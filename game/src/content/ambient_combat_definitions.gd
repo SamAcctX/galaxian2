@@ -26,10 +26,10 @@ static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dicti
 	if not Layouts.matches(data.provenance,int(origin.offset),source_bytes,[SPANS,MAC_SPANS]):return "Invalid ambient combat source layout"
 	return ""
 
-static func population(bindings: RefCounted,packet: Dictionary,rank: Variant,difficulty: Variant) -> Dictionary:
+static func population(bindings: RefCounted,packet: Dictionary,rank: Variant,difficulty: Variant,mission_context: RefCounted=null) -> Dictionary:
 	if bindings==null or not parameters(bindings.ambient_combat) or not Ambient.parameters(bindings.ambient_population) or not ControlRules.parameters(bindings.combat_training_control):return {}
 	if packet.has("free_context"):
-		var ordinary:=FreeTraffic.population(bindings,packet,rank,difficulty)
+		var ordinary:=FreeTraffic.population(bindings,packet,rank,difficulty,mission_context)
 		return _common_scalars(bindings,ordinary) if not ordinary.is_empty() else {}
 	var rules:=for_context(bindings,packet.get("campaign_cursor"),packet.get("population",{}).get("station_id"))
 	if rules.is_empty():return {}

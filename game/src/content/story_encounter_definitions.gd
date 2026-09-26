@@ -273,6 +273,27 @@ static func compose_dekato(bindings: RefCounted,catalogues: RefCounted,construct
 		data.mission_recipe=load("res://src/content/mission_recipe.gd").select(bindings,context.campaign_cursor)
 	return data
 
+## Reuse the ordinary ship factory and lifecycle under the admitted return.
+## The independent passenger job remains a separate retained career owner.
+static func compose_normal_return(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,mission_context: RefCounted) -> Dictionary:
+	if not is_instance_of(construction,load("res://src/simulation/opening_npc_construction.gd")) or catalogues==null or catalogues.content_id!=bindings.base_content_id:return {}
+	var packet: Dictionary=construction.snapshot()
+	var population:=FreeLife.population(bindings,packet,mission_context)
+	if population.is_empty():return {}
+	var data: Dictionary=bindings.combat_training_control.duplicate(true)
+	data.merge(population,true)
+	data.authored_story=true;data.actor_rows=packet.actors.duplicate(true)
+	data.actor_kinds=packet.actors.map(func(row):return row.actor_kind)
+	data.hull_catalogue_ids=packet.actors.map(func(row):return row.hull_catalogue_id)
+	data.standing=bindings.mido_travel.free_lifecycle.standing.duplicate(true)
+	data.nonhostile_remaining_delta=int(bindings.combat_training_destruction.nonhostile_remaining_delta)
+	data.selection_skipped_modes=data.lifecycle.selection_skipped_modes
+	data.context_key="free_context";data.context=packet.free_context.duplicate(true)
+	data.player_ship_id=packet.player_ship_id
+	data.player_weapon_targets=[];data.target_memberships=[]
+	data.mission_context=mission_context;data.mission_recipe=mission_context.recipe()
+	return data
+
 static func selected(bindings: RefCounted,context: Dictionary) -> bool:
 	return bindings!=null and (Sahi.selected(bindings.mido_travel,context) or Post.selected(bindings.mido_travel,context) or Dima.selected(bindings.mido_travel,context))
 

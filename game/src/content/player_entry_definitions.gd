@@ -114,8 +114,22 @@ func configure_selected41(bindings: RefCounted,context: Dictionary,ship_id: int)
 	cursor=41;_kind="selected41";uses_equipment=true;restores_local=true
 	return true
 
+## A typed normal-world continuation restores the transferred cache. It never
+## authorizes a generic player entry, station departure or repair/reset.
+func configure_normal_return(bindings: RefCounted,mission_context: RefCounted,loadout: Dictionary) -> bool:
+	error="";cursor=-1;is_arrival=false;is_departure=false;uses_equipment=false
+	equipped_entry={};_kind="";_departure={};_training={};_pirate={};_travel={};restores_local=false
+	if not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not mission_context.matches_loadout(loadout):return reject("Normal player entry requires its admitted equipment")
+	var identity: Dictionary=mission_context.identity()
+	if not mission_context.normal_location(bindings,int(loadout.station_id),int(identity.campaign_cursor)):return reject("Normal player entry requires its completed portal return")
+	equipped_entry=bindings.mido_travel.player_entry.duplicate(true)
+	equipped_entry.merge({"campaign_cursor":identity.campaign_cursor,"station_id":loadout.station_id,"system_id":loadout.system_id,"ship_id":loadout.ship_id},true)
+	cursor=identity.campaign_cursor;_kind="normal_return";uses_equipment=true;restores_local=true
+	return true
+
 func player_cache(parameters: Dictionary, seed: Dictionary, hull: int, capacities: Dictionary, reset:=false) -> Dictionary:
 	if cursor<0:return {}
+	if _kind=="normal_return":return {} if reset else Cache._departure_cache(parameters,equipped_entry,seed,hull,capacities,false)
 	if _kind=="selected41":return {} if reset else Cache._departure_cache(parameters,equipped_entry,seed,hull,capacities,false,true)
 	if _kind in ["dekato","selected40"]:return Cache._departure_cache(parameters,equipped_entry,seed,hull,capacities,reset)
 	if _kind=="alioth":return Cache.alioth_attack_cache(parameters,_travel,seed,hull,capacities,reset)
@@ -132,6 +146,7 @@ func player_cache(parameters: Dictionary, seed: Dictionary, hull: int, capacitie
 
 func contact_weapons(opening_weapon: Dictionary) -> Dictionary:
 	if cursor<0:return {}
+	if _kind=="normal_return":return {"candidates":[],"enabled":false,"context":{}}
 	if _kind=="selected41":return {"candidates":[],"enabled":false,"context":{}}
 	if _kind in ["convoy","alioth","free","kappa","sahi","post_sahi","ordinary_void","dekato","selected40"]:return {"candidates":[],"enabled":false,"context":{}}
 	if _kind=="local":

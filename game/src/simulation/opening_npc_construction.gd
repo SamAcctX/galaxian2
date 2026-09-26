@@ -46,6 +46,7 @@ var _traffic := {}
 var _ambient:={}
 var _free:={}
 var _population_owner: RefCounted
+var _mission_context: RefCounted
 var _traffic_sample := {}
 var _authored_route: RefCounted
 var _convoy:={}
@@ -149,7 +150,7 @@ func configure_ambient_traffic(bindings: RefCounted,catalogues: RefCounted,equip
 	_traffic.unix_seconds=unix_seconds;_ambient=ambient.duplicate(true);_population_owner=population
 	return true
 
-func configure_free_traffic(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,unix_seconds: Variant) -> bool:
+func configure_free_traffic(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,unix_seconds: Variant,mission_context: RefCounted=null) -> bool:
 	clear()
 	if bindings==null or not equipment is Equipment:return reject("Ordinary construction requires its retained equipment")
 	var owned: Dictionary=equipment.snapshot()
@@ -159,14 +160,16 @@ func configure_free_traffic(bindings: RefCounted,catalogues: RefCounted,equipmen
 	if seed.base_content_id!=bindings.base_content_id or seed.binding_id!=bindings.binding_id:return reject("Ordinary construction belongs to another content identity")
 	for key in ["station_id","system_id"]:
 		if seed[key]!=context.get(key):return reject("Ordinary construction does not match the retained player location")
-	return configure_free_factory(bindings,catalogues,int(seed.ship_id),seed.equipment_ids,context,unix_seconds)
+	if mission_context!=null and (not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not mission_context.matches_loadout(seed)):return reject("Ordinary factory equipment differs from its admitted mission")
+	return configure_free_factory(bindings,catalogues,int(seed.ship_id),seed.equipment_ids,context,unix_seconds,mission_context)
 
-func configure_free_factory(bindings: RefCounted,catalogues: RefCounted,player_ship_id: int,equipment_ids: Array,context: Dictionary,unix_seconds: Variant) -> bool:
+func configure_free_factory(bindings: RefCounted,catalogues: RefCounted,player_ship_id: int,equipment_ids: Array,context: Dictionary,unix_seconds: Variant,mission_context: RefCounted=null) -> bool:
 	# Detached factory inputs. The session owns permission to depart and the
 	# retained player; this method neither creates nor updates gameplay progress.
 	clear()
 	var population:=TrafficPopulation.new()
-	if not population.configure_free(bindings,catalogues,context,unix_seconds):return reject(population.error)
+	if not population.configure_free(bindings,catalogues,context,unix_seconds,mission_context):return reject(population.error)
+	if mission_context!=null and not mission_context.matches_factory(player_ship_id,equipment_ids):return reject("Ordinary factory changed the admitted player ship or equipment")
 	if player_ship_id<0 or player_ship_id>=catalogues.tables.ships.size():return reject("Unknown player ship for cargo construction")
 	for id in equipment_ids:
 		if not id is int or id<0 or id>=catalogues.tables.items.size():return reject("Unknown installed equipment for cargo construction")
@@ -196,6 +199,7 @@ func configure_free_factory(bindings: RefCounted,catalogues: RefCounted,player_s
 	var data: Dictionary=bindings.mido_travel.departure_traffic.duplicate(true)
 	data.merge({"station_id":int(context.station_id),"system_id":int(context.system_id),"campaign_cursor":int(context.campaign_cursor),"actor_kind":local_faction,"ambient":true,"free_context":context.duplicate(true),"free_player_ship_id":player_ship_id},true)
 	var seed:={"ship_id":player_ship_id,"equipment_ids":equipment_ids.duplicate(),"station_id":int(context.station_id)}
+	_mission_context=mission_context
 	if not _configure(bindings,catalogues,seed,{},{},{},data):return false
 	_traffic.unix_seconds=unix_seconds;_ambient=bindings.ambient_population.duplicate(true)
 	_free=rules.duplicate(true);_free.hulls=hulls.duplicate(true);_population_owner=population
@@ -483,7 +487,7 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, 
 	if not dekato.is_empty():count=int(dekato.actor_count)
 	if not selected40.is_empty():count=int(selected40.actor_count)
 	if not selected41.is_empty():count=int(selected41.actor_count)
-	if traffic.has("free_context"):count=FreePopulation.maximum_actor_count(bindings,int(traffic.free_context.rank),float(traffic.free_context.difficulty),traffic.free_context)
+	if traffic.has("free_context"):count=FreePopulation.maximum_actor_count(bindings,int(traffic.free_context.rank),float(traffic.free_context.difficulty),traffic.free_context,_mission_context)
 	elif traffic.has("void_context"):count=int(traffic.void_maximum_count)
 	elif traffic.get("ambient",false):count=AmbientDefinitions.maximum_actor_count(bindings.ambient_population,traffic)
 	for id in count:
@@ -1182,7 +1186,7 @@ func snapshot() -> Dictionary:
 	return value
 
 func clear() -> void:
-	error="";_identity={};_definition={};_items=[];_routes=[];_actors=[];_random_state={};_arrival={};_full_hold={};_training={};_traffic={};_traffic_sample={};_authored_route=null;_ambient={};_free={};_population_owner=null
+	error="";_identity={};_definition={};_items=[];_routes=[];_actors=[];_random_state={};_arrival={};_full_hold={};_training={};_traffic={};_traffic_sample={};_authored_route=null;_ambient={};_free={};_population_owner=null;_mission_context=null
 	_contract={};_contract_layout={};_generated=false;_convoy={};_alioth={};_kappa={};_sahi={};_dekato={};_selected40={};_selected41={}
 
 var _contract:={}

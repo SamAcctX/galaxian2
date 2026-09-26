@@ -23,6 +23,8 @@ func configure(bindings: RefCounted, library: RefCounted, construction: RefCount
 	if Ordinary.for_departure(bindings,flight).is_empty():return reject("This construction has no connected ordinary flight context")
 	var training: bool=flight.get("campaign_cursor")==7
 	var rules:=Ordinary.briefing(bindings,flight.get("campaign_cursor"),(Ordinary.FreeFlight.ordinary_entry(bindings,flight) or flight.get("scenery",{}).get("world_initialization",{}).has("contract_context")),int(flight.location.station_id))
+	var mission_context: RefCounted=construction.mission_context_owner()
+	if mission_context!=null:rules=Ordinary.MissionRecipe.briefing(bindings,mission_context.recipe())
 	if rules.is_empty():return reject("This departure has no supported mining briefing")
 	if flight.activated or flight.entry_released or flight.briefing_started:return reject("Mining briefing requires a fresh prepared departure")
 	var instruction_rules: Dictionary=rules if training else Ordinary.briefing(bindings,2)
@@ -39,7 +41,7 @@ func configure(bindings: RefCounted, library: RefCounted, construction: RefCount
 	var failure_line:={}
 	# The selected B'akka world is a combat contest. Its frame keeps the
 	# shared entry clock but must not load the unrelated mining tutorial hint.
-	var instruction: Dictionary={} if flight.has("bakka_context") or flight.has("dekato_context") else bindings.mining_session.get("failure_instruction",{})
+	var instruction: Dictionary={} if flight.has("bakka_context") or mission_context!=null else bindings.mining_session.get("failure_instruction",{})
 	if not instruction.is_empty():
 		for id in [instruction.text_id,instruction.title_text_id]:
 			if int(id)>=library.strings.size() or not library.strings[int(id)] is String or library.strings[int(id)].is_empty():return reject("Mining failure instruction is unavailable in this language")

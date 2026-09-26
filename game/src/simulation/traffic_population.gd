@@ -43,15 +43,17 @@ func configure(bindings: RefCounted,context: Dictionary,unix_seconds: Variant) -
 	_seconds=unix_seconds
 	return true
 
-func configure_free(bindings: RefCounted,catalogues: RefCounted,context: Dictionary,unix_seconds: Variant) -> bool:
+func configure_free(bindings: RefCounted,catalogues: RefCounted,context: Dictionary,unix_seconds: Variant,mission_context: RefCounted=null) -> bool:
 	_reset_configuration()
 	if not Free.available(bindings) or catalogues==null:return reject("Ordinary traffic requires its imported population and catalogue declarations")
 	if catalogues.content_id!=bindings.base_content_id:return reject("Ordinary population catalogues belong to another content")
 	if not unix_seconds is int or unix_seconds<0 or unix_seconds>2147483647:return reject("Ordinary traffic requires supported Unix seconds")
 	var data: Dictionary=bindings.mido_travel.free_population
 	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").catalogue_location(bindings,catalogues,context.get("station_id"))
-	if world.is_empty() or context.get("system_id")!=world.system_id or not Campaign.supported(bindings,context.get("campaign_cursor")):return reject("This location and campaign context has no ordinary population support")
-	if not Delivery.mission_context_valid(bindings,context):return reject("Ordinary traffic requires its retained empty or supported delivery mission")
+	var admitted: bool=load("res://src/simulation/mission_context.gd").normal_population_matches(bindings,context,mission_context)
+	if mission_context!=null and not admitted:return reject("Ordinary population differs from its admitted normal world")
+	if world.is_empty() or context.get("system_id")!=world.system_id or (not admitted and not Campaign.supported(bindings,context.get("campaign_cursor"))):return reject("This location and campaign context has no ordinary population support")
+	if not admitted and not Delivery.mission_context_valid(bindings,context):return reject("Ordinary traffic requires its retained empty or supported delivery mission")
 	# These are explicit source inputs. Mission/session owners must produce them;
 	# construction never infers missing retained state or grants campaign progress.
 	if context.get("companions_empty")!=true:return reject("This population does not support companion overrides")
@@ -74,7 +76,7 @@ func configure_free(bindings: RefCounted,catalogues: RefCounted,context: Diction
 	_groups=bindings.ambient_population.duplicate(true)
 	_ordinary=data.duplicate(true)
 	_ordinary.merge({"security":security,"faction":faction,"rank":int(context.rank),"difficulty":float(difficulty)})
-	_ordinary.empty_story=Campaign.empty_story(bindings,context)
+	_ordinary.empty_story=admitted or Campaign.empty_story(bindings,context)
 	if _ordinary.empty_story:_ordinary.mission_kind=int(context.mission_kind)
 	if _ordinary.empty_story or not context.side_missions_empty:
 		_ordinary.delivery_count=Delivery.extra_count(bindings,context)

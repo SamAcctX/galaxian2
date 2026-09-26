@@ -34,9 +34,9 @@ static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dicti
 	if not Layouts.matches(data.provenance,int(origin.offset),source_bytes,[spans,alternate]):return "Invalid ambient lifecycle source layout"
 	return ""
 
-static func guidance(bindings: RefCounted,packet: Dictionary,rank: Variant,difficulty: Variant) -> Dictionary:
+static func guidance(bindings: RefCounted,packet: Dictionary,rank: Variant,difficulty: Variant,mission_context: RefCounted=null) -> Dictionary:
 	if bindings==null or not parameters(bindings.ambient_lifecycle):return {}
-	var population:=Combat.population(bindings,packet,rank,difficulty)
+	var population:=Combat.population(bindings,packet,rank,difficulty,mission_context)
 	if population.is_empty():return {}
 	var result: Dictionary=bindings.combat_training_control.duplicate(true)
 	result.merge(bindings.mido_travel.traffic_control,true)

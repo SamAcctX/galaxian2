@@ -129,13 +129,13 @@ func _configure_owners(bindings: RefCounted,combat: Dictionary,seed_seconds: int
 	_presentation_identity=RefCounted.new()
 	return true
 
-func configure_local_traffic(bindings: RefCounted,combat: Dictionary,seed_seconds: Variant) -> bool:
+func configure_local_traffic(bindings: RefCounted,combat: Dictionary,seed_seconds: Variant,mission_context: RefCounted=null) -> bool:
 	clear()
 	if bindings==null or Travel.flight(bindings,78).is_empty() or not FullHold.parameters(bindings.full_hold_particles) or not Definitions.parameters(bindings.damage_particles.get("owners",{})) or not seed_seconds is int:return reject("Local smoke/fire requires its ordinary particle owners and seed")
 	_rules=bindings.damage_particles.owners.duplicate(true)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(combat.get("campaign_cursor",-1))}
 	var actors: Variant=combat.get("actors")
-	if not OrdinaryFlight.combat_population(bindings,combat):clear();return reject("Local smoke/fire requires the generated population")
+	if not OrdinaryFlight.combat_population(bindings,combat,mission_context):clear();return reject("Local smoke/fire requires the generated population")
 	_npc_count=actors.size()
 	if not valid_combat(combat):clear();return reject("Local smoke/fire requires its initialized ships")
 	var keys:=[]

@@ -13,8 +13,12 @@ static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALU
 static func available(bindings: RefCounted) -> bool:
 	return bindings!=null and parameters(bindings.mido_travel.get("local_arrival_environment")) and load("res://src/content/gate_environment_definitions.gd").available(bindings)
 
-static func location_supported(bindings: RefCounted,catalogues: RefCounted,station_id: int,cursor: int) -> bool:
+static func location_supported(bindings: RefCounted,catalogues: RefCounted,station_id: int,cursor: int,mission_context: RefCounted=null) -> bool:
 	if not available(bindings) or catalogues==null or catalogues.content_id!=bindings.base_content_id:return false
+	if mission_context!=null:
+		if not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not mission_context.normal_location(bindings,station_id,cursor):return false
+		var normal: Dictionary=load("res://src/content/ordinary_world_definitions.gd").catalogue_location(bindings,catalogues,station_id)
+		return not normal.is_empty() and normal.planet_type in SUPPORTED_TYPES
 	var story_system: int=9 if cursor==26 and station_id==48 and load("res://src/content/post_sahi_definitions.gd").available(bindings) else 18 if cursor==28 and station_id==91 and load("res://src/content/thynome_expedition_definitions.gd").available(bindings) else -1
 	# Generated scenery is not a public route. The selected Dekato constructor
 	# separately requires its target-world cache, equipment and location owner.

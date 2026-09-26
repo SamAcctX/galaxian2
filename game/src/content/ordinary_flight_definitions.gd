@@ -337,7 +337,8 @@ static func station_conversation(bindings: RefCounted,cursor: Variant) -> Dictio
 	result.events=bindings.mido_travel.conversations[0].events.duplicate(true)
 	return result
 
-static func combat_population(bindings: RefCounted, combat: Dictionary) -> bool:
+static func combat_population(bindings: RefCounted, combat: Dictionary,mission_context: RefCounted=null) -> bool:
+	if mission_context!=null and mission_context.has_feature("normal_space"):return load("res://src/simulation/mission_context.gd").normal_combat_matches(bindings,combat,mission_context)
 	return Dekato.combat_population(bindings,combat) or BakkaCombat.combat_population(bindings,combat) or Authored.combat_population(bindings,combat) or Kappa.combat_population(bindings,combat) or Attack.combat_population(bindings,combat) or Convoy.combat_population(bindings,combat) or Travel.combat_population(bindings,combat) or AmbientCombat.live_population(bindings,combat) or ContractWorld.combat_population(bindings,combat)
 
 static func kappa_return_values() -> Dictionary:

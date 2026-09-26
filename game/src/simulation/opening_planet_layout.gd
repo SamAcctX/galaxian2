@@ -37,14 +37,14 @@ func for_departure(bindings: RefCounted, catalogues: RefCounted, cache: Variant,
 	var location:=Arrival.new()
 	var source:=location.resolve_departure(bindings,catalogues,cache,equipment,mission_context)
 	if source.is_empty():return reject(location.error)
-	return _for_location(bindings,catalogues,source,bindings.opening_sky.planet_resources,bindings.base_content_id,quality,true)
+	return _for_location(bindings,catalogues,source,bindings.opening_sky.planet_resources,bindings.base_content_id,quality,true,false,mission_context)
 
-func for_lounge(bindings: RefCounted,catalogues: RefCounted,station_id: int,cursor: int,quality:="high") -> Dictionary:
+func for_lounge(bindings: RefCounted,catalogues: RefCounted,station_id: int,cursor: int,quality:="high",mission_context: RefCounted=null) -> Dictionary:
 	error=""
 	var location:=Arrival.new()
-	var source:=location.resolve_lounge(bindings,catalogues,station_id,cursor)
+	var source:=location.resolve_lounge(bindings,catalogues,station_id,cursor,mission_context)
 	if source.is_empty():return reject(location.error)
-	return _for_location(bindings,catalogues,source,bindings.opening_sky.planet_resources,bindings.base_content_id,quality,true)
+	return _for_location(bindings,catalogues,source,bindings.opening_sky.planet_resources,bindings.base_content_id,quality,true,false,mission_context)
 
 static func supports_station(bindings: RefCounted,catalogues: RefCounted,station_id: int) -> bool:
 	var world: Dictionary=Worlds.catalogue_location(bindings,catalogues,station_id)
@@ -62,13 +62,13 @@ func for_station(bindings: RefCounted,catalogues: RefCounted,station_id: int,cur
 		"current_planet_texture_id":int(resources.near_textures[int(station.planet_type)])}
 	return _for_location(bindings,catalogues,context,resources,bindings.base_content_id,quality,true,true)
 
-func _for_location(bindings: RefCounted, catalogues: RefCounted, opening: Dictionary, data: Dictionary, base_content_id: String, quality: String, ordinary: bool, station_preview:=false) -> Dictionary:
+func _for_location(bindings: RefCounted, catalogues: RefCounted, opening: Dictionary, data: Dictionary, base_content_id: String, quality: String, ordinary: bool, station_preview:=false,mission_context: RefCounted=null) -> Dictionary:
 	var system: Dictionary=catalogues.tables.systems[opening.system_id]
 	var station: Dictionary=catalogues.tables.stations[opening.station_id]
 	# Other planet types and special system/campaign constructors need their own
 	# verified selector. A familiar mesh is not evidence those contexts work.
 	var travel_context:=ordinary and Travel.location_supported(bindings.mido_travel,int(opening.station_id),int(opening.system_id),int(station.planet_type))
-	var local_arrival:=ordinary and LocalArrival.location_supported(bindings,catalogues,int(opening.station_id),int(opening.get("campaign_cursor",-1)))
+	var local_arrival:=ordinary and LocalArrival.location_supported(bindings,catalogues,int(opening.station_id),int(opening.get("campaign_cursor",-1)),mission_context)
 	travel_context=travel_context or local_arrival or station_preview
 	if (station.planet_type!=0 and not travel_context) or opening.system_id==27 or not Numbers.integer(system.get("sky_index"),0,14):
 		return reject("This planet layout requires an ordinary supported location")

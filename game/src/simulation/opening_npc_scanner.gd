@@ -34,8 +34,9 @@ var _departure_modes:={}
 var _selected40_world: RefCounted
 var _mission_combat:=false
 
-func configure(bindings: RefCounted, catalogues: RefCounted, frame_radii: Vector2, animation_frames: int, equipment_owner: RefCounted=null, local_combat: Dictionary={}, recovery: RefCounted=null) -> bool:
-	return _configure(bindings,catalogues,frame_radii,animation_frames,equipment_owner,local_combat,recovery)
+func configure(bindings: RefCounted, catalogues: RefCounted, frame_radii: Vector2, animation_frames: int, equipment_owner: RefCounted=null, local_combat: Dictionary={}, recovery: RefCounted=null,mission_context: RefCounted=null) -> bool:
+	if mission_context!=null and (not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not equipment_owner is Equipment or not mission_context.matches_loadout(equipment_owner.snapshot().loadout)):return reject("Mission scanner lost its admitted equipment")
+	return _configure(bindings,catalogues,frame_radii,animation_frames,equipment_owner,local_combat,recovery,null,mission_context)
 
 ## The retained inventory stays at Néhma. Only the actual selected native cast
 ## supplies scanner targets; this does not admit cursor40 as an ordinary flight.

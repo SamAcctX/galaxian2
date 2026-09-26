@@ -19,10 +19,10 @@ static func parameters(data: Variant) -> bool:
 static func available(bindings: RefCounted) -> bool:
 	return Traffic.available(bindings) and parameters(bindings.mido_travel.get("free_lifecycle")) and load("res://src/content/contract_ship_lifecycle_definitions.gd").available(bindings)
 
-static func population(bindings: RefCounted,packet: Dictionary) -> Dictionary:
+static func population(bindings: RefCounted,packet: Dictionary,mission_context: RefCounted=null) -> Dictionary:
 	if not available(bindings) or not packet.get("free_context") is Dictionary:return {}
 	var context: Dictionary=packet.free_context
-	var data: Dictionary=load("res://src/content/ambient_lifecycle_definitions.gd").guidance(bindings,packet,context.get("rank"),context.get("difficulty"))
+	var data: Dictionary=load("res://src/content/ambient_lifecycle_definitions.gd").guidance(bindings,packet,context.get("rank"),context.get("difficulty"),mission_context)
 	if data.is_empty():return {}
 	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,context.station_id)
 	var population_rules: Dictionary=bindings.mido_travel.free_population

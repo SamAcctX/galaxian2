@@ -24,9 +24,7 @@ func verify_component(world: RefCounted) -> void:
 	var visuals: RefCounted=load("res://src/content/visual_library.gd").new()
 	if not visuals.open(visual_path,library.manifest):check(false,visuals.error);return
 	root.size=Vector2i(1440,900);root.content_scale_size=Vector2i.ZERO
-	scene=Scene.new();root.add_child(scene)
-	if not scene.configure(library,bindings,visuals,catalogues,active,root.size):check(false,scene.error);scene.free();return
-	scene.world_changed.connect(func(candidate):active=candidate)
+	if not prepare_scene(visuals):return
 	scene.feedback.set_active(true)
 	await capture("continuation-arrival")
 	var skipped: RefCounted=active.skip_entry()
@@ -88,7 +86,13 @@ func verify_component(world: RefCounted) -> void:
 		present()
 	check(original.career.mission==after.career.mission,"Independent passenger job changed across the cinematic")
 	if failures==0:await verify_retained_flight()
-	scene.free()
+	if is_instance_valid(scene):scene.free()
+
+func prepare_scene(visuals: RefCounted) -> bool:
+	scene=Scene.new();root.add_child(scene)
+	if not scene.configure(library,bindings,visuals,catalogues,active,root.size):check(false,scene.error);scene.free();return false
+	scene.world_changed.connect(func(candidate):active=candidate)
+	return true
 
 func verify_retained_flight() -> void:pass
 

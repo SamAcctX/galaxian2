@@ -52,8 +52,9 @@ static func parameters(data: Variant) -> bool:
 static func available(bindings: RefCounted) -> bool:
 	return Navigation.available(bindings) and Ambient.parameters(bindings.ambient_population) and Encounters.parameters(bindings.early_contracts.get("encounter_construction")) and parameters(bindings.mido_travel.get("free_population"))
 
-static func maximum_actor_count(bindings: RefCounted,rank: int,difficulty: float,context: Dictionary={}) -> int:
+static func maximum_actor_count(bindings: RefCounted,rank: int,difficulty: float,context: Dictionary={},mission_context: RefCounted=null) -> int:
 	var delivery=preload("res://src/content/ordinary_contracts_definitions.gd")
+	if load("res://src/simulation/mission_context.gd").normal_population_matches(bindings,context,mission_context):return 0
 	if delivery.active_courier(context) or delivery.Campaign.empty_story(bindings,context):return 0
 	var rules: Dictionary=bindings.mido_travel.free_population
 	var groups: Dictionary=bindings.ambient_population

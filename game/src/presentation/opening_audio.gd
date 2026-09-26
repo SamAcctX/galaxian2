@@ -84,14 +84,17 @@ var _flight_music_attached:=false
 var _selected40_identity: RefCounted
 var _selected41_radio_world: RefCounted
 
-func configure(library: RefCounted, bindings: RefCounted, audio_seed: int=0, campaign_cursor: int=0, local_combat: Dictionary={}) -> bool:
+func configure(library: RefCounted, bindings: RefCounted, audio_seed: int=0, campaign_cursor: int=0, local_combat: Dictionary={},mission_context: RefCounted=null) -> bool:
 	if campaign_cursor==40 and (not local_combat.has("free_context") or not OrdinaryFlight.combat_population(bindings,local_combat)):return reject("Selected40 audio requires its explicit native flight owner")
 	clear()
 	var dialogue: Dictionary=Dialogue.select(bindings,campaign_cursor) if bindings!=null else {}
 	var contest: bool=OrdinaryFlight.BakkaCombat.combat_population(bindings,local_combat)
-	var local_flight: bool=OrdinaryFlight.combat_population(bindings,local_combat)
+	var local_flight: bool=OrdinaryFlight.combat_population(bindings,local_combat,mission_context)
+	var admitted_silent: bool=mission_context!=null and mission_context.has_feature("normal_space") and mission_context.recipe().radio.is_empty()
+	if admitted_silent:dialogue={}
 	var authored_radio: bool=Dialogue.valid_parameters(dialogue,campaign_cursor) and ((campaign_cursor in [28,29] and Story.combat_population(bindings,local_combat)) or OrdinaryFlight.Dekato.combat_population(bindings,local_combat))
 	var story_radio: bool=(campaign_cursor==14 and local_combat.get("actors",[]).any(func(actor):return actor.get("convoy",false))) or campaign_cursor==16 or OrdinaryFlight.Kappa.combat_population(bindings,local_combat) or OrdinaryFlight.Authored.combat_population(bindings,local_combat) or authored_radio
+	if admitted_silent:story_radio=true
 	if campaign_cursor==29 and not authored_radio:return reject("Authored radio requires its selected story cast")
 	if campaign_cursor==2:
 		_npc_count=0
@@ -107,7 +110,7 @@ func configure(library: RefCounted, bindings: RefCounted, audio_seed: int=0, cam
 		if bindings==null or not Travel.parameters(bindings.mido_travel) or not PlayerDeath.parameters(bindings.player_destruction):return reject("Local flight audio lacks its patrol and player destruction declarations")
 		var actors: Variant=local_combat.get("actors")
 		var empty_delivery: bool=ContractWorld.supports(bindings,campaign_cursor) and actors is Array and actors.is_empty() and local_combat.get("contract_encounter",{}).get("kind")==0
-		if not OrdinaryFlight.combat_population(bindings,local_combat) and not authored_radio and not empty_delivery:return reject("Local flight audio requires its generated population")
+		if not local_flight and not authored_radio and not empty_delivery:return reject("Local flight audio requires its generated population")
 		for id in actors.size():
 			if not actors[id] is Dictionary or actors[id].get("actor_id")!=id or (not actors[id].get("actor_kind") is int):return reject("Unsupported local sound owner")
 		_npc_count=actors.size();_player_death_rules=bindings.player_destruction.duplicate(true)
@@ -128,7 +131,7 @@ func configure(library: RefCounted, bindings: RefCounted, audio_seed: int=0, cam
 		if not _resources.configure_local_traffic(library,bindings):return reject(_resources.error)
 	# Ordinary Void and the contest have combat but no timed radio. Resolve
 	# their original clips through the base bank without inventing a radio scene.
-	elif not _resources.configure(library,bindings,0 if contest or campaign_cursor in [2,4,26,33] else campaign_cursor):return reject(_resources.error)
+	elif not _resources.configure(library,bindings,0 if admitted_silent or contest or campaign_cursor in [2,4,26,33] else campaign_cursor):return reject(_resources.error)
 	for id in [_npc_scan_sound,_debris_sound,_notification_sound]:
 		if id>=0 and _resources.prepare(id).is_empty():return reject(_resources.error)
 	for id in _travel_sounds:
@@ -352,10 +355,11 @@ func configure_full_hold(library: RefCounted,bindings: RefCounted,world: RefCoun
 	var cursor: int=state.player_destruction.departure_cursor
 	if state.campaign_cursor!=cursor:return reject("Register ordinary-flight sound in its initial mission")
 	var combat: Dictionary=state.get("encounter",{}).get("combat",{})
-	var local_flight:=OrdinaryFlight.combat_population(bindings,combat)
+	var mission_context: RefCounted=world.mission_context_owner()
+	var local_flight:=OrdinaryFlight.combat_population(bindings,combat,mission_context)
 	var travel: Variant=state.get("local_travel",{})
 	if not travel is Dictionary or (not travel.is_empty() and (not local_flight or travel.get("event_serial")!=0 or travel.get("events")!=[])):return reject("Register local travel audio before its first event")
-	if not configure(library,bindings,audio_seed,cursor,combat if local_flight else {}):return false
+	if not configure(library,bindings,audio_seed,cursor,combat if local_flight else {},mission_context):return false
 	if state.has("void_probe_stage")!=state.has("void_probe") or (cursor==29)!=state.has("void_probe_stage"):
 		return reject("Probe sound requires its selected stage and model")
 	if cursor==29:

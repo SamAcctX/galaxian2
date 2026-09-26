@@ -1082,10 +1082,15 @@ func _enter_navigation40_arrival(now_microseconds: int,environment_seconds: Vari
 	_locations=locations
 	return true
 
-func _accept_first_flight(candidate: Node3D, now_microseconds: int) -> bool:
+func _accept_first_flight(candidate: Node3D, now_microseconds: int,normal_return: RefCounted=null) -> bool:
 	candidate.transition_rejected.connect(transition_error)
 	for reason in ["user","hidden","focus"]:
 		candidate.set_pause(reason,_user_paused if reason=="user" else not is_visible_in_tree() if reason=="hidden" else not _focused,now_microseconds)
+	# Preparation may involve complete resource/scene construction. Recheck the
+	# living source immediately before activating/swapping the staged candidate.
+	if normal_return!=null and (not is_instance_of(normal_return,load("res://src/simulation/mission_portal_return.gd")) or not session is MissionSession or not normal_return.matches_departure(session.flight_owner())):
+		candidate.free();session.camera.make_current()
+		return transition_error("The Void departure changed while its normal-space candidate was prepared")
 	if not candidate.activate():
 		var message: String=candidate.error;candidate.free();session.camera.make_current();cancel_departure()
 		return transition_error(message)
@@ -1136,6 +1141,26 @@ func enter_mission_portal(now_microseconds: int,environment_seconds: Variant=nul
 	if not enter_mission_prepared(constructor,now_microseconds):return transition_error(status.text)
 	return true
 
+func enter_mission_normal_space(now_microseconds: int,environment_seconds: Variant=null,field_seconds: Variant=null) -> bool:
+	if not session is MissionSession or session.is_paused() or session.status!="normal_space_return_required":return transition_error("The living Void escape has not finished")
+	var catalogues:=Catalogues.new()
+	if not catalogues.open(library):return transition_error(catalogues.error)
+	var transfer: RefCounted=load("res://src/simulation/mission_portal_return.gd").new()
+	if not transfer.prepare(bindings,catalogues,session.flight_owner()):return transition_error(transfer.error)
+	var bodies:=FirstFlightSession.Bodies.new();var effects:=FirstFlightSession.Effects.new()
+	if not bodies.configure(library,bindings) or not effects.configure(library,bindings):return transition_error(bodies.error+effects.error)
+	var now:=int(Time.get_unix_time_from_system())
+	var field_seed: int=now if field_seconds==null else int(field_seconds)
+	var construction:=FirstFlightSession.Construction.new()
+	if not construction.prepare_mission_return(bindings,catalogues,transfer,now if environment_seconds==null else int(environment_seconds),field_seed,true,bodies,effects):return transition_error(construction.error)
+	var previous_camera: Camera3D=viewport.get_camera_3d()
+	var candidate:=FirstFlightSession.new();viewport.add_child(candidate)
+	if not candidate.configure_prepared_arrival(library,bindings,visuals,catalogues,construction,now_microseconds,field_seed,_controls.touch_controls):
+		var message: String=candidate.error;candidate.free()
+		if previous_camera!=null:previous_camera.make_current()
+		return transition_error(message)
+	return _accept_first_flight(candidate,now_microseconds,transfer)
+
 func _selected40_input(event: InputEvent) -> void:
 	if session.handle_selection_event(event):
 		clear_input();present_session();get_viewport().set_input_as_handled();return
@@ -1157,6 +1182,7 @@ func _selected40_tick(now_microseconds: int) -> void:
 		transition_error(session.error);return
 	if session.status=="game_over_transition_required" and not session.is_paused() and _focused and is_visible_in_tree():enter_game_over();return
 	if session.status=="selected40_portal_transition_required" and not session.is_paused() and _focused and is_visible_in_tree():enter_mission_portal(now_microseconds);return
+	if session.status=="normal_space_return_required" and not session.is_paused() and _focused and is_visible_in_tree():enter_mission_normal_space(now_microseconds);return
 	present_session()
 
 func enter_game_over() -> bool:

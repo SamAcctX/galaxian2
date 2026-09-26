@@ -138,11 +138,11 @@ func configure_void_factory(bindings: RefCounted,catalogues: RefCounted,player_s
 		"entry_conditions":entry_conditions.duplicate(true),"void_context":context.duplicate(true)})
 	return true
 
-func configure_free_traffic(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,unix_seconds: Variant,entry_conditions: Dictionary) -> bool:
+func configure_free_traffic(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,unix_seconds: Variant,entry_conditions: Dictionary,mission_context: RefCounted=null) -> bool:
 	clear()
 	if not FirstFlight.entry_conditions(entry_conditions):return reject("Ordinary initialization requires ordinary entry with no additional companions")
 	var construction:=Construction.new()
-	if not construction.configure_free_traffic(bindings,catalogues,equipment,context,unix_seconds):return reject(construction.error)
+	if not construction.configure_free_traffic(bindings,catalogues,equipment,context,unix_seconds,mission_context):return reject(construction.error)
 	var seed: Dictionary=equipment.snapshot().loadout
 	return _configure_free(bindings,catalogues,construction,int(seed.ship_id),seed.equipment_ids,context,entry_conditions)
 

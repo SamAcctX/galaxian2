@@ -16,14 +16,14 @@ const FreeFlight=preload("res://src/content/free_flight_definitions.gd")
 const Sahi=preload("res://src/content/sahi_encounter_definitions.gd")
 var error:=""
 
-func resolve_lounge(bindings: RefCounted,catalogues: RefCounted,station_id: int,cursor: int) -> Dictionary:
+func resolve_lounge(bindings: RefCounted,catalogues: RefCounted,station_id: int,cursor: int,mission_context: RefCounted=null) -> Dictionary:
 	error=""
 	if not Lounge.available(bindings) or catalogues==null or catalogues.content_id!=bindings.base_content_id:return reject("The lounge requires matching location declarations")
 	if station_id<0 or station_id>=catalogues.tables.stations.size():return reject("Unknown lounge station")
 	var station: Dictionary=catalogues.tables.stations[station_id]
-	var ordinary: bool=load("res://src/content/local_arrival_environment_definitions.gd").location_supported(bindings,catalogues,station_id,cursor)
+	var ordinary: bool=load("res://src/content/local_arrival_environment_definitions.gd").location_supported(bindings,catalogues,station_id,cursor,mission_context)
 	if not ordinary and (not Travel.location_supported(bindings.mido_travel,station_id,int(station.system_id),int(station.planet_type)) or cursor not in [13,14,15]):return reject("This lounge location is not yet supported")
-	var context:=_resolve(bindings,catalogues,{"station_id":station_id,"system_id":int(station.system_id)},cursor)
+	var context:=_resolve(bindings,catalogues,{"station_id":station_id,"system_id":int(station.system_id)},cursor,mission_context)
 	if not context.is_empty():context.world_type=int(bindings.early_contracts.lounge_presentation.world_type)
 	return context
 
@@ -53,7 +53,7 @@ func resolve_departure(bindings: RefCounted, catalogues: RefCounted, departure_c
 	if not Cache.matches(departure_cache,seed,int(flight.campaign_cursor)):return reject("Mining-flight location requires the replacement ship cache")
 	return _resolve(bindings,catalogues,seed,int(flight.campaign_cursor))
 
-func _resolve(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, cursor: int) -> Dictionary:
+func _resolve(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, cursor: int,mission_context: RefCounted=null) -> Dictionary:
 	var data: Dictionary=bindings.arrival_environment
 	var system: Dictionary=catalogues.tables.systems[seed.system_id]
 	var station: Dictionary=catalogues.tables.stations[seed.station_id]
@@ -63,7 +63,7 @@ func _resolve(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, cu
 	var sahi_entry:=Cache.post_sahi_entry(bindings.mido_travel,cursor,int(seed.get("ship_id",-1))) if cursor==26 else Cache.sahi_entry(bindings.mido_travel,int(seed.get("ship_id",-1)),cursor)
 	if cursor in [24,26,28] and not sahi_entry.is_empty() and seed.station_id==sahi_entry.station_id and seed.system_id==sahi_entry.system_id:local_travel=Numbers.integer(station.get("planet_type"),0,bindings.opening_sky.planet_resources.near_textures.size()-1)
 	if FreeFlight.Campaign.supported(bindings,cursor) and FreeFlight.available(bindings) and not FreeFlight.player_entry(bindings,int(seed.station_id),int(seed.get("ship_id",-1)),cursor).is_empty():local_travel=Numbers.integer(station.get("planet_type"),0,bindings.opening_sky.planet_resources.near_textures.size()-1)
-	if load("res://src/content/local_arrival_environment_definitions.gd").location_supported(bindings,catalogues,int(seed.station_id),cursor):local_travel=true
+	if load("res://src/content/local_arrival_environment_definitions.gd").location_supported(bindings,catalogues,int(seed.station_id),cursor,mission_context):local_travel=true
 	if station.get("planet_type")!=int(data.supported_planet_type) and not local_travel:return reject("This flight uses an unsupported planet layout")
 	var index:=int(system.sky_index)
 	var sky: Dictionary=bindings.opening_sky
@@ -102,7 +102,7 @@ func resolve_local_travel(bindings: RefCounted, catalogues: RefCounted, equipmen
 	if not cursor is int or (Travel.player_entry(bindings.mido_travel,int(seed.station_id),cursor).is_empty() and not (cursor==16 and seed.station_id==98 and not Cache.alioth_entry(bindings.mido_travel).is_empty()) and not ordinary and not sahi and not admitted):return reject("This local location has no supported player entry")
 	if catalogues.content_id!=bindings.base_content_id or seed.base_content_id!=bindings.base_content_id or seed.binding_id!=bindings.binding_id or not Cache.matches(player_cache,seed,cursor):return reject("Local travel cache belongs to another equipped location")
 	if not Definitions.parameters(bindings.arrival_environment) or not SkyDefinitions.parameters(bindings.opening_sky) or not Planets.parameters(bindings.opening_sky.get("planet_resources",{})):return reject("Local travel requires the shared ordinary environment")
-	return _resolve(bindings,catalogues,seed,cursor)
+	return _resolve(bindings,catalogues,seed,cursor,mission_context)
 
 ## The Void is not a catalogue row. Resolve its explicit source identity before
 ## any ordinary station/system indexing; its retained return remains Sahi9/48.

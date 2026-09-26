@@ -20,7 +20,7 @@ static func available(bindings: RefCounted) -> bool:
 	# loading the declaration graph to keep its optional children independent.
 	return load("res://src/content/ambient_combat_definitions.gd").parameters(bindings.ambient_combat) and load("res://src/content/contract_ship_combat_definitions.gd").parameters(bindings.early_contracts.get("ship_combat"))
 
-static func population(bindings: RefCounted,packet: Dictionary,rank: Variant,difficulty: Variant) -> Dictionary:
+static func population(bindings: RefCounted,packet: Dictionary,rank: Variant,difficulty: Variant,mission_context: RefCounted=null) -> Dictionary:
 	if not available(bindings) or not Numbers.integer(rank,0,20) or difficulty not in [0.5,1.0]:return {}
 	for key in ["base_content_id","binding_id"]:
 		if packet.get(key)!=bindings.get(key):return {}
@@ -29,15 +29,15 @@ static func population(bindings: RefCounted,packet: Dictionary,rank: Variant,dif
 	var actors: Variant=packet.get("actors")
 	var rules: Dictionary=bindings.mido_travel.free_population
 	if not context is Dictionary or not source is Dictionary or not actors is Array:return {}
-	if not context_valid(bindings,context) or context.rank!=rank or context.difficulty!=difficulty:return {}
-	var visit:=Campaign.empty_story(bindings,context)
+	if not context_valid(bindings,context,mission_context) or context.rank!=rank or context.difficulty!=difficulty:return {}
+	var visit: bool=mission_context!=null or Campaign.empty_story(bindings,context)
 	if actors.is_empty() and not Delivery.active_courier(context) and not visit:return {}
 	for key in ["campaign_cursor","station_id","system_id"]:
 		if source.get(key)!=context[key]:return {}
 	if packet.get("campaign_cursor")!=context.campaign_cursor or packet.get("station_id")!=context.station_id:return {}
 	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,context.station_id)
 	if source.get("system_faction")!=world.faction or source.get("security")!=world.security or not source.get("groups") is Dictionary:return {}
-	if actors.size()>Population.maximum_actor_count(bindings,rank,float(difficulty),context) or source.get("actor_count")!=actors.size():return {}
+	if actors.size()>Population.maximum_actor_count(bindings,rank,float(difficulty),context,mission_context) or source.get("actor_count")!=actors.size():return {}
 	if not context.side_missions_empty and source.groups.get("delivery_pirate")!=Delivery.extra_count(bindings,context):return {}
 	if Delivery.active_courier(context) and source.get("mission_kind")!=0:return {}
 	if visit and (source.get("mission_kind")!=context.mission_kind or not actors.is_empty()):return {}
@@ -64,13 +64,15 @@ static func population(bindings: RefCounted,packet: Dictionary,rank: Variant,dif
 	if Population.freighter_hull(bindings,3)>=0:data.freighter_boxes[3]=bindings.ambient_combat.freighter.boxes.duplicate(true)
 	return data
 
-static func context_valid(bindings: RefCounted,context: Variant) -> bool:
+static func context_valid(bindings: RefCounted,context: Variant,mission_context: RefCounted=null) -> bool:
 	if bindings==null or not context is Dictionary:return false
 	var rules: Dictionary=bindings.mido_travel.get("free_population",{})
 	if not Population.parameters(rules):return false
 	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,context.get("station_id"))
 	if world.is_empty() or context.get("system_id")!=world.system_id:return false
-	if not Campaign.supported(bindings,context.get("campaign_cursor")) or not Delivery.mission_context_valid(bindings,context):return false
+	if mission_context!=null:
+		if not load("res://src/simulation/mission_context.gd").normal_population_matches(bindings,context,mission_context):return false
+	elif not Campaign.supported(bindings,context.get("campaign_cursor")) or not Delivery.mission_context_valid(bindings,context):return false
 	if context.get("companions_empty")!=true:return false
 	for key in ["station_response","void_encounter"]:
 		if context.get(key)!=false:return false

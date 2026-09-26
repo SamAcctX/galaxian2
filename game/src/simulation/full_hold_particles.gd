@@ -25,17 +25,17 @@ var _emp_bound:=false
 var _emp_capture_ms:=-1
 var _emp_phase:=0
 
-func configure(bindings: RefCounted,combat: Dictionary,death: RefCounted,seed_seconds: Variant) -> bool:
+func configure(bindings: RefCounted,combat: Dictionary,death: RefCounted,seed_seconds: Variant,mission_context: RefCounted=null) -> bool:
 	error=""
 	if bindings==null or not Definitions.parameters(bindings.full_hold_particles) or not death is Death or death.presentation_identity()==null or not seed_seconds is int:return reject("Second-flight particles require their declared population, player death owner and seed")
 	var initial: Dictionary=death.snapshot()
 	for key in ["base_content_id","binding_id"]:
 		if initial.get(key)!=bindings.get(key) or combat.get(key)!=bindings.get(key):return reject("Second-flight particles belong to another departure")
 	var training: bool=combat.get("campaign_cursor")==7
-	var local_flight: bool=load("res://src/content/ordinary_flight_definitions.gd").combat_population(bindings,combat)
+	var local_flight: bool=load("res://src/content/ordinary_flight_definitions.gd").combat_population(bindings,combat,mission_context)
 	if initial.get("phase")!="ready" or initial.get("departure_cursor")!=(int(combat.campaign_cursor) if local_flight else (7 if training else 4)):return reject("Register ordinary-flight particles before player death in the same encounter")
 	var smoke:=Smoke.new()
-	var ready:=smoke.configure_local_traffic(bindings,combat,seed_seconds) if local_flight else (smoke.configure_combat_training(bindings,combat,seed_seconds) if training else smoke.configure_full_hold(bindings,combat,seed_seconds))
+	var ready:=smoke.configure_local_traffic(bindings,combat,seed_seconds,mission_context) if local_flight else (smoke.configure_combat_training(bindings,combat,seed_seconds) if training else smoke.configure_full_hold(bindings,combat,seed_seconds))
 	if not ready:return reject(smoke.error)
 	return _configure_registered(bindings,combat,death,int(seed_seconds),smoke)
 

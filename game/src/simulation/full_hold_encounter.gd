@@ -258,12 +258,16 @@ func configure_dekato(bindings: RefCounted,catalogues: RefCounted,library: RefCo
 	if world==null or not context.admit(bindings,catalogues,world.snapshot().get("dekato_context",{}),equipment.snapshot().loadout):return reject(context.error)
 	return configure_mission(bindings,catalogues,library,player,scenery,equipment,reputation,context)
 
+func mission_context_owner() -> RefCounted:
+	return null if _control==null else _control.mission_context_owner()
+
 func configure_mission(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,player: RefCounted,scenery: RefCounted,equipment: RefCounted,reputation: Dictionary,mission_context: RefCounted) -> bool:
 	error=""
 	if _control!=null or not player is Player or not scenery is Scenery or not is_instance_of(equipment,load("res://src/simulation/station_equipment.gd")):return reject("Dekato encounter requires fresh native equipped owners")
 	var world: RefCounted=scenery.world_initialization_owner()
 	if world==null:return reject("Dekato encounter requires its generated world")
-	var data:=Story.compose_dekato(bindings,catalogues,world.npc_construction_owner())
+	if not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")):return reject("Mission encounter requires its native capability")
+	var data:=Story.compose_normal_return(bindings,catalogues,world.npc_construction_owner(),mission_context) if mission_context.has_feature("normal_space") else Story.compose_dekato(bindings,catalogues,world.npc_construction_owner())
 	if data.is_empty():return reject("Dekato encounter has no supported selected population")
 	if not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not mission_context.matches_loadout(equipment.snapshot().loadout):return reject("Encounter requires its admitted mission equipment")
 	data.mission_context=mission_context
@@ -383,7 +387,7 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, library: 
 	var bakka: bool=cursor==36 and initial.get("bakka_context") is Dictionary and Bakka.context_valid(bindings,initial.bakka_context)
 	if not story.is_empty():
 		var population: RefCounted=world.npc_construction_owner()
-		if not story.get("ordinary_void",false):freight_resources=FreightResources.new()
+		if not story.get("ordinary_void",false) and not story.get("actors",[]).is_empty():freight_resources=FreightResources.new()
 		if not resources._configure_story(library,bindings,population,story):return reject(resources.error)
 		if freight_resources!=null and not freight_resources._configure_story(library,bindings,story):return reject(freight_resources.error)
 		if not control._configure_story(bindings,catalogues,population,equipment,reputation,story) or not weapons._configure_encounter_weapons(bindings,catalogues,story):return reject(control.error+weapons.error)

@@ -86,7 +86,7 @@ func configure_departure(bindings: RefCounted, catalogues: RefCounted, cache: Va
 	_departure_cache=cache.duplicate(true);_departure_conditions=entry_conditions.duplicate(true);_departure_population=selected
 	return true
 
-func _configure_field(bindings: RefCounted, catalogues: RefCounted, unix_seconds: Variant, station_id: int, campaign_cursor: int, center: Vector3, large_display: bool, body_resources: RefCounted, effect_resources: RefCounted) -> bool:
+func _configure_field(bindings: RefCounted, catalogues: RefCounted, unix_seconds: Variant, station_id: int, campaign_cursor: int, center: Vector3, large_display: bool, body_resources: RefCounted, effect_resources: RefCounted,retained_random: Dictionary={}) -> bool:
 	_read_snapshot={}
 	if not unix_seconds is int or unix_seconds<0 or unix_seconds>2147483647:
 		return reject("Scenery requires explicit supported Unix seconds")
@@ -95,7 +95,8 @@ func _configure_field(bindings: RefCounted, catalogues: RefCounted, unix_seconds
 	# Field.configure still owns capability and location admission.
 	if not field.configure(bindings,catalogues,station_id,station_id==-1 and campaign_cursor in [25,29,33,41],false,campaign_cursor):return reject(field.error)
 	var random := Generator.new()
-	random.seed_from(unix_seconds)
+	if retained_random.is_empty():random.seed_from(unix_seconds)
+	elif not random.restore(retained_random):return reject(random.error)
 	var generated := field.generate(center,random.snapshot())
 	if generated.is_empty():return reject(field.error)
 	var motion := Motion.new()
@@ -348,16 +349,16 @@ func configure_ordinary_void(bindings: RefCounted,catalogues: RefCounted,equipme
 	_departure_population=selected
 	return true
 
-func configure_free(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,entry_conditions: Dictionary,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null) -> bool:
+func configure_free(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,entry_conditions: Dictionary,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null,mission_context: RefCounted=null,retained_random: Dictionary={}) -> bool:
 	clear()
 	if not load("res://src/content/free_flight_definitions.gd").available(bindings) or not is_instance_of(equipment,load("res://src/simulation/station_equipment.gd")):return reject("Ordinary scenery requires its verified equipped entry")
 	var world:=WorldInitialization.new()
-	if not world.configure_free_traffic(bindings,catalogues,equipment,context,unix_seconds,entry_conditions):return reject(world.error)
+	if not world.configure_free_traffic(bindings,catalogues,equipment,context,unix_seconds,entry_conditions,mission_context):return reject(world.error)
 	var population:=Population.new()
 	if not population.configure(bindings):return reject(population.error)
 	var selected:=population.for_departure(int(context.station_id),entry_conditions,int(context.campaign_cursor))
 	if selected.is_empty():return reject(population.error)
-	if not _configure_field(bindings,catalogues,unix_seconds,selected.station_id,context.campaign_cursor,selected.center,large_display,body_resources,effect_resources):return false
+	if not _configure_field(bindings,catalogues,unix_seconds,selected.station_id,context.campaign_cursor,selected.center,large_display,body_resources,effect_resources,retained_random):return false
 	if not _finish_world_initialization(world):
 		var message:=error;clear();return reject(message)
 	_departure_population=selected

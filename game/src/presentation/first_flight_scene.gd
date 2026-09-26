@@ -197,7 +197,7 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 		notice_panel=NoticePanel.new();overlay.add_child(notice_panel);notice_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		if not notice_panel.configure(library,bindings,visuals):return fail(notice_panel.error)
 	dialogue=Dialogue.new();overlay.add_child(dialogue);dialogue.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	if not dialogue.configure_flight(library,bindings,visuals,state):return fail(dialogue.error)
+	if not dialogue.configure_flight(library,bindings,visuals,state,flight.mission_context_owner()):return fail(dialogue.error)
 	if death!=null and not bindings.game_over_presentation.is_empty():
 		game_over=GameOver.new();overlay.add_child(game_over);game_over.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		if not game_over.configure(library,bindings,visuals,death):return fail(game_over.error)

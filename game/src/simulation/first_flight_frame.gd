@@ -149,6 +149,7 @@ var _near_target:=false
 var _camera_ms:=0
 var _camera_passes:=1
 var _mission_context: RefCounted
+var _mission_station_return:={}
 
 func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted, construction: RefCounted, dock_key: String, sensitivity: float, viewport_size:=Vector2i(1280,720), mobile_layout:=false, hard_difficulty:=false, autopilot_key:="Q", primary_key:="Space", fast_forward_key:="Tab") -> bool:
 	error=""
@@ -273,10 +274,10 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	var particles: RefCounted
 	if death!=null and not bindings.full_hold_particles.is_empty():
 		particles=Particles.new()
-		var prepared: bool=particles.configure_first_mining(bindings,death,int(entry.unix_seconds)) if encounter==null else particles.configure(bindings,encounter.snapshot().combat,death,int(entry.unix_seconds))
+		var prepared: bool=particles.configure_first_mining(bindings,death,int(entry.unix_seconds)) if encounter==null else particles.configure(bindings,encounter.snapshot().combat,death,int(entry.unix_seconds),mission_context)
 		if not prepared:return reject(particles.error)
 	var radio: RefCounted
-	if entry.campaign_cursor in [7,16] or mission_world or rescue_world or (sahi_world and entry.campaign_cursor in [24,25,28,29]) or (entry.campaign_cursor==14 and not ordinary_world):
+	if entry.campaign_cursor in [7,16] or (mission_world and not mission_context.recipe().radio.is_empty()) or rescue_world or (sahi_world and entry.campaign_cursor in [24,25,28,29]) or (entry.campaign_cursor==14 and not ordinary_world):
 		var resources:=RadioResources.new();radio=Radio.new()
 		if not resources.prepare(library,bindings,null,int(entry.campaign_cursor)) or not radio.configure(bindings,library,resources.line_counts,int(entry.campaign_cursor)):return reject(resources.error+radio.error)
 	elif entry.campaign_cursor in [10,11,12] or ordinary_world or free_world:
@@ -327,7 +328,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 		var strip:=ScanAnimation.source_geometry(library,bindings,bindings.opening_staging.npc_scanner)
 		if art.has("error") or strip.has("error"):return reject("Training NPC acquisition art is unavailable")
 		scanner=Scanner.new()
-		if not scanner.configure(bindings,catalogues,TargetFrame.logical_radii(art.quarter_size,mobile_layout),int(strip.frames),equipment,encounter.snapshot().combat if encounter!=null and equipment!=null and entry.campaign_cursor!=7 else {},tractor):return reject(scanner.error)
+		if not scanner.configure(bindings,catalogues,TargetFrame.logical_radii(art.quarter_size,mobile_layout),int(strip.frames),equipment,encounter.snapshot().combat if encounter!=null and equipment!=null and entry.campaign_cursor!=7 else {},tractor,mission_context):return reject(scanner.error)
 		if not scanner.advance(encounter.snapshot().combat,entry.player_pose,camera.snapshot().pose,aim.snapshot(),0,false):return reject(scanner.error)
 	var void_targeting: RefCounted
 	if probe!=null:
@@ -397,10 +398,10 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 		var layout: RefCounted=load("res://src/simulation/gate_environment.gd").new()
 		gate_animation=GateAnimation.new()
 		if not layout.configure_void(bindings,void_environment) or not gate_animation.configure_layout(bindings,library,layout):return reject(layout.error+gate_animation.error)
-	if free_world and GateArrival.available(bindings):
+	if (free_world or (mission_world and mission_context.has_feature("normal_space"))) and GateArrival.available(bindings):
 		gate_animation=GateAnimation.new()
 		if not gate_animation.configure(bindings,catalogues,library,int(entry.location.station_id)):return reject(gate_animation.error)
-		if gate_animation.snapshot().layout.objects.any(func(gate):return gate.index==1 and gate.interactive):
+		if free_world and gate_animation.snapshot().layout.objects.any(func(gate):return gate.index==1 and gate.interactive):
 			var system_navigation:=SystemNavigation.new()
 			var career: Dictionary=construction.contract_owner().snapshot()
 			if not system_navigation.configure(bindings,catalogues,career.get("lounges",{}).get("system_availability")):return reject(system_navigation.error)
@@ -477,7 +478,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 	var viewport:=_viewport if viewport_size==Vector2i.ZERO else viewport_size
 	if viewport.x<1 or viewport.y<1 or viewport.x>32767 or viewport.y>32767:reject("Invalid first-flight viewport");return null
 	var next:=fork_for_frame()
-	if paused or not _station_packet.is_empty() or not _game_over_packet.is_empty() or not _unsupported_boundary.is_empty():return next
+	if paused or not _station_packet.is_empty() or not _game_over_packet.is_empty() or not _unsupported_boundary.is_empty() or mission_station_return_required():return next
 	if contract_result_pending() or convoy_arrival_required() or sahi_arrival_required() or void_return_required():return next
 	if gate_modal() or not prepare_gate_arrival().is_empty():return next
 	if _local_travel!=null and _local_travel.snapshot().phase=="arrival_required" and not death_active():return next
@@ -1758,8 +1759,13 @@ func _finish_mission_navigation(previous: Dictionary) -> bool:
 			if career.snapshot().progress!=result.progress:return reject("Dekato acknowledgement changed its earned combat progress")
 		var docking: Dictionary=recipe.docking.duplicate(true)
 		if not docking.is_empty() and (career==null or _autopilot==null or _station==null):return reject("Mission acknowledgement lost its retained physical return")
+		var station_return:={}
+		if recipe.get("continuation",{}).get("kind")=="station":
+			if career==null or recipe.next_mission.station_id!=recipe.continuation.station_id:return reject("Mission acknowledgement lost its automatic station destination")
+			station_return={"source_cursor":recipe.cursor,"campaign_cursor":recipe.next_cursor,"station_id":recipe.continuation.station_id}
 		if not _encounter.acknowledge_mission_result():return reject(_encounter.error)
 		_convoy_career=career;_return_rules=docking
+		_mission_station_return=station_return
 	return true
 
 func acknowledge_contract_result(serial: int,paused:=false) -> RefCounted:
@@ -1791,6 +1797,7 @@ func skip_entry(paused:=false) -> RefCounted:
 func has_local_travel() -> bool:return _local_travel!=null
 func station_owner() -> RefCounted:return null if _station==null else _station.fork_for_frame()
 func mission_context_owner() -> RefCounted:return _mission_context
+func mission_station_return_required() -> bool:return not _mission_station_return.is_empty()
 func encounter_owner() -> RefCounted:return null if _encounter==null else _encounter.fork_for_frame()
 func tractor_owner() -> RefCounted:return null if _tractor==null else _tractor.fork_for_frame()
 func destruction_owner() -> RefCounted:return null if _death==null else _death.fork_for_frame()
@@ -1891,6 +1898,9 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 		state.void_probe_stage=_probe.snapshot();state.void_probe=_probe.probe_snapshot()
 		state.void_station_targeting=_void_targeting.snapshot()
 	state.world_phase_elapsed_ms=_world_elapsed_ms
+	if mission_station_return_required():
+		state.boundary="mission_station_return_required"
+		state.mission_station_return=_mission_station_return.duplicate(true)
 	if _music!=null:state.flight_music=_flight_music.duplicate(true)
 	state.player_statistics_pose=_statistics_pose
 	state.camera_follow_enabled=_camera_follow_enabled
@@ -1978,6 +1988,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._mission_context=_mission_context
+	copy._mission_station_return=_mission_station_return.duplicate(true)
 	copy._entry=_entry;copy._pose=_pose;copy._shot=_shot.duplicate(true);copy._random=_random.duplicate(true);copy._reference=_reference
 	copy._station_response_flags=_station_response_flags.duplicate(true)
 	if _alioth!=null:copy._alioth=_alioth.fork_for_frame();copy._portal=_portal.fork_for_frame()

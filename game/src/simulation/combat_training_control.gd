@@ -507,6 +507,9 @@ func configure_bakka(bindings: RefCounted,catalogues: RefCounted,construction: R
 	_contract_result={"clock_ms":0,"elapsed_ms":0,"mode":0,"retired":false}
 	return true
 
+func mission_context_owner() -> RefCounted:
+	return null if _mission_runner==null else _mission_runner.context_owner()
+
 func _configure_story(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,equipment: RefCounted,reputation: Dictionary,data: Dictionary) -> bool:
 	clear()
 	var combat:=Combat.new()
@@ -971,7 +974,7 @@ func _advance_freighter(id: int,delta_ms: int) -> Dictionary:
 
 func defeat_status() -> Dictionary:
 	if _selected40_world!=null:return {}
-	if _mission_runner!=null:return _mission_runner.observe(_combat.actor_snapshots())
+	if _mission_runner!=null:return _mission_runner.observe(_combat.actor_snapshots(),{},_mission_runner.context_owner().world_observation(_mission_runner.snapshot().elapsed_ms))
 	if _bakka:
 		return preload("res://src/simulation/pirate_defeat_condition.gd").evaluate(_combat.snapshot().actors,_accounting.snapshot().counter_deltas,_bindings.mido_travel.bakka_contest.objectives,true)
 	if _convoy or _alioth or _kappa or _story:return {}
@@ -1019,7 +1022,7 @@ func poll_bakka_result(radio_active: bool,periodic_poll_allowed: bool=true) -> D
 func poll_mission_result(radio_active: bool,periodic_poll_allowed: bool=true) -> Dictionary:
 	error=""
 	if _mission_runner==null:return fail("This encounter has no mission runner")
-	return _mission_runner.poll(_combat.actor_snapshots(),radio_active,periodic_poll_allowed)
+	return _mission_runner.poll(_combat.actor_snapshots(),radio_active,periodic_poll_allowed,true,{},_mission_runner.context_owner().world_observation(_mission_runner.snapshot().elapsed_ms))
 
 func _poll_flight_result(radio_active: bool,periodic_poll_allowed: bool) -> Dictionary:
 	if _contract_result.is_empty() or _accounting==null:return fail("Flight results are unavailable")

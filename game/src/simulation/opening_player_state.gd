@@ -216,15 +216,17 @@ func configure_ordinary_void(bindings: RefCounted,catalogues: RefCounted,equipme
 	_state.void_context=world.snapshot().void_context.duplicate(true)
 	return true
 
-func configure_free(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,construction: RefCounted,previous_cache: Variant=null) -> bool:
+func configure_free(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,construction: RefCounted,previous_cache: Variant=null,mission_context: RefCounted=null) -> bool:
 	clear()
 	if not FreeFlight.available(bindings) or not construction is Construction:return reject("Ordinary player requires its source-bound population")
 	var packet: Dictionary=construction.snapshot()
-	var data:=FreeFlight.Life.population(bindings,packet)
+	var data:=FreeFlight.Life.population(bindings,packet,mission_context)
 	if data.is_empty() or not equipment is StationEquipment:return reject("Ordinary player differs from its retained equipment or population")
 	var owned: Dictionary=equipment.snapshot();var loadout: Dictionary=owned.get("loadout",{})
 	if not equipment.cargo_cache_valid() or loadout.get("station_id")!=int(data.station_id) or loadout.get("ship_id")!=packet.player_ship_id:return reject("Ordinary player differs from its retained equipment or population")
+	if mission_context!=null:data.mission_context=mission_context
 	if not _configure(bindings,catalogues,int(data.campaign_cursor),previous_cache,equipment,data):return false
+	if mission_context!=null:_retain_restored_cache(previous_cache)
 	_state.free_context=packet.free_context.duplicate(true)
 	return true
 
@@ -238,8 +240,10 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, cursor: int, previ
 	var ship_id:=int(owned.get("loadout",{}).get("ship_id",-1))
 	var selected40: bool=contract.get("context_key")=="selected40_context"
 	var selected41: bool=contract.get("context_key")=="selected41_context"
+	var normal_return: bool=contract.get("mission_context")!=null and contract.mission_context.has_feature("normal_space")
 	var selected: bool
-	if selected41:selected=entry.configure_selected41(bindings,contract.context,ship_id)
+	if normal_return:selected=entry.configure_normal_return(bindings,contract.mission_context,owned.loadout)
+	elif selected41:selected=entry.configure_selected41(bindings,contract.context,ship_id)
 	elif selected40:selected=entry.configure_selected40(bindings,contract.context,ship_id)
 	elif contract.get("context_key")=="dekato_context":selected=entry.configure_dekato(bindings,contract.context,ship_id)
 	else:selected=entry.configure(bindings,cursor,station_id,previous_cache!=null and not (previous_cache is Dictionary and previous_cache.is_empty()),ship_id)
@@ -316,7 +320,7 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, cursor: int, previ
 		if not FlightCache.matches(previous_cache,seed,cursor):return reject("Local arrival cache belongs to another equipped location")
 		current=FlightCache.restore_values(cache_parameters,base_hull,capacities,previous_cache.values)
 		if current.is_empty():return reject("Unsupported local arrival player values")
-		if cursor not in FlightStages.POST_SAHI and not selected41 and not (cursor==33 and seed.station_id==-1):current.gamma=Vitals.single(cache_parameters.gamma_full)
+		if cursor not in FlightStages.POST_SAHI and not selected41 and not normal_return and not (cursor==33 and seed.station_id==-1):current.gamma=Vitals.single(cache_parameters.gamma_full)
 	if base_hull>=0:
 		max_hull=maxi(base_hull,current.hull)
 		repair=Repair.new()

@@ -26,6 +26,8 @@ func configure(bindings: RefCounted, library: RefCounted, construction: RefCount
 	if flight.is_empty() or flight.get("base_content_id")!=bindings.base_content_id or flight.get("binding_id")!=bindings.binding_id or library.manifest.get("content_id")!=bindings.base_content_id:return reject("Mining objective belongs to another departure or content identity")
 	if Story.for_departure(bindings,flight).is_empty():return reject("This construction has no connected ordinary flight context")
 	var rules:=Story.objective(bindings,flight.get("campaign_cursor"))
+	var mission_context: RefCounted=construction.mission_context_owner()
+	if mission_context!=null:rules=Story.MissionRecipe.objective(bindings,mission_context.recipe())
 	if rules.is_empty():return reject("This departure has no supported mining objective")
 	if flight.campaign_cursor!=int(rules.campaign_cursor) or flight.activated or flight.entry_released or flight.briefing_started:return reject("Mining objective requires its fresh prepared departure")
 	var mission: Dictionary=flight.departure.mission

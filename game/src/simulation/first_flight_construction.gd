@@ -256,6 +256,44 @@ func _prepare_selected40_owned(bindings: RefCounted,catalogues: RefCounted,libra
 
 ## The second Void return resumes an ordinary selected visit. Its persistent
 ## portal never inserted a synthetic station into the retained location cache.
+func prepare_mission_return(bindings: RefCounted,catalogues: RefCounted,transfer: RefCounted,environment_seconds: Variant,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null) -> bool:
+	error=""
+	if not _state.is_empty() or _selected40_builder!=null:return reject("Prepare a normal return in a fresh constructor")
+	var capability:=MissionContext.new()
+	if not capability.admit_normal_return(bindings,catalogues,transfer):return reject(capability.error)
+	var retained: Dictionary=transfer.snapshot()
+	var equipment: RefCounted=transfer.equipment_owner();var contracts: RefCounted=transfer.career_owner()
+	var owned: Dictionary=equipment.snapshot();var career: Dictionary=contracts.snapshot()
+	var incoming:=Incoming.new()
+	if not incoming.configure(bindings,catalogues,retained.return_station_id,contracts.location_owner(),retained.campaign_cursor,capability):return reject(incoming.error)
+	var context: Dictionary=capability.normal_population_context(incoming.snapshot().position)
+	var data: Dictionary=capability.flight_rules(bindings)
+	var candidate: RefCounted=get_script().new()
+	var environment: Dictionary=candidate._prepare_environment(bindings,data,environment_seconds,incoming,null,capability,retained.random_state)
+	if environment.is_empty():return reject(candidate.error)
+	var conditions:={"companions_empty":true,"location_match":false,"special_placement":false}
+	var scenery:=Scenery.new()
+	if not scenery.configure_free(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources,capability,environment.yaw_random_state):return reject(scenery.error)
+	var player:=Player.new()
+	if not player.configure_free(bindings,catalogues,equipment,scenery.world_initialization_owner().npc_construction_owner(),retained.player_cache,capability):return reject(player.error)
+	var location:=Location.new()
+	var place:=location.resolve_local_travel(bindings,catalogues,equipment,player.cache_snapshot(),capability)
+	if place.is_empty():return reject(location.error)
+	var packet:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":retained.campaign_cursor,
+		"loadout":owned.loadout.duplicate(true),"equipment":owned,"cargo":owned.cargo.duplicate(true),"cargo_used":int(owned.cargo.used),
+		"progress":career.progress.duplicate(true),"mission":retained.mission.duplicate(true),"contracts":career,
+		"player":player.snapshot(),"player_cache":player.cache_snapshot(),"free_context":context,
+		"station_response_flags":{},"source_ship_configuration":int(bindings.station_entry.source_ship_configuration),
+		"arrival_environment":incoming.snapshot(),"mission_return":retained}
+	var recipe: Dictionary=capability.recipe()
+	packet[recipe.receipt_key]=recipe.source_receipt.duplicate(true)
+	if not candidate._construct(bindings,catalogues,packet,data,player,place,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,equipment,contracts,scenery,incoming,environment,capability):return reject(candidate.error)
+	candidate._state.mission_context=capability;candidate._state.mission_flight=data
+	for key in ["station_id","system_id","mission_kind","mission_story","mission_completed"]:candidate._state[key]=context[key]
+	_state=candidate._state;_scenery=candidate._scenery;_camera=candidate._camera;_player=candidate._player
+	_equipment=candidate._equipment;_contracts=candidate._contracts;_selected_locations=contracts.location_owner()
+	return true
+
 func prepare_portal_return(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,contracts: RefCounted,flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,previous_cache: Dictionary) -> bool:
 	if not Campaign.expedition_available(bindings.mido_travel) or contracts==null or not equipment is Equipment:return reject("The Void return requires its retained expedition career and ship")
 	var cursor: int=contracts.snapshot().get("campaign_cursor",-1)
@@ -615,10 +653,11 @@ func _prepare_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dictio
 			return _prepare_convoy_owned(bindings,catalogues,destination,contracts,packet,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,cached)
 	return _construct(bindings,catalogues,packet,data,player,context,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,destination,contracts if contract_arrival else null)
 
-func _prepare_environment(bindings: RefCounted,data: Dictionary,environment_seconds: Variant,incoming: RefCounted=null,ordinary_void_source: RefCounted=null) -> Dictionary:
+func _prepare_environment(bindings: RefCounted,data: Dictionary,environment_seconds: Variant,incoming: RefCounted=null,ordinary_void_source: RefCounted=null,mission_context: RefCounted=null,retained_random: Dictionary={}) -> Dictionary:
 	var random:=Random.new()
 	if not Numbers.integer(environment_seconds,0,2147483647):reject("First flight requires explicit environment Unix seconds");return {}
-	random.seed_from(environment_seconds)
+	if retained_random.is_empty():random.seed_from(environment_seconds)
+	elif mission_context==null or not mission_context.normal_location(bindings,int(data.station_id),int(data.campaign_cursor)) or not random.restore(retained_random):reject("Normal environment lost its admitted source stream");return {}
 	var input_random:=random.snapshot()
 	if bindings.resolve(int(data.environment_object_resource_id),"mesh").is_empty():reject(bindings.error);return {}
 	# The ordinary early-campaign environment reseeds from Unix seconds, then
@@ -640,7 +679,7 @@ func _prepare_environment(bindings: RefCounted,data: Dictionary,environment_seco
 	var before_yaw:=random.snapshot()
 	# Both portal entries retain the environment heading and bypass the normal
 	# launch's random yaw. Void copies the incoming gate's position only.
-	var retained_heading: bool=void_environment!=null or (int(data.campaign_cursor) in [26,30,33] and incoming!=null)
+	var retained_heading: bool=void_environment!=null or (mission_context!=null and mission_context.has_feature("normal_space")) or (int(data.campaign_cursor) in [26,30,33] and incoming!=null)
 	var units:=32768 if retained_heading else int(data.yaw_units)*(1 if random.next_int(2)==0 else -1)
 	var yaw:=f32(f32(units*float(data.angle_fraction))*float(data.angle_tau))
 	var pose:=Transform3D(Basis(Vector3.UP,yaw),Vector3(data.player_position[0],data.player_position[1],data.player_position[2]))
@@ -653,9 +692,11 @@ func _prepare_environment(bindings: RefCounted,data: Dictionary,environment_seco
 		"before_yaw_random_state":before_yaw,"yaw_random_state":random.snapshot(),
 		"position":environment_position,"void_environment":void_environment}
 
-func _construct(bindings: RefCounted, catalogues: RefCounted, packet: Dictionary, data: Dictionary, player: RefCounted, context: Dictionary, environment_seconds: Variant, unix_seconds: Variant, large_display: bool, body_resources: RefCounted, effect_resources: RefCounted, equipment: RefCounted,contracts: RefCounted=null,prepared_scenery: RefCounted=null,incoming: RefCounted=null,environment: Dictionary={}) -> bool:
+func _construct(bindings: RefCounted, catalogues: RefCounted, packet: Dictionary, data: Dictionary, player: RefCounted, context: Dictionary, environment_seconds: Variant, unix_seconds: Variant, large_display: bool, body_resources: RefCounted, effect_resources: RefCounted, equipment: RefCounted,contracts: RefCounted=null,prepared_scenery: RefCounted=null,incoming: RefCounted=null,environment: Dictionary={},mission_context: RefCounted=null) -> bool:
 	var training: bool=int(data.campaign_cursor)==7
 	var local_entry: bool=int(data.campaign_cursor) in [10,11,12]
+	var normal: bool=MissionContext.normal_population_matches(bindings,packet.get("free_context"),mission_context)
+	if mission_context!=null and (not normal or not mission_context.matches_loadout(equipment.snapshot().loadout)):return reject("Normal construction lost its admitted world or equipment")
 	if incoming!=null:
 		if not incoming is Incoming or packet.get("arrival_environment")!=incoming.snapshot() or packet.get("dekato_context",packet.get("bakka_context",packet.get("sahi_context",packet.get("kappa_context",packet.get("free_context",{}))))).get("player_position")!=incoming.snapshot().position:return reject("Local arrival pose differs from its generated scenery")
 	if environment.is_empty():environment=_prepare_environment(bindings,data,environment_seconds,incoming)
@@ -668,8 +709,10 @@ func _construct(bindings: RefCounted, catalogues: RefCounted, packet: Dictionary
 	var scenery: RefCounted=prepared_scenery if prepared_scenery!=null else Scenery.new()
 	if prepared_scenery!=null:
 		var sahi_story: bool=packet.has("sahi_context") and not Story.flight(bindings,packet.sahi_context).is_empty()
-		if not prepared_scenery is Scenery or (int(data.campaign_cursor) not in [14,16,21] and not Campaign.supported(bindings,data.campaign_cursor) and not sahi_story and not ordinary_void):return reject("Unexpected prepared flight scenery")
-		if ordinary_void:
+		if not prepared_scenery is Scenery or (int(data.campaign_cursor) not in [14,16,21] and not Campaign.supported(bindings,data.campaign_cursor) and not sahi_story and not ordinary_void and not normal):return reject("Unexpected prepared flight scenery")
+		if normal:
+			if prepared_scenery.snapshot().world_initialization.npc_construction.get("free_context")!=packet.free_context:return reject("Normal scenery differs from its admitted return")
+		elif ordinary_void:
 			if prepared_scenery.snapshot().world_initialization.get("void_context")!=packet.void_context:return reject("Ordinary Void scenery differs from its selected entry")
 		elif sahi_story:
 			if prepared_scenery.snapshot().world_initialization.npc_construction.get("sahi_context")!=packet.sahi_context:return reject("Sahi scenery differs from the selected story entry")
@@ -713,7 +756,7 @@ func _construct(bindings: RefCounted, catalogues: RefCounted, packet: Dictionary
 	var camera:=Rig.new()
 	if not camera.configure(bindings) or not camera.update(0,shot,scene,initial):return reject(camera.error)
 	var state:=identity.duplicate()
-	if not ordinary_void and (Campaign.supported(bindings,int(data.campaign_cursor)) or int(data.campaign_cursor)==26) and Gates.Definitions.available(bindings):
+	if not ordinary_void and (normal or Campaign.supported(bindings,int(data.campaign_cursor)) or int(data.campaign_cursor)==26) and Gates.Definitions.available(bindings):
 		var gates:=Gates.new()
 		if not gates.configure(bindings,catalogues,int(context.station_id)):return reject(gates.error)
 		state.gate_environment=gates.snapshot()
