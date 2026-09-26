@@ -11,12 +11,31 @@ const Model = preload("res://src/presentation/imported_model.gd")
 const Geometry = preload("res://src/presentation/opening_geometry.gd")
 const STAR_SHADER = preload("res://src/presentation/sky_stars.gdshader")
 const NEBULA_SHADER = preload("res://src/presentation/sky_nebula.gdshader")
+const STORED_STAR_SHADER = preload("res://src/presentation/sky_stored_stars.gdshader")
+const STORED_NEBULA_SHADER = preload("res://src/presentation/sky_stored_nebula.gdshader")
 var error := ""
 var selection := {}
 var layers: Array[Node3D] = []
 var _orientation := Basis.IDENTITY
 var _initial_descriptors:=[]
 var _escape_descriptor:={}
+var _stored_channels:=false
+
+func set_stored_channel_composition(enabled: bool) -> bool:
+	# This is an explicit presentation choice. Existing flight views keep their
+	# accepted mode; source-channel composition never changes another material.
+	if layers.size()<2:error="Sky composition requires a complete background pair";return false
+	for index in layers.size():
+		var expected: Shader=(STORED_STAR_SHADER if index==0 else STORED_NEBULA_SHADER) if _stored_channels else (STAR_SHADER if index==0 else NEBULA_SHADER)
+		for material in layers[index].materials:
+			if material.shader!=expected:
+				error="Sky composition cannot replace a different material owner";return false
+	if enabled!=_stored_channels:
+		for index in layers.size():
+			var selected: Shader=(STORED_STAR_SHADER if index==0 else STORED_NEBULA_SHADER) if enabled else (STAR_SHADER if index==0 else NEBULA_SHADER)
+			for material in layers[index].materials:material.shader=selected
+		_stored_channels=enabled
+	error="";return true
 
 func build(library: RefCounted, visuals: RefCounted, bindings: RefCounted, catalogues: RefCounted, campaign_cursor: Variant, world_type: Variant, location_match: Variant, quality := "high", with_escape := false) -> bool:
 	clear()
@@ -177,6 +196,7 @@ func apply_view(view: Dictionary, escape: Dictionary = {}) -> bool:
 func clear() -> void:
 	for child in get_children(): child.free()
 	layers.clear();selection.clear();_initial_descriptors=[];_escape_descriptor={};_orientation=Basis.IDENTITY;transform=Transform3D.IDENTITY;error=""
+	_stored_channels=false
 
 func reject(message: String) -> bool:
 	clear();error=message

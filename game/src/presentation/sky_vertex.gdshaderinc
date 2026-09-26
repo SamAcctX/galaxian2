@@ -1,4 +1,8 @@
+#ifdef SKY_STORED_CHANNELS
+#include "res://src/presentation/sky_stored_sampling.gdshaderinc"
+#else
 #include "res://src/presentation/material_sampling.gdshaderinc"
+#endif
 void vertex() {
 	imported_vertex_color = has_vertex_color ? CUSTOM0 : vec4(1.0);
 	// Camera and world translation are intentionally absent. Preserve the source

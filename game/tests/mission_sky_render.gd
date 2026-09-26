@@ -143,6 +143,9 @@ func source_sample(decoded: Dictionary,image: Image,direction: Vector3) -> Dicti
 	# Raw decoder coordinates remain untouched. The source shader path uses V4/5
 	# image coordinates; this independent reference never reads Model's arrays.
 	if int(decoded.version) in [4,5]:selected.y=1.0-selected.y
+	return sample_at_uv(image,selected)
+
+func sample_at_uv(image: Image,selected: Vector2) -> Dictionary:
 	var color := sample_linear(image,selected).linear_to_srgb()
 	var smooth:=true
 	# Exclude steep texel neighborhoods where anisotropic footprint selection,
