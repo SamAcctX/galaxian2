@@ -1172,6 +1172,10 @@ func enter_mission_normal_space(now_microseconds: int,environment_seconds: Varia
 	return _accept_first_flight(candidate,now_microseconds,transfer)
 
 func _selected40_input(event: InputEvent) -> void:
+	# Dialogue may consume the trigger as acknowledgement. Retain its neutral
+	# requirement before that dispatch, so a repeated value cannot become a
+	# fresh flight shot when the modal/cinematic gives control back.
+	if not _focused or not is_visible_in_tree() or not session.can_control():_controls.discard_modal_event(event)
 	if session.handle_selection_event(event):
 		clear_input();present_session();get_viewport().set_input_as_handled();return
 	if session.handle_game_over_event(event):
