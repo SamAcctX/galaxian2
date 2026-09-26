@@ -1,5 +1,15 @@
 {
   "files": [
+    "game/src/simulation/mission_station_context.gd",
+    "game/src/simulation/mission_station_context.gd.uid",
+    "game/src/simulation/mission_station_return.gd",
+    "game/src/simulation/mission_station_return.gd.uid",
+    "game/tests/mission_station_return.gd",
+    "game/tests/mission_station_return.gd.uid",
+    "game/tests/mission_station_resume.gd",
+    "game/tests/mission_station_resume.gd.uid",
+    "game/tests/mission_normal_return.gd",
+    "game/tests/mission_normal_return.gd.uid",
     "game/tests/mission_portal_return.gd",
     "game/tests/mission_portal_return.gd.uid",
     "game/src/simulation/mission_portal_return.gd",

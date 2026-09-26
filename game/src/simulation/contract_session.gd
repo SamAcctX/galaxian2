@@ -227,6 +227,18 @@ func transfer_ordinary_void(bindings: RefCounted,progress: Dictionary,source: Re
 	return _retain_story_progress(bindings,progress,33,33,int(route.source_station_id) if entering else -1,-1 if entering else int(route.source_station_id),true)
 
 ## Keep the independent job and final combat counters while the world changes.
+var _station_context: RefCounted
+
+func enter_mission_station(bindings: RefCounted,cat: RefCounted,library: RefCounted,entry: RefCounted,equipment: RefCounted,settings: Dictionary,unix_seconds: Variant) -> bool:
+	if not is_instance_of(entry,load("res://src/simulation/mission_station_return.gd")) or not entry.matches_source_career(self):return reject("Station continuation requires its actual retained career")
+	var context: RefCounted=entry.context_owner();var destination: Dictionary=context.snapshot()
+	if not context.permits(bindings,_state.campaign_cursor,destination.station_id,context) or equipment.snapshot().loadout.station_id!=destination.station_id:return reject("Station continuation lost its career or inventory location")
+	if not _flight.is_empty() or not _pending_flight.is_empty() or not _result_inventory.is_empty() or not _state.pending_result.is_empty():return reject("Station continuation cannot discard an unresolved independent result")
+	if not select_location(bindings,cat,library,destination.station_id,settings,entry.source_random(),unix_seconds,context):return false
+	if not _adopt_station(destination.station_id):return false
+	_state.erase("location_generation_pending");_station_context=context
+	return true
+
 func transfer_mission_return(bindings: RefCounted,entry: RefCounted) -> bool:
 	error=""
 	if not is_instance_of(entry,load("res://src/simulation/mission_portal_return.gd")) or not entry.matches_source_career(self):return reject("The return lost its actual retained career")
@@ -459,7 +471,7 @@ func rebase_gate_arrival(bindings: RefCounted,catalogues: RefCounted,equipment: 
 	_state.travel_statistics={"jumpgates_used":count}
 	return true
 
-func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,station_id: int,settings: Dictionary,random_state: Dictionary,unix_seconds: Variant) -> bool:
+func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,station_id: int,settings: Dictionary,random_state: Dictionary,unix_seconds: Variant,station_context: RefCounted=null) -> bool:
 	# Called on the detached arrival career, after retiring its old flight
 	# ledger and before constructing the destination world. Accepted jobs and
 	# their original clients remain independent of the currently selected lounge.
@@ -469,7 +481,7 @@ func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,st
 	var previous_station: int=_lounges.selection_state().current_station_id
 	var candidate: RefCounted=_lounges.fork()
 	var context:={"station_id":station_id,"campaign_cursor":_state.campaign_cursor,"rank":_state.rank,"reputation":_state.reputation.duplicate(true)}
-	if not candidate.select_location(bindings,cat,library,context,settings,random_state,unix_seconds):return reject(candidate.error)
+	if not candidate.select_location(bindings,cat,library,context,settings,random_state,unix_seconds,station_context):return reject(candidate.error)
 	var source: RefCounted=_void_source
 	var selected_entry: RefCounted
 	# The native arrival path represents the set-location wrapper. An unchanged
@@ -479,6 +491,7 @@ func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,st
 		var random: RefCounted=load("res://src/simulation/seeded_random.gd").new()
 		if not random.restore(selected.random):return reject(random.error)
 		var mission:=Campaign.mission(bindings,_state.campaign_cursor)
+		if load("res://src/simulation/mission_station_context.gd").permits(bindings,_state.campaign_cursor,station_id,station_context):mission=station_context.snapshot().mission
 		if mission.is_empty():return reject("The Void source requires the retained story destination")
 		var plan: Dictionary
 		if _state.campaign_cursor==40:
@@ -1131,7 +1144,9 @@ func _station_inventory(equipment: RefCounted,bindings: RefCounted=null) -> Dict
 	if not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false) or not equipment.cargo_cache_valid():reject("The delivery inventory is unavailable");return {}
 	for key in ["base_content_id","binding_id"]:
 		if owned.loadout.get(key)!=_state[key]:reject("The delivery inventory belongs to another content identity");return {}
-	if bindings!=null and Campaign.supported(bindings,_state.campaign_cursor):
+	if load("res://src/simulation/mission_station_context.gd").permits(bindings,_state.campaign_cursor,owned.loadout.station_id,_station_context):
+		if _state.station_id!=owned.loadout.station_id or owned.loadout.system_id!=_station_context.snapshot().system_id:return fail("The continuation station changed its retained inventory location")
+	elif bindings!=null and Campaign.supported(bindings,_state.campaign_cursor):
 		var free_rules: Dictionary=load("res://src/content/free_flight_definitions.gd").flight(bindings,int(owned.loadout.station_id),_state.campaign_cursor)
 		if free_rules.is_empty() or owned.loadout.system_id!=int(free_rules.system_id) or _state.base_content_id!=bindings.base_content_id or _state.binding_id!=bindings.binding_id:reject("The ordinary station is outside the supported content");return {}
 	elif bindings!=null and load("res://src/content/nehma_return_definitions.gd").station_supported(bindings,_state.campaign_cursor,int(owned.loadout.station_id)):
@@ -1168,6 +1183,7 @@ func fork() -> RefCounted:
 	result._void_source=_void_source.fork() if _void_source!=null else null
 	result._blueprints=_blueprints.fork_for_transaction() if _blueprints!=null else null
 	result._selected40_entry=_selected40_entry.fork() if _selected40_entry!=null else null
+	result._station_context=_station_context
 	return result
 
 func reject(message: String) -> bool:error=message;return false

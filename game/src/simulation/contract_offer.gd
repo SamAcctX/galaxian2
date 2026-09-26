@@ -12,13 +12,13 @@ var _state:={}
 static func available(bindings: RefCounted) -> bool:
 	return bindings!=null and Definitions.parameters(bindings.early_contracts)
 
-func configure(bindings: RefCounted,catalogues: RefCounted,context: Variant,choices: Variant) -> bool:
+func configure(bindings: RefCounted,catalogues: RefCounted,context: Variant,choices: Variant,station_context: RefCounted=null) -> bool:
 	error=""
 	if not available(bindings) or catalogues==null or catalogues.content_id!=bindings.base_content_id:
 		return reject("Early contract terms are unavailable for this content")
 	var rules: Dictionary=bindings.early_contracts
 	if not context is Dictionary:return reject("An offer requires its retained campaign context")
-	var ordinary: bool=context.size()==6 and Navigation.ordinary_context(bindings,catalogues,context)
+	var ordinary: bool=context.size()==6 and Navigation.ordinary_context(bindings,catalogues,context,station_context)
 	var base: bool=context.size()==6 and Navigation.arrival_context(bindings,catalogues,context)
 	if not ordinary and (not Numbers.integer(context.get("campaign_cursor"),Definitions.first_generation_cursor(rules),int(rules.last_cursor)) or (not base and context.size()!=5)):return reject("Unsupported quotation context")
 	if not Numbers.integer(context.get("rank"),0,bindings.opening_handoff.get("rank_thresholds",[]).size()-1) or not Reputation.valid_state(context.get("reputation")) or not Numbers.integer(context.get("client_faction"),0,7):
@@ -141,11 +141,11 @@ static func quantize_credits(value: float,step: int) -> int:
 	var remainder:=credits%step
 	return credits-remainder+(step if remainder*2==step else 0)
 
-func restore(bindings: RefCounted,catalogues: RefCounted,data: Variant) -> bool:
+func restore(bindings: RefCounted,catalogues: RefCounted,data: Variant,station_context: RefCounted=null) -> bool:
 	error=""
 	if not data is Dictionary:return reject("Invalid retained contract offer")
 	var next: RefCounted=get_script().new()
-	if not next.configure(bindings,catalogues,data.get("context"),data.get("choices")):return reject(next.error)
+	if not next.configure(bindings,catalogues,data.get("context"),data.get("choices"),station_context):return reject(next.error)
 	if data!=next.snapshot():return reject("Retained offer disagrees with its source terms or content identity")
 	_state=next._state
 	return true

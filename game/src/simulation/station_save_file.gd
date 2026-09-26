@@ -20,13 +20,13 @@ func save(path: String,station: RefCounted,bindings: RefCounted,cat: RefCounted,
 	if archive.restore(bindings,cat,library,document)==null:return reject(archive.error)
 	var bytes:=encode(document)
 	if bytes.is_empty():return false
-	if not _path_valid(path) or DirAccess.make_dir_recursive_absolute(path.get_base_dir())!=OK:return reject("Cannot create the save directory")
+	if not _path_valid(path) or not _create_directory(path.get_base_dir()):return reject("Cannot create the save directory")
 	var previous:={}
 	if FileAccess.file_exists(path):
 		previous=read_document(path)
 		if not previous.is_empty() and (previous.get("base_content_id")!=bindings.base_content_id or previous.get("binding_id")!=bindings.binding_id):return reject("Keep the existing save with its original content and gameplay bindings")
-		if previous.get("version") in [9,10] and (not _supplement_matches(bindings,previous.get("station"),int(previous.version)) or previous.station.dekato_source_receipt!=document.station.get("dekato_source_receipt")):return reject("Keep the existing checkpoint with its explicitly attached supplemental source")
-		if previous.get("version")==10 and (document.version!=10 or previous.station.nehma_source_receipt!=document.station.get("nehma_source_receipt")):return reject("Keep the onward checkpoint with both explicitly attached sources")
+		if previous.get("version") in [9,10,11] and (not _supplement_matches(bindings,previous.get("station"),int(previous.version)) or previous.station.dekato_source_receipt!=document.station.get("dekato_source_receipt")):return reject("Keep the existing checkpoint with its explicitly attached supplemental source")
+		if previous.get("version") in [10,11] and (document.version not in [10,11] or previous.station.nehma_source_receipt!=document.station.get("nehma_source_receipt")):return reject("Keep the onward checkpoint with both explicitly attached sources")
 		if not previous.is_empty() and archive.restore(bindings,cat,library,previous)==null:previous={}
 	error=""
 	var staged:=path+".tmp"
@@ -54,7 +54,7 @@ func load_document(path: String,bindings: RefCounted,cat: RefCounted,library: Re
 		if not document.is_empty():
 			# Missing source capability is not file damage. Do not silently roll
 			# this career back to an older backup or attach declarations on load.
-			if document.get("version") in [9,10] and not _supplement_matches(bindings,document.get("station"),int(document.version)):return failure("Explicitly attach this checkpoint's exact supplemental sources before loading")
+			if document.get("version") in [9,10,11] and not _supplement_matches(bindings,document.get("station"),int(document.version)):return failure("Explicitly attach this checkpoint's exact supplemental sources before loading")
 			var archive:=Archive.new()
 			if archive.restore(bindings,cat,library,document)!=null:
 				error="";recovered_backup=not suffix.is_empty()
@@ -64,7 +64,7 @@ func load_document(path: String,bindings: RefCounted,cat: RefCounted,library: Re
 	return failure(first_error if not first_error.is_empty() else "No viable saved station is available")
 
 static func _supplement_matches(bindings: RefCounted,station: Variant,version: int=9) -> bool:
-	return version in [9,10] and station is Dictionary and Archive.Dekato.source_receipt_matches(bindings,station.get("dekato_source_receipt")) and (version!=10 or Archive.Nehma.source_receipt_matches(bindings,station.get("nehma_source_receipt")))
+	return version in [9,10,11] and station is Dictionary and Archive.Dekato.source_receipt_matches(bindings,station.get("dekato_source_receipt")) and (version==9 or Archive.Nehma.source_receipt_matches(bindings,station.get("nehma_source_receipt")))
 
 func encode(document: Dictionary) -> PackedByteArray:
 	if not Archive.data_tree(document):reject("The save contains unsupported data");return PackedByteArray()
@@ -98,6 +98,17 @@ func _write(path: String,bytes: PackedByteArray) -> bool:
 
 static func _path_valid(path: String) -> bool:
 	return path.is_absolute_path() or path.begins_with("user://")
+
+static func _create_directory(directory: String) -> bool:
+	# A file in the parent chain is a recoverable save error. Detect it before
+	# calling the engine's recursive creator, which emits a global error.
+	var parent:=directory
+	while not parent.is_empty() and not DirAccess.dir_exists_absolute(parent):
+		if FileAccess.file_exists(parent):return false
+		var next:=parent.get_base_dir()
+		if next==parent:break
+		parent=next
+	return DirAccess.make_dir_recursive_absolute(directory)==OK
 
 static func _digest(payload: PackedByteArray) -> PackedByteArray:
 	var hash:=HashingContext.new();hash.start(HashingContext.HASH_SHA256);hash.update(payload)

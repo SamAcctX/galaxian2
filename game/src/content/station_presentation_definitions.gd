@@ -28,13 +28,14 @@ static func _parameters(data: Variant,expected: Dictionary) -> bool:
 		if not Values.equal_value(data.get(key),expected[key]):return false
 	return true
 
-static func select(bindings: RefCounted, station_id: int, cursor: int) -> Dictionary:
+static func select(bindings: RefCounted, station_id: int, cursor: int,station_context: RefCounted=null) -> Dictionary:
 	if bindings==null or not parameters(bindings.station_presentation):return {}
 	if station_id==98:
 		if not Alioth.available(bindings):return {}
 		if cursor not in [15,16] and not ((cursor==17 or load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor)) and load("res://src/content/alioth_return_definitions.gd").available(bindings)):return {}
 		return alioth_view(bindings.station_presentation)
 	var world: Dictionary=Worlds.location(bindings.mido_travel,station_id)
+	if load("res://src/simulation/mission_station_context.gd").permits(bindings,cursor,station_id,station_context) and not world.is_empty():return ordinary_view(bindings.station_presentation,station_id,source_hangar_row(world,int(bindings.hangars.get("system_field",-1))))
 	if (load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) or load("res://src/content/dekato_convoy_definitions.gd").station_supported(bindings,cursor,station_id) or load("res://src/content/nehma_return_definitions.gd").station_supported(bindings,cursor,station_id)) and not world.is_empty():
 		if not load("res://src/content/local_arrival_environment_definitions.gd").available(bindings):return {}
 		# Ordinary worlds carry their source system fields. The catalogue resolver still

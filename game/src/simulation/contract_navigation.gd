@@ -23,8 +23,9 @@ static func arrival_context(bindings: RefCounted,cat: RefCounted,context: Dictio
 	var rules: Dictionary=bindings.early_contracts.base_navigation
 	return context.get("campaign_cursor")==int(rules.arrival_cursor) and context.get("station_id")==int(rules.arrival_station_id) and cat.tables.stations[int(rules.arrival_station_id)].system_id==int(rules.arrival_system_id) and valid_availability(rules,context.get("system_availability"))
 
-static func ordinary_context(bindings: RefCounted,cat: RefCounted,context: Dictionary) -> bool:
-	return Definitions.available(bindings) and Ordinary.location_supported(bindings,cat,context.get("campaign_cursor"),context.get("station_id")) and valid_availability(bindings.early_contracts.base_navigation,context.get("system_availability"))
+static func ordinary_context(bindings: RefCounted,cat: RefCounted,context: Dictionary,station_context: RefCounted=null) -> bool:
+	var admitted: bool=load("res://src/simulation/mission_station_context.gd").permits(bindings,context.get("campaign_cursor"),context.get("station_id"),station_context)
+	return Definitions.available(bindings) and (admitted or Ordinary.location_supported(bindings,cat,context.get("campaign_cursor"),context.get("station_id"))) and valid_availability(bindings.early_contracts.base_navigation,context.get("system_availability"))
 
 static func eligible(rules: Dictionary,cat: RefCounted,current_system: int,flags: Array,station: int) -> bool:
 	if not Numbers.integer(station,0,cat.tables.stations.size()-1) or not valid_availability(rules,flags):return false

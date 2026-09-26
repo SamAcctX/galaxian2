@@ -150,6 +150,7 @@ var _camera_ms:=0
 var _camera_passes:=1
 var _mission_context: RefCounted
 var _mission_station_return:={}
+var _mission_station_identity: RefCounted
 
 func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted, construction: RefCounted, dock_key: String, sensitivity: float, viewport_size:=Vector2i(1280,720), mobile_layout:=false, hard_difficulty:=false, autopilot_key:="Q", primary_key:="Space", fast_forward_key:="Tab") -> bool:
 	error=""
@@ -1704,6 +1705,9 @@ func equipment_owner() -> RefCounted:return null if _equipment==null else _equip
 
 func contract_owner() -> RefCounted:
 	if _objective is ContractObjective:return _objective.retained_for_arrival(_encounter) if not _station_packet.is_empty() else _objective.contract_owner()
+	# Final mission Next already committed the complete career. The frozen
+	# pending station frame must not re-admit it through an older convoy stage.
+	if mission_station_return_required():return null if _convoy_career==null else _convoy_career.fork()
 	if _mission_context!=null and _convoy_career!=null:
 		var career: RefCounted=_convoy_career.fork()
 		if not career.retain_dekato_progress(_story_bindings,_objective.snapshot().progress):reject(career.error);return null
@@ -1766,6 +1770,7 @@ func _finish_mission_navigation(previous: Dictionary) -> bool:
 		if not _encounter.acknowledge_mission_result():return reject(_encounter.error)
 		_convoy_career=career;_return_rules=docking
 		_mission_station_return=station_return
+		if not station_return.is_empty():_mission_station_identity=RefCounted.new()
 	return true
 
 func acknowledge_contract_result(serial: int,paused:=false) -> RefCounted:
@@ -1798,6 +1803,7 @@ func has_local_travel() -> bool:return _local_travel!=null
 func station_owner() -> RefCounted:return null if _station==null else _station.fork_for_frame()
 func mission_context_owner() -> RefCounted:return _mission_context
 func mission_station_return_required() -> bool:return not _mission_station_return.is_empty()
+func mission_station_return_identity() -> RefCounted:return _mission_station_identity
 func encounter_owner() -> RefCounted:return null if _encounter==null else _encounter.fork_for_frame()
 func tractor_owner() -> RefCounted:return null if _tractor==null else _tractor.fork_for_frame()
 func destruction_owner() -> RefCounted:return null if _death==null else _death.fork_for_frame()
@@ -1989,6 +1995,7 @@ func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._mission_context=_mission_context
 	copy._mission_station_return=_mission_station_return.duplicate(true)
+	copy._mission_station_identity=_mission_station_identity
 	copy._entry=_entry;copy._pose=_pose;copy._shot=_shot.duplicate(true);copy._random=_random.duplicate(true);copy._reference=_reference
 	copy._station_response_flags=_station_response_flags.duplicate(true)
 	if _alioth!=null:copy._alioth=_alioth.fork_for_frame();copy._portal=_portal.fork_for_frame()

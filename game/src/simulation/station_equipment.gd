@@ -410,6 +410,13 @@ func relocate_mission_return(bindings: RefCounted,entry: RefCounted) -> bool:
 	_state.loadout.station_id=source.return_station_id;_state.loadout.system_id=source.return_system_id
 	return true
 
+func relocate_mission_station(bindings: RefCounted,entry: RefCounted) -> bool:
+	if not is_instance_of(entry,load("res://src/simulation/mission_station_return.gd")) or not entry.matches_source_equipment(self) or not cargo_cache_valid():return reject("Station continuation requires its native paid inventory")
+	var context: RefCounted=entry.context_owner();var destination: Dictionary=context.snapshot()
+	if not context.permits(bindings,destination.campaign_cursor,destination.station_id,context):return reject("Station continuation inventory changed its source identity")
+	_state.loadout.station_id=destination.station_id;_state.loadout.system_id=destination.system_id
+	return true
+
 func relocate_post_sahi(bindings: RefCounted,cursor: int) -> bool:
 	error=""
 	if bindings==null:return reject("The portal requires its source declarations")

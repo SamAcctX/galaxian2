@@ -26,16 +26,17 @@ var _navigation:={}
 var _context:={}
 var _catalogues: RefCounted
 var _ordinary:={}
+var _station_context: RefCounted
 
 static func available(bindings: RefCounted) -> bool:
 	return bindings!=null and Terms.generation_parameters(bindings.early_contracts)
 
-func prepare(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: Variant,random_state: Variant,history: Variant) -> bool:
+func prepare(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: Variant,random_state: Variant,history: Variant,station_context: RefCounted=null) -> bool:
 	error=""
 	if not available(bindings) or cat==null or library==null or cat.content_id!=bindings.base_content_id or library.manifest.get("content_id")!=bindings.base_content_id:return reject("Early lounge population requires matching supported content")
 	var rules: Dictionary=bindings.early_contracts.generation
 	if not context is Dictionary or not Numbers.integer(context.get("rank"),0,bindings.opening_handoff.rank_thresholds.size()-1) or not Reputation.valid_state(context.get("reputation")):return reject("Lounge population requires its retained career")
-	var ordinary: bool=context.size()==6 and Navigation.ordinary_context(bindings,cat,context) and context.get("difficulty") in [0.5,1.0,1.5]
+	var ordinary: bool=context.size()==6 and Navigation.ordinary_context(bindings,cat,context,station_context) and context.get("difficulty") in [0.5,1.0,1.5]
 	var base: bool=context.size()==5 and Navigation.arrival_context(bindings,cat,context)
 	if not ordinary and (not Numbers.integer(context.get("campaign_cursor"),Terms.first_generation_cursor(bindings.early_contracts),int(rules.last_cursor)) or (not base and context.size()!=4)):return reject("Unsupported lounge generation context")
 	var system_id:=int(bindings.early_contracts.base_navigation.arrival_system_id) if base else int(rules.system_id)
@@ -48,6 +49,7 @@ func prepare(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: V
 	if not candidate._rng.restore(random_state):return reject(candidate._rng.error)
 	candidate._rules=rules.duplicate(true);candidate._history=history.duplicate();candidate._stations=stations.duplicate()
 	candidate._context=context.duplicate(true);candidate._catalogues=cat
+	candidate._station_context=station_context
 	candidate._portrait_bases=bindings.portrait_layers.get("part_bases",[])
 	var contacts:=[]
 	var persistent_rules: Dictionary={}
@@ -322,7 +324,7 @@ func _offer(bindings: RefCounted,cat: RefCounted,context: Dictionary) -> Diction
 	if not error.is_empty():return {}
 	var offer:=Offer.new()
 	var choices:={"kind":kind,"difficulty_index":difficulty,"destination_station_id":destination,"parameter_index":description,"quantity_index":quantity_index} if ordinary else {"kind_index":kind_index,"difficulty_index":difficulty,"destination_station_id":destination,"cargo_description_index":description}
-	if not offer.configure(bindings,cat,context,choices):reject(offer.error);return {}
+	if not offer.configure(bindings,cat,context,choices,_station_context):reject(offer.error);return {}
 	return offer.snapshot()
 
 func _history_kind(faction: int) -> int:
@@ -357,11 +359,11 @@ func _merchant() -> Dictionary:
 	var unit_price:=int(Vitals.single(float(item.price)*factor))
 	return {"item_id":id,"quantity":quantity,"total_price":unit_price*quantity}
 
-func restore(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: Variant) -> bool:
+func restore(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: Variant,station_context: RefCounted=null) -> bool:
 	error=""
 	if not data is Dictionary:return reject("Invalid retained lounge population")
 	var next: RefCounted=get_script().new()
-	if not next.prepare(bindings,cat,library,data.get("context"),data.get("initial_random"),data.get("initial_history")):return reject(next.error)
+	if not next.prepare(bindings,cat,library,data.get("context"),data.get("initial_random"),data.get("initial_history"),station_context):return reject(next.error)
 	if data!=next.snapshot():return reject("Retained contacts disagree with their source inputs")
 	_state=next._state
 	return true

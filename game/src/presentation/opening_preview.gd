@@ -724,7 +724,7 @@ func _process(_delta: float) -> void:
 	if session is MissionSession:
 		_selected40_tick(Time.get_ticks_usec())
 		return
-	if session==null or session.status not in ["running","arrival_transition_required","station_transition_required","station_reload_required","local_arrival_transition_required","gate_confirmation_required","gate_map_required","gate_arrival_transition_required","game_over_transition_required","convoy_arrival_transition_required","sahi_arrival_transition_required","void_return_transition_required"] or _transition_failed:return
+	if session==null or session.status not in ["running","arrival_transition_required","station_transition_required","station_reload_required","local_arrival_transition_required","gate_confirmation_required","gate_map_required","gate_arrival_transition_required","game_over_transition_required","convoy_arrival_transition_required","sahi_arrival_transition_required","void_return_transition_required","mission_station_return_required"] or _transition_failed:return
 	if _station_course_id>=0 and session is FirstFlightSession and session.can_control():
 		if session.select_planet(_station_course_id):_station_course_id=-1
 		else:transition_error(session.error);return
@@ -748,7 +748,7 @@ func _process(_delta: float) -> void:
 		if not enter_gate_arrival(Time.get_ticks_usec()):return
 	if session.status in ["sahi_arrival_transition_required","void_return_transition_required"] and not _transition_failed:
 		if not enter_portal_arrival(Time.get_ticks_usec()):return
-	if session.status in ["station_transition_required","station_reload_required","convoy_arrival_transition_required"] and not _transition_failed and StationSession.supported(bindings):
+	if session.status in ["station_transition_required","station_reload_required","convoy_arrival_transition_required","mission_station_return_required"] and not _transition_failed and StationSession.supported(bindings):
 		if not enter_station(Time.get_ticks_usec()):return
 	if session.status=="game_over_transition_required" and not session.is_paused() and _focused and is_visible_in_tree():
 		enter_game_over();return
@@ -1232,27 +1232,41 @@ func game_over_result() -> Dictionary:return _last_game_over.duplicate(true)
 
 func enter_station(now_microseconds: int, camera_seed: int=0, unix_seconds: Variant=null) -> bool:
 	var reloading: bool=session is StationSession and session.status=="station_reload_required"
-	if not reloading and (session==null or not (session is ArrivalSession or session is FirstFlightSession) or session.status not in ["station_transition_required","convoy_arrival_transition_required"]):return transition_error("The flight has not reached station entry")
+	if not reloading and (session==null or not (session is ArrivalSession or session is FirstFlightSession) or session.status not in ["station_transition_required","convoy_arrival_transition_required","mission_station_return_required"]):return transition_error("The flight has not reached station entry")
+	var mission_return: bool=session.status=="mission_station_return_required"
+	if mission_return and (_user_paused or not _focused or not is_visible_in_tree()):return false
 	var returning:=session is FirstFlightSession
 	var captured: bool=returning and session.status=="convoy_arrival_transition_required"
 	var alioth_return: bool=returning and session.snapshot().get("campaign_cursor")==17
 	var ordinary_return: bool=returning and FirstFlightSession.FreeFlight.Campaign.supported(bindings,session.snapshot().get("campaign_cursor"))
 	var dekato_return: bool=returning and load("res://src/content/dekato_convoy_definitions.gd").station_supported(bindings,session.snapshot().get("campaign_cursor"),session.snapshot().get("equipment",{}).get("loadout",{}).get("station_id"))
-	var captured_settings:=BASE_STOCK_SETTINGS.duplicate(true) if captured or alioth_return else {}
-	if captured:captured_settings.ship_price_percent=0
+	var captured_settings:=BASE_STOCK_SETTINGS.duplicate(true) if captured or alioth_return or mission_return else {}
+	if captured or mission_return:captured_settings.ship_price_percent=0
 	var seconds: Variant=int(Time.get_unix_time_from_system()) if unix_seconds==null else unix_seconds
+	var transfer: RefCounted
+	var continuation_catalogues: RefCounted
+	if mission_return:
+		var cat:=Catalogues.new()
+		if not cat.open(library):return transition_error(cat.error)
+		continuation_catalogues=cat
+		transfer=load("res://src/simulation/mission_station_return.gd").new()
+		var retained: RefCounted=session.flight_owner().contract_owner()
+		if retained==null:return transition_error("The pending station continuation lost its retained career")
+		captured_settings.difficulty=retained.snapshot().difficulty
+		if not transfer.prepare(bindings,cat,library,session.flight_owner(),captured_settings,seconds):return transition_error(transfer.error)
 	var packet: Dictionary={} if returning or reloading else session.prepare_station()
 	if not returning and not reloading and packet.is_empty():return transition_error(session.error)
 	var candidate:=StationSession.new();viewport.add_child(candidate)
 	var prepared: bool
 	if reloading:prepared=candidate.configure_reload(library,bindings,visuals,session.station_owner(),now_microseconds,camera_seed)
+	elif mission_return:prepared=candidate.configure_mission_return(library,bindings,visuals,transfer,now_microseconds,camera_seed)
 	elif returning:prepared=candidate.configure_return(library,bindings,visuals,session.flight_owner(),now_microseconds,camera_seed,captured_settings,seconds)
 	else:prepared=candidate.configure(library,bindings,visuals,packet,now_microseconds,camera_seed)
 	if not prepared:
 		var message:=candidate.error;candidate.free();session.camera.make_current()
 		return transition_error(message)
 	var locations: RefCounted
-	if captured or alioth_return or ordinary_return or dekato_return:locations=candidate.location_owner()
+	if captured or alioth_return or ordinary_return or dekato_return or mission_return:locations=candidate.location_owner()
 	elif StationGeneration.available(bindings):
 		var state: Dictionary=candidate.snapshot()
 		var random: Dictionary
@@ -1276,8 +1290,16 @@ func enter_station(now_microseconds: int, camera_seed: int=0, unix_seconds: Vari
 	candidate.set_pause("user",_user_paused,now_microseconds)
 	candidate.set_pause("hidden",not is_visible_in_tree(),now_microseconds)
 	candidate.set_pause("focus",not _focused,now_microseconds)
+	if transfer!=null and not transfer.matches_departure(session.flight_owner()):
+		panel.free();candidate.free();session.camera.make_current()
+		return transition_error("The pending mission changed before station commit")
 	if not candidate.activate():
 		var message:=candidate.error;panel.free();candidate.free();session.camera.make_current()
+		return transition_error(message)
+	# A continuation autosave is part of this transaction. A checked atomic
+	# file failure keeps the pending world, camera and previous save retryable.
+	if transfer!=null and not _save_directory.is_empty() and not _save_file.save(station_save_path(),candidate.station_owner(),bindings,continuation_catalogues,library,candidate.location_owner()):
+		var message: String=_save_file.error;panel.free();candidate.free();session.camera.make_current()
 		return transition_error(message)
 	var previous:=session;var previous_panel:=station_panel
 	session=candidate;station_panel=panel;connect_station_panel(panel)
@@ -1286,7 +1308,7 @@ func enter_station(now_microseconds: int, camera_seed: int=0, unix_seconds: Vari
 	target_frame.set_active(false);aim_reticle.clear();npc_markers.clear()
 	session.rebase_time(Time.get_ticks_usec());_transition_failed=false;_pause_button.disabled=false;clear_input()
 	refresh_render_mode()
-	_autosave_station()
+	if transfer==null:_autosave_station()
 	return true
 
 func _prepare_locations(station_id: int,progress: Dictionary,random_state: Dictionary,unix_seconds: Variant) -> RefCounted:
@@ -1366,7 +1388,7 @@ func retry_transition() -> bool:
 	if session.status in ["sahi_arrival_transition_required","void_return_transition_required"]:return enter_portal_arrival(now)
 	if session.status in ["gate_confirmation_required","gate_map_required"]:
 		session.set_pause("transition",false,now);_transition_failed=false;present_session();return not _transition_failed
-	if session.status in ["station_transition_required","station_reload_required","convoy_arrival_transition_required"]:return enter_station(now)
+	if session.status in ["station_transition_required","station_reload_required","convoy_arrival_transition_required","mission_station_return_required"]:return enter_station(now)
 	if session.status=="game_over_transition_required":return enter_game_over()
 	if session is StationSession:return request_departure()
 	if session is FirstFlightSession and session.status=="running":

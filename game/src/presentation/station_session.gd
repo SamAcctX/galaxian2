@@ -70,6 +70,15 @@ func configure_return(library: RefCounted, bindings: RefCounted, visuals: RefCou
 		if not _world.begin_campaign_conversation(bindings,cat,library):return fail(_world.error)
 	return _build_scene(library,bindings,visuals,cat,now_microseconds,camera_seed)
 
+func configure_mission_return(library: RefCounted,bindings: RefCounted,visuals: RefCounted,transfer: RefCounted,now_microseconds: int,camera_seed: int=0) -> bool:
+	clear()
+	var cat:=Catalogues.new()
+	if not supported(bindings) or not cat.open(library):return fail("Station continuation presentation: "+cat.error)
+	_world=World.new()
+	if not _world.configure_mission_return(bindings,library,transfer):return fail(_world.error)
+	_locations=_world.contract_owner().location_owner()
+	return _build_scene(library,bindings,visuals,cat,now_microseconds,camera_seed)
+
 func configure_reload(library: RefCounted, bindings: RefCounted, visuals: RefCounted, previous: RefCounted, now_microseconds: int, camera_seed: int=0) -> bool:
 	clear()
 	if not supported(bindings):return fail("This pack has no supported station scene")
@@ -97,7 +106,7 @@ func configure_saved(library: RefCounted,bindings: RefCounted,visuals: RefCounte
 func _build_scene(library: RefCounted, bindings: RefCounted, visuals: RefCounted, cat: RefCounted, now_microseconds: int, camera_seed: int) -> bool:
 	_bindings=bindings;_catalogues=cat;_library=library;_visuals=visuals
 	var seed: Dictionary=_world.snapshot().loadout
-	var view:=Definitions.select(bindings,int(seed.station_id),int(_world.snapshot().campaign_cursor))
+	var view:=Definitions.select(bindings,int(seed.station_id),int(_world.snapshot().campaign_cursor),_world.mission_station_context_owner())
 	if view.is_empty():return fail("This station has no supported presentation")
 	var selected: Dictionary=bindings.resolve_hangar(int(seed.station_id),cat)
 	if selected.is_empty():return fail(bindings.error)

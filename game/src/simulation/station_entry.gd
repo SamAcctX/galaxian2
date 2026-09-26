@@ -42,6 +42,33 @@ var _contracts: RefCounted
 var _contract_followup: RefCounted
 var _campaign_visit: RefCounted
 var _campaign_bindings: RefCounted
+var _mission_station_context: RefCounted
+
+func mission_station_context_owner() -> RefCounted:return _mission_station_context
+
+func configure_mission_return(bindings: RefCounted,library: RefCounted,transfer: RefCounted) -> bool:
+	if not is_instance_of(transfer,load("res://src/simulation/mission_station_return.gd")) or transfer.snapshot().is_empty():return fail("Station entry requires its prepared native continuation")
+	var context: RefCounted=transfer.context_owner();var arrival: Dictionary=transfer.snapshot()
+	var destination: Dictionary=context.snapshot()
+	if library.manifest.get("content_id")!=bindings.base_content_id or not context.permits(bindings,destination.campaign_cursor,destination.station_id,context):return fail("Station entry belongs to another continuation")
+	var equipment: RefCounted=transfer.equipment_owner();var contracts: RefCounted=transfer.career_owner()
+	var owned: Dictionary=equipment.snapshot();var career: Dictionary=contracts.snapshot()
+	if career.station_id!=destination.station_id or owned.loadout.system_id!=destination.system_id or not Cache.matches(arrival.player_cache,owned.loadout,destination.campaign_cursor):return fail("Station continuation lost its relocated career or player")
+	clear()
+	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language,
+		"campaign_cursor":career.campaign_cursor,"phase":"free_play_required","line_index":0,"loadout":owned.loadout,
+		"source_ship_configuration":int(bindings.station_entry.source_ship_configuration),"display_ship_configuration":int(bindings.station_entry.display_ship_configuration),
+		"source_marked_item_ids":[],"progress":career.progress,"mission":destination.mission,"cargo":owned.cargo,
+		"player_cache":arrival.player_cache,"arrival_player":retained_player_state(arrival.arrival_player),
+		"flight_elapsed_ms":arrival.flight_elapsed_ms,"station_response_flags":arrival.station_response_flags,
+		"mission_station_return":destination,"return_visit":true,"local_visit":true,"contract_station":true,
+		"local_visit_acknowledged":true,"completed_side_missions":career.completed_side_missions,
+		"acknowledged":true,"reward_credits":0,"mining_completed":false,"alioth_return_acknowledged":true}
+	_rules=bindings.station_entry.duplicate(true);_progress_rules=bindings.opening_handoff.duplicate(true)
+	_equipment=equipment;_contracts=contracts;_mission_station_context=context
+	_state.dekato_source_receipt=bindings.dekato_source_receipt().duplicate(true)
+	_state.nehma_source_receipt=bindings.nehma_source_receipt().duplicate(true)
+	return true
 
 func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted, packet: Dictionary) -> bool:
 	clear()
@@ -155,6 +182,7 @@ func _configure_departure_return(bindings: RefCounted,catalogues: RefCounted,fli
 	_equipment_rules=previous._equipment_rules;_equipment_lines=previous._equipment_lines
 	_equipment=equipment;_contracts=null;_local_exchange=null;_contract_followup=null
 	_campaign_visit=null;_campaign_bindings=null
+	_mission_station_context=null
 	_state.merge({"loadout":owned.loadout,"cargo":owned.cargo,"progress":packet.progress.duplicate(true),
 		"player_cache":packet.player_cache.duplicate(true),"arrival_player":retained_player_state(packet.player),
 		"docking":packet.docking.duplicate(true),"flight_elapsed_ms":packet.world_elapsed_ms},true)
@@ -794,6 +822,7 @@ func snapshot() -> Dictionary:
 
 func clear() -> void:
 	error="";_departure_refusal=-1;_state={};_lines=[];_rules={};_progress_rules={};_return_rules={}
+	_mission_station_context=null
 	_equipment=null;_equipment_rules={};_equipment_lines=[]
 	_local_rules={};_local_exchange=null;_contracts=null;_contract_followup=null
 	_campaign_visit=null;_campaign_bindings=null
@@ -809,6 +838,7 @@ func fork() -> RefCounted:
 	result._contract_followup=_contract_followup.fork() if _contract_followup!=null else null
 	result._campaign_visit=_campaign_visit.fork() if _campaign_visit!=null else null
 	result._campaign_bindings=_campaign_bindings
+	result._mission_station_context=_mission_station_context
 	return result
 
 func fail(message: String) -> bool:

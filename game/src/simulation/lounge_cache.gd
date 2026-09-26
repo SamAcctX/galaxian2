@@ -30,7 +30,7 @@ func configure(bindings: RefCounted) -> bool:
 		_state.current_station_id=-1;_state.random={}
 	return true
 
-func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: Variant,settings: Variant,random_state: Variant,unix_seconds: Variant) -> bool:
+func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: Variant,settings: Variant,random_state: Variant,unix_seconds: Variant,station_context: RefCounted=null) -> bool:
 	_read={}
 	error=""
 	if _state.is_empty() or not Stock.available(bindings) or cat==null or library==null:return reject("This cache cannot generate early station stock")
@@ -38,6 +38,7 @@ func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,co
 	var rules: Dictionary=bindings.early_contracts.station_generation
 	var alioth_return: bool=context is Dictionary and context.get("campaign_cursor")==17 and context.get("station_id")==98 and load("res://src/content/alioth_return_definitions.gd").available(bindings)
 	var ordinary: bool=context is Dictionary and Ordinary.location_supported(bindings,cat,context.get("campaign_cursor"),context.get("station_id"))
+	if context is Dictionary and load("res://src/simulation/mission_station_context.gd").permits(bindings,context.get("campaign_cursor"),context.get("station_id"),station_context):ordinary=true
 	if not context is Dictionary or context.size()!=4 or (not ordinary and not Numbers.integer(context.get("campaign_cursor"),int(rules.first_cursor),17 if alioth_return else int(rules.last_cursor))) or not Numbers.integer(context.get("rank"),0,bindings.opening_handoff.rank_thresholds.size()-1) or not Reputation.valid_state(context.get("reputation")):return reject("Retain the career at the time of location selection")
 	var mido: bool=context.get("station_id") in cat.tables.systems[int(rules.system_id)].station_ids
 	var base: bool=NavigationDefinitions.available(bindings) and context.get("station_id")==int(bindings.early_contracts.base_navigation.arrival_station_id) and context.campaign_cursor==int(bindings.early_contracts.base_navigation.arrival_cursor)
@@ -69,7 +70,7 @@ func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,co
 	var contact_context: Dictionary=context.duplicate(true)
 	if base or ordinary:contact_context.system_availability=availability.duplicate()
 	if ordinary:contact_context.difficulty=settings.difficulty
-	if not contacts.prepare(bindings,cat,library,contact_context,stock.snapshot().random,_state.history):return reject(contacts.error)
+	if not contacts.prepare(bindings,cat,library,contact_context,stock.snapshot().random,_state.history,station_context):return reject(contacts.error)
 	if not remember(contacts,stock):return false
 	if not availability.is_empty():_state.system_availability=availability
 	_state.current_station_id=context.station_id;_state.random=contacts.snapshot().random
