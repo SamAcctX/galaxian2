@@ -4,6 +4,7 @@ extends "res://tests/mission_portal_return.gd"
 const NormalConstruction=preload("res://src/simulation/first_flight_construction.gd")
 const FreeEntry=preload("res://src/content/free_flight_definitions.gd")
 const Host=preload("res://src/presentation/opening_preview.gd")
+const EarnedApplication=preload("res://tests/void_ambush_application.gd")
 var application: Control
 
 class PreparedWorld extends RefCounted:
@@ -34,6 +35,7 @@ func acknowledge() -> bool:
 	var retained_world: RefCounted=active.initialized_world_owner()
 	if not await super.acknowledge():return false
 	var published: Dictionary=application.session.snapshot()
+	check(EarnedApplication.observed_dialogue(application.session)==active.dialogue(),"The earned pilot could not observe the retained mission dialogue")
 	check(application.session==retained_session and active.initialized_world_owner()==retained_world,"Dialogue acknowledgement rebuilt the active mission session or Void world")
 	check(published.campaign_cursor==active.snapshot().campaign_cursor and published.campaign_cursor==published.career.campaign_cursor,"Application reported the player's entry cursor instead of the acknowledged mission")
 	check(published.player==active.player_owner().snapshot(),"Publishing the active mission changed the retained player")
@@ -120,6 +122,7 @@ func verify_normal_result(app: Control) -> void:
 	var speakers:=[0,0,6,0]
 	for page in 4:
 		var state: Dictionary=session.snapshot()
+		check(EarnedApplication.observed_dialogue(session)==state.dialogue,"The earned pilot used a Void-only dialogue accessor after normal return")
 		check(state.dialogue.text_id==2054+page and state.dialogue.voice_event_id==421+page and state.dialogue.speaker_id==speakers[page],"Normal result42 changed its source page, speaker or voice")
 		if DisplayServer.get_name()!="headless" and page==0:
 			app.present_session()

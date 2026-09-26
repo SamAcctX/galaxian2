@@ -43,17 +43,22 @@ func verify_free_application() -> void:
 	check(FileAccess.get_sha256(input_path)==OS.get_environment("GOF2_SOURCE_SAVE_SHA256"),"The earned journey changed its source checkpoint")
 	if not failures:print("Earned Néhma40 -> mission40 -> Void ambush -> result41 -> freighter destruction -> portal escape -> normal result42 -> Thynome10/cursor43 autosave")
 
+## Void and normal flight expose the same application observation, not the
+## same implementation-specific dialogue methods on their flight owners.
+static func observed_dialogue(session: Node) -> Dictionary:
+	return session.snapshot().get("dialogue",{})
+
 func dialogue_visible() -> bool:
-	return app.session.flight_owner().campaign_dialogue_visible()
+	return observed_dialogue(app.session).get("visible",false)
 
 ## Acknowledge the visible page with the keyboard, as a player would.
 func acknowledge_page(label: String) -> bool:
 	var session: Node=app.session
-	var before: Dictionary=app.session.flight_owner().dialogue()
+	var before: Dictionary=observed_dialogue(app.session)
 	resume_application_focus();app.present_session();await process_frame
 	press_key(KEY_ENTER);await process_frame
 	if app.session!=session:return true
-	var after: Dictionary=app.session.flight_owner().dialogue()
+	var after: Dictionary=observed_dialogue(app.session)
 	print(label," page ",before.get("text_id")," voice ",before.get("voice_event_id")," -> ",after.get("text_id")," visible ",after.get("visible"))
 	check(app.session.snapshot().campaign_cursor==app.session.flight_owner().snapshot().campaign_cursor,"Application exposed a stale campaign cursor after "+label+" acknowledgement")
 	if after==before and app.session.status=="running":print("Acknowledgement diagnostics: scene ",app.session.scene.error," status ",app.status.text," session ",app.session.error)
@@ -124,7 +129,7 @@ func return_to_thynome(original: Dictionary) -> bool:
 	check(dialogue_visible() and app.session.snapshot().world_elapsed_ms>10000,"Normal-space result did not wait for its own world clock")
 	if failures:return false
 	for page in 4:
-		var line: Dictionary=app.session.flight_owner().dialogue()
+		var line: Dictionary=observed_dialogue(app.session)
 		check(line.text_id==2054+page and line.voice_event_id==421+page,"The earned normal-space result changed its source text or voice")
 		await capture_free_application("void42-result-page-"+str(page))
 		if not await acknowledge_page("M42 return"):return false
@@ -166,7 +171,7 @@ func fly_mission41() -> bool:
 			print("M41 phase ",last_phase," at tick ",tick," elapsed ",state.elapsed_ms," freighter ",state.encounter.combat.actors[0].position," hull ",state.encounter.combat.actors[0].vitals.hull," blocked ",sequence.input_blocked)
 			await capture_free_application("void41-phase-"+str(last_phase))
 		if dialogue_visible():
-			var line: Dictionary=app.session.flight_owner().dialogue()
+			var line: Dictionary=observed_dialogue(app.session)
 			if not captured.has(line.get("text_id")):
 				captured[line.get("text_id")]=true
 				await capture_free_application("void41-dialogue-"+str(line.get("text_id")))
