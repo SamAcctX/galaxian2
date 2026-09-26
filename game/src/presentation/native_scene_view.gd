@@ -61,7 +61,9 @@ func unregister_overlay(canvas: CanvasLayer) -> void:
 	if canvas not in _overlays:return
 	if is_instance_valid(_overlay_viewport) and canvas.custom_viewport==_overlay_viewport:canvas.custom_viewport=viewport
 	_overlays.erase(canvas)
-	if _overlays.is_empty():_release_overlay_target()
+	# Canvas exit can run while this view's own children are being removed.
+	# Retire sibling targets immediately, but let the tree delete them safely.
+	if _overlays.is_empty():_release_overlay_target(true)
 
 func _prepare_overlay_target() -> void:
 	if _overlay_viewport!=null:return
@@ -86,9 +88,15 @@ func _restore_overlays() -> void:
 		if is_instance_valid(_overlay_viewport) and canvas.custom_viewport==_overlay_viewport:canvas.custom_viewport=viewport
 	_release_overlay_target()
 
-func _release_overlay_target() -> void:
-	if is_instance_valid(_overlay_image):_overlay_image.free()
-	if is_instance_valid(_overlay_viewport):_overlay_viewport.free()
+func _release_overlay_target(deferred:=false) -> void:
+	if is_instance_valid(_overlay_image):
+		_overlay_image.hide()
+		if deferred:_overlay_image.queue_free()
+		else:_overlay_image.free()
+	if is_instance_valid(_overlay_viewport):
+		_overlay_viewport.render_target_update_mode=SubViewport.UPDATE_DISABLED
+		if deferred:_overlay_viewport.queue_free()
+		else:_overlay_viewport.free()
 	_overlay_image=null;_overlay_viewport=null
 
 func _sync_overlay_activity() -> void:
@@ -111,6 +119,23 @@ func refresh_size() -> void:
 		_overlay_viewport.size=viewport.size
 		_overlay_viewport.size_2d_override=viewport.size_2d_override
 		_overlay_viewport.size_2d_override_stretch=true
+
+func _unhandled_input(event: InputEvent) -> void:
+	# Embedded controls retain their scene lifetime and focus when a canvas is
+	# drawn into the sharp interface target. Keyboard input does not cross a
+	# SubViewport boundary automatically as pointer input does here.
+	if viewport==null or not is_visible_in_tree() or size.x<=0 or size.y<=0:return
+	# Controller actions stay with the application's existing input owner.
+	if not event is InputEventKey:return
+	# Root GUI has already had its chance; a focused outer control must not
+	# also activate the last selected control in the scene behind it.
+	if get_viewport().gui_get_focus_owner()!=null:return
+	var target: Viewport=viewport
+	if _overlay_viewport!=null and _overlay_viewport.gui_get_focus_owner()!=null:target=_overlay_viewport
+	var focused:=target.gui_get_focus_owner()
+	if focused==null or not focused.is_visible_in_tree():return
+	target.push_input(event.duplicate(),true)
+	if target.is_input_handled():get_viewport().set_input_as_handled()
 
 func _gui_input(event: InputEvent) -> void:
 	if viewport==null or size.x<=0 or size.y<=0 or not event is InputEventMouse:return
