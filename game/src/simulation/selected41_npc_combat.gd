@@ -90,6 +90,17 @@ func evaluate_contacts(milliseconds: Variant,player_pose: Variant,display_availa
 	next._events={"contacts":contacts.actors,"radio":transmissions,"result_observation":observed_result}
 	return next
 
+## A successful parent result ends the frame at the contact boundary. Retain
+## its early effects and radio clock without visiting choreography/NPC motion.
+## This is a completed frame, not a pending transaction to replay on resume.
+func finish_before_sequence() -> RefCounted:
+	error=""
+	if _stage!="contacts":return failed("Finish the result boundary after contacts exactly once")
+	var next:=fork_for_frame()
+	next._state.revision+=1;next._state.elapsed_ms+=_frame_ms
+	next._stage="ready";next._frame_ms=0
+	return next
+
 func evaluate_sequence(preceding_camera: RefCounted=null) -> RefCounted:
 	error=""
 	if _stage!="contacts":return failed("Visit source41 sequence after contacts exactly once")

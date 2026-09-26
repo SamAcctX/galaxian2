@@ -203,6 +203,20 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	var result: Dictionary=next._runner.poll(observation.actors,radio.visible,_state.entry_released and not blocked,not dying,observation.sequences)
 	if result.is_empty():return failed(next._runner.error)
 	if result.mode!=0 and not next._runner.open_result():return failed(next._runner.error)
+	# Success returns before the late script, new firing, NPCs and camera.
+	# Failure has no corresponding early return. Preserve the completed early
+	# player/contact work and close its staged frame for the retained world.
+	if result.mode==1:
+		var completed_result: Dictionary=next._encounter.finish_before_sequence()
+		if completed_result.is_empty():return failed(next._encounter.error)
+		next._encounter=completed_result.encounter
+		if not next._engine_audio.retain_frame(milliseconds):return failed(next._engine_audio.error)
+		if not next._particles.retain_frame(milliseconds) or not next._engines.retain_frame(milliseconds):return failed(next._particles.error+next._engines.error)
+		next._viewport=size;next._flight_music={"operations":[]}
+		next._state.elapsed_ms+=milliseconds;next._state.revision+=1
+		next._state.input={"enabled":false,"commands":Vector2.ZERO,"primary_held":false,"secondary_requested":false,"throttle":next._throttle}
+		if not next._observe_progress():return failed(next.error)
+		return next
 	var sequence: Dictionary=next._encounter.evaluate_sequence(next._camera)
 	if sequence.is_empty():return failed(next._encounter.error)
 	next._encounter=sequence.encounter;next._player=sequence.player;next._random=sequence.random_state

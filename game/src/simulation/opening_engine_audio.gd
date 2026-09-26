@@ -88,6 +88,15 @@ func follow_player(pose: Transform3D,hull: int,delta_ms: int) -> bool:
 	_state.position=pose.origin;_state.active=hull>0;_state.elapsed_ms+=delta_ms
 	return true
 
+## Stamp a completed world frame whose late sound update was not visited.
+## This timestamp authenticates presentation; it does not drive parameters,
+## spatial motion or the lifetime of the retained playback instance.
+func retain_frame(delta_ms: int) -> bool:
+	error=""
+	if _selection==null or delta_ms<0 or delta_ms>150 or _state.elapsed_ms>2147483647-delta_ms:return reject("Invalid retained engine frame clock")
+	_state.elapsed_ms+=delta_ms
+	return true
+
 func sample_commands(axes: Vector2) -> bool:
 	error=""
 	if _selection==null or not axes.is_finite() or absf(axes.x)>1.0 or absf(axes.y)>1.0:return reject("Invalid normalized engine steering input")

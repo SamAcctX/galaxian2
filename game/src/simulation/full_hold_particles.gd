@@ -183,6 +183,14 @@ func apply_player_poll(death: RefCounted) -> bool:
 		if not _emitters.player.set_emitting(true):return reject(_emitters.player.error)
 	return true
 
+## The world can finish before its late particle pass. Publish the retained
+## population at that frame without ageing slots, moving roots or consuming RNG.
+func retain_frame(delta_ms: Variant) -> bool:
+	error=""
+	if _identity.is_empty() or not Numbers.integer(delta_ms,0,1000) or _elapsed_ms>2147483647-int(delta_ms):return reject("Invalid retained particle frame clock")
+	_elapsed_ms+=int(delta_ms)
+	return true
+
 func advance(player_root: Variant,delta_ms: Variant) -> bool:
 	error=""
 	if _identity.is_empty() or not Flight.rigid_pose(player_root) or not Numbers.integer(delta_ms,0,1000):return reject("Second-flight particles require a rigid player root and bounded milliseconds")

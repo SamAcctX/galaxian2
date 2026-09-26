@@ -63,6 +63,14 @@ func set_nozzle_emitting(index: Variant,value: Variant) -> bool:
 	# manager draw gate and the requested engine flag remain independent.
 	adopt(next);return true
 
+## Stamp retained exhaust when its late pass was not visited. Emitter ages,
+## manager cadence, pose history and private random streams stay unchanged.
+func retain_frame(delta_ms: Variant) -> bool:
+	error=""
+	if _identity.is_empty() or not Numbers.integer(delta_ms,0,1000) or _elapsed_ms>2147483647-int(delta_ms):return reject("Invalid retained exhaust frame clock")
+	_elapsed_ms+=int(delta_ms)
+	return true
+
 func advance(statistics_pose: Variant,delta_ms: Variant,boost_active: Variant=false) -> bool:
 	error=""
 	if _identity.is_empty() or not Flight.rigid_pose(statistics_pose) or not Numbers.integer(delta_ms,0,1000):return reject("Player exhaust requires a rigid statistics pose and bounded milliseconds")

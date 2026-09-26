@@ -58,6 +58,8 @@ func verify_component(world: RefCounted) -> void:
 	var release: RefCounted
 	for tick in 900:
 		if active.campaign_dialogue_visible():break
+		if release!=null and int(active.runner_owner().snapshot().clock_ms)+100>5000 and not active.encounter_owner().radio_owner().snapshot().visible:
+			await capture("continuation-result-pre-poll")
 		var next: RefCounted=active.evaluate(100,Vector2.ZERO,1.0,false,false,root.size,0.0,false,scene.feedback.audio.current_music_id())
 		if next==null:check(false,active.error);scene.free();return
 		active=next
@@ -86,7 +88,9 @@ func verify_component(world: RefCounted) -> void:
 				await capture("continuation-pullback-late")
 	check(active.campaign_dialogue_visible() and active.dialogue().get("text_id")==2047,"Native cinematic did not open result41")
 	await capture("continuation-result-first")
-	if release!=null:verify_result_camera(release)
+	if release!=null:
+		verify_result_camera(release)
+		verify_result_opening_frames(release)
 	if failures:scene.free();return
 	for page in 4:
 		check(active.dialogue().text_id==2047+page,"Result41 changed its page order")
@@ -165,6 +169,57 @@ func verify_void_surfaces() -> void:
 		check(source_surfaces>0 and pbr_surfaces==0,"A Void body branch retained unlit/default PBR surfaces")
 
 func verify_retained_flight() -> void:pass
+
+func verify_result_opening_frames(release: RefCounted) -> void:
+	# Branch only the existing detached component. These are native frame-rate
+	# checks, not independently earned battles or additional rendered routes.
+	var untouched: Dictionary=release.snapshot()
+	for pattern in [[100],[],[1,7,33,100,16,6,57,11]]:
+		var label: String="144Hz" if pattern.is_empty() else "100ms" if pattern.size()==1 else "variable"
+		var branch: RefCounted=release
+		var preceding: RefCounted
+		var last_delta:=0
+		for tick in 1200:
+			last_delta=int((tick+1)*1000/144)-int(tick*1000/144) if pattern.is_empty() else int(pattern[tick%pattern.size()])
+			preceding=branch
+			branch=preceding.evaluate(last_delta,Vector2.ZERO,1.0)
+			if branch==null:check(false,label+": "+preceding.error);return
+			if branch.campaign_dialogue_visible():break
+		check(branch.campaign_dialogue_visible() and branch.dialogue().get("text_id")==2047,label+": success did not open")
+		if not branch.campaign_dialogue_visible():continue
+		var before: Dictionary=preceding.snapshot();var result: Dictionary=branch.snapshot()
+		var closed: RefCounted=branch.encounter_owner();var closed_before: Dictionary=closed.snapshot()
+		check(closed.finish_before_sequence().is_empty() and closed.snapshot()==closed_before,label+": a completed contact frame finished twice")
+		var ready: RefCounted=release.encounter_owner();var ready_before: Dictionary=ready.snapshot()
+		check(ready.finish_before_sequence().is_empty() and ready.snapshot()==ready_before,label+": an unstaged result changed native owners")
+		check(before.runner.clock_ms<=5000 and int(before.runner.clock_ms)+last_delta>5000,label+": result changed its strict polling cadence")
+		check(result.elapsed_ms==int(before.elapsed_ms)+last_delta and result.player_pose!=before.player_pose,label+": early player motion/time was rolled back")
+		check(result.encounter.view.camera==before.encounter.view.camera,label+": camera advanced underneath the newly opened result")
+		check(result.encounter.sequence.revision==before.encounter.sequence.revision,label+": late choreography ran after success")
+		check(result.player_engine_audio.elapsed_ms==result.elapsed_ms,label+": retained sound lost its world frame stamp")
+		for key in ["position","active","generation","source_id"]:
+			check(result.player_engine_audio[key]==before.player_engine_audio[key],label+": skipped late pass changed retained sound: "+key)
+		for id in before.encounter.combat.actors.size():
+			check(result.encounter.combat.actors[id].body_pose==before.encounter.combat.actors[id].body_pose,label+": NPC moved after success")
+		for key in ["damage_particles","player_engines"]:
+			check(result[key].elapsed_ms==result.elapsed_ms,label+": retained population lost its frame stamp: "+key)
+			var earlier: Dictionary=before[key].duplicate(true);var retained: Dictionary=result[key].duplicate(true)
+			earlier.erase("elapsed_ms");retained.erase("elapsed_ms")
+			check(retained==earlier,label+": skipped particle pass changed slots, ages, cadence or RNG: "+key)
+		for key in ["detail","npc_scanner","mining_targeting","flight_notices"]:
+			check(result[key]==before[key],label+": late owner advanced after success: "+key)
+		check(not result.encounter.pending_world and result.encounter.elapsed_ms==result.elapsed_ms and result.encounter.world_elapsed_ms==result.elapsed_ms,label+": result published an unfinished contact frame")
+		var frozen: RefCounted=branch.evaluate(100,Vector2.ONE,1.0,true)
+		check(frozen!=null and frozen.snapshot()==result,label+": modal frames consumed pilot input")
+		print("Result opening ",label,": final step ",last_delta,"ms; camera retained ",result.encounter.view.camera==before.encounter.view.camera)
+		for page in 5:
+			var following: RefCounted=branch.navigate("next")
+			if following==null:check(false,label+": "+branch.error);break
+			branch=following
+		check(branch.frame_context().campaign_cursor==42 and not branch.campaign_dialogue_visible(),label+": acknowledgement lost retained continuation")
+		var resumed: RefCounted=branch.evaluate(last_delta,Vector2(0.1,-0.1),1.0)
+		check(resumed!=null and resumed.frame_context().input.enabled,label+": completed result could not resume native flight")
+		check(preceding.snapshot()==before and release.snapshot()==untouched,label+": result branch mutated its parent")
 
 func verify_result_camera(release: RefCounted) -> void:
 	var before: Dictionary=release.snapshot();var result: Dictionary=active.snapshot()

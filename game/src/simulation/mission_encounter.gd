@@ -65,6 +65,18 @@ func evaluate_weapons(player: RefCounted,pose: Transform3D,milliseconds: int,sce
 	next._elapsed_ms+=milliseconds;next._primary_fire={}
 	return {"encounter":next,"player":contacts.player_owner(),"scenery":primary.scenery,"random_state":contacts.random_state()}
 
+## Commit the already evaluated early frame when success interrupts the late
+## pass. The native hook enforces the contact boundary and retains its cast.
+func finish_before_sequence() -> Dictionary:
+	error=""
+	if _hook==null or _hook.composition_stage()!="contacts":return fail("A result must finish its ordered contact frame")
+	var completed: RefCounted=_hook.finish_before_sequence()
+	if completed==null:return fail(_hook.error)
+	if completed.frame_context().elapsed_ms!=_elapsed_ms:return fail("Result completion lost its contact clock")
+	var next:=fork_for_frame();next._adopt_hook(completed)
+	next._world_elapsed_ms=next._elapsed_ms
+	return {"encounter":next}
+
 func evaluate_sequence(preceding_camera: RefCounted=null) -> Dictionary:
 	error=""
 	var hook: RefCounted=_hook.evaluate_sequence(preceding_camera)
