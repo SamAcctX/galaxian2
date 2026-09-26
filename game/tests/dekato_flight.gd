@@ -148,6 +148,9 @@ func verify(library: RefCounted,bindings: RefCounted,cat: RefCounted,art: String
 	var retained: RefCounted=prepare_retained_career(bindings,cat,equipment,context,progress,locations,cache,bodies,effects)
 	if retained==null:return
 	prepared=retained;constructed=prepared.snapshot()
+	if OS.get_environment("GOF2_DEKATO_COMPONENT_LOADOUTS")=="1":
+		verify_representative_loadouts(bindings,cat,library,prepared,bodies,effects)
+		return
 	var frame:=Frame.new()
 	var probe:=Frame.Encounter.new()
 	if not probe.configure_dekato(bindings,cat,library,prepared.player_owner(),prepared.scenery_owner(),equipment,progress.reputation):check(false,probe.error);return
@@ -255,13 +258,13 @@ func verify(library: RefCounted,bindings: RefCounted,cat: RefCounted,art: String
 ## regression. Battle outcome coverage separately uses the existing original
 ## shielded component preset with original primary2, not edited weapon/actor stats,
 ## a purchase, an upgraded earned202 ship, or an in-flight pool refill.
-func prepare_shielded_component(bindings: RefCounted,cat: RefCounted,original: RefCounted,bodies: RefCounted,effects: RefCounted) -> RefCounted:
+func prepare_shielded_component(bindings: RefCounted,cat: RefCounted,original: RefCounted,bodies: RefCounted,effects: RefCounted,primary_id:=2) -> RefCounted:
 	var before: Dictionary=original.snapshot()
 	var career: RefCounted=original.contract_owner();var locations: RefCounted=career.location_owner()
 	var context: Dictionary=career.campaign_flight_context(bindings,Navigation.Campaign.mission(bindings.mido_travel,38))
 	if context.is_empty():check(false,career.error);return null
 	var seed: Dictionary=before.departure.loadout.duplicate(true)
-	seed.equipment_ids=[2,41,50,81,55]
+	seed.equipment_ids=[primary_id,41,50,81,55]
 	var fixture:=Inventory.new();var equipment: RefCounted=fixture.create(bindings,cat,seed)
 	if equipment==null:check(false,fixture.error);return null
 	var entry:=PlayerEntry.new()
@@ -277,6 +280,37 @@ func prepare_shielded_component(bindings: RefCounted,cat: RefCounted,original: R
 	check(result.player_owner().cache_snapshot()==cache and result.contract_owner().snapshot()==career.snapshot() and original.snapshot()==before,"Preparing a separate combat component changed the damaged source or retained career")
 	print("Dekato independent shielded component: equipment=",loadout.equipment_ids," initial pools=",cache.values,"; no purchase, no saved202 migration, no in-flight refill")
 	return result
+
+## These are detached equipped entries. They prove admission, movement and real
+## projectile emission for both starter guns, not shopping or an earned save.
+func verify_representative_loadouts(bindings: RefCounted,cat: RefCounted,library: RefCounted,original: RefCounted,bodies: RefCounted,effects: RefCounted) -> void:
+	var preserved: Dictionary=original.snapshot()
+	for primary_id in [0,22]:
+		var prepared: RefCounted=prepare_shielded_component(bindings,cat,original,bodies,effects,primary_id)
+		if prepared==null:return
+		var frame:=Frame.new()
+		if not frame.configure(bindings,cat,library,prepared,"F",1.0):check(false,frame.error);return
+		for tick in 122:
+			if frame.dialogue_visible():break
+			var next: RefCounted=frame.evaluate(100)
+			if next==null:check(false,frame.error);return
+			frame=next
+		check(frame.snapshot().phase=="briefing" and frame.snapshot().dialogue.voice_event_id==184,"A starter loadout did not reach the actual entry briefing")
+		if failures:return
+		frame=frame.navigate("next")
+		if frame==null:check(false,"A starter loadout could not acknowledge its briefing");return
+		var before: Dictionary=frame.snapshot();var emitted:=false
+		for tick in 20:
+			var next: RefCounted=frame.evaluate(100,Vector2(0.3,-0.2),1.0,false,Vector2i(1280,720),Vector2.ZERO,true)
+			if next==null:check(false,frame.error);return
+			frame=next
+			emitted=emitted or frame.snapshot().encounter.primaries.guns[0].projectiles.slots.any(func(slot):return slot!=null)
+		var after: Dictionary=frame.snapshot()
+		check(after.entry_released and after.player_pose!=before.player_pose and after.player.vitals.hull>0,"Admitted starter equipment could not control a surviving player")
+		check(emitted and after.encounter.primaries.guns[0].projectiles.weapon.item_id==primary_id,"The admitted starter gun failed to emit its own native projectiles")
+		check(after.campaign_cursor==38 and after.equipment==before.equipment and after.contracts.credits==before.contracts.credits,"Detached starter controls changed inventory, wallet or campaign progress")
+		check(original.snapshot()==preserved,"Starter loadout coverage changed the retained component parent")
+		print("Detached starter",primary_id," entry, briefing, steering and projectile emission checked; no station purchase or earned-save claim")
 
 ## Explicit component ledger, not an earned203 checkpoint. Its native location,
 ## Void and blueprint owners retain their own state and identity. No saved202
@@ -499,8 +533,8 @@ func bindings_id(frame: RefCounted,key: String) -> String:return frame._entry[ke
 func verify_results(parent: RefCounted,bindings: RefCounted) -> void:
 	var preserved: Dictionary=parent.snapshot()
 	var retained_career: Dictionary=parent.contract_owner().snapshot()
-	check(parent._encounter.poll_dekato_result(false,true).get("mode")==0,"Live actors completed the mission")
-	check(not parent._encounter.acknowledge_dekato_result(),"Unopened result accepted acknowledgement")
+	check(parent._encounter.poll_mission_result(false,true).get("mode")==0,"Live actors completed the mission")
+	check(not parent._encounter.acknowledge_mission_result(),"Unopened result accepted acknowledgement")
 	var win: RefCounted=retired_branch(parent,range(2,7))
 	if win==null:return
 	var status: Dictionary=win._encounter._control.defeat_status()
@@ -509,23 +543,31 @@ func verify_results(parent: RefCounted,bindings: RefCounted) -> void:
 	# The source succeeds only after 5000ms, on an allowed idle-radio poll.
 	for sample in [[5000,false,true,0],[5001,true,true,0],[5001,false,false,0],[5001,false,true,1]]:
 		var probe: RefCounted=win._encounter.fork_for_frame()
-		check(probe.sample_dekato_clock(int(preserved.world_elapsed_ms),sample[0]),probe.error)
-		var selected: Dictionary=probe.poll_dekato_result(sample[1],sample[2])
+		check(probe.sample_mission_clock(int(preserved.world_elapsed_ms),sample[0]),probe.error)
+		var selected: Dictionary=probe.poll_mission_result(sample[1],sample[2])
 		check(selected.get("mode")==sample[3],"Dekato success ignored the original HUD/idle-radio/periodic gate")
 		if sample[0]==5001 and sample[1]:check(selected.get("clock_ms")==0,"Blocked due success poll failed to reset its clock")
 	var single: RefCounted=retired_branch(parent,[0])
 	if single==null:return
-	check(not single._encounter._control.defeat_status().failed and single._encounter.poll_dekato_result(true,false).get("mode")==0,"Losing only one freighter failed the convoy")
+	check(not single._encounter._control.defeat_status().failed and single._encounter.poll_mission_result(true,false).get("mode")==0,"Losing only one freighter failed the convoy")
+	var single_win: RefCounted=retired_branch(win,[0])
+	if single_win==null:return
+	check(single_win._encounter.sample_mission_clock(int(preserved.world_elapsed_ms),5001),single_win._encounter.error)
+	check(single_win._encounter.poll_mission_result(false,true).get("mode")==1,"One surviving freighter prevented a completed escort victory")
+	var both: RefCounted=retired_branch(parent,[0,1])
+	if both==null:return
+	check(both._encounter.sample_mission_clock(int(preserved.world_elapsed_ms),0),both._encounter.error)
+	check(both._encounter.poll_mission_result(true,false).get("mode")==2 and not both._encounter._control.defeat_status().satisfied,"Both freighters lost with escorts still active failed to bypass time and radio gates")
 	var all_retired: RefCounted=retired_branch(win,[0,1])
 	if all_retired==null:return
 	status=all_retired._encounter._control.defeat_status()
 	check(status.satisfied and status.failed,"Independent all-retired source predicates were collapsed")
 	for sample in [[0,true,false,2],[5000,false,true,2],[5001,true,true,2],[5001,false,false,2],[5001,false,true,1]]:
 		var probe: RefCounted=all_retired._encounter.fork_for_frame()
-		check(probe.sample_dekato_clock(int(preserved.world_elapsed_ms),sample[0]),probe.error)
-		var selected: Dictionary=probe.poll_dekato_result(sample[1],sample[2])
+		check(probe.sample_mission_clock(int(preserved.world_elapsed_ms),sample[0]),probe.error)
+		var selected: Dictionary=probe.poll_mission_result(sample[1],sample[2])
 		check(selected.get("mode")==sample[3],"Completion-first/failure-fallback order changed")
-		check(probe.poll_dekato_result(false,true)==selected,"An opened result changed on repeated polling")
+		check(probe.poll_mission_result(false,true)==selected,"An opened result changed on repeated polling")
 	# The existing frame currently has active radio and a sub-threshold HUD
 	# clock. Failure must still open on a zero-time pass, not a periodic tick.
 	var losing: RefCounted=all_retired.evaluate(0)
@@ -566,7 +608,7 @@ func verify_results(parent: RefCounted,bindings: RefCounted) -> void:
 	if win==null:return
 	var second: Dictionary=win.snapshot()
 	var invalid: RefCounted=win.fork_for_frame()
-	check(invalid._encounter.acknowledge_dekato_result(),invalid._encounter.error)
+	check(invalid._encounter.acknowledge_mission_result(),invalid._encounter.error)
 	var invalid_before: Dictionary=invalid.snapshot()
 	check(invalid.navigate("next")==null and invalid.snapshot()==invalid_before,"Rejected controller retirement partially advanced the objective")
 	for field in ["pending_result","campaign_cursor","binding_id"]:
@@ -582,14 +624,15 @@ func verify_results(parent: RefCounted,bindings: RefCounted) -> void:
 	var continued: Dictionary=win.snapshot()
 	check(continued.campaign_cursor==39 and continued.mission=={"kind":11,"station_id":30,"reward":0,"bonus":0,"source_parameter":0},"Final Next did not select the exact original mission39")
 	check(continued.combat_objective_acknowledged and not continued.cargo_objective_acknowledged and not continued.station_return_required and continued.reward_credits==0,"Acknowledgement invented a mining return or reward")
-	check(continued.encounter.controller.dekato_result.retired and continued.encounter.controller.dekato_result.mode==0,"Final Next failed to retire the native result")
+	check(continued.encounter.controller.mission_result.retired and continued.encounter.controller.mission_result.mode==0,"Final Next failed to retire the native result")
 	check(continued.player_cache==second.player_cache and continued.equipment==second.equipment and continued.cargo==second.cargo,"Acknowledgement repaired or replaced retained player resources")
 	check(continued.progress.rank_score==second.progress.rank_score+int(bindings.opening_handoff.cursor_weight),"Acknowledgement duplicated or lost campaign score")
 	var career: RefCounted=win.contract_owner()
 	check(career!=null and career.snapshot()==continued.contracts and career.snapshot().campaign_cursor==39 and unchanged_career_fields(retained_career,career.snapshot()),"Final acknowledgement lost or paid the retained delivery, wallet, locations, Void or blueprint owners")
 	var acknowledged: Dictionary=career.snapshot()
 	check(not career.advance_dekato_story(bindings,second.progress) and career.snapshot()==acknowledged,"Retained career acknowledged Dekato twice")
-	check(win.prepare_station().is_empty() and Archive.new().capture(win,bindings).is_empty() and not Navigation.destination_supported(bindings,39,continued.mission,30),"A selected result manufactured a station transition, save or public39 route")
+	check(win.prepare_station().is_empty() and Archive.new().capture(win,bindings).is_empty(),"A selected result manufactured physical docking or a station save")
+	check(Navigation.destination_supported(bindings,39,continued.mission,30)==Navigation.Campaign.onward_available(bindings),"Pending Néhma travel ignored its attached source capability")
 	check(win.navigate("next")==null,"Settled result accepted duplicate Next")
 	win=advance(win,100)
 	if win==null:return

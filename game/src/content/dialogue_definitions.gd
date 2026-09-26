@@ -16,6 +16,10 @@ const Voice = preload("res://src/content/radio_audio_definitions.gd")
 const Equal = preload("res://src/content/opening_escape_definitions.gd")
 
 static func select(bindings: RefCounted, campaign_cursor: int = 0) -> Dictionary:
+	# Select source-authored records here; flight admission belongs to its entry owner.
+	var source: Dictionary=Dekato.declarations(bindings) if bindings!=null else {}
+	if source.get("mission",{}).get("campaign_cursor")==campaign_cursor and Dekato.available(bindings) and Sahi.coherent(bindings.mido_travel):
+		return _timed_radio(bindings,campaign_cursor,_source_events(source.radio_events))
 	match campaign_cursor:
 		41:
 			if not Selected41.available(bindings) or not Sahi.coherent(bindings.mido_travel):return {}
@@ -29,9 +33,6 @@ static func select(bindings: RefCounted, campaign_cursor: int = 0) -> Dictionary
 		14: return Convoy.radio(bindings)
 		16: return Alioth.radio(bindings)
 		21: return Kappa.radio(bindings)
-		38:
-			if not Dekato.available(bindings) or not Sahi.coherent(bindings.mido_travel):return {}
-			return _timed_radio(bindings,38,_source_events(Dekato.declarations(bindings).radio_events))
 		25:
 			if not Post.available(bindings):return {}
 			return _timed_radio(bindings,25,_source_events(bindings.mido_travel.post_sahi["void"].radio))
@@ -60,13 +61,15 @@ static func _source_events(source: Array) -> Array:
 		events.append({"speaker_id":int(row.speaker_id),"text_id":int(row.text_id),"voice_event_id":int(row.voice_event_id),"condition":int(row.condition_kind),"values":[int(row.condition_value)]})
 	return events
 
+static func _authored_radio_parameters(data: Dictionary,cursor: int,source: Dictionary) -> bool:
+	return cursor==int(source.mission.campaign_cursor) and Numbers.integer(data.get("campaign_cursor"),cursor,cursor) and Equal.equal_value(data.get("events"),_source_events(source.radio_events)) and Equal.equal_value(data.get("timing"),Sahi.VALUES.radio_timing)
+
 static func valid_parameters(data: Dictionary, campaign_cursor: int = 0) -> bool:
+	if _authored_radio_parameters(data,campaign_cursor,Dekato.VALUES) or _authored_radio_parameters(data,campaign_cursor,Dekato.MAC_VALUES):return true
 	if campaign_cursor==41:
 		return Numbers.integer(data.get("campaign_cursor"),41,41) and (Equal.equal_value(data.get("events"),Selected41.radio_events(0)) or Equal.equal_value(data.get("events"),Selected41.radio_events(1))) and Equal.equal_value(data.get("timing"),Sahi.VALUES.radio_timing)
 	if campaign_cursor==40:
 		return Numbers.integer(data.get("campaign_cursor"),40,40) and (Equal.equal_value(data.get("events"),Selected40.radio_events(0)) or Equal.equal_value(data.get("events"),Selected40.radio_events(1))) and Equal.equal_value(data.get("timing"),Sahi.VALUES.radio_timing)
-	if campaign_cursor==38:
-		return Numbers.integer(data.get("campaign_cursor"),38,38) and (Equal.equal_value(data.get("events"),_source_events(Dekato.VALUES.radio_events)) or Equal.equal_value(data.get("events"),_source_events(Dekato.MAC_VALUES.radio_events))) and Equal.equal_value(data.get("timing"),Sahi.VALUES.radio_timing)
 	if campaign_cursor==25:
 		return Numbers.integer(data.get("campaign_cursor"),25,25) and Equal.equal_value(data.get("events"),_source_events(Post.VALUES["void"].radio)) and Equal.equal_value(data.get("timing"),Sahi.VALUES.radio_timing)
 	if campaign_cursor==24:

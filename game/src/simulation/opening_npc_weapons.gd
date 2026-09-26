@@ -1,5 +1,4 @@
 extends RefCounted
-const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Shared native projectile pools for the verified ordinary NPC populations.
 ## The encounter owner decides who requests fire and when updates run. Target
 ## selection, shooter state, AI and mission consequences remain outside this owner.
@@ -216,7 +215,7 @@ func apply_alioth_sequence(owner: RefCounted) -> bool:
 func _configure_rows(bindings: RefCounted, catalogues: RefCounted, rows: Array, cursor: int=-1, selected40:=false, selected41:=false) -> bool:
 	var guns:=[];var sounds:=[]
 	for data in rows:
-		if (cursor in ([11,12,13,14,16]+FlightStages.FREE) or (selected40 and cursor==40) or (selected41 and cursor==41)) and data.get("unarmed",false):guns.append(null);sounds.append({});continue
+		if data.get("unarmed",false):guns.append(null);sounds.append({});continue
 		var weapon:=_resolve_weapon(bindings,catalogues,data,cursor,selected40,selected41)
 		if weapon.is_empty():return false
 		var gun:=Projectiles.new()
@@ -247,7 +246,7 @@ func _resolve_weapon(bindings: RefCounted, catalogues: RefCounted, data: Diction
 		var properties: Dictionary=items[int(data.item_id)].get("properties",{})
 		var extra: Variant=properties.get(int(policy.get("additional_damage_property",-1)),int(policy.get("missing_additional_damage",0)))
 		if extra!=int(policy.get("missing_additional_damage",0)) or policy.is_empty():return fail("NPC weapon requires unsupported additional damage")
-		if cursor not in FlightStages.EQUIPPED and not (selected40 and cursor==40) and not (selected41 and cursor==41):return fail("NPC weapons require an explicit supported encounter")
+		if cursor<0:return fail("NPC weapons require their constructed encounter identity")
 		weapon.campaign_cursor=cursor
 		weapon.nonplayer_source=bool(data.nonplayer_source)
 		weapon.ordinary_hit_policy={"additional_damage":int(extra),"additional_damage_required":false,"nonplayer_damage":weapon.damage}

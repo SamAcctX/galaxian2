@@ -1,5 +1,4 @@
 extends RefCounted
-const FlightStages=preload("res://src/content/flight_stages.gd")
 const Frames=preload("res://src/simulation/frame_clock.gd")
 var _max_ms:=0
 ## Retained combat for supported early flights. The enclosing flight stages
@@ -253,12 +252,21 @@ func configure_kappa_rescue(bindings: RefCounted,catalogues: RefCounted,library:
 ## Join the complete source-selected convoy with its actual player and scenery.
 ## The shared contact and NPC phases below remain the sole combat implementation.
 func configure_dekato(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,player: RefCounted,scenery: RefCounted,equipment: RefCounted,reputation: Dictionary) -> bool:
+	if scenery==null or equipment==null:return reject("Mission entry requires native scenery and equipment")
+	var context: RefCounted=load("res://src/simulation/mission_context.gd").new()
+	var world: RefCounted=scenery.world_initialization_owner()
+	if world==null or not context.admit(bindings,catalogues,world.snapshot().get("dekato_context",{}),equipment.snapshot().loadout):return reject(context.error)
+	return configure_mission(bindings,catalogues,library,player,scenery,equipment,reputation,context)
+
+func configure_mission(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,player: RefCounted,scenery: RefCounted,equipment: RefCounted,reputation: Dictionary,mission_context: RefCounted) -> bool:
 	error=""
 	if _control!=null or not player is Player or not scenery is Scenery or not is_instance_of(equipment,load("res://src/simulation/station_equipment.gd")):return reject("Dekato encounter requires fresh native equipped owners")
 	var world: RefCounted=scenery.world_initialization_owner()
 	if world==null:return reject("Dekato encounter requires its generated world")
 	var data:=Story.compose_dekato(bindings,catalogues,world.npc_construction_owner())
 	if data.is_empty():return reject("Dekato encounter has no supported selected population")
+	if not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not mission_context.matches_loadout(equipment.snapshot().loadout):return reject("Encounter requires its admitted mission equipment")
+	data.mission_context=mission_context
 	if player.snapshot().get(data.context_key)!=data.context:return reject("Dekato encounter differs from its initialized player")
 	var seed: Dictionary=equipment.snapshot().get("loadout",{}).duplicate(true)
 	seed.campaign_cursor=int(data.campaign_cursor)
@@ -422,9 +430,8 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, library: 
 	if not control.set_destruction(bindings,resources,freight_resources):return reject(control.error)
 	var mounts:=Mounts.new();var primaries:=Primaries.new();var inventory:=Inventory.new()
 	if not mounts.open(library,catalogues):return reject(mounts.error)
-	var selected_primary: Dictionary=story.context if story.get("context_key")=="dekato_context" else {}
-	if not primaries.configure(bindings,catalogues,mounts,player.loadout(),selected_primary):return reject(primaries.error)
-	var targets:=inventory.configure_ordinary_void(bindings,catalogues,player,scenery,story) if story.get("ordinary_void",false) else inventory._configure_story(bindings,catalogues,player,scenery,story) if not story.is_empty() else inventory.configure_kappa_rescue(bindings,catalogues,player,scenery) if rescue else (inventory.configure_local_travel(bindings,catalogues,player,scenery,cursor) if cursor in FlightStages.LOCAL else inventory.configure_combat_training(bindings,catalogues,player,scenery))
+	if not primaries.configure_player(bindings,catalogues,mounts,player,story.get("mission_context")):return reject(primaries.error)
+	var targets:=inventory.configure_ordinary_void(bindings,catalogues,player,scenery,story) if story.get("ordinary_void",false) else inventory._configure_story(bindings,catalogues,player,scenery,story) if not story.is_empty() else inventory.configure_kappa_rescue(bindings,catalogues,player,scenery) if rescue else (inventory.configure_local_travel(bindings,catalogues,player,scenery,cursor) if cursor!=7 else inventory.configure_combat_training(bindings,catalogues,player,scenery))
 	if not targets:return reject(inventory.error)
 	var identity:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":cursor}
 	if not _accept_configuration(bindings,library,identity,control,control.combat_owner(),weapons,resources,primaries,inventory,scenery.presentation_identity()):return false
@@ -585,7 +592,8 @@ func configure_secondaries(bindings: RefCounted,cat: RefCounted,player: RefCount
 	if owner.evaluate_retention(player,equipment,_primaries,_inventory).is_empty():return reject(owner.error)
 	# Detached physics checks may omit art. Every actual equipped departure
 	# supplies its library and prepares retained bursts before the first launch.
-	if library!=null:
+	# A launcher whose last round was spent has left the loadout; no burst to prepare.
+	if library!=null and not owner.snapshot().guns.is_empty():
 		var bursts:=DetonationResources.new()
 		if not bursts.configure(library,bindings):return reject(bursts.error)
 		if not owner.configure_detonations(bursts):return reject(owner.error)
@@ -675,9 +683,9 @@ func sample_bakka_clock(world_ms: int,poll_ms: int) -> bool:
 	if _identity.get("campaign_cursor")!=36 or not _control is TrainingControl:return reject("This encounter has no B'akka scene clock")
 	return _sample_scene_clock(world_ms,poll_ms)
 
-func sample_dekato_clock(world_ms: int,poll_ms: int) -> bool:
+func sample_mission_clock(world_ms: int,poll_ms: int) -> bool:
 	error=""
-	if _identity.get("campaign_cursor")!=38 or not _control is TrainingControl or _control._dekato_objective==null:return reject("This encounter has no Dekato scene clock")
+	if not _control is TrainingControl or _control._mission_runner==null:return reject("This encounter has no mission clock")
 	return _sample_scene_clock(world_ms,poll_ms)
 
 func _sample_scene_clock(world_ms: int,poll_ms: int) -> bool:
@@ -703,20 +711,20 @@ func acknowledge_bakka_result() -> bool:
 	_control=control
 	return true
 
-func poll_dekato_result(radio_active: bool,periodic_poll_allowed: bool) -> Dictionary:
+func poll_mission_result(radio_active: bool,periodic_poll_allowed: bool) -> Dictionary:
 	error=""
-	if _identity.get("campaign_cursor")!=38 or not _control is TrainingControl:return fail("This encounter has no Dekato result")
+	if not _control is TrainingControl or _control._mission_runner==null:return fail("This encounter has no mission result")
 	var control: RefCounted=_control.fork_for_frame(false,_combat)
-	var result: Dictionary=control.poll_dekato_result(radio_active,periodic_poll_allowed)
+	var result: Dictionary=control.poll_mission_result(radio_active,periodic_poll_allowed)
 	if result.is_empty():return fail(control.error)
 	_control=control
 	return result
 
-func acknowledge_dekato_result() -> bool:
+func acknowledge_mission_result() -> bool:
 	error=""
-	if _identity.get("campaign_cursor")!=38 or not _control is TrainingControl:return reject("This encounter has no Dekato result")
+	if not _control is TrainingControl or _control._mission_runner==null:return reject("This encounter has no mission result")
 	var control: RefCounted=_control.fork_for_frame(false,_combat)
-	if not control.acknowledge_dekato_result():return reject(control.error)
+	if not control.acknowledge_mission_result():return reject(control.error)
 	_control=control
 	return true
 
@@ -827,7 +835,7 @@ func evaluate_world_logic(milliseconds: int, random_state: Dictionary, player_po
 	var random:=Random.new()
 	if not random.restore(random_state):return fail(random.error)
 	var next:=fork_for_frame()
-	if _identity.campaign_cursor in FlightStages.REGENERATING and _control.has_method("runs_ambient_traffic") and _control.runs_ambient_traffic():
+	if _control.has_method("runs_ambient_traffic") and _control.runs_ambient_traffic():
 		var result: Dictionary=_control.evaluate_ambient_world_logic(milliseconds,_combat,random_state,player_pose)
 		if result.is_empty():return fail(_control.error)
 		next._control=result.controller;next._combat=result.combat

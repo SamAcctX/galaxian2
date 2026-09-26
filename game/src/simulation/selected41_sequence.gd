@@ -1,7 +1,7 @@
 extends RefCounted
-## Native attack-shot director over an already initialized generation. Radio
-## runs after contacts; this shot runs before the ordinary NPC/camera tail.
-## It is not a complete mission, a result authority or a Host activation.
+## Native cinematic hook over an already initialized generation. The parent
+## result poll precedes this hook; radio follows contacts, then choreography,
+## ordinary NPC motion and the late camera. Completion never grants a result.
 const World=preload("res://src/simulation/selected41_world_initialization.gd")
 const Radio=preload("res://src/simulation/radio_sequence.gd")
 const Rules=preload("res://src/content/selected41_population_definitions.gd")
@@ -25,7 +25,8 @@ func configure(bindings: RefCounted,world: RefCounted) -> bool:
 	_world=world;_camera=view;_max_ms=Frames.simulation_limit(bindings)
 	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":41,
 		"phase":0,"revision":0,"view_revision":0,"frame_milliseconds":0,"elapsed_ms":0,"input_blocked":false,"hud_visible":true,
-		"frame":{"reset_fighters":[],"cancel_actions":false},"complete_cinematic_supported":false}
+		"phase_elapsed_ms":0,"sequence_complete":false,"player_damage_allowed":true,"effects_enabled":[],
+		"frame":empty_frame(),"complete_cinematic_supported":true}
 	_shot={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"mode":"fixed_eye",
 		"target":"actor","actor_id":0,"inherit_target_up":true,"eye":view.snapshot().eye}
 	return true
@@ -39,14 +40,13 @@ func advance(milliseconds: Variant,radio: RefCounted,combat: RefCounted,player_p
 		if speech.get(key)!=_state[key]:return reject("Source41 choreography received unrelated radio")
 	if _state.elapsed_ms>2147483647-milliseconds:return reject("Source41 sequence clock overflow")
 	if _state.view_revision!=_state.revision:return reject("Source41 preceding frame has no completed late camera")
-	# Fail closed, transactionally, rather than inventing an event5 freighter
-	# destruction, effect removal, player cancellation or condition25 result.
-	if _state.phase==1 and radio.event_state(5).condition_satisfied:return reject("Source41 event5 cinematic consumers are not yet composed")
 	var next:=_state.duplicate(true);var shot:=_shot.duplicate(true)
 	next.revision+=1;next.elapsed_ms+=milliseconds;next.frame_milliseconds=milliseconds
-	next.frame={"reset_fighters":[],"cancel_actions":false}
+	next.frame=empty_frame()
 	var actors: Array=combat.actor_snapshots()
 	if actors.size()!=8:return reject("Source41 sequence requires all eight original bodies")
+	for id in actors.size():
+		if actors[id].get("actor_id")!=id or not Flight.rigid_pose(actors[id].get("body_pose")):return reject("Source41 choreography lost an actor pose")
 	var scene:={"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,"player_pose":player_pose,
 		"actors":actors.map(func(row):return {"actor_id":row.actor_id,"pose":row.body_pose})}
 	var camera: RefCounted=_camera.fork_for_frame()
@@ -68,8 +68,55 @@ func advance(milliseconds: Variant,radio: RefCounted,combat: RefCounted,player_p
 		# its absolute-eye and relative-eye setters refresh the renderer.
 		if not camera.set_auxiliary_enabled(false) or not camera.set_orbit_enabled(false) or not camera.update(0,shot,scene,shot):return reject(camera.error)
 		next.phase=1;next.input_blocked=true;next.hud_visible=false;next.frame.cancel_actions=true
+		next.player_damage_allowed=false
+		next.frame.input_actions=[{"action":"cancel_player_actions"},{"action":"set_player_control","enabled":false}]
+	elif _state.phase==1 and radio.event_state(5).condition_satisfied:
+		next.phase=2;next.phase_elapsed_ms=0
+		next.effects_enabled=[40,41]
+		for effect in next.effects_enabled:next.frame.effects.append({"action":"set_enabled","actor_id":0,"effect_type":effect,"enabled":true})
+		next.frame.actor_actions=[{"action":"set_hull","actor_id":0,"hull":9999999},
+			{"action":"set_freighter_motion","actor_id":0,"cruise_enabled":false}]
+		next.frame.audio=[{"action":"play","sound_id":155},{"action":"stop_actor_engine","actor_id":0}]
+		shot.eye=actors[0].body_pose.origin+Vector3(-3000,-2000,12000)
+		if not camera.set_orbit_enabled(false) or not camera.update(0,shot,scene,shot):return reject(camera.error)
+	elif _state.phase==2:
+		next.phase_elapsed_ms+=milliseconds
+		var pose: Transform3D=actors[0].body_pose
+		pose.origin+=Vector3(0,-milliseconds,2*milliseconds)
+		pose.basis=(pose.basis*Vectors.local_xyz(Vector3(0,0,0.00003*milliseconds))).orthonormalized()
+		next.frame.actor_actions=[{"action":"set_freighter_motion","actor_id":0,"pose":pose}]
+		if next.phase_elapsed_ms>15000:next.phase=3
+	elif _state.phase==3:
+		var pose:=Transform3D(Vectors.local_xyz(Vector3(-0.4,0,1.8)),Vector3(2006,-31500,-86720))
+		next.frame.actor_actions=[{"action":"set_freighter_motion","actor_id":0,"pose":pose},
+			{"action":"set_engine_draw","actor_id":0,"enabled":false}]
+		for id in range(1,actors.size()):
+			if actors[id].actor_kind==9:next.frame.actor_actions.append({"action":"retarget_player","actor_id":id})
+		shot.eye=pose.origin+Vector3(3000,1000,2000);shot.inherit_target_up=false
+		scene.actors[0].pose=pose
+		if not camera.update(0,shot,scene,shot):return reject(camera.error)
+		next.phase=4;next.phase_elapsed_ms=0
+	elif _state.phase==4:
+		next.phase_elapsed_ms+=milliseconds
+		shot.eye+=Vector3(milliseconds,milliseconds,-2*milliseconds)
+		if not camera.update(0,shot,scene,shot):return reject(camera.error)
+		if next.phase_elapsed_ms>15000:
+			next.frame.actor_actions=[{"action":"set_hull","actor_id":0,"hull":100},
+				{"action":"set_freighter_motion","actor_id":0,"speed":0.0}]
+			next.frame.audio=[{"action":"stop","sound_id":156}]
+			next.frame.input_actions=[{"action":"set_player_control","enabled":true}]
+			next.frame.restore_control=true;next.frame.refresh_geometry_detail=true
+			next.phase=5;next.sequence_complete=true;next.input_blocked=false;next.hud_visible=true;next.player_damage_allowed=true
+			shot={"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,"mode":"follow","target":"player"}
+	if next.phase!=_state.phase:
+		next.frame.camera_actions=[{"action":"select_shot","shot":shot.duplicate(true)}]
+		next.frame.phase_changed={"from":_state.phase,"to":next.phase}
 	_state=next;_camera=camera;_shot=shot
 	return true
+
+static func empty_frame() -> Dictionary:
+	return {"reset_fighters":[],"actor_actions":[],"effects":[],"audio":[],"input_actions":[],"camera_actions":[],
+		"cancel_actions":false,"restore_control":false,"refresh_geometry_detail":false}
 
 ## Cinematic eye setters refresh immediately before NPCs. The ordinary camera
 ## update then follows their CURRENT physical target, not last frame's pose.
@@ -81,7 +128,7 @@ func finish_camera(milliseconds: Variant,combat: RefCounted,player_pose: Transfo
 	var scene:={"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,"player_pose":player_pose,
 		"actors":actors.map(func(row):return {"actor_id":row.actor_id,"pose":row.body_pose})}
 	var camera: RefCounted=_camera.fork_for_frame()
-	if _state.phase==1 and not camera.update(milliseconds,_shot,scene):return reject(camera.error)
+	if _state.phase>0 and not camera.update(milliseconds,_shot,scene):return reject(camera.error)
 	_camera=camera;_state.view_revision=_state.revision
 	return true
 
@@ -90,6 +137,7 @@ func snapshot() -> Dictionary:
 	var result:=_state.duplicate(true);result.camera=_camera.snapshot();result.shot=_shot.duplicate(true)
 	return result
 func world_owner() -> RefCounted:return _world
+func result_flags() -> Dictionary:return {"sequence_complete":not _state.is_empty() and _state.sequence_complete}
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._world=_world;copy._state=_state.duplicate(true);copy._shot=_shot.duplicate(true);copy._max_ms=_max_ms

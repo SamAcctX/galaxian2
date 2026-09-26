@@ -70,6 +70,27 @@ func configure_selected40(bindings: RefCounted,combat: RefCounted,seed_seconds: 
 	adopt(candidate)
 	return true
 
+## Smoke/fire for a cast admitted at mission entry. Every non-freighter actor
+## owns its emitters; registration precedes the first actor motion.
+func configure_mission(bindings: RefCounted,context: RefCounted,combat: RefCounted,seed_seconds: Variant) -> bool:
+	error=""
+	if not _identity.is_empty() or not is_instance_of(context,load("res://src/simulation/mission_context.gd")) or not is_instance_of(combat,load("res://src/simulation/opening_combat_group.gd")) or bindings==null or not seed_seconds is int:return reject("Mission smoke/fire requires its admitted native combat and an explicit seed")
+	if not FullHold.parameters(bindings.full_hold_particles) or not Definitions.parameters(bindings.damage_particles.get("owners",{})):return reject("Mission smoke/fire lacks verified shared presets")
+	var state: Dictionary=combat.snapshot()
+	var candidate: RefCounted=get_script().new()
+	candidate._rules=bindings.damage_particles.owners.duplicate(true)
+	candidate._identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(context.recipe().cursor)}
+	candidate._npc_count=int(context.recipe().result.actor_count)
+	if not candidate.valid_combat(state):return reject("Mission smoke/fire requires every admitted native body")
+	var keys:=[];var modes:=[]
+	for actor in state.actors:
+		modes.append(int(actor.actor_mode))
+		if actor.get("population_group") not in ["freighter","capital"]:keys.append("npc%d"%int(actor.actor_id))
+	if not candidate._configure_owners(bindings,state,seed_seconds,keys,modes):return reject(candidate.error)
+	_identity=candidate._identity;_rules=candidate._rules;_npc_count=candidate._npc_count;_presentation_identity=candidate._presentation_identity
+	adopt(candidate)
+	return true
+
 func configure_first_mining(bindings: RefCounted,seed_seconds: Variant) -> bool:
 	clear()
 	# General sprite manager +88 still updates in cursor two, but the source
@@ -119,9 +140,8 @@ func configure_local_traffic(bindings: RefCounted,combat: Dictionary,seed_second
 	if not valid_combat(combat):clear();return reject("Local smoke/fire requires its initialized ships")
 	var keys:=[]
 	for actor in actors:
-		if combat.campaign_cursor not in FlightStages.FACTIONS and actor.get("actor_kind")!=3:clear();return reject("Local smoke/fire belongs to another faction")
 		if actor.get("population_group") not in ["freighter","capital","debris"]:keys.append("npc%d"%int(actor.actor_id))
-	return _configure_owners(bindings,combat,seed_seconds,keys,actors.map(func(actor):return int(actor.actor_mode) if combat.campaign_cursor in FlightStages.FACTIONS else (4 if actor.get("population_group")=="travel" else 0)))
+	return _configure_owners(bindings,combat,seed_seconds,keys,actors.map(func(actor):return int(actor.actor_mode) if actor.get("authored_story",false) or combat.has("free_context") or combat.campaign_cursor in FlightStages.FACTIONS else (4 if actor.get("population_group")=="travel" else 0)))
 
 func presentation_identity() -> RefCounted:return _presentation_identity
 
@@ -224,7 +244,7 @@ func valid_combat(combat: Dictionary) -> bool:
 	if not actors is Array or actors.size()!=_npc_count:return false
 	for id in _npc_count:
 		var actor: Variant=actors[id]
-		var minimum_mode:=0 if _identity.get("campaign_cursor") in (FlightStages.LOCAL+FlightStages.POST_SAHI+[33,40]) or (_identity.get("campaign_cursor")==7 and id==3) else 1
+		var minimum_mode:=0 if combat.has("provocation") or (_identity.get("campaign_cursor")==7 and id==3) else 1
 		if not actor is Dictionary or actor.get("actor_id")!=id or not Flight.rigid_pose(actor.get("pose")) or not Numbers.integer(actor.get("actor_mode"),minimum_mode,9):return false
 		if not actor.get("vitals") is Dictionary or not Numbers.integer(actor.vitals.get("hull"),0,2147483647) or not Numbers.integer(actor.get("max_hull"),1,2147483647):return false
 	return true

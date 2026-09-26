@@ -1,5 +1,4 @@
 extends RefCounted
-const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Source-bound first mining station: model assembly bounds and authored volumes.
 ## This owner has no clock, random draws, damage, autopilot or arrival transition.
 const Definitions=preload("res://src/content/station_exterior_definitions.gd")
@@ -26,10 +25,8 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 	if entry.get("base_content_id")!=bindings.base_content_id or entry.get("binding_id")!=bindings.binding_id:return reject("Station exterior belongs to another construction")
 	var context: Variant=entry.get("location")
 	if not context is Dictionary:return reject("Station exterior requires its constructed location")
-	var cursor:=int(entry.get("campaign_cursor",-1));var station_id:=int(context.get("station_id",-1));var system_id:=int(context.get("system_id",-1))
-	if cursor in FlightStages.LOCAL+FlightStages.POST_SAHI:
-		if OrdinaryFlight.for_departure(bindings,entry).is_empty():return reject("This local exterior has no supported flight world")
-	elif OrdinaryFlight.select(bindings,cursor).is_empty():return reject("Station exterior requires a supported flight")
+	var station_id:=int(context.get("station_id",-1));var system_id:=int(context.get("system_id",-1))
+	if OrdinaryFlight.for_departure(bindings,entry).is_empty():return reject("Station exterior requires its prepared flight world")
 	return _prepare_location(library,bindings,catalogues,station_id,system_id)
 
 func configure_ordinary_location(library: RefCounted,bindings: RefCounted,catalogues: RefCounted,station_id: int) -> bool:

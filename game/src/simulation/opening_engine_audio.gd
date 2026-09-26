@@ -3,12 +3,22 @@ extends RefCounted
 ## Raw commands are consumed before manual movement and sampled after the camera.
 const Selection=preload("res://src/simulation/engine_audio.gd")
 const Loadout=preload("res://src/simulation/opening_loadout.gd")
+const MissionContext=preload("res://src/simulation/mission_context.gd")
 var error:=""
 var _selection: RefCounted
 var _state:={}
 var _commands:=Vector2.ZERO
 var _ordinary_phase:=-1
 var _arrival_id:=-1
+
+func configure_mission(bindings: RefCounted,catalogues: RefCounted,context: RefCounted,player: RefCounted,pose: Transform3D) -> bool:
+	error=""
+	if not _state.is_empty() or not context is MissionContext or not is_instance_of(player,load("res://src/simulation/opening_player_state.gd")) or not pose.is_finite():return reject("Mission engine requires its admitted player and initial pose")
+	var seed: Dictionary=player.loadout()
+	if not context.matches_loadout(seed):return reject("Mission engine lost its admitted loadout")
+	if not _configure_loadout(bindings,catalogues,seed,bindings.opening_actors.player_initialization.repair,pose):return false
+	_ordinary_phase=int(bindings.opening_staging.player_flight.ordinary_phase);_arrival_id=-1
+	return true
 
 func configure(bindings: RefCounted,catalogues: RefCounted,scene: Dictionary) -> bool:
 	_selection=null;_state={};_commands=Vector2.ZERO;_ordinary_phase=-1;_arrival_id=-1;error=""

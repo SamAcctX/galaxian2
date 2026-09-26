@@ -61,9 +61,9 @@ func configure(bindings: RefCounted, library: RefCounted, construction: RefCount
 		"required_cargo":int(rules.required_cargo),"mission":mission.duplicate(true),"progress":flight.departure.progress.duplicate(true),
 		"reward_credits":0,"mining_completed":false}
 	_initial_progress=flight.departure.progress.duplicate(true)
-	if rules.has("defeat_condition") or rules.get("local_visit",false) or rules.get("capture_controlled",false) or rules.get("alioth_attack",false) or rules.get("portal_controlled",false) or rules.get("bakka_contest",false) or rules.get("dekato_convoy",false):
+	if rules.has("defeat_condition") or rules.get("local_visit",false) or rules.get("capture_controlled",false) or rules.get("alioth_attack",false) or rules.get("portal_controlled",false) or rules.get("bakka_contest",false) or rules.get("runner_controlled",false):
 		_state.combat_objective_satisfied=false;_state.combat_objective_acknowledged=false
-	if rules.get("void_visit",false) or rules.get("pursuit_controlled",false) or rules.get("probe_controlled",false) or rules.get("bakka_contest",false) or rules.get("dekato_convoy",false):_state.mission_completed=false
+	if rules.get("void_visit",false) or rules.get("pursuit_controlled",false) or rules.get("probe_controlled",false) or rules.get("bakka_contest",false) or rules.get("runner_controlled",false):_state.mission_completed=false
 	return true
 
 func poll(cargo: RefCounted, scenery: RefCounted, player_alive:=true, encounter: RefCounted=null,radio: RefCounted=null,elapsed_ms: int=-1) -> bool:
@@ -73,7 +73,7 @@ func poll(cargo: RefCounted, scenery: RefCounted, player_alive:=true, encounter:
 	if held.get("base_content_id")!=_state.base_content_id or held.get("binding_id")!=_state.binding_id or cargo.field_identity()!=_field_identity or scenery.presentation_identity()!=_field_identity or not cargo.matches_mined_field(scenery.mining_snapshot()):return reject("Mining objective cargo and field history do not match")
 	if _rules.get("bakka_contest",false):
 		return poll_bakka(encounter,radio!=null and radio.snapshot().get("visible",false),true,player_alive)
-	if _rules.get("dekato_convoy",false):return reject("Dekato results require the enclosing scene's sampled clock and periodic gate")
+	if _rules.get("runner_controlled",false):return reject("Dekato results require the enclosing scene's sampled clock and periodic gate")
 	if _rules.get("void_visit",false):
 		if elapsed_ms<0:return reject("Void arrival requires the live flight clock")
 		if not observe_combat(encounter):return false
@@ -135,16 +135,16 @@ func poll_bakka(encounter: RefCounted,radio_active: bool,periodic_poll_allowed: 
 		_state.phase="failure_instructions"
 	return true
 
-func poll_dekato(encounter: RefCounted,radio_active: bool,periodic_poll_allowed: bool,player_alive: bool=true) -> bool:
+func poll_mission(encounter: RefCounted,radio_active: bool,periodic_poll_allowed: bool,player_alive: bool=true) -> bool:
 	error=""
-	if _state.is_empty() or not _rules.get("dekato_convoy",false):return reject("No Dekato objective is configured")
+	if _state.is_empty() or not _rules.get("runner_controlled",false):return reject("No Dekato objective is configured")
 	if not observe_combat(encounter):return false
 	if _state.phase!="collecting" or not player_alive:return true
-	var result: Dictionary=encounter.poll_dekato_result(radio_active,periodic_poll_allowed)
+	var result: Dictionary=encounter.poll_mission_result(radio_active,periodic_poll_allowed)
 	if result.is_empty():return reject(encounter.error)
-	if result.mode==int(_rules.dekato_result_modes.success_result_mode):
+	if result.mode==int(_rules.result_modes.success_result_mode):
 		_state.combat_objective_satisfied=true;_state.mission_completed=true;_state.phase="return_instructions"
-	elif result.mode==int(_rules.dekato_result_modes.failure_result_mode):
+	elif result.mode==int(_rules.result_modes.failure_result_mode):
 		_state.phase="failure_instructions"
 	return true
 
@@ -167,7 +167,7 @@ func observe_combat(encounter: RefCounted,state: Dictionary={}) -> bool:
 		if state.get(key)!=_state[key]:return reject("Combat progress belongs to another encounter")
 	if state.get("campaign_cursor")!=int(_rules.campaign_cursor):return reject("Combat progress has another mission")
 	var progress:=_initial_progress.duplicate(true)
-	if _rules.has("defeat_condition") or _rules.get("local_visit",false) or _rules.get("capture_controlled",false) or _rules.get("alioth_attack",false) or _rules.get("portal_controlled",false) or _rules.get("bakka_contest",false) or _rules.get("dekato_convoy",false):
+	if _rules.has("defeat_condition") or _rules.get("local_visit",false) or _rules.get("capture_controlled",false) or _rules.get("alioth_attack",false) or _rules.get("portal_controlled",false) or _rules.get("bakka_contest",false) or _rules.get("runner_controlled",false):
 		var counters: Dictionary=state.controller.accounting.counter_deltas
 		progress.player_kills+=int(counters.player_kills);progress.pirate_kills+=int(counters.pirate_kills)
 		if _rules.get("capture_controlled",false):progress.capital_ship_kills=int(_initial_progress.get("capital_ship_kills",0))+int(counters.capital_ship_kills)
@@ -209,7 +209,7 @@ func navigate(action: String) -> bool:
 	elif _state.line_index<_lines.size()-1:_state.line_index+=1
 	else:
 		var post_sahi: bool=_rules.get("void_visit",false) or _rules.get("pursuit_controlled",false) or _rules.get("probe_controlled",false)
-		if _rules.has("defeat_condition") or _rules.get("alioth_attack",false) or _rules.get("bakka_contest",false) or _rules.get("dekato_convoy",false) or post_sahi:_state.combat_objective_acknowledged=true
+		if _rules.has("defeat_condition") or _rules.get("alioth_attack",false) or _rules.get("bakka_contest",false) or _rules.get("runner_controlled",false) or post_sahi:_state.combat_objective_acknowledged=true
 		else:_state.cargo_objective_acknowledged=true
 		_state.phase="return_required";_state.station_return_required=true
 		_state.campaign_cursor=int(_rules.cursor_after_acknowledgement)
@@ -219,7 +219,7 @@ func navigate(action: String) -> bool:
 			if _state.progress.rank_score>=int(_progress_rules.rank_thresholds[i]):_state.progress.rank=i
 		_state.mission={"kind":int(_rules.next_kind),"station_id":int(_rules.station_id),"reward":0,"bonus":0}
 		if _rules.get("alioth_attack",false) or _rules.get("bakka_contest",false):_state.mission.source_parameter=0
-		if post_sahi or _rules.get("dekato_convoy",false):
+		if post_sahi or _rules.get("runner_controlled",false):
 			# Final Next advances the story and retires the selected mission.
 			# The existing world remains alive; this is the next pending mission.
 			_state.mission=_rules.next_mission.duplicate(true)

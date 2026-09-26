@@ -131,8 +131,8 @@ func configure_dekato(bindings: RefCounted,catalogues: RefCounted,equipment: Ref
 	if not equipment.cargo_cache_valid() or loadout.get("station_id")!=context.station_id or loadout.get("system_id")!=context.system_id or loadout.get("ship_id")!=packet.get("player_ship_id") or loadout.get("equipment_ids")!=packet.get("player_equipment_ids"):
 		return reject("Dekato player differs from its retained ship, equipment or location")
 	if load("res://src/simulation/equipment_slots.gd").checked_slots(bindings,catalogues,loadout).is_empty():return reject("Dekato player requires valid retained equipment slots")
-	if not FlightCache.matches(previous_cache,loadout,38) or int(previous_cache.values.hull)<=0:return reject("Dekato player requires its surviving target-world cache")
-	if not _configure(bindings,catalogues,38,previous_cache,equipment,data):return false
+	if not FlightCache.matches(previous_cache,loadout,int(context.campaign_cursor)) or int(previous_cache.values.hull)<=0:return reject("Dekato player requires its surviving target-world cache")
+	if not _configure(bindings,catalogues,int(context.campaign_cursor),previous_cache,equipment,data):return false
 	# _configure restores the living pools but initializes a capacity cache.
 	# The enclosing selected arrival must retain those restored values even
 	# before its first simulation frame, not report a freshly repaired ship.
@@ -225,7 +225,6 @@ func configure_free(bindings: RefCounted,catalogues: RefCounted,equipment: RefCo
 	var owned: Dictionary=equipment.snapshot();var loadout: Dictionary=owned.get("loadout",{})
 	if not equipment.cargo_cache_valid() or loadout.get("station_id")!=int(data.station_id) or loadout.get("ship_id")!=packet.player_ship_id:return reject("Ordinary player differs from its retained equipment or population")
 	if not _configure(bindings,catalogues,int(data.campaign_cursor),previous_cache,equipment,data):return false
-	if int(data.campaign_cursor)==40 and previous_cache is Dictionary:_retain_restored_cache(previous_cache)
 	_state.free_context=packet.free_context.duplicate(true)
 	return true
 
@@ -253,8 +252,8 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, cursor: int, previ
 		return reject("This profile has no supported fresh player initialization")
 	var seed: Dictionary
 	if entry.uses_equipment:
-		if (cursor in FlightStages.LOCAL+[33] or selected40 or selected41) and (not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false)):return reject("Complete the station drill exchange before local flight")
-		if not ((cursor in FlightStages.FREE+FlightStages.POST_SAHI+[33] or selected40 or selected41) and Fitting.available(bindings)) and not owned.requirements.satisfied:return reject("Install the required weapon and armor before combat training")
+		if cursor!=7 and (not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false)):return reject("Complete the station drill exchange before local flight")
+		if not (cursor!=7 and Fitting.available(bindings)) and not owned.requirements.satisfied:return reject("Install the required weapon and armor before combat training")
 		seed=owned.loadout
 		if seed.get("base_content_id")!=bindings.base_content_id or seed.get("binding_id")!=bindings.binding_id or catalogues.content_id!=bindings.base_content_id:return reject("Equipped player belongs to another source identity")
 		for key in ["ship_id","station_id","system_id"]:

@@ -1,5 +1,4 @@
 extends RefCounted
-const FlightStages=preload("res://src/content/flight_stages.gd")
 const Frames=preload("res://src/simulation/frame_clock.gd")
 var _max_ms:=0
 ## Shared guidance to a supported station or local planet. The caller supplies the
@@ -41,7 +40,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, construction: RefCo
 	for data in ([entry] if void_world else [entry,target]):
 		if data.get("base_content_id")!=bindings.base_content_id or data.get("binding_id")!=bindings.binding_id:return reject("Station autopilot belongs to another flight identity")
 	var rules: Dictionary=bindings.station_autopilot
-	if (ordinary_void or entry.get("campaign_cursor") in (FlightStages.LOCAL+FlightStages.POST_SAHI)) and not OrdinaryFlight.for_departure(bindings,entry).is_empty():
+	if not OrdinaryFlight.for_departure(bindings,entry).is_empty():
 		rules=rules.duplicate(true);rules.station_id=int(entry.location.station_id);rules.system_id=int(entry.location.system_id)
 	if OrdinaryFlight.for_departure(bindings,entry).is_empty() or entry.get("location",{}).get("station_id")!=int(rules.station_id) or entry.location.get("system_id")!=int(rules.system_id) or (not void_world and (target.get("station_id")!=int(rules.station_id) or target.get("system_id")!=int(rules.system_id))):return reject("Station autopilot requires the supported mining location")
 	var destination:=Vector3.ZERO if void_world else Vector3(rules.target_position[0],rules.target_position[1],rules.target_position[2])

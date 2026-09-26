@@ -16,7 +16,5 @@ static func location_supported(bindings: RefCounted,cat: RefCounted,cursor: Vari
 	if not available(bindings) or cat==null or cat.content_id!=bindings.base_content_id:return false
 	var numbers=load("res://src/content/opening_definitions.gd")
 	if not load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) or not numbers.integer(station_id,0,cat.tables.stations.size()-1):return false
-	# Selecting native stock/contact records is not navigation permission.
-	# The unfinished Dekato route remains closed in the campaign travel owner.
-	if cursor==38 and load("res://src/content/dekato_convoy_definitions.gd").selected_location(bindings,int(station_id),int(cat.tables.stations[station_id].system_id)):return true
+	# Stock and contacts follow catalogue locations; navigation owns admission.
 	return not load("res://src/content/ordinary_world_definitions.gd").catalogue_location(bindings,cat,station_id).is_empty()

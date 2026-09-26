@@ -25,9 +25,12 @@ func verify(args: PackedStringArray) -> void:
 	var metrics:=Metrics.new();var layout:=Layout.new()
 	if not metrics.open_selected(library,bindings,0) or not layout.configure_from_bindings(metrics,350,5,bindings):check(false,metrics.error+layout.error);return
 	var rules: Dictionary=bindings.mido_travel.traffic_combat.radio
-	for cursor in [10,14,21,24]:
-		if cursor>14 and not Radio.FreeFlight.Campaign.supported(bindings.mido_travel,cursor):continue
+	# The probe's stage-clock adapter does not expand ordinary traffic admission.
+	for cursor in [10,14,21,24,29]:
 		var radio:=Radio.new()
+		if cursor>14 and not Radio.FreeFlight.Campaign.supported(bindings.mido_travel,cursor):
+			if cursor==29:check(not radio.configure(bindings,library,layout,cursor),"Probe context admitted ordinary local radio")
+			continue
 		if not radio.configure(bindings,library,layout,cursor):check(false,radio.error);return
 		var reaction:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":cursor,
 			"radio_serial":1,"pending_radio":{"serial":1,"kind":"warning","speaker_id":int(rules.speaker_id),"text_id":int(rules.warning_text_ids[0]),"voice_event_id":int(rules.warning_voice_ids[0])}}

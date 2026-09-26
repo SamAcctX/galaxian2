@@ -1,5 +1,4 @@
 extends RefCounted
-const FlightStages=preload("res://src/content/flight_stages.gd")
 const Layouts=preload("res://src/content/declaration_layouts.gd")
 ## Recovered first-station view constants; scoped separately from progression.
 const Values=preload("res://src/content/opening_escape_definitions.gd")
@@ -33,7 +32,7 @@ static func select(bindings: RefCounted, station_id: int, cursor: int) -> Dictio
 	if bindings==null or not parameters(bindings.station_presentation):return {}
 	if station_id==98:
 		if not Alioth.available(bindings):return {}
-		if cursor not in [15,16] and not (cursor in ([17]+FlightStages.FREE) and load("res://src/content/alioth_return_definitions.gd").available(bindings)):return {}
+		if cursor not in [15,16] and not ((cursor==17 or load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor)) and load("res://src/content/alioth_return_definitions.gd").available(bindings)):return {}
 		return alioth_view(bindings.station_presentation)
 	var world: Dictionary=Worlds.location(bindings.mido_travel,station_id)
 	if (load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) or load("res://src/content/dekato_convoy_definitions.gd").station_supported(bindings,cursor,station_id) or load("res://src/content/nehma_return_definitions.gd").station_supported(bindings,cursor,station_id)) and not world.is_empty():

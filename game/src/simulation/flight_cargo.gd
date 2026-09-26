@@ -1,5 +1,4 @@
 extends RefCounted
-const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Cargo retains source item order and mission markers between station and
 ## flight. Asteroid extraction additionally requires the prepared field identity.
 const Construction=preload("res://src/simulation/first_flight_construction.gd")
@@ -28,10 +27,10 @@ func configure_departure(bindings: RefCounted, catalogues: RefCounted, construct
 	var entry: Dictionary=construction.snapshot()
 	if entry.is_empty() or entry.get("base_content_id")!=bindings.base_content_id or entry.get("binding_id")!=bindings.binding_id or catalogues.content_id!=bindings.base_content_id:return reject("Cargo belongs to another departure identity")
 	if OrdinaryFlight.for_departure(bindings,entry).is_empty():return reject("Cargo requires a supported ordinary departure")
-	var equipped: bool=entry.campaign_cursor in FlightStages.EQUIPPED
+	var equipped: bool=construction.equipment_owner()!=null
 	var ship_id:=int(bindings.station_departure.ship_id)
 	var ships: Array=catalogues.tables.get("ships",[])
-	if entry.campaign_cursor in FlightStages.POST_SAHI or load("res://src/content/free_campaign_definitions.gd").supported(bindings,entry.campaign_cursor):
+	if equipped:
 		if not Numbers.integer(entry.departure.loadout.get("ship_id"),0,ships.size()-1):return reject("Ordinary cargo requires its actual equipped ship")
 		ship_id=int(entry.departure.loadout.ship_id)
 	if entry.departure.loadout.ship_id!=ship_id or ship_id>=ships.size() or (not equipped and entry.departure.cargo_used!=0) or int(bindings.station_departure.initial_cargo_used)!=0:return reject("Unsupported initial cargo or ship")

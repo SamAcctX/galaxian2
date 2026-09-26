@@ -9,6 +9,7 @@ const ArrivalSession = preload("res://src/presentation/arrival_session.gd")
 const StationSession = preload("res://src/presentation/station_session.gd")
 const FirstFlightSession = preload("res://src/presentation/first_flight_session.gd")
 const Selected40Session = preload("res://src/presentation/selected40_session.gd")
+const MissionSession = preload("res://src/presentation/mission_session.gd")
 const StationPanel = preload("res://src/presentation/station_dialogue_panel.gd")
 const EquipmentPanel = preload("res://src/presentation/station_equipment_panel.gd")
 const StationShell = preload("res://src/presentation/station_shell_panel.gd")
@@ -38,7 +39,6 @@ const StationSaveFile=preload("res://src/simulation/station_save_file.gd")
 const BASE_STOCK_SETTINGS={"difficulty":0.5,"valkyrie_owned":false,"supernova_owned":false,
 	"energy_availability_percent":0,"missile_availability_percent":0}
 const STATION_DEPARTURE_PHASES=["ready_to_launch","combat_departure_required","local_departure_required","contracts_required","convoy_departure_required","alioth_departure_required","free_play_required"]
-const PRIMARY_FLIGHT_CURSORS=([7,10,11,12,13,14,16,17]+FlightStages.FREE+FlightStages.POST_SAHI)
 
 var _support_context: RefCounted
 var _support_identity:=""
@@ -398,7 +398,7 @@ func _shopping_available() -> bool:
 	return _departure_support.shopping
 
 func refresh_render_mode(state: Dictionary={}) -> void:
-	if session is Selected40Session:
+	if session is MissionSession:
 		_sync_mouse_capture()
 		for node in [station_shell,station_panel,equipment_panel,flight_vitals,radio_panel,target_frame,aim_reticle,npc_markers,secondary_panel,lounge_panel,flight_menu,map_panel,gate_panel,touch_overlay,_flight_actions,_flight_hint,_launch_button,_hangar_button,_station_map_button,_lounge_button,_save_button,_load_button,_retry_button,_skip_button]:
 			if node!=null:node.hide()
@@ -461,7 +461,7 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		_hangar_button.disabled=not _focused or not is_visible_in_tree() or not _launch_packet.is_empty() or (session!=null and session.is_paused())
 	if touch_overlay!=null:
 		var drilling: bool=session is FirstFlightSession and not state.mining_session.drill.is_empty()
-		touch_overlay.set_fire_label(("Stop" if drilling else "Fire" if state.location.campaign_cursor in PRIMARY_FLIGHT_CURSORS else "Mine") if session is FirstFlightSession else "Fire")
+		touch_overlay.set_fire_label(("Stop" if drilling else "Fire" if not state.get("encounter",{}).get("primaries",{}).is_empty() else "Mine") if session is FirstFlightSession else "Fire")
 		touch_overlay.visible=touch_actions and session!=null and session.flight_hud_visible(state)
 		touch_overlay.set_active(touch_overlay.visible and session.can_control() and is_visible_in_tree() and _focused)
 	if flight_vitals!=null:
@@ -470,7 +470,7 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		flight_vitals.set_active(gauges_visible)
 		flight_vitals.set_touch_inset(touch_actions and flight_vitals.visible)
 	if _flight_hint!=null:
-		var cinematic: bool=session is Session and session.can_skip_cinematic()
+		var cinematic: bool=session!=null and session.has_method("can_skip_cinematic") and session.can_skip_cinematic()
 		_flight_hint.visible=_player_mode and not touch_actions and ((session is FirstFlightSession and session.can_control()) or cinematic) and _focused and is_visible_in_tree()
 		if _flight_hint.visible and cinematic:
 			_flight_hint.text="Skipping cinematic…" if session.cinematic_skipping() else "Enter / A  Skip cinematic"
@@ -480,8 +480,8 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 			if not fast.is_empty():
 				_flight_hint.text+="    ·    Hold Tab  Fast Forward" if fast.get("enabled",false) else "    ·    Hold Tab  Fast Forward (unavailable)"
 	if _skip_button!=null:
-		_skip_button.visible=touch_actions and session is Session and session.can_skip_cinematic() and _focused and is_visible_in_tree()
-		_skip_button.disabled=session is Session and session.cinematic_skipping()
+		_skip_button.visible=touch_actions and session!=null and session.has_method("can_skip_cinematic") and session.can_skip_cinematic() and _focused and is_visible_in_tree()
+		_skip_button.disabled=session!=null and session.has_method("cinematic_skipping") and session.cinematic_skipping()
 	_layout_flight_overlays()
 	_refresh_station_shell(state)
 	if _player_mode and session is StationSession and (_station_map_open or state.get("dialogue",{}).get("visible",false) or state.get("hangar_open",false) or state.get("lounge_open",false) or not state.get("contracts",{}).get("pending_result",{}).is_empty()):
@@ -527,7 +527,7 @@ func _station_shell_action(action: String) -> void:
 
 func _sync_mouse_capture() -> void:
 	var active: bool=_player_mode and _mouse_steering and not _mobile_layout and not touch_actions_enabled() and _focused and is_visible_in_tree() and session!=null and (session.can_control() or (session is FirstFlightSession and session.can_stop_mining()))
-	if session is Selected40Session and session.flight_owner().frame_context().encounter.view.camera_mode==3:active=false
+	if session is MissionSession and session.flight_owner().frame_context().encounter.view.camera_mode==3:active=false
 	_controls.set_mouse_active(active)
 	if active==_mouse_captured:return
 	_mouse_captured=active
@@ -547,7 +547,7 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
-	if session is Selected40Session:
+	if session is MissionSession:
 		_selected40_input(event)
 		return
 	if not is_visible_in_tree() or not _focused:return
@@ -597,7 +597,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	var pause_key: bool = event is InputEventKey and (event.physical_keycode if event.physical_keycode else event.keycode) in [KEY_ESCAPE,KEY_P]
 	var pause_button: bool = event is InputEventJoypadButton and event.button_index==JOY_BUTTON_START
 	var supported:=pause_key or pause_button
-	if session is Session and session.can_skip_cinematic():
+	if session!=null and session.has_method("can_skip_cinematic") and session.can_skip_cinematic():
 		var skip_key: bool=event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode if event.physical_keycode else event.keycode) in [KEY_ENTER,KEY_KP_ENTER]
 		var skip_pad: bool=event is InputEventJoypadButton and event.pressed and event.button_index==JOY_BUTTON_A
 		if skip_key or skip_pad:skip_cinematic();get_viewport().set_input_as_handled();return
@@ -649,7 +649,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func clear_input() -> void:
 	_controls.clear()
-	if session is FirstFlightSession or session is Selected40Session:session.clear_flight_input()
+	if session is FirstFlightSession or session is MissionSession:session.clear_flight_input()
 	if touch_overlay!=null:touch_overlay.clear()
 
 func set_touch_controls(enabled: bool) -> void:
@@ -712,16 +712,16 @@ func _controller_connection(device: int, connected: bool) -> void:
 		_controls.disconnect_controller(device)
 		# The pressed edge may already have left Controls for the session queue.
 		# Disconnecting the active pad must not fire it on the next world frame.
-		if was_active and (session is FirstFlightSession or session is Selected40Session):session.clear_flight_input()
+		if was_active and (session is FirstFlightSession or session is MissionSession):session.clear_flight_input()
 
 func skip_cinematic() -> void:
-	if not session is Session or not _focused or not is_visible_in_tree():return
+	if session==null or not session.has_method("request_cinematic_skip") or not _focused or not is_visible_in_tree():return
 	if not session.request_cinematic_skip():show_error(session.error);return
 	clear_input();present_session()
 
 func _process(_delta: float) -> void:
 	_controls.advance_mouse(_delta)
-	if session is Selected40Session:
+	if session is MissionSession:
 		_selected40_tick(Time.get_ticks_usec())
 		return
 	if session==null or session.status not in ["running","arrival_transition_required","station_transition_required","station_reload_required","local_arrival_transition_required","gate_confirmation_required","gate_map_required","gate_arrival_transition_required","game_over_transition_required","convoy_arrival_transition_required","sahi_arrival_transition_required","void_return_transition_required"] or _transition_failed:return
@@ -781,7 +781,7 @@ func handle_actions(actions: Array) -> void:
 		if action=="pause":set_user_paused(not _user_paused)
 		elif action=="mouse_mode":
 			_mouse_steering=not _mouse_steering;clear_input();_sync_mouse_capture()
-		elif session is Selected40Session:
+		elif session is MissionSession:
 			if not session.action(action):status.text=session.error
 		elif session is FirstFlightSession:flight_action(action)
 
@@ -1101,11 +1101,14 @@ func _accept_first_flight(candidate: Node3D, now_microseconds: int) -> bool:
 ## An explicit prepared-flight caller, not a new station departure capability.
 ## Admission of a saved career/travel result remains with its existing owners.
 func enter_selected40_prepared(construction: RefCounted,now_microseconds: int) -> bool:
+	return enter_mission_prepared(construction,now_microseconds)
+
+func enter_mission_prepared(construction: RefCounted,now_microseconds: int) -> bool:
 	if viewport==null or library==null or bindings==null or visuals==null:return false
 	var catalogues:=Catalogues.new()
 	if not catalogues.open(library):status.text=catalogues.error;return false
 	var previous_camera: Camera3D=viewport.get_camera_3d()
-	var candidate:=Selected40Session.new();viewport.add_child(candidate)
+	var candidate:=MissionSession.new();viewport.add_child(candidate)
 	if not candidate.configure(library,bindings,visuals,catalogues,construction,now_microseconds,viewport.size):
 		status.text=candidate.error;candidate.free()
 		if previous_camera!=null:previous_camera.make_current()
@@ -1121,6 +1124,16 @@ func enter_selected40_prepared(construction: RefCounted,now_microseconds: int) -
 	cancel_departure();station_panel.clear();radio_panel.clear();target_frame.clear();aim_reticle.clear();npc_markers.clear();lounge_panel.clear();map_panel.clear();gate_panel.clear()
 	candidate.transition_rejected.connect(func(message):status.text=message)
 	_transition_failed=false;_last_game_over={};clear_input();present_session()
+	return true
+
+func enter_mission_portal(now_microseconds: int,environment_seconds: Variant=null,field_seconds: Variant=null) -> bool:
+	if not session is MissionSession or session.is_paused() or session.status!="selected40_portal_transition_required":return transition_error("The living portal transition is not ready")
+	var catalogues:=Catalogues.new()
+	if not catalogues.open(library):return transition_error(catalogues.error)
+	var constructor: RefCounted=load("res://src/simulation/mission_entry.gd").new()
+	var now:=int(Time.get_unix_time_from_system())
+	if not constructor.prepare_portal(bindings,catalogues,library,session.flight_owner(),now if environment_seconds==null else int(environment_seconds),now if field_seconds==null else int(field_seconds),1.0,viewport.size):return transition_error(constructor.error)
+	if not enter_mission_prepared(constructor,now_microseconds):return transition_error(status.text)
 	return true
 
 func _selected40_input(event: InputEvent) -> void:
@@ -1143,13 +1156,14 @@ func _selected40_tick(now_microseconds: int) -> void:
 	if not session.step(now_microseconds,input.command,input.held.fire,_mouse_captured,input.get("strafe",0.0),input.held.get("brake",false)):
 		transition_error(session.error);return
 	if session.status=="game_over_transition_required" and not session.is_paused() and _focused and is_visible_in_tree():enter_game_over();return
+	if session.status=="selected40_portal_transition_required" and not session.is_paused() and _focused and is_visible_in_tree():enter_mission_portal(now_microseconds);return
 	present_session()
 
 func enter_game_over() -> bool:
-	if session is Selected40Session:
+	if session is MissionSession:
 		if session.status!="game_over_transition_required" or session.is_paused() or not _focused or not is_visible_in_tree():return false
 		var selected_packet: Dictionary=session.prepare_game_over();var selected_state: Dictionary=session.snapshot()
-		var selected_expected:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"source_state":1,"campaign_cursor":40}
+		var selected_expected:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"source_state":1,"campaign_cursor":int(selected_state.campaign_cursor)}
 		var story_failed:=false
 		if selected_state.get("campaign_phase","")=="failure_acknowledged":
 			var failure:=selected_expected.duplicate(true);failure.outcome="failed";failure.reward_credits=0
@@ -1165,7 +1179,7 @@ func enter_game_over() -> bool:
 	if _user_paused or not _focused or not is_visible_in_tree():return false
 	var packet: Dictionary=session.prepare_game_over();var state: Dictionary=session.snapshot()
 	var expected:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"source_state":1,"campaign_cursor":state.campaign_cursor}
-	var rescue_failed:=false;var contest_failed:=false
+	var rescue_failed:=false;var contest_failed:=false;var mission_failed:=false
 	var failure: Dictionary=state.get("mining_objective",{}).get("campaign_failure",{})
 	if not failure.is_empty():
 		var visit: Dictionary=state.mining_objective.get("campaign_visit",{})
@@ -1175,9 +1189,11 @@ func enter_game_over() -> bool:
 		var contest_receipt:=expected.duplicate(true)
 		contest_receipt.outcome="failed";contest_receipt.reward_credits=0
 		contest_failed=state.campaign_cursor==36 and FirstFlightSession.Frame.OrdinaryFlight.Bakka.context_valid(bindings,state.get("player",{}).get("bakka_context",{})) and state.mining_objective.get("phase")=="failure_acknowledged" and failure==contest_receipt
-		if rescue_failed or contest_failed:expected.campaign_failure=failure.duplicate(true)
+		var admitted: RefCounted=load("res://src/simulation/mission_context.gd").from_owner(session.flight_owner())
+		mission_failed=admitted!=null and state.mining_objective.get("phase")=="failure_acknowledged" and failure==contest_receipt
+		if rescue_failed or contest_failed or mission_failed:expected.campaign_failure=failure.duplicate(true)
 	var player_failed: bool=state.get("player_destruction",{}).get("phase")=="game_over" and state.player_destruction.get("exit_requested",false)
-	if packet!=expected or state.campaign_cursor not in ([2,3,4,5,7,8,10,11,12,13,14,16,17]+FlightStages.FREE+FlightStages.POST_SAHI) or state.get("boundary")!="game_over_transition_required" or not (player_failed or rescue_failed or contest_failed):return transition_error("Game-over exit lost its accepted source state")
+	if packet!=expected or state.get("boundary")!="game_over_transition_required" or not (player_failed or rescue_failed or contest_failed or mission_failed):return transition_error("Game-over exit lost its accepted source state")
 	# Source state1 is the main menu, with no implicit retry or inventory change.
 	var result:={"transition":packet.duplicate(true),"flight":state.duplicate(true)}
 	reset();_last_game_over=result
@@ -1342,7 +1358,7 @@ func _present_secondaries() -> String:
 
 func present_session() -> void:
 	if session==null:return
-	if session is Selected40Session:
+	if session is MissionSession:
 		if not session.can_control():clear_input()
 		if session.is_paused():status.text="Paused · Esc / controller Start resumes"
 		elif session.status!="running":status.text="This flight has reached an unimplemented travel or result boundary. No progress has been awarded."
@@ -1405,7 +1421,7 @@ func present_session() -> void:
 		elif state.get("local_travel",{}).get("phase")=="launch":status.text="Travelling · Esc / Start pauses"
 		elif not state.entry_released:status.text=("Arriving at " if state.get("arrival_from_station_id",-1)>=0 else "Departing ")+station_name+" · Esc / Start pauses"
 		elif not state.mining_session.drill.is_empty():status.text="Keep the drill centered: Mouse / arrows / stick · Stop: F / Space / controller X"
-		elif state.location.campaign_cursor in PRIMARY_FLIGHT_CURSORS:status.text="Steer: Mouse / arrows / stick · Fire: Space / right trigger · Mine / Dock: F / X · Autopilot: Q / Y · Speed: ] / /"
+		elif not state.get("encounter",{}).get("primaries",{}).is_empty():status.text="Steer: Mouse / arrows / stick · Fire: Space / right trigger · Mine / Dock: F / X · Autopilot: Q / Y · Speed: ] / /"
 		else:status.text="Steer: Mouse / arrows / stick · Mine / Dock: F / X · Autopilot: Q / Y · Speed: ] / / · Cargo: %d / %d"%[state.cargo.used,state.cargo.capacity]
 		if session.can_open_map():status.text+=" · Map: E → Map / L1"
 		refresh_render_mode(state);return

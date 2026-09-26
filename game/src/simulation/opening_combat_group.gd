@@ -1,5 +1,4 @@
 extends RefCounted
-const FlightStages=preload("res://src/content/flight_stages.gd")
 const FreeLife=preload("res://src/content/free_lifecycle_definitions.gd")
 const Alioth=preload("res://src/content/alioth_population_definitions.gd")
 const Kappa=preload("res://src/content/kappa_population_definitions.gd")
@@ -233,7 +232,7 @@ func _configure_reputation(bindings: RefCounted, cursor: int, difficulty: Varian
 	if not Reputation.available(bindings):return true
 	var history:=Reputation.new()
 	var kinds:=_actors.map(func(actor):return int(actor.snapshot().actor_kind))
-	if not history.configure(bindings,cursor,kinds,difficulty,_training_weapons.has("kappa_lifecycle"),ordinary_void_system_id,ordinary_void_rank,not _bakka_encounter.is_empty(),_training_weapons.get("context_key","")=="dekato_context"):return reject(history.error)
+	if not history.configure(bindings,cursor,kinds,difficulty,_training_weapons.has("kappa_lifecycle"),ordinary_void_system_id,ordinary_void_rank,not _bakka_encounter.is_empty(),_training_weapons if _training_weapons.has("mission_recipe") else {}):return reject(history.error)
 	_reputation=history
 	return true
 
@@ -829,7 +828,7 @@ func supports_weapon_hit(weapon: Variant) -> bool:
 			var valid: bool=Story.npc_hit(_training_weapons,weapon) if _training_weapons.get("authored_story",false) else Kappa.npc_hit(_training_weapons,weapon) if _training_weapons.has("kappa_lifecycle") else FreeLife.npc_hit(_training_weapons,weapon) if _training_weapons.has("free_lifecycle") else Alioth.npc_hit(_training_weapons,weapon) if _training_weapons.has("alioth_lifecycle") else Convoy.npc_hit(_training_weapons,weapon) if _training_weapons.has("capital_death") else (BakkaCombat.npc_hit(_training_weapons,weapon) if not _bakka_encounter.is_empty() else (ContractLife.npc_hit(_training_weapons,weapon) if not _contract_encounter.is_empty() else (Travel.npc_hit(_training_weapons,weapon) if _provocation!=null else TrainingWeapons.npc_hit(_training_weapons,weapon))))
 			if not valid:return reject("NPC damage differs from this encounter's weapon declaration")
 			kinds=[0,1]
-		elif (weapon.get("campaign_cursor") in FlightStages.FREE or (_selected40_world!=null and weapon.get("campaign_cursor")==40) or (_selected41_world!=null and weapon.get("campaign_cursor")==41) or (weapon.get("campaign_cursor")==21 and _training_weapons.has("kappa_lifecycle"))) and preload("res://src/content/ordinary_fitting_definitions.gd").ordinary(weapon):kinds=[0,1,2]
+		elif preload("res://src/content/ordinary_fitting_definitions.gd").ordinary(weapon):kinds=[0,1,2]
 		elif weapon.get("kind")==2:
 			if not TrainingWeapons.dispersed_primary(weapon):return reject("Player damage lacks its verified primary declaration")
 			kinds=[0,2]

@@ -276,7 +276,8 @@ func configure_selected41(bindings: RefCounted,catalogues: RefCounted,entry: Ref
 	for key in ["weapon_effect_capacity","weapon_effect_random_bound","zero_means_flipped"]:data[key]=shared[key]
 	var equipment: Array=seed.equipment_ids.map(func(id):return {"item_id":id})
 	if not _configure(bindings,catalogues,data,construction,[int(seed.ship_id),13,8],equipment,true):return false
-	_identity.merge({"campaign_cursor":41,"station_id":-1,"system_id":-1,"selected41_entry":entry.snapshot(),"selected41_context":entry.snapshot().context})
+	_identity.merge({"campaign_cursor":41,"station_id":-1,"system_id":-1,"selected41_entry":entry.snapshot(),"selected41_context":entry.snapshot().context,
+		"entry_conditions":{"companions_empty":true,"location_match":true,"special_placement":true}})
 	return true
 
 func configure_sahi(bindings: RefCounted,catalogues: RefCounted,seed: Dictionary,context: Dictionary,entry_conditions: Dictionary) -> bool:

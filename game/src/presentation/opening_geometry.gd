@@ -1,5 +1,4 @@
 extends Node3D
-const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Source opening body/light presentation, driven by detached simulation state.
 ## Mac Betty departure includes its original nozzle-glow mesh. Exhaust particles,
 ## mounted equipment and the location environment have separate owners.
@@ -121,13 +120,13 @@ func build_arrival(library: RefCounted, visuals: RefCounted, bindings: RefCounte
 	_arrival_player_origin=initial.frame.player_position
 	return true
 
-func build_departure(library: RefCounted, visuals: RefCounted, bindings: RefCounted, catalogues: RefCounted, cache: Variant, state: Dictionary, quality := "high", with_detail := false, equipment: RefCounted=null,ordinary_void_environment: RefCounted=null) -> bool:
+func build_departure(library: RefCounted, visuals: RefCounted, bindings: RefCounted, catalogues: RefCounted, cache: Variant, state: Dictionary, quality := "high", with_detail := false, equipment: RefCounted=null,ordinary_void_environment: RefCounted=null, mission_context: RefCounted=null) -> bool:
 	clear()
 	var location:=ArrivalLocation.new()
-	var context:=location.resolve_departure(bindings,catalogues,cache,equipment) if ordinary_void_environment==null else location.resolve_ordinary_void(bindings,catalogues,equipment,cache,ordinary_void_environment)
+	var context:=location.resolve_departure(bindings,catalogues,cache,equipment,mission_context) if ordinary_void_environment==null else location.resolve_ordinary_void(bindings,catalogues,equipment,cache,ordinary_void_environment)
 	if context.is_empty():return reject(location.error)
 	var objective:=OrdinaryFlight.objective(bindings,int(context.campaign_cursor))
-	var selected_result: bool=(objective.get("bakka_contest",false) and state.get("player",{}).has("bakka_context")) or (objective.get("dekato_convoy",false) and state.get("player",{}).has("dekato_context"))
+	var selected_result: bool=(objective.get("bakka_contest",false) and state.get("player",{}).has("bakka_context")) or objective.get("runner_controlled",false)
 	_departure_return_available=not objective.is_empty() and (int(context.campaign_cursor) in [2,4,7,16,25,26,29] or selected_result)
 	_departure_return_cursor=int(context.campaign_cursor)+1
 	if _departure_return_available:
@@ -292,7 +291,7 @@ func apply_state(state: Dictionary, escape: Dictionary = {}) -> bool:
 	var player_pose: Transform3D=state.player_pose
 	var player_visible:=true
 	if state.has("player_model_basis"):
-		if _campaign_cursor not in ([2,4]+FlightStages.EQUIPPED) or not state.player_model_basis is Basis or not valid_pose(Transform3D(state.player_model_basis,Vector3.ZERO)):return reject("Invalid mining-flight visual model orientation")
+		if not state.player_model_basis is Basis or not valid_pose(Transform3D(state.player_model_basis,Vector3.ZERO)):return reject("Invalid mining-flight visual model orientation")
 		player_pose=player_pose*Transform3D(state.player_model_basis,Vector3.ZERO)
 		if not valid_pose(player_pose):return reject("First-flight visual model orientation overflowed")
 	if not escape.is_empty():

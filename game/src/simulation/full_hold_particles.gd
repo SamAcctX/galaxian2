@@ -1,5 +1,4 @@
 extends RefCounted
-const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Second-trip particle ownership. The player tail precedes the early particle
 ## managers, the death poll follows them, and the NPC pass updates next-frame
 ## roots and flags. Each registered emitter has an independent random stream.
@@ -33,7 +32,7 @@ func configure(bindings: RefCounted,combat: Dictionary,death: RefCounted,seed_se
 	for key in ["base_content_id","binding_id"]:
 		if initial.get(key)!=bindings.get(key) or combat.get(key)!=bindings.get(key):return reject("Second-flight particles belong to another departure")
 	var training: bool=combat.get("campaign_cursor")==7
-	var local_flight: bool=combat.get("campaign_cursor") in (FlightStages.LOCAL+FlightStages.POST_SAHI+[33])
+	var local_flight: bool=load("res://src/content/ordinary_flight_definitions.gd").combat_population(bindings,combat)
 	if initial.get("phase")!="ready" or initial.get("departure_cursor")!=(int(combat.campaign_cursor) if local_flight else (7 if training else 4)):return reject("Register ordinary-flight particles before player death in the same encounter")
 	var smoke:=Smoke.new()
 	var ready:=smoke.configure_local_traffic(bindings,combat,seed_seconds) if local_flight else (smoke.configure_combat_training(bindings,combat,seed_seconds) if training else smoke.configure_full_hold(bindings,combat,seed_seconds))
@@ -64,6 +63,17 @@ func configure_selected40(bindings: RefCounted,combat: RefCounted,death: RefCoun
 		if initial.get(key)!=bindings.get(key):return reject("Selected40 particle resources belong to another source")
 	var smoke:=Smoke.new()
 	if not smoke.configure_selected40(bindings,combat,seed_seconds):return reject(smoke.error)
+	return _configure_registered(bindings,combat.snapshot(),death,seed_seconds,smoke)
+
+func configure_mission(bindings: RefCounted,context: RefCounted,combat: RefCounted,death: RefCounted,seed_seconds: Variant) -> bool:
+	error=""
+	if not _identity.is_empty() or bindings==null or not Definitions.parameters(bindings.full_hold_particles) or not death is Death or not seed_seconds is int or not is_instance_of(combat,load("res://src/simulation/opening_combat_group.gd")):return reject("Mission particles require fresh admitted combat, player death owner and seed")
+	var initial: Dictionary=death.snapshot()
+	if initial.get("phase")!="ready" or initial.get("departure_cursor")!=int(context.recipe().cursor):return reject("Register mission particles before native player destruction")
+	for key in ["base_content_id","binding_id"]:
+		if initial.get(key)!=bindings.get(key):return reject("Mission particle resources belong to another source")
+	var smoke:=Smoke.new()
+	if not smoke.configure_mission(bindings,context,combat,seed_seconds):return reject(smoke.error)
 	return _configure_registered(bindings,combat.snapshot(),death,seed_seconds,smoke)
 
 func _configure_registered(bindings: RefCounted,combat: Dictionary,death: RefCounted,seed_seconds: int,smoke: RefCounted) -> bool:

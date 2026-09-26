@@ -21,8 +21,8 @@ func build(library: RefCounted, visuals: RefCounted, bindings: RefCounted, catal
 func build_arrival(library: RefCounted, visuals: RefCounted, bindings: RefCounted, catalogues: RefCounted, arrival_cache: Variant, quality := "high") -> bool:
 	return _build(library,visuals,bindings,catalogues,quality,false,1,arrival_cache)
 
-func build_departure(library: RefCounted, visuals: RefCounted, bindings: RefCounted, catalogues: RefCounted, cache: Variant, quality := "high", equipment: RefCounted=null) -> bool:
-	return _build(library,visuals,bindings,catalogues,quality,false,2,cache,equipment)
+func build_departure(library: RefCounted, visuals: RefCounted, bindings: RefCounted, catalogues: RefCounted, cache: Variant, quality := "high", equipment: RefCounted=null, mission_context: RefCounted=null) -> bool:
+	return _build(library,visuals,bindings,catalogues,quality,false,2,cache,equipment,mission_context)
 
 func build_lounge(library: RefCounted,visuals: RefCounted,bindings: RefCounted,catalogues: RefCounted,station_id: int,cursor: int,quality:="high") -> bool:
 	return _build(library,visuals,bindings,catalogues,quality,false,3,{"station_id":station_id,"campaign_cursor":cursor})
@@ -30,7 +30,7 @@ func build_lounge(library: RefCounted,visuals: RefCounted,bindings: RefCounted,c
 func build_station(library: RefCounted,visuals: RefCounted,bindings: RefCounted,catalogues: RefCounted,station_id: int,cursor: int,quality:="high") -> bool:
 	return _build(library,visuals,bindings,catalogues,quality,false,4,{"station_id":station_id,"campaign_cursor":cursor})
 
-func _build(library: RefCounted, visuals: RefCounted, bindings: RefCounted, catalogues: RefCounted, quality: String, with_escape: bool, cursor: int, location_cache: Variant, equipment: RefCounted=null) -> bool:
+func _build(library: RefCounted, visuals: RefCounted, bindings: RefCounted, catalogues: RefCounted, quality: String, with_escape: bool, cursor: int, location_cache: Variant, equipment: RefCounted=null, mission_context: RefCounted=null) -> bool:
 	clear()
 	if visuals.base_content_id!=bindings.base_content_id:return reject("Planet textures belong to another content identity")
 	var layout:=Layout.new()
@@ -38,7 +38,7 @@ func _build(library: RefCounted, visuals: RefCounted, bindings: RefCounted, cata
 	match cursor:
 		0:_layout=layout.for_opening(bindings,catalogues,library.manifest.get("content_id",""),quality)
 		1:_layout=layout.for_arrival(bindings,catalogues,location_cache,quality)
-		2:_layout=layout.for_departure(bindings,catalogues,location_cache,quality,equipment)
+		2:_layout=layout.for_departure(bindings,catalogues,location_cache,quality,equipment,mission_context)
 		3:_layout=layout.for_lounge(bindings,catalogues,location_cache.station_id,location_cache.campaign_cursor,quality)
 		4:_layout=layout.for_station(bindings,catalogues,location_cache.station_id,location_cache.campaign_cursor,quality)
 		_:return reject("Unsupported planet scene")

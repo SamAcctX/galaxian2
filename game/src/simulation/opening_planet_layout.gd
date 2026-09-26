@@ -32,10 +32,10 @@ func for_arrival(bindings: RefCounted, catalogues: RefCounted, arrival_cache: Va
 	if source.is_empty():return reject(location.error)
 	return _for_location(bindings,catalogues,source,bindings.opening_sky.planet_resources,bindings.base_content_id,quality,true)
 
-func for_departure(bindings: RefCounted, catalogues: RefCounted, cache: Variant, quality := "high", equipment: RefCounted=null) -> Dictionary:
+func for_departure(bindings: RefCounted, catalogues: RefCounted, cache: Variant, quality := "high", equipment: RefCounted=null, mission_context: RefCounted=null) -> Dictionary:
 	error=""
 	var location:=Arrival.new()
-	var source:=location.resolve_departure(bindings,catalogues,cache,equipment)
+	var source:=location.resolve_departure(bindings,catalogues,cache,equipment,mission_context)
 	if source.is_empty():return reject(location.error)
 	return _for_location(bindings,catalogues,source,bindings.opening_sky.planet_resources,bindings.base_content_id,quality,true)
 

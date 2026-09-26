@@ -5,7 +5,7 @@ const StationFile=preload("res://src/simulation/station_save_file.gd")
 
 func verify_free_application() -> void:
 	await super.verify_free_application()
-	if failures:return
+	if failures or pilot_losses==2:return
 	var flying: Dictionary=app.session.snapshot()
 	check(flying.station_return_supported and app.session.flight_owner()._return_rules==DekatoArrival.docking(definitions),"Acknowledgement omitted source-defined physical docking")
 	if failures or not await dock_application():return
@@ -21,8 +21,13 @@ func verify_free_application() -> void:
 	app.present_session()
 	check(app.session.station_owner().snapshot()==docked,"Station result polling changed the pending independent passenger job")
 	await capture_free_application("earned202-dekato39-station")
+	# Read before any explicit Save can conceal a missing docking autosave.
+	var file:=StationFile.new();var archive:=StationGuards.Archive.new()
+	var automatic:=file.load_document(app.station_save_path(),definitions,catalogue,source)
+	var restored: RefCounted=archive.restore(definitions,catalogue,source,automatic)
+	check(not automatic.is_empty() and restored!=null and restored.snapshot()==docked,"Physical docking did not autosave the full newly earned station/career")
 	if failures or not retain_chapter_save("dekato39-docked"):return
-	var file:=StationFile.new();var document:=file.read_document(app.station_save_path())
+	var document:=file.read_document(app.station_save_path())
 	if document.is_empty():check(false,file.error);return
 	var args: Variant=JSON.parse_string(FileAccess.get_file_as_string(OS.get_environment("GOF2_DEKATO_SOURCE_ARGS")))
 	var guards:=StationGuards.new()
@@ -39,6 +44,20 @@ func verify_free_application() -> void:
 	if predecessor!=null:check(not file.save(app.station_save_path(),predecessor,plain,catalogue,source),"An unextended v8 save overwrote the supplemental v9 checkpoint")
 	check(FileAccess.get_sha256(app.station_save_path())==saved_hash,"A rejected source change modified the viable saved career")
 	check(FileAccess.get_sha256(OS.get_environment("GOF2_SOURCE_SAVE"))==SOURCE_SHA,"The postbattle checkpoint overwrote its earned Eanya predecessor")
-	check(not app.request_departure() and app.session.station_owner().snapshot()==docked,"Saving admitted an unsupported onward39 departure")
+	var onward:=PostProbeCampaign.onward_available(definitions)
+	check(app.request_departure()==onward and app.session.station_owner().snapshot()==docked,"The saved Néhma continuation ignored its explicit source capability")
+	if onward:
+		check(not app._launch_packet.is_empty(),"The supported onward departure omitted its confirmation")
+		app.cancel_departure()
+	check(app.session.station_owner().snapshot()==docked,"Departure confirmation changed the saved station before launch")
 	await capture_free_application("earned202-dekato39-restored")
+	if not failures:
+		var observed_path:=chapter_directory.path_join("dekato39-docked.observed")
+		check(not FileAccess.file_exists(observed_path),"Use fresh output for pilot observations")
+		if failures:return
+		var observation:=FileAccess.open(observed_path,FileAccess.WRITE)
+		if observation==null:check(false,"Could not retain the live pilot observation");return
+		observation.store_var({"format":1,"source_sha":SOURCE_SHA,"output_sha":FileAccess.get_sha256(chapter_directory.path_join("dekato39-docked.gof2save")),"station":docked,"timing":pilot_timing,"losses":pilot_losses,"entry":pilot_entry,"dialogue_inputs":pilot_dialogue_inputs,"host_deltas_us":pilot_deltas})
+		check(observation.get_error()==OK,"Could not write the live pilot observation")
+		observation.close()
 	if not failures:print("Actual original202 Eanya20 -> Dekato input victory -> physical station22 docking -> v9 explicit-source save/load; native39 career and original38 world pools retained")

@@ -28,7 +28,7 @@ var _travel:={}
 func configure(bindings: RefCounted, value: int, station_id: int=-1, restoring_local:=false,ship_id: int=-1) -> bool:
 	error="";cursor=-1;is_arrival=false;is_departure=false;uses_equipment=false
 	equipped_entry={};_kind="";_departure={};_training={};_pirate={};_travel={};restores_local=false
-	if bindings==null or (not KINDS.has(value) and value not in FlightStages.FREE and value not in FlightStages.POST_SAHI and not (value==33 and station_id==-1)):return reject("Unsupported player entry")
+	if bindings==null or (not KINDS.has(value) and not FreeFlight.Campaign.supported(bindings,value) and value not in FlightStages.POST_SAHI and not (value==33 and station_id==-1)):return reject("Unsupported player entry")
 	var kind: String="ordinary_void" if value==33 and station_id==-1 else "post_sahi" if value in FlightStages.POST_SAHI else KINDS.get(value,"free")
 	if value==21 and FreeFlight.Campaign.supported(bindings.mido_travel,value) and not FreeFlight.Campaign.rescue_at(bindings.mido_travel,value,station_id):kind="free"
 	if value==14 and Travel.navigation_available(bindings.mido_travel,value):kind="local"

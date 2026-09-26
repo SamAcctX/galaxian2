@@ -6,6 +6,7 @@ const Streams=preload("res://src/presentation/audio_stream_control.gd")
 const MiningStory=preload("res://src/content/ordinary_flight_definitions.gd")
 const StationReturn=preload("res://src/content/ordinary_flight_definitions.gd")
 const StationEntry=preload("res://src/content/station_entry_definitions.gd")
+const MissionContext=preload("res://src/simulation/mission_context.gd")
 var error:=""
 var diagnostics:={}
 var _resources: RefCounted
@@ -17,6 +18,26 @@ var _history: Array=[]
 var _effect_clips:={}
 var _effects:={}
 var _effect_history:=[]
+var _mission_voice_lines:={}
+
+func configure_mission(library: RefCounted,bindings: RefCounted,context: RefCounted) -> bool:
+	if not context is MissionContext:return reject("Mission speech requires its admitted context")
+	clear();_resources=Resources.new()
+	var recipe: Dictionary=context.recipe()
+	var events: Array=recipe.briefing+recipe.result.lines
+	if not _resources._configure_campaign(library,bindings,{"events":events}):return reject(_resources.error)
+	var ids:=[-1]
+	for event in events:
+		var id:=int(event.voice_event_id)
+		if not ids.has(id):ids.append(id)
+	for index in ids.size():_mission_voice_lines[ids[index]]=index
+	return _prepare_voices(ids)
+
+func present_mission(dialogue: Dictionary) -> bool:
+	if not dialogue.get("visible",false):return present(-1)
+	var id:=int(dialogue.get("voice_event_id",-1))
+	if not _mission_voice_lines.has(id):return reject("Mission dialogue selected an unprepared voice")
+	return present(int(_mission_voice_lines[id]))
 
 func configure(library: RefCounted, bindings: RefCounted) -> bool:
 	clear();_resources=Resources.new()
@@ -166,4 +187,5 @@ func clear() -> void:
 	for child in get_children():child.free()
 	error="";diagnostics={};_resources=null;_clips=[];_player=null;_paused=false;_line=-1;_history=[]
 	_effect_clips={};_effects={};_effect_history=[]
+	_mission_voice_lines={}
 func reject(message: String) -> bool:error=message;return false

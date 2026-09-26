@@ -268,7 +268,9 @@ static func compose_dekato(bindings: RefCounted,catalogues: RefCounted,construct
 	var profile:={"population":{"freighter_combat":bindings.mido_travel.sahi_encounter.population.freighter_combat},
 		"weapons":{"player_weapon_targets":range(actors.size()),"npc_target_memberships":Weapons.target_memberships(kinds)}}
 	var data:=_compose_population(bindings,catalogues,packet,context,profile,actors,false,int(context.system_id),-1,false)
-	if not data.is_empty():data.context_key="dekato_context"
+	if not data.is_empty():
+		data.context_key="dekato_context"
+		data.mission_recipe=load("res://src/content/mission_recipe.gd").select(bindings,context.campaign_cursor)
 	return data
 
 static func selected(bindings: RefCounted,context: Dictionary) -> bool:

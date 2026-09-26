@@ -26,10 +26,10 @@ func build_arrival(bindings: RefCounted, catalogues: RefCounted, cache: Variant)
 	if context.is_empty():return reject(location.error)
 	return _build_station(bindings,catalogues,context)
 
-func build_departure(bindings: RefCounted, catalogues: RefCounted, cache: Variant, equipment: RefCounted=null) -> bool:
+func build_departure(bindings: RefCounted, catalogues: RefCounted, cache: Variant, equipment: RefCounted=null, mission_context: RefCounted=null) -> bool:
 	clear()
 	var location:=ArrivalLocation.new()
-	var context:=location.resolve_departure(bindings,catalogues,cache,equipment)
+	var context:=location.resolve_departure(bindings,catalogues,cache,equipment,mission_context)
 	if context.is_empty():return reject(location.error)
 	return _build_station(bindings,catalogues,context)
 

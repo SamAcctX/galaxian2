@@ -1,5 +1,4 @@
 extends RefCounted
-const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Original ship setup for accepted early contracts.
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
 const Encounters=preload("res://src/content/contract_encounter_definitions.gd")
@@ -75,7 +74,7 @@ static func weapon_for(data: Dictionary,rank: int,difficulty: float,faction: int
 	return shared_weapon(data.weapons,int(data.campaign_cursor),rank,difficulty,faction,rival)
 
 static func shared_weapon(rules: Dictionary,cursor: int,rank: int,difficulty: float,faction: int,rival:=false) -> Dictionary:
-	if not Equal.equal_value(rules,VALUES.weapons) or cursor not in ([13,14]+FlightStages.FREE) or rank<0 or rank>20 or difficulty not in [0.5,1.0] or faction not in [0,1,2,3,8]:return {}
+	if not Equal.equal_value(rules,VALUES.weapons) or cursor<0 or cursor>2147483647 or rank<0 or rank>20 or difficulty not in [0.5,1.0] or faction not in [0,1,2,3,8]:return {}
 	for source in rules.factions:
 		if int(source.actor_kind)!=faction:continue
 		var row:=scaled_parameters(rules,cursor,rank,difficulty,rival)
@@ -86,8 +85,8 @@ static func shared_weapon(rules: Dictionary,cursor: int,rank: int,difficulty: fl
 static func scaled_parameters(rules: Dictionary,cursor: int,rank: int,difficulty: float,rival:=false) -> Dictionary:
 	# Shared factory arithmetic only. The encounter still supplies a verified
 	# faction, ship and any authored damage override before creating a gun.
-	# Cursors40/41 here do not open generic flight or contact admission.
-	if not Equal.equal_value(rules,VALUES.weapons) or cursor not in (FlightStages.FACTIONS+[40,41]) or rank<0 or rank>20 or difficulty not in [0.5,1.0]:return {}
+	# A cursor scales the authored firing interval; it does not grant flight.
+	if not Equal.equal_value(rules,VALUES.weapons) or cursor<0 or cursor>2147483647 or rank<0 or rank>20 or difficulty not in [0.5,1.0]:return {}
 	var level:=int(clampf(Vitals.single(float(rank+int(rules.rank_offset))*float(rules.rank_multiplier)),float(rules.rank_level_min),float(rules.rank_level_max)))
 	level=mini(int(rules.scaled_level_max),int(Vitals.single(float(level)+Vitals.single(float(level)*Vitals.single(difficulty+float(rules.game_difficulty_offset))))))
 	var damage:=int(rules.zero_level_damage) if level==0 else level+int(rules.damage_offset)

@@ -28,7 +28,6 @@ func configure(library: RefCounted, bindings: RefCounted, campaign_cursor: int =
 	error="";unsupported.clear();_banks.clear();_clips.clear();_sound_cache.clear();_channel_cache.clear();_decoded_bytes=0;_definitions={};_library=null
 	_language_index=0;_voice_ids.clear()
 	if library==null or bindings==null or bindings.base_content_id!=library.manifest.get("content_id"):return reject("Audio requires matching base content and bindings")
-	if campaign_cursor not in [0,1,7,14,16,21,24,25,28,29,38,40,41]:return reject("Unsupported radio scene")
 	var message:=Definitions.validate(bindings.audio,library.manifest.files)
 	if not message.is_empty():return reject(message)
 	if bindings.audio.is_empty():return reject("This binding pack has no audio declarations")
@@ -56,7 +55,9 @@ func prepare(id: int) -> Dictionary:
 	if (event.has("sound") and event.get("simple_flags")!=1) or not compatible_category(event.categories,id):return unavailable(id,"This event needs additional native category or instance behavior")
 	# The opening owner uses the source's cached handle per event. The authored
 	# maximum across separately acquired instances does not create extra voices.
-	if int(p.mode) not in [0x180008,0x280010] or p.pitch!=0 or not Definitions.number(p.pitch_random,0,1) or p.volume_random!=0 or not Definitions.integer(p.max_playbacks,1,3) or p.max_playbacks_behavior!=1 or int(p.flags) not in [0,0x80000]:return unavailable(id,"This event needs additional native playback behavior")
+	# Both 2D modes share playback behavior; their distance-rolloff bit only
+	# affects spatial events. Authored cutscene sounds also use 0x280008.
+	if int(p.mode) not in [0x180008,0x280008,0x280010] or p.pitch!=0 or not Definitions.number(p.pitch_random,0,1) or p.volume_random!=0 or not Definitions.integer(p.max_playbacks,1,3) or p.max_playbacks_behavior!=1 or int(p.flags) not in [0,0x80000]:return unavailable(id,"This event needs additional native playback behavior")
 	for key in ["distance_filter","speaker_spread","position_random_min","position_random_max","spawn_random"]:
 		if p.get(key)!=0:return unavailable(id,"This event needs additional native spatial behavior")
 	# A unity outside volume leaves the entire cone unattenuated, including the

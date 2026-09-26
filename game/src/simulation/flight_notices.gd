@@ -1,5 +1,4 @@
 extends RefCounted
-const FlightStages=preload("res://src/content/flight_stages.gd")
 const Frames=preload("res://src/simulation/frame_clock.gd")
 var _max_ms:=0
 ## Source timed text queue for the first mining flight. It never pauses flight,
@@ -37,6 +36,12 @@ func configure_selected40(bindings: RefCounted,library: RefCounted,world: RefCou
 	if not Definitions.parameters(bindings.flight_notices) or library.manifest.get("content_id")!=bindings.base_content_id or library.active_language.is_empty():return reject("Selected40 notices belong to another content or language")
 	return _configure_messages(bindings,library,40,{},null)
 
+func configure_mission(bindings: RefCounted,library: RefCounted,context: RefCounted) -> bool:
+	error=""
+	if not _rules.is_empty() or not is_instance_of(context,load("res://src/simulation/mission_context.gd")) or bindings==null or library==null:return reject("Mission notices require an admitted context and language")
+	if not Definitions.parameters(bindings.flight_notices) or library.manifest.get("content_id")!=bindings.base_content_id or library.active_language.is_empty():return reject("Mission notices belong to another content or language")
+	return _configure_messages(bindings,library,int(context.recipe().cursor),{},null)
+
 func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,location: Dictionary,catalogues: RefCounted) -> bool:
 	var messages:={}
 	var definitions: Dictionary=bindings.flight_notices.messages.duplicate(true)
@@ -58,8 +63,7 @@ func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,lo
 	if location.get("station_id",-1)>=0 and not bindings.station_flight.is_empty():
 		var data: Dictionary=bindings.station_flight
 		if not StationFlight.parameters(data):return reject("Station notices require their verified declarations")
-		if cursor in FlightStages.LOCAL+FlightStages.POST_SAHI:
-			data=data.duplicate(true);data.station_id=int(location.station_id);data.system_id=int(location.system_id)
+		data=data.duplicate(true);data.station_id=int(location.station_id);data.system_id=int(location.system_id)
 		if location.station_id!=int(data.station_id) or location.system_id!=int(data.system_id):return reject("Station notices belong to another flight location")
 		var tables: RefCounted=catalogues
 		if tables==null:

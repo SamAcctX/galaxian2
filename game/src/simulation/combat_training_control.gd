@@ -2,7 +2,6 @@ extends RefCounted
 const Frames=preload("res://src/simulation/frame_clock.gd")
 const Kappa=preload("res://src/content/kappa_population_definitions.gd")
 const BakkaCombat=preload("res://src/content/bakka_combat_definitions.gd")
-const DekatoObjective=preload("res://src/simulation/dekato_convoy_objective.gd")
 const Alioth=preload("res://src/content/alioth_population_definitions.gd")
 const AliothSequence=preload("res://src/simulation/alioth_attack.gd")
 ## Shared population guidance, motion and prepared cargo destruction. Local
@@ -52,7 +51,7 @@ var _convoy:=false
 var _alioth:=false
 var _kappa:=false
 var _bakka:=false
-var _dekato_objective: RefCounted
+var _mission_runner: RefCounted
 var _story:=false
 var _alioth_sequence:={}
 var _bindings: RefCounted
@@ -65,6 +64,8 @@ var _contract_result:={}
 var _selected40_world: RefCounted
 var _selected41_world: RefCounted
 var _selected41_sequence_revision:=0
+var _selected41_sequence_phase:=0
+var _selected41_sequence_elapsed:=0
 var _selected40_sequence:={"revision":0,"elapsed_ms":0,"phase":0}
 
 func evaluate_selected40_sequence(owner: RefCounted,combat: RefCounted,random_state: Dictionary) -> Dictionary:
@@ -144,16 +145,18 @@ func configure_selected41(bindings: RefCounted,catalogues: RefCounted,library: R
 
 func selected41_world_owner() -> RefCounted:return _selected41_world
 
-## The attack stage resets existing fighters, not their generated construction.
-## Every mutation remains on the candidate until the subsequent NPC pass succeeds.
+## Every scripted actor action remains on a candidate until the subsequent NPC
+## pass succeeds. Only the opening attack resets fighters and their weapons.
 func evaluate_selected41_sequence(owner: RefCounted,combat: RefCounted,weapons: RefCounted) -> Dictionary:
 	error=""
 	if not is_instance_of(owner,load("res://src/simulation/selected41_sequence.gd")) or owner.world_owner()!=_selected41_world or not combat is Combat or combat.selected41_world_owner()!=_selected41_world or not weapons is Weapons:return fail("Source41 cinematic requires its retained native owners")
 	var cue: Dictionary=owner.snapshot()
 	if cue.get("revision")!=_selected41_sequence_revision+1:return fail("Source41 cinematic revision skipped or repeated")
+	if cue.phase<_selected41_sequence_phase or cue.phase>_selected41_sequence_phase+1 or cue.elapsed_ms<_selected41_sequence_elapsed or cue.elapsed_ms>_selected41_sequence_elapsed+_max_ms:return fail("Source41 cinematic phase or clock skipped")
 	var rows: Array=cue.frame.reset_fighters
 	if not rows.is_empty() and rows.map(func(row):return row.actor_id)!=[1,2,3]:return fail("Source41 attack replaced its authored fighter membership")
-	var staged: RefCounted=fork_for_frame(not rows.is_empty(),combat)
+	var actions: Array=cue.frame.get("actor_actions",[])
+	var staged: RefCounted=fork_for_frame(not rows.is_empty() or not actions.is_empty(),combat)
 	var next_weapons: RefCounted=weapons.fork_for_frame()
 	if not rows.is_empty():
 		if staged._launch_pending.is_empty():staged._launch_pending.resize(8);staged._launch_pending.fill(false)
@@ -168,8 +171,53 @@ func evaluate_selected41_sequence(owner: RefCounted,combat: RefCounted,weapons: 
 			if not staged._accounting._register_selected41_restart(actor.snapshot()):return fail(staged._accounting.error)
 			staged._launch_pending[id]=true
 	if not next_weapons._restart_selected41_attack(owner):return fail(next_weapons.error)
+	for action in actions:
+		if not action is Dictionary or not staged._apply_sequence_actor_action(action,next_weapons):return fail(staged.error)
 	staged._selected41_sequence_revision=int(cue.revision)
+	staged._selected41_sequence_phase=int(cue.phase);staged._selected41_sequence_elapsed=int(cue.elapsed_ms)
 	return {"controller":staged,"combat":staged._combat,"weapons":next_weapons}
+
+## Native owner adapters for named sequence actions. The caller has already
+## forked motion, guidance, weapons and combat; actor writes must still use COW.
+func _apply_sequence_actor_action(action: Dictionary,weapons: RefCounted) -> bool:
+	var id: Variant=action.get("actor_id")
+	if not Vitals.integer(id) or id>=_initial_actors.size():return reject("Sequence action names an absent actor")
+	var actor: RefCounted=_combat._writable(id)
+	var body: Dictionary=actor.snapshot()
+	match action.get("action"):
+		"set_hull":
+			if not Vitals.integer(action.get("hull")) or _destruction[id].snapshot().phase!="ready":return reject("Sequence hull action requires a body before destruction")
+			var pools:=Vitals.new()
+			if not pools.configure(action.hull,body.vitals.armor,body.vitals.shield):return reject(pools.error)
+			actor._vitals=pools;actor._state.max_hull=maxi(body.max_hull,action.hull)
+		"set_freighter_motion":
+			if not _flight[id] is FreightMotion or _destruction[id].snapshot().phase!="ready":return reject("Sequence motion requires a retained living freighter")
+			var motion: RefCounted=_flight[id]
+			if action.has("cruise_enabled"):
+				if not action.cruise_enabled is bool:return reject("Sequence cruise permission must be explicit")
+				motion._state.cruise_enabled=action.cruise_enabled
+			if action.has("pose"):
+				if not Flight.rigid_pose(action.pose):return reject("Sequence freighter pose must be finite and unscaled")
+				if not actor.set_pose(action.pose,action.pose):return reject(actor.error)
+				motion._state.body_pose=action.pose;motion._state.statistics_pose=action.pose
+				motion._state.source_position=Vector3i(action.pose.origin)
+			if action.has("speed"):
+				if not (action.speed is float or action.speed is int) or not is_finite(action.speed) or action.speed<0:return reject("Sequence speed must be finite and nonnegative")
+				motion._state.speed=float(action.speed);actor._state.speed=float(action.speed)
+		"set_engine_draw":
+			if not action.get("enabled") is bool:return reject("Sequence engine visibility must be explicit")
+			actor._state.engine_draw_enabled=action.enabled
+		"retarget_player":
+			if _guidance[id]==null or weapons._guns[id]==null:return reject("Sequence targeting requires retained guidance and weapons")
+			var guidance: RefCounted=_guidance[id]
+			var target: int=weapons._training.player_target_id
+			guidance._training=guidance._training.duplicate(true)
+			guidance._training.target_memberships[id]=[target]
+			guidance._state.target_index=0;guidance._state.target_selected=true
+			weapons._training=weapons._training.duplicate(true)
+			weapons._training.target_memberships[id]=[target]
+		_:return reject("Unknown native sequence actor action")
+	return true
 
 func configure_selected40(bindings: RefCounted,catalogues: RefCounted,world: RefCounted) -> bool:
 	error=""
@@ -480,11 +528,13 @@ func _configure_story(bindings: RefCounted,catalogues: RefCounted,construction: 
 	_combat=combat;_guidance=guidance;_flight=flight;_random=construction.snapshot().random_state
 	_initial_actors=data.actor_rows
 	_bindings=bindings;_construction=construction;_max_ms=Frames.simulation_limit(bindings)
-	if data.get("context_key")=="dekato_context":
-		if not ContractResults.available(bindings):return reject("Dekato requires the shared original result policy")
-		_dekato_objective=DekatoObjective.new()
-		if not _dekato_objective.configure(DekatoObjective.Definitions.declarations(bindings)):return reject(_dekato_objective.error)
-		_contract_result={"clock_ms":0,"elapsed_ms":0,"mode":0,"retired":false}
+	if data.has("mission_recipe"):
+		if data.get("mission_context")==null:
+			var context: RefCounted=load("res://src/simulation/mission_context.gd").new()
+			if not context.admit(bindings,catalogues,data.context,equipment.snapshot().loadout):return reject(context.error)
+			data.mission_context=context
+		_mission_runner=load("res://src/simulation/mission_runner.gd").new()
+		if not _mission_runner.configure(data.mission_context):return reject(_mission_runner.error)
 	return true
 
 func _set_story_destruction(bindings: RefCounted,resources: RefCounted,freighter_resources: RefCounted) -> bool:
@@ -759,7 +809,8 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 		if combat!=null and combat.has_local_reactions()!=_combat.has_local_reactions():return fail("Selected40 actor update lost its consequence owners")
 	# Story dialogue still visits world owners at zero time. Positive flight
 	# and lounge settlement keep their existing acknowledgement barrier.
-	if not _contract_result.is_empty() and _contract_result.mode!=0 and ((not _bakka and _dekato_objective==null) or delta_ms!=0):return fail("Acknowledge the flight result before advancing")
+	if _mission_runner!=null and _mission_runner.snapshot().mode!=0 and delta_ms!=0:return fail("Acknowledge the flight result before advancing")
+	if not _contract_result.is_empty() and _contract_result.mode!=0 and (not _bakka or delta_ms!=0):return fail("Acknowledge the flight result before advancing")
 	if _identity.is_empty() or (combat!=null and not combat is Combat):return fail("Configure combat-training control before advancing")
 	if (_ambient or _contract or _convoy or _alioth or _kappa or _bakka or _story) and _accounting==null:return fail("Actor control requires its prepared destruction and accounting")
 	if (not _destruction.is_empty() or _local_patrol or _contract or _convoy or _alioth or _kappa or _bakka or _story) and (not Vitals.integer(delta_ms) or delta_ms>_max_ms):return fail("Invalid ordinary actor frame duration")
@@ -920,7 +971,7 @@ func _advance_freighter(id: int,delta_ms: int) -> Dictionary:
 
 func defeat_status() -> Dictionary:
 	if _selected40_world!=null:return {}
-	if _dekato_objective!=null:return _dekato_objective.observe(_combat.actor_snapshots())
+	if _mission_runner!=null:return _mission_runner.observe(_combat.actor_snapshots())
 	if _bakka:
 		return preload("res://src/simulation/pirate_defeat_condition.gd").evaluate(_combat.snapshot().actors,_accounting.snapshot().counter_deltas,_bindings.mido_travel.bakka_contest.objectives,true)
 	if _convoy or _alioth or _kappa or _story:return {}
@@ -945,6 +996,10 @@ func _contract_defeat_status() -> Dictionary:
 
 func sample_scene_clock(world_ms: int,poll_ms: int) -> bool:
 	error=""
+	if _mission_runner!=null:
+		if not _mission_runner.sample_clock(world_ms,poll_ms):return reject(_mission_runner.error)
+		_scene_clocked=true
+		return true
 	if _contract_result.is_empty():return true
 	if _contract_result.mode!=0 or world_ms<int(_contract_result.elapsed_ms) or world_ms>2147483647 or poll_ms<0 or poll_ms>2147483647:return reject("The scene lost its retained contract clock")
 	if not _scene_clocked and (_started or _contract_result.elapsed_ms!=0):return reject("Connect the scene clock before the first actor update")
@@ -961,10 +1016,10 @@ func poll_bakka_result(radio_active: bool,periodic_poll_allowed: bool=true) -> D
 	if not _bakka:return fail("B'akka flight results are unavailable")
 	return _poll_flight_result(radio_active,periodic_poll_allowed)
 
-func poll_dekato_result(radio_active: bool,periodic_poll_allowed: bool=true) -> Dictionary:
+func poll_mission_result(radio_active: bool,periodic_poll_allowed: bool=true) -> Dictionary:
 	error=""
-	if _dekato_objective==null:return fail("Dekato flight results are unavailable")
-	return _poll_flight_result(radio_active,periodic_poll_allowed)
+	if _mission_runner==null:return fail("This encounter has no mission runner")
+	return _mission_runner.poll(_combat.actor_snapshots(),radio_active,periodic_poll_allowed)
 
 func _poll_flight_result(radio_active: bool,periodic_poll_allowed: bool) -> Dictionary:
 	if _contract_result.is_empty() or _accounting==null:return fail("Flight results are unavailable")
@@ -972,7 +1027,7 @@ func _poll_flight_result(radio_active: bool,periodic_poll_allowed: bool) -> Dict
 	var rules: Dictionary=_bindings.early_contracts.flight_results
 	var status:=defeat_status()
 	if status.is_empty():return fail("Flight result lost its native retirement predicates")
-	var kind: int=4 if _dekato_objective!=null else 12 if _bakka else int(_rules.mission.kind)
+	var kind: int=12 if _bakka else int(_rules.mission.kind)
 	var mode:=0
 	if periodic_poll_allowed and status.satisfied and _contract_result.clock_ms>=int(rules.success_poll_milliseconds) and not radio_active:
 		mode=int(rules.success_result_mode)
@@ -994,10 +1049,10 @@ func acknowledge_bakka_result() -> bool:
 	_contract_result.mode=0;_contract_result.retired=true
 	return true
 
-func acknowledge_dekato_result() -> bool:
+func acknowledge_mission_result() -> bool:
 	error=""
-	if _dekato_objective==null or _contract_result.is_empty() or _contract_result.retired or _contract_result.mode!=int(_bindings.early_contracts.flight_results.success_result_mode):return reject("No successful Dekato result awaits acknowledgement")
-	_contract_result.mode=0;_contract_result.retired=true
+	if _mission_runner==null:return reject("This encounter has no mission runner")
+	if not _mission_runner.acknowledge():return reject(_mission_runner.error)
 	return true
 
 func acknowledge_contract_result() -> bool:
@@ -1052,12 +1107,12 @@ func kappa_context(require_fresh:=false) -> Dictionary:
 func career_snapshot() -> Dictionary:
 	if _identity.is_empty():return {}
 	var result:=_identity.duplicate()
+	if _mission_runner!=null:result.mission_result=_mission_runner.snapshot()
 	if _selected40_world!=null:result.selected40_sequence=_selected40_sequence.duplicate()
 	result.combat=_combat.career_snapshot()
 	if _accounting!=null:result.accounting=_accounting.snapshot()
 	if not _contract_result.is_empty():
 		if _bakka:result.bakka_result=_contract_result.duplicate(true)
-		elif _dekato_objective!=null:result.dekato_result=_contract_result.duplicate(true)
 		else:result.contract_result=_contract_result.duplicate(true)
 	return result
 
@@ -1070,6 +1125,7 @@ func shares_combat(owner: RefCounted) -> bool:return owner!=null and is_same(own
 func snapshot(combat_view: Dictionary={}) -> Dictionary:
 	if _identity.is_empty():return {}
 	var result:=_identity.duplicate()
+	if _mission_runner!=null:result.mission_result=_mission_runner.snapshot()
 	result.merge({"combat":_combat.snapshot() if combat_view.is_empty() else combat_view,"guidance":_guidance.map(func(owner):return {} if owner==null else owner.snapshot()),
 		"flight":_flight.map(func(owner):return {} if owner==null else owner.snapshot()),"random_state":_random.duplicate(true)})
 	if _local_patrol:result.support_state="ordinary_combat" if _combat.has_local_reactions() else "patrol_only"
@@ -1084,7 +1140,6 @@ func snapshot(combat_view: Dictionary={}) -> Dictionary:
 	if _alioth:result.support_state="alioth_combat";result.alioth_sequence=_alioth_sequence.duplicate(true)
 	if not _contract_result.is_empty():
 		if _bakka:result.bakka_result=_contract_result.duplicate(true)
-		elif _dekato_objective!=null:result.dekato_result=_contract_result.duplicate(true)
 		else:result.contract_result=_contract_result.duplicate(true)
 	if _ambient:result.traffic_clock=_launch_clock.snapshot();result.cargo=_cargo.duplicate(true)
 	if _accounting!=null:
@@ -1108,7 +1163,7 @@ func fork_for_frame(copy_motion:=true, incoming_combat: RefCounted=null) -> RefC
 	copy._started=_started;copy._max_ms=_max_ms
 	copy._local_patrol=_local_patrol;copy._contract=_contract
 	copy._convoy=_convoy;copy._alioth=_alioth;copy._kappa=_kappa;copy._bakka=_bakka;copy._story=_story
-	copy._dekato_objective=null if _dekato_objective==null else _dekato_objective.fork()
+	copy._mission_runner=null if _mission_runner==null else _mission_runner.fork()
 	copy._alioth_sequence=_alioth_sequence.duplicate(true)
 	copy._ambient=_ambient;copy._bindings=_bindings;copy._construction=_construction;copy._death_resources=_death_resources
 	copy._launch_clock=null if _launch_clock==null else _launch_clock.fork_for_frame()
@@ -1119,6 +1174,7 @@ func fork_for_frame(copy_motion:=true, incoming_combat: RefCounted=null) -> RefC
 	copy._scene_clocked=_scene_clocked
 	copy._selected40_world=_selected40_world;copy._selected41_world=_selected41_world
 	copy._selected41_sequence_revision=_selected41_sequence_revision
+	copy._selected41_sequence_phase=_selected41_sequence_phase;copy._selected41_sequence_elapsed=_selected41_sequence_elapsed
 	copy._selected40_sequence=_selected40_sequence.duplicate(true)
 	return copy
 
@@ -1127,13 +1183,14 @@ func clear() -> void:
 	_initial_actors=[];_destruction=[];_death_rules={};_accounting=null;_started=false;_max_ms=0;_local_patrol=false
 	_ambient=false;_contract=false;_bindings=null;_construction=null;_death_resources=null;_launch_clock=null;_cargo=[];_launch_pending=[]
 	_convoy=false;_alioth=false;_kappa=false;_bakka=false;_story=false
-	_dekato_objective=null
+	_mission_runner=null
 	_alioth_sequence={}
 	_contract_result={}
 	_flight_identity=null
 	_scene_clocked=false
 	_selected40_world=null;_selected41_world=null
 	_selected41_sequence_revision=0
+	_selected41_sequence_phase=0;_selected41_sequence_elapsed=0
 	_selected40_sequence={"revision":0,"elapsed_ms":0,"phase":0}
 
 func reject(message: String) -> bool:

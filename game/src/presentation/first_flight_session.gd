@@ -1,5 +1,4 @@
 extends Node3D
-const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Playable ordinary flights. The native frame owns gameplay; this session owns the
 ## clock, acknowledged speech, accepted presentation and subsequent sound commit.
 signal transition_rejected(message: String)
@@ -199,7 +198,7 @@ func _configure_construction(library: RefCounted, bindings: RefCounted, visuals:
 		objective_failure_audio=Speech.new();add_child(objective_failure_audio)
 		var mission: Dictionary=entry.departure.mission
 		if not objective_audio.configure_campaign_result(library,bindings,cursor,mission) or not objective_failure_audio.configure_campaign_result(library,bindings,cursor,mission,true):return fail(objective_audio.error+objective_failure_audio.error)
-	if cursor in ([2,4]+FlightStages.EQUIPPED):
+	if _world.destruction_owner()!=null or cursor==2:
 		flight_audio=FlightAudio.new();add_child(flight_audio)
 		if not flight_audio.configure_full_hold(library,bindings,_world,int(field_seed)):return fail(flight_audio.error)
 	if _world.destruction_owner()!=null:
@@ -504,6 +503,13 @@ func rebase_time(now_microseconds: int) -> bool:
 	return _clock!=null and _clock.rebase(now_microseconds)
 func is_paused() -> bool:return not _pauses.is_empty()
 func can_control() -> bool:return _active and status=="running" and not is_paused() and not _world.death_active() and not _world.local_departing() and not _world.cinematic_input_blocked() and _world.entry_released() and not _world.dialogue_visible()
+func can_skip_cinematic() -> bool:return _active and status=="running" and not is_paused() and _world!=null and _world.can_skip_entry()
+func cinematic_skipping() -> bool:return false
+func request_cinematic_skip() -> bool:
+	if not can_skip_cinematic():return reject("No arrival introduction can be skipped")
+	var next: RefCounted=_world.skip_entry()
+	if next==null:return reject(_world.error)
+	return _commit(next,false)
 func can_stop_mining() -> bool:return _active and status=="running" and not is_paused() and not _world.game_over_waiting() and _world.drill_owner()!=null and not _world.dialogue_visible()
 func flight_hud_visible(state: Dictionary={}) -> bool:
 	if _world==null:return false

@@ -241,7 +241,10 @@ def mac_records(mach, checkpoint):
     pattern = re.compile(
         rb'\x49\x89\x04\x24\x48\x8d\x35(.{4})\x48\x89\xc7\x48\x89\xda\xe8.{4}'
         rb'(?:\x41\xc7\x44\x24\x08(.{4}))?\x66\x41\xc7\x07(.{2})'
-        rb'\x41\xc7\x47\x04(.{4})\x41\xc7\x47\x08\xff\xff\xff\xff\x4d\x89\x67\x10', re.S)
+        rb'\x41\xc7\x47\x04(.{4})\x41\xc7\x47\x08\xff\xff\xff\xff'
+        # A stack-address setup may precede the same payload link. It writes
+        # neither the registration nor its string/material payload.
+        rb'(?:\x48\x8d\xb5.{4})?\x4d\x89\x67\x10', re.S)
     section = mach.text
     text = mach.data[section['offset']:section['offset'] + section['length']]
     rows = []
@@ -287,6 +290,9 @@ def mac_records(mach, checkpoint):
         rows.append(row)
         if len(rows) > MAX_RECORDS:
             raise ContentError('Too many resource declarations')
+    offsets = [row['source_offset'] for row in rows]
+    if len(offsets) != len(set(offsets)):
+        raise ContentError('Duplicate x86-64 resource declaration match')
     return rows
 
 
@@ -379,6 +385,41 @@ def record(mach, offset, identifier, kind, path):
     return {'id': identifier, 'registration_type': kind, 'kind': 'texture' if path.endswith('.aei') else 'mesh',
             'resource': 'resources/' + re.sub(r'/+', '/', path), 'source_path': path,
             'source_offset': offset + mach.slice_offset}
+
+
+def mesh_supplement(source, binding_header, identifiers):
+    """Read explicit missing mesh declarations without rebuilding a binding pack.
+
+    The original header proves which executable and base this supplement extends.
+    The caller writes this data separately; neither identity is replaced.
+    """
+    mach = MachO(source, 'mac-full-hd')
+    if (binding_header.get('architecture') != 'x86_64'
+            or binding_header.get('source_executable_sha256') != mach.source_sha256
+            or binding_header.get('source_executable_bytes') != mach.source_bytes):
+        raise ContentError('Mesh supplement requires the binding executable source')
+    for key in ('base_content_id', 'binding_id', 'records_sha256'):
+        if not re.fullmatch('[0-9a-f]{64}', str(binding_header.get(key, ''))):
+            raise ContentError('Invalid mesh supplement binding identity')
+    identity = 'gof2-bindings-v1\n%s\n%s\nx86_64\n%s\n' % (
+        binding_header['base_content_id'], mach.source_sha256, binding_header['records_sha256'])
+    if hashlib.sha256(identity.encode()).hexdigest() != binding_header['binding_id']:
+        raise ContentError('Mesh supplement binding identity mismatch')
+    if (not identifiers or len(identifiers) > 32
+            or any(type(value) is not int for value in identifiers)
+            or len(identifiers) != len(set(identifiers))):
+        raise ContentError('Mesh supplement requires distinct explicit identifiers')
+    rows = mac_records(mach, lambda *_: None)
+    selected = []
+    for identifier in identifiers:
+        matches = [row for row in rows if row['id'] == identifier]
+        if (len(matches) != 1 or matches[0]['kind'] != 'mesh'
+                or matches[0]['registration_type'] != 4
+                or 'material_id' not in matches[0] or matches[0].get('mesh_flags') != 0):
+            raise ContentError('Missing, duplicate or unsupported supplemental mesh declaration')
+        selected.append(matches[0])
+    return {'schema': 1, 'reader': 'mac-mesh-registration-supplement-v1',
+            'binding_header': dict(binding_header), 'registrations': selected}
 
 
 def extract(source, edition, checkpoint=lambda *_: None, *, ship_count=None):

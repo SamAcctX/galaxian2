@@ -148,6 +148,7 @@ var _fast_forward: RefCounted
 var _near_target:=false
 var _camera_ms:=0
 var _camera_passes:=1
+var _mission_context: RefCounted
 
 func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted, construction: RefCounted, dock_key: String, sensitivity: float, viewport_size:=Vector2i(1280,720), mobile_layout:=false, hard_difficulty:=false, autopilot_key:="Q", primary_key:="Space", fast_forward_key:="Tab") -> bool:
 	error=""
@@ -158,10 +159,10 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	var rescue_world:=Kappa.prepared_entry(bindings,entry)
 	var sahi_world:=Story.prepared_entry(bindings,entry)
 	var bakka_world: bool=entry.get("campaign_cursor")==36 and Bakka.context_valid(bindings,entry.get("bakka_context",{}))
-	var dekato_world: bool=entry.get("campaign_cursor")==38 and OrdinaryFlight.Dekato.context_valid(bindings,entry.get("dekato_context",{}))
-	if dekato_world:
-		var proof: Dictionary=bindings.dekato_source_receipt()
-		if (proof.is_empty() and entry.departure.has("dekato_source_receipt")) or entry.departure.get("dekato_source_receipt",{})!=proof:return reject("The prepared convoy changed its explicit source provenance")
+	var mission_context: RefCounted=construction.mission_context_owner()
+	var mission_world: bool=mission_context!=null
+	if mission_world:
+		if not mission_context.matches_source(bindings,entry.departure):return reject("The prepared convoy changed its explicit source provenance")
 	var ordinary_void:=Story.prepared_ordinary_void(bindings,entry)
 	var void_source: RefCounted=construction.ordinary_void_source_owner()
 	var void_world: bool=ordinary_void or (sahi_world and entry.campaign_cursor in [25,29])
@@ -195,9 +196,9 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	elif bakka_world:
 		encounter=Encounter.new()
 		if not encounter.configure_bakka(bindings,catalogues,library,construction) or not encounter.sample_bakka_clock(0,0):return reject(encounter.error)
-	elif dekato_world:
+	elif mission_world:
 		encounter=Encounter.new()
-		if not encounter.configure_dekato(bindings,catalogues,library,player,construction.scenery_owner(),equipment,entry.departure.progress.reputation) or not encounter.sample_dekato_clock(0,0):return reject(encounter.error)
+		if not encounter.configure_mission(bindings,catalogues,library,player,construction.scenery_owner(),equipment,entry.departure.progress.reputation,mission_context) or not encounter.sample_mission_clock(0,0):return reject(encounter.error)
 	elif ordinary_void:
 		encounter=Encounter.new()
 		if not encounter.configure_ordinary_void(bindings,catalogues,library,player,construction.scenery_owner(),equipment,entry.departure.progress.reputation,void_source,entry.departure.difficulty):return reject(encounter.error)
@@ -265,7 +266,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	if (encounter!=null or first_mining_contacts) and not bindings.player_destruction.is_empty():
 		death=Death.new()
 		var resources: RefCounted=encounter.destruction_resources() if encounter!=null else null
-		if resources==null or entry.campaign_cursor in FlightStages.FACTIONS:
+		if resources==null or mission_world or free_world or entry.campaign_cursor in FlightStages.FACTIONS:
 			resources=DeathResources.new()
 			if not resources.configure(library,bindings):return reject(resources.error)
 		if not death.configure(bindings,resources,construction,catalogues):return reject(death.error)
@@ -275,7 +276,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 		var prepared: bool=particles.configure_first_mining(bindings,death,int(entry.unix_seconds)) if encounter==null else particles.configure(bindings,encounter.snapshot().combat,death,int(entry.unix_seconds))
 		if not prepared:return reject(particles.error)
 	var radio: RefCounted
-	if entry.campaign_cursor in [7,16] or dekato_world or rescue_world or (sahi_world and entry.campaign_cursor in [24,25,28,29]) or (entry.campaign_cursor==14 and not ordinary_world):
+	if entry.campaign_cursor in [7,16] or mission_world or rescue_world or (sahi_world and entry.campaign_cursor in [24,25,28,29]) or (entry.campaign_cursor==14 and not ordinary_world):
 		var resources:=RadioResources.new();radio=Radio.new()
 		if not resources.prepare(library,bindings,null,int(entry.campaign_cursor)) or not radio.configure(bindings,library,resources.line_counts,int(entry.campaign_cursor)):return reject(resources.error+radio.error)
 	elif entry.campaign_cursor in [10,11,12] or ordinary_world or free_world:
@@ -326,7 +327,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 		var strip:=ScanAnimation.source_geometry(library,bindings,bindings.opening_staging.npc_scanner)
 		if art.has("error") or strip.has("error"):return reject("Training NPC acquisition art is unavailable")
 		scanner=Scanner.new()
-		if not scanner.configure(bindings,catalogues,TargetFrame.logical_radii(art.quarter_size,mobile_layout),int(strip.frames),equipment,encounter.snapshot().combat if ordinary_void or entry.campaign_cursor in (FlightStages.LOCAL+FlightStages.POST_SAHI) else {},tractor):return reject(scanner.error)
+		if not scanner.configure(bindings,catalogues,TargetFrame.logical_radii(art.quarter_size,mobile_layout),int(strip.frames),equipment,encounter.snapshot().combat if encounter!=null and equipment!=null and entry.campaign_cursor!=7 else {},tractor):return reject(scanner.error)
 		if not scanner.advance(encounter.snapshot().combat,entry.player_pose,camera.snapshot().pose,aim.snapshot(),0,false):return reject(scanner.error)
 	var void_targeting: RefCounted
 	if probe!=null:
@@ -428,6 +429,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_autopilot=autopilot;_preceding_commands=Vector2.ZERO
 	_return_rules=return_rules;_departure_station=null
 	_station_contact=false;_station_packet={};_encounter=encounter;_world_elapsed_ms=0
+	_mission_context=mission_context
 	_unsupported_boundary=""
 	_death=death;_statistics_pose=entry.player_pose;_camera_follow_enabled=true;_game_over_packet={}
 	_particles=particles;_equipment=equipment
@@ -442,9 +444,9 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_station_response_flags=entry.departure.get("station_response_flags",{}).duplicate(true)
 	_alioth=alioth;_portal=portal;_alioth_camera={}
 	_convoy=convoy;_convoy_camera={}
-	_convoy_career=construction.contract_owner() if convoy!=null or alioth!=null or sahi_world or ordinary_void or bakka_world or dekato_world else null
+	_convoy_career=construction.contract_owner() if convoy!=null or alioth!=null or sahi_world or ordinary_void or bakka_world or mission_world else null
 	_selected_locations=construction.selected_locations_owner() if sahi_world and _convoy_career==null else null
-	_story_bindings=bindings if free_world or rescue_world or sahi_world or ordinary_void or bakka_world or dekato_world or return_rules.get("alioth_return",false) else null
+	_story_bindings=bindings if free_world or rescue_world or sahi_world or ordinary_void or bakka_world or mission_world or return_rules.get("alioth_return",false) else null
 	_story_catalogues=catalogues if sahi_world else null
 	_gate_animation=gate_animation;_gate_transit=gate_transit;_gate_destinations=gate_destinations
 	_gate_cruise_speed=float(bindings.cruise.speed_units_per_millisecond)
@@ -507,9 +509,9 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		if timing.is_empty():reject(next._fast_forward.error);return null
 		if timing.reset and not next._camera.set_fast_forward(false):reject(next._camera.error);return null
 		delta_ms=timing.simulation_ms;next._camera_ms=timing.camera_ms;next._camera_passes=timing.camera_passes
-	if _entry.has("dekato_context"):
+	if _mission_context!=null:
 		var timing: Dictionary=next._briefing.snapshot()
-		if not next._encounter.sample_dekato_clock(int(timing.world_elapsed_ms),int(timing.hud_elapsed_ms)):reject(next._encounter.error);return null
+		if not next._encounter.sample_mission_clock(int(timing.world_elapsed_ms),int(timing.hud_elapsed_ms)):reject(next._encounter.error);return null
 	elif _objective is ContractObjective or _entry.has("bakka_context"):
 		var timing: Dictionary=next._briefing.snapshot()
 		var accepted: bool=next._encounter.sample_bakka_clock(int(timing.world_elapsed_ms),int(timing.hud_elapsed_ms)) if _entry.has("bakka_context") else next._encounter.sample_contract_clock(int(timing.world_elapsed_ms),int(timing.hud_elapsed_ms))
@@ -720,9 +722,9 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 			if not next._briefing.show_mining_failure_instruction() or not next._mining.mark_failure_instruction_shown(cursor):reject(next._briefing.error+next._mining.error);return null
 			next._retain_mining_hint(true);instruction_opened=true
 	var completion_opened:=false
-	if not instruction_opened and _entry.has("dekato_context"):
+	if not instruction_opened and _mission_context!=null:
 		var radio_active: bool=next._radio!=null and next._radio.snapshot().get("visible",false)
-		if not next._objective.poll_dekato(next._encounter,radio_active,next._briefing.mission_poll_due(),not next.death_active() and next._player.snapshot().vitals.hull>0):reject(next._objective.error);return null
+		if not next._objective.poll_mission(next._encounter,radio_active,next._briefing.mission_poll_due(),not next.death_active() and next._player.snapshot().vitals.hull>0):reject(next._objective.error);return null
 		completion_opened=next._objective.snapshot().dialogue.visible
 	elif not instruction_opened and _entry.has("bakka_context"):
 		var radio_active: bool=next._radio!=null and next._radio.snapshot().get("visible",false)
@@ -1261,7 +1263,11 @@ func _observe_radio() -> bool:
 		if result.is_empty():return reject(_radio.error)
 		_radio=result.radio;_radio_events=result.events;_random=result.random_state
 		return true
-	if _void_environment!=null or _entry.campaign_cursor==28 or _entry.has("dekato_context"):
+	if _mission_context!=null:
+		var elapsed: int=int(_briefing.snapshot().world_elapsed_ms)
+		if not _radio.bind_context(_mission_context.radio_observation(elapsed)):return reject(_radio.error)
+		_radio_events=_radio.step_context(elapsed)
+	elif _void_environment!=null or _entry.campaign_cursor==28:
 		_radio_events=_radio.step(int(_briefing.snapshot().world_elapsed_ms),{},0)
 	elif _sahi!=null:
 		var context:={"base_content_id":_entry.base_content_id,"binding_id":_entry.binding_id,"campaign_cursor":_entry.campaign_cursor,"recovery":_encounter.recovery_totals()}
@@ -1592,8 +1598,8 @@ func _evaluate_station_return() -> bool:
 				contracts=_retained_sahi_return_career(objective.progress)
 				if contracts==null:return false
 		else:return reject("The station requires the retained contract flight")
-	elif _return_rules.get("dekato_return",false):
-		if not OrdinaryFlight.Dekato.source_receipt_matches(_story_bindings,_entry.departure.get("dekato_source_receipt")) or not OrdinaryFlight.Dekato.station_mission(_story_bindings,objective.campaign_cursor,_entry.location.station_id,objective.mission) or not objective.get("combat_objective_acknowledged",false):return reject("Dekato docking lost its acknowledged source result")
+	elif _mission_context!=null:
+		if not _mission_context.matches_source(_story_bindings,_entry.departure) or not _mission_context.accepts_result(objective.campaign_cursor,objective.mission,_entry.location.station_id) or not objective.get("combat_objective_acknowledged",false):return reject("Mission docking lost its acknowledged source result")
 		contracts=contract_owner()
 		if contracts==null:return reject("Dekato docking lost its retained native career")
 	elif _return_rules.get("departure_return",false):
@@ -1697,7 +1703,7 @@ func equipment_owner() -> RefCounted:return null if _equipment==null else _equip
 
 func contract_owner() -> RefCounted:
 	if _objective is ContractObjective:return _objective.retained_for_arrival(_encounter) if not _station_packet.is_empty() else _objective.contract_owner()
-	if _entry.has("dekato_context") and _convoy_career!=null:
+	if _mission_context!=null and _convoy_career!=null:
 		var career: RefCounted=_convoy_career.fork()
 		if not career.retain_dekato_progress(_story_bindings,_objective.snapshot().progress):reject(career.error);return null
 		return career
@@ -1735,25 +1741,24 @@ func contract_result_pending() -> bool:
 
 ## A selected native flight can retire its result and select the original next
 ## mission. Public admission and an earned career/save remain separate owners.
-func _finish_dekato_navigation(previous: Dictionary) -> bool:
+func _finish_mission_navigation(previous: Dictionary) -> bool:
 	var result: Dictionary=_objective.snapshot()
 	if result.has("campaign_failure"):
 		var receipt: Dictionary=result.campaign_failure
 		_game_over_packet={"base_content_id":_entry.base_content_id,"binding_id":_entry.binding_id,"campaign_cursor":result.campaign_cursor,"source_state":receipt.source_state,"campaign_failure":receipt.duplicate(true)}
 	elif result.campaign_cursor!=previous.campaign_cursor:
-		if previous.campaign_cursor!=38 or result.campaign_cursor!=39 or not result.combat_objective_acknowledged:return reject("Dekato acknowledgement lost its native result")
-		if _entry.departure.get("dekato_source_receipt",{})!=_story_bindings.dekato_source_receipt():return reject("Dekato acknowledgement changed its explicit source provenance")
+		var recipe: Dictionary=_mission_context.recipe()
+		if recipe.is_empty() or result.campaign_cursor!=recipe.next_cursor or not result.combat_objective_acknowledged:return reject("Mission acknowledgement lost its native result")
+		if not _mission_context.matches_source(_story_bindings,_entry.departure):return reject("Mission acknowledgement changed its explicit source provenance")
 		if _entry.departure.has("contracts") and _convoy_career==null:return reject("Dekato acknowledgement lost its retained career")
 		var career: RefCounted=null
 		if _convoy_career!=null:
 			career=_convoy_career.fork()
-			if not career.advance_dekato_story(_story_bindings,previous.progress):return reject(career.error)
+			if not career.advance_mission_story(_story_bindings,_mission_context,previous.progress):return reject(career.error)
 			if career.snapshot().progress!=result.progress:return reject("Dekato acknowledgement changed its earned combat progress")
-		var docking: Dictionary={}
-		if OrdinaryFlight.Dekato.source_arrival_available(_story_bindings):
-			docking=OrdinaryFlight.Dekato.docking(_story_bindings)
-			if career==null or docking.is_empty() or _autopilot==null or _station==null:return reject("Dekato acknowledgement lost its retained physical return")
-		if not _encounter.acknowledge_dekato_result():return reject(_encounter.error)
+		var docking: Dictionary=recipe.docking.duplicate(true)
+		if not docking.is_empty() and (career==null or _autopilot==null or _station==null):return reject("Mission acknowledgement lost its retained physical return")
+		if not _encounter.acknowledge_mission_result():return reject(_encounter.error)
 		_convoy_career=career;_return_rules=docking
 	return true
 
@@ -1773,8 +1778,19 @@ func acknowledge_contract_result(serial: int,paused:=false) -> RefCounted:
 
 func drill_owner() -> RefCounted:return null if _mining==null else _mining.drill_owner()
 func entry_released() -> bool:return _briefing!=null and _briefing.snapshot().entry_released
+func can_skip_entry() -> bool:
+	return _mission_context!=null and _briefing!=null and not entry_released() and _briefing.snapshot().entry_elapsed_ms>0 and not dialogue_visible() and not death_active() and not local_departing() and not cinematic_input_blocked() and _unsupported_boundary.is_empty()
+
+func skip_entry(paused:=false) -> RefCounted:
+	if paused or not can_skip_entry():reject("The arrival introduction is not awaiting skip");return null
+	var next:=fork_for_frame()
+	if not next._briefing.skip_entry():reject(next._briefing.error);return null
+	var frame: RefCounted=next.evaluate(0)
+	if frame==null:reject(next.error)
+	return frame
 func has_local_travel() -> bool:return _local_travel!=null
 func station_owner() -> RefCounted:return null if _station==null else _station.fork_for_frame()
+func mission_context_owner() -> RefCounted:return _mission_context
 func encounter_owner() -> RefCounted:return null if _encounter==null else _encounter.fork_for_frame()
 func tractor_owner() -> RefCounted:return null if _tractor==null else _tractor.fork_for_frame()
 func destruction_owner() -> RefCounted:return null if _death==null else _death.fork_for_frame()
@@ -1824,7 +1840,7 @@ func navigate(action: String, paused:=false) -> RefCounted:
 				next._return_rules=FreeFlight.docking(_story_bindings,int(_entry.location.station_id),state.campaign_cursor)
 		elif not next._objective.navigate(action):reject(next._objective.error);return null
 		if _entry.has("bakka_context") and not next._finish_bakka_navigation(_objective.snapshot()):reject(next.error);return null
-		if _entry.has("dekato_context") and not next._finish_dekato_navigation(_objective.snapshot()):reject(next.error);return null
+		if _mission_context!=null and not next._finish_mission_navigation(_objective.snapshot()):reject(next.error);return null
 		if _entry.campaign_cursor==7 and _equipment!=null and next._objective.snapshot().combat_objective_acknowledged and not _objective.snapshot().combat_objective_acknowledged:
 			if not next._equipment.complete_training(next._cargo.snapshot()):reject(next._equipment.error);return null
 			if not _navigation.is_empty() and _navigation.clear_on_completion_acknowledgement:next._route=null
@@ -1961,6 +1977,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
+	copy._mission_context=_mission_context
 	copy._entry=_entry;copy._pose=_pose;copy._shot=_shot.duplicate(true);copy._random=_random.duplicate(true);copy._reference=_reference
 	copy._station_response_flags=_station_response_flags.duplicate(true)
 	if _alioth!=null:copy._alioth=_alioth.fork_for_frame();copy._portal=_portal.fork_for_frame()

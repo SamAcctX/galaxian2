@@ -3,7 +3,7 @@ extends RefCounted
 ## The enclosing live frame must retain actor ownership, resolve simultaneous
 ## success/failure and acknowledge the result. This object cannot advance a save.
 const Definitions=preload("res://src/content/dekato_convoy_definitions.gd")
-const Retirement=preload("res://src/simulation/actor_retirement_condition.gd")
+const Conditions=preload("res://src/simulation/mission_result_condition.gd")
 var error:=""
 var _rules:={}
 
@@ -17,8 +17,8 @@ func observe(actors: Variant) -> Dictionary:
 	error=""
 	if _rules.is_empty() or not actors is Array or actors.size()!=int(_rules.actor_count):
 		reject("Dekato requires its complete seven-actor observation");return {}
-	var success:=Retirement.range_status(actors,int(_rules.success.first_actor),int(_rules.success.end_actor),int(_rules.destroyed_mode))
-	var failure:=Retirement.range_status(actors,int(_rules.failure.first_actor),int(_rules.failure.end_actor),int(_rules.destroyed_mode))
+	var success:=Conditions.evaluate(_rules.success,{"actors":actors})
+	var failure:=Conditions.evaluate(_rules.failure,{"actors":actors})
 	if success.is_empty() or failure.is_empty():reject("Dekato received an invalid native actor mode");return {}
 	# The original predicates are independent. In particular, losing one convoy
 	# ship is not condition7; do not invent a priority when both predicates hold.

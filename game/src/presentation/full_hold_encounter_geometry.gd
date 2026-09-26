@@ -1,5 +1,4 @@
 extends Node3D
-const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Original NPC hulls, lights, engines, cargo and effects. Each complete cast is
 ## prepared before drawing; lifetime and gameplay stay in the encounter owner.
 const Encounter=preload("res://src/simulation/full_hold_encounter.gd")
@@ -15,6 +14,7 @@ const FreightGeometry=preload("res://src/presentation/freighter_destruction_geom
 const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const Junk=preload("res://src/content/contract_junk_definitions.gd")
 const Selected=preload("res://src/content/selected40_population_definitions.gd")
+const MissionContext=preload("res://src/simulation/mission_context.gd")
 const ENGINES={2:{"id":18002,"path":"resources/data/assets/main/3d/meshes/ships/ship_002_pirates_engine_add.aem"},
 	30:{"id":18030,"path":"resources/data/assets/main/3d/meshes/ships/ship_030_midorian_engine_add.aem"}}
 var error:=""
@@ -47,8 +47,12 @@ func _build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: 
 	if not owner is Encounter or owner.snapshot().is_empty():return fail("Prepare the ordinary encounter before its geometry")
 	var state: Dictionary=owner.snapshot()
 	if bindings==null or state.base_content_id!=bindings.base_content_id or state.binding_id!=bindings.binding_id:return fail("NPC geometry belongs to another content identity")
-	var local_traffic: bool=state.campaign_cursor in (FlightStages.LOCAL+FlightStages.POST_SAHI+[33])
-	if selected40:
+	var local_traffic: bool=OrdinaryFlight.combat_population(bindings,state.combat)
+	# A cast admitted by the mission entry is drawn from its native actors.
+	var admitted: RefCounted=MissionContext.from_owner(owner) if not selected40 else null
+	if admitted!=null:
+		if state.combat.actors.size()!=int(admitted.recipe().result.actor_count):return fail("Mission geometry differs from its admitted cast")
+	elif selected40:
 		var generation: RefCounted=owner.selected40_construction_owner()
 		if generation==null or state.campaign_cursor!=40 or not Selected.context_valid(bindings,generation.snapshot().get("selected40_context",{})) or state.combat.actors.size()!=int(Selected.VALUES.actor_count):return fail("Selected40 geometry requires its original native cast")
 		_selected40_generation=generation
@@ -60,8 +64,9 @@ func _build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: 
 		if actor.get("population_group")=="debris":
 			if not _build_debris(owner,id,actor,library,visuals,bindings):return false
 			continue
-		var ship_id: int=int(actor.hull_catalogue_id) if local_traffic or selected40 else (30 if id==3 else 2)
-		if actor.actor_id!=id or actor.hull_catalogue_id!=ship_id or (not selected40 and state.campaign_cursor not in FlightStages.FACTIONS and actor.actor_kind!=(3 if local_traffic or id==3 else 8)):return fail("Unsupported ordinary NPC model construction")
+		var native_cast: bool=local_traffic or selected40 or admitted!=null
+		var ship_id: int=int(actor.hull_catalogue_id) if native_cast else (30 if id==3 else 2)
+		if actor.actor_id!=id or actor.hull_catalogue_id!=ship_id or (not native_cast and actor.actor_kind!=(3 if id==3 else 8)):return fail("Unsupported ordinary NPC model construction")
 		if selected40:
 			var constructed: Dictionary=_selected40_generation.snapshot().actors[id]
 			if actor.hull_catalogue_id!=constructed.hull_catalogue_id or actor.population_group!=constructed.population_group or not Selected.constructed_kind_matches(actor,int(constructed.actor_kind)):return fail("Selected40 model differs from its constructed hull or faction")
@@ -69,8 +74,7 @@ func _build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: 
 			if not _build_freighter(owner,id,actor,library,visuals,bindings):return false
 			continue
 		var exhaust: Dictionary
-		if local_traffic or selected40:
-			if not selected40 and state.campaign_cursor not in FlightStages.FACTIONS and not bindings.mido_travel.departure_traffic.hull_candidates.any(func(value):return int(value)==ship_id):return fail("Unsupported local NPC hull")
+		if native_cast:
 			var engine_id:=int(bindings.mido_travel.traffic_presentation.engine_model_base)+ship_id
 			exhaust={"id":engine_id,"path":bindings.resolve(engine_id,"mesh")}
 		else:exhaust=ENGINES[ship_id]
@@ -96,12 +100,17 @@ func _build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: 
 	if not projectiles.build(owner.projectile_visual_owner(),library,visuals,bindings):return fail(projectiles.error)
 	impacts=Impacts.new();add_child(impacts)
 	if not impacts.build(owner.impact_visual_owner(),library,visuals,bindings):return fail(impacts.error)
-	if owner.has_secondaries():
+	if _draws_launchers(owner):
 		secondaries=Secondaries.new();add_child(secondaries)
 		if not secondaries.build(owner.secondary_owner(),library,visuals,bindings):return fail(secondaries.error)
 	_identity={"base_content_id":state.base_content_id,"binding_id":state.binding_id,"campaign_cursor":state.campaign_cursor}
 	_library=library;_visuals=visuals;_bindings=bindings
 	return true
+
+## A launcher whose last round was spent before this flight has left the
+## loadout; there is nothing to draw, but the secondary owner still exists.
+func _draws_launchers(owner: RefCounted) -> bool:
+	return owner.has_secondaries() and not owner.secondary_owner().snapshot().guns.is_empty()
 
 func _build_debris(owner: RefCounted,id: int,actor: Dictionary,library: RefCounted,visuals: RefCounted,bindings: RefCounted) -> bool:
 	if not Junk.available(bindings) or actor.actor_kind!=-1 or actor.actor_id!=id:return fail("Debris geometry requires its original contract construction")
@@ -216,7 +225,7 @@ func prepare_world(owner: RefCounted, camera: Transform3D, detail: Dictionary, o
 	if hits.is_empty():return failed(impacts.error)
 	var result: Dictionary={} if prepared.is_empty() else prepared[0].duplicate(true)
 	result.merge({"actors":prepared,"shots":shots,"hits":hits})
-	if owner.has_secondaries()!=(secondaries!=null):return failed("EMP presentation lost its equipped owner")
+	if secondaries==null and _draws_launchers(owner):return failed("EMP presentation lost its equipped owner")
 	if secondaries!=null:
 		result.secondaries=secondaries.prepare_world(owner.secondary_owner(),camera)
 		if result.secondaries.is_empty():return failed(secondaries.error)

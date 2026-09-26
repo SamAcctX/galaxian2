@@ -51,6 +51,13 @@ func configure_selected40(bindings: RefCounted,catalogues: RefCounted,equipment:
 	_selected40_world=world
 	return true
 
+func configure_mission(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,scenery: RefCounted,frame_radii: Vector2,animation_frames: int,context: RefCounted) -> bool:
+	error=""
+	if not _rules.is_empty() or not scenery is Scenery or not equipment is Equipment or bindings==null or catalogues==null or not is_instance_of(context,load("res://src/simulation/mission_context.gd")):return reject("Mission asteroid acquisition requires fresh admitted scenery and equipment")
+	var loadout: Dictionary=equipment.snapshot().loadout
+	if not context.matches_loadout(loadout) or not equipment.cargo_cache_valid():return reject("Mission asteroid acquisition lost its admitted loadout")
+	return _configure_devices(bindings,catalogues,loadout,scenery,frame_radii,animation_frames)
+
 func _configure_devices(bindings: RefCounted,catalogues: RefCounted,loadout: Dictionary,scenery: RefCounted,frame_radii: Vector2,animation_frames: int) -> bool:
 	if not Definitions.parameters(bindings.mining_targeting) or catalogues.content_id!=bindings.base_content_id:return reject("Asteroid acquisition requires its source declarations and catalogue")
 	var projection:=TargetProjection.new()

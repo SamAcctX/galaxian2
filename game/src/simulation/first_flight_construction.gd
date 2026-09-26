@@ -27,6 +27,7 @@ const Story=preload("res://src/content/story_encounter_definitions.gd")
 const FreeFlight=preload("res://src/content/free_flight_definitions.gd")
 const Bakka=preload("res://src/content/bakka_contest_definitions.gd")
 const Dekato=preload("res://src/content/dekato_convoy_definitions.gd")
+const MissionContext=preload("res://src/simulation/mission_context.gd")
 const FreeNavigation=preload("res://src/content/free_navigation_definitions.gd")
 const Gates=preload("res://src/simulation/gate_environment.gd")
 const Incoming=preload("res://src/simulation/local_arrival_environment.gd")
@@ -164,8 +165,7 @@ func prepare_free(bindings: RefCounted,catalogues: RefCounted,station: RefCounte
 	var departure: Dictionary=station.prepare_departure(bindings,catalogues)
 	if departure.is_empty() or not Campaign.supported(bindings,departure.get("campaign_cursor")):return reject(station.error if departure.is_empty() else "Ordinary departure requires its acknowledged native station")
 	var contracts: RefCounted=station.contract_owner();var equipment: RefCounted=station.equipment_owner()
-	var retained: Variant=station.snapshot().player_cache if departure.campaign_cursor==40 else null
-	return _prepare_free_owned(bindings,catalogues,equipment,contracts,departure.mission,departure.station_response_flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,retained)
+	return _prepare_free_owned(bindings,catalogues,equipment,contracts,departure.mission,departure.station_response_flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources)
 
 func _prepare_free_owned(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,contracts: RefCounted,mission: Dictionary,flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,previous_cache: Variant=null,incoming: RefCounted=null,from_station_id: int=-1,library: RefCounted=null) -> bool:
 	var career: Dictionary=contracts.snapshot();var owned: Dictionary=equipment.snapshot()
@@ -280,15 +280,17 @@ func prepare_dekato_selected(bindings: RefCounted,catalogues: RefCounted,equipme
 	if bindings==null or catalogues==null or not equipment is Equipment:return reject("Dekato construction requires retained equipped content")
 	var data:=Dekato.flight(bindings,context)
 	if data.is_empty():return reject("Dekato construction requires its selected source world")
-	if not _valid_selected_progress(bindings,progress,38,context.rank,context.difficulty):return false
+	if not _valid_selected_progress(bindings,progress,int(context.campaign_cursor),context.rank,context.difficulty):return false
 	if not FreeFlight.response_flags(bindings,station_response_flags):return reject("Dekato construction lost retained station responses")
 	var owned: Dictionary=equipment.snapshot();var loadout: Dictionary=owned.get("loadout",{})
 	if not equipment.cargo_cache_valid() or loadout.get("station_id")!=context.station_id or loadout.get("system_id")!=context.system_id:return reject("Dekato requires equipment already relocated to its target")
-	if not Cache.matches(previous_cache,loadout,38) or int(previous_cache.get("values",{}).get("hull",0))<=0:return reject("Dekato requires the surviving target-world cache")
+	var mission_context:=MissionContext.new()
+	if not mission_context.admit(bindings,catalogues,context,loadout):return reject(mission_context.error)
+	if not Cache.matches(previous_cache,loadout,int(context.campaign_cursor)) or int(previous_cache.get("values",{}).get("hull",0))<=0:return reject("Dekato requires the surviving target-world cache")
 	var retained_contracts: RefCounted=null
 	if contracts!=null:
 		if not is_instance_of(contracts,load("res://src/simulation/contract_session.gd")):return reject("Dekato requires its native retained career")
-		var selected: Dictionary=contracts.campaign_flight_context(bindings,Campaign.mission(bindings.mido_travel,38))
+		var selected: Dictionary=contracts.campaign_flight_context(bindings,Campaign.mission(bindings.mido_travel,int(context.campaign_cursor)))
 		if selected.is_empty():return reject(contracts.error)
 		if selected!=context or contracts.snapshot().progress!=progress:return reject("Dekato construction differs from its retained campaign context")
 		var history: RefCounted=contracts.location_owner()
@@ -297,7 +299,7 @@ func prepare_dekato_selected(bindings: RefCounted,catalogues: RefCounted,equipme
 	if incoming==null:
 		if from_station_id!=-1:return reject("A detached Dekato component cannot manufacture travel provenance")
 		incoming=Incoming.new()
-		if not incoming.configure(bindings,catalogues,int(context.station_id),locations,38):return reject(incoming.error)
+		if not incoming.configure(bindings,catalogues,int(context.station_id),locations,int(context.campaign_cursor)):return reject(incoming.error)
 	else:
 		if not incoming is Incoming or retained_contracts==null:return reject("Dekato incoming placement requires its native arrival and retained career")
 		if from_station_id<0 or from_station_id>=catalogues.tables.stations.size() or from_station_id==context.station_id:return reject("Dekato arrival requires its distinct departing station")
@@ -315,11 +317,11 @@ func prepare_dekato_selected(bindings: RefCounted,catalogues: RefCounted,equipme
 	var population: RefCounted=scenery.world_initialization_owner().npc_construction_owner()
 	var player:=Player.new()
 	if not player.configure_dekato(bindings,catalogues,equipment,population,previous_cache):return reject(player.error)
-	var location:=Location.new();var place:=location.resolve_local_travel(bindings,catalogues,equipment,player.cache_snapshot())
+	var location:=Location.new();var place:=location.resolve_local_travel(bindings,catalogues,equipment,player.cache_snapshot(),mission_context)
 	if place.is_empty():return reject(location.error)
 	var source: Dictionary=Dekato.declarations(bindings).mission
 	var mission:={"kind":int(source.kind),"station_id":int(source.station_id),"reward":int(source.reward),"bonus":int(source.bonus),"source_parameter":int(source.source_parameter)}
-	var packet:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":38,
+	var packet:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(context.campaign_cursor),
 		"loadout":loadout.duplicate(true),"equipment":owned,"cargo":owned.cargo.duplicate(true),"cargo_used":int(owned.cargo.used),
 		"progress":progress.duplicate(true),"mission":mission,"player":player.snapshot(),"player_cache":player.cache_snapshot(),
 		"dekato_context":context.duplicate(true),"station_response_flags":station_response_flags.duplicate(true),
@@ -331,6 +333,8 @@ func prepare_dekato_selected(bindings: RefCounted,catalogues: RefCounted,equipme
 	if retained_contracts!=null:packet.contracts=retained_contracts.snapshot()
 	if not _construct(bindings,catalogues,packet,data,player,place,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,equipment,retained_contracts,scenery,incoming,environment):return false
 	_state.dekato_context=context.duplicate(true);_selected_locations=locations.fork()
+	_state.mission_context=mission_context
+	_state.mission_flight=mission_context.flight_rules(bindings)
 	for key in ["system_id","station_id","mission_kind","mission_story","mission_completed"]:_state[key]=context[key]
 	return true
 
@@ -790,6 +794,7 @@ func _valid_packet(bindings: RefCounted, packet: Dictionary, context: Dictionary
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}
 	var result:=_state.duplicate(true)
+	result.erase("mission_context")
 	result.scenery=_scenery.snapshot();result.camera_view=_camera.snapshot();result.player=_player.snapshot()
 	return result
 
@@ -798,6 +803,7 @@ func camera_owner() -> RefCounted:return null if _camera==null else _camera.fork
 func player_owner() -> RefCounted:return null if _player==null else _player.fork_for_frame()
 func equipment_owner() -> RefCounted:return null if _equipment==null else _equipment.fork()
 func contract_owner() -> RefCounted:return null if _contracts==null else _contracts.fork()
+func mission_context_owner() -> RefCounted:return _state.get("mission_context")
 func selected_locations_owner() -> RefCounted:return null if _selected_locations==null else _selected_locations.fork()
 func void_environment_owner() -> RefCounted:return null if _void_environment==null else _void_environment.fork()
 func ordinary_void_source_owner() -> RefCounted:return null if _ordinary_void_source==null else _ordinary_void_source.fork()

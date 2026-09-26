@@ -5,6 +5,7 @@ const Bindings=preload("res://src/content/resource_bindings.gd")
 const Catalogues=preload("res://src/content/catalogues.gd")
 const SaveFile=preload("res://src/simulation/station_save_file.gd")
 const Guards=preload("res://tests/fixtures/dekato_station_checks.gd")
+const PrivatePath=preload("res://tests/fixtures/free_play_station_scenario.gd")
 
 func _initialize() -> void:
 	var guards:=Guards.new();var args:=OS.get_cmdline_user_args()
@@ -25,4 +26,25 @@ func verify(args: PackedStringArray,guards: RefCounted) -> void:
 	if document.is_empty():guards.check(false,file.error);return
 	guards.verify(bindings,cat,library,document,args[1],str(supplement[1]))
 	guards.check(guards.completed,"The archive guard suite did not finish")
+	var archive:=Guards.Archive.new();var station: RefCounted=archive.restore(bindings,cat,library,document)
+	if station==null:guards.check(false,archive.error);return
+	verify_pilot_observation(OS.get_environment("GOF2_DEKATO_EXPECTED_STATE"),path,station.snapshot(),guards)
 	guards.check(FileAccess.get_sha256(path)==expected,"Archive validation changed its immutable earned39 source")
+
+## Optional historical guard runs remain possible, but only a producer's live
+## observation earns a fresh pilot Resume claim. Never supply expected vitals
+## or ammunition from an older battle: compare the complete native snapshot.
+static func verify_pilot_observation(path: String,saved: String,station: Dictionary,guards: RefCounted) -> void:
+	if path.is_empty():
+		print("Historical checkpoint guard only; no new pilot observation supplied")
+		return
+	guards.check(PrivatePath.private_path(path) and FileAccess.file_exists(path),"Supply the newly produced pilot observation from private output")
+	if guards.failures:return
+	var file:=FileAccess.open(path,FileAccess.READ)
+	if file==null:guards.check(false,"Could not read the retained live pilot observation");return
+	var observed: Variant=file.get_var(false);file.close()
+	guards.check(observed is Dictionary,"Malformed pilot observation")
+	if guards.failures:return
+	guards.check(observed.get("format")==1 and observed.get("source_sha")=="b86c1dac98a7e68ce768bca8ee33e4500bb2cf5d81985d8bd4caff6e295c7c70" and observed.get("output_sha")==FileAccess.get_sha256(saved),"The observation belongs to another source or another produced save")
+	guards.check(observed.get("station")==station,"Fresh restoration changed the producer's live pools, ammunition, equipment, progress, stock or independent career")
+	guards.check(observed.get("losses") in [0,1] and observed.get("timing") in ["100ms","144hz","variable"] and observed.get("dialogue_inputs",[]).has("mouse") and observed.get("dialogue_inputs",[]).has("keyboard"),"The pilot record lacks its requested successful player path")

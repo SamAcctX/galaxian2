@@ -18,7 +18,8 @@ static func location_supported(bindings: RefCounted,catalogues: RefCounted,stati
 	var story_system: int=9 if cursor==26 and station_id==48 and load("res://src/content/post_sahi_definitions.gd").available(bindings) else 18 if cursor==28 and station_id==91 and load("res://src/content/thynome_expedition_definitions.gd").available(bindings) else -1
 	# Generated scenery is not a public route. The selected Dekato constructor
 	# separately requires its target-world cache, equipment and location owner.
-	if cursor==38 and load("res://src/content/dekato_convoy_definitions.gd").selected_location(bindings,station_id,4):story_system=4
+	var recipe: Dictionary=load("res://src/content/mission_recipe.gd").select(bindings,cursor)
+	if not recipe.is_empty() and station_id==recipe.station_id:story_system=int(recipe.system_id)
 	if story_system>=0:
 		if station_id>=catalogues.tables.stations.size():return false
 		var station: Dictionary=catalogues.tables.stations[station_id]

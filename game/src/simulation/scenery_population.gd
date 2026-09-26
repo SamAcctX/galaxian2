@@ -21,7 +21,6 @@ var _travel := {}
 var _void_crystal_field := {}
 var _alioth := false
 var _free := false
-var _free_cursors: Array=[]
 var _kappa := false
 var _sahi := false
 
@@ -37,7 +36,6 @@ func clear() -> void:
 	_void_crystal_field={}
 	_alioth=false
 	_free=false
-	_free_cursors=[]
 	_kappa=false
 	_sahi=false
 
@@ -57,8 +55,6 @@ func configure(bindings: RefCounted) -> bool:
 	_void_crystal_field=void_crystal_field(bindings)
 	_alioth=load("res://src/content/alioth_flight_definitions.gd").available(bindings)
 	_free=load("res://src/content/free_flight_definitions.gd").available(bindings)
-	var campaign=load("res://src/content/free_campaign_definitions.gd")
-	_free_cursors=load("res://src/content/flight_stages.gd").FREE.filter(func(cursor):return campaign.supported(bindings,cursor)) if _free else []
 	_kappa=load("res://src/content/kappa_lifecycle_definitions.gd").available(bindings)
 	_sahi=load("res://src/content/sahi_encounter_definitions.gd").coherent(bindings.mido_travel)
 	return true
@@ -84,6 +80,8 @@ func for_arrival(station_id: Variant, entry_conditions: Variant) -> Dictionary:
 	if station_id!=78 or not Arrival.entry_conditions(entry_conditions):return fail("Rescue scenery requires its retained station, ordinary location and no companions")
 	return _ordinary_center(station_id,int(_arrival.campaign_cursor))
 
+## Select scenery data for the already prepared world. Its entry owner decides
+## whether the player may depart; resource generation does not admit a campaign.
 func for_departure(station_id: Variant, entry_conditions: Variant, cursor: int=2) -> Dictionary:
 	error=""
 	if not Arrival.parameters(_arrival):return fail("Ordinary scenery center is unavailable")
@@ -110,7 +108,7 @@ func for_departure(station_id: Variant, entry_conditions: Variant, cursor: int=2
 	elif cursor==26 and post.parameters(_travel.get("post_sahi",{})) and station_id==48:data={"station_id":station_id}
 	elif cursor==28 and load("res://src/content/thynome_expedition_definitions.gd").coherent(_travel) and station_id==91:data={"station_id":station_id}
 	elif bakka_target and load("res://src/content/bakka_contest_definitions.gd").parameters(_travel.get("bakka_contest")):data={"station_id":station_id}
-	elif _free_cursors.has(cursor) and _free and station_id is int and not bakka_target and not load("res://src/content/ordinary_world_definitions.gd").location(_travel,station_id).is_empty():data={"station_id":station_id}
+	elif _free and cursor>=0 and station_id is int and not bakka_target and not load("res://src/content/ordinary_world_definitions.gd").location(_travel,station_id).is_empty():data={"station_id":station_id}
 	elif cursor==14 and station_id==79 and not Travel.player_entry(_travel,station_id,cursor).is_empty():data={"station_id":station_id}
 	elif Travel.navigation_available(_travel,cursor) and station_id is int and Travel.navigation_stations(_travel,cursor,station_id).has(station_id):data={"station_id":station_id}
 	else:return fail("This departure has no supported scenery center")

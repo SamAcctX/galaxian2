@@ -77,7 +77,7 @@ static func supported(source: Variant,cursor: Variant) -> bool:
 	# Retaining a declared mission does not admit its target story world.
 	if cursor==35:return nehma_available(travel)
 	if cursor==36:return gakkrr_available(travel)
-	if cursor in [37,38]:return gakkrr_available(travel) and BakkaReturn.parameters(travel.get("bakka_return"))
+	if BakkaReturn.parameters(travel.get("bakka_return")) and (cursor==int(travel.bakka_return.mission.campaign_cursor) or cursor==int(travel.bakka_return.next_mission.campaign_cursor)):return gakkrr_available(travel)
 	if cursor in [33,34]:return post_probe_available(travel) and Crystals.parameters(travel.get("void_crystals")) and load("res://src/content/void_access_definitions.gd").parameters(travel.get("void_access"))
 	return cursor==int(travel.free_flight.campaign_cursor) or (Visit.parameters(travel.get("suttnar_visit")) and cursor==int(travel.suttnar_visit.next_cursor)) or (chapter_available(travel) and cursor in [20,21,22,23,24])
 
@@ -120,7 +120,7 @@ static func mission(source: Variant,cursor: int) -> Dictionary:
 	if cursor==35:return PostProbe.mission_values(travel.nehma_visit.next_mission)
 	if cursor==36:return PostProbe.mission_values(travel.gakkrr_visit.next_mission)
 	if cursor==37:return PostProbe.mission_values(travel.bakka_return.mission)
-	if cursor==38:return PostProbe.mission_values(travel.bakka_return.next_mission)
+	if BakkaReturn.parameters(travel.get("bakka_return")) and cursor==int(travel.bakka_return.next_mission.campaign_cursor):return PostProbe.mission_values(travel.bakka_return.next_mission)
 	if cursor==27:
 		var result:={}
 		for key in ["kind","station_id","reward","bonus","source_parameter"]:result[key]=int(travel.post_sahi.missions["27"][key])

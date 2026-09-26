@@ -116,7 +116,7 @@ func collision_context(object_index: Variant) -> Dictionary:
 func supports_weapon_hit(weapon: Variant) -> bool:
 	var kinds:=[0]
 	if weapon is Dictionary and weapon.get("campaign_cursor") in _primary_cursors and TrainingWeapons.dispersed_primary(weapon):kinds.append(2)
-	if weapon is Dictionary and weapon.get("campaign_cursor") in FlightStages.FREE and _primary_cursors.has(weapon.get("campaign_cursor")) and preload("res://src/content/ordinary_fitting_definitions.gd").ordinary(weapon):kinds=[0,1,2]
+	if weapon is Dictionary and preload("res://src/content/ordinary_fitting_definitions.gd").ordinary(weapon):kinds=[0,1,2]
 	error=WeaponHit.validate(weapon,_identity,_hit_policy,kinds)
 	return error.is_empty()
 

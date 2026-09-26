@@ -13,6 +13,7 @@ const Effects=preload("res://src/content/scenery_effect_resources.gd")
 const Vectors=preload("res://src/simulation/source_vectors.gd")
 const Source=preload("res://src/simulation/ordinary_void_source.gd")
 const Selected40=preload("res://src/content/selected40_population_definitions.gd")
+const Context=preload("res://src/simulation/mission_context.gd")
 var error:=""
 var _rules:={}
 var _probe:={}
@@ -22,6 +23,55 @@ var _frame:={}
 var _entered:=false
 var _max_ms:=0
 var _selected40_generation: RefCounted
+var _context: RefCounted
+var _hold_open: Variant=null
+var _explicit_opening:=false
+var _identity: RefCounted
+
+## Entry has already been admitted by the capability owner. Consume the
+## initialized world's original environment slot, without selecting a story.
+func configure_admitted_world(bindings: RefCounted,context: RefCounted,world: Dictionary,library: RefCounted) -> bool:
+	error=""
+	if not _state.is_empty() or bindings==null or not context is Context or not context.has_feature("portal"):
+		return reject("Portal requires a fresh admitted world")
+	if not Definitions.coherent(bindings.mido_travel):return reject("Shared portal declarations are unavailable")
+	var identity: Dictionary=context.identity();var recipe: Dictionary=context.recipe()
+	for key in ["base_content_id","binding_id","campaign_cursor"]:
+		if world.get(key)!=identity.get(key):return reject("Portal belongs to another admitted world")
+	for key in ["station_id","system_id"]:
+		if world.get(key)!=recipe.get(key):return reject("Portal location differs from its admitted world")
+	var entry:=world.duplicate(true);entry.mission_kind=recipe.mission.kind
+	if not _configure_accepted(bindings,entry,library,{}):return false
+	_context=context
+	return true
+
+## Retain the animation and model. A newly opened contact volume starts a new
+## entry latch; the flight still owns contact sampling, pull and world changes.
+func open_at(position: Vector3,hold_open:=true) -> bool:
+	error=""
+	if _state.is_empty() or not position.is_finite():return reject("Open a configured portal at a finite position")
+	_state=_state.duplicate(true)
+	_state.position=position;_state.pose.origin=position;_state.visible=true
+	_state.elapsed_ms=-int(_rules.portal.open_duration_ms);_state.extent=0;_state.scale=0.0
+	_hold_open=hold_open;_explicit_opening=true;_entered=false;_contact={};_frame={}
+	return true
+
+func set_hold_open(enabled: bool) -> bool:
+	error=""
+	if _state.is_empty():return reject("Hold a configured portal")
+	_hold_open=enabled
+	return true
+
+func begin_closing(age_ms:=59000) -> bool:
+	error=""
+	if _state.is_empty() or age_ms<0 or age_ms>int(_rules.portal.close_start_ms):return reject("Portal closing requires a full-size lifetime age")
+	_state=_state.duplicate(true)
+	_state.elapsed_ms=age_ms;_state.extent=int(_rules.portal.extent_scale);_state.scale=1.0;_state.visible=true
+	_hold_open=false;_explicit_opening=false
+	return true
+
+func mission_context_owner() -> RefCounted:return _context
+func retained_identity() -> RefCounted:return _identity
 
 func configure(bindings: RefCounted,entry: Dictionary,library: RefCounted) -> bool:
 	error=""
@@ -109,6 +159,8 @@ func _configure_accepted(bindings: RefCounted,entry: Dictionary,library: RefCoun
 	_rules=rules.duplicate(true);_probe=bindings.mido_travel.void_probe.duplicate(true) if entry.campaign_cursor==29 else {}
 	_state=state;_contact={};_frame={};_entered=false
 	_selected40_generation=null
+	_context=null;_hold_open=null;_explicit_opening=false
+	_identity=RefCounted.new()
 	_max_ms=Frames.simulation_limit(bindings,150)
 	return true
 
@@ -121,7 +173,7 @@ func advance(milliseconds: Variant,camera: Transform3D,random: RefCounted) -> bo
 	# The already source-checked shared update explicitly clamps cursor40 in
 	# normal space at close_start_ms while its constructor flag remains set.
 	# Animation and facing still advance. This path never draws relocation RNG.
-	var held_open: bool=_selected40_generation!=null
+	var held_open: bool=_selected40_generation!=null if _hold_open==null else _hold_open
 	if not held_open and _state.visible and _state.elapsed_ms+milliseconds>=int(_rules.portal.hide_at_ms):
 		next_random=random.fork()
 		var policy: Dictionary=_rules.portal.relocation
@@ -132,8 +184,13 @@ func advance(milliseconds: Variant,camera: Transform3D,random: RefCounted) -> bo
 		relocation={"position":Vector3(x,y,z),"elapsed_ms":int(policy.opening_elapsed_ms)}
 	var next:=Portal.evaluate_clock(_state,_rules.portal,milliseconds,camera,relocation,held_open)
 	if next.has("error"):return reject(next.error)
+	# Explicit opening controls reach full extent at the opening boundary.
+	# Legacy lifecycle callers retain their historical boundary-frame extent.
+	if _explicit_opening and next.elapsed_ms>=0 and next.elapsed_ms<=int(_rules.portal.close_start_ms):
+		next.extent=int(_rules.portal.extent_scale);next.scale=1.0
 	if next_random!=null and not random.restore(next_random.snapshot()):return reject(random.error)
 	_state=next
+	if _explicit_opening and next.elapsed_ms>=0:_explicit_opening=false
 	_frame={} if relocation.is_empty() else {"relocated":true,"cancel_autopilot":bool(_rules.portal.relocation.cancel_player_autopilot_on_relocation)}
 	return true
 
@@ -174,5 +231,7 @@ func fork_for_frame() -> RefCounted:
 	copy._rules=_rules;copy._probe=_probe;copy._state=_state.duplicate(true);copy._frame=_frame.duplicate(true)
 	copy._contact=_contact.duplicate(true);copy._entered=_entered;copy._max_ms=_max_ms
 	copy._selected40_generation=_selected40_generation
+	copy._context=_context;copy._hold_open=_hold_open;copy._explicit_opening=_explicit_opening
+	copy._identity=_identity
 	return copy
 func reject(message: String) -> bool:error=message;return false

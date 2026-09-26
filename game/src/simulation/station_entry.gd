@@ -207,7 +207,7 @@ func _configure_convoy_return(bindings: RefCounted,catalogues: RefCounted,librar
 
 func _configure_contract_return(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,flight: RefCounted,current: Dictionary,packet: Dictionary) -> bool:
 	if not LoungeLifecycle.available(bindings):return fail("This pack has no supported retained station contracts")
-	var dekato_return: bool=OrdinaryFlight.Dekato.station_supported(bindings,packet.campaign_cursor,packet.get("docking",{}).get("station_id")) and packet.get("player",{}).get("campaign_cursor")==38
+	var dekato_return: bool=OrdinaryFlight.Dekato.station_supported(bindings,packet.campaign_cursor,packet.get("docking",{}).get("station_id")) and packet.get("player",{}).get("campaign_cursor")==int(OrdinaryFlight.Dekato.declarations(bindings).get("mission",{}).get("campaign_cursor",-1))
 	var free_flight: bool=dekato_return or FreeFlight.Campaign.supported(bindings,packet.campaign_cursor)
 	var equipment: RefCounted=flight.equipment_owner()
 	var contracts: RefCounted=flight.contract_owner()

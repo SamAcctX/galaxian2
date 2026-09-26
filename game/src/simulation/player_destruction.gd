@@ -1,5 +1,4 @@
 extends RefCounted
-const FlightStages=preload("res://src/content/flight_stages.gd")
 const Frames=preload("res://src/simulation/frame_clock.gd")
 var _max_ms:=0
 ## Mac starter destruction component. The flight owner supplies its physical
@@ -27,6 +26,20 @@ var _presentation_identity: RefCounted
 # the authority for any later removal of an exhausted ammunition stack.
 var _departure_loadout: Dictionary={}
 var _selected40_construction: RefCounted
+
+func configure_mission(bindings: RefCounted,resources: RefCounted,catalogues: RefCounted,context: RefCounted,player: RefCounted,pose: Transform3D,camera_pose: Transform3D) -> bool:
+	error=""
+	if not _state.is_empty() or not bindings is Bindings or not resources is Resources or not player is Player or not is_instance_of(context,load("res://src/simulation/mission_context.gd")):return reject("Mission destruction requires fresh admitted native owners")
+	if catalogues.content_id!=bindings.base_content_id or not context.matches_loadout(player.loadout()) or not Flight.rigid_pose(pose) or not Flight.rigid_pose(camera_pose):return reject("Mission destruction lost its admitted player or camera")
+	var effect: Dictionary=resources.snapshot()
+	for key in ["base_content_id","binding_id"]:
+		if effect.get(key)!=bindings.get(key):return reject("Mission destruction resources belong to another source")
+	var clock:=Explosion.create(effect,[],14292)
+	if clock.is_empty():return reject("Mission destruction lacks its original explosion clocks")
+	var recipe: Dictionary=context.recipe();var rules: Dictionary=bindings.player_destruction.duplicate(true)
+	rules.ship_id=context.ship_id();rules.departure_cursor=recipe.cursor;rules.story_cursors=[recipe.cursor,recipe.next_cursor]
+	_commit_configuration(bindings,rules,clock,player.snapshot(),player.loadout(),pose,camera_pose)
+	return true
 
 ## Explicit selected-source component, not a fabricated ordinary departure.
 ## Keep the actual origin inventory and the native constructor generation.
@@ -64,9 +77,18 @@ func configure(bindings: RefCounted, resources: RefCounted, construction: RefCou
 	var entry: Dictionary=construction.snapshot();var effect: Dictionary=resources.snapshot()
 	for key in ["base_content_id","binding_id"]:
 		if entry.get(key)!=bindings.get(key) or effect.get(key)!=bindings.get(key):return reject("Player destruction belongs to another content identity")
+	var context: RefCounted=construction.mission_context_owner()
+	if context!=null:
+		if not context.matches_loadout(entry.departure.loadout):return reject("Player equipment changed after mission entry")
+		var recipe: Dictionary=context.recipe()
+		rules=rules.duplicate(true);rules.ship_id=context.ship_id();rules.departure_cursor=recipe.cursor
+		rules.story_cursors=[recipe.cursor,recipe.next_cursor]
+		var mission_clock:=Explosion.create(effect,[],14292)
+		if mission_clock.is_empty():return reject("Player destruction lacks its explosion resources")
+		_commit_configuration(bindings,rules,mission_clock,entry.player,entry.departure.loadout,entry.player_pose,entry.camera_view.pose)
+		return true
 	var training: bool=entry.get("campaign_cursor")==7
-	var ordinary_void:=Ordinary.Authored.prepared_ordinary_void(bindings,entry)
-	var local_flight: bool=ordinary_void or entry.get("campaign_cursor") in (FlightStages.LOCAL+FlightStages.POST_SAHI)
+	var local_flight: bool=not training and construction.equipment_owner()!=null
 	var first_mining: bool=entry.get("campaign_cursor")==2
 	if first_mining:
 		var flight: Dictionary=Ordinary.for_departure(bindings,entry)
@@ -81,7 +103,7 @@ func configure(bindings: RefCounted, resources: RefCounted, construction: RefCou
 		rules.departure_cursor=7;rules.story_cursors=[7,int(bindings.combat_training_story.cursor_after_acknowledgement)]
 	elif local_flight:
 		if Ordinary.for_departure(bindings,entry).is_empty() or construction.equipment_owner()==null:return reject("Local destruction requires its equipped Mido flight")
-		rules=rules.duplicate(true);rules.departure_cursor=int(entry.campaign_cursor);rules.story_cursors=[entry.campaign_cursor,17 if entry.campaign_cursor==16 else entry.campaign_cursor]
+		rules=rules.duplicate(true);rules.ship_id=int(entry.departure.loadout.ship_id);rules.departure_cursor=int(entry.campaign_cursor);rules.story_cursors=[entry.campaign_cursor,17 if entry.campaign_cursor==16 else entry.campaign_cursor]
 		var campaign=load("res://src/content/free_campaign_definitions.gd")
 		if campaign.visit_at(bindings.mido_travel,entry.campaign_cursor,entry.location.station_id):
 			var visit: Dictionary=campaign.dialogue_rules(bindings,entry.campaign_cursor,entry.departure.mission)
@@ -99,7 +121,7 @@ func configure(bindings: RefCounted, resources: RefCounted, construction: RefCou
 	# retained drill/scanner. None supplies the escape-pod subtype27.
 	if training and not expected_equipment.all(func(id):return id in [0,22,55,81,90]):return reject("Training destruction has an unsupported escape-device context")
 	if local_flight:
-		if (ordinary_void or entry.campaign_cursor in (FlightStages.FREE+FlightStages.POST_SAHI)) and Fitting.available(bindings) and catalogues!=null:
+		if Fitting.available(bindings) and catalogues!=null:
 			if catalogues.content_id!=bindings.base_content_id:return reject("Destruction equipment belongs to another catalogue")
 			for id in expected_equipment:
 				if not Numbers.integer(id,0,catalogues.tables.items.size()-1) or catalogues.tables.items[id].arrays[2][5]==27:return reject("Escape-device destruction is not yet supported")

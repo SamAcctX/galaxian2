@@ -32,25 +32,22 @@ func clear() -> void:
 	_selected40_context = {}
 	_selected40_construction = null
 
-func configure(bindings: RefCounted, catalogues: RefCounted, mounts: RefCounted, loadout: Dictionary,dekato_context: Dictionary={}) -> bool:
+func configure(bindings: RefCounted, catalogues: RefCounted, mounts: RefCounted, loadout: Dictionary,mission_context: RefCounted=null) -> bool:
 	clear()
 	var content_id: Variant = loadout.get("base_content_id")
 	if not Library.valid_hash(content_id) or bindings == null or catalogues == null or mounts == null:
 		return reject("Primary weapons require an explicit content loadout")
 	if loadout.get("binding_id") != bindings.binding_id or mounts.snapshot().get("base_content_id") != content_id:
 		return reject("Primary equipment, mounts and bindings have different identities")
+	if mission_context!=null:
+		if not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not mission_context.matches_loadout(loadout):return reject("Primary equipment changed after mission entry")
+		return _configure_loadout(bindings,catalogues,mounts,loadout)
 	if loadout.has("campaign_cursor") and (loadout.campaign_cursor not in FlightStages.EQUIPPED or not loadout.campaign_cursor is int or not TrainingWeapons.parameters(bindings.combat_training_weapons)):
 		return reject("Unsupported primary encounter context")
 	if loadout.get("campaign_cursor") in [10,11,12,13,14] and Travel.player_entry(bindings.mido_travel,int(loadout.get("station_id",-1)),int(loadout.campaign_cursor)).is_empty():return reject("Local primary entry requires its supported location")
 	if loadout.get("campaign_cursor")==16 and (load("res://src/content/alioth_population_definitions.gd").flight(bindings,int(loadout.get("station_id",-1))).is_empty()):return reject("Alioth primary entry requires its supported location")
 	var ordinary: bool=loadout.get("campaign_cursor") in FlightStages.FREE and not load("res://src/content/free_flight_definitions.gd").flight(bindings,int(loadout.get("station_id",-1)),int(loadout.campaign_cursor)).is_empty()
-	# An explicit selected native encounter is separate from generic travel.
-	# Existing callers without this context keep the original admission guard.
-	if not dekato_context.is_empty():
-		if not load("res://src/content/dekato_convoy_definitions.gd").context_valid(bindings,dekato_context):return reject("Dekato primaries require their selected source context")
-		for key in ["campaign_cursor","station_id","system_id"]:
-			if loadout.get(key)!=dekato_context[key]:return reject("Dekato primaries differ from their equipped location")
-	if loadout.get("campaign_cursor") in FlightStages.FREE and loadout.campaign_cursor not in [21,24,28,33] and not ordinary and dekato_context.is_empty():return reject("Ordinary primary entry requires its supported location")
+	if loadout.get("campaign_cursor") in FlightStages.FREE and loadout.campaign_cursor not in [21,24,28,33] and not ordinary:return reject("Ordinary primary entry requires its supported location")
 	if loadout.get("campaign_cursor") in [21,24,28,33] and not ordinary:
 		var cache_rules=load("res://src/simulation/flight_player_cache.gd")
 		var entry: Dictionary=cache_rules.ordinary_void_entry(bindings.mido_travel,int(loadout.get("ship_id",-1))) if loadout.campaign_cursor==33 else cache_rules.kappa_entry(bindings.mido_travel) if loadout.campaign_cursor==21 else cache_rules.sahi_entry(bindings.mido_travel,int(loadout.get("ship_id",-1)),int(loadout.campaign_cursor))
@@ -58,6 +55,16 @@ func configure(bindings: RefCounted, catalogues: RefCounted, mounts: RefCounted,
 		for key in ["ship_id","station_id","system_id"]:
 			if loadout.get(key)!=int(entry[key]):return reject("Story primary entry differs from its equipped location")
 	if loadout.get("campaign_cursor")==13 and not ContractLife.available(bindings):return reject("Contract primary contacts require supported lifecycle declarations")
+	return _configure_loadout(bindings,catalogues,mounts,loadout)
+
+## Consume the player already prepared by the flight entry owner. This does
+## not select a world or admit a new loadout.
+func configure_player(bindings: RefCounted,catalogues: RefCounted,mounts: RefCounted,player: RefCounted,mission_context: RefCounted=null) -> bool:
+	if not is_instance_of(player,load("res://src/simulation/opening_player_state.gd")) or player.snapshot().is_empty():return reject("Primary weapons require their initialized native player")
+	var loadout: Dictionary=player.loadout()
+	if mission_context!=null:return configure(bindings,catalogues,mounts,loadout,mission_context)
+	clear()
+	if bindings==null or catalogues==null or mounts==null or loadout.get("base_content_id")!=bindings.base_content_id or loadout.get("binding_id")!=bindings.binding_id or mounts.snapshot().get("base_content_id")!=bindings.base_content_id:return reject("Primary player and mounts belong to another content identity")
 	return _configure_loadout(bindings,catalogues,mounts,loadout)
 
 ## Construct the retained player's actual guns without granting a selected

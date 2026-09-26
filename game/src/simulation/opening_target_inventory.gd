@@ -1,5 +1,4 @@
 extends RefCounted
-const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Complete ordinary target membership for verified opening and training worlds.
 ## Unknown equipment groups and changed source populations remain unsupported.
 const Opening = preload("res://src/content/opening_sky_definitions.gd")
@@ -23,6 +22,18 @@ var _actors := []
 var _scenery := []
 var _selected40_construction: RefCounted
 var _selected40_context:={}
+
+func configure_mission(bindings: RefCounted,catalogues: RefCounted,context: RefCounted,player: RefCounted,scenery: RefCounted,combat: RefCounted) -> bool:
+	error=""
+	if not _state.is_empty() or not is_instance_of(context,load("res://src/simulation/mission_context.gd")) or not player is Player or not is_instance_of(combat,load("res://src/simulation/opening_combat_group.gd")):return reject("Mission targets require the admitted player, field and cast")
+	var source: Dictionary=player.loadout()
+	if not context.matches_loadout(source):return reject("Mission targets lost their admitted loadout")
+	var generation: RefCounted=scenery.world_initialization_owner()
+	if generation==null:return reject("Mission targets require their completed native generation")
+	var constructor: RefCounted=generation.npc_construction_owner()
+	var field: Dictionary=scenery.snapshot();var generated: Dictionary=generation.snapshot()
+	if not _configure_source(bindings,catalogues,source,constructor.snapshot().actors,field,field.departure_population,{},generated.entry_conditions.location_match):return false
+	return validate_owners(combat.snapshot(),field.bodies)
 
 ## Target location belongs to the actual generated source field. The player's
 ## canonical equipment remains at its retained origin; no cache is relocated.
@@ -184,25 +195,18 @@ func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dic
 		indices.append(index)
 	var npc_ids := []
 	var cast:=[]
-	var free_faction:=-1
-	if story.is_empty() and source.get("campaign_cursor") in FlightStages.FREE:
-		# Assembly admission follows the actual world, not the Terran default
-		# or the faction claimed by an individual target.
-		free_faction=int(load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,source.station_id).get("faction",-1))
 	for actor in actor_rows:
-		# Authored assembly and membership were accepted by encounter composition.
-		var story_freight: bool=not story.is_empty() and actor.population_group=="freighter"
-		var free_freight: bool=story.is_empty() and source.get("campaign_cursor") in FlightStages.FREE and actor.get("population_group")=="freighter"
-		if free_freight and not load("res://src/content/free_traffic_definitions.gd").actor_matches(bindings,actor,"freighter",-1,false,free_faction):return reject("Ordinary target changed its source freighter assembly")
-		var alioth_freight: bool=source.get("campaign_cursor")==16 and actor.get("population_group")=="freighter"
-		if alioth_freight and actor.get("assembly")!=bindings.mido_travel.alioth_attack.population.freighter_assembly:return reject("Alioth target changed its original freighter assembly")
-		var freight: bool=source.get("campaign_cursor") in [11,12,13,14] and actor.get("population_group")=="freighter"
-		var capital: bool=source.get("campaign_cursor")==14 and actor.get("population_group")=="capital"
-		if capital and actor.get("assembly")!=bindings.mido_travel.convoy_ship.assembly:return reject("Convoy target changed its source capital assembly")
-		var debris: bool=source.get("campaign_cursor") in [13,14] and actor.get("population_group")=="debris"
-		if freight and not Ambient.assembly_matches(bindings.ambient_population,actor.get("assembly")):return reject("Mixed target lacks its original freighter assembly")
-		var assembled: bool=story_freight or capital or alioth_freight or free_freight or freight
-		var root_id: int=int(actor.assembly.root_model_id if actor.assembly.has("root_model_id") else actor.assembly.body_resource_ids[0]) if assembled else -1
+		# The native world already validated its cast and assemblies. Target
+		# resources follow those semantic records, not the campaign cursor.
+		var assembled: bool=actor.get("population_group") in ["freighter","capital"]
+		var debris: bool=actor.get("population_group")=="debris"
+		var root_id:=-1
+		if assembled:
+			var assembly: Variant=actor.get("assembly")
+			if not assembly is Dictionary:return reject("Constructed target lost its body assembly")
+			if assembly.has("root_model_id"):root_id=int(assembly.root_model_id)
+			elif assembly.get("body_resource_ids") is Array and not assembly.body_resource_ids.is_empty():root_id=int(assembly.body_resource_ids[0])
+			if root_id<0:return reject("Constructed target lost its body resource")
 		var model: String=bindings.resolve(root_id,"mesh") if assembled else bindings.resolve(int(actor.resource_id),"mesh") if debris else bindings.resolve_ship_model(int(actor.hull_catalogue_id))
 		if model.is_empty():return reject(bindings.error)
 		npc_ids.append(actor.actor_id)

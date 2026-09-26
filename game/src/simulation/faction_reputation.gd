@@ -33,7 +33,7 @@ static func valid_state(data: Variant) -> bool:
 	var axes: Variant=data.get("axes")
 	return axes is Array and axes.size()==2 and axes.all(func(value):return value is int and value>=-100 and value<=100)
 
-func configure(bindings: RefCounted, cursor: Variant, kinds: Variant, difficulty: Variant, rescue_context:=false, ordinary_void_system_id: Variant=null, ordinary_void_rank: Variant=null, bakka_context:=false, dekato_context:=false) -> bool:
+func configure(bindings: RefCounted, cursor: Variant, kinds: Variant, difficulty: Variant, rescue_context:=false, ordinary_void_system_id: Variant=null, ordinary_void_rank: Variant=null, bakka_context:=false, native_cast: Dictionary={}) -> bool:
 	error="";_rules={};_state={}
 	_selected40_world=null
 	if not available(bindings) or not cursor is int or not kinds is Array or (not difficulty is int and not difficulty is float) or not is_finite(float(difficulty)) or float(difficulty)<0.0 or float(difficulty)>10.0:return reject("Reputation requires a verified early Mido encounter")
@@ -48,7 +48,11 @@ func configure(bindings: RefCounted, cursor: Variant, kinds: Variant, difficulty
 	var kappa: bool=rescue_context and cursor==21 and Kappa.KappaLife.available(bindings) and kinds==[0,0,0,0]
 	var bakka: bool=bakka_context and cursor==36 and load("res://src/content/bakka_contest_definitions.gd").available(bindings) and ContractLife.available(bindings) and kinds==[1,8,8,8,8,8,8,8]
 	var story: bool=cursor==24 and load("res://src/content/sahi_encounter_definitions.gd").coherent(bindings.mido_travel) and kinds==bindings.mido_travel.sahi_encounter.population.actors.map(func(actor):return int(actor.actor_kind))
-	var dekato: bool=dekato_context and cursor==38 and load("res://src/content/dekato_convoy_definitions.gd").available(bindings) and kinds==[2,2,3,3,3,3,3]
+	var constructed: bool=not native_cast.is_empty()
+	if constructed:
+		if native_cast.get("campaign_cursor")!=cursor or not native_cast.get("actor_rows") is Array or not native_cast.get("context",{}).get("system_id") is int:return reject("Reputation requires its native cast and location")
+		expected=native_cast.actor_rows.map(func(actor):return int(actor.actor_kind))
+		if kinds!=expected:return reject("Reputation differs from its constructed affiliations")
 	if cursor in [25,26,29] and load("res://src/content/post_sahi_definitions.gd").portal_available(bindings.mido_travel,cursor):
 		var count: int=bindings.mido_travel.post_sahi["void"].population.count if cursor in [25,29] else bindings.mido_travel.post_sahi.pursuers.count
 		story=kinds.size()==count and kinds.all(func(kind):return kind is int and kind==9)
@@ -62,12 +66,11 @@ func configure(bindings: RefCounted, cursor: Variant, kinds: Variant, difficulty
 	if (ordinary_void_system_id!=null or ordinary_void_rank!=null) and not ordinary_void:return reject("Void reputation requires a source-system fighter population")
 	if rescue_context and not kappa:return reject("Rescue reputation requires its authored cast")
 	if bakka_context and not bakka:return reject("B'akka reputation requires its authored cast")
-	if dekato_context and not dekato:return reject("Dekato reputation requires its authored cast")
 	# The world validates the mission/population pair before supplying this
 	# faction ledger. A selected courier supplies an empty list; delivery pirates
 	# can extend the ordinary list beyond the no-job population bound.
-	var free: bool=not kappa and not bakka and not dekato and load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) and FreeLife.available(bindings) and (not kinds.is_empty() or OrdinaryContracts.available(bindings)) and kinds.size()<=FreeLife.Traffic.Population.maximum_actor_count(bindings,20,float(difficulty))+OrdinaryContracts.maximum_extra_count(bindings) and kinds.all(func(kind):return kind is int and kind in [0,1,2,3,8])
-	if contract or convoy or alioth or free or kappa or story or ordinary_void or bakka or dekato:
+	var free: bool=not kappa and not bakka and not constructed and load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) and FreeLife.available(bindings) and (not kinds.is_empty() or OrdinaryContracts.available(bindings)) and kinds.size()<=FreeLife.Traffic.Population.maximum_actor_count(bindings,20,float(difficulty))+OrdinaryContracts.maximum_extra_count(bindings) and kinds.all(func(kind):return kind is int and kind in [0,1,2,3,8])
+	if contract or convoy or alioth or free or kappa or story or ordinary_void or bakka or constructed:
 		if float(difficulty) not in [0.5,1.0]:return reject("Reputation requires the supported contract ship population")
 		expected=kinds.duplicate()
 		_set_faction_rules(bindings,rules)
@@ -76,7 +79,7 @@ func configure(bindings: RefCounted, cursor: Variant, kinds: Variant, difficulty
 			rules.systems_reputation=bindings.mido_travel.kappa_lifecycle.systems.duplicate(true)
 		if free:rules.system_id=int(bindings.mido_travel.free_lifecycle.system_id)
 		if bakka:rules.system_id=int(bindings.mido_travel.bakka_contest.mission.system_id)
-		if dekato:rules.system_id=int(load("res://src/content/dekato_convoy_definitions.gd").declarations(bindings).mission.system_id)
+		if constructed:rules.system_id=int(native_cast.context.system_id)
 		if alioth or story or ordinary_void:
 			rules.system_id=int(ordinary_void_system_id) if ordinary_void else (18 if cursor in [28,29] else int(bindings.mido_travel.sahi_encounter.system_id if story else bindings.mido_travel.alioth_lifecycle.system_id))
 			rules.lethal_changes["9"]=int(bindings.mido_travel.alioth_lifecycle.void_reputation_change)
@@ -90,7 +93,7 @@ func configure(bindings: RefCounted, cursor: Variant, kinds: Variant, difficulty
 	if not expected is Array or kinds.size()!=expected.size():return reject("Reputation has an unsupported encounter population")
 	for id in kinds.size():
 		if not kinds[id] is int or kinds[id]!=int(expected[id]):return reject("Reputation actor affiliation changed")
-	if NPCSystems.available(bindings) and (story or ordinary_void or free or bakka or dekato or not AmbientCombat.for_context(bindings,cursor).is_empty()):
+	if NPCSystems.available(bindings) and (story or ordinary_void or free or bakka or constructed or not AmbientCombat.for_context(bindings,cursor).is_empty()):
 		rules.systems_changes={}
 		for kind in kinds:rules.systems_changes[str(kind)]=NPCSystems.reputation(bindings,kind)
 	_rules=rules.duplicate(true)
@@ -102,7 +105,6 @@ func configure(bindings: RefCounted, cursor: Variant, kinds: Variant, difficulty
 		_state.spawn_generations=[];_state.spawn_generations.resize(kinds.size());_state.spawn_generations.fill(0)
 	if kappa:_state.kappa_rescue=true
 	if bakka:_state.bakka_contest=true
-	if dekato:_state.dekato_convoy=true
 	return true
 
 ## Fixed authored cast at the actual selected normal-space source. Sharing the
@@ -263,7 +265,7 @@ func restore(bindings: RefCounted, data: Variant) -> bool:
 	error=""
 	if not data is Dictionary or not data.get("events") is Array:return reject("Retained reputation hit history is unavailable")
 	var next: RefCounted=get_script().new()
-	if not next.configure(bindings,data.get("campaign_cursor"),data.get("actor_kinds"),data.get("difficulty"),data.get("kappa_rescue",false),null,null,data.get("bakka_contest",false),data.get("dekato_convoy",false)):return reject(next.error)
+	if not next.configure(bindings,data.get("campaign_cursor"),data.get("actor_kinds"),data.get("difficulty"),data.get("kappa_rescue",false),null,null,data.get("bakka_contest",false)):return reject(next.error)
 	if next._state.has("spawn_generations"):
 		var generations: Variant=data.get("spawn_generations")
 		if not generations is Array or generations.size()!=next._state.actor_kinds.size() or not generations.all(func(value):return Numbers.integer(value,0,2147483647)):return reject("Invalid retained traffic generations")

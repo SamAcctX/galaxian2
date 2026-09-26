@@ -71,10 +71,10 @@ func build_station(library: RefCounted,visuals: RefCounted,bindings: RefCounted,
 	_initial_descriptors=descriptors.duplicate(true)
 	return _build_layers(library,visuals,bindings,{"station_id":station_id,"system_id":system_id},quality,descriptors,rotation_value,variant)
 
-func build_departure(library: RefCounted, visuals: RefCounted, bindings: RefCounted, catalogues: RefCounted, cache: Variant, quality := "high", equipment: RefCounted=null) -> bool:
+func build_departure(library: RefCounted, visuals: RefCounted, bindings: RefCounted, catalogues: RefCounted, cache: Variant, quality := "high", equipment: RefCounted=null, mission_context: RefCounted=null) -> bool:
 	clear()
 	var location:=Arrival.new()
-	var context:=location.resolve_departure(bindings,catalogues,cache,equipment)
+	var context:=location.resolve_departure(bindings,catalogues,cache,equipment,mission_context)
 	if context.is_empty():return reject(location.error)
 	if library.manifest.get("content_id","")!=bindings.base_content_id:return reject("Departure sky belongs to another content identity")
 	if not _build_location(library,visuals,bindings,catalogues,context.sky_parameters,context,quality,false):return false

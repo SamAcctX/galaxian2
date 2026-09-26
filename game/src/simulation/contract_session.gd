@@ -164,6 +164,13 @@ func advance_dekato_story(bindings: RefCounted,progress: Dictionary) -> bool:
 	var rules: Dictionary=Dekato.declarations(bindings)
 	return _retain_story_progress(bindings,progress,int(rules.mission.campaign_cursor),int(rules.next_mission.campaign_cursor),int(rules.mission.station_id),int(rules.mission.station_id),false)
 
+func advance_mission_story(bindings: RefCounted,context: RefCounted,progress: Dictionary) -> bool:
+	error=""
+	if not is_instance_of(context,load("res://src/simulation/mission_context.gd")) or _state.is_empty():return reject("Mission acknowledgement requires its retained career and entry")
+	var recipe: Dictionary=context.recipe()
+	if recipe.is_empty():return reject("Mission acknowledgement lost its recipe")
+	return _retain_story_progress(bindings,progress,recipe.cursor,recipe.next_cursor,recipe.station_id,recipe.station_id,false)
+
 ## Reading the living flight's career incorporates its native combat counters
 ## without another acknowledgement, payment, relocation or generated contact.
 func retain_dekato_progress(bindings: RefCounted,progress: Dictionary) -> bool:

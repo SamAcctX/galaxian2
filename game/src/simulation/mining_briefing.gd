@@ -79,6 +79,12 @@ func advance(milliseconds: Variant, paused:=false, defer_poll:=false) -> bool:
 
 func mission_poll_due() -> bool:return _poll_due
 
+func skip_entry() -> bool:
+	if _state.is_empty() or _state.phase!="entry" or _state.entry_released or _state.entry_elapsed_ms<=0:return reject("Only a started arrival introduction can be skipped")
+	# Skip the entry controller's clock, never combat, radio or acknowledgement.
+	_state.entry_elapsed_ms=int(_rules.entry_release_ms)
+	return true
+
 func show_mining_failure_instruction() -> bool:
 	if _state.is_empty() or _failure_line.is_empty() or _state.phase!="flight":return reject("The mining failure instruction cannot replace an active dialogue")
 	_state.phase="mining_instruction"

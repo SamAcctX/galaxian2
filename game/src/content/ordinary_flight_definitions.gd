@@ -18,6 +18,7 @@ const Authored=preload("res://src/content/story_encounter_definitions.gd")
 const Bakka=preload("res://src/content/bakka_contest_definitions.gd")
 const BakkaCombat=preload("res://src/content/bakka_combat_definitions.gd")
 const Dekato=preload("res://src/content/dekato_convoy_definitions.gd")
+const MissionRecipe=preload("res://src/content/mission_recipe.gd")
 
 static func select(bindings: RefCounted, cursor: Variant) -> Dictionary:
 	if bindings==null or not cursor is int:return {}
@@ -27,6 +28,9 @@ static func select(bindings: RefCounted, cursor: Variant) -> Dictionary:
 	return Training.flight(bindings) if cursor==7 else Mining.flight(bindings,cursor)
 
 static func for_departure(bindings: RefCounted, entry: Dictionary) -> Dictionary:
+	# The construction's capability owner has already admitted this flight.
+	# Observations carry only its declarative projection, never the live owner.
+	if entry.has("mission_flight"):return entry.mission_flight.duplicate(true)
 	var rules:=select(bindings,entry.get("campaign_cursor"))
 	if Kappa.prepared_entry(bindings,entry):rules=Kappa.flight(bindings,int(entry.get("location",{}).get("station_id",-1)))
 	if FreeFlight.ordinary_entry(bindings,entry):rules=FreeFlight.flight(bindings,int(entry.get("location",{}).get("station_id",-1)),entry.campaign_cursor)
@@ -39,7 +43,6 @@ static func for_departure(bindings: RefCounted, entry: Dictionary) -> Dictionary
 	# B'akka is admitted only from its already-selected native construction.
 	# This does not make station27 a free-navigation destination.
 	if Bakka.context_valid(bindings,entry.get("bakka_context",{})):rules=FreeFlight.flight(bindings,int(entry.get("location",{}).get("station_id",-1)),36)
-	if Dekato.context_valid(bindings,entry.get("dekato_context",{})):rules=Dekato.flight(bindings,entry.dekato_context)
 	if rules.is_empty() or entry.get("location",{}).get("station_id")!=int(rules.station_id):return {}
 	var packet: Variant=entry.get("departure")
 	if not packet is Dictionary:return {}
@@ -50,7 +53,8 @@ static func for_departure(bindings: RefCounted, entry: Dictionary) -> Dictionary
 ## Resource preparation is separate from supported flight construction. This
 ## lets the original lesson be checked without opening an unfinished mission.
 static func briefing_presentation(bindings: RefCounted,cursor: Variant,ordinary_world:=false) -> Dictionary:
-	if cursor==38 and not ordinary_world and Dekato.available(bindings):return briefing(bindings,cursor,false,int(Dekato.declarations(bindings).mission.station_id))
+	var recipe:=MissionRecipe.select(bindings,cursor)
+	if not recipe.is_empty() and not ordinary_world:return MissionRecipe.briefing(bindings,recipe)
 	if cursor==36 and not ordinary_world and Bakka.available(bindings):return briefing(bindings,cursor,false,int(bindings.mido_travel.bakka_contest.mission.station_id))
 	if bindings!=null and cursor==32 and FreeFlight.Campaign.post_probe_available(bindings.mido_travel):return briefing(bindings,cursor,true,int(bindings.mido_travel.post_probe_visits.missions["32"].station_id))
 	if cursor==24 and bindings!=null and Authored.Sahi.coherent(bindings.mido_travel):return briefing(bindings,cursor,false,int(bindings.mido_travel.sahi_encounter.station_id))
@@ -64,14 +68,8 @@ static func briefing_presentation(bindings: RefCounted,cursor: Variant,ordinary_
 	return briefing(bindings,cursor,ordinary_world)
 
 static func briefing(bindings: RefCounted,cursor: Variant,ordinary_world:=false,station_id: int=-1) -> Dictionary:
-	if cursor==38 and Dekato.available(bindings) and station_id==int(Dekato.declarations(bindings).mission.station_id):
-		var shared:=MiningStory.briefing(bindings,2)
-		if shared.is_empty():return {}
-		var mission: Dictionary=Dekato.declarations(bindings).mission
-		shared.campaign_cursor=int(mission.campaign_cursor);shared.mission_kind=int(mission.kind)
-		shared.events=mission.briefing_events.duplicate(true)
-		shared.entry_release_ms=int(bindings.mido_travel.free_flight.launch_clear_after_ms)+1
-		return shared
+	var recipe:=MissionRecipe.select(bindings,cursor)
+	if not recipe.is_empty() and station_id==recipe.station_id:return MissionRecipe.briefing(bindings,recipe)
 	# Owning the contest capability must not replace ordinary travel elsewhere
 	# while its target remains pending. Only the selected B'akka entry uses it.
 	if cursor==36 and Bakka.available(bindings) and station_id==int(bindings.mido_travel.bakka_contest.mission.station_id):
@@ -160,21 +158,8 @@ static func briefing(bindings: RefCounted,cursor: Variant,ordinary_world:=false,
 	return Training.briefing(bindings) if cursor==7 else MiningStory.briefing(bindings,cursor)
 
 static func objective(bindings: RefCounted,cursor: Variant) -> Dictionary:
-	if cursor==38 and Dekato.available(bindings):
-		var shared:=MiningStory.objective(bindings,2)
-		if shared.is_empty():return {}
-		var mission: Dictionary=Dekato.declarations(bindings).mission
-		shared.campaign_cursor=int(mission.campaign_cursor);shared.mission_kind=int(mission.kind);shared.station_id=int(mission.station_id)
-		shared.required_cargo=0;shared.events=mission.result_events.duplicate(true);shared.dekato_convoy=true
-		var continuation: Dictionary=Dekato.declarations(bindings).next_mission
-		shared.cursor_after_acknowledgement=int(continuation.campaign_cursor);shared.next_kind=int(continuation.kind)
-		shared.next_mission={}
-		for key in ["kind","station_id","reward","bonus","source_parameter"]:shared.next_mission[key]=int(continuation[key])
-		shared.dekato_result_modes=bindings.early_contracts.flight_results.duplicate(true)
-		shared.campaign_failure=bindings.mido_travel.kappa_outcome.failure.duplicate(true)
-		# This selected native result does not authorize public travel or a save.
-		shared.mission={"kind":int(mission.kind),"station_id":int(mission.station_id),"reward":int(mission.reward),"bonus":int(mission.bonus),"source_parameter":int(mission.source_parameter)}
-		return shared
+	var recipe:=MissionRecipe.select(bindings,cursor)
+	if not recipe.is_empty():return MissionRecipe.objective(bindings,recipe)
 	if cursor==36 and Bakka.available(bindings):
 		var shared:=MiningStory.objective(bindings,2)
 		if shared.is_empty():return {}

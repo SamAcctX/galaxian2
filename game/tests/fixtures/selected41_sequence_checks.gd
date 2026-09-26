@@ -13,7 +13,7 @@ static func run(host: SceneTree,library: RefCounted,bindings: RefCounted,cat: Re
 	if not npc.prepare(bindings,cat,library,world):host.check(false,npc.error);return
 	var initial: Dictionary=npc.snapshot();var pose: Transform3D=initial.player_pose
 	var sequence: RefCounted=npc.sequence_owner();var initial_sequence: Dictionary=sequence.snapshot()
-	host.check(initial_sequence.camera==world.camera_owner().snapshot() and initial_sequence.phase==0 and not initial_sequence.complete_cinematic_supported,"Source41 attack replaced arrival camera or claimed a complete cinematic")
+	host.check(initial_sequence.camera==world.camera_owner().snapshot() and initial_sequence.phase==0 and initial_sequence.complete_cinematic_supported and not initial_sequence.sequence_complete,"Source41 sequence replaced arrival camera or completed before its cinematic")
 	for bad in [null,RefCounted.new()]:
 		host.check(not sequence.advance(0,npc.radio_owner(),bad,pose) and sequence.snapshot()==initial_sequence,"Unrelated combat drove source41 choreography")
 	var foreign:=NPC.new();host.check(foreign.prepare(bindings,cat,library,other),foreign.error)
@@ -123,17 +123,97 @@ static func run(host: SceneTree,library: RefCounted,bindings: RefCounted,cat: Re
 	var killed_next: RefCounted=killed.evaluate(1,pose,false)
 	if killed_next==null:host.check(false,killed.error);return
 	host.check(killed_next.snapshot().controller.accounting.events.filter(func(event):return event.actor_id==1).size()==2,"Reset fighter death was lost or counted more than once")
-	# Unsupported event5 must reject the complete candidate, not silently
-	# pretend phase2 exists or write physical+0x8c from hull/position guesses.
-	var later: RefCounted=active.fork_for_frame();later._radio._active=-1;later._radio._finished[4]=true
-	var later_before: Dictionary=later.snapshot()
-	host.check(later.evaluate(0,pose,false)==null and later.error.contains("event5") and later.snapshot()==later_before,"Unsupported event5 mutated a live owner or granted a result")
 	for _frame in 20:
 		var next: RefCounted=active.evaluate(100,pose,false)
 		if next==null:host.check(false,active.error);return
 		active=next
 		host.check(active.snapshot().sequence.camera.look==active.combat_owner().actor_snapshot(0).body_pose.origin,"Source41 camera used the pre-motion rather than current freighter target")
 	host.check(active.snapshot().sequence.phase==1 and active.snapshot().events.sequence.reset_fighters.is_empty() and active.combat_owner().actor_snapshot(1).body_pose!=attack.combat.actors[1].body_pose,"Attack failed to retain its shot while continuing ordinary NPC motion")
+	_complete_sequence(host,active,pose)
 	if DisplayServer.get_name()!="headless":await load("res://tests/fixtures/selected41_construction_checks.gd").render(host,library,bindings,visuals,world.construction_owner(),world,active,[],true)
 	host.check(world.snapshot()==original and world.entry_owner().snapshot()==retained and npc.snapshot()==initial and damaged.snapshot()==before,"Attack checks changed initialized content, passengers, wallet or canonical parent")
-	print("Source41 native ATTACK: event4-start phase0->1; same fighters1..3 reset, separate root/statistics placement, freighter-only targeting, retained boost/bank/recovery/effect-RNG, native camera, second death, rollback;20x100ms continuation; detached fixtures; event5/full cinematic/Host/result remain closed")
+	print("Source41 native SEQUENCE: original attack retained; event5 enables damage effects, stops cruise, protects hull; timed drift/fixed pose, seven existing fighters retarget, timed pullback, player restore and semantic completion; transactional rollback. Detached components, no earned41/Host/result/save acceptance")
+
+static func _complete_sequence(host: SceneTree,attack: RefCounted,pose: Transform3D) -> void:
+	# Disclosed radio-finish stimulus, continuing the actual native component.
+	# A stopped freighter must never satisfy the semantic completion adapter.
+	var later: RefCounted=attack.fork_for_frame()
+	later._radio._active=-1;later._radio._finished[4]=true
+	later._control=later._control.fork_for_frame()
+	later._control._flight[0]._state.speed=0.0;later._combat._writable(0)._state.speed=0.0
+	var condition=load("res://src/simulation/mission_result_condition.gd")
+	var predicate:={"kind":25,"sequence_flag":"sequence_complete"}
+	host.check(not condition.evaluate(predicate,later.result_observation()).satisfied and not later.completion_condition_observation().satisfied,"Incidental zero speed completed the sequence")
+	_reject_tail(host,later,pose,"event5")
+	var before: Dictionary=later.snapshot()
+	var active: RefCounted=later.evaluate(0,pose,false)
+	if active==null:host.check(false,later.error);return
+	var entered: Dictionary=active.snapshot();var cue: Dictionary=entered.sequence
+	host.check(cue.phase==2 and cue.phase_elapsed_ms==0 and entered.radio.started[5] and not entered.radio.finished[5],"Event5 must start the next shot before its playback finishes")
+	host.check(cue.effects_enabled==[40,41] and cue.frame.effects.all(func(effect):return effect.enabled) and cue.frame.effects.size()==2,"Event5 removed damage effects instead of enabling them")
+	host.check(cue.frame.audio==[{"action":"play","sound_id":155},{"action":"stop_actor_engine","actor_id":0}],"Event5 lost the sound/engine-stop directives")
+	host.check(entered.combat.actors[0].vitals.hull==9999999 and entered.combat.actors[0].max_hull==9999999 and not entered.controller.flight[0].cruise_enabled,"Event5 did not protect current/max hull and stop ordinary cruise")
+	host.check(entered.combat.actors[0].body_pose==before.combat.actors[0].body_pose and cue.camera.eye==before.combat.actors[0].body_pose.origin+Vector3(-3000,-2000,12000),"Event5 moved the freighter early or misplaced the damage shot")
+	host.check(entered.weapons.actors==before.weapons.actors and entered.player.vitals==before.player.vitals and active.player_owner().loadout()==later.player_owner().loadout(),"Event5 reset weapons, player pools or retained loadout")
+	var replay: RefCounted=later.evaluate(0,pose,false)
+	host.check(replay!=null and replay.snapshot()==entered and later.snapshot()==before,"Event5 replay consumed a parent")
+	var start: Transform3D=entered.combat.actors[0].body_pose
+	for _step in 150:
+		var next: RefCounted=active.evaluate(100,pose,false)
+		if next==null:host.check(false,active.error);return
+		active=next
+	var drift: Dictionary=active.snapshot()
+	host.check(drift.sequence.phase==2 and drift.sequence.phase_elapsed_ms==15000 and not active.completion_condition_observation().satisfied,"Drift must last strictly more than 15000ms")
+	host.check(drift.combat.actors[0].body_pose.origin.is_equal_approx(start.origin+Vector3(0,-15000,30000)) and drift.combat.actors[0].body_pose.basis.is_equal_approx(start.basis*Basis(Vector3.BACK,0.45)),"Disabled freighter did not drift and roll independently of automatic cruise")
+	host.check(drift.sequence.camera.eye==cue.camera.eye and drift.sequence.camera.look==drift.combat.actors[0].body_pose.origin,"Drift shot stopped tracking the current freighter")
+	var crossed: RefCounted=active.evaluate(1,pose,false)
+	if crossed==null:host.check(false,active.error);return
+	active=crossed
+	host.check(active.snapshot().sequence.phase==3 and active.snapshot().combat.actors[0].body_pose.origin!=Vector3(2006,-31500,-86720),"Drift crossing skipped the next-frame placement boundary")
+	# Retargeting must preserve an injured fighter and every retained projectile,
+	# including their elapsed intervals, handles, systems and accounting history.
+	var cut: RefCounted=active.fork_for_frame()
+	host.check(not cut._combat._writable(2).normal_hit(1,true).is_empty(),"Cannot injure the retained retarget probe")
+	var cut_before: Dictionary=cut.snapshot()
+	var sequence: RefCounted=cut.sequence_owner()
+	if not sequence.advance(0,cut.radio_owner(),cut._combat,pose):host.check(false,sequence.error);return
+	var prepared: Dictionary=cut._control.evaluate_selected41_sequence(sequence,cut._combat,cut._weapons)
+	if prepared.is_empty():host.check(false,cut._control.error);return
+	for id in range(1,8):
+		host.check(prepared.combat.actor_snapshot(id)==cut_before.combat.actors[id],"Retarget reset an existing fighter lifecycle/pool/pose")
+		host.check(prepared.weapons.snapshot().target_memberships[id]==[-1] and prepared.controller._guidance[id]._training.target_memberships[id]==[-1],"Retarget did not update both native player target lists")
+	host.check(prepared.weapons.snapshot().actors==cut_before.weapons.actors and prepared.controller.snapshot().accounting==cut_before.controller.accounting,"Retarget reset weapon state or accounted history")
+	host.check(cut.snapshot()==cut_before,"Retarget preparation mutated its parent")
+	_reject_tail(host,cut,pose,"fixed pose and retarget")
+	var placed: RefCounted=cut.evaluate(0,pose,false)
+	if placed==null:host.check(false,cut.error);return
+	active=placed
+	var fixed: Dictionary=active.snapshot();var fixed_pose: Transform3D=fixed.combat.actors[0].body_pose
+	host.check(fixed.sequence.phase==4 and fixed.sequence.phase_elapsed_ms==0 and fixed_pose.origin==Vector3(2006,-31500,-86720) and fixed_pose.basis.is_equal_approx(Basis(Vector3.RIGHT,-0.4)*Basis(Vector3.BACK,1.8)),"Freighter final pose or shot boundary changed")
+	host.check(not fixed.combat.actors[0].engine_draw_enabled and not fixed.sequence.shot.inherit_target_up and fixed.sequence.camera.eye==fixed_pose.origin+Vector3(3000,1000,2000),"Final shot lost engine visibility, upright camera or authored eye")
+	for _step in 150:
+		var next: RefCounted=active.evaluate(100,pose,false)
+		if next==null:host.check(false,active.error);return
+		active=next
+	var pullback: Dictionary=active.snapshot()
+	host.check(pullback.sequence.phase==4 and pullback.sequence.phase_elapsed_ms==15000 and pullback.sequence.camera.eye==fixed.sequence.camera.eye+Vector3(15000,15000,-30000),"Pullback must move the eye and last strictly more than 15000ms")
+	host.check(pullback.combat.actors[0].body_pose==fixed_pose and not pullback.player.damage_allowed,"Freighter resumed cruise or player damage returned during the shot")
+	_reject_tail(host,active,pose,"completion")
+	var finished: RefCounted=active.evaluate(1,pose,false)
+	if finished==null:host.check(false,active.error);return
+	var done: Dictionary=finished.snapshot()
+	host.check(done.sequence.phase==5 and done.sequence.sequence_complete and done.sequence.shot.target=="player" and done.sequence.camera.mode=="follow","Final shot failed to restore the native player camera and semantic completion")
+	host.check(done.combat.actors[0].vitals.hull==100 and done.combat.actors[0].max_hull==9999999 and done.combat.actors[0].speed==0.0,"Final hull setter lowered capacity or failed to stop the freighter")
+	host.check(done.player.damage_allowed and not done.sequence.input_blocked and done.sequence.hud_visible and done.sequence.frame.restore_control and done.sequence.frame.audio==[{"action":"stop","sound_id":156}],"Player control/damage/HUD or completion audio was not restored")
+	host.check(done.player.vitals==before.player.vitals and finished.player_owner().loadout()==later.player_owner().loadout(),"Cinematic changed retained player pools/loadout")
+	host.check(not condition.evaluate(predicate,done.events.result_observation).satisfied and condition.evaluate(predicate,finished.result_observation()).satisfied,"Parent result poll saw completion early or lacked the next-frame semantic flag")
+	var continued: RefCounted=finished.evaluate(0,pose,false)
+	if continued==null:host.check(false,finished.error);return
+	host.check(continued.snapshot().sequence.phase==5 and continued.snapshot().sequence.frame.actor_actions.is_empty() and continued.snapshot().sequence.frame.audio.is_empty() and not continued.snapshot().sequence.frame.restore_control,"Completed sequence repeated rewards, audio or restore actions")
+	host.check(later.snapshot()==before and cut.snapshot()==cut_before,"Later cinematic frames changed retained parent owners")
+
+static func _reject_tail(host: SceneTree,parent: RefCounted,pose: Transform3D,label: String) -> void:
+	var broken: RefCounted=parent.fork_for_frame()
+	broken._control._rules=broken._control._rules.duplicate(true);broken._control._rules.actor_count=9
+	var before: Dictionary=broken.snapshot()
+	host.check(broken.evaluate(0 if label!="completion" else 1,pose,false)==null and broken.snapshot()==before,"Late NPC failure leaked "+label+" actions")

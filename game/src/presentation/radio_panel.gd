@@ -1,5 +1,4 @@
 extends Control
-const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Passive native view of a radio snapshot. The mission owns simulation time,
 ## pauses and completion; native wrapping never feeds back into source timing.
 ## Speaker names/portraits must be resolved by the content owner before use.
@@ -79,7 +78,7 @@ func _configure(base_content_id: String, binding_id: String, language: String, s
 	_background.texture = null
 	_header_bar.texture = null
 	_speakers = {}
-	if not Library.valid_hash(base_content_id) or not Library.valid_hash(binding_id) or language.is_empty() or (campaign_cursor not in ([0,1]+FlightStages.EQUIPPED) and not (native_story and campaign_cursor in [40,41])):
+	if not Library.valid_hash(base_content_id) or not Library.valid_hash(binding_id) or language.is_empty() or campaign_cursor<0:
 		return _fail("Radio view needs a verified content, binding and language identity")
 	# Copy names and retain supplied texture resources. Never guess a portrait or
 	# derive a localization ID by adding a fixed cross-edition offset.

@@ -39,11 +39,11 @@ func resolve(bindings: RefCounted, catalogues: RefCounted, arrival_cache: Varian
 	if not Cache.matches(arrival_cache,seed,int(data.campaign_cursor)):return reject("Rescue location requires the matching restored player cache")
 	return _resolve(bindings,catalogues,seed,int(data.campaign_cursor))
 
-func resolve_departure(bindings: RefCounted, catalogues: RefCounted, departure_cache: Variant, equipment: RefCounted=null) -> Dictionary:
+func resolve_departure(bindings: RefCounted, catalogues: RefCounted, departure_cache: Variant, equipment: RefCounted=null, mission_context: RefCounted=null) -> Dictionary:
 	error=""
 	if bindings==null or catalogues==null or not departure_cache is Dictionary:return reject("Mining-flight environment is unavailable")
 	if departure_cache.get("campaign_cursor")==7:return resolve_combat_training(bindings,catalogues,equipment,departure_cache)
-	if departure_cache.get("campaign_cursor") in FlightStages.LOCAL+FlightStages.POST_SAHI:return resolve_local_travel(bindings,catalogues,equipment,departure_cache)
+	if equipment is Equipment:return resolve_local_travel(bindings,catalogues,equipment,departure_cache,mission_context)
 	var flight:=MiningFlight.flight(bindings,departure_cache.get("campaign_cursor"))
 	if flight.is_empty():return reject("This departure has no supported mining-flight environment")
 	if not Definitions.parameters(bindings.arrival_environment) or not SkyDefinitions.parameters(bindings.opening_sky) or not Planets.parameters(bindings.opening_sky.get("planet_resources",{})):return reject("First flight requires the shared ordinary environment")
@@ -86,7 +86,7 @@ func resolve_combat_training(bindings: RefCounted, catalogues: RefCounted, equip
 		if seed.get(key)!=int(bindings.combat_training_story[key]):return reject("Training location changed")
 	return _resolve(bindings,catalogues,seed,7)
 
-func resolve_local_travel(bindings: RefCounted, catalogues: RefCounted, equipment: RefCounted, player_cache: Dictionary) -> Dictionary:
+func resolve_local_travel(bindings: RefCounted, catalogues: RefCounted, equipment: RefCounted, player_cache: Dictionary, mission_context: RefCounted=null) -> Dictionary:
 	error=""
 	if bindings==null or catalogues==null or not equipment is Equipment:return reject("Local travel requires its retained equipped player")
 	if player_cache.get("campaign_cursor") in FlightStages.POST_SAHI:return resolve_post_sahi(bindings,catalogues,equipment,player_cache)
@@ -97,8 +97,9 @@ func resolve_local_travel(bindings: RefCounted, catalogues: RefCounted, equipmen
 	var ordinary: bool=FreeFlight.Campaign.supported(bindings,cursor) and FreeFlight.available(bindings) and not FreeFlight.player_entry(bindings,int(seed.station_id),int(seed.ship_id),cursor).is_empty()
 	var entry: Dictionary=Cache.sahi_entry(bindings.mido_travel,int(seed.ship_id),cursor) if cursor is int and cursor in [24,28] else {}
 	var sahi: bool=not entry.is_empty() and entry.station_id==seed.station_id and entry.system_id==seed.system_id
-	var dekato: bool=cursor==38 and load("res://src/content/dekato_convoy_definitions.gd").selected_location(bindings,int(seed.station_id),int(seed.system_id))
-	if not cursor is int or (Travel.player_entry(bindings.mido_travel,int(seed.station_id),cursor).is_empty() and not (cursor==16 and seed.station_id==98 and not Cache.alioth_entry(bindings.mido_travel).is_empty()) and not ordinary and not sahi and not dekato):return reject("This local location has no supported player entry")
+	var admitted: bool=mission_context!=null
+	if admitted and (not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not mission_context.matches_loadout(seed) or mission_context.identity().campaign_cursor!=cursor):return reject("Mission location changed after admission")
+	if not cursor is int or (Travel.player_entry(bindings.mido_travel,int(seed.station_id),cursor).is_empty() and not (cursor==16 and seed.station_id==98 and not Cache.alioth_entry(bindings.mido_travel).is_empty()) and not ordinary and not sahi and not admitted):return reject("This local location has no supported player entry")
 	if catalogues.content_id!=bindings.base_content_id or seed.base_content_id!=bindings.base_content_id or seed.binding_id!=bindings.binding_id or not Cache.matches(player_cache,seed,cursor):return reject("Local travel cache belongs to another equipped location")
 	if not Definitions.parameters(bindings.arrival_environment) or not SkyDefinitions.parameters(bindings.opening_sky) or not Planets.parameters(bindings.opening_sky.get("planet_resources",{})):return reject("Local travel requires the shared ordinary environment")
 	return _resolve(bindings,catalogues,seed,cursor)

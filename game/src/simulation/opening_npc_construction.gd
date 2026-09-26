@@ -1,5 +1,4 @@
 extends RefCounted
-const FlightStages=preload("res://src/content/flight_stages.gd")
 const Contracts=preload("res://src/simulation/contract_session.gd")
 const Transit=preload("res://src/content/convoy_transit_definitions.gd")
 const ContractDefinitions=preload("res://src/content/early_contract_definitions.gd")
@@ -1123,7 +1122,7 @@ func _sample_cargo(random: RefCounted) -> Array:
 
 func sample_relaunch_cargo(random_state: Variant) -> Dictionary:
 	error=""
-	if _ambient.is_empty() or _actors.is_empty() or (_identity.get("campaign_cursor") not in FlightStages.REGENERATING or (_identity.get("campaign_cursor") in FlightStages.FREE and _free.is_empty())):return fail("Traffic cargo regeneration requires its retained generated population")
+	if _ambient.is_empty() or _actors.is_empty():return fail("Traffic cargo regeneration requires its retained generated population")
 	var random:=Random.new()
 	if not random.restore(random_state):return fail(random.error)
 	return {"cargo":_sample_cargo(random),"random_state":random.snapshot()}

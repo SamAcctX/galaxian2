@@ -35,7 +35,7 @@ static func available(bindings: RefCounted) -> bool:return Delivery.available(bi
 static func can_capture(state: Dictionary) -> bool:
 	if state.get("hangar_open",false) or state.get("lounge_open",false) or not state.get("acknowledged",false):return false
 	if not state.get("contracts",{}).get("pending_result",{}).is_empty():return false
-	return Opening.accepts(state) or (state.get("phase")=="free_play_required" and (state.get("campaign_cursor") in [18,19,20,21,22,23,24,27,28,31,32,33,34,35,36,38] or (state.get("campaign_cursor")==39 and state.has("dekato_source_receipt")) or (state.get("campaign_cursor")==40 and state.has("nehma_source_receipt"))) and state.get("alioth_return_acknowledged")==true)
+	return Opening.accepts(state) or (state.get("phase")=="free_play_required" and state.get("alioth_return_acknowledged")==true)
 
 func capture(station: RefCounted,bindings: RefCounted,locations: RefCounted=null) -> Dictionary:
 	error=""
@@ -53,7 +53,7 @@ func capture(station: RefCounted,bindings: RefCounted,locations: RefCounted=null
 	if not can_capture(state) or not FreeFlight.Campaign.supported(bindings.mido_travel,state.get("campaign_cursor")):return fail("Finish the station conversation before saving")
 	# The completed contest retains the actual source/blueprint career. A
 	# detached encounter alone cannot produce a durable campaign checkpoint.
-	if state.campaign_cursor==38 and not state.get("contracts",{}).has("void_source"):return fail("The B'akka checkpoint requires its retained Void career")
+	if FreeFlight.Campaign.BakkaReturn.parameters(bindings.mido_travel.get("bakka_return")) and state.mission==FreeFlight.Campaign.PostProbe.mission_values(bindings.mido_travel.bakka_return.next_mission) and not state.get("contracts",{}).has("void_source"):return fail("The B'akka checkpoint requires its retained Void career")
 	if state.get("contracts",{}).has("void_source"):return _capture_career(station,bindings,8)
 	return _capture_career(station,bindings,7 if state.campaign_cursor==32 else 6 if state.campaign_cursor in [28,31] else 5 if state.campaign_cursor==27 else (1 if state.campaign_cursor==18 else (3 if state.campaign_cursor==19 else 4)))
 

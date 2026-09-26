@@ -89,7 +89,7 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 	camera=Camera3D.new();camera.current=activate_camera;add_child(camera)
 	geometry=Geometry.new();add_child(geometry)
 	var ordinary_void_environment: RefCounted=flight.void_environment_owner() if state.player.has("void_context") else null
-	if not geometry.build_departure(library,visuals,bindings,catalogues,state.player_cache,_player_geometry_state(state),"high",true,flight.equipment_owner(),ordinary_void_environment):return fail(geometry.error)
+	if not geometry.build_departure(library,visuals,bindings,catalogues,state.player_cache,_player_geometry_state(state),"high",true,flight.equipment_owner(),ordinary_void_environment,flight.mission_context_owner()):return fail(geometry.error)
 	var pirates: RefCounted=flight.encounter_owner()
 	if pirates!=null:
 		encounter=EncounterGeometry.new();add_child(encounter)
@@ -117,13 +117,13 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 		sky=void_environment.sky;gates=void_environment.gates
 	else:
 		sky=Background.new();add_child(sky)
-		if not sky.build_departure(library,visuals,bindings,catalogues,state.player_cache,"high",flight.equipment_owner()):return fail(sky.error)
+		if not sky.build_departure(library,visuals,bindings,catalogues,state.player_cache,"high",flight.equipment_owner(),flight.mission_context_owner()):return fail(sky.error)
 		planets=Planets.new();add_child(planets)
-		if not planets.build_departure(library,visuals,bindings,catalogues,state.player_cache,"high",flight.equipment_owner()):return fail(planets.error)
+		if not planets.build_departure(library,visuals,bindings,catalogues,state.player_cache,"high",flight.equipment_owner(),flight.mission_context_owner()):return fail(planets.error)
 		sun=Sun.new();add_child(sun)
-		if not sun.build_departure(library,visuals,bindings,catalogues,state.player_cache,"high",flight.equipment_owner()):return fail(sun.error)
+		if not sun.build_departure(library,visuals,bindings,catalogues,state.player_cache,"high",flight.equipment_owner(),flight.mission_context_owner()):return fail(sun.error)
 		var lights:=Lighting.new();add_child(lights)
-		if not lights.build_departure(bindings,catalogues,state.player_cache,flight.equipment_owner()):return fail(lights.error)
+		if not lights.build_departure(bindings,catalogues,state.player_cache,flight.equipment_owner(),flight.mission_context_owner()):return fail(lights.error)
 		scenery_lighting=lights.state
 	scenery=Scenery.new();add_child(scenery)
 	if not scenery.build(state.scenery,library,visuals,bindings,"high",true):return fail(scenery.error)
