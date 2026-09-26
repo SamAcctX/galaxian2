@@ -226,6 +226,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if motion.is_empty():return failed(next._encounter.error)
 	if not next._particles.finish_npc_pass(before_actors,motion.encounter.combat_snapshot(),motion.encounter.actor_events(),milliseconds,1.0):return failed(next._particles.error)
 	next._encounter=motion.encounter;next._random=motion.random_state
+	if not next._particles.apply_sequence(cue.frame.get("effects",[]),next._encounter.combat_snapshot().actors):return failed(next._particles.error)
 	var completed: Dictionary=next._encounter.frame_context().sequence
 	if not dying:
 		if completed.phase>0:next._camera=next._encounter.camera_owner()

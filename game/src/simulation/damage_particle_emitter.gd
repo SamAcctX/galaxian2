@@ -46,6 +46,15 @@ func configure_full_hold(bindings: RefCounted,content_id: String,preset_id: Vari
 	_enabled=bindings.full_hold_particles.burst_initial_emitting if _preset.preset_id==bindings.full_hold_particles.burst_preset else bindings.full_hold_particles.player_initial_emitting
 	return true
 
+## The admitted content owner supplies its complete sprite declaration.
+## This reuses the same bounded slots, timing and appearance as imported presets.
+func configure_declared(bindings: RefCounted,preset: Dictionary,seed: Variant,fade_in_rgb: Variant=false) -> bool:
+	clear()
+	if bindings==null or not Definitions.sprite_preset(preset) or not fade_in_rgb is bool:return reject("Attached particles require a supported sprite declaration")
+	if not _configure_rows(bindings,bindings.base_content_id,preset.preset_id,seed,[preset]):return false
+	_fade_rgb=fade_in_rgb
+	return true
+
 func configure_junk(bindings: RefCounted,seed: Variant) -> bool:
 	clear()
 	if not Junk.available(bindings):return reject("Junk explosion particles are unavailable")

@@ -19,6 +19,8 @@ static func select(bindings: RefCounted,cursor: Variant) -> Dictionary:
 static func from_ambush(bindings: RefCounted) -> Dictionary:
 	var source:=Ambush.mission(bindings)
 	if source.is_empty():return {}
+	var particles:=ambush_particles(bindings)
+	if particles.size()!=2:return {}
 	var appstore: bool=Ambush.Previous.Equal.equal_value(Ambush.Previous.Nehma.declarations(bindings),Ambush.Previous.Nehma.VALUES)
 	var first_text:=2038 if appstore else 2024
 	var briefing_events:=[];var result_events:=[]
@@ -40,7 +42,24 @@ static func from_ambush(bindings: RefCounted) -> Dictionary:
 			{"model_id":14286,"face_forward":true,"forward_offset":10000},{"model_id":14287,"face_forward":true,"forward_offset":0}],
 		"escape_sounds":[153,154],
 		"sequence_sounds":[155,156],
+		"sequence_particles":particles,
 		"receipt_key":"nehma_source_receipt","source_receipt":bindings.nehma_source_receipt().duplicate(true)}
+
+## Both authored variants use the general manager's imported explosion art.
+## Register once on the physical actor root; the native hook owns enablement.
+static func ambush_particles(bindings: RefCounted) -> Array:
+	var smoke:={};var fire:={}
+	for row in bindings.damage_particles.get("presets",[]):
+		if int(row.preset_id)==15:smoke=row.duplicate(true)
+	for row in bindings.full_hold_particles.get("presets",[]):
+		if int(row.preset_id)==9:fire=row.duplicate(true)
+	if smoke.is_empty() or fire.is_empty():return []
+	smoke.merge({"preset_id":40,"material_id":fire.material_id,"size":1800.0,"size_jitter":300,"local_offset_z":500.0},true)
+	fire.merge({"preset_id":41,"capacity":1000,"lifetime_ms":1000,"emission_per_second":9.0,
+		"size":4000.0,"size_jitter":2000,"scatter_xz":1000,"scatter_y":800,
+		"local_offset_z":-4000.0,"local_offset_z_jitter":8000.0},true)
+	return [{"actor_id":0,"kind":"fire","preset":smoke,"initial_emitting":false,"fade_in_rgb":true},
+		{"actor_id":0,"kind":"fire","preset":fire,"initial_emitting":false,"fade_in_rgb":true}]
 
 ## The ambush result changes the objective, not the world. Its retained radio
 ## and freighter remain authoritative until the escape and normal-space return.

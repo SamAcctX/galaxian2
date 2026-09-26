@@ -24,6 +24,7 @@ var _emp:={}
 var _emp_bound:=false
 var _emp_capture_ms:=-1
 var _emp_phase:=0
+var _attached:={}
 
 func configure(bindings: RefCounted,combat: Dictionary,death: RefCounted,seed_seconds: Variant,mission_context: RefCounted=null) -> bool:
 	error=""
@@ -74,9 +75,9 @@ func configure_mission(bindings: RefCounted,context: RefCounted,combat: RefCount
 		if initial.get(key)!=bindings.get(key):return reject("Mission particle resources belong to another source")
 	var smoke:=Smoke.new()
 	if not smoke.configure_mission(bindings,context,combat,seed_seconds):return reject(smoke.error)
-	return _configure_registered(bindings,combat.snapshot(),death,seed_seconds,smoke)
+	return _configure_registered(bindings,combat.snapshot(),death,seed_seconds,smoke,context.recipe().get("sequence_particles",[]))
 
-func _configure_registered(bindings: RefCounted,combat: Dictionary,death: RefCounted,seed_seconds: int,smoke: RefCounted) -> bool:
+func _configure_registered(bindings: RefCounted,combat: Dictionary,death: RefCounted,seed_seconds: int,smoke: RefCounted,attachments: Array=[]) -> bool:
 	var emitters:={}
 	var keys:=["player"]
 	for id in combat.actors.size():
@@ -100,11 +101,41 @@ func _configure_registered(bindings: RefCounted,combat: Dictionary,death: RefCou
 				var emitter:=Emitter.new()
 				if not emitter.configure_convoy_emp(bindings,int(preset),seed_seconds):return reject(emitter.error)
 				emp[key]["emp%d"%int(preset)]=emitter
+	var attached:={}
+	if attachments.size()>32:return reject("Too many attached sprite declarations")
+	for declaration in attachments:
+		if not declaration is Dictionary or declaration.size()!=5 or declaration.get("kind") not in ["smoke","fire"] or not Numbers.integer(declaration.get("actor_id"),0,combat.actors.size()-1) or not declaration.get("preset") is Dictionary or not declaration.get("fade_in_rgb") is bool:return reject("Invalid attached sprite declaration")
+		var id:=int(declaration.actor_id);var actor: Dictionary=combat.actors[id]
+		if actor.get("actor_id")!=id or not Flight.rigid_pose(actor.get("body_pose")):return reject("Attached sprite lost its physical actor root")
+		var emitter:=Emitter.new()
+		if not emitter.configure_declared(bindings,declaration.preset,seed_seconds,declaration.fade_in_rgb) or not emitter.set_emitting(declaration.get("initial_emitting")):return reject(emitter.error)
+		var effect:=int(declaration.preset.preset_id);var key:="attached%d_%d"%[id,effect]
+		if attached.has(key):return reject("Duplicate attached sprite registration")
+		attached[key]={"actor_id":id,"effect_type":effect,"kind":declaration.kind,"pose":actor.body_pose,"emitter":emitter}
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
 	_smoke=smoke;_emitters=emitters;_manager_ms=0;_elapsed_ms=0;_burst_count=0;_births={}
 	_death_identity=death.presentation_identity();_presentation_identity=RefCounted.new()
 	_emp=emp;_emp_bound=false;_emp_capture_ms=-1;_emp_phase=0
+	_attached=attached
 	return true
+
+## Consume native directives and current physical roots transactionally. Merely
+## displaying a frame never advances, re-enables or resets these emitters.
+func apply_sequence(effects: Array,actors: Array) -> bool:
+	error=""
+	if _identity.is_empty():return reject("Configure attached sprites before their native frame")
+	if _attached.is_empty():return true if effects.is_empty() else reject("Sequence requested an unregistered sprite")
+	var next:=fork_for_frame()
+	for record in next._attached.values():
+		var id:=int(record.actor_id)
+		if id>=actors.size() or not actors[id] is Dictionary or actors[id].get("actor_id")!=id or not Flight.rigid_pose(actors[id].get("body_pose")):return reject("Attached sprite frame lost its registered physical root")
+		record.pose=actors[id].body_pose
+	for cue in effects:
+		if not cue is Dictionary or cue.size()!=4 or cue.get("action")!="set_enabled" or not Numbers.integer(cue.get("actor_id"),0,65535) or not Numbers.integer(cue.get("effect_type"),0,47) or not cue.get("enabled") is bool:return reject("Invalid attached sprite directive")
+		var key:="attached%d_%d"%[int(cue.actor_id),int(cue.effect_type)]
+		if not next._attached.has(key):return reject("Sequence requested an unregistered sprite")
+		if not next._attached[key].emitter.set_emitting(cue.enabled):return reject(next._attached[key].emitter.error)
+	adopt(next);return true
 
 func has_convoy_emp() -> bool:return not _emp.is_empty()
 
@@ -165,6 +196,11 @@ func advance(player_root: Variant,delta_ms: Variant) -> bool:
 		var result: Dictionary=next._emitters[key].advance(pose,delta_ms,interval)
 		if result.has("error"):return reject(next._emitters[key].error)
 		next._births[key]=int(result.births)
+	for key in next._attached:
+		var record: Dictionary=next._attached[key]
+		var result: Dictionary=record.emitter.advance(record.pose,delta_ms,interval)
+		if result.has("error"):return reject(record.emitter.error)
+		next._births[key]=int(result.births)
 	if not next._smoke.advance(player_root,delta_ms):return reject(next._smoke.error)
 	for key in _emp:
 		var pose: Transform3D=player_root if _emp_bound and key=="npc0" else _smoke.npc_root(int(key.trim_prefix("npc")))
@@ -209,6 +245,10 @@ func snapshot(shared:=false) -> Dictionary:
 	for key in _emitters:
 		result.owners[key]=smoke.owners.get(key,{})
 		result.owners[key]["junk_burst" if key=="junk" else "burst" if key=="world" else "trail"]=_emitters[key].snapshot(shared)
+	for key in _attached:
+		var record: Dictionary=_attached[key]
+		result.owners[key]={"actor_id":record.actor_id,"root":record.pose}
+		result.owners[key][record.kind]=record.emitter.snapshot(shared)
 	if has_convoy_emp():
 		result.emp={"bound_to_player":_emp_bound,"capture_elapsed_ms":_emp_capture_ms,"phase":_emp_phase}
 		for key in _emp:
@@ -220,6 +260,9 @@ func fork_for_frame() -> RefCounted:
 	copy._identity=_identity.duplicate();copy._manager_ms=_manager_ms;copy._elapsed_ms=_elapsed_ms;copy._burst_count=_burst_count;copy._births=_births.duplicate(true)
 	if _smoke!=null:copy._smoke=_smoke.fork_for_frame()
 	for key in _emitters:copy._emitters[key]=_emitters[key].fork_for_frame()
+	for key in _attached:
+		copy._attached[key]=_attached[key].duplicate()
+		copy._attached[key].emitter=_attached[key].emitter.fork_for_frame()
 	for key in _emp:
 		copy._emp[key]={}
 		for kind in _emp[key]:copy._emp[key][kind]=_emp[key][kind].fork_for_frame()
@@ -230,9 +273,11 @@ func fork_for_frame() -> RefCounted:
 func adopt(next: RefCounted) -> void:
 	_smoke=next._smoke;_emitters=next._emitters;_manager_ms=next._manager_ms;_elapsed_ms=next._elapsed_ms;_burst_count=next._burst_count;_births=next._births
 	_emp=next._emp;_emp_bound=next._emp_bound;_emp_capture_ms=next._emp_capture_ms;_emp_phase=next._emp_phase
+	_attached=next._attached
 
 func clear() -> void:
 	error="";_identity={};_smoke=null;_emitters={};_manager_ms=0;_elapsed_ms=0;_burst_count=0;_births={};_death_identity=null;_presentation_identity=null
 	_emp={};_emp_bound=false;_emp_capture_ms=-1;_emp_phase=0
+	_attached={}
 
 func reject(message: String) -> bool:error=message;return false

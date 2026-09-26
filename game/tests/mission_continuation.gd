@@ -27,6 +27,7 @@ func verify_component(world: RefCounted) -> void:
 	if not prepare_scene(visuals):return
 	scene.feedback.set_active(true)
 	check(scene.sequence_audio!=null and scene.sequence_audio.snapshot().active.is_empty(),"Ambush sounds started before their cinematic cut")
+	verify_attached_particles(0)
 	await capture("continuation-arrival")
 	var skipped: RefCounted=active.skip_entry()
 	if skipped==null:check(false,active.error);scene.free();return
@@ -42,7 +43,7 @@ func verify_component(world: RefCounted) -> void:
 	for index in 5:
 		active._encounter._hook._radio._started[index]=true
 		active._encounter._hook._radio._finished[index]=true
-	var phases:={};var elapsed_pullback:=0
+	var phases:={};var elapsed_pullback:=0;var elapsed_drift:=0
 	for tick in 900:
 		if active.campaign_dialogue_visible():break
 		var next: RefCounted=active.evaluate(100)
@@ -54,10 +55,18 @@ func verify_component(world: RefCounted) -> void:
 			phases[phase]=true
 			verify_sequence_sound(phase)
 			verify_freighter_engine(phase)
+			verify_attached_particles(phase)
 			await capture("continuation-shot-"+str(phase))
+		if phase==2:
+			elapsed_drift+=100
+			if elapsed_drift==3000:
+				verify_attached_particles(phase,true)
+				await capture("continuation-burning-drift")
 		if phase==4:
 			elapsed_pullback+=100
-			if elapsed_pullback==14000:await capture("continuation-pullback-late")
+			if elapsed_pullback==14000:
+				verify_attached_particles(phase,true)
+				await capture("continuation-pullback-late")
 	check(active.campaign_dialogue_visible() and active.dialogue().get("text_id")==2047,"Native cinematic did not open result41")
 	if failures:scene.free();return
 	for page in 4:
@@ -77,6 +86,7 @@ func verify_component(world: RefCounted) -> void:
 	check(active.initialized_world_owner()==world and active.presentation_identity()==parent.presentation_identity(),"Continuation rebuilt the world or scene generation")
 	check(active.encounter_owner().snapshot()==parent.encounter_owner().snapshot() and after.scenery==before.scenery and after.player==before.player and after.player_pose==before.player_pose,"Result acknowledgement changed cast, radio, player or scenery")
 	check(after.equipment==before.equipment and after.career.mission==before.career.mission and after.career.credits==before.career.credits,"Result acknowledgement changed independent job, equipment or money")
+	check(after.damage_particles==before.damage_particles,"Retained mission continuation restarted or lost the attached burning wreck")
 	check(after.runner.mode==0 and not after.runner.retired and after.runner.clock_ms==0,"Successor inherited the old result or polling clock")
 	check(parent.snapshot()==before and world.snapshot()==world_before,"Accepted successor mutated its parent/world")
 	check(active.navigate("next")==null and active.snapshot()==after,"Repeated final Next advanced the career twice")
@@ -135,6 +145,39 @@ func verify_freighter_engine(phase: int) -> void:
 		for level in body.levels.size():
 			check(body.apply_selection({"visible":true,"level":level}) and not engines[0].visible,"Changing hull detail revived a disabled freighter engine")
 		check(body.apply_selection(selection) and body.visible,"Engine shutdown lost the retained freighter body")
+
+func verify_attached_particles(phase: int,require_visible:=false) -> void:
+	var owner: RefCounted=active.damage_particles_owner();var particles: Dictionary=owner.snapshot()
+	var actors: Array=active.encounter_owner().combat_snapshot().actors
+	for effect in [40,41]:
+		var key:="attached0_%d"%effect
+		check(particles.owners.has(key),"Native ambush did not register an attached sprite owner")
+		if not particles.owners.has(key):continue
+		var record: Dictionary=particles.owners[key];var emitter: Dictionary=record.fire
+		check(record.actor_id==0 and record.root==actors[0].body_pose,"Attached particles lost the current physical freighter pose")
+		check(emitter.enabled==(phase>=2),"Freighter particles ignored their native damage-cut enablement")
+		check(emitter.preset.preset_id==effect and emitter.preset.material_id==20099 and emitter.get("fade_in_rgb",false),"Attached particles lost the general-manager material or RGB fade")
+		check(emitter.slots.size()==(30 if effect==40 else 1000),"Attached particle population changed")
+		var live: Array=emitter.slots.filter(func(slot):return slot.appearance.age_ms>=0)
+		if phase<2:check(live.is_empty(),"Freighter burned before the source damage cut")
+		var rendered: Array=scene.effects.sprites.items.filter(func(item):return item.key==key and item.kind=="fire")
+		check(rendered.size()==1,"Attached particles have no shared sprite renderer")
+		if require_visible:
+			check(not live.is_empty(),"Enabled attached emitter produced no live particles")
+			check(rendered.size()==1 and rendered[0].node.visible and rendered[0].node.mesh!=null,"Live attached particles were not actually drawn")
+	if phase==2 and not require_visible:
+		var display_before: Dictionary=scene.effects.snapshot()
+		check(present() and active.damage_particles_owner().snapshot()==particles and scene.effects.snapshot()==display_before,"Repeated display advanced or reset attached particles")
+		var invalid: Array=[{"action":"set_enabled","actor_id":0,"effect_type":40,"enabled":false},
+			{"action":"set_enabled","actor_id":0,"effect_type":39,"enabled":false}]
+		check(not owner.apply_sequence(invalid,actors) and owner.snapshot()==particles,"Rejected final directive partially disabled the first attached emitter")
+		var extra: Dictionary=invalid[0].duplicate();extra.unexpected=true
+		check(not owner.apply_sequence([extra],actors) and owner.snapshot()==particles,"Attached sprites accepted an unsupported cue field")
+		var invalid_actors: Array=actors.duplicate(true);invalid_actors[0].body_pose=Transform3D(Basis.IDENTITY,Vector3(NAN,0,0))
+		check(not owner.apply_sequence([],invalid_actors) and owner.snapshot()==particles,"Invalid root partially changed attached particle state")
+		var candidate: RefCounted=owner.fork_for_frame()
+		check(candidate.apply_sequence([invalid[0]],actors),candidate.error)
+		check(not candidate.snapshot().owners.attached0_40.fire.enabled and candidate.snapshot().owners.attached0_41.fire.enabled and owner.snapshot()==particles,"Disabling one declared emitter modified its sibling or parent")
 
 func verify_successor_conditions(frame: RefCounted) -> void:
 	var runner: RefCounted=frame.runner_owner();var recipe: Dictionary=runner.context_owner().recipe()
