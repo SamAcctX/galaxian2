@@ -403,6 +403,11 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		for node in [station_shell,station_panel,equipment_panel,flight_vitals,radio_panel,target_frame,aim_reticle,npc_markers,secondary_panel,lounge_panel,flight_menu,map_panel,gate_panel,touch_overlay,_flight_actions,_flight_hint,_launch_button,_hangar_button,_station_map_button,_lounge_button,_save_button,_load_button,_retry_button,_skip_button]:
 			if node!=null:node.hide()
 		_pause_button.visible=_controls.touch_controls;_pause_button.disabled=false
+		var skip_available: bool=_focused and is_visible_in_tree() and session.can_skip_cinematic()
+		_flight_hint.visible=_player_mode and not touch_actions_enabled() and skip_available
+		_flight_hint.text="Enter / A  Skip cinematic"
+		_skip_button.visible=touch_actions_enabled() and skip_available;_skip_button.disabled=false
+		_layout_flight_overlays()
 		viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS if is_visible_in_tree() and not session.is_paused() and session.status=="running" else SubViewport.UPDATE_ONCE
 		status.visible=true
 		return
@@ -597,10 +602,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	var pause_key: bool = event is InputEventKey and (event.physical_keycode if event.physical_keycode else event.keycode) in [KEY_ESCAPE,KEY_P]
 	var pause_button: bool = event is InputEventJoypadButton and event.button_index==JOY_BUTTON_START
 	var supported:=pause_key or pause_button
-	if session!=null and session.has_method("can_skip_cinematic") and session.can_skip_cinematic():
-		var skip_key: bool=event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode if event.physical_keycode else event.keycode) in [KEY_ENTER,KEY_KP_ENTER]
-		var skip_pad: bool=event is InputEventJoypadButton and event.pressed and event.button_index==JOY_BUTTON_A
-		if skip_key or skip_pad:skip_cinematic();get_viewport().set_input_as_handled();return
+	if _handle_cinematic_skip_event(event):return
 	if lounge_panel.visible and not supported:
 		if lounge_panel.handle_event(event):clear_input();present_session()
 		get_viewport().set_input_as_handled();return
@@ -713,6 +715,14 @@ func _controller_connection(device: int, connected: bool) -> void:
 		# The pressed edge may already have left Controls for the session queue.
 		# Disconnecting the active pad must not fire it on the next world frame.
 		if was_active and (session is FirstFlightSession or session is MissionSession):session.clear_flight_input()
+
+func _handle_cinematic_skip_event(event: InputEvent) -> bool:
+	if not _focused or not is_visible_in_tree() or session==null or not session.has_method("can_skip_cinematic") or not session.can_skip_cinematic():return false
+	var skip_key: bool=event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode if event.physical_keycode else event.keycode) in [KEY_ENTER,KEY_KP_ENTER]
+	var skip_pad: bool=event is InputEventJoypadButton and event.pressed and event.button_index==JOY_BUTTON_A
+	if not skip_key and not skip_pad:return false
+	skip_cinematic();get_viewport().set_input_as_handled()
+	return true
 
 func skip_cinematic() -> void:
 	if session==null or not session.has_method("request_cinematic_skip") or not _focused or not is_visible_in_tree():return
@@ -1167,6 +1177,7 @@ func _selected40_input(event: InputEvent) -> void:
 	if session.handle_game_over_event(event):
 		clear_input();present_session();get_viewport().set_input_as_handled();return
 	if not _focused or not is_visible_in_tree():return
+	if _handle_cinematic_skip_event(event):return
 	if session.orbit_event(event):get_viewport().set_input_as_handled();return
 	var pause_event:=false
 	if event is InputEventKey:pause_event=Controls.KEY_ACTIONS.get(event.physical_keycode if event.physical_keycode else event.keycode)=="pause"

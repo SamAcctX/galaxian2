@@ -142,6 +142,22 @@ func set_pause(reason: String,value: bool,now_microseconds: int) -> bool:
 	scene.secondary_panel.set_selection_active(_active and not _external_pause())
 	return true
 
+func can_skip_cinematic() -> bool:
+	return _active and status=="running" and not is_paused() and _world!=null and _world.has_method("can_skip_entry") and _world.can_skip_entry()
+
+func cinematic_skipping() -> bool:return false
+
+func request_cinematic_skip() -> bool:
+	error=""
+	if not can_skip_cinematic():return reject("No arrival introduction can be skipped")
+	var next: RefCounted=_world.skip_entry()
+	if next==null:return reject(_world.error)
+	# The existing ordinary release owns briefing, damage permission and time.
+	# Commit its zero-time candidate only after the retained scene accepts it.
+	if not scene.present(next,Vector2i(get_viewport().get_visible_rect().size)):return reject(scene.error)
+	_accepted_world(next)
+	return true
+
 func rebase_time(now_microseconds: int) -> bool:return _clock!=null and _clock.rebase(now_microseconds)
 func clear_flight_input() -> void:_secondary_pending=false
 func is_paused() -> bool:return _pauses.values().has(true)

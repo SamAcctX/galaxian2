@@ -356,9 +356,12 @@ func navigate(action: String) -> RefCounted:
 			next._state.boundary="campaign_failure_transition_required";next._game_over=outcome.transition
 	return next
 
+func can_skip_entry() -> bool:
+	return not _state.is_empty() and not _state.entry_released and _state.boundary.is_empty() and not _encounter.frame_context().sequence.input_blocked
+
 func skip_entry(paused:=false) -> RefCounted:
 	error=""
-	if _state.is_empty() or paused or _state.entry_released or not _state.boundary.is_empty() or _encounter.frame_context().sequence.input_blocked:return failed("Only the ordinary mission arrival can be skipped")
+	if paused or not can_skip_entry():return failed("Only the ordinary mission arrival can be skipped")
 	var next:=fork_for_frame()
 	next._state.entry_elapsed_ms=int(_context.recipe().entry_release_ms);next._state.entry_skipped=true
 	# Ordinary release/briefing still visits the complete zero-time frame.
