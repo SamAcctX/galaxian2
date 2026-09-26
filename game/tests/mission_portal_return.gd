@@ -34,6 +34,9 @@ func verify_retained_flight() -> void:
 	var destination: Dictionary=entry.equipment_owner().snapshot()
 	var career: Dictionary=entry.career_owner().snapshot()
 	var retained: Dictionary=active.initialized_world_owner().entry_owner().snapshot()
+	check(not retained.station_response_flags.is_empty() and result.station_response_flags==retained.station_response_flags,"Normal return lost the nonempty retained station responses")
+	var inspected: Dictionary=active.station_response_flags();inspected.clear()
+	check(active.station_response_flags()==retained.station_response_flags,"Inspecting the station history mutated the retained entry")
 	check(result.return_station_id==retained.return_station_id and result.return_system_id==retained.return_system_id and result.return_station_id!=10,"Return skipped the retained location for Thynome")
 	var expected: Dictionary=before.equipment.duplicate(true)
 	expected.loadout.station_id=retained.return_station_id;expected.loadout.system_id=retained.return_system_id
@@ -66,6 +69,7 @@ func verify_retained_flight() -> void:
 	var accepted: Dictionary=entry.snapshot()
 	check(not entry.prepare(bindings,catalogues,active) and entry.snapshot()==accepted,"Repeated preparation changed an accepted transfer")
 	result.player_cache.values.hull=1
+	result.station_response_flags.clear()
 	check(entry.snapshot()==accepted,"A returned snapshot mutated the prepared player cache")
 	var forked: RefCounted=entry.fork()
 	check(forked.snapshot()==accepted and forked.matches_departure(active) and forked.equipment_owner().snapshot()==destination and forked.career_owner().snapshot()==career,"Forking the prepared return changed its owners or terminal binding")

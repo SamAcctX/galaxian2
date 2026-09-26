@@ -66,9 +66,10 @@ var _career: RefCounted
 var _failure_lines:=[]
 var _language:=""
 
-func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,player: RefCounted,scenery: RefCounted,equipment: RefCounted,reputation: Dictionary,pose: Transform3D,camera: RefCounted,aim: RefCounted,sensitivity:=1.0,viewport:=Vector2i(1440,900)) -> bool:
+func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,player: RefCounted,scenery: RefCounted,equipment: RefCounted,reputation: Dictionary,pose: Transform3D,camera: RefCounted,aim: RefCounted,sensitivity:=1.0,viewport:=Vector2i(1440,900),station_response_flags: Dictionary={}) -> bool:
 	error=""
 	if not _state.is_empty() or not player is Player or not scenery is Scenery or not Flight.rigid_pose(pose) or not valid_viewport(viewport):return reject("Moving selected40 flight requires fresh native owners and a rigid player pose")
+	if not load("res://src/content/free_flight_definitions.gd").response_flags(bindings,station_response_flags):return reject("Selected flight lost its retained station responses")
 	var encounter:=Encounter.new();var pilot:=Pilot.new();var contacts:=Contacts.new()
 	if not encounter.configure_selected40(bindings,catalogues,library,player,scenery,equipment,reputation) or not encounter.prepare_selected40_sequence(bindings,library) or not encounter.prepare_selected40_view(bindings,camera,aim,player):return reject(encounter.error)
 	if not encounter.configure_secondaries(bindings,catalogues,player,equipment,library):return reject(encounter.error)
@@ -133,9 +134,12 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,p
 	_pose=pose;_reference=Vector3.ZERO;_random=scenery.random_state();_viewport=viewport
 	_max_ms=int(bindings.frame_clock.max_frame_milliseconds)
 	_state=identity.merged({"scope":"selected40_moving_flight_component","revision":0,"elapsed_ms":0,"boundary":"","phase":"ready","input":{},"physical_contacts":[]})
+	_state.station_response_flags=station_response_flags.duplicate(true)
 	_failure_lines=CampaignFailure.failure_lines(bindings,library);_language=library.active_language
 	if _failure_lines.size()!=1:return reject("Selected story requires its original shared failure conversation")
 	return true
+
+func station_response_flags() -> Dictionary:return _state.get("station_response_flags",{}).duplicate(true)
 
 ## secondary_fire is a discrete activation request, not a held-button state.
 ## A second press detonates the retained live round, including the last one.

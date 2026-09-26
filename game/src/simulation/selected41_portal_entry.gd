@@ -28,19 +28,21 @@ func prepare(bindings: RefCounted,departure: RefCounted) -> bool:
 	for key in ["mission","accepted_contact","passengers","credits","active_offer_id","result_serial","completed_side_missions","pending_result","last_result","void_source","blueprints","lounges"]:
 		if before.get(key)!=after.get(key):return reject("Successor changed retained career state: "+key)
 	var observation: Dictionary=departure.prepare_portal_transition()
+	var flags: Dictionary=departure.station_response_flags()
+	if not load("res://src/content/free_flight_definitions.gd").response_flags(bindings,flags):return reject("Portal entry lost its retained station responses")
 	var context:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,
 		"campaign_cursor":41,"station_id":-1,"system_id":-1,"mission_kind":4,"mission_story":true,"mission_completed":false,"mission_failed":false,
 		"rank":after.rank,"difficulty":after.difficulty,"retained_freighter_hull":observation.freighter_hull}
 	if not Rules.context_valid(bindings,context):return reject("Successor41 lost its source-selected mission context")
 	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"source_state":2,"from_cursor":40,"campaign_cursor":41,
-		"context":context,"mission":Rules.mission(bindings),"player_cache":cache,"freighter_hull":Rules.freighter_hull(observation.freighter_hull,after.rank),
+		"context":context,"mission":Rules.mission(bindings),"player_cache":cache,"freighter_hull":Rules.freighter_hull(observation.freighter_hull,after.rank),"station_response_flags":flags,
 		"source_before":observation.source_before.duplicate(true),"return_station_id":observation.return_station_id,"return_system_id":observation.return_system_id,
 		"source_revision":departure.frame_context().revision,"source_elapsed_ms":departure.frame_context().elapsed_ms,"application_committed":false}
 	_equipment=equipment;_career=career;_source_identity=departure.presentation_identity()
 	return true
 
 func matches_departure(departure: RefCounted) -> bool:
-	return not _state.is_empty() and is_instance_of(departure,load("res://src/simulation/selected40_flight_frame.gd")) and departure.presentation_identity()==_source_identity and departure.frame_context().revision==_state.source_revision and departure.frame_context().elapsed_ms==_state.source_elapsed_ms and departure.prepare_portal_transition().get("freighter_hull")==_state.context.retained_freighter_hull
+	return not _state.is_empty() and is_instance_of(departure,load("res://src/simulation/selected40_flight_frame.gd")) and departure.presentation_identity()==_source_identity and departure.frame_context().revision==_state.source_revision and departure.frame_context().elapsed_ms==_state.source_elapsed_ms and departure.prepare_portal_transition().get("freighter_hull")==_state.context.retained_freighter_hull and departure.station_response_flags()==_state.station_response_flags
 
 func snapshot() -> Dictionary:return _state.duplicate(true)
 func equipment_owner() -> RefCounted:return null if _equipment==null else _equipment.fork()

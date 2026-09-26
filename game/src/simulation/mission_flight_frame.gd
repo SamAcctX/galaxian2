@@ -462,6 +462,8 @@ func presentation_identity() -> RefCounted:return _presentation_identity
 func portal_return_identity() -> RefCounted:return null if prepare_portal_transition().is_empty() else _return_identity
 func mission_context_owner() -> RefCounted:return _context
 func initialized_world_owner() -> RefCounted:return _world
+## Station conversations belong to the retained entry, not the active mission.
+func station_response_flags() -> Dictionary:return {} if _world==null else _world.entry_owner().snapshot().station_response_flags.duplicate(true)
 func player_owner() -> RefCounted:return null if _player==null else _player.fork_for_frame()
 func scenery_owner() -> RefCounted:return null if _scenery==null else _scenery.fork_for_frame()
 func encounter_owner() -> RefCounted:return null if _encounter==null else _encounter.fork_for_frame()

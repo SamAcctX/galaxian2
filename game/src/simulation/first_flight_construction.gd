@@ -177,7 +177,7 @@ func _prepare_free_owned(bindings: RefCounted,catalogues: RefCounted,equipment: 
 		if incoming!=null:
 			if selected==null or selected.snapshot().station_id!=station_id or selected.snapshot().source_after!=career.void_source:return reject("Navigation40 arrival lost its original source-selection owner")
 			if selected.snapshot().selected40:
-				return _prepare_selected40_owned(bindings,catalogues,library,equipment,contracts,selected,previous_cache,environment_seconds,unix_seconds,large_display,body_resources,effect_resources)
+				return _prepare_selected40_owned(bindings,catalogues,library,equipment,contracts,selected,previous_cache,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,flags)
 		elif station_id==career.void_source.source_station_id:return reject("The selected source requires its native encounter, not ordinary departure")
 	var source: RefCounted=contracts.void_source_owner() if cursor==33 else null
 	if cursor==33 and source==null:return reject("Ordinary Void travel requires the retained source career")
@@ -240,7 +240,7 @@ func _prepare_free_owned(bindings: RefCounted,catalogues: RefCounted,equipment: 
 
 ## Called only after the existing travel transaction has relocated inventory,
 ## captured surviving pools and selected/rebased the detached destination career.
-func _prepare_selected40_owned(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,equipment: RefCounted,contracts: RefCounted,entry: RefCounted,cache: Variant,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,bodies: RefCounted,effects: RefCounted) -> bool:
+func _prepare_selected40_owned(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,equipment: RefCounted,contracts: RefCounted,entry: RefCounted,cache: Variant,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,bodies: RefCounted,effects: RefCounted,flags: Dictionary) -> bool:
 	if library==null or not Numbers.integer(environment_seconds,0,2147483647):return reject("Selected arrival requires its content and explicit environment seed")
 	var owned: Dictionary=equipment.snapshot();var career: Dictionary=contracts.snapshot()
 	var context: Dictionary=contracts.selected40_context(bindings,owned.loadout.station_id,owned.loadout.system_id)
@@ -250,7 +250,7 @@ func _prepare_selected40_owned(bindings: RefCounted,catalogues: RefCounted,libra
 	if not player.configure_selected40(bindings,catalogues,equipment,scenery.world_initialization_owner().npc_construction_owner(),cache):return reject(player.error)
 	var builder: RefCounted=load("res://src/simulation/selected40_flight_construction.gd").new()
 	var pose: Variant=entry.player_pose(Transform3D.IDENTITY)
-	if not pose is Transform3D or not builder.prepare(bindings,catalogues,library,player,scenery,equipment,career.reputation,pose,0.5,_arrival_viewport,contracts):return reject(builder.error)
+	if not pose is Transform3D or not builder.prepare(bindings,catalogues,library,player,scenery,equipment,career.reputation,pose,0.5,_arrival_viewport,contracts,flags):return reject(builder.error)
 	_selected40_builder=builder
 	return true
 
@@ -283,7 +283,7 @@ func prepare_mission_return(bindings: RefCounted,catalogues: RefCounted,transfer
 		"loadout":owned.loadout.duplicate(true),"equipment":owned,"cargo":owned.cargo.duplicate(true),"cargo_used":int(owned.cargo.used),
 		"progress":career.progress.duplicate(true),"mission":retained.mission.duplicate(true),"contracts":career,
 		"player":player.snapshot(),"player_cache":player.cache_snapshot(),"free_context":context,
-		"station_response_flags":{},"source_ship_configuration":int(bindings.station_entry.source_ship_configuration),
+		"station_response_flags":retained.station_response_flags.duplicate(true),"source_ship_configuration":int(bindings.station_entry.source_ship_configuration),
 		"arrival_environment":incoming.snapshot(),"mission_return":retained}
 	var recipe: Dictionary=capability.recipe()
 	packet[recipe.receipt_key]=recipe.source_receipt.duplicate(true)

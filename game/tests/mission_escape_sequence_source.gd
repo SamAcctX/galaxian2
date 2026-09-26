@@ -35,7 +35,7 @@ func prepare(bindings: RefCounted,cat: RefCounted,library: RefCounted,station: R
 	if not player.configure_selected40(bindings,cat,equipment,scenery.world_initialization_owner().npc_construction_owner(),cache):return fail(player.error)
 	var builder: RefCounted=load("res://src/simulation/selected40_flight_construction.gd").new()
 	var pose: Transform3D=selected.player_pose(Transform3D.IDENTITY)
-	if not builder.prepare(bindings,cat,library,player,scenery,equipment,career.snapshot().reputation,pose,0.5,Vector2i(1440,900),career):return fail(builder.error)
+	if not builder.prepare(bindings,cat,library,player,scenery,equipment,career.snapshot().reputation,pose,0.5,Vector2i(1440,900),career,before.station_response_flags):return fail(builder.error)
 	var frame: RefCounted=builder.world_owner()
 	frame._encounter._selected40_sequence=frame._encounter._selected40_sequence.fork_for_frame()
 	frame._encounter._selected40_sequence._state.phase=4

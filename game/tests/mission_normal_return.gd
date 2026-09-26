@@ -77,6 +77,7 @@ func verify_normal_application(normal: RefCounted) -> void:
 	if not app.enter_mission_normal_space(1300000,100,100):check(false,app.status.text);app.free();return
 	check(app.session is Host.FirstFlightSession and app.session!=old_session and not app._transition_failed,"Host did not accept the retry as an ordinary native session")
 	check(app.viewport.get_camera_3d()==app.session.camera,"Normal-space camera was not committed with the session")
+	check(app.session.flight_owner().station_response_flags()==active.station_response_flags(),"Normal-space application discarded retained station responses")
 	if DisplayServer.get_name()!="headless":
 		await capture_normal_scene(app,"normal-return-arrival")
 	await verify_normal_result(app)

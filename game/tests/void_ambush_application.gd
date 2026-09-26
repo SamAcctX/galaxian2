@@ -1,6 +1,7 @@
 extends "res://tests/nehma_onward_application.gd"
 ## Continue the earned Néhma40 station through real departure, the Void portal
-## and the mission 41 ambush. Only application input drives the journey.
+## and both Void missions to the automatically saved Thynome station.
+## Only application input drives the journey; no detached combat stimuli.
 const ExpeditionPilot=preload("res://tests/fixtures/expedition_flight_pilot.gd")
 const CombatPilot=preload("res://tests/fixtures/bakka_flight_pilot.gd")
 var combat_pilot:=CombatPilot.new()
@@ -36,20 +37,116 @@ func verify_free_application() -> void:
 	# the freighter kill, portal escape and Thynome docking follow (mission 42).
 	var after: Dictionary=app.session.snapshot()
 	check(after.campaign_cursor==42 and app.session.status=="running" and after.encounter.combat.actors[0].vitals.hull>0,"Result 41 did not continue into mission 42 in the living Void world")
-	if not failures:print("Earned Néhma40 -> mission 40 escort -> portal -> Void ambush cinematic -> result41 -> cursor42")
+	check(app.session.flight_owner().station_response_flags()==original.station_response_flags,"Void entry lost the earned station responses")
+	if failures or not await fly_mission42():return
+	if not await return_to_thynome(original):return
+	check(FileAccess.get_sha256(input_path)==OS.get_environment("GOF2_SOURCE_SAVE_SHA256"),"The earned journey changed its source checkpoint")
+	if not failures:print("Earned Néhma40 -> mission40 -> Void ambush -> result41 -> freighter destruction -> portal escape -> normal result42 -> Thynome10/cursor43 autosave")
 
 func dialogue_visible() -> bool:
 	return app.session.flight_owner().campaign_dialogue_visible()
 
 ## Acknowledge the visible page with the keyboard, as a player would.
 func acknowledge_page(label: String) -> bool:
+	var session: Node=app.session
 	var before: Dictionary=app.session.flight_owner().dialogue()
 	resume_application_focus();app.present_session();await process_frame
 	press_key(KEY_ENTER);await process_frame
+	if app.session!=session:return true
 	var after: Dictionary=app.session.flight_owner().dialogue()
 	print(label," page ",before.get("text_id")," voice ",before.get("voice_event_id")," -> ",after.get("text_id")," visible ",after.get("visible"))
 	if after==before and app.session.status=="running":print("Acknowledgement diagnostics: scene ",app.session.scene.error," status ",app.status.text," session ",app.session.error)
 	check(after!=before or app.session.status!="running","Enter did not acknowledge the visible "+label+" page")
+	return failures==0
+
+## Fly and fire at the crippled ship, wait for its actual radio consequences,
+## then steer into the opened exit. The retained world owns every cut and fade.
+func fly_mission42() -> bool:
+	var world: RefCounted=app.session.flight_owner().initialized_world_owner()
+	var last_phase:=-1;var captured:={};var killed:=false
+	combat_pilot=CombatPilot.new()
+	for tick in 8000:
+		var state: Dictionary=app.session.snapshot()
+		if app.session.status=="normal_space_return_required":
+			check(killed and captured.has("explosion") and captured.has("fade"),"Escape returned without its earned destruction, explosion or fade")
+			return failures==0
+		if app.session.status!="running" or state.player.vitals.hull<=0:
+			await capture_free_application("void42-failed")
+			check(false,"Mission 42 stopped at tick "+str(tick)+" status "+app.session.status+" pools "+str(state.player.vitals));return false
+		var escape: Dictionary=state.escape
+		var phase: int=int(escape.phase)
+		var freighter: Dictionary=state.encounter.combat.actors[0]
+		if phase!=last_phase:
+			last_phase=phase
+			check(app.session.flight_owner().initialized_world_owner()==world,"Escape rebuilt the living Void world")
+			print("M42 phase ",phase," tick ",tick," freighter hull ",freighter.vitals.hull," pools ",state.player.vitals)
+			await capture_free_application("void42-phase-"+str(phase))
+		if freighter.vitals.hull<=0 and not killed:
+			killed=true;await capture_free_application("void42-freighter-destroyed")
+		if phase==6:
+			var radio: RefCounted=app.session.flight_owner().encounter_owner().radio_owner()
+			check(killed and radio.event_state(6).playback_finished and radio.event_state(7).playback_finished,"Portal opened before the freighter and escape radio finished")
+		if phase==7:
+			if escape.explosion_elapsed_ms>4000 and not captured.has("explosion"):
+				captured.explosion=true;await capture_free_application("void42-mothership-explosion")
+			if escape.fade_requested and escape.fade.elapsed_ms>=2000 and not captured.has("fade"):
+				captured.fade=true;await capture_free_application("void42-escape-fade")
+		var commands:=Vector2.ZERO;var fire:=false;var throttle:=0.0
+		if app.session.can_control():
+			if not killed:
+				var input: Dictionary=combat_pilot.controls(state,tick,[0])
+				commands=input.commands;fire=input.fire;throttle=input.throttle
+			else:
+				commands=ExpeditionPilot.steering_toward(state.player_pose,state.portal.position)
+				throttle=1.0 if phase>=6 else 0.3
+		if tick%100==0:
+			print("M42 tick ",tick," phase ",phase," freighter ",freighter.vitals.hull," portal distance ",state.player_pose.origin.distance_to(state.portal.position)," radio ",state.encounter.radio.get("started",[]))
+			await process_frame
+		if failures or not flight_step(commands,fire,throttle):return false
+	check(false,"Mission 42 never completed its portal escape")
+	return false
+
+func return_to_thynome(original: Dictionary) -> bool:
+	var departure: RefCounted=app.session.flight_owner()
+	var retained: Dictionary=departure.prepare_portal_transition()
+	if not app.enter_mission_normal_space(now_us,flight_world_seconds(),flight_world_seconds()):check(false,app.status.text);return false
+	var arrival: Dictionary=app.session.snapshot()
+	check(arrival.campaign_cursor==42 and arrival.location.station_id==retained.return_station_id and arrival.location.system_id==retained.return_system_id,"Escape skipped its retained normal-space world")
+	check(app.session.flight_owner().station_response_flags()==original.station_response_flags,"Normal-space return discarded earned station responses")
+	await capture_free_application("void42-normal-space-arrival")
+	for tick in 220:
+		if dialogue_visible():break
+		now_us+=100000
+		if not app.session.step(now_us,Vector2.ZERO,false,false,0.0,true):check(false,app.session.error);return false
+		app.present_session()
+		if tick%25==0:await process_frame
+	check(dialogue_visible() and app.session.snapshot().world_elapsed_ms>10000,"Normal-space result did not wait for its own world clock")
+	if failures:return false
+	for page in 4:
+		var line: Dictionary=app.session.flight_owner().dialogue()
+		check(line.text_id==2054+page and line.voice_event_id==421+page,"The earned normal-space result changed its source text or voice")
+		await capture_free_application("void42-result-page-"+str(page))
+		if not await acknowledge_page("M42 return"):return false
+	if app.session.status=="mission_station_return_required":
+		if not app.enter_station(now_us,0,flight_world_seconds()):check(false,app.status.text);return false
+	var arrived: Dictionary=app.session.snapshot()
+	check(arrived.campaign_cursor==43 and arrived.loadout.station_id==10 and arrived.reward_credits==0,"The final result did not enter Thynome at cursor43 without a false reward")
+	check(arrived.station_response_flags==original.station_response_flags,"Thynome discarded the earned response history")
+	for key in ["mission","accepted_contact","passengers","credits","result_serial","completed_side_missions","pending_result","last_result"]:
+		check(arrived.contracts.get(key)==original.contracts.get(key),"Void journey altered independent career field: "+key)
+	var path: String=app.station_save_path()
+	check(FileAccess.file_exists(path),"Automatic Thynome entry did not autosave")
+	if failures:return false
+	var file:=OnwardFile.new();var document:=file.read_document(path)
+	check(not document.is_empty() and document.version==11 and document.station.campaign_cursor==43 and document.station.station_response_flags==original.station_response_flags,"The automatic save lost its continuation or response history")
+	check(DirAccess.copy_absolute(path,chapter_directory.path_join("thynome43-autosaved.gof2save"))==OK,"Could not retain the unmodified automatic checkpoint")
+	await capture_free_application("void43-thynome-autosaved")
+	if not app.load_station(now_us+100000):check(false,"Application Resume failed for earned Thynome");return false
+	var resumed: Dictionary=app.session.snapshot()
+	for key in ["campaign_cursor","mission","player_cache","equipment","contracts","station_response_flags"]:
+		check(resumed.get(key)==arrived.get(key),"Earned station Resume changed "+key)
+	await capture_free_application("void43-thynome-resumed")
+	print("Earned Thynome automatic checkpoint: ",path," SHA256 ",FileAccess.get_sha256(path))
 	return failures==0
 
 ## Protect Errkt's freighter until the scripted attack and its cinematic end.

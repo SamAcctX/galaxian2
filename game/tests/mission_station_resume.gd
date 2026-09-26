@@ -39,8 +39,9 @@ func verify(args: Array) -> void:
 	if not app.load_station(1000000):check(false,"Fresh application Resume: "+app._save_notice.text);app.free();return
 	var recovered: Dictionary=app.session.snapshot()
 	check(app.session is Host.StationSession and recovered.campaign_cursor==43 and recovered.loadout.station_id==10,"Fresh Resume lost the Thynome station boundary")
-	for key in ["mission","player_cache","progress","mission_station_return"]:
+	for key in ["mission","player_cache","progress","mission_station_return","station_response_flags"]:
 		check(recovered.get(key)==document.station.get(key),"Fresh Resume changed station state: "+key)
+	check(not recovered.station_response_flags.is_empty(),"Fresh Resume received a checkpoint without its earned station-response history")
 	var career: Dictionary=recovered.contracts.duplicate(true);career.erase("lounges")
 	check(career==document.career,"Fresh Resume changed passenger terms, wallet, progression or source history")
 	check(app.session.station_owner().equipment_owner().snapshot().loadout==document.inventory.loadout,"Fresh Resume changed the paid ship")

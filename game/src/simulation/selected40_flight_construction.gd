@@ -10,7 +10,7 @@ const Scenery=preload("res://src/simulation/opening_scenery.gd")
 var error:=""
 var _world: RefCounted
 
-func prepare(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,player: RefCounted,scenery: RefCounted,equipment: RefCounted,reputation: Dictionary,pose: Transform3D,sensitivity:=1.0,viewport:=Vector2i(1440,900),career: RefCounted=null) -> bool:
+func prepare(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,player: RefCounted,scenery: RefCounted,equipment: RefCounted,reputation: Dictionary,pose: Transform3D,sensitivity:=1.0,viewport:=Vector2i(1440,900),career: RefCounted=null,station_response_flags: Dictionary={}) -> bool:
 	error=""
 	if _world!=null or not player is Player or not scenery is Scenery or not Frame.valid_viewport(viewport):return reject("Application flight requires fresh retained native owners")
 	var entry: Dictionary=scenery.snapshot().get("departure_population",{}).get("selected40_entry",{})
@@ -20,7 +20,7 @@ func prepare(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,pla
 	var camera: RefCounted=initial.camera_owner()
 	if not aim.advance(pose,camera.snapshot().pose,viewport):return reject(aim.error)
 	var frame:=Frame.new()
-	if not frame.configure(bindings,catalogues,library,player,scenery,equipment,reputation,pose,camera,aim,sensitivity,viewport):return reject(frame.error)
+	if not frame.configure(bindings,catalogues,library,player,scenery,equipment,reputation,pose,camera,aim,sensitivity,viewport,station_response_flags):return reject(frame.error)
 	var prepared: RefCounted=frame.prepare_application_entry(initial)
 	if prepared==null:return reject(frame.error)
 	if career!=null and not prepared.prepare_career(bindings,career):return reject(prepared.error)

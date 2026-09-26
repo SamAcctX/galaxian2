@@ -45,6 +45,7 @@ func verify_normal_result(app: Control) -> void:
 	cached.campaign_cursor=43
 	check(arrived.player_cache==cached,"Station entry repaired the surviving ship or lost its cache")
 	check(arrived.station_response_flags==source.station_response_flags(),"Station entry lost the native station responses")
+	check(not arrived.station_response_flags.is_empty() and arrived.station_response_flags==active.station_response_flags(),"Station arrival lost the original nonempty Void-entry history")
 	check(source.snapshot()==before,"Station entry mutated its copy-on-write flight parent")
 	check(app.viewport.get_camera_3d()==app.session.camera,"Station scene committed the wrong camera")
 	check(FreeEntry.player_entry(bindings,10,arrived.loadout.ship_id,43).is_empty(),"Station-only entry opened generic campaign flight")

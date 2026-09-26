@@ -32,6 +32,8 @@ func prepare(bindings: RefCounted,catalogues: RefCounted,departure: RefCounted) 
 	if int(catalogues.tables.stations[station].system_id)!=system or not catalogues.tables.systems[system].station_ids.has(station):return reject("The retained return station and system disagree")
 	var random:=Random.new()
 	var source: Dictionary=departure.frame_context()
+	var flags: Dictionary=departure.station_response_flags()
+	if not load("res://src/content/free_flight_definitions.gd").response_flags(bindings,flags):return reject("Normal return lost its retained station responses")
 	if not random.restore(source.random_state):return reject(random.error)
 	var next: RefCounted=get_script().new()
 	next._departure=departure.fork_for_frame();next._generation=departure.presentation_identity();next._terminal=departure.portal_return_identity()
@@ -48,7 +50,7 @@ func prepare(bindings: RefCounted,catalogues: RefCounted,departure: RefCounted) 
 	if not next.matches_departure(departure):return reject("The departing world changed during return preparation")
 	next._state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":observation.campaign_cursor,
 		"return_station_id":station,"return_system_id":system,"mission":recipe.mission.duplicate(true),
-		"player_cache":cache,"progress":after.progress.duplicate(true),"random_state":source.random_state.duplicate(true),
+		"player_cache":cache,"progress":after.progress.duplicate(true),"random_state":source.random_state.duplicate(true),"station_response_flags":flags,
 		"source_before":observation.source_before.duplicate(true),"source_revision":observation.source_revision,
 		"source_elapsed_ms":observation.source_elapsed_ms,"source_player_pose":observation.player_pose}
 	_departure=next._departure;_generation=next._generation;_terminal=next._terminal;_observation=next._observation
@@ -58,7 +60,7 @@ func prepare(bindings: RefCounted,catalogues: RefCounted,departure: RefCounted) 
 func matches_departure(departure: RefCounted) -> bool:
 	if _departure==null or not is_instance_of(departure,load("res://src/simulation/mission_flight_frame.gd")):return false
 	if departure.presentation_identity()!=_generation or departure.portal_return_identity()!=_terminal or _terminal==null:return false
-	return departure.prepare_portal_transition()==_observation and departure.equipment_owner().snapshot()==_departure.equipment_owner().snapshot() and departure.career_owner().snapshot()==_departure.career_owner().snapshot() and departure.frame_context().random_state==_departure.frame_context().random_state
+	return departure.prepare_portal_transition()==_observation and departure.equipment_owner().snapshot()==_departure.equipment_owner().snapshot() and departure.career_owner().snapshot()==_departure.career_owner().snapshot() and departure.frame_context().random_state==_departure.frame_context().random_state and departure.station_response_flags()==_departure.station_response_flags()
 
 func matches_source_equipment(equipment: RefCounted) -> bool:
 	return _departure!=null and is_instance_of(equipment,load("res://src/simulation/station_equipment.gd")) and equipment.snapshot()==_departure.equipment_owner().snapshot()
