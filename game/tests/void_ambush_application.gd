@@ -55,6 +55,7 @@ func acknowledge_page(label: String) -> bool:
 	if app.session!=session:return true
 	var after: Dictionary=app.session.flight_owner().dialogue()
 	print(label," page ",before.get("text_id")," voice ",before.get("voice_event_id")," -> ",after.get("text_id")," visible ",after.get("visible"))
+	check(app.session.snapshot().campaign_cursor==app.session.flight_owner().snapshot().campaign_cursor,"Application exposed a stale campaign cursor after "+label+" acknowledgement")
 	if after==before and app.session.status=="running":print("Acknowledgement diagnostics: scene ",app.session.scene.error," status ",app.status.text," session ",app.session.error)
 	check(after!=before or app.session.status!="running","Enter did not acknowledge the visible "+label+" page")
 	return failures==0

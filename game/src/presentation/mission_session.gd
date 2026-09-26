@@ -163,6 +163,10 @@ func _accepted_exit(packet: Dictionary) -> void:
 
 func snapshot() -> Dictionary:
 	if _world==null:return {}
-	var state: Dictionary=_world.snapshot();state.campaign_cursor=int(_world.player_owner().snapshot().campaign_cursor);state.status=status;state.paused=is_paused()
+	var state: Dictionary=_world.snapshot()
+	# A living world can advance the story without replacing its player. The
+	# player's entry cursor is not the current campaign observation.
+	state.campaign_cursor=int(_world.campaign_result().campaign_cursor)
+	state.status=status;state.paused=is_paused()
 	return state
 func reject(message: String) -> bool:error=message;return false

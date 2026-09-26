@@ -29,6 +29,16 @@ func present() -> bool:
 	application.session._accepted_world(active)
 	return true
 
+func acknowledge() -> bool:
+	var retained_session: Node3D=application.session
+	var retained_world: RefCounted=active.initialized_world_owner()
+	if not await super.acknowledge():return false
+	var published: Dictionary=application.session.snapshot()
+	check(application.session==retained_session and active.initialized_world_owner()==retained_world,"Dialogue acknowledgement rebuilt the active mission session or Void world")
+	check(published.campaign_cursor==active.snapshot().campaign_cursor and published.campaign_cursor==published.career.campaign_cursor,"Application reported the player's entry cursor instead of the acknowledged mission")
+	check(published.player==active.player_owner().snapshot(),"Publishing the active mission changed the retained player")
+	return failures==0
+
 func verify_retained_flight() -> void:
 	await super.verify_retained_flight()
 	if failures:return
