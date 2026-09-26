@@ -40,6 +40,13 @@ func verify_component(world: RefCounted) -> void:
 		if not acknowledge():scene.free();return
 	check(not active.campaign_dialogue_visible(),"Briefing did not release the component flight")
 	if not verify_mission_music():scene.free();return
+	# Use real free-flight frames before the detached radio stimulus. Starting
+	# both clocks at zero aliases this 100ms component's release with a poll.
+	for tick in 10:
+		var flown: RefCounted=active.evaluate(100,Vector2.ZERO,1.0,false,false,root.size,0.0,false,scene.feedback.audio.current_music_id())
+		if flown==null:check(false,active.error);scene.free();return
+		active=flown
+		if not present():scene.free();return
 	# Detached completed preceding radio: the actual native hook still performs
 	# the attack, drift, placement, pullback and timed eligibility itself.
 	active._encounter=active._encounter.fork_for_frame()
@@ -48,6 +55,7 @@ func verify_component(world: RefCounted) -> void:
 		active._encounter._hook._radio._started[index]=true
 		active._encounter._hook._radio._finished[index]=true
 	var phases:={};var elapsed_pullback:=0;var elapsed_drift:=0
+	var release: RefCounted
 	for tick in 900:
 		if active.campaign_dialogue_visible():break
 		var next: RefCounted=active.evaluate(100,Vector2.ZERO,1.0,false,false,root.size,0.0,false,scene.feedback.audio.current_music_id())
@@ -55,6 +63,9 @@ func verify_component(world: RefCounted) -> void:
 		active=next
 		if not present():scene.free();return
 		var phase: int=active.frame_context().encounter.sequence.phase
+		if phase==5 and release==null:
+			release=active
+			check(not active.campaign_dialogue_visible() and active.frame_context().encounter.view.camera.mode=="follow","The cinematic release did not begin ordinary follow before its result")
 		if not phases.has(phase):
 			phases[phase]=true
 			verify_sequence_sound(phase)
@@ -74,6 +85,8 @@ func verify_component(world: RefCounted) -> void:
 				verify_attached_particles(phase,true)
 				await capture("continuation-pullback-late")
 	check(active.campaign_dialogue_visible() and active.dialogue().get("text_id")==2047,"Native cinematic did not open result41")
+	await capture("continuation-result-first")
+	if release!=null:verify_result_camera(release)
 	if failures:scene.free();return
 	for page in 4:
 		check(active.dialogue().text_id==2047+page,"Result41 changed its page order")
@@ -152,6 +165,18 @@ func verify_void_surfaces() -> void:
 		check(source_surfaces>0 and pbr_surfaces==0,"A Void body branch retained unlit/default PBR surfaces")
 
 func verify_retained_flight() -> void:pass
+
+func verify_result_camera(release: RefCounted) -> void:
+	var before: Dictionary=release.snapshot();var result: Dictionary=active.snapshot()
+	var camera: Dictionary=result.encounter.view.camera;var earlier: Dictionary=before.encounter.view.camera
+	var elapsed: int=int(result.elapsed_ms)-int(before.elapsed_ms)
+	print("Result camera: release poll ",before.runner.clock_ms,"; released flight ",elapsed,"ms; eye distance ",camera.eye.distance_to(result.player_pose.origin))
+	check(before.runner.clock_ms<5001,"The cinematic retained an overdue result timer at release")
+	var expected_delay: int=(int((5000-int(before.runner.clock_ms))/100)+1)*100
+	check(elapsed==expected_delay and camera.mode=="follow" and camera.pose!=earlier.pose,"The result did not respect the remaining shared interval during camera return")
+	check(not scene.camera.is_position_behind(scene.player.global_position) and Rect2(Vector2.ZERO,Vector2(root.size)).has_point(scene.camera.unproject_position(scene.player.global_position)),"The result opened before the returning player entered the actual view")
+	var frozen: RefCounted=active.evaluate(100,Vector2.ONE,1.0,true)
+	check(frozen!=null and frozen.snapshot()==result,"The result conversation advanced flight or consumed held input")
 
 func verify_sequence_sound(phase: int) -> void:
 	if scene.sequence_audio==null:check(false,"Admitted ambush has no sequence audio owner");return

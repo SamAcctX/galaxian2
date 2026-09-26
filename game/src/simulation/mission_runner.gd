@@ -94,10 +94,13 @@ func poll(actors: Array,radio_active: bool,periodic_poll_allowed: bool,player_al
 	var status:=observe(actors,sequences,world_facts)
 	if status.is_empty():return fail("Mission result lost its actor or sequence observation")
 	var policy: Dictionary=_result.policy
-	var eligible: bool=periodic_poll_allowed and _state.clock_ms>=int(policy.success_poll_milliseconds)
+	var interval_elapsed: bool=_state.clock_ms>=int(policy.success_poll_milliseconds)
+	var eligible: bool=periodic_poll_allowed and interval_elapsed
 	if eligible and not radio_active and status.satisfied:_state.mode=int(policy.success_result_mode)
 	elif status.failed:_state.mode=int(policy.failure_result_mode)
-	elif eligible:_state.clock_ms=0
+	# A cinematic can gate success, but the independent result-check cadence
+	# still runs. Do not bank an overdue success check for the release frame.
+	elif interval_elapsed:_state.clock_ms=0
 	return snapshot()
 
 func acknowledge() -> bool:

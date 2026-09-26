@@ -39,7 +39,9 @@ func verify() -> void:
 			changed[key]="foreign" if key=="binding_id" else 20 if key=="station_id" else []
 			var refused:=Context.new()
 			check(not refused.admit(bindings,cat,entry,changed) and refused.recipe().is_empty() and not context.matches_loadout(changed),"A changed source, station or equipped inventory reused mission admission: "+key)
-		if primary==2:verify_runner(context)
+		if primary==2:
+			verify_runner(context)
+			verify_poll_cadence(context)
 	verify_pilot_delta()
 
 func observations(retired: Array) -> Array:
@@ -74,6 +76,31 @@ func verify_runner(context: RefCounted) -> void:
 	var frozen:=parent.snapshot()
 	check(not parent.sample_clock(14999,0) and parent.snapshot()==frozen,"A backward clock partially changed the runner")
 	check(parent.poll(observations(range(7)),false,true,false)==frozen,"A dead player opened a new mission result")
+
+func verify_poll_cadence(context: RefCounted) -> void:
+	var parent:=Runner.new()
+	if not parent.configure(context):check(false,parent.error);return
+	var untouched:=parent.snapshot()
+	# A cinematic can prevent success, but cannot bank an overdue check.
+	# Radio and unavailable success leave the independent cadence running.
+	for allowed in [false,true]:
+		for radio_active in [false,true]:
+			for elapsed in [5000,5001]:
+				var branch: RefCounted=parent.fork()
+				check(branch.sample_clock(20000,elapsed),branch.error)
+				var result: Dictionary=branch.poll(observations([]),radio_active,allowed)
+				check(result.mode==0 and result.clock_ms==(0 if elapsed>5000 else elapsed),"A gated or unsuccessful result check lost its independent cadence")
+	var blocked: RefCounted=parent.fork()
+	check(blocked.sample_clock(30000,5100),blocked.error)
+	var waiting: Dictionary=blocked.poll(observations(range(2,7)),false,false)
+	check(waiting.mode==0 and waiting.clock_ms==0,"Cinematic time accumulated an overdue success check")
+	check(blocked.sample_clock(30100,int(waiting.clock_ms)+100),blocked.error)
+	check(blocked.poll(observations(range(2,7)),false,true).mode==0,"Release opened an overdue result before the next interval")
+	check(blocked.sample_clock(35000,5000),blocked.error)
+	check(blocked.poll(observations(range(2,7)),false,true).mode==0,"Success lost the strict five-second boundary")
+	check(blocked.sample_clock(35001,5001),blocked.error)
+	check(blocked.poll(observations(range(2,7)),false,true).mode==1,"Released success did not open on the next eligible check")
+	check(parent.snapshot()==untouched,"A gated check changed its parent runner")
 
 func verify_pilot_delta() -> void:
 	# Identical physical target velocity sampled at different intervals must
