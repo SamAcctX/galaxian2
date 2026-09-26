@@ -39,6 +39,7 @@ static func from_ambush(bindings: RefCounted) -> Dictionary:
 		"sequence_models":[{"model_id":14285,"face_forward":false,"forward_offset":0},
 			{"model_id":14286,"face_forward":true,"forward_offset":10000},{"model_id":14287,"face_forward":true,"forward_offset":0}],
 		"escape_sounds":[153,154],
+		"sequence_sounds":[155,156],
 		"receipt_key":"nehma_source_receipt","source_receipt":bindings.nehma_source_receipt().duplicate(true)}
 
 ## The ambush result changes the objective, not the world. Its retained radio

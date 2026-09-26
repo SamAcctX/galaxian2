@@ -12,6 +12,7 @@ var error := ""
 var levels: Array[Node3D] = []
 var selection := {}
 var engine_glow: Node3D
+var _actor_engine_parts: Array[Node3D]=[]
 var _detail: RefCounted
 var _camera_suppressed := false
 
@@ -36,7 +37,7 @@ func build_freighter(assembly: Dictionary,library: RefCounted,visuals: RefCounte
 		# The engine is the source factory's last shared child and is attached
 		# to both body levels. The light mesh exists only on the detailed hull.
 		if index==0:parts.append({"resource_id":int(assembly.light_model_id)})
-		parts.append({"resource_id":int(assembly.engine_model_id)})
+		parts.append({"resource_id":int(assembly.engine_model_id),"actor_engine":true})
 		for container in int(assembly.container_count):
 			parts.append({"resource_id":int(assembly.container_model_id if index==0 else assembly.container_lod_model_id),
 				"offset":Vector3(0,0,float(assembly.container_positions_z[container]))})
@@ -90,7 +91,9 @@ func _build_assembly(ship_id: int,assembly: Dictionary,detail: RefCounted,librar
 				continue
 			var child_path: String=bindings.resolve(int(child),"mesh")
 			if child_path.is_empty():return reject(bindings.error)
-			parts.append({"resource_id":int(child),"path":child_path})
+			# The authored detailed assembly retains its last attached child as
+			# the actor-controlled effect. Lights and hull LODs stay independent.
+			parts.append({"resource_id":int(child),"path":child_path,"actor_engine":index==0 and child==assembly.child_resource_ids[0].back()})
 		selected.levels.append({"resource_id":id,"path":path,"parts":parts,"model_scale":float(assembly.model_scale)})
 	return _build(ship_id,selected,detail,library,visuals,bindings,quality,shared_resources,false)
 
@@ -122,6 +125,9 @@ func _build(ship_id: int,selected: Dictionary,detail: RefCounted,library: RefCou
 			child.set_meta("source_resource_id",part.resource_id)
 			child.position=part.get("offset",Vector3.ZERO)
 			body.add_child(child)
+			if part.get("actor_engine",false):
+				_actor_engine_parts.append(child)
+				child.set_meta("source_actor_engine",true)
 		body.hide()
 		levels.append(body)
 	if with_player_glow:
@@ -165,6 +171,14 @@ func _refresh_draw_visibility() -> void:
 	# sibling retains that shared pose and follows the selected body's cull gate.
 	if engine_glow!=null:engine_glow.visible=drawable
 
+## Actor-owned effect visibility is not a body/LOD or camera visibility flag.
+## Selection changes must not revive an engine disabled by native choreography.
+func apply_engine_draw(enabled: Variant) -> bool:
+	error=""
+	if _detail==null or not enabled is bool:return reject("Engine draw requires built geometry and an explicit boolean")
+	for part in _actor_engine_parts:part.visible=enabled
+	return true
+
 func valid_selection(next: Variant) -> bool:
 	if _detail==null or not next is Dictionary or not next.get("visible") is bool or not next.get("level") is int: return false
 	return (next.visible and next.level>=0 and next.level<levels.size()) or (not next.visible and next.level==-1)
@@ -173,6 +187,7 @@ func clear() -> void:
 	for child in get_children(): child.free()
 	levels.clear()
 	engine_glow=null
+	_actor_engine_parts.clear()
 	selection={}
 	_detail=null
 	_camera_suppressed=false

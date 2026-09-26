@@ -166,7 +166,7 @@ func _prepare_freighter(owner: RefCounted,actor: Dictionary,nodes: Dictionary,de
 		effect=nodes.explosion.prepare_state(death,camera)
 		if effect.is_empty():return failed(nodes.explosion.error)
 	return {"pose":actor.body_pose,"body_visible":state.phase=="ready" and actor.active and actor.node_draw_requested and actor.model_draw_enabled,
-		"selection":selection.duplicate(true),"effect":effect}
+		"selection":selection.duplicate(true),"effect":effect,"engine_draw_enabled":actor.engine_draw_enabled}
 
 ## `observed` is the flight's own encounter snapshot for this owner, when the
 ## caller already holds it; it contains every presentation field.
@@ -240,6 +240,7 @@ func commit_world(frame: Dictionary) -> void:
 			continue
 		nodes.hull.apply_selection(current.selection)
 		if nodes.get("freighter",false):
+			nodes.hull.apply_engine_draw(current.engine_draw_enabled)
 			if not current.effect.is_empty():nodes.explosion.commit_state(current.effect)
 			continue
 		nodes.engine.transform=current.pose;nodes.engine.visible=current.engine_visible

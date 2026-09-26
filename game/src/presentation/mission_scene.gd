@@ -39,6 +39,7 @@ var sequence_audio: Node3D
 var sequence_fade: ColorRect
 var _sequence_context: RefCounted
 var _escape_sound_revision:=-1
+var _sequence_sound_revision:=-1
 var _projection: RefCounted
 var _identity: RefCounted
 var _revision:=-1
@@ -69,14 +70,20 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cata
 		if not resources.configure(library,bindings) or not reflection.build(library,bindings,catalogues,int(environment.lights.state.system_id),false):return failed_build(resources.error+reflection.error)
 		if not scenery.prepare_destruction(field,library,visuals,bindings,resources,environment.lights.state,reflection,OrdinaryScene.EFFECT_RESPONSE):return failed_build(scenery.error)
 	if not exhaust.configure(library,bindings,visuals,world) or not effects.configure(library,bindings,visuals,world):return failed_build(exhaust.error+effects.error)
-	if context!=null and not context.recipe().get("sequence_models",[]).is_empty():
-		sequence_effects=SequenceEffects.new();add_child(sequence_effects)
-		# Old imported packs may supply a separately validated same-source mesh
-		# supplement. New imports resolve these records normally; never relabel.
-		if not sequence_effects.configure(context,library,visuals,bindings,context.recipe().sequence_models,OS.get_environment("GOF2_SEQUENCE_MESH_SUPPLEMENT")):return failed_build(sequence_effects.error)
-		var resources_audio:=AudioResources.new()
-		sequence_audio=SequenceAudio.new();add_child(sequence_audio)
-		if not resources_audio.configure(library,bindings,int(context.identity().campaign_cursor)) or not sequence_audio.configure(context,resources_audio,bindings,context.recipe().escape_sounds):return failed_build(resources_audio.error+sequence_audio.error)
+	if context!=null:
+		var recipe: Dictionary=context.recipe()
+		if not recipe.get("sequence_models",[]).is_empty():
+			sequence_effects=SequenceEffects.new();add_child(sequence_effects)
+			# Old imported packs may supply a separately validated same-source mesh
+			# supplement. New imports resolve these records normally; never relabel.
+			if not sequence_effects.configure(context,library,visuals,bindings,recipe.sequence_models,OS.get_environment("GOF2_SEQUENCE_MESH_SUPPLEMENT")):return failed_build(sequence_effects.error)
+		var sound_ids: Array=recipe.get("sequence_sounds",[]).duplicate()
+		for id in recipe.get("escape_sounds",[]):
+			if id not in sound_ids:sound_ids.append(id)
+		if not sound_ids.is_empty():
+			var resources_audio:=AudioResources.new()
+			sequence_audio=SequenceAudio.new();add_child(sequence_audio)
+			if not resources_audio.configure(library,bindings,int(context.identity().campaign_cursor)) or not sequence_audio.configure(context,resources_audio,bindings,sound_ids):return failed_build(resources_audio.error+sequence_audio.error)
 		_sequence_context=context
 	overlay=Control.new();overlay.mouse_filter=Control.MOUSE_FILTER_IGNORE;add_child(overlay);overlay.size=Vector2(viewport)
 	hud=Hud.new();feedback=Feedback.new();secondary_panel=SecondaryPanel.new()
@@ -116,7 +123,13 @@ func present(world: RefCounted,viewport: Vector2i) -> bool:
 			models.append({"model_id":declaration.model_id,"visible":escape.get("explosions_visible",false),"time_ms":int(escape.get("explosion_elapsed_ms",0))})
 		animation=sequence_effects.prepare_state(_sequence_context,{"revision":state.revision,"models":models,"mothership_visible":escape.get("mothership_visible",true)},-view.camera.pose.basis.z)
 		if animation.is_empty():return reject(sequence_effects.error)
+	var audio_state: Dictionary=world.audio_state()
+	if sequence_audio!=null:
 		var cues:=[]
+		# Conversation navigation has a new flight revision but retains the last
+		# choreography frame. Only a new sequence revision owns new sound cues.
+		if int(audio_state.get("sequence_revision",-1))>_sequence_sound_revision:
+			cues.append_array(audio_state.get("sequence_audio",[]).duplicate(true))
 		if not escape.is_empty() and escape.revision>_escape_sound_revision:
 			for cue in escape.frame.audio:
 				if cue.action=="update":
@@ -152,6 +165,7 @@ func present(world: RefCounted,viewport: Vector2i) -> bool:
 	if not feedback.present(world,state.elapsed_ms):return failed_display(feedback.error)
 	if not sequence_sound.is_empty() and not sequence_sound.get("repeat",false) and not sequence_audio.commit_frame(sequence_sound):return failed_display("Sequence sound frame was superseded")
 	_escape_sound_revision=int(escape.get("revision",-1))
+	_sequence_sound_revision=int(audio_state.get("sequence_revision",-1))
 	overlay.size=Vector2(viewport)
 	_revision=state.revision;_elapsed_ms=state.elapsed_ms;_viewport=viewport
 	return true
@@ -183,7 +197,7 @@ func failed_display(message: String) -> bool:
 func failed_build(message: String) -> bool:
 	for child in get_children():child.free()
 	environment=null;encounter=null;player=null;scenery=null;exhaust=null;effects=null;camera=null;hud=null;feedback=null;secondary_panel=null;overlay=null
-	sequence_effects=null;sequence_audio=null;sequence_fade=null;_sequence_context=null;_escape_sound_revision=-1
+	sequence_effects=null;sequence_audio=null;sequence_fade=null;_sequence_context=null;_escape_sound_revision=-1;_sequence_sound_revision=-1
 	_identity=null;_projection=null;_revision=-1;_elapsed_ms=-1
 	return reject(message)
 func reject(message: String) -> bool:error=message;return false

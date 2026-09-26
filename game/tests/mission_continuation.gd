@@ -26,6 +26,7 @@ func verify_component(world: RefCounted) -> void:
 	root.size=Vector2i(1440,900);root.content_scale_size=Vector2i.ZERO
 	if not prepare_scene(visuals):return
 	scene.feedback.set_active(true)
+	check(scene.sequence_audio!=null and scene.sequence_audio.snapshot().active.is_empty(),"Ambush sounds started before their cinematic cut")
 	await capture("continuation-arrival")
 	var skipped: RefCounted=active.skip_entry()
 	if skipped==null:check(false,active.error);scene.free();return
@@ -51,6 +52,8 @@ func verify_component(world: RefCounted) -> void:
 		var phase: int=active.frame_context().encounter.sequence.phase
 		if not phases.has(phase):
 			phases[phase]=true
+			verify_sequence_sound(phase)
+			verify_freighter_engine(phase)
 			await capture("continuation-shot-"+str(phase))
 		if phase==4:
 			elapsed_pullback+=100
@@ -61,11 +64,13 @@ func verify_component(world: RefCounted) -> void:
 		check(active.dialogue().text_id==2047+page,"Result41 changed its page order")
 		if not acknowledge():scene.free();return
 	await capture("continuation-final-result")
+	var sound_before_result: Dictionary=scene.sequence_audio.snapshot()
 	var parent: RefCounted=active;var before: Dictionary=parent.snapshot()
 	var rejected_loadout: Dictionary=parent.equipment_owner().snapshot().loadout.duplicate(true)
 	rejected_loadout.ship_id=-1
 	check(context.retained_successor(bindings,rejected_loadout)==null,"Continuation accepted changed equipment")
 	if not acknowledge():scene.free();return
+	check(scene.sequence_audio.snapshot().history==sound_before_result.history,"Final Next replayed the retained cinematic sound cues")
 	var after: Dictionary=active.snapshot()
 	check(after.campaign_cursor==42 and after.boundary.is_empty() and not active.campaign_dialogue_visible(),"Final Next did not release living mission42")
 	check(active.runner_owner().context_owner().identity().campaign_cursor==42 and active.mission_context_owner()==context,"Active objective replaced the admitted world capability")
@@ -95,6 +100,41 @@ func prepare_scene(visuals: RefCounted) -> bool:
 	return true
 
 func verify_retained_flight() -> void:pass
+
+func verify_sequence_sound(phase: int) -> void:
+	if scene.sequence_audio==null:check(false,"Admitted ambush has no sequence audio owner");return
+	var sound: Dictionary=scene.sequence_audio.snapshot()
+	var starts: Array=sound.history.filter(func(cue):return cue.action=="play" and cue.get("sound_id")==155)
+	var stops: Array=sound.history.filter(func(cue):return cue.action=="stop" and cue.get("sound_id")==156)
+	check(starts.size()==int(phase>=2),"Engine damage sound did not start exactly once at the drift cut")
+	check(stops.size()==int(phase>=5),"Cinematic release lost or repeated its distinct stop cue")
+	if phase==2:
+		check(sound.active.has(155),"Damage sound has no actual prepared playback instance")
+		if sound.active.has(155):
+			check(scene.sequence_audio._players[155].nodes.any(func(node):return node.playing),"Damage sound instance is not playing")
+		check(sound.directives==[{"action":"stop_actor_engine","actor_id":0}],"Engine stop lost its actor rather than reaching the shared directive boundary")
+		check(present() and scene.sequence_audio.snapshot()==sound,"Repeated display replayed or advanced a cinematic sound")
+		scene.set_paused(true)
+		var paused: RefCounted=active.evaluate(100,Vector2.ZERO,1.0,false,true)
+		check(paused!=null and scene.present(paused,root.size),"Paused cinematic could not display its unchanged frame")
+		scene.set_paused(false)
+		check(scene.sequence_audio.snapshot()==sound,"Pause/resume advanced, restarted or lost cinematic sound state")
+	if phase==5:
+		check(not sound.history.any(func(cue):return cue.action=="stop" and cue.get("sound_id")==155),"Release incorrectly replaced the distinct stop156 with stop155")
+
+func verify_freighter_engine(phase: int) -> void:
+	var body: Node3D=scene.encounter.actors[0].hull
+	var engines: Array=body._actor_engine_parts
+	check(engines.size()==1 and engines[0].get_meta("source_resource_id")==17038,"Actor draw control lost the original detailed Vossk engine child")
+	if engines.size()!=1:return
+	check(engines[0].visible==(phase<4),"Freighter engine visibility differs from the native final-placement cut")
+	var lights: Array=body.levels[0].get_children().filter(func(node):return node.get_meta("source_resource_id",-1)==18713)
+	check(lights.size()==1 and lights[0].visible,"Engine shutdown hid the independent freighter lights")
+	if phase==4:
+		var selection: Dictionary=body.selection.duplicate(true)
+		for level in body.levels.size():
+			check(body.apply_selection({"visible":true,"level":level}) and not engines[0].visible,"Changing hull detail revived a disabled freighter engine")
+		check(body.apply_selection(selection) and body.visible,"Engine shutdown lost the retained freighter body")
 
 func verify_successor_conditions(frame: RefCounted) -> void:
 	var runner: RefCounted=frame.runner_owner();var recipe: Dictionary=runner.context_owner().recipe()
