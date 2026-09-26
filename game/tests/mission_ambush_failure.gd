@@ -3,6 +3,7 @@ extends "res://tests/mission_escape_sequence.gd"
 ## is detached; native destruction must retire the existing freighter before
 ## the real mission runner opens failure. The earned station remains untouched.
 const Runner=preload("res://src/simulation/mission_runner.gd")
+const Flight=preload("res://src/simulation/mission_flight_frame.gd")
 
 func verify_component(world: RefCounted) -> void:
 	var context:=Context.new()
@@ -45,3 +46,41 @@ func verify_component(world: RefCounted) -> void:
 	check(active.snapshot().combat.actors.size()==original.combat.actors.size(),"Freighter retirement replaced the encounter's cast")
 	check(origin.snapshot()==original,"Failure component mutated its living parent encounter")
 	print("Native freighter retirement at ",retirement_ms,"ms opens failure, not hull-zero success; source career remains unchanged")
+	if not failures:verify_premature_exit(world,context)
+
+## Detached portal placement tests the forbidden-exit boundary, not a playable
+## way to open the mission's initially hidden exit. Native contact and player
+## destruction must enforce the recipe without acknowledging the ambush.
+func verify_premature_exit(world: RefCounted,context: RefCounted) -> void:
+	var frame:=Flight.new()
+	if not frame.configure(bindings,catalogues,library,context,world):check(false,frame.error);return
+	var active: RefCounted=frame.skip_entry()
+	if active==null:check(false,frame.error);return
+	for page in context.recipe().briefing.size():
+		var next: RefCounted=active.navigate("next")
+		if next==null:check(false,active.error);return
+		active=next
+	var original: Dictionary=active.snapshot()
+	var career: Dictionary=active.career_owner().snapshot()
+	check(original.campaign_cursor==41 and not original.portal.visible and original.player.vitals.hull>0,"Premature-exit check did not start in the living unacknowledged ambush")
+	var contact: RefCounted=active.fork_for_frame()
+	# Place an already-open contact volume through its owning operations.
+	# Do not force the entered latch, hit the player, or change career/save data.
+	if not contact._portal.open_at(original.player_pose.origin) or not contact._portal.begin_closing(0):check(false,contact._portal.error);return
+	var placed: Dictionary=contact.snapshot()
+	# The control case overlaps the same volume; visibility alone differs.
+	var hidden: RefCounted=contact.fork_for_frame()
+	if not hidden._portal.set_visible(false):check(false,hidden._portal.error);return
+	var hidden_before: Dictionary=hidden.snapshot()
+	var closed: RefCounted=hidden.evaluate(100,Vector2.ZERO,0.0,false)
+	if closed==null:check(false,hidden.error);return
+	check(not closed.snapshot().portal_contact.portal_entered and closed.snapshot().player.vitals.hull>0 and closed.prepare_portal_transition().is_empty(),"The overlapping hidden exit killed or returned the player")
+	check(hidden.snapshot()==hidden_before,"Hidden-portal contact mutated its parent")
+	var rejected: RefCounted=contact.evaluate(100,Vector2.ZERO,0.0,false)
+	if rejected==null:check(false,contact.error);return
+	var after: Dictionary=rejected.snapshot()
+	check(after.portal_contact.portal_entered and after.player.vitals.hull<=0,"Native portal contact before result41 did not destroy the player")
+	check(after.campaign_cursor==41 and rejected.prepare_portal_transition().is_empty(),"Premature Void exit advanced or returned the campaign")
+	check(rejected.career_owner().snapshot()==career,"Premature exit changed the independent career")
+	check(contact.snapshot()==placed and active.snapshot()==original,"Premature-exit candidate mutated either living parent")
+	print("Native portal contact before result41 destroys the player without a return or career advancement")
