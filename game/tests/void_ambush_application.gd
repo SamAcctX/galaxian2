@@ -6,6 +6,7 @@ const ExpeditionPilot=preload("res://tests/fixtures/expedition_flight_pilot.gd")
 const CombatPilot=preload("res://tests/fixtures/bakka_flight_pilot.gd")
 var combat_pilot:=CombatPilot.new()
 var pending_emp:=false
+var void_route_history:={}
 
 func verify_free_application() -> void:
 	var input_path:=OS.get_environment("GOF2_SOURCE_SAVE")
@@ -25,6 +26,7 @@ func verify_free_application() -> void:
 	# Every station launch restores the equipped ship, including this one.
 	check(app.session.snapshot().player.vitals.armor==110,"The Néhma launch kept arrival damage instead of the station launch reset")
 	if not await enter_mission40_gate():return
+	if not retain_navigation_history(original.station_response_flags):return
 	await capture_free_application("void41-selected40-arrival")
 	if not await fly_mission40_to_portal():return
 	await capture_free_application("void41-m40-portal-contact")
@@ -37,7 +39,7 @@ func verify_free_application() -> void:
 	# the freighter kill, portal escape and Thynome docking follow (mission 42).
 	var after: Dictionary=app.session.snapshot()
 	check(after.campaign_cursor==42 and app.session.status=="running" and after.encounter.combat.actors[0].vitals.hull>0,"Result 41 did not continue into mission 42 in the living Void world")
-	check(app.session.flight_owner().station_response_flags()==original.station_response_flags,"Void entry lost the earned station responses")
+	check(app.session.flight_owner().station_response_flags()==void_route_history,"Void entry lost the actual navigation's station responses")
 	if failures or not await fly_mission42():return
 	if not await return_to_thynome(original):return
 	check(FileAccess.get_sha256(input_path)==OS.get_environment("GOF2_SOURCE_SAVE_SHA256"),"The earned journey changed its source checkpoint")
@@ -47,6 +49,23 @@ func verify_free_application() -> void:
 ## same implementation-specific dialogue methods on their flight owners.
 static func observed_dialogue(session: Node) -> Dictionary:
 	return session.snapshot().get("dialogue",{})
+
+## Ordinary arrival initializes its destination's response flag. Every other
+## earned entry must survive, with no unobserved additions or changed values.
+static func navigation_history_matches(original: Dictionary,current: Dictionary,destination: int,initial: bool) -> bool:
+	var expected:=original.duplicate(true)
+	expected[destination]=initial
+	return current==expected
+
+func retain_navigation_history(original: Dictionary) -> bool:
+	var flight: RefCounted=app.session.flight_owner()
+	var current: Dictionary=flight.station_response_flags()
+	var destination: int=flight.player_owner().loadout().station_id
+	check(navigation_history_matches(original,current,destination,bool(definitions.mido_travel.traffic_combat.station_flag_initial)),
+		"Selected arrival lost old response history or changed more than its destination: "+str(current))
+	if failures:return false
+	void_route_history=current.duplicate(true)
+	return true
 
 func dialogue_visible() -> bool:
 	return observed_dialogue(app.session).get("visible",false)
@@ -118,7 +137,7 @@ func return_to_thynome(original: Dictionary) -> bool:
 	if not app.enter_mission_normal_space(now_us,flight_world_seconds(),flight_world_seconds()):check(false,app.status.text);return false
 	var arrival: Dictionary=app.session.snapshot()
 	check(arrival.campaign_cursor==42 and arrival.location.station_id==retained.return_station_id and arrival.location.system_id==retained.return_system_id,"Escape skipped its retained normal-space world")
-	check(app.session.flight_owner().station_response_flags()==original.station_response_flags,"Normal-space return discarded earned station responses")
+	check(app.session.flight_owner().station_response_flags()==void_route_history,"Normal-space return discarded earned station responses")
 	await capture_free_application("void42-normal-space-arrival")
 	for tick in 220:
 		if dialogue_visible():break
@@ -137,14 +156,14 @@ func return_to_thynome(original: Dictionary) -> bool:
 		if not app.enter_station(now_us,0,flight_world_seconds()):check(false,app.status.text);return false
 	var arrived: Dictionary=app.session.snapshot()
 	check(arrived.campaign_cursor==43 and arrived.loadout.station_id==10 and arrived.reward_credits==0,"The final result did not enter Thynome at cursor43 without a false reward")
-	check(arrived.station_response_flags==original.station_response_flags,"Thynome discarded the earned response history")
+	check(arrived.station_response_flags==void_route_history,"Thynome discarded the earned response history")
 	for key in ["mission","accepted_contact","passengers","credits","result_serial","completed_side_missions","pending_result","last_result"]:
 		check(arrived.contracts.get(key)==original.contracts.get(key),"Void journey altered independent career field: "+key)
 	var path: String=app.station_save_path()
 	check(FileAccess.file_exists(path),"Automatic Thynome entry did not autosave")
 	if failures:return false
 	var file:=OnwardFile.new();var document:=file.read_document(path)
-	check(not document.is_empty() and document.version==11 and document.station.campaign_cursor==43 and document.station.station_response_flags==original.station_response_flags,"The automatic save lost its continuation or response history")
+	check(not document.is_empty() and document.version==11 and document.station.campaign_cursor==43 and document.station.station_response_flags==void_route_history,"The automatic save lost its continuation or response history")
 	check(DirAccess.copy_absolute(path,chapter_directory.path_join("thynome43-autosaved.gof2save"))==OK,"Could not retain the unmodified automatic checkpoint")
 	await capture_free_application("void43-thynome-autosaved")
 	if not app.load_station(now_us+100000):check(false,"Application Resume failed for earned Thynome");return false
