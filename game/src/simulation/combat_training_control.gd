@@ -1119,6 +1119,13 @@ func career_snapshot() -> Dictionary:
 		else:result.contract_result=_contract_result.duplicate(true)
 	return result
 
+## Read the actual motion owner, not cinematic phase or player engine state.
+func actor_engine_observation(actor_id: int) -> Dictionary:
+	if actor_id<0 or actor_id>=_flight.size() or not _flight[actor_id] is FreightMotion:return {}
+	var actor: Dictionary=_combat.actor_snapshot(actor_id)
+	var motion: Dictionary=_flight[actor_id].snapshot()
+	return {"position":actor.body_pose.origin,"enabled":bool(actor.active) and bool(motion.cruise_enabled) and _destruction[actor_id].snapshot().phase=="ready"}
+
 ## Matches the snapshot's traffic_clock entry without building the snapshot.
 func runs_ambient_traffic() -> bool:return not _identity.is_empty() and _ambient
 

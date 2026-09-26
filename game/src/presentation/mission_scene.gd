@@ -136,7 +136,7 @@ func present(world: RefCounted,viewport: Vector2i) -> bool:
 					cues.append({"action":"position","sound_id":cue.sound_id,"position":cue.position,"velocity":cue.velocity})
 					for index in cue.parameters:cues.append({"action":"parameter","sound_id":cue.sound_id,"index":index,"value":cue.parameters[index]})
 				else:cues.append(cue.duplicate(true))
-		sequence_sound={"repeat":true} if state.revision==_revision else sequence_audio.prepare_frame(_sequence_context,{"revision":state.revision,"delta_ms":0 if _elapsed_ms<0 else int(state.elapsed_ms)-_elapsed_ms,"cues":cues,"stopped":world.destruction_owner().snapshot().phase!="ready"},view.camera.pose)
+		sequence_sound={"repeat":true} if state.revision==_revision else sequence_audio.prepare_frame(_sequence_context,{"revision":state.revision,"delta_ms":0 if _elapsed_ms<0 else int(state.elapsed_ms)-_elapsed_ms,"cues":cues,"actor_engines":audio_state.get("actor_engines",{}),"stopped":world.destruction_owner().snapshot().phase!="ready"},view.camera.pose)
 		if sequence_sound.is_empty():return reject(sequence_audio.error)
 	if not environment.present(world,viewport):return reject(environment.error)
 	var field_owner: RefCounted=world.scenery_owner();var field: Dictionary=field_owner.read_snapshot()

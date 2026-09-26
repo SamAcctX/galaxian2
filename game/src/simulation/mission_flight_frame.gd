@@ -9,6 +9,8 @@ const Contacts=preload("res://src/simulation/physical_scenery_contacts.gd")
 const Aim=preload("res://src/simulation/opening_aim.gd")
 const Engines=preload("res://src/simulation/player_engine_particles.gd")
 const EngineAudio=preload("res://src/simulation/opening_engine_audio.gd")
+const Music=preload("res://src/simulation/ordinary_music.gd")
+const Radar=preload("res://src/simulation/fast_forward.gd")
 const Death=preload("res://src/simulation/player_destruction.gd")
 const Particles=preload("res://src/simulation/full_hold_particles.gd")
 const Scanner=preload("res://src/simulation/opening_npc_scanner.gd")
@@ -41,6 +43,10 @@ var _camera: RefCounted
 var _aim: RefCounted
 var _engines: RefCounted
 var _engine_audio: RefCounted
+var _music: RefCounted
+var _radar: RefCounted
+var _music_context:={}
+var _flight_music:={"operations":[]}
 var _death: RefCounted
 var _particles: RefCounted
 var _scanner: RefCounted
@@ -86,6 +92,15 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,c
 	if not mounts.open(library,catalogues) or not engines.configure(bindings,mounts,int(loadout.ship_id),scenery.seed_seconds()):return reject(mounts.error+engines.error)
 	if not audio.has_method("configure_mission") or not death.has_method("configure_mission"):return reject("Mission flight needs admitted configure_mission entry points on OpeningEngineAudio and PlayerDestruction")
 	if not audio.configure_mission(bindings,catalogues,context,player,pose):return reject(audio.error)
+	var music:=Music.new();var radar:=Radar.new()
+	if not music.configure(bindings.ordinary_music) or not radar.configure(bindings) or not radar.configure_radar(catalogues,loadout.equipment_ids):return reject(music.error+radar.error)
+	# This admitted route retains the preceding world's actual unequipped
+	# scanner. Its source skip-NPC-loop branch does not count visible enemies.
+	if not radar.publish_without_scanner(false):return reject(radar.error)
+	var music_context:={"world_type":int(initialized_world.snapshot().world_type),"campaign_cursor":int(context.identity().campaign_cursor),
+		"selected_station_id":int(context.recipe().station_id),"system_id":int(context.recipe().system_id),
+		"retained_void_station_id":-1,"void_source_station_id":int(entry.snapshot().source_before.source_station_id)}
+	if Music.context_kind(music_context,0).is_empty():return reject("Admitted mission lacks its source music location")
 	if not death.configure_mission(bindings,encounter.destruction_resources(),catalogues,context,player,pose,camera.snapshot().pose):return reject(death.error)
 	var particles:=Particles.new()
 	if not particles.configure_mission(bindings,context,encounter.combat_owner(),death,scenery.seed_seconds()):return reject(particles.error)
@@ -117,6 +132,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,c
 	_portal=portal
 	_player=player;_scenery=scenery;_equipment=equipment;_career=career;_pilot=pilot;_physical=physical
 	_camera=camera;_aim=aim;_engines=engines;_engine_audio=audio;_death=death;_particles=particles;_detail=detail
+	_music=music;_radar=radar;_music_context=music_context
 	_scanner=scanner;_targeting=targeting;_notices=notices
 	_pose=pose;_viewport=viewport;_max_ms=Frames.simulation_limit(bindings);_random=initialized_world.snapshot().random_state.duplicate(true)
 	_initial_progress=career.snapshot().progress.duplicate(true);_progress=_initial_progress.duplicate(true)
@@ -259,7 +275,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 		next._random=rng.snapshot()
 	# The shared HUD pass follows actor motion with the committed camera. Hidden
 	# cinematic frames keep acquisition history without advancing selection.
-	var hud_on: bool=next._state.entry_released and bool(next._encounter.frame_context().sequence.hud_visible) and (next._escape==null or next._escape.snapshot().hud_visible) and not dying
+	var hud_on: bool=next._state.entry_released and bool(next._encounter.frame_context().sequence.hud_visible) and (next._escape==null or next._escape.snapshot().hud_visible) and not dying and not next.campaign_dialogue_visible()
 	var aim_state: Dictionary=next._aim.snapshot();var camera_pose: Transform3D=next._camera.snapshot().pose
 	if not next._scanner.advance_mission(next._encounter.combat_owner(),next._pose,camera_pose,aim_state,milliseconds,hud_on):return failed(next._scanner.error)
 	var scan: Dictionary=next._scanner.snapshot()
@@ -267,6 +283,11 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	for event in next._targeting.snapshot().events:
 		if event.get("kind")=="notification" and not next._notices.enqueue(event.get("source_id")):return failed(next._notices.error)
 	if not next._notices.advance(milliseconds,false):return failed(next._notices.error)
+	if not next._radar.publish_without_scanner(hud_on,current_music_id):return failed(next._radar.error)
+	next._music_context.campaign_cursor=int(next._state.campaign_cursor)
+	var music: Dictionary=next._music.prepare_for_context(current_music_id,next._radar.battle_count(),-1,hud_on,next._music_context)
+	if music.is_empty():return failed(next._music.error)
+	next._flight_music={"operations":music.operations}
 	if enabled:next._throttle=throttle
 	next._state.elapsed_ms+=milliseconds;next._state.revision+=1
 	next._state.input={"enabled":enabled,"commands":commands if enabled else Vector2.ZERO,"primary_held":primary_fire and enabled and next._primary_released,"secondary_requested":secondary_fire and enabled and next._secondary_released,"throttle":next._throttle}
@@ -305,6 +326,8 @@ func navigate(action: String) -> RefCounted:
 			if not career.advance_mission_story(_bindings,completed_context,_progress):return failed(career.error)
 			next._career=career;next._progress=career.snapshot().progress.duplicate(true)
 			next._state.campaign_cursor=career.snapshot().campaign_cursor
+			next._music_context.campaign_cursor=int(next._state.campaign_cursor)
+			next._flight_music={"operations":[]}
 			next._state.mission=completed_context.recipe().next_mission
 			if completed_context.recipe().get("continuation",{}).get("kind")=="retained_world":
 				var continuation: RefCounted=next._runner.continue_in_world(_bindings,_library,_equipment.snapshot().loadout)
@@ -376,6 +399,7 @@ func snapshot() -> Dictionary:
 	var view: Dictionary=state.encounter.view;var sequence: Dictionary=state.encounter.sequence
 	state.encounter=_encounter.snapshot();state.encounter.view=view;state.encounter.sequence=sequence
 	state.scenery=_scenery.snapshot();state.player_engines=_engines.snapshot();state.player_engine_audio=_engine_audio.snapshot()
+	state.radar=_radar.snapshot();state.music_context=_music_context.duplicate(true);state.flight_music=_flight_music.duplicate(true)
 	state.player_destruction=_death.snapshot();state.damage_particles=_particles.snapshot();state.npc_scanner=_scanner.snapshot();state.mining_targeting=_targeting.snapshot();state.flight_notices=_notices.snapshot();state.detail=_detail.snapshot();state.equipment=_equipment.snapshot()
 	state.game_over_packet=prepare_game_over();state.initial_progress=_initial_progress.duplicate(true)
 	return state
@@ -392,10 +416,14 @@ func audio_state() -> Dictionary:
 	if _state.is_empty():return {}
 	var state: Dictionary=_encounter.frame_context();var combat: Dictionary=_encounter.audio_snapshot()
 	combat.player_engine=_engine_audio.snapshot()
+	var actor_engines:={}
+	for declaration in _context.recipe().get("actor_engines",[]):
+		actor_engines[int(declaration.actor_id)]=_encounter.actor_engine_observation(int(declaration.actor_id))
 	return {"revision":_state.revision,"elapsed_ms":_state.elapsed_ms,"combat":combat,"camera_view":_camera.snapshot(),
+		"actor_engines":actor_engines,
 		"radio":state.radio,"radio_events":state.radio_events,"death_events":_death.snapshot().events,
 		"sequence_revision":state.sequence.revision,"sequence_audio":state.sequence.frame.audio,"escape_audio":[] if _escape==null else _escape.snapshot().frame.audio,"dialogue":dialogue(),
-		"scanner_events":_scanner.snapshot().events,"flight_music":{"operations":[]}}
+		"scanner_events":_scanner.snapshot().events,"flight_music":_flight_music.duplicate(true)}
 func effects_state() -> Dictionary:
 	if _state.is_empty():return {}
 	var sequence: Dictionary=_encounter.frame_context().sequence
@@ -457,6 +485,7 @@ func fork_for_frame() -> RefCounted:
 	copy._return_identity=_return_identity
 	copy._portal=null if _portal==null else _portal.fork_for_frame();copy._escape=null if _escape==null else _escape.fork_for_frame()
 	if _state.is_empty():return copy
+	copy._music=_music;copy._radar=_radar.fork_for_frame();copy._music_context=_music_context.duplicate(true);copy._flight_music=_flight_music.duplicate(true)
 	copy._runner=_runner.fork();copy._encounter=_encounter.fork_for_frame();copy._player=_player.fork_for_frame();copy._scenery=_scenery.fork_for_frame()
 	copy._equipment=_equipment;copy._career=_career
 	copy._pilot=_pilot.fork_for_frame();copy._physical=_physical.fork_for_frame();copy._camera=_camera.fork_for_frame();copy._aim=_aim.fork_for_frame()

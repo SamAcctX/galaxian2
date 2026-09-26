@@ -961,6 +961,8 @@ func selected40_frame_context() -> Dictionary:
 		"pending_world":_selected40_pending_world,"sequence":_selected40_sequence.snapshot(),
 		"view":_selected40_view.snapshot(),"freighter_mode":_combat.actor_snapshot(0).actor_mode}
 func actor_events() -> Array:return _actor_events.duplicate(true)
+func actor_engine_observation(actor_id: int) -> Dictionary:
+	return {} if _control==null else _control.actor_engine_observation(actor_id)
 
 ## Sound does not need full actor/system/particle/controller snapshots.
 func audio_snapshot() -> Dictionary:

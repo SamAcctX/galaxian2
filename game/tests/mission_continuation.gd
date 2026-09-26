@@ -9,6 +9,8 @@ var active: RefCounted
 var scene: Node3D
 var visual_path:=""
 var capture_path:=""
+var actor_engine_node: Node
+var retained_music_node: Node
 
 func verify(args: Array) -> void:
 	visual_path=args[2]
@@ -28,6 +30,7 @@ func verify_component(world: RefCounted) -> void:
 	scene.feedback.set_active(true)
 	check(scene.sequence_audio!=null and scene.sequence_audio.snapshot().active.is_empty(),"Ambush sounds started before their cinematic cut")
 	verify_attached_particles(0)
+	verify_actor_engine_audio(0)
 	await capture("continuation-arrival")
 	var skipped: RefCounted=active.skip_entry()
 	if skipped==null:check(false,active.error);scene.free();return
@@ -36,6 +39,7 @@ func verify_component(world: RefCounted) -> void:
 	for page in context.recipe().briefing.size():
 		if not acknowledge():scene.free();return
 	check(not active.campaign_dialogue_visible(),"Briefing did not release the component flight")
+	if not verify_mission_music():scene.free();return
 	# Detached completed preceding radio: the actual native hook still performs
 	# the attack, drift, placement, pullback and timed eligibility itself.
 	active._encounter=active._encounter.fork_for_frame()
@@ -46,7 +50,7 @@ func verify_component(world: RefCounted) -> void:
 	var phases:={};var elapsed_pullback:=0;var elapsed_drift:=0
 	for tick in 900:
 		if active.campaign_dialogue_visible():break
-		var next: RefCounted=active.evaluate(100)
+		var next: RefCounted=active.evaluate(100,Vector2.ZERO,1.0,false,false,root.size,0.0,false,scene.feedback.audio.current_music_id())
 		if next==null:check(false,active.error);scene.free();return
 		active=next
 		if not present():scene.free();return
@@ -55,6 +59,8 @@ func verify_component(world: RefCounted) -> void:
 			phases[phase]=true
 			verify_sequence_sound(phase)
 			verify_freighter_engine(phase)
+			verify_actor_engine_audio(phase)
+			check(scene.feedback.audio.current_music_id()==145 and scene.feedback.audio._players.get(145,{}).get("node")==retained_music_node,"Cinematic or continuation restarted retained flight music")
 			verify_attached_particles(phase)
 			await capture("continuation-shot-"+str(phase))
 		if phase==2:
@@ -80,6 +86,8 @@ func verify_component(world: RefCounted) -> void:
 	check(context.retained_successor(bindings,rejected_loadout)==null,"Continuation accepted changed equipment")
 	if not acknowledge():scene.free();return
 	check(scene.sequence_audio.snapshot().history==sound_before_result.history,"Final Next replayed the retained cinematic sound cues")
+	check(scene.sequence_audio.snapshot().actor_engines.is_empty(),"Retained mission42 restarted the crippled freighter's engine")
+	check(active.snapshot().music_context.campaign_cursor==42 and active.audio_state().flight_music.operations.is_empty(),"Result continuation retained the old music cursor or replayed a music command")
 	var after: Dictionary=active.snapshot()
 	check(after.campaign_cursor==42 and after.boundary.is_empty() and not active.campaign_dialogue_visible(),"Final Next did not release living mission42")
 	check(active.runner_owner().context_owner().identity().campaign_cursor==42 and active.mission_context_owner()==context,"Active objective replaced the admitted world capability")
@@ -131,6 +139,113 @@ func verify_sequence_sound(phase: int) -> void:
 		check(scene.sequence_audio.snapshot()==sound,"Pause/resume advanced, restarted or lost cinematic sound state")
 	if phase==5:
 		check(not sound.history.any(func(cue):return cue.action=="stop" and cue.get("sound_id")==155),"Release incorrectly replaced the distinct stop156 with stop155")
+
+func verify_mission_music() -> bool:
+	var before: Dictionary=active.snapshot()
+	check(not before.radar.scanner_present and before.radar.battle_count==0,"Mission radar lost actual unequipped scanner state")
+	var candidate: RefCounted=active.evaluate(0,Vector2.ZERO,1.0,false,false,root.size,0.0,false,scene.feedback.audio.current_music_id())
+	if candidate==null:check(false,active.error);return false
+	check(candidate.audio_state().flight_music.operations==[{"action":"replace_music","source_id":145}],"Visible no-scanner radar did not select native portal peace music")
+	check(active.snapshot()==before,"Music/radar candidate mutated its parent flight")
+	active=candidate
+	if not present():return false
+	check(scene.feedback.audio.current_music_id()==145 and scene.feedback.audio._players.has(145),"Shared mission music did not reach actual playback")
+	if not scene.feedback.audio._players.has(145):return false
+	retained_music_node=scene.feedback.audio._players[145].node
+	check(retained_music_node.playing,"Selected mission music has no running audio channel")
+	before=active.snapshot()
+	candidate=active.evaluate(0,Vector2.ZERO,1.0,false,false,root.size,0.0,false,145)
+	if candidate==null:check(false,active.error);return false
+	check(candidate.audio_state().flight_music.operations.is_empty() and candidate.snapshot().radar.battle_count==0,"Existing portal peace music was replaced or enemies invented a scanner count")
+	check(active.snapshot()==before,"Retained music sample changed its parent radar")
+	active=candidate
+	return present()
+
+func verify_actor_engine_audio(phase: int) -> void:
+	var owner: Node3D=scene.sequence_audio
+	var sound: Dictionary=owner.snapshot()
+	var engines: Dictionary=sound.actor_engines
+	var native: Dictionary=active.audio_state().actor_engines[0]
+	check(native.enabled==(phase<2),"Freighter sound lost its native automatic-motion gate")
+	if phase>=3:
+		check(engines.is_empty(),"Crippled freighter engine survived its stop fade or restarted")
+		check(not is_instance_valid(actor_engine_node) or not actor_engine_node.playing,"Stopped freighter left a live playback channel")
+		return
+	check(engines.has(0),"Freighter has no separately owned engine playback")
+	if not engines.has(0):return
+	var engine: Dictionary=engines[0];var record: Dictionary=owner._players[owner.actor_key(0)]
+	check(engine.sound_id==47 and record.clip.looping and record.nodes.size()==1,"Freighter substituted a player loop or lost its source event")
+	check(engine.position==native.position and record.nodes[0].position==native.position,"Freighter engine does not follow its physical root")
+	check(record.nodes[0] is AudioStreamPlayer3D and record.nodes[0].playing,"Freighter engine has no actual playing spatial channel")
+	if phase==0:
+		check(active.audio_state().flight_music.operations.is_empty(),"Hidden arrival published a flight music command")
+		actor_engine_node=record.nodes[0]
+		check(record.clip.fade_in_ms==800 and record.clip.fade_out_ms==200,"Actor loop lost imported event fades")
+		check(record.clip.min_distance==1 and record.clip.max_distance==10000,"Actor loop lost imported distance attenuation")
+		var event_pitch: float=record.nodes[0].pitch_scale/float(record.clip.get("pitch",1.0))
+		check(event_pitch>=pow(2.0,-.1) and event_pitch<=pow(2.0,.1),"Actor engine pitch exceeded its imported variation")
+		check(engine.gains_db[0]==-80.0,"Distant arrival engine bypassed source attenuation")
+		var adapter: RefCounted=load("res://src/content/sequence_audio_resources.gd").new()
+		var resources: RefCounted=load("res://src/content/audio_resources.gd").new()
+		check(resources.configure(library,bindings,41),resources.error)
+		check(adapter.prepare_actor_loop(resources,47,4).is_empty(),"Actor loop admitted more handles than its source maximum")
+		verify_actor_stop_consumer(resources,native)
+	else:check(record.nodes[0]==actor_engine_node,"Ordinary motion recreated the retained actor engine")
+	check(engine.stopping==(phase==2),"Damage cut did not stop the actor-owned instance")
+	if phase==2:
+		check(engine.remaining_ms==200,"Engine stop skipped or restarted its source fade")
+		var player_loop: Dictionary=scene.feedback.audio._players.get(scene.feedback.audio.PLAYER_ENGINE,{})
+		check(not player_loop.is_empty() and player_loop.node.playing and player_loop.node!=actor_engine_node,"Freighter stop silenced the independent player engine")
+	if phase==1:
+		var flight_before: Dictionary=active.snapshot()
+		var hidden: RefCounted=active.evaluate(0,Vector2.ZERO,1.0,false,false,root.size,0.0,false,-1)
+		check(hidden!=null and hidden.audio_state().flight_music.operations.is_empty(),"Hidden cinematic selected music without a radar publication")
+		check(active.snapshot()==flight_before,"Hidden music observation mutated the retained flight")
+		var before: Dictionary=owner.snapshot()
+		var candidate: Dictionary=before.state.duplicate(true)
+		candidate.revision+=1;candidate.delta_ms=0
+		candidate.cues=[{"action":"stop_actor_engine","actor_id":0},{"action":"stop_actor_engine","actor_id":999}]
+		check(owner.prepare_frame(active.mission_context_owner(),candidate,scene.camera.transform).is_empty() and owner.snapshot()==before and actor_engine_node.playing,"Final invalid actor cue partly stopped a valid engine")
+		candidate.cues=[];candidate.actor_engines[0].position=Vector3(NAN,0,0)
+		check(owner.prepare_frame(active.mission_context_owner(),candidate,scene.camera.transform).is_empty() and owner.snapshot()==before,"Malformed physical sound position mutated playback")
+		scene.set_paused(true)
+		check(owner.snapshot().paused and (actor_engine_node.stream_paused or owner._players[owner.actor_key(0)].pause_records[0].pending_resume),"Pause did not reach the actual freighter channel")
+		scene.set_paused(false)
+		check(owner.snapshot()==before and record.nodes[0]==actor_engine_node,"Pause resumed a new engine instance or advanced its fade")
+
+## Isolate cue consumption from the coincident cruise-off state. This is a
+## playback component witness, not an input-earned world or campaign result.
+func verify_actor_stop_consumer(resources: RefCounted,native: Dictionary) -> void:
+	var owner: Node3D=scene.sequence_audio.get_script().new();root.add_child(owner)
+	var context: RefCounted=active.mission_context_owner()
+	if not owner.configure(context,resources,bindings,[155,156]):check(false,owner.error);owner.free();return
+	var frame:={"revision":0,"delta_ms":0,"cues":[],"actor_engines":{0:native.duplicate(true)}}
+	var listener:=Transform3D(Basis.IDENTITY,native.position+Vector3(0,0,2))
+	var prepared: Dictionary=owner.prepare_frame(context,frame,listener)
+	if prepared.is_empty():check(false,owner.error);owner.free();return
+	check(owner.commit_frame(prepared),"Actor witness could not start its native loop")
+	var key: String=owner.actor_key(0);var channel: Node=owner._players[key].nodes[0]
+	check(channel.playing,"Actor witness has no actual playing channel")
+	frame.revision=1;frame.delta_ms=1000;frame.cues=[{"action":"stop_actor_engine","actor_id":0}]
+	prepared=owner.prepare_frame(context,frame,listener)
+	if prepared.is_empty():check(false,owner.error);owner.free();return
+	check(owner.commit_frame(prepared),"Actor stop consumer rejected its own prepared frame")
+	check(frame.actor_engines[0].enabled and owner.snapshot().actor_engines[0].stopping and channel.playing,"Stop directive only logged or relied on an unrelated motion change")
+	var stop_gain: float=db_to_linear(channel.volume_db)
+	frame.revision=2;frame.delta_ms=100;frame.cues=[];frame.actor_engines[0].enabled=false
+	prepared=owner.prepare_frame(context,frame,listener)
+	check(not prepared.is_empty() and owner.commit_frame(prepared),"Actor stop fade did not accept its continuation")
+	check(is_equal_approx(db_to_linear(channel.volume_db),stop_gain*.5),"Actor engine fade did not reach its actual channel gain")
+	frame.revision=3
+	prepared=owner.prepare_frame(context,frame,listener)
+	check(not prepared.is_empty() and owner.commit_frame(prepared),"Actor stop fade did not finish")
+	check(owner.snapshot().actor_engines.is_empty() and not channel.playing,"Completed actor fade left live audio")
+	frame.revision=4;frame.delta_ms=0;frame.actor_engines[0].enabled=true
+	prepared=owner.prepare_frame(context,frame,listener)
+	check(not prepared.is_empty() and owner.commit_frame(prepared),"Independent actor loop could not reacquire its source event")
+	channel=owner._players[key].nodes[0]
+	owner.free()
+	check(not is_instance_valid(channel),"Scene teardown retained an actor playback node")
 
 func verify_freighter_engine(phase: int) -> void:
 	var body: Node3D=scene.encounter.actors[0].hull

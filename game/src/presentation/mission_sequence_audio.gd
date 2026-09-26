@@ -1,5 +1,5 @@
 extends Node3D
-## Sequence SFX only. Declarative actor-engine cues are returned to that owner.
+## Shared sequence effects and independently actor-owned spatial loops.
 const Context=preload("res://src/simulation/mission_context.gd")
 const Audio=preload("res://src/content/audio_resources.gd")
 const Resources=preload("res://src/content/sequence_audio_resources.gd")
@@ -7,6 +7,7 @@ const Layered=preload("res://src/presentation/layered_audio.gd")
 const Streams=preload("res://src/presentation/audio_stream_control.gd")
 const Envelope=preload("res://src/content/audio_envelope.gd")
 const Numbers=preload("res://src/content/audio_definitions.gd")
+const Sequence=preload("res://src/simulation/audio_sequence.gd")
 var error:=""
 var _context: Context
 var _identity: RefCounted
@@ -20,6 +21,9 @@ var _listener:=Transform3D.IDENTITY
 var _history: Array=[]
 var _directives: Array=[]
 var _epoch:=0
+var _actor_engines:={}
+var _pitch_random:=RandomNumberGenerator.new()
+var _last_samples:={}
 
 func configure(context: Context,resources: Audio,bindings: RefCounted,event_ids: Array,seed_value:=0) -> bool:
 	error=""
@@ -35,7 +39,17 @@ func configure(context: Context,resources: Audio,bindings: RefCounted,event_ids:
 		if clip.is_empty():return reject(adapter.error)
 		if clip.get("voice",false) or clip.get("kind","") not in ["","layered","sequence_layers"]:return reject("Sequence SFX require a static clip or supported layers")
 		clips[id]=clip
-	_clips=clips;_seed=seed_value;_context=context;_identity=RefCounted.new()
+	var actors:={};var counts:={}
+	for declaration in context.recipe().get("actor_engines",[]):
+		if not declaration is Dictionary or declaration.size()!=2 or not Numbers.integer(declaration.get("actor_id"),0,65535) or not Numbers.integer(declaration.get("sound_id"),0,19999):return reject("Invalid actor engine declaration")
+		var actor_id: int=int(declaration.actor_id);var sound_id: int=int(declaration.sound_id)
+		if actors.has(actor_id) or clips.has(sound_id):return reject("Actor engine requires an independent declared handle")
+		actors[actor_id]=sound_id;counts[sound_id]=int(counts.get(sound_id,0))+1
+	for actor_id in actors:
+		var clip:=adapter.prepare_actor_loop(resources,actors[actor_id],counts[actors[actor_id]])
+		if clip.is_empty():return reject(adapter.error)
+		clips[actor_key(actor_id)]=clip
+	_clips=clips;_actor_engines=actors;_seed=seed_value;_pitch_random.seed=seed_value;_context=context;_identity=RefCounted.new()
 	return true
 
 ## Frame: revision, delta_ms, cues. Optional stopped ends the world/death audio.
@@ -52,10 +66,17 @@ func prepare_frame(context: Context,state: Dictionary,listener: Transform3D) -> 
 		if sample==_sample:return {"identity":_identity,"repeat":true}
 	if _paused and (state.delta_ms!=0 or not state.cues.is_empty()) and not state.get("stopped",false):return failed("Paused sequence audio cannot advance or consume cues")
 	var cues: Array=state.cues.duplicate(true);var directives:=[]
+	var engines: Variant=state.get("actor_engines",{})
+	if not engines is Dictionary or engines.size()!=_actor_engines.size():return failed("Sequence frame lost its declared actor engine population")
+	for actor_id in _actor_engines:
+		var actor: Variant=engines.get(actor_id)
+		if not actor is Dictionary or actor.size()!=2 or not actor.get("enabled") is bool or not actor.get("position") is Vector3 or not actor.position.is_finite():return failed("Actor engine requires its native physical position and motion permission")
+	engines=engines.duplicate(true)
 	for cue in cues:
 		if not cue is Dictionary:return failed("Invalid sequence audio cue")
 		if cue.get("action")=="stop_actor_engine":
-			if not Numbers.integer(cue.get("actor_id"),0,65535):return failed("Invalid actor-engine stop cue")
+			if cue.size()!=2 or not cue.get("actor_id") is int or not _actor_engines.has(cue.actor_id):return failed("Actor-engine stop names an unprepared actor")
+			engines[cue.actor_id].enabled=false
 			directives.append(cue.duplicate(true));continue
 		if not cue.get("sound_id") is int:return failed("Sequence cue has no sound identifier")
 		var id: int=cue.sound_id
@@ -79,7 +100,7 @@ func prepare_frame(context: Context,state: Dictionary,listener: Transform3D) -> 
 					var frame: Dictionary=node.prepare_step(int(state.delta_ms))
 					if frame.is_empty():return failed(node.error)
 					layers.append({"node":node,"frame":frame})
-	return {"identity":_identity,"epoch":_epoch,"previous_revision":_sample.get("revision",-1),"sample":sample,"cues":cues,"directives":directives,"layers":layers}
+	return {"identity":_identity,"epoch":_epoch,"previous_revision":_sample.get("revision",-1),"sample":sample,"cues":cues,"directives":directives,"layers":layers,"actor_engines":engines}
 
 func commit_frame(frame: Dictionary) -> bool:
 	if frame.get("identity")!=_identity or frame.get("epoch")!=_epoch or frame.get("repeat",false) or frame.get("previous_revision")!=_sample.get("revision",-1):return false
@@ -104,10 +125,15 @@ func commit_frame(frame: Dictionary) -> bool:
 				if _players.has(id):_players[id].parameter=float(cue.value)
 		var entry: Dictionary=cue.duplicate(true);entry.revision=_sample.revision;_history.append(entry)
 		if _history.size()>64:_history.pop_front()
+	for actor_id in frame.actor_engines:
+		var key:=actor_key(actor_id);var actor: Dictionary=frame.actor_engines[actor_id]
+		if actor.enabled:_play(key,actor.position)
+		else:_stop(key)
+		if _players.has(key):_players[key].position=actor.position
 	_refresh_levels()
 	return true
 
-func _play(id: int,position_value: Variant) -> void:
+func _play(id: Variant,position_value: Variant) -> void:
 	if _players.has(id):
 		var old: Dictionary=_players[id]
 		if not old.stopping and old.nodes.any(func(node):return node.playing or _paused):
@@ -115,6 +141,13 @@ func _play(id: int,position_value: Variant) -> void:
 			return
 		_remove(id)
 	var clip: Dictionary=_clips[id];var nodes: Array=[]
+	if clip.get("kind")=="playlist":
+		var definition: Dictionary=clip.definition
+		var last: int=_last_samples.get(id,-1) if definition.playlist_flags!=8 else -1
+		var choice:=Sequence.sample(definition,_pitch_random,last)
+		_last_samples[id]=choice.playlist_index
+		clip=clip.duplicate();clip.merge(choice.sample);clip.gain*=choice.gain
+		clip.pitch=choice.pitch;clip.playlist_index=choice.playlist_index
 	if clip.get("kind") in ["layered","sequence_layers"]:
 		var groups: Array=clip.groups if clip.get("kind")=="sequence_layers" else [{"definition":clip}]
 		for group in groups:
@@ -125,12 +158,15 @@ func _play(id: int,position_value: Variant) -> void:
 	_players[id]=record
 	for node in nodes:
 		add_child(node)
+		if id is String:node.pitch_scale=float(clip.get("pitch",1.0))
+		if id is String and float(clip.get("event_pitch_random",0.0))>0:
+			node.pitch_scale*=Sequence.event_pitch(0.0,float(clip.event_pitch_random),_pitch_random.randi()&0x7fffffff)
 		var pause:={"node":node,"pending_resume":false,"resume_position":0.0}
 		record.pause_records.append(pause)
 		if _paused:pause.pending_resume=true
 		else:node.play()
 
-func _stop(id: int) -> void:
+func _stop(id: Variant) -> void:
 	if not _players.has(id) or _players[id].stopping:return
 	var record: Dictionary=_players[id]
 	if record.clip.fade_out_ms==0:_remove(id);return
@@ -157,16 +193,21 @@ func set_paused(value: bool) -> void:
 		for pause in record.pause_records:Streams.pause(pause,value)
 
 func directives() -> Array:return _directives.duplicate(true)
+static func actor_key(actor_id: int) -> String:return "actor:"+str(actor_id)
 func snapshot() -> Dictionary:
-	var active:={}
+	var active:={};var actors:={}
 	for id in _players:
 		var record: Dictionary=_players[id];var layers:=[]
 		for node in record.nodes:
 			if node is Layered:layers.append(node.snapshot())
-		active[id]={"position":record.position,"parameter":record.parameter,"age_ms":record.age_ms,"stopping":record.stopping,"remaining_ms":record.remaining_ms,"layers":layers,"gains_db":record.nodes.map(func(node):return node.volume_db)}
-	return {"state":_sample.duplicate(true),"active":active,"paused":_paused,"history":_history.duplicate(true),"directives":directives()}
+		var entry:={"position":record.position,"parameter":record.parameter,"age_ms":record.age_ms,"stopping":record.stopping,"remaining_ms":record.remaining_ms,"layers":layers,"gains_db":record.nodes.map(func(node):return node.volume_db)}
+		if id is String:
+			entry.sound_id=int(record.clip.id);entry.playing=record.nodes.any(func(node):return node.playing or _paused)
+			actors[int(id.trim_prefix("actor:"))]=entry
+		else:active[id]=entry
+	return {"state":_sample.duplicate(true),"active":active,"actor_engines":actors,"paused":_paused,"history":_history.duplicate(true),"directives":directives()}
 
-func _remove(id: int) -> void:
+func _remove(id: Variant) -> void:
 	for node in _players[id].nodes:node.stop();node.queue_free()
 	_players.erase(id)
 func stop_all() -> void:

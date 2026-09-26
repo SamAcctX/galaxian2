@@ -48,4 +48,25 @@ func prepare(resources: Audio,id: int) -> Dictionary:
 	result.merge({"kind":"sequence_layers","groups":groups,"parameters":event.parameters.duplicate(true),"looping":true})
 	return result
 
+## Actor instances retain separate handles. Admit only a bounded population,
+## so an authored overflow policy is never replaced with invented stealing.
+func prepare_actor_loop(resources: Audio,id: int,population: int) -> Dictionary:
+	error=""
+	var events: Array=resources._definitions.get("events",[])
+	if id<0 or id>=events.size() or population<1:return failed("Actor loop requires a declared source event and population")
+	var event: Dictionary=events[id];var p: Dictionary=event.properties
+	if event.get("type")!=16 or event.get("simple_flags")!=1 or event.get("categories")!=["sfx"] or not resources.compatible_category(event.categories,id) or not event.get("sound") is Dictionary:return failed("Actor engine requires a static source effect")
+	if p.mode!=0x280010 or p.flags!=0 or p.doppler!=0 or p.pitch!=0 or not Numbers.number(p.pitch_random,0,1) or p.volume_random!=0 or not Numbers.integer(p.max_playbacks,1,32) or population>p.max_playbacks or int(p.max_playbacks_behavior) not in [1,5]:return failed("Unsupported actor loop spatial or instance policy")
+	for key in ["distance_filter","speaker_spread","position_random_min","position_random_max","spawn_random"]:
+		if p.get(key)!=0:return failed("Unsupported actor loop spatial modulation")
+	if not Numbers.number(p.cone_inside,0,360) or not Numbers.number(p.cone_outside,0,360) or p.cone_outside_volume!=1 or p.pan_level!=1 or p.spawn_intensity!=1 or not Numbers.number(p.volume,0,4) or not Numbers.number(p.min_distance,0,1000000) or not Numbers.number(p.max_distance,p.min_distance+0.000001,1000000) or not Numbers.integer(p.fade_in_ms,0,60000) or not Numbers.integer(p.fade_out_ms,0,60000):return failed("Unsupported actor loop level or range")
+	var sound: Dictionary=event.sound
+	if sound.flags!=0 or sound.flags2!=0 or sound.loop_count!=-1 or sound.auto_pitch!=0 or sound.fine_tune!=0 or sound.x!=0 or sound.width!=1 or float(sound.fade_in) not in [-1.0,0.0] or float(sound.fade_out) not in [-1.0,0.0] or not Numbers.number(sound.volume,0,4):return failed("Unsupported actor loop scheduling")
+	var definition:=resources.cached_playlist(int(sound.sound_def),true)
+	if definition.is_empty():return failed(resources.error)
+	if definition.has("unsupported"):return failed(definition.unsupported)
+	var result:=resources.event_header(event)
+	result.gain*=float(sound.volume);result.merge({"kind":"playlist","definition":definition,"looping":true})
+	return result
+
 func failed(message: String) -> Dictionary:error=message;return {}

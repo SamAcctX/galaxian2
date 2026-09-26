@@ -42,6 +42,7 @@ static func from_ambush(bindings: RefCounted) -> Dictionary:
 			{"model_id":14286,"face_forward":true,"forward_offset":10000},{"model_id":14287,"face_forward":true,"forward_offset":0}],
 		"escape_sounds":[153,154],
 		"sequence_sounds":[155,156],
+		"actor_engines":[{"actor_id":0,"sound_id":47}],
 		"sequence_particles":particles,
 		"receipt_key":"nehma_source_receipt","source_receipt":bindings.nehma_source_receipt().duplicate(true)}
 
