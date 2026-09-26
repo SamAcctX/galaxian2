@@ -39,6 +39,19 @@ func _build_station(bindings: RefCounted, catalogues: RefCounted, context: Dicti
 	var model := Lighting.new()
 	var staged := model.for_station(bindings.environment_colors,context.station_id,station.get("planet_type"),system.get("sky_index"))
 	if staged.is_empty(): return reject(model.error)
+	return _build_state(bindings,context,staged)
+
+func build_void(bindings: RefCounted,source: RefCounted) -> bool:
+	clear()
+	if bindings==null or not is_instance_of(source,load("res://src/simulation/void_environment.gd")):return reject("Void lighting requires its generated native environment")
+	var context: Dictionary=source.snapshot()
+	if context.get("base_content_id")!=bindings.base_content_id or context.get("binding_id")!=bindings.binding_id:return reject("Void lighting belongs to another content identity")
+	var model:=Lighting.new()
+	var staged:=model.for_void(bindings.environment_colors)
+	if staged.is_empty():return reject(model.error)
+	return _build_state(bindings,context,staged)
+
+func _build_state(bindings: RefCounted,context: Dictionary,staged: Dictionary) -> bool:
 	environment=WorldEnvironment.new();environment.environment=Environment.new()
 	environment.environment.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR
 	var ambient: Vector3 = staged.global_ambient

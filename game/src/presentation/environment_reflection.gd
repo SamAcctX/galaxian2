@@ -21,15 +21,28 @@ func build(library: RefCounted,bindings: RefCounted,catalogues: RefCounted,syste
 	var system: Dictionary = catalogues.tables.systems[int(system_id)]
 	var identifier := Definitions.texture_id(bindings.reflection_selection,system.get("sky_index"),location_match)
 	if identifier<0:return reject("Reflection selection is unavailable or its location state is unsupported")
+	return _load(library,bindings,identifier,quality,{"base_content_id":identity,"binding_id":bindings.binding_id,"system_id":int(system_id),
+		"sky_index":system.get("sky_index"),"location_match":location_match})
+
+func build_void(library: RefCounted,bindings: RefCounted,source: RefCounted,quality:="high") -> bool:
+	clear()
+	if library==null or bindings==null or not is_instance_of(source,load("res://src/simulation/void_environment.gd")):return reject("Void reflection requires its generated native environment")
+	var state: Dictionary=source.snapshot()
+	if library.manifest.get("content_id")!=bindings.base_content_id or state.get("base_content_id")!=bindings.base_content_id or state.get("binding_id")!=bindings.binding_id:return reject("Void reflection belongs to another content identity")
+	var identifier: Variant=state.get("sky",{}).get("cubemap_id")
+	if not Numbers.integer(identifier,0,65533):return reject("Void environment has no reflection resource")
+	return _load(library,bindings,int(identifier),quality,{"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,
+		"system_id":state.system_id,"sky_index":-1,"location_match":true})
+
+func _load(library: RefCounted,bindings: RefCounted,identifier: int,quality: String,identity: Dictionary) -> bool:
 	var path: String = bindings.resolve_texture(identifier,quality)
 	if path.is_empty():return reject(bindings.error)
 	var loader := Cube.new()
 	var staged := loader.load(library,path)
 	if staged==null:return reject(loader.error)
 	texture=staged
-	selection={"base_content_id":identity,"binding_id":bindings.binding_id,"system_id":int(system_id),
-		"sky_index":system.get("sky_index"),"location_match":location_match,"texture_id":identifier,
-		"texture_path":path,"quality":quality}
+	selection=identity.duplicate(true)
+	selection.merge({"texture_id":identifier,"texture_path":path,"quality":quality})
 	return true
 
 func build_opening(library: RefCounted,bindings: RefCounted,catalogues: RefCounted,campaign_cursor: Variant,world_type: Variant,location_match: Variant,quality := "high") -> bool:

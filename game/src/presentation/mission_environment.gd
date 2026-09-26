@@ -5,8 +5,11 @@ const Context=preload("res://src/simulation/mission_context.gd")
 const Ordinary=preload("res://src/presentation/selected40_environment.gd")
 const VoidView=preload("res://src/presentation/void_environment_geometry.gd")
 const PortalView=preload("res://src/presentation/portal_geometry.gd")
+const Lighting=preload("res://src/presentation/opening_lighting.gd")
+const Reflection=preload("res://src/presentation/environment_reflection.gd")
 var error:=""
 var lights: Node3D
+var reflection: RefCounted
 var _ordinary: Node3D
 var _void: Node3D
 var _portal: Node3D
@@ -23,6 +26,8 @@ func configure(library: RefCounted,visuals: RefCounted,bindings: RefCounted,cata
 	elif context.has_feature("void_environment"):
 		_void=VoidView.new();add_child(_void)
 		if not _void.build(library,visuals,bindings,world.void_environment_owner()):return reject(_void.error)
+		lights=Lighting.new();add_child(lights)
+		if not lights.build_void(bindings,world.void_environment_owner()):return reject(lights.error)
 		var owner: RefCounted=world.portal_owner()
 		if owner!=null:
 			var portal: Dictionary=owner.portal_snapshot()
@@ -31,8 +36,14 @@ func configure(library: RefCounted,visuals: RefCounted,bindings: RefCounted,cata
 			_portal=PortalView.new();add_child(_portal)
 			if not _portal._build_portal(library,visuals,bindings,identity):return reject(_portal.error)
 	else:return reject("No environment renderer was prepared for the admitted world features")
+	reflection=Reflection.new()
+	var reflected: bool=reflection.build_void(library,bindings,world.void_environment_owner()) if _void!=null else reflection.build(library,bindings,catalogues,int(lights.state.system_id),false)
+	if not reflected:return reject(reflection.error)
 	_generation=world.presentation_identity()
 	return true
+
+func surface_roots() -> Array:
+	return [_void.station] if _void!=null else [_ordinary.station]
 
 func present(world: RefCounted,viewport: Vector2i) -> bool:
 	if _generation==null or world.presentation_identity()!=_generation:return reject("Environment belongs to another flight generation")

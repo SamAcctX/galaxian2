@@ -114,8 +114,42 @@ func verify_component(world: RefCounted) -> void:
 func prepare_scene(visuals: RefCounted) -> bool:
 	scene=Scene.new();root.add_child(scene)
 	if not scene.configure(library,bindings,visuals,catalogues,active,root.size):check(false,scene.error);scene.free();return false
+	verify_void_surfaces()
 	scene.world_changed.connect(func(candidate):active=candidate)
 	return true
+
+func verify_void_surfaces() -> void:
+	var light_node: Node3D=scene.environment.lights
+	check(light_node!=null,"The admitted Void scene omitted its light owner")
+	if light_node==null:return
+	var colors: Dictionary=bindings.environment_colors
+	var key: Array=colors.sun_rgb[10]
+	var expected_ambient:=Vector3(key[0],key[1],key[2])*0.15
+	var expected_fill:=Vector3(colors.planet_rgb[7][2],colors.planet_rgb[8][0],colors.planet_rgb[8][1])*1.5
+	var state: Dictionary=light_node.state
+	check(state.system_id==-1 and state.station_id==-1 and state.sun.is_empty(),"Void lighting invented an ordinary station or sun placement")
+	check(state.global_ambient.is_equal_approx(expected_ambient) and state.lights.size()==2,"Void palette or shared light count changed")
+	check(state.lights[0].direction_to_light==Vector3(0,0,-1) and state.lights[1].direction_to_light==Vector3(0,0,-1),"Fallback light directions changed")
+	check(state.lights[0].diffuse==Vector3.ONE*2 and state.lights[1].diffuse.is_equal_approx(expected_fill),"Void key/fill palette response changed")
+	check(light_node.environment!=null and light_node.lights.size()==2 and light_node.environment.environment.ambient_light_energy>0,"Native light state has no actual Godot lights")
+	check(scene.environment.reflection.texture!=null and scene.environment.reflection.selection.texture_id==12040 and scene.environment.reflection.selection.system_id==-1,"Void reflection substituted the return-system cube")
+	check(scene.scenery.destruction!=null,"Void scenery omitted its shared surface/destruction owner")
+	var imported:=load("res://src/presentation/imported_model.gd")
+	var old_shader:=load("res://src/presentation/imported_material.gdshader")
+	var source_shader:=load("res://src/presentation/surface_response.gdshader")
+	for branch in [scene.player,scene.encounter,scene.scenery]+scene.environment.surface_roots():
+		var source_surfaces:=0;var pbr_surfaces:=0
+		for child in branch.find_children("*","",true,false):
+			if child.get_script()!=imported:continue
+			for index in child.materials.size():
+				var material: ShaderMaterial=child.materials[index]
+				if material.shader==old_shader:pbr_surfaces+=1
+				if material.shader!=source_shader:continue
+				source_surfaces+=1
+				check(child.instances[index].material_override==material,"Geometry retained its old opaque material after replacement")
+				check(material.get_shader_parameter("ambient_colors")[0].is_equal_approx(expected_ambient),"Actual hull material lost the Void ambient palette")
+				check(material.get_shader_parameter("reflection_texture")==scene.environment.reflection.texture,"Actual hull material lost the prepared Void reflection")
+		check(source_surfaces>0 and pbr_surfaces==0,"A Void body branch retained unlit/default PBR surfaces")
 
 func verify_retained_flight() -> void:pass
 
