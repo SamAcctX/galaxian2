@@ -1,6 +1,9 @@
 extends TextureRect
 ## Keep 3D at physical resolution while the surrounding interface uses UI scale.
+const Bloom=preload("res://src/presentation/scene_bloom.gd")
 var viewport: SubViewport
+var error:=""
+var _bloom: Node
 
 func _ready() -> void:
 	expand_mode=TextureRect.EXPAND_IGNORE_SIZE
@@ -14,6 +17,27 @@ func _ready() -> void:
 	add_child(viewport);texture=viewport.get_texture()
 	resized.connect(refresh_size);get_window().size_changed.connect(refresh_size)
 	refresh_size()
+
+func set_bloom_enabled(enabled: bool) -> bool:
+	# Activation is an explicit presentation choice, not a campaign capability.
+	# Existing views stay unfiltered until their settings owner opts in.
+	if not enabled:
+		if _bloom!=null:
+			if material==_bloom.composite:material=null
+			_bloom.free();_bloom=null
+		error="";return true
+	if _bloom!=null:return true
+	if viewport==null or material!=null:
+		error="Bloom requires a ready scene view without a different display effect";return false
+	var candidate:=Bloom.new();add_child(candidate)
+	if not candidate.build(viewport.get_texture()):
+		error=candidate.error;candidate.free();return false
+	_bloom=candidate;material=candidate.composite
+	_bloom.set_active(is_visible_in_tree());error="";return true
+
+func _notification(what: int) -> void:
+	if what==NOTIFICATION_VISIBILITY_CHANGED and _bloom!=null:
+		_bloom.set_active(is_visible_in_tree())
 
 func refresh_size() -> void:
 	if viewport==null:return
