@@ -5,6 +5,8 @@ const VALUES = {"scope":"ordinary_station_contacts_and_offers","early_max_cursor
 const SPANS = {"ordinary_offer_selection":[-233980,885],"ordinary_offer_parameters":[-233095,619],"ordinary_offer_reward":[-232476,594],"ordinary_offer_dispatch":[-231350,48],"ordinary_contact_identity":[-234960,95],"ordinary_contact_roster":[-234652,317],"ordinary_contact_population":[-236767,267],"ordinary_contact_unique_role":[-235772,178],"ordinary_persistent_loader":[-675370,696],"ordinary_persistent_constructor":[-720294,434],"ordinary_contact_station":[-719568,10],"ordinary_contact_system":[-719578,10],"ordinary_system_loader":[-673478,1100],"ordinary_system_constructor":[734132,236],"ordinary_system_stations":[735314,10],"ordinary_item_fields":[-84866,140],"ordinary_item_difficulty":[-84660,10],"ordinary_item_price":[-84616,10],"ordinary_roster_hard_predicate":[873106,34],"ordinary_offer_constants":[1557090,32],"ordinary_escort_multiplier":[1545694,4],"ordinary_roster_hard_value":[1545698,4]}
 
 # Native composition.
+const MAC_SPANS = {"ordinary_offer_selection":[-235000,885],"ordinary_offer_parameters":[-234115,619],"ordinary_offer_reward":[-233496,594],"ordinary_offer_dispatch":[-232370,48],"ordinary_contact_identity":[-235980,95],"ordinary_contact_roster":[-235672,317],"ordinary_contact_population":[-237787,267],"ordinary_contact_unique_role":[-236792,178],"ordinary_persistent_loader":[-681258,696],"ordinary_persistent_constructor":[-726190,434],"ordinary_contact_station":[-725464,10],"ordinary_contact_system":[-725474,10],"ordinary_system_loader":[-679366,1100],"ordinary_system_constructor":[734764,236],"ordinary_system_stations":[735946,10],"ordinary_item_fields":[-84866,140],"ordinary_item_difficulty":[-84660,10],"ordinary_item_price":[-84616,10],"ordinary_roster_hard_predicate":[873738,34],"ordinary_offer_constants":[1532090,32],"ordinary_escort_multiplier":[1520678,4],"ordinary_roster_hard_value":[1520682,4]}
+
 static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALUES)
 
 static func available(bindings: RefCounted) -> bool:
@@ -13,5 +15,8 @@ static func available(bindings: RefCounted) -> bool:
 static func location_supported(bindings: RefCounted,cat: RefCounted,cursor: Variant,station_id: Variant) -> bool:
 	if not available(bindings) or cat==null or cat.content_id!=bindings.base_content_id:return false
 	var numbers=load("res://src/content/opening_definitions.gd")
-	if not load("res://src/content/free_campaign_definitions.gd").supported(bindings.mido_travel,cursor) or not numbers.integer(station_id,0,cat.tables.stations.size()-1):return false
+	if not load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) or not numbers.integer(station_id,0,cat.tables.stations.size()-1):return false
+	# Selecting native stock/contact records is not navigation permission.
+	# The unfinished Dekato route remains closed in the campaign travel owner.
+	if cursor==38 and load("res://src/content/dekato_convoy_definitions.gd").selected_location(bindings,int(station_id),int(cat.tables.stations[station_id].system_id)):return true
 	return not load("res://src/content/ordinary_world_definitions.gd").catalogue_location(bindings,cat,station_id).is_empty()

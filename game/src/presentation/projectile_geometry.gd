@@ -48,10 +48,13 @@ func build(owner: RefCounted, library: RefCounted, visuals: RefCounted, bindings
 func prepare_world(owner: RefCounted, world: Dictionary, camera: Transform3D, parent_rgba:=PackedByteArray([255,255,255,255]), global_tint:=Vector4(1,1,1,1), darken:=1.0) -> Dictionary:
 	error=""
 	if not owner is State or owner.presentation_identity()!=_identity or _descriptor.is_empty():return failed("Projectile geometry follows one configured weapon population")
-	var state: Dictionary=owner.snapshot()
+	# The frame already carries this owner's snapshot; debug builds recheck it.
+	var observed: Variant=world.get("projectile_visuals")
+	if not observed is Dictionary or (OS.is_debug_build() and owner.snapshot()!=observed):return failed("Projectile presentation requires its current world clock")
+	var state: Dictionary=observed
 	for key in ["base_content_id","binding_id"]:
 		if world.get(key)!=_descriptor[key] or state.get(key)!=_descriptor[key]:return failed("Projectile frame belongs to another identity")
-	if world.get("elapsed_ms")!=state.elapsed_ms or world.get("projectile_visuals")!=state:return failed("Projectile presentation requires its current world clock")
+	if world.get("elapsed_ms")!=state.elapsed_ms:return failed("Projectile presentation requires its current world clock")
 	if Colors.tint(parent_rgba,global_tint).is_empty() or not is_finite(darken) or not is_finite(Colors.single(darken)):return failed("Invalid projectile color")
 	var weapons:=State.weapons(world)
 	if weapons.size()!=guns.size() or state.models.size()!=guns.size():return failed("Projectile weapon population changed")

@@ -1,4 +1,5 @@
 extends RefCounted
+const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Fresh opening NPC acquisition. This owns no damage, rewards or mission state.
 ## Special devices, other target groups and acquisition audio/messages remain separate.
 const Definitions = preload("res://src/content/npc_scanner_definitions.gd")
@@ -11,6 +12,9 @@ const Training=preload("res://src/content/combat_training_control_definitions.gd
 const OrdinaryFlight=preload("res://src/content/ordinary_flight_definitions.gd")
 const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const TrafficLife=preload("res://src/content/ambient_lifecycle_definitions.gd")
+const Recovery=preload("res://src/simulation/tractor_recovery.gd")
+const Selected40=preload("res://src/content/selected40_population_definitions.gd")
+const Combat=preload("res://src/simulation/opening_combat_group.gd")
 var error := ""
 var _identity := {}
 var _definition := {}
@@ -28,8 +32,21 @@ var _sample := {}
 var _kinds:=[8,8,8]
 var _campaign_cursor:=0
 var _departure_modes:={}
+var _selected40_world: RefCounted
 
-func configure(bindings: RefCounted, catalogues: RefCounted, frame_radii: Vector2, animation_frames: int, equipment_owner: RefCounted=null, local_combat: Dictionary={}) -> bool:
+func configure(bindings: RefCounted, catalogues: RefCounted, frame_radii: Vector2, animation_frames: int, equipment_owner: RefCounted=null, local_combat: Dictionary={}, recovery: RefCounted=null) -> bool:
+	return _configure(bindings,catalogues,frame_radii,animation_frames,equipment_owner,local_combat,recovery)
+
+## The retained inventory stays at Néhma. Only the actual selected native cast
+## supplies scanner targets; this does not admit cursor40 as an ordinary flight.
+func configure_selected40(bindings: RefCounted,catalogues: RefCounted,frame_radii: Vector2,animation_frames: int,equipment: RefCounted,combat: RefCounted) -> bool:
+	error=""
+	if not _definition.is_empty() or not combat is Combat or not equipment is Equipment:return reject("Selected40 scanner requires fresh native owners")
+	var world: RefCounted=combat.selected40_world_owner()
+	if world==null or world.npc_construction_owner()==null or not Selected40.context_valid(bindings,world.snapshot().get("selected40_context",{})):return reject("Selected40 scanner lacks its actual source generation")
+	return _configure(bindings,catalogues,frame_radii,animation_frames,equipment,combat.snapshot(),null,world)
+
+func _configure(bindings: RefCounted, catalogues: RefCounted, frame_radii: Vector2, animation_frames: int, equipment_owner: RefCounted=null, local_combat: Dictionary={}, recovery: RefCounted=null,selected_world: RefCounted=null) -> bool:
 	clear()
 	if bindings==null or catalogues==null or not Definitions.parameters(bindings.opening_staging.get("npc_scanner",{})):
 		return reject("NPC scanner requires its verified opening declarations")
@@ -42,24 +59,32 @@ func configure(bindings: RefCounted, catalogues: RefCounted, frame_radii: Vector
 	var loadout: Dictionary
 	var training:=equipment_owner!=null
 	var local_flight:=not local_combat.is_empty()
-	var ordinary: bool=local_combat.get("campaign_cursor") in [18,19] and preload("res://src/content/ordinary_fitting_definitions.gd").available(bindings)
-	if local_flight and (not training or not Travel.parameters(bindings.mido_travel) or local_combat.get("campaign_cursor") not in [10,11,12,13,14,16,18,19]):return reject("Local scanner requires its equipped traffic encounter")
+	var selected40:=selected_world!=null
+	var ordinary: bool=(selected40 or local_combat.get("campaign_cursor") in (FlightStages.FREE+FlightStages.POST_SAHI+[33])) and preload("res://src/content/ordinary_fitting_definitions.gd").available(bindings)
+	if local_flight and (not training or not Travel.parameters(bindings.mido_travel) or (not selected40 and local_combat.get("campaign_cursor") not in (FlightStages.LOCAL+FlightStages.POST_SAHI+[33]))):return reject("Local scanner requires its equipped traffic encounter")
 	if training:
 		if not equipment_owner is Equipment or not Training.parameters(bindings.combat_training_control) or (not ordinary and not equipment_owner.requirements().satisfied):return reject("Training scanner requires the retained equipped ship and complete cast")
-		loadout=equipment_owner.snapshot().loadout
+		var owned: Dictionary=equipment_owner.snapshot()
+		loadout=owned.loadout
 		if loadout.base_content_id!=bindings.base_content_id or loadout.binding_id!=bindings.binding_id or catalogues.content_id!=bindings.base_content_id:return reject("Training scanner equipment belongs to another content identity")
-		var station: Variant=local_combat.get("contract_encounter",{}).get("context",{}).get("station_id",local_combat.get("provocation",{}).get("station_id"))
-		if local_flight and (loadout.station_id!=station or not equipment_owner.snapshot().get("prototype_drill_replaced",false) or not equipment_owner.snapshot().get("training_inventory_released",false)):return reject("Local scanner requires its retained Mido inventory")
+		var station: Variant=local_combat.get("bakka_encounter",{}).get("context",{}).get("station_id",local_combat.get("contract_encounter",{}).get("context",{}).get("station_id",local_combat.get("provocation",{}).get("station_id")))
+		if selected40:
+			var context: Dictionary=selected_world.snapshot().selected40_context
+			var built: Dictionary=selected_world.npc_construction_owner().snapshot()
+			station=context.origin_station_id
+			if loadout.system_id!=context.origin_system_id or loadout.ship_id!=built.player_ship_id or loadout.equipment_ids!=built.player_equipment_ids:return reject("Selected40 scanner changed its retained origin loadout")
+		if local_flight and (loadout.station_id!=station or not owned.get("prototype_drill_replaced",false) or not owned.get("training_inventory_released",false)):return reject("Local scanner requires its retained Mido inventory")
 	else:
 		var initial:=Loadout.new()
 		if not initial.configure(bindings,catalogues,bindings.base_content_id):return reject(initial.error)
 		loadout=initial.snapshot()
 	var data: Dictionary=bindings.opening_staging.npc_scanner
 	var equipment := -1
+	var supported_recovery: bool=ordinary and recovery is Recovery and recovery.same_identity(loadout) and recovery.equipment_loadout()=={"ship_id":int(loadout.ship_id),"equipment_ids":loadout.equipment_ids}
 	for id in loadout.equipment_ids:
 		var item: Dictionary=catalogues.tables.items[id]
 		if item.arrays[2].size()<=5:return reject("Scanner equipment lacks its source type")
-		if int(item.arrays[2][5]) in [13,19] and not (ordinary and int(item.arrays[2][5])==19) and (not training or id!=(86 if local_flight else 90)):return reject("Special scanner devices are outside this flight's scope")
+		if int(item.arrays[2][5]) in [13,19] and not (ordinary and int(item.arrays[2][5])==19) and not (supported_recovery and int(item.arrays[2][5])==13) and (not training or id!=(86 if local_flight else 90)):return reject("Special scanner devices are outside this flight's scope")
 		if int(item.arrays[2][5])==int(data.equipment_type):equipment=id
 	var duration := int(data.default_duration_ms)
 	var cargo := false
@@ -78,19 +103,38 @@ func configure(bindings: RefCounted, catalogues: RefCounted, frame_radii: Vector
 		for key in _identity:
 			if local_combat.get(key)!=_identity[key]:return reject("Local scanner belongs to another encounter")
 		var actors: Variant=local_combat.get("actors")
-		if not OrdinaryFlight.combat_population(bindings,local_combat):return reject("Local scanner requires the generated population")
+		if not selected40 and not OrdinaryFlight.combat_population(bindings,local_combat):return reject("Local scanner requires the generated population")
 		_hulls=[];_kinds=[];_campaign_cursor=int(local_combat.campaign_cursor)
 		for id in actors.size():
 			var actor: Variant=actors[id]
-			if not actor is Dictionary or actor.get("actor_id")!=id or (local_combat.campaign_cursor not in [13,14,16,18,19] and actor.get("actor_kind")!=3):return reject("Local scanner has an unsupported ship")
+			if not actor is Dictionary or actor.get("actor_id")!=id or (not selected40 and local_combat.campaign_cursor not in FlightStages.FACTIONS and actor.get("actor_kind")!=3):return reject("Local scanner has an unsupported ship")
 			_hulls.append(int(actor.hull_catalogue_id));_kinds.append(int(actor.actor_kind))
 			if actor.get("population_group")=="travel" and actor.has("travel_cycle"):
 				if not TrafficLife.parameters(bindings.ambient_lifecycle):return reject("Travelling scanner targets lack their source lifecycle")
 				_departure_modes[id]=int(bindings.ambient_lifecycle.departure_mode)
 	_radii=frame_radii;_frame_count=animation_frames;_equipment=equipment;_duration=duration;_cargo=cargo
+	_selected40_world=selected_world
 	return true
 
-func advance(combat: Dictionary, player: Transform3D, camera: Transform3D, aim: Dictionary, delta_ms: Variant, enabled: bool) -> bool:
+## One projection can serve both cargo acquisition and ordinary markers during
+## the same HUD operation. It carries no selection or acquisition clock.
+func prepare_projection(viewport: Vector2i) -> RefCounted:
+	var projection:=TargetProjection.new()
+	if not projection.configure(_perspective,viewport,_radii):reject(projection.error);return null
+	return projection
+
+func advance(combat: Dictionary, player: Transform3D, camera: Transform3D, aim: Dictionary, delta_ms: Variant, enabled: bool, ordinary_candidate: int=-2, prepared_projection: RefCounted=null) -> bool:
+	if _selected40_world!=null:return reject("Selected40 scanning requires its native combat owner, not a dictionary")
+	return _advance(combat,player,camera,aim,delta_ms,enabled,ordinary_candidate,prepared_projection)
+
+func advance_selected40(combat: RefCounted,player: Transform3D,camera: Transform3D,aim: Dictionary,delta_ms: Variant,enabled: bool) -> bool:
+	error=""
+	if _selected40_world==null or not combat is Combat:return reject("Selected40 scanning requires its configured native combat owner")
+	var world: RefCounted=combat.selected40_world_owner()
+	if world==null or world.npc_construction_owner()!=_selected40_world.npc_construction_owner() or world.snapshot()!=_selected40_world.snapshot():return reject("Selected40 scanning changed its constructor generation")
+	return _advance(combat.snapshot(),player,camera,aim,delta_ms,enabled)
+
+func _advance(combat: Dictionary, player: Transform3D, camera: Transform3D, aim: Dictionary, delta_ms: Variant, enabled: bool, ordinary_candidate: int=-2, prepared_projection: RefCounted=null) -> bool:
 	error=""
 	if _definition.is_empty() or not Numbers.integer(delta_ms,0,2147483647):return reject("NPC scanner requires an ordinary integer frame duration")
 	for key in _identity:
@@ -98,18 +142,20 @@ func advance(combat: Dictionary, player: Transform3D, camera: Transform3D, aim: 
 	var population: Variant=combat.get("actors")
 	var point: Variant=aim.get("point");var viewport: Variant=aim.get("viewport_size")
 	if not population is Array or population.size()!=_hulls.size() or not point is Vector3 or not point.is_finite() or not TargetProjection.safe_pixel(point.x) or not TargetProjection.safe_pixel(point.y) or not viewport is Vector2i or not player.is_finite():return reject("Invalid ordinary scanner sample")
-	if _campaign_cursor in [7,10,11,12,13,14,16,18,19] and combat.get("campaign_cursor")!=_campaign_cursor:return reject("Equipped scanner lost its encounter context")
-	var projection := TargetProjection.new()
-	if not projection.configure(_perspective,viewport,_radii):return reject(projection.error)
+	if (_selected40_world!=null or _campaign_cursor in FlightStages.EQUIPPED) and combat.get("campaign_cursor")!=_campaign_cursor:return reject("Equipped scanner lost its encounter context")
+	if not Numbers.integer(ordinary_candidate,-2,population.size()-1):return reject("The shared HUD candidate is outside this encounter")
+	var projection: RefCounted=prepare_projection(viewport) if prepared_projection==null else prepared_projection
+	if not projection is TargetProjection:return reject("NPC scanning requires its prepared flight projection")
 	# Check all inputs before committing selection, including invisible bodies.
 	for id in population.size():
 		var actor: Variant=population[id]
-		if not actor is Dictionary or actor.get("actor_id")!=id or actor.get("base_content_id")!=_identity.base_content_id or actor.get("binding_id")!=_identity.binding_id or actor.get("actor_kind")!=_kinds[id] or actor.get("hull_catalogue_id")!=_hulls[id] or not actor.get("pose") is Transform3D or not actor.pose.is_finite() or not actor.get("active") is bool or not actor.get("hostile") is bool or not valid_mode(id,actor.get("actor_mode")) or not Numbers.integer(actor.get("hull_percent"),0,100):
+		var kind_matches: bool=actor is Dictionary and (Selected40.constructed_kind_matches(actor,_kinds[id]) if _selected40_world!=null else actor.get("actor_kind")==_kinds[id])
+		if not actor is Dictionary or actor.get("actor_id")!=id or actor.get("base_content_id")!=_identity.base_content_id or actor.get("binding_id")!=_identity.binding_id or not kind_matches or actor.get("hull_catalogue_id")!=_hulls[id] or not actor.get("pose") is Transform3D or not actor.pose.is_finite() or not actor.get("active") is bool or not actor.get("hostile") is bool or not valid_mode(id,actor.get("actor_mode")) or not Numbers.integer(actor.get("hull_percent"),0,100):
 			var detail: Variant=actor
 			if actor is Dictionary:detail={"actor_id":actor.get("actor_id"),"kind":actor.get("actor_kind"),"hull":actor.get("hull_catalogue_id"),"mode":actor.get("actor_mode"),"hull_percent":actor.get("hull_percent"),"active":actor.get("active"),"hostile":actor.get("hostile"),"pose":actor.get("pose")}
 			return reject("Invalid fresh NPC scanner population at %d: %s"%[id,str(detail)])
 	var selected := _selected;var candidate := _candidate;var elapsed := _elapsed
-	var markers := [];var events := [];var animation := -1
+	var markers := [];var events := [];var animation := -1;var found := -1
 	# Native scope currently displays the ordinary phase-four HUD. Hidden draws
 	# retain selection and time; pause owners do not call advance at all.
 	if enabled and _equipment>=0:
@@ -119,7 +165,6 @@ func advance(combat: Dictionary, player: Transform3D, camera: Transform3D, aim: 
 		if not TargetProjection.safe_pixel(lower.x) or not TargetProjection.safe_pixel(lower.y) or not TargetProjection.safe_pixel(lower.x+radius*2) or not TargetProjection.safe_pixel(lower.y+radius*2):return reject("Scanner window exceeds source pixel coordinates")
 		var lower_pixels := Vector2i(int(lower.x),int(lower.y))
 		var upper_pixels := lower_pixels+Vector2i(radius*2,radius*2)
-		var found := -1
 		for actor in population:
 			if not selectable(actor):continue
 			var projected: Dictionary=projection.project(camera,actor.pose.origin)
@@ -131,6 +176,9 @@ func advance(combat: Dictionary, player: Transform3D, camera: Transform3D, aim: 
 			markers.append({"actor_id":actor.actor_id,"pixels":pixel,"near":near,"selected":actor.actor_id==selected,
 				"hostile":actor.hostile,"hull_percent":int(actor.hull_percent),"in_scan_window":inside,"in_view":projected.in_view})
 			if found<0 and inside:found=int(actor.actor_id)
+		# A fitted tractor and ordinary scanner share the original ordered NPC
+		# candidate. Cargo cannot advance a second, unrelated ship scan as well.
+		if ordinary_candidate!=-2:found=ordinary_candidate
 		if found>=0:
 			if candidate!=found:elapsed=0
 			candidate=found
@@ -150,11 +198,11 @@ func advance(combat: Dictionary, player: Transform3D, camera: Transform3D, aim: 
 			elapsed=0
 			if selected<0:candidate=-1
 	_selected=selected;_candidate=candidate;_elapsed=elapsed
-	_sample={"visible":enabled and _equipment>=0,"markers":markers,"events":events,"animation_frame":animation,"aim_pixels":Vector2i(int(point.x),int(point.y)),"viewport_size":viewport}
+	_sample={"visible":enabled and _equipment>=0,"markers":markers,"events":events,"animation_frame":animation,"found_actor_id":found,"aim_pixels":Vector2i(int(point.x),int(point.y)),"viewport_size":viewport}
 	return true
 
 func valid_mode(actor_id: int,mode: Variant) -> bool:
-	var minimum:=0 if _campaign_cursor in [10,11,12,13,14,16,18,19] or (_campaign_cursor==7 and actor_id==3) else 1
+	var minimum:=0 if _selected40_world!=null or _campaign_cursor in (FlightStages.LOCAL+FlightStages.POST_SAHI+[33]) or (_campaign_cursor==7 and actor_id==3) else 1
 	return Numbers.integer(mode,minimum,5) or (mode is int and _departure_modes.has(actor_id) and _departure_modes[actor_id]==mode)
 
 static func selectable(actor: Dictionary) -> bool:
@@ -179,6 +227,7 @@ func fork_for_frame() -> RefCounted:
 	copy._selected=_selected;copy._candidate=_candidate;copy._elapsed=_elapsed;copy._sample=_sample.duplicate(true)
 	copy._kinds=_kinds.duplicate();copy._campaign_cursor=_campaign_cursor
 	copy._departure_modes=_departure_modes.duplicate()
+	copy._selected40_world=_selected40_world
 	return copy
 
 func clear() -> void:
@@ -186,6 +235,7 @@ func clear() -> void:
 	_selected=-1;_candidate=-1;_elapsed=0;_sample={}
 	_kinds=[8,8,8];_campaign_cursor=0
 	_departure_modes={}
+	_selected40_world=null
 
 func reject(message: String) -> bool:
 	error=message

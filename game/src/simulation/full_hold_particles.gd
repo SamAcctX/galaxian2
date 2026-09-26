@@ -1,4 +1,5 @@
 extends RefCounted
+const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Second-trip particle ownership. The player tail precedes the early particle
 ## managers, the death poll follows them, and the NPC pass updates next-frame
 ## roots and flags. Each registered emitter has an independent random stream.
@@ -32,11 +33,40 @@ func configure(bindings: RefCounted,combat: Dictionary,death: RefCounted,seed_se
 	for key in ["base_content_id","binding_id"]:
 		if initial.get(key)!=bindings.get(key) or combat.get(key)!=bindings.get(key):return reject("Second-flight particles belong to another departure")
 	var training: bool=combat.get("campaign_cursor")==7
-	var local_flight: bool=combat.get("campaign_cursor") in [10,11,12,13,14,16,18,19]
+	var local_flight: bool=combat.get("campaign_cursor") in (FlightStages.LOCAL+FlightStages.POST_SAHI+[33])
 	if initial.get("phase")!="ready" or initial.get("departure_cursor")!=(int(combat.campaign_cursor) if local_flight else (7 if training else 4)):return reject("Register ordinary-flight particles before player death in the same encounter")
 	var smoke:=Smoke.new()
 	var ready:=smoke.configure_local_traffic(bindings,combat,seed_seconds) if local_flight else (smoke.configure_combat_training(bindings,combat,seed_seconds) if training else smoke.configure_full_hold(bindings,combat,seed_seconds))
 	if not ready:return reject(smoke.error)
+	return _configure_registered(bindings,combat,death,int(seed_seconds),smoke)
+
+func configure_first_mining(bindings: RefCounted,death: RefCounted,seed_seconds: Variant) -> bool:
+	error=""
+	if bindings==null or bindings.source_architecture!="x86_64" or not Definitions.parameters(bindings.full_hold_particles) or not death is Death or death.presentation_identity()==null or not seed_seconds is int:
+		return reject("First mining particles require verified Mac sprite presets and player destruction")
+	var state: Dictionary=death.snapshot()
+	for key in ["base_content_id","binding_id"]:
+		if state.get(key)!=bindings.get(key):return reject("First mining particles belong to another departure")
+	if state.get("phase")!="ready" or state.get("departure_cursor")!=2 or state.get("campaign_cursor")!=2 or state.get("equipment_ids")!=[90,81]:
+		return reject("First mining particles require the fresh Betty departure and its retained equipment")
+	var smoke:=Smoke.new()
+	if not smoke.configure_first_mining(bindings,seed_seconds):return reject(smoke.error)
+	return _configure_registered(bindings,{"campaign_cursor":2,"actors":[]},death,int(seed_seconds),smoke)
+
+func configure_selected40(bindings: RefCounted,combat: RefCounted,death: RefCounted,seed_seconds: Variant) -> bool:
+	error=""
+	if not _identity.is_empty() or bindings==null or not Definitions.parameters(bindings.full_hold_particles) or not death is Death or not seed_seconds is int or not is_instance_of(combat,load("res://src/simulation/opening_combat_group.gd")):return reject("Selected40 particles require fresh native combat and player destruction")
+	var world: RefCounted=combat.selected40_world_owner()
+	if world==null or death.selected40_construction_owner()==null or death.selected40_construction_owner()!=world.npc_construction_owner():return reject("Selected40 particles cannot join unrelated constructor generations")
+	var initial: Dictionary=death.snapshot()
+	if initial.get("phase")!="ready" or initial.get("departure_cursor")!=40:return reject("Register selected40 particles before native player destruction")
+	for key in ["base_content_id","binding_id"]:
+		if initial.get(key)!=bindings.get(key):return reject("Selected40 particle resources belong to another source")
+	var smoke:=Smoke.new()
+	if not smoke.configure_selected40(bindings,combat,seed_seconds):return reject(smoke.error)
+	return _configure_registered(bindings,combat.snapshot(),death,seed_seconds,smoke)
+
+func _configure_registered(bindings: RefCounted,combat: Dictionary,death: RefCounted,seed_seconds: int,smoke: RefCounted) -> bool:
 	var emitters:={}
 	var keys:=["player"]
 	for id in combat.actors.size():
@@ -159,20 +189,20 @@ func matches_death(death: RefCounted) -> bool:
 
 func presentation_identity() -> RefCounted:return _presentation_identity
 
-func snapshot() -> Dictionary:
+func snapshot(shared:=false) -> Dictionary:
 	if _identity.is_empty():return {}
 	var result:=_identity.duplicate()
-	var smoke: Dictionary=_smoke.snapshot()
+	var smoke: Dictionary=_smoke.snapshot(shared)
 	result.manager_ms=_manager_ms;result.elapsed_ms=_elapsed_ms;result.burst_count=_burst_count
 	result.births=_births.duplicate(true);result.smoke_fire_births=smoke.births
 	result.owners={}
 	for key in _emitters:
 		result.owners[key]=smoke.owners.get(key,{})
-		result.owners[key]["junk_burst" if key=="junk" else "burst" if key=="world" else "trail"]=_emitters[key].snapshot()
+		result.owners[key]["junk_burst" if key=="junk" else "burst" if key=="world" else "trail"]=_emitters[key].snapshot(shared)
 	if has_convoy_emp():
 		result.emp={"bound_to_player":_emp_bound,"capture_elapsed_ms":_emp_capture_ms,"phase":_emp_phase}
 		for key in _emp:
-			for kind in _emp[key]:result.owners[key][kind]=_emp[key][kind].snapshot()
+			for kind in _emp[key]:result.owners[key][kind]=_emp[key][kind].snapshot(shared)
 	return result
 
 func fork_for_frame() -> RefCounted:

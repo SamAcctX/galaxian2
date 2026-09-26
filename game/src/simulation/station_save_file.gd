@@ -25,6 +25,8 @@ func save(path: String,station: RefCounted,bindings: RefCounted,cat: RefCounted,
 	if FileAccess.file_exists(path):
 		previous=read_document(path)
 		if not previous.is_empty() and (previous.get("base_content_id")!=bindings.base_content_id or previous.get("binding_id")!=bindings.binding_id):return reject("Keep the existing save with its original content and gameplay bindings")
+		if previous.get("version") in [9,10] and (not _supplement_matches(bindings,previous.get("station"),int(previous.version)) or previous.station.dekato_source_receipt!=document.station.get("dekato_source_receipt")):return reject("Keep the existing checkpoint with its explicitly attached supplemental source")
+		if previous.get("version")==10 and (document.version!=10 or previous.station.nehma_source_receipt!=document.station.get("nehma_source_receipt")):return reject("Keep the onward checkpoint with both explicitly attached sources")
 		if not previous.is_empty() and archive.restore(bindings,cat,library,previous)==null:previous={}
 	error=""
 	var staged:=path+".tmp"
@@ -50,6 +52,9 @@ func load_document(path: String,bindings: RefCounted,cat: RefCounted,library: Re
 	for suffix in ["",".bak"]:
 		var document:=read_document(path+suffix)
 		if not document.is_empty():
+			# Missing source capability is not file damage. Do not silently roll
+			# this career back to an older backup or attach declarations on load.
+			if document.get("version") in [9,10] and not _supplement_matches(bindings,document.get("station"),int(document.version)):return failure("Explicitly attach this checkpoint's exact supplemental sources before loading")
 			var archive:=Archive.new()
 			if archive.restore(bindings,cat,library,document)!=null:
 				error="";recovered_backup=not suffix.is_empty()
@@ -57,6 +62,9 @@ func load_document(path: String,bindings: RefCounted,cat: RefCounted,library: Re
 			error=archive.error
 		if suffix.is_empty():first_error=error
 	return failure(first_error if not first_error.is_empty() else "No viable saved station is available")
+
+static func _supplement_matches(bindings: RefCounted,station: Variant,version: int=9) -> bool:
+	return version in [9,10] and station is Dictionary and Archive.Dekato.source_receipt_matches(bindings,station.get("dekato_source_receipt")) and (version!=10 or Archive.Nehma.source_receipt_matches(bindings,station.get("nehma_source_receipt")))
 
 func encode(document: Dictionary) -> PackedByteArray:
 	if not Archive.data_tree(document):reject("The save contains unsupported data");return PackedByteArray()

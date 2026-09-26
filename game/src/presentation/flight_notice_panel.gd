@@ -1,6 +1,7 @@
 extends Control
 ## Original notice-bar artwork with native text. The queue owns fade time;
 ## this responsive layout adds no acknowledgement or flight action button.
+signal layout_changed
 const Definitions=preload("res://src/content/flight_notice_definitions.gd")
 const Atlas=preload("res://src/content/atlas_region.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
@@ -70,6 +71,19 @@ func _reflow() -> void:
 	# original centered bar below a native margin, with room for localized text.
 	_bar.size=Vector2(width,height);_bar.position=Vector2(floorf((size.x-width)*0.5),24*scale)
 	_label.size=Vector2(available,height-8*scale);_label.position=_bar.position+Vector2(12,4)*scale
+	layout_changed.emit()
+
+## Occupancy is local to the native HUD, not visibility of an off-screen staged
+## parent. Readers can reserve this space without changing the queue or alpha.
+func occupied_rect() -> Rect2:
+	return _bar.get_rect() if visible and not _sample.is_empty() else Rect2()
+
+func bottom_inset() -> float:
+	var area:=occupied_rect()
+	return area.end.y+(12.0 if _mobile else 6.0) if area.has_area() else 0.0
+
 func snapshot() -> Dictionary:return _sample.duplicate(true)
-func clear() -> void:error="";_sample={};_label.clear();visible=false
+func clear() -> void:
+	error="";_sample={};_label.clear();visible=false
+	layout_changed.emit()
 func reject(message: String) -> bool:error=message;return false

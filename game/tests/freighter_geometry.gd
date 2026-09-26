@@ -26,6 +26,7 @@ func verify(args: PackedStringArray):
 	if not library.open(args[0]) or not bindings.open(args[1],library.manifest) or not visuals.open(args[2],library.manifest):check(false,library.error+bindings.error+visuals.error);return
 	if bindings.ambient_population.is_empty():check(false,"This fixture requires original mixed-traffic declarations");return
 	var assembly: Dictionary=bindings.ambient_population.freighter.assembly.duplicate(true)
+	assembly.container_count=0
 	var paths:=[]
 	for id in [17049,17050,17052,17053,17054,17055]:paths.append(bindings.resolve(id,"mesh"))
 	var shared:=Models.new()
@@ -41,7 +42,7 @@ func verify(args: PackedStringArray):
 	viewport.add_child(environment)
 	var ship:=Geometry.new();viewport.add_child(ship)
 	var selector:=Detail.new()
-	check(selector.configure_freighter(bindings.ambient_population,bindings.ship_lod),selector.error)
+	check(configure_detail(selector,bindings,assembly),selector.error)
 	# Independent binary32 thresholds: square-to-float, then detail factor.
 	for pair in [[0.0,612499968.0],[0.5,918749952.0],[1.0,1224999936.0]]:
 		var detail: float=pair[0]
@@ -52,7 +53,7 @@ func verify(args: PackedStringArray):
 	var module_pixels:=[]
 	for count in 4:
 		assembly.container_count=count
-		if not ship.build_freighter(assembly,library,visuals,bindings,"high",shared):check(false,ship.error);break
+		if not build_ship(ship,assembly,library,visuals,bindings,shared):check(false,ship.error);break
 		check(ship.levels.size()==2 and ship.get_meta("source_ship_id")==15 and ship.engine_glow==null,"Freighter lost its special hull or acquired a player glow")
 		for index in 2:
 			var body: Node3D=ship.levels[index]
@@ -80,9 +81,10 @@ func verify(args: PackedStringArray):
 						if absf(pixel.r-background.r)+absf(pixel.g-background.g)+absf(pixel.b-background.b)>0.09:foreground+=1
 				check(foreground>100,"Original freighter did not render appreciable geometry")
 				if index==0:module_pixels.append(foreground)
-				if args.size()==4:
-					DirAccess.make_dir_recursive_absolute(args[3])
-					check(image.save_png(args[3].path_join("midorian-freighter-%d-modules-lod-%d.png"%[count,index]))==OK,"Freighter capture failed")
+				var captures: String=args[3] if args.size()==4 else OS.get_environment("GOF2_CAPTURE_DIR")
+				if not captures.is_empty():
+					DirAccess.make_dir_recursive_absolute(captures)
+					check(image.save_png(captures.path_join("midorian-freighter-%d-modules-lod-%d.png"%[count,index]))==OK,"Freighter capture failed")
 		var before:=ship.selection.duplicate(true)
 		check(not ship.apply_detail(-1,1) and ship.selection==before,"Invalid freighter detail changed rendered state")
 		check(ship.apply_selection({"visible":false,"level":-1}) and ship.levels.all(func(node):return not node.visible),"Hidden freighter retained floating parts")
@@ -101,6 +103,12 @@ func verify(args: PackedStringArray):
 func rendered(viewport: SubViewport) -> Image:
 	await process_frame;await process_frame;await RenderingServer.frame_post_draw
 	return viewport.get_texture().get_image()
+
+func configure_detail(selector: RefCounted,bindings: RefCounted,_assembly: Dictionary) -> bool:
+	return selector.configure_freighter(bindings.ambient_population,bindings.ship_lod)
+
+func build_ship(ship: Node3D,assembly: Dictionary,library: RefCounted,visuals: RefCounted,bindings: RefCounted,shared: RefCounted) -> bool:
+	return ship.build_freighter(assembly,library,visuals,bindings,"high",shared)
 
 func check(value: bool,message: String):
 	checks+=1

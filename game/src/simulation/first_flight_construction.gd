@@ -5,6 +5,7 @@ const Reputation=preload("res://src/simulation/faction_reputation.gd")
 const MiningFlight=preload("res://src/content/full_hold_flight_definitions.gd")
 const Handoff=preload("res://src/content/opening_handoff_definitions.gd")
 const Career=preload("res://src/simulation/opening_handoff.gd")
+const MiningSession=preload("res://src/content/mining_session_definitions.gd")
 const Location=preload("res://src/simulation/arrival_location.gd")
 const Player=preload("res://src/simulation/opening_player_state.gd")
 const Cache=preload("res://src/simulation/flight_player_cache.gd")
@@ -18,10 +19,14 @@ const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const LocalTravel=preload("res://src/simulation/local_travel.gd")
 const Transit=preload("res://src/content/convoy_transit_definitions.gd")
 const Alioth=preload("res://src/content/alioth_population_definitions.gd")
+const Kappa=preload("res://src/content/kappa_population_definitions.gd")
 const Convoy=preload("res://src/content/convoy_world_definitions.gd")
 const ContractWorld=preload("res://src/content/contract_world_definitions.gd")
 const Campaign=preload("res://src/content/free_campaign_definitions.gd")
+const Story=preload("res://src/content/story_encounter_definitions.gd")
 const FreeFlight=preload("res://src/content/free_flight_definitions.gd")
+const Bakka=preload("res://src/content/bakka_contest_definitions.gd")
+const Dekato=preload("res://src/content/dekato_convoy_definitions.gd")
 const FreeNavigation=preload("res://src/content/free_navigation_definitions.gd")
 const Gates=preload("res://src/simulation/gate_environment.gd")
 const Incoming=preload("res://src/simulation/local_arrival_environment.gd")
@@ -34,6 +39,18 @@ var _camera: RefCounted
 var _player: RefCounted
 var _equipment: RefCounted
 var _contracts: RefCounted
+var _selected_locations: RefCounted
+var _void_environment: RefCounted
+var _ordinary_void_source: RefCounted
+var _selected40_builder: RefCounted
+var _arrival_viewport:=Vector2i(1440,900)
+
+func selected40_builder() -> RefCounted:return _selected40_builder
+
+func prepare_arrival_viewport(viewport: Vector2i) -> bool:
+	if not _state.is_empty() or _selected40_builder!=null or viewport.x<1 or viewport.y<1 or viewport.x>32767 or viewport.y>32767:return reject("Prepare a fresh arrival with a valid native viewport")
+	_arrival_viewport=viewport
+	return true
 
 func prepare(bindings: RefCounted, catalogues: RefCounted, packet: Dictionary, environment_seconds: Variant, unix_seconds: Variant, large_display:=true, body_resources: RefCounted=null, effect_resources: RefCounted=null, equipment: RefCounted=null,contracts: RefCounted=null) -> bool:
 	error=""
@@ -100,50 +117,87 @@ func _prepare_convoy_owned(bindings: RefCounted,catalogues: RefCounted,equipment
 	return _construct(bindings,catalogues,packet,data,player,context,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,equipment,contracts,scenery)
 
 func prepare_alioth(bindings: RefCounted,catalogues: RefCounted,station: RefCounted,environment_seconds: Variant,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null) -> bool:
+	return _prepare_story_encounter(bindings,catalogues,station,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,false)
+
+func prepare_kappa_rescue(bindings: RefCounted,catalogues: RefCounted,station: RefCounted,environment_seconds: Variant,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null) -> bool:
+	return _prepare_story_encounter(bindings,catalogues,station,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,true)
+
+func _prepare_story_encounter(bindings: RefCounted,catalogues: RefCounted,station: RefCounted,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,rescue: bool) -> bool:
 	error=""
-	if not is_instance_of(station,load("res://src/simulation/station_entry.gd")):return reject("Alioth departure requires its acknowledged native station")
+	if not is_instance_of(station,load("res://src/simulation/station_entry.gd")):return reject("Story departure requires its acknowledged native station")
 	var retained: Dictionary=station.snapshot()
-	var data:=Alioth.flight(bindings,int(retained.get("loadout",{}).get("station_id",-1)))
-	if data.is_empty() or retained.get("phase")!="alioth_departure_required" or retained.get("campaign_cursor")!=16 or not retained.get("alioth_conversation_acknowledged",false):return reject("Acknowledge Alioth's arrival conversation before departure")
+	var at:=int(retained.get("loadout",{}).get("station_id",-1))
+	var data:=Kappa.flight(bindings,at) if rescue else Alioth.flight(bindings,at)
+	var phase:="free_play_required" if rescue else "alioth_departure_required"
+	var acknowledged: bool=retained.get("acknowledged",false) if rescue else retained.get("alioth_conversation_acknowledged",false)
+	if data.is_empty() or retained.get("phase")!=phase or retained.get("campaign_cursor")!=int(data.campaign_cursor) or not acknowledged:return reject("Acknowledge the story's station conversation before departure")
+	if rescue and station.prepare_departure(bindings,catalogues).is_empty():return reject(station.error)
 	var contracts: RefCounted=station.contract_owner()
 	var equipment: RefCounted=station.equipment_owner()
-	if contracts==null or equipment==null:return reject("Alioth departure lost its retained career or inventory")
+	if contracts==null or equipment==null:return reject("Story departure lost its retained career or inventory")
 	var career: Dictionary=contracts.snapshot();var owned: Dictionary=equipment.snapshot()
 	var mission:={"kind":int(data.mission_kind),"station_id":int(data.station_id),"reward":0,"bonus":0,"source_parameter":0}
 	for key in ["base_content_id","binding_id"]:
-		if retained.get(key)!=bindings.get(key) or career.get(key)!=bindings.get(key):return reject("Alioth departure belongs to another content identity")
-	if retained.mission!=mission or career.campaign_cursor!=16 or retained.progress!=career.progress or career.station_id!=owned.loadout.station_id or owned.loadout!=retained.loadout or owned.cargo!=retained.cargo or owned.cargo_cache_stale:return reject("Alioth must retain the acknowledged career, location and inventory")
-	var encounter:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":16,"station_id":int(data.station_id),"system_id":int(data.system_id),"mission_kind":int(data.mission_kind),"mission_story":true,"mission_completed":false,"rank":career.rank,"difficulty":career.difficulty}
+		if retained.get(key)!=bindings.get(key) or career.get(key)!=bindings.get(key):return reject("Story departure belongs to another content identity")
+	if retained.mission!=mission or career.campaign_cursor!=int(data.campaign_cursor) or retained.progress!=career.progress or career.station_id!=owned.loadout.station_id or owned.loadout!=retained.loadout or owned.cargo!=retained.cargo or not equipment.cargo_cache_valid():return reject("Story departure must retain the acknowledged career, location and inventory")
+	var encounter:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(data.campaign_cursor),"station_id":int(data.station_id),"system_id":int(data.system_id),"mission_kind":int(data.mission_kind),"mission_story":true,"mission_completed":false,"rank":career.rank,"difficulty":career.difficulty}
 	var conditions:={"companions_empty":true,"location_match":false,"special_placement":false}
 	var scenery:=Scenery.new()
 	var position:=Vector3(data.player_position[0],data.player_position[1],data.player_position[2])
-	if not scenery.configure_alioth(bindings,catalogues,equipment,encounter,position,conditions,unix_seconds,large_display,body_resources,effect_resources):return reject(scenery.error)
+	var ready: bool=scenery.configure_kappa_rescue(bindings,catalogues,equipment,encounter,conditions,unix_seconds,large_display,body_resources,effect_resources) if rescue else scenery.configure_alioth(bindings,catalogues,equipment,encounter,position,conditions,unix_seconds,large_display,body_resources,effect_resources)
+	if not ready:return reject(scenery.error)
 	var player:=Player.new()
-	if not player.configure_alioth_attack(bindings,catalogues,equipment,scenery.world_initialization_owner().npc_construction_owner()):return reject(player.error)
+	ready=player.configure_kappa_rescue(bindings,catalogues,equipment,scenery.world_initialization_owner().npc_construction_owner()) if rescue else player.configure_alioth_attack(bindings,catalogues,equipment,scenery.world_initialization_owner().npc_construction_owner())
+	if not ready:return reject(player.error)
 	var location:=Location.new();var context:=location.resolve_local_travel(bindings,catalogues,equipment,player.cache_snapshot())
 	if context.is_empty():return reject(location.error)
-	var packet:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":16,
+	var packet:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(data.campaign_cursor),
 		"loadout":owned.loadout.duplicate(true),"equipment":owned,"cargo":owned.cargo.duplicate(true),"cargo_used":int(owned.cargo.used),
 		"progress":career.progress.duplicate(true),"mission":mission,"contracts":career,"player":player.snapshot(),"player_cache":player.cache_snapshot(),
 		"station_response_flags":retained.get("station_response_flags",{}).duplicate(true),"source_ship_configuration":int(bindings.station_entry.source_ship_configuration)}
+	if rescue:packet.kappa_context=encounter.duplicate(true)
 	return _construct(bindings,catalogues,packet,data,player,context,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,equipment,contracts,scenery)
 
 func prepare_free(bindings: RefCounted,catalogues: RefCounted,station: RefCounted,environment_seconds: Variant,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null) -> bool:
 	error=""
 	if not FreeFlight.available(bindings) or not is_instance_of(station,load("res://src/simulation/station_entry.gd")):return reject("Ordinary departure requires its acknowledged native station")
 	var departure: Dictionary=station.prepare_departure(bindings,catalogues)
-	if departure.is_empty() or not Campaign.supported(bindings.mido_travel,departure.get("campaign_cursor")):return reject(station.error if departure.is_empty() else "Ordinary departure requires its acknowledged native station")
+	if departure.is_empty() or not Campaign.supported(bindings,departure.get("campaign_cursor")):return reject(station.error if departure.is_empty() else "Ordinary departure requires its acknowledged native station")
 	var contracts: RefCounted=station.contract_owner();var equipment: RefCounted=station.equipment_owner()
-	return _prepare_free_owned(bindings,catalogues,equipment,contracts,departure.mission,departure.station_response_flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources)
+	var retained: Variant=station.snapshot().player_cache if departure.campaign_cursor==40 else null
+	return _prepare_free_owned(bindings,catalogues,equipment,contracts,departure.mission,departure.station_response_flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,retained)
 
-func _prepare_free_owned(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,contracts: RefCounted,mission: Dictionary,flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,previous_cache: Variant=null,incoming: RefCounted=null,from_station_id: int=-1) -> bool:
+func _prepare_free_owned(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,contracts: RefCounted,mission: Dictionary,flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,previous_cache: Variant=null,incoming: RefCounted=null,from_station_id: int=-1,library: RefCounted=null) -> bool:
 	var career: Dictionary=contracts.snapshot();var owned: Dictionary=equipment.snapshot()
 	var station_id: int=owned.loadout.station_id
-	var accepted: Dictionary=contracts.free_flight_context(bindings,station_id)
-	if accepted.is_empty():return reject(contracts.error)
 	var cursor: int=career.campaign_cursor
-	if not FreeNavigation.ordinary_departure_at(bindings,cursor,mission,station_id):return reject("This destination selects an unsupported story encounter")
-	var data:=FreeFlight.flight(bindings,station_id,cursor)
+	if cursor==40:
+		var selected: RefCounted=contracts.selected40_entry_owner() if incoming!=null else null
+		if career.get("void_source",{}).is_empty() or mission!=Campaign.mission(bindings,cursor):return reject("Navigation40 requires its retained source and pending story")
+		if incoming!=null:
+			if selected==null or selected.snapshot().station_id!=station_id or selected.snapshot().source_after!=career.void_source:return reject("Navigation40 arrival lost its original source-selection owner")
+			if selected.snapshot().selected40:
+				return _prepare_selected40_owned(bindings,catalogues,library,equipment,contracts,selected,previous_cache,environment_seconds,unix_seconds,large_display,body_resources,effect_resources)
+		elif station_id==career.void_source.source_station_id:return reject("The selected source requires its native encounter, not ordinary departure")
+	var source: RefCounted=contracts.void_source_owner() if cursor==33 else null
+	if cursor==33 and source==null:return reject("Ordinary Void travel requires the retained source career")
+	var rescue:=Campaign.rescue_at(bindings.mido_travel,cursor,station_id)
+	var sahi:=Campaign.sahi_at(bindings.mido_travel,cursor,station_id)
+	var bakka:=Bakka.selected(bindings,cursor,mission,station_id)
+	var dekato:=Dekato.selected(bindings,cursor,mission,station_id)
+	var accepted: Dictionary=contracts.campaign_flight_context(bindings,mission) if rescue or sahi or bakka or dekato else contracts.free_flight_context(bindings,station_id)
+	if accepted.is_empty():return reject(contracts.error)
+	# Travel still owns route authorization. A selected incoming contest uses
+	# its native constructor rather than an ordinary traffic population.
+	if dekato:
+		if incoming==null:return reject("The Dekato convoy requires its incoming flight, not a station departure")
+		return prepare_dekato_selected(bindings,catalogues,equipment,accepted,career.progress,flags,environment_seconds,unix_seconds,contracts.location_owner(),previous_cache,large_display,body_resources,effect_resources,contracts,incoming,from_station_id)
+	if bakka:
+		if incoming==null:return reject("The B'akka contest requires its incoming flight, not a station departure")
+		return prepare_bakka_selected(bindings,catalogues,equipment,accepted,career.progress,flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,previous_cache,from_station_id,contracts,incoming)
+	if not FreeNavigation.destination_supported(bindings,cursor,mission,station_id):return reject("This destination selects an unsupported story encounter")
+	if sahi:return _prepare_story_selected(bindings,catalogues,equipment,accepted,career.progress,flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,previous_cache,contracts,from_station_id,incoming)
+	var data:=Kappa.flight(bindings,station_id) if rescue else FreeFlight.flight(bindings,station_id,cursor)
 	if data.is_empty():return reject("This destination has no supported ordinary world")
 	var context:={"campaign_cursor":cursor,"station_id":station_id,"system_id":int(data.system_id),"rank":career.rank,"difficulty":career.difficulty,
 		"mission_kind":-1,"mission_completed":true,"mission_story":false,"companions_empty":true,"side_missions_empty":true,
@@ -153,14 +207,17 @@ func _prepare_free_owned(bindings: RefCounted,catalogues: RefCounted,equipment: 
 		context.side_missions_empty=false;context.side_mission=accepted.side_mission.duplicate(true)
 		context.mission_kind=int(accepted.mission.get("kind",-1));context.mission_completed=accepted.mission.is_empty()
 		context.player_position=Vector3(data.player_position[0],data.player_position[1],data.player_position[2])
-	if Campaign.visit_at(bindings.mido_travel,cursor,station_id):
+	if Campaign.ordinary_story_at(bindings,cursor,station_id):
 		context.mission_kind=int(mission.kind);context.mission_completed=false;context.mission_story=true
+	if rescue:context=accepted.duplicate(true)
 	if incoming!=null:context.player_position=incoming.snapshot().position
 	var conditions:={"companions_empty":true,"location_match":false,"special_placement":false}
 	var scenery:=Scenery.new()
-	if not scenery.configure_free(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources):return reject(scenery.error)
+	var ready: bool=scenery.configure_kappa_rescue(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources) if rescue else scenery.configure_free(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources)
+	if not ready:return reject(scenery.error)
 	var player:=Player.new()
-	if not player.configure_free(bindings,catalogues,equipment,scenery.world_initialization_owner().npc_construction_owner(),previous_cache):return reject(player.error)
+	ready=player.configure_kappa_rescue(bindings,catalogues,equipment,scenery.world_initialization_owner().npc_construction_owner(),previous_cache) if rescue else player.configure_free(bindings,catalogues,equipment,scenery.world_initialization_owner().npc_construction_owner(),previous_cache)
+	if not ready:return reject(player.error)
 	var location:=Location.new();var place:=location.resolve_local_travel(bindings,catalogues,equipment,player.cache_snapshot())
 	if place.is_empty():return reject(location.error)
 	var packet:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":cursor,
@@ -168,46 +225,343 @@ func _prepare_free_owned(bindings: RefCounted,catalogues: RefCounted,equipment: 
 		"progress":career.progress.duplicate(true),"mission":mission.duplicate(true),"contracts":career,
 		"player":player.snapshot(),"player_cache":player.cache_snapshot(),"free_context":context,
 		"station_response_flags":flags.duplicate(true),"source_ship_configuration":int(bindings.station_entry.source_ship_configuration)}
+	if rescue:packet.erase("free_context");packet.kappa_context=context
 	if incoming!=null:
 		packet.arrival_environment=incoming.snapshot();packet.from_station_id=from_station_id
-	return _construct(bindings,catalogues,packet,data,player,place,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,equipment,contracts,scenery,incoming)
+	if not _construct(bindings,catalogues,packet,data,player,place,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,equipment,contracts,scenery,incoming):return false
+	if source!=null:
+		var retained: Dictionary=source.snapshot()
+		if station_id==retained.source_station_id and context.mission_kind==-1 and not context.mission_story:
+			_ordinary_void_source=source
+			_state.system_id=place.system_id;_state.station_id=station_id;_state.current_station_id=station_id;_state.void_station_id=-1
+			_state.mission_kind=-1;_state.mission_story=false
+			_state.return_station_id=retained.source_station_id;_state.return_system_id=retained.source_system_id
+	return true
 
-func prepare_local_arrival(bindings: RefCounted, catalogues: RefCounted, travel: RefCounted, source_player: RefCounted, equipment: RefCounted, environment_seconds: Variant, unix_seconds: Variant, large_display:=true, body_resources: RefCounted=null, effect_resources: RefCounted=null, objective: Dictionary={},contracts: RefCounted=null) -> bool:
+## Called only after the existing travel transaction has relocated inventory,
+## captured surviving pools and selected/rebased the detached destination career.
+func _prepare_selected40_owned(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,equipment: RefCounted,contracts: RefCounted,entry: RefCounted,cache: Variant,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,bodies: RefCounted,effects: RefCounted) -> bool:
+	if library==null or not Numbers.integer(environment_seconds,0,2147483647):return reject("Selected arrival requires its content and explicit environment seed")
+	var owned: Dictionary=equipment.snapshot();var career: Dictionary=contracts.snapshot()
+	var context: Dictionary=contracts.selected40_context(bindings,owned.loadout.station_id,owned.loadout.system_id)
+	var scenery:=Scenery.new()
+	if not scenery.configure_selected40(bindings,catalogues,equipment,context,entry,unix_seconds,large_display,bodies,effects):return reject(scenery.error)
+	var player:=Player.new()
+	if not player.configure_selected40(bindings,catalogues,equipment,scenery.world_initialization_owner().npc_construction_owner(),cache):return reject(player.error)
+	var builder: RefCounted=load("res://src/simulation/selected40_flight_construction.gd").new()
+	var pose: Variant=entry.player_pose(Transform3D.IDENTITY)
+	if not pose is Transform3D or not builder.prepare(bindings,catalogues,library,player,scenery,equipment,career.reputation,pose,0.5,_arrival_viewport,contracts):return reject(builder.error)
+	_selected40_builder=builder
+	return true
+
+## The second Void return resumes an ordinary selected visit. Its persistent
+## portal never inserted a synthetic station into the retained location cache.
+func prepare_portal_return(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,contracts: RefCounted,flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,previous_cache: Dictionary) -> bool:
+	if not Campaign.expedition_available(bindings.mido_travel) or contracts==null or not equipment is Equipment:return reject("The Void return requires its retained expedition career and ship")
+	var cursor: int=contracts.snapshot().get("campaign_cursor",-1)
+	if cursor not in [30,33]:return reject("This career has no ordinary portal return")
+	var station_id:=91;var system_id:=18
+	if cursor==33:
+		var source: RefCounted=contracts.void_source_owner()
+		if source==null:return reject("The ordinary return lost its recorded source")
+		var retained: Dictionary=source.snapshot()
+		station_id=retained.source_station_id;system_id=retained.source_system_id
+	var owned: Dictionary=equipment.snapshot()
+	if owned.loadout.station_id!=station_id or owned.loadout.system_id!=system_id or not Cache.matches(previous_cache,owned.loadout,cursor):return reject("The Void return lost its retained ship or recorded location")
+	if previous_cache.values.hull<=0:return reject("The Void return cannot restore a destroyed ship")
+	var incoming:=Incoming.new()
+	if not incoming.configure(bindings,catalogues,station_id,contracts.location_owner(),cursor):return reject(incoming.error)
+	return _prepare_free_owned(bindings,catalogues,equipment,contracts,Campaign.mission(bindings.mido_travel,cursor),flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,previous_cache,incoming,-1)
+
+## Compose a selected Dekato arrival from the actual target-world owners.
+## This never relocates equipment, creates a cache, authorizes travel or saves.
+func prepare_dekato_selected(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,progress: Dictionary,station_response_flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,locations: RefCounted,previous_cache: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null,contracts: RefCounted=null,incoming: RefCounted=null,from_station_id: int=-1) -> bool:
+	error=""
+	if bindings==null or catalogues==null or not equipment is Equipment:return reject("Dekato construction requires retained equipped content")
+	var data:=Dekato.flight(bindings,context)
+	if data.is_empty():return reject("Dekato construction requires its selected source world")
+	if not _valid_selected_progress(bindings,progress,38,context.rank,context.difficulty):return false
+	if not FreeFlight.response_flags(bindings,station_response_flags):return reject("Dekato construction lost retained station responses")
+	var owned: Dictionary=equipment.snapshot();var loadout: Dictionary=owned.get("loadout",{})
+	if not equipment.cargo_cache_valid() or loadout.get("station_id")!=context.station_id or loadout.get("system_id")!=context.system_id:return reject("Dekato requires equipment already relocated to its target")
+	if not Cache.matches(previous_cache,loadout,38) or int(previous_cache.get("values",{}).get("hull",0))<=0:return reject("Dekato requires the surviving target-world cache")
+	var retained_contracts: RefCounted=null
+	if contracts!=null:
+		if not is_instance_of(contracts,load("res://src/simulation/contract_session.gd")):return reject("Dekato requires its native retained career")
+		var selected: Dictionary=contracts.campaign_flight_context(bindings,Campaign.mission(bindings.mido_travel,38))
+		if selected.is_empty():return reject(contracts.error)
+		if selected!=context or contracts.snapshot().progress!=progress:return reject("Dekato construction differs from its retained campaign context")
+		var history: RefCounted=contracts.location_owner()
+		if not is_instance_of(locations,load("res://src/simulation/lounge_cache.gd")) or history==null or history.snapshot()!=locations.snapshot():return reject("Dekato construction changed its retained location history")
+		retained_contracts=contracts.fork()
+	if incoming==null:
+		if from_station_id!=-1:return reject("A detached Dekato component cannot manufacture travel provenance")
+		incoming=Incoming.new()
+		if not incoming.configure(bindings,catalogues,int(context.station_id),locations,38):return reject(incoming.error)
+	else:
+		if not incoming is Incoming or retained_contracts==null:return reject("Dekato incoming placement requires its native arrival and retained career")
+		if from_station_id<0 or from_station_id>=catalogues.tables.stations.size() or from_station_id==context.station_id:return reject("Dekato arrival requires its distinct departing station")
+		var arrival: Dictionary=incoming.snapshot()
+		for key in ["base_content_id","binding_id","campaign_cursor","station_id","system_id"]:
+			if arrival.get(key)!=context[key]:return reject("Dekato incoming placement selects another world")
+		var history: Dictionary=locations.snapshot()
+		if history.current_station_id!=context.station_id or arrival.get("location_order")!=history.locations.map(func(row):return int(row.station_id)):return reject("Dekato incoming placement differs from retained location order")
+	context=context.duplicate(true);context.player_position=incoming.snapshot().position
+	var environment:=_prepare_environment(bindings,data,environment_seconds,incoming)
+	if environment.is_empty():return false
+	var conditions:={"companions_empty":true,"location_match":false,"special_placement":false}
+	var scenery:=Scenery.new()
+	if not scenery.configure_dekato(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources):return reject(scenery.error)
+	var population: RefCounted=scenery.world_initialization_owner().npc_construction_owner()
+	var player:=Player.new()
+	if not player.configure_dekato(bindings,catalogues,equipment,population,previous_cache):return reject(player.error)
+	var location:=Location.new();var place:=location.resolve_local_travel(bindings,catalogues,equipment,player.cache_snapshot())
+	if place.is_empty():return reject(location.error)
+	var source: Dictionary=Dekato.declarations(bindings).mission
+	var mission:={"kind":int(source.kind),"station_id":int(source.station_id),"reward":int(source.reward),"bonus":int(source.bonus),"source_parameter":int(source.source_parameter)}
+	var packet:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":38,
+		"loadout":loadout.duplicate(true),"equipment":owned,"cargo":owned.cargo.duplicate(true),"cargo_used":int(owned.cargo.used),
+		"progress":progress.duplicate(true),"mission":mission,"player":player.snapshot(),"player_cache":player.cache_snapshot(),
+		"dekato_context":context.duplicate(true),"station_response_flags":station_response_flags.duplicate(true),
+		"arrival_environment":incoming.snapshot(),"source_ship_configuration":int(bindings.station_entry.source_ship_configuration)}
+	# Source provenance is separate from the original saved career identity.
+	# It describes declarations, not proof that a component fixture earned travel.
+	if not bindings.dekato_source_receipt().is_empty():packet.dekato_source_receipt=bindings.dekato_source_receipt().duplicate(true)
+	if from_station_id>=0:packet.from_station_id=from_station_id
+	if retained_contracts!=null:packet.contracts=retained_contracts.snapshot()
+	if not _construct(bindings,catalogues,packet,data,player,place,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,equipment,retained_contracts,scenery,incoming,environment):return false
+	_state.dekato_context=context.duplicate(true);_selected_locations=locations.fork()
+	for key in ["system_id","station_id","mission_kind","mission_story","mission_completed"]:_state[key]=context[key]
+	return true
+
+## Detached target-world composition for the selected B'akka contest. The
+## enclosing station/session must first relocate the retained inventory/cache;
+## this method intentionally does not authorize or perform navigation.
+func prepare_bakka_selected(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,progress: Dictionary,station_response_flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null,previous_cache: Variant=null,from_station_id: int=-1,contracts: RefCounted=null,incoming: RefCounted=null) -> bool:
+	error=""
+	if bindings==null or catalogues==null or not equipment is Equipment:return reject("B'akka construction requires retained equipped content")
+	if not Bakka.context_valid(bindings,context):return reject("B'akka construction requires its selected story context")
+	if not _valid_selected_progress(bindings,progress,36,context.get("rank"),context.get("difficulty")):return false
+	if not FreeFlight.response_flags(bindings,station_response_flags):return reject("B'akka construction requires retained station responses")
+	var owned: Dictionary=equipment.snapshot();var loadout: Dictionary=owned.get("loadout",{})
+	if not equipment.cargo_cache_valid() or loadout.get("station_id")!=context.station_id or loadout.get("system_id")!=context.system_id:return reject("B'akka construction requires equipment already relocated to its target")
+	if not Cache.matches(previous_cache,loadout,36) or int(previous_cache.get("values",{}).get("hull",0))<=0:return reject("B'akka construction requires the surviving target-world cache")
+	var retained_contracts: RefCounted=null
+	if contracts!=null:
+		if not is_instance_of(contracts,load("res://src/simulation/contract_session.gd")):return reject("B'akka construction requires its native retained career")
+		retained_contracts=contracts.fork()
+		if incoming!=null and retained_contracts.station_id()==context.station_id:
+			# Ordinary arrival already relocated this detached career and retained
+			# its generated location. Do not clear contacts or transfer it twice.
+			var retained: Dictionary=retained_contracts.snapshot()
+			var selected: Dictionary=retained_contracts.campaign_flight_context(bindings,Campaign.mission(bindings.mido_travel,36))
+			if selected!=context or retained.progress!=progress:return reject("B'akka arrival differs from its retained campaign context")
+		elif not retained_contracts.rebase_bakka_target(bindings,equipment,context,progress):return reject(retained_contracts.error)
+	var data: Dictionary=FreeFlight.flight(bindings,int(context.station_id),36)
+	if data.is_empty() or int(data.system_id)!=int(context.system_id):return reject("B'akka construction requires its admitted target world")
+	if incoming!=null:
+		if not incoming is Incoming or retained_contracts==null:return reject("B'akka incoming placement requires its native arrival and retained career")
+		var arrival: Dictionary=incoming.snapshot()
+		for key in ["base_content_id","binding_id","campaign_cursor","station_id","system_id"]:
+			if arrival.get(key)!=context[key]:return reject("B'akka incoming placement selects another world")
+		var locations: RefCounted=retained_contracts.location_owner()
+		if locations==null:return reject("B'akka incoming placement lost its retained locations")
+		var history: Dictionary=locations.snapshot()
+		if history.current_station_id!=context.station_id or arrival.get("location_order")!=history.locations.map(func(row):return int(row.station_id)):return reject("B'akka incoming placement differs from retained location order")
+		context=context.duplicate(true);context.player_position=arrival.position
+	var environment:=_prepare_environment(bindings,data,environment_seconds,incoming)
+	if environment.is_empty():return false
+	var conditions:={"companions_empty":true,"location_match":false,"special_placement":false}
+	var scenery:=Scenery.new()
+	if not scenery.configure_bakka(bindings,catalogues,equipment,context,environment.player_pose.origin,conditions,unix_seconds,large_display,body_resources,effect_resources):return reject(scenery.error)
+	var world:=scenery.world_initialization_owner();var population: RefCounted=null if world==null else world.npc_construction_owner()
+	if population==null:return reject("B'akka construction lost its selected population")
+	var player:=Player.new()
+	if not player.configure_bakka(bindings,catalogues,equipment,population,previous_cache):return reject(player.error)
+	var location:=Location.new();var place:=location.resolve_local_travel(bindings,catalogues,equipment,player.cache_snapshot())
+	if place.is_empty() or place.station_id!=context.station_id or place.system_id!=context.system_id:return reject(location.error if not location.error.is_empty() else "B'akka construction selected another location")
+	var source_mission: Dictionary=bindings.mido_travel.bakka_contest.mission
+	var mission:={"kind":int(source_mission.kind),"station_id":int(source_mission.station_id),"reward":int(source_mission.reward),"bonus":int(source_mission.bonus),"source_parameter":0}
+	var packet:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":36,
+		"loadout":owned.loadout.duplicate(true),"equipment":owned,"cargo":owned.cargo.duplicate(true),"cargo_used":int(owned.cargo.used),
+		"progress":progress.duplicate(true),"mission":mission,"player":player.snapshot(),"player_cache":player.cache_snapshot(),
+		"bakka_context":context.duplicate(true),"station_response_flags":station_response_flags.duplicate(true),"from_station_id":from_station_id,
+		"source_ship_configuration":int(bindings.station_entry.source_ship_configuration)}
+	if retained_contracts!=null:packet.contracts=retained_contracts.snapshot()
+	if incoming!=null:packet.arrival_environment=incoming.snapshot()
+	if not _construct(bindings,catalogues,packet,data,player,place,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,equipment,retained_contracts,scenery,incoming,environment):return false
+	_state.bakka_context=context.duplicate(true)
+	for key in ["system_id","station_id","mission_kind","mission_story","mission_completed"]:_state[key]=context[key]
+	return true
+
+## Prepare the selected Sahi story world without authorizing station48 travel.
+## Progress and optional career ownership are supplied by the already-earned
+## caller; navigation remains separately guarded until the full transition works.
+func prepare_sahi_selected(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,progress: Dictionary,station_response_flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null,previous_cache: Variant=null,contracts: RefCounted=null,from_station_id: int=-1,locations: RefCounted=null) -> bool:
+	if context.get("campaign_cursor")!=24:return reject("Sahi selection cannot advance the campaign")
+	return _prepare_story_selected(bindings,catalogues,equipment,context,progress,station_response_flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,previous_cache,contracts,from_station_id,null,locations)
+
+func prepare_dima_selected(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,progress: Dictionary,station_response_flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null,previous_cache: Variant=null,contracts: RefCounted=null,from_station_id: int=-1,locations: RefCounted=null) -> bool:
+	if context.get("campaign_cursor")!=28:return reject("Dima selection cannot advance the campaign")
+	return _prepare_story_selected(bindings,catalogues,equipment,context,progress,station_response_flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,previous_cache,contracts,from_station_id,null,locations)
+
+## The enclosing live portal transaction supplies the relocated equipment and
+## actual ship cache. This does not authorize navigation or a fresh Void spawn.
+func prepare_post_sahi_selected(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,progress: Dictionary,station_response_flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null,previous_cache: Dictionary={},contracts: RefCounted=null,locations: RefCounted=null) -> bool:
+	if context.get("campaign_cursor") not in [25,26,29] or previous_cache.is_empty():return reject("The Void entry requires its retained portal transition")
+	return _prepare_story_selected(bindings,catalogues,equipment,context,progress,station_response_flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,previous_cache,contracts,48 if context.campaign_cursor==25 else 91 if context.campaign_cursor==29 else -1,null,locations)
+
+## Prepare the world selected by an enclosing ordinary portal transaction.
+## Relocation and its surviving cache must already exist; this constructor
+## neither advances the campaign nor grants navigation, crystals or rewards.
+func prepare_ordinary_void_selected(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,source: RefCounted,previous_cache: Dictionary,progress: Dictionary,station_response_flags: Dictionary,difficulty: Variant,environment_seconds: Variant,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null,contracts: RefCounted=null) -> bool:
+	error=""
+	if bindings==null or catalogues==null or not equipment is Equipment or not source is Story.VoidSource:return reject("Ordinary Void construction requires retained equipped content and its native source")
+	if not _valid_selected_progress(bindings,progress,33,progress.get("rank"),difficulty):return false
+	if not FreeFlight.response_flags(bindings,station_response_flags):return reject("Ordinary Void construction lost its station responses")
+	var retained: Dictionary=source.snapshot()
+	if retained.get("base_content_id")!=bindings.base_content_id or retained.get("binding_id")!=bindings.binding_id or retained.get("source_station_id",-1)<0 or retained.get("source_system_id",-1)<0:return reject("Ordinary Void construction lost its active source")
+	var career:={}
+	if contracts!=null:
+		if not is_instance_of(contracts,load("res://src/simulation/contract_session.gd")):return reject("Ordinary Void construction requires its native career")
+		career=contracts.snapshot()
+		if career.get("campaign_cursor")!=33 or career.get("station_id")!=-1 or career.get("progress")!=progress or career.get("void_source")!=retained:return reject("Ordinary Void construction differs from its relocated career")
+	var context:={"campaign_cursor":33,"selected_system_id":-1,"selected_station_id":-1,"retained_system_id":-1,"retained_station_id":-1,
+		"selected_mission_kind":-1,"selected_mission_story":false,"location_match":true,"rank":int(progress.rank)}
+	var data:=Story.ordinary_void_flight(bindings,context)
+	if data.is_empty():return reject("Ordinary Void construction lacks its source declarations")
+	var environment:=_prepare_environment(bindings,data,environment_seconds,null,source)
+	if environment.is_empty():return false
+	var scenery:=Scenery.new()
+	var conditions:={"companions_empty":true,"location_match":true,"special_placement":false}
+	if not scenery.configure_ordinary_void(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources):return reject(scenery.error)
+	var player:=Player.new()
+	if not player.configure_ordinary_void(bindings,catalogues,equipment,scenery.world_initialization_owner(),source,difficulty,previous_cache):return reject(player.error)
+	var location:=Location.new()
+	var place:=location.resolve_ordinary_void(bindings,catalogues,equipment,player.cache_snapshot(),environment.void_environment)
+	if place.is_empty():return reject(location.error)
+	var owned: Dictionary=equipment.snapshot()
+	var mission:=Story.VoidCrystals.PostProbe.mission_values(bindings.mido_travel.void_crystals.mission33)
+	var packet:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":33,
+		"loadout":owned.loadout.duplicate(true),"equipment":owned,"cargo":owned.cargo.duplicate(true),"cargo_used":int(owned.cargo.used),
+		"progress":progress.duplicate(true),"mission":mission,"player":player.snapshot(),"player_cache":player.cache_snapshot(),
+		"void_context":context,"difficulty":difficulty,"station_response_flags":station_response_flags.duplicate(true),"from_station_id":retained.source_station_id,
+		"source_ship_configuration":int(bindings.station_entry.source_ship_configuration)}
+	if contracts!=null:packet.contracts=career
+	if not _construct(bindings,catalogues,packet,data,player,place,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,equipment,contracts,scenery,null,environment):return false
+	_state.void_context=context;_state.system_id=-1;_state.station_id=-1;_state.current_station_id=-1;_state.void_station_id=-1
+	_state.mission_kind=-1;_state.mission_story=false;_state.return_station_id=retained.source_station_id;_state.return_system_id=retained.source_system_id
+	_ordinary_void_source=source.fork()
+	return true
+
+func _valid_selected_progress(bindings: RefCounted,progress: Dictionary,cursor: int,rank: Variant,difficulty: Variant) -> bool:
+	if not Reputation.valid_state(progress.get("reputation")) or not Numbers.integer(progress.get("player_kills"),0,2147483647) or not Numbers.integer(progress.get("pirate_kills"),0,2147483647) or not Numbers.integer(progress.get("other_score"),-2147483648,2147483647):return reject("Selected construction requires earned campaign progress")
+	var expected:=Career.calculate_progress(bindings.opening_handoff,cursor,progress.player_kills,progress.pirate_kills,progress.other_score)
+	if expected.is_empty():return reject("Selected construction has unsupported career counters")
+	expected.reputation=progress.reputation.duplicate(true)
+	for key in ["debris_destroyed","capital_ship_kills"]:
+		if not Numbers.integer(progress.get(key),0,2147483647):return reject("Selected construction lost retained free-play progress")
+		expected[key]=progress[key]
+	if progress.has("cargo_recovered"):
+		if not Numbers.integer(progress.cargo_recovered,0,2147483647):return reject("Selected construction lost its recovered-cargo statistic")
+		expected.cargo_recovered=progress.cargo_recovered
+	if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected or rank!=progress.get("rank") or difficulty not in [0.5,1.0]:return reject("Selected construction changed earned rank, difficulty or hint history")
+	return true
+
+func _prepare_story_selected(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,progress: Dictionary,station_response_flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,previous_cache: Variant,contracts: RefCounted,from_station_id: int,incoming: RefCounted=null,locations: RefCounted=null) -> bool:
+	error=""
+	if bindings==null or catalogues==null or not equipment is Equipment:return reject("Sahi construction requires retained equipped content")
+	var data: Dictionary=Story.flight(bindings,context)
+	if data.is_empty():return reject("Sahi construction requires its selected story world")
+	if not _valid_selected_progress(bindings,progress,int(context.campaign_cursor),context.get("rank"),context.get("difficulty")):return false
+	if not FreeFlight.response_flags(bindings,station_response_flags):return reject("Sahi construction requires retained station responses")
+	if contracts!=null:
+		if not is_instance_of(contracts,load("res://src/simulation/contract_session.gd")) or contracts.snapshot().get("progress")!=progress:return reject("Sahi construction requires the matching retained career")
+	elif locations!=null:
+		if not is_instance_of(locations,load("res://src/simulation/lounge_cache.gd")):return reject("Selected story locations require the native cache owner")
+		var retained: Dictionary=locations.snapshot()
+		var retained_station:=91 if context.campaign_cursor in [28,29] else 48
+		if retained.get("base_content_id")!=bindings.base_content_id or retained.get("binding_id")!=bindings.binding_id or retained.get("current_station_id")!=retained_station:return reject("Selected story locations lost their retained history")
+	if context.campaign_cursor==26 and from_station_id==-1:
+		incoming=Incoming.new()
+		# Void selection bypasses the ordinary location cache. Selecting the
+		# existing Sahi entry on return also leaves its insertion order intact.
+		var history: RefCounted=contracts.location_owner() if contracts!=null else locations
+		if not incoming.configure(bindings,catalogues,int(context.station_id),history,26):return reject(incoming.error)
+	var environment:=_prepare_environment(bindings,data,environment_seconds,incoming)
+	if environment.is_empty():return false
+	if context.campaign_cursor==28:
+		context=context.duplicate(true)
+		context.portal_position=environment.position
+	if incoming!=null:
+		context=context.duplicate(true)
+		context.player_pose=environment.player_pose
+		context.player_position=context.player_pose.origin
+	var conditions:=Story.entry_conditions(int(context.campaign_cursor))
+	var scenery:=Scenery.new()
+	if not scenery.configure_sahi(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources):return reject(scenery.error)
+	var world:=scenery.world_initialization_owner()
+	var population: RefCounted=null if world==null else world.npc_construction_owner()
+	if population==null:return reject("Sahi construction lost its selected population")
+	var player:=Player.new()
+	if not player.configure_sahi(bindings,catalogues,equipment,population,previous_cache):return reject(player.error)
+	var location:=Location.new();var place:=location.resolve_local_travel(bindings,catalogues,equipment,player.cache_snapshot())
+	if place.is_empty() or place.station_id!=context.station_id or place.system_id!=context.system_id:return reject(location.error if not location.error.is_empty() else "Sahi construction selected another location")
+	var owned: Dictionary=equipment.snapshot()
+	var source_mission: Dictionary=load("res://src/content/post_sahi_definitions.gd").mission(bindings,int(context.campaign_cursor)) if int(context.campaign_cursor) in [25,26,29] else bindings.mido_travel.sahi_visit.mission
+	if context.campaign_cursor==28:source_mission=bindings.mido_travel.thynome_expedition.mission28
+	if source_mission.is_empty():return reject("Sahi construction lost its source mission")
+	var mission:={}
+	# Dialogue arrays and source selection metadata belong to their own owners,
+	# not to the five scalar fields retained by an active flight mission.
+	for key in ["kind","station_id","reward","bonus","source_parameter"]:mission[key]=int(source_mission[key])
+	var packet:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(context.campaign_cursor),
+		"loadout":owned.loadout.duplicate(true),"equipment":owned,"cargo":owned.cargo.duplicate(true),"cargo_used":int(owned.cargo.used),
+		"progress":progress.duplicate(true),"mission":mission.duplicate(true),"player":player.snapshot(),"player_cache":player.cache_snapshot(),
+		"sahi_context":context.duplicate(true),"station_response_flags":station_response_flags.duplicate(true),"from_station_id":from_station_id,
+		"source_ship_configuration":int(bindings.station_entry.source_ship_configuration)}
+	if contracts!=null:packet.contracts=contracts.snapshot()
+	if incoming!=null:packet.arrival_environment=incoming.snapshot()
+	if not _construct(bindings,catalogues,packet,data,player,place,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,equipment,contracts,scenery,incoming,environment):return false
+	_selected_locations=locations.fork() if contracts==null and locations!=null else null
+	_state.sahi_context=context.duplicate(true)
+	for key in ["system_id","station_id","mission_kind","mission_story","mission_completed","mission_failed"]:_state[key]=context[key]
+	return true
+
+func prepare_local_arrival(bindings: RefCounted, catalogues: RefCounted, travel: RefCounted, source_player: RefCounted, equipment: RefCounted, environment_seconds: Variant, unix_seconds: Variant, large_display:=true, body_resources: RefCounted=null, effect_resources: RefCounted=null, objective: Dictionary={},contracts: RefCounted=null,library: RefCounted=null) -> bool:
 	error=""
 	if bindings==null or catalogues==null or not travel is LocalTravel or not source_player is Player or not equipment is Equipment:return reject("Local arrival requires the native travel, player and equipment owners")
 	var packet: Dictionary=travel.prepare_arrival()
 	if packet.is_empty():return reject(travel.error)
-	return _prepare_arrival(bindings,catalogues,packet,source_player,equipment,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,objective,contracts,false)
+	return _prepare_arrival(bindings,catalogues,packet,source_player,equipment,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,objective,contracts,false,library)
 
-func prepare_gate_arrival(bindings: RefCounted,catalogues: RefCounted,travel: RefCounted,source_player: RefCounted,equipment: RefCounted,environment_seconds: Variant,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null,objective: Dictionary={},contracts: RefCounted=null) -> bool:
+func prepare_gate_arrival(bindings: RefCounted,catalogues: RefCounted,travel: RefCounted,source_player: RefCounted,equipment: RefCounted,environment_seconds: Variant,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null,objective: Dictionary={},contracts: RefCounted=null,library: RefCounted=null) -> bool:
 	error=""
 	if not travel is GateTransit or not source_player is Player or not equipment is Equipment:return reject("Gate arrival requires its native transit, player and equipment owners")
 	var packet:=GateArrival.packet(bindings,catalogues,travel.arrival_request(),int(objective.get("campaign_cursor",-1)))
 	if packet.is_empty():return reject("Finish the gate animation before constructing a supported destination")
-	return _prepare_arrival(bindings,catalogues,packet,source_player,equipment,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,objective,contracts,true)
+	return _prepare_arrival(bindings,catalogues,packet,source_player,equipment,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,objective,contracts,true,library)
 
-func _prepare_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dictionary,source_player: RefCounted,equipment: RefCounted,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,objective: Dictionary,contracts: RefCounted,gate_arrival: bool) -> bool:
+func _prepare_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dictionary,source_player: RefCounted,equipment: RefCounted,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,objective: Dictionary,contracts: RefCounted,gate_arrival: bool,library: RefCounted=null) -> bool:
 	for key in ["base_content_id","binding_id","campaign_cursor"]:
 		if objective.get(key)!=packet[key]:return reject("Local arrival requires the departing mission and career identity")
 	var trip:=Travel.journey(bindings.mido_travel,packet.campaign_cursor)
 	var contract_arrival: bool=ContractWorld.supports(bindings,packet.campaign_cursor)
-	var free_arrival: bool=Travel.free_local_navigation(bindings.mido_travel,packet.campaign_cursor) and FreeFlight.available(bindings)
+	var free_arrival: bool=Travel.free_local_navigation(bindings,packet.campaign_cursor) and FreeFlight.available(bindings)
 	if trip.is_empty() and not contract_arrival and not free_arrival:return reject("This mission has no supported arrival")
 	var mission: Variant=objective.get("mission")
-	if not mission is Dictionary or not Travel.navigation_mission(bindings.mido_travel,packet.campaign_cursor,mission):return reject("Local arrival changed the pending station visit")
+	if not mission is Dictionary or not Travel.navigation_mission(bindings,packet.campaign_cursor,mission):return reject("Local arrival changed the pending station visit")
 	var progress: Variant=objective.get("progress")
 	if not progress is Dictionary or not Reputation.valid_state(progress.get("reputation")):return reject("Local arrival requires the live career and reputation")
-	var expected:=Career.calculate_progress(bindings.opening_handoff,packet.campaign_cursor,progress.get("player_kills"),progress.get("pirate_kills"),progress.get("other_score"))
-	if expected.is_empty():return reject("Local arrival has unsupported career counters")
-	expected.reputation=progress.reputation.duplicate(true)
 	if contract_arrival or free_arrival:
+		# The retained career owns its validated counters, including recovery.
+		# Arrival transfers that same observation without rebuilding an older subset.
 		if not is_instance_of(contracts,load("res://src/simulation/contract_session.gd")) or contracts.snapshot().get("progress")!=progress:return reject("Local arrival requires its retained contract career")
-		if not Numbers.integer(progress.get("debris_destroyed"),0,2147483647):return reject("Local arrival lost its debris statistic")
-		expected.debris_destroyed=progress.debris_destroyed
-	if free_arrival:
-		if not Numbers.integer(progress.get("capital_ship_kills"),0,2147483647):return reject("Local arrival lost its retained capital-ship statistic")
-		expected.capital_ship_kills=progress.capital_ship_kills
-	if progress!=expected:return reject("Local arrival career disagrees with its counters")
+	else:
+		var expected:=Career.calculate_progress(bindings.opening_handoff,packet.campaign_cursor,progress.get("player_kills"),progress.get("pirate_kills"),progress.get("other_score"))
+		if expected.is_empty():return reject("Local arrival has unsupported career counters")
+		expected.reputation=progress.reputation.duplicate(true)
+		if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected:return reject("Local arrival career disagrees with its counters")
 	var flags: Variant=objective.get("station_response_flags")
 	var valid_flags: bool=FreeFlight.response_flags(bindings,flags) if free_arrival else (ContractWorld.response_flags(bindings,flags) if contract_arrival else Travel.valid_response_flags(bindings.mido_travel,flags,packet.campaign_cursor))
 	if not valid_flags:return reject("Local arrival requires its retained station response")
@@ -218,18 +572,22 @@ func _prepare_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dictio
 	var departing: Dictionary=source_player.loadout()
 	for key in Cache.IDENTITY_KEYS:
 		if departing.get(key)!=original.get(key):return reject("Local arrival changed the departing equipped player")
-	var cached:=Cache.capture_gate_arrival(bindings.mido_travel,original,destination.snapshot().loadout,source_player.snapshot()) if gate_arrival else Cache.capture_local_arrival(bindings.mido_travel,original,destination.snapshot().loadout,source_player.snapshot())
+	var cached:=Cache.capture_gate_arrival(bindings,original,destination.snapshot().loadout,source_player.snapshot()) if gate_arrival else Cache.capture_local_arrival(bindings,original,destination.snapshot().loadout,source_player.snapshot())
 	if cached.is_empty():return reject("Local arrival requires the surviving player's current pools")
 	if free_arrival:cached.campaign_cursor=packet.campaign_cursor
 	if free_arrival:
 		contracts=contracts.fork()
-		var retained: bool=contracts.rebase_gate_arrival(bindings,catalogues,destination,packet) if gate_arrival else contracts.rebase_station(destination,bindings)
+		var retained: bool
+		if not gate_arrival and Dekato.selected(bindings,packet.campaign_cursor,mission,int(packet.station_id)):
+			retained=contracts.rebase_dekato_arrival(bindings,destination,packet,mission)
+		else:
+			retained=contracts.rebase_gate_arrival(bindings,catalogues,destination,packet) if gate_arrival else contracts.rebase_station(destination,bindings)
 		if not retained:return reject(contracts.error)
 		var incoming:=Incoming.new()
 		if not incoming.configure(bindings,catalogues,int(packet.station_id),contracts.location_owner(),packet.campaign_cursor):return reject(incoming.error)
 		var arrival_flags: Dictionary=flags.duplicate(true)
 		arrival_flags[int(packet.station_id)]=bool(bindings.mido_travel.traffic_combat.station_flag_initial)
-		return _prepare_free_owned(bindings,catalogues,destination,contracts,mission,arrival_flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,cached,incoming,int(packet.from_station_id))
+		return _prepare_free_owned(bindings,catalogues,destination,contracts,mission,arrival_flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,cached,incoming,int(packet.from_station_id),library)
 	var player:=Player.new()
 	if not player.configure_local_travel(bindings,catalogues,destination,cached,packet.campaign_cursor):return reject(player.error)
 	var location:=Location.new()
@@ -253,35 +611,72 @@ func _prepare_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dictio
 			return _prepare_convoy_owned(bindings,catalogues,destination,contracts,packet,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,cached)
 	return _construct(bindings,catalogues,packet,data,player,context,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,destination,contracts if contract_arrival else null)
 
-func _construct(bindings: RefCounted, catalogues: RefCounted, packet: Dictionary, data: Dictionary, player: RefCounted, context: Dictionary, environment_seconds: Variant, unix_seconds: Variant, large_display: bool, body_resources: RefCounted, effect_resources: RefCounted, equipment: RefCounted,contracts: RefCounted=null,prepared_scenery: RefCounted=null,incoming: RefCounted=null) -> bool:
-	var training: bool=int(data.campaign_cursor)==7
-	var local_entry: bool=int(data.campaign_cursor) in [10,11,12]
+func _prepare_environment(bindings: RefCounted,data: Dictionary,environment_seconds: Variant,incoming: RefCounted=null,ordinary_void_source: RefCounted=null) -> Dictionary:
 	var random:=Random.new()
-	if not Numbers.integer(environment_seconds,0,2147483647):return reject("First flight requires explicit environment Unix seconds")
+	if not Numbers.integer(environment_seconds,0,2147483647):reject("First flight requires explicit environment Unix seconds");return {}
 	random.seed_from(environment_seconds)
 	var input_random:=random.snapshot()
-	if bindings.resolve(int(data.environment_object_resource_id),"mesh").is_empty():return reject(bindings.error)
+	if bindings.resolve(int(data.environment_object_resource_id),"mesh").is_empty():reject(bindings.error);return {}
 	# The ordinary early-campaign environment reseeds from Unix seconds, then
 	# places the wormhole before selecting yaw. Field construction reseeds again.
 	var environment_position:=Vector3.ZERO
+	var void_environment: RefCounted
+	if int(data.campaign_cursor) in [25,29] or (int(data.campaign_cursor)==33 and data.station_id==-1):
+		void_environment=load("res://src/simulation/void_environment.gd").new()
+		var configured: bool=void_environment.configure_ordinary(bindings,input_random,ordinary_void_source) if int(data.campaign_cursor)==33 else void_environment.configure(bindings,input_random,int(data.campaign_cursor))
+		if not configured or not random.restore(void_environment.snapshot().random_state):reject(void_environment.error+random.error);return {}
+	# The Void incoming gate consumes its two placement draws first. Its slot3
+	# wormhole then uses the same source placement as other early story worlds.
 	for axis in 3:environment_position[axis]=int(data.environment_object_position_offsets[axis])+random.next_int(int(data.environment_object_position_bounds[axis]))
 	# Population places the Alioth portal after ordinary environment draws.
 	if int(data.campaign_cursor)==16:environment_position=Vector3(bindings.mido_travel.alioth_attack.portal.position[0],bindings.mido_travel.alioth_attack.portal.position[1],bindings.mido_travel.alioth_attack.portal.position[2])
+	if int(data.campaign_cursor)==28:
+		var offset: Array=bindings.mido_travel.thynome_expedition.world28.portal.cast_position_offset_xyz
+		environment_position+=Vector3(offset[0],offset[1],offset[2])
 	var before_yaw:=random.snapshot()
-	var units:=int(data.yaw_units)*(1 if random.next_int(2)==0 else -1)
+	# Both portal entries retain the environment heading and bypass the normal
+	# launch's random yaw. Void copies the incoming gate's position only.
+	var retained_heading: bool=void_environment!=null or (int(data.campaign_cursor) in [26,30,33] and incoming!=null)
+	var units:=32768 if retained_heading else int(data.yaw_units)*(1 if random.next_int(2)==0 else -1)
 	var yaw:=f32(f32(units*float(data.angle_fraction))*float(data.angle_tau))
 	var pose:=Transform3D(Basis(Vector3.UP,yaw),Vector3(data.player_position[0],data.player_position[1],data.player_position[2]))
+	if void_environment!=null:pose.origin=void_environment.snapshot().player_position
 	if incoming!=null:
-		if not incoming is Incoming or packet.get("arrival_environment")!=incoming.snapshot() or packet.get("free_context",{}).get("player_position")!=incoming.snapshot().position:return reject("Local arrival pose differs from its generated scenery")
 		var arrival_pose: Variant=incoming.player_pose(pose.basis)
-		if not arrival_pose is Transform3D:return reject(incoming.error)
+		if not arrival_pose is Transform3D:reject(incoming.error);return {}
 		pose=arrival_pose
-	var yaw_random:=random.snapshot()
-	var conditions:={"companions_empty":true,"location_match":false,"special_placement":false}
+	return {"player_pose":pose,"player_yaw_units":units,"input_random_state":input_random,
+		"before_yaw_random_state":before_yaw,"yaw_random_state":random.snapshot(),
+		"position":environment_position,"void_environment":void_environment}
+
+func _construct(bindings: RefCounted, catalogues: RefCounted, packet: Dictionary, data: Dictionary, player: RefCounted, context: Dictionary, environment_seconds: Variant, unix_seconds: Variant, large_display: bool, body_resources: RefCounted, effect_resources: RefCounted, equipment: RefCounted,contracts: RefCounted=null,prepared_scenery: RefCounted=null,incoming: RefCounted=null,environment: Dictionary={}) -> bool:
+	var training: bool=int(data.campaign_cursor)==7
+	var local_entry: bool=int(data.campaign_cursor) in [10,11,12]
+	if incoming!=null:
+		if not incoming is Incoming or packet.get("arrival_environment")!=incoming.snapshot() or packet.get("dekato_context",packet.get("bakka_context",packet.get("sahi_context",packet.get("kappa_context",packet.get("free_context",{}))))).get("player_position")!=incoming.snapshot().position:return reject("Local arrival pose differs from its generated scenery")
+	if environment.is_empty():environment=_prepare_environment(bindings,data,environment_seconds,incoming)
+	if environment.is_empty():return false
+	var pose: Transform3D=environment.player_pose
+	var void_environment: RefCounted=environment.void_environment
+	var random:=Random.new()
+	var ordinary_void: bool=packet.has("void_context") and not Story.ordinary_void_flight(bindings,packet.void_context).is_empty()
+	var conditions:=Story.entry_conditions(int(data.campaign_cursor)) if packet.has("sahi_context") else {"companions_empty":true,"location_match":ordinary_void,"special_placement":false}
 	var scenery: RefCounted=prepared_scenery if prepared_scenery!=null else Scenery.new()
 	if prepared_scenery!=null:
-		if not prepared_scenery is Scenery or (int(data.campaign_cursor) not in [14,16] and not Campaign.supported(bindings.mido_travel,data.campaign_cursor)):return reject("Unexpected prepared flight scenery")
-		if Campaign.supported(bindings.mido_travel,int(data.campaign_cursor)) and (not FreeFlight.available(bindings) or prepared_scenery.snapshot().world_initialization.npc_construction.free_context!=packet.get("free_context")):return reject("Ordinary flight scenery differs from the acknowledged entry")
+		var sahi_story: bool=packet.has("sahi_context") and not Story.flight(bindings,packet.sahi_context).is_empty()
+		if not prepared_scenery is Scenery or (int(data.campaign_cursor) not in [14,16,21] and not Campaign.supported(bindings,data.campaign_cursor) and not sahi_story and not ordinary_void):return reject("Unexpected prepared flight scenery")
+		if ordinary_void:
+			if prepared_scenery.snapshot().world_initialization.get("void_context")!=packet.void_context:return reject("Ordinary Void scenery differs from its selected entry")
+		elif sahi_story:
+			if prepared_scenery.snapshot().world_initialization.npc_construction.get("sahi_context")!=packet.sahi_context:return reject("Sahi scenery differs from the selected story entry")
+		elif packet.has("kappa_context"):
+			if not Kappa.context_valid(bindings,packet.kappa_context) or prepared_scenery.snapshot().world_initialization.npc_construction.get("kappa_context")!=packet.kappa_context:return reject("Kappa scenery differs from its acknowledged departure")
+		elif packet.has("dekato_context"):
+			if not Dekato.context_valid(bindings,packet.dekato_context) or prepared_scenery.snapshot().world_initialization.get("dekato_context")!=packet.dekato_context:return reject("Dekato scenery differs from its selected story entry")
+		elif packet.has("bakka_context"):
+			var bakka_world: Dictionary=prepared_scenery.snapshot().world_initialization
+			if not Bakka.context_valid(bindings,packet.bakka_context) or bakka_world.get("bakka_context")!=packet.bakka_context:return reject("B'akka scenery differs from its selected story entry")
+		elif Campaign.supported(bindings,int(data.campaign_cursor)) and (not FreeFlight.available(bindings) or prepared_scenery.snapshot().world_initialization.npc_construction.get("free_context")!=packet.get("free_context")):return reject("Ordinary flight scenery differs from the acknowledged entry")
 	elif contracts!=null:
 		if not scenery.configure_contract(bindings,catalogues,equipment,contracts,player.cache_snapshot(),pose.origin,conditions,unix_seconds,large_display,body_resources,effect_resources):return reject(scenery.error)
 	elif training:
@@ -314,20 +709,27 @@ func _construct(bindings: RefCounted, catalogues: RefCounted, packet: Dictionary
 	var camera:=Rig.new()
 	if not camera.configure(bindings) or not camera.update(0,shot,scene,initial):return reject(camera.error)
 	var state:=identity.duplicate()
-	if Campaign.supported(bindings.mido_travel,int(data.campaign_cursor)) and Gates.Definitions.available(bindings):
+	if not ordinary_void and (Campaign.supported(bindings,int(data.campaign_cursor)) or int(data.campaign_cursor)==26) and Gates.Definitions.available(bindings):
 		var gates:=Gates.new()
 		if not gates.configure(bindings,catalogues,int(context.station_id)):return reject(gates.error)
 		state.gate_environment=gates.snapshot()
 	state.merge({"campaign_cursor":int(data.campaign_cursor),"world_type":int(data.world_type),"location":context,
-		"entry_conditions":conditions,"departure":packet.duplicate(true),"player_pose":pose,"player_yaw_units":units,
-		"camera_shot":shot,"camera_offset":offset,"input_random_state":input_random,"before_yaw_random_state":before_yaw,"yaw_random_state":yaw_random,
-		"environment_seconds":environment_seconds,"environment_object":{"resource_id":int(data.environment_object_resource_id),"position":environment_position},
+		"entry_conditions":conditions,"departure":packet.duplicate(true),"player_pose":pose,"player_yaw_units":environment.player_yaw_units,
+		"camera_shot":shot,"camera_offset":offset,"input_random_state":environment.input_random_state,"before_yaw_random_state":environment.before_yaw_random_state,"yaw_random_state":environment.yaw_random_state,
+		"environment_seconds":environment_seconds,"environment_object":{"resource_id":int(data.environment_object_resource_id),"position":environment.position},
 		"camera_input_random_state":camera_input,"random_state":random.snapshot(),"unix_seconds":unix_seconds,
 		"entry_released":false,"entry_elapsed_ms":0,"briefing_started":false,"activated":false})
+	if void_environment!=null:
+		state.void_environment=void_environment.snapshot()
+		state.pending_station_id=state.void_environment.return_station_id
+		state.pending_system_id=state.void_environment.return_system_id
+	elif int(data.campaign_cursor)==26:
+		state.pending_station_id=int(context.station_id);state.pending_system_id=int(context.system_id)
 	# Commit only after every prospective owner accepts the complete entry.
-	_state=state;_scenery=scenery;_camera=camera;_player=player
+	_state=state;_scenery=scenery;_camera=camera;_player=player;_void_environment=void_environment;_ordinary_void_source=null
 	_equipment=equipment.fork() if equipment!=null else null
 	_contracts=contracts.fork() if contracts!=null else null
+	_selected_locations=null
 	return true
 
 func _valid_packet(bindings: RefCounted, packet: Dictionary, context: Dictionary, player: RefCounted, equipment: RefCounted=null) -> bool:
@@ -373,7 +775,7 @@ func _valid_packet(bindings: RefCounted, packet: Dictionary, context: Dictionary
 	if ContractWorld.supports(bindings,packet.campaign_cursor):
 		if not Numbers.integer(progress.get("debris_destroyed"),0,2147483647):return reject("Contract departure lost its debris statistic")
 		expected_progress.debris_destroyed=progress.debris_destroyed
-	if progress!=expected_progress:return reject("First flight changed earned campaign progress")
+	if not MiningSession.retain_hint_history(progress,expected_progress,bindings.mining_session) or progress!=expected_progress:return reject("First flight changed earned campaign progress")
 	if ContractWorld.supports(bindings,packet.campaign_cursor):
 		if not Travel.navigation_mission(bindings.mido_travel,packet.campaign_cursor,packet.mission) or packet.contracts.progress!=progress or not ContractWorld.response_flags(bindings,packet.station_response_flags):return reject("Contract departure changed the retained career, responses or pending story")
 		return true
@@ -396,6 +798,9 @@ func camera_owner() -> RefCounted:return null if _camera==null else _camera.fork
 func player_owner() -> RefCounted:return null if _player==null else _player.fork_for_frame()
 func equipment_owner() -> RefCounted:return null if _equipment==null else _equipment.fork()
 func contract_owner() -> RefCounted:return null if _contracts==null else _contracts.fork()
-func clear() -> void:error="";_state={};_scenery=null;_camera=null;_player=null;_equipment=null;_contracts=null
+func selected_locations_owner() -> RefCounted:return null if _selected_locations==null else _selected_locations.fork()
+func void_environment_owner() -> RefCounted:return null if _void_environment==null else _void_environment.fork()
+func ordinary_void_source_owner() -> RefCounted:return null if _ordinary_void_source==null else _ordinary_void_source.fork()
+func clear() -> void:error="";_state={};_scenery=null;_camera=null;_player=null;_equipment=null;_contracts=null;_selected_locations=null;_void_environment=null;_ordinary_void_source=null
 static func f32(value: float) -> float:return PackedFloat32Array([value])[0]
 func reject(message: String) -> bool:error=message;return false

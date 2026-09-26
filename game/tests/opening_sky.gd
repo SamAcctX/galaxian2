@@ -11,6 +11,7 @@ const MaterialLights = preload("res://src/presentation/material_light_state.gd")
 const Geometry = preload("res://src/presentation/opening_geometry.gd")
 const Timeline = preload("res://src/simulation/opening_detail_timeline.gd")
 const FlightCamera = preload("res://src/presentation/flight_camera.gd")
+const AEM = preload("res://src/content/aem.gd")
 var failures := 0
 var native_response := false
 
@@ -53,6 +54,7 @@ func verify_source(content: String, pack: String, texture_pack: String) -> void:
 	check(sky.selection.station_id==78 and sky.selection.system_id==15 and sky.selection.star_variant==0,"Wrong opening location or star alternative")
 	check(sky.layers.size()==2 and sky.layers[0].get_meta("source_resource_id")==17850 and sky.layers[1].get_meta("source_resource_id")==17803,"Wrong opening background mesh set")
 	check(sky.layers[0].get_meta("source_texture_id")==10086 and sky.layers[1].get_meta("source_texture_id")==10068,"Wrong opening texture override")
+	verify_layer_attributes(sky,library,bindings)
 	check(bindings.material_for_mesh(bindings.resolve(17850,"mesh")).is_empty(),"Ambiguous star path material was silently chosen")
 	check(sky.apply_view({"pose":camera.global_transform}),sky.error)
 	var initial := sky.global_transform
@@ -140,6 +142,21 @@ func verify_source(content: String, pack: String, texture_pack: String) -> void:
 					check(image.save_png(output.path_join("%s-phase-%d.png" % [library.manifest.profile.edition,phase]))==OK,"Sky capture failed")
 		if phase==4:break
 	check(phases.size()==5,"Opening sky did not cover all recovered phases")
+	# Independent location-resource case, not a campaign transition or save.
+	# This source sky exposed faceted bands despite prior image-variation tests.
+	check(sky.build_station(library,visuals,bindings,catalogues,42),sky.error)
+	verify_layer_attributes(sky,library,bindings)
+	camera.transform=Transform3D.IDENTITY
+	geometry.hide();lighting.hide()
+	check(sky.apply_view({"pose":camera.global_transform}),sky.error)
+	if DisplayServer.get_name()!="headless":
+		var station_image := await capture(viewport)
+		var output := OS.get_environment("GOF2_CAPTURE_DIR")
+		if not output.is_empty():
+			DirAccess.make_dir_recursive_absolute(output)
+			check(station_image.save_png(output.path_join("%s-source42-sky.png" % bindings.base_content_id.substr(0,8)))==OK,"Source42 sky capture failed")
+			if OS.get_environment("GOF2_SKY_DIAGNOSTICS")=="1":
+				await diagnose_sky(sky,viewport,visuals,output,bindings.base_content_id.substr(0,8),station_image)
 	# Unknown contexts and mixed profiles must leave an empty scene.
 	for context in [[1,3,false],[0,4,false],[0,3,true],[0.5,3,false]]:
 		check(not sky.build(library,visuals,bindings,catalogues,context[0],context[1],context[2]) and sky.get_child_count()==0,"Unsupported sky context retained scenery")
@@ -148,6 +165,106 @@ func verify_source(content: String, pack: String, texture_pack: String) -> void:
 	visuals.base_content_id=original_id
 	viewport.free()
 	print(library.manifest.profile.edition+": opening sky layers, deterministic rotation, camera translation and pre-combat composition verified")
+
+func verify_layer_attributes(sky: Node3D,library: RefCounted,bindings: RefCounted) -> void:
+	for layer in sky.layers:
+		var resource_id: int=layer.get_meta("source_resource_id")
+		var reader := AEM.new()
+		var decoded := reader.decode(library.read_resource(bindings.resolve(resource_id,"mesh"),AEM.MAX_BYTES))
+		check(not decoded.is_empty(),reader.error)
+		if decoded.is_empty():continue
+		var mismatches := {"position":0,"uv":0,"color":0}
+		var color_corners := 0
+		for surface_index in decoded.surfaces.size():
+			var source: Dictionary=decoded.surfaces[surface_index]
+			var arrays: Array=layer.instances[surface_index].mesh.surface_get_arrays(0)
+			check(arrays[Mesh.ARRAY_INDEX].size()==source.indices.size(),"Sky triangle count changed")
+			if arrays[Mesh.ARRAY_INDEX].size()!=source.indices.size():continue
+			var colors: PackedFloat32Array=arrays[Mesh.ARRAY_CUSTOM0] if not source.colors.is_empty() else PackedFloat32Array()
+			for corner in source.indices.size():
+				var source_index: int=source.indices[corner-corner%3+[0,2,1][corner%3]]
+				var rendered_index: int=arrays[Mesh.ARRAY_INDEX][corner]
+				if not arrays[Mesh.ARRAY_VERTEX][rendered_index].is_equal_approx(source.positions[source_index]):mismatches.position+=1
+				if not source.uvs.is_empty():
+					var expected_uv: Vector2=source.uvs[source_index]
+					if decoded.version in [4,5]:expected_uv.y=1.0-expected_uv.y
+					if not arrays[Mesh.ARRAY_TEX_UV][rendered_index].is_equal_approx(expected_uv):mismatches.uv+=1
+				if not source.colors.is_empty():
+					color_corners+=1
+					var actual := Color(colors[rendered_index*4],colors[rendered_index*4+1],colors[rendered_index*4+2],colors[rendered_index*4+3])
+					if not actual.is_equal_approx(source.colors[source_index]):mismatches.color+=1
+		check(mismatches.position==0 and mismatches.uv==0 and mismatches.color==0,"Source sky %d vertex associations differ: %s" % [resource_id,mismatches])
+		print("Source sky %d: V%d flags %d, %d colored corners; association mismatches %s" % [resource_id,decoded.version,decoded.flags,color_corners,mismatches])
+
+func diagnose_sky(sky: Node3D,viewport: SubViewport,visuals: RefCounted,output: String,prefix: String,baseline: Image) -> void:
+	# Explicit diagnostic variants only; no source state or production shader is
+	# altered. Save real source textures beside isolated layers for comparison.
+	for index in sky.layers.size():
+		for other in sky.layers.size():sky.layers[other].visible=other==index
+		var layer: Node3D=sky.layers[index]
+		var image := await capture(viewport)
+		check(image.save_png(output.path_join("%s-layer%d.png" % [prefix,index]))==OK,"Sky layer capture failed")
+		var texture: Image=visuals.load_image(layer.get_meta("source_texture_path"))
+		check(texture!=null,visuals.error)
+		if texture!=null:check(texture.save_png(output.path_join("%s-texture%d.png" % [prefix,index]))==OK,"Source sky texture capture failed")
+		if texture!=null and index==1:
+			var samples := []
+			var camera: Camera3D=viewport.get_camera_3d()
+			for point in [Vector2i(480,270),Vector2i(400,300),Vector2i(500,350),Vector2i(700,300),Vector2i(400,200),Vector2i(250,250),Vector2i(850,150)]:
+				var sample := source_texel(layer,camera,point,texture)
+				check(not sample.is_empty(),"Source sky mesh has a hole at diagnostic pixel %s" % point)
+				sample["pixel"]=[point.x,point.y]
+				var rendered:=image.get_pixelv(point)
+				sample["rendered_rgb"]=[rendered.r,rendered.g,rendered.b]
+				samples.append(sample)
+			var evidence:=FileAccess.open(output.path_join(prefix+"-source-texels.json"),FileAccess.WRITE)
+			check(evidence!=null,"Cannot write source texel diagnostics")
+			if evidence!=null:evidence.store_string(JSON.stringify(samples,"  ")+"\n");evidence.close()
+	for layer in sky.layers:layer.show()
+	for variant in ["no_depth","two_sided","raw_uv"]:
+		var originals := []
+		for layer in sky.layers:
+			for material in layer.materials:
+				originals.append(material.shader)
+				var shader := Shader.new()
+				shader.code=material.shader.code
+				if variant=="no_depth":shader.code=shader.code.replace("depth_draw_never","depth_draw_never, depth_test_disabled")
+				elif variant=="two_sided":shader.code=shader.code.replace("cull_back","cull_disabled")
+				else:shader.code=shader.code.replace("source_diffuse(UV)","source_diffuse(vec2(UV.x,1.0-UV.y))")
+				material.shader=shader
+		var image := await capture(viewport)
+		check(image.save_png(output.path_join("%s-%s.png" % [prefix,variant]))==OK,"Sky diagnostic capture failed")
+		print("Sky diagnostic ",prefix," ",variant," differs=",image.get_data()!=baseline.get_data())
+		var index := 0
+		for layer in sky.layers:
+			for material in layer.materials:
+				material.shader=originals[index];index+=1
+
+func source_texel(layer: Node3D,camera: Camera3D,pixel: Vector2i,image: Image) -> Dictionary:
+	# Independent ray/triangle intersection against decoded source positions,
+	# not against the prepared GPU arrays. Infinite projection omits translation.
+	var direction:=camera.project_ray_normal(Vector2(pixel)+Vector2(0.5,0.5))
+	for surface_index in layer.surfaces.size():
+		var surface: Dictionary=layer.surfaces[surface_index]
+		var local_direction: Vector3=layer.instances[surface_index].global_basis.inverse()*direction
+		for triangle in range(0,surface.indices.size(),3):
+			var a: int=surface.indices[triangle]
+			var b: int=surface.indices[triangle+1]
+			var c: int=surface.indices[triangle+2]
+			var hit: Variant=Geometry3D.ray_intersects_triangle(Vector3.ZERO,local_direction,surface.positions[a],surface.positions[b],surface.positions[c])
+			if hit==null:continue
+			var u: Vector3=surface.positions[b]-surface.positions[a]
+			var v: Vector3=surface.positions[c]-surface.positions[a]
+			var delta: Vector3=hit-surface.positions[a]
+			var determinant:=u.dot(u)*v.dot(v)-u.dot(v)*u.dot(v)
+			var wb: float=(v.dot(v)*delta.dot(u)-u.dot(v)*delta.dot(v))/determinant
+			var wc: float=(u.dot(u)*delta.dot(v)-u.dot(v)*delta.dot(u))/determinant
+			var uv: Vector2=surface.uvs[a]*(1.0-wb-wc)+surface.uvs[b]*wb+surface.uvs[c]*wc
+			uv.y=1.0-uv.y # These diagnostic sources are independently checked V4.
+			var texel:=Vector2i(clampi(floori(uv.x*image.get_width()),0,image.get_width()-1),clampi(floori(uv.y*image.get_height()),0,image.get_height()-1))
+			var color:=image.get_pixelv(texel)
+			return {"triangle":triangle/3,"source_uv":[uv.x,uv.y],"texel":[texel.x,texel.y],"source_rgb":[color.r,color.g,color.b],"geometry_hit":true}
+	return {}
 
 func capture(viewport: SubViewport) -> Image:
 	await process_frame;await process_frame;await RenderingServer.frame_post_draw

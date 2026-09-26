@@ -1,7 +1,9 @@
 extends RefCounted
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 const FreeLife=preload("res://src/content/free_lifecycle_definitions.gd")
 const Kappa=preload("res://src/content/kappa_population_definitions.gd")
 const Alioth=preload("res://src/content/alioth_population_definitions.gd")
+const BakkaCombat=preload("res://src/content/bakka_combat_definitions.gd")
 ## Counter changes in the configured encounter. Save totals and
 ## mission/achievement outcomes require their own verified state owners.
 const Definitions = preload("res://src/content/npc_death_accounting_definitions.gd")
@@ -25,8 +27,10 @@ var _totals := {}
 var _population := 3
 var _training := {}
 var _generations := []
+var _selected41_restarts:={}
 
 func configure(bindings: RefCounted) -> bool:
+	_selected41_restarts={}
 	error="";_identity={};_rules={};_events=[];_totals={};_population=3;_training={};_generations=[]
 	if bindings==null: return reject("NPC death accounting requires content bindings")
 	var rules: Variant=bindings.opening_actors.get("npc_initialization",{}).get("death_accounting",{})
@@ -91,7 +95,7 @@ func register_relaunch(actor: Dictionary) -> bool:
 	if not Numbers.integer(id,0,_population-1):return reject("Recycled death actor is outside the population")
 	for key in ["actor_kind","hull_catalogue_id","subtype","population_group"]:
 		if actor.get(key)!=_training.actors[id].get(key):return reject("Recycled death actor changed its construction")
-	if actor.get("population_group") not in ["patrol","travel"] or actor.get("spawn_generation")!=_generations[id]+1 or actor.get("active")!=true or actor.get("actor_mode")!=1 or actor.get("vitals",{}).get("hull",0)<=0:return reject("Death accounting requires the next restored small ship")
+	if not FreeLife.recyclable_actor(actor) or actor.get("spawn_generation")!=_generations[id]+1 or actor.get("active")!=true or actor.get("actor_mode")!=1 or actor.get("vitals",{}).get("hull",0)<=0:return reject("Death accounting requires the next restored small ship")
 	_generations[id]+=1
 	return true
 
@@ -133,6 +137,31 @@ func configure_kappa_rescue(bindings: RefCounted,construction: RefCounted) -> bo
 	_totals.nonhostile_remaining=0
 	return true
 
+func configure_bakka(bindings: RefCounted,construction: RefCounted) -> bool:
+	if not construction is Construction:return reject("B'akka accounting requires its generated encounter")
+	var data:=BakkaCombat.population(bindings,construction.snapshot())
+	if data.is_empty():return reject("Unsupported B'akka death accounting")
+	if not configure(bindings):return false
+	_training=data;_population=int(data.actor_count);_identity.campaign_cursor=int(data.campaign_cursor)
+	_totals.nonhostile_remaining=0
+	return true
+
+func _configure_story(bindings: RefCounted,data: Dictionary) -> bool:
+	if not configure(bindings):return false
+	_training=data;_population=int(data.actor_count);_identity.campaign_cursor=int(data.campaign_cursor)
+	_totals.nonhostile_remaining=0
+	return true
+
+## Restart eligibility changes, not previously earned counters. A previously
+## killed Void fighter can die once again after this one-time physical reset.
+func _register_selected41_restart(actor: Dictionary) -> bool:
+	if _identity.get("campaign_cursor")!=41 or actor.get("actor_id") not in [1,2,3] or not actor.get("selected41_attack_reset",false) or _selected41_restarts.has(actor.actor_id):return reject("Source41 accounting requires its one-time restored fighter")
+	var count:=0
+	for event in _events:
+		if event.actor_id==actor.actor_id:count+=1
+	_selected41_restarts[actor.actor_id]=count
+	return true
+
 func _record(actor: Dictionary, scripted_restart: bool) -> Dictionary:
 	error=""
 	if _identity.is_empty(): return fail("Configure death accounting before recording a death")
@@ -141,7 +170,8 @@ func _record(actor: Dictionary, scripted_restart: bool) -> Dictionary:
 	var id: Variant=actor.get("actor_id")
 	if not id is int or id<0 or id>=_population: return fail("NPC death is outside the configured population")
 	var kind: int=int(_rules.actor_kind) if _training.is_empty() else int(_training.actors[id].actor_kind)
-	var local: bool=_identity.get("campaign_cursor") in [10,11,12,13,14] or _training.has("kappa_lifecycle") or _training.has("alioth_lifecycle") or _training.has("free_lifecycle")
+	if _identity.get("campaign_cursor")==40 and load("res://src/content/selected40_population_definitions.gd").constructed_kind_matches(actor,kind):kind=int(actor.actor_kind)
+	var local: bool=_identity.get("campaign_cursor") in [10,11,12,13,14] or _training.has("kappa_lifecycle") or _training.has("alioth_lifecycle") or _training.has("free_lifecycle") or _training.get("bakka",false) or _training.get("authored_story",false)
 	var hostile: bool=bool(actor.get("hostile",false)) if local else (true if _training.is_empty() else bool(_training.actors[id].hostile))
 	var modes: Array=[0,1] if local or (not _training.is_empty() and id==int(_training.initial_mode_death_actor)) else [1]
 	if not _generations.is_empty():
@@ -154,7 +184,7 @@ func _record(actor: Dictionary, scripted_restart: bool) -> Dictionary:
 	var prior_count:=0
 	for prior in _events:
 		if prior.actor_id==id and (_generations.is_empty() or prior.get("spawn_generation")==_generations[id]):prior_count+=1
-	if prior_count!=(1 if scripted_restart else 0):return fail("NPC death was already recorded or lacks its prior scripted death")
+	if prior_count!=int(_selected41_restarts.get(id,1 if scripted_restart else 0)):return fail("NPC death was already recorded or lacks its prior scripted death")
 	var player_credit: bool=not actor.nonplayer_kill
 	var delta := {"hostile_remaining":int(_rules.hostile_remaining_delta),"hostile_deaths":int(_rules.hostile_deaths_delta),
 		"world_player_kills":int(_rules.world_player_kills_delta) if player_credit else 0,
@@ -165,7 +195,7 @@ func _record(actor: Dictionary, scripted_restart: bool) -> Dictionary:
 		if not hostile:
 			for key in delta:delta[key]=0
 		delta.nonhostile_remaining=int(_training.nonhostile_remaining_delta) if not hostile else 0
-	if _identity.get("campaign_cursor") in [13,14] or _training.has("kappa_lifecycle") or _training.has("alioth_lifecycle") or _training.has("free_lifecycle"):
+	if _identity.get("campaign_cursor") in [13,14] or _training.has("kappa_lifecycle") or _training.has("alioth_lifecycle") or _training.has("free_lifecycle") or _training.get("bakka",false) or _training.get("authored_story",false):
 		delta.pirate_kills=int(_rules.pirate_kills_delta) if hostile and kind==8 and player_credit else 0
 	elif local:delta.pirate_kills=int(_training.pirate_kills_delta)
 	if _training.has("capital_death"):
@@ -189,17 +219,20 @@ func snapshot() -> Dictionary:
 	var result := _identity.duplicate()
 	result.events=_events.duplicate(true)
 	result.counter_deltas=_totals.duplicate()
+	if not _selected41_restarts.is_empty():result.selected41_restarts=_selected41_restarts.duplicate()
 	# An ordinary courier world still owns an empty traffic-generation ledger.
 	if not _generations.is_empty() or (_population==0 and _training.has("free_lifecycle")):result.spawn_generations=_generations.duplicate()
 	return result
 
 func fork_for_frame() -> RefCounted:
+	# Configuration is fixed after preparation; detach live state only.
 	var copy: RefCounted=get_script().new()
-	copy._identity=_identity.duplicate();copy._rules=_rules.duplicate(true)
+	copy._identity=_identity.duplicate();copy._rules=Readonly.freeze(_rules)
 	copy._events=_events.duplicate(true);copy._totals=_totals.duplicate()
 	copy._population=_population
-	copy._training=_training.duplicate(true)
+	copy._training=Readonly.freeze(_training)
 	copy._generations=_generations.duplicate()
+	copy._selected41_restarts=_selected41_restarts.duplicate()
 	return copy
 
 func reject(message: String) -> bool:

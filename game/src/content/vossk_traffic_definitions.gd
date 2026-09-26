@@ -1,0 +1,9 @@
+extends RefCounted
+## Optional source-backed Vossk ship data; no progression grants.
+const Equal=preload("res://src/content/opening_escape_definitions.gd")
+const VALUES = {"scope":"ordinary_vossk_freighter","actor_kind":1,"hull_catalogue_id":13,"assembly":{"body_resource_ids":[17013,17139,17140],"child_resource_ids":[[18713,17038],[17040],[17041]],"lod_distances":[35000,45000],"maximum_distance":0,"model_scale":1.0},"boxes":[{"offset":[0,351.0,5827.0],"half_extents":[1965.0,795.0,1035.0]},{"offset":[0,616.0,4573.0],"half_extents":[2220.0,1060.0,517.5]},{"offset":[0,780.0,3303.0],"half_extents":[2485.0,1310.0,947.5]},{"offset":[0,456.0,-309.0],"half_extents":[1347.5,1765.0,3300.0]},{"offset":[0,248.0,-5587.0],"half_extents":[1662.5,1510.0,2102.5]}],"death":{"hull_catalogue_id":13,"model_id":18303,"model_resource":"resources/data/assets/main/3d/meshes/ships/cargo_004_vossk_explosion_anim.aem","model_scale":1.0,"initial_material_id":34712,"wreck_layout_id":4,"wreck_material_id":33355}}
+const SPANS = {"vossk_traffic_assembly_entry":[-219294,66],"vossk_traffic_spawn_hull":[-22069,138],"vossk_traffic_assembly":[-219228,203],"vossk_traffic_collision_dispatch":[78680,33],"vossk_traffic_collision_table":[81406,16],"vossk_traffic_collision_boxes":[80798,450],"vossk_traffic_collision_values":[1575402,80],"vossk_traffic_death_layout":[633685,160],"vossk_traffic_wreck_table":[638178,20],"vossk_traffic_wreck_material":[637821,17]}
+const MAC_SPANS = {"vossk_traffic_assembly_entry":[-220250,66],"vossk_traffic_spawn_hull":[-22069,138],"vossk_traffic_assembly":[-220184,203],"vossk_traffic_collision_dispatch":[78680,33],"vossk_traffic_collision_table":[81406,16],"vossk_traffic_collision_boxes":[80798,450],"vossk_traffic_collision_values":[1550466,80],"vossk_traffic_death_layout":[634233,160],"vossk_traffic_wreck_table":[638726,20],"vossk_traffic_wreck_material":[638369,17]}
+
+static func parameters(data: Variant) -> bool:
+	return Equal.equal_value(data,VALUES)

@@ -62,8 +62,7 @@ func fork_for_frame() -> RefCounted:
 	copy._boundaries=_boundaries.duplicate();copy._factors=_factors.duplicate()
 	return copy
 
-static func single(value: float) -> float:
-	return PackedFloat32Array([value])[0]
+static func single(value: float) -> float:return Vector2(value,0.0).x
 
 func reject(message: String) -> bool:
 	error=message;return false

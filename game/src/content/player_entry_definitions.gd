@@ -8,8 +8,10 @@ const Training=preload("res://src/content/combat_training_weapon_definitions.gd"
 const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const Alioth=preload("res://src/content/alioth_lifecycle_definitions.gd")
 const FreeFlight=preload("res://src/content/free_flight_definitions.gd")
+const Sahi=preload("res://src/content/sahi_encounter_definitions.gd")
 const Cache=preload("res://src/simulation/flight_player_cache.gd")
-const KINDS={0:"opening",1:"arrival",2:"mining",4:"full_hold",7:"training",10:"local",11:"local",12:"local",13:"local",14:"convoy",16:"alioth",18:"free",19:"free"}
+const FlightStages=preload("res://src/content/flight_stages.gd")
+const KINDS={0:"opening",1:"arrival",2:"mining",4:"full_hold",7:"training",10:"local",11:"local",12:"local",13:"local",14:"convoy",16:"alioth",21:"kappa"}
 var error:=""
 var cursor:=-1
 var is_arrival:=false
@@ -26,9 +28,11 @@ var _travel:={}
 func configure(bindings: RefCounted, value: int, station_id: int=-1, restoring_local:=false,ship_id: int=-1) -> bool:
 	error="";cursor=-1;is_arrival=false;is_departure=false;uses_equipment=false
 	equipped_entry={};_kind="";_departure={};_training={};_pirate={};_travel={};restores_local=false
-	if bindings==null or not KINDS.has(value):return reject("Unsupported player entry")
-	var kind: String=KINDS[value]
+	if bindings==null or (not KINDS.has(value) and value not in FlightStages.FREE and value not in FlightStages.POST_SAHI and not (value==33 and station_id==-1)):return reject("Unsupported player entry")
+	var kind: String="ordinary_void" if value==33 and station_id==-1 else "post_sahi" if value in FlightStages.POST_SAHI else KINDS.get(value,"free")
+	if value==21 and FreeFlight.Campaign.supported(bindings.mido_travel,value) and not FreeFlight.Campaign.rescue_at(bindings.mido_travel,value,station_id):kind="free"
 	if value==14 and Travel.navigation_available(bindings.mido_travel,value):kind="local"
+	if value in [24,28] and Cache.sahi_entry(bindings.mido_travel,ship_id,value).get("station_id")==station_id:kind="sahi"
 	var departure:=kind in ["mining","full_hold","training"]
 	if departure and not Departure.parameters(bindings.station_departure):return reject("This profile has no supported first departure")
 	if kind=="full_hold" and (not FullHold.parameters(bindings.full_hold_departure) or not FullHold.StationReturn.parameters(bindings.station_return)):return reject("This profile has no supported second mining departure")
@@ -38,9 +42,27 @@ func configure(bindings: RefCounted, value: int, station_id: int=-1, restoring_l
 		_travel=bindings.mido_travel.duplicate(true)
 		equipped_entry=Cache.alioth_entry(_travel)
 		departure=true
+	if kind=="kappa":
+		if not load("res://src/content/kappa_lifecycle_definitions.gd").available(bindings):return reject("Kappa requires its retained equipment and source encounter")
+		equipped_entry=Cache.kappa_entry(bindings.mido_travel)
+		if equipped_entry.is_empty() or station_id!=int(equipped_entry.station_id) or ship_id!=int(equipped_entry.ship_id):return reject("Kappa player entry differs from its supported ship or location")
+		_travel=bindings.mido_travel.duplicate(true);departure=not restoring_local;restores_local=restoring_local
+	if kind=="sahi":
+		_travel=bindings.mido_travel.duplicate(true)
+		equipped_entry=Cache.sahi_entry(_travel,ship_id,value)
+		if equipped_entry.is_empty() or station_id!=int(equipped_entry.station_id):return reject("Sahi player entry requires its selected equipped location")
+		departure=not restoring_local;restores_local=restoring_local
+	if kind=="post_sahi":
+		equipped_entry=Cache.post_sahi_entry(bindings.mido_travel,value,ship_id)
+		if equipped_entry.is_empty() or station_id!=int(equipped_entry.station_id):return reject("The post-Sahi player entry differs from its source world")
+		_travel=bindings.mido_travel.duplicate(true);departure=not restoring_local;restores_local=restoring_local
+	if kind=="ordinary_void":
+		equipped_entry=Cache.ordinary_void_entry(bindings.mido_travel,ship_id)
+		if equipped_entry.is_empty() or not restoring_local:return reject("The ordinary Void player requires its retained portal arrival")
+		_travel=bindings.mido_travel.duplicate(true);departure=false;restores_local=true
 	if kind=="free":
 		if not FreeFlight.available(bindings):return reject("Ordinary player entry is unavailable")
-		equipped_entry=FreeFlight.player_entry(bindings.mido_travel,station_id,ship_id,value)
+		equipped_entry=FreeFlight.player_entry(bindings,station_id,ship_id,value)
 		if equipped_entry.is_empty():return reject("Ordinary player entry requires its equipped location")
 		_travel=bindings.mido_travel.duplicate(true);departure=not restoring_local;restores_local=restoring_local
 	if kind in ["local","convoy"]:
@@ -55,14 +77,53 @@ func configure(bindings: RefCounted, value: int, station_id: int=-1, restoring_l
 	if uses_equipment:
 		_training=bindings.combat_training_weapons.duplicate(true)
 		equipped_entry=_training.player_entry.duplicate(true)
-	if kind in ["local","convoy","alioth","free"]:uses_equipment=true
+	if kind in ["local","convoy","alioth","free","kappa","sahi","post_sahi","ordinary_void"]:uses_equipment=true
 	if kind=="full_hold":_pirate=bindings.full_hold_pirate.duplicate(true)
+	return true
+
+## Explicit native story selection, not an extension of generic free entry.
+## The player adapter requires an actual surviving cache for this arrival.
+func configure_dekato(bindings: RefCounted,context: Dictionary,ship_id: int) -> bool:
+	error="";cursor=-1;is_arrival=false;is_departure=false;uses_equipment=false
+	equipped_entry={};_kind="";_departure={};_training={};_pirate={};_travel={};restores_local=false
+	if not load("res://src/content/dekato_convoy_definitions.gd").context_valid(bindings,context) or ship_id<0:return reject("Dekato player entry requires the selected source context and ship")
+	equipped_entry=bindings.mido_travel.player_entry.duplicate(true)
+	for key in ["campaign_cursor","station_id","system_id"]:equipped_entry[key]=context[key]
+	equipped_entry.ship_id=ship_id
+	cursor=context.campaign_cursor;_kind="dekato";uses_equipment=true;restores_local=true
+	return true
+
+## Pool restoration at the retained origin only. This capability grants neither
+## a location transition nor generic cursor40 player/departure admission.
+func configure_selected40(bindings: RefCounted,context: Dictionary,ship_id: int) -> bool:
+	error="";cursor=-1;is_arrival=false;is_departure=false;uses_equipment=false
+	equipped_entry={};_kind="";_departure={};_training={};_pirate={};_travel={};restores_local=false
+	if not load("res://src/content/selected40_population_definitions.gd").context_valid(bindings,context) or ship_id<0:return reject("Selected40 player pools require their retained source context and ship")
+	equipped_entry=bindings.mido_travel.player_entry.duplicate(true)
+	equipped_entry.merge({"campaign_cursor":context.campaign_cursor,"station_id":context.origin_station_id,"system_id":context.origin_system_id,"ship_id":ship_id},true)
+	cursor=context.campaign_cursor;_kind="selected40";uses_equipment=true;restores_local=true
+	return true
+
+## Explicit source41 pool restoration. General player entry remains closed.
+func configure_selected41(bindings: RefCounted,context: Dictionary,ship_id: int) -> bool:
+	error="";cursor=-1;is_arrival=false;is_departure=false;uses_equipment=false
+	equipped_entry={};_kind="";_departure={};_training={};_pirate={};_travel={};restores_local=false
+	if not load("res://src/content/selected41_population_definitions.gd").context_valid(bindings,context) or ship_id<0:return reject("Source41 player requires its retained native portal context")
+	equipped_entry=bindings.mido_travel.player_entry.duplicate(true)
+	equipped_entry.merge({"campaign_cursor":41,"station_id":-1,"system_id":-1,"ship_id":ship_id},true)
+	cursor=41;_kind="selected41";uses_equipment=true;restores_local=true
 	return true
 
 func player_cache(parameters: Dictionary, seed: Dictionary, hull: int, capacities: Dictionary, reset:=false) -> Dictionary:
 	if cursor<0:return {}
+	if _kind=="selected41":return {} if reset else Cache._departure_cache(parameters,equipped_entry,seed,hull,capacities,false,true)
+	if _kind in ["dekato","selected40"]:return Cache._departure_cache(parameters,equipped_entry,seed,hull,capacities,reset)
 	if _kind=="alioth":return Cache.alioth_attack_cache(parameters,_travel,seed,hull,capacities,reset)
-	if _kind=="free":return Cache.free_flight_cache(parameters,_travel,seed,hull,capacities,reset,cursor)
+	if _kind=="kappa":return Cache.kappa_rescue_cache(parameters,_travel,seed,hull,capacities,reset)
+	if _kind=="sahi":return Cache.sahi_cache(parameters,_travel,seed,hull,capacities,reset,cursor)
+	if _kind=="post_sahi":return Cache.post_sahi_cache(parameters,_travel,seed,hull,capacities,reset,cursor)
+	if _kind=="ordinary_void":return Cache.ordinary_void_cache(parameters,_travel,seed,hull,capacities,reset)
+	if _kind=="free":return Cache._departure_cache(parameters,equipped_entry,seed,hull,capacities,reset)
 	if _kind in ["local","convoy"]:return Cache.local_travel_cache(parameters,_travel,seed,hull,capacities,reset,cursor)
 	if _kind=="training":return Cache.combat_training_cache(parameters,_training,seed,hull,capacities,reset)
 	if is_departure:return Cache.departure_cache(parameters,_departure,seed,hull,capacities,reset)
@@ -71,7 +132,8 @@ func player_cache(parameters: Dictionary, seed: Dictionary, hull: int, capacitie
 
 func contact_weapons(opening_weapon: Dictionary) -> Dictionary:
 	if cursor<0:return {}
-	if _kind in ["convoy","alioth","free"]:return {"candidates":[],"enabled":false,"context":{}}
+	if _kind=="selected41":return {"candidates":[],"enabled":false,"context":{}}
+	if _kind in ["convoy","alioth","free","kappa","sahi","post_sahi","ordinary_void","dekato","selected40"]:return {"candidates":[],"enabled":false,"context":{}}
 	if _kind=="local":
 		var armed:=is_departure or Travel.navigation_available(_travel,cursor)
 		return {"candidates":[Travel.ordinary_weapon(_travel,cursor)] if armed else [],

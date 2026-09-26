@@ -1,4 +1,7 @@
 extends RefCounted
+const FlightStages=preload("res://src/content/flight_stages.gd")
+const Frames=preload("res://src/simulation/frame_clock.gd")
+var _max_ms:=0
 ## Mac starter destruction component. The flight owner supplies its physical
 ## motion before each player pass, then applies the returned camera, activity,
 ## particle and audio events in source order. No cargo or save is owned here.
@@ -20,6 +23,39 @@ var error:=""
 var _rules:={}
 var _state:={}
 var _presentation_identity: RefCounted
+# Immutable departure template shared by frame forks. The launcher remains
+# the authority for any later removal of an exhausted ammunition stack.
+var _departure_loadout: Dictionary={}
+var _selected40_construction: RefCounted
+
+## Explicit selected-source component, not a fabricated ordinary departure.
+## Keep the actual origin inventory and the native constructor generation.
+func configure_selected40(bindings: RefCounted,resources: RefCounted,catalogues: RefCounted,player: RefCounted,scenery: RefCounted,equipment: RefCounted,pose: Transform3D,camera_pose: Transform3D) -> bool:
+	error=""
+	if not _state.is_empty() or not bindings is Bindings or not resources is Resources or not player is Player or not Definitions.parameters(bindings.player_destruction):return reject("Selected40 destruction requires fresh verified native owners")
+	var profile: Dictionary=load("res://src/content/selected40_population_definitions.gd").consequence_profile(bindings,catalogues,scenery,equipment)
+	if profile.is_empty() or not Flight.rigid_pose(pose) or not Flight.rigid_pose(camera_pose):return reject("Selected40 destruction lost its native field, origin equipment or poses")
+	var world: RefCounted=scenery.world_initialization_owner()
+	var constructor: RefCounted=world.npc_construction_owner()
+	var initial: Dictionary=player.snapshot();var loadout: Dictionary=equipment.snapshot().loadout.duplicate(true)
+	loadout.campaign_cursor=40
+	if player.selected40_construction_owner()!=constructor or initial.get("selected40_context")!=profile.context or player.loadout()!=loadout or initial.ship_id!=0 or initial.vitals.hull<=0:return reject("Selected40 destruction requires the living retained player from this exact constructor")
+	for id in initial.equipment_ids:
+		if not Numbers.integer(id,0,catalogues.tables.items.size()-1) or catalogues.tables.items[id].arrays[2][5]==27:return reject("Escape-device destruction is not yet supported")
+	var effect: Dictionary=resources.snapshot()
+	for key in ["base_content_id","binding_id"]:
+		if effect.get(key)!=bindings.get(key):return reject("Selected40 destruction effects belong to another source")
+	var clock:=Explosion.create(effect,[],14292)
+	if clock.is_empty():return reject("Selected40 destruction lacks its original explosion clocks")
+	var rules: Dictionary=bindings.player_destruction.duplicate(true)
+	for index in 2:
+		if clock.models[index].get("model_id")!=int(rules.model_ids[index]) or clock.models[index].get("resource")!=Resources.PATHS[index]:return reject("Selected40 destruction changed its original explosion models")
+	rules.departure_cursor=40;rules.story_cursors=[40]
+	_commit_configuration(bindings,rules,clock,initial,loadout,pose,camera_pose)
+	_selected40_construction=constructor
+	return true
+
+func selected40_construction_owner() -> RefCounted:return _selected40_construction
 
 func configure(bindings: RefCounted, resources: RefCounted, construction: RefCounted,catalogues: RefCounted=null) -> bool:
 	error=""
@@ -29,14 +65,28 @@ func configure(bindings: RefCounted, resources: RefCounted, construction: RefCou
 	for key in ["base_content_id","binding_id"]:
 		if entry.get(key)!=bindings.get(key) or effect.get(key)!=bindings.get(key):return reject("Player destruction belongs to another content identity")
 	var training: bool=entry.get("campaign_cursor")==7
-	var local_flight: bool=entry.get("campaign_cursor") in [10,11,12,13,14,16,18,19]
-	if training:
+	var ordinary_void:=Ordinary.Authored.prepared_ordinary_void(bindings,entry)
+	var local_flight: bool=ordinary_void or entry.get("campaign_cursor") in (FlightStages.LOCAL+FlightStages.POST_SAHI)
+	var first_mining: bool=entry.get("campaign_cursor")==2
+	if first_mining:
+		var flight: Dictionary=Ordinary.for_departure(bindings,entry)
+		var objective: Dictionary=Ordinary.objective(bindings,2)
+		if flight.is_empty() or objective.is_empty() or construction.equipment_owner()!=null:return reject("First-mining destruction requires its accepted starter departure and objective")
+		rules=rules.duplicate(true)
+		rules.departure_cursor=int(flight.campaign_cursor)
+		rules.story_cursors=[int(flight.campaign_cursor),int(objective.cursor_after_acknowledgement)]
+	elif training:
 		if Training.flight(bindings).is_empty() or construction.equipment_owner()==null:return reject("Training destruction requires its equipped ordinary departure")
 		rules=rules.duplicate(true)
 		rules.departure_cursor=7;rules.story_cursors=[7,int(bindings.combat_training_story.cursor_after_acknowledgement)]
 	elif local_flight:
 		if Ordinary.for_departure(bindings,entry).is_empty() or construction.equipment_owner()==null:return reject("Local destruction requires its equipped Mido flight")
 		rules=rules.duplicate(true);rules.departure_cursor=int(entry.campaign_cursor);rules.story_cursors=[entry.campaign_cursor,17 if entry.campaign_cursor==16 else entry.campaign_cursor]
+		var campaign=load("res://src/content/free_campaign_definitions.gd")
+		if campaign.visit_at(bindings.mido_travel,entry.campaign_cursor,entry.location.station_id):
+			var visit: Dictionary=campaign.dialogue_rules(bindings,entry.campaign_cursor,entry.departure.mission)
+			rules.story_cursors.append(int(visit.next_cursor))
+		if Ordinary.Kappa.prepared_entry(bindings,entry):rules.story_cursors.append(22)
 	if entry.get("campaign_cursor")!=int(rules.departure_cursor) or entry.get("departure",{}).get("loadout",{}).get("ship_id")!=int(rules.ship_id):return reject("Unsupported player destruction context")
 	var clock:=Explosion.create(effect,[],14292)
 	if clock.is_empty():return reject("Player destruction lacks its authored explosion clocks")
@@ -49,32 +99,42 @@ func configure(bindings: RefCounted, resources: RefCounted, construction: RefCou
 	# retained drill/scanner. None supplies the escape-pod subtype27.
 	if training and not expected_equipment.all(func(id):return id in [0,22,55,81,90]):return reject("Training destruction has an unsupported escape-device context")
 	if local_flight:
-		if entry.campaign_cursor in [18,19] and Fitting.available(bindings) and catalogues!=null:
+		if (ordinary_void or entry.campaign_cursor in (FlightStages.FREE+FlightStages.POST_SAHI)) and Fitting.available(bindings) and catalogues!=null:
 			if catalogues.content_id!=bindings.base_content_id:return reject("Destruction equipment belongs to another catalogue")
 			for id in expected_equipment:
 				if not Numbers.integer(id,0,catalogues.tables.items.size()-1) or catalogues.tables.items[id].arrays[2][5]==27:return reject("Escape-device destruction is not yet supported")
-		elif expected_equipment!=[22,86,81,55]:return reject("Local destruction has an unsupported escape-device context")
+		# Either tutorial starter gun may remain mounted beside the exchanged gear.
+		elif expected_equipment not in [[22,86,81,55],[0,86,81,55]]:return reject("Local destruction has an unsupported escape-device context")
+	_commit_configuration(bindings,rules,clock,initial,entry.departure.loadout,entry.player_pose,entry.camera_view.pose)
+	return true
+
+func _commit_configuration(bindings: RefCounted,rules: Dictionary,clock: Dictionary,initial: Dictionary,loadout: Dictionary,pose: Transform3D,camera_pose: Transform3D) -> void:
 	_rules=rules.duplicate(true)
+	# Imported JSON numbers become floats; native story observations use ints.
+	_rules.story_cursors=_rules.story_cursors.map(func(value):return int(value))
+	_max_ms=Frames.simulation_limit(bindings,150)
 	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"actor_id":"player",
 		"departure_cursor":int(rules.departure_cursor),"campaign_cursor":int(rules.departure_cursor),
 		"phase":"ready","elapsed_ms":0,"player_updates":0,"failure_elapsed_ms":0,"fade_elapsed_ms":0,
 		"failed":false,"exit_requested":false,"fragments":[],"effect":clock,
-		"physical_pose":entry.player_pose,"statistics_pose":entry.player_pose,"model_rotation":Vector3.ZERO,"rendered_model_basis":Basis.IDENTITY,
-		"camera_pose":entry.camera_view.pose,"camera_follow_enabled":true,"particle_emitting":false,"particle_drawing":true,
+		"physical_pose":pose,"statistics_pose":pose,"model_rotation":Vector3.ZERO,"rendered_model_basis":Basis.IDENTITY,
+		"camera_pose":camera_pose,"camera_follow_enabled":true,"particle_emitting":false,"particle_drawing":true,
 		"equipment_ids":initial.equipment_ids.duplicate(),"events":{}}
+	_departure_loadout=loadout.duplicate(true)
 	_presentation_identity=RefCounted.new()
-	return true
+	_selected40_construction=null
 
-func start(player: RefCounted, physical_pose: Variant, model_rotation: Variant, camera_pose: Variant, campaign_cursor: Variant, rendered_model_basis: Variant=null, statistics_pose: Variant=null) -> bool:
+func start(player: RefCounted, physical_pose: Variant, model_rotation: Variant, camera_pose: Variant, campaign_cursor: Variant, rendered_model_basis: Variant=null, statistics_pose: Variant=null, secondaries: RefCounted=null) -> bool:
 	error=""
 	if _state.is_empty() or _state.phase!="ready" or not player is Player:return reject("Start player destruction once, after accepted lethal contact")
+	if _selected40_construction!=null and player.selected40_construction_owner()!=_selected40_construction:return reject("Selected40 destruction rejected another native player generation")
 	var current: Dictionary=player.snapshot()
 	for key in ["base_content_id","binding_id"]:
 		if current.get(key)!=_state[key]:return reject("Lethal player belongs to another departure")
-	if current.get("campaign_cursor")!=_state.departure_cursor or current.get("ship_id")!=int(_rules.ship_id) or current.get("equipment_ids")!=_state.equipment_ids:return reject("Lethal player changed its supported loadout")
+	if current.get("campaign_cursor")!=_state.departure_cursor or current.get("ship_id")!=int(_rules.ship_id) or not _accepts_equipment(current.get("equipment_ids"),secondaries):return reject("Lethal player changed its supported loadout")
 	if not Numbers.integer(current.get("vitals",{}).get("hull"),0,0):return reject("Player destruction requires exhausted hull")
 	if not Flight.rigid_pose(physical_pose) or not Flight.rigid_pose(camera_pose) or not model_rotation is Vector3 or not model_rotation.is_finite():return reject("Player destruction requires finite source poses and Euler angles")
-	if not campaign_cursor is int or (campaign_cursor!=int(_rules.story_cursors[0]) and campaign_cursor!=int(_rules.story_cursors[1])):return reject("Unsupported player destruction story cursor")
+	if not campaign_cursor is int or not campaign_cursor in _rules.story_cursors:return reject("Unsupported player destruction story cursor")
 	if (rendered_model_basis==null)!=(statistics_pose==null):return reject("Supply the retained visual basis and statistics pose together")
 	if rendered_model_basis!=null:
 		if not rendered_model_basis is Basis or not Flight.rigid_pose(Transform3D(rendered_model_basis,Vector3.ZERO)) or not Flight.rigid_pose(statistics_pose):return reject("Player destruction requires rigid retained visual and statistics poses")
@@ -97,12 +157,18 @@ func start(player: RefCounted, physical_pose: Variant, model_rotation: Variant, 
 	_state=next
 	return true
 
+func _accepts_equipment(equipment_ids: Variant,secondaries: RefCounted=null) -> bool:
+	if equipment_ids==_state.equipment_ids:return true
+	if not is_instance_of(secondaries,load("res://src/simulation/secondary_weapons.gd")):return false
+	var retained: Dictionary=secondaries.reconcile_loadout(_departure_loadout)
+	return not retained.is_empty() and equipment_ids==retained.equipment_ids
+
 func player_updates_enabled() -> bool:
 	return not _state.is_empty() and _state.phase!="ready" and not _state.exit_requested and _state.fade_elapsed_ms<int(_rules.fade_ms)
 
 func advance(milliseconds: Variant, physical_pose: Variant, random_state: Variant, paused:=false, statistics_pose: Variant=null, player_tail:=true) -> Dictionary:
 	error=""
-	if _state.is_empty() or _state.phase=="ready" or not Numbers.integer(milliseconds,0,150) or not Flight.rigid_pose(physical_pose):return fail("Player destruction requires a started scene, finite physical pose and bounded frame")
+	if _state.is_empty() or _state.phase=="ready" or not Numbers.integer(milliseconds,0,_max_ms) or not Flight.rigid_pose(physical_pose):return fail("Player destruction requires a started scene, finite physical pose and bounded frame")
 	if statistics_pose!=null and not Flight.rigid_pose(statistics_pose):return fail("Player destruction requires a rigid statistics sample from flight")
 	var random:=Random.new()
 	if not random.restore(random_state):return fail(random.error)
@@ -187,8 +253,10 @@ func presentation_identity() -> RefCounted:return _presentation_identity
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._rules=_rules.duplicate(true);copy._state=_state.duplicate(true);copy._presentation_identity=_presentation_identity
-	return copy
+	copy._departure_loadout=_departure_loadout
+	copy._selected40_construction=_selected40_construction
+	copy._max_ms=_max_ms;return copy
 
-func clear() -> void:error="";_rules={};_state={};_presentation_identity=null
+func clear() -> void:_max_ms=0;error="";_rules={};_state={};_presentation_identity=null;_departure_loadout={};_selected40_construction=null
 func reject(message: String) -> bool:error=message;return false
 func fail(message: String) -> Dictionary:reject(message);return {}

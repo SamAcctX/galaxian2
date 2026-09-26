@@ -127,9 +127,9 @@ func check_combat(library: RefCounted, bindings: RefCounted, catalogues: RefCoun
 			"malformed":bad.damage=true
 		check(group.weapon_hit(0,bad).is_empty() and group.snapshot()==before,"Unsupported weapon hit changed NPC state: "+key)
 	check(group.weapon_hit(3,weapon).is_empty() and group.snapshot()==before,"Absent target accepted source hit")
-	check(group._actors[0].set_permissions(true,false,true),"Cannot set damage permission")
+	check(group._writable(0).set_permissions(true,false,true),"Cannot set damage permission")
 	check(not group.weapon_hit(0,weapon).accepted and group.snapshot().actors[0].vitals.hull==144,"Resolved hit bypassed damage gate")
-	check(group._actors[0].set_permissions(true,true,true),"Cannot restore damage permission")
+	check(group._writable(0).set_permissions(true,true,true),"Cannot restore damage permission")
 	var deaths := 0
 	for i in 25:
 		if group.weapon_hit(0,weapon).destroyed_now:deaths+=1

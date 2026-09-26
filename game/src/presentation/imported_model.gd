@@ -36,8 +36,18 @@ func build(model: Dictionary, diffuse: Image = null, normal_specular: Image = nu
 			arrays[Mesh.ARRAY_TEX_UV] = uvs
 		if not surface.normals.is_empty():
 			arrays[Mesh.ARRAY_NORMAL] = surface.normals
+		var flags := 0
+		if not surface.colors.is_empty():
+			# Carry HDR colors through normal/tangent generation with the other
+			# vertex attributes: SurfaceTool may split or reorder vertices.
+			# COLOR would quantize them to eight bits; custom floats retain them.
+			var color_values := PackedFloat32Array()
+			for color in surface.colors:
+				color_values.append_array(PackedFloat32Array([color.r,color.g,color.b,color.a]))
+			arrays[Mesh.ARRAY_CUSTOM0] = color_values
+			flags = Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
 		var mesh := ArrayMesh.new()
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, flags)
 		var builder := SurfaceTool.new()
 		builder.create_from(mesh, 0)
 		if surface.normals.is_empty():
@@ -45,16 +55,6 @@ func build(model: Dictionary, diffuse: Image = null, normal_specular: Image = nu
 		if not surface.uvs.is_empty():
 			builder.generate_tangents()
 		mesh = builder.commit()
-		if not surface.colors.is_empty():
-			# Preserve source floating-point/HDR colors; Godot's COLOR attribute
-			# quantizes to eight bits. Add custom floats after tangent generation.
-			var color_values := PackedFloat32Array()
-			for color in surface.colors:
-				color_values.append_array(PackedFloat32Array([color.r, color.g, color.b, color.a]))
-			arrays = mesh.surface_get_arrays(0)
-			arrays[Mesh.ARRAY_CUSTOM0] = color_values
-			mesh = ArrayMesh.new()
-			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 		var material := MaterialLibrary.create(render_type, diffuse_texture,
 			normal_texture if not surface.uvs.is_empty() else null, not surface.colors.is_empty())
 		var instance := MeshInstance3D.new()
@@ -76,11 +76,11 @@ func copy_from(template: Node3D) -> void:
 		var material: ShaderMaterial = template.materials[i].duplicate(false)
 		var instance := MeshInstance3D.new()
 		instance.mesh = template.instances[i].mesh
+		instance.transform = template.instances[i].transform
 		instance.material_override = material
 		add_child(instance)
 		instances.append(instance)
 		materials.append(material)
-	set_source_time(0.0)
 
 func set_source_time(time: float) -> void:
 	for i in surfaces.size():

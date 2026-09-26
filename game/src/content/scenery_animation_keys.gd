@@ -98,8 +98,8 @@ static func ratio(numerator: int, denominator: int) -> float:
 static func blend(left: float, right: float, weight: float) -> float:
 	return single(left+single(weight*single(right-left)))
 
-static func single(value: float) -> float:
-	return PackedFloat32Array([value])[0]
+# Single-precision engine vectors round each component like a source float cast.
+static func single(value: float) -> float:return Vector2(value,0.0).x
 
 func reject(message: String) -> Dictionary:
 	error=message;return {}

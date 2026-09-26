@@ -46,7 +46,7 @@ func configure_alioth_freighter(data: Dictionary,ordinary_detail: Dictionary) ->
 func configure_assembly(bindings: RefCounted,assembly: Dictionary) -> bool:
 	_selector.clear();error=""
 	if bindings==null:return reject("Ship detail requires content declarations")
-	if FreePopulation.available(bindings) and bindings.mido_travel.free_population.freighter_assemblies.values().has(assembly):
+	if FreePopulation.available(bindings) and FreePopulation.assembly_hull(bindings,assembly)>=0:
 		if not Definitions.parameters(bindings.ship_lod):return reject("Ordinary ship detail declarations are unavailable")
 		return _configure_assembly(assembly,bindings.ship_lod)
 	var alioth: Dictionary=bindings.mido_travel.get("alioth_attack",{})

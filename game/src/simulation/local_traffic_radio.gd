@@ -19,7 +19,7 @@ var _last_time:=-1
 
 func configure(bindings: RefCounted, library: RefCounted, layout: RefCounted,cursor: int=10) -> bool:
 	error="";_identity={};_rules={};_templates={};_last_received={};_pending={};_message={};_portrait={};_active=null;_last_time=-1
-	if bindings==null or (Travel.journey(bindings.mido_travel,cursor).is_empty() and not ContractWorld.supports(bindings,cursor) and not (load("res://src/content/free_campaign_definitions.gd").supported(bindings.mido_travel,cursor) and FreeFlight.available(bindings))):return reject("Local radio requires its verified declarations")
+	if bindings==null or (Travel.journey(bindings.mido_travel,cursor).is_empty() and not ContractWorld.supports(bindings,cursor) and not (load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) and FreeFlight.available(bindings))):return reject("Local radio requires its verified declarations")
 	var templates:={};var rules: Dictionary=bindings.mido_travel.traffic_combat.radio
 	for kind in ["warning","response"]:
 		for value in rules[kind+"_text_ids"]:
@@ -59,10 +59,12 @@ func evaluate(elapsed_ms: int, reaction: Dictionary, random_state: Dictionary) -
 			next._portrait={"status":"fixed","family":family,"parts":parts}
 			events=next._step(elapsed_ms)
 	else:events=next._step(elapsed_ms)
+	if not next.error.is_empty():return fail(next.error)
 	return {"radio":next,"random_state":random.snapshot(),"events":events}
 
 func _step(elapsed_ms: int) -> Array:
 	var events: Array=_active.step(elapsed_ms,{},0)
+	if not _active.error.is_empty():reject(_active.error);return []
 	for event in events:
 		event.message_kind=_message.kind
 		event.merge(_message)

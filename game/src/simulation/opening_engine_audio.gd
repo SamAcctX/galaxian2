@@ -1,5 +1,5 @@
 extends RefCounted
-## The fresh player's retained engine. Rendering owns the actual sound instance.
+## The player's retained engine. Rendering owns the actual sound instance.
 ## Raw commands are consumed before manual movement and sampled after the camera.
 const Selection=preload("res://src/simulation/engine_audio.gd")
 const Loadout=preload("res://src/simulation/opening_loadout.gd")
@@ -20,9 +20,35 @@ func configure(bindings: RefCounted,catalogues: RefCounted,scene: Dictionary) ->
 	var repair: Dictionary=bindings.opening_actors.get("player_initialization",{}).get("repair",{})
 	var flight: Dictionary=bindings.opening_staging.get("player_flight",{})
 	if repair.is_empty() or flight.is_empty():return reject("Player engine lacks its fresh movement and equipment owners")
-	var selection:=Selection.new();var loadout:=Loadout.new()
-	if not selection.configure(bindings,catalogues) or not loadout.configure(bindings,catalogues,bindings.base_content_id):return reject(selection.error+loadout.error)
+	var loadout:=Loadout.new()
+	if not loadout.configure(bindings,catalogues,bindings.base_content_id):return reject(loadout.error)
 	var seed: Dictionary=loadout.snapshot()
+	if not _configure_loadout(bindings,catalogues,seed,repair,pose):return false
+	_ordinary_phase=int(flight.ordinary_phase)
+	_arrival_id=int(bindings.opening_staging.get("escape",{}).get("arrival_engine_sound_id",-1))
+	return true
+
+## A selected native player supplies its actual origin loadout. Never construct
+## the opening ship or relocate its equipment to the prospective source world.
+func configure_selected40(bindings: RefCounted,catalogues: RefCounted,player: RefCounted,pose: Transform3D) -> bool:
+	error=""
+	if not _state.is_empty() or not is_instance_of(player,load("res://src/simulation/opening_player_state.gd")):return reject("Retained engine requires a fresh owner and native selected40 player")
+	if bindings==null or catalogues==null or player.selected40_construction_owner()==null or not pose.is_finite():return reject("Retained engine lost its native construction or position")
+	var seed: Dictionary=player.loadout()
+	var context: Dictionary=load("res://src/content/selected40_population_definitions.gd").retained_player_context(bindings,player.selected40_construction_owner().snapshot(),seed)
+	if context.is_empty() or player.snapshot().get("selected40_context")!=context:return reject("Retained engine belongs to another selected40 generation")
+	var repair: Dictionary=bindings.opening_actors.get("player_initialization",{}).get("repair",{})
+	var flight: Dictionary=bindings.opening_staging.get("player_flight",{})
+	if repair.is_empty() or flight.is_empty():return reject("Retained engine lacks source movement and ship-upgrade declarations")
+	if not _configure_loadout(bindings,catalogues,seed,repair,pose):return false
+	_ordinary_phase=int(flight.ordinary_phase)
+	# This world has no fresh-opening escape-engine replacement.
+	_arrival_id=-1
+	return true
+
+func _configure_loadout(bindings: RefCounted,catalogues: RefCounted,seed: Dictionary,repair: Dictionary,pose: Transform3D) -> bool:
+	var selection:=Selection.new()
+	if not selection.configure(bindings,catalogues):return reject(selection.error)
 	var chosen: Dictionary=selection.select(seed.ship_id,repair.initial_upgrades,seed.equipment_ids)
 	if chosen.is_empty():return reject(selection.error)
 	if selection.program(int(chosen.source_id)).is_empty():return reject(selection.error)
@@ -31,9 +57,10 @@ func configure(bindings: RefCounted,catalogues: RefCounted,scene: Dictionary) ->
 	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,
 		"initial_source_id":int(chosen.source_id),"source_id":int(chosen.source_id),
 		"generation":0,"parameters":[0.0,0.0,0.0],"position":pose.origin,"active":true,"elapsed_ms":0}
-	_selection=selection;_ordinary_phase=int(flight.ordinary_phase)
-	_arrival_id=int(bindings.opening_staging.get("escape",{}).get("arrival_engine_sound_id",-1))
+	_selection=selection
 	return true
+
+func before_ordinary_motion() -> bool:return before_motion(_ordinary_phase)
 
 func before_motion(phase: int) -> bool:
 	error=""

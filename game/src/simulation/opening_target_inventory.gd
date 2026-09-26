@@ -1,4 +1,5 @@
 extends RefCounted
+const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Complete ordinary target membership for verified opening and training worlds.
 ## Unknown equipment groups and changed source populations remain unsupported.
 const Opening = preload("res://src/content/opening_sky_definitions.gd")
@@ -14,11 +15,39 @@ const Training=preload("res://src/content/combat_training_weapon_definitions.gd"
 const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const Ambient=preload("res://src/content/ambient_population_definitions.gd")
 const ContractWorld=preload("res://src/content/contract_world_definitions.gd")
+const VoidCrystals=preload("res://src/content/void_crystal_definitions.gd")
 const REQUIRED_EQUIPMENT_TYPE := 33
 var error := ""
 var _state := {}
 var _actors := []
 var _scenery := []
+var _selected40_construction: RefCounted
+var _selected40_context:={}
+
+## Target location belongs to the actual generated source field. The player's
+## canonical equipment remains at its retained origin; no cache is relocated.
+func configure_selected40(bindings: RefCounted,catalogues: RefCounted,player: RefCounted,scenery: RefCounted,equipment: RefCounted,combat: RefCounted) -> bool:
+	error=""
+	if not _state.is_empty() or not player is Player or not is_instance_of(combat,load("res://src/simulation/opening_combat_group.gd")):return reject("Selected40 targets require fresh inventory and native player/combat owners")
+	var rules=load("res://src/content/selected40_population_definitions.gd")
+	var data: Dictionary=rules.consequence_profile(bindings,catalogues,scenery,equipment)
+	if data.is_empty() or not combat.has_local_reactions() or not rules.matches_world(scenery,combat.selected40_world_owner()):return reject("Selected40 targets require the complete same-generation consequence owners")
+	var construction: RefCounted=combat.selected40_world_owner().npc_construction_owner()
+	var source: Dictionary=player.loadout();var expected: Dictionary=equipment.snapshot().loadout.duplicate(true)
+	expected.campaign_cursor=40
+	if player.selected40_construction_owner()!=construction or player.snapshot().get("selected40_context")!=data.context or source!=expected:return reject("Selected40 targets differ from their native retained origin player")
+	var field: Dictionary=scenery.snapshot();var count: Dictionary=field.departure_population
+	if not _configure_source(bindings,catalogues,source,construction.snapshot().actors,field,count,data):return false
+	_selected40_construction=construction;_selected40_context=data.context.duplicate(true)
+	_state.selected40_context=_selected40_context.duplicate(true)
+	_state.target_station_id=int(data.station_id);_state.target_system_id=int(data.system_id)
+	return true
+
+func matches_selected40(combat: RefCounted,construction: RefCounted,context: Dictionary) -> bool:
+	if _selected40_construction==null or construction!=_selected40_construction or context!=_selected40_context:return false
+	if not is_instance_of(combat,load("res://src/simulation/opening_combat_group.gd")) or not combat.has_local_reactions():return false
+	var world: RefCounted=combat.selected40_world_owner()
+	return world!=null and world.npc_construction_owner()==_selected40_construction
 
 func configure(bindings: RefCounted, catalogues: RefCounted, opening_field: Dictionary) -> bool:
 	clear()
@@ -43,10 +72,41 @@ func configure_combat_training(bindings: RefCounted, catalogues: RefCounted, pla
 
 func configure_local_travel(bindings: RefCounted, catalogues: RefCounted, player: RefCounted, scenery: RefCounted, cursor: int=10) -> bool:
 	if bindings==null or not Travel.parameters(bindings.mido_travel):clear();return reject("Local targets require their source declarations")
-	if not (load("res://src/content/free_campaign_definitions.gd").supported(bindings.mido_travel,cursor) and load("res://src/content/free_flight_definitions.gd").available(bindings)) and not (cursor==16 and load("res://src/content/alioth_flight_definitions.gd").available(bindings)) and not (cursor==14 and not load("res://src/content/convoy_world_definitions.gd").flight(bindings,79).is_empty()) and not (ContractWorld.supports(bindings,cursor)) and (cursor not in [10,11,12] or Travel.journey(bindings.mido_travel,cursor).is_empty()):clear();return reject("Unsupported local target context")
+	if not (load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) and load("res://src/content/free_flight_definitions.gd").available(bindings)) and not (cursor==16 and load("res://src/content/alioth_flight_definitions.gd").available(bindings)) and not (cursor==14 and not load("res://src/content/convoy_world_definitions.gd").flight(bindings,79).is_empty()) and not (ContractWorld.supports(bindings,cursor)) and (cursor not in [10,11,12] or Travel.journey(bindings.mido_travel,cursor).is_empty()):clear();return reject("Unsupported local target context")
 	return _configure_equipped(bindings,catalogues,player,scenery,cursor)
 
-func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, player: RefCounted, scenery: RefCounted, cursor: int) -> bool:
+func configure_kappa_rescue(bindings: RefCounted,catalogues: RefCounted,player: RefCounted,scenery: RefCounted) -> bool:
+	clear()
+	if not player is Player or scenery==null or scenery.get_script()==null or scenery.get_script().resource_path!="res://src/simulation/opening_scenery.gd":return reject("Kappa targets require native player and scenery owners")
+	var world: RefCounted=scenery.world_initialization_owner()
+	if world==null:return reject("Kappa targets require completed world construction")
+	var packet: Dictionary=world.snapshot().get("npc_construction",{})
+	var data: Dictionary=load("res://src/content/kappa_population_definitions.gd").lifecycle(bindings,packet)
+	if data.is_empty() or player.snapshot().get("kappa_context")!=packet.kappa_context:return reject("Kappa targets differ from the player's generated encounter")
+	return _configure_equipped(bindings,catalogues,player,scenery,int(data.campaign_cursor))
+
+func _configure_story(bindings: RefCounted,catalogues: RefCounted,player: RefCounted,scenery: RefCounted,data: Dictionary) -> bool:
+	return _configure_equipped(bindings,catalogues,player,scenery,int(data.campaign_cursor),data)
+
+func configure_ordinary_void(bindings: RefCounted,catalogues: RefCounted,player: RefCounted,scenery: RefCounted,data: Dictionary) -> bool:
+	clear()
+	if bindings==null or not data.get("ordinary_void",false) or not player is Player or scenery==null or scenery.get_script()==null or scenery.get_script().resource_path!="res://src/simulation/opening_scenery.gd":return reject("Void targets require the generated fighter, player and crystal field")
+	var world: RefCounted=scenery.world_initialization_owner()
+	var initial: Dictionary={} if world==null else world.snapshot()
+	var source: Dictionary=player.loadout();var field: Dictionary=scenery.snapshot()
+	if initial.get("campaign_cursor")!=33 or not initial.get("void_context") is Dictionary or source.get("campaign_cursor")!=33 or source.get("station_id")!=-1 or source.get("system_id")!=-1:return reject("Void target player differs from the selected location")
+	for key in initial.void_context:
+		if data.context.get(key)!=initial.void_context[key]:return reject("Void target selection changed after fighter construction")
+	if source.get("base_content_id")!=bindings.base_content_id or source.get("binding_id")!=bindings.binding_id or initial.get("base_content_id")!=bindings.base_content_id or initial.get("binding_id")!=bindings.binding_id:return reject("Void target content identity changed")
+	var context: Dictionary=initial.void_context.duplicate(true);context.merge(initial.entry_conditions,true)
+	if not VoidCrystals.selected_void(bindings.mido_travel,context):return reject("Void target lost its nonstory selection")
+	var population:=Population.new()
+	if not population.configure(bindings):return reject(population.error)
+	var count: Dictionary=population.for_void_crystals(context)
+	if count.is_empty():return reject(population.error)
+	return _configure_source(bindings,catalogues,source,initial.npc_construction.actors,field,count,data,true,true)
+
+func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, player: RefCounted, scenery: RefCounted, cursor: int, story: Dictionary={}) -> bool:
 	clear()
 	# Scenery also owns primary contact staging; avoid a preload cycle through
 	# its primary owner while still requiring the native scenery implementation.
@@ -54,15 +114,17 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, player: R
 	var source: Dictionary=player.loadout();var field: Dictionary=scenery.snapshot()
 	if source.get("campaign_cursor")!=cursor or source.get("binding_id")!=bindings.binding_id or source.get("base_content_id")!=bindings.base_content_id:return reject("Equipped target entry has a different identity")
 	var world: RefCounted=scenery.world_initialization_owner()
-	if world==null or world.snapshot().get("campaign_cursor")!=cursor:return reject("Equipped targets require completed world construction")
+	var initial: Dictionary={} if world==null else world.snapshot()
+	if initial.get("campaign_cursor")!=cursor:return reject("Equipped targets require completed world construction")
 	var population:=Population.new()
 	if not population.configure(bindings):return reject(population.error)
-	var count:=population.for_departure(source.station_id,world.snapshot().entry_conditions,cursor)
+	var count:=population.for_dekato(bindings,story.context,initial.entry_conditions) if story.get("context_key")=="dekato_context" else population.for_departure(source.station_id,initial.entry_conditions,cursor)
 	if count.is_empty():return reject(population.error)
-	return _configure_source(bindings,catalogues,source,world.snapshot().npc_construction.actors,field,count)
+	return _configure_source(bindings,catalogues,source,initial.npc_construction.actors,field,count,story,initial.entry_conditions.location_match)
 
-func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dictionary, actor_rows: Array, opening_field: Dictionary, count: Dictionary) -> bool:
+func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dictionary, actor_rows: Array, opening_field: Dictionary, count: Dictionary, story: Dictionary={},location_match:=false,ordinary_void:=false) -> bool:
 	if catalogues==null or catalogues.content_id!=bindings.base_content_id or not Vehicle.valid_parameters(bindings.vehicle_response):return reject("Target inventory requires matching equipment type declarations")
+	var location: Dictionary=story.selected40_entry if story.get("context_key")=="selected40_context" else source
 	var type_index := int(bindings.vehicle_response.item_type_value_index)
 	for id in source.equipment_ids:
 		var values: Variant = catalogues.tables.items[id].arrays[2]
@@ -70,8 +132,13 @@ func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dic
 			return reject("Opening equipment has no supported source type")
 		if int(values[type_index])==REQUIRED_EQUIPMENT_TYPE:
 			return reject("Opening equipment requires an unsupported additional target group")
-	for key in ["base_content_id","binding_id","station_id","system_id"]:
+	for key in ["base_content_id","binding_id"]:
 		if not exact_value(opening_field.get(key),source[key]):return reject("Opening target field has a different identity or location")
+	if ordinary_void:
+		if opening_field.get("station_id")!=-1 or opening_field.get("system_id")!=-1 or source.get("station_id")!=-1 or source.get("system_id")!=-1:return reject("Void target field or equipped selected location changed")
+	else:
+		for key in ["station_id","system_id"]:
+			if not exact_value(opening_field.get(key),location[key]):return reject("Opening target field has a different identity or location")
 	if not opening_field.get("center") is Vector3 or opening_field.center!=count.center:
 		return reject("Ordinary targets require the source scenery center")
 	var rows: Variant = opening_field.get("objects")
@@ -81,13 +148,14 @@ func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dic
 	if not large_count is int or large_count<Field.LARGE_COUNT_BASE or large_count>=Field.LARGE_COUNT_BASE+Field.LARGE_COUNT_BOUND:
 		return reject("Opening target scenery has an invalid size-class boundary")
 	var ores := Ores.new()
-	if not ores.configure(bindings,catalogues,source.station_id,false,false,int(source.get("campaign_cursor",0))):return reject(ores.error)
+	if not ores.configure(bindings,catalogues,-1 if ordinary_void else location.station_id,location_match,false,int(source.get("campaign_cursor",0))):return reject(ores.error)
 	var possible_ores := {}
+	if location_match:possible_ores[int(bindings.scenery_resources.fallback_item_id)]=true
 	var ore_rows: Array = ores.snapshot().rows
 	for index in int(bindings.scenery_resources.sample_rows):
 		var ore: Dictionary = ore_rows[index]
 		if ore.weight>0 and ores.accepted_id(ore.item_id):possible_ores[ore.item_id]=true
-	var variant := 2 if source.system_id==22 else 0
+	var variant := 1 if location_match else (2 if location.system_id==22 else 0)
 	var model_id := int(bindings.scenery_resources.model_ids[variant])
 	var scenery := []
 	var indices := []
@@ -97,7 +165,7 @@ func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dic
 			return reject("Opening scenery targets must retain source array order")
 		if not row.get("model_variant") is int or row.model_variant!=variant or not row.get("model_id") is int or row.model_id!=model_id:
 			return reject("Opening scenery target model differs from its fresh source variant")
-		if not row.get("item_id") is int or not possible_ores.has(row.item_id):
+		if not row.get("item_id") is int or not possible_ores.has(row.item_id) or (ordinary_void and row.item_id!=int(bindings.mido_travel.void_crystals.field.ore_item_id)):
 			return reject("Opening scenery target ore is outside its source population")
 		if not row.get("large") is bool or row.large!=(index<large_count):
 			return reject("Opening scenery target size classes are out of order")
@@ -116,9 +184,16 @@ func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dic
 		indices.append(index)
 	var npc_ids := []
 	var cast:=[]
+	var free_faction:=-1
+	if story.is_empty() and source.get("campaign_cursor") in FlightStages.FREE:
+		# Assembly admission follows the actual world, not the Terran default
+		# or the faction claimed by an individual target.
+		free_faction=int(load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,source.station_id).get("faction",-1))
 	for actor in actor_rows:
-		var free_freight: bool=source.get("campaign_cursor") in [18,19] and actor.get("population_group")=="freighter"
-		if free_freight and not load("res://src/content/free_traffic_definitions.gd").actor_matches(bindings,actor,"freighter"):return reject("Ordinary target changed its source freighter assembly")
+		# Authored assembly and membership were accepted by encounter composition.
+		var story_freight: bool=not story.is_empty() and actor.population_group=="freighter"
+		var free_freight: bool=story.is_empty() and source.get("campaign_cursor") in FlightStages.FREE and actor.get("population_group")=="freighter"
+		if free_freight and not load("res://src/content/free_traffic_definitions.gd").actor_matches(bindings,actor,"freighter",-1,false,free_faction):return reject("Ordinary target changed its source freighter assembly")
 		var alioth_freight: bool=source.get("campaign_cursor")==16 and actor.get("population_group")=="freighter"
 		if alioth_freight and actor.get("assembly")!=bindings.mido_travel.alioth_attack.population.freighter_assembly:return reject("Alioth target changed its original freighter assembly")
 		var freight: bool=source.get("campaign_cursor") in [11,12,13,14] and actor.get("population_group")=="freighter"
@@ -126,7 +201,9 @@ func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dic
 		if capital and actor.get("assembly")!=bindings.mido_travel.convoy_ship.assembly:return reject("Convoy target changed its source capital assembly")
 		var debris: bool=source.get("campaign_cursor") in [13,14] and actor.get("population_group")=="debris"
 		if freight and not Ambient.assembly_matches(bindings.ambient_population,actor.get("assembly")):return reject("Mixed target lacks its original freighter assembly")
-		var model: String=bindings.resolve(int(actor.assembly.body_resource_ids[0]),"mesh") if capital or alioth_freight or free_freight else bindings.resolve(int(actor.resource_id),"mesh") if debris else (bindings.resolve(int(actor.assembly.root_model_id),"mesh") if freight else bindings.resolve_ship_model(int(actor.hull_catalogue_id)))
+		var assembled: bool=story_freight or capital or alioth_freight or free_freight or freight
+		var root_id: int=int(actor.assembly.root_model_id if actor.assembly.has("root_model_id") else actor.assembly.body_resource_ids[0]) if assembled else -1
+		var model: String=bindings.resolve(root_id,"mesh") if assembled else bindings.resolve(int(actor.resource_id),"mesh") if debris else bindings.resolve_ship_model(int(actor.hull_catalogue_id))
 		if model.is_empty():return reject(bindings.error)
 		npc_ids.append(actor.actor_id)
 		cast.append({"actor_id":actor.actor_id,"actor_kind":actor.actor_kind,
@@ -141,6 +218,25 @@ func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dic
 		"loadout":canonical.duplicate(true)}
 	_actors=cast;_scenery=scenery
 	return true
+
+## Ammunition removal cannot add targets or reconstruct their source ordering.
+## Call this on a fork before committing the corresponding weapon frame.
+func retain_secondary_ammunition(owner: RefCounted) -> bool:
+	error=""
+	if _state.is_empty() or not is_instance_of(owner,load("res://src/simulation/secondary_weapons.gd")):return reject("Target inventory requires the actual secondary launch history")
+	if _state.get("equipment_ids")!=_state.loadout.get("equipment_ids"):return reject("Target inventory lost its retained equipment order")
+	var next: Dictionary=owner.reconcile_weapon_loadout(_state.loadout)
+	if next.is_empty():return reject(owner.error)
+	_state.loadout=next;_state.equipment_ids=next.equipment_ids.duplicate()
+	return true
+
+func fork_for_frame() -> RefCounted:
+	var copy: RefCounted=get_script().new()
+	copy._state=_state.duplicate(true)
+	# Construction membership and geometry are immutable after configuration.
+	copy._actors=_actors;copy._scenery=_scenery
+	copy._selected40_construction=_selected40_construction;copy._selected40_context=_selected40_context
+	return copy
 
 func validate_loadout(loadout: Dictionary) -> bool:
 	error=""
@@ -164,6 +260,7 @@ func validate_owners(combat: Dictionary, bodies: Dictionary) -> bool:
 		var actor: Variant = actors[index]
 		if not actor is Dictionary:return reject("Invalid target actor record")
 		for key in ["actor_id","hull_catalogue_id","hull_resource","actor_kind"]:
+			if key=="actor_kind" and _selected40_construction!=null and load("res://src/content/selected40_population_definitions.gd").constructed_kind_matches(actor,int(_actors[index][key])):continue
 			if not exact_value(actor.get(key),_actors[index][key]):return reject("Target actor identity or source order changed")
 		for key in ["base_content_id","binding_id"]:
 			if actor.get(key)!=_state[key]:return reject("Target actor belongs to another content identity")
@@ -177,8 +274,11 @@ func validate_owners(combat: Dictionary, bodies: Dictionary) -> bool:
 func snapshot() -> Dictionary:
 	return _state.duplicate(true)
 
+func npc_ids() -> Array:
+	return _state.get("npc_ids",[]).duplicate()
+
 func clear() -> void:
-	error="";_state={};_actors=[];_scenery=[]
+	error="";_state={};_actors=[];_scenery=[];_selected40_construction=null;_selected40_context={}
 
 static func exact_value(left: Variant, right: Variant) -> bool:
 	if typeof(left)!=typeof(right):return false

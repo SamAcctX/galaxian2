@@ -67,10 +67,13 @@ func verify_freighter_motion(bindings: RefCounted,construction: RefCounted,id: i
 	check(not motion.update(16,true) and motion.snapshot().is_empty(),"An unconfigured freighter moved")
 	if not motion.configure(bindings,construction,id):check(false,motion.error);return
 	var before:=motion.snapshot()
-	for invalid in [-1,true,1.5,int(bindings.frame_clock.max_frame_milliseconds)+1]:
+	for invalid in [-1,true,1.5,FreighterMotion.Frames.simulation_limit(bindings)+1]:
 		check(not motion.update(invalid,true) and motion.snapshot()==before,"Invalid freighter duration advanced the ship")
 	check(not motion.update(1,0) and motion.snapshot()==before,"Invalid freighter permission advanced the ship")
 	check(motion.update(32,false) and motion.update(0,true) and motion.snapshot()==before,"Paused or held freighter moved")
+	var maximum: int=FreighterMotion.Frames.simulation_limit(bindings)
+	var boundary:=motion.fork_for_frame()
+	check(boundary.update(maximum,true) and boundary.snapshot().elapsed_motion_ms==maximum and boundary.snapshot().body_pose.origin==before.body_pose.origin+Vector3(0,0,maximum) and motion.snapshot()==before,"Freighter rejected its declared simulation limit or changed its parent")
 	var fork:=motion.fork_for_frame()
 	for duration in [16,16,17,32,19]:check(fork.update(duration,true),fork.error)
 	var moved: Dictionary=fork.snapshot()

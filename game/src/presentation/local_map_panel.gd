@@ -18,6 +18,7 @@ var _panel: Control
 var _title: Label
 var _faction: Label
 var _security: Label
+var _void_warning: Label
 var _faction_icon: TextureRect
 var _field: Control
 var _view: SubViewport
@@ -61,13 +62,15 @@ class MapCanvas extends Control:
 			var away: float=point.distance_to(row.pixels)
 			if away<=distance:distance=away;nearest=int(row.station_id)
 		if nearest>=0:selected.emit(nearest);accept_event()
+	func row_name(row: Dictionary) -> String:
+		return row.name+(" · Void" if row.void_source else "")
 	func label_rectangles() -> Array[Rect2]:
 		var result: Array[Rect2]=[]
 		if font==null:return result
 		var extent:=68.0 if mobile else 44.0
 		var font_size:=20 if mobile else 14
 		for row in rows:
-			var width:=font.get_string_size(row.name,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size).x
+			var width:=font.get_string_size(row_name(row),HORIZONTAL_ALIGNMENT_LEFT,-1,font_size).x
 			var left:=clampf(row.pixels.x-width/2,3,maxf(3,size.x-width-3))
 			var label:=Rect2(Vector2(left,row.pixels.y+extent/2+3),Vector2(width,font_size+2))
 			# Nearby planets keep their source positions. Stack intersecting names
@@ -90,8 +93,8 @@ class MapCanvas extends Control:
 			var id:=int(rules.selected_image_id if row.station_id==selected_id else rules.frame_image_id)
 			draw_texture_rect(sprites[id],Rect2(row.pixels-Vector2.ONE*extent/2,Vector2.ONE*extent),false)
 			var anchor:=labels[index].position+Vector2(0,font_size)
-			draw_string(font,anchor+Vector2.ONE,row.name,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,Color.BLACK)
-			draw_string(font,anchor,row.name,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,Color.WHITE)
+			draw_string(font,anchor+Vector2.ONE,row_name(row),HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,Color.BLACK)
+			draw_string(font,anchor,row_name(row),HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,Color.WHITE)
 			if row.mission_target or row.current:
 				var marker:=int(rules.story_image_id if row.mission_target else rules.current_image_id)
 				draw_texture_rect(sprites[marker],Rect2(row.pixels+Vector2(extent/2-2,-extent/2-3),Vector2.ONE*icon_size),false)
@@ -113,6 +116,8 @@ func _init() -> void:
 	_canvas.selected.connect(select_station)
 	_faction_icon=texture_rect(_panel)
 	_title=label(_panel);_faction=label(_panel);_security=label(_panel)
+	_void_warning=label(_panel);_void_warning.visible=false
+	_void_warning.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
 	_footer=texture_rect(_panel)
 	_notice=Panel.new();_notice.mouse_filter=Control.MOUSE_FILTER_IGNORE;_panel.add_child(_notice);_notice.visible=false
 	_status=label(_notice);_status.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
@@ -193,6 +198,12 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted, c
 	_camera.near=float(art.camera_near);_camera.far=float(art.camera_far)
 	_title.text=state.system_name;_faction.text=state.labels.faction;_security.text=state.labels.security
 	_security.modulate=state.security_color
+	# Compact native readout, not a replacement for the original galaxy-map
+	# warning model's spatial presentation. Names remain catalogue-localized.
+	_void_warning.visible=not state.void_warning.is_empty()
+	if _void_warning.visible:
+		_void_warning.text="Void · "+state.void_warning.system_name
+		if state.void_warning.station_id>=0:_void_warning.text+=" / "+state.void_warning.station_name
 	_faction_icon.texture=sprites[state.faction_image_id];_footer.texture=sprites[int(state.ui.footer_image_id)]
 	for entry in state.labels.legend:
 		var row:=HBoxContainer.new();_legend_rows.add_child(row)
@@ -340,6 +351,9 @@ func _relayout() -> void:
 	for item in [_title,_faction,_security]:
 		item.add_theme_font_size_override("font_size",font_size)
 		item.position=Vector2(icon+16,top);top+=font_size+4
+	_void_warning.add_theme_font_size_override("font_size",font_size)
+	_void_warning.position=Vector2(icon+16,top)
+	_void_warning.size=Vector2(maxf(1,size.x-icon-24),2*(font_size+4))
 	var footer_height:=62.0 if _mobile else 44.0
 	_footer.position=Vector2(0,size.y-footer_height);_footer.size=Vector2(size.x,footer_height)
 	var button_height:=44.0 if _mobile else 30.0
@@ -389,6 +403,7 @@ func _project() -> void:
 	# margin and touch footer. Shift the camera to use that available height;
 	# fixed desktop margins otherwise shrink the planets into the lower controls.
 	var top_margin:=42.0 if _mobile else 100.0
+	if _void_warning.visible:top_margin=maxf(top_margin,_void_warning.get_rect().end.y+8)
 	var bottom_margin:=_footer.size.y+62.0 if _mobile else 130.0
 	var center_offset:=(top_margin-bottom_margin)*0.5 if _mobile else 0.0
 	# The orbit quads include transparent corners far outside their visible art.
@@ -421,6 +436,7 @@ func clear() -> void:
 	_systems.visible=false
 	_legend.visible=false;_notice.visible=false;_sprites={};_styles={};_font=null
 	_faction_icon.texture=null;_footer.texture=null
+	_void_warning.visible=false;_void_warning.text=""
 	_view.render_target_update_mode=SubViewport.UPDATE_DISABLED
 
 func reject(message: String) -> bool:error=message;return false

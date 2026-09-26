@@ -42,6 +42,26 @@ func run() -> void:
 	check(view._body.text == library.strings[0] and not view._body.bbcode_enabled, "Source text interpreted as markup or changed")
 	check(view._name.text == "Synthetic speaker" and view._portrait.texture == portrait, "Resolved speaker not captured")
 	await process_frame
+	var staged:=PanelView.new();root.add_child(staged);staged.size=view.size
+	# Actual40 now shares equipped flight consumers (FlightStages.FREE). This
+	# passive view is not a departure grant. Unfinished41 still needs its typed
+	# initialized world; generic configuration must not admit that successor.
+	check(staged.configure(bindings.base_content_id,bindings.binding_id,"gb",{},40),"Accepted equipped40 lost its passive radio view")
+	check(not staged.configure(bindings.base_content_id,bindings.binding_id,"gb",{},41),"Generic radio configuration admitted the incomplete selected41 flight")
+	check(staged.configure(bindings.base_content_id,bindings.binding_id,"gb",{0:{"name":"Synthetic speaker","portrait":portrait}}),staged.error)
+	check(staged.present(radio.snapshot()),staged.error)
+	await process_frame
+	view._body.get_v_scroll_bar().value=50.0
+	await process_frame
+	var retained_scroll: float=view._body.get_v_scroll_bar().value
+	staged.inherit_scroll(view)
+	await process_frame
+	check(retained_scroll>0 and staged._body.get_v_scroll_bar().value==retained_scroll,"Prepared radio layer lost the reader's scroll for an identical transmission")
+	var changed:=radio.snapshot().duplicate(true);changed.text="Different transmission. "+changed.text
+	check(staged.present(changed),staged.error);staged.inherit_scroll(view)
+	await process_frame
+	check(staged._body.get_v_scroll_bar().value==0,"Different radio text inherited stale scrolling")
+	staged.free()
 	var before := radio.snapshot()
 	var desktop_width: float = view._panel.size.x
 	for phone in [true, false]:
@@ -56,6 +76,26 @@ func run() -> void:
 	view.size = Vector2(1120, 720)
 	view.set_mobile_layout(true)
 	check(is_equal_approx(view._panel.size.x, desktop_width * 2), "Desktop composition is not half phone composition")
+	# A preceding HUD readout can reserve more than a small landscape viewport.
+	# The passive radio must retain a usable scroll area without leaving it.
+	for phone in [false, true]:
+		view.set_mobile_layout(phone)
+		view.size = Vector2(844, 390)
+		view.set_top_inset(440)
+		await process_frame
+		check(Rect2(Vector2.ZERO, view.size).encloses(view._panel.get_rect()), "Reserved HUD inset pushed radio beyond the landscape viewport")
+		check(view._body.size.y >= view._body.get_theme_font_size("normal_font_size"), "Reserved HUD inset removed the radio's readable line")
+		check(view.present(radio.snapshot()) and radio.snapshot() == before, "Inset clamping changed source radio state")
+		var args := OS.get_cmdline_user_args()
+		if args.size() == 4 and DisplayServer.get_name() != "headless":
+			root.content_scale_size = Vector2i.ZERO; root.size = Vector2i(view.size)
+			await RenderingServer.frame_post_draw
+			DirAccess.make_dir_recursive_absolute(args[3])
+			var image := root.get_texture().get_image()
+			check(image != null and image.save_png(args[3].path_join("radio-inset-" + ("touch" if phone else "desktop") + ".png")) == OK, "Cannot capture bounded radio inset")
+	view.set_top_inset(0)
+	view.size = Vector2(1120, 720)
+	view.set_mobile_layout(true)
 	view._body.get_v_scroll_bar().value = 50
 	var scroll: float = view._body.get_v_scroll_bar().value
 	check(view.present(radio.snapshot()) and view._body.get_v_scroll_bar().value == scroll, "Per-frame refresh reset scroll")

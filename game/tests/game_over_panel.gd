@@ -30,6 +30,7 @@ var captures:=""
 func _initialize():call_deferred("run")
 func run():
 	var args:=OS.get_cmdline_user_args()
+	if args.size()==3 and DisplayServer.get_name()!="headless" and not OS.get_environment("GOF2_CAPTURE_DIR").is_empty():args.append(OS.get_environment("GOF2_CAPTURE_DIR"))
 	check(args.size() in [3,4],"Expected explicit Mac content, bindings, visuals and optional captures")
 	if args.size() in [3,4]:await verify(args)
 	if canvas!=null:canvas.free()
@@ -79,6 +80,8 @@ func verify(args: PackedStringArray):
 	check(panel.present(death,0) and panel.snapshot().alpha_byte==255 and panel.snapshot().prompt_visible and panel.snapshot().prompt_alpha_byte==0,"Full fade or absolute blink origin differs")
 	check(not panel.handle_event(held_trigger),"Held trigger crossed into game-over acknowledgement")
 	held_trigger.axis_value=0.0;check(not panel.handle_event(held_trigger),"Trigger release acknowledged game-over")
+	check(not panel.handle_event(enter()),"Held Enter crossed the completed fade")
+	var enter_release:=enter();enter_release.pressed=false;check(not panel.handle_event(enter_release),"Enter release acknowledged game-over")
 	var before: Dictionary=death.snapshot()
 	var previous_requests:=requests
 	check(panel.handle_event(enter()) and requests==previous_requests+1 and death.snapshot()==before,"Continuation intent mutated death/progress or was lost")
@@ -101,7 +104,8 @@ func verify(args: PackedStringArray):
 		check(panel.present(death,524) and panel.snapshot().text_id==188 and panel.snapshot().text==lib.strings[188],"Mobile continuation text lost: "+language)
 		await process_frame
 		var state: Dictionary=panel.snapshot()
-		check(state.image_rect.size==Vector2(294,136) and state.prompt_rect.end.y<=800 and state.prompt_rect.end.x<=420,"Phone art/prompt exceeds its viewport: "+language)
+		var viewport:=Rect2(Vector2.ZERO,panel.size)
+		check(state.image_rect.size==Vector2(294,136) and viewport.encloses(state.image_rect) and viewport.encloses(state.prompt_rect),"Phone art/prompt exceeds its landscape viewport: "+language)
 	check(lib.select_language("ja") and panel.configure(lib,bindings,visuals,death),"Japanese capture resources unavailable")
 	canvas.size=Vector2i(800,450);panel.size=canvas.size
 	check(panel.present(death,524),panel.error);await capture("phone-japanese")
@@ -122,11 +126,16 @@ func verify_inputs():
 	invalid=enter();invalid.keycode=KEY_A;check(not panel.handle_event(invalid),"Flight shortcut continued game-over")
 	panel.set_active(false);check(not panel.handle_event(enter()) and not panel.snapshot().input_enabled,"Inactive panel continued game-over")
 	panel.set_active(true)
+	check(not panel.handle_event(enter()),"Enter held during pause acknowledged after resume")
+	invalid=enter();invalid.pressed=false;check(not panel.handle_event(invalid),"Paused Enter release acknowledged game-over")
 	var joystick:=InputEventJoypadButton.new();joystick.button_index=JOY_BUTTON_A;joystick.pressed=true
 	var touch:=InputEventScreenTouch.new();touch.pressed=true
 	var mouse:=InputEventMouseButton.new();mouse.button_index=MOUSE_BUTTON_LEFT;mouse.pressed=true
 	for event in [enter(),joystick,touch,mouse]:
 		var old:=requests;check(panel.handle_event(event) and requests==old+1,"Native continuation action was lost or repeated")
+		check(not panel.handle_event(event) and requests==old+1,"Held continuation action was treated as a fresh edge")
+		var released: InputEvent=event.duplicate();released.pressed=false
+		check(not panel.handle_event(released),"Continuation release was treated as a fresh edge")
 	joystick.pressed=false;touch.pressed=false;mouse.pressed=false
 	for event in [joystick,touch,mouse]:check(not panel.handle_event(event),"Pointer/controller release continued game-over")
 	var trigger:=InputEventJoypadMotion.new();trigger.axis=JOY_AXIS_TRIGGER_RIGHT;trigger.axis_value=1.0
@@ -137,6 +146,7 @@ func verify_inputs():
 	var hidden_parent:=Control.new();canvas.add_child(hidden_parent);panel.reparent(hidden_parent);hidden_parent.hide()
 	check(not panel.handle_event(enter()) and not panel.snapshot().input_enabled,"Hidden ancestor left game-over input active")
 	panel.reparent(canvas);hidden_parent.free()
+	invalid=enter();invalid.pressed=false;panel.handle_event(invalid)
 
 func verify_dispatch():
 	await process_frame
@@ -144,6 +154,8 @@ func verify_dispatch():
 	for event in [enter(),pointer]:
 		var before:=requests;canvas.push_input(event,true)
 		check(requests==before+1,"Viewport continuation was lost or dispatched twice")
+		canvas.push_input(event,true);check(requests==before+1,"Viewport repeated a held continuation")
+		var released: InputEvent=event.duplicate();released.pressed=false;canvas.push_input(released,true)
 	pointer.pressed=false;var before:=requests;canvas.push_input(pointer,true)
 	check(requests==before,"Viewport pointer release repeated continuation")
 

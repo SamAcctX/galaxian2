@@ -1,7 +1,12 @@
 extends RefCounted
+const FlightStages=preload("res://src/content/flight_stages.gd")
 const Contracts=preload("res://src/simulation/contract_session.gd")
 const Transit=preload("res://src/content/convoy_transit_definitions.gd")
 const ContractDefinitions=preload("res://src/content/early_contract_definitions.gd")
+const Bakka=preload("res://src/content/bakka_contest_definitions.gd")
+const Dekato=preload("res://src/content/dekato_convoy_definitions.gd")
+const Selected40=preload("res://src/content/selected40_population_definitions.gd")
+const Selected41=preload("res://src/content/selected41_population_definitions.gd")
 const FreePopulation=preload("res://src/content/free_population_definitions.gd")
 const AmbientDefinitions=preload("res://src/content/ambient_population_definitions.gd")
 const TrafficPopulation=preload("res://src/simulation/traffic_population.gd")
@@ -24,6 +29,8 @@ const Vitals = preload("res://src/simulation/combat_vitals.gd")
 const Convoy = preload("res://src/content/convoy_world_definitions.gd")
 const Kappa = preload("res://src/content/kappa_population_definitions.gd")
 const Alioth = preload("res://src/content/alioth_attack_definitions.gd")
+const Sahi = preload("res://src/content/sahi_encounter_definitions.gd")
+const Dima = preload("res://src/content/dima_encounter_definitions.gd")
 const Numbers = preload("res://src/content/opening_definitions.gd")
 const Vectors = preload("res://src/simulation/source_vectors.gd")
 var error := ""
@@ -45,6 +52,10 @@ var _authored_route: RefCounted
 var _convoy:={}
 var _alioth:={}
 var _kappa:={}
+var _sahi:={}
+var _dekato:={}
+var _selected40:={}
+var _selected41:={}
 
 func configure(bindings: RefCounted, catalogues: RefCounted) -> bool:
 	clear()
@@ -143,7 +154,7 @@ func configure_free_traffic(bindings: RefCounted,catalogues: RefCounted,equipmen
 	clear()
 	if bindings==null or not equipment is Equipment:return reject("Ordinary construction requires its retained equipment")
 	var owned: Dictionary=equipment.snapshot()
-	if not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false) or owned.get("cargo_cache_stale",true):return reject("Ordinary construction requires the retained released inventory")
+	if not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false) or not equipment.cargo_cache_valid():return reject("Ordinary construction requires the retained released inventory")
 	if not preload("res://src/content/ordinary_fitting_definitions.gd").available(bindings) and not equipment.requirements().satisfied:return reject("This profile requires the retained tutorial equipment")
 	var seed: Dictionary=owned.loadout
 	if seed.base_content_id!=bindings.base_content_id or seed.binding_id!=bindings.binding_id:return reject("Ordinary construction belongs to another content identity")
@@ -162,29 +173,68 @@ func configure_free_factory(bindings: RefCounted,catalogues: RefCounted,player_s
 		if not id is int or id<0 or id>=catalogues.tables.items.size():return reject("Unknown installed equipment for cargo construction")
 	var rules: Dictionary=bindings.mido_travel.free_population
 	var hulls: Dictionary=bindings.early_contracts.encounter_construction.hulls
-	for faction in [0,8,1]:
+	var local_faction: int=int(catalogues.tables.systems[int(context.system_id)].fields[int(rules.faction_field)])
+	for faction in [local_faction,int(rules.pirate_faction),int(rules.enemy_factions[local_faction])]:
 		for hull in int(hulls.draw_bound):
 			if int(hulls.factions[hull])!=faction or (hull<=int(hulls.mask_limit) and (int(hulls.excluded_mask)&(1<<hull))!=0):continue
 			if bindings.resolve_ship_model(hull).is_empty():return reject(bindings.error)
 	if bindings.resolve_ship_model(int(hulls.early_vossk_hull)).is_empty():return reject(bindings.error)
-	for assembly in rules.freighter_assemblies.values():
-		for resource in assembly.body_resource_ids+assembly.child_resource_ids[0]:
+	var assemblies: Dictionary=FreePopulation.assemblies(bindings)
+	for faction in [local_faction,int(rules.freighter_alternate_factions[local_faction])]:
+		var assembly: Dictionary=assemblies.get(str(faction),{})
+		if assembly.is_empty():return reject("Unsupported local freighter assembly")
+		var resources: Array=[]
+		if faction==int(bindings.ambient_population.actor_kind):
+			for key in ["root_model_id","light_model_id","engine_model_id","container_model_id","container_lod_model_id","lod_model_id"]:resources.append(assembly[key])
+		else:
+			resources=assembly.body_resource_ids.duplicate()
+			var empty_children: Array=FreePopulation.empty_child_resources(bindings,assembly)
+			for children in assembly.child_resource_ids:
+				for child in children:
+					if child not in empty_children:resources.append(child)
+		for resource in resources:
 			if bindings.resolve(int(resource),"mesh").is_empty():return reject(bindings.error)
 	var data: Dictionary=bindings.mido_travel.departure_traffic.duplicate(true)
-	data.merge({"station_id":int(context.station_id),"system_id":int(context.system_id),"campaign_cursor":int(context.campaign_cursor),"actor_kind":0,"ambient":true,"free_context":context.duplicate(true),"free_player_ship_id":player_ship_id},true)
+	data.merge({"station_id":int(context.station_id),"system_id":int(context.system_id),"campaign_cursor":int(context.campaign_cursor),"actor_kind":local_faction,"ambient":true,"free_context":context.duplicate(true),"free_player_ship_id":player_ship_id},true)
 	var seed:={"ship_id":player_ship_id,"equipment_ids":equipment_ids.duplicate(),"station_id":int(context.station_id)}
 	if not _configure(bindings,catalogues,seed,{},{},{},data):return false
 	_traffic.unix_seconds=unix_seconds;_ambient=bindings.ambient_population.duplicate(true)
 	_free=rules.duplicate(true);_free.hulls=hulls.duplicate(true);_population_owner=population
+	_free.freighter_assemblies=assemblies
+	_free.freighter_hulls={}
+	for faction in assemblies:_free.freighter_hulls[faction]=FreePopulation.freighter_hull(bindings,int(faction))
 	if not context.side_missions_empty:_free.delivery=bindings.mido_travel.ordinary_contracts.population.duplicate(true)
 	if context.special_arrival:_free.arrival=bindings.mido_travel.free_arrival.duplicate(true)
+	return true
+
+## Detached ordinary Void actor factory. The caller supplies earned equipment
+## and the selected world context; this owner does not advance cursor33.
+func configure_void_factory(bindings: RefCounted,catalogues: RefCounted,player_ship_id: int,equipment_ids: Array,context: Dictionary) -> bool:
+	clear()
+	var population:=TrafficPopulation.new()
+	if not population.configure_void(bindings,context):return reject(population.error)
+	if catalogues==null or catalogues.content_id!=bindings.base_content_id:return reject("Void construction requires its matching imported catalogue")
+	if not Numbers.integer(player_ship_id,0,catalogues.tables.ships.size()-1):return reject("Void construction requires an earned catalogue ship")
+	for id in equipment_ids:
+		if not Numbers.integer(id,0,catalogues.tables.items.size()-1):return reject("Void construction requires installed catalogue equipment")
+	var rules: Dictionary=bindings.mido_travel.void_crystals.void_population
+	if bindings.resolve_ship_model(int(rules.hull_id)).is_empty():return reject(bindings.error)
+	var traffic:={"campaign_cursor":int(context.campaign_cursor),"station_id":int(context.selected_station_id),
+		"system_id":int(context.selected_system_id),"actor_kind":int(rules.actor_kind),"subtype":int(rules.actor_subtype),
+		"void_context":context.duplicate(true),"void_rules":rules.duplicate(true),
+		"void_maximum_count":population.maximum_void_actor_count(),"void_player_ship_id":player_ship_id,
+		"void_equipment_ids":equipment_ids.duplicate()}
+	var seed:={"ship_id":player_ship_id,"equipment_ids":equipment_ids.duplicate(),"station_id":-1,"system_id":-1}
+	if not _configure(bindings,catalogues,seed,{},{},{},traffic):return false
+	_population_owner=population
+	_identity.station_id=-1;_identity.system_id=-1
 	return true
 
 func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,contracts: RefCounted,player_position: Vector3,field_center: Vector3) -> bool:
 	clear()
 	if bindings==null or catalogues==null or not ContractDefinitions.encounter_parameters(bindings.early_contracts) or not contracts is Contracts or not equipment is Equipment:return reject("Contract construction requires its native accepted contract, inventory and declarations")
 	var owned: Dictionary=equipment.snapshot()
-	if not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false) or owned.get("cargo_cache_stale",true) or not equipment.requirements().satisfied:return reject("Contract construction requires the retained released inventory")
+	if not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false) or not equipment.cargo_cache_valid() or not equipment.requirements().satisfied:return reject("Contract construction requires the retained released inventory")
 	var seed: Dictionary=owned.loadout
 	var context: Dictionary=contracts.flight_context(int(seed.station_id))
 	if context.is_empty():return reject(contracts.error)
@@ -228,7 +278,7 @@ func configure_convoy(bindings: RefCounted,catalogues: RefCounted,equipment: Ref
 	clear()
 	if not Convoy.context_valid(bindings,context) or catalogues==null or not equipment is Equipment:return reject("Convoy construction requires its active Kernstal story and retained inventory")
 	var owned: Dictionary=equipment.snapshot()
-	if not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false) or owned.get("cargo_cache_stale",true) or not equipment.requirements().satisfied:return reject("Convoy construction requires the completed equipment tutorial and exchange")
+	if not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false) or not equipment.cargo_cache_valid() or not equipment.requirements().satisfied:return reject("Convoy construction requires the completed equipment tutorial and exchange")
 	var seed: Dictionary=owned.loadout
 	if seed.base_content_id!=bindings.base_content_id or seed.binding_id!=bindings.binding_id or catalogues.content_id!=bindings.base_content_id:return reject("Convoy construction belongs to another content identity")
 	if seed.ship_id!=0 or seed.station_id!=context.station_id or seed.system_id!=context.system_id:return reject("Convoy construction requires the retained ship at Kernstal")
@@ -264,6 +314,42 @@ func configure_alioth_attack(bindings: RefCounted,catalogues: RefCounted,seed: D
 	data.context=context.duplicate(true);data.player_position=player_position
 	return _configure(bindings,catalogues,seed,{},{},{},{},{},{},data)
 
+func configure_bakka(bindings: RefCounted,catalogues: RefCounted,seed: Dictionary,context: Dictionary,player_position: Vector3) -> bool:
+	clear()
+	if not Bakka.context_valid(bindings,context) or catalogues==null:return reject("Bakka construction requires its selected story context")
+	if not ContractDefinitions.encounter_parameters(bindings.early_contracts):return reject("Bakka requires the shared small-ship construction declarations")
+	for key in ["base_content_id","binding_id","station_id","system_id"]:
+		if seed.get(key)!=context[key]:return reject("Bakka equipment belongs to another content identity or location")
+	if catalogues.content_id!=bindings.base_content_id or not Numbers.integer(seed.get("ship_id"),0,catalogues.tables.ships.size()-1):return reject("Bakka requires a retained catalogue ship")
+	var ids: Variant=seed.get("equipment_ids")
+	if not ids is Array or ids.any(func(id):return not Numbers.integer(id,0,catalogues.tables.items.size()-1)):return reject("Bakka requires installed catalogue equipment")
+	if not player_position.is_finite():return reject("Bakka requires a finite player position")
+	var recipe:=Bakka.construction_recipe(bindings,context,player_position)
+	if bindings.resolve_ship_model(int(recipe.rival_hull)).is_empty():return reject(bindings.error)
+	for id in recipe.hulls.factions.size():
+		if int(recipe.hulls.factions[id])==int(recipe.pirate_actor_kind) and not (id<=int(recipe.hulls.mask_limit) and (int(recipe.hulls.excluded_mask)&(1<<id))!=0) and bindings.resolve_ship_model(id).is_empty():return reject(bindings.error)
+	recipe.loadout=seed.duplicate(true)
+	return _configure(bindings,catalogues,seed,{},{},{},{},recipe)
+
+func configure_dekato(bindings: RefCounted,catalogues: RefCounted,seed: Dictionary,context: Dictionary) -> bool:
+	clear()
+	var recipe:=Dekato.construction_recipe(bindings,context)
+	if recipe.is_empty() or catalogues==null:return reject("Dekato construction requires its source-selected story and shared factories")
+	for key in ["base_content_id","binding_id","station_id","system_id"]:
+		if seed.get(key)!=context[key]:return reject("Dekato loadout belongs to another content identity or location")
+	if catalogues.content_id!=bindings.base_content_id or not Numbers.integer(seed.get("ship_id"),0,catalogues.tables.ships.size()-1):return reject("Dekato requires a retained catalogue ship")
+	var ids: Variant=seed.get("equipment_ids")
+	if not ids is Array or ids.any(func(id):return not Numbers.integer(id,0,catalogues.tables.items.size()-1)):return reject("Dekato requires installed catalogue equipment")
+	for id in recipe.hulls.factions.size():
+		if int(recipe.hulls.factions[id])==int(recipe.escort_actor_kind) and not (id<=int(recipe.hulls.mask_limit) and (int(recipe.hulls.excluded_mask)&(1<<id))!=0) and bindings.resolve_ship_model(id).is_empty():return reject(bindings.error)
+	for id in recipe.freighter_assembly.body_resource_ids:
+		if bindings.resolve(int(id),"mesh").is_empty():return reject(bindings.error)
+	for children in recipe.freighter_assembly.child_resource_ids:
+		for id in children:
+			if bindings.resolve(int(id),"mesh").is_empty():return reject(bindings.error)
+	recipe.loadout=seed.duplicate(true)
+	return _configure(bindings,catalogues,seed,{},{},{},{},{},{},{},{},{},recipe)
+
 func configure_kappa_rescue(bindings: RefCounted,catalogues: RefCounted,seed: Dictionary,context: Dictionary) -> bool:
 	clear()
 	if not Kappa.context_valid(bindings,context) or catalogues==null:return reject("Kappa construction requires its original rescue context")
@@ -280,13 +366,86 @@ func configure_kappa_rescue(bindings: RefCounted,catalogues: RefCounted,seed: Di
 	data.loadout=seed.duplicate(true)
 	return _configure(bindings,catalogues,seed,{},{},{},{},{},{},{},data)
 
-func _configure(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, arrival: Dictionary, full_hold: Dictionary={}, training: Dictionary={}, traffic: Dictionary={}, contract: Dictionary={}, convoy: Dictionary={}, alioth: Dictionary={}, kappa: Dictionary={}) -> bool:
+func configure_sahi(bindings: RefCounted,catalogues: RefCounted,seed: Dictionary,context: Dictionary) -> bool:
+	clear()
+	var post_rules=load("res://src/content/post_sahi_definitions.gd")
+	var post: bool=bindings!=null and post_rules.selected(bindings.mido_travel,context)
+	var dima: bool=bindings!=null and Dima.selected(bindings.mido_travel,context)
+	if bindings==null or catalogues==null or not (post or dima or Sahi.selected(bindings.mido_travel,context)):return reject("Story construction requires its selected source context")
+	for key in ["base_content_id","binding_id"]:
+		if seed.get(key)!=bindings.get(key) or context.get(key)!=bindings.get(key):return reject("Sahi construction belongs to another content identity")
+	for key in ["station_id","system_id"]:
+		if seed.get(key)!=context.get(key):return reject("Sahi construction requires retained equipment at the selected world")
+	if catalogues.content_id!=bindings.base_content_id or not Numbers.integer(seed.get("ship_id"),0,catalogues.tables.ships.size()-1):return reject("Sahi construction requires a valid retained ship")
+	var ids: Variant=seed.get("equipment_ids")
+	if not ids is Array or ids.any(func(id):return not Numbers.integer(id,0,catalogues.tables.items.size()-1)):return reject("Sahi construction requires installed catalogue equipment")
+	var data: Dictionary=post_rules.population(bindings.mido_travel,context) if post else (Dima.population(bindings.mido_travel,context) if dima else bindings.mido_travel.sahi_encounter.population.duplicate(true))
+	if data.is_empty():return reject("Dima construction requires its relocated portal position")
+	if post and context.campaign_cursor==26:
+		if not load("res://src/simulation/npc_flight.gd").rigid_pose(context.get("player_pose")):return reject("Pursuers require the actual returning player pose")
+		data.player_pose=context.player_pose
+	var factory: Dictionary=bindings.opening_actors.get("npc_initialization",{}).get("construction",{})
+	if data.factory_spawn_offset!=factory.get("spawn_origin") or int(data.factory_spawn_bound)!=int(factory.get("spawn_bound",-1)):return reject("Sahi construction disagrees with the shared source factory")
+	for row in data.actors:
+		if int(row.subtype)==0 and bindings.resolve_ship_model(int(row.hull_catalogue_id)).is_empty():return reject(bindings.error)
+	for id in data.freighter_assembly.body_resource_ids:
+		if bindings.resolve(int(id),"mesh").is_empty():return reject(bindings.error)
+	for children in data.freighter_assembly.child_resource_ids:
+		for id in children:
+			if bindings.resolve(int(id),"mesh").is_empty():return reject(bindings.error)
+	data.context=context.duplicate(true);data.loadout=seed.duplicate(true)
+	return _configure(bindings,catalogues,seed,{},{},{},{},{},{},{},{},data)
+
+## Detached cast construction using the retained origin loadout. No player,
+## station, campaign cursor or special-world owner is changed here.
+func configure_selected40(bindings: RefCounted,catalogues: RefCounted,seed: Dictionary,context: Dictionary) -> bool:
+	clear()
+	var recipe:=Selected40.construction_recipe(bindings,context)
+	if recipe.is_empty() or catalogues==null:return reject("Selected40 construction requires its explicit original source and origin")
+	for key in ["base_content_id","binding_id"]:
+		if seed.get(key)!=context[key]:return reject("Selected40 loadout belongs to another content identity")
+	if seed.get("station_id")!=context.origin_station_id or seed.get("system_id")!=context.origin_system_id:return reject("Selected40 requires the retained origin, not a fabricated special station")
+	if catalogues.content_id!=bindings.base_content_id or not Numbers.integer(seed.get("ship_id"),0,catalogues.tables.ships.size()-1):return reject("Selected40 requires a retained catalogue ship")
+	var ids: Variant=seed.get("equipment_ids")
+	if not ids is Array or ids.any(func(id):return not Numbers.integer(id,0,catalogues.tables.items.size()-1)):return reject("Selected40 requires retained catalogue equipment")
+	for id in recipe.hulls.factions.size():
+		if int(recipe.hulls.factions[id])==int(recipe.escort_actor_kind) and not (id<=int(recipe.hulls.mask_limit) and (int(recipe.hulls.excluded_mask)&(1<<id))!=0) and bindings.resolve_ship_model(id).is_empty():return reject(bindings.error)
+	if bindings.resolve_ship_model(int(recipe.void_hull_catalogue_id)).is_empty():return reject(bindings.error)
+	for id in recipe.freighter_assembly.body_resource_ids:
+		if bindings.resolve(int(id),"mesh").is_empty():return reject(bindings.error)
+	for children in recipe.freighter_assembly.child_resource_ids:
+		for id in children:
+			if bindings.resolve(int(id),"mesh").is_empty():return reject(bindings.error)
+	recipe.loadout=seed.duplicate(true)
+	return _configure(bindings,catalogues,seed,{},{},{},{},{},{},{},{},{},{},recipe)
+
+func configure_selected41(bindings: RefCounted,catalogues: RefCounted,entry: RefCounted) -> bool:
+	clear()
+	if not is_instance_of(entry,load("res://src/simulation/selected41_portal_entry.gd")) or entry.snapshot().is_empty():return reject("Source41 construction requires its native late-portal transaction")
+	var equipment: RefCounted=entry.equipment_owner()
+	var seed: Dictionary=equipment.snapshot().loadout
+	var recipe:=Selected41.construction_recipe(bindings,entry.snapshot().context)
+	if recipe.is_empty() or catalogues==null or catalogues.content_id!=bindings.base_content_id or not equipment.cargo_cache_valid():return reject("Source41 construction requires matching original content and inventory")
+	if seed.get("station_id")!=-1 or seed.get("system_id")!=-1 or not Numbers.integer(seed.get("ship_id"),0,catalogues.tables.ships.size()-1):return reject("Source41 inventory was not relocated by the native portal")
+	if load("res://src/simulation/equipment_slots.gd").checked_slots(bindings,catalogues,seed).is_empty():return reject("Source41 requires actual ordered installed equipment")
+	if bindings.resolve_ship_model(int(recipe.fighter_hull_catalogue_id)).is_empty():return reject(bindings.error)
+	for id in recipe.freighter_assembly.body_resource_ids:
+		if bindings.resolve(int(id),"mesh").is_empty():return reject(bindings.error)
+	var empty_children: Array=Selected41.Previous.Population.empty_child_resources(bindings,recipe.freighter_assembly)
+	for children in recipe.freighter_assembly.child_resource_ids:
+		for id in children:
+			if id in empty_children:continue
+			if bindings.resolve(int(id),"mesh").is_empty():return reject(bindings.error)
+	recipe.loadout=seed.duplicate(true)
+	return _configure(bindings,catalogues,seed,{},{},{},{},{},{},{},{},{},{},{},recipe)
+
+func _configure(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, arrival: Dictionary, full_hold: Dictionary={}, training: Dictionary={}, traffic: Dictionary={}, contract: Dictionary={}, convoy: Dictionary={}, alioth: Dictionary={}, kappa: Dictionary={}, sahi: Dictionary={}, dekato: Dictionary={}, selected40: Dictionary={}, selected41: Dictionary={}) -> bool:
 	var data: Variant = bindings.opening_actors.get("npc_initialization",{}).get("construction",{})
 	if not Definitions.parameters(data): return reject("NPC construction is unavailable in this pack")
 	if bindings.resolve(int(data.fragment_resource),"mesh").is_empty(): return reject(bindings.error)
 	var expected_ship:=10 if full_hold.is_empty() else 0
 	var expected_equipment: Array=[2,2,36,54,59,82,73] if full_hold.is_empty() else [90,81]
-	if kappa.is_empty() and not traffic.has("free_context") and alioth.is_empty() and convoy.is_empty() and contract.is_empty() and ((training.is_empty() and traffic.is_empty() and (seed.ship_id!=expected_ship or seed.equipment_ids!=expected_equipment)) or ((not training.is_empty() or not traffic.is_empty()) and seed.ship_id!=0) or seed.station_id!=(int(traffic.station_id) if not traffic.is_empty() else 78)):
+	if selected41.is_empty() and selected40.is_empty() and dekato.is_empty() and sahi.is_empty() and kappa.is_empty() and not traffic.has("free_context") and not traffic.has("void_context") and alioth.is_empty() and convoy.is_empty() and contract.is_empty() and ((training.is_empty() and traffic.is_empty() and (seed.ship_id!=expected_ship or seed.equipment_ids!=expected_equipment)) or ((not training.is_empty() or not traffic.is_empty()) and seed.ship_id!=0) or seed.station_id!=(int(traffic.station_id) if not traffic.is_empty() else 78)):
 		return reject("NPC construction requires its supported retained loadout")
 	var items: Variant = catalogues.tables.get("items")
 	if not items is Array or items.size()!=233: return reject("Unsupported NPC cargo catalogue")
@@ -316,23 +475,37 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, 
 	for id in seed.equipment_ids:
 		if staged[id].type==int(data.special_equipment_type): return reject("Special cargo override is outside fresh opening construction")
 	var routes := []
-	var count: int=int(traffic.empty_population_fallback) if not traffic.is_empty() else (int(training.actor_count) if not training.is_empty() else (3 if arrival.is_empty() and full_hold.is_empty() else 1))
+	var count: int=0 if traffic.has("void_context") else (int(traffic.empty_population_fallback) if not traffic.is_empty() else (int(training.actor_count) if not training.is_empty() else (3 if arrival.is_empty() and full_hold.is_empty() else 1)))
 	if not contract.is_empty():count=0 if int(contract.context.mission.kind)==7 else int(contract.actor_count)
 	if not convoy.is_empty():count=int(convoy.actor_count)
 	if not alioth.is_empty():count=int(alioth.actor_count)
 	if not kappa.is_empty():count=int(kappa.actor_count)
+	if not sahi.is_empty():count=int(sahi.actor_count)
+	if not dekato.is_empty():count=int(dekato.actor_count)
+	if not selected40.is_empty():count=int(selected40.actor_count)
+	if not selected41.is_empty():count=int(selected41.actor_count)
 	if traffic.has("free_context"):count=FreePopulation.maximum_actor_count(bindings,int(traffic.free_context.rank),float(traffic.free_context.difficulty),traffic.free_context)
+	elif traffic.has("void_context"):count=int(traffic.void_maximum_count)
 	elif traffic.get("ambient",false):count=AmbientDefinitions.maximum_actor_count(bindings.ambient_population,traffic)
 	for id in count:
+		if not selected41.is_empty() and id==int(selected41.freighter_actor_id):routes.append(null);continue
+		if not selected40.is_empty() and id==int(selected40.freighter_actor_id):routes.append(null);continue
+		if not dekato.is_empty() and id<int(dekato.freighter_count):routes.append(null);continue
 		if not alioth.is_empty() and int(alioth.actors[id].subtype)!=0:routes.append(null);continue
 		if not convoy.is_empty() and int(convoy.actors[id].subtype)!=0:routes.append(null);continue
 		var route := Route.new()
 		var ready: bool
-		if not kappa.is_empty():ready=route.configure_kappa_generated(bindings,id)
+		if not selected41.is_empty():ready=route.configure_selected41_generated(bindings,id)
+		elif not selected40.is_empty():ready=route.configure_selected40_generated(bindings,id)
+		elif not dekato.is_empty():ready=route.configure_dekato_generated(bindings,id)
+		elif not sahi.is_empty():ready=route.configure_sahi_generated(bindings,id,sahi.context)
+		elif not kappa.is_empty():ready=route.configure_kappa_generated(bindings,id)
 		elif not alioth.is_empty():ready=route.configure_alioth_generated(bindings,id)
 		elif not convoy.is_empty():ready=route.configure_convoy_generated(bindings,id)
+		elif contract.get("bakka",false):ready=route.configure_bakka_generated(bindings,id)
 		elif not contract.is_empty():ready=route.configure_contract_generated(bindings,id,int(contract.context.campaign_cursor))
 		elif traffic.has("free_context"):ready=route.configure_free_generated(bindings,id,traffic.free_context)
+		elif traffic.has("void_context"):ready=route.configure_void_generated(bindings,id,traffic.void_context)
 		elif traffic.get("ambient",false):ready=route.configure_ambient_generated(bindings,id,int(traffic.campaign_cursor))
 		elif not traffic.is_empty():ready=route.configure_local_generated(bindings,id)
 		elif not training.is_empty():ready=route.configure_training_generated(bindings,id)
@@ -342,10 +515,25 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, 
 		if not ready: return reject(route.error)
 		routes.append(route)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
+	if not selected41.is_empty():
+		_identity.campaign_cursor=41;_identity.station_id=-1;_identity.system_id=-1
+		_selected41=selected41.duplicate(true)
+	if not selected40.is_empty():
+		_identity.campaign_cursor=int(selected40.context.campaign_cursor)
+		_selected40=selected40.duplicate(true)
+	if not dekato.is_empty():
+		_identity.campaign_cursor=int(dekato.context.campaign_cursor)
+		_identity.station_id=int(dekato.context.station_id)
+		_identity.system_id=int(dekato.context.system_id)
+		_dekato=dekato.duplicate(true)
 	if not kappa.is_empty():
 		_identity.campaign_cursor=int(kappa.context.campaign_cursor)
 		_identity.station_id=int(kappa.context.station_id)
 		_kappa=kappa.duplicate(true)
+	if not sahi.is_empty():
+		_identity.campaign_cursor=int(sahi.context.campaign_cursor)
+		_identity.station_id=int(sahi.context.station_id)
+		_sahi=sahi.duplicate(true)
 	if not alioth.is_empty():
 		_identity.campaign_cursor=int(alioth.context.campaign_cursor)
 		_identity.station_id=int(alioth.context.station_id)
@@ -386,6 +574,11 @@ func generate(random_state: Variant) -> Dictionary:
 	if _identity.is_empty() or not _actors.is_empty() or _generated: return fail("Configure fresh NPC construction before generating once")
 	var random := Random.new()
 	if not random.restore(random_state): return fail(random.error)
+	if not _selected41.is_empty():return _generate_selected41(random)
+	if not _selected40.is_empty():return _generate_selected40(random)
+	if not _dekato.is_empty():return _generate_dekato(random)
+	if not _sahi.is_empty():return _generate_sahi(random)
+	if _traffic.has("void_context"):return _generate_void(random)
 	if not _kappa.is_empty():return _generate_kappa(random)
 	if not _alioth.is_empty():return _generate_alioth(random)
 	if not _convoy.is_empty():return _generate_convoy(random)
@@ -411,7 +604,8 @@ func generate(random_state: Variant) -> Dictionary:
 			if role=="freighter":
 				var drawn:=random.next_int(int(_ambient.freighter.faction_draw_bound))
 				if not _free.is_empty() and drawn<int(_free.freighter_alternate_threshold):faction=int(_free.freighter_alternate_factions[faction])
-				hull=int(_ambient.freighter.hull_catalogue_id)
+				hull=int(_ambient.freighter.hull_catalogue_id) if _free.is_empty() else int(_free.freighter_hulls.get(str(faction),-1))
+				if hull<0:return fail("Unsupported ordinary freighter faction")
 			elif not _free.is_empty():
 				if role=="delivery_pirate":
 					# Even a zero-sized selected hostile group chooses its hull and
@@ -452,7 +646,7 @@ func generate(random_state: Variant) -> Dictionary:
 				var freight: Dictionary=_ambient.freighter
 				# The original multipart model is generated before the world moves
 				# the freighter. Its container count consumes the shared stream.
-				if _free.is_empty():
+				if _free.is_empty() or faction==int(_ambient.actor_kind):
 					actor.assembly=freight.assembly.duplicate(true)
 					actor.assembly.container_count=random.next_int(int(freight.assembly.container_count_bound))
 				else:actor.assembly=_free.freighter_assemblies[str(faction)].duplicate(true)
@@ -605,6 +799,175 @@ func _generate_alioth(random: RefCounted) -> Dictionary:
 	_actors=actors;_routes=routes;_random_state=random.snapshot();_generated=true
 	return snapshot()
 
+func _generate_dekato(random: RefCounted) -> Dictionary:
+	var actors:=[];var routes:=[]
+	var waypoint:=Poses.vec(_dekato.path_points[0])
+	for id in int(_dekato.actor_count):
+		var freighter: bool=id<int(_dekato.freighter_count)
+		# The escort hull rejection draw precedes its factory; the freighter
+		# has a fixed hull and no patrol or initial-fragment allocation.
+		var hull: int=int(_dekato.freighter_hull_catalogue_id) if freighter else _select_hull(random,int(_dekato.escort_hull_picker_faction),_dekato.hulls)
+		var sampled:=_sample_actor(id,waypoint,random,freighter)
+		if sampled.is_empty():return {}
+		var actor: Dictionary=sampled.actor
+		var position: Vector3=actor.factory_position
+		if freighter:
+			var cargo: Dictionary=_dekato.freighter_cargo
+			_scale_freighter_cargo(actor.discarded_cargo,random,int(cargo.cargo_multiplier_offset),int(cargo.cargo_multiplier_bound),int(cargo.cargo_floor_offset),int(cargo.cargo_floor_bound))
+			position=waypoint
+			for axis in 3:position[axis]+=int(_dekato.freighter_position_offset)+random.next_int(int(_dekato.freighter_position_bound))
+			actor.assembly=_dekato.freighter_assembly.duplicate(true);actor.model_assembly_required=true
+			actor.friendly=bool(_dekato.freighter_forced_friendly)
+			actor.cruise_enabled=bool(_dekato.freighter_cruise_enabled)
+		else:actor.script_hostile=bool(_dekato.escort_forced_hostile)
+		# Unlike Alioth/Sahi, this script never clears cargo or rescales hull.
+		actor.cargo=actor.discarded_cargo;actor.discarded_cargo=[]
+		actor.actor_kind=int(_dekato.freighter_actor_kind if freighter else _dekato.escort_actor_kind)
+		actor.subtype=int(_dekato.freighter_subtype if freighter else _dekato.escort_subtype)
+		actor.hull_catalogue_id=hull;actor.population_group="freighter" if freighter else "fighter"
+		actor.body_pose=Transform3D(Basis.IDENTITY,position);actor.statistics_pose=actor.body_pose;actor.model_local_pose=Transform3D.IDENTITY
+		actors.append(actor);routes.append(sampled.route)
+	_actors=actors;_routes=routes;_random_state=random.snapshot();_generated=true
+	return snapshot()
+
+func _generate_selected40(random: RefCounted) -> Dictionary:
+	var actors:=[];var routes:=[]
+	for id in int(_selected40.actor_count):
+		var freighter: bool=id==int(_selected40.freighter_actor_id)
+		var escort: bool=id>=int(_selected40.escort_first) and id<int(_selected40.escort_end)
+		var reserve: bool=id>=int(_selected40.reserve_first)
+		var hull: int=int(_selected40.freighter_hull_catalogue_id) if freighter else _select_hull(random,int(_selected40.escort_actor_kind),_selected40.hulls) if escort else int(_selected40.void_hull_catalogue_id)
+		var origin:=Poses.vec(_selected40.attack_origin) if id>=int(_selected40.attack_first) and not reserve else Vector3.ZERO
+		var sampled:=_sample_actor(id,origin,random,freighter)
+		if sampled.is_empty():return {}
+		var actor: Dictionary=sampled.actor;var route: RefCounted=sampled.route
+		var position: Vector3=actor.factory_position
+		if freighter:
+			var cargo: Dictionary=_selected40.freighter_cargo
+			_scale_freighter_cargo(actor.discarded_cargo,random,int(cargo.cargo_multiplier_offset),int(cargo.cargo_multiplier_bound),int(cargo.cargo_floor_offset),int(cargo.cargo_floor_bound))
+			actor.assembly=_selected40.freighter_assembly.duplicate(true);actor.model_assembly_required=true
+			actor.hull_override=int(_selected40.freighter_hull_base)+int(_selected40.freighter_hull_per_rank)*int(_selected40.context.rank)
+			actor.name_text_id=int(_selected40.name_text_ids[0]);position=Poses.vec(_selected40.freighter_position)
+		elif escort:
+			actor.discarded_route=actor.route
+			if not route.replace_with_selected40_patrol():return fail(route.error)
+			actor.route=route.snapshot()
+			if id==int(_selected40.named_escort_id):actor.name_text_id=int(_selected40.name_text_ids[1])
+		elif reserve:position=Poses.vec(_selected40.reserve_position)
+		actor.cargo=actor.discarded_cargo;actor.discarded_cargo=[]
+		actor.actor_kind=int(_selected40.freighter_actor_kind) if freighter else int(_selected40.escort_actor_kind) if escort else int(_selected40.void_actor_kind)
+		actor.subtype=1 if freighter else 0;actor.hull_catalogue_id=hull
+		actor.population_group="freighter" if freighter else "fighter"
+		actor.friendly=freighter or escort;actor.script_hostile=not actor.friendly
+		actor.mode=int(_selected40.parked_mode) if freighter or reserve else 0
+		actor.active=not (freighter or reserve);actor.targeting_blocked=not actor.active
+		actor.model_draw_enabled=not freighter
+		actor.body_pose=Transform3D(Basis.IDENTITY,position);actor.statistics_pose=actor.body_pose;actor.model_local_pose=Transform3D.IDENTITY
+		actors.append(actor);routes.append(route)
+	_actors=actors;_routes=routes;_random_state=random.snapshot();_generated=true
+	return snapshot()
+
+func _generate_selected41(random: RefCounted) -> Dictionary:
+	var actors:=[];var routes:=[]
+	for id in int(_selected41.actor_count):
+		var freighter: bool=id==int(_selected41.freighter_actor_id)
+		# Source constructs each factory at zero first, preserving its cargo,
+		# patrol and debris draws. Script placement is a later fixed override.
+		var sampled:=_sample_actor(id,Vector3.ZERO,random,freighter)
+		if sampled.is_empty():return {}
+		var actor: Dictionary=sampled.actor;var route: RefCounted=sampled.route
+		if freighter:
+			var cargo: Dictionary=_selected41.freighter_cargo
+			_scale_freighter_cargo(actor.discarded_cargo,random,int(cargo.cargo_multiplier_offset),int(cargo.cargo_multiplier_bound),int(cargo.cargo_floor_offset),int(cargo.cargo_floor_bound))
+			actor.assembly=_selected41.freighter_assembly.duplicate(true);actor.model_assembly_required=true
+			# Current hull is restored, not a replacement for factory capacity.
+			actor.retained_current_hull=int(_selected41.retained_hull)
+			actor.name_text_id=int(_selected41.name_text_id);actor.cruise_enabled=true
+		actor.cargo=actor.discarded_cargo;actor.discarded_cargo=[]
+		actor.actor_kind=int(_selected41.freighter_actor_kind if freighter else _selected41.fighter_actor_kind)
+		actor.subtype=1 if freighter else 0;actor.hull_catalogue_id=int(_selected41.freighter_hull_catalogue_id if freighter else _selected41.fighter_hull_catalogue_id)
+		actor.population_group="freighter" if freighter else "fighter"
+		actor.friendly=freighter;actor.script_hostile=not freighter
+		actor.body_pose=Transform3D(Basis.IDENTITY,Poses.vec(_selected41.positions[id]));actor.statistics_pose=actor.body_pose;actor.model_local_pose=Transform3D.IDENTITY
+		actors.append(actor);routes.append(route)
+	_actors=actors;_routes=routes;_random_state=random.snapshot();_generated=true
+	return snapshot()
+
+func _generate_sahi(random: RefCounted) -> Dictionary:
+	var actors:=[];var routes:=[]
+	actors.resize(int(_sahi.actor_count));routes.resize(int(_sahi.actor_count))
+	var waypoint:=Poses.vec(_sahi.waypoints[0])
+	for value in _sahi.construction_order:
+		var id:=int(value);var source: Dictionary=_sahi.actors[id]
+		var freighter: bool=int(source.subtype)==1
+		# The shared factory selects the concrete subtype before construction.
+		# Freighters have no patrol or initial debris; Sahi replaces Void routes.
+		var sampled:=_sample_actor(id,waypoint,random,freighter)
+		if sampled.is_empty():return {}
+		var actor: Dictionary=sampled.actor;var route: RefCounted=sampled.route
+		if freighter:
+			var cargo_rules: Dictionary=_sahi.freighter_cargo
+			_scale_freighter_cargo(actor.discarded_cargo,random,int(cargo_rules.multiplier_offset),int(cargo_rules.multiplier_bound),int(cargo_rules.floor_offset),int(cargo_rules.floor_bound))
+			actor.assembly=_sahi.freighter_assembly.duplicate(true);actor.model_assembly_required=true
+			actor.cruise_enabled=bool(_sahi.freighter_cruise_enabled);actor.hull_divisors=[int(_sahi.freighter_hull_divisor)]
+			actor.cargo=[]
+		else:
+			if not _sahi.has("post_sahi") and not _sahi.has("dima"):
+				if not route.replace_with_sahi_patrol():return fail(route.error)
+				actor.discarded_route=actor.route;actor.route=route.snapshot()
+			actor.cargo=actor.discarded_cargo;actor.discarded_cargo=[]
+		if _sahi.has("post_sahi"):
+			var rules: Dictionary=_sahi.post_sahi
+			var position:=Vector3.ZERO
+			var placement_draws:=[]
+			if _sahi.context.campaign_cursor in [25,29]:
+				for axis in 3:
+					var sign_draw: int=random.next_int(int(rules.sign_bound));var magnitude_draw: int=random.next_int(int(rules.magnitude_bound))
+					position[axis]=(1 if sign_draw==int(rules.positive_sign_draw) else -1)*(int(rules.magnitude_offset)+magnitude_draw)
+					placement_draws.append([sign_draw,magnitude_draw])
+			else:
+				position=Vectors.added(_sahi.player_pose.origin,Vectors.scaled(Vectors.normalized(_sahi.player_pose.basis.z),float(rules.forward_distance)))
+				for axis in 3:
+					var draw: int=random.next_int(int(rules.axis_bound));placement_draws.append(draw)
+					position[axis]=Vitals.single(position[axis]+int(rules.axis_offset)+draw)
+			actor.factory_position_before_relocation=actor.factory_position
+			actor.factory_position=position;actor.placement_draws=placement_draws
+		for key in ["actor_kind","subtype","hull_catalogue_id"]:actor[key]=int(source[key])
+		actor.population_group="freighter" if freighter else "fighter"
+		actor.body_pose=Transform3D(Basis.IDENTITY,actor.factory_position);actor.statistics_pose=actor.body_pose;actor.model_local_pose=Transform3D.IDENTITY
+		actors[id]=actor;routes[id]=route
+	_actors=actors;_routes=routes;_random_state=random.snapshot();_generated=true
+	return snapshot()
+
+func _generate_void(random: RefCounted) -> Dictionary:
+	var population: Dictionary=_sample_traffic(random)
+	if population.is_empty() or int(population.actor_count)>_routes.size():return fail("Void actor count exceeds its configured routes")
+	var rules: Dictionary=_traffic.void_rules
+	var actors:=[];var routes:=[]
+	for id in int(population.actor_count):
+		# The same kind9/subtype0/hull8 factory used by the earlier Void casts
+		# consumes its position, route, cargo and fragment draws first.
+		var sampled:=_sample_actor(id,Vector3.ZERO,random)
+		if sampled.is_empty():return {}
+		var actor: Dictionary=sampled.actor;var route: RefCounted=sampled.route
+		var position:=Vector3.ZERO;var draws:=[]
+		for axis in 3:
+			var drawn: int=random.next_int(int(rules.position_bounds[axis]))
+			draws.append(drawn)
+			position[axis]=int(rules.position_offsets[axis])+drawn
+		var body:=Transform3D(Basis.IDENTITY,position)
+		actor.merge({"actor_kind":int(rules.actor_kind),"hull_catalogue_id":int(rules.hull_id),
+			"subtype":int(rules.actor_subtype),"population_group":"fighter","factory_position_before_relocation":actor.factory_position,
+			"factory_position":position,"placement_draws":draws,"cargo":actor.discarded_cargo,"discarded_cargo":[],
+			"body_pose":body,"statistics_pose":body,"model_local_pose":Transform3D.IDENTITY,
+			"activation_setter_argument":int(rules.shared_activation_setter_argument),
+			# This setter forces persistent hostility. F8 is a statistics flag;
+			# neither it nor these raw bytes set the native actor's active mode.
+			"activation_fields":{"f8":1,"b60":1,"b61":0,"ec":1}},true)
+		actors.append(actor);routes.append(route)
+	_actors=actors;_routes=routes;_random_state=random.snapshot();_traffic_sample=population;_generated=true
+	return snapshot()
+
 func _sample_actor(id: int,origin: Vector3,random: RefCounted,freighter:=false) -> Dictionary:
 	var position:=Vector3.ZERO
 	for axis in 3:position[axis]=origin[axis]+int(_definition.spawn_origin[axis])+random.next_int(int(_definition.spawn_bound))
@@ -648,12 +1011,15 @@ static func _select_hull(random: RefCounted,faction: int,rules: Dictionary) -> i
 
 func _generate_contract(random: RefCounted) -> Dictionary:
 	var kind:=int(_contract.context.mission.kind)
-	# This common selection precedes kind dispatch even for empty courier worlds.
-	var enemy_faction:=ContractDefinitions.draw_enemy_faction(_contract,random,int(_contract.alternate_enemy_faction))
+	var story: bool=_contract.get("bakka",false)
+	# Lounge selection consumes a draw even for empty couriers. The authored
+	# story population is a separate source branch and must not consume it.
+	var enemy_faction: int=-1 if story else ContractDefinitions.draw_enemy_faction(_contract,random,int(_contract.alternate_enemy_faction))
 	var path:=[]
 	var actors:=[];var routes:=[]
 	var center:=Vector3.ZERO
-	if kind==4:
+	if story:path=_contract.authored_path.duplicate()
+	elif kind==4:
 		var rules: Dictionary=_contract.pirate
 		if random.next_int(int(rules.path_choice_bound))==0:path=[Vector3(Vector3i(_contract.field_center))]
 		else:path=_contract_path(random,int(rules.path_count_offset)+random.next_int(int(rules.path_count_bound)))
@@ -673,8 +1039,8 @@ func _generate_contract(random: RefCounted) -> Dictionary:
 				"hostile":bool(rules.hostile),"friendly":bool(rules.friendly),"cargo":[],"fragments":[],"route":{}})
 			routes.append(null);continue
 		var rival:=kind==12 and id==int(_contract.challenge.rival_actor_id)
-		var faction:=int(_contract.context.client_faction) if rival else int(_contract.pirate_actor_kind)
-		var hull:=_contract_hull(random,faction)
+		var faction:=int(_contract.rival_faction if story else _contract.context.client_faction) if rival else int(_contract.pirate_actor_kind)
+		var hull: int=int(_contract.rival_hull) if story and rival else _contract_hull(random,faction)
 		var origin: Vector3=Vector3.ZERO if rival else path[random.next_int(path.size())]
 		var sampled:=_sample_actor(id,origin,random)
 		if sampled.is_empty():return {}
@@ -691,7 +1057,9 @@ func _generate_contract(random: RefCounted) -> Dictionary:
 			if not route.replace_with_contract_path(path):return fail(route.error)
 			actor.route=route.snapshot()
 			actor.merge({"friendly":bool(rules.friendly),"current_hull_override":int(rules.current_hull_override),
-				"name":_contract.context.contact_name,"base_speed":float(rules.base_speed),"speed":float(rules.speed)})
+				"base_speed":float(rules.base_speed),"speed":float(rules.speed)})
+			if story:actor.name_text_id=int(_contract.rival_name_text_id)
+			else:actor.name=_contract.context.contact_name
 		else:
 			actor.cargo=actor.discarded_cargo;actor.discarded_cargo=[]
 			actor.merge({"mode":int(_contract.pirate.mode),"active":bool(_contract.pirate.active),"targeting_blocked":bool(_contract.pirate.targeting_blocked)})
@@ -755,7 +1123,7 @@ func _sample_cargo(random: RefCounted) -> Array:
 
 func sample_relaunch_cargo(random_state: Variant) -> Dictionary:
 	error=""
-	if _ambient.is_empty() or _actors.is_empty() or (_identity.get("campaign_cursor") not in [11,12,13,14,18,19] or (_identity.get("campaign_cursor") in [18,19] and _free.is_empty())):return fail("Traffic cargo regeneration requires its retained generated population")
+	if _ambient.is_empty() or _actors.is_empty() or (_identity.get("campaign_cursor") not in FlightStages.REGENERATING or (_identity.get("campaign_cursor") in FlightStages.FREE and _free.is_empty())):return fail("Traffic cargo regeneration requires its retained generated population")
 	var random:=Random.new()
 	if not random.restore(random_state):return fail(random.error)
 	return {"cargo":_sample_cargo(random),"random_state":random.snapshot()}
@@ -784,19 +1152,39 @@ func snapshot() -> Dictionary:
 	var value := _identity.duplicate()
 	value.merge({"actors":_actors.duplicate(true),"random_state":_random_state.duplicate()})
 	if not _traffic_sample.is_empty():value.population=_traffic_sample.duplicate(true)
-	if not _contract_layout.is_empty():value.contract_encounter=_contract_layout.duplicate(true)
+	if not _contract_layout.is_empty():
+		if _contract.get("bakka",false):
+			value.bakka_encounter=_contract_layout.duplicate(true)
+			value.system_id=int(_contract.context.system_id)
+			value.player_ship_id=int(_contract.loadout.ship_id)
+		else:value.contract_encounter=_contract_layout.duplicate(true)
 	if not _convoy.is_empty():value.convoy_context=_convoy.context.duplicate(true)
 	if not _alioth.is_empty():value.alioth_context=_alioth.context.duplicate(true)
 	if not _kappa.is_empty():
 		value.kappa_context=_kappa.context.duplicate(true);value.kappa_loadout=_kappa.loadout.duplicate(true)
+	if not _sahi.is_empty():
+		value.sahi_context=_sahi.context.duplicate(true);value.player_ship_id=int(_sahi.loadout.ship_id)
+	if not _dekato.is_empty():
+		value.dekato_context=_dekato.context.duplicate(true);value.player_ship_id=int(_dekato.loadout.ship_id)
+		value.player_equipment_ids=_dekato.loadout.equipment_ids.duplicate()
+	if not _selected40.is_empty():
+		value.selected40_context=_selected40.context.duplicate(true);value.player_ship_id=int(_selected40.loadout.ship_id)
+		value.player_equipment_ids=_selected40.loadout.equipment_ids.duplicate()
+	if not _selected41.is_empty():
+		value.selected41_context=_selected41.context.duplicate(true);value.player_ship_id=int(_selected41.loadout.ship_id)
+		value.player_equipment_ids=_selected41.loadout.equipment_ids.duplicate()
 	if _traffic.has("free_context"):
 		value.free_context=_traffic.free_context.duplicate(true);value.player_ship_id=int(_traffic.free_player_ship_id)
 		value.station_id=int(_traffic.station_id)
+	if _traffic.has("void_context"):
+		value.void_context=_traffic.void_context.duplicate(true);value.player_ship_id=int(_traffic.void_player_ship_id)
+		value.player_equipment_ids=_traffic.void_equipment_ids.duplicate()
+		value.station_id=-1;value.system_id=-1
 	return value
 
 func clear() -> void:
 	error="";_identity={};_definition={};_items=[];_routes=[];_actors=[];_random_state={};_arrival={};_full_hold={};_training={};_traffic={};_traffic_sample={};_authored_route=null;_ambient={};_free={};_population_owner=null
-	_contract={};_contract_layout={};_generated=false;_convoy={};_alioth={};_kappa={}
+	_contract={};_contract_layout={};_generated=false;_convoy={};_alioth={};_kappa={};_sahi={};_dekato={};_selected40={};_selected41={}
 
 var _contract:={}
 var _contract_layout:={}

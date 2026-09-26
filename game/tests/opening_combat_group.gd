@@ -65,13 +65,13 @@ func check_profile(content: String, binding_path: String) -> void:
 	bad_scene.actors[0].position=Vector3.ZERO
 	bad_scene.actors[2].position=Vector3(INF,0,0)
 	check(not group.update(bad_scene,3,radio) and group.snapshot()==before,"Failed group update partially committed")
-	check(group._actors[0].set_permissions(false,false,false),"Could not set explicit permissions")
+	check(group._writable(0).set_permissions(false,false,false),"Could not set explicit permissions")
 	check(group.update(first.scene,3,radio),group.error)
 	var active: Dictionary = group.snapshot()
 	check(active.activated and active.actors[0].active and not active.actors[0].damage_allowed and not active.actors[0].firing_allowed,"Activation overwrote independent permissions")
 	for actor in active.actors:
 		check(actor.active and actor.actor_mode==1 and actor.spatial_half_extent==50000,"Source activation fields lost")
-	check(group._actors[0].set_permissions(false,true,true),"Could not deactivate actor after cue")
+	check(group._writable(0).set_permissions(false,true,true),"Could not deactivate actor after cue")
 	check(group.update(first.scene,4,radio) and not group.snapshot().actors[0].active,"Repeated phase update replayed activation")
 	var fork: RefCounted = group.fork_for_frame()
 	check(fork.record_contact(1,Vector3(1,2,30)),fork.error)

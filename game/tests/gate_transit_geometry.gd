@@ -78,6 +78,7 @@ func capture(viewport: SubViewport,args: PackedStringArray,name: String):
 			var pixel:=image.get_pixel(x,y)
 			if absf(pixel.r-background.r)+absf(pixel.g-background.g)+absf(pixel.b-background.b)>0.09:foreground+=1
 	check(foreground>100,"Original animated gate did not render: "+name)
-	if args.size()==4:
-		DirAccess.make_dir_recursive_absolute(args[3])
-		check(image.save_png(args[3].path_join(name+".png"))==OK,"Gate animation capture failed")
+	var directory:=args[3] if args.size()==4 else OS.get_environment("GOF2_CAPTURE_DIR")
+	if not directory.is_empty():
+		DirAccess.make_dir_recursive_absolute(directory)
+		check(image.save_png(directory.path_join(name+".png"))==OK,"Gate animation capture failed")

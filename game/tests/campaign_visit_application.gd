@@ -11,6 +11,22 @@ func verify_free_application() -> void:
 	app.enable_saves(directory)
 	app.show();app.present_session();await process_frame;resume_application_focus()
 	var initial: Dictionary=app.session.station_owner().snapshot()
+	if OS.get_environment("GOF2_VISIT_STATION_UI_ONLY")=="1":
+		# Reuse the native archive loaded above, including safe crystal-transit
+		# stations. A focused request must never fall back to an earlier journey.
+		check(initial.campaign_cursor in [33,34,35,36,38],"Use an earned crystal-era station for focused service checks")
+		if failures:return
+		var campaign=load("res://src/content/free_campaign_definitions.gd")
+		var previous: Dictionary=campaign.mission(definitions.mido_travel,initial.campaign_cursor-1)
+		var saved:=OS.get_environment("GOF2_SOURCE_SAVE")
+		var input_hash:=FileAccess.get_sha256(saved)
+		# Cursor33 can be archived at ordinary transit stations before hand-in;
+		# later chapters must still be at their actually acknowledged target.
+		check((initial.campaign_cursor==33 or initial.loadout.station_id==previous.get("station_id")) and not input_hash.is_empty(),"Use the earned transit checkpoint or acknowledged station of the preceding visit")
+		if failures:return
+		await verify_saved_services(initial,"campaign-"+str(initial.campaign_cursor))
+		check(FileAccess.get_sha256(saved)==input_hash,"Station services rewrote their earned source save")
+		return
 	if initial.campaign_cursor==19 and initial.loadout.station_id==56:
 		retained_job=initial.contracts.mission.duplicate(true)
 		await verify_visit_continuation(initial)
@@ -70,7 +86,7 @@ func after_local_journeys(original: Dictionary,_initial_stock: Dictionary) -> vo
 		if app.session.snapshot().dialogue.visible:break
 		if not application_step():return
 	var opened: Dictionary=app.session.snapshot()
-	check(opened.dialogue.visible and opened.dialogue.text_id==1838 and opened.world_elapsed_ms>10000 and opened.campaign_cursor==18,"The original visit did not open at its eligible poll: "+str({"world_ms":opened.world_elapsed_ms,"hud_ms":opened.hud_elapsed_ms,"visit":opened.mining_objective.campaign_visit.phase}))
+	check(opened.dialogue.visible and opened.dialogue.text_id==int(definitions.mido_travel.suttnar_visit.events[0].text_id) and opened.world_elapsed_ms>10000 and opened.campaign_cursor==18,"The original visit did not open at its eligible poll: "+str({"world_ms":opened.world_elapsed_ms,"hud_ms":opened.hud_elapsed_ms,"visit":opened.mining_objective.campaign_visit.phase}))
 	check(not app.session.can_control() and app.session.scene.dialogue.visible,"The visit did not take ownership of flight input")
 	if failures:return
 	var frozen: Dictionary=app.session.snapshot()
@@ -134,30 +150,43 @@ func verify_visit_continuation(landed: Dictionary) -> void:
 	check(app.session.snapshot().campaign_cursor==19 and app.session.snapshot().loadout.station_id==57 and app.session.snapshot().contracts.mission==retained_job,"Post-visit travel lost its retained career")
 	print("Earned Suttnar cursor19 retained through station save/load, departure and Tornard travel")
 
-func verify_saved_services(landed: Dictionary) -> void:
-	await capture_free_application("suttnar-station")
+func verify_saved_services(landed: Dictionary,label: String="suttnar") -> void:
+	await capture_free_application(label+"-station")
 	check(app._launch_button.visible and app._hangar_button.visible and app._lounge_button.visible,"The restored station omitted an available service")
 	var key:=InputEventKey.new();key.physical_keycode=KEY_H;key.pressed=true;app._unhandled_input(key)
 	check(app.equipment_panel.visible and app.session.snapshot().hangar_open,"The restored station's Hangar shortcut failed")
 	if failures:return
-	await capture_free_application("suttnar-hangar")
+	await capture_free_application(label+"-hangar")
 	if not app.equipment_action("close"):check(false,app.session.error);return
 	key=InputEventKey.new();key.physical_keycode=KEY_L;key.pressed=true;app._unhandled_input(key)
 	check(app.lounge_panel.visible and app.session.snapshot().lounge_open,"The restored station's Space Lounge shortcut failed")
 	if failures:return
-	await capture_free_application("suttnar-lounge")
+	# The deterministic host is not processing itself. Follow the real room
+	# camera's entry frames before judging/capturing its saved presentation.
+	app.session.rebase_time(now_us)
+	for tick in 30:
+		if not application_step():return
+	check(app.session.lounge_scene!=null and app.session.lounge_scene.camera.current and not app.session.geometry.visible,"The restored lounge did not select its native room camera")
+	if failures:return
+	var room: Dictionary=app.session.lounge_scene.snapshot()
+	check(room.station_id==landed.loadout.station_id and room.visitors.size()==app.session.snapshot().contracts.population.contacts.size(),"The restored room lost its actual station or saved contacts")
+	if failures:return
+	await capture_free_application(label+"-lounge")
 	if not app.contract_action("close",-1):check(false,app.session.error);return
 	var after: Dictionary=app.session.station_owner().snapshot()
-	for field in ["credits","mission","passengers","progress"]:
-		check(after.contracts[field]==landed.contracts[field],"Browsing restored services changed retained "+field)
-	check(after.loadout==landed.loadout and after.cargo==landed.cargo and after.mission==landed.mission,"Browsing restored services changed the ship, cargo or story")
+	for field in ["credits","mission","passengers","progress","accepted_contact","travel_statistics","blueprints","void_source"]:
+		if landed.contracts.has(field):check(after.contracts.get(field)==landed.contracts[field],"Browsing restored services changed retained "+field)
+	check(after.loadout==landed.loadout and after.cargo==landed.cargo and after.mission==landed.mission and after.campaign_cursor==landed.campaign_cursor,"Browsing restored services changed the ship, cargo or story")
 	if not app.load_station(now_us):check(false,app._save_notice.text);return
 	check(app.session.station_owner().snapshot()==after,"Service-exit autosave changed the restored station")
-	print("Restored Suttnar Hangar/H, Space Lounge/L and service-exit autosave retained the actual career")
+	print("Restored ",label," Hangar/H, Space Lounge/L and service-exit autosave retained the actual career")
 
 func visit_gate(system_id: int,station_id: int) -> bool:
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,1789100000):check(false,app.status.text);return false
 	if not await release_application_flight():return false
+	return await follow_gate_course(system_id,station_id)
+
+func follow_gate_course(system_id: int,station_id: int) -> bool:
 	if not app.open_map() or not app.switch_map_system(system_id):check(false,app.status.text);return false
 	app.map_panel.select_station(station_id);app.map_panel.request_confirmation()
 	if not app.confirm_map_planet(station_id,now_us):check(false,app.map_panel.error);return false
@@ -169,6 +198,6 @@ func visit_gate(system_id: int,station_id: int) -> bool:
 		now_us+=100000
 		if not app.session.step(now_us):check(false,app.session.error);return false
 	if app.session.status!="gate_arrival_transition_required":check(false,"The actual gate did not complete its animation");return false
-	if not app.enter_gate_arrival(now_us,4096,1789100000):check(false,app.status.text);return false
+	if not app.enter_gate_arrival(now_us,4096,flight_world_seconds()):check(false,app.status.text);return false
 	check(app.session.snapshot().location.system_id==system_id and app.session.snapshot().location.station_id==station_id,"The gate arrived outside the selected adjacent system")
 	return failures==0

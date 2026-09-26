@@ -4,6 +4,7 @@ extends RefCounted
 const Definitions=preload("res://src/content/mido_travel_definitions.gd")
 const Random=preload("res://src/simulation/seeded_random.gd")
 const GateArrival=preload("res://src/content/gate_arrival_definitions.gd")
+const VoidSource=preload("res://src/simulation/ordinary_void_source.gd")
 var error:=""
 var _state:={}
 
@@ -15,11 +16,26 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 	var rules: Dictionary=bindings.mido_travel.map
 	var location: Dictionary=flight.get("location",{})
 	var travel: Dictionary=flight.get("local_travel",{})
+	var docked: bool=flight.get("station_map",false)
 	var cursor:=int(flight.get("campaign_cursor",-1))
-	var stations:=Definitions.navigation_stations(bindings.mido_travel,cursor,int(location.get("station_id",-1)))
-	if Definitions.free_local_navigation(bindings.mido_travel,cursor):stations=stations.filter(func(id):return id==location.get("station_id") or load("res://src/content/free_navigation_definitions.gd").ordinary_departure_at(bindings,cursor,flight.get("mission",{}),id))
-	if stations.is_empty() or location.get("system_id")!=Definitions.navigation_system(bindings.mido_travel,cursor,int(location.get("station_id",-1))) or travel.get("phase")!="flight":return reject("The local map is unavailable at this campaign boundary")
-	if (Definitions.navigation_available(bindings.mido_travel,cursor) or Definitions.free_local_navigation(bindings.mido_travel,cursor)) and not Definitions.navigation_mission(bindings.mido_travel,cursor,flight.get("mission",{})):return reject("The local map lost the pending story objective")
+	# Observe the retained source through its validation owner. Never select a
+	# location, initialize missing legacy state or draw from the career RNG here.
+	var warning:={}
+	var career: Dictionary=flight.get("contracts",{})
+	if career.has("void_source"):
+		var source:=VoidSource.new()
+		if not source.configure(bindings,catalogues,career.get("lounges",{}).get("system_availability"),career.void_source):return reject(source.error)
+		var retained:=source.snapshot()
+		var gates: Dictionary=bindings.mido_travel.void_access.map_warning
+		if cursor>=int(gates.first_cursor) and retained.source_system_id>=0:
+			var station_id: int=int(retained.source_station_id) if cursor>=int(gates.target_hint_first_cursor) else -1
+			warning={"system_id":int(retained.source_system_id),"station_id":station_id,
+				"system_name":catalogues.tables.systems[int(retained.source_system_id)].name,
+				"station_name":catalogues.tables.stations[station_id].name if station_id>=0 else ""}
+	var stations:=Definitions.navigation_stations(bindings,cursor,int(location.get("station_id",-1)))
+	if Definitions.free_local_navigation(bindings,cursor):stations=stations.filter(func(id):return id==location.get("station_id") or load("res://src/content/free_navigation_definitions.gd").destination_supported(bindings,cursor,flight.get("mission",{}),id))
+	if stations.is_empty() or location.get("system_id")!=Definitions.navigation_system(bindings,cursor,int(location.get("station_id",-1))) or (not docked and travel.get("phase")!="flight"):return reject("The local map is unavailable at this campaign boundary")
+	if (Definitions.navigation_available(bindings.mido_travel,cursor) or Definitions.free_local_navigation(bindings,cursor)) and not Definitions.navigation_mission(bindings,cursor,flight.get("mission",{})):return reject("The local map lost the pending story objective")
 	# The same original system display serves both local courses and a gate's
 	# destination choice. Displaying another system never changes flight state.
 	var systems: Array=[int(location.system_id)]
@@ -68,6 +84,7 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 		if material.is_empty() or material.get("id")!=int(rules.material_id) or material.get("render_type")!=int(rules.render_type) or int(material.texture_ids[0])!=int(rules.texture_id):return reject("Local map planet material is unsupported")
 		rows.append({"station_id":int(station.id),"name":station.name,"planet_type":type,
 			"current":int(station.id)==int(location.station_id),
+			"void_source":display_system_id==warning.get("system_id",-1) and int(station.id)==warning.get("station_id",-1),
 			"supported":stations.has(int(station.id)) and int(station.id)!=int(location.station_id),
 			"mission_target":int(station.id)==int(flight.get("mission",{}).get("station_id",-1)) or int(station.id)==int(flight.get("contracts",{}).get("mission",{}).get("station_id",-1)),
 			"model_id":resource_id,"model_path":path,"radius":radius,"angle_units":angle_units,
@@ -85,7 +102,7 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 	for entry in ui.legend:labels.legend.append({"image_id":int(entry.image_id),"text":library.strings[int(entry.text_id)]})
 	_state={"base_content_id":base,"binding_id":bindings.binding_id,"language":library.active_language,
 		"campaign_cursor":int(flight.campaign_cursor),"station_id":int(location.station_id),
-		"system_id":display_system_id,"system_name":system.name,"labels":labels,"rows":rows,
+		"system_id":display_system_id,"system_name":system.name,"labels":labels,"rows":rows,"void_warning":warning,
 		"route_mode":"gate" if gate_selection else "local","system_choices":choices,
 		"selected_station_id":-1,"confirmation_visible":false,"diagnostic":"",
 		"ambient":float(rules.ambient),"diffuse":float(rules.diffuse),"layout_random":layout_random,

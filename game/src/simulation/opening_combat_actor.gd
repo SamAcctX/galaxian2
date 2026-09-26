@@ -11,6 +11,7 @@ const AmbientLife=preload("res://src/content/ambient_lifecycle_definitions.gd")
 const NPCConstruction=preload("res://src/simulation/opening_npc_construction.gd")
 const ContractCombat=preload("res://src/content/contract_ship_combat_definitions.gd")
 const ContractLife=preload("res://src/content/contract_ship_lifecycle_definitions.gd")
+const BakkaCombat=preload("res://src/content/bakka_combat_definitions.gd")
 const ControlDefinitions=preload("res://src/content/full_hold_control_definitions.gd")
 const Appearance=preload("res://src/content/full_hold_appearance_definitions.gd")
 const Flight=preload("res://src/simulation/npc_flight.gd")
@@ -36,6 +37,7 @@ const Kappa = preload("res://src/content/kappa_population_definitions.gd")
 const KappaFighters = preload("res://src/content/kappa_fighters_definitions.gd")
 const KappaRescue = preload("res://src/simulation/kappa_rescue.gd")
 const ShipSystems = preload("res://src/simulation/ship_systems.gd")
+const NPCSystems = preload("res://src/content/npc_systems_definitions.gd")
 const Alioth = preload("res://src/content/alioth_population_definitions.gd")
 const AliothAttack = preload("res://src/simulation/alioth_attack.gd")
 var error := ""
@@ -184,7 +186,7 @@ func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction:
 	var row: Dictionary=packet.actors[actor_id]
 	if not Flight.rigid_pose(row.get("body_pose")) or row.body_pose!=row.get("statistics_pose"):return reject("Ambient actor poses disagree")
 	var freight: bool=row.population_group=="freighter"
-	var root_id: int=int(row.assembly.body_resource_ids[0] if data.has("free_traffic") else row.assembly.root_model_id) if freight else -1
+	var root_id: int=int(row.assembly.root_model_id if row.assembly.has("root_model_id") else row.assembly.body_resource_ids[0]) if freight else -1
 	var model: String=bindings.resolve(root_id,"mesh") if freight else bindings.resolve_ship_model(int(row.hull_catalogue_id))
 	if model.is_empty():return reject(bindings.error)
 	var base: int=int(data.rank_base)+int(data.rank_multiplier)*rank+int(data.cursor_multiplier)*int(data.campaign_cursor)
@@ -211,6 +213,7 @@ func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction:
 		_state.active=bool(bindings.ambient_lifecycle.initial_active)
 		_state.travel_cycle=0
 	if AmbientLife.recycling_parameters(bindings.ambient_lifecycle):_state.spawn_generation=0
+	if not _configure_ordinary_systems(bindings,int(rank),int(row.subtype)):return false
 	return set_pose(row.statistics_pose,row.body_pose)
 
 func configure_convoy(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
@@ -315,20 +318,119 @@ func systems_hit(amount: Variant) -> Dictionary:
 	var result: Dictionary=_systems.hit(amount,_vitals.snapshot().hull,_state.active,_state.damage_allowed)
 	if result.is_empty():return fail_hit(_systems.error)
 	if result.accepted:_state.systems_hit_serial+=1
+	if result.accepted and result.after.integrity==0 and _state.has("systems_motion_ms"):
+		_state.systems_motion_ms=float(result.after.recovery_ms)
 	return result
 
 func advance_systems(delta_ms: Variant) -> bool:
 	error=""
 	if _systems==null or not Vitals.integer(delta_ms):return reject("This actor has no supported systems recovery frame")
-	if _state.actor_mode in [3,4]:return true
+	var freighter: bool=_state.get("population_group")=="freighter"
+	if not freighter and _state.actor_mode in [3,4]:return true
 	if not _systems.advance(delta_ms):return reject(_systems.error)
+	if freighter and _state.systems_motion_ms>0.0:
+		_state.systems_motion_ms=maxf(0.0,Vitals.single(_state.systems_motion_ms-float(delta_ms)))
 	# Radio reads the NPC projection, updated during the actor pass. A pulse
 	# changes statistics first; it must not fabricate an earlier radio event.
-	_state.systems_disabled=bool(_systems.snapshot().disabled)
+	if freighter:_state.systems_disabled=_state.systems_motion_ms>0.0
+	elif _state.actor_mode!=6:_state.systems_disabled=bool(_systems.snapshot().disabled)
 	return true
 
 func systems_for_frame() -> RefCounted:
 	return null if _systems==null else _systems.fork()
+
+func _configure_ordinary_systems(bindings: RefCounted,rank: int,subtype: int) -> bool:
+	if not NPCSystems.available(bindings):return true
+	var rules:=NPCSystems.systems(bindings,rank,subtype)
+	var systems:=ShipSystems.new()
+	if rules.is_empty() or not systems.configure(bindings,rules.capacity,rules.recovery_ms):return reject("Ordinary systems initialization is unavailable")
+	_systems=systems
+	_state.merge({"systems_disabled":false,"systems_hit_serial":0,"script_hostile":false,"scenery":false,"permanent_friendly":false},true)
+	if subtype==1:_state.systems_motion_ms=0.0
+	return true
+
+func retain_ordinary_force(forced: bool,persistent: bool) -> bool:
+	if _systems==null or not (_state.get("ambient_traffic",false) or _state.get("authored_story",false) or _state.get("bakka_combat",false)) or (_state.script_hostile and not persistent):return reject("Ordinary reactions lost persistent faction hostility")
+	if not retain_local_force(forced):return false
+	_state.script_hostile=persistent
+	# Challenge friendship is authored independently of the persistent force
+	# bit. Do not replace it with ordinary traffic's derived faction projection.
+	if persistent and not _state.get("bakka_combat",false):_state.hostile=true;_state.friendly=false
+	return true
+
+func _configure_story(bindings: RefCounted,data: Dictionary,row: Dictionary) -> bool:
+	clear()
+	var freight: bool=row.population_group=="freighter"
+	var model: String=bindings.resolve(int(row.assembly.body_resource_ids[0]),"mesh") if freight else bindings.resolve_ship_model(int(row.hull_catalogue_id))
+	if model.is_empty():return reject(bindings.error)
+	var base:=int(data.rank_base)+int(data.rank_multiplier)*int(data.rank)+int(data.cursor_multiplier)*int(data.campaign_cursor)
+	if freight:base*=int(data.freighter.hull_multiplier)
+	var factory_hull:=scaled_hull(float(base),float(data.difficulty),float(data.difficulty_offset))
+	var current_hull:=factory_hull
+	for divisor in row.get("hull_divisors",[]):
+		@warning_ignore("integer_division")
+		current_hull=current_hull/int(divisor)
+	# Some authored constructors replace BOTH hull values after the factory;
+	# this is not the ordinary setter which only raises maximum capacity.
+	if row.has("hull_override"):current_hull=int(row.hull_override)
+	if row.has("retained_current_hull"):current_hull=int(row.retained_current_hull)
+	var initial:={"actor_id":row.actor_id,"actor_kind":row.actor_kind,"hull_catalogue_id":row.hull_catalogue_id,
+		"hull_resource":model,"position":row.statistics_pose.origin,"current_hull":current_hull}
+	var policy:={"initial_hostile":bool(data.initial_hostile),"updated_hostile":row.actor_kind==9}
+	if not _initialize_body(bindings,bindings.opening_actors.npc_initialization,initial,float(data.difficulty),factory_hull,float(data.percentage_scale),policy):return false
+	_state.max_hull=maxi(factory_hull,current_hull) if row.has("retained_current_hull") else current_hull
+	_state.merge({"campaign_cursor":int(data.campaign_cursor),"rank":int(data.rank),"authored_story":true,
+		"population_group":row.population_group,"subtype":row.subtype,"friendly":bool(data.friendly),
+		"actor_mode":int(data.initial_actor_mode),"active":bool(data.initial_active),
+		"targeting_blocked":bool(data.initial_actor_targeting_blocked),"statistics_targeting_blocked":bool(data.initial_statistics_targeting_blocked),
+		"spatial_half_extent":int(data.engagement_half_extent),"model_draw_enabled":bool(data.initial_model_draw_enabled),
+		"node_draw_requested":bool(data.initial_node_draw_requested),"engine_draw_enabled":bool(data.initial_engine_draw_enabled),
+		"local_combat":true,"forced_hostile":false},true)
+	if data.has("station_id"):_state.station_id=int(data.station_id)
+	_initial_training_death=true
+	if freight:
+		_state.point_boxes=data.freighter.boxes.map(func(box):return {"offset":Vector3(box.offset[0],box.offset[1],box.offset[2]),"half_extents":Vector3(box.half_extents[0],box.half_extents[1],box.half_extents[2])})
+		_state.point_box_index=0
+	if not _configure_ordinary_systems(bindings,int(data.rank),int(row.subtype)):return false
+	# Authored statistics setters run after the shared factory. Systems setup
+	# must not erase them; the same two flags survive every later actor pass.
+	_state.permanent_friendly=bool(row.get("friendly",false))
+	if (data.get("ordinary_void",false) or row.get("script_hostile",false)) and not retain_ordinary_force(true,true):return false
+	if _state.permanent_friendly:_state.hostile=false;_state.friendly=true
+	return set_pose(row.statistics_pose,row.body_pose)
+
+## A detached selected40 body, not admission to its unfinished flight. Retain
+## the constructor's parked/visible/target gates instead of ordinary traffic's
+## initial activity. Shared vitals, systems and contact geometry stay native.
+func configure_selected40(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
+	clear()
+	if not construction is NPCConstruction or catalogues==null or bindings==null:return reject("Selected40 bodies require their retained native construction")
+	var packet: Dictionary=construction.snapshot()
+	var data: Dictionary=load("res://src/content/selected40_population_definitions.gd").body_profile(bindings,packet)
+	if data.is_empty() or catalogues.content_id!=bindings.base_content_id or not actor_id is int or actor_id<0 or actor_id>=packet.actors.size():return reject("Unsupported selected40 body identity or context")
+	var row: Dictionary=packet.actors[actor_id]
+	if not _configure_story(bindings,data,row):return false
+	_state.merge({"selected40_component":true,"origin_station_id":int(data.origin_station_id),"origin_system_id":int(data.origin_system_id),
+		"actor_mode":int(row.mode),"active":bool(row.active),"targeting_blocked":bool(row.targeting_blocked),
+		"model_draw_enabled":bool(row.model_draw_enabled)},true)
+	if row.has("name_text_id"):_state.name_text_id=int(row.name_text_id)
+	return true
+
+func configure_selected41(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
+	clear()
+	if not construction is NPCConstruction or catalogues==null or bindings==null:return reject("Source41 bodies require their retained native construction")
+	var packet: Dictionary=construction.snapshot()
+	var data: Dictionary=load("res://src/content/selected41_population_definitions.gd").body_profile(bindings,packet)
+	if data.is_empty() or catalogues.content_id!=bindings.base_content_id or not actor_id is int or actor_id<0 or actor_id>=packet.actors.size():return reject("Unsupported source41 body identity or context")
+	var row: Dictionary=packet.actors[actor_id]
+	if not _configure_story(bindings,data,row):return false
+	_state.selected41_component=true
+	if row.has("name_text_id"):_state.name_text_id=int(row.name_text_id)
+	return true
+
+func apply_story_guidance(decision: Dictionary) -> bool:
+	if not _state.get("authored_story",false) or _state.population_group!="fighter":return reject("Story guidance requires its retained fighter")
+	return _apply_guidance_activity(decision,true)
 
 func configure_alioth_attack(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
 	clear()
@@ -407,6 +509,24 @@ func apply_alioth_retirement(owner: RefCounted) -> bool:
 	_state.alioth_phase=sequence.phase;_state.alioth_elapsed_ms=sequence.elapsed_ms
 	return true
 
+func apply_selected40_sequence(owner: RefCounted) -> bool:
+	error=""
+	if not _state.get("selected40_component",false) or not is_instance_of(owner,load("res://src/simulation/selected40_sequence.gd")):return reject("Selected40 activity requires its native sequence")
+	var data: Dictionary=owner.snapshot()
+	for key in ["base_content_id","binding_id","campaign_cursor"]:
+		if data.get(key)!=_state[key]:return reject("Selected40 activity belongs to another encounter")
+	var command: Dictionary=data.frame.actor_commands.get(_state.actor_id,{})
+	match command.get("action"):
+		"reveal","reserve":
+			_state.actor_mode=1;_state.active=true
+			if command.action=="reveal":
+				_state.actor_kind=1;_state.selected40_revealed=true
+				_state.model_draw_enabled=true;_state.node_draw_requested=true
+		"escape":
+			if command.retire:_state.active=false;_state.selected40_script_retired=true
+		_:return reject("Selected40 activity has no command for this actor")
+	return true
+
 func refresh_convoy_hostility(reputation: Dictionary,forced: bool,rules: Dictionary) -> bool:
 	if not _state.get("convoy",false) or not _state.get("local_combat",false):return reject("Convoy hostility requires connected combat")
 	if _state.actor_kind==8:
@@ -469,6 +589,35 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	if rival:_state.name=row.name
 	return set_pose(row.statistics_pose,row.body_pose)
 
+func configure_bakka(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
+	clear()
+	if not construction is NPCConstruction or catalogues==null:return reject("B'akka ship bodies require their generated story population")
+	var packet: Dictionary=construction.snapshot()
+	var data:=BakkaCombat.population(bindings,packet)
+	if data.is_empty() or catalogues.content_id!=bindings.base_content_id or not actor_id is int or actor_id<0 or actor_id>=data.actor_count:return reject("Unsupported B'akka ship population or identity")
+	var row: Dictionary=packet.actors[actor_id]
+	if not Flight.rigid_pose(row.get("body_pose")) or row.body_pose!=row.get("statistics_pose"):return reject("B'akka ship factory poses disagree")
+	var model: String=bindings.resolve_ship_model(int(row.hull_catalogue_id))
+	if model.is_empty():return reject(bindings.error)
+	var rival: bool=actor_id==0
+	var base: int=int(data.rank_base)+int(data.rank_multiplier)*int(data.rank)+int(data.cursor_multiplier)*int(data.campaign_cursor)
+	var factory_hull:=scaled_hull(float(base),float(data.difficulty),float(data.difficulty_offset))
+	var initial:={"actor_id":actor_id,"actor_kind":int(row.actor_kind),"hull_catalogue_id":int(row.hull_catalogue_id),
+		"hull_resource":model,"position":row.statistics_pose.origin,"current_hull":int(row.current_hull_override) if rival else factory_hull}
+	var policy: Dictionary=data.rival if rival else data.pirate
+	if not _initialize_body(bindings,bindings.opening_actors.npc_initialization,initial,float(data.difficulty),factory_hull,float(data.percentage_scale),policy):return false
+	_state.merge({"campaign_cursor":36,"station_id":27,"rank":int(data.rank),"bakka_ship":true,
+		"population_group":row.population_group,"subtype":int(row.subtype),"friendly":bool(policy.friendly),"actor_mode":int(policy.initial_mode) if rival else int(row.mode),
+		"active":bool(policy.initial_active) if rival else bool(row.active),"targeting_blocked":bool(policy.initial_targeting_blocked) if rival else bool(row.targeting_blocked),
+		"statistics_targeting_blocked":bool(data.npc_statistics_targeting_blocked),"spatial_half_extent":int(data.engagement_half_extent),
+		"model_draw_enabled":bool(data.initial_model_draw_enabled),"node_draw_requested":bool(data.initial_node_draw_requested),"engine_draw_enabled":bool(data.initial_engine_draw_enabled)},true)
+	# These are the same source small-ship statistics owners, including their
+	# rank-derived systems pools. Retained EMP equipment must be preparable even
+	# when the selected story replaces the ordinary traffic population.
+	if not _configure_ordinary_systems(bindings,int(data.rank),int(row.subtype)):return false
+	if rival:_state.name_text_id=int(row.name_text_id)
+	return set_pose(row.statistics_pose,row.body_pose)
+
 func _configure_debris(bindings: RefCounted,catalogues: RefCounted,packet: Dictionary,actor_id: Variant) -> bool:
 	var data:=Junk.population(bindings,packet)
 	if data.is_empty() or catalogues.content_id!=bindings.base_content_id or not actor_id is int or actor_id<0 or actor_id>=data.actor_count:return reject("Unsupported contract debris population or identity")
@@ -492,11 +641,22 @@ func apply_contract_guidance(decision: Dictionary) -> bool:
 	if not _state.get("contract_ship",false):return reject("Contract guidance requires its prepared ship body")
 	return _apply_guidance_activity(decision,true)
 
+func apply_bakka_guidance(decision: Dictionary) -> bool:
+	error=""
+	if not _state.get("bakka_ship",false):return reject("B'akka guidance requires its prepared story ship")
+	return _apply_guidance_activity(decision,true)
+
 func enable_contract_combat(bindings: RefCounted) -> bool:
 	var supported: bool=Junk.available(bindings) if _state.get("contract_debris",false) else _state.get("contract_ship",false) and ContractLife.available(bindings)
 	if not supported:return reject("Contract damage requires verified lifecycle declarations")
 	if bindings.base_content_id!=_state.base_content_id or bindings.binding_id!=_state.binding_id:return reject("Contract lifecycle belongs to another content pack")
 	_state.contract_combat=true;_state.forced_hostile=false
+	return true
+
+func enable_bakka_combat(bindings: RefCounted) -> bool:
+	if not _state.get("bakka_ship",false) or bindings==null:return reject("B'akka damage requires its prepared story ship")
+	if bindings.base_content_id!=_state.base_content_id or bindings.binding_id!=_state.binding_id:return reject("B'akka lifecycle belongs to another content pack")
+	_state.bakka_combat=true;_state.forced_hostile=false
 	return true
 
 func refresh_contract_hostility(forced: bool) -> bool:
@@ -505,11 +665,12 @@ func refresh_contract_hostility(forced: bool) -> bool:
 	# The rival's authored friendship takes precedence over faction provocation.
 	return refresh_hostility()
 
-func relaunch_ambient(bindings: RefCounted,death_owner: RefCounted=null) -> bool:
+func relaunch_ambient(bindings: RefCounted,death_owner: RefCounted=null,origin: Vector3=Vector3.ZERO) -> bool:
 	error=""
 	if bindings==null or not AmbientLife.parameters(bindings.ambient_lifecycle):return reject("Traffic launch requires supported lifecycle declarations")
 	var recycling:=AmbientLife.recycling_parameters(bindings.ambient_lifecycle)
-	if _state.get("population_group") not in (["patrol","travel"] if recycling else ["travel"]):return reject("Traffic launch requires a supported small ship")
+	if not (FreeLife.recyclable_actor(_state) if recycling else _state.get("population_group")=="travel"):return reject("Traffic launch requires a supported small ship")
+	if not origin.is_finite() or (_state.get("population_group")!="hostile" and origin!=Vector3.ZERO):return reject("Invalid traffic relaunch position")
 	for key in ["base_content_id","binding_id"]:
 		if _state.get(key)!=bindings.get(key):return reject("Traffic launch belongs to another content identity")
 	if _state.actor_mode!=int(bindings.ambient_lifecycle.initial_mode) or _state.active:return reject("Only inactive traffic can relaunch")
@@ -524,9 +685,9 @@ func relaunch_ambient(bindings: RefCounted,death_owner: RefCounted=null) -> bool
 	var pools:=Vitals.new()
 	if not pools.configure(_state.max_hull,0,0.0):return reject(pools.error)
 	var root: Transform3D=_state.body_pose
-	root.origin=Vector3.ZERO
+	root.origin=origin
 	var banked: Transform3D=root if recycling else _state.pose
-	banked.origin=Vector3.ZERO
+	banked.origin=origin
 	if not set_pose(banked,root):return false
 	_vitals=pools;_state.actor_mode=int(bindings.ambient_lifecycle.launch_mode);_state.active=true
 	_state.statistics_targeting_blocked=false;_state.nonplayer_kill=false
@@ -534,6 +695,10 @@ func relaunch_ambient(bindings: RefCounted,death_owner: RefCounted=null) -> bool
 	_state.engine_draw_enabled=true;_state.node_draw_requested=true;_state.model_draw_enabled=true
 	if _state.has("travel_cycle"):_state.travel_cycle+=1
 	if recycling:_state.spawn_generation+=1
+	if _systems!=null:
+		var systems: Dictionary=_systems.snapshot()
+		if not _systems.configure(bindings,systems.capacity,systems.recovery_ms):return reject(_systems.error)
+		_state.systems_disabled=false
 	return true
 
 func apply_ambient_guidance(decision: Dictionary) -> bool:
@@ -590,6 +755,11 @@ func _initialize_body(bindings: RefCounted, data: Dictionary, actor: Dictionary,
 	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,
 		"actor_id":actor.actor_id,"hull_catalogue_id":actor.hull_catalogue_id,"hull_resource":actor.hull_resource,
 		"actor_kind":actor.actor_kind,"difficulty":source_difficulty,
+		# The base NPC constructor clears actor+0x5E. Its only recovered set is
+		# the separate faction-zero random-world group, absent from these
+		# supported construction records. The radar music mark requires this bit
+		# AND statistics/root+0xF8, so later root hostility cannot mark this body.
+		"radar_marked_actor":false,
 		"half_extent":int(data.special_half_extent if source_difficulty==Vitals.single(float(data.special_difficulty)) else data.ordinary_half_extent),
 		"position":actor.position,"pose":Transform3D(Basis.IDENTITY,actor.position),"active":data.initial_active,
 		"damage_allowed":data.initial_damage_allowed,"firing_allowed":data.initial_firing_allowed,
@@ -638,24 +808,49 @@ func enable_local_combat() -> bool:
 func apply_local_hostility(reputation: Dictionary, forced: bool, rules: Dictionary) -> bool:
 	if not _state.get("local_combat",false):return reject("Local hostility requires connected combat reactions")
 	var value: int=reputation.axes[int(rules.axis)]
-	_state.hostile=forced or value>int(rules.hostile_above)
-	_state.friendly=not forced and value<int(rules.friendly_below)
+	var hostile: bool=forced or _state.get("script_hostile",false)
+	_state.hostile=hostile or value>int(rules.hostile_above)
+	_state.friendly=not hostile and value<int(rules.friendly_below)
 	_state.forced_hostile=forced
 	return true
 
 func apply_free_hostility(reputation: Dictionary,forced: bool,rules: Dictionary) -> bool:
-	if not _state.get("free_traffic",false) or not _state.get("local_combat",false):return reject("Ordinary hostility requires connected faction reactions")
-	var standing:=FreeLife.standing(rules,int(_state.actor_kind),reputation,forced)
+	if not (_state.get("free_traffic",false) or _state.get("authored_story",false)) or not _state.get("local_combat",false):return reject("Ordinary hostility requires connected faction reactions")
+	# Both small-ship and freighter updates apply the persistent friendly bit
+	# last, after standing and persistent hostility. Damage history is retained.
+	if _state.get("authored_story",false) and _state.get("permanent_friendly",false):
+		_state.hostile=false;_state.friendly=true;_state.forced_hostile=forced
+		return true
+	if _state.get("authored_story",false) and _state.actor_kind==9:
+		_state.hostile=true;_state.friendly=false;_state.forced_hostile=forced
+		return true
+	var standing:=FreeLife.standing(rules,int(_state.actor_kind),reputation,forced or _state.get("script_hostile",false))
 	if standing.is_empty():return reject("Unsupported ordinary faction standing")
 	_state.merge(standing,true);_state.forced_hostile=forced
 	return true
 
 func retain_local_force(forced: bool) -> bool:
-	if not _state.get("local_combat",false) and not _state.get("contract_combat",false):return reject("Local force requires connected combat reactions")
+	if not _state.get("local_combat",false) and not _state.get("contract_combat",false) and not _state.get("bakka_combat",false):return reject("Local force requires connected combat reactions")
 	# The hit changes the force flag now; ordinary actor update refreshes the
 	# displayed/targeting hostility later in the same frame.
 	_state.forced_hostile=forced
 	return true
+
+## Internal transaction primitive; the typed sequence/controller owns admission.
+## Restore represented statistics and lifecycle, retaining construction, source
+## faction force and systems recovery history. This is not a factory reroll.
+func _restart_selected41_attack(statistics: Transform3D,physical: Transform3D) -> bool:
+	error=""
+	if not _state.get("selected41_component",false) or _state.actor_id not in [1,2,3] or _state.actor_kind!=9 or _state.get("selected41_attack_reset",false):return reject("Source41 fighter reset requires its first authored attack")
+	if not Flight.rigid_pose(statistics) or not Flight.rigid_pose(physical):return reject("Source41 fighter reset needs finite source poses")
+	var pools:=Vitals.new()
+	if not pools.configure(int(_state.max_hull),0,0.0):return reject(pools.error)
+	if _systems==null or not _systems.reinitialize():return reject("Source41 fighter reset lost its systems owner")
+	_vitals=pools
+	for key in ["active","damage_allowed","firing_allowed","engine_draw_enabled","node_draw_requested","model_draw_enabled"]:_state[key]=true
+	for key in ["statistics_targeting_blocked","nonplayer_kill","contact","systems_disabled"]:_state[key]=false
+	_state.impact_vector=Vector3.ZERO;_state.actor_mode=1;_state.selected41_attack_reset=true
+	return set_pose(statistics,physical)
 
 func snapshot() -> Dictionary:
 	if _state.is_empty(): return {}
@@ -665,6 +860,16 @@ func snapshot() -> Dictionary:
 	if _state.has("max_hull"):
 		var fraction := Vitals.single(Vitals.single(float(result.vitals.hull))/Vitals.single(float(result.max_hull)))
 		result.hull_percent=int(Vitals.single(fraction*_hull_percentage_scale))
+	return result
+
+## Mission/radio predicates need current NPC flags, not projectile, pose or
+## systems-pool snapshots. In particular the projected stun flag can lag a hit.
+func kappa_observation() -> Dictionary:
+	if not _state.get("kappa_rescue",false):return {}
+	var result:={}
+	for key in ["actor_id","actor_kind","hull_catalogue_id","actor_mode","hostile","scenery","active","friendly","systems_disabled"]:
+		result[key]=_state[key]
+	result.current_hull=int(_vitals.snapshot().hull)
 	return result
 
 func apply_scene(scene: Variant) -> bool:
@@ -696,7 +901,7 @@ func apply_scene(scene: Variant) -> bool:
 func set_pose(pose: Variant, physical_pose: Variant=null) -> bool:
 	error = ""
 	if _state.is_empty() or not pose is Transform3D or not pose.is_finite(): return reject("Actor pose requires a configured body and finite transform")
-	if physical_pose!=null and ((_state.get("campaign_cursor") not in [4,7,10] and not _state.get("ambient_traffic",false) and not _state.get("contract_ship",false) and not _state.get("contract_debris",false) and not _state.get("convoy",false) and not _state.get("alioth_attack",false) and not _state.get("kappa_rescue",false)) or not Flight.rigid_pose(physical_pose)):return reject("Separate physical motion requires a supported finite flight root")
+	if physical_pose!=null and ((_state.get("campaign_cursor") not in [4,7,10] and not _state.get("ambient_traffic",false) and not _state.get("contract_ship",false) and not _state.get("contract_debris",false) and not _state.get("bakka_ship",false) and not _state.get("convoy",false) and not _state.get("alioth_attack",false) and not _state.get("kappa_rescue",false) and not _state.get("authored_story",false)) or not Flight.rigid_pose(physical_pose)):return reject("Separate physical motion requires a supported finite flight root")
 	# The actor's source-space transform is also the collision-center authority.
 	var source_pose: Transform3D = pose
 	for axis in 3:
@@ -727,7 +932,7 @@ func apply_destruction(death: Dictionary) -> bool:
 	var phase: Variant=death.get("phase")
 	if phase not in ["tumble","explosion","retired"] or death.get("mode")!=(3 if phase=="tumble" else 4): return reject("Unsupported NPC destruction phase")
 	var previous: Variant=_state.get("actor_mode")
-	var initial_death: bool=previous==0 and (_initial_training_death or _state.get("local_combat",false) or _state.get("contract_combat",false))
+	var initial_death: bool=previous==0 and (_initial_training_death or _state.get("local_combat",false) or _state.get("contract_combat",false) or _state.get("bakka_combat",false))
 	if previous==6 and _state.has("travel_cycle"):initial_death=true
 	if _state.has("spawn_generation") and death.get("spawn_generation")!=_state.spawn_generation:return reject("Destruction belongs to an earlier traffic instance")
 	if (previous not in [1,3,4] and not initial_death) or (previous==4 and phase=="tumble") or (not _state.active and phase!="retired"): return reject("NPC destruction phase regressed")
@@ -746,14 +951,28 @@ func apply_freighter_destruction(owner: RefCounted) -> bool:
 	if not owner is FreighterDeath or _state.get("population_group") not in ["freighter","capital"] or _vitals.snapshot().get("hull")!=0:return reject("Freighter lifecycle requires its exhausted combat body")
 	var death: Dictionary=owner.snapshot()
 	for key in ["base_content_id","binding_id","campaign_cursor","actor_id","actor_kind","hull_catalogue_id","subtype"]:
+		if key=="actor_kind" and _state.get("selected40_component",false) and load("res://src/content/selected40_population_definitions.gd").constructed_kind_matches(_state,int(death.get(key,-1))):continue
 		if death.get(key)!=_state.get(key):return reject("Freighter lifecycle belongs to another actor")
 	var mode: Variant=death.get("mode");var previous: int=_state.actor_mode
-	if mode not in [3,4] or (previous==0 and mode!=3) or (previous==4 and mode!=4) or previous not in [0,3,4]:return reject("Freighter lifecycle skipped or regressed a phase")
+	var initial:=1 if _state.get("selected40_revealed",false) else 0
+	if mode not in [3,4] or (previous==initial and mode!=3) or (previous==4 and mode!=4) or previous not in [initial,3,4]:return reject("Freighter lifecycle skipped or regressed a phase")
 	if not death.get("active") is bool or (not _state.active and death.active) or not death.get("pose") is Transform3D or not death.get("statistics_pose") is Transform3D:return reject("Invalid freighter lifecycle state")
 	if not set_pose(death.statistics_pose,death.pose):return false
 	_state.actor_mode=mode;_state.active=death.active;_state.engine_draw_enabled=false
 	_state.world_movement_enabled=false;_state.interaction_blocked=death.interaction_blocked
 	return true
+
+## Internal half of the encounter's native wreck transaction. Pulling moves the
+## physical root without refreshing statistics; model recreation updates both.
+func _retain_recovery_frame(frame: Dictionary) -> void:
+	var changes: Dictionary=frame.actor_changes
+	if changes.has("body_pose"):_state.body_pose=changes.body_pose
+	if changes.has("statistics_pose"):
+		_state.pose=changes.statistics_pose;_state.position=changes.statistics_pose.origin
+	if changes.has("active"):_state.active=changes.active
+	for event in frame.events:
+		if event.kind=="special_cargo_accepted":_state.special_cargo_accepted=true
+		elif event.kind=="special_cargo_rejected":_state.special_cargo_rejected=true
 
 func apply_debris_destruction(owner: RefCounted) -> bool:
 	error=""
@@ -786,6 +1005,7 @@ func normal_hit(amount: Variant, nonplayer_source: Variant=false) -> Dictionary:
 	# reputation, warning requests and faction retaliation.
 	if (_state.get("local_patrol",false) or _state.get("ambient_traffic",false) or _state.get("kappa_rescue",false)) and not _state.get("local_combat",false):return fail_hit("Local traffic damage and retaliation are not connected")
 	if (_state.get("contract_ship",false) or _state.get("contract_debris",false)) and not _state.get("contract_combat",false):return fail_hit("Contract damage and lifecycle are not connected")
+	if _state.get("bakka_ship",false) and not _state.get("bakka_combat",false):return fail_hit("B'akka damage and lifecycle are not connected")
 	if _state.is_empty():
 		reject("Configure an actor before applying a normal hit")
 		return {}

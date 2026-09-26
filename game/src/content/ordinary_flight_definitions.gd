@@ -13,6 +13,11 @@ const FirstReturn=preload("res://src/content/station_return_definitions.gd")
 const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const ContractWorld=preload("res://src/content/contract_world_definitions.gd")
 const FreeFlight=preload("res://src/content/free_flight_definitions.gd")
+const Kappa=preload("res://src/content/kappa_population_definitions.gd")
+const Authored=preload("res://src/content/story_encounter_definitions.gd")
+const Bakka=preload("res://src/content/bakka_contest_definitions.gd")
+const BakkaCombat=preload("res://src/content/bakka_combat_definitions.gd")
+const Dekato=preload("res://src/content/dekato_convoy_definitions.gd")
 
 static func select(bindings: RefCounted, cursor: Variant) -> Dictionary:
 	if bindings==null or not cursor is int:return {}
@@ -23,11 +28,18 @@ static func select(bindings: RefCounted, cursor: Variant) -> Dictionary:
 
 static func for_departure(bindings: RefCounted, entry: Dictionary) -> Dictionary:
 	var rules:=select(bindings,entry.get("campaign_cursor"))
+	if Kappa.prepared_entry(bindings,entry):rules=Kappa.flight(bindings,int(entry.get("location",{}).get("station_id",-1)))
 	if FreeFlight.ordinary_entry(bindings,entry):rules=FreeFlight.flight(bindings,int(entry.get("location",{}).get("station_id",-1)),entry.campaign_cursor)
 	if entry.get("campaign_cursor")==16:rules=Attack.flight(bindings,int(entry.get("location",{}).get("station_id",-1)))
 	if entry.get("campaign_cursor")==14 and not ContractWorld.ordinary_entry(bindings,entry):rules=Convoy.flight(bindings,int(entry.get("location",{}).get("station_id",-1)))
 	if ContractWorld.ordinary_entry(bindings,entry):rules=ContractWorld.flight(bindings,int(entry.get("location",{}).get("station_id",-1)),entry.campaign_cursor)
 	if entry.get("campaign_cursor") in [10,11,12]:rules=Travel.flight(bindings,int(entry.get("location",{}).get("station_id",-1)),entry.campaign_cursor)
+	if Authored.prepared_entry(bindings,entry):rules=Authored.flight(bindings,entry.sahi_context)
+	if Authored.prepared_ordinary_void(bindings,entry):rules=Authored.ordinary_void_flight(bindings,entry.void_context)
+	# B'akka is admitted only from its already-selected native construction.
+	# This does not make station27 a free-navigation destination.
+	if Bakka.context_valid(bindings,entry.get("bakka_context",{})):rules=FreeFlight.flight(bindings,int(entry.get("location",{}).get("station_id",-1)),36)
+	if Dekato.context_valid(bindings,entry.get("dekato_context",{})):rules=Dekato.flight(bindings,entry.dekato_context)
 	if rules.is_empty() or entry.get("location",{}).get("station_id")!=int(rules.station_id):return {}
 	var packet: Variant=entry.get("departure")
 	if not packet is Dictionary:return {}
@@ -35,13 +47,83 @@ static func for_departure(bindings: RefCounted, entry: Dictionary) -> Dictionary
 		if not packet.get(key) is Dictionary:return {}
 	return rules
 
-static func briefing(bindings: RefCounted,cursor: Variant,ordinary_world:=false) -> Dictionary:
-	if bindings!=null and FreeFlight.Campaign.supported(bindings.mido_travel,cursor):
+## Resource preparation is separate from supported flight construction. This
+## lets the original lesson be checked without opening an unfinished mission.
+static func briefing_presentation(bindings: RefCounted,cursor: Variant,ordinary_world:=false) -> Dictionary:
+	if cursor==38 and not ordinary_world and Dekato.available(bindings):return briefing(bindings,cursor,false,int(Dekato.declarations(bindings).mission.station_id))
+	if cursor==36 and not ordinary_world and Bakka.available(bindings):return briefing(bindings,cursor,false,int(bindings.mido_travel.bakka_contest.mission.station_id))
+	if bindings!=null and cursor==32 and FreeFlight.Campaign.post_probe_available(bindings.mido_travel):return briefing(bindings,cursor,true,int(bindings.mido_travel.post_probe_visits.missions["32"].station_id))
+	if cursor==24 and bindings!=null and Authored.Sahi.coherent(bindings.mido_travel):return briefing(bindings,cursor,false,int(bindings.mido_travel.sahi_encounter.station_id))
+	if cursor==28 and Authored.Dima.Thynome.available(bindings):return briefing(bindings,cursor,false,91)
+	if cursor is int and cursor==21:return load("res://src/content/kappa_rescue_definitions.gd").presentation_briefing(bindings)
+	if cursor==23 and FreeFlight.Campaign.chapter_available(bindings.mido_travel):return briefing(bindings,cursor,true,int(bindings.mido_travel.kappa_return.arrival_briefing.station_id))
+	# Prepare the destination portrait and voice before either leg is constructed.
+	# The simulation selects this modal only after reaching that destination.
+	if bindings!=null and cursor==11 and Travel.parameters(bindings.mido_travel) and bindings.mido_travel.has("arrival_briefing"):
+		return briefing(bindings,cursor,ordinary_world,int(bindings.mido_travel.arrival_briefing.station_id))
+	return briefing(bindings,cursor,ordinary_world)
+
+static func briefing(bindings: RefCounted,cursor: Variant,ordinary_world:=false,station_id: int=-1) -> Dictionary:
+	if cursor==38 and Dekato.available(bindings) and station_id==int(Dekato.declarations(bindings).mission.station_id):
+		var shared:=MiningStory.briefing(bindings,2)
+		if shared.is_empty():return {}
+		var mission: Dictionary=Dekato.declarations(bindings).mission
+		shared.campaign_cursor=int(mission.campaign_cursor);shared.mission_kind=int(mission.kind)
+		shared.events=mission.briefing_events.duplicate(true)
+		shared.entry_release_ms=int(bindings.mido_travel.free_flight.launch_clear_after_ms)+1
+		return shared
+	# Owning the contest capability must not replace ordinary travel elsewhere
+	# while its target remains pending. Only the selected B'akka entry uses it.
+	if cursor==36 and Bakka.available(bindings) and station_id==int(bindings.mido_travel.bakka_contest.mission.station_id):
+		var mission: Dictionary=bindings.mido_travel.bakka_contest.mission
+		var shared:=MiningStory.briefing(bindings,2)
+		if shared.is_empty():return {}
+		shared.campaign_cursor=36;shared.mission_kind=int(mission.kind)
+		# The shared source ready-entry opener admits selected story kind12.
+		# Its mode0 lines belong here, not to ordinary travel at Ga'kkrr29.
+		# These are spoken story lines, not a new desktop tutorial mapping.
+		shared.events=mission.briefing_events.duplicate(true)
+		shared.entry_release_ms=int(bindings.mido_travel.free_flight.launch_clear_after_ms)+1
+		return shared
+	if cursor==33 and station_id==-1 and bindings!=null and Authored.VoidCrystals.parameters(bindings.mido_travel.get("void_crystals")) and Authored.VoidCrystals.VoidAccess.parameters(bindings.mido_travel.get("void_access")):
+		var shared:=MiningStory.briefing(bindings,2)
+		if shared.is_empty():return {}
+		shared.campaign_cursor=33;shared.mission_kind=-1;shared.events=[]
+		shared.entry_release_ms=int(bindings.mido_travel.free_flight.launch_clear_after_ms)+1
+		return shared
+	if cursor in [25,26,28,29] and bindings!=null:
+		var mission: Dictionary=bindings.mido_travel.thynome_expedition.mission28 if cursor==28 and Authored.Dima.Thynome.available(bindings) else Authored.Post.mission(bindings,cursor)
+		if mission.is_empty():return {}
+		var shared:=MiningStory.briefing(bindings,2)
+		if shared.is_empty():return {}
+		shared.campaign_cursor=cursor;shared.mission_kind=int(mission.kind)
+		shared.events=mission.briefing_events.duplicate(true)
+		shared.entry_release_ms=int(bindings.mido_travel.free_flight.launch_clear_after_ms)+1
+		return shared
+	if cursor==24 and station_id==48 and bindings!=null and Authored.Sahi.coherent(bindings.mido_travel):
+		var shared:=MiningStory.briefing(bindings,2)
+		if shared.is_empty():return {}
+		shared.campaign_cursor=24;shared.mission_kind=4
+		shared.events=bindings.mido_travel.sahi_visit.briefing.events.duplicate(true)
+		shared.entry_release_ms=int(bindings.mido_travel.free_flight.launch_clear_after_ms)+1
+		return shared
+	if cursor==21 and not ordinary_world:return Kappa.Rescue.presentation_briefing(bindings)
+	if bindings!=null and FreeFlight.Campaign.supported(bindings,cursor):
 		if not FreeFlight.available(bindings):return {}
 		var shared:=MiningStory.briefing(bindings,2)
 		if shared.is_empty():return {}
 		shared.campaign_cursor=cursor;shared.mission_kind=-1;shared.events=[]
 		shared.entry_release_ms=int(bindings.mido_travel.free_flight.launch_clear_after_ms)+1
+		if cursor==32 and station_id==int(bindings.mido_travel.post_probe_visits.missions["32"].station_id):
+			var source: Dictionary=bindings.mido_travel.post_probe_visits
+			shared.mission_kind=int(source.missions["32"].kind)
+			shared.events=source.missions["32"].briefing_events.duplicate(true)
+			shared.briefing_minimum_ms=int(source.flight_briefing.hud_minimum_ms)
+		elif FreeFlight.Campaign.ordinary_story_at(bindings,cursor,station_id):
+			var mission:=FreeFlight.Campaign.mission(bindings,cursor)
+			var location:=FreeFlight.Worlds.location(bindings.mido_travel,station_id)
+			shared.events=FreeFlight.Campaign.Return.briefing(bindings.mido_travel,{"campaign_cursor":cursor,"station_id":station_id,"system_id":int(location.system_id),"mission_kind":int(mission.kind),"mission_story":true,"mission_completed":false})
+			shared.mission_kind=int(mission.kind)
 		return shared
 	if cursor==16:
 		if Attack.flight(bindings).is_empty():return {}
@@ -70,11 +152,88 @@ static func briefing(bindings: RefCounted,cursor: Variant,ordinary_world:=false)
 		shared.campaign_cursor=cursor;shared.mission_kind=11
 		var entry: Dictionary=Travel.journey(bindings.mido_travel,cursor) if cursor in [11,12] else bindings.mido_travel.entry
 		shared.events=entry.briefing_events.duplicate(true)
+		var arrival: Dictionary=bindings.mido_travel.get("arrival_briefing",{})
+		if not arrival.is_empty() and cursor==int(arrival.campaign_cursor) and station_id==int(arrival.station_id):
+			shared.events=arrival.events.duplicate(true)
 		shared.entry_release_ms=int(entry.entry_release_ms)
 		return shared
 	return Training.briefing(bindings) if cursor==7 else MiningStory.briefing(bindings,cursor)
 
 static func objective(bindings: RefCounted,cursor: Variant) -> Dictionary:
+	if cursor==38 and Dekato.available(bindings):
+		var shared:=MiningStory.objective(bindings,2)
+		if shared.is_empty():return {}
+		var mission: Dictionary=Dekato.declarations(bindings).mission
+		shared.campaign_cursor=int(mission.campaign_cursor);shared.mission_kind=int(mission.kind);shared.station_id=int(mission.station_id)
+		shared.required_cargo=0;shared.events=mission.result_events.duplicate(true);shared.dekato_convoy=true
+		var continuation: Dictionary=Dekato.declarations(bindings).next_mission
+		shared.cursor_after_acknowledgement=int(continuation.campaign_cursor);shared.next_kind=int(continuation.kind)
+		shared.next_mission={}
+		for key in ["kind","station_id","reward","bonus","source_parameter"]:shared.next_mission[key]=int(continuation[key])
+		shared.dekato_result_modes=bindings.early_contracts.flight_results.duplicate(true)
+		shared.campaign_failure=bindings.mido_travel.kappa_outcome.failure.duplicate(true)
+		# This selected native result does not authorize public travel or a save.
+		shared.mission={"kind":int(mission.kind),"station_id":int(mission.station_id),"reward":int(mission.reward),"bonus":int(mission.bonus),"source_parameter":int(mission.source_parameter)}
+		return shared
+	if cursor==36 and Bakka.available(bindings):
+		var shared:=MiningStory.objective(bindings,2)
+		if shared.is_empty():return {}
+		var mission: Dictionary=bindings.mido_travel.bakka_contest.mission
+		shared.campaign_cursor=36;shared.mission_kind=int(mission.kind);shared.station_id=int(mission.station_id)
+		shared.required_cargo=0;shared.events=bindings.mido_travel.bakka_contest.result_events.duplicate(true);shared.bakka_contest=true
+		shared.cursor_after_acknowledgement=37;shared.next_kind=160
+		shared.bakka_result_modes=bindings.early_contracts.flight_results.duplicate(true)
+		shared.bakka_failure=bindings.mido_travel.kappa_outcome.failure.duplicate(true)
+		shared.campaign_failure=shared.bakka_failure.duplicate(true)
+		shared.mission={"kind":int(mission.kind),"station_id":int(mission.station_id),"reward":int(mission.reward),"bonus":int(mission.bonus),"source_parameter":0}
+		# The acknowledged result selects the source kind160 return to B'akka.
+		# Flight admission and the subsequent station transaction remain separate.
+		return shared
+	if cursor==33 and bindings!=null and Authored.VoidCrystals.parameters(bindings.mido_travel.get("void_crystals")):
+		var shared:=MiningStory.objective(bindings,2)
+		if shared.is_empty():return {}
+		var mission:=Authored.VoidCrystals.PostProbe.mission_values(bindings.mido_travel.void_crystals.mission33)
+		shared.campaign_cursor=33;shared.mission_kind=mission.kind;shared.station_id=mission.station_id
+		shared.required_cargo=mission.source_parameter;shared.events=[];shared.portal_controlled=true;shared.mission=mission
+		# Mining and combat retain their results, but only the landed station
+		# hand-in can consume crystals, complete this mission or grant its reward.
+		return shared
+	if cursor in [25,26,29] and Authored.Post.available(bindings):
+		var shared:=MiningStory.objective(bindings,2)
+		if shared.is_empty():return {}
+		var mission:=Authored.Post.mission(bindings,cursor)
+		if mission.is_empty():return {}
+		shared.campaign_cursor=cursor;shared.mission_kind=int(mission.kind);shared.station_id=int(mission.station_id)
+		shared.required_cargo=0;shared.events=mission.result_events.duplicate(true)
+		shared.portal_controlled=true
+		shared.cursor_after_acknowledgement=cursor+1
+		shared.next_mission=Authored.Post.active_mission(bindings,cursor+1)
+		if cursor==25:
+			shared.void_visit=true
+			shared.elapsed_greater_than_ms=int(bindings.mido_travel.post_sahi.void.completion.elapsed_greater_than_ms)
+		elif cursor==26:
+			shared.pursuit_controlled=true
+			shared.pursuit_condition={"kind":int(bindings.mido_travel.post_sahi.pursuers.completion_condition_kind),
+				"value":int(bindings.mido_travel.post_sahi.pursuers.completion_condition_value)}
+		else:
+			if shared.next_mission.is_empty():return {}
+			shared.probe_controlled=true
+		return shared
+	if bindings!=null and ((cursor==24 and Authored.Sahi.coherent(bindings.mido_travel)) or (cursor==28 and Authored.Dima.Thynome.available(bindings))):
+		var shared:=MiningStory.objective(bindings,2)
+		if shared.is_empty():return {}
+		shared.campaign_cursor=cursor;shared.mission_kind=4;shared.station_id=48 if cursor==24 else 91
+		shared.required_cargo=0;shared.events=[];shared.portal_controlled=true
+		return shared
+	if cursor==21:
+		var shared:=MiningStory.objective(bindings,2)
+		if shared.is_empty() or Kappa.flight(bindings).is_empty():return {}
+		var rescue: Dictionary=bindings.mido_travel.kappa_rescue
+		shared.campaign_cursor=int(rescue.campaign_cursor);shared.mission_kind=int(rescue.mission_kind)
+		shared.station_id=int(rescue.station_id);shared.required_cargo=0
+		shared.events=rescue.completion_events.duplicate(true)
+		shared.kappa_rescue=true;shared.cursor_after_acknowledgement=22;shared.next_kind=11
+		return shared
 	if cursor==16:
 		var shared:=MiningStory.objective(bindings,2)
 		if shared.is_empty() or Attack.flight(bindings).is_empty():return {}
@@ -97,10 +256,19 @@ static func objective(bindings: RefCounted,cursor: Variant) -> Dictionary:
 	return Training.objective(bindings) if cursor==7 else MiningStory.objective(bindings,cursor)
 
 static func docking(bindings: RefCounted,cursor: Variant) -> Dictionary:
+	if cursor==37:
+		if not Bakka.available(bindings) or not FirstReturn.parameters(bindings.station_return):return {}
+		return bakka_return_values()
+	if cursor==26:
+		if not Authored.Post.available(bindings) or not FirstReturn.parameters(bindings.station_return):return {}
+		return pursuit_docking_values()
+	if cursor==22:
+		if not load("res://src/content/kappa_outcome_definitions.gd").available(bindings) or not FirstReturn.parameters(bindings.station_return):return {}
+		return kappa_return_values()
 	if cursor==17:
 		if not AttackReturn.available(bindings) or not FirstReturn.parameters(bindings.station_return):return {}
 		var result: Dictionary=bindings.station_return.duplicate(true)
-		result.merge(alioth_return_overlay(),true)
+		result.merge(alioth_return_overlay(bindings.mido_travel.alioth_return),true)
 		return result
 	if cursor in [10,11,12]:return Travel.station_return(bindings,cursor)
 	if cursor!=8:return MiningReturn.select(bindings,cursor)
@@ -111,15 +279,27 @@ static func docking(bindings: RefCounted,cursor: Variant) -> Dictionary:
 	result.departing_cursor=7;result.campaign_cursor=8;result.minimum_delivered_cargo=0
 	return result
 
+## Kind11 permits docking before reaching its story destination. Returning to
+## the departure station retains the acknowledged station and unfinished trip.
+static func departure_docking(bindings: RefCounted,cursor: int) -> Dictionary:
+	if Travel.journey(bindings.mido_travel,cursor).is_empty() or not FirstReturn.parameters(bindings.station_return):return {}
+	return _departure_docking_values(cursor)
+
+static func _departure_docking_values(cursor: int) -> Dictionary:
+	if cursor not in [10,11,12]:return {}
+	var station_id: int=int(Travel.VALUES.station_ids[0]) if cursor==10 else int(Travel.CONTINUATION.from_station_id) if cursor==11 else int(Travel.RETURN_VISIT.from_station_id)
+	var result:=FreeFlight._docking_values(station_id,int(Travel.VALUES.system_id),cursor)
+	result.contract_station=false;result.departure_return=true
+	return result
+
 static func docking_parameters(rules: Dictionary) -> bool:
+	if rules.get("dekato_return",false):return FreeFlight.Equal.equal_value(rules,Dekato.docking_values())
+	if rules.get("bakka_return",false):return FreeFlight.Equal.equal_value(rules,bakka_return_values())
+	if rules.get("departure_return",false):return rules.get("campaign_cursor") in [10,11,12] and FreeFlight.Equal.equal_value(rules,_departure_docking_values(int(rules.campaign_cursor)))
+	if rules.get("sahi_return",false):return FreeFlight.Equal.equal_value(rules,pursuit_docking_values())
+	if rules.get("kappa_return",false):return FreeFlight.Equal.equal_value(rules,kappa_return_values())
 	if rules.get("alioth_return",false):
-		var original:=rules.duplicate(true)
-		var overlay:=alioth_return_overlay()
-		for key in overlay:
-			if rules.get(key)!=overlay[key]:return false
-			if FirstReturn.VALUES.has(key):original[key]=FirstReturn.VALUES[key]
-			else:original.erase(key)
-		return FirstReturn.parameters(original)
+		return _alioth_return_parameters(rules,AttackReturn.VALUES,FirstReturn.VALUES) or _alioth_return_parameters(rules,AttackReturn.MAC_VALUES,FirstReturn.MAC_VALUES)
 	if ContractWorld.docking_parameters(rules):return true
 	if FreeFlight.docking_parameters(rules):return true
 	if Travel.station_return_parameters(rules):return true
@@ -129,6 +309,19 @@ static func docking_parameters(rules: Dictionary) -> bool:
 	var original:=rules.duplicate(true)
 	for key in ["departing_cursor","campaign_cursor","minimum_delivered_cargo"]:original[key]=FirstReturn.VALUES[key]
 	return FirstReturn.parameters(original)
+
+## Physical arrival only. The acknowledged kind160 return does not authorize
+## a station conversation, onward travel or a persistent campaign checkpoint.
+static func bakka_return_values() -> Dictionary:
+	var result:=FreeFlight._docking_values(27,5,37)
+	result.merge({"bakka_return":true,"departing_cursor":36,"local_visit":false,"contract_station":false,
+		"mission_kind":160,"restricted_notice":FirstReturn.VALUES.restricted_notice},true)
+	return result
+
+static func pursuit_docking_values() -> Dictionary:
+	var result:=FreeFlight._docking_values(48,9,26)
+	result.contract_station=false;result.sahi_return=true;result.restricted_notice=21
+	return result
 
 static func station_return(bindings: RefCounted,cursor: Variant) -> Dictionary:
 	if cursor==17:return docking(bindings,cursor)
@@ -160,10 +353,23 @@ static func station_conversation(bindings: RefCounted,cursor: Variant) -> Dictio
 	return result
 
 static func combat_population(bindings: RefCounted, combat: Dictionary) -> bool:
-	return Attack.combat_population(bindings,combat) or Convoy.combat_population(bindings,combat) or Travel.combat_population(bindings,combat) or AmbientCombat.live_population(bindings,combat) or ContractWorld.combat_population(bindings,combat)
+	return Dekato.combat_population(bindings,combat) or BakkaCombat.combat_population(bindings,combat) or Authored.combat_population(bindings,combat) or Kappa.combat_population(bindings,combat) or Attack.combat_population(bindings,combat) or Convoy.combat_population(bindings,combat) or Travel.combat_population(bindings,combat) or AmbientCombat.live_population(bindings,combat) or ContractWorld.combat_population(bindings,combat)
 
-static func alioth_return_overlay() -> Dictionary:
-	var source: Dictionary=AttackReturn.VALUES
+static func kappa_return_values() -> Dictionary:
+	var result:=FreeFlight._docking_values(55,11,22)
+	result.merge({"kappa_return":true,"departing_cursor":21,"local_visit":false,"restricted_notice":FirstReturn.VALUES.restricted_notice},true)
+	return result
+
+static func _alioth_return_parameters(rules: Dictionary,source: Dictionary,first_values: Dictionary) -> bool:
+	var overlay:=alioth_return_overlay(source)
+	var original:=rules.duplicate(true)
+	for key in overlay:
+		if not FirstReturn.Equal.equal_value(rules.get(key),overlay[key]):return false
+		if first_values.has(key):original[key]=first_values[key]
+		else:original.erase(key)
+	return FirstReturn.parameters(original)
+
+static func alioth_return_overlay(source: Dictionary) -> Dictionary:
 	return {"alioth_return":true,"departing_cursor":int(source.departing_cursor),"campaign_cursor":int(source.campaign_cursor),
 		"station_id":int(source.station_id),"system_id":int(source.system_id),"minimum_delivered_cargo":0,"restricted_mission_kind":4,
 		"clear_cargo_after_acknowledgement":false,"cursor_after_acknowledgement":int(source.next_cursor),

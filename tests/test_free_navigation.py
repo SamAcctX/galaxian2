@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from declaration_fixture import declaration_fixture
-from gof2_content import free_navigation as reader, mido_travel
+from gof2_content import free_navigation as reader, mido_travel, vossk_traffic, vossk_lod
 
 
 class FreeNavigationTests(unittest.TestCase):
@@ -49,18 +49,95 @@ class FreeNavigationTests(unittest.TestCase):
             ('free_lifecycle', 'extract_free_lifecycle'),
             ('free_flight', 'extract_free_flight'),
             ('free_arrival', 'extract_free_arrival'),
+            ('gate_environment', 'extract_gate_environment'),
+            ('local_arrival_environment', 'extract_local_arrival_environment'),
+            ('gate_transit', 'extract_gate_transit'),
+            ('ordinary_worlds', 'extract_ordinary_worlds'),
+            ('gate_arrival', 'extract_gate_arrival'),
+            ('ordinary_shopping', 'extract_ordinary_shopping'),
+            ('ordinary_fitting', 'extract_ordinary_fitting'),
+            ('ordinary_contracts', 'extract_ordinary_contracts'),
+            ('suttnar_visit', 'extract_suttnar_visit'),
+            ('kappa_preparation', 'extract_kappa_preparation'),
+            ('emp_bombs', 'extract_emp_bombs'),
+            ('kappa_rescue', 'extract_kappa_rescue'),
+            ('kappa_fighters', 'extract_kappa_fighters'),
+            ('kappa_lifecycle', 'extract_kappa_lifecycle'),
+            ('secondary_ownership', 'extract_secondary_ownership'),
+            ('kappa_return', 'extract_kappa_return'),
+            ('kappa_outcome', 'extract_kappa_outcome'),
+            ('kappa_departure', 'extract_kappa_departure'),
+            ('sahi_visit', 'extract_sahi_visit'),
+            ('sahi_encounter', 'extract_sahi_encounter'),
+            ('sahi_stage', 'extract_sahi_stage'),
+            ('tractor_recovery', 'extract_tractor_recovery'),
+            ('void_portal', 'extract_void_portal'),
+            ('post_sahi', 'extract_post_sahi'),
+            ('thynome_expedition', 'extract_thynome_expedition'),
+            ('void_probe', 'extract_void_probe'),
+            ('dima_return', 'extract_dima_return'),
+            ('post_probe_visits', 'extract_post_probe_visits'),
+            ('void_access', 'extract_void_access'),
+            ('void_crystals', 'extract_void_crystals'),
+            ('nehma_visit', 'extract_nehma_visit'),
+            ('gakkrr_visit', 'extract_gakkrr_visit'),
+            ('bakka_contest', 'extract_bakka_contest'),
+            ('bakka_return', 'extract_bakka_return'),
+            ('dekato_convoy', 'extract_dekato_convoy'),
+            ('nehma_return', 'extract_nehma_return'),
         ]
-        for missing in range(len(extensions) + 1):
-            with self.subTest(missing=missing), ExitStack() as stack:
-                stack.enter_context(patch.object(mido_travel, 'hashed_declarations', return_value={'base': {}}))
-                probes = []
-                for index, (key, function) in enumerate(extensions):
-                    result = ({}, {}) if index == missing else ({'scope': key}, {key: {'offset': index}})
-                    probes.append(stack.enter_context(patch.object(mido_travel, function, return_value=result)))
-                actual = mido_travel.extract_mido_travel(None, {}, {'scope': 'first_station_entry'}, {'scope': 'combat_training_encounter_construction'})
-                for index, (key, _) in enumerate(extensions):
-                    self.assertEqual(key in actual, index < missing)
-                    self.assertEqual(key in actual['provenance'], index < missing)
-                    self.assertEqual(probes[index].call_count, int(index <= missing))
-                for key, value in mido_travel.VALUES.items():
-                    self.assertEqual(actual[key], value)
+        predecessors = {
+            'void_access': 'post_probe_visits',
+            'void_crystals': 'post_probe_visits',
+            'nehma_visit': 'void_crystals',
+            'gakkrr_visit': 'nehma_visit',
+            'bakka_contest': 'gakkrr_visit',
+            'bakka_return': 'bakka_contest',
+            'dekato_convoy': 'bakka_return',
+            'nehma_return': 'dekato_convoy',
+        }
+        indices = {key: index for index, (key, _) in enumerate(extensions)}
+        # This isolates orchestration; individual readers have real byte fixtures.
+        arrival, population, resources = {}, object(), object()
+        for variant in (0, 1):
+            for missing in range(len(extensions) + 1):
+                with self.subTest(variant=variant, missing=missing), ExitStack() as stack:
+                    stack.enter_context(patch.object(mido_travel, 'hashed_variants', return_value=(variant, {'base': {}})))
+                    stack.enter_context(patch.object(mido_travel, 'hashed_declarations', return_value={'base': {}}))
+                    probes = []
+                    for index, (key, function) in enumerate(extensions):
+                        result = ({}, {}) if index == missing else ({'scope': key}, {key: {'offset': index}})
+                        probes.append(stack.enter_context(patch.object(mido_travel, function, return_value=result)))
+                    # Ship declarations are independent of the campaign suffix,
+                    # but still require the earlier free-lifecycle capability.
+                    ships = []
+                    for key, module in [('vossk_traffic', vossk_traffic), ('vossk_lod', vossk_lod)]:
+                        result = ({'scope': key}, {key: {'offset': -1}})
+                        ships.append(stack.enter_context(patch.object(module, 'extract_' + key, return_value=result)))
+                    actual = mido_travel.extract_mido_travel(None, arrival, {'scope': 'first_station_entry'}, {'scope': 'combat_training_encounter_construction'}, population, resources)
+                    for index, (key, _) in enumerate(extensions):
+                        self.assertEqual(key in actual, index < missing)
+                        self.assertEqual(key in actual['provenance'], index < missing)
+                        self.assertEqual(probes[index].call_count, int(index <= missing))
+                        if index > missing:
+                            continue
+                        args = (None, arrival)
+                        if key in predecessors:
+                            args += (probes[indices[predecessors[key]]].return_value[0],)
+                        if key == 'void_crystals':
+                            args += (population, resources)
+                        probes[index].assert_called_once_with(*args)
+                    ship_support = indices['free_lifecycle'] < missing
+                    for key, probe in zip(('vossk_traffic', 'vossk_lod'), ships):
+                        self.assertEqual(key in actual, ship_support)
+                        self.assertEqual(key in actual['provenance'], ship_support)
+                        self.assertEqual(probe.call_count, int(ship_support))
+                        if ship_support:
+                            probe.assert_called_once_with(None, arrival)
+                    retained = {key for index, (key, _) in enumerate(extensions) if index < missing}
+                    if ship_support:
+                        retained.update(('vossk_traffic', 'vossk_lod'))
+                    self.assertEqual(set(actual['provenance']), retained | {'base'})
+                    expected = mido_travel.MAC_VALUES if variant else mido_travel.VALUES
+                    for key, value in expected.items():
+                        self.assertEqual(actual[key], value)

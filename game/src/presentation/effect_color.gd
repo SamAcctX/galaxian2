@@ -9,5 +9,4 @@ static func tint(parent_rgba: PackedByteArray, global_tint: Vector4, animation_b
 		value[channel]=single(single(float(byte)*single(global_tint[channel]))/255.0)
 	return {"value":value} if value.is_finite() else {}
 
-static func single(value: float) -> float:
-	return PackedFloat32Array([value])[0]
+static func single(value: float) -> float:return Vector2(value,0.0).x

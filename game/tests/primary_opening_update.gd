@@ -47,7 +47,7 @@ func check_profile(content: String, pack: String) -> void:
 	for actor in scene.actors: actor.position=Vector3.ZERO;actor.erase("pose")
 	check(combat.update(scene,3,radio),combat.error)
 	check(combat.normal_hit(0,144).accepted,"Could not stage NPC death")
-	check(combat._actors[1].set_permissions(true,false,true),"Could not stage damage immunity")
+	check(combat._writable(1).set_permissions(true,false,true),"Could not stage damage immunity")
 	check(bodies.normal_hit(0,bodies.snapshot().objects[0].initial_hull-6).accepted,"Could not stage scenery death")
 	check(inventory.configure(bindings,catalogues,field),inventory.error)
 	check(inventory.validate_owners(combat.snapshot(),bodies.snapshot()),inventory.error)

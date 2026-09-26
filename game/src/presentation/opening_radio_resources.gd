@@ -5,6 +5,7 @@ const Metrics = preload("res://src/content/image_font.gd")
 const Layout = preload("res://src/presentation/source_text_layout.gd")
 const Definitions = preload("res://src/content/dialogue_definitions.gd")
 const Portraits = preload("res://src/presentation/portrait_compositor.gd")
+const StationPortraits = preload("res://src/content/station_presentation_definitions.gd")
 const Travel = preload("res://src/content/mido_travel_definitions.gd")
 const ContractWorld = preload("res://src/content/contract_world_definitions.gd")
 const LocalRadio = preload("res://src/simulation/local_traffic_radio.gd")
@@ -41,7 +42,12 @@ func prepare(library: RefCounted, bindings: RefCounted, visuals: RefCounted = nu
 		if not bindings.error.is_empty():return fail(bindings.error)
 		resolved[id]={"name":speaker_name}
 		if visuals!=null and not visuals.base_content_id.is_empty() and not bindings.portrait_layers.is_empty():
-			var portrait := composer.compose(library,bindings,visuals,id,"baseline")
+			# Speaker 0 is reader-unavailable in the generic portrait table. The
+			# station presentation has his source-selected fixed four-part portrait.
+			var portrait: Dictionary={}
+			var fixed: Dictionary=bindings.station_presentation.get("portraits",{}).get("0",{}) if id==0 and StationPortraits.parameters(bindings.station_presentation) else {}
+			if not fixed.is_empty():portrait=composer.compose_definition(library,bindings,visuals,id,"baseline",fixed)
+			else:portrait=composer.compose(library,bindings,visuals,id,"baseline")
 			if portrait.is_empty():diagnostics[id]=composer.error
 			else:resolved[id].portrait=ImageTexture.create_from_image(portrait.image)
 	line_counts=counts;speakers=resolved;portrait_diagnostics=diagnostics
@@ -49,7 +55,7 @@ func prepare(library: RefCounted, bindings: RefCounted, visuals: RefCounted = nu
 
 func prepare_local_traffic(library: RefCounted, bindings: RefCounted, visuals: RefCounted,cursor: int=10) -> bool:
 	error="";line_counts=[];speakers={};portrait_diagnostics={};_clear_local()
-	if library==null or bindings==null or visuals==null or (Travel.journey(bindings.mido_travel,cursor).is_empty() and not ContractWorld.supports(bindings,cursor) and not (load("res://src/content/free_campaign_definitions.gd").supported(bindings.mido_travel,cursor) and load("res://src/content/free_flight_definitions.gd").available(bindings))):return fail("Local radio requires its imported content and declarations")
+	if library==null or bindings==null or visuals==null or (Travel.journey(bindings.mido_travel,cursor).is_empty() and not ContractWorld.supports(bindings,cursor) and not (load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) and load("res://src/content/free_flight_definitions.gd").available(bindings))):return fail("Local radio requires its imported content and declarations")
 	if library.manifest.get("content_id")!=bindings.base_content_id or visuals.base_content_id!=bindings.base_content_id:return fail("Local radio resources belong to another content identity")
 	var id:=int(bindings.mido_travel.traffic_combat.radio.speaker_id)
 	var label: String=bindings.resolve_speaker_name(id,library)

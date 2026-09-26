@@ -32,6 +32,8 @@ func _initialize() -> void:
 	bindings.base_content_id = "a".repeat(64); bindings.binding_id = "b".repeat(64)
 	bindings.camera_follow = Fixture.definition()
 	bindings.frame_clock = {"max_frame_milliseconds": 150, "time_unit": "milliseconds"}
+	verify_auxiliary(bindings)
+	verify_orbit(bindings)
 	var rig := Rig.new()
 	check(rig.configure(bindings), rig.error)
 	var shot := {"base_content_id": bindings.base_content_id, "binding_id": bindings.binding_id,
@@ -92,6 +94,8 @@ func verify_source(content: String, pack: String) -> void:
 	check(library.open(content) and library.select_language("gb"), library.error)
 	check(bindings.open(pack, library.manifest), bindings.error)
 	check(catalogues.open(library), catalogues.error)
+	verify_auxiliary(bindings)
+	verify_orbit(bindings)
 	var rig := Rig.new(); var director := Director.new(); var staging := Staging.new(); var radio := Radio.new()
 	check(staging.configure(bindings, catalogues, catalogues.content_id), staging.error)
 	check(director.configure(bindings), director.error)
@@ -130,6 +134,129 @@ func verify_source(content: String, pack: String) -> void:
 	check(rig.update(33, director.snapshot(), world), rig.error)
 	check(rig.snapshot().pose.basis.determinant() > 0.999, "Moving follow orientation invalid")
 	print(library.manifest.profile.edition, ": radio/staging/camera handoff, response curve and moving follow verified")
+
+func verify_auxiliary(bindings: RefCounted) -> void:
+	var rig:=Rig.new()
+	check(not rig.set_auxiliary_enabled(false) and rig.auxiliary_snapshot().is_empty(),"Unconfigured auxiliary camera accepted a reset")
+	check(rig.configure(bindings),rig.error)
+	check(not rig.set_auxiliary_enabled(true) and not rig.auxiliary_snapshot().enabled,"Auxiliary activation invented an anchor")
+	var target:=Transform3D(Basis.from_euler(Vector3(0.2,0.4,-0.3)),Vector3(400,-50,700))
+	var scene:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"player_pose":target}
+	var shot:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"mode":"fixed_eye","target":"player","eye":Vector3(-120,40,-300),"inherit_target_up":true}
+	check(rig.update(16,shot,scene),rig.error)
+	var anchor:=Transform3D(Basis.from_euler(Vector3(-0.3,-0.7,0.2)),Vector3(-900,240,1100))
+	check(rig.set_auxiliary_anchor(anchor) and rig.set_auxiliary_enabled(true),rig.error)
+	var before:=rig.snapshot();var auxiliary:=rig.auxiliary_snapshot()
+	check(not rig.update(16,shot,scene) and rig.snapshot()==before and rig.auxiliary_snapshot()==auxiliary,"A fixed shot bypassed auxiliary cancellation")
+	shot.mode="follow"
+	check(rig.update(0,shot,scene) and rig.snapshot()==before and rig.auxiliary_snapshot()==auxiliary,"Zero time advanced an auxiliary view")
+	check(not rig.update(16,shot,scene,{},null,Vector3.ONE) and rig.snapshot()==before and rig.auxiliary_snapshot()==auxiliary,"Unprepared auxiliary shake mutated the view")
+	var eye_weight:=Rig.weight(Rig.coefficients(bindings.camera_follow.response_matrix,bindings.camera_follow.eye_rate),16,bindings.camera_follow.reciprocal_numerator)
+	var completed:=false;var ready:=false
+	for tick in 128:
+		# Disclosed moving-anchor mathematics, not equipment or career state.
+		# A later large translation also exercises the finite transition end.
+		if tick==4:
+			anchor.origin+=Vector3(40000,12000,-30000)
+			check(rig.set_auxiliary_anchor(anchor),rig.error)
+		before=rig.snapshot();auxiliary=rig.auxiliary_snapshot()
+		var desired:=anchor*Vector3(0,150,800)
+		var terminal: bool=auxiliary.initial_distance>0 and auxiliary.travelled>=Rig.single(auxiliary.initial_distance*1.5)
+		var expected: Vector3=desired if terminal else before.eye.lerp(desired,eye_weight)
+		check(rig.update(16,shot,scene),rig.error)
+		var state:=rig.snapshot();var current:=rig.auxiliary_snapshot()
+		# Closed-form half-turn geometry is independent of the rig's matrix
+		# composition. Float32 pi/large-coordinate rounding fits this bound.
+		near(state.eye,expected,"Auxiliary camera ignored its own anchor/response",0.03)
+		near(state.look,state.eye+anchor.basis.z,"Auxiliary view lost its reversed forward axis",0.01)
+		check(current.initial_distance>=0 and current.travelled>=auxiliary.travelled and current.enabled,"Auxiliary progress regressed or disabled itself")
+		check(current.transition_pending==(current.travelled>Rig.single(current.initial_distance*0.75)),"Auxiliary ready latch lost its strict distance threshold")
+		completed=completed or terminal;ready=ready or current.transition_pending
+	check(completed and ready,"Moving native anchor never reached the auxiliary transition boundary")
+	var original:=rig.snapshot();var original_aux:=rig.auxiliary_snapshot();var response:=rig.response_snapshot()
+	var restored: RefCounted=rig.fork_for_frame()
+	check(restored.set_auxiliary_enabled(false),restored.error)
+	var reset: Dictionary=restored.auxiliary_snapshot()
+	check(restored.snapshot()==original and restored.response_snapshot()==response,"Auxiliary cancellation replaced view history or follow response")
+	check(not reset.enabled and reset.travelled==0 and reset.initial_distance==0 and reset.offset==Vector3(0,150,-800) and reset.transition_pending==original_aux.transition_pending and reset.anchor==original_aux.anchor,"Auxiliary reset changed the wrong state fields")
+	check(restored.update(0,shot,scene) and restored.snapshot()==original and restored.auxiliary_snapshot()==reset,"Zero-time return changed view or progress")
+	var expected_eye: Vector3=original.eye.lerp(target*Staging.vec(bindings.camera_follow.eye_offset),eye_weight)
+	var look_weight:=Rig.weight(Rig.coefficients(bindings.camera_follow.response_matrix,bindings.camera_follow.look_rate),16,bindings.camera_follow.reciprocal_numerator)
+	var expected_look: Vector3=original.look.lerp(target*Staging.vec(bindings.camera_follow.look_offset),look_weight)
+	check(restored.update(16,shot,scene),restored.error)
+	near(restored.snapshot().eye,expected_eye,"Auxiliary reset replaced the ordinary eye offset",0.01)
+	near(restored.snapshot().look,expected_look,"Auxiliary reset replaced the ordinary look offset",0.01)
+	check(restored.auxiliary_snapshot().transition_pending==(restored.auxiliary_snapshot().travelled<800.0),"Ordinary return lost its independent 800-unit threshold")
+	check(rig.snapshot()==original and rig.auxiliary_snapshot()==original_aux,"Forked auxiliary cancellation mutated its parent")
+	# A terminal view at its desired eye is a genuine zero-distance transition,
+	# not a hand-edited progress counter.
+	check(rig.set_auxiliary_enabled(true) and rig.update(16,shot,scene),rig.error)
+	check(rig.auxiliary_snapshot().initial_distance==0 and rig.auxiliary_snapshot().travelled==0 and not rig.auxiliary_snapshot().transition_pending,"Zero-distance auxiliary transition produced stale progress or NaN")
+	for invalid in [true,1,null,Vector3.ZERO,Transform3D(Basis.IDENTITY.scaled(Vector3(2,1,1)),Vector3.ZERO),Transform3D(Basis.IDENTITY,Vector3(INF,0,0))]:
+		before=rig.snapshot();auxiliary=rig.auxiliary_snapshot()
+		check(not rig.set_auxiliary_anchor(invalid) and rig.snapshot()==before and rig.auxiliary_snapshot()==auxiliary,"Malformed auxiliary anchor changed retained state")
+	for invalid in [1,0,null,"false"]:
+		before=rig.snapshot();auxiliary=rig.auxiliary_snapshot()
+		check(not rig.set_auxiliary_enabled(invalid) and rig.snapshot()==before and rig.auxiliary_snapshot()==auxiliary,"Non-boolean auxiliary mode changed retained state")
+	var failed: RefCounted=rig.fork_for_frame()
+	check(failed.set_auxiliary_anchor(Transform3D(Basis.IDENTITY,Vector3(3e38,3e38,3e38))) and failed.set_auxiliary_enabled(true),failed.error)
+	before=failed.snapshot();auxiliary=failed.auxiliary_snapshot()
+	check(not failed.update(16,shot,scene) and failed.snapshot()==before and failed.auxiliary_snapshot()==auxiliary,"Overflowing auxiliary frame partially committed view or progress")
+	print("Auxiliary camera: live anchor, blend/ready/return, zero-distance, reset, rollback and fork isolation verified")
+
+func verify_orbit(bindings: RefCounted) -> void:
+	var rig:=Rig.new()
+	check(not rig.set_orbit_enabled(true) and rig.orbit_snapshot().is_empty(),"Unconfigured orbit was admitted")
+	check(rig.configure(bindings),rig.error)
+	var target:=Transform3D(Basis.from_euler(Vector3(0.3,-0.7,0.2)),Vector3(400,-50,700))
+	var scene:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"player_pose":target}
+	var shot:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"mode":"fixed_eye","target":"player","eye":Vector3(-120,40,-300),"inherit_target_up":true}
+	check(rig.update(0,shot,scene,shot),rig.error)
+	var initial:=rig.snapshot();var initial_orbit:=rig.orbit_snapshot();var auxiliary:=rig.auxiliary_snapshot()
+	var angles:=Vector3(-0.175,0.49,0)
+	check(rig.set_orbit_parameters(angles,3800) and rig.set_orbit_enabled(true),rig.error)
+	check(rig.snapshot()==initial and rig.auxiliary_snapshot()==auxiliary,"Orbit selection replaced history or enabled an auxiliary camera")
+	shot.mode="follow"
+	var selected:=rig.orbit_snapshot()
+	check(rig.update(0,shot,scene) and rig.snapshot()==initial and rig.orbit_snapshot()==selected,"Zero-time orbit normalized its offset or changed the view")
+	var eye_weight:=Rig.weight(Rig.coefficients(bindings.camera_follow.response_matrix,bindings.camera_follow.eye_rate),16,bindings.camera_follow.reciprocal_numerator)
+	var look_weight:=Rig.weight(Rig.coefficients(bindings.camera_follow.response_matrix,bindings.camera_follow.look_rate),16,bindings.camera_follow.reciprocal_numerator)
+	var base_eye: Vector3=initial_orbit.eye_offset.normalized()*3800
+	var base_look:=Staging.vec(bindings.camera_follow.look_offset)
+	for tick in 24:
+		angles=Vector3(-0.175+tick*0.02,0.49-tick*0.035,tick*0.01)
+		target.origin+=Vector3(2,-1,4);scene.player_pose=target
+		check(rig.set_orbit_parameters(angles,3800),rig.error)
+		var before:=rig.snapshot()
+		# Independent sequential vector rotations: rightmost Z, then X, then Y.
+		# The rig composes bases; this oracle never reads its rotated target.
+		var desired_eye: Vector3=target*base_eye.rotated(Vector3.BACK,angles.z).rotated(Vector3.RIGHT,angles.x).rotated(Vector3.UP,angles.y)
+		var desired_look: Vector3=target*base_look.rotated(Vector3.BACK,angles.z).rotated(Vector3.RIGHT,angles.x).rotated(Vector3.UP,angles.y)
+		check(rig.update(16,shot,scene),rig.error)
+		var current:=rig.snapshot()
+		near(current.eye,before.eye.lerp(desired_eye,eye_weight),"Orbit changed local YXZ order, target composition or source eye response",0.02)
+		near(current.look,before.look.lerp(desired_look,look_weight),"Orbit failed to rotate the source look offset",0.02)
+		var backwards: Vector3=(current.eye-current.look).normalized()
+		near(current.pose.basis.x,target.basis.y.cross(backwards).normalized(),"Orbit rotated inherited up with its offsets",0.00001)
+		check(absf(rig.orbit_snapshot().eye_offset.length()-3800)<0.002 and not rig.auxiliary_snapshot().enabled,"Orbit lost its radius or enabled the auxiliary path")
+	var parent:=rig.snapshot();var parent_orbit:=rig.orbit_snapshot()
+	var copy: RefCounted=rig.fork_for_frame()
+	check(copy.set_orbit_enabled(false) and copy.orbit_snapshot().eye_offset==parent_orbit.eye_offset,"Leaving orbit reset the retained normalized offset")
+	check(copy.update(16,shot,scene),copy.error)
+	near(copy.snapshot().eye,parent.eye.lerp(target*parent_orbit.eye_offset,eye_weight),"Returning to follow invented a new distance",0.02)
+	check(rig.snapshot()==parent and rig.orbit_snapshot()==parent_orbit,"Forked return changed its parent")
+	for invalid in [true,null,Vector2.ZERO,Vector3(INF,0,0)]:
+		check(not rig.set_orbit_parameters(invalid,3800) and rig.orbit_snapshot()==parent_orbit,"Malformed orbit angles changed retained parameters")
+	for invalid in [true,null,-1,0,INF,NAN,"3800"]:
+		check(not rig.set_orbit_parameters(angles,invalid) and rig.orbit_snapshot()==parent_orbit,"Malformed orbit distance changed retained parameters")
+	for invalid in [null,0,1,"true"]:
+		check(not rig.set_orbit_enabled(invalid) and rig.orbit_snapshot()==parent_orbit,"Malformed orbit enable changed state")
+	copy=rig.fork_for_frame();check(copy.set_orbit_parameters(angles,8000),copy.error)
+	copy._eye_coefficients=PackedFloat64Array([NAN])
+	var broken: Dictionary=copy.orbit_snapshot();var history: Dictionary=copy.snapshot()
+	check(not copy.update(16,shot,scene) and copy.orbit_snapshot()==broken and copy.snapshot()==history,"Failed orbit frame partially committed radius normalization or view")
+	check(rig.configure(bindings) and not rig.orbit_snapshot().enabled and rig.orbit_snapshot().eye_offset==initial_orbit.eye_offset,"Fresh configuration retained a previous orbit radius")
+	print("Ordinary orbit: YXZ offsets, unrotated target up, source blend, persistent radius, zero-time, malformed input and rollback verified")
 
 func near(actual: Vector3, expected: Vector3, message: String, tolerance := 0.001) -> void:
 	check(actual.distance_to(expected) <= tolerance, message + ": " + str(actual) + " vs " + str(expected))

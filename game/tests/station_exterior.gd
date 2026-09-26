@@ -105,20 +105,30 @@ func verify(args: Array):
 	# The construction snapshot also needs its prepared simulation owners.
 	foreign._scenery=construction.scenery_owner();foreign._player=construction.player_owner();foreign._camera=construction.camera_owner()
 	check(not resources.configure(lib,bindings,cat,foreign) and resources.snapshot()==state,"Foreign departure replaced the prepared station")
+	# The legacy side deliberately removes station-flight/player-response
+	# declarations. Compare both sides before the later optional Fast Forward
+	# capability, rather than constructing an invalid mixed-capability fixture.
+	var fast_forward: Dictionary=bindings.fast_forward;bindings.fast_forward={}
 	var flight:=Frame.new()
 	if not flight.configure(bindings,cat,lib,construction,"E",0.5,Vector2i(960,720)):check(false,flight.error);return
 	var initial:=flight.snapshot();var legacy:=Frame.new();var declaration: Dictionary=bindings.station_exterior;var live: Dictionary=bindings.station_flight;var arrival_rules: Dictionary=bindings.station_return
 	bindings.station_exterior={};bindings.station_flight={};bindings.station_return={}
 	check(legacy.configure(bindings,cat,lib,construction,"E",0.5,Vector2i(960,720)),legacy.error)
-	bindings.station_exterior=declaration;bindings.station_flight=live;bindings.station_return=arrival_rules
+	bindings.station_exterior=declaration;bindings.station_flight=live;bindings.station_return=arrival_rules;bindings.fast_forward=fast_forward
 	var without:=initial.duplicate(true);without.erase("station_exterior");without.erase("station_volume_index");without.erase("station_autopilot");without.erase("station_arrival");without.erase("boundary")
-	check(without==legacy.snapshot(),"Station construction changed flight, cargo or random state")
+	var legacy_initial:=legacy.snapshot()
+	check(initial.has("station_targeting") and not legacy_initial.has("station_targeting"),"Station targeting did not follow the exterior capability")
+	without.erase("station_targeting")
+	check(without==legacy_initial,"Station construction changed flight, cargo or random state")
 	check(flight.evaluate(100,Vector2.ONE,0.0,true).snapshot()==initial,"Paused station world advanced")
 	for i in 71:
 		flight=flight.evaluate(100);legacy=legacy.evaluate(100)
 		if flight==null or legacy==null:check(false,"Station flight failed to advance");return
 	var moving: Dictionary=flight.snapshot();without=moving.duplicate(true);without.erase("station_exterior");without.erase("station_volume_index");without.erase("station_autopilot");without.erase("station_arrival");without.erase("boundary")
-	check(without==legacy.snapshot() and moving.station_exterior==state,"Station update changed ordinary simulation")
+	var legacy_moving:=legacy.snapshot()
+	check(moving.has("station_targeting") and not legacy_moving.has("station_targeting"),"Station update changed its targeting capability")
+	without.erase("station_targeting")
+	check(without==legacy_moving and moving.station_exterior==state,"Station update changed ordinary simulation")
 	var inside: RefCounted=flight.fork_for_frame();inside._pose.origin=Vector3.ZERO
 	var overlap: Dictionary=inside.snapshot()
 	check(overlap.station_volume_index==3 and overlap.mission==moving.mission and overlap.campaign_cursor==2 and overlap.cargo==moving.cargo and not overlap.mining_completed,"Station overlap awarded arrival, cargo or campaign progress")

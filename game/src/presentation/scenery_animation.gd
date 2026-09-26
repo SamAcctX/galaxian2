@@ -121,16 +121,17 @@ static func vector_at(values: PackedFloat32Array, start: int) -> Vector3:
 static func multiply(left: Transform3D, right: Transform3D) -> Transform3D:
 	# Explicit float32 products and sums preserve the source affine contract,
 	# including the four successive pivot/parent products used when drawing.
+	# Vector2(x,0).x is the same binary32 rounding as Keys.single(), inline.
 	var result := Transform3D()
 	for row in 3:
 		for column in 4:
 			var value := 0.0
 			for term in 3:
 				var component: float=right.basis[column][term] if column<3 else right.origin[term]
-				var product := Keys.single(left.basis[term][row]*component)
-				value=product if term==0 else Keys.single(value+product)
+				var product:=Vector2(left.basis[term][row]*component,0.0).x
+				value=product if term==0 else Vector2(value+product,0.0).x
 			if column<3:result.basis[column][row]=value
-			else:result.origin[row]=Keys.single(value+left.origin[row])
+			else:result.origin[row]=Vector2(value+left.origin[row],0.0).x
 	return result
 
 func reject(message: String) -> Dictionary:

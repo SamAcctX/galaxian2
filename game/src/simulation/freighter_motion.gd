@@ -34,7 +34,7 @@ func configure(bindings: RefCounted,construction: RefCounted,actor_id: Variant) 
 		"actor_id":int(actor_id),"actor_kind":actor.actor_kind,"hull_catalogue_id":actor.hull_catalogue_id,
 		"body_pose":actor.body_pose,"statistics_pose":actor.statistics_pose,
 		"source_position":Vector3i(actor.body_pose.origin),"elapsed_motion_ms":0}
-	_max_ms=int(bindings.frame_clock.max_frame_milliseconds)
+	_max_ms=Frames.simulation_limit(bindings)
 	return true
 
 func configure_convoy(bindings: RefCounted,actor_id: Variant) -> bool:
@@ -56,7 +56,7 @@ func configure_convoy(bindings: RefCounted,actor_id: Variant) -> bool:
 		"body_pose":pose,"statistics_pose":pose,"source_position":Vector3i(position),"elapsed_motion_ms":0,
 		"convoy_ship":true,"cruise_enabled":bool(data.motion.initial_cruise_enabled),
 		"capture_actor_id":int(data.motion.capture_actor_id),"capture_phase":Capture.Stage.INTERCEPTION}
-	_max_ms=int(bindings.frame_clock.max_frame_milliseconds)
+	_max_ms=Frames.simulation_limit(bindings)
 	return true
 
 func configure_alioth_attack(bindings: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
@@ -71,7 +71,16 @@ func configure_alioth_attack(bindings: RefCounted,construction: RefCounted,actor
 		"actor_id":actor_id,"actor_kind":row.actor_kind,"hull_catalogue_id":row.hull_catalogue_id,
 		"body_pose":row.body_pose,"statistics_pose":row.statistics_pose,"source_position":Vector3i(row.body_pose.origin),
 		"elapsed_motion_ms":0,"cruise_enabled":row.cruise_enabled}
-	_max_ms=int(bindings.frame_clock.max_frame_milliseconds)
+	_max_ms=Frames.simulation_limit(bindings)
+	return true
+
+func _configure_story(bindings: RefCounted,data: Dictionary,row: Dictionary) -> bool:
+	clear()
+	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(data.campaign_cursor),
+		"actor_id":row.actor_id,"actor_kind":row.actor_kind,"hull_catalogue_id":row.hull_catalogue_id,
+		"body_pose":row.body_pose,"statistics_pose":row.statistics_pose,"source_position":Vector3i(row.body_pose.origin),
+		"elapsed_motion_ms":0,"cruise_enabled":row.cruise_enabled}
+	_max_ms=Frames.simulation_limit(bindings)
 	return true
 
 func apply_capture(capture: RefCounted) -> bool:
@@ -100,6 +109,37 @@ func update(delta_ms: Variant,movement_enabled: Variant) -> bool:
 	_state.source_position.z+=int(delta_ms)
 	_state.elapsed_motion_ms+=int(delta_ms)
 	return true
+
+func source_position() -> Vector3i:return _state.source_position
+
+func apply_selected40_sequence(owner: RefCounted) -> bool:
+	error=""
+	if _state.get("campaign_cursor")!=40 or _state.get("actor_id")!=0 or not is_instance_of(owner,load("res://src/simulation/selected40_sequence.gd")):return reject("Selected40 movement requires its original freighter")
+	var packet: Dictionary=owner.snapshot()
+	for key in ["base_content_id","binding_id","campaign_cursor"]:
+		if packet.get(key)!=_state[key]:return reject("Selected40 freighter belongs to another encounter")
+	var command: Dictionary=packet.frame.actor_commands.get(0,{})
+	var next:=_state.duplicate(true);var pose: Transform3D=next.body_pose
+	match command.get("action"):
+		"reveal":
+			pose.origin=command.position;next.source_position=Vector3i(pose.origin);next.cruise_enabled=true
+		"escape":
+			var units:=int(command.forward_units)
+			pose.origin=Vectors.added(pose.origin,Vectors.scaled(Vectors.normalized(pose.basis.z),float(units)))
+			next.source_position.z+=units
+			if command.retire:pose.origin=command.retired_position;next.source_position=Vector3i(pose.origin)
+		_:return reject("Selected40 freighter has no movement command")
+	if not Geometry.valid_pose(pose):return reject("Selected40 movement exceeded source coordinates")
+	next.body_pose=pose;next.statistics_pose=pose;_state=next
+	return true
+
+## The tractor uses the freighter's retained integer origin, not the model's
+## fractional cruise position. Commit it alongside the same recovery frame.
+func _retain_recovery_frame(frame: Dictionary) -> void:
+	var changes: Dictionary=frame.actor_changes
+	if changes.has("freighter_position"):
+		_state.source_position=changes.freighter_position
+		_state.body_pose=changes.body_pose;_state.statistics_pose=changes.statistics_pose
 
 func snapshot() -> Dictionary:return _state.duplicate(true)
 

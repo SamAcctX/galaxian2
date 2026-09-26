@@ -6,12 +6,14 @@ const Definitions=preload("res://src/content/station_equipment_definitions.gd")
 const Loadout=preload("res://src/simulation/opening_loadout.gd")
 const Training=preload("res://src/content/combat_training_story_definitions.gd")
 const Travel=preload("res://src/content/mido_travel_definitions.gd")
+const Bakka=preload("res://src/content/bakka_contest_definitions.gd")
 const Contracts=preload("res://src/content/early_contract_definitions.gd")
 const GateArrival=preload("res://src/content/gate_arrival_definitions.gd")
 const Shopping=preload("res://src/content/ordinary_shopping_definitions.gd")
 const Prices=preload("res://src/simulation/station_prices.gd")
 const FittingRules=preload("res://src/content/ordinary_fitting_definitions.gd")
 const Fitting=preload("res://src/simulation/equipment_fitting.gd")
+const RecoveryRules=preload("res://src/content/tractor_recovery_definitions.gd")
 var error:=""
 var _state:={}
 var _rules:={}
@@ -19,6 +21,7 @@ var _items:={}
 var _counts:=[]
 var _completion_prices:=[]
 var _mission_cargo_id:=-1
+var _recovery_cargo_ids:=[]
 var _fitting_assets:={}
 
 func configure(bindings: RefCounted, catalogues: RefCounted, station: Dictionary) -> bool:
@@ -45,6 +48,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, station: Dictionary
 	var capacity:=int(catalogues.tables.ships[seed.ship_id].stats.cargo_capacity)
 	if station.cargo.get("capacity")!=capacity:return reject("Tutorial cargo capacity differs from the ship catalogue")
 	_rules=rules.duplicate(true);_items=items;_counts=counts;_completion_prices=[];_mission_cargo_id=-1;_fitting_assets={}
+	_recovery_cargo_ids=RecoveryRules.cargo_marker_ids(bindings)
 	_state={"loadout":seed,"stock":stock,"cargo":station.cargo.duplicate(true),"cargo_cache_stale":station.get("cargo_cache_stale",false),"credit_delta":0,"transactions":0}
 	return true
 
@@ -104,8 +108,7 @@ func open_ordinary_shopping(bindings: RefCounted,cat: RefCounted,stock: Array,ra
 	if place.is_empty() or place.system_id!=_state.loadout.system_id or not Shopping.valid_stock(stock,cat.tables.items.size()):reject("The ordinary hangar has no supported current stock");return {}
 	for key in ["base_content_id","binding_id"]:
 		if _state.loadout.get(key)!=bindings.get(key) or _state.cargo.get(key)!=bindings.get(key):reject("The inventory belongs to another content identity");return {}
-	if _state.cargo_cache_stale:reject("Refresh the retained cargo before ordinary shopping");return {}
-	if not _valid_cargo(_state.cargo,true):return {}
+	if not cargo_cache_valid():return {}
 	if not _state.get("prices") is Dictionary or not _state.prices.get("cargo") is Array or not _state.prices.get("installed") is Array or _state.prices.cargo.size()!=_state.cargo.entries.size() or _state.prices.installed.size()!=_state.loadout.slots.size():reject("The retained prices lost their cargo or installed order");return {}
 	var lists:={"cargo":null if _state.cargo.entries.is_empty() else _state.prices.cargo,
 		"installed":_state.prices.installed,"stock":null if stock.is_empty() else stock}
@@ -135,7 +138,7 @@ func open_ordinary_shopping(bindings: RefCounted,cat: RefCounted,stock: Array,ra
 	var next:=_state.duplicate(true)
 	next.ordinary_shopping_open=true;next.market_rows=rows;next.market_rules=bindings.mido_travel.ordinary_shopping.duplicate(true)
 	next.stock_station_id=place.station_id;next.prices.installed=quoted.installed
-	_retain_market_inventory(next)
+	_retain_market_inventory(next,false)
 	var staged:=fork();staged._state=next;staged._items=items
 	if FittingRules.available(bindings):
 		var fitting:=Fitting.new();staged._fitting_assets=fitting.prepare_assets(bindings,cat,library)
@@ -257,7 +260,7 @@ func _transact_ordinary(action: String,item_id: int,credits: int) -> bool:
 	next.transactions+=1;_state=next
 	return true
 
-func _retain_market_inventory(state: Dictionary) -> void:
+func _retain_market_inventory(state: Dictionary,refresh_used:=true) -> void:
 	var cargo:=[];var prices:=[];var stock:=[];var used:=0
 	for row in state.market_rows:
 		if row.owned>0:
@@ -266,7 +269,11 @@ func _retain_market_inventory(state: Dictionary) -> void:
 			cargo.append(item);prices.append({"item_id":row.item_id,"unit_price":row.unit_price});used+=row.owned
 		if row.stock>0:stock.append({"item_id":row.item_id,"quantity":row.stock,"unit_price":row.unit_price})
 	state.stock=stock;state.prices.cargo=prices;state.cargo.entries=cargo
-	state.cargo.used=used;state.cargo.free_space=int(state.cargo.capacity)-used;state.cargo_cache_stale=false
+	# Opening a hangar quotes retained lists without invoking the original
+	# inventory setter. Purchases, sales and fitting explicitly refresh it.
+	if refresh_used:state.cargo.used=used
+	state.cargo.free_space=int(state.cargo.capacity)-int(state.cargo.used)
+	state.cargo_cache_stale=state.cargo.used!=used
 
 func requirements() -> Dictionary:
 	var weapon:=false;var armor:=false
@@ -310,6 +317,20 @@ func prepare_alioth_return(bindings: RefCounted) -> bool:
 	_state.ship_affiliation=int(rules.next_player_ship_affiliation)
 	return true
 
+func relocate_bakka_target(bindings: RefCounted,catalogues: RefCounted,context: Dictionary) -> bool:
+	error=""
+	if not Bakka.context_valid(bindings,context) or catalogues==null or _state.is_empty():return reject("B\'akka target requires its selected story inventory")
+	if not _state.get("training_inventory_released",false) or not _state.get("prototype_drill_replaced",false) or not cargo_cache_valid():return reject("B\'akka target requires the retained completed inventory")
+	var source: Dictionary=bindings.mido_travel.get("gakkrr_visit",{}).get("mission35",{})
+	var target: Dictionary=bindings.mido_travel.bakka_contest.mission
+	var seed: Dictionary=_state.loadout
+	if source.is_empty() or seed.get("base_content_id")!=bindings.base_content_id or seed.get("binding_id")!=bindings.binding_id:return reject("B\'akka target belongs to another career")
+	if seed.get("station_id")!=int(source.station_id) or seed.get("system_id")!=int(source.system_id):return reject("B\'akka target must follow the earned Ga\'kkrr station")
+	if context.station_id!=int(target.station_id) or context.system_id!=int(target.system_id) or catalogues.content_id!=bindings.base_content_id:return reject("B\'akka target changed its source destination")
+	if context.station_id<0 or context.station_id>=catalogues.tables.stations.size() or int(catalogues.tables.stations[context.station_id].system_id)!=context.system_id:return reject("B\'akka target is absent from this catalogue")
+	_state.loadout.station_id=context.station_id;_state.loadout.system_id=context.system_id
+	return true
+
 func relocate_local_arrival(bindings: RefCounted, catalogues: RefCounted, arrival: Dictionary) -> bool:
 	error=""
 	if bindings==null or catalogues==null or not Travel.parameters(bindings.mido_travel) or _state.is_empty():return reject("Local arrival requires its retained equipment")
@@ -317,7 +338,7 @@ func relocate_local_arrival(bindings: RefCounted, catalogues: RefCounted, arriva
 	var data: Dictionary=bindings.mido_travel
 	if not arrival.get("campaign_cursor") is int:return reject("Local arrival has no mission context")
 	if not arrival.get("from_station_id") is int or not arrival.get("station_id") is int:return reject("Local arrival requires catalogue station IDs")
-	var trip:=Travel.route(data,arrival.campaign_cursor,arrival.from_station_id,arrival.station_id)
+	var trip:=Travel.route(bindings,arrival.campaign_cursor,arrival.from_station_id,arrival.station_id)
 	if trip.is_empty():return reject("Unsupported local destination mission")
 	var expected:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,
 		"campaign_cursor":arrival.campaign_cursor,"from_station_id":int(trip.from_station_id),
@@ -344,6 +365,66 @@ func relocate_gate_arrival(bindings: RefCounted,catalogues: RefCounted,arrival: 
 	if seed.station_id!=arrival.from_station_id or seed.system_id!=arrival.from_system_id:return reject("The gate arrival does not follow this inventory's location")
 	# The world transaction owns this fork. Preserve all cargo, prices and slots.
 	_state.loadout.station_id=arrival.station_id;_state.loadout.system_id=arrival.system_id
+	return true
+
+## The cursor25 factory marks only the first retained Void-crystal row. It
+## neither creates a missing item nor changes quantities, prices or hold caches.
+func protect_sahi_cargo(bindings: RefCounted) -> bool:
+	error=""
+	if not load("res://src/content/post_sahi_definitions.gd").available(bindings) or not load("res://src/content/sahi_stage_definitions.gd").coherent(bindings.mido_travel) or not cargo_cache_valid():return reject("Sahi cargo protection requires its retained source inventory")
+	var seed: Dictionary=_state.loadout
+	if seed.base_content_id!=bindings.base_content_id or seed.binding_id!=bindings.binding_id or seed.station_id!=48 or seed.system_id!=9:return reject("Sahi cargo protection belongs to another entry")
+	var id:=int(bindings.mido_travel.sahi_stage.next_factory.protected_cargo_item_id)
+	var markers:=RecoveryRules.cargo_marker_ids(bindings)
+	if id not in markers:return reject("Sahi cargo protection requires its supported story marker")
+	_recovery_cargo_ids=markers
+	for row in _state.cargo.entries:
+		if row.item_id==id:
+			row.mission=true
+			break
+	return true
+
+## The caller owns a detached inventory. No station/save edit can stand in
+## for the source-selected native frame that actually entered the late portal.
+func relocate_selected41(bindings: RefCounted,departure: RefCounted) -> bool:
+	error=""
+	if not is_instance_of(departure,load("res://src/simulation/selected40_flight_frame.gd")) or not departure.successor41_ready(bindings):return reject("Successor equipment requires the native living late portal")
+	if not _state.get("training_inventory_released",false) or not _state.get("prototype_drill_replaced",false) or not cargo_cache_valid():return reject("Successor requires the retained earned inventory")
+	var seed: Dictionary=_state.loadout
+	var actual: Dictionary=departure.equipment_owner().snapshot().loadout
+	if seed!=actual:return reject("Successor inventory differs from the actual departure equipment")
+	var player: Dictionary=departure.player_owner().loadout()
+	for key in ["base_content_id","binding_id","ship_id","station_id","system_id","equipment_ids"]:
+		if seed.get(key)!=player.get(key):return reject("Successor player and inventory disagree: "+key)
+	_state.loadout.station_id=-1;_state.loadout.system_id=-1
+	return true
+
+func relocate_post_sahi(bindings: RefCounted,cursor: int) -> bool:
+	error=""
+	if bindings==null:return reject("The portal requires its source declarations")
+	var location: Dictionary=load("res://src/simulation/flight_player_cache.gd").post_sahi_entry(bindings.mido_travel,cursor,int(_state.get("loadout",{}).get("ship_id",-1)))
+	if location.is_empty() or not _state.get("training_inventory_released",false) or not _state.get("prototype_drill_replaced",false):return reject("The portal requires the retained earned inventory")
+	var seed: Dictionary=_state.loadout
+	for key in ["base_content_id","binding_id"]:
+		if seed.get(key)!=bindings.get(key):return reject("Portal equipment belongs to another source")
+	if seed.station_id!=(48 if cursor==25 else 91 if cursor==29 else -1) or seed.system_id!=(9 if cursor==25 else 18 if cursor==29 else -1):return reject("The portal does not leave this inventory's location")
+	_state.loadout.station_id=int(location.station_id);_state.loadout.system_id=int(location.system_id)
+	return true
+
+## Portal transactions relocate a detached inventory without touching its cargo,
+## slots or prices. Ordinary entry and return keep the same campaign cursor.
+func relocate_ordinary_void(bindings: RefCounted,source_owner: RefCounted,entering: bool) -> bool:
+	error=""
+	if bindings==null or not is_instance_of(source_owner,load("res://src/simulation/ordinary_void_source.gd")) or not _state.get("training_inventory_released",false) or not _state.get("prototype_drill_replaced",false):return reject("The ordinary portal requires its retained source and earned inventory")
+	var source: Dictionary=source_owner.snapshot()
+	var seed: Dictionary=_state.loadout
+	var location: Dictionary=load("res://src/simulation/flight_player_cache.gd").ordinary_void_entry(bindings.mido_travel,int(seed.ship_id))
+	if location.is_empty():return reject("The ordinary Void equipment location is unavailable")
+	for key in ["base_content_id","binding_id"]:
+		if source.get(key)!=bindings.get(key) or seed.get(key)!=bindings.get(key):return reject("The ordinary portal inventory belongs to another content identity")
+	if seed.station_id!=(source.source_station_id if entering else -1) or seed.system_id!=(source.source_system_id if entering else -1):return reject("The ordinary portal does not leave this inventory's actual location")
+	_state.loadout.station_id=-1 if entering else source.source_station_id
+	_state.loadout.system_id=-1 if entering else source.source_system_id
 	return true
 
 @warning_ignore("integer_division")
@@ -386,6 +467,28 @@ func complete_training(hold: Dictionary) -> bool:
 	_state.protected_item_ids=[];_state.training_inventory_released=true
 	return true
 
+## Flight consumption removes only the installed stack and its matching price.
+## Cargo, stock, wallet accounting and the other installed prices are retained.
+func retain_secondary_ammunition(owner: RefCounted) -> bool:
+	error=""
+	if _state.is_empty() or not _state.get("training_inventory_released",false) or _state.get("ordinary_shopping_open",false):return reject("Secondary consumption requires the released flight inventory")
+	if not is_instance_of(owner,load("res://src/simulation/secondary_weapons.gd")):return reject("Secondary consumption requires the actual launcher history")
+	var next_loadout: Dictionary=owner.reconcile_loadout(_state.loadout)
+	if next_loadout.is_empty():return reject(owner.error)
+	if not _state.get("prices") is Dictionary or not _state.prices.get("installed") is Array or _state.prices.installed.size()!=_state.loadout.slots.size():return reject("Secondary consumption lost installed price order")
+	var prices: Array=_state.prices.installed.duplicate(true)
+	for index in prices.size():
+		var prior: Variant=_state.loadout.slots[index]
+		var price: Variant=prices[index]
+		if prior==null:
+			if price!=null:return reject("An empty equipment slot retained a price")
+		elif not price is Dictionary or price.get("item_id")!=prior.item_id or not price.get("unit_price") is int or price.unit_price<0 or price.unit_price>2147483647:return reject("Installed ammunition has an invalid retained price")
+		if next_loadout.slots[index]==null:prices[index]=null
+	var next:=_state.duplicate(true)
+	next.loadout=next_loadout;next.prices.installed=prices
+	_state=next
+	return true
+
 func retain_flight_cargo(hold: Dictionary) -> bool:
 	error=""
 	if _state.is_empty() or _completion_prices.is_empty():return reject("Prepare the equipped flight before retaining its cargo")
@@ -393,13 +496,55 @@ func retain_flight_cargo(hold: Dictionary) -> bool:
 	if hold==_state.cargo:return true
 	if _state.get("training_inventory_released",false):
 		var existing:={};var prices:=[]
-		for row in _state.prices.cargo:existing[row.item_id]=row.unit_price
+		for row in _state.prices.cargo:
+			if not existing.has(row.item_id):existing[row.item_id]=[]
+			existing[row.item_id].append(row.unit_price)
 		# A newly acquired item starts with its own catalogue prototype price.
 		# Retained rows keep the price assigned at the training transition.
-		for row in hold.entries:prices.append({"item_id":row.item_id,"unit_price":existing.get(row.item_id,_completion_prices[row.item_id])})
+		for row in hold.entries:
+			var retained: Array=existing.get(row.item_id,[])
+			prices.append({"item_id":row.item_id,"unit_price":_completion_prices[row.item_id] if retained.is_empty() else retained.pop_front()})
 		_state.prices.cargo=prices
-	_state.cargo=hold.duplicate(true);_state.cargo_cache_stale=false
+	_state.cargo=hold.duplicate(true);_state.cargo_cache_stale=hold.used!=_used(hold.entries)
 	return true
+
+## Kind8 checks any qualifying row, but removal uses the first matching row.
+## Existing cargo and its row prices were validated on entry to this owner.
+func campaign_cargo(loadout: Dictionary,item_id: int,quantity: int) -> Dictionary:
+	error=""
+	if not _campaign_cargo_context(item_id,quantity) or _state.loadout!=loadout:
+		reject("Campaign cargo requires the retained station inventory");return {}
+	var satisfied:=_campaign_cargo_index(item_id,quantity)>=0
+	return {"satisfied":satisfied,"cargo":_state.cargo.duplicate(true) if satisfied else {}}
+
+func matches_cargo(hold: Dictionary) -> bool:
+	return not _state.is_empty() and _state.cargo==hold
+
+func debit_campaign_cargo(item_id: int,quantity: int) -> bool:
+	error=""
+	if not _campaign_cargo_context(item_id,quantity):return reject("Campaign cargo requires a closed, retained inventory")
+	var index:=_campaign_cargo_index(item_id,quantity)
+	if index<0:return reject("The required campaign cargo is unavailable")
+	var hold: Dictionary=_state.cargo.duplicate(true)
+	var prices: Array=_state.prices.cargo.duplicate(true)
+	hold.entries[index].quantity-=quantity
+	if hold.entries[index].quantity<=0:
+		hold.entries.remove_at(index);prices.remove_at(index)
+	hold.used=_used(hold.entries);hold.free_space=int(hold.capacity)-hold.used
+	_state.cargo=hold;_state.prices.cargo=prices;_state.cargo_cache_stale=false
+	return true
+
+func _campaign_cargo_context(item_id: int,quantity: int) -> bool:
+	return _state.get("training_inventory_released",false) and not _state.get("ordinary_shopping_open",false) and item_id>=0 and item_id<_completion_prices.size() and quantity>0 and quantity<=2147483647
+
+func _campaign_cargo_index(item_id: int,quantity: int) -> int:
+	var first:=-1;var satisfied:=false
+	for index in _state.cargo.entries.size():
+		var row: Dictionary=_state.cargo.entries[index]
+		if row.item_id!=item_id:continue
+		if first<0:first=index
+		if row.quantity>=quantity:satisfied=true
+	return first if satisfied else -1
 
 func prepare_contract_cargo(bindings: RefCounted) -> bool:
 	error=""
@@ -408,6 +553,7 @@ func prepare_contract_cargo(bindings: RefCounted) -> bool:
 	var id:=int(bindings.early_contracts.courier.cargo_item_id)
 	if id<0 or id>=_completion_prices.size():return reject("The mission cargo prototype is absent")
 	_mission_cargo_id=id
+	_recovery_cargo_ids=RecoveryRules.cargo_marker_ids(bindings)
 	return true
 
 func apply_station_exchange(bindings: RefCounted, catalogues: RefCounted, cursor: int) -> bool:
@@ -458,17 +604,23 @@ static func _item_metadata(catalogues: RefCounted, id: int, rules: Dictionary) -
 func _valid_flight_cargo(hold: Dictionary) -> bool:
 	return _valid_cargo(hold,false)
 
+func cargo_cache_valid() -> bool:
+	if _state.is_empty() or not _state.get("cargo_cache_stale") is bool or not _valid_cargo(_state.cargo,true):return reject("The equipped inventory has an invalid retained cargo cache")
+	if _state.cargo_cache_stale!=(_state.cargo.used!=_used(_state.cargo.entries)):return reject("The cargo cache marker disagrees with its retained quantities")
+	return true
+
 func _valid_cargo(hold: Dictionary,station_only: bool) -> bool:
 	for key in ["base_content_id","binding_id","ship_id","capacity"]:
 		if hold.get(key)!=_state.cargo[key]:return reject("Completed training cargo belongs to another ship")
 	if not hold.get("entries") is Array or hold.entries.size()>_completion_prices.size() or _state.loadout.slots.size()>_completion_prices.size():return reject("Completed training inventory has an unsupported extent")
 	var used:=0;var seen:=[]
+	var recovery: bool=not _recovery_cargo_ids.is_empty()
 	for index in hold.entries.size():
 		var row: Variant=hold.entries[index]
-		if not row is Dictionary or row.size()!=2+int(row.has("mission")) or not row.get("item_id") is int or row.item_id<0 or row.item_id>=_completion_prices.size() or seen.has(row.item_id) or not row.get("quantity") is int or row.quantity<1 or row.quantity>(2147483647 if station_only else int(hold.capacity))-used:return reject("Retained cargo contains invalid or repeated rows")
-		if row.has("mission") and (row.item_id!=_mission_cargo_id or not row.mission is bool or not row.mission):return reject("Unsupported mission cargo marker")
+		if not row is Dictionary or row.size()!=2+int(row.has("mission")) or not row.get("item_id") is int or row.item_id<0 or row.item_id>=_completion_prices.size() or (not recovery and seen.has(row.item_id)) or not row.get("quantity") is int or row.quantity<1 or row.quantity>(2147483647 if station_only or recovery else int(hold.capacity))-used:return reject("Retained cargo contains invalid or unsupported repeated rows")
+		if row.has("mission") and (not row.mission is bool or not row.mission or (row.item_id!=_mission_cargo_id and row.item_id not in _recovery_cargo_ids)):return reject("Unsupported mission cargo marker")
 		seen.append(row.item_id);used+=row.quantity
-	if hold.get("used")!=used or hold.get("free_space")!=int(hold.capacity)-used:return reject("Completed training cargo quantities disagree with its capacity")
+	if not hold.get("used") is int or hold.used<0 or hold.used>2147483647 or (not recovery and hold.used!=used) or not hold.get("free_space") is int or hold.free_space!=int(hold.capacity)-hold.used:return reject("Retained cargo quantities disagree with its used-space cache")
 	return true
 
 func fork() -> RefCounted:
@@ -476,6 +628,7 @@ func fork() -> RefCounted:
 	result._state=_state.duplicate(true);result._rules=_rules.duplicate(true);result._items=_items.duplicate(true);result._counts=_counts.duplicate()
 	result._completion_prices=_completion_prices.duplicate()
 	result._mission_cargo_id=_mission_cargo_id
+	result._recovery_cargo_ids=_recovery_cargo_ids.duplicate()
 	result._fitting_assets=_fitting_assets.duplicate(true)
 	return result
 

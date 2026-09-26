@@ -1,6 +1,10 @@
 extends RefCounted
+const FlightStages=preload("res://src/content/flight_stages.gd")
 const Alioth=preload("res://src/content/alioth_population_definitions.gd")
 const FreeFlight=preload("res://src/content/free_flight_definitions.gd")
+const Sahi=preload("res://src/content/sahi_encounter_definitions.gd")
+const Bakka=preload("res://src/content/bakka_contest_definitions.gd")
+const BakkaCombat=preload("res://src/content/bakka_combat_definitions.gd")
 ## Content-bound Opening, rescue and supported departure player pools.
 ## The world owner supplies ordering; full player lifecycle remains separate.
 const Definitions = preload("res://src/content/player_initialization_definitions.gd")
@@ -34,6 +38,8 @@ var _loadout := {}
 var _recharge: RefCounted
 var _repair: RefCounted
 var _flight_cache := {}
+var _selected40_construction: RefCounted
+var _selected41_construction: RefCounted
 
 func configure(bindings: RefCounted, catalogues: RefCounted) -> bool:
 	return _configure(bindings,catalogues,0,{})
@@ -80,6 +86,136 @@ func configure_alioth_attack(bindings: RefCounted,catalogues: RefCounted,equipme
 	_state.alioth_context=construction.snapshot().alioth_context.duplicate(true)
 	return true
 
+## Compose the selected B'akka population with the surviving target-world
+## inventory/cache. Route admission and result handling remain outside this owner.
+func configure_bakka(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,construction: RefCounted,previous_cache: Variant) -> bool:
+	clear()
+	if not construction is Construction or not equipment is StationEquipment:return reject("B'akka player requires its equipped ship and generated encounter")
+	var packet: Dictionary=construction.snapshot();var encounter: Dictionary=packet.get("bakka_encounter",{});var context: Dictionary=encounter.get("context",{})
+	var data: Dictionary=BakkaCombat.population(bindings,packet)
+	if data.is_empty():return reject("B'akka player requires its source-bound contest population")
+	var owned: Dictionary=equipment.snapshot();var loadout: Dictionary=owned.get("loadout",{})
+	if not equipment.cargo_cache_valid() or loadout.get("station_id")!=context.get("station_id") or loadout.get("system_id")!=context.get("system_id") or loadout.get("ship_id")!=packet.get("player_ship_id"):
+		return reject("B'akka player differs from its retained equipped location")
+	if load("res://src/simulation/equipment_slots.gd").checked_slots(bindings,catalogues,loadout).is_empty():return reject("B'akka player requires valid retained equipment slots")
+	if not FlightCache.matches(previous_cache,loadout,36) or int(previous_cache.get("values",{}).get("hull",0))<=0:return reject("B'akka player requires its surviving target-world cache")
+	if not _configure(bindings,catalogues,36,previous_cache,equipment,data):return false
+	var selected_context:=context.duplicate(true);selected_context.erase("mission")
+	if not Bakka.context_valid(bindings,selected_context):return reject("B'akka player lost its selected story context")
+	_state.bakka_context=selected_context
+	return true
+
+## Composition of the generated rescue and retained equipment. Career entry
+## and fitting acknowledgement remain the enclosing station session's job.
+func configure_kappa_rescue(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,construction: RefCounted,previous_cache: Variant=null) -> bool:
+	clear()
+	if not construction is Construction or not equipment is StationEquipment:return reject("Kappa player requires its equipped ship and generated encounter")
+	var data: Dictionary=load("res://src/content/kappa_population_definitions.gd").lifecycle(bindings,construction.snapshot())
+	if data.is_empty():return reject("Kappa player requires its source-bound population")
+	var owned: Dictionary=equipment.snapshot();var loadout: Dictionary=owned.get("loadout",{})
+	if not equipment.cargo_cache_valid() or loadout.get("station_id")!=data.station_id or loadout.get("system_id")!=data.system_id or loadout.get("ship_id")!=data.player_ship_id:return reject("Kappa player differs from its retained equipped location")
+	if load("res://src/simulation/equipment_slots.gd").checked_slots(bindings,catalogues,loadout).is_empty():return reject("Kappa player requires valid retained equipment slots")
+	if not _configure(bindings,catalogues,int(data.campaign_cursor),previous_cache,equipment,data):return false
+	_state.kappa_context=construction.snapshot().kappa_context.duplicate(true)
+	return true
+
+## The selected convoy consumes the surviving ship, not a fresh tutorial pool.
+## This composes native owners only; station navigation admits the journey.
+func configure_dekato(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,construction: RefCounted,previous_cache: Variant) -> bool:
+	clear()
+	if not construction is Construction or not equipment is StationEquipment:return reject("Dekato player requires its retained equipment and generated encounter")
+	var data: Dictionary=load("res://src/content/story_encounter_definitions.gd").compose_dekato(bindings,catalogues,construction)
+	if data.is_empty():return reject("Dekato player requires its selected source population")
+	var packet: Dictionary=construction.snapshot();var context: Dictionary=data.context
+	var loadout: Dictionary=equipment.snapshot().get("loadout",{})
+	if not equipment.cargo_cache_valid() or loadout.get("station_id")!=context.station_id or loadout.get("system_id")!=context.system_id or loadout.get("ship_id")!=packet.get("player_ship_id") or loadout.get("equipment_ids")!=packet.get("player_equipment_ids"):
+		return reject("Dekato player differs from its retained ship, equipment or location")
+	if load("res://src/simulation/equipment_slots.gd").checked_slots(bindings,catalogues,loadout).is_empty():return reject("Dekato player requires valid retained equipment slots")
+	if not FlightCache.matches(previous_cache,loadout,38) or int(previous_cache.values.hull)<=0:return reject("Dekato player requires its surviving target-world cache")
+	if not _configure(bindings,catalogues,38,previous_cache,equipment,data):return false
+	# _configure restores the living pools but initializes a capacity cache.
+	# The enclosing selected arrival must retain those restored values even
+	# before its first simulation frame, not report a freshly repaired ship.
+	_retain_restored_cache(previous_cache)
+	_state.dekato_context=context.duplicate(true)
+	return true
+
+## Compose real retained ship statistics without moving the origin equipment.
+## The enclosing selected world, NPC weapons/contacts and flight lifecycle are
+## deliberately not supplied here; this is not an earned cursor40 flight.
+func configure_selected40(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,construction: RefCounted,previous_cache: Variant) -> bool:
+	error=""
+	if not _state.is_empty():return reject("Configure a fresh selected40 player component before retaining pools")
+	if not construction is Construction or not equipment is StationEquipment:return reject("Selected40 player requires its retained equipment and generated cast")
+	var owned: Dictionary=equipment.snapshot();var loadout: Dictionary=owned.get("loadout",{})
+	var context: Dictionary=load("res://src/content/selected40_population_definitions.gd").retained_player_context(bindings,construction.snapshot(),loadout)
+	if context.is_empty() or not equipment.cargo_cache_valid():return reject("Selected40 player lost its source-bound origin equipment")
+	if load("res://src/simulation/equipment_slots.gd").checked_slots(bindings,catalogues,loadout).is_empty():return reject("Selected40 player requires the actual ordered equipment slots")
+	if not FlightCache.matches(previous_cache,loadout,40) or previous_cache.values.hull<=0:return reject("Selected40 player requires its living retained origin cache, not a proposed destination")
+	var profile: Dictionary=load("res://src/content/selected40_population_definitions.gd").weapon_profile(bindings,construction.snapshot())
+	if profile.is_empty():return reject("Selected40 player lacks its source NPC weapon declarations")
+	var component:={"context_key":"selected40_context","context":context,"npc_weapons":profile.npc_weapons}
+	if not _configure(bindings,catalogues,40,previous_cache,equipment,component):return false
+	_retain_restored_cache(previous_cache)
+	_state.selected40_context=context
+	_state.scope="selected40_retained_player_component"
+	_selected40_construction=construction
+	return true
+
+func selected40_construction_owner() -> RefCounted:return _selected40_construction
+
+func selected41_construction_owner() -> RefCounted:return _selected41_construction
+
+func configure_selected41(bindings: RefCounted,catalogues: RefCounted,entry: RefCounted,construction: RefCounted) -> bool:
+	clear()
+	if not is_instance_of(entry,load("res://src/simulation/selected41_portal_entry.gd")) or entry.snapshot().is_empty() or not construction is Construction:return reject("Source41 player requires its native portal entry and cast")
+	var retained: Dictionary=entry.snapshot();var equipment: RefCounted=entry.equipment_owner()
+	var packet: Dictionary=construction.snapshot()
+	var profile: Dictionary=load("res://src/content/selected41_population_definitions.gd").player_profile(bindings,packet)
+	if profile.is_empty() or packet.selected41_context!=retained.context:return reject("Source41 player differs from its actual successor cast")
+	var loadout: Dictionary=equipment.snapshot().loadout
+	if not equipment.cargo_cache_valid() or loadout.ship_id!=packet.player_ship_id or loadout.equipment_ids!=packet.player_equipment_ids or load("res://src/simulation/equipment_slots.gd").checked_slots(bindings,catalogues,loadout).is_empty():return reject("Source41 player lost its retained ordered inventory")
+	if not FlightCache.matches(retained.player_cache,loadout,41) or retained.player_cache.values.hull<=0:return reject("Source41 requires its surviving portal cache")
+	var component:={"context_key":"selected41_context","context":retained.context,"npc_weapons":profile.npc_weapons}
+	if not _configure(bindings,catalogues,41,retained.player_cache,equipment,component):return false
+	_retain_restored_cache(retained.player_cache)
+	_state.selected41_context=retained.context.duplicate(true)
+	_selected41_construction=construction
+	return true
+
+func _retain_restored_cache(previous_cache: Dictionary) -> void:
+	_flight_cache=previous_cache.duplicate(true)
+	for key in ["hull","armor","shield"]:_flight_cache.values[key]=int(_state.vitals[key])
+	_flight_cache.values.gamma=int(_state.gamma)
+
+func configure_sahi(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,construction: RefCounted,previous_cache: Variant=null) -> bool:
+	clear()
+	if not construction is Construction or not equipment is StationEquipment:return reject("Sahi player requires its equipped ship and generated encounter")
+	var packet: Dictionary=construction.snapshot();var context: Dictionary=packet.get("sahi_context",{})
+	var data: Dictionary=load("res://src/content/story_encounter_definitions.gd").compose(bindings,catalogues,packet)
+	if data.is_empty():return reject("Sahi player requires its source-selected encounter")
+	var owned: Dictionary=equipment.snapshot();var loadout: Dictionary=owned.get("loadout",{})
+	if not equipment.cargo_cache_valid() or loadout.get("station_id")!=context.station_id or loadout.get("system_id")!=context.system_id or loadout.get("ship_id")!=packet.get("player_ship_id"):
+		return reject("Sahi player differs from its retained equipped location")
+	if load("res://src/simulation/equipment_slots.gd").checked_slots(bindings,catalogues,loadout).is_empty():return reject("Sahi player requires valid retained equipment slots")
+	if not _configure(bindings,catalogues,int(context.campaign_cursor),previous_cache,equipment,data):return false
+	_state.sahi_context=context.duplicate(true)
+	return true
+
+## The ordinary Void is reached through a portal, never a fresh launch. The
+## generated world owns its fighter population; the cache owns surviving pools.
+func configure_ordinary_void(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,world: RefCounted,source: RefCounted,difficulty: Variant,previous_cache: Variant) -> bool:
+	clear()
+	var data: Dictionary=load("res://src/content/story_encounter_definitions.gd").compose_void(bindings,catalogues,world,equipment,source,difficulty)
+	if data.is_empty():return reject("Void player requires its retained source, equipment and generated world")
+	var owned: Dictionary=equipment.snapshot();var loadout: Dictionary=owned.loadout
+	if loadout.get("station_id")!=-1 or loadout.get("system_id")!=-1:return reject("Void player requires equipment relocated by its portal")
+	if load("res://src/simulation/equipment_slots.gd").checked_slots(bindings,catalogues,loadout).is_empty():return reject("Void player requires valid retained equipment slots")
+	if not FlightCache.matches(previous_cache,loadout,33) or previous_cache.values.hull<=0:return reject("Void player requires its surviving portal cache")
+	if not _configure(bindings,catalogues,33,previous_cache,equipment,data):return false
+	_state.void_context=world.snapshot().void_context.duplicate(true)
+	return true
+
 func configure_free(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,construction: RefCounted,previous_cache: Variant=null) -> bool:
 	clear()
 	if not FreeFlight.available(bindings) or not construction is Construction:return reject("Ordinary player requires its source-bound population")
@@ -87,8 +223,9 @@ func configure_free(bindings: RefCounted,catalogues: RefCounted,equipment: RefCo
 	var data:=FreeFlight.Life.population(bindings,packet)
 	if data.is_empty() or not equipment is StationEquipment:return reject("Ordinary player differs from its retained equipment or population")
 	var owned: Dictionary=equipment.snapshot();var loadout: Dictionary=owned.get("loadout",{})
-	if owned.get("cargo_cache_stale",true) or loadout.get("station_id")!=int(data.station_id) or loadout.get("ship_id")!=packet.player_ship_id:return reject("Ordinary player differs from its retained equipment or population")
+	if not equipment.cargo_cache_valid() or loadout.get("station_id")!=int(data.station_id) or loadout.get("ship_id")!=packet.player_ship_id:return reject("Ordinary player differs from its retained equipment or population")
 	if not _configure(bindings,catalogues,int(data.campaign_cursor),previous_cache,equipment,data):return false
+	if int(data.campaign_cursor)==40 and previous_cache is Dictionary:_retain_restored_cache(previous_cache)
 	_state.free_context=packet.free_context.duplicate(true)
 	return true
 
@@ -97,20 +234,28 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, cursor: int, previ
 	clear()
 	if bindings==null or catalogues==null: return reject("Player initialization requires content definitions")
 	var entry:=Entry.new()
-	var station_id:=int(equipment.snapshot().get("loadout",{}).get("station_id",-1)) if equipment is StationEquipment else -1
-	var ship_id:=int(equipment.snapshot().get("loadout",{}).get("ship_id",-1)) if equipment is StationEquipment else -1
-	if not entry.configure(bindings,cursor,station_id,previous_cache!=null and not (previous_cache is Dictionary and previous_cache.is_empty()),ship_id):return reject(entry.error)
+	var owned: Dictionary=equipment.snapshot() if equipment is StationEquipment else {}
+	var station_id:=int(owned.get("loadout",{}).get("station_id",-1))
+	var ship_id:=int(owned.get("loadout",{}).get("ship_id",-1))
+	var selected40: bool=contract.get("context_key")=="selected40_context"
+	var selected41: bool=contract.get("context_key")=="selected41_context"
+	var selected: bool
+	if selected41:selected=entry.configure_selected41(bindings,contract.context,ship_id)
+	elif selected40:selected=entry.configure_selected40(bindings,contract.context,ship_id)
+	elif contract.get("context_key")=="dekato_context":selected=entry.configure_dekato(bindings,contract.context,ship_id)
+	else:selected=entry.configure(bindings,cursor,station_id,previous_cache!=null and not (previous_cache is Dictionary and previous_cache.is_empty()),ship_id)
+	if not selected:return reject(entry.error)
 	var arrival:=entry.is_arrival
 	var departure:=entry.is_departure
-	if entry.uses_equipment and not equipment is StationEquipment:return reject("Combat-training player requires the actual equipped tutorial ship")
+	if entry.uses_equipment and owned.is_empty():return reject("Combat-training player requires the actual equipped tutorial ship")
 	var parameters: Dictionary=bindings.opening_actors.get("player_initialization",{})
 	if not Definitions.parameters(parameters) or not Actors.parameters(bindings.opening_actors):
 		return reject("This profile has no supported fresh player initialization")
 	var seed: Dictionary
 	if entry.uses_equipment:
-		if cursor in [10,11,12,13,14,16,18,19] and (not equipment.snapshot().get("training_inventory_released",false) or not equipment.snapshot().get("prototype_drill_replaced",false)):return reject("Complete the station drill exchange before local flight")
-		if not (cursor in [18,19] and Fitting.available(bindings)) and not equipment.requirements().satisfied:return reject("Install the required weapon and armor before combat training")
-		seed=equipment.snapshot().loadout
+		if (cursor in FlightStages.LOCAL+[33] or selected40 or selected41) and (not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false)):return reject("Complete the station drill exchange before local flight")
+		if not ((cursor in FlightStages.FREE+FlightStages.POST_SAHI+[33] or selected40 or selected41) and Fitting.available(bindings)) and not owned.requirements.satisfied:return reject("Install the required weapon and armor before combat training")
+		seed=owned.loadout
 		if seed.get("base_content_id")!=bindings.base_content_id or seed.get("binding_id")!=bindings.binding_id or catalogues.content_id!=bindings.base_content_id:return reject("Equipped player belongs to another source identity")
 		for key in ["ship_id","station_id","system_id"]:
 			if seed.get(key)!=int(entry.equipped_entry[key]):return reject("Equipped player has an unsupported ship or location")
@@ -172,7 +317,7 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, cursor: int, previ
 		if not FlightCache.matches(previous_cache,seed,cursor):return reject("Local arrival cache belongs to another equipped location")
 		current=FlightCache.restore_values(cache_parameters,base_hull,capacities,previous_cache.values)
 		if current.is_empty():return reject("Unsupported local arrival player values")
-		current.gamma=Vitals.single(cache_parameters.gamma_full)
+		if cursor not in FlightStages.POST_SAHI and not selected41 and not (cursor==33 and seed.station_id==-1):current.gamma=Vitals.single(cache_parameters.gamma_full)
 	if base_hull>=0:
 		max_hull=maxi(base_hull,current.hull)
 		repair=Repair.new()
@@ -251,17 +396,40 @@ func supports_weapon_hit(weapon: Variant) -> bool:
 
 func loadout() -> Dictionary:return _loadout.duplicate(true)
 
+## Only an accepted launch history can change equipped ammunition in flight.
+## Updating ownership must not reconstruct pools, repair timers or hit state.
+func retain_secondary_ammunition(owner: RefCounted) -> bool:
+	error=""
+	if _state.is_empty() or not is_instance_of(owner,load("res://src/simulation/secondary_weapons.gd")):return reject("Player ammunition requires its equipped secondary owner")
+	for key in ["base_content_id","binding_id","ship_id","equipment_ids"]:
+		if _state.get(key)!=_loadout.get(key):return reject("Player ammunition lost its retained equipment identity")
+	if _state.get("campaign_cursor")!=_loadout.get("campaign_cursor"):return reject("Player ammunition belongs to another encounter")
+	var next: Dictionary=owner.reconcile_loadout(_loadout)
+	if next.is_empty():return reject(owner.error)
+	if not _flight_cache.is_empty() and not FlightCache.matches(_flight_cache,_loadout,int(_loadout.get("campaign_cursor",0))):return reject("Player ammunition lost its flight cache identity")
+	_loadout=next
+	_state.equipment_ids=next.equipment_ids.duplicate()
+	if not _flight_cache.is_empty():_flight_cache.equipment_ids=next.equipment_ids.duplicate()
+	return true
+
 func weapon_hit(weapon: Variant, shooter_present: Variant, shooter_hostile: Variant, special_flight: Variant) -> Dictionary:
 	if not supports_weapon_hit(weapon): return {}
 	var resolver := Damage.new()
 	var resolved := resolver.resolve(weapon.damage,_hit_policy,shooter_present,shooter_hostile,special_flight)
 	if resolved.is_empty(): reject(resolver.error);return {}
+	var result:=normal_hit(resolved.amount)
+	if result.is_empty():return {}
+	result.resolution=resolved
+	return result
+
+func normal_hit(amount: Variant) -> Dictionary:
+	error=""
+	if _state.is_empty():reject("Configure player statistics before applying damage");return {}
 	var pools := Vitals.new()
 	if not pools.configure(_state.vitals.hull,_state.vitals.armor,_state.vitals.shield): reject(pools.error);return {}
-	var result: Dictionary=pools.normal_hit(resolved.amount,_state.active and _state.damage_allowed)
+	var result: Dictionary=pools.normal_hit(amount,_state.active and _state.damage_allowed)
 	if result.is_empty(): reject(pools.error);return {}
 	_state.vitals=pools.snapshot()
-	result.resolution=resolved
 	return result
 
 func collision_context(pose: Variant) -> Dictionary:
@@ -274,6 +442,16 @@ func collision_context(pose: Variant) -> Dictionary:
 	# the NPC actor's collision flag; the ordinary path uses statistics bounds.
 	return {"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,
 		"eligible":_state.active and _state.vitals.hull>0,"path":"bounds","center":center,"half_extent":_state.half_extent}
+
+## The selected story rejects an early physical portal entry by setting hull
+## directly, not by applying weapon damage through shield/armor permissions.
+## The enclosing mission owns its phase gate; this setter requires the actual
+## latched portal from this player's native constructor generation.
+func reject_selected40_portal(portal: RefCounted) -> bool:
+	error=""
+	if _state.is_empty() or _selected40_construction==null or not is_instance_of(portal,load("res://src/simulation/void_portal.gd")) or portal.selected40_construction_owner()!=_selected40_construction or not portal.transition_ready(_state.vitals.hull):return reject("Early portal rejection requires this living player's actual selected contact")
+	_state.vitals.hull=0
+	return true
 
 func set_permissions(active: Variant, damage_allowed: Variant) -> bool:
 	error=""
@@ -306,12 +484,14 @@ func fork_for_frame() -> RefCounted:
 	copy._state=_state.duplicate(true)
 	copy._flight_cache=_flight_cache.duplicate(true)
 	copy._hit_policy=_hit_policy.duplicate(true);copy._npc_weapons=_npc_weapons.duplicate(true);copy._loadout=_loadout.duplicate(true)
+	copy._selected40_construction=_selected40_construction
+	copy._selected41_construction=_selected41_construction
 	if _recharge!=null: copy._recharge=_recharge.fork_for_frame()
 	if _repair!=null: copy._repair=_repair.fork_for_frame()
 	return copy
 
 func clear() -> void:
-	error="";_state={};_hit_policy={};_npc_weapons=[];_loadout={};_flight_cache={}
+	error="";_state={};_hit_policy={};_npc_weapons=[];_loadout={};_flight_cache={};_selected40_construction=null;_selected41_construction=null
 	_recharge=null
 	_repair=null
 

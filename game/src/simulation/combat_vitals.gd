@@ -50,8 +50,8 @@ func normal_hit(amount: Variant, damage_allowed: Variant) -> Dictionary:
 static func integer(value: Variant) -> bool:
 	return value is int and value >= 0 and value <= MAX_INTEGER
 
-static func single(value: float) -> float:
-	return PackedFloat32Array([value])[0]
+# Single-precision engine vectors round each component like a source float cast.
+static func single(value: float) -> float:return Vector2(value,0.0).x
 
 func fail(message: String) -> Dictionary:
 	reject(message)

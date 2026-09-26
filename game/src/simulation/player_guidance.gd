@@ -21,4 +21,4 @@ static func signed_turn(previous: Basis, heading: Vector3, sign_angle: float) ->
 		if side>=-1.0 and side<=1.0 and single(acos(side))<sign_angle:angle=-angle
 	return angle
 
-static func single(value: float) -> float:return PackedFloat32Array([value])[0]
+static func single(value: float) -> float:return Vector2(value,0.0).x

@@ -7,6 +7,7 @@ const EquipmentRules=preload("res://src/content/station_equipment_definitions.gd
 
 func run():
 	var args:=OS.get_cmdline_user_args()
+	if args.size()==3 and DisplayServer.get_name()!="headless" and not OS.get_environment("GOF2_CAPTURE_DIR").is_empty():args.append(OS.get_environment("GOF2_CAPTURE_DIR"))
 	check(args.size() in [3,4],"Expected Mac content, bindings, visuals and optional captures")
 	if args.size() in [3,4]:await verify(args)
 	if is_instance_valid(host):host.free()
@@ -65,6 +66,7 @@ func after_second_return(args: PackedStringArray):
 	check(host.equipment_action("open") and host.equipment_action("mount",55),host.session.error)
 	state=host.session.snapshot()
 	check(state.equipment.requirements.satisfied and state.cargo.used==1 and state.cargo.entries==[{"item_id":0,"quantity":1}],"Equipment predicate counted cargo or consumed the spare gun")
+	state=choose_starter_gun(state)
 	host.equipment_panel.select_tab("ship")
 	if args.size()==4:
 		var file:=FileAccess.open(args[3].path_join("equipment-installed-state.json"),FileAccess.WRITE)
@@ -77,7 +79,7 @@ func after_second_return(args: PackedStringArray):
 	bindings.audio=old_audio
 	check(host.equipment_action("close"),host.session.error)
 	state=host.session.snapshot()
-	check(not host.equipment_panel.visible and state.dialogue.visible and state.dialogue.text_id==1725 and state.campaign_cursor==6 and state.mission.kind==158,"Equipment completion skipped its acknowledged source line")
+	check(not host.equipment_panel.visible and state.dialogue.visible and state.dialogue.text_id==int(bindings.station_equipment.events[0].text_id) and state.campaign_cursor==6 and state.mission.kind==158,"Equipment completion skipped its acknowledged source line")
 	check(host.session.audio.snapshot().history.back().source_id==438,"Equipment completion used the wrong voice")
 	check(state.progress==before.progress and state.reward_credits==0 and state.equipment.credit_delta==0,"Equipment granted credits or premature campaign progress")
 	if args.size()==4:await capture(args[3],"equipment-confirmed-dialogue")
@@ -99,10 +101,14 @@ func after_second_return(args: PackedStringArray):
 	if args.size()==4:await capture(args[3],"equipment-completed-action-rejection")
 	var scenario_path:=OS.get_environment("GOF2_SCENARIO_OUTPUT")
 	if not scenario_path.is_empty() and failures==0:
-		var problem:=EquipmentScenario.capture(scenario_path,bindings,scenario_before,state,host.session._world.equipment_owner())
+		var problem:=EquipmentScenario.capture(scenario_path,bindings,scenario_before,state,host.session._world.equipment_owner(),scenario_transactions())
 		check(problem.is_empty(),problem)
 
 func death_branch(_args: PackedStringArray, _packet: Dictionary):pass
+
+# Players may finish the tutorial with either free starter gun mounted.
+func choose_starter_gun(state: Dictionary) -> Dictionary:return state
+func scenario_transactions() -> Array:return EquipmentScenario.TRANSACTIONS
 
 func capture(directory: String, name: String):
 	# The desktop can change focus while this fixture yields for rendering.

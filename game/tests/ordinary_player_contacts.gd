@@ -113,8 +113,8 @@ func check_group(bindings: RefCounted, catalogues: RefCounted) -> void:
 	check(weapons.configure(bindings,catalogues),weapons.error)
 	check(combat.configure(bindings,catalogues,0.5),combat.error)
 	for id in 3:
-		combat._actors[id].set_permissions(true,true,true)
-		combat._actors[id].set_pose(Transform3D(Basis(Vector3.UP,PI),Vector3(0,0,2000)))
+		combat._writable(id).set_permissions(true,true,true)
+		combat._writable(id).set_pose(Transform3D(Basis(Vector3.UP,PI),Vector3(0,0,2000)))
 	weapons.advance(1);weapons.fire(combat,[0,1,2])
 	var contexts := [{"present":true,"hostile":true},{"present":true,"hostile":true},{"present":true,"hostile":true}]
 	var original := {"player":player.snapshot(),"weapons":weapons.snapshot()}

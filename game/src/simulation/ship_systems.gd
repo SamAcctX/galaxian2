@@ -13,6 +13,14 @@ func configure(bindings: RefCounted,capacity: Variant,recovery_ms: Variant) -> b
 		"capacity":capacity,"integrity":capacity,"recovery_ms":recovery_ms,"elapsed_ms":0,"disabled":false}
 	return true
 
+## The original statistics reinitializer restores integrity and clears the
+## disabled bit, but does NOT zero its retained recovery elapsed field.
+func reinitialize() -> bool:
+	error=""
+	if _state.is_empty():return reject("Configure systems before native reinitialization")
+	_state.integrity=_state.capacity;_state.disabled=false
+	return true
+
 func hit(amount: Variant,hull: Variant,active: Variant,damage_allowed: Variant) -> Dictionary:
 	error=""
 	if _state.is_empty() or not Vitals.integer(amount) or not Vitals.integer(hull) or not active is bool or not damage_allowed is bool:return fail("Invalid systems damage context")

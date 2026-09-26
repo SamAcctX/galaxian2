@@ -76,6 +76,13 @@ func _build_models(library: RefCounted,visuals: RefCounted,bindings: RefCounted)
 	selection=chosen.duplicate(true)
 	return true
 
+func build_station(library: RefCounted,visuals: RefCounted,bindings: RefCounted,catalogues: RefCounted,station_id: int,cursor: int,quality:="high") -> bool:
+	clear()
+	if library.manifest.get("content_id","")!=bindings.base_content_id or visuals.base_content_id!=bindings.base_content_id:return reject("Station sun resources belong to another content identity")
+	_owner=Frame.new()
+	if not _owner.configure_station(bindings,catalogues,station_id,cursor,quality):return reject(_owner.error)
+	return _build_models(library,visuals,bindings)
+
 func prepare_frame(view: Dictionary,viewport_size: Vector2i,previous_intensity: Variant) -> Dictionary:
 	error=""
 	if _owner==null:return failure("Sun geometry has not been prepared")

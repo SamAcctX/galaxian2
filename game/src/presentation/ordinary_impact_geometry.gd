@@ -45,10 +45,13 @@ func build(owner: RefCounted, library: RefCounted, visuals: RefCounted, bindings
 func prepare_world(owner: RefCounted, world: Dictionary, camera: Transform3D, parent_rgba:=PackedByteArray([255,255,255,255]), global_tint:=Vector4.ONE, darken:=1.0) -> Dictionary:
 	error=""
 	if not owner is State or _descriptor.is_empty() or owner.presentation_identity()!=_identity:return failed("Impact geometry follows one configured owner")
-	var state: Dictionary=owner.snapshot()
+	# The frame already carries this owner's snapshot; debug builds recheck it.
+	var observed: Variant=world.get("impact_visuals")
+	if not observed is Dictionary or (OS.is_debug_build() and owner.snapshot()!=observed):return failed("Impact presentation requires its current world clock")
+	var state: Dictionary=observed
 	for key in ["base_content_id","binding_id"]:
 		if state.get(key)!=_descriptor[key] or world.get(key)!=_descriptor[key]:return failed("Impact frame belongs to another identity")
-	if world.get("elapsed_ms")!=state.elapsed_ms or world.get("impact_visuals")!=state:return failed("Impact presentation requires its current world clock")
+	if world.get("elapsed_ms")!=state.elapsed_ms:return failed("Impact presentation requires its current world clock")
 	if not camera.is_finite() or Colors.tint(parent_rgba,global_tint).is_empty() or not is_finite(darken) or not is_finite(Colors.single(darken)):return failed("Invalid impact camera or color")
 	if state.weapons.size()!=guns.size():return failed("Impact weapon population changed")
 	var prepared:=[];var samplers:=[]

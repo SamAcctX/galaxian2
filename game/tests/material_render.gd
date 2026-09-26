@@ -63,7 +63,10 @@ func run_checks() -> void:
 	foreground.hide()
 	var alpha = quad(Color(1, 0, 0, 0.25), 1)
 	var mixed := await pixel()
-	check(mixed.r > 0.15 and mixed.r < 0.4 and mixed.b < background.b - 0.02, "Source-alpha blend failed")
+	# Vulkan renders in linear light and encodes the capture to sRGB. Compare
+	# the constant red shader contribution in its working space, not display RGB.
+	var mixed_shader := shader_color(mixed)
+	check(mixed_shader.r > 0.15 and mixed_shader.r < 0.4 and mixed.b < background.b - 0.02, "Source-alpha blend failed")
 	alpha.materials[0].render_priority = -1
 	quad(Color(0, 1, 0, 0.5), 1, -0.05, 1)
 	var behind := await pixel()
@@ -88,6 +91,7 @@ func run_checks() -> void:
 	await check_map_lighting()
 	await check_visitor_cutouts()
 	await check_source_uvs()
+	check_vertex_associations()
 	print("Material render checks: %d failures; pixels %s %s %s %s" % [failures, background, additive, mixed, behind])
 	clear_models()
 	quit(1 if failures else 0)
@@ -120,10 +124,12 @@ func check_map_lighting() -> void:
 	material.set_shader_parameter("diffuse_color", Vector3.ONE * 0.6)
 	material.set_shader_parameter("light_position", Vector3(0, 0, -10))
 	var shadow := await pixel()
-	check(shadow.r > 0.15 and shadow.r < 0.25 and shadow.b < 0.03, "Map ambient lighting or opaque texture alpha failed: %s" % shadow)
+	var shadow_shader := shader_color(shadow)
+	check(shadow_shader.r > 0.15 and shadow_shader.r < 0.25 and shadow_shader.b < 0.03, "Map ambient lighting or opaque texture alpha failed: %s" % shadow)
 	material.set_shader_parameter("light_position", Vector3(0, 0, 10))
 	var facing := await pixel()
-	check(facing.r > shadow.r + 0.5 and facing.r < 0.85, "Map surface normal or point-light direction failed: %s" % facing)
+	var facing_shader := shader_color(facing)
+	check(facing_shader.r > shadow_shader.r + 0.5 and facing_shader.r < 0.85, "Map surface normal or point-light direction failed: %s" % facing)
 	quad(Color.GREEN, 1, -0.05, 1)
 	check((await pixel()).is_equal_approx(facing), "Map planet failed to write depth before the alpha pass")
 	planet.rotation.y = PI
@@ -179,6 +185,36 @@ func check_source_uvs() -> void:
 	var raw_pixel := await pixel()
 	check(raw_pixel.r>raw_pixel.b+0.2,"Explicit raw UV inspection was not preserved")
 	prepared.free();raw.free()
+
+func check_vertex_associations() -> void:
+	# Tangent/normal preparation may reorder vertices. Nonuniform HDR colors
+	# must remain attached to their authored positions, not the old array index.
+	var colors := PackedColorArray([Color(1.125,0.123456,0.5,0.75),Color(0.25,2.0,0.3,0.5),Color(0.1,0.4,3.0,1.0)])
+	for with_uvs in [false,true]:
+		for with_normals in [false,true]:
+			var input := surface(colors)
+			input.indices=PackedInt32Array([2,0,1])
+			if not with_uvs:input.uvs=PackedVector2Array()
+			if not with_normals:input.normals=PackedVector3Array()
+			var original := input.duplicate(true)
+			var model := Model.new()
+			model.build({"version":4,"surfaces":[input]},null,null,0)
+			var arrays: Array=model.instances[0].mesh.surface_get_arrays(0)
+			var stored: PackedFloat32Array=arrays[Mesh.ARRAY_CUSTOM0]
+			var mismatch := 0
+			for corner in 3:
+				var source_index: int=input.indices[[0,2,1][corner]]
+				var rendered_index: int=arrays[Mesh.ARRAY_INDEX][corner]
+				var expected: Color=input.colors[source_index]
+				var actual := Color(stored[rendered_index*4],stored[rendered_index*4+1],stored[rendered_index*4+2],stored[rendered_index*4+3])
+				if not actual.is_equal_approx(expected):mismatch+=1
+				check(arrays[Mesh.ARRAY_VERTEX][rendered_index].is_equal_approx(input.positions[source_index]),"Tangent preparation changed a source triangle position")
+			check(mismatch==0,"Source color/position association changed at %d corners (UV %s, normals %s)" % [mismatch,with_uvs,with_normals])
+			check(input==original,"Mesh preparation mutated decoded source attributes")
+			model.free()
+
+func shader_color(display_color: Color) -> Color:
+	return display_color if RenderingServer.get_current_rendering_method()=="gl_compatibility" else display_color.srgb_to_linear()
 
 func check(condition: bool, message: String) -> void:
 	if not condition:

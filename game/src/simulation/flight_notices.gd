@@ -1,4 +1,7 @@
 extends RefCounted
+const FlightStages=preload("res://src/content/flight_stages.gd")
+const Frames=preload("res://src/simulation/frame_clock.gd")
+var _max_ms:=0
 ## Source timed text queue for the first mining flight. It never pauses flight,
 ## accepts acknowledgement, advances missions or consumes randomness.
 const Definitions=preload("res://src/content/flight_notice_definitions.gd")
@@ -23,9 +26,21 @@ func configure(bindings: RefCounted, library: RefCounted, construction: RefCount
 	if bindings==null or library==null or construction==null or construction.get_script()!=Construction or not Definitions.parameters(bindings.flight_notices):return reject("Flight notices require supported departure declarations")
 	var entry: Dictionary=construction.snapshot()
 	if entry.is_empty() or entry.get("base_content_id")!=bindings.base_content_id or entry.get("binding_id")!=bindings.binding_id or library.manifest.get("content_id")!=bindings.base_content_id or library.active_language.is_empty() or OrdinaryFlight.for_departure(bindings,entry).is_empty():return reject("Flight notices belong to another departure or language")
+	return _configure_messages(bindings,library,int(entry.campaign_cursor),entry.location,catalogues)
+
+## Only shared flight/equipment notices are admitted here. Station warnings
+## still require a native station owner; no guessed location is substituted.
+func configure_selected40(bindings: RefCounted,library: RefCounted,world: RefCounted) -> bool:
+	error=""
+	if not _rules.is_empty() or not is_instance_of(world,load("res://src/simulation/opening_world_initialization.gd")) or bindings==null or library==null:return reject("Selected40 notices require a fresh native world and language")
+	if world.npc_construction_owner()==null or not load("res://src/content/selected40_population_definitions.gd").context_valid(bindings,world.snapshot().get("selected40_context",{})):return reject("Selected40 notices lack their selected source generation")
+	if not Definitions.parameters(bindings.flight_notices) or library.manifest.get("content_id")!=bindings.base_content_id or library.active_language.is_empty():return reject("Selected40 notices belong to another content or language")
+	return _configure_messages(bindings,library,40,{},null)
+
+func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,location: Dictionary,catalogues: RefCounted) -> bool:
 	var messages:={}
 	var definitions: Dictionary=bindings.flight_notices.messages.duplicate(true)
-	if entry.campaign_cursor==7:
+	if cursor==7:
 		var navigation:=TrainingStory.navigation(bindings)
 		if not navigation.is_empty():
 			var notice: Dictionary=navigation.progress_notice
@@ -40,12 +55,12 @@ func configure(bindings: RefCounted, library: RefCounted, construction: RefCount
 		for component in rule.rgb:rgb.append(int(component))
 		for source_id in rule.text_ids:text_ids.append(int(source_id))
 		messages[int(key)]={"source_id":int(key),"text_ids":text_ids,"display_text_ids":display_ids,"text":str(rule.separator).join(pieces),"rgb":rgb}
-	if not bindings.station_flight.is_empty():
+	if location.get("station_id",-1)>=0 and not bindings.station_flight.is_empty():
 		var data: Dictionary=bindings.station_flight
 		if not StationFlight.parameters(data):return reject("Station notices require their verified declarations")
-		if entry.campaign_cursor in [10,11,12,13,14,16,18,19]:
-			data=data.duplicate(true);data.station_id=int(entry.location.station_id);data.system_id=int(entry.location.system_id)
-		if entry.location.station_id!=int(data.station_id) or entry.location.system_id!=int(data.system_id):return reject("Station notices belong to another flight location")
+		if cursor in FlightStages.LOCAL+FlightStages.POST_SAHI:
+			data=data.duplicate(true);data.station_id=int(location.station_id);data.system_id=int(location.system_id)
+		if location.station_id!=int(data.station_id) or location.system_id!=int(data.system_id):return reject("Station notices belong to another flight location")
 		var tables: RefCounted=catalogues
 		if tables==null:
 			tables=Catalogues.new()
@@ -63,6 +78,7 @@ func configure(bindings: RefCounted, library: RefCounted, construction: RefCount
 		messages[int(data.target_notice.source_id)]={"source_id":int(data.target_notice.source_id),"text_ids":source_ids.slice(0,2),"display_text_ids":display_ids.slice(0,2),"text":text,"rgb":data.target_notice.rgb.duplicate(),"station_id":int(data.station_id)}
 		messages[int(data.restricted_notice.source_id)]={"source_id":int(data.restricted_notice.source_id),"text_ids":[source_ids[2]],"display_text_ids":[display_ids[2]],"text":library.strings[display_ids[2]],"rgb":data.restricted_notice.rgb.duplicate()}
 	_rules=bindings.flight_notices.duplicate(true);_messages=messages
+	_max_ms=Frames.simulation_limit(bindings,int(_rules.max_frame_ms))
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language}
 	_pending=[];_elapsed=0;_falling=false;_suppressed=false
 	return true
@@ -80,7 +96,7 @@ func enqueue(source_id: Variant) -> bool:
 
 func advance(milliseconds: Variant, suppressed:=false, paused:=false) -> bool:
 	error=""
-	if _rules.is_empty() or not Numbers.integer(milliseconds,0,int(_rules.max_frame_ms)):return reject("Invalid timed-notice frame")
+	if _rules.is_empty() or not Numbers.integer(milliseconds,0,_max_ms):return reject("Invalid timed-notice frame")
 	if paused:return true
 	_suppressed=suppressed
 	if suppressed or _pending.is_empty():return true
@@ -103,8 +119,8 @@ func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._rules=_rules;copy._identity=_identity;copy._messages=_messages
 	copy._pending=_pending.duplicate(true);copy._elapsed=_elapsed;copy._falling=_falling;copy._suppressed=_suppressed
-	return copy
-func clear() -> void:error="";_rules={};_identity={};_messages={};_pending=[];_elapsed=0;_falling=false;_suppressed=false
+	copy._max_ms=_max_ms;return copy
+func clear() -> void:_max_ms=0;error="";_rules={};_identity={};_messages={};_pending=[];_elapsed=0;_falling=false;_suppressed=false
 static func f32(value: float) -> float:
 	var bytes:=PackedByteArray();bytes.resize(4);bytes.encode_float(0,value);return bytes.decode_float(0)
 func reject(message: String) -> bool:error=message;return false

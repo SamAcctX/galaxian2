@@ -293,8 +293,8 @@ func check_split_frame(timeline: RefCounted) -> void:
 	var actors: RefCounted=staged.combat_owner()
 	var moved: Transform3D=actors.snapshot().actors[0].pose;moved.origin.x+=100
 	check(actors.set_pose(0,moved),actors.error)
-	actors._actors[2]._state.pose.origin=Vector3.INF
-	actors._actors[2]._state.position=Vector3.INF
+	actors._writable(2)._state.pose.origin=Vector3.INF
+	actors._writable(2)._state.position=Vector3.INF
 	check(not staged.adopt_combat_pass(actors) and staged.snapshot()==pending,"Invalid last actor partially adopted an earlier pose")
 	check(staged.finish_frame(false),staged.error)
 	var finished: Dictionary=staged.snapshot()

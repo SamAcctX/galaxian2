@@ -50,6 +50,15 @@ func _configure_layout(bindings: RefCounted,data: Dictionary,base_content_id: St
 	_perspective=bindings.flight_projection.duplicate(true)
 	return true
 
+func configure_station(bindings: RefCounted,catalogues: RefCounted,station_id: int,cursor: int,quality:="high") -> bool:
+	clear()
+	var data: Dictionary=bindings.opening_sky.get("sun_flares",{})
+	if not Definitions.parameters(data):return reject("Station sun requires its original flare declarations")
+	var layout:=Layout.new()
+	_layout=layout.for_station(bindings,catalogues,station_id,cursor,quality)
+	if _layout.is_empty():return reject(layout.error)
+	return _configure_layout(bindings,data,bindings.base_content_id)
+
 func evaluate(view: Dictionary,viewport_size: Vector2i,previous_intensity: Variant) -> Dictionary:
 	error=""
 	if selection.is_empty() or not Geometry.valid_pose(view.get("pose")):
@@ -111,8 +120,7 @@ static func intensity_at(screen: Vector2,depth: float,viewport_size: Vector2i,co
 	if not is_finite(value):return {"error":"Lens intensity exceeds source precision"}
 	return {"intensity":value}
 
-static func single(value: float) -> float:
-	return PackedFloat32Array([value])[0]
+static func single(value: float) -> float:return Vector2(value,0.0).x
 
 func clear() -> void:
 	error="";selection.clear();_layout.clear();_perspective.clear()

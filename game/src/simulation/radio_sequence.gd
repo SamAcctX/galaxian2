@@ -23,6 +23,7 @@ var _activated_at := 0
 var _last_time := -1
 var _identity := {}
 var _waypoint_indices := {}
+var _requires_encounter_context:=false
 
 func clear() -> void:
 	error = ""
@@ -37,6 +38,7 @@ func clear() -> void:
 	_last_time = -1
 	_identity = {}
 	_waypoint_indices = {}
+	_requires_encounter_context=false
 
 func configure(bindings: RefCounted, library: RefCounted, source_line_counts: Array, campaign_cursor: int = 0) -> bool:
 	clear()
@@ -44,7 +46,9 @@ func configure(bindings: RefCounted, library: RefCounted, source_line_counts: Ar
 	if not Library.valid_hash(content_id) or content_id != bindings.base_content_id or not Library.valid_hash(bindings.binding_id): return fail("Radio belongs to another or unavailable content identity")
 	var data: Dictionary = Definitions.select(bindings, campaign_cursor)
 	if not Definitions.valid_parameters(data, campaign_cursor) or source_line_counts.size() != data.events.size(): return fail("Scene radio or source text layout is unavailable")
-	return _configure_records(bindings,library,data,source_line_counts,campaign_cursor)
+	if not _configure_records(bindings,library,data,source_line_counts,campaign_cursor):return false
+	_requires_encounter_context=campaign_cursor in [7,14,16,21,24,29,40,41]
+	return true
 
 func _configure_records(bindings: RefCounted, library: RefCounted, data: Dictionary, source_line_counts: Array, campaign_cursor: int) -> bool:
 	var content_id: String=library.manifest.get("content_id", "")
@@ -65,7 +69,7 @@ func _configure_records(bindings: RefCounted, library: RefCounted, data: Diction
 
 func configure_local_message(bindings: RefCounted, library: RefCounted, layout: RefCounted, text_id: int, cursor: int=10) -> bool:
 	clear()
-	if bindings==null or library==null or layout==null or (Travel.journey(bindings.mido_travel,cursor).is_empty() and not ContractWorld.supports(bindings,cursor) and not (load("res://src/content/free_campaign_definitions.gd").supported(bindings.mido_travel,cursor) and FreeFlight.available(bindings))) or not Definitions.valid_parameters(bindings.opening_dialogue,0):return fail("Local radio requires its verified dialogue and clock")
+	if bindings==null or library==null or layout==null or (Travel.journey(bindings.mido_travel,cursor).is_empty() and not ContractWorld.supports(bindings,cursor) and not (load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) and FreeFlight.available(bindings))) or not Definitions.valid_parameters(bindings.opening_dialogue,0):return fail("Local radio requires its verified dialogue and clock")
 	if library.manifest.get("content_id")!=bindings.base_content_id or layout.content_id!=bindings.base_content_id or layout.binding_id!=bindings.binding_id or layout.language!=library.active_language:return fail("Local radio layout belongs to another content or language")
 	var rule: Dictionary=bindings.mido_travel.traffic_combat.radio
 	if not rule.warning_text_ids.any(func(value):return int(value)==text_id) and not rule.response_text_ids.any(func(value):return int(value)==text_id):return fail("Local radio text is outside the verified faction messages")
@@ -91,7 +95,7 @@ func configure_from_layout(bindings: RefCounted, library: RefCounted, layout: Re
 	return configure(bindings, library, counts, campaign_cursor)
 
 func step(elapsed_ms: int, actor_hulls: Dictionary, cinematic_phase: int) -> Array:
-	if _identity.get("campaign_cursor") in [7,14,16,21]:
+	if _requires_encounter_context:
 		fail("Encounter radio requires its verified target context")
 		return []
 	return _step(elapsed_ms,actor_hulls,cinematic_phase,false)
@@ -119,6 +123,33 @@ func step_combat_training(elapsed_ms: int, combat: RefCounted) -> Array:
 		# do not participate in source radio condition16.
 		hostile_active=hostile_active or (actor.active and not actor.friendly)
 	return _step(elapsed_ms,{},0,hostile_active)
+
+## Read the native freighter, not a caller's victory flag. The mission owner
+## separately verifies that this group retains its exact constructor generation.
+func step_selected40(elapsed_ms: int, combat: RefCounted) -> Array:
+	error=""
+	if _identity.get("campaign_cursor")!=40 or not combat is Combat or combat.selected40_world_owner()==null:
+		fail("Selected40 radio requires its native selected-world actor group");return []
+	var body: Dictionary=combat.actor_snapshot(0)
+	for key in ["base_content_id","binding_id","campaign_cursor"]:
+		if body.get(key)!=_identity[key]:fail("Selected40 radio belongs to another encounter");return []
+	if body.get("actor_id")!=0 or body.get("population_group")!="freighter" or not body.get("active") is bool or not Numbers.integer(body.get("max_hull"),1,2147483647) or not Numbers.integer(body.get("vitals",{}).get("hull"),0,2147483647):
+		fail("Selected40 radio lacks its retained freighter vitals and activity");return []
+	return _step(elapsed_ms,{0:int(body.vitals.hull)},0,false,0,{"maximum_hulls":{0:int(body.max_hull)},"activity":{0:body.active}})
+
+## Condition26 uses the statistics pose and STRICT absolute Z proximity.
+## Condition1 only tests current hull <= 0; the active wreck and completed
+## breakup mode belong to different predicates. No caller supplies victory.
+func step_selected41(elapsed_ms: int, combat: RefCounted) -> Array:
+	error=""
+	if _identity.get("campaign_cursor")!=41 or not combat is Combat or combat.selected41_world_owner()==null:
+		fail("Source41 radio requires its native initialized actor group");return []
+	var body: Dictionary=combat.actor_snapshot(0)
+	for key in ["base_content_id","binding_id","campaign_cursor"]:
+		if body.get(key)!=_identity[key]:fail("Source41 radio belongs to another encounter");return []
+	if body.get("actor_id")!=0 or body.get("population_group")!="freighter" or not body.get("active") is bool or not Numbers.integer(body.get("vitals",{}).get("hull"),0,2147483647) or not load("res://src/simulation/npc_flight.gd").rigid_pose(body.get("pose")):
+		fail("Source41 radio lacks the first retained target's hull, activity or statistics pose");return []
+	return _step(elapsed_ms,{0:int(body.vitals.hull)},0,false,0,{"freighter_active":body.active,"freighter_z":body.pose.origin.z})
 
 func step_convoy(elapsed_ms: int, targets: Dictionary) -> Array:
 	error=""
@@ -213,6 +244,47 @@ func step_kappa_rescue(elapsed_ms: int, targets: Dictionary) -> Array:
 	# These predicates do not use lifetime kills or scanner selection.
 	return _step(elapsed_ms,{},0,hostile_active,0,{"targets":rows,"route_index":int(route_index),"survivors":survivors})
 
+func step_sahi(elapsed_ms: int, combat: Dictionary) -> Array:
+	error=""
+	if _identity.get("campaign_cursor")!=24:
+		fail("Sahi radio requires its original encounter declarations")
+		return []
+	for key in ["base_content_id","binding_id","campaign_cursor"]:
+		if combat.get(key)!=_identity[key]:
+			fail("Sahi recovery belongs to another encounter")
+			return []
+	var recovery: Variant=combat.get("recovery",{})
+	if not recovery is Dictionary:
+		fail("Sahi radio requires the current world recovery counter")
+		return []
+	var collected: Variant=recovery.get("accepted_quantity",0)
+	if not Numbers.integer(collected,0,2147483647):
+		fail("Sahi radio requires the accepted recovery quantity")
+		return []
+	return _step(elapsed_ms,{},0,false,0,{"collected_cargo_quantity":int(collected)})
+
+## The stage clock can reset after event1 playback while radio display time
+## remains monotonic. The flight owner supplies the current target lock and
+## already-incremented stage clock; this scheduler owns neither value.
+func step_probe(display_elapsed_ms: int, observation: Dictionary) -> Array:
+	error=""
+	if _identity.get("campaign_cursor")!=29:
+		fail("Probe radio requires its original six-row encounter")
+		return []
+	if not observation.get("campaign_cursor") is int:
+		fail("Probe radio requires its campaign cursor")
+		return []
+	for key in ["base_content_id","binding_id","campaign_cursor"]:
+		if observation.get(key)!=_identity[key]:
+			fail("Probe radio observation belongs to another encounter")
+			return []
+	var stage_elapsed: Variant=observation.get("stage_elapsed_ms")
+	if not stage_elapsed is int or not Numbers.integer(stage_elapsed,0,2147483647) or not observation.get("mother_ship_locked") is bool:
+		fail("Probe radio requires its current stage clock and mother-ship lock")
+		return []
+	return _step(display_elapsed_ms,{},0,false,0,{"stage_elapsed_ms":stage_elapsed,
+		"mother_ship_locked":bool(observation.mother_ship_locked)})
+
 func _step(elapsed_ms: int, actor_hulls: Dictionary, cinematic_phase: int, hostile_active: bool, defeated_targets:=0, observations: Dictionary={}) -> Array:
 	error = ""
 	if _identity.is_empty() or elapsed_ms < 0 or elapsed_ms < _last_time or elapsed_ms > 2147483647:
@@ -247,8 +319,33 @@ func _step(elapsed_ms: int, actor_hulls: Dictionary, cinematic_phase: int, hosti
 func eligible(row: Dictionary, elapsed_ms: int, hulls: Dictionary, phase: int, hostile_active:=false, defeated_targets:=0, observations: Dictionary={}, event_index: int=-1) -> bool:
 	var value := int(row.values[0])
 	match int(row.condition):
-		5: return elapsed_ms >= value
+		1:
+			if _identity.get("campaign_cursor")!=41:return false
+			for actor in row.values:
+				var current: Variant=hulls.get(int(actor))
+				if Numbers.integer(current,0,2147483647) and int(current)<=0:return true
+			return false
+		26:
+			if _identity.get("campaign_cursor")!=41 or observations.get("freighter_active")!=true or not Numbers.integer(hulls.get(0),1,2147483647):return false
+			var position: Variant=observations.get("freighter_z")
+			if not position is float or not is_finite(position):return false
+			var distance: float=load("res://src/simulation/combat_vitals.gd").single(position-float(value))
+			return absf(distance)<load("res://src/content/selected41_population_definitions.gd").RADIO_POSITION_TOLERANCE
+		5:
+			if _identity.get("campaign_cursor")==29:
+				var stage_time: Variant=observations.get("stage_elapsed_ms")
+				return Numbers.integer(stage_time,0,2147483647) and int(stage_time)>=value
+			return elapsed_ms >= value
 		6: return _started[value]
+		12:
+			if _identity.get("campaign_cursor")!=40:return false
+			var maximum: Variant=observations.get("maximum_hulls",{}).get(value)
+			var current: Variant=hulls.get(value)
+			return Numbers.integer(maximum,1,2147483647) and Numbers.integer(current,0,2147483647) and int(current)<int(int(maximum)/2)
+		24:
+			if _identity.get("campaign_cursor")!=40:return false
+			return observations.get("activity",{}).get(value)==false and Numbers.integer(hulls.get(value),1,2147483647) and elapsed_ms>=60000
+		23: return observations.get("mother_ship_locked")==true
 		9:
 			for actor in row.values:
 				var hull: Variant = hulls.get(int(actor))
@@ -257,6 +354,9 @@ func eligible(row: Dictionary, elapsed_ms: int, hulls: Dictionary, phase: int, h
 		27: return phase == value
 		16: return hostile_active
 		20: return defeated_targets>=value
+		22:
+			var collected: Variant=observations.get("collected_cargo_quantity")
+			return Numbers.integer(collected,0,2147483647) and int(collected)>=value
 		8:
 			var targets: Array=observations.get("targets",[])
 			return value<targets.size() and not targets[value].scenery and targets[value].active
@@ -271,6 +371,12 @@ func eligible(row: Dictionary, elapsed_ms: int, hulls: Dictionary, phase: int, h
 			_waypoint_indices[event_index]=current
 			return current>previous and previous==0 and int(observations.get("survivors",0))>=value
 	return false
+
+## Source row+0x30 and row+0x31 are distinct latches. A stage can inspect
+## these after each radio tick without inferring playback from visibility.
+func event_state(event_index: int) -> Dictionary:
+	if _identity.is_empty() or event_index<0 or event_index>=_started.size():return {}
+	return {"condition_satisfied":bool(_started[event_index]),"playback_finished":bool(_finished[event_index])}
 
 func snapshot() -> Dictionary:
 	if _identity.is_empty(): return {}
@@ -297,6 +403,7 @@ func fork_for_frame() -> RefCounted:
 	copy._last_time = _last_time
 	copy._identity = _identity.duplicate(true)
 	copy._waypoint_indices = _waypoint_indices.duplicate()
+	copy._requires_encounter_context=_requires_encounter_context
 	return copy
 
 func fail(message: String) -> bool:

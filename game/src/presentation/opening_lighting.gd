@@ -60,6 +60,13 @@ func _build_station(bindings: RefCounted, catalogues: RefCounted, context: Dicti
 	state.station_id=context.station_id;state.system_id=context.system_id
 	return true
 
+## Location resource preparation is not a departure or arrival permission.
+func build_station(bindings: RefCounted,catalogues: RefCounted,station_id: int) -> bool:
+	clear()
+	var context: Dictionary=load("res://src/content/ordinary_world_definitions.gd").catalogue_location(bindings,catalogues,station_id)
+	if context.is_empty():return reject("Lighting requires a source-supported ordinary location")
+	return _build_station(bindings,catalogues,context)
+
 func encoded_color(linear: Vector3) -> Color:
 	return Color(linear.x,linear.y,linear.z).linear_to_srgb()
 

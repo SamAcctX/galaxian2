@@ -72,7 +72,7 @@ func resolve(ship_id: int, upgrade_tags: Array, equipment_ids: Array, single_pre
 	return {"ship_id": ship_id, "effective_handling": handling, "equipment_percent": percent,
 		"handling_item_id": selected_item, "response_factor": factor}
 
-static func single(value: float) -> float:return PackedFloat32Array([value])[0]
+static func single(value: float) -> float:return Vector2(value,0.0).x
 
 func fail(message: String) -> Dictionary:
 	error = message

@@ -90,7 +90,7 @@ func check_profile(content: String, bindings_path: String) -> void:
 	var invalid := active_group(bindings,catalogues)
 	# A body now retains its constructor pose even without a scene pose override.
 	# Corrupt the final actor explicitly to exercise late firing rollback.
-	invalid._actors[2]._state.erase("pose")
+	invalid._writable(2)._state.erase("pose")
 	guns.advance(601)
 	saved=guns.snapshot()
 	check(guns.fire(invalid,[0,2]).is_empty() and guns.snapshot()==saved,"Late invalid pose partly committed NPC fire")
@@ -100,7 +100,7 @@ func check_profile(content: String, bindings_path: String) -> void:
 	var copy: RefCounted = guns.fork_for_frame()
 	check(copy.advance(1).size()>0 and guns.snapshot()==saved,"NPC fork aliases original projectiles")
 	combat.normal_hit(1,150)
-	combat._actors[2].set_permissions(true,true,false)
+	combat._writable(2).set_permissions(true,true,false)
 	result=guns.fire(combat,[0,1,2])
 	check(result.actors[0].outcome.fired and not result.actors[1].outcome.fired and not result.actors[2].outcome.fired,"Death or firing permission ignored")
 	# Late overflow must preserve every prior actor's projectile update.

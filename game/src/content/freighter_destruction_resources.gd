@@ -29,6 +29,10 @@ func configure_alioth_attack(library: RefCounted,bindings: RefCounted) -> bool:
 	if rules.is_empty():return reject("Alioth freighter destruction is unavailable in this content pack")
 	return _configure_resources(library,bindings,rules)
 
+func _configure_story(library: RefCounted,bindings: RefCounted,data: Dictionary) -> bool:
+	error="";_state={}
+	return _configure_resources(library,bindings,data.freighter_death)
+
 func configure_free(library: RefCounted,bindings: RefCounted,construction: RefCounted) -> bool:
 	error="";_state={}
 	if not construction is Construction:return reject("Ordinary freighter resources require their population")
@@ -71,9 +75,16 @@ func _configure_resources(library: RefCounted,bindings: RefCounted,rules: Dictio
 	var volumes:=Volumes.new()
 	var shapes:=volumes.decode(library.read_resource(rules.wreck_resource,Volumes.MAX_BYTES),int(rules.wreck_layout_id),int(rules.wreck_record_limit),float(rules.wreck_sphere_scale),float(rules.wreck_box_scale))
 	if shapes.is_empty():return reject("Invalid freighter wreck volumes: "+volumes.error)
+	# The shared decoder keeps the compact boxes-only station representation.
+	# Destruction consumes typed shapes for both boxes-only and mixed records.
+	var wreck_shapes: Array=shapes.get("shapes",[]).duplicate(true)
+	if not shapes.has("shapes"):
+		for box in shapes.boxes:
+			var shape: Dictionary=box.duplicate(true);shape.kind=1
+			wreck_shapes.append(shape)
 	_state=effects.snapshot()
 	_state.merge({"campaign_cursor":int(rules.campaign_cursor),"model_scale":float(rules.get("model_scale",1.0)),"model":{"model_id":int(rules.model_id),"resource":path,"start_ms":timing.start_ms,"end_ms":timing.end_ms},
-		"cargo_model":cargo,"wreck_shapes":shapes.get("shapes",[]),"wreck_source_offset":shapes.source_offset,"wreck_source_bytes":shapes.source_bytes,
+		"cargo_model":cargo,"wreck_shapes":wreck_shapes,"wreck_source_offset":shapes.source_offset,"wreck_source_bytes":shapes.source_bytes,
 		"initial_material":initial,"wreck_material":wreck})
 	if _state.wreck_shapes.is_empty():_state={};return reject("Freighter wreck has no supported collision shapes")
 	return true

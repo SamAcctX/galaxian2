@@ -36,7 +36,7 @@ func check_profile(content: String, pack: String) -> void:
 		actor.erase("pose")
 	check(combat.update(scene,3,radio),combat.error)
 	check(combat.normal_hit(0,144).accepted,combat.error)
-	check(combat._actors[1].set_permissions(true,false,true),"Cannot set independent immunity")
+	check(combat._writable(1).set_permissions(true,false,true),"Cannot set independent immunity")
 	owner.advance(1)
 	var volley: Dictionary = owner.fire(Transform3D.IDENTITY,true)
 	check(volley.weapons[0].slot==1 and volley.weapons[1].slot==0,"Firing order changed")

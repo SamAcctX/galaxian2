@@ -9,6 +9,8 @@ const VALUES = {"scope":"augmenta_ordinary_ship_setup","campaign_cursor":18,"opp
 const SPANS = {"free_traffic_nivelian_boxes":[80500,278],"free_traffic_box_values":[1575482,48],"free_traffic_opposition":[614052,268]}
 
 # Native composition.
+const MAC_SPANS = {"free_traffic_nivelian_boxes":[80500,278],"free_traffic_box_values":[1550546,48],"free_traffic_opposition":[614600,268]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES)
 
@@ -28,7 +30,7 @@ static func population(bindings: RefCounted,packet: Dictionary,rank: Variant,dif
 	var rules: Dictionary=bindings.mido_travel.free_population
 	if not context is Dictionary or not source is Dictionary or not actors is Array:return {}
 	if not context_valid(bindings,context) or context.rank!=rank or context.difficulty!=difficulty:return {}
-	var visit:=Campaign.active_visit(bindings.mido_travel,context)
+	var visit:=Campaign.empty_story(bindings,context)
 	if actors.is_empty() and not Delivery.active_courier(context) and not visit:return {}
 	for key in ["campaign_cursor","station_id","system_id"]:
 		if source.get(key)!=context[key]:return {}
@@ -38,8 +40,8 @@ static func population(bindings: RefCounted,packet: Dictionary,rank: Variant,dif
 	if actors.size()>Population.maximum_actor_count(bindings,rank,float(difficulty),context) or source.get("actor_count")!=actors.size():return {}
 	if not context.side_missions_empty and source.groups.get("delivery_pirate")!=Delivery.extra_count(bindings,context):return {}
 	if Delivery.active_courier(context) and source.get("mission_kind")!=0:return {}
-	if visit and (source.get("mission_kind")!=156 or not actors.is_empty()):return {}
-	if not source.get("hostile_selected") is bool or source.get("hostile_faction") not in [1,8]:return {}
+	if visit and (source.get("mission_kind")!=context.mission_kind or not actors.is_empty()):return {}
+	if not source.get("hostile_selected") is bool or source.get("hostile_faction") not in [int(rules.enemy_factions[int(world.faction)]),int(rules.pirate_faction)]:return {}
 	if not source.hostile_selected and source.groups.get("hostile")!=0:return {}
 	var hulls: Dictionary=bindings.early_contracts.encounter_construction.hulls
 	if not Numbers.integer(packet.get("player_ship_id"),0,hulls.factions.size()-1):return {}
@@ -51,13 +53,15 @@ static func population(bindings: RefCounted,packet: Dictionary,rank: Variant,dif
 			if count>=actors.size():return {}
 			var row: Variant=actors[count]
 			if not row is Dictionary or row.get("actor_id")!=count or row.get("population_group")!=role:return {}
-			if not actor_matches(bindings,row,role,int(source.hostile_faction)):return {}
+			if not actor_matches(bindings,row,role,int(source.hostile_faction),false,int(world.faction)):return {}
 			count+=1
 	if count!=actors.size():return {}
 	var data: Dictionary=bindings.ambient_combat.duplicate(true)
 	data.merge(context,true);data.scope="augmenta_ordinary_combat";data.actor_count=count
 	data.free_traffic=bindings.mido_travel.free_traffic.duplicate(true)
 	data.freighter_boxes={0:bindings.mido_travel.alioth_attack.population.freighter_combat.boxes.duplicate(true),2:data.free_traffic.nivelian_boxes.duplicate(true)}
+	if Population.freighter_hull(bindings,1)>=0:data.freighter_boxes[1]=bindings.mido_travel.vossk_traffic.boxes.duplicate(true)
+	if Population.freighter_hull(bindings,3)>=0:data.freighter_boxes[3]=bindings.ambient_combat.freighter.boxes.duplicate(true)
 	return data
 
 static func context_valid(bindings: RefCounted,context: Variant) -> bool:
@@ -66,25 +70,29 @@ static func context_valid(bindings: RefCounted,context: Variant) -> bool:
 	if not Population.parameters(rules):return false
 	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,context.get("station_id"))
 	if world.is_empty() or context.get("system_id")!=world.system_id:return false
-	if not Campaign.supported(bindings.mido_travel,context.get("campaign_cursor")) or not Delivery.mission_context_valid(bindings,context):return false
+	if not Campaign.supported(bindings,context.get("campaign_cursor")) or not Delivery.mission_context_valid(bindings,context):return false
 	if context.get("companions_empty")!=true:return false
 	for key in ["station_response","void_encounter"]:
 		if context.get(key)!=false:return false
 	if not load("res://src/content/free_arrival_definitions.gd").context_supported(bindings,context):return false
 	return Numbers.integer(context.get("rank"),0,20) and context.get("difficulty") in [0.5,1.0]
 
-static func actor_matches(bindings: RefCounted,row: Dictionary,role: String,hostile_faction: int=-1,live:=false) -> bool:
+static func actor_matches(bindings: RefCounted,row: Dictionary,role: String,hostile_faction: int=-1,live:=false,system_faction: int=0) -> bool:
 	var faction: Variant=row.get("actor_kind");var hull: Variant=row.get("hull_catalogue_id")
 	if not faction is int or not hull is int:return false
 	if role=="freighter":
-		if faction not in [0,2] or hull!=15 or row.get("subtype")!=1:return false
-		return live or (row.get("world_flag")==true and row.get("model_assembly_required")==true and Equal.equal_value(row.get("assembly"),bindings.mido_travel.free_population.freighter_assemblies[str(faction)]))
+		var expected_hull:=Population.freighter_hull(bindings,faction)
+		if expected_hull<0 or hull!=expected_hull or row.get("subtype")!=1:return false
+		if system_faction not in [0,1,2,3] or faction not in [system_faction,int(bindings.mido_travel.free_population.freighter_alternate_factions[system_faction])]:return false
+		return live or (row.get("world_flag")==true and row.get("model_assembly_required")==true and Population.freighter_assembly_matches(bindings,faction,row.get("assembly")))
 	if role not in ["patrol","travel","hostile","delivery_pirate"] or row.get("subtype")!=0:return false
+	if system_faction not in [0,1,2,3]:return false
 	if role=="delivery_pirate":
 		if not Delivery.available(bindings) or faction!=int(bindings.mido_travel.ordinary_contracts.population.actor_kind):return false
 	elif role=="hostile":
-		if faction not in [1,8] or (hostile_faction>=0 and faction!=hostile_faction):return false
-	elif faction!=0:return false
+		var rules: Dictionary=bindings.mido_travel.free_population
+		if faction not in [int(rules.enemy_factions[system_faction]),int(rules.pirate_faction)] or (hostile_faction>=0 and faction!=hostile_faction):return false
+	elif faction!=system_faction:return false
 	var hulls: Dictionary=bindings.early_contracts.encounter_construction.hulls
 	if hull<0 or hull>=hulls.factions.size() or int(hulls.factions[hull])!=faction:return false
 	return faction==1 or hull>int(hulls.mask_limit) or (int(hulls.excluded_mask)>>hull)&1==0

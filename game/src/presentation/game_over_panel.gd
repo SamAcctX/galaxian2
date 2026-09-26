@@ -17,6 +17,7 @@ var _sample:={}
 var _mobile:=false
 var _active:=true
 var _controls:=Controls.new()
+var _held_acknowledgements:={}
 var _art: TextureRect
 var _prompt: Label
 
@@ -81,19 +82,38 @@ static func blink_alpha(absolute_milliseconds: int, radians_per_millisecond: flo
 	return clampi(int(Vitals.single(absf(Vitals.single(sin(angle)))*255.0)),0,255)
 
 func handle_event(event: InputEvent) -> bool:
-	# Track fire edges even before the fade ends. A held trigger must be released
-	# before it can acknowledge; reuse the flight controller's device/deadzone rules.
-	_controls.accept(event)
-	var fired: bool="fire" in _controls.take_pressed()
+	var accepted:=acknowledgement_edge(event)
 	if not _active or not is_visible_in_tree() or not _sample.get("continue_enabled",false):return false
-	var accepted:=fired
-	if event is InputEventKey:accepted=fired or (event.pressed and not event.echo and (event.physical_keycode if event.physical_keycode else event.keycode) in [KEY_ENTER,KEY_KP_ENTER])
-	elif event is InputEventJoypadButton:accepted=event.pressed and event.button_index==JOY_BUTTON_A
-	elif event is InputEventScreenTouch:accepted=event.pressed
-	elif event is InputEventMouseButton:accepted=event.pressed and event.button_index==MOUSE_BUTTON_LEFT
 	if not accepted:return false
 	continue_requested.emit()
 	return true
+
+## Reuse the SAME physical hold history for a story-failure modal. Readiness
+## still belongs to its native caller; sampling an edge alone never exits.
+func acknowledgement_edge(event: InputEvent) -> bool:
+	# Track fire edges even before the fade ends. A held trigger must be released
+	# before it can acknowledge; reuse the flight controller's device/deadzone rules.
+	_controls.accept(event)
+	var edges: Array=_controls.take_pressed()
+	var accepted: bool="fire" in edges
+	# Enter and pointer/touch acknowledgement are not flight actions. Retain
+	# their physical holds while hidden/inactive too, just like the fire edge.
+	var token:="";var pressed:=false
+	if event is InputEventKey:
+		var key: int=event.physical_keycode if event.physical_keycode else event.keycode
+		if key in [KEY_ENTER,KEY_KP_ENTER] and not event.echo:
+			token="key:%d:%d"%[event.device,key];pressed=event.pressed
+	elif event is InputEventJoypadButton:
+		accepted=event.button_index==JOY_BUTTON_A and "boost" in edges
+	elif event is InputEventScreenTouch:
+		token="touch:%d:%d"%[event.device,event.index];pressed=event.pressed
+	elif event is InputEventMouseButton and event.button_index==MOUSE_BUTTON_LEFT:
+		token="mouse:%d"%event.device;pressed=event.pressed
+	if not token.is_empty():
+		accepted=pressed and not _held_acknowledgements.has(token)
+		if pressed:_held_acknowledgements[token]=true
+		else:_held_acknowledgements.erase(token)
+	return accepted
 
 func _gui_input(event: InputEvent) -> void:
 	if handle_event(event):accept_event()
@@ -130,6 +150,6 @@ func snapshot() -> Dictionary:
 	return state
 
 func clear() -> void:
-	error="";_sample={};visible=false;_prompt.text="";_controls.clear()
+	error="";_sample={};visible=false;_prompt.text="";_controls.clear();_held_acknowledgements.clear()
 
 func reject(message: String) -> bool:error=message;return false

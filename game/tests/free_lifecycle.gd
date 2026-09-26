@@ -3,8 +3,13 @@ extends "res://tests/mixed_traffic_control.gd"
 ## lethal-contact fixtures. This does not create an earned campaign departure.
 const FreeLife=preload("res://src/content/free_lifecycle_definitions.gd")
 const FreePopulation=preload("res://tests/free_population.gd")
+const NPCSystems=preload("res://src/content/npc_systems_definitions.gd")
+const SystemsActor=preload("res://src/simulation/opening_combat_actor.gd")
 var observed_factions:={}
 var verified_wrecks:={}
+var verified_hostile_budgets:=0
+var verified_hostile_reentries:=0
+const ReentryRandom=preload("res://src/simulation/seeded_random.gd")
 
 func _initialize() -> void:
 	var args:=OS.get_cmdline_user_args()
@@ -27,11 +32,14 @@ func verify(args: PackedStringArray) -> void:
 	var scenario:=Scenario.new();var equipment: RefCounted=scenario.open(OS.get_environment("GOF2_SCENARIO_INPUT"),bindings,cat)
 	if equipment==null:check(false,scenario.error);return
 	if not Scenario.prepare_alioth_component(equipment,bindings,cat):check(false,equipment.error);return
-	var inventory: Dictionary=equipment.snapshot()
-	for vector in [[2,0,0.5],[22,0,0.5],[30,20,1.0]]:
-		var context:=FreePopulation.CONTEXT.duplicate();context.rank=vector[1];context.difficulty=vector[2]
+	var source_equipment: RefCounted=equipment;var source_inventory: Dictionary=equipment.snapshot()
+	for vector in lifecycle_vectors():
+		var context: Dictionary=vector.context
+		equipment=lifecycle_equipment(source_equipment,bindings,cat,context)
+		if equipment==null:return
+		var inventory: Dictionary=equipment.snapshot()
 		var construction:=Construction.new()
-		if not construction.configure_free_traffic(bindings,cat,equipment,context,vector[0]) or construction.generate({"state":98765}).is_empty():check(false,construction.error);return
+		if not construction.configure_free_traffic(bindings,cat,equipment,context,vector.seed) or construction.generate({"state":98765}).is_empty():check(false,construction.error);return
 		var packet: Dictionary=construction.snapshot()
 		var resources:=SmallResources.new();var freight:=FreightResources.new()
 		if not resources.configure_free(library,bindings,construction) or not freight.configure_free(library,bindings,construction):check(false,resources.error+freight.error);return
@@ -39,9 +47,23 @@ func verify(args: PackedStringArray) -> void:
 		if not control.configure_ambient(bindings,cat,construction,context.rank,context.difficulty,equipment,REPUTATION) or not control.set_destruction(bindings,resources,freight):check(false,control.error);return
 		verify_ordinary_reactions(bindings,cat,equipment,construction)
 		verify_ordinary_contacts(bindings,cat,equipment,construction)
+		if NPCSystems.available(bindings):verify_ordinary_systems(bindings,cat,equipment,construction,control)
 		verify_ordinary_control(bindings,cat,construction,control,freight)
-		check(construction.snapshot()==packet and equipment.snapshot()==inventory,"Detached lifecycle changed construction or earned equipment")
+		check(construction.snapshot()==packet and equipment.snapshot()==inventory and source_equipment.snapshot()==source_inventory,"Detached lifecycle changed construction or earned equipment")
 		if failures:return
+	verify_lifecycle_coverage()
+
+func lifecycle_equipment(equipment: RefCounted,_bindings: RefCounted,_cat: RefCounted,_context: Dictionary) -> RefCounted:
+	return equipment
+
+func lifecycle_vectors() -> Array:
+	var result:=[]
+	for values in [[2,0,0.5],[22,0,0.5],[30,20,1.0]]:
+		var context:=FreePopulation.CONTEXT.duplicate();context.rank=values[1];context.difficulty=values[2]
+		result.append({"context":context,"seed":values[0]})
+	return result
+
+func verify_lifecycle_coverage() -> void:
 	for faction in [0,1,2,8]:check(observed_factions.has(faction),"Missing ordinary faction branch: "+str(faction))
 	check(verified_wrecks.size()==2,"Missing Terran or Nivelian destruction resources")
 
@@ -69,8 +91,9 @@ func ordinary_group(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,c
 	return group
 
 func verify_ordinary_reactions(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,construction: RefCounted) -> void:
-	var kinds:={}
-	for actor in construction.snapshot().actors:
+	var kinds:={};var packet: Dictionary=construction.snapshot()
+	var primary: int=int(packet.population.system_faction)
+	for actor in packet.actors:
 		if actor.population_group!="travel":kinds[actor.actor_kind]=actor.actor_id
 	for faction in kinds:
 		observed_factions[faction]=true
@@ -96,7 +119,7 @@ func verify_ordinary_reactions(bindings: RefCounted,cat: RefCounted,equipment: R
 			var response:=damage(group,id,1);draw=random.next_int(3)
 			check(response.reactions.size()==1 and response.reactions[0].text_id==418+draw and response.reactions[0].voice_event_id==650+draw,"Ordinary response changed source radio")
 			var reaction: Dictionary=group.snapshot().provocation
-			check(reaction.station_response_flag==(faction==0) and group.contact_random_state()==random.snapshot(),"Secondary faction set the station response or consumed extra radio randomness")
+			check(reaction.station_response_flag==(faction==primary) and group.contact_random_state()==random.snapshot(),"Secondary faction set the station response or consumed extra radio randomness")
 			for actor in before.actors:check(reaction.forced_hostile[actor.actor_id]==(actor.actor_kind==faction),"Faction response forced an unrelated faction")
 		else:
 			damage(group,id,int(hull*0.75))
@@ -122,7 +145,7 @@ func verify_ordinary_reactions(bindings: RefCounted,cat: RefCounted,equipment: R
 func verify_ordinary_control(bindings: RefCounted,cat: RefCounted,construction: RefCounted,control: RefCounted,freight: RefCounted) -> void:
 	var player:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"ship_id":0,"pose":Transform3D(Basis.IDENTITY,Vector3(2000000,0,0)),"active":true,"hull":95,"special_flight":false,"targeting_blocked":false,"alternate_position":null}
 	var before: Dictionary=control.snapshot()
-	for dt in [-1,151,0.5,true]:check(control.advance(dt,player).is_empty() and control.snapshot()==before,"Invalid ordinary frame partially advanced control")
+	for dt in [-1,751 if not bindings.fast_forward.is_empty() else 151,0.5,true]:check(control.advance(dt,player).is_empty() and control.snapshot()==before,"Invalid ordinary frame partially advanced control")
 	check(control.evaluate_ambient_world_logic(0,control.combat_owner(),{"state":-1}).is_empty() and control.snapshot()==before,"Invalid ordinary world stream mutated control")
 	var clock:=Launch.new()
 	if not clock.configure(bindings,construction,10000,45000):check(false,clock.error);return
@@ -136,10 +159,17 @@ func verify_ordinary_control(bindings: RefCounted,cat: RefCounted,construction: 
 		if control==null:return
 		elapsed+=150
 	var live: Dictionary=control.snapshot();var ids:=[];var recycle:=[];var hostile:=[]
+	var security: int=int(construction.snapshot().population.security)
+	var candidates: Array=live.combat.actors.filter(func(actor):return actor.population_group=="hostile").map(func(actor):return actor.actor_id)
+	var eligible:=[]
+	if candidates.size()>=2:
+		if security==0:eligible=candidates
+		elif security==1:eligible=candidates.slice(0,3)
+	verify_hostile_clock(bindings,construction,live.combat,candidates,security)
 	for actor in live.combat.actors:
 		check(actor.active and actor.vitals.hull==actor.max_hull,"Ordinary traffic did not enter its alive state")
 		ids.append(actor.actor_id)
-		if actor.population_group in ["patrol","travel"]:recycle.append(actor.actor_id)
+		if actor.population_group in ["patrol","travel"] or actor.actor_id in eligible:recycle.append(actor.actor_id)
 		elif actor.population_group=="hostile":hostile.append(actor.actor_id)
 		if actor.population_group=="travel":check(actor.spawn_generation==1 and actor.travel_cycle==1,"Ordinary travel launch lost its instance")
 	var weapons:=Weapons.new();var context: Dictionary=construction.snapshot().free_context
@@ -156,6 +186,14 @@ func verify_ordinary_control(bindings: RefCounted,cat: RefCounted,construction: 
 		var state: Dictionary=killed.snapshot();var pirate: bool=actor.actor_kind==8
 		check(state.accounting.events.size()==1 and state.accounting.counter_deltas.player_kills==(1 if pirate else 0) and state.accounting.counter_deltas.pirate_kills==(1 if pirate else 0),"Player death accounting confused a pirate with a neutral Nivelian trader")
 		check(state.combat.current_reputation.axes==[30,-7 if pirate else -11],"Player death accounting changed the source faction standing")
+	if NPCSystems.available(bindings):
+		var disabled: RefCounted=control.combat_owner()
+		if not disabled.begin_contact_pass(control.snapshot().random_state,true):check(false,disabled.error);return
+		for id in ids:
+			var pools: Dictionary=disabled.actor_snapshot(id).systems
+			check(disabled.systems_hit(id,1).get("accepted",false),disabled.error)
+			check(disabled.systems_hit(id,pools.capacity,true).get("accepted",false),disabled.error)
+		if control.advance(0,player,disabled).is_empty():check(false,control.error);return
 	control=step(control,0,player,ids,true)
 	if control==null:return
 	var dead: Dictionary=control.snapshot()
@@ -168,10 +206,13 @@ func verify_ordinary_control(bindings: RefCounted,cat: RefCounted,construction: 
 			verified_wrecks[actor.actor_kind]=true
 	var killed_again:=[]
 	while elapsed<95000:
+		if int(control.snapshot().traffic_clock.patrol_elapsed_ms)+150>45000:
+			verify_hostile_transaction(construction,control,150,player)
+			if failures:return
 		control=step(control,150,player)
 		if control==null:return
 		elapsed+=150
-		for id in last_relaunches:check(id in recycle,"Augmenta recycled a hostile ship or freighter")
+		for id in last_relaunches:check(id in recycle,"World security recycled an ineligible ship or freighter")
 		var state: Dictionary=control.snapshot();var kill_now:=[]
 		for id in recycle:
 			var actor: Dictionary=state.combat.actors[id]
@@ -179,6 +220,16 @@ func verify_ordinary_control(bindings: RefCounted,cat: RefCounted,construction: 
 				check(state.destruction[id].phase=="ready" and state.destruction[id].cargo.entries==state.cargo[id] and not state.destruction[id].cargo.model_exists,"Relaunch retained an old wreck or lost sampled cargo")
 				check(actor.vitals.hull==actor.max_hull and state.guidance[id].spawn_generation==actor.spawn_generation and state.accounting.spawn_generations[id]==actor.spawn_generation,"Relaunch split actor, guidance and accounting instances")
 				check(state.combat.provocation.requested_damage[id]==0,"Relaunch retained requested damage")
+				if NPCSystems.available(bindings):
+					check(actor.systems.integrity==actor.systems.capacity and not actor.systems.disabled and not actor.systems_disabled,"Recycled traffic retained EMP damage or disable state")
+					check(state.combat.provocation.systems_requested_damage[id]==0,"Recycled traffic retained requested systems damage")
+					var recycled: RefCounted=control.combat_owner()
+					if not recycled.begin_contact_pass(state.random_state,true):check(false,recycled.error);return
+					var hit: Dictionary=recycled.systems_hit(id,actor.systems.capacity)
+					var systems_history:=Reputation.new()
+					check(hit.get("disabled_now",false) and systems_history.restore(bindings,recycled.snapshot().reputation),"A new traffic instance could not retain EMP reputation after an earlier death: "+systems_history.error)
+					var stale: Dictionary=recycled.actor_snapshot(id);stale.spawn_generation-=1
+					check(not systems_history.record_systems_depletion(stale,hit),"Recycled systems history accepted an earlier traffic generation")
 				var history:=Reputation.new();check(history.restore(bindings,state.combat.reputation),history.error)
 				check(not history.record_lethal(dead.combat.actors[id]),"Recycled history accepted a stale death")
 				kill_now.append(id);killed_again.append(id)
@@ -186,23 +237,176 @@ func verify_ordinary_control(bindings: RefCounted,cat: RefCounted,construction: 
 			control=step(control,0,player,kill_now,false)
 			if control==null:return
 	var final: Dictionary=control.snapshot()
-	check(killed_again.size()==recycle.size(),"A supported ordinary patrol/travel actor failed to recycle")
+	check(killed_again.size()==recycle.size(),"Ordinary recycle mismatch: expected IDs "+str(recycle)+"; system="+str(construction.snapshot().population.system_id))
 	check(final.accounting.events.size()==ids.size()+recycle.size() and final.combat.reputation.events.size()==ids.size()+recycle.size(),"Recycling duplicated or erased lethal history")
-	check(final.combat.current_reputation.axes==[30-5*recycle.size(),-6],"Relaunched Terran kills changed the source standing delta")
+	var expected_axes: Array=REPUTATION.axes.duplicate()
+	for id in recycle:
+		var faction: int=int(live.combat.actors[id].actor_kind)
+		if faction==8:expected_axes[1]-=1
+		else:expected_axes[int(faction/2)]+=5*(-1 if faction%2==0 else 1)
+	check(final.combat.current_reputation.axes==expected_axes,"Relaunched kills changed the source faction standing delta")
 	check(final.accounting.events.slice(0,ids.size())==dead.accounting.events and final.combat.reputation.events.slice(0,ids.size())==dead.combat.reputation.events,"Recycling rewrote earlier deaths")
-	for id in hostile:check(final.combat.actors[id].spawn_generation==live.combat.actors[id].spawn_generation and final.combat.actors[id].vitals.hull==0 and not final.combat.actors[id].active,"Augmenta security3 incorrectly respawned its hostile tail")
+	for id in hostile:check(final.combat.actors[id].spawn_generation==live.combat.actors[id].spawn_generation and final.combat.actors[id].vitals.hull==0 and not final.combat.actors[id].active,"Ineligible or over-budget hostile slot respawned")
 	for actor in final.combat.actors:
 		if actor.population_group=="freighter":check(not actor.active and final.destruction[actor.actor_id].phase=="wreck","Freighter did not retain and clean up its wreck")
 	check(final.defeat_status.is_empty(),"Ordinary traffic granted a story or contract completion")
+
+func next_hostile_check(clock: RefCounted,combat: Dictionary) -> Dictionary:
+	# Explicit clock input, not an earned flight or synthesized save.
+	while int(clock.snapshot().patrol_elapsed_ms)<45000:
+		if clock.advance(mini(150,45000-int(clock.snapshot().patrol_elapsed_ms)),combat).is_empty():check(false,clock.error);return {}
+	return clock.advance(1,combat)
+
+func verify_hostile_clock(bindings: RefCounted,construction: RefCounted,combat: Dictionary,ids: Array,security: int) -> void:
+	if ids.size()<2:return
+	for retired_count in [0,1,2]:
+		var sample:=combat.duplicate(true)
+		for id in ids:
+			sample.actors[id].active=true;sample.actors[id].actor_mode=1
+		for id in ids.slice(0,retired_count):
+			sample.actors[id].active=false;sample.actors[id].actor_mode=4
+		var clock:=Launch.new()
+		if not clock.configure(bindings,construction,0,45000):check(false,clock.error);return
+		var exact:=clock.advance(0,sample)
+		check(exact.hostile_actor_ids.is_empty() and exact.hostile_waves==0,"Reinforcement fired at the exact 45-second boundary")
+		var first:=clock.advance(1,sample)
+		var expected: Array=ids.slice(0,2) if retired_count==2 and security in [0,1] else []
+		check(first.hostile_actor_ids==expected and first.hostile_launches==expected.size() and first.hostile_waves==(0 if expected.is_empty() else 1),"Retired-count/security gate or wave accounting changed")
+		if retired_count!=2 or security!=1:continue
+		var retained:=clock.snapshot();var branch:=clock.fork_for_frame()
+		var second:=next_hostile_check(branch,sample)
+		check(second.get("hostile_actor_ids")==ids.slice(0,1) and second.get("hostile_launches")==3 and second.get("hostile_waves")==2,"Security 1 must allow only its third replacement on wave two")
+		var third:=next_hostile_check(branch,sample)
+		check(third.get("hostile_actor_ids")==[] and third.get("hostile_launches")==3 and third.get("hostile_waves")==2 and clock.snapshot()==retained,"Exhausted wave budget relaunched ships or changed a fork's parent")
+		verified_hostile_budgets+=1
+		for field in ["active","actor_mode"]:
+			var wrong:=sample.duplicate(true)
+			wrong.actors[ids[0]][field]=true if field=="active" else 3
+			var guarded:=Launch.new()
+			if not guarded.configure(bindings,construction,0,45000):check(false,guarded.error);return
+			check(guarded.advance(1,wrong).hostile_actor_ids.is_empty(),"Active or still-exploding ship counted as retired")
+	if ids.size()>2:
+		var all_retired:=combat.duplicate(true)
+		for id in ids:all_retired.actors[id].active=false;all_retired.actors[id].actor_mode=4
+		var clock:=Launch.new()
+		if not clock.configure(bindings,construction,0,45000):check(false,clock.error);return
+		var expected: Array=ids.slice(0,3) if security==1 else (ids if security==0 else [])
+		check(clock.advance(1,all_retired).hostile_actor_ids==expected,"One wave exceeded its security-specific replacement budget")
+
+func verify_hostile_transaction(construction: RefCounted,control: RefCounted,dt: int,player: Dictionary) -> void:
+	var before: Dictionary=control.snapshot()
+	var operation: Dictionary=control.evaluate_ambient_world_logic(dt,control.combat_owner(),before.random_state,player.pose)
+	if operation.is_empty():check(false,control.error);return
+	var stream: Dictionary=before.random_state
+	var after: Dictionary=operation.controller.snapshot()
+	for id in operation.relaunches:
+		var cargo: Dictionary=construction.sample_relaunch_cargo(stream)
+		if cargo.is_empty():check(false,construction.error);return
+		stream=cargo.random_state
+		check(after.cargo[id]==cargo.cargo,"Relaunch changed the source cargo draw order")
+		var actor: Dictionary=after.combat.actors[id]
+		var expected_origin:=Vector3.ZERO
+		if actor.population_group=="hostile":
+			var random:=ReentryRandom.new()
+			if not random.restore(stream):check(false,random.error);return
+			var offset:=Vector3.ZERO
+			for axis in 3:
+				var bound:=5000 if axis==1 else 60000
+				var magnitude: int=bound+random.next_int(bound)
+				offset[axis]=magnitude if random.next_int(2)==0 else -magnitude
+			expected_origin=player.pose.origin+offset;stream=random.snapshot()
+			verified_hostile_reentries+=1
+		check(actor.body_pose.origin==expected_origin and actor.pose==actor.body_pose and actor.body_pose.basis==before.combat.actors[id].body_pose.basis,"Reentry lost its player-relative position, statistics copy or retained axes")
+	check(operation.random_state==stream and control.snapshot()==before,"Staged reentry consumed the wrong stream or mutated its parent")
+	if operation.clock.hostile_actor_ids.is_empty():return
+	for bad_pose in [null,Transform3D(Basis.IDENTITY,Vector3(NAN,0,0)),Transform3D(Basis.IDENTITY.scaled(Vector3(2,1,1)),Vector3.ZERO)]:
+		check(control.evaluate_ambient_world_logic(dt,control.combat_owner(),before.random_state,bad_pose).is_empty() and control.snapshot()==before,"Invalid player placement partly consumed a reinforcement wave")
+
+func verify_ordinary_systems(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,construction: RefCounted,control: RefCounted) -> void:
+	# Direct damage is a detached component fixture. Paid launch, detonation and
+	# save retention are covered by secondary_fitting_application.
+	var context: Dictionary=construction.snapshot().free_context
+	var kinds:={};var active:=[]
+	var primary: int=int(construction.snapshot().population.system_faction)
+	for actor in control.snapshot().combat.actors:
+		var freight: bool=actor.population_group=="freighter"
+		var capacity: int=(40 if context.rank==0 else 140)*(3 if freight else 1)
+		check(actor.systems.capacity==capacity and actor.systems.integrity==capacity and actor.systems.recovery_ms==(45000 if freight else 15000),"Ordinary systems lost rank, subtype or difficulty-independent capacity")
+		if actor.active:kinds[actor.actor_kind]=actor.actor_id;active.append(actor.actor_id)
+	for faction in kinds:
+		var id: int=kinds[faction];var group:=ordinary_group(bindings,cat,equipment,construction)
+		if group==null:return
+		var actor: Dictionary=group.actor_snapshot(id)
+		var third: int=int(actor.systems.capacity/3)
+		var partial: Dictionary=group.systems_hit(id,third)
+		check(partial.get("accepted",false) and group.actor_snapshot(id).vitals==actor.vitals and group.advance_systems(id,150) and group.actor_snapshot(id).systems.integrity==actor.systems.capacity-third,"Partial EMP damage changed combat pools or recovered spontaneously")
+		check(not group.snapshot().provocation.warning_issued,"EMP warned at the exact one-third boundary")
+		var edge: Dictionary=group.systems_hit(id,1)
+		check(not edge.is_empty() and group.snapshot().provocation.warning_issued==(faction==primary),"EMP warning ignored the system's primary faction or strict boundary")
+		var hit: Dictionary=group.systems_hit(id,group.actor_snapshot(id).systems.integrity)
+		check(hit.get("disabled_now",false) and hit.first_disable_by_player and group.actor_snapshot(id).vitals==actor.vitals,"EMP depletion changed hull or lost first-disable attribution")
+		var disabled: Dictionary=group.snapshot();var expected:=REPUTATION.duplicate(true)
+		if faction==0:expected.axes[0]-=2
+		elif faction==1:expected.axes[0]+=2
+		elif faction==2:expected.axes[1]-=2
+		check(group.current_reputation()==expected and not disabled.provocation.response_issued and not disabled.provocation.station_response_flag,"EMP depletion changed the wrong faction axis or requested a station response")
+		for other in disabled.actors:check(other.script_hostile==(faction==primary and other.actor_kind==primary),"EMP faction response changed unrelated ships or lost persistent hostility")
+		check(not group.systems_hit(id,1).get("accepted",true) and group.snapshot()==disabled,"Empty systems accepted another penalty")
+		check(group.advance_systems(id,1000),group.error)
+		var repeated: Dictionary=group.systems_hit(id,group.actor_snapshot(id).systems.integrity)
+		check(repeated.get("accepted",false) and not repeated.disabled_now and not repeated.first_disable_by_player and group.snapshot().reputation.events.size()==2,"Repeated depletion during recovery lost its separate reputation event")
+		var history:=Reputation.new();var retained: Dictionary=group.snapshot().reputation
+		check(history.restore(bindings,retained) and history.snapshot()==retained,history.error)
+		check(not history.record_systems_depletion(group.actor_snapshot(id),repeated),"Systems reputation credited the same hit twice")
+		var npc:=ordinary_group(bindings,cat,equipment,construction)
+		if npc==null:return
+		var previous: Dictionary=npc.snapshot()
+		check(npc.systems_hit(id,actor.systems.capacity,true).get("disabled_now",false) and npc.current_reputation()==REPUTATION and npc.snapshot().provocation==previous.provocation,"NPC EMP damage created player crime or reputation")
+		var detached: Dictionary=npc.snapshot()
+		for invalid in [-1,0.5,true]:check(npc.systems_hit(id,invalid).is_empty() and npc.snapshot()==detached,"Invalid EMP damage partially mutated ordinary combat")
+	# A direct actor frame covers the strict recovery boundary; the controller
+	# below checks ordering with an ordinary bounded duration.
+	for row in construction.snapshot().actors:
+		if row.population_group not in ["patrol","freighter"]:continue
+		var actor:=SystemsActor.new()
+		if not actor.configure_ambient(bindings,cat,construction,row.actor_id,context.rank,context.difficulty) or not actor.enable_local_combat():check(false,actor.error);return
+		var initial: Dictionary=actor.snapshot()
+		check(actor.systems_hit(initial.systems.capacity).get("disabled_now",false),actor.error)
+		check(actor.advance_systems(initial.systems.recovery_ms) and actor.snapshot().systems.disabled and actor.snapshot().systems.integrity==initial.systems.capacity,"Ordinary systems recovered before the strict integer boundary")
+		if row.population_group=="freighter":check(actor.snapshot().systems_motion_ms==0.0 and not actor.snapshot().systems_disabled,"Freighter EMP movement timer inherited strict integrity recovery")
+		check(actor.advance_systems(400) and not actor.snapshot().systems.disabled,"Ordinary systems failed to recover after full capacity")
+	var player:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"ship_id":0,"pose":Transform3D(Basis.IDENTITY,Vector3(2000000,0,0)),"active":true,"hull":95,"special_flight":false,"targeting_blocked":false,"alternate_position":null}
+	var staged: RefCounted=control.fork_for_frame();var damage_owner: RefCounted=staged.combat_owner()
+	if not damage_owner.begin_contact_pass(staged.snapshot().random_state,true):check(false,damage_owner.error);return
+	for id in active:check(damage_owner.systems_hit(id,damage_owner.actor_snapshot(id).systems.capacity,true).get("accepted",false),damage_owner.error)
+	var before: Dictionary=staged.snapshot()
+	if staged.advance(150,player,damage_owner).is_empty():check(false,staged.error);return
+	for id in active:
+		var actor: Dictionary=staged.snapshot().combat.actors[id]
+		check(actor.body_pose==before.combat.actors[id].body_pose and actor.pose==before.combat.actors[id].pose and actor.systems_disabled,"Ordinary actor movement advanced during EMP disable")
+	check(control.snapshot()==before,"Staged EMP controller changed its retained parent")
+	var resumed: RefCounted=control.fork_for_frame();var boundary: RefCounted=resumed.combat_owner();var freighters:=[]
+	if not boundary.begin_contact_pass(before.random_state,true):check(false,boundary.error);return
+	for actor in before.combat.actors:
+		if actor.population_group!="freighter":continue
+		freighters.append(actor.actor_id)
+		check(boundary.systems_hit(actor.actor_id,actor.systems.capacity,true).get("disabled_now",false) and boundary.advance_systems(actor.actor_id,45000),boundary.error)
+	if resumed.advance(1,player,boundary).is_empty():check(false,resumed.error);return
+	for id in freighters:
+		var actor: Dictionary=resumed.snapshot().combat.actors[id]
+		check(actor.systems.disabled and not actor.systems_disabled and actor.body_pose.origin==before.combat.actors[id].body_pose.origin+Vector3(0,0,1),"Freighter cruise waited for strict integrity recovery after its separate timer expired")
 
 func verify_ordinary_wreck(bindings: RefCounted,resources: RefCounted,death: RefCounted,random: Dictionary) -> void:
 	var initial: Dictionary=death.snapshot();var faction: int=initial.actor_kind
 	var pack: RefCounted=resources.faction_owner(faction)
 	if pack==null:check(false,"Missing original freighter faction resources");return
 	var assets: Dictionary=pack.snapshot()
-	check(assets.model.model_id==(18302 if faction==0 else 18301) and assets.initial_material.id==(34708 if faction==0 else 34704) and assets.wreck_material.id==(33354 if faction==0 else 33353),"Freighter used another faction's breakup or wreck art")
+	var art: Dictionary={0:[18302,34708,33354,16992],1:[18303,34712,33355,16991],2:[18301,34704,33353,16993]}
+	check(art.has(faction),"Unexpected freighter faction in lifecycle coverage")
+	if not art.has(faction):return
+	check(assets.model.model_id==art[faction][0] and assets.initial_material.id==art[faction][1] and assets.wreck_material.id==art[faction][2],"Freighter used another faction's breakup or wreck art")
 	check(initial.phase=="animation" and initial.model_scale==1.0 and not initial.world_movement_enabled,"Ordinary freighter skipped breakup entry or retained cruise")
-	check(initial.cargo.model_id==(16992 if faction==0 else 16993),"Freighter salvage changed faction models")
+	check(initial.cargo.model_id==art[faction][3],"Freighter salvage changed faction models")
 	observe_ordinary_death(pack,death,"entry")
 	var saw_middle:=false
 	while death.snapshot().phase=="animation":
@@ -266,7 +470,11 @@ func verify_ordinary_fire(control: RefCounted,weapons: RefCounted,player: Dictio
 	if not group.begin_contact_pass(random,true) or group.normal_hit(0,int(group.snapshot().actors[0].max_hull/2)+1,false).is_empty():check(false,group.error);return
 	random=group.contact_random_state()
 	var staged: RefCounted=control.fork_for_frame();var guns: RefCounted=weapons.fork_for_frame();var target:=player.duplicate(true);var fired:=false
-	for iteration in 12:
+	# Existing NPC targets are retained until the source's five-second refresh.
+	# Allow two refreshes and a complete weapon interval; do not reset guidance.
+	var tuning=load("res://src/content/opening_npc_guidance_definitions.gd")
+	var budget: int=2*int(tuning.EXPECTED.selection_period_ms)+int(guns.snapshot().actors[0].projectiles.weapon.interval_ms)+150
+	for iteration in int(ceil(float(budget)/150.0)):
 		var pose: Transform3D=group.snapshot().actors[0].body_pose
 		target.pose=Transform3D(Basis.IDENTITY,pose.origin+pose.basis.z*2000.0)
 		if guns.advance(150).is_empty():check(false,guns.error);return
@@ -276,4 +484,5 @@ func verify_ordinary_fire(control: RefCounted,weapons: RefCounted,player: Dictio
 		for slot in guns.snapshot().actors[0].projectiles.slots:
 			if slot!=null and slot.remaining_ms>0:fired=true
 		if fired:break
-	check(fired,"Provoked Terran patrol never fired through ordinary guidance/control")
+	if not fired:printerr("Patrol firing diagnostic: ",{"actor":group.snapshot().actors[0],"guidance":staged.snapshot().guidance[0],"weapon":guns.snapshot().actors[0],"target":target})
+	check(fired,"Provoked patrol never fired through ordinary guidance/control")

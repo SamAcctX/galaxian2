@@ -137,7 +137,7 @@ func verify_contacts(bindings: RefCounted,catalogues: RefCounted,equipment: RefC
 	if repeated.is_empty():return
 	check(repeated.combat.snapshot().actors[id].vitals.hull==320-2*int(weapon.ordinary_hit_policy.nonplayer_damage),"Repeated point contacts lost ordinary damage")
 	check(repeated.projectiles.snapshot().slots[0].remaining_ms==-1000000,"Freighter hit retired a retained projectile too early")
-	var denied: RefCounted=group.fork_for_frame();denied._actors[id].set_permissions(true,false,true)
+	var denied: RefCounted=group.fork_for_frame();denied._writable(id).set_permissions(true,false,true)
 	var immune:=operation.evaluate(shots,denied,[id])
 	check(not immune.is_empty() and immune.contacts.size()==1 and not immune.contacts[0].damage.accepted and immune.combat.snapshot().actors[id].contact,"Damage immunity incorrectly suppressed contact marking")
 	var near_death: RefCounted=group.fork_for_frame();damage(near_death,id,319,true)

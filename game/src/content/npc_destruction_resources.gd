@@ -2,6 +2,7 @@ extends RefCounted
 const FreeLife=preload("res://src/content/free_lifecycle_definitions.gd")
 const Kappa=preload("res://src/content/kappa_population_definitions.gd")
 const Alioth=preload("res://src/content/alioth_population_definitions.gd")
+const BakkaCombat=preload("res://src/content/bakka_combat_definitions.gd")
 ## Authored explosion models and ranges; no death or mission state is inferred.
 const Definitions = preload("res://src/content/npc_destruction_definitions.gd")
 const FullHold = preload("res://src/content/full_hold_destruction_definitions.gd")
@@ -129,10 +130,19 @@ func configure_kappa_rescue(library: RefCounted,bindings: RefCounted,constructio
 	if not construction is Construction:return reject("Kappa destruction requires its generated population")
 	return _configure_population_models(library,bindings,construction,Kappa.lifecycle(bindings,construction.snapshot()),"kappa_context")
 
+func configure_bakka(library: RefCounted,bindings: RefCounted,construction: RefCounted) -> bool:
+	clear()
+	if not construction is Construction:return reject("B'akka destruction requires its generated population")
+	return _configure_population_models(library,bindings,construction,BakkaCombat.population(bindings,construction.snapshot()),"bakka_encounter")
+
 func configure_free(library: RefCounted,bindings: RefCounted,construction: RefCounted) -> bool:
 	clear()
 	if not construction is Construction:return reject("Ordinary destruction requires its generated population")
 	return _configure_population_models(library,bindings,construction,FreeLife.population(bindings,construction.snapshot()),"free_context")
+
+func _configure_story(library: RefCounted,bindings: RefCounted,construction: RefCounted,data: Dictionary) -> bool:
+	clear()
+	return _configure_population_models(library,bindings,construction,data,data.context_key)
 
 func _configure_population_models(library: RefCounted,bindings: RefCounted,construction: RefCounted,data: Dictionary,context_key: String) -> bool:
 	if data.is_empty():return reject("Unsupported population destruction resources")

@@ -71,12 +71,12 @@ func verify_weapons(bindings: RefCounted, cat: RefCounted, flight: RefCounted):
 	check(state.actors.size()==1 and state.definition.damage==1 and state.definition.interval_ms==592 and state.actors[0].projectiles.slots.size()==4,"Pirate reused Opening gun damage, interval or population")
 	check(combat.shooter_states()==[{"present":true,"hostile":true}] and combat.refresh_hostility(0) and combat.snapshot()==before,"Inactive pirate lost source hostility or statistics ownership")
 	check(not combat.update(before,3,{}) and not combat.configure_escape(bindings) and combat.snapshot()==before,"Opening radio or escape activated the second pirate")
-	check(not combat._actors[0].apply_activation(bindings.opening_actors.npc_initialization.activation),"Opening activation applied to the second-trip body")
+	check(not combat._writable(0).apply_activation(bindings.opening_actors.npc_initialization.activation),"Opening activation applied to the second-trip body")
 	guns.advance(1)
 	check(not guns.fire(combat,[0]).actors[0].outcome.fired,"Inactive pirate fired")
 	# Synthetic owner input tests combat/projectile composition. Source activation
 	# ordering, model flags and live mission transitions are verified separately.
-	combat._actors[0].set_permissions(true,true,true)
+	combat._writable(0).set_permissions(true,true,true)
 	combat.set_pose(0,Transform3D.IDENTITY)
 	var shot: Dictionary=guns.fire(combat,[0]).actors[0].outcome
 	check(shot.fired and shot.projectile.position==Vector3.ZERO and shot.projectile.velocity==Vector3(0,0,16) and shot.projectile.remaining_ms==3000,"Pirate forward muzzle, speed or lifetime differs from source")

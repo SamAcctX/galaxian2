@@ -75,6 +75,6 @@ static func valid_parameters(parameters: Dictionary) -> bool:
 	var strength: Variant=parameters.get("shake_strength")
 	var radius: Variant=parameters.get("shake_radius")
 	return eye is Vector3 and eye.is_finite() and (strength is int or strength is float) and is_finite(strength) and strength>=0.0 and strength<=1.0 and Numbers.integer(radius,0,20) and radius in [0,20] and (strength==0 or radius>0)
-static func single(value: float) -> float:return PackedFloat32Array([value])[0]
+static func single(value: float) -> float:return Vector2(value,0.0).x
 func reject(message: String) -> bool:error=message;return false
 func fail(message: String) -> Dictionary:reject(message);return {}

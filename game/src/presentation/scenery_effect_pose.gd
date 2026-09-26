@@ -47,5 +47,4 @@ static func normalized(value: Vector3) -> Vector3:
 static func scaled(value: Vector3, scale: float) -> Vector3:
 	return Vector3(single(value.x*scale),single(value.y*scale),single(value.z*scale))
 
-static func single(value: float) -> float:
-	return PackedFloat32Array([value])[0]
+static func single(value: float) -> float:return Vector2(value,0.0).x

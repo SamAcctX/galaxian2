@@ -1,4 +1,5 @@
 extends RefCounted
+const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Shared native projectile pools for the verified ordinary NPC populations.
 ## The encounter owner decides who requests fire and when updates run. Target
 ## selection, shooter state, AI and mission consequences remain outside this owner.
@@ -18,6 +19,7 @@ const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const AmbientLife=preload("res://src/content/ambient_lifecycle_definitions.gd")
 const Construction=preload("res://src/simulation/opening_npc_construction.gd")
 const ContractCombat=preload("res://src/content/contract_ship_combat_definitions.gd")
+const BakkaCombat=preload("res://src/content/bakka_combat_definitions.gd")
 const Junk=preload("res://src/content/contract_junk_definitions.gd")
 const Convoy=preload("res://src/content/convoy_world_definitions.gd")
 const Kappa=preload("res://src/content/kappa_population_definitions.gd")
@@ -32,6 +34,10 @@ var _definitions := []
 var _actor_audio := []
 var _training := {}
 var _alioth_revision:=-1
+var _selected40_world: RefCounted
+var _selected40:={}
+var _selected41_world: RefCounted
+var _selected41:={}
 
 func clear() -> void:
 	error = ""
@@ -41,6 +47,7 @@ func clear() -> void:
 	_audio = {}
 	_definitions=[];_actor_audio=[];_training={}
 	_alioth_revision=-1
+	_selected40_world=null;_selected40={};_selected41_world=null;_selected41={}
 
 func configure(bindings: RefCounted, catalogues: RefCounted) -> bool:
 	clear()
@@ -127,6 +134,16 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	_training.contract_encounter=construction.snapshot().contract_encounter.duplicate(true)
 	return true
 
+func configure_bakka(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted) -> bool:
+	clear()
+	if not _matching_content(bindings,catalogues) or not construction is Construction:return reject("B'akka weapons require their generated story population")
+	var data:=BakkaCombat.population(bindings,construction.snapshot())
+	if data.is_empty():return reject("This population has no supported B'akka ship weapons")
+	if not _configure_rows(bindings,catalogues,data.npc_weapons,36):return false
+	_identity.campaign_cursor=36;_training=data
+	_training.bakka_encounter=construction.snapshot().bakka_encounter.duplicate(true)
+	return true
+
 func configure_convoy(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted) -> bool:
 	clear()
 	if not _matching_content(bindings,catalogues) or not construction is Construction:return reject("Convoy weapons require their generated population")
@@ -150,6 +167,36 @@ func _configure_encounter_weapons(bindings: RefCounted,catalogues: RefCounted,da
 	_identity.campaign_cursor=int(data.campaign_cursor);_training=data
 	return true
 
+func configure_selected41(bindings: RefCounted,catalogues: RefCounted,world: RefCounted,combat: RefCounted) -> bool:
+	error=""
+	if not _identity.is_empty() or not _matching_content(bindings,catalogues):return reject("Source41 weapons require fresh matching owners")
+	if not is_instance_of(world,load("res://src/simulation/selected41_world_initialization.gd")) or not combat is Combat or combat.selected41_world_owner()!=world or not combat.has_local_reactions():return reject("Source41 weapons require their complete native generation")
+	var initial: Dictionary=world.scenery_owner().world_initialization_owner().snapshot()
+	var data: Dictionary=load("res://src/content/selected41_population_definitions.gd").weapon_profile(bindings,initial.get("npc_construction",{}))
+	if data.is_empty() or not initial.get("weapon_effects") is Array or initial.weapon_effects.size()!=8:return reject("Source41 weapons lost the accepted effect allocations")
+	if not _configure_rows(bindings,catalogues,data.npc_weapons,41,false,true):return false
+	_identity.campaign_cursor=41;_training=data;_selected41_world=world
+	_selected41={"context":initial.selected41_context.duplicate(true),"weapon_effects":initial.weapon_effects.duplicate(true),
+		"input_random_state":initial.input_random_state.duplicate(),"random_state":initial.random_state.duplicate()}
+	return true
+
+func configure_selected40(bindings: RefCounted,catalogues: RefCounted,world: RefCounted,combat: RefCounted) -> bool:
+	error=""
+	if not _identity.is_empty() or not _matching_content(bindings,catalogues):return reject("Selected40 weapons require fresh owners and matching source content")
+	if not is_instance_of(world,load("res://src/simulation/opening_world_initialization.gd")) or not combat is Combat or combat.selected40_world_owner()!=world:return reject("Selected40 weapons must retain the same native world as their actors")
+	var initial: Dictionary=world.snapshot()
+	var data: Dictionary=load("res://src/content/selected40_population_definitions.gd").weapon_profile(bindings,initial.get("npc_construction",{}))
+	if data.is_empty() or not initial.get("weapon_effects") is Array or initial.weapon_effects.size()!=int(data.actor_count):return reject("Selected40 weapons require completed cast and weapon allocation")
+	if not _configure_rows(bindings,catalogues,data.npc_weapons,40,true):return false
+	_identity.campaign_cursor=40;_training=data;_selected40_world=world
+	_selected40={"context":initial.selected40_context.duplicate(true),"weapon_effects":initial.weapon_effects.duplicate(true),
+		"input_random_state":initial.input_random_state.duplicate(),"random_state":initial.random_state.duplicate()}
+	return true
+
+func _clear_story_targets() -> void:
+	_training=_training.duplicate()
+	_training.target_memberships=_training.target_memberships.map(func(_targets):return [])
+
 func apply_alioth_sequence(owner: RefCounted) -> bool:
 	error=""
 	if _alioth_revision<0 or not owner is AliothSequence:return reject("Alioth target changes require their retained weapon owner")
@@ -166,11 +213,11 @@ func apply_alioth_sequence(owner: RefCounted) -> bool:
 	_training.target_memberships=memberships;_alioth_revision=sequence.revision
 	return true
 
-func _configure_rows(bindings: RefCounted, catalogues: RefCounted, rows: Array, cursor: int=-1) -> bool:
+func _configure_rows(bindings: RefCounted, catalogues: RefCounted, rows: Array, cursor: int=-1, selected40:=false, selected41:=false) -> bool:
 	var guns:=[];var sounds:=[]
 	for data in rows:
-		if cursor in [11,12,13,14,16,18,19] and data.get("unarmed",false):guns.append(null);sounds.append({});continue
-		var weapon:=_resolve_weapon(bindings,catalogues,data,cursor)
+		if (cursor in ([11,12,13,14,16]+FlightStages.FREE) or (selected40 and cursor==40) or (selected41 and cursor==41)) and data.get("unarmed",false):guns.append(null);sounds.append({});continue
+		var weapon:=_resolve_weapon(bindings,catalogues,data,cursor,selected40,selected41)
 		if weapon.is_empty():return false
 		var gun:=Projectiles.new()
 		if not gun.configure(weapon):return reject(gun.error)
@@ -185,7 +232,7 @@ func _configure_rows(bindings: RefCounted, catalogues: RefCounted, rows: Array, 
 	_guns=guns;_actor_audio=sounds;_definitions=rows.duplicate(true)
 	return true
 
-func _resolve_weapon(bindings: RefCounted, catalogues: RefCounted, data: Dictionary, cursor: int) -> Dictionary:
+func _resolve_weapon(bindings: RefCounted, catalogues: RefCounted, data: Dictionary, cursor: int, selected40:=false, selected41:=false) -> Dictionary:
 	var items: Variant = catalogues.tables.get("items")
 	if not items is Array or data.item_id>=items.size(): return fail("NPC weapon names an absent catalogue item")
 	var arrays: Variant = items[int(data.item_id)].get("arrays")
@@ -200,7 +247,7 @@ func _resolve_weapon(bindings: RefCounted, catalogues: RefCounted, data: Diction
 		var properties: Dictionary=items[int(data.item_id)].get("properties",{})
 		var extra: Variant=properties.get(int(policy.get("additional_damage_property",-1)),int(policy.get("missing_additional_damage",0)))
 		if extra!=int(policy.get("missing_additional_damage",0)) or policy.is_empty():return fail("NPC weapon requires unsupported additional damage")
-		if cursor not in [7,10,11,12,13,14,16,18,19,21]:return fail("NPC contacts require an explicit supported encounter")
+		if cursor not in FlightStages.EQUIPPED and not (selected40 and cursor==40) and not (selected41 and cursor==41):return fail("NPC weapons require an explicit supported encounter")
 		weapon.campaign_cursor=cursor
 		weapon.nonplayer_source=bool(data.nonplayer_source)
 		weapon.ordinary_hit_policy={"additional_damage":int(extra),"additional_damage_required":false,"nonplayer_damage":weapon.damage}
@@ -213,6 +260,10 @@ func snapshot() -> Dictionary:
 	result.definition=_definition.duplicate(true)
 	result.audio=_audio.duplicate()
 	result.actors=[]
+	if not _selected41.is_empty():
+		result.selected41=_selected41.duplicate(true);result.target_memberships=_training.target_memberships.duplicate(true)
+	if not _selected40.is_empty():
+		result.selected40=_selected40.duplicate(true);result.target_memberships=_training.target_memberships.duplicate(true)
 	if _alioth_revision>=0:
 		result.alioth_revision=_alioth_revision;result.target_memberships=_training.target_memberships.duplicate(true)
 	for id in _guns.size():
@@ -223,9 +274,63 @@ func snapshot() -> Dictionary:
 	return result
 
 func fire(combat: RefCounted, requested_actor_ids: Array) -> Dictionary:
+	if _selected41_world!=null:return fail("Source41 firing requires its retained native target owner")
+	if _selected40_world!=null:return fail("Selected40 firing requires its live target owner")
 	return _fire(combat,requested_actor_ids,{})
 
 func fire_combat_training(combat: RefCounted, requests: Array) -> Dictionary:
+	if _selected41_world!=null:return fail("Source41 firing requires its retained native target owner")
+	if _selected40_world!=null:return fail("Selected40 firing requires its live target owner")
+	return _fire_requests(combat,requests)
+
+func _restart_selected41_attack(sequence: RefCounted) -> bool:
+	error=""
+	if not is_instance_of(sequence,load("res://src/simulation/selected41_sequence.gd")) or sequence.world_owner()!=_selected41_world:return reject("Source41 weapon reset requires its native sequence")
+	var rows: Array=sequence.snapshot().frame.reset_fighters
+	if rows.is_empty():return true
+	if _selected41.get("attack_reset",false) or rows.map(func(row):return row.actor_id)!=[1,2,3]:return reject("Source41 weapon reset cannot repeat or replace actors")
+	_training=_training.duplicate(true)
+	for row in rows:
+		var id: int=row.actor_id
+		_guns[id]=_guns[id].fork_state();_guns[id].discard_flying()
+		if not _guns[id].reset_fire_interval():return reject(_guns[id].error)
+		_training.target_memberships[id]=[0]
+	_selected41=_selected41.duplicate(true);_selected41.attack_reset=true
+	return true
+
+func fire_selected41(combat: RefCounted,player: RefCounted,requests: Array) -> Dictionary:
+	error=""
+	if _selected41_world==null or not combat is Combat or combat.selected41_world_owner()!=_selected41_world or not player is Player:return fail("Source41 firing requires its matching native actors and player")
+	var state: Dictionary=player.snapshot()
+	if player.selected41_construction_owner()!=_selected41_world.construction_owner().npc_construction_owner() or state.get("selected41_context")!=_selected41.context or player.loadout().get("ship_id")!=_training.player_ship_id:return fail("Source41 firing changed its retained player generation")
+	var actors: Array=combat.actor_snapshots()
+	for request in requests:
+		if not request is Dictionary or not request.get("actor_id") is int or not request.get("target_actor_id") is int:return fail("Invalid source41 target request")
+		var id: int=request.actor_id;var target: int=request.target_actor_id
+		if id<1 or id>=actors.size() or target not in _training.target_memberships[id]:return fail("Source41 target is outside its authored membership")
+		if request.get("pose")!=actors[id].pose:return fail("Source41 muzzle must retain its pre-motion native pose")
+		if target==-1:
+			if not actors[id].hostile or not state.active or state.vitals.hull<=0:return fail("Source41 gun cannot target a friendly or inactive player")
+		elif not actors[target].active or actors[target].vitals.hull<=0 or actors[target].statistics_targeting_blocked:return fail("Source41 gun cannot target inactive, destroyed or blocked statistics")
+	return _fire_requests(combat,requests)
+
+func fire_selected40(combat: RefCounted,player: RefCounted,requests: Array) -> Dictionary:
+	error=""
+	if _selected40_world==null or not combat is Combat or combat.selected40_world_owner()!=_selected40_world or not player is Player:return fail("Selected40 firing requires its matching native actors and player")
+	var state: Dictionary=player.snapshot()
+	if player.selected40_construction_owner()!=_selected40_world.npc_construction_owner() or state.get("selected40_context")!=_selected40.context or player.loadout().get("ship_id")!=_training.player_ship_id:return fail("Selected40 target belongs to another retained player context")
+	var actors: Array=combat.actor_snapshots()
+	for request in requests:
+		if not request is Dictionary or not request.get("actor_id") is int or not request.get("target_actor_id") is int:return fail("Invalid selected40 target request")
+		var id: int=request.actor_id;var target: int=request.target_actor_id
+		if id<1 or id>=actors.size() or target not in _training.target_memberships[id]:return fail("Selected40 target is outside its authored membership")
+		if request.get("pose")!=actors[id].pose:return fail("Selected40 muzzle must use its native actor pose")
+		if target==-1:
+			if not actors[id].hostile or not state.active or state.vitals.hull<=0:return fail("Selected40 gun cannot target a friendly or inactive player")
+		elif not actors[target].active or actors[target].vitals.hull<=0 or actors[target].statistics_targeting_blocked:return fail("Selected40 gun cannot target inactive, destroyed or blocked statistics")
+	return _fire_requests(combat,requests)
+
+func _fire_requests(combat: RefCounted, requests: Array) -> Dictionary:
 	error=""
 	if _training.is_empty():return fail("This weapon owner has no combat-training firing requests")
 	var ids:=[];var poses:={}
@@ -240,13 +345,18 @@ func fire_combat_training(combat: RefCounted, requests: Array) -> Dictionary:
 func _fire(combat: RefCounted, requested_actor_ids: Array, poses: Dictionary) -> Dictionary:
 	error=""
 	if _identity.is_empty() or not combat is Combat: return fail("NPC firing requires configured weapons and matching combat actors")
+	if _selected41_world!=null and combat.selected41_world_owner()!=_selected41_world:return fail("Source41 firing uses a different native generation")
+	if _selected40_world!=null and combat.selected40_world_owner()!=_selected40_world:return fail("Selected40 firing uses a different generated world")
 	var scene: Dictionary = combat.snapshot()
 	for key in _identity:
 		if scene.get(key)!=_identity[key]: return fail("NPC firing actors belong to another source profile")
 	if not scene.get("actors") is Array or scene.actors.size()!=_guns.size():return fail("NPC firing population differs from its weapon pools")
 	for id in _guns.size():
-		if scene.actors[id].get("actor_id")!=id or scene.actors[id].get("actor_kind")!=_definitions[id].actor_kind:return fail("NPC firing membership differs from its weapon declaration")
+		var kind_matches: bool=scene.actors[id].get("actor_kind")==_definitions[id].actor_kind
+		if _selected40_world!=null:kind_matches=load("res://src/content/selected40_population_definitions.gd").constructed_kind_matches(scene.actors[id],int(_definitions[id].actor_kind))
+		if scene.actors[id].get("actor_id")!=id or not kind_matches:return fail("NPC firing membership differs from its weapon declaration")
 	if _training.has("contract_encounter") and scene.get("contract_encounter")!=_training.contract_encounter:return fail("NPC firing belongs to another accepted contract")
+	if _training.has("bakka_encounter") and scene.get("bakka_encounter")!=_training.bakka_encounter:return fail("NPC firing belongs to another B'akka contest")
 	var seen := {}
 	for id in requested_actor_ids:
 		if not id is int or id<0 or id>=_guns.size() or seen.has(id): return fail("Invalid or duplicate NPC firing request")
@@ -262,6 +372,7 @@ func _fire(combat: RefCounted, requested_actor_ids: Array, poses: Dictionary) ->
 		if not seen.has(id): continue
 		var actor: Dictionary = scene.actors[id]
 		var allowed: bool = actor.active and actor.firing_allowed and actor.vitals.hull>0
+		if _selected40_world!=null or _selected41_world!=null:allowed=allowed and actor.actor_mode==1
 		var outcome := {"fired":false,"reason":"permission"}
 		if allowed:
 			var pose: Variant = poses.get(id,actor.get("pose"))
@@ -302,6 +413,8 @@ func fork_for_frame() -> RefCounted:
 	copy._audio=_audio.duplicate()
 	copy._definitions=_definitions.duplicate(true);copy._actor_audio=_actor_audio.duplicate(true);copy._training=_training.duplicate(true)
 	copy._alioth_revision=_alioth_revision
+	copy._selected40_world=_selected40_world;copy._selected40=_selected40.duplicate(true)
+	copy._selected41_world=_selected41_world;copy._selected41=_selected41.duplicate(true)
 	for gun in _guns: copy._guns.append(null if gun==null else gun.fork_state())
 	return copy
 
@@ -329,6 +442,23 @@ func evaluate_player_update(player: RefCounted, pose: Variant, shooter_states: V
 
 func evaluate_combat_training_update(player: RefCounted, pose: Variant, combat: RefCounted, special_flight: Variant, delta_ms: Variant) -> Dictionary:
 	error=""
+	if _selected41_world!=null:return fail("Source41 mixed contacts require their explicit native owners")
+	if _selected40_world!=null:return fail("Selected40 mixed contacts require complete consequence and lifecycle owners")
+	return _evaluate_mixed_update(player,pose,combat,special_flight,delta_ms)
+
+func evaluate_selected41_update(player: RefCounted,pose: Variant,combat: RefCounted,delta_ms: Variant) -> Dictionary:
+	error=""
+	if _selected41_world==null or not player is Player or not combat is Combat or combat.selected41_world_owner()!=_selected41_world or not combat.has_local_reactions():return fail("Source41 contacts require complete native consequence owners")
+	if player.selected41_construction_owner()!=_selected41_world.construction_owner().npc_construction_owner() or player.snapshot().get("selected41_context")!=_selected41.context:return fail("Source41 contacts changed their retained native player")
+	return _evaluate_mixed_update(player,pose,combat,false,delta_ms)
+
+func evaluate_selected40_update(player: RefCounted,pose: Variant,combat: RefCounted,delta_ms: Variant) -> Dictionary:
+	error=""
+	if _selected40_world==null or not player is Player or not combat is Combat or combat.selected40_world_owner()!=_selected40_world or not combat.has_local_reactions():return fail("Selected40 contacts require their prepared native world and consequence owners")
+	if player.selected40_construction_owner()!=_selected40_world.npc_construction_owner() or player.snapshot().get("selected40_context")!=_selected40.context:return fail("Selected40 contacts differ from their retained native player")
+	return _evaluate_mixed_update(player,pose,combat,false,delta_ms)
+
+func _evaluate_mixed_update(player: RefCounted,pose: Variant,combat: RefCounted,special_flight: Variant,delta_ms: Variant) -> Dictionary:
 	if _training.is_empty() or not player is Player or not combat is Combat or not Vitals.integer(delta_ms) or not special_flight is bool:return fail("Mixed contacts require the verified training weapon, player and combat owners")
 	var player_state: Dictionary=player.snapshot();var scene: Dictionary=combat.snapshot()
 	for key in _identity:
@@ -336,6 +466,7 @@ func evaluate_combat_training_update(player: RefCounted, pose: Variant, combat: 
 	if not scene.get("actors") is Array or scene.actors.size()!=_guns.size():return fail("Mixed contacts require the complete NPC population")
 	for id in _guns.size():
 		for key in ["actor_id","actor_kind","hull_catalogue_id"]:
+			if key=="actor_kind" and _selected40_world!=null and load("res://src/content/selected40_population_definitions.gd").constructed_kind_matches(scene.actors[id],int(_definitions[id][key])):continue
 			if scene.actors[id].get(key)!=_definitions[id][key]:return fail("Mixed contact population changed")
 	if _training.has("contract_encounter") and (scene.get("contract_encounter")!=_training.contract_encounter or player_state.get("contract_encounter")!=_training.contract_encounter):return fail("Mixed contacts belong to another accepted contract")
 	var shooters: Array=combat.shooter_states()
@@ -352,7 +483,9 @@ func evaluate_combat_training_update(player: RefCounted, pose: Variant, combat: 
 				gun=contact.projectiles;staged_player=contact.player;player_hits.append_array(contact.contacts)
 				if not contact.contacts.is_empty():last=contact.last_contact_actor
 			else:
-				var npc:=npc_contacts.evaluate(gun,staged_combat,[int(target)])
+				# Both owners were detached above. Keep the outer transaction's
+				# actors across target passes; a later failure discards them all.
+				var npc:=npc_contacts.evaluate_staged(gun,staged_combat,[int(target)])
 				if npc.is_empty():return fail(npc_contacts.error)
 				gun=npc.projectiles;staged_combat=npc.combat;npc_hits.append_array(npc.contacts)
 				if npc.last_contact_actor_id!=null:last={"group":"npc","index":npc.last_contact_actor_id}

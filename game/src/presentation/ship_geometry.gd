@@ -13,6 +13,7 @@ var levels: Array[Node3D] = []
 var selection := {}
 var engine_glow: Node3D
 var _detail: RefCounted
+var _camera_suppressed := false
 
 func build(ship_id: int, library: RefCounted, visuals: RefCounted, bindings: RefCounted, quality := "high", shared_resources: RefCounted = null, with_player_glow := false) -> bool:
 	clear()
@@ -65,10 +66,10 @@ func build_alioth_freighter(library: RefCounted,visuals: RefCounted,bindings: Re
 
 func build_population_assembly(assembly: Dictionary,library: RefCounted,visuals: RefCounted,bindings: RefCounted) -> bool:
 	clear();error=""
-	if FreePopulation.available(bindings) and bindings.mido_travel.free_population.freighter_assemblies.values().has(assembly):
+	if FreePopulation.available(bindings) and FreePopulation.assembly_hull(bindings,assembly)>=0:
 		var detail:=Detail.new()
 		if not detail.configure_assembly(bindings,assembly):return reject(detail.error)
-		return _build_assembly(15,assembly,detail,library,visuals,bindings,"high",null)
+		return _build_assembly(FreePopulation.assembly_hull(bindings,assembly),assembly,detail,library,visuals,bindings,"high",null)
 	if Alioth.available(bindings) and assembly==bindings.mido_travel.alioth_attack.population.freighter_assembly:
 		return build_alioth_freighter(library,visuals,bindings)
 	if Convoy.available(bindings) and assembly==bindings.mido_travel.convoy_ship.assembly:
@@ -77,12 +78,16 @@ func build_population_assembly(assembly: Dictionary,library: RefCounted,visuals:
 
 func _build_assembly(ship_id: int,assembly: Dictionary,detail: RefCounted,library: RefCounted,visuals: RefCounted,bindings: RefCounted,quality: String,shared_resources: RefCounted) -> bool:
 	var selected:={"levels":[]}
+	var empty_children: Array=FreePopulation.empty_child_resources(bindings,assembly)
 	for index in assembly.body_resource_ids.size():
 		var id:=int(assembly.body_resource_ids[index])
 		var path: String=bindings.resolve(id,"mesh")
 		if path.is_empty():return reject(bindings.error)
 		var parts:=[]
 		for child in assembly.child_resource_ids[index]:
+			if child in empty_children:
+				parts.append({"resource_id":int(child),"empty":true})
+				continue
 			var child_path: String=bindings.resolve(int(child),"mesh")
 			if child_path.is_empty():return reject(bindings.error)
 			parts.append({"resource_id":int(child),"path":child_path})
@@ -93,7 +98,8 @@ func _build(ship_id: int,selected: Dictionary,detail: RefCounted,library: RefCou
 	var paths := []
 	for level in selected.levels:
 		paths.append(level.path)
-		for part in level.get("parts",level.get("lights",[])):paths.append(part.path)
+		for part in level.get("parts",level.get("lights",[])):
+			if not part.get("empty",false):paths.append(part.path)
 	var glow: Dictionary={}
 	if with_player_glow:
 		glow=bindings.resolve_player_engine_glow(ship_id,quality)
@@ -111,7 +117,8 @@ func _build(ship_id: int,selected: Dictionary,detail: RefCounted,library: RefCou
 		body.scale*=float(level.get("model_scale",1.0))
 		add_child(body)
 		for part in level.get("parts",level.get("lights",[])):
-			var child: Node3D = resources.instantiate(part.path)
+			var child: Node3D = Node3D.new() if part.get("empty",false) else resources.instantiate(part.path)
+			if part.get("empty",false):child.set_meta("source_empty_child",true)
 			child.set_meta("source_resource_id",part.resource_id)
 			child.position=part.get("offset",Vector3.ZERO)
 			body.add_child(child)
@@ -138,12 +145,25 @@ func apply_detail(distance_squared: Variant, detail: Variant) -> bool:
 func apply_selection(next: Dictionary) -> bool:
 	error = ""
 	if not valid_selection(next): return reject("Invalid or unconfigured ship detail selection")
-	for i in levels.size(): levels[i].visible=next.visible and next.level==i
+	selection=next.duplicate(true)
+	_refresh_draw_visibility()
+	return true
+
+## The camera mask is independent of retained LOD and the caller's authored
+## root visibility. Releasing a transition cannot revive a culled/hidden ship.
+func apply_camera_suppression(suppressed: Variant) -> bool:
+	error=""
+	if _detail==null or not suppressed is bool:return reject("Camera draw suppression requires built geometry and an explicit boolean")
+	_camera_suppressed=suppressed
+	_refresh_draw_visibility()
+	return true
+
+func _refresh_draw_visibility() -> void:
+	var drawable: bool=not selection.is_empty() and selection.visible and not _camera_suppressed
+	for i in levels.size(): levels[i].visible=drawable and selection.level==i
 	# The source attaches the same glow child to each body LOD. One native
 	# sibling retains that shared pose and follows the selected body's cull gate.
-	if engine_glow!=null:engine_glow.visible=next.visible
-	selection=next.duplicate(true)
-	return true
+	if engine_glow!=null:engine_glow.visible=drawable
 
 func valid_selection(next: Variant) -> bool:
 	if _detail==null or not next is Dictionary or not next.get("visible") is bool or not next.get("level") is int: return false
@@ -155,6 +175,7 @@ func clear() -> void:
 	engine_glow=null
 	selection={}
 	_detail=null
+	_camera_suppressed=false
 	if has_meta("source_ship_id"): remove_meta("source_ship_id")
 
 func reject(message: String) -> bool:

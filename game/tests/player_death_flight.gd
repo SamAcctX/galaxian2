@@ -21,6 +21,7 @@ var captures:={}
 func _initialize():call_deferred("run")
 func run():
 	var args:=OS.get_cmdline_user_args()
+	if args.size()==3 and DisplayServer.get_name()!="headless" and not OS.get_environment("GOF2_CAPTURE_DIR").is_empty():args.append(OS.get_environment("GOF2_CAPTURE_DIR"))
 	check(args.size() in [3,4],"Expected explicit Mac content, bindings, visuals and optional captures")
 	if args.size() in [3,4]:await verify(args)
 	print("Player death flight: %d checks; %d failures"%[checks,failures]);quit(1 if failures else 0)
@@ -63,7 +64,7 @@ func step(world: RefCounted, milliseconds: int, command:=Vector2.ZERO, throttle:
 	return next
 
 func lethal(world: RefCounted, milliseconds:=0, command:=Vector2.ZERO, throttle:=1.0, drill:=Vector2.ZERO) -> RefCounted:
-	var branch: RefCounted=world.fork_for_frame()
+	var branch: RefCounted=Fixture.fork_world_fixture(world)
 	var gun: RefCounted=branch._encounter._weapons._guns[0]
 	var weapon: Dictionary=gun.snapshot().weapon
 	while branch._player.snapshot().vitals.hull>1:
@@ -243,6 +244,7 @@ func verify_render(args: PackedStringArray, lib: RefCounted, bindings: RefCounte
 	var scene:=Scene.new();root.add_child(scene)
 	if not scene.build(lib,bindings,visuals,cat,ready):check(false,scene.error);scene.free();return
 	check(scene.player_destruction!=null and scene.game_over!=null and not scene.player_destruction.visible and not scene.game_over.visible,"Ready scene omitted death support or showed it early")
+	check((scene.station_target_overlay!=null)==(ready.snapshot().has("station_targeting") and not bindings.combat_training_story.get("navigation",{}).is_empty()),"Station overlay ignored the imported HUD capability boundary")
 	var stages:=captures.keys();stages.erase("game_over");stages.append("game_over")
 	for stage in stages:
 		var world: RefCounted=captures[stage];var state: Dictionary=world.snapshot()
@@ -334,6 +336,7 @@ func verify_particles():
 	check(particles.burst_count==1 and particles.owners.world.burst.cursor==1 and active_slots(particles.owners.world.burst)==1,"Breakup did not request exactly one world burst")
 	check(particles.owners.world.burst.slots[0].position==state.player_statistics_pose.origin and particles.owners.world.burst.slots[0].appearance.age_ms==150,"Breakup burst did not use statistics before this frame's manager aging")
 	check(particles.owners.player.trail.enabled and not particles.owners.player.trail.visible and active_slots(particles.owners.player.trail)==0,"Breakup reset/poll restored drawing or retained old trail sprites")
+	check(state.player_destruction.events.particle_events==[{"emitting":false,"drawing":false,"impact_requested":true},{"emitting":true}] and particles.owners.player.trail.enabled==state.player_destruction.particle_emitting,"The breakup tail and later poll lost their ordered particle cues")
 	captures.player_breakup=world
 	var rng: Dictionary=particles.owners.world.burst.random
 	for i in 11:
@@ -341,6 +344,7 @@ func verify_particles():
 		if world==null:return
 	state=world.snapshot()
 	check(state.damage_particles.burst_count==1 and state.damage_particles.owners.world.burst.random==rng and active_slots(state.damage_particles.owners.world.burst)==0,"Following frames replayed the manual burst or failed to expire it")
+	check(state.damage_particles.owners.player.trail.enabled==state.player_destruction.particle_emitting and not state.damage_particles.owners.player.trail.visible and active_slots(state.damage_particles.owners.player.trail)==0,"Following death polls restored drawing or desynchronized emission")
 	var invalid: RefCounted=world.fork_for_frame();invalid._particles._smoke._identity.binding_id="foreign"
 	var before: Dictionary=invalid.snapshot()
 	check(invalid.evaluate(100)==null and invalid.snapshot()==before,"A late particle-owner failure committed player or random state")

@@ -1,6 +1,7 @@
 extends SceneTree
 const Death = preload("res://src/simulation/npc_destruction.gd")
 const Resources = preload("res://src/content/npc_destruction_resources.gd")
+const Frames = preload("res://src/simulation/frame_clock.gd")
 const Definitions = preload("res://src/content/npc_destruction_definitions.gd")
 const Construction = preload("res://src/simulation/opening_npc_construction.gd")
 const Bindings = preload("res://src/content/resource_bindings.gd")
@@ -24,8 +25,9 @@ const FIXTURES := [
 
 func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
-	check(not args.is_empty() and args.size()%3==0,"Pass content/bindings/visuals triples")
-	for i in range(0,args.size()-2,3): check_profile(args[i],args[i+1])
+	var stride:=2 if args.size()==2 else 3
+	check(not args.is_empty() and args.size()%stride==0,"Pass a content/bindings pair or content/bindings/visuals triples")
+	for i in range(0,args.size()-stride+1,stride): check_profile(args[i],args[i+1])
 	print("NPC destruction checks: %d failures" % failures)
 	quit(1 if failures else 0)
 
@@ -133,7 +135,7 @@ func check_failures(bindings: RefCounted, resources: RefCounted, fragments: Arra
 	check(death.configure(bindings,resources,0,pose,1.0,fragments),death.error)
 	var previous := death.snapshot()
 	check(not death.capture(pose,-1) and death.snapshot()==previous,"Invalid motion capture changed state")
-	for delta in [-1,0.5,true,null,"16",INF,NAN,int(bindings.frame_clock.max_frame_milliseconds)+1]:
+	for delta in [-1,0.5,true,null,"16",INF,NAN,Frames.simulation_limit(bindings)+1]:
 		check(death.advance(delta,rng).is_empty() and death.snapshot()==previous,"Invalid frame partly changed death state")
 	for invalid in [null,{},0,{"state":-1},{"state":true},{"state":281474976710656}]:
 		check(death.advance(0,invalid).is_empty() and death.snapshot()==previous,"Invalid random state partly initialized death")
@@ -189,7 +191,7 @@ func check_controller(bindings: RefCounted, catalogues: RefCounted, resources: R
 	check(not combat.apply_destruction(0,skipped) and combat.snapshot()==bodies,"Combat body skipped tumble and explosion")
 	# Actor zero and one would initialize deaths before the final invalid actor.
 	var invalid_combat: RefCounted=combat.fork_for_frame()
-	invalid_combat._actors[2]._state.pose.origin.x=INF
+	invalid_combat._writable(2)._state.pose.origin.x=INF
 	check(control.evaluate(invalid_combat,guns,1,player,rng).is_empty(),"Late invalid death actor was accepted")
 	check(control.snapshot()==before and combat.snapshot()==bodies and guns.snapshot()==weapons,"Failed death pass mutated input owners")
 	frame=control.evaluate(combat,guns,1,player,rng)
@@ -222,7 +224,7 @@ func check_controller(bindings: RefCounted, catalogues: RefCounted, resources: R
 			if life.phase=="explosion" and not life.effect.active:
 				retiring.append(id)
 				# If the early exit is misplaced, hostility would flip this flag.
-				combat._actors[id]._state.hostile=false
+				combat._writable(id)._state.hostile=false
 		frame=control.evaluate(combat,guns,100,player,rng)
 		if frame.is_empty(): check(false,"Repeated NPC destruction pass: "+control.error);return
 		for row in frame.actors:

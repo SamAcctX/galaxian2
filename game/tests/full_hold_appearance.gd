@@ -131,7 +131,7 @@ func verify_first_death_after_cue(bindings: RefCounted, cat: RefCounted, world: 
 	check(unprepared.apply_full_hold_appearance(pair.combat,5,player).is_empty(),"Appearance bypassed destruction preparation")
 	if not place(pair,5,player):return
 	var cued: Dictionary=pair.control.snapshot();var body: Dictionary=pair.combat.snapshot()
-	var damaged: RefCounted=pair.combat.fork_for_frame();damaged._actors[0]._state.body_pose.origin.x+=1
+	var damaged: RefCounted=pair.combat.fork_for_frame();damaged._writable(0)._state.body_pose.origin.x+=1
 	check(pair.control.evaluate(damaged,pair.guns,0,player,pair.random).is_empty() and pair.control.snapshot()==cued and pair.combat.snapshot()==body,"Mismatched pending root was committed")
 	detached=pair.control.destruction_owner(0);original=detached.snapshot()
 	check(not detached.reposition_full_hold(bindings.full_hold_appearance,Transform3D.IDENTITY,Transform3D.IDENTITY) and detached.snapshot()==original,"Repeated direct placement reset retained clocks")
