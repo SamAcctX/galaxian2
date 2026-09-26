@@ -52,6 +52,7 @@ var _library: RefCounted
 var _portal: RefCounted
 var _escape: RefCounted
 var _presentation_identity: RefCounted
+var _return_identity: RefCounted
 var _pose:=Transform3D.IDENTITY
 var _reference:=Vector3.ZERO
 var _random:={}
@@ -269,7 +270,9 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	next._state.elapsed_ms+=milliseconds;next._state.revision+=1
 	next._state.input={"enabled":enabled,"commands":commands if enabled else Vector2.ZERO,"primary_held":primary_fire and enabled and next._primary_released,"secondary_requested":secondary_fire and enabled and next._secondary_released,"throttle":next._throttle}
 	if not next._observe_progress():return failed(next.error)
-	if next._escape!=null and not next._escape.snapshot().boundary.is_empty():next._state.boundary=next._escape.snapshot().boundary
+	if next._escape!=null and not next._escape.snapshot().boundary.is_empty():
+		next._state.boundary=next._escape.snapshot().boundary
+		next._return_identity=RefCounted.new()
 	return next
 
 ## Baseline plus native cumulative deltas, never last-frame totals plus totals.
@@ -426,6 +429,8 @@ func prepare_portal_transition() -> Dictionary:
 	return packet
 func detail_state() -> Dictionary:return {} if _detail==null else _detail.snapshot()
 func presentation_identity() -> RefCounted:return _presentation_identity
+## Issued only by the evaluated living escape, never by a packet reader.
+func portal_return_identity() -> RefCounted:return null if prepare_portal_transition().is_empty() else _return_identity
 func mission_context_owner() -> RefCounted:return _context
 func initialized_world_owner() -> RefCounted:return _world
 func player_owner() -> RefCounted:return null if _player==null else _player.fork_for_frame()
@@ -448,6 +453,7 @@ func fork_for_frame() -> RefCounted:
 	copy._throttle=_throttle;copy._max_ms=_max_ms;copy._game_over=_game_over.duplicate(true)
 	copy._primary_released=_primary_released;copy._secondary_released=_secondary_released
 	copy._presentation_identity=_presentation_identity
+	copy._return_identity=_return_identity
 	copy._portal=null if _portal==null else _portal.fork_for_frame();copy._escape=null if _escape==null else _escape.fork_for_frame()
 	if _state.is_empty():return copy
 	copy._runner=_runner.fork();copy._encounter=_encounter.fork_for_frame();copy._player=_player.fork_for_frame();copy._scenery=_scenery.fork_for_frame()

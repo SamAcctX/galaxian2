@@ -226,6 +226,14 @@ func transfer_ordinary_void(bindings: RefCounted,progress: Dictionary,source: Re
 	if _lounges==null or _lounges.selection_state().current_station_id!=route.source_station_id:return reject("The portal lost its retained ordinary location")
 	return _retain_story_progress(bindings,progress,33,33,int(route.source_station_id) if entering else -1,-1 if entering else int(route.source_station_id),true)
 
+## Keep the independent job and final combat counters while the world changes.
+func transfer_mission_return(bindings: RefCounted,entry: RefCounted) -> bool:
+	error=""
+	if not is_instance_of(entry,load("res://src/simulation/mission_portal_return.gd")) or not entry.matches_source_career(self):return reject("The return lost its actual retained career")
+	var source: Dictionary=entry.source_observation()
+	if source.is_empty() or _lounges==null or _lounges.selection_state().current_station_id!=source.return_station_id:return reject("The return lost its retained normal-space location history")
+	return _retain_story_progress(bindings,source.progress,source.campaign_cursor,source.campaign_cursor,-1,source.return_station_id,true)
+
 func retain_sahi_return_progress(bindings: RefCounted,progress: Dictionary) -> bool:
 	error=""
 	if not load("res://src/content/post_sahi_definitions.gd").available(bindings) or _state.is_empty():return reject("The Sahi return is unavailable")

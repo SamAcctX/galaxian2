@@ -53,6 +53,7 @@ static func from_ambush_escape(bindings: RefCounted) -> Dictionary:
 	recipe.entry="retained_world";recipe.retained_world_cursor=previous.cursor
 	recipe.briefing=[];recipe.entry_release_ms=0;recipe.sequences=["freighter_escape"]
 	recipe.continuation={"kind":"station","station_id":10}
+	recipe.world_return={"kind":"normal_space","location":"retained_entry"}
 	recipe.result.success={"kind":"world_elapsed","feature":"normal_space","after_ms":10000,"different_station":-1}
 	recipe.result.failure={"kind":"never"}
 	recipe.result.lines=[]

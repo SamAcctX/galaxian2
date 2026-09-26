@@ -1,5 +1,9 @@
 {
   "files": [
+    "game/tests/mission_portal_return.gd",
+    "game/tests/mission_portal_return.gd.uid",
+    "game/src/simulation/mission_portal_return.gd",
+    "game/src/simulation/mission_portal_return.gd.uid",
     "game/src/simulation/selected41_sequence.gd",
     "game/src/simulation/selected41_sequence.gd.uid",
     "game/tests/fixtures/selected41_sequence_checks.gd",

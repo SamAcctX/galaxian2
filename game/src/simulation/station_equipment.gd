@@ -399,6 +399,17 @@ func relocate_selected41(bindings: RefCounted,departure: RefCounted) -> bool:
 	_state.loadout.station_id=-1;_state.loadout.system_id=-1
 	return true
 
+## Only a native return transfer may relocate the final paid inventory.
+func relocate_mission_return(bindings: RefCounted,entry: RefCounted) -> bool:
+	error=""
+	if not is_instance_of(entry,load("res://src/simulation/mission_portal_return.gd")) or not entry.matches_source_equipment(self):return reject("Return inventory differs from the actual departing ship")
+	var source: Dictionary=entry.source_observation()
+	if source.is_empty() or not cargo_cache_valid():return reject("The return requires intact earned inventory")
+	for key in ["base_content_id","binding_id"]:
+		if source.get(key)!=bindings.get(key) or _state.loadout.get(key)!=bindings.get(key):return reject("The return inventory belongs to another source")
+	_state.loadout.station_id=source.return_station_id;_state.loadout.system_id=source.return_system_id
+	return true
+
 func relocate_post_sahi(bindings: RefCounted,cursor: int) -> bool:
 	error=""
 	if bindings==null:return reject("The portal requires its source declarations")

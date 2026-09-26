@@ -114,6 +114,21 @@ static func capture_selected41(bindings: RefCounted,departure: RefCounted,equipm
 	if not result.is_empty():result.campaign_cursor=41
 	return result
 
+static func capture_mission_return(bindings: RefCounted,entry: RefCounted,equipment: RefCounted) -> Dictionary:
+	if not is_instance_of(entry,load("res://src/simulation/mission_portal_return.gd")) or not is_instance_of(equipment,load("res://src/simulation/station_equipment.gd")):return {}
+	var observation: Dictionary=entry.source_observation()
+	var owner: RefCounted=entry.source_player_owner()
+	if observation.is_empty() or owner==null:return {}
+	var source: Dictionary=owner.loadout();var destination: Dictionary=equipment.snapshot().loadout
+	if not valid_seed(source,true) or not valid_seed(destination) or destination.station_id!=observation.return_station_id or destination.system_id!=observation.return_system_id:return {}
+	for key in IDENTITY_KEYS:
+		if key not in ["station_id","system_id"] and source[key]!=destination[key]:return {}
+	for key in ["base_content_id","binding_id"]:
+		if observation.get(key)!=bindings.get(key):return {}
+	var result:=_capture_arrival(bindings.mido_travel,source,destination,owner.snapshot())
+	if not result.is_empty():result.campaign_cursor=observation.campaign_cursor
+	return result
+
 static func free_flight_cache(parameters: Dictionary,travel: Dictionary,seed: Dictionary,hull: int,capacities: Dictionary,reset: bool=false,cursor: int=18) -> Dictionary:
 	var entry:=FreeFlight.player_entry(travel,int(seed.get("station_id",-1)),int(seed.get("ship_id",-1)),cursor)
 	if entry.is_empty():return {}
