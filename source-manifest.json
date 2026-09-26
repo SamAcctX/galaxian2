@@ -2556,6 +2556,8 @@
     "game/src/simulation/radio_condition.gd.uid",
     "game/tests/fixtures/mission_flight_source.gd",
     "game/tests/fixtures/mission_flight_source.gd.uid",
+    "game/tests/mission_continuation.gd",
+    "game/tests/mission_continuation.gd.uid",
     "game/tests/mission_escape_sequence.gd",
     "game/tests/mission_escape_sequence.gd.uid",
     "game/tests/mission_escape_sequence_source.gd",

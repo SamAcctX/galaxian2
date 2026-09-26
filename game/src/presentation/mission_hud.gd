@@ -15,6 +15,7 @@ const Notice=preload("res://src/presentation/flight_notice_panel.gd")
 var error:=""
 var _identity:={}
 var _generation: RefCounted
+var _context: RefCounted
 var _layers: Array[Dictionary]=[]
 var _front:=-1
 var _sample:={}
@@ -49,12 +50,17 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,fram
 	for row in pending:
 		add_child(row.root);row.root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_layers=pending;_generation=frame.presentation_identity()
-	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(sample.campaign_cursor)}
+	_context=Context.from_owner(frame)
+	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
+	# A retained world can outlive its active mission. Its capability and scene
+	# generation remain authoritative; the radio keeps its own inherited queue.
+	if _context==null:_identity.campaign_cursor=int(sample.campaign_cursor)
 	return true
 
 func present(frame: RefCounted) -> bool:
 	error=""
 	if _layers.is_empty() or not (frame is FlightFrame or Context.from_owner(frame)!=null) or frame.presentation_identity()!=_generation:return reject("Mission HUD cannot accept a detached or different flight generation")
+	if _context!=null and Context.from_owner(frame)!=_context:return reject("Mission HUD cannot replace its admitted world")
 	var sample: Dictionary=frame.hud_state()
 	if sample.is_empty():return reject("Mission HUD requires a fully accepted native frame, not a pending result boundary")
 	for key in _identity:

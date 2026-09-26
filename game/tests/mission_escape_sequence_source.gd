@@ -8,8 +8,14 @@ var error:=""
 func prepare(bindings: RefCounted,cat: RefCounted,library: RefCounted,station: RefCounted) -> RefCounted:
 	var equipment: RefCounted=station.equipment_owner();var career: RefCounted=station.contract_owner()
 	var before: Dictionary=station.snapshot();var seed: Dictionary=equipment.snapshot().loadout
-	var departing: RefCounted=load("res://src/simulation/opening_player_state.gd").new()
-	if not departing.configure_local_travel(bindings,cat,equipment,before.player_cache,40):return fail(departing.error)
+	var bodies: RefCounted=load("res://src/content/scenery_body_resources.gd").new()
+	var effects: RefCounted=load("res://src/content/scenery_effect_resources.gd").new()
+	if not bodies.configure(library,bindings) or not effects.configure(library,bindings):return fail(bodies.error+effects.error)
+	# Use the same equipped station launch as the application. The old local
+	# travel adapter does not own this campaign's departure or repair policy.
+	var departure: RefCounted=load("res://src/simulation/first_flight_construction.gd").new()
+	if not departure.prepare_free(bindings,cat,station,1700000000,1700000000,true,bodies,effects):return fail(departure.error)
+	var departing: RefCounted=departure.player_owner()
 	var packet: Dictionary=load("res://src/content/gate_arrival_definitions.gd").packet(bindings,cat,
 		{"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,
 		"from_station_id":seed.station_id,"destination_station_id":career.void_source_state().source_station_id},40)
@@ -23,10 +29,7 @@ func prepare(bindings: RefCounted,cat: RefCounted,library: RefCounted,station: R
 	var selected: RefCounted=career.selected40_entry_owner()
 	if selected==null:return fail("Native arrival did not retain its selected source")
 	var context: Dictionary=career.selected40_context(bindings,packet.station_id,packet.system_id)
-	var bodies: RefCounted=load("res://src/content/scenery_body_resources.gd").new()
-	var effects: RefCounted=load("res://src/content/scenery_effect_resources.gd").new()
 	var scenery: RefCounted=load("res://src/simulation/opening_scenery.gd").new()
-	if not bodies.configure(library,bindings) or not effects.configure(library,bindings):return fail(bodies.error+effects.error)
 	if not scenery.configure_selected40(bindings,cat,equipment,context,selected,1700000001,true,bodies,effects):return fail(scenery.error)
 	var player: RefCounted=load("res://src/simulation/opening_player_state.gd").new()
 	if not player.configure_selected40(bindings,cat,equipment,scenery.world_initialization_owner().npc_construction_owner(),cache):return fail(player.error)

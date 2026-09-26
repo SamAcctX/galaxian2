@@ -24,11 +24,25 @@ func prepare_conversations(bindings: RefCounted,library: RefCounted) -> bool:
 	if _context==null or not _conversations.is_empty():return reject("Prepare mission conversations once at entry")
 	var prepared:={}
 	for kind in ["briefing","success","failure"]:
+		if kind=="briefing" and _context.recipe().briefing.is_empty():continue
 		var pages:=Conversation.new()
 		if not pages.prepare(bindings,library,_context,kind):return reject(pages.error)
 		prepared[kind]=pages
 	_conversations=prepared
 	return true
+
+## Called only on the acknowledged candidate. Replacing this small coordinator
+## clears obsolete result predicates and polling time without touching the cast.
+func continue_in_world(bindings: RefCounted,library: RefCounted,loadout: Dictionary) -> RefCounted:
+	error=""
+	if _context==null or not _state.retired or _conversation!=null:
+		reject("A retained continuation requires the acknowledged final result");return null
+	var context: RefCounted=_context.retained_successor(bindings,loadout)
+	if context==null:reject(_context.error);return null
+	var next: RefCounted=get_script().new()
+	if not next.configure(context) or not next.prepare_conversations(bindings,library):reject(next.error);return null
+	next._state.briefed=true
+	return next
 
 func open_briefing() -> bool:
 	if _conversation!=null or not _conversations.has("briefing") or _state.get("briefed",false):return reject("The mission briefing is not available")
@@ -63,9 +77,9 @@ func sample_clock(world_ms: int,poll_ms: int) -> bool:
 	_state.elapsed_ms=world_ms;_state.clock_ms=poll_ms
 	return true
 
-func observe(actors: Array,sequences: Dictionary={}) -> Dictionary:
+func observe(actors: Array,sequences: Dictionary={},world_facts: Dictionary={}) -> Dictionary:
 	if _context==null or actors.size()!=int(_result.actor_count):return {}
-	var observation:={"actors":actors,"sequences":sequences}
+	var observation:={"actors":actors,"sequences":sequences,"world":world_facts}
 	var success:=Condition.evaluate(_result.success,observation)
 	var failure:=Condition.evaluate(_result.failure,observation)
 	if success.is_empty() or failure.is_empty():return {}
@@ -73,11 +87,11 @@ func observe(actors: Array,sequences: Dictionary={}) -> Dictionary:
 		"defeated":success.get("retired",0),"required":success.get("required",0),
 		"convoy_destroyed":failure.get("retired",0),"convoy_count":failure.get("required",0)}
 
-func poll(actors: Array,radio_active: bool,periodic_poll_allowed: bool,player_alive:=true,sequences: Dictionary={}) -> Dictionary:
+func poll(actors: Array,radio_active: bool,periodic_poll_allowed: bool,player_alive:=true,sequences: Dictionary={},world_facts: Dictionary={}) -> Dictionary:
 	error=""
 	if _context==null:return fail("Mission runner is not configured")
 	if _state.retired or _state.mode!=0 or not player_alive:return snapshot()
-	var status:=observe(actors,sequences)
+	var status:=observe(actors,sequences,world_facts)
 	if status.is_empty():return fail("Mission result lost its actor or sequence observation")
 	var policy: Dictionary=_result.policy
 	var eligible: bool=periodic_poll_allowed and _state.clock_ms>=int(policy.success_poll_milliseconds)

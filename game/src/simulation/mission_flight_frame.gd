@@ -45,6 +45,7 @@ var _targeting: RefCounted
 var _notices: RefCounted
 var _detail: RefCounted
 var _bindings: RefCounted
+var _library: RefCounted
 var _presentation_identity: RefCounted
 var _pose:=Transform3D.IDENTITY
 var _reference:=Vector3.ZERO
@@ -101,7 +102,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,c
 	if not scanner.advance_mission(encounter.combat_owner(),pose,camera.snapshot().pose,aim.snapshot(),0,false) or not targeting.advance(scenery,pose,camera.snapshot().pose,aim.snapshot(),0,false):return reject(scanner.error+targeting.error)
 	# Pools come from the actual living portal. Only permission changes at entry.
 	if not player.set_permissions(player.snapshot().active,false):return reject(player.error)
-	_context=context;_world=initialized_world;_bindings=bindings;_runner=runner;_encounter=encounter
+	_context=context;_world=initialized_world;_bindings=bindings;_library=library;_runner=runner;_encounter=encounter
 	_player=player;_scenery=scenery;_equipment=equipment;_career=career;_pilot=pilot;_physical=physical
 	_camera=camera;_aim=aim;_engines=engines;_engine_audio=audio;_death=death;_particles=particles;_detail=detail
 	_scanner=scanner;_targeting=targeting;_notices=notices
@@ -254,12 +255,17 @@ func navigate(action: String) -> RefCounted:
 	next._state.revision+=1
 	if outcome.acknowledged:
 		if outcome.kind=="success":
+			var completed_context: RefCounted=_runner.context_owner()
 			var career: RefCounted=_career.fork()
-			if not career.advance_mission_story(_bindings,_context,_progress):return failed(career.error)
+			if not career.advance_mission_story(_bindings,completed_context,_progress):return failed(career.error)
 			next._career=career;next._progress=career.snapshot().progress.duplicate(true)
 			next._state.campaign_cursor=career.snapshot().campaign_cursor
-			next._state.mission=_context.recipe().next_mission
-			next._state.boundary="mission_continuation_required"
+			next._state.mission=completed_context.recipe().next_mission
+			if completed_context.recipe().get("continuation",{}).get("kind")=="retained_world":
+				var continuation: RefCounted=next._runner.continue_in_world(_bindings,_library,_equipment.snapshot().loadout)
+				if continuation==null:return failed(next._runner.error)
+				next._runner=continuation
+			else:next._state.boundary="mission_continuation_required"
 		elif outcome.kind=="failure":
 			next._state.boundary="campaign_failure_transition_required";next._game_over=outcome.transition
 	return next
@@ -379,7 +385,7 @@ func engine_particles_owner() -> RefCounted:return null if _engines==null else _
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
-	copy._state=_state.duplicate(true);copy._context=_context;copy._world=_world;copy._bindings=_bindings
+	copy._state=_state.duplicate(true);copy._context=_context;copy._world=_world;copy._bindings=_bindings;copy._library=_library
 	copy._pose=_pose;copy._reference=_reference;copy._random=_random.duplicate(true)
 	copy._initial_progress=_initial_progress;copy._progress=_progress.duplicate(true);copy._viewport=_viewport
 	copy._throttle=_throttle;copy._max_ms=_max_ms;copy._game_over=_game_over.duplicate(true)

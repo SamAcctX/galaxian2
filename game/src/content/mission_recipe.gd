@@ -12,6 +12,8 @@ static func select(bindings: RefCounted,cursor: Variant) -> Dictionary:
 		return from_convoy(bindings,source)
 	if Ambush.available(bindings) and int(Ambush.VALUES.campaign_cursor)==cursor:
 		return from_ambush(bindings)
+	if Ambush.available(bindings) and int(Ambush.VALUES.campaign_cursor)+1==cursor:
+		return from_ambush_escape(bindings)
 	return {}
 
 static func from_ambush(bindings: RefCounted) -> Dictionary:
@@ -32,7 +34,28 @@ static func from_ambush(bindings: RefCounted) -> Dictionary:
 		"result":{"success":{"kind":25,"sequence_flag":"sequence_complete"},"failure":{"kind":7,"end_actor":1},
 			"actor_count":int(Ambush.VALUES.actor_count),"lines":result_events,"policy":bindings.early_contracts.flight_results.duplicate(true)},
 		"sequences":["freighter_ambush"],"entry_release_ms":7001,"docking":{},
+		"continuation":{"kind":"retained_world"},
 		"receipt_key":"nehma_source_receipt","source_receipt":bindings.nehma_source_receipt().duplicate(true)}
+
+## The ambush result changes the objective, not the world. Its retained radio
+## and freighter remain authoritative until the escape and normal-space return.
+static func from_ambush_escape(bindings: RefCounted) -> Dictionary:
+	var previous:=from_ambush(bindings)
+	if previous.is_empty():return {}
+	var recipe:=previous.duplicate(true)
+	recipe.cursor=previous.next_cursor;recipe.mission=previous.next_mission.duplicate(true)
+	recipe.next_cursor=recipe.cursor+1
+	recipe.next_mission={"kind":11,"station_id":10,"reward":0,"bonus":0,"source_parameter":0}
+	recipe.entry="retained_world";recipe.retained_world_cursor=previous.cursor
+	recipe.briefing=[];recipe.entry_release_ms=0;recipe.sequences=["freighter_escape"]
+	recipe.continuation={"kind":"station","station_id":10}
+	recipe.result.success={"kind":"world_elapsed","feature":"normal_space","after_ms":10000,"different_station":-1}
+	recipe.result.failure={"kind":"never"}
+	recipe.result.lines=[]
+	var speakers:=[0,0,6,0]
+	for index in speakers.size():
+		recipe.result.lines.append({"speaker_id":speakers[index],"text_id":int(previous.briefing[0].text_id)+16+index,"voice_event_id":421+index})
+	return recipe
 
 static func from_convoy(bindings: RefCounted,source: Dictionary) -> Dictionary:
 	if not Convoy.parameters(source):return {}

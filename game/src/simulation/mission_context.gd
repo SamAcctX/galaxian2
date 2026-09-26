@@ -13,6 +13,7 @@ func admit(bindings: RefCounted,catalogues: RefCounted,context: Dictionary,loado
 	if not _recipe.is_empty():return reject("A mission context is admitted only once")
 	var recipe:=Recipe.select(bindings,context.get("campaign_cursor"))
 	if recipe.is_empty():return reject("No complete recipe supports this mission")
+	if recipe.entry=="retained_world":return reject("This mission must continue its acknowledged living world")
 	if catalogues==null or catalogues.content_id!=bindings.base_content_id:return reject("Mission catalogues belong to another content source")
 	for key in ["base_content_id","binding_id"]:
 		if context.get(key)!=bindings.get(key) or loadout.get(key)!=bindings.get(key):return reject("Mission entry belongs to another content source")
@@ -28,6 +29,25 @@ func admit(bindings: RefCounted,catalogues: RefCounted,context: Dictionary,loado
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":recipe.cursor}
 	_loadout=loadout.duplicate(true)
 	return true
+
+## Keep the original capability on the living world. A successor capability is
+## for the active objective only; it neither reconstructs nor re-identifies any
+## already admitted player, actor, radio, camera or presentation owner.
+func retained_successor(bindings: RefCounted,loadout: Dictionary) -> RefCounted:
+	error=""
+	if _recipe.is_empty() or _recipe.get("continuation",{}).get("kind")!="retained_world" or not matches_loadout(loadout):
+		reject("No retained-world continuation accepts this equipment");return null
+	var source:=Recipe.select(bindings,_recipe.cursor)
+	var recipe:=Recipe.select(bindings,_recipe.next_cursor)
+	if source!=_recipe or recipe.is_empty() or recipe.get("entry")!="retained_world" or recipe.get("retained_world_cursor")!=_recipe.cursor or recipe.mission!=_recipe.next_mission:
+		reject("The retained successor differs from its admitted recipe");return null
+	if recipe.world!=_recipe.world or recipe.station_id!=_recipe.station_id or recipe.system_id!=_recipe.system_id:
+		reject("A retained continuation cannot replace its world or location");return null
+	var next: RefCounted=get_script().new()
+	next._recipe=recipe;next._identity=_identity.duplicate();next._identity.campaign_cursor=recipe.cursor
+	next._loadout=_loadout.duplicate(true)
+	if next._loadout.has("campaign_cursor"):next._loadout.campaign_cursor=recipe.cursor
+	return next
 
 func recipe() -> Dictionary:return _recipe.duplicate(true)
 func identity() -> Dictionary:return _identity.duplicate()
