@@ -87,7 +87,10 @@ func verify_component(world: RefCounted) -> void:
 		check(active.frame_context().campaign_cursor==42 and not active.campaign_dialogue_visible(),"Retained ambush completion repeated its result")
 		present()
 	check(original.career.mission==after.career.mission,"Independent passenger job changed across the cinematic")
+	if failures==0:await verify_retained_flight()
 	scene.free()
+
+func verify_retained_flight() -> void:pass
 
 func verify_successor_conditions(frame: RefCounted) -> void:
 	var runner: RefCounted=frame.runner_owner();var recipe: Dictionary=runner.context_owner().recipe()

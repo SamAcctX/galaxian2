@@ -96,6 +96,7 @@ func radio_owner() -> RefCounted:return null if _hook==null else _hook.radio_own
 func camera_owner() -> RefCounted:return null if _hook==null else _hook.camera_owner()
 func mission_context_owner() -> RefCounted:return _context
 func world_owner() -> RefCounted:return null if _hook==null else _hook.world_owner()
+func sequence_hook_owner() -> RefCounted:return null if _hook==null else _hook.fork_for_frame()
 
 func snapshot() -> Dictionary:
 	var state:=super.snapshot()

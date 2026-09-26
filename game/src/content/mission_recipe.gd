@@ -35,6 +35,10 @@ static func from_ambush(bindings: RefCounted) -> Dictionary:
 			"actor_count":int(Ambush.VALUES.actor_count),"lines":result_events,"policy":bindings.early_contracts.flight_results.duplicate(true)},
 		"sequences":["freighter_ambush"],"entry_release_ms":7001,"docking":{},
 		"continuation":{"kind":"retained_world"},
+		"portal_policy":{"initially_visible":false,"unauthorized_exit":"destroy_player"},
+		"sequence_models":[{"model_id":14285,"face_forward":false,"forward_offset":0},
+			{"model_id":14286,"face_forward":true,"forward_offset":10000},{"model_id":14287,"face_forward":true,"forward_offset":0}],
+		"escape_sounds":[153,154],
 		"receipt_key":"nehma_source_receipt","source_receipt":bindings.nehma_source_receipt().duplicate(true)}
 
 ## The ambush result changes the objective, not the world. Its retained radio

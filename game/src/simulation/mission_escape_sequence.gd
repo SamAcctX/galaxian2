@@ -59,7 +59,7 @@ func configure(bindings: RefCounted,context: RefCounted,retained_npc: RefCounted
 	_state.merge({"phase":5,"revision":0,"elapsed_ms":int(prior.elapsed_ms),"phase_elapsed_ms":0,
 		"input_blocked":false,"hud_visible":true,"player_damage_allowed":true,"automatic_forward":false,
 		"player_visible":true,"player_particles_visible":true,"cinematic":false,"absolute_eye":false,
-		"shake_strength":0.0,"shake_range":30,"explosions_visible":false,"explosion_elapsed_ms":0,
+		"shake_strength":0.0,"shake_range":30,"vertical_fov_radians":0.0,"explosions_visible":false,"explosion_elapsed_ms":0,
 		"mothership_visible":true,"fade_requested":false,"boundary":"","frame":empty_frame()})
 	_shot={"base_content_id":identity.base_content_id,"binding_id":identity.binding_id,"mode":"follow","target":"player"}
 	_fade={"active":false,"elapsed_ms":0,"duration_ms":4000,"source_direction":1,"black_plate":false}
@@ -111,6 +111,7 @@ func advance(milliseconds: Variant,radio: RefCounted,player: RefCounted,portal: 
 			next.input_blocked=true;next.hud_visible=false;next.player_damage_allowed=false
 			next.automatic_forward=true;next.player_visible=false;next.player_particles_visible=false
 			next.cinematic=true;next.absolute_eye=true;next.shake_strength=0.0;next.explosions_visible=true
+			next.vertical_fov_radians=1.22
 			shot={"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,
 				"mode":"fixed_eye","target":"environment","slot":0,"inherit_target_up":true,
 				"eye":player_pose.origin+Vectors.scaled(Vectors.normalized(player_pose.origin),5000.0)}

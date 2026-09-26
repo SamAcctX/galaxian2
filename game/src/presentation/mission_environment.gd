@@ -46,6 +46,7 @@ func present(world: RefCounted,viewport: Vector2i) -> bool:
 		portal=_portal.prepare_state(world.portal_owner().portal_snapshot())
 		if portal.is_empty():return reject(_portal.error)
 	if not _void.advance(int(state.elapsed_ms)-_elapsed_ms,state.encounter.view.camera):return reject(_void.error)
+	_void.station.visible=state.get("escape",{}).get("mothership_visible",true)
 	if not portal.is_empty():_portal.commit_state(portal)
 	_elapsed_ms=int(state.elapsed_ms)
 	return true

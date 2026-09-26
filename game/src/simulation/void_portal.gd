@@ -73,6 +73,13 @@ func begin_closing(age_ms:=59000) -> bool:
 func mission_context_owner() -> RefCounted:return _context
 func retained_identity() -> RefCounted:return _identity
 
+func set_visible(enabled: bool) -> bool:
+	error=""
+	if _state.is_empty():return reject("Visibility requires a configured portal")
+	_state=_state.duplicate(true);_state.visible=enabled
+	if not enabled:_entered=false;_contact={};_frame={}
+	return true
+
 func configure(bindings: RefCounted,entry: Dictionary,library: RefCounted) -> bool:
 	error=""
 	if bindings==null or not Definitions.selected(bindings.mido_travel,entry):return reject("The portal requires its selected source world")

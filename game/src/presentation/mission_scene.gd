@@ -19,6 +19,9 @@ const SecondaryPanel=preload("res://src/presentation/secondary_weapon_panel.gd")
 const SceneryEffects=preload("res://src/content/scenery_effect_resources.gd")
 const Reflection=preload("res://src/presentation/environment_reflection.gd")
 const OrdinaryScene=preload("res://src/presentation/first_flight_scene.gd")
+const SequenceEffects=preload("res://src/presentation/mission_sequence_effects.gd")
+const SequenceAudio=preload("res://src/presentation/mission_sequence_audio.gd")
+const AudioResources=preload("res://src/content/audio_resources.gd")
 var error:=""
 var environment: Node3D
 var encounter: Node3D
@@ -31,6 +34,11 @@ var hud: Control
 var feedback: Control
 var secondary_panel: Control
 var overlay: Control
+var sequence_effects: Node3D
+var sequence_audio: Node3D
+var sequence_fade: ColorRect
+var _sequence_context: RefCounted
+var _escape_sound_revision:=-1
 var _projection: RefCounted
 var _identity: RefCounted
 var _revision:=-1
@@ -61,6 +69,15 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cata
 		if not resources.configure(library,bindings) or not reflection.build(library,bindings,catalogues,int(environment.lights.state.system_id),false):return failed_build(resources.error+reflection.error)
 		if not scenery.prepare_destruction(field,library,visuals,bindings,resources,environment.lights.state,reflection,OrdinaryScene.EFFECT_RESPONSE):return failed_build(scenery.error)
 	if not exhaust.configure(library,bindings,visuals,world) or not effects.configure(library,bindings,visuals,world):return failed_build(exhaust.error+effects.error)
+	if context!=null and not context.recipe().get("sequence_models",[]).is_empty():
+		sequence_effects=SequenceEffects.new();add_child(sequence_effects)
+		# Old imported packs may supply a separately validated same-source mesh
+		# supplement. New imports resolve these records normally; never relabel.
+		if not sequence_effects.configure(context,library,visuals,bindings,context.recipe().sequence_models,OS.get_environment("GOF2_SEQUENCE_MESH_SUPPLEMENT")):return failed_build(sequence_effects.error)
+		var resources_audio:=AudioResources.new()
+		sequence_audio=SequenceAudio.new();add_child(sequence_audio)
+		if not resources_audio.configure(library,bindings,int(context.identity().campaign_cursor)) or not sequence_audio.configure(context,resources_audio,bindings,context.recipe().escape_sounds):return failed_build(resources_audio.error+sequence_audio.error)
+		_sequence_context=context
 	overlay=Control.new();overlay.mouse_filter=Control.MOUSE_FILTER_IGNORE;add_child(overlay);overlay.size=Vector2(viewport)
 	hud=Hud.new();feedback=Feedback.new();secondary_panel=SecondaryPanel.new()
 	for node in [hud,secondary_panel,feedback]:
@@ -68,6 +85,9 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cata
 	if not hud.configure(library,bindings,visuals,world) or not secondary_panel.configure(library,bindings,visuals) or not feedback.configure(library,bindings,visuals,world):return failed_build(hud.error+secondary_panel.error+feedback.error)
 	feedback.exit_requested.connect(_request_exit)
 	if feedback.has_signal("world_changed"):feedback.world_changed.connect(_request_world)
+	sequence_fade=ColorRect.new();overlay.add_child(sequence_fade)
+	sequence_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	sequence_fade.mouse_filter=Control.MOUSE_FILTER_IGNORE;sequence_fade.color=Color(0,0,0,0);sequence_fade.hide()
 	_identity=world.presentation_identity()
 	if not present(world,viewport):return failed_build(error)
 	return true
@@ -88,6 +108,23 @@ func present(world: RefCounted,viewport: Vector2i) -> bool:
 	if not player.valid_selection(selection):return reject("Selected scene lost its retained player detail")
 	var sound: Dictionary=feedback.prepare_audio(world)
 	if sound.is_empty():return reject(feedback.audio.error)
+	var escape: Dictionary=state.get("escape",{})
+	var animation:={};var sequence_sound:={}
+	if sequence_effects!=null:
+		var models:=[]
+		for declaration in _sequence_context.recipe().sequence_models:
+			models.append({"model_id":declaration.model_id,"visible":escape.get("explosions_visible",false),"time_ms":int(escape.get("explosion_elapsed_ms",0))})
+		animation=sequence_effects.prepare_state(_sequence_context,{"revision":state.revision,"models":models,"mothership_visible":escape.get("mothership_visible",true)},-view.camera.pose.basis.z)
+		if animation.is_empty():return reject(sequence_effects.error)
+		var cues:=[]
+		if not escape.is_empty() and escape.revision>_escape_sound_revision:
+			for cue in escape.frame.audio:
+				if cue.action=="update":
+					cues.append({"action":"position","sound_id":cue.sound_id,"position":cue.position,"velocity":cue.velocity})
+					for index in cue.parameters:cues.append({"action":"parameter","sound_id":cue.sound_id,"index":index,"value":cue.parameters[index]})
+				else:cues.append(cue.duplicate(true))
+		sequence_sound={"repeat":true} if state.revision==_revision else sequence_audio.prepare_frame(_sequence_context,{"revision":state.revision,"delta_ms":0 if _elapsed_ms<0 else int(state.elapsed_ms)-_elapsed_ms,"cues":cues,"stopped":world.destruction_owner().snapshot().phase!="ready"},view.camera.pose)
+		if sequence_sound.is_empty():return reject(sequence_audio.error)
 	if not environment.present(world,viewport):return reject(environment.error)
 	var field_owner: RefCounted=world.scenery_owner();var field: Dictionary=field_owner.read_snapshot()
 	if not scenery.apply_state(field) or not scenery.apply_detail(field.detail) or not scenery.apply_activity(field.bodies):return failed_display(scenery.error)
@@ -100,14 +137,21 @@ func present(world: RefCounted,viewport: Vector2i) -> bool:
 	secondary_panel.set_top_inset(maxf(occupied.gauges_bottom,maxf(occupied.notice_rect.end.y,occupied.radio_rect.end.y))+8)
 	var problem: String=_projection.apply(camera,view.camera)
 	if not problem.is_empty():return failed_display(problem)
+	if float(escape.get("vertical_fov_radians",0.0))>0:camera.fov=rad_to_deg(float(escape.vertical_fov_radians))
 	encounter.commit_world(cast)
+	if not animation.is_empty() and not animation.get("repeat",false) and not sequence_effects.commit_state(animation):return failed_display("Sequence model frame was superseded")
 	player.transform=state.player_pose;player.apply_selection(selection)
 	player.apply_camera_suppression(view.player_render_suppressed)
 	var destruction: Dictionary=world.destruction_owner().snapshot()
-	player.visible=destruction.body_visible
+	player.visible=destruction.body_visible and state.encounter.sequence.get("player_visible",true)
+	exhaust.visible=state.encounter.sequence.get("player_particles_visible",true)
+	var alpha: float=float(escape.get("fade",{}).get("alpha_byte",0))/255.0
+	sequence_fade.color=Color(0,0,0,alpha);sequence_fade.visible=alpha>0
 	if destruction.phase!="ready" and player.engine_glow!=null:player.engine_glow.hide()
 	# Audible events are committed last, only after the complete scene accepted.
 	if not feedback.present(world,state.elapsed_ms):return failed_display(feedback.error)
+	if not sequence_sound.is_empty() and not sequence_sound.get("repeat",false) and not sequence_audio.commit_frame(sequence_sound):return failed_display("Sequence sound frame was superseded")
+	_escape_sound_revision=int(escape.get("revision",-1))
 	overlay.size=Vector2(viewport)
 	_revision=state.revision;_elapsed_ms=state.elapsed_ms;_viewport=viewport
 	return true
@@ -125,6 +169,7 @@ func _request_world(candidate: RefCounted) -> void:
 func handle_event(event: InputEvent) -> bool:return feedback!=null and feedback.handle_event(event)
 func set_paused(value: bool) -> void:
 	if feedback!=null:feedback.set_paused(value)
+	if sequence_audio!=null:sequence_audio.set_paused(value)
 func world_owner() -> RefCounted:return null if feedback==null else feedback.world_owner()
 func snapshot() -> Dictionary:
 	return {} if _revision<0 else {"revision":_revision,"elapsed_ms":_elapsed_ms,"viewport":_viewport,"transition":_transition.duplicate(true),"camera":camera.global_transform,"player_pose":player.transform,"actor_count":encounter.actors.size(),"scenery_count":scenery.objects.size()}
@@ -138,6 +183,7 @@ func failed_display(message: String) -> bool:
 func failed_build(message: String) -> bool:
 	for child in get_children():child.free()
 	environment=null;encounter=null;player=null;scenery=null;exhaust=null;effects=null;camera=null;hud=null;feedback=null;secondary_panel=null;overlay=null
+	sequence_effects=null;sequence_audio=null;sequence_fade=null;_sequence_context=null;_escape_sound_revision=-1
 	_identity=null;_projection=null;_revision=-1;_elapsed_ms=-1
 	return reject(message)
 func reject(message: String) -> bool:error=message;return false

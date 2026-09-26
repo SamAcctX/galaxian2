@@ -22,6 +22,9 @@ const ShipDetail=preload("res://src/presentation/ship_detail.gd")
 const Frames=preload("res://src/simulation/frame_clock.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
 const Career=preload("res://src/simulation/opening_handoff.gd")
+const VoidPortal=preload("res://src/simulation/void_portal.gd")
+const Escape=preload("res://src/simulation/mission_escape_sequence.gd")
+const Random=preload("res://src/simulation/seeded_random.gd")
 var error:=""
 var _state:={}
 var _context: RefCounted
@@ -46,6 +49,8 @@ var _notices: RefCounted
 var _detail: RefCounted
 var _bindings: RefCounted
 var _library: RefCounted
+var _portal: RefCounted
+var _escape: RefCounted
 var _presentation_identity: RefCounted
 var _pose:=Transform3D.IDENTITY
 var _reference:=Vector3.ZERO
@@ -100,9 +105,15 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,c
 	var scanner:=Scanner.new();var targeting:=Targeting.new();var notices:=Notices.new()
 	if not scanner.configure_mission(bindings,catalogues,radii,int(strip.frames),equipment,encounter.combat_owner(),context) or not targeting.configure_mission(bindings,catalogues,equipment,scenery,radii,int(asteroid_strip.frames),context) or not notices.configure_mission(bindings,library,context):return reject(scanner.error+targeting.error+notices.error)
 	if not scanner.advance_mission(encounter.combat_owner(),pose,camera.snapshot().pose,aim.snapshot(),0,false) or not targeting.advance(scenery,pose,camera.snapshot().pose,aim.snapshot(),0,false):return reject(scanner.error+targeting.error)
+	var portal: RefCounted
+	if context.has_feature("portal"):
+		portal=VoidPortal.new()
+		if not portal.configure_admitted_world(bindings,context,initialized_world.snapshot(),library):return reject(portal.error)
+		if not portal.set_visible(context.recipe().get("portal_policy",{}).get("initially_visible",true)):return reject(portal.error)
 	# Pools come from the actual living portal. Only permission changes at entry.
 	if not player.set_permissions(player.snapshot().active,false):return reject(player.error)
 	_context=context;_world=initialized_world;_bindings=bindings;_library=library;_runner=runner;_encounter=encounter
+	_portal=portal
 	_player=player;_scenery=scenery;_equipment=equipment;_career=career;_pilot=pilot;_physical=physical
 	_camera=camera;_aim=aim;_engines=engines;_engine_audio=audio;_death=death;_particles=particles;_detail=detail
 	_scanner=scanner;_targeting=targeting;_notices=notices
@@ -127,8 +138,9 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	var prior: Dictionary=_encounter.frame_context()
 	if prior.pending_world or prior.elapsed_ms!=_state.elapsed_ms or prior.world_elapsed_ms!=_state.elapsed_ms:return failed("Mission flight lost its completed encounter frame")
 	var dying: bool=_death.snapshot().phase!="ready"
-	var blocked: bool=prior.sequence.input_blocked
-	var moving: bool=not blocked and (not dying or _death.player_updates_enabled())
+	var blocked: bool=prior.sequence.input_blocked or (_escape!=null and _escape.snapshot().input_blocked)
+	var automatic: bool=_escape!=null and _escape.snapshot().automatic_forward
+	var moving: bool=(not blocked or automatic) and (not dying or _death.player_updates_enabled())
 	var enabled_before: bool=_state.entry_released and not blocked and not dying
 	var seconds:=float(milliseconds)/1000.0
 	next._state.physical_contacts=[]
@@ -145,6 +157,15 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 		next._pose.origin=contact.center_after;next._state.physical_contacts=contact.operations
 		if next._player.advance_recharge(milliseconds).is_empty() or next._player.advance_repair(milliseconds).is_empty():return failed(next._player.error)
 		if not next._aim.advance(next._pose,_camera.snapshot().pose,size):return failed(next._aim.error)
+		# Contact samples the preceding portal clock, after solid scenery and
+		# before weapons/radio. Opening later in this frame cannot teleport us.
+		if next._portal!=null:
+			if not next._portal.observe_contact({"player_pose":next._pose,"environment_contact_enabled":enabled_before and next._player.collision_context(next._pose).eligible,"mining_active":false}):return failed(next._portal.error)
+			var portal_contact: Dictionary=next._portal.snapshot().contact
+			if not portal_contact.is_empty() and portal_contact.pull_distance>0:
+				next._pose.origin=VoidPortal.Vectors.added(next._pose.origin,VoidPortal.Vectors.scaled(VoidPortal.Vectors.normalized(-portal_contact.player_offset),float(portal_contact.pull_distance)))
+			if next._escape==null and next._portal.transition_ready(next._player.snapshot().vitals.hull) and _context.recipe().get("portal_policy",{}).get("unauthorized_exit")=="destroy_player":
+				if next._player.normal_hit(2147483647).is_empty():return failed(next._player.error)
 	if dying:
 		var tail: Dictionary=next._death.advance(milliseconds,next._pose,next._random,false,next._pose,moving)
 		if tail.is_empty():return failed(next._death.error)
@@ -169,6 +190,18 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if sequence.is_empty():return failed(next._encounter.error)
 	next._encounter=sequence.encounter;next._player=sequence.player;next._random=sequence.random_state
 	var cue: Dictionary=sequence.sequence
+	if next._escape!=null and not dying:
+		var rng:=Random.new()
+		if not rng.restore(next._random) or not next._escape.advance(milliseconds,next._encounter.radio_owner(),next._player,next._portal,next._pose,_world.environment_owner().object_state(0).pose,rng,_camera):return failed(rng.error+next._escape.error)
+		var escape: Dictionary=next._escape.snapshot()
+		next._random=escape.random_state
+		for action in escape.frame.portal_actions:
+			var accepted: bool=next._portal.open_at(action.position,action.hold_open) if action.action=="open_at" else next._portal.begin_closing(action.age_ms)
+			if not accepted:return failed(next._portal.error)
+		if not next._player.set_permissions(next._player.snapshot().active,escape.player_damage_allowed):return failed(next._player.error)
+		if not escape.frame.input_actions.is_empty():
+			next._pilot.angular_units=Vector2.ZERO;next._pilot.lateral_units_per_millisecond=0.0
+			next._primary_released=false;next._secondary_released=false
 	if cue.frame.cancel_actions:
 		next._pilot.angular_units=Vector2.ZERO;next._pilot.lateral_units_per_millisecond=0.0
 		next._primary_released=false;next._secondary_released=false
@@ -179,7 +212,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 		if next._state.entry_elapsed_ms>=int(_context.recipe().entry_release_ms) and not dying and not next.campaign_dialogue_visible():
 			next._state.entry_released=true
 			if not next._player.set_permissions(true,cue.player_damage_allowed) or not next._runner.open_briefing():return failed(next._player.error+next._runner.error)
-	var enabled: bool=next._state.entry_released and not cue.input_blocked and not dying and not next.campaign_dialogue_visible()
+	var enabled: bool=next._state.entry_released and not cue.input_blocked and (next._escape==null or not next._escape.snapshot().input_blocked) and not dying and not next.campaign_dialogue_visible()
 	if not next._pilot.sample_commands(commands if enabled else Vector2.ZERO,seconds) or not next._engine_audio.sample_commands(commands if enabled else Vector2.ZERO):return failed(next._pilot.error+next._engine_audio.error)
 	var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,primary_fire and next._primary_released,enabled,next._random)
 	if fired.is_empty():return failed(next._encounter.error)
@@ -201,6 +234,9 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 			if not next._state.entry_released:shot.merge({"mode":"fixed_eye","eye":_world.camera_initialization().snapshot().fixed_shot.eye},true)
 			if not next._camera.update(milliseconds,shot,scene):return failed(next._camera.error)
 	elif not next._death.sample_camera(next._camera.snapshot().pose,false):return failed(next._death.error)
+	# Both native hooks sampled the same preceding camera, not each other's
+	# already advanced follow pose. The active sequence owns the final view.
+	if next._escape!=null and not dying:next._camera=next._escape.camera_owner()
 	if not next._aim.sample_feedback(next._encounter.primary_npc_contact(),milliseconds,enabled):return failed(next._aim.error)
 	if not next._engine_audio.follow_player(next._pose,int(next._player.snapshot().vitals.hull),milliseconds):return failed(next._engine_audio.error)
 	if not dying and not next._engines.set_engine_enabled((throttle if enabled else _throttle)>0):return failed(next._engines.error)
@@ -215,9 +251,13 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if immediate!=null and not next._detail.refresh(positions,immediate,1.0):return failed(next._detail.error)
 	if not next._scenery.update(milliseconds,_reference,1.0,immediate,next._random):return failed(next._scenery.error)
 	next._random=next._scenery.random_state();next._reference=next._camera.snapshot().eye;next._viewport=size
+	if next._portal!=null:
+		var rng:=Random.new()
+		if not rng.restore(next._random) or not next._portal.advance(milliseconds,next._camera.snapshot().pose,rng):return failed(rng.error+next._portal.error)
+		next._random=rng.snapshot()
 	# The shared HUD pass follows actor motion with the committed camera. Hidden
 	# cinematic frames keep acquisition history without advancing selection.
-	var hud_on: bool=next._state.entry_released and bool(next._encounter.frame_context().sequence.hud_visible) and not dying
+	var hud_on: bool=next._state.entry_released and bool(next._encounter.frame_context().sequence.hud_visible) and (next._escape==null or next._escape.snapshot().hud_visible) and not dying
 	var aim_state: Dictionary=next._aim.snapshot();var camera_pose: Transform3D=next._camera.snapshot().pose
 	if not next._scanner.advance_mission(next._encounter.combat_owner(),next._pose,camera_pose,aim_state,milliseconds,hud_on):return failed(next._scanner.error)
 	var scan: Dictionary=next._scanner.snapshot()
@@ -229,6 +269,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	next._state.elapsed_ms+=milliseconds;next._state.revision+=1
 	next._state.input={"enabled":enabled,"commands":commands if enabled else Vector2.ZERO,"primary_held":primary_fire and enabled and next._primary_released,"secondary_requested":secondary_fire and enabled and next._secondary_released,"throttle":next._throttle}
 	if not next._observe_progress():return failed(next.error)
+	if next._escape!=null and not next._escape.snapshot().boundary.is_empty():next._state.boundary=next._escape.snapshot().boundary
 	return next
 
 ## Baseline plus native cumulative deltas, never last-frame totals plus totals.
@@ -265,6 +306,10 @@ func navigate(action: String) -> RefCounted:
 				var continuation: RefCounted=next._runner.continue_in_world(_bindings,_library,_equipment.snapshot().loadout)
 				if continuation==null:return failed(next._runner.error)
 				next._runner=continuation
+				if continuation.context_owner().recipe().sequences.has("freighter_escape"):
+					var escape:=Escape.new()
+					if not escape.configure(_bindings,_context,_encounter.sequence_hook_owner(),next._portal,_camera,true):return failed(escape.error)
+					next._escape=escape
 			else:next._state.boundary="mission_continuation_required"
 		elif outcome.kind=="failure":
 			next._state.boundary="campaign_failure_transition_required";next._game_over=outcome.transition
@@ -281,7 +326,7 @@ func skip_entry(paused:=false) -> RefCounted:
 	return result
 
 func select_secondary(item_id: int,paused:=false) -> RefCounted:
-	if paused or _state.is_empty() or not _state.boundary.is_empty() or campaign_dialogue_visible() or not _state.entry_released or _encounter.frame_context().sequence.input_blocked:return failed("Secondary selection requires player control")
+	if paused or _state.is_empty() or not _state.boundary.is_empty() or frame_context().encounter.sequence.input_blocked:return failed("Secondary selection requires player control")
 	var selected: RefCounted=_encounter.select_secondary(item_id)
 	if selected==null:return failed(_encounter.error)
 	var next:=fork_for_frame();next._encounter=selected;return next
@@ -309,9 +354,13 @@ func frame_context() -> Dictionary:
 	state.player_pose=_pose;state.player=_player.snapshot();state.throttle=_throttle
 	state.pilot={"angular_units":_pilot.angular_units,"lateral_rate":_pilot.lateral_units_per_millisecond}
 	state.encounter=_encounter.frame_context()
+	state.escape=escape_state()
+	if _escape!=null:
+		for key in ["input_blocked","hud_visible","player_damage_allowed","player_visible","player_particles_visible","cinematic"]:state.encounter.sequence[key]=state.escape[key]
 	state.encounter.sequence.input_blocked=not _state.entry_released or state.encounter.sequence.input_blocked or campaign_dialogue_visible() or _death.snapshot().phase!="ready"
 	state.encounter.sequence.hud_visible=_state.entry_released and state.encounter.sequence.hud_visible and not campaign_dialogue_visible() and _death.snapshot().phase=="ready"
-	state.encounter.view={"camera":_camera.snapshot(),"player_aim":_aim.snapshot(),"player_render_suppressed":false,"camera_mode":0,"orbit_input":{"dragging":false}}
+	state.encounter.view={"camera":_camera.snapshot(),"player_aim":_aim.snapshot(),"player_render_suppressed":not state.encounter.sequence.get("player_visible",true),"camera_mode":0,"orbit_input":{"dragging":false}}
+	if _portal!=null:state.portal=_portal.portal_snapshot();state.portal_contact=_portal.snapshot()
 	state.encounter.sequence.radio=state.encounter.radio;state.encounter.sequence.radio_events=state.encounter.radio_events
 	state.runner=_runner.snapshot();state.dialogue=dialogue();state.career=_career.snapshot();state.progress=_progress.duplicate(true)
 	state.random_state=_random.duplicate(true)
@@ -341,7 +390,7 @@ func audio_state() -> Dictionary:
 	combat.player_engine=_engine_audio.snapshot()
 	return {"revision":_state.revision,"elapsed_ms":_state.elapsed_ms,"combat":combat,"camera_view":_camera.snapshot(),
 		"radio":state.radio,"radio_events":state.radio_events,"death_events":_death.snapshot().events,
-		"sequence_revision":state.sequence.revision,"sequence_audio":state.sequence.frame.audio,"dialogue":dialogue(),
+		"sequence_revision":state.sequence.revision,"sequence_audio":state.sequence.frame.audio,"escape_audio":[] if _escape==null else _escape.snapshot().frame.audio,"dialogue":dialogue(),
 		"scanner_events":_scanner.snapshot().events,"flight_music":{"operations":[]}}
 func effects_state() -> Dictionary:
 	if _state.is_empty():return {}
@@ -357,8 +406,9 @@ func exhaust_state() -> Dictionary:
 	return state
 func environment_state() -> Dictionary:return {} if _world==null else _world.environment_owner().snapshot()
 func void_environment_owner() -> RefCounted:return null if _world==null else _world.environment_owner()
-## The retained arrival world has no enabled exit. Its successor owns opening it.
-func portal_owner() -> RefCounted:return null
+## The original portal is retained from entry; its successor enables it.
+func portal_owner() -> RefCounted:return null if _portal==null else _portal.fork_for_frame()
+func escape_state() -> Dictionary:return {} if _escape==null else _escape.snapshot()
 func scanner_owner() -> RefCounted:return null if _scanner==null else _scanner.fork_for_frame()
 func targeting_owner() -> RefCounted:return null if _targeting==null else _targeting.fork_for_frame()
 func notices_owner() -> RefCounted:return null if _notices==null else _notices.fork_for_frame()
@@ -366,7 +416,14 @@ func damage_particles_owner() -> RefCounted:return null if _particles==null else
 ## The ambush keeps the ordinary follow camera; there is no player orbit view.
 func camera_input(_mode: Variant=null,_pointer_kind:="",_position: Variant=Vector2i.ZERO,_paused:=false) -> RefCounted:
 	return failed("This mission has no alternate camera view")
-func prepare_portal_transition() -> Dictionary:return {}
+func prepare_portal_transition() -> Dictionary:
+	if _escape==null or _state.boundary!="normal_space_return_required" or _escape.snapshot().boundary!=_state.boundary or _player.snapshot().vitals.hull<=0:return {}
+	var retained: Dictionary=_world.entry_owner().snapshot()
+	var packet: Dictionary=_context.identity()
+	packet.merge({"kind":"mission_portal_return","campaign_cursor":_state.campaign_cursor,"return_station_id":retained.return_station_id,"return_system_id":retained.return_system_id,
+		"source_before":retained.source_before.duplicate(true),"source_revision":_state.revision,"source_elapsed_ms":_state.elapsed_ms,
+		"player":_player.snapshot(),"player_pose":_pose,"progress":_progress.duplicate(true),"request":_escape.snapshot().frame.return_request.duplicate(true)},true)
+	return packet
 func detail_state() -> Dictionary:return {} if _detail==null else _detail.snapshot()
 func presentation_identity() -> RefCounted:return _presentation_identity
 func mission_context_owner() -> RefCounted:return _context
@@ -391,6 +448,7 @@ func fork_for_frame() -> RefCounted:
 	copy._throttle=_throttle;copy._max_ms=_max_ms;copy._game_over=_game_over.duplicate(true)
 	copy._primary_released=_primary_released;copy._secondary_released=_secondary_released
 	copy._presentation_identity=_presentation_identity
+	copy._portal=null if _portal==null else _portal.fork_for_frame();copy._escape=null if _escape==null else _escape.fork_for_frame()
 	if _state.is_empty():return copy
 	copy._runner=_runner.fork();copy._encounter=_encounter.fork_for_frame();copy._player=_player.fork_for_frame();copy._scenery=_scenery.fork_for_frame()
 	copy._equipment=_equipment;copy._career=_career
