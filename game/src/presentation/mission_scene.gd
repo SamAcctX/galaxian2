@@ -23,6 +23,7 @@ const OrdinaryScene=preload("res://src/presentation/first_flight_scene.gd")
 const SequenceEffects=preload("res://src/presentation/mission_sequence_effects.gd")
 const SequenceAudio=preload("res://src/presentation/mission_sequence_audio.gd")
 const AudioResources=preload("res://src/content/audio_resources.gd")
+const OverlayLayer=preload("res://src/presentation/scene_overlay.gd")
 var error:=""
 var environment: Node3D
 var encounter: Node3D
@@ -35,6 +36,7 @@ var hud: Control
 var feedback: Control
 var secondary_panel: Control
 var overlay: Control
+var overlay_layer: CanvasLayer
 var sequence_effects: Node3D
 var sequence_audio: Node3D
 var sequence_fade: ColorRect
@@ -95,7 +97,9 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cata
 			sequence_audio=SequenceAudio.new();add_child(sequence_audio)
 			if not resources_audio.configure(library,bindings,int(context.identity().campaign_cursor)) or not sequence_audio.configure(context,resources_audio,bindings,sound_ids):return failed_build(resources_audio.error+sequence_audio.error)
 		_sequence_context=context
-	overlay=Control.new();overlay.mouse_filter=Control.MOUSE_FILTER_IGNORE;add_child(overlay);overlay.size=Vector2(viewport)
+	overlay_layer=OverlayLayer.new();add_child(overlay_layer)
+	if not overlay_layer.error.is_empty():return failed_build(overlay_layer.error)
+	overlay=Control.new();overlay.mouse_filter=Control.MOUSE_FILTER_IGNORE;overlay_layer.add_child(overlay);overlay.size=Vector2(viewport)
 	hud=Hud.new();feedback=Feedback.new();secondary_panel=SecondaryPanel.new()
 	for node in [hud,secondary_panel,feedback]:
 		overlay.add_child(node);node.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -207,6 +211,7 @@ func failed_display(message: String) -> bool:
 func failed_build(message: String) -> bool:
 	for child in get_children():child.free()
 	environment=null;encounter=null;player=null;scenery=null;exhaust=null;effects=null;camera=null;hud=null;feedback=null;secondary_panel=null;overlay=null
+	overlay_layer=null
 	sequence_effects=null;sequence_audio=null;sequence_fade=null;_sequence_context=null;_escape_sound_revision=-1;_sequence_sound_revision=-1
 	_identity=null;_projection=null;_revision=-1;_elapsed_ms=-1
 	return reject(message)
