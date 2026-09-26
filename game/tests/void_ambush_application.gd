@@ -4,6 +4,7 @@ extends "res://tests/nehma_onward_application.gd"
 ## Only application input drives the journey; no detached combat stimuli.
 const ExpeditionPilot=preload("res://tests/fixtures/expedition_flight_pilot.gd")
 const CombatPilot=preload("res://tests/fixtures/bakka_flight_pilot.gd")
+const EscapePilot=preload("res://tests/fixtures/void_escape_pilot.gd")
 var combat_pilot:=CombatPilot.new()
 var pending_emp:=false
 var void_route_history:={}
@@ -89,7 +90,7 @@ func acknowledge_page(label: String) -> bool:
 func fly_mission42() -> bool:
 	var world: RefCounted=app.session.flight_owner().initialized_world_owner()
 	var last_phase:=-1;var captured:={};var killed:=false
-	combat_pilot=CombatPilot.new()
+	var pilot:=EscapePilot.new()
 	for tick in 8000:
 		var state: Dictionary=app.session.snapshot()
 		if app.session.status=="normal_space_return_required":
@@ -116,18 +117,11 @@ func fly_mission42() -> bool:
 				captured.explosion=true;await capture_free_application("void42-mothership-explosion")
 			if escape.fade_requested and escape.fade.elapsed_ms>=2000 and not captured.has("fade"):
 				captured.fade=true;await capture_free_application("void42-escape-fade")
-		var commands:=Vector2.ZERO;var fire:=false;var throttle:=0.0
-		if app.session.can_control():
-			if not killed:
-				var input: Dictionary=combat_pilot.controls(state,tick,[0])
-				commands=input.commands;fire=input.fire;throttle=input.throttle
-			else:
-				commands=ExpeditionPilot.steering_toward(state.player_pose,state.portal.position)
-				throttle=1.0 if phase>=6 else 0.3
+		var input: Dictionary=pilot.controls(state,tick,app.session.can_control())
 		if tick%100==0:
-			print("M42 tick ",tick," phase ",phase," freighter ",freighter.vitals.hull," portal distance ",state.player_pose.origin.distance_to(state.portal.position)," radio ",state.encounter.radio.get("started",[]))
+			print("M42 tick ",tick," phase ",phase," freighter ",freighter.vitals.hull," target distance ",state.player_pose.origin.distance_to(freighter.position)," portal distance ",state.player_pose.origin.distance_to(state.portal.position)," pools ",state.player.vitals," input ",input," radio ",state.encounter.radio.get("started",[]))
 			await process_frame
-		if failures or not flight_step(commands,fire,throttle):return false
+		if failures or not EscapePilot.advance(flight_step,input):return false
 	check(false,"Mission 42 never completed its portal escape")
 	return false
 
