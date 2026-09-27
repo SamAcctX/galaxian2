@@ -2728,6 +2728,14 @@
     "game/tests/material_fog.gd",
     "game/tests/material_fog.gd.uid",
     "game/tests/interior_rendering.gd",
-    "game/tests/interior_rendering.gd.uid"
+    "game/tests/interior_rendering.gd.uid",
+    "game/src/presentation/space_fog_field.gd",
+    "game/src/presentation/space_fog_field.gd.uid",
+    "game/src/presentation/space_fog_geometry.gd",
+    "game/src/presentation/space_fog_geometry.gd.uid",
+    "game/src/presentation/space_fog.gdshader",
+    "game/src/presentation/space_fog.gdshader.uid",
+    "game/tests/space_fog.gd",
+    "game/tests/space_fog.gd.uid"
   ]
 }

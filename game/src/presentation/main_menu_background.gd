@@ -86,6 +86,8 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,chosen_s
 		descriptors=[{"mesh_id":17852,"texture_id":10088,"mode":0},{"mesh_id":17810,"texture_id":10075,"mode":2}]
 	if not prepared_sky._build_layers(library,visuals,bindings,{"station_id":station_id,"system_id":system_id},"high",descriptors,rotation,star_variant):
 		var message: String=prepared_sky.error;scene.free();return reject(message)
+	if not prepared_sky.enable_space_fog(library,visuals,bindings,catalogues):
+		var message: String=prepared_sky.error;scene.free();return reject(message)
 	var population:=Population.new()
 	if not population.configure(bindings):scene.free();return reject(population.error)
 	var count_state: Dictionary=population.for_station(station_id)

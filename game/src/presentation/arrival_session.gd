@@ -59,6 +59,7 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted, p
 	if not geometry.build_arrival(library,visuals,bindings,cat,packet.player_cache,"high",true):return fail(geometry.error)
 	sky=Background.new();add_child(sky)
 	if not sky.build_arrival(library,visuals,bindings,cat,packet.player_cache):return fail(sky.error)
+	if not sky.enable_space_fog(library,visuals,bindings,cat):return fail(sky.error)
 	planets=Planets.new();add_child(planets)
 	if not planets.build_arrival(library,visuals,bindings,cat,packet.player_cache):return fail(planets.error)
 	sun=Sun.new();add_child(sun)
@@ -112,13 +113,15 @@ func present(advance_sun:=false) -> bool:
 	if not geometry.apply_arrival(state.staging,state.actor,state.ship_detail):return reject(geometry.error)
 	var message: String=_projection.apply(camera,state.camera.view)
 	if not message.is_empty():return reject(message)
-	if not sky.apply_view(state.camera.view):return reject(sky.error)
+	var sky_frame: Dictionary=sky.prepare_view(state.camera.view)
+	if sky_frame.is_empty():return reject(sky.error)
 	if not planets.apply_view(state.camera.view):return reject(planets.error)
 	if not scenery.apply_state(state.scenery) or not scenery.apply_detail(state.scenery.detail):return reject(scenery.error)
 	sun.commit_frame(sun_frame)
 	fade_overlay.color=Color(0,0,0,float(state.fade.alpha_byte)/255.0)
 	fade_overlay.visible=state.fade.alpha_byte>0
 	# Playback starts only after every prospective scene resource accepts the frame.
+	sky.commit_view(sky_frame)
 	audio.commit_frame(audio_frame)
 	return true
 

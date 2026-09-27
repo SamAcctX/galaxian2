@@ -41,6 +41,7 @@ func configure(library: RefCounted,visuals: RefCounted,bindings: RefCounted,cata
 	sky=Background.new();planets=Planets.new();sun=Sun.new();lights=Lighting.new();station=Station.new();portal=Portal.new()
 	for node in [sky,planets,sun,lights,station,portal]:add_child(node)
 	if not sky.build_station(library,visuals,bindings,catalogues,int(entry.station_id)):return fail(sky.error)
+	if not sky.enable_space_fog(library,visuals,bindings,catalogues):return fail(sky.error)
 	if not planets.build_station(library,visuals,bindings,catalogues,int(entry.station_id),int(entry.campaign_cursor)):return fail(planets.error)
 	if not sun.build_station(library,visuals,bindings,catalogues,int(entry.station_id),int(entry.campaign_cursor)):return fail(sun.error)
 	if not lights.build_station(bindings,catalogues,int(entry.station_id)):return fail(lights.error)
@@ -65,7 +66,9 @@ func present(world: RefCounted,viewport: Vector2i) -> bool:
 	if not station.apply_state(world.station_owner().snapshot()):return reject(station.error)
 	var prepared: Dictionary=sun.prepare_frame(state.camera,viewport,_intensity)
 	if prepared.has("error"):return reject(sun.error)
-	if not sky.apply_view(state.camera) or not planets.apply_view(state.camera):return reject(sky.error+planets.error)
+	var sky_frame: Dictionary=sky.prepare_view(state.camera)
+	if sky_frame.is_empty() or not planets.apply_view(state.camera):return reject(sky.error+planets.error)
+	sky.commit_view(sky_frame)
 	sun.commit_frame(prepared)
 	portal.commit_state(portal_frame);_portal_state=state.portal.duplicate(true)
 	_intensity=prepared.next_intensity;_revision=state.revision;_elapsed_ms=state.elapsed_ms;_camera=state.camera.duplicate(true);_viewport=viewport

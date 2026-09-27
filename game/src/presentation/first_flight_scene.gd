@@ -122,6 +122,7 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 	else:
 		sky=Background.new();add_child(sky)
 		if not sky.build_departure(library,visuals,bindings,catalogues,state.player_cache,"high",flight.equipment_owner(),flight.mission_context_owner()):return fail(sky.error)
+		if not sky.enable_space_fog(library,visuals,bindings,catalogues):return fail(sky.error)
 		planets=Planets.new();add_child(planets)
 		if not planets.build_departure(library,visuals,bindings,catalogues,state.player_cache,"high",flight.equipment_owner(),flight.mission_context_owner()):return fail(planets.error)
 		sun=Sun.new();add_child(sun)
@@ -306,7 +307,8 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if station!=null and not station.apply_state(state.station_exterior):return reject(station.error)
 	var message: String=_projection.apply(camera,state.camera_view)
 	if not message.is_empty():return reject(message)
-	if not sky.apply_view(state.camera_view):return reject(sky.error)
+	var sky_frame: Dictionary=sky.prepare_view(state.camera_view)
+	if sky_frame.is_empty():return reject(sky.error)
 	if planets!=null and not planets.apply_view(state.camera_view):return reject(planets.error)
 	if not scenery.apply_state(state.scenery) or not scenery.apply_detail(state.scenery.detail):return reject(scenery.error)
 	if state.scenery.has("bodies") and not scenery.apply_activity(state.scenery.bodies):return reject(scenery.error)
@@ -356,6 +358,7 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if state.has("convoy_capture"):
 		if not state.convoy_capture.ship_visible:geometry.player.visible=false
 		if state.convoy_capture.input_blocked and geometry.player.engine_glow!=null:geometry.player.engine_glow.visible=false
+	sky.commit_view(sky_frame)
 	return true
 
 func _scan_sample(state: Dictionary) -> Dictionary:

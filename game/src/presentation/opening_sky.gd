@@ -1,6 +1,6 @@
 extends Node3D
-## Source background layers for the verified opening and rescue. No suns,
-## planets, stations, flares, asteroid belts or location lighting are implied.
+## Source background layers, with opt-in nearby clouds for exterior views.
+## Suns, planets, stations, flares and location lighting have separate owners.
 const Definitions = preload("res://src/content/opening_sky_definitions.gd")
 const Numbers = preload("res://src/content/opening_definitions.gd")
 const Loadout = preload("res://src/simulation/opening_loadout.gd")
@@ -9,6 +9,7 @@ const Orientation = preload("res://src/simulation/scenery_orientation.gd")
 const AEM = preload("res://src/content/aem.gd")
 const Model = preload("res://src/presentation/imported_model.gd")
 const Geometry = preload("res://src/presentation/opening_geometry.gd")
+const SpaceFog = preload("res://src/presentation/space_fog_geometry.gd")
 const STAR_SHADER = preload("res://src/presentation/sky_stars.gdshader")
 const NEBULA_SHADER = preload("res://src/presentation/sky_nebula.gdshader")
 const STORED_STAR_SHADER = preload("res://src/presentation/sky_stored_stars.gdshader")
@@ -16,10 +17,23 @@ const STORED_NEBULA_SHADER = preload("res://src/presentation/sky_stored_nebula.g
 var error := ""
 var selection := {}
 var layers: Array[Node3D] = []
+var space_fog: MultiMeshInstance3D
 var _orientation := Basis.IDENTITY
 var _initial_descriptors:=[]
 var _escape_descriptor:={}
 var _stored_channels:=false
+
+func enable_space_fog(library: RefCounted,visuals: RefCounted,bindings: RefCounted,catalogues: RefCounted) -> bool:
+	if selection.is_empty() or space_fog!=null or catalogues==null or bindings==null or catalogues.content_id!=selection.base_content_id:
+		error="Prepare one matching exterior before its space clouds";return false
+	if bindings.base_content_id!=selection.base_content_id or bindings.binding_id!=selection.binding_id:
+		error="Space clouds belong to another background identity";return false
+	var clouds:=SpaceFog.new()
+	var sky_index:=int(catalogues.tables.systems[int(selection.system_id)].sky_index)
+	if not clouds.build(library,visuals,bindings,sky_index,int(selection.station_id)):
+		error=clouds.error;clouds.free();return false
+	clouds.name="SpaceClouds";add_child(clouds);space_fog=clouds
+	error="";return true
 
 func set_stored_channel_composition(enabled: bool) -> bool:
 	# This is an explicit presentation choice. Existing flight views keep their
@@ -176,28 +190,43 @@ func _build_layers(library: RefCounted,visuals: RefCounted,bindings: RefCounted,
 	return true
 
 func apply_view(view: Dictionary, escape: Dictionary = {}) -> bool:
+	var prepared:=prepare_view(view,escape)
+	if prepared.is_empty():return false
+	commit_view(prepared)
+	return true
+
+func prepare_view(view: Dictionary, escape: Dictionary = {}) -> Dictionary:
 	error=""
 	if selection.is_empty() or not Geometry.valid_pose(view.get("pose")):
 		error="Opening sky requires a valid current camera view"
-		return false
+		return {}
 	var relocated:=false
 	if not _escape_descriptor.is_empty():
 		if escape.get("base_content_id")!=selection.base_content_id or escape.get("binding_id")!=selection.binding_id or not Numbers.integer(escape.get("phase"),4,16):
-			error="Escape sky frame belongs to another or invalid opening";return false
+			error="Escape sky frame belongs to another or invalid opening";return {}
 		relocated=int(escape.phase)>=10
 	elif not escape.is_empty():
-		error="This sky has no prepared escape resources";return false
+		error="This sky has no prepared escape resources";return {}
+	var clouds: RefCounted
+	if space_fog!=null:
+		clouds=space_fog.prepare_view(view.pose)
+		if clouds==null:error=space_fog.error;return {}
+	return {"pose":view.pose,"relocated":relocated,"clouds":clouds}
+
+func commit_view(prepared: Dictionary) -> void:
 	# Keep bounds near the viewer. Shader projection excludes this translation.
-	global_transform=Transform3D(_orientation,view.pose.origin)
+	global_transform=Transform3D(_orientation,prepared.pose.origin)
+	var relocated: bool=prepared.relocated
 	if not _escape_descriptor.is_empty():
 		layers[1].visible=not relocated;layers[2].visible=relocated
 		selection.layers=[_initial_descriptors[0].duplicate(),(_escape_descriptor if relocated else _initial_descriptors[1]).duplicate()]
-	return true
+	if space_fog!=null:space_fog.commit_view(prepared.clouds)
 
 func clear() -> void:
 	for child in get_children(): child.free()
 	layers.clear();selection.clear();_initial_descriptors=[];_escape_descriptor={};_orientation=Basis.IDENTITY;transform=Transform3D.IDENTITY;error=""
 	_stored_channels=false
+	space_fog=null
 
 func reject(message: String) -> bool:
 	clear();error=message

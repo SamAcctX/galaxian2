@@ -105,6 +105,7 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted, n
 		overlay.add_child(fade_overlay);fade_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	sky=Background.new();add_child(sky)
 	if not sky.build(library,visuals,bindings,catalogues,0,3,false,"high",escape_sequence):return fail(sky.error)
+	if not sky.enable_space_fog(library,visuals,bindings,catalogues):return fail(sky.error)
 	if not bindings.opening_sky.get("planet_resources",{}).is_empty():
 		planets=Planets.new();add_child(planets)
 		if not planets.build(library,visuals,bindings,catalogues,"high",escape_sequence):return fail(planets.error)
@@ -357,7 +358,8 @@ func present(advance_sun := false) -> bool:
 		if sun_frame.has("error"):return reject(sun.error)
 	var message: String = _projection.apply(camera,view)
 	if not message.is_empty():return reject(message)
-	if not sky.apply_view(view,state.escape if escape_sequence else {}):return reject(sky.error)
+	var sky_frame: Dictionary=sky.prepare_view(view,state.escape if escape_sequence else {})
+	if sky_frame.is_empty():return reject(sky.error)
 	if planets!=null and not planets.apply_view(view,state.escape if escape_sequence else {}):return reject(planets.error)
 	var scenery_state: Dictionary = _scenery.read_snapshot()
 	if not scenery.apply_state(scenery_state) or not scenery.apply_detail(scenery_state.detail):return reject(scenery.error)
@@ -376,6 +378,7 @@ func present(advance_sun := false) -> bool:
 		var alpha: int=_fade.snapshot().alpha_byte
 		fade_overlay.color=Color(0,0,0,float(alpha)/255.0);fade_overlay.visible=alpha>0
 	# Playback is the last operation: failed staging/presentation emits no audio.
+	sky.commit_view(sky_frame)
 	if audio!=null:audio.commit_frame(audio_frame)
 	return true
 
