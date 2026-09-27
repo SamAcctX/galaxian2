@@ -24,6 +24,7 @@ const Construction=preload("res://src/simulation/opening_npc_construction.gd")
 const ContractLife=preload("res://src/content/contract_ship_lifecycle_definitions.gd")
 const Convoy=preload("res://src/content/convoy_world_definitions.gd")
 const ContractResults=preload("res://src/content/contract_flight_result_definitions.gd")
+const ResultPoll=preload("res://src/simulation/mission_result_poll.gd")
 const Junk=preload("res://src/content/contract_junk_definitions.gd")
 const DebrisDeath=preload("res://src/simulation/debris_destruction.gd")
 const LaunchClock=preload("res://src/simulation/traffic_launch_clock.gd")
@@ -1030,20 +1031,15 @@ func _poll_flight_result(radio_active: bool,periodic_poll_allowed: bool) -> Dict
 	var rules: Dictionary=_bindings.early_contracts.flight_results
 	var status:=defeat_status()
 	if status.is_empty():return fail("Flight result lost its native retirement predicates")
-	var kind: int=12 if _bakka else int(_rules.mission.kind)
-	var mode:=0
-	if periodic_poll_allowed and status.satisfied and _contract_result.clock_ms>=int(rules.success_poll_milliseconds) and not radio_active:
-		mode=int(rules.success_result_mode)
-	elif status.get("failed",false):mode=int(rules.failure_result_mode)
-	elif periodic_poll_allowed and kind==7 and _contract_result.clock_ms>=int(rules.success_poll_milliseconds) and _contract_result.elapsed_ms>int(_rules.lifecycle.deadline_milliseconds):
-		mode=int(rules.failure_result_mode)
-	if mode!=0:
+	if _rules.lifecycle.has("deadline_milliseconds"):
+		status.periodic_failure=_contract_result.elapsed_ms>int(_rules.lifecycle.deadline_milliseconds)
+	# Legacy flight callers own periodic scheduling; the runner also samples
+	# its cadence during cinematic gates. Both use the same result precedence.
+	var next:=ResultPoll.evaluate(rules,_contract_result,status,radio_active,periodic_poll_allowed,false)
+	if next.mode!=0:
 		# B'akka shares the source result poll, not the lounge-contract result UI.
-		if _contract and not _combat.open_contract_result(_bindings,mode):return fail(_combat.error)
-		_contract_result.mode=mode
-		if kind==7 and mode==int(rules.failure_result_mode):_contract_result.clock_ms=0
-	elif periodic_poll_allowed and _contract_result.clock_ms>=int(rules.success_poll_milliseconds):
-		_contract_result.clock_ms=0
+		if _contract and not _combat.open_contract_result(_bindings,next.mode):return fail(_combat.error)
+	_contract_result=next
 	return _contract_result.duplicate(true)
 
 func acknowledge_bakka_result() -> bool:

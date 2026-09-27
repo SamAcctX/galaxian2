@@ -2688,6 +2688,10 @@
     "game/tests/void_ambush_application.gd.uid",
     "tests/test_registration_mesh.py",
     "game/src/presentation/sky_stored_sampling.gdshaderinc",
-    "game/src/presentation/sky_stored_sampling.gdshaderinc.uid"
+    "game/src/presentation/sky_stored_sampling.gdshaderinc.uid",
+    "game/src/simulation/mission_result_poll.gd",
+    "game/src/simulation/mission_result_poll.gd.uid",
+    "game/tests/lounge_reading.gd",
+    "game/tests/lounge_reading.gd.uid"
   ]
 }

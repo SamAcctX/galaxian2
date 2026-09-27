@@ -4,6 +4,7 @@ extends RefCounted
 const Context=preload("res://src/simulation/mission_context.gd")
 const Condition=preload("res://src/simulation/mission_result_condition.gd")
 const Conversation=preload("res://src/simulation/mission_conversation.gd")
+const ResultPoll=preload("res://src/simulation/mission_result_poll.gd")
 var error:=""
 var _context: RefCounted
 var _result:={}
@@ -93,14 +94,7 @@ func poll(actors: Array,radio_active: bool,periodic_poll_allowed: bool,player_al
 	if _state.retired or _state.mode!=0 or not player_alive:return snapshot()
 	var status:=observe(actors,sequences,world_facts)
 	if status.is_empty():return fail("Mission result lost its actor or sequence observation")
-	var policy: Dictionary=_result.policy
-	var interval_elapsed: bool=_state.clock_ms>=int(policy.success_poll_milliseconds)
-	var eligible: bool=periodic_poll_allowed and interval_elapsed
-	if eligible and not radio_active and status.satisfied:_state.mode=int(policy.success_result_mode)
-	elif status.failed:_state.mode=int(policy.failure_result_mode)
-	# A cinematic can gate success, but the independent result-check cadence
-	# still runs. Do not bank an overdue success check for the release frame.
-	elif interval_elapsed:_state.clock_ms=0
+	_state=ResultPoll.evaluate(_result.policy,_state,status,radio_active,periodic_poll_allowed)
 	return snapshot()
 
 func acknowledge() -> bool:

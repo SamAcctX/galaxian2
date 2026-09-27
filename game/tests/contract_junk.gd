@@ -33,6 +33,10 @@ func after_encounter_population(bindings: RefCounted,cat: RefCounted,owner: RefC
 	if not resources.configure_contract(_life_library,bindings,owner) or not controller.set_destruction(bindings,resources):check(false,resources.error+controller.error);return
 	var before: Dictionary=controller.snapshot()
 	check(before.combat.actors.size() in [17,19] and before.combat.actors.all(func(actor):return actor.vitals.hull==1 and actor.half_extent==1000 and actor.actor_mode==0 and actor.active and actor.hostile),"Junk borrowed a ship hull, activity state or collision bounds")
+	var smoke: RefCounted=load("res://src/simulation/opening_damage_particles.gd").new()
+	if not smoke.configure_local_traffic(bindings,before.combat,17):check(false,"Accepted Junk flight could not prepare its particle managers: "+smoke.error);return
+	check(smoke.snapshot().owners.is_empty(),"Stationary debris received small-ship smoke or fire")
+	check(smoke.advance(Transform3D.IDENTITY,100) and smoke.snapshot().owners.is_empty(),"Empty Junk smoke/fire managers could not advance")
 	check(before.flight.all(func(value):return value.is_empty()) and before.guidance.all(func(value):return value.is_empty()),"Stationary Junk borrowed ship movement or guidance")
 	var weapons:=ShipWeapons.new()
 	if not weapons.configure_contract(bindings,cat,owner):check(false,weapons.error);return

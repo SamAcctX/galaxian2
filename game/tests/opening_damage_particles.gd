@@ -109,6 +109,12 @@ func verify_clock_and_reset(bindings: RefCounted,combat: Dictionary) -> void:
 func verify_atomicity(bindings: RefCounted,combat: Dictionary) -> void:
 	var group:=Particles.new();check(group.configure(bindings,combat,42),group.error)
 	var before: Dictionary=group.snapshot();var copied: Dictionary=group.snapshot()
+	for mode in [-1,10]:
+		var invalid:=combat.duplicate(true);invalid.actors[0].actor_mode=mode
+		check(not group.finish_npc_pass(invalid,invalid,events(),0,1) and group.snapshot()==before,"Invalid actor mode changed particle owners")
+	var premature:=combat.duplicate(true);premature.actors[0].actor_mode=0
+	var fresh:=Particles.new()
+	check(not fresh.configure(bindings,premature,42),"The opening accepted an actor before its factory's held mode")
 	copied.owners.player.smoke.slots[0].appearance.age_ms=15
 	check(group.snapshot()==before,"Snapshot shared live particle slots")
 	check(not group.advance(Transform3D.IDENTITY,1001) and group.snapshot()==before,"Invalid time partially advanced emitters")

@@ -105,6 +105,7 @@ func present(state: Dictionary) -> bool:
 	next.cargo=state.get("cargo",{}).duplicate(true)
 	var population: Dictionary=career.get("population",{})
 	var client: Dictionary=career.get("accepted_contact",{}).get("portrait",{})
+	var refresh:=not visible
 	if client!=_client_definition:
 		var image: Texture2D
 		if not client.is_empty():
@@ -112,7 +113,7 @@ func present(state: Dictionary) -> bool:
 			var composite: Dictionary=composer.compose_definition(_library,_bindings,_visuals,0,"large",client)
 			if composite.is_empty():return reject(composer.error)
 			image=ImageTexture.create_from_image(composite.image)
-		_client_definition=client.duplicate(true);_client_portrait=image
+		_client_definition=client.duplicate(true);_client_portrait=image;refresh=true
 	if _population!=population:
 		var portraits:={};var composer:=Portraits.new()
 		for contact in population.get("contacts",[]):
@@ -122,9 +123,14 @@ func present(state: Dictionary) -> bool:
 		_population=population.duplicate(true);_portraits=portraits;_selected=-1;_confirming=false
 		_contact_ids=[]
 		for contact in population.get("contacts",[]):_contact_ids.append(int(contact.contact_id))
-	if _state!=next:_state=next;_confirming=false
-	_previews=state.get("contract_previews",{}).duplicate(true)
-	visible=true;_refresh();_layout()
+		refresh=true
+	var previews: Dictionary=state.get("contract_previews",{})
+	if _state!=next or _previews!=previews:
+		_state=next;_previews=previews.duplicate(true);_confirming=false;refresh=true
+	visible=true
+	# Station frames continue while the player reads or confirms an offer.
+	# Rebuild text and controls only when their displayed state changes.
+	if refresh:_refresh();_layout()
 	return true
 
 func select_contact(id: int) -> void:
@@ -219,7 +225,9 @@ func handle_event(event: InputEvent) -> bool:
 		if event.button_index in [JOY_BUTTON_DPAD_LEFT,JOY_BUTTON_DPAD_UP]:move=-1
 		if event.button_index in [JOY_BUTTON_DPAD_RIGHT,JOY_BUTTON_DPAD_DOWN]:move=1
 	if move!=0 and _state.pending_result.is_empty() and not _contact_ids.is_empty():
-		select_contact(_contact_ids[posmod(_contact_ids.find(_selected)+move,_contact_ids.size())]);return true
+		var current:=_contact_ids.find(_selected)
+		var next: int=(0 if move>0 else _contact_ids.size()-1) if current<0 else posmod(current+move,_contact_ids.size())
+		select_contact(_contact_ids[next]);return true
 	return false
 
 func set_active(value: bool) -> void:
