@@ -61,8 +61,8 @@ func configure_local_travel(bindings: RefCounted, catalogues: RefCounted, equipm
 func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,construction: RefCounted,previous_cache: Variant=null) -> bool:
 	clear()
 	if not construction is Construction:return reject("Contract player requires its accepted generated encounter")
-	var data:=ContractLife.population(bindings,construction.snapshot())
-	if data.is_empty():data=Junk.population(bindings,construction.snapshot())
+	var data:=ContractLife.population(bindings,construction.snapshot(),construction.mission_context_owner())
+	if data.is_empty():data=Junk.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	if data.is_empty() or not equipment is StationEquipment or equipment.snapshot().loadout.station_id!=int(data.station_id):return reject("Contract player belongs to another equipped station")
 	if not _configure(bindings,catalogues,int(data.campaign_cursor),previous_cache,equipment,data):return false
 	_state.contract_encounter=construction.snapshot().contract_encounter.duplicate(true)

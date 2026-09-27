@@ -49,6 +49,27 @@ func verify() -> void:
 			verify_runner(context)
 			verify_poll_cadence(context)
 	verify_pilot_delta()
+	verify_contest_conditions(bindings)
+
+func verify_contest_conditions(bindings: RefCounted) -> void:
+	var conditions=preload("res://src/simulation/mission_result_condition.gd")
+	var rules: Dictionary=bindings.early_contracts.ship_lifecycle.objectives
+	var success:={"kind":20,"rules":rules};var failure:={"kind":21,"rules":rules}
+	var actors:=[{"actor_kind":3,"actor_mode":0},{"actor_kind":8,"actor_mode":4},{"actor_kind":8,"actor_mode":4}]
+	for score in [[2,0,true],[1,1,false],[0,2,false]]:
+		var observation:={"actors":actors,"world":{"counters":{"world_player_kills":score[0],"world_other_kills":score[1]}}}
+		check(conditions.evaluate(success,observation).satisfied==score[2] and conditions.evaluate(failure,observation).satisfied!=score[2],"The retired contest pirates lost strict player credit or tie failure")
+		actors[2].actor_mode=3
+		check(not conditions.evaluate(success,observation).satisfied and not conditions.evaluate(failure,observation).satisfied,"An unfinished pirate breakup opened the contest result")
+		actors[2].actor_mode=4
+		actors[0].actor_mode=4
+		check(conditions.evaluate(success,observation).satisfied==score[2],"The rival's retirement changed pirate credit")
+	actors[2].actor_kind=3
+	var foreign:={"actors":actors,"world":{"counters":{"world_player_kills":2,"world_other_kills":0}}}
+	check(not conditions.evaluate(success,foreign).satisfied and not conditions.evaluate(failure,foreign).satisfied,"An unrelated faction satisfied the contest")
+	check(conditions.evaluate(success,{"actors":actors}).is_empty(),"Missing kill attribution was treated as a contest loss")
+	var deadline:={"kind":"elapsed","after_ms":121000}
+	check(not conditions.evaluate(deadline,{"elapsed_ms":121000}).satisfied and conditions.evaluate(deadline,{"elapsed_ms":121001}).satisfied,"Timed failure lost its strict boundary")
 
 func observations(retired: Array) -> Array:
 	var result:=[]

@@ -86,6 +86,15 @@ func verify_population_vectors(bindings: RefCounted,cat: RefCounted,equipment: R
 		var random:=Random.new();random.seed_from(int(vector.seed))
 		var state:=owner.generate(random.snapshot())
 		if state.is_empty():check(false,owner.error);return
+		var capability: RefCounted=owner.mission_context_owner()
+		check(capability.matches_loadout(equipment.snapshot().loadout) and capability.matches_contract_population(bindings,state),"The generated job lost its admitted inventory or accepted contact")
+		var changed:=state.duplicate(true)
+		changed.contract_encounter.context.mission.reward+=1
+		check(not capability.matches_contract_population(bindings,changed),"A changed job reward reused the original admission")
+		changed=state.duplicate(true);changed.actors.append({})
+		check(not capability.matches_contract_population(bindings,changed),"An extra actor reused another cast's admission")
+		var recipe: Dictionary=capability.recipe();recipe.mission.reward+=1;recipe.cast.actor_count+=1
+		check(capability.matches_contract_population(bindings,state),"Editing a detached recipe changed the admitted job")
 		check(state.campaign_cursor==13 and state.station_id==equipment.snapshot().loadout.station_id and state.actors.size()==vector.actors.size(),"The encounter changed its context or source population")
 		check(state.random_state.state==int(vector.random_state),"Encounter changed the independent final RNG for "+str([vector.kind,vector.difficulty,vector.game,vector.seed]))
 		var layout: Dictionary=state.contract_encounter

@@ -86,8 +86,8 @@ func read_cargo_model(library: RefCounted, bindings: RefCounted, data: Dictionar
 func configure_contract(library: RefCounted,bindings: RefCounted,construction: RefCounted) -> bool:
 	clear()
 	if not construction is Construction:return reject("Contract destruction resources require their accepted construction")
-	var data:=ContractLife.population(bindings,construction.snapshot())
-	if data.is_empty():data=Junk.population(bindings,construction.snapshot())
+	var data:=ContractLife.population(bindings,construction.snapshot(),construction.mission_context_owner())
+	if data.is_empty():data=Junk.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	if data.is_empty():return reject("Unsupported contract cargo resources")
 	var prepared: RefCounted=get_script().new()
 	var debris: bool=int(data.mission.kind)==7

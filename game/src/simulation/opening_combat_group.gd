@@ -448,8 +448,8 @@ func apply_convoy_capture(owner: RefCounted) -> bool:
 func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,equipment: RefCounted) -> bool:
 	clear()
 	if not construction is NPCConstruction:return reject("Contract combat requires its accepted generated population")
-	var data:=ContractLife.population(bindings,construction.snapshot())
-	if data.is_empty():data=Junk.population(bindings,construction.snapshot())
+	var data:=ContractLife.population(bindings,construction.snapshot(),construction.mission_context_owner())
+	if data.is_empty():data=Junk.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	if data.is_empty():return reject("Unsupported contract combat lifecycle")
 	var reaction: RefCounted
 	var debris: bool=int(data.mission.kind)==7

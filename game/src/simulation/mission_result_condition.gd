@@ -9,6 +9,9 @@ static func evaluate(condition: Dictionary,observation: Dictionary) -> Dictionar
 	if condition.get("kind") is String:
 		match condition.kind:
 			"never":return {"satisfied":false}
+			"elapsed":
+				if not observation.get("elapsed_ms") is int:return {}
+				return {"satisfied":observation.elapsed_ms>int(condition.after_ms)}
 			"world_elapsed":
 				var world: Dictionary=observation.get("world",{})
 				if not world.get("features",{}).get(condition.get("feature",""),false):return {"satisfied":false}
@@ -20,6 +23,16 @@ static func evaluate(condition: Dictionary,observation: Dictionary) -> Dictionar
 			return Retirement.range_status(actors,0,int(condition.get("end_actor",-1)),4)
 		18:
 			return Retirement.range_status(actors,int(condition.get("first_actor",-1)),int(condition.get("end_actor",-1)),4)
+		20,21:
+			var totals: Dictionary=observation.get("world",{}).get("counters",{})
+			if not totals.get("world_player_kills") is int or not totals.get("world_other_kills") is int:return {}
+			var rules: Dictionary=condition.get("rules",{})
+			var retirement:=Retirement.range_status(actors,int(rules.get("challenge_first_actor",-1)),actors.size(),int(rules.get("destroyed_mode",-1)))
+			if retirement.is_empty():return {}
+			for actor in actors:
+				if not actor.get("actor_kind") is int:return {}
+			var result:=preload("res://src/simulation/pirate_defeat_condition.gd").evaluate(actors,totals,rules,true)
+			return {"satisfied":result.satisfied if int(condition.kind)==20 else result.failed,"retired":result.defeated,"required":result.required}
 		25:
 			# The recipe names the native sequence adapter. This is deliberately
 			# not a universal interpretation of the original script field.

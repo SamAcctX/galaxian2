@@ -3,7 +3,41 @@ extends RefCounted
 ## are stored here; the existing native factory still constructs each cast.
 const Convoy=preload("res://src/content/dekato_convoy_definitions.gd")
 const Story=preload("res://src/content/full_hold_story_definitions.gd")
+const Vitals=preload("res://src/simulation/combat_vitals.gd")
 const Ambush=preload("res://src/content/selected41_population_definitions.gd")
+
+## The entry owner has already admitted the retained side job. Cast counts and
+## result conditions share this recipe; downstream owners do not infer them.
+static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dictionary) -> Dictionary:
+	var rules: Dictionary=bindings.early_contracts.encounter_construction
+	var mission: Dictionary=context.mission
+	var scaled:=Vitals.single(float(mission.difficulty)/float(rules.difficulty_divisor))
+	var count:=0
+	match int(mission.kind):
+		4:
+			var base:=int(Vitals.single(scaled*float(rules.pirate.count_multiplier)))+int(rules.pirate.count_offset)
+			count=int(Vitals.single(base+Vitals.single(base*Vitals.single(float(context.difficulty)+float(rules.pirate.game_difficulty_offset)))))
+		7:count=int(Vitals.single(scaled*float(rules.junk.debris_count_multiplier)))+int(rules.junk.debris_count_offset)
+		12:
+			var base:=int(Vitals.single(scaled*float(rules.challenge.count_multiplier)))
+			count=base+(int(rules.challenge.count_odd_offset) if (base+int(rules.challenge.count_odd_offset))%2 else int(rules.challenge.count_even_offset))+1
+	var success:={"kind":18,"first_actor":0,"end_actor":count}
+	var failure:={"kind":"never"}
+	var periodic:={"kind":"never"}
+	match int(mission.kind):
+		0:success={"kind":"never"}
+		7:
+			success={"kind":7,"end_actor":count}
+			periodic={"kind":"elapsed","after_ms":int(bindings.early_contracts.junk_lifecycle.deadline_milliseconds)}
+		12:
+			var objectives: Dictionary=bindings.early_contracts.ship_lifecycle.objectives.duplicate(true)
+			success={"kind":int(objectives.challenge_success_kind),"rules":objectives}
+			failure={"kind":int(objectives.challenge_failure_kind),"rules":objectives}
+	return {"track":"side_job","cursor":context.campaign_cursor,"station_id":context.station_id,"system_id":loadout.system_id,
+		"mission":mission.duplicate(true),"entry":"ordinary_flight","world":{"station":true,"portal":true,"asteroid_field":true},
+		"cast":{"kind":"contract","actor_count":count,"operations":rules.duplicate(true)},"briefing":[],"radio":[],"sequences":[],
+		"result":{"success":success,"failure":failure,"periodic_failure":periodic,"actor_count":count,
+			"retire_failure":true,"freeze_clock_on_result":true,"reset_while_blocked":false,"policy":bindings.early_contracts.flight_results.duplicate(true)}}
 
 static func select(bindings: RefCounted,cursor: Variant) -> Dictionary:
 	if bindings==null or not cursor is int:return {}

@@ -181,15 +181,15 @@ func replace_with_selected40_patrol() -> bool:
 	_candidates=[];_index=int(rules.route_initial_index);_loop=bool(rules.route_loop);_authored=true
 	return true
 
-func configure_contract_generated(bindings: RefCounted,actor_id: int,cursor:=13) -> bool:
+func configure_contract_generated(bindings: RefCounted,actor_id: int,context: RefCounted) -> bool:
 	clear()
 	if bindings==null or not Contracts.encounter_parameters(bindings.early_contracts):return reject("Contract routes require their source encounter declarations")
-	# The early supported difficulty range creates at most four small ships.
-	if actor_id<0 or actor_id>3 or not load("res://src/content/convoy_transit_definitions.gd").supports(bindings.mido_travel,cursor):return reject("Unknown early contract route owner")
+	if not is_instance_of(context,load("res://src/simulation/mission_context.gd")) or context.recipe().get("cast",{}).get("kind")!="contract":return reject("Contract routes require the admitted cast recipe")
+	if actor_id<0 or actor_id>=int(context.recipe().cast.actor_count):return reject("Unknown generated route owner")
 	var data: Dictionary=bindings.opening_actors.get("npc_initialization",{}).get("routes",{})
 	if not Definitions.parameters(data):return reject("Generated NPC routes are unavailable in this pack")
 	_configure_generated(bindings,actor_id,data)
-	_identity.campaign_cursor=cursor
+	_identity.campaign_cursor=context.identity().campaign_cursor
 	return true
 
 func configure_convoy_generated(bindings: RefCounted,actor_id: int) -> bool:

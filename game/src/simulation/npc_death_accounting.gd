@@ -101,8 +101,8 @@ func register_relaunch(actor: Dictionary) -> bool:
 
 func configure_contract(bindings: RefCounted,construction: RefCounted) -> bool:
 	if not construction is Construction:return reject("Contract death accounting requires its accepted population")
-	var data:=ContractLife.population(bindings,construction.snapshot())
-	if data.is_empty():data=Junk.population(bindings,construction.snapshot())
+	var data:=ContractLife.population(bindings,construction.snapshot(),construction.mission_context_owner())
+	if data.is_empty():data=Junk.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	if data.is_empty():return reject("Unsupported contract death accounting")
 	if not configure(bindings):return false
 	_training=data;_population=int(data.actor_count);_identity.campaign_cursor=int(data.campaign_cursor)

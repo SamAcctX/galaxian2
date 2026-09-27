@@ -235,32 +235,15 @@ func configure_void_factory(bindings: RefCounted,catalogues: RefCounted,player_s
 
 func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,contracts: RefCounted,player_position: Vector3,field_center: Vector3) -> bool:
 	clear()
-	if bindings==null or catalogues==null or not ContractDefinitions.encounter_parameters(bindings.early_contracts) or not contracts is Contracts or not equipment is Equipment:return reject("Contract construction requires its native accepted contract, inventory and declarations")
-	var owned: Dictionary=equipment.snapshot()
-	if not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false) or not equipment.cargo_cache_valid() or not equipment.requirements().satisfied:return reject("Contract construction requires the retained released inventory")
-	var seed: Dictionary=owned.loadout
-	var context: Dictionary=contracts.flight_context(int(seed.station_id))
-	if context.is_empty():return reject(contracts.error)
-	for key in ["base_content_id","binding_id"]:
-		if seed[key]!=bindings.get(key) or context[key]!=seed[key]:return reject("Contract construction belongs to another content identity")
-	var rules: Dictionary=bindings.early_contracts.encounter_construction
-	if catalogues.content_id!=bindings.base_content_id or seed.system_id!=int(rules.system_id) or not Transit.supports(bindings.mido_travel,context.campaign_cursor):return reject("Unsupported contract location or campaign context")
+	var capability: RefCounted=load("res://src/simulation/mission_context.gd").new()
+	if not capability.admit_contract(bindings,catalogues,contracts,equipment):return reject(capability.error)
 	if not player_position.is_finite() or not field_center.is_finite():return reject("Contract construction requires finite player and asteroid-field positions")
-	if not rules.supported_game_difficulties.has(context.difficulty):return reject("This contract population does not support the selected difficulty")
-	var mission: Dictionary=context.mission
-	if mission.is_empty():return reject("This location requires the ordinary ambient population")
-	if not rules.kinds.any(func(value):return int(value)==int(mission.kind)) or not rules.mission_difficulties.any(func(value):return int(value)==int(mission.difficulty)) or mission.story:return reject("Unsupported active contract definition")
-	var count:=0
-	var scaled:=Vitals.single(float(mission.difficulty)/float(rules.difficulty_divisor))
-	match int(mission.kind):
-		4:
-			var base:=int(Vitals.single(scaled*float(rules.pirate.count_multiplier)))+int(rules.pirate.count_offset)
-			count=int(Vitals.single(base+Vitals.single(base*Vitals.single(context.difficulty+float(rules.pirate.game_difficulty_offset)))))
-		7:count=int(Vitals.single(scaled*float(rules.junk.debris_count_multiplier)))+int(rules.junk.debris_count_offset)
-		12:
-			var base:=int(Vitals.single(scaled*float(rules.challenge.count_multiplier)))
-			count=base+(int(rules.challenge.count_odd_offset) if (base+int(rules.challenge.count_odd_offset))%2 else int(rules.challenge.count_even_offset))+1
-			if context.client_faction<0 or context.client_faction>3 or context.contact_name.is_empty():return reject("The challenge requires its original generated rival")
+	var seed: Dictionary=equipment.snapshot().loadout
+	var context: Dictionary=capability.contract_context()
+	var recipe: Dictionary=capability.recipe()
+	var rules: Dictionary=recipe.cast.operations
+	var mission: Dictionary=recipe.mission
+	var count: int=recipe.cast.actor_count
 	var possible_hulls:=[]
 	if int(mission.kind) in [4,12]:
 		for hull in int(rules.hulls.draw_bound):
@@ -275,6 +258,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 			if bindings.resolve(int(resource_id),"mesh").is_empty():return reject(bindings.error)
 	var definition: Dictionary=rules.duplicate(true)
 	definition.merge({"context":context,"actor_count":count,"player_position":player_position,"field_center":field_center})
+	_mission_context=capability
 	return _configure(bindings,catalogues,seed,{},{},{},{},definition)
 
 func configure_convoy(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary) -> bool:
@@ -506,7 +490,7 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, 
 		elif not alioth.is_empty():ready=route.configure_alioth_generated(bindings,id)
 		elif not convoy.is_empty():ready=route.configure_convoy_generated(bindings,id)
 		elif contract.get("bakka",false):ready=route.configure_bakka_generated(bindings,id)
-		elif not contract.is_empty():ready=route.configure_contract_generated(bindings,id,int(contract.context.campaign_cursor))
+		elif not contract.is_empty():ready=route.configure_contract_generated(bindings,id,_mission_context)
 		elif traffic.has("free_context"):ready=route.configure_free_generated(bindings,id,traffic.free_context)
 		elif traffic.has("void_context"):ready=route.configure_void_generated(bindings,id,traffic.void_context)
 		elif traffic.get("ambient",false):ready=route.configure_ambient_generated(bindings,id,int(traffic.campaign_cursor))
@@ -1149,6 +1133,8 @@ func arrival_motion_construction() -> Dictionary:
 	var result:=_identity.duplicate()
 	for key in ["actor_id","body_pose","statistics_pose","model_local_pose"]:result[key]=_actors[0][key]
 	return result
+
+func mission_context_owner() -> RefCounted:return _mission_context
 
 func snapshot() -> Dictionary:
 	if _identity.is_empty(): return {}

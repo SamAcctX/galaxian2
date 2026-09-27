@@ -75,16 +75,18 @@ func dialogue() -> Dictionary:
 
 func sample_clock(world_ms: int,poll_ms: int) -> bool:
 	if _context==null or world_ms<0 or poll_ms<0 or world_ms>2147483647 or poll_ms>2147483647 or world_ms<int(_state.elapsed_ms):return reject("Mission clock must advance monotonically within its supported range")
+	if _state.mode!=0 and _result.get("freeze_clock_on_result",false):return reject("Acknowledge the result before advancing its clock")
 	_state.elapsed_ms=world_ms;_state.clock_ms=poll_ms
 	return true
 
 func observe(actors: Array,sequences: Dictionary={},world_facts: Dictionary={}) -> Dictionary:
 	if _context==null or actors.size()!=int(_result.actor_count):return {}
-	var observation:={"actors":actors,"sequences":sequences,"world":world_facts}
+	var observation:={"actors":actors,"sequences":sequences,"world":world_facts,"elapsed_ms":int(_state.elapsed_ms)}
 	var success:=Condition.evaluate(_result.success,observation)
 	var failure:=Condition.evaluate(_result.failure,observation)
-	if success.is_empty() or failure.is_empty():return {}
-	return {"satisfied":success.satisfied,"failed":failure.satisfied,
+	var periodic:=Condition.evaluate(_result.get("periodic_failure",{"kind":"never"}),observation)
+	if success.is_empty() or failure.is_empty() or periodic.is_empty():return {}
+	return {"satisfied":success.satisfied,"failed":failure.satisfied,"periodic_failure":periodic.satisfied,
 		"defeated":success.get("retired",0),"required":success.get("required",0),
 		"convoy_destroyed":failure.get("retired",0),"convoy_count":failure.get("required",0)}
 
@@ -94,12 +96,13 @@ func poll(actors: Array,radio_active: bool,periodic_poll_allowed: bool,player_al
 	if _state.retired or _state.mode!=0 or not player_alive:return snapshot()
 	var status:=observe(actors,sequences,world_facts)
 	if status.is_empty():return fail("Mission result lost its actor or sequence observation")
-	_state=ResultPoll.evaluate(_result.policy,_state,status,radio_active,periodic_poll_allowed)
+	_state=ResultPoll.evaluate(_result.policy,_state,status,radio_active,periodic_poll_allowed,_result.get("reset_while_blocked",true))
 	return snapshot()
 
 func acknowledge() -> bool:
 	error=""
-	if _context==null or _state.retired or _state.mode!=int(_result.policy.success_result_mode):return reject("No successful mission result awaits acknowledgement")
+	if _context==null or _state.retired or _state.mode==0:return reject("No mission result awaits acknowledgement")
+	if _state.mode!=int(_result.policy.success_result_mode) and not (_result.get("retire_failure",false) and _state.mode==int(_result.policy.failure_result_mode)):return reject("This failed mission cannot resume after acknowledgement")
 	_state.mode=0;_state.retired=true
 	return true
 

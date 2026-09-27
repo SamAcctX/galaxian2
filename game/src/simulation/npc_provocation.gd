@@ -70,7 +70,7 @@ func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction:
 func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,equipment: RefCounted) -> bool:
 	error="";_rules={};_state={}
 	if not construction is Construction:return reject("Contract reactions require their generated accepted population")
-	var data:=ContractLife.population(bindings,construction.snapshot())
+	var data:=ContractLife.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	if data.is_empty():return reject("Unsupported contract reaction population")
 	if not _configure_population(bindings,catalogues,data,equipment,data.reputation_state):return false
 	_set_factions(data,int(data.mission.kind))

@@ -359,8 +359,8 @@ func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction:
 func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,equipment: RefCounted) -> bool:
 	clear()
 	if not construction is Construction:return reject("Contract control requires its accepted generated population")
-	var rules:=ContractLife.population(bindings,construction.snapshot())
-	if rules.is_empty():rules=Junk.population(bindings,construction.snapshot())
+	var rules:=ContractLife.population(bindings,construction.snapshot(),construction.mission_context_owner())
+	if rules.is_empty():rules=Junk.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	if rules.is_empty():return reject("Unsupported contract control lifecycle")
 	var combat:=Combat.new()
 	if not combat.configure_contract(bindings,catalogues,construction,equipment):return reject(combat.error)
@@ -378,7 +378,8 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	_combat=combat;_guidance=guidance;_flight=flight;_random=construction.snapshot().random_state.duplicate(true)
 	_initial_actors=construction.snapshot().actors.duplicate(true)
 	_bindings=bindings;_construction=construction;_max_ms=Frames.simulation_limit(bindings)
-	if ContractResults.available(bindings):_contract_result={"clock_ms":0,"elapsed_ms":0,"mode":0,"retired":false}
+	_mission_runner=load("res://src/simulation/mission_runner.gd").new()
+	if not _mission_runner.configure(construction.mission_context_owner()):return reject(_mission_runner.error)
 	return true
 
 func _set_contract_destruction(bindings: RefCounted,resources: RefCounted) -> bool:
@@ -813,7 +814,7 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 		if combat!=null and combat.has_local_reactions()!=_combat.has_local_reactions():return fail("Selected40 actor update lost its consequence owners")
 	# Story dialogue still visits world owners at zero time. Positive flight
 	# and lounge settlement keep their existing acknowledgement barrier.
-	if _mission_runner!=null and _mission_runner.snapshot().mode!=0 and delta_ms!=0:return fail("Acknowledge the flight result before advancing")
+	if _mission_runner!=null and _mission_runner.snapshot().mode!=0 and (_contract or delta_ms!=0):return fail("Acknowledge the flight result before advancing")
 	if not _contract_result.is_empty() and _contract_result.mode!=0 and (not _bakka or delta_ms!=0):return fail("Acknowledge the flight result before advancing")
 	if _identity.is_empty() or (combat!=null and not combat is Combat):return fail("Configure combat-training control before advancing")
 	if (_ambient or _contract or _convoy or _alioth or _kappa or _bakka or _story) and _accounting==null:return fail("Actor control requires its prepared destruction and accounting")
@@ -916,6 +917,10 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 			if moved.is_empty():return fail(staged._flight[id].error)
 		if not decision.get("traffic_departure",false) and not decision.get("traffic_waiting",false) and not staged._combat.set_pose(id,staged._flight[id].systems_statistics_pose() if systems_supported else moved.pose,moved.root_pose):return fail(staged._combat.error)
 		staged._random=decision.random_state.duplicate(true);decisions.append(decision)
+	if staged._mission_runner!=null and not _scene_clocked:
+		var clock: Dictionary=staged._mission_runner.snapshot()
+		if not staged._mission_runner.sample_clock(int(clock.elapsed_ms)+int(delta_ms),int(clock.clock_ms)+int(delta_ms)):return fail(staged._mission_runner.error)
+	_mission_runner=staged._mission_runner
 	_combat=staged._combat;_guidance=staged._guidance;_flight=staged._flight;_random=staged._random
 	_destruction=staged._destruction;_accounting=staged._accounting;_started=true
 	_launch_pending=staged._launch_pending
@@ -975,11 +980,12 @@ func _advance_freighter(id: int,delta_ms: int) -> Dictionary:
 
 func defeat_status() -> Dictionary:
 	if _selected40_world!=null:return {}
-	if _mission_runner!=null:return _mission_runner.observe(_combat.actor_snapshots(),{},_mission_runner.context_owner().world_observation(_mission_runner.snapshot().elapsed_ms))
+	if _mission_runner!=null:
+		if _contract and (_accounting==null or _mission_runner.snapshot().retired):return {}
+		return _mission_runner.observe(_combat.actor_snapshots(),{},_result_world())
 	if _bakka:
 		return preload("res://src/simulation/pirate_defeat_condition.gd").evaluate(_combat.snapshot().actors,_accounting.snapshot().counter_deltas,_bindings.mido_travel.bakka_contest.objectives,true)
 	if _convoy or _alioth or _kappa or _story:return {}
-	if _contract:return _contract_defeat_status()
 	if _death_rules.is_empty() or _local_patrol:return {}
 	var rule: Dictionary=_death_rules.defeat_condition
 	var count:=0
@@ -988,15 +994,10 @@ func defeat_status() -> Dictionary:
 		if actors[id].actor_mode==int(rule.actor_mode):count+=1
 	return {"kind":int(rule.kind),"defeated":count,"required":int(rule.end)-int(rule.begin),"satisfied":count==int(rule.end)-int(rule.begin)}
 
-func _contract_defeat_status() -> Dictionary:
-	if _accounting==null or _contract_result.get("retired",false):return {}
-	if int(_rules.mission.kind)==7:
-		var actors: Array=_combat.snapshot().actors
-		var count:=actors.filter(func(actor):return actor.actor_mode==int(_rules.lifecycle.destroyed_mode)).size()
-		return {"kind":7,"defeated":count,"required":actors.size(),"satisfied":count==actors.size(),"failed":false}
-	return preload("res://src/simulation/pirate_defeat_condition.gd").evaluate(
-		_combat.snapshot().actors,_accounting.snapshot().counter_deltas,
-		_rules.lifecycle.objectives,int(_rules.mission.kind)==12)
+func _result_world() -> Dictionary:
+	var facts: Dictionary=_mission_runner.context_owner().world_observation(_mission_runner.snapshot().elapsed_ms)
+	if _accounting!=null:facts.counters=_accounting.snapshot().counter_deltas
+	return facts
 
 func sample_scene_clock(world_ms: int,poll_ms: int) -> bool:
 	error=""
@@ -1012,8 +1013,15 @@ func sample_scene_clock(world_ms: int,poll_ms: int) -> bool:
 
 func poll_contract_result(radio_active: bool,periodic_poll_allowed: bool=true) -> Dictionary:
 	error=""
-	if not _contract:return fail("Contract flight results are unavailable")
-	return _poll_flight_result(radio_active,periodic_poll_allowed)
+	if not _contract or _mission_runner==null or _accounting==null:return fail("Contract flight results are unavailable")
+	var current: Dictionary=_mission_runner.snapshot()
+	if current.retired or current.mode!=0:return current
+	var staged: RefCounted=_mission_runner.fork()
+	var result: Dictionary=staged.poll(_combat.actor_snapshots(),radio_active,periodic_poll_allowed,true,{},_result_world())
+	if result.is_empty():return fail(staged.error)
+	if result.mode!=0 and not _combat.open_contract_result(_bindings,int(result.mode)):return fail(_combat.error)
+	_mission_runner=staged
+	return result
 
 func poll_bakka_result(radio_active: bool,periodic_poll_allowed: bool=true) -> Dictionary:
 	error=""
@@ -1023,7 +1031,7 @@ func poll_bakka_result(radio_active: bool,periodic_poll_allowed: bool=true) -> D
 func poll_mission_result(radio_active: bool,periodic_poll_allowed: bool=true) -> Dictionary:
 	error=""
 	if _mission_runner==null:return fail("This encounter has no mission runner")
-	return _mission_runner.poll(_combat.actor_snapshots(),radio_active,periodic_poll_allowed,true,{},_mission_runner.context_owner().world_observation(_mission_runner.snapshot().elapsed_ms))
+	return _mission_runner.poll(_combat.actor_snapshots(),radio_active,periodic_poll_allowed,true,{},_result_world())
 
 func _poll_flight_result(radio_active: bool,periodic_poll_allowed: bool) -> Dictionary:
 	if _contract_result.is_empty() or _accounting==null:return fail("Flight results are unavailable")
@@ -1031,14 +1039,9 @@ func _poll_flight_result(radio_active: bool,periodic_poll_allowed: bool) -> Dict
 	var rules: Dictionary=_bindings.early_contracts.flight_results
 	var status:=defeat_status()
 	if status.is_empty():return fail("Flight result lost its native retirement predicates")
-	if _rules.lifecycle.has("deadline_milliseconds"):
-		status.periodic_failure=_contract_result.elapsed_ms>int(_rules.lifecycle.deadline_milliseconds)
-	# Legacy flight callers own periodic scheduling; the runner also samples
-	# its cadence during cinematic gates. Both use the same result precedence.
+	# The remaining legacy story adapter shares the polling policy. Side jobs
+	# use the runner's recipe conditions and retain only their settlement owner.
 	var next:=ResultPoll.evaluate(rules,_contract_result,status,radio_active,periodic_poll_allowed,false)
-	if next.mode!=0:
-		# B'akka shares the source result poll, not the lounge-contract result UI.
-		if _contract and not _combat.open_contract_result(_bindings,next.mode):return fail(_combat.error)
 	_contract_result=next
 	return _contract_result.duplicate(true)
 
@@ -1056,9 +1059,11 @@ func acknowledge_mission_result() -> bool:
 
 func acknowledge_contract_result() -> bool:
 	error=""
-	if not _contract or _contract_result.is_empty() or _contract_result.mode==0 or _contract_result.retired:return reject("No contract flight result awaits acknowledgement")
+	if not _contract or _mission_runner==null:return reject("No contract flight result awaits acknowledgement")
+	var staged: RefCounted=_mission_runner.fork()
+	if not staged.acknowledge():return reject(staged.error)
 	if not _combat.retire_contract_result():return reject(_combat.error)
-	_contract_result.mode=0;_contract_result.retired=true
+	_mission_runner=staged
 	return true
 
 func evaluate(combat: RefCounted, weapons: RefCounted, milliseconds: int, player: Dictionary, random_state: Dictionary, retained_player: RefCounted=null) -> Dictionary:
@@ -1106,7 +1111,9 @@ func kappa_context(require_fresh:=false) -> Dictionary:
 func career_snapshot() -> Dictionary:
 	if _identity.is_empty():return {}
 	var result:=_identity.duplicate()
-	if _mission_runner!=null:result.mission_result=_mission_runner.snapshot()
+	if _mission_runner!=null:
+		if _contract:result.contract_result=_mission_runner.snapshot()
+		else:result.mission_result=_mission_runner.snapshot()
 	if _selected40_world!=null:result.selected40_sequence=_selected40_sequence.duplicate()
 	result.combat=_combat.career_snapshot()
 	if _accounting!=null:result.accounting=_accounting.snapshot()
@@ -1131,7 +1138,9 @@ func shares_combat(owner: RefCounted) -> bool:return owner!=null and is_same(own
 func snapshot(combat_view: Dictionary={}) -> Dictionary:
 	if _identity.is_empty():return {}
 	var result:=_identity.duplicate()
-	if _mission_runner!=null:result.mission_result=_mission_runner.snapshot()
+	if _mission_runner!=null:
+		if _contract:result.contract_result=_mission_runner.snapshot()
+		else:result.mission_result=_mission_runner.snapshot()
 	result.merge({"combat":_combat.snapshot() if combat_view.is_empty() else combat_view,"guidance":_guidance.map(func(owner):return {} if owner==null else owner.snapshot()),
 		"flight":_flight.map(func(owner):return {} if owner==null else owner.snapshot()),"random_state":_random.duplicate(true)})
 	if _local_patrol:result.support_state="ordinary_combat" if _combat.has_local_reactions() else "patrol_only"

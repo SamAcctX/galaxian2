@@ -119,9 +119,9 @@ func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction:
 func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted) -> bool:
 	clear()
 	if not _matching_content(bindings,catalogues) or not construction is Construction:return reject("Contract weapons require their generated accepted population")
-	var data:=ContractCombat.population(bindings,construction.snapshot())
+	var data:=ContractCombat.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	if data.is_empty():
-		data=Junk.population(bindings,construction.snapshot())
+		data=Junk.population(bindings,construction.snapshot(),construction.mission_context_owner())
 		if not data.is_empty():
 			data.target_memberships=[]
 			for id in int(data.actor_count):

@@ -138,6 +138,7 @@ func after_lifecycle_outcome(bindings: RefCounted,contracts: RefCounted,original
 	if success and kind==4:standing.axes[1]=maxi(-100,standing.axes[1]-5)
 	check(pending.reputation==standing and frozen.combat.current_reputation==standing,"Result bonus missed the client faction or applied to Challenge")
 	check(controller.advance(1,target).is_empty() and controller.snapshot()==frozen,"A modal result allowed flight motion")
+	check(not controller.sample_scene_clock(int(frozen.contract_result.elapsed_ms)+1,0) and controller.snapshot()==frozen,"An open result allowed its retained clock to change")
 	check(session.acknowledge_delivery_result(equipment)==null and not session.poll_station(equipment),"A flight result leaked into station delivery settlement")
 	check(session.acknowledge_flight_result(controller,pending.pending_result.serial+1).is_empty(),"Wrong acknowledgement serial paid a flight result")
 	check(session.acknowledge_flight_result(stale,pending.pending_result.serial).is_empty(),"An old flight paid the current result")

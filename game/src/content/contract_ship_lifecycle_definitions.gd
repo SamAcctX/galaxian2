@@ -17,12 +17,12 @@ static func available(bindings: RefCounted) -> bool:
 	return bindings!=null and parameters(bindings.early_contracts.get("ship_lifecycle")) and ShipCombat.parameters(bindings.early_contracts.get("ship_combat")) and TrainingDeath.parameters(bindings.combat_training_destruction) and Travel.parameters(bindings.mido_travel)
 
 static func supported_kinds(kinds: Array) -> bool:
-	if kinds.size() not in [2,3,4] or not kinds.all(func(value):return value is int):return false
+	if kinds.is_empty() or not kinds.all(func(value):return value is int):return false
 	if kinds.all(func(value):return value==8):return true
-	return kinds.size()==4 and kinds[0] in [0,1,2,3] and kinds.slice(1)==[8,8,8]
+	return kinds.size()>1 and kinds[0] in [0,1,2,3] and kinds.slice(1).all(func(value):return value==8)
 
 static func npc_hit(data: Dictionary,weapon: Dictionary) -> bool:
-	if data.get("campaign_cursor") not in [13,14] or not data.get("npc_weapons") is Array:return false
+	if not data.get("npc_weapons") is Array:return false
 	for row in data.npc_weapons:
 		var matches:=true
 		for key in ["item_id","category","kind","damage","nonplayer_source"]:
@@ -30,9 +30,9 @@ static func npc_hit(data: Dictionary,weapon: Dictionary) -> bool:
 		if matches:return true
 	return false
 
-static func population(bindings: RefCounted,packet: Dictionary) -> Dictionary:
+static func population(bindings: RefCounted,packet: Dictionary,capability: RefCounted=null) -> Dictionary:
 	if not available(bindings):return {}
-	var data:=ShipCombat.population(bindings,packet)
+	var data:=ShipCombat.population(bindings,packet,capability)
 	if data.is_empty() or not supported_kinds(data.actor_kinds):return {}
 	data.lifecycle=bindings.early_contracts.ship_lifecycle.duplicate(true)
 	data.reputation_state=packet.contract_encounter.context.reputation.duplicate(true)

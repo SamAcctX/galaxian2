@@ -16,7 +16,7 @@ func configure(bindings: RefCounted,resources: RefCounted,construction: RefCount
 	error="";_state={};_rules={};_max_ms=0
 	if not construction is Construction or not resources is Resources:return reject("Debris requires its prepared original cargo resources and construction")
 	var packet: Dictionary=construction.snapshot()
-	var data:=Rules.population(bindings,packet)
+	var data:=Rules.population(bindings,packet,construction.mission_context_owner())
 	var models: Dictionary=resources.snapshot()
 	if data.is_empty() or actor_id<0 or actor_id>=data.actor_count or models.get("contract_encounter")!=packet.contract_encounter:return reject("Debris resources belong to another accepted encounter")
 	for key in ["base_content_id","binding_id"]:

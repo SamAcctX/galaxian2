@@ -14,7 +14,7 @@ static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES)
 
 # Native setup helpers.
-static func population(bindings: RefCounted,packet: Dictionary) -> Dictionary:
+static func population(bindings: RefCounted,packet: Dictionary,capability: RefCounted=null) -> Dictionary:
 	if bindings==null or not parameters(bindings.early_contracts.get("ship_combat")) or not Encounters.parameters(bindings.early_contracts.get("encounter_construction")) or not ControlRules.parameters(bindings.combat_training_control):return {}
 	var source: Variant=packet.get("contract_encounter")
 	var actors: Variant=packet.get("actors")
@@ -23,18 +23,15 @@ static func population(bindings: RefCounted,packet: Dictionary) -> Dictionary:
 	var rules: Dictionary=bindings.early_contracts.ship_combat
 	for key in ["base_content_id","binding_id"]:
 		if packet.get(key)!=bindings.get(key) or context.get(key)!=bindings.get(key):return {}
-	if not Transit.supports(bindings.mido_travel,packet.get("campaign_cursor")) or context.get("campaign_cursor")!=packet.campaign_cursor or packet.get("station_id")!=context.get("station_id") or context.station_id not in [75,76,77,78,79]:return {}
-	if not context.get("rank") is int or context.rank<0 or context.rank>=bindings.opening_handoff.get("rank_thresholds",[]).size():return {}
-	if context.get("difficulty") not in [0.5,1.0] or not source.get("mission") is Dictionary or source.mission!=context.get("mission"):return {}
+	if not is_instance_of(capability,load("res://src/simulation/mission_context.gd")) or not capability.matches_contract_population(bindings,packet):return {}
 	var mission: Dictionary=source.mission
-	if mission.get("kind") not in [4,12] or mission.get("difficulty") not in [1,2] or mission.get("story")!=false or source.get("kind")!=mission.kind or source.get("actor_count")!=actors.size():return {}
-	if (mission.kind==12 and actors.size()!=4) or (mission.kind==4 and actors.size() not in [2,3,4]):return {}
+	if mission.kind not in [4,12]:return {}
 	var data:=rules.duplicate(true)
 	data.campaign_cursor=context.campaign_cursor
 	# Construction already validates the equipped ship's system against these
 	# declarations; the retained contract context identifies its station directly.
-	data.merge({"station_id":context.station_id,"system_id":int(bindings.early_contracts.encounter_construction.system_id),"rank":context.rank,"difficulty":context.difficulty,
-		"mission_kind":mission.kind,"actor_count":actors.size(),"player_ship_id":int(bindings.combat_training_weapons.player_entry.ship_id),
+	data.merge({"station_id":context.station_id,"system_id":int(capability.recipe().system_id),"rank":context.rank,"difficulty":context.difficulty,
+		"mission_kind":mission.kind,"actor_count":actors.size(),"player_ship_id":capability.ship_id(),
 		"actor_kinds":[],"hull_catalogue_ids":[],"target_memberships":[],"player_weapon_targets":[],"npc_weapons":[]})
 	for key in ["rank_base","rank_multiplier","cursor_multiplier","difficulty_offset","percentage_scale","engagement_half_extent","proximity_half_extent","target_activation_half_extent","initial_model_draw_enabled","initial_node_draw_requested","initial_engine_draw_enabled","npc_statistics_targeting_blocked","random_selection_chance","random_selection_attempts","nonplayer_selection_checks_range","completed_route_retains_position_once"]:
 		data[key]=bindings.combat_training_control[key]

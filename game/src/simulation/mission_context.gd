@@ -9,6 +9,42 @@ var _identity:={}
 var _loadout:={}
 var _normal_return: RefCounted
 var _normal_progress:={}
+var _contract_context:={}
+
+## A retained career and inventory authorize a generated side job once. Other
+## owners receive this capability with the cast, never a caller-authored recipe.
+func admit_contract(bindings: RefCounted,catalogues: RefCounted,contracts: RefCounted,equipment: RefCounted) -> bool:
+	error=""
+	if not _recipe.is_empty():return reject("A mission context is admitted only once")
+	if not is_instance_of(contracts,load("res://src/simulation/contract_session.gd")) or not is_instance_of(equipment,load("res://src/simulation/station_equipment.gd")):return reject("Contract entry requires its retained career and inventory")
+	if bindings==null or catalogues==null or catalogues.content_id!=bindings.base_content_id or not load("res://src/content/early_contract_definitions.gd").encounter_parameters(bindings.early_contracts):return reject("Contract entry requires matching original declarations")
+	var owned: Dictionary=equipment.snapshot()
+	if not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false) or not equipment.cargo_cache_valid() or not equipment.requirements().satisfied:return reject("Contract entry requires released, usable inventory")
+	var loadout: Dictionary=owned.loadout
+	var context: Dictionary=contracts.flight_context(int(loadout.station_id),bindings)
+	if context.is_empty():return reject(contracts.error)
+	for key in ["base_content_id","binding_id"]:
+		if context.get(key)!=bindings.get(key) or loadout.get(key)!=bindings.get(key):return reject("Contract entry belongs to another content source")
+	var rules: Dictionary=bindings.early_contracts.encounter_construction
+	if loadout.system_id!=int(rules.system_id) or load("res://src/content/contract_world_definitions.gd").flight(bindings,context.station_id,context.campaign_cursor).is_empty():return reject("This contract location has no complete flight recipe")
+	if not context.get("rank") is int or context.rank<0 or context.rank>=bindings.opening_handoff.rank_thresholds.size() or not rules.supported_game_difficulties.has(context.difficulty):return reject("Unsupported contract career or difficulty")
+	var mission: Dictionary=context.mission
+	if mission.is_empty() or mission.get("story")!=false or not rules.kinds.any(func(value):return int(value)==int(mission.get("kind",-1))) or not rules.mission_difficulties.any(func(value):return int(value)==int(mission.get("difficulty",-1))):return reject("This active contract has no complete cast recipe")
+	if int(mission.kind)==12 and (context.client_faction not in [0,1,2,3] or context.contact_name.is_empty()):return reject("The contest lost its generated rival")
+	if Slots.checked_slots(bindings,catalogues,loadout).is_empty():return reject("Contract entry requires valid installed equipment")
+	_recipe=Recipe.from_contract(bindings,context,loadout)
+	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":context.campaign_cursor}
+	_loadout=loadout.duplicate(true);_contract_context=context.duplicate(true)
+	return true
+
+func contract_context() -> Dictionary:return _contract_context.duplicate(true)
+
+func matches_contract_population(bindings: RefCounted,packet: Dictionary) -> bool:
+	if _contract_context.is_empty() or bindings==null:return false
+	for key in ["base_content_id","binding_id"]:
+		if _identity[key]!=bindings.get(key) or packet.get(key)!=_identity[key]:return false
+	var source: Dictionary=packet.get("contract_encounter",{})
+	return packet.get("campaign_cursor")==_recipe.cursor and packet.get("station_id")==_recipe.station_id and source.get("context")==_contract_context and source.get("mission")==_recipe.mission and source.get("kind")==_recipe.mission.kind and source.get("actor_count")==_recipe.cast.actor_count and packet.get("actors") is Array and packet.actors.size()==_recipe.cast.actor_count
 
 ## Normal space is admitted by a completed living escape, not by a cursor or
 ## a caller-supplied location. The generic mission/free-flight entries stay shut.

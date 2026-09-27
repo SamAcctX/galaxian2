@@ -47,7 +47,7 @@ func after_encounter_population(bindings: RefCounted,cat: RefCounted,owner: RefC
 		check(not ShipRules.parameters(changed) and ShipRules.weapon_for(changed,1,0.5,3,true).is_empty(),"Changed rival weapon tuning was accepted")
 		_ship_matrix_checked=true
 	var weapons:=ShipWeapons.new()
-	var data:=ShipRules.population(bindings,before)
+	var data:=ShipRules.population(bindings,before,owner.mission_context_owner())
 	if int(vector.kind) not in [4,12]:
 		var junk: bool=int(vector.kind)==7 and preload("res://src/content/contract_junk_definitions.gd").available(bindings)
 		check(data.is_empty(),"An unarmed world borrowed ship combat declarations")

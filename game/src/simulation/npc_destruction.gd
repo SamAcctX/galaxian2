@@ -105,7 +105,7 @@ func configure_contract(bindings: RefCounted,resources: RefCounted,construction:
 	clear()
 	if not construction is Construction or not resources is Resources:return reject("Contract death requires its generated population and cargo resources")
 	var packet: Dictionary=construction.snapshot()
-	var data:=ContractLife.population(bindings,packet)
+	var data:=ContractLife.population(bindings,packet,construction.mission_context_owner())
 	var id: Variant=actor.get("actor_id")
 	if data.is_empty() or not Vitals.integer(id) or id>=int(data.actor_count):return reject("Unsupported contract death actor")
 	for key in ["actor_kind","hull_catalogue_id","subtype","population_group","cargo","fragments"]:

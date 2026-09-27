@@ -567,8 +567,8 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	clear()
 	if not construction is NPCConstruction or catalogues==null:return reject("Contract ship bodies require their generated accepted population")
 	var packet: Dictionary=construction.snapshot()
-	if packet.get("contract_encounter",{}).get("kind")==7:return _configure_debris(bindings,catalogues,packet,actor_id)
-	var data:=ContractCombat.population(bindings,packet)
+	if packet.get("contract_encounter",{}).get("kind")==7:return _configure_debris(bindings,catalogues,construction,actor_id)
+	var data:=ContractCombat.population(bindings,packet,construction.mission_context_owner())
 	if data.is_empty() or catalogues.content_id!=bindings.base_content_id or not actor_id is int or actor_id<0 or actor_id>=data.actor_count:return reject("Unsupported contract ship population or identity")
 	var row: Dictionary=packet.actors[actor_id]
 	if not Flight.rigid_pose(row.get("body_pose")) or row.body_pose!=row.get("statistics_pose"):return reject("Contract ship factory poses disagree")
@@ -618,8 +618,9 @@ func configure_bakka(bindings: RefCounted,catalogues: RefCounted,construction: R
 	if rival:_state.name_text_id=int(row.name_text_id)
 	return set_pose(row.statistics_pose,row.body_pose)
 
-func _configure_debris(bindings: RefCounted,catalogues: RefCounted,packet: Dictionary,actor_id: Variant) -> bool:
-	var data:=Junk.population(bindings,packet)
+func _configure_debris(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
+	var packet: Dictionary=construction.snapshot()
+	var data:=Junk.population(bindings,packet,construction.mission_context_owner())
 	if data.is_empty() or catalogues.content_id!=bindings.base_content_id or not actor_id is int or actor_id<0 or actor_id>=data.actor_count:return reject("Unsupported contract debris population or identity")
 	var row: Dictionary=packet.actors[actor_id]
 	if row.body_pose.basis!=Basis.IDENTITY:return reject("Contract debris requires its stationary source pose")

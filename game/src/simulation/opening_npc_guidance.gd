@@ -172,7 +172,7 @@ func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction:
 func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
 	clear()
 	if not construction is NPCConstruction:return reject("Contract guidance requires its generated population")
-	var rules:=ContractCombat.population(bindings,construction.snapshot())
+	var rules:=ContractCombat.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	if rules.is_empty():return reject("Unsupported contract ship guidance")
 	var actor:=Initial.new()
 	if not actor.configure_contract(bindings,catalogues,construction,actor_id):return reject(actor.error)
@@ -180,7 +180,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	var data: Dictionary=bindings.opening_actors.npc_initialization.get("guidance",{})
 	if not Definitions.parameters(data) or not _configure_state(bindings,data,body,int(body.factory_hull)):return reject("Contract guidance lacks ordinary ship tuning")
 	_training=rules
-	if ContractLife.available(bindings):_training_death=ContractLife.population(bindings,construction.snapshot())
+	if ContractLife.available(bindings):_training_death=ContractLife.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	_identity.campaign_cursor=int(rules.campaign_cursor);_identity.rank=int(rules.rank)
 	_state.target_index=int(rules.initial_target_index);_state.desired_position=Vector3.ZERO
 	_frame_limit=Frames.simulation_limit(bindings)
