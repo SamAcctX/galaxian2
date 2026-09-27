@@ -35,5 +35,20 @@ func verify_component(world: RefCounted) -> void:
 		print("Desktop pilot sample ",index,": ",delta_us/1000,"ms throttle ",before.throttle," -> ",after.throttle," fire ",after.input.primary_held," strafe ",delivered.strafe)
 		if failures:app.free();return
 	check(parent.snapshot()==initial,"Desktop pilot mutated its retained source frame")
+	if DisplayServer.get_name()!="headless":
+		check(Input.mouse_mode==Input.MOUSE_MODE_CAPTURED,"Mouse flight did not capture the cursor")
+		app._notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_OUT)
+		app.refresh_render_mode()
+		check(Input.mouse_mode==Input.MOUSE_MODE_VISIBLE and not app._mouse_captured and app.session.is_paused(),"Unfocused flight retained or recaptured the cursor")
+		check(not app._controls.snapshot().held.fire and app._controls.snapshot().command==Vector2.ZERO,"Focus loss retained the pilot's input")
+		app._notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN)
+		check(Input.mouse_mode==Input.MOUSE_MODE_CAPTURED,"Focused flight did not restore mouse steering")
+		app.set_user_paused(true)
+		check(Input.mouse_mode==Input.MOUSE_MODE_VISIBLE,"Pause retained the cursor")
+		app.set_user_paused(false)
+		app.hide()
+		check(Input.mouse_mode==Input.MOUSE_MODE_VISIBLE,"Hidden flight retained the cursor")
+		app.show()
 	await capture(app,"mission-pilot-input")
 	app.free();await process_frame
+	check(Input.mouse_mode==Input.MOUSE_MODE_VISIBLE,"Closing flight retained the cursor")
