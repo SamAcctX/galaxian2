@@ -15,24 +15,37 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 	var scaled:=Vitals.single(float(mission.difficulty)/float(rules.difficulty_divisor))
 	var count:=0
 	var debris_count:=0
+	var placement:={"kind":"none"}
+	var rival_actor_id:=-1
+	var player_last_ids:=[]
 	var ship_state:={"mode":int(rules.pirate.mode),"active":bool(rules.pirate.active),"targeting_blocked":bool(rules.pirate.targeting_blocked)}
 	match int(mission.kind):
 		4:
 			var base:=int(Vitals.single(scaled*float(rules.pirate.count_multiplier)))+int(rules.pirate.count_offset)
 			count=int(Vitals.single(base+Vitals.single(base*Vitals.single(float(context.difficulty)+float(rules.pirate.game_difficulty_offset)))))
+			placement={"kind":"patrol","field_choice_bound":int(rules.pirate.path_choice_bound),"minimum_points":int(rules.pirate.path_count_offset),"point_count_bound":int(rules.pirate.path_count_bound)}
+		6:
+			count=1
+			placement={"kind":"distant_point","horizontal_offset":60000,"horizontal_bound":80000}
+			ship_state.merge({"hull_multiplier":3,"boost_enabled":false,"motion_speed":3.0})
 		7:
 			debris_count=int(Vitals.single(scaled*float(rules.junk.debris_count_multiplier)))+int(rules.junk.debris_count_offset)
 			count=debris_count+int(Vitals.single(scaled*float(rules.junk.pirate_count_multiplier)))
 			ship_state={"mode":0,"active":true,"targeting_blocked":false}
+			placement={"kind":"debris_field"}
 		12:
 			var base:=int(Vitals.single(scaled*float(rules.challenge.count_multiplier)))
 			count=base+(int(rules.challenge.count_odd_offset) if (base+int(rules.challenge.count_odd_offset))%2 else int(rules.challenge.count_even_offset))+1
+			placement={"kind":"patrol","field_choice_bound":0,"minimum_points":int(rules.challenge.path_count_offset),"point_count_bound":int(rules.challenge.path_count_bound)}
+			rival_actor_id=int(rules.challenge.rival_actor_id)
+			player_last_ids=range(1,count,2)
 	var success:={"kind":18,"first_actor":0,"end_actor":count}
 	var failure:={"kind":"never"}
 	var periodic:={"kind":"never"}
 	var readout:={}
 	match int(mission.kind):
 		0:success={"kind":"never"}
+		6:success={"kind":1,"actor_id":0}
 		7:
 			success={"kind":7,"end_actor":debris_count}
 			periodic={"kind":"elapsed","after_ms":int(bindings.early_contracts.junk_lifecycle.deadline_milliseconds)}
@@ -44,7 +57,8 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 			readout={"kind":"contest","player_counter":"world_player_kills","other_counter":"world_other_kills"}
 	return {"track":"side_job","cursor":context.campaign_cursor,"station_id":context.station_id,"system_id":loadout.system_id,
 		"mission":mission.duplicate(true),"next_cursor":context.campaign_cursor,"entry":"ordinary_flight","world":{"station":true,"portal":true,"asteroid_field":true},
-		"cast":{"kind":"contract","actor_count":count,"debris_count":debris_count,"ship_state":ship_state,"operations":rules.duplicate(true)},"briefing":[],"radio":[],"sequences":[],"readout":readout,
+		"cast":{"kind":"contract","actor_count":count,"debris_count":debris_count,"ship_state":ship_state,"placement":placement,
+			"rival_actor_id":rival_actor_id,"player_last_ids":player_last_ids,"operations":rules.duplicate(true)},"briefing":[],"radio":[],"sequences":[],"readout":readout,
 		"result":{"success":success,"failure":failure,"periodic_failure":periodic,"actor_count":count,
 			"retire_failure":true,"freeze_clock_on_result":true,"reset_while_blocked":false,"policy":bindings.early_contracts.flight_results.duplicate(true)}}
 

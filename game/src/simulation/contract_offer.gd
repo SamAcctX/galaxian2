@@ -35,7 +35,9 @@ func configure(bindings: RefCounted,catalogues: RefCounted,context: Variant,choi
 	var extra: Dictionary=rules.ordinary_generation.offers if ordinary else {}
 	if not choices is Dictionary:return reject("Unsupported contract selection")
 	if ordinary:
-		if choices.size()!=5 or not Numbers.integer(choices.get("kind"),0,int(extra.kind_count)-1) or not Numbers.integer(choices.get("difficulty_index"),0,int(extra.difficulty_draw_bound)-1):return reject("Unsupported ordinary contract selection")
+		var named: bool=choices.get("kind")==6 and choices.has("target_name")
+		if choices.size()!=(6 if named else 5) or not Numbers.integer(choices.get("kind"),0,int(extra.kind_count)-1) or not Numbers.integer(choices.get("difficulty_index"),0,int(extra.difficulty_draw_bound)-1):return reject("Unsupported ordinary contract selection")
+		if named and (not choices.target_name is String or choices.target_name.is_empty() or choices.target_name.length()>1024 or choices.target_name.contains("#") or choices.target_name.contains("\n")):return reject("Invalid retained target name")
 	elif choices.size()!=4 or not Numbers.integer(choices.get("kind_index"),0,rules.kind_choices.size()-1) or not Numbers.integer(choices.get("difficulty_index"),0,int(rules.difficulty_draw_bound)-1):return reject("Unsupported early contract selection")
 	var kind:=int(choices.kind) if ordinary else int(rules.kind_choices[choices.kind_index])
 	var difficulty:=int(choices.difficulty_index)+int(rules.difficulty_add)
@@ -115,6 +117,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,context: Variant,choi
 		"reward":quantize_credits(gross,int(pricing.credit_step)),"bonus":bonus,
 		"title_text_id":int(rules.title_text_base)+kind,"briefing_text_id":int(rules.briefing_text_base)+kind,
 		"cargo_text_id":cargo_text_id}
+	if choices.has("target_name"):mission.target_name=choices.target_name
 	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,
 		"context":context.duplicate(true),"choices":choices.duplicate(true),"mission":mission,"requirements":requirements}
 	return true

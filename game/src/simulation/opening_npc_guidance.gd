@@ -186,6 +186,9 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	_frame_limit=Frames.simulation_limit(bindings)
 	_boost_enabled=bool(rules.rival.boost_enabled if body.population_group=="rival" else rules.pirate.boost_enabled)
 	if not _boost_enabled:_state.speed=float(rules.rival.motion_speed)
+	var options: Dictionary=construction.snapshot().actors[actor_id]
+	_boost_enabled=bool(options.get("boost_enabled",_boost_enabled))
+	if options.has("motion_speed"):_state.speed=float(options.motion_speed)
 	if not set_initial_route(construction.route(actor_id)):
 		var message:=error;clear();return reject(message)
 	return true

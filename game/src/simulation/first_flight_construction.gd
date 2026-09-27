@@ -751,7 +751,8 @@ func _construct(bindings: RefCounted, catalogues: RefCounted, packet: Dictionary
 	var field: Dictionary=scenery.snapshot()
 	if contracts!=null and prepared_scenery==null:
 		var world: RefCounted=scenery.world_initialization_owner()
-		if world.snapshot().contract_context.mission.get("kind",-1) in [4,7,12]:
+		var contract_admission: RefCounted=world.npc_construction_owner().mission_context_owner()
+		if contract_admission!=null and contract_admission.has_contract_actors():
 			var contact_player:=Player.new()
 			if not contact_player.configure_contract(bindings,catalogues,equipment,world.npc_construction_owner(),player.cache_snapshot()):return reject(contact_player.error)
 			player=contact_player

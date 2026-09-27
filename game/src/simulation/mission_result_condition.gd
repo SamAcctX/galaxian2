@@ -23,6 +23,9 @@ static func evaluate(condition: Dictionary,observation: Dictionary) -> Dictionar
 				return {"satisfied":world.elapsed_ms>int(condition.after_ms) and world.station_id!=int(condition.different_station)}
 		return {}
 	match int(condition.get("kind",-1)):
+		1:
+			var id:=int(condition.get("actor_id",-1))
+			return Retirement.range_status(actors,id,id+1,4)
 		7:
 			return Retirement.range_status(actors,0,int(condition.get("end_actor",-1)),4)
 		18:

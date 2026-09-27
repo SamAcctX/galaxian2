@@ -54,6 +54,7 @@ func matches_location(bindings: RefCounted,location: Dictionary) -> bool:
 
 static func supports_contract(bindings: RefCounted,mission: Variant,cursor: int) -> bool:
 	if bindings==null or not mission is Dictionary or mission.get("story")!=false:return false
+	if mission.get("kind")==6 and (not mission.get("target_name") is String or mission.target_name.is_empty()):return false
 	var rules: Dictionary=bindings.early_contracts.get("encounter_construction",{})
 	if rules.is_empty():return false
 	var world=load("res://src/content/contract_world_definitions.gd")
@@ -62,7 +63,7 @@ static func supports_contract(bindings: RefCounted,mission: Variant,cursor: int)
 	var ordinary=load("res://src/content/free_flight_definitions.gd")
 	# Keeping a side slot through a story world does not select that job's cast.
 	# Actual entry also requires the location/flight admitted below.
-	return ordinary.available(bindings) and cursor>=int(bindings.mido_travel.free_flight.campaign_cursor) and mission.get("kind") in [4,7,12] and preload("res://src/content/opening_definitions.gd").integer(mission.get("difficulty"),1,9) and not ordinary.Worlds.location(bindings.mido_travel,mission.get("station_id")).is_empty()
+	return ordinary.available(bindings) and cursor>=int(bindings.mido_travel.free_flight.campaign_cursor) and mission.get("kind") in [4,6,7,12] and preload("res://src/content/opening_definitions.gd").integer(mission.get("difficulty"),1,9) and not ordinary.Worlds.location(bindings.mido_travel,mission.get("station_id")).is_empty()
 
 ## A retained career and inventory authorize a generated side job once. Other
 ## owners receive this capability with the cast, never a caller-authored recipe.
@@ -93,6 +94,7 @@ func admit_contract(bindings: RefCounted,catalogues: RefCounted,contracts: RefCo
 	return true
 
 func contract_context() -> Dictionary:return _contract_context.duplicate(true)
+func has_contract_actors() -> bool:return not _contract_context.is_empty() and int(_recipe.cast.actor_count)>0
 func advances_campaign() -> bool:return not _recipe.is_empty() and _recipe.get("track","campaign")=="campaign"
 
 func matches_contract_population(bindings: RefCounted,packet: Dictionary) -> bool:

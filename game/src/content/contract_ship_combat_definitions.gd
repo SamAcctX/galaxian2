@@ -47,7 +47,7 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 			data.actor_kinds.append(-1);data.hull_catalogue_ids.append(-1);data.player_weapon_targets.append(id)
 			data.npc_weapons.append({"actor_id":id,"actor_kind":-1,"hull_catalogue_id":-1,"unarmed":true})
 			continue
-		var rival: bool=mission.kind==12 and id==0
+		var rival: bool=id==int(cast.rival_actor_id)
 		if not actor is Dictionary or actor.get("actor_id")!=id or actor.get("subtype")!=0 or actor.get("population_group")!=("rival" if rival else "pirate"):return {}
 		var faction: Variant=actor.get("actor_kind")
 		if not faction is int or (rival and (faction not in [0,1,2,3] or faction!=context.get("client_faction"))) or (not rival and faction!=8):return {}
@@ -61,7 +61,7 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 		var weapon:=shared_weapon(rules.weapons,context.campaign_cursor,context.rank,float(context.difficulty),faction,rival)
 		if weapon.is_empty():return {}
 		weapon.actor_id=id;weapon.hull_catalogue_id=hull;data.npc_weapons.append(weapon)
-	data.target_memberships=target_memberships(data.actor_kinds,range(1,actors.size(),2) if mission.kind==12 else [])
+	data.target_memberships=target_memberships(data.actor_kinds,cast.player_last_ids)
 	for id in int(cast.debris_count):data.target_memberships[id]=[]
 	return data
 

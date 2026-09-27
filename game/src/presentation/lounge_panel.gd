@@ -152,7 +152,7 @@ func money(value: int) -> String:return str(value)+"$"
 func format_job(template: String,mission: Dictionary) -> String:
 	var station:=int(mission.get("station_id",-1))
 	var name: String=_catalogues.tables.stations[station].name if station>=0 and station<_catalogues.tables.stations.size() else ""
-	return template.replace("#S",name).replace("#Q",str(int(mission.get("quantity",0)))).replace("#P",text(int(mission.get("cargo_text_id",-1)))).replace("#C",money(int(mission.get("reward",0))+int(mission.get("bonus",0))))
+	return template.replace("#S",name).replace("#N",str(mission.get("target_name",""))).replace("#Q",str(int(mission.get("quantity",0)))).replace("#P",text(int(mission.get("cargo_text_id",-1)))).replace("#C",money(int(mission.get("reward",0))+int(mission.get("bonus",0))))
 
 func _refresh() -> void:
 	if _state.is_empty() or _art==null:return

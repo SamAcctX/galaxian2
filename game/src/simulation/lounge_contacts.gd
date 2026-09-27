@@ -27,6 +27,7 @@ var _context:={}
 var _catalogues: RefCounted
 var _ordinary:={}
 var _station_context: RefCounted
+var _generation_revision:=1
 
 static func available(bindings: RefCounted) -> bool:
 	return bindings!=null and Terms.generation_parameters(bindings.early_contracts)
@@ -50,6 +51,7 @@ func prepare(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: V
 	candidate._rules=rules.duplicate(true);candidate._history=history.duplicate();candidate._stations=stations.duplicate()
 	candidate._context=context.duplicate(true);candidate._catalogues=cat
 	candidate._station_context=station_context
+	candidate._generation_revision=_generation_revision
 	candidate._portrait_bases=bindings.portrait_layers.get("part_bases",[])
 	var contacts:=[]
 	var persistent_rules: Dictionary={}
@@ -107,6 +109,7 @@ func prepare(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: V
 	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,
 		"context":context.duplicate(true),"initial_random":random_state.duplicate(true),"initial_history":history.duplicate(),
 		"random":candidate._rng.snapshot(),"history":candidate._history.duplicate(),"draw_calls":candidate._draws,"contacts":contacts}
+	if ordinary and _generation_revision>0:_state.generation_revision=_generation_revision
 	return true
 
 func _population_count(authored_count: int,persistent_rules: Dictionary) -> int:
@@ -324,6 +327,7 @@ func _offer(bindings: RefCounted,cat: RefCounted,context: Dictionary) -> Diction
 	if not error.is_empty():return {}
 	var offer:=Offer.new()
 	var choices:={"kind":kind,"difficulty_index":difficulty,"destination_station_id":destination,"parameter_index":description,"quantity_index":quantity_index} if ordinary else {"kind_index":kind_index,"difficulty_index":difficulty,"destination_station_id":destination,"cargo_description_index":description}
+	if ordinary and kind==6 and _generation_revision>0:choices.target_name=_name(int(_rules.identity.terran_faction),true)
 	if not offer.configure(bindings,cat,context,choices,_station_context):reject(offer.error);return {}
 	return offer.snapshot()
 
@@ -363,6 +367,8 @@ func restore(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: Vari
 	error=""
 	if not data is Dictionary:return reject("Invalid retained lounge population")
 	var next: RefCounted=get_script().new()
+	if not Numbers.integer(data.get("generation_revision",0),0,1):return reject("Unsupported retained lounge generation")
+	next._generation_revision=int(data.get("generation_revision",0))
 	if not next.prepare(bindings,cat,library,data.get("context"),data.get("initial_random"),data.get("initial_history"),station_context):return reject(next.error)
 	if data!=next.snapshot():return reject("Retained contacts disagree with their source inputs")
 	_state=next._state

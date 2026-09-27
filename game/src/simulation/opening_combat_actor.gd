@@ -576,7 +576,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	if model.is_empty():return reject(bindings.error)
 	var rival: bool=row.population_group=="rival"
 	var base: int=int(data.rank_base)+int(data.rank_multiplier)*int(data.rank)+int(data.cursor_multiplier)*int(data.campaign_cursor)
-	var factory_hull:=scaled_hull(float(base),float(data.difficulty),float(data.difficulty_offset))
+	var factory_hull:=scaled_hull(float(base),float(data.difficulty),float(data.difficulty_offset))*int(row.get("hull_multiplier",1))
 	var initial:={"actor_id":actor_id,"actor_kind":int(row.actor_kind),"hull_catalogue_id":int(row.hull_catalogue_id),
 		"hull_resource":model,"position":row.statistics_pose.origin,"current_hull":int(row.current_hull_override) if rival else factory_hull}
 	var policy: Dictionary=data.rival if rival else data.pirate

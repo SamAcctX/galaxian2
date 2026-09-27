@@ -157,6 +157,11 @@ func verify_ordinary_draws(bindings: RefCounted,cat: RefCounted,lib: RefCounted,
 
 func verify_ordinary_populations(bindings: RefCounted,cat: RefCounted,lib: RefCounted,context: Dictionary):
 	var kinds:={};var roles:={};var duplicate_seen:=false
+	var name_rules: Dictionary=bindings.early_contracts.generation.names
+	var pools: Array=name_rules.pool_choices_by_faction[0]
+	var first_names:=Contacts.decode_names(lib.read_resource(name_rules.resources[int(pools[0][0])],1024*1024))
+	var last_names:=Contacts.decode_names(lib.read_resource(name_rules.resources[int(pools[1][0])],1024*1024))
+	var legacy_checked:=false
 	for station in [95,96,97,98,99]:
 		for seed in 32:
 			var career:=context.duplicate(true);career.station_id=station;career.difficulty=1.5 if seed%2 else 1.0
@@ -174,6 +179,20 @@ func verify_ordinary_populations(bindings: RefCounted,cat: RefCounted,lib: RefCo
 				if not contact.offer.is_empty():
 					kinds[contact.offer.mission.kind]=true
 					check(Offer.new().restore(bindings,cat,contact.offer),"Generated ordinary offer cannot be restored")
+					if contact.offer.mission.kind==6:
+						var name: String=contact.offer.mission.get("target_name","")
+						check(first_names.any(func(first):return name.begins_with(first+" ") and last_names.has(name.substr(first.length()+1))),"The Wanted target was not named from the original male Terran pools")
+						var location: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,contact.offer.mission.station_id)
+						check(Session.acceptance_supported(bindings.early_contracts,18,contact.offer,bindings)==not location.is_empty(),"Bounty acceptance disagreed with destination support")
+						var bad:=state.duplicate(true)
+						bad.contacts[contact.contact_id].offer.mission.target_name+="!"
+						check(not Contacts.new().restore(bindings,cat,lib,bad),"A saved population accepted an altered bounty identity")
+						if not legacy_checked:
+							var legacy:=Contacts.new();legacy._generation_revision=0
+							check(legacy.prepare(bindings,cat,lib,career,random.snapshot(),history),legacy.error)
+							var old: Dictionary=legacy.snapshot();var loaded:=Contacts.new()
+							check(not old.has("generation_revision") and loaded.restore(bindings,cat,lib,old) and loaded.snapshot()==old,"The name addition rerolled an older saved lounge")
+							legacy_checked=true
 			check(roster_count<=1,"A second role6 survived population uniqueness")
 			var restored:=Contacts.new()
 			check(restored.restore(bindings,cat,lib,state) and restored.snapshot()==state,"Ordinary population lost its stream or terms on restoration")

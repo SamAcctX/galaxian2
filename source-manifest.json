@@ -2756,6 +2756,12 @@
     "game/tests/challenge_unlocked_application.gd",
     "game/tests/challenge_unlocked_application.gd.uid",
     "game/tests/challenge_resume_application.gd",
-    "game/tests/challenge_resume_application.gd.uid"
+    "game/tests/challenge_resume_application.gd.uid",
+    "game/tests/wanted_unlocked.gd",
+    "game/tests/wanted_unlocked.gd.uid",
+    "game/tests/wanted_unlocked_application.gd",
+    "game/tests/wanted_unlocked_application.gd.uid",
+    "game/tests/wanted_resume_application.gd",
+    "game/tests/wanted_resume_application.gd.uid"
   ]
 }

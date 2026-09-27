@@ -859,7 +859,8 @@ func bind_flight(controller: RefCounted,bindings: RefCounted=null) -> bool:
 	var encounter: Dictionary=scene.get("combat",{}).get("contract_encounter",{})
 	if clock.is_empty() or clock.elapsed_ms!=0 or clock.mode!=0 or clock.retired or not scene.has("accounting"):return reject("Bind the prepared flight before its first actor update")
 	var context:=flight_context(int(encounter.get("context",{}).get("station_id",-1)),bindings)
-	var supported: bool=not context.is_empty() and (_rules.flight_results.ship_kinds.any(func(value):return int(value)==int(context.mission.get("kind",-1))) or (Junk.parameters(_rules.get("junk_lifecycle")) and context.mission.kind==7))
+	var capability: RefCounted=controller.mission_context_owner()
+	var supported: bool=capability!=null and capability.has_contract_actors() and capability.contract_context()==context
 	if not supported or context!=encounter.get("context"):return reject("This flight does not belong to the accepted contract")
 	if not scene.accounting.events.is_empty() or not scene.combat.reputation.events.is_empty() or not scene.combat.get("contract_settlement",{}).is_empty():return reject("A new flight cannot adopt unrecorded combat results")
 	if not scene.combat.get("recovery",{}).is_empty():return reject("Bind the flight before cargo recovery changes its career")

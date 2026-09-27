@@ -383,6 +383,8 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, library: 
 	var freight_resources: RefCounted
 	var contract_world: bool=initial.has("contract_context")
 	var contract_mission: Dictionary=initial.get("contract_context",{}).get("mission",{})
+	var population_owner: RefCounted=world.npc_construction_owner()
+	var capability: RefCounted=null if population_owner==null else population_owner.mission_context_owner()
 	var ambient: bool=(load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) and not contract_world) or (contract_world and contract_mission.is_empty()) or (cursor in [11,12] and initial.station_id==int(Travel.journey(bindings.mido_travel,cursor).from_station_id))
 	var rescue: bool=cursor==21 and initial.get("npc_construction",{}).has("kappa_context")
 	var bakka: bool=cursor==36 and initial.get("bakka_context") is Dictionary and Bakka.context_valid(bindings,initial.bakka_context)
@@ -419,7 +421,7 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, library: 
 		if not ready:return reject(resources.error+freight_resources.error)
 		if not control.configure_ambient(bindings,catalogues,population,rank,difficulty,equipment,reputation):return reject(control.error)
 		if not weapons.configure_ambient(bindings,catalogues,population,rank,difficulty):return reject(weapons.error)
-	elif contract_world and contract_mission.get("kind") in [4,7,12]:
+	elif contract_world and capability!=null and capability.has_contract_actors():
 		var population: RefCounted=world.npc_construction_owner()
 		if not resources.configure_contract(library,bindings,population):return reject(resources.error)
 		if not control.configure_contract(bindings,catalogues,population,equipment):return reject(control.error)
