@@ -43,6 +43,11 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 				{"first_actor":attackers,"end_actor":count,"faction":local_faction,"population_group":"protected","origin":"zero",
 				"position":{"kind":"scenery_midpoint","offset":Vector3(0,2000,0)},"clear_cargo":true,
 				"ship_state":{"hull_multiplier":3,"boost_enabled":false,"motion_speed":0.0},"policy":{"initial_hostile":false,"updated_hostile":false,"friendly":true}}]
+		3,5:
+			count=int(mission.quantity)
+			placement={"kind":"distant_point","horizontal_offset":40000,"horizontal_bound":80000}
+			ship_groups=[{"first_actor":count-1,"end_actor":count,"faction":8,"population_group":"pirate","origin":"path",
+				"name_text_id":1600,"cargo_override":{"entries":[{"item_id":117 if int(mission.kind)==3 else 116,"quantity":1}],"special":true}}]
 		4:
 			var base:=int(Vitals.single(scaled*float(rules.pirate.count_multiplier)))+int(rules.pirate.count_offset)
 			count=int(Vitals.single(base+Vitals.single(base*Vitals.single(float(context.difficulty)+float(rules.pirate.game_difficulty_offset)))))
@@ -72,6 +77,9 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 		2:
 			success={"kind":18,"first_actor":0,"end_actor":attackers}
 			failure={"kind":18,"first_actor":attackers,"end_actor":count}
+		3,5:
+			success={"kind":11,"actor_id":count-1}
+			failure={"kind":12,"actor_id":count-1}
 		6:success={"kind":1,"actor_id":0}
 		7:
 			success={"kind":7,"end_actor":debris_count}
@@ -86,6 +94,7 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 		"mission":mission.duplicate(true),"next_cursor":context.campaign_cursor,"entry":"ordinary_flight","world":{"station":true,"portal":true,"asteroid_field":true},
 		"cast":{"kind":"contract","actor_count":count,"debris_count":debris_count,"ship_state":ship_state,"placement":placement,
 			"rival_actor_id":rival_actor_id,"player_last_ids":player_last_ids,"player_only_ids":player_only_ids,"count_draw":count_draw,"ship_groups":ship_groups,"local_faction":local_faction,"operations":rules.duplicate(true)},"briefing":[],"radio":[],"sequences":[],"readout":readout,
+		"continuation":contract_continuation(mission),
 		"result":{"success":success,"failure":failure,"periodic_failure":periodic,"actor_count":count,
 			"retire_failure":true,"freeze_clock_on_result":true,"reset_while_blocked":false,"policy":bindings.early_contracts.flight_results.duplicate(true)}}
 
@@ -94,15 +103,19 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 static func contract_ship_options(cast: Dictionary,id: int,enemy_faction: int,client_faction: int) -> Dictionary:
 	var rival: bool=id==int(cast.rival_actor_id)
 	var result:={"rival":rival,"faction":client_faction if rival else 8,"population_group":"rival" if rival else "pirate",
-		"origin":"zero" if rival else "path","policy":{},"ship_state":cast.ship_state.duplicate(true),"position":{},"route_start":-1,"clear_cargo":false,"group_index":id}
+		"origin":"zero" if rival else "path","policy":{},"ship_state":cast.ship_state.duplicate(true),"position":{},"route_start":-1,"clear_cargo":false,"group_index":id,"cargo_override":{},"name_text_id":-1}
 	for group in cast.get("ship_groups",[]):
 		if id<int(group.first_actor) or id>=int(group.end_actor):continue
 		result.faction=enemy_faction if int(group.faction)==-2 else int(group.faction)
-		for key in ["population_group","origin","policy","position","route_start","clear_cargo"]:result[key]=group.get(key,result[key])
+		for key in ["population_group","origin","policy","position","route_start","clear_cargo","cargo_override","name_text_id"]:result[key]=group.get(key,result[key])
 		result.group_index=id-int(group.first_actor)
 		result.ship_state.merge(group.get("ship_state",{}),true)
 		break
 	return result
+
+static func contract_continuation(mission: Dictionary) -> Dictionary:
+	if mission.get("kind") not in [3,5]:return {}
+	return {"kind":"return_delivery","mission_kind":11,"result_text_id":378,"briefing_text_id":792,"source_parameter":-1}
 
 static func select(bindings: RefCounted,cursor: Variant) -> Dictionary:
 	if bindings==null or not cursor is int:return {}

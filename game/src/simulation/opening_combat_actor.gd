@@ -587,6 +587,9 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 		"statistics_targeting_blocked":bool(data.npc_statistics_targeting_blocked),"spatial_half_extent":int(data.engagement_half_extent),
 		"model_draw_enabled":bool(data.initial_model_draw_enabled),"node_draw_requested":bool(data.initial_node_draw_requested),"engine_draw_enabled":bool(data.initial_engine_draw_enabled)},true)
 	if rival:_state.name=row.name
+	if row.has("name_text_id"):_state.name_text_id=int(row.name_text_id)
+	if row.get("special_cargo",false):
+		_state.merge({"special_cargo":true,"special_cargo_accepted":false,"special_cargo_rejected":false})
 	return set_pose(row.statistics_pose,row.body_pose)
 
 func configure_bakka(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
@@ -945,7 +948,9 @@ func apply_destruction(death: Dictionary) -> bool:
 	if not set_pose(death.get("statistics_pose",body_pose),body_pose if _state.has("campaign_cursor") else null): return false
 	if _state.has("engine_draw_enabled") and (previous==1 or initial_death):_state.engine_draw_enabled=false
 	_state.actor_mode=int(death.mode)
-	if phase=="retired": _state.active=false
+	if phase=="retired":
+		_state.active=false
+		if _state.get("special_cargo",false) and not _state.special_cargo_accepted:_state.special_cargo_rejected=true
 	return true
 
 func apply_freighter_destruction(owner: RefCounted) -> bool:

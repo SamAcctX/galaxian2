@@ -523,7 +523,7 @@ func evaluate_cargo_recovery(tractor: RefCounted,cargo: RefCounted,delta_ms: int
 				"active":actor.active,"cargo_eligible":life.cargo.eligible,"cargo_model_exists":life.cargo.model_exists,
 				"retire_on_transfer":life.retire_on_transfer,"body_pose":life.pose,"cargo_pose":life.cargo.pose,
 				"cargo_entries":life.cargo.entries,"collision_centers":[],"friendly":actor.get("friendly",false),
-				"statistics_exempt":false,"body_motion_blocked":false,"body_motion_detached":false,"special_cargo":false}
+				"statistics_exempt":false,"body_motion_blocked":false,"body_motion_detached":false,"special_cargo":actor.get("special_cargo",false)}
 			if death is FreightDeath:observation.freighter_position=_control._flight[id].source_position()
 	var next_tractor: RefCounted=tractor.fork_for_frame()
 	if not next_tractor.advance(delta_ms,player,observation,cargo.snapshot()):return fail(next_tractor.error)

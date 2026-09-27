@@ -28,6 +28,7 @@ const STATION_KEYS=["base_content_id","binding_id","language","campaign_cursor",
 const CHAPTER_KEYS=["campaign_conversation","next_course"]
 const INVENTORY_KEYS=["loadout","stock","cargo","cargo_cache_stale","credit_delta","transactions","prices","protected_item_ids","training_inventory_released","prototype_drill_replaced","ship_affiliation","stock_station_id"]
 const CAREER_KEYS=["base_content_id","binding_id","campaign_cursor","station_id","rank","reputation","difficulty","credits","passengers","mission","active_offer_id","offers","progress","completed_side_missions","delivery_statistics","pending_result","result_serial","accepted_contact","travel_statistics","last_result","population"]
+const OPTIONAL_CAREER_KEYS=["contract_phase"]
 var error:=""
 var restored_locations: RefCounted
 
@@ -83,7 +84,7 @@ func restore(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: Vari
 	if not _identity(data,bindings):return reject("This save belongs to different content or gameplay bindings")
 	if not data_tree(data):return reject("The save contains unsupported or oversized data")
 	if data.version==2:return Opening.new().restore(self,bindings,cat,library,data)
-	var career_keys: Array=CAREER_KEYS+(["void_source","blueprints"] if data.version in [8,9,10,11] else [])
+	var career_keys: Array=CAREER_KEYS+OPTIONAL_CAREER_KEYS+(["void_source","blueprints"] if data.version in [8,9,10,11] else [])
 	var station_keys: Array=STATION_KEYS+(CHAPTER_KEYS if data.version in [4,6,7,8,10,11] else [])+(["dekato_source_receipt"] if data.version in [9,10,11] else [])+(["nehma_source_receipt"] if data.version in [10,11] else [])+(["mission_station_return"] if data.version==11 else [])
 	if not _keys(data.get("station"),station_keys) or not _keys(data.get("inventory"),INVENTORY_KEYS) or not _keys(data.get("career"),career_keys):return reject("The save contains an unknown station, inventory or career field")
 	if data.version in [8,9,10,11] and not data.career.get("void_source") is Dictionary:return reject("The save is missing its retained Void source")
@@ -259,7 +260,7 @@ func _career(bindings: RefCounted,cat: RefCounted,data: Dictionary,equipment: Re
 	if data.has("last_result"):
 		if not data.last_result is Dictionary or not Numbers.integer(data.last_result.get("serial"),1,data.result_serial) or data.last_result.get("acknowledgement_required")!=false:return reject("Invalid acknowledged result history")
 	if data.mission.is_empty():
-		if data.passengers!=0 or data.active_offer_id!=-1 or not data.accepted_contact.is_empty():return reject("The empty contract slot retains passengers or a client")
+		if data.passengers!=0 or data.active_offer_id!=-1 or not data.accepted_contact.is_empty() or data.has("contract_phase"):return reject("The empty contract slot retains passengers, a client or a continuation")
 	else:
 		var contact: Dictionary=data.accepted_contact
 		if not _keys(contact,["offer_id","station_id","offer","name","portrait"]) or contact.size()!=5 or not Numbers.integer(contact.get("offer_id"),0,4095) or contact.offer_id!=data.get("active_offer_id") or not contact.get("name") is String or not contact.get("portrait") is Dictionary:return reject("The accepted contract lost its original client")
@@ -279,12 +280,12 @@ func _career(bindings: RefCounted,cat: RefCounted,data: Dictionary,equipment: Re
 			var quote_limit: int=cursor if station_context.completed_career(bindings) else station_context.snapshot().source_cursor
 			if not Numbers.integer(quoted,0,quote_limit):return reject("The carried job has no preceding quotation context")
 			accepted_cursor=quoted
-		if offer.snapshot().mission!=data.mission or not Contracts.acceptance_supported(bindings.early_contracts,accepted_cursor,offer.snapshot(),bindings) or contact.station_id!=offer.snapshot().context.station_id:return reject("The accepted contract changed its generated terms")
+		if not Contracts.ContractProgress.matches(data,offer.snapshot(),cat) or not Contracts.acceptance_supported(bindings.early_contracts,accepted_cursor,offer.snapshot(),bindings) or contact.station_id!=offer.snapshot().context.station_id:return reject("The accepted contract changed its generated terms")
 		# The three-location FIFO may have evicted and regenerated this station.
 		# Its current contact IDs then name new offers. Restore the independently
 		# retained accepted terms above; cached offers/consumption belong to their
 		# own validated population and must not be joined by station and row ID.
-		var passengers: int=int(data.mission.quantity) if data.mission.kind==11 else 0
+		var passengers: int=Contracts.ContractProgress.occupied_passengers(data)
 		if data.passengers!=passengers or passengers>Contracts.passenger_capacity(Contracts.cabin_catalogue(cat,bindings.early_contracts.acceptance),equipment.snapshot().loadout):return reject("The accepted passengers disagree with their mission or installed berths")
 	var career:=Contracts.new()
 	career._state=data.duplicate(true);career._rules=bindings.early_contracts.duplicate(true)

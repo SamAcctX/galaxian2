@@ -28,6 +28,12 @@ static func evaluate(condition: Dictionary,observation: Dictionary) -> Dictionar
 			return Retirement.range_status(actors,id,id+1,4)
 		7:
 			return Retirement.range_status(actors,0,int(condition.get("end_actor",-1)),4)
+		11,12:
+			var id:=int(condition.get("actor_id",-1))
+			if not actors is Array or id<0 or id>=actors.size():return {}
+			var flag: String="special_cargo_accepted" if int(condition.kind)==11 else "special_cargo_rejected"
+			if not actors[id].get(flag) is bool:return {}
+			return {"satisfied":actors[id][flag]}
 		18:
 			return Retirement.range_status(actors,int(condition.get("first_actor",-1)),int(condition.get("end_actor",-1)),4)
 		20,21:

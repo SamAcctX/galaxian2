@@ -63,7 +63,9 @@ func verify_free_application() -> void:
 		app.show();app.present_session();await process_frame;resume_application_focus()
 		var before: Dictionary=app.session.station_owner().snapshot()
 		var selected:=0 if starter=="standard" else 22
-		var previous:=22 if starter=="standard" else 0
+		var primaries: Array=before.loadout.slots.filter(func(slot):return slot!=null and slot.category==0)
+		if primaries.size()!=1:check(false,"The input pilot requires one retained primary mount");return
+		var previous: int=primaries[0].item_id
 		if not app.equipment_action("open") or not app.equipment_action("unmount",previous) or not app.equipment_action("mount",selected) or not app.equipment_action("close"):
 			check(false,app.session.error);return
 		var fitted: Dictionary=app.session.station_owner().snapshot()
@@ -242,6 +244,9 @@ func run_resumed_job() -> void:
 			await capture_free_application("freelance-paid-resumed-flight")
 		else:check(false,app.status.text)
 	else:
-		check(restored.contracts.mission.get("kind")==requested_contract_kind(),"Fresh Resume discarded the accepted freelance job")
+		check(resumed_contract_valid(restored),"Fresh Resume discarded the accepted freelance job")
 		if failures==0:await verify_free_application()
 	app.free();print("Freelance Resume: %d checks; %d failures"%[checks,failures]);quit(1 if failures else 0)
+
+func resumed_contract_valid(state: Dictionary) -> bool:
+	return state.contracts.mission.get("kind")==requested_contract_kind()

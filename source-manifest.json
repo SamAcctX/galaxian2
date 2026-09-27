@@ -2774,6 +2774,14 @@
     "game/tests/protection_unlocked_application.gd",
     "game/tests/protection_unlocked_application.gd.uid",
     "game/tests/protection_resume_application.gd",
-    "game/tests/protection_resume_application.gd.uid"
+    "game/tests/protection_resume_application.gd.uid",
+    "game/src/simulation/contract_progress.gd",
+    "game/src/simulation/contract_progress.gd.uid",
+    "game/tests/recovery_contract.gd",
+    "game/tests/recovery_contract.gd.uid",
+    "game/tests/recovery_application.gd",
+    "game/tests/recovery_application.gd.uid",
+    "game/tests/recovery_resume_application.gd",
+    "game/tests/recovery_resume_application.gd.uid"
   ]
 }

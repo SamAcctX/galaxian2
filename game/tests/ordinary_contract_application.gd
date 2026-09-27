@@ -9,6 +9,7 @@ func accepts_requested_contract(mission: Dictionary) -> bool:
 	return mission.kind==requested_contract_kind()
 
 func contract_search_stations() -> Array:return [-1,96,97,99,95,98]
+func contract_destination_allowed(station_id: int) -> bool:return station_id in [95,96,97,98,99]
 
 func verify_free_application() -> void:
 	var original: Dictionary=app.session.station_owner().snapshot()
@@ -30,7 +31,7 @@ func verify_free_application() -> void:
 			if row.consumed:continue
 			var preview: Dictionary=station.contract_preview(id,definitions)
 			print("Ordinary application offer: ",{"origin":career.station_id,"id":id,"kind":row.offer.mission.kind,"destination":row.offer.mission.station_id,"quantity":row.offer.mission.quantity,"can_accept":preview.get("can_accept",false)})
-			if accepts_requested_contract(row.offer.mission) and int(row.offer.mission.station_id) in [95,96,97,98,99] and preview.get("can_accept",false):chosen=id;break
+			if accepts_requested_contract(row.offer.mission) and contract_destination_allowed(int(row.offer.mission.station_id)) and preview.get("can_accept",false):chosen=id;break
 		if chosen>=0:break
 		if not app.contract_action("close",-1):check(false,app.session.error);return
 	if chosen<0:check(false,"Actual local journeys produced no supported affordable delivery");return

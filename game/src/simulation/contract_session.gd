@@ -26,6 +26,7 @@ const OrdinaryContracts=preload("res://src/content/ordinary_contracts_definition
 const VoidSource=preload("res://src/simulation/ordinary_void_source.gd")
 const VoidAccess=preload("res://src/content/void_access_definitions.gd")
 const Blueprints=preload("res://src/simulation/blueprint_progress.gd")
+const ContractProgress=preload("res://src/simulation/contract_progress.gd")
 var error:=""
 var _state:={}
 var _rules:={}
@@ -433,8 +434,7 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 		# an empty ship or discard the accepted mission to permit fitting.
 		if not _state.mission.is_empty() and not OrdinaryContracts.retained_mission(bindings,_state.mission,int(_state.campaign_cursor)):return _shopping_reject("Fitting for this active contract is not yet supported")
 		var passengers: Variant=_state.get("passengers")
-		var expected_passengers: Variant=0
-		if not _state.mission.is_empty() and int(_state.mission.kind)==int(_rules.passenger.kind):expected_passengers=_state.mission.get("quantity")
+		var expected_passengers: Variant=ContractProgress.occupied_passengers(_state)
 		if not Numbers.integer(passengers,0,2147483647) or not Numbers.integer(expected_passengers,0,2147483647) or passengers!=expected_passengers:return _shopping_reject("Fitting lost the retained contract's passengers")
 		if not inventory.fit(bindings,cat,action,item_id,slot_index,passengers):return _shopping_reject(inventory.error)
 	elif not inventory.transact(action,item_id,_state.credits):return _shopping_reject(inventory.error)
@@ -696,6 +696,7 @@ func accept(offer_id: int,equipment: RefCounted,replace_current: bool=false,bind
 	if not candidate.retain_flight_cargo(hold):reject(candidate.error);return null
 	next.credits-=int(terms.fee);next.active_offer_id=offer_id
 	next.mission=quote.mission.duplicate(true);next.offers[offer_id].consumed=true
+	next.erase("contract_phase")
 	if next.has("accepted_contact"):
 		next.accepted_contact={"offer_id":offer_id,"station_id":int(next.station_id),"offer":quote.duplicate(true),"name":""}
 		for contact in next.get("population",{}).get("contacts",[]):
@@ -737,7 +738,7 @@ func _selected_contract_context(station_id: int,bindings: RefCounted) -> Diction
 	if mission.is_empty():return result
 	var retained: Dictionary=_state.get("accepted_contact",{})
 	var accepted: Dictionary=_state.offers.get(_state.active_offer_id,{}) if retained.is_empty() else {"consumed":true,"offer":retained.offer}
-	if accepted.is_empty() or not accepted.consumed or accepted.offer.mission!=mission:
+	if accepted.is_empty() or not accepted.consumed or not ContractProgress.matches(_state,accepted.offer,_catalogues):
 		reject("The flight mission has no retained accepted contact");return {}
 	result.client_faction=int(accepted.offer.context.client_faction)
 	if not retained.is_empty():result.contact_name=retained.name
@@ -765,7 +766,7 @@ func retained_station_context(bindings: RefCounted,station_id: int) -> Dictionar
 	if not side.is_empty():
 		if not OrdinaryContracts.retained_mission(bindings,side,int(_state.campaign_cursor)):return fail("This accepted side mission has no supported ordinary flight")
 		var contact: Dictionary=_state.get("accepted_contact",{})
-		if contact.get("offer_id")!=_state.active_offer_id or contact.get("offer",{}).get("mission")!=side:return fail("The ordinary side mission lost its accepted contact")
+		if contact.get("offer_id")!=_state.active_offer_id or not ContractProgress.matches(_state,contact.get("offer",{}),_catalogues):return fail("The ordinary side mission lost its accepted contact")
 		var selected:=_selected_contract_context(station_id,bindings)
 		if selected.is_empty():return {}
 		selected.side_mission=side.duplicate(true)
@@ -795,7 +796,7 @@ func _poll_station_results(owned: Dictionary) -> bool:
 	var accepted: Dictionary=_state.offers.get(_state.active_offer_id,{}) if retained.is_empty() else {"consumed":true,"offer":retained.offer}
 	if accepted.is_empty() or not accepted.consumed:return reject("The delivery has no accepted contact")
 	var quote: Dictionary=accepted.offer
-	if mission!=quote.mission or mission.story:return reject("Only the retained non-story delivery can settle here")
+	if not ContractProgress.matches(_state,quote,_catalogues) or mission.story:return reject("Only the retained non-story delivery can settle here")
 	var reward:=int(mission.reward)+int(mission.bonus)
 	if not Numbers.integer(reward,0,int(rules.maximum_station_reward)) or not Numbers.integer(_state.credits,0,2147483647):return reject("The delivery payment is outside the supported source range")
 	if not Reputation.valid_state(_state.reputation):return reject("The delivery lost the retained faction standing")
@@ -847,6 +848,7 @@ func _acknowledge_delivery_inventory(equipment: RefCounted,owned: Dictionary) ->
 	next.last_result.acknowledgement_required=false
 	next.last_result.notification_sound_id=int(rules.notification_sound_id) if reward!=0 else -1
 	next.mission={};next.active_offer_id=-1;next.pending_result={}
+	next.erase("contract_phase")
 	if next.has("accepted_contact"):next.accepted_contact={}
 	_state=next;_result_inventory={}
 	return inventory
@@ -894,7 +896,7 @@ func campaign_flight_context(bindings: RefCounted,mission: Dictionary) -> Dictio
 	var side: Dictionary=_state.get("mission",{})
 	if not side.is_empty():
 		var contact: Dictionary=_state.get("accepted_contact",{})
-		if not OrdinaryContracts.retained_mission(bindings,side,int(_state.campaign_cursor)) or contact.get("offer_id")!=_state.get("active_offer_id") or contact.get("offer",{}).get("mission")!=side:return fail("The campaign flight lost its accepted delivery")
+		if not OrdinaryContracts.retained_mission(bindings,side,int(_state.campaign_cursor)) or contact.get("offer_id")!=_state.get("active_offer_id") or not ContractProgress.matches(_state,contact.get("offer",{}),_catalogues):return fail("The campaign flight lost its accepted delivery")
 	var result:={"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,"campaign_cursor":_state.campaign_cursor,
 		"station_id":_state.station_id,"system_id":int(Dekato.declarations(bindings).mission.system_id) if dekato else int(bindings.mido_travel.bakka_contest.mission.system_id) if bakka else int(bindings.mido_travel.thynome_expedition.mission28.system_id) if sahi and _state.campaign_cursor==28 else 9 if sahi else int(bindings.mido_travel.kappa_rescue.system_id),"mission_kind":int(mission.kind),
 		"mission_story":true,"mission_completed":false,"rank":_state.rank,"difficulty":_state.difficulty}
@@ -934,9 +936,9 @@ func _selected40_side_slot_valid(bindings: RefCounted) -> bool:
 	if mission.is_empty():
 		if _state.passengers!=0 or _state.active_offer_id!=-1 or not contact.is_empty():return reject("Empty side slot retained passengers or an accepted contact")
 	else:
-		var passengers:=int(mission.quantity) if mission.kind==int(_rules.passenger.kind) else 0
+		var passengers:=ContractProgress.occupied_passengers(_state)
 		if not OrdinaryContracts.retained_mission(bindings,mission,int(_state.campaign_cursor)) or _state.passengers!=passengers:return reject("The selected story lost its independently retained side job")
-		if contact.is_empty() or contact.get("offer_id")!=_state.active_offer_id or contact.get("offer",{}).get("mission")!=mission:return reject("The selected story's side job lost its accepted contact")
+		if contact.is_empty() or contact.get("offer_id")!=_state.active_offer_id or not ContractProgress.matches(_state,contact.get("offer",{}),_catalogues):return reject("The selected story's side job lost its accepted contact")
 	return true
 
 func bind_campaign_world(bindings: RefCounted,controller: RefCounted,mission: Dictionary) -> bool:
@@ -981,11 +983,12 @@ func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_result
 		var rules: Dictionary=_rules.delivery_results
 		var succeeded: bool=result.mode==int(_rules.flight_results.success_result_mode)
 		var mission: Dictionary=next._state.mission
+		var continuation: Dictionary=flight.mission_context_owner().recipe().get("continuation",{}) if succeeded else {}
 		# The admitted mission runner owns whether this flight has failed. Only
 		# the wager rule changes the balance when an ordinary job is lost.
-		var delta:=int(mission.reward)+int(mission.bonus) if succeeded else (-int(mission.reward) if int(mission.kind)==int(_rules.flight_results.penalty_kind) else 0)
+		var delta:=0 if not continuation.is_empty() else (int(mission.reward)+int(mission.bonus) if succeeded else (-int(mission.reward) if int(mission.kind)==int(_rules.flight_results.penalty_kind) else 0))
 		if absi(delta)>int(rules.maximum_credit_delta):return fail("The contract settlement exceeds the supported credit range")
-		if succeeded:
+		if succeeded and continuation.is_empty():
 			if not Numbers.integer(next._state.completed_side_missions,0,2147483646):return fail("The contract count exceeds the supported career range")
 			var progress: Dictionary=next._state.progress
 			var earned:=Career.calculate_progress(_progress_rules,next._state.campaign_cursor,progress.player_kills,progress.pirate_kills,int(progress.other_score)+int(rules.completion_rank_weight))
@@ -998,6 +1001,11 @@ func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_result
 		next._state.pending_result={"serial":next._state.result_serial,"offer_id":next._state.active_offer_id,
 			"station_id":int(mission.station_id),"kind":int(mission.kind),"mode":int(result.mode),"flight":true,
 			"acknowledgement_required":true,"credit_delta":delta,"completed":succeeded,"failed":not succeeded}
+		if not continuation.is_empty():
+			if not ContractProgress.continue_delivery(next._state,continuation,_catalogues):return fail("The earned continuation lost its accepted contract")
+			next._state.pending_result.continuation=continuation.duplicate(true)
+			next._state.pending_result.result_text_id=int(continuation.result_text_id)
+			next._state.pending_result.station_id=int(next._state.mission.station_id)
 		next._pending_flight=flight.snapshot()
 	next._flight.settlement=flight.snapshot().combat.get("contract_settlement",{}).duplicate(true)
 	return {"session":next,"controller":flight,"opened":opened}
@@ -1013,8 +1021,11 @@ func acknowledge_flight_result(controller: RefCounted,serial: int) -> Dictionary
 	next._state.last_result=pending.duplicate(true)
 	next._state.last_result.acknowledgement_required=false
 	next._state.last_result.notification_sound_id=int(_rules.delivery_results.notification_sound_id) if pending.completed and pending.credit_delta!=0 else -1
-	next._state.mission={};next._state.active_offer_id=-1;next._state.pending_result={}
-	if next._state.has("accepted_contact"):next._state.accepted_contact={}
+	if pending.get("continuation",{}).is_empty():
+		next._state.mission={};next._state.active_offer_id=-1
+		next._state.erase("contract_phase")
+		if next._state.has("accepted_contact"):next._state.accepted_contact={}
+	next._state.pending_result={}
 	next._pending_flight={};next._flight.retired=true
 	next._flight.settlement=flight.snapshot().combat.contract_settlement.duplicate(true)
 	return {"session":next,"controller":flight,"clear_player_control":true,"clear_world_path":true}

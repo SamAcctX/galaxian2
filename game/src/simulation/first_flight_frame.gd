@@ -540,8 +540,8 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 	if convoy_input_blocked():active_throttle=0.0
 	var ordinary_motion:=false
 	var visual_response: Vector2=next._pilot.angular_units
-	# Station contact uses the cached player position before movement. The later
-	# arrival query uses the current station boxes after player/world updates.
+	# Proximity uses the cached position; physical hull contact can also set this
+	# flag after movement, before the arrival query checks the current boxes.
 	if not _return_rules.is_empty() and _collision_enabled and _player.snapshot().active:
 		var length:=Autopilot.single(sqrt(Vectors.dot(_pose.origin,_pose.origin)))
 		if not is_finite(length):reject("Station contact exceeds source coordinates");return null
@@ -855,6 +855,9 @@ func _advance_physical_contacts() -> bool:
 	if not _scenery.apply_physical_contacts(plan.operations):return reject(_scenery.error)
 	for operation in plan.operations:
 		if operation.kind=="asteroid" and _player.normal_hit(operation.player_damage).is_empty():return reject(_player.error)
+		# Projection puts the ship on a strict volume boundary. Retain the actual
+		# contact so a selected station can dock after that point leaves its box.
+		if operation.kind=="station" and operation.center_after!=operation.center_before:_station_contact=true
 	if plan.center_after!=plan.center_before:
 		_pose.origin=plan.center_after
 		_statistics_pose.origin=plan.center_after

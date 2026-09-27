@@ -169,6 +169,7 @@ func _refresh() -> void:
 		_title.text=text(343+int(pending.kind)) if pending.get("completed",false) else text(381)
 		_name.text=_state.accepted_contact.get("name","")
 		_body.text=label_text(753).replace("#C",money(int(pending.get("reward_credits",pending.get("credit_delta",0))))) if pending.get("completed",false) else text(381)
+		if pending.has("result_text_id"):_body.text=format_job(text(int(pending.result_text_id)),pending)
 		show_yes=true;_yes.text=text(180)
 	else:
 		var row: Dictionary=_state.offers.get(_selected,{})
@@ -179,6 +180,8 @@ func _refresh() -> void:
 			_body.text=label_text(614) if _selected<0 else "This contact's service is not yet available."
 		else:
 			var mission: Dictionary=row.offer.mission
+			var client: Dictionary=_state.accepted_contact
+			if not _state.mission.is_empty() and client.get("station_id")==_state.station_id and client.get("offer_id")==_selected and client.get("offer")==row.offer:mission=_state.mission
 			_title.text=text(int(mission.title_text_id))
 			_body.text=format_job(text(int(mission.briefing_text_id)),mission)+"\n\n"+label_text(753).replace("#C",money(int(mission.reward)+int(mission.bonus)))
 			if row.consumed:_body.text+="\n\n"+label_text(841)

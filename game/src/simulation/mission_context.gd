@@ -64,7 +64,8 @@ static func supports_contract(bindings: RefCounted,mission: Variant,cursor: int)
 	# Keeping a side slot through a story world does not select that job's cast.
 	# Actual entry also requires the location/flight admitted below.
 	if mission.get("kind")==2 and not preload("res://src/content/opening_definitions.gd").integer(mission.get("quantity"),2,5):return false
-	return ordinary.available(bindings) and cursor>=int(bindings.mido_travel.free_flight.campaign_cursor) and mission.get("kind") in [1,2,4,6,7,12] and preload("res://src/content/opening_definitions.gd").integer(mission.get("difficulty"),1,9) and not ordinary.Worlds.location(bindings.mido_travel,mission.get("station_id")).is_empty()
+	if mission.get("kind") in [3,5] and (not preload("res://src/content/tractor_recovery_definitions.gd").available(bindings) or not preload("res://src/content/opening_definitions.gd").integer(mission.get("quantity"),2,9)):return false
+	return ordinary.available(bindings) and cursor>=int(bindings.mido_travel.free_flight.campaign_cursor) and mission.get("kind") in [1,2,3,4,5,6,7,12] and preload("res://src/content/opening_definitions.gd").integer(mission.get("difficulty"),1,9) and not ordinary.Worlds.location(bindings.mido_travel,mission.get("station_id")).is_empty()
 
 ## A retained career and inventory authorize a generated side job once. Other
 ## owners receive this capability with the cast, never a caller-authored recipe.
@@ -74,7 +75,7 @@ func admit_contract(bindings: RefCounted,catalogues: RefCounted,contracts: RefCo
 	if not is_instance_of(contracts,load("res://src/simulation/contract_session.gd")) or not is_instance_of(equipment,load("res://src/simulation/station_equipment.gd")):return reject("Contract entry requires its retained career and inventory")
 	if bindings==null or catalogues==null or catalogues.content_id!=bindings.base_content_id or not load("res://src/content/early_contract_definitions.gd").encounter_parameters(bindings.early_contracts):return reject("Contract entry requires matching original declarations")
 	var owned: Dictionary=equipment.snapshot()
-	if not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false) or not equipment.cargo_cache_valid() or not equipment.requirements().satisfied:return reject("Contract entry requires released, usable inventory")
+	if not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false) or not equipment.cargo_cache_valid():return reject("Contract entry requires released, usable inventory")
 	var loadout: Dictionary=owned.loadout
 	var context: Dictionary=contracts.flight_context(int(loadout.station_id),bindings)
 	if context.is_empty():return reject(contracts.error)
