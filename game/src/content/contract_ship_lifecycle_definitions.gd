@@ -33,7 +33,7 @@ static func npc_hit(data: Dictionary,weapon: Dictionary) -> bool:
 static func population(bindings: RefCounted,packet: Dictionary,capability: RefCounted=null) -> Dictionary:
 	if not available(bindings):return {}
 	var data:=ShipCombat.population(bindings,packet,capability)
-	if data.is_empty() or not supported_kinds(data.actor_kinds):return {}
+	if data.is_empty():return {}
 	data.lifecycle=bindings.early_contracts.ship_lifecycle.duplicate(true)
 	data.reputation_state=packet.contract_encounter.context.reputation.duplicate(true)
 	data.mission=packet.contract_encounter.mission.duplicate(true)
@@ -41,7 +41,14 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 	data.selection_skipped_modes=data.lifecycle.selection_skipped_modes.map(func(mode):return int(mode))
 	data.nonhostile_remaining_delta=int(bindings.combat_training_destruction.nonhostile_remaining_delta)
 	data.actors=[]
+	var debris: Dictionary={}
+	if int(data.debris_count)>0:
+		debris=load("res://src/content/contract_junk_definitions.gd").population(bindings,packet,capability)
+		if debris.is_empty():return {}
+		data.debris_lifecycle=debris.lifecycle
 	for actor in packet.actors:
+		if actor.population_group=="debris":
+			data.actors.append(debris.actors[actor.actor_id]);continue
 		var row: Dictionary={}
 		for key in ["actor_id","actor_kind","hull_catalogue_id","subtype","population_group"]:row[key]=actor[key]
 		row.hostile=actor.population_group=="pirate"

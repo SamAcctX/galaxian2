@@ -33,6 +33,11 @@ func release_application_flight() -> bool:
 
 func requested_contract_kind() -> int:return 4
 
+func contract_cast_valid(actors: Array) -> bool:
+	return not actors.is_empty() and actors.all(func(actor):return actor.actor_kind==8)
+
+func expects_contract_success() -> bool:return true
+
 func accepts_requested_contract(mission: Dictionary) -> bool:
 	var selected:=OS.get_environment("GOF2_PIRATE_DIFFICULTY")
 	return super.accepts_requested_contract(mission) and (selected.is_empty() or mission.difficulty==selected.to_int())
@@ -57,13 +62,13 @@ func verify_free_application() -> void:
 		check(fitted.loadout.equipment_ids.has(selected) and not fitted.loadout.equipment_ids.has(previous) and fitted.cargo.entries.has({"item_id":previous,"quantity":1}) and fitted.contracts.credits==before.contracts.credits and fitted.contracts.mission==before.contracts.mission,"Fitting the owned starter gun changed the accepted career")
 		await capture_free_application("freelance-"+starter+"-starter-fitted")
 	var saved: Dictionary=app.session.station_owner().snapshot()
-	if saved.contracts.mission.get("kind")==4:
+	if saved.contracts.mission.get("kind")==requested_contract_kind():
 		app.show();app.present_session();await process_frame;resume_application_focus()
-		await verify_delivery_route(saved,saved,{"mission":saved.contracts.mission},saved,4)
+		await verify_delivery_route(saved,saved,{"mission":saved.contracts.mission},saved,requested_contract_kind())
 	else:await super.verify_free_application()
 
 func verify_delivery_route(original: Dictionary,before: Dictionary,offer: Dictionary,accepted: Dictionary,requested_kind: int) -> void:
-	check(requested_kind==4,"The freelance pilot selected another job")
+	check(requested_kind==requested_contract_kind(),"The freelance pilot selected another job")
 	if not app.save_station(false):check(false,app._save_file.error);return
 	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_SAVE_TEST_DIRECTORY").path_join("accepted.gof2save"))==OK,"The playtest could not retain the accepted autosave")
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
@@ -72,15 +77,16 @@ func verify_delivery_route(original: Dictionary,before: Dictionary,offer: Dictio
 	var arrived: Dictionary=app.session.snapshot()
 	check(arrived.contracts.mission==offer.mission and arrived.contracts.credits==accepted.contracts.credits,"Arriving in space paid or discarded the Pirate job")
 	check(arrived.campaign_cursor==original.campaign_cursor and arrived.mission==original.mission,"The freelance target replaced the pending campaign")
-	check(not arrived.encounter.combat.actors.is_empty() and arrived.encounter.combat.actors.all(func(actor):return actor.actor_kind==8),"The Pirate target used the ordinary traffic cast")
+	check(contract_cast_valid(arrived.encounter.combat.actors),"The freelance target constructed the wrong cast")
 	await capture_free_application("freelance-pirate-arrival")
 	print("Freelance arrival: ",{"difficulty":offer.mission.difficulty,"pirates":arrived.encounter.combat.actors.size(),"credits_before":before.contracts.credits})
-	if not await fly_pirate_job(arrived):return
+	if not await fly_contract_job(arrived):return
 	if OS.get_environment("GOF2_PIRATE_FAILURE")=="1":return
 	var pending: Dictionary=app.session.snapshot()
 	var result: Dictionary=pending.contracts.pending_result
-	check(result.get("completed",false) and app.lounge_panel.visible and not app.session.can_control(),"Victory did not open its modal freelance result")
-	check(pending.contracts.credits==accepted.contracts.credits and pending.contracts.completed_side_missions==accepted.contracts.completed_side_missions+1,"Victory lost its success count or paid before acknowledgement")
+	var won:=expects_contract_success()
+	check(not result.is_empty() and result.get("completed",false)==won and app.lounge_panel.visible and not app.session.can_control(),"The job did not open its expected modal result")
+	check(pending.contracts.credits==accepted.contracts.credits and pending.contracts.completed_side_missions==accepted.contracts.completed_side_missions+int(won),"The result lost its success count or paid before acknowledgement")
 	await capture_free_application("freelance-pirate-result")
 	var serial: int=result.serial
 	resume_application_focus();app.present_session()
@@ -98,10 +104,11 @@ func verify_delivery_route(original: Dictionary,before: Dictionary,offer: Dictio
 	if not paid.contracts.pending_result.is_empty():
 		check(false,"Acknowledgement retained the finished job: "+app.session.error+" · "+str({"status":app.session.status,"active":app.lounge_panel._active,"focus":app._focused,"pauses":app.session._pauses}));return
 	check(paid.contracts.mission.is_empty(),"Acknowledgement retained the finished job")
-	check(paid.contracts.credits==accepted.contracts.credits+int(offer.mission.reward)+int(offer.mission.bonus) and paid.contracts.completed_side_missions==accepted.contracts.completed_side_missions+1,"The freelance result paid another reward or count")
+	var reward:=int(offer.mission.reward)+int(offer.mission.bonus) if won else 0
+	check(paid.contracts.credits==accepted.contracts.credits+reward and paid.contracts.completed_side_missions==accepted.contracts.completed_side_missions+int(won),"The freelance result paid another reward or count")
 	check(paid.mission==original.mission and paid.campaign_cursor==original.campaign_cursor,"Freelance payment advanced the campaign")
 	check(not app.contract_action("result_close",serial) and app.session.snapshot()==paid,"Repeated acknowledgement changed the career")
-	check(app.session.flight_audio.snapshot().history.filter(func(row):return row.get("source_id")==36).size()==1,"The original payment sound did not play exactly once")
+	check(app.session.flight_audio.snapshot().history.filter(func(row):return row.get("source_id")==36).size()==int(won),"The result played the wrong number of payment sounds")
 	if not application_step() or not await dock_application():return
 	var docked: Dictionary=app.session.station_owner().snapshot()
 	check(docked.contracts.credits==paid.contracts.credits and docked.contracts.mission.is_empty() and docked.mission==original.mission,"Docking changed the settled freelance career")
@@ -142,7 +149,7 @@ func pirate_step(input: Dictionary) -> bool:
 	app.present_session()
 	return true
 
-func fly_pirate_job(initial: Dictionary) -> bool:
+func fly_contract_job(initial: Dictionary) -> bool:
 	if OS.get_environment("GOF2_PIRATE_RESULT_FIXTURE")=="1":
 		if not await damage_contract_targets(4):return false
 		for tick in 160:
@@ -192,3 +199,35 @@ func fly_pirate_job(initial: Dictionary) -> bool:
 			print("Freelance pilot: ",{"elapsed":(now_us-started)/1000000.0,"hull":state.player.vitals.hull,"pirates":state.encounter.combat.actors.map(func(actor):return actor.vitals.hull),"target":input.target,"distance":input.distance})
 			next_log=now_us+20000000
 	check(false,"The input-only Pirate pilot did not reach an outcome");return false
+
+func run_resumed_job() -> void:
+	if not open_application_content(OS.get_cmdline_user_args()):quit(1);return
+	var directory:=OS.get_environment("GOF2_SAVE_TEST_DIRECTORY")
+	var saved:=OS.get_environment("GOF2_SOURCE_SAVE")
+	if directory.is_empty() or saved.is_empty():check(false,"Resume requires an earned source file and an isolated destination");quit(1);return
+	app=Host.new();root.add_child(app);app.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	app.set_context(source,definitions,visual);app.set_process(false);app.enable_saves(directory)
+	DirAccess.make_dir_recursive_absolute(app.station_save_path().get_base_dir())
+	if DirAccess.copy_absolute(saved,app.station_save_path())!=OK:check(false,"Could not retain the source checkpoint for Resume");app.free();quit(1);return
+	app.show();app.present_session();await process_frame;resume_application_focus()
+	check(app.session==null and app._load_button.visible,"A fresh application omitted Resume")
+	var key:=InputEventKey.new();key.physical_keycode=KEY_F9;key.pressed=true;app._unhandled_input(key)
+	if app.session==null:check(false,app._save_notice.text);app.free();quit(1);return
+	var restored: Dictionary=app.session.station_owner().snapshot()
+	check(not app.session.snapshot().dialogue.visible and not app.session.snapshot().lounge_open,"Resume replayed a modal conversation")
+	await capture_free_application("freelance-resumed-station")
+	if OS.get_environment("GOF2_PIRATE_RESUME_PAID")=="1":
+		var document: Dictionary=app._save_file.load_document(saved,definitions,catalogue,source)
+		if document.is_empty():check(false,app._save_file.error);app.free();quit(1);return
+		check(restored.campaign_cursor==document.career.campaign_cursor and restored.contracts.credits==document.career.credits and restored.contracts.completed_side_missions==document.career.completed_side_missions and restored.contracts.mission.is_empty(),"Fresh Resume lost or repeated the saved freelance payment")
+		if app.request_departure() and app.enter_first_flight(now_us,4096,flight_world_seconds()) and await release_application_flight():
+			var flight: Dictionary=app.session.snapshot()
+			check(flight.contracts.credits==restored.contracts.credits and flight.contracts.completed_side_missions==restored.contracts.completed_side_missions and flight.mission==restored.mission,"Departure after Resume repeated the payment or advanced the campaign")
+			check(flight.player.equipment_ids==restored.loadout.equipment_ids,"Departure after Resume lost the saved fitted equipment")
+			check(flight.encounter.combat.get("contract_encounter",{}).is_empty() and flight.encounter.combat.free_context.mission_kind==-1,"The paid job respawned its mission pirates")
+			await capture_free_application("freelance-paid-resumed-flight")
+		else:check(false,app.status.text)
+	else:
+		check(restored.contracts.mission.get("kind")==requested_contract_kind(),"Fresh Resume discarded the accepted freelance job")
+		if failures==0:await verify_free_application()
+	app.free();print("Freelance Resume: %d checks; %d failures"%[checks,failures]);quit(1 if failures else 0)

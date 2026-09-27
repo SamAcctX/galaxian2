@@ -19,7 +19,6 @@ const AmbientLife=preload("res://src/content/ambient_lifecycle_definitions.gd")
 const Construction=preload("res://src/simulation/opening_npc_construction.gd")
 const ContractCombat=preload("res://src/content/contract_ship_combat_definitions.gd")
 const BakkaCombat=preload("res://src/content/bakka_combat_definitions.gd")
-const Junk=preload("res://src/content/contract_junk_definitions.gd")
 const Convoy=preload("res://src/content/convoy_world_definitions.gd")
 const Kappa=preload("res://src/content/kappa_population_definitions.gd")
 const Alioth=preload("res://src/content/alioth_population_definitions.gd")
@@ -120,13 +119,6 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	clear()
 	if not _matching_content(bindings,catalogues) or not construction is Construction:return reject("Contract weapons require their generated accepted population")
 	var data:=ContractCombat.population(bindings,construction.snapshot(),construction.mission_context_owner())
-	if data.is_empty():
-		data=Junk.population(bindings,construction.snapshot(),construction.mission_context_owner())
-		if not data.is_empty():
-			data.target_memberships=[]
-			for id in int(data.actor_count):
-				data.npc_weapons.append({"actor_id":id,"actor_kind":-1,"hull_catalogue_id":-1,"unarmed":true})
-				data.target_memberships.append([])
 	if data.is_empty():return reject("This population has no supported contract ship weapons")
 	if not _configure_rows(bindings,catalogues,data.npc_weapons,int(data.campaign_cursor)):return false
 	_identity.campaign_cursor=int(data.campaign_cursor);_training=data

@@ -71,7 +71,7 @@ func verify_ordinary_quotes(bindings: RefCounted,cat: RefCounted,context: Dictio
 			check(state.requirements.cargo_tons==(quantity if kind==0 else 0) and state.requirements.passenger_places==(quantity if kind==11 else 0),"A quoted source quantity invented cargo or cabin requirements")
 			check(not Session.acceptance_supported(bindings.early_contracts,18,state),"An unsupported ordinary quote enabled acceptance")
 			if preload("res://src/content/ordinary_contracts_definitions.gd").available(bindings):
-				check(Session.acceptance_supported(bindings.early_contracts,18,state,bindings)==(kind in [0,11]),"Ordinary acceptance crossed its implemented delivery types")
+				check(Session.acceptance_supported(bindings.early_contracts,18,state,bindings)==(kind in [0,4,7,11]),"Ordinary acceptance crossed its implemented delivery and combat recipes")
 			check(Offer.new().restore(bindings,cat,state),"Ordinary quote did not restore exactly")
 	for item in [97,98]:
 		var choice:={"kind":8,"difficulty_index":8,"destination_station_id":96,"parameter_index":item,"quantity_index":14}

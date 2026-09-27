@@ -28,12 +28,12 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 	if not is_instance_of(capability,load("res://src/simulation/mission_context.gd")) or not capability.matches_contract_population(bindings,packet):return {}
 	var mission: Dictionary=encounter.mission
 	if mission.kind!=7:return {}
-	var count: int=capability.recipe().cast.actor_count
+	var cast: Dictionary=capability.recipe().cast
 	var rules: Dictionary=bindings.early_contracts.junk_lifecycle
 	var construction: Dictionary=bindings.early_contracts.encounter_construction.junk
 	var data:={"campaign_cursor":context.campaign_cursor,"station_id":context.station_id,"rank":context.rank,"difficulty":context.difficulty,
-		"mission":mission.duplicate(true),"lifecycle":rules.duplicate(true),"actor_count":count,"npc_weapons":[],"actors":[]}
-	for id in count:
+		"mission":mission.duplicate(true),"lifecycle":rules.duplicate(true),"actor_count":int(cast.actor_count),"debris_count":int(cast.debris_count),"npc_weapons":[],"actors":[]}
+	for id in int(cast.debris_count):
 		var row: Variant=actors[id]
 		if not row is Dictionary or row.get("actor_id")!=id or row.get("population_group")!="debris" or row.get("actor_kind")!=-1:return {}
 		for pair in [["type_id","type_id"],["hull","hull"],["half_extent","half_extent"],["mode","mode"],["hostile","hostile"],["friendly","friendly"]]:

@@ -567,7 +567,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	clear()
 	if not construction is NPCConstruction or catalogues==null:return reject("Contract ship bodies require their generated accepted population")
 	var packet: Dictionary=construction.snapshot()
-	if packet.get("contract_encounter",{}).get("kind")==7:return _configure_debris(bindings,catalogues,construction,actor_id)
+	if actor_id is int and actor_id>=0 and actor_id<packet.get("actors",[]).size() and packet.actors[actor_id].get("population_group")=="debris":return _configure_debris(bindings,catalogues,construction,actor_id)
 	var data:=ContractCombat.population(bindings,packet,construction.mission_context_owner())
 	if data.is_empty() or catalogues.content_id!=bindings.base_content_id or not actor_id is int or actor_id<0 or actor_id>=data.actor_count:return reject("Unsupported contract ship population or identity")
 	var row: Dictionary=packet.actors[actor_id]
@@ -621,7 +621,7 @@ func configure_bakka(bindings: RefCounted,catalogues: RefCounted,construction: R
 func _configure_debris(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
 	var packet: Dictionary=construction.snapshot()
 	var data:=Junk.population(bindings,packet,construction.mission_context_owner())
-	if data.is_empty() or catalogues.content_id!=bindings.base_content_id or not actor_id is int or actor_id<0 or actor_id>=data.actor_count:return reject("Unsupported contract debris population or identity")
+	if data.is_empty() or catalogues.content_id!=bindings.base_content_id or not actor_id is int or actor_id<0 or actor_id>=data.debris_count:return reject("Unsupported contract debris population or identity")
 	var row: Dictionary=packet.actors[actor_id]
 	if row.body_pose.basis!=Basis.IDENTITY:return reject("Contract debris requires its stationary source pose")
 	var model: String=bindings.resolve(int(row.resource_id),"mesh")
@@ -633,6 +633,7 @@ func _configure_debris(bindings: RefCounted,catalogues: RefCounted,construction:
 	_state.merge({"campaign_cursor":int(data.campaign_cursor),"station_id":int(data.station_id),"rank":int(data.rank),"contract_debris":true,
 		"resource_id":int(row.resource_id),"population_group":"debris","friendly":bool(row.friendly),
 		"actor_mode":int(row.mode),"active":bool(rules.initial_active),"targeting_blocked":bool(rules.initial_targeting_blocked),
+		"statistics_targeting_blocked":false,
 		"half_extent":int(row.half_extent),"spatial_half_extent":int(row.half_extent),
 		"model_draw_enabled":bool(rules.initial_model_draw_enabled)},true)
 	return set_pose(row.statistics_pose,row.body_pose)

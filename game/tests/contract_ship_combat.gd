@@ -50,10 +50,10 @@ func after_encounter_population(bindings: RefCounted,cat: RefCounted,owner: RefC
 	var data:=ShipRules.population(bindings,before,owner.mission_context_owner())
 	if int(vector.kind) not in [4,12]:
 		var junk: bool=int(vector.kind)==7 and preload("res://src/content/contract_junk_definitions.gd").available(bindings)
-		check(data.is_empty(),"An unarmed world borrowed ship combat declarations")
 		if junk:
+			check(not data.is_empty() and data.npc_weapons.all(func(row):return row.get("unarmed",false)),"Debris preparation lost its unarmed actor roles")
 			check(weapons.configure_contract(bindings,cat,owner) and weapons.snapshot().actors.all(func(actor):return actor.projectiles.is_empty()),"Junk acquired ordinary ship weapons")
-		else:check(not weapons.configure_contract(bindings,cat,owner) and not ShipBody.new().configure_contract(bindings,cat,owner,0),"An earlier or empty world enabled debris combat")
+		else:check(data.is_empty() and not weapons.configure_contract(bindings,cat,owner) and not ShipBody.new().configure_contract(bindings,cat,owner,0),"An earlier or empty world enabled debris combat")
 		check(not ShipGuidance.new().configure_contract(bindings,cat,owner,0),"Debris or an empty world borrowed ship controls")
 		return
 	if data.is_empty():check(false,"Unsupported contract ship population");return

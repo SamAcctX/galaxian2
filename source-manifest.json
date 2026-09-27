@@ -2742,6 +2742,12 @@
     "game/src/presentation/space_fog.gdshader",
     "game/src/presentation/space_fog.gdshader.uid",
     "game/tests/space_fog.gd",
-    "game/tests/space_fog.gd.uid"
+    "game/tests/space_fog.gd.uid",
+    "game/tests/junk_unlocked.gd",
+    "game/tests/junk_unlocked.gd.uid",
+    "game/tests/junk_unlocked_application.gd",
+    "game/tests/junk_unlocked_application.gd.uid",
+    "game/tests/junk_resume_application.gd",
+    "game/tests/junk_resume_application.gd.uid"
   ]
 }

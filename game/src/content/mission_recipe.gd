@@ -14,11 +14,16 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 	var mission: Dictionary=context.mission
 	var scaled:=Vitals.single(float(mission.difficulty)/float(rules.difficulty_divisor))
 	var count:=0
+	var debris_count:=0
+	var ship_state:={"mode":int(rules.pirate.mode),"active":bool(rules.pirate.active),"targeting_blocked":bool(rules.pirate.targeting_blocked)}
 	match int(mission.kind):
 		4:
 			var base:=int(Vitals.single(scaled*float(rules.pirate.count_multiplier)))+int(rules.pirate.count_offset)
 			count=int(Vitals.single(base+Vitals.single(base*Vitals.single(float(context.difficulty)+float(rules.pirate.game_difficulty_offset)))))
-		7:count=int(Vitals.single(scaled*float(rules.junk.debris_count_multiplier)))+int(rules.junk.debris_count_offset)
+		7:
+			debris_count=int(Vitals.single(scaled*float(rules.junk.debris_count_multiplier)))+int(rules.junk.debris_count_offset)
+			count=debris_count+int(Vitals.single(scaled*float(rules.junk.pirate_count_multiplier)))
+			ship_state={"mode":0,"active":true,"targeting_blocked":false}
 		12:
 			var base:=int(Vitals.single(scaled*float(rules.challenge.count_multiplier)))
 			count=base+(int(rules.challenge.count_odd_offset) if (base+int(rules.challenge.count_odd_offset))%2 else int(rules.challenge.count_even_offset))+1
@@ -28,7 +33,7 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 	match int(mission.kind):
 		0:success={"kind":"never"}
 		7:
-			success={"kind":7,"end_actor":count}
+			success={"kind":7,"end_actor":debris_count}
 			periodic={"kind":"elapsed","after_ms":int(bindings.early_contracts.junk_lifecycle.deadline_milliseconds)}
 		12:
 			var objectives: Dictionary=bindings.early_contracts.ship_lifecycle.objectives.duplicate(true)
@@ -36,7 +41,7 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 			failure={"kind":int(objectives.challenge_failure_kind),"rules":objectives}
 	return {"track":"side_job","cursor":context.campaign_cursor,"station_id":context.station_id,"system_id":loadout.system_id,
 		"mission":mission.duplicate(true),"next_cursor":context.campaign_cursor,"entry":"ordinary_flight","world":{"station":true,"portal":true,"asteroid_field":true},
-		"cast":{"kind":"contract","actor_count":count,"operations":rules.duplicate(true)},"briefing":[],"radio":[],"sequences":[],
+		"cast":{"kind":"contract","actor_count":count,"debris_count":debris_count,"ship_state":ship_state,"operations":rules.duplicate(true)},"briefing":[],"radio":[],"sequences":[],
 		"result":{"success":success,"failure":failure,"periodic_failure":periodic,"actor_count":count,
 			"retire_failure":true,"freeze_clock_on_result":true,"reset_while_blocked":false,"policy":bindings.early_contracts.flight_results.duplicate(true)}}
 

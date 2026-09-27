@@ -18,7 +18,6 @@ const ContractLife=preload("res://src/content/contract_ship_lifecycle_definition
 const BakkaCombat=preload("res://src/content/bakka_combat_definitions.gd")
 const Convoy=preload("res://src/content/convoy_world_definitions.gd")
 const ContractResults=preload("res://src/content/contract_flight_result_definitions.gd")
-const Junk=preload("res://src/content/contract_junk_definitions.gd")
 const NPCConstruction=preload("res://src/simulation/opening_npc_construction.gd")
 const Reputation=preload("res://src/simulation/faction_reputation.gd")
 const Provocation=preload("res://src/simulation/npc_provocation.gd")
@@ -392,6 +391,7 @@ func _reaction_actors(reaction: RefCounted,actors: Array) -> Array:
 	var state: Dictionary=reaction.snapshot();var result:=[]
 	for id in actors.size():
 		var actor: RefCounted=actors[id].fork_for_frame()
+		if actor.snapshot().get("contract_debris",false):result.append(actor);continue
 		if _training_weapons.has("kappa_lifecycle"):
 			if not actor.retain_kappa_force(state.forced_hostile[id],state.permanent_hostile[id]):reject(actor.error);return []
 		elif state.has("systems_requested_damage"):
@@ -450,10 +450,9 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	clear()
 	if not construction is NPCConstruction:return reject("Contract combat requires its accepted generated population")
 	var data:=ContractLife.population(bindings,construction.snapshot(),construction.mission_context_owner())
-	if data.is_empty():data=Junk.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	if data.is_empty():return reject("Unsupported contract combat lifecycle")
 	var reaction: RefCounted
-	var debris: bool=int(data.mission.kind)==7
+	var debris: bool=data.actors.all(func(row):return row.population_group=="debris")
 	if debris:
 		if equipment==null or equipment.snapshot().get("loadout",{}).get("station_id")!=int(data.station_id):return reject("Debris combat belongs to another equipped location")
 	else:
@@ -565,7 +564,7 @@ func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction:
 func begin_contact_pass(random_state: Dictionary, display_available: bool) -> bool:
 	if _selected40_world!=null and _provocation==null:return reject("Selected40 consequences require complete native owners")
 	error=""
-	if _provocation==null and _contract_encounter.get("kind")!=7:return reject("This encounter does not use local provocation")
+	if _provocation==null and _contract_encounter.is_empty():return reject("This encounter does not use local provocation")
 	var random:=Random.new()
 	if not random.restore(random_state):return reject(random.error)
 	_contact_random=random.snapshot();_display_available=display_available
@@ -574,7 +573,7 @@ func begin_contact_pass(random_state: Dictionary, display_available: bool) -> bo
 func contact_random_state() -> Dictionary:return _contact_random.duplicate(true)
 
 func current_reputation() -> Dictionary:
-	if _contract_encounter.get("kind")==7:
+	if _provocation==null and not _contract_encounter.is_empty():
 		return _contract_settlement.reputation.duplicate(true) if not _contract_settlement.is_empty() else _contract_encounter.context.reputation.duplicate(true)
 	if _provocation==null:return {}
 	if not _contract_settlement.is_empty():return _reputation.apply_to(_contract_settlement.reputation,int(_contract_settlement.event_count))
@@ -709,7 +708,7 @@ func career_snapshot() -> Dictionary:
 	var result:=_identity.duplicate()
 	if _training_weapons.get("context_key","")=="dekato_context":result.dekato_context=_training_weapons.context.duplicate(true)
 	if _reputation!=null:result.reputation=_reputation.snapshot()
-	elif _contract_encounter.get("kind")==7:result.reputation={"events":[]};result.current_reputation=current_reputation()
+	elif not _contract_encounter.is_empty():result.reputation={"events":[]};result.current_reputation=current_reputation()
 	if _provocation!=null:
 		result.provocation=_provocation.snapshot();result.current_reputation=current_reputation()
 	if not _contract_encounter.is_empty():result.contract_encounter=_contract_encounter.duplicate(true)
@@ -735,13 +734,13 @@ func normal_hit(actor_id: Variant, amount: Variant, nonplayer_source: Variant=fa
 		return {}
 	var actor: RefCounted=_actors[actor_id].fork_for_frame()
 	var reaction:={}
-	if _provocation!=null:
+	if _provocation!=null and not actor.snapshot().get("contract_debris",false):
 		reaction=_provocation.evaluate(actor.snapshot(),amount,nonplayer_source,_contact_random,_display_available)
 		if reaction.is_empty():reject(_provocation.error);return {}
 	var result: Dictionary = actor.normal_hit(amount,nonplayer_source)
 	if result.is_empty():reject(actor.error);return {}
 	var history: RefCounted=_reputation
-	if result.destroyed_now and _reputation!=null:
+	if result.destroyed_now and _reputation!=null and not actor.snapshot().get("contract_debris",false):
 		history=_reputation.fork_for_frame()
 		if not history.record_lethal(actor.snapshot()):reject(history.error);return {}
 	var staged:=_actors.duplicate();staged[actor_id]=actor

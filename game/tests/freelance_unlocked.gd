@@ -10,6 +10,8 @@ func _initialize() -> void:
 	print("Unlocked freelance: %d checks; %d failures"%[checks,failures])
 	quit(1 if failures else 0)
 
+func requested_contract_kind() -> int:return 4
+
 func verify_unlocked(args: PackedStringArray) -> void:
 	var library:=Library.new();var bindings:=Bindings.new();var cat:=Catalogues.new()
 	if not library.open(args[0]) or not bindings.open(args[1],library.manifest) or not library.select_language("gb") or not cat.open(library):check(false,library.error+bindings.error+cat.error);return
@@ -20,7 +22,7 @@ func verify_unlocked(args: PackedStringArray) -> void:
 	var station: RefCounted=archive.restore(bindings,cat,library,source)
 	if station==null:check(false,archive.error);return
 	var original: Dictionary=station.snapshot()
-	if original.contracts.mission.get("kind")!=4:check(false,"The retained save has no accepted Pirate job");return
+	if original.contracts.mission.get("kind")!=requested_contract_kind():check(false,"The retained save has no accepted requested job");return
 	var accepted: Dictionary=station.snapshot()
 	var path:="user://unlocked-freelance.gof2save"
 	if not file.save(path,station,bindings,cat,library):check(false,file.error);return
@@ -55,6 +57,9 @@ func verify_unlocked(args: PackedStringArray) -> void:
 	check(context!=null and not context.advances_campaign(),"Selected freelance flight acquired campaign advancement")
 	var frame=preload("res://src/simulation/first_flight_frame.gd").new()
 	if not frame.configure(bindings,cat,library,destination,"F",1.0):check(false,frame.error);return
+	verify_contract_frame(bindings,frame,accepted)
+
+func verify_contract_frame(bindings: RefCounted,frame: RefCounted,accepted: Dictionary) -> void:
 	var world: Dictionary=frame.snapshot()
 	check(world.contracts.mission==accepted.contracts.mission and world.campaign_cursor==accepted.campaign_cursor,"Entering the target discarded the job or advanced the campaign")
 	check(not world.encounter.combat.actors.is_empty() and world.encounter.combat.actors.all(func(actor):return actor.actor_kind==8),"The selected job constructed ambient traffic instead of pirates")

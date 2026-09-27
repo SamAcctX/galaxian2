@@ -25,7 +25,6 @@ const ContractLife=preload("res://src/content/contract_ship_lifecycle_definition
 const Convoy=preload("res://src/content/convoy_world_definitions.gd")
 const ContractResults=preload("res://src/content/contract_flight_result_definitions.gd")
 const ResultPoll=preload("res://src/simulation/mission_result_poll.gd")
-const Junk=preload("res://src/content/contract_junk_definitions.gd")
 const DebrisDeath=preload("res://src/simulation/debris_destruction.gd")
 const LaunchClock=preload("res://src/simulation/traffic_launch_clock.gd")
 const FreightMotion=preload("res://src/simulation/freighter_motion.gd")
@@ -360,13 +359,12 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	clear()
 	if not construction is Construction:return reject("Contract control requires its accepted generated population")
 	var rules:=ContractLife.population(bindings,construction.snapshot(),construction.mission_context_owner())
-	if rules.is_empty():rules=Junk.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	if rules.is_empty():return reject("Unsupported contract control lifecycle")
 	var combat:=Combat.new()
 	if not combat.configure_contract(bindings,catalogues,construction,equipment):return reject(combat.error)
 	var guidance:=[];var flight:=[]
 	for id in int(rules.actor_count):
-		if int(rules.mission.kind)==7:
+		if rules.actors[id].population_group=="debris":
 			guidance.append(null);flight.append(null)
 			continue
 		var controller:=Guidance.new();var motion:=Flight.new()
@@ -386,7 +384,7 @@ func _set_contract_destruction(bindings: RefCounted,resources: RefCounted) -> bo
 	if _started or _accounting!=null or bindings!=_bindings or not resources is DeathResources:return reject("Prepare contract destruction once before flight starts")
 	var owners:=[]
 	for id in _initial_actors.size():
-		if int(_rules.mission.kind)==7:
+		if _initial_actors[id].population_group=="debris":
 			var owner:=DebrisDeath.new()
 			if not owner.configure(bindings,resources,_construction,id):return reject(owner.error)
 			owners.append(owner)
@@ -849,7 +847,7 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 			# breakup stops too; neither path starts a new death/accounting event.
 			decisions.append({"actor_id":id,"fire_requested":false,"script_retired":true})
 			continue
-		if _contract and int(_rules.mission.kind)==7:
+		if _contract and _initial_actors[id].population_group=="debris":
 			var debris: Dictionary=staged._advance_debris(id,int(delta_ms))
 			if debris.is_empty():return fail(staged.error)
 			decisions.append(debris.decision)

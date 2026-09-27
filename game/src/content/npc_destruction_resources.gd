@@ -11,7 +11,6 @@ const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const Lifecycle=preload("res://src/content/ambient_lifecycle_definitions.gd")
 const ContractLife=preload("res://src/content/contract_ship_lifecycle_definitions.gd")
 const Convoy=preload("res://src/content/convoy_world_definitions.gd")
-const Junk=preload("res://src/content/contract_junk_definitions.gd")
 const Construction=preload("res://src/simulation/opening_npc_construction.gd")
 const AEM = preload("res://src/content/aem.gd")
 const Timing = preload("res://src/content/scenery_effect_resources.gd")
@@ -87,19 +86,19 @@ func configure_contract(library: RefCounted,bindings: RefCounted,construction: R
 	clear()
 	if not construction is Construction:return reject("Contract destruction resources require their accepted construction")
 	var data:=ContractLife.population(bindings,construction.snapshot(),construction.mission_context_owner())
-	if data.is_empty():data=Junk.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	if data.is_empty():return reject("Unsupported contract cargo resources")
 	var prepared: RefCounted=get_script().new()
-	var debris: bool=int(data.mission.kind)==7
+	var debris: bool=data.actors.all(func(row):return row.population_group=="debris")
 	if debris:
 		if not library is Library or library.manifest.get("content_id")!=bindings.base_content_id:return reject("Debris cargo belongs to another content library")
 		prepared._state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
 	elif not prepared.configure(library,bindings):return reject(prepared.error)
 	var models:=[]
+	var model_cache:={}
 	for row in data.actors:
-		var model: Dictionary=models[0].duplicate(true) if debris and not models.is_empty() else prepared.read_cargo_model(library,bindings,row)
+		var model: Dictionary=model_cache[row.cargo_model_id] if model_cache.has(row.cargo_model_id) else prepared.read_cargo_model(library,bindings,row)
 		if model.is_empty():return reject(prepared.error)
-		models.append(model)
+		model_cache[row.cargo_model_id]=model;models.append(model.duplicate(true))
 	_state=prepared.snapshot();_state.cargo_models=models;_state.campaign_cursor=int(data.campaign_cursor)
 	_state.contract_encounter=construction.snapshot().contract_encounter.duplicate(true)
 	return true

@@ -29,7 +29,6 @@ const StationEquipment = preload("res://src/simulation/station_equipment.gd")
 const Construction=preload("res://src/simulation/opening_npc_construction.gd")
 const Convoy=preload("res://src/content/convoy_world_definitions.gd")
 const ContractLife=preload("res://src/content/contract_ship_lifecycle_definitions.gd")
-const Junk=preload("res://src/content/contract_junk_definitions.gd")
 var error := ""
 var _state := {}
 var _hit_policy := {}
@@ -62,7 +61,6 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 	clear()
 	if not construction is Construction:return reject("Contract player requires its accepted generated encounter")
 	var data:=ContractLife.population(bindings,construction.snapshot(),construction.mission_context_owner())
-	if data.is_empty():data=Junk.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	if data.is_empty() or not equipment is StationEquipment or equipment.snapshot().loadout.station_id!=int(data.station_id):return reject("Contract player belongs to another equipped station")
 	data.mission_context=construction.mission_context_owner()
 	if not _configure(bindings,catalogues,int(data.campaign_cursor),previous_cache,equipment,data):return false

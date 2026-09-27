@@ -247,7 +247,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 	var mission: Dictionary=recipe.mission
 	var count: int=recipe.cast.actor_count
 	var possible_hulls:=[]
-	if int(mission.kind) in [4,12]:
+	if count>int(recipe.cast.debris_count):
 		for hull in int(rules.hulls.draw_bound):
 			if hull<=int(rules.hulls.mask_limit) and (int(rules.hulls.excluded_mask)&(1<<hull))!=0:continue
 			var faction:=int(rules.hulls.factions[hull])
@@ -259,7 +259,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 		for resource_id in rules.junk.model_ids:
 			if bindings.resolve(int(resource_id),"mesh").is_empty():return reject(bindings.error)
 	var definition: Dictionary=rules.duplicate(true)
-	definition.merge({"context":context,"actor_count":count,"player_position":player_position,"field_center":field_center})
+	definition.merge({"context":context,"actor_count":count,"debris_count":recipe.cast.debris_count,"ship_state":recipe.cast.ship_state,"player_position":player_position,"field_center":field_center})
 	definition.campaign_cursor=context.campaign_cursor
 	_mission_context=capability
 	return _configure(bindings,catalogues,seed,{},{},{},{},definition)
@@ -466,7 +466,7 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, 
 		if staged[id].type==int(data.special_equipment_type): return reject("Special cargo override is outside fresh opening construction")
 	var routes := []
 	var count: int=0 if traffic.has("void_context") else (int(traffic.empty_population_fallback) if not traffic.is_empty() else (int(training.actor_count) if not training.is_empty() else (3 if arrival.is_empty() and full_hold.is_empty() else 1)))
-	if not contract.is_empty():count=0 if int(contract.context.mission.kind)==7 else int(contract.actor_count)
+	if not contract.is_empty():count=int(contract.actor_count)
 	if not convoy.is_empty():count=int(convoy.actor_count)
 	if not alioth.is_empty():count=int(alioth.actor_count)
 	if not kappa.is_empty():count=int(kappa.actor_count)
@@ -478,6 +478,7 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, 
 	elif traffic.has("void_context"):count=int(traffic.void_maximum_count)
 	elif traffic.get("ambient",false):count=AmbientDefinitions.maximum_actor_count(bindings.ambient_population,traffic)
 	for id in count:
+		if not contract.is_empty() and id<int(contract.get("debris_count",0)):routes.append(null);continue
 		if not selected41.is_empty() and id==int(selected41.freighter_actor_id):routes.append(null);continue
 		if not selected40.is_empty() and id==int(selected40.freighter_actor_id):routes.append(null);continue
 		if not dekato.is_empty() and id<int(dekato.freighter_count):routes.append(null);continue
@@ -1017,7 +1018,7 @@ func _generate_contract(random: RefCounted) -> Dictionary:
 	elif kind==7:
 		for axis in 3:center[axis]=int(_contract.junk.center_offsets[axis])+random.next_int(int(_contract.junk.center_bounds[axis]))
 	for id in int(_contract.actor_count):
-		if kind==7:
+		if id<int(_contract.get("debris_count",0)):
 			var rules: Dictionary=_contract.junk
 			var position:=center
 			for axis in 3:position[axis]+=int(rules.position_offset)+random.next_int(int(rules.position_bound))
@@ -1031,7 +1032,7 @@ func _generate_contract(random: RefCounted) -> Dictionary:
 		var rival:=kind==12 and id==int(_contract.challenge.rival_actor_id)
 		var faction:=int(_contract.rival_faction if story else _contract.context.client_faction) if rival else int(_contract.pirate_actor_kind)
 		var hull: int=int(_contract.rival_hull) if story and rival else _contract_hull(random,faction)
-		var origin: Vector3=Vector3.ZERO if rival else path[random.next_int(path.size())]
+		var origin: Vector3=Vector3.ZERO if rival or path.is_empty() else path[random.next_int(path.size())]
 		var sampled:=_sample_actor(id,origin,random)
 		if sampled.is_empty():return {}
 		var actor: Dictionary=sampled.actor
@@ -1052,7 +1053,7 @@ func _generate_contract(random: RefCounted) -> Dictionary:
 			else:actor.name=_contract.context.contact_name
 		else:
 			actor.cargo=actor.discarded_cargo;actor.discarded_cargo=[]
-			actor.merge({"mode":int(_contract.pirate.mode),"active":bool(_contract.pirate.active),"targeting_blocked":bool(_contract.pirate.targeting_blocked)})
+			actor.merge(_contract.get("ship_state",{"mode":int(_contract.pirate.mode),"active":bool(_contract.pirate.active),"targeting_blocked":bool(_contract.pirate.targeting_blocked)}))
 		var body:=Transform3D(Basis.IDENTITY,position)
 		actor.merge({"body_pose":body,"statistics_pose":body,"model_local_pose":Transform3D.IDENTITY})
 		actors.append(actor);routes.append(route)

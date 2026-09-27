@@ -8,6 +8,8 @@ func requested_contract_kind() -> int:
 func accepts_requested_contract(mission: Dictionary) -> bool:
 	return mission.kind==requested_contract_kind()
 
+func contract_search_stations() -> Array:return [-1,96,97,99,95,98]
+
 func verify_free_application() -> void:
 	var original: Dictionary=app.session.station_owner().snapshot()
 	app.show();app.present_session();await process_frame;resume_application_focus()
@@ -15,7 +17,7 @@ func verify_free_application() -> void:
 	if requested_kind==11 and not await acquire_passenger_cabin():return
 	check(app._lounge_button.visible and app._launch_button.visible,"The unlocked station omitted its lounge")
 	var chosen:=-1
-	for destination in [-1,96,97,99,95,98]:
+	for destination in contract_search_stations():
 		if destination==int(app.session.station_owner().snapshot().loadout.station_id):continue
 		if destination>=0 and not await visit_delivery_station(destination):return
 		var key:=InputEventKey.new();key.physical_keycode=KEY_L;key.pressed=true

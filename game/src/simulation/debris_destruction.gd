@@ -18,7 +18,7 @@ func configure(bindings: RefCounted,resources: RefCounted,construction: RefCount
 	var packet: Dictionary=construction.snapshot()
 	var data:=Rules.population(bindings,packet,construction.mission_context_owner())
 	var models: Dictionary=resources.snapshot()
-	if data.is_empty() or actor_id<0 or actor_id>=data.actor_count or models.get("contract_encounter")!=packet.contract_encounter:return reject("Debris resources belong to another accepted encounter")
+	if data.is_empty() or actor_id<0 or actor_id>=data.debris_count or models.get("contract_encounter")!=packet.contract_encounter:return reject("Debris resources belong to another accepted encounter")
 	for key in ["base_content_id","binding_id"]:
 		if models.get(key)!=bindings.get(key):return reject("Debris resources belong to another content identity")
 	var rules: Dictionary=data.lifecycle

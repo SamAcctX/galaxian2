@@ -67,16 +67,16 @@ static func combat_population(bindings: RefCounted,combat: Dictionary) -> bool:
 		if combat.get(key)!=bindings.get(key) or context.get(key)!=bindings.get(key):return false
 	if context.get("campaign_cursor")!=combat.get("campaign_cursor"):return false
 	var kind: Variant=source.get("kind")
-	if kind!=context.mission.get("kind") or kind not in [4,7,12]:return false
+	if kind!=context.mission.get("kind"):return false
 	# Cast admission owns location and population size; presentation observes it.
 	var hulls: Dictionary=bindings.early_contracts.encounter_construction.hulls
 	for id in actors.size():
 		var actor: Variant=actors[id]
 		if not actor is Dictionary or actor.get("actor_id")!=id:return false
-		if kind==7:
-			if actor.get("population_group")!="debris" or actor.get("actor_kind")!=-1 or actor.get("hull_catalogue_id")!=-1:return false
+		if actor.get("population_group")=="debris":
+			if actor.get("actor_kind")!=-1 or actor.get("hull_catalogue_id")!=-1:return false
 		else:
-			var rival: bool=kind==12 and id==0
+			var rival: bool=actor.get("population_group")=="rival"
 			var hull: Variant=actor.get("hull_catalogue_id")
 			var faction: Variant=context.get("client_faction") if rival else 8
 			if actor.get("population_group")!=("rival" if rival else "pirate") or actor.get("actor_kind")!=faction:return false

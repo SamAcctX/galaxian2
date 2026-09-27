@@ -13,7 +13,6 @@ const Training=preload("res://src/content/combat_training_destruction_definition
 const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const ContractLife=preload("res://src/content/contract_ship_lifecycle_definitions.gd")
 const Convoy=preload("res://src/content/convoy_world_definitions.gd")
-const Junk=preload("res://src/content/contract_junk_definitions.gd")
 const Ambient=preload("res://src/content/ambient_combat_definitions.gd")
 const Freighter=preload("res://src/content/freighter_destruction_definitions.gd")
 const Construction=preload("res://src/simulation/opening_npc_construction.gd")
@@ -107,13 +106,12 @@ func register_relaunch(actor: Dictionary) -> bool:
 func configure_contract(bindings: RefCounted,construction: RefCounted) -> bool:
 	if not construction is Construction:return reject("Contract death accounting requires its accepted population")
 	var data:=ContractLife.population(bindings,construction.snapshot(),construction.mission_context_owner())
-	if data.is_empty():data=Junk.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	if data.is_empty():return reject("Unsupported contract death accounting")
 	if not configure(bindings):return false
 	_ordinary=true;_faction_kills=true
 	_training=data;_population=int(data.actor_count);_identity.campaign_cursor=int(data.campaign_cursor)
 	_totals.nonhostile_remaining=0
-	if int(data.mission.kind)==7:_totals.debris_destroyed=0
+	if data.has("debris_lifecycle"):_totals.debris_destroyed=0
 	return true
 
 func configure_convoy(bindings: RefCounted,construction: RefCounted) -> bool:
@@ -212,10 +210,10 @@ func _record(actor: Dictionary, scripted_restart: bool) -> Dictionary:
 		# The source battleship counter is independent of current hostility.
 		# Script retirement never enters this fresh, active death path.
 		delta.capital_ship_kills=int(_training.capital_death.capital_kills_delta) if actor.get("population_group")=="capital" and player_credit else 0
-	if _training.get("mission",{}).get("kind")==7:
+	if actor.get("population_group")=="debris" and _training.has("debris_lifecycle"):
 		for key in delta:delta[key]=0
-		delta.hostile_remaining=int(_training.lifecycle.hostile_remaining_delta)
-		delta.debris_destroyed=int(_training.lifecycle.debris_destroyed_delta)
+		delta.hostile_remaining=int(_training.debris_lifecycle.hostile_remaining_delta)
+		delta.debris_destroyed=int(_training.debris_lifecycle.debris_destroyed_delta)
 	var event := _identity.duplicate()
 	event.merge({"actor_id":id,"nonplayer_kill":actor.nonplayer_kill,"counter_deltas":delta})
 	if not _generations.is_empty():event.spawn_generation=_generations[id]
