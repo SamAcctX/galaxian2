@@ -1,25 +1,48 @@
 extends TextureRect
 ## Keep 3D at physical resolution while the surrounding interface uses UI scale.
 const Bloom=preload("res://src/presentation/scene_bloom.gd")
+const Effects=preload("res://src/presentation/scene_effect_settings.gd")
 var viewport: SubViewport
+var owns_viewport:=true
 var error:=""
 var _bloom: Node
+var _bloom_requested:=false
+var _settings: RefCounted
 var _overlays: Array[CanvasLayer]=[]
 var _overlay_viewport: SubViewport
 var _overlay_image: TextureRect
 
-func _ready() -> void:
+func _init() -> void:
 	expand_mode=TextureRect.EXPAND_IGNORE_SIZE
 	stretch_mode=TextureRect.STRETCH_SCALE
 	# The 3D scene also owns native GUI panels (flight conversations). Forward
 	# pointer events into its viewport while allowing outer controls to receive
 	# events when no embedded GUI consumes them.
 	mouse_filter=Control.MOUSE_FILTER_PASS
-	viewport=SubViewport.new();viewport.own_world_3d=true;viewport.handle_input_locally=false
-	viewport.render_target_update_mode=SubViewport.UPDATE_DISABLED
-	add_child(viewport);texture=viewport.get_texture()
+
+func _ready() -> void:
+	if owns_viewport:
+		viewport=SubViewport.new();viewport.own_world_3d=true;viewport.handle_input_locally=false
+		viewport.render_target_update_mode=SubViewport.UPDATE_DISABLED
+		add_child(viewport);texture=viewport.get_texture()
 	resized.connect(refresh_size);get_window().size_changed.connect(refresh_size)
 	refresh_size()
+	_settings=Effects.for_view(self)
+	if _settings!=null:_settings.bind(self)
+
+func set_external_viewport(source: SubViewport) -> bool:
+	# Menu and credits keep their scene lifetime; this view owns only display.
+	if owns_viewport or not is_inside_tree() or source==null or not source.is_inside_tree() or not _overlays.is_empty() or (material!=null and _bloom==null):
+		error="External scene display requires a ready view without a different display owner";return false
+	if viewport==source:return true
+	var enabled:=_bloom_requested
+	set_bloom_enabled(false)
+	viewport=source;texture=source.get_texture();refresh_size()
+	return set_bloom_enabled(enabled)
+
+func apply_bloom_preference(enabled: bool) -> void:
+	_bloom_requested=enabled
+	if viewport!=null:set_bloom_enabled(enabled)
 
 func set_bloom_enabled(enabled: bool) -> bool:
 	# Activation is an explicit presentation choice, not a campaign capability.
@@ -29,6 +52,7 @@ func set_bloom_enabled(enabled: bool) -> bool:
 			if material==_bloom.composite:material=null
 			_bloom.free();_bloom=null
 		_restore_overlays()
+		_bloom_requested=false
 		error="";return true
 	if _bloom!=null:return true
 	if viewport==null or material!=null:
@@ -39,7 +63,7 @@ func set_bloom_enabled(enabled: bool) -> bool:
 	var candidate:=Bloom.new();add_child(candidate)
 	if not candidate.build(viewport.get_texture()):
 		error=candidate.error;candidate.free();return false
-	_bloom=candidate;material=candidate.composite
+	_bloom=candidate;material=candidate.composite;_bloom_requested=true
 	if not _overlays.is_empty():
 		_prepare_overlay_target()
 		for canvas in _overlays:canvas.custom_viewport=_overlay_viewport

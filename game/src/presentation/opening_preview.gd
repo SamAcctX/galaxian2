@@ -98,6 +98,7 @@ var _save_button: Button
 var _load_button: Button
 var _save_notice: Label
 var _mobile_layout:=false
+var _scene_effects:=preload("res://src/presentation/scene_effect_settings.gd").new()
 var _player_mode:=false
 var _mouse_steering:=false
 var _mouse_captured:=false
@@ -507,7 +508,9 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 	if status!=null and _player_mode:status.visible=_transition_failed or (not _station_map_open and not flight_menu.visible and not (session is StationSession) and not (flight_vitals!=null and flight_vitals.visible and session.can_control()))
 	if _station_map_open and _save_notice!=null:_save_notice.hide()
 	if viewport==null:return
-	if not is_visible_in_tree():viewport.render_target_update_mode=SubViewport.UPDATE_DISABLED
+	var scene_view: Control=viewport.get_parent()
+	scene_view.visible=not state.get("presentation",{}).get("background_swapped",false)
+	if not scene_view.is_visible_in_tree():viewport.render_target_update_mode=SubViewport.UPDATE_DISABLED
 	elif session!=null and session.status=="running" and not session.is_paused():viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS
 	else:viewport.render_target_update_mode=SubViewport.UPDATE_ONCE
 
@@ -692,11 +695,14 @@ func set_player_mode(enabled: bool) -> void:
 	refresh_render_mode()
 
 func apply_preferences(preferences: Dictionary) -> void:
+	_scene_effects.apply(preferences)
 	clear_input()
 	_controls.configure_preferences(_controls.deadzone,preferences.invert_pitch,preferences.touch_controls)
 	_mouse_steering=preferences.get("mouse_steering",false)
 	_controls.mouse_sensitivity=preferences.get("mouse_sensitivity",1.0)
 	set_touch_controls(preferences.touch_controls)
+
+func scene_effect_settings() -> RefCounted:return _scene_effects
 
 func set_mobile_layout(value: bool) -> void:
 	_mobile_layout=value

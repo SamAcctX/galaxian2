@@ -30,7 +30,7 @@ var _release_remaining_ms:=0
 
 func _init() -> void:
 	mouse_filter=Control.MOUSE_FILTER_STOP;visible=false
-	_image=TextureRect.new();_image.mouse_filter=Control.MOUSE_FILTER_IGNORE
+	_image=preload("res://src/presentation/native_scene_view.gd").new();_image.owns_viewport=false;_image.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	_image.expand_mode=TextureRect.EXPAND_IGNORE_SIZE;_image.stretch_mode=TextureRect.STRETCH_SCALE
 	add_child(_image);_image.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	radio=RadioPanel.new();add_child(radio);radio.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -57,7 +57,7 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,sequ
 	if not radio.configure(bindings.base_content_id,bindings.binding_id,library.active_language,resources.speakers,int(state.campaign_cursor)) or not radio.configure_art(library,bindings,visuals):return reject(radio.error)
 	background=Background.new();add_child(background);background.set_process(false)
 	if not background.build(library,bindings,visuals,station_id,camera_seed) or background.selection.station_id!=station_id or not background.build_planets(library,bindings,visuals,int(state.campaign_cursor)) or not background.set_camera_yaw_rate(float(spec.camera_yaw_rate)):return reject(background.error)
-	_image.texture=background.get_texture()
+	if not _image.set_external_viewport(background):return reject(_image.error)
 	speech=Speech.new();add_child(speech)
 	if not speech.configure_events(library,bindings,spec.radio):return reject(speech.error)
 	var sounds:=Resources.new()
@@ -115,7 +115,7 @@ func advance_release(milliseconds: int) -> bool:
 
 func _layout() -> void:
 	if _sequence==null or _logo.texture==null or size.x<=0 or size.y<=0:return
-	background.size=Vector2i(maxi(1,roundi(size.x)),maxi(1,roundi(size.y)))
+	_image.refresh_size()
 	var unit:=size.x/1600.0
 	var logo_size: Vector2=_logo.texture.get_size()*unit
 	var layout: Dictionary=_sequence.credits_layout(size.y/unit,_logo.texture.get_height())

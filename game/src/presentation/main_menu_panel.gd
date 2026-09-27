@@ -29,7 +29,7 @@ const FRAME_LIMIT_MS:=150.0
 
 func _init() -> void:
 	mouse_filter=Control.MOUSE_FILTER_STOP
-	_background_rect=TextureRect.new();_background_rect.mouse_filter=Control.MOUSE_FILTER_IGNORE
+	_background_rect=preload("res://src/presentation/native_scene_view.gd").new();_background_rect.owns_viewport=false;_background_rect.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	_background_rect.expand_mode=TextureRect.EXPAND_IGNORE_SIZE;_background_rect.stretch_mode=TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	add_child(_background_rect);_background_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_logo=TextureRect.new();_logo.mouse_filter=Control.MOUSE_FILTER_IGNORE
@@ -66,7 +66,8 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> 
 		if not candidate_background.build(library,bindings,visuals):
 			var message: String=candidate_background.error;candidate_background.free();return reject(message)
 	if candidate_background!=null:
-		_background_rect.texture=candidate_background.get_texture()
+		if not _background_rect.set_external_viewport(candidate_background):
+			var message: String=_background_rect.error;candidate_background.free();return reject(message)
 		if _background!=null:_background.free()
 		_background=candidate_background
 	if _resources==null or _resources.identity.base_content_id!=resources.identity.base_content_id:_title_seen=false

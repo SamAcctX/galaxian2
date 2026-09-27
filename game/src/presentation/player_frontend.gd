@@ -25,6 +25,7 @@ var _pause_controls: PanelContainer
 var music: Node
 var preferences:=Preferences.new()
 var _display:=DisplaySettings.new()
+var _scene_effects:=preload("res://src/presentation/scene_effect_settings.gd").new()
 var _preferences_path:=""
 var _save_directory:=""
 var _data_directory:=""
@@ -110,7 +111,10 @@ func open_import(receipt: String) -> bool:
 func apply_preferences() -> void:
 	var values:=preferences.values
 	Streams.set_levels(values.music,values.fx,values.voice)
+	_scene_effects.apply(values)
 	if game!=null:game.apply_preferences(values)
+
+func scene_effect_settings() -> RefCounted:return _scene_effects
 
 func set_mobile_layout(value: bool) -> void:
 	_mobile=value;menu.set_mobile_layout(value)
@@ -284,6 +288,7 @@ func show_options() -> void:
 		_settings_controls.resolution.disabled=preferences.values.window_mode=="fullscreen"
 		_choice("aspect_ratio","Aspect ratio",Preferences.ASPECTS,["Automatic (match window)","Native display","4:3","16:9","16:10","21:9","32:9"])
 	_choice("frame_rate","Frame rate",Preferences.FRAME_RATES,["Display refresh (V-Sync)","Unlimited (V-Sync off)","30 FPS","60 FPS","90 FPS","120 FPS","144 FPS","165 FPS","240 FPS","360 FPS"])
+	_settings_toggle("bloom","Bloom")
 	_settings_heading(library.strings[490])
 	for pair in [["music",34],["fx",35],["voice",36]]:
 		var slider:=HSlider.new();slider.min_value=0;slider.max_value=1;slider.step=0.05;slider.value=preferences.values[pair[0]];slider.custom_minimum_size.y=44 if _mobile else 30
@@ -292,10 +297,7 @@ func show_options() -> void:
 	_settings_heading(library.strings[487])
 	for pair in [["invert_pitch",library.strings[489]],["touch_controls","Touch controls"],["mouse_steering","Mouse steering"]]:
 		if pair[0]=="mouse_steering" and _mobile:continue
-		var toggle:=CheckButton.new();toggle.text=pair[1];toggle.button_pressed=preferences.values[pair[0]];toggle.custom_minimum_size.y=44 if _mobile else 30
-		if menu._ui!=null:menu._ui.apply_button(toggle,_mobile)
-		_style_settings_toggle(toggle)
-		toggle.toggled.connect(func(value):change_preference(pair[0],value));_body.add_child(toggle);_settings_controls[pair[0]]=toggle
+		_settings_toggle(pair[0],pair[1])
 	if not _mobile:
 		var slider:=HSlider.new();slider.min_value=0.1;slider.max_value=3.0;slider.step=0.1;slider.value=preferences.values.mouse_sensitivity;slider.custom_minimum_size.y=30
 		_style_settings_slider(slider)
@@ -304,6 +306,12 @@ func show_options() -> void:
 	var files:=_button("Game files…",show_setup);files.disabled=has_session()
 	files.tooltip_text="Choose or update imported game files before starting or loading a game"
 	_body.get_parent().set_deferred("scroll_vertical",0)
+
+func _settings_toggle(key: String,title: String) -> void:
+	var toggle:=CheckButton.new();toggle.text=title;toggle.button_pressed=preferences.values[key];toggle.custom_minimum_size.y=44 if _mobile else 30
+	if menu._ui!=null:menu._ui.apply_button(toggle,_mobile)
+	_style_settings_toggle(toggle)
+	toggle.toggled.connect(func(value):change_preference(key,value));_body.add_child(toggle);_settings_controls[key]=toggle
 
 func _settings_heading(text: String) -> void:
 	var band:=PanelContainer.new();band.custom_minimum_size.y=40 if _mobile else 28
@@ -373,7 +381,7 @@ func _setting_row(title: String,control: Control) -> void:
 		scroll.ensure_control_visible.call_deferred(row))
 
 func change_preference(key: String,value: Variant) -> bool:
-	if key not in ["music","fx","voice","invert_pitch","touch_controls","mouse_steering","mouse_sensitivity"]+Preferences.DISPLAY_KEYS:return false
+	if key not in ["music","fx","voice","invert_pitch","touch_controls","mouse_steering","mouse_sensitivity","bloom"]+Preferences.DISPLAY_KEYS:return false
 	var candidate:=preferences.values.duplicate(true);candidate[key]=value
 	if not Preferences.valid(candidate):return reject("Invalid game preference")
 	if not preferences.save_file(_preferences_path,candidate):return reject(preferences.error)

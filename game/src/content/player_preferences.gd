@@ -11,18 +11,18 @@ var error:=""
 var values:=defaults()
 
 static func defaults() -> Dictionary:
-	return {"schema":3,"content":"","bindings":"","visuals":"","import_record":"","language":"gb",
+	return {"schema":4,"content":"","bindings":"","visuals":"","import_record":"","language":"gb",
 		"music":1.0,"fx":1.0,"voice":1.0,"invert_pitch":false,"touch_controls":OS.has_feature("mobile"),
 		"window_mode":"windowed","resolution":"1120x720","aspect_ratio":"auto","frame_rate":-1,"ui_scale":0,
-		"mouse_steering":not OS.has_feature("mobile"),"mouse_sensitivity":1.0}
+		"mouse_steering":not OS.has_feature("mobile"),"mouse_sensitivity":1.0,"bloom":true}
 
 static func valid(value: Variant) -> bool:
-	if not value is Dictionary or value.size()!=defaults().size() or value.get("schema")!=3 or value.get("language") not in LANGUAGES:return false
+	if not value is Dictionary or value.size()!=defaults().size() or value.get("schema")!=4 or value.get("language") not in LANGUAGES:return false
 	for key in ["content","bindings","visuals","import_record"]:
 		if not value.get(key) is String or value[key].length()>4096 or (not value[key].is_empty() and not value[key].is_absolute_path()):return false
 	for key in ["music","fx","voice"]:
 		if not (value.get(key) is float or value.get(key) is int) or not is_finite(value[key]) or value[key]<0 or value[key]>1:return false
-	for key in ["invert_pitch","touch_controls","mouse_steering"]:
+	for key in ["invert_pitch","touch_controls","mouse_steering","bloom"]:
 		if not value.get(key) is bool:return false
 	if value.get("window_mode") not in ["windowed","fullscreen"] or value.get("resolution") not in RESOLUTIONS or value.get("aspect_ratio") not in ASPECTS:return false
 	if not (value.get("frame_rate") is int or value.get("frame_rate") is float) or not is_finite(value.frame_rate) or value.frame_rate!=floor(value.frame_rate) or int(value.frame_rate) not in FRAME_RATES:return false
@@ -44,6 +44,8 @@ func read_file(path: String) -> bool:
 		candidate.schema=2
 	if candidate is Dictionary and candidate.get("schema")==2:
 		candidate.ui_scale=0;candidate.schema=3
+	if candidate is Dictionary and candidate.get("schema")==3:
+		candidate.bloom=defaults().bloom;candidate.schema=4
 	if not valid(candidate):return reject("Saved preferences are invalid; choose the game files again")
 	candidate.schema=int(candidate.schema);candidate.frame_rate=int(candidate.frame_rate);candidate.ui_scale=int(candidate.ui_scale)
 	values=candidate;return true
