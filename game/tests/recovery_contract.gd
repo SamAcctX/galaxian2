@@ -38,6 +38,9 @@ func verify_contract_boundaries(bindings: RefCounted,cat: RefCounted,library: Re
 		var frame=load("res://src/simulation/first_flight_frame.gd").new()
 		if not frame.configure(bindings,cat,library,construction,"F",1.0):check(false,frame.error);return
 		var initial: Dictionary=frame.snapshot();var actors: Array=initial.encounter.combat.actors
+		if kind==3:
+			verify_outer_station_contact(frame)
+			if failures:return
 		var carrier:=actors.size()-1
 		check(actors.size()==quote.snapshot().mission.quantity and actors.all(func(actor):return actor.actor_kind==8 and actor.actor_mode==5 and not actor.active),"Recovery lost its quoted distant pirate group")
 		check(actors[carrier].name_text_id==1600 and actors[carrier].special_cargo and not actors[carrier].special_cargo_accepted and not actors[carrier].special_cargo_rejected,"The Hijacker lost its name or cargo objective flags")
@@ -77,6 +80,47 @@ func verify_contract_boundaries(bindings: RefCounted,cat: RefCounted,library: Re
 		check(abandoned.contract_result_pending() and abandoned.snapshot().contracts.pending_result.failed,"Uncollected mission cargo never expired into failure")
 		check(frame.snapshot()==initial,"Cargo recovery or expiry changed the unplayed parent frame")
 	check(station.snapshot()==original,"Recovery fixtures changed the earned station")
+
+func verify_outer_station_contact(frame: RefCounted) -> void:
+	# An outer wall lies beyond the proximity fallback. Its physical projection
+	# must still permit docking, even though the final point is outside the box.
+	var original: Dictionary=frame.snapshot()
+	var flight: RefCounted=frame.fork_for_frame()
+	for tick in 400:
+		if flight._briefing.snapshot().entry_released:break
+		var next: RefCounted=flight.evaluate(100)
+		if next==null:check(false,flight.error);return
+		flight=next
+	var station: Dictionary=flight._station.snapshot()
+	var position: Variant=null
+	for shape in station.collision.get("shapes",station.collision.get("boxes",[])):
+		if shape.get("kind",1)!=1:continue
+		for x in [-0.9,0.9]:
+			for y in [-0.9,0.9]:
+				for z in [-0.9,0.9]:
+					var point: Vector3=station.pose.origin+shape.center+shape.half_extents*Vector3(x,y,z)
+					if point.length()<=float(flight._return_rules.contact_radius):continue
+					var pose: Transform3D=flight._pose;pose.origin=point
+					var plan: Dictionary=flight._physical_contacts.plan(flight._player.collision_context(pose),flight._scenery.read_snapshot().get("bodies",{}),true)
+					if not plan.is_empty() and plan.center_after!=point and flight._station.point_volume(plan.center_after)<0:position=point
+	check(position!=null,"The imported station has no outer wall for the docking regression")
+	if position==null:return
+	flight._pose.origin=position;flight._statistics_pose=flight._pose
+	if not flight._autopilot.observe_scripted_pose(flight._pose):check(false,flight._autopilot.error);return
+	var before: Dictionary=flight.snapshot()
+	var manual: RefCounted=flight.evaluate(0,Vector2.ZERO,0.0)
+	if manual==null:check(false,flight.error);return
+	check(manual._station_packet.is_empty() and manual._pose.origin!=position,"Touching the hull without selecting docking entered the station or lost physical projection")
+	var selected: RefCounted=flight.start_station_autopilot()
+	if selected==null:check(false,flight.error);return
+	var landed: RefCounted=selected.evaluate(0,Vector2.ZERO,0.0)
+	if landed==null:check(false,selected.error);return
+	var packet: Dictionary=landed.prepare_station()
+	check(not packet.is_empty(),"Station projection discarded docking contact beyond the proximity fallback")
+	if not packet.is_empty():
+		check(packet.docking.post_motion_volume_index<0 and packet.docking.position.length()>float(flight._return_rules.contact_radius),"The wall regression did not exercise projection outside the docking query")
+		check(packet.player.vitals==before.player.vitals and packet.contracts.credits==before.contracts.credits and packet.campaign_cursor==before.campaign_cursor,"Outer-wall docking damaged the ship, paid an unfinished job or advanced the story")
+	check(flight.snapshot()==before and frame.snapshot()==original,"Station contact mutated its retained parent frame")
 
 func verify_pickups(bindings: RefCounted,cat: RefCounted,library: RefCounted,station: RefCounted,branch: RefCounted,id: int,item: int) -> void:
 	var encounter: RefCounted=branch._encounter
