@@ -2692,6 +2692,12 @@
     "game/src/simulation/mission_result_poll.gd",
     "game/src/simulation/mission_result_poll.gd.uid",
     "game/tests/lounge_reading.gd",
-    "game/tests/lounge_reading.gd.uid"
+    "game/tests/lounge_reading.gd.uid",
+    "game/src/content/campaign_epilogue_definitions.gd",
+    "game/src/content/campaign_epilogue_definitions.gd.uid",
+    "game/src/simulation/mission_presentation.gd",
+    "game/src/simulation/mission_presentation.gd.uid",
+    "game/tests/mission_presentation.gd",
+    "game/tests/mission_presentation.gd.uid"
   ]
 }

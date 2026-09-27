@@ -83,6 +83,24 @@ func configure_local_message(bindings: RefCounted, library: RefCounted, layout: 
 	var row:={"speaker_id":int(rule.speaker_id),"text_id":text_id,"condition":int(rule.condition),"values":[int(rule.value)]}
 	return _configure_records(bindings,library,{"events":[row],"timing":bindings.opening_dialogue.timing.duplicate(true)},[lines.size()],cursor)
 
+## A prepared recipe supplies its events; timing and text measurement remain
+## shared with flight radio. This entry does not grant a flight capability.
+func configure_scripted(bindings: RefCounted,library: RefCounted,layout: RefCounted,cursor: int,events: Array) -> bool:
+	clear()
+	if bindings==null or library==null or layout==null or cursor<0 or events.is_empty() or events.size()>256:return fail("Scripted radio requires its declared events and text layout")
+	if library.manifest.get("content_id")!=bindings.base_content_id or layout.content_id!=bindings.base_content_id or layout.binding_id!=bindings.binding_id or layout.language!=library.active_language:return fail("Scripted radio belongs to another content or language")
+	if not Definitions.valid_parameters(bindings.opening_dialogue,0):return fail("Scripted radio lacks its shared display timing")
+	var counts:=[]
+	for index in events.size():
+		var row: Variant=events[index]
+		if not row is Dictionary or not Condition.valid_row(row,events.size()) or not Numbers.integer(row.get("speaker_id"),0,65535) or not Numbers.integer(row.get("text_id"),0,library.strings.size()-1) or not Numbers.integer(row.get("voice_event_id"),-1,65535):return fail("Invalid scripted radio event")
+		if int(row.condition)==6 and int(row.values[0])==index:return fail("Radio cannot depend on its own start")
+		var lines: PackedStringArray=layout.wrap(library.strings[int(row.text_id)])
+		if not layout.error.is_empty():return fail(layout.error)
+		counts.append(lines.size())
+	var data:={"events":events.duplicate(true),"timing":bindings.opening_dialogue.timing.duplicate(true)}
+	return _configure_records(bindings,library,data,counts,cursor)
+
 func configure_from_layout(bindings: RefCounted, library: RefCounted, layout: RefCounted, campaign_cursor: int = 0) -> bool:
 	clear()
 	if layout.content_id != library.manifest.get("content_id", "") or layout.language != library.active_language or (not layout.binding_id.is_empty() and layout.binding_id != bindings.binding_id):
