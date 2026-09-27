@@ -48,6 +48,7 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,worl
 		next_panel.free();next_audio.free();return reject(reason)
 	panel=next_panel;audio=next_audio;_identity=world.presentation_identity()
 	dialogue=Dialogue.new();add_child(dialogue);dialogue.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dialogue.set_centered(true)
 	if not _configure_dialogue(library,bindings,visuals,world):
 		var reason: String=dialogue.error
 		dialogue.free();panel.free();audio.free();dialogue=null;panel=null;audio=null;_identity=null

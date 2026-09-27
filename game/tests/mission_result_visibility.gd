@@ -3,13 +3,19 @@ extends "res://tests/mission_continuation.gd"
 ## preceding radio is detached; ordinary frames own player pose and poll time.
 ## Inspect actual hull visibility/projection separately from camera identity.
 var observations: Array[Dictionary]=[]
+const Session=preload("res://src/presentation/mission_session.gd")
+var view_session: Node3D
+
+class PreparedWorld extends RefCounted:
+	var world: RefCounted
+	func world_owner() -> RefCounted:return world
 
 func verify_component(world: RefCounted) -> void:
 	var original: Dictionary=world.snapshot()
 	root.size=Vector2i(1280,720);root.content_scale_size=Vector2i.ZERO
 	for relative_mouse in [false,true]:
 		await verify_visibility_path(world,relative_mouse)
-		if is_instance_valid(scene):scene.free()
+		if is_instance_valid(view_session):view_session.free()
 		if failures:break
 	check(world.snapshot()==original,"Visibility branches mutated their shared initialized world")
 	if not capture_path.is_empty():
@@ -26,8 +32,10 @@ func verify_visibility_path(world: RefCounted,relative_mouse: bool) -> void:
 	if not active.configure(bindings,catalogues,library,context,world,1.0,root.size):check(false,active.error);return
 	var visuals: RefCounted=load("res://src/content/visual_library.gd").new()
 	if not visuals.open(visual_path,library.manifest):check(false,visuals.error);return
-	scene=Scene.new();root.add_child(scene)
-	if not scene.configure(library,bindings,visuals,catalogues,active,root.size):check(false,scene.error);return
+	view_session=Session.new();root.add_child(view_session)
+	var prepared:=PreparedWorld.new();prepared.world=active
+	if not view_session.configure(library,bindings,visuals,catalogues,prepared,0,root.size) or not view_session.activate():check(false,view_session.error);return
+	scene=view_session.scene
 	scene.world_changed.connect(func(candidate):active=candidate)
 	scene.feedback.set_active(true)
 	var camera_node: Camera3D=scene.camera;var player_node: Node3D=scene.player
@@ -70,10 +78,31 @@ func verify_visibility_path(world: RefCounted,relative_mouse: bool) -> void:
 	var modal: RefCounted=active.evaluate(100,Vector2.ONE,1.0,true,false,root.size,1.0,false,-1,not relative_mouse)
 	check(modal!=null and modal.snapshot()==result,label+": modal input moved the camera/player or changed response")
 	check(scene.camera==camera_node and scene.player==player_node,label+": result recreated its presentation owners")
+	view_session._accepted_world(active)
+	var now:=0
+	for reason in ["user","focus","hidden"]:
+		check(view_session.set_pause(reason,true,now),view_session.error)
+		now+=100000
+		check(view_session.step(now,Vector2.ONE,true,not relative_mouse,1.0) and view_session.flight_owner().snapshot()==result,label+": paused result advanced its view or gameplay")
+		check(view_session.set_pause(reason,false,now),view_session.error)
+	for tick in 40:
+		now+=100000
+		if not view_session.step(now,Vector2.ONE,true,not relative_mouse,1.0):check(false,view_session.error);return
+	active=view_session.flight_owner()
+	var settled: Dictionary=active.snapshot()
+	for key in result:
+		if key in ["revision","detail","encounter"]:continue
+		check(settled[key]==result[key],label+": settling the result camera changed "+key)
+	var original_encounter: Dictionary=result.encounter.duplicate(true);original_encounter.erase("view")
+	var settled_encounter: Dictionary=settled.encounter.duplicate(true);settled_encounter.erase("view")
+	check(original_encounter==settled_encounter,label+": settling the view advanced actors, shots or the sequence")
+	check(active._camera.response_snapshot().relative_capture==relative_mouse,label+": modal mouse input changed camera response")
+	observe_visibility(label,"result-settled")
+	await capture("visibility-"+label+"-result-settled")
 	for page in 5:
 		if not acknowledge():return
 	var continued: Dictionary=active.snapshot()
-	check(continued.campaign_cursor==42 and continued.player_pose==result.player_pose and continued.encounter.view.camera==result.encounter.view.camera,label+": final Next moved the retained view or lost living42")
+	check(continued.campaign_cursor==42 and continued.player_pose==result.player_pose and continued.encounter.view.camera==settled.encounter.view.camera,label+": final Next moved the retained view or lost living42")
 	check(continued.equipment==result.equipment and continued.career.credits==result.career.credits,label+": result altered inventory or money")
 	if not visibility_step(100,relative_mouse):return
 	observe_visibility(label,"resumed-first")
@@ -136,7 +165,9 @@ func observe_visibility(label: String,moment: String) -> void:
 		"response":active._camera.response_snapshot()}
 	# A consistent but permanently culled ship must not pass this component.
 	# Do not require visibility during the uncompleted return itself.
-	if moment in ["ordinary","resumed-four-seconds"]:
+	if moment in ["ordinary","result-settled","resumed-four-seconds"]:
 		check(drawable and drawing>0 and row.center_on_screen and row.within_depth and row.hull_intersects_view,label+": ordinary follow failed to show the retained player hull at "+moment)
+	if moment=="result-settled":
+		check(not scene.feedback.dialogue._panel.get_global_rect().intersects(rect),label+": result dialogue covered the returned player hull")
 	observations.append(row)
 	print("Result visibility ",JSON.stringify(row))

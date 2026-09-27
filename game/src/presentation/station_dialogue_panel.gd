@@ -15,6 +15,7 @@ var _identity:={}
 var _portraits:={}
 var _labels:={}
 var _mobile:=false
+var _centered:=false
 var _snapshot:={}
 var _active:=true
 var _panel: PanelContainer
@@ -164,6 +165,9 @@ func set_active(value: bool) -> void:
 	_next.disabled=not value
 	_previous.disabled=not value or not _snapshot.get("previous_available",false)
 
+func set_centered(value: bool) -> void:
+	_centered=value;_place_panel()
+
 func set_mobile_layout(value: bool) -> void:
 	_mobile=value
 	if _art!=null:
@@ -204,7 +208,8 @@ func _relayout() -> void:
 func _place_panel() -> void:
 	if not visible:return
 	var bottom_margin:=24.0 if _mobile else 12.0
-	_panel.position=Vector2(maxf(0,(size.x-_panel.size.x)/2),maxf(0,size.y-_panel.size.y-bottom_margin))
+	var top: float=(size.y-_panel.size.y)/2 if _centered else size.y-_panel.size.y-bottom_margin
+	_panel.position=Vector2(maxf(0,(size.x-_panel.size.x)/2),maxf(0,top))
 
 func clear() -> void:
 	error="";_snapshot={};visible=false;_name.text="";_body.text="";_portrait.texture=null

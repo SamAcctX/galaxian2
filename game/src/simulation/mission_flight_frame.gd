@@ -377,6 +377,25 @@ func select_secondary(item_id: int,paused:=false) -> RefCounted:
 
 func cycle_secondary(paused:=false) -> RefCounted:return select_secondary(_encounter.next_secondary_id(),paused)
 func secondary_feedback() -> Dictionary:return {} if _encounter==null else _encounter.secondary_feedback()
+## A result stops flight time, but its ordinary follow view can finish returning
+## to the stationary player. Keep that presentation change separate from flight.
+func advance_result_view(milliseconds: int) -> RefCounted:
+	error=""
+	if not Numbers.integer(milliseconds,0,_max_ms):return failed("Invalid result view interval")
+	if milliseconds==0 or not campaign_dialogue_visible() or _runner.snapshot().mode!=1 or _camera.snapshot().mode!="follow" or _death.snapshot().phase!="ready":return self
+	var next:=fork_for_frame()
+	var target: Dictionary=_context.identity();target.player_pose=_pose
+	var shot: Dictionary=_context.identity();shot.merge({"target":"player","mode":"follow","inherit_target_up":true})
+	if not next._camera.update(milliseconds,shot,target):return failed(next._camera.error)
+	var positions:={};var registered: Dictionary=next._detail.snapshot().selections
+	if registered.has("player"):positions["player"]=_pose.origin
+	for actor in _encounter.combat_snapshot().actors:
+		if registered.has(actor.actor_id):positions[actor.actor_id]=actor.body_pose.origin
+	next._reference=next._camera.snapshot().eye
+	if not next._detail.refresh(positions,next._reference,1.0):return failed(next._detail.error)
+	next._state.revision+=1
+	return next
+
 func campaign_dialogue_visible() -> bool:return _runner!=null and _runner.dialogue().get("visible",false)
 func dialogue() -> Dictionary:return {"visible":false} if _runner==null else _runner.dialogue()
 func campaign_result() -> Dictionary:

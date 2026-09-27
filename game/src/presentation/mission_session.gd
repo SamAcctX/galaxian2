@@ -52,10 +52,17 @@ func step(now_microseconds: int,commands:=Vector2.ZERO,primary_fire:=false,mouse
 	error=""
 	if not _active or _world==null:return reject("Activate the selected application session before stepping")
 	var clock: RefCounted=_clock.fork_for_frame()
-	var seconds: float=clock.sample(now_microseconds,is_paused() or status!="running" or _world.campaign_dialogue_visible())
+	var seconds: float=clock.sample(now_microseconds,is_paused() or status!="running")
 	if not clock.error.is_empty():return reject(clock.error)
-	if is_paused() or status!="running" or _world.campaign_dialogue_visible():_clock=clock;clear_flight_input();return true
+	if is_paused() or status!="running":_clock=clock;clear_flight_input();return true
 	var viewport:=Vector2i(get_viewport().get_visible_rect().size)
+	if _world.campaign_dialogue_visible():
+		if _world.has_method("advance_result_view"):
+			var view: RefCounted=_world.advance_result_view(int(round(seconds*1000.0)))
+			if view==null:return reject(_world.error)
+			if view!=_world and not scene.present(view,viewport):return reject(scene.error)
+			_world=view
+		_clock=clock;clear_flight_input();return true
 	var current_music: int=scene.feedback.audio.current_music_id()
 	var next: RefCounted=_world.evaluate(int(round(seconds*1000.0)),commands,0.0 if brake else _throttle,primary_fire,false,viewport,strafe,_secondary_pending,current_music,mouse_captured)
 	if next==null:return reject(_world.error)
