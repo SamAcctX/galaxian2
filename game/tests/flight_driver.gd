@@ -40,9 +40,48 @@ func _initialize() -> void:
 		check(catalogues.open(library), catalogues.error)
 		check_clock(bindings)
 		check_driver(bindings, catalogues)
+		check_continuous_strafe(bindings, catalogues)
 		print(library.manifest.profile.edition, ": native event-to-motion driver checked")
 	print("Flight driver checks: %d failures" % failures)
 	quit(1 if failures else 0)
+
+func check_continuous_strafe(bindings: RefCounted, catalogues: RefCounted) -> void:
+	# A single desktop key-down must keep translating the ship, without a timed
+	# dodge returning it to its starting position. Sample long enough to see that
+	# distinction, including auto-repeat and frames with no new input event.
+	for cadence in ["60 Hz", "144 Hz", "variable", "100 ms"]:
+		for code in [KEY_A, KEY_D]:
+			var driver := Driver.new()
+			check(driver.configure(bindings, catalogues, catalogues.content_id, 0, [], [], 0.5, Transform3D.IDENTITY), driver.error)
+			driver.step(0, 0)
+			driver.accept(key(code, true))
+			var direction := 1.0 if code == KEY_A else -1.0
+			var time_us := 0
+			var tick := 0
+			var previous := 0.0
+			var at_two_seconds := 0.0
+			while time_us < 8000000:
+				var delta_us: int = [7000, 21000, 11000, 37000][tick % 4] if cadence == "variable" else 100000 if cadence == "100 ms" else roundi(1000000.0 / (144.0 if cadence == "144 Hz" else 60.0))
+				time_us += mini(delta_us, 8000000 - time_us)
+				if tick % 11 == 0:
+					var repeat_event := key(code, true); repeat_event.echo = true
+					driver.accept(repeat_event)
+				var frame := driver.step(time_us, 0)
+				var displacement: float = frame.pose.origin.x * direction
+				check(displacement > previous and driver.controls.snapshot().strafe == -direction, cadence + " lost held strafe or moved back")
+				check(frame.pose.basis.is_equal_approx(Basis.IDENTITY) and frame.pose.origin.z == 0, cadence + " strafe changed heading or forward position")
+				if time_us <= 2000000: at_two_seconds = displacement
+				previous = displacement; tick += 1
+			check(previous > at_two_seconds * 3, cadence + " strafe stopped after its initial movement")
+			driver.accept(key(code, false))
+			for i in 180:
+				time_us += 16667
+				var position: float = driver.step(time_us, 0).pose.origin.x * direction
+				check(position >= previous - 0.001, cadence + " release returned the ship to its old position")
+				previous = position
+			var resting: Vector3 = driver.pose().origin
+			time_us += 100000
+			check(driver.step(time_us, 0).pose.origin.is_equal_approx(resting), cadence + " released strafe did not settle")
 
 func check_controls() -> void:
 	var c := Controls.new()
