@@ -1086,6 +1086,10 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 			actor.merge(options.ship_state if not story else {"mode":int(_contract.pirate.mode),"active":bool(_contract.pirate.active),"targeting_blocked":bool(_contract.pirate.targeting_blocked)})
 		if not story:
 			if options.clear_cargo:actor.cargo=[]
+			if not options.cargo_override.is_empty():
+				actor.cargo=options.cargo_override.entries.duplicate(true)
+				actor.special_cargo=bool(options.cargo_override.special)
+			if int(options.name_text_id)>=0:actor.name_text_id=int(options.name_text_id)
 			match options.position.get("kind",""):
 				"path_start":position=path[0]+Vector3(options.position.step)*int(options.group_index)
 				"scenery_midpoint":

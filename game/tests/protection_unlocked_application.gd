@@ -3,6 +3,8 @@ extends "res://tests/defense_unlocked_application.gd"
 
 func requested_contract_kind() -> int:return 2
 
+func contract_search_stations() -> Array:return [-1,98]
+
 func accepts_requested_contract(mission: Dictionary) -> bool:
 	return mission.kind==2 and mission.difficulty<=3
 

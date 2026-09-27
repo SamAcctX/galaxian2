@@ -63,7 +63,9 @@ func verify_free_application() -> void:
 		app.show();app.present_session();await process_frame;resume_application_focus()
 		var before: Dictionary=app.session.station_owner().snapshot()
 		var selected:=0 if starter=="standard" else 22
-		var previous:=22 if starter=="standard" else 0
+		var primaries: Array=before.loadout.slots.filter(func(slot):return slot!=null and slot.category==0)
+		if primaries.size()!=1:check(false,"The input pilot requires one retained primary mount");return
+		var previous: int=primaries[0].item_id
 		if not app.equipment_action("open") or not app.equipment_action("unmount",previous) or not app.equipment_action("mount",selected) or not app.equipment_action("close"):
 			check(false,app.session.error);return
 		var fitted: Dictionary=app.session.station_owner().snapshot()
@@ -171,7 +173,9 @@ func fly_contract_job(initial: Dictionary) -> bool:
 	while now_us-started<600000000:
 		var state: Dictionary=app.session.snapshot()
 		if not state.contracts.pending_result.is_empty():
-			check(not failure and shots>0 and state.progress.player_kills>initial.progress.player_kills and contract_targets_retired(state.encounter.combat.actors,targets),"The input pilot did not earn the freelance victory")
+			var won:=expects_contract_success()
+			check(not failure and shots>0 and state.contracts.pending_result.completed==won and contract_targets_retired(state.encounter.combat.actors,targets),"The input pilot did not reach the expected freelance result")
+			if won:check(state.progress.player_kills>initial.progress.player_kills,"The input pilot did not defeat a hostile fighter")
 			return failures==0
 		if app.session.flight_owner().death_active():
 			check(failure,"The input pilot died before defeating the pirates")
@@ -194,11 +198,15 @@ func fly_contract_job(initial: Dictionary) -> bool:
 			return failures==0
 		if not live_captured and state.encounter.primaries.guns[0].projectiles.slots.any(func(slot):return slot!=null):
 			await capture_free_application("freelance-pirate-combat");live_captured=true
+		var weapon: Dictionary=state.encounter.primaries.guns[0].projectiles.weapon
+		var reach:=float(weapon.speed_units_per_millisecond)*float(weapon.lifetime_ms)
+		pilot.firing_range=reach*0.9
 		var input: Dictionary=pilot.controls_at_time(state,float(state.world_elapsed_ms),targets,false)
-		# Keep firing on the damaged fighter and circle at weapon range. Closing
-		# to point-blank range exposes this unshielded starter to all three ships.
-		input.throttle=1.0 if input.distance>18000.0 else 0.0
-		if input.distance<35000.0:input.strafe=1.0
+		# Keep the orbit within the fitted gun's reach. The close approach uses
+		# the pilot's pursuit and alternating strafes for a single opponent.
+		if OS.get_environment("GOF2_PIRATE_APPROACH")!="close":
+			input.throttle=1.0 if input.distance>minf(18000.0,reach*0.6) else 0.0
+			if input.distance<35000.0:input.strafe=1.0
 		if failure:input.fire=false;input.strafe=0.0
 		if input.fire:shots+=1
 		if not pirate_step(input):return false
@@ -236,6 +244,9 @@ func run_resumed_job() -> void:
 			await capture_free_application("freelance-paid-resumed-flight")
 		else:check(false,app.status.text)
 	else:
-		check(restored.contracts.mission.get("kind")==requested_contract_kind(),"Fresh Resume discarded the accepted freelance job")
+		check(resumed_contract_valid(restored),"Fresh Resume discarded the accepted freelance job")
 		if failures==0:await verify_free_application()
 	app.free();print("Freelance Resume: %d checks; %d failures"%[checks,failures]);quit(1 if failures else 0)
+
+func resumed_contract_valid(state: Dictionary) -> bool:
+	return state.contracts.mission.get("kind")==requested_contract_kind()

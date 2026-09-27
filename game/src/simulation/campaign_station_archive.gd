@@ -10,7 +10,7 @@ const Numbers=preload("res://src/content/opening_definitions.gd")
 func restore(a: RefCounted,opening: RefCounted,bindings: RefCounted,cat: RefCounted,library: RefCounted,data: Dictionary) -> RefCounted:
 	var saved: Dictionary=data.station;var cursor: int=saved.campaign_cursor
 	if cursor not in [13,14,16] or saved.get("return_visit")!=true or saved.get("source_marked_item_ids")!=[] or not Numbers.integer(saved.get("flight_elapsed_ms"),0,2147483647):return a.reject("The campaign checkpoint lost its acknowledged return")
-	if not a._keys(data.career,a.CAREER_KEYS) or not a._required(data.career,a.CAREER_KEYS.filter(func(key):return key!="last_result")):return a.reject("The campaign checkpoint has incomplete career data")
+	if not a._keys(data.career,a.CAREER_KEYS+a.OPTIONAL_CAREER_KEYS) or not a._required(data.career,a.CAREER_KEYS.filter(func(key):return key!="last_result")):return a.reject("The campaign checkpoint has incomplete career data")
 	var equipment: RefCounted=opening.inventory(a,bindings,cat,data.inventory,cursor)
 	if equipment==null:return null
 	var locations: RefCounted=a._locations(bindings,cat,library,data.get("locations"))
