@@ -8,6 +8,15 @@ const Tactics=preload("res://tests/fixtures/mission_escort_tactics.gd")
 const Steering=preload("res://tests/fixtures/expedition_flight_pilot.gd")
 const CADENCE_MS=[4,17,31,9,67]
 
+func frame_delta_ms(index: int) -> int:
+	return CADENCE_MS[index%CADENCE_MS.size()]
+
+func observe_phase(_frame: RefCounted,_phase: int) -> void:
+	pass
+
+func finish_component(_frame: RefCounted,_frames: int) -> void:
+	pass
+
 func verify_component(world: RefCounted) -> void:
 	var entry: RefCounted=world.entry_owner();var context:=Context.new()
 	if not context.admit(bindings,catalogues,entry.snapshot().context,entry.equipment_owner().snapshot().loadout):check(false,context.error);return
@@ -34,7 +43,9 @@ func verify_component(world: RefCounted) -> void:
 		if failures:return
 		if state.dialogue.visible:break
 		var phase: int=state.encounter.sequence.phase
-		if not phases.has(phase):print("Detached escort phase ",phase," at ",state.elapsed_ms,"ms; fire ",firing," pools ",state.player.vitals)
+		if not phases.has(phase):
+			print("Detached escort phase ",phase," at ",state.elapsed_ms,"ms; fire ",firing," pools ",state.player.vitals)
+			observe_phase(active,phase)
 		phases[phase]=true
 		var input:={"commands":Vector2.ZERO,"fire":false,"throttle":1.0,"strafe":0.0}
 		if not state.encounter.sequence.input_blocked:
@@ -69,7 +80,7 @@ func verify_component(world: RefCounted) -> void:
 		if state.elapsed_ms>=next_report_ms:
 			next_report_ms=state.elapsed_ms+10000
 			print("Detached escort ",state.elapsed_ms,"ms phase ",phase," pools ",state.player.vitals," fire ",firing," target ",input.get("target",-1)," range ",input.get("distance",-1)," regroup ",tactics.regrouping," retreat ",tactics.retreating," distance ",tactics.escort_distance," max ",max_distance," completed returns ",returns)
-		var delta: int=CADENCE_MS[frames%CADENCE_MS.size()]
+		var delta: int=frame_delta_ms(frames)
 		var next: RefCounted=active.evaluate(delta,input.commands,input.throttle,input.fire,false,Vector2i(1280,720),input.strafe,false,-1,true)
 		if next==null:check(false,active.error);return
 		var observed: Dictionary=next.snapshot()
@@ -94,3 +105,4 @@ func verify_component(world: RefCounted) -> void:
 	for phase in [1,2,3,4,5]:check(phases.has(phase),"Detached pilot missed a native ambush shot")
 	check(parent.snapshot()==initial and result.equipment==initial.equipment,"Detached pilot changed its retained parent or inventory")
 	print("Detached escort result ",result.dialogue.get("text_id",-1)," at ",result.elapsed_ms,"ms; ",frames," frames, fire ",firing," emitted ",emitted," regroup ",regroup_frames," returns ",returns," max distance ",max_distance," pools ",result.player.vitals,"; not earned Host survival")
+	if not failures:finish_component(active,frames)
