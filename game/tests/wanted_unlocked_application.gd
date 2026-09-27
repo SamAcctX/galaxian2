@@ -17,6 +17,10 @@ func contract_cast_valid(actors: Array) -> bool:
 func fly_contract_job(initial: Dictionary) -> bool:
 	var job: Dictionary=initial.contracts.mission
 	check(not job.target_name.is_empty() and initial.contracts.accepted_contact.offer.mission==job,"The Wanted job lost its retained briefing identity")
-	var briefing: String=app.lounge_panel.format_job(source.strings[job.briefing_text_id],job)
-	check(briefing.contains(job.target_name) and not briefing.contains("#N"),"The Wanted briefing omitted its criminal's name")
+	# Resume can launch the accepted job without opening a lounge. Inspect the
+	# actual briefing only on the acceptance path, where its panel was prepared.
+	if app.lounge_panel._catalogues!=null:
+		var briefing: String=app.lounge_panel.format_job(source.strings[job.briefing_text_id],job)
+		check(briefing.contains(job.target_name) and not briefing.contains("#N"),"The Wanted briefing omitted its criminal's name")
+	if failures:return false
 	return await super.fly_contract_job(initial)
