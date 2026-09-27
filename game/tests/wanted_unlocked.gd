@@ -50,7 +50,7 @@ func verify_contract_boundaries(bindings: RefCounted,cat: RefCounted,library: Re
 	var effects=load("res://src/content/scenery_effect_resources.gd").new()
 	if not bodies.configure(library,bindings) or not effects.configure(library,bindings):check(false,bodies.error+effects.error);return
 	for difficulty in [0.5,1.0]:
-		var hulls:=[]
+		var hulls:=[];var shots:=[]
 		for kind in [4,6]:
 			var contracts: RefCounted=station.contract_owner().fork()
 			contracts._state.mission.kind=kind;contracts._state.difficulty=difficulty
@@ -61,5 +61,13 @@ func verify_contract_boundaries(bindings: RefCounted,cat: RefCounted,library: Re
 			if not frame.configure(bindings,cat,library,construction,"F",1.0):check(false,frame.error);return
 			var actor: Dictionary=frame.snapshot().encounter.combat.actors[0]
 			hulls.append([actor.max_hull,actor.vitals.hull])
+			var before: Dictionary=frame.snapshot()
+			var gun: RefCounted=frame._encounter._weapons._guns[0].fork_state()
+			if gun.advance(1).is_empty() or not gun.fire(Vector3.ZERO,Vector3.BACK,true).fired or gun.advance(100).is_empty():check(false,gun.error);return
+			var fired: Dictionary=gun.snapshot()
+			var projectile: Dictionary=fired.slots.filter(func(slot):return slot!=null)[0]
+			shots.append({"position":projectile.position,"damage":fired.weapon.damage})
+			check(frame.snapshot()==before,"The projectile probe changed its retained flight")
 		check(hulls[1][0]==3*hulls[0][0] and hulls[1][1]==3*hulls[0][1],"The bounty did not triple both current and maximum ordinary hull")
+		check(shots[1].position.z>shots[0].position.z and shots[1].damage==shots[0].damage+int(original.contracts.rank),"The bounty lost its faster projectile and rank-added weapon damage")
 	check(station.snapshot()==original,"Hull boundary fixtures changed the earned station")

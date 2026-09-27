@@ -62,7 +62,7 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 		var policy: Dictionary=(rules.rival if rival else rules.pirate).duplicate(true)
 		policy.merge(options.policy,true);data.actor_policies.append(policy)
 		data.actor_kinds.append(faction);data.hull_catalogue_ids.append(hull);data.player_weapon_targets.append(id)
-		var weapon:=shared_weapon(rules.weapons,context.campaign_cursor,context.rank,float(context.difficulty),faction,rival)
+		var weapon:=shared_weapon(rules.weapons,context.campaign_cursor,context.rank,float(context.difficulty),faction,bool(options.ship_state.get("enhanced_weapon",rival)))
 		if weapon.is_empty():return {}
 		weapon.actor_id=id;weapon.hull_catalogue_id=hull;data.npc_weapons.append(weapon)
 	data.target_memberships=target_memberships(data.actor_kinds,cast.player_last_ids)
@@ -86,16 +86,16 @@ static func weapon_for(data: Dictionary,rank: int,difficulty: float,faction: int
 	if not parameters(data) or rank<0 or rank>20 or difficulty not in [0.5,1.0] or (rival and faction not in [0,1,2,3]) or (not rival and faction!=8):return {}
 	return shared_weapon(data.weapons,int(data.campaign_cursor),rank,difficulty,faction,rival)
 
-static func shared_weapon(rules: Dictionary,cursor: int,rank: int,difficulty: float,faction: int,rival:=false) -> Dictionary:
+static func shared_weapon(rules: Dictionary,cursor: int,rank: int,difficulty: float,faction: int,enhanced:=false) -> Dictionary:
 	if not Equal.equal_value(rules,VALUES.weapons) or cursor<0 or cursor>2147483647 or rank<0 or rank>20 or difficulty not in [0.5,1.0] or faction not in [0,1,2,3,8]:return {}
 	for source in rules.factions:
 		if int(source.actor_kind)!=faction:continue
-		var row:=scaled_parameters(rules,cursor,rank,difficulty,rival)
+		var row:=scaled_parameters(rules,cursor,rank,difficulty,enhanced)
 		for key in ["actor_kind","item_id","kind","catalogue_kind","model_resource_id"]:row[key]=int(source[key])
 		return row
 	return {}
 
-static func scaled_parameters(rules: Dictionary,cursor: int,rank: int,difficulty: float,rival:=false) -> Dictionary:
+static func scaled_parameters(rules: Dictionary,cursor: int,rank: int,difficulty: float,enhanced:=false) -> Dictionary:
 	# Shared factory arithmetic only. The encounter still supplies a verified
 	# faction, ship and any authored damage override before creating a gun.
 	# A cursor scales the authored firing interval; it does not grant flight.
@@ -103,7 +103,7 @@ static func scaled_parameters(rules: Dictionary,cursor: int,rank: int,difficulty
 	var level:=int(clampf(Vitals.single(float(rank+int(rules.rank_offset))*float(rules.rank_multiplier)),float(rules.rank_level_min),float(rules.rank_level_max)))
 	level=mini(int(rules.scaled_level_max),int(Vitals.single(float(level)+Vitals.single(float(level)*Vitals.single(difficulty+float(rules.game_difficulty_offset))))))
 	var damage:=int(rules.zero_level_damage) if level==0 else level+int(rules.damage_offset)
-	if rival:damage+=rank
+	if enhanced:damage+=rank
 	return {"category":int(rules.category),"damage":damage,"projectile_capacity":int(rules.capacity),"lifetime_ms":int(rules.lifetime_ms),
 		"interval_ms":int(rules.interval_base_ms)+cursor*int(rules.interval_cursor_multiplier),
-		"speed_units_per_millisecond":float(rules.rival_speed if rival else rules.speed),"nonplayer_source":true}
+		"speed_units_per_millisecond":float(rules.rival_speed if enhanced else rules.speed),"nonplayer_source":true}

@@ -38,7 +38,7 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 		6:
 			count=1
 			placement={"kind":"distant_point","horizontal_offset":60000,"horizontal_bound":80000}
-			ship_state.merge({"hull_multiplier":3,"boost_enabled":false,"motion_speed":3.0})
+			ship_state.merge({"hull_multiplier":3,"boost_enabled":false,"motion_speed":3.0,"enhanced_weapon":true})
 		7:
 			debris_count=int(Vitals.single(scaled*float(rules.junk.debris_count_multiplier)))+int(rules.junk.debris_count_offset)
 			count=debris_count+int(Vitals.single(scaled*float(rules.junk.pirate_count_multiplier)))
