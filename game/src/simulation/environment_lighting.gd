@@ -6,6 +6,7 @@ extends RefCounted
 const Colors = preload("res://src/content/environment_color_definitions.gd")
 const Numbers = preload("res://src/content/opening_definitions.gd")
 const Placement = preload("res://src/simulation/sun_placement.gd")
+const Fog = preload("res://src/simulation/distance_fog.gd")
 var error := ""
 
 func for_station(colors: Dictionary, station_id: Variant, planet_type: Variant, sky_index: Variant) -> Dictionary:
@@ -19,7 +20,9 @@ func for_station(colors: Dictionary, station_id: Variant, planet_type: Variant, 
 	if sun.is_empty(): return reject(placement.error)
 	var source_sun := rgb(colors.sun_rgb[int(sky_index)])
 	var source_planet := rgb(colors.planet_rgb[int(planet_type)])
-	return _compose(source_sun,source_planet,rgb(colors.rim_rgb[int(sky_index)]),sun.direction_to_sun,sun)
+	var result:=_compose(source_sun,source_planet,rgb(colors.rim_rgb[int(sky_index)]),sun.direction_to_sun,sun)
+	result.fog=Fog.for_sky(int(sky_index))
+	return result
 
 func for_void(colors: Dictionary) -> Dictionary:
 	error=""
@@ -31,7 +34,7 @@ func for_void(colors: Dictionary) -> Dictionary:
 func _compose(source_sun: Vector3,source_planet: Vector3,rim: Vector3,direction: Vector3,sun: Dictionary={}) -> Dictionary:
 	var diffuse := source_sun*15.0
 	for axis in 3: diffuse[axis]=clampf(diffuse[axis],0.0,2.0)
-	return {"sun":sun,"global_ambient":source_sun*PackedFloat32Array([0.15])[0],
+	return {"sun":sun,"fog":{},"global_ambient":source_sun*PackedFloat32Array([0.15])[0],
 		"rim_color":rim*3.0,
 		"lights":[{"direction_to_light":direction,"ambient":Vector3.ZERO,
 			"diffuse":diffuse,"specular":Vector3.ONE*2.0},

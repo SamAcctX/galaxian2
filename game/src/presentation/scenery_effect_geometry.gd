@@ -21,8 +21,9 @@ func build(library: RefCounted, visuals: RefCounted, bindings: RefCounted, descr
 	if not Resources.effect_parameters(descriptor,bindings):return reject("Unsupported scenery effect descriptor")
 	if library==null or visuals==null or library.manifest.get("content_id")!=descriptor.base_content_id or visuals.base_content_id!=descriptor.base_content_id:
 		return reject("Scenery effect resources belong to another content base")
-	if response.size()!=3 or response.get("variant")!="unfogged_two_light_cube" or not response.has_all(["diffuse_bias","normal_bias"]):
-		return reject("Select the explicit unfogged two-light cube effect variant")
+	if response.size()!=3 or response.get("variant")!="two_light_cube" or not response.has_all(["diffuse_bias","normal_bias"]):
+		return reject("Select the explicit two-light cube effect variant")
+	if not Response.Fog.State.valid(lighting.get("fog",{})):return reject("Invalid source effect fog")
 	if lighting.get("base_content_id")!=descriptor.base_content_id or lighting.get("binding_id")!=descriptor.binding_id:
 		return reject("Scenery effect lighting belongs to another content identity")
 	if reflection==null or reflection.selection.get("base_content_id")!=descriptor.base_content_id or reflection.selection.get("binding_id")!=descriptor.binding_id or reflection.selection.get("system_id")!=lighting.get("system_id"):
@@ -61,6 +62,7 @@ func build(library: RefCounted, visuals: RefCounted, bindings: RefCounted, descr
 			if index==0:
 				material=ShaderMaterial.new();material.shader=Alpha
 				material.set_shader_parameter("diffuse_texture",original.get_shader_parameter("diffuse_texture"))
+				Response.Fog.apply(material,lighting.get("fog",{}))
 			else:
 				var adapter := Response.new()
 				if not adapter.from_imported(original,bindings.surface_material,lighting,reflection.texture,response.diffuse_bias,response.normal_bias,"two_light_cube"):

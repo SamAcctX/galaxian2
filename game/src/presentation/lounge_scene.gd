@@ -10,6 +10,9 @@ const Random=preload("res://src/simulation/seeded_random.gd")
 const PoseSampler=preload("res://src/presentation/scenery_animation.gd")
 const Background=preload("res://src/presentation/opening_sky.gd")
 const Planets=preload("res://src/presentation/opening_planet_geometry.gd")
+const Lighting=preload("res://src/presentation/opening_lighting.gd")
+const Reflection=preload("res://src/presentation/environment_reflection.gd")
+const Surfaces=preload("res://src/presentation/surface_response.gd")
 var error:=""
 var camera: Camera3D
 var sky: Node3D
@@ -23,6 +26,8 @@ var _elapsed_ms:=0
 var _entry:=Transform3D.IDENTITY
 var _settled:=Transform3D.IDENTITY
 var environment: Environment
+var lighting: Node3D
+var reflection: RefCounted
 
 func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cat: RefCounted,state: Dictionary,seed_value: int=0) -> bool:
 	clear()
@@ -79,12 +84,15 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cat: Ref
 	if not sky.build_lounge(library,visuals,bindings,cat,station_id,cursor):return reject(sky.error)
 	planets=Planets.new();add_child(planets)
 	if not planets.build_lounge(library,visuals,bindings,cat,station_id,cursor):return reject(planets.error)
-	# Shared native PBR adaptation. Original shader/global-light parity is still
-	# incomplete; the authored additive room and glass layers remain intact.
-	environment=Environment.new();environment.background_mode=Environment.BG_COLOR;environment.background_color=Color.BLACK
-	environment.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR;environment.ambient_light_color=Color.WHITE;environment.ambient_light_energy=0.5
-	var light:=DirectionalLight3D.new();add_child(light);light.rotation=Vector3(-0.8,0.4,0)
-	var diffuse: Array=_rules.light_diffuse;light.light_color=Color(diffuse[0],diffuse[1],diffuse[2]).linear_to_srgb();light.shadow_enabled=false
+	lighting=Lighting.new();add_child(lighting)
+	if not lighting.build_station(bindings,cat,station_id,"lounge"):return reject(lighting.error)
+	# The station owner switches its one WorldEnvironment when entering a room.
+	environment=lighting.environment.environment
+	lighting.environment.free();lighting.environment=null
+	reflection=Reflection.new()
+	if not reflection.build(library,bindings,cat,int(station.system_id),false):return reject(reflection.error)
+	var surfaces:=Surfaces.new()
+	if not surfaces.apply_branches([self],bindings,lighting.state,reflection):return reject(surfaces.error)
 	selection={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"station_id":station_id,"system_id":int(station.system_id),"room":_room,"room_meshes":parts.duplicate(),"visitors":[]}
 	for row in _visitors:selection.visitors.append({"contact_id":row.id,"slot":row.slot,"mesh_id":row.body.get_meta("source_resource_id"),"position":row.body.position})
 	return advance(0)
@@ -170,4 +178,5 @@ static func vector(value: Array) -> Vector3:return Vector3(value[0],value[1],val
 func clear() -> void:
 	for child in get_children():child.free()
 	error="";camera=null;sky=null;planets=null;selection={};_rules={};_visitors=[];_animated=[];_elapsed_ms=0;environment=null
+	lighting=null;reflection=null
 func reject(message: String) -> bool:error=message;return false

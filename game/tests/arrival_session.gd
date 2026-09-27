@@ -38,6 +38,9 @@ func verify(args: Array):
 	var viewport:=SubViewport.new();viewport.size=Vector2i(1000,700);viewport.own_world_3d=true;viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS;root.add_child(viewport)
 	var session:=Session.new();viewport.add_child(session)
 	if not session.configure(lib,bindings,visuals,packet,0,1789100000):check(false,session.error);viewport.free();return
+	for child in session.find_children("*","",true,false):
+		if child.get_script()!=preload("res://src/presentation/imported_model.gd"):continue
+		for material in child.materials:check(material.shader!=preload("res://src/presentation/imported_material.gdshader"),"Rescue retained generic PBR shading")
 	var panel:=RadioPanel.new();viewport.add_child(panel);panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	check(panel.configure(bindings.base_content_id,bindings.binding_id,lib.active_language,session.radio_resources.speakers,1),panel.error)
 	check(session.prepare_station().is_empty(),"Running rescue prepared a station before its fade")
@@ -103,7 +106,7 @@ func verify(args: Array):
 	if not bindings.station_entry.is_empty():
 		var station:=Station.new()
 		check(station.configure(bindings,cat,lib,station_packet),station.error)
-		check(station.snapshot().dialogue.text_id==1678 and station.snapshot().loadout.ship_id==0,"Live rescue packet did not enter the source station conversation")
+		check(station.snapshot().dialogue.text==lib.strings[int(bindings.station_entry.dialogue.events[0].text_id)] and station.snapshot().loadout.ship_id==0,"Live rescue packet did not enter the source station conversation")
 	await capture(viewport,"rescue-station-boundary")
 	for key in ["binding_id","player","rescue_disposition","progress"]:
 		var bad:=packet.duplicate(true)
@@ -120,7 +123,8 @@ func verify(args: Array):
 
 func capture(viewport: SubViewport,name_value: String):
 	if captures.is_empty() or DisplayServer.get_name()=="headless":return
-	await process_frame;await process_frame;await RenderingServer.frame_post_draw
+	for index in 20:await process_frame
+	await RenderingServer.frame_post_draw
 	DirAccess.make_dir_recursive_absolute(captures)
 	check(viewport.get_texture().get_image().save_png(captures.path_join(name_value+".png"))==OK,"Could not capture rescue scene")
 

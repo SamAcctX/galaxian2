@@ -160,6 +160,8 @@ func build_planets(library: RefCounted,bindings: RefCounted,visuals: RefCounted,
 	var candidate=preload("res://src/presentation/opening_planet_geometry.gd").new();_world.add_child(candidate)
 	if not candidate.build_station(library,visuals,bindings,catalogues,int(selection.station_id),cursor) or not candidate.apply_view({"pose":camera.global_transform}):
 		var problem: String=candidate.error;candidate.free();return reject(problem)
+	var surfaces:=SurfaceResponse.new()
+	if not surfaces.apply_branches([candidate],bindings,lighting.state,reflection):candidate.free();return reject(surfaces.error)
 	planets=candidate
 	return true
 

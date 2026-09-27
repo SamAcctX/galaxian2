@@ -1,6 +1,7 @@
 shader_type spatial;
 render_mode unshaded, cull_disabled, fog_disabled;
 #include "res://src/presentation/material_coordinates.gdshaderinc"
+#include "res://src/presentation/material_fog.gdshaderinc"
 
 // Native forward material. Inputs are prepared by material_light_state; this
 // shader owns lighting rather than routing it through Godot's PBR response.
@@ -31,6 +32,7 @@ vec3 display_to_linear(vec3 value) {
 }
 
 void vertex() {
+	source_fog_weight = source_fog_amount(VERTEX,MODEL_MATRIX,CAMERA_POSITION_WORLD);
 	mat3 into_tangent = transpose(mat3(TANGENT,BINORMAL,NORMAL));
 	mat4 into_model = inverse(MODEL_MATRIX);
 	vec3 eye_offset = (into_model*vec4(CAMERA_POSITION_WORLD,1.0)).xyz-VERTEX;
@@ -67,5 +69,6 @@ void fragment() {
 	}
 	// Preserve raw source texture arithmetic in the display-referred response.
 	// Godot's linear backends apply their display transfer after this stage.
+	response = source_fog_display(response);
 	ALBEDO = OUTPUT_IS_SRGB ? response : display_to_linear(response);
 }

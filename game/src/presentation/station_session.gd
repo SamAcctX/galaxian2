@@ -15,6 +15,9 @@ const LoungeScene=preload("res://src/presentation/lounge_scene.gd")
 const SourceSky=preload("res://src/presentation/opening_sky.gd")
 const SourcePlanets=preload("res://src/presentation/opening_planet_geometry.gd")
 const PlanetLayout=preload("res://src/simulation/opening_planet_layout.gd")
+const Lighting=preload("res://src/presentation/opening_lighting.gd")
+const Reflection=preload("res://src/presentation/environment_reflection.gd")
+const Surfaces=preload("res://src/presentation/surface_response.gd")
 const BOUNDARIES=["launch_required","station_reload_required","station_followup_required"]
 var _polled_world: RefCounted
 var error:=""
@@ -43,6 +46,8 @@ var _hangar_environment: Environment
 var _hangar_lights: Array[Light3D]=[]
 var station_sky: Node3D
 var station_planets: Node3D
+var lighting: Node3D
+var reflection: RefCounted
 var _story_elapsed_ms:=0
 var _presentation: RefCounted
 var _presentation_view: Control
@@ -136,7 +141,7 @@ func _build_scene(library: RefCounted, bindings: RefCounted, visuals: RefCounted
 	camera.transform=_motion.snapshot().pose
 	if not station_sky.apply_view({"pose":camera.global_transform}):return fail(station_sky.error)
 	if station_planets!=null and not station_planets.apply_view({"pose":camera.global_transform}):return fail(station_planets.error)
-	build_lighting(view.light)
+	if not build_lighting(int(seed.station_id)):return false
 	audio=Speech.new();add_child(audio)
 	var state: Dictionary=_world.snapshot()
 	var voice_ready: bool=true
@@ -155,23 +160,16 @@ func _build_scene(library: RefCounted, bindings: RefCounted, visuals: RefCounted
 	status="running"
 	return true
 
-func build_lighting(data: Dictionary) -> void:
-	# Source direction and ambient/diffuse colors adapted to Godot PBR. Original
-	# station shader selection, inherited global/rim state remain unverified.
-	var direction: Vector3=-(Basis(Vector3.UP,float(data.initial_camera_yaw)).z+Motion.vector(data.direction_bias)).normalized()
-	var light:=DirectionalLight3D.new();add_child(light)
-	_hangar_lights.append(light)
-	light.basis=Basis.looking_at(-direction,Vector3.UP)
-	light.light_color=Color(data.diffuse[0],data.diffuse[1],data.diffuse[2]).linear_to_srgb()
-	light.light_energy=1;light.light_specular=float(data.specular[0]);light.shadow_enabled=false
-	var ambient: Vector3=Motion.vector(data.ambient)*float(data.material_ambient)
-	var energy: float=maxf(ambient.x,maxf(ambient.y,ambient.z))
-	var environment:=WorldEnvironment.new();environment.environment=Environment.new()
-	environment.environment.background_mode=Environment.BG_COLOR;environment.environment.background_color=Color.BLACK
-	environment.environment.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR
-	environment.environment.ambient_light_color=Color(ambient.x/energy,ambient.y/energy,ambient.z/energy).linear_to_srgb()
-	environment.environment.ambient_light_energy=energy;add_child(environment)
-	_environment=environment;_hangar_environment=environment.environment
+func build_lighting(station_id: int) -> bool:
+	lighting=Lighting.new();add_child(lighting)
+	if not lighting.build_station(_bindings,_catalogues,station_id,"hangar"):return fail(lighting.error)
+	reflection=Reflection.new()
+	if not reflection.build(_library,_bindings,_catalogues,int(lighting.state.system_id),false):return fail(reflection.error)
+	var surfaces:=Surfaces.new()
+	if not surfaces.apply_branches([geometry,station_planets],_bindings,lighting.state,reflection):return fail(surfaces.error)
+	_hangar_lights.assign(lighting.lights)
+	_environment=lighting.environment;_hangar_environment=lighting.environment.environment
+	return true
 
 func activate() -> bool:
 	if status!="running" or _active:return reject("Station scene cannot be activated")
@@ -450,6 +448,7 @@ func clear() -> void:
 	_dialogue_started=false;_dialogue_delay_ms=0
 	_locations=null;_bindings=null;_catalogues=null;_library=null;_lounge_open=false
 	_visuals=null;lounge_scene=null;station_sky=null;station_planets=null;_environment=null;_hangar_environment=null;_hangar_lights=[]
+	lighting=null;reflection=null
 	_story_elapsed_ms=0
 
 func _clear_presentations() -> void:

@@ -1,11 +1,13 @@
 extends Node3D
-## Godot light adapter for the recovered opening. Source colors/directions are
-## preserved; Godot's PBR material response is not original shader parity.
+## Location light state consumed by the native material renderer. Interior
+## overrides retain the source location's fill, global ambient and rim.
 const Lighting = preload("res://src/simulation/environment_lighting.gd")
 const Loadout = preload("res://src/simulation/opening_loadout.gd")
 const ArrivalLocation = preload("res://src/simulation/arrival_location.gd")
 const Definitions = preload("res://src/content/opening_sky_definitions.gd")
 const Numbers = preload("res://src/content/opening_definitions.gd")
+const StationView = preload("res://src/content/station_presentation_definitions.gd")
+const Fog = preload("res://src/simulation/distance_fog.gd")
 var error := ""
 var state := {}
 var lights: Array[DirectionalLight3D] = []
@@ -33,12 +35,29 @@ func build_departure(bindings: RefCounted, catalogues: RefCounted, cache: Varian
 	if context.is_empty():return reject(location.error)
 	return _build_station(bindings,catalogues,context)
 
-func _build_station(bindings: RefCounted, catalogues: RefCounted, context: Dictionary) -> bool:
+func _build_station(bindings: RefCounted, catalogues: RefCounted, context: Dictionary, interior:="") -> bool:
 	var station: Dictionary = catalogues.tables.stations[context.station_id]
 	var system: Dictionary = catalogues.tables.systems[context.system_id]
 	var model := Lighting.new()
 	var staged := model.for_station(bindings.environment_colors,context.station_id,station.get("planet_type"),system.get("sky_index"))
 	if staged.is_empty(): return reject(model.error)
+	if not interior.is_empty():
+		var faction:=int(system.fields[int(bindings.hangars.system_field)])
+		var surface: Dictionary=bindings.surface_material.duplicate(true)
+		if interior=="hangar":
+			var view:=StationView.ordinary_view(bindings.station_presentation,int(context.station_id),faction)
+			if view.is_empty():return reject("Hangar lighting requires its bound station view")
+			var data: Dictionary=view.light
+			staged.lights[0]={"direction_to_light":-(Basis(Vector3.UP,float(data.initial_camera_yaw)).z+model.rgb(data.direction_bias)).normalized(),
+				"ambient":model.rgb(data.ambient),"diffuse":model.rgb(data.diffuse),"specular":model.rgb(data.specular)}
+			surface.ambient_rgb=[data.material_ambient,data.material_ambient,data.material_ambient]
+			surface.specular_power=data.specular_power
+		elif interior=="lounge":
+			# Historical declaration name: this is the light's specular strength.
+			staged.lights[0].specular=model.rgb(bindings.early_contracts.lounge_presentation.light_diffuse)
+		else:return reject("Unknown interior light context")
+		staged.surface_material=surface
+		staged.fog=Fog.for_interior(staged.fog,faction,interior)
 	return _build_state(bindings,context,staged)
 
 func build_void(bindings: RefCounted,source: RefCounted) -> bool:
@@ -74,13 +93,13 @@ func _build_state(bindings: RefCounted,context: Dictionary,staged: Dictionary) -
 	return true
 
 ## Location resource preparation is not a departure or arrival permission.
-func build_station(bindings: RefCounted,catalogues: RefCounted,station_id: int) -> bool:
+func build_station(bindings: RefCounted,catalogues: RefCounted,station_id: int,interior:="") -> bool:
 	clear()
 	if bindings==null or catalogues==null or catalogues.content_id!=bindings.base_content_id or station_id<0 or station_id>=catalogues.tables.stations.size():return reject("Lighting requires a matching catalogue station")
 	var system_id:=int(catalogues.tables.stations[station_id].system_id)
 	if system_id<0 or system_id>=catalogues.tables.systems.size():return reject("Lighting station has no catalogue system")
 	var context:={"station_id":station_id,"system_id":system_id}
-	return _build_station(bindings,catalogues,context)
+	return _build_station(bindings,catalogues,context,interior)
 
 func encoded_color(linear: Vector3) -> Color:
 	return Color(linear.x,linear.y,linear.z).linear_to_srgb()

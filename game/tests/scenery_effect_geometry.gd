@@ -10,7 +10,7 @@ const Lighting = preload("res://src/presentation/opening_lighting.gd")
 const Reflection = preload("res://src/presentation/environment_reflection.gd")
 const Sampler = preload("res://src/presentation/scenery_animation.gd")
 const Poses = preload("res://src/presentation/scenery_effect_pose.gd")
-const RESPONSE := {"variant":"unfogged_two_light_cube","diffuse_bias":-1,"normal_bias":0}
+const RESPONSE := {"variant":"two_light_cube","diffuse_bias":-1,"normal_bias":0}
 const WHITE := Vector4(1,1,1,1)
 var failures := 0
 var viewport: SubViewport
@@ -155,8 +155,8 @@ func check_shader() -> void:
 	# Independent constant RGB/alpha follows the same Godot transfer and blending,
 	# isolating material arithmetic without claiming original framebuffer parity.
 	var shader := Shader.new()
-	shader.code="shader_type spatial; render_mode unshaded, blend_mix, depth_draw_never, fog_disabled; void fragment(){ALBEDO=vec3(0.1,0.1,0.075);ALPHA=0.25;}"
-	var reference := ShaderMaterial.new();reference.shader=shader;plane.material_override=reference
+	shader.code="shader_type spatial; render_mode unshaded, blend_mix, depth_draw_never, fog_disabled; uniform vec4 value:source_color; void fragment(){ALBEDO=value.rgb;ALPHA=value.a;}"
+	var reference := ShaderMaterial.new();reference.shader=shader;reference.set_shader_parameter("value",Color(0.1,0.1,0.075,0.25));plane.material_override=reference
 	var expected := (await capture()).get_pixel(192,192)
 	check(Vector3(actual.r,actual.g,actual.b).distance_to(Vector3(expected.r,expected.g,expected.b))<0.012,"Alpha shader lost tint, opacity, transparent depth behavior or RGB-only darkening")
 	plane.free();behind.free()

@@ -62,7 +62,7 @@ var _skip_cinematic:=false
 const BOUNDARIES := ["encounter_required","mission_transition_required","player_death_required","arrival_transition_required"]
 # Explicit native preview preset. Source preference restoration and fogged
 # variants remain separate work; these values do not claim automatic selection.
-const EFFECT_RESPONSE := {"variant":"unfogged_two_light_cube","diffuse_bias":-1,"normal_bias":0}
+const EFFECT_RESPONSE := {"variant":"two_light_cube","diffuse_bias":-1,"normal_bias":0}
 
 # The preview explicitly selects the source Normal value. This is not saved
 # difficulty restoration; a future game session must supply its selected value.
@@ -171,7 +171,7 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted, n
 	if effect_resources!=null:
 		if not scenery.prepare_destruction(_scenery.snapshot(),library,visuals,bindings,effect_resources,lights.state,reflection,EFFECT_RESPONSE):return fail(scenery.error)
 	var surfaces=load("res://src/presentation/surface_response.gd").new()
-	if not surfaces.apply_branches([geometry,scenery],bindings,lights.state,reflection):return fail(surfaces.error)
+	if not surfaces.apply_branches([geometry,scenery,planets],bindings,lights.state,reflection):return fail(surfaces.error)
 	if _world_frame!=null:
 		var initial: Dictionary=_world_frame.evaluate(_timeline,_scenery,0,true,1.0,Vector2.ZERO,false,Vector2i(camera.get_viewport().get_visible_rect().size))
 		if initial.is_empty():return fail(_world_frame.error)

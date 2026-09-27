@@ -16,10 +16,14 @@ func check(ok: bool,message: String) -> void:
 	checks+=1
 	if not ok:failures+=1;push_error(message)
 func frame() -> Image:
-	await process_frame;await process_frame;await RenderingServer.frame_post_draw
+	for index in 20:await process_frame
+	await RenderingServer.frame_post_draw
 	return canvas.get_texture().get_image()
 func run() -> void:
 	var args:=OS.get_cmdline_user_args()
+	var captures:=OS.get_environment("GOF2_CAPTURE_DIR")
+	if args.size()==3 and not captures.is_empty():
+		DirAccess.make_dir_recursive_absolute(captures);args.append(captures)
 	if args.size() not in [3,4] or DisplayServer.get_name()=="headless":push_error("Expected GPU and explicit content/bindings/visuals");quit(1);return
 	var library:=Library.new();var bindings:=Bindings.new();var visuals:=Visuals.new();var cat:=Catalogues.new()
 	if not library.open(args[0]) or not bindings.open(args[1],library.manifest) or not visuals.open(args[2],library.manifest) or not cat.open(library):push_error(library.error+bindings.error+visuals.error+cat.error);quit(1);return
@@ -36,6 +40,10 @@ func run() -> void:
 		var environment:=WorldEnvironment.new();environment.environment=scene.environment;scene.add_child(environment)
 		scene.camera.make_current();check(scene.advance(3000),scene.error)
 		var snapshot:=scene.snapshot()
+		check(not scene.lighting.state.fog.is_empty() if room==1 else scene.lighting.state.fog.is_empty(),"Lounge lost its faction fog selection")
+		for child in scene.find_children("*","",true,false):
+			if child.get_script()!=preload("res://src/presentation/imported_model.gd"):continue
+			for material in child.materials:check(material.shader!=preload("res://src/presentation/imported_material.gdshader"),"Lounge retained default PBR shading")
 		check(snapshot.room==room and snapshot.station_id==79 and snapshot.system_id==15,"Room or actual background location changed")
 		check(snapshot.visitors.size()==visitors.size() and scene.screen_contacts().size()==visitors.size(),"Original visitors are absent or unselectable")
 		var slots:={}

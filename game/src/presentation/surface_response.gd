@@ -1,21 +1,22 @@
 extends RefCounted
-## Explicit two-light material adapter. It does not select source settings or
-## silently replace an unknown shader variant. Opaque material 28 only.
+## Shared material preparation: two-light response for opaque material 28,
+## distance fog for participating passes, and preserved additive layers.
 const ShaderSource = preload("res://src/presentation/surface_response.gdshader")
 const Lights = preload("res://src/presentation/material_light_state.gd")
 const ImportedShader = preload("res://src/presentation/imported_material.gdshader")
 const ImportedModel = preload("res://src/presentation/imported_model.gd")
-# Explicit desktop high-quality surface preset, shared by exterior scene owners.
+const Fog = preload("res://src/presentation/material_fog.gd")
+# Explicit desktop high-quality surface preset, shared by scene owners.
 const HIGH_QUALITY:={"variant":"two_light_cube","diffuse_bias":-1,"normal_bias":0}
 var error := ""
 var material: ShaderMaterial
 
 func apply_branches(roots: Array, bindings: RefCounted, environment: Dictionary, reflection: RefCounted, settings:=HIGH_QUALITY) -> bool:
 	error=""
-	if bindings==null or reflection==null:return fail("Exterior surfaces require prepared lighting and reflection")
+	if bindings==null or reflection==null:return fail("Source surfaces require prepared lighting and reflection")
 	for key in ["base_content_id","binding_id"]:
-		if environment.get(key)!=bindings.get(key) or reflection.selection.get(key)!=bindings.get(key):return fail("Exterior surface resources belong to another content identity")
-	if reflection.selection.get("system_id")!=environment.get("system_id"):return fail("Exterior reflection belongs to another location")
+		if environment.get(key)!=bindings.get(key) or reflection.selection.get(key)!=bindings.get(key):return fail("Surface resources belong to another content identity")
+	if reflection.selection.get("system_id")!=environment.get("system_id"):return fail("Reflection belongs to another location")
 	var models:=[]
 	for branch in roots:
 		if branch==null:continue
@@ -23,9 +24,13 @@ func apply_branches(roots: Array, bindings: RefCounted, environment: Dictionary,
 		descendants.push_front(branch)
 		for child in descendants:
 			if child.get_script()==ImportedModel and not models.has(child):models.append(child)
-	var changes:=prepare_models(models,bindings.surface_material,environment,reflection.texture,settings.diffuse_bias,settings.normal_bias,settings.variant)
-	if changes.is_empty():return false
-	commit_models(changes)
+	if not Fog.State.valid(environment.get("fog",{})):return fail("Invalid source distance fog")
+	var opaque:=models.filter(func(model):return model.materials.any(func(value):return value.shader==ImportedShader))
+	if not opaque.is_empty():
+		var changes:=prepare_models(opaque,environment.get("surface_material",bindings.surface_material),environment,reflection.texture,settings.diffuse_bias,settings.normal_bias,settings.variant)
+		if changes.is_empty():return false
+		commit_models(changes)
+	Fog.apply_models(models,environment.get("fog",{}))
 	return true
 
 func prepare_models(models: Array, surface: Dictionary, environment: Dictionary, reflection: Cubemap, diffuse_bias: Variant, normal_bias: Variant, variant: String) -> Array:
@@ -59,6 +64,7 @@ func from_imported(original: ShaderMaterial, surface: Dictionary, environment: D
 func build(surface: Dictionary, environment: Dictionary, diffuse: Texture2D, detail: Texture2D, reflection: Cubemap, diffuse_bias: Variant, normal_bias: Variant, variant: String) -> bool:
 	error="";material=null
 	if variant!="two_light_cube":return fail("Unsupported source material response variant: "+variant)
+	if not Fog.State.valid(environment.get("fog",{})):return fail("Invalid source distance fog")
 	if diffuse==null or detail==null or reflection==null:return fail("Source material response needs diffuse, normal/specular and cube textures")
 	for value in [diffuse_bias,normal_bias]:
 		if not (value is float or value is int) or not is_finite(float(value)) or absf(value)>16:return fail("Invalid source texture sampling bias")
@@ -78,6 +84,7 @@ func build(surface: Dictionary, environment: Dictionary, diffuse: Texture2D, det
 		var values := PackedVector3Array()
 		for row in lights.state.lights:values.append(row[field])
 		staged.set_shader_parameter("light_directions" if field=="direction_to_light" else field+"_colors",values)
+	Fog.apply(staged,environment.get("fog",{}))
 	material=staged
 	return true
 

@@ -79,7 +79,7 @@ var _radio_resources: RefCounted
 var npc_markers: Control
 var waypoint_marker: Control
 var station_target_overlay: Control
-const EFFECT_RESPONSE:={"variant":"unfogged_two_light_cube","diffuse_bias":-1,"normal_bias":0}
+const EFFECT_RESPONSE:={"variant":"two_light_cube","diffuse_bias":-1,"normal_bias":0}
 
 func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogues: RefCounted,flight: RefCounted,activate_camera:=true) -> bool:
 	clear()
@@ -206,7 +206,7 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 		game_over=GameOver.new();overlay.add_child(game_over);game_over.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		if not game_over.configure(library,bindings,visuals,death):return fail(game_over.error)
 	var surfaces:=SurfaceResponse.new()
-	if not surfaces.apply_branches([geometry,encounter,station,gates,void_environment,scenery],bindings,lighting.state,reflection):return fail(surfaces.error)
+	if not surfaces.apply_branches([geometry,encounter,station,gates,void_environment,scenery,planets],bindings,lighting.state,reflection):return fail(surfaces.error)
 	if not present(flight):return fail(error)
 	return true
 

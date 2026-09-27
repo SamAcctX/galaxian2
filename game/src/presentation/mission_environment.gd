@@ -43,7 +43,7 @@ func configure(library: RefCounted,visuals: RefCounted,bindings: RefCounted,cata
 	return true
 
 func surface_roots() -> Array:
-	return [_void.station] if _void!=null else [_ordinary.station]
+	return [_void.station] if _void!=null else [_ordinary.station,_ordinary.planets]
 
 func present(world: RefCounted,viewport: Vector2i) -> bool:
 	if _generation==null or world.presentation_identity()!=_generation:return reject("Environment belongs to another flight generation")

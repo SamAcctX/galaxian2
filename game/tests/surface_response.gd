@@ -39,7 +39,7 @@ func run() -> void:
 	check(not response.from_imported(Materials.create(0,pigment,null,false),surface,lighting,cube,0,0,"two_light_cube") and response.material==null,"Unsupported material family retained conversion")
 	if DisplayServer.get_name()!="headless":
 		var reference_shader := Shader.new()
-		reference_shader.code="shader_type spatial; render_mode unshaded; uniform vec3 value; void fragment(){ALBEDO=value;}"
+		reference_shader.code="shader_type spatial; render_mode unshaded; uniform vec4 value:source_color; void fragment(){ALBEDO=value.rgb;}"
 		calibration=ShaderMaterial.new();calibration.shader=reference_shader
 		viewport=SubViewport.new();viewport.size=Vector2i(65,65);viewport.own_world_3d=true
 		viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS;root.add_child(viewport)
@@ -72,7 +72,7 @@ func probe(pigment: Texture2D, normal: Texture2D, expected: Vector3, label: Stri
 	if response.material==null:return
 	plane.material_override=response.material
 	var actual := await sample()
-	calibration.set_shader_parameter("value",expected);plane.material_override=calibration
+	calibration.set_shader_parameter("value",Color(expected.x,expected.y,expected.z));plane.material_override=calibration
 	var reference := await sample()
 	check(actual.distance_to(reference)<0.012,"%s: calibrated expected %s, got %s" % [label,reference,actual])
 	print(label,": ",actual," reference: ",reference)
