@@ -19,6 +19,8 @@ var _pauses:={}
 var _active:=false
 var _secondary_pending:=false
 var _throttle:=1.0
+var _observed_world: RefCounted
+var _flight_read:={}
 
 func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogues: RefCounted,construction: RefCounted,now_microseconds: int,viewport: Vector2i) -> bool:
 	error=""
@@ -79,7 +81,7 @@ func action(name: String) -> bool:
 		"missiles":_secondary_pending=true;return true
 		"throttle_up":_throttle=minf(1.0,_throttle+0.1);return true
 		"throttle_down":_throttle=maxf(0.0,_throttle-0.1);return true
-		"change_view":next=_world.camera_input(3 if _world.frame_context().encounter.view.camera_mode==0 else 0)
+		"change_view":next=_world.camera_input(3 if _flight_observation().camera_mode==0 else 0)
 		"secondary_next":next=_world.cycle_secondary()
 		_:return true # Held primary, brake and mouse steering belong to controls.
 	if next==null:return reject(_world.error)
@@ -96,8 +98,8 @@ func supports_event(event: InputEvent) -> bool:
 	return event is InputEventMouseMotion
 
 func orbit_event(event: InputEvent) -> bool:
-	if not can_control() or _world.frame_context().encounter.view.camera_mode!=3:return false
-	var input: Dictionary=_world.frame_context().encounter.view.orbit_input
+	if not can_control() or _flight_observation().camera_mode!=3:return false
+	var input: Dictionary=_flight_observation().orbit_input
 	var kind:="";var position:=Vector2i.ZERO
 	if event is InputEventMouseButton and event.button_index==MOUSE_BUTTON_LEFT:
 		if event.pressed==bool(input.dragging):return false
@@ -162,8 +164,32 @@ func rebase_time(now_microseconds: int) -> bool:return _clock!=null and _clock.r
 func clear_flight_input() -> void:_secondary_pending=false
 func is_paused() -> bool:return _pauses.values().has(true)
 func can_control() -> bool:
-	return _active and status=="running" and not is_paused() and _world!=null and not _world.campaign_dialogue_visible() and _world.prepare_portal_transition().is_empty() and not _world.frame_context().encounter.sequence.input_blocked and _world.player_owner().snapshot().active and _world.player_owner().snapshot().vitals.hull>0
-func flight_hud_visible() -> bool:return _active and _world!=null and not _world.campaign_dialogue_visible() and _world.frame_context().encounter.sequence.hud_visible
+	if not _active or status!="running" or is_paused() or _world==null:return false
+	var state:=_flight_observation()
+	return not state.dialogue_visible and not state.portal_pending and not state.input_blocked and state.player_active and state.player_alive
+func flight_hud_visible() -> bool:
+	if not _active or _world==null:return false
+	var state:=_flight_observation()
+	return not state.dialogue_visible and state.hud_visible
+
+## Small read-only observations of an accepted immutable flight. Session pause,
+## activation and pending controls remain live, outside this owner-keyed memo.
+func flight_observation() -> Dictionary:return _flight_observation().duplicate(true)
+func _flight_observation() -> Dictionary:
+	if _world==null:return {}
+	if _world==_observed_world:return _flight_read
+	var state: Dictionary=_world.frame_context()
+	var sequence: Dictionary=state.encounter.sequence;var view: Dictionary=state.encounter.view
+	var destruction: Dictionary=_world.destruction_owner().snapshot()
+	_flight_read={"dialogue_visible":_world.campaign_dialogue_visible(),
+		"portal_pending":not _world.prepare_portal_transition().is_empty(),
+		"input_blocked":sequence.input_blocked,"hud_visible":sequence.hud_visible,
+		"player_active":state.player.active,"player_alive":state.player.vitals.hull>0,
+		"entry_released":sequence.get("entry_released",false),
+		"camera_mode":view.camera_mode,"orbit_input":view.orbit_input.duplicate(true),
+		"destruction_phase":destruction.phase,"game_over_visible":destruction.game_over_visible}
+	_observed_world=_world
+	return _flight_read
 func flight_owner() -> RefCounted:return null if _world==null else _world.fork_for_frame()
 func handle_game_over_event(event: InputEvent) -> bool:return scene!=null and scene.handle_event(event)
 func prepare_game_over() -> Dictionary:return {} if _world==null else _world.prepare_game_over()

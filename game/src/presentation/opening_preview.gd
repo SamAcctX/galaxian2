@@ -532,7 +532,7 @@ func _station_shell_action(action: String) -> void:
 
 func _sync_mouse_capture() -> void:
 	var active: bool=_player_mode and _mouse_steering and not _mobile_layout and not touch_actions_enabled() and _focused and is_visible_in_tree() and session!=null and (session.can_control() or (session is FirstFlightSession and session.can_stop_mining()))
-	if session is MissionSession and session.flight_owner().frame_context().encounter.view.camera_mode==3:active=false
+	if session is MissionSession and session.flight_observation().camera_mode==3:active=false
 	_controls.set_mouse_active(active)
 	if active==_mouse_captured:return
 	_mouse_captured=active
@@ -1434,9 +1434,11 @@ func present_session() -> void:
 		if not session.can_control():clear_input()
 		if session.is_paused():status.text="Paused · Esc / controller Start resumes"
 		elif session.status!="running":status.text="This flight has reached an unimplemented travel or result boundary. No progress has been awarded."
-		elif session.flight_owner().destruction_owner().snapshot().phase!="ready":status.text="Game over" if session.flight_owner().destruction_owner().snapshot().game_over_visible else "Your ship was destroyed"
-		elif not session.flight_owner().frame_context().encounter.sequence.get("entry_released",false):status.text="Entering the selected encounter"
-		else:status.text="Steer: Mouse / arrows / stick · Fire: Space / trigger · Select secondary: G · EMP: R / left trigger · View: T"
+		else:
+			var observation: Dictionary=session.flight_observation()
+			if observation.destruction_phase!="ready":status.text="Game over" if observation.game_over_visible else "Your ship was destroyed"
+			elif not observation.entry_released:status.text="Entering the selected encounter"
+			else:status.text="Steer: Mouse / arrows / stick · Fire: Space / trigger · Select secondary: G · EMP: R / left trigger · View: T"
 		refresh_render_mode();return
 	var secondary_error:=_present_secondaries()
 	if not secondary_error.is_empty():transition_error(secondary_error);return
