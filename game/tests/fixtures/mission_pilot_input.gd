@@ -9,11 +9,15 @@ static func key(viewport: Viewport,code: Key,down: bool) -> void:
 static func press(viewport: Viewport,code: Key) -> void:
 	key(viewport,code,true);key(viewport,code,false)
 
-static func apply(app: Control,viewport: Viewport,input: Dictionary,delta_us: int) -> Dictionary:
+static func apply(app: Control,viewport: Viewport,input: Dictionary,delta_us: int,observation: RefCounted=null) -> Dictionary:
+	# Never silently re-observe while retaining controls planned from stale data.
+	if observation!=null and not observation.matches(app.session):
+		return {"error":"Expired pilot observation: re-observe and plan before delivering input"}
 	if app.session.can_control():
 		# snapshot.throttle belongs to the last accepted flight frame. Re-reading
 		# it between key presses cannot observe the pending control setting.
-		var current: float=app.session.snapshot().throttle
+		var accepted: Dictionary=app.session.snapshot() if observation==null else observation.read(app.session)
+		var current: float=accepted.throttle
 		var count:=roundi(absf(current-float(input.throttle))*10.0)
 		for adjustment in count:
 			press(viewport,KEY_BRACKETRIGHT if current<float(input.throttle) else KEY_SLASH)
@@ -25,4 +29,5 @@ static func apply(app: Control,viewport: Viewport,input: Dictionary,delta_us: in
 		motion.screen_relative=Vector2(-input.commands.y,input.commands.x)*600.0*float(delta_us)/1000000.0/app._controls.mouse_sensitivity
 		motion.relative=motion.screen_relative;viewport.push_input(motion,true)
 	app._controls.advance_mouse(float(delta_us)/1000000.0)
+	if observation!=null:observation.invalidate()
 	return app._controls.snapshot()
