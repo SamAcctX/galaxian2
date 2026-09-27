@@ -51,6 +51,37 @@ func verify() -> void:
 	var inactive:=damaged.duplicate(true);inactive.encounter.combat.actors[0].active=false
 	check(stance.apply(inactive,firing).commands==Vector2.ZERO,"Withdrawal steered toward an inactive escort")
 	check(close==close_before and damaged==damaged_before and firing==firing_before,"Policy cases changed retained observations or the original firing sample")
+	var separated:=observation(91,50000.0,4000)
+	separated.encounter.combat.actors[0].position=Vector3(0,-1500,-122000)
+	var separated_before: Dictionary=separated.duplicate(true)
+	var outbound: Dictionary=Pilot.new().controls_at_time(separated,4000.0,[1],true)
+	var outbound_before: Dictionary=outbound.duplicate(true)
+	var regroup:=Tactics.new();var bounded:=regroup.apply(separated,outbound)
+	check(bounded.target==-1 and not bounded.fire and bounded.commands.y>0.9,"Healthy pilot continued a remote pursuit instead of returning to its separated escort")
+	check(bounded.throttle==1.0 and bounded.distance==125000.0 and bounded.strafe==1.0,"Separated escort return lost its actual distance, travel or timed evasion")
+	check(separated==separated_before and outbound==outbound_before,"Regrouping changed its observed world or original pilot sample")
+	var boundary:=separated.duplicate(true);boundary.encounter.combat.actors[0].position.z=-37000
+	var boundary_tactics:=Tactics.new()
+	check(boundary_tactics.apply(boundary,outbound)==outbound,"An escort exactly on the outer boundary changed the valid approach")
+	boundary.encounter.combat.actors[0].position.z=-37001
+	check(boundary_tactics.apply(boundary,outbound).target==-1,"Crossing the outer boundary did not stop remote pursuit")
+	var middle:=separated.duplicate(true);middle.elapsed_ms=5000
+	middle.encounter.combat.actors[0].position.z=-7000
+	var midway:=regroup.apply(middle,firing)
+	check(midway.target==-1 and not midway.fire and midway.commands.y>0.9 and midway.strafe==-1.0,"Regroup resumed pursuit too early or lost the opposite timed strafe")
+	var arrived:=middle.duplicate(true);arrived.encounter.combat.actors[0].position.z=-2000
+	var released:=regroup.apply(arrived,firing)
+	check(released.target==1 and released.fire and released.throttle==0.0,"Reaching the inner boundary did not restore a real aligned firing solution")
+	arrived.player.vitals.hull=60
+	check(not regroup.apply(arrived,firing).fire and regroup.retreating,"Regroup completion overrode the damage reserve")
+	var abandoned:=separated.duplicate(true);abandoned.encounter.combat.actors.remove_at(0)
+	var stranded:=boundary_tactics.apply(abandoned,firing)
+	check(stranded.target==-1 and not stranded.fire and stranded.commands==Vector2.ZERO,"A missing escort cancelled regroup and resumed firing")
+	var lost:=separated.duplicate(true);lost.encounter.combat.actors[0].vitals.hull=0
+	check(boundary_tactics.apply(lost,firing).commands==Vector2.ZERO,"Regroup steered toward a defeated escort")
+	lost.encounter.combat.actors[0].vitals.hull=100;lost.encounter.combat.actors[0].active=false
+	check(boundary_tactics.apply(lost,firing).commands==Vector2.ZERO,"Regroup steered toward an inactive escort")
+	check(separated==separated_before and outbound==outbound_before and firing==firing_before,"Leash boundary cases mutated retained input data")
 	print("Escort tactics: ",checks," checks; ",failures," failures; stand-off and damage-aware withdrawal are synthetic input policy, not earned survival")
 	quit(0 if failures==0 else 1)
 
