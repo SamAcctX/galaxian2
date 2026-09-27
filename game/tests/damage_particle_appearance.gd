@@ -11,12 +11,12 @@ func _initialize() -> void:
 	var updates:=0
 	for vector in fixture.vectors:
 		var preset: Dictionary=fixture.presets[int(vector.preset_index)]
-		var state:=Appearance.start(preset,int(vector.slot),int(vector.size_sample))
+		var state:=Appearance.start_prepared(preset,int(vector.slot),int(vector.size_sample))
 		check(not state.has("error"),"Synthetic sprite construction failed")
 		if state.has("error"):continue
 		for step in vector.steps:
 			var before:=state.duplicate(true)
-			var next:=Appearance.advance(preset,state,step.delta)
+			var next:=Appearance.advance_prepared(preset,state,step.delta)
 			check(state==before,"Appearance mutated the caller's retained state")
 			check(next.get("slot")==step.state.slot and next.get("age_ms")==step.state.age_ms and next.get("size")==step.state["size"],"Particle growth or strict lifetime differs from mathematical vector")
 			var got:=Appearance.sample(preset,next)
@@ -40,6 +40,7 @@ func _initialize() -> void:
 	bad=initial.duplicate();bad["size"]=32768
 	check(Appearance.sample(preset,bad).has("error"),"Invalid retained size accepted")
 	check(Appearance.sample({},initial).has("error"),"Missing declaration fabricated particles")
+	check(Appearance.start({},0,0).has("error") and Appearance.advance({},initial,1).has("error"),"Unprepared appearance accepted a missing declaration")
 	var repeated:=Appearance.advance(preset,initial,0.5)
 	check(repeated==initial,"Fractional update incorrectly accumulates age or growth")
 	var large:=preset.duplicate();large.size_growth_per_second=32767

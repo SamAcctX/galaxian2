@@ -6,13 +6,22 @@ const Numbers=preload("res://src/content/opening_definitions.gd")
 const Random=preload("res://src/simulation/seeded_random.gd")
 
 static func start(preset: Dictionary,slot: Variant,size_sample: Variant) -> Dictionary:
-	if (OS.is_debug_build() and not Definitions.sprite_preset(preset)) or not Numbers.integer(slot,0,int(preset.capacity)-1):return {"error":"Invalid damage particle preset or slot"}
+	if not Definitions.sprite_preset(preset):return {"error":"Invalid damage particle preset"}
+	return start_prepared(preset,slot,size_sample)
+
+## Emitters retain a frozen preset validated at construction.
+static func start_prepared(preset: Dictionary,slot: Variant,size_sample: Variant) -> Dictionary:
+	if not Numbers.integer(slot,0,int(preset.capacity)-1):return {"error":"Invalid damage particle slot"}
 	if not Numbers.integer(size_sample,0,maxi(0,int(preset.size_jitter)-1)):return {"error":"Invalid damage particle size sample"}
 	return {"slot":int(slot),"age_ms":0,"size":int(single(single(preset.size)+float(size_sample)))}
 
 static func advance(preset: Dictionary,state: Dictionary,delta_ms: Variant) -> Dictionary:
-	# The emitter validated its preset and owns slot changes; recheck in debug.
-	if OS.is_debug_build() and not valid_state(preset,state):return {"error":"Invalid damage particle appearance state"}
+	if not Definitions.sprite_preset(preset):return {"error":"Invalid damage particle appearance preset"}
+	return advance_prepared(preset,state,delta_ms)
+
+## An admitted preset stays immutable; changing slots and time are checked here.
+static func advance_prepared(preset: Dictionary,state: Dictionary,delta_ms: Variant) -> Dictionary:
+	if not valid_slot(preset,state):return {"error":"Invalid damage particle appearance state"}
 	if not (delta_ms is float or delta_ms is int) or not is_finite(delta_ms) or delta_ms<0 or delta_ms>60000:return {"error":"Invalid damage particle appearance interval"}
 	var result:=state.duplicate(true)
 	if int(state.age_ms)==-1:return result

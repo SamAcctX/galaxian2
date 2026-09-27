@@ -298,12 +298,12 @@ func _new_appearance() -> Dictionary:
 		# Sprite geometry uses one size; both auxiliary dimensions still consume
 		# their own draws on this emitter's independent random stream.
 		_random.next_int(int(_preset.size_jitter));_random.next_int(int(_preset.size_jitter))
-	return Appearance.start(_preset,_cursor,size_sample)
+	return Appearance.start_prepared(_preset,_cursor,size_sample)
 
 func move_particle(index: int,delta_ms: float) -> bool:
 	var slot: Dictionary=_slots[index]
 	if slot.appearance.age_ms<0:return true
-	var appearance:=Appearance.advance(_preset,slot.appearance,delta_ms)
+	var appearance:=Appearance.advance_prepared(_preset,slot.appearance,delta_ms)
 	if appearance.has("error"):return reject(appearance.error)
 	slot=slot.duplicate();slot.appearance=appearance
 	if appearance.age_ms<0:slot.position=RESET_POSITION
