@@ -28,6 +28,20 @@ func verify() -> void:
 	turning.encounter.combat.actors[3].position=Vector3(5000,0,18000)
 	var turn:=Escort.new().controls_at_time(turning,0.0,preferred,true)
 	check(turn.target==3 and not turn.fire,"Nearby aiming did not choose the smaller real turn or invented fire")
+	var saturated:=observation()
+	saturated.encounter.combat.actors[1].position=Vector3(12000,12000,13000)
+	saturated.encounter.combat.actors[2].position=Vector3(0,0,-5000)
+	var diagonal:=Pilot.new().controls_at_time(saturated,0.0,[1],true)
+	var behind:=Pilot.new().controls_at_time(saturated,0.0,[2],true)
+	check(diagonal.commands.length_squared()>behind.commands.length_squared(),"Fixture no longer exposes saturated command ordering")
+	var angular:=Escort.new().controls_at_time(saturated,0.0,[1,2],true)
+	check(angular.target==1 and not angular.fire,"Clamped commands preferred a rear target over a smaller physical turn")
+	var rotated: Dictionary=saturated.duplicate(true)
+	var basis:=Basis(Vector3.UP,1.2)*Basis(Vector3.FORWARD,.6)
+	rotated.player_pose.basis=basis
+	for item in rotated.encounter.combat.actors:item.position=basis*item.position
+	var local_bearing:=Escort.new().controls_at_time(rotated,0.0,[1,2],true)
+	check(local_bearing.target==1 and local_bearing.commands.is_equal_approx(diagonal.commands),"Opportunity bearing ignored the player's rotated frame")
 	var moving:=observation();var measured:=Escort.new();var reference:=Pilot.new()
 	measured.controls_at_time(moving,0.0,preferred,true);reference.controls_at_time(moving,0.0,[2],true)
 	moving.elapsed_ms=40;moving.encounter.combat.actors[2].position.x=100

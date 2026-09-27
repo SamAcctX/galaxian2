@@ -15,14 +15,18 @@ func controls_at_time(state: Dictionary,elapsed_ms: float,preferred: Array=[],re
 	for id in _opportunities.keys():
 		if id not in hostiles:_opportunities.erase(id)
 	if hostiles.is_empty():return {"commands":Vector2.ZERO,"throttle":0.0,"fire":false,"strafe":0.0,"target":-1,"distance":0.0}
-	var ready: Dictionary={};var nearby: Dictionary={}
+	var ready: Dictionary={};var nearby: Dictionary={};var nearest_angle:=INF
 	for id in hostiles:
 		if not _opportunities.has(id):_opportunities[id]=Pilot.new()
 		# Keep each ship's measured lead even while another target is selected.
 		var sample: Dictionary=_opportunities[id].controls_at_time(state,elapsed_ms,[id],true)
 		if sample.fire and (ready.is_empty() or sample.distance<ready.distance):ready=sample
 		if sample.distance>=NEARBY_DISTANCE:continue
-		if nearby.is_empty() or sample.commands.length_squared()<nearby.commands.length_squared():nearby=sample
+		# Clamped stick axes lose angular distance, especially behind the nose.
+		# Rank actual bearings; retain the selected pilot's measured firing lead.
+		var offset: Vector3=state.encounter.combat.actors[id].position-state.player_pose.origin
+		var angle: float=state.player_pose.basis.z.angle_to(offset)
+		if angle<nearest_angle:nearby=sample;nearest_angle=angle
 	if not ready.is_empty():return ready
 	if not nearby.is_empty():return nearby
 	return _pursuit.controls_at_time(state,elapsed_ms,preferred,reacquire_nearer)
