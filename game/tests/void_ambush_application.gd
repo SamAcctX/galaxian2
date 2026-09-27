@@ -8,6 +8,7 @@ const EscapePilot=preload("res://tests/fixtures/void_escape_pilot.gd")
 var combat_pilot:=CombatPilot.new()
 var pending_emp:=false
 var void_route_history:={}
+var equip_escape_shield:=false
 
 ## Shared earned prefix for success and loss cases; no staged Void world.
 func enter_earned_ambush() -> Dictionary:
@@ -24,6 +25,9 @@ func enter_earned_ambush() -> Dictionary:
 	app.enable_saves(chapter_directory)
 	app.show();app.present_session();await process_frame;resume_application_focus()
 	await capture_free_application("void41-nehma40-source")
+	if equip_escape_shield:
+		if not purchase_route_device(51,64):return {}
+		original=app.session.station_owner().snapshot()
 	if not await depart_onward():return {}
 	# Every station launch restores the equipped ship, including this one.
 	check(app.session.snapshot().player.vitals.armor==110,"The Néhma launch kept arrival damage instead of the station launch reset")
@@ -39,6 +43,7 @@ func enter_earned_ambush() -> Dictionary:
 	return original if not failures else {}
 
 func verify_free_application() -> void:
+	equip_escape_shield=true
 	var original:=await enter_earned_ambush()
 	if original.is_empty():return
 	var input_path:=OS.get_environment("GOF2_SOURCE_SAVE")
@@ -125,6 +130,7 @@ func fly_mission42() -> bool:
 			if escape.fade_requested and escape.fade.elapsed_ms>=2000 and not captured.has("fade"):
 				captured.fade=true;await capture_free_application("void42-escape-fade")
 		var input: Dictionary=pilot.controls(state,tick,app.session.can_control())
+		if freighter.vitals.hull<=0 and app.session.can_control() and not await use_emp(state):return false
 		if tick%100==0:
 			print("M42 tick ",tick," phase ",phase," freighter ",freighter.vitals.hull," target distance ",state.player_pose.origin.distance_to(freighter.position)," portal distance ",state.player_pose.origin.distance_to(state.portal.position)," pools ",state.player.vitals," input ",input," radio ",state.encounter.radio.get("started",[]))
 			await process_frame
@@ -207,6 +213,10 @@ func fly_mission41() -> bool:
 			else:
 				commands=ExpeditionPilot.steering_toward(state.player_pose,freighter.position+Vector3(0,1500,-3000))
 				throttle=1.0 if state.player_pose.origin.distance_to(freighter.position)>5000.0 else 0.3
+			# Control can return before the result poll. Nearby attackers still
+			# fire during that gap, even when none is close to the freighter.
+			if state.encounter.combat.actors.any(func(actor):return actor.actor_id>0 and actor.active and actor.hostile and actor.vitals.hull>0 and actor.position.distance_to(state.player_pose.origin)<35000.0):
+				strafe=CombatPilot.evasion_at(float(state.elapsed_ms))
 		if tick%100==0:
 			print("M41 tick ",tick," elapsed ",state.elapsed_ms," phase ",sequence.get("phase")," control ",app.session.can_control()," hull ",state.player.vitals," freighter ",freighter.position," fhull ",freighter.vitals.hull," threats ",threats," radio ",state.encounter.radio.get("started",[])," runner ",state.runner)
 			await process_frame
@@ -243,7 +253,7 @@ func flight_step(commands: Vector2,fire:=false,throttle:=1.0,strafe:=0.0) -> boo
 			if not app.session.action("throttle_up" if current<throttle else "throttle_down"):check(false,app.session.error);return false
 	if pending_emp:
 		pending_emp=false
-		if app.session.can_control() and not try_paid_emp(app.session.snapshot(),9000,0.0,"mission 40 attackers",true):return false
+		if app.session.can_control() and not try_paid_emp(app.session.snapshot(),9000,0.0,"Void route attackers",true):return false
 	now_us+=100000
 	if not app.session.step(now_us,commands,fire,false,strafe):check(false,app.session.error);return false
 	app.present_session()
