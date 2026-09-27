@@ -385,6 +385,24 @@ func campaign_result() -> Dictionary:
 	state.merge({"campaign_cursor":_state.campaign_cursor,"language":_state.language,"phase":"conversation" if line.get("visible",false) else "flying","dialogue":line},true)
 	return state
 func prepare_game_over() -> Dictionary:return _game_over.duplicate(true)
+## The runner retains its campaign transition; the menu consumes a game-over
+## receipt. Only this acknowledged native owner can adapt between the two.
+func prepare_campaign_failure_exit() -> Dictionary:
+	if _runner==null or _state.get("boundary","")!="campaign_failure_transition_required" or campaign_dialogue_visible():return {}
+	var context: RefCounted=_runner.context_owner();var recipe: Dictionary=context.recipe()
+	var runner: Dictionary=_runner.snapshot();var identity: Dictionary=context.identity()
+	if runner.mode!=int(recipe.result.policy.failure_result_mode) or runner.retired or _state.campaign_cursor!=identity.campaign_cursor:return {}
+	var rules: Dictionary=_bindings.mido_travel.kappa_outcome.failure
+	var expected:={"base_content_id":identity.base_content_id,"binding_id":identity.binding_id,
+		"from_cursor":identity.campaign_cursor,"previous_mission":_state.mission.duplicate(true),
+		"outcome":"failed","source_state":int(rules.continue_source_state),"reward_credits":int(rules.reward_credits)}
+	if _game_over!=expected:return {}
+	var packet:={"base_content_id":identity.base_content_id,"binding_id":identity.binding_id,
+		"campaign_cursor":identity.campaign_cursor,"source_state":int(rules.continue_source_state)}
+	var failure:=packet.duplicate(true);failure.outcome="failed";failure.reward_credits=int(rules.reward_credits)
+	packet.campaign_failure=failure
+	return packet
+
 func request_game_over_exit(paused:=false) -> RefCounted:
 	if paused or _death==null or not _state.boundary.is_empty():return failed("Game over is not awaiting input")
 	var next:=fork_for_frame();var packet: Dictionary=next._death.request_exit()

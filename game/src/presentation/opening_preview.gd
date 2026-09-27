@@ -1204,14 +1204,23 @@ func enter_game_over() -> bool:
 	if session is MissionSession:
 		if session.status!="game_over_transition_required" or session.is_paused() or not _focused or not is_visible_in_tree():return false
 		var selected_packet: Dictionary=session.prepare_game_over();var selected_state: Dictionary=session.snapshot()
-		var selected_expected:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"source_state":1,"campaign_cursor":int(selected_state.campaign_cursor)}
-		var story_failed:=false
-		if selected_state.get("campaign_phase","")=="failure_acknowledged":
-			var failure:=selected_expected.duplicate(true);failure.outcome="failed";failure.reward_credits=0
-			story_failed=selected_state.get("campaign_failure",{})==failure
-			if story_failed:selected_expected.campaign_failure=failure
-		var player_failed: bool=selected_state.player_destruction.phase=="game_over" and selected_state.player_destruction.exit_requested
-		if selected_packet!=selected_expected or selected_state.boundary!="game_over_transition_required" or not (player_failed or story_failed):return transition_error("Selected game-over exit lost its accepted native state")
+		var selected_owner: RefCounted=session.flight_owner();var native_failure: Dictionary={}
+		if load("res://src/simulation/mission_context.gd").from_owner(selected_owner)!=null and selected_owner.has_method("prepare_campaign_failure_exit"):
+			native_failure=selected_owner.prepare_campaign_failure_exit()
+		if not native_failure.is_empty():
+			if native_failure.base_content_id!=bindings.base_content_id or native_failure.binding_id!=bindings.binding_id or native_failure.campaign_cursor!=int(selected_state.campaign_cursor):return transition_error("Mission failure exit changed the Host's source identity")
+			# Keep the native campaign boundary and raw transition in the flight;
+			# the acknowledged owner alone supplies the menu's exit receipt.
+			selected_packet=native_failure
+		else:
+			var selected_expected:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"source_state":1,"campaign_cursor":int(selected_state.campaign_cursor)}
+			var story_failed:=false
+			if selected_state.get("campaign_phase","")=="failure_acknowledged":
+				var failure:=selected_expected.duplicate(true);failure.outcome="failed";failure.reward_credits=0
+				story_failed=selected_state.get("campaign_failure",{})==failure
+				if story_failed:selected_expected.campaign_failure=failure
+			var player_failed: bool=selected_state.player_destruction.phase=="game_over" and selected_state.player_destruction.exit_requested
+			if selected_packet!=selected_expected or selected_state.boundary!="game_over_transition_required" or not (player_failed or story_failed):return transition_error("Selected game-over exit lost its accepted native state")
 		var selected_result:={"transition":selected_packet.duplicate(true),"flight":selected_state.duplicate(true)}
 		reset();_last_game_over=selected_result;status.text="Game over · Return to your saved game from the menu"
 		if _player_mode:game_over_requested.emit()
