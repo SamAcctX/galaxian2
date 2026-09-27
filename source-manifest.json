@@ -2762,6 +2762,12 @@
     "game/tests/wanted_unlocked_application.gd",
     "game/tests/wanted_unlocked_application.gd.uid",
     "game/tests/wanted_resume_application.gd",
-    "game/tests/wanted_resume_application.gd.uid"
+    "game/tests/wanted_resume_application.gd.uid",
+    "game/tests/defense_cast.gd",
+    "game/tests/defense_cast.gd.uid",
+    "game/tests/defense_unlocked_application.gd",
+    "game/tests/defense_unlocked_application.gd.uid",
+    "game/tests/defense_resume_application.gd",
+    "game/tests/defense_resume_application.gd.uid"
   ]
 }

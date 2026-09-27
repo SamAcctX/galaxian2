@@ -63,7 +63,7 @@ static func supports_contract(bindings: RefCounted,mission: Variant,cursor: int)
 	var ordinary=load("res://src/content/free_flight_definitions.gd")
 	# Keeping a side slot through a story world does not select that job's cast.
 	# Actual entry also requires the location/flight admitted below.
-	return ordinary.available(bindings) and cursor>=int(bindings.mido_travel.free_flight.campaign_cursor) and mission.get("kind") in [4,6,7,12] and preload("res://src/content/opening_definitions.gd").integer(mission.get("difficulty"),1,9) and not ordinary.Worlds.location(bindings.mido_travel,mission.get("station_id")).is_empty()
+	return ordinary.available(bindings) and cursor>=int(bindings.mido_travel.free_flight.campaign_cursor) and mission.get("kind") in [1,4,6,7,12] and preload("res://src/content/opening_definitions.gd").integer(mission.get("difficulty"),1,9) and not ordinary.Worlds.location(bindings.mido_travel,mission.get("station_id")).is_empty()
 
 ## A retained career and inventory authorize a generated side job once. Other
 ## owners receive this capability with the cast, never a caller-authored recipe.
@@ -88,13 +88,27 @@ func admit_contract(bindings: RefCounted,catalogues: RefCounted,contracts: RefCo
 	if not supports_contract(bindings,mission,int(context.campaign_cursor)):return reject("This active contract has no complete cast recipe")
 	if int(mission.kind)==12 and (context.client_faction not in [0,1,2,3] or context.contact_name.is_empty()):return reject("The contest lost its generated rival")
 	if not _accept_equipment(bindings,catalogues,loadout):return false
-	_recipe=Recipe.from_contract(bindings,context,loadout)
+	var local_faction:=int(catalogues.tables.systems[int(loadout.system_id)].fields[int(bindings.early_contracts.generation.system_faction_field)])
+	if local_faction not in [0,1,2,3]:return reject("Contract ships require a supported local faction")
+	_recipe=Recipe.from_contract(bindings,context,loadout,local_faction)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":context.campaign_cursor}
 	_loadout=loadout.duplicate(true);_contract_context=context.duplicate(true)
 	return true
 
 func contract_context() -> Dictionary:return _contract_context.duplicate(true)
 func has_contract_actors() -> bool:return not _contract_context.is_empty() and int(_recipe.cast.actor_count)>0
+
+## Construction resolves a variable cast once before exposing any actors. The
+## admitted parent remains unchanged; result and actor owners share this copy.
+func resolve_contract_count(count: int) -> RefCounted:
+	if _contract_context.is_empty():reject("Only admitted contracts can resolve a cast");return null
+	var draw: Dictionary=_recipe.cast.get("count_draw",{})
+	if draw.is_empty() or count<int(draw.minimum) or count>=int(draw.minimum)+int(draw.bound):reject("The generated population exceeds its admitted cast");return null
+	var copy: RefCounted=get_script().new()
+	copy._identity=_identity;copy._loadout=_loadout;copy._contract_context=_contract_context
+	copy._recipe=_recipe.duplicate(true)
+	copy._recipe.cast.actor_count=count;copy._recipe.cast.count_draw={};copy._recipe.result.actor_count=count
+	return copy
 func advances_campaign() -> bool:return not _recipe.is_empty() and _recipe.get("track","campaign")=="campaign"
 
 func matches_contract_population(bindings: RefCounted,packet: Dictionary) -> bool:
@@ -102,6 +116,7 @@ func matches_contract_population(bindings: RefCounted,packet: Dictionary) -> boo
 	for key in ["base_content_id","binding_id"]:
 		if _identity[key]!=bindings.get(key) or packet.get(key)!=_identity[key]:return false
 	var source: Dictionary=packet.get("contract_encounter",{})
+	if not _recipe.cast.ship_groups.is_empty() and source.get("unused_enemy_faction") not in [8,int([1,0,3,2][int(_recipe.cast.local_faction)])]:return false
 	return packet.get("campaign_cursor")==_recipe.cursor and packet.get("station_id")==_recipe.station_id and source.get("context")==_contract_context and source.get("mission")==_recipe.mission and source.get("kind")==_recipe.mission.kind and source.get("actor_count")==_recipe.cast.actor_count and packet.get("actors") is Array and packet.actors.size()==_recipe.cast.actor_count
 
 ## Normal space is admitted by a completed living escape, not by a cursor or

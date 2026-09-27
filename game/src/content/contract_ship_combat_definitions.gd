@@ -37,7 +37,7 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 	# declarations; the retained contract context identifies its station directly.
 	data.merge({"station_id":context.station_id,"system_id":int(capability.recipe().system_id),"rank":context.rank,"difficulty":context.difficulty,
 		"mission_kind":mission.kind,"actor_count":actors.size(),"debris_count":int(cast.debris_count),"player_ship_id":capability.ship_id(),
-		"actor_kinds":[],"hull_catalogue_ids":[],"target_memberships":[],"player_weapon_targets":[],"npc_weapons":[]})
+		"actor_kinds":[],"hull_catalogue_ids":[],"target_memberships":[],"player_weapon_targets":[],"npc_weapons":[],"actor_policies":[]})
 	for key in ["rank_base","rank_multiplier","cursor_multiplier","difficulty_offset","percentage_scale","engagement_half_extent","proximity_half_extent","target_activation_half_extent","initial_model_draw_enabled","initial_node_draw_requested","initial_engine_draw_enabled","npc_statistics_targeting_blocked","random_selection_chance","random_selection_attempts","nonplayer_selection_checks_range","completed_route_retains_position_once"]:
 		data[key]=bindings.combat_training_control[key]
 	var hulls: Dictionary=bindings.early_contracts.encounter_construction.hulls
@@ -46,17 +46,21 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 		if id<int(cast.debris_count):
 			data.actor_kinds.append(-1);data.hull_catalogue_ids.append(-1);data.player_weapon_targets.append(id)
 			data.npc_weapons.append({"actor_id":id,"actor_kind":-1,"hull_catalogue_id":-1,"unarmed":true})
+			data.actor_policies.append({})
 			continue
-		var rival: bool=id==int(cast.rival_actor_id)
-		if not actor is Dictionary or actor.get("actor_id")!=id or actor.get("subtype")!=0 or actor.get("population_group")!=("rival" if rival else "pirate"):return {}
+		var options: Dictionary=load("res://src/content/mission_recipe.gd").contract_ship_options(cast,id,int(source.unused_enemy_faction),int(context.client_faction))
+		var rival: bool=options.rival
+		if not actor is Dictionary or actor.get("actor_id")!=id or actor.get("subtype")!=0 or actor.get("population_group")!=options.population_group:return {}
 		var faction: Variant=actor.get("actor_kind")
-		if not faction is int or (rival and (faction not in [0,1,2,3] or faction!=context.get("client_faction"))) or (not rival and faction!=8):return {}
+		if not faction is int or faction!=options.faction:return {}
 		var hull: Variant=actor.get("hull_catalogue_id")
 		if not hull is int or hull<0 or hull>=hulls.factions.size() or int(hulls.factions[hull])!=faction or (faction!=1 and hull<=int(hulls.mask_limit) and (int(hulls.excluded_mask)>>hull)&1):return {}
 		if rival and (actor.get("friendly")!=true or actor.get("name","").is_empty() or actor.name!=context.get("contact_name") or actor.get("current_hull_override")!=9999999):return {}
 		if not rival:
-			for key in cast.ship_state:
-				if actor.get(key)!=cast.ship_state[key]:return {}
+			for key in options.ship_state:
+				if actor.get(key)!=options.ship_state[key]:return {}
+		var policy: Dictionary=(rules.rival if rival else rules.pirate).duplicate(true)
+		policy.merge(options.policy,true);data.actor_policies.append(policy)
 		data.actor_kinds.append(faction);data.hull_catalogue_ids.append(hull);data.player_weapon_targets.append(id)
 		var weapon:=shared_weapon(rules.weapons,context.campaign_cursor,context.rank,float(context.difficulty),faction,rival)
 		if weapon.is_empty():return {}

@@ -76,10 +76,9 @@ static func combat_population(bindings: RefCounted,combat: Dictionary) -> bool:
 		if actor.get("population_group")=="debris":
 			if actor.get("actor_kind")!=-1 or actor.get("hull_catalogue_id")!=-1:return false
 		else:
-			var rival: bool=actor.get("population_group")=="rival"
 			var hull: Variant=actor.get("hull_catalogue_id")
-			var faction: Variant=context.get("client_faction") if rival else 8
-			if actor.get("population_group")!=("rival" if rival else "pirate") or actor.get("actor_kind")!=faction:return false
+			var faction: Variant=actor.get("actor_kind")
+			if not actor.get("contract_ship",false) or actor.get("subtype")!=0:return false
 			if not hull is int or hull<0 or hull>=hulls.factions.size() or int(hulls.factions[hull])!=faction:return false
 	return true
 

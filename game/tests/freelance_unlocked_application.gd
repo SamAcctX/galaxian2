@@ -36,6 +36,11 @@ func requested_contract_kind() -> int:return 4
 func contract_cast_valid(actors: Array) -> bool:
 	return not actors.is_empty() and actors.all(func(actor):return actor.actor_kind==8)
 
+func contract_target_ids(actors: Array) -> Array:return range(actors.size())
+
+func contract_targets_retired(actors: Array,targets: Array) -> bool:
+	return targets.all(func(id):return actors[id].actor_mode==4)
+
 func expects_contract_success() -> bool:return true
 
 func contract_credit_delta(offer: Dictionary,won: bool) -> int:
@@ -162,11 +167,11 @@ func fly_contract_job(initial: Dictionary) -> bool:
 	var pilot:=PiratePilot.new();var started:=now_us;var next_yield:=now_us+2000000;var next_log:=now_us
 	var failure: bool=OS.get_environment("GOF2_PIRATE_FAILURE")=="1"
 	var live_captured:=false;var shots:=0
-	var targets: Array=range(initial.encounter.combat.actors.size())
+	var targets: Array=contract_target_ids(initial.encounter.combat.actors)
 	while now_us-started<600000000:
 		var state: Dictionary=app.session.snapshot()
 		if not state.contracts.pending_result.is_empty():
-			check(not failure and shots>0 and state.progress.player_kills>initial.progress.player_kills and state.encounter.combat.actors.all(func(actor):return actor.actor_mode==4),"The input pilot did not earn the Pirate victory")
+			check(not failure and shots>0 and state.progress.player_kills>initial.progress.player_kills and contract_targets_retired(state.encounter.combat.actors,targets),"The input pilot did not earn the freelance victory")
 			return failures==0
 		if app.session.flight_owner().death_active():
 			check(failure,"The input pilot died before defeating the pirates")

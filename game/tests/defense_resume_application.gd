@@ -1,0 +1,3 @@
+extends "res://tests/defense_unlocked_application.gd"
+
+func _initialize() -> void:call_deferred("run_resumed_job")

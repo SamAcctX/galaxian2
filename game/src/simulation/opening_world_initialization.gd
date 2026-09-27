@@ -105,6 +105,8 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 	else:
 		if not construction.configure_contract(bindings,catalogues,equipment,contracts,player_position,field_center,capability):return reject(construction.error)
 		data.weapon_groups=["pirate","rival"]
+		for group in construction.mission_context_owner().recipe().cast.ship_groups:
+			if group.population_group not in data.weapon_groups:data.weapon_groups.append(group.population_group)
 	if not _bind_faction_weapon_effects(bindings,data):return false
 	if not _configure(bindings,catalogues,data,construction,[],equipment.snapshot().loadout.slots.filter(func(slot):return slot!=null)):return false
 	_identity.merge({"campaign_cursor":int(context.campaign_cursor),"station_id":int(context.station_id),"entry_conditions":entry_conditions.duplicate(true),"contract_context":accepted})

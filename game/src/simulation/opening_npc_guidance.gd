@@ -177,6 +177,8 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	var actor:=Initial.new()
 	if not actor.configure_contract(bindings,catalogues,construction,actor_id):return reject(actor.error)
 	var body:=actor.snapshot()
+	var policy: Dictionary=rules.actor_policies[actor_id]
+	if policy.is_empty():return reject("This cast role has no ship guidance")
 	var data: Dictionary=bindings.opening_actors.npc_initialization.get("guidance",{})
 	if not Definitions.parameters(data) or not _configure_state(bindings,data,body,int(body.factory_hull)):return reject("Contract guidance lacks ordinary ship tuning")
 	_training=rules
@@ -184,8 +186,8 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	_identity.campaign_cursor=int(rules.campaign_cursor);_identity.rank=int(rules.rank)
 	_state.target_index=int(rules.initial_target_index);_state.desired_position=Vector3.ZERO
 	_frame_limit=Frames.simulation_limit(bindings)
-	_boost_enabled=bool(rules.rival.boost_enabled if body.population_group=="rival" else rules.pirate.boost_enabled)
-	if not _boost_enabled:_state.speed=float(rules.rival.motion_speed)
+	_boost_enabled=bool(policy.boost_enabled)
+	if policy.has("motion_speed"):_state.speed=float(policy.motion_speed)
 	var options: Dictionary=construction.snapshot().actors[actor_id]
 	_boost_enabled=bool(options.get("boost_enabled",_boost_enabled))
 	if options.has("motion_speed"):_state.speed=float(options.motion_speed)

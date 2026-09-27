@@ -246,13 +246,19 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 	var rules: Dictionary=recipe.cast.operations
 	var count: int=recipe.cast.actor_count
 	var has_rival: bool=recipe.cast.rival_actor_id>=0
+	var factions: Array=[int(rules.pirate_actor_kind)]
+	if has_rival:factions.append(int(context.client_faction))
+	var opposite:=int([1,0,3,2][int(recipe.cast.local_faction)])
+	for group in recipe.cast.ship_groups:
+		var faction: int=opposite if int(group.faction)==-2 else int(group.faction)
+		if faction not in factions:factions.append(faction)
 	var possible_hulls:=[]
 	if count>int(recipe.cast.debris_count):
 		for hull in int(rules.hulls.draw_bound):
 			if hull<=int(rules.hulls.mask_limit) and (int(rules.hulls.excluded_mask)&(1<<hull))!=0:continue
 			var faction:=int(rules.hulls.factions[hull])
-			if faction==int(rules.pirate_actor_kind) or (has_rival and faction==context.client_faction):possible_hulls.append(hull)
-		if has_rival and context.client_faction==int(rules.hulls.early_vossk_faction):possible_hulls.append(int(rules.hulls.early_vossk_hull))
+			if faction in factions:possible_hulls.append(hull)
+		if int(rules.hulls.early_vossk_faction) in factions:possible_hulls.append(int(rules.hulls.early_vossk_hull))
 	for hull in possible_hulls:
 		if bindings.resolve_ship_model(hull).is_empty():return reject(bindings.error)
 	if int(recipe.cast.debris_count)>0:
@@ -261,6 +267,8 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 	var definition: Dictionary=rules.duplicate(true)
 	definition.merge({"context":context,"actor_count":count,"debris_count":recipe.cast.debris_count,"ship_state":recipe.cast.ship_state,"player_position":player_position,"field_center":field_center})
 	definition.placement=recipe.cast.placement;definition.rival_actor_id=recipe.cast.rival_actor_id
+	definition.count_draw=recipe.cast.count_draw;definition.ship_groups=recipe.cast.ship_groups
+	if not recipe.cast.ship_groups.is_empty():definition.alternate_enemy_faction=opposite
 	definition.campaign_cursor=context.campaign_cursor
 	_mission_context=capability
 	return _configure(bindings,catalogues,seed,{},{},{},{},definition)
@@ -1014,6 +1022,8 @@ func _generate_contract(random: RefCounted) -> Dictionary:
 	else:
 		var placement: Dictionary=_contract.placement
 		match placement.kind:
+			"line":
+				for z in placement.z_positions:path.append(Vector3(int(placement.x_offset)+random.next_int(int(placement.x_bound)),0,int(z)))
 			"patrol":
 				if int(placement.field_choice_bound)>0 and random.next_int(int(placement.field_choice_bound))==0:path=[Vector3(Vector3i(_contract.field_center))]
 				else:path=_contract_path(random,int(placement.minimum_points)+random.next_int(int(placement.point_count_bound)))
@@ -1025,7 +1035,13 @@ func _generate_contract(random: RefCounted) -> Dictionary:
 				path=[point]
 			"debris_field":
 				for axis in 3:center[axis]=int(_contract.junk.center_offsets[axis])+random.next_int(int(_contract.junk.center_bounds[axis]))
-	for id in int(_contract.actor_count):
+	var count:=int(_contract.actor_count)
+	if not _contract.get("count_draw",{}).is_empty():
+		count=int(_contract.count_draw.minimum)+random.next_int(int(_contract.count_draw.bound))
+		var resolved: RefCounted=_mission_context.resolve_contract_count(count)
+		if resolved==null:return fail(_mission_context.error)
+		_mission_context=resolved
+	for id in count:
 		if id<int(_contract.get("debris_count",0)):
 			var rules: Dictionary=_contract.junk
 			var position:=center
@@ -1039,14 +1055,18 @@ func _generate_contract(random: RefCounted) -> Dictionary:
 			routes.append(null);continue
 		var rival:=id==int(_contract.challenge.rival_actor_id if story else _contract.rival_actor_id)
 		var faction:=int(_contract.rival_faction if story else _contract.context.client_faction) if rival else int(_contract.pirate_actor_kind)
+		var options: Dictionary={} if story else load("res://src/content/mission_recipe.gd").contract_ship_options(_contract,id,enemy_faction,int(_contract.context.client_faction))
+		if not story:faction=int(options.faction)
 		var hull: int=int(_contract.rival_hull) if story and rival else _contract_hull(random,faction)
-		var origin: Vector3=Vector3.ZERO if rival or path.is_empty() else path[random.next_int(path.size())]
+		var at_origin: bool=rival or path.is_empty() or options.get("origin")=="zero"
+		var origin: Vector3=Vector3.ZERO if at_origin else path[random.next_int(path.size())]
 		var sampled:=_sample_actor(id,origin,random)
 		if sampled.is_empty():return {}
 		var actor: Dictionary=sampled.actor
 		var route: RefCounted=sampled.route
 		var position: Vector3=actor.factory_position
 		actor.merge({"actor_kind":faction,"hull_catalogue_id":hull,"subtype":int(_contract.subtype),"population_group":"rival" if rival else "pirate"})
+		if not story:actor.population_group=options.population_group
 		if rival:
 			var rules: Dictionary=_contract.challenge
 			position=_contract.player_position
@@ -1061,7 +1081,7 @@ func _generate_contract(random: RefCounted) -> Dictionary:
 			else:actor.name=_contract.context.contact_name
 		else:
 			actor.cargo=actor.discarded_cargo;actor.discarded_cargo=[]
-			actor.merge(_contract.get("ship_state",{"mode":int(_contract.pirate.mode),"active":bool(_contract.pirate.active),"targeting_blocked":bool(_contract.pirate.targeting_blocked)}))
+			actor.merge(options.ship_state if not story else {"mode":int(_contract.pirate.mode),"active":bool(_contract.pirate.active),"targeting_blocked":bool(_contract.pirate.targeting_blocked)})
 		var body:=Transform3D(Basis.IDENTITY,position)
 		actor.merge({"body_pose":body,"statistics_pose":body,"model_local_pose":Transform3D.IDENTITY})
 		actors.append(actor);routes.append(route)

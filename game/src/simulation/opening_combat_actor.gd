@@ -579,7 +579,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	var factory_hull:=scaled_hull(float(base),float(data.difficulty),float(data.difficulty_offset))*int(row.get("hull_multiplier",1))
 	var initial:={"actor_id":actor_id,"actor_kind":int(row.actor_kind),"hull_catalogue_id":int(row.hull_catalogue_id),
 		"hull_resource":model,"position":row.statistics_pose.origin,"current_hull":int(row.current_hull_override) if rival else factory_hull}
-	var policy: Dictionary=data.rival if rival else data.pirate
+	var policy: Dictionary=data.actor_policies[actor_id]
 	if not _initialize_body(bindings,bindings.opening_actors.npc_initialization,initial,float(data.difficulty),factory_hull,float(data.percentage_scale),policy):return false
 	_state.merge({"campaign_cursor":int(data.campaign_cursor),"station_id":int(data.station_id),"rank":int(data.rank),"contract_ship":true,
 		"population_group":row.population_group,"subtype":int(row.subtype),"friendly":bool(policy.friendly),"actor_mode":int(data.rival.initial_mode) if rival else int(row.mode),
