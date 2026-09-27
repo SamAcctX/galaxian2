@@ -28,6 +28,19 @@ func verify_component(world: RefCounted) -> void:
 		images.append(visuals.load_image(layer.get_meta("source_texture_path")))
 		textures.append(layer.materials[0].get_shader_parameter("diffuse_texture"))
 	camera.transform=Transform3D(sky.basis,Vector3.ZERO);sky.apply_view({"pose":camera.global_transform})
+	# Verify the actual matte in both modes before the arithmetic fixtures,
+	# whose synthetic input colors deliberately have a zero background.
+	var matte: Color=sky.layers[1].get_meta("nebula_black_level")
+	var dark:=Image.create(1,1,false,Image.FORMAT_RGBA8);dark.fill(Color.BLACK)
+	var flat:=Image.create(1,1,false,Image.FORMAT_RGBA8);flat.fill(matte)
+	bind_texture(sky.layers[0],ImageTexture.create_from_image(dark))
+	bind_texture(sky.layers[1],ImageTexture.create_from_image(flat))
+	for stored in [false,true]:
+		check(sky.set_stored_channel_composition(stored),sky.error)
+		check(color_error((await render_image()).get_pixelv(root.size/2),Color.BLACK)<0.01,"Flat nebula background remains visible")
+	for index in 2:bind_texture(sky.layers[index],textures[index])
+	sky.layers[1].set_meta("nebula_black_level",Color.BLACK)
+	sky.set_stored_channel_composition(false)
 	var original:=await render_image();write_image(original,"channels-current-forward")
 	var previous: Shader=sky.layers[1].materials[0].shader
 	sky.layers[1].materials[0].shader=sky.STAR_SHADER

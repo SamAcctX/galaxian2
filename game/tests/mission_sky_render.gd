@@ -56,6 +56,9 @@ func verify_component(world: RefCounted) -> void:
 	for y in range(4,root.size.y,8):
 		for x in range(4,root.size.x,8):composite_points.append(Vector2i(x,y))
 	var signal_counts:=[0,0]
+	var background_probes:=0
+	var background_errors:=0
+	var distinct_composite_probes:=0
 	for view in views:
 		camera.transform=Transform3D(sky.basis*Basis.looking_at(view.direction,view.up),Vector3.ZERO)
 		check(sky.apply_view({"pose":camera.global_transform}),sky.error)
@@ -73,6 +76,11 @@ func verify_component(world: RefCounted) -> void:
 				var direction: Vector3=sky.global_basis.inverse()*camera.project_ray_normal(Vector2(point)+Vector2(0.5,0.5))
 				var sample := source_sample(raw[index],images[index],direction)
 				if sample.is_empty() or not sample.smooth:continue
+				if index==1:
+					sample.color=without_background(sample.color,images[index].get_pixel(0,0))
+					if color_error(sample.color,Color.BLACK)<0.001:
+						background_probes+=1
+						if color_error(actual.get_pixelv(point),Color.BLACK)>=0.01:background_errors+=1
 				compared+=1
 				if maxf(sample.color.r,maxf(sample.color.g,sample.color.b))>0.02:signal_samples+=1
 				var difference := color_error(actual.get_pixelv(point),sample.color)
@@ -93,7 +101,7 @@ func verify_component(world: RefCounted) -> void:
 			if difference>3.0/255.0:composition_failures+=1
 			if color_error(expected,star_color)>0.02 and color_error(expected,nebula_color)>0.02:frame.distinct_samples+=1
 		check(composition_failures==0,"Sky additive composition mismatch in %s: %d, max %.6f"%[view.name,composition_failures,frame.composition_max_error])
-		check(frame.distinct_samples>=20,"Composition reference cannot distinguish missing layers in "+view.name)
+		distinct_composite_probes+=frame.distinct_samples
 		frame.coordinate_reference=await verify_coordinates(sky,camera,raw,coordinate_image,points,view.name)
 		diagnostics.append(frame)
 		write_image(combined,"sky-"+view.name)
@@ -105,6 +113,11 @@ func verify_component(world: RefCounted) -> void:
 			check(combined.get_data()==moved.get_data(),"Camera translation changes infinite sky pixels")
 			await verify_foreground(camera)
 	check(signal_counts[1]>=8,"Raw-source nebula oracle only sampled black texels")
+	check(background_probes>300,"Sky views did not cover the dark atlas joins")
+	check(background_errors==0,"Nebula atlas background produces a visible band")
+	# Empty sky directions are black after removing the atlas background. The
+	# other views must still distinguish each layer from the completed sky.
+	check(distinct_composite_probes>=140,"Composition reference cannot distinguish missing sky layers")
 	check(world.snapshot()==before,"Sky rendering mutated the retained mission world")
 	var output := OS.get_environment("GOF2_CAPTURE_DIR")
 	if not output.is_empty():
@@ -166,8 +179,11 @@ func verify_coordinates(sky: Node3D,camera: Camera3D,raw: Array,image: Image,poi
 	for index in sky.layers.size():
 		for other in sky.layers.size():sky.layers[other].visible=other==index
 		var originals: Array=[]
+		var backgrounds: Array=[]
 		for material in sky.layers[index].materials:
 			originals.append(material.get_shader_parameter("diffuse_texture"))
+			backgrounds.append(material.get_shader_parameter("nebula_black_level"))
+			if index>0:material.set_shader_parameter("nebula_black_level",Vector3.ZERO)
 			material.set_shader_parameter("diffuse_texture",texture)
 		var rendered := await render_image()
 		var count:=0;var mismatches:=0;var maximum:=0.0
@@ -179,7 +195,9 @@ func verify_coordinates(sky: Node3D,camera: Camera3D,raw: Array,image: Image,poi
 			var difference := color_error(rendered.get_pixelv(point),sample.color)
 			maximum=maxf(maximum,difference)
 			if difference>0.015:mismatches+=1
-		for material_index in originals.size():sky.layers[index].materials[material_index].set_shader_parameter("diffuse_texture",originals[material_index])
+		for material_index in originals.size():
+			sky.layers[index].materials[material_index].set_shader_parameter("diffuse_texture",originals[material_index])
+			if index>0:sky.layers[index].materials[material_index].set_shader_parameter("nebula_black_level",backgrounds[material_index])
 		check(count>=100,"Insufficient informative UV probes for %s layer %d"%[label,index])
 		check(mismatches==0,"Sky coordinate ramp differs from raw mesh in %s layer %d: %d, max %.6f"%[label,index,mismatches,maximum])
 		result.append({"samples":count,"mismatches":mismatches,"maximum_error":maximum})
@@ -199,6 +217,10 @@ func texel_linear(image: Image,at: Vector2i) -> Color:
 func additive_color(stars: Color,nebula: Color) -> Color:
 	var sum := stars.srgb_to_linear()+nebula.srgb_to_linear()
 	return Color(minf(sum.r,1.0),minf(sum.g,1.0),minf(sum.b,1.0),1.0).linear_to_srgb()
+
+func without_background(color: Color,background: Color) -> Color:
+	var light:=color.srgb_to_linear();var black:=background.srgb_to_linear()
+	return Color(maxf(0,(light.r-black.r)/(1-black.r)),maxf(0,(light.g-black.g)/(1-black.g)),maxf(0,(light.b-black.b)/(1-black.b))).linear_to_srgb()
 
 func color_error(a: Color,b: Color) -> float:
 	return maxf(absf(a.r-b.r),maxf(absf(a.g-b.g),absf(a.b-b.b)))

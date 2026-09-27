@@ -33,7 +33,12 @@ func set_stored_channel_composition(enabled: bool) -> bool:
 	if enabled!=_stored_channels:
 		for index in layers.size():
 			var selected: Shader=(STORED_STAR_SHADER if index==0 else STORED_NEBULA_SHADER) if enabled else (STAR_SHADER if index==0 else NEBULA_SHADER)
-			for material in layers[index].materials:material.shader=selected
+			for material in layers[index].materials:
+				material.shader=selected
+				if index>0:
+					var black: Color=layers[index].get_meta("nebula_black_level",Color.BLACK)
+					if not enabled:black=black.srgb_to_linear()
+					material.set_shader_parameter("nebula_black_level",Vector3(black.r,black.g,black.b))
 		_stored_channels=enabled
 	error="";return true
 
@@ -158,8 +163,13 @@ func _build_layers(library: RefCounted,visuals: RefCounted,bindings: RefCounted,
 		model.set_meta("source_resource_id",descriptor.mesh_id)
 		model.set_meta("source_texture_id",descriptor.texture_id)
 		model.set_meta("source_texture_path",texture_path)
+		var black:=_nebula_background(image) if descriptor.mode!=0 else Color.BLACK
+		model.set_meta("nebula_black_level",black)
 		for material in model.materials:
 			material.shader=STAR_SHADER if descriptor.mode==0 else NEBULA_SHADER
+			if descriptor.mode!=0:
+				var linear_black:=black.srgb_to_linear()
+				material.set_shader_parameter("nebula_black_level",Vector3(linear_black.r,linear_black.g,linear_black.b))
 			material.render_priority=-128 if descriptor.mode==0 else -127 # Stars, then nebula, before alpha world geometry.
 		# The shader projects infinite background directions; source-sized CPU
 		# bounds must not cull the layer against an ordinary world far plane.
@@ -173,6 +183,15 @@ func _build_layers(library: RefCounted,visuals: RefCounted,bindings: RefCounted,
 		"station_id":opening.station_id,"system_id":opening.system_id,"angles":rotation_value.angles,
 		"star_variant":variant,"layers":_initial_descriptors.duplicate(true)}
 	return true
+
+func _nebula_background(image: Image) -> Color:
+	# A dark, constant atlas background is not nebula emission. Leave images
+	# with varying corners alone, and keep the original texture data intact.
+	var black:=image.get_pixel(0,0)
+	if maxf(black.r,maxf(black.g,black.b))>0.125:return Color.BLACK
+	for point in [Vector2i(image.get_width()-1,0),Vector2i(0,image.get_height()-1),image.get_size()-Vector2i.ONE]:
+		if image.get_pixelv(point)!=black:return Color.BLACK
+	return black
 
 func apply_view(view: Dictionary, escape: Dictionary = {}) -> bool:
 	error=""
