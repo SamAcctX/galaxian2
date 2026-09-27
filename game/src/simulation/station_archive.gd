@@ -302,11 +302,19 @@ func _career(bindings: RefCounted,cat: RefCounted,data: Dictionary,equipment: Re
 func _player_cache(bindings: RefCounted,cat: RefCounted,value: Variant,loadout: Dictionary,cursor: int=18) -> bool:
 	if not value is Dictionary or not _identity(value,bindings) or not value.get("equipment_ids") is Array:return _invalid("The station lost its retained player pools")
 	# A station fit can change installed IDs after the arrival cache was captured.
-	var seed:=loadout.duplicate(true);seed.equipment_ids=value.equipment_ids.duplicate()
+	var seed:=_arrival_loadout(loadout,value)
 	for id in seed.equipment_ids:
 		if not Numbers.integer(id,0,cat.tables.items.size()-1):return _invalid("The saved player cache contains an unknown item")
 	if not Cache.matches(value,seed,cursor) or value.values.hull==0:return _invalid("The save has no viable station player cache")
 	return true
+
+static func _arrival_loadout(loadout: Dictionary,arrival: Dictionary) -> Dictionary:
+	# Equipment transactions change the current fit, not the recorded arrival.
+	# Keep ship/location/content identity while validating that historical cache.
+	if not arrival.get("equipment_ids") is Array:return {}
+	var seed:=loadout.duplicate(true)
+	seed.equipment_ids=arrival.equipment_ids.duplicate()
+	return seed
 
 func _continuation_station(bindings: RefCounted,state: Dictionary,context: RefCounted) -> bool:
 	if not Dekato.source_receipt_matches(bindings,state.get("dekato_source_receipt")) or not Nehma.source_receipt_matches(bindings,state.get("nehma_source_receipt")):return _invalid("The mission station lost its explicit content sources")
@@ -319,14 +327,15 @@ func _continuation_station(bindings: RefCounted,state: Dictionary,context: RefCo
 	if player.get("campaign_cursor")!=destination.source_cursor or not state.get("flight_elapsed_ms") is int:return _invalid("The mission station changed its arriving flight cursor or clock")
 	var recipe:=StationContext.Recipe.select(bindings,destination.source_cursor)
 	if state.flight_elapsed_ms<=recipe.result.success.after_ms:return _invalid("The mission station preceded its normal-space result")
-	# Player snapshots own ship identity and pools, not station coordinates.
-	# The admitted station loadout owns location; capture checks the player's
-	# content, ship and installed IDs against that retained equipment owner.
+	# The admitted station loadout owns location. Arrival equipment and pools
+	# remain historical after a station refit; current inventory is separate.
 	if not Cache.valid_seed(seed):return _invalid("The mission station has an invalid equipment identity")
-	var cached:=Cache._capture_arrival(bindings.mido_travel,seed,seed,player)
+	var arrival_seed:=_arrival_loadout(seed,player)
+	if not Cache.valid_seed(arrival_seed):return _invalid("The mission station lost its arrival equipment identity")
+	var cached:=Cache._capture_arrival(bindings.mido_travel,arrival_seed,arrival_seed,player)
 	if cached.is_empty():return _invalid("The mission station lost its living player pools")
 	cached.campaign_cursor=destination.campaign_cursor
-	if cached!=state.get("player_cache") or not Cache.matches(cached,seed,destination.campaign_cursor):return _invalid("The mission station cache differs from its arriving player")
+	if cached!=state.get("player_cache") or not Cache.matches(cached,arrival_seed,destination.campaign_cursor):return _invalid("The mission station cache differs from its arriving player")
 	return true
 
 func _dekato_station(bindings: RefCounted,state: Dictionary) -> bool:
@@ -341,8 +350,9 @@ func _dekato_station(bindings: RefCounted,state: Dictionary) -> bool:
 	if player.get("campaign_cursor")!=int(Dekato.declarations(bindings).mission.campaign_cursor) or not player.get("campaign_cursor") is int:return false
 	if not _keys(dock,["station_id","pre_motion_contact","post_motion_volume_index","position"]) or dock.size()!=4 or not dock.get("station_id") is int or dock.station_id!=seed.station_id or not dock.get("pre_motion_contact") is bool or not dock.get("post_motion_volume_index") is int or not dock.get("position") is Vector3:return false
 	if not dock.position.is_finite() or (not dock.pre_motion_contact and dock.post_motion_volume_index<0):return false
-	var cached: Dictionary=Cache.station_arrival_cache(Dekato.docking(bindings),seed,player)
-	return not cached.is_empty() and cached==state.player_cache and Cache.matches(state.player_cache,seed,39) and cached.values.hull>0
+	var arrival_seed:=_arrival_loadout(seed,player)
+	var cached: Dictionary=Cache.station_arrival_cache(Dekato.docking(bindings),arrival_seed,player)
+	return not cached.is_empty() and cached==state.player_cache and Cache.matches(state.player_cache,arrival_seed,39) and cached.values.hull>0
 
 func _onward_station(bindings: RefCounted,state: Dictionary) -> bool:
 	if not Dekato.source_receipt_matches(bindings,state.get("dekato_source_receipt")) or not Nehma.source_receipt_matches(bindings,state.get("nehma_source_receipt")) or not _identity(state,bindings):return false
@@ -365,10 +375,11 @@ func _onward_station(bindings: RefCounted,state: Dictionary) -> bool:
 	if not dock.position.is_finite() or (not dock.pre_motion_contact and dock.post_motion_volume_index<0):return false
 	# Acknowledgement advances the career/cache, not the surviving flight. The
 	# original living player and docking contact remain at source world39.
-	var cached: Dictionary=Cache.station_arrival_cache(FreeFlight.docking(bindings,int(seed.station_id),39),seed,player)
+	var arrival_seed:=_arrival_loadout(seed,player)
+	var cached: Dictionary=Cache.station_arrival_cache(FreeFlight.docking(bindings,int(seed.station_id),39),arrival_seed,player)
 	if cached.is_empty():return false
 	cached.campaign_cursor=cursor
-	return cached==state.player_cache and Cache.matches(state.player_cache,seed,cursor) and cached.values.hull>0
+	return cached==state.player_cache and Cache.matches(state.player_cache,arrival_seed,cursor) and cached.values.hull>0
 
 static func _identity(data: Dictionary,bindings: RefCounted) -> bool:return data.get("base_content_id")==bindings.base_content_id and data.get("binding_id")==bindings.binding_id
 

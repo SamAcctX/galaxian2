@@ -35,7 +35,21 @@ func verify() -> void:
 	check(document.version==10 and document.binding_id==bindings.binding_id and original.campaign_cursor in [39,40] and original.arrival_player.campaign_cursor==39,"The actual onward save lost its version or surviving world")
 	check(Archive.Nehma.station_mission(bindings,original.campaign_cursor,original.loadout.station_id,original.mission) and archive.capture(station,bindings)==document,"Native recapture changed the actual sourced station")
 	check(original.contracts.credits==19370 and original.contracts.passengers==3 and original.cargo.entries.is_empty(),"Onward persistence changed the independent wallet or passenger job")
-	check(station.prepare_departure(bindings,cat).is_empty()==(original.campaign_cursor==40),"Restoration confused ordinary39 with the special40 boundary")
+	check(not station.prepare_departure(bindings,cat).is_empty(),"The earned station cannot prepare its supported next departure")
+	if original.campaign_cursor==40:
+		var fitting: RefCounted=load("res://tests/fixtures/mission_paid_loadout.gd").new()
+		var refitted: RefCounted=fitting.prepare(bindings,cat,library,station,check)
+		if refitted==null:check(false,fitting.error);return
+		var fitted: Dictionary=refitted.snapshot()
+		var after: Dictionary=archive.capture(refitted,bindings)
+		check(not after.is_empty(),"A paid Néhma refit cannot be saved: "+archive.error)
+		if failures:return
+		var resumed: RefCounted=archive.restore(bindings,cat,library,after)
+		check(resumed!=null,"The paid refit cannot Resume: "+archive.error)
+		if failures:return
+		check(archive.capture(resumed,bindings)==after and resumed.snapshot().loadout==fitted.loadout,"Resume lost the purchased primary or its paid station record")
+		check(fitted.arrival_player==original.arrival_player and fitted.player_cache==original.player_cache,"A station purchase rewrote arrival pools or equipment history")
+		check(not resumed.prepare_departure(bindings,cat).is_empty(),"The saved refit cannot prepare its next departure")
 	var plain:=Bindings.new();var previous:=Bindings.new();var selected:=Bindings.new()
 	if not plain.open(args[1],library.manifest) or not previous.open(args[1],library.manifest) or not previous.attach_dekato_source(extra[0],library.manifest) or not selected.open(extra[1],library.manifest):check(false,plain.error+previous.error+selected.error);return
 	for candidate in [plain,previous,selected]:

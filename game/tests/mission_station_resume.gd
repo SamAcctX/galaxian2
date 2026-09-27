@@ -31,6 +31,11 @@ func verify(args: Array) -> void:
 	var document: Dictionary=save.load_document(path,bindings,catalogues,library)
 	if document.is_empty():check(false,save.error);return
 	check(document.version==11,"Resume did not receive the new native station checkpoint")
+	var archive:=Host.StationArchive.new()
+	for invalid_ids in [null,"missing",[1.5]]:
+		var invalid:=document.duplicate(true)
+		invalid.station.arrival_player.equipment_ids=invalid_ids
+		check(archive.restore(bindings,catalogues,library,invalid)==null and not archive.error.is_empty(),"Resume accepted malformed historical arrival equipment")
 	root.size=Vector2i(1440,900);root.content_scale_size=Vector2i.ZERO
 	var app:=Host.new();root.add_child(app);app.set_process(false)
 	app.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
