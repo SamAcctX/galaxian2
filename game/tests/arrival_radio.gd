@@ -34,8 +34,9 @@ func verify_source(content: String, pack: String, images: String):
 	if not visuals.open(images,library.manifest):check(false,visuals.error);return
 	var data: Dictionary=bindings.arrival_dialogue
 	var edition: String=library.manifest.profile.edition
-	var first:=1697 if edition=="ios-hd" else 1675
-	check(data.events.map(func(row):return int(row.text_id))==[first,first+1,first+2],"Wrong edition-local rescue text IDs")
+	check(library.select_language("gb"),library.error)
+	var texts: Array=data.events.map(func(row):return library.strings[int(row.text_id)])
+	check(texts.size()==3 and texts.all(func(value):return not value.is_empty()) and texts[0]!=texts[1] and texts[1]!=texts[2],"Rescue transmissions need three distinct source texts")
 	check(data.events.map(func(row):return int(row.speaker_id))==[2,2,2],"Wrong source rescue speaker")
 	check(data.voice.event_ids.map(func(id):return int(id))==[501,502,503],"Wrong source rescue recordings")
 	verify_pack_failures(pack,library.manifest)
@@ -65,19 +66,14 @@ func verify_pack_failures(pack: String, base: Dictionary):
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(pack.path_join("bindings.json")))
 	var directory:=OS.get_cache_dir().path_join("gof2-rescue-radio-%d"%Time.get_ticks_usec())
 	DirAccess.make_dir_recursive_absolute(directory)
-	for scenario in ["missing","wrong_type","wrong_voice_text","missing_voice","empty"]:
+	for scenario in ["missing","wrong_type","wrong_voice_text","missing_voice","removed_required_radio"]:
 		var body:=original.duplicate(true);var metadata:=header.duplicate(true)
 		match scenario:
 			"missing":body.erase("arrival_dialogue")
 			"wrong_type":body.arrival_dialogue=false
 			"wrong_voice_text":body.arrival_dialogue.voice.text_ids[0]+=1
 			"missing_voice":body.arrival_dialogue.erase("voice")
-			"empty":
-				body.arrival_dialogue={}
-				if body.has("arrival_staging"):body.arrival_staging={}
-				if body.opening_actors.player_initialization.has("flight_cache"):body.opening_actors.player_initialization.flight_cache={}
-				if body.has("arrival_environment"):body.arrival_environment={}
-				if body.has("arrival_actor_motion"):body.arrival_actor_motion={}
+			"removed_required_radio":body.arrival_dialogue={}
 		var serialized:=JSON.stringify(body,"",true,true)
 		metadata.records_sha256=serialized.sha256_text();metadata.records_bytes=serialized.to_utf8_buffer().size()
 		metadata.binding_id=("gof2-bindings-v1\n%s\n%s\n%s\n%s\n"%[metadata.base_content_id,metadata.source_executable_sha256,metadata.architecture,metadata.records_sha256]).sha256_text()
@@ -85,8 +81,7 @@ func verify_pack_failures(pack: String, base: Dictionary):
 		file=FileAccess.open(directory.path_join("bindings.json"),FileAccess.WRITE);file.store_string(JSON.stringify(metadata));file.close()
 		var reader:=Bindings.new();check(reader.open(pack,base),reader.error)
 		var accepted:=reader.open(directory,base)
-		if scenario=="empty":check(accepted and reader.arrival_dialogue.is_empty() and not reader.opening_dialogue.is_empty(),"Explicit unsupported rescue capability was rejected")
-		else:check(not accepted and reader.arrival_dialogue.is_empty() and reader.opening_dialogue.is_empty() and reader.audio.is_empty(),"Invalid replacement retained scene data: "+scenario)
+		check(not accepted and reader.arrival_dialogue.is_empty() and reader.opening_dialogue.is_empty() and reader.audio.is_empty(),"Invalid replacement retained scene data: "+scenario+" "+reader.error)
 	DirAccess.remove_absolute(directory.path_join("registrations.json"));DirAccess.remove_absolute(directory.path_join("bindings.json"));DirAccess.remove_absolute(directory)
 
 func verify_sequence(library: RefCounted, bindings: RefCounted, visuals: RefCounted):

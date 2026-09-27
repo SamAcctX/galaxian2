@@ -26,11 +26,19 @@ func prepare(library: RefCounted, bindings: RefCounted, visuals: RefCounted = nu
 	if library==null or bindings==null:return fail("Open imported content and resource bindings first")
 	var dialogue: Dictionary=Definitions.select(bindings,campaign_cursor)
 	if not Definitions.valid_parameters(dialogue,campaign_cursor):return fail("Scene radio declarations are unavailable")
+	return prepare_events(library,bindings,visuals,dialogue.events)
+
+## Recipes may prepare radio outside a flight. Resolution uses the same source
+## metrics, names and portrait compositor as an admitted flight conversation.
+func prepare_events(library: RefCounted,bindings: RefCounted,visuals: RefCounted,events: Array) -> bool:
+	error="";line_counts=[];speakers={};portrait_diagnostics={};_clear_local()
+	if library==null or bindings==null or library.manifest.get("content_id")!=bindings.base_content_id:return fail("Radio resources belong to another content pack")
 	var layout:=prepare_layout(library,bindings)
 	if layout==null:return false
 	var counts := [];var resolved := {};var diagnostics := {}
 	var composer := Portraits.new()
-	for event in dialogue.events:
+	for event in events:
+		if not event is Dictionary or not Definitions.Numbers.integer(event.get("text_id"),0,library.strings.size()-1) or not Definitions.Numbers.integer(event.get("speaker_id"),0,65535):return fail("Radio resources need declared text and speakers")
 		var text_id := int(event.text_id)
 		if text_id<0 or text_id>=library.strings.size():return fail("Opening text is outside the selected language")
 		var lines: Array = layout.wrap(library.strings[text_id])

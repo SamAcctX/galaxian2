@@ -2698,6 +2698,10 @@
     "game/src/simulation/mission_presentation.gd",
     "game/src/simulation/mission_presentation.gd.uid",
     "game/tests/mission_presentation.gd",
-    "game/tests/mission_presentation.gd.uid"
+    "game/tests/mission_presentation.gd.uid",
+    "game/src/presentation/mission_credits_panel.gd",
+    "game/src/presentation/mission_credits_panel.gd.uid",
+    "game/tests/mission_credits_panel.gd",
+    "game/tests/mission_credits_panel.gd.uid"
   ]
 }

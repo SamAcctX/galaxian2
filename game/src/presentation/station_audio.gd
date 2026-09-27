@@ -22,9 +22,13 @@ var _mission_voice_lines:={}
 
 func configure_mission(library: RefCounted,bindings: RefCounted,context: RefCounted) -> bool:
 	if not context is MissionContext:return reject("Mission speech requires its admitted context")
-	clear();_resources=Resources.new()
 	var recipe: Dictionary=context.recipe()
-	var events: Array=recipe.briefing+recipe.result.lines
+	return configure_events(library,bindings,recipe.briefing+recipe.result.lines)
+
+func configure_events(library: RefCounted,bindings: RefCounted,events: Array) -> bool:
+	clear();_resources=Resources.new()
+	for event in events:
+		if not event is Dictionary or not preload("res://src/content/opening_definitions.gd").integer(event.get("voice_event_id"),-1,65535):return reject("Speech requires declared voice events")
 	if not _resources._configure_campaign(library,bindings,{"events":events}):return reject(_resources.error)
 	var ids:=[-1]
 	for event in events:

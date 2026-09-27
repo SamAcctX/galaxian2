@@ -9,23 +9,27 @@ var layout: RefCounted
 
 func _initialize() -> void:
 	var args:=OS.get_cmdline_user_args()
-	if args.size()!=3:check(false,"Expected selected content, bindings and visuals");finish();return
-	library=load("res://src/content/library.gd").new();bindings=load("res://src/content/resource_bindings.gd").new()
-	if not library.open(args[0]) or not bindings.open(args[1],library.manifest) or not library.select_language("gb"):
-		check(false,library.error+bindings.error);finish();return
-	for key in ["GOF2_DEKATO_SOURCE_ARGS","GOF2_NEHMA_SOURCE_ARGS"]:
-		var supplement: Variant=JSON.parse_string(FileAccess.get_file_as_string(OS.get_environment(key)))
-		if not supplement is Array or supplement.size()!=3:check(false,"Missing declared campaign source");finish();return
-		var accepted: bool=bindings.attach_dekato_source(supplement[1],library.manifest) if key=="GOF2_DEKATO_SOURCE_ARGS" else bindings.attach_nehma_source(supplement[1],library.manifest)
-		if not accepted:check(false,bindings.error);finish();return
-	var resources=load("res://src/presentation/opening_radio_resources.gd").new()
-	layout=resources.prepare_layout(library,bindings)
-	if layout==null:check(false,resources.error);finish();return
+	if not prepare_content(args):finish();return
 	check(not Epilogue.recipe(bindings,43).is_empty(),"The earned campaign pack cannot prepare its station continuation")
 	verify_boundaries()
 	for cadence in [[100],[],[7,17,41,8,100,11]]:verify_cadence(cadence)
 	verify_rejections()
 	finish()
+
+func prepare_content(args: PackedStringArray) -> bool:
+	if args.size()!=3:check(false,"Expected selected content, bindings and visuals");return false
+	library=load("res://src/content/library.gd").new();bindings=load("res://src/content/resource_bindings.gd").new()
+	if not library.open(args[0]) or not bindings.open(args[1],library.manifest) or not library.select_language("gb"):
+		check(false,library.error+bindings.error);return false
+	for key in ["GOF2_DEKATO_SOURCE_ARGS","GOF2_NEHMA_SOURCE_ARGS"]:
+		var supplement: Variant=JSON.parse_string(FileAccess.get_file_as_string(OS.get_environment(key)))
+		if not supplement is Array or supplement.size()!=3:check(false,"Missing declared campaign source");return false
+		var accepted: bool=bindings.attach_dekato_source(supplement[1],library.manifest) if key=="GOF2_DEKATO_SOURCE_ARGS" else bindings.attach_nehma_source(supplement[1],library.manifest)
+		if not accepted:check(false,bindings.error);return false
+	var resources=load("res://src/presentation/opening_radio_resources.gd").new()
+	layout=resources.prepare_layout(library,bindings)
+	if layout==null:check(false,resources.error);return false
+	return true
 
 func prepared() -> RefCounted:
 	var result:=Presentation.new()

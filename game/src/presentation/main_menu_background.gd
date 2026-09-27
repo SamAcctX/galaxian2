@@ -21,6 +21,8 @@ var station: Node3D
 var _world: Node3D
 var _motion: RefCounted
 var _yaw:=0.0
+var _yaw_rate:=CAMERA_YAW_RATE
+var planets: Node3D
 var _active:=false
 var _focused:=true
 
@@ -37,11 +39,12 @@ func _notification(what: int) -> void:
 func _process(delta: float) -> void:
 	if _active and _focused:advance(delta*1000.0)
 
-func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,chosen_station: int=-1) -> bool:
+func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,chosen_station: int=-1,camera_seed: int=-1) -> bool:
 	if library==null or bindings==null or visuals==null or library.manifest.get("profile",{}).get("edition")!="mac-full-hd" or library.manifest.get("content_id")!=bindings.base_content_id or visuals.base_content_id!=bindings.base_content_id:return reject("Menu background requires matching Mac Full HD resources")
 	var catalogues:=Catalogues.new()
 	if not catalogues.open(library):return reject(catalogues.error)
 	var random:=RandomNumberGenerator.new();random.randomize()
+	if camera_seed>=0:random.seed=camera_seed
 	var station_id:=chosen_station
 	if station_id<0:station_id=random.randi_range(0,99)
 	if station_id<0 or station_id>=100:return reject("Menu station choice is outside the source title range")
@@ -128,12 +131,28 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,chosen_s
 
 func advance(milliseconds: float) -> void:
 	if camera==null or not is_finite(milliseconds) or milliseconds<0.0:return
-	_yaw=wrapf(_yaw+milliseconds*CAMERA_YAW_RATE,-PI,PI)
+	_yaw=wrapf(_yaw+milliseconds*_yaw_rate,-PI,PI)
 	camera.basis=Basis(Vector3.UP,_yaw)
 	if sky!=null:sky.apply_view({"pose":camera.global_transform})
+	if planets!=null:planets.apply_view({"pose":camera.global_transform})
 	if _motion!=null and _motion.update(mini(roundi(milliseconds),int(SCENERY_STEP_LIMIT_MS))):
 		if not scenery.apply_state(_motion.frame_snapshot()):error=scenery.error
 	selection.camera_yaw=_yaw
+
+func set_camera_yaw_rate(value: float) -> bool:
+	if not is_finite(value) or absf(value)>1.0:return reject("Invalid background camera speed")
+	_yaw_rate=value
+	return true
+
+func build_planets(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cursor: int) -> bool:
+	if _world==null or planets!=null:return reject("Prepare the background before adding its planets")
+	var catalogues:=Catalogues.new()
+	if not catalogues.open(library):return reject(catalogues.error)
+	var candidate=preload("res://src/presentation/opening_planet_geometry.gd").new();_world.add_child(candidate)
+	if not candidate.build_station(library,visuals,bindings,catalogues,int(selection.station_id),cursor) or not candidate.apply_view({"pose":camera.global_transform}):
+		var problem: String=candidate.error;candidate.free();return reject(problem)
+	planets=candidate
+	return true
 
 func set_active(value: bool) -> void:
 	_active=value
