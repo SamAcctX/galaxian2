@@ -30,3 +30,19 @@ func controls_at_time(state: Dictionary,elapsed_ms: float,preferred: Array=[],re
 	if not ready.is_empty():return ready
 	if not nearby.is_empty():return nearby
 	return _pursuit.controls_at_time(state,elapsed_ms,preferred,reacquire_nearer)
+
+## Explicit trigger-input coverage while acquiring a nearby forward hostile.
+## The caller stops requesting this sample after native projectile emission.
+static func request_trigger_sample(state: Dictionary,sample: Dictionary) -> Dictionary:
+	var result: Dictionary=sample.duplicate(true)
+	var id:=int(result.get("target",-1))
+	var actors: Array=state.encounter.combat.actors
+	var eligible: Array=Targets.select_ids(actors.filter(func(actor):return actor.actor_id!=0))
+	if id not in eligible:return result
+	for actor in actors:
+		if actor.actor_id!=id:continue
+		var offset: Vector3=actor.position-state.player_pose.origin
+		# A normal trigger press may miss; never confuse it with an aim lock.
+		if offset.length()<NEARBY_DISTANCE and state.player_pose.basis.z.dot(offset)>0.0:result.fire=true
+		break
+	return result

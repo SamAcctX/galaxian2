@@ -64,8 +64,38 @@ func verify() -> void:
 	var distant:=observation();var bounded:=Tactics.new().apply(distant,ready)
 	check(bounded.target==-1 and not bounded.fire,"Opportunity bypassed spatial regrouping")
 	check(before==observation(),"Regression cases corrupted their detached original observation")
+	verify_trigger_sample()
 	print("Escort opportunity pilot: ",checks," checks; ",failures," failures; synthetic observations only")
 	quit(1 if failures else 0)
+
+func verify_trigger_sample() -> void:
+	var state:=observation()
+	state.encounter.combat.actors[0].position=Vector3(0,0,-10000)
+	state.encounter.combat.actors[2].position=Vector3(12000,0,4000)
+	var before: Dictionary=state.duplicate(true)
+	var sample:=Pilot.new().controls_at_time(state,0.0,[2],true)
+	var expected: Dictionary=sample.duplicate(true);expected.fire=true
+	var trigger:=Escort.request_trigger_sample(state,sample)
+	check(not sample.fire and trigger==expected,"Trigger coverage did not press while preserving the selected turn")
+	check(state==before and not sample.fire,"Trigger coverage edited its observation or incoming sample")
+	var tactics:=Tactics.new();var protected_sample:=tactics.apply(state,trigger)
+	check(protected_sample.fire and protected_sample.throttle==0.0,"Trigger sample lost ordinary stand-off throttle")
+	for position in [Vector3(0,0,22000),Vector3(0,0,-1000),Vector3(1000,0,0),Vector3.ZERO]:
+		var excluded: Dictionary=state.duplicate(true)
+		excluded.encounter.combat.actors[2].position=position
+		check(not Escort.request_trigger_sample(excluded,sample).fire,"Trigger coverage admitted a far, rear or coincident target")
+	for field in ["hostile","active","hull"]:
+		var excluded: Dictionary=state.duplicate(true)
+		if field=="hull":excluded.encounter.combat.actors[2].vitals.hull=0
+		else:excluded.encounter.combat.actors[2][field]=false
+		check(not Escort.request_trigger_sample(excluded,sample).fire,"Trigger coverage admitted an ineligible "+field+" target")
+	for id in [-1,0,99]:
+		var absent: Dictionary=sample.duplicate(true);absent.target=id
+		check(not Escort.request_trigger_sample(state,absent).fire,"Trigger coverage invented a hostile target")
+	state.player.vitals.hull=60
+	check(not tactics.apply(state,trigger).fire and tactics.retreating,"Trigger coverage bypassed the damage reserve")
+	var far: Dictionary=before.duplicate(true);far.encounter.combat.actors[0].position=Vector3(0,0,100000)
+	check(not Tactics.new().apply(far,trigger).fire,"Trigger coverage bypassed spatial regrouping")
 
 func observation() -> Dictionary:
 	return {"elapsed_ms":0,"player_pose":Transform3D.IDENTITY,"player":{"vitals":{"hull":91}},"encounter":{"combat":{"actors":[actor(0,Vector3(100000,0,50000),false),actor(1,Vector3(100000,0,40000)),actor(2,Vector3(0,0,18000)),actor(3,Vector3(200000,0,50000))]},"primaries":{"guns":[{"projectiles":{"weapon":{"speed_units_per_millisecond":20.0}}}]}}}
