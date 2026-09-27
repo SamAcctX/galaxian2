@@ -812,7 +812,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		var selected_planet:=-1
 		if next._autopilot.snapshot().active and next._autopilot.snapshot().target_kind=="planet":selected_planet=int(next._autopilot.snapshot().station_id)
 		var planet_hud: bool=not next.death_active() and cues.entry_released and not cues.dialogue.visible and not next.local_departing() and not next.cinematic_input_blocked()
-		var mining_selected: bool=next._targeting!=null and next._targeting.snapshot().selected_object_index>=0
+		var mining_selected: bool=next._targeting!=null and next._targeting.selected_object_index()>=0
 		if not next._local_travel.sample_frame(next._camera.snapshot().pose,next._aim.snapshot(),delta_ms,selected_planet,planet_hud,mining_selected):reject(next._local_travel.error);return null
 		if not local_departing() and next.local_departing():
 			if not next._begin_local_departure():reject(next.error);return null
@@ -880,7 +880,7 @@ func _advance_npc_hud(delta_ms: int,enabled: bool,camera: Transform3D,aim: Dicti
 			"enabled":enabled,"guidance_active":_route!=null,"alternate_operation_active":false,
 			"mining_approach_active":_approach!=null and _approach.snapshot().phase!="idle",
 			"alternate_approach_active":false,"autopilot":_autopilot!=null and _autopilot.snapshot().active,
-			"other_target_selected":_targeting!=null and _targeting.snapshot().selected_object_index>=0,
+			"other_target_selected":_targeting!=null and _targeting.selected_object_index()>=0,
 			"ordinary_scan_enabled":true,"ordinary_scan_blocked":false,
 			"aim_pixels":Vector2(point.x,point.y),"viewport_size":aim.viewport_size}
 		var acquired: Dictionary=_encounter.acquire_cargo_target(_tractor,delta_ms,projection,camera,context)
@@ -920,24 +920,24 @@ func _advance_scenery_hud(delta_ms: int,enabled: bool,camera: Transform3D,aim: D
 		suspended=suspended or recovery.frame.get("found_actor_id",-1)>=0
 		blocked=blocked or recovery.request_actor_id>=0
 	if not _targeting.advance(_scenery,_pose,camera,aim,delta_ms,enabled,approaching,blocked,suspended):return reject(_targeting.error)
-	var target: Dictionary=_targeting.snapshot()
-	_queue_mining_audio(target.events)
-	if not _queue_notice_events(target.events):return false
-	if target.recovery_object_index>=0:
+	var events: Array=_targeting.selection_events()
+	_queue_mining_audio(events)
+	if not _queue_notice_events(events):return false
+	var recovery_index: int=_targeting.recovery_object_index()
+	if recovery_index>=0:
 		if _tractor==null:return reject("Acquired scenery cargo has no fitted tractor")
-		var actor: Dictionary=_scenery.recovery_observation(int(target.recovery_object_index))
+		var actor: Dictionary=_scenery.recovery_observation(recovery_index)
 		if actor.is_empty():return reject(_scenery.error)
 		if not _tractor.queue_acquired_wreck(actor):return reject(_tractor.error)
 	return true
 
 func _advance_station_targeting(delta_ms: int,enabled: bool,held_primary: bool,camera: Transform3D,aim: Dictionary) -> bool:
-	var mining: Dictionary=_targeting.snapshot()
 	var scanner: Dictionary={} if _scanner==null else _scanner.snapshot()
 	var recovery: Dictionary={} if _tractor==null else _tractor.snapshot()
 	# A retained ship scan is not a target found in this HUD pass. Only the
 	# current NPC/cargo/asteroid acquisition may preempt the environment slot.
 	var other: bool=scanner.get("found_actor_id",-1)>=0 \
-		or recovery.get("request_actor_id",-1)>=0 or mining.get("selected_object_index",-1)>=0
+		or recovery.get("request_actor_id",-1)>=0 or _targeting.selected_object_index()>=0
 	var observation:={"base_content_id":_entry.base_content_id,"binding_id":_entry.binding_id,"campaign_cursor":int(_entry.campaign_cursor),
 		"delta_ms":delta_ms,"viewport_size":aim.viewport_size,"camera_pose":camera,"aim_point":aim.point,
 		"station":{"environment_slot":0,"pose":_station.snapshot().pose,"active":true},
@@ -948,11 +948,10 @@ func _advance_station_targeting(delta_ms: int,enabled: bool,held_primary: bool,c
 
 func _advance_void_targeting(delta_ms: int,enabled: bool,held_primary: bool,camera: Transform3D,aim: Dictionary) -> bool:
 	var station: Dictionary=_void_environment.object_state(0)
-	var mining: Dictionary={} if _targeting==null else _targeting.snapshot()
 	var scanner: Dictionary={} if _scanner==null else _scanner.snapshot()
 	var recovery: Dictionary={} if _tractor==null else _tractor.snapshot()
 	var other: bool=scanner.get("found_actor_id",-1)>=0 or scanner.get("selected_actor_id",-1)>=0 \
-		or recovery.get("request_actor_id",-1)>=0 or mining.get("selected_object_index",-1)>=0
+		or recovery.get("request_actor_id",-1)>=0 or (_targeting!=null and _targeting.selected_object_index()>=0)
 	var observation:={"base_content_id":_entry.base_content_id,"binding_id":_entry.binding_id,"campaign_cursor":29,
 		"delta_ms":delta_ms,"viewport_size":aim.viewport_size,"camera_pose":camera,"aim_point":aim.point,
 		"station":{"environment_slot":0,"pose":station.pose,"active":true},

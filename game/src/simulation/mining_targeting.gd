@@ -185,12 +185,16 @@ func snapshot() -> Dictionary:
 	return state
 
 func clear_selection() -> void:_selected=-1
+func selected_object_index() -> int:return _selected
+func selection_events() -> Array:return _sample.get("events",[]).duplicate(true)
+func recovery_object_index() -> int:return int(_sample.get("recovery_object_index",-1))
 func field_identity() -> RefCounted:return _field_identity
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._rules=_rules;copy._perspective=_perspective;copy._identity=_identity;copy._field_identity=_field_identity
 	copy._radii=_radii;copy._frames=_frames;copy._duration=_duration;copy._scanner_id=_scanner_id;copy._drill_id=_drill_id;copy._tractor_id=_tractor_id
-	copy._selected=_selected;copy._candidate=_candidate;copy._elapsed=_elapsed;copy._sample=_sample.duplicate(true)
+	# Each advance replaces the complete sample; public observations stay detached.
+	copy._selected=_selected;copy._candidate=_candidate;copy._elapsed=_elapsed;copy._sample=_sample
 	copy._selected40_world=_selected40_world
 	copy._max_ms=_max_ms;return copy
 func clear() -> void:
