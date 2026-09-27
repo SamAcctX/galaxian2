@@ -171,7 +171,9 @@ func fly_contract_job(initial: Dictionary) -> bool:
 	while now_us-started<600000000:
 		var state: Dictionary=app.session.snapshot()
 		if not state.contracts.pending_result.is_empty():
-			check(not failure and shots>0 and state.progress.player_kills>initial.progress.player_kills and contract_targets_retired(state.encounter.combat.actors,targets),"The input pilot did not earn the freelance victory")
+			var won:=expects_contract_success()
+			check(not failure and shots>0 and state.contracts.pending_result.completed==won and contract_targets_retired(state.encounter.combat.actors,targets),"The input pilot did not reach the expected freelance result")
+			if won:check(state.progress.player_kills>initial.progress.player_kills,"The input pilot did not defeat a hostile fighter")
 			return failures==0
 		if app.session.flight_owner().death_active():
 			check(failure,"The input pilot died before defeating the pirates")
@@ -195,10 +197,14 @@ func fly_contract_job(initial: Dictionary) -> bool:
 		if not live_captured and state.encounter.primaries.guns[0].projectiles.slots.any(func(slot):return slot!=null):
 			await capture_free_application("freelance-pirate-combat");live_captured=true
 		var input: Dictionary=pilot.controls_at_time(state,float(state.world_elapsed_ms),targets,false)
-		# Keep firing on the damaged fighter and circle at weapon range. Closing
-		# to point-blank range exposes this unshielded starter to all three ships.
-		input.throttle=1.0 if input.distance>18000.0 else 0.0
-		if input.distance<35000.0:input.strafe=1.0
+		# Keep the orbit within the fitted gun's reach. The close approach uses
+		# the pilot's pursuit and alternating strafes for a single opponent.
+		var weapon: Dictionary=state.encounter.primaries.guns[0].projectiles.weapon
+		var reach:=float(weapon.speed_units_per_millisecond)*float(weapon.lifetime_ms)
+		if OS.get_environment("GOF2_PIRATE_APPROACH")!="close":
+			input.throttle=1.0 if input.distance>minf(18000.0,reach*0.6) else 0.0
+			if input.distance<35000.0:input.strafe=1.0
+		input.fire=input.fire and input.distance<reach*0.9
 		if failure:input.fire=false;input.strafe=0.0
 		if input.fire:shots+=1
 		if not pirate_step(input):return false
