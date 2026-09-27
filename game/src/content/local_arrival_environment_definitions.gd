@@ -16,7 +16,7 @@ static func available(bindings: RefCounted) -> bool:
 static func location_supported(bindings: RefCounted,catalogues: RefCounted,station_id: int,cursor: int,mission_context: RefCounted=null) -> bool:
 	if not available(bindings) or catalogues==null or catalogues.content_id!=bindings.base_content_id:return false
 	if mission_context!=null:
-		if not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not mission_context.normal_location(bindings,station_id,cursor):return false
+		if not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not mission_context.ordinary_location(bindings,station_id,cursor):return false
 		var normal: Dictionary=load("res://src/content/ordinary_world_definitions.gd").catalogue_location(bindings,catalogues,station_id)
 		return not normal.is_empty() and normal.planet_type in SUPPORTED_TYPES
 	var story_system: int=9 if cursor==26 and station_id==48 and load("res://src/content/post_sahi_definitions.gd").available(bindings) else 18 if cursor==28 and station_id==91 and load("res://src/content/thynome_expedition_definitions.gd").available(bindings) else -1

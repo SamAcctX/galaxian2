@@ -31,6 +31,12 @@ func verify() -> void:
 		if not context.admit(bindings,cat,entry,loadout):check(false,context.error);return
 		var admitted:=context.recipe()
 		check(context.matches_loadout(loadout) and context.ship_id()==0 and context.has_feature("station"),"The representative equipped entry lost its admitted flight capability")
+		var planets: RefCounted=load("res://src/simulation/opening_planet_layout.gd").new()
+		var layout: Dictionary=planets.for_lounge(bindings,cat,entry.station_id,entry.campaign_cursor,"high",context)
+		check(not layout.is_empty(),"Admitted mission could not construct its ordinary scenery: "+planets.error)
+		check(layout==planets.for_lounge(bindings,cat,entry.station_id,entry.campaign_cursor),"Mission admission changed the catalogue's planet layout")
+		check(planets.for_lounge(bindings,cat,20,entry.campaign_cursor,"high",context).is_empty(),"Mission admission granted another location")
+		check(planets.for_lounge(bindings,cat,entry.station_id,entry.campaign_cursor,"high",Context.new()).is_empty(),"Empty mission context granted scenery admission")
 		var exposed:=context.recipe();exposed.next_cursor=-1;exposed.world.station=false
 		check(context.recipe()==admitted,"A caller changed the admitted recipe through its snapshot")
 		check(not context.admit(bindings,cat,entry,loadout) and context.recipe()==admitted,"A mission entry was admitted twice")

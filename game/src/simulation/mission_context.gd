@@ -44,6 +44,9 @@ func admit_normal_return(bindings: RefCounted,catalogues: RefCounted,transfer: R
 func normal_location(bindings: RefCounted,station_id: int,cursor: int) -> bool:
 	return _normal_return!=null and has_feature("normal_space") and _identity.base_content_id==bindings.base_content_id and _identity.binding_id==bindings.binding_id and cursor==_recipe.cursor and station_id==_recipe.station_id
 
+func ordinary_location(bindings: RefCounted,station_id: int,cursor: int) -> bool:
+	return has_feature("station") and not has_feature("void_environment") and _identity.base_content_id==bindings.base_content_id and _identity.binding_id==bindings.binding_id and cursor==_recipe.cursor and station_id==_recipe.station_id
+
 func world_observation(elapsed_ms: int) -> Dictionary:
 	if _recipe.is_empty() or elapsed_ms<0:return {}
 	return {"features":_recipe.world.duplicate(true),"station_id":_recipe.station_id,"elapsed_ms":elapsed_ms}
