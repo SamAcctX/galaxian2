@@ -96,13 +96,13 @@ func evaluate_world(player: RefCounted,pose: Transform3D,milliseconds: int,rando
 
 func _adopt_hook(hook: RefCounted) -> void:
 	_hook=hook;_control=hook.controller_owner();_combat=hook.combat_owner();_weapons=hook.weapons_owner()
-	var events: Dictionary=hook.snapshot().events
+	var events: Dictionary=hook.event_observation()
 	_weapon_events=events.get("contacts",[]);_actor_events=events.get("actors",[])
 
 func frame_context() -> Dictionary:
 	if _hook==null:return {}
 	return {"elapsed_ms":_elapsed_ms,"world_elapsed_ms":_world_elapsed_ms,"pending_world":_hook.composition_stage()!="ready",
-		"sequence":_hook.sequence_owner().snapshot(),"radio":_hook.radio_owner().snapshot(),"radio_events":_hook.snapshot().events.get("radio",[])}
+		"sequence":_hook.sequence_owner().snapshot(),"radio":_hook.radio_owner().snapshot(),"radio_events":_hook.event_observation().get("radio",[])}
 func result_observation() -> Dictionary:return {} if _hook==null else _hook.result_observation()
 func radio_owner() -> RefCounted:return null if _hook==null else _hook.radio_owner()
 func camera_owner() -> RefCounted:return null if _hook==null else _hook.camera_owner()

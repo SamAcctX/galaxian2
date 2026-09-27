@@ -149,6 +149,10 @@ func random_state() -> Dictionary:return _random.duplicate(true)
 func composition_stage() -> String:return _stage
 func failed(message: String) -> RefCounted:reject(message);return null
 
+## Events are already owned by this composed frame. Observing them must not
+## rebuild unrelated player, combat, controller or weapon snapshots.
+func event_observation() -> Dictionary:return {} if _state.is_empty() else _events.duplicate(true)
+
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}
 	var result:=_state.duplicate()
