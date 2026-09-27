@@ -9,6 +9,7 @@ const ResultPoll=preload("res://src/simulation/mission_result_poll.gd")
 var error:=""
 var _context: RefCounted
 var _result:={}
+var _readout:={}
 var _state:={}
 var _conversations:={}
 var _conversation: RefCounted
@@ -18,7 +19,8 @@ func configure(context: RefCounted) -> bool:
 	error=""
 	if _context!=null:return reject("A mission runner is configured only once")
 	if not (context is Context or context is StationContext) or context.recipe().is_empty():return reject("Mission runner requires an admitted entry")
-	_context=context;_result=context.recipe().result
+	var recipe: Dictionary=context.recipe()
+	_context=context;_result=recipe.result;_readout=recipe.get("readout",{})
 	_state={"clock_ms":0,"elapsed_ms":0,"mode":0,"retired":false}
 	return true
 
@@ -108,10 +110,24 @@ func acknowledge() -> bool:
 	return true
 
 func context_owner() -> RefCounted:return _context
+## Passive HUD values use the same accepted clock and encounter counters as
+## results. Presentation neither advances time nor decides the mission outcome.
+func flight_readout(counters: Dictionary={}) -> Dictionary:
+	if _context==null or _state.retired or _readout.is_empty():return {}
+	match _readout.kind:
+		"countdown":
+			var remaining: int=int(_readout.duration_ms)-int(_state.elapsed_ms)
+			return {"kind":"countdown","remaining_ms":remaining} if remaining>0 else {}
+		"contest":
+			var player: Variant=counters.get(_readout.player_counter)
+			var other: Variant=counters.get(_readout.other_counter)
+			if player is int and other is int and player>=0 and other>=0:return {"kind":"contest","player":player,"other":other}
+	return {}
+
 func snapshot() -> Dictionary:return _state.duplicate(true)
 func fork() -> RefCounted:
 	var copy: RefCounted=get_script().new()
-	copy._context=_context;copy._result=_result;copy._state=_state.duplicate(true)
+	copy._context=_context;copy._result=_result;copy._readout=_readout;copy._state=_state.duplicate(true)
 	copy._conversations=_conversations
 	copy._conversation=null if _conversation==null else _conversation.fork();copy._dialogue_kind=_dialogue_kind
 	return copy

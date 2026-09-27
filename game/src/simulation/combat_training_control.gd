@@ -1158,6 +1158,7 @@ func snapshot(combat_view: Dictionary={}) -> Dictionary:
 	if _accounting!=null:
 		result.destruction=_destruction.map(func(owner):return owner.snapshot())
 		result.accounting=_accounting.snapshot();result.defeat_status=defeat_status()
+	if _mission_runner!=null:result.mission_readout=_mission_runner.flight_readout(result.get("accounting",{}).get("counter_deltas",{}))
 	return result
 
 func fork_for_frame(copy_motion:=true, incoming_combat: RefCounted=null) -> RefCounted:

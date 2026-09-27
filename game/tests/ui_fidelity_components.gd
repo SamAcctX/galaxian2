@@ -46,7 +46,7 @@ func run() -> void:
 		flight.control_throttle=1.0
 		check(hud.present(flight),hud.error)
 		check(absf(hud._hull_ratio-47.0/95.0)<0.001 and absf(hud._shield_ratio-0.5)<0.001 and hud._shield_visible,"Flight gauges lost accepted hull/shield fractions")
-		check(hud._cargo_text.text=="1 / 25t" and hud._cargo_frame.texture.get_meta("source_image_id")==1218,"Cargo HUD lost source counter art or totals")
+		check(hud._cargo_text.text=="1 / 25t" and hud._cargo_frame.texture.get_meta("source_image_id")==1312,"Cargo HUD lost source counter art or totals")
 		check(hud._throttle_text.text=="100" and hud._throttle_frame.texture.get_meta("source_image_id")==1352 and hud._throttle_frame.texture.get_meta("source_region")==250,"Throttle HUD lost its accepted percentage or source art")
 		var bare:=flight.duplicate(true);bare.player.capacities.shield=0;bare.player.vitals.shield=0.0;bare.control_throttle=0.35
 		check(hud.throttle_alpha(Time.get_ticks_msec())==0.0,"Throttle indicator stayed visible without a throttle change")
@@ -57,6 +57,7 @@ func run() -> void:
 		var invalid:=flight.duplicate(true);invalid.control_throttle=1.5
 		check(not hud.present(invalid) and hud._throttle_text.text=="35","Invalid throttle replaced the last accepted indicator")
 		check(hud.present(flight),hud.error)
+		verify_mission_readout(hud,flight)
 		var inventory:=identity.duplicate()
 		inventory.hangar_open=true;inventory.contracts={"credits":6161}
 		inventory.equipment={"ordinary_shopping_open":true,"requirements":{"weapon_installed":true,"armor_installed":true},
@@ -113,3 +114,21 @@ func run() -> void:
 func check(value: bool,message: String) -> void:
 	checks+=1
 	if not value:failures+=1;push_error(message)
+
+func verify_mission_readout(hud: Control,flight: Dictionary) -> void:
+	var sample:=flight.duplicate(true)
+	for row in [[61234,"01:01"],[1000,"00:01"],[1,"00:00"],[3600123,"01:00:00"]]:
+		sample.mission_readout={"kind":"countdown","remaining_ms":row[0]}
+		check(hud.present(sample) and hud._cargo_text.text==row[1],"The mission countdown rounded up or lost its clock format")
+	var accepted:=sample.duplicate(true)
+	check(hud.present(sample) and sample==accepted and hud._cargo_text.text=="01:00:00","Presenting an unchanged timer advanced its clock or changed the sample")
+	sample.mission_readout={"kind":"contest","player":2,"other":1}
+	check(hud.present(sample) and hud._cargo_text.text=="2 : 1","The contest did not replace cargo with its player/rival score")
+	sample.mission_readout.other=3
+	check(hud.present(sample) and hud._cargo_text.text=="2 : 3","The rival score did not update independently")
+	hud.set_active(false)
+	check(not hud.visible,"A cinematic gate retained the mission readout")
+	hud.set_active(true)
+	var invalid:=sample.duplicate(true);invalid.mission_readout.player=-1
+	check(not hud.present(invalid) and hud._cargo_text.text=="2 : 3","An invalid contest score replaced the accepted display")
+	check(hud.present(flight) and hud._cargo_text.text=="1 / 25t","Retiring the readout did not restore cargo")

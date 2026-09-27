@@ -6,6 +6,10 @@ func requested_contract_kind() -> int:return 7
 
 func verify_contract_frame(_bindings: RefCounted,frame: RefCounted,accepted: Dictionary) -> void:
 	var world: Dictionary=frame.snapshot()
+	check(world.mission_readout=={"kind":"countdown","remaining_ms":121000-world.world_elapsed_ms},"Junk entry omitted its deadline readout")
+	var elapsed: RefCounted=frame.evaluate(100)
+	if elapsed==null:check(false,frame.error);return
+	check(elapsed.snapshot().mission_readout.remaining_ms==world.mission_readout.remaining_ms-100 and frame.snapshot()==world,"The countdown did not follow its accepted clock or mutated its parent")
 	var debris: Array=world.encounter.combat.actors.filter(func(actor):return actor.population_group=="debris").map(func(actor):return actor.actor_id)
 	var pirates: Array=world.encounter.combat.actors.filter(func(actor):return actor.population_group=="pirate").map(func(actor):return actor.actor_id)
 	check(not debris.is_empty() and pirates.size()==1,"The mixed Junk fixture requires one pirate and a debris field")
@@ -36,6 +40,7 @@ func verify_contract_frame(_bindings: RefCounted,frame: RefCounted,accepted: Dic
 	# Kill the remaining ship after settlement. Reputation must start from the
 	# settled bonus, while debris statistics and the result stay unchanged.
 	var paid_world: Dictionary=paid.snapshot()
+	check(paid_world.mission_readout.is_empty(),"The acknowledged job retained its countdown")
 	var after: RefCounted=paid.fork_for_frame()
 	after._encounter._combat=after._encounter._combat.fork_for_frame()
 	combat=after._encounter._combat

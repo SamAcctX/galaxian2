@@ -1946,6 +1946,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	if not _audio_frame.is_empty():state.flight_audio=_audio_frame.duplicate(true)
 	if _encounter!=null:
 		state.encounter=_encounter.snapshot();state.actors=state.encounter.combat.actors.duplicate(true)
+		state.mission_readout=state.encounter.controller.get("mission_readout",{})
 		state.station_return_supported=not _return_rules.is_empty()
 	if _entry.campaign_cursor in [10,11,12,26,36] or _entry.has("dekato_context") or _objective is ContractObjective:state.station_response_flags=station_response_flags()
 	if _station!=null:

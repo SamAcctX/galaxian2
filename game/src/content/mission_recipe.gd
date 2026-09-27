@@ -30,18 +30,21 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 	var success:={"kind":18,"first_actor":0,"end_actor":count}
 	var failure:={"kind":"never"}
 	var periodic:={"kind":"never"}
+	var readout:={}
 	match int(mission.kind):
 		0:success={"kind":"never"}
 		7:
 			success={"kind":7,"end_actor":debris_count}
 			periodic={"kind":"elapsed","after_ms":int(bindings.early_contracts.junk_lifecycle.deadline_milliseconds)}
+			readout={"kind":"countdown","duration_ms":int(periodic.after_ms)}
 		12:
 			var objectives: Dictionary=bindings.early_contracts.ship_lifecycle.objectives.duplicate(true)
 			success={"kind":int(objectives.challenge_success_kind),"rules":objectives}
 			failure={"kind":int(objectives.challenge_failure_kind),"rules":objectives}
+			readout={"kind":"contest","player_counter":"world_player_kills","other_counter":"world_other_kills"}
 	return {"track":"side_job","cursor":context.campaign_cursor,"station_id":context.station_id,"system_id":loadout.system_id,
 		"mission":mission.duplicate(true),"next_cursor":context.campaign_cursor,"entry":"ordinary_flight","world":{"station":true,"portal":true,"asteroid_field":true},
-		"cast":{"kind":"contract","actor_count":count,"debris_count":debris_count,"ship_state":ship_state,"operations":rules.duplicate(true)},"briefing":[],"radio":[],"sequences":[],
+		"cast":{"kind":"contract","actor_count":count,"debris_count":debris_count,"ship_state":ship_state,"operations":rules.duplicate(true)},"briefing":[],"radio":[],"sequences":[],"readout":readout,
 		"result":{"success":success,"failure":failure,"periodic_failure":periodic,"actor_count":count,
 			"retire_failure":true,"freeze_clock_on_result":true,"reset_while_blocked":false,"policy":bindings.early_contracts.flight_results.duplicate(true)}}
 

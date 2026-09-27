@@ -4,7 +4,7 @@ const Catalogues=preload("res://src/content/catalogues.gd")
 const Atlas=preload("res://src/content/atlas_region.gd")
 const OriginalUI=preload("res://src/presentation/original_ui.gd")
 const INTERFACE_ATLAS="resources/data/textures/gof2_interface_ipad_1440.aei"
-const SOURCE_IMAGES={"hull_badge":1195,"armor_badge":1194,"shield_badge":1197,"cargo_frame":1218,"throttle_frame":1352}
+const SOURCE_IMAGES={"hull_badge":1195,"armor_badge":1194,"shield_badge":1197,"throttle_frame":1352}
 const SOURCE_REGIONS={"hull_fill":90,"armor_fill":91,"gauge_back":97,"shield_fill":98}
 # Remake presentation timing: the throttle reading appears after a change and
 # then fades. The original display duration has not been recovered.
@@ -20,6 +20,7 @@ var _has_state:=false
 var _mobile:=false
 var _touch_inset:=false
 var _shield_visible:=false
+var _readout_kind:=""
 var _armor_visible:=false
 var _hull_ratio:=1.0
 var _armor_ratio:=0.0
@@ -92,6 +93,9 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> 
 	if bytes.is_empty() or image==null:return reject(library.error+visuals.error)
 	var pixels:=ImageTexture.create_from_image(image)
 	var sprites:={}
+	var counters:=art.load_regions(library,bindings,visuals,[1221,1312],bindings.mido_travel.map.ui.atlas_resources)
+	if counters.is_empty():return reject(art.error)
+	sprites.timer_frame=counters[1221];sprites.cargo_frame=counters[1312]
 	for key in SOURCE_IMAGES:
 		var alias: Dictionary=bindings.resolve_image_region(int(SOURCE_IMAGES[key]))
 		# The Mac throttle alias is verified. Keep older deferred iOS imports
@@ -138,6 +142,9 @@ func present(state: Dictionary,show_hull_value:=true) -> bool:
 	var has_throttle:=state.has("control_throttle")
 	var throttle: Variant=state.get("control_throttle")
 	if has_throttle and (not (throttle is float or throttle is int) or not is_finite(float(throttle)) or float(throttle)<0.0 or float(throttle)>1.0):return reject("Flight throttle must be a finite fraction")
+	var readout: Variant=state.get("mission_readout",{})
+	var readout_text: Variant=_mission_text(readout)
+	if readout_text==null:return reject("Flight readout requires accepted time or encounter counters")
 	var ship_id: int=int(player.get("ship_id",-1))
 	if ship_id<0 or ship_id>=_catalogues.tables.ships.size():return reject("Flight gauges selected an unknown ship")
 	var hull_max: int=int(player.get("max_hull",_catalogues.tables.ships[ship_id].stats.armor))
@@ -161,8 +168,10 @@ func present(state: Dictionary,show_hull_value:=true) -> bool:
 	_hull_text.visible=show_hull_value
 	_armor_text.text="%s %d/%d"%[_armor_label,armor,armor_max]
 	_shield_text.text="%s %d/%d"%[_shield_label,roundi(shield),shield_max]
-	_cargo_text.text="%d / %dt"%[used,capacity]
-	_cargo_frame.visible=not cargo.is_empty();_cargo_text.visible=not cargo.is_empty()
+	_readout_kind=readout.get("kind","")
+	_cargo_text.text="%d / %dt"%[used,capacity] if readout.is_empty() else readout_text
+	_cargo_frame.texture=_sprites.timer_frame if _readout_kind=="countdown" else _sprites.cargo_frame
+	_cargo_frame.visible=not cargo.is_empty() or not readout.is_empty();_cargo_text.visible=_cargo_frame.visible
 	_throttle_visible=has_throttle and _throttle_frame.texture!=null
 	_throttle_percent=roundi(float(throttle)*100.0) if has_throttle else 0
 	_throttle_text.text=str(_throttle_percent) if has_throttle else ""
@@ -173,6 +182,21 @@ func present(state: Dictionary,show_hull_value:=true) -> bool:
 		_throttle_seen=_throttle_percent
 	_has_state=true;visible=_active;_relayout()
 	return true
+
+static func _mission_text(readout: Variant) -> Variant:
+	if not readout is Dictionary:return null
+	if readout.is_empty():return ""
+	match readout.get("kind"):
+		"countdown":
+			if not readout.get("remaining_ms") is int or readout.remaining_ms<=0:return null
+			var seconds:=int(readout.remaining_ms/1000)
+			var hours:=int(seconds/3600)
+			var clock:="%02d:%02d"%[int(seconds/60)%60,seconds%60]
+			return "%02d:"%hours+clock if hours>0 else clock
+		"contest":
+			if not readout.get("player") is int or not readout.get("other") is int or readout.player<0 or readout.other<0:return null
+			return "%d : %d"%[readout.player,readout.other]
+	return null
 
 func _process(_delta: float) -> void:
 	if _throttle_visible:_apply_throttle_alpha(Time.get_ticks_msec())
@@ -229,8 +253,8 @@ func _relayout() -> void:
 	for row in [[_hull_text,hull_y],[_armor_text,armor_y],[_shield_text,margin]]:
 		row[0].position=Vector2(track_left+width+4,float(row[1])+badge*0.20)
 		row[0].size=Vector2(110,badge*0.8)
-	var counter_width:=164.0 if _mobile else 146.0
 	var counter_height:=32.0 if _mobile else 26.0
+	var counter_width:=counter_height*_cargo_frame.texture.get_width()/_cargo_frame.texture.get_height() if _cargo_frame.texture!=null else 146.0
 	_cargo_frame.position=Vector2(maxf(0,size.x-counter_width-margin-(60.0 if _touch_inset else 0.0)),margin)
 	_cargo_frame.size=Vector2(counter_width,counter_height)
 	_cargo_text.position=_cargo_frame.position;_cargo_text.size=_cargo_frame.size
@@ -242,7 +266,7 @@ func _relayout() -> void:
 	_throttle_text.size=Vector2(throttle_size.x,21 if _mobile else 16)
 
 func clear() -> void:
-	_has_state=false;visible=false;_cargo_text.text="";_throttle_text.text="";_throttle_visible=false;_throttle_seen=-1
+	_has_state=false;visible=false;_cargo_text.text="";_readout_kind="";_throttle_text.text="";_throttle_visible=false;_throttle_seen=-1
 	_throttle_changed_ms=-THROTTLE_HOLD_MS-THROTTLE_FADE_MS
 	_throttle_frame.hide();_throttle_text.hide()
 	for label in [_hull_text,_armor_text,_shield_text]:label.text=""
