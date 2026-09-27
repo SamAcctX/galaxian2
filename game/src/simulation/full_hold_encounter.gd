@@ -259,7 +259,7 @@ func configure_dekato(bindings: RefCounted,catalogues: RefCounted,library: RefCo
 	return configure_mission(bindings,catalogues,library,player,scenery,equipment,reputation,context)
 
 func mission_context_owner() -> RefCounted:
-	return null if _control==null else _control.mission_context_owner()
+	return load("res://src/simulation/mission_context.gd").from_owner(_control)
 
 func configure_mission(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,player: RefCounted,scenery: RefCounted,equipment: RefCounted,reputation: Dictionary,mission_context: RefCounted) -> bool:
 	error=""
