@@ -91,6 +91,7 @@ func run() -> void:
 			check(viewport.encloses(equipment._panel.get_global_rect()) and viewport.encloses(equipment._close.get_global_rect()),"Hangar escaped the landscape viewport")
 			check(viewport.encloses(shell._actions.hangar.get_global_rect()) and viewport.encloses(hud._cargo_frame.get_global_rect()),"Station/HUD corner action escaped landscape")
 			check(viewport.encloses(hud._throttle_frame.get_global_rect()) and absf(hud._throttle_frame.get_global_rect().get_center().x-float(root.size.x)*0.5)<1.0,"Throttle indicator escaped the centered landscape flight layout")
+			verify_gauge_frames(hud,flight)
 			if args.size()==4 and language=="gb" and DisplayServer.get_name()!="headless":
 				if not DirAccess.dir_exists_absolute(args[3]):DirAccess.make_dir_recursive_absolute(args[3])
 				var form:="touch" if mobile else "desktop"
@@ -114,6 +115,23 @@ func run() -> void:
 func check(value: bool,message: String) -> void:
 	checks+=1
 	if not value:failures+=1;push_error(message)
+
+func verify_gauge_frames(hud: Control,flight: Dictionary) -> void:
+	for row in [[hud._hull_badge,hud._hull_frame,hud._hull_back],
+		[hud._shield_badge,hud._shield_frame,hud._shield_back],
+		[hud._armor_badge,hud._armor_frame,hud._armor_back]]:
+		var badge: Rect2=row[0].get_global_rect()
+		var frame: Rect2=row[1].get_global_rect()
+		var back: Rect2=row[2].get_global_rect()
+		check(row[1].texture!=null and absf(badge.end.x-frame.position.x)<0.01 and absf(badge.position.y-frame.position.y)<0.01 and absf(badge.size.y-frame.size.y)<0.01,"Gauge badge connectors did not join a full-height frame")
+		check(frame.grow(1.0).encloses(back) and back.size.x>badge.size.x*4.0,"Long gauge artwork was missing or outside its frame")
+	var state:=flight.duplicate(true)
+	for fraction in [0.0,0.5,1.0]:
+		state.player.max_hull=100;state.player.vitals={"hull":roundi(100*fraction),"armor":roundi(40*fraction),"shield":50.0*fraction}
+		check(hud.present(state),hud.error)
+		for row in [[hud._hull_frame,hud._hull_clip,hud._hull_fill],[hud._shield_frame,hud._shield_clip,hud._shield_fill],[hud._armor_frame,hud._armor_clip,hud._armor_fill]]:
+			check(row[0].visible and absf(row[1].size.x-row[2].size.x*fraction)<0.01 and row[2].size.x>0.0,"Pool changes resized the gauge artwork or removed its frame")
+	check(hud.present(flight),hud.error)
 
 func verify_mission_readout(hud: Control,flight: Dictionary) -> void:
 	var sample:=flight.duplicate(true)

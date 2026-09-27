@@ -1,11 +1,11 @@
 extends Control
 ## Original corner art over accepted flight vitals and cargo. No flight input lives here.
 const Catalogues=preload("res://src/content/catalogues.gd")
-const Atlas=preload("res://src/content/atlas_region.gd")
 const OriginalUI=preload("res://src/presentation/original_ui.gd")
-const INTERFACE_ATLAS="resources/data/textures/gof2_interface_ipad_1440.aei"
-const SOURCE_IMAGES={"hull_badge":1195,"armor_badge":1194,"shield_badge":1197,"throttle_frame":1352}
-const SOURCE_REGIONS={"hull_fill":90,"armor_fill":91,"gauge_back":97,"shield_fill":98}
+const SOURCE_IMAGES={"hull_badge":1195,"armor_badge":1194,"shield_badge":1196,
+	"gauge_frame":1193,"hull_back":1191,"shield_back":1198,
+	"hull_fill":1316,"armor_fill":1192,"shield_fill":1199,"throttle_frame":1352,
+	"timer_frame":1221,"cargo_frame":1312}
 # Remake presentation timing: the throttle reading appears after a change and
 # then fades. The original display duration has not been recovered.
 const THROTTLE_HOLD_MS:=1500
@@ -34,6 +34,9 @@ var _shield_label:=""
 var _hull_badge: TextureRect
 var _armor_badge: TextureRect
 var _shield_badge: TextureRect
+var _hull_frame: TextureRect
+var _armor_frame: TextureRect
+var _shield_frame: TextureRect
 var _hull_back: TextureRect
 var _armor_back: TextureRect
 var _shield_back: TextureRect
@@ -54,6 +57,7 @@ var _throttle_text: Label
 func _init() -> void:
 	visible=false;mouse_filter=Control.MOUSE_FILTER_IGNORE
 	_hull_badge=_texture(self);_armor_badge=_texture(self);_shield_badge=_texture(self)
+	_hull_frame=_texture(self);_armor_frame=_texture(self);_shield_frame=_texture(self)
 	_hull_back=_texture(self);_armor_back=_texture(self);_shield_back=_texture(self)
 	_hull_clip=Control.new();_hull_clip.mouse_filter=Control.MOUSE_FILTER_IGNORE;_hull_clip.clip_contents=true;add_child(_hull_clip)
 	_hull_fill=_texture(_hull_clip)
@@ -88,48 +92,24 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> 
 	if not cat.open(library):return reject(cat.error)
 	var art:=OriginalUI.new()
 	if not art.configure(library,bindings,visuals):return reject(art.error)
-	var bytes: PackedByteArray=library.read_resource(INTERFACE_ATLAS,Atlas.MAX_BYTES)
-	var image: Image=visuals.load_image(INTERFACE_ATLAS)
-	if bytes.is_empty() or image==null:return reject(library.error+visuals.error)
-	var pixels:=ImageTexture.create_from_image(image)
 	var sprites:={}
-	var counters:=art.load_regions(library,bindings,visuals,[1221,1312],bindings.mido_travel.map.ui.atlas_resources)
-	if counters.is_empty():return reject(art.error)
-	sprites.timer_frame=counters[1221];sprites.cargo_frame=counters[1312]
+	var images:=art.load_regions(library,bindings,visuals,SOURCE_IMAGES.values(),bindings.mido_travel.map.ui.atlas_resources)
+	if images.is_empty():return reject(art.error)
 	for key in SOURCE_IMAGES:
-		var alias: Dictionary=bindings.resolve_image_region(int(SOURCE_IMAGES[key]))
-		# The Mac throttle alias is verified. Keep older deferred iOS imports
-		# playable if their interface atlas does not expose this extra image.
-		if key=="throttle_frame" and library.manifest.profile.edition!="mac-full-hd" and (alias.is_empty() or int(alias.get("texture_id",-1))!=10062 or int(alias.get("region",-1))!=250):continue
-		if alias.is_empty() or int(alias.texture_id)!=10062:return reject("Flight gauge image has no verified interface alias")
-		if key=="throttle_frame" and int(alias.region)!=250:return reject("Flight throttle frame has no verified interface region")
-		var texture: Texture2D=_atlas_piece(bytes,pixels,int(alias.region))
-		if key=="throttle_frame" and texture==null and library.manifest.profile.edition!="mac-full-hd":continue
-		if texture==null:return reject("Flight gauge image disagrees with its source atlas")
-		texture.set_meta("source_image_id",int(SOURCE_IMAGES[key]));sprites[key]=texture
-	for key in SOURCE_REGIONS:
-		var texture: Texture2D=_atlas_piece(bytes,pixels,int(SOURCE_REGIONS[key]))
-		if texture==null:return reject("Flight gauge bar is missing from its source atlas")
-		sprites[key]=texture
+		sprites[key]=images[SOURCE_IMAGES[key]]
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language}
 	_catalogues=cat;_art=art;_sprites=sprites
 	_armor_label=library.strings[Catalogues.SHIP_LABEL_IDS[library.manifest.profile.edition][0]]
 	_shield_label=library.strings[219] if library.manifest.profile.edition=="mac-full-hd" else ""
 	_hull_badge.texture=sprites.hull_badge;_armor_badge.texture=sprites.armor_badge;_shield_badge.texture=sprites.shield_badge
-	_hull_back.texture=sprites.gauge_back;_armor_back.texture=sprites.gauge_back;_shield_back.texture=sprites.gauge_back
+	for node in [_hull_frame,_armor_frame,_shield_frame]:node.texture=sprites.gauge_frame
+	_hull_back.texture=sprites.hull_back;_armor_back.texture=sprites.hull_back;_shield_back.texture=sprites.shield_back
 	_hull_fill.texture=sprites.hull_fill;_armor_fill.texture=sprites.armor_fill;_shield_fill.texture=sprites.shield_fill
 	_cargo_frame.texture=sprites.cargo_frame
 	_throttle_frame.texture=sprites.get("throttle_frame")
 	var theme:=Theme.new();theme.default_font=art.font;self.theme=theme
 	set_mobile_layout(_mobile)
 	return true
-
-func _atlas_piece(bytes: PackedByteArray,pixels: Texture2D,index: int) -> AtlasTexture:
-	var region: Dictionary=Atlas.new().region(bytes,index)
-	if region.is_empty() or Vector2(region.size)!=pixels.get_size():return null
-	var texture:=AtlasTexture.new();texture.atlas=pixels;texture.region=Rect2(region.rect);texture.filter_clip=true
-	texture.set_meta("source_resource",INTERFACE_ATLAS);texture.set_meta("source_region",index)
-	return texture
 
 func present(state: Dictionary,show_hull_value:=true) -> bool:
 	error=""
@@ -229,25 +209,36 @@ func _relayout() -> void:
 	if size.x<=0 or size.y<=0:return
 	var margin:=16.0 if _mobile else 12.0
 	var badge:=32.0 if _mobile else 27.0
-	var width:=136.0 if _mobile else 128.0
-	var track_left:=margin+badge-5
-	var track_height:=13.0 if _mobile else 11.0
+	var track_left:=margin+badge
+	var frame_size:=Vector2.ZERO
+	var track_size:=Vector2.ZERO
+	if _hull_frame.texture!=null:
+		# Keep the badge's painted connectors joined to the original long frame.
+		var artwork_scale:=badge/_hull_frame.texture.get_height()
+		frame_size=_hull_frame.texture.get_size()*artwork_scale
+		track_size=_hull_back.texture.get_size()*artwork_scale
+	var width:=track_size.x
+	var track_height:=track_size.y
+	var track_top:=(badge-track_height)*0.5
 	var spacing:=34.0 if _mobile else 29.0
 	var armor_y:=margin+(spacing if _shield_visible else 0.0)
 	var hull_y:=armor_y+(spacing if _armor_visible else 0.0)
 	_hull_badge.position=Vector2(margin,hull_y);_hull_badge.size=Vector2.ONE*badge
-	_hull_back.position=Vector2(track_left,hull_y+badge*0.34);_hull_back.size=Vector2(width,track_height)
+	_hull_frame.position=Vector2(track_left,hull_y);_hull_frame.size=frame_size
+	_hull_back.position=Vector2(track_left,hull_y+track_top);_hull_back.size=track_size
 	_hull_clip.position=_hull_back.position;_hull_clip.size=Vector2(width*_hull_ratio,track_height)
 	_hull_fill.position=Vector2.ZERO;_hull_fill.size=Vector2(width,track_height)
-	_armor_badge.visible=_armor_visible;_armor_back.visible=_armor_visible;_armor_clip.visible=_armor_visible;_armor_text.visible=_armor_visible
+	_armor_badge.visible=_armor_visible;_armor_frame.visible=_armor_visible;_armor_back.visible=_armor_visible;_armor_clip.visible=_armor_visible;_armor_text.visible=_armor_visible
 	_armor_badge.position=Vector2(margin,armor_y);_armor_badge.size=Vector2.ONE*badge
-	_armor_back.position=Vector2(track_left,armor_y+badge*0.34);_armor_back.size=Vector2(width,track_height)
+	_armor_frame.position=Vector2(track_left,armor_y);_armor_frame.size=frame_size
+	_armor_back.position=Vector2(track_left,armor_y+track_top);_armor_back.size=track_size
 	_armor_clip.position=_armor_back.position;_armor_clip.size=Vector2(width*_armor_ratio,track_height)
 	_armor_fill.position=Vector2.ZERO;_armor_fill.size=Vector2(width,track_height)
-	_shield_badge.visible=_shield_visible;_shield_back.visible=_shield_visible;_shield_clip.visible=_shield_visible
+	_shield_badge.visible=_shield_visible;_shield_frame.visible=_shield_visible;_shield_back.visible=_shield_visible;_shield_clip.visible=_shield_visible
 	_shield_text.visible=_shield_visible
 	_shield_badge.position=Vector2(margin,margin);_shield_badge.size=Vector2.ONE*badge
-	_shield_back.position=Vector2(track_left,margin+badge*0.34);_shield_back.size=Vector2(width,track_height)
+	_shield_frame.position=Vector2(track_left,margin);_shield_frame.size=frame_size
+	_shield_back.position=Vector2(track_left,margin+track_top);_shield_back.size=track_size
 	_shield_clip.position=_shield_back.position;_shield_clip.size=Vector2(width*_shield_ratio,track_height)
 	_shield_fill.position=Vector2.ZERO;_shield_fill.size=Vector2(width,track_height)
 	for row in [[_hull_text,hull_y],[_armor_text,armor_y],[_shield_text,margin]]:
