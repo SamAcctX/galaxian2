@@ -721,6 +721,9 @@ func flight_context(station_id: int,bindings: RefCounted=null) -> Dictionary:
 	if _state.is_empty() or not Definitions.encounter_parameters(_rules) or (station_id not in _stations and not ordinary):
 		reject("This contract session has no supported encounter context");return {}
 	if not _state.pending_result.is_empty():reject("Acknowledge the contract result before preparing another encounter");return {}
+	return _selected_contract_context(station_id,bindings)
+
+func _selected_contract_context(station_id: int,bindings: RefCounted) -> Dictionary:
 	var mission:=active_mission_for(station_id,bindings)
 	var result:={"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,
 		"campaign_cursor":_state.campaign_cursor,"station_id":station_id,
@@ -739,9 +742,17 @@ func flight_context(station_id: int,bindings: RefCounted=null) -> Dictionary:
 	return result
 
 func free_flight_context(bindings: RefCounted,station_id: int) -> Dictionary:
+	var context:=retained_station_context(bindings,station_id)
+	if context.is_empty():return {}
+	if load("res://src/content/free_flight_definitions.gd").flight(bindings,station_id,int(_state.campaign_cursor)).is_empty():return fail("This station requires its selected story flight")
+	return context
+
+## A saved station may be waiting to launch an authored encounter. Validate
+## its career without granting an ordinary departure at the same location.
+func retained_station_context(bindings: RefCounted,station_id: int) -> Dictionary:
 	error=""
 	var definitions=load("res://src/content/free_flight_definitions.gd")
-	if not definitions.available(bindings) or definitions.flight(bindings,station_id,int(_state.get("campaign_cursor",-1))).is_empty() or not Campaign.supported(bindings,_state.get("campaign_cursor")) or _state.get("station_id")!=station_id:return fail("The ordinary flight requires its retained unlocked career")
+	if not definitions.available(bindings) or definitions.Worlds.location(bindings.mido_travel,station_id).is_empty() or not Campaign.supported(bindings,_state.get("campaign_cursor")) or _state.get("station_id")!=station_id:return fail("The station requires its retained unlocked career")
 	if _state.get("base_content_id")!=bindings.base_content_id or _state.get("binding_id")!=bindings.binding_id or _rules!=bindings.early_contracts:return fail("The ordinary career belongs to another content identity")
 	if GateArrival.available(bindings) and not GateArrival.valid_statistics(_state.get("travel_statistics")):return fail("The ordinary career lost its earned travel statistics")
 	if not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the retained flight or result before ordinary departure")
@@ -750,7 +761,7 @@ func free_flight_context(bindings: RefCounted,station_id: int) -> Dictionary:
 		if not OrdinaryContracts.delivery_mission(bindings,side):return fail("This accepted side mission has no supported ordinary flight")
 		var contact: Dictionary=_state.get("accepted_contact",{})
 		if contact.get("offer_id")!=_state.active_offer_id or contact.get("offer",{}).get("mission")!=side:return fail("The ordinary side mission lost its accepted contact")
-		var selected:=flight_context(station_id,bindings)
+		var selected:=_selected_contract_context(station_id,bindings)
 		if selected.is_empty():return {}
 		selected.side_mission=side.duplicate(true)
 		return selected

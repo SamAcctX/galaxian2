@@ -37,9 +37,25 @@ func verify(args: PackedStringArray) -> void:
 			check(not camera.advance(151) and camera.snapshot()==before,"Invalid camera time changed the accepted pose")
 			var changed:=view.duplicate(true);changed.camera.position[0]+=1
 			check(not Views.view_parameters(changed),"The supported station admitted a fabricated camera")
-			changed=view.duplicate(true);changed.station_id=999
-			check(not Views.view_parameters(changed),"An unknown station borrowed the supported camera")
+			changed=view.duplicate(true);changed.hangar_row=99
+			check(not Views.view_parameters(changed),"An unknown hangar row borrowed the supported camera")
 	check(visited>0,"No supported source locations were checked")
+	# Acknowledging a rescue changes the career while keeping this same
+	# station. Its admitted hangar must stay usable throughout that transition.
+	for station in [55,98]:
+		var selected:=bindings.resolve_hangar(station,cat)
+		if selected.is_empty():continue
+		var initial: Dictionary=Views.select(bindings,station,21)
+		for cursor in [22,23]:
+			var view:=Views.select(bindings,station,cursor)
+			var camera:=Camera.new()
+			check(view==initial and view.get("hangar_row")==selected.row and camera.configure(view,42),"A campaign acknowledgement blocked the admitted docking camera: "+str(station))
+	check(Views.select(bindings,999,22).is_empty(),"Unknown station presentation borrowed the starter hangar")
+	for station in [78,79,55,98]:
+		var selected:=bindings.resolve_hangar(station,cat)
+		var view:=Views.ordinary_view(bindings.station_presentation,station,int(selected.row))
+		var camera:=Camera.new()
+		check(camera.configure(view,42),"An admitted hangar could not initialize its docking camera: "+str(station))
 	if FreeCampaign.supported(bindings.mido_travel,27):
 		# The earned return docks at Sahi48 after the Void pursuit. Every
 		# system9 station shares source hangar row2, including this cursor27 path.

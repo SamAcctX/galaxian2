@@ -294,8 +294,8 @@ func _career(bindings: RefCounted,cat: RefCounted,data: Dictionary,equipment: Re
 	career._state.erase("void_source")
 	career._state.erase("blueprints")
 	if not career.restore_void_career(bindings,cat,data.get("void_source"),data.get("blueprints")):return reject(career.error)
-	if FreeFlight.Campaign.supported(bindings.mido_travel,cursor) and career.free_flight_context(bindings,data.station_id).is_empty():return reject(career.error)
-	if onward and cursor==int(Nehma.declarations(bindings).mission.campaign_cursor) and career.free_flight_context(bindings,data.station_id).is_empty():return reject(career.error)
+	if FreeFlight.Campaign.supported(bindings.mido_travel,cursor) and career.retained_station_context(bindings,data.station_id).is_empty():return reject(career.error)
+	if onward and cursor==int(Nehma.declarations(bindings).mission.campaign_cursor) and career.retained_station_context(bindings,data.station_id).is_empty():return reject(career.error)
 	if cursor in [13,14] and career.flight_context(data.station_id,bindings).is_empty():return reject(career.error)
 	return career
 

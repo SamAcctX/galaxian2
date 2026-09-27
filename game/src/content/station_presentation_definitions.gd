@@ -28,21 +28,20 @@ static func _parameters(data: Variant,expected: Dictionary) -> bool:
 		if not Values.equal_value(data.get(key),expected[key]):return false
 	return true
 
-static func select(bindings: RefCounted, station_id: int, cursor: int,station_context: RefCounted=null) -> Dictionary:
+## Station entry/save restoration owns admission. Presentation selects only
+## the imported location's hangar row, independent of campaign progress.
+static func select(bindings: RefCounted, station_id: int, _cursor: int,_station_context: RefCounted=null) -> Dictionary:
 	if bindings==null or not parameters(bindings.station_presentation):return {}
 	if station_id==98:
 		if not Alioth.available(bindings):return {}
-		if cursor not in [15,16] and not ((cursor==17 or load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor)) and load("res://src/content/alioth_return_definitions.gd").available(bindings)):return {}
 		return alioth_view(bindings.station_presentation)
 	var world: Dictionary=Worlds.location(bindings.mido_travel,station_id)
-	if load("res://src/simulation/mission_station_context.gd").permits(bindings,cursor,station_id,station_context) and not world.is_empty():return ordinary_view(bindings.station_presentation,station_id,source_hangar_row(world,int(bindings.hangars.get("system_field",-1))))
-	if (load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) or load("res://src/content/dekato_convoy_definitions.gd").station_supported(bindings,cursor,station_id) or load("res://src/content/nehma_return_definitions.gd").station_supported(bindings,cursor,station_id)) and not world.is_empty():
-		if not load("res://src/content/local_arrival_environment_definitions.gd").available(bindings):return {}
+	if not world.is_empty():
 		# Ordinary worlds carry their source system fields. The catalogue resolver still
 		# checks the selected row against the imported station at scene entry.
 		var row:=source_hangar_row(world,int(bindings.hangars.get("system_field",-1)))
 		return ordinary_view(bindings.station_presentation,station_id,row)
-	return bindings.station_presentation.duplicate(true)
+	return bindings.station_presentation.duplicate(true) if station_id==int(bindings.station_presentation.station_id) else {}
 
 static func alioth_view(shared: Dictionary) -> Dictionary:
 	var data:=shared.duplicate(true)
@@ -59,9 +58,10 @@ static func source_hangar_row(world: Dictionary,field: int) -> int:
 	return int(world.system_fields[field])
 
 static func ordinary_view(shared: Dictionary,station_id: int,row: int=0) -> Dictionary:
-	if row not in [0,1,2,3]:return {}
+	if not parameters(shared) or station_id<0 or row not in [0,1,2,3]:return {}
 	# Mido uses the already-verified first-station camera and light table row.
 	var data:=shared.duplicate(true) if row==3 else alioth_view(shared)
+	data.hangar_row=row
 	if row in [1,2]:
 		var selected: Dictionary=ROW_ONE if row==1 else ROW_TWO
 		data.hangar_row=row
@@ -76,14 +76,11 @@ static func view_parameters(data: Dictionary) -> bool:
 	if not data.get("provenance") is Dictionary:return false
 	for expected in [VALUES,MAC_VALUES]:
 		var shared: Dictionary=expected.duplicate(true);shared.provenance=data.provenance
-		# Reuse the supported source locations so admission and the selected
-		# faction view cannot diverge when another verified system is connected.
-		var source_world: Dictionary={}
-		for world in Worlds.SYSTEMS.values():
-			if world.station_ids.has(data.get("station_id")):source_world=world;break
-		if data.get("station_id")!=98 and not source_world.is_empty():
-			if Values.equal_value(data,ordinary_view(shared,int(data.station_id),source_hangar_row(source_world,2))):return true
-		elif Values.equal_value(data,alioth_view(shared)):return true
+		# The admitted station's catalogue selected the hangar. This component
+		# validates that row's camera/lighting, not a second list of locations.
+		if not data.get("station_id") is int or not data.get("hangar_row") is int:return false
+		if Values.equal_value(data,ordinary_view(shared,data.station_id,data.hangar_row)):return true
+		if Values.equal_value(data,alioth_view(shared)):return true
 	return false
 
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, station: Dictionary) -> String:

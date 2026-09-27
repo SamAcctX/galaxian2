@@ -1,5 +1,4 @@
 extends RefCounted
-const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Native ownership of ordinary primaries for an explicit player equipment state.
 ## Actor permission, world scheduling, target lists and consequences belong to
 ## the encounter owner. No unsupported primary is silently replaced or omitted.
@@ -14,9 +13,6 @@ const OpeningContacts = preload("res://src/simulation/ordinary_opening_contacts.
 const TargetInventory = preload("res://src/simulation/opening_target_inventory.gd")
 const SceneryBodies = preload("res://src/simulation/scenery_bodies.gd")
 const Audio = preload("res://src/simulation/weapon_audio.gd")
-const TrainingWeapons = preload("res://src/content/combat_training_weapon_definitions.gd")
-const Travel=preload("res://src/content/mido_travel_definitions.gd")
-const ContractLife=preload("res://src/content/contract_ship_lifecycle_definitions.gd")
 const Random = preload("res://src/simulation/seeded_random.gd")
 var error := ""
 var _loadout := {}
@@ -42,19 +38,9 @@ func configure(bindings: RefCounted, catalogues: RefCounted, mounts: RefCounted,
 	if mission_context!=null:
 		if not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not mission_context.matches_loadout(loadout):return reject("Primary equipment changed after mission entry")
 		return _configure_loadout(bindings,catalogues,mounts,loadout)
-	if loadout.has("campaign_cursor") and (loadout.campaign_cursor not in FlightStages.EQUIPPED or not loadout.campaign_cursor is int or not TrainingWeapons.parameters(bindings.combat_training_weapons)):
-		return reject("Unsupported primary encounter context")
-	if loadout.get("campaign_cursor") in [10,11,12,13,14] and Travel.player_entry(bindings.mido_travel,int(loadout.get("station_id",-1)),int(loadout.campaign_cursor)).is_empty():return reject("Local primary entry requires its supported location")
-	if loadout.get("campaign_cursor")==16 and (load("res://src/content/alioth_population_definitions.gd").flight(bindings,int(loadout.get("station_id",-1))).is_empty()):return reject("Alioth primary entry requires its supported location")
-	var ordinary: bool=loadout.get("campaign_cursor") in FlightStages.FREE and not load("res://src/content/free_flight_definitions.gd").flight(bindings,int(loadout.get("station_id",-1)),int(loadout.campaign_cursor)).is_empty()
-	if loadout.get("campaign_cursor") in FlightStages.FREE and loadout.campaign_cursor not in [21,24,28,33] and not ordinary:return reject("Ordinary primary entry requires its supported location")
-	if loadout.get("campaign_cursor") in [21,24,28,33] and not ordinary:
-		var cache_rules=load("res://src/simulation/flight_player_cache.gd")
-		var entry: Dictionary=cache_rules.ordinary_void_entry(bindings.mido_travel,int(loadout.get("ship_id",-1))) if loadout.campaign_cursor==33 else cache_rules.kappa_entry(bindings.mido_travel) if loadout.campaign_cursor==21 else cache_rules.sahi_entry(bindings.mido_travel,int(loadout.get("ship_id",-1)),int(loadout.campaign_cursor))
-		if entry.is_empty():return reject("Story primaries require their source entry declarations")
-		for key in ["ship_id","station_id","system_id"]:
-			if loadout.get(key)!=int(entry[key]):return reject("Story primary entry differs from its equipped location")
-	if loadout.get("campaign_cursor")==13 and not ContractLife.available(bindings):return reject("Contract primary contacts require supported lifecycle declarations")
+	# This component constructs catalogue equipment; it cannot authorize a
+	# journey. Gameplay passes the player prepared by the flight entry owner.
+	if loadout.has("campaign_cursor") and not preload("res://src/content/opening_definitions.gd").integer(loadout.campaign_cursor,0,2147483647):return reject("Invalid primary observation cursor")
 	return _configure_loadout(bindings,catalogues,mounts,loadout)
 
 ## Consume the player already prepared by the flight entry owner. This does

@@ -52,7 +52,7 @@ func after_convoy(frame: RefCounted,live: Node3D) -> void:
 	definitions.mido_travel=saved
 	var view:=StationView.select(definitions,98,15)
 	check(view.hangar_row==0 and view.camera.position==[1076,900,-2273] and view.light.ambient==[.25,.25,.25],"Alioth reused the Mido station camera or light")
-	check(StationView.select(definitions,98,13).is_empty(),"Alioth appeared at an unsupported story cursor")
+	check(StationView.select(definitions,98,13)==view,"The same imported hangar selected a different camera by campaign cursor")
 	for language in source.manifest.languages:
 		if not source.select_language(language):check(false,source.error);return
 		var localized:=AliothStation.new()

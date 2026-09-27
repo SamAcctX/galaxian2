@@ -59,12 +59,11 @@ func _resolve(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, cu
 	var station: Dictionary=catalogues.tables.stations[seed.station_id]
 	if seed.system_id==int(data.special_system_id) or not Numbers.integer(system.get("sky_index"),0,int(data.maximum_sky_index)):
 		return reject("This flight uses an unsupported system background")
-	var local_travel:=(not Travel.player_entry(bindings.mido_travel,int(seed.station_id),cursor).is_empty() or (cursor==16 and not Cache.alioth_entry(bindings.mido_travel).is_empty())) and Travel.location_supported(bindings.mido_travel,int(seed.station_id),int(seed.system_id),int(station.get("planet_type",-1)))
-	var sahi_entry:=Cache.post_sahi_entry(bindings.mido_travel,cursor,int(seed.get("ship_id",-1))) if cursor==26 else Cache.sahi_entry(bindings.mido_travel,int(seed.get("ship_id",-1)),cursor)
-	if cursor in [24,26,28] and not sahi_entry.is_empty() and seed.station_id==sahi_entry.station_id and seed.system_id==sahi_entry.system_id:local_travel=Numbers.integer(station.get("planet_type"),0,bindings.opening_sky.planet_resources.near_textures.size()-1)
-	if FreeFlight.Campaign.supported(bindings,cursor) and FreeFlight.available(bindings) and not FreeFlight.player_entry(bindings,int(seed.station_id),int(seed.get("ship_id",-1)),cursor).is_empty():local_travel=Numbers.integer(station.get("planet_type"),0,bindings.opening_sky.planet_resources.near_textures.size()-1)
-	if load("res://src/content/local_arrival_environment_definitions.gd").location_supported(bindings,catalogues,int(seed.station_id),cursor,mission_context):local_travel=true
-	if station.get("planet_type")!=int(data.supported_planet_type) and not local_travel:return reject("This flight uses an unsupported planet layout")
+	# Mission entry already chose the world. Resolve only its content layout;
+	# a camera/background loader must not re-admit the campaign cursor.
+	var local_travel:=Travel.location_supported(bindings.mido_travel,int(seed.station_id),int(seed.system_id),int(station.get("planet_type",-1))) or not FreeFlight.Worlds.catalogue_location(bindings,catalogues,int(seed.station_id)).is_empty()
+	if mission_context!=null and not mission_context.matches_location(bindings,seed):return reject("The admitted flight changed its environment location")
+	if not Numbers.integer(station.get("planet_type"),0,bindings.opening_sky.planet_resources.near_textures.size()-1) or (station.get("planet_type")!=int(data.supported_planet_type) and not local_travel):return reject("This flight uses an unsupported planet layout")
 	var index:=int(system.sky_index)
 	var sky: Dictionary=bindings.opening_sky
 	var result:=seed.duplicate(true)
@@ -94,12 +93,8 @@ func resolve_local_travel(bindings: RefCounted, catalogues: RefCounted, equipmen
 	if not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false):return reject("Local travel requires the drill exchange")
 	var seed: Dictionary=owned.loadout
 	var cursor: Variant=player_cache.get("campaign_cursor")
-	var ordinary: bool=FreeFlight.Campaign.supported(bindings,cursor) and FreeFlight.available(bindings) and not FreeFlight.player_entry(bindings,int(seed.station_id),int(seed.ship_id),cursor).is_empty()
-	var entry: Dictionary=Cache.sahi_entry(bindings.mido_travel,int(seed.ship_id),cursor) if cursor is int and cursor in [24,28] else {}
-	var sahi: bool=not entry.is_empty() and entry.station_id==seed.station_id and entry.system_id==seed.system_id
-	var admitted: bool=mission_context!=null
-	if admitted and (not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not mission_context.matches_loadout(seed) or mission_context.identity().campaign_cursor!=cursor):return reject("Mission location changed after admission")
-	if not cursor is int or (Travel.player_entry(bindings.mido_travel,int(seed.station_id),cursor).is_empty() and not (cursor==16 and seed.station_id==98 and not Cache.alioth_entry(bindings.mido_travel).is_empty()) and not ordinary and not sahi and not admitted):return reject("This local location has no supported player entry")
+	if not cursor is int or cursor<0:return reject("Local travel requires its initialized player cursor")
+	if mission_context!=null and (not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not mission_context.matches_loadout(seed) or mission_context.identity().campaign_cursor!=cursor):return reject("Mission location changed after admission")
 	if catalogues.content_id!=bindings.base_content_id or seed.base_content_id!=bindings.base_content_id or seed.binding_id!=bindings.binding_id or not Cache.matches(player_cache,seed,cursor):return reject("Local travel cache belongs to another equipped location")
 	if not Definitions.parameters(bindings.arrival_environment) or not SkyDefinitions.parameters(bindings.opening_sky) or not Planets.parameters(bindings.opening_sky.get("planet_resources",{})):return reject("Local travel requires the shared ordinary environment")
 	return _resolve(bindings,catalogues,seed,cursor,mission_context)

@@ -8,7 +8,6 @@ const Definitions=preload("res://src/content/player_destruction_definitions.gd")
 const Bindings=preload("res://src/content/resource_bindings.gd")
 const Resources=preload("res://src/content/npc_destruction_resources.gd")
 const Construction=preload("res://src/simulation/first_flight_construction.gd")
-const Ordinary=preload("res://src/content/ordinary_flight_definitions.gd")
 const Player=preload("res://src/simulation/opening_player_state.gd")
 const Flight=preload("res://src/simulation/npc_flight.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
@@ -16,8 +15,6 @@ const Vectors=preload("res://src/simulation/source_vectors.gd")
 const Vitals=preload("res://src/simulation/combat_vitals.gd")
 const Random=preload("res://src/simulation/seeded_random.gd")
 const Explosion=preload("res://src/simulation/type_zero_explosion.gd")
-const Training=preload("res://src/content/combat_training_story_definitions.gd")
-const Fitting=preload("res://src/content/ordinary_fitting_definitions.gd")
 var error:=""
 var _rules:={}
 var _state:={}
@@ -36,8 +33,8 @@ func configure_mission(bindings: RefCounted,resources: RefCounted,catalogues: Re
 		if effect.get(key)!=bindings.get(key):return reject("Mission destruction resources belong to another source")
 	var clock:=Explosion.create(effect,[],14292)
 	if clock.is_empty():return reject("Mission destruction lacks its original explosion clocks")
-	var recipe: Dictionary=context.recipe();var rules: Dictionary=bindings.player_destruction.duplicate(true)
-	rules.ship_id=context.ship_id();rules.departure_cursor=recipe.cursor;rules.story_cursors=[recipe.cursor,recipe.next_cursor]
+	var rules: Dictionary=bindings.player_destruction.duplicate(true)
+	rules.ship_id=context.ship_id();rules.departure_cursor=context.identity().campaign_cursor;rules.story_cursors=context.live_cursors()
 	_commit_configuration(bindings,rules,clock,player.snapshot(),player.loadout(),pose,camera_pose)
 	return true
 
@@ -70,63 +67,22 @@ func configure_selected40(bindings: RefCounted,resources: RefCounted,catalogues:
 
 func selected40_construction_owner() -> RefCounted:return _selected40_construction
 
-func configure(bindings: RefCounted, resources: RefCounted, construction: RefCounted,catalogues: RefCounted=null) -> bool:
+func configure(bindings: RefCounted, resources: RefCounted, construction: RefCounted,_catalogues: RefCounted=null) -> bool:
 	error=""
 	if not bindings is Bindings or not resources is Resources or not construction is Construction or not Definitions.parameters(bindings.player_destruction):return reject("Player destruction requires its verified Mac departure and effect resources")
-	var rules: Dictionary=bindings.player_destruction
+	var rules: Dictionary=bindings.player_destruction.duplicate(true)
 	var entry: Dictionary=construction.snapshot();var effect: Dictionary=resources.snapshot()
 	for key in ["base_content_id","binding_id"]:
 		if entry.get(key)!=bindings.get(key) or effect.get(key)!=bindings.get(key):return reject("Player destruction belongs to another content identity")
-	var context: RefCounted=construction.mission_context_owner()
-	if context!=null:
-		if not context.matches_loadout(entry.departure.loadout):return reject("Player equipment changed after mission entry")
-		var recipe: Dictionary=context.recipe()
-		rules=rules.duplicate(true);rules.ship_id=context.ship_id();rules.departure_cursor=recipe.cursor
-		rules.story_cursors=[recipe.cursor,recipe.next_cursor]
-		var mission_clock:=Explosion.create(effect,[],14292)
-		if mission_clock.is_empty():return reject("Player destruction lacks its explosion resources")
-		_commit_configuration(bindings,rules,mission_clock,entry.player,entry.departure.loadout,entry.player_pose,entry.camera_view.pose)
-		return true
-	var training: bool=entry.get("campaign_cursor")==7
-	var local_flight: bool=not training and construction.equipment_owner()!=null
-	var first_mining: bool=entry.get("campaign_cursor")==2
-	if first_mining:
-		var flight: Dictionary=Ordinary.for_departure(bindings,entry)
-		var objective: Dictionary=Ordinary.objective(bindings,2)
-		if flight.is_empty() or objective.is_empty() or construction.equipment_owner()!=null:return reject("First-mining destruction requires its accepted starter departure and objective")
-		rules=rules.duplicate(true)
-		rules.departure_cursor=int(flight.campaign_cursor)
-		rules.story_cursors=[int(flight.campaign_cursor),int(objective.cursor_after_acknowledgement)]
-	elif training:
-		if Training.flight(bindings).is_empty() or construction.equipment_owner()==null:return reject("Training destruction requires its equipped ordinary departure")
-		rules=rules.duplicate(true)
-		rules.departure_cursor=7;rules.story_cursors=[7,int(bindings.combat_training_story.cursor_after_acknowledgement)]
-	elif local_flight:
-		if Ordinary.for_departure(bindings,entry).is_empty() or construction.equipment_owner()==null:return reject("Local destruction requires its equipped Mido flight")
-		rules=rules.duplicate(true);rules.ship_id=int(entry.departure.loadout.ship_id);rules.departure_cursor=int(entry.campaign_cursor);rules.story_cursors=[entry.campaign_cursor,17 if entry.campaign_cursor==16 else entry.campaign_cursor]
-		var campaign=load("res://src/content/free_campaign_definitions.gd")
-		if campaign.visit_at(bindings.mido_travel,entry.campaign_cursor,entry.location.station_id):
-			var visit: Dictionary=campaign.dialogue_rules(bindings,entry.campaign_cursor,entry.departure.mission)
-			rules.story_cursors.append(int(visit.next_cursor))
-		if Ordinary.Kappa.prepared_entry(bindings,entry):rules.story_cursors.append(22)
-	if entry.get("campaign_cursor")!=int(rules.departure_cursor) or entry.get("departure",{}).get("loadout",{}).get("ship_id")!=int(rules.ship_id):return reject("Unsupported player destruction context")
+	var context: RefCounted=construction.flight_context_owner()
+	if context==null or not context.matches_loadout(entry.departure.loadout) or not context.matches_location(bindings,entry.location):return reject("Player destruction lost its admitted flight")
+	rules.ship_id=context.ship_id();rules.departure_cursor=context.identity().campaign_cursor;rules.story_cursors=context.live_cursors()
 	var clock:=Explosion.create(effect,[],14292)
 	if clock.is_empty():return reject("Player destruction lacks its authored explosion clocks")
 	for index in 2:
 		if clock.models[index].get("model_id")!=int(rules.model_ids[index]) or clock.models[index].get("resource")!=Resources.PATHS[index]:return reject("Player destruction changed its explosion model bindings")
 	var initial: Dictionary=entry.get("player",{})
-	var expected_equipment: Array=construction.equipment_owner().snapshot().loadout.equipment_ids if training or local_flight else [90,81]
-	if initial.get("ship_id")!=int(rules.ship_id) or initial.get("equipment_ids")!=expected_equipment:return reject("Player destruction requires its retained starter loadout")
-	# The native tutorial inventory can only contain these source offers and
-	# retained drill/scanner. None supplies the escape-pod subtype27.
-	if training and not expected_equipment.all(func(id):return id in [0,22,55,81,90]):return reject("Training destruction has an unsupported escape-device context")
-	if local_flight:
-		if Fitting.available(bindings) and catalogues!=null:
-			if catalogues.content_id!=bindings.base_content_id:return reject("Destruction equipment belongs to another catalogue")
-			for id in expected_equipment:
-				if not Numbers.integer(id,0,catalogues.tables.items.size()-1) or catalogues.tables.items[id].arrays[2][5]==27:return reject("Escape-device destruction is not yet supported")
-		# Either tutorial starter gun may remain mounted beside the exchanged gear.
-		elif expected_equipment not in [[22,86,81,55],[0,86,81,55]]:return reject("Local destruction has an unsupported escape-device context")
+	if initial.get("campaign_cursor")!=int(rules.departure_cursor) or initial.get("ship_id")!=context.ship_id() or initial.get("equipment_ids")!=entry.departure.loadout.equipment_ids:return reject("Player destruction requires its admitted player")
 	_commit_configuration(bindings,rules,clock,initial,entry.departure.loadout,entry.player_pose,entry.camera_view.pose)
 	return true
 

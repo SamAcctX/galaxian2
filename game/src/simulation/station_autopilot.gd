@@ -6,7 +6,6 @@ var _max_ms:=0
 ## frame/input ordering and checks arrival.
 ## The logical camera target stays separate from the visible banked ship.
 const Definitions=preload("res://src/content/station_autopilot_definitions.gd")
-const OrdinaryFlight=preload("res://src/content/ordinary_flight_definitions.gd")
 const Construction=preload("res://src/simulation/first_flight_construction.gd")
 const Station=preload("res://src/content/station_exterior_resources.gd")
 const Vehicle=preload("res://src/simulation/vehicle_response.gd")
@@ -33,16 +32,17 @@ func configure(bindings: RefCounted, catalogues: RefCounted, construction: RefCo
 	error=""
 	if bindings==null or catalogues==null or construction==null or construction.get_script()!=Construction or not Definitions.parameters(bindings.station_autopilot):return reject("This flight has no supported station autopilot")
 	var entry: Dictionary=construction.snapshot()
-	var ordinary_void:=OrdinaryFlight.Authored.prepared_ordinary_void(bindings,entry)
-	var void_world: bool=(ordinary_void or (entry.get("campaign_cursor") in [25,29] and OrdinaryFlight.Authored.prepared_entry(bindings,entry))) and construction.void_environment_owner()!=null
+	var context: RefCounted=construction.flight_context_owner()
+	if context==null or not context.matches_location(bindings,entry.get("location",{})) or not context.matches_loadout(entry.departure.loadout):return reject("Station guidance lost its admitted flight")
+	var void_world: bool=context.has_feature("void_environment")
+	if void_world and construction.void_environment_owner()==null:return reject("Void guidance requires its constructed environment")
 	if not void_world and (station==null or station.get_script()!=Station):return reject("This flight requires its actual station exterior")
 	var target: Dictionary={} if void_world else station.snapshot()
 	for data in ([entry] if void_world else [entry,target]):
 		if data.get("base_content_id")!=bindings.base_content_id or data.get("binding_id")!=bindings.binding_id:return reject("Station autopilot belongs to another flight identity")
-	var rules: Dictionary=bindings.station_autopilot
-	if not OrdinaryFlight.for_departure(bindings,entry).is_empty():
-		rules=rules.duplicate(true);rules.station_id=int(entry.location.station_id);rules.system_id=int(entry.location.system_id)
-	if OrdinaryFlight.for_departure(bindings,entry).is_empty() or entry.get("location",{}).get("station_id")!=int(rules.station_id) or entry.location.get("system_id")!=int(rules.system_id) or (not void_world and (target.get("station_id")!=int(rules.station_id) or target.get("system_id")!=int(rules.system_id))):return reject("Station autopilot requires the supported mining location")
+	var rules: Dictionary=bindings.station_autopilot.duplicate(true)
+	rules.station_id=int(entry.location.station_id);rules.system_id=int(entry.location.system_id)
+	if not void_world and (not context.has_feature("station") or not context.matches_location(bindings,target)):return reject("Station guidance requires its admitted exterior")
 	var destination:=Vector3.ZERO if void_world else Vector3(rules.target_position[0],rules.target_position[1],rules.target_position[2])
 	if not void_world and (not target.get("pose") is Transform3D or target.pose.origin!=destination):return reject("Station autopilot target differs from its authored position")
 	var vehicle:=Vehicle.new()

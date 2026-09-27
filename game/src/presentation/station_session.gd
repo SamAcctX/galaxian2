@@ -106,11 +106,10 @@ func configure_saved(library: RefCounted,bindings: RefCounted,visuals: RefCounte
 func _build_scene(library: RefCounted, bindings: RefCounted, visuals: RefCounted, cat: RefCounted, now_microseconds: int, camera_seed: int) -> bool:
 	_bindings=bindings;_catalogues=cat;_library=library;_visuals=visuals
 	var seed: Dictionary=_world.snapshot().loadout
-	var view:=Definitions.select(bindings,int(seed.station_id),int(_world.snapshot().campaign_cursor),_world.mission_station_context_owner())
-	if view.is_empty():return fail("This station has no supported presentation")
 	var selected: Dictionary=bindings.resolve_hangar(int(seed.station_id),cat)
 	if selected.is_empty():return fail(bindings.error)
-	if selected.row!=view.hangar_row:return fail("Station camera belongs to another hangar")
+	var view:=Definitions.ordinary_view(bindings.station_presentation,int(selected.station_id),int(selected.row))
+	if view.is_empty():return fail("This station has no supported presentation")
 	selected.ship=bindings.resolve_hangar_ship(int(seed.ship_id))
 	if selected.ship.is_empty():return fail(bindings.error)
 	geometry=Geometry.new();add_child(geometry)

@@ -10,12 +10,53 @@ var _loadout:={}
 var _normal_return: RefCounted
 var _normal_progress:={}
 var _contract_context:={}
+var _legacy_flight:={}
+var _live_cursors: Array=[]
+
+## Older mission owners still select their authored entry and run their own
+## objectives. Admit that selected flight here without creating a runner recipe.
+func admit_legacy(bindings: RefCounted,catalogues: RefCounted,flight: Dictionary,loadout: Dictionary) -> bool:
+	error=""
+	if not _identity.is_empty():return reject("A flight context is admitted only once")
+	if bindings==null or flight.is_empty():return reject("Flight entry requires its selected world declarations")
+	var source_cursor: Variant=flight.get("campaign_cursor")
+	if not (source_cursor is int or source_cursor is float) or not is_finite(source_cursor) or source_cursor<0 or source_cursor>2147483647 or source_cursor!=int(source_cursor):return reject("Flight entry requires its selected campaign cursor")
+	for key in ["station_id","system_id"]:
+		if loadout.get(key)!=flight.get(key):return reject("Flight entry and equipped location disagree")
+	if loadout.has("campaign_cursor") and loadout.campaign_cursor!=flight.campaign_cursor:return reject("Flight entry changed its player cursor")
+	if not _accept_equipment(bindings,catalogues,loadout):return false
+	var ordinary=load("res://src/content/ordinary_flight_definitions.gd")
+	var cursor:=int(source_cursor)
+	var cursors: Array=[cursor]
+	var objective: Dictionary=ordinary.objective(bindings,cursor)
+	if int(objective.get("cursor_after_acknowledgement",cursor))>cursor:cursors.append(int(objective.cursor_after_acknowledgement))
+	var campaign=load("res://src/content/free_campaign_definitions.gd")
+	if campaign.visit_at(bindings.mido_travel,cursor,int(loadout.station_id)):
+		var visit: Dictionary=campaign.dialogue_rules(bindings,cursor,campaign.mission(bindings,cursor))
+		if visit.has("next_cursor"):cursors.append(int(visit.next_cursor))
+	_legacy_flight=flight.duplicate(true);_live_cursors=cursors
+	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":cursor}
+	_loadout=loadout.duplicate(true)
+	return true
+
+func _accept_equipment(bindings: RefCounted,catalogues: RefCounted,loadout: Dictionary) -> bool:
+	var slots:=Slots.checked_slots(bindings,catalogues,loadout)
+	if slots.is_empty():return reject("Flight entry requires valid installed equipment")
+	for id in slots.equipment_ids:
+		if int(catalogues.tables.items[id].arrays[2][5])==27:return reject("Escape-device flight is not supported yet")
+	return true
+
+func live_cursors() -> Array:
+	return _live_cursors.duplicate() if not _legacy_flight.is_empty() else ([_recipe.cursor,_recipe.next_cursor] if not _recipe.is_empty() else [])
+
+func matches_location(bindings: RefCounted,location: Dictionary) -> bool:
+	return bindings!=null and not _identity.is_empty() and _identity.base_content_id==bindings.base_content_id and _identity.binding_id==bindings.binding_id and location.get("station_id")==_loadout.station_id and location.get("system_id")==_loadout.system_id
 
 ## A retained career and inventory authorize a generated side job once. Other
 ## owners receive this capability with the cast, never a caller-authored recipe.
 func admit_contract(bindings: RefCounted,catalogues: RefCounted,contracts: RefCounted,equipment: RefCounted) -> bool:
 	error=""
-	if not _recipe.is_empty():return reject("A mission context is admitted only once")
+	if not _identity.is_empty():return reject("A mission context is admitted only once")
 	if not is_instance_of(contracts,load("res://src/simulation/contract_session.gd")) or not is_instance_of(equipment,load("res://src/simulation/station_equipment.gd")):return reject("Contract entry requires its retained career and inventory")
 	if bindings==null or catalogues==null or catalogues.content_id!=bindings.base_content_id or not load("res://src/content/early_contract_definitions.gd").encounter_parameters(bindings.early_contracts):return reject("Contract entry requires matching original declarations")
 	var owned: Dictionary=equipment.snapshot()
@@ -31,7 +72,7 @@ func admit_contract(bindings: RefCounted,catalogues: RefCounted,contracts: RefCo
 	var mission: Dictionary=context.mission
 	if mission.is_empty() or mission.get("story")!=false or not rules.kinds.any(func(value):return int(value)==int(mission.get("kind",-1))) or not rules.mission_difficulties.any(func(value):return int(value)==int(mission.get("difficulty",-1))):return reject("This active contract has no complete cast recipe")
 	if int(mission.kind)==12 and (context.client_faction not in [0,1,2,3] or context.contact_name.is_empty()):return reject("The contest lost its generated rival")
-	if Slots.checked_slots(bindings,catalogues,loadout).is_empty():return reject("Contract entry requires valid installed equipment")
+	if not _accept_equipment(bindings,catalogues,loadout):return false
 	_recipe=Recipe.from_contract(bindings,context,loadout)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":context.campaign_cursor}
 	_loadout=loadout.duplicate(true);_contract_context=context.duplicate(true)
@@ -50,7 +91,7 @@ func matches_contract_population(bindings: RefCounted,packet: Dictionary) -> boo
 ## a caller-supplied location. The generic mission/free-flight entries stay shut.
 func admit_normal_return(bindings: RefCounted,catalogues: RefCounted,transfer: RefCounted) -> bool:
 	error=""
-	if not _recipe.is_empty():return reject("A mission context is admitted only once")
+	if not _identity.is_empty():return reject("A mission context is admitted only once")
 	if not is_instance_of(transfer,load("res://src/simulation/mission_portal_return.gd")) or transfer.snapshot().is_empty():return reject("Normal space requires its completed native mission return")
 	var retained: Dictionary=transfer.snapshot()
 	var recipe:=Recipe.select(bindings,retained.campaign_cursor)
@@ -107,7 +148,7 @@ static func normal_population_matches(bindings: RefCounted,context: Variant,capa
 
 func admit(bindings: RefCounted,catalogues: RefCounted,context: Dictionary,loadout: Dictionary) -> bool:
 	error=""
-	if not _recipe.is_empty():return reject("A mission context is admitted only once")
+	if not _identity.is_empty():return reject("A mission context is admitted only once")
 	var recipe:=Recipe.select(bindings,context.get("campaign_cursor"))
 	if recipe.is_empty():return reject("No complete recipe supports this mission")
 	if recipe.entry=="retained_world":return reject("This mission must continue its acknowledged living world")
@@ -118,10 +159,7 @@ func admit(bindings: RefCounted,catalogues: RefCounted,context: Dictionary,loado
 		if context.get(key)!=recipe[key] or loadout.get(key)!=recipe[key]:return reject("Mission entry and equipped location disagree")
 	if context.get("mission_kind")!=recipe.mission.kind or context.get("mission_story")!=true:return reject("The authored mission is not selected")
 	if context.get("mission_completed")!=false or context.get("mission_failed",false)!=false:return reject("A completed mission cannot be entered again")
-	var slots:=Slots.checked_slots(bindings,catalogues,loadout)
-	if slots.is_empty():return reject("Mission entry requires valid installed equipment")
-	for id in slots.equipment_ids:
-		if int(catalogues.tables.items[id].arrays[2][5])==27:return reject("Escape-device flight is not supported yet")
+	if not _accept_equipment(bindings,catalogues,loadout):return false
 	_recipe=recipe
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":recipe.cursor}
 	_loadout=loadout.duplicate(true)
@@ -156,15 +194,19 @@ func radio_observation(condition_clock: int,facts: Dictionary={}) -> Dictionary:
 	var observation:=facts.duplicate(true)
 	observation.merge(_identity,true);observation.condition_clock=condition_clock
 	return observation
-func has_feature(name: String) -> bool:return not _recipe.is_empty() and _recipe.world.get(name,false)
+func has_feature(name: String) -> bool:
+	if not _legacy_flight.is_empty():
+		if name=="station":return int(_legacy_flight.station_id)>=0
+		if name=="void_environment":return int(_legacy_flight.station_id)<0
+	return not _recipe.is_empty() and _recipe.world.get(name,false)
 func ship_id() -> int:return int(_loadout.get("ship_id",-1))
 func matches_factory(player_ship_id: int,equipment_ids: Array) -> bool:
 	return not _recipe.is_empty() and player_ship_id==ship_id() and equipment_ids==_loadout.get("equipment_ids",[])
 func matches_loadout(loadout: Dictionary) -> bool:
-	if _recipe.is_empty():return false
+	if _identity.is_empty():return false
 	for key in ["base_content_id","binding_id","station_id","system_id","ship_id","equipment_ids","slots"]:
 		if loadout.get(key)!=_loadout.get(key):return false
-	return not loadout.has("campaign_cursor") or loadout.campaign_cursor==_recipe.cursor
+	return not loadout.has("campaign_cursor") or loadout.campaign_cursor==_identity.campaign_cursor
 
 func matches_source(bindings: RefCounted,departure: Dictionary) -> bool:
 	if _recipe.is_empty():return false

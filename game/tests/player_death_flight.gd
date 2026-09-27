@@ -286,6 +286,9 @@ func verify_render(args: PackedStringArray, lib: RefCounted, bindings: RefCounte
 	scene.game_over.set_active(false)
 	check(not scene.game_over.handle_event(enter) and clicks.is_empty(),"Inactive scene accepted game-over continuation")
 	scene.game_over.set_active(true)
+	enter.pressed=false
+	check(not scene.game_over.handle_event(enter),"Releasing the inactive acknowledgement continued the game")
+	enter.pressed=true
 	check(scene.game_over.handle_event(enter) and clicks.size()==1 and captures.game_over.prepare_game_over().is_empty(),"Game-over display failed to emit intent or mutated flight state")
 	scene.set_mobile_layout(true)
 	check(scene.game_over.snapshot().composition_scale==1.0 and scene.game_over.snapshot().text_id==188,"Flight scene lost the mobile game-over layout")

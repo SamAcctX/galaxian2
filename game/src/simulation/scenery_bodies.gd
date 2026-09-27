@@ -1,5 +1,4 @@
 extends RefCounted
-const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Intact source scenery bodies and ordinary weapon damage. Zero hull is an
 ## explicit boundary: effect playback, destruction accounting and mining are
 ## separate owners and are not completed or rewarded by this component.
@@ -9,15 +8,12 @@ const HitDefinitions = preload("res://src/content/ordinary_hit_definitions.gd")
 const WeaponHit = preload("res://src/simulation/ordinary_weapon_hit.gd")
 const Vitals = preload("res://src/simulation/combat_vitals.gd")
 const TrainingWeapons=preload("res://src/content/combat_training_weapon_definitions.gd")
-const Travel=preload("res://src/content/mido_travel_definitions.gd")
-const Convoy=preload("res://src/content/convoy_world_definitions.gd")
-const Alioth=preload("res://src/content/alioth_population_definitions.gd")
 var error := ""
 var _identity := {}
 var _hit_policy := {}
 var _rows := []
 var _vitals := []
-var _primary_cursors:=[]
+var _dispersed_primary:=false
 var _read_snapshot:={}
 
 func configure(bindings: RefCounted, field: Dictionary, resources: RefCounted) -> bool:
@@ -72,18 +68,7 @@ func configure(bindings: RefCounted, field: Dictionary, resources: RefCounted) -
 	_identity={"base_content_id":source.base_content_id,"binding_id":source.binding_id}
 	_hit_policy=policy.duplicate(true)
 	_rows=rows;_vitals=pools
-	if TrainingWeapons.parameters(bindings.combat_training_weapons):
-		_primary_cursors.append(7)
-		if Travel.parameters(bindings.mido_travel):
-			_primary_cursors.append(10)
-			for cursor in [11,12]:
-				if not Travel.journey(bindings.mido_travel,cursor).is_empty():_primary_cursors.append(cursor)
-			if bindings.early_contracts.has("world_initialization") and Travel.navigation_available(bindings.mido_travel,13):_primary_cursors.append(13)
-			if not Convoy.flight(bindings,79).is_empty():_primary_cursors.append(14)
-			if not Alioth.flight(bindings,98).is_empty():_primary_cursors.append(16)
-			for cursor in FlightStages.FREE:
-				if load("res://src/content/free_flight_definitions.gd").available(bindings) and load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor):_primary_cursors.append(cursor)
-			if load("res://src/content/kappa_lifecycle_definitions.gd").available(bindings):_primary_cursors.append(21)
+	_dispersed_primary=TrainingWeapons.parameters(bindings.combat_training_weapons)
 	return true
 
 func snapshot() -> Dictionary:
@@ -115,7 +100,7 @@ func collision_context(object_index: Variant) -> Dictionary:
 
 func supports_weapon_hit(weapon: Variant) -> bool:
 	var kinds:=[0]
-	if weapon is Dictionary and weapon.get("campaign_cursor") in _primary_cursors and TrainingWeapons.dispersed_primary(weapon):kinds.append(2)
+	if _dispersed_primary and TrainingWeapons.dispersed_primary(weapon):kinds.append(2)
 	if weapon is Dictionary and preload("res://src/content/ordinary_fitting_definitions.gd").ordinary(weapon):kinds=[0,1,2]
 	error=WeaponHit.validate(weapon,_identity,_hit_policy,kinds)
 	return error.is_empty()
@@ -197,7 +182,7 @@ func has_pending_destruction() -> bool:
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted = get_script().new()
 	copy._identity=_identity;copy._hit_policy=_hit_policy
-	copy._primary_cursors=_primary_cursors.duplicate()
+	copy._dispersed_primary=_dispersed_primary
 	# Each mutation above detaches only the touched row/pool. Empty projectile
 	# passes no longer reconstruct every asteroid's unchanged combat state.
 	copy._rows=_rows.duplicate();copy._vitals=_vitals.duplicate();copy._read_snapshot=_read_snapshot
@@ -212,7 +197,7 @@ func mining_snapshot() -> Dictionary:
 func clear() -> void:
 	_read_snapshot={}
 	error="";_identity={};_hit_policy={};_rows=[];_vitals=[]
-	_primary_cursors=[]
+	_dispersed_primary=false
 
 func valid_index(index: Variant) -> bool:
 	return index is int and index>=0 and index<_rows.size()

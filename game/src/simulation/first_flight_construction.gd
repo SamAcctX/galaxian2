@@ -693,6 +693,11 @@ func _prepare_environment(bindings: RefCounted,data: Dictionary,environment_seco
 		"position":environment_position,"void_environment":void_environment}
 
 func _construct(bindings: RefCounted, catalogues: RefCounted, packet: Dictionary, data: Dictionary, player: RefCounted, context: Dictionary, environment_seconds: Variant, unix_seconds: Variant, large_display: bool, body_resources: RefCounted, effect_resources: RefCounted, equipment: RefCounted,contracts: RefCounted=null,prepared_scenery: RefCounted=null,incoming: RefCounted=null,environment: Dictionary={},mission_context: RefCounted=null) -> bool:
+	var capability: RefCounted=mission_context
+	if capability==null:
+		capability=MissionContext.new()
+		if not capability.admit_legacy(bindings,catalogues,data,player.loadout()):return reject(capability.error)
+	if not capability.matches_location(bindings,context) or not capability.matches_loadout(packet.get("loadout",{})):return reject("Flight entry lost its admitted location or equipment")
 	var training: bool=int(data.campaign_cursor)==7
 	var local_entry: bool=int(data.campaign_cursor) in [10,11,12]
 	var normal: bool=MissionContext.normal_population_matches(bindings,packet.get("free_context"),mission_context)
@@ -773,6 +778,7 @@ func _construct(bindings: RefCounted, catalogues: RefCounted, packet: Dictionary
 	elif int(data.campaign_cursor)==26:
 		state.pending_station_id=int(context.station_id);state.pending_system_id=int(context.system_id)
 	# Commit only after every prospective owner accepts the complete entry.
+	state.flight_context=capability
 	_state=state;_scenery=scenery;_camera=camera;_player=player;_void_environment=void_environment;_ordinary_void_source=null
 	_equipment=equipment.fork() if equipment!=null else null
 	_contracts=contracts.fork() if contracts!=null else null
@@ -838,6 +844,7 @@ func snapshot() -> Dictionary:
 	if _state.is_empty():return {}
 	var result:=_state.duplicate(true)
 	result.erase("mission_context")
+	result.erase("flight_context")
 	result.scenery=_scenery.snapshot();result.camera_view=_camera.snapshot();result.player=_player.snapshot()
 	return result
 
@@ -847,6 +854,7 @@ func player_owner() -> RefCounted:return null if _player==null else _player.fork
 func equipment_owner() -> RefCounted:return null if _equipment==null else _equipment.fork()
 func contract_owner() -> RefCounted:return null if _contracts==null else _contracts.fork()
 func mission_context_owner() -> RefCounted:return _state.get("mission_context")
+func flight_context_owner() -> RefCounted:return _state.get("mission_context",_state.get("flight_context"))
 func selected_locations_owner() -> RefCounted:return null if _selected_locations==null else _selected_locations.fork()
 func void_environment_owner() -> RefCounted:return null if _void_environment==null else _void_environment.fork()
 func ordinary_void_source_owner() -> RefCounted:return null if _ordinary_void_source==null else _ordinary_void_source.fork()

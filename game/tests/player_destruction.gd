@@ -55,6 +55,7 @@ func verify(args: PackedStringArray):
 	var packet: Dictionary=fixture.packet_fixture(bindings,cat,3);fixture.free()
 	if not construction.prepare(bindings,cat,packet,4096,1789100000) or not resources.configure(lib,bindings):check(false,construction.error+resources.error);return
 	reference=construction.snapshot();player=construction.player_owner()
+	verify_admission()
 	# Only this detached player's hull is exhausted. The station cache, cargo,
 	# source loadout, earned progress and resource declarations remain unchanged.
 	player._state.vitals.hull=0
@@ -64,6 +65,33 @@ func verify(args: PackedStringArray):
 	check(construction.snapshot()==reference,"Destruction modified its prepared departure or earned progress")
 	check(player.snapshot().vitals.hull==0 and player.snapshot().gamma==100,"Destruction healed or reset the external player")
 	if failures==0:await verify_geometry(args)
+
+func verify_admission() -> void:
+	var context: RefCounted=construction.flight_context_owner()
+	check(context!=null and context.matches_loadout(player.loadout()),"Departure did not retain its admitted equipment")
+	if context==null:return
+	var changed: Dictionary=player.loadout()
+	changed.station_id+=1
+	check(not context.matches_loadout(changed),"The flight capability admitted equipment from another station")
+	var rules: Dictionary=preload("res://src/content/ordinary_flight_definitions.gd").for_departure(bindings,reference)
+	var trial:=preload("res://src/simulation/mission_context.gd").new()
+	check(not trial.admit_legacy(bindings,cat,rules,changed) and trial.identity().is_empty(),"A mismatched departure left a partially admitted flight")
+	# An installed escape device needs a different death transition. Reject it
+	# before flight starts, rather than discovering that during lethal contact.
+	changed=player.loadout()
+	for id in cat.tables.items.size():
+		var item: Dictionary=cat.tables.items[id]
+		if int(item.arrays[2][5])!=27:continue
+		for slot in changed.slots:
+			if slot!=null and slot.category==int(item.arrays[2][3]):
+				slot.item_id=id
+				changed.equipment_ids=[]
+				for mounted in changed.slots:
+					if mounted!=null:changed.equipment_ids.append(mounted.item_id)
+				check(not trial.admit_legacy(bindings,cat,rules,changed) and trial.error.contains("Escape-device") and trial.identity().is_empty(),"Unsupported escape equipment was admitted into an ordinary flight")
+				check(not context.admit_legacy(bindings,cat,rules,changed) and context.matches_loadout(player.loadout()),"Readmission replaced the accepted flight equipment")
+				return
+	check(false,"The source catalogue did not exercise escape-device admission")
 
 func started(cursor:=5) -> RefCounted:
 	var death:=Death.new()
