@@ -9,32 +9,39 @@ var combat_pilot:=CombatPilot.new()
 var pending_emp:=false
 var void_route_history:={}
 
-func verify_free_application() -> void:
+## Shared earned prefix for success and loss cases; no staged Void world.
+func enter_earned_ambush() -> Dictionary:
 	var input_path:=OS.get_environment("GOF2_SOURCE_SAVE")
 	var original: Dictionary=app.session.station_owner().snapshot()
 	check(FileAccess.get_sha256(input_path)==OS.get_environment("GOF2_SOURCE_SAVE_SHA256") and definitions.binding_id==SOURCE_BINDING,"Use the exact earned Néhma40 checkpoint")
 	check(original.campaign_cursor==40 and original.loadout.station_id==30 and original.loadout.system_id==2,"Resume the acknowledged Néhma40 station")
-	if failures:return
+	if failures:return {}
 	chapter_directory=OS.get_environment("GOF2_SAVE_TEST_DIRECTORY")
 	check(not chapter_directory.is_empty() and FreePlayCheckpoint.private_path(chapter_directory+"/save.bin"),"Use isolated Void ambush output")
-	if failures:return
+	if failures:return {}
 	_world_clock_base=1789105600
 	retained_job=original.contracts.mission.duplicate(true);route_credits=int(original.contracts.credits)
 	app.enable_saves(chapter_directory)
 	app.show();app.present_session();await process_frame;resume_application_focus()
 	await capture_free_application("void41-nehma40-source")
-	if not await depart_onward():return
+	if not await depart_onward():return {}
 	# Every station launch restores the equipped ship, including this one.
 	check(app.session.snapshot().player.vitals.armor==110,"The Néhma launch kept arrival damage instead of the station launch reset")
-	if not await enter_mission40_gate():return
-	if not retain_navigation_history(original.station_response_flags):return
+	if not await enter_mission40_gate():return {}
+	if not retain_navigation_history(original.station_response_flags):return {}
 	await capture_free_application("void41-selected40-arrival")
-	if not await fly_mission40_to_portal():return
+	if not await fly_mission40_to_portal():return {}
 	await capture_free_application("void41-m40-portal-contact")
-	if not app.enter_mission_portal(now_us,flight_world_seconds(),flight_world_seconds()):check(false,app.status.text);return
+	if not app.enter_mission_portal(now_us,flight_world_seconds(),flight_world_seconds()):check(false,app.status.text);return {}
 	var ambush: Dictionary=app.session.snapshot()
 	check(ambush.campaign_cursor==41 and ambush.encounter.combat.actors.size()==8 and ambush.player.vitals.hull>0,"The portal did not enter the eight-actor Void ambush with the surviving ship")
 	await capture_free_application("void41-arrival")
+	return original if not failures else {}
+
+func verify_free_application() -> void:
+	var original:=await enter_earned_ambush()
+	if original.is_empty():return
+	var input_path:=OS.get_environment("GOF2_SOURCE_SAVE")
 	if failures or not await fly_mission41():return
 	# Final result Next advances the career once to 42 in the SAME Void world;
 	# the freighter kill, portal escape and Thynome docking follow (mission 42).
