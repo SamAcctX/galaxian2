@@ -431,7 +431,7 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 		# A retained delivery does not lock unrelated equipment. Its actual
 		# passengers must reach the shared occupied-berth guard; never assume
 		# an empty ship or discard the accepted mission to permit fitting.
-		if not _state.mission.is_empty() and not OrdinaryContracts.delivery_mission(bindings,_state.mission):return _shopping_reject("Fitting for this active contract is not yet supported")
+		if not _state.mission.is_empty() and not OrdinaryContracts.retained_mission(bindings,_state.mission,int(_state.campaign_cursor)):return _shopping_reject("Fitting for this active contract is not yet supported")
 		var passengers: Variant=_state.get("passengers")
 		var expected_passengers: Variant=0
 		if not _state.mission.is_empty() and int(_state.mission.kind)==int(_rules.passenger.kind):expected_passengers=_state.mission.get("quantity")
@@ -662,7 +662,7 @@ static func acceptance_supported(rules: Dictionary,cursor: int,quote: Dictionary
 	# Quotation coverage can grow before the corresponding flight/objective
 	# owners. Retained earlier contacts do not grant post-unlock acceptance.
 	if OrdinaryContracts.available(bindings) and Campaign.supported(bindings,cursor):
-		return rules==bindings.early_contracts and Numbers.integer(quote.get("context",{}).get("campaign_cursor"),Definitions.first_generation_cursor(rules),cursor) and OrdinaryContracts.delivery_mission(bindings,quote.get("mission"))
+		return rules==bindings.early_contracts and Numbers.integer(quote.get("context",{}).get("campaign_cursor"),Definitions.first_generation_cursor(rules),cursor) and OrdinaryContracts.retained_mission(bindings,quote.get("mission"),cursor)
 	return not rules.is_empty() and Numbers.integer(cursor,Definitions.first_generation_cursor(rules),int(rules.last_cursor)) and Numbers.integer(quote.get("context",{}).get("campaign_cursor"),Definitions.first_generation_cursor(rules),int(rules.last_cursor)) and quote.get("choices",{}).has("kind_index")
 
 func accept(offer_id: int,equipment: RefCounted,replace_current: bool=false,bindings: RefCounted=null) -> RefCounted:
@@ -713,7 +713,7 @@ func accept(offer_id: int,equipment: RefCounted,replace_current: bool=false,bind
 func active_mission_for(station_id: int,bindings: RefCounted=null) -> Dictionary:
 	# The active world mission and the retained side slot are different things.
 	# Passenger delivery is handled by the station even at its destination.
-	var ordinary: bool=OrdinaryContracts.delivery_mission(bindings,_state.get("mission")) and Campaign.supported(bindings,_state.get("campaign_cursor"))
+	var ordinary: bool=OrdinaryContracts.retained_mission(bindings,_state.get("mission"),int(_state.campaign_cursor)) and Campaign.supported(bindings,_state.get("campaign_cursor"))
 	if not _rules.has("delivery_results") or (station_id not in _stations and not ordinary) or _state.mission.is_empty() or not _state.pending_result.is_empty():return {}
 	var mission: Dictionary=_state.mission
 	if mission.station_id!=station_id or _rules.delivery_results.active_flight_excluded_kinds.any(func(value):return int(value)==int(mission.kind)):return {}
@@ -763,7 +763,7 @@ func retained_station_context(bindings: RefCounted,station_id: int) -> Dictionar
 	if not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the retained flight or result before ordinary departure")
 	var side: Dictionary=_state.get("mission",{})
 	if not side.is_empty():
-		if not OrdinaryContracts.delivery_mission(bindings,side):return fail("This accepted side mission has no supported ordinary flight")
+		if not OrdinaryContracts.retained_mission(bindings,side,int(_state.campaign_cursor)):return fail("This accepted side mission has no supported ordinary flight")
 		var contact: Dictionary=_state.get("accepted_contact",{})
 		if contact.get("offer_id")!=_state.active_offer_id or contact.get("offer",{}).get("mission")!=side:return fail("The ordinary side mission lost its accepted contact")
 		var selected:=_selected_contract_context(station_id,bindings)
@@ -851,14 +851,14 @@ func _acknowledge_delivery_inventory(equipment: RefCounted,owned: Dictionary) ->
 	_state=next;_result_inventory={}
 	return inventory
 
-func bind_flight(controller: RefCounted) -> bool:
+func bind_flight(controller: RefCounted,bindings: RefCounted=null) -> bool:
 	error=""
 	if not _flight.is_empty() or not FlightResults.parameters(_rules.get("flight_results")) or not is_instance_of(controller,load("res://src/simulation/combat_training_control.gd")):return reject("This contract session cannot bind a new flight")
 	var scene: Dictionary=controller.snapshot()
 	var clock: Dictionary=scene.get("contract_result",{})
 	var encounter: Dictionary=scene.get("combat",{}).get("contract_encounter",{})
 	if clock.is_empty() or clock.elapsed_ms!=0 or clock.mode!=0 or clock.retired or not scene.has("accounting"):return reject("Bind the prepared flight before its first actor update")
-	var context:=flight_context(int(encounter.get("context",{}).get("station_id",-1)))
+	var context:=flight_context(int(encounter.get("context",{}).get("station_id",-1)),bindings)
 	var supported: bool=not context.is_empty() and (_rules.flight_results.ship_kinds.any(func(value):return int(value)==int(context.mission.get("kind",-1))) or (Junk.parameters(_rules.get("junk_lifecycle")) and context.mission.kind==7))
 	if not supported or context!=encounter.get("context"):return reject("This flight does not belong to the accepted contract")
 	if not scene.accounting.events.is_empty() or not scene.combat.reputation.events.is_empty() or not scene.combat.get("contract_settlement",{}).is_empty():return reject("A new flight cannot adopt unrecorded combat results")
@@ -874,7 +874,7 @@ func bind_world(controller: RefCounted,context: Dictionary,bindings: RefCounted=
 	var expected:=free_flight_context(bindings,int(context.get("station_id",-1))) if bindings!=null and Campaign.supported(bindings,context.get("campaign_cursor")) else flight_context(int(context.get("station_id",-1)))
 	if expected.is_empty() or context!=expected:return reject("The prepared world changed its retained contract context")
 	var scene: Dictionary=controller.snapshot()
-	if not scene.get("contract_result",{}).is_empty():return bind_flight(controller)
+	if not scene.get("contract_result",{}).is_empty():return bind_flight(controller,bindings)
 	return _bind_accounted_world(controller,context,scene)
 
 func campaign_flight_context(bindings: RefCounted,mission: Dictionary) -> Dictionary:
@@ -893,7 +893,7 @@ func campaign_flight_context(bindings: RefCounted,mission: Dictionary) -> Dictio
 	var side: Dictionary=_state.get("mission",{})
 	if not side.is_empty():
 		var contact: Dictionary=_state.get("accepted_contact",{})
-		if not OrdinaryContracts.delivery_mission(bindings,side) or contact.get("offer_id")!=_state.get("active_offer_id") or contact.get("offer",{}).get("mission")!=side:return fail("The campaign flight lost its accepted delivery")
+		if not OrdinaryContracts.retained_mission(bindings,side,int(_state.campaign_cursor)) or contact.get("offer_id")!=_state.get("active_offer_id") or contact.get("offer",{}).get("mission")!=side:return fail("The campaign flight lost its accepted delivery")
 	var result:={"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,"campaign_cursor":_state.campaign_cursor,
 		"station_id":_state.station_id,"system_id":int(Dekato.declarations(bindings).mission.system_id) if dekato else int(bindings.mido_travel.bakka_contest.mission.system_id) if bakka else int(bindings.mido_travel.thynome_expedition.mission28.system_id) if sahi and _state.campaign_cursor==28 else 9 if sahi else int(bindings.mido_travel.kappa_rescue.system_id),"mission_kind":int(mission.kind),
 		"mission_story":true,"mission_completed":false,"rank":_state.rank,"difficulty":_state.difficulty}
@@ -933,10 +933,9 @@ func _selected40_side_slot_valid(bindings: RefCounted) -> bool:
 	if mission.is_empty():
 		if _state.passengers!=0 or _state.active_offer_id!=-1 or not contact.is_empty():return reject("Empty side slot retained passengers or an accepted contact")
 	else:
-		# Only the independently accepted station-settled passenger job is
-		# supported here; the story never supplies its quantity or settlement.
-		if not OrdinaryContracts.delivery_mission(bindings,mission) or mission.kind!=int(_rules.passenger.kind) or _state.passengers!=mission.get("quantity"):return reject("Selected40 side slot is not its independently retained passenger job")
-		if contact.is_empty() or contact.get("offer_id")!=_state.active_offer_id or contact.get("offer",{}).get("mission")!=mission:return reject("Selected40 passenger job lost its accepted contact")
+		var passengers:=int(mission.quantity) if mission.kind==int(_rules.passenger.kind) else 0
+		if not OrdinaryContracts.retained_mission(bindings,mission,int(_state.campaign_cursor)) or _state.passengers!=passengers:return reject("The selected story lost its independently retained side job")
+		if contact.is_empty() or contact.get("offer_id")!=_state.active_offer_id or contact.get("offer",{}).get("mission")!=mission:return reject("The selected story's side job lost its accepted contact")
 	return true
 
 func bind_campaign_world(bindings: RefCounted,controller: RefCounted,mission: Dictionary) -> bool:

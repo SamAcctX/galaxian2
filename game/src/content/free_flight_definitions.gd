@@ -52,6 +52,8 @@ static func response_flags(bindings: RefCounted,flags: Variant) -> bool:
 
 static func ordinary_entry(bindings: RefCounted,entry: Dictionary) -> bool:
 	if not available(bindings) or not Campaign.supported(bindings,entry.get("campaign_cursor")):return false
+	if entry.get("mission_track")=="side_job":
+		return entry.get("departure",{}).get("contract_context")==entry.get("scenery",{}).get("world_initialization",{}).get("contract_context")
 	var context: Variant=entry.get("departure",{}).get("free_context")
 	if not context is Dictionary or not Life.Traffic.context_valid(bindings,context):return false
 	if context.campaign_cursor!=entry.campaign_cursor:return false

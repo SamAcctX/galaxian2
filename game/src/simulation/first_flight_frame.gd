@@ -162,7 +162,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	var sahi_world:=Story.prepared_entry(bindings,entry)
 	var bakka_world: bool=entry.get("campaign_cursor")==36 and Bakka.context_valid(bindings,entry.get("bakka_context",{}))
 	var mission_context: RefCounted=construction.mission_context_owner()
-	var mission_world: bool=mission_context!=null
+	var mission_world: bool=mission_context!=null and mission_context.advances_campaign()
 	if mission_world:
 		if not mission_context.matches_source(bindings,entry.departure):return reject("The prepared convoy changed its explicit source provenance")
 	var ordinary_void:=Story.prepared_ordinary_void(bindings,entry)
@@ -414,6 +414,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 			gate_animation=null # Transit now owns the one animation clock.
 	if not trip.is_empty():
 		return_rules=OrdinaryFlight.docking(bindings,int(entry.campaign_cursor)) if entry.location.station_id==int(trip.station_id) else {}
+	elif mission_context!=null and not mission_context.advances_campaign():return_rules=mission_context.ordinary_docking_rules()
 	elif ordinary_world:return_rules=ContractWorld.docking(bindings,int(entry.location.station_id),entry.campaign_cursor)
 	elif free_world:return_rules=FreeFlight.docking(bindings,int(entry.location.station_id),entry.campaign_cursor)
 	elif sahi_world and entry.campaign_cursor==26:return_rules=OrdinaryFlight.docking(bindings,26)
@@ -511,7 +512,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		if timing.is_empty():reject(next._fast_forward.error);return null
 		if timing.reset and not next._camera.set_fast_forward(false):reject(next._camera.error);return null
 		delta_ms=timing.simulation_ms;next._camera_ms=timing.camera_ms;next._camera_passes=timing.camera_passes
-	if _mission_context!=null:
+	if _mission_context!=null and _mission_context.advances_campaign():
 		var timing: Dictionary=next._briefing.snapshot()
 		if not next._encounter.sample_mission_clock(int(timing.world_elapsed_ms),int(timing.hud_elapsed_ms)):reject(next._encounter.error);return null
 	elif _objective is ContractObjective or _entry.has("bakka_context"):
@@ -724,7 +725,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 			if not next._briefing.show_mining_failure_instruction() or not next._mining.mark_failure_instruction_shown(cursor):reject(next._briefing.error+next._mining.error);return null
 			next._retain_mining_hint(true);instruction_opened=true
 	var completion_opened:=false
-	if not instruction_opened and _mission_context!=null:
+	if not instruction_opened and _mission_context!=null and _mission_context.advances_campaign():
 		var radio_active: bool=next._radio!=null and next._radio.snapshot().get("visible",false)
 		if not next._objective.poll_mission(next._encounter,radio_active,next._briefing.mission_poll_due(),not next.death_active() and next._player.snapshot().vitals.hull>0):reject(next._objective.error);return null
 		completion_opened=next._objective.snapshot().dialogue.visible
@@ -1265,7 +1266,7 @@ func _observe_radio() -> bool:
 		if result.is_empty():return reject(_radio.error)
 		_radio=result.radio;_radio_events=result.events;_random=result.random_state
 		return true
-	if _mission_context!=null:
+	if _mission_context!=null and _mission_context.advances_campaign():
 		var elapsed: int=int(_briefing.snapshot().world_elapsed_ms)
 		if not _radio.bind_context(_mission_context.radio_observation(elapsed)):return reject(_radio.error)
 		_radio_events=_radio.step_context(elapsed)
@@ -1600,7 +1601,7 @@ func _evaluate_station_return() -> bool:
 				contracts=_retained_sahi_return_career(objective.progress)
 				if contracts==null:return false
 		else:return reject("The station requires the retained contract flight")
-	elif _mission_context!=null:
+	elif _mission_context!=null and _mission_context.advances_campaign():
 		if not _mission_context.matches_source(_story_bindings,_entry.departure) or not _mission_context.accepts_result(objective.campaign_cursor,objective.mission,_entry.location.station_id) or not objective.get("combat_objective_acknowledged",false):return reject("Mission docking lost its acknowledged source result")
 		contracts=contract_owner()
 		if contracts==null:return reject("Dekato docking lost its retained native career")
@@ -1708,7 +1709,7 @@ func contract_owner() -> RefCounted:
 	# Final mission Next already committed the complete career. The frozen
 	# pending station frame must not re-admit it through an older convoy stage.
 	if mission_station_return_required():return null if _convoy_career==null else _convoy_career.fork()
-	if _mission_context!=null and _convoy_career!=null:
+	if _mission_context!=null and _mission_context.advances_campaign() and _convoy_career!=null:
 		var career: RefCounted=_convoy_career.fork()
 		if not career.retain_dekato_progress(_story_bindings,_objective.snapshot().progress):reject(career.error);return null
 		return career
@@ -1853,7 +1854,7 @@ func navigate(action: String, paused:=false) -> RefCounted:
 				next._return_rules=FreeFlight.docking(_story_bindings,int(_entry.location.station_id),state.campaign_cursor)
 		elif not next._objective.navigate(action):reject(next._objective.error);return null
 		if _entry.has("bakka_context") and not next._finish_bakka_navigation(_objective.snapshot()):reject(next.error);return null
-		if _mission_context!=null and not next._finish_mission_navigation(_objective.snapshot()):reject(next.error);return null
+		if _mission_context!=null and _mission_context.advances_campaign() and not next._finish_mission_navigation(_objective.snapshot()):reject(next.error);return null
 		if _entry.campaign_cursor==7 and _equipment!=null and next._objective.snapshot().combat_objective_acknowledged and not _objective.snapshot().combat_objective_acknowledged:
 			if not next._equipment.complete_training(next._cargo.snapshot()):reject(next._equipment.error);return null
 			if not _navigation.is_empty() and _navigation.clear_on_completion_acknowledgement:next._route=null

@@ -28,9 +28,12 @@ var _population := 3
 var _training := {}
 var _generations := []
 var _selected41_restarts:={}
+var _ordinary:=false
+var _faction_kills:=false
 
 func configure(bindings: RefCounted) -> bool:
 	_selected41_restarts={}
+	_ordinary=false;_faction_kills=false
 	error="";_identity={};_rules={};_events=[];_totals={};_population=3;_training={};_generations=[]
 	if bindings==null: return reject("NPC death accounting requires content bindings")
 	var rules: Variant=bindings.opening_actors.get("npc_initialization",{}).get("death_accounting",{})
@@ -69,6 +72,7 @@ func record_scripted_restart(actor: Dictionary, declarations: Dictionary) -> Dic
 func configure_local_traffic(bindings: RefCounted, data: Dictionary) -> bool:
 	if not Travel.destruction_parameters(bindings,data):return reject("Local death accounting requires its verified population")
 	if not configure(bindings):return false
+	_ordinary=true
 	_training=data.duplicate(true);_identity.campaign_cursor=int(data.campaign_cursor);_population=int(data.actor_count)
 	_totals.nonhostile_remaining=0
 	return true
@@ -79,6 +83,7 @@ func configure_ambient(bindings: RefCounted,construction: RefCounted) -> bool:
 	var ordinary:=FreeLife.population(bindings,packet) if packet.has("free_context") else {}
 	if (packet.has("free_context") and ordinary.is_empty()) or (not packet.has("free_context") and Ambient.population(bindings,packet,0,0.5).is_empty()):return reject("Ambient death accounting population is invalid")
 	if not configure(bindings):return false
+	_ordinary=true;_faction_kills=not ordinary.is_empty()
 	_training={"actors":packet.actors.duplicate(true),"nonhostile_remaining_delta":int(bindings.freighter_destruction.nonhostile_remaining_delta),"pirate_kills_delta":int(bindings.freighter_destruction.pirate_kills_delta)}
 	if not ordinary.is_empty():_training.free_lifecycle=ordinary.free_lifecycle.duplicate(true)
 	_identity.campaign_cursor=int(packet.campaign_cursor);_population=packet.actors.size()
@@ -105,6 +110,7 @@ func configure_contract(bindings: RefCounted,construction: RefCounted) -> bool:
 	if data.is_empty():data=Junk.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	if data.is_empty():return reject("Unsupported contract death accounting")
 	if not configure(bindings):return false
+	_ordinary=true;_faction_kills=true
 	_training=data;_population=int(data.actor_count);_identity.campaign_cursor=int(data.campaign_cursor)
 	_totals.nonhostile_remaining=0
 	if int(data.mission.kind)==7:_totals.debris_destroyed=0
@@ -115,6 +121,7 @@ func configure_convoy(bindings: RefCounted,construction: RefCounted) -> bool:
 	var data:=Convoy.lifecycle(bindings,construction.snapshot())
 	if data.is_empty():return reject("Unsupported convoy death accounting")
 	if not configure(bindings):return false
+	_ordinary=true;_faction_kills=true
 	_training=data;_population=int(data.actor_count);_identity.campaign_cursor=int(data.campaign_cursor)
 	_totals.nonhostile_remaining=0;_totals.capital_ship_kills=0
 	return true
@@ -124,6 +131,7 @@ func configure_alioth_attack(bindings: RefCounted,construction: RefCounted) -> b
 	var data:=Alioth.lifecycle(bindings,construction.snapshot())
 	if data.is_empty():return reject("Unsupported Alioth death accounting")
 	if not configure(bindings):return false
+	_ordinary=true;_faction_kills=true
 	_training=data;_population=int(data.actor_count);_identity.campaign_cursor=int(data.campaign_cursor)
 	_totals.nonhostile_remaining=0
 	return true
@@ -133,6 +141,7 @@ func configure_kappa_rescue(bindings: RefCounted,construction: RefCounted) -> bo
 	var data:=Kappa.lifecycle(bindings,construction.snapshot())
 	if data.is_empty():return reject("Unsupported Kappa death accounting")
 	if not configure(bindings):return false
+	_ordinary=true;_faction_kills=true
 	_training=data;_population=int(data.actor_count);_identity.campaign_cursor=int(data.campaign_cursor)
 	_totals.nonhostile_remaining=0
 	return true
@@ -142,12 +151,14 @@ func configure_bakka(bindings: RefCounted,construction: RefCounted) -> bool:
 	var data:=BakkaCombat.population(bindings,construction.snapshot())
 	if data.is_empty():return reject("Unsupported B'akka death accounting")
 	if not configure(bindings):return false
+	_ordinary=true;_faction_kills=true
 	_training=data;_population=int(data.actor_count);_identity.campaign_cursor=int(data.campaign_cursor)
 	_totals.nonhostile_remaining=0
 	return true
 
 func _configure_story(bindings: RefCounted,data: Dictionary) -> bool:
 	if not configure(bindings):return false
+	_ordinary=true;_faction_kills=true
 	_training=data;_population=int(data.actor_count);_identity.campaign_cursor=int(data.campaign_cursor)
 	_totals.nonhostile_remaining=0
 	return true
@@ -171,9 +182,8 @@ func _record(actor: Dictionary, scripted_restart: bool) -> Dictionary:
 	if not id is int or id<0 or id>=_population: return fail("NPC death is outside the configured population")
 	var kind: int=int(_rules.actor_kind) if _training.is_empty() else int(_training.actors[id].actor_kind)
 	if _identity.get("campaign_cursor")==40 and load("res://src/content/selected40_population_definitions.gd").constructed_kind_matches(actor,kind):kind=int(actor.actor_kind)
-	var local: bool=_identity.get("campaign_cursor") in [10,11,12,13,14] or _training.has("kappa_lifecycle") or _training.has("alioth_lifecycle") or _training.has("free_lifecycle") or _training.get("bakka",false) or _training.get("authored_story",false)
-	var hostile: bool=bool(actor.get("hostile",false)) if local else (true if _training.is_empty() else bool(_training.actors[id].hostile))
-	var modes: Array=[0,1] if local or (not _training.is_empty() and id==int(_training.initial_mode_death_actor)) else [1]
+	var hostile: bool=bool(actor.get("hostile",false)) if _ordinary else (true if _training.is_empty() else bool(_training.actors[id].hostile))
+	var modes: Array=[0,1] if _ordinary or (not _training.is_empty() and id==int(_training.initial_mode_death_actor)) else [1]
 	if not _generations.is_empty():
 		if actor.get("spawn_generation")!=_generations[id]:return fail("Death belongs to an earlier traffic instance")
 		if actor.get("population_group")=="travel":modes.append(6)
@@ -195,9 +205,9 @@ func _record(actor: Dictionary, scripted_restart: bool) -> Dictionary:
 		if not hostile:
 			for key in delta:delta[key]=0
 		delta.nonhostile_remaining=int(_training.nonhostile_remaining_delta) if not hostile else 0
-	if _identity.get("campaign_cursor") in [13,14] or _training.has("kappa_lifecycle") or _training.has("alioth_lifecycle") or _training.has("free_lifecycle") or _training.get("bakka",false) or _training.get("authored_story",false):
+	if _faction_kills:
 		delta.pirate_kills=int(_rules.pirate_kills_delta) if hostile and kind==8 and player_credit else 0
-	elif local:delta.pirate_kills=int(_training.pirate_kills_delta)
+	elif _ordinary:delta.pirate_kills=int(_training.pirate_kills_delta)
 	if _training.has("capital_death"):
 		# The source battleship counter is independent of current hostility.
 		# Script retirement never enters this fresh, active death path.
@@ -231,6 +241,7 @@ func fork_for_frame() -> RefCounted:
 	copy._events=_events.duplicate(true);copy._totals=_totals.duplicate()
 	copy._population=_population
 	copy._training=Readonly.freeze(_training)
+	copy._ordinary=_ordinary;copy._faction_kills=_faction_kills
 	copy._generations=_generations.duplicate()
 	copy._selected41_restarts=_selected41_restarts.duplicate()
 	return copy

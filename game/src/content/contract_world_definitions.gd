@@ -20,7 +20,7 @@ static func supports(bindings: RefCounted,cursor: Variant) -> bool:
 	return available(bindings) and cursor is int and Travel.navigation_available(bindings.mido_travel,cursor)
 
 static func ordinary_entry(bindings: RefCounted,entry: Dictionary) -> bool:
-	return supports(bindings,entry.get("campaign_cursor")) and entry.get("scenery",{}).get("world_initialization",{}).has("contract_context")
+	return (entry.get("mission_track")=="side_job" or supports(bindings,entry.get("campaign_cursor"))) and entry.get("scenery",{}).get("world_initialization",{}).has("contract_context")
 
 static func flight(bindings: RefCounted,station_id: int,cursor:=13) -> Dictionary:
 	if not supports(bindings,cursor) or Travel.navigation_stations(bindings.mido_travel,cursor,station_id).is_empty():return {}
@@ -58,17 +58,17 @@ static func docking_parameters(data: Dictionary) -> bool:
 	return station is int and station in [75,76,77,78,79] and data.get("campaign_cursor") in [13,14] and Equal.equal_value(data,_docking_values(station,data.campaign_cursor))
 
 static func combat_population(bindings: RefCounted,combat: Dictionary) -> bool:
-	if not supports(bindings,combat.get("campaign_cursor")):return false
+	if not available(bindings):return false
 	var source: Dictionary=combat.get("contract_encounter",{})
 	var context: Dictionary=source.get("context",{})
 	var actors: Variant=combat.get("actors")
 	if not actors is Array or source.get("actor_count")!=actors.size() or source.get("mission",{})!=context.get("mission"):return false
 	for key in ["base_content_id","binding_id"]:
 		if combat.get(key)!=bindings.get(key) or context.get(key)!=bindings.get(key):return false
-	if context.get("campaign_cursor")!=combat.campaign_cursor or flight(bindings,int(context.get("station_id",-1)),combat.campaign_cursor).is_empty():return false
+	if context.get("campaign_cursor")!=combat.get("campaign_cursor"):return false
 	var kind: Variant=source.get("kind")
 	if kind!=context.mission.get("kind") or kind not in [4,7,12]:return false
-	if (kind==4 and actors.size() not in [2,3,4]) or (kind==7 and actors.size() not in [17,19]) or (kind==12 and actors.size()!=4):return false
+	# Cast admission owns location and population size; presentation observes it.
 	var hulls: Dictionary=bindings.early_contracts.encounter_construction.hulls
 	for id in actors.size():
 		var actor: Variant=actors[id]

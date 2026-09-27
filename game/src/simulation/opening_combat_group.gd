@@ -228,11 +228,12 @@ func configure_local_patrol(bindings: RefCounted, catalogues: RefCounted, world:
 	_owned={};_actors=actors
 	return _configure_reputation(bindings,int(data.campaign_cursor),difficulty)
 
-func _configure_reputation(bindings: RefCounted, cursor: int, difficulty: Variant, ordinary_void_system_id: Variant=null, ordinary_void_rank: Variant=null) -> bool:
+func _configure_reputation(bindings: RefCounted, cursor: int, difficulty: Variant, ordinary_void_system_id: Variant=null, ordinary_void_rank: Variant=null, native_cast: Dictionary={}) -> bool:
 	if not Reputation.available(bindings):return true
 	var history:=Reputation.new()
 	var kinds:=_actors.map(func(actor):return int(actor.snapshot().actor_kind))
-	if not history.configure(bindings,cursor,kinds,difficulty,_training_weapons.has("kappa_lifecycle"),ordinary_void_system_id,ordinary_void_rank,not _bakka_encounter.is_empty(),_training_weapons if _training_weapons.has("mission_recipe") else {}):return reject(history.error)
+	if native_cast.is_empty() and _training_weapons.has("mission_recipe"):native_cast=_training_weapons
+	if not history.configure(bindings,cursor,kinds,difficulty,_training_weapons.has("kappa_lifecycle"),ordinary_void_system_id,ordinary_void_rank,not _bakka_encounter.is_empty(),native_cast):return reject(history.error)
 	_reputation=history
 	return true
 
@@ -468,7 +469,8 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(data.campaign_cursor)}
 	_owned={};_actors=actors;_hit_policy=policy.duplicate(true);_provocation=reaction;_training_weapons=data
 	_contract_encounter=construction.snapshot().contract_encounter.duplicate(true)
-	if not debris and not _configure_reputation(bindings,int(data.campaign_cursor),data.difficulty):
+	var native_cast:={"campaign_cursor":data.campaign_cursor,"actor_rows":data.actors,"context":{"system_id":construction.mission_context_owner().recipe().system_id}}
+	if not debris and not _configure_reputation(bindings,int(data.campaign_cursor),data.difficulty,null,null,native_cast):
 		var reason:=error;clear();return reject(reason)
 	return true
 

@@ -233,10 +233,12 @@ func configure_void_factory(bindings: RefCounted,catalogues: RefCounted,player_s
 	_identity.station_id=-1;_identity.system_id=-1
 	return true
 
-func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,contracts: RefCounted,player_position: Vector3,field_center: Vector3) -> bool:
+func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,contracts: RefCounted,player_position: Vector3,field_center: Vector3,capability: RefCounted=null) -> bool:
 	clear()
-	var capability: RefCounted=load("res://src/simulation/mission_context.gd").new()
-	if not capability.admit_contract(bindings,catalogues,contracts,equipment):return reject(capability.error)
+	if capability==null:
+		capability=load("res://src/simulation/mission_context.gd").new()
+		if not capability.admit_contract(bindings,catalogues,contracts,equipment):return reject(capability.error)
+	elif not capability.matches_loadout(equipment.snapshot().loadout) or capability.contract_context()!=contracts.flight_context(int(equipment.snapshot().loadout.station_id),bindings):return reject("Contract construction differs from its admitted career and equipment")
 	if not player_position.is_finite() or not field_center.is_finite():return reject("Contract construction requires finite player and asteroid-field positions")
 	var seed: Dictionary=equipment.snapshot().loadout
 	var context: Dictionary=capability.contract_context()
@@ -258,6 +260,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 			if bindings.resolve(int(resource_id),"mesh").is_empty():return reject(bindings.error)
 	var definition: Dictionary=rules.duplicate(true)
 	definition.merge({"context":context,"actor_count":count,"player_position":player_position,"field_center":field_center})
+	definition.campaign_cursor=context.campaign_cursor
 	_mission_context=capability
 	return _configure(bindings,catalogues,seed,{},{},{},{},definition)
 
@@ -530,7 +533,7 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, 
 		_identity.station_id=int(convoy.context.station_id)
 		_convoy=convoy.duplicate(true)
 	if not contract.is_empty():
-		_identity.campaign_cursor=int(contract.campaign_cursor)
+		_identity.campaign_cursor=int(contract.context.campaign_cursor)
 		_identity.station_id=int(contract.context.station_id)
 		_contract=contract.duplicate(true)
 	if not traffic.is_empty():

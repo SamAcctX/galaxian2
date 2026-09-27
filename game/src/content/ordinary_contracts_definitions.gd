@@ -24,15 +24,18 @@ static func delivery_mission(bindings: RefCounted,mission: Variant) -> bool:
 static func active_courier(context: Dictionary) -> bool:
 	return context.get("mission_kind")==0 and context.get("mission_completed")==false and context.get("side_missions_empty")==false
 
+static func retained_mission(bindings: RefCounted,mission: Variant,cursor: int) -> bool:
+	return delivery_mission(bindings,mission) or load("res://src/simulation/mission_context.gd").supports_contract(bindings,mission,cursor)
+
 static func mission_context_valid(bindings: RefCounted,context: Dictionary) -> bool:
 	if Campaign.empty_story(bindings,context):
 		if context.get("side_missions_empty")==true:return context.get("side_mission",{})=={}
-		return context.get("side_missions_empty")==false and delivery_mission(bindings,context.get("side_mission"))
+		return context.get("side_missions_empty")==false and retained_mission(bindings,context.get("side_mission"),int(context.campaign_cursor))
 	if Campaign.ordinary_story_at(bindings,context.get("campaign_cursor"),context.get("station_id")) or Campaign.rescue_at(bindings.mido_travel,context.get("campaign_cursor"),context.get("station_id")):return false
 	if context.get("mission_story")!=false:return false
 	if context.get("side_missions_empty")==true:
 		return context.get("side_mission",{})=={} and context.get("mission_kind")==-1 and context.get("mission_completed")==true
-	if context.get("side_missions_empty")!=false or not delivery_mission(bindings,context.get("side_mission")):return false
+	if context.get("side_missions_empty")!=false or not retained_mission(bindings,context.get("side_mission"),int(context.campaign_cursor)):return false
 	var side: Dictionary=context.side_mission
 	var selected: bool=int(side.kind)==0 and side.station_id==context.get("station_id")
 	var position: Variant=context.get("player_position")

@@ -212,13 +212,15 @@ func _prepare_free_owned(bindings: RefCounted,catalogues: RefCounted,equipment: 
 	if rescue:context=accepted.duplicate(true)
 	if incoming!=null:context.player_position=incoming.snapshot().position
 	var conditions:={"companions_empty":true,"location_match":false,"special_placement":false}
+	var selected_job: bool=not context.mission_story and MissionContext.supports_contract(bindings,accepted.mission,cursor)
 	var scenery:=Scenery.new()
-	var ready: bool=scenery.configure_kappa_rescue(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources) if rescue else scenery.configure_free(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources)
+	var ready: bool=scenery.configure_contract(bindings,catalogues,equipment,contracts,previous_cache if previous_cache is Dictionary else {},context.get("player_position",Vector3(data.player_position[0],data.player_position[1],data.player_position[2])),conditions,unix_seconds,large_display,body_resources,effect_resources) if selected_job else scenery.configure_kappa_rescue(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources) if rescue else scenery.configure_free(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources)
 	if not ready:return reject(scenery.error)
 	var player:=Player.new()
-	ready=player.configure_kappa_rescue(bindings,catalogues,equipment,scenery.world_initialization_owner().npc_construction_owner(),previous_cache) if rescue else player.configure_free(bindings,catalogues,equipment,scenery.world_initialization_owner().npc_construction_owner(),previous_cache)
+	ready=player.configure_contract(bindings,catalogues,equipment,scenery.world_initialization_owner().npc_construction_owner(),previous_cache) if selected_job else player.configure_kappa_rescue(bindings,catalogues,equipment,scenery.world_initialization_owner().npc_construction_owner(),previous_cache) if rescue else player.configure_free(bindings,catalogues,equipment,scenery.world_initialization_owner().npc_construction_owner(),previous_cache)
 	if not ready:return reject(player.error)
-	var location:=Location.new();var place:=location.resolve_local_travel(bindings,catalogues,equipment,player.cache_snapshot())
+	var capability: RefCounted=scenery.world_initialization_owner().npc_construction_owner().mission_context_owner() if selected_job else null
+	var location:=Location.new();var place:=location.resolve_local_travel(bindings,catalogues,equipment,player.cache_snapshot(),capability)
 	if place.is_empty():return reject(location.error)
 	var packet:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":cursor,
 		"loadout":owned.loadout.duplicate(true),"equipment":owned,"cargo":owned.cargo.duplicate(true),"cargo_used":int(owned.cargo.used),
@@ -228,7 +230,10 @@ func _prepare_free_owned(bindings: RefCounted,catalogues: RefCounted,equipment: 
 	if rescue:packet.erase("free_context");packet.kappa_context=context
 	if incoming!=null:
 		packet.arrival_environment=incoming.snapshot();packet.from_station_id=from_station_id
-	if not _construct(bindings,catalogues,packet,data,player,place,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,equipment,contracts,scenery,incoming):return false
+	if capability!=null:packet.contract_context=capability.contract_context()
+	if not _construct(bindings,catalogues,packet,data,player,place,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,equipment,contracts,scenery,incoming,{},capability):return false
+	if capability!=null:
+		_state.mission_context=capability;_state.mission_flight=capability.flight_rules(bindings);_state.mission_track=capability.recipe().track
 	if source!=null:
 		var retained: Dictionary=source.snapshot()
 		if station_id==retained.source_station_id and context.mission_kind==-1 and not context.mission_story:
@@ -701,7 +706,8 @@ func _construct(bindings: RefCounted, catalogues: RefCounted, packet: Dictionary
 	var training: bool=int(data.campaign_cursor)==7
 	var local_entry: bool=int(data.campaign_cursor) in [10,11,12]
 	var normal: bool=MissionContext.normal_population_matches(bindings,packet.get("free_context"),mission_context)
-	if mission_context!=null and (not normal or not mission_context.matches_loadout(equipment.snapshot().loadout)):return reject("Normal construction lost its admitted world or equipment")
+	var contract: bool=mission_context!=null and not mission_context.advances_campaign() and packet.get("contract_context")==mission_context.contract_context()
+	if mission_context!=null and ((not normal and not contract) or not mission_context.matches_loadout(equipment.snapshot().loadout)):return reject("Construction lost its admitted world or equipment")
 	if incoming!=null:
 		if not incoming is Incoming or packet.get("arrival_environment")!=incoming.snapshot() or packet.get("dekato_context",packet.get("bakka_context",packet.get("sahi_context",packet.get("kappa_context",packet.get("free_context",{}))))).get("player_position")!=incoming.snapshot().position:return reject("Local arrival pose differs from its generated scenery")
 	if environment.is_empty():environment=_prepare_environment(bindings,data,environment_seconds,incoming)
@@ -715,7 +721,9 @@ func _construct(bindings: RefCounted, catalogues: RefCounted, packet: Dictionary
 	if prepared_scenery!=null:
 		var sahi_story: bool=packet.has("sahi_context") and not Story.flight(bindings,packet.sahi_context).is_empty()
 		if not prepared_scenery is Scenery or (int(data.campaign_cursor) not in [14,16,21] and not Campaign.supported(bindings,data.campaign_cursor) and not sahi_story and not ordinary_void and not normal):return reject("Unexpected prepared flight scenery")
-		if normal:
+		if contract:
+			if not mission_context.matches_contract_population(bindings,prepared_scenery.world_initialization_owner().npc_construction_owner().snapshot()):return reject("Contract scenery differs from its admitted cast")
+		elif normal:
 			if prepared_scenery.snapshot().world_initialization.npc_construction.get("free_context")!=packet.free_context:return reject("Normal scenery differs from its admitted return")
 		elif ordinary_void:
 			if prepared_scenery.snapshot().world_initialization.get("void_context")!=packet.void_context:return reject("Ordinary Void scenery differs from its selected entry")

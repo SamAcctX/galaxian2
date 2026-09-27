@@ -200,6 +200,7 @@ func configure_contract_world(bindings: RefCounted,catalogues: RefCounted,librar
 	var state: Dictionary=construction.contract_owner().snapshot()
 	if not _configure_equipped(bindings,catalogues,library,construction.player_owner(),construction.scenery_owner(),state.rank,state.difficulty,state.campaign_cursor,construction.equipment_owner(),state.reputation):return false
 	_contract_context=construction.scenery_owner().world_initialization_owner().snapshot().contract_context.duplicate(true)
+	if load("res://src/content/free_flight_definitions.gd").ordinary_entry(bindings,construction.snapshot()):_contract_context=construction.contract_owner().free_flight_context(bindings,int(state.station_id))
 	return true
 
 func configure_convoy(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,construction: RefCounted) -> bool:
@@ -380,9 +381,9 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, library: 
 	if initial.is_empty() or scenery.snapshot().random_state!=initial.random_state:return reject("Equipped combat must join its fresh constructed world")
 	var control:=TrainingControl.new();var weapons:=Weapons.new();var resources:=Resources.new()
 	var freight_resources: RefCounted
-	var contract_world: bool=ContractWorld.supports(bindings,cursor) and initial.has("contract_context")
+	var contract_world: bool=initial.has("contract_context")
 	var contract_mission: Dictionary=initial.get("contract_context",{}).get("mission",{})
-	var ambient: bool=load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) or (contract_world and contract_mission.is_empty()) or (cursor in [11,12] and initial.station_id==int(Travel.journey(bindings.mido_travel,cursor).from_station_id))
+	var ambient: bool=(load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) and not contract_world) or (contract_world and contract_mission.is_empty()) or (cursor in [11,12] and initial.station_id==int(Travel.journey(bindings.mido_travel,cursor).from_station_id))
 	var rescue: bool=cursor==21 and initial.get("npc_construction",{}).has("kappa_context")
 	var bakka: bool=cursor==36 and initial.get("bakka_context") is Dictionary and Bakka.context_valid(bindings,initial.bakka_context)
 	if not story.is_empty():

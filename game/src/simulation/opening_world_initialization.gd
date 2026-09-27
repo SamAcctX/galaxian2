@@ -84,15 +84,16 @@ func configure_combat_training(bindings: RefCounted, catalogues: RefCounted, equ
 	_identity.campaign_cursor=int(data.campaign_cursor);_identity.entry_conditions=entry_conditions.duplicate(true)
 	return true
 
-func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,contracts: RefCounted,player_cache: Dictionary,entry_conditions: Dictionary,unix_seconds: Variant,player_position: Vector3,field_center: Vector3) -> bool:
+func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,contracts: RefCounted,player_cache: Dictionary,entry_conditions: Dictionary,unix_seconds: Variant,player_position: Vector3,field_center: Vector3,capability: RefCounted=null) -> bool:
 	clear()
 	if not ContractWorld.available(bindings) or not is_instance_of(contracts,load("res://src/simulation/contract_session.gd")) or not FirstFlight.entry_conditions(entry_conditions):return reject("Ordinary contract construction needs its retained session and entry conditions")
 	var location:=ArrivalLocation.new()
-	var context:=location.resolve_local_travel(bindings,catalogues,equipment,player_cache)
+	var context:=location.resolve_local_travel(bindings,catalogues,equipment,player_cache,capability)
 	if context.is_empty():return reject(location.error)
 	var data:=ContractWorld.flight(bindings,int(context.station_id),int(context.campaign_cursor))
+	if data.is_empty():data=load("res://src/content/free_flight_definitions.gd").flight(bindings,int(context.station_id),int(context.campaign_cursor))
 	if data.is_empty() or contracts.snapshot().campaign_cursor!=context.campaign_cursor:return reject("Unsupported ordinary contract world location")
-	var accepted: Dictionary=contracts.flight_context(int(context.station_id))
+	var accepted: Dictionary=contracts.flight_context(int(context.station_id),bindings)
 	if accepted.is_empty():return reject(contracts.error)
 	var construction:=Construction.new()
 	if accepted.mission.is_empty():
@@ -102,7 +103,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 		if not construction.configure_ambient_traffic(bindings,catalogues,equipment,ambient,unix_seconds):return reject(construction.error)
 		data.weapon_groups=Travel.journey(bindings.mido_travel,11).weapon_groups.duplicate()
 	else:
-		if not construction.configure_contract(bindings,catalogues,equipment,contracts,player_position,field_center):return reject(construction.error)
+		if not construction.configure_contract(bindings,catalogues,equipment,contracts,player_position,field_center,capability):return reject(construction.error)
 		data.weapon_groups=["pirate","rival"]
 	if not _bind_faction_weapon_effects(bindings,data):return false
 	if not _configure(bindings,catalogues,data,construction,[],equipment.snapshot().loadout.slots.filter(func(slot):return slot!=null)):return false

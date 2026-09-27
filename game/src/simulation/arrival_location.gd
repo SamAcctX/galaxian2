@@ -88,6 +88,12 @@ func resolve_combat_training(bindings: RefCounted, catalogues: RefCounted, equip
 func resolve_local_travel(bindings: RefCounted, catalogues: RefCounted, equipment: RefCounted, player_cache: Dictionary, mission_context: RefCounted=null) -> Dictionary:
 	error=""
 	if bindings==null or catalogues==null or not equipment is Equipment:return reject("Local travel requires its retained equipped player")
+	if mission_context!=null:
+		var admitted_loadout: Dictionary=equipment.snapshot().loadout
+		if not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not mission_context.matches_loadout(admitted_loadout) or catalogues.content_id!=bindings.base_content_id:return reject("Mission location changed after admission")
+		var admitted_cursor: int=mission_context.identity().campaign_cursor
+		if not player_cache.is_empty() and not Cache.matches(player_cache,admitted_loadout,admitted_cursor):return reject("Mission location lost its retained player cache")
+		return _resolve(bindings,catalogues,admitted_loadout,admitted_cursor,mission_context)
 	if player_cache.get("campaign_cursor") in FlightStages.POST_SAHI:return resolve_post_sahi(bindings,catalogues,equipment,player_cache)
 	var owned: Dictionary=equipment.snapshot()
 	if not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false):return reject("Local travel requires the drill exchange")

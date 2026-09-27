@@ -52,6 +52,18 @@ func live_cursors() -> Array:
 func matches_location(bindings: RefCounted,location: Dictionary) -> bool:
 	return bindings!=null and not _identity.is_empty() and _identity.base_content_id==bindings.base_content_id and _identity.binding_id==bindings.binding_id and location.get("station_id")==_loadout.station_id and location.get("system_id")==_loadout.system_id
 
+static func supports_contract(bindings: RefCounted,mission: Variant,cursor: int) -> bool:
+	if bindings==null or not mission is Dictionary or mission.get("story")!=false:return false
+	var rules: Dictionary=bindings.early_contracts.get("encounter_construction",{})
+	if rules.is_empty():return false
+	var world=load("res://src/content/contract_world_definitions.gd")
+	if world.supports(bindings,cursor):
+		return rules.kinds.any(func(value):return int(value)==mission.get("kind")) and rules.mission_difficulties.any(func(value):return int(value)==mission.get("difficulty")) and not world.flight(bindings,int(mission.get("station_id",-1)),cursor).is_empty()
+	var ordinary=load("res://src/content/free_flight_definitions.gd")
+	# Keeping a side slot through a story world does not select that job's cast.
+	# Actual entry also requires the location/flight admitted below.
+	return ordinary.available(bindings) and cursor>=int(bindings.mido_travel.free_flight.campaign_cursor) and mission.get("kind")==4 and preload("res://src/content/opening_definitions.gd").integer(mission.get("difficulty"),1,9) and not ordinary.Worlds.location(bindings.mido_travel,mission.get("station_id")).is_empty()
+
 ## A retained career and inventory authorize a generated side job once. Other
 ## owners receive this capability with the cast, never a caller-authored recipe.
 func admit_contract(bindings: RefCounted,catalogues: RefCounted,contracts: RefCounted,equipment: RefCounted) -> bool:
@@ -67,10 +79,12 @@ func admit_contract(bindings: RefCounted,catalogues: RefCounted,contracts: RefCo
 	for key in ["base_content_id","binding_id"]:
 		if context.get(key)!=bindings.get(key) or loadout.get(key)!=bindings.get(key):return reject("Contract entry belongs to another content source")
 	var rules: Dictionary=bindings.early_contracts.encounter_construction
-	if loadout.system_id!=int(rules.system_id) or load("res://src/content/contract_world_definitions.gd").flight(bindings,context.station_id,context.campaign_cursor).is_empty():return reject("This contract location has no complete flight recipe")
+	var flight: Dictionary=load("res://src/content/contract_world_definitions.gd").flight(bindings,context.station_id,context.campaign_cursor)
+	if flight.is_empty():flight=load("res://src/content/free_flight_definitions.gd").flight(bindings,context.station_id,context.campaign_cursor)
+	if flight.is_empty() or loadout.system_id!=int(flight.system_id):return reject("This contract location has no complete flight recipe")
 	if not context.get("rank") is int or context.rank<0 or context.rank>=bindings.opening_handoff.rank_thresholds.size() or not rules.supported_game_difficulties.has(context.difficulty):return reject("Unsupported contract career or difficulty")
 	var mission: Dictionary=context.mission
-	if mission.is_empty() or mission.get("story")!=false or not rules.kinds.any(func(value):return int(value)==int(mission.get("kind",-1))) or not rules.mission_difficulties.any(func(value):return int(value)==int(mission.get("difficulty",-1))):return reject("This active contract has no complete cast recipe")
+	if not supports_contract(bindings,mission,int(context.campaign_cursor)):return reject("This active contract has no complete cast recipe")
 	if int(mission.kind)==12 and (context.client_faction not in [0,1,2,3] or context.contact_name.is_empty()):return reject("The contest lost its generated rival")
 	if not _accept_equipment(bindings,catalogues,loadout):return false
 	_recipe=Recipe.from_contract(bindings,context,loadout)
@@ -79,6 +93,7 @@ func admit_contract(bindings: RefCounted,catalogues: RefCounted,contracts: RefCo
 	return true
 
 func contract_context() -> Dictionary:return _contract_context.duplicate(true)
+func advances_campaign() -> bool:return not _recipe.is_empty() and _recipe.get("track","campaign")=="campaign"
 
 func matches_contract_population(bindings: RefCounted,packet: Dictionary) -> bool:
 	if _contract_context.is_empty() or bindings==null:return false
@@ -222,5 +237,9 @@ func flight_rules(bindings: RefCounted) -> Dictionary:
 	result.campaign_cursor=_recipe.cursor;result.station_id=_recipe.station_id;result.system_id=_recipe.system_id
 	result.mission_kind=_recipe.mission.kind;result.scope="mission_flight";result.erase("actor_count")
 	return result
+
+func ordinary_docking_rules() -> Dictionary:
+	if _recipe.get("track")!="side_job" or not has_feature("station"):return {}
+	return load("res://src/content/free_flight_definitions.gd")._docking_values(int(_recipe.station_id),int(_recipe.system_id),int(_recipe.cursor))
 
 func reject(message: String) -> bool:error=message;return false

@@ -24,7 +24,7 @@ func configure(bindings: RefCounted, library: RefCounted, construction: RefCount
 	var training: bool=flight.get("campaign_cursor")==7
 	var rules:=Ordinary.briefing(bindings,flight.get("campaign_cursor"),(Ordinary.FreeFlight.ordinary_entry(bindings,flight) or flight.get("scenery",{}).get("world_initialization",{}).has("contract_context")),int(flight.location.station_id))
 	var mission_context: RefCounted=construction.mission_context_owner()
-	if mission_context!=null:rules=Ordinary.MissionRecipe.briefing(bindings,mission_context.recipe())
+	if mission_context!=null and mission_context.advances_campaign():rules=Ordinary.MissionRecipe.briefing(bindings,mission_context.recipe())
 	if rules.is_empty():return reject("This departure has no supported mining briefing")
 	if flight.activated or flight.entry_released or flight.briefing_started:return reject("Mining briefing requires a fresh prepared departure")
 	var instruction_rules: Dictionary=rules if training else Ordinary.briefing(bindings,2)

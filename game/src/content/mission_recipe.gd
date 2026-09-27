@@ -35,7 +35,7 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 			success={"kind":int(objectives.challenge_success_kind),"rules":objectives}
 			failure={"kind":int(objectives.challenge_failure_kind),"rules":objectives}
 	return {"track":"side_job","cursor":context.campaign_cursor,"station_id":context.station_id,"system_id":loadout.system_id,
-		"mission":mission.duplicate(true),"entry":"ordinary_flight","world":{"station":true,"portal":true,"asteroid_field":true},
+		"mission":mission.duplicate(true),"next_cursor":context.campaign_cursor,"entry":"ordinary_flight","world":{"station":true,"portal":true,"asteroid_field":true},
 		"cast":{"kind":"contract","actor_count":count,"operations":rules.duplicate(true)},"briefing":[],"radio":[],"sequences":[],
 		"result":{"success":success,"failure":failure,"periodic_failure":periodic,"actor_count":count,
 			"retire_failure":true,"freeze_clock_on_result":true,"reset_while_blocked":false,"policy":bindings.early_contracts.flight_results.duplicate(true)}}

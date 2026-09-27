@@ -172,15 +172,19 @@ func _configure_local(bindings: RefCounted, catalogues: RefCounted, equipment: R
 
 func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,contracts: RefCounted,player_cache: Dictionary,player_position: Vector3,entry_conditions: Dictionary,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null) -> bool:
 	clear()
+	var capability: RefCounted
+	if not contracts.flight_context(int(equipment.snapshot().loadout.station_id),bindings).get("mission",{}).is_empty():
+		capability=load("res://src/simulation/mission_context.gd").new()
+		if not capability.admit_contract(bindings,catalogues,contracts,equipment):return reject(capability.error)
 	var location:=ArrivalLocation.new()
-	var context:=location.resolve_local_travel(bindings,catalogues,equipment,player_cache)
+	var context:=location.resolve_local_travel(bindings,catalogues,equipment,player_cache,capability)
 	if context.is_empty():return reject(location.error)
 	var population:=Population.new()
 	if not population.configure(bindings):return reject(population.error)
 	var selected:=population.for_departure(int(context.station_id),entry_conditions,int(context.campaign_cursor))
 	if selected.is_empty():return reject(population.error)
 	var world:=WorldInitialization.new()
-	if not world.configure_contract(bindings,catalogues,equipment,contracts,player_cache,entry_conditions,unix_seconds,player_position,selected.center):return reject(world.error)
+	if not world.configure_contract(bindings,catalogues,equipment,contracts,player_cache,entry_conditions,unix_seconds,player_position,selected.center,capability):return reject(world.error)
 	if not _configure_field(bindings,catalogues,unix_seconds,selected.station_id,int(context.campaign_cursor),selected.center,large_display,body_resources,effect_resources):return false
 	if not _finish_world_initialization(world):
 		var message:=error;clear();return reject(message)

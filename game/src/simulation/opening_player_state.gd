@@ -64,6 +64,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 	var data:=ContractLife.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	if data.is_empty():data=Junk.population(bindings,construction.snapshot(),construction.mission_context_owner())
 	if data.is_empty() or not equipment is StationEquipment or equipment.snapshot().loadout.station_id!=int(data.station_id):return reject("Contract player belongs to another equipped station")
+	data.mission_context=construction.mission_context_owner()
 	if not _configure(bindings,catalogues,int(data.campaign_cursor),previous_cache,equipment,data):return false
 	_state.contract_encounter=construction.snapshot().contract_encounter.duplicate(true)
 	return true
@@ -243,6 +244,7 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, cursor: int, previ
 	var normal_return: bool=contract.get("mission_context")!=null and contract.mission_context.has_feature("normal_space")
 	var selected: bool
 	if normal_return:selected=entry.configure_normal_return(bindings,contract.mission_context,owned.loadout)
+	elif contract.get("mission_context")!=null:selected=entry.configure_admitted(bindings,contract.mission_context,owned.loadout,previous_cache!=null and not (previous_cache is Dictionary and previous_cache.is_empty()))
 	elif selected41:selected=entry.configure_selected41(bindings,contract.context,ship_id)
 	elif selected40:selected=entry.configure_selected40(bindings,contract.context,ship_id)
 	elif contract.get("context_key")=="dekato_context":selected=entry.configure_dekato(bindings,contract.context,ship_id)

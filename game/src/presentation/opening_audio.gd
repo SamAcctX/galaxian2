@@ -85,17 +85,17 @@ var _selected40_identity: RefCounted
 var _selected41_radio_world: RefCounted
 
 func configure(library: RefCounted, bindings: RefCounted, audio_seed: int=0, campaign_cursor: int=0, local_combat: Dictionary={},mission_context: RefCounted=null) -> bool:
-	if campaign_cursor==40 and (not local_combat.has("free_context") or not OrdinaryFlight.combat_population(bindings,local_combat)):return reject("Selected40 audio requires its explicit native flight owner")
+	if mission_context==null and campaign_cursor==40 and (not local_combat.has("free_context") or not OrdinaryFlight.combat_population(bindings,local_combat)):return reject("Selected40 audio requires its explicit native flight owner")
 	clear()
 	var dialogue: Dictionary=Dialogue.select(bindings,campaign_cursor) if bindings!=null else {}
 	var contest: bool=OrdinaryFlight.BakkaCombat.combat_population(bindings,local_combat)
 	var local_flight: bool=OrdinaryFlight.combat_population(bindings,local_combat,mission_context)
-	var admitted_silent: bool=mission_context!=null and mission_context.has_feature("normal_space") and mission_context.recipe().radio.is_empty()
+	var admitted_silent: bool=mission_context!=null and mission_context.recipe().radio.is_empty()
 	if admitted_silent:dialogue={}
 	var authored_radio: bool=Dialogue.valid_parameters(dialogue,campaign_cursor) and ((campaign_cursor in [28,29] and Story.combat_population(bindings,local_combat)) or OrdinaryFlight.Dekato.combat_population(bindings,local_combat))
 	var story_radio: bool=(campaign_cursor==14 and local_combat.get("actors",[]).any(func(actor):return actor.get("convoy",false))) or campaign_cursor==16 or OrdinaryFlight.Kappa.combat_population(bindings,local_combat) or OrdinaryFlight.Authored.combat_population(bindings,local_combat) or authored_radio
-	if admitted_silent:story_radio=true
-	if campaign_cursor==29 and not authored_radio:return reject("Authored radio requires its selected story cast")
+	if admitted_silent:story_radio=mission_context.advances_campaign()
+	if campaign_cursor==29 and not authored_radio and not admitted_silent:return reject("Authored radio requires its selected story cast")
 	if campaign_cursor==2:
 		_npc_count=0
 		if PlayerDeath.parameters(bindings.player_destruction):_player_death_rules=bindings.player_destruction.duplicate(true)
@@ -116,11 +116,11 @@ func configure(library: RefCounted, bindings: RefCounted, audio_seed: int=0, cam
 		_npc_count=actors.size();_player_death_rules=bindings.player_destruction.duplicate(true)
 		_npc_scan_sound=int(bindings.opening_staging.npc_scanner.acquisition_sound_id)
 		_local_radio_rules={} if story_radio or contest else bindings.mido_travel.traffic_combat.radio.duplicate(true)
-		if (not story_radio and not contest) or campaign_cursor==26:_travel_sounds=[int(bindings.mido_travel.travel.acquisition_sound_id),int(bindings.mido_travel.travel.launch_sound_id)]
+		_travel_sounds=[int(bindings.mido_travel.travel.acquisition_sound_id),int(bindings.mido_travel.travel.launch_sound_id)]
 	if local_flight:
 		_freighter_actors=local_combat.actors.filter(func(actor):return actor.get("population_group") in ["freighter","capital"]).map(func(actor):return int(actor.actor_id))
 		if not _freighter_actors.is_empty():_freighter_audio=bindings.freighter_destruction.duplicate(true)
-	if local_flight and not story_radio and not contest and (local_combat.has("free_context") or local_combat.has("contract_encounter")):
+	if local_flight and (local_combat.has("free_context") or local_combat.has("contract_encounter")):
 		_debris_actors=local_combat.actors.filter(func(actor):return actor.get("population_group")=="debris").map(func(actor):return int(actor.actor_id))
 		_debris_sound=int(bindings.early_contracts.junk_lifecycle.sound_id)
 		_notification_sound=int(bindings.early_contracts.delivery_results.notification_sound_id)

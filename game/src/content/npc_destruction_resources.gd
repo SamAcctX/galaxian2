@@ -100,7 +100,7 @@ func configure_contract(library: RefCounted,bindings: RefCounted,construction: R
 		var model: Dictionary=models[0].duplicate(true) if debris and not models.is_empty() else prepared.read_cargo_model(library,bindings,row)
 		if model.is_empty():return reject(prepared.error)
 		models.append(model)
-	_state=prepared.snapshot();_state.cargo_models=models;_state.campaign_cursor=13
+	_state=prepared.snapshot();_state.cargo_models=models;_state.campaign_cursor=int(data.campaign_cursor)
 	_state.contract_encounter=construction.snapshot().contract_encounter.duplicate(true)
 	return true
 

@@ -114,6 +114,19 @@ func configure_selected41(bindings: RefCounted,context: Dictionary,ship_id: int)
 	cursor=41;_kind="selected41";uses_equipment=true;restores_local=true
 	return true
 
+func configure_admitted(bindings: RefCounted,mission_context: RefCounted,loadout: Dictionary,restoring: bool) -> bool:
+	error="";cursor=-1;is_arrival=false;is_departure=false;uses_equipment=false
+	equipped_entry={};_kind="";_departure={};_training={};_pirate={};_travel={};restores_local=false
+	if not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not mission_context.matches_loadout(loadout):return reject("Player entry requires its admitted equipment")
+	var identity: Dictionary=mission_context.identity()
+	if not mission_context.ordinary_location(bindings,int(loadout.station_id),int(identity.campaign_cursor)):return reject("Player entry requires its admitted ordinary location")
+	equipped_entry=bindings.mido_travel.player_entry.duplicate(true)
+	equipped_entry.merge({"campaign_cursor":identity.campaign_cursor,"station_id":loadout.station_id,"system_id":loadout.system_id,"ship_id":loadout.ship_id},true)
+	cursor=identity.campaign_cursor;_kind="free";uses_equipment=true;restores_local=restoring;is_departure=not restoring
+	_travel=bindings.mido_travel.duplicate(true)
+	if is_departure:_departure=bindings.station_departure.duplicate(true)
+	return true
+
 ## A typed normal-world continuation restores the transferred cache. It never
 ## authorizes a generic player entry, station departure or repair/reset.
 func configure_normal_return(bindings: RefCounted,mission_context: RefCounted,loadout: Dictionary) -> bool:
