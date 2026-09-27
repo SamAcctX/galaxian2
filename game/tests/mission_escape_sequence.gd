@@ -46,13 +46,18 @@ func verify(args: Array) -> void:
 	var station: RefCounted=archive.restore(bindings,catalogues,library,document)
 	if station==null:check(false,archive.error);return
 	var before: Dictionary=station.snapshot()
+	var selected_station: RefCounted=component_station(station)
+	if selected_station==null:return
 	var source:=Source.new()
-	var initialized: RefCounted=source.prepare(bindings,catalogues,library,station)
+	var initialized: RefCounted=source.prepare(bindings,catalogues,library,selected_station)
 	if initialized==null:check(false,source.error)
 	else:
 		check(not before.station_response_flags.is_empty() and initialized.entry_owner().snapshot().station_response_flags==before.station_response_flags,"Selected flight or portal entry lost the earned nonempty station history")
 		await verify_component(initialized)
 	check(station.snapshot()==before and archive.capture(station,bindings)==document,"Escape component changed the earned station/save")
+
+func component_station(station: RefCounted) -> RefCounted:
+	return station
 
 func verify_component(world: RefCounted) -> void:
 	var world_before: Dictionary=world.snapshot();var entry: RefCounted=world.entry_owner()
