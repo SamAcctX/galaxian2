@@ -6,6 +6,19 @@ var native_steps:={}
 var clock_origin_us:=-1
 var clock_origin_ms:=0
 
+func exercise_cadence_controls() -> bool:
+	# Exercise free firing and throttle edges in the first second, before the
+	# escort pilot spends the battle following its freighter. A player can fire
+	# without an aim lock; this proves input/emission, not a target hit.
+	for index in 144:
+		if not cadence_host_step({"commands":Vector2.ZERO,"fire":index<72,
+			"throttle":0.0 if index<72 else 1.0,"strafe":-1.0 if index<72 else 1.0,"free_fire":true}):return false
+	check(emitted_primary_shots>0,"The earned opening trigger sample did not emit a projectile")
+	if failures:return false
+	await capture_free_application("void41-cadence-primary-emission")
+	primary_captured=true
+	return true
+
 func cadence_delta_us(index: int) -> int:
 	return HostCadence.rate_delta_us(index,144)
 

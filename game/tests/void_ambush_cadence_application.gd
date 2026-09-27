@@ -34,10 +34,13 @@ func verify_free_application() -> void:
 		if not await acknowledge_cadence_page(2038+page,185+page,"briefing"):return
 	check(session.can_control() and app._mouse_captured,"Earned briefing did not release desktop mouse flight")
 	if failures:return
+	if not await exercise_cadence_controls():return
 	var pilot:=EscortPilot.new();var tactics:=EscortTactics.new();var phases:={}
 	await fly_cadence_loop(session,pilot,tactics,phases)
 	if failures:return
 	await finish_cadence_flight(session,scene,camera,parent,initial,world,pilot,phases)
+
+func exercise_cadence_controls() -> bool:return true
 
 ## The earned driver and bounded integration check execute this same loop.
 ## A component may stop at a sample limit; earned verification has no such limit
@@ -158,7 +161,7 @@ func cadence_host_step(input: Dictionary,observation: RefCounted=null) -> bool:
 		controlled_frames+=1
 		if input.fire:
 			var eligible: Array=EscortTargets.select_ids(before.encounter.combat.actors.filter(func(actor):return actor.actor_id!=0))
-			check(input.get("target",-1) in eligible,"Earned primary input lacked an actual living active hostile")
+			check(input.get("target",-1) in eligible or input.get("free_fire",false),"Earned aimed primary input lacked an actual living active hostile")
 			if failures:return false
 			firing_frames+=1
 		if input.strafe!=0:strafe_frames[int(input.strafe)]+=1
@@ -175,7 +178,7 @@ func cadence_host_step(input: Dictionary,observation: RefCounted=null) -> bool:
 		var mounts: Array=after.encounter.primaries.guns.filter(func(gun):return gun.mount_id==shot.mount_id)
 		check(mounts.size()==1 and mounts[0].projectiles.slots.any(func(slot):return slot!=null),"Earned native fired event lacked its mounted live projectile")
 		emitted_primary_shots+=1
-		print("Earned actual primary emission ",emitted_primary_shots," at ",after.elapsed_ms,"ms; mount ",shot.mount_id," item ",shot.item_id," target ",input.get("target",-1),"; trigger while acquiring, not a hit claim")
+		print("Earned actual primary emission ",emitted_primary_shots," at ",after.elapsed_ms,"ms; mount ",shot.mount_id," item ",shot.item_id," target ",input.get("target",-1),"; trigger sample, not a hit claim")
 	if controlling and app.session.can_control():check(after.input.commands.is_equal_approx(input.commands) and after.input.primary_held==input.fire and is_equal_approx(float(after.throttle),float(input.throttle)),"Native pilot sample mismatch: expected "+str(input)+" consumed "+str(after.input)+" throttle "+str(after.throttle))
 	cadence_frames+=1;cadence_elapsed_us+=delta_us;cadence_kinds[delta_us]=true
 	return failures==0
