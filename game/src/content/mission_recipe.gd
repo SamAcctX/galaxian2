@@ -5,6 +5,7 @@ const Convoy=preload("res://src/content/dekato_convoy_definitions.gd")
 const Story=preload("res://src/content/full_hold_story_definitions.gd")
 const Vitals=preload("res://src/simulation/combat_vitals.gd")
 const Ambush=preload("res://src/content/selected41_population_definitions.gd")
+const Epilogue=preload("res://src/content/campaign_epilogue_definitions.gd")
 
 ## The entry owner has already admitted the retained side job. Cast counts and
 ## result conditions share this recipe; downstream owners do not infer them.
@@ -41,6 +42,8 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 
 static func select(bindings: RefCounted,cursor: Variant) -> Dictionary:
 	if bindings==null or not cursor is int:return {}
+	var station:=Epilogue.recipe(bindings,cursor)
+	if not station.is_empty():return station
 	var source: Dictionary=Convoy.declarations(bindings)
 	if Convoy.available(bindings) and int(source.mission.campaign_cursor)==cursor:
 		return from_convoy(bindings,source)
@@ -79,6 +82,10 @@ static func from_ambush(bindings: RefCounted) -> Dictionary:
 		"actor_engines":[{"actor_id":0,"sound_id":47}],
 		"sequence_particles":particles,
 		"receipt_key":"nehma_source_receipt","source_receipt":bindings.nehma_source_receipt().duplicate(true)}
+
+static func select_flight(bindings: RefCounted,cursor: Variant) -> Dictionary:
+	var recipe:=select(bindings,cursor)
+	return {} if recipe.get("entry")=="station" else recipe
 
 ## Both authored variants use the general manager's imported explosion art.
 ## Register once on the physical actor root; the native hook owns enablement.

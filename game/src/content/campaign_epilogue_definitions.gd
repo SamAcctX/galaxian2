@@ -16,10 +16,12 @@ static func recipe(bindings: RefCounted,cursor: Variant) -> Dictionary:
 	var mission:={"kind":11,"station_id":10,"reward":0,"bonus":0,"source_parameter":0}
 	var next_mission:=mission.duplicate()
 	if cursor==44:next_mission={"kind":-1,"station_id":0,"reward":0,"bonus":0,"source_parameter":0}
+	var policy: Dictionary=bindings.early_contracts.flight_results.duplicate(true)
+	policy.success_poll_milliseconds=1001
 	return {"cursor":cursor,"station_id":10,"mission":mission,"next_cursor":cursor+1,
 		"next_mission":next_mission,"entry":"station","briefing":[],"radio":[],"sequences":[],
 		"result":{"success":{"kind":"station","station_id":10,"after_ms":1000},"failure":{"kind":"never"},
-			"actor_count":0,"lines":result,"policy":bindings.early_contracts.flight_results.duplicate(true)},
+			"actor_count":0,"lines":result,"policy":policy},
 		"career":{"reward_credits":40000 if cursor==44 else 0},
 		"presentation":presentation() if cursor==43 else {},
 		"continuation":{"kind":"station","station_id":10},

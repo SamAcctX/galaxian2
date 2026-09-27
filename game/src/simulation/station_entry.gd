@@ -602,18 +602,25 @@ func previous() -> bool:
 	_state.line_index-=1
 	return true
 
-func campaign_conversation_ready(bindings: RefCounted,catalogues: RefCounted,library: RefCounted) -> bool:
-	return _ready_campaign_visit(bindings,catalogues,library)!=null
+func campaign_conversation_ready(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,elapsed_ms: int=0) -> bool:
+	return _ready_campaign_visit(bindings,catalogues,library,elapsed_ms)!=null
 
-func _ready_campaign_visit(bindings: RefCounted,catalogues: RefCounted,library: RefCounted) -> RefCounted:
+func _ready_campaign_visit(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,elapsed_ms: int=0) -> RefCounted:
 	if _state.get("phase")!="free_play_required" or not _state.get("acknowledged",false) or _state.get("hangar_open",false) or _contracts==null or _equipment==null or _contracts.result_pending():return null
-	var visit:=CampaignVisit.new()
-	if not visit.configure_station(bindings,library,catalogues,_state.campaign_cursor,_state.mission) or not visit.poll_station(_state.loadout,true,false,_equipment):return null
+	var visit: RefCounted
+	if _mission_station_context!=null:
+		if _mission_station_context.recipe().is_empty():return null
+		visit=load("res://src/simulation/station_mission_visit.gd").new()
+		if not visit.prepare(bindings,library,catalogues,_mission_station_context,elapsed_ms):return null
+	else:
+		visit=CampaignVisit.new()
+		if not visit.configure_station(bindings,library,catalogues,_state.campaign_cursor,_state.mission):return null
+	if not visit.poll_station(_state.loadout,true,false,_equipment):return null
 	return visit if visit.snapshot().dialogue.visible else null
 
-func begin_campaign_conversation(bindings: RefCounted,catalogues: RefCounted,library: RefCounted) -> bool:
+func begin_campaign_conversation(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,elapsed_ms: int=0) -> bool:
 	error=""
-	var visit: RefCounted=_ready_campaign_visit(bindings,catalogues,library)
+	var visit: RefCounted=_ready_campaign_visit(bindings,catalogues,library,elapsed_ms)
 	if visit==null:return fail("The campaign station conversation is not ready")
 	var owned: Dictionary=_equipment.snapshot();var career: Dictionary=_contracts.snapshot()
 	if owned.loadout!=_state.loadout or owned.cargo!=_state.cargo or career.progress!=_state.progress or career.campaign_cursor!=_state.campaign_cursor or career.station_id!=_state.loadout.station_id:return fail("The campaign station lost its retained equipment or career")
@@ -628,13 +635,31 @@ func _navigate_campaign(action: String) -> bool:
 	if receipt.is_empty():
 		_campaign_visit=visit;_state.line_index=int(visit.snapshot().dialogue.index)
 		return true
+	if _mission_station_context!=null and not _mission_station_context.recipe().get("presentation",{}).is_empty():
+		_campaign_visit=visit;_state.phase="presentation_required"
+		return true
+	return _commit_campaign_visit(visit)
+
+func presentation_request() -> Dictionary:
+	if _state.get("phase")!="presentation_required" or _mission_station_context==null:return {}
+	return _mission_station_context.recipe().get("presentation",{}).duplicate(true)
+
+func complete_presentation(sequence: RefCounted) -> bool:
+	var request:=presentation_request()
+	if request.is_empty() or not is_instance_of(sequence,load("res://src/simulation/mission_presentation.gd")) or not sequence.completes(_campaign_bindings,int(_state.campaign_cursor),request):return fail("The station presentation has not completed")
+	return _commit_campaign_visit(_campaign_visit)
+
+func _commit_campaign_visit(visit: RefCounted) -> bool:
 	if _contracts==null or _equipment==null or _campaign_bindings==null:return fail("The campaign conversation lost its retained owners")
+	var receipt: Dictionary=visit.transition()
 	var staged: Dictionary=_contracts.acknowledge_station_campaign(_campaign_bindings,_equipment,_state.mission,visit)
 	if staged.is_empty():return fail(_contracts.error)
 	_contracts=staged.career;_state.progress=_contracts.snapshot().progress
 	_retain_equipment(staged.equipment)
 	_state.campaign_cursor=receipt.campaign_cursor;_state.player_cache.campaign_cursor=receipt.campaign_cursor
 	_state.mission=receipt.mission.duplicate(true);_state.reward_credits=receipt.reward_credits
+	_mission_station_context=_contracts.station_context_owner()
+	if _mission_station_context!=null:_state.mission_station_return=_mission_station_context.snapshot()
 	_state.phase="free_play_required";_state.acknowledged=true;_state.campaign_conversation=false
 	if receipt.has("next_course") and not receipt.next_course.is_empty():_state.next_course=receipt.next_course.duplicate(true)
 	_campaign_visit=null;_campaign_bindings=null;_state.line_index=0

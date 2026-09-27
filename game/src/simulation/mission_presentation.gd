@@ -57,6 +57,9 @@ func skip() -> bool:
 	_complete=true;_completion="skipped";_events=[]
 	return true
 
+func completes(bindings: RefCounted,cursor: int,spec: Dictionary) -> bool:
+	return _complete and _identity=={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":cursor} and _spec==spec
+
 func snapshot() -> Dictionary:
 	if _identity.is_empty():return {}
 	var fade:=0.0

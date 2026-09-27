@@ -25,6 +25,8 @@ var _last_background_ms:=0
 var _active:=false
 var _paused:=false
 var _music_gain:=1.0
+var _music_fade_ms:=0
+var _release_remaining_ms:=0
 
 func _init() -> void:
 	mouse_filter=Control.MOUSE_FILTER_STOP;visible=false
@@ -62,7 +64,8 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,sequ
 	if not sounds.configure(library,bindings):return reject(sounds.error)
 	var clip: Dictionary=sounds.prepare(int(spec.music_event_id))
 	if clip.has("unsupported") or not clip.get("stream") is AudioStream or clip.get("voice",false) or clip.get("spatial",true):return reject("The presentation music is unavailable: "+str(clip.get("unsupported",sounds.error)))
-	music=Streams.player(clip.stream,false,"Music");_music_gain=float(clip.gain);music.volume_db=linear_to_db(_music_gain);add_child(music)
+	music=Streams.player(clip.stream,false,"Music");_music_gain=float(clip.gain);_music_fade_ms=int(clip.fade_out_ms)
+	music.volume_db=linear_to_db(_music_gain);add_child(music)
 	_logo.texture=menu.logo;_credits.text=library.strings[int(spec.credits_text_id)]
 	_credits.add_theme_font_override("normal_font",art.font)
 	_spec=spec.duplicate(true);_sequence=sequence;_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":state.campaign_cursor}
@@ -97,6 +100,18 @@ func set_paused(value: bool) -> void:
 	if music!=null:music.stream_paused=value
 	if speech!=null:speech.set_paused(value)
 	if background!=null:background.set_active(_active and not value and _sequence!=null and _sequence.snapshot().background_swapped and not _sequence.snapshot().complete)
+
+func release() -> void:
+	_active=false;visible=false;background.set_active(false);speech.clear()
+	_release_remaining_ms=_music_fade_ms
+	if _release_remaining_ms==0:music.stop()
+
+func advance_release(milliseconds: int) -> bool:
+	if _paused:return _release_remaining_ms>0
+	_release_remaining_ms=maxi(0,_release_remaining_ms-maxi(0,milliseconds))
+	if _release_remaining_ms==0:music.stop();return false
+	music.volume_db=linear_to_db(maxf(0.000001,_music_gain*float(_release_remaining_ms)/float(_music_fade_ms)))
+	return true
 
 func _layout() -> void:
 	if _sequence==null or _logo.texture==null or size.x<=0 or size.y<=0:return

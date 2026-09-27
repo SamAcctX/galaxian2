@@ -94,7 +94,7 @@ func admit_normal_return(bindings: RefCounted,catalogues: RefCounted,transfer: R
 	if not _identity.is_empty():return reject("A mission context is admitted only once")
 	if not is_instance_of(transfer,load("res://src/simulation/mission_portal_return.gd")) or transfer.snapshot().is_empty():return reject("Normal space requires its completed native mission return")
 	var retained: Dictionary=transfer.snapshot()
-	var recipe:=Recipe.select(bindings,retained.campaign_cursor)
+	var recipe:=Recipe.select_flight(bindings,retained.campaign_cursor)
 	if recipe.is_empty() or recipe.get("world_return",{})!={"kind":"normal_space","location":"retained_entry"}:return reject("This mission has no retained normal-space continuation")
 	if catalogues==null or catalogues.content_id!=bindings.base_content_id:return reject("Normal return catalogues belong to another content source")
 	for key in ["base_content_id","binding_id"]:
@@ -149,7 +149,7 @@ static func normal_population_matches(bindings: RefCounted,context: Variant,capa
 func admit(bindings: RefCounted,catalogues: RefCounted,context: Dictionary,loadout: Dictionary) -> bool:
 	error=""
 	if not _identity.is_empty():return reject("A mission context is admitted only once")
-	var recipe:=Recipe.select(bindings,context.get("campaign_cursor"))
+	var recipe:=Recipe.select_flight(bindings,context.get("campaign_cursor"))
 	if recipe.is_empty():return reject("No complete recipe supports this mission")
 	if recipe.entry=="retained_world":return reject("This mission must continue its acknowledged living world")
 	if catalogues==null or catalogues.content_id!=bindings.base_content_id:return reject("Mission catalogues belong to another content source")
@@ -172,8 +172,8 @@ func retained_successor(bindings: RefCounted,loadout: Dictionary) -> RefCounted:
 	error=""
 	if _recipe.is_empty() or _recipe.get("continuation",{}).get("kind")!="retained_world" or not matches_loadout(loadout):
 		reject("No retained-world continuation accepts this equipment");return null
-	var source:=Recipe.select(bindings,_recipe.cursor)
-	var recipe:=Recipe.select(bindings,_recipe.next_cursor)
+	var source:=Recipe.select_flight(bindings,_recipe.cursor)
+	var recipe:=Recipe.select_flight(bindings,_recipe.next_cursor)
 	if source!=_recipe or recipe.is_empty() or recipe.get("entry")!="retained_world" or recipe.get("retained_world_cursor")!=_recipe.cursor or recipe.mission!=_recipe.next_mission:
 		reject("The retained successor differs from its admitted recipe");return null
 	if recipe.world!=_recipe.world or recipe.station_id!=_recipe.station_id or recipe.system_id!=_recipe.system_id:
@@ -210,7 +210,7 @@ func matches_loadout(loadout: Dictionary) -> bool:
 
 func matches_source(bindings: RefCounted,departure: Dictionary) -> bool:
 	if _recipe.is_empty():return false
-	var current:=Recipe.select(bindings,_recipe.cursor)
+	var current:=Recipe.select_flight(bindings,_recipe.cursor)
 	return not current.is_empty() and current.source_receipt==_recipe.source_receipt and departure.get(_recipe.receipt_key,{})==_recipe.source_receipt
 
 func accepts_result(cursor: int,mission: Dictionary,station_id: int) -> bool:

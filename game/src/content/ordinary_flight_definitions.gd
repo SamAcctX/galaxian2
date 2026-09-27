@@ -53,7 +53,7 @@ static func for_departure(bindings: RefCounted, entry: Dictionary) -> Dictionary
 ## Resource preparation is separate from supported flight construction. This
 ## lets the original lesson be checked without opening an unfinished mission.
 static func briefing_presentation(bindings: RefCounted,cursor: Variant,ordinary_world:=false) -> Dictionary:
-	var recipe:=MissionRecipe.select(bindings,cursor)
+	var recipe:=MissionRecipe.select_flight(bindings,cursor)
 	if not recipe.is_empty() and not ordinary_world:return MissionRecipe.briefing(bindings,recipe)
 	if cursor==36 and not ordinary_world and Bakka.available(bindings):return briefing(bindings,cursor,false,int(bindings.mido_travel.bakka_contest.mission.station_id))
 	if bindings!=null and cursor==32 and FreeFlight.Campaign.post_probe_available(bindings.mido_travel):return briefing(bindings,cursor,true,int(bindings.mido_travel.post_probe_visits.missions["32"].station_id))
@@ -68,7 +68,7 @@ static func briefing_presentation(bindings: RefCounted,cursor: Variant,ordinary_
 	return briefing(bindings,cursor,ordinary_world)
 
 static func briefing(bindings: RefCounted,cursor: Variant,ordinary_world:=false,station_id: int=-1) -> Dictionary:
-	var recipe:=MissionRecipe.select(bindings,cursor)
+	var recipe:=MissionRecipe.select_flight(bindings,cursor)
 	if not recipe.is_empty() and station_id==recipe.station_id:return MissionRecipe.briefing(bindings,recipe)
 	# Owning the contest capability must not replace ordinary travel elsewhere
 	# while its target remains pending. Only the selected B'akka entry uses it.
@@ -158,7 +158,7 @@ static func briefing(bindings: RefCounted,cursor: Variant,ordinary_world:=false,
 	return Training.briefing(bindings) if cursor==7 else MiningStory.briefing(bindings,cursor)
 
 static func objective(bindings: RefCounted,cursor: Variant) -> Dictionary:
-	var recipe:=MissionRecipe.select(bindings,cursor)
+	var recipe:=MissionRecipe.select_flight(bindings,cursor)
 	if not recipe.is_empty():return MissionRecipe.objective(bindings,recipe)
 	if cursor==36 and Bakka.available(bindings):
 		var shared:=MiningStory.objective(bindings,2)

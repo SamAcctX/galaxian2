@@ -84,7 +84,7 @@ func restore(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: Vari
 	if not data_tree(data):return reject("The save contains unsupported or oversized data")
 	if data.version==2:return Opening.new().restore(self,bindings,cat,library,data)
 	var career_keys: Array=CAREER_KEYS+(["void_source","blueprints"] if data.version in [8,9,10,11] else [])
-	var station_keys: Array=STATION_KEYS+(CHAPTER_KEYS if data.version in [4,6,7,8,10] else [])+(["dekato_source_receipt"] if data.version in [9,10,11] else [])+(["nehma_source_receipt"] if data.version in [10,11] else [])+(["mission_station_return"] if data.version==11 else [])
+	var station_keys: Array=STATION_KEYS+(CHAPTER_KEYS if data.version in [4,6,7,8,10,11] else [])+(["dekato_source_receipt"] if data.version in [9,10,11] else [])+(["nehma_source_receipt"] if data.version in [10,11] else [])+(["mission_station_return"] if data.version==11 else [])
 	if not _keys(data.get("station"),station_keys) or not _keys(data.get("inventory"),INVENTORY_KEYS) or not _keys(data.get("career"),career_keys):return reject("The save contains an unknown station, inventory or career field")
 	if data.version in [8,9,10,11] and not data.career.get("void_source") is Dictionary:return reject("The save is missing its retained Void source")
 	if data.version in [8,9,10,11] and not data.career.get("blueprints") is Dictionary:return reject("The save is missing its retained blueprint progress")
@@ -133,7 +133,7 @@ func restore(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: Vari
 		if not saved.next_course is Dictionary:return reject("The saved campaign course is not a coordinate record")
 		for key in expected_course:
 			if not saved.next_course.get(key) is int:return reject("The saved campaign course has an invalid coordinate")
-	if saved.get("reward_credits")!=0:
+	if saved.get("reward_credits")!=0 and continuation==null:
 		var reward: Dictionary={} if data.version!=4 else bindings.mido_travel.kappa_return.conversations[-1]
 		if data.version in [7,8] and cursor==32:reward=FreeFlight.Campaign.dialogue_rules(bindings,31,FreeFlight.Campaign.mission(bindings.mido_travel,31),true)
 		if reward.is_empty() or cursor!=int(reward.next_cursor) or inventory.loadout.station_id!=int(reward.mission.station_id) or saved.get("reward_credits")!=int(reward.reward_credits):return reject("The acknowledged station retains an unknown story reward")
@@ -214,7 +214,8 @@ func _locations(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: V
 		var row: Variant=data.locations[index]
 		if not _keys(row,["station_id","population","offers","stock","market_items"]) or not row.get("population") is Dictionary or not row.get("offers") is Dictionary:return reject("Invalid saved lounge entry")
 		var stock:=Stock.new();var contacts:=Contacts.new()
-		if not stock.restore(bindings,cat,row.get("stock")) or not contacts.restore(bindings,cat,library,row.population,station_context):return reject(stock.error+contacts.error)
+		var generation_context: RefCounted=null if station_context==null else station_context.historical(bindings,row.population.get("context",{}).get("campaign_cursor"))
+		if not stock.restore(bindings,cat,row.get("stock")) or not contacts.restore(bindings,cat,library,row.population,generation_context):return reject(stock.error+contacts.error)
 		if row.get("station_id")!=row.population.context.station_id:return reject("The cached lounge names another station")
 		if index==0:cache._state.history=row.population.initial_history.duplicate()
 		if not cache.remember(contacts,stock):return reject(cache.error)
@@ -321,7 +322,7 @@ func _continuation_station(bindings: RefCounted,state: Dictionary,context: RefCo
 	if not state.get("loadout") is Dictionary or not state.get("arrival_player") is Dictionary:return _invalid("The mission station lost its arriving player or equipment")
 	var destination: Dictionary=context.snapshot();var seed: Dictionary=state.loadout;var player: Dictionary=state.arrival_player
 	if not StationContext.permits(bindings,state.get("campaign_cursor"),seed.get("station_id"),context) or seed.get("system_id")!=destination.system_id:return _invalid("The mission station differs from its admitted destination")
-	if not _identity(state,bindings) or state.get("mission_station_return")!=destination or state.get("mission")!=destination.mission or state.get("reward_credits")!=0 or state.get("phase")!="free_play_required" or state.get("line_index")!=0:return _invalid("The mission station changed its acknowledged result or reward")
+	if not _identity(state,bindings) or state.get("mission_station_return")!=destination or state.get("mission")!=destination.mission or state.get("reward_credits")!=destination.get("reward_credits",0) or state.get("phase")!="free_play_required" or state.get("line_index")!=0:return _invalid("The mission station changed its acknowledged result or reward")
 	for key in ["return_visit","local_visit","contract_station","local_visit_acknowledged","acknowledged","alioth_return_acknowledged"]:
 		if state.get(key)!=true:return _invalid("The mission station lost acknowledgement: "+key)
 	if player.get("campaign_cursor")!=destination.source_cursor or not state.get("flight_elapsed_ms") is int:return _invalid("The mission station changed its arriving flight cursor or clock")

@@ -253,6 +253,15 @@ func save_station(announce: bool=true) -> bool:
 func _autosave_station() -> bool:
 	return save_station(false) if _can_save_station() else true
 
+## Recipe acknowledgement and its durable checkpoint are one transaction.
+func _save_station_candidate(candidate: RefCounted) -> bool:
+	if _save_directory.is_empty():return true
+	var cat:=Catalogues.new()
+	if not cat.open(library):return _save_message(cat.error,false)
+	if not _save_file.save(station_save_path(),candidate,bindings,cat,library,candidate.contract_owner().location_owner()):return _save_message(_save_file.error,false)
+	if _save_notice!=null:_save_notice.hide()
+	return true
+
 func _save_message(message: String,success: bool) -> bool:
 	if _save_notice!=null:
 		_save_notice.text=message;_save_notice.modulate=Color(0.7,0.9,0.8) if success else Color(1.0,0.65,0.5);_save_notice.show()
@@ -489,6 +498,10 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		_skip_button.disabled=session!=null and session.has_method("cinematic_skipping") and session.cinematic_skipping()
 	_layout_flight_overlays()
 	_refresh_station_shell(state)
+	if session is StationSession and session.presentation_active():
+		for node in [station_shell,station_panel,equipment_panel,lounge_panel,map_panel,_menu_button,_launch_button,_hangar_button,_lounge_button,_station_map_button,_save_button,_load_button,_flight_hint,_skip_button]:
+			if node!=null:node.hide()
+		if _save_notice!=null and not _transition_failed:_save_notice.hide()
 	if _player_mode and session is StationSession and (_station_map_open or state.get("dialogue",{}).get("visible",false) or state.get("hangar_open",false) or state.get("lounge_open",false) or not state.get("contracts",{}).get("pending_result",{}).is_empty()):
 		for button in [_menu_button,_launch_button,_hangar_button,_lounge_button,_station_map_button,_save_button,_load_button]:button.hide()
 	if status!=null and _player_mode:status.visible=_transition_failed or (not _station_map_open and not flight_menu.visible and not (session is StationSession) and not (flight_vitals!=null and flight_vitals.visible and session.can_control()))
@@ -542,6 +555,13 @@ func _exit_tree() -> void:
 	if _mouse_captured and Input.mouse_mode==Input.MOUSE_MODE_CAPTURED:Input.mouse_mode=Input.MOUSE_MODE_VISIBLE
 
 func _input(event: InputEvent) -> void:
+	if session is StationSession and session.presentation_active() and _focused and is_visible_in_tree():
+		var pressed: bool=(event is InputEventKey and event.pressed and not event.echo) or (event is InputEventJoypadButton and event.pressed) or (event is InputEventMouseButton and event.pressed) or (event is InputEventScreenTouch and event.pressed)
+		if pressed:
+			if _transition_failed:retry_transition()
+			elif session.skip_presentation():present_session()
+		if not event is InputEventMouseMotion:get_viewport().set_input_as_handled()
+		return
 	if not _touch_detected and event is InputEventScreenTouch and event.pressed and event.device!=InputEvent.DEVICE_ID_EMULATION:
 		_touch_detected=true;refresh_render_mode()
 	# Own captured mouse input before the flight SubViewport can consume it.
@@ -770,10 +790,11 @@ func connect_station_panel(panel: Control) -> void:
 
 func station_navigation(action: String) -> void:
 	if session==null or not session is StationSession or not _focused or not is_visible_in_tree() or session.is_paused():return
-	if not session.navigate(action,station_panel):
+	var recipe_checkpoint: bool=session.has_station_recipe_context()
+	if not session.navigate(action,station_panel,_save_station_candidate):
 		status.text=session.error;return
 	present_session()
-	if action=="next":_autosave_station()
+	if action=="next" and not recipe_checkpoint:_autosave_station()
 
 func equipment_action(action: String, item_id: int=-1, slot_index: int=-1) -> bool:
 	if not session is StationSession or not _focused or not is_visible_in_tree() or session.is_paused() or not _launch_packet.is_empty():return false
@@ -1003,6 +1024,7 @@ func _begin_station_story(campaign: bool) -> bool:
 	if not prepared or not (session.begin_campaign_story(panel) if campaign else session.begin_contract_story(panel)):
 		var problem: String=panel.error+session.error;panel.free();return transition_error(problem)
 	var previous:=station_panel;station_panel=panel;connect_station_panel(panel);previous.free()
+	if _save_notice!=null:_save_notice.hide()
 	return true
 
 func cancel_departure() -> void:
@@ -1406,6 +1428,10 @@ func transition_error(message: String) -> bool:
 func retry_transition() -> bool:
 	if not _transition_failed or session==null or not _focused or not is_visible_in_tree():return false
 	var now:=Time.get_ticks_usec()
+	if session is StationSession and session.presentation_complete():
+		_transition_failed=false
+		present_session()
+		return not _transition_failed
 	if session.status=="arrival_transition_required":return enter_arrival(now)
 	if session.status=="local_arrival_transition_required":return enter_local_arrival(now)
 	if session.status=="gate_arrival_transition_required":return enter_gate_arrival(now)
@@ -1430,6 +1456,11 @@ func _present_secondaries() -> String:
 
 func present_session() -> void:
 	if session==null:return
+	if session is StationSession and not _transition_failed:
+		if session.presentation_complete() and not session.is_paused():
+			if not session.complete_presentation(station_panel,_save_station_candidate):transition_error(session.error);return
+		if session.has_station_recipe_context() and not session.presentation_active() and not session.is_paused() and session.campaign_story_ready():
+			if not _begin_campaign_story():return
 	if session is MissionSession:
 		if not session.can_control():clear_input()
 		if session.is_paused():status.text="Paused · Esc / controller Start resumes"

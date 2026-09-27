@@ -2,6 +2,7 @@ extends RefCounted
 ## Coordinates mission transitions while combat, flight, dialogue and career
 ## retain their native owners. Frame forks make each boundary transactional.
 const Context=preload("res://src/simulation/mission_context.gd")
+const StationContext=preload("res://src/simulation/mission_station_context.gd")
 const Condition=preload("res://src/simulation/mission_result_condition.gd")
 const Conversation=preload("res://src/simulation/mission_conversation.gd")
 const ResultPoll=preload("res://src/simulation/mission_result_poll.gd")
@@ -16,7 +17,7 @@ var _dialogue_kind:=""
 func configure(context: RefCounted) -> bool:
 	error=""
 	if _context!=null:return reject("A mission runner is configured only once")
-	if not context is Context or context.recipe().is_empty():return reject("Mission runner requires an admitted entry")
+	if not (context is Context or context is StationContext) or context.recipe().is_empty():return reject("Mission runner requires an admitted entry")
 	_context=context;_result=context.recipe().result
 	_state={"clock_ms":0,"elapsed_ms":0,"mode":0,"retired":false}
 	return true

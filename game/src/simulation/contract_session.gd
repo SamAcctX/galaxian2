@@ -229,6 +229,8 @@ func transfer_ordinary_void(bindings: RefCounted,progress: Dictionary,source: Re
 ## Keep the independent job and final combat counters while the world changes.
 var _station_context: RefCounted
 
+func station_context_owner() -> RefCounted:return _station_context
+
 func enter_mission_station(bindings: RefCounted,cat: RefCounted,library: RefCounted,entry: RefCounted,equipment: RefCounted,settings: Dictionary,unix_seconds: Variant) -> bool:
 	if not is_instance_of(entry,load("res://src/simulation/mission_station_return.gd")) or not entry.matches_source_career(self):return reject("Station continuation requires its actual retained career")
 	var context: RefCounted=entry.context_owner();var destination: Dictionary=context.snapshot()
@@ -581,6 +583,9 @@ func acknowledge_station_campaign(bindings: RefCounted,equipment: RefCounted,sto
 	if rules.has("unlock_system_ids") and (not equal.equal_value(receipt.get("unlock_system_ids"),rules.unlock_system_ids) or not equal.equal_value(receipt.get("next_course"),rules.next_course)):return fail("The station conversation changed its next destination")
 	var next: RefCounted=fork()
 	var inventory: RefCounted=equipment.fork()
+	if _station_context!=null:
+		next._station_context=_station_context.successor(bindings,receipt)
+		if next._station_context==null:return fail(_station_context.error)
 	if rules.has("cargo_requirement"):
 		if next._blueprints==null:return fail("The crystal hand-in lost its retained blueprints")
 		var required: Dictionary=rules.cargo_requirement

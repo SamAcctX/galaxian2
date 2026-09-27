@@ -9,6 +9,10 @@ static func evaluate(condition: Dictionary,observation: Dictionary) -> Dictionar
 	if condition.get("kind") is String:
 		match condition.kind:
 			"never":return {"satisfied":false}
+			"station":
+				var world: Dictionary=observation.get("world",{})
+				if not world.get("docked") is bool or not world.get("station_id") is int or not observation.get("elapsed_ms") is int:return {}
+				return {"satisfied":world.docked and world.station_id==int(condition.station_id) and observation.elapsed_ms>int(condition.after_ms)}
 			"elapsed":
 				if not observation.get("elapsed_ms") is int:return {}
 				return {"satisfied":observation.elapsed_ms>int(condition.after_ms)}

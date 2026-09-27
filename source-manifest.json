@@ -2702,6 +2702,12 @@
     "game/src/presentation/mission_credits_panel.gd",
     "game/src/presentation/mission_credits_panel.gd.uid",
     "game/tests/mission_credits_panel.gd",
-    "game/tests/mission_credits_panel.gd.uid"
+    "game/tests/mission_credits_panel.gd.uid",
+    "game/src/simulation/station_mission_visit.gd",
+    "game/src/simulation/station_mission_visit.gd.uid",
+    "game/tests/station_mission_recipe.gd",
+    "game/tests/station_mission_recipe.gd.uid",
+    "game/tests/campaign_ending_application.gd",
+    "game/tests/campaign_ending_application.gd.uid"
   ]
 }

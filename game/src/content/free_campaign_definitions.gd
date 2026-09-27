@@ -32,6 +32,11 @@ static func result_presentation(bindings: RefCounted,cursor: Variant,mission: Va
 ## Preparing original dialogue does not authorize a campaign departure.
 static func dialogue_rules(bindings: RefCounted,cursor: Variant,mission: Variant,station_only:=false) -> Dictionary:
 	if station_only:
+		var recipe: Dictionary=load("res://src/content/mission_recipe.gd").select(bindings,cursor)
+		if recipe.get("entry")=="station" and recipe.mission==mission:
+			return {"campaign_cursor":recipe.cursor,"mission":recipe.mission,"next_cursor":recipe.next_cursor,
+				"next_mission":recipe.next_mission,"reward_credits":recipe.career.reward_credits,
+				"events":recipe.result.lines,"target_station_required":true}
 		if cursor==39:return load("res://src/content/nehma_return_definitions.gd").conversation(bindings,cursor,mission)
 		if Preparation.selected(bindings,cursor,mission,"fitting"):return bindings.mido_travel.kappa_preparation.fitting.duplicate(true)
 		if bindings!=null and expedition_available(bindings.mido_travel) and cursor==27:return Thynome.conversation(bindings,cursor,mission)

@@ -43,6 +43,10 @@ var _hangar_environment: Environment
 var _hangar_lights: Array[Light3D]=[]
 var station_sky: Node3D
 var station_planets: Node3D
+var _story_elapsed_ms:=0
+var _presentation: RefCounted
+var _presentation_view: Control
+var _released_presentation: Control
 
 static func supported(bindings: RefCounted) -> bool:
 	return bindings!=null and Definitions.parameters(bindings.station_presentation)
@@ -182,6 +186,14 @@ func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false) ->
 	var milliseconds:=roundi(clock.sample(now_microseconds,is_paused() or result_open)*1000)
 	if not clock.error.is_empty():return reject(clock.error)
 	if is_paused() or result_open:_clock=clock;return true
+	if _released_presentation!=null and not _released_presentation.advance_release(milliseconds):
+		_released_presentation.free();_released_presentation=null
+	if _presentation!=null:
+		if not _presentation.snapshot().complete:
+			var next: RefCounted=_presentation.fork()
+			if not next.advance(milliseconds) or not _presentation_view.present(next):return reject(next.error+_presentation_view.error)
+			_presentation=next
+		_clock=clock;_generation+=1;return true
 	if _polled_world!=_world and _world.has_contracts() and (world_state.phase in ["contracts_required","convoy_departure_required"] or (world_state.phase=="free_play_required" and preload("res://src/content/ordinary_contracts_definitions.gd").available(_bindings))):
 		var candidate: RefCounted=_world.fork()
 		if not candidate.poll_contract_result(_bindings):return reject(candidate.error)
@@ -199,11 +211,12 @@ func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false) ->
 	if not station_sky.apply_view({"pose":camera.global_transform}):return reject(station_sky.error)
 	if station_planets!=null and not station_planets.apply_view({"pose":camera.global_transform}):return reject(station_planets.error)
 	_motion=motion;_clock=clock;_generation+=1
+	_story_elapsed_ms=mini(2147483647,_story_elapsed_ms+milliseconds)
 	if not _dialogue_started and state.elapsed_ms>=_dialogue_delay_ms:
 		_dialogue_started=true;audio.present(0)
 	return true
 
-func navigate(action: String, panel: Control) -> bool:
+func navigate(action: String, panel: Control, checkpoint: Callable=Callable()) -> bool:
 	error=""
 	if status!="running" or not _active or not _dialogue_started or is_paused() or action not in ["next","previous"] or panel==null:return reject("Station conversation is inactive")
 	var candidate: RefCounted=_world.fork()
@@ -211,12 +224,54 @@ func navigate(action: String, panel: Control) -> bool:
 	if candidate.snapshot().get("phase")=="contracts_required" and _locations!=null:
 		if not candidate.open_contracts(_bindings,_catalogues) or not candidate.retain_contract_locations(_locations):return reject(candidate.error)
 	var staged: Dictionary=candidate.snapshot()
+	var request: Dictionary=candidate.presentation_request()
+	var sequence: RefCounted
+	var view: Control
+	if not request.is_empty():
+		var resources=load("res://src/presentation/opening_radio_resources.gd").new()
+		var layout: RefCounted=resources.prepare_layout(_library,_bindings)
+		sequence=load("res://src/simulation/mission_presentation.gd").new()
+		if layout==null or not sequence.configure(_bindings,_library,layout,int(staged.campaign_cursor),request):return reject(resources.error+sequence.error)
+		view=load("res://src/presentation/mission_credits_panel.gd").new();panel.get_parent().add_child(view)
+		view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		if not view.configure(_library,_bindings,_visuals,sequence,request,int(staged.loadout.station_id)):
+			var problem: String=view.error;view.free();return reject(problem)
 	var voice_line: int=int(staged.dialogue.index) if staged.dialogue.visible else -1
-	if not audio.valid_line(voice_line):return reject("Station speech is unavailable")
-	if not panel.present(staged):return reject(panel.error)
+	if not audio.valid_line(voice_line) or not panel.present(staged):
+		if view!=null:view.free()
+		return reject("Station speech or dialogue presentation is unavailable: "+panel.error)
+	if candidate.mission_station_context_owner()!=null and staged.phase=="free_play_required" and checkpoint.is_valid() and not checkpoint.call(candidate):
+		panel.present(_world.snapshot());return reject("Could not save the station continuation; acknowledge it again to retry")
 	_world=candidate;_generation+=1
+	if sequence!=null:
+		_presentation=sequence;_presentation_view=view
+		view.skip_requested.connect(skip_presentation);view.activate()
+	if staged.phase=="free_play_required":_story_elapsed_ms=0
 	if staged.get("boundary")=="station_reload_required":status="station_reload_required"
 	audio.present(voice_line)
+	return true
+
+func presentation_active() -> bool:return _presentation!=null
+func presentation_complete() -> bool:return _presentation!=null and _presentation.snapshot().complete
+func has_station_recipe_context() -> bool:return _world!=null and _world.mission_station_context_owner()!=null
+
+func skip_presentation() -> bool:
+	if _presentation==null or not _active or is_paused():return reject("No active presentation accepts input")
+	var next: RefCounted=_presentation.fork()
+	if not next.skip():return false
+	if not _presentation_view.present(next):return reject(_presentation_view.error)
+	_presentation=next;return true
+
+func complete_presentation(panel: Control,checkpoint: Callable=Callable()) -> bool:
+	if not presentation_complete() or panel==null or is_paused():return reject("The presentation has not finished")
+	var candidate: RefCounted=_world.fork()
+	if not candidate.complete_presentation(_presentation):return reject(candidate.error)
+	if not panel.present(candidate.snapshot()):return reject(panel.error)
+	if checkpoint.is_valid() and not checkpoint.call(candidate):
+		panel.present(_world.snapshot());return reject("Could not save the completed presentation; retry the transition")
+	_world=candidate;_story_elapsed_ms=0;_generation+=1
+	_presentation_view.release();_released_presentation=_presentation_view
+	_presentation_view=null;_presentation=null
 	return true
 
 func prepare_departure(bindings: RefCounted, catalogues: RefCounted) -> Dictionary:
@@ -238,7 +293,7 @@ func begin_contract_story(panel: Control) -> bool:
 	return _begin_station_story(panel,false)
 
 func campaign_story_ready() -> bool:
-	return _world!=null and not _lounge_open and _world.campaign_conversation_ready(_bindings,_catalogues,_library)
+	return _world!=null and not _lounge_open and _presentation==null and _world.campaign_conversation_ready(_bindings,_catalogues,_library,_story_elapsed_ms)
 
 func begin_campaign_story(panel: Control) -> bool:
 	return _begin_station_story(panel,true)
@@ -246,7 +301,7 @@ func begin_campaign_story(panel: Control) -> bool:
 func _begin_station_story(panel: Control,campaign: bool) -> bool:
 	if not (campaign_story_ready() if campaign else contract_story_ready()) or not _active or is_paused() or panel==null:return reject("The station story conversation is not ready")
 	var candidate: RefCounted=_world.fork()
-	if not (candidate.begin_campaign_conversation(_bindings,_catalogues,_library) if campaign else candidate.begin_contract_conversation(_bindings,_catalogues,_library)):return reject(candidate.error)
+	if not (candidate.begin_campaign_conversation(_bindings,_catalogues,_library,_story_elapsed_ms) if campaign else candidate.begin_contract_conversation(_bindings,_catalogues,_library)):return reject(candidate.error)
 	var state: Dictionary=candidate.snapshot()
 	var speech:=Speech.new();add_child(speech)
 	var prepared: bool=speech.configure_campaign_visit(_library,_bindings,int(state.campaign_cursor),state.mission,true) if campaign else speech.configure_station_return(_library,_bindings,13)
@@ -352,6 +407,8 @@ func set_pause(reason: String, paused: bool, now_microseconds: int) -> bool:
 	if paused:_pauses[reason]=true
 	else:_pauses.erase(reason)
 	if audio!=null:audio.set_paused(is_paused())
+	if _presentation_view!=null:_presentation_view.set_paused(is_paused())
+	if _released_presentation!=null:_released_presentation.set_paused(is_paused())
 	return true
 
 func rebase_time(now_microseconds: int) -> bool:
@@ -377,6 +434,7 @@ func snapshot() -> Dictionary:
 	state.camera=_motion.snapshot();state.generation=_generation
 	state.conversation_started=_dialogue_started
 	state.dialogue.visible=state.dialogue.visible and _dialogue_started
+	if _presentation!=null:state.presentation=_presentation.snapshot()
 	var locations: Dictionary=_world.contract_locations_snapshot() if _world.has_contracts() else ({} if _locations==null else _locations.snapshot())
 	if not locations.is_empty():state.locations=locations
 	if _world.has_contracts():
@@ -385,11 +443,20 @@ func snapshot() -> Dictionary:
 		if _lounge_open and lounge_scene!=null:state.lounge_scene=lounge_scene.snapshot()
 	return state
 func clear() -> void:
+	_clear_presentations()
 	for child in get_children():child.free()
 	error="";status="idle";station_name="";camera=null;geometry=null;audio=null
 	_world=null;_polled_world=null;_motion=null;_clock=null;_pauses={};_active=false;_generation=0
 	_dialogue_started=false;_dialogue_delay_ms=0
 	_locations=null;_bindings=null;_catalogues=null;_library=null;_lounge_open=false
 	_visuals=null;lounge_scene=null;station_sky=null;station_planets=null;_environment=null;_hangar_environment=null;_hangar_lights=[]
+	_story_elapsed_ms=0
+
+func _clear_presentations() -> void:
+	if is_instance_valid(_presentation_view):_presentation_view.free()
+	if is_instance_valid(_released_presentation):_released_presentation.free()
+	_presentation_view=null;_released_presentation=null;_presentation=null
+
+func _exit_tree() -> void:_clear_presentations()
 func fail(message: String) -> bool:clear();status="error";error=message;return false
 func reject(message: String) -> bool:error=message;return false
