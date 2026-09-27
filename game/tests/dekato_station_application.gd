@@ -15,7 +15,7 @@ func verify_free_application() -> void:
 	check(docked.dekato_source_receipt==definitions.dekato_source_receipt() and docked.binding_id==SOURCE_BINDING,"Docking changed the original202 or attached-source identity")
 	for key in ["credits","passengers","mission","accepted_contact","blueprints","void_source","completed_side_missions","delivery_statistics","travel_statistics"]:
 		check(docked.contracts[key]==flying.contracts[key],"Docking changed independent career: "+key)
-	check(docked.loadout==flying.equipment.loadout and docked.cargo==flying.cargo and docked.contracts.credits==19370,"Docking lost actual spent ammunition, cargo or money")
+	check(docked.loadout==flying.equipment.loadout and docked.cargo==flying.cargo and docked.contracts.credits==route_credits,"Docking lost actual spent ammunition, cargo or paid wallet")
 	now_us+=100000
 	if not app.session.step(now_us):check(false,app.session.error);return
 	app.present_session()

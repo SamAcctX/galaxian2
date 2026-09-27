@@ -32,6 +32,8 @@ func verify_free_application() -> void:
 	app.enable_saves(chapter_directory)
 	retained_job=original.contracts.mission.duplicate(true);route_credits=int(original.contracts.credits)
 	app.show();app.present_session();await process_frame;resume_application_focus()
+	if not prepare_battle_loadout():return
+	source_station=app.session.station_owner();original=source_station.snapshot()
 	if not app.save_station():check(false,app._save_notice.text);return
 	var safe_hash:=FileAccess.get_sha256(app.station_save_path())
 	await capture_free_application("earned202-dekato-eanya20-source")
@@ -84,7 +86,9 @@ func verify_free_application() -> void:
 	check(app.session.can_control() and app.session.snapshot().campaign_cursor==38,"The original briefing did not release the unchanged pending story")
 	await capture_free_application("earned202-dekato-controlled")
 	check(FileAccess.get_sha256(saved)==SOURCE_SHA and FileAccess.get_sha256(app.station_save_path())==safe_hash,"Arrival overwrote its viable Eanya checkpoint")
-	if not failures:print("Actual original202 Eanya20 -> map/cancel/confirm -> acquisition/launch -> Dekato22 incoming/briefing; no rebinding, purchases, grants or battle completion")
+	if not failures:print("Actual original202 Eanya20 -> map/cancel/confirm -> acquisition/launch -> Dekato22 incoming/briefing; retained paid career, no battle completion")
+
+func prepare_battle_loadout() -> bool:return true
 
 func verify_launch_reset(original: Dictionary,launched: Dictionary) -> void:
 	var rules: Dictionary=definitions.opening_actors.player_initialization

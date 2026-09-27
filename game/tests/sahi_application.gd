@@ -201,6 +201,45 @@ func prepare_route_emp() -> bool:
 		return failures==0
 	return purchase_route_emp(10)
 
+func purchase_route_device(item_id: int,replace_id:=-1) -> bool:
+	if not app.equipment_action("open"):check(false,app.status.text);return false
+	var before: Dictionary=app.session.station_owner().snapshot()
+	var panel: Control=app.equipment_panel
+	if replace_id>=0:
+		panel.select_tab("ship")
+		var slot: int=before.loadout.slots.find_custom(func(row):return row!=null and row.item_id==replace_id)
+		check(slot>=0 and panel._installed_rows.has(slot) and not panel._installed_rows[slot].button.disabled,"The intended device cannot be kept in cargo")
+		if failures:return false
+		panel._installed_rows[slot].button.pressed.emit()
+	panel.select_tab("shop")
+	var offers: Array=before.equipment.market_rows.filter(func(row):return row.item_id==item_id)
+	check(offers.size()==1 and offers[0].stock>0 and offers[0].unit_price>0 and offers[0].unit_price<=before.contracts.credits,"The station cannot supply the requested paid device")
+	if failures:return false
+	check(panel._rows.has(item_id) and not panel._rows[item_id].actions.buy.disabled,"The real device purchase is unavailable")
+	if failures:return false
+	panel._rows[item_id].actions.buy.pressed.emit()
+	panel.select_tab("cargo")
+	check(panel._rows.has(item_id) and not panel._rows[item_id].actions.mount.disabled,"The purchased device cannot be fitted")
+	if failures:return false
+	panel._rows[item_id].actions.mount.pressed.emit()
+	var fitted: Dictionary=app.session.station_owner().snapshot()
+	check(fitted.contracts.credits==before.contracts.credits-offers[0].unit_price and fitted.cargo.used==before.cargo.used+(1 if replace_id>=0 else 0),"The paid device changed the wrong wallet or cargo quantity")
+	check(fitted.loadout.equipment_ids.has(item_id) and before.loadout.equipment_ids.all(func(id):return id==replace_id or fitted.loadout.equipment_ids.has(id)),"The device replaced unrelated equipment")
+	if replace_id>=0:
+		var old_quantity:=0;var kept_quantity:=0
+		for row in before.cargo.entries:
+			if row.item_id==replace_id:old_quantity+=row.quantity
+		for row in fitted.cargo.entries:
+			if row.item_id==replace_id:kept_quantity+=row.quantity
+		check(kept_quantity==old_quantity+1 and not fitted.loadout.equipment_ids.has(replace_id),"The removed device was lost instead of retained in cargo")
+	for key in ["mission","progress","station_response_flags","campaign_cursor"]:
+		check(fitted[key]==before[key],"The device purchase changed earned "+key)
+	check(fitted.contracts.mission==before.contracts.mission and fitted.contracts.passengers==before.contracts.passengers,"The device purchase changed the independent job")
+	if failures or not app.equipment_action("close"):check(false,app.status.text);return false
+	route_credits=int(fitted.contracts.credits)
+	print("Earned station ",before.loadout.station_id," device ",item_id," bought and fitted for ",offers[0].unit_price," credits; wallet ",route_credits)
+	return failures==0
+
 func purchase_route_emp(maximum_rounds: int,require_full:=true,item_id:=43) -> bool:
 	if not app.equipment_action("open"):check(false,app.status.text);return false
 	var quote: Dictionary=app.session.station_owner().snapshot()

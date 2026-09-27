@@ -18,6 +18,9 @@ func open_application_content(args: PackedStringArray) -> bool:
 	check(pilot_timing in ["100ms","144hz","variable"] and pilot_entry in ["watch","skip-request"],"Unknown Dekato player-path option")
 	return failures==0
 
+func prepare_battle_loadout() -> bool:
+	return purchase_route_device(51,64) if pilot_losses==1 else true
+
 func verify_free_application() -> void:
 	await super.verify_free_application()
 	if failures:return
@@ -197,6 +200,7 @@ func win_earned_convoy(initial: Dictionary) -> bool:
 			return failures==0
 		if app.session.flight_owner().death_active():
 			await capture_free_application("earned202-dekato-death")
+			print("Convoy death observation: ",{"contacts":state.get("physical_contacts",{}),"position":state.player_pose.origin,"actors":state.encounter.combat.actors.map(func(actor):return {"id":actor.actor_id,"hull":actor.vitals.hull,"mode":actor.actor_mode,"distance":actor.position.distance_to(state.player_pose.origin)})})
 			check(false,"The actual convoy pilot died at frame "+str(tick)+"; pools "+str(state.player.vitals));return false
 		if not live_captured and state.encounter.primaries.guns[0].projectiles.slots.any(func(slot):return slot!=null):
 			await capture_free_application("earned202-dekato-combat");live_captured=true
@@ -207,7 +211,9 @@ func win_earned_convoy(initial: Dictionary) -> bool:
 		if pilot_losses>0:
 			# Leave one escort so success cannot race the deliberate losses.
 			var attackers: Array=[2,3,4,6].filter(func(id):return state.encounter.combat.actors[id].vitals.hull>0)
-			var freighters: Array=range(pilot_losses).filter(func(id):return state.encounter.combat.actors[id].actor_mode!=4)
+			# Once hull reaches zero, the breakup owns the loss. Do not stop
+			# defending against the last escort while waiting for that animation.
+			var freighters: Array=range(pilot_losses).filter(func(id):return state.encounter.combat.actors[id].vitals.hull>0)
 			if not attackers.is_empty():targets=attackers
 			elif not freighters.is_empty():targets=freighters
 		var delta_ms:=maxi(1,int(state.world_elapsed_ms)-previous_world_ms)
@@ -215,10 +221,14 @@ func win_earned_convoy(initial: Dictionary) -> bool:
 		var input: Dictionary=pilot.controls(state,tick,targets,true,float(delta_ms))
 		# A wider orbit avoids exceeding this equipped ship's angular tracking
 		# speed when an EMP stops the target. Only ordinary control inputs change.
-		input.strafe=1.0
+		# The final escort can lead a constant orbit while the pilot spends a
+		# long time on a freighter. Change evasive direction using elapsed time.
+		input.strafe=ConvoyPilot.evasion_at(float(state.world_elapsed_ms)) if input.target in [0,1] else 1.0
 		if input.target>=0:
-			input.throttle=1.0 if input.distance>(14000.0 if input.target<2 else 10000.0) else 0.0
-		if input.target>=2 and not try_paid_emp(state,9000,0.0,"Dekato escorts",true):return false
+			input.throttle=1.0 if input.distance>(18000.0 if input.target<2 else 10000.0) else 0.0
+		# The deliberately retained escort still attacks during a freighter loss.
+		# Keep using the player's paid defence while aiming at the freighter too.
+		if not try_paid_emp(state,9000,0.0,"Dekato escorts",true):return false
 		if now_us>=next_log:
 			print("Actual202 convoy pilot ",tick," target=",input.target," distance=",int(input.distance)," firing=",firing_frames," aim=",input.commands," pools=",state.player.vitals," actor hulls=",state.encounter.combat.actors.map(func(actor):return actor.vitals.hull))
 			next_log=now_us+20000000
