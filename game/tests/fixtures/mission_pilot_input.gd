@@ -14,6 +14,10 @@ static func apply(app: Control,viewport: Viewport,input: Dictionary,delta_us: in
 	if observation!=null and not observation.matches(app.session):
 		return {"error":"Expired pilot observation: re-observe and plan before delivering input"}
 	if app.session.can_control():
+		# This scripted sample owns its relative-motion interval. Consume mouse
+		# events queued while the harness yielded, before its new root event.
+		# Do not clear held keys/actions or change production event accumulation.
+		app._controls.advance_mouse(0)
 		# snapshot.throttle belongs to the last accepted flight frame. Re-reading
 		# it between key presses cannot observe the pending control setting.
 		var accepted: Dictionary=app.session.snapshot() if observation==null else observation.read(app.session)
