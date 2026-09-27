@@ -276,7 +276,8 @@ func _career(bindings: RefCounted,cat: RefCounted,data: Dictionary,equipment: Re
 			# The accepted job keeps its original quotation, not permission to
 			# accept a different job at the new station-only campaign stage.
 			var quoted: Variant=offer.snapshot().context.get("campaign_cursor")
-			if not Numbers.integer(quoted,0,station_context.snapshot().source_cursor):return reject("The carried job has no preceding quotation context")
+			var quote_limit: int=cursor if station_context.completed_career(bindings) else station_context.snapshot().source_cursor
+			if not Numbers.integer(quoted,0,quote_limit):return reject("The carried job has no preceding quotation context")
 			accepted_cursor=quoted
 		if offer.snapshot().mission!=data.mission or not Contracts.acceptance_supported(bindings.early_contracts,accepted_cursor,offer.snapshot(),bindings) or contact.station_id!=offer.snapshot().context.station_id:return reject("The accepted contract changed its generated terms")
 		# The three-location FIFO may have evicted and regenerated this station.
@@ -321,6 +322,9 @@ func _continuation_station(bindings: RefCounted,state: Dictionary,context: RefCo
 	if not Dekato.source_receipt_matches(bindings,state.get("dekato_source_receipt")) or not Nehma.source_receipt_matches(bindings,state.get("nehma_source_receipt")):return _invalid("The mission station lost its explicit content sources")
 	if not state.get("loadout") is Dictionary or not state.get("arrival_player") is Dictionary:return _invalid("The mission station lost its arriving player or equipment")
 	var destination: Dictionary=context.snapshot();var seed: Dictionary=state.loadout;var player: Dictionary=state.arrival_player
+	if state.has("docking") and context.completed_career(bindings):
+		if not _identity(state,bindings) or not StationContext.permits(bindings,state.get("campaign_cursor"),seed.get("station_id"),context) or state.get("mission_station_return")!=destination or state.get("mission")!=destination.mission:return _invalid("The docked career lost its completed campaign history")
+		return _ordinary_docked_station(bindings,state,int(destination.campaign_cursor)) or _invalid("The completed career lost its actual docking or player cache")
 	if not StationContext.permits(bindings,state.get("campaign_cursor"),seed.get("station_id"),context) or seed.get("system_id")!=destination.system_id:return _invalid("The mission station differs from its admitted destination")
 	if not _identity(state,bindings) or state.get("mission_station_return")!=destination or state.get("mission")!=destination.mission or state.get("reward_credits")!=destination.get("reward_credits",0) or state.get("phase")!="free_play_required" or state.get("line_index")!=0:return _invalid("The mission station changed its acknowledged result or reward")
 	for key in ["return_visit","local_visit","contract_station","local_visit_acknowledged","acknowledged","alioth_return_acknowledged"]:
@@ -359,10 +363,18 @@ func _onward_station(bindings: RefCounted,state: Dictionary) -> bool:
 	if not Dekato.source_receipt_matches(bindings,state.get("dekato_source_receipt")) or not Nehma.source_receipt_matches(bindings,state.get("nehma_source_receipt")) or not _identity(state,bindings):return false
 	for key in ["loadout","mission","player_cache","arrival_player","docking"]:
 		if not state.get(key) is Dictionary:return false
-	var seed: Dictionary=state.loadout;var player: Dictionary=state.arrival_player;var dock: Dictionary=state.docking
+	var seed: Dictionary=state.loadout
 	var cursor: Variant=state.get("campaign_cursor")
 	if not Nehma.station_mission(bindings,cursor,seed.get("station_id"),state.mission):return false
 	if cursor==39 and seed.station_id==int(Nehma.declarations(bindings).mission.station_id):return false
+	if cursor==40 and state.get("campaign_conversation")!=false:return false
+	return _ordinary_docked_station(bindings,state,39)
+
+func _ordinary_docked_station(bindings: RefCounted,state: Dictionary,flight_cursor: int) -> bool:
+	for key in ["loadout","player_cache","arrival_player","docking"]:
+		if not state.get(key) is Dictionary:return false
+	var seed: Dictionary=state.loadout;var player: Dictionary=state.arrival_player;var dock: Dictionary=state.docking
+	var cursor: Variant=state.get("campaign_cursor")
 	for key in ["line_index","reward_credits"]:
 		if not state.get(key) is int or state[key]!=0:return false
 	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,int(seed.station_id))
@@ -370,14 +382,13 @@ func _onward_station(bindings: RefCounted,state: Dictionary) -> bool:
 	if state.get("phase")!="free_play_required" or state.get("line_index")!=0 or state.get("reward_credits")!=0 or state.get("alioth_return",false)!=false:return false
 	for key in ["return_visit","local_visit","contract_station","local_visit_acknowledged","acknowledged","alioth_return_acknowledged"]:
 		if not state.get(key) is bool or state[key]!=true:return false
-	if not player.get("campaign_cursor") is int or player.campaign_cursor!=39:return false
-	if cursor==40 and state.get("campaign_conversation")!=false:return false
+	if not player.get("campaign_cursor") is int or player.campaign_cursor!=flight_cursor:return false
 	if not _keys(dock,["station_id","pre_motion_contact","post_motion_volume_index","position"]) or dock.size()!=4 or not dock.get("station_id") is int or dock.station_id!=seed.station_id or not dock.get("pre_motion_contact") is bool or not dock.get("post_motion_volume_index") is int or not dock.get("position") is Vector3:return false
 	if not dock.position.is_finite() or (not dock.pre_motion_contact and dock.post_motion_volume_index<0):return false
 	# Acknowledgement advances the career/cache, not the surviving flight. The
-	# original living player and docking contact remain at source world39.
+	# original living player and docking contact retain their arriving flight.
 	var arrival_seed:=_arrival_loadout(seed,player)
-	var cached: Dictionary=Cache.station_arrival_cache(FreeFlight.docking(bindings,int(seed.station_id),39),arrival_seed,player)
+	var cached: Dictionary=Cache.station_arrival_cache(FreeFlight.docking(bindings,int(seed.station_id),flight_cursor),arrival_seed,player)
 	if cached.is_empty():return false
 	cached.campaign_cursor=cursor
 	return cached==state.player_cache and Cache.matches(state.player_cache,arrival_seed,cursor) and cached.values.hull>0

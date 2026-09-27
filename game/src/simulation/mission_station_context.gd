@@ -1,6 +1,6 @@
 extends RefCounted
 ## Station-only admission from an acknowledged mission continuation. Restoring
-## its receipt admits a station, never a flight or a live-world transition.
+## its receipt retains history; the shared flight owner admits any later launch.
 const Recipe=preload("res://src/content/mission_recipe.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
 var error:=""
@@ -71,6 +71,11 @@ func successor(bindings: RefCounted,receipt: Dictionary) -> RefCounted:
 
 func recipe() -> Dictionary:return _recipe.duplicate(true)
 
+func completed_career(bindings: RefCounted) -> bool:
+	if _record.is_empty() or bindings==null or _record.base_content_id!=bindings.base_content_id or _record.binding_id!=bindings.binding_id:return false
+	var completed:=Recipe.completed_career(bindings,_record.campaign_cursor)
+	return not completed.is_empty() and completed==_record.mission
+
 ## Cached contacts retain the station chapter that originally generated them.
 ## Reconstruct only an acknowledged prefix; never use it as the current entry.
 func historical(bindings: RefCounted,cursor: Variant) -> RefCounted:
@@ -91,7 +96,9 @@ func historical(bindings: RefCounted,cursor: Variant) -> RefCounted:
 static func permits(bindings: RefCounted,cursor: Variant,station: Variant,context: RefCounted) -> bool:
 	if not is_instance_of(context,load("res://src/simulation/mission_station_context.gd")) or bindings==null:return false
 	var record: Dictionary=context._record
-	return not record.is_empty() and cursor is int and station is int and record.base_content_id==bindings.base_content_id and record.binding_id==bindings.binding_id and record.campaign_cursor==cursor and record.station_id==station
+	if record.is_empty() or not cursor is int or not station is int or record.base_content_id!=bindings.base_content_id or record.binding_id!=bindings.binding_id or record.campaign_cursor!=cursor:return false
+	if record.station_id==station:return true
+	return context.completed_career(bindings) and not load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,station).is_empty()
 
 func snapshot() -> Dictionary:return _record.duplicate(true)
 func reject(message: String) -> bool:error=message;return false

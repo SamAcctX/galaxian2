@@ -75,6 +75,7 @@ static func onward_available(source: Variant) -> bool:
 static func supported(source: Variant,cursor: Variant) -> bool:
 	var travel:=source_travel(source)
 	if not cursor is int or not travel.has("free_flight"):return false
+	if not completed_mission(source,cursor).is_empty():return true
 	if cursor in [39,40]:return onward_available(source)
 	if cursor==27:return Post.parameters(travel.get("post_sahi",{}))
 	if cursor in [28,30,31]:return expedition_available(travel)
@@ -109,6 +110,8 @@ static func gakkrr_world_available(travel: Dictionary) -> bool:
 
 static func mission(source: Variant,cursor: int) -> Dictionary:
 	if not supported(source,cursor):return {}
+	var completed:=completed_mission(source,cursor)
+	if not completed.is_empty():return completed
 	var travel:=source_travel(source)
 	if cursor==39:return PostProbe.mission_values(load("res://src/content/nehma_return_definitions.gd").declarations(source).mission)
 	if cursor==40:return PostProbe.mission_values(load("res://src/content/nehma_return_definitions.gd").declarations(source).next_mission)
@@ -140,6 +143,10 @@ static func mission(source: Variant,cursor: int) -> Dictionary:
 	var result:={}
 	for key in travel.suttnar_visit.next_mission:result[key]=int(travel.suttnar_visit.next_mission[key])
 	return result
+
+static func completed_mission(source: Variant,cursor: Variant) -> Dictionary:
+	if not source is RefCounted:return {}
+	return load("res://src/content/mission_recipe.gd").completed_career(source,cursor)
 
 static func visit_at(travel: Dictionary,cursor: Variant,station_id: Variant) -> bool:
 	if cursor==30 and expedition_available(travel):return station_id==int(travel.void_probe.mission30_declaration.station_id)

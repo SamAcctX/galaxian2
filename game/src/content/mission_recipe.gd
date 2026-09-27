@@ -87,6 +87,14 @@ static func select_flight(bindings: RefCounted,cursor: Variant) -> Dictionary:
 	var recipe:=select(bindings,cursor)
 	return {} if recipe.get("entry")=="station" else recipe
 
+## A final acknowledged station recipe can leave an empty campaign slot.
+## This describes ordinary career support; it does not pay or acknowledge it.
+static func completed_career(bindings: RefCounted,cursor: Variant) -> Dictionary:
+	if not cursor is int or cursor<=0:return {}
+	var previous:=Epilogue.recipe(bindings,cursor-1)
+	if previous.is_empty() or previous.next_cursor!=cursor or previous.next_mission.kind!=-1:return {}
+	return previous.next_mission.duplicate(true)
+
 ## Both authored variants use the general manager's imported explosion art.
 ## Register once on the physical actor root; the native hook owns enablement.
 static func ambush_particles(bindings: RefCounted) -> Array:

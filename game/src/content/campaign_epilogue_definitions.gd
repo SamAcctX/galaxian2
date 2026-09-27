@@ -7,7 +7,7 @@ static func available(bindings: RefCounted) -> bool:
 	return bindings!=null and Ambush.available(bindings) and Ambush.Previous.Equal.equal_value(Ambush.Previous.Nehma.declarations(bindings),Ambush.Previous.Nehma.VALUES)
 
 static func recipe(bindings: RefCounted,cursor: Variant) -> Dictionary:
-	if not available(bindings) or not cursor is int or cursor not in [43,44]:return {}
+	if not cursor is int or cursor not in [43,44] or not available(bindings):return {}
 	var result:=[]
 	if cursor==43:
 		result=[{"speaker_id":0,"text_id":2058,"voice_event_id":425},{"speaker_id":6,"text_id":2059,"voice_event_id":426}]

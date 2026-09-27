@@ -1159,7 +1159,7 @@ func _station_inventory(equipment: RefCounted,bindings: RefCounted=null) -> Dict
 	if not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false) or not equipment.cargo_cache_valid():reject("The delivery inventory is unavailable");return {}
 	for key in ["base_content_id","binding_id"]:
 		if owned.loadout.get(key)!=_state[key]:reject("The delivery inventory belongs to another content identity");return {}
-	if load("res://src/simulation/mission_station_context.gd").permits(bindings,_state.campaign_cursor,owned.loadout.station_id,_station_context):
+	if load("res://src/simulation/mission_station_context.gd").permits(bindings,_state.campaign_cursor,owned.loadout.station_id,_station_context) and not _station_context.completed_career(bindings):
 		if _state.station_id!=owned.loadout.station_id or owned.loadout.system_id!=_station_context.snapshot().system_id:return fail("The continuation station changed its retained inventory location")
 	elif bindings!=null and Campaign.supported(bindings,_state.campaign_cursor):
 		var free_rules: Dictionary=load("res://src/content/free_flight_definitions.gd").flight(bindings,int(owned.loadout.station_id),_state.campaign_cursor)

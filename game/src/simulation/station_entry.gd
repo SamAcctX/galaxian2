@@ -285,6 +285,12 @@ func _configure_contract_return(bindings: RefCounted,catalogues: RefCounted,libr
 		state.nehma_source_receipt=bindings.nehma_source_receipt().duplicate(true)
 	_state=state;_lines=[];_rules=bindings.station_entry.duplicate(true);_return_rules=rules;_progress_rules=bindings.opening_handoff.duplicate(true)
 	_equipment=equipment;_contracts=contracts;_equipment_rules={};_equipment_lines=[];_local_rules={};_local_exchange=null;_contract_followup=null
+	var continuation: RefCounted=contracts.station_context_owner()
+	if continuation!=null and continuation.completed_career(bindings):
+		_mission_station_context=continuation
+		_state.mission_station_return=continuation.snapshot()
+		_state.dekato_source_receipt=bindings.dekato_source_receipt().duplicate(true)
+		_state.nehma_source_receipt=bindings.nehma_source_receipt().duplicate(true)
 	return true
 
 static func retained_player_state(player: Dictionary) -> Dictionary:
