@@ -6,6 +6,7 @@ var target_id:=-1
 var previous: Variant=null
 var previous_observed_ms:=-1.0
 var observed_velocity:=Vector3.ZERO
+var firing_range:=22000.0
 
 func controls(state: Dictionary,tick: int,target_actor_ids: Array=[],reacquire_nearer:=false,delta_ms:=100.0) -> Dictionary:
 	return _sample(state,float(tick)*100.0,target_actor_ids,reacquire_nearer,delta_ms)
@@ -50,6 +51,6 @@ func _sample(state: Dictionary,elapsed_ms: float,target_actor_ids: Array,reacqui
 	result.commands=Steering.steering_toward(state.player_pose,aim)
 	result.throttle=1.0 if offset.length()>6000.0 else 0.0
 	if offset.length()<35000.0:result.strafe=evasion_at(elapsed_ms)
-	result.fire=offset.length()<22000.0 and state.player_pose.basis.z.angle_to(aim-state.player_pose.origin)<0.15
+	result.fire=offset.length()<firing_range and state.player_pose.basis.z.angle_to(aim-state.player_pose.origin)<0.15
 	result.target=target_id;result.distance=offset.length()
 	return result

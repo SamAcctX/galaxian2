@@ -196,15 +196,15 @@ func fly_contract_job(initial: Dictionary) -> bool:
 			return failures==0
 		if not live_captured and state.encounter.primaries.guns[0].projectiles.slots.any(func(slot):return slot!=null):
 			await capture_free_application("freelance-pirate-combat");live_captured=true
+		var weapon: Dictionary=state.encounter.primaries.guns[0].projectiles.weapon
+		var reach:=float(weapon.speed_units_per_millisecond)*float(weapon.lifetime_ms)
+		pilot.firing_range=reach*0.9
 		var input: Dictionary=pilot.controls_at_time(state,float(state.world_elapsed_ms),targets,false)
 		# Keep the orbit within the fitted gun's reach. The close approach uses
 		# the pilot's pursuit and alternating strafes for a single opponent.
-		var weapon: Dictionary=state.encounter.primaries.guns[0].projectiles.weapon
-		var reach:=float(weapon.speed_units_per_millisecond)*float(weapon.lifetime_ms)
 		if OS.get_environment("GOF2_PIRATE_APPROACH")!="close":
 			input.throttle=1.0 if input.distance>minf(18000.0,reach*0.6) else 0.0
 			if input.distance<35000.0:input.strafe=1.0
-		input.fire=input.fire and input.distance<reach*0.9
 		if failure:input.fire=false;input.strafe=0.0
 		if input.fire:shots+=1
 		if not pirate_step(input):return false
