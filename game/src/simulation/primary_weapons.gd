@@ -232,8 +232,13 @@ func _evaluate_opening_update(combat: RefCounted,bodies: RefCounted,inventory: R
 	var events := []
 	for index in range(staged._guns.size()-1,-1,-1):
 		var gun: Dictionary = staged._guns[index]
-		var result := operation.evaluate(gun.projectiles,staged_combat,staged_bodies,inventory,bounds_selection)
-		if result.is_empty(): return fail(operation.error)
+		var result:={"projectiles":gun.projectiles,"combat":staged_combat,"bodies":staged_bodies,
+			"contacts":[],"last_contact_target":null}
+		# Configuration and world entry already validated the ordinary policy.
+		# Empty guns need their clocks and events, but no target geometry queries.
+		if gun.projectiles.has_retained_projectiles() or bounds_selection!=null:
+			result=operation.evaluate(gun.projectiles,staged_combat,staged_bodies,inventory,bounds_selection)
+			if result.is_empty(): return fail(operation.error)
 		# Cleanup belongs after this gun's COMPLETE target list, never between
 		# NPCs and scenery or after every gun has completed a global contact pass.
 		var motion: Dictionary = result.projectiles.advance(delta_ms)

@@ -84,6 +84,12 @@ func reset_fire_interval() -> bool:
 func discard_flying() -> void:
 	_slots.fill(null)
 
+func has_retained_projectiles() -> bool:
+	# Expired and impacted objects still contact targets before the next cleanup.
+	for slot in _slots:
+		if slot!=null:return true
+	return false
+
 func fork_state() -> RefCounted:
 	# Native owners stage a multi-weapon operation on private copies before commit.
 	# These copies represent the same logical weapon; their handles are not new

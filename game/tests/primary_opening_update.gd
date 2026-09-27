@@ -51,6 +51,18 @@ func check_profile(content: String, pack: String) -> void:
 	check(bodies.normal_hit(0,bodies.snapshot().objects[0].initial_hull-6).accepted,"Could not stage scenery death")
 	check(inventory.configure(bindings,catalogues,field),inventory.error)
 	check(inventory.validate_owners(combat.snapshot(),bodies.snapshot()),inventory.error)
+	var idle_before: Dictionary=owner.snapshot()
+	var idle: Dictionary=owner.evaluate_opening_update(combat,bodies,inventory,1)
+	check(not idle.is_empty(),owner.error)
+	if idle.is_empty():return
+	check(owner.snapshot()==idle_before and idle.combat.snapshot()==combat.snapshot() and idle.bodies.snapshot()==bodies.snapshot(),"Idle guns changed the retained world or weapon state")
+	for gun in idle.primaries.snapshot().guns:
+		check(gun.projectiles.elapsed_ms==int(gun.projectiles.weapon.interval_ms)+1 and gun.projectiles.time_ready and gun.contact_pass_evaluated and gun.last_contact_target==null,"An empty contact pass lost its cooldown or evaluation state")
+	check(idle.weapons.all(func(event):return event.contacts.is_empty() and event.motion=={"moved":[],"expired":[],"cleared":[]}),"Idle guns invented a hit or projectile movement")
+	check(idle.primaries.fire(Transform3D.IDENTITY,true).weapons.all(func(event):return event.result.fired),"A gun could not fire after its idle cooldown")
+	var idle_extreme: RefCounted=owner.fork_state();idle_extreme._guns[0].projectiles._elapsed_ms=2147483647
+	var idle_extreme_before: Dictionary=idle_extreme.snapshot()
+	check(idle_extreme.evaluate_opening_update(combat,bodies,inventory,1).is_empty() and idle_extreme.snapshot()==idle_extreme_before,"An idle time overflow changed the retained weapon state")
 	check(not owner.advance(1).is_empty(),owner.error)
 	var volley := owner.fire(Transform3D.IDENTITY,true)
 	check(volley.weapons[0].slot==1 and volley.weapons[1].slot==0,"Firing order changed")
@@ -76,6 +88,12 @@ func check_profile(content: String, pack: String) -> void:
 		check(gun.projectiles.slots[0]==null and gun.projectiles.elapsed_ms==0,"Mixed zero-time update moved time or retained an impact")
 		check(gun.contact_pass_evaluated and gun.last_contact_target==({"group":"scenery","index":0} if gun.equipment.slot==0 else {"group":"npc","index":2}),"Gun did not retain its evaluated last target")
 	check(owner.snapshot()==before and combat.snapshot()==before_combat and bodies.snapshot()==before_bodies and inventory.snapshot()==before_inventory,"Mixed update changed input owners")
+	var expired: RefCounted=owner.fork_state()
+	for gun in expired._guns:
+		for slot in gun.projectiles._slots:
+			if slot!=null:slot.remaining_ms=0
+	var expired_result: Dictionary=expired.evaluate_opening_update(combat,bodies,inventory,0)
+	check(not expired_result.is_empty() and expired_result.combat.snapshot()==result.combat.snapshot() and expired_result.bodies.snapshot()==result.bodies.snapshot(),"Retained expired projectiles skipped their final ordered contacts")
 	var retained: Dictionary = result.primaries.snapshot()
 	result.weapons[0].last_contact_target.index=999
 	var detached: Dictionary = result.primaries.snapshot();detached.guns[0].last_contact_target.index=999
