@@ -385,7 +385,7 @@ func complete_world_initialization(bindings: RefCounted, catalogues: RefCounted)
 
 func _finish_world_initialization(owner: RefCounted) -> bool:
 	_read_snapshot={}
-	var result: Dictionary=owner.generate(_random_state)
+	var result: Dictionary=owner.generate(_random_state,_motion.snapshot().objects.map(func(row):return row.position))
 	if result.is_empty(): return reject(owner.error)
 	_world_initialization=owner;_random_state=result.random_state.duplicate(true)
 	_initialization_snapshot=preload("res://src/simulation/readonly_state.gd").freeze(owner.snapshot())

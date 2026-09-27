@@ -981,9 +981,10 @@ func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_result
 		var rules: Dictionary=_rules.delivery_results
 		var succeeded: bool=result.mode==int(_rules.flight_results.success_result_mode)
 		var mission: Dictionary=next._state.mission
-		var junk: bool=Junk.parameters(_rules.get("junk_lifecycle")) and int(mission.kind)==7
-		var delta:=int(mission.reward)+int(mission.bonus) if succeeded else (int(_rules.junk_lifecycle.failure_credit_delta) if junk else -int(mission.reward))
-		if (not succeeded and not junk and int(mission.kind)!=int(_rules.flight_results.penalty_kind)) or absi(delta)>int(rules.maximum_credit_delta):return fail("Unsupported contract settlement")
+		# The admitted mission runner owns whether this flight has failed. Only
+		# the wager rule changes the balance when an ordinary job is lost.
+		var delta:=int(mission.reward)+int(mission.bonus) if succeeded else (-int(mission.reward) if int(mission.kind)==int(_rules.flight_results.penalty_kind) else 0)
+		if absi(delta)>int(rules.maximum_credit_delta):return fail("The contract settlement exceeds the supported credit range")
 		if succeeded:
 			if not Numbers.integer(next._state.completed_side_missions,0,2147483646):return fail("The contract count exceeds the supported career range")
 			var progress: Dictionary=next._state.progress

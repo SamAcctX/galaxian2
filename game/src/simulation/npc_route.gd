@@ -25,6 +25,7 @@ var _definition := {}
 var _points := []
 var _candidates := []
 var _index := 0
+var _start_index := 0
 var _loop := true
 var _authored := false
 var _ambient_restart := false
@@ -58,6 +59,7 @@ func _configure_generated(bindings: RefCounted, actor_id: int, data: Dictionary)
 	_definition=data.duplicate(true)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"actor_id":actor_id}
 	_index=int(data.initial_index)
+	_start_index=_index
 	return true
 
 func configure_full_hold_generated(bindings: RefCounted) -> bool:
@@ -178,7 +180,7 @@ func replace_with_selected40_patrol() -> bool:
 	var rules: Dictionary=preload("res://src/content/selected40_population_definitions.gd").VALUES
 	if _identity.get("campaign_cursor")!=40 or _identity.get("actor_id",-1)<int(rules.escort_first) or _identity.get("actor_id",-1)>=int(rules.escort_end) or _points.is_empty() or _authored:return reject("Only a generated selected escort accepts this authored patrol")
 	_points=rules.patrol_points.map(func(point):return Vector3(point[0],point[1],point[2]))
-	_candidates=[];_index=int(rules.route_initial_index);_loop=bool(rules.route_loop);_authored=true
+	_candidates=[];_index=int(rules.route_initial_index);_loop=bool(rules.route_loop);_authored=true;_start_index=_index
 	return true
 
 func configure_contract_generated(bindings: RefCounted,actor_id: int,context: RefCounted) -> bool:
@@ -230,7 +232,7 @@ func replace_with_kappa_patrol() -> bool:
 	error=""
 	if _kappa_patrol.is_empty() or _points.is_empty() or _authored:return reject("Generate a Kappa fighter route before assigning its patrol")
 	_points=[_kappa_patrol.point];_candidates=[]
-	_index=_kappa_patrol.index;_loop=_kappa_patrol.loop;_authored=true
+	_index=_kappa_patrol.index;_loop=_kappa_patrol.loop;_authored=true;_start_index=_index
 	return true
 
 func configure_sahi_generated(bindings: RefCounted,actor_id: int,context: Dictionary) -> bool:
@@ -255,27 +257,29 @@ func replace_with_sahi_patrol() -> bool:
 	error=""
 	if _sahi_patrol.is_empty() or _points.is_empty() or _authored:return reject("Generate a Sahi fighter route before assigning its authored patrol")
 	_points=_sahi_patrol.points.duplicate();_candidates=[]
-	_index=_sahi_patrol.index;_loop=_sahi_patrol.loop;_authored=true
+	_index=_sahi_patrol.index;_loop=_sahi_patrol.loop;_authored=true;_start_index=_index
 	return true
 
 func configure_kappa_player(bindings: RefCounted) -> bool:
 	if not configure_kappa_generated(bindings,0):return false
 	var data: Dictionary=bindings.mido_travel.kappa_rescue.population
 	_points=data.waypoints.map(func(point):return Vector3(point[0],point[1],point[2]))
-	_index=int(data.route_initial_index);_loop=bool(data.route_loop);_authored=true
+	_index=int(data.route_initial_index);_loop=bool(data.route_loop);_authored=true;_start_index=_index
 	_identity.erase("actor_id");_identity.owner="player"
 	return true
 
-func replace_with_contract_path(points: Array) -> bool:
+func replace_with_contract_path(points: Array,start_index:=0) -> bool:
 	error=""
-	if _identity.is_empty() or _points.is_empty() or _authored or points.size()<3 or points.size()>4:return reject("Generate the rival route before replacing it with the mission path")
+	if _identity.is_empty() or _points.is_empty() or _authored or points.is_empty() or start_index<0 or start_index>=points.size():return reject("Generate the ship route before replacing it with a valid mission path")
 	if points.any(func(point):return not point is Vector3 or not point.is_finite()):return reject("The mission path contains an invalid waypoint")
-	_points=points.duplicate();_candidates=[];_index=0;_loop=false;_authored=true
+	_points=points.duplicate();_candidates=[];_index=start_index;_start_index=start_index;_loop=false;_authored=true
 	return true
+
+func is_at_start() -> bool:return not _points.is_empty() and _index==_start_index
 
 func replace_with_ambient_destination(point: Variant) -> bool:
 	if _identity.is_empty() or _points.is_empty() or not point is Vector3 or not point.is_finite():return reject("Generate an ambient route before assigning its destination")
-	_points=[point];_candidates=[];_index=0;_loop=false;_authored=true
+	_points=[point];_candidates=[];_index=0;_loop=false;_authored=true;_start_index=_index
 	return true
 
 func replace_with_alioth_escape(owner: RefCounted) -> bool:
@@ -288,7 +292,7 @@ func replace_with_alioth_escape(owner: RefCounted) -> bool:
 	for row in sequence.frame.actor_overrides:
 		if row.actor_id!=_identity.actor_id:continue
 		if row.route_points.size()!=1 or not row.route_points[0] is Vector3 or not row.route_points[0].is_finite() or row.route_initial_index!=0 or row.route_loop:return reject("Unsupported Alioth escape waypoint")
-		_points=row.route_points.duplicate();_candidates=[];_index=0;_loop=false;_authored=true
+		_points=row.route_points.duplicate();_candidates=[];_index=0;_loop=false;_authored=true;_start_index=_index
 		return true
 	return reject("Alioth escape does not replace this actor's route")
 
@@ -308,7 +312,7 @@ func configure_training_authored(bindings: RefCounted) -> bool:
 	if not configure_training_generated(bindings,3):return false
 	var data: Dictionary=bindings.combat_training
 	_points=data.waypoints.map(func(point):return Vector3(point[0],point[1],point[2]))
-	_index=int(data.authored_route_initial_index);_loop=bool(data.authored_route_loop);_authored=true
+	_index=int(data.authored_route_initial_index);_loop=bool(data.authored_route_loop);_authored=true;_start_index=_index
 	return true
 
 func configure_training_player(bindings: RefCounted) -> bool:
@@ -374,14 +378,14 @@ func snapshot() -> Dictionary:
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._identity=_identity.duplicate();copy._definition=_definition.duplicate(true)
-	copy._points=_points.duplicate();copy._candidates=_candidates.duplicate();copy._index=_index
+	copy._points=_points.duplicate();copy._candidates=_candidates.duplicate();copy._index=_index;copy._start_index=_start_index
 	copy._loop=_loop;copy._authored=_authored
 	copy._ambient_restart=_ambient_restart
 	copy._kappa_patrol=_kappa_patrol.duplicate(true);copy._sahi_patrol=_sahi_patrol.duplicate(true)
 	return copy
 
 func clear() -> void:
-	error="";_identity={};_definition={};_points=[];_candidates=[];_index=0;_loop=true;_authored=false;_ambient_restart=false;_kappa_patrol={};_sahi_patrol={}
+	error="";_identity={};_definition={};_points=[];_candidates=[];_index=0;_start_index=0;_loop=true;_authored=false;_ambient_restart=false;_kappa_patrol={};_sahi_patrol={}
 
 func reject(message: String) -> bool:
 	error=message

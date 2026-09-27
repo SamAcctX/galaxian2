@@ -569,7 +569,7 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, 
 	_items=staged;_routes=routes
 	return true
 
-func generate(random_state: Variant) -> Dictionary:
+func generate(random_state: Variant,scenery_positions: Array=[]) -> Dictionary:
 	error=""
 	if _identity.is_empty() or not _actors.is_empty() or _generated: return fail("Configure fresh NPC construction before generating once")
 	var random := Random.new()
@@ -582,7 +582,7 @@ func generate(random_state: Variant) -> Dictionary:
 	if not _kappa.is_empty():return _generate_kappa(random)
 	if not _alioth.is_empty():return _generate_alioth(random)
 	if not _convoy.is_empty():return _generate_convoy(random)
-	if not _contract.is_empty():return _generate_contract(random)
+	if not _contract.is_empty():return _generate_contract(random,scenery_positions)
 	var actors := [];var routes := []
 	var population: Dictionary={} if _traffic.is_empty() else _sample_traffic(random)
 	if not _traffic.is_empty() and population.is_empty():return fail("Ambient population failed before actor construction")
@@ -1009,7 +1009,7 @@ static func _select_hull(random: RefCounted,faction: int,rules: Dictionary) -> i
 		if int(rules.factions[hull])==faction:return hull
 	return -1
 
-func _generate_contract(random: RefCounted) -> Dictionary:
+func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictionary:
 	var kind:=int(_contract.context.mission.kind)
 	var story: bool=_contract.get("bakka",false)
 	# Lounge selection consumes a draw even for empty couriers. The authored
@@ -1022,6 +1022,8 @@ func _generate_contract(random: RefCounted) -> Dictionary:
 	else:
 		var placement: Dictionary=_contract.placement
 		match placement.kind:
+			"approach":
+				path=[Vector3(int(placement.horizontal_offset)-random.next_int(int(placement.horizontal_bound)),0,int(placement.horizontal_offset)-random.next_int(int(placement.horizontal_bound))),Vector3.ZERO]
 			"line":
 				for z in placement.z_positions:path.append(Vector3(int(placement.x_offset)+random.next_int(int(placement.x_bound)),0,int(z)))
 			"patrol":
@@ -1082,6 +1084,18 @@ func _generate_contract(random: RefCounted) -> Dictionary:
 		else:
 			actor.cargo=actor.discarded_cargo;actor.discarded_cargo=[]
 			actor.merge(options.ship_state if not story else {"mode":int(_contract.pirate.mode),"active":bool(_contract.pirate.active),"targeting_blocked":bool(_contract.pirate.targeting_blocked)})
+		if not story:
+			if options.clear_cargo:actor.cargo=[]
+			match options.position.get("kind",""):
+				"path_start":position=path[0]+Vector3(options.position.step)*int(options.group_index)
+				"scenery_midpoint":
+					var anchor:=int(scenery_positions.size()/2)+int(options.group_index)
+					if anchor>=scenery_positions.size() or not scenery_positions[anchor] is Vector3 or not scenery_positions[anchor].is_finite():return fail("The admitted cast requires its world scenery anchors")
+					position=scenery_positions[anchor]+Vector3(options.position.offset)
+			if int(options.route_start)>=0:
+				actor.discarded_route=route.snapshot()
+				if not route.replace_with_contract_path(path,int(options.route_start)):return fail(route.error)
+				actor.route=route.snapshot()
 		var body:=Transform3D(Basis.IDENTITY,position)
 		actor.merge({"body_pose":body,"statistics_pose":body,"model_local_pose":Transform3D.IDENTITY})
 		actors.append(actor);routes.append(route)

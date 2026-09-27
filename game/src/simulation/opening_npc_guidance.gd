@@ -590,7 +590,7 @@ func set_initial_route(route: RefCounted) -> bool:
 	var state: Dictionary = route.snapshot()
 	for key in ["base_content_id","binding_id","actor_id"]:
 		if state.get(key)!=_identity[key]: return reject("NPC route belongs to another actor or content identity")
-	if state.get("waypoints",[]).is_empty() or state.get("index")!=0: return reject("NPC route must have its fresh generated state")
+	if not route.is_at_start(): return reject("NPC route must be at its configured start")
 	_route=route.fork_for_frame()
 	return true
 

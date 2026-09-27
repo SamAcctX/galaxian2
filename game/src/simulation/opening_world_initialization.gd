@@ -364,7 +364,7 @@ func configure_local_traffic(bindings: RefCounted, catalogues: RefCounted, equip
 	_identity.entry_conditions=entry_conditions.duplicate(true)
 	return true
 
-func generate(random_state: Variant) -> Dictionary:
+func generate(random_state: Variant,scenery_positions: Array=[]) -> Dictionary:
 	error=""
 	if _identity.is_empty() or not _state.is_empty(): return fail("Configure fresh world initialization before generating once")
 	var random := Random.new()
@@ -376,7 +376,7 @@ func generate(random_state: Variant) -> Dictionary:
 		_state=_identity.duplicate(true)
 		_state.merge({"input_random_state":input,"npc_construction":{"actors":[],"random_state":input.duplicate(true)},"weapon_effects":[],"random_state":input.duplicate(true)})
 		return snapshot()
-	var generated: Dictionary=_construction.generate(input)
+	var generated: Dictionary=_construction.generate(input,scenery_positions)
 	if generated.is_empty(): return fail(_construction.error)
 	# Construction validates its own RNG result. All following bounds are fixed
 	# validated declarations, so no fallible operation follows this owner commit.

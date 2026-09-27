@@ -63,7 +63,8 @@ static func supports_contract(bindings: RefCounted,mission: Variant,cursor: int)
 	var ordinary=load("res://src/content/free_flight_definitions.gd")
 	# Keeping a side slot through a story world does not select that job's cast.
 	# Actual entry also requires the location/flight admitted below.
-	return ordinary.available(bindings) and cursor>=int(bindings.mido_travel.free_flight.campaign_cursor) and mission.get("kind") in [1,4,6,7,12] and preload("res://src/content/opening_definitions.gd").integer(mission.get("difficulty"),1,9) and not ordinary.Worlds.location(bindings.mido_travel,mission.get("station_id")).is_empty()
+	if mission.get("kind")==2 and not preload("res://src/content/opening_definitions.gd").integer(mission.get("quantity"),2,5):return false
+	return ordinary.available(bindings) and cursor>=int(bindings.mido_travel.free_flight.campaign_cursor) and mission.get("kind") in [1,2,4,6,7,12] and preload("res://src/content/opening_definitions.gd").integer(mission.get("difficulty"),1,9) and not ordinary.Worlds.location(bindings.mido_travel,mission.get("station_id")).is_empty()
 
 ## A retained career and inventory authorize a generated side job once. Other
 ## owners receive this capability with the cast, never a caller-authored recipe.
