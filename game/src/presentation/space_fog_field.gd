@@ -15,31 +15,38 @@ var _weights:=PackedFloat32Array()
 var _camera:=Vector3.ZERO
 var _seed:=0
 var _random_state:=0
+var _velocity:=Vector3.ZERO
+var _elapsed_ms:=0
 
-func configure(location_sky: int, placement_seed: int) -> bool:
-	if location_sky<0 or location_sky>=PALETTE.size():
+func configure(location_sky: int, placement_seed: int,velocity:=Vector3.ZERO,color_scale:=0.6) -> bool:
+	if location_sky<0 or location_sky>=PALETTE.size() or not velocity.is_finite() or not is_finite(color_scale) or color_scale<0.0 or color_scale>1.0:
 		error="Space clouds require a location palette";return false
 	sky_index=location_sky;_seed=placement_seed;_random_state=0
+	_velocity=velocity;_elapsed_ms=0
 	_positions.clear();_weights.clear();_camera=Vector3.ZERO
 	var rgb: int=PALETTE[sky_index]
-	tint=Color(float(int(((rgb>>16)&255)*0.6))/255.0,
-		float(int(((rgb>>8)&255)*0.6))/255.0,float(int((rgb&255)*0.6))/255.0,187.0/255.0)
+	tint=Color(float(int(((rgb>>16)&255)*color_scale))/255.0,
+		float(int(((rgb>>8)&255)*color_scale))/255.0,float(int((rgb&255)*color_scale))/255.0,187.0/255.0)
 	error="";return true
 
-func sample(camera_position: Vector3) -> RefCounted:
+func sample(camera_position: Vector3,elapsed_ms:=0) -> RefCounted:
 	error=""
-	if sky_index<0 or not camera_position.is_finite():
+	if sky_index<0 or not camera_position.is_finite() or elapsed_ms<_elapsed_ms:
 		error="Space clouds require a configured finite camera";return null
-	if not _positions.is_empty() and camera_position==_camera:return self
+	if not _positions.is_empty() and camera_position==_camera and (_velocity==Vector3.ZERO or elapsed_ms==_elapsed_ms):return self
 	var next=get_script().new()
 	next.sky_index=sky_index;next.tint=tint;next._seed=_seed;next._camera=camera_position
+	next._velocity=_velocity;next._elapsed_ms=elapsed_ms
 	next._positions=_positions.duplicate();next._weights.resize(COUNT)
 	var random:=RandomNumberGenerator.new()
 	if _positions.is_empty():
 		random.seed=_seed
 		for index in COUNT:
 			next._positions.append(camera_position+Vector3(random.randf_range(-RADIUS,RADIUS),random.randf_range(-RADIUS,RADIUS),random.randf_range(-RADIUS,RADIUS)))
-	else:random.state=_random_state
+	else:
+		random.state=_random_state
+		var movement:=_velocity*(float(elapsed_ms-_elapsed_ms)/1000.0)
+		for index in COUNT:next._positions[index]+=movement
 	for index in COUNT:
 		var distance_squared: float=camera_position.distance_squared_to(next._positions[index])
 		if not is_finite(distance_squared):
@@ -62,5 +69,5 @@ static func brightness(distance_squared: float) -> float:
 	return minf(near_fade,far_fade)
 
 func snapshot() -> Dictionary:
-	return {"sky_index":sky_index,"tint":tint,"camera":_camera,
+	return {"sky_index":sky_index,"tint":tint,"camera":_camera,"velocity":_velocity,"elapsed_ms":_elapsed_ms,
 		"positions":_positions.duplicate(),"weights":_weights.duplicate()}

@@ -28,9 +28,12 @@ func enable_space_fog(library: RefCounted,visuals: RefCounted,bindings: RefCount
 		error="Prepare one matching exterior before its space clouds";return false
 	if bindings.base_content_id!=selection.base_content_id or bindings.binding_id!=selection.binding_id:
 		error="Space clouds belong to another background identity";return false
-	var clouds:=SpaceFog.new()
 	var sky_index:=int(catalogues.tables.systems[int(selection.system_id)].sky_index)
-	if not clouds.build(library,visuals,bindings,sky_index,int(selection.station_id)):
+	return _build_space_fog(library,visuals,bindings,sky_index,int(selection.station_id))
+
+func _build_space_fog(library: RefCounted,visuals: RefCounted,bindings: RefCounted,sky_index: int,seed_value: int,velocity:=Vector3.ZERO,color_scale:=0.6) -> bool:
+	var clouds:=SpaceFog.new()
+	if not clouds.build(library,visuals,bindings,sky_index,seed_value,velocity,color_scale):
 		error=clouds.error;clouds.free();return false
 	clouds.name="SpaceClouds";add_child(clouds);space_fog=clouds
 	error="";return true
@@ -147,7 +150,11 @@ func build_void(library: RefCounted,visuals: RefCounted,bindings: RefCounted,env
 	var source: Dictionary=state.sky
 	_initial_descriptors=[{"mesh_id":int(source.star_mesh_id),"texture_id":int(source.star_texture_id),"mode":0},
 		{"mesh_id":int(source.sky_mesh_id),"texture_id":int(source.sky_texture_id),"mode":2}]
-	return _build_layers(library,visuals,bindings,state,quality,_initial_descriptors,state.sky_orientation,0)
+	if not _build_layers(library,visuals,bindings,state,quality,_initial_descriptors,state.sky_orientation,0):return false
+	var lighting=load("res://src/simulation/environment_lighting.gd").new()
+	var light: Dictionary=lighting.for_void(bindings.environment_colors)
+	if light.is_empty():return reject(lighting.error)
+	return _build_space_fog(library,visuals,bindings,10,-1,-light.lights[0].direction_to_light*2000.0,1.0)
 
 func _build_layers(library: RefCounted,visuals: RefCounted,bindings: RefCounted,opening: Dictionary,quality: String,descriptors: Array,rotation_value: Dictionary,variant: int) -> bool:
 	var cache := {}
@@ -189,13 +196,13 @@ func _build_layers(library: RefCounted,visuals: RefCounted,bindings: RefCounted,
 		"star_variant":variant,"layers":_initial_descriptors.duplicate(true)}
 	return true
 
-func apply_view(view: Dictionary, escape: Dictionary = {}) -> bool:
-	var prepared:=prepare_view(view,escape)
+func apply_view(view: Dictionary, escape: Dictionary = {},elapsed_ms:=0) -> bool:
+	var prepared:=prepare_view(view,escape,elapsed_ms)
 	if prepared.is_empty():return false
 	commit_view(prepared)
 	return true
 
-func prepare_view(view: Dictionary, escape: Dictionary = {}) -> Dictionary:
+func prepare_view(view: Dictionary, escape: Dictionary = {},elapsed_ms:=0) -> Dictionary:
 	error=""
 	if selection.is_empty() or not Geometry.valid_pose(view.get("pose")):
 		error="Opening sky requires a valid current camera view"
@@ -209,7 +216,7 @@ func prepare_view(view: Dictionary, escape: Dictionary = {}) -> Dictionary:
 		error="This sky has no prepared escape resources";return {}
 	var clouds: RefCounted
 	if space_fog!=null:
-		clouds=space_fog.prepare_view(view.pose)
+		clouds=space_fog.prepare_view(view.pose,elapsed_ms)
 		if clouds==null:error=space_fog.error;return {}
 	return {"pose":view.pose,"relocated":relocated,"clouds":clouds}
 

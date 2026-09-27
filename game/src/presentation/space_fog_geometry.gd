@@ -8,11 +8,11 @@ var error:=""
 var selection:={}
 var _field: RefCounted
 
-func build(library: RefCounted,visuals: RefCounted,bindings: RefCounted,sky_index: int,seed_value: int) -> bool:
+func build(library: RefCounted,visuals: RefCounted,bindings: RefCounted,sky_index: int,seed_value: int,velocity:=Vector3.ZERO,color_scale:=0.6) -> bool:
 	if library==null or visuals==null or bindings==null or library.manifest.get("content_id")!=bindings.base_content_id or visuals.base_content_id!=bindings.base_content_id:
 		return reject("Space cloud resources belong to another content identity")
 	var field:=Field.new()
-	if not field.configure(sky_index,seed_value):return reject(field.error)
+	if not field.configure(sky_index,seed_value,velocity,color_scale):return reject(field.error)
 	var material_id:=20137 if sky_index==12 else 20095
 	var descriptor: Dictionary=bindings.resolve_material(material_id)
 	if descriptor.is_empty() or descriptor.render_type!=2 or descriptor.texture_paths[0].is_empty():return reject("Space clouds require their additive texture material")
@@ -34,10 +34,10 @@ func build(library: RefCounted,visuals: RefCounted,bindings: RefCounted,sky_inde
 		"sky_index":sky_index,"material_id":material_id,"texture_id":int(descriptor.texture_ids[0])}
 	error="";return true
 
-func prepare_view(pose: Transform3D) -> RefCounted:
+func prepare_view(pose: Transform3D,elapsed_ms:=0) -> RefCounted:
 	error=""
 	if _field==null:error="Space clouds have not been built";return null
-	var candidate: RefCounted=_field.sample(pose.origin)
+	var candidate: RefCounted=_field.sample(pose.origin,elapsed_ms)
 	if candidate==null:error=_field.error
 	return candidate
 

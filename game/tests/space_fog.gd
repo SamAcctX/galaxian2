@@ -72,10 +72,29 @@ func run() -> void:
 	check(sky.apply_view({"pose":camera.global_transform}) and sky.space_fog.snapshot()==sky_state,"Discarded scene preparation changed the next accepted sky frame")
 	check(not sky.apply_view({"pose":Transform3D(Basis.IDENTITY,Vector3(INF,0,0))}) and sky.space_fog.snapshot()==sky_state,"Invalid sky camera changed accepted clouds")
 	sky.clear();check(sky.space_fog==null and sky.get_child_count()==0,"Changing locations retained old cloud geometry")
+	if bindings.mido_travel.has("post_sahi"):
+		var environment=load("res://src/simulation/void_environment.gd").new()
+		if not environment.configure(bindings,{"state":4096}):check(false,environment.error);viewport.free();quit(1);return
+		check(sky.build_void(library,visuals,bindings,environment) and sky.space_fog!=null,"The admitted Void omitted its cloud field: "+sky.error)
+		if sky.space_fog!=null:
+			check(sky.apply_view({"pose":camera.global_transform},{},0),sky.error)
+			var first: Dictionary=sky.space_fog.snapshot()
+			check(first.tint.is_equal_approx(Color(146.0/255.0,116.0/255.0,212.0/255.0,187.0/255.0)),"Void clouds inherited ordinary palette dimming")
+			var flowed: Dictionary=sky.prepare_view({"pose":camera.global_transform},{},500)
+			check(not flowed.is_empty() and sky.space_fog.snapshot()==first,"Preparing Void flow changed the displayed frame")
+			sky.commit_view(flowed)
+			var flowing: Dictionary=sky.space_fog.snapshot()
+			var moved_count:=0
+			for index in first.positions.size():
+				if flowing.positions[index].is_equal_approx(first.positions[index]+Vector3(0,0,1000)):moved_count+=1
+			check(moved_count>first.positions.size()/2,"Void clouds did not drift on their fixed world axis")
+			check(sky.apply_view({"pose":Transform3D(Basis(Vector3.UP,0.7),camera.position)},{},500) and sky.space_fog.snapshot()==flowing,"Camera rotation advanced or redirected Void clouds")
+			check(not sky.apply_view({"pose":camera.global_transform},{},499) and sky.space_fog.snapshot()==flowing,"A rejected Void time damaged the accepted field")
 	viewport.free()
 	print("Space clouds: %d checks; %d failures"%[checks,failures]);quit(1 if failures else 0)
 
 func check_field() -> void:
+	check_drift()
 	var field:=Field.new();check(field.configure(9,78),field.error)
 	var initial: RefCounted=field.sample(Vector3.ZERO)
 	check(initial!=null and field.snapshot().positions.is_empty(),"Preparing clouds mutated their previous frame")
@@ -103,6 +122,25 @@ func check_field() -> void:
 		bounded=bounded and jump.positions[index].distance_to(jump.camera)<11000
 	check(dark and bounded,"Recycled clouds popped in brightly or stayed behind the camera")
 	check(initial.sample(Vector3(NAN,0,0))==null and initial.snapshot()==state,"Invalid camera damaged the accepted field")
+
+func check_drift() -> void:
+	var field:=Field.new();check(field.configure(10,21,Vector3(0,0,2000),1.0),field.error)
+	var initial: RefCounted=field.sample(Vector3.ZERO,0)
+	# One known center isolates flow from outer-boundary recycling.
+	initial._positions[0]=Vector3(0,0,-4000)
+	var before: Dictionary=initial.snapshot()
+	var moved: RefCounted=initial.sample(Vector3.ZERO,500)
+	check(moved.snapshot().positions[0]==Vector3(0,0,-3000) and initial.snapshot()==before,"Cloud flow followed the camera or changed its parent")
+	check(moved.sample(Vector3.ZERO,500)==moved,"A repeated or paused cloud view advanced time")
+	check(moved.sample(Vector3.ZERO,499)==null and moved.snapshot().positions[0]==Vector3(0,0,-3000),"A rejected clock sample moved clouds")
+	var split: RefCounted=initial.sample(Vector3.ZERO,137).sample(Vector3.ZERO,500)
+	check(split.snapshot().positions[0].is_equal_approx(moved.snapshot().positions[0]),"Variable steps changed the visible flow speed")
+	var parallax: RefCounted=moved.sample(Vector3(100,0,0),500)
+	check(parallax.snapshot().positions[0]==moved.snapshot().positions[0],"Camera translation dragged the flowing cloud")
+	var recycled: RefCounted=moved.sample(Vector3(1000000,0,0),600)
+	var dark:=true
+	for value in recycled.snapshot().weights:dark=dark and value==0.0
+	check(dark,"Moving clouds recycled brightly")
 
 func capture(viewport: SubViewport) -> Image:
 	for tick in 12:await process_frame

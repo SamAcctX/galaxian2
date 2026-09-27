@@ -56,7 +56,7 @@ func advance(milliseconds: int,view: Dictionary) -> bool:
 	if not _clock.advance(milliseconds):return reject(_clock.error)
 	if not gates.apply_animation(_clock):return reject(gates.error)
 	if not advance_station(milliseconds):return false
-	if not sky.apply_view(view):return reject(sky.error)
+	if not sky.apply_view(view,{},int(_clock.snapshot().elapsed_ms)):return reject(sky.error)
 	return true
 
 func advance_station(milliseconds: int) -> bool:

@@ -307,7 +307,7 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if station!=null and not station.apply_state(state.station_exterior):return reject(station.error)
 	var message: String=_projection.apply(camera,state.camera_view)
 	if not message.is_empty():return reject(message)
-	var sky_frame: Dictionary=sky.prepare_view(state.camera_view)
+	var sky_frame: Dictionary=sky.prepare_view(state.camera_view,{},int(state.world_elapsed_ms))
 	if sky_frame.is_empty():return reject(sky.error)
 	if planets!=null and not planets.apply_view(state.camera_view):return reject(planets.error)
 	if not scenery.apply_state(state.scenery) or not scenery.apply_detail(state.scenery.detail):return reject(scenery.error)
