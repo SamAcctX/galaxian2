@@ -125,7 +125,7 @@ func fly_recovery_job(initial: Dictionary) -> bool:
 			var reach:=float(weapon.speed_units_per_millisecond)*float(weapon.lifetime_ms)
 			pilot.firing_range=reach*0.9
 			input=pilot.controls_at_time(state,float(state.world_elapsed_ms),escorts if not escorts.is_empty() else [carrier],false)
-			input.throttle=1.0 if input.distance>minf(18000.0,reach*0.6) else 0.0
+			input.throttle=1.0 if input.distance>minf(18000.0,reach*0.8) else 0.0
 			if input.distance<35000.0:input.strafe=1.0
 		else:
 			var distance: float=state.player_pose.origin.distance_to(actor.position)
