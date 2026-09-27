@@ -38,6 +38,9 @@ func contract_cast_valid(actors: Array) -> bool:
 
 func expects_contract_success() -> bool:return true
 
+func contract_credit_delta(offer: Dictionary,won: bool) -> int:
+	return int(offer.mission.reward)+int(offer.mission.bonus) if won else 0
+
 func accepts_requested_contract(mission: Dictionary) -> bool:
 	var selected:=OS.get_environment("GOF2_PIRATE_DIFFICULTY")
 	return super.accepts_requested_contract(mission) and (selected.is_empty() or mission.difficulty==selected.to_int())
@@ -104,8 +107,8 @@ func verify_delivery_route(original: Dictionary,before: Dictionary,offer: Dictio
 	if not paid.contracts.pending_result.is_empty():
 		check(false,"Acknowledgement retained the finished job: "+app.session.error+" · "+str({"status":app.session.status,"active":app.lounge_panel._active,"focus":app._focused,"pauses":app.session._pauses}));return
 	check(paid.contracts.mission.is_empty(),"Acknowledgement retained the finished job")
-	var reward:=int(offer.mission.reward)+int(offer.mission.bonus) if won else 0
-	check(paid.contracts.credits==accepted.contracts.credits+reward and paid.contracts.completed_side_missions==accepted.contracts.completed_side_missions+int(won),"The freelance result paid another reward or count")
+	var reward:=contract_credit_delta(offer,won)
+	check(paid.contracts.credits==maxi(0,accepted.contracts.credits+reward) and paid.contracts.completed_side_missions==accepted.contracts.completed_side_missions+int(won),"The freelance result paid another reward or count")
 	check(paid.mission==original.mission and paid.campaign_cursor==original.campaign_cursor,"Freelance payment advanced the campaign")
 	check(not app.contract_action("result_close",serial) and app.session.snapshot()==paid,"Repeated acknowledgement changed the career")
 	check(app.session.flight_audio.snapshot().history.filter(func(row):return row.get("source_id")==36).size()==int(won),"The result played the wrong number of payment sounds")

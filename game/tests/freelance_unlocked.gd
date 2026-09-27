@@ -41,23 +41,28 @@ func verify_unlocked(args: PackedStringArray) -> void:
 		invalid=later.fork();invalid._state.accepted_contact=invalid._state.accepted_contact.duplicate(true);invalid._state.accepted_contact.offer.mission={}
 		check(not invalid._selected40_side_slot_valid(bindings) and later._selected40_side_slot_valid(bindings),"A changed accepted client reached a selected story or corrupted its parent")
 	var departure:=Construction.new()
-	if not departure.prepare_free(bindings,cat,restored,4096,1789100000):check(false,departure.error);return
-	var equipment: RefCounted=restored.equipment_owner();var contracts: RefCounted=restored.contract_owner()
-	var target: int=accepted.contracts.mission.station_id
-	var route: Dictionary=preload("res://src/content/mido_travel_definitions.gd").route(bindings,int(accepted.campaign_cursor),int(accepted.loadout.station_id),target)
-	if route.is_empty():check(false,"The selected job has no local route");return
-	var arrival:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(accepted.campaign_cursor),"from_station_id":int(accepted.loadout.station_id),"station_id":target,"system_id":int(route.system_id),"source_state":int(bindings.mido_travel.travel.source_state),"world_type":int(bindings.mido_travel.travel.world_type),"audio_selector":int(bindings.mido_travel.travel.audio_selector)}
-	if not equipment.relocate_local_arrival(bindings,cat,arrival) or not contracts.rebase_station(equipment,bindings):check(false,equipment.error+contracts.error);return
-	var destination:=Construction.new()
 	var bodies=preload("res://src/content/scenery_body_resources.gd").new()
 	var effects=preload("res://src/content/scenery_effect_resources.gd").new()
 	if not bodies.configure(library,bindings) or not effects.configure(library,bindings):check(false,bodies.error+effects.error);return
-	if not destination._prepare_free_owned(bindings,cat,equipment,contracts,accepted.mission,{},4096,1789100000,true,bodies,effects):check(false,destination.error);return
+	if not departure.prepare_free(bindings,cat,restored,4096,1789100000,true,bodies,effects):check(false,departure.error);return
+	var equipment: RefCounted=restored.equipment_owner();var contracts: RefCounted=restored.contract_owner()
+	var target: int=accepted.contracts.mission.station_id
+	var destination: RefCounted=departure
+	if target!=int(accepted.loadout.station_id):
+		var route: Dictionary=preload("res://src/content/mido_travel_definitions.gd").route(bindings,int(accepted.campaign_cursor),int(accepted.loadout.station_id),target)
+		if route.is_empty():check(false,"The selected job has no local route");return
+		var arrival:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(accepted.campaign_cursor),"from_station_id":int(accepted.loadout.station_id),"station_id":target,"system_id":int(route.system_id),"source_state":int(bindings.mido_travel.travel.source_state),"world_type":int(bindings.mido_travel.travel.world_type),"audio_selector":int(bindings.mido_travel.travel.audio_selector)}
+		if not equipment.relocate_local_arrival(bindings,cat,arrival) or not contracts.rebase_station(equipment,bindings):check(false,equipment.error+contracts.error);return
+		destination=Construction.new()
+		if not destination._prepare_free_owned(bindings,cat,equipment,contracts,accepted.mission,{},4096,1789100000,true,bodies,effects):check(false,destination.error);return
 	var context: RefCounted=destination.mission_context_owner()
 	check(context!=null and not context.advances_campaign(),"Selected freelance flight acquired campaign advancement")
 	var frame=preload("res://src/simulation/first_flight_frame.gd").new()
 	if not frame.configure(bindings,cat,library,destination,"F",1.0):check(false,frame.error);return
 	verify_contract_frame(bindings,frame,accepted)
+	if failures==0:verify_contract_boundaries(bindings,cat,library,restored)
+
+func verify_contract_boundaries(_bindings: RefCounted,_cat: RefCounted,_library: RefCounted,_station: RefCounted) -> void:pass
 
 func verify_contract_frame(bindings: RefCounted,frame: RefCounted,accepted: Dictionary) -> void:
 	var world: Dictionary=frame.snapshot()

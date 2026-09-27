@@ -268,7 +268,7 @@ func configure_kappa_player(bindings: RefCounted) -> bool:
 
 func replace_with_contract_path(points: Array) -> bool:
 	error=""
-	if _identity.get("campaign_cursor") not in [13,14,36] or _points.is_empty() or _authored or points.size()<3 or points.size()>4:return reject("Generate the rival route before replacing it with the mission path")
+	if _identity.is_empty() or _points.is_empty() or _authored or points.size()<3 or points.size()>4:return reject("Generate the rival route before replacing it with the mission path")
 	if points.any(func(point):return not point is Vector3 or not point.is_finite()):return reject("The mission path contains an invalid waypoint")
 	_points=points.duplicate();_candidates=[];_index=0;_loop=false;_authored=true
 	return true
