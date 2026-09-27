@@ -56,10 +56,17 @@ func verify_visibility_path(world: RefCounted,relative_mouse: bool) -> void:
 		active._encounter._hook._radio._started[index]=true
 		active._encounter._hook._radio._finished[index]=true
 	var release: RefCounted;var preceding: RefCounted
+	var pullback_start:=-1;var pullback_captured:=false
 	for tick in 700:
 		preceding=active
 		if not visibility_step(100,relative_mouse):return
 		var state: Dictionary=active.frame_context()
+		if state.encounter.sequence.phase==4:
+			if pullback_start<0:pullback_start=int(state.elapsed_ms)
+			if not pullback_captured and int(state.elapsed_ms)-pullback_start>=10000:
+				pullback_captured=true
+				print(label,": pullback capture ",int(state.elapsed_ms)-pullback_start,"ms after placement")
+				await capture("visibility-"+label+"-pullback-ten-seconds")
 		if state.encounter.sequence.phase==5 and release==null:
 			release=active
 			observe_visibility(label,"release")
