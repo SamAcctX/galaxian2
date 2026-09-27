@@ -26,6 +26,17 @@ func run() -> void:
 		check(false,panel.error);finish();return
 	await process_frame
 	check(panel.background.planets!=null and panel.background.selection.station_id==10,"Credits did not prepare the current station and its original planets")
+	var shaded:=0;var emissive:=0
+	for branch in [panel.background.station,panel.background.scenery]:
+		for child in branch.find_children("*","",true,false):
+			if child.get_script()!=preload("res://src/presentation/imported_model.gd"):continue
+			for material in child.materials:
+				check(material.shader!=preload("res://src/presentation/imported_material.gdshader"),"The ending retained a generic PBR exterior")
+				if material.shader==preload("res://src/presentation/surface_response.gdshader"):
+					shaded+=1
+					check(material.get_shader_parameter("reflection_texture")==panel.background.reflection.texture,"The ending uses another location's reflection")
+				else:emissive+=1
+	check(shaded>0 and emissive>0,"Exterior shading removed the independent station light layers")
 	var key:=InputEventKey.new();key.physical_keycode=KEY_ENTER;key.pressed=true
 	Input.parse_input_event(key);Input.flush_buffered_events();await process_frame
 	check(requests==0,"Early keyboard input bypassed the radio gate")

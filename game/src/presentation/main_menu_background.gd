@@ -10,6 +10,9 @@ const Motion=preload("res://src/simulation/scenery_motion.gd")
 const SourceRandom=preload("res://src/simulation/seeded_random.gd")
 const Scenery=preload("res://src/presentation/scenery_geometry.gd")
 const Models=preload("res://src/presentation/model_resources.gd")
+const Lighting=preload("res://src/presentation/opening_lighting.gd")
+const Reflection=preload("res://src/presentation/environment_reflection.gd")
+const SurfaceResponse=preload("res://src/presentation/surface_response.gd")
 const SCENERY_STEP_LIMIT_MS:=150.0
 const CAMERA_YAW_RATE:=0.00005
 var error:=""
@@ -18,6 +21,8 @@ var camera: Camera3D
 var sky: Node3D
 var scenery: Node3D
 var station: Node3D
+var lighting: Node3D
+var reflection: RefCounted
 var _world: Node3D
 var _motion: RefCounted
 var _yaw:=0.0
@@ -119,10 +124,14 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,chosen_s
 	_yaw=-PI/4.0;prepared_camera.transform=Transform3D(Basis(Vector3.UP,_yaw),origin)
 	if not prepared_sky.apply_view({"pose":prepared_camera.global_transform}):
 		var message: String=prepared_sky.error;scene.free();return reject(message)
-	var environment:=Environment.new();environment.background_mode=Environment.BG_COLOR;environment.background_color=Color(0.007,0.014,0.027)
-	environment.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR;environment.ambient_light_color=Color.WHITE;environment.ambient_light_energy=0.35
-	var world_environment:=WorldEnvironment.new();world_environment.environment=environment;scene.add_child(world_environment)
-	var light:=DirectionalLight3D.new();light.rotation=Vector3(-0.8,0.4,0.0);light.light_energy=0.8;light.shadow_enabled=false;scene.add_child(light)
+	var prepared_lighting:=Lighting.new();scene.add_child(prepared_lighting)
+	if not prepared_lighting.build_station(bindings,catalogues,station_id):
+		var message: String=prepared_lighting.error;scene.free();return reject(message)
+	var prepared_reflection:=Reflection.new()
+	if not prepared_reflection.build(library,bindings,catalogues,system_id,false):scene.free();return reject(prepared_reflection.error)
+	var surfaces:=SurfaceResponse.new()
+	if not surfaces.apply_branches([prepared_station,prepared_scenery],bindings,prepared_lighting.state,prepared_reflection):scene.free();return reject(surfaces.error)
+	lighting=prepared_lighting;reflection=prepared_reflection
 	_world=scene;sky=prepared_sky;scenery=prepared_scenery;station=prepared_station;camera=prepared_camera;_motion=prepared_motion
 	selection={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"station_id":station_id,"system_id":system_id,"requested_station_id":requested_station,
 		"camera_origin":origin,"camera_yaw":_yaw,"camera_fov":0.92,"camera_near":200.0,"camera_far":200000.0,

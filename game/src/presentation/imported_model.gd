@@ -29,9 +29,9 @@ func build(model: Dictionary, diffuse: Image = null, normal_specular: Image = nu
 		arrays[Mesh.ARRAY_INDEX] = indices
 		if not surface.uvs.is_empty():
 			var uvs: PackedVector2Array=surface.uvs.duplicate()
-			# Verified V4/V5 shader-path loading changes V before tangent creation.
-			# Keep the raw decoder data intact for inspection and other paths.
-			if source_uv and model.get("version",0) in [4,5]:
+			# The shader path changes V for both packed and floating-point meshes.
+			# Keep decoder coordinates intact, and generate tangents after conversion.
+			if source_uv:
 				for index in uvs.size():uvs[index].y=1.0-uvs[index].y
 			arrays[Mesh.ARRAY_TEX_UV] = uvs
 		if not surface.normals.is_empty():

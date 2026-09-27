@@ -16,6 +16,7 @@ const Lighting=preload("res://src/presentation/opening_lighting.gd")
 const Scenery=preload("res://src/presentation/scenery_geometry.gd")
 const SceneryEffects=preload("res://src/content/scenery_effect_resources.gd")
 const Reflection=preload("res://src/presentation/environment_reflection.gd")
+const SurfaceResponse=preload("res://src/presentation/surface_response.gd")
 const Station=preload("res://src/presentation/station_exterior_geometry.gd")
 const Gates=preload("res://src/presentation/gate_geometry.gd")
 const FlightProjection=preload("res://src/presentation/flight_camera.gd")
@@ -46,6 +47,8 @@ var planets: Node3D
 var sun: Node3D
 var scenery: Node3D
 var station: Node3D
+var lighting: Node3D
+var reflection: RefCounted
 var gates: Node3D
 var camera: Camera3D
 var dialogue: Control
@@ -110,11 +113,12 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 	if particles!=null:
 		damage_particles=DamageParticles.new();add_child(damage_particles)
 		if not damage_particles.build(particles,library,visuals,bindings):return fail(damage_particles.error)
-	var scenery_lighting: Dictionary={}
+	lighting=Lighting.new();add_child(lighting)
 	if state.has("void_environment"):
 		void_environment=VoidEnvironment.new();add_child(void_environment)
 		if not void_environment.build(library,visuals,bindings,flight.void_environment_owner(),flight.gate_animation_owner()):return fail(void_environment.error)
 		sky=void_environment.sky;gates=void_environment.gates
+		if not lighting.build_void(bindings,flight.void_environment_owner()):return fail(lighting.error)
 	else:
 		sky=Background.new();add_child(sky)
 		if not sky.build_departure(library,visuals,bindings,catalogues,state.player_cache,"high",flight.equipment_owner(),flight.mission_context_owner()):return fail(sky.error)
@@ -122,17 +126,16 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 		if not planets.build_departure(library,visuals,bindings,catalogues,state.player_cache,"high",flight.equipment_owner(),flight.mission_context_owner()):return fail(planets.error)
 		sun=Sun.new();add_child(sun)
 		if not sun.build_departure(library,visuals,bindings,catalogues,state.player_cache,"high",flight.equipment_owner(),flight.mission_context_owner()):return fail(sun.error)
-		var lights:=Lighting.new();add_child(lights)
-		if not lights.build_departure(bindings,catalogues,state.player_cache,flight.equipment_owner(),flight.mission_context_owner()):return fail(lights.error)
-		scenery_lighting=lights.state
+		if not lighting.build_departure(bindings,catalogues,state.player_cache,flight.equipment_owner(),flight.mission_context_owner()):return fail(lighting.error)
+	reflection=Reflection.new()
+	var reflected: bool=reflection.build_void(library,bindings,flight.void_environment_owner()) if state.has("void_environment") else reflection.build(library,bindings,catalogues,int(lighting.state.system_id),false)
+	if not reflected:return fail(reflection.error)
 	scenery=Scenery.new();add_child(scenery)
 	if not scenery.build(state.scenery,library,visuals,bindings,"high",true):return fail(scenery.error)
-	if state.scenery.has("destruction") and not scenery_lighting.is_empty():
+	if state.scenery.has("destruction"):
 		var effects:=SceneryEffects.new()
 		if not effects.configure(library,bindings):return fail(effects.error)
-		var reflection:=Reflection.new()
-		if not reflection.build(library,bindings,catalogues,int(scenery_lighting.system_id),false):return fail(reflection.error)
-		if not scenery.prepare_destruction(state.scenery,library,visuals,bindings,effects,scenery_lighting,reflection,EFFECT_RESPONSE):return fail(scenery.error)
+		if not scenery.prepare_destruction(state.scenery,library,visuals,bindings,effects,lighting.state,reflection,EFFECT_RESPONSE):return fail(scenery.error)
 	if state.has("station_exterior"):
 		station=Station.new();add_child(station)
 		if not station.build(library,visuals,bindings,flight.station_owner()):return fail(station.error)
@@ -202,6 +205,8 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 	if death!=null and not bindings.game_over_presentation.is_empty():
 		game_over=GameOver.new();overlay.add_child(game_over);game_over.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		if not game_over.configure(library,bindings,visuals,death):return fail(game_over.error)
+	var surfaces:=SurfaceResponse.new()
+	if not surfaces.apply_branches([geometry,encounter,station,gates,void_environment,scenery],bindings,lighting.state,reflection):return fail(surfaces.error)
 	if not present(flight):return fail(error)
 	return true
 
@@ -417,7 +422,7 @@ func clear() -> void:
 	error="";geometry=null;sky=null;planets=null;sun=null;scenery=null;camera=null;dialogue=null;_projection=null;_last={}
 	target_frame=null;reticle=null;scan_animation=null
 	mining_panel=null;_last_drill=null;notice_panel=null
-	station=null;gates=null;void_environment=null
+	station=null;gates=null;void_environment=null;lighting=null;reflection=null
 	encounter=null;_last_encounter=null
 	tractor=null;_last_tractor=null
 	_last_scenery=null

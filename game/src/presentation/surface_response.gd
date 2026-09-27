@@ -4,8 +4,29 @@ extends RefCounted
 const ShaderSource = preload("res://src/presentation/surface_response.gdshader")
 const Lights = preload("res://src/presentation/material_light_state.gd")
 const ImportedShader = preload("res://src/presentation/imported_material.gdshader")
+const ImportedModel = preload("res://src/presentation/imported_model.gd")
+# Explicit desktop high-quality surface preset, shared by exterior scene owners.
+const HIGH_QUALITY:={"variant":"two_light_cube","diffuse_bias":-1,"normal_bias":0}
 var error := ""
 var material: ShaderMaterial
+
+func apply_branches(roots: Array, bindings: RefCounted, environment: Dictionary, reflection: RefCounted, settings:=HIGH_QUALITY) -> bool:
+	error=""
+	if bindings==null or reflection==null:return fail("Exterior surfaces require prepared lighting and reflection")
+	for key in ["base_content_id","binding_id"]:
+		if environment.get(key)!=bindings.get(key) or reflection.selection.get(key)!=bindings.get(key):return fail("Exterior surface resources belong to another content identity")
+	if reflection.selection.get("system_id")!=environment.get("system_id"):return fail("Exterior reflection belongs to another location")
+	var models:=[]
+	for branch in roots:
+		if branch==null:continue
+		var descendants: Array=branch.find_children("*","",true,false)
+		descendants.push_front(branch)
+		for child in descendants:
+			if child.get_script()==ImportedModel and not models.has(child):models.append(child)
+	var changes:=prepare_models(models,bindings.surface_material,environment,reflection.texture,settings.diffuse_bias,settings.normal_bias,settings.variant)
+	if changes.is_empty():return false
+	commit_models(changes)
+	return true
 
 func prepare_models(models: Array, surface: Dictionary, environment: Dictionary, reflection: Cubemap, diffuse_bias: Variant, normal_bias: Variant, variant: String) -> Array:
 	error=""

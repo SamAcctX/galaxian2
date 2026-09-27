@@ -18,7 +18,6 @@ const FlightProjection=preload("res://src/presentation/flight_camera.gd")
 const SecondaryPanel=preload("res://src/presentation/secondary_weapon_panel.gd")
 const SceneryEffects=preload("res://src/content/scenery_effect_resources.gd")
 const SurfaceResponse=preload("res://src/presentation/surface_response.gd")
-const ImportedModel=preload("res://src/presentation/imported_model.gd")
 const OrdinaryScene=preload("res://src/presentation/first_flight_scene.gd")
 const SequenceEffects=preload("res://src/presentation/mission_sequence_effects.gd")
 const SequenceAudio=preload("res://src/presentation/mission_sequence_audio.gd")
@@ -72,15 +71,8 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cata
 	if environment.lights!=null:
 		if not resources.configure(library,bindings):return failed_build(resources.error)
 		if not scenery.prepare_destruction(field,library,visuals,bindings,resources,environment.lights.state,reflection,OrdinaryScene.EFFECT_RESPONSE):return failed_build(scenery.error)
-		var models:=[]
-		for branch in [player,encounter]+environment.surface_roots():
-			for child in branch.find_children("*","",true,false):
-				if child.get_script()==ImportedModel:models.append(child)
 		var adapter:=SurfaceResponse.new()
-		var response: Dictionary=OrdinaryScene.EFFECT_RESPONSE
-		var materials:=adapter.prepare_models(models,bindings.surface_material,environment.lights.state,reflection.texture,response.diffuse_bias,response.normal_bias,"two_light_cube")
-		if materials.is_empty():return failed_build(adapter.error)
-		SurfaceResponse.commit_models(materials)
+		if not adapter.apply_branches([player,encounter]+environment.surface_roots(),bindings,environment.lights.state,reflection):return failed_build(adapter.error)
 	if not exhaust.configure(library,bindings,visuals,world) or not effects.configure(library,bindings,visuals,world):return failed_build(exhaust.error+effects.error)
 	if context!=null:
 		var recipe: Dictionary=context.recipe()

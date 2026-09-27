@@ -76,8 +76,10 @@ func _build_state(bindings: RefCounted,context: Dictionary,staged: Dictionary) -
 ## Location resource preparation is not a departure or arrival permission.
 func build_station(bindings: RefCounted,catalogues: RefCounted,station_id: int) -> bool:
 	clear()
-	var context: Dictionary=load("res://src/content/ordinary_world_definitions.gd").catalogue_location(bindings,catalogues,station_id)
-	if context.is_empty():return reject("Lighting requires a source-supported ordinary location")
+	if bindings==null or catalogues==null or catalogues.content_id!=bindings.base_content_id or station_id<0 or station_id>=catalogues.tables.stations.size():return reject("Lighting requires a matching catalogue station")
+	var system_id:=int(catalogues.tables.stations[station_id].system_id)
+	if system_id<0 or system_id>=catalogues.tables.systems.size():return reject("Lighting station has no catalogue system")
+	var context:={"station_id":station_id,"system_id":system_id}
 	return _build_station(bindings,catalogues,context)
 
 func encoded_color(linear: Vector3) -> Color:

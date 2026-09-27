@@ -2714,6 +2714,10 @@
     "game/tests/station_mission_recipe.gd",
     "game/tests/station_mission_recipe.gd.uid",
     "game/tests/campaign_ending_application.gd",
-    "game/tests/campaign_ending_application.gd.uid"
+    "game/tests/campaign_ending_application.gd.uid",
+    "game/tests/imported_uv.gd",
+    "game/tests/imported_uv.gd.uid",
+    "game/tests/exterior_resume.gd",
+    "game/tests/exterior_resume.gd.uid"
   ]
 }
