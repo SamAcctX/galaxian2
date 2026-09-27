@@ -43,10 +43,18 @@ func run() -> void:
 	check(Definitions.mission(bindings,25).result_events.size()==3 and Definitions.mission(bindings,26).briefing_events.size()==3 and Definitions.mission(bindings,27).result_events.size()==11,"Post-Sahi original conversations lost lines")
 	var node:=Geometry.new();root.add_child(node)
 	if not node.build(library,visuals,bindings,environment):check(false,node.error);node.free();quit(1);return
+	var meshes: Array=node.station.find_children("*","MeshInstance3D",true,false)
+	var bounds: AABB=meshes[0].global_transform*meshes[0].mesh.get_aabb()
+	for mesh in meshes:bounds=bounds.merge(mesh.global_transform*mesh.mesh.get_aabb())
+	check(bounds.size.length()>100000.0,"The mothership is still a small unposed asset instead of surrounding the cinematic")
+	var first_poses: Array=meshes.map(func(mesh):return mesh.transform)
 	var camera:=Camera3D.new();root.add_child(camera);camera.current=true;camera.far=400000;camera.near=.5;root.size=Vector2i(1280,720)
 	camera.position=world.player_position+Vector3(0,7000,-25000);camera.look_at(Vector3.ZERO)
 	var view:={"pose":camera.global_transform}
 	check(node.advance(100,view),node.error)
+	var moved_poses: Array=meshes.map(func(mesh):return mesh.transform)
+	check(moved_poses!=first_poses,"The Void station's decorative surfaces never animate")
+	check(node.advance(0,view) and meshes.map(func(mesh):return mesh.transform)==moved_poses,"A paused Void view changed station geometry")
 	if args.size()==4 and DisplayServer.get_name()!="headless":
 		DirAccess.make_dir_recursive_absolute(args[3]);await process_frame
 		RenderingServer.force_draw(false);await RenderingServer.frame_post_draw

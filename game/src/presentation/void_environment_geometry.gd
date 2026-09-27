@@ -7,11 +7,15 @@ const GateGeometry=preload("res://src/presentation/gate_geometry.gd")
 const GateClock=preload("res://src/simulation/gate_animation.gd")
 const Models=preload("res://src/presentation/model_resources.gd")
 const SkyLayers=preload("res://src/presentation/opening_sky.gd")
+const Sampler=preload("res://src/presentation/scenery_animation.gd")
+const Playback=preload("res://src/simulation/model_playback.gd")
+const Colors=preload("res://src/presentation/effect_color.gd")
 var error:=""
 var station: Node3D
 var gates: Node3D
 var sky: Node3D
 var _clock: RefCounted
+var _station_layers: Array=[]
 
 func build(library: RefCounted,visuals: RefCounted,bindings: RefCounted,environment: RefCounted,animation: RefCounted=null) -> bool:
 	clear()
@@ -38,19 +42,38 @@ func build(library: RefCounted,visuals: RefCounted,bindings: RefCounted,environm
 		var instance: Node3D=models.instantiate(source.models[id])
 		if instance==null:models.clear();return reject(models.error)
 		instance.set_meta("source_resource_id",id);station.add_child(instance)
+		var sampler:=Sampler.new()
+		if not sampler.configure(instance.surfaces,true):models.clear();return reject(sampler.error)
+		var timing: Dictionary=sampler.snapshot().range
+		_station_layers.append({"model":instance,"sampler":sampler,"clock":{
+			"start_ms":timing.start_ms,"end_ms":timing.end_ms,"time_ms":timing.start_ms,"playing":timing.end_ms>0}})
 	models.clear();_clock=clock
-	return gates.apply_animation(_clock)
+	return gates.apply_animation(_clock) and advance_station(0)
 
 func advance(milliseconds: int,view: Dictionary) -> bool:
 	error=""
 	if _clock==null:return reject("Prepare Void scenery before animation")
 	if not _clock.advance(milliseconds):return reject(_clock.error)
 	if not gates.apply_animation(_clock):return reject(gates.error)
+	if not advance_station(milliseconds):return false
 	if not sky.apply_view(view):return reject(sky.error)
+	return true
+
+func advance_station(milliseconds: int) -> bool:
+	for row in _station_layers:
+		Playback.advance([row.clock],milliseconds,true)
+		var sample: Dictionary=row.sampler.sample(row.clock.time_ms,Transform3D.IDENTITY)
+		if sample.is_empty():return reject(row.sampler.error)
+		for index in sample.surfaces.size():
+			var surface: Dictionary=sample.surfaces[index]
+			var color:=Colors.tint(PackedByteArray([255,255,255,255]),Vector4.ONE,surface.get("color_byte",-1))
+			if color.is_empty():return reject("Invalid Void station surface color")
+			row.model.instances[index].transform=surface.pose
+			row.model.materials[index].set_shader_parameter("surface_tint",color.value)
 	return true
 
 func clear() -> void:
 	for child in get_children():child.free()
-	station=null;gates=null;sky=null;_clock=null;error=""
+	station=null;gates=null;sky=null;_clock=null;_station_layers=[];error=""
 
 func reject(message: String) -> bool:error=message;return false

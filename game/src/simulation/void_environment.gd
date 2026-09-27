@@ -45,7 +45,9 @@ func _configure(bindings: RefCounted,random_state: Dictionary,cursor: int,return
 			if path.is_empty():return reject(bindings.error)
 			resources[int(id)]=path
 		var gate: bool=source.environment_slot==2
-		var pose:=Transform3D.IDENTITY
+		# The station faces back along its asset axes; all of its attached
+		# models share that pose. The incoming gate has its own facing below.
+		var pose:=Transform3D(Basis(Vector3.UP,PI),Vector3.ZERO)
 		if gate:pose=Transform3D(Basis.looking_at(-positions,Vector3.UP,true),positions)
 		objects.append({"index":int(source.environment_slot),"pose":pose,"models":resources,
 			"model_ids":source.model_ids.map(func(id):return int(id)),"kind":"gate" if gate else "station"})
