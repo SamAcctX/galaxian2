@@ -76,6 +76,18 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 				{"first_actor":attackers,"end_actor":count,"faction":faction,"population_group":"freighter","subtype":1,"origin":"zero","clear_cargo":true,
 					"position":{"kind":"positions","points":[Vector3(-2500,-300,27000),Vector3(6500,3000,24000),Vector3(-4000,-2000,19000),Vector3(9000,-6000,17000),Vector3(3000,7000,15000)]},
 					"ship_state":{"hull_override":hull,"cruise_enabled":true},"policy":{"initial_hostile":false,"updated_hostile":false,"friendly":true}}]
+		10:
+			var base:=int(Vitals.single(scaled*5.0))+3
+			attackers=int(Vitals.single(base+Vitals.single(base*Vitals.single(float(context.difficulty)-0.5))))
+			count=attackers+3;count_draw={"minimum":attackers+2,"bound":2,"group":0}
+			var faction:=int([1,0,3,2][int(context.client_faction)]) if int(context.client_faction)<4 else 0
+			placement={"kind":"random_points","regions":[{"offsets":[-2500,-2500,80000],"bounds":[5000,5000,30000]},
+				{"offsets":[-2500,-2500,120000],"bounds":[5000,5000,30000]}]}
+			ship_state={"mode":0,"active":true,"targeting_blocked":false}
+			ship_groups=[{"first_actor":0,"end_actor":3,"faction":faction,"population_group":"freighter","subtype":1,"origin":"path",
+				"position":{"kind":"path_scatter","index":1,"offsets":[-10000,-10000,-10000],"bounds":[20000,20000,20000]},
+				"ship_state":{"cruise_enabled":false,"hull_scales":[0.7,1.4 if float(context.difficulty)>0.7 else 1.0]},"policy":{"initial_hostile":true,"updated_hostile":true}},
+				{"first_actor":3,"end_actor":count,"faction":faction,"population_group":"patrol","origin":"path","policy":{"initial_hostile":true,"updated_hostile":true}}]
 		12:
 			var base:=int(Vitals.single(scaled*float(rules.challenge.count_multiplier)))
 			count=base+(int(rules.challenge.count_odd_offset) if (base+int(rules.challenge.count_odd_offset))%2 else int(rules.challenge.count_even_offset))+1
@@ -110,6 +122,7 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 			success={"kind":7,"end_actor":debris_count}
 			periodic={"kind":"elapsed","after_ms":int(bindings.early_contracts.junk_lifecycle.deadline_milliseconds)}
 			readout={"kind":"countdown","duration_ms":int(periodic.after_ms)}
+		10:success={"kind":7,"end_actor":3}
 		12:
 			var objectives: Dictionary=bindings.early_contracts.ship_lifecycle.objectives.duplicate(true)
 			success={"kind":int(objectives.challenge_success_kind),"rules":objectives}

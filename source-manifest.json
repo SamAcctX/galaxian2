@@ -2812,6 +2812,10 @@
     "game/tests/informer_contract.gd",
     "game/tests/informer_contract.gd.uid",
     "game/tests/informer_application.gd",
-    "game/tests/informer_application.gd.uid"
+    "game/tests/informer_application.gd.uid",
+    "game/tests/intercept_cast.gd",
+    "game/tests/intercept_cast.gd.uid",
+    "game/tests/intercept_application.gd",
+    "game/tests/intercept_application.gd.uid"
   ]
 }

@@ -65,11 +65,11 @@ static func supports_contract(bindings: RefCounted,mission: Variant,cursor: int)
 	# Actual entry also requires the location/flight admitted below.
 	if mission.get("kind")==2 and not preload("res://src/content/opening_definitions.gd").integer(mission.get("quantity"),2,5):return false
 	if Recipe.defers_station_result(mission) and not load("res://src/content/free_lifecycle_definitions.gd").available(bindings):return false
-	if mission.get("kind")==9:
+	if mission.get("kind") in [9,10]:
 		var population=load("res://src/content/free_population_definitions.gd")
 		if not [0,1,2,3].all(func(faction):return population.freighter_hull(bindings,faction)>=0 and not population.freighter_assembly(bindings,faction).is_empty()):return false
 	if mission.get("kind") in [3,5] and (not preload("res://src/content/tractor_recovery_definitions.gd").available(bindings) or not preload("res://src/content/opening_definitions.gd").integer(mission.get("quantity"),2,9)):return false
-	return ordinary.available(bindings) and cursor>=int(bindings.mido_travel.free_flight.campaign_cursor) and mission.get("kind") in [1,2,3,4,5,6,7,9,12,13] and preload("res://src/content/opening_definitions.gd").integer(mission.get("difficulty"),1,9) and not ordinary.Worlds.location(bindings.mido_travel,mission.get("station_id")).is_empty()
+	return ordinary.available(bindings) and cursor>=int(bindings.mido_travel.free_flight.campaign_cursor) and mission.get("kind") in [1,2,3,4,5,6,7,9,10,12,13] and preload("res://src/content/opening_definitions.gd").integer(mission.get("difficulty"),1,9) and not ordinary.Worlds.location(bindings.mido_travel,mission.get("station_id")).is_empty()
 
 ## A retained career and inventory authorize a generated side job once. Other
 ## owners receive this capability with the cast, never a caller-authored recipe.
@@ -114,6 +114,22 @@ func resolve_contract_count(count: int) -> RefCounted:
 	copy._identity=_identity;copy._loadout=_loadout;copy._contract_context=_contract_context
 	copy._recipe=_recipe.duplicate(true)
 	copy._recipe.cast.actor_count=count;copy._recipe.cast.count_draw={};copy._recipe.result.actor_count=count
+	if draw.has("group"):
+		var selected:=int(draw.group);var groups: Array=copy._recipe.cast.ship_groups
+		var boundary:=int(groups[selected].end_actor);var change:=count-int(_recipe.cast.actor_count)
+		for index in range(selected,groups.size()):
+			groups[index].end_actor+=change
+			if index>selected:groups[index].first_actor+=change
+		for name in ["success","failure","periodic_failure"]:
+			var condition: Dictionary=copy._recipe.result[name]
+			for field in ["first_actor","end_actor"]:
+				if condition.get(field,-1)>=boundary:condition[field]+=change
+		for name in ["player_last_ids","player_only_ids"]:
+			var adjusted:=[]
+			for id in copy._recipe.cast[name]:
+				if id<boundary+change:adjusted.append(id)
+				elif id>=boundary:adjusted.append(id+change)
+			copy._recipe.cast[name]=adjusted
 	return copy
 func advances_campaign() -> bool:return not _recipe.is_empty() and _recipe.get("track","campaign")=="campaign"
 
