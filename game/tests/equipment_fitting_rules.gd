@@ -88,6 +88,7 @@ func verify_fitting(args: PackedStringArray) -> void:
 		guns.append(id)
 	print("Supported original item IDs: ",supported,"; resolved primary IDs: ",guns)
 	check(guns.has(1) and guns.has(12) and guns.has(23) and guns.has(9) and guns.has(10) and guns.has(11),"Primary support omitted a supported bolt or beam family")
+	check(guns.has(28) and guns.has(29) and guns.has(30),"Original thermal weapons failed fitting, damage, sound or visual resolution")
 	check(guns.has(16)==Fitting.NPCSystems.available(bindings),"EMP fitting disagrees with the shared systems capability")
 	var combined:=seed.duplicate(true);combined.equipment_ids=[50,55,63,64,91,92,76,75]
 	var resolved:=fitting.inspect(bindings,cat,combined,assets)

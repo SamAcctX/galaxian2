@@ -823,14 +823,14 @@ func shooter_states() -> Array:
 
 func supports_weapon_hit(weapon: Variant) -> bool:
 	if _selected40_world!=null and not has_local_reactions():return reject("Selected40 weapon contacts require complete consequence owners")
-	var kinds: Array=[0]
+	var fitted: bool=weapon is Dictionary and preload("res://src/content/ordinary_fitting_definitions.gd").ordinary(weapon)
+	var kinds: Array=[int(weapon.kind)] if fitted else [0]
 	if not _training_weapons.is_empty() and weapon is Dictionary:
 		if weapon.get("nonplayer_source",false)==true:
 			var valid: bool=Story.npc_hit(_training_weapons,weapon) if _training_weapons.get("authored_story",false) else Kappa.npc_hit(_training_weapons,weapon) if _training_weapons.has("kappa_lifecycle") else FreeLife.npc_hit(_training_weapons,weapon) if _training_weapons.has("free_lifecycle") else Alioth.npc_hit(_training_weapons,weapon) if _training_weapons.has("alioth_lifecycle") else Convoy.npc_hit(_training_weapons,weapon) if _training_weapons.has("capital_death") else (BakkaCombat.npc_hit(_training_weapons,weapon) if not _bakka_encounter.is_empty() else (ContractLife.npc_hit(_training_weapons,weapon) if not _contract_encounter.is_empty() else (Travel.npc_hit(_training_weapons,weapon) if _provocation!=null else TrainingWeapons.npc_hit(_training_weapons,weapon))))
 			if not valid:return reject("NPC damage differs from this encounter's weapon declaration")
 			kinds=[0,1]
-		elif preload("res://src/content/ordinary_fitting_definitions.gd").ordinary(weapon):kinds=[0,1,2]
-		elif weapon.get("kind")==2:
+		elif weapon.get("kind")==2 and not fitted:
 			if not TrainingWeapons.dispersed_primary(weapon):return reject("Player damage lacks its verified primary declaration")
 			kinds=[0,2]
 	elif weapon is Dictionary and weapon.get("nonplayer_source",false)==true:return reject("This group has no verified NPC weapon contact path")
@@ -871,6 +871,13 @@ func collision_context(actor_id: Variant) -> Dictionary:
 		reject("Collision target names an unavailable opening actor")
 		return {}
 	return _actors[actor_id].collision_context()
+
+## Resolve after this gun's contacts; an acquired ship may have just retired.
+func guidance_position(actor_id: int) -> Variant:
+	if actor_id<0 or actor_id>=_actors.size():return null
+	var actor: Dictionary=_actors[actor_id].snapshot()
+	if not actor.active or actor.actor_mode in [3,4] or actor.get("hidden",false) or actor.get("cloaked",false):return null
+	return actor.pose.origin
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted = get_script().new()

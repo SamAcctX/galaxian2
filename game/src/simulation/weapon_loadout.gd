@@ -112,6 +112,7 @@ func resolve(item_id: Variant, equipment_ids: Array) -> Dictionary:
 		result.projectile_capacity=fitted.projectile_capacity
 		result.fitting_primary=true
 		if fitted.has("beam"):result.beam=fitted.beam.duplicate(true)
+		if fitted.has("thermal"):result.thermal=fitted.thermal.duplicate(true)
 		if fitted.has("dispersion"):result.dispersion=fitted.dispersion
 	var hit_policy: Dictionary = _data.get("ordinary_hit_policy",{})
 	if launch_mode in ["ordinary","beam"] and not hit_policy.is_empty():

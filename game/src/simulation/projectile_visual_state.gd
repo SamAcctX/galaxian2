@@ -53,6 +53,7 @@ func configure(bindings: RefCounted, library: RefCounted, world: Dictionary) -> 
 		if weapon.has("beam"):
 			models[-1].beam=weapon.beam.duplicate(true)
 			models[-1].playing=false
+		if weapon.has("thermal"):models[-1].thermal=weapon.thermal.duplicate(true)
 	_state={"base_content_id":world.base_content_id,"binding_id":world.binding_id,"models":models,"elapsed_ms":0,"rules":rules.duplicate(true)}
 	_identity=RefCounted.new()
 	_max_ms=Frames.simulation_limit(bindings,150)
@@ -72,6 +73,15 @@ func fork_for_frame() -> RefCounted:
 func reject(message: String) -> bool:error=message;return false
 
 static func model_mapping(bindings: RefCounted, weapon: Dictionary, key: String, impact: bool) -> Dictionary:
+	# Fitting already admitted this player's weapon. Its original model does
+	# not change with the campaign cursor or the encounter's NPC population.
+	if key.begins_with("player:") and Fitting.ordinary(weapon):
+		if not key.substr(7).is_valid_int() or int(key.substr(7))<0:return {}
+		var fitted:=Fitting.model(bindings,weapon,impact)
+		# The legacy opening launch has no retained firing-up column. Modern
+		# equipped launches carry it with their explicit campaign observation.
+		if not fitted.is_empty():fitted.captured_up=weapon.has("campaign_cursor")
+		return fitted
 	# A constructed NPC weapon carries the imported weapon declaration. Its
 	# model is independent of which mission selected that fighter.
 	var npc_void: Dictionary=bindings.mido_travel.get("alioth_attack",{}).get("weapons",{}).get("void",{})
@@ -123,7 +133,6 @@ static func model_mapping(bindings: RefCounted, weapon: Dictionary, key: String,
 	var dima: bool=cursor==28
 	if dima and not Thynome.coherent(bindings.mido_travel):return {}
 	var ordinary_void: bool=cursor==33 and VoidCrystals.parameters(bindings.mido_travel.get("void_crystals"))
-	if key.begins_with("player:") and Fitting.ordinary(weapon) and Fitting.available(bindings):return Fitting.model(bindings,weapon,impact)
 	if (cursor==24 or post or dima or ordinary_void) and key.begins_with("npc:") and weapon.get("item_id")==5:
 		if not load("res://src/content/sahi_encounter_definitions.gd").coherent(bindings.mido_travel) or not key.substr(4).is_valid_int():return {}
 		var data: Dictionary=bindings.mido_travel.sahi_encounter

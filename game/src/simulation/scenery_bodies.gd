@@ -101,7 +101,7 @@ func collision_context(object_index: Variant) -> Dictionary:
 func supports_weapon_hit(weapon: Variant) -> bool:
 	var kinds:=[0]
 	if _dispersed_primary and TrainingWeapons.dispersed_primary(weapon):kinds.append(2)
-	if weapon is Dictionary and preload("res://src/content/ordinary_fitting_definitions.gd").ordinary(weapon):kinds=[0,1,2]
+	if weapon is Dictionary and preload("res://src/content/ordinary_fitting_definitions.gd").ordinary(weapon):kinds=[int(weapon.kind)]
 	error=WeaponHit.validate(weapon,_identity,_hit_policy,kinds)
 	return error.is_empty()
 

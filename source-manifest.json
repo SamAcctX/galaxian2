@@ -2810,6 +2810,20 @@
     "game/tests/cargo_scanner_application.gd",
     "game/tests/cargo_scanner_application.gd.uid",
     "game/tests/automatic_tractor_application.gd",
-    "game/tests/automatic_tractor_application.gd.uid"
+    "game/tests/automatic_tractor_application.gd.uid",
+    "game/src/content/thermal_primary_definitions.gd",
+    "game/src/content/thermal_primary_definitions.gd.uid",
+    "game/src/presentation/projectile_trail_geometry.gd",
+    "game/src/presentation/projectile_trail_geometry.gd.uid",
+    "game/src/simulation/projectile_guidance.gd",
+    "game/src/simulation/projectile_guidance.gd.uid",
+    "game/src/simulation/projectile_trail.gd",
+    "game/src/simulation/projectile_trail.gd.uid",
+    "game/tests/thermal_primaries.gd",
+    "game/tests/thermal_primaries.gd.uid",
+    "game/tests/thermal_primary_application.gd",
+    "game/tests/thermal_primary_application.gd.uid",
+    "game/tests/thermal_trail_geometry.gd",
+    "game/tests/thermal_trail_geometry.gd.uid"
   ]
 }
