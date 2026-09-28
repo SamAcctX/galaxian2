@@ -11,10 +11,12 @@ func verify_free_application() -> void:
 		if app.session.can_control():break
 		now_us+=100000;app._selected40_tick(now_us)
 	check(app.session.can_control() and not app.touch_overlay.visible,"Authored desktop flight lost controls or exposed touch surfaces")
+	check(not app.status.visible and not app._flight_hint.visible,"Authored flight retained the generic instruction strip")
 	if failures:return
 	root.size=Vector2i(844,390);app.set_mobile_layout(true);app.set_touch_controls(true)
 	await touch(Vector2(1,1),true,7);await touch(Vector2(1,1),false,7)
 	check(app.touch_overlay.visible and app.touch_overlay.active and app._flight_actions.visible,"Authored mission still hides admitted touch controls")
+	check(not app.status.visible and not app._flight_hint.visible and app.session.scene.hud.visible,"Mobile mission retained desktop instructions or lost its HUD")
 	if failures:return
 	var stick: Vector2=app.touch_overlay.get_global_transform_with_canvas()*app.touch_overlay.stick_center()
 	var fire: Vector2=app.touch_overlay.get_global_transform_with_canvas()*app.touch_overlay.fire_center()

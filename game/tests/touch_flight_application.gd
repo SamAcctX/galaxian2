@@ -7,6 +7,7 @@ func verify_free_application() -> void:
 	app.set_player_mode(true);app.set_mobile_layout(false);app.set_touch_controls(false)
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()) or not await release_application_flight():check(false,app.status.text);return
 	check(not app.touch_overlay.visible and not app._flight_actions.visible,"Desktop exposed touch surfaces")
+	check(not app.status.visible and not app._flight_hint.visible and app.flight_vitals.visible,"Player flight retained generic instructions or lost its gauges")
 	await capture_free_application("touch-hidden-desktop")
 	root.size=Vector2i(844,390);app.set_mobile_layout(true);app.set_touch_controls(true)
 	await process_frame;resume_application_focus();app.present_session()

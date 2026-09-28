@@ -490,7 +490,7 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		_skip_button.visible=touch_actions_enabled() and skip_available;_skip_button.disabled=false
 		_layout_flight_overlays()
 		viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS if is_visible_in_tree() and not session.is_paused() and session.status=="running" else SubViewport.UPDATE_ONCE
-		status.visible=true
+		status.visible=not _player_mode or _transition_failed
 		return
 	if state.is_empty() and session!=null:state=session.snapshot()
 	_sync_booster_indicator(state)
@@ -559,14 +559,9 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		flight_vitals.set_touch_inset(touch_actions and flight_vitals.visible)
 	if _flight_hint!=null:
 		var cinematic: bool=session!=null and session.has_method("can_skip_cinematic") and session.can_skip_cinematic()
-		_flight_hint.visible=_player_mode and not touch_actions and ((session is FirstFlightSession and session.can_control()) or cinematic) and _focused and is_visible_in_tree()
-		if _flight_hint.visible and cinematic:
+		_flight_hint.visible=_player_mode and not touch_actions and cinematic and _focused and is_visible_in_tree()
+		if _flight_hint.visible:
 			_flight_hint.text="Skipping cinematic…" if session.cinematic_skipping() else "Enter / A  Skip cinematic"
-		elif _flight_hint.visible:
-			_flight_hint.text="Q  Autopilot destinations / Cancel" if state.get("station_autopilot",{}).get("active",false) else "Q  Autopilot destinations    ·    F  Dock / Mine    ·    E  Actions"
-			var fast: Dictionary=state.get("fast_forward",{})
-			if not fast.is_empty():
-				_flight_hint.text+="    ·    Hold Tab  Fast Forward" if fast.get("enabled",false) else "    ·    Hold Tab  Fast Forward (unavailable)"
 	if _skip_button!=null:
 		_skip_button.visible=touch_actions and session!=null and session.has_method("can_skip_cinematic") and session.can_skip_cinematic() and _focused and is_visible_in_tree()
 		_skip_button.disabled=session!=null and session.has_method("cinematic_skipping") and session.cinematic_skipping()
