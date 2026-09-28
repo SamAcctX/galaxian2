@@ -7,6 +7,13 @@ func _initialize() -> void:
 
 func requested_contract_kind() -> int:return 8
 
+func application_step() -> bool:
+	if not app.session is StationSession:return super.application_step()
+	resume_application_focus();now_us+=pirate_delta_us()
+	if not app.session.step(now_us):check(false,app.session.error);return false
+	app.present_session()
+	return true
+
 func verify_free_application() -> void:
 	app.enable_saves(OS.get_environment("GOF2_SAVE_TEST_DIRECTORY"))
 	app.show();app.present_session();await process_frame;resume_application_focus()
@@ -44,6 +51,11 @@ func verify_free_application() -> void:
 	if failures:return
 	var open_key:=InputEventKey.new();open_key.physical_keycode=KEY_H;open_key.pressed=true;app._unhandled_input(open_key)
 	var panel: Control=app.equipment_panel
+	if held>0:
+		panel.select_tab("cargo");await process_frame
+		panel._scroll.ensure_control_visible(panel._rows[item].node)
+		await process_frame;await process_frame;resume_application_focus()
+		await capture_free_application("purchase-retained-goods")
 	panel.select_tab("shop")
 	var rows: Array=app.session.station_owner().snapshot().equipment.market_rows.filter(func(row):return row.item_id==item)
 	if rows.size()!=1:check(false,"The generated client has no stock of its requested goods");return
@@ -93,7 +105,7 @@ func verify_free_application() -> void:
 	if not app.equipment_action("close"):check(false,app.session.error);return
 	await capture_free_application("purchase-paid")
 	if not retain_recovery_save("paid"):return
-	print("Purchase earned: ",{"item":item,"quantity":quantity,"price":price,"reward":mission.reward,"credits":paid.contracts.credits,"jobs":paid.contracts.completed_side_missions,"cursor":paid.campaign_cursor})
+	print("Purchase earned: ",{"item":item,"quantity":quantity,"price":price,"reward":mission.reward,"credits":paid.contracts.credits,"jobs":paid.contracts.completed_side_missions,"cursor":paid.campaign_cursor,"deltas":_pilot_deltas})
 
 func replace_purchase(supplied: Dictionary,item: int) -> void:
 	var key:=InputEventKey.new();key.physical_keycode=KEY_L;key.pressed=true;app._unhandled_input(key)
