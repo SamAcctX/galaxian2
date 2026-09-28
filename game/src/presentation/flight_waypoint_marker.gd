@@ -1,4 +1,5 @@
 extends Control
+const Distance=preload("res://src/presentation/flight_distance.gd")
 ## Original route marker art with native distance text. Arrival belongs to the
 ## flight owner; projecting or resizing the HUD never advances the route.
 const Story=preload("res://src/content/combat_training_story_definitions.gd")
@@ -63,22 +64,8 @@ func present(route: Dictionary, camera: Transform3D, viewport: Vector2i, hud_ena
 	_sample=sample;visible=sample.visible;queue_redraw()
 	return true
 
-func distance_meters(point: Vector3, eye: Vector3) -> int:
-	if _rules.is_empty() or not point.is_finite() or not eye.is_finite():return -1
-	var squared: int=0
-	for axis in 3:
-		var delta:=TargetProjection.single(TargetProjection.single(point[axis]*_rules.distance_coordinate_scale)-TargetProjection.single(eye[axis]*_rules.distance_coordinate_scale))
-		# Bound integer squares and their sum before the source-width conversion.
-		if not is_finite(delta) or absf(delta)>1000000000:return -1
-		var component:=int(delta);squared+=component*component
-	var root:=TargetProjection.single(sqrt(TargetProjection.single(TargetProjection.single(float(squared))*_rules.distance_squared_scale)))
-	var result:=int(root)*int(_rules.distance_result_scale)
-	return result if result<2147483648 else -1
-
-func distance_text(meters: int) -> String:
-	if meters<int(_rules.kilometer_threshold):return "%dm"%meters
-	@warning_ignore("integer_division")
-	return "%d.%dkm"%[meters/1000,(meters%1000)/100]
+func distance_meters(point: Vector3,eye: Vector3) -> int:return Distance.meters(point,eye,_rules)
+func distance_text(meters: int) -> String:return Distance.label(meters,_rules)
 
 func set_mobile_layout(value: bool) -> void:_mobile=value;queue_redraw()
 func snapshot() -> Dictionary:return _sample.duplicate(true)

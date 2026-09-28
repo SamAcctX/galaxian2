@@ -189,7 +189,7 @@ func _advance(combat: Dictionary, player: Transform3D, camera: Transform3D, aim:
 			var pixel: Vector2i=projected.pixels
 			var inside: bool=projected.in_view and pixel.x>lower_pixels.x and pixel.x<upper_pixels.x and pixel.y>lower_pixels.y and pixel.y<upper_pixels.y
 			markers.append({"actor_id":actor.actor_id,"pixels":pixel,"near":near,"selected":actor.actor_id==selected,
-				"hostile":actor.hostile,"hull_percent":int(actor.hull_percent),"in_scan_window":inside,"in_view":projected.in_view})
+				"hostile":actor.hostile,"hull_percent":int(actor.hull_percent),"in_scan_window":inside,"in_view":projected.in_view,"position":actor.pose.origin})
 			if found<0 and inside:found=int(actor.actor_id)
 		# A fitted tractor and ordinary scanner share the original ordered NPC
 		# candidate. Cargo cannot advance a second, unrelated ship scan as well.
@@ -214,6 +214,11 @@ func _advance(combat: Dictionary, player: Transform3D, camera: Transform3D, aim:
 			if selected<0:candidate=-1
 	_selected=selected;_candidate=candidate;_elapsed=elapsed
 	_sample={"visible":enabled and _equipment>=0,"markers":markers,"events":events,"animation_frame":animation,"found_actor_id":found,"aim_pixels":Vector2i(int(point.x),int(point.y)),"viewport_size":viewport}
+	_sample.camera_position=camera.origin
+	_sample.selected_target={}
+	if enabled and _equipment>=0 and selected>=0:
+		var actor: Dictionary=population[selected]
+		_sample.selected_target={"actor_id":selected,"actor_kind":int(actor.actor_kind),"name_text_id":int(actor.get("name_text_id",-1)),"hull_percent":int(actor.hull_percent)}
 	return true
 
 func valid_mode(actor_id: int,mode: Variant) -> bool:

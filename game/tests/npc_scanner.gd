@@ -19,7 +19,7 @@ func _initialize() -> void:
 
 func verify(content: String, pack: String, pixels: String) -> void:
 	var library:=Library.new();var bindings:=Bindings.new();var catalogues:=Catalogues.new();var visuals:=Visuals.new()
-	if not library.open(content) or not bindings.open(pack,library.manifest) or not catalogues.open(library):
+	if not library.open(content) or not bindings.open(pack,library.manifest) or not library.select_language("gb") or not catalogues.open(library):
 		check(false,library.error+bindings.error+catalogues.error);return
 	var scanner:=Scanner.new()
 	if bindings.opening_staging.get("npc_scanner",{}).is_empty():
@@ -115,6 +115,21 @@ func verify(content: String, pack: String, pixels: String) -> void:
 	check(hud.prepare(library,bindings,visuals),hud.error)
 	check(hud.present(scanner.snapshot()),hud.error)
 	check(hud.source().regions.size()==15 and hud.source().animation.frames==25,"Original marker aliases or filmstrip missing")
+	check(hud.information_snapshot().text=="%s %d%%"%[library.strings[403],combat.actors[1].hull_percent],"A selected ordinary NPC lost its localized category and live hull")
+	combat.actors[1].name_text_id=1600;combat.actors[1].hull_percent=37
+	var previous: Dictionary=scanner.snapshot();var named: RefCounted=scanner.fork_for_frame()
+	check(named.advance(combat,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,1,true),named.error)
+	check(hud.present(named.snapshot()) and hud.information_snapshot().text==library.strings[1600] and hud.information_snapshot().color==Color("ff2a00"),"The named Hijacker lost its red name or gained an invented hull suffix")
+	check(scanner.snapshot()==previous,"Named-target presentation corrupted the retained scanner")
+	check(hud.present(named.snapshot(),true) and hud.information_snapshot().is_empty(),"A retained NPC covered the higher-priority asteroid information")
+	check(named.advance(combat,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,100,false) and hud.present(named.snapshot()) and not hud.visible and hud.information_snapshot().is_empty(),"Hidden HUD retained a visible target panel")
+	combat.actors[1].actor_mode=4
+	check(named.advance(combat,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,1,true) and hud.present(named.snapshot()) and hud.information_snapshot().is_empty(),"A retired ship remained in selected information")
+	var rules: Dictionary=load("res://src/content/combat_training_story_definitions.gd").navigation(bindings)
+	var distance=load("res://src/presentation/flight_distance.gd")
+	if not rules.is_empty():
+		check(distance.label(992,rules)=="992m" and distance.label(1000,rules)=="1.0km" and distance.label(1296,rules)=="1.2km","Shared HUD distance units changed at the kilometer boundary")
+		check(distance.meters(Vector3(16000,0,0),Vector3.ZERO,rules)==1000 and distance.meters(Vector3(INF,0,0),Vector3.ZERO,rules)==-1,"Shared HUD distance conversion lost its world scale or finite-coordinate guard")
 	hud.set_mobile_layout(true);hud.free()
 	print(library.manifest.profile.edition,": scanner timing, source ordering, boundaries, death, detached failure and original art verified")
 

@@ -12,7 +12,7 @@ func run() -> void:
 	quit(1 if failures else 0)
 func verify(content: String, pack: String, pixels: String) -> void:
 	var library:=Library.new();var bindings:=Bindings.new();var visuals:=Visuals.new()
-	if not library.open(content) or not bindings.open(pack,library.manifest) or not visuals.open(pixels,library.manifest):check(false,library.error+bindings.error+visuals.error);return
+	if not library.open(content) or not bindings.open(pack,library.manifest) or not library.select_language("gb") or not visuals.open(pixels,library.manifest):check(false,library.error+bindings.error+visuals.error);return
 	var hud:=Markers.new();root.add_child(hud);hud.size=Vector2(1120,720)
 	if bindings.opening_staging.get("npc_scanner",{}).is_empty():
 		check(not hud.prepare(library,bindings,visuals),"Legacy pack acquired scanner art");hud.free();return
@@ -25,19 +25,26 @@ func verify(content: String, pack: String, pixels: String) -> void:
 		var rect:=Rect2i(source.animation.rect.position+Vector2i(i*40,0),Vector2i(40,40))
 		check(hud._frames[i].get_image().get_data()==strip_image.get_region(rect).get_data(),"Scanner frame lost original crop")
 	var sample:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"visible":true,"markers":[],"animation_frame":12,"aim_pixels":Vector2i(560,450)}
+	sample.selected_target={"actor_id":1,"actor_kind":8,"name_text_id":-1,"hull_percent":58}
+	sample.camera_position=Vector3.ZERO
 	for near in [true,false]:
 		for hostile in [true,false]:
 			for selected in [false,true]:
-				sample.markers.append({"pixels":Vector2i(320+int(hostile)*260+int(selected)*130,200 if near else 330),"near":near,"selected":selected,"hostile":hostile,"hull_percent":58})
+				sample.markers.append({"pixels":Vector2i(320+int(hostile)*260+int(selected)*130,200 if near else 330),"near":near,"selected":selected,"hostile":hostile,"hull_percent":58,"in_view":true,"position":Vector3(0,0,70000)})
 	for mobile in [false,true]:
 		hud.set_mobile_layout(mobile);check(hud.present(sample),hud.error)
 		check(hud.visible and hud.mouse_filter==Control.MOUSE_FILTER_IGNORE,"Markers hidden or intercept flight input")
 		if DisplayServer.get_name()!="headless":
 			await process_frame;await process_frame;await RenderingServer.frame_post_draw
 			var output:=OS.get_environment("GOF2_CAPTURE_DIR")
-			if not output.is_empty():check(root.get_texture().get_image().save_png(output.path_join("npc-markers-%s-%s.png"%[library.manifest.profile.edition,"phone" if mobile else "desktop"]))==OK,"Marker capture failed")
+			if not output.is_empty():
+				DirAccess.make_dir_recursive_absolute(output)
+				check(root.get_texture().get_image().save_png(output.path_join("npc-markers-%s-%s.png"%[library.manifest.profile.edition,"phone" if mobile else "desktop"]))==OK,"Marker capture failed")
 	var before: Dictionary=hud._sample.duplicate(true);var bad:=sample.duplicate(true);bad.binding_id="0".repeat(64)
+	var information:=hud.information_snapshot()
 	check(not hud.present(bad) and hud._sample==before,"Foreign sample replaced marker art")
+	bad=sample.duplicate(true);bad.selected_target.name_text_id=library.strings.size()
+	check(not hud.present(bad) and hud._sample==before and hud.information_snapshot()==information,"Invalid selected identity replaced the accepted target display")
 	bad=sample.duplicate(true);bad.animation_frame=25
 	check(not hud.present(bad) and hud._sample==before,"Out-of-range animation replaced marker art")
 	check(hud.present({}) and not hud.visible,"Missing capability retained markers")

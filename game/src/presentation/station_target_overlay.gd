@@ -1,4 +1,5 @@
 extends Control
+const Distance=preload("res://src/presentation/flight_distance.gd")
 ## The source neutral target rings and catalogue identity for an ordinary
 ## station. Acquisition and projection are committed by StationTargeting.
 const Atlas=preload("res://src/content/atlas_region.gd")
@@ -70,21 +71,8 @@ func present(lock: Dictionary,camera: Transform3D,hud_enabled: bool) -> bool:
 	visible=draw;queue_redraw()
 	return true
 
-func distance_meters(point: Vector3,eye: Vector3) -> int:
-	if _distance_rules.is_empty() or not point.is_finite() or not eye.is_finite():return -1
-	var squared: int=0
-	for axis in 3:
-		var delta:=TargetProjection.single(TargetProjection.single(point[axis]*_distance_rules.distance_coordinate_scale)-TargetProjection.single(eye[axis]*_distance_rules.distance_coordinate_scale))
-		if not is_finite(delta) or absf(delta)>1000000000:return -1
-		var component:=int(delta);squared+=component*component
-	var root:=TargetProjection.single(sqrt(TargetProjection.single(TargetProjection.single(float(squared))*_distance_rules.distance_squared_scale)))
-	var result:=int(root)*int(_distance_rules.distance_result_scale)
-	return result if result<2147483648 else -1
-
-func distance_text(meters: int) -> String:
-	if meters<int(_distance_rules.kilometer_threshold):return "%dm"%meters
-	@warning_ignore("integer_division")
-	return "%d.%dkm"%[meters/1000,(meters%1000)/100]
+func distance_meters(point: Vector3,eye: Vector3) -> int:return Distance.meters(point,eye,_distance_rules)
+func distance_text(meters: int) -> String:return Distance.label(meters,_distance_rules)
 
 func set_mobile_layout(value: bool) -> void:_mobile=value;queue_redraw()
 func snapshot() -> Dictionary:return _sample.duplicate(true)
