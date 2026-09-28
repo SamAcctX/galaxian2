@@ -9,6 +9,7 @@ var observed_factions:={}
 var verified_wrecks:={}
 var verified_hostile_budgets:=0
 var verified_hostile_reentries:=0
+var verified_emp_projectiles:=false
 const ReentryRandom=preload("res://src/simulation/seeded_random.gd")
 
 func _initialize() -> void:
@@ -333,6 +334,9 @@ func verify_ordinary_systems(bindings: RefCounted,cat: RefCounted,equipment: Ref
 		var capacity: int=(40 if context.rank==0 else 140)*(3 if freight else 1)
 		check(actor.systems.capacity==capacity and actor.systems.integrity==capacity and actor.systems.recovery_ms==(45000 if freight else 15000),"Ordinary systems lost rank, subtype or difficulty-independent capacity")
 		if actor.active:kinds[actor.actor_kind]=actor.actor_id;active.append(actor.actor_id)
+	if not verified_emp_projectiles:
+		verify_emp_projectiles(bindings,cat,equipment,construction)
+		if failures:return
 	for faction in kinds:
 		var id: int=kinds[faction];var group:=ordinary_group(bindings,cat,equipment,construction)
 		if group==null:return
@@ -395,6 +399,50 @@ func verify_ordinary_systems(bindings: RefCounted,cat: RefCounted,equipment: Ref
 	for id in freighters:
 		var actor: Dictionary=resumed.snapshot().combat.actors[id]
 		check(actor.systems.disabled and not actor.systems_disabled and actor.body_pose.origin==before.combat.actors[id].body_pose.origin+Vector3(0,0,1),"Freighter cruise waited for strict integrity recovery after its separate timer expired")
+
+func verify_emp_projectiles(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,construction: RefCounted) -> void:
+	# Exact placement isolates projectile contact. The application check buys,
+	# mounts and aims the gun through the normal player path.
+	var resolver:=Resolver.new();var original:=ordinary_group(bindings,cat,equipment,construction)
+	if original==null:return
+	if not resolver.configure(bindings,cat,bindings.base_content_id):check(false,resolver.error);return
+	var targets:={}
+	for actor in original.snapshot().actors:
+		if actor.active:targets[actor.population_group=="freighter"]=actor.actor_id
+	check(targets.size()==2,"EMP projectile coverage needs a living fighter and freighter")
+	for item in [16,17,18]:
+		var weapon: Dictionary=resolver.resolve(item,[])
+		if weapon.is_empty():check(false,resolver.error);return
+		weapon.campaign_cursor=original.snapshot().campaign_cursor
+		for id in targets.values():
+			var group: RefCounted=original.fork_for_frame();var initial: Dictionary=group.actor_snapshot(id)
+			var remaining: int=initial.systems.integrity
+			while remaining>0:
+				var collision: Dictionary=group.collision_context(id);var point: Vector3=collision.center
+				if collision.path=="point_geometry":point+=collision.boxes[0].offset
+				var projectiles:=shot(weapon,point)
+				if projectiles==null:return
+				var before: Dictionary=group.snapshot();var bullets: Dictionary=projectiles.snapshot()
+				var contacts:=Contacts.new();var result:=contacts.evaluate(projectiles,group,[id])
+				if result.is_empty():check(false,contacts.error);return
+				check(result.contacts.size()==1 and result.contacts[0].damage.systems.accepted,"A resolved EMP projectile missed its systems contact")
+				check(group.snapshot()==before and projectiles.snapshot()==bullets,"An EMP contact changed the retained parent frame")
+				group=result.combat
+				var actor: Dictionary=group.actor_snapshot(id)
+				check(actor.systems.integrity<remaining and actor.vitals==initial.vitals and not result.contacts[0].damage.destroyed_now,"EMP fire damaged hull or failed to reduce systems")
+				check(result.projectiles.snapshot()!=bullets and actor.contact,"EMP contact lost the projectile impact or target feedback")
+				if failures:return
+				remaining=actor.systems.integrity
+			check(group.actor_snapshot(id).systems.disabled and not original.actor_snapshot(id).systems.disabled,"Sustained EMP fire failed to disable only its staged target")
+	# Explicit invalid component state: systems are connected, normal contract
+	# damage is not. Failure after the systems hit must roll back both pools.
+	var broken: RefCounted=original.fork_for_frame();var id: int=targets.values()[0]
+	broken._writable(id)._state.contract_ship=true
+	var before: Dictionary=broken.snapshot();var staged: RefCounted=broken.fork_for_frame()
+	check(not staged.systems_hit(id,3).is_empty(),staged.error)
+	var weapon: Dictionary=resolver.resolve(16,[]);weapon.campaign_cursor=before.campaign_cursor
+	check(broken.weapon_hit(id,weapon).is_empty() and broken.snapshot()==before,"A later normal-contact failure retained EMP damage or reactions")
+	verified_emp_projectiles=true
 
 func verify_ordinary_wreck(bindings: RefCounted,resources: RefCounted,death: RefCounted,random: Dictionary) -> void:
 	var initial: Dictionary=death.snapshot();var faction: int=initial.actor_kind

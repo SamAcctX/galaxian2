@@ -14,6 +14,7 @@ static func validate(weapon: Variant, identity: Dictionary, policy: Dictionary, 
 	if weapon.category!=0 or weapon.kind not in kinds or weapon.get("launch_mode")!="ordinary" or not Definitions.resolved(weapon.get("ordinary_hit_policy"),weapon.damage):
 		return "Weapon lacks supported ordinary non-player hit declarations"
 	if weapon.has("nonplayer_source") and not weapon.nonplayer_source is bool:return "Invalid ordinary damage attribution"
-	if weapon.ordinary_hit_policy.additional_damage_required or weapon.ordinary_hit_policy.additional_damage!=int(policy.missing_additional_damage):
-		return "Weapon requires an unsupported additional-damage path"
+	var extra: int=weapon.ordinary_hit_policy.additional_damage
+	if weapon.ordinary_hit_policy.additional_damage_required!=(extra!=int(policy.missing_additional_damage)) or (extra!=int(policy.missing_additional_damage) and not Vitals.integer(extra)):
+		return "Weapon has inconsistent systems damage"
 	return ""

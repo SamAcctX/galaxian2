@@ -839,7 +839,24 @@ func supports_weapon_hit(weapon: Variant) -> bool:
 
 func weapon_hit(actor_id: Variant, weapon: Variant) -> Dictionary:
 	if not supports_weapon_hit(weapon): return {}
-	return normal_hit(actor_id,weapon.ordinary_hit_policy.nonplayer_damage,weapon.get("nonplayer_source",false))
+	if not weapon.ordinary_hit_policy.additional_damage_required:return normal_hit(actor_id,weapon.ordinary_hit_policy.nonplayer_damage,weapon.get("nonplayer_source",false))
+	if not actor_id is int or actor_id<0 or actor_id>=_actors.size():return _failed_weapon_hit("Systems projectile names an unavailable actor")
+	# A projectile applies both pools as one transaction. Later normal-contact
+	# failure must not leave a disabled ship or a reputation change behind.
+	var next: RefCounted=fork_for_frame();var systems:={}
+	if not _actors[actor_id].snapshot().get("contract_debris",false):
+		systems=next.systems_hit(actor_id,weapon.ordinary_hit_policy.additional_damage,weapon.get("nonplayer_source",false))
+		if systems.is_empty():return _failed_weapon_hit(next.error)
+	var result: Dictionary=next.normal_hit(actor_id,weapon.ordinary_hit_policy.nonplayer_damage,weapon.get("nonplayer_source",false))
+	if result.is_empty():return _failed_weapon_hit(next.error)
+	if not systems.is_empty():
+		result.systems=systems
+		result.reactions=systems.get("reactions",[])+result.get("reactions",[])
+	_owned={};_actors=next._actors;_provocation=next._provocation;_reputation=next._reputation;_contact_random=next._contact_random
+	return result
+
+func _failed_weapon_hit(message: String) -> Dictionary:
+	error=message;return {}
 
 func record_contact(actor_id: Variant, incoming_velocity: Variant,point_box_index: Variant=null) -> bool:
 	error = ""

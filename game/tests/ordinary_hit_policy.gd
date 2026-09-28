@@ -119,7 +119,7 @@ func check_combat(library: RefCounted, bindings: RefCounted, catalogues: RefCoun
 		match key:
 			"identity":bad.base_content_id="c".repeat(64)
 			"binding":bad.binding_id="c".repeat(64)
-			"additional":bad.ordinary_hit_policy.additional_damage_required=true;bad.ordinary_hit_policy.additional_damage=0
+			"additional":bad.ordinary_hit_policy.additional_damage_required=true;bad.ordinary_hit_policy.additional_damage=-2
 			"hidden_additional":bad.ordinary_hit_policy.additional_damage=0
 			"missing":bad.erase("ordinary_hit_policy")
 			"kind":bad.kind=11

@@ -76,7 +76,7 @@ func check_synthetic() -> void:
 	var inactive: RefCounted = bodies.fork_for_frame()
 	check(inactive.set_permissions(2,false,true),inactive.error)
 	check(operation.evaluate(shots,inactive,[2]).contacts.is_empty(),"Inactive scenery participated")
-	inactive=bodies.fork_for_frame();inactive._rows[2].collision_enabled=false
+	inactive=bodies.fork_for_frame();inactive._rows[2]=inactive._rows[2].duplicate(true);inactive._rows[2].collision_enabled=false;inactive._read_snapshot={}
 	check(operation.evaluate(shots,inactive,[2]).contacts.is_empty(),"Geometry-disabled scenery participated")
 	var empty := operation.evaluate(shots,bodies,[])
 	check(empty.contacts.is_empty() and empty.last_contact_object_index==null,"Empty list invented a target or stale last contact")

@@ -2794,6 +2794,10 @@
     "game/tests/escort_cast.gd",
     "game/tests/escort_cast.gd.uid",
     "game/tests/escort_application.gd",
-    "game/tests/escort_application.gd.uid"
+    "game/tests/escort_application.gd.uid",
+    "game/tests/emp_primary_application.gd",
+    "game/tests/emp_primary_application.gd.uid",
+    "game/tests/cargo_scanner_application.gd",
+    "game/tests/cargo_scanner_application.gd.uid"
   ]
 }

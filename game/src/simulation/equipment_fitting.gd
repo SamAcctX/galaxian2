@@ -18,6 +18,7 @@ const AEM=preload("res://src/content/aem.gd")
 const Sampler=preload("res://src/presentation/scenery_animation.gd")
 const Surface=preload("res://src/presentation/animated_additive_model.gd")
 const Tractor=preload("res://src/simulation/tractor_recovery.gd")
+const NPCSystems=preload("res://src/content/npc_systems_definitions.gd")
 var error:=""
 
 func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) -> Dictionary:
@@ -109,6 +110,7 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 	if category==0:
 		var weapon: Dictionary=resolver.resolve(id,ids)
 		if weapon.is_empty():return "This weapon's firing behavior is not yet supported"
+		if weapon.get("ordinary_hit_policy",{}).get("additional_damage_required",false) and not NPCSystems.available(bindings):return "This weapon requires ship systems damage support"
 		var projectiles:=Projectiles.new()
 		if not projectiles.configure(weapon):return "This weapon's firing behavior is not yet supported"
 		var reason:=Hits.validate(weapon,{"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id},bindings.weapon_parameters.ordinary_hit_policy,[0,1,2])
