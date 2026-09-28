@@ -19,10 +19,26 @@ func configure(bindings: RefCounted,catalogues: RefCounted,station_id: int,locat
 	_state.location_order=cache.locations.map(func(entry):return int(entry.station_id))
 	return true
 
-func _configure_selected(bindings: RefCounted,catalogues: RefCounted,station_id: int,cursor: int,cached_station: int,has_cached_planet: bool,mission_context: RefCounted=null) -> bool:
+## Early travel has a departure packet before it has a retained lounge history.
+## Its source station supplies the incoming planet to the same pose owner.
+func configure_transit(bindings: RefCounted,catalogues: RefCounted,packet: Dictionary,equipment: RefCounted) -> bool:
+	error=""
+	if bindings==null or catalogues==null or not Definitions.available(bindings):return reject("Incoming travel requires its original environment")
+	for key in ["base_content_id","binding_id"]:
+		if packet.get(key)!=bindings.get(key):return reject("Incoming travel belongs to another content source")
+	var travel=load("res://src/content/mido_travel_definitions.gd")
+	var cursor:=int(packet.get("campaign_cursor",-1));var destination:=int(packet.get("station_id",-1));var source:=int(packet.get("from_station_id",-1))
+	var stations: Array=travel.navigation_stations(bindings,cursor,source)
+	if source==destination or not stations.has(source) or not stations.has(destination) or catalogues.tables.stations[destination].system_id!=packet.get("system_id"):return reject("Incoming travel lost its admitted local route")
+	var planets:=Planets.new()
+	var layout:=planets.for_departure(bindings,catalogues,packet.get("player_cache"),"high",equipment)
+	if layout.is_empty():return reject(planets.error)
+	return _configure_selected(bindings,catalogues,destination,cursor,source,true,null,layout)
+
+func _configure_selected(bindings: RefCounted,catalogues: RefCounted,station_id: int,cursor: int,cached_station: int,has_cached_planet: bool,mission_context: RefCounted=null,prepared_layout: Dictionary={}) -> bool:
 	var gates:=Gates.new()
 	if not gates.configure(bindings,catalogues,station_id):return reject(gates.error)
-	var planets:=Planets.new();var layout:=planets.for_lounge(bindings,catalogues,station_id,cursor,"high",mission_context)
+	var planets:=Planets.new();var layout:=prepared_layout if not prepared_layout.is_empty() else planets.for_lounge(bindings,catalogues,station_id,cursor,"high",mission_context)
 	if layout.is_empty():return reject(planets.error)
 	var rules: Dictionary=bindings.mido_travel.local_arrival_environment.arrival
 	var gate_state: Dictionary=gates.snapshot()

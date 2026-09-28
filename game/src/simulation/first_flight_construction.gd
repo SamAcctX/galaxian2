@@ -672,7 +672,10 @@ func _prepare_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dictio
 		packet.contracts=contracts.snapshot()
 		if Transit.selected(bindings.mido_travel,packet.campaign_cursor,context.station_id,mission):
 			return _prepare_convoy_owned(bindings,catalogues,destination,contracts,packet,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,cached)
-	return _construct(bindings,catalogues,packet,data,player,context,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,destination,contracts if contract_arrival else null)
+	var incoming:=Incoming.new()
+	if not incoming.configure_transit(bindings,catalogues,packet,destination):return reject(incoming.error)
+	packet.arrival_environment=incoming.snapshot()
+	return _construct(bindings,catalogues,packet,data,player,context,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,destination,contracts if contract_arrival else null,null,incoming)
 
 func _prepare_environment(bindings: RefCounted,data: Dictionary,environment_seconds: Variant,incoming: RefCounted=null,ordinary_void_source: RefCounted=null,mission_context: RefCounted=null,retained_random: Dictionary={}) -> Dictionary:
 	var random:=Random.new()
@@ -725,7 +728,8 @@ func _construct(bindings: RefCounted, catalogues: RefCounted, packet: Dictionary
 	var contract: bool=mission_context!=null and not mission_context.advances_campaign() and packet.get("contract_context")==mission_context.contract_context()
 	if mission_context!=null and ((not normal and not contract) or not mission_context.matches_loadout(equipment.snapshot().loadout)):return reject("Construction lost its admitted world or equipment")
 	if incoming!=null:
-		if not incoming is Incoming or packet.get("arrival_environment")!=incoming.snapshot() or packet.get("dekato_context",packet.get("bakka_context",packet.get("sahi_context",packet.get("kappa_context",packet.get("free_context",{}))))).get("player_position")!=incoming.snapshot().position:return reject("Local arrival pose differs from its generated scenery")
+		var selected: Dictionary=packet.get("dekato_context",packet.get("bakka_context",packet.get("sahi_context",packet.get("kappa_context",packet.get("free_context",{})))))
+		if not incoming is Incoming or packet.get("arrival_environment")!=incoming.snapshot() or (not selected.is_empty() and selected.get("player_position")!=incoming.snapshot().position):return reject("Local arrival pose differs from its generated scenery")
 	if environment.is_empty():environment=_prepare_environment(bindings,data,environment_seconds,incoming)
 	if environment.is_empty():return false
 	var pose: Transform3D=environment.player_pose
