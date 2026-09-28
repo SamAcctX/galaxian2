@@ -12,6 +12,8 @@ var _normal_progress:={}
 var _contract_context:={}
 var _legacy_flight:={}
 var _live_cursors: Array=[]
+var _arrival_source:={}
+var _arrival_packet:={}
 
 ## Map browsing and course entry share the same supported destination set.
 ## Availability comes from the retained career, never from visiting the map.
@@ -52,8 +54,41 @@ static func base_player_hull(bindings: RefCounted,ship_id: Variant) -> bool:
 		return ship_id==bindings.opening_loadout.get("ship_id",-1) or ship_id==bindings.station_entry.get("ship_id",-1)
 	var ships: Dictionary=bindings.early_contracts.base_station_stock.ships
 	if not preload("res://src/content/opening_definitions.gd").integer(ship_id,0,int(ships.selection_draw_bound)-1):return false
+	if preload("res://src/content/deep_science_stock_definitions.gd").available(bindings) and ship_id==int(bindings.deep_science_stock.all_base_gold_ship_id):return true
 	if int(ship_id)==int(ships.vossk_ship_id) or ships.fixed_first_ships.values().any(func(id):return int(id)==int(ship_id)):return true
 	return not ships.selection_excluded_ids.any(func(id):return int(id)==int(ship_id))
+
+static func drive_destinations(bindings: RefCounted,cat: RefCounted,career: RefCounted) -> Array:
+	if not is_instance_of(career,load("res://src/simulation/contract_session.gd")):return []
+	var state: Dictionary=career.snapshot()
+	var observation: Dictionary=state.duplicate(true)
+	observation.location={"station_id":state.station_id,"system_id":cat.tables.stations[state.station_id].system_id}
+	observation.contracts=state
+	observation.mission=load("res://src/content/free_navigation_definitions.gd").Campaign.mission(bindings,int(state.campaign_cursor))
+	return navigation_destinations(bindings,cat,observation)
+
+## A live drive admits the destination once before spending fuel. Inventory,
+## pool transfer and presentation consume this capability without route lists.
+func admit_drive_arrival(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,career: RefCounted,station_id: int) -> bool:
+	error=""
+	if not _identity.is_empty() or not drive_destinations(bindings,cat,career).has(station_id):return reject("This drive destination has no admitted flight")
+	if not _accept_equipment(bindings,cat,loadout):return false
+	var state: Dictionary=career.snapshot();var station: Dictionary=cat.tables.stations[station_id]
+	var available: Array=state.get("lounges",{}).get("system_availability",[])
+	if station.system_id>=available.size() or not available[station.system_id]:return reject("This system is not available to the retained career")
+	for key in ["base_content_id","binding_id"]:
+		if state.get(key)!=bindings.get(key) or loadout.get(key)!=bindings.get(key):return reject("Drive arrival belongs to another content source")
+	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(state.campaign_cursor)}
+	_arrival_source=loadout.duplicate(true);_loadout=loadout.duplicate(true)
+	_loadout.station_id=station_id;_loadout.system_id=station.system_id
+	_arrival_packet=_identity.duplicate()
+	_arrival_packet.merge({"from_station_id":loadout.station_id,"from_system_id":loadout.system_id,"station_id":station_id,"system_id":station.system_id,"kind":"khador"})
+	return true
+
+func arrival_source_matches(loadout: Dictionary) -> bool:return not _arrival_packet.is_empty() and loadout==_arrival_source
+func arrival_loadout() -> Dictionary:return {} if _arrival_packet.is_empty() else _loadout.duplicate(true)
+func arrival_packet() -> Dictionary:return _arrival_packet.duplicate(true)
+
 
 ## Older mission owners still select their authored entry and run their own
 ## objectives. Admit that selected flight here without creating a runner recipe.

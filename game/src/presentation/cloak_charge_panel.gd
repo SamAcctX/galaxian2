@@ -6,6 +6,7 @@ var _sprites:={}
 var _label: Label
 var _sample:={}
 var _mobile:=false
+var _labels:={}
 
 func _init() -> void:
 	mouse_filter=Control.MOUSE_FILTER_IGNORE;hide()
@@ -18,11 +19,13 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> 
 	if not art.configure(library,bindings,visuals):error=art.error;return false
 	var sprites:=art.load_regions(library,bindings,visuals,[1337,1338],bindings.mido_travel.map.ui.atlas_resources)
 	if sprites.is_empty():error=art.error;return false
-	_sprites=sprites;_label.text=library.strings[306];_label.add_theme_font_override("font",art.font)
+	_labels={"cloak":library.strings[306],"khador":library.strings[307]}
+	_sprites=sprites;_label.text=_labels.cloak;_label.add_theme_font_override("font",art.font)
 	return true
 
-func present(state: Dictionary,enabled: bool,mobile: bool) -> void:
+func present(state: Dictionary,enabled: bool,mobile: bool,device:="cloak") -> void:
 	_sample=state;_mobile=mobile
+	_label.text=_labels.get(device,"")
 	visible=enabled and state.get("phase")=="charging" and not _sprites.is_empty()
 	modulate.a=clampf(float(state.get("elapsed_ms",0))/1000.0,0.0,1.0)
 	_layout()

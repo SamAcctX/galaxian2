@@ -876,14 +876,14 @@ func _evaluate_bomb_damage(player: RefCounted,hits: Array) -> RefCounted:
 		if next.normal_hit(hit.damage).is_empty():reject(next.error);return null
 	return next
 
-func evaluate_world_logic(milliseconds: int, random_state: Dictionary, player_pose: Variant=null) -> Dictionary:
+func evaluate_world_logic(milliseconds: int, random_state: Dictionary, player_pose: Variant=null, energy_cells: int=-1) -> Dictionary:
 	error=""
 	if _control==null or not Numbers.integer(milliseconds,0,_max_ms):return fail("Invalid encounter world-logic frame")
 	var random:=Random.new()
 	if not random.restore(random_state):return fail(random.error)
 	var next:=fork_for_frame()
 	if _control.has_method("runs_ambient_traffic") and _control.runs_ambient_traffic():
-		var result: Dictionary=_control.evaluate_ambient_world_logic(milliseconds,_combat,random_state,player_pose)
+		var result: Dictionary=_control.evaluate_ambient_world_logic(milliseconds,_combat,random_state,player_pose,energy_cells)
 		if result.is_empty():return fail(_control.error)
 		next._control=result.controller;next._combat=result.combat
 		return {"encounter":next,"random_state":result.random_state}

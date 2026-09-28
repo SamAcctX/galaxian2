@@ -205,6 +205,9 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 		17:
 			var scanner: Dictionary=bindings.opening_staging.npc_scanner
 			if not Numbers.integer(properties.get(int(scanner.duration_property)),1,2147483647):return "The scanner acquisition duration is unavailable"
+		18:
+			var drive: Dictionary=load("res://src/content/khador_drive_definitions.gd").resolve(bindings,cat,{"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"equipment_ids":[id]},0.5)
+			if drive.has("error"):return drive.error
 		19:
 			for property in [bindings.mining_drill.stability_property,bindings.mining_drill.rate_property]:
 				if not Numbers.integer(properties.get(int(property)),1,100000):return "The drill performance is unavailable"

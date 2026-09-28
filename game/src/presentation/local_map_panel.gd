@@ -335,7 +335,10 @@ func _present() -> void:
 	if confirming and error.is_empty():
 		_legend.visible=false
 		for row in state.rows:
-			if row.station_id==state.selected_station_id:_status.text=row.name+" · "+state.labels.question
+			if row.station_id==state.selected_station_id:_status.text=state.confirmation_text
+	if not confirming and _status.text.is_empty() and state.get("drive_mode",false):
+		var quote: Dictionary=state.drive_quotes.get(int(state.selected_station_id),{})
+		if not quote.is_empty():_status.text=state.drive_labels.cost+" "+str(quote.cost)
 	_notice.visible=not _status.text.is_empty()
 	_canvas.queue_redraw();_relayout()
 

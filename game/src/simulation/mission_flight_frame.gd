@@ -335,7 +335,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 		if activation.started:
 			next._equipment=next._equipment.fork()
 			if not next._equipment.retain_flight_cargo(next._cargo.snapshot()):return failed(next._equipment.error)
-			if not next._notices.enqueue_cloak_spent(activation.consumed):return failed(next._notices.error)
+			if not next._notices.enqueue_energy_spent(activation.consumed):return failed(next._notices.error)
 	if boost_requested and enabled:
 		var activation: int=next._booster.snapshot().activation
 		if not next._booster.request_start():return failed(next._booster.error)

@@ -57,7 +57,7 @@ func configure(library: RefCounted,bindings: RefCounted,cat: RefCounted,observat
 	if mission_target>=0:route=navigation.route(int(location.system_id),mission_target)
 	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language,
 		"campaign_cursor":int(observation.campaign_cursor),"station_id":int(location.station_id),"system_id":int(location.system_id),
-		"rows":rows,"links":links,"mission_route":route,"void_warning":warning,"destinations":destinations,
+		"drive_mode":observation.get("drive_mode",false),"rows":rows,"links":links,"mission_route":route,"void_warning":warning,"destinations":destinations,
 		"selected_system_id":int(location.system_id),"selected_station_id":-1,"confirmation_visible":false,"diagnostic":"",
 		"route_mode":"galaxy","ui":rules.ui.duplicate(true),"visuals":rules.visuals.duplicate(true),
 		"labels":{"title":library.strings[176],"back":library.strings[169],"open":library.strings[177],"key":library.strings[389],"unconnected":library.strings[409]}}
@@ -89,7 +89,7 @@ func open_selected() -> int:
 	error=""
 	for row in _state.get("rows",[]):
 		if row.system_id!=_state.selected_system_id:continue
-		if not row.connected:_state.diagnostic=_state.labels.unconnected;return -1
+		if not row.connected and not _state.drive_mode:_state.diagnostic=_state.labels.unconnected;return -1
 		if not row.supported:_state.diagnostic="This destination is not available in the current flight.";return -1
 		return int(row.system_id)
 	return -1

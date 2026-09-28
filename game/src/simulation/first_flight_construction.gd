@@ -594,7 +594,11 @@ func prepare_gate_arrival(bindings: RefCounted,catalogues: RefCounted,travel: Re
 	if packet.is_empty():return reject("Finish the gate animation before constructing a supported destination")
 	return _prepare_arrival(bindings,catalogues,packet,source_player,equipment,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,objective,contracts,true,library)
 
-func _prepare_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dictionary,source_player: RefCounted,equipment: RefCounted,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,objective: Dictionary,contracts: RefCounted,gate_arrival: bool,library: RefCounted=null) -> bool:
+func prepare_drive_arrival(bindings: RefCounted,catalogues: RefCounted,capability: RefCounted,source_player: RefCounted,equipment: RefCounted,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,objective: Dictionary,contracts: RefCounted,library: RefCounted) -> bool:
+	if not capability is MissionContext or capability.arrival_packet().is_empty():return reject("Drive arrival requires its admitted destination")
+	return _prepare_arrival(bindings,catalogues,capability.arrival_packet(),source_player,equipment,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,objective,contracts,false,library,capability)
+
+func _prepare_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dictionary,source_player: RefCounted,equipment: RefCounted,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,objective: Dictionary,contracts: RefCounted,gate_arrival: bool,library: RefCounted=null,arrival_capability: RefCounted=null) -> bool:
 	for key in ["base_content_id","binding_id","campaign_cursor"]:
 		if objective.get(key)!=packet[key]:return reject("Local arrival requires the departing mission and career identity")
 	var trip:=Travel.journey(bindings.mido_travel,packet.campaign_cursor)
@@ -618,13 +622,13 @@ func _prepare_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dictio
 	var valid_flags: bool=FreeFlight.response_flags(bindings,flags) if free_arrival else (ContractWorld.response_flags(bindings,flags) if contract_arrival else Travel.valid_response_flags(bindings.mido_travel,flags,packet.campaign_cursor))
 	if not valid_flags:return reject("Local arrival requires its retained station response")
 	var destination: RefCounted=equipment.fork()
-	var relocated: bool=destination.relocate_gate_arrival(bindings,catalogues,packet) if gate_arrival else destination.relocate_local_arrival(bindings,catalogues,packet)
+	var relocated: bool=destination.relocate_admitted_arrival(arrival_capability) if arrival_capability!=null else destination.relocate_gate_arrival(bindings,catalogues,packet) if gate_arrival else destination.relocate_local_arrival(bindings,catalogues,packet)
 	if not relocated:return reject(destination.error)
 	var original: Dictionary=equipment.snapshot().loadout
 	var departing: Dictionary=source_player.loadout()
 	for key in Cache.IDENTITY_KEYS:
 		if departing.get(key)!=original.get(key):return reject("Local arrival changed the departing equipped player")
-	var cached:=Cache.capture_gate_arrival(bindings,original,destination.snapshot().loadout,source_player.snapshot()) if gate_arrival else Cache.capture_local_arrival(bindings,original,destination.snapshot().loadout,source_player.snapshot())
+	var cached:=Cache.capture_admitted_arrival(bindings,arrival_capability,original,source_player.snapshot()) if arrival_capability!=null else Cache.capture_gate_arrival(bindings,original,destination.snapshot().loadout,source_player.snapshot()) if gate_arrival else Cache.capture_local_arrival(bindings,original,destination.snapshot().loadout,source_player.snapshot())
 	if cached.is_empty():return reject("Local arrival requires the surviving player's current pools")
 	if free_arrival:cached.campaign_cursor=packet.campaign_cursor
 	if free_arrival:

@@ -43,6 +43,11 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 	for destination in destinations:
 		var system_id:=int(catalogues.tables.stations[destination].system_id)
 		if not systems.has(system_id) and cursor>=int(rules.galaxy_cursor) and catalogues.tables.systems[location.system_id].linked_system_ids.has(system_id):systems.append(system_id)
+	var drive_mode: bool=flight.get("drive_mode",false)
+	if drive_mode:
+		for destination in destinations:
+			var id:=int(catalogues.tables.stations[destination].system_id)
+			if not systems.has(id):systems.append(id)
 	var gate_map: bool=flight.get("gate_transit",{}).get("phase")=="map"
 	if systems.is_empty():return reject("This gate has no supported destination map")
 	if gate_map and display_system_id<0 and systems.size()>1:display_system_id=int(systems[1])
@@ -105,6 +110,9 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 	_state={"base_content_id":base,"binding_id":bindings.binding_id,"language":library.active_language,
 		"campaign_cursor":int(flight.campaign_cursor),"station_id":int(location.station_id),
 		"system_id":display_system_id,"system_name":system.name,"labels":labels,"rows":rows,"void_warning":warning,
+		"drive_mode":drive_mode,"drive_quotes":flight.get("drive_quotes",{}).duplicate(true),
+		"drive_labels":{"cost":library.strings[567],"insufficient":library.strings[568],"return":library.strings[570],"gate":library.strings[571]},
+		"confirmation_text":"","gate_alternative":false,
 		"route_mode":"gate" if gate_selection else "local","system_choices":choices,
 		"selected_station_id":-1,"confirmation_visible":false,"diagnostic":"",
 		"ambient":float(rules.ambient),"diffuse":float(rules.diffuse),"layout_random":layout_random,
@@ -135,6 +143,15 @@ func request_confirmation() -> bool:
 	var row: Dictionary=_state.rows[index]
 	if row.current:_state.diagnostic=_state.labels.current;return true
 	if not row.supported:_state.diagnostic="Travel to %s is not implemented yet."%row.name;return true
+	_state.confirmation_text=row.name+" · "+_state.labels.question;_state.gate_alternative=false
+	if _state.drive_mode:
+		var quote: Dictionary=_state.drive_quotes.get(int(row.station_id),{})
+		if quote.is_empty():return reject("The drive lost its destination quote")
+		if not quote.affordable:
+			if not quote.gate_alternative:_state.diagnostic=_state.drive_labels.insufficient;return true
+			_state.gate_alternative=true;_state.confirmation_text=_state.drive_labels.gate
+		elif quote.return_warning:_state.confirmation_text=_state.drive_labels["return"]
+		_state.confirmation_text+="\n"+_state.drive_labels.cost+" "+str(quote.cost)
 	_state.confirmation_visible=true;_state.diagnostic=""
 	return true
 

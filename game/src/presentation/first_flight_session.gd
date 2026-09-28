@@ -21,7 +21,7 @@ const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const ContractWorld=preload("res://src/content/contract_world_definitions.gd")
 const FreeFlight=preload("res://src/content/free_flight_definitions.gd")
 const StationGeneration=preload("res://src/content/station_generation_definitions.gd")
-const BOUNDARIES=["station_transition_required","game_over_transition_required","local_arrival_transition_required","convoy_arrival_transition_required","gate_confirmation_required","gate_map_required","gate_arrival_transition_required","sahi_arrival_transition_required","void_return_transition_required","mission_station_return_required"]
+const BOUNDARIES=["station_transition_required","game_over_transition_required","local_arrival_transition_required","convoy_arrival_transition_required","gate_confirmation_required","gate_map_required","gate_arrival_transition_required","drive_arrival_transition_required","sahi_arrival_transition_required","void_return_transition_required","mission_station_return_required"]
 var error:=""
 var _presentation_state:={}
 var status:="idle"
@@ -131,6 +131,9 @@ func configure_bakka_selected(library: RefCounted,bindings: RefCounted,visuals: 
 func configure_local_arrival(library: RefCounted, bindings: RefCounted, visuals: RefCounted, departing: RefCounted, now_microseconds: int, environment_seconds: Variant=null, unix_seconds: Variant=null, mobile_layout:=false,location_settings: Dictionary={}) -> bool:
 	return _configure_arrival(library,bindings,visuals,departing,now_microseconds,environment_seconds,unix_seconds,mobile_layout,location_settings,"local")
 
+func configure_drive_arrival(library: RefCounted,bindings: RefCounted,visuals: RefCounted,departing: RefCounted,now_microseconds: int,environment_seconds: Variant=null,unix_seconds: Variant=null,mobile_layout:=false,location_settings: Dictionary={}) -> bool:
+	return _configure_arrival(library,bindings,visuals,departing,now_microseconds,environment_seconds,unix_seconds,mobile_layout,location_settings,"drive")
+
 func configure_gate_arrival(library: RefCounted,bindings: RefCounted,visuals: RefCounted,departing: RefCounted,now_microseconds: int,environment_seconds: Variant=null,unix_seconds: Variant=null,mobile_layout:=false,location_settings: Dictionary={}) -> bool:
 	return _configure_arrival(library,bindings,visuals,departing,now_microseconds,environment_seconds,unix_seconds,mobile_layout,location_settings,"gate")
 
@@ -160,6 +163,7 @@ func _configure_arrival(library: RefCounted,bindings: RefCounted,visuals: RefCou
 	match kind:
 		"sahi":construction=departing.construct_sahi_arrival(bindings,cat,environment_seed,field_seed,true,bodies,effects)
 		"void":construction=departing.construct_void_return(bindings,cat,environment_seed,field_seed,true,bodies,effects)
+		"drive":construction=departing.construct_drive_arrival(bindings,cat,environment_seed,field_seed,true,bodies,effects,location_settings,library)
 		"gate":construction=departing.construct_gate_arrival(bindings,cat,environment_seed,field_seed,true,bodies,effects,location_settings,library)
 		"local":construction=departing.construct_local_arrival(bindings,cat,environment_seed,field_seed,true,bodies,effects,location_settings,library)
 		_:return fail("Unsupported flight arrival")
@@ -378,6 +382,25 @@ func select_planet(station_id: int) -> bool:
 	_throttle=1.0
 	return true
 
+func request_drive_map() -> bool:
+	if not can_control() or not drive_available():return false
+	if _world.drive_permits_mission():return true
+	var next: RefCounted=_world.drive_selection()
+	if next==null:return reject(_world.error)
+	_commit(next,false)
+	return false
+
+func drive_fitted() -> bool:return _world!=null and _world.drive_fitted()
+func drive_available() -> bool:return _world!=null and _world.drive_available()
+func drive_map_observation() -> Dictionary:return _world.drive_map_observation()
+
+func confirm_drive_destination(station_id: int,now_microseconds: int) -> bool:
+	if not map_active():return reject("The drive map does not own input")
+	var world: RefCounted=_world.start_drive(station_id)
+	if world==null:return reject(_world.error)
+	if not _commit(world,false):return false
+	return set_pause("map",false,now_microseconds)
+
 func can_open_map() -> bool:
 	return can_control() and _world.has_local_travel()
 
@@ -439,8 +462,8 @@ func select_map_destination(station_id: int) -> bool:
 	_throttle=1.0
 	return true
 
-func queue_map_destination(station_id: int) -> bool:
-	var world: RefCounted=_world.queue_map_destination(station_id)
+func queue_map_destination(station_id: int,drive:=false) -> bool:
+	var world: RefCounted=_world.queue_map_destination(station_id,drive)
 	if world==null:return reject(_world.error)
 	return _commit(world,false)
 

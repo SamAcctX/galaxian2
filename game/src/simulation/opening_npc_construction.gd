@@ -36,6 +36,8 @@ var error := ""
 var _identity := {}
 var _definition := {}
 var _items := []
+var _khador_fitted:=false
+var _player_energy_cells:=0
 var _routes := []
 var _actors := []
 var _random_state := {}
@@ -161,7 +163,8 @@ func configure_free_traffic(bindings: RefCounted,catalogues: RefCounted,equipmen
 	for key in ["station_id","system_id"]:
 		if seed[key]!=context.get(key):return reject("Ordinary construction does not match the retained player location")
 	if mission_context!=null and (not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not mission_context.matches_loadout(seed)):return reject("Ordinary factory equipment differs from its admitted mission")
-	return configure_free_factory(bindings,catalogues,int(seed.ship_id),seed.equipment_ids,context,unix_seconds,mission_context)
+	if not configure_free_factory(bindings,catalogues,int(seed.ship_id),seed.equipment_ids,context,unix_seconds,mission_context):return false
+	return retain_player_cargo(equipment)
 
 func configure_free_factory(bindings: RefCounted,catalogues: RefCounted,player_ship_id: int,equipment_ids: Array,context: Dictionary,unix_seconds: Variant,mission_context: RefCounted=null) -> bool:
 	# Detached factory inputs. The session owns permission to depart and the
@@ -478,11 +481,7 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, 
 		var average: int=low+delta/2
 		if average<-2147483648 or average>2147483647: return reject("NPC cargo average price overflows its source field")
 		staged.append({"category":category,"restricted":not arrays[0].is_empty(),"rank":p[int(data.rank_index)],"chance":p[int(data.chance_index)],"price":average,"type":p[5]})
-	# The source special-drop predicate depends on ship identity or equipment type 18.
-	# Neither applies to this exact fresh loadout; arbitrary loadouts are unsupported.
-	if data.special_ship_ids.any(func(value): return int(value)==int(seed.ship_id)): return reject("Special cargo override is outside fresh opening construction")
-	for id in seed.equipment_ids:
-		if staged[id].type==int(data.special_equipment_type): return reject("Special cargo override is outside fresh opening construction")
+	_khador_fitted=seed.equipment_ids.any(func(id):return staged[id].type==int(data.special_equipment_type))
 	var routes := []
 	var count: int=0 if traffic.has("void_context") else (int(traffic.empty_population_fallback) if not traffic.is_empty() else (int(training.actor_count) if not training.is_empty() else (3 if arrival.is_empty() and full_hold.is_empty() else 1)))
 	if not contract.is_empty():count=int(contract.actor_count)
@@ -577,6 +576,16 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, 
 	# JSON number arrays are floats; Array membership is type-sensitive.
 	_definition.excluded_items=data.excluded_items.map(func(value): return int(value))
 	_items=staged;_routes=routes
+	return true
+
+## Entry copies only the fuel count. Respawns receive the current hold count;
+## the factory never owns or edits the player's inventory.
+func retain_player_cargo(equipment: RefCounted) -> bool:
+	if _identity.is_empty() or _generated or not _actors.is_empty() or not equipment is Equipment or not equipment.cargo_cache_valid():return reject("NPC cargo requires the retained inventory before generation")
+	var owned: Dictionary=equipment.snapshot()
+	for key in ["base_content_id","binding_id"]:
+		if owned.loadout.get(key)!=_identity.get(key):return reject("NPC cargo belongs to another content source")
+	_player_energy_cells=_energy_quantity(owned.cargo.entries)
 	return true
 
 func generate(random_state: Variant,scenery_positions: Array=[]) -> Dictionary:
@@ -1162,7 +1171,7 @@ static func sample_fragments(random: RefCounted,definition: Dictionary) -> Array
 		fragments.append({"rotation_radians":rotation,"scale":scale_value,"resource_id":int(definition.fragment_resource)})
 	return fragments
 
-func _sample_cargo(random: RefCounted) -> Array:
+func _sample_cargo(random: RefCounted,energy_cells: int=-1) -> Array:
 	var count: int=random.next_int(int(_definition.cargo_count_bound))
 	if count==0:
 		if random.next_int(int(_definition.cargo_count_bound))==0: return []
@@ -1187,14 +1196,22 @@ func _sample_cargo(random: RefCounted) -> Array:
 		elif _items[selected].category==int(_definition.commodity_category):
 			quantity_bound=int(_definition.commodity_quantity_bound)
 		cargo.append({"item_id":selected,"quantity":int(_definition.quantity_minimum)+random.next_int(quantity_bound)})
+	var fuel: int=_player_energy_cells if energy_cells<0 else energy_cells
+	if _khador_fitted and fuel==0 and random.next_int(int(_definition.chance_bound))<=int(_definition.special_chance_maximum):
+		cargo[0].item_id=int(_definition.special_item)
 	return cargo
 
-func sample_relaunch_cargo(random_state: Variant) -> Dictionary:
+static func _energy_quantity(entries: Array) -> int:
+	for row in entries:
+		if row.item_id==122:return int(row.quantity)
+	return 0
+
+func sample_relaunch_cargo(random_state: Variant,energy_cells: int=-1) -> Dictionary:
 	error=""
 	if _ambient.is_empty() or _actors.is_empty():return fail("Traffic cargo regeneration requires its retained generated population")
 	var random:=Random.new()
 	if not random.restore(random_state):return fail(random.error)
-	return {"cargo":_sample_cargo(random),"random_state":random.snapshot()}
+	return {"cargo":_sample_cargo(random,energy_cells),"random_state":random.snapshot()}
 
 func route(actor_id: int) -> RefCounted:
 	if not _arrival.is_empty():
@@ -1253,7 +1270,7 @@ func snapshot() -> Dictionary:
 	return value
 
 func clear() -> void:
-	error="";_identity={};_definition={};_items=[];_routes=[];_actors=[];_random_state={};_arrival={};_full_hold={};_training={};_traffic={};_traffic_sample={};_authored_route=null;_ambient={};_free={};_population_owner=null;_mission_context=null
+	error="";_identity={};_definition={};_items=[];_khador_fitted=false;_player_energy_cells=0;_routes=[];_actors=[];_random_state={};_arrival={};_full_hold={};_training={};_traffic={};_traffic_sample={};_authored_route=null;_ambient={};_free={};_population_owner=null;_mission_context=null
 	_contract={};_contract_layout={};_generated=false;_convoy={};_alioth={};_kappa={};_sahi={};_dekato={};_selected40={};_selected41={}
 
 var _contract:={}

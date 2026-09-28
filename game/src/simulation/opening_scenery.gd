@@ -133,7 +133,7 @@ func configure_combat_training(bindings: RefCounted, catalogues: RefCounted, equ
 	var selected:=population.for_departure(int(bindings.combat_training.station_id),entry_conditions,7)
 	if selected.is_empty():return reject(population.error)
 	if not _configure_field(bindings,catalogues,unix_seconds,selected.station_id,7,selected.center,large_display,body_resources,effect_resources):return false
-	if not _finish_world_initialization(world):
+	if not _finish_world_initialization(world,equipment):
 		var message:=error;clear();return reject(message)
 	_departure_population=selected
 	return true
@@ -165,7 +165,7 @@ func _configure_local(bindings: RefCounted, catalogues: RefCounted, equipment: R
 	var selected:=population.for_departure(int(context.station_id),entry_conditions,cursor)
 	if selected.is_empty():return reject(population.error)
 	if not _configure_field(bindings,catalogues,unix_seconds,selected.station_id,cursor,selected.center,large_display,body_resources,effect_resources):return false
-	if not _finish_world_initialization(world):
+	if not _finish_world_initialization(world,equipment):
 		var message:=error;clear();return reject(message)
 	_departure_population=selected
 	return true
@@ -186,7 +186,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 	var world:=WorldInitialization.new()
 	if not world.configure_contract(bindings,catalogues,equipment,contracts,player_cache,entry_conditions,unix_seconds,player_position,selected.center,capability):return reject(world.error)
 	if not _configure_field(bindings,catalogues,unix_seconds,selected.station_id,int(context.campaign_cursor),selected.center,large_display,body_resources,effect_resources):return false
-	if not _finish_world_initialization(world):
+	if not _finish_world_initialization(world,equipment):
 		var message:=error;clear();return reject(message)
 	_departure_population=selected
 	return true
@@ -200,7 +200,7 @@ func configure_convoy(bindings: RefCounted,catalogues: RefCounted,equipment: Ref
 	var selected:=population.for_departure(int(context.station_id),entry_conditions,int(context.campaign_cursor))
 	if selected.is_empty():return reject(population.error)
 	if not _configure_field(bindings,catalogues,unix_seconds,selected.station_id,context.campaign_cursor,selected.center,large_display,body_resources,effect_resources):return false
-	if not _finish_world_initialization(world):
+	if not _finish_world_initialization(world,equipment):
 		var message:=error;clear();return reject(message)
 	_departure_population=selected
 	return true
@@ -214,7 +214,7 @@ func configure_alioth(bindings: RefCounted,catalogues: RefCounted,equipment: Ref
 	var selected:=population.for_departure(int(context.station_id),entry_conditions,int(context.campaign_cursor))
 	if selected.is_empty():return reject(population.error)
 	if not _configure_field(bindings,catalogues,unix_seconds,selected.station_id,context.campaign_cursor,selected.center,large_display,body_resources,effect_resources):return false
-	if not _finish_world_initialization(world):
+	if not _finish_world_initialization(world,equipment):
 		var message:=error;clear();return reject(message)
 	_departure_population=selected
 	return true
@@ -234,7 +234,7 @@ func configure_bakka(bindings: RefCounted,catalogues: RefCounted,equipment: RefC
 	var selected:=population.for_departure(int(context.station_id),entry_conditions,int(context.campaign_cursor))
 	if selected.is_empty():return reject(population.error)
 	if not _configure_field(bindings,catalogues,unix_seconds,selected.station_id,context.campaign_cursor,selected.center,large_display,body_resources,effect_resources):return false
-	if not _finish_world_initialization(world):
+	if not _finish_world_initialization(world,equipment):
 		var message:=error;clear();return reject(message)
 	_departure_population=selected
 	return true
@@ -251,7 +251,7 @@ func configure_kappa_rescue(bindings: RefCounted,catalogues: RefCounted,equipmen
 	var selected:=population.for_departure(int(context.station_id),entry_conditions,int(context.campaign_cursor))
 	if selected.is_empty():return reject(population.error)
 	if not _configure_field(bindings,catalogues,unix_seconds,selected.station_id,context.campaign_cursor,selected.center,large_display,body_resources,effect_resources):return false
-	if not _finish_world_initialization(world):
+	if not _finish_world_initialization(world,equipment):
 		var message:=error;clear();return reject(message)
 	_departure_population=selected
 	return true
@@ -271,7 +271,7 @@ func configure_dekato(bindings: RefCounted,catalogues: RefCounted,equipment: Ref
 	var selected:=population.for_dekato(bindings,context,entry_conditions)
 	if selected.is_empty():return reject(population.error)
 	if not _configure_field(bindings,catalogues,unix_seconds,selected.station_id,context.campaign_cursor,selected.center,large_display,body_resources,effect_resources):return false
-	if not _finish_world_initialization(world):
+	if not _finish_world_initialization(world,equipment):
 		var message:=error;clear();return reject(message)
 	_departure_population=selected
 	return true
@@ -293,7 +293,7 @@ func configure_selected40(bindings: RefCounted,catalogues: RefCounted,equipment:
 	var selected:=population.for_selected40(bindings,entry)
 	if selected.is_empty():return reject(population.error)
 	if not _configure_field(bindings,catalogues,unix_seconds,selected.station_id,context.campaign_cursor,selected.center,large_display,body_resources,effect_resources):return false
-	if not _finish_world_initialization(world):
+	if not _finish_world_initialization(world,equipment):
 		var message:=error;clear();return reject(message)
 	_departure_population=selected
 	return true
@@ -310,7 +310,7 @@ func configure_sahi(bindings: RefCounted,catalogues: RefCounted,equipment: RefCo
 	var selected:=population.for_departure(int(context.station_id),entry_conditions,int(context.campaign_cursor))
 	if selected.is_empty():return reject(population.error)
 	if not _configure_field(bindings,catalogues,unix_seconds,selected.station_id,context.campaign_cursor,selected.center,large_display,body_resources,effect_resources):return false
-	if not _finish_world_initialization(world):
+	if not _finish_world_initialization(world,equipment):
 		var message:=error;clear();return reject(message)
 	_departure_population=selected
 	return true
@@ -327,7 +327,7 @@ func configure_selected41(bindings: RefCounted,catalogues: RefCounted,entry: Ref
 	var selected:=population.for_selected41(bindings,entry)
 	if selected.is_empty():return reject(population.error)
 	if not _configure_field(bindings,catalogues,unix_seconds,-1,41,selected.center,large_display,body_resources,effect_resources):return false
-	if not _finish_world_initialization(world):
+	if not _finish_world_initialization(world,entry.equipment_owner()):
 		var message:=error;clear();return reject(message)
 	_departure_population=selected
 	return true
@@ -348,7 +348,7 @@ func configure_ordinary_void(bindings: RefCounted,catalogues: RefCounted,equipme
 	var selected:=population.for_void_crystals(selected_context)
 	if selected.is_empty():return reject(population.error)
 	if not _configure_field(bindings,catalogues,unix_seconds,-1,33,selected.center,large_display,body_resources,effect_resources):return false
-	if not _finish_world_initialization(world):
+	if not _finish_world_initialization(world,equipment):
 		var message:=error;clear();return reject(message)
 	_departure_population=selected
 	return true
@@ -363,7 +363,7 @@ func configure_free(bindings: RefCounted,catalogues: RefCounted,equipment: RefCo
 	var selected:=population.for_departure(int(context.station_id),entry_conditions,int(context.campaign_cursor))
 	if selected.is_empty():return reject(population.error)
 	if not _configure_field(bindings,catalogues,unix_seconds,selected.station_id,context.campaign_cursor,selected.center,large_display,body_resources,effect_resources,retained_random):return false
-	if not _finish_world_initialization(world):
+	if not _finish_world_initialization(world,equipment):
 		var message:=error;clear();return reject(message)
 	_departure_population=selected
 	return true
@@ -383,7 +383,8 @@ func complete_world_initialization(bindings: RefCounted, catalogues: RefCounted)
 	if not ready:return reject(owner.error)
 	return _finish_world_initialization(owner)
 
-func _finish_world_initialization(owner: RefCounted) -> bool:
+func _finish_world_initialization(owner: RefCounted,equipment: RefCounted=null) -> bool:
+	if equipment!=null and not owner.retain_player_cargo(equipment):return reject(owner.error)
 	_read_snapshot={}
 	var result: Dictionary=owner.generate(_random_state,_motion.snapshot().objects.map(func(row):return row.position))
 	if result.is_empty(): return reject(owner.error)

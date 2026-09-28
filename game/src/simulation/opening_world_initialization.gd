@@ -364,6 +364,11 @@ func configure_local_traffic(bindings: RefCounted, catalogues: RefCounted, equip
 	_identity.entry_conditions=entry_conditions.duplicate(true)
 	return true
 
+func retain_player_cargo(equipment: RefCounted) -> bool:
+	if not _state.is_empty():return reject("World cargo is fixed after its actors are generated")
+	if _construction!=null and not _construction.retain_player_cargo(equipment):return reject(_construction.error)
+	return true
+
 func generate(random_state: Variant,scenery_positions: Array=[]) -> Dictionary:
 	error=""
 	if _identity.is_empty() or not _state.is_empty(): return fail("Configure fresh world initialization before generating once")

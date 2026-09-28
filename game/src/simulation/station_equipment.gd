@@ -460,6 +460,12 @@ func relocate_gate_arrival(bindings: RefCounted,catalogues: RefCounted,arrival: 
 	_state.loadout.station_id=arrival.station_id;_state.loadout.system_id=arrival.system_id
 	return true
 
+func relocate_admitted_arrival(capability: RefCounted) -> bool:
+	error=""
+	if not is_instance_of(capability,load("res://src/simulation/mission_context.gd")) or not capability.arrival_source_matches(_state.get("loadout",{})):return reject("Arrival lost its admitted source inventory")
+	_state=_state.duplicate(true);_state.loadout=capability.arrival_loadout()
+	return true
+
 ## The cursor25 factory marks only the first retained Void-crystal row. It
 ## neither creates a missing item nor changes quantities, prices or hold caches.
 func protect_sahi_cargo(bindings: RefCounted) -> bool:

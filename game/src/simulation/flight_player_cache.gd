@@ -191,6 +191,10 @@ static func _capture_arrival(travel: Dictionary,source: Dictionary,destination: 
 	for key in IDENTITY_KEYS:result[key]=destination[key]
 	return result.duplicate(true)
 
+static func capture_admitted_arrival(bindings: RefCounted,capability: RefCounted,source: Dictionary,player: Dictionary) -> Dictionary:
+	if not is_instance_of(capability,load("res://src/simulation/mission_context.gd")) or not capability.arrival_source_matches(source):return {}
+	return _capture_arrival(bindings.mido_travel,source,capability.arrival_loadout(),player)
+
 static func _departure_cache(parameters: Dictionary, departure: Dictionary, seed: Dictionary, hull: int, capacities: Dictionary, reset: bool, void_location:=false) -> Dictionary:
 	for key in ["ship_id","station_id","system_id"]:
 		if seed.get(key)!=int(departure[key]):return {}

@@ -46,6 +46,7 @@ func configure_mission(bindings: RefCounted,library: RefCounted,context: RefCoun
 func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,location: Dictionary,catalogues: RefCounted) -> bool:
 	var messages:={}
 	var definitions: Dictionary=bindings.flight_notices.messages.duplicate(true)
+	definitions["21"]={"text_ids":[514],"separator":"","rgb":[255,255,255]}
 	definitions["22"]={"text_ids":[531],"separator":"","rgb":[255,255,255]}
 	if cursor==7:
 		var navigation:=TrainingStory.navigation(bindings)
@@ -62,8 +63,8 @@ func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,lo
 		for component in rule.rgb:rgb.append(int(component))
 		for source_id in rule.text_ids:text_ids.append(int(source_id))
 		messages[int(key)]={"source_id":int(key),"text_ids":text_ids,"display_text_ids":display_ids,"text":str(rule.separator).join(pieces),"rgb":rgb}
-	for key in {"cloak_ready":305,"cloak_spent":1385}:
-		var text_id: int={"cloak_ready":305,"cloak_spent":1385}[key]
+	for key in {"cloak_ready":305,"energy_spent":1385}:
+		var text_id: int={"cloak_ready":305,"energy_spent":1385}[key]
 		var display_id:=Desktop.select_id(bindings.desktop_text,text_id)
 		if display_id<0 or display_id>=library.strings.size() or library.strings[display_id].is_empty():return reject("A cloak notice is missing in this language")
 		messages[key]={"kind":key,"text_ids":[text_id],"display_text_ids":[display_id],"text":library.strings[display_id],"rgb":[255,255,255]}
@@ -110,9 +111,9 @@ func enqueue(source_id: Variant) -> bool:
 	return _enqueue(_messages[int(source_id)])
 
 func enqueue_cloak_ready() -> bool:return _enqueue(_messages.cloak_ready)
-func enqueue_cloak_spent(units: int) -> bool:
-	if units<=0:return reject("Cloak notice requires spent energy")
-	var message: Dictionary=_messages.cloak_spent.duplicate(true)
+func enqueue_energy_spent(units: int) -> bool:
+	if units<=0:return reject("Fuel notice requires spent energy")
+	var message: Dictionary=_messages.energy_spent.duplicate(true)
 	message.text="-%dt " % units+message.text
 	return _enqueue(message)
 

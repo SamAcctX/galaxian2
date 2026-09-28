@@ -39,6 +39,7 @@ const WaypointMarker=preload("res://src/presentation/flight_waypoint_marker.gd")
 const StationTargetOverlay=preload("res://src/presentation/station_target_overlay.gd")
 var error:=""
 var void_environment: Node3D
+var drive_effect: Node3D
 var portal: Node3D
 var probe: Node3D
 var geometry: Node3D
@@ -208,6 +209,11 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 	if death!=null and not bindings.game_over_presentation.is_empty():
 		game_over=GameOver.new();overlay.add_child(game_over);game_over.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		if not game_over.configure(library,bindings,visuals,death):return fail(game_over.error)
+	if state.get("khador",{}).get("available",false):
+		drive_effect=load("res://src/presentation/portal_geometry.gd").new();add_child(drive_effect)
+		var identity: Dictionary=state.khador.effect.duplicate()
+		for key in ["pose","scale","visible","animation"]:identity.erase(key)
+		if not drive_effect._build_portal(library,visuals,bindings,identity):return fail(drive_effect.error)
 	var surfaces:=SurfaceResponse.new()
 	if not surfaces.apply_branches([geometry,encounter,station,gates,void_environment,scenery,planets],bindings,lighting.state,reflection):return fail(surfaces.error)
 	if not present(flight):return fail(error)
@@ -277,6 +283,10 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 		if gates==null or gate_animation==null or gate_animation.snapshot()!=state.gate_animation:return reject("Gate geometry lost its current native clock")
 		gate_frame=gates.prepare_animation(gate_animation)
 		if gate_frame.is_empty():return reject(gates.error)
+	var drive_frame:={}
+	if drive_effect!=null:
+		drive_frame=drive_effect.prepare_state(state.khador.effect)
+		if drive_frame.is_empty():return reject(drive_effect.error)
 	var portal_frame:={}
 	if portal!=null:
 		portal_frame=portal.prepare_state(state.get("void_portal",state.get("sahi_portal",state.get("alioth_portal",{}))))
@@ -339,6 +349,7 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 		for control in [target_frame,reticle,scan_animation,npc_markers,waypoint_marker,station_target_overlay]:
 			if control!=null:control.visible=false
 	if game_over!=null and not game_over.present(death,absolute_milliseconds):return reject(game_over.error)
+	if drive_effect!=null:drive_effect.commit_state(drive_frame)
 	if portal!=null:portal.commit_state(portal_frame)
 	if not gate_frame.is_empty():gates.commit_animation(gate_frame)
 	if sun!=null:sun.commit_frame(sun_frame)
@@ -361,6 +372,12 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if state.has("convoy_capture"):
 		if not state.convoy_capture.ship_visible:geometry.player.visible=false
 		if state.convoy_capture.input_blocked and geometry.player.engine_glow!=null:geometry.player.engine_glow.visible=false
+	if state.get("khador",{}).get("phase","") in ["departing","arrival"]:
+		geometry.player.visible=state.khador.player_visible
+		if engine_particles!=null:engine_particles.visible=state.khador.player_visible
+		camera.fov=70.0
+		for control in [target_frame,reticle,scan_animation,mining_panel,notice_panel,npc_markers,waypoint_marker,station_target_overlay]:
+			if control!=null:control.visible=false
 	sky.commit_view(sky_frame)
 	return true
 
@@ -422,6 +439,8 @@ func set_mobile_layout(value: bool) -> void:
 	for control in [target_frame,reticle,scan_animation,mining_panel,notice_panel,game_over,radio,npc_markers,waypoint_marker,station_target_overlay]:
 		if control!=null:control.set_mobile_layout(value)
 func clear() -> void:
+	if is_instance_valid(drive_effect):drive_effect.free()
+	drive_effect=null
 	if is_instance_valid(portal):portal.free()
 	portal=null;probe=null
 	for child in get_children():child.free()

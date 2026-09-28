@@ -84,6 +84,8 @@ func choose_map_destination(station_id: int,cancel_once: bool) -> bool:
 	return failures==0 and not app.map_panel.visible
 
 func galaxy_click(id: int) -> void:
+	# Let the map viewport adopt the station/flight layout before projecting.
+	await process_frame;await process_frame
 	for frame in 180:
 		if not app.map_panel._galaxy._centering:break
 		await process_frame
@@ -98,6 +100,7 @@ func galaxy_click(id: int) -> void:
 
 func map_pointer(point: Vector2) -> void:
 	await process_frame;resume_application_focus()
+	var motion:=InputEventMouseMotion.new();motion.position=point;motion.global_position=point;root.push_input(motion,true)
 	for pressed in [true,false]:
 		var event:=InputEventMouseButton.new();event.position=point;event.global_position=point;event.button_index=MOUSE_BUTTON_LEFT;event.pressed=pressed;root.push_input(event,true)
 	await process_frame;resume_application_focus()

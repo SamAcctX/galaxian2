@@ -60,9 +60,12 @@ const LocalTravel=preload("res://src/simulation/local_travel.gd")
 const GateAnimation=preload("res://src/simulation/gate_animation.gd")
 const GateTransit=preload("res://src/simulation/gate_transit.gd")
 const GateArrival=preload("res://src/content/gate_arrival_definitions.gd")
+const Drive=preload("res://src/simulation/khador_drive.gd")
 const SystemNavigation=preload("res://src/simulation/system_navigation.gd")
 const Context=preload("res://src/simulation/mission_context.gd")
 const FastForward=preload("res://src/simulation/fast_forward.gd")
+var _drive: RefCounted
+var _drive_arrival: RefCounted
 var error:=""
 const PhysicalContacts=preload("res://src/simulation/physical_scenery_contacts.gd")
 const Music=preload("res://src/simulation/ordinary_music.gd")
@@ -150,6 +153,7 @@ var _gate_cruise_speed:=0.0
 var _system_navigation: RefCounted
 var _navigation_destinations: Array=[]
 var _pending_destination:=-1
+var _queued_drive:=false
 var _navigation_applied:=false
 var _fast_forward: RefCounted
 var _near_target:=false
@@ -405,13 +409,15 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	# Only final result acknowledgement selects the permitted kind160 return.
 	var return_rules: Dictionary={} if sahi_world or void_world else OrdinaryFlight.docking(bindings,int(entry.campaign_cursor)+1)
 	var gate_animation: RefCounted;var gate_transit: RefCounted;var gate_destinations:=[]
-	var system_navigation: RefCounted;var navigation_destinations:=[]
+	var system_navigation: RefCounted;var navigation_destinations:=[];var drive: RefCounted
 	if free_world:
 		system_navigation=SystemNavigation.new()
 		var career: Dictionary=construction.contract_owner().snapshot()
 		if not system_navigation.configure(bindings,catalogues,career.get("lounges",{}).get("system_availability")):return reject(system_navigation.error)
 		var observation:=entry.duplicate();observation.contracts=career;observation.mission=entry.departure.mission
 		navigation_destinations=Context.navigation_destinations(bindings,catalogues,observation)
+		drive=Drive.new()
+		if not drive.configure(bindings,catalogues,loadout,career.difficulty,system_navigation,navigation_destinations):return reject(drive.error)
 	if void_world:
 		var layout: RefCounted=load("res://src/simulation/gate_environment.gd").new()
 		gate_animation=GateAnimation.new()
@@ -464,10 +470,11 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_convoy_career=construction.contract_owner() if convoy!=null or alioth!=null or sahi_world or ordinary_void or bakka_world or mission_world else null
 	_selected_locations=construction.selected_locations_owner() if sahi_world and _convoy_career==null else null
 	_story_bindings=bindings if free_world or rescue_world or sahi_world or ordinary_void or bakka_world or mission_world or return_rules.get("alioth_return",false) else null
-	_story_catalogues=catalogues if sahi_world else null
+	_story_catalogues=catalogues if sahi_world or free_world else null
 	_gate_animation=gate_animation;_gate_transit=gate_transit;_gate_destinations=gate_destinations
 	_system_navigation=system_navigation;_navigation_destinations=navigation_destinations
-	_pending_destination=int(entry.get("navigation_destination_id",-1));_navigation_applied=false
+	_drive=drive;_drive_arrival=null
+	_pending_destination=int(entry.get("navigation_destination_id",-1));_navigation_applied=false;_queued_drive=false
 	_gate_cruise_speed=float(bindings.cruise.speed_units_per_millisecond)
 	_fast_forward=fast_forward;_near_target=false;_camera_ms=0;_camera_passes=1
 	_mining_audio={} if targeting==null else {"serial":0,"events":[]}
@@ -498,7 +505,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 	var next:=fork_for_frame()
 	if paused or not _station_packet.is_empty() or not _game_over_packet.is_empty() or not _unsupported_boundary.is_empty() or mission_station_return_required():return next
 	if contract_result_pending() or convoy_arrival_required() or sahi_arrival_required() or void_return_required():return next
-	if gate_modal() or not prepare_gate_arrival().is_empty():return next
+	if gate_modal() or not prepare_gate_arrival().is_empty() or not prepare_drive_arrival().is_empty():return next
 	if _local_travel!=null and _local_travel.snapshot().phase=="arrival_required" and not death_active():return next
 	next._radio_events=[];next._scanner_events=[]
 	next._begin_mining_audio_batch()
@@ -537,7 +544,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		if not accepted:reject(next._encounter.error);return null
 	# The world traffic clock precedes player and weapon phases.
 	if next._encounter!=null:
-		var world_logic: Dictionary=next._encounter.evaluate_world_logic(delta_ms,next._random,_pose)
+		var world_logic: Dictionary=next._encounter.evaluate_world_logic(delta_ms,next._random,_pose,next._cargo.quantity(Drive.Definitions.ENERGY_ITEM))
 		if world_logic.is_empty():reject(next._encounter.error);return null
 		next._encounter=world_logic.encounter;next._random=world_logic.random_state
 	var cues: Dictionary=next._briefing.snapshot()
@@ -572,6 +579,8 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		if not is_finite(length):reject("Station contact exceeds source coordinates");return null
 		next._station_contact=length<float(_return_rules.contact_radius)
 	if not player_updates:
+		pass
+	elif drive_departing():
 		pass
 	elif gate_departing():
 		if not next._gate_transit.advance(delta_ms):reject(next._gate_transit.error);return null
@@ -657,6 +666,8 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 			if not next._autopilot.observe_manual(next._pose,visual_response):reject(next._autopilot.error);return null
 			next._model_basis=next._autopilot.snapshot().model_basis
 			next._preceding_commands=commands if manual else Vector2.ZERO
+	if next._drive!=null and not next.death_active():
+		if not next._advance_drive(delta_ms):reject(next.error);return null
 	if _gate_transit!=null and not gate_departing():
 		if not next._gate_transit.advance(delta_ms):reject(next._gate_transit.error);return null
 	elif _gate_animation!=null:
@@ -819,7 +830,10 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		if cued==null:reject(next._encounter.error);return null
 		next._encounter=cued
 	var scene:={"base_content_id":_entry.base_content_id,"binding_id":_entry.binding_id,"player_pose":next._pose}
-	if next.gate_departing():
+	if next.drive_departing():
+		scene.player_pose=next._drive.snapshot().effect.pose
+		if not next._camera.update(0,next._shot,scene,next._shot):reject(next._camera.error);return null
+	elif next.gate_departing():
 		# The original translation setter forces a positive fixed-eye refresh.
 		# Rebuild the view directly, without advancing a synthetic camera clock.
 		if not next._camera.update(0,next._shot,scene,next._shot):reject(next._camera.error);return null
@@ -846,7 +860,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		if activation.started:
 			next._equipment=next._equipment.fork()
 			if not next._equipment.retain_flight_cargo(next._cargo.snapshot()):reject(next._equipment.error);return null
-			if not next._notices.enqueue_cloak_spent(activation.consumed):reject(next._notices.error);return null
+			if not next._notices.enqueue_energy_spent(activation.consumed):reject(next._notices.error);return null
 	if boost_requested and next.booster_input_permitted():
 		var activation: int=next._booster.snapshot().activation
 		if not next._booster.request_start():reject(next._booster.error);return null
@@ -891,7 +905,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 			if selection.is_empty():reject(next._music.error);return null
 			next._flight_music={"operations":selection.operations}
 	if next._pending_destination>=0 and not next._navigation_applied and cues.entry_released and not next.dialogue_visible() and not next.death_active() and not next.cinematic_input_blocked():
-		var guided: RefCounted=next.select_map_destination(next._pending_destination)
+		var guided: RefCounted=next.start_drive(next._pending_destination) if next._queued_drive else next.select_map_destination(next._pending_destination)
 		if guided==null:reject(next.error);return null
 		next=guided
 	return next
@@ -1084,7 +1098,7 @@ func select_secondary(item_id: int,paused:=false) -> RefCounted:
 	return next
 
 func cinematic_input_blocked() -> bool:
-	return convoy_input_blocked() or (_alioth!=null and _alioth.snapshot().input_blocked) or (_sahi!=null and _sahi.snapshot().input_blocked) or (_probe!=null and _probe.snapshot().input_blocked) or gate_modal() or gate_coasting() or gate_departing()
+	return convoy_input_blocked() or (_alioth!=null and _alioth.snapshot().input_blocked) or (_sahi!=null and _sahi.snapshot().input_blocked) or (_probe!=null and _probe.snapshot().input_blocked) or gate_modal() or gate_coasting() or gate_departing() or drive_departing()
 
 func void_environment_owner() -> RefCounted:return null if _void_environment==null else _void_environment.fork()
 func ordinary_void_source_owner() -> RefCounted:return null if _ordinary_void_source==null else _ordinary_void_source.fork()
@@ -1523,10 +1537,10 @@ func select_map_destination(station_id: int,paused:=false) -> RefCounted:
 	next._pending_destination=station_id;next._navigation_applied=true
 	return next
 
-func queue_map_destination(station_id: int) -> RefCounted:
+func queue_map_destination(station_id: int,drive:=false) -> RefCounted:
 	if entry_released():reject("Queue a departure course before flight input is released");return null
 	if _system_navigation!=null and not _navigation_destinations.has(station_id):reject("The departure course has no admitted destination");return null
-	var next:=fork_for_frame();next._pending_destination=station_id;next._navigation_applied=false
+	var next:=fork_for_frame();next._pending_destination=station_id;next._navigation_applied=false;next._queued_drive=drive
 	return next
 
 func choose_gate_confirmation(result: int,paused:=false) -> RefCounted:
@@ -1584,7 +1598,7 @@ func construct_gate_arrival(bindings: RefCounted,catalogues: RefCounted,environm
 	if packet.is_empty():reject("Complete the surviving gate flight before constructing arrival");return null
 	return _construct_arrival(bindings,catalogues,packet,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,location_settings,location_library,true)
 
-func _construct_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,location_settings: Dictionary,location_library: RefCounted,gate: bool) -> RefCounted:
+func _construct_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,location_settings: Dictionary,location_library: RefCounted,gate: bool,drive_arrival: RefCounted=null) -> RefCounted:
 	var result:=Construction.new()
 	if not result.prepare_arrival_viewport(_viewport):reject(result.error);return null
 	var objective: Dictionary=_objective.snapshot()
@@ -1599,7 +1613,7 @@ func _construct_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dict
 	if contracts!=null:
 		if not location_settings.is_empty() and not contracts.select_location(bindings,catalogues,location_library,int(packet.station_id),location_settings,_random,unix_seconds):reject(contracts.error);return null
 		objective.progress=contracts.snapshot().progress
-	var prepared: bool=result.prepare_gate_arrival(bindings,catalogues,_gate_transit,_player,_equipment,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,objective,contracts,location_library) if gate else result.prepare_local_arrival(bindings,catalogues,_local_travel,_player,_equipment,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,objective,contracts,location_library)
+	var prepared: bool=result.prepare_drive_arrival(bindings,catalogues,drive_arrival,_player,_equipment,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,objective,contracts,location_library) if drive_arrival!=null else result.prepare_gate_arrival(bindings,catalogues,_gate_transit,_player,_equipment,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,objective,contracts,location_library) if gate else result.prepare_local_arrival(bindings,catalogues,_local_travel,_player,_equipment,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,objective,contracts,location_library)
 	if not prepared:reject(result.error);return null
 	if _pending_destination>=0 and _pending_destination!=int(packet.station_id) and not result.retain_navigation_destination(_pending_destination):reject(result.error);return null
 	return result.selected40_builder() if result.selected40_builder()!=null else result
@@ -1911,6 +1925,71 @@ func toggle_turret() -> RefCounted:
 	next._pilot.angular_units=Vector2.ZERO;next._pilot.lateral_units_per_millisecond=0.0
 	return next
 
+func drive_state() -> Dictionary:return {} if _drive==null else _drive.snapshot()
+func drive_departing() -> bool:return _drive!=null and _drive.departing()
+func drive_fitted() -> bool:return _drive!=null and _drive.available()
+func drive_available() -> bool:return _drive!=null and _drive.ready()
+func drive_quote(station_id: int) -> Dictionary:return {} if _drive==null else _drive.quote(station_id,_cargo.quantity(Drive.Definitions.ENERGY_ITEM))
+func drive_permits_mission() -> bool:
+	if _objective==null:return false
+	var current: Dictionary=_objective.snapshot()
+	var job: Dictionary=current.get("contracts",{}).get("mission",{})
+	if not job.is_empty():return Drive.permits_mission(job)
+	var context: Dictionary=_entry.departure.get("free_context",{})
+	if not context.get("mission_story",false):return true
+	return Drive.permits_mission({"kind":context.get("mission_kind",-1),"completed":context.get("mission_completed",false)})
+
+func drive_selection() -> RefCounted:
+	if not drive_available():reject("Khador Drive is not ready");return null
+	var next:=fork_for_frame()
+	if not drive_permits_mission() and not next._notices.enqueue(21):reject(next._notices.error);return null
+	return next
+
+func drive_map_observation() -> Dictionary:
+	var result:=snapshot();var quotes:={}
+	for station_id in _navigation_destinations:
+		if station_id==result.location.station_id:continue
+		var quote:=drive_quote(station_id)
+		if not quote.is_empty():quotes[station_id]=quote
+	result.drive_mode=true;result.drive_quotes=quotes
+	return result
+
+func start_drive(station_id: int) -> RefCounted:
+	error=""
+	if not drive_available() or not entry_released() or death_active() or dialogue_visible() or cinematic_input_blocked() or local_departing():reject("Khador Drive is unavailable during this operation");return null
+	var next:=fork_for_frame()
+	if not drive_permits_mission():
+		if not next._notices.enqueue(21):reject(next._notices.error);return null
+		return next
+	var operation: Dictionary=next._drive.evaluate_request(station_id,next._cargo)
+	if operation.is_empty() or not operation.started:reject(next._drive.error if operation.is_empty() else "Not enough energy cells for this jump");return null
+	next._equipment=next._equipment.fork()
+	if not next._equipment.retain_flight_cargo(operation.cargo.snapshot()):reject(next._equipment.error);return null
+	var capability:=Context.new()
+	if not capability.admit_drive_arrival(_story_bindings,_story_catalogues,next._equipment.snapshot().loadout,contract_owner(),station_id):reject(capability.error);return null
+	if not next._notices.enqueue_energy_spent(int(operation.quote.cost)):reject(next._notices.error);return null
+	next._drive=operation.drive;next._cargo=operation.cargo;next._drive_arrival=capability
+	next._pending_destination=-1;next._navigation_applied=true
+	if not next._autopilot.clear_target():reject(next._autopilot.error);return null
+	return next
+
+func _advance_drive(milliseconds: int) -> bool:
+	var departing:=drive_departing()
+	if not _drive.advance(milliseconds,_pose):return reject(_drive.error)
+	if not drive_departing():return true
+	if not departing:
+		if not _booster.cancel() or not _autopilot.clear_target() or not _player.set_permissions(true,false):return reject(_booster.error+_autopilot.error+_player.error)
+		if _encounter.turret_active():_encounter=_encounter.set_turret_active(false)
+		_collision_enabled=false
+		_shot.merge({"mode":"fixed_eye","inherit_target_up":false},true)
+	_shot.eye=_drive.snapshot().camera_position
+	return true
+
+func prepare_drive_arrival() -> Dictionary:return {} if _drive==null or death_active() else _drive.arrival_request()
+func construct_drive_arrival(bindings: RefCounted,cat: RefCounted,environment_seconds: Variant,unix_seconds: Variant,large_display:=true,bodies: RefCounted=null,effects: RefCounted=null,settings: Dictionary={},library: RefCounted=null) -> RefCounted:
+	if prepare_drive_arrival().is_empty() or _drive_arrival==null:reject("Finish the Khador transit before arriving");return null
+	return _construct_arrival(bindings,cat,_drive_arrival.arrival_packet(),environment_seconds,unix_seconds,large_display,bodies,effects,settings,library,false,_drive_arrival)
+
 func cloak_state() -> Dictionary:return {} if _player==null else _player.cloak_state()
 func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
 func cloak_input_permitted() -> bool:
@@ -1994,7 +2073,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	var state: Dictionary=_briefing.snapshot()
 	var held: Dictionary=_cargo.snapshot()
 	state.cargo_used=held.used
-	state.booster=booster_state();state.cloak=cloak_state();state.turret=turret_state()
+	state.booster=booster_state();state.cloak=cloak_state();state.turret=turret_state();state.khador=drive_state()
 	state.merge({"world_type":_entry.world_type,"location":_entry.location.duplicate(true),"activated":true,
 		"player_pose":_pose,"control_throttle":_throttle,"player":_player.snapshot(),"player_cache":_player.cache_snapshot(),"angular_units":_pilot.angular_units,
 		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),
@@ -2031,6 +2110,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 		state.gate_transit=_gate_transit.snapshot();state.gate_destinations=_gate_destinations.duplicate()
 		if gate_modal():state.boundary="gate_confirmation_required" if state.gate_transit.phase=="confirmation" else "gate_map_required"
 		elif not prepare_gate_arrival().is_empty():state.boundary="gate_arrival_transition_required"
+	if not prepare_drive_arrival().is_empty():state.boundary="drive_arrival_transition_required"
 	if _alioth!=null:
 		state.alioth_attack=_alioth.snapshot();state.alioth_portal=_portal.snapshot();state.alioth_camera=_alioth_camera.duplicate(true)
 	if _sahi!=null:
@@ -2115,6 +2195,7 @@ func fork_for_frame() -> RefCounted:
 	if _probe!=null:copy._probe=_probe.fork_for_frame()
 	if _void_targeting!=null:copy._void_targeting=_void_targeting.fork_for_frame()
 	copy._void_environment=_void_environment # Immutable generated layout; public access forks it.
+	copy._drive=_drive.fork_for_frame() if _drive!=null else null;copy._drive_arrival=_drive_arrival
 	copy._ordinary_void_source=_ordinary_void_source # Entry-owned immutable route; public access forks it.
 	copy._alioth_camera=_alioth_camera.duplicate(true)
 	if _convoy!=null:copy._convoy=_convoy.fork_for_frame()
@@ -2127,7 +2208,7 @@ func fork_for_frame() -> RefCounted:
 	if _gate_transit!=null:copy._gate_transit=_gate_transit.fork_for_frame()
 	copy._gate_destinations=_gate_destinations.duplicate();copy._gate_cruise_speed=_gate_cruise_speed
 	copy._system_navigation=_system_navigation;copy._navigation_destinations=_navigation_destinations
-	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied
+	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied;copy._queued_drive=_queued_drive
 	copy._briefing=_briefing.fork();copy._player=_player.fork_for_frame();copy._scenery=_scenery.fork_for_frame()
 	copy._camera=_camera.fork_for_frame();copy._pilot=_pilot.fork_for_frame();copy._detail=_detail.fork_for_frame()
 	copy._collision_enabled=_collision_enabled
@@ -2183,6 +2264,7 @@ func clear() -> void:
 	_story_catalogues=null
 	_gate_animation=null;_gate_transit=null;_gate_destinations=[];_gate_cruise_speed=0.0
 	_system_navigation=null;_navigation_destinations=[];_pending_destination=-1;_navigation_applied=false
+	_drive=null;_drive_arrival=null;_queued_drive=false
 	_briefing=null;_player=null;_scenery=null;_camera=null;_pilot=null;_detail=null;_collision_enabled=false
 	_cargo=null;_tractor=null;_tractor_frame={}
 	_aim=null;_targeting=null;_viewport=Vector2i(1280,720)

@@ -770,7 +770,7 @@ func _ambient_seed(id: int) -> Dictionary:
 	seed.cargo=_cargo[id].duplicate(true)
 	return seed
 
-func evaluate_ambient_world_logic(delta_ms: Variant,combat: RefCounted,random_state: Dictionary,player_pose: Variant=null) -> Dictionary:
+func evaluate_ambient_world_logic(delta_ms: Variant,combat: RefCounted,random_state: Dictionary,player_pose: Variant=null,energy_cells: int=-1) -> Dictionary:
 	error=""
 	if not _ambient or _launch_clock==null or _accounting==null or not combat is Combat:return fail("World traffic logic requires its prepared mixed controller")
 	var incoming: Dictionary=combat.snapshot()
@@ -793,7 +793,7 @@ func evaluate_ambient_world_logic(delta_ms: Variant,combat: RefCounted,random_st
 	for id in ids:
 		var before: Dictionary=staged._combat.actor_snapshot(id)
 		var retired: RefCounted=staged._destruction[id] if before.vitals.hull==0 else null
-		var cargo: Dictionary=_construction.sample_relaunch_cargo(staged._random)
+		var cargo: Dictionary=_construction.sample_relaunch_cargo(staged._random,energy_cells)
 		if cargo.is_empty():return fail(_construction.error)
 		staged._cargo[id]=cargo.cargo;staged._random=cargo.random_state
 		var origin:=Vector3.ZERO

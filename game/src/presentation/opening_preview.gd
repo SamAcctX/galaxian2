@@ -93,6 +93,7 @@ var map_panel: Control
 var flight_menu: Control
 var _station_map_open:=false
 var _station_course_id:=-1
+var _station_drive_course:=false
 var _station_map_button: Button
 var gate_panel: Control
 var _retry_button: Button
@@ -254,7 +255,8 @@ func _sync_cloak_ui(flight: Dictionary={}) -> void:
 		_cloak_generation=generation;_cloak_failure_serial=0;_cloak_dialog.clear()
 	var state: Dictionary=session.cloak_state() if session is FirstFlightSession or session is MissionSession else {}
 	var hud: bool=session.flight_hud_visible() if session is MissionSession else session.flight_hud_visible(flight) if session is FirstFlightSession else false
-	_cloak_charge.present(state,hud,_mobile_layout)
+	var drive: Dictionary=flight.get("khador",{})
+	_cloak_charge.present(drive if drive.get("phase")=="charging" else state,hud,_mobile_layout,"khador" if drive.get("phase")=="charging" else "cloak")
 	_cloak_button.visible=hud and state.get("available",false)
 	if _cloak_button.visible:
 		_cloak_button.disabled=not state.ready or not session.can_control() or not _focused
@@ -840,7 +842,7 @@ func _process(_delta: float) -> void:
 	if session is MissionSession:
 		_selected40_tick(Time.get_ticks_usec())
 		return
-	if session==null or session.status not in ["running","arrival_transition_required","station_transition_required","station_reload_required","local_arrival_transition_required","gate_confirmation_required","gate_map_required","gate_arrival_transition_required","game_over_transition_required","convoy_arrival_transition_required","sahi_arrival_transition_required","void_return_transition_required","mission_station_return_required"] or _transition_failed:return
+	if session==null or session.status not in ["running","arrival_transition_required","station_transition_required","station_reload_required","local_arrival_transition_required","gate_confirmation_required","gate_map_required","gate_arrival_transition_required","drive_arrival_transition_required","game_over_transition_required","convoy_arrival_transition_required","sahi_arrival_transition_required","void_return_transition_required","mission_station_return_required"] or _transition_failed:return
 	if session.status=="running":
 		handle_action_events(_controls.take_events())
 		var input: Dictionary=_controls.snapshot() if session.can_control() else {"command":Vector2.ZERO,"held":{"fire":false}}
@@ -857,6 +859,8 @@ func _process(_delta: float) -> void:
 		if not enter_arrival(Time.get_ticks_usec()):return
 	if session.status=="local_arrival_transition_required" and not _transition_failed:
 		if not enter_local_arrival(Time.get_ticks_usec()):return
+	if session.status=="drive_arrival_transition_required" and not _transition_failed:
+		if not enter_drive_arrival(Time.get_ticks_usec()):return
 	if session.status=="gate_arrival_transition_required" and not _transition_failed:
 		if not enter_gate_arrival(Time.get_ticks_usec()):return
 	if session.status in ["sahi_arrival_transition_required","void_return_transition_required"] and not _transition_failed:
@@ -915,6 +919,7 @@ func handle_action_events(events: Array) -> void:
 
 func flight_action(action: String) -> void:
 	if action in ["autopilot","action_menu"]:open_flight_menu(action=="autopilot");return
+	if action=="khador" or (action=="jump" and session is FirstFlightSession and session.drive_fitted()):open_map(-1,true);return
 	if action=="map":open_map();return
 	if action=="secondary_menu":open_secondary_menu();return
 	if not session is FirstFlightSession or not _focused or not is_visible_in_tree():return
@@ -969,15 +974,28 @@ func _station_map_observation() -> Dictionary:
 	var id: int=int(state.loadout.station_id)
 	state.location={"station_id":id,"system_id":int(cat.tables.stations[id].system_id)}
 	state.station_map=true
+	if state.loadout.equipment_ids.has(85):
+		var navigation=load("res://src/simulation/system_navigation.gd").new()
+		if navigation.configure(bindings,cat,state.contracts.lounges.system_availability):
+			var drive=load("res://src/simulation/khador_drive.gd").new()
+			var destinations: Array=MissionContext.navigation_destinations(bindings,cat,state)
+			if drive.configure(bindings,cat,state.loadout,state.contracts.difficulty,navigation,destinations):
+				var energy:=0
+				for row in state.cargo.entries:
+					if row.item_id==122:energy+=int(row.quantity)
+				state.drive_mode=true;state.drive_quotes={}
+				for destination in destinations:
+					if destination!=id:state.drive_quotes[destination]=drive.quote(destination,energy)
 	return state
 
-func open_map(now_microseconds: int=-1) -> bool:
+func open_map(now_microseconds: int=-1,drive_mode:=false) -> bool:
 	if not _focused or not is_visible_in_tree():return false
 	var docked: bool=_station_map_available()
+	if drive_mode and not docked and (not session is FirstFlightSession or not session.request_drive_map()):present_session();return false
 	if not docked and (not session is FirstFlightSession or not session.can_open_map()):return false
 	var catalogues:=Catalogues.new()
 	if not catalogues.open(library):status.text=catalogues.error;return false
-	var observation: Dictionary=_station_map_observation() if docked else session.snapshot()
+	var observation: Dictionary=_station_map_observation() if docked else (session.drive_map_observation() if drive_mode and session.drive_available() else session.snapshot())
 	if not map_panel.configure(library,bindings,visuals,catalogues,observation):status.text=map_panel.error;return false
 	var now:=Time.get_ticks_usec() if now_microseconds<0 else now_microseconds
 	if docked:
@@ -1008,6 +1026,7 @@ func open_flight_menu(autopilot: bool=true) -> bool:
 	elif session is FirstFlightSession:
 		rows.append({"action":"autopilot","label":"Autopilot"})
 		if session.can_open_map():rows.append({"action":"map","label":library.strings[176]})
+		if session.drive_available():rows.append({"action":"khador","label":library.strings[int(bindings.station_equipment.item_text_offset)+85]})
 		if session.secondary_available():rows.append({"action":"secondary_menu","label":"Secondary weapons"})
 	var turret: Dictionary=session.turret_state()
 	if not autopilot and turret.get("ready",false):rows.append({"action":"turret","label":library.strings[207]+" (T)"})
@@ -1035,6 +1054,7 @@ func confirm_map_planet(station_id: int, now_microseconds: int=-1) -> bool:
 		var choice: Dictionary=map_panel.snapshot()
 		if choice.get("selected_station_id")!=station_id or not choice.get("confirmation_visible",false):return false
 		_station_course_id=station_id
+		_station_drive_course=choice.get("drive_mode",false) and not choice.get("gate_alternative",false) and choice.system_id!=session.snapshot().loadout.system_id
 		if not close_map(now_microseconds):return false
 		var cat:=Catalogues.new()
 		if not cat.open(library):return transition_error(cat.error)
@@ -1045,6 +1065,7 @@ func confirm_map_planet(station_id: int, now_microseconds: int=-1) -> bool:
 	var now:=Time.get_ticks_usec() if now_microseconds<0 else now_microseconds
 	var accepted: bool
 	if session.status=="gate_map_required":accepted=session.close_gate_map(true,station_id,now)
+	elif map_panel.snapshot().get("drive_mode",false) and not map_panel.snapshot().get("gate_alternative",false) and map_panel.snapshot().system_id!=session.snapshot().location.system_id:accepted=session.confirm_drive_destination(station_id,now)
 	elif map_panel.snapshot().route_mode=="gate":accepted=session.confirm_map_gate(station_id,now)
 	else:accepted=session.confirm_map_planet(station_id,now)
 	if not accepted:map_panel.set_error(session.error);return false
@@ -1163,15 +1184,18 @@ func enter_portal_arrival(now_microseconds: int,environment_seconds: Variant=nul
 		return transition_error(message)
 	return _accept_first_flight(candidate,now_microseconds)
 
-func _enter_flight_arrival(now_microseconds: int,environment_seconds: Variant,unix_seconds: Variant,gate: bool) -> bool:
-	var boundary:="gate_arrival_transition_required" if gate else "local_arrival_transition_required"
+func enter_drive_arrival(now_microseconds: int,environment_seconds: Variant=null,unix_seconds: Variant=null) -> bool:
+	return _enter_flight_arrival(now_microseconds,environment_seconds,unix_seconds,false,true)
+
+func _enter_flight_arrival(now_microseconds: int,environment_seconds: Variant,unix_seconds: Variant,gate: bool,drive:=false) -> bool:
+	var boundary:="drive_arrival_transition_required" if drive else "gate_arrival_transition_required" if gate else "local_arrival_transition_required"
 	if not session is FirstFlightSession or session.status!=boundary:return transition_error("The flight has not reached its destination transition")
 	var locations: RefCounted
 	var contract_trip: bool=session.flight_owner().contract_owner()!=null
 	if gate and not contract_trip:return transition_error("Gate arrival lost its retained career")
 	var settings:=BASE_STOCK_SETTINGS.duplicate(true) if contract_trip else {}
 	if contract_trip and FirstFlightSession.FreeFlight.Campaign.supported(bindings,session.snapshot().campaign_cursor):settings.ship_price_percent=0
-	if session.snapshot().campaign_cursor==40:return _enter_navigation40_arrival(now_microseconds,environment_seconds,unix_seconds,gate,settings)
+	if not drive and session.snapshot().campaign_cursor==40:return _enter_navigation40_arrival(now_microseconds,environment_seconds,unix_seconds,gate,settings)
 	if StationGeneration.available(bindings) and not contract_trip:
 		var departing: RefCounted=session.flight_owner()
 		var trip: Dictionary=departing.prepare_local_arrival()
@@ -1180,7 +1204,7 @@ func _enter_flight_arrival(now_microseconds: int,environment_seconds: Variant,un
 		locations=_prepare_locations(int(trip.station_id),previous.progress,previous.random_state,unix_seconds)
 		if locations==null:return transition_error(_location_error)
 	var candidate:=FirstFlightSession.new();viewport.add_child(candidate)
-	var prepare: Callable=candidate.configure_gate_arrival if gate else candidate.configure_local_arrival
+	var prepare: Callable=candidate.configure_drive_arrival if drive else candidate.configure_gate_arrival if gate else candidate.configure_local_arrival
 	if not prepare.call(library,bindings,visuals,session.flight_owner(),now_microseconds,environment_seconds,unix_seconds,OS.has_feature("mobile"),settings):
 		var message:=candidate.error;candidate.free();session.camera.make_current()
 		return transition_error(message)
@@ -1215,7 +1239,7 @@ func _enter_navigation40_arrival(now_microseconds: int,environment_seconds: Vari
 
 func _accept_first_flight(candidate: Node3D, now_microseconds: int,normal_return: RefCounted=null) -> bool:
 	candidate.transition_rejected.connect(transition_error)
-	if _station_course_id>=0 and not candidate.queue_map_destination(_station_course_id):
+	if _station_course_id>=0 and not candidate.queue_map_destination(_station_course_id,_station_drive_course):
 		var problem: String=candidate.error;candidate.free();session.camera.make_current()
 		return transition_error(problem)
 	for reason in ["user","hidden","focus"]:
@@ -1229,7 +1253,7 @@ func _accept_first_flight(candidate: Node3D, now_microseconds: int,normal_return
 		var message: String=candidate.error;candidate.free();session.camera.make_current();cancel_departure()
 		return transition_error(message)
 	var previous:=session;session=candidate;previous.free();cancel_departure()
-	_station_course_id=-1
+	_station_course_id=-1;_station_drive_course=false
 	_save_notice.hide()
 	station_panel.clear();radio_panel.clear();target_frame.clear();aim_reticle.clear();npc_markers.clear()
 	lounge_panel.clear()
@@ -1537,6 +1561,7 @@ func retry_transition() -> bool:
 		return not _transition_failed
 	if session.status=="arrival_transition_required":return enter_arrival(now)
 	if session.status=="local_arrival_transition_required":return enter_local_arrival(now)
+	if session.status=="drive_arrival_transition_required":return enter_drive_arrival(now)
 	if session.status=="gate_arrival_transition_required":return enter_gate_arrival(now)
 	if session.status in ["sahi_arrival_transition_required","void_return_transition_required"]:return enter_portal_arrival(now)
 	if session.status in ["gate_confirmation_required","gate_map_required"]:
