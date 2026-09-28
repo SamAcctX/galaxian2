@@ -51,6 +51,13 @@ func _retain_recovery_frame(index: int,frame: Dictionary) -> void:
 func snapshot() -> Dictionary:
 	return _field.duplicate(true)
 
+func object_count() -> int:return 0 if _field.is_empty() else _field.objects.size()
+
+## A physical pose is a value; lifecycle callers need no detached field copy.
+func object_pose(index: int) -> Transform3D:
+	var row: Dictionary=_field.objects[index]
+	return Transform3D(row.basis.scaled(Vector3.ONE*row.scale),row.position)
+
 func frame_snapshot() -> Dictionary:
 	var result:=_field.duplicate()
 	if not result.is_empty():result.objects=_field.objects.map(func(row):return row.duplicate())

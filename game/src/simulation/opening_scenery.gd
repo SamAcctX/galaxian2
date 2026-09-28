@@ -507,7 +507,6 @@ func update(presentation_delta_ms: Variant, previous_reference: Variant, detail_
 	var events := [];var mask := [];var bodies: RefCounted=_bodies
 	if not destruction.is_empty():
 		var body_state: Dictionary=_bodies.read_snapshot()
-		var field: Dictionary=_motion.snapshot()
 		for index in destruction.size():
 			var body: Dictionary=body_state.objects[index]
 			if body.motion_scalar!=0.0:return reject("Scenery displacement requires a separate motion owner")
@@ -515,8 +514,7 @@ func update(presentation_delta_ms: Variant, previous_reference: Variant, detail_
 			if body.vitals.hull>0 and destruction[index].actor_state()==0:
 				mask.append(_spin_disabled.has(index));continue
 			var actor: RefCounted=destruction[index].fork_for_frame()
-			var row: Dictionary=field.objects[index]
-			var result: Dictionary=actor.update(presentation_delta_ms,body_state,Transform3D(row.basis.scaled(Vector3.ONE*row.scale),row.position),random_state)
+			var result: Dictionary=actor.update(presentation_delta_ms,body_state,_motion.object_pose(index),random_state)
 			if result.is_empty():return reject(actor.error)
 			if result.motion_scalar!=body.motion_scalar:return reject("Scenery displacement requires a separate motion owner")
 			if result.statistics_active!=body.active:
@@ -525,7 +523,7 @@ func update(presentation_delta_ms: Variant, previous_reference: Variant, detail_
 			random_state=result.random_state;events.append_array(result.events)
 			mask.append(result.skip_motion or _spin_disabled.has(index));destruction[index]=actor
 	elif not _spin_disabled.is_empty():
-		for index in motion.snapshot().objects.size():mask.append(_spin_disabled.has(index))
+		for index in motion.object_count():mask.append(_spin_disabled.has(index))
 	if not motion.update(presentation_delta_ms,mask):return reject(motion.error)
 	_motion=motion;_detail=detail
 	_bodies=bodies;_destruction=destruction;_random_state=random_state
