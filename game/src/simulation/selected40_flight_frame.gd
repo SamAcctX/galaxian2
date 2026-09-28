@@ -224,7 +224,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 		if tail.is_empty():reject(next._death.error);return null
 		next._random=tail.random_state
 		if not next._particles.apply_player_tail(next._death):reject(next._particles.error);return null
-	var weapons: Dictionary=next._encounter.evaluate_weapons(next._player,next._pose,milliseconds,next._scenery,next._random,true,not prior.sequence.radio.visible)
+	var weapons: Dictionary=next._encounter.evaluate_weapons(next._player,next._pose,milliseconds,next._scenery,next._random,true,not prior.sequence.radio.visible,-1 if next._scanner==null else next._scanner.guidance_target_id())
 	if weapons.is_empty():reject(next._encounter.error);return null
 	next._encounter=weapons.encounter;next._player=weapons.player;next._scenery=weapons.scenery;next._random=weapons.random_state
 	# Transport time remains aligned after the player-update gate closes; the

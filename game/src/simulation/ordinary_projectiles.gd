@@ -3,6 +3,9 @@ extends RefCounted
 ## direction; beams place the contact at a target from the shared aim window.
 ## Collision consequences and rendering remain with their existing owners.
 const Beam=preload("res://src/simulation/beam_primary.gd")
+const Thermal=preload("res://src/content/thermal_primary_definitions.gd")
+const Guidance=preload("res://src/simulation/projectile_guidance.gd")
+const Trail=preload("res://src/simulation/projectile_trail.gd")
 const Vectors = preload("res://src/simulation/source_vectors.gd")
 const Bounds = preload("res://src/content/weapon_collision_bounds.gd")
 const Hits = preload("res://src/content/ordinary_hit_definitions.gd")
@@ -18,6 +21,7 @@ var _weapon := {}
 var _slots: Array = []
 var _elapsed_ms := 0
 var _beam := {}
+var _trails: Array=[]
 # Do not reuse a live object's handles after clear, failure or content replacement.
 var _next_id := 1
 
@@ -27,6 +31,7 @@ func clear() -> void:
 	_slots = []
 	_elapsed_ms = 0
 	_beam = {}
+	_trails=[]
 
 func configure(weapon: Dictionary, capacity: Variant = null) -> bool:
 	clear()
@@ -40,11 +45,12 @@ func configure(weapon: Dictionary, capacity: Variant = null) -> bool:
 		if not Library.valid_hash(weapon.get(field)): return reject("Projectile weapon requires content and binding identities")
 	for field in ["item_id", "category", "kind", "damage", "interval_ms", "lifetime_ms"]:
 		if not Vitals.integer(weapon.get(field)): return reject("Invalid projectile weapon field: "+field)
-	if weapon.category!=0 or weapon.kind not in [0,1,2] or (weapon.get("launch_mode")!="ordinary" and not Beam.Definitions.resolved(weapon)):
+	if weapon.category!=0 or (weapon.kind not in [0,1,2] and not Thermal.resolved(weapon)) or (weapon.get("launch_mode")!="ordinary" and not Beam.Definitions.resolved(weapon)):
 		return reject("This projectile owner requires a source-declared ordinary primary launch path")
 	if weapon.has("beam") and not Beam.Definitions.resolved(weapon):return reject("Invalid resolved beam declaration")
 	if weapon.kind==2 and not TrainingWeapons.dispersed_primary(weapon) and not Fitting.dispersed(weapon):return reject("This ordinary kind requires its verified dispersion and capacity")
-	if weapon.kind!=2 and weapon.has("dispersion"):return reject("This ordinary kind has no supported dispersion declaration")
+	if weapon.kind!=2 and weapon.has("dispersion") and not Thermal.resolved(weapon):return reject("This ordinary kind has no supported dispersion declaration")
+	if weapon.has("thermal") and not Thermal.resolved(weapon):return reject("Invalid resolved thermal declaration")
 	if weapon.has("campaign_cursor") and not Vitals.integer(weapon.campaign_cursor):return reject("Invalid projectile campaign context")
 	if weapon.has("nonplayer_source") and not weapon.nonplayer_source is bool:return reject("Invalid projectile damage attribution")
 	if weapon.has("ordinary_hit_policy") and not Hits.resolved(weapon.ordinary_hit_policy,weapon.damage):
@@ -59,6 +65,7 @@ func configure(weapon: Dictionary, capacity: Variant = null) -> bool:
 	_weapon.speed_units_per_millisecond=Vitals.single(float(speed))
 	_weapon.launch_mode=weapon.launch_mode
 	if weapon.has("beam"):_weapon.beam=weapon.beam.duplicate(true)
+	if weapon.has("thermal"):_weapon.thermal=weapon.thermal.duplicate(true)
 	if weapon.has("campaign_cursor"):_weapon.campaign_cursor=weapon.campaign_cursor
 	if weapon.has("nonplayer_source"):_weapon.nonplayer_source=weapon.nonplayer_source
 	if weapon.has("dispersion"):_weapon.dispersion=weapon.dispersion.duplicate(true)
@@ -67,6 +74,7 @@ func configure(weapon: Dictionary, capacity: Variant = null) -> bool:
 	if weapon.has("collision_bounds"): _weapon.collision_bounds=weapon.collision_bounds.duplicate(true)
 	_weapon.projectile_capacity=capacity
 	_slots.resize(capacity)
+	if weapon.has("thermal"):_trails.resize(capacity)
 	_elapsed_ms=weapon.interval_ms
 	return true
 
@@ -79,6 +87,7 @@ func snapshot() -> Dictionary:
 		"time_ready":_elapsed_ms>int(_weapon.interval_ms),"available_slots":available,
 		"slots":_slots.duplicate(true)}
 	if _weapon.has("beam"):result.beam=_beam.duplicate(true)
+	if _weapon.has("thermal"):result.trails=_trails.map(func(trail):return {} if trail==null else trail.snapshot())
 	return result
 
 func reset_fire_interval() -> bool:
@@ -90,6 +99,7 @@ func reset_fire_interval() -> bool:
 func discard_flying() -> void:
 	_slots.fill(null)
 	_beam={}
+	_trails.fill(null)
 
 func has_retained_projectiles() -> bool:
 	# Expired and impacted objects still contact targets before the next cleanup.
@@ -107,6 +117,7 @@ func fork_state() -> RefCounted:
 	staged._elapsed_ms = _elapsed_ms
 	staged._next_id = _next_id
 	staged._beam = _beam.duplicate(true)
+	staged._trails=_trails.map(func(trail):return null if trail==null else trail.fork_for_frame())
 	return staged
 
 func fire_forward_from_mount(mount: Dictionary, firing_transform: Variant, firing_allowed: Variant, random_state: Variant=null) -> Dictionary:
@@ -119,6 +130,7 @@ func fire_forward_from_mount(mount: Dictionary, firing_transform: Variant, firin
 	return fire_from_mount(mount, firing_transform, firing_transform.basis.z, firing_allowed,random_state)
 
 func has_beam() -> bool:return _weapon.has("beam")
+func has_guidance() -> bool:return _weapon.has("thermal")
 
 func observe_beam_pose(pose: Transform3D) -> bool:
 	if not pose.is_finite():return reject("Beam source pose must be finite")
@@ -179,6 +191,12 @@ func fire(muzzle: Variant, world_direction: Variant, firing_allowed: Variant, ra
 		"previous_position":position,"velocity":velocity,"remaining_ms":int(_weapon.lifetime_ms)}
 	_next_id+=1
 	_slots[index]=projectile
+	if _weapon.has("thermal"):
+		projectile.trail_basis=Basis.IDENTITY
+		projectile.trail_basis.z=direction
+		var trail:=Trail.new()
+		trail.start(int(_weapon.thermal.trail_id),Transform3D(projectile.trail_basis,position))
+		_trails[index]=trail
 	_elapsed_ms=0
 	var result:={"fired":true,"reason":"","projectile":projectile.duplicate(true)}
 	if random!=null:result.random_state=random.snapshot()
@@ -208,6 +226,11 @@ func fire_from_mount(mount: Dictionary, ship_transform: Variant, world_direction
 	var up:=scaled(basis.y,1.0)
 	if not up.is_finite():return fail("Weapon up axis exceeds finite world coordinates")
 	var result:=fire(muzzle, world_direction, firing_allowed,random_state)
+	if result.get("fired",false) and _weapon.has("thermal"):
+		var slot: Dictionary=_slots[result.projectile.slot]
+		slot.trail_basis=Basis(basis.x,basis.y,normalized_launch(slot.velocity))
+		_trails[result.projectile.slot].start(int(_weapon.thermal.trail_id),Transform3D(slot.trail_basis,muzzle))
+		result.projectile=slot.duplicate(true)
 	if result.get("fired",false) and _weapon.has("campaign_cursor") and not _weapon.get("nonplayer_source",false):
 		# The original ordinary launch stores the firing matrix's Y column in
 		# each slot. It survives ship rotation and is reused by the draw root.
@@ -223,11 +246,12 @@ static func mount_dot(row: Vector3, offset: Vector3) -> float:
 	var z := Vitals.single(Vitals.single(row.z) * offset.z)
 	return Vitals.single(Vitals.single(x + y) + z)
 
-func advance(delta_ms: Variant) -> Dictionary:
+func advance(delta_ms: Variant, guidance_target: Variant=null) -> Dictionary:
 	error=""
 	if _weapon.is_empty(): return fail("Configure ordinary projectiles before advancing")
 	if not Vitals.integer(delta_ms) or _elapsed_ms>Vitals.MAX_INTEGER-delta_ms:
 		return fail("Projectile time exceeds supported integer milliseconds")
+	if guidance_target!=null and not finite_vector(guidance_target):return fail("Guidance requires a finite acquired target position")
 	var result := {"moved":[],"expired":[],"cleared":[]}
 	# Zero elapsed time still runs source cleanup and refreshes live geometry.
 	# A caller requiring frozen state must suppress this update.
@@ -245,11 +269,25 @@ func advance(delta_ms: Variant) -> Dictionary:
 		slot.previous_position=slot.position
 		slot.position=next
 		slot.remaining_ms-=delta_ms
+		if _weapon.has("thermal") and guidance_target!=null:
+			slot.velocity=Guidance.velocity(next,slot.velocity,guidance_target)
+			if not slot.velocity.is_finite():return fail("Guided projectile exceeds finite world coordinates")
+		if _weapon.has("thermal"):slot.trail_basis.z=normalized_launch(slot.velocity)
 		result.moved.append(slot.duplicate(true))
 		if slot.remaining_ms<=0: result.expired.append(slot.id)
 	# Commit only after every projectile's motion has been validated. A final
 	# full step is retained for presentation; its slot can already be reused.
-	_slots=staged
+	var trails:=[]
+	for i in _trails.size():
+		var trail: RefCounted=_trails[i]
+		if trail==null:trails.append(null);continue
+		trail=trail.fork_for_frame()
+		var slot: Variant=staged[i]
+		var pose: Variant=null
+		if slot!=null:pose=Transform3D(slot.trail_basis,added(slot.position,scaled(slot.velocity,float(delta_ms)*0.5)))
+		if not trail.advance(delta_ms,pose):return fail(trail.error)
+		trails.append(trail)
+	_slots=staged;_trails=trails
 	_elapsed_ms+=delta_ms
 	if not _beam.is_empty():_beam.age_ms=mini(Vitals.MAX_INTEGER,int(_beam.age_ms)+delta_ms)
 	return result

@@ -242,6 +242,14 @@ static func selection_retired(actor: Dictionary) -> bool:
 
 func weapon_target_ids() -> Array:return _sample.get("weapon_target_ids",[]).duplicate()
 
+## Guidance keeps the acquired ship outside the aim square, until it leaves
+## the view. The camera owner disables this observation during free look.
+func guidance_target_id(camera_allowed:=true) -> int:
+	if not camera_allowed or _equipment<0 or _selected<0:return -1
+	for marker in _sample.get("markers",[]):
+		if marker.actor_id==_selected and marker.in_view:return _selected
+	return -1
+
 func sound_events() -> Array:
 	return _sample.get("events",[]).filter(func(event):return event.kind=="sound").duplicate(true)
 

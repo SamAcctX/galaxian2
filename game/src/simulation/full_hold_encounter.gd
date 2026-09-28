@@ -802,7 +802,7 @@ func acknowledge_campaign_result(bindings: RefCounted,session: RefCounted,visit:
 	if result==null:reject(session.error)
 	return result
 
-func evaluate_weapons(player: RefCounted, pose: Transform3D, milliseconds: int, scenery: RefCounted=null, shared_random_state: Variant=null, display_available:=true, secondary_display_available:=true) -> Dictionary:
+func evaluate_weapons(player: RefCounted, pose: Transform3D, milliseconds: int, scenery: RefCounted=null, shared_random_state: Variant=null, display_available:=true, secondary_display_available:=true,guidance_actor_id: int=-1) -> Dictionary:
 	error=""
 	if _control==null or not Numbers.integer(milliseconds,0,_max_ms) or target(player,pose).is_empty():return fail("Invalid encounter weapon frame")
 	if _primaries!=null and (not scenery is Scenery or scenery.presentation_identity()!=_scenery_identity):return fail("Equipped contacts require the retained complete scenery")
@@ -813,7 +813,8 @@ func evaluate_weapons(player: RefCounted, pose: Transform3D, milliseconds: int, 
 	var field: RefCounted=scenery
 	var contact_random:={}
 	if next._primaries!=null:
-		var primary: Dictionary=field.evaluate_primary_contacts(next._primaries,next._combat,next._inventory,milliseconds,shared_random_state,display_available)
+		if _selected40_view!=null and _selected40_view.snapshot().camera_mode!=0:guidance_actor_id=-1
+		var primary: Dictionary=field.evaluate_primary_contacts(next._primaries,next._combat,next._inventory,milliseconds,shared_random_state,display_available,guidance_actor_id)
 		if primary.is_empty():return fail(field.error)
 		field=primary.scenery;next._primaries=primary.primaries;next._combat=primary.combat;next._primary_contacts=primary.weapons
 		contact_random=primary.get("random_state",{})

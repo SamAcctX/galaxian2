@@ -8,6 +8,7 @@ const Pose=preload("res://src/presentation/projectile_pose.gd")
 const Colors=preload("res://src/presentation/effect_color.gd")
 const Surface=preload("res://src/presentation/animated_additive_model.gd")
 const Beam=preload("res://src/presentation/beam_primary_geometry.gd")
+const Trail=preload("res://src/presentation/projectile_trail_geometry.gd")
 const Additive=Surface.ShaderSource
 var error:=""
 var guns:=[]
@@ -44,6 +45,10 @@ func build(owner: RefCounted, library: RefCounted, visuals: RefCounted, bindings
 			add_child(model);slots.append(model);model.visible=false
 			if not _surface.prepare_model(model):resources.clear();return reject(_surface.error)
 		guns.append({"key":row.key,"slots":slots})
+		if row.has("thermal"):
+			var trail:=Trail.new();add_child(trail)
+			if not trail.build(int(row.thermal.trail_id),library,visuals,bindings):resources.clear();return reject(trail.error)
+			guns[-1].trail=trail
 		var sampler:=Sampler.new()
 		if not sampler.configure(slots[0].surfaces,row.end_ms==0):resources.clear();return reject(sampler.error)
 		if sampler.snapshot().range!={"start_ms":row.start_ms,"end_ms":row.end_ms}:resources.clear();return reject("Projectile animation metadata changed")
@@ -64,13 +69,18 @@ func prepare_world(owner: RefCounted, world: Dictionary, camera: Transform3D, pa
 	if Colors.tint(parent_rgba,global_tint).is_empty() or not is_finite(darken) or not is_finite(Colors.single(darken)):return failed("Invalid projectile color")
 	var weapons:=State.weapons(world)
 	if weapons.size()!=guns.size() or state.models.size()!=guns.size():return failed("Projectile weapon population changed")
-	var prepared:=[];var samplers:=[]
+	var prepared:=[];var samplers:=[];var trails:={}
 	for i in guns.size():
 		var row: Dictionary=state.models[i];var weapon: Dictionary=weapons[i].projectiles
 		for key in ["key","item_id","kind","capacity","model_id","resource","captured_up","start_ms","end_ms"]:
 			if row.get(key)!=_descriptor.models[i][key]:return failed("Projectile model identity changed")
 		if weapons[i].key!=row.key or weapon.weapon.item_id!=row.item_id or weapon.weapon.kind!=row.kind or weapon.slots.size()!=row.capacity:return failed("Projectile slots differ from prepared weapons")
 		if row.get("beam",{})!=_descriptor.models[i].get("beam",{}):return failed("Beam model identity changed")
+		if row.get("thermal",{})!=_descriptor.models[i].get("thermal",{}):return failed("Thermal model identity changed")
+		if guns[i].has("trail"):
+			var trail: Dictionary=guns[i].trail.prepare(weapon.trails,Colors.tint(parent_rgba,global_tint).value)
+			if trail.is_empty():return failed(guns[i].trail.error)
+			trails[i]=trail
 		if guns[i].has("beam"):
 			var beam: Dictionary=guns[i].beam.prepare(weapon,parent_rgba,global_tint)
 			if beam.is_empty():return failed(guns[i].beam.error)
@@ -81,7 +91,7 @@ func prepare_world(owner: RefCounted, world: Dictionary, camera: Transform3D, pa
 		if animation.is_empty():return failed(sampler.error)
 		var slots:=[]
 		for slot in weapon.slots:
-			var root:=Pose.sample(slot,row.kind,camera,_reduced,state.rules,row.captured_up)
+			var root:=Pose.sample(slot,row.kind,camera,_reduced,state.rules,row.captured_up,row.get("thermal",{}).get("camera_facing",false))
 			if root.has("error"):return failed(root.error)
 			var surfaces:=[]
 			if root.visible:
@@ -89,10 +99,11 @@ func prepare_world(owner: RefCounted, world: Dictionary, camera: Transform3D, pa
 				if surfaces.is_empty():return failed(_surface.error)
 			slots.append({"visible":root.visible,"surfaces":surfaces})
 		prepared.append(slots);samplers.append(sampler)
-	return {"guns":prepared,"samplers":samplers,"darken":Colors.single(darken) if _edition=="mac-full-hd" else 1.0}
+	return {"guns":prepared,"samplers":samplers,"trails":trails,"darken":Colors.single(darken) if _edition=="mac-full-hd" else 1.0}
 
 func commit_world(prepared: Dictionary) -> void:
 	for i in guns.size():
+		if guns[i].has("trail"):guns[i].trail.commit(prepared.trails[i])
 		if guns[i].has("beam"):
 			guns[i].beam.commit(prepared.guns[i],prepared.darken)
 			continue

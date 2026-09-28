@@ -30,6 +30,7 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 		var id:=int(item.id);var mapping:=Rules.primary(bindings.mido_travel.ordinary_fitting,id,int(item.arrays[2][5]))
 		if mapping.is_empty():continue
 		items[id]=""
+		if mapping.has("thermal") and not preload("res://src/presentation/projectile_trail_geometry.gd").supported_material(bindings):items[id]="This weapon's trail atlas is unavailable"
 		var model_keys:=["projectile_model_id","impact_model_id"]
 		if mapping.has("muzzle_model_id"):model_keys.append("muzzle_model_id")
 		for key in model_keys:
@@ -115,7 +116,7 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 		if weapon.get("ordinary_hit_policy",{}).get("additional_damage_required",false) and not NPCSystems.available(bindings):return "This weapon requires ship systems damage support"
 		var projectiles:=Projectiles.new()
 		if not projectiles.configure(weapon):return "This weapon's firing behavior is not yet supported"
-		var reason:=Hits.validate(weapon,{"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id},bindings.weapon_parameters.ordinary_hit_policy,[0,1,2])
+		var reason:=Hits.validate(weapon,{"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id},bindings.weapon_parameters.ordinary_hit_policy,[int(weapon.kind)])
 		if not reason.is_empty():return "This weapon's damage effects are not yet supported"
 		if Rules.model(bindings,weapon,false).is_empty() or Rules.model(bindings,weapon,true).is_empty():return "This primary weapon's visual behavior is not yet supported"
 		if Audio.player_entries(bindings.weapon_parameters.audio,cat.tables.items,[weapon]).size()!=1:return "This weapon's audio is not yet supported"

@@ -202,18 +202,18 @@ func evaluate_npc_update(combat: RefCounted, ordered_actor_ids: Variant, delta_m
 			"contacts":contacts.contacts,"motion":motion})
 	return {"primaries":staged,"combat":staged_combat,"weapons":events}
 
-func evaluate_opening_update(combat: RefCounted, bodies: RefCounted, inventory: RefCounted, delta_ms: Variant, bounds_selection: Variant = null) -> Dictionary:
+func evaluate_opening_update(combat: RefCounted, bodies: RefCounted, inventory: RefCounted, delta_ms: Variant, bounds_selection: Variant = null, guidance_actor_id: int=-1) -> Dictionary:
 	error=""
 	if not _selected40_context.is_empty():return fail("Selected40 mixed contacts require the unfinished native scenery and targeting owners")
-	return _evaluate_opening_update(combat,bodies,inventory,delta_ms,bounds_selection)
+	return _evaluate_opening_update(combat,bodies,inventory,delta_ms,bounds_selection,guidance_actor_id)
 
 ## Explicit admission to the shared ordered pass, never generic cursor40 travel.
-func evaluate_selected40_update(combat: RefCounted,bodies: RefCounted,inventory: RefCounted,delta_ms: Variant) -> Dictionary:
+func evaluate_selected40_update(combat: RefCounted,bodies: RefCounted,inventory: RefCounted,delta_ms: Variant,guidance_actor_id: int=-1) -> Dictionary:
 	error=""
 	if _selected40_construction==null or not inventory is TargetInventory or not inventory.matches_selected40(combat,_selected40_construction,_selected40_context):return fail("Selected40 primaries require their same-generation native target inventory")
-	return _evaluate_opening_update(combat,bodies,inventory,delta_ms,null)
+	return _evaluate_opening_update(combat,bodies,inventory,delta_ms,null,guidance_actor_id)
 
-func _evaluate_opening_update(combat: RefCounted,bodies: RefCounted,inventory: RefCounted,delta_ms: Variant,bounds_selection: Variant) -> Dictionary:
+func _evaluate_opening_update(combat: RefCounted,bodies: RefCounted,inventory: RefCounted,delta_ms: Variant,bounds_selection: Variant,guidance_actor_id: int) -> Dictionary:
 	if _loadout.is_empty(): return fail("Configure primary ownership before opening updates")
 	if not Vitals.integer(delta_ms): return fail("Primary time must be nonnegative integer milliseconds")
 	if combat==null or combat.get_script()!=Combat or bodies==null or bodies.get_script()!=SceneryBodies:
@@ -241,7 +241,8 @@ func _evaluate_opening_update(combat: RefCounted,bodies: RefCounted,inventory: R
 			if result.is_empty(): return fail(operation.error)
 		# Cleanup belongs after this gun's COMPLETE target list, never between
 		# NPCs and scenery or after every gun has completed a global contact pass.
-		var motion: Dictionary = result.projectiles.advance(delta_ms)
+		var target: Variant=result.combat.guidance_position(guidance_actor_id) if result.projectiles.has_guidance() else null
+		var motion: Dictionary = result.projectiles.advance(delta_ms,target)
 		if motion.is_empty(): return fail(result.projectiles.error)
 		gun.projectiles=result.projectiles
 		gun.contact_pass_evaluated=true

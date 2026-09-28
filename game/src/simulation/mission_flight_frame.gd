@@ -188,7 +188,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 		if tail.is_empty():return failed(next._death.error)
 		next._random=tail.random_state
 		if not next._particles.apply_player_tail(next._death):return failed(next._particles.error)
-	var contacts: Dictionary=next._encounter.evaluate_weapons(next._player,next._pose,milliseconds,next._scenery,next._random,true,not prior.radio.visible)
+	var contacts: Dictionary=next._encounter.evaluate_weapons(next._player,next._pose,milliseconds,next._scenery,next._random,true,not prior.radio.visible,-1 if next._scanner==null else next._scanner.guidance_target_id())
 	if contacts.is_empty():return failed(next._encounter.error)
 	next._encounter=contacts.encounter;next._player=contacts.player;next._scenery=contacts.scenery;next._random=contacts.random_state
 	if not dying and next._player.snapshot().vitals.hull<=0:

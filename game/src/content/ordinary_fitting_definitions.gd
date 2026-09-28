@@ -20,7 +20,8 @@ static func primary(data: Dictionary,item_id: int,kind: int) -> Dictionary:
 
 ## Row lookup for already validated declarations, including this file's constants.
 static func _primary_row(data: Dictionary,item_id: int,kind: int) -> Dictionary:
-	if item_id<0 or item_id>=data.primary.projectile_model_ids.size() or kind not in [0,1,2]:return {}
+	var thermal:=preload("res://src/content/thermal_primary_definitions.gd").primary(item_id,kind)
+	if item_id<0 or item_id>=data.primary.projectile_model_ids.size() or (kind not in [0,1,2] and thermal.is_empty()):return {}
 	var model:=int(data.primary.projectile_model_ids[item_id]);var impact:=int(data.primary.impact_model_ids[item_id])
 	var beam:=Beams.primary(item_id,kind)
 	if not beam.is_empty():model=beam.model_id
@@ -30,6 +31,8 @@ static func _primary_row(data: Dictionary,item_id: int,kind: int) -> Dictionary:
 	if not beam.is_empty():
 		result.projectile_capacity=1;result.beam=beam;result.muzzle_model_id=beam.muzzle_model_id
 	if kind==int(data.primary.dispersed_kind):result.dispersion=data.primary.dispersion.duplicate(true)
+	if not thermal.is_empty():
+		result.thermal=thermal;result.dispersion=preload("res://src/content/thermal_primary_definitions.gd").DISPERSION.duplicate()
 	return result
 
 static func dispersed(weapon: Dictionary) -> bool:
@@ -38,7 +41,7 @@ static func dispersed(weapon: Dictionary) -> bool:
 static func ordinary(weapon: Dictionary) -> bool:
 	if weapon.get("fitting_primary")!=true or weapon.get("category")!=0 or weapon.get("nonplayer_source",false):return false
 	var row:=_primary_row(VALUES,int(weapon.get("item_id",-1)),int(weapon.get("kind",-1)))
-	return not row.is_empty() and weapon.get("projectile_capacity")==row.projectile_capacity and (weapon.kind!=2 or dispersed(weapon))
+	return not row.is_empty() and weapon.get("projectile_capacity")==row.projectile_capacity and (weapon.kind!=2 or dispersed(weapon)) and (weapon.kind!=3 or preload("res://src/content/thermal_primary_definitions.gd").resolved(weapon))
 
 static func model(bindings: RefCounted,weapon: Dictionary,impact: bool) -> Dictionary:
 	if not available(bindings) or weapon.get("category")!=0 or weapon.get("nonplayer_source",false):return {}
