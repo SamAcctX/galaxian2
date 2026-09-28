@@ -833,7 +833,7 @@ func skip_cinematic() -> void:
 	clear_input();present_session()
 
 func _process(_delta: float) -> void:
-	_controls.advance_mouse(_delta)
+	_controls.advance_mouse(_delta,get_viewport().get_visible_rect().size,session is FirstFlightSession and session.can_stop_mining())
 	if session is MissionSession:
 		_selected40_tick(Time.get_ticks_usec())
 		return
@@ -844,7 +844,7 @@ func _process(_delta: float) -> void:
 		if session is FirstFlightSession and session.can_stop_mining():input.command=Controls.pointer_command(input.command)
 		var accepted: bool
 		if session is FirstFlightSession:accepted=session.step(Time.get_ticks_usec(),input.command,input.held.fire,_mouse_captured,input.get("strafe",0.0),input.held.get("brake",false),_controls.invert_pitch)
-		elif session is Session:accepted=session.step(Time.get_ticks_usec(),input.command,input.held.fire,input.get("strafe",0.0),input.held.get("brake",false))
+		elif session is Session:accepted=session.step(Time.get_ticks_usec(),input.command,input.held.fire,input.get("strafe",0.0),input.held.get("brake",false),_mouse_captured)
 		else:accepted=session.step(Time.get_ticks_usec(),input.command,input.held.fire)
 		if not accepted:
 			if session is FirstFlightSession:transition_error(session.error)

@@ -279,7 +279,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	for operation in cue.sequence.frame.camera_operations:
 		if operation.kind=="follow_player" and not next._player.set_permissions(next._player.snapshot().active,true):reject(next._player.error);return null
 	var enabled: bool=not cue.sequence.input_blocked and next._player.snapshot().active and not next.campaign_dialogue_visible()
-	if player_updates and not next._pilot.sample_commands(commands if enabled and not next._encounter.turret_active() else Vector2.ZERO,seconds):reject(next._pilot.error);return null
+	if player_updates and not next._pilot.sample_commands(commands if enabled and not next._encounter.turret_active() else Vector2.ZERO,seconds,relative_mouse_capture):reject(next._pilot.error);return null
 	if player_updates and not next._engine_audio.sample_commands(commands if enabled and not next._encounter.turret_active() else Vector2.ZERO):reject(next._engine_audio.error);return null
 	var turret_active: bool=next._encounter.turret_active()
 	if turret_active:

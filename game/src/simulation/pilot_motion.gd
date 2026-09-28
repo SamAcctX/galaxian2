@@ -80,12 +80,12 @@ func set_response_factor(value: float) -> bool:
 	if result: _response_factor = value
 	return result
 
-func advance(pose: Transform3D, commands: Vector2, throttle: float, seconds: float, strafe_command:=0.0, forward_multiplier:=1.0) -> Transform3D:
+func advance(pose: Transform3D, commands: Vector2, throttle: float, seconds: float, strafe_command:=0.0, forward_multiplier:=1.0,mouse_capture:=false) -> Transform3D:
 	error = ""
 	if binding_id.is_empty():
 		error = "Configure this content's pilot motion before advancing"
 		return pose
-	var next_response := _response.next_units(angular_units, commands, seconds)
+	var next_response := _response.next_units(angular_units, commands, seconds,mouse_capture)
 	if not _response.error.is_empty():
 		error = _response.error
 		return pose
@@ -122,9 +122,9 @@ func advance_prepared(pose: Transform3D, throttle: float, seconds: float, strafe
 		_lateral_gain = gain
 	return next_pose
 
-func sample_commands(commands: Vector2, seconds: float) -> bool:
+func sample_commands(commands: Vector2, seconds: float,mouse_capture:=false) -> bool:
 	error = ""
-	var next := _response.next_units(angular_units, commands, seconds)
+	var next := _response.next_units(angular_units, commands, seconds,mouse_capture)
 	if not _response.error.is_empty():
 		error = _response.error
 		return false

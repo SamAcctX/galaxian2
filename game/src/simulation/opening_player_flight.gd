@@ -48,10 +48,10 @@ func motion(scene: Dictionary, phase: Variant, delta_ms: Variant, strafe_command
 	result.prior_pose=prior;result.pose=pose
 	return result
 
-func sample_commands(commands: Vector2, delta_ms: Variant) -> bool:
+func sample_commands(commands: Vector2, delta_ms: Variant,mouse_capture:=false) -> bool:
 	error=""
 	if _pilot==null or not Numbers.integer(delta_ms,0,150): return reject("Invalid player input frame")
-	if not _pilot.sample_commands(commands,float(delta_ms)/1000.0):return reject(_pilot.error)
+	if not _pilot.sample_commands(commands,float(delta_ms)/1000.0,mouse_capture):return reject(_pilot.error)
 	return true
 
 func boundary_event() -> int:

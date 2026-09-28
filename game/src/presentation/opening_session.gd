@@ -246,8 +246,8 @@ func request_cinematic_skip() -> bool:
 	if audio!=null:audio.set_paused(true)
 	return true
 
-func step(now_microseconds: int, commands := Vector2.ZERO, fire_primary := false, strafe:=0.0, brake:=false) -> bool:
-	if not _skip_cinematic or is_paused():return _step_once(now_microseconds,commands,fire_primary,strafe,brake)
+func step(now_microseconds: int, commands := Vector2.ZERO, fire_primary := false, strafe:=0.0, brake:=false,mouse_capture:=false) -> bool:
+	if not _skip_cinematic or is_paused():return _step_once(now_microseconds,commands,fire_primary,strafe,brake,mouse_capture)
 	if now_microseconds<0:return reject("Invalid opening timestamp")
 	# Each bounded pass uses the normal native sequence, radio dependencies and
 	# transactional presentation. Yield between batches so focus/pause still work.
@@ -263,7 +263,7 @@ func step(now_microseconds: int, commands := Vector2.ZERO, fire_primary := false
 	if not accepted:return reject(message)
 	return true
 
-func _step_once(now_microseconds: int, commands := Vector2.ZERO, fire_primary := false, strafe:=0.0, brake:=false) -> bool:
+func _step_once(now_microseconds: int, commands := Vector2.ZERO, fire_primary := false, strafe:=0.0, brake:=false,mouse_capture:=false) -> bool:
 	error=""
 	if status!="running" and status not in BOUNDARIES:return reject("Start the opening before advancing it")
 	if not commands.is_finite() or absf(commands.x)>1.0 or absf(commands.y)>1.0:return reject("Invalid opening flight commands")
@@ -282,7 +282,7 @@ func _step_once(now_microseconds: int, commands := Vector2.ZERO, fire_primary :=
 	var fade: RefCounted=null if _fade==null else _fade.fork_for_frame()
 	if fade!=null and not fade.advance(roundi(seconds*1000.0)):return reject(fade.error)
 	if world_frame!=null:
-		var result: Dictionary=world_frame.evaluate(timeline,scenery_owner,roundi(seconds*1000.0),true,1.0,commands,fire_primary,Vector2i(camera.get_viewport().get_visible_rect().size),true if fade==null else fade.is_active(),-1 if audio==null else audio.current_music_id(),strafe,brake)
+		var result: Dictionary=world_frame.evaluate(timeline,scenery_owner,roundi(seconds*1000.0),true,1.0,commands,fire_primary,Vector2i(camera.get_viewport().get_visible_rect().size),true if fade==null else fade.is_active(),-1 if audio==null else audio.current_music_id(),strafe,brake,mouse_capture)
 		if result.is_empty():return reject(world_frame.error)
 		world_frame=result.world_frame;timeline=result.timeline;scenery_owner=result.scenery
 	else:

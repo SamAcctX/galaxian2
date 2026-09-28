@@ -183,19 +183,29 @@ func action_event(action: String,pressed: bool,touch:=false) -> Dictionary:
 
 func check_mouse() -> void:
 	var c:=Controls.new()
-	var motion:=InputEventMouseMotion.new();motion.screen_relative=Vector2(5,-5);motion.relative=Vector2(500,-500)
+	var motion:=InputEventMouseMotion.new();motion.screen_relative=Vector2(224,-126);motion.relative=Vector2(500,-500)
 	check(not c.accept(motion),"Menu pointer motion steered the ship")
 	c.set_mouse_active(true)
 	c.accept(motion);c.advance_mouse(1.0/60.0)
 	check(c.snapshot().command==Vector2(-0.5,-0.5),"Physical mouse motion did not steer up/right independently of UI scaling")
 	check(Controls.pointer_command(c.snapshot().command)==Vector2(0.5,-0.5),"Mouse drilling cursor did not follow screen direction")
 	var slow: Vector2=c.snapshot().command
-	motion.screen_relative=Vector2(1.25,-1.25);c.accept(motion);c.advance_mouse(1.0/240.0)
+	c.clear();motion.screen_relative=Vector2(56,-31.5)
+	for i in 4:c.accept(motion);c.advance_mouse(1.0/240.0)
 	check(c.snapshot().command==slow,"Higher frame rate changed mouse sensitivity")
 	c.advance_mouse(1.0/240.0)
-	check(c.snapshot().command==Vector2.ZERO,"Stopped mouse retained a turn command")
-	c.invert_pitch=true;c.mouse_sensitivity=2.0;c.accept(motion);c.advance_mouse(1.0/240.0)
+	check(c.snapshot().command==slow,"Stopping the hand cancelled the chosen turn")
+	motion.screen_relative=Vector2(-224,126);c.accept(motion);c.advance_mouse(0.1)
+	check(c.snapshot().command==Vector2.ZERO,"Recentering the mouse did not stop steering")
+	c.invert_pitch=true;c.mouse_sensitivity=2.0;motion.screen_relative=Vector2(224,-126);c.accept(motion);c.advance_mouse(1.0/240.0)
 	check(c.snapshot().command==Vector2(1,-1),"Mouse sensitivity or pitch inversion failed")
+	c.clear();c.invert_pitch=false;c.mouse_sensitivity=1.0
+	motion.screen_relative=Vector2(448,-252);c.accept(motion);c.advance_mouse(0.1,Vector2(2560,1440))
+	check(c.snapshot().command==slow,"A larger viewport reduced the response to the same relative movement")
+	motion.screen_relative=Vector2(5,-5);c.accept(motion);c.advance_mouse(1.0/60.0,Vector2(1280,720),true)
+	check(c.snapshot().command.is_equal_approx(slow),"Drilling inherited the retained flight cursor")
+	c.advance_mouse(1.0/60.0,Vector2(1280,720),true)
+	check(c.snapshot().command==Vector2.ZERO,"Drilling retained motion after the mouse stopped")
 	var click:=InputEventMouseButton.new();click.button_index=MOUSE_BUTTON_LEFT;click.pressed=true
 	c.accept(click);check(c.snapshot().held.fire and c.take_pressed()==["fire"],"Mouse click did not fire")
 	c.accept(key(KEY_SPACE,true));click.pressed=false;c.accept(click)

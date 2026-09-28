@@ -183,7 +183,7 @@ func configure_npc_scanner(bindings: RefCounted, catalogues: RefCounted, radii: 
 	_scanner=scanner
 	return true
 
-func evaluate(timeline: RefCounted, scenery: RefCounted, delta_ms: Variant, present_radio: Variant, detail: Variant = 1.0, commands := Vector2.ZERO, fire_primary := false, hud_viewport := Vector2i.ZERO, fade_active := true, current_music_id: int=-1, strafe:=0.0, brake:=false) -> Dictionary:
+func evaluate(timeline: RefCounted, scenery: RefCounted, delta_ms: Variant, present_radio: Variant, detail: Variant = 1.0, commands := Vector2.ZERO, fire_primary := false, hud_viewport := Vector2i.ZERO, fade_active := true, current_music_id: int=-1, strafe:=0.0, brake:=false,mouse_capture:=false) -> Dictionary:
 	error=""
 	if _controller==null or not timeline is Timeline or not scenery is Scenery: return fail("Configure opening frame owners before updating")
 	var previous: Dictionary=timeline.snapshot();var field: Dictionary=scenery.clock_snapshot()
@@ -282,7 +282,7 @@ func evaluate(timeline: RefCounted, scenery: RefCounted, delta_ms: Variant, pres
 		if fire_primary:
 			next._primary_fire=next._primaries.fire(scene.scene.player_pose,player.active and player.hull>0)
 			if next._primary_fire.is_empty(): return fail(next._primaries.error)
-		if not next._flight.sample_commands(commands,delta_ms): return fail(next._flight.error)
+		if not next._flight.sample_commands(commands,delta_ms,mouse_capture): return fail(next._flight.error)
 		if next._engine_audio!=null and not next._engine_audio.sample_commands(commands):return fail(next._engine_audio.error)
 	var camera_random: Dictionary=field.random_state
 	if int(scene.camera.shot.phase)>4:camera_random=scene.escape.random_state

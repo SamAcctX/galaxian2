@@ -18,6 +18,7 @@ func _initialize() -> void:
 	check(response.next_units(Vector2.ONE, Vector2.ONE, 1) == Vector2.ONE and not response.error.is_empty(), "Unconfigured response accepted commands")
 	check(response.configure(bindings, bindings.base_content_id, 12.6, 0.5), response.error)
 	check_response(response)
+	check_mouse_response(response)
 	# Configuration snapshots declarations; changing a source object is not a live tuning API.
 	bindings.pilot_response.target_gain = 63
 	check(response.next_units(Vector2.ZERO, Vector2.ONE, 10) == Vector2(150, 150), "Response retained mutable declarations")
@@ -58,6 +59,20 @@ func _initialize() -> void:
 func parameters() -> Dictionary:
 	return {"target_gain": 750.0, "target_divisor": 63, "ramp_bias": 3.3,
 		"ramp_scale": 20.0, "neutral_divisor": 126.0, "mode": "elapsed", "command_curve": "signed_square"}
+
+func check_mouse_response(response: RefCounted) -> void:
+	var mouse: Vector2=response.next_units(Vector2.ZERO,Vector2(0.5,-0.5),0.1,true)
+	var stick: Vector2=response.next_units(Vector2.ZERO,Vector2(0.5,-0.5),0.1)
+	check(mouse.x>stick.x*2 and mouse.x==-mouse.y,"Captured mouse kept the slow squared-stick response")
+	for cadence in [[1.0/60.0],[1.0/144.0],[0.007,0.021,0.011,0.037],[0.1]]:
+		var value:=Vector2.ZERO;var elapsed:=0.0;var tick:=0
+		while elapsed<1.0:
+			var step:=minf(cadence[tick%cadence.size()],1.0-elapsed)
+			value=response.next_units(value,Vector2(0.5,-0.5),step,true)
+			elapsed+=step;tick+=1
+		check(value.is_equal_approx(mouse),"Mouse response changed with frame cadence")
+		check(response.next_units(value,Vector2.ZERO,0.1,true).x<value.x,"Recentred mouse did not slow the turn")
+	check(response.next_units(mouse,Vector2.ONE,0.0,true)==mouse,"Paused mouse steering advanced")
 
 func check_response(response: RefCounted) -> void:
 	near(response.next_units(Vector2.ZERO, Vector2(1, -1), 0.1), Vector2(22.5, -22.5), "Initial signed response")

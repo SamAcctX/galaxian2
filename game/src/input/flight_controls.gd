@@ -26,6 +26,7 @@ var mouse_sensitivity := 1.0
 var _mouse_active := false
 var _mouse_delta := Vector2.ZERO
 var _mouse_command := Vector2.ZERO
+var _mouse_pointer_mode:=false
 var _mouse_fire := false
 var _keys := {}
 var _axes := {}
@@ -153,13 +154,14 @@ func set_mouse_active(active: bool) -> void:
 	_mouse_active=active
 	_mouse_delta=Vector2.ZERO;_mouse_command=Vector2.ZERO;_mouse_fire=false
 
-func advance_mouse(seconds: float) -> void:
-	# Convert physical mouse speed to the existing bounded ship controls. A
-	# fixed distance over a fixed time has the same response at 60 or 240 FPS.
-	_mouse_command=Vector2.ZERO
-	if _mouse_active and is_finite(seconds) and seconds>0:
-		var velocity:=_mouse_delta*mouse_sensitivity/(600.0*seconds)
-		_mouse_command=Vector2(clampf(velocity.y,-1,1),clampf(velocity.x,-1,1))
+func advance_mouse(seconds: float,viewport_size:=Vector2(1280,720),relative_pointer:=false) -> void:
+	# Captured mouse steers by a retained cursor offset. Returning the mouse
+	# toward the centre stops the turn; stopping the hand keeps the chosen turn.
+	if relative_pointer!=_mouse_pointer_mode or relative_pointer:_mouse_command=Vector2.ZERO
+	_mouse_pointer_mode=relative_pointer
+	if _mouse_active and is_finite(seconds) and seconds>0 and viewport_size.x>0 and viewport_size.y>0:
+		var offset:=_mouse_delta*mouse_sensitivity/(Vector2.ONE*600.0*seconds if relative_pointer else viewport_size*0.35)
+		_mouse_command=(_mouse_command+Vector2(offset.y,offset.x)).clamp(Vector2(-1,-1),Vector2.ONE)
 	_mouse_delta=Vector2.ZERO
 
 func set_touch_command(command: Vector2, active: bool) -> bool:
@@ -200,7 +202,7 @@ func snapshot() -> Dictionary:
 	for action in _touch:
 		if _touch[action]: held[action] = true
 	if _mouse_fire:held.fire=true
-	return {"command": command, "strafe": strafe, "held": held, "pressed": pressed_actions()}
+	return {"command": command, "strafe": strafe, "held": held, "pressed": pressed_actions(),"mouse_capture":_mouse_active}
 
 func take_pressed() -> Array[String]:
 	var result := pressed_actions()
