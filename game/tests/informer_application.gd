@@ -13,6 +13,16 @@ func expects_contract_success() -> bool:return OS.get_environment("GOF2_INFORMER
 
 func verify_delivery_route(original: Dictionary,before: Dictionary,offer: Dictionary,accepted: Dictionary,requested_kind: int) -> void:
 	check(requested_kind==13,"The pilot selected a different contract")
+	if OS.get_environment("GOF2_INFORMER_TARGET_CAPTURE")=="1" or OS.get_environment("GOF2_INFORMER_EQUIP")=="1":
+		if not app.equipment_action("open"):check(false,app.session.error);return
+		for change in [[91,81],[86,55]]:
+			if app.session.station_owner().snapshot().loadout.equipment_ids.has(change[0]):
+				if not app.equipment_action("unmount",change[0]) or not app.equipment_action("mount",change[1]):check(false,app.session.error);return
+		if not app.equipment_action("close"):check(false,app.session.error);return
+		accepted=app.session.station_owner().snapshot()
+		check(accepted.loadout.equipment_ids.has(81) and accepted.loadout.equipment_ids.has(55) and accepted.contracts.credits==before.contracts.credits and accepted.contracts.mission==offer.mission,"Fitting the owned scanner and shield changed the accepted job or wallet")
+		if failures:return
+		await capture_free_application("informer-scanner-shield-fitted")
 	if not app.save_station(false):check(false,app._save_file.error);return
 	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_SAVE_TEST_DIRECTORY").path_join("accepted.gof2save"))==OK,"Could not retain the accepted Informer checkpoint")
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
@@ -23,6 +33,7 @@ func verify_delivery_route(original: Dictionary,before: Dictionary,offer: Dictio
 	check(arrived.contracts.credits==accepted.contracts.credits and arrived.mission==original.mission,"Flight changed money or the pending story")
 	await capture_free_application("informer-arrival")
 	print("Informer accepted: ",offer.mission)
+	if OS.get_environment("GOF2_INFORMER_TARGET_CAPTURE")=="1" and not await acquire_informer():return
 	if not await fly_informer(arrived):return
 	var earned: Dictionary=app.session.snapshot()
 	check(earned.contracts.pending_result.is_empty() and app.session.can_control() and earned.contracts.credits==accepted.contracts.credits,"The objective opened a flight result or paid before docking")
@@ -54,6 +65,34 @@ func verify_delivery_route(original: Dictionary,before: Dictionary,offer: Dictio
 	check(not saved.is_empty() and saved.career.credits==paid.contracts.credits and saved.career.completed_side_missions==paid.contracts.completed_side_missions and saved.career.mission.is_empty(),"The station autosave lost the earned Informer result")
 	print("Informer saved: ",{"credits":paid.contracts.credits,"completed":paid.contracts.completed_side_missions,"campaign_cursor":paid.campaign_cursor,"deltas":_pilot_deltas,"path":app.station_save_path()})
 
+func acquire_informer() -> bool:
+	var started:=now_us;var next_yield:=now_us;var next_log:=now_us
+	while now_us-started<180000000:
+		var state: Dictionary=app.session.snapshot()
+		var target: Dictionary=state.encounter.combat.actors[0]
+		var distance: float=state.player_pose.origin.distance_to(target.position)
+		var input:={"commands":PiratePilot.Steering.steering_toward(state.player_pose,target.position),"throttle":1.0 if distance>6000.0 else 0.0,"fire":false,"strafe":0.0}
+		var markers: Array=state.npc_scanner.markers.filter(func(row):return row.actor_id==0 and row.in_view)
+		if not markers.is_empty():
+			var offset: Vector2=Vector2(markers[0].pixels-state.npc_scanner.aim_pixels)
+			input.commands=Vector2(clampf(offset.y/300.0,-1.0,1.0),clampf(-offset.x/300.0,-1.0,1.0))
+		if not pirate_step(input):return false
+		var acquired: Dictionary=app.session.snapshot()
+		if now_us>=next_log:
+			print("Informer identification: ",{"elapsed":(now_us-started)/1000000.0,"distance":distance,"equipment":acquired.npc_scanner.equipment_id,"visible":acquired.npc_scanner.visible,"active":target.active,"marker":markers,"aim":acquired.npc_scanner.aim_pixels,"selected":acquired.npc_scanner.selected_actor_id,"candidate":acquired.npc_scanner.candidate_actor_id,"elapsed_ms":acquired.npc_scanner.elapsed_ms,"duration":acquired.npc_scanner.duration_ms})
+			next_log=now_us+10000000
+		if acquired.npc_scanner.get("selected_target",{}).get("actor_id",-1)==0:
+			var overlay: Control=app.session.scene.npc_markers
+			var info: Dictionary=overlay.information_snapshot()
+			check(overlay.visible and info.text==source.strings[1652] and info.color==Color("ff2a00"),"The spy lock lost its original red name")
+			check(not acquired.contracts.has("station_outcome"),"Identifying the spy completed the objective")
+			await capture_free_application("informer-identified-desktop")
+			overlay.set_mobile_layout(true);await capture_free_application("informer-identified-touch");overlay.set_mobile_layout(false)
+			return failures==0
+		if now_us>=next_yield:await process_frame;next_yield=now_us+1000000
+	await capture_free_application("informer-identification-stopped")
+	check(false,"The input pilot did not identify the spy");return false
+
 func fly_informer(initial: Dictionary) -> bool:
 	var pilot:=PiratePilot.new();var started:=now_us;var next_yield:=now_us+2000000;var next_log:=now_us
 	var target:=0 if expects_contract_success() else 1
@@ -63,7 +102,9 @@ func fly_informer(initial: Dictionary) -> bool:
 		if state.contracts.get("station_outcome",0)!=0:
 			check(shots>0 and state.contracts.station_outcome==(1 if expects_contract_success() else 2),"The input pilot reached another Informer outcome")
 			return failures==0
-		if app.session.flight_owner().death_active():check(false,"The pilot died before finishing the spy objective");return false
+		if app.session.flight_owner().death_active():
+			await capture_free_application("informer-pilot-died")
+			check(false,"The pilot died before finishing the spy objective");return false
 		var weapon: Dictionary=state.encounter.primaries.guns[0].projectiles.weapon
 		pilot.firing_range=float(weapon.speed_units_per_millisecond)*float(weapon.lifetime_ms)*0.9
 		var input: Dictionary=pilot.controls_at_time(state,float(state.world_elapsed_ms),[target],false)
