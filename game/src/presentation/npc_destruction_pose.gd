@@ -4,14 +4,21 @@ extends RefCounted
 const Player = preload("res://src/simulation/player_destruction.gd")
 const Death = preload("res://src/simulation/npc_destruction.gd")
 const Freighter = preload("res://src/simulation/freighter_destruction.gd")
+const Bomb = preload("res://src/simulation/emp_detonation.gd")
 const Billboard = preload("res://src/presentation/scenery_effect_pose.gd")
 const Vectors = preload("res://src/simulation/source_vectors.gd")
 const BODY_LAST_MS := 299
 
 static func for_death(death: RefCounted, camera: Transform3D) -> Dictionary:
-	if not (death is Death or death is Player or death is Freighter) or death.presentation_identity()==null: return {"error":"NPC presentation requires its native death owner"}
+	if not (death is Death or death is Player or death is Freighter or death is Bomb) or death.presentation_identity()==null: return {"error":"Explosion presentation requires its native owner"}
 	var state: Dictionary=death.snapshot()
 	if not camera.is_finite(): return {"error":"NPC explosion camera must be finite"}
+	if death is Bomb:
+		if state.get("effect_type")!=0:return {"error":"This bomb does not use a type-zero explosion"}
+		if not state.effect.active:return {"body_visible":false,"effect_visible":false,"roots":[]}
+		var root:=Billboard.alpha_root(camera,state.effect.position,1.0)
+		if root.has("error"):return root
+		return {"body_visible":false,"effect_visible":true,"roots":[root.pose,root.pose]}
 	if death is Freighter:return freighter_roots(state,camera)
 	var body: bool=state.body_visible if death is Player else state.phase in ["ready","tumble"] or (state.phase=="explosion" and state.countdown_ms<=BODY_LAST_MS)
 	# The authored second-trip cue can reactivate an exhausted actor while an

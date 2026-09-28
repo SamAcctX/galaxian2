@@ -4,6 +4,7 @@ extends Node3D
 const Player = preload("res://src/simulation/player_destruction.gd")
 const Death = preload("res://src/simulation/npc_destruction.gd")
 const Freighter = preload("res://src/simulation/freighter_destruction.gd")
+const Bomb = preload("res://src/simulation/emp_detonation.gd")
 const Resources = preload("res://src/content/npc_destruction_resources.gd")
 const Models = preload("res://src/presentation/model_resources.gd")
 const Sampler = preload("res://src/presentation/scenery_animation.gd")
@@ -21,7 +22,7 @@ var _edition := ""
 
 func build(library: RefCounted, visuals: RefCounted, bindings: RefCounted, death: RefCounted, quality := "high", shared_models: RefCounted = null) -> bool:
 	clear()
-	if not (death is Death or death is Player or death is Freighter) or death.presentation_identity()==null: return reject("Build Explosion effects from a configured native death owner")
+	if not supported_owner(death) or death.presentation_identity()==null: return reject("Build Explosion effects from a configured native owner")
 	var state: Dictionary=death.snapshot()
 	if library==null or visuals==null or bindings==null or library.manifest.get("content_id")!=state.base_content_id or visuals.base_content_id!=state.base_content_id or bindings.base_content_id!=state.base_content_id or bindings.binding_id!=state.binding_id:
 		return reject("Explosion effect resources belong to another content identity")
@@ -70,9 +71,10 @@ func follows(death: RefCounted) -> bool:
 
 func prepare_effect(death: RefCounted, camera: Transform3D, parent_rgba: PackedByteArray, global_tint: Vector4, darken: Variant) -> Dictionary:
 	error=""
-	if _descriptor.is_empty() or not (death is Death or death is Player or death is Freighter) or death.presentation_identity()!=_identity: return failed_frame("Explosion geometry follows one configured death owner")
+	if _descriptor.is_empty() or not supported_owner(death) or death.presentation_identity()!=_identity: return failed_frame("Explosion geometry follows one configured owner")
 	var state: Dictionary=death.snapshot()
-	for key in ["base_content_id","binding_id","actor_id","fragments"]:
+	var identity_keys:=["base_content_id","binding_id","item_id","kind","effect_type"] if death is Bomb else ["base_content_id","binding_id","actor_id","fragments"]
+	for key in identity_keys:
 		if state.get(key)!=_descriptor[key]: return failed_frame("Explosion effect identity or retained fragments changed")
 	if not state.get("effect") is Dictionary or not state.effect.get("models") is Array or state.effect.models.size()!=models.size(): return failed_frame("Explosion effect model population changed")
 	if state.effect.get("duration_ms")!=_descriptor.effect.duration_ms: return failed_frame("Explosion effect duration changed")
@@ -128,3 +130,6 @@ func reject(message: String) -> bool:
 
 func failed_frame(message: String) -> Dictionary:
 	error=message;return {}
+
+static func supported_owner(owner: RefCounted) -> bool:
+	return owner is Death or owner is Player or owner is Freighter or (owner is Bomb and owner.snapshot().get("effect_type")==0)

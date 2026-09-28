@@ -7,11 +7,14 @@ const Weapons=preload("res://src/simulation/weapon_loadout.gd")
 const Vectors=preload("res://src/simulation/source_vectors.gd")
 const Vitals=preload("res://src/simulation/combat_vitals.gd")
 const Geometry=preload("res://src/simulation/ordinary_hit_geometry.gd")
+const Visuals=preload("res://src/content/bomb_projectile_resources.gd")
+const Playback=preload("res://src/simulation/model_playback.gd")
 var error:=""
 var _weapon:={}
 var _shot:={}
 var _elapsed_ms:=0
 var _next_id:=1
+var _visuals:={}
 
 func configure(bindings: RefCounted,cat: RefCounted,item_id: Variant,equipment_ids: Array,muzzle_offset:=Vector3(0,0,400)) -> bool:
 	error=""
@@ -28,7 +31,14 @@ func configure(bindings: RefCounted,cat: RefCounted,item_id: Variant,equipment_i
 	if not Vitals.integer(damage) or not Vitals.integer(radius) or radius<1:return reject("The bomb lacks its damage or blast radius")
 	weapon.system_damage=damage;weapon.radius=radius;weapon.launch_mode="emp_bomb" if weapon.kind==6 else "antimatter_bomb"
 	weapon.model_id=declaration.model_id;weapon.muzzle_offset=muzzle_offset
-	_weapon=weapon;_shot={};_elapsed_ms=weapon.interval_ms
+	_weapon=weapon;_shot={};_elapsed_ms=weapon.interval_ms;_visuals={}
+	return true
+
+func prepare_visuals(library: RefCounted,bindings: RefCounted) -> bool:
+	if _weapon.is_empty() or not _shot.is_empty() or not _visuals.is_empty():return reject("Prepare bomb models once before the first launch")
+	var prepared:=Visuals.prepare(library,bindings,_weapon)
+	if prepared.is_empty():return reject("The bomb's original animated models are unavailable")
+	_visuals=prepared
 	return true
 
 func discard_flying() -> void:
@@ -73,6 +83,7 @@ func advance(delta_ms: Variant,targets: Variant) -> Dictionary:
 			if blast.is_empty():return {}
 			next.phase="detonated";next.remaining_ms=int(Definitions.VALUES.detonated_lifetime)
 			result.action="detonated";result.blast=blast
+			_advance_visuals(delta_ms)
 			_shot=next;_elapsed_ms+=delta_ms
 			return result
 		var position:=Vectors.added(next.position,Vectors.scaled(next.velocity,Vitals.single(float(delta_ms))))
@@ -83,8 +94,13 @@ func advance(delta_ms: Variant,targets: Variant) -> Dictionary:
 			if blast.is_empty():return {}
 			next.phase="detonated";next.remaining_ms=int(Definitions.VALUES.detonated_lifetime)
 			result.action="detonated";result.blast=blast
+	_advance_visuals(delta_ms)
 	_shot=next;_elapsed_ms+=delta_ms
 	return result
+
+func _advance_visuals(delta_ms: int) -> void:
+	if _shot.is_empty() or _visuals.is_empty():return
+	for model in _visuals.models:Playback.advance([model],delta_ms,model.loop)
 
 func detonate(projectile_id: Variant,targets: Variant) -> Dictionary:
 	error=""
@@ -156,11 +172,12 @@ static func _valid_targets(targets: Variant) -> bool:
 static func _event() -> Dictionary:return {"action":"none","ammunition_consumed":0,"shot":{},"blast":{}}
 
 func snapshot() -> Dictionary:
-	return {"weapon":_weapon.duplicate(true),"shot":_shot.duplicate(true),"elapsed_ms":_elapsed_ms}
+	return {"weapon":_weapon.duplicate(true),"shot":_shot.duplicate(true),"elapsed_ms":_elapsed_ms,"visuals":_visuals.duplicate(true)}
 
 func fork() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._weapon=_weapon.duplicate(true);copy._shot=_shot.duplicate(true);copy._elapsed_ms=_elapsed_ms;copy._next_id=_next_id
+	copy._visuals=_visuals.duplicate(true)
 	return copy
 
 func reject(message: String) -> bool:error=message;return false

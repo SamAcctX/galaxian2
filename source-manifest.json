@@ -2850,6 +2850,16 @@
     "game/tests/conventional_secondary_geometry.gd",
     "game/tests/conventional_secondary_geometry.gd.uid",
     "game/tests/conventional_secondary_application.gd",
-    "game/tests/conventional_secondary_application.gd.uid"
+    "game/tests/conventional_secondary_application.gd.uid",
+    "game/tests/area_bombs.gd",
+    "game/tests/area_bombs.gd.uid",
+    "game/tests/scenery_displacement.gd",
+    "game/tests/scenery_displacement.gd.uid",
+    "game/src/content/bomb_projectile_resources.gd",
+    "game/src/content/bomb_projectile_resources.gd.uid",
+    "game/src/presentation/bomb_projectile_geometry.gd",
+    "game/src/presentation/bomb_projectile_geometry.gd.uid",
+    "game/tests/area_bomb_visuals.gd",
+    "game/tests/area_bomb_visuals.gd.uid"
   ]
 }
