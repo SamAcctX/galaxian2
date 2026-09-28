@@ -213,6 +213,7 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted, c
 	_back.text=state.labels.back;_target.text=state.labels.target;_yes.text=state.labels.confirm;_no.text=state.labels.cancel;_key.text=state.labels.key
 	for choice in state.system_choices:
 		var item:=Button.new();item.text=choice.name;item.focus_mode=Control.FOCUS_NONE
+		if choice.get("mission_target",false):item.icon=sprites[int(state.ui.story_image_id)]
 		item.set_meta("system_id",int(choice.system_id));_systems.add_child(item)
 		item.pressed.connect(func():request_system(int(item.get_meta("system_id"))))
 	_systems.visible=state.system_choices.size()>1

@@ -266,7 +266,7 @@ func _configure_contract_return(bindings: RefCounted,catalogues: RefCounted,libr
 		if not contracts.retain_dekato_station(bindings,equipment,packet.dekato_source_receipt):return fail(contracts.error)
 	else:
 		if not contracts.rebase_station(equipment,bindings if free_flight else null):return fail(contracts.error)
-		if not contracts.apply_campaign_station_entry(bindings,catalogues,equipment,mission):return fail(contracts.error)
+		if not contracts.apply_station_entry(bindings,catalogues,equipment,mission):return fail(contracts.error)
 	career=contracts.snapshot()
 	var state:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language,
 		"campaign_cursor":career.campaign_cursor,"phase":"free_play_required" if free_flight else ("contracts_required" if packet.campaign_cursor==13 else "convoy_departure_required"),"line_index":0,"loadout":seed,

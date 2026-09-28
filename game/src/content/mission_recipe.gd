@@ -169,6 +169,9 @@ static func station_delivery(rules: Dictionary,mission: Dictionary) -> Dictionar
 	var kind: Variant=mission.get("kind")
 	if defers_station_result(mission):
 		return {"required_cargo":{},"unload":"none","statistic":"","select_flight":true,"deferred":true,"any_station":true}
+	if kind==14:
+		return {"required_cargo":{"item_id":115,"quantity":1},"unload":"required_stack","statistic":"","select_flight":false,"return_to_contact":true,
+			"entry_stock":{"item_id":115,"quantity":1},"briefing_location":"system"}
 	if kind==rules.courier.kind:
 		return {"required_cargo":{},"unload":"marked_cargo","statistic":"cargo","select_flight":true}
 	if kind==rules.passenger.kind:
@@ -178,6 +181,19 @@ static func station_delivery(rules: Dictionary,mission: Dictionary) -> Dictionar
 		return {"required_cargo":{"item_id":int(mission.get("source_parameter",-1)),"quantity":int(mission.get("quantity",0))},
 			"unload":"required_cargo","statistic":"","select_flight":false}
 	return {}
+
+static func station_objective(rules: Dictionary,mission: Dictionary,contact: Dictionary) -> int:
+	var delivery:=station_delivery(rules,mission)
+	return int(contact.get("station_id",-1)) if delivery.get("return_to_contact",false) else int(mission.get("station_id",-1))
+
+static func objective_markers(rules: Dictionary,mission: Dictionary,contact: Dictionary,cargo: Dictionary) -> Dictionary:
+	var station:=station_objective(rules,mission,contact)
+	var system_station:=int(mission.get("station_id",-1))
+	var delivery:=station_delivery(rules,mission)
+	if delivery.get("return_to_contact",false):
+		var required: Dictionary=delivery.required_cargo
+		if cargo.get("entries",[]).any(func(row):return row.item_id==required.item_id and row.quantity>=required.quantity):system_station=station
+	return {"station_id":station,"system_station_id":system_station}
 
 static func contact_request(rules: Dictionary,role: int) -> Dictionary:
 	var collection: Dictionary=rules.get("ordinary_generation",{}).get("offers",{}).get("collection",{})

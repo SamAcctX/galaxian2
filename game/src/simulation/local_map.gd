@@ -5,6 +5,7 @@ const Definitions=preload("res://src/content/mido_travel_definitions.gd")
 const Random=preload("res://src/simulation/seeded_random.gd")
 const GateArrival=preload("res://src/content/gate_arrival_definitions.gd")
 const VoidSource=preload("res://src/simulation/ordinary_void_source.gd")
+const Recipe=preload("res://src/content/mission_recipe.gd")
 var error:=""
 var _state:={}
 
@@ -54,7 +55,10 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 	var gate_selection: bool=display_system_id!=int(location.system_id)
 	if gate_selection:stations=destinations.duplicate()
 	var choices:=[]
-	for id in systems:choices.append({"system_id":id,"name":catalogues.tables.systems[id].name})
+	var objective:=Recipe.objective_markers(bindings.early_contracts,career.get("mission",{}),career.get("accepted_contact",{}),flight.get("cargo",{}))
+	var target_system:=-1
+	if objective.system_station_id>=0:target_system=int(catalogues.tables.stations[objective.system_station_id].system_id)
+	for id in systems:choices.append({"system_id":id,"name":catalogues.tables.systems[id].name,"mission_target":id==target_system})
 	var system: Dictionary=catalogues.tables.systems[display_system_id]
 	var labels:={}
 	for key in rules.labels:
@@ -86,7 +90,7 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 			"current":int(station.id)==int(location.station_id),
 			"void_source":display_system_id==warning.get("system_id",-1) and int(station.id)==warning.get("station_id",-1),
 			"supported":stations.has(int(station.id)) and int(station.id)!=int(location.station_id),
-			"mission_target":int(station.id)==int(flight.get("mission",{}).get("station_id",-1)) or int(station.id)==int(flight.get("contracts",{}).get("mission",{}).get("station_id",-1)),
+			"mission_target":int(station.id)==int(flight.get("mission",{}).get("station_id",-1)) or int(station.id)==objective.station_id,
 			"model_id":resource_id,"model_path":path,"radius":radius,"angle_units":angle_units,
 			"position":Vector3(-sin(angle)*radius,0,cos(angle)*radius),
 			"scale":float(rules.planet_sizes[type])*float(rules.size_multiplier)})

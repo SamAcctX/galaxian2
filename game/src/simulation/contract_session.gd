@@ -550,10 +550,22 @@ func void_source_state() -> Dictionary:return {} if _void_source==null else _voi
 func void_source_owner() -> RefCounted:return null if _void_source==null else _void_source.fork()
 func blueprint_state() -> Dictionary:return {} if _blueprints==null else _blueprints.snapshot()
 
-func apply_campaign_station_entry(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,story_mission: Dictionary) -> bool:
+func apply_station_entry(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,story_mission: Dictionary) -> bool:
 	# Called only on a detached, actually docked station candidate. Location
 	# generation, opening the shop and restoring a save do not call this path.
 	error=""
+	var delivery:=Recipe.station_delivery(_rules,_state.get("mission",{}))
+	var item: Dictionary=delivery.get("entry_stock",{})
+	if not item.is_empty() and _state.station_id==_state.mission.station_id:
+		if _station_inventory(equipment,bindings).is_empty():return false
+		var stock: Array=_lounges.item_stock(_state.station_id)
+		if not stock.any(func(row):return row.item_id==item.item_id):
+			var metadata: Dictionary=load("res://src/simulation/station_stock.gd").item_metadata(cat.tables.items[int(item.item_id)],_rules.station_generation)
+			var supplied:=stock.duplicate(true)
+			supplied.append({"item_id":int(item.item_id),"quantity":int(item.quantity),"unit_price":int(metadata.unit_price)})
+			var locations: RefCounted=_lounges.fork()
+			if not locations.replace_item_stock(bindings,cat,_state.station_id,stock,supplied):return reject(locations.error)
+			_lounges=locations
 	var definitions=load("res://src/content/kappa_preparation_definitions.gd")
 	if not definitions.available(bindings) or _state.get("campaign_cursor")!=int(bindings.mido_travel.kappa_preparation.fitting.campaign_cursor):return true
 	if _campaign_station_inventory(bindings,equipment,story_mission).is_empty():return false
@@ -804,7 +816,7 @@ func _poll_station_results(owned: Dictionary,equipment: RefCounted) -> bool:
 	var rules: Dictionary=_rules.delivery_results
 	var mission: Dictionary=_state.mission
 	var delivery:=Recipe.station_delivery(_rules,mission)
-	if delivery.is_empty() or (not delivery.get("any_station",false) and mission.station_id!=owned.loadout.station_id):return true
+	if delivery.is_empty() or (not delivery.get("any_station",false) and Recipe.station_objective(_rules,mission,_state.get("accepted_contact",{}))!=owned.loadout.station_id):return true
 	var completed:=true
 	if delivery.get("deferred",false):
 		if not _state.has("station_outcome"):return true
@@ -858,6 +870,8 @@ func _acknowledge_delivery_inventory(equipment: RefCounted,owned: Dictionary) ->
 	if delivery.unload=="required_cargo":
 		var required: Dictionary=delivery.required_cargo
 		if not inventory.debit_delivery_cargo(int(required.item_id),int(required.quantity)):reject(inventory.error);return null
+	elif delivery.unload=="required_stack":
+		if not inventory.debit_delivery_stack(int(delivery.required_cargo.item_id)):reject(inventory.error);return null
 	elif delivery.unload=="marked_cargo":
 		var hold: Dictionary=owned.cargo.duplicate(true)
 		for index in hold.entries.size():
