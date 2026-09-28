@@ -107,11 +107,16 @@ func verify_touch_gates() -> void:
 	check(app._pause_button.get_theme_stylebox("normal") is StyleBoxTexture and not app._pause_button.get_global_rect().intersects(app.flight_vitals._cargo_frame.get_global_rect()),"The source Pause action is hidden behind the cargo counter")
 	var fire_center: Vector2=app.touch_overlay.get_global_transform_with_canvas()*app.touch_overlay.fire_center()
 	var fire_extent: Vector2=Vector2.ONE*app.touch_overlay.fire_radius()
-	check(Rect2(Vector2.ZERO,Vector2(root.size)).encloses(app._flight_actions.get_global_rect()) and not app._map_button.get_global_rect().intersects(Rect2(fire_center-fire_extent,fire_extent*2.0)),"Touch action layout exceeds landscape bounds or covers primary fire")
+	check(Rect2(Vector2.ZERO,Vector2(root.size)).encloses(app._flight_actions.get_global_rect()) and not app._actions_button.get_global_rect().intersects(Rect2(fire_center-fire_extent,fire_extent*2.0)),"Touch action layout exceeds landscape bounds or covers primary fire")
 	check(app.flight_vitals.visible and app.flight_vitals._cargo_text.text.contains(str(app.session.snapshot().cargo.used)),"Touch flight hid its source vitals or cargo")
 	await capture_free_application("ui-carme-flight-touch-landscape")
 	if failures:return
-	tap_action(app._map_button)
+	tap_action(app._actions_button)
+	await process_frame
+	check(app.flight_menu.visible,"Touch Actions did not expose Map")
+	var menu_rows: Array=app.flight_menu.snapshot().rows
+	for index in menu_rows.size():
+		if menu_rows[index].action=="map":tap_action(app.flight_menu._buttons[index]);break
 	await process_frame
 	check(app.session.map_active(),"The source Map touch button did not open the live map")
 	if failures:return
@@ -120,7 +125,7 @@ func verify_touch_gates() -> void:
 	if failures:return
 	check(app.flight_vitals.visible and app._flight_actions.visible and app.touch_overlay.active,"Closing the map did not restore live flight chrome")
 	app.set_user_paused(true)
-	check(not app.touch_overlay.active and app._mine_button.disabled and app._map_button.disabled,"Pause left touch flight input active")
+	check(not app.touch_overlay.active and app._mine_button.disabled and app._actions_button.disabled,"Pause left touch flight input active")
 	app.set_user_paused(false);app.session.rebase_time(now_us);app.present_session()
 	check(app.touch_overlay.active and not app._mine_button.disabled,"Resuming did not restore touch input")
 	app.set_touch_controls(false)

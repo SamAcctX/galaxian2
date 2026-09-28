@@ -7,6 +7,9 @@ var error:=""
 var _art: RefCounted
 var _panel: PanelContainer
 var _column: VBoxContainer
+var _rows_box: VBoxContainer
+var _scroll: ScrollContainer
+var _cancel: Button
 var _rows: Array=[]
 var _buttons: Array[Button]=[]
 var _active:=false
@@ -20,12 +23,15 @@ func _init() -> void:
 	add_child(dim);dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_panel=PanelContainer.new();add_child(_panel)
 	_column=VBoxContainer.new();_column.add_theme_constant_override("separation",6);_panel.add_child(_column)
+	_scroll=ScrollContainer.new();_scroll.horizontal_scroll_mode=ScrollContainer.SCROLL_MODE_DISABLED;_column.add_child(_scroll)
+	_rows_box=VBoxContainer.new();_rows_box.add_theme_constant_override("separation",6);_rows_box.size_flags_horizontal=Control.SIZE_EXPAND_FILL;_scroll.add_child(_rows_box)
+	_cancel=Button.new();_cancel.focus_mode=Control.FOCUS_NONE;_cancel.pressed.connect(func():if _active:cancelled.emit());_column.add_child(_cancel)
 	resized.connect(_layout)
 
 func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> bool:
 	var art:=OriginalUI.new()
 	if not art.configure(library,bindings,visuals):error=art.error;return false
-	_art=art
+	_art=art;_cancel.text=library.strings[414]
 	var prepared:=Theme.new();prepared.default_font=art.font;theme=prepared
 	return true
 
@@ -37,12 +43,13 @@ func present(rows: Array,close_key: int=KEY_Q) -> bool:
 		var row: Dictionary=rows[index]
 		var button:=Button.new();button.text="%d.  %s"%[index+1,row.label]
 		button.focus_mode=Control.FOCUS_NONE;button.pressed.connect(func():_choose(index))
-		_column.add_child(button);_buttons.append(button);_art.apply_button(button,_mobile)
+		_rows_box.add_child(button);_buttons.append(button);_art.apply_button(button,_mobile)
 	visible=true;set_active(true);_layout();return true
 
 func set_active(value: bool) -> void:
 	_active=value
 	for button in _buttons:button.disabled=not value
+	_cancel.disabled=not value
 
 func close() -> void:visible=false;set_active(false)
 func set_mobile_layout(value: bool) -> void:_mobile=value;_layout()
@@ -64,6 +71,7 @@ func handle_event(event: InputEvent) -> bool:
 		elif event.button_index==JOY_BUTTON_DPAD_UP:_selection=posmod(_selection-1,_rows.size())
 		elif event.button_index==JOY_BUTTON_DPAD_DOWN:_selection=posmod(_selection+1,_rows.size())
 	for index in _buttons.size():_buttons[index].modulate=Color.WHITE if index==_selection else Color(0.8,0.86,0.9)
+	if not _buttons.is_empty():_scroll.ensure_control_visible(_buttons[_selection])
 	return true
 
 func _choose(index: int) -> void:
@@ -74,6 +82,8 @@ func _layout() -> void:
 	var width:=320.0 if _mobile else 238.0
 	if _art!=null:
 		_panel.add_theme_stylebox_override("panel",_art.styles[_mobile].panel)
-		for button in _buttons:_art.apply_button(button,_mobile)
+		for button in _buttons+[_cancel]:_art.apply_button(button,_mobile)
+	var fixed_height:=_panel.get_theme_stylebox("panel").get_minimum_size().y+_cancel.get_combined_minimum_size().y+6.0
+	_scroll.custom_minimum_size.y=minf(_rows_box.get_combined_minimum_size().y,maxf(1.0,size.y-48.0-fixed_height))
 	_panel.size=Vector2(minf(width,maxf(0,size.x-32)),0)
 	_panel.position=Vector2(20,maxf(16,size.y-_panel.get_combined_minimum_size().y-36))

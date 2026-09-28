@@ -17,9 +17,11 @@ var error:=""
 var _identity:={}
 var _names:={}
 var _art: RefCounted
+var _touch_art:={}
 var _menu_labels:={}
 var _state:={}
 var _mobile:=false
+var _layout_prepared:=false
 var _active:=false
 var _touch:=false
 var _hud_visible:=true
@@ -95,19 +97,22 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted=null
 		names[int(id)]=library.strings[text_id]
 	var art: RefCounted
 	var labels:={}
+	var touch_art:={}
 	if visuals!=null:
 		art=OriginalUI.new()
 		if not art.configure(library,bindings,visuals):return reject(art.error)
+		touch_art=art.load_regions(library,bindings,visuals,[1204,1205,1210,1211],bindings.mido_travel.map.ui.atlas_resources)
+		if touch_art.is_empty():return reject(art.error)
 		for key in MENU_TEXT_IDS:
 			var id: int=MENU_TEXT_IDS[key]
 			if id>=library.strings.size() or not library.strings[id] is String or library.strings[id].is_empty():return reject("The localized secondary menu text is unavailable")
 			labels[key]=library.strings[id]
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language}
-	_names=names;_art=art;_menu_labels=labels
-	_menu.theme=null
+	_names=names;_art=art;_touch_art=touch_art;_menu_labels=labels
+	_menu.theme=null;_panel.theme=null
 	if _art!=null:
-		var original_theme:=Theme.new();original_theme.default_font=_art.font;_menu.theme=original_theme
-	clear_sample();_refresh_menu_text();set_mobile_layout(_mobile)
+		var original_theme:=Theme.new();original_theme.default_font=_art.font;_menu.theme=original_theme;_panel.theme=original_theme
+	clear_sample();_refresh_menu_text();set_mobile_layout(_mobile,true)
 	return true
 
 func present(sample: Dictionary) -> bool:
@@ -160,7 +165,7 @@ func _refresh() -> void:
 	var detonations: int=_state.actions.size()-launches
 	_can_activate=not _state.actions.is_empty()
 	_can_cycle=remaining>0 or not selected.is_empty()
-	_name.text="None selected" if selected.is_empty() else _names[selected.item_id]
+	_name.text=_menu_labels.get("none","None selected") if selected.is_empty() else _names[selected.item_id]
 	_ammunition.text="Ammunition: %d"%selected.quantity if not selected.is_empty() else "Available ammunition: %d"%remaining
 	if live>0:_ammunition.text+=" · In flight: %d"%live
 	var activation:="Launch / detonate"
@@ -177,7 +182,12 @@ func _refresh() -> void:
 	# evidence that the player stopped using the keyboard.
 	var menu_key:=OS.get_keycode_string(Controls.KEY_ACTIONS.find_key("secondary_menu"))
 	_hint.text=menu_key+" / D-pad right: Weapons menu\nR / B / LT: "+activation
+	_title.visible=not _touch;_status.visible=not _touch;_ammunition.visible=not _touch
 	_actions.visible=_touch;_hint.visible=not _touch
+	if not _touch_art.is_empty():
+		_select.text="";_fire.text=""
+		_select.tooltip_text=_menu_labels.get("title","");_fire.tooltip_text=activation
+		if _touch:_name.text+=" (%d)"%(remaining if selected.is_empty() else selected.quantity)
 	if _menu_open:_rebuild_choices()
 	_refresh_visibility();_relayout()
 
@@ -185,22 +195,31 @@ func _request(action: String) -> void:
 	if not _active or not _touch or not is_visible_in_tree() or _menu_open:return
 	if (action=="secondary_menu" and _can_cycle) or (action=="missiles" and _can_activate):action_requested.emit(action)
 
-func set_mobile_layout(value: bool) -> void:
-	_mobile=value
+func set_mobile_layout(value: bool,force:=false) -> void:
+	if _layout_prepared and _mobile==value and not force:return
+	_mobile=value;_layout_prepared=true
 	var box:=StyleBoxFlat.new();box.bg_color=Color(0.025,0.055,0.09,0.94);box.border_color=Color(0.19,0.39,0.48,0.9)
 	box.set_border_width_all(1);box.set_corner_radius_all(8)
 	box.content_margin_left=12;box.content_margin_right=12;box.content_margin_top=10;box.content_margin_bottom=10
 	_panel.add_theme_stylebox_override("panel",box)
 	_menu.add_theme_stylebox_override("panel",box.duplicate())
-	if _art!=null:_menu.add_theme_stylebox_override("panel",_art.styles[value].panel)
+	if _art!=null:
+		_menu.add_theme_stylebox_override("panel",_art.styles[value].panel)
+		_panel.add_theme_stylebox_override("panel",_art.styles[value].panel)
 	_menu_title.add_theme_font_size_override("font_size",24 if value else 20)
 	_menu_hint.add_theme_font_size_override("font_size",18 if value else 14)
 	for button in [_menu_confirm,_menu_cancel]+_menu_rows.get_children():
 		_style_menu_button(button,button.get_parent()==_menu_rows)
 	for label in [_title,_ammunition,_status,_hint]:label.add_theme_font_size_override("font_size",18 if value else 14)
 	_name.add_theme_font_size_override("font_size",22 if value else 17)
-	for button in [_select,_fire]:
-		button.custom_minimum_size.y=48 if value else 32
+	for row in [[_select,1210,1211],[_fire,1204,1205]]:
+		var button: Button=row[0]
+		if not _touch_art.is_empty():
+			for state in ["normal","hover","disabled","pressed","hover_pressed"]:
+				var style:=StyleBoxTexture.new();style.texture=_touch_art[row[2] if state in ["pressed","hover_pressed"] else row[1]]
+				button.add_theme_stylebox_override(state,style)
+			button.size_flags_horizontal=Control.SIZE_SHRINK_CENTER
+		button.custom_minimum_size=Vector2(56,56) if value else Vector2(42,42)
 		button.add_theme_font_size_override("font_size",20 if value else 15)
 	_relayout()
 
@@ -211,7 +230,7 @@ func set_top_inset(value: float) -> void:
 	_top_inset=value;_relayout()
 
 func _relayout() -> void:
-	var width:=minf(380.0 if _mobile else 300.0,maxf(0.0,size.x-24.0))
+	var width:=minf(248.0 if _mobile else 300.0,maxf(0.0,size.x-24.0))
 	_panel.position=Vector2(12,maxf(12,_top_inset))
 	_panel.custom_minimum_size=Vector2(width,0)
 	_panel.size=Vector2(width,0)
@@ -239,7 +258,7 @@ func clear_sample() -> void:
 	_refresh_visibility()
 
 func clear() -> void:
-	error="";_identity={};_names={};_art=null;_menu_labels={};_menu.theme=null;_active=false;clear_sample()
+	error="";_identity={};_names={};_art=null;_touch_art={};_menu_labels={};_menu.theme=null;_active=false;clear_sample()
 
 func _build_selection_menu() -> void:
 	_shade=ColorRect.new();_shade.color=Color(0.005,0.015,0.03,0.82)

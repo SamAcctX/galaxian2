@@ -79,7 +79,7 @@ func verify_presentation(visuals: RefCounted) -> void:
 		check(not repeated.is_empty() and repeated.operations.is_empty(),"Presenting cloak twice replayed its sound")
 	check(audio.snapshot().history.filter(func(row):return row.action=="start" and row.source_id==30).size()==2,"Cloak start and expiry did not play exactly two original samples")
 	var preview:=Preview.new();root.add_child(preview);preview.set_context(library,bindings,visuals)
-	check(preview._cloak_charge._sprites.size()==2 and preview._cloak_button.text.is_empty(),"Application could not prepare the original cloak controls")
+	check(preview._cloak_charge._sprites.size()==2,"Application could not prepare the original cloak controls")
 	preview.free();audio.free();panel.free();ship.free();backdrop.free();camera.free();light.free();environment.free()
 
 func capture_cloak(label: String) -> void:

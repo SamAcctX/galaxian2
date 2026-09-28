@@ -40,7 +40,7 @@ func verify_free_application() -> void:
 	var landed: Dictionary=app.session.station_owner().snapshot()
 	check(landed.loadout==fitted.loadout and landed.cargo==flown.cargo and landed.contracts.credits==fitted.contracts.credits,"Docking lost the fitted cloak or restored spent energy")
 	check(landed.campaign_cursor==original.campaign_cursor and landed.contracts.mission==original.contracts.mission and landed.contracts.passengers==3,"Cloaking changed the campaign or retained passenger job")
-	check(not app._cloak_button.visible and not app._cloak_charge.visible,"Station retained flight cloak controls")
+	check(not app._cloak_charge.visible,"Station retained flight cloak controls")
 	if not retain_recovery_save("returned"):return
 	var document: Dictionary=app._save_file.load_document(app.station_save_path(),definitions,catalogue,source)
 	check(not document.is_empty() and document.inventory.cargo==landed.cargo,"Station autosave failed to retain consumed cloak fuel")
@@ -113,7 +113,7 @@ func fly_cloaked(menu: bool) -> bool:
 				if fire.get("result",{}).get("fired",false):shots+=1
 			if state.cloak.dissolve>=1.0 and not active_seen:
 				active_seen=true
-				check(not app._cloak_charge.visible and app._cloak_button.visible,"Active cloak retained charging or lost its indicator")
+				check(not app._cloak_charge.visible,"Active cloak retained its charging bar or a placeholder action icon")
 				await capture_free_application("cloak-active")
 				var retained: RefCounted=app.session.flight_owner();var held: Dictionary=retained.snapshot()
 				# Detached contact diagnostic: the live earned flight stays untouched.

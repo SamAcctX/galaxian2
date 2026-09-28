@@ -90,24 +90,9 @@ func _draw() -> void:
 		_draw_sprite(1217,stick_center(),Vector2.ONE*base)
 		var knob:=stick_center()+Vector2(_command.y,_command.x)*radius()*0.42
 		_draw_sprite(1206 if _stick_id!=-2 else 1207,knob,Vector2.ONE*radius()*1.45)
-		_draw_sprite(1204 if not _fire_ids.is_empty() else 1205,fire_center(),Vector2.ONE*fire_radius()*2.0)
-		if _fire_label=="Stop":
-			var font:=ThemeDB.fallback_font
-			var label_size:=18 if mobile else 14
-			var extent:=font.get_string_size(_fire_label,HORIZONTAL_ALIGNMENT_LEFT,-1,label_size)
-			draw_string(font,fire_center()+Vector2(-extent.x/2,extent.y/4),_fire_label,HORIZONTAL_ALIGNMENT_LEFT,-1,label_size,Color(0.04,0.12,0.18))
-		return
-	var color:=Color(0.46,0.78,0.92,0.8 if active else 0.25)
-	var fill:=Color(0.015,0.035,0.06,0.7 if active else 0.3)
-	for center in [stick_center(),fire_center()]:
-		draw_circle(center,radius(),fill)
-		draw_arc(center,radius(),0,TAU,64,color,1.5,true)
-	var point:=stick_center()+Vector2(_command.y,_command.x)*radius()*0.7
-	draw_circle(point,radius()*0.28,color)
-	var font:=ThemeDB.fallback_font;var font_size:=20 if mobile else 14
-	var label:=_fire_label;var extent:=font.get_string_size(label,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size)
-	if not _fire_ids.is_empty():draw_circle(fire_center(),radius()-2,Color(0.3,0.65,0.8,0.4))
-	draw_string(font,fire_center()+Vector2(-extent.x/2,extent.y/4),label,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,color)
+		var mining:=_fire_label in ["Mine","Stop"]
+		var sprite: int=(1258 if not _fire_ids.is_empty() else 1257) if mining else (1205 if not _fire_ids.is_empty() else 1204)
+		_draw_sprite(sprite,fire_center(),Vector2.ONE*fire_radius()*2.0)
 
 func _draw_sprite(id: int,center: Vector2,extent: Vector2) -> void:
 	draw_texture_rect(sprites[id],Rect2(center-extent*0.5,extent),false,Color.WHITE if active else Color(1,1,1,0.5))

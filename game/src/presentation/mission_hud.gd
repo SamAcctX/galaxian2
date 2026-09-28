@@ -19,6 +19,7 @@ var _context: RefCounted
 var _layers: Array[Dictionary]=[]
 var _front:=-1
 var _sample:={}
+var _layout_mode:=[]
 
 func _init() -> void:
 	mouse_filter=Control.MOUSE_FILTER_IGNORE
@@ -106,3 +107,12 @@ func visible_state() -> Dictionary:
 		"speaker":row.radio._name.text,"transmission":row.radio._body.text,"portrait":row.radio._portrait.texture!=null}
 
 func reject(message: String) -> bool:error=message;return false
+
+func set_mobile_layout(mobile: bool,touch_actions:=false) -> void:
+	if _layout_mode==[mobile,touch_actions]:return
+	_layout_mode=[mobile,touch_actions]
+	for row in _layers:
+		for key in ["gauges","target","reticle","markers","notice","radio"]:
+			if row[key].has_method("set_mobile_layout"):row[key].set_mobile_layout(mobile)
+		row.gauges.set_touch_inset(touch_actions)
+		_layout_radio(row)
