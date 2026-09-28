@@ -327,7 +327,7 @@ func _begin_station_story(panel: Control,campaign: bool) -> bool:
 	_world=candidate;_dialogue_started=false;_generation+=1
 	return true
 
-func contract_action(action: String,id: int,panel: Control) -> bool:
+func contract_action(action: String,id: int,panel: Control,checkpoint: Callable=Callable()) -> bool:
 	error=""
 	if status!="running" or not _active or is_paused() or _world.contract_owner()==null or (_world.snapshot().get("hangar_open",false) and action!="result_close"):return reject("The space lounge is unavailable")
 	var candidate: RefCounted=_world.fork();var opened:=_lounge_open
@@ -340,6 +340,8 @@ func contract_action(action: String,id: int,panel: Control) -> bool:
 			if not opened or not candidate.inspect_contract_contact(id,_bindings):return reject(candidate.error)
 		"buy_goods":
 			if not opened or not candidate.purchase_lounge_goods(id,_bindings):return reject(candidate.error)
+		"buy_coordinates":
+			if not opened or not candidate.purchase_lounge_coordinates(id,_bindings):return reject(candidate.error)
 		"accept","replace":
 			if not opened or not candidate.accept_contract(id,action=="replace",_bindings):return reject(candidate.error)
 		"result_close":
@@ -355,6 +357,13 @@ func contract_action(action: String,id: int,panel: Control) -> bool:
 	if panel!=null and not panel.present(staged):
 		if prepared!=null:prepared.free()
 		return reject(panel.error)
+	if action=="buy_coordinates" and checkpoint.is_valid() and not checkpoint.call(candidate):
+		if prepared!=null:prepared.free()
+		if panel!=null:
+			var previous: Dictionary=_world.snapshot();previous.lounge_open=_lounge_open
+			previous.contract_previews=_contract_previews(_world,_lounge_open)
+			panel.present(previous)
+		return reject("The coordinate purchase could not be saved; no credits were spent")
 	if prepared!=null:lounge_scene=prepared
 	_world=candidate;_lounge_open=opened;_generation+=1
 	if lounge_scene!=null:
@@ -378,6 +387,9 @@ func _contract_previews(owner: RefCounted,opened: bool) -> Dictionary:
 	for contact in career.get("population",{}).get("contacts",[]):
 		if contact.has("trade"):
 			result[contact.contact_id]=owner.merchant_preview(contact.contact_id,_bindings)
+			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
+		elif contact.get("role")==4 and contact.has("service"):
+			result[contact.contact_id]=owner.coordinate_preview(contact.contact_id,_bindings)
 			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
 	var requests:={}
 	for place in career.get("lounges",{}).get("locations",[]):

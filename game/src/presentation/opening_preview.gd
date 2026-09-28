@@ -1118,7 +1118,9 @@ func contract_action(action: String,id: int) -> bool:
 	if session==null or not _focused or not is_visible_in_tree() or session.is_paused():return false
 	if not prepare_lounge():return false
 	var accepted: bool=false
-	if session is StationSession:accepted=session.contract_action(action,id,lounge_panel)
+	if session is StationSession:
+		var checkpoint: Callable=_save_station_candidate if action=="buy_coordinates" else Callable()
+		accepted=session.contract_action(action,id,lounge_panel,checkpoint)
 	elif session is FirstFlightSession and action=="result_close":accepted=session.acknowledge_contract_result(id)
 	if not accepted:lounge_panel.show_error(session.error);return false
 	if session is StationSession and session.contract_story_ready():

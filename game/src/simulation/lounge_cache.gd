@@ -168,6 +168,28 @@ func consume(station_id: int,offer_id: int) -> bool:
 		return true
 	return reject("The accepted contact has no retained lounge")
 
+func coordinate_quote(station_id: int,contact_id: int) -> Dictionary:
+	var available: Array=_state.get("system_availability",[])
+	for contact in location(station_id).get("population",{}).get("contacts",[]):
+		if contact.contact_id!=contact_id or contact.get("role")!=4 or not contact.has("service"):continue
+		var terms: Dictionary=contact.service
+		if not Numbers.integer(terms.get("parameter"),0,available.size()-1) or not Numbers.integer(terms.get("price"),0,2147483647):return {}
+		var system_id:=int(terms.parameter)
+		return {"system_id":system_id,"total_price":int(terms.price),"consumed":bool(available[system_id])}
+	return {}
+
+func purchase_coordinates(station_id: int,contact_id: int) -> bool:
+	error=""
+	if station_id!=_state.get("current_station_id") :return reject("Buy coordinates from the current station lounge")
+	var quote:=coordinate_quote(station_id,contact_id)
+	if quote.is_empty() or quote.consumed:return reject("This contact has no unknown coordinates for sale")
+	# Known coordinates outlive the FIFO lounge cache and already survive saves.
+	# Never charge again after revisiting or restoring an older earned career.
+	var available: Array=_state.system_availability.duplicate()
+	available[int(quote.system_id)]=true
+	_read={};_state.system_availability=available
+	return true
+
 func merchant_quote(station_id: int,contact_id: int) -> Dictionary:
 	var entry:=location(station_id)
 	for contact in entry.get("population",{}).get("contacts",[]):
