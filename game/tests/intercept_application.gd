@@ -6,7 +6,7 @@ func _initialize() -> void:
 	else:super._initialize()
 
 func requested_contract_kind() -> int:return 10
-func contract_search_stations() -> Array:return [-1,38,39,35,36]
+func contract_search_stations() -> Array:return [-1,39]
 func contract_destination_allowed(station_id: int) -> bool:return station_id in [35,36,37,38,39]
 func accepts_requested_contract(mission: Dictionary) -> bool:return mission.kind==10 and mission.difficulty<=3
 
@@ -26,3 +26,7 @@ func contract_cast_valid(actors: Array) -> bool:
 
 func contract_target_ids(actors: Array) -> Array:
 	return actors.filter(func(actor):return actor.population_group=="freighter").map(func(actor):return actor.actor_id)
+
+func contract_pilot_targets(actors: Array) -> Array:
+	var guards: Array=actors.filter(func(actor):return actor.population_group!="freighter" and actor.vitals.hull>0)
+	return guards.map(func(actor):return actor.actor_id) if not guards.is_empty() else contract_target_ids(actors)

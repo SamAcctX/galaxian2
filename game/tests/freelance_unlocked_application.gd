@@ -38,6 +38,8 @@ func contract_cast_valid(actors: Array) -> bool:
 
 func contract_target_ids(actors: Array) -> Array:return range(actors.size())
 
+func contract_pilot_targets(actors: Array) -> Array:return contract_target_ids(actors)
+
 func contract_targets_retired(actors: Array,targets: Array) -> bool:
 	return targets.all(func(id):return actors[id].actor_mode==4)
 
@@ -201,7 +203,7 @@ func fly_contract_job(initial: Dictionary) -> bool:
 		var weapon: Dictionary=state.encounter.primaries.guns[0].projectiles.weapon
 		var reach:=float(weapon.speed_units_per_millisecond)*float(weapon.lifetime_ms)
 		pilot.firing_range=reach*0.9
-		var input: Dictionary=pilot.controls_at_time(state,float(state.world_elapsed_ms),targets,false)
+		var input: Dictionary=pilot.controls_at_time(state,float(state.world_elapsed_ms),contract_pilot_targets(state.encounter.combat.actors),false)
 		# Keep the orbit within the fitted gun's reach. The close approach uses
 		# the pilot's pursuit and alternating strafes for a single opponent.
 		if OS.get_environment("GOF2_PIRATE_APPROACH")!="close":
