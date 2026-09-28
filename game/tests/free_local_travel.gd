@@ -28,6 +28,7 @@ func verify_free_application() -> void:
 		var unready_state: Dictionary=unready.snapshot()
 		check(unready.construct_local_arrival(definitions,catalogue,4096,1789100000)==null and unready.snapshot()==unready_state,"Arrival bypassed actual planet acquisition and flight")
 		if not app.open_map():check(false,app.status.text);return
+		if app.map_panel.snapshot().route_mode=="galaxy":app.map_panel.show_system(int(app.session.snapshot().location.system_id))
 		var map: Dictionary=app.map_panel.snapshot()
 		check(map.system_id==19 and map.rows.map(func(row):return row.station_id)==[95,96,97,98,99],"Augmenta map lost its actual station membership")
 		check(map.rows.filter(func(row):return row.supported).size()==4 and map.rows.filter(func(row):return row.mission_target).map(func(row):return row.station_id)==mission_markers,"Ordinary map disabled travel or changed its retained story/contract markers")

@@ -61,6 +61,7 @@ func verify_delivery_route(original: Dictionary,before: Dictionary,offer: Dictio
 	check(context.side_mission==offer.mission and context.mission_kind==-1,"Off-target courier lost its side slot or selected its destination early")
 	if not await release_application_flight():return
 	if not app.open_map():check(false,app.status.text);return
+	if app.map_panel.snapshot().route_mode=="galaxy":app.map_panel.show_system(int(app.session.snapshot().location.system_id))
 	check(app.map_panel.snapshot().rows.filter(func(row):return row.mission_target).map(func(row):return row.station_id)==[int(offer.mission.station_id)],"The map did not identify the courier destination")
 	await capture_free_application("ordinary-contract-map-desktop")
 	if not app.close_map(now_us):check(false,app.status.text);return

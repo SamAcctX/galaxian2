@@ -96,6 +96,7 @@ func verify_sahi_return_departure(landed: Dictionary) -> void:
 	check(departed.campaign_cursor==27 and departed.location.station_id==48 and not departed.has("sahi_stage") and not departed.has("void_portal"),"The saved return replayed a completed story encounter")
 	check(departed.cargo==landed.cargo and departed.progress==landed.progress and departed.contracts.mission==retained_job and departed.contracts.passengers==3 and departed.contracts.credits==route_credits,"Ordinary departure lost the saved recovery, wallet or occupied cabin")
 	if not app.open_map():check(false,app.status.text);return
+	if app.map_panel.snapshot().route_mode=="galaxy":app.map_panel.show_system(int(app.session.snapshot().location.system_id))
 	var destinations: Array=app.map_panel.snapshot().rows.filter(func(row):return row.station_id==45)
 	check(destinations.size()==1 and destinations[0].supported,"The saved Sahi return cannot select ordinary Weymire travel")
 	if not app.close_map(now_us):check(false,app.status.text);return

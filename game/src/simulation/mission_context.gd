@@ -13,6 +13,36 @@ var _contract_context:={}
 var _legacy_flight:={}
 var _live_cursors: Array=[]
 
+## Map browsing and course entry share the same supported destination set.
+## Availability comes from the retained career, never from visiting the map.
+static func navigation_destinations(bindings: RefCounted,cat: RefCounted,observation: Dictionary) -> Array:
+	if bindings==null or cat==null or cat.content_id!=bindings.base_content_id:return []
+	for key in ["base_content_id","binding_id"]:
+		if observation.get(key)!=bindings.get(key):return []
+	var travel=load("res://src/content/mido_travel_definitions.gd")
+	var cursor:=int(observation.get("campaign_cursor",-1))
+	var location: Dictionary=observation.get("location",{})
+	var current:=int(location.get("station_id",-1))
+	var local: Array=travel.navigation_stations(bindings,cursor,current)
+	if not travel.free_local_navigation(bindings,cursor):return local
+	var navigation=load("res://src/content/free_navigation_definitions.gd")
+	var career: Dictionary=observation.get("contracts",{})
+	var available: Array=career.get("lounges",{}).get("system_availability",[])
+	if not load("res://src/simulation/contract_navigation.gd").valid_availability(bindings.early_contracts.base_navigation,available):
+		if not career.is_empty():return []
+		# Early detached observations predate a career location owner. Their
+		# explicitly prepared gate destinations must still pass arrival entry.
+		var arrival=load("res://src/content/gate_arrival_definitions.gd")
+		for destination in observation.get("gate_destinations",[]):
+			var packet: Dictionary=arrival.packet(bindings,cat,{"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"from_station_id":current,"destination_station_id":destination},cursor)
+			if not packet.is_empty() and not local.has(destination):local.append(destination)
+		return local
+	var mission: Dictionary=observation.get("mission",{})
+	var result:=[]
+	for station in cat.tables.stations:
+		if available[station.system_id] and navigation.destination_supported(bindings,cursor,mission,int(station.id)):result.append(int(station.id))
+	return result
+
 ## Base-game player hulls come from the ordinary stock factory, including its
 ## fixed station offers and dedicated faction selection. NPC-only prototypes
 ## and expansion-only offers are not admitted by a catalogue index alone.

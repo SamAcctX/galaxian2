@@ -56,7 +56,9 @@ func verify():
 		check(navigation.configure(library,bindings,catalogues,gate_view,14) and navigation.snapshot().route_mode=="gate" and navigation.snapshot().rows.all(func(row):return row.supported),"Gate map lost its supported foreign-system choices")
 		var accepted:=navigation.snapshot()
 		check(not navigation.configure(library,bindings,catalogues,gate_view,11) and navigation.snapshot()==accepted,"Gate map displayed an unsupported world")
-		gate_view.contracts={"mission":{"kind":0,"station_id":71}}
+		var availability:=[]
+		for system in catalogues.tables.systems:availability.append(system.id in [19,14])
+		gate_view.contracts={"mission":{"kind":0,"station_id":71},"lounges":{"system_availability":availability}}
 		var story: Dictionary=gate_view.mission.duplicate(true)
 		check(navigation.configure(library,bindings,catalogues,gate_view,14),navigation.error)
 		check(navigation.snapshot().rows.filter(func(row):return row.mission_target).map(func(row):return row.station_id)==[71],"Map omitted the retained side-contract destination")
@@ -140,18 +142,18 @@ func verify_gate_panels(library: RefCounted,bindings: RefCounted,visuals: RefCou
 	panel.set_active(true)
 	panel.system_requested.connect(func(id):check(panel.configure(library,bindings,visuals,catalogues,flight,id),panel.error);panel.set_active(true))
 	for tick in 3:await process_frame
-	panel._systems.get_child(1).pressed.emit()
-	check(panel.snapshot().system_id==14 and panel._systems.get_child_count()==2,"System-button dispatch retained old buttons or lost its destination")
-	panel._systems.get_child(0).pressed.emit()
-	check(panel.snapshot().system_id==19 and panel._systems.get_child_count()==2,"Repeated system-button dispatch failed")
-	panel._systems.get_child(1).pressed.emit()
+	panel.request_system(14)
+	check(panel.snapshot().system_id==14 and panel.snapshot().system_choices.size()==2,"Local view lost the selected system's destinations")
+	panel.request_system(19)
+	check(panel.snapshot().system_id==19,"Local view could not return to the current system")
+	panel.request_system(14)
 	for tick in 3:await process_frame
 	check_projection(panel)
 	if not directory.is_empty():await capture(directory,"gate-map-desktop")
 	root.size=Vector2i(960,540);panel.set_mobile_layout(true)
 	for tick in 3:await process_frame
 	check_projection(panel)
-	for button in panel._systems.get_children():check(button.size.y>=44 and Rect2(Vector2.ZERO,panel.size).encloses(Rect2(button.position+panel._systems.position,button.size)),"System selector exceeds the landscape touch map")
+	check(panel.snapshot().rows.filter(func(row):return row.jumpgate).map(func(row):return row.station_id)==[70],"Local view does not identify its physical jumpgate")
 	if not directory.is_empty():await capture(directory,"gate-map-mobile")
 	panel.free()
 	var question:=GatePanel.new();root.add_child(question);question.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

@@ -27,6 +27,7 @@ func verify_free_application() -> void:
 	check(PostProbeNavigation.destination_supported(definitions,36,original.mission,27) and departing._local_travel.supports_destination(27),"Complete B'akka support did not reach the native destination list")
 	if failures:return
 	if not app.open_map(now_us):check(false,app.status.text);return
+	if app.map_panel.snapshot().route_mode=="galaxy":app.map_panel.show_system(int(app.session.snapshot().location.system_id))
 	var held: Dictionary=session.snapshot()
 	check(app.map_panel.is_visible_in_tree() and app.map_panel.snapshot().rows.any(func(row):return row.station_id==27 and row.supported),"The visible local map cannot select B'akka")
 	app.map_panel.select_station(27);app.map_panel.request_confirmation()

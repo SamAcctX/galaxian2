@@ -3,7 +3,7 @@ extends RefCounted
 ## and confirming a selection only requests the existing planet guidance owner.
 const Definitions=preload("res://src/content/mido_travel_definitions.gd")
 const Random=preload("res://src/simulation/seeded_random.gd")
-const GateArrival=preload("res://src/content/gate_arrival_definitions.gd")
+const Context=preload("res://src/simulation/mission_context.gd")
 const VoidSource=preload("res://src/simulation/ordinary_void_source.gd")
 const Recipe=preload("res://src/content/mission_recipe.gd")
 var error:=""
@@ -33,20 +33,16 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 			warning={"system_id":int(retained.source_system_id),"station_id":station_id,
 				"system_name":catalogues.tables.systems[int(retained.source_system_id)].name,
 				"station_name":catalogues.tables.stations[station_id].name if station_id>=0 else ""}
-	var stations:=Definitions.navigation_stations(bindings,cursor,int(location.get("station_id",-1)))
-	if Definitions.free_local_navigation(bindings,cursor):stations=stations.filter(func(id):return id==location.get("station_id") or load("res://src/content/free_navigation_definitions.gd").destination_supported(bindings,cursor,flight.get("mission",{}),id))
+	var stations:=Context.navigation_destinations(bindings,catalogues,flight)
 	if stations.is_empty() or location.get("system_id")!=Definitions.navigation_system(bindings,cursor,int(location.get("station_id",-1))) or (not docked and travel.get("phase")!="flight"):return reject("The local map is unavailable at this campaign boundary")
 	if (Definitions.navigation_available(bindings.mido_travel,cursor) or Definitions.free_local_navigation(bindings,cursor)) and not Definitions.navigation_mission(bindings,cursor,flight.get("mission",{})):return reject("The local map lost the pending story objective")
 	# The same original system display serves both local courses and a gate's
 	# destination choice. Displaying another system never changes flight state.
 	var systems: Array=[int(location.system_id)]
-	var destinations: Array=flight.get("gate_destinations",[])
+	var destinations: Array=stations
 	for destination in destinations:
-		if not destination is int:return reject("Gate map destinations must be imported station identifiers")
-		var request:={"base_content_id":base,"binding_id":bindings.binding_id,"from_station_id":int(location.station_id),"destination_station_id":destination}
-		var arrival:=GateArrival.packet(bindings,catalogues,request,cursor)
-		if arrival.is_empty():return reject("Gate map destination has no supported arrival")
-		if not systems.has(arrival.system_id):systems.append(arrival.system_id)
+		var system_id:=int(catalogues.tables.stations[destination].system_id)
+		if not systems.has(system_id) and cursor>=int(rules.galaxy_cursor) and catalogues.tables.systems[location.system_id].linked_system_ids.has(system_id):systems.append(system_id)
 	var gate_map: bool=flight.get("gate_transit",{}).get("phase")=="map"
 	if gate_map:systems.erase(int(location.system_id))
 	if systems.is_empty():return reject("This gate has no supported destination map")
@@ -87,6 +83,7 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 		var material: Dictionary=bindings.material_for_mesh(path,"high")
 		if material.is_empty() or material.get("id")!=int(rules.material_id) or material.get("render_type")!=int(rules.render_type) or int(material.texture_ids[0])!=int(rules.texture_id):return reject("Local map planet material is unsupported")
 		rows.append({"station_id":int(station.id),"name":station.name,"planet_type":type,
+			"jumpgate":int(station.id)==int(system.fields[6]),
 			"current":int(station.id)==int(location.station_id),
 			"void_source":display_system_id==warning.get("system_id",-1) and int(station.id)==warning.get("station_id",-1),
 			"supported":stations.has(int(station.id)) and int(station.id)!=int(location.station_id),

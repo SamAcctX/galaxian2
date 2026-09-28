@@ -198,6 +198,7 @@ func verify_active_contract_fitting(original: Dictionary) -> void:
 	check(fired_items==[spare] and app.session.snapshot().contracts.passengers==3,"Departure did not fire the fitted gun with its actual passengers retained")
 	await capture_free_application("active-fitting-flight")
 	if not app.open_map():check(false,app.status.text);return
+	if app.map_panel.snapshot().route_mode=="galaxy":app.map_panel.show_system(int(app.session.snapshot().location.system_id))
 	var kappa: Array=app.map_panel.snapshot().rows.filter(func(row):return row.station_id==55)
 	check(kappa.size()==1 and kappa[0].mission_target and not kappa[0].supported,"Active fitting exposed the unfinished Kappa chapter")
 	if not app.close_map(now_us):check(false,app.status.text);return

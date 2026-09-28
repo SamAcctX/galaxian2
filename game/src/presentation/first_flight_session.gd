@@ -431,12 +431,25 @@ func confirm_map_planet(station_id: int, now_microseconds: int) -> bool:
 func confirm_map_gate(station_id: int, now_microseconds: int) -> bool:
 	return _confirm_map_destination(station_id,now_microseconds,true)
 
+func select_map_destination(station_id: int) -> bool:
+	if not can_control():return reject("Course selection requires released flight")
+	var world: RefCounted=_world.select_map_destination(station_id)
+	if world==null:return reject(_world.error)
+	if not _commit(world,false):return false
+	_throttle=1.0
+	return true
+
+func queue_map_destination(station_id: int) -> bool:
+	var world: RefCounted=_world.queue_map_destination(station_id)
+	if world==null:return reject(_world.error)
+	return _commit(world,false)
+
 func _confirm_map_destination(station_id: int,now_microseconds: int,gate: bool) -> bool:
 	error=""
 	if not map_active():return reject("The local map does not own input")
 	var clock: RefCounted=_clock.fork_for_frame()
 	if not clock.rebase(now_microseconds):return reject(clock.error)
-	var world: RefCounted=_world.select_gate_destination(station_id) if gate else _world.select_planet(station_id)
+	var world: RefCounted=_world.select_map_destination(station_id) if gate else _world.select_planet(station_id)
 	if world==null:return reject(_world.error)
 	if not _commit(world,false):return false
 	_clock=clock;_throttle=1.0

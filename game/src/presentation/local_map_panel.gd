@@ -36,7 +36,6 @@ var _yes: Button
 var _no: Button
 var _back: Button
 var _key: Button
-var _systems: HBoxContainer
 var _bounds_points: Array[Vector3]=[]
 var _sprites:={}
 var _styles:={}
@@ -96,6 +95,7 @@ class MapCanvas extends Control:
 			draw_string(font,anchor+Vector2.ONE,row_name(row),HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,Color.BLACK)
 			draw_string(font,anchor,row_name(row),HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,Color.WHITE)
 			var markers:=[]
+			if row.jumpgate:markers.append(1107)
 			if row.story_target:markers.append(int(rules.story_image_id))
 			if row.contract_target:markers.append(int(rules.legend[1].image_id))
 			if row.current:markers.append(int(rules.current_image_id))
@@ -130,7 +130,6 @@ func _init() -> void:
 	_legend_rows=VBoxContainer.new();_legend.add_child(_legend_rows)
 	_back=button(back);_target=button(request_confirmation);_no=button(back);_yes=button(confirm_destination)
 	_key=button(func():_legend.visible=not _legend.visible;_relayout())
-	_systems=HBoxContainer.new();_panel.add_child(_systems)
 	resized.connect(_relayout);_view.size_changed.connect(_project)
 
 func texture_rect(parent: Node) -> TextureRect:
@@ -215,12 +214,6 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted, c
 		icon.stretch_mode=TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		var text:=label(row);text.text=entry.text
 	_back.text=state.labels.back;_target.text=state.labels.target;_yes.text=state.labels.confirm;_no.text=state.labels.cancel;_key.text=state.labels.key
-	for choice in state.system_choices:
-		var item:=Button.new();item.text=choice.name;item.focus_mode=Control.FOCUS_NONE
-		if choice.get("mission_target",false):item.icon=sprites[int(state.ui.legend[1].image_id)]
-		item.set_meta("system_id",int(choice.system_id));_systems.add_child(item)
-		item.pressed.connect(func():request_system(int(item.get_meta("system_id"))))
-	_systems.visible=state.system_choices.size()>1
 	for mobile in [false,true]:
 		var height:=44 if mobile else 30;var variants:={}
 		variants.panel=panel_style(sprites,state.ui,1.0 if mobile else 0.5)
@@ -337,7 +330,6 @@ func _present() -> void:
 	_yes.visible=confirming;_no.visible=confirming;_target.visible=not confirming;_key.visible=not confirming
 	_target.disabled=not _active or state.selected_station_id<0
 	for item in [_back,_yes,_no,_key]:item.disabled=not _active
-	for item in _systems.get_children():item.disabled=not _active or confirming or int(item.get_meta("system_id"))==int(state.system_id)
 	_canvas.active=_active and not confirming;_canvas.selected_id=int(state.selected_station_id)
 	_status.text=state.diagnostic if error.is_empty() else error
 	if confirming and error.is_empty():
@@ -373,13 +365,6 @@ func _relayout() -> void:
 		item.add_theme_stylebox_override("pressed",style.back_pressed if item==_back else style.pressed)
 		item.add_theme_stylebox_override("disabled",style.back_normal if item==_back else style.normal)
 		item.size=Vector2(button_width,button_height)
-	for item in _systems.get_children():
-		item.add_theme_font_size_override("font_size",18 if _mobile else 14)
-		for mode in ["normal","disabled","focus"]:item.add_theme_stylebox_override(mode,style.normal)
-		for mode in ["hover","pressed"]:item.add_theme_stylebox_override(mode,style.pressed)
-		item.custom_minimum_size=Vector2(112,button_height)
-	_systems.size=_systems.get_combined_minimum_size()
-	_systems.position=Vector2(size.x-_systems.size.x-8,8)
 	_back.position=Vector2(8,button_y)
 	_key.position=Vector2(size.x-button_width-8,button_y);_yes.position=_key.position
 	_target.position=Vector2(size.x-button_width*2-16,button_y);_no.position=_target.position
@@ -435,10 +420,6 @@ func clear() -> void:
 	for child in _world.get_children():
 		if child!=_camera:child.free()
 	for child in _legend_rows.get_children():child.free()
-	# System selection can rebuild this row from one of its own press signals.
-	# Detach immediately, then retire the emitting button after dispatch ends.
-	for child in _systems.get_children():_systems.remove_child(child);child.queue_free()
-	_systems.visible=false
 	_legend.visible=false;_notice.visible=false;_sprites={};_styles={};_font=null
 	_faction_icon.texture=null;_footer.texture=null
 	_void_warning.visible=false;_void_warning.text=""

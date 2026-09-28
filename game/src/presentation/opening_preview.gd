@@ -18,6 +18,7 @@ const LoungePanel = preload("res://src/presentation/lounge_panel.gd")
 const EquipmentDefinitions = preload("res://src/content/station_equipment_definitions.gd")
 const Shopping = preload("res://src/content/ordinary_shopping_definitions.gd")
 const Catalogues = preload("res://src/content/catalogues.gd")
+const MissionContext = preload("res://src/simulation/mission_context.gd")
 const RadioPanel = preload("res://src/presentation/radio_panel.gd")
 const OriginalUI = preload("res://src/presentation/original_ui.gd")
 const Touch = preload("res://src/presentation/flight_touch_controls.gd")
@@ -28,7 +29,7 @@ const NpcMarkers = preload("res://src/presentation/flight_npc_markers.gd")
 const AimReticle = preload("res://src/presentation/flight_aim_reticle.gd")
 const FlightActionMenu = preload("res://src/presentation/flight_action_menu.gd")
 const TravelDefinitions = preload("res://src/content/mido_travel_definitions.gd")
-const LocalMapPanel = preload("res://src/presentation/local_map_panel.gd")
+const LocalMapPanel = preload("res://src/presentation/navigation_map_panel.gd")
 const GateConfirmationPanel = preload("res://src/presentation/gate_confirmation_panel.gd")
 const LocationCache = preload("res://src/simulation/lounge_cache.gd")
 const StationGeneration = preload("res://src/content/station_generation_definitions.gd")
@@ -840,9 +841,6 @@ func _process(_delta: float) -> void:
 		_selected40_tick(Time.get_ticks_usec())
 		return
 	if session==null or session.status not in ["running","arrival_transition_required","station_transition_required","station_reload_required","local_arrival_transition_required","gate_confirmation_required","gate_map_required","gate_arrival_transition_required","game_over_transition_required","convoy_arrival_transition_required","sahi_arrival_transition_required","void_return_transition_required","mission_station_return_required"] or _transition_failed:return
-	if _station_course_id>=0 and session is FirstFlightSession and session.can_control():
-		if session.select_planet(_station_course_id):_station_course_id=-1
-		else:transition_error(session.error);return
 	if session.status=="running":
 		handle_action_events(_controls.take_events())
 		var input: Dictionary=_controls.snapshot() if session.can_control() else {"command":Vector2.ZERO,"held":{"fire":false}}
@@ -951,13 +949,17 @@ func _station_map_available(state: Dictionary={}) -> bool:
 	if not session is StationSession or bindings==null:return false
 	if state.is_empty():state=session.snapshot()
 	if state.get("dialogue",{}).get("visible",false) or state.get("hangar_open",false) or state.get("lounge_open",false) or not state.get("contracts",{}).get("pending_result",{}).is_empty():return false
-	if int(state.campaign_cursor)<10:return false
 	# Explicit source attachment changes capability, never the save identity.
 	var identity:=_capability_identity()
 	if _support_context!=bindings or _support_identity!=identity:
 		_support_context=bindings;_support_identity=identity;_departure_support={}
 	var key:="map:%d:%d"%[int(state.campaign_cursor),int(state.loadout.station_id)]
-	if not _departure_support.has(key):_departure_support[key]=not TravelDefinitions.navigation_stations(bindings,int(state.campaign_cursor),int(state.loadout.station_id)).is_empty()
+	if not _departure_support.has(key):
+		var cat:=Catalogues.new()
+		if not cat.open(library):return false
+		var observation:=state.duplicate()
+		observation.location={"station_id":int(state.loadout.station_id),"system_id":int(state.loadout.system_id)}
+		_departure_support[key]=not MissionContext.navigation_destinations(bindings,cat,observation).is_empty()
 	return _departure_support[key]
 
 func _station_map_observation() -> Dictionary:
@@ -1033,7 +1035,11 @@ func confirm_map_planet(station_id: int, now_microseconds: int=-1) -> bool:
 		var choice: Dictionary=map_panel.snapshot()
 		if choice.get("selected_station_id")!=station_id or not choice.get("confirmation_visible",false):return false
 		_station_course_id=station_id
-		return close_map(now_microseconds)
+		if not close_map(now_microseconds):return false
+		var cat:=Catalogues.new()
+		if not cat.open(library):return transition_error(cat.error)
+		_launch_packet=session.prepare_departure(bindings,cat)
+		return enter_first_flight(Time.get_ticks_usec() if now_microseconds<0 else now_microseconds)
 	if not session is FirstFlightSession or not _focused or not is_visible_in_tree() or map_panel.snapshot().get("selected_station_id")!=station_id or not map_panel.snapshot().get("confirmation_visible",false):return false
 	if not session.map_active() and not (session.status=="gate_map_required" and session.gate_modal_active()):return false
 	var now:=Time.get_ticks_usec() if now_microseconds<0 else now_microseconds
@@ -1209,6 +1215,9 @@ func _enter_navigation40_arrival(now_microseconds: int,environment_seconds: Vari
 
 func _accept_first_flight(candidate: Node3D, now_microseconds: int,normal_return: RefCounted=null) -> bool:
 	candidate.transition_rejected.connect(transition_error)
+	if _station_course_id>=0 and not candidate.queue_map_destination(_station_course_id):
+		var problem: String=candidate.error;candidate.free();session.camera.make_current()
+		return transition_error(problem)
 	for reason in ["user","hidden","focus"]:
 		candidate.set_pause(reason,_user_paused if reason=="user" else not is_visible_in_tree() if reason=="hidden" else not _focused,now_microseconds)
 	# Preparation may involve complete resource/scene construction. Recheck the
@@ -1220,6 +1229,7 @@ func _accept_first_flight(candidate: Node3D, now_microseconds: int,normal_return
 		var message: String=candidate.error;candidate.free();session.camera.make_current();cancel_departure()
 		return transition_error(message)
 	var previous:=session;session=candidate;previous.free();cancel_departure()
+	_station_course_id=-1
 	_save_notice.hide()
 	station_panel.clear();radio_panel.clear();target_frame.clear();aim_reticle.clear();npc_markers.clear()
 	lounge_panel.clear()

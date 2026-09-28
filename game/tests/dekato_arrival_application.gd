@@ -46,6 +46,7 @@ func verify_free_application() -> void:
 	var before: Dictionary=departing.snapshot()
 	check(PostProbeNavigation.destination_supported(definitions,38,original.mission,22) and departing.local_travel_owner().supports_destination(22),"The explicitly admitted route is missing from native local travel")
 	if failures or not app.open_map(now_us):check(false,app.status.text);return
+	if app.map_panel.snapshot().route_mode=="galaxy":app.map_panel.show_system(int(app.session.snapshot().location.system_id))
 	var held: Dictionary=app.session.snapshot()
 	check(app.map_panel.is_visible_in_tree() and app.map_panel.snapshot().rows.any(func(row):return row.station_id==22 and row.supported),"The visible map cannot select the source-admitted convoy")
 	app.map_panel.select_station(22);app.map_panel.request_confirmation()

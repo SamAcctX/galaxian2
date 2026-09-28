@@ -143,6 +143,7 @@ func verify_visit_continuation(landed: Dictionary) -> void:
 	if not await release_application_flight():return
 	check(app.session.snapshot().campaign_cursor==19 and not app.session.snapshot().encounter.combat.actors.is_empty(),"The next launch repeated the completed story population")
 	if not app.open_map():check(false,app.status.text);return
+	if app.map_panel.snapshot().route_mode=="galaxy":app.map_panel.show_system(int(app.session.snapshot().location.system_id))
 	var kappa: Dictionary=app.map_panel.snapshot().rows.filter(func(row):return row.station_id==55)[0]
 	check(kappa.mission_target and not kappa.supported,"The unimplemented Kappa visit was exposed")
 	if not app.close_map(now_us):check(false,app.status.text);return
@@ -188,6 +189,7 @@ func visit_gate(system_id: int,station_id: int) -> bool:
 
 func follow_gate_course(system_id: int,station_id: int) -> bool:
 	if not app.open_map() or not app.switch_map_system(system_id):check(false,app.status.text);return false
+	if app.map_panel.snapshot().route_mode=="galaxy":app.map_panel.show_system(int(app.session.snapshot().location.system_id))
 	app.map_panel.select_station(station_id);app.map_panel.request_confirmation()
 	if not app.confirm_map_planet(station_id,now_us):check(false,app.map_panel.error);return false
 	if not await reach_gate_confirmation():return false

@@ -40,6 +40,7 @@ func verify_free_application() -> void:
 	await capture_free_application("earned202-eanya38-station20")
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
 	if not await release_application_flight() or not app.open_map(now_us):check(false,app.status.text);return
+	if app.map_panel.snapshot().route_mode=="galaxy":app.map_panel.show_system(int(app.session.snapshot().location.system_id))
 	var held: Dictionary=app.session.snapshot();var rows: Array=app.map_panel.snapshot().rows
 	check(rows.map(func(row):return row.station_id)==[20,21,22,23,24],"Eanya map lost its original member planets")
 	check(rows.any(func(row):return row.station_id==21 and row.supported) and rows.any(func(row):return row.station_id==22 and not row.supported),"Ordinary member admission and pending-story rejection diverged")

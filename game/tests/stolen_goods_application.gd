@@ -77,6 +77,7 @@ func file_quantity(state: Dictionary) -> int:
 
 func check_search_map(client: int,label: String) -> bool:
 	if not app.open_map(now_us):check(false,app.status.text);return false
+	if app.map_panel.snapshot().route_mode=="galaxy":app.map_panel.show_system(int(app.session.snapshot().location.system_id))
 	var targets: Array=app.map_panel.snapshot().rows.filter(func(row):return row.mission_target).map(func(row):return row.station_id)
 	check(targets==[client],"The map disclosed the shop instead of the return client")
 	await capture_free_application(label)
@@ -95,6 +96,7 @@ func click_shop_control(control: Control) -> void:
 
 func acquire_application_planet(destination: int) -> bool:
 	if not app.open_map():check(false,app.status.text);return false
+	if app.map_panel.snapshot().route_mode=="galaxy":app.map_panel.show_system(int(app.session.snapshot().location.system_id))
 	app.map_panel.select_station(destination);app.map_panel.request_confirmation()
 	if not app.confirm_map_planet(destination,now_us):check(false,app.map_panel.error);return false
 	app.session.rebase_time(now_us)

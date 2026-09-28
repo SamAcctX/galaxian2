@@ -131,13 +131,11 @@ func choose_gate_course(from_system:=19,to_system:=14,destination:=70,label:="ga
 	check(app.session.map_active() and app.map_panel.snapshot().system_id==from_system,"Keyboard map did not retain the current system")
 	if failures:return false
 	var frozen: Dictionary=app.session.snapshot()
-	var system_button:=InputEventJoypadButton.new();system_button.pressed=true;system_button.button_index=JOY_BUTTON_RIGHT_SHOULDER
-	app._unhandled_input(system_button)
-	check(app.map_panel.snapshot().system_id==to_system and app.map_panel.snapshot().rows.map(func(row):return row.station_id)==Array(catalogue.tables.systems[to_system].station_ids),"Controller did not display the other system's original destinations")
-	app.map_panel._systems.get_child(0).pressed.emit()
-	check(app.map_panel.snapshot().system_id==from_system,"The original-style system button did not return to the current system")
-	app.map_panel._systems.get_child(1).pressed.emit()
-	check(app.map_panel.snapshot().system_id==to_system,"The original-style system button did not select the destination system")
+	app.map_panel.show_system(to_system)
+	check(app.map_panel.snapshot().system_id==to_system and app.map_panel.snapshot().rows.map(func(row):return row.station_id)==Array(catalogue.tables.systems[to_system].station_ids),"Galaxy selection did not display the other system's original destinations")
+	app.map_panel.back_to_overview()
+	check(app.map_panel.snapshot().route_mode=="galaxy","Local back did not return to the galaxy overview")
+	app.map_panel.show_system(to_system)
 	check(app.session.snapshot()==frozen,"Browsing another system mutated the current flight")
 	app._unhandled_input(gate_key_event(KEY_RIGHT,true));app._unhandled_input(gate_key_event(KEY_ENTER,true))
 	check(app.map_panel.snapshot().get("selected_station_id")==destination and app.map_panel.snapshot().get("confirmation_visible",false),"Keyboard destination skipped the map confirmation")

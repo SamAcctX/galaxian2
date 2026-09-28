@@ -28,7 +28,7 @@ func verify_free_application() -> void:
 	check(map.has("void_warning") and not map.get("void_warning",{}).is_empty(),"The earned mission32 map omits its retained Void source warning")
 	if failures:return
 	check(map.void_warning.system_id==18 and map.void_warning.station_id==-1 and map.void_warning.station_name.is_empty(),"Mission32 hid the warned system or revealed the station hint early")
-	check(map.void_warning.system_name==catalogue.tables.systems[18].name and app.map_panel._void_warning.visible,"The earned source warning lost its catalogue name or visible readout")
+	check(map.void_warning.system_name==catalogue.tables.systems[18].name and app.map_panel._galaxy._warning!=null,"The earned source warning lost its catalogue name or original galaxy model")
 	check(app.session.snapshot().contracts==flying.contracts,"Opening the map rerolled or advanced the retained career")
 	await capture_free_application("earned-void-source-map")
 	if not app.switch_map_system(14):check(false,app.status.text);return

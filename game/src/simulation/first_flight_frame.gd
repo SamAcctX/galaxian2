@@ -61,6 +61,7 @@ const GateAnimation=preload("res://src/simulation/gate_animation.gd")
 const GateTransit=preload("res://src/simulation/gate_transit.gd")
 const GateArrival=preload("res://src/content/gate_arrival_definitions.gd")
 const SystemNavigation=preload("res://src/simulation/system_navigation.gd")
+const Context=preload("res://src/simulation/mission_context.gd")
 const FastForward=preload("res://src/simulation/fast_forward.gd")
 var error:=""
 const PhysicalContacts=preload("res://src/simulation/physical_scenery_contacts.gd")
@@ -146,6 +147,10 @@ var _gate_animation: RefCounted
 var _gate_transit: RefCounted
 var _gate_destinations:=[]
 var _gate_cruise_speed:=0.0
+var _system_navigation: RefCounted
+var _navigation_destinations: Array=[]
+var _pending_destination:=-1
+var _navigation_applied:=false
 var _fast_forward: RefCounted
 var _near_target:=false
 var _camera_ms:=0
@@ -400,6 +405,13 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	# Only final result acknowledgement selects the permitted kind160 return.
 	var return_rules: Dictionary={} if sahi_world or void_world else OrdinaryFlight.docking(bindings,int(entry.campaign_cursor)+1)
 	var gate_animation: RefCounted;var gate_transit: RefCounted;var gate_destinations:=[]
+	var system_navigation: RefCounted;var navigation_destinations:=[]
+	if free_world:
+		system_navigation=SystemNavigation.new()
+		var career: Dictionary=construction.contract_owner().snapshot()
+		if not system_navigation.configure(bindings,catalogues,career.get("lounges",{}).get("system_availability")):return reject(system_navigation.error)
+		var observation:=entry.duplicate();observation.contracts=career;observation.mission=entry.departure.mission
+		navigation_destinations=Context.navigation_destinations(bindings,catalogues,observation)
 	if void_world:
 		var layout: RefCounted=load("res://src/simulation/gate_environment.gd").new()
 		gate_animation=GateAnimation.new()
@@ -408,14 +420,10 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 		gate_animation=GateAnimation.new()
 		if not gate_animation.configure(bindings,catalogues,library,int(entry.location.station_id)):return reject(gate_animation.error)
 		if free_world and gate_animation.snapshot().layout.objects.any(func(gate):return gate.index==1 and gate.interactive):
-			var system_navigation:=SystemNavigation.new()
-			var career: Dictionary=construction.contract_owner().snapshot()
-			if not system_navigation.configure(bindings,catalogues,career.get("lounges",{}).get("system_availability")):return reject(system_navigation.error)
 			gate_transit=GateTransit.new()
 			if not gate_transit.configure(bindings,gate_animation,system_navigation):return reject(gate_transit.error)
-			for world in GateArrival.Worlds.SYSTEMS.values():
-				for destination in world.station_ids:
-					if not GateArrival.packet(bindings,catalogues,{"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"from_station_id":entry.location.station_id,"destination_station_id":destination},entry.campaign_cursor).is_empty() and load("res://src/content/free_navigation_definitions.gd").destination_supported(bindings,entry.campaign_cursor,entry.departure.mission,destination):gate_destinations.append(destination)
+			for destination in navigation_destinations:
+				if catalogues.tables.systems[entry.location.system_id].linked_system_ids.has(catalogues.tables.stations[destination].system_id):gate_destinations.append(destination)
 			gate_animation=null # Transit now owns the one animation clock.
 	if not trip.is_empty():
 		return_rules=OrdinaryFlight.docking(bindings,int(entry.campaign_cursor)) if entry.location.station_id==int(trip.station_id) else {}
@@ -457,6 +465,8 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_story_bindings=bindings if free_world or rescue_world or sahi_world or ordinary_void or bakka_world or mission_world or return_rules.get("alioth_return",false) else null
 	_story_catalogues=catalogues if sahi_world else null
 	_gate_animation=gate_animation;_gate_transit=gate_transit;_gate_destinations=gate_destinations
+	_system_navigation=system_navigation;_navigation_destinations=navigation_destinations
+	_pending_destination=int(entry.get("navigation_destination_id",-1));_navigation_applied=false
 	_gate_cruise_speed=float(bindings.cruise.speed_units_per_millisecond)
 	_fast_forward=fast_forward;_near_target=false;_camera_ms=0;_camera_passes=1
 	_mining_audio={} if targeting==null else {"serial":0,"events":[]}
@@ -879,6 +889,10 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 			var selection: Dictionary=next._music.prepare_for_context(current_music_id,next._fast_forward.battle_count(),next._music_faction,radar_visible,context)
 			if selection.is_empty():reject(next._music.error);return null
 			next._flight_music={"operations":selection.operations}
+	if next._pending_destination>=0 and not next._navigation_applied and cues.entry_released and not next.dialogue_visible() and not next.death_active() and not next.cinematic_input_blocked():
+		var guided: RefCounted=next.select_map_destination(next._pending_destination)
+		if guided==null:reject(next.error);return null
+		next=guided
 	return next
 
 ## The ordinary-flight vibration write replaces earlier wrapper camera fields
@@ -1424,6 +1438,7 @@ func select_planet(station_id: int, paused:=false) -> RefCounted:
 	if destination==null:reject(_local_travel.error);return null
 	var next:=fork_for_frame()
 	if not next._autopilot.start_planet(station_id,destination,_pose):reject(next._autopilot.error);return null
+	next._pending_destination=station_id;next._navigation_applied=true
 	next._throttle=next._autopilot.snapshot().throttle
 	return next
 
@@ -1489,6 +1504,28 @@ func select_gate_destination(station_id: int,paused:=false) -> RefCounted:
 	var next:=start_gate_autopilot(paused)
 	if next==null:return null
 	if not next._gate_transit.set_course(station_id):reject(next._gate_transit.error);return null
+	next._pending_destination=station_id;next._navigation_applied=true
+	return next
+
+func select_map_destination(station_id: int,paused:=false) -> RefCounted:
+	error=""
+	if _system_navigation==null:return select_planet(station_id,paused)
+	if not _navigation_destinations.has(station_id):reject("This destination has no admitted flight");return null
+	var course: Dictionary=_system_navigation.course(int(_entry.location.station_id),station_id)
+	if course.is_empty() or int(course.jump_count)>1:reject("Choose a location in this system or a directly linked system");return null
+	var next: RefCounted
+	match course.guidance.kind:
+		"planet":next=select_planet(int(course.guidance.station_id),paused)
+		"gate":next=select_gate_destination(station_id,paused)
+		_:reject("The ship is already at this destination");return null
+	if next==null:return null
+	next._pending_destination=station_id;next._navigation_applied=true
+	return next
+
+func queue_map_destination(station_id: int) -> RefCounted:
+	if entry_released():reject("Queue a departure course before flight input is released");return null
+	if _system_navigation!=null and not _navigation_destinations.has(station_id):reject("The departure course has no admitted destination");return null
+	var next:=fork_for_frame();next._pending_destination=station_id;next._navigation_applied=false
 	return next
 
 func choose_gate_confirmation(result: int,paused:=false) -> RefCounted:
@@ -1562,6 +1599,7 @@ func _construct_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dict
 		objective.progress=contracts.snapshot().progress
 	var prepared: bool=result.prepare_gate_arrival(bindings,catalogues,_gate_transit,_player,_equipment,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,objective,contracts,location_library) if gate else result.prepare_local_arrival(bindings,catalogues,_local_travel,_player,_equipment,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,objective,contracts,location_library)
 	if not prepared:reject(result.error);return null
+	if _pending_destination>=0 and _pending_destination!=int(packet.station_id) and not result.retain_navigation_destination(_pending_destination):reject(result.error);return null
 	return result.selected40_builder() if result.selected40_builder()!=null else result
 
 func station_response_flags() -> Dictionary:
@@ -1960,6 +1998,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),
 		"ship_detail":_detail.snapshot(),"detail_reference":_reference,"actors":[],"random_state":_random.duplicate(true),
 		"cargo":held,"arrival_from_station_id":int(_entry.departure.get("from_station_id",-1)),
+		"navigation_destination_id":_pending_destination,
 		"scenery_collision_enabled":_collision_enabled,"scenery_collision_supported":_physical_contacts!=null})
 	if _entry.has("environment_object"):state.environment_object=_entry.environment_object.duplicate(true)
 	if _entry.departure.has("dekato_source_receipt"):state.dekato_source_receipt=_entry.departure.dekato_source_receipt.duplicate(true)
@@ -2085,6 +2124,8 @@ func fork_for_frame() -> RefCounted:
 	if _gate_animation!=null:copy._gate_animation=_gate_animation.fork_for_frame()
 	if _gate_transit!=null:copy._gate_transit=_gate_transit.fork_for_frame()
 	copy._gate_destinations=_gate_destinations.duplicate();copy._gate_cruise_speed=_gate_cruise_speed
+	copy._system_navigation=_system_navigation;copy._navigation_destinations=_navigation_destinations
+	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied
 	copy._briefing=_briefing.fork();copy._player=_player.fork_for_frame();copy._scenery=_scenery.fork_for_frame()
 	copy._camera=_camera.fork_for_frame();copy._pilot=_pilot.fork_for_frame();copy._detail=_detail.fork_for_frame()
 	copy._collision_enabled=_collision_enabled
@@ -2139,6 +2180,7 @@ func clear() -> void:
 	_story_bindings=null
 	_story_catalogues=null
 	_gate_animation=null;_gate_transit=null;_gate_destinations=[];_gate_cruise_speed=0.0
+	_system_navigation=null;_navigation_destinations=[];_pending_destination=-1;_navigation_applied=false
 	_briefing=null;_player=null;_scenery=null;_camera=null;_pilot=null;_detail=null;_collision_enabled=false
 	_cargo=null;_tractor=null;_tractor_frame={}
 	_aim=null;_targeting=null;_viewport=Vector2i(1280,720)

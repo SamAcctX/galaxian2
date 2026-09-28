@@ -45,6 +45,7 @@ func verify_free_application() -> void:
 		if failures or not report_step():return
 	# A later station/planet selection must remain usable after cancellation.
 	if not app.open_map(now_us):check(false,app.status.text);return
+	if app.map_panel.snapshot().route_mode=="galaxy":app.map_panel.show_system(int(app.session.snapshot().location.system_id))
 	var choices: Array=app.map_panel.snapshot().rows.filter(func(row):return row.supported)
 	check(not choices.is_empty(),"The earned flight has no ordinary local destination")
 	if failures:return

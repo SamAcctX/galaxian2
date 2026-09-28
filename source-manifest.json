@@ -2946,6 +2946,16 @@
     "game/tests/blueprint_application.gd",
     "game/tests/blueprint_application.gd.uid",
     "game/src/simulation/base_medal_progress.gd",
-    "game/src/simulation/base_medal_progress.gd.uid"
+    "game/src/simulation/base_medal_progress.gd.uid",
+    "game/src/simulation/galaxy_map.gd",
+    "game/src/simulation/galaxy_map.gd.uid",
+    "game/src/presentation/galaxy_map_panel.gd",
+    "game/src/presentation/galaxy_map_panel.gd.uid",
+    "game/tests/galaxy_map.gd",
+    "game/tests/galaxy_map.gd.uid",
+    "game/src/presentation/navigation_map_panel.gd",
+    "game/src/presentation/navigation_map_panel.gd.uid",
+    "game/tests/galaxy_application.gd",
+    "game/tests/galaxy_application.gd.uid"
   ]
 }

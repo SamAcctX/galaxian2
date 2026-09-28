@@ -63,9 +63,10 @@ func verify_free_application() -> void:
 	var resumed: Dictionary=app.session.snapshot()
 	check(resumed.location.station_id==85 and resumed.mission==original.mission and resumed.campaign_cursor==38 and app.session.can_control(),"Saved Genoh cannot resume ordinary controlled flight")
 	var request:={"base_content_id":definitions.base_content_id,"binding_id":definitions.binding_id,"from_station_id":85,"destination_station_id":20}
-	var eanya_ready:=not load("res://src/content/ordinary_world_definitions.gd").catalogue_location(definitions,catalogue,20).is_empty()
+	var eanya_ready: bool=not load("res://src/content/ordinary_world_definitions.gd").catalogue_location(definitions,catalogue,20).is_empty()
 	check(AccessGate.packet(definitions,catalogue,request,38).is_empty()!=eanya_ready,"Eanya gate permission disagrees with its complete ordinary-world dependencies")
 	if not app.open_map(now_us):check(false,app.status.text);return
+	if app.map_panel.snapshot().route_mode=="galaxy":app.map_panel.show_system(int(app.session.snapshot().location.system_id))
 	var held: Dictionary=app.session.snapshot()
 	check(app.map_panel.snapshot().rows.map(func(row):return row.station_id)==[85,86,87,88,89],"Nesla map omitted original member stations")
 	check(app.map_panel.snapshot().rows.any(func(row):return row.station_id==88 and row.supported),"The original Aoéh contact world is not reachable")

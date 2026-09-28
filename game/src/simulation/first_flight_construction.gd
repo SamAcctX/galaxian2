@@ -48,6 +48,11 @@ var _arrival_viewport:=Vector2i(1440,900)
 
 func selected40_builder() -> RefCounted:return _selected40_builder
 
+func retain_navigation_destination(station_id: int) -> bool:
+	if _state.is_empty() or not Numbers.integer(station_id,0,134):return reject("Retain a course only on a prepared arrival")
+	_state=_state.duplicate();_state.navigation_destination_id=station_id
+	return true
+
 func prepare_arrival_viewport(viewport: Vector2i) -> bool:
 	if not _state.is_empty() or _selected40_builder!=null or viewport.x<1 or viewport.y<1 or viewport.x>32767 or viewport.y>32767:return reject("Prepare a fresh arrival with a valid native viewport")
 	_arrival_viewport=viewport
