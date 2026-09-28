@@ -24,7 +24,7 @@ static func delivery_mission(bindings: RefCounted,mission: Variant) -> bool:
 	var requested: bool=not delivery.required_cargo.is_empty()
 	var maximum:=int(bindings.early_contracts.ordinary_generation.offers.difficulty_maximum) if requested else 9
 	if not Numbers.integer(mission.get("difficulty"),0 if requested else 1,maximum):return false
-	return not load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,mission.get("station_id")).is_empty()
+	return not load("res://src/content/ordinary_world_definitions.gd").location(bindings,mission.get("station_id")).is_empty()
 
 static func active_courier(context: Dictionary) -> bool:
 	return context.get("mission_kind")==0 and context.get("mission_completed")==false and context.get("side_missions_empty")==false

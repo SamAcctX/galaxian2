@@ -50,7 +50,7 @@ static func context_valid(bindings: RefCounted,context: Dictionary) -> bool:
 	# The retained equipment follows real native travel; Néhma30/2 is the
 	# immutable input checkpoint, not the only possible runtime location.
 	if not context.get("origin_station_id") is int or not context.get("origin_system_id") is int:return false
-	var origin: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,context.origin_station_id)
+	var origin: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings,context.origin_station_id)
 	if origin.is_empty() or origin.system_id!=context.origin_system_id:return false
 	return context.get("mission_story")==true and context.get("mission_completed")==false and context.get("mission_failed")==false and Numbers.integer(context.get("rank"),0,20) and context.get("difficulty") in [0.5,1.0]
 

@@ -35,7 +35,7 @@ static func population(bindings: RefCounted,packet: Dictionary,rank: Variant,dif
 	for key in ["campaign_cursor","station_id","system_id"]:
 		if source.get(key)!=context[key]:return {}
 	if packet.get("campaign_cursor")!=context.campaign_cursor or packet.get("station_id")!=context.station_id:return {}
-	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,context.station_id)
+	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings,context.station_id)
 	if source.get("system_faction")!=world.faction or source.get("security")!=world.security or not source.get("groups") is Dictionary:return {}
 	if actors.size()>Population.maximum_actor_count(bindings,rank,float(difficulty),context,mission_context) or source.get("actor_count")!=actors.size():return {}
 	if not context.side_missions_empty and source.groups.get("delivery_pirate")!=Delivery.extra_count(bindings,context):return {}
@@ -72,7 +72,7 @@ static func context_valid(bindings: RefCounted,context: Variant,mission_context:
 	if bindings==null or not context is Dictionary:return false
 	var rules: Dictionary=bindings.mido_travel.get("free_population",{})
 	if not Population.parameters(rules):return false
-	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,context.get("station_id"))
+	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings,context.get("station_id"))
 	if world.is_empty() or context.get("system_id")!=world.system_id:return false
 	if mission_context!=null:
 		if not load("res://src/simulation/mission_context.gd").normal_population_matches(bindings,context,mission_context):return false

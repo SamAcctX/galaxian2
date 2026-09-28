@@ -41,6 +41,8 @@ var _picker: FileDialog
 var _selection:={}
 var _pending_action:=""
 var _quit_after_import:=false
+var _refresh_receipt:=""
+var _updated_import:=""
 var _settings_controls:={}
 var _settings_art:={}
 
@@ -81,15 +83,23 @@ func boot(args: PackedStringArray=PackedStringArray(),directory: String="user://
 	if image_index<0:image_index=args.find("--app")
 	if image_index>=0 and image_index+1<args.size():return begin_import(args[image_index+1])
 	if not preferences.values.import_record.is_empty():
-		if open_import(preferences.values.import_record):return true
+		if open_import(preferences.values.import_record):
+			if OS.get_name()!="Android":_refresh_import()
+			return true
 		message=error
 	show_setup();_notice.text=message;return false
 
-func select_content(selection: Dictionary) -> bool:
+func select_content(selection: Dictionary,updates: Array=[]) -> bool:
 	if has_session():return reject("Close the current game before changing its content")
 	if not Preferences.valid(selection):return reject("Choose valid game folders and a supported language")
 	var candidate_library:=Library.new();var candidate_bindings:=Bindings.new();var candidate_visuals:=Visuals.new()
-	if not candidate_library.open(selection.content) or not candidate_bindings.open(selection.bindings,candidate_library.manifest) or not candidate_visuals.open(selection.visuals,candidate_library.manifest) or not candidate_library.select_language(selection.language):return reject(candidate_library.error+candidate_bindings.error+candidate_visuals.error)
+	if not candidate_library.open(selection.content) or not candidate_bindings.open(selection.bindings,candidate_library.manifest,candidate_library) or not candidate_visuals.open(selection.visuals,candidate_library.manifest) or not candidate_library.select_language(selection.language):return reject(candidate_library.error+candidate_bindings.error+candidate_visuals.error)
+	var update_failed:=false
+	for directory in updates:
+		# An optional newer extraction must not make the original career
+		# inaccessible. Saves requiring a missing extension still fail on load.
+		if not candidate_bindings.attach_import_update(directory,candidate_library.manifest,candidate_library):
+			update_failed=true;candidate_bindings.error=""
 	var candidate_music:=MenuAudio.new()
 	if not candidate_music.configure(candidate_library,candidate_bindings):
 		var message:=candidate_music.error;candidate_music.free();return reject(message)
@@ -99,14 +109,25 @@ func select_content(selection: Dictionary) -> bool:
 	if game!=null:game.free();game=null
 	library=candidate_library;bindings=candidate_bindings;visuals=candidate_visuals
 	preferences.values=selection.duplicate(true);_selection=selection.duplicate(true)
-	apply_preferences();show_menu();_persist();return true
+	apply_preferences();show_menu();_persist()
+	if update_failed:menu.show_error("Some updated game files could not be applied to this career. Its original game files are still available.")
+	return true
 
 func open_import(receipt: String) -> bool:
 	var record:=DmgImport.read_receipt(receipt)
 	if record.is_empty():return reject("Select the Mac .dmg or .app to prepare this game")
 	var selection:=preferences.values.duplicate(true);selection.import_record=receipt
 	for key in ["content","bindings","visuals"]:selection[key]=receipt.get_base_dir().path_join(record[key])
-	return select_content(selection)
+	var updates:=[];var latest:=receipt;var imports:=_prepared_imports();imports.reverse()
+	for prepared in imports:
+		var candidate: Dictionary=prepared.record
+		if candidate.get("source_sha256")==record.source_sha256 and candidate.base_content_id==record.base_content_id and candidate.binding_id!=record.binding_id and Bindings.reader_version(candidate.get("reader"))>=Bindings.reader_version(record.get("reader")):
+			updates.append(prepared.path.get_base_dir().path_join(candidate.bindings))
+			latest=prepared.path
+			selection.visuals=prepared.path.get_base_dir().path_join(candidate.visuals)
+	if not select_content(selection,updates):return false
+	_updated_import=latest if latest!=receipt else ""
+	return true
 
 func apply_preferences() -> void:
 	var values:=preferences.values
@@ -148,12 +169,11 @@ func request_action(action: String) -> void:
 	if phase!="menu":return
 	match action:
 		"new_game":
-			if not has_session() and _needs_import_update():
+			if not has_session() and _updated_import.is_empty() and _needs_import_update():
 				_show_details("update","Update game files")
-				_label("These game files were prepared before engine exhaust and newer fixes were added. Select your Mac game again to prepare updated files for a new game.")
+				_label("These game files were prepared by an earlier version. Choose your Mac game once to update them. Future changes to the importer will refresh them automatically while that source remains available.")
 				_label("Existing saves remain available with their earlier import. You can select either import from the game files screen.")
 				_button("Choose or update game files…",show_setup)
-				_button("Use current game files",_start_new_game)
 			else:_start_new_game()
 		"load":
 			if not has_save():return
@@ -169,7 +189,9 @@ func request_action(action: String) -> void:
 			request_close()
 
 func _needs_import_update() -> bool:
-	return bindings!=null and library.manifest.get("profile",{}).get("edition")=="mac-full-hd" and (bindings.engine_particle_owners.is_empty() or not bindings.engine_particles.has("opening_ship"))
+	if bindings==null:return false
+	var record:=DmgImport.read_receipt(preferences.values.import_record)
+	return not record.is_empty() and bindings.import_update_receipt().is_empty() and Bindings.reader_version(record.get("reader"))<Bindings.MAX_READER_VERSION
 
 func _start_new_game() -> void:
 	if has_session() or has_save():_confirm("new_game",library.strings[51])
@@ -198,6 +220,10 @@ func confirm_pending() -> void:
 
 func _enter_game(action: String) -> bool:
 	if library==null or action not in ["new_game","load"]:return false
+	if action=="new_game" and not _updated_import.is_empty():
+		var updated:=_updated_import
+		if not open_import(updated):return false
+		_updated_import=""
 	music.set_active(false)
 	var candidate:=Host.new();add_child(candidate);candidate.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	candidate.set_context(library,bindings,visuals);candidate.set_player_mode(true)
@@ -257,6 +283,7 @@ func _picked(path: String) -> void:
 
 func begin_import(path: String) -> bool:
 	if has_session() or _importer.busy():return false
+	_refresh_receipt=preferences.values.import_record
 	_show_details("import","Preparing Galaxy on Fire 2 Full HD")
 	_import_status=_label("Reading your Mac game…")
 	var progress:=ProgressBar.new();progress.indeterminate=true;progress.show_percentage=false;_body.add_child(progress)
@@ -264,8 +291,30 @@ func begin_import(path: String) -> bool:
 	if not _importer.start(path,_data_directory):show_setup();return reject(_importer.error)
 	return true
 
+func _refresh_import() -> void:
+	_refresh_receipt=preferences.values.import_record
+	_show_details("import","Checking game files")
+	_import_status=_label("Checking for updated game data…")
+	_back.hide()
+	if not _importer.start("",_data_directory,_refresh_receipt):
+		var message: String=_importer.error
+		_import_finished(false,"",message)
+
 func _import_finished(success: bool,receipt: String,message: String) -> void:
 	if _quit_after_import:exit_requested.emit();return
+	if not _refresh_receipt.is_empty():
+		var earlier:=_refresh_receipt;_refresh_receipt=""
+		if success:
+			var old_record:=DmgImport.read_receipt(earlier)
+			var updated:=DmgImport.read_receipt(receipt)
+			if has_save() and old_record.get("source_sha256")==updated.get("source_sha256") and old_record.get("binding_id")!=updated.get("binding_id"):
+				_updated_import=receipt
+				if open_import(earlier):return
+			elif open_import(receipt):return
+			message=error
+		show_setup();reject(message)
+		if has_save():_button("Continue saved game",func():open_import(earlier))
+		return
 	if success and open_import(receipt):return
 	if success:message=error
 	show_setup();reject(message)

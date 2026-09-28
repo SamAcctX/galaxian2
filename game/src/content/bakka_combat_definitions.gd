@@ -26,7 +26,7 @@ static func population(bindings: RefCounted,packet: Dictionary) -> Dictionary:
 	data.rank=int(context.rank);data.difficulty=float(context.difficulty);data.mission_kind=12;data.actor_count=8
 	# The authored contest still uses ordinary ship hit/faction routines. Their
 	# primary faction comes from this world, not the shared Mido contract defaults.
-	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,int(data.station_id))
+	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings,int(data.station_id))
 	if not load("res://src/content/free_lifecycle_definitions.gd").available(bindings) or world.get("system_id")!=data.system_id:return {}
 	data.lifecycle=bindings.early_contracts.ship_lifecycle.duplicate(true)
 	data.lifecycle.reactions=bindings.mido_travel.free_lifecycle.reactions.duplicate(true)

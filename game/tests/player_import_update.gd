@@ -27,8 +27,12 @@ func run() -> void:
 	check(app._prepared_imports().size()==2,"Game files chooser lost one of the prepared imports")
 	choose(app,"earlier files")
 	check(app.phase=="menu" and app.bindings.binding_id==earlier.binding_id and app.has_save(),"Earlier files must retain their earned save")
+	check(app.bindings.import_update_receipt().get("source_binding_id")==updated.binding_id and not app._needs_import_update(),"Earlier careers did not receive verified source additions")
+	# A legacy installation without an attached update must explain the picker.
+	check(app.select_content(app.preferences.values,[directory.path_join("missing-update")]),app.error);app._updated_import=""
+	check(app.phase=="menu" and app.has_save() and app.bindings.binding_id==earlier.binding_id and app.bindings.import_update_receipt().is_empty(),"An unusable optional update blocked the original career")
 	app.request_action("new_game")
-	check(app.phase=="update" and not app.has_session(),"New game silently reused files without exhaust")
+	check(app.phase=="update" and not app.has_session(),"New game silently reused outdated game files")
 	await capture("import-update-notice")
 	choose(app,"Choose or update")
 	check(app.phase=="setup","Update action did not return to the common file chooser")
@@ -40,6 +44,9 @@ func run() -> void:
 	if app.game!=null:app.game.free();app.game=null
 	app.show_setup();choose(app,"earlier files")
 	check(app.has_save() and app.bindings.binding_id==earlier.binding_id,"Returning to earlier files lost Resume")
+	app.request_action("new_game")
+	check(app.phase=="confirm" and not app.has_session(),"Updated New Game bypassed the saved-career confirmation")
+	app._back.pressed.emit()
 	app.request_action("resume")
 	check(app.phase=="game" and app.has_session(),app.error)
 	if app.has_session():
@@ -47,6 +54,13 @@ func run() -> void:
 		check(app.game.station_shell.visible,"The existing first-station save still has no interface")
 		await capture("import-earlier-save-resumed")
 	check(FileAccess.get_file_as_bytes(copy)==saved and FileAccess.get_file_as_bytes(args[2])==saved,"Import selection changed or migrated the earlier save")
+	app.free();await process_frame
+	app=Frontend.new();root.add_child(app)
+	check(app.boot(PackedStringArray(),directory),app.error)
+	check(app.phase=="import","A fresh launch did not check for importer changes")
+	var deadline:=Time.get_ticks_msec()+30000
+	while app._importer.busy() and Time.get_ticks_msec()<deadline:await create_timer(0.1).timeout
+	check(app.phase=="menu" and app.has_save() and app.bindings.binding_id==earlier.binding_id and app.bindings.import_update_receipt().get("source_binding_id")==updated.binding_id,"Automatic refresh lost the existing career or its updated data: "+app.error)
 	app.free();await process_frame
 	finish()
 

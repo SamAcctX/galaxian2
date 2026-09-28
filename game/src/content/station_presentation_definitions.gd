@@ -35,7 +35,7 @@ static func select(bindings: RefCounted, station_id: int, _cursor: int,_station_
 	if station_id==98:
 		if not Alioth.available(bindings):return {}
 		return alioth_view(bindings.station_presentation)
-	var world: Dictionary=Worlds.location(bindings.mido_travel,station_id)
+	var world: Dictionary=Worlds.location(bindings,station_id)
 	if not world.is_empty():
 		# Ordinary worlds carry their source system fields. The catalogue resolver still
 		# checks the selected row against the imported station at scene entry.

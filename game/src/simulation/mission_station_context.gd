@@ -98,7 +98,7 @@ static func permits(bindings: RefCounted,cursor: Variant,station: Variant,contex
 	var record: Dictionary=context._record
 	if record.is_empty() or not cursor is int or not station is int or record.base_content_id!=bindings.base_content_id or record.binding_id!=bindings.binding_id or record.campaign_cursor!=cursor:return false
 	if record.station_id==station:return true
-	return context.completed_career(bindings) and not load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,station).is_empty()
+	return context.completed_career(bindings) and not load("res://src/content/ordinary_world_definitions.gd").location(bindings,station).is_empty()
 
 func snapshot() -> Dictionary:return _record.duplicate(true)
 func reject(message: String) -> bool:error=message;return false

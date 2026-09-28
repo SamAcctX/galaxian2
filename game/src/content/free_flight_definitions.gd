@@ -27,7 +27,7 @@ static func player_entry(source: Variant,station_id: int,ship_id: int,cursor: in
 	# into a generic player/cache entry, even when that story is only declared
 	# by the preceding pack. The authored arrival has its own retained adapter.
 	if story.get("kind")==4 and station_id==int(story.get("station_id",-1)):return {}
-	var world:=Worlds.location(travel,station_id)
+	var world:=Worlds.location(source,station_id)
 	if world.is_empty():return {}
 	var result: Dictionary=travel.player_entry.duplicate(true)
 	result.campaign_cursor=cursor;result.system_id=int(world.system_id)
@@ -38,7 +38,7 @@ static func flight(bindings: RefCounted,station_id: int,cursor: int=18) -> Dicti
 	if not available(bindings) or player_entry(bindings,station_id,0,cursor).is_empty():return {}
 	var result: Dictionary=bindings.first_flight.duplicate(true)
 	result.scope="augmenta_ordinary_flight";result.campaign_cursor=cursor
-	result.station_id=station_id;result.system_id=int(Worlds.location(bindings.mido_travel,station_id).system_id);result.mission_kind=-1
+	result.station_id=station_id;result.system_id=int(Worlds.location(bindings,station_id).system_id);result.mission_kind=-1
 	if result.system_id!=19:result.scope="ordinary_flight"
 	result.erase("actor_count")
 	return result
@@ -61,7 +61,7 @@ static func ordinary_entry(bindings: RefCounted,entry: Dictionary) -> bool:
 
 static func docking(bindings: RefCounted,station_id: int,cursor: int=18) -> Dictionary:
 	if flight(bindings,station_id,cursor).is_empty() or not load("res://src/content/station_return_definitions.gd").parameters(bindings.station_return):return {}
-	return _docking_values(station_id,int(Worlds.location(bindings.mido_travel,station_id).system_id),cursor)
+	return _docking_values(station_id,int(Worlds.location(bindings,station_id).system_id),cursor)
 
 static func _docking_values(station_id: int,system_id: int=19,cursor: int=18) -> Dictionary:
 	var result: Dictionary=load("res://src/content/contract_world_definitions.gd")._docking_values(station_id,cursor)
@@ -70,4 +70,6 @@ static func _docking_values(station_id: int,system_id: int=19,cursor: int=18) ->
 
 static func docking_parameters(data: Dictionary) -> bool:
 	var system: Variant=data.get("system_id")
-	return data.get("campaign_cursor") is int and data.campaign_cursor>=0 and system is int and Worlds.SYSTEMS.has(system) and data.get("station_id") is int and data.station_id in Worlds.SYSTEMS[system].station_ids and Equal.equal_value(data,_docking_values(data.station_id,system,int(data.get("campaign_cursor",-1))))
+	# The shared world entry already admits the catalogue location. Docking
+	# validates its rule shape without maintaining a second destination list.
+	return data.get("campaign_cursor") is int and data.campaign_cursor>=0 and system is int and system>=0 and data.get("station_id") is int and data.station_id>=0 and Equal.equal_value(data,_docking_values(data.station_id,system,int(data.get("campaign_cursor",-1))))

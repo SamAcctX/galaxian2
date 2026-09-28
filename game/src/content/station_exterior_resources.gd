@@ -65,7 +65,11 @@ func _prepare_location(library: RefCounted,bindings: RefCounted,catalogues: RefC
 	if collision.is_empty():return reject(volume_reader.error)
 	var layers:=[];var sphere:=Vector4.ZERO
 	for index in data.model_ids.size():
-		var id:=int(data.model_ids[index]);var path: String=bindings.resolve(id,"mesh")
+		var id:=int(data.model_ids[index])
+		# Some original stations register an optional light mesh absent from
+		# the supplied bundle. Their hull and docking geometry remain complete.
+		if index==2 and bindings.records.has(id) and bindings.records[id].all(func(row):return row.kind=="mesh" and not library.manifest.files.has(row.resource)):continue
+		var path: String=bindings.resolve(id,"mesh")
 		if path.is_empty():return reject(bindings.error)
 		var material: Dictionary=bindings.material_for_mesh(path,"high")
 		if material.is_empty():return reject(bindings.error)
@@ -102,6 +106,16 @@ static func initial_transform_supported(surface: Dictionary, allow_light_scalar:
 	if allow_light_scalar:
 		if scalar.size()!=1 or scalar[0].dimensions!=1 or scalar[0].keys.size()<2 or scalar[0].keys[0]!=0 or scalar[0].keys[1]!=100:return false
 		copy.tracks.scalar=[]
+	# Constant Euler half-turns may compose to the identity even though none
+	# of their individual angles are zero. Bounds still use that identity.
+	var rotations: Array=copy.tracks.get("rotation",[])
+	if not rotations.is_empty():
+		var angles:=Tracks.vector(rotations,0.0,Vector3.ZERO)
+		if not Basis.from_euler(angles,EULER_ORDER_XYZ).is_equal_approx(Basis.IDENTITY):return false
+		for track in rotations:
+			for offset in range(0,track.keys.size(),int(track.dimensions)+1):
+				if not Tracks.vector(rotations,float(track.keys[offset]),Vector3.ZERO).is_equal_approx(angles):return false
+		copy.tracks.rotation=[]
 	return Tracks.has_identity_tracks([copy])
 
 static func merge_spheres(current: Vector4, incoming: Vector4) -> Vector4:

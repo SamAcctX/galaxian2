@@ -22,7 +22,7 @@ func resolve_lounge(bindings: RefCounted,catalogues: RefCounted,station_id: int,
 	if station_id<0 or station_id>=catalogues.tables.stations.size():return reject("Unknown lounge station")
 	var station: Dictionary=catalogues.tables.stations[station_id]
 	var ordinary: bool=load("res://src/content/local_arrival_environment_definitions.gd").location_supported(bindings,catalogues,station_id,cursor,mission_context)
-	if not ordinary and (not Travel.location_supported(bindings.mido_travel,station_id,int(station.system_id),int(station.planet_type)) or cursor not in [13,14,15]):return reject("This lounge location is not yet supported")
+	if not ordinary and (not Travel.location_supported(bindings,station_id,int(station.system_id),int(station.planet_type)) or cursor not in [13,14,15]):return reject("This lounge location is not yet supported")
 	var context:=_resolve(bindings,catalogues,{"station_id":station_id,"system_id":int(station.system_id)},cursor,mission_context)
 	if not context.is_empty():context.world_type=int(bindings.early_contracts.lounge_presentation.world_type)
 	return context
@@ -61,7 +61,7 @@ func _resolve(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, cu
 		return reject("This flight uses an unsupported system background")
 	# Mission entry already chose the world. Resolve only its content layout;
 	# a camera/background loader must not re-admit the campaign cursor.
-	var local_travel:=Travel.location_supported(bindings.mido_travel,int(seed.station_id),int(seed.system_id),int(station.get("planet_type",-1))) or not FreeFlight.Worlds.catalogue_location(bindings,catalogues,int(seed.station_id)).is_empty()
+	var local_travel:=Travel.location_supported(bindings,int(seed.station_id),int(seed.system_id),int(station.get("planet_type",-1))) or not FreeFlight.Worlds.catalogue_location(bindings,catalogues,int(seed.station_id)).is_empty()
 	if mission_context!=null and not mission_context.matches_location(bindings,seed):return reject("The admitted flight changed its environment location")
 	if not Numbers.integer(station.get("planet_type"),0,bindings.opening_sky.planet_resources.near_textures.size()-1) or (station.get("planet_type")!=int(data.supported_planet_type) and not local_travel):return reject("This flight uses an unsupported planet layout")
 	var index:=int(system.sky_index)

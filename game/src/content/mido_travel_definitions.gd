@@ -238,9 +238,10 @@ static func validate(data: Variant, source_bytes: int, arch: String, arrival: Di
 		if not Fonts.extent(span,"offset","bytes",[rule[1]],source_bytes) or int(span.offset)!=int(origin.offset)+int(rule[0]):return "Invalid local travel extent: "+key
 	return ""
 
-static func location_supported(data: Dictionary, station_id: int, system_id: int, planet_type: int) -> bool:
+static func location_supported(source: Variant, station_id: int, system_id: int, planet_type: int) -> bool:
+	var data: Dictionary=FreeFlight.Campaign.source_travel(source)
 	if not parameters(data):return false
-	var ordinary:=Worlds.location(data,station_id) if free_local_navigation(data,18) else {}
+	var ordinary:=Worlds.location(source,station_id) if free_local_navigation(source,18) else {}
 	if not ordinary.is_empty():return system_id==ordinary.system_id and planet_type==ordinary.planet_type
 	if data.has("alioth_arrival") and station_id==int(data.alioth_arrival.station_id):
 		return system_id==int(data.alioth_arrival.system_id) and planet_type==int(data.alioth_arrival.planet_type)
@@ -264,13 +265,13 @@ static func free_local_navigation(source: Variant,cursor: int) -> bool:
 static func navigation_system(source: Variant,cursor: int,station_id: int=-1) -> int:
 	var data: Dictionary=FreeFlight.Campaign.source_travel(source)
 	if free_local_navigation(source,cursor):
-		return int(Worlds.location(data,station_id).get("system_id",-1)) if station_id>=0 else int(data.free_flight.system_id)
+		return int(Worlds.location(source,station_id).get("system_id",-1)) if station_id>=0 else int(data.free_flight.system_id)
 	return int(data.get("system_id",-1))
 
 static func navigation_stations(source: Variant, cursor: int, station_id: int) -> Array:
 	var data: Dictionary=FreeFlight.Campaign.source_travel(source)
 	if navigation_available(data,cursor) or free_local_navigation(source,cursor):
-		var stations: Array=(Worlds.location(data,station_id).get("station_ids",[]) if free_local_navigation(source,cursor) else data.contract_navigation.station_ids).map(func(id):return int(id))
+		var stations: Array=(Worlds.location(source,station_id).get("station_ids",[]) if free_local_navigation(source,cursor) else data.contract_navigation.station_ids).map(func(id):return int(id))
 		return stations if stations.has(station_id) else []
 	var trip:=journey(data,cursor)
 	if trip.is_empty() or station_id!=int(trip.from_station_id):return []
@@ -430,7 +431,7 @@ static func population(bindings: RefCounted, world: Dictionary, rank: Variant, d
 static func combat_population(bindings: RefCounted, combat: Dictionary) -> bool:
 	if bindings==null or not parameters(bindings.mido_travel) or not combat.get("campaign_cursor") is int:return false
 	if navigation_available(bindings.mido_travel,combat.campaign_cursor):
-		return bindings.early_contracts.has("world_initialization") and combat.get("actors")==[] and combat.get("base_content_id")==bindings.base_content_id and combat.get("binding_id")==bindings.binding_id and navigation_stations(bindings.mido_travel,combat.campaign_cursor,int(combat.get("provocation",{}).get("station_id",-1))).size()>0
+		return bindings.early_contracts.has("world_initialization") and combat.get("actors")==[] and combat.get("base_content_id")==bindings.base_content_id and combat.get("binding_id")==bindings.binding_id and navigation_stations(bindings,combat.campaign_cursor,int(combat.get("provocation",{}).get("station_id",-1))).size()>0
 	var trip:=journey(bindings.mido_travel,combat.campaign_cursor)
 	if trip.is_empty():return false
 	for key in ["base_content_id","binding_id"]:
@@ -485,7 +486,7 @@ static func destruction_parameters(bindings: RefCounted, data: Dictionary) -> bo
 	var expected: Dictionary=bindings.mido_travel.traffic_combat.death.duplicate(true)
 	if not data.get("campaign_cursor") is int:return false
 	var trip:=journey(bindings.mido_travel,data.campaign_cursor)
-	var contract: bool=navigation_available(bindings.mido_travel,data.campaign_cursor) and bindings.early_contracts.has("world_initialization") and navigation_stations(bindings.mido_travel,data.campaign_cursor,int(data.get("station_id",-1))).size()>0
+	var contract: bool=navigation_available(bindings.mido_travel,data.campaign_cursor) and bindings.early_contracts.has("world_initialization") and navigation_stations(bindings,data.campaign_cursor,int(data.get("station_id",-1))).size()>0
 	if (trip.is_empty() and not contract) or (count>0 and data.campaign_cursor!=10):return false
 	if count==0:expected.scope="mido_kernstal_empty_death" if int(data.campaign_cursor)==10 else "mido_yrdal_empty_death";expected.station_id=int(data.station_id) if contract else int(trip.station_id)
 	expected.campaign_cursor=data.campaign_cursor;expected.actor_count=count;expected.cargo=bindings.combat_training_destruction.cargo.duplicate(true);expected.actors=[]

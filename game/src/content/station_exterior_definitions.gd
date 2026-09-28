@@ -23,16 +23,16 @@ static func for_location(bindings: RefCounted, station_id: int, system_id: int, 
 	var sahi: bool=station_id==48 and system_id==9 and load("res://src/content/sahi_encounter_definitions.gd").coherent(bindings.mido_travel)
 	var dekato: bool=load("res://src/content/dekato_convoy_definitions.gd").selected_location(bindings,station_id,system_id)
 	if (sahi or dekato) and catalogue_faction not in [0,1,2,3]:return {}
-	if not sahi and not dekato and not Travel.location_supported(bindings.mido_travel,station_id,system_id,planet_type):return {}
+	if not sahi and not dekato and not Travel.location_supported(bindings,station_id,system_id,planet_type):return {}
 	var result:=data.duplicate(true)
 	result.station_id=station_id;result.system_id=system_id
 	# Faction belongs to the system; the exterior models belong to each station.
 	if bindings.mido_travel.has("alioth_arrival") and system_id==int(bindings.mido_travel.alioth_arrival.system_id):result.faction=int(bindings.mido_travel.alioth_arrival.faction)
-	var ordinary: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,station_id)
+	var ordinary: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings,station_id)
 	if not ordinary.is_empty():result.faction=int(ordinary.faction)
 	if sahi or dekato:result.faction=catalogue_faction
 	result.model_ids=bindings.mido_travel.exterior_model_bases.map(func(base):return int(base)+station_id)
-	if not ordinary.is_empty() and ordinary.system_id in [3,5]:
+	if not ordinary.is_empty() and ordinary.faction==1:
 		# These source stations use the shared Vossk assembly, not station-ID
 		# meshes. Its authored collision record is shared without relocating it.
 		result.model_ids=[16436,16439,16442]

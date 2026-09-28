@@ -18,6 +18,7 @@ var _departure := {}
 var _full_hold := {}
 var _training := {}
 var _travel := {}
+var _world_source: RefCounted
 var _void_crystal_field := {}
 var _alioth := false
 var _free := false
@@ -33,6 +34,7 @@ func clear() -> void:
 	_full_hold={}
 	_training={}
 	_travel={}
+	_world_source=null
 	_void_crystal_field={}
 	_alioth=false
 	_free=false
@@ -52,6 +54,7 @@ func configure(bindings: RefCounted) -> bool:
 	_full_hold=bindings.full_hold_flight.duplicate(true)
 	_training=bindings.combat_training.duplicate(true)
 	_travel=bindings.mido_travel.duplicate(true)
+	_world_source=bindings
 	_void_crystal_field=void_crystal_field(bindings)
 	_alioth=load("res://src/content/alioth_flight_definitions.gd").available(bindings)
 	_free=load("res://src/content/free_flight_definitions.gd").available(bindings)
@@ -108,9 +111,9 @@ func for_departure(station_id: Variant, entry_conditions: Variant, cursor: int=2
 	elif cursor==26 and post.parameters(_travel.get("post_sahi",{})) and station_id==48:data={"station_id":station_id}
 	elif cursor==28 and load("res://src/content/thynome_expedition_definitions.gd").coherent(_travel) and station_id==91:data={"station_id":station_id}
 	elif bakka_target and load("res://src/content/bakka_contest_definitions.gd").parameters(_travel.get("bakka_contest")):data={"station_id":station_id}
-	elif _free and cursor>=0 and station_id is int and not bakka_target and not load("res://src/content/ordinary_world_definitions.gd").location(_travel,station_id).is_empty():data={"station_id":station_id}
+	elif _free and cursor>=0 and station_id is int and not bakka_target and not load("res://src/content/ordinary_world_definitions.gd").location(_world_source,station_id).is_empty():data={"station_id":station_id}
 	elif cursor==14 and station_id==79 and not Travel.player_entry(_travel,station_id,cursor).is_empty():data={"station_id":station_id}
-	elif Travel.navigation_available(_travel,cursor) and station_id is int and Travel.navigation_stations(_travel,cursor,station_id).has(station_id):data={"station_id":station_id}
+	elif Travel.navigation_available(_travel,cursor) and station_id is int and Travel.navigation_stations(_world_source,cursor,station_id).has(station_id):data={"station_id":station_id}
 	else:return fail("This departure has no supported scenery center")
 	if not station_id is int or station_id!=int(data.station_id) or not FirstFlight.entry_conditions(entry_conditions):return fail("Departure scenery requires its ordinary station and empty companion list")
 	return _ordinary_center(station_id,cursor)

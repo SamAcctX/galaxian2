@@ -17,6 +17,7 @@ func save(path: String,station: RefCounted,bindings: RefCounted,cat: RefCounted,
 	error="";recovered_backup=false
 	var archive:=Archive.new();var document:=archive.capture(station,bindings,locations)
 	if document.is_empty():return reject(archive.error)
+	if not bindings.import_update_receipt().is_empty():document.import_update=bindings.import_update_receipt().duplicate(true)
 	if archive.restore(bindings,cat,library,document)==null:return reject(archive.error)
 	var bytes:=encode(document)
 	if bytes.is_empty():return false
@@ -52,6 +53,7 @@ func load_document(path: String,bindings: RefCounted,cat: RefCounted,library: Re
 	for suffix in ["",".bak"]:
 		var document:=read_document(path+suffix)
 		if not document.is_empty():
+			if document.has("import_update") and not bindings.accepts_import_update(document.import_update):return failure("Update the game files to restore this saved career's additional source data")
 			# Missing source capability is not file damage. Do not silently roll
 			# this career back to an older backup or attach declarations on load.
 			if document.get("version") in [9,10,11] and not _supplement_matches(bindings,document.get("station"),int(document.version)):return failure("Explicitly attach this checkpoint's exact supplemental sources before loading")

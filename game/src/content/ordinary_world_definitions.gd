@@ -35,7 +35,32 @@ static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALU
 static func available(bindings: RefCounted) -> bool:
 	return bindings!=null and parameters(bindings.mido_travel.get("ordinary_worlds")) and load("res://src/content/local_arrival_environment_definitions.gd").available(bindings)
 
-static func location(data: Dictionary,station_id: Variant) -> Dictionary:
+static func from_catalogues(bindings: RefCounted,cat: RefCounted) -> Dictionary:
+	var result:={}
+	if not available(bindings) or cat.content_id!=bindings.base_content_id:return result
+	var population: Dictionary=bindings.mido_travel.free_population
+	var stock: Dictionary=bindings.early_contracts.get("base_station_stock",{})
+	if stock.is_empty():return result
+	for system in cat.tables.systems:
+		if system.id>int(stock.last_system_id):continue
+		var faction:=int(system.fields[int(population.faction_field)])
+		var security:=int(system.fields[int(population.security_field)])
+		if faction not in [0,1,2,3] or system.sky_index<0 or system.sky_index>14:continue
+		if faction==1 and not vossk_available(bindings.mido_travel):continue
+		var ids: Array=Array(system.station_ids)
+		if ids.is_empty():continue
+		var types:=ids.map(func(id):return int(cat.tables.stations[id].planet_type))
+		var world:={"system_id":int(system.id),"station_ids":ids,"planet_types":types,"faction":faction,"security":security,
+			"gate_station_id":int(system.fields[int(bindings.mido_travel.free_navigation.gate_station_field)]),"sky_index":int(system.sky_index)}
+		for index in ids.size():
+			if ids[index]>int(stock.last_station_id) or types[index] not in range(20):continue
+			var location:=world.duplicate(true);location.station_id=int(ids[index]);location.planet_type=types[index]
+			result[int(ids[index])]=location
+	return load("res://src/simulation/readonly_state.gd").freeze(result)
+
+static func location(source: Variant,station_id: Variant) -> Dictionary:
+	var data: Dictionary=load("res://src/content/free_campaign_definitions.gd").source_travel(source)
+	if source is RefCounted and not source.world_locations.is_empty():return source.world_locations.get(station_id,{}) if station_id is int else {}
 	if not station_id is int or not data.has("free_population"):return {}
 	for id in SYSTEMS:
 		# Hull declarations alone do not provide the source's complete LOD assembly.
@@ -59,7 +84,8 @@ static func vossk_available(data: Dictionary) -> bool:
 
 static func catalogue_location(bindings: RefCounted,catalogues: RefCounted,station_id: Variant) -> Dictionary:
 	if bindings==null or catalogues==null or catalogues.content_id!=bindings.base_content_id:return {}
-	var world:=location(bindings.mido_travel,station_id)
+	if not bindings.bind_catalogues(catalogues):return {}
+	var world:=location(bindings,station_id)
 	if world.is_empty():return {}
 	if world.system_id in [1,4,8,17] and not load("res://src/content/persistent_contact_definitions.gd").available(bindings):return {}
 	if world.system_id==4 and not load("res://src/content/free_traffic_definitions.gd").available(bindings):return {}

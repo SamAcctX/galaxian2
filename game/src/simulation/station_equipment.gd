@@ -443,7 +443,7 @@ func relocate_local_arrival(bindings: RefCounted, catalogues: RefCounted, arriva
 	if seed.base_content_id!=bindings.base_content_id or seed.binding_id!=bindings.binding_id or seed.station_id!=arrival.from_station_id or seed.system_id!=arrival.system_id:return reject("Local arrival does not follow this inventory's location")
 	if arrival.station_id>=catalogues.tables.stations.size():return reject("The destination station is absent")
 	var station: Dictionary=catalogues.tables.stations[arrival.station_id]
-	if not Travel.location_supported(data,arrival.station_id,station.system_id,station.planet_type):return reject("The destination environment is unsupported")
+	if not Travel.location_supported(bindings,arrival.station_id,station.system_id,station.planet_type):return reject("The destination environment is unsupported")
 	# Callers prepare this on a fork, committing it with the complete new world.
 	# Moving the location does not buy, sell, refill or reprice any inventory.
 	_state.loadout.station_id=arrival.station_id

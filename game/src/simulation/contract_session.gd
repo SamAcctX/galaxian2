@@ -51,6 +51,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,station: Dictionary,e
 	error=""
 	if not _state.is_empty():return reject("Retain the current contract session instead of resetting it")
 	if not available(bindings) or catalogues==null or catalogues.content_id!=bindings.base_content_id:return reject("Contract acceptance is unavailable for this content")
+	if not bindings.bind_catalogues(catalogues):return reject(bindings.error)
 	if not is_finite(difficulty) or difficulty<=0.0:return reject("The game difficulty is invalid")
 	var terms: Dictionary=bindings.early_contracts
 	var visit: Dictionary=bindings.mido_travel.get("return_visit",{})
@@ -810,7 +811,7 @@ func free_flight_context(bindings: RefCounted,station_id: int) -> Dictionary:
 func retained_station_context(bindings: RefCounted,station_id: int) -> Dictionary:
 	error=""
 	var definitions=load("res://src/content/free_flight_definitions.gd")
-	if not definitions.available(bindings) or definitions.Worlds.location(bindings.mido_travel,station_id).is_empty() or not Campaign.supported(bindings,_state.get("campaign_cursor")) or _state.get("station_id")!=station_id:return fail("The station requires its retained unlocked career")
+	if not definitions.available(bindings) or definitions.Worlds.location(bindings,station_id).is_empty() or not Campaign.supported(bindings,_state.get("campaign_cursor")) or _state.get("station_id")!=station_id:return fail("The station requires its retained unlocked career")
 	if _state.get("base_content_id")!=bindings.base_content_id or _state.get("binding_id")!=bindings.binding_id or _rules!=bindings.early_contracts:return fail("The ordinary career belongs to another content identity")
 	if GateArrival.available(bindings) and not GateArrival.valid_statistics(_state.get("travel_statistics")):return fail("The ordinary career lost its earned travel statistics")
 	if not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the retained flight or result before ordinary departure")
@@ -1257,7 +1258,7 @@ func _station_inventory(equipment: RefCounted,bindings: RefCounted=null) -> Dict
 	elif bindings!=null and load("res://src/content/nehma_return_definitions.gd").station_supported(bindings,_state.campaign_cursor,int(owned.loadout.station_id)):
 		# Retain the acknowledged station-only continuation without admitting its
 		# as-yet unsupported special flight or changing the living world cursor.
-		var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,int(owned.loadout.station_id))
+		var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings,int(owned.loadout.station_id))
 		if world.is_empty() or owned.loadout.system_id!=int(world.system_id):reject("The continuation station differs from its source world");return {}
 	elif owned.loadout.system_id!=int(_rules.system_id) or owned.loadout.station_id not in _stations:reject("The delivery station is outside the supported system");return {}
 	var candidate: RefCounted=equipment.fork()

@@ -80,8 +80,10 @@ func _capture_career(station: RefCounted,bindings: RefCounted,version: int) -> D
 func restore(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: Variant) -> RefCounted:
 	error="";restored_locations=null
 	if not available(bindings) or cat==null or library==null or cat.content_id!=bindings.base_content_id or library.manifest.get("content_id")!=bindings.base_content_id:return reject("Select the game's content and current bindings before loading")
-	if not data is Dictionary or data.size()!=8 or data.get("format")!="gof2-native-station" or data.get("version") not in [1,2,3,4,5,6,7,8,9,10,11] or not data.version is int:return reject("Unsupported station save format")
+	if not data is Dictionary or data.size()!=8+int(data.has("import_update")) or data.get("format")!="gof2-native-station" or data.get("version") not in [1,2,3,4,5,6,7,8,9,10,11] or not data.version is int:return reject("Unsupported station save format")
 	if not _identity(data,bindings):return reject("This save belongs to different content or gameplay bindings")
+	if data.has("import_update") and not bindings.accepts_import_update(data.import_update):return reject("Update the game files to restore this saved career's additional source data")
+	if not bindings.bind_catalogues(cat):return reject(bindings.error)
 	if not data_tree(data):return reject("The save contains unsupported or oversized data")
 	if data.version==2:return Opening.new().restore(self,bindings,cat,library,data)
 	var career_keys: Array=CAREER_KEYS+OPTIONAL_CAREER_KEYS+(["void_source","blueprints"] if data.version in [8,9,10,11] else [])
@@ -395,7 +397,7 @@ func _ordinary_docked_station(bindings: RefCounted,state: Dictionary,flight_curs
 	var cursor: Variant=state.get("campaign_cursor")
 	for key in ["line_index","reward_credits"]:
 		if not state.get(key) is int or state[key]!=0:return false
-	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,int(seed.station_id))
+	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings,int(seed.station_id))
 	if world.is_empty() or not seed.get("system_id") is int or seed.system_id!=int(world.system_id):return false
 	if state.get("phase")!="free_play_required" or state.get("line_index")!=0 or state.get("reward_credits")!=0 or state.get("alioth_return",false)!=false:return false
 	for key in ["return_visit","local_visit","contract_station","local_visit_acknowledged","acknowledged","alioth_return_acknowledged"]:

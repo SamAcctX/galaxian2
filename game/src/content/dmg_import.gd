@@ -31,10 +31,12 @@ static func valid_source(source: String) -> bool:
 	if source.get_extension().to_lower()=="dmg":return FileAccess.file_exists(source)
 	return source.trim_suffix("/").get_extension().to_lower()=="app" and DirAccess.dir_exists_absolute(source) and FileAccess.file_exists(source.path_join("Contents/Info.plist"))
 
-func start(source: String,directory: String) -> bool:
+func start(source: String,directory: String,refresh_receipt: String="") -> bool:
 	error=""
 	if busy():return reject("A Mac import is already running")
-	if not valid_source(source):return reject("Choose a Galaxy on Fire 2 Full HD Mac .dmg or .app ZIP" if OS.get_name()=="Android" else "Choose your Galaxy on Fire 2 Full HD Mac .dmg file or .app folder")
+	if not refresh_receipt.is_empty():
+		if read_receipt(refresh_receipt).is_empty() or OS.get_name()=="Android":return reject("Choose your Mac game to update its prepared files")
+	elif not valid_source(source):return reject("Choose a Galaxy on Fire 2 Full HD Mac .dmg or .app ZIP" if OS.get_name()=="Android" else "Choose your Galaxy on Fire 2 Full HD Mac .dmg file or .app folder")
 	if OS.get_name()=="Android":
 		if not Engine.has_singleton("GoF2AndroidImport"):return reject("The Android Mac app importer is missing from this game package")
 		var android_jobs:=directory.path_join("import-jobs")
@@ -59,7 +61,9 @@ func start(source: String,directory: String) -> bool:
 	var bundled_python:=bundled.path_join("python/python.exe" if OS.get_name()=="Windows" else "python/bin/python3")
 	if python.is_empty() and FileAccess.file_exists(bundled_python):python=bundled_python
 	if python.is_empty():python="python" if OS.get_name()=="Windows" else "python3"
-	var arguments:=PackedStringArray([helper,source,"--store",directory.path_join("imports"),"--status",_status_path,"--cancel-file",_cancel_path])
+	var arguments:=PackedStringArray([helper])
+	arguments.append_array(PackedStringArray([source]) if refresh_receipt.is_empty() else PackedStringArray(["--refresh",refresh_receipt]))
+	arguments.append_array(PackedStringArray(["--store",directory.path_join("imports"),"--status",_status_path,"--cancel-file",_cancel_path]))
 	if python==bundled_python:arguments=PackedStringArray(["-E","-s","-B"])+arguments
 	_pid=OS.create_process(python,arguments)
 	if _pid<0:return reject("Could not start the Mac importer. Extract the complete download, including its importer folder.")

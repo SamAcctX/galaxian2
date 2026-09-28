@@ -54,7 +54,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, equipment: RefCount
 		if Definitions.free_local_navigation(bindings,cursor) and id!=seed.station_id and not load("res://src/content/free_navigation_definitions.gd").destination_supported(bindings,cursor,mission,id):continue
 		if not Numbers.integer(id,0,catalogues.tables.stations.size()-1):return reject("Local destination is absent from the catalogue")
 		var row: Dictionary=catalogues.tables.stations[int(id)]
-		if not Definitions.location_supported(content,int(id),int(row.system_id),int(row.planet_type)):return reject("Local destination uses an unsupported environment")
+		if not Definitions.location_supported(bindings,int(id),int(row.system_id),int(row.planet_type)):return reject("Local destination uses an unsupported environment")
 		stations.append(int(id))
 	var duration:=int(rules.default_acquisition_ms)
 	for id in seed.equipment_ids:
@@ -84,7 +84,7 @@ func rebase_campaign(bindings: RefCounted,cursor: int,mission: Dictionary) -> bo
 	var visit: Dictionary=campaign.dialogue_rules(bindings,_state.get("campaign_cursor"),campaign.mission(bindings.mido_travel,int(_state.get("campaign_cursor",-1))))
 	if _state.get("phase")!="flight" or not campaign.visit_at(bindings.mido_travel,_state.get("campaign_cursor"),_state.get("station_id")) or visit.is_empty() or cursor!=int(visit.next_cursor) or not Definitions.navigation_mission(bindings.mido_travel,cursor,mission):return reject("Local navigation lost its acknowledged campaign visit")
 	_state.campaign_cursor=cursor
-	_stations=Definitions.navigation_stations(bindings.mido_travel,cursor,_state.station_id).filter(func(id):return id==_state.station_id or load("res://src/content/free_navigation_definitions.gd").destination_supported(bindings,cursor,mission,id))
+	_stations=Definitions.navigation_stations(bindings,cursor,_state.station_id).filter(func(id):return id==_state.station_id or load("res://src/content/free_navigation_definitions.gd").destination_supported(bindings,cursor,mission,id))
 	if not _stations.has(_state.candidate_station_id):_state.candidate_station_id=-1;_state.acquisition_ms=0
 	if not _stations.has(_state.acquired_station_id):_state.acquired_station_id=-1
 	return true

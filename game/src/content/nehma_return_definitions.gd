@@ -42,7 +42,7 @@ static func station_supported(bindings: RefCounted,cursor: Variant,station_id: V
 	if not source_available(bindings) or not cursor is int or not station_id is int:return false
 	var data:=declarations(bindings)
 	if cursor==int(data.next_mission.campaign_cursor):return station_id==int(data.mission.station_id)
-	return cursor==int(data.mission.campaign_cursor) and not load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,station_id).is_empty()
+	return cursor==int(data.mission.campaign_cursor) and not load("res://src/content/ordinary_world_definitions.gd").location(bindings,station_id).is_empty()
 
 static func station_mission(bindings: RefCounted,cursor: Variant,station_id: Variant,mission: Variant) -> bool:
 	if not station_supported(bindings,cursor,station_id) or not mission is Dictionary or mission.size()!=5:return false

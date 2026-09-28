@@ -171,7 +171,7 @@ static func capture_ordinary_void(bindings: RefCounted,retained_source: RefCount
 static func capture_gate_arrival(content: Variant,source: Dictionary,destination: Dictionary,player: Dictionary) -> Dictionary:
 	var travel:=FreeFlight.Campaign.source_travel(content)
 	if not Travel.parameters(travel) or not valid_seed(source) or not valid_seed(destination) or not FreeFlight.Campaign.supported(content,player.get("campaign_cursor")):return {}
-	var trip:=GateArrival.route(travel,source.station_id,destination.station_id)
+	var trip:=GateArrival.route(content,source.station_id,destination.station_id)
 	if trip.is_empty() or source.system_id!=trip.from_system_id or destination.system_id!=trip.system_id:return {}
 	for key in IDENTITY_KEYS:
 		if key not in ["station_id","system_id"] and source[key]!=destination[key]:return {}

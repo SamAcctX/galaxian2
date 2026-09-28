@@ -23,7 +23,7 @@ static func ordinary_entry(bindings: RefCounted,entry: Dictionary) -> bool:
 	return (entry.get("mission_track")=="side_job" or supports(bindings,entry.get("campaign_cursor"))) and entry.get("scenery",{}).get("world_initialization",{}).has("contract_context")
 
 static func flight(bindings: RefCounted,station_id: int,cursor:=13) -> Dictionary:
-	if not supports(bindings,cursor) or Travel.navigation_stations(bindings.mido_travel,cursor,station_id).is_empty():return {}
+	if not supports(bindings,cursor) or Travel.navigation_stations(bindings,cursor,station_id).is_empty():return {}
 	var result: Dictionary=bindings.first_flight.duplicate(true)
 	result.scope="mido_ordinary_contract_flight";result.campaign_cursor=cursor;result.station_id=station_id
 	# Population selection uses the retained side slot at this station. The
@@ -40,7 +40,7 @@ static func impact_model(bindings: RefCounted,item_id: int) -> int:
 static func response_flags(bindings: RefCounted,flags: Variant) -> bool:
 	if not available(bindings) or not flags is Dictionary or flags.is_empty():return false
 	for station in flags:
-		if not station is int or not flags[station] is bool or Travel.navigation_stations(bindings.mido_travel,13,station).is_empty():return false
+		if not station is int or not flags[station] is bool or Travel.navigation_stations(bindings,13,station).is_empty():return false
 	return true
 
 static func docking(bindings: RefCounted,station_id: int,cursor:=13) -> Dictionary:

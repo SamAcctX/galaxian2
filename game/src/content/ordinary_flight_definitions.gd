@@ -135,7 +135,7 @@ static func briefing(bindings: RefCounted,cursor: Variant,ordinary_world:=false,
 			shared.briefing_minimum_ms=int(source.flight_briefing.hud_minimum_ms)
 		elif FreeFlight.Campaign.ordinary_story_at(bindings,cursor,station_id):
 			var mission:=FreeFlight.Campaign.mission(bindings,cursor)
-			var location:=FreeFlight.Worlds.location(bindings.mido_travel,station_id)
+			var location:=FreeFlight.Worlds.location(bindings,station_id)
 			shared.events=FreeFlight.Campaign.Return.briefing(bindings.mido_travel,{"campaign_cursor":cursor,"station_id":station_id,"system_id":int(location.system_id),"mission_kind":int(mission.kind),"mission_story":true,"mission_completed":false})
 			shared.mission_kind=int(mission.kind)
 		return shared

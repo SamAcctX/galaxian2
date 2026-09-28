@@ -126,6 +126,10 @@ var fast_forward := {}
 var ordinary_music := {}
 var physical_scenery_contacts := {}
 var mido_travel := {}
+var world_locations: Dictionary={}
+var _update_header: Dictionary={}
+var _update_body: Dictionary={}
+var _update_receipts: Array=[]
 var early_contracts := {}
 var deep_science_stock := {}
 var persistent_contacts := {}
@@ -201,7 +205,7 @@ var _nehma_parent_identity: Dictionary={}
 var _nehma_source: Dictionary={}
 
 
-func open(directory: String, base: Dictionary) -> bool:
+func open(directory: String, base: Dictionary,library: RefCounted=null) -> bool:
 	error = ""
 	_extension_identity={};_dekato_source={}
 	_nehma_identity={};_nehma_parent_identity={};_nehma_source={}
@@ -237,6 +241,8 @@ func open(directory: String, base: Dictionary) -> bool:
 	ordinary_music = {}
 	physical_scenery_contacts = {}
 	mido_travel = {}
+	world_locations={}
+	_update_header={};_update_body={};_update_receipts=[]
 	early_contracts = {}
 	deep_science_stock = {}
 	persistent_contacts = {}
@@ -1181,7 +1187,37 @@ func open(directory: String, base: Dictionary) -> bool:
 	base_content_id = base.content_id
 	_extension_identity=load("res://src/content/dekato_source_extension.gd").describe(header,body)
 	_nehma_identity=load("res://src/content/nehma_source_extension.gd").describe(header,body)
+	_update_header=header;_update_body=body
+	if library!=null:
+		var cat=load("res://src/content/catalogues.gd").new()
+		if not cat.open(library) or not bind_catalogues(cat):return fail(cat.error)
 	return true
+
+## Native location support is derived once from this content's checked tables.
+## It is not serialized into or substituted for imported declarations.
+func bind_catalogues(cat: RefCounted) -> bool:
+	if cat==null or cat.content_id!=base_content_id:return fail("World catalogues belong to another content source")
+	if world_locations.is_empty():world_locations=load("res://src/content/ordinary_world_definitions.gd").from_catalogues(self,cat)
+	return true
+
+func attach_import_update(directory: String,base: Dictionary,library: RefCounted) -> bool:
+	error=""
+	var candidate: RefCounted=get_script().new()
+	if not candidate.open(directory,base,library):return fail(candidate.error)
+	if candidate.binding_id==_update_header.get("binding_id"):return true
+	if reader_version(candidate._update_header.get("reader"))<reader_version(_update_header.get("reader")) or not load("res://src/content/import_update.gd").compatible(_update_header,_update_body,candidate._update_header,candidate._update_body):return fail("The updated extraction changes earlier game data; keep the saved game's original import")
+	var receipt:={"base_content_id":base_content_id,"binding_id":binding_id,"source_binding_id":candidate.binding_id,"source_executable_sha256":_update_header.source_executable_sha256}
+	# Compose verified additions in memory. The original pack and saved identity
+	# remain intact, and subsequent saves record the supplemental source receipt.
+	for property in get_property_list():
+		var name: String=property.name
+		if property.usage&PROPERTY_USAGE_SCRIPT_VARIABLE and not name.begins_with("_") and name not in ["error","base_content_id","binding_id"]:set(name,candidate.get(name))
+	_update_header=candidate._update_header;_update_body=candidate._update_body
+	_update_receipts.append(load("res://src/simulation/readonly_state.gd").freeze(receipt))
+	return true
+
+func import_update_receipt() -> Dictionary:return {} if _update_receipts.is_empty() else _update_receipts.back()
+func accepts_import_update(receipt: Variant) -> bool:return receipt is Dictionary and _update_receipts.has(receipt)
 
 
 ## Explicit opt-in. Both packs are independently verified by the normal reader.

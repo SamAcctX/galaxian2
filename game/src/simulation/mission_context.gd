@@ -189,7 +189,7 @@ static func supports_contract(bindings: RefCounted,mission: Variant,cursor: int)
 		var population=load("res://src/content/free_population_definitions.gd")
 		if not [0,1,2,3].all(func(faction):return population.freighter_hull(bindings,faction)>=0 and not population.freighter_assembly(bindings,faction).is_empty()):return false
 	if mission.get("kind") in [3,5] and (not preload("res://src/content/tractor_recovery_definitions.gd").available(bindings) or not preload("res://src/content/opening_definitions.gd").integer(mission.get("quantity"),2,9)):return false
-	return ordinary.available(bindings) and cursor>=int(bindings.mido_travel.free_flight.campaign_cursor) and mission.get("kind") in [1,2,3,4,5,6,7,9,10,12,13] and preload("res://src/content/opening_definitions.gd").integer(mission.get("difficulty"),1,9) and not ordinary.Worlds.location(bindings.mido_travel,mission.get("station_id")).is_empty()
+	return ordinary.available(bindings) and cursor>=int(bindings.mido_travel.free_flight.campaign_cursor) and mission.get("kind") in [1,2,3,4,5,6,7,9,10,12,13] and preload("res://src/content/opening_definitions.gd").integer(mission.get("difficulty"),1,9) and not ordinary.Worlds.location(bindings,mission.get("station_id")).is_empty()
 
 ## A retained career and inventory authorize a generated side job once. Other
 ## owners receive this capability with the cast, never a caller-authored recipe.

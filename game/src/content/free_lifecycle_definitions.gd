@@ -24,7 +24,7 @@ static func population(bindings: RefCounted,packet: Dictionary,mission_context: 
 	var context: Dictionary=packet.free_context
 	var data: Dictionary=load("res://src/content/ambient_lifecycle_definitions.gd").guidance(bindings,packet,context.get("rank"),context.get("difficulty"),mission_context)
 	if data.is_empty():return {}
-	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,context.station_id)
+	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings,context.station_id)
 	var population_rules: Dictionary=bindings.mido_travel.free_population
 	if world.is_empty() or world.system_id!=context.system_id or world.faction<0 or world.faction>=population_rules.enemy_factions.size():return {}
 	data.merge(context,true);data.free_context=context.duplicate(true)
@@ -80,7 +80,7 @@ static func live_population(bindings: RefCounted,combat: Dictionary) -> bool:
 	var actors: Variant=combat.get("actors")
 	if not actors is Array or actors.size()>Traffic.Population.maximum_actor_count(bindings,int(context.rank),float(context.difficulty),context):return false
 	if actors.is_empty() and not Traffic.Delivery.active_courier(context) and not Traffic.Campaign.empty_story(bindings,context):return false
-	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,context.station_id)
+	var world: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings,context.station_id)
 	if world.is_empty():return false
 	var order: Array=Traffic.Delivery.group_order(bindings,context)
 	var previous:=-1

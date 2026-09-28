@@ -14,9 +14,10 @@ static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALU
 static func available(bindings: RefCounted) -> bool:
 	return bindings!=null and parameters(bindings.mido_travel.get("gate_arrival")) and Worlds.available(bindings) and load("res://src/content/gate_transit_definitions.gd").available(bindings)
 
-static func route(data: Dictionary,from_station: Variant,to_station: Variant) -> Dictionary:
+static func route(source: Variant,from_station: Variant,to_station: Variant) -> Dictionary:
+	var data: Dictionary=load("res://src/content/free_campaign_definitions.gd").source_travel(source)
 	if not parameters(data.get("gate_arrival")):return {}
-	var origin:=Worlds.location(data,from_station);var destination:=Worlds.location(data,to_station)
+	var origin:=Worlds.location(source,from_station);var destination:=Worlds.location(source,to_station)
 	if origin.is_empty() or destination.is_empty() or origin.station_id==destination.station_id or origin.station_id!=origin.gate_station_id:return {}
 	return {"from_station_id":origin.station_id,"from_system_id":origin.system_id,
 		"station_id":destination.station_id,"system_id":destination.system_id}
@@ -25,7 +26,7 @@ static func packet(bindings: RefCounted,catalogues: RefCounted,request: Dictiona
 	if not available(bindings) or not load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) or request.size()!=4:return {}
 	for key in ["base_content_id","binding_id"]:
 		if request.get(key)!=bindings.get(key):return {}
-	var trip:=route(bindings.mido_travel,request.get("from_station_id"),request.get("destination_station_id"))
+	var trip:=route(bindings,request.get("from_station_id"),request.get("destination_station_id"))
 	if trip.is_empty():return {}
 	if catalogues==null or (trip.from_system_id!=trip.system_id and not catalogues.tables.systems[trip.from_system_id].linked_system_ids.has(trip.system_id)):return {}
 	for id in [trip.from_station_id,trip.station_id]:
