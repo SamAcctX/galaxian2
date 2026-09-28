@@ -431,7 +431,9 @@ func prepare_full_hold(world: RefCounted, state: Dictionary={}) -> Dictionary:
 		if _revision>=0 and mining_elapsed==_elapsed_ms and mining.serial==_mining_serial and flight_music.operations.is_empty() and booster.serial==_booster_serial and cloak.serial==_cloak_serial and drive.serial==_drive_serial:return {"identity":_identity,"revision":_revision,"repeat":true}
 		var mining_view:={"booster":state.get("booster",{}),"cloak":state.get("cloak",{}),"khador":state.get("khador",{}),"elapsed_ms":int(mining_elapsed),"camera":{"view":state.camera_view},"escape":{"frame":{"audio":mining.operations+flight_music.operations}}}
 		if mining.parameter!=null:mining_view.mining_drill_parameter=mining.parameter
-		var mining_frame:=prepare_frame(_revision+1,mining_view)
+		var engine_world:=_content_identity.duplicate()
+		engine_world.elapsed_ms=int(mining_elapsed);engine_world.player_engine=state.player_engine;engine_world.actor_events=[]
+		var mining_frame:=prepare_frame(_revision+1,mining_view,engine_world)
 		if mining_frame.is_empty():return {}
 		mining_frame.mining_serial=mining.serial
 		return mining_frame
@@ -494,9 +496,9 @@ func prepare_full_hold(world: RefCounted, state: Dictionary={}) -> Dictionary:
 	if mining.parameter!=null:view.mining_drill_parameter=mining.parameter
 	if state.has("radio"):
 		view.radio=state.radio;view.radio_changes=[] if repeated else state.radio_events
-	var combat:={}
+	var combat:=_content_identity.duplicate()
+	combat.elapsed_ms=int(elapsed);combat.player_engine=state.player_engine;combat.actor_events=[]
 	if not repeated and state.has("encounter"):
-		combat=_content_identity.duplicate()
 		for key in ["primary_fire","primaries","secondaries","secondary_events"]:
 			if state.encounter.has(key):combat[key]=state.encounter[key]
 		combat.elapsed_ms=int(elapsed);combat.actor_events=cues.get("actors")

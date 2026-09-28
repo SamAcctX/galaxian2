@@ -1,6 +1,6 @@
 extends SceneTree
-## Mac native flight audio. Close placements, lethal hits and the warmed cached
-## music/engine are disclosed fixtures; actual native passes produce the cues.
+## Mac native flight audio. Close placements, lethal hits and warmed cached
+## music are disclosed fixtures; the native player supplies its retained engine.
 const Fixture=preload("res://tests/full_hold_control.gd")
 const Live=preload("res://tests/player_death_flight.gd")
 const Audio=preload("res://src/presentation/opening_audio.gd")
@@ -66,7 +66,7 @@ func accept(audio: Node,world: RefCounted) -> bool:
 	if world==null:check(false,"Native audio flight failed");return false
 	var prior: Dictionary=audio.snapshot();var before: Dictionary=world.snapshot()
 	var prepared: Dictionary=audio.prepare_full_hold(world)
-	if prepared.is_empty():check(false,audio.error);return false
+	if prepared.is_empty():check(false,audio.error+"; engine/world/encounter="+str([before.player_engine.elapsed_ms,before.world_phase_elapsed_ms,before.get("encounter",{}).get("elapsed_ms")]));return false
 	if audio.snapshot()!=prior or world.snapshot()!=before:check(false,"Preparing sound changed playback or native state");return false
 	listener_camera.transform=world.snapshot().camera_view.pose
 	audio.commit_frame(prepared)
@@ -93,12 +93,13 @@ func released(audio: Node) -> RefCounted:
 func verify_player(audio: Node):
 	var world:=released(audio)
 	if world==null:return
-	# Warm two already-supported cached events to test source death-stop ownership.
-	var warm: Dictionary=audio.prepare_frame(int(audio.snapshot().revision)+1,{"elapsed_ms":world.snapshot().encounter.elapsed_ms,"camera":{"view":world.snapshot().camera_view},"escape":{"frame":{"audio":[{"action":"replace_music","source_id":143},{"action":"set_player_engine","source_id":44,"position":world.snapshot().player_pose.origin}]}}})
+	var state_before: Dictionary=world.snapshot()
+	var engine_world:={"base_content_id":state_before.base_content_id,"binding_id":state_before.binding_id,"elapsed_ms":state_before.encounter.elapsed_ms,"player_engine":state_before.player_engine,"actor_events":[]}
+	var warm: Dictionary=audio.prepare_frame(int(audio.snapshot().revision)+1,{"elapsed_ms":state_before.encounter.elapsed_ms,"camera":{"view":state_before.camera_view},"escape":{"frame":{"audio":[{"action":"replace_music","source_id":143}]}}},engine_world)
 	check(not warm.is_empty(),audio.error)
 	if warm.is_empty():return
 	audio.commit_frame(warm)
-	check(audio.snapshot().active.has(143) and audio.snapshot().active.has(44),"Could not warm the disclosed cached music/engine fixtures")
+	check(audio.snapshot().active.has(143) and audio.snapshot().active.has(Audio.PLAYER_ENGINE),"The ordinary player engine or disclosed cached music is silent")
 	var fixture:=Live.new();var lethal: RefCounted=fixture.lethal(world);check(fixture.failures==0,"Lethal contact fixture failed");fixture.free()
 	if lethal==null:return
 	var before: Dictionary=audio.snapshot()
@@ -114,7 +115,7 @@ func verify_player(audio: Node):
 	check(stops.size()==10 and stops[0].action=="stop_music" and stops[1].action=="stop_player_engine","Death stop order changed")
 	for i in bindings.player_destruction.stop_sound_ids.size():
 		check(stops[i+2].action=="stop" and stops[i+2].source_id==bindings.player_destruction.stop_sound_ids[i],"Death stop ID/order changed")
-	check(not state.active.has(143) and not state.active.has(44) and state.retiring==before.retiring+2,"Cached music/engine stop ignored source fades")
+	check(not state.active.has(143) and not state.active.has(Audio.PLAYER_ENGINE) and state.retiring==before.retiring+2,"Music/retained engine death ignored source fades")
 	check(world.snapshot().player_destruction.events.stop_current_music and not world.snapshot().player_destruction.events.has("stop_primary_sound"),"Death mislabeled current music as a primary sound")
 	var repeat: Dictionary=audio.prepare_full_hold(world);audio.commit_frame(repeat)
 	check(repeat.get("repeat",false) and audio.snapshot()==state,"Repeated death frame replayed stops")

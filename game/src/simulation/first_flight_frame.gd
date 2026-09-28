@@ -50,6 +50,8 @@ const Encounter=preload("res://src/simulation/full_hold_encounter.gd")
 const Particles=preload("res://src/simulation/full_hold_particles.gd")
 const Booster=preload("res://src/simulation/player_booster.gd")
 const Engines=preload("res://src/simulation/player_engine_particles.gd")
+const EngineAudio=preload("res://src/simulation/opening_engine_audio.gd")
+var _engine_audio: RefCounted
 const Mounts=preload("res://src/content/weapon_mounts.gd")
 const Death=preload("res://src/simulation/player_destruction.gd")
 const Radio=preload("res://src/simulation/radio_sequence.gd")
@@ -455,6 +457,8 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_return_rules=return_rules;_departure_station=null
 	_station_contact=false;_station_packet={};_encounter=encounter;_world_elapsed_ms=0
 	_mission_context=mission_context
+	_engine_audio=EngineAudio.new()
+	if not _engine_audio.configure_player(bindings,catalogues,player,_pose):return reject(_engine_audio.error)
 	_unsupported_boundary=""
 	_death=death;_statistics_pose=entry.player_pose;_camera_follow_enabled=true;_game_over_packet={}
 	_particles=particles;_equipment=equipment
@@ -659,6 +663,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 	else:
 		ordinary_motion=true
 	if ordinary_motion:
+		if not next._engine_audio.before_ordinary_motion():reject(next._engine_audio.error);return null
 		if next._engine_particles!=null and next._engine_particles.engine_enabled()!=(active_throttle>0.0) and not next._engine_particles.set_engine_enabled(active_throttle>0.0):reject(next._engine_particles.error);return null
 		next._pose=next._pilot.advance(_pose,commands if manual else Vector2.ZERO,active_throttle,float(delta_ms)/1000.0,strafe if manual else 0.0,next._booster.speed_multiplier())
 		if not next._pilot.error.is_empty():reject(next._pilot.error);return null
@@ -708,6 +713,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		next._encounter=weapon_pass.encounter;next._player=weapon_pass.player
 		if weapon_pass.has("scenery"):next._scenery=weapon_pass.scenery
 		if weapon_pass.has("random_state"):next._random=weapon_pass.random_state
+	if not next._engine_audio.follow_player(next._statistics_pose,int(next._player.snapshot().vitals.hull),delta_ms):reject(next._engine_audio.error);return null
 	if next._player.snapshot().vitals.hull<=0 and next._death==null:
 		if not next._booster.cancel():reject(next._booster.error);return null
 		# Any lethal damage belongs to the same death boundary, including scenery
@@ -910,6 +916,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		var guided: RefCounted=next.start_drive(next._pending_destination) if next._queued_drive else next.select_map_destination(next._pending_destination)
 		if guided==null:reject(next.error);return null
 		next=guided
+	if player_updates and not next._engine_audio.sample_commands(commands if manual and not turret_active else Vector2.ZERO):reject(next._engine_audio.error);return null
 	return next
 
 ## The ordinary-flight vibration write replaces earlier wrapper camera fields
@@ -2086,6 +2093,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	var held: Dictionary=_cargo.snapshot()
 	state.cargo_used=held.used
 	state.booster=booster_state();state.cloak=cloak_state();state.turret=turret_state();state.khador=drive_state()
+	state.player_engine=_engine_audio.snapshot()
 	state.merge({"world_type":_entry.world_type,"location":_entry.location.duplicate(true),"activated":true,
 		"player_pose":_pose,"control_throttle":_throttle,"player":_player.snapshot(),"player_cache":_player.cache_snapshot(),"angular_units":_pilot.angular_units,
 		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),
@@ -2252,6 +2260,7 @@ func fork_for_frame() -> RefCounted:
 	if _death!=null:copy._death=_death.fork_for_frame()
 	if _particles!=null:copy._particles=_particles.fork_for_frame()
 	if _engine_particles!=null:copy._engine_particles=_engine_particles.fork_for_frame()
+	if _engine_audio!=null:copy._engine_audio=_engine_audio.fork_for_frame()
 	if _booster!=null:copy._booster=_booster.fork_for_frame()
 	if _equipment!=null:copy._equipment=_equipment.fork()
 	if _radio!=null:copy._radio=_radio.fork_for_frame()
@@ -2292,6 +2301,7 @@ func clear() -> void:
 	_death=null;_statistics_pose=Transform3D.IDENTITY;_camera_follow_enabled=true;_game_over_packet={}
 	_particles=null;_audio_frame={};_equipment=null;_radio=null;_radio_events=[]
 	_engine_particles=null;_booster=null
+	_engine_audio=null
 	_route=null;_navigation={};_world_path=[];_rescue=null;_sahi=null;_void_environment=null;_void_portal=null;_ordinary_void_source=null
 	_probe=null;_void_targeting=null
 	_scanner=null;_scanner_events=[]

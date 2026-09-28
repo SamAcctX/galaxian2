@@ -11,6 +11,13 @@ var _commands:=Vector2.ZERO
 var _ordinary_phase:=-1
 var _arrival_id:=-1
 
+func configure_player(bindings: RefCounted,catalogues: RefCounted,player: RefCounted,pose: Transform3D) -> bool:
+	error=""
+	if not _state.is_empty() or bindings==null or catalogues==null or not is_instance_of(player,load("res://src/simulation/opening_player_state.gd")) or not pose.is_finite():return reject("Retained engine requires a prepared player and initial pose")
+	if not _configure_loadout(bindings,catalogues,player.loadout(),bindings.opening_actors.player_initialization.repair,pose):return false
+	_ordinary_phase=int(bindings.opening_staging.player_flight.ordinary_phase);_arrival_id=-1
+	return true
+
 func configure_mission(bindings: RefCounted,catalogues: RefCounted,context: RefCounted,player: RefCounted,pose: Transform3D) -> bool:
 	error=""
 	if not _state.is_empty() or not context is MissionContext or not is_instance_of(player,load("res://src/simulation/opening_player_state.gd")) or not pose.is_finite():return reject("Mission engine requires its admitted player and initial pose")
@@ -84,7 +91,7 @@ func before_motion(phase: int) -> bool:
 
 func follow_player(pose: Transform3D,hull: int,delta_ms: int) -> bool:
 	error=""
-	if _selection==null or not pose.is_finite() or delta_ms<0 or delta_ms>150:return reject("Invalid retained engine movement frame")
+	if _selection==null or not pose.is_finite() or delta_ms<0 or delta_ms>2147483647-_state.elapsed_ms:return reject("Invalid retained engine movement frame")
 	_state.position=pose.origin;_state.active=hull>0;_state.elapsed_ms+=delta_ms
 	return true
 

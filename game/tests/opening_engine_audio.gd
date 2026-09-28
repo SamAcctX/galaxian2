@@ -53,6 +53,11 @@ func verify(content: String,pack: String):
 	check(staged.snapshot().source_commands==Vector2.ZERO and engine.snapshot().source_commands==Vector2(0.25,-0.5625),"Movement did not clear commands independently in the candidate frame")
 	var moved:=Transform3D(Basis.IDENTITY,Vector3(20,4,9))
 	check(staged.follow_player(moved,100,100),staged.error)
+	var accelerated: RefCounted=staged.fork_for_frame()
+	var accelerated_before: Dictionary=staged.snapshot()
+	check(accelerated.follow_player(moved,100,2400) and accelerated.snapshot().elapsed_ms==accelerated_before.elapsed_ms+2400 and accelerated.snapshot().parameters==accelerated_before.parameters and staged.snapshot()==accelerated_before,"Fast Forward lost its elapsed engine time, replayed controls or changed its parent")
+	var accelerated_after: Dictionary=accelerated.snapshot()
+	check(not accelerated.follow_player(moved,100,2147483647) and accelerated.snapshot()==accelerated_after,"An overflowing engine clock changed accepted playback state")
 	var failed:=prepare(audio,staged,2,[{"action":"position","source_id":161,"position":Vector3(INF,0,0)}])
 	check(failed.is_empty() and audio._players[Audio.PLAYER_ENGINE].node==player and player.snapshot().parameters==[0.0,0.0,0.0],"A late rejected cue changed live engine parameters")
 	engine=staged
