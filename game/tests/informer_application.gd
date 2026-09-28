@@ -39,9 +39,22 @@ func verify_delivery_route(original: Dictionary,before: Dictionary,offer: Dictio
 		for change in [[91,81],[86,55]]:
 			if app.session.station_owner().snapshot().loadout.equipment_ids.has(change[0]):
 				if not app.equipment_action("unmount",change[0]) or not app.equipment_action("mount",change[1]):check(false,app.session.error);return
+		var cost:=0
+		if OS.get_environment("GOF2_INFORMER_BUY_SHIELD")=="1":
+			if not app.equipment_action("close"):check(false,app.session.error);return
+			var shop:=OS.get_environment("GOF2_INFORMER_SHIELD_STATION").to_int()
+			if shop!=int(app.session.station_owner().snapshot().loadout.station_id) and not await visit_delivery_station(shop):return
+			if not app.equipment_action("open"):check(false,app.session.error);return
+			var market: Dictionary=app.session.station_owner().snapshot()
+			var shields: Array=market.equipment.market_rows.filter(func(row):return row.stock>0 and row.unit_price<=market.contracts.credits and catalogue.tables.items[row.item_id].properties.get(2)==9)
+			shields.sort_custom(func(a,b):return catalogue.tables.items[a.item_id].properties.get(18,0)>catalogue.tables.items[b.item_id].properties.get(18,0))
+			if shields.is_empty():check(false,"The retained shop has no affordable shield for the spy pilot");return
+			var shield: Dictionary=shields[0];cost=int(shield.unit_price)
+			if not app.equipment_action("buy",int(shield.item_id)) or not app.equipment_action("unmount",68) or not app.equipment_action("mount",int(shield.item_id)):check(false,app.session.error);return
+			print("Informer shield purchased: ",{"item":shield.item_id,"price":cost})
 		if not app.equipment_action("close"):check(false,app.session.error);return
 		accepted=app.session.station_owner().snapshot()
-		check(accepted.loadout.equipment_ids.has(81) and accepted.loadout.equipment_ids.has(55) and accepted.contracts.credits==before.contracts.credits and accepted.contracts.mission==offer.mission,"Fitting the owned scanner and shield changed the accepted job or wallet")
+		check(accepted.loadout.equipment_ids.has(81) and accepted.loadout.equipment_ids.has(55) and accepted.contracts.credits==before.contracts.credits-cost and accepted.contracts.mission==offer.mission,"Fitting the scanner, armor and purchased shield changed the job or wallet incorrectly")
 		if failures:return
 		await capture_free_application("informer-scanner-shield-fitted")
 	if not app.save_station(false):check(false,app._save_file.error);return
@@ -129,6 +142,9 @@ func fly_informer(initial: Dictionary) -> bool:
 		var weapon: Dictionary=state.encounter.primaries.guns[0].projectiles.weapon
 		pilot.firing_range=float(weapon.speed_units_per_millisecond)*float(weapon.lifetime_ms)*0.9
 		var input: Dictionary=pilot.controls_at_time(state,float(state.world_elapsed_ms),[target],false)
+		if OS.get_environment("GOF2_INFORMER_APPROACH")=="orbit":
+			input.throttle=1.0 if input.distance>minf(18000.0,pilot.firing_range*2.0/3.0) else 0.0
+			if input.distance<50000.0:input.strafe=1.0
 		if input.fire:shots+=1
 		if not pirate_step(input):return false
 		if not captured and input.fire:
