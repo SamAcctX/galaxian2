@@ -63,6 +63,12 @@ func verify():
 		check(navigation.configure(library,bindings,catalogues,gate_view,14),navigation.error)
 		check(navigation.snapshot().rows.filter(func(row):return row.mission_target).map(func(row):return row.station_id)==[71],"Map omitted the retained side-contract destination")
 		check(gate_view.mission==story,"Map replaced pending story with a contract destination")
+		gate_view.gate_transit.phase="map"
+		check(navigation.configure(library,bindings,catalogues,gate_view,19) and navigation.snapshot().route_mode=="gate","Physical gate omitted its current system")
+		check(navigation.select_station(95) and navigation.request_confirmation() and navigation.snapshot().diagnostic==library.strings[408] and navigation.destination()==-1,"Physical gate accepted its current planet")
+		check(navigation.select_station(98) and navigation.request_confirmation() and navigation.destination()==98,"Physical gate refused another local planet")
+		gate_view.gate_transit.phase="flight"
+		check(navigation.configure(library,bindings,catalogues,gate_view,19) and navigation.snapshot().route_mode=="local","Ordinary local course became a gate jump")
 	if DisplayServer.get_name()=="headless":finish();return
 	root.size=Vector2i(1120,720)
 	var panel:=MapPanel.new();root.add_child(panel);panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

@@ -423,7 +423,8 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 			gate_transit=GateTransit.new()
 			if not gate_transit.configure(bindings,gate_animation,system_navigation):return reject(gate_transit.error)
 			for destination in navigation_destinations:
-				if catalogues.tables.systems[entry.location.system_id].linked_system_ids.has(catalogues.tables.stations[destination].system_id):gate_destinations.append(destination)
+				var destination_system:=int(catalogues.tables.stations[destination].system_id)
+				if destination!=entry.location.station_id and (destination_system==entry.location.system_id or catalogues.tables.systems[entry.location.system_id].linked_system_ids.has(destination_system)):gate_destinations.append(destination)
 			gate_animation=null # Transit now owns the one animation clock.
 	if not trip.is_empty():
 		return_rules=OrdinaryFlight.docking(bindings,int(entry.campaign_cursor)) if entry.location.station_id==int(trip.station_id) else {}
@@ -1543,6 +1544,7 @@ func close_gate_map(accepted: bool,destination: int=-1,paused:=false) -> RefCoun
 	if accepted:
 		if not _gate_destinations.has(destination):reject("This destination does not yet have a supported ordinary world");return null
 		if not next._gate_transit.set_course(destination):reject(next._gate_transit.error);return null
+		next._pending_destination=destination;next._navigation_applied=true
 	if not next._gate_transit.close_map(accepted):reject(next._gate_transit.error);return null
 	if accepted:
 		if not next._begin_gate_departure():reject(next.error);return null

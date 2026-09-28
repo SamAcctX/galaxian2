@@ -44,11 +44,11 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 		var system_id:=int(catalogues.tables.stations[destination].system_id)
 		if not systems.has(system_id) and cursor>=int(rules.galaxy_cursor) and catalogues.tables.systems[location.system_id].linked_system_ids.has(system_id):systems.append(system_id)
 	var gate_map: bool=flight.get("gate_transit",{}).get("phase")=="map"
-	if gate_map:systems.erase(int(location.system_id))
 	if systems.is_empty():return reject("This gate has no supported destination map")
+	if gate_map and display_system_id<0 and systems.size()>1:display_system_id=int(systems[1])
 	if display_system_id<0:display_system_id=int(systems[0])
 	if not systems.has(display_system_id):return reject("This flight cannot select a destination in that system")
-	var gate_selection: bool=display_system_id!=int(location.system_id)
+	var gate_selection: bool=gate_map or display_system_id!=int(location.system_id)
 	if gate_selection:stations=destinations.duplicate()
 	var choices:=[]
 	var objective:=Recipe.objective_markers(bindings.early_contracts,career.get("mission",{}),career.get("accepted_contact",{}),flight.get("cargo",{}))

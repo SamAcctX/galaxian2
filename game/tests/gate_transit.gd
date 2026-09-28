@@ -40,7 +40,8 @@ func verify_transit(args: PackedStringArray) -> void:
 			point[axis]-=sign_value
 			check(transit.contains(point),"Strict gate interior was rejected")
 	check(not transit.contains(Vector3(NAN,0,0)),"Nonfinite contact was accepted")
-	check(not transit.set_course(98),"Local travel was sent through an outgoing gate")
+	check(not transit.set_course(95),"Gate accepted its current planet as a destination")
+	check(transit.set_course(98) and transit.snapshot().course.jump_count==0,"Gate map refused another planet in its current system")
 	check(transit.set_course(70),transit.error)
 	var before:=transit.snapshot();var pose:=Transform3D(Basis.IDENTITY,center)
 	var ordinary:={"kind":-1,"completed":true}

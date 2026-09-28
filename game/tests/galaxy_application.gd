@@ -9,6 +9,16 @@ func verify_free_application() -> void:
 	if not app.open_map(now_us):check(false,app.status.text);return
 	check(app.map_panel.snapshot().route_mode=="galaxy","Station map did not open the galaxy overview")
 	await capture_free_application("galaxy-station-overview")
+	if OS.get_environment("GOF2_GALAXY_LOCAL_GATE")=="1":
+		if not await choose_map_destination(10,false) or not await release_application_flight() or not await follow_selected_course(10,int(original.loadout.station_id)):return
+		if not await release_application_flight():return
+		check(app.session.snapshot().navigation_destination_id==-1 and not app.session.snapshot().station_autopilot.active,"Gate map kept the replaced remote course after arrival")
+		await capture_free_application("galaxy-same-system-gate-arrival")
+		if not await dock_application():return
+		var landed: Dictionary=app.session.station_owner().snapshot()
+		check(landed.loadout.station_id==original.loadout.station_id and landed.cargo==original.cargo and landed.contracts.credits==original.contracts.credits and landed.campaign_cursor==original.campaign_cursor,"Same-system gate lost the earned career")
+		check(landed.contracts.travel_statistics.jumpgates_used==original.contracts.travel_statistics.jumpgates_used+1,"Same-system gate did not count exactly one physical jump")
+		retain_recovery_save("returned");return
 	if OS.get_environment("GOF2_GALAXY_RESUMED")=="1":
 		check(app.map_panel.snapshot().system_id==original.loadout.system_id,"Fresh Resume opened another galaxy location")
 		if not app.close_map(now_us):check(false,app.session.error);return
@@ -95,7 +105,7 @@ func map_pointer(point: Vector2) -> void:
 func map_key(code: int) -> void:
 	var event:=InputEventKey.new();event.physical_keycode=code;event.keycode=code;event.pressed=true;app._unhandled_input(event)
 
-func follow_selected_course(destination: int) -> bool:
+func follow_selected_course(destination: int,gate_destination: int=-1) -> bool:
 	var local_legs:=0;var gate_seen:=false
 	for leg in 3:
 		app.session.rebase_time(now_us)
@@ -115,13 +125,14 @@ func follow_selected_course(destination: int) -> bool:
 		await capture_free_application("galaxy-gate-confirmation")
 		if not app.choose_gate_confirmation(1,now_us):check(false,app.session.error);return false
 		check(app.map_panel.snapshot().route_mode=="galaxy","In-flight gate opened a plain system button row")
-		if not await choose_map_destination(destination,false):return false
+		var chosen:=destination if gate_destination<0 else gate_destination
+		if not await choose_map_destination(chosen,false):return false
 		app.session.rebase_time(now_us);started=now_us
 		while app.session.status=="running" and now_us-started<10000000:
 			if not application_step():return false
 		check(app.session.status=="gate_arrival_transition_required","Gate animation failed to finish")
 		if failures or not app.enter_gate_arrival(now_us,4096,flight_world_seconds()):check(false,app.status.text);return false
-		check(app.session.snapshot().location.station_id==destination,"Gate arrived at a different planet from the confirmed destination")
+		check(app.session.snapshot().location.station_id==chosen,"Gate arrived at a different planet from the confirmed destination")
 		break
 	check(gate_seen,"Selected course never entered a gate")
 	if destination==10:check(local_legs==1,"Departure away from a gate skipped its local approach")

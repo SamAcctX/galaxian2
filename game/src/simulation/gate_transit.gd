@@ -44,8 +44,8 @@ func set_course(destination: int) -> bool:
 	error=""
 	if _state.is_empty() or _state.phase not in ["flight","map"]:return reject("Choose a gate destination before departure")
 	var course: Dictionary=_navigation.course(_state.station_id,destination)
-	if course.is_empty() or course.guidance.get("kind")!="gate":return reject("The selected destination does not use this outgoing gate")
-	if course.jump_count!=1:return reject("Select a destination in a directly connected system")
+	if course.is_empty() or destination==_state.station_id:return reject("Choose another planet before gate departure")
+	if course.jump_count>1:return reject("Select a destination in this system or a directly connected system")
 	_state=_state.duplicate(true);_state.course=course
 	return true
 

@@ -17,7 +17,7 @@ static func available(bindings: RefCounted) -> bool:
 static func route(data: Dictionary,from_station: Variant,to_station: Variant) -> Dictionary:
 	if not parameters(data.get("gate_arrival")):return {}
 	var origin:=Worlds.location(data,from_station);var destination:=Worlds.location(data,to_station)
-	if origin.is_empty() or destination.is_empty() or origin.system_id==destination.system_id or origin.station_id!=origin.gate_station_id:return {}
+	if origin.is_empty() or destination.is_empty() or origin.station_id==destination.station_id or origin.station_id!=origin.gate_station_id:return {}
 	return {"from_station_id":origin.station_id,"from_system_id":origin.system_id,
 		"station_id":destination.station_id,"system_id":destination.system_id}
 
@@ -27,7 +27,7 @@ static func packet(bindings: RefCounted,catalogues: RefCounted,request: Dictiona
 		if request.get(key)!=bindings.get(key):return {}
 	var trip:=route(bindings.mido_travel,request.get("from_station_id"),request.get("destination_station_id"))
 	if trip.is_empty():return {}
-	if catalogues==null or not catalogues.tables.systems[trip.from_system_id].linked_system_ids.has(trip.system_id):return {}
+	if catalogues==null or (trip.from_system_id!=trip.system_id and not catalogues.tables.systems[trip.from_system_id].linked_system_ids.has(trip.system_id)):return {}
 	for id in [trip.from_station_id,trip.station_id]:
 		if Worlds.catalogue_location(bindings,catalogues,id).is_empty():return {}
 	var result:=trip.duplicate()
