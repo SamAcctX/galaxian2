@@ -11,7 +11,7 @@ static func sample(slot: Variant, kind: int, camera: Transform3D, reduced_scale:
 	if not slot.position.is_finite() or not slot.velocity.is_finite() or not camera.is_finite():return {"error":"Nonfinite projectile presentation pose"}
 	if slot.position.x==rules.hidden_position_x:return {"visible":false}
 	var basis: Basis
-	var billboard: bool=camera_facing or kind==int(rules.camera_facing_kind)
+	var billboard: bool=camera_facing or kind in [int(rules.camera_facing_kind),8]
 	if billboard:
 		basis=Basis(camera.basis.x,camera.basis.y,-camera.basis.z)
 	else:

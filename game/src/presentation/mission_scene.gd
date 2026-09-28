@@ -65,6 +65,7 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cata
 	var cast_ready: bool=encounter.build(world.encounter_owner(),library,visuals,bindings) if context!=null else encounter.build_selected40(world.encounter_owner(),library,visuals,bindings)
 	if not cast_ready:return failed_build(encounter.error)
 	if not player.build(int(world.player_owner().loadout().ship_id),library,visuals,bindings,"high",null,true):return failed_build(player.error)
+	if not player.build_turret(world.turret_state(),library,visuals,bindings):return failed_build(player.error)
 	var field: Dictionary=world.scenery_owner().read_snapshot()
 	if not scenery.build(field,library,visuals,bindings,"high",true):return failed_build(scenery.error)
 	var resources:=SceneryEffects.new();var reflection: RefCounted=environment.reflection
@@ -159,7 +160,7 @@ func present(world: RefCounted,viewport: Vector2i) -> bool:
 	if float(escape.get("vertical_fov_radians",0.0))>0:camera.fov=rad_to_deg(float(escape.vertical_fov_radians))
 	encounter.commit_world(cast)
 	if not animation.is_empty() and not animation.get("repeat",false) and not sequence_effects.commit_state(animation):return failed_display("Sequence model frame was superseded")
-	if not player.apply_cloak(state.player.get("cloak",{})):return failed_display(player.error)
+	if not player.present_turret(world.turret_state()) or not player.apply_cloak(state.player.get("cloak",{})):return failed_display(player.error)
 	player.transform=state.player_pose;player.apply_selection(selection)
 	player.apply_camera_suppression(view.player_render_suppressed)
 	var destruction: Dictionary=world.destruction_owner().snapshot()

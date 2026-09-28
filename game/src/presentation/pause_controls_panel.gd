@@ -72,6 +72,7 @@ static func reference_rows(strings: Array,mouse_steering: bool) -> Array[Diction
 	if KEY_D in Controls.STRAFE_KEYS:rows.append({"label":_source_text(strings,base+12,"Strafe right"),"key":"D"})
 	if Controls.KEY_ACTIONS.get(KEY_P)=="pause" or Controls.KEY_ACTIONS.get(KEY_ESCAPE)=="pause":
 		rows.append({"label":_source_text(strings,base+13,"Pause menu"),"key":"P / ESC" if Controls.KEY_ACTIONS.get(KEY_P)=="pause" else "ESC"})
+	_append_binding(rows,KEY_T,"change_view",strings,207,"Turret","T")
 	_append_binding(rows,KEY_E,"action_menu",strings,base+14,"Action menu","E")
 	_append_binding(rows,KEY_Q,"autopilot",strings,560,"Autopilot","Q")
 	_append_binding(rows,KEY_G,"secondary_menu",strings,base+15,"Rocket menu","G")

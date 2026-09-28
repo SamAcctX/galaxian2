@@ -309,6 +309,13 @@ static func weight(values: PackedFloat64Array, milliseconds: int, numerator: flo
 	var reciprocal := PackedFloat32Array([numerator / float(milliseconds)])[0]
 	return PackedFloat32Array([polynomial(values, float(milliseconds)) * reciprocal])[0]
 
+## Mounted views supply a physical camera pose; normal follow history is kept
+## in the same owner so leaving the mount returns smoothly to the ship.
+func set_mounted_view(pose: Transform3D) -> bool:
+	if not pose.is_finite() or not pose.basis.is_equal_approx(pose.basis.orthonormalized()):return reject("Invalid mounted camera pose")
+	_state={"base_content_id":_base,"binding_id":_binding,"eye":pose.origin,"look":pose.origin-pose.basis.z*1000.0,"pose":pose,"mode":"mounted"}
+	return true
+
 func snapshot() -> Dictionary:
 	return _state.duplicate(true)
 

@@ -155,7 +155,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,c
 func prepare(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,context: RefCounted,initialized_world: RefCounted,sensitivity:=1.0,viewport:=Vector2i(1440,900)) -> bool:
 	return configure(bindings,catalogues,library,context,initialized_world,sensitivity,viewport)
 
-func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary_fire:=false,paused:=false,viewport:=Vector2i.ZERO,strafe:=0.0,secondary_fire:=false,current_music_id:=-1,relative_mouse_capture:=false,boost_requested:=false,cloak_requested:=false) -> RefCounted:
+func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary_fire:=false,paused:=false,viewport:=Vector2i.ZERO,strafe:=0.0,secondary_fire:=false,current_music_id:=-1,relative_mouse_capture:=false,boost_requested:=false,cloak_requested:=false,turret_inverted:=false) -> RefCounted:
 	error=""
 	var size:=_viewport if viewport==Vector2i.ZERO else viewport
 	if _state.is_empty() or not Numbers.integer(milliseconds,0,_max_ms) or _state.elapsed_ms>2147483647-milliseconds or not valid_viewport(size) or not commands.is_finite() or absf(commands.x)>1 or absf(commands.y)>1 or not is_finite(throttle) or throttle<0 or throttle>1 or strafe not in [-1.0,0.0,1.0] or not Numbers.integer(current_music_id,-1,2292):return failed("Invalid mission flight time or pilot input")
@@ -177,7 +177,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 		var response: Dictionary=next._camera.response_snapshot()
 		if response.relative_capture!=relative_mouse_capture or response.player_handling!=next._pilot.response_factor():next._camera.mark_response_dirty()
 		if not next._camera.refresh_player_response(relative_mouse_capture,next._pilot.response_factor()) or not next._engine_audio.before_ordinary_motion():return failed(next._camera.error+next._engine_audio.error)
-		next._pose=next._pilot.advance_prepared(_pose,throttle if enabled_before else _throttle,seconds,strafe if enabled_before else 0.0,next._booster.speed_multiplier())
+		next._pose=next._pilot.advance_prepared(_pose,throttle if enabled_before else _throttle,seconds,strafe if enabled_before and not next._encounter.turret_active() else 0.0,next._booster.speed_multiplier())
 		if not next._pilot.error.is_empty():return failed(next._pilot.error)
 		var contact: Dictionary=next._physical.plan(next._player.collision_context(next._pose),next._scenery.read_snapshot().bodies,enabled_before)
 		if contact.is_empty() or not next._scenery.apply_physical_contacts(contact.operations):return failed(next._physical.error+next._scenery.error)
@@ -185,7 +185,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 			if operation.kind=="asteroid" and next._player.normal_hit(operation.player_damage).is_empty():return failed(next._player.error)
 		next._pose.origin=contact.center_after;next._state.physical_contacts=contact.operations
 		if next._player.advance_recharge(milliseconds).is_empty() or next._player.advance_repair(milliseconds).is_empty() or not next._player.advance_cloak(milliseconds,next._notices):return failed(next._player.error)
-		if not next._aim.advance(next._pose,_camera.snapshot().pose,size):return failed(next._aim.error)
+		if not next._aim.advance(next._encounter.turret_aim_pose(next._pose),_camera.snapshot().pose,size):return failed(next._aim.error)
 		# Contact samples the preceding portal clock, after solid scenery and
 		# before weapons/radio. Opening later in this frame cannot teleport us.
 		if next._portal!=null:
@@ -261,11 +261,15 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 			next._state.entry_released=true
 			if not next._player.set_permissions(true,cue.player_damage_allowed) or not next._runner.open_briefing():return failed(next._player.error+next._runner.error)
 	var enabled: bool=next._state.entry_released and not cue.input_blocked and (next._escape==null or not next._escape.snapshot().input_blocked) and not dying and not next.campaign_dialogue_visible()
-	if not next._pilot.sample_commands(commands if enabled else Vector2.ZERO,seconds) or not next._engine_audio.sample_commands(commands if enabled else Vector2.ZERO):return failed(next._pilot.error+next._engine_audio.error)
-	var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,primary_fire and next._primary_released,enabled,next._random,[] if next._scanner==null else next._scanner.weapon_target_ids())
+	if not next._pilot.sample_commands(commands if enabled and not next._encounter.turret_active() else Vector2.ZERO,seconds) or not next._engine_audio.sample_commands(commands if enabled and not next._encounter.turret_active() else Vector2.ZERO):return failed(next._pilot.error+next._engine_audio.error)
+	var turret_active: bool=next._encounter.turret_active()
+	if turret_active:
+		next._encounter=next._encounter.advance_turret(commands if enabled else Vector2.ZERO,milliseconds,turret_inverted)
+		if not enabled:next._encounter=next._encounter.set_turret_active(false);turret_active=false
+	var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,(primary_fire and next._primary_released) or (secondary_fire and next._secondary_released and turret_active),enabled,next._random,[] if next._scanner==null else next._scanner.weapon_target_ids())
 	if fired.is_empty():return failed(next._encounter.error)
 	next._encounter=fired.encounter;next._random=fired.random_state
-	var secondary: Dictionary=next._encounter.evaluate_secondary_fire(next._player,next._equipment,next._pose,secondary_fire and next._secondary_released,enabled,next._random,not radio.visible,next._scenery)
+	var secondary: Dictionary=next._encounter.evaluate_secondary_fire(next._player,next._equipment,next._pose,secondary_fire and next._secondary_released and not turret_active,enabled,next._random,not radio.visible,next._scenery)
 	if secondary.is_empty():return failed(next._encounter.error)
 	next._encounter=secondary.encounter;next._player=secondary.player;next._equipment=secondary.equipment;next._random=secondary.random_state
 	next._scenery=secondary.scenery
@@ -287,6 +291,8 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	# Both native hooks sampled the same preceding camera, not each other's
 	# already advanced follow pose. The active sequence owns the final view.
 	if next._escape!=null and not dying:next._camera=next._escape.camera_owner()
+	if turret_active:
+		if not next._encounter.present_turret_camera(next._camera,next._pose) or not next._aim.advance(next._encounter.turret_aim_pose(next._pose),next._camera.snapshot().pose,size):return failed(next._camera.error+next._aim.error)
 	if not next._aim.sample_feedback(next._encounter.primary_npc_contact(),milliseconds,enabled):return failed(next._aim.error)
 	if not next._engine_audio.follow_player(next._pose,int(next._player.snapshot().vitals.hull),milliseconds):return failed(next._engine_audio.error)
 	if not dying and not next._engines.set_engine_enabled((throttle if enabled else _throttle)>0):return failed(next._engines.error)
@@ -335,7 +341,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 		if not next._booster.request_start():return failed(next._booster.error)
 		if next._booster.snapshot().activation!=activation:next._throttle=1.0
 	next._state.elapsed_ms+=milliseconds;next._state.revision+=1
-	next._state.input={"enabled":enabled,"commands":commands if enabled else Vector2.ZERO,"primary_held":primary_fire and enabled and next._primary_released,"secondary_requested":secondary_fire and enabled and next._secondary_released,"throttle":next._throttle}
+	next._state.input={"enabled":enabled,"commands":commands if enabled and not next._encounter.turret_active() else Vector2.ZERO,"primary_held":primary_fire and enabled and next._primary_released,"secondary_requested":secondary_fire and enabled and next._secondary_released,"throttle":next._throttle}
 	if not next._observe_progress():return failed(next.error)
 	if next._escape!=null and not next._escape.snapshot().boundary.is_empty():
 		next._state.boundary=next._escape.snapshot().boundary
@@ -483,7 +489,7 @@ func snapshot() -> Dictionary:
 	if state.is_empty():return state
 	var view: Dictionary=state.encounter.view;var sequence: Dictionary=state.encounter.sequence
 	state.encounter=_encounter.snapshot();state.encounter.view=view;state.encounter.sequence=sequence
-	state.booster=booster_state();state.cloak=cloak_state()
+	state.booster=booster_state();state.cloak=cloak_state();state.turret=turret_state()
 	state.scenery=_scenery.snapshot();state.player_engines=_engines.snapshot();state.player_engine_audio=_engine_audio.snapshot()
 	state.radar=_radar.snapshot();state.music_context=_music_context.duplicate(true);state.flight_music=_flight_music.duplicate(true)
 	state.player_destruction=_death.snapshot();state.damage_particles=_particles.snapshot();state.npc_scanner=_scanner.snapshot();state.mining_targeting=_targeting.snapshot();state.flight_notices=_notices.snapshot();state.detail=_detail.snapshot();state.equipment=_equipment.snapshot()
@@ -506,7 +512,7 @@ func audio_state() -> Dictionary:
 	for declaration in _context.recipe().get("actor_engines",[]):
 		actor_engines[int(declaration.actor_id)]=_encounter.actor_engine_observation(int(declaration.actor_id))
 	return {"revision":_state.revision,"elapsed_ms":_state.elapsed_ms,"combat":combat,"camera_view":_camera.snapshot(),
-		"actor_engines":actor_engines,"booster":booster_state(),"cloak":cloak_state(),
+		"actor_engines":actor_engines,"booster":booster_state(),"cloak":cloak_state(),"turret":turret_state(),
 		"radio":state.radio,"radio_events":state.radio_events,"death_events":_death.snapshot().events,
 		"sequence_revision":state.sequence.revision,"sequence_audio":state.sequence.frame.audio,"escape_audio":[] if _escape==null else _escape.snapshot().frame.audio,"dialogue":dialogue(),
 		"scanner_events":_scanner.sound_events(),"flight_music":_flight_music.duplicate(true)}
@@ -520,7 +526,7 @@ func effects_state() -> Dictionary:
 func exhaust_state() -> Dictionary:
 	if _state.is_empty():return {}
 	var state: Dictionary=_context.identity()
-	state.merge({"revision":_state.revision,"elapsed_ms":_state.elapsed_ms,"engine_particles":_engines.snapshot(),"cloak":cloak_state(),"camera_pose":_camera.snapshot().pose})
+	state.merge({"revision":_state.revision,"elapsed_ms":_state.elapsed_ms,"engine_particles":_engines.snapshot(),"cloak":cloak_state(),"turret":turret_state(),"camera_pose":_camera.snapshot().pose})
 	return state
 func environment_state() -> Dictionary:return {} if _world==null else _world.environment_owner().snapshot()
 func void_environment_owner() -> RefCounted:return null if _world==null else _world.environment_owner()
@@ -582,6 +588,15 @@ func fork_for_frame() -> RefCounted:
 static func valid_viewport(size: Vector2i) -> bool:return size.x>0 and size.y>0 and size.x<=32767 and size.y<=32767
 func reject(message: String) -> bool:error=message;return false
 func failed(message: String) -> RefCounted:reject(message);return null
+
+func turret_state() -> Dictionary:return {} if _encounter==null else _encounter.turret_state()
+func toggle_turret() -> RefCounted:
+	error=""
+	if not turret_state().get("ready",false) or not _state.boundary.is_empty() or campaign_dialogue_visible() or _death.snapshot().phase!="ready":reject("The turret is unavailable during this operation");return null
+	var next:=fork_for_frame()
+	next._encounter=_encounter.set_turret_active(not _encounter.turret_active())
+	next._pilot.angular_units=Vector2.ZERO;next._pilot.lateral_units_per_millisecond=0.0
+	return next
 
 func cloak_state() -> Dictionary:return {} if _player==null else _player.cloak_state()
 func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()

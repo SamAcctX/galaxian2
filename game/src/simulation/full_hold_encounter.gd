@@ -889,6 +889,32 @@ func evaluate_world_logic(milliseconds: int, random_state: Dictionary, player_po
 		return {"encounter":next,"random_state":result.random_state}
 	return {"encounter":next,"random_state":random.snapshot()}
 
+func turret_state() -> Dictionary:return {} if _primaries==null else _primaries.turret_state()
+func turret_active() -> bool:return _primaries!=null and _primaries.turret_active()
+func turret_aim_pose(pose: Transform3D) -> Transform3D:return pose if _primaries==null else _primaries.aim_pose(pose)
+
+func set_turret_active(active: bool) -> RefCounted:
+	error=""
+	var next:=fork_for_frame()
+	if _primaries!=null:
+		next._primaries=_primaries.fork_state();next._primaries.set_turret_active(active)
+		if not next._primaries.reset_fire_intervals():reject(next._primaries.error);return null
+	return next
+
+func advance_turret(command: Vector2,milliseconds: int,inverted:=false) -> RefCounted:
+	var next:=fork_for_frame()
+	if turret_active():
+		next._primaries=_primaries.fork_state();next._primaries.advance_turret(command,milliseconds,inverted)
+	return next
+
+func present_turret_camera(camera: RefCounted,pose: Transform3D) -> bool:
+	return not turret_active() or camera.set_mounted_view(_primaries.turret_camera(pose))
+
+func present_selected_turret(pose: Transform3D,viewport: Vector2i) -> bool:
+	if not turret_active() or _selected40_view==null:return true
+	_selected40_view=_selected40_view.fork_for_frame()
+	return _selected40_view.set_mounted_view(_primaries.turret_camera(pose),turret_aim_pose(pose),viewport)
+
 func reset_primary_fire_intervals() -> bool:
 	error=""
 	if _primaries==null:return reject("This encounter has no equipped primary owner")

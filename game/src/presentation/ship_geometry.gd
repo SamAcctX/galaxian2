@@ -11,6 +11,7 @@ const Alioth = preload("res://src/content/alioth_attack_definitions.gd")
 var error := ""
 var levels: Array[Node3D] = []
 var selection := {}
+var turret: Node3D
 var engine_glow: Node3D
 var _actor_engine_parts: Array[Node3D]=[]
 var _detail: RefCounted
@@ -143,6 +144,17 @@ func _build(ship_id: int,selected: Dictionary,detail: RefCounted,library: RefCou
 	set_meta("source_ship_id",ship_id)
 	return true
 
+func build_turret(state: Dictionary,library: RefCounted,visuals: RefCounted,bindings: RefCounted) -> bool:
+	if state.is_empty():return true
+	var node=preload("res://src/presentation/manual_turret_geometry.gd").new()
+	add_child(node)
+	if not node.build(state,library,visuals,bindings):var message: String=node.error;node.free();return reject(message)
+	turret=node
+	return true
+
+func present_turret(state: Dictionary) -> bool:
+	return turret==null or turret.present(state)
+
 func apply_cloak(state: Dictionary) -> bool:
 	if state.is_empty():return true
 	if _cloak==null:
@@ -181,6 +193,7 @@ func _refresh_draw_visibility() -> void:
 	# The source attaches the same glow child to each body LOD. One native
 	# sibling retains that shared pose and follows the selected body's cull gate.
 	if engine_glow!=null:engine_glow.visible=drawable
+	if turret!=null:turret.visible=drawable
 
 ## Actor-owned effect visibility is not a body/LOD or camera visibility flag.
 ## Selection changes must not revive an engine disabled by native choreography.
@@ -197,7 +210,7 @@ func valid_selection(next: Variant) -> bool:
 func clear() -> void:
 	for child in get_children(): child.free()
 	levels.clear()
-	engine_glow=null
+	engine_glow=null;turret=null
 	_actor_engine_parts.clear()
 	selection={}
 	_detail=null

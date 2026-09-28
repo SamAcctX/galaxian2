@@ -8,7 +8,7 @@ const Construction=preload("res://src/simulation/selected40_flight_construction.
 const Scene=preload("res://src/presentation/mission_scene.gd")
 const Clock=preload("res://src/simulation/frame_clock.gd")
 const Controls=preload("res://src/input/flight_controls.gd")
-const ACTIONS=["boost","cloak","action_menu","fire","brake","mouse_mode","throttle_up","throttle_down","missiles","secondary_next","secondary_menu","change_view"]
+const ACTIONS=["turret","boost","cloak","action_menu","fire","brake","mouse_mode","throttle_up","throttle_down","missiles","secondary_next","secondary_menu","change_view"]
 var error:=""
 var status:="idle"
 var scene: Node3D
@@ -50,7 +50,7 @@ func activate() -> bool:
 	_active=true;status="running";camera.make_current();scene.feedback.set_active(true);scene.set_paused(is_paused())
 	return true
 
-func step(now_microseconds: int,commands:=Vector2.ZERO,primary_fire:=false,mouse_captured:=false,strafe:=0.0,brake:=false) -> bool:
+func step(now_microseconds: int,commands:=Vector2.ZERO,primary_fire:=false,mouse_captured:=false,strafe:=0.0,brake:=false,turret_inverted:=false) -> bool:
 	error=""
 	if not _active or _world==null:return reject("Activate the selected application session before stepping")
 	var clock: RefCounted=_clock.fork_for_frame()
@@ -66,7 +66,7 @@ func step(now_microseconds: int,commands:=Vector2.ZERO,primary_fire:=false,mouse
 			_world=view
 		_clock=clock;clear_flight_input();return true
 	var current_music: int=scene.feedback.audio.current_music_id()
-	var next: RefCounted=_world.evaluate(int(round(seconds*1000.0)),commands,0.0 if brake else _throttle,primary_fire,false,viewport,strafe,_secondary_pending,current_music,mouse_captured,_boost_pending,_cloak_pending)
+	var next: RefCounted=_world.evaluate(int(round(seconds*1000.0)),commands,0.0 if brake else _throttle,primary_fire,false,viewport,strafe,_secondary_pending,current_music,mouse_captured,_boost_pending,_cloak_pending,turret_inverted)
 	if next==null:return reject(_world.error)
 	var state: Dictionary=next.frame_context()
 	if not state.boundary.is_empty():
@@ -93,7 +93,8 @@ func action(name: String) -> bool:
 		"cloak":_cloak_pending=true;return true
 		"throttle_up":_throttle=minf(1.0,_throttle+0.1);return true
 		"throttle_down":_throttle=maxf(0.0,_throttle-0.1);return true
-		"change_view":next=_world.camera_input(3 if _flight_observation().camera_mode==0 else 0)
+		"turret":next=_world.toggle_turret()
+		"change_view":next=_world.toggle_turret() if turret_state().get("ready",false) else _world.camera_input(3 if _flight_observation().camera_mode==0 else 0)
 		"secondary_next":next=_world.cycle_secondary()
 		_:return true # Held primary, brake and mouse steering belong to controls.
 	if next==null:return reject(_world.error)
@@ -174,6 +175,7 @@ func request_cinematic_skip() -> bool:
 
 func rebase_time(now_microseconds: int) -> bool:return _clock!=null and _clock.rebase(now_microseconds)
 func clear_flight_input() -> void:_secondary_pending=false;_boost_pending=false;_cloak_pending=false
+func turret_state() -> Dictionary:return {} if _world==null else _world.turret_state()
 func cloak_state() -> Dictionary:return {} if _world==null else _world.cloak_state()
 func booster_state() -> Dictionary:return {} if _world==null else _world.booster_state()
 func is_paused() -> bool:return _pauses.values().has(true)

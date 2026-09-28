@@ -229,7 +229,7 @@ func activate() -> bool:
 	if flight_audio!=null:flight_audio.commit_frame(prepared)
 	return true
 
-func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false, relative_mouse_capture:=false, strafe:=0.0, brake:=false) -> bool:
+func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false, relative_mouse_capture:=false, strafe:=0.0, brake:=false,turret_inverted:=false) -> bool:
 	error=""
 	var fire_secondary:=_take_secondary_request()
 	if not _active or (status!="running" and status not in BOUNDARIES):return reject("Activate the mining trip before advancing it")
@@ -241,7 +241,7 @@ func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false, re
 	if is_paused() or status!="running" or _world.contract_result_pending():_clock=clock;return true
 	var drilling: bool=_world.drill_owner()!=null
 	var music_id: int=-1 if flight_audio==null else flight_audio.current_music_id()
-	var world: RefCounted=_world.evaluate(milliseconds,Vector2.ZERO if drilling else commands,0.0 if brake else _throttle,false,Vector2i(camera.get_viewport().get_visible_rect().size),commands if drilling else Vector2.ZERO,fire_primary,fire_secondary,relative_mouse_capture,music_id,strafe,_boost_requested,_cloak_requested)
+	var world: RefCounted=_world.evaluate(milliseconds,Vector2.ZERO if drilling else commands,0.0 if brake else _throttle,false,Vector2i(camera.get_viewport().get_visible_rect().size),commands if drilling else Vector2.ZERO,fire_primary,fire_secondary,relative_mouse_capture,music_id,strafe,_boost_requested,_cloak_requested,turret_inverted)
 	if world==null:return reject(_world.error)
 	var activated: bool=world.booster_state().activation!=_world.booster_state().activation
 	if not _commit(world,true,floori(float(now_microseconds)/1000.0)):return false
@@ -271,17 +271,19 @@ func action(name: String) -> bool:
 	if not can_control() and not (can_stop_mining() and name in ["dock","fire"]):return reject("Mining controls are inactive")
 	var world: RefCounted
 	match name:
+		"turret","change_view":world=_world.toggle_turret()
 		"time":world=_world.press_fast_forward()
 		"boost":_boost_requested=true;return true
 		"cloak":_cloak_requested=true;return true
 		"missiles":
-			if not secondary_available():return reject("No supported secondary launcher is installed")
+			if not secondary_available() and not turret_state().get("active",false):return reject("No supported secondary launcher is installed")
 			# A button edge requests one late-input pass, not an immediate pulse.
 			# Repeated events before that pass coalesce; held input does not detonate.
 			_secondary_requested=true
 			return true
 		"secondary_next":world=_world.cycle_secondary()
 		"dock","fire":
+			if turret_state().get("active",false):return true
 			if _world.drill_owner()!=null:world=_world.stop_mining()
 			elif _world.snapshot().mining_approach.phase!="idle":world=_world.cancel_mining()
 			elif name=="dock" and _world.snapshot().get("station_targeting",{}).get("locked_index",-1)==0:world=_world.start_station_autopilot()
@@ -302,6 +304,7 @@ func action(name: String) -> bool:
 	if name in ["autopilot","field_autopilot","station_autopilot"] and _world.snapshot().station_autopilot.active:_throttle=1.0
 	return true
 
+func turret_state() -> Dictionary:return {} if _world==null else _world.turret_state()
 func cloak_state() -> Dictionary:return {} if _world==null else _world.cloak_state()
 func booster_state() -> Dictionary:return {} if _world==null else _world.booster_state()
 

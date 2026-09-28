@@ -93,6 +93,7 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 	geometry=Geometry.new();add_child(geometry)
 	var ordinary_void_environment: RefCounted=flight.void_environment_owner() if state.player.has("void_context") else null
 	if not geometry.build_departure(library,visuals,bindings,catalogues,state.player_cache,_player_geometry_state(state),"high",true,flight.equipment_owner(),ordinary_void_environment,flight.mission_context_owner()):return fail(geometry.error)
+	if not geometry.player.build_turret(flight.turret_state(),library,visuals,bindings):return fail(geometry.player.error)
 	var pirates: RefCounted=flight.encounter_owner()
 	if pirates!=null:
 		encounter=EncounterGeometry.new();add_child(encounter)
@@ -304,6 +305,7 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 		pirate_frame=encounter.prepare_world(pirates,state.camera_view.pose,state.ship_detail,state.encounter)
 		if pirate_frame.is_empty():return reject(encounter.error)
 	if not geometry.apply_state(_player_geometry_state(state)):return reject(geometry.error)
+	if not geometry.player.present_turret(state.get("turret",{})):return reject(geometry.player.error)
 	if (station!=null)!=state.has("station_exterior"):return reject("Station exterior support changed within a flight")
 	if station!=null and not station.apply_state(state.station_exterior):return reject(station.error)
 	var message: String=_projection.apply(camera,state.camera_view)

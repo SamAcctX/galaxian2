@@ -39,11 +39,13 @@ static func dispersed(weapon: Dictionary) -> bool:
 	return weapon.get("fitting_primary",false) and weapon.get("category")==0 and weapon.get("kind")==int(VALUES.primary.dispersed_kind) and weapon.get("projectile_capacity")==int(VALUES.primary.dispersed_capacity) and Equal.equal_value(weapon.get("dispersion"),VALUES.primary.dispersion)
 
 static func ordinary(weapon: Dictionary) -> bool:
+	if preload("res://src/content/manual_turret_definitions.gd").resolved(weapon):return true
 	if weapon.get("fitting_primary")!=true or weapon.get("category")!=0 or weapon.get("nonplayer_source",false):return false
 	var row:=_primary_row(VALUES,int(weapon.get("item_id",-1)),int(weapon.get("kind",-1)))
 	return not row.is_empty() and weapon.get("projectile_capacity")==row.projectile_capacity and (weapon.kind!=2 or dispersed(weapon)) and (weapon.kind!=3 or preload("res://src/content/thermal_primary_definitions.gd").resolved(weapon))
 
 static func model(bindings: RefCounted,weapon: Dictionary,impact: bool) -> Dictionary:
+	if available(bindings) and preload("res://src/content/manual_turret_definitions.gd").resolved(weapon):return preload("res://src/content/manual_turret_definitions.gd").model(bindings,weapon,impact)
 	if not available(bindings) or weapon.get("category")!=0 or weapon.get("nonplayer_source",false):return {}
 	var row:=primary(bindings.mido_travel.ordinary_fitting,int(weapon.get("item_id",-1)),int(weapon.get("kind",-1)))
 	if row.is_empty() or weapon.get("projectile_capacity")!=row.projectile_capacity:return {}

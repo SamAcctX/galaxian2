@@ -1,6 +1,7 @@
 extends RefCounted
 ## Resolve fitting against the same native owners used by flight. Unsupported
 ## devices keep an explicit reason; stock availability never grants behavior.
+const Turrets=preload("res://src/content/manual_turret_definitions.gd")
 const Rules=preload("res://src/content/ordinary_fitting_definitions.gd")
 const Stats=preload("res://src/simulation/equipment_stats.gd")
 const Vehicle=preload("res://src/simulation/vehicle_response.gd")
@@ -40,8 +41,10 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 	var cloak_ready: bool=not cloak_clip.is_empty() and not cloak_clip.has("unsupported") and library.manifest.files.has(Cloak.Definitions.CLOAK_MAP)
 	for id in [94,95,96]:items[id]="" if cloak_ready else "This cloak's original mask or sound is unavailable"
 	for item in cat.tables.items:
-		if item.arrays[2][3]!=0:continue
+		if item.arrays[2][3] not in [0,2]:continue
 		var id:=int(item.id);var mapping:=Rules.primary(bindings.mido_travel.ordinary_fitting,id,int(item.arrays[2][5]))
+		if item.arrays[2][3]==2 and not Turrets.declaration(id).is_empty():
+			mapping={"projectile_model_id":int(bindings.mido_travel.ordinary_fitting.primary.projectile_model_ids[id]),"impact_model_id":int(bindings.mido_travel.ordinary_fitting.primary.impact_model_ids[id])}
 		if mapping.is_empty():continue
 		items[id]=""
 		if mapping.has("thermal") and not preload("res://src/presentation/projectile_trail_geometry.gd").supported_material(bindings):items[id]="This weapon's trail atlas is unavailable"
@@ -58,6 +61,12 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 				supported=supported and bindings.material_for_mesh(path,"high").get("render_type")==2
 				resources[model]="" if supported else "This weapon's animated model is not yet supported"
 			if not resources[model].is_empty():items[id]=resources[model]
+		if item.arrays[2][3]==2:
+			for key in ["base_model","gun_model"]:
+				var path: String=bindings.resolve(int(Turrets.declaration(id)[key]),"mesh")
+				if not library.manifest.files.has(path) or not Materials.supports(bindings.material_for_mesh(path,"high")):items[id]="This turret model is unavailable"
+			var clip: Dictionary=sounds.prepare(int(bindings.weapon_parameters.audio.player_event_ids[id]))
+			if clip.is_empty() or clip.has("unsupported"):items[id]="This turret sound is unavailable"
 	if Secondaries.Definitions.available(bindings):
 		# Resolve each bomb through its shared declaration and actual body/burst
 		# providers. Stock alone cannot admit unsupported animation or effects.
@@ -112,7 +121,7 @@ func inspect(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,assets: Di
 	for item in cat.tables.items:
 		var id:=int(item.id)
 		support[id]=_item_reason(bindings,cat,weapon,id,ids,int(ship))
-		if support[id].is_empty() and item.arrays[2][3] in [0,1]:support[id]=assets.items.get(id,"This weapon's model is unavailable")
+		if support[id].is_empty() and item.arrays[2][3] in [0,1,2]:support[id]=assets.items.get(id,"This weapon's model is unavailable")
 		if support[id].is_empty() and item.arrays[2][3]==3 and item.arrays[2][5]==13:support[id]=assets.items.get(id,"This tractor's beam is unavailable")
 		if support[id].is_empty() and item.arrays[2][3]==3 and item.arrays[2][5]==14:support[id]=assets.items.get(id,"This booster's sound is unavailable")
 		if support[id].is_empty() and item.arrays[2][3]==3 and item.arrays[2][5]==21:support[id]=assets.items.get(id,"This cloak's mask or sound is unavailable")
@@ -142,7 +151,7 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 	var item: Dictionary=cat.tables.items[id]
 	var category: int=item.arrays[2][3];var subtype: int=item.arrays[2][5]
 	var properties: Dictionary=item.properties
-	if category==0:
+	if category in [0,2]:
 		var weapon: Dictionary=resolver.resolve(id,ids)
 		if weapon.is_empty():return "This weapon's firing behavior is not yet supported"
 		if weapon.get("ordinary_hit_policy",{}).get("additional_damage_required",false) and not NPCSystems.available(bindings):return "This weapon requires ship systems damage support"

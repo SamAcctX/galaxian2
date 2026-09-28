@@ -733,9 +733,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if session is FirstFlightSession:
 			if event is InputEventKey:
 				var key: int=event.physical_keycode if event.physical_keycode else event.keycode
-				supported=supported or key in Controls.DIRECTIONS or (Controls.KEY_ACTIONS.has(key) and Controls.KEY_ACTIONS[key] in ["fire","boost","cloak","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu"]) or (session.secondary_available() and Controls.KEY_ACTIONS.get(key) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.KEY_ACTIONS.get(key)=="time")
-			elif event is InputEventJoypadButton:supported=supported or (Controls.BUTTON_ACTIONS.has(event.button_index) and Controls.BUTTON_ACTIONS[event.button_index] in ["fire","boost","cloak","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu"]) or (session.secondary_available() and Controls.BUTTON_ACTIONS.get(event.button_index) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.BUTTON_ACTIONS.get(event.button_index)=="time")
-			elif event is InputEventJoypadMotion:supported=event.axis in [JOY_AXIS_LEFT_X,JOY_AXIS_LEFT_Y,JOY_AXIS_TRIGGER_RIGHT] or (session.secondary_available() and event.axis==JOY_AXIS_TRIGGER_LEFT)
+				supported=supported or key in Controls.DIRECTIONS or (Controls.KEY_ACTIONS.has(key) and Controls.KEY_ACTIONS[key] in ["fire","boost","cloak","change_view","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu"]) or ((session.secondary_available() or session.turret_state().get("active",false)) and Controls.KEY_ACTIONS.get(key) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.KEY_ACTIONS.get(key)=="time")
+			elif event is InputEventJoypadButton:supported=supported or (Controls.BUTTON_ACTIONS.has(event.button_index) and Controls.BUTTON_ACTIONS[event.button_index] in ["fire","boost","cloak","change_view","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu"]) or ((session.secondary_available() or session.turret_state().get("active",false)) and Controls.BUTTON_ACTIONS.get(event.button_index) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.BUTTON_ACTIONS.get(event.button_index)=="time")
+			elif event is InputEventJoypadMotion:supported=event.axis in [JOY_AXIS_LEFT_X,JOY_AXIS_LEFT_Y,JOY_AXIS_TRIGGER_RIGHT] or ((session.secondary_available() or session.turret_state().get("active",false)) and event.axis==JOY_AXIS_TRIGGER_LEFT)
 		elif event is InputEventKey:
 			var key: int=event.physical_keycode if event.physical_keycode else event.keycode
 			supported=supported or key in Controls.DIRECTIONS or Controls.KEY_ACTIONS.get(key) in ["fire","brake","mouse_mode"]
@@ -847,7 +847,7 @@ func _process(_delta: float) -> void:
 		var input: Dictionary=_controls.snapshot() if session.can_control() else {"command":Vector2.ZERO,"held":{"fire":false}}
 		if session is FirstFlightSession and session.can_stop_mining():input.command=Controls.pointer_command(input.command)
 		var accepted: bool
-		if session is FirstFlightSession:accepted=session.step(Time.get_ticks_usec(),input.command,input.held.fire,_mouse_captured,input.get("strafe",0.0),input.held.get("brake",false))
+		if session is FirstFlightSession:accepted=session.step(Time.get_ticks_usec(),input.command,input.held.fire,_mouse_captured,input.get("strafe",0.0),input.held.get("brake",false),_controls.invert_pitch)
 		elif session is Session:accepted=session.step(Time.get_ticks_usec(),input.command,input.held.fire,input.get("strafe",0.0),input.held.get("brake",false))
 		else:accepted=session.step(Time.get_ticks_usec(),input.command,input.held.fire)
 		if not accepted:
@@ -1006,6 +1006,8 @@ func open_flight_menu(autopilot: bool=true) -> bool:
 		rows.append({"action":"autopilot","label":"Autopilot"})
 		if session.can_open_map():rows.append({"action":"map","label":library.strings[176]})
 		if session.secondary_available():rows.append({"action":"secondary_menu","label":"Secondary weapons"})
+	var turret: Dictionary=session.turret_state()
+	if not autopilot and turret.get("ready",false):rows.append({"action":"turret","label":library.strings[207]+" (T)"})
 	var cloak: Dictionary=session.cloak_state()
 	if not autopilot and cloak.get("ready",false):rows.append({"action":"cloak","label":library.strings[int(bindings.station_equipment.item_text_offset)+int(cloak.item_id)]})
 	if rows.is_empty() or not flight_menu.configure(library,bindings,visuals):return false
@@ -1305,7 +1307,7 @@ func _selected40_tick(now_microseconds: int) -> void:
 	if _transition_failed:return
 	handle_action_events(_controls.take_events())
 	var input: Dictionary=_controls.snapshot() if session.can_control() else {"command":Vector2.ZERO,"held":{"fire":false}}
-	if not session.step(now_microseconds,input.command,input.held.fire,_mouse_captured,input.get("strafe",0.0),input.held.get("brake",false)):
+	if not session.step(now_microseconds,input.command,input.held.fire,_mouse_captured,input.get("strafe",0.0),input.held.get("brake",false),_controls.invert_pitch):
 		transition_error(session.error);return
 	if session.status=="game_over_transition_required" and not session.is_paused() and _focused and is_visible_in_tree():enter_game_over();return
 	if session.status=="selected40_portal_transition_required" and not session.is_paused() and _focused and is_visible_in_tree():enter_mission_portal(now_microseconds);return

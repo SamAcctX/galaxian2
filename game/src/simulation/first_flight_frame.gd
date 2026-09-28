@@ -477,7 +477,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 			_flight_music={"operations":[]}
 	return true
 
-func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paused:=false, viewport_size:=Vector2i.ZERO, drill_command:=Vector2.ZERO, primary_fire:=false, secondary_fire:=false, relative_mouse_capture:=false, current_music_id:=-1, strafe:=0.0, boost_requested:=false,cloak_requested:=false) -> RefCounted:
+func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paused:=false, viewport_size:=Vector2i.ZERO, drill_command:=Vector2.ZERO, primary_fire:=false, secondary_fire:=false, relative_mouse_capture:=false, current_music_id:=-1, strafe:=0.0, boost_requested:=false,cloak_requested:=false,turret_inverted:=false) -> RefCounted:
 	error=""
 	if _briefing==null or not Numbers.integer(milliseconds,0,150) or not commands.is_finite() or absf(commands.x)>1.0 or absf(commands.y)>1.0 or not is_finite(throttle) or throttle<0.0 or throttle>1.0:
 		reject("Invalid first-flight frame, command or throttle");return null
@@ -544,6 +544,12 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		next._near_target=false
 		if not next._camera.refresh_player_response(relative_mouse_capture,next._autopilot.snapshot().response_factor):reject(next._camera.error);return null
 	var manual: bool=alive and cues.entry_released and not cues.dialogue.visible and not local_departing() and not cinematic_input_blocked()
+	var turret_active: bool=_encounter!=null and _encounter.turret_active()
+	if turret_active:
+		next._encounter=next._encounter.advance_turret(commands if manual else Vector2.ZERO,delta_ms,turret_inverted)
+		if not manual or (_autopilot!=null and _autopilot.snapshot().active) or (_approach!=null and _approach.snapshot().phase!="idle"):
+			next._encounter=next._encounter.set_turret_active(false);turret_active=false
+		else:commands=Vector2.ZERO;strafe=0.0
 	var active_throttle: float=(throttle if _briefing.snapshot().entry_released else 1.0) if alive else _throttle
 	if convoy_input_blocked():active_throttle=0.0
 	var ordinary_motion:=false
@@ -656,7 +662,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 			if arrival.is_empty():reject(next._route.error);return null
 			if arrival.arrived and next._notices!=null and _navigation.has("progress_notice"):
 				if not next._notices.enqueue(int(_navigation.progress_notice.source_id)):reject(next._notices.error);return null
-		if next._aim!=null and not next._aim.advance(next._pose,_camera.snapshot().pose,viewport):reject(next._aim.error);return null
+		if next._aim!=null and not next._aim.advance(next._encounter.turret_aim_pose(next._pose) if next._encounter!=null else next._pose,_camera.snapshot().pose,viewport):reject(next._aim.error);return null
 		if next._player.advance_recharge(delta_ms).is_empty() or next._player.advance_repair(delta_ms).is_empty() or not next._player.advance_cloak(delta_ms,next._notices):reject(next._player.error);return null
 		if not next._advance_tractor(delta_ms):reject(next.error);return null
 		var portal_contact: RefCounted=next._sahi if next._sahi!=null else next._void_portal
@@ -808,16 +814,18 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		if not next._camera.update(0,next._shot,scene,next._shot):reject(next._camera.error);return null
 	if next._camera_follow_enabled and not next.cinematic_input_blocked():
 		if not next._advance_follow_camera(next._camera_ms,scene,next._camera_passes):reject(next.error);return null
+	if turret_active:
+		if not next._encounter.present_turret_camera(next._camera,next._pose) or not next._aim.advance(next._encounter.turret_aim_pose(next._pose),next._camera.snapshot().pose,viewport):reject(next._camera.error+next._aim.error);return null
 	if next.death_active() and not next._death.sample_camera(next._camera.snapshot().pose,next._camera_follow_enabled):reject(next._death.error);return null
 	if next._mining!=null and next._mining.has_active_drill() and next._player.snapshot().vitals.hull>0 and not cues.dialogue.visible and not next.cinematic_input_blocked():
 		if not next._mining.set_command(drill_command):reject(next._mining.error);return null
 	if next._equipment!=null:
-		var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,primary_fire,cues.entry_released and not cues.dialogue.visible and not next.death_active() and not next.local_departing() and not next.cinematic_input_blocked(),next._random,[] if next._scanner==null else next._scanner.weapon_target_ids())
+		var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,primary_fire or (secondary_fire and turret_active),cues.entry_released and not cues.dialogue.visible and not next.death_active() and not next.local_departing() and not next.cinematic_input_blocked(),next._random,[] if next._scanner==null else next._scanner.weapon_target_ids())
 		if fired.is_empty():reject(next._encounter.error);return null
 		next._encounter=fired.encounter;next._random=fired.random_state
 		if next._encounter.has_secondaries():
 			var enabled: bool=cues.entry_released and not cues.dialogue.visible and not next.death_active() and not next.local_departing() and not next.cinematic_input_blocked()
-			if not next._apply_secondary_input(secondary_fire,enabled):reject(next.error);return null
+			if not next._apply_secondary_input(secondary_fire and not turret_active,enabled):reject(next.error);return null
 	if next.cinematic_input_blocked():
 		if not next._booster.cancel():reject(next._booster.error);return null
 	if cloak_requested:
@@ -1854,6 +1862,15 @@ func damage_particle_owner() -> RefCounted:return null if _particles==null else 
 ## Read-only during presentation of this accepted frame.
 func scenery_presentation_owner() -> RefCounted:return _scenery
 
+func turret_state() -> Dictionary:return {} if _encounter==null else _encounter.turret_state()
+func toggle_turret() -> RefCounted:
+	error=""
+	if not turret_state().get("ready",false) or not entry_released() or dialogue_visible() or death_active() or local_departing() or cinematic_input_blocked() or _approach.snapshot().phase!="idle" or (_autopilot!=null and _autopilot.snapshot().active):reject("The turret is unavailable during this operation");return null
+	var next:=fork_for_frame()
+	next._encounter=_encounter.set_turret_active(not _encounter.turret_active())
+	next._pilot.angular_units=Vector2.ZERO;next._pilot.lateral_units_per_millisecond=0.0
+	return next
+
 func cloak_state() -> Dictionary:return {} if _player==null else _player.cloak_state()
 func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
 func cloak_input_permitted() -> bool:
@@ -1937,7 +1954,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	var state: Dictionary=_briefing.snapshot()
 	var held: Dictionary=_cargo.snapshot()
 	state.cargo_used=held.used
-	state.booster=booster_state();state.cloak=cloak_state()
+	state.booster=booster_state();state.cloak=cloak_state();state.turret=turret_state()
 	state.merge({"world_type":_entry.world_type,"location":_entry.location.duplicate(true),"activated":true,
 		"player_pose":_pose,"control_throttle":_throttle,"player":_player.snapshot(),"player_cache":_player.cache_snapshot(),"angular_units":_pilot.angular_units,
 		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),

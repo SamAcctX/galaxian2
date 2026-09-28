@@ -2930,6 +2930,16 @@
     "game/tests/ship_purchase_application.gd",
     "game/tests/ship_purchase_application.gd.uid",
     "game/tests/ship_freelance_application.gd",
-    "game/tests/ship_freelance_application.gd.uid"
+    "game/tests/ship_freelance_application.gd.uid",
+    "game/src/content/manual_turret_definitions.gd",
+    "game/src/content/manual_turret_definitions.gd.uid",
+    "game/src/simulation/manual_turret.gd",
+    "game/src/simulation/manual_turret.gd.uid",
+    "game/src/presentation/manual_turret_geometry.gd",
+    "game/src/presentation/manual_turret_geometry.gd.uid",
+    "game/tests/manual_turrets.gd",
+    "game/tests/manual_turrets.gd.uid",
+    "game/tests/manual_turret_application.gd",
+    "game/tests/manual_turret_application.gd.uid"
   ]
 }

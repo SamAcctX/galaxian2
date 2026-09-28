@@ -7,6 +7,7 @@ const Vitals = preload("res://src/simulation/combat_vitals.gd")
 const TrainingWeapons = preload("res://src/content/combat_training_weapon_definitions.gd")
 const Fitting=preload("res://src/content/ordinary_fitting_definitions.gd")
 const Secondary=preload("res://src/content/conventional_secondary_definitions.gd")
+const Turrets=preload("res://src/content/manual_turret_definitions.gd")
 const Mines=preload("res://src/content/mine_definitions.gd")
 var error := ""
 var base_content_id := ""
@@ -107,11 +108,15 @@ func resolve(item_id: Variant, equipment_ids: Array) -> Dictionary:
 	var secondary:=Secondary.declaration(item_id,int(kind)) if category==1 and not _fitting.is_empty() else {}
 	if not secondary.is_empty():launch_mode="ordinary"
 	if not mine.is_empty():launch_mode="mine"
+	var turret: bool=category==2 and kind==8 and not Turrets.declaration(item_id).is_empty() and not _fitting.is_empty()
+	if turret:
+		launch_mode="ordinary";damage_factor=1.0;interval_factor=1.0;selected=-1
 	var result := {"base_content_id":base_content_id,"binding_id":binding_id,"item_id":item_id,"category":category,"kind":kind,
 		"damage":damage,"interval_ms":interval,"lifetime_ms":values.lifetime,"speed_units_per_millisecond":Vitals.single(float(values.speed)),
 		"modifier_item_id":selected,"damage_multiplier":damage_factor,"interval_multiplier":interval_factor,"launch_mode":launch_mode}
 	if launch_mode=="ordinary" and not _data.get("projectile_capacity",{}).is_empty():
 		result.projectile_capacity=int(_data.projectile_capacity.slots)
+	if turret:result.manual_turret=true;result.projectile_capacity=Turrets.CAPACITY
 	if dispersed:
 		result.projectile_capacity=int(_training.projectile_capacity)
 		result.dispersion=_training.dispersion.duplicate(true)

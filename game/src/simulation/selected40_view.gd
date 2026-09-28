@@ -161,6 +161,10 @@ func advance(sequence: RefCounted,combat: RefCounted,player: RefCounted,pose: Tr
 	_state=next;_camera=camera;_aim=aim;_shot=shot
 	return true
 
+func set_mounted_view(camera_pose: Transform3D,aim_pose: Transform3D,viewport: Vector2i) -> bool:
+	if not _camera.set_mounted_view(camera_pose) or not _aim.advance(aim_pose,camera_pose,viewport):return reject(_camera.error+_aim.error)
+	return true
+
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}
 	var result:=_state.duplicate(true)

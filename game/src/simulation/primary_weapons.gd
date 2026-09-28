@@ -1,7 +1,8 @@
 extends RefCounted
-## Native ownership of ordinary primaries for an explicit player equipment state.
+## Native ownership of forward guns and a manual turret for an owned loadout.
 ## Actor permission, world scheduling, target lists and consequences belong to
 ## the encounter owner. No unsupported primary is silently replaced or omitted.
+const Turret=preload("res://src/simulation/manual_turret.gd")
 const Projectiles = preload("res://src/simulation/ordinary_projectiles.gd")
 const Weapons = preload("res://src/simulation/weapon_loadout.gd")
 const Slots = preload("res://src/simulation/equipment_slots.gd")
@@ -15,6 +16,7 @@ const SceneryBodies = preload("res://src/simulation/scenery_bodies.gd")
 const Audio = preload("res://src/simulation/weapon_audio.gd")
 const Random = preload("res://src/simulation/seeded_random.gd")
 var error := ""
+var _turret: RefCounted
 var _loadout := {}
 var _guns: Array = []
 var _next_mount_id := 1
@@ -23,7 +25,7 @@ var _selected40_construction: RefCounted
 
 func clear() -> void:
 	error = ""
-	_loadout = {}
+	_loadout = {};_turret=null
 	_guns = []
 	_selected40_context = {}
 	_selected40_construction = null
@@ -90,6 +92,8 @@ func _configure_loadout(bindings: RefCounted,catalogues: RefCounted,mounts: RefC
 	# Source builds each category backwards while visiting installed slots forwards.
 	# Empty slots stay absent; they do not shift the authored category-slot number.
 	primary.reverse()
+	var forward_count:=primary.size()
+	primary.append_array(checked.categories[2])
 	var staged := []
 	var resolved := []
 	if _next_mount_id > 9223372036854775807 - primary.size(): return reject("Weapon handle limit exceeded")
@@ -98,8 +102,12 @@ func _configure_loadout(bindings: RefCounted,catalogues: RefCounted,mounts: RefC
 		if weapon.is_empty(): return reject(resolver.error)
 		if loadout.has("campaign_cursor"):weapon.campaign_cursor=loadout.campaign_cursor
 		resolved.append(weapon)
-		var mount: Dictionary = mounts.resolve(ship_id,0,equipment.slot)
+		var mount: Dictionary = mounts.resolve(ship_id,int(equipment.category),equipment.slot)
 		if mount.is_empty(): return reject(mounts.error)
+		if equipment.category==2:
+			if _turret!=null:return reject("Only one manual turret mount is supported")
+			_turret=Turret.new()
+			if not _turret.configure(items[equipment.item_id],mount):return reject(_turret.error)
 		var projectiles := Projectiles.new()
 		if not projectiles.configure(weapon): return reject(projectiles.error)
 		# No contact result exists before the first pass. This native sentinel
@@ -108,7 +116,10 @@ func _configure_loadout(bindings: RefCounted,catalogues: RefCounted,mounts: RefC
 			"mount":mount,"projectiles":projectiles,"contact_pass_evaluated":false,"last_contact_target":null,"audio":{}})
 	var audio: Dictionary=bindings.weapon_parameters.get("audio",{})
 	if not audio.is_empty():
-		var entries := Audio.player_entries(audio,items,resolved)
+		var entries := Audio.player_entries(audio,items,resolved.slice(0,forward_count))
+		# The mounted weapon has its own sound, independent of the forward-gun
+		# sound budget. Entering turret view must not mute a full primary rack.
+		entries.append_array(Audio.player_entries(audio,items,resolved.slice(forward_count)))
 		if entries.size()!=staged.size():return reject("Primary weapons lack supported sound selection")
 		for i in staged.size():staged[i].audio=entries[i]
 	_guns = staged
@@ -128,6 +139,7 @@ func snapshot() -> Dictionary:
 			"contact_pass_evaluated":gun.contact_pass_evaluated,
 			"last_contact_target":null if gun.last_contact_target==null else gun.last_contact_target.duplicate()})
 	var result:={"loadout":_loadout.duplicate(true),"guns":guns}
+	if _turret!=null:result.turret=_turret.snapshot()
 	if not _selected40_context.is_empty():
 		result.scope="selected40_retained_primary_component"
 		result.selected40_context=_selected40_context.duplicate(true)
@@ -136,6 +148,7 @@ func snapshot() -> Dictionary:
 func fork_state() -> RefCounted:
 	var staged: RefCounted = get_script().new()
 	staged._loadout = _loadout.duplicate(true)
+	staged._turret=null if _turret==null else _turret.fork()
 	staged._next_mount_id = _next_mount_id
 	staged._selected40_context = _selected40_context.duplicate(true)
 	staged._selected40_construction = _selected40_construction
@@ -252,7 +265,17 @@ func _evaluate_opening_update(combat: RefCounted,bodies: RefCounted,inventory: R
 			"contacts":result.contacts,"last_contact_target":result.last_contact_target,"motion":motion})
 	return {"primaries":staged,"combat":staged_combat,"bodies":staged_bodies,"weapons":events}
 
+func turret_state() -> Dictionary:return {} if _turret==null else _turret.snapshot()
+func turret_active() -> bool:return _turret!=null and _turret.active()
+func set_turret_active(value: bool) -> void:
+	if _turret!=null:_turret.set_active(value)
+func advance_turret(command: Vector2,milliseconds: int,inverted:=false) -> void:
+	if _turret!=null:_turret.advance(command,milliseconds,inverted)
+func turret_camera(ship: Transform3D) -> Transform3D:return _turret.camera_pose(ship)
+func aim_pose(ship: Transform3D) -> Transform3D:return _turret.aim_pose(ship) if turret_active() else ship
+
 func has_beams() -> bool:
+	if turret_active():return false
 	for gun in _guns:
 		if gun.projectiles.has_beam():return true
 	return false
@@ -277,10 +300,11 @@ func fire(firing_transform: Variant, firing_allowed: Variant, random_state: Vari
 	var events := []
 	for gun in _guns:
 		var projectiles: RefCounted = gun.projectiles.fork_state()
-		var result := {"fired":false,"reason":"quantity"}
-		if gun.equipment.quantity > 0:
+		var result := {"fired":false,"reason":"inactive_group"}
+		var firing_pose: Transform3D=_turret.barrel_pose(firing_transform) if gun.equipment.category==2 else firing_transform
+		if gun.equipment.quantity > 0 and (gun.equipment.category==2)==turret_active():
 			if projectiles.has_beam():result=projectiles.fire_beam_from_mount(gun.mount,firing_transform,firing_allowed,beam_targets)
-			else:result = projectiles.fire_forward_from_mount(gun.mount,firing_transform,firing_allowed,next_random)
+			else:result = projectiles.fire_forward_from_mount(gun.mount,firing_pose,firing_allowed,next_random)
 		if result.is_empty(): return fail(projectiles.error)
 		if result.has("random_state"):next_random=result.random_state
 		staged.append(projectiles)
@@ -289,7 +313,7 @@ func fire(firing_transform: Variant, firing_allowed: Variant, random_state: Vari
 		if not gun.audio.is_empty():
 			var cues := []
 			if result.fired:
-				var cue := Audio.cue(gun.audio,firing_transform.origin)
+				var cue := Audio.cue(gun.audio,firing_pose.origin)
 				if not cue.is_empty():cues.append(cue)
 			events[-1].audio_events=cues
 	for i in _guns.size(): _guns[i].projectiles = staged[i]

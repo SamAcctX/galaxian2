@@ -2,6 +2,7 @@ extends RefCounted
 ## Retained projectile contacts and timing. Travelling shots use their muzzle and
 ## direction; beams place the contact at a target from the shared aim window.
 ## Collision consequences and rendering remain with their existing owners.
+const Turrets=preload("res://src/content/manual_turret_definitions.gd")
 const Beam=preload("res://src/simulation/beam_primary.gd")
 const Thermal=preload("res://src/content/thermal_primary_definitions.gd")
 const Secondary=preload("res://src/content/conventional_secondary_definitions.gd")
@@ -51,7 +52,7 @@ func configure(weapon: Dictionary, capacity: Variant = null) -> bool:
 	for field in ["item_id", "category", "kind", "damage", "interval_ms", "lifetime_ms"]:
 		if not Vitals.integer(weapon.get(field)): return reject("Invalid projectile weapon field: "+field)
 	var secondary:=Secondary.resolved(weapon)
-	if not secondary and (weapon.category!=0 or (weapon.kind not in [0,1,2] and not Thermal.resolved(weapon)) or (weapon.get("launch_mode")!="ordinary" and not Beam.Definitions.resolved(weapon))):
+	if not secondary and not Turrets.resolved(weapon) and (weapon.category!=0 or (weapon.kind not in [0,1,2] and not Thermal.resolved(weapon)) or (weapon.get("launch_mode")!="ordinary" and not Beam.Definitions.resolved(weapon))):
 		return reject("This projectile owner requires a declared travelling or beam launch path")
 	if weapon.has("beam") and not Beam.Definitions.resolved(weapon):return reject("Invalid resolved beam declaration")
 	if weapon.kind==2 and not TrainingWeapons.dispersed_primary(weapon) and not Fitting.dispersed(weapon):return reject("This ordinary kind requires its verified dispersion and capacity")
@@ -71,6 +72,7 @@ func configure(weapon: Dictionary, capacity: Variant = null) -> bool:
 		_weapon[field]=weapon[field]
 	_weapon.speed_units_per_millisecond=Vitals.single(float(speed))
 	_weapon.launch_mode=weapon.launch_mode
+	if Turrets.resolved(weapon):_weapon.manual_turret=true
 	if weapon.has("beam"):_weapon.beam=weapon.beam.duplicate(true)
 	if weapon.has("thermal"):_weapon.thermal=weapon.thermal.duplicate(true)
 	if secondary:_weapon.secondary_projectile=weapon.secondary_projectile.duplicate(true)
@@ -224,11 +226,13 @@ func fire_from_mount(mount: Dictionary, ship_transform: Variant, world_direction
 		if not Vitals.integer(mount.get(field)): return fail("Invalid weapon mount field: " + field)
 	if not finite_vector(mount.get("position")) or not ship_transform is Transform3D or not ship_transform.is_finite():
 		return fail("Mount launch requires a finite ship transform and local position")
-	# Fixed player mounts: the verified setup shifts local Z by 100 source units.
-	# Mount assignment uses the equipment instance's category slot, not item ID.
-	# Alternating mount flags and other source launch kinds are not enabled here.
 	var offset := scaled(mount.position, 1.0)
-	offset.z = Vitals.single(offset.z + 100.0)
+	if Turrets.resolved(_weapon):
+		# The caller supplies the moving barrel pose. Failed attempts do not
+		# change which side of a twin barrel fires next.
+		var spacing: float=Turrets.declaration(_weapon.item_id).barrel_spacing
+		offset=Vector3(spacing if _next_id%2==1 else -spacing,0,300)
+	else:offset.z = Vitals.single(offset.z + 100.0)
 	var basis: Basis = ship_transform.basis
 	var rotated := Vector3(
 		mount_dot(Vector3(basis.x.x, basis.y.x, basis.z.x), offset),
@@ -244,7 +248,7 @@ func fire_from_mount(mount: Dictionary, ship_transform: Variant, world_direction
 		slot.trail_basis=Basis(basis.x,basis.y,normalized_launch(slot.velocity))
 		_trails[result.projectile.slot].start(_trail_id,Transform3D(slot.trail_basis,muzzle))
 		result.projectile=slot.duplicate(true)
-	if result.get("fired",false) and (_weapon.has("campaign_cursor") or _weapon.has("secondary_projectile")) and not _weapon.get("nonplayer_source",false):
+	if result.get("fired",false) and (_weapon.has("campaign_cursor") or _weapon.has("secondary_projectile") or Turrets.resolved(_weapon)) and not _weapon.get("nonplayer_source",false):
 		# The original ordinary launch stores the firing matrix's Y column in
 		# each slot. It survives ship rotation and is reused by the draw root.
 		# Cursor40 uses the explicit retained-primary component, not admission
