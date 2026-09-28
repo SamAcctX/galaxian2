@@ -22,8 +22,10 @@ func verify_escort(args: PackedStringArray) -> void:
 	var bodies=load("res://src/content/scenery_body_resources.gd").new()
 	var effects=load("res://src/content/scenery_effect_resources.gd").new()
 	if not bodies.configure(library,bindings) or not effects.configure(library,bindings):check(false,bodies.error+effects.error);return
-	for faction in [0,1,2,3,4]:
+	for variant in 10:
+		var faction:=variant%5
 		var contracts: RefCounted=station.contract_owner().fork()
+		contracts._state.difficulty=0.5 if variant<5 else 1.0
 		contracts._state.mission.kind=9;contracts._state.mission.station_id=int(original.loadout.station_id)
 		contracts._state.accepted_contact.offer.mission=contracts._state.mission.duplicate(true)
 		contracts._state.accepted_contact.offer.context.client_faction=faction
@@ -56,7 +58,20 @@ func verify_cast_frame(frame: RefCounted,faction: int) -> void:
 	if stepped==null:check(false,frame.error);return
 	for id in range(split,actors.size()):
 		check(stepped.snapshot().encounter.combat.actors[id].position==actors[id].position+Vector3(0,0,100),"A cruising freighter did not advance along its original forward axis")
-	check(frame.snapshot()==original,"Convoy movement changed the retained parent frame")
+	var paused: RefCounted=frame.evaluate(100,Vector2.ZERO,1.0,true)
+	if paused==null:check(false,frame.error);return
+	check(paused.snapshot().encounter.combat.actors==actors,"Pause advanced the convoy or its combat state")
+	var stunned: RefCounted=frame.fork_for_frame()
+	var combat: RefCounted=stunned._encounter._combat.fork_for_frame();stunned._encounter._combat=combat
+	var freight: RefCounted=combat._writable(split)
+	var pulse: Dictionary=freight.systems_hit(int(actors[split].systems.capacity))
+	if pulse.is_empty():check(false,freight.error);return
+	stunned=stunned.evaluate(100)
+	if stunned==null:check(false,"EMP freighter frame failed");return
+	var stopped: Dictionary=stunned.snapshot().encounter.combat.actors[split]
+	check(stopped.position==actors[split].position and stopped.systems_disabled and stopped.vitals==actors[split].vitals,"An EMP failed to halt the freighter or damaged its hull")
+	check(stunned.snapshot().encounter.combat.actors[split+1].position==actors[split+1].position+Vector3(0,0,100),"One disabled freighter stopped the rest of the convoy")
+	check(frame.snapshot()==original,"Convoy movement or EMP changed the retained parent frame")
 	if faction!=0:return
 	var runner: RefCounted=frame._encounter._control._mission_runner.fork()
 	var observed: Array=actors.duplicate(true)
@@ -68,10 +83,10 @@ func verify_cast_frame(frame: RefCounted,faction: int) -> void:
 	check(runner.sample_clock(5001,5001) and runner.poll(observed,true,true).mode==2,"The lost convoy did not fail during radio")
 	for won in [true,false]:
 		var branch: RefCounted=frame.fork_for_frame()
-		var combat: RefCounted=branch._encounter._combat.fork_for_frame();branch._encounter._combat=combat
-		if not combat.begin_contact_pass(original.random_state,true):check(false,combat.error);return
+		var outcome_combat: RefCounted=branch._encounter._combat.fork_for_frame();branch._encounter._combat=outcome_combat
+		if not outcome_combat.begin_contact_pass(original.random_state,true):check(false,outcome_combat.error);return
 		for id in (range(split) if won else range(split,actors.size())):
-			if combat.normal_hit(id,actors[id].vitals.hull,false).is_empty():check(false,combat.error);return
+			if outcome_combat.normal_hit(id,actors[id].vitals.hull,false).is_empty():check(false,outcome_combat.error);return
 		for tick in 200:
 			var next: RefCounted=branch.evaluate(100)
 			if next==null:check(false,branch.error);return
