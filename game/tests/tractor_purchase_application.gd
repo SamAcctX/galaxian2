@@ -103,7 +103,7 @@ func verify_owned_fitting(original: Dictionary) -> void:
 	if failures or not app.equipment_action("open"):check(false,app.status.text);return
 	var opened: Dictionary=app.session.station_owner().snapshot()
 	check(opened.equipment.fitting_support[68].is_empty() and opened.equipment.fitting_support[69].is_empty(),"The verified timed tractors are still refused")
-	check(not opened.equipment.fitting_support[70].is_empty() and not opened.equipment.fitting_support[194].is_empty(),"Timed recovery enabled unsupported automatic tractors")
+	check(opened.equipment.fitting_support[70].is_empty() and not opened.equipment.fitting_support[194].is_empty(),"Fitting lost visible automatic recovery or admitted an unsupported expansion beam")
 	if failures or not mount_owned_device(68,10):return
 	var fitted: Dictionary=app.session.station_owner().snapshot()
 	check(fitted.loadout.equipment_ids.any(func(id):return int(id)==68) and fitted.loadout.equipment_ids.any(func(id):return int(id)==91) and not fitted.loadout.equipment_ids.any(func(id):return catalogue.tables.items[id].arrays[2][3]==3 and catalogue.tables.items[id].arrays[2][5]==10),"Mounting the paid tractor failed to exchange the original armor or preserve the passenger cabin")

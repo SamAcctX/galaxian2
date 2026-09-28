@@ -187,10 +187,50 @@ func verify_tractor_targeting(debris: RefCounted) -> void:
 	check(default_timer.advance(debris,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,1,true) and default_timer.snapshot().recovery_object_index==0,"Timed tractor incorrectly required the NPC scanner gate for scenery")
 	equipped._state.departure.loadout.equipment_ids=[68,70,81,90]
 	check(default_timer.configure(bindings,cat,equipped,radii,frames) and default_timer.snapshot().tractor_id==68,"Scenery did not use the first installed tractor getter")
-	var before: Dictionary=default_timer.snapshot()
 	equipped._state.departure.loadout.equipment_ids=[70,68,81,90]
-	check(not default_timer.configure(bindings,cat,equipped,radii,frames) and default_timer.snapshot()==before,"An unsupported automatic mode replaced a valid timed selector")
+	check(default_timer.configure(bindings,cat,equipped,radii,frames) and default_timer.snapshot().tractor_id==70 and default_timer.snapshot().tractor_mode==1,"The first installed automatic tractor did not own scenery acquisition")
+	verify_automatic_tractors(equipped,debris)
 	default_timer.clear();check(default_timer.snapshot().is_empty(),"Clearing selection retained tractor configuration")
+
+func verify_automatic_tractors(equipped: RefCounted,debris: RefCounted) -> void:
+	var off_aim:=aim.duplicate(true);off_aim.point.x=600
+	var behind: RefCounted=debris.fork_for_frame();behind._motion=behind._motion.fork_for_frame()
+	behind._motion._field.objects[0].position=Vector3(0,0,1000);refresh_fixture(behind)
+	var original: Dictionary=debris.snapshot()
+	for id in [70,194]:
+		# These are acquisition fixtures. The expansion device's separate mesh
+		# validation still refuses fitting until its original UV tracks render.
+		equipped._state.departure.loadout.equipment_ids=[id]
+		var tractor:=Targeting.new()
+		if not tractor.configure(bindings,cat,equipped,radii,frames):check(false,tractor.error);return
+		check(tractor.advance(debris,Transform3D.IDENTITY,Transform3D.IDENTITY,off_aim,0,true),tractor.error)
+		var acquired: Dictionary=tractor.snapshot()
+		check(acquired.recovery_object_index==0 and acquired.elapsed_ms==0 and acquired.scanner_id==-1 and acquired.candidate_indices.is_empty() and not acquired.markers[0].in_scan_window,"Automatic debris recovery waited for a scanner or centered aim")
+		check(acquired.selected_object_index==-1 and acquired.events.is_empty(),"Automatic cargo became mining or emitted a missing-equipment notice")
+		var branch: RefCounted=tractor.fork_for_frame()
+		check(branch.advance(behind,Transform3D.IDENTITY,Transform3D.IDENTITY,off_aim,100,true) and branch.snapshot().recovery_object_index==(0 if id==194 else -1) and not branch.snapshot().markers[0].in_view,"Automatic scenery recovery lost its visibility distinction")
+		check(tractor.snapshot()==acquired,"Advancing automatic recovery changed its retained parent frame")
+		for gates in [[true,false],[false,true],[true,true]]:
+			check(branch.advance(debris,Transform3D.IDENTITY,Transform3D.IDENTITY,off_aim,100,true,false,gates[0],gates[1]) and branch.recovery_object_index()==(0 if id==194 else -1),"Automatic selection ignored its guidance, NPC or autopilot priority")
+		check(branch.advance(debris,Transform3D.IDENTITY,Transform3D.IDENTITY,off_aim,100,true,false,false,false,true) and branch.recovery_object_index()==-1,"Automatic scenery replaced a pending NPC or scenery pickup")
+		check(branch.advance(debris,Transform3D.IDENTITY,Transform3D.IDENTITY,off_aim,100,true,true) and branch.recovery_object_index()==-1 and branch.snapshot().markers.is_empty(),"A mining approach admitted automatic scenery recovery")
+		check(branch.advance(debris,Transform3D.IDENTITY,Transform3D.IDENTITY,off_aim,100,false) and branch.recovery_object_index()==-1,"A hidden HUD requested automatic recovery")
+		check(branch.advance(debris,Transform3D.IDENTITY,Transform3D.IDENTITY,off_aim,0,true) and branch.recovery_object_index()==0,"Releasing acquisition gates failed to resume automatic recovery")
+		var held: Dictionary=branch.snapshot()
+		check(not branch.advance(debris,Transform3D.IDENTITY,Transform3D.IDENTITY,off_aim,-1,true) and branch.snapshot()==held,"Invalid automatic frame changed its request")
+	check(debris.snapshot()==original,"Automatic selection consumed or moved scenery cargo")
+	var ordered: RefCounted=arranged([10000.0,1000.0])
+	for index in 2:
+		ordered._destruction[index]._state.actor_state=3;ordered._destruction[index]._read_snapshot={}
+	refresh_fixture(ordered)
+	equipped._state.departure.loadout.equipment_ids=[70]
+	var first:=Targeting.new();check(first.configure(bindings,cat,equipped,radii,frames),first.error)
+	check(first.advance(ordered,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,0,true) and first.recovery_object_index()==0,"Automatic recovery used nearest distance instead of the first eligible cargo")
+	ordered._destruction[0].disable_drop();refresh_fixture(ordered)
+	check(first.advance(ordered,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,0,true) and first.recovery_object_index()==1,"Automatic recovery selected already consumed cargo")
+	ordered._motion=ordered._motion.fork_for_frame()
+	ordered._motion._field.objects[1].position.z=-2000000.0;refresh_fixture(ordered)
+	check(first.advance(ordered,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,0,true) and first.recovery_object_index()==1,"Automatic recovery inherited the timed selection distance sentinel")
 
 func verify_flight(lib: RefCounted,args: Array):
 	var flight:=Frame.new()

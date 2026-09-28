@@ -914,6 +914,7 @@ func _advance_scenery_hud(delta_ms: int,enabled: bool,camera: Transform3D,aim: D
 	var approaching: bool=_approach!=null and _approach.snapshot().phase!="idle"
 	var suspended: bool=_autopilot!=null and _autopilot.snapshot().active
 	var blocked: bool=_route!=null
+	var recovery_pending:=false
 	if _local_travel!=null:blocked=blocked or _local_travel.snapshot().acquired_station_id>=0
 	if _scanner!=null:
 		var scan: Dictionary=_scanner.snapshot()
@@ -922,8 +923,9 @@ func _advance_scenery_hud(delta_ms: int,enabled: bool,camera: Transform3D,aim: D
 	if _tractor!=null:
 		var recovery: Dictionary=_tractor.snapshot()
 		suspended=suspended or recovery.frame.get("found_actor_id",-1)>=0
-		blocked=blocked or recovery.request_actor_id>=0
-	if not _targeting.advance(_scenery,_pose,camera,aim,delta_ms,enabled,approaching,blocked,suspended):return reject(_targeting.error)
+		recovery_pending=recovery.request_actor_id>=0
+		blocked=blocked or recovery_pending
+	if not _targeting.advance(_scenery,_pose,camera,aim,delta_ms,enabled,approaching,blocked,suspended,recovery_pending):return reject(_targeting.error)
 	var events: Array=_targeting.selection_events()
 	_queue_mining_audio(events)
 	if not _queue_notice_events(events):return false

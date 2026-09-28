@@ -62,7 +62,7 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 	if Tractor.Definitions.available(bindings):
 		var rules: Dictionary=bindings.mido_travel.tractor_recovery
 		for item in cat.tables.items:
-			if item.arrays[2][3]!=3 or item.arrays[2][5]!=int(rules.equipment.category) or item.properties.get(int(rules.equipment.mode_property))!=0:continue
+			if item.arrays[2][3]!=3 or item.arrays[2][5]!=int(rules.equipment.category):continue
 			var tractor:=Tractor.new()
 			var loadout:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,
 				"ship_id":int(rules.pull.supported_player_hulls[0]),"equipment_ids":[int(item.id)]}
@@ -142,7 +142,6 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 			if not Tractor.Definitions.available(bindings):return "Tractor recovery is not yet supported by this content pack"
 			var tractor: Dictionary=bindings.mido_travel.tractor_recovery
 			if not tractor.pull.supported_player_hulls.any(func(hull):return int(hull)==ship):return "Tractor recovery is not yet supported for this ship"
-			if properties.get(int(tractor.equipment.mode_property))!=0:return "Automatic tractor recovery is not yet supported"
 		15:
 			if Stats.resolve_repair_device(cat.tables.items,[id],rule.repair).is_empty():return "The repair device is unavailable"
 		16:

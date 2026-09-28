@@ -24,6 +24,7 @@ var _duration:=0
 var _scanner_id:=-1
 var _drill_id:=-1
 var _tractor_id:=-1
+var _tractor_mode:=-1
 var _selected:=-1
 var _candidate:=-1
 var _elapsed:=0
@@ -64,7 +65,7 @@ func _configure_devices(bindings: RefCounted,catalogues: RefCounted,loadout: Dic
 	if not projection.configure(bindings.flight_projection,Vector2i.ONE,frame_radii):return reject(projection.error)
 	if animation_frames<1 or animation_frames>1024:return reject("Invalid source acquisition filmstrip")
 	var rules: Dictionary=bindings.mining_targeting
-	var scanner:=-1;var drill:=-1;var tractor:=-1
+	var scanner:=-1;var drill:=-1;var tractor:=-1;var tractor_mode:=-1
 	var items: Array=catalogues.tables.get("items",[])
 	for id in loadout.equipment_ids:
 		if not Numbers.integer(id,0,items.size()-1):return reject("Asteroid selection equipment is unavailable")
@@ -76,8 +77,9 @@ func _configure_devices(bindings: RefCounted,catalogues: RefCounted,loadout: Dic
 		if tractor<0 and category==int(rules.unsupported_device_category):
 			if not RecoveryDefinitions.available(bindings):return reject("Scenery cargo requires verified tractor declarations")
 			var device: Dictionary=bindings.mido_travel.tractor_recovery.equipment
-			if properties.get(int(device.mode_property))!=0:return reject("Automatic scenery recovery requires its separate acquisition gates")
-			tractor=id
+			var mode: Variant=properties.get(int(device.mode_property))
+			if not Numbers.integer(mode,0,2147483647) or not device.modes.any(func(value):return int(value)==int(mode)):return reject("Unsupported scenery tractor acquisition mode")
+			tractor=id;tractor_mode=int(mode)
 		if scanner<0 and category==int(rules.scanner_category):scanner=id
 		if drill<0 and category==int(rules.drill_category):drill=id
 	var duration:=int(rules.default_duration_ms)
@@ -89,11 +91,11 @@ func _configure_devices(bindings: RefCounted,catalogues: RefCounted,loadout: Dic
 	_max_ms=Frames.simulation_limit(bindings,int(_rules.max_frame_ms))
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
 	_field_identity=scenery.presentation_identity();_selected40_world=null
-	_radii=frame_radii;_frames=animation_frames;_duration=duration;_scanner_id=scanner;_drill_id=drill;_tractor_id=tractor
+	_radii=frame_radii;_frames=animation_frames;_duration=duration;_scanner_id=scanner;_drill_id=drill;_tractor_id=tractor;_tractor_mode=tractor_mode
 	_selected=-1;_candidate=-1;_elapsed=0;_sample={}
 	return true
 
-func advance(scenery: RefCounted, player: Transform3D, camera: Transform3D, aim: Dictionary, delta_ms: Variant, enabled: bool, approaching:=false, selection_blocked:=false, acquisition_suspended:=false) -> bool:
+func advance(scenery: RefCounted, player: Transform3D, camera: Transform3D, aim: Dictionary, delta_ms: Variant, enabled: bool, approaching:=false, selection_blocked:=false, acquisition_suspended:=false, recovery_pending:=false) -> bool:
 	error=""
 	if _rules.is_empty() or scenery==null or scenery.get_script()!=Scenery or scenery.presentation_identity()!=_field_identity or not Numbers.integer(delta_ms,0,_max_ms):return reject("Invalid asteroid selection field or frame")
 	if _selected40_world!=null:
@@ -116,7 +118,7 @@ func advance(scenery: RefCounted, player: Transform3D, camera: Transform3D, aim:
 	var bodies: Variant=field.get("bodies",{}).get("objects")
 	var lifecycles: Array=field.get("destruction",[])
 	if not bodies is Array or bodies.size()!=field.objects.size() or (not lifecycles.is_empty() and lifecycles.size()!=bodies.size()):return reject("Asteroid selection requires complete live bodies")
-	var markers:=[];var candidates:=[];var kinds:={}
+	var markers:=[];var candidates:=[];var kinds:={};var automatic_recovery:=-1
 	for index in bodies.size():
 		var body: Variant=bodies[index]
 		if not body is Dictionary or body.get("index")!=index or not body.get("active") is bool or not body.get("position") is Vector3 or not body.position.is_finite() or not Numbers.integer(body.get("source_size_value"),4,7) or not field.objects[index].position is Vector3 or not field.objects[index].position.is_finite() or body.model_id!=field.objects[index].model_id:return reject("Invalid asteroid body sample")
@@ -134,10 +136,16 @@ func advance(scenery: RefCounted, player: Transform3D, camera: Transform3D, aim:
 		var kind:="debris" if cargo_eligible and state in [3,4] else "asteroid"
 		markers.append({"object_index":index,"pixels":pixel,"in_view":projected.in_view,"in_scan_window":inside,"selected":index==_selected,"kind":kind,"item_id":body.item_id})
 		kinds[index]=kind
-		if inside and not selection_blocked and not acquisition_suspended and not body.get("mined",false) and candidates.size()<int(_rules.candidate_limit):candidates.append(index)
+		# Automatic recovery keeps the ordered cargo request separate from the
+		# mining clock. All-direction devices bypass ordinary selection gates,
+		# but neither mode can replace an existing pickup or a prior cargo row.
+		var normal_selection: bool=not selection_blocked and not acquisition_suspended
+		if kind=="debris" and automatic_recovery<0 and not recovery_pending:
+			if _tractor_mode==2 or (_tractor_mode==1 and projected.in_view and normal_selection):automatic_recovery=index
+		if inside and normal_selection and not recovery_pending and automatic_recovery<0 and not body.get("mined",false) and candidates.size()<int(_rules.candidate_limit):candidates.append(index)
 	var selected:=_selected;var candidate:=_candidate;var elapsed:=_elapsed
 	var nearest:=-1;var nearest_distance:=int(_rules.candidate_distance_limit)
-	var events:=[];var animation:=-1;var recovery:=-1
+	var events:=[];var animation:=-1;var recovery:=automatic_recovery
 	# Mining owns its selected body while approaching. An earlier NPC candidate
 	# or ordinary autopilot also skips this clock/selection pass. A retained
 	# request, planet or mission route instead prevents a new candidate; ordinary
@@ -159,7 +167,8 @@ func advance(scenery: RefCounted, player: Transform3D, camera: Transform3D, aim:
 			elapsed+=int(delta_ms)
 			if elapsed>_duration-int(_rules.acquisition_lead_ms):
 				if kinds[candidate]=="debris":
-					if _tractor_id>=0:recovery=candidate
+					if _tractor_id>=0:
+						if recovery<0:recovery=candidate
 					else:events.append({"kind":"notification","source_id":int(_rules.missing_tractor_notification),"object_index":candidate})
 				elif _drill_id<0:events.append({"kind":"notification","source_id":int(_rules.missing_drill_notification),"object_index":candidate})
 				else:
@@ -180,7 +189,7 @@ func snapshot() -> Dictionary:
 	if _rules.is_empty():return {}
 	var state:=_identity.duplicate()
 	state.merge({"selected_object_index":_selected,"candidate_object_index":_candidate,"elapsed_ms":_elapsed,
-		"scanner_id":_scanner_id,"drill_id":_drill_id,"tractor_id":_tractor_id,"duration_ms":_duration,"animation_frames":_frames})
+		"scanner_id":_scanner_id,"drill_id":_drill_id,"tractor_id":_tractor_id,"tractor_mode":_tractor_mode,"duration_ms":_duration,"animation_frames":_frames})
 	state.merge(_sample.duplicate(true))
 	return state
 
@@ -192,7 +201,7 @@ func field_identity() -> RefCounted:return _field_identity
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._rules=_rules;copy._perspective=_perspective;copy._identity=_identity;copy._field_identity=_field_identity
-	copy._radii=_radii;copy._frames=_frames;copy._duration=_duration;copy._scanner_id=_scanner_id;copy._drill_id=_drill_id;copy._tractor_id=_tractor_id
+	copy._radii=_radii;copy._frames=_frames;copy._duration=_duration;copy._scanner_id=_scanner_id;copy._drill_id=_drill_id;copy._tractor_id=_tractor_id;copy._tractor_mode=_tractor_mode
 	# Each advance replaces the complete sample; public observations stay detached.
 	copy._selected=_selected;copy._candidate=_candidate;copy._elapsed=_elapsed;copy._sample=_sample
 	copy._selected40_world=_selected40_world
@@ -201,5 +210,5 @@ func clear() -> void:
 	_max_ms=0
 	error="";_rules={};_perspective={};_identity={};_field_identity=null;_sample={}
 	_selected40_world=null
-	_radii=Vector2.ZERO;_frames=0;_duration=0;_scanner_id=-1;_drill_id=-1;_tractor_id=-1;_selected=-1;_candidate=-1;_elapsed=0
+	_radii=Vector2.ZERO;_frames=0;_duration=0;_scanner_id=-1;_drill_id=-1;_tractor_id=-1;_tractor_mode=-1;_selected=-1;_candidate=-1;_elapsed=0
 func reject(message: String) -> bool:error=message;return false
