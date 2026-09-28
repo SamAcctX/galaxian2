@@ -1126,7 +1126,7 @@ func contract_action(action: String,id: int) -> bool:
 	if session is StationSession and session.campaign_story_ready():
 		if not _begin_campaign_story():return false
 	clear_input();present_session()
-	if action in ["close","result_close"]:_autosave_station()
+	if action in ["close","result_close","buy_goods"]:_autosave_station()
 	return true
 
 func _begin_contract_story() -> bool:

@@ -567,6 +567,24 @@ func inspect_contract_contact(contact_id: int,bindings: RefCounted) -> bool:
 	_contracts=contracts
 	return true
 
+func merchant_preview(contact_id: int,bindings: RefCounted) -> Dictionary:
+	error=""
+	if _contracts==null or not _contract_station(bindings):fail("The station lounge is unavailable");return {}
+	var preview: Dictionary=_contracts.merchant_preview(bindings,contact_id,_equipment)
+	if preview.is_empty():fail(_contracts.error)
+	return preview
+
+func purchase_lounge_goods(contact_id: int,bindings: RefCounted) -> bool:
+	error=""
+	if _contracts==null or not _contract_station(bindings):return fail("The station lounge is unavailable")
+	var contracts: RefCounted=_contracts.fork()
+	var inventory: RefCounted=contracts.purchase_lounge_goods(bindings,contact_id,_equipment)
+	if inventory==null:return fail(contracts.error)
+	var owned: Dictionary=inventory.snapshot()
+	_equipment=inventory;_contracts=contracts
+	_state.loadout=owned.loadout;_state.cargo=owned.cargo;_state.cargo_cache_stale=owned.cargo_cache_stale
+	return true
+
 func accept_contract(offer_id: int,replace_current: bool=false,bindings: RefCounted=null) -> bool:
 	error=""
 	if _contracts==null or not _contract_station(bindings):return fail("The lounge is not open")

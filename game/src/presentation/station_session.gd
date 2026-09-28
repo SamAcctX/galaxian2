@@ -338,6 +338,8 @@ func contract_action(action: String,id: int,panel: Control) -> bool:
 		"close":opened=false
 		"select":
 			if not opened or not candidate.inspect_contract_contact(id,_bindings):return reject(candidate.error)
+		"buy_goods":
+			if not opened or not candidate.purchase_lounge_goods(id,_bindings):return reject(candidate.error)
 		"accept","replace":
 			if not opened or not candidate.accept_contract(id,action=="replace",_bindings):return reject(candidate.error)
 		"result_close":
@@ -373,6 +375,10 @@ func _contract_previews(owner: RefCounted,opened: bool) -> Dictionary:
 	if not opened:return result
 	var career: Dictionary=owner.snapshot().get("contracts",{})
 	if not career.get("pending_result",{}).is_empty():return result
+	for contact in career.get("population",{}).get("contacts",[]):
+		if contact.has("trade"):
+			result[contact.contact_id]=owner.merchant_preview(contact.contact_id,_bindings)
+			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
 	var requests:={}
 	for place in career.get("lounges",{}).get("locations",[]):
 		if place.station_id==career.station_id:requests=place.get("requested_offers",{});break

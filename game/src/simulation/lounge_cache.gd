@@ -168,6 +168,26 @@ func consume(station_id: int,offer_id: int) -> bool:
 		return true
 	return reject("The accepted contact has no retained lounge")
 
+func merchant_quote(station_id: int,contact_id: int) -> Dictionary:
+	var entry:=location(station_id)
+	for contact in entry.get("population",{}).get("contacts",[]):
+		if contact.contact_id==contact_id and contact.has("trade"):
+			var result: Dictionary=contact.trade.duplicate(true)
+			result.consumed=contact_id in entry.get("purchased_goods",[])
+			return result
+	return {}
+
+func consume_goods(station_id: int,contact_id: int) -> bool:
+	_read={};error=""
+	var quote:=merchant_quote(station_id,contact_id)
+	if quote.is_empty() or quote.consumed:return reject("This merchant has no remaining goods")
+	for entry in _state.locations:
+		if entry.station_id==station_id:
+			if not entry.has("purchased_goods"):entry.purchased_goods=[]
+			entry.purchased_goods.append(contact_id)
+			return true
+	return reject("The merchant lost its retained lounge")
+
 func location(station_id: int) -> Dictionary:
 	for entry in _state.get("locations",[]):
 		if entry.station_id==station_id:return entry.duplicate(true)

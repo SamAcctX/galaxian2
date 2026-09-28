@@ -1858,6 +1858,8 @@
     "game/tests/lounge_cache.gd.uid",
     "game/tests/lounge_contacts.gd",
     "game/tests/lounge_contacts.gd.uid",
+    "game/tests/lounge_merchant.gd",
+    "game/tests/lounge_merchant.gd.uid",
     "game/tests/lounge_progression.gd",
     "game/tests/lounge_progression.gd.uid",
     "game/tests/lounge_reading.gd",

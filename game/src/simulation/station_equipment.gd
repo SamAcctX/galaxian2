@@ -607,6 +607,20 @@ func retain_secondary_ammunition(owner: RefCounted) -> bool:
 	_state=next
 	return true
 
+## A lounge sells its retained bundle without using or changing hangar stock.
+func receive_lounge_goods(item_id: int,quantity: int) -> bool:
+	error=""
+	if not _state.get("training_inventory_released",false) or _state.get("ordinary_shopping_open",false) or not cargo_cache_valid():return reject("Close the hangar before receiving lounge goods")
+	if quantity<1 or not _items.has(item_id) or item_id>=_completion_prices.size() or quantity>2147483647-_used(_state.cargo.entries):return reject("Invalid lounge goods quantity")
+	var hold: Dictionary=_state.cargo.duplicate(true)
+	var merged:=false
+	for row in hold.entries:
+		if row.item_id==item_id:
+			row.quantity+=quantity;merged=true;break
+	if not merged:hold.entries.append({"item_id":item_id,"quantity":quantity})
+	hold.used=_used(hold.entries);hold.free_space=int(hold.capacity)-int(hold.used)
+	return retain_flight_cargo(hold)
+
 func retain_flight_cargo(hold: Dictionary) -> bool:
 	error=""
 	if _state.is_empty() or _completion_prices.is_empty():return reject("Prepare the equipped flight before retaining its cargo")

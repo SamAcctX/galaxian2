@@ -5,7 +5,7 @@ signal action_requested(action: String,id: int)
 const Art=preload("res://src/presentation/original_ui.gd")
 const Portraits=preload("res://src/presentation/portrait_compositor.gd")
 const Recipe=preload("res://src/content/mission_recipe.gd")
-const MAC_LABEL_IDS={614:616,753:755,841:843,847:849,848:850,850:852}
+const MAC_LABEL_IDS={614:616,753:755,841:843,847:849,848:850,850:852,855:857}
 var error:=""
 var _art: RefCounted
 var _library: RefCounted
@@ -183,7 +183,17 @@ func _refresh() -> void:
 		_portrait.texture=_portraits.get(_selected)
 		for contact in _population.get("contacts",[]):
 			if contact.contact_id==_selected:_name.text=contact.name;break
-		if row.is_empty():
+		var service: Dictionary=_previews.get(_selected,{})
+		if service.get("kind")=="merchant":
+			var item_name:=text(int(_bindings.station_equipment.item_text_offset)+int(service.item_id))
+			var offer_text:=label_text(855).replace("#Q",str(service.quantity)).replace("#P",item_name).replace("#C",money(int(service.total_price)))
+			_body.text=offer_text
+			if service.consumed:_body.text+="\n\n"+label_text(841)
+			elif service.can_accept:
+				show_yes=true
+				if _confirming:_yes.text=text(133);show_no=true;_no.text=text(134)
+			else:_body.text+="\n\n"+text(192).replace("#C",money(int(service.missing_credits)))
+		elif row.is_empty():
 			_body.text=label_text(614) if _selected<0 else "This contact's service is not yet available."
 		else:
 			var mission: Dictionary=row.offer.mission
@@ -213,7 +223,8 @@ func confirm() -> void:
 	var preview: Dictionary=_previews.get(_selected,{})
 	if not preview.get("can_accept",false):return
 	if not _confirming:_confirming=true;_refresh();return
-	action_requested.emit("replace" if preview.replacement_required else "accept",_selected)
+	if preview.get("kind")=="merchant":action_requested.emit("buy_goods",_selected)
+	else:action_requested.emit("replace" if preview.replacement_required else "accept",_selected)
 
 func back() -> void:
 	if not _active or not visible or not _state.pending_result.is_empty():return

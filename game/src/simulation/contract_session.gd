@@ -707,6 +707,31 @@ static func acceptance_supported(rules: Dictionary,cursor: int,quote: Dictionary
 		return rules==bindings.early_contracts and Numbers.integer(quote.get("context",{}).get("campaign_cursor"),Definitions.first_generation_cursor(rules),cursor) and OrdinaryContracts.retained_mission(bindings,quote.get("mission"),cursor)
 	return not rules.is_empty() and Numbers.integer(cursor,Definitions.first_generation_cursor(rules),int(rules.last_cursor)) and Numbers.integer(quote.get("context",{}).get("campaign_cursor"),Definitions.first_generation_cursor(rules),int(rules.last_cursor)) and quote.get("choices",{}).has("kind_index")
 
+func merchant_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> Dictionary:
+	error=""
+	if _lounges==null or not equipment is Equipment or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the current flight or result before buying lounge goods")
+	var owned: Dictionary=equipment.snapshot()
+	for key in ["base_content_id","binding_id"]:
+		if bindings==null or _state.get(key)!=bindings.get(key) or owned.get("loadout",{}).get(key)!=bindings.get(key):return fail("Merchant and inventory belong to different content")
+	if owned.loadout.station_id!=_state.station_id or _lounges.selection_state().current_station_id!=_state.station_id or owned.get("ordinary_shopping_open",false):return fail("Open the current station lounge with the hangar closed")
+	if not equipment.cargo_cache_valid():return fail(equipment.error)
+	var quote: Dictionary=_lounges.merchant_quote(int(_state.station_id),contact_id)
+	if quote.is_empty():return fail("This contact has no goods for sale")
+	quote.kind="merchant";quote.can_accept=not quote.consumed and int(_state.credits)>=int(quote.total_price)
+	quote.missing_credits=maxi(0,int(quote.total_price)-int(_state.credits))
+	return quote
+
+func purchase_lounge_goods(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> RefCounted:
+	var quote:=merchant_preview(bindings,contact_id,equipment)
+	if quote.is_empty():return null
+	if not quote.can_accept:return _shopping_reject("This purchase is unavailable or exceeds the current credits")
+	var inventory: RefCounted=equipment.fork()
+	if not inventory.receive_lounge_goods(int(quote.item_id),int(quote.quantity)):return _shopping_reject(inventory.error)
+	var cache: RefCounted=_lounges.fork()
+	if not cache.consume_goods(int(_state.station_id),contact_id):return _shopping_reject(cache.error)
+	_state.credits-=int(quote.total_price);_lounges=cache
+	return inventory
+
 func inspect_contact(bindings: RefCounted,contact_id: int) -> bool:
 	error=""
 	if _lounges==null or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return reject("Resolve the current flight or result before inspecting a contact")
