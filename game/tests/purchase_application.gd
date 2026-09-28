@@ -50,8 +50,12 @@ func verify_free_application() -> void:
 	var price:=int(rows[0].unit_price);var remaining:=target_quantity-held
 	check(rows[0].stock>=remaining and price*remaining<=accepted.contracts.credits,"The actual stock or earned wallet cannot supply this request")
 	if failures:return
-	panel._scroll.ensure_control_visible(panel._rows[item].actions.buy)
+	await process_frame
+	panel._scroll.ensure_control_visible(panel._rows[item].node)
 	await process_frame;await process_frame;resume_application_focus()
+	await click_purchase_control(panel._rows[item].node)
+	check(panel._selected_id==item and panel._rows[item].actions.buy.visible,"The shop row click did not expose Buy")
+	if failures:return
 	await capture_free_application("purchase-shop")
 	for index in remaining:
 		await click_purchase_control(panel._rows[item].actions.buy)
