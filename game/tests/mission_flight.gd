@@ -91,6 +91,7 @@ func verify_component(bindings: RefCounted,cat: RefCounted,library: RefCounted,w
 	var active: RefCounted=skipped.evaluate(100,Vector2(.3,-.2),1,true)
 	if active==null:check(false,skipped.error);return
 	check(active.frame_context().player_pose!=skipped.frame_context().player_pose and active.frame_context().input.enabled,"Released mission did not fly with native motion")
+	verify_blast_composition(active._encounter)
 	check(frame.snapshot()==start and world.snapshot()==initial,"Accepted child flight changed portal/world/parent")
 	var broken: RefCounted=active.fork_for_frame()
 	broken._scenery._detail=broken._scenery._detail.fork_for_frame();broken._scenery._detail.clear();broken._scenery._read_snapshot={}
@@ -130,6 +131,41 @@ func verify_booster(origin: RefCounted,bindings: RefCounted,cat: RefCounted) -> 
 		if scripted.frame_context().encounter.sequence.input_blocked:break
 	check(scripted.frame_context().encounter.sequence.input_blocked and not scripted.booster_state().active and scripted.booster_state().remaining_ms==0,"New cinematic retained boost or imposed a cooldown")
 	check(advanced.snapshot()==active and origin.snapshot()==before,"Recipe booster or cinematic mutated a retained parent")
+
+func verify_blast_composition(origin: RefCounted) -> void:
+	var original: Dictionary=origin.snapshot();var encounter: RefCounted=origin.fork_for_frame()
+	encounter._hook=encounter._hook.fork_for_frame()
+	var control: RefCounted=encounter._hook._control
+	var actor_id:=-1
+	for id in control._destruction.size():
+		if control._destruction[id].get_script()==preload("res://src/simulation/npc_destruction.gd"):actor_id=id;break
+	if actor_id<0:check(false,"Recipe fixture has no fighter wreck owner");return
+	var death: RefCounted=control._destruction[actor_id].fork_for_frame()
+	# Detached cargo and a completed breakup isolate the later blast handoff.
+	# Neither is written to the earned campaign or the original encounter.
+	death._state.cargo.entries=[{"item_id":0,"quantity":1}];death._state.cargo.eligible=true
+	if not death.capture(Transform3D.IDENTITY,2.0):check(false,death.error);return
+	var random: Dictionary=encounter._hook.random_state()
+	for tick in 100:
+		var breakup: Dictionary=death.advance(100,random)
+		if breakup.is_empty():check(false,death.error);return
+		random=breakup.random_state
+		if breakup.state.phase=="explosion":break
+	var wreck: Dictionary=death.snapshot()
+	if wreck.phase!="explosion":check(false,"Recipe wreck never exposed its cargo");return
+	control._destruction[actor_id]=death;encounter._control=encounter._hook.controller_owner()
+	var before: Dictionary=encounter.snapshot();var candidate: RefCounted=encounter.fork_for_frame()
+	var pulse:=[{"blast":{"hits":[{"actor_id":actor_id,"normal_damage":1,"motion_scalar":0.25}]}}]
+	if not candidate._retain_blast_motion(pulse):check(false,candidate.error);return
+	var hook: RefCounted=candidate._hook
+	var composed: RefCounted=hook.compose(hook.player_owner(),candidate._combat,candidate._weapons,random)
+	if composed==null:check(false,hook.error);return
+	var retained: RefCounted=composed.controller_owner()._destruction[actor_id].fork_for_frame()
+	var moved: Dictionary=retained.advance(7,random)
+	if moved.is_empty():check(false,retained.error);return
+	check(absf(moved.state.cargo.pose.origin.distance_to(wreck.cargo.pose.origin)-0.25)<0.001,"Recipe composition discarded the later blast's visible cargo speed")
+	check(moved.state.drift_direction==wreck.drift_direction and moved.state.effect.position==wreck.effect.position and moved.state.cargo.entries==wreck.cargo.entries and moved.random_state==random,"Recipe blast restarted breakup, changed cargo/direction or consumed random draws")
+	check(encounter.snapshot()==before and origin.snapshot()==original,"Recipe blast changed the previous mission frame")
 
 func verify_result_order(origin: RefCounted,context: RefCounted,bindings: RefCounted,library: RefCounted) -> void:
 	var npc: RefCounted=origin.fork_for_frame();var original: Dictionary=origin.snapshot()

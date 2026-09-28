@@ -58,8 +58,8 @@ func evaluate_weapons(player: RefCounted,pose: Transform3D,milliseconds: int,sce
 	next=secondary.encounter
 	var pilot: RefCounted=next._evaluate_bomb_damage(player,secondary.self_hits)
 	if pilot==null:return fail(next.error)
-	var composed: RefCounted=_hook.compose(pilot,next._combat,next._weapons,secondary.random_state)
-	if composed==null:return fail(_hook.error)
+	var composed: RefCounted=next._hook.compose(pilot,next._combat,next._weapons,secondary.random_state)
+	if composed==null:return fail(next._hook.error)
 	var contacts: RefCounted=composed.evaluate_contacts(milliseconds,pose,display_available)
 	if contacts==null:return fail(composed.error)
 	next._adopt_hook(contacts)
@@ -95,6 +95,15 @@ func evaluate_world(player: RefCounted,pose: Transform3D,milliseconds: int,rando
 	if motion==null:return fail(composed.error)
 	var next:=fork_for_frame();next._adopt_hook(motion);next._world_elapsed_ms+=milliseconds
 	return {"encounter":next,"random_state":motion.random_state()}
+
+func _retain_blast_motion(events: Array) -> bool:
+	var hook: RefCounted=_hook.evaluate_blast_motion(events)
+	if hook==null:return reject(_hook.error)
+	if hook==_hook:return true
+	# Keep the controller inside the hook that subsequent composition retains.
+	# Re-adopting all hook owners here would discard this pass's weapon contacts.
+	_hook=hook;_control=hook.controller_owner()
+	return true
 
 func _adopt_hook(hook: RefCounted) -> void:
 	_hook=hook;_control=hook.controller_owner();_combat=hook.combat_owner();_weapons=hook.weapons_owner()

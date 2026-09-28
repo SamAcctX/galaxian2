@@ -60,6 +60,15 @@ func compose(player: RefCounted,combat: RefCounted,weapons: RefCounted,random_st
 	next._player=player.fork_for_frame();next._combat=combat.fork_for_frame();next._weapons=weapons.fork_for_frame();next._random=random.snapshot()
 	return next
 
+func evaluate_blast_motion(events: Array) -> RefCounted:
+	error=""
+	if _control==null:return failed("Blast motion requires an initialized encounter")
+	var control: RefCounted=_control.evaluate_blast_motion(events)
+	if control==null:return failed(_control.error)
+	if control==_control:return self
+	var next:=fork_for_frame();next._control=control
+	return next
+
 func evaluate(milliseconds: Variant,player_pose: Variant,display_available:=true) -> RefCounted:
 	var contacts:=evaluate_contacts(milliseconds,player_pose,display_available)
 	if contacts==null:return null
