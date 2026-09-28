@@ -11,3 +11,13 @@ static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALU
 
 static func available(bindings: RefCounted) -> bool:
 	return bindings!=null and parameters(bindings.mido_travel.get("emp_bombs"))
+
+## Both original area-bomb families share launch and detonation ownership.
+## Damage, timing, speed and radius remain catalogue values.
+static func declaration(item_id: int) -> Dictionary:
+	var index: int=VALUES.item_ids.find(item_id)
+	if index>=0:return {"kind":6,"model_id":14684,"attachment_id":-1,"effect_type":7,"launch_sound":6+index,"burst_sound":15+index}
+	if item_id not in [44,45,46]:return {}
+	return {"kind":7,"model_id":14682 if item_id==46 else 14680,
+		"attachment_id":14683 if item_id==46 else 14681,"effect_type":0,
+		"launch_sound":item_id-35,"burst_sound":58-item_id}

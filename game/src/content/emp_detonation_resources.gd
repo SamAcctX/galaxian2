@@ -1,11 +1,12 @@
 extends RefCounted
-## Original single-model EMP burst metadata. Geometry and audio remain local
+## Original area-bomb burst metadata. Geometry and audio remain local
 ## imported content; this provider never creates equipment or mission progress.
 const Library = preload("res://src/content/library.gd")
 const Bindings = preload("res://src/content/resource_bindings.gd")
 const Ownership = preload("res://src/content/secondary_ownership_definitions.gd")
 const AEM = preload("res://src/content/aem.gd")
 const Timing = preload("res://src/content/scenery_effect_resources.gd")
+const TypeZero = preload("res://src/content/npc_destruction_resources.gd")
 const MODEL_ID := 16805
 const MODEL_PATH := "resources/data/assets/main/3d/meshes/fx/explosion_emp_anim_lookat_add.aem"
 const ITEM_IDS := [41, 42, 43]
@@ -16,12 +17,18 @@ const CAMERA_SPREAD := 50
 var error := ""
 var _state := {}
 
-func configure(library: RefCounted, bindings: RefCounted) -> bool:
+func configure(library: RefCounted, bindings: RefCounted, kind:=6) -> bool:
 	_state = {}; error = ""
 	if not library is Library or not bindings is Bindings or not Ownership.available(bindings):
 		return reject("EMP detonation requires supported secondary content")
 	if not Library.valid_hash(bindings.base_content_id) or not Library.valid_hash(bindings.binding_id) or library.manifest.get("content_id") != bindings.base_content_id:
 		return reject("EMP detonation resources belong to another content identity")
+	if kind==7:
+		var resources:=TypeZero.new()
+		if not resources.configure(library,bindings):return reject(resources.error)
+		_state=resources.snapshot();_state.kind=7;_state.effect_type=0
+		return true
+	if kind!=6:return reject("Unsupported area-bomb effect family")
 	if bindings.resolve(MODEL_ID, "mesh") != MODEL_PATH or bindings.material_for_mesh(MODEL_PATH, "high").get("render_type") != 2:
 		return reject("EMP detonation lost its original additive model mapping")
 	var bytes: PackedByteArray = library.read_resource(MODEL_PATH, AEM.MAX_BYTES)
@@ -33,7 +40,7 @@ func configure(library: RefCounted, bindings: RefCounted) -> bool:
 	var timing := Timing.playback_range(mesh.surfaces)
 	if timing.is_empty(): return reject("Unsupported EMP detonation animation timing")
 	_state = {"base_content_id": bindings.base_content_id, "binding_id": bindings.binding_id,
-		"effect_type": 7, "models": [{"model_id": MODEL_ID, "resource": MODEL_PATH,
+		"kind":6,"effect_type": 7, "models": [{"model_id": MODEL_ID, "resource": MODEL_PATH,
 		"start_ms": timing.start_ms, "end_ms": timing.end_ms}], "duration_ms": timing.end_ms}
 	return true
 

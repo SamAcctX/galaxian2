@@ -85,7 +85,7 @@ func verify(content: String,pack: String) -> void:
 	verify_multiple(bindings,cat,built)
 	verify_expiry(bindings,cat,built)
 
-func equipped(bindings: RefCounted,cat: RefCounted,secondaries: Array,ship_id:=0) -> Dictionary:
+static func equipped(bindings: RefCounted,cat: RefCounted,secondaries: Array,ship_id:=0) -> Dictionary:
 	var counts:=[];var total:=0
 	for property in Categories.SLOT_PROPERTIES:
 		var count: int=cat.tables.ships[ship_id].stats[property]

@@ -1,5 +1,5 @@
 extends RefCounted
-## Retained native type-seven burst. The weapon owner supplies its accepted
+## Retained native area-bomb burst. The weapon owner supplies its accepted
 ## before/after physics samples, so late manual pulses are observed next update.
 ## This component does not apply damage, change ammunition or move a camera.
 const Resources = preload("res://src/content/emp_detonation_resources.gd")
@@ -7,23 +7,28 @@ const Numbers = preload("res://src/content/opening_definitions.gd")
 const Playback = preload("res://src/simulation/model_playback.gd")
 const Vitals = preload("res://src/simulation/combat_vitals.gd")
 const Vectors = preload("res://src/simulation/source_vectors.gd")
+const Bomb = preload("res://src/simulation/emp_bombs.gd")
+const TypeZero = preload("res://src/simulation/type_zero_explosion.gd")
 var error := ""
 var _state := {}
 var _identity: RefCounted
 
 func configure(resources: RefCounted, item_id: int) -> bool:
 	error = ""
-	if not resources is Resources or item_id not in Resources.ITEM_IDS:
+	var declaration:=Bomb.Definitions.declaration(item_id)
+	if not resources is Resources or declaration.is_empty():
 		return reject("EMP burst requires its prepared original resources and item")
 	var data: Dictionary = resources.snapshot()
-	if data.is_empty(): return reject("EMP burst resources are not prepared")
-	var model: Dictionary = data.models[0].duplicate(true)
-	model.time_ms = model.start_ms; model.playing = true
+	if data.is_empty() or data.kind!=declaration.kind: return reject("Bomb burst resources are not prepared for this family")
+	var effect: Dictionary
+	if data.effect_type==0:effect=TypeZero.create(data,[],-1)
+	else:effect={"active":false,"elapsed_ms":0,"duration_ms":data.duration_ms,"position":Vector3.ZERO,"models":[TypeZero.model_clock(data.models[0])]}
+	if effect.is_empty():return reject("Bomb burst has unsupported animation clocks")
+	effect.position=Vector3.ZERO
 	_state = {"base_content_id": data.base_content_id, "binding_id": data.binding_id,
-		"item_id": item_id, "projectile_id": 0, "cached_position": Vector3.ZERO, "triggered": false,
+		"item_id": item_id,"kind":declaration.kind,"effect_type":data.effect_type, "projectile_id": 0, "cached_position": Vector3.ZERO, "triggered": false,
 		"camera": {"initial_strength": 0.0, "elapsed_ms": 0, "strength": 0.0, "spread": 0},
-		"effect": {"active": false, "elapsed_ms": 0, "duration_ms": data.duration_ms,
-		"position": Vector3.ZERO, "models": [model]}}
+		"effect":effect}
 	_identity = RefCounted.new()
 	return true
 
@@ -62,6 +67,7 @@ func advance(before: Dictionary, after: Dictionary, delta_ms: Variant, observer_
 	if previous.get("phase") == "flying": next.cached_position = previous.position
 	var started: bool = not next.triggered and (previous.get("phase") == "detonated" or current.get("phase") == "detonated")
 	var audio: Array[Dictionary] = []
+	var own_hit:={}
 	if started:
 		if observer_position == null: return failed("A newly observed EMP burst requires the current player position")
 		var difference: Vector3 = next.cached_position - observer_position
@@ -70,7 +76,9 @@ func advance(before: Dictionary, after: Dictionary, delta_ms: Variant, observer_
 		var attenuation := Vitals.single(1.0 - Vitals.single(minf(distance, Resources.CAMERA_RANGE) / Resources.CAMERA_RANGE))
 		next.camera = {"initial_strength": attenuation, "elapsed_ms": 0, "strength": attenuation, "spread": Resources.CAMERA_SPREAD}
 		next.triggered = true; next.effect.active = true; next.effect.position = next.cached_position
-		audio.append({"action": "start_spatial", "source_id": Resources.SOUND_IDS[Resources.ITEM_IDS.find(next.item_id)],
+		own_hit=Bomb.self_hit(before.weapon,next.cached_position,observer_position)
+		if own_hit.is_empty():return failed("Bomb self-damage observation exceeds finite world coordinates")
+		audio.append({"action": "start_spatial", "source_id": Bomb.Definitions.declaration(next.item_id).burst_sound,
 			"position": next.cached_position, "pitch_raw": 0.0})
 	var retired := false
 	var camera := {}
@@ -89,14 +97,14 @@ func advance(before: Dictionary, after: Dictionary, delta_ms: Variant, observer_
 			next.camera.elapsed_ms = 0; next.camera.strength = 0.0; next.camera.spread = 0
 		camera = {"strength": next.camera.strength, "spread": next.camera.spread, "projectile_id": next.projectile_id}
 	_state = next
-	return {"started": started, "retired": retired, "audio": audio, "camera": camera}
+	return {"started": started, "retired": retired, "audio": audio, "camera": camera,"self_hit":own_hit}
 
 func valid_sample(sample: Dictionary) -> bool:
 	var weapon: Variant = sample.get("weapon")
 	if not weapon is Dictionary or not sample.get("shot") is Dictionary or not Numbers.integer(sample.get("elapsed_ms"), 0, 2147483647): return false
 	for key in ["base_content_id", "binding_id", "item_id"]:
 		if weapon.get(key) != _state[key]: return false
-	return weapon.get("kind") == 6 and valid_shot(sample.shot)
+	return weapon.get("kind") == _state.kind and valid_shot(sample.shot)
 
 static func valid_shot(shot: Dictionary) -> bool:
 	if shot.is_empty(): return true

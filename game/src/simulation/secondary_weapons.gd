@@ -41,7 +41,13 @@ func configure(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,mounts: 
 		var gun:={"slot_index":index,"equipment":entry.duplicate(true),"ammunition":entry.quantity}
 		if entry.item_id in Definitions.VALUES.item_ids:
 			var bomb:=Bomb.new()
-			if not bomb.configure(bindings,cat,entry.item_id,checked.equipment_ids):return reject(bomb.error)
+			var muzzle:=Vector3(0,0,400)
+			if mounts!=null:
+				if not is_instance_of(mounts,load("res://src/content/weapon_mounts.gd")):return reject("Bomb launchers require the ship's authored mounts")
+				gun.mount=mounts.resolve(int(checked.ship_id),1,int(entry.slot))
+				if gun.mount.is_empty():return reject(mounts.error)
+				muzzle=gun.mount.position+Vector3(0,0,100)
+			if not bomb.configure(bindings,cat,entry.item_id,checked.equipment_ids,muzzle):return reject(bomb.error)
 			gun.bomb=bomb
 			gun.audio={"enabled":true,"source_id":int(Definitions.VALUES.launch_audio.event_ids[Definitions.VALUES.item_ids.find(entry.item_id)]),"pitch_raw":float(Definitions.VALUES.launch_audio.pitch_raw)}
 		else:
