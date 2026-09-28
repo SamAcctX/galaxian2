@@ -59,6 +59,7 @@ var _contract_context:={}
 var _secondaries: RefCounted
 var _selected_secondary:=-1
 var _secondary_events:=[]
+var _difficulty:=0.5
 var _selected40_world: RefCounted
 var _selected40_context:={}
 var _selected40_sequence: RefCounted
@@ -160,6 +161,7 @@ func configure_selected40(bindings: RefCounted,catalogues: RefCounted,library: R
 	var identity:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":40}
 	if not _accept_configuration(bindings,library,identity,control,combat,weapons,control.destruction_resources(),primaries,inventory,scenery.presentation_identity()):return false
 	_selected40_world=world;_selected40_context=data.context.duplicate(true)
+	_difficulty=float(data.difficulty)
 	_freighter_resources=freight;_freighter_assemblies={0:initial.npc_construction.actors[0].assembly.duplicate(true)}
 	return true
 
@@ -445,6 +447,7 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, library: 
 	if not targets:return reject(inventory.error)
 	var identity:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":cursor}
 	if not _accept_configuration(bindings,library,identity,control,control.combat_owner(),weapons,resources,primaries,inventory,scenery.presentation_identity()):return false
+	_difficulty=float(difficulty)
 	if player.loadout().slots.any(func(slot):return slot!=null and slot.category==1):
 		if not configure_secondaries(bindings,catalogues,player,equipment,library):return false
 	_freighter_resources=freight_resources;_freighter_assemblies={}
@@ -608,9 +611,10 @@ func configure_secondaries(bindings: RefCounted,cat: RefCounted,player: RefCount
 	# supplies its library and prepares retained bursts before the first launch.
 	# A launcher whose last round was spent has left the loadout; no burst to prepare.
 	if library!=null and owner.has_bombs():
-		var bursts:=DetonationResources.new()
-		if not bursts.configure(library,bindings):return reject(bursts.error)
-		if not owner.configure_detonations(bursts):return reject(owner.error)
+		for kind in owner.bomb_kinds():
+			var bursts:=DetonationResources.new()
+			if not bursts.configure(library,bindings,kind):return reject(bursts.error)
+			if not owner.configure_detonations(bursts):return reject(owner.error)
 	if library!=null and not owner.configure_projectile_visuals(library,bindings):return reject(owner.error)
 	_secondaries=owner;_selected_secondary=-1;_secondary_events=[]
 	return true
@@ -644,22 +648,26 @@ func select_secondary(item_id: int) -> RefCounted:
 
 ## Late secondary input is evaluated after primary input and before the NPC pass.
 ## Selection is explicit; an exhausted attempt clears it, never equips or refills.
-func evaluate_secondary_fire(player: RefCounted,equipment: RefCounted,pose: Transform3D,requested: bool,input_enabled: bool,random_state: Dictionary,display_available:=true) -> Dictionary:
+func evaluate_secondary_fire(player: RefCounted,equipment: RefCounted,pose: Transform3D,requested: bool,input_enabled: bool,random_state: Dictionary,display_available:=true,scenery: RefCounted=null) -> Dictionary:
 	error=""
 	if _secondaries==null or target(player,pose).is_empty():return fail("Late secondary input requires an equipped encounter")
+	if scenery!=null and (not scenery is Scenery or scenery.presentation_identity()!=_scenery_identity):return fail("Secondary input requires this encounter's retained scenery")
 	# The selected40 script can change permission during the same frame. Do
 	# not let a caller's stale pre-radio input override its cinematic gate.
 	if _selected40_sequence!=null:input_enabled=input_enabled and not _selected40_sequence.snapshot().input_blocked
 	var next:=fork_for_frame()
 	next._combat=_combat.fork_for_frame()
 	if not next._combat.begin_contact_pass(random_state,display_available):return fail(next._combat.error)
-	var operation: Dictionary=next._secondaries.evaluate_player_trigger(pose,next._selected_secondary,next._combat,next._inventory.snapshot().npc_ids,player,equipment,next._primaries,next._inventory,requested and input_enabled)
-	if operation.is_empty():return fail(next._secondaries.error)
+	var operation: Dictionary=next._secondaries.evaluate_player_trigger(pose,next._selected_secondary,next._combat,next._inventory.snapshot().npc_ids,player,equipment,next._primaries,next._inventory,requested and input_enabled) if scenery==null else scenery.evaluate_secondary_trigger(next._secondaries,next._combat,next._inventory,player,equipment,next._primaries,pose,next._selected_secondary,requested and input_enabled)
+	if operation.is_empty():return fail(next._secondaries.error if scenery==null else scenery.error)
 	next._secondaries=operation.owner;next._combat=operation.combat
+	if not next._retain_blast_motion(operation.events):return fail(next.error)
 	next._primaries=operation.primaries;next._inventory=operation.targets
 	next._secondary_events.append_array(operation.events)
 	if operation.selection_exhausted:next._selected_secondary=-1
-	return {"encounter":next,"player":operation.player,"equipment":operation.equipment,"random_state":next._combat.contact_random_state()}
+	var result:={"encounter":next,"player":operation.player,"equipment":operation.equipment,"random_state":next._combat.contact_random_state()}
+	if operation.has("scenery"):result.scenery=operation.scenery
+	return result
 
 ## Existing bombs advance even without a new input edge. The shared early
 ## weapon pass calls this before NPC projectiles and the later actor update.
@@ -672,11 +680,19 @@ func evaluate_secondary_motion(milliseconds: int,random_state: Dictionary,displa
 	var operation: Dictionary=next._secondaries.evaluate_advance(milliseconds,next._combat,next._inventory.snapshot().npc_ids,observer_position,null,null,guidance_actor_id) if scenery==null else scenery.evaluate_secondary_contacts(next._secondaries,next._combat,next._inventory,milliseconds,observer_position,guidance_actor_id)
 	if operation.is_empty():return fail(next._secondaries.error if scenery==null else scenery.error)
 	next._secondaries=operation.owner;next._combat=operation.combat;next._secondary_events=operation.events
-	var result:={"encounter":next,"random_state":next._combat.contact_random_state()}
+	if not next._retain_blast_motion(operation.events):return fail(next.error)
+	var result:={"encounter":next,"random_state":next._combat.contact_random_state(),"self_hits":operation.self_hits}
 	if operation.has("scenery"):result.scenery=operation.scenery
 	return result
 
 func secondary_owner() -> RefCounted:return null if _secondaries==null else _secondaries.fork()
+
+func _retain_blast_motion(events: Array) -> bool:
+	if not _control is TrainingControl:return true
+	var next: RefCounted=_control.evaluate_blast_motion(events)
+	if next==null:return reject(_control.error)
+	_control=next
+	return true
 
 func secondary_impacts() -> Array:return _secondary_events.filter(func(event):return event.action=="impact").duplicate(true)
 
@@ -820,6 +836,7 @@ func evaluate_weapons(player: RefCounted, pose: Transform3D, milliseconds: int, 
 	if not next._projectiles.advance(milliseconds):return fail(next._projectiles.error)
 	if not next._impacts.advance(milliseconds):return fail(next._impacts.error)
 	var field: RefCounted=scenery
+	var pilot: RefCounted=player
 	var contact_random:={}
 	if next._primaries!=null:
 		if _selected40_view!=null and _selected40_view.snapshot().camera_mode!=0:guidance_actor_id=-1
@@ -835,11 +852,13 @@ func evaluate_weapons(player: RefCounted, pose: Transform3D, milliseconds: int, 
 		if secondary.is_empty():return fail(next.error)
 		next=secondary.encounter;contact_random=secondary.random_state
 		if secondary.has("scenery"):field=secondary.scenery
+		pilot=next._evaluate_bomb_damage(player,secondary.self_hits)
+		if pilot==null:return fail(next.error)
 	var pass_result: Dictionary
 	if next._primaries==null:
-		pass_result=next._weapons.evaluate_player_update(player,pose,next._combat.shooter_states(),false,milliseconds)
+		pass_result=next._weapons.evaluate_player_update(pilot,pose,next._combat.shooter_states(),false,milliseconds)
 	else:
-		pass_result=next._weapons.evaluate_selected40_update(player,pose,next._combat,milliseconds) if _selected40_world!=null else next._weapons.evaluate_combat_training_update(player,pose,next._combat,false,milliseconds)
+		pass_result=next._weapons.evaluate_selected40_update(pilot,pose,next._combat,milliseconds) if _selected40_world!=null else next._weapons.evaluate_combat_training_update(pilot,pose,next._combat,false,milliseconds)
 	if pass_result.is_empty():return fail(next._weapons.error)
 	if not next._impacts.apply_contacts(prior,next._primary_contacts,pass_result.actors):return fail(next._impacts.error)
 	if next._primaries!=null:next._combat=pass_result.combat
@@ -849,6 +868,13 @@ func evaluate_weapons(player: RefCounted, pose: Transform3D, milliseconds: int, 
 	if field!=null:result.scenery=field
 	if not contact_random.is_empty():result.random_state=contact_random
 	return result
+
+func _evaluate_bomb_damage(player: RefCounted,hits: Array) -> RefCounted:
+	if _difficulty!=1.5 or hits.is_empty():return player
+	var next: RefCounted=player.fork_for_frame()
+	for hit in hits:
+		if next.normal_hit(hit.damage).is_empty():reject(next.error);return null
+	return next
 
 func evaluate_world_logic(milliseconds: int, random_state: Dictionary, player_pose: Variant=null) -> Dictionary:
 	error=""
@@ -1016,6 +1042,7 @@ func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._contract_context=_contract_context.duplicate(true)
 	copy._max_ms=_max_ms
+	copy._difficulty=_difficulty
 	copy._selected40_world=_selected40_world
 	copy._selected40_context=_selected40_context
 	copy._selected40_sequence=_selected40_sequence

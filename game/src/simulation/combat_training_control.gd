@@ -1171,6 +1171,23 @@ func snapshot(combat_view: Dictionary={}) -> Dictionary:
 	if _mission_runner!=null:result.mission_readout=_mission_runner.flight_readout(result.get("accounting",{}).get("counter_deltas",{}))
 	return result
 
+## Existing fighter cargo responds to a radius pulse once, alongside damage.
+## Live ships choose their normal breakup drift later; freighters keep their
+## own movement, and asteroid displacement belongs to the scenery owner.
+func evaluate_blast_motion(events: Array) -> RefCounted:
+	error=""
+	var next: RefCounted=self
+	for event in events:
+		for hit in event.get("blast",{}).get("hits",[]):
+			if not hit.has("normal_damage") or hit.get("target",{}).get("group")=="scenery":continue
+			var id: int=hit.actor_id
+			if id<0 or id>=_destruction.size():reject("Blast drift names an unavailable destruction owner");return null
+			if not _destruction[id] is Death or _destruction[id].snapshot().phase!="explosion":continue
+			if next==self:next=fork_for_frame(false)
+			next._destruction[id]=next._destruction[id].fork_for_frame()
+			if not next._destruction[id].apply_blast_strength(float(hit.motion_scalar)):reject(next._destruction[id].error);return null
+	return next
+
 func fork_for_frame(copy_motion:=true, incoming_combat: RefCounted=null) -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	# Configuration is immutable after setup; only live state needs a private copy.

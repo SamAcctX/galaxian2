@@ -2860,6 +2860,10 @@
     "game/src/presentation/bomb_projectile_geometry.gd",
     "game/src/presentation/bomb_projectile_geometry.gd.uid",
     "game/tests/area_bomb_visuals.gd",
-    "game/tests/area_bomb_visuals.gd.uid"
+    "game/tests/area_bomb_visuals.gd.uid",
+    "game/tests/area_bomb_contacts.gd",
+    "game/tests/area_bomb_contacts.gd.uid",
+    "game/tests/area_bomb_ownership_visuals.gd",
+    "game/tests/area_bomb_ownership_visuals.gd.uid"
   ]
 }

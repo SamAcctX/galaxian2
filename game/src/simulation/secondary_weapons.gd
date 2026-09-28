@@ -39,7 +39,8 @@ func configure(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,mounts: 
 		if entry.quantity<1 or seen.has(entry.item_id):return reject("This installed secondary has an invalid ammunition stack")
 		var index: int=int(checked.counts[0])+entry.slot
 		var gun:={"slot_index":index,"equipment":entry.duplicate(true),"ammunition":entry.quantity}
-		if entry.item_id in Definitions.VALUES.item_ids:
+		var declaration:=Bomb.Definitions.declaration(int(entry.item_id))
+		if not declaration.is_empty():
 			var bomb:=Bomb.new()
 			var muzzle:=Vector3(0,0,400)
 			if mounts!=null:
@@ -49,7 +50,7 @@ func configure(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,mounts: 
 				muzzle=gun.mount.position+Vector3(0,0,100)
 			if not bomb.configure(bindings,cat,entry.item_id,checked.equipment_ids,muzzle):return reject(bomb.error)
 			gun.bomb=bomb
-			gun.audio={"enabled":true,"source_id":int(Definitions.VALUES.launch_audio.event_ids[Definitions.VALUES.item_ids.find(entry.item_id)]),"pitch_raw":float(Definitions.VALUES.launch_audio.pitch_raw)}
+			gun.audio={"enabled":true,"source_id":int(declaration.launch_sound),"pitch_raw":float(Definitions.VALUES.launch_audio.pitch_raw)}
 		else:
 			var weapon:=resolver.resolve(entry.item_id,checked.equipment_ids)
 			if not Conventional.resolved(weapon):return reject("This installed secondary has no supported launch declaration")
@@ -69,21 +70,31 @@ func configure(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,mounts: 
 ## callers may omit presentation; actual effect callers must prepare it explicitly.
 func configure_detonations(resources: RefCounted) -> bool:
 	error=""
-	if _loadout.is_empty() or not has_bombs() or _launches!=0 or has_detonations() or not resources is Detonation.Resources:return reject("Prepare EMP bursts once, before launching")
+	if _loadout.is_empty() or not has_bombs() or _launches!=0 or not resources is Detonation.Resources:return reject("Prepare bomb bursts once, before launching")
 	var data: Dictionary=resources.snapshot()
 	for key in ["base_content_id","binding_id"]:
 		if data.get(key)!=_loadout[key]:return reject("EMP burst resources belong to another weapon owner")
 	var prepared:={}
 	for gun in _guns:
-		if not gun.has("bomb"):continue
+		if not gun.has("bomb") or gun.bomb.snapshot().weapon.kind!=data.get("kind"):continue
+		if gun.has("detonation"):return reject("This bomb family already has its prepared bursts")
 		var burst:=Detonation.new()
 		if not burst.configure(resources,int(gun.equipment.item_id)):return reject(burst.error)
 		prepared[gun.slot_index]=burst
+	if prepared.is_empty():return reject("These burst resources do not match an installed bomb family")
 	for gun in _guns:
 		if prepared.has(gun.slot_index):gun.detonation=prepared[gun.slot_index]
 	return true
 
 func has_bombs() -> bool:return _guns.any(func(gun):return gun.has("bomb"))
+
+func bomb_kinds() -> Array[int]:
+	var kinds: Array[int]=[]
+	for gun in _guns:
+		if gun.has("bomb"):
+			var kind: int=gun.bomb.snapshot().weapon.kind
+			if kind not in kinds:kinds.append(kind)
+	return kinds
 
 func configure_projectile_visuals(library: RefCounted,bindings: RefCounted) -> bool:
 	error=""
@@ -91,7 +102,12 @@ func configure_projectile_visuals(library: RefCounted,bindings: RefCounted) -> b
 	for key in ["base_content_id","binding_id"]:
 		if _loadout.get(key)!=bindings.get(key):return reject("Secondary models belong to another content identity")
 	var prepared:={}
+	var bombs:={}
 	for gun in _guns:
+		if gun.has("bomb") and gun.bomb.snapshot().weapon.kind==7:
+			var bomb: RefCounted=gun.bomb.fork()
+			if not bomb.prepare_visuals(library,bindings):return reject(bomb.error)
+			bombs[gun.slot_index]=bomb
 		if not gun.has("projectiles"):continue
 		if gun.has("visuals"):return reject("Secondary model clocks were already prepared")
 		var visual:=Conventional.presentation(library,bindings,gun.projectiles.snapshot().weapon)
@@ -99,6 +115,7 @@ func configure_projectile_visuals(library: RefCounted,bindings: RefCounted) -> b
 		prepared[gun.slot_index]=visual
 	for gun in _guns:
 		if prepared.has(gun.slot_index):gun.visuals=prepared[gun.slot_index]
+		if bombs.has(gun.slot_index):gun.bomb=bombs[gun.slot_index]
 	return true
 
 func has_detonations() -> bool:
@@ -109,12 +126,14 @@ func detonation_owner(slot_index: int) -> RefCounted:
 		if gun.slot_index==slot_index:return gun.get("detonation")
 	return null
 
-func evaluate_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted,ordered_actor_ids: Variant,permitted: Variant=true) -> Dictionary:
+func evaluate_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted,ordered_actor_ids: Variant,permitted: Variant=true,bodies: RefCounted=null,inventory: RefCounted=null) -> Dictionary:
 	error=""
-	var targets:=_targets(combat,ordered_actor_ids)
+	var pulse_pending: bool=permitted==true and _guns.any(func(gun):return gun.has("bomb") and gun.bomb.snapshot().shot.get("phase")=="flying")
+	var targets:=_targets(combat,ordered_actor_ids,bodies if pulse_pending else null,inventory)
 	if not error.is_empty():return {}
 	if not Flight.rigid_pose(pose) or not permitted is bool or not selected_item_id is int or (selected_item_id!=-1 and not _guns.any(func(gun):return gun.equipment.item_id==selected_item_id)):return fail("Invalid selected secondary or firing context")
 	var next:=fork();var group: RefCounted=combat.fork_for_frame();var events:=[];var exhausted:=false
+	var field: RefCounted=bodies
 	if permitted:
 		for gun in next._guns:
 			var before: Dictionary=gun.bomb.snapshot() if gun.has("bomb") else gun.projectiles.snapshot()
@@ -131,20 +150,21 @@ func evaluate_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted
 			if event.action=="none":
 				if gun.ammunition==0 and before.elapsed_ms>before.weapon.interval_ms:exhausted=true
 				continue
-			var committed: Dictionary=next._apply_event(gun,event,group,pose.origin)
+			if field!=null and field==bodies and _changes_scenery(event):field=bodies.fork_for_frame()
+			var committed: Dictionary=next._apply_event(gun,event,group,pose.origin,field)
 			if committed.is_empty():return fail(next.error)
 			events.append(committed)
 			if event.action=="launched":break
-	return {"owner":next,"combat":group,"events":events,"selection_exhausted":exhausted,"loadout":next._loadout.duplicate(true)}
+	return {"owner":next,"combat":group,"bodies":field,"events":events,"selection_exhausted":exhausted,"loadout":next._loadout.duplicate(true)}
 
 ## Live player input stages the pulse and every inventory view as one result.
 ## A rejected retained view discards the prospective launch and its combat hits.
-func evaluate_player_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted,ordered_actor_ids: Variant,player: RefCounted,equipment: RefCounted,primaries: RefCounted,targets: RefCounted,input_enabled: Variant=true) -> Dictionary:
+func evaluate_player_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted,ordered_actor_ids: Variant,player: RefCounted,equipment: RefCounted,primaries: RefCounted,targets: RefCounted,input_enabled: Variant=true,bodies: RefCounted=null) -> Dictionary:
 	error=""
 	if not is_instance_of(player,load("res://src/simulation/opening_player_state.gd")) or not input_enabled is bool:return fail("Secondary firing requires an initialized player and input permission")
 	var state: Dictionary=player.snapshot()
 	if player.loadout()!=_loadout or not state.get("active") is bool or not state.get("vitals") is Dictionary or not Vitals.integer(state.vitals.get("hull")):return fail("Secondary firing lost its current player equipment or vitality")
-	var operation:=evaluate_trigger(pose,selected_item_id,combat,ordered_actor_ids,input_enabled and state.active and state.vitals.hull>0)
+	var operation:=evaluate_trigger(pose,selected_item_id,combat,ordered_actor_ids,input_enabled and state.active and state.vitals.hull>0,bodies,targets if bodies!=null else null)
 	if operation.is_empty():return {}
 	var retained: Dictionary=operation.owner.evaluate_retention(player,equipment,primaries,targets)
 	if retained.is_empty():return fail(operation.owner.error)
@@ -158,6 +178,7 @@ func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Va
 	if not Vitals.integer(delta_ms):return fail("Invalid secondary frame duration")
 	var next:=fork();var group: RefCounted=combat.fork_for_frame();var events:=[]
 	var field: RefCounted=bodies
+	var self_hits:=[]
 	next._detonation_events.clear();next._camera_commands.clear()
 	# Projectile wrappers update in creation order, independently of firing order.
 	for index in range(next._guns.size()-1,-1,-1):
@@ -181,21 +202,26 @@ func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Va
 			if gun.projectiles.advance(delta_ms,target).is_empty():return fail(gun.projectiles.error)
 			continue
 		var before: Dictionary=gun.bomb.snapshot()
+		if before.shot.get("phase")=="flying":
+			targets=next._targets(group,ordered_actor_ids,field,inventory,field!=null)
+			if not next.error.is_empty():return fail(next.error)
 		var event: Dictionary=gun.bomb.advance(delta_ms,targets)
 		if event.is_empty():return fail(gun.bomb.error)
 		if gun.has("detonation"):
 			var burst: Dictionary=gun.detonation.advance(before,gun.bomb.snapshot(),delta_ms,observer_position)
 			if burst.is_empty():return fail(gun.detonation.error)
 			next._detonation_events.append_array(burst.audio)
+			if not burst.self_hit.is_empty():self_hits.append(burst.self_hit.duplicate(true))
 			if not burst.camera.is_empty():
 				var command: Dictionary=burst.camera.duplicate(true)
 				command.slot_index=gun.slot_index;command.item_id=gun.equipment.item_id
 				next._camera_commands.append(command)
 		if event.action=="none":continue
-		var committed: Dictionary=next._apply_event(gun,event,group,Vector3.ZERO)
+		if field!=null and field==bodies and _changes_scenery(event):field=bodies.fork_for_frame()
+		var committed: Dictionary=next._apply_event(gun,event,group,Vector3.ZERO,field)
 		if committed.is_empty():return fail(next.error)
 		events.append(committed)
-	return {"owner":next,"combat":group,"bodies":field,"events":events,"loadout":next._loadout.duplicate(true)}
+	return {"owner":next,"combat":group,"bodies":field,"events":events,"self_hits":self_hits,"loadout":next._loadout.duplicate(true)}
 
 func evaluate_contact(slot_index: Variant,projectile_id: Variant,combat: RefCounted,ordered_actor_ids: Variant) -> Dictionary:
 	error=""
@@ -213,21 +239,41 @@ func evaluate_contact(slot_index: Variant,projectile_id: Variant,combat: RefCoun
 		return {"owner":next,"combat":group,"events":[committed],"loadout":next._loadout.duplicate(true)}
 	return fail("Secondary contact names an unavailable launcher")
 
-func _targets(combat: RefCounted,ordered_actor_ids: Variant) -> Array:
+func _targets(combat: RefCounted,ordered_actor_ids: Variant,bodies: RefCounted=null,inventory: RefCounted=null,physical_contacts:=false) -> Array:
 	if _loadout.is_empty() or not combat is Combat or not ordered_actor_ids is Array:reject("Secondary update requires its equipped owner and combat targets");return []
 	var state: Dictionary=combat.snapshot()
 	for key in ["base_content_id","binding_id","campaign_cursor"]:
 		if not _loadout.has(key) or state.get(key)!=_loadout[key]:reject("Secondary targets belong to another encounter");return []
+	var field:={};var scenery_indices:=[]
+	if bodies!=null:
+		if not bodies is Contacts.Bodies or not inventory is Contacts.Inventory:reject("Bomb targets require the shared scenery and target membership");return []
+		field=bodies.read_snapshot()
+		if not inventory.validate_owners(state,field) or inventory.snapshot().npc_ids!=ordered_actor_ids:reject("Bomb targets differ from the admitted complete encounter");return []
+		scenery_indices=inventory.snapshot().scenery_indices
 	var targets:=[];var seen:={}
 	for id in ordered_actor_ids:
 		if not id is int or id<0 or id>=state.actors.size() or seen.has(id):reject("Secondary target order names an unavailable or repeated actor");return []
 		var actor: Dictionary=state.actors[id]
 		if not actor.get("scenery") is bool or not actor.get("active") is bool or not actor.get("position") is Vector3 or not actor.position.is_finite():reject("Secondary target lacks current classification and position");return []
-		targets.append({"actor_id":id,"position":actor.position,"active":actor.active,"emp_immune":actor.scenery})
+		var target:={"actor_id":id,"position":actor.position,"active":actor.active,"emp_immune":actor.scenery}
+		if physical_contacts:
+			target.collision=combat.collision_context(id)
+			if target.collision.is_empty():reject(combat.error);return []
+		targets.append(target)
 		seen[id]=true
+	for index in scenery_indices:
+		var body: Dictionary=field.objects[index]
+		var target:={"actor_id":state.actors.size()+int(index),"position":body.position,"active":body.active,"emp_immune":true,"target":{"group":"scenery","index":int(index)}}
+		if physical_contacts:
+			target.collision=bodies.collision_context(index)
+			if target.collision.is_empty():reject(bodies.error);return []
+		targets.append(target)
 	return targets
 
-func _apply_event(gun: Dictionary,event: Dictionary,combat: RefCounted,origin: Vector3) -> Dictionary:
+static func _changes_scenery(event: Dictionary) -> bool:
+	return event.get("blast",{}).get("hits",[]).any(func(hit):return hit.has("normal_damage") and hit.get("target",{}).get("group")=="scenery")
+
+func _apply_event(gun: Dictionary,event: Dictionary,combat: RefCounted,origin: Vector3,bodies: RefCounted=null) -> Dictionary:
 	var result:=event.duplicate(true)
 	result.slot_index=gun.slot_index;result.item_id=gun.equipment.item_id;result.audio={};result.systems_hits=[]
 	if event.action=="launched":
@@ -241,7 +287,20 @@ func _apply_event(gun: Dictionary,event: Dictionary,combat: RefCounted,origin: V
 		if gun.has("detonation") and not gun.detonation.begin_projectile(event.shot):return fail(gun.detonation.error)
 		result.audio=Audio.cue(gun.audio,origin)
 	elif event.action=="detonated":
+		result.normal_hits=[]
 		for hit in event.blast.hits:
+			if hit.has("normal_damage"):
+				var target: Dictionary=hit.get("target",{"group":"npc","index":hit.actor_id})
+				var normal: Dictionary
+				if target.group=="scenery":
+					if bodies==null:return fail("A scenery blast lost its retained body owner")
+					normal=bodies.normal_hit(target.index,hit.normal_damage)
+					if normal.is_empty() or not bodies.record_blast(target.index,hit.impact_vector,hit.motion_scalar):return fail(bodies.error)
+				else:
+					normal=combat.normal_hit(target.index,hit.normal_damage,false)
+					if normal.is_empty():return fail(combat.error)
+				result.normal_hits.append({"target":target,"damage":hit.normal_damage,"result":normal})
+				continue
 			var applied: Dictionary=combat.systems_hit(hit.actor_id,hit.system_damage,false)
 			if applied.is_empty():return fail(combat.error)
 			result.systems_hits.append({"actor_id":hit.actor_id,"damage":hit.system_damage,"result":applied})

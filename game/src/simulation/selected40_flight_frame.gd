@@ -276,9 +276,10 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	# The shared launcher owns ammunition and live projectile history. Keep all
 	# four loadout views in this prospective frame, after primary input and
 	# before actor motion. A late failure cannot spend a paid round.
-	var secondary: Dictionary=next._encounter.evaluate_secondary_fire(next._player,next._equipment,next._pose,secondary_fire,enabled,next._random,not cue.sequence.radio.visible)
+	var secondary: Dictionary=next._encounter.evaluate_secondary_fire(next._player,next._equipment,next._pose,secondary_fire,enabled,next._random,not cue.sequence.radio.visible,next._scenery)
 	if secondary.is_empty():reject(next._encounter.error);return null
 	next._encounter=secondary.encounter;next._player=secondary.player;next._equipment=secondary.equipment;next._random=secondary.random_state
+	next._scenery=secondary.scenery
 	var before_actors: Dictionary=next._encounter.combat_snapshot()
 	var world: Dictionary=next._encounter.evaluate_world(next._player,next._pose,milliseconds,next._random)
 	if world.is_empty():reject(next._encounter.error);return null

@@ -1006,9 +1006,10 @@ func clear_fast_forward_input() -> bool:
 func _apply_secondary_input(requested: bool,input_enabled: bool) -> bool:
 	if _encounter==null or not _encounter.has_secondaries():return reject("This flight has no equipped secondary owner")
 	var radio_free: bool=_radio==null or not _radio.snapshot().get("visible",false)
-	var operation: Dictionary=_encounter.evaluate_secondary_fire(_player,_equipment,_pose,requested,input_enabled,_random,radio_free)
+	var operation: Dictionary=_encounter.evaluate_secondary_fire(_player,_equipment,_pose,requested,input_enabled,_random,radio_free,_scenery)
 	if operation.is_empty():return reject(_encounter.error)
 	_encounter=operation.encounter;_player=operation.player;_equipment=operation.equipment;_random=operation.random_state
+	_scenery=operation.scenery
 	return true
 
 func secondary_available() -> bool:return _encounter!=null and _encounter.has_secondaries()

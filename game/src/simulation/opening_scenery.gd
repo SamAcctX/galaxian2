@@ -614,6 +614,19 @@ func evaluate_secondary_contacts(secondaries: RefCounted,combat: RefCounted,inve
 
 func _failed_secondary(message: String) -> Dictionary:reject(message);return {}
 
+## Manual detonation has the same body owner as the early contact pass. Keep
+## the equipment transaction and every radius hit in one prospective frame.
+func evaluate_secondary_trigger(secondaries: RefCounted,combat: RefCounted,inventory: RefCounted,player: RefCounted,equipment: RefCounted,primaries: RefCounted,pose: Transform3D,selected_item_id: int,input_enabled: bool) -> Dictionary:
+	error=""
+	if _bodies==null or not is_instance_of(secondaries,load("res://src/simulation/secondary_weapons.gd")) or not combat is Combat:return _failed_secondary("Secondary input requires the retained scenery and weapon owners")
+	var result: Dictionary=secondaries.evaluate_player_trigger(pose,selected_item_id,combat,inventory.snapshot().npc_ids,player,equipment,primaries,inventory,input_enabled,_bodies)
+	if result.is_empty():return _failed_secondary(secondaries.error)
+	var next: RefCounted=fork_for_frame()
+	next._read_snapshot={};next._bodies=result.bodies
+	if result.combat.has_local_reactions():next._random_state=result.combat.contact_random_state()
+	result.scenery=next
+	return result
+
 ## The field owns the scenery-specific recovery contract. Its physical model
 ## can move after collision statistics retire; these are not NPC wreck poses.
 func recovery_observation(index: int) -> Dictionary:

@@ -347,6 +347,14 @@ func random_direction(random: RefCounted) -> Vector3:
 func snapshot() -> Dictionary:
 	return _state.duplicate(true)
 
+## Breakup chooses its own drift direction. A later radius hit replaces the
+## cargo's retained strength without restarting death or moving its effect.
+func apply_blast_strength(strength: float) -> bool:
+	error=""
+	if _state.is_empty() or not is_finite(strength) or strength<0.0 or strength>1.0:return reject("Blast drift requires a configured wreck and finite radius fraction")
+	if _state.phase=="explosion" and not _cargo_rules.is_empty():_state.drift_speed=Vitals.single(strength)
+	return true
+
 ## The enclosing encounter computed this frame from this live wreck and the
 ## native tractor. Its prospective branch owns all mutations and rollback.
 func _retain_recovery_frame(frame: Dictionary) -> void:

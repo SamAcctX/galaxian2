@@ -249,9 +249,10 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,primary_fire and next._primary_released,enabled,next._random,[] if next._scanner==null else next._scanner.weapon_target_ids())
 	if fired.is_empty():return failed(next._encounter.error)
 	next._encounter=fired.encounter;next._random=fired.random_state
-	var secondary: Dictionary=next._encounter.evaluate_secondary_fire(next._player,next._equipment,next._pose,secondary_fire and next._secondary_released,enabled,next._random,not radio.visible)
+	var secondary: Dictionary=next._encounter.evaluate_secondary_fire(next._player,next._equipment,next._pose,secondary_fire and next._secondary_released,enabled,next._random,not radio.visible,next._scenery)
 	if secondary.is_empty():return failed(next._encounter.error)
 	next._encounter=secondary.encounter;next._player=secondary.player;next._equipment=secondary.equipment;next._random=secondary.random_state
+	next._scenery=secondary.scenery
 	var before_actors: Dictionary=next._encounter.combat_snapshot()
 	var motion: Dictionary=next._encounter.evaluate_world(next._player,next._pose,milliseconds,next._random)
 	if motion.is_empty():return failed(next._encounter.error)
