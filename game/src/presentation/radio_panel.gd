@@ -140,7 +140,7 @@ func present(snapshot: Dictionary, resolved_speaker: Dictionary = {}) -> bool:
 		clear()
 		return true
 	var speaker: Dictionary = _speakers.get(int(snapshot.speaker_id), {})
-	if _identity.get("campaign_cursor") in [10,11,12]:
+	if snapshot.has("message") or not resolved_speaker.is_empty():
 		if not resolved_speaker.get("name") is String or not resolved_speaker.get("portrait") is Texture2D:return _fail("Local radio requires its selected portrait and resolved name")
 		speaker=resolved_speaker
 	# Avoid rewriting text/resetting scroll on every simulation frame.

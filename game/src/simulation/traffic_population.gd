@@ -57,8 +57,7 @@ func configure_free(bindings: RefCounted,catalogues: RefCounted,context: Diction
 	# These are explicit source inputs. Mission/session owners must produce them;
 	# construction never infers missing retained state or grants campaign progress.
 	if context.get("companions_empty")!=true:return reject("This population does not support companion overrides")
-	for key in ["station_response","void_encounter"]:
-		if context.get(key)!=false:return reject("This population does not support encounter or response overrides")
+	if not context.get("station_response") is bool or context.get("void_encounter")!=false:return reject("Ordinary population requires a retained response flag and no Void encounter")
 	if not load("res://src/content/free_arrival_definitions.gd").context_supported(bindings,context):return reject("Ordinary arrival placement requires its verified flag and player position")
 	if not Numbers.integer(context.get("rank"),0,bindings.opening_handoff.rank_thresholds.size()-1):return reject("Ordinary traffic requires a supported rank")
 	var difficulty: Variant=context.get("difficulty")
@@ -75,7 +74,7 @@ func configure_free(bindings: RefCounted,catalogues: RefCounted,context: Diction
 	_common=bindings.mido_travel.departure_traffic.duplicate(true)
 	_groups=bindings.ambient_population.duplicate(true)
 	_ordinary=data.duplicate(true)
-	_ordinary.merge({"security":security,"faction":faction,"rank":int(context.rank),"difficulty":float(difficulty)})
+	_ordinary.merge({"security":security,"faction":faction,"rank":int(context.rank),"difficulty":float(difficulty),"station_response":context.station_response})
 	_ordinary.empty_story=admitted or Campaign.empty_story(bindings,context)
 	if _ordinary.empty_story:_ordinary.mission_kind=int(context.mission_kind)
 	if _ordinary.empty_story or not context.side_missions_empty:
@@ -200,6 +199,7 @@ static func _sample(common: Dictionary,groups: Dictionary,seconds: int,random: R
 		@warning_ignore("integer_division")
 		counts.patrol+=int(counts.freighter)/int(groups.freighters_per_patrol)
 	if ordinary.has("delivery_count"):counts.delivery_pirate=int(ordinary.delivery_count)
+	if ordinary.get("station_response",false):counts.patrol=maxi(counts.patrol,int(ordinary.station_response_minimum))
 	if counts.patrol+counts.travel+counts.freighter+int(counts.get("hostile",0))+int(counts.get("delivery_pirate",0))==0:counts.patrol=int(common.empty_population_fallback)
 	result.groups=counts
 	result.actor_count=counts.patrol+counts.travel+counts.freighter+int(counts.get("hostile",0))+int(counts.get("delivery_pirate",0))

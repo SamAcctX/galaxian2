@@ -95,9 +95,13 @@ class MapCanvas extends Control:
 			var anchor:=labels[index].position+Vector2(0,font_size)
 			draw_string(font,anchor+Vector2.ONE,row_name(row),HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,Color.BLACK)
 			draw_string(font,anchor,row_name(row),HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,Color.WHITE)
-			if row.mission_target or row.current:
-				var marker:=int(rules.story_image_id if row.mission_target else rules.current_image_id)
-				draw_texture_rect(sprites[marker],Rect2(row.pixels+Vector2(extent/2-2,-extent/2-3),Vector2.ONE*icon_size),false)
+			var markers:=[]
+			if row.story_target:markers.append(int(rules.story_image_id))
+			if row.contract_target:markers.append(int(rules.legend[1].image_id))
+			if row.current:markers.append(int(rules.current_image_id))
+			for marker_index in markers.size():
+				var anchor_icon: Vector2=row.pixels+Vector2(extent/2-2,-extent/2-3+marker_index*icon_size)
+				draw_texture_rect(sprites[markers[marker_index]],Rect2(anchor_icon,Vector2.ONE*icon_size),false)
 
 func _init() -> void:
 	visible=false;mouse_filter=Control.MOUSE_FILTER_STOP
@@ -213,6 +217,7 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted, c
 	_back.text=state.labels.back;_target.text=state.labels.target;_yes.text=state.labels.confirm;_no.text=state.labels.cancel;_key.text=state.labels.key
 	for choice in state.system_choices:
 		var item:=Button.new();item.text=choice.name;item.focus_mode=Control.FOCUS_NONE
+		if choice.get("mission_target",false):item.icon=sprites[int(state.ui.legend[1].image_id)]
 		item.set_meta("system_id",int(choice.system_id));_systems.add_child(item)
 		item.pressed.connect(func():request_system(int(item.get_meta("system_id"))))
 	_systems.visible=state.system_choices.size()>1

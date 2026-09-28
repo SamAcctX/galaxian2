@@ -65,6 +65,13 @@ func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction:
 		_state.actor_kinds=packet.actors.map(func(actor):return int(actor.actor_kind))
 		_state.permanent_hostile=[];_state.permanent_hostile.resize(data.actor_count);_state.permanent_hostile.fill(false)
 		_state.systems_requested_damage=[];_state.systems_requested_damage.resize(data.actor_count);_state.systems_requested_damage.fill(0)
+	if data.get("station_response",false):
+		_state.response_issued=true;_state.station_response_flag=true
+		_state.arrival_response_pending=true
+		for id in int(data.actor_count):
+			if _state.actor_kinds[id]!=int(data.lifecycle.reactions.primary_faction):continue
+			_state.forced_hostile[id]=true
+			if _state.has("permanent_hostile"):_state.permanent_hostile[id]=true
 	return true
 
 func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,equipment: RefCounted) -> bool:
@@ -74,6 +81,11 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	if data.is_empty():return reject("Unsupported contract reaction population")
 	if not _configure_population(bindings,catalogues,data,equipment,data.reputation_state):return false
 	_set_factions(data,int(data.mission.kind))
+	if not data.ordinary_standing.is_empty() and NPCSystems.available(bindings):
+		_rules.systems=bindings.mido_travel.kappa_lifecycle.systems.duplicate(true)
+		_rules.systems_primary=int(data.lifecycle.reactions.primary_faction)
+		_state.permanent_hostile=[];_state.permanent_hostile.resize(data.actor_count);_state.permanent_hostile.fill(false)
+		_state.systems_requested_damage=[];_state.systems_requested_damage.resize(data.actor_count);_state.systems_requested_damage.fill(0)
 	return true
 
 func configure_convoy(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,equipment: RefCounted,reputation: Dictionary) -> bool:
@@ -268,6 +280,17 @@ func _queue_radio(kind: String, random: RefCounted, display_available: bool, eve
 	_state.pending_radio=event.duplicate(true);events.append(event)
 
 func snapshot() -> Dictionary:return _state.duplicate(true)
+
+func evaluate_arrival(random_state: Dictionary,display_available: bool) -> Dictionary:
+	var random:=Random.new()
+	if not random.restore(random_state):return fail(random.error)
+	var next:=fork_for_frame()
+	if next._state.get("arrival_response_pending",false) and display_available:
+		next._state.erase("arrival_response_pending")
+		if next._state.active_mission_kind==int(_rules.contract.empty_mission_kind):
+			next._state.radio_serial+=1
+			next._state.pending_radio=load("res://src/simulation/local_traffic_radio.gd").arrival_message(int(_rules.contract.primary_faction),random.next_int(3),next._state.radio_serial)
+	return {"owner":next,"random_state":random.snapshot()}
 
 func retire_contract() -> bool:
 	error=""

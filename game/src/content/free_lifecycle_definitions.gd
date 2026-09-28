@@ -30,9 +30,7 @@ static func population(bindings: RefCounted,packet: Dictionary,mission_context: 
 	data.merge(context,true);data.free_context=context.duplicate(true)
 	data.free_lifecycle=bindings.mido_travel.free_lifecycle.duplicate(true)
 	data.lifecycle=bindings.early_contracts.ship_lifecycle.duplicate(true)
-	data.lifecycle.reactions=data.free_lifecycle.reactions.duplicate(true)
-	data.lifecycle.reactions.primary_faction=int(world.faction)
-	data.lifecycle.reactions.eligible_factions=[int(world.faction),int(population_rules.enemy_factions[int(world.faction)])]
+	data.lifecycle.reactions=reactions(bindings,int(world.faction))
 	data.cargo=bindings.combat_training_destruction.cargo.duplicate(true)
 	data.actors=[];data.npc_weapons=[]
 	for actor in packet.actors:
@@ -48,6 +46,13 @@ static func population(bindings: RefCounted,packet: Dictionary,mission_context: 
 		for key in ["actor_id","actor_kind","hull_catalogue_id"]:weapon[key]=actor[key]
 		data.npc_weapons.append(weapon)
 	return data
+
+static func reactions(bindings: RefCounted,faction: int) -> Dictionary:
+	if not available(bindings) or faction not in [0,1,2,3]:return {}
+	var result: Dictionary=bindings.mido_travel.free_lifecycle.reactions.duplicate(true)
+	result.primary_faction=faction
+	result.eligible_factions=[faction,int(bindings.mido_travel.free_population.enemy_factions[faction])]
+	return result
 
 static func standing(rules: Dictionary,faction: int,reputation: Dictionary,forced: bool) -> Dictionary:
 	if not Equal.equal_value(rules,VALUES.standing) or not load("res://src/simulation/faction_reputation.gd").valid_state(reputation):return {}

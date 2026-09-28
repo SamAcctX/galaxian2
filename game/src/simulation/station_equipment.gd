@@ -546,6 +546,13 @@ func debit_campaign_cargo(item_id: int,quantity: int) -> bool:
 	if _state.get("ordinary_shopping_open",false):return reject("Campaign cargo requires a closed inventory")
 	return debit_delivery_cargo(item_id,quantity)
 
+func debit_delivery_stack(item_id: int) -> bool:
+	error=""
+	if not _campaign_cargo_context(item_id,1):return reject("Delivery cargo requires its retained inventory")
+	var index:=_campaign_cargo_index(item_id,1)
+	if index<0:return reject("The required delivery cargo is unavailable")
+	return debit_delivery_cargo(item_id,int(_state.cargo.entries[index].quantity))
+
 func debit_delivery_cargo(item_id: int,quantity: int) -> bool:
 	error=""
 	if not _campaign_cargo_context(item_id,quantity):return reject("Delivery cargo requires its retained inventory")

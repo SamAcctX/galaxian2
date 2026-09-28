@@ -9,6 +9,15 @@ static func evaluate(condition: Dictionary,observation: Dictionary) -> Dictionar
 	if condition.get("kind") is String:
 		match condition.kind:
 			"never":return {"satisfied":false}
+			"hull_empty":
+				var first:=int(condition.get("first_actor",-1));var end:=int(condition.get("end_actor",-1))
+				if not actors is Array or first<0 or end<=first or end>actors.size():return {}
+				var defeated:=0
+				for id in range(first,end):
+					var hull: Variant=actors[id].get("vitals",{}).get("hull")
+					if not hull is int or hull<0:return {}
+					if hull==0:defeated+=1
+				return {"satisfied":defeated>0,"retired":defeated,"required":end-first}
 			"station":
 				var world: Dictionary=observation.get("world",{})
 				if not world.get("docked") is bool or not world.get("station_id") is int or not observation.get("elapsed_ms") is int:return {}

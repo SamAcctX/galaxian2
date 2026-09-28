@@ -76,12 +76,34 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 				{"first_actor":attackers,"end_actor":count,"faction":faction,"population_group":"freighter","subtype":1,"origin":"zero","clear_cargo":true,
 					"position":{"kind":"positions","points":[Vector3(-2500,-300,27000),Vector3(6500,3000,24000),Vector3(-4000,-2000,19000),Vector3(9000,-6000,17000),Vector3(3000,7000,15000)]},
 					"ship_state":{"hull_override":hull,"cruise_enabled":true},"policy":{"initial_hostile":false,"updated_hostile":false,"friendly":true}}]
+		10:
+			var base:=int(Vitals.single(scaled*5.0))+3
+			attackers=int(Vitals.single(base+Vitals.single(base*Vitals.single(float(context.difficulty)-0.5))))
+			count=attackers+3;count_draw={"minimum":attackers+2,"bound":2,"group":0}
+			var faction:=int([1,0,3,2][int(context.client_faction)]) if int(context.client_faction)<4 else 0
+			placement={"kind":"random_points","regions":[{"offsets":[-2500,-2500,80000],"bounds":[5000,5000,30000]},
+				{"offsets":[-2500,-2500,120000],"bounds":[5000,5000,30000]}]}
+			ship_state={"mode":0,"active":true,"targeting_blocked":false}
+			ship_groups=[{"first_actor":0,"end_actor":3,"faction":faction,"population_group":"freighter","subtype":1,"origin":"path",
+				"position":{"kind":"path_scatter","index":1,"offsets":[-10000,-10000,-10000],"bounds":[20000,20000,20000]},
+				"ship_state":{"cruise_enabled":false,"hull_scales":[0.7,1.4 if float(context.difficulty)>0.7 else 1.0]},"policy":{"initial_hostile":true,"updated_hostile":true}},
+				{"first_actor":3,"end_actor":count,"faction":faction,"population_group":"patrol","origin":"path","policy":{"initial_hostile":true,"updated_hostile":true}}]
 		12:
 			var base:=int(Vitals.single(scaled*float(rules.challenge.count_multiplier)))
 			count=base+(int(rules.challenge.count_odd_offset) if (base+int(rules.challenge.count_odd_offset))%2 else int(rules.challenge.count_even_offset))+1
 			placement={"kind":"patrol","field_choice_bound":0,"minimum_points":int(rules.challenge.path_count_offset),"point_count_bound":int(rules.challenge.path_count_bound)}
 			rival_actor_id=int(rules.challenge.rival_actor_id)
 			player_last_ids=range(1,count,2)
+		13:
+			var awaiting_target: bool=context.get("station_outcome",0)==0
+			count=7 if awaiting_target else 6
+			placement={"kind":"random_point","offsets":[-50000,0,50000],"bounds":[100000,0,50000]}
+			ship_state={"mode":0,"active":true,"targeting_blocked":false,"ordinary_hostility":true}
+			if awaiting_target:
+				ship_groups.append({"first_actor":0,"end_actor":1,"faction":local_faction,"population_group":"patrol","origin":"path","name_text_id":1652,
+					"policy":{"initial_hostile":false,"updated_hostile":false}})
+			ship_groups.append({"first_actor":1 if awaiting_target else 0,"end_actor":count,"faction":local_faction,"population_group":"patrol","origin":"path",
+				"policy":{"initial_hostile":false,"updated_hostile":false}})
 	var success:={"kind":18,"first_actor":0,"end_actor":count}
 	var failure:={"kind":"never"}
 	var periodic:={"kind":"never"}
@@ -100,18 +122,23 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 			success={"kind":7,"end_actor":debris_count}
 			periodic={"kind":"elapsed","after_ms":int(bindings.early_contracts.junk_lifecycle.deadline_milliseconds)}
 			readout={"kind":"countdown","duration_ms":int(periodic.after_ms)}
+		10:success={"kind":7,"end_actor":3}
 		12:
 			var objectives: Dictionary=bindings.early_contracts.ship_lifecycle.objectives.duplicate(true)
 			success={"kind":int(objectives.challenge_success_kind),"rules":objectives}
 			failure={"kind":int(objectives.challenge_failure_kind),"rules":objectives}
 			readout={"kind":"contest","player_counter":"world_player_kills","other_counter":"world_other_kills"}
+		13:
+			var awaiting_target: bool=context.get("station_outcome",0)==0
+			success={"kind":"hull_empty","first_actor":0,"end_actor":1} if awaiting_target else {"kind":"never"}
+			failure={"kind":"hull_empty","first_actor":1 if awaiting_target else 0,"end_actor":count}
 	return {"track":"side_job","cursor":context.campaign_cursor,"station_id":context.station_id,"system_id":loadout.system_id,
 		"mission":mission.duplicate(true),"next_cursor":context.campaign_cursor,"entry":"ordinary_flight","world":{"station":true,"portal":true,"asteroid_field":true},
 		"cast":{"kind":"contract","actor_count":count,"debris_count":debris_count,"ship_state":ship_state,"placement":placement,
 			"rival_actor_id":rival_actor_id,"player_last_ids":player_last_ids,"player_only_ids":player_only_ids,"count_draw":count_draw,"ship_groups":ship_groups,"local_faction":local_faction,"operations":rules.duplicate(true)},"briefing":[],"radio":[],"sequences":[],"readout":readout,
 		"continuation":contract_continuation(mission),
 		"result":{"success":success,"failure":failure,"periodic_failure":periodic,"actor_count":count,
-			"retire_failure":true,"freeze_clock_on_result":true,"reset_while_blocked":false,"policy":bindings.early_contracts.flight_results.duplicate(true)}}
+			"defer_to_station":defers_station_result(mission),"retire_failure":true,"freeze_clock_on_result":true,"reset_while_blocked":false,"policy":bindings.early_contracts.flight_results.duplicate(true)}}
 
 ## Cast roles supply faction, initial placement and hostility to the shared
 ## small-ship factory. A sampled opposing faction is a construction input.
@@ -132,11 +159,19 @@ static func contract_continuation(mission: Dictionary) -> Dictionary:
 	if mission.get("kind") not in [3,5]:return {}
 	return {"kind":"return_delivery","mission_kind":11,"result_text_id":378,"briefing_text_id":792,"source_parameter":-1}
 
+static func defers_station_result(mission: Dictionary) -> bool:
+	return mission.get("kind")==13 and mission.get("story")==false
+
 ## Station objectives share settlement while recipes choose their inventory
 ## requirement, unloading and optional delivered-quantity statistic.
 static func station_delivery(rules: Dictionary,mission: Dictionary) -> Dictionary:
 	if not rules.has("delivery_results") or mission.get("story")!=false:return {}
 	var kind: Variant=mission.get("kind")
+	if defers_station_result(mission):
+		return {"required_cargo":{},"unload":"none","statistic":"","select_flight":true,"deferred":true,"any_station":true}
+	if kind==14:
+		return {"required_cargo":{"item_id":115,"quantity":1},"unload":"required_stack","statistic":"","select_flight":false,"return_to_contact":true,
+			"entry_stock":{"item_id":115,"quantity":1},"briefing_location":"system"}
 	if kind==rules.courier.kind:
 		return {"required_cargo":{},"unload":"marked_cargo","statistic":"cargo","select_flight":true}
 	if kind==rules.passenger.kind:
@@ -146,6 +181,19 @@ static func station_delivery(rules: Dictionary,mission: Dictionary) -> Dictionar
 		return {"required_cargo":{"item_id":int(mission.get("source_parameter",-1)),"quantity":int(mission.get("quantity",0))},
 			"unload":"required_cargo","statistic":"","select_flight":false}
 	return {}
+
+static func station_objective(rules: Dictionary,mission: Dictionary,contact: Dictionary) -> int:
+	var delivery:=station_delivery(rules,mission)
+	return int(contact.get("station_id",-1)) if delivery.get("return_to_contact",false) else int(mission.get("station_id",-1))
+
+static func objective_markers(rules: Dictionary,mission: Dictionary,contact: Dictionary,cargo: Dictionary) -> Dictionary:
+	var station:=station_objective(rules,mission,contact)
+	var system_station:=int(mission.get("station_id",-1))
+	var delivery:=station_delivery(rules,mission)
+	if delivery.get("return_to_contact",false):
+		var required: Dictionary=delivery.required_cargo
+		if cargo.get("entries",[]).any(func(row):return row.item_id==required.item_id and row.quantity>=required.quantity):system_station=station
+	return {"station_id":station,"system_station_id":system_station}
 
 static func contact_request(rules: Dictionary,role: int) -> Dictionary:
 	var collection: Dictionary=rules.get("ordinary_generation",{}).get("offers",{}).get("collection",{})

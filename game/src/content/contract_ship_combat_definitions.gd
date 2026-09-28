@@ -32,6 +32,7 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 		debris=load("res://src/content/contract_junk_definitions.gd").population(bindings,packet,capability)
 		if debris.is_empty():return {}
 	var data:=rules.duplicate(true)
+	data.ordinary_standing=bindings.mido_travel.free_lifecycle.standing.duplicate(true) if cast.ship_state.get("ordinary_hostility",false) else {}
 	data.campaign_cursor=context.campaign_cursor
 	# Construction already validates the equipped ship's system against these
 	# declarations; the retained contract context identifies its station directly.
@@ -64,7 +65,12 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 			for key in options.ship_state:
 				if actor.get(key)!=options.ship_state[key]:return {}
 		var policy: Dictionary=(rules.rival if rival else rules.pirate).duplicate(true)
-		policy.merge(options.policy,true);data.actor_policies.append(policy)
+		policy.merge(options.policy,true)
+		if not data.ordinary_standing.is_empty():
+			var standing: Dictionary=load("res://src/content/free_lifecycle_definitions.gd").standing(data.ordinary_standing,faction,context.reputation,false)
+			if standing.is_empty():return {}
+			policy.initial_hostile=standing.hostile;policy.updated_hostile=standing.hostile;policy.friendly=standing.friendly
+		data.actor_policies.append(policy)
 		data.actor_kinds.append(faction);data.hull_catalogue_ids.append(hull);data.player_weapon_targets.append(id)
 		var weapon:={"unarmed":true,"actor_kind":faction} if freighter else shared_weapon(rules.weapons,context.campaign_cursor,context.rank,float(context.difficulty),faction,bool(options.ship_state.get("enhanced_weapon",rival)))
 		if weapon.is_empty():return {}

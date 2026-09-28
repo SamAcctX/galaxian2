@@ -84,6 +84,8 @@ func configure_local_traffic(library: RefCounted, bindings: RefCounted) -> bool:
 	_voice_ids.clear()
 	var radio: Dictionary=bindings.mido_travel.traffic_combat.radio
 	for id in radio.warning_voice_ids+radio.response_voice_ids:_voice_ids[int(id)]=true
+	for profile in load("res://src/simulation/local_traffic_radio.gd").ARRIVAL_PROFILES:
+		for id in profile.voice_ids:_voice_ids[int(id)]=true
 	return true
 
 func configure_mining_briefing(library: RefCounted, bindings: RefCounted, campaign_cursor:=2) -> bool:
