@@ -323,6 +323,36 @@ func _transact_ordinary(action: String,item_id: int,credits: int) -> bool:
 	next.transactions+=1;_state=next
 	return true
 
+func supply_blueprint_material(item_id: int,quantity: int) -> int:
+	error=""
+	if not _state.get("ordinary_shopping_open",false) or quantity<1:reject("Open the Hangar before supplying materials");return -1
+	var next:=_state.duplicate(true);var row:=_market_row(next,item_id)
+	if row.is_empty() or row.mission or item_id in next.get("protected_item_ids",[]) or row.owned<quantity:reject("The requested materials are not available in cargo");return -1
+	var value: int=quantity*int(row.unit_price)
+	if value>2147483647:reject("The material value exceeds its supported range");return -1
+	row.owned-=quantity;next.credit_delta=0;next.transactions+=1
+	_retain_market_inventory(next);_state=next
+	return value
+
+func receive_blueprint_product(item_id: int,quantity: int) -> bool:
+	error=""
+	if _state.is_empty() or item_id<0 or item_id>=_completion_prices.size() or quantity<1 or quantity>2147483647-_used(_state.cargo.entries):return reject("The constructed product exceeds the supported inventory range")
+	var next:=_state.duplicate(true)
+	if next.get("ordinary_shopping_open",false):
+		var row:=_market_row(next,item_id)
+		if row.is_empty():
+			row={"item_id":item_id,"owned":0,"stock":0,"unit_price":_completion_prices[item_id],"mission":false};next.market_rows.append(row)
+		if row.mission:return reject("The constructed product conflicts with mission cargo")
+		row.owned+=quantity;_retain_market_inventory(next)
+	else:
+		var matching: Array=next.cargo.entries.filter(func(row):return row.item_id==item_id and not row.get("mission",false))
+		if matching.is_empty():
+			next.cargo.entries.append({"item_id":item_id,"quantity":quantity});next.prices.cargo.append({"item_id":item_id,"unit_price":_completion_prices[item_id]})
+		else:matching[0].quantity+=quantity
+		next.cargo.used=_used(next.cargo.entries);next.cargo.free_space=int(next.cargo.capacity)-int(next.cargo.used);next.cargo_cache_stale=false
+	next.credit_delta=0;next.transactions+=1;_state=next
+	return true
+
 func _retain_market_inventory(state: Dictionary,refresh_used:=true) -> void:
 	var cargo:=[];var prices:=[];var stock:=[];var used:=0
 	for row in state.market_rows:

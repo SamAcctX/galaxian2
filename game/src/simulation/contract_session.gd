@@ -425,11 +425,20 @@ func open_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,un
 	_lounges=locations
 	return inventory
 
-func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,action: String,item_id: int,slot_index: int=-1) -> RefCounted:
+func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,action: String,item_id: int,slot_index: int=-1,quantity: int=1) -> RefCounted:
 	error=""
 	var owned:=_shopping_inventory(bindings,cat,equipment)
 	if owned.is_empty():return null
 	if not owned.get("ordinary_shopping_open",false) or owned.stock!=_lounges.item_stock(_state.station_id):return _shopping_reject("Open the current station's hangar quote before trading")
+	if action=="supply_blueprint":
+		if _blueprints==null:return _shopping_reject("No blueprint is available")
+		var shipping: int=_blueprints.shipping_cost(item_id,_state.station_id,quantity)
+		if shipping<0 or shipping>_state.credits:return _shopping_reject("Insufficient credits for shipping these materials")
+		var project: RefCounted=_blueprints.fork_for_transaction()
+		var supplied: RefCounted=project.contribute(item_id,slot_index,quantity,equipment)
+		if supplied==null:return _shopping_reject(project.error)
+		_blueprints=project;_state.credits-=shipping
+		return supplied
 	var inventory: RefCounted=equipment.fork()
 	if action=="buy_ship":
 		if owned.get("market_ships")!=_lounges.ship_stock(_state.station_id):return _shopping_reject("The station's ship quote changed")
@@ -452,6 +461,16 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 	if action=="buy_ship" and not locations.replace_ship_stock(bindings,cat,_state.station_id,owned.market_ships,accepted.market_ships):return _shopping_reject(locations.error)
 	var credits:=credit_balance(_state.credits,accepted.credit_delta,_rules.delivery_results)
 	_lounges=locations;_state.credits=credits
+	return inventory
+
+func collect_blueprint_products(equipment: RefCounted) -> RefCounted:
+	error=""
+	if _blueprints==null:return equipment.fork()
+	if not equipment is Equipment or equipment.snapshot().loadout.station_id!=_state.station_id:return _shopping_reject("Blueprint collection lost its station")
+	var project: RefCounted=_blueprints.fork_for_transaction()
+	var inventory: RefCounted=project.collect(equipment)
+	if inventory==null:return _shopping_reject(project.error)
+	_blueprints=project
 	return inventory
 
 func _shopping_inventory(bindings: RefCounted,cat: RefCounted,equipment: RefCounted) -> Dictionary:
@@ -492,7 +511,8 @@ func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,st
 	var previous_station: int=_lounges.selection_state().current_station_id
 	var candidate: RefCounted=_lounges.fork()
 	var context:={"station_id":station_id,"campaign_cursor":_state.campaign_cursor,"rank":_state.rank,"reputation":_state.reputation.duplicate(true)}
-	if not candidate.select_location(bindings,cat,library,context,settings,random_state,unix_seconds,station_context):return reject(candidate.error)
+	var medals:=LoungeCache.Medals.blueprint_counts(blueprint_state())
+	if not candidate.select_location(bindings,cat,library,context,settings,random_state,unix_seconds,station_context,medals):return reject(candidate.error)
 	var source: RefCounted=_void_source
 	var selected_entry: RefCounted
 	# The native arrival path represents the set-location wrapper. An unchanged

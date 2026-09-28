@@ -219,7 +219,7 @@ func _locations(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: V
 	if not random.restore(data.get("random")):return reject(random.error)
 	for index in data.locations.size():
 		var row: Variant=data.locations[index]
-		if not _keys(row,["station_id","population","offers","stock","market_items","market_ships","requested_offers"]) or not row.get("population") is Dictionary or not row.get("offers") is Dictionary:return reject("Invalid saved lounge entry")
+		if not _keys(row,["station_id","population","offers","stock","market_items","market_ships","requested_offers","medal_progress"]) or not row.get("population") is Dictionary or not row.get("offers") is Dictionary or not row.get("medal_progress",{}) is Dictionary:return reject("Invalid saved lounge entry")
 		var stock:=Stock.new();var contacts:=Contacts.new()
 		var generation_context: RefCounted=null if station_context==null else station_context.historical(bindings,row.population.get("context",{}).get("campaign_cursor"))
 		if not stock.restore(bindings,cat,row.get("stock")) or not contacts.restore(bindings,cat,library,row.population,generation_context):return reject(stock.error+contacts.error)
@@ -227,7 +227,7 @@ func _locations(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: V
 		# Requested jobs can change history between visits to any cached lounge.
 		# Each population and request is independently checked from its inputs.
 		cache._state.history=row.population.initial_history.duplicate()
-		if not cache.remember(contacts,stock):return reject(cache.error)
+		if not cache.remember(contacts,stock,row.get("medal_progress",{})):return reject(cache.error)
 		if row.has("requested_offers"):
 			if not row.requested_offers is Dictionary or not cache.restore_requested_offers(bindings,cat,int(row.station_id),row.requested_offers,generation_context):return reject(cache.error if row.requested_offers is Dictionary else "Invalid saved requested offers")
 		var generated: Dictionary=cache.location(row.station_id)

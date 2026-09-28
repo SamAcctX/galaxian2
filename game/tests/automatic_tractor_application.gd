@@ -62,6 +62,7 @@ func visit_tractor_supplier(destination: int) -> bool:
 			var gate:=int(catalogue.tables.systems[next_system].fields[gate_field])
 			if not await follow_gate_course(next_system,gate) or not await release_application_flight():return false
 			if not await dock_application() or not retain_recovery_save("route-"+str(gate)):return false
+			if next_system==system_id and gate==destination:return true
 			if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return false
 			if not await release_application_flight():return false
 	if app.session.snapshot().location.station_id!=destination and not await travel_application(destination):return false

@@ -483,13 +483,13 @@ func open_equipment(bindings: RefCounted, catalogues: RefCounted, library: RefCo
 	_state.hangar_open=true
 	return true
 
-func equipment_action(action: String, item_id: int, bindings: RefCounted=null, catalogues: RefCounted=null, slot_index: int=-1) -> bool:
+func equipment_action(action: String, item_id: int, bindings: RefCounted=null, catalogues: RefCounted=null, slot_index: int=-1,quantity: int=1) -> bool:
 	error=""
 	if _equipment==null or not _state.get("hangar_open",false):return fail("Open the equipment hangar first")
 	if _state.phase=="free_play_required":
 		if _contracts==null:return fail("Shopping lost its retained career")
 		var career: RefCounted=_contracts.fork()
-		var inventory: RefCounted=career.transact_shopping(bindings,catalogues,_equipment,action,item_id,slot_index)
+		var inventory: RefCounted=career.transact_shopping(bindings,catalogues,_equipment,action,item_id,slot_index,quantity)
 		if inventory==null:return fail(career.error)
 		_contracts=career;_retain_equipment(inventory)
 		return true
@@ -506,6 +506,14 @@ func _retain_equipment(candidate: RefCounted) -> void:
 
 func equipment_owner() -> RefCounted:
 	return null if _equipment==null else _equipment.fork()
+
+func collect_blueprint_products() -> bool:
+	if _contracts==null or _equipment==null:return true
+	var career: RefCounted=_contracts.fork()
+	var inventory: RefCounted=career.collect_blueprint_products(_equipment)
+	if inventory==null:return fail(career.error)
+	_contracts=career;_retain_equipment(inventory)
+	return true
 
 func open_contracts(bindings: RefCounted,catalogues: RefCounted,difficulty: float=0.5) -> bool:
 	error=""

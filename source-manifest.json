@@ -2940,6 +2940,12 @@
     "game/tests/manual_turrets.gd",
     "game/tests/manual_turrets.gd.uid",
     "game/tests/manual_turret_application.gd",
-    "game/tests/manual_turret_application.gd.uid"
+    "game/tests/manual_turret_application.gd.uid",
+    "game/tests/blueprint_construction.gd",
+    "game/tests/blueprint_construction.gd.uid",
+    "game/tests/blueprint_application.gd",
+    "game/tests/blueprint_application.gd.uid",
+    "game/src/simulation/base_medal_progress.gd",
+    "game/src/simulation/base_medal_progress.gd.uid"
   ]
 }

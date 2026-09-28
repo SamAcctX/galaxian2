@@ -12,6 +12,7 @@ const Reputation=preload("res://src/simulation/faction_reputation.gd")
 const Random=preload("res://src/simulation/seeded_random.gd")
 const Shopping=preload("res://src/content/ordinary_shopping_definitions.gd")
 const DeepScience=preload("res://src/content/deep_science_stock_definitions.gd")
+const Medals=preload("res://src/simulation/base_medal_progress.gd")
 var error:=""
 var _state:={}
 var _deep_science:={}
@@ -30,7 +31,7 @@ func configure(bindings: RefCounted) -> bool:
 		_state.current_station_id=-1;_state.random={}
 	return true
 
-func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: Variant,settings: Variant,random_state: Variant,unix_seconds: Variant,station_context: RefCounted=null) -> bool:
+func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: Variant,settings: Variant,random_state: Variant,unix_seconds: Variant,station_context: RefCounted=null,medal_progress: Dictionary={}) -> bool:
 	_read={}
 	error=""
 	if _state.is_empty() or not Stock.available(bindings) or cat==null or library==null:return reject("This cache cannot generate early station stock")
@@ -59,11 +60,9 @@ func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,co
 	var stock_context: Dictionary=settings.duplicate(true)
 	stock_context.station_id=context.station_id;stock_context.campaign_cursor=context.campaign_cursor
 	if not _deep_science.is_empty() and context.station_id==int(_deep_science.station_id):
-		# Native careers start with a fresh profile and do not import original or
-		# global medals. One required gold medal cannot be earned before this
-		# source-defined story cursor. Later profiles need a retained medal owner.
-		if context.campaign_cursor>=int(_deep_science.required_campaign_cursor):return reject("Deep Science requires the career's retained medal progress")
-		stock_context.all_base_medals_gold=false
+		var gold: Variant=Medals.all_base_gold(context.campaign_cursor,medal_progress)
+		if gold==null:return reject("Deep Science requires the career's retained medal progress")
+		stock_context.all_base_medals_gold=gold
 	var stock:=Stock.new()
 	if not stock.prepare(bindings,cat,stock_context,random.snapshot(),unix_seconds):return reject(stock.error)
 	var contacts:=Contacts.new()
@@ -71,12 +70,12 @@ func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,co
 	if base or ordinary:contact_context.system_availability=availability.duplicate()
 	if ordinary:contact_context.difficulty=settings.difficulty
 	if not contacts.prepare(bindings,cat,library,contact_context,stock.snapshot().random,_state.history,station_context):return reject(contacts.error)
-	if not remember(contacts,stock):return false
+	if not remember(contacts,stock,medal_progress if stock_context.has("all_base_medals_gold") else {}):return false
 	if not availability.is_empty():_state.system_availability=availability
 	_state.current_station_id=context.station_id;_state.random=contacts.snapshot().random
 	return true
 
-func remember(contacts: RefCounted,stock: RefCounted=null) -> bool:
+func remember(contacts: RefCounted,stock: RefCounted=null,medal_progress: Dictionary={}) -> bool:
 	_read={}
 	error=""
 	if _state.is_empty() or not contacts is Contacts:return reject("Retain a prepared lounge population")
@@ -84,6 +83,7 @@ func remember(contacts: RefCounted,stock: RefCounted=null) -> bool:
 	for key in ["base_content_id","binding_id"]:
 		if population.get(key)!=_state[key]:return reject("The contacts belong to another content identity")
 	var station: int=population.context.station_id
+	if not medal_progress.is_empty() and (_deep_science.is_empty() or station!=int(_deep_science.station_id) or not Medals.valid_counts(medal_progress)):return reject("Invalid retained native career medal progress")
 	if not location(station).is_empty():return reject("Keep the existing location's contacts")
 	if not _state.history.is_empty() and population.initial_history!=_state.history:return reject("The lounge lost the retained mission-type history")
 	var inventory:={}
@@ -96,7 +96,8 @@ func remember(contacts: RefCounted,stock: RefCounted=null) -> bool:
 			if inventory.context[key]!=population.context[key]:return reject("Stock and contacts came from different selections")
 		if inventory.random!=population.initial_random:return reject("Stock must advance the shared stream before contacts")
 		if not _deep_science.is_empty() and station==int(_deep_science.station_id):
-			if inventory.context.campaign_cursor>=int(_deep_science.required_campaign_cursor) or inventory.context.get("all_base_medals_gold")!=false:return reject("This native career cannot retain all-gold Deep Science stock")
+			var gold: Variant=Medals.all_base_gold(inventory.context.campaign_cursor,medal_progress)
+			if gold==null or inventory.context.get("all_base_medals_gold")!=gold:return reject("This native career has no retained medal result for Deep Science stock")
 	var offers:={}
 	for contact in population.contacts:
 		if not contact.offer.is_empty():offers[int(contact.contact_id)]={"offer":contact.offer.duplicate(true),"consumed":false}
@@ -105,6 +106,7 @@ func remember(contacts: RefCounted,stock: RefCounted=null) -> bool:
 	if _state.locations.size()==_state.capacity:_state.locations.pop_front()
 	var entry:={"station_id":station,"population":population,"offers":offers}
 	if not inventory.is_empty():entry.stock=inventory
+	if not _deep_science.is_empty() and station==int(_deep_science.station_id) and not medal_progress.is_empty():entry.medal_progress=medal_progress.duplicate(true)
 	_state.locations.append(entry)
 	_state.history=population.history.duplicate()
 	return true

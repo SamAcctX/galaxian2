@@ -6,12 +6,14 @@ const MIN_I32 := -2147483648
 const STORY_BLUEPRINT_ID := 85
 const STORY_MATERIAL_ID := 164
 const STORY_MATERIAL_QUANTITY := 50
+const SHIPPING_UNIT_COST := 20
 const Catalogues = preload("res://src/content/catalogues.gd")
 const Library = preload("res://src/content/library.gd")
 var error := ""
 var _recipes: Dictionary = {}
 var _material_unit_value := 0
 var _state: Dictionary = {}
+var _station_count := 0
 
 
 func configure(catalogues: RefCounted, binding_id: String) -> bool:
@@ -21,10 +23,12 @@ func configure(catalogues: RefCounted, binding_id: String) -> bool:
 	var entries := []
 	for item_id in definitions.ids:
 		entries.append({"item_id": item_id, "available": false,
-			"remaining": definitions.recipes[item_id].quantities.duplicate(), "material_value": 0})
+			"remaining": definitions.recipes[item_id].quantities.duplicate(), "material_value": 0,
+			"station_id": -1, "completed": 0})
 	_recipes = definitions.recipes
 	_material_unit_value = definitions.material_unit_value
-	_state = {"base_content_id": catalogues.content_id, "binding_id": binding_id, "entries": entries}
+	_station_count=catalogues.tables.stations.size()
+	_state = {"base_content_id": catalogues.content_id, "binding_id": binding_id, "entries": entries,"products":[]}
 	return true
 
 
@@ -32,7 +36,7 @@ func restore(catalogues: RefCounted, binding_id: String, saved: Dictionary) -> b
 	error = ""
 	var definitions := _read_catalogue(catalogues, binding_id)
 	if definitions.is_empty(): return false
-	if saved.size() != 3 or saved.get("base_content_id") != catalogues.content_id or saved.get("binding_id") != binding_id or not saved.get("entries") is Array:
+	if saved.size() not in [3,4] or (saved.size()==4 and not saved.has("products")) or saved.get("base_content_id") != catalogues.content_id or saved.get("binding_id") != binding_id or not saved.get("entries") is Array:
 		return reject("Blueprint progress has another content identity or an incomplete state")
 	var entries: Array = saved.entries
 	if entries.size() != definitions.ids.size():
@@ -40,17 +44,33 @@ func restore(catalogues: RefCounted, binding_id: String, saved: Dictionary) -> b
 	for index in entries.size():
 		var row: Variant = entries[index]
 		var item_id: int = definitions.ids[index]
-		if not row is Dictionary or row.size() != 4 or not row.get("item_id") is int or row.item_id != item_id or not row.get("available") is bool or not row.get("material_value") is int or row.material_value < 0 or row.material_value > MAX_I32 or not row.get("remaining") is Array:
+		if not row is Dictionary or row.size() not in [4,6] or not row.get("item_id") is int or row.item_id != item_id or not row.get("available") is bool or not row.get("material_value") is int or row.material_value < 0 or row.material_value > MAX_I32 or not row.get("remaining") is Array:
 			return reject("Blueprint progress contains an invalid entry")
+		if row.size()==6 and (not row.get("station_id") is int or row.station_id < -1 or row.station_id>=catalogues.tables.stations.size() or not row.get("completed") is int or row.completed<0 or row.completed>MAX_I32):return reject("Blueprint progress contains an invalid construction site")
 		var remaining: Array = row.remaining
 		if remaining.size() != definitions.recipes[item_id].quantities.size():
 			return reject("Blueprint progress changed its source recipe extent")
 		for amount in remaining:
 			if not amount is int or amount < MIN_I32 or amount > MAX_I32:
 				return reject("Blueprint progress contains an invalid material count")
+	var products: Variant=saved.get("products",[])
+	if not products is Array or products.size()>definitions.ids.size()*catalogues.tables.stations.size():return reject("Invalid retained blueprint products")
+	var seen:={}
+	for product in products:
+		if not product is Dictionary or product.size()!=3 or not product.get("item_id") is int or not definitions.recipes.has(product.item_id) or not product.get("station_id") is int or product.station_id<0 or product.station_id>=catalogues.tables.stations.size() or not product.get("quantity") is int or product.quantity<1 or product.quantity>MAX_I32:return reject("Invalid retained blueprint product")
+		var key:=str(product.item_id)+":"+str(product.station_id)
+		if seen.has(key):return reject("Duplicate retained blueprint product")
+		seen[key]=true
 	_recipes = definitions.recipes
 	_material_unit_value = definitions.material_unit_value
 	_state = saved.duplicate(true)
+	_station_count=catalogues.tables.stations.size()
+	_state.products=products.duplicate(true)
+	for row in _state.entries:
+		if not row.has("station_id"):
+			# Earlier native saves only allowed the story's partial prototype.
+			row.station_id=10 if row.item_id==STORY_BLUEPRINT_ID and row.available and row.material_value>0 else -1
+			row.completed=0
 	return true
 
 
@@ -69,7 +89,66 @@ func fork_for_transaction() -> RefCounted:
 	copy._recipes = _recipes
 	copy._material_unit_value = _material_unit_value
 	copy._state = _state.duplicate(true)
+	copy._station_count=_station_count
 	return copy
+
+func recipe(item_id: int) -> Dictionary:return _recipes.get(item_id,{}).duplicate(true)
+
+func shipping_cost(item_id: int,station_id: int,quantity: int) -> int:
+	return quote_shipping(entry(item_id),station_id,quantity)
+
+static func quote_shipping(row: Dictionary,station_id: int,quantity: int) -> int:
+	if row.is_empty() or quantity<1 or quantity>MAX_I32/SHIPPING_UNIT_COST:return -1
+	var site: int=row.get("station_id",-1)
+	return quantity*SHIPPING_UNIT_COST if site>=0 and site!=station_id else 0
+
+## Inventory owns the debit and product insertion. Commit this owner and the
+## returned inventory together, after the career has accepted the shipping fee.
+func contribute(item_id: int,material_id: int,quantity: int,inventory: RefCounted) -> RefCounted:
+	error=""
+	if not is_instance_of(inventory,load("res://src/simulation/station_equipment.gd")):reject("Supply materials from the current Hangar inventory");return null
+	var before:=entry(item_id);var owned: Dictionary=inventory.snapshot()
+	if before.is_empty() or not before.available or quantity<1 or not owned.get("ordinary_shopping_open",false):reject("This blueprint is unavailable");return null
+	for key in ["base_content_id","binding_id"]:
+		if owned.loadout.get(key)!=_state.get(key):reject("Blueprint materials belong to another content source");return null
+	var station: int=owned.loadout.station_id
+	if station<0 or station>=_station_count:reject("Blueprint construction lost its station");return null
+	var index: int=_recipes[item_id].material_ids.find(material_id)
+	if index<0 or quantity>before.remaining[index]:reject("This quantity exceeds the blueprint's remaining requirement");return null
+	var staged: RefCounted=inventory.fork()
+	var value: int=staged.supply_blueprint_material(material_id,quantity)
+	if value<0:reject(staged.error);return null
+	if before.material_value>MAX_I32-value:reject("Blueprint material value exceeds its supported range");return null
+	var next:=_state.duplicate(true)
+	var row: Dictionary=next.entries.filter(func(candidate):return candidate.item_id==item_id)[0]
+	row.remaining[index]-=quantity;row.material_value+=value
+	if row.station_id<0:row.station_id=station
+	if row.remaining.all(func(amount):return amount<=0):
+		if row.completed==MAX_I32:reject("Blueprint completion count exceeds its supported range");return null
+		var amount: int=_recipes[item_id].output_quantity
+		if row.station_id==station:
+			if not staged.receive_blueprint_product(item_id,amount):reject(staged.error);return null
+		else:
+			var pending: Array=next.products.filter(func(product):return product.item_id==item_id and product.station_id==row.station_id)
+			if pending.is_empty():next.products.append({"item_id":item_id,"station_id":row.station_id,"quantity":amount})
+			elif pending[0].quantity>MAX_I32-amount:reject("Blueprint output exceeds its supported range");return null
+			else:pending[0].quantity+=amount
+		row.completed+=1;row.station_id=-1;row.material_value=0;row.remaining=_recipes[item_id].quantities.duplicate()
+	_state=next
+	return staged
+
+func collect(inventory: RefCounted) -> RefCounted:
+	error=""
+	if not is_instance_of(inventory,load("res://src/simulation/station_equipment.gd")):reject("Blueprint collection requires its inventory");return null
+	var owned: Dictionary=inventory.snapshot()
+	for key in ["base_content_id","binding_id"]:
+		if owned.loadout.get(key)!=_state.get(key):reject("Blueprint collection belongs to another content source");return null
+	var staged: RefCounted=inventory.fork();var kept:=[]
+	for product in _state.products:
+		if product.station_id!=owned.loadout.station_id:kept.append(product.duplicate(true));continue
+		if not staged.receive_blueprint_product(product.item_id,product.quantity):reject(staged.error);return null
+	_state=_state.duplicate(true);_state.products=kept
+	return staged
 
 
 ## Invoke on a fork after staging the source's 50-crystal removal request.
@@ -98,6 +177,7 @@ func precredit_story33(transaction: Dictionary) -> bool:
 			row.available = true
 			row.remaining[index] -= STORY_MATERIAL_QUANTITY
 			row.material_value += material_value
+			if row.station_id<0:row.station_id=10
 			return true
 	return reject("Blueprint entry disappeared during the transaction")
 
@@ -132,7 +212,7 @@ func _read_catalogue(catalogues: RefCounted, binding_id: String) -> Dictionary:
 				return {}
 			seen[material] = true
 		ids.append(item_id)
-		recipes[item_id] = {"material_ids": material_ids.duplicate(), "quantities": quantities.duplicate()}
+		recipes[item_id] = {"material_ids": material_ids.duplicate(), "quantities": quantities.duplicate(),"output_quantity":10 if item.properties.get(1)==1 else 1}
 	if not recipes.has(STORY_BLUEPRINT_ID):
 		reject("The Khador Drive source recipe is missing")
 		return {}

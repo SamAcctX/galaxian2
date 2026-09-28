@@ -2,6 +2,7 @@ extends Control
 ## Source-art hangar screen over the existing station equipment transaction owner.
 signal action_requested(action: String, item_id: int)
 signal slot_action_requested(action: String,item_id: int,slot_index: int)
+signal blueprint_action_requested(action: String,item_id: int,material_id: int,quantity: int)
 const Definitions=preload("res://src/content/station_equipment_definitions.gd")
 const Shopping=preload("res://src/content/ordinary_shopping_definitions.gd")
 const Catalogues=preload("res://src/content/catalogues.gd")
@@ -61,6 +62,12 @@ var _replacement: ConfirmationDialog
 var _pending_replace:={}
 var _ship_offers:={}
 var _passengers:=0
+var _blueprints:={}
+var _blueprint_list: VBoxContainer
+var _blueprint_rows:={}
+var _blueprint_materials:={}
+var _selected_blueprint:=-1
+var _blueprint_render_state:={}
 
 func _init() -> void:
 	mouse_filter=Control.MOUSE_FILTER_STOP;visible=false
@@ -78,7 +85,7 @@ func _init() -> void:
 	header_margin.add_theme_constant_override("margin_left",12)
 	_title=Label.new();header_margin.add_child(_title)
 	var tabs:=HBoxContainer.new();header_row.add_child(tabs)
-	for tab in ["ship","shop","cargo"]:
+	for tab in ["ship","shop","cargo","blueprints"]:
 		var button:=Button.new();button.toggle_mode=true;button.custom_minimum_size.x=92
 		button.pressed.connect(func():select_tab(tab));tabs.add_child(button);_tabs[tab]=button
 	_body_margin=MarginContainer.new();_body_margin.size_flags_vertical=Control.SIZE_EXPAND_FILL;_column.add_child(_body_margin)
@@ -98,6 +105,7 @@ func _init() -> void:
 		var band:=PanelContainer.new();_list.add_child(band);band.hide()
 		var label:=Label.new();band.add_child(label);_categories[category]={"node":band,"label":label,"spacer":spacer}
 	for id in [0,22,55,90,81]:_add_row(id)
+	_blueprint_list=VBoxContainer.new();_list.add_child(_blueprint_list);_blueprint_list.hide()
 	_message=Label.new();_message.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART;body.add_child(_message)
 	var footer:=Control.new();footer.custom_minimum_size.y=38;_column.add_child(footer)
 	_footer_bar=TextureRect.new();_footer_bar.mouse_filter=Control.MOUSE_FILTER_IGNORE;footer.add_child(_footer_bar)
@@ -181,7 +189,11 @@ func _request_ship(index: int) -> void:
 func _confirm_replacement() -> void:
 	var pending:=_pending_replace;_pending_replace={}
 	if not _active or not visible or pending.is_empty() or _state.get("loadout")!=pending.loadout:return
-	if pending.has("ship_index"):
+	if pending.has("blueprint"):
+		var entries: Array=_blueprints.get("entries",[]).filter(func(row):return row.item_id==pending.blueprint)
+		if entries.is_empty() or entries[0]!=pending.entry:return
+		blueprint_action_requested.emit("supply_blueprint",pending.blueprint,pending.material_id,pending.quantity)
+	elif pending.has("ship_index"):
 		if pending.ship_index>=_state.get("market_ships",[]).size() or _state.market_ships[pending.ship_index]!=pending.offer:return
 		action_requested.emit("buy_ship",pending.ship_index)
 	else:slot_action_requested.emit("replace",pending.item_id,pending.index)
@@ -230,6 +242,7 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted=nu
 			if ship_base+id<library.strings.size():ship_names[id]=library.strings[ship_base+id]
 	var label_ids:={"hangar":166,"shop":184,"cargo":183,"ship":182,"close":169,"buy":351,"mount":270,"unmount":271,"sell":319,"instruction":1724,"protected":312,"overfilled":193,"blank":173,"primary":254,"secondary":255,"turret":256,"equipment":258,"commodities":259}
 	label_ids.merge({"buy_ship":293,"same_ship":318,"ship_passengers":325,"insufficient":192})
+	label_ids.merge({"blueprints":261,"available_blueprints":262,"finished":263,"at":264,"missing":265,"owned":273,"store":185,"start_production":201,"shipping":277,"constructed_here":200,"constructed_there":199})
 	for key in label_ids:
 		var text_id: int=label_ids[key]
 		if text_id>=library.strings.size() or library.strings[text_id].is_empty():return reject("Equipment action text is unavailable")
@@ -271,7 +284,7 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted=nu
 	_names=names;_labels=labels;_item_categories=categories;_ship_names=ship_names;_catalogues=cat
 	_art=art;_item_pixels=pixels;_item_metadata=metadata;_icon_cache={};_row_art=row_art
 	_background_art=null if art==null else art.sprites[int(bindings.mido_travel.map.ui.panel_background_image_id)]
-	_tab="shop";_state={};_message.text="";_selected_id=-1;_selected_slot=-1
+	_tab="shop";_state={};_blueprints={};_blueprint_render_state={};_message.text="";_selected_id=-1;_selected_slot=-1;_selected_blueprint=-1
 	_title.text=labels.hangar;_close.text=labels.close;_ship_label.text=labels.ship
 	for key in _tabs:_tabs[key].text=labels[key]
 	for category in _categories:_categories[category].label.text=labels[["primary","secondary","turret","equipment","commodities"][category]]
@@ -334,7 +347,17 @@ func present(state: Dictionary) -> bool:
 	for i in state.equipment.get("market_ships",[]).size():_add_ship_offer(i)
 	_credits=int(state.get("contracts",{}).get("credits",0))
 	_passengers=int(state.get("contracts",{}).get("passengers",0))
+	var next_blueprints: Dictionary=state.get("contracts",{}).get("blueprints",{})
+	var notice:=""
+	for previous in _blueprints.get("entries",[]):
+		for current in next_blueprints.get("entries",[]):
+			if current.item_id==previous.item_id and int(current.get("completed",0))>int(previous.get("completed",0)):
+				var site: int=int(previous.get("station_id",-1))
+				notice=(_labels.constructed_here if site<0 or site==int(state.equipment.loadout.station_id) else _labels.constructed_there).replace("#N",_names[current.item_id])
+				if site>=0:notice=notice.replace("#S",_catalogues.tables.stations[site].name)
+	_blueprints=next_blueprints.duplicate(true)
 	if _state!=state.equipment:_state=state.equipment.duplicate(true);_message.text=""
+	if not notice.is_empty():_message.text=notice
 	visible=state.get("contracts",{}).get("pending_result",{}).is_empty();_refresh();_relayout()
 	return true
 
@@ -375,6 +398,9 @@ func _refresh() -> void:
 	_footer_bar.get_parent().custom_minimum_size.y=(72 if _mobile else 58) if overfilled else (52 if _mobile else 38)
 	_wallet.text="%d$"%_credits if ordinary else ""
 	for tab in _tabs:_tabs[tab].set_pressed_no_signal(tab==_tab);_tabs[tab].disabled=not controls
+	_tabs.blueprints.visible=ordinary and not _blueprints.is_empty()
+	_blueprint_list.visible=_tab=="blueprints"
+	if _blueprint_list.visible:_refresh_blueprints(controls)
 	for id in _rows:
 		var row: Dictionary=_rows[id];var stock:=0;var owned:=0;var price:=0;var price_known:=false;var offered:=false;var mission:=false
 		for item in _state.get("market_rows",[]):
@@ -385,6 +411,7 @@ func _refresh() -> void:
 			if entry.item_id==id:owned=int(entry.quantity)
 		var protected: bool=mission or id in _state.get("protected_item_ids",[90,81])
 		row.node.visible=(offered if ordinary else id in [0,22,55]) if _tab=="shop" else owned>0 and (_tab=="cargo" or int(_item_categories.get(id,-1)) in [0,1,2,3])
+		if _tab=="blueprints":row.node.hide()
 		row.name.text=_names.get(id,"")
 		row.quantity.text=str(stock) if _tab=="shop" else str(owned)
 		row.icon.texture=_icon_texture(int(id))
@@ -419,6 +446,58 @@ func _refresh() -> void:
 		row.button.disabled=not controls or (slot!=null and slot.item_id in _state.get("protected_item_ids",[]))
 	_close.disabled=not controls
 	_order_rows();_style_rows()
+
+func _refresh_blueprints(controls: bool) -> void:
+	var signature:={"projects":_blueprints,"cargo":_state.cargo,"selected":_selected_blueprint,"controls":controls,"mobile":_mobile}
+	if signature==_blueprint_render_state:return
+	_blueprint_render_state=signature.duplicate(true)
+	for child in _blueprint_list.get_children():_blueprint_list.remove_child(child);child.queue_free()
+	_blueprint_rows={};_blueprint_materials={}
+	var title:=Label.new();title.text=_labels.available_blueprints;_blueprint_list.add_child(title)
+	var available: Array=_blueprints.get("entries",[]).filter(func(row):return row.available)
+	if not available.any(func(row):return row.item_id==_selected_blueprint):_selected_blueprint=-1 if available.is_empty() else int(available[0].item_id)
+	_blueprint_render_state.selected=_selected_blueprint
+	for entry in available:
+		var id:=int(entry.item_id)
+		var select:=Button.new();select.text=_names[id];select.toggle_mode=true;select.set_pressed_no_signal(id==_selected_blueprint)
+		select.disabled=not controls;_blueprint_list.add_child(select);_style_button(select);_blueprint_rows[id]=select
+		select.pressed.connect(func():_selected_blueprint=id;_refresh())
+		if id!=_selected_blueprint:continue
+		var site:=int(entry.get("station_id",-1));var detail:=Label.new()
+		detail.text="%s: %d"%[_labels.finished,int(entry.get("completed",0))]
+		if site>=0:detail.text+="   %s %s"%[_labels.at,_catalogues.tables.stations[site].name]
+		for product in _blueprints.get("products",[]):
+			if product.item_id==id:detail.text+="\n"+_labels.constructed_there.replace("#N",_names[id]).replace("#S",_catalogues.tables.stations[product.station_id].name)
+		_blueprint_list.add_child(detail)
+		var materials: Array=Array(_catalogues.tables.items[id].arrays[0])
+		for index in materials.size():
+			var material:=int(materials[index]);var count:=0
+			for row in _state.cargo.entries:
+				if row.item_id==material and not row.get("mission",false):count+=int(row.quantity)
+			var remaining:=maxi(0,int(entry.remaining[index]));var limit:=mini(count,remaining)
+			var panel:=PanelContainer.new();_blueprint_list.add_child(panel);panel.add_theme_stylebox_override("panel",_row_styles[false])
+			var line:=HBoxContainer.new();panel.add_child(line)
+			var icon:=TextureRect.new();icon.texture=_icon_texture(material);icon.custom_minimum_size=Vector2(68,38);icon.expand_mode=TextureRect.EXPAND_IGNORE_SIZE;icon.stretch_mode=TextureRect.STRETCH_KEEP_ASPECT_CENTERED;line.add_child(icon)
+			var text:=Label.new();text.size_flags_horizontal=Control.SIZE_EXPAND_FILL;text.text="%s\n%s %d   ·   %s %d"%[_names[material],_labels.missing,remaining,_labels.owned,count];line.add_child(text)
+			var amount:=SpinBox.new();amount.min_value=1 if limit>0 else 0;amount.max_value=limit;amount.value=limit;amount.step=1;amount.editable=controls and limit>0;line.add_child(amount)
+			var send:=Button.new();send.text=_labels.store;send.disabled=not controls or limit==0;line.add_child(send);_style_button(send)
+			send.pressed.connect(func():_supply_blueprint(id,material,int(amount.value)))
+			_blueprint_materials[material]={"button":send,"quantity":amount,"node":panel}
+	for child in _blueprint_list.find_children("*","Label",true,false):child.add_theme_font_size_override("font_size",20 if _mobile else 15)
+
+func _supply_blueprint(id: int,material: int,quantity: int) -> void:
+	if not _active or not visible or not _pending_replace.is_empty() or quantity<1:return
+	var entries: Array=_blueprints.get("entries",[]).filter(func(row):return row.item_id==id)
+	if entries.is_empty():return
+	var entry: Dictionary=entries[0];var site:=int(entry.get("station_id",-1))
+	var shipping: int=preload("res://src/simulation/blueprint_progress.gd").quote_shipping(entry,int(_state.loadout.station_id),quantity)
+	if shipping>_credits:_message.text=_labels.insufficient.replace("#C","%d$"%(shipping-_credits));return
+	if site<0 or shipping>0:
+		_pending_replace={"blueprint":id,"material_id":material,"quantity":quantity,"entry":entry.duplicate(true),"loadout":_state.loadout.duplicate(true)}
+		_replacement.title=_labels.blueprints
+		_replacement.dialog_text=_labels.start_production if site<0 else _labels.shipping.replace("#S",_catalogues.tables.stations[site].name).replace("#C","%d$"%shipping)
+		_replacement.popup_centered(Vector2i(600 if _mobile else 460,170));_refresh()
+	else:blueprint_action_requested.emit("supply_blueprint",id,material,quantity)
 
 func _mount_has_position(item_id: int) -> bool:
 	if _state.get("fitting_conflicts",{}).has(item_id):return true

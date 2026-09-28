@@ -52,6 +52,7 @@ var _story_elapsed_ms:=0
 var _presentation: RefCounted
 var _presentation_view: Control
 var _released_presentation: Control
+var _blueprint_pickup: AcceptDialog
 
 static func supported(bindings: RefCounted) -> bool:
 	return bindings!=null and Definitions.parameters(bindings.station_presentation)
@@ -113,6 +114,10 @@ func configure_saved(library: RefCounted,bindings: RefCounted,visuals: RefCounte
 	return _build_scene(library,bindings,visuals,cat,now_microseconds,camera_seed)
 
 func _build_scene(library: RefCounted, bindings: RefCounted, visuals: RefCounted, cat: RefCounted, now_microseconds: int, camera_seed: int) -> bool:
+	var before: Dictionary=_world.snapshot()
+	var products: Array=before.get("contracts",{}).get("blueprints",{}).get("products",[]).filter(func(row):return row.station_id==before.loadout.station_id)
+	if not _world.collect_blueprint_products():return fail(_world.error)
+	if not products.is_empty() and not _prepare_blueprint_pickup(library,bindings,visuals,products):return false
 	_bindings=bindings;_catalogues=cat;_library=library;_visuals=visuals
 	var seed: Dictionary=_world.snapshot().loadout
 	var selected: Dictionary=bindings.resolve_hangar(int(seed.station_id),cat)
@@ -160,6 +165,18 @@ func _build_scene(library: RefCounted, bindings: RefCounted, visuals: RefCounted
 	status="running"
 	return true
 
+func _prepare_blueprint_pickup(library: RefCounted,bindings: RefCounted,visuals: RefCounted,products: Array) -> bool:
+	_blueprint_pickup=AcceptDialog.new();_blueprint_pickup.borderless=true;add_child(_blueprint_pickup)
+	_blueprint_pickup.dialog_text=library.strings[202]
+	for product in products:_blueprint_pickup.dialog_text+="\n%dx %s"%[product.quantity,library.strings[int(bindings.station_equipment.item_text_offset)+int(product.item_id)]]
+	var art:=preload("res://src/presentation/original_ui.gd").new()
+	if not art.configure(library,bindings,visuals):return fail(art.error)
+	var mobile:=OS.has_feature("mobile")
+	var theme:=Theme.new();theme.default_font=art.font;theme.default_font_size=20 if mobile else 16;_blueprint_pickup.theme=theme
+	_blueprint_pickup.add_theme_stylebox_override("panel",art.styles[mobile].panel)
+	art.apply_button(_blueprint_pickup.get_ok_button(),mobile)
+	return true
+
 func build_lighting(station_id: int) -> bool:
 	lighting=Lighting.new();add_child(lighting)
 	if not lighting.build_station(_bindings,_catalogues,station_id,"hangar"):return fail(lighting.error)
@@ -174,6 +191,7 @@ func build_lighting(station_id: int) -> bool:
 func activate() -> bool:
 	if status!="running" or _active:return reject("Station scene cannot be activated")
 	_active=true;camera.make_current()
+	if is_instance_valid(_blueprint_pickup):_blueprint_pickup.popup_centered(Vector2i(500,180))
 	return true
 
 func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false) -> bool:
@@ -374,7 +392,7 @@ func location_owner() -> RefCounted:
 	var contracts: RefCounted=contract_owner()
 	return contracts.location_owner() if contracts!=null else (null if _locations==null else _locations.fork())
 
-func equipment_action(action: String, item_id: int, library: RefCounted, bindings: RefCounted, panel: Control, hangar: Control, unix_seconds: Variant=null, slot_index: int=-1) -> bool:
+func equipment_action(action: String, item_id: int, library: RefCounted, bindings: RefCounted, panel: Control, hangar: Control, unix_seconds: Variant=null, slot_index: int=-1,quantity: int=1) -> bool:
 	error=""
 	if status!="running" or not _active or not _dialogue_started or is_paused() or _lounge_open or panel==null or hangar==null:return reject("Equipment controls are inactive")
 	var candidate: RefCounted=_world.fork()
@@ -388,7 +406,7 @@ func equipment_action(action: String, item_id: int, library: RefCounted, binding
 			if not audio.prepare_equipment_effects(bindings.station_equipment,library,bindings):return reject(audio.error)
 	elif action=="close":
 		if not candidate.close_equipment():return reject(candidate.error)
-	elif not candidate.equipment_action(action,item_id,bindings,_catalogues,slot_index):return reject(candidate.error)
+	elif not candidate.equipment_action(action,item_id,bindings,_catalogues,slot_index,quantity):return reject(candidate.error)
 	var staged: Dictionary=candidate.snapshot()
 	var replacement_geometry: Node3D=null
 	if int(staged.loadout.ship_id)!=int(_world.snapshot().loadout.ship_id):
@@ -471,6 +489,8 @@ func clear() -> void:
 	_story_elapsed_ms=0
 
 func _clear_presentations() -> void:
+	if is_instance_valid(_blueprint_pickup):_blueprint_pickup.free()
+	_blueprint_pickup=null
 	if is_instance_valid(_presentation_view):_presentation_view.free()
 	if is_instance_valid(_released_presentation):_released_presentation.free()
 	_presentation_view=null;_released_presentation=null;_presentation=null

@@ -159,6 +159,7 @@ func _ready() -> void:
 	equipment_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	equipment_panel.action_requested.connect(equipment_action)
 	equipment_panel.slot_action_requested.connect(equipment_action)
+	equipment_panel.blueprint_action_requested.connect(equipment_action)
 	touch_overlay=Touch.new();host.add_child(touch_overlay);touch_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	touch_overlay.steering.connect(func(command,held):_controls.set_touch_command(command,held))
 	touch_overlay.firing.connect(func(held):_controls.set_touch_action("fire",held))
@@ -880,10 +881,10 @@ func station_navigation(action: String) -> void:
 	present_session()
 	if action=="next" and not recipe_checkpoint:_autosave_station()
 
-func equipment_action(action: String, item_id: int=-1, slot_index: int=-1) -> bool:
+func equipment_action(action: String, item_id: int=-1, slot_index: int=-1,quantity: int=1) -> bool:
 	if not session is StationSession or not _focused or not is_visible_in_tree() or session.is_paused() or not _launch_packet.is_empty():return false
 	if action=="open" and not equipment_panel.configure(library,bindings,visuals):status.text=equipment_panel.error;return false
-	if not session.equipment_action(action,item_id,library,bindings,station_panel,equipment_panel,null,slot_index):
+	if not session.equipment_action(action,item_id,library,bindings,station_panel,equipment_panel,null,slot_index,quantity):
 		equipment_panel.show_error(session.error);status.text=session.error;return false
 	if action=="close" and session.campaign_story_ready():
 		if not _begin_campaign_story():return false
