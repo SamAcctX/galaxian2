@@ -359,7 +359,8 @@ func load_station(now_microseconds: int=-1) -> bool:
 	session=candidate;station_panel=panel;connect_station_panel(panel);previous_panel.free()
 	_locations=session.location_owner();session.camera.make_current()
 	session.rebase_time(now);refresh_render_mode();present_session()
-	_save_message("Recovered the previous saved station" if _save_file.recovered_backup else "Saved station loaded",true)
+	if _save_file.recovered_backup:_save_message("Recovered the previous saved station",true)
+	elif not _player_mode:_save_message("Saved station loaded",true)
 	return true
 
 func reset() -> void:

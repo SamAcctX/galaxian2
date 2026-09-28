@@ -147,6 +147,7 @@ func resume_and_depart() -> void:
 	if failures:return
 	app.game.set_process(false);focus(app.game);app.game.present_session()
 	check(Archive.new().capture(app.game.session.station_owner(),app.bindings,app.game.session.location_owner())==document,"Resume changed the saved career")
+	check(not app.game._save_notice.visible,"Resume left a generic success strip above the station header")
 	await capture("resumed-station");focus(app.game)
 	if not failures:await depart()
 
