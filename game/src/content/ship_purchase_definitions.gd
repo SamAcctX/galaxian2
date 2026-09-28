@@ -1,7 +1,7 @@
 extends RefCounted
 ## Source declarations for an offered ordinary Hangar ship exchange.
-## This capability is intentionally unwired; current ship instance state, mutable
-## ship stock, and save ownership must exist before exposing the action.
+## Retained for older import readers. Native base-game exchange lives in
+## StationEquipment; the optional Keep branch here requires expansion ownership.
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
 const Fonts=preload("res://src/content/font_definitions.gd")
 const Layouts=preload("res://src/content/declaration_layouts.gd")

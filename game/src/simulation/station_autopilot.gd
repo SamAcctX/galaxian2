@@ -48,7 +48,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, construction: RefCo
 	var vehicle:=Vehicle.new()
 	if not vehicle.configure(bindings,catalogues,bindings.base_content_id):return reject(vehicle.error)
 	var loadout: Dictionary=entry.departure.loadout
-	var response:=vehicle.resolve(int(loadout.ship_id),[],loadout.equipment_ids,true)
+	var response:=vehicle.resolve(int(loadout.ship_id),preload("res://src/simulation/ship_instance.gd").upgrades(loadout),loadout.equipment_ids,true)
 	if response.is_empty():return reject(vehicle.error)
 	var gain:=minf(float(rules.maximum_gain),single(float(response.effective_handling)+float(rules.response_add)))
 	var factor:=float(response.response_factor)

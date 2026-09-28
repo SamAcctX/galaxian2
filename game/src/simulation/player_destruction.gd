@@ -49,7 +49,7 @@ func configure_selected40(bindings: RefCounted,resources: RefCounted,catalogues:
 	var constructor: RefCounted=world.npc_construction_owner()
 	var initial: Dictionary=player.snapshot();var loadout: Dictionary=equipment.snapshot().loadout.duplicate(true)
 	loadout.campaign_cursor=40
-	if player.selected40_construction_owner()!=constructor or initial.get("selected40_context")!=profile.context or player.loadout()!=loadout or initial.ship_id!=0 or initial.vitals.hull<=0:return reject("Selected40 destruction requires the living retained player from this exact constructor")
+	if player.selected40_construction_owner()!=constructor or initial.get("selected40_context")!=profile.context or player.loadout()!=loadout or initial.ship_id!=loadout.ship_id or initial.vitals.hull<=0:return reject("Selected40 destruction requires the living retained player from this exact constructor")
 	for id in initial.equipment_ids:
 		if not Numbers.integer(id,0,catalogues.tables.items.size()-1) or catalogues.tables.items[id].arrays[2][5]==27:return reject("Escape-device destruction is not yet supported")
 	var effect: Dictionary=resources.snapshot()
@@ -60,7 +60,7 @@ func configure_selected40(bindings: RefCounted,resources: RefCounted,catalogues:
 	var rules: Dictionary=bindings.player_destruction.duplicate(true)
 	for index in 2:
 		if clock.models[index].get("model_id")!=int(rules.model_ids[index]) or clock.models[index].get("resource")!=Resources.PATHS[index]:return reject("Selected40 destruction changed its original explosion models")
-	rules.departure_cursor=40;rules.story_cursors=[40]
+	rules.departure_cursor=40;rules.story_cursors=[40];rules.ship_id=int(loadout.ship_id)
 	_commit_configuration(bindings,rules,clock,initial,loadout,pose,camera_pose)
 	_selected40_construction=constructor
 	return true

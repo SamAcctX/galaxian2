@@ -88,7 +88,7 @@ func follow_gate_course(system_id: int,station_id: int) -> bool:
 	check(app.session.snapshot().location.system_id==system_id and app.session.snapshot().location.station_id==station_id,"The supplier gate arrived at a different destination")
 	return failures==0
 
-func recover_automatic_scenery() -> bool:
+func recover_automatic_scenery(automatic:=true) -> bool:
 	var target:=-1;var visited:=[];var request_seen:=false;var beam_seen:=false;var sound_seen:=false
 	var initial: Dictionary=app.session.snapshot()
 	var accepted_before:=int(initial.encounter.combat.get("recovery",{}).get("accepted_quantity",0))
@@ -97,7 +97,7 @@ func recover_automatic_scenery() -> bool:
 		var state: Dictionary=app.session.snapshot();var field: Dictionary=state.scenery
 		if int(state.encounter.combat.get("recovery",{}).get("accepted_quantity",0))>accepted_before:
 			check(request_seen and beam_seen and sound_seen and state.cargo.used>initial.cargo.used,"Automatic recovery skipped its request, original beam/audio or cargo transfer")
-			check(state.mining_targeting.scanner_id==-1 and state.tractor.equipment_id==70,"Automatic scenery pickup required a ship scanner or substituted equipment")
+			check(state.mining_targeting.scanner_id==-1 and state.tractor.equipment_id==(70 if automatic else 68),"Scenery pickup required a ship scanner or substituted equipment")
 			await capture_free_application("automatic-tractor-pickup")
 			return failures==0
 		if app.session.flight_owner().death_active():check(false,"The automatic recovery pilot died before collecting cargo");return false
@@ -120,12 +120,12 @@ func recover_automatic_scenery() -> bool:
 		if not pirate_step(input):return false
 		var after: Dictionary=app.session.snapshot()
 		if not request_seen and after.tractor.request_actor_id>=0:
-			check(after.tractor.request_group=="scenery" and after.mining_targeting.elapsed_ms<1000,"Automatic debris recovery waited for timed targeting or queued another population")
+			check(after.tractor.request_group=="scenery" and (not automatic or after.mining_targeting.elapsed_ms<1000),"Debris recovery queued another population or delayed automatic targeting")
 			request_seen=true
 		for event in after.tractor_frame.get("events",[]):
 			if event.get("kind")=="sound" and event.get("source_id")==0:sound_seen=true
 		if not beam_seen and after.tractor_frame.get("phase")=="pulling":
-			check(after.tractor.beam.model_id==14234 and app.session.flight_audio!=null,"Automatic recovery lost its original model or flight audio")
+			check(after.tractor.beam.model_id==(14234 if automatic else 14232) and app.session.flight_audio!=null,"Scenery recovery lost its original model or flight audio")
 			await capture_free_application("automatic-tractor-beam");beam_seen=true
 		if now_us>=next_log:
 			print("Automatic recovery pilot: ",{"seconds":(now_us-started)/1000000.0,"target":target,"distance":offset.length(),"lifecycle":life.actor_state,"hull":after.player.vitals.hull,"request":after.tractor.request_actor_id,"phase":after.tractor_frame.get("phase","")})

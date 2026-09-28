@@ -48,14 +48,15 @@ static func alioth_attack_cache(parameters: Dictionary,travel: Dictionary,seed: 
 	if entry.is_empty():return {}
 	return _departure_cache(parameters,entry,seed,hull,capacities,reset)
 
-static func kappa_entry(travel: Dictionary) -> Dictionary:
+static func kappa_entry(travel: Dictionary,ship_id: int=-1) -> Dictionary:
 	if not Travel.parameters(travel) or not load("res://src/content/kappa_rescue_definitions.gd").parameters(travel.get("kappa_rescue")) or not load("res://src/content/kappa_lifecycle_definitions.gd").parameters(travel.get("kappa_lifecycle")):return {}
 	var data: Dictionary=travel.player_entry.duplicate(true)
 	for key in ["campaign_cursor","station_id","system_id"]:data[key]=int(travel.kappa_rescue[key])
+	if ship_id>=0:data.ship_id=ship_id
 	return data
 
 static func kappa_rescue_cache(parameters: Dictionary,travel: Dictionary,seed: Dictionary,hull: int,capacities: Dictionary,reset: bool=false) -> Dictionary:
-	var entry:=kappa_entry(travel)
+	var entry:=kappa_entry(travel,int(seed.get("ship_id",-1)))
 	if entry.is_empty():return {}
 	return _departure_cache(parameters,entry,seed,hull,capacities,reset)
 

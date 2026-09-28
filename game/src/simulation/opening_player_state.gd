@@ -298,7 +298,7 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, cursor: int, previ
 		if not RepairDefinitions.parameters(repair_parameters): return reject("Invalid repair declarations")
 		var fields: Variant=catalogues.tables.ships[seed.ship_id].get("fields")
 		if not (fields is Array or fields is PackedInt32Array) or fields.size()<=int(repair_parameters.base_hull_field): return reject("Ship lacks its source base hull field")
-		base_hull=resolve_ship_hull(fields[int(repair_parameters.base_hull_field)],repair_parameters.initial_upgrades,repair_parameters)
+		base_hull=resolve_ship_hull(fields[int(repair_parameters.base_hull_field)],preload("res://src/simulation/ship_instance.gd").upgrades(seed),repair_parameters)
 		device=resolve_repair_device(catalogues.tables.items,seed.equipment_ids,repair_parameters)
 		if base_hull<0 or device.is_empty(): return reject("Invalid source hull or equipped repair device")
 	var current:={"hull":int(bindings.opening_actors.player_current_hull_override),"armor":capacities.armor,"shield":capacities.shield}

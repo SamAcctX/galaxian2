@@ -178,6 +178,24 @@ func item_stock(station_id: int) -> Array:
 	# retention owns both; revisiting a station does not regenerate either.
 	return entry.get("market_items",entry.stock.items).duplicate(true)
 
+func ship_stock(station_id: int) -> Array:
+	var entry:=location(station_id)
+	if entry.is_empty() or not entry.has("stock"):return []
+	return entry.get("market_ships",entry.stock.ships).duplicate(true)
+
+func replace_ship_stock(bindings: RefCounted,cat: RefCounted,station_id: int,expected: Array,ships: Array) -> bool:
+	_read={}
+	error=""
+	if Shopping.location(bindings,cat,station_id).is_empty() or _state.get("current_station_id")!=station_id:return reject("Ship exchange requires the currently retained station")
+	for key in ["base_content_id","binding_id"]:
+		if _state.get(key)!=bindings.get(key):return reject("The ship market belongs to another content identity")
+	if expected!=ship_stock(station_id) or not preload("res://src/simulation/ship_instance.gd").valid_offers(ships,cat):return reject("The ship quote changed or contains invalid stock")
+	for entry in _state.locations:
+		if entry.station_id!=station_id:continue
+		entry.market_ships=ships.duplicate(true)
+		return true
+	return reject("This location has no retained ships")
+
 func replace_item_stock(bindings: RefCounted,cat: RefCounted,station_id: int,expected: Array,items: Array,random_state: Dictionary={}) -> bool:
 	_read={}
 	error=""

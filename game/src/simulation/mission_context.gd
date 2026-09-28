@@ -13,6 +13,18 @@ var _contract_context:={}
 var _legacy_flight:={}
 var _live_cursors: Array=[]
 
+## Base-game player hulls come from the ordinary stock factory, including its
+## fixed station offers and dedicated faction selection. NPC-only prototypes
+## and expansion-only offers are not admitted by a catalogue index alone.
+static func base_player_hull(bindings: RefCounted,ship_id: Variant) -> bool:
+	if bindings==null or not preload("res://src/content/opening_definitions.gd").integer(ship_id,0,2147483647):return false
+	if not preload("res://src/content/base_station_stock_definitions.gd").available(bindings):
+		return ship_id==bindings.opening_loadout.get("ship_id",-1) or ship_id==bindings.station_entry.get("ship_id",-1)
+	var ships: Dictionary=bindings.early_contracts.base_station_stock.ships
+	if not preload("res://src/content/opening_definitions.gd").integer(ship_id,0,int(ships.selection_draw_bound)-1):return false
+	if int(ship_id)==int(ships.vossk_ship_id) or ships.fixed_first_ships.values().any(func(id):return int(id)==int(ship_id)):return true
+	return not ships.selection_excluded_ids.any(func(id):return int(id)==int(ship_id))
+
 ## Older mission owners still select their authored entry and run their own
 ## objectives. Admit that selected flight here without creating a runner recipe.
 func admit_legacy(bindings: RefCounted,catalogues: RefCounted,flight: Dictionary,loadout: Dictionary) -> bool:
@@ -40,6 +52,8 @@ func admit_legacy(bindings: RefCounted,catalogues: RefCounted,flight: Dictionary
 	return true
 
 func _accept_equipment(bindings: RefCounted,catalogues: RefCounted,loadout: Dictionary) -> bool:
+	if not base_player_hull(bindings,loadout.get("ship_id")):return reject("This hull has no supported player flight")
+	if loadout.has("ship_instance") and not load("res://src/simulation/ship_instance.gd").valid(loadout.ship_instance):return reject("Flight entry lost its retained hull properties")
 	var slots:=Slots.checked_slots(bindings,catalogues,loadout)
 	if slots.is_empty():return reject("Flight entry requires valid installed equipment")
 	for id in slots.equipment_ids:

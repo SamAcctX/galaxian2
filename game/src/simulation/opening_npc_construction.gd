@@ -290,7 +290,7 @@ func configure_convoy(bindings: RefCounted,catalogues: RefCounted,equipment: Ref
 	if not owned.get("training_inventory_released",false) or not owned.get("prototype_drill_replaced",false) or not equipment.cargo_cache_valid() or not equipment.requirements().satisfied:return reject("Convoy construction requires the completed equipment tutorial and exchange")
 	var seed: Dictionary=owned.loadout
 	if seed.base_content_id!=bindings.base_content_id or seed.binding_id!=bindings.binding_id or catalogues.content_id!=bindings.base_content_id:return reject("Convoy construction belongs to another content identity")
-	if seed.ship_id!=0 or seed.station_id!=context.station_id or seed.system_id!=context.system_id:return reject("Convoy construction requires the retained ship at Kernstal")
+	if not load("res://src/simulation/mission_context.gd").base_player_hull(bindings,seed.ship_id) or seed.station_id!=context.station_id or seed.system_id!=context.system_id:return reject("Convoy construction requires the retained ship at Kernstal")
 	var data: Dictionary=bindings.mido_travel.convoy_capture.population.duplicate(true)
 	for row in data.actors:
 		if int(row.subtype)==0 and bindings.resolve_ship_model(int(row.hull_catalogue_id)).is_empty():return reject(bindings.error)
@@ -308,7 +308,7 @@ func configure_alioth_attack(bindings: RefCounted,catalogues: RefCounted,seed: D
 	for key in ["campaign_cursor","station_id","system_id","mission_kind"]:
 		if not context.get(key) is int or context[key]!=int(source[key]):return reject("Alioth construction requires its selected station attack")
 	if context.get("mission_story")!=true or context.get("mission_completed")!=false or not Numbers.integer(context.get("rank"),0,20) or context.get("difficulty") not in [0.5,1.0]:return reject("Alioth construction has an unsupported mission context")
-	if catalogues.content_id!=bindings.base_content_id or seed.get("ship_id")!=0 or seed.get("station_id")!=context.station_id or seed.get("system_id")!=context.system_id:return reject("Alioth construction requires the retained starter ship at Alioth")
+	if catalogues.content_id!=bindings.base_content_id or not load("res://src/simulation/mission_context.gd").base_player_hull(bindings,seed.get("ship_id")) or seed.get("station_id")!=context.station_id or seed.get("system_id")!=context.system_id:return reject("Alioth construction requires the retained ship at Alioth")
 	var ids: Variant=seed.get("equipment_ids")
 	if not ids is Array or ids.any(func(id):return not Numbers.integer(id,0,catalogues.tables.items.size()-1)):return reject("Alioth construction requires installed catalogue equipment")
 	if not player_position.is_finite():return reject("Alioth escorts require the current player position")
@@ -364,7 +364,7 @@ func configure_kappa_rescue(bindings: RefCounted,catalogues: RefCounted,seed: Di
 	if not Kappa.context_valid(bindings,context) or catalogues==null:return reject("Kappa construction requires its original rescue context")
 	for key in ["base_content_id","binding_id","station_id","system_id"]:
 		if seed.get(key)!=context[key]:return reject("Kappa loadout belongs to another content identity or location")
-	if catalogues.content_id!=bindings.base_content_id or seed.get("ship_id")!=0:return reject("Kappa construction requires the retained starter ship")
+	if catalogues.content_id!=bindings.base_content_id or not load("res://src/simulation/mission_context.gd").base_player_hull(bindings,seed.get("ship_id")):return reject("Kappa construction requires the admitted player hull")
 	var ids: Variant=seed.get("equipment_ids")
 	if not ids is Array or ids.any(func(id):return not Numbers.integer(id,0,catalogues.tables.items.size()-1)):return reject("Kappa construction requires installed catalogue equipment")
 	var data: Dictionary=bindings.mido_travel.kappa_rescue.population.duplicate(true)

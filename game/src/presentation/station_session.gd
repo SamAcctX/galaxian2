@@ -390,6 +390,15 @@ func equipment_action(action: String, item_id: int, library: RefCounted, binding
 		if not candidate.close_equipment():return reject(candidate.error)
 	elif not candidate.equipment_action(action,item_id,bindings,_catalogues,slot_index):return reject(candidate.error)
 	var staged: Dictionary=candidate.snapshot()
+	var replacement_geometry: Node3D=null
+	if int(staged.loadout.ship_id)!=int(_world.snapshot().loadout.ship_id):
+		var selected: Dictionary=geometry.definition.duplicate(true)
+		selected.ship=bindings.resolve_hangar_ship(int(staged.loadout.ship_id))
+		if selected.ship.is_empty():return reject(bindings.error)
+		replacement_geometry=Geometry.new();add_child(replacement_geometry);replacement_geometry.hide()
+		var surfaces:=Surfaces.new()
+		if not replacement_geometry.build(selected,library,_visuals,bindings) or not surfaces.apply_branches([replacement_geometry],bindings,lighting.state,reflection):
+			var message: String=replacement_geometry.error+surfaces.error;replacement_geometry.free();return reject(message)
 	var speech: Node=null
 	if action=="close" and staged.get("equipment_conversation",false):
 		speech=Speech.new();add_child(speech)
@@ -397,9 +406,11 @@ func equipment_action(action: String, item_id: int, library: RefCounted, binding
 			var message: String=speech.error;speech.free();return reject(message)
 	if not panel.present(staged) or not hangar.present(staged):
 		if speech!=null:speech.free()
+		if replacement_geometry!=null:replacement_geometry.free()
 		panel.present(_world.snapshot());hangar.present(_world.snapshot())
 		return reject("Equipment presentation could not accept the prepared inventory")
 	_world=candidate;_generation+=1
+	if replacement_geometry!=null:geometry.free();geometry=replacement_geometry;geometry.show()
 	if action in ["unmount","replace"]:audio.play_equipment_effect(int(bindings.station_equipment.unmount_audio_id))
 	if action in ["mount","replace"]:audio.play_equipment_effect(int(bindings.station_equipment.mount_audio_id))
 	if speech!=null:

@@ -1,6 +1,6 @@
 extends RefCounted
-## Normal player engine-manager ownership. Boost and other hulls need their own
-## declarations; nozzle attachments and artwork are validated separately.
+## Shared player engine manager. Authored attachments choose nozzle count;
+## the entry capability owns hull admission and boost supplies its envelope.
 const Layouts=preload("res://src/content/declaration_layouts.gd")
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
 const Fonts=preload("res://src/content/font_definitions.gd")
@@ -37,9 +37,4 @@ static func available(bindings: RefCounted) -> bool:
 	return parameters(owner) or (owner is Dictionary and owner.is_empty())
 
 static func available_for(bindings: RefCounted,ship_id: Variant) -> bool:
-	if not available(bindings):return false
-	var owner: Dictionary=bindings.engine_particle_owners
-	var engine: Dictionary=bindings.engine_particles
-	if ship_id==int(VALUES.ship_id):return true
-	if owner.is_empty():return false
-	return ship_id==int(OPENING_SHIP.ship_id) and Equal.equal_value(owner.get("opening_ship"),OPENING_SHIP) and Equal.equal_value(engine.get("opening_ship"),Engines.OPENING_SHIP)
+	return available(bindings) and preload("res://src/simulation/mission_context.gd").base_player_hull(bindings,ship_id)

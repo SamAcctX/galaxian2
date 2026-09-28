@@ -79,8 +79,8 @@ func verify_equipment() -> void:
 		check([state.equipment_id,state.mode,state.duration_ms,state.beam.model_id]==vector,"Original tractor catalogue mode/duration/model changed")
 	var first:=owner([69,68,81])
 	check(first.snapshot().equipment_id==69,"Equipment lookup did not retain the first matching installed slot")
-	var before: Dictionary=first.snapshot();var wrong:=loadout([68,81]);wrong.ship_id=44
-	check(not first.configure(rules,cat,wrong) and first.snapshot()==before,"Unsupported hull partly reconfigured tractor")
+	var before: Dictionary=first.snapshot();var wrong:=loadout([68,81]);wrong.ship_id=cat.tables.ships.size()
+	check(not first.configure(rules,cat,wrong) and first.snapshot()==before,"Unknown hull partly reconfigured tractor")
 	wrong=loadout([68,81]);wrong.binding_id="0".repeat(64)
 	check(not first.configure(rules,cat,wrong) and first.snapshot()==before,"Cross-identity loadout was accepted")
 	var definition: Dictionary=rules.mido_travel.tractor_recovery.duplicate(true)

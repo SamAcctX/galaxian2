@@ -14,6 +14,8 @@ const Prices=preload("res://src/simulation/station_prices.gd")
 const FittingRules=preload("res://src/content/ordinary_fitting_definitions.gd")
 const Fitting=preload("res://src/simulation/equipment_fitting.gd")
 const RecoveryRules=preload("res://src/content/tractor_recovery_definitions.gd")
+const Ship=preload("res://src/simulation/ship_instance.gd")
+const ShipStock=preload("res://src/simulation/station_stock.gd")
 var error:=""
 var _state:={}
 var _rules:={}
@@ -151,8 +153,69 @@ func close_ordinary_shopping() -> bool:
 	error=""
 	if not _state.get("ordinary_shopping_open",false):return reject("The ordinary hangar is not open")
 	_state.erase("ordinary_shopping_open");_state.erase("market_rows");_state.erase("market_rules")
-	for key in ["fitting_support","fitting_conflicts","fitting_stats"]:_state.erase(key)
+	for key in ["fitting_support","fitting_conflicts","fitting_stats","market_ships","ship_price_percent"]:_state.erase(key)
 	_fitting_assets={}
+	return true
+
+func open_ship_market(bindings: RefCounted,cat: RefCounted,offers: Array,price_percent: int) -> bool:
+	error=""
+	if not _state.get("ordinary_shopping_open",false) or not Ship.valid_offers(offers,cat):return reject("Open a valid station market before inspecting ships")
+	var current:=Ship.from_inventory(bindings,cat,_state)
+	if current.is_empty():return reject("The current ship lost its retained properties")
+	if current.unit_price>0:
+		current.unit_price=ShipStock.local_ship_price(bindings,cat,int(_state.loadout.ship_id),int(_state.loadout.station_id),price_percent)
+	if not Ship.valid(current):return reject("The current ship has an invalid local quote")
+	_state.loadout.ship_instance=current
+	_state.erase("ship_affiliation")
+	_state.market_ships=offers.duplicate(true);_state.ship_price_percent=price_percent
+	return true
+
+func purchase_ship(bindings: RefCounted,cat: RefCounted,index: int,credits: int,passengers: int) -> bool:
+	error=""
+	if not _state.get("ordinary_shopping_open",false) or not _state.get("market_ships") is Array or index<0 or index>=_state.market_ships.size():return reject("Select a ship from the current Hangar quote")
+	var offer: Dictionary=_state.market_ships[index]
+	var current:=Ship.from_inventory(bindings,cat,_state)
+	if current.is_empty() or not Ship.valid_offers(_state.market_ships,cat) or credits<0 or credits>2147483647 or passengers<0:return reject("The exchange lost its ship, wallet or passenger count")
+	if not load("res://src/simulation/mission_context.gd").base_player_hull(bindings,offer.ship_id):return reject("This ship is outside the supported base game")
+	if offer.ship_id==_state.loadout.ship_id:return reject("You already own this type of ship.")
+	if passengers>0:return reject("You cannot change ships while carrying passengers.")
+	if int(offer.unit_price)>credits+int(current.unit_price):return reject("Insufficient credits. You need %d more."%(int(offer.unit_price)-credits-int(current.unit_price)))
+	var delta:=int(current.unit_price)-int(offer.unit_price)
+	if absi(delta)>int(_state.market_rules.transfer.maximum_credit_delta) or credits+delta>2147483647:return reject("The ship exchange exceeds the supported wallet range")
+	var staged:=fork();var next: Dictionary=staged._state
+	var previous: Dictionary=next.loadout.duplicate(true);var prices: Array=next.prices.installed.duplicate(true)
+	var empty:=Loadout.new()
+	if not empty.assemble({"ship_id":offer.ship_id,"station_id":previous.station_id,"equipment":[],"item_category_value_index":int(_rules.item_category_value_index)},cat,bindings.base_content_id,bindings.binding_id):return reject(empty.error)
+	next.loadout=empty.snapshot();next.loadout.ship_instance=Ship.from_offer(offer)
+	next.loadout.ship_instance.unit_price=ShipStock.local_ship_price(bindings,cat,int(offer.ship_id),int(previous.station_id),int(next.ship_price_percent))
+	if not Ship.valid(next.loadout.ship_instance):return reject("The purchased ship has an invalid local quote")
+	staged._counts=[]
+	for key in Loadout.SLOT_PROPERTIES:staged._counts.append(int(cat.tables.ships[int(offer.ship_id)].stats[key]))
+	next.prices.installed=[];next.prices.installed.resize(next.loadout.slots.size())
+	for i in previous.slots.size():
+		var slot: Variant=previous.slots[i]
+		if slot==null:continue
+		var position: Dictionary=staged._mount_position(next.loadout.slots,int(slot.item_id))
+		if not position.has("error"):
+			next.loadout.slots[position.index]={"item_id":slot.item_id,"category":position.category,"slot":position.slot,"quantity":slot.quantity}
+			next.prices.installed[position.index]=prices[i]
+		else:
+			var row:=_market_row(next,int(slot.item_id))
+			if row.is_empty():
+				row={"item_id":slot.item_id,"owned":0,"stock":0,"unit_price":prices[i].unit_price,"mission":slot.item_id in next.get("protected_item_ids",[])}
+				next.market_rows.append(row)
+			if int(slot.quantity)>2147483647-int(row.owned):return reject("The transferred equipment exceeds the supported cargo range")
+			row.owned+=int(slot.quantity)
+	for slot in next.loadout.slots:
+		if slot!=null:next.loadout.equipment_ids.append(slot.item_id)
+	next.cargo.ship_id=int(offer.ship_id)
+	staged._retain_market_inventory(next)
+	if next.cargo.used>2147483647 or not staged._refresh_fitting(bindings,cat):return reject(staged.error if not staged.error.is_empty() else "The transferred cargo exceeds the supported range")
+	var resale:=current.duplicate(true);resale.ship_id=int(previous.ship_id)
+	resale.unit_price=ShipStock.local_ship_price(bindings,cat,int(previous.ship_id),int(previous.station_id),int(next.ship_price_percent))
+	if not Ship.valid_offers([resale],cat):return reject("The former ship has an invalid local resale quote")
+	next.market_ships[index]=resale;next.credit_delta=delta;next.transactions+=1
+	_state=next;_counts=staged._counts
 	return true
 
 func fit(bindings: RefCounted,cat: RefCounted,action: String,item_id: int,slot_index: int=-1,passengers: int=0) -> bool:

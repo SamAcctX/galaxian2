@@ -78,7 +78,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,p
 	var loadout: Dictionary=player.loadout()
 	var booster:=Booster.new()
 	if not booster.configure(bindings,catalogues,loadout.equipment_ids):return reject(booster.error)
-	if not pilot.configure_vehicle(bindings,catalogues,bindings.base_content_id,int(loadout.ship_id),[],loadout.equipment_ids,sensitivity):return reject(pilot.error)
+	if not pilot.configure_vehicle(bindings,catalogues,bindings.base_content_id,int(loadout.ship_id),preload("res://src/simulation/ship_instance.gd").upgrades(loadout),loadout.equipment_ids,sensitivity):return reject(pilot.error)
 	var identity:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
 	var entry: Dictionary=scenery.snapshot().get("departure_population",{}).get("selected40_entry",{})
 	if entry.get("selected40")!=true or entry.get("world_type")!=3 or entry.get("base_content_id")!=bindings.base_content_id or entry.get("binding_id")!=bindings.binding_id:return reject("Selected40 environment lost its native prospective world entry")

@@ -95,7 +95,7 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 			if item.arrays[2][3]!=3 or item.arrays[2][5]!=int(rules.equipment.category):continue
 			var tractor:=Tractor.new()
 			var loadout:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,
-				"ship_id":int(rules.pull.supported_player_hulls[0]),"equipment_ids":[int(item.id)]}
+				"ship_id":int(bindings.station_entry.ship_id),"equipment_ids":[int(item.id)]}
 			items[int(item.id)]="" if tractor.configure(bindings,cat,loadout,library) else "This tractor's beam is not yet supported"
 	return {"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"items":items,"mounts":mounts}
 
@@ -125,13 +125,14 @@ func inspect(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,assets: Di
 		if not secondaries.configure(bindings,cat,loadout,assets.get("mounts")):return fail(secondaries.error)
 	var pools:=Stats.resolve_capacities(cat.tables.items,ids,bindings.opening_actors.player_initialization)
 	var repair: Dictionary=bindings.opening_actors.player_initialization.repair
-	var hull:=Stats.resolve_ship_hull(cat.tables.ships[ship].fields[int(repair.base_hull_field)],repair.initial_upgrades,repair)
+	var upgrades: Array=preload("res://src/simulation/ship_instance.gd").upgrades(loadout)
+	var hull:=Stats.resolve_ship_hull(cat.tables.ships[ship].fields[int(repair.base_hull_field)],upgrades,repair)
 	var device:=Stats.resolve_repair_device(cat.tables.items,ids,repair)
 	var capacity:=Stats.cargo_capacity(bindings,cat,loadout)
 	var passengers:=Stats.capacity_sum(cat,ids,int(Rules.VALUES.passenger_subtype),int(Rules.VALUES.passenger_property))
 	var vehicle:=Vehicle.new()
 	if not vehicle.configure(bindings,cat,bindings.base_content_id):return fail(vehicle.error)
-	var handling:=vehicle.resolve(ship,[],ids)
+	var handling:=vehicle.resolve(ship,upgrades,ids)
 	if pools.is_empty() or hull<0 or device.is_empty() or capacity<0 or passengers<0 or handling.is_empty():return fail("Equipment produces unsupported ship capacities or handling")
 	return {"support":support,"stats":{"hull":hull,"armor":pools.armor,"shield":pools.shield,
 		"cargo_capacity":capacity,"passenger_capacity":passengers,"repair_mode":device.mode,
@@ -184,7 +185,6 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 		13:
 			if not Tractor.Definitions.available(bindings):return "Tractor recovery is not yet supported by this content pack"
 			var tractor: Dictionary=bindings.mido_travel.tractor_recovery
-			if not tractor.pull.supported_player_hulls.any(func(hull):return int(hull)==ship):return "Tractor recovery is not yet supported for this ship"
 		14:
 			var booster:=Booster.new()
 			if not booster.configure(bindings,cat,[id]):return booster.error

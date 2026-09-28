@@ -770,7 +770,7 @@ func _prepare_free_departure(bindings: RefCounted,catalogues: RefCounted) -> Dic
 			fail("Install an EMP bomb before departing from the mission station.");return {}
 	var context: Dictionary=_contracts.campaign_flight_context(bindings,_state.mission) if rescue else _contracts.free_flight_context(bindings,station_id)
 	if context.is_empty():fail(_contracts.error);return {}
-	if owned.get("ship_affiliation")!=int(bindings.mido_travel.alioth_return.next_player_ship_affiliation):fail("Ordinary departure lost the acknowledged ship affiliation");return {}
+	if preload("res://src/simulation/ship_instance.gd").from_inventory(bindings,catalogues,owned).is_empty():fail("Ordinary departure lost its retained ship properties");return {}
 	if not FreeFlight.response_flags(bindings,_state.get("station_response_flags",{})):fail("Ordinary departure has unsupported station-response history");return {}
 	var packet:=_career_departure_packet(bindings,owned,career)
 	packet.station_response_flags=_state.get("station_response_flags",{}).duplicate(true)

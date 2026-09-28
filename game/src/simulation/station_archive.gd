@@ -96,7 +96,7 @@ func restore(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: Vari
 		if not _continuation_station(bindings,data.station,continuation):return null
 	if data.version==9 and not _dekato_station(bindings,data.station):return reject("The v9 checkpoint requires its exact explicitly attached source and actual station boundary")
 	if data.version==10 and not _onward_station(bindings,data.station):return reject("The v10 checkpoint requires its exact explicit sources and actual onward station boundary")
-	if not _required(data.inventory,INVENTORY_KEYS.filter(func(key):return key!="stock_station_id")) or not _required(data.career,CAREER_KEYS):return reject("The save is missing required inventory or career data")
+	if not _required(data.inventory,INVENTORY_KEYS.filter(func(key):return key not in ["stock_station_id","ship_affiliation"])) or not _required(data.career,CAREER_KEYS):return reject("The save is missing required inventory or career data")
 	var owned:=_inventory(bindings,cat,data.inventory)
 	if owned==null:return null
 	var locations:=_locations(bindings,cat,library,data.locations,continuation)
@@ -170,7 +170,8 @@ func _inventory(bindings: RefCounted,cat: RefCounted,data: Dictionary) -> RefCou
 	if equipment==null:return null
 	var seed: Dictionary=data.loadout;var hold: Dictionary=data.cargo
 	if Shopping.location(bindings,cat,seed.station_id).is_empty() or not data.get("prices") is Dictionary:return reject("The saved inventory has no supported market or prices")
-	if data.get("training_inventory_released")!=true or data.get("prototype_drill_replaced")!=true or data.get("protected_item_ids")!=[] or data.get("ship_affiliation")!=int(bindings.mido_travel.alioth_return.next_player_ship_affiliation):return reject("The save lost its earned equipment transitions")
+	if data.get("training_inventory_released")!=true or data.get("prototype_drill_replaced")!=true or data.get("protected_item_ids")!=[]:return reject("The save lost its earned equipment transitions")
+	if not seed.has("ship_instance") and data.get("ship_affiliation")!=int(bindings.mido_travel.alioth_return.next_player_ship_affiliation):return reject("The save lost its earned ship affiliation")
 	if not equipment.cargo_cache_valid():return reject(equipment.error)
 	if not _price_list(data.prices.get("cargo"),hold.entries) or not _price_list(data.prices.get("installed"),seed.slots) or data.prices.size()!=2:return reject("Saved prices differ from the retained inventory order")
 	return equipment
@@ -189,7 +190,12 @@ func _inventory_base(bindings: RefCounted,cat: RefCounted,data: Dictionary) -> R
 		if row.category!=1 and row.quantity!=1:return reject("The saved ship contains an invalid installed quantity")
 		installed.append({"item_id":row.item_id,"slot":row.slot,"quantity":row.quantity})
 	var loadout:=Loadout.new()
-	if not loadout.assemble({"ship_id":seed.ship_id,"station_id":seed.station_id,"equipment":installed,"item_category_value_index":int(bindings.station_equipment.item_category_value_index)},cat,bindings.base_content_id,bindings.binding_id) or loadout.snapshot()!=seed:return reject("The saved slots disagree with the original ship and item catalogues")
+	if not loadout.assemble({"ship_id":seed.ship_id,"station_id":seed.station_id,"equipment":installed,"item_category_value_index":int(bindings.station_equipment.item_category_value_index)},cat,bindings.base_content_id,bindings.binding_id):return reject(loadout.error)
+	var expected:=loadout.snapshot()
+	if seed.has("ship_instance"):
+		if data.has("ship_affiliation") or not preload("res://src/simulation/ship_instance.gd").valid(seed.ship_instance) or not preload("res://src/simulation/mission_context.gd").base_player_hull(bindings,seed.ship_id):return reject("The save contains invalid ship ownership")
+		expected.ship_instance=seed.ship_instance.duplicate(true)
+	if expected!=seed:return reject("The saved slots disagree with the original ship and item catalogues")
 	if hold.get("ship_id")!=seed.ship_id or hold.get("capacity")!=Stats.cargo_capacity(bindings,cat,seed):return reject("Saved cargo capacity disagrees with the equipped ship")
 	if not Numbers.integer(data.get("transactions"),0,2147483647) or not Numbers.integer(data.get("credit_delta"),-2147483648,2147483647):return reject("The inventory has an invalid transaction counter")
 	if data.has("stock_station_id") and not Numbers.integer(data.stock_station_id,0,cat.tables.stations.size()-1):return reject("The inventory's last quote names an unknown station")
@@ -213,7 +219,7 @@ func _locations(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: V
 	if not random.restore(data.get("random")):return reject(random.error)
 	for index in data.locations.size():
 		var row: Variant=data.locations[index]
-		if not _keys(row,["station_id","population","offers","stock","market_items","requested_offers"]) or not row.get("population") is Dictionary or not row.get("offers") is Dictionary:return reject("Invalid saved lounge entry")
+		if not _keys(row,["station_id","population","offers","stock","market_items","market_ships","requested_offers"]) or not row.get("population") is Dictionary or not row.get("offers") is Dictionary:return reject("Invalid saved lounge entry")
 		var stock:=Stock.new();var contacts:=Contacts.new()
 		var generation_context: RefCounted=null if station_context==null else station_context.historical(bindings,row.population.get("context",{}).get("campaign_cursor"))
 		if not stock.restore(bindings,cat,row.get("stock")) or not contacts.restore(bindings,cat,library,row.population,generation_context):return reject(stock.error+contacts.error)
@@ -233,6 +239,9 @@ func _locations(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: V
 		if row.has("market_items"):
 			if not Shopping.valid_stock(row.market_items,cat.tables.items.size()):return reject("Invalid mutable station stock")
 			cache._state.locations.back().market_items=row.market_items.duplicate(true)
+		if row.has("market_ships"):
+			if not preload("res://src/simulation/ship_instance.gd").valid_offers(row.market_ships,cat):return reject("Invalid retained ship market")
+			cache._state.locations.back().market_ships=row.market_ships.duplicate(true)
 	if not data.get("history") is Array or data.history.size()!=int(bindings.early_contracts.generation.mission_history.size) or not data.history.all(func(value):return value is bool) or cache.location(data.get("current_station_id",-1)).is_empty():return reject("The saved station cache lost its history or current location")
 	cache._read={};cache._state.history=data.history.duplicate()
 	cache._state.current_station_id=data.current_station_id;cache._state.random=random.snapshot()
@@ -311,16 +320,18 @@ func _player_cache(bindings: RefCounted,cat: RefCounted,value: Variant,loadout: 
 	if not value is Dictionary or not _identity(value,bindings) or not value.get("equipment_ids") is Array:return _invalid("The station lost its retained player pools")
 	# A station fit can change installed IDs after the arrival cache was captured.
 	var seed:=_arrival_loadout(loadout,value)
+	if not Numbers.integer(seed.get("ship_id"),0,cat.tables.ships.size()-1):return _invalid("The arriving player cache names an unknown hull")
 	for id in seed.equipment_ids:
 		if not Numbers.integer(id,0,cat.tables.items.size()-1):return _invalid("The saved player cache contains an unknown item")
 	if not Cache.matches(value,seed,cursor) or value.values.hull==0:return _invalid("The save has no viable station player cache")
 	return true
 
 static func _arrival_loadout(loadout: Dictionary,arrival: Dictionary) -> Dictionary:
-	# Equipment transactions change the current fit, not the recorded arrival.
-	# Keep ship/location/content identity while validating that historical cache.
+	# Equipment fitting and hull exchanges leave the actual arrival untouched.
+	# Location/content identity still belongs to the current station.
 	if not arrival.get("equipment_ids") is Array:return {}
 	var seed:=loadout.duplicate(true)
+	seed.ship_id=arrival.get("ship_id",-1)
 	seed.equipment_ids=arrival.equipment_ids.duplicate()
 	return seed
 

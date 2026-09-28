@@ -59,7 +59,7 @@ func configure_selected40(bindings: RefCounted,catalogues: RefCounted,player: Re
 func _configure_loadout(bindings: RefCounted,catalogues: RefCounted,seed: Dictionary,repair: Dictionary,pose: Transform3D) -> bool:
 	var selection:=Selection.new()
 	if not selection.configure(bindings,catalogues):return reject(selection.error)
-	var chosen: Dictionary=selection.select(seed.ship_id,repair.initial_upgrades,seed.equipment_ids)
+	var chosen: Dictionary=selection.select(seed.ship_id,preload("res://src/simulation/ship_instance.gd").upgrades(seed),seed.equipment_ids)
 	if chosen.is_empty():return reject(selection.error)
 	if selection.program(int(chosen.source_id)).is_empty():return reject(selection.error)
 	# Fresh FEV parameters start at their minima; the supported program has three

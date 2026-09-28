@@ -139,16 +139,25 @@ func _select_ship(faction: int) -> int:
 	return -1
 
 func _ship_offer(cat: RefCounted,id: int,faction: int) -> Dictionary:
+	var price:=ship_price(cat,id,_faction,int(_context.ship_price_percent),_base.ships)
+	if price<0:reject("The retained ship modifier produces an unsupported negative price")
+	return {"ship_id":id,"faction_id":faction,"unit_price":price}
+
+static func local_ship_price(bindings: RefCounted,cat: RefCounted,id: int,station_id: int,price_percent: int=0) -> int:
+	if not BaseStock.available(bindings) or cat==null or cat.content_id!=bindings.base_content_id or id<0 or id>=cat.tables.ships.size() or station_id<0 or station_id>=cat.tables.stations.size():return -1
+	var system: Dictionary=cat.tables.systems[int(cat.tables.stations[station_id].system_id)]
+	var faction:=int(system.fields[int(bindings.early_contracts.station_generation.catalogue.system_faction_field)])
+	return ship_price(cat,id,faction,price_percent,bindings.early_contracts.base_station_stock.ships)
+
+static func ship_price(cat: RefCounted,id: int,faction: int,price_percent: int,rules: Dictionary) -> int:
 	var price:=int(cat.tables.ships[id].stats.base_price)
 	if price>0:
-		var rules: Dictionary=_base.ships
 		var base_price:=Vitals.single(float(price))
-		var discount:=Vitals.single(base_price*float(rules.local_price_multiplier)) if int(rules.affiliations[id])==_faction else 0.0
+		var discount:=Vitals.single(base_price*float(rules.local_price_multiplier)) if int(rules.affiliations[id])==faction else 0.0
 		var adjusted:=Vitals.single(base_price+discount)
-		var modifier:=Vitals.single(Vitals.single(base_price*Vitals.single(float(_context.ship_price_percent)))*float(rules.percent_multiplier))
+		var modifier:=Vitals.single(Vitals.single(base_price*Vitals.single(float(price_percent)))*float(rules.percent_multiplier))
 		price=int(Vitals.single(adjusted+modifier))
-		if price<0:reject("The retained ship modifier produces an unsupported negative price")
-	return {"ship_id":id,"faction_id":faction,"unit_price":price}
+	return price
 
 static func item_metadata(item: Dictionary,rules: Dictionary) -> Dictionary:
 	if not item.get("properties") is Dictionary or not item.get("arrays") is Array:return {}

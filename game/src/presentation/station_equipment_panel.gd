@@ -59,6 +59,8 @@ var _credits:=0
 var _installed_rows:={}
 var _replacement: ConfirmationDialog
 var _pending_replace:={}
+var _ship_offers:={}
+var _passengers:=0
 
 func _init() -> void:
 	mouse_filter=Control.MOUSE_FILTER_STOP;visible=false
@@ -147,15 +149,42 @@ func _request_action(action: String,id: int) -> void:
 	var conflict: Dictionary=_state.get("fitting_conflicts",{}).get(id,{})
 	if action=="mount" and not conflict.is_empty():
 		_pending_replace={"item_id":id,"index":conflict.index,"previous_item_id":conflict.item_id,"loadout":_state.loadout.duplicate(true)}
+		_replacement.title="Replace equipment"
 		_replacement.dialog_text="Replace %s with %s?"%[_names[conflict.item_id],_names[id]]
 		_replacement.popup_centered(Vector2i(600 if _mobile else 420,160))
 		_refresh()
 	else:action_requested.emit(action,id)
 
+func _add_ship_offer(index: int) -> void:
+	if _ship_offers.has(index):return
+	var row:=PanelContainer.new();_list.add_child(row)
+	var line:=HBoxContainer.new();row.add_child(line)
+	var copy:=VBoxContainer.new();copy.size_flags_horizontal=Control.SIZE_EXPAND_FILL;line.add_child(copy)
+	var name:=Label.new();copy.add_child(name)
+	var detail:=Label.new();detail.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART;copy.add_child(detail)
+	var button:=Button.new();line.add_child(button);_buttons.append(button)
+	button.pressed.connect(func():_request_ship(index));_style_button(button)
+	_ship_offers[index]={"node":row,"name":name,"detail":detail,"button":button}
+
+func _request_ship(index: int) -> void:
+	if not _active or not visible or not _pending_replace.is_empty() or index<0 or index>=_state.get("market_ships",[]).size():return
+	var offer: Dictionary=_state.market_ships[index]
+	if offer.ship_id==_state.loadout.ship_id:_message.text=_labels.same_ship;return
+	if _passengers>0:_message.text=_labels.ship_passengers;return
+	var shortfall:=int(offer.unit_price)-_credits-int(_state.loadout.ship_instance.unit_price)
+	if shortfall>0:_message.text=_labels.insufficient.replace("#C","%d$"%shortfall);return
+	_pending_replace={"ship_index":index,"offer":offer.duplicate(true),"loadout":_state.loadout.duplicate(true)}
+	_replacement.title=_labels.buy
+	_replacement.dialog_text=_labels.buy_ship+"\n"+_ship_names[int(offer.ship_id)]+"\n%d$"%(int(offer.unit_price)-int(_state.loadout.ship_instance.unit_price))
+	_replacement.popup_centered(Vector2i(600 if _mobile else 440,180));_refresh()
+
 func _confirm_replacement() -> void:
 	var pending:=_pending_replace;_pending_replace={}
 	if not _active or not visible or pending.is_empty() or _state.get("loadout")!=pending.loadout:return
-	slot_action_requested.emit("replace",pending.item_id,pending.index)
+	if pending.has("ship_index"):
+		if pending.ship_index>=_state.get("market_ships",[]).size() or _state.market_ships[pending.ship_index]!=pending.offer:return
+		action_requested.emit("buy_ship",pending.ship_index)
+	else:slot_action_requested.emit("replace",pending.item_id,pending.index)
 	_refresh()
 
 func _add_installed_row(index: int) -> void:
@@ -200,6 +229,7 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted=nu
 		for id in cat.tables.ships.size():
 			if ship_base+id<library.strings.size():ship_names[id]=library.strings[ship_base+id]
 	var label_ids:={"hangar":166,"shop":184,"cargo":183,"ship":182,"close":169,"buy":351,"mount":270,"unmount":271,"sell":319,"instruction":1724,"protected":312,"overfilled":193,"blank":173,"primary":254,"secondary":255,"turret":256,"equipment":258,"commodities":259}
+	label_ids.merge({"buy_ship":293,"same_ship":318,"ship_passengers":325,"insufficient":192})
 	for key in label_ids:
 		var text_id: int=label_ids[key]
 		if text_id>=library.strings.size() or library.strings[text_id].is_empty():return reject("Equipment action text is unavailable")
@@ -255,6 +285,7 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted=nu
 	# assignment leaves TextServer querying a freed font descriptor.
 	var previous_theme: Theme=_panel.theme
 	_panel.theme=theme
+	_replacement.theme=theme
 	for id in _rows:_rows[id].icon.texture=_icon_texture(int(id))
 	set_mobile_layout(_mobile)
 	return true
@@ -300,7 +331,9 @@ func present(state: Dictionary) -> bool:
 		for slot in int(stats[slot_properties[category]]):_slot_categories.append(category)
 	if _slot_categories.size()!=state.equipment.loadout.slots.size():return reject("The ship slot display disagrees with its loadout")
 	for i in _slot_categories.size():_add_installed_row(i)
+	for i in state.equipment.get("market_ships",[]).size():_add_ship_offer(i)
 	_credits=int(state.get("contracts",{}).get("credits",0))
+	_passengers=int(state.get("contracts",{}).get("passengers",0))
 	if _state!=state.equipment:_state=state.equipment.duplicate(true);_message.text=""
 	visible=state.get("contracts",{}).get("pending_result",{}).is_empty();_refresh();_relayout()
 	return true
@@ -322,7 +355,18 @@ func _refresh() -> void:
 		_ship_stats.text="Hull %d   Armor %d   Shield %d   Handling %d%%   Passengers %d"%[stats.hull,stats.armor,stats.shield,stats.handling_bonus_percent,stats.passenger_capacity]
 	_ship_stats.visible=fitting
 	_ship_name.text=_ship_names.get(int(_state.loadout.ship_id),_labels.ship)
-	_ship_band.visible=_tab=="ship";_ship_row.visible=_tab=="ship"
+	_ship_band.visible=_tab=="ship" or (_tab=="shop" and not _state.get("market_ships",[]).is_empty());_ship_row.visible=_tab=="ship"
+	for index in _ship_offers:
+		var row: Dictionary=_ship_offers[index]
+		row.node.visible=_tab=="shop" and index<_state.get("market_ships",[]).size()
+		if not row.node.visible:continue
+		var offer: Dictionary=_state.market_ships[index];var hull: Dictionary=_catalogues.tables.ships[int(offer.ship_id)].stats
+		row.name.text="%s   %d$"%[_ship_names[int(offer.ship_id)],int(offer.unit_price)]
+		row.detail.text="%s %d   %s %d   %s %d   %s %d   %s %dt"%[_labels.primary,hull.primary_slots,_labels.secondary,hull.secondary_slots,_labels.turret,hull.turret_slots,_labels.equipment,hull.equipment_slots,_labels.cargo,hull.cargo_capacity]
+		row.button.text=_labels.buy;row.button.disabled=not controls
+		row.node.add_theme_stylebox_override("panel",_row_styles[false])
+		for label in [row.name,row.detail]:label.add_theme_font_size_override("font_size",20 if _mobile else 15)
+	if _state.loadout.has("ship_instance"):_ship_name.text+="   %d$"%int(_state.loadout.ship_instance.unit_price)
 	_requirement.visible=not ordinary or (_tab=="ship" and not fitting)
 	_cargo.text="%d / %dt"%[int(_state.cargo.used),int(_state.cargo.capacity)]
 	_cargo.tooltip_text=_labels.cargo
@@ -386,6 +430,9 @@ func _mount_has_position(item_id: int) -> bool:
 func _order_rows() -> void:
 	var position:=2
 	var preceding_group:=_tab=="ship"
+	for row in _ship_offers.values():
+		_list.move_child(row.node,position);position+=1
+		preceding_group=preceding_group or row.node.visible
 	for category in CATEGORY_LABELS.size():
 		var members:=[]
 		if _tab=="ship":
@@ -463,6 +510,9 @@ func set_mobile_layout(value: bool) -> void:
 	_header_bar.get_parent().custom_minimum_size.y=48 if value else 32
 	_footer_bar.get_parent().custom_minimum_size.y=52 if value else 38
 	_row_styles={false:_row_style(false),true:_row_style(true)}
+	_replacement.add_theme_stylebox_override("panel",_row_styles[false])
+	_replacement.get_label().add_theme_font_size_override("font_size",font_size)
+	for button in [_replacement.get_ok_button(),_replacement.get_cancel_button()]:_style_button(button)
 	_ship_row.add_theme_stylebox_override("panel",_row_styles[false])
 	var bands: Array=_categories.values()+[{"node":_ship_band,"label":_ship_label}]
 	for band in bands:

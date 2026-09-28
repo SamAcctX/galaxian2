@@ -2922,6 +2922,14 @@
     "game/tests/cloak_application.gd",
     "game/tests/cloak_application.gd.uid",
     "game/tests/cloak_presentation.gd",
-    "game/tests/cloak_presentation.gd.uid"
+    "game/tests/cloak_presentation.gd.uid",
+    "game/src/simulation/ship_instance.gd",
+    "game/src/simulation/ship_instance.gd.uid",
+    "game/tests/ship_exchange.gd",
+    "game/tests/ship_exchange.gd.uid",
+    "game/tests/ship_purchase_application.gd",
+    "game/tests/ship_purchase_application.gd.uid",
+    "game/tests/ship_freelance_application.gd",
+    "game/tests/ship_freelance_application.gd.uid"
   ]
 }

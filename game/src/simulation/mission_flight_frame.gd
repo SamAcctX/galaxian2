@@ -93,7 +93,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,c
 	var booster:=Booster.new()
 	if not booster.configure(bindings,catalogues,loadout.equipment_ids):return reject(booster.error)
 	if not runner.configure(context) or not runner.prepare_conversations(bindings,library):return reject(runner.error)
-	if not pilot.configure_vehicle(bindings,catalogues,bindings.base_content_id,int(loadout.ship_id),[],loadout.equipment_ids,sensitivity):return reject(pilot.error)
+	if not pilot.configure_vehicle(bindings,catalogues,bindings.base_content_id,int(loadout.ship_id),preload("res://src/simulation/ship_instance.gd").upgrades(loadout),loadout.equipment_ids,sensitivity):return reject(pilot.error)
 	if not physical.configure(bindings.physical_scenery_contacts,context.identity(),{},scenery.read_snapshot().bodies):return reject(physical.error)
 	if not aim.configure(bindings) or not aim.advance(pose,camera.snapshot().pose,viewport):return reject(aim.error)
 	var mounts:=Mounts.new();var engines:=Engines.new();var audio:=EngineAudio.new();var death:=Death.new()

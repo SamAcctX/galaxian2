@@ -1357,21 +1357,19 @@ func resolve_ship_detail(ship_id: int) -> Dictionary:
 
 func resolve_player_engine_glow(ship_id: int, quality := "high") -> Dictionary:
 	error = ""
-	# Mac player factory selects hull+17900, independently of the exhaust
-	# particle manager. Only the current Betty flight has been verified.
-	if source_architecture!="x86_64" or ship_id!=0:
+	# The admitted base player uses the factory's additive hull attachment.
+	if source_architecture!="x86_64" or not load("res://src/simulation/mission_context.gd").base_player_hull(self,ship_id):
 		fail("Player engine-glow assembly is not verified for this content or hull")
 		return {}
-	var path:=resolve(17900,"mesh")
-	if path!="resources/data/assets/main/3d/meshes/ships/ship_000_midorian_engine_glow_add.aem":
-		fail("Unsupported Betty engine-glow resource mapping")
-		return {}
+	var identifier:=17900+ship_id
+	var path:=resolve(identifier,"mesh")
+	if path.is_empty():return {}
 	var material:=material_for_mesh(path,quality)
 	var slots: Array=material.get("texture_ids",[])
-	if material.get("id")!=34813 or material.get("render_type")!=2 or slots.size()!=8 or slots[0]!=34812 or not slots.slice(1).all(func(id):return id==65535):
-		fail("Unsupported Betty engine-glow material mapping")
+	if material.get("render_type")!=2 or slots.size()!=8 or slots[0]!=34812 or not slots.slice(1).all(func(id):return id==65535):
+		fail("Unsupported player engine-glow material mapping")
 		return {}
-	return {"resource_id":17900,"path":path}
+	return {"resource_id":identifier,"path":path}
 
 
 func resolve_hangar(station_id: int, catalogues: RefCounted) -> Dictionary:

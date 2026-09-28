@@ -34,7 +34,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, construction: RefCo
 	var vehicle:=Vehicle.new();var cruise:=Cruise.new()
 	if not vehicle.configure(bindings,catalogues,bindings.base_content_id) or not cruise.configure(bindings,bindings.base_content_id):return reject(vehicle.error+cruise.error)
 	var loadout: Dictionary=entry.departure.loadout
-	var response:=vehicle.resolve(int(loadout.ship_id),[],loadout.equipment_ids)
+	var response:=vehicle.resolve(int(loadout.ship_id),preload("res://src/simulation/ship_instance.gd").upgrades(loadout),loadout.equipment_ids)
 	if response.is_empty():return reject(vehicle.error)
 	_rules=bindings.mining_approach.duplicate(true)
 	_max_ms=Frames.simulation_limit(bindings,int(_rules.max_frame_ms))

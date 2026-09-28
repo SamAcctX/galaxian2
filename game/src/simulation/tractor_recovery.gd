@@ -30,11 +30,11 @@ func configure(bindings: RefCounted, catalogues: RefCounted, loadout: Dictionary
 	var rules: Dictionary=bindings.mido_travel.tractor_recovery.duplicate(true)
 	# JSON numeric arrays arrive as floats. Normalize the validated configuration
 	# once so native IDs and modes have the same membership semantics in flight.
-	for pair in [[rules.pull,"supported_player_hulls"],[rules.equipment,"modes"],
+	for pair in [[rules.equipment,"modes"],
 		[rules.acquisition,"ship_auto_modes"],[rules.transfer,"wreck_modes"],
 		[rules.transfer,"faction_kinds"],[rules.transfer,"special_item_ids"]]:
 		pair[0][pair[1]]=pair[0][pair[1]].map(func(value):return int(value))
-	if loadout.get("ship_id") not in rules.pull.supported_player_hulls or not loadout.get("equipment_ids") is Array:return reject("Tractor beam origins currently support Betty's equipped loadout")
+	if not Numbers.integer(loadout.get("ship_id"),0,catalogues.tables.ships.size()-1) or not loadout.get("equipment_ids") is Array:return reject("Tractor recovery requires the admitted player's equipped hull")
 	var items: Variant=catalogues.tables.get("items")
 	if not items is Array or items.is_empty():return reject("Tractor equipment catalogue is unavailable")
 	var kinds:=[]

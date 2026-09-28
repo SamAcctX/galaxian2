@@ -303,7 +303,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	if Engines.Definitions.available_for(bindings,int(loadout.ship_id)):
 		var mounts:=Mounts.new();engine_particles=Engines.new()
 		if not mounts.open(library,catalogues) or not engine_particles.configure(bindings,mounts,int(loadout.ship_id),int(entry.unix_seconds)):return reject(mounts.error+engine_particles.error)
-	if not pilot.configure_vehicle(bindings,catalogues,bindings.base_content_id,int(loadout.ship_id),[],loadout.equipment_ids,sensitivity):return reject(pilot.error)
+	if not pilot.configure_vehicle(bindings,catalogues,bindings.base_content_id,int(loadout.ship_id),preload("res://src/simulation/ship_instance.gd").upgrades(loadout),loadout.equipment_ids,sensitivity):return reject(pilot.error)
 	if not player.set_permissions(true,false):return reject(player.error)
 	var ships:={"player":int(loadout.ship_id)};var positions:={"player":entry.player_pose.origin};var freighters:=[];var assemblies:={}
 	if encounter!=null:

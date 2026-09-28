@@ -418,6 +418,8 @@ func open_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,un
 	var inventory: RefCounted=equipment.fork()
 	var receipt: Dictionary=inventory.open_ordinary_shopping(bindings,cat,stock,_lounges.snapshot().random,times,0,library)
 	if receipt.is_empty():return _shopping_reject(inventory.error)
+	var ship_percent:=int(_lounges.location(_state.station_id).stock.context.get("ship_price_percent",0))
+	if not inventory.open_ship_market(bindings,cat,_lounges.ship_stock(_state.station_id),ship_percent):return _shopping_reject(inventory.error)
 	var locations: RefCounted=_lounges.fork()
 	if not locations.replace_item_stock(bindings,cat,_state.station_id,stock,inventory.snapshot().stock,receipt.random):return _shopping_reject(locations.error)
 	_lounges=locations
@@ -429,7 +431,12 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 	if owned.is_empty():return null
 	if not owned.get("ordinary_shopping_open",false) or owned.stock!=_lounges.item_stock(_state.station_id):return _shopping_reject("Open the current station's hangar quote before trading")
 	var inventory: RefCounted=equipment.fork()
-	if action in ["mount","unmount","replace"]:
+	if action=="buy_ship":
+		if owned.get("market_ships")!=_lounges.ship_stock(_state.station_id):return _shopping_reject("The station's ship quote changed")
+		var passengers: Variant=_state.get("passengers")
+		if not Numbers.integer(passengers,0,2147483647) or passengers!=ContractProgress.occupied_passengers(_state):return _shopping_reject("Ship exchange lost the retained contract's passengers")
+		if not inventory.purchase_ship(bindings,cat,item_id,_state.credits,passengers):return _shopping_reject(inventory.error)
+	elif action in ["mount","unmount","replace"]:
 		# A retained delivery does not lock unrelated equipment. Its actual
 		# passengers must reach the shared occupied-berth guard; never assume
 		# an empty ship or discard the accepted mission to permit fitting.
@@ -442,6 +449,7 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 	var accepted: Dictionary=inventory.snapshot()
 	var locations: RefCounted=_lounges.fork()
 	if not locations.replace_item_stock(bindings,cat,_state.station_id,owned.stock,accepted.stock):return _shopping_reject(locations.error)
+	if action=="buy_ship" and not locations.replace_ship_stock(bindings,cat,_state.station_id,owned.market_ships,accepted.market_ships):return _shopping_reject(locations.error)
 	var credits:=credit_balance(_state.credits,accepted.credit_delta,_rules.delivery_results)
 	_lounges=locations;_state.credits=credits
 	return inventory

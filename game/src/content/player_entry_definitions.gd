@@ -44,7 +44,7 @@ func configure(bindings: RefCounted, value: int, station_id: int=-1, restoring_l
 		departure=true
 	if kind=="kappa":
 		if not load("res://src/content/kappa_lifecycle_definitions.gd").available(bindings):return reject("Kappa requires its retained equipment and source encounter")
-		equipped_entry=Cache.kappa_entry(bindings.mido_travel)
+		equipped_entry=Cache.kappa_entry(bindings.mido_travel,ship_id)
 		if equipped_entry.is_empty() or station_id!=int(equipped_entry.station_id) or ship_id!=int(equipped_entry.ship_id):return reject("Kappa player entry differs from its supported ship or location")
 		_travel=bindings.mido_travel.duplicate(true);departure=not restoring_local;restores_local=restoring_local
 	if kind=="sahi":
