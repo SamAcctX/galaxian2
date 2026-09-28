@@ -2886,6 +2886,14 @@
     "game/tests/foreground_particles.gd",
     "game/tests/foreground_particles.gd.uid",
     "game/tests/foreground_particles_application.gd",
-    "game/tests/foreground_particles_application.gd.uid"
+    "game/tests/foreground_particles_application.gd.uid",
+    "game/src/content/mine_definitions.gd",
+    "game/src/content/mine_definitions.gd.uid",
+    "game/src/simulation/area_weapon_blast.gd",
+    "game/src/simulation/area_weapon_blast.gd.uid",
+    "game/src/simulation/mine_projectiles.gd",
+    "game/src/simulation/mine_projectiles.gd.uid",
+    "game/tests/mine_projectiles.gd",
+    "game/tests/mine_projectiles.gd.uid"
   ]
 }

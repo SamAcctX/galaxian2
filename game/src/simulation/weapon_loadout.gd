@@ -7,6 +7,7 @@ const Vitals = preload("res://src/simulation/combat_vitals.gd")
 const TrainingWeapons = preload("res://src/content/combat_training_weapon_definitions.gd")
 const Fitting=preload("res://src/content/ordinary_fitting_definitions.gd")
 const Secondary=preload("res://src/content/conventional_secondary_definitions.gd")
+const Mines=preload("res://src/content/mine_definitions.gd")
 var error := ""
 var base_content_id := ""
 var binding_id := ""
@@ -54,8 +55,10 @@ func resolve(item_id: Variant, equipment_ids: Array) -> Dictionary:
 	var properties: Variant = item.get("properties")
 	if not properties is Dictionary: return fail("Weapon has no property table")
 	var values := {}
+	var mine:=Mines.declaration(item_id) if category==1 and kind==11 and not _fitting.is_empty() else {}
 	for field in ["damage", "interval", "lifetime", "speed"]:
-		var value: Variant = properties.get(int(_data[field+"_property"]))
+		var value: Variant = properties.get(int(_data[field+"_property"]),0 if not mine.is_empty() and field=="damage" else null)
+		if not mine.is_empty() and field=="speed":value=int(Mines.SPEED)
 		if not Vitals.integer(value): return fail("Weapon lacks a supported "+field+" property")
 		values[field] = value
 	var damage_factor := float(_data.default_multiplier)
@@ -103,6 +106,7 @@ func resolve(item_id: Variant, equipment_ids: Array) -> Dictionary:
 	if fitted.has("beam") and launch_mode=="alternate":launch_mode="beam"
 	var secondary:=Secondary.declaration(item_id,int(kind)) if category==1 and not _fitting.is_empty() else {}
 	if not secondary.is_empty():launch_mode="ordinary"
+	if not mine.is_empty():launch_mode="mine"
 	var result := {"base_content_id":base_content_id,"binding_id":binding_id,"item_id":item_id,"category":category,"kind":kind,
 		"damage":damage,"interval_ms":interval,"lifetime_ms":values.lifetime,"speed_units_per_millisecond":Vitals.single(float(values.speed)),
 		"modifier_item_id":selected,"damage_multiplier":damage_factor,"interval_multiplier":interval_factor,"launch_mode":launch_mode}
@@ -120,6 +124,7 @@ func resolve(item_id: Variant, equipment_ids: Array) -> Dictionary:
 	if not secondary.is_empty():
 		result.projectile_capacity=5
 		result.secondary_projectile=secondary
+	if not mine.is_empty():result.projectile_capacity=Mines.CAPACITY
 	var hit_policy: Dictionary = _data.get("ordinary_hit_policy",{})
 	if launch_mode in ["ordinary","beam"] and not hit_policy.is_empty():
 		var additional: Variant = properties.get(int(hit_policy.additional_damage_property),int(hit_policy.missing_additional_damage))

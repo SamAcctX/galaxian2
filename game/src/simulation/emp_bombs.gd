@@ -9,6 +9,7 @@ const Vitals=preload("res://src/simulation/combat_vitals.gd")
 const Geometry=preload("res://src/simulation/ordinary_hit_geometry.gd")
 const Visuals=preload("res://src/content/bomb_projectile_resources.gd")
 const Playback=preload("res://src/simulation/model_playback.gd")
+const Blast=preload("res://src/simulation/area_weapon_blast.gd")
 var error:=""
 var _weapon:={}
 var _shot:={}
@@ -112,25 +113,10 @@ func detonate(projectile_id: Variant,targets: Variant) -> Dictionary:
 	return result
 
 func _blast(shot: Dictionary,targets: Array) -> Dictionary:
-	var hits:=[]
-	for target in targets:
-		if not target.active or (_weapon.kind==6 and target.emp_immune):continue
-		var difference: Vector3=target.position-shot.position
-		var distance:=Vitals.single(sqrt(Vectors.dot(difference,difference)))
-		if not is_finite(distance) or distance>Vitals.MAX_SHIELD:return fail("EMP target distance exceeds supported coordinates")
-		var whole:=int(distance)
-		if whole>=_weapon.radius:continue
-		var fraction:=Vitals.single(Vitals.single(float(_weapon.radius-whole))/Vitals.single(float(_weapon.radius)))
-		var amount:=fraction
-		if _weapon.kind==7 and target.emp_immune:amount=Vitals.single(amount*Vitals.single(0.6))
-		var hit:={"actor_id":target.actor_id,"system_damage":int(Vitals.single(float(_weapon.system_damage)*amount)),"distance":whole}
-		if target.has("target"):hit.target=target.target.duplicate()
-		if _weapon.kind==7:
-			hit.normal_damage=int(Vitals.single(float(_weapon.damage)*amount))
-			hit.impact_vector=Vectors.normalized(difference);hit.motion_scalar=fraction
-		hits.append(hit)
-	return {"base_content_id":_weapon.base_content_id,"binding_id":_weapon.binding_id,
-		"projectile_id":shot.id,"item_id":_weapon.item_id,"position":shot.position,"hits":hits}
+	var operation:=Blast.new()
+	var result:=operation.evaluate(_weapon,shot,targets)
+	if result.is_empty():return fail(operation.error)
+	return result
 
 ## Collision candidates are sampled before movement. A first physical contact
 ## produces one radial pulse; the same bomb cannot hit overlapping bodies twice.
