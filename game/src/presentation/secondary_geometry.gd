@@ -1,14 +1,17 @@
 extends Node3D
-## Original EMP bodies and retained burst wrappers share one accepted frame.
+## Original secondary bodies and effects share one accepted frame.
 ## Removing the last ammunition slot never removes a live projectile or effect.
 const Ownership=preload("res://src/simulation/secondary_weapons.gd")
 const Models=preload("res://src/presentation/model_resources.gd")
 const Burst=preload("res://src/presentation/emp_detonation_geometry.gd")
+const Conventional=preload("res://src/presentation/conventional_secondary_geometry.gd")
 const Vectors=preload("res://src/simulation/source_vectors.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
 var error:=""
 var bodies: Array[Node3D]=[]
 var detonations: Array[Node3D]=[]
+var _conventional:={}
+var _detonation_slots: Array[int]=[]
 var _identity: RefCounted
 var _content:={}
 var _launchers:=[]
@@ -22,6 +25,10 @@ func build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: R
 	for key in ["base_content_id","binding_id"]:
 		if state.loadout.get(key)!=bindings.get(key):return fail("EMP geometry belongs to another content identity")
 	for gun in state.guns:
+		if gun.has("projectiles"):
+			if not gun.get("visuals") is Dictionary:return fail("Conventional secondary model clocks were not prepared")
+			launchers.append({"slot_index":gun.slot_index,"item_id":gun.equipment.item_id,"model_id":gun.visuals.model_id,"resource":gun.visuals.resource,"conventional":true})
+			continue
 		var weapon: Dictionary=gun.bomb.weapon
 		var id: int=weapon.model_id;var path: String=bindings.resolve(id,"mesh")
 		if id!=14684 or not path.ends_with("/misc/bomb_emp_a.aem") or weapon.kind!=6:return fail("EMP geometry lost the original bomb model mapping")
@@ -31,14 +38,21 @@ func build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: R
 	# Reject unknown animation rather than applying the model viewer's preview
 	# convention. The supported original projectile body has static tracks.
 	if not resources.prepare(paths,library,visuals,bindings,"high",true,true):return fail(resources.error)
-	for launcher in launchers:
+	for index in launchers.size():
+		var launcher: Dictionary=launchers[index]
+		if launcher.get("conventional",false):
+			var projectile:=Conventional.new();add_child(projectile);bodies.append(projectile);_conventional[index]=projectile
+			if not projectile.build(state.guns[index],library,visuals,bindings):resources.clear();return fail(projectile.error)
+			continue
 		var body: Node3D=resources.instantiate(launcher.resource)
 		if body==null:resources.clear();return fail("Original EMP body could not be instantiated")
 		add_child(body);body.hide();body.set_meta("source_resource_id",launcher.model_id);bodies.append(body)
 	resources.clear()
 	if owner.has_detonations():
 		for launcher in launchers:
+			if launcher.get("conventional",false):continue
 			var burst:=Burst.new();add_child(burst);detonations.append(burst)
+			_detonation_slots.append(launcher.slot_index)
 			if not burst.build(owner.detonation_owner(launcher.slot_index),library,visuals,bindings):return fail(burst.error)
 	_identity=owner.presentation_identity();_launchers=launchers
 	_content={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
@@ -54,10 +68,16 @@ func prepare_world(owner: RefCounted,camera: Variant=null) -> Dictionary:
 	if state.guns.size()!=_launchers.size():return failed("EMP presentation changed launcher count")
 	if owner.has_detonations()!=(not detonations.is_empty()):return failed("EMP presentation lost its prepared burst wrappers")
 	if not detonations.is_empty() and not camera is Transform3D:return failed("EMP bursts require the accepted flight camera")
-	var poses:=[]
+	var poses:=[];var projectiles:={}
 	for index in state.guns.size():
 		var gun: Dictionary=state.guns[index];var launcher: Dictionary=_launchers[index]
-		if gun.slot_index!=launcher.slot_index or gun.equipment.item_id!=launcher.item_id or gun.bomb.weapon.model_id!=launcher.model_id:return failed("EMP presentation changed the source launcher order")
+		if gun.slot_index!=launcher.slot_index or gun.equipment.item_id!=launcher.item_id:return failed("Secondary presentation changed the source launcher order")
+		if launcher.get("conventional",false):
+			var projectile: Dictionary=_conventional[index].prepare(gun,camera if camera is Transform3D else Transform3D.IDENTITY)
+			if projectile.is_empty():return failed(_conventional[index].error)
+			projectiles[index]=projectile;poses.append({"visible":true,"pose":Transform3D.IDENTITY})
+			continue
+		if gun.get("bomb",{}).get("weapon",{}).get("model_id")!=launcher.model_id:return failed("EMP presentation changed its original model")
 		var shot: Dictionary=gun.bomb.shot
 		if shot.is_empty() or shot.get("phase")=="detonated":poses.append({"visible":false,"pose":Transform3D.IDENTITY});continue
 		if shot.get("phase")!="flying" or not Numbers.integer(shot.get("id"),1,2147483647) or not shot.get("position") is Vector3 or not shot.position.is_finite() or not shot.get("velocity") is Vector3 or not shot.velocity.is_finite():return failed("EMP presentation lost a finite live projectile")
@@ -70,11 +90,11 @@ func prepare_world(owner: RefCounted,camera: Variant=null) -> Dictionary:
 		var pose:=Transform3D(Basis(right,up,forward),shot.position)
 		if not pose.is_finite():return failed("EMP presentation exceeded finite world coordinates")
 		poses.append({"visible":true,"pose":pose})
-	var frame:={"identity":_identity,"generation":_generation,"revision":_revision+1,"bodies":poses}
+	var frame:={"identity":_identity,"generation":_generation,"revision":_revision+1,"bodies":poses,"conventional":projectiles}
 	if not detonations.is_empty():
 		var effects:=[]
 		for index in detonations.size():
-			var effect: Dictionary=detonations[index].prepare_effect(owner.detonation_owner(_launchers[index].slot_index),camera,PackedByteArray([255,255,255,255]),Vector4.ONE,1.0)
+			var effect: Dictionary=detonations[index].prepare_effect(owner.detonation_owner(_detonation_slots[index]),camera,PackedByteArray([255,255,255,255]),Vector4.ONE,1.0)
 			if effect.is_empty():return failed(detonations[index].error)
 			effects.append(effect)
 		frame.detonations=effects
@@ -91,10 +111,12 @@ func commit_world(frame: Dictionary) -> void:
 		bodies[index].transform=frame.bodies[index].pose
 		bodies[index].visible=frame.bodies[index].visible
 	for index in detonations.size():detonations[index].commit_effect(frame.detonations[index])
+	for index in _conventional:_conventional[index].commit(frame.conventional[index])
 
 func clear() -> void:
 	for child in get_children():child.free()
 	bodies.clear();detonations.clear();_identity=null;_content={};_launchers=[];error=""
+	_conventional={};_detonation_slots=[]
 	_generation=null;_revision=0
 
 func fail(message: String) -> bool:clear();error=message;return false

@@ -830,7 +830,8 @@ func shooter_states() -> Array:
 func supports_weapon_hit(weapon: Variant) -> bool:
 	if _selected40_world!=null and not has_local_reactions():return reject("Selected40 weapon contacts require complete consequence owners")
 	var fitted: bool=weapon is Dictionary and preload("res://src/content/ordinary_fitting_definitions.gd").ordinary(weapon)
-	var kinds: Array=[int(weapon.kind)] if fitted else [0]
+	var secondary: bool=weapon is Dictionary and preload("res://src/content/conventional_secondary_definitions.gd").resolved(weapon)
+	var kinds: Array=[int(weapon.kind)] if fitted or secondary else [0]
 	if not _training_weapons.is_empty() and weapon is Dictionary:
 		if weapon.get("nonplayer_source",false)==true:
 			var valid: bool=Story.npc_hit(_training_weapons,weapon) if _training_weapons.get("authored_story",false) else Kappa.npc_hit(_training_weapons,weapon) if _training_weapons.has("kappa_lifecycle") else FreeLife.npc_hit(_training_weapons,weapon) if _training_weapons.has("free_lifecycle") else Alioth.npc_hit(_training_weapons,weapon) if _training_weapons.has("alioth_lifecycle") else Convoy.npc_hit(_training_weapons,weapon) if _training_weapons.has("capital_death") else (BakkaCombat.npc_hit(_training_weapons,weapon) if not _bakka_encounter.is_empty() else (ContractLife.npc_hit(_training_weapons,weapon) if not _contract_encounter.is_empty() else (Travel.npc_hit(_training_weapons,weapon) if _provocation!=null else TrainingWeapons.npc_hit(_training_weapons,weapon))))

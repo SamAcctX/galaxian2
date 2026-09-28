@@ -49,6 +49,12 @@ func evaluate(projectiles: RefCounted, bodies: RefCounted, ordered_object_indice
 			if not query.hit: continue
 			var hit: Dictionary = staged_bodies.weapon_hit(object_index,shots.weapon)
 			if hit.is_empty(): return fail(staged_bodies.error)
+			if shots.weapon.get("secondary_projectile",{}).get("penetrates_scenery",false):
+				# An asteroid breaks without consuming the rocket or missile. Its
+				# destruction owner supplies the effect; this launcher checks the
+				# next asteroid on its next update.
+				contacts.append({"object_index":object_index,"slot":slot,"projectile_id":projectile.id,"geometry":query,"damage":hit,"projectile_continues":true})
+				return {"projectiles":staged_shots,"bodies":staged_bodies,"contacts":contacts,"last_contact_object_index":last_contact_object_index}
 			if not staged_bodies.record_contact(object_index,projectile.velocity): return fail(staged_bodies.error)
 			if not staged_shots.mark_impact(projectile.id): return fail(staged_shots.error)
 			last_contact_object_index=object_index

@@ -270,6 +270,7 @@ func detached_encounter(bindings: RefCounted,cat: RefCounted,lib: RefCounted,bui
 	var group:=active_group(bindings,cat,built,0)
 	if group==null:return null
 	var result:=Encounter.new()
+	result._max_ms=Encounter.Frames.simulation_limit(bindings,150)
 	result._identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":21}
 	result._control=control;result._combat=group;result._weapons=weapons;result._resources=resources
 	# Geometry and scenery are deliberately outside this component test. The

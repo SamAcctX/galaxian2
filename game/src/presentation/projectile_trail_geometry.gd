@@ -1,7 +1,7 @@
 extends MeshInstance3D
 ## Crossed, diagonal ribbons use the imported additive atlas. Geometry consumes
 ## retained simulation sections and never advances an emission or fade clock.
-const Definitions=preload("res://src/content/thermal_primary_definitions.gd")
+const Definitions=preload("res://src/content/projectile_trail_definitions.gd")
 const Materials=preload("res://src/presentation/material_library.gd")
 var error:=""
 var _preset:={}
@@ -32,7 +32,9 @@ func prepare(trails: Array, tint: Vector4) -> Dictionary:
 			var section: Dictionary=trail.sections[index]
 			var end:=_fade(section.age_ms)
 			var start:=0.0 if index==0 else _fade(trail.sections[index-1].age_ms)
-			if not append_section(data,section.from,section.to,start,end,_preset.uv_rect,tint):return failed("Nonfinite projectile trail section")
+			var uv: Vector4=_preset.uv_rect
+			uv.w=lerpf(uv.y,uv.w,float(section.get("uv_fraction",1.0)))
+			if not append_section(data,section.from,section.to,start,end,uv,tint):return failed("Nonfinite projectile trail section")
 		if trail.emitting:
 			var head: Transform3D=trail.head
 			var edge:=Transform3D(head.basis,head.origin-head.basis.z*float(_preset.cap_length))

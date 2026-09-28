@@ -104,7 +104,7 @@ func verify_rejections(panel: Control,sample: Dictionary) -> void:
 			"boolean":bad.weapons[0].live=1
 			"timer":bad.weapons[0].wait_ms=2147483648
 			"repeat":bad.weapons.append(bad.weapons[0].duplicate(true))
-			"action":bad.actions=[{"item_id":41,"action":"launched"}]
+			"action":bad.actions=[{"item_id":41,"action":"unsupported"}]
 			"missing":bad.erase("selected_item_id")
 		check(not panel.present(bad) and panel.snapshot()==before,"Rejected feedback changed the visible controls: "+corruption)
 

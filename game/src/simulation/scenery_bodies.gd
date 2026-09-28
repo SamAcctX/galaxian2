@@ -102,6 +102,7 @@ func supports_weapon_hit(weapon: Variant) -> bool:
 	var kinds:=[0]
 	if _dispersed_primary and TrainingWeapons.dispersed_primary(weapon):kinds.append(2)
 	if weapon is Dictionary and preload("res://src/content/ordinary_fitting_definitions.gd").ordinary(weapon):kinds=[int(weapon.kind)]
+	if weapon is Dictionary and preload("res://src/content/conventional_secondary_definitions.gd").resolved(weapon):kinds=[int(weapon.kind)]
 	error=WeaponHit.validate(weapon,_identity,_hit_policy,kinds)
 	return error.is_empty()
 
@@ -114,7 +115,8 @@ func weapon_hit(object_index: Variant, weapon: Variant) -> Dictionary:
 	# already exhausted hull, or the damage permission rejects this hit.
 	_rows[object_index]=_rows[object_index].duplicate(true)
 	_rows[object_index].motion_scalar=0.0
-	var result := normal_hit(object_index,weapon.ordinary_hit_policy.nonplayer_damage)
+	var amount: int=weapon.secondary_projectile.scenery_damage if weapon.has("secondary_projectile") else weapon.ordinary_hit_policy.nonplayer_damage
+	var result := normal_hit(object_index,amount)
 	if result.is_empty(): return {}
 	result.motion_scalar_before=before
 	result.motion_scalar_after=0.0

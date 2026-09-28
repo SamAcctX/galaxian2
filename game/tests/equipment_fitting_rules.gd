@@ -127,19 +127,19 @@ func verify_fitting(args: PackedStringArray) -> void:
 func verify_secondary_fitting(bindings: RefCounted,cat: RefCounted,seed: Dictionary,assets: Dictionary,support: Dictionary) -> void:
 	var available: bool=Fitting.Secondaries.Definitions.available(bindings)
 	for item in cat.tables.items:
-		if item.arrays[2][3]==1 and (not available or item.id not in [41,42,43]):
+		if item.arrays[2][3]==1 and (not available or item.id not in range(31,44)):
 			check(not support[item.id].is_empty(),"Unimplemented secondary equipment was offered for fitting")
 	if not available:return
 	var fitting:=Fitting.new();var held: Dictionary=seed.duplicate(true)
 	var offset:=int(cat.tables.ships[seed.ship_id].stats.primary_slots)
-	for id in [41,42,43]:
+	for id in range(31,44):
 		var candidate:=seed.duplicate(true)
 		candidate.slots[offset]={"item_id":id,"category":1,"slot":0,"quantity":10}
 		candidate.equipment_ids=[id]
 		var resolved:=fitting.inspect(bindings,cat,candidate,assets)
-		check(not resolved.is_empty() and support[id].is_empty(),"A verified EMP stack was unavailable for fitting: "+fitting.error)
+		check(not resolved.is_empty() and support[id].is_empty(),"A supported secondary stack was unavailable for fitting: "+fitting.error)
 		var owner:=Fitting.Secondaries.new()
-		check(owner.configure(bindings,cat,candidate) and owner.snapshot().guns[0].ammunition==10,"Fitting disagreed with actual launcher construction: "+owner.error)
+		check(owner.configure(bindings,cat,candidate,assets.get("mounts")) and owner.snapshot().guns[0].ammunition==10,"Fitting disagreed with actual launcher construction: "+owner.error)
 		var missing: Dictionary=assets.duplicate(true);missing.items.erase(id)
 		check(fitting.inspect(bindings,cat,candidate,missing).is_empty(),"Installed EMP bypassed original asset verification")
 		# Shared content validation accepts integral JSON numbers, but not

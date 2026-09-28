@@ -2836,6 +2836,20 @@
     "game/tests/thermal_primary_application.gd",
     "game/tests/thermal_primary_application.gd.uid",
     "game/tests/thermal_trail_geometry.gd",
-    "game/tests/thermal_trail_geometry.gd.uid"
+    "game/tests/thermal_trail_geometry.gd.uid",
+    "game/src/content/conventional_secondary_definitions.gd",
+    "game/src/content/conventional_secondary_definitions.gd.uid",
+    "game/src/content/projectile_trail_definitions.gd",
+    "game/src/content/projectile_trail_definitions.gd.uid",
+    "game/tests/conventional_projectiles.gd",
+    "game/tests/conventional_projectiles.gd.uid",
+    "game/tests/conventional_secondaries.gd",
+    "game/tests/conventional_secondaries.gd.uid",
+    "game/src/presentation/conventional_secondary_geometry.gd",
+    "game/src/presentation/conventional_secondary_geometry.gd.uid",
+    "game/tests/conventional_secondary_geometry.gd",
+    "game/tests/conventional_secondary_geometry.gd.uid",
+    "game/tests/conventional_secondary_application.gd",
+    "game/tests/conventional_secondary_application.gd.uid"
   ]
 }

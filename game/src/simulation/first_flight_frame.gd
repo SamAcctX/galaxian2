@@ -677,7 +677,9 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 	# Geometry managers run in the early weapon phase, using preceding NPC
 	# roots and renderer reference. Scenery lifecycle belongs to the later pass.
 	if next._engine_particles!=null and not next._engine_particles.advance(next._statistics_pose,delta_ms):reject(next._engine_particles.error);return null
-	if next._particles!=null and not next._particles.advance(next._pose,delta_ms):reject(next._particles.error);return null
+	if next._particles!=null:
+		if next._encounter!=null and not next._particles.apply_weapon_impacts(next._encounter.secondary_impacts()):reject(next._particles.error);return null
+		if not next._particles.advance(next._pose,delta_ms):reject(next._particles.error);return null
 	var positions:={"player":next._pose.origin}
 	if next._encounter!=null:
 		for actor in next._encounter.combat_snapshot().actors:

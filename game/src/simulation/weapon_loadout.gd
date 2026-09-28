@@ -6,6 +6,7 @@ const Library = preload("res://src/content/library.gd")
 const Vitals = preload("res://src/simulation/combat_vitals.gd")
 const TrainingWeapons = preload("res://src/content/combat_training_weapon_definitions.gd")
 const Fitting=preload("res://src/content/ordinary_fitting_definitions.gd")
+const Secondary=preload("res://src/content/conventional_secondary_definitions.gd")
 var error := ""
 var base_content_id := ""
 var binding_id := ""
@@ -100,6 +101,8 @@ func resolve(item_id: Variant, equipment_ids: Array) -> Dictionary:
 	var fitted:=Fitting.primary(_fitting,item_id,int(kind)) if category==0 and not _fitting.is_empty() else {}
 	if not fitted.is_empty() and item_id not in modes.get("alternate_item_ids",[]):launch_mode="ordinary"
 	if fitted.has("beam") and launch_mode=="alternate":launch_mode="beam"
+	var secondary:=Secondary.declaration(item_id,int(kind)) if category==1 and not _fitting.is_empty() else {}
+	if not secondary.is_empty():launch_mode="ordinary"
 	var result := {"base_content_id":base_content_id,"binding_id":binding_id,"item_id":item_id,"category":category,"kind":kind,
 		"damage":damage,"interval_ms":interval,"lifetime_ms":values.lifetime,"speed_units_per_millisecond":Vitals.single(float(values.speed)),
 		"modifier_item_id":selected,"damage_multiplier":damage_factor,"interval_multiplier":interval_factor,"launch_mode":launch_mode}
@@ -114,6 +117,9 @@ func resolve(item_id: Variant, equipment_ids: Array) -> Dictionary:
 		if fitted.has("beam"):result.beam=fitted.beam.duplicate(true)
 		if fitted.has("thermal"):result.thermal=fitted.thermal.duplicate(true)
 		if fitted.has("dispersion"):result.dispersion=fitted.dispersion
+	if not secondary.is_empty():
+		result.projectile_capacity=5
+		result.secondary_projectile=secondary
 	var hit_policy: Dictionary = _data.get("ordinary_hit_policy",{})
 	if launch_mode in ["ordinary","beam"] and not hit_policy.is_empty():
 		var additional: Variant = properties.get(int(hit_policy.additional_damage_property),int(hit_policy.missing_additional_damage))

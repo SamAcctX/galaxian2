@@ -143,6 +143,9 @@ func detached_views(bindings: RefCounted,cat: RefCounted,lib: RefCounted,initial
 	for row in held.slots:prices.append(null if row==null else {"item_id":row.item_id,"unit_price":65 if row.item_id==41 else 91})
 	equipment._state={"loadout":held,"prices":{"installed":prices,"cargo":[{"item_id":22,"unit_price":104}]},"training_inventory_released":true,"prototype_drill_replaced":true,"transactions":12,"credit_delta":-77,"stock":[{"item_id":41,"quantity":8,"unit_price":0}],"cargo":{"entries":[{"item_id":22,"quantity":1}],"used":1},"cargo_cache_stale":false}
 	equipment._rules={"weapon_category":0,"armor_subtype":10}
+	var capacity: int=preload("res://src/simulation/equipment_stats.gd").cargo_capacity(bindings,cat,held)
+	equipment._state.cargo.merge({"base_content_id":initial.base_content_id,"binding_id":initial.binding_id,"ship_id":initial.ship_id,"capacity":capacity,"free_space":capacity-1})
+	equipment._completion_prices.resize(cat.tables.items.size());equipment._completion_prices.fill(104)
 	equipment._items={22:{"category":0,"subtype":0},41:{"category":1,"subtype":6}}
 	var primary:=Primaries.new();var mounts:=Mounts.new()
 	# The shared weapon utility supports detached loadouts without a mission;

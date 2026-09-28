@@ -11,6 +11,7 @@ const Library=preload("res://src/content/library.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
 const OriginalUI=preload("res://src/presentation/original_ui.gd")
 const Controls=preload("res://src/input/flight_controls.gd")
+const Catalogues=preload("res://src/content/catalogues.gd")
 const MENU_TEXT_IDS={"title":255,"selected":266,"none":275,"confirm":130,"cancel":414}
 var error:=""
 var _identity:={}
@@ -82,7 +83,13 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted=null
 	error=""
 	if library==null or bindings==null or not Ownership.Definitions.available(bindings) or not Library.valid_hash(bindings.binding_id) or library.manifest.get("content_id")!=bindings.base_content_id or library.active_language.is_empty():return reject("Secondary controls require matching imported content and an active language")
 	var names:={}
-	for id in Ownership.Definitions.VALUES.item_ids:
+	var catalogue:=Catalogues.new()
+	if not catalogue.open(library):return reject(catalogue.error)
+	# Names are presentation data. The equipped owner decides which launchers
+	# are supported; a menu must not maintain a second capability list.
+	for item in catalogue.tables.items:
+		if item.arrays[2][3]!=1:continue
+		var id:=int(item.id)
 		var text_id: int=int(id)+int(bindings.station_equipment.item_text_offset)
 		if text_id<0 or text_id>=library.strings.size() or not library.strings[text_id] is String or library.strings[text_id].is_empty():return reject("The equipped secondary name is unavailable")
 		names[int(id)]=library.strings[text_id]
@@ -110,17 +117,17 @@ func present(sample: Dictionary) -> bool:
 	for key in ["base_content_id","binding_id"]:
 		if sample.get(key)!=_identity[key]:return reject("Secondary controls belong to another content identity")
 	if not sample.get("selected_item_id") is int or not sample.get("weapons") is Array or sample.weapons.size()>_names.size() or not sample.get("actions") is Array:return reject("Invalid secondary control sample")
-	var ids:={};var slots:={};var expected_actions:=[];var ended:=false
+	var ids:={};var slots:={}
 	for weapon in sample.weapons:
 		if not weapon is Dictionary or not weapon.get("item_id") is int or not _names.has(weapon.item_id) or ids.has(weapon.item_id):return reject("Secondary controls lost a unique equipped item")
 		if not Numbers.integer(weapon.get("quantity"),0,2147483647) or not weapon.get("live") is bool or not Numbers.integer(weapon.get("slot_index"),0,2147483647) or slots.has(weapon.slot_index) or not Numbers.integer(weapon.get("wait_ms"),0,2147483647):return reject("Secondary controls lost ammunition, timing or slot identity")
 		ids[weapon.item_id]=true;slots[weapon.slot_index]=true
-		if ended:continue
-		if weapon.live:expected_actions.append({"item_id":weapon.item_id,"action":"detonated"})
-		elif weapon.item_id==sample.selected_item_id and weapon.quantity>0 and weapon.wait_ms==0:
-			expected_actions.append({"item_id":weapon.item_id,"action":"launched"});ended=true
+		if not Numbers.integer(weapon.get("in_flight",int(weapon.live)),0,4096):return reject("Secondary controls lost their retained projectile count")
 	if sample.selected_item_id!=-1 and not ids.has(sample.selected_item_id):return reject("Secondary controls selected an unavailable launcher")
-	if sample.actions!=expected_actions:return reject("Secondary control feedback disagrees with launcher order or readiness")
+	# Readiness includes retained capacity and manual bomb detonation. Consume
+	# the owner's accepted actions instead of reconstructing its firing rules.
+	for action in sample.actions:
+		if not action is Dictionary or not ids.has(action.get("item_id")) or action.get("action") not in ["launched","detonated"]:return reject("Invalid secondary control action")
 	if _state!=sample:_state=sample.duplicate(true);_refresh()
 	return true
 
@@ -147,7 +154,7 @@ func _refresh() -> void:
 	if _state.is_empty():_refresh_visibility();return
 	var selected:={};var live:=0;var remaining:=0
 	for weapon in _state.weapons:
-		live+=int(weapon.live);remaining+=weapon.quantity
+		live+=int(weapon.get("in_flight",int(weapon.live)));remaining+=weapon.quantity
 		if weapon.item_id==_state.selected_item_id:selected=weapon
 	var launches: int=_state.actions.filter(func(action):return action.action=="launched").size()
 	var detonations: int=_state.actions.size()-launches
@@ -164,6 +171,7 @@ func _refresh() -> void:
 	elif remaining==0:_status.text="No ammunition remaining"
 	elif selected.is_empty():_status.text="Select a secondary weapon"
 	elif selected.quantity==0:_status.text="Selected ammunition exhausted"
+	elif selected.wait_ms==0 and selected.get("in_flight",0)>0:_status.text="Projectiles in flight"
 	else:_status.text="Reloading · %.1f s"%(ceilf(float(selected.wait_ms)/100.0)/10.0)
 	# Both input families remain usable. A previously used controller is not
 	# evidence that the player stopped using the keyboard.

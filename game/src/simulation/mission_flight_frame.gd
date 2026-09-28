@@ -191,6 +191,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	var contacts: Dictionary=next._encounter.evaluate_weapons(next._player,next._pose,milliseconds,next._scenery,next._random,true,not prior.radio.visible,-1 if next._scanner==null else next._scanner.guidance_target_id())
 	if contacts.is_empty():return failed(next._encounter.error)
 	next._encounter=contacts.encounter;next._player=contacts.player;next._scenery=contacts.scenery;next._random=contacts.random_state
+	if not next._particles.apply_weapon_impacts(next._encounter.secondary_impacts()):return failed(next._particles.error)
 	if not dying and next._player.snapshot().vitals.hull<=0:
 		if not next._death.start(next._player,next._pose,Vector3.ZERO,next._camera.snapshot().pose,_state.campaign_cursor,Basis.IDENTITY,next._pose,next._encounter.secondary_owner()):return failed(next._death.error)
 		if not next._player.set_permissions(false,next._player.snapshot().damage_allowed) or not next._engines.set_engine_enabled(false):return failed(next._player.error+next._engines.error)

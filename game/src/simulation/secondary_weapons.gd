@@ -1,6 +1,6 @@
 extends RefCounted
-## Equipped EMP ownership. Prospective operations commit ammo, bomb state and
-## target systems together. The flight supplies selection, permissions and targets.
+## Equipped secondary ownership. Prospective operations commit ammunition,
+## retained projectiles and target damage together.
 const Definitions=preload("res://src/content/secondary_ownership_definitions.gd")
 const Loadout=preload("res://src/simulation/equipment_slots.gd")
 const Bomb=preload("res://src/simulation/emp_bombs.gd")
@@ -10,6 +10,12 @@ const Vitals=preload("res://src/simulation/combat_vitals.gd")
 const Audio=preload("res://src/simulation/weapon_audio.gd")
 const Flight=preload("res://src/simulation/npc_flight.gd")
 const Random=preload("res://src/simulation/seeded_random.gd")
+const Weapons=preload("res://src/simulation/weapon_loadout.gd")
+const Projectiles=preload("res://src/simulation/ordinary_projectiles.gd")
+const Conventional=preload("res://src/content/conventional_secondary_definitions.gd")
+const Contacts=preload("res://src/simulation/ordinary_opening_contacts.gd")
+const NpcContacts=preload("res://src/simulation/ordinary_npc_contacts.gd")
+const Playback=preload("res://src/simulation/model_playback.gd")
 var error:=""
 var _initial_loadout:={}
 var _loadout:={}
@@ -19,7 +25,7 @@ var _detonation_events: Array[Dictionary]=[]
 var _camera_commands: Array[Dictionary]=[]
 var _presentation_identity: RefCounted
 
-func configure(bindings: RefCounted,cat: RefCounted,loadout: Dictionary) -> bool:
+func configure(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,mounts: RefCounted=null) -> bool:
 	error=""
 	if not Definitions.available(bindings):return reject("This content has no supported secondary ownership")
 	var checked:=Loadout.checked_slots(bindings,cat,loadout)
@@ -27,14 +33,27 @@ func configure(bindings: RefCounted,cat: RefCounted,loadout: Dictionary) -> bool
 	var weapons: Array=checked.categories[int(Definitions.VALUES.category)].duplicate(true)
 	weapons.reverse()
 	var guns:=[];var seen:={}
+	var resolver:=Weapons.new()
+	if not resolver.configure(bindings,cat,bindings.base_content_id):return reject(resolver.error)
 	for entry in weapons:
-		if entry.item_id not in Definitions.VALUES.item_ids or entry.quantity<1 or seen.has(entry.item_id):return reject("This installed secondary is unsupported or has an invalid ammunition stack")
-		var bomb:=Bomb.new()
-		if not bomb.configure(bindings,cat,entry.item_id,checked.equipment_ids):return reject(bomb.error)
+		if entry.quantity<1 or seen.has(entry.item_id):return reject("This installed secondary has an invalid ammunition stack")
 		var index: int=int(checked.counts[0])+entry.slot
-		var sound: int=int(Definitions.VALUES.launch_audio.event_ids[Definitions.VALUES.item_ids.find(entry.item_id)])
-		guns.append({"slot_index":index,"equipment":entry.duplicate(true),"ammunition":entry.quantity,"bomb":bomb,
-			"audio":{"enabled":true,"source_id":sound,"pitch_raw":float(Definitions.VALUES.launch_audio.pitch_raw)}})
+		var gun:={"slot_index":index,"equipment":entry.duplicate(true),"ammunition":entry.quantity}
+		if entry.item_id in Definitions.VALUES.item_ids:
+			var bomb:=Bomb.new()
+			if not bomb.configure(bindings,cat,entry.item_id,checked.equipment_ids):return reject(bomb.error)
+			gun.bomb=bomb
+			gun.audio={"enabled":true,"source_id":int(Definitions.VALUES.launch_audio.event_ids[Definitions.VALUES.item_ids.find(entry.item_id)]),"pitch_raw":float(Definitions.VALUES.launch_audio.pitch_raw)}
+		else:
+			var weapon:=resolver.resolve(entry.item_id,checked.equipment_ids)
+			if not Conventional.resolved(weapon):return reject("This installed secondary has no supported launch declaration")
+			if loadout.has("campaign_cursor"):weapon.campaign_cursor=loadout.campaign_cursor
+			if not is_instance_of(mounts,load("res://src/content/weapon_mounts.gd")):return reject("Conventional launchers require the ship's authored mounts")
+			gun.mount=mounts.resolve(int(checked.ship_id),1,int(entry.slot))
+			gun.projectiles=Projectiles.new()
+			if gun.mount.is_empty() or not gun.projectiles.configure(weapon):return reject(mounts.error+gun.projectiles.error)
+			gun.audio={"enabled":true,"source_id":int(bindings.weapon_parameters.audio.player_event_ids[entry.item_id]),"pitch_raw":0.0}
+		guns.append(gun)
 		seen[entry.item_id]=true
 	_initial_loadout=loadout.duplicate(true);_loadout=loadout.duplicate(true);_guns=guns;_launches=0;_detonation_events=[];_camera_commands=[]
 	_presentation_identity=RefCounted.new()
@@ -44,20 +63,40 @@ func configure(bindings: RefCounted,cat: RefCounted,loadout: Dictionary) -> bool
 ## callers may omit presentation; actual effect callers must prepare it explicitly.
 func configure_detonations(resources: RefCounted) -> bool:
 	error=""
-	if _loadout.is_empty() or _guns.is_empty() or _launches!=0 or has_detonations() or not resources is Detonation.Resources:return reject("Prepare EMP bursts once, before launching")
+	if _loadout.is_empty() or not has_bombs() or _launches!=0 or has_detonations() or not resources is Detonation.Resources:return reject("Prepare EMP bursts once, before launching")
 	var data: Dictionary=resources.snapshot()
 	for key in ["base_content_id","binding_id"]:
 		if data.get(key)!=_loadout[key]:return reject("EMP burst resources belong to another weapon owner")
-	var prepared:=[]
+	var prepared:={}
 	for gun in _guns:
+		if not gun.has("bomb"):continue
 		var burst:=Detonation.new()
 		if not burst.configure(resources,int(gun.equipment.item_id)):return reject(burst.error)
-		prepared.append(burst)
-	for index in _guns.size():_guns[index].detonation=prepared[index]
+		prepared[gun.slot_index]=burst
+	for gun in _guns:
+		if prepared.has(gun.slot_index):gun.detonation=prepared[gun.slot_index]
+	return true
+
+func has_bombs() -> bool:return _guns.any(func(gun):return gun.has("bomb"))
+
+func configure_projectile_visuals(library: RefCounted,bindings: RefCounted) -> bool:
+	error=""
+	if _loadout.is_empty() or _launches!=0:return reject("Prepare projectile models before the first secondary launch")
+	for key in ["base_content_id","binding_id"]:
+		if _loadout.get(key)!=bindings.get(key):return reject("Secondary models belong to another content identity")
+	var prepared:={}
+	for gun in _guns:
+		if not gun.has("projectiles"):continue
+		if gun.has("visuals"):return reject("Secondary model clocks were already prepared")
+		var visual:=Conventional.presentation(library,bindings,gun.projectiles.snapshot().weapon)
+		if visual.is_empty():return reject("Conventional launcher has unsupported original body or attachment animation")
+		prepared[gun.slot_index]=visual
+	for gun in _guns:
+		if prepared.has(gun.slot_index):gun.visuals=prepared[gun.slot_index]
 	return true
 
 func has_detonations() -> bool:
-	return not _guns.is_empty() and _guns.all(func(gun):return gun.has("detonation"))
+	return has_bombs() and _guns.all(func(gun):return not gun.has("bomb") or gun.has("detonation"))
 
 func detonation_owner(slot_index: int) -> RefCounted:
 	for gun in _guns:
@@ -72,11 +111,17 @@ func evaluate_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted
 	var next:=fork();var group: RefCounted=combat.fork_for_frame();var events:=[];var exhausted:=false
 	if permitted:
 		for gun in next._guns:
-			var before: Dictionary=gun.bomb.snapshot()
-			var flying: bool=before.shot.get("phase")=="flying"
+			var before: Dictionary=gun.bomb.snapshot() if gun.has("bomb") else gun.projectiles.snapshot()
+			var flying: bool=before.get("shot",{}).get("phase")=="flying"
 			if not flying and gun.equipment.item_id!=selected_item_id:continue
-			var event: Dictionary=gun.bomb.trigger(pose,gun.ammunition,targets,true)
-			if event.is_empty():return fail(gun.bomb.error)
+			var event: Dictionary
+			if gun.has("bomb"):
+				event=gun.bomb.trigger(pose,gun.ammunition,targets,true)
+				if event.is_empty():return fail(gun.bomb.error)
+			else:
+				var shot: Dictionary=gun.projectiles.fire_forward_from_mount(gun.mount,pose,gun.ammunition>0)
+				if shot.is_empty():return fail(gun.projectiles.error)
+				event={"action":"launched","ammunition_consumed":1,"shot":shot.projectile} if shot.fired else {"action":"none"}
 			if event.action=="none":
 				if gun.ammunition==0 and before.elapsed_ms>before.weapon.interval_ms:exhausted=true
 				continue
@@ -100,16 +145,35 @@ func evaluate_player_trigger(pose: Variant,selected_item_id: Variant,combat: Ref
 	operation.merge(retained)
 	return operation
 
-func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Variant,observer_position: Variant=null) -> Dictionary:
+func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Variant,observer_position: Variant=null,bodies: RefCounted=null,inventory: RefCounted=null,guidance_actor_id: int=-1) -> Dictionary:
 	error=""
 	var targets:=_targets(combat,ordered_actor_ids)
 	if not error.is_empty():return {}
 	if not Vitals.integer(delta_ms):return fail("Invalid secondary frame duration")
 	var next:=fork();var group: RefCounted=combat.fork_for_frame();var events:=[]
+	var field: RefCounted=bodies
 	next._detonation_events.clear();next._camera_commands.clear()
 	# Projectile wrappers update in creation order, independently of firing order.
 	for index in range(next._guns.size()-1,-1,-1):
 		var gun: Dictionary=next._guns[index]
+		if gun.has("projectiles"):
+			if gun.has("visuals"):Playback.advance([gun.visuals.attachment],int(delta_ms),true)
+			var shots: Dictionary=gun.projectiles.snapshot()
+			if gun.projectiles.has_retained_projectiles():
+				var contacts: RefCounted=Contacts.new() if field!=null else NpcContacts.new()
+				var result: Dictionary=contacts.evaluate(gun.projectiles,group,field,inventory) if field!=null else contacts.evaluate(gun.projectiles,group,ordered_actor_ids)
+				if result.is_empty():return fail(contacts.error)
+				gun.projectiles=result.projectiles;group=result.combat
+				if field!=null:field=result.bodies
+				for hit in result.contacts:
+					if hit.get("projectile_continues",false):continue
+					var projectile: Dictionary=shots.slots[hit.slot]
+					var contact: Dictionary=hit.duplicate(true)
+					contact.merge({"action":"impact","slot_index":gun.slot_index,"item_id":gun.equipment.item_id,"position":projectile.position,"audio":{},"ammunition_consumed":0})
+					events.append(contact)
+			var target: Variant=group.guidance_position(guidance_actor_id) if gun.projectiles.has_guidance() else null
+			if gun.projectiles.advance(delta_ms,target).is_empty():return fail(gun.projectiles.error)
+			continue
 		var before: Dictionary=gun.bomb.snapshot()
 		var event: Dictionary=gun.bomb.advance(delta_ms,targets)
 		if event.is_empty():return fail(gun.bomb.error)
@@ -125,7 +189,7 @@ func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Va
 		var committed: Dictionary=next._apply_event(gun,event,group,Vector3.ZERO)
 		if committed.is_empty():return fail(next.error)
 		events.append(committed)
-	return {"owner":next,"combat":group,"events":events,"loadout":next._loadout.duplicate(true)}
+	return {"owner":next,"combat":group,"bodies":field,"events":events,"loadout":next._loadout.duplicate(true)}
 
 func evaluate_contact(slot_index: Variant,projectile_id: Variant,combat: RefCounted,ordered_actor_ids: Variant) -> Dictionary:
 	error=""
@@ -135,6 +199,7 @@ func evaluate_contact(slot_index: Variant,projectile_id: Variant,combat: RefCoun
 	var next:=fork();var group: RefCounted=combat.fork_for_frame()
 	for gun in next._guns:
 		if gun.slot_index!=slot_index:continue
+		if not gun.has("bomb"):return fail("Conventional contacts require their physical target pass")
 		var event: Dictionary=gun.bomb.detonate(projectile_id,targets)
 		if event.is_empty():return fail(gun.bomb.error)
 		var committed: Dictionary=next._apply_event(gun,event,group,Vector3.ZERO)
@@ -254,11 +319,12 @@ func selection_feedback(selected_item_id: int) -> Dictionary:
 	if _loadout.is_empty() or (selected_item_id!=-1 and not _guns.any(func(gun):return gun.equipment.item_id==selected_item_id)):return fail("Secondary feedback requires the current launcher selection")
 	var weapons:=[];var actions:=[];var ended:=false
 	for gun in _guns:
-		var bomb: Dictionary=gun.bomb.snapshot()
-		var flying: bool=bomb.shot.get("phase")=="flying"
-		var wait_ms: int=maxi(0,int(bomb.weapon.interval_ms)-int(bomb.elapsed_ms)+1)
-		var action: String=gun.bomb.trigger_action(gun.ammunition)
-		weapons.append({"item_id":int(gun.equipment.item_id),"quantity":int(gun.ammunition),"slot_index":int(gun.slot_index),"live":flying,"wait_ms":wait_ms})
+		var state: Dictionary=gun.bomb.snapshot() if gun.has("bomb") else gun.projectiles.snapshot()
+		var flying: bool=state.get("shot",{}).get("phase")=="flying"
+		var wait_ms: int=maxi(0,int(state.weapon.interval_ms)-int(state.elapsed_ms)+1)
+		var action: String=gun.bomb.trigger_action(gun.ammunition) if gun.has("bomb") else ("launched" if gun.ammunition>0 and wait_ms==0 and state.available_slots>0 else "none")
+		var count: int=int(flying) if gun.has("bomb") else state.slots.filter(func(slot):return slot!=null).size()
+		weapons.append({"item_id":int(gun.equipment.item_id),"quantity":int(gun.ammunition),"slot_index":int(gun.slot_index),"live":flying,"in_flight":count,"wait_ms":wait_ms})
 		if ended or (not flying and gun.equipment.item_id!=selected_item_id) or action=="none":continue
 		actions.append({"item_id":int(gun.equipment.item_id),"action":action})
 		ended=action=="launched"
@@ -297,7 +363,9 @@ func evaluate_camera(random_state: Dictionary) -> Dictionary:
 	return {"offset":offset,"random_state":random.snapshot()}
 
 func discard_flying() -> void:
-	for gun in _guns:gun.bomb.discard_flying()
+	for gun in _guns:
+		if gun.has("bomb"):gun.bomb.discard_flying()
+		else:gun.projectiles.discard_flying()
 
 func presentation_identity() -> RefCounted:return _presentation_identity
 
@@ -305,10 +373,14 @@ func snapshot() -> Dictionary:
 	if _loadout.is_empty():return {}
 	var guns:=[]
 	for gun in _guns:
-		guns.append({"slot_index":gun.slot_index,"equipment":gun.equipment.duplicate(true),"ammunition":gun.ammunition,"bomb":gun.bomb.snapshot(),"audio":gun.audio.duplicate()})
+		var row:={"slot_index":gun.slot_index,"equipment":gun.equipment.duplicate(true),"ammunition":gun.ammunition,"audio":gun.audio.duplicate()}
+		if gun.has("bomb"):row.bomb=gun.bomb.snapshot()
+		else:row.projectiles=gun.projectiles.snapshot();row.mount=gun.mount.duplicate(true)
+		if gun.has("detonation"):row.detonation=gun.detonation.snapshot()
+		if gun.has("visuals"):row.visuals=gun.visuals.duplicate(true)
+		guns.append(row)
 	var state:={"initial_loadout":_initial_loadout.duplicate(true),"loadout":_loadout.duplicate(true),"launches":_launches,"guns":guns}
 	if has_detonations():
-		for index in guns.size():guns[index].detonation=_guns[index].detonation.snapshot()
 		state.detonation_audio=_detonation_events.duplicate(true)
 		state.detonation_camera=_camera_commands.duplicate(true)
 	return state
@@ -318,8 +390,11 @@ func fork() -> RefCounted:
 	next._initial_loadout=_initial_loadout.duplicate(true);next._loadout=_loadout.duplicate(true);next._launches=_launches
 	next._presentation_identity=_presentation_identity;next._detonation_events=_detonation_events.duplicate(true);next._camera_commands=_camera_commands.duplicate(true)
 	for gun in _guns:
-		var copy: Dictionary=gun.duplicate();copy.equipment=gun.equipment.duplicate(true);copy.audio=gun.audio.duplicate();copy.bomb=gun.bomb.fork()
+		var copy: Dictionary=gun.duplicate();copy.equipment=gun.equipment.duplicate(true);copy.audio=gun.audio.duplicate()
+		if gun.has("bomb"):copy.bomb=gun.bomb.fork()
+		else:copy.projectiles=gun.projectiles.fork_state();copy.mount=gun.mount.duplicate(true)
 		if gun.has("detonation"):copy.detonation=gun.detonation.fork()
+		if gun.has("visuals"):copy.visuals=gun.visuals.duplicate(true)
 		next._guns.append(copy)
 	return next
 

@@ -19,12 +19,17 @@ const Sampler=preload("res://src/presentation/scenery_animation.gd")
 const Surface=preload("res://src/presentation/animated_additive_model.gd")
 const Tractor=preload("res://src/simulation/tractor_recovery.gd")
 const NPCSystems=preload("res://src/content/npc_systems_definitions.gd")
+const Mounts=preload("res://src/content/weapon_mounts.gd")
+const Conventional=preload("res://src/content/conventional_secondary_definitions.gd")
+const ImpactSprites=preload("res://src/content/full_hold_particle_definitions.gd")
 var error:=""
 
 func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) -> Dictionary:
 	error=""
 	if not Rules.available(bindings) or library==null or cat==null or library.manifest.get("content_id")!=bindings.base_content_id or cat.content_id!=bindings.base_content_id:return fail("Fitting requires its original content assets")
 	var resources:={};var items:={}
+	var mounts:=Mounts.new()
+	if not mounts.open(library,cat):return fail(mounts.error)
 	for item in cat.tables.items:
 		if item.arrays[2][3]!=0:continue
 		var id:=int(item.id);var mapping:=Rules.primary(bindings.mido_travel.ordinary_fitting,id,int(item.arrays[2][5]))
@@ -60,6 +65,15 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 				var supported: bool=model==14684 and path.ends_with("/misc/bomb_emp_a.aem") and Tracks.has_identity_tracks(decoded.surfaces) and Materials.supports(bindings.material_for_mesh(path,"high"))
 				resources[model]="" if supported else "This EMP body's visual behavior is not yet supported"
 			items[int(ids[index])]=resources[model]
+		var resolver:=Weapons.new()
+		if not resolver.configure(bindings,cat,bindings.base_content_id):return fail(resolver.error)
+		for item in cat.tables.items:
+			if item.arrays[2][3]!=1 or Conventional.declaration(int(item.id),int(item.arrays[2][5])).is_empty():continue
+			var weapon:=resolver.resolve(int(item.id),[])
+			var prepared:=Conventional.presentation(library,bindings,weapon)
+			var supported: bool=not prepared.is_empty() and Materials.supports(bindings.material_for_mesh(prepared.get("resource",""),"high"))
+			supported=supported and preload("res://src/presentation/projectile_trail_geometry.gd").supported_material(bindings) and ImpactSprites.parameters(bindings.full_hold_particles)
+			items[int(item.id)]="" if supported else "This secondary weapon's original effects are unavailable"
 	if Tractor.Definitions.available(bindings):
 		var rules: Dictionary=bindings.mido_travel.tractor_recovery
 		for item in cat.tables.items:
@@ -68,7 +82,7 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 			var loadout:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,
 				"ship_id":int(rules.pull.supported_player_hulls[0]),"equipment_ids":[int(item.id)]}
 			items[int(item.id)]="" if tractor.configure(bindings,cat,loadout,library) else "This tractor's beam is not yet supported"
-	return {"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"items":items}
+	return {"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"items":items,"mounts":mounts}
 
 func inspect(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,assets: Dictionary) -> Dictionary:
 	error=""
@@ -91,7 +105,7 @@ func inspect(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,assets: Di
 	var secondary_slots: bool=slots is Array and slots.any(func(slot):return slot is Dictionary and slot.get("category")==1)
 	if secondary_slots or ids.any(func(id):return cat.tables.items[id].arrays[2][3]==1):
 		var secondaries:=Secondaries.new()
-		if not secondaries.configure(bindings,cat,loadout):return fail(secondaries.error)
+		if not secondaries.configure(bindings,cat,loadout,assets.get("mounts")):return fail(secondaries.error)
 	var pools:=Stats.resolve_capacities(cat.tables.items,ids,bindings.opening_actors.player_initialization)
 	var repair: Dictionary=bindings.opening_actors.player_initialization.repair
 	var hull:=Stats.resolve_ship_hull(cat.tables.ships[ship].fields[int(repair.base_hull_field)],repair.initial_upgrades,repair)
@@ -122,9 +136,17 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 		if Audio.player_entries(bindings.weapon_parameters.audio,cat.tables.items,[weapon]).size()!=1:return "This weapon's audio is not yet supported"
 		return ""
 	if category==1:
-		if not Secondaries.Definitions.available(bindings) or id not in Secondaries.Definitions.VALUES.item_ids:return "This secondary weapon's flight behavior is not yet supported"
-		var bomb:=Secondaries.Bomb.new()
-		return "" if bomb.configure(bindings,cat,id,ids) else "This EMP bomb's firing behavior is not yet supported"
+		if not Secondaries.Definitions.available(bindings):return "This secondary weapon's flight behavior is not yet supported"
+		if id in Secondaries.Definitions.VALUES.item_ids:
+			var bomb:=Secondaries.Bomb.new()
+			return "" if bomb.configure(bindings,cat,id,ids) else "This EMP bomb's firing behavior is not yet supported"
+		var weapon: Dictionary=resolver.resolve(id,ids)
+		if not Conventional.resolved(weapon):return "This secondary weapon's flight behavior is not yet supported"
+		if weapon.ordinary_hit_policy.additional_damage_required and not NPCSystems.available(bindings):return "This weapon requires ship systems damage support"
+		var projectiles:=Projectiles.new()
+		if not projectiles.configure(weapon):return "This secondary weapon's firing behavior is not yet supported"
+		var reason:=Hits.validate(weapon,{"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id},bindings.weapon_parameters.ordinary_hit_policy,[int(weapon.kind)])
+		return "" if reason.is_empty() else "This secondary weapon's damage effects are not yet supported"
 	if category!=3:return "Fitting this equipment is not yet supported"
 	var rule: Dictionary=bindings.opening_actors.player_initialization
 	match subtype:

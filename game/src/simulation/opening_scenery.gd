@@ -597,6 +597,21 @@ func evaluate_primary_contacts(primaries: RefCounted, combat: RefCounted, invent
 		next._random_state=result.combat.contact_random_state();operation.random_state=next._random_state.duplicate(true)
 	return operation
 
+## The secondary owner shares these same physical bodies and ordered targets.
+## The encounter already prepared its contact stream before entering this pass.
+func evaluate_secondary_contacts(secondaries: RefCounted,combat: RefCounted,inventory: RefCounted,delta_ms: int,observer_position: Variant=null,guidance_actor_id: int=-1) -> Dictionary:
+	error=""
+	if _bodies==null or not is_instance_of(secondaries,load("res://src/simulation/secondary_weapons.gd")) or not combat is Combat:return _failed_secondary("Secondary contacts require the retained scenery and weapon owners")
+	var result: Dictionary=secondaries.evaluate_advance(delta_ms,combat,inventory.snapshot().npc_ids,observer_position,_bodies,inventory,guidance_actor_id)
+	if result.is_empty():return _failed_secondary(secondaries.error)
+	var next: RefCounted=fork_for_frame()
+	next._read_snapshot={};next._bodies=result.bodies
+	if result.combat.has_local_reactions():next._random_state=result.combat.contact_random_state()
+	result.scenery=next
+	return result
+
+func _failed_secondary(message: String) -> Dictionary:reject(message);return {}
+
 ## The field owns the scenery-specific recovery contract. Its physical model
 ## can move after collision statistics retire; these are not NPC wreck poses.
 func recovery_observation(index: int) -> Dictionary:

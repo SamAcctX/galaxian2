@@ -183,6 +183,19 @@ func apply_player_poll(death: RefCounted) -> bool:
 		if not _emitters.player.set_emitting(true):return reject(_emitters.player.error)
 	return true
 
+## Rockets and missiles emit the same original world burst as other manual
+## explosion sources. Their contact pass, not presentation, decides births.
+func apply_weapon_impacts(contacts: Array) -> bool:
+	error=""
+	if contacts.is_empty():return true
+	if _identity.is_empty() or not _emitters.has("world"):return reject("Weapon impacts require the registered world sprite pool")
+	var next:=fork_for_frame()
+	for contact in contacts:
+		if not contact is Dictionary or contact.get("action")!="impact" or not contact.get("position") is Vector3 or not contact.position.is_finite():return reject("Invalid weapon impact position")
+		var result: Dictionary=next._emitters.world.emit_once(contact.position)
+		if result.has("error"):return reject(next._emitters.world.error)
+	adopt(next);return true
+
 ## The world can finish before its late particle pass. Publish the retained
 ## population at that frame without ageing slots, moving roots or consuming RNG.
 func retain_frame(delta_ms: Variant) -> bool:
