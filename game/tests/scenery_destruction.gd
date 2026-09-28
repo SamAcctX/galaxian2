@@ -131,7 +131,9 @@ func check_failure(bindings: RefCounted, catalogues: RefCounted, descriptor: Dic
 		elif key=="impact":invalid.objects[0].motion_scalar=1.0
 		else:invalid.objects[0].position=Vector3(INF,0,0)
 		check(lifecycle.update(100,invalid,pose,random).is_empty() and lifecycle.snapshot()==before,"Invalid destruction input changed lifecycle: "+key)
-	for bad in [-1,int(bindings.frame_clock.max_frame_milliseconds)+1,null,true,"1",NAN]:
+	# The retained fast-forward declaration permits a scaled simulation step.
+	# Reject beyond that limit, not a valid step above the raw presentation cap.
+	for bad in [-1,Lifecycle.Frames.simulation_limit(bindings)+1,null,true,"1",NAN]:
 		check(lifecycle.update(bad,body,pose,random).is_empty() and lifecycle.snapshot()==before,"Invalid frame duration changed lifecycle")
 	check(lifecycle.update(100,body,pose,{}).is_empty() and lifecycle.snapshot()==before,"Missing shared RNG state changed lifecycle")
 	var item_count: int=lifecycle._item_count

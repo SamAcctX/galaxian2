@@ -1,6 +1,6 @@
 extends RefCounted
-## Source Euler spin, with lifecycle skip decisions supplied by the world.
-## Displaced bodies and mining require separate motion ownership.
+## Source Euler spin and physical translation, with lifecycle decisions supplied
+## by the world. Statistics and contact positions stay with the body owner.
 const Library = preload("res://src/content/library.gd")
 const Field = preload("res://src/simulation/scenery_field.gd")
 const Frames = preload("res://src/simulation/frame_clock.gd")
@@ -47,6 +47,13 @@ func update(presentation_delta_ms: Variant, skip_motion: Array = []) -> bool:
 ## bounds belong to the scenery body and deliberately retain their old origin.
 func _retain_recovery_frame(index: int,frame: Dictionary) -> void:
 	if frame.actor_changes.has("body_pose"):_field.objects[index].position=frame.actor_changes.body_pose.origin
+
+func translate(index: int,offset: Vector3) -> bool:
+	if _field.is_empty() or index<0 or index>=_field.objects.size() or not offset.is_finite():return reject("Scenery translation requires an owned object and finite displacement")
+	var position: Vector3=preload("res://src/simulation/source_vectors.gd").added(_field.objects[index].position,offset)
+	if not position.is_finite():return reject("Scenery translation exceeds finite world coordinates")
+	_field.objects[index].position=position
+	return true
 
 func snapshot() -> Dictionary:
 	return _field.duplicate(true)

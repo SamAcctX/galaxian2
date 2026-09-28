@@ -164,6 +164,19 @@ func set_permissions(object_index: Variant, active: Variant, damage_allowed: Var
 	_rows[object_index].active=active;_rows[object_index].damage_allowed=damage_allowed
 	return true
 
+## A radial impulse translates the later breakup models. It does not relocate
+## the statistics center or turn the blast into a direct projectile contact.
+func record_blast(object_index: int,direction: Vector3,strength: float) -> bool:
+	error=""
+	if not valid_index(object_index) or not direction.is_finite() or not is_finite(strength) or strength<0.0 or strength>1.0 or (strength>0.0 and not direction.is_normalized()):return reject("Scenery blast requires a finite radial impulse")
+	_read_snapshot={};_rows[object_index]=_rows[object_index].duplicate(true)
+	_rows[object_index].impact_vector=direction;_rows[object_index].motion_scalar=strength
+	return true
+
+func retain_motion_scalar(object_index: int,strength: float) -> bool:
+	if not valid_index(object_index):return reject("Scenery displacement names an unavailable body")
+	return record_blast(object_index,_rows[object_index].impact_vector,strength)
+
 func retire_mined(object_index: int) -> bool:
 	_read_snapshot={}
 	error=""

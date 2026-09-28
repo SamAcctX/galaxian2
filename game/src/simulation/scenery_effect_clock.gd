@@ -78,6 +78,14 @@ func update(delta_ms: Variant) -> bool:
 func snapshot() -> Dictionary:
 	return _state.duplicate(true)
 
+func translate(offset: Vector3) -> bool:
+	if _state.is_empty() or not _state.active or not offset.is_finite():return reject("Only a live breakup effect can be displaced")
+	var pose: Transform3D=_state.pose
+	pose.origin=preload("res://src/simulation/source_vectors.gd").added(pose.origin,offset)
+	if not pose.is_finite():return reject("Breakup displacement exceeds finite world coordinates")
+	_state.pose=pose
+	return true
+
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted = get_script().new()
 	copy._state=_state.duplicate(true)

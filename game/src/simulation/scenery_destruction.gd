@@ -7,6 +7,8 @@ const Clock = preload("res://src/simulation/scenery_effect_clock.gd")
 const Resources = preload("res://src/content/scenery_effect_resources.gd")
 const Random = preload("res://src/simulation/seeded_random.gd")
 const Numbers = preload("res://src/content/opening_definitions.gd")
+const Vectors = preload("res://src/simulation/source_vectors.gd")
+const Vitals = preload("res://src/simulation/combat_vitals.gd")
 const CargoPaths := ["resources/data/assets/main/3d/meshes/misc/asteroid_01_junk.aem",
 	"resources/data/assets/main/3d/meshes/misc/asteroid_void_junk.aem"]
 var error := ""
@@ -68,7 +70,6 @@ func update(delta_ms: Variant, body_state: Dictionary, pose: Transform3D, random
 		elif not next.update_enabled:
 			return fail("Retired scenery cannot be reactivated by this lifecycle")
 		elif body.vitals.hull==0 and next.actor_state==0:
-			if body.motion_scalar!=0.0:return fail("Displaced scenery destruction is not implemented")
 			if not effect.trigger(pose):return fail(effect.error)
 			var cargo := candidate(next.drop_allowed,random)
 			if cargo.has("error"):return fail(cargo.error)
@@ -82,10 +83,23 @@ func update(delta_ms: Variant, body_state: Dictionary, pose: Transform3D, random
 			# The triggering actor returns before either effect time or spin work.
 			result.skip_motion=true
 		elif next.actor_state==3:
-			if body.motion_scalar!=0.0:return fail("Displaced scenery destruction is not implemented")
 			if not effect.update(delta_ms):return fail(effect.error)
 			if not effect.snapshot().active:
 				next.actor_state=4;result.motion_scalar=0.0
+			elif body.motion_scalar>0.0:
+				if not body.get("impact_vector") is Vector3 or not body.impact_vector.is_finite():return fail("Scenery displacement lost its radial impact direction")
+				var size:=Vitals.single(clampf(float(body.scale),0.6,1.0))
+				var distance:=int(Vitals.single(Vitals.single(float(body.motion_scalar)*1024.0)*Vitals.single(1.0-Vitals.single(size/100.0))))
+				var offset:=Vectors.scaled(body.impact_vector,float(distance))
+				if not offset.is_finite() or not effect.translate(offset):return fail("Scenery displacement exceeds finite coordinates")
+				if next.cargo_model_exists:
+					var cargo_pose: Transform3D=next.cargo.pose
+					cargo_pose.origin=Vectors.added(cargo_pose.origin,offset)
+					if not cargo_pose.is_finite():return fail("Displaced junk exceeds finite coordinates")
+					next.cargo.pose=cargo_pose
+				result.displacement=offset
+				result.motion_scalar=Vitals.single(float(body.motion_scalar)*Vitals.single(0.98))
+				if result.motion_scalar<Vitals.single(0.05):result.motion_scalar=0.0
 		elif next.actor_state==4:
 			result.statistics_active=false;result.motion_scalar=0.0
 	# On state 3 and the active state-4 retirement tick, original intact-model
@@ -166,7 +180,8 @@ func current_body(body_state: Dictionary) -> Dictionary:
 		if row.get(key)!=_body[key]:return fail("Scenery destruction body content changed")
 	if not row.get("active") is bool or not row.get("position") is Vector3 or not row.position.is_finite():return fail("Invalid scenery destruction body state")
 	if not row.get("vitals") is Dictionary or not Numbers.integer(row.vitals.get("hull"),0,2147483647):return fail("Invalid scenery destruction hull")
-	if not (row.get("motion_scalar") is int or row.get("motion_scalar") is float) or not is_finite(row.motion_scalar):return fail("Invalid scenery impact scalar")
+	if not (row.get("motion_scalar") is int or row.get("motion_scalar") is float) or not is_finite(row.motion_scalar) or row.motion_scalar<0.0 or row.motion_scalar>1.0:return fail("Invalid scenery impact scalar")
+	if row.motion_scalar>0.0 and (not row.get("impact_vector") is Vector3 or not row.impact_vector.is_finite() or not row.impact_vector.is_normalized()):return fail("Scenery displacement requires a finite radial direction")
 	return row
 
 func clear() -> void:

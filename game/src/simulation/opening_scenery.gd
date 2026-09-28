@@ -509,14 +509,16 @@ func update(presentation_delta_ms: Variant, previous_reference: Variant, detail_
 		var body_state: Dictionary=_bodies.read_snapshot()
 		for index in destruction.size():
 			var body: Dictionary=body_state.objects[index]
-			if body.motion_scalar!=0.0:return reject("Scenery displacement requires a separate motion owner")
 			# Intact actors have no lifecycle mutation or RNG consumption.
 			if body.vitals.hull>0 and destruction[index].actor_state()==0:
 				mask.append(_spin_disabled.has(index));continue
 			var actor: RefCounted=destruction[index].fork_for_frame()
 			var result: Dictionary=actor.update(presentation_delta_ms,body_state,_motion.object_pose(index),random_state)
 			if result.is_empty():return reject(actor.error)
-			if result.motion_scalar!=body.motion_scalar:return reject("Scenery displacement requires a separate motion owner")
+			if result.motion_scalar!=body.motion_scalar:
+				if bodies==_bodies:bodies=_bodies.fork_for_frame()
+				if not bodies.retain_motion_scalar(index,float(result.motion_scalar)):return reject(bodies.error)
+			if result.has("displacement") and not motion.translate(index,result.displacement):return reject(motion.error)
 			if result.statistics_active!=body.active:
 				if bodies==_bodies:bodies=_bodies.fork_for_frame()
 				if not bodies.set_permissions(index,result.statistics_active,body.damage_allowed):return reject(bodies.error)
