@@ -7,6 +7,7 @@ const Sampler=preload("res://src/presentation/scenery_animation.gd")
 const Pose=preload("res://src/presentation/projectile_pose.gd")
 const Colors=preload("res://src/presentation/effect_color.gd")
 const Surface=preload("res://src/presentation/animated_additive_model.gd")
+const Beam=preload("res://src/presentation/beam_primary_geometry.gd")
 const Additive=Surface.ShaderSource
 var error:=""
 var guns:=[]
@@ -26,11 +27,16 @@ func build(owner: RefCounted, library: RefCounted, visuals: RefCounted, bindings
 	var paths:=[]
 	for model in state.models:
 		if bindings.resolve(model.model_id,"mesh")!=model.resource or bindings.material_for_mesh(model.resource,"high").get("render_type")!=state.rules.render_type:return reject("Unsupported projectile material mapping")
-		paths.append(model.resource)
+		if not model.has("beam"):paths.append(model.resource)
 	var resources:=Models.new()
-	if not resources.prepare(paths,library,visuals,bindings,"high",false,true):return reject(resources.error)
+	if not paths.is_empty() and not resources.prepare(paths,library,visuals,bindings,"high",false,true):return reject(resources.error)
 	_surface=Surface.new();_reflected_additive=_surface.reflected
 	for row in state.models:
+		if row.has("beam"):
+			var beam:=Beam.new();add_child(beam)
+			if not beam.build(row,library,visuals,bindings):return reject(beam.error)
+			guns.append({"key":row.key,"slots":[],"beam":beam});_samplers.append(null)
+			continue
 		var slots:=[]
 		for slot in row.capacity:
 			var model: Node3D=resources.instantiate(row.resource)
@@ -64,6 +70,12 @@ func prepare_world(owner: RefCounted, world: Dictionary, camera: Transform3D, pa
 		for key in ["key","item_id","kind","capacity","model_id","resource","captured_up","start_ms","end_ms"]:
 			if row.get(key)!=_descriptor.models[i][key]:return failed("Projectile model identity changed")
 		if weapons[i].key!=row.key or weapon.weapon.item_id!=row.item_id or weapon.weapon.kind!=row.kind or weapon.slots.size()!=row.capacity:return failed("Projectile slots differ from prepared weapons")
+		if row.get("beam",{})!=_descriptor.models[i].get("beam",{}):return failed("Beam model identity changed")
+		if guns[i].has("beam"):
+			var beam: Dictionary=guns[i].beam.prepare(weapon,parent_rgba,global_tint)
+			if beam.is_empty():return failed(guns[i].beam.error)
+			prepared.append(beam);samplers.append(null)
+			continue
 		var sampler: RefCounted=_samplers[i].fork_for_frame()
 		var animation: Dictionary=sampler.sample(row.time_ms,Transform3D.IDENTITY)
 		if animation.is_empty():return failed(sampler.error)
@@ -81,6 +93,9 @@ func prepare_world(owner: RefCounted, world: Dictionary, camera: Transform3D, pa
 
 func commit_world(prepared: Dictionary) -> void:
 	for i in guns.size():
+		if guns[i].has("beam"):
+			guns[i].beam.commit(prepared.guns[i],prepared.darken)
+			continue
 		for slot in guns[i].slots.size():
 			var model: Node3D=guns[i].slots[slot];var row: Dictionary=prepared.guns[i][slot]
 			model.visible=row.visible

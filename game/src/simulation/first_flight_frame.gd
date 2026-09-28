@@ -795,7 +795,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 	if next._mining!=null and next._mining.has_active_drill() and next._player.snapshot().vitals.hull>0 and not cues.dialogue.visible and not next.cinematic_input_blocked():
 		if not next._mining.set_command(drill_command):reject(next._mining.error);return null
 	if next._equipment!=null:
-		var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,primary_fire,cues.entry_released and not cues.dialogue.visible and not next.death_active() and not next.local_departing() and not next.cinematic_input_blocked(),next._random)
+		var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,primary_fire,cues.entry_released and not cues.dialogue.visible and not next.death_active() and not next.local_departing() and not next.cinematic_input_blocked(),next._random,[] if next._scanner==null else next._scanner.weapon_target_ids())
 		if fired.is_empty():reject(next._encounter.error);return null
 		next._encounter=fired.encounter;next._random=fired.random_state
 		if next._encounter.has_secondaries():

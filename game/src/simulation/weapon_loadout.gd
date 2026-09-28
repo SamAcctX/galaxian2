@@ -99,6 +99,7 @@ func resolve(item_id: Variant, equipment_ids: Array) -> Dictionary:
 	if dispersed:launch_mode="ordinary"
 	var fitted:=Fitting.primary(_fitting,item_id,int(kind)) if category==0 and not _fitting.is_empty() else {}
 	if not fitted.is_empty() and item_id not in modes.get("alternate_item_ids",[]):launch_mode="ordinary"
+	if fitted.has("beam") and launch_mode=="alternate":launch_mode="beam"
 	var result := {"base_content_id":base_content_id,"binding_id":binding_id,"item_id":item_id,"category":category,"kind":kind,
 		"damage":damage,"interval_ms":interval,"lifetime_ms":values.lifetime,"speed_units_per_millisecond":Vitals.single(float(values.speed)),
 		"modifier_item_id":selected,"damage_multiplier":damage_factor,"interval_multiplier":interval_factor,"launch_mode":launch_mode}
@@ -107,18 +108,19 @@ func resolve(item_id: Variant, equipment_ids: Array) -> Dictionary:
 	if dispersed:
 		result.projectile_capacity=int(_training.projectile_capacity)
 		result.dispersion=_training.dispersion.duplicate(true)
-	if not fitted.is_empty() and launch_mode=="ordinary":
+	if not fitted.is_empty() and launch_mode in ["ordinary","beam"]:
 		result.projectile_capacity=fitted.projectile_capacity
 		result.fitting_primary=true
+		if fitted.has("beam"):result.beam=fitted.beam.duplicate(true)
 		if fitted.has("dispersion"):result.dispersion=fitted.dispersion
 	var hit_policy: Dictionary = _data.get("ordinary_hit_policy",{})
-	if launch_mode=="ordinary" and not hit_policy.is_empty():
+	if launch_mode in ["ordinary","beam"] and not hit_policy.is_empty():
 		var additional: Variant = properties.get(int(hit_policy.additional_damage_property),int(hit_policy.missing_additional_damage))
 		if not signed_integer(additional): return fail("Malformed additional damage property")
 		result.ordinary_hit_policy = {"additional_damage":additional,
 			"additional_damage_required":additional!=int(hit_policy.missing_additional_damage),
 			"nonplayer_damage":damage}
-	if launch_mode=="ordinary" and not _data.get("collision_bounds",{}).is_empty():
+	if launch_mode in ["ordinary","beam"] and not _data.get("collision_bounds",{}).is_empty():
 		result.collision_bounds={"mode":_data.collision_bounds.mode}
 	return result
 

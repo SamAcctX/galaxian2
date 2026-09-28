@@ -50,6 +50,9 @@ func configure(bindings: RefCounted, library: RefCounted, world: Dictionary) -> 
 			metadata[id]=timing
 		var timing: Dictionary=metadata[id]
 		models.append({"key":entry.key,"item_id":int(weapon.item_id),"kind":int(weapon.kind),"capacity":int(weapon.projectile_capacity),"model_id":id,"resource":path,"captured_up":mapping.captured_up,"start_ms":timing.start_ms,"end_ms":timing.end_ms,"time_ms":timing.start_ms,"playing":true})
+		if weapon.has("beam"):
+			models[-1].beam=weapon.beam.duplicate(true)
+			models[-1].playing=false
 	_state={"base_content_id":world.base_content_id,"binding_id":world.binding_id,"models":models,"elapsed_ms":0,"rules":rules.duplicate(true)}
 	_identity=RefCounted.new()
 	_max_ms=Frames.simulation_limit(bindings,150)

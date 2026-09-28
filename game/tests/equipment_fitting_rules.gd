@@ -84,7 +84,7 @@ func verify_fitting(args: PackedStringArray) -> void:
 			verify_impact_geometry(id,bindings,library,textures,primary,impacts)
 		guns.append(id)
 	print("Supported original item IDs: ",supported,"; resolved primary IDs: ",guns)
-	check(guns.has(1) and guns.has(12) and guns.has(23) and not guns.has(9),"Primary support omitted ordinary families or accepted unfinished alternate behavior")
+	check(guns.has(1) and guns.has(12) and guns.has(23) and guns.has(9) and guns.has(10) and guns.has(11),"Primary support omitted a supported bolt or beam family")
 	check(guns.has(16)==Fitting.NPCSystems.available(bindings),"EMP fitting disagrees with the shared systems capability")
 	var combined:=seed.duplicate(true);combined.equipment_ids=[50,55,63,64,91,92,76,75]
 	var resolved:=fitting.inspect(bindings,cat,combined,assets)

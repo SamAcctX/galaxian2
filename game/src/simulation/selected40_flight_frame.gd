@@ -270,7 +270,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	var enabled: bool=not cue.sequence.input_blocked and next._player.snapshot().active and not next.campaign_dialogue_visible()
 	if player_updates and not next._pilot.sample_commands(commands if enabled else Vector2.ZERO,seconds):reject(next._pilot.error);return null
 	if player_updates and not next._engine_audio.sample_commands(commands if enabled else Vector2.ZERO):reject(next._engine_audio.error);return null
-	var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,primary_fire,enabled,next._random)
+	var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,primary_fire,enabled,next._random,[] if next._scanner==null else next._scanner.weapon_target_ids())
 	if fired.is_empty():reject(next._encounter.error);return null
 	next._encounter=fired.encounter;next._random=fired.random_state
 	# The shared launcher owns ammunition and live projectile history. Keep all

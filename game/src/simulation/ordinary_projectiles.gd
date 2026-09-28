@@ -1,8 +1,8 @@
 extends RefCounted
-## Native timing and flight for verified ordinary primary projectiles. The owner
-## supplies a world muzzle or authored fixed mount, aim and firing permission;
-## capacity comes from bindings or an explicit fixture input. No collision,
-## targeting, spread, ownership, effects or mission consequences are inferred.
+## Retained primary contacts and timing. Travelling shots use their muzzle and
+## direction; beams place the contact at a target from the shared aim window.
+## Collision consequences and rendering remain with their existing owners.
+const Beam=preload("res://src/simulation/beam_primary.gd")
 const Vectors = preload("res://src/simulation/source_vectors.gd")
 const Bounds = preload("res://src/content/weapon_collision_bounds.gd")
 const Hits = preload("res://src/content/ordinary_hit_definitions.gd")
@@ -17,6 +17,7 @@ var error := ""
 var _weapon := {}
 var _slots: Array = []
 var _elapsed_ms := 0
+var _beam := {}
 # Do not reuse a live object's handles after clear, failure or content replacement.
 var _next_id := 1
 
@@ -25,6 +26,7 @@ func clear() -> void:
 	_weapon = {}
 	_slots = []
 	_elapsed_ms = 0
+	_beam = {}
 
 func configure(weapon: Dictionary, capacity: Variant = null) -> bool:
 	clear()
@@ -38,8 +40,9 @@ func configure(weapon: Dictionary, capacity: Variant = null) -> bool:
 		if not Library.valid_hash(weapon.get(field)): return reject("Projectile weapon requires content and binding identities")
 	for field in ["item_id", "category", "kind", "damage", "interval_ms", "lifetime_ms"]:
 		if not Vitals.integer(weapon.get(field)): return reject("Invalid projectile weapon field: "+field)
-	if weapon.category!=0 or weapon.kind not in [0,1,2] or weapon.get("launch_mode")!="ordinary":
+	if weapon.category!=0 or weapon.kind not in [0,1,2] or (weapon.get("launch_mode")!="ordinary" and not Beam.Definitions.resolved(weapon)):
 		return reject("This projectile owner requires a source-declared ordinary primary launch path")
+	if weapon.has("beam") and not Beam.Definitions.resolved(weapon):return reject("Invalid resolved beam declaration")
 	if weapon.kind==2 and not TrainingWeapons.dispersed_primary(weapon) and not Fitting.dispersed(weapon):return reject("This ordinary kind requires its verified dispersion and capacity")
 	if weapon.kind!=2 and weapon.has("dispersion"):return reject("This ordinary kind has no supported dispersion declaration")
 	if weapon.has("campaign_cursor") and not Vitals.integer(weapon.campaign_cursor):return reject("Invalid projectile campaign context")
@@ -55,6 +58,7 @@ func configure(weapon: Dictionary, capacity: Variant = null) -> bool:
 		_weapon[field]=weapon[field]
 	_weapon.speed_units_per_millisecond=Vitals.single(float(speed))
 	_weapon.launch_mode=weapon.launch_mode
+	if weapon.has("beam"):_weapon.beam=weapon.beam.duplicate(true)
 	if weapon.has("campaign_cursor"):_weapon.campaign_cursor=weapon.campaign_cursor
 	if weapon.has("nonplayer_source"):_weapon.nonplayer_source=weapon.nonplayer_source
 	if weapon.has("dispersion"):_weapon.dispersion=weapon.dispersion.duplicate(true)
@@ -71,9 +75,11 @@ func snapshot() -> Dictionary:
 	var available := 0
 	for slot in _slots:
 		if slot==null or slot.remaining_ms<=0: available+=1
-	return {"weapon":_weapon.duplicate(true),"elapsed_ms":_elapsed_ms,
+	var result:={"weapon":_weapon.duplicate(true),"elapsed_ms":_elapsed_ms,
 		"time_ready":_elapsed_ms>int(_weapon.interval_ms),"available_slots":available,
 		"slots":_slots.duplicate(true)}
+	if _weapon.has("beam"):result.beam=_beam.duplicate(true)
+	return result
 
 func reset_fire_interval() -> bool:
 	error=""
@@ -83,6 +89,7 @@ func reset_fire_interval() -> bool:
 
 func discard_flying() -> void:
 	_slots.fill(null)
+	_beam={}
 
 func has_retained_projectiles() -> bool:
 	# Expired and impacted objects still contact targets before the next cleanup.
@@ -99,6 +106,7 @@ func fork_state() -> RefCounted:
 	staged._slots = _slots.duplicate(true)
 	staged._elapsed_ms = _elapsed_ms
 	staged._next_id = _next_id
+	staged._beam = _beam.duplicate(true)
 	return staged
 
 func fire_forward_from_mount(mount: Dictionary, firing_transform: Variant, firing_allowed: Variant, random_state: Variant=null) -> Dictionary:
@@ -110,9 +118,34 @@ func fire_forward_from_mount(mount: Dictionary, firing_transform: Variant, firin
 	# Final normalization remains inside fire(), after direction preparation.
 	return fire_from_mount(mount, firing_transform, firing_transform.basis.z, firing_allowed,random_state)
 
+func has_beam() -> bool:return _weapon.has("beam")
+
+func observe_beam_pose(pose: Transform3D) -> bool:
+	if not pose.is_finite():return reject("Beam source pose must be finite")
+	if not _beam.is_empty():_beam.player_pose=pose
+	return true
+
+func fire_beam_from_mount(mount: Dictionary, pose: Transform3D, allowed: bool, targets: Array) -> Dictionary:
+	error=""
+	if not has_beam():return fail("This weapon has no beam launch declaration")
+	if not pose.is_finite() or mount.get("base_content_id")!=_weapon.base_content_id or mount.get("category")!=0 or not finite_vector(mount.get("position")):return fail("Beam launch requires its original primary mount and finite pose")
+	for key in ["ship_id","slot"]:
+		if not Vitals.integer(mount.get(key)):return fail("Invalid beam mount field: "+key)
+	if not allowed:return {"fired":false,"reason":"permission"}
+	if _elapsed_ms<=int(_weapon.interval_ms):return {"fired":false,"reason":"interval"}
+	if _slots[0]!=null and _slots[0].remaining_ms>0:return {"fired":false,"reason":"capacity"}
+	var aim:=Beam.launch(pose,targets)
+	if aim.has("error"):return fail(aim.error)
+	if not aim.position.is_finite() or not aim.velocity.is_finite() or not aim.direction.is_finite() or _next_id==9223372036854775807:return fail("Beam launch exceeds finite coordinates or handles")
+	var endpoint:={"id":_next_id,"slot":0,"position":aim.position,"previous_position":aim.position,"velocity":aim.velocity,"remaining_ms":int(_weapon.lifetime_ms)}
+	_beam={"id":_next_id,"age_ms":0,"player_pose":pose,"mount":mount.position,"direction":aim.direction,"length":aim.length,"target_actor_id":aim.target_actor_id}
+	_slots[0]=endpoint;_next_id+=1;_elapsed_ms=0
+	return {"fired":true,"reason":"","projectile":endpoint.duplicate(true),"target_actor_id":aim.target_actor_id}
+
 func fire(muzzle: Variant, world_direction: Variant, firing_allowed: Variant, random_state: Variant=null) -> Dictionary:
 	error=""
 	if _weapon.is_empty(): return fail("Configure ordinary projectiles before firing")
+	if _weapon.has("beam"):return fail("Beam launch requires its retained aim-window targets")
 	if not finite_vector(muzzle) or not finite_vector(world_direction) or not firing_allowed is bool:
 		return fail("Firing requires finite world vectors and explicit permission")
 	if not firing_allowed: return {"fired":false,"reason":"permission"}
@@ -218,6 +251,7 @@ func advance(delta_ms: Variant) -> Dictionary:
 	# full step is retained for presentation; its slot can already be reused.
 	_slots=staged
 	_elapsed_ms+=delta_ms
+	if not _beam.is_empty():_beam.age_ms=mini(Vitals.MAX_INTEGER,int(_beam.age_ms)+delta_ms)
 	return result
 
 func retire(projectile_id: Variant) -> bool:

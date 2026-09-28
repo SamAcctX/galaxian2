@@ -87,6 +87,7 @@ func verify(content: String, pack: String, pixels: String) -> void:
 	saved=scanner.snapshot()
 	check(scanner.advance(combat,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,4000,false),scanner.error)
 	check(scanner.snapshot().elapsed_ms==100 and scanner.snapshot().candidate_actor_id==1 and not scanner.snapshot().visible,"Hidden HUD advanced or discarded retained scanning")
+	check(scanner.weapon_target_ids()==saved.weapon_target_ids,"Hidden HUD discarded the retained weapon aim sample")
 	saved=scanner.snapshot()
 	check(not scanner.advance(combat,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,2147483647,true) and scanner.snapshot()==saved,"Overflowing scanner frame changed state")
 	var bad_aim:=aim.duplicate(true);bad_aim.viewport_size=Vector2i.ZERO
@@ -97,6 +98,10 @@ func verify(content: String, pack: String, pixels: String) -> void:
 	combat.actors[1].pose.origin.z=-24001
 	check(scanner.advance(combat,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,3001,true),scanner.error)
 	check(not scanner.snapshot().markers[0].near and scanner.snapshot().selected_actor_id==1,"Far NPC could not be acquired")
+	check(scanner.weapon_target_ids()==[1],"Eligible beam target incorrectly depends on proximity")
+	var unscanned: RefCounted=scanner.fork_for_frame();unscanned._equipment=-1
+	check(unscanned.advance(combat,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,0,true),unscanned.error)
+	check(unscanned.weapon_target_ids()==[1] and not unscanned.snapshot().visible and unscanned.snapshot().markers.is_empty(),"Removing scanner equipment removed the independent weapon aim window")
 	# Negative fractional lower bound: int(20.5-radius) has a different
 	# upper edge from int(20.5)-radius. Project safely inside pixel radius+20.
 	var half_fov: float=bindings.flight_projection.vertical_fov_radians/2.0
@@ -107,6 +112,7 @@ func verify(content: String, pack: String, pixels: String) -> void:
 	combat.actors[1].pose.origin=Vector3(0,0,-70000);aim.point.x=400
 	check(scanner.advance(combat,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,1,true),scanner.error)
 	check(scanner.snapshot().markers[0].in_scan_window and scanner.snapshot().elapsed_ms==101,"Scanner incorrectly applied the weapon's 60000-unit cutoff")
+	check(scanner.weapon_target_ids().is_empty(),"A distant acquired target remained beam-eligible")
 	saved=scanner.snapshot();combat.actors[1].hull_catalogue_id=44
 	check(not scanner.advance(combat,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,100,true) and scanner.snapshot()==saved,"Scanner accepted an unsupported target population")
 	combat.actors[1].hull_catalogue_id=23

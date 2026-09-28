@@ -1,5 +1,15 @@
 {
   "files": [
+    "game/src/content/beam_primary_definitions.gd",
+    "game/src/content/beam_primary_definitions.gd.uid",
+    "game/src/simulation/beam_primary.gd",
+    "game/src/simulation/beam_primary.gd.uid",
+    "game/src/presentation/beam_primary_geometry.gd",
+    "game/src/presentation/beam_primary_geometry.gd.uid",
+    "game/tests/beam_primaries.gd",
+    "game/tests/beam_primaries.gd.uid",
+    "game/tests/beam_primary_application.gd",
+    "game/tests/beam_primary_application.gd.uid",
     "game/src/presentation/bloom_composite.gdshader.uid",
     "game/src/presentation/bloom_filter.gdshader.uid",
     "game/src/presentation/bloom_response.gdshader.uid",

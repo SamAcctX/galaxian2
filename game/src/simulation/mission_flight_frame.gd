@@ -245,7 +245,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 			if not next._player.set_permissions(true,cue.player_damage_allowed) or not next._runner.open_briefing():return failed(next._player.error+next._runner.error)
 	var enabled: bool=next._state.entry_released and not cue.input_blocked and (next._escape==null or not next._escape.snapshot().input_blocked) and not dying and not next.campaign_dialogue_visible()
 	if not next._pilot.sample_commands(commands if enabled else Vector2.ZERO,seconds) or not next._engine_audio.sample_commands(commands if enabled else Vector2.ZERO):return failed(next._pilot.error+next._engine_audio.error)
-	var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,primary_fire and next._primary_released,enabled,next._random)
+	var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,primary_fire and next._primary_released,enabled,next._random,[] if next._scanner==null else next._scanner.weapon_target_ids())
 	if fired.is_empty():return failed(next._encounter.error)
 	next._encounter=fired.encounter;next._random=fired.random_state
 	var secondary: Dictionary=next._encounter.evaluate_secondary_fire(next._player,next._equipment,next._pose,secondary_fire and next._secondary_released,enabled,next._random,not radio.visible)

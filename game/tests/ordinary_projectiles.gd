@@ -160,7 +160,9 @@ func check_profile(content: String, path: String) -> void:
 	print(library.manifest.profile.edition,": original primary parameters drive native projectile flight")
 	for id in [9,10,11,228]:
 		var alternate: Dictionary = resolver.resolve(id,[])
-		check(alternate.get("launch_mode")=="alternate" and not simulation.configure(alternate,1),"Alternate type-zero item accepted as an ordinary projectile")
+		if alternate.get("launch_mode")=="beam":
+			check(simulation.configure(alternate,1) and simulation.fire(Vector3.ZERO,Vector3.BACK,true).is_empty(),"Beam used the ordinary travelling launch path")
+		else:check(alternate.get("launch_mode")=="alternate" and not simulation.configure(alternate,1),"Unsupported alternate type-zero item accepted")
 
 func check(condition: bool, message: String) -> void:
 	if not condition:

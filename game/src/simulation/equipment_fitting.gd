@@ -30,7 +30,9 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 		var id:=int(item.id);var mapping:=Rules.primary(bindings.mido_travel.ordinary_fitting,id,int(item.arrays[2][5]))
 		if mapping.is_empty():continue
 		items[id]=""
-		for key in ["projectile_model_id","impact_model_id"]:
+		var model_keys:=["projectile_model_id","impact_model_id"]
+		if mapping.has("muzzle_model_id"):model_keys.append("muzzle_model_id")
+		for key in model_keys:
 			var model: int=mapping[key]
 			if not resources.has(model):
 				var path: String=bindings.resolve(model,"mesh");var reader:=AEM.new()

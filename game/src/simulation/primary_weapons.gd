@@ -251,7 +251,18 @@ func _evaluate_opening_update(combat: RefCounted,bodies: RefCounted,inventory: R
 			"contacts":result.contacts,"last_contact_target":result.last_contact_target,"motion":motion})
 	return {"primaries":staged,"combat":staged_combat,"bodies":staged_bodies,"weapons":events}
 
-func fire(firing_transform: Variant, firing_allowed: Variant, random_state: Variant=null) -> Dictionary:
+func has_beams() -> bool:
+	for gun in _guns:
+		if gun.projectiles.has_beam():return true
+	return false
+
+func observe_beam_pose(pose: Transform3D) -> bool:
+	if not pose.is_finite():return reject("Beam source pose must be finite")
+	for gun in _guns:
+		if gun.projectiles.has_beam() and not gun.projectiles.observe_beam_pose(pose):return reject(gun.projectiles.error)
+	return true
+
+func fire(firing_transform: Variant, firing_allowed: Variant, random_state: Variant=null, beam_targets: Array=[]) -> Dictionary:
 	error = ""
 	if _loadout.is_empty(): return fail("Configure primary ownership before firing")
 	if not firing_transform is Transform3D or not firing_transform.is_finite() or not firing_allowed is bool:
@@ -267,7 +278,8 @@ func fire(firing_transform: Variant, firing_allowed: Variant, random_state: Vari
 		var projectiles: RefCounted = gun.projectiles.fork_state()
 		var result := {"fired":false,"reason":"quantity"}
 		if gun.equipment.quantity > 0:
-			result = projectiles.fire_forward_from_mount(gun.mount,firing_transform,firing_allowed,next_random)
+			if projectiles.has_beam():result=projectiles.fire_beam_from_mount(gun.mount,firing_transform,firing_allowed,beam_targets)
+			else:result = projectiles.fire_forward_from_mount(gun.mount,firing_transform,firing_allowed,next_random)
 		if result.is_empty(): return fail(projectiles.error)
 		if result.has("random_state"):next_random=result.random_state
 		staged.append(projectiles)

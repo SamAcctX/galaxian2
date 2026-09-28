@@ -1,6 +1,7 @@
 extends RefCounted
 ## Fresh opening NPC acquisition. This owns no damage, rewards or mission state.
 ## Special devices, other target groups and acquisition audio/messages remain separate.
+const Beams=preload("res://src/content/beam_primary_definitions.gd")
 const Definitions = preload("res://src/content/npc_scanner_definitions.gd")
 const Numbers = preload("res://src/content/opening_definitions.gd")
 const TargetProjection = preload("res://src/presentation/target_projection.gd")
@@ -171,9 +172,10 @@ func _advance(combat: Dictionary, player: Transform3D, camera: Transform3D, aim:
 			return reject("Invalid fresh NPC scanner population at %d: %s"%[id,str(detail)])
 	var selected := _selected;var candidate := _candidate;var elapsed := _elapsed
 	var markers := [];var events := [];var animation := -1;var found := -1
+	var weapon_targets: Array=[] if enabled else weapon_target_ids()
 	# Native scope currently displays the ordinary phase-four HUD. Hidden draws
 	# retain selection and time; pause owners do not call advance at all.
-	if enabled and _equipment>=0:
+	if enabled:
 		if selected>=0 and selection_retired(population[selected]):selected=-1;candidate=-1
 		var radius := int(viewport.x)/int(_definition.window_divisor)
 		var lower := Vector2(TargetProjection.single(point.x-float(radius)),TargetProjection.single(point.y-float(radius)))
@@ -188,9 +190,12 @@ func _advance(combat: Dictionary, player: Transform3D, camera: Transform3D, aim:
 			var near: bool=projected.in_view and absf(offset.x)<=_definition.near_half_extent and absf(offset.y)<=_definition.near_half_extent and absf(offset.z)<=_definition.near_half_extent
 			var pixel: Vector2i=projected.pixels
 			var inside: bool=projected.in_view and pixel.x>lower_pixels.x and pixel.x<upper_pixels.x and pixel.y>lower_pixels.y and pixel.y<upper_pixels.y
+			if inside and offset.length()<Beams.AIM_DISTANCE:weapon_targets.append(int(actor.actor_id))
+			if _equipment<0:continue
 			markers.append({"actor_id":actor.actor_id,"pixels":pixel,"near":near,"selected":actor.actor_id==selected,
 				"hostile":actor.hostile,"hull_percent":int(actor.hull_percent),"in_scan_window":inside,"in_view":projected.in_view,"position":actor.pose.origin})
 			if found<0 and inside:found=int(actor.actor_id)
+	if enabled and _equipment>=0:
 		# A fitted tractor and ordinary scanner share the original ordered NPC
 		# candidate. Cargo cannot advance a second, unrelated ship scan as well.
 		if ordinary_candidate!=-2:found=ordinary_candidate
@@ -215,7 +220,7 @@ func _advance(combat: Dictionary, player: Transform3D, camera: Transform3D, aim:
 			elapsed=0
 			if selected<0:candidate=-1
 	_selected=selected;_candidate=candidate;_elapsed=elapsed
-	_sample={"visible":enabled and _equipment>=0,"markers":markers,"events":events,"animation_frame":animation,"found_actor_id":found,"aim_pixels":Vector2i(int(point.x),int(point.y)),"viewport_size":viewport}
+	_sample={"visible":enabled and _equipment>=0,"weapon_target_ids":weapon_targets,"markers":markers,"events":events,"animation_frame":animation,"found_actor_id":found,"aim_pixels":Vector2i(int(point.x),int(point.y)),"viewport_size":viewport}
 	_sample.camera_position=camera.origin
 	_sample.selected_target={}
 	if enabled and _equipment>=0 and selected>=0:
@@ -234,6 +239,8 @@ static func selection_retired(actor: Dictionary) -> bool:
 	# Junk removes its body immediately. A dropped container keeps the same
 	# target active; an empty drop clears it. Ship breakup has another rule.
 	return not actor.active if actor.get("population_group")=="debris" else int(actor.actor_mode) in [3,4]
+
+func weapon_target_ids() -> Array:return _sample.get("weapon_target_ids",[]).duplicate()
 
 func sound_events() -> Array:
 	return _sample.get("events",[]).filter(func(event):return event.kind=="sound").duplicate(true)

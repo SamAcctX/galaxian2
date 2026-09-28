@@ -860,7 +860,7 @@ func reset_primary_fire_intervals() -> bool:
 	_primaries=primaries
 	return true
 
-func evaluate_primary_fire(player: RefCounted, pose: Transform3D, requested: bool, input_enabled: bool, random_state: Dictionary) -> Dictionary:
+func evaluate_primary_fire(player: RefCounted, pose: Transform3D, requested: bool, input_enabled: bool, random_state: Dictionary, weapon_targets: Array=[]) -> Dictionary:
 	error=""
 	var input:=target(player,pose);var random:=Random.new()
 	if _primaries==null or input.is_empty():return fail("Late primary input requires an equipped encounter")
@@ -868,9 +868,20 @@ func evaluate_primary_fire(player: RefCounted, pose: Transform3D, requested: boo
 	var next:=fork_for_frame();var result:=random.snapshot()
 	next._primary_fire={}
 	var sequence_enabled: bool=_selected40_sequence==null or not _selected40_sequence.snapshot().input_blocked
-	if requested and input_enabled and sequence_enabled and input.active and input.hull>0:
+	var firing: bool=requested and input_enabled and sequence_enabled and input.active and input.hull>0
+	var beams: bool=_primaries.has_beams()
+	if firing or beams:
 		next._primaries=_primaries.fork_state()
-		next._primary_fire=next._primaries.fire(pose,true,result)
+		if beams and not next._primaries.observe_beam_pose(pose):return fail(next._primaries.error)
+	if firing:
+		var targets:=[]
+		if beams:
+			for id in weapon_targets:
+				if not id is int:return fail("Weapon aim window contains an invalid actor")
+				var actor: Dictionary=_combat.actor_snapshot(id)
+				if actor.is_empty():return fail(_combat.error)
+				targets.append(actor)
+		next._primary_fire=next._primaries.fire(pose,true,result,targets)
 		if next._primary_fire.is_empty():return fail(next._primaries.error)
 		result=next._primary_fire.random_state
 	return {"encounter":next,"random_state":result}

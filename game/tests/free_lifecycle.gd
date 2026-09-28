@@ -336,6 +336,7 @@ func verify_ordinary_systems(bindings: RefCounted,cat: RefCounted,equipment: Ref
 		if actor.active:kinds[actor.actor_kind]=actor.actor_id;active.append(actor.actor_id)
 	if not verified_emp_projectiles:
 		verify_emp_projectiles(bindings,cat,equipment,construction)
+		verify_beam_projectiles(bindings,cat,equipment,construction)
 		if failures:return
 	for faction in kinds:
 		var id: int=kinds[faction];var group:=ordinary_group(bindings,cat,equipment,construction)
@@ -443,6 +444,30 @@ func verify_emp_projectiles(bindings: RefCounted,cat: RefCounted,equipment: RefC
 	var weapon: Dictionary=resolver.resolve(16,[]);weapon.campaign_cursor=before.campaign_cursor
 	check(broken.weapon_hit(id,weapon).is_empty() and broken.snapshot()==before,"A later normal-contact failure retained EMP damage or reactions")
 	verified_emp_projectiles=true
+
+func verify_beam_projectiles(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,construction: RefCounted) -> void:
+	var resolver:=Resolver.new();var original:=ordinary_group(bindings,cat,equipment,construction)
+	if original==null:return
+	if not resolver.configure(bindings,cat,bindings.base_content_id):check(false,resolver.error);return
+	var targets:={}
+	for actor in original.snapshot().actors:
+		if actor.active:targets[actor.population_group=="freighter"]=actor.actor_id
+	for item in [9,10,11]:
+		var weapon: Dictionary=resolver.resolve(item,[]);weapon.campaign_cursor=original.snapshot().campaign_cursor
+		for id in targets.values():
+			var target: Dictionary=original.actor_snapshot(id);var projectiles:=preload("res://src/simulation/ordinary_projectiles.gd").new()
+			if not projectiles.configure(weapon) or projectiles.advance(1).is_empty():check(false,projectiles.error);return
+			var pose:=Transform3D(Basis.IDENTITY,target.pose.origin-Vector3(0,0,5000))
+			var mount:={"base_content_id":bindings.base_content_id,"category":0,"ship_id":0,"slot":0,"position":Vector3.ZERO}
+			if not projectiles.fire_beam_from_mount(mount,pose,true,[target]).get("fired",false):check(false,projectiles.error);return
+			var parent: Dictionary=original.snapshot();var shot: Dictionary=projectiles.snapshot();var contacts:=Contacts.new()
+			var result:=contacts.evaluate(projectiles,original,[id])
+			if result.is_empty():check(false,contacts.error);return
+			check(result.contacts.size()==1,"A beam endpoint at a living ship's statistics position missed its normal contact")
+			var hit: Dictionary=result.combat.actor_snapshot(id)
+			check(hit.vitals!=target.vitals and hit.systems==target.systems and hit.contact,"Beam contact lost normal damage/feedback or invented systems damage")
+			check(original.snapshot()==parent and projectiles.snapshot()==shot,"Beam contact changed a retained parent")
+			check(not result.projectiles.advance(0).is_empty() and result.projectiles.snapshot().slots[0]==null and not result.projectiles.snapshot().beam.is_empty(),"Beam impact did not release the shot while preserving its fade")
 
 func verify_ordinary_wreck(bindings: RefCounted,resources: RefCounted,death: RefCounted,random: Dictionary) -> void:
 	var initial: Dictionary=death.snapshot();var faction: int=initial.actor_kind
