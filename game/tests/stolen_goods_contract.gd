@@ -103,3 +103,5 @@ func verify_markers(accepted: Dictionary,source: Dictionary,cargo: Dictionary,bi
 	var map=load("res://src/simulation/local_map.gd").new()
 	if not map.configure(library,bindings,cat,state):check(false,map.error);return
 	check(map.snapshot().rows.filter(func(row):return row.mission_target).map(func(row):return row.station_id)==[accepted.accepted_contact.station_id],"The local map did not display the return client")
+	var row: Dictionary=map.snapshot().rows.filter(func(entry):return entry.station_id==accepted.accepted_contact.station_id)[0]
+	check(row.contract_target and not row.story_target,"The side job used a campaign objective marker")

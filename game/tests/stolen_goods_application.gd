@@ -8,6 +8,7 @@ func _initialize() -> void:
 func requested_contract_kind() -> int:return 14
 func contract_search_stations() -> Array:return [-1,38]
 func accepts_requested_contract(mission: Dictionary) -> bool:return mission.kind==14
+func uses_pilot_cadence() -> bool:return app.session is FlightSession
 
 func application_step() -> bool:
 	if not app.session is StationSession:return super.application_step()
@@ -91,3 +92,15 @@ func click_shop_control(control: Control) -> void:
 		var click:=InputEventMouseButton.new();click.position=point;click.global_position=point;click.button_index=MOUSE_BUTTON_LEFT;click.pressed=down
 		Input.parse_input_event(click);Input.flush_buffered_events()
 	await process_frame;resume_application_focus()
+
+func acquire_application_planet(destination: int) -> bool:
+	if not app.open_map():check(false,app.status.text);return false
+	app.map_panel.select_station(destination);app.map_panel.request_confirmation()
+	if not app.confirm_map_planet(destination,now_us):check(false,app.map_panel.error);return false
+	app.session.rebase_time(now_us)
+	var started:=now_us;var next_yield:=now_us+2000000
+	while now_us-started<200000000 and app.session.status!="local_arrival_transition_required":
+		if not application_step():return false
+		if now_us>=next_yield:await process_frame;next_yield=now_us+2000000
+	check(app.session.status=="local_arrival_transition_required","The input course did not reach its actual planet")
+	return failures==0

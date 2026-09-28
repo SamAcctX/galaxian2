@@ -91,6 +91,7 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 			"void_source":display_system_id==warning.get("system_id",-1) and int(station.id)==warning.get("station_id",-1),
 			"supported":stations.has(int(station.id)) and int(station.id)!=int(location.station_id),
 			"mission_target":int(station.id)==int(flight.get("mission",{}).get("station_id",-1)) or int(station.id)==objective.station_id,
+			"story_target":int(station.id)==int(flight.get("mission",{}).get("station_id",-1)),"contract_target":int(station.id)==objective.station_id,
 			"model_id":resource_id,"model_path":path,"radius":radius,"angle_units":angle_units,
 			"position":Vector3(-sin(angle)*radius,0,cos(angle)*radius),
 			"scale":float(rules.planet_sizes[type])*float(rules.size_multiplier)})

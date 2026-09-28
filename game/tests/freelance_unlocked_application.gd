@@ -4,10 +4,13 @@ const PiratePilot=preload("res://tests/fixtures/bakka_flight_pilot.gd")
 var _pilot_frames:=0
 var _pilot_deltas:={}
 
-func application_step() -> bool:
-	if not app.session is FlightSession:return super.application_step()
+func uses_pilot_cadence() -> bool:
+	if not app.session is FlightSession:return false
 	var admitted: RefCounted=app.session._world.mission_context_owner()
-	if admitted==null or admitted.advances_campaign():return super.application_step()
+	return admitted!=null and not admitted.advances_campaign()
+
+func application_step() -> bool:
+	if not uses_pilot_cadence():return super.application_step()
 	resume_application_focus();now_us+=pirate_delta_us()
 	if not app.session.step(now_us):check(false,app.session.error);return false
 	app.present_session()
@@ -15,8 +18,7 @@ func application_step() -> bool:
 	return true
 
 func release_application_flight() -> bool:
-	var admitted: RefCounted=app.session._world.mission_context_owner()
-	if admitted==null or admitted.advances_campaign():return await super.release_application_flight()
+	if not uses_pilot_cadence():return await super.release_application_flight()
 	app.session.rebase_time(now_us)
 	var started:=now_us;var next_yield:=now_us+1000000
 	while not app.session.can_control() and now_us-started<20000000:
