@@ -169,8 +169,10 @@ func fly_contract_job(initial: Dictionary) -> bool:
 	var pilot:=PiratePilot.new();var started:=now_us;var next_yield:=now_us+2000000;var next_log:=now_us
 	var failure: bool=OS.get_environment("GOF2_PIRATE_FAILURE")=="1"
 	var live_captured:=false;var shots:=0
+	var seconds:=OS.get_environment("GOF2_PIRATE_LIMIT_SECONDS")
+	var limit_us:=600000000 if seconds.is_empty() else clampi(seconds.to_int(),1,1800)*1000000
 	var targets: Array=contract_target_ids(initial.encounter.combat.actors)
-	while now_us-started<600000000:
+	while now_us-started<limit_us:
 		var state: Dictionary=app.session.snapshot()
 		if not state.contracts.pending_result.is_empty():
 			var won:=expects_contract_success()
@@ -182,7 +184,7 @@ func fly_contract_job(initial: Dictionary) -> bool:
 			check(state.contracts.credits==initial.contracts.credits and state.contracts.mission==initial.contracts.mission,"Player death paid or removed the unfinished Pirate job")
 			while app.session.snapshot().player_destruction.phase!="game_over":
 				if not pirate_step({"commands":Vector2.ZERO,"throttle":0.0,"fire":false,"strafe":0.0}):return false
-				if now_us-started>=600000000:break
+				if now_us-started>=limit_us:break
 			await capture_free_application("freelance-pirate-game-over")
 			check(app.session.snapshot().player_destruction.phase=="game_over","Pirate death did not reach Game Over")
 			var saved: Dictionary=app._save_file.load_document(app.station_save_path(),definitions,catalogue,source)
