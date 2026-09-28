@@ -22,6 +22,7 @@ var _rules:={}
 var _items:={}
 var _counts:=[]
 var _completion_prices:=[]
+var _catalogue_size:=0
 var _mission_cargo_id:=-1
 var _recovery_cargo_ids:=[]
 var _fitting_assets:={}
@@ -49,7 +50,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, station: Dictionary
 	for name in Loadout.SLOT_PROPERTIES:counts.append(int(catalogues.tables.ships[seed.ship_id].stats[name]))
 	var capacity:=int(catalogues.tables.ships[seed.ship_id].stats.cargo_capacity)
 	if station.cargo.get("capacity")!=capacity:return reject("Tutorial cargo capacity differs from the ship catalogue")
-	_rules=rules.duplicate(true);_items=items;_counts=counts;_completion_prices=[];_mission_cargo_id=-1;_fitting_assets={}
+	_rules=rules.duplicate(true);_items=items;_counts=counts;_completion_prices=[];_catalogue_size=catalogues.tables.items.size();_mission_cargo_id=-1;_fitting_assets={}
 	_recovery_cargo_ids=RecoveryRules.cargo_marker_ids(bindings)
 	_state={"loadout":seed,"stock":stock,"cargo":station.cargo.duplicate(true),"cargo_cache_stale":station.get("cargo_cache_stale",false),"credit_delta":0,"transactions":0}
 	return true
@@ -753,12 +754,12 @@ func cargo_cache_valid() -> bool:
 func _valid_cargo(hold: Dictionary,station_only: bool) -> bool:
 	for key in ["base_content_id","binding_id","ship_id","capacity"]:
 		if hold.get(key)!=_state.cargo[key]:return reject("Completed training cargo belongs to another ship")
-	if not hold.get("entries") is Array or hold.entries.size()>_completion_prices.size() or _state.loadout.slots.size()>_completion_prices.size():return reject("Completed training inventory has an unsupported extent")
+	if not hold.get("entries") is Array or _catalogue_size<=0 or hold.entries.size()>_catalogue_size or _state.loadout.slots.size()>_catalogue_size:return reject("Retained inventory has an unsupported extent")
 	var used:=0;var seen:=[]
 	var recovery: bool=not _recovery_cargo_ids.is_empty()
 	for index in hold.entries.size():
 		var row: Variant=hold.entries[index]
-		if not row is Dictionary or row.size()!=2+int(row.has("mission")) or not row.get("item_id") is int or row.item_id<0 or row.item_id>=_completion_prices.size() or (not recovery and seen.has(row.item_id)) or not row.get("quantity") is int or row.quantity<1 or row.quantity>(2147483647 if station_only or recovery else int(hold.capacity))-used:return reject("Retained cargo contains invalid or unsupported repeated rows")
+		if not row is Dictionary or row.size()!=2+int(row.has("mission")) or not row.get("item_id") is int or row.item_id<0 or row.item_id>=_catalogue_size or (not recovery and seen.has(row.item_id)) or not row.get("quantity") is int or row.quantity<1 or row.quantity>(2147483647 if station_only or recovery else int(hold.capacity))-used:return reject("Retained cargo contains invalid or unsupported repeated rows")
 		if row.has("mission") and (not row.mission is bool or not row.mission or (row.item_id!=_mission_cargo_id and row.item_id not in _recovery_cargo_ids)):return reject("Unsupported mission cargo marker")
 		seen.append(row.item_id);used+=row.quantity
 	if not hold.get("used") is int or hold.used<0 or hold.used>2147483647 or (not recovery and hold.used!=used) or not hold.get("free_space") is int or hold.free_space!=int(hold.capacity)-hold.used:return reject("Retained cargo quantities disagree with its used-space cache")
@@ -768,6 +769,7 @@ func fork() -> RefCounted:
 	var result: RefCounted=get_script().new()
 	result._state=_state.duplicate(true);result._rules=_rules.duplicate(true);result._items=_items.duplicate(true);result._counts=_counts.duplicate()
 	result._completion_prices=_completion_prices.duplicate()
+	result._catalogue_size=_catalogue_size
 	result._mission_cargo_id=_mission_cargo_id
 	result._recovery_cargo_ids=_recovery_cargo_ids.duplicate()
 	result._fitting_assets=_fitting_assets.duplicate(true)

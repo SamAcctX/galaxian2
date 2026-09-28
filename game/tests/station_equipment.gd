@@ -67,6 +67,8 @@ func after_second_return(args: PackedStringArray):
 	state=host.session.snapshot()
 	check(state.equipment.requirements.satisfied and state.cargo.used==1 and state.cargo.entries==[{"item_id":0,"quantity":1}],"Equipment predicate counted cargo or consumed the spare gun")
 	state=choose_starter_gun(state)
+	var inventory: RefCounted=host.session._world.equipment_owner()
+	check(inventory.cargo_cache_valid() and inventory.fork().cargo_cache_valid(),"Fresh tutorial inventory cannot enter flight before completion prices are prepared: "+inventory.error)
 	host.equipment_panel.select_tab("ship")
 	if args.size()==4:
 		var file:=FileAccess.open(args[3].path_join("equipment-installed-state.json"),FileAccess.WRITE)

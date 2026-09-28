@@ -203,6 +203,7 @@ func _inventory_base(bindings: RefCounted,cat: RefCounted,data: Dictionary) -> R
 	var equipment:=Equipment.new()
 	equipment._rules=bindings.station_equipment.duplicate(true);equipment._state=data.duplicate(true)
 	equipment._completion_prices=Equipment.prototype_prices(bindings,cat)
+	equipment._catalogue_size=cat.tables.items.size()
 	if equipment._completion_prices.is_empty():return reject("The source inventory prices are unavailable")
 	for item in cat.tables.items:equipment._items[int(item.id)]=Equipment._item_metadata(cat,int(item.id),equipment._rules)
 	for key in Loadout.SLOT_PROPERTIES:equipment._counts.append(int(cat.tables.ships[seed.ship_id].stats[key]))
