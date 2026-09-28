@@ -424,6 +424,9 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, library: 
 	elif contract_world and capability!=null and capability.has_contract_actors():
 		var population: RefCounted=world.npc_construction_owner()
 		if not resources.configure_contract(library,bindings,population):return reject(resources.error)
+		if population.snapshot().actors.any(func(row):return row.get("subtype",0)==1):
+			freight_resources=FreightResources.new()
+			if not freight_resources.configure_contract(library,bindings,population):return reject(freight_resources.error)
 		if not control.configure_contract(bindings,catalogues,population,equipment):return reject(control.error)
 		if not weapons.configure_contract(bindings,catalogues,population):return reject(weapons.error)
 	elif cursor in [10,11,12] or (contract_world and contract_mission.get("kind")==0):

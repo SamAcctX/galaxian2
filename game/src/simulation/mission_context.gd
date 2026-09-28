@@ -64,8 +64,11 @@ static func supports_contract(bindings: RefCounted,mission: Variant,cursor: int)
 	# Keeping a side slot through a story world does not select that job's cast.
 	# Actual entry also requires the location/flight admitted below.
 	if mission.get("kind")==2 and not preload("res://src/content/opening_definitions.gd").integer(mission.get("quantity"),2,5):return false
+	if mission.get("kind")==9:
+		var population=load("res://src/content/free_population_definitions.gd")
+		if not [0,1,2,3].all(func(faction):return population.freighter_hull(bindings,faction)>=0 and not population.freighter_assembly(bindings,faction).is_empty()):return false
 	if mission.get("kind") in [3,5] and (not preload("res://src/content/tractor_recovery_definitions.gd").available(bindings) or not preload("res://src/content/opening_definitions.gd").integer(mission.get("quantity"),2,9)):return false
-	return ordinary.available(bindings) and cursor>=int(bindings.mido_travel.free_flight.campaign_cursor) and mission.get("kind") in [1,2,3,4,5,6,7,12] and preload("res://src/content/opening_definitions.gd").integer(mission.get("difficulty"),1,9) and not ordinary.Worlds.location(bindings.mido_travel,mission.get("station_id")).is_empty()
+	return ordinary.available(bindings) and cursor>=int(bindings.mido_travel.free_flight.campaign_cursor) and mission.get("kind") in [1,2,3,4,5,6,7,9,12] and preload("res://src/content/opening_definitions.gd").integer(mission.get("difficulty"),1,9) and not ordinary.Worlds.location(bindings.mido_travel,mission.get("station_id")).is_empty()
 
 ## A retained career and inventory authorize a generated side job once. Other
 ## owners receive this capability with the cast, never a caller-authored recipe.
@@ -120,6 +123,36 @@ func matches_contract_population(bindings: RefCounted,packet: Dictionary) -> boo
 	var source: Dictionary=packet.get("contract_encounter",{})
 	if not _recipe.cast.ship_groups.is_empty() and source.get("unused_enemy_faction") not in [8,int([1,0,3,2][int(_recipe.cast.local_faction)])]:return false
 	return packet.get("campaign_cursor")==_recipe.cursor and packet.get("station_id")==_recipe.station_id and source.get("context")==_contract_context and source.get("mission")==_recipe.mission and source.get("kind")==_recipe.mission.kind and source.get("actor_count")==_recipe.cast.actor_count and packet.get("actors") is Array and packet.actors.size()==_recipe.cast.actor_count
+
+static func contract_combat_matches(bindings: RefCounted,combat: Dictionary) -> bool:
+	if not load("res://src/content/contract_world_definitions.gd").available(bindings):return false
+	var source: Dictionary=combat.get("contract_encounter",{})
+	var context: Dictionary=source.get("context",{})
+	var actors: Variant=combat.get("actors")
+	if not actors is Array or source.get("actor_count")!=actors.size() or source.get("mission",{})!=context.get("mission"):return false
+	for key in ["base_content_id","binding_id"]:
+		if combat.get(key)!=bindings.get(key) or context.get(key)!=bindings.get(key):return false
+	if context.get("campaign_cursor")!=combat.get("campaign_cursor"):return false
+	var kind: Variant=source.get("kind")
+	if kind!=context.mission.get("kind"):return false
+	# Cast admission owns location and population size; presentation observes it.
+	var hulls: Dictionary=bindings.early_contracts.encounter_construction.hulls
+	for id in actors.size():
+		var actor: Variant=actors[id]
+		if not actor is Dictionary or actor.get("actor_id")!=id:return false
+		if actor.get("population_group")=="debris":
+			if actor.get("actor_kind")!=-1 or actor.get("hull_catalogue_id")!=-1:return false
+		else:
+			var hull: Variant=actor.get("hull_catalogue_id")
+			var faction: Variant=actor.get("actor_kind")
+			if not actor.get("contract_ship",false):return false
+			if actor.get("subtype")==1:
+				if actor.get("population_group")!="freighter" or hull!=load("res://src/content/free_population_definitions.gd").freighter_hull(bindings,int(faction)):return false
+				continue
+			if actor.get("subtype")!=0:return false
+			if not hull is int or hull<0 or hull>=hulls.factions.size() or int(hulls.factions[hull])!=faction:return false
+	return true
+
 
 ## Normal space is admitted by a completed living escape, not by a cursor or
 ## a caller-supplied location. The generic mission/free-flight entries stay shut.

@@ -50,11 +50,15 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 			continue
 		var options: Dictionary=load("res://src/content/mission_recipe.gd").contract_ship_options(cast,id,int(source.unused_enemy_faction),int(context.client_faction))
 		var rival: bool=options.rival
-		if not actor is Dictionary or actor.get("actor_id")!=id or actor.get("subtype")!=0 or actor.get("population_group")!=options.population_group:return {}
+		if not actor is Dictionary or actor.get("actor_id")!=id or actor.get("subtype")!=options.subtype or actor.get("population_group")!=options.population_group:return {}
 		var faction: Variant=actor.get("actor_kind")
 		if not faction is int or faction!=options.faction:return {}
 		var hull: Variant=actor.get("hull_catalogue_id")
-		if not hull is int or hull<0 or hull>=hulls.factions.size() or int(hulls.factions[hull])!=faction or (faction!=1 and hull<=int(hulls.mask_limit) and (int(hulls.excluded_mask)>>hull)&1):return {}
+		var freighter: bool=options.subtype==1
+		if freighter:
+			var population=load("res://src/content/free_population_definitions.gd")
+			if hull!=population.freighter_hull(bindings,faction) or not population.freighter_assembly_matches(bindings,faction,actor.get("assembly")) or not actor.get("world_flag",false):return {}
+		elif not hull is int or hull<0 or hull>=hulls.factions.size() or int(hulls.factions[hull])!=faction or (faction!=1 and hull<=int(hulls.mask_limit) and (int(hulls.excluded_mask)>>hull)&1):return {}
 		if rival and (actor.get("friendly")!=true or actor.get("name","").is_empty() or actor.name!=context.get("contact_name") or actor.get("current_hull_override")!=9999999):return {}
 		if not rival:
 			for key in options.ship_state:
@@ -62,7 +66,7 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 		var policy: Dictionary=(rules.rival if rival else rules.pirate).duplicate(true)
 		policy.merge(options.policy,true);data.actor_policies.append(policy)
 		data.actor_kinds.append(faction);data.hull_catalogue_ids.append(hull);data.player_weapon_targets.append(id)
-		var weapon:=shared_weapon(rules.weapons,context.campaign_cursor,context.rank,float(context.difficulty),faction,bool(options.ship_state.get("enhanced_weapon",rival)))
+		var weapon:={"unarmed":true,"actor_kind":faction} if freighter else shared_weapon(rules.weapons,context.campaign_cursor,context.rank,float(context.difficulty),faction,bool(options.ship_state.get("enhanced_weapon",rival)))
 		if weapon.is_empty():return {}
 		weapon.actor_id=id;weapon.hull_catalogue_id=hull;data.npc_weapons.append(weapon)
 	data.target_memberships=target_memberships(data.actor_kinds,cast.player_last_ids)

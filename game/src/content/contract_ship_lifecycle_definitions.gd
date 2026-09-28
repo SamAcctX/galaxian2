@@ -41,6 +41,7 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 	data.selection_skipped_modes=data.lifecycle.selection_skipped_modes.map(func(mode):return int(mode))
 	data.nonhostile_remaining_delta=int(bindings.combat_training_destruction.nonhostile_remaining_delta)
 	data.actors=[]
+	data.freighter_deaths={}
 	var debris: Dictionary={}
 	if int(data.debris_count)>0:
 		debris=load("res://src/content/contract_junk_definitions.gd").population(bindings,packet,capability)
@@ -56,5 +57,10 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 			if int(model.actor_kind)==actor.actor_kind:
 				row.cargo_model_id=int(model.cargo_model_id);row.cargo_model_resource=model.cargo_model_resource
 		if not row.has("cargo_model_id"):return {}
+		if actor.subtype==1:
+			var death: Dictionary=load("res://src/content/freighter_destruction_definitions.gd").for_faction(bindings,int(actor.actor_kind))
+			if death.is_empty():return {}
+			for key in ["campaign_cursor","station_id","system_id"]:death[key]=data[key]
+			data.freighter_deaths[int(actor.actor_id)]=death
 		data.actors.append(row)
 	return data

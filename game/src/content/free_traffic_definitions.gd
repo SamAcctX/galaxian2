@@ -59,10 +59,14 @@ static func population(bindings: RefCounted,packet: Dictionary,rank: Variant,dif
 	var data: Dictionary=bindings.ambient_combat.duplicate(true)
 	data.merge(context,true);data.scope="augmenta_ordinary_combat";data.actor_count=count
 	data.free_traffic=bindings.mido_travel.free_traffic.duplicate(true)
-	data.freighter_boxes={0:bindings.mido_travel.alioth_attack.population.freighter_combat.boxes.duplicate(true),2:data.free_traffic.nivelian_boxes.duplicate(true)}
-	if Population.freighter_hull(bindings,1)>=0:data.freighter_boxes[1]=bindings.mido_travel.vossk_traffic.boxes.duplicate(true)
-	if Population.freighter_hull(bindings,3)>=0:data.freighter_boxes[3]=bindings.ambient_combat.freighter.boxes.duplicate(true)
+	data.freighter_boxes=freighter_boxes(bindings)
 	return data
+
+static func freighter_boxes(bindings: RefCounted) -> Dictionary:
+	var result:={0:bindings.mido_travel.alioth_attack.population.freighter_combat.boxes.duplicate(true),2:bindings.mido_travel.free_traffic.nivelian_boxes.duplicate(true)}
+	if Population.freighter_hull(bindings,1)>=0:result[1]=bindings.mido_travel.vossk_traffic.boxes.duplicate(true)
+	if Population.freighter_hull(bindings,3)>=0:result[3]=bindings.ambient_combat.freighter.boxes.duplicate(true)
+	return result
 
 static func context_valid(bindings: RefCounted,context: Variant,mission_context: RefCounted=null) -> bool:
 	if bindings==null or not context is Dictionary:return false

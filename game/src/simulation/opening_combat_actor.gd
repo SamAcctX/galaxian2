@@ -572,11 +572,14 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	if data.is_empty() or catalogues.content_id!=bindings.base_content_id or not actor_id is int or actor_id<0 or actor_id>=data.actor_count:return reject("Unsupported contract ship population or identity")
 	var row: Dictionary=packet.actors[actor_id]
 	if not Flight.rigid_pose(row.get("body_pose")) or row.body_pose!=row.get("statistics_pose"):return reject("Contract ship factory poses disagree")
-	var model: String=bindings.resolve_ship_model(int(row.hull_catalogue_id))
+	var freighter: bool=row.subtype==1
+	var root_id: int=int(row.assembly.root_model_id if row.assembly.has("root_model_id") else row.assembly.body_resource_ids[0]) if freighter else -1
+	var model: String=bindings.resolve(root_id,"mesh") if freighter else bindings.resolve_ship_model(int(row.hull_catalogue_id))
 	if model.is_empty():return reject(bindings.error)
 	var rival: bool=row.population_group=="rival"
 	var base: int=int(data.rank_base)+int(data.rank_multiplier)*int(data.rank)+int(data.cursor_multiplier)*int(data.campaign_cursor)
 	var factory_hull:=scaled_hull(float(base),float(data.difficulty),float(data.difficulty_offset))*int(row.get("hull_multiplier",1))
+	if row.has("hull_override"):factory_hull=int(row.hull_override)
 	var initial:={"actor_id":actor_id,"actor_kind":int(row.actor_kind),"hull_catalogue_id":int(row.hull_catalogue_id),
 		"hull_resource":model,"position":row.statistics_pose.origin,"current_hull":int(row.current_hull_override) if rival else factory_hull}
 	var policy: Dictionary=data.actor_policies[actor_id]
@@ -587,6 +590,12 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 		"statistics_targeting_blocked":bool(data.npc_statistics_targeting_blocked),"spatial_half_extent":int(data.engagement_half_extent),
 		"model_draw_enabled":bool(data.initial_model_draw_enabled),"node_draw_requested":bool(data.initial_node_draw_requested),"engine_draw_enabled":bool(data.initial_engine_draw_enabled)},true)
 	if rival:_state.name=row.name
+	if freighter:
+		var boxes: Dictionary=load("res://src/content/free_traffic_definitions.gd").freighter_boxes(bindings)
+		_state.point_boxes=boxes[int(row.actor_kind)].map(func(box):return {"offset":Vector3(box.offset[0],box.offset[1],box.offset[2]),"half_extents":Vector3(box.half_extents[0],box.half_extents[1],box.half_extents[2])})
+		_state.point_box_index=0
+		if not _configure_ordinary_systems(bindings,int(data.rank),int(row.subtype)):return false
+		_state.permanent_friendly=bool(policy.friendly)
 	if row.has("name_text_id"):_state.name_text_id=int(row.name_text_id)
 	if row.get("special_cargo",false):
 		_state.merge({"special_cargo":true,"special_cargo_accepted":false,"special_cargo_rejected":false})

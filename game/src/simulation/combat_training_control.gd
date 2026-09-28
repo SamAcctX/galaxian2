@@ -367,6 +367,11 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 		if rules.actors[id].population_group=="debris":
 			guidance.append(null);flight.append(null)
 			continue
+		if rules.actors[id].subtype==1:
+			var motion:=FreightMotion.new()
+			if not motion._configure_story(bindings,rules,construction.snapshot().actors[id]):return reject(motion.error)
+			guidance.append(null);flight.append(motion)
+			continue
 		var controller:=Guidance.new();var motion:=Flight.new()
 		if not controller.configure_contract(bindings,catalogues,construction,id) or not motion.configure(bindings,combat.snapshot().actors[id].body_pose):return reject(controller.error+motion.error)
 		guidance.append(controller);flight.append(motion)
@@ -380,10 +385,15 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	if not _mission_runner.configure(construction.mission_context_owner()):return reject(_mission_runner.error)
 	return true
 
-func _set_contract_destruction(bindings: RefCounted,resources: RefCounted) -> bool:
+func _set_contract_destruction(bindings: RefCounted,resources: RefCounted,freighter_resources: RefCounted) -> bool:
 	if _started or _accounting!=null or bindings!=_bindings or not resources is DeathResources:return reject("Prepare contract destruction once before flight starts")
 	var owners:=[]
 	for id in _initial_actors.size():
+		if _rules.freighter_deaths.has(id):
+			var owner:=FreightDeath.new()
+			if not owner._configure_population(bindings,freighter_resources,_construction,id,_rules.freighter_deaths[id]):return reject(owner.error)
+			owners.append(owner)
+			continue
 		if _initial_actors[id].population_group=="debris":
 			var owner:=DebrisDeath.new()
 			if not owner.configure(bindings,resources,_construction,id):return reject(owner.error)
@@ -714,7 +724,7 @@ func set_destruction(bindings: RefCounted, resources: RefCounted,freighter_resou
 	if _kappa:return _set_kappa_destruction(bindings,resources)
 	if _alioth:return _set_alioth_destruction(bindings,resources,freighter_resources)
 	if _convoy:return _set_convoy_destruction(bindings,resources,freighter_resources)
-	if _contract:return _set_contract_destruction(bindings,resources)
+	if _contract:return _set_contract_destruction(bindings,resources,freighter_resources)
 	if _ambient:return _set_ambient_destruction(bindings,resources,freighter_resources)
 	if _local_patrol and not _combat.has_local_reactions():return reject("Local traffic cannot borrow training destruction or accounting")
 	if _identity.is_empty() or _started or _accounting!=null or bindings==null or not resources is DeathResources or not DeathRules.parameters(bindings.combat_training_destruction):return reject("Prepare training destruction once before the first actor pass")
@@ -853,7 +863,7 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 			decisions.append(debris.decision)
 			if debris.has("death"):death_events.append(debris.death)
 			continue
-		if ((_ambient or _alioth or _story or _selected40_world!=null) and _initial_actors[id].population_group=="freighter") or (_convoy and _initial_actors[id].population_group=="capital"):
+		if staged._flight[id] is FreightMotion:
 			var freight: Dictionary=staged._advance_freighter(id,int(delta_ms))
 			if freight.is_empty():return fail(staged.error)
 			decisions.append(freight.decision)

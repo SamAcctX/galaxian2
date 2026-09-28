@@ -138,7 +138,9 @@ func fresh_lethal(actor: Dictionary) -> bool:
 		if actor.get(key)!=_state[key]:return false
 	var vitals: Variant=actor.get("vitals")
 	var mode:=1 if actor.get("selected40_revealed",false) and _state.campaign_cursor==40 else 0
-	return vitals is Dictionary and vitals.get("hull") is int and vitals.hull==0 and actor.get("population_group")==_state.population_group and actor.get("local_combat")==true and actor.get("active")==true and actor.get("actor_mode")==mode and Flight.rigid_pose(actor.get("body_pose"))
+	# The prepared population above owns admission. A local-traffic marker
+	# cannot exclude the same freighter body in another admitted cast.
+	return vitals is Dictionary and vitals.get("hull") is int and vitals.hull==0 and actor.get("population_group")==_state.population_group and actor.get("active")==true and actor.get("actor_mode")==mode and Flight.rigid_pose(actor.get("body_pose"))
 
 func effect_sound(random: RefCounted,position: Vector3) -> Dictionary:
 	return {"source_id":int(_rules.effect_sound_base)+random.next_int(int(_rules.effect_sound_bound)),"position":position}

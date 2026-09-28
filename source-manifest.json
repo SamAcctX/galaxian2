@@ -2790,6 +2790,10 @@
     "game/tests/purchase_contract.gd",
     "game/tests/purchase_contract.gd.uid",
     "game/tests/purchase_application.gd",
-    "game/tests/purchase_application.gd.uid"
+    "game/tests/purchase_application.gd.uid",
+    "game/tests/escort_cast.gd",
+    "game/tests/escort_cast.gd.uid",
+    "game/tests/escort_application.gd",
+    "game/tests/escort_application.gd.uid"
   ]
 }

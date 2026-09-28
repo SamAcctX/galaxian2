@@ -58,29 +58,7 @@ static func docking_parameters(data: Dictionary) -> bool:
 	return station is int and station in [75,76,77,78,79] and data.get("campaign_cursor") in [13,14] and Equal.equal_value(data,_docking_values(station,data.campaign_cursor))
 
 static func combat_population(bindings: RefCounted,combat: Dictionary) -> bool:
-	if not available(bindings):return false
-	var source: Dictionary=combat.get("contract_encounter",{})
-	var context: Dictionary=source.get("context",{})
-	var actors: Variant=combat.get("actors")
-	if not actors is Array or source.get("actor_count")!=actors.size() or source.get("mission",{})!=context.get("mission"):return false
-	for key in ["base_content_id","binding_id"]:
-		if combat.get(key)!=bindings.get(key) or context.get(key)!=bindings.get(key):return false
-	if context.get("campaign_cursor")!=combat.get("campaign_cursor"):return false
-	var kind: Variant=source.get("kind")
-	if kind!=context.mission.get("kind"):return false
-	# Cast admission owns location and population size; presentation observes it.
-	var hulls: Dictionary=bindings.early_contracts.encounter_construction.hulls
-	for id in actors.size():
-		var actor: Variant=actors[id]
-		if not actor is Dictionary or actor.get("actor_id")!=id:return false
-		if actor.get("population_group")=="debris":
-			if actor.get("actor_kind")!=-1 or actor.get("hull_catalogue_id")!=-1:return false
-		else:
-			var hull: Variant=actor.get("hull_catalogue_id")
-			var faction: Variant=actor.get("actor_kind")
-			if not actor.get("contract_ship",false) or actor.get("subtype")!=0:return false
-			if not hull is int or hull<0 or hull>=hulls.factions.size() or int(hulls.factions[hull])!=faction:return false
-	return true
+	return load("res://src/simulation/mission_context.gd").contract_combat_matches(bindings,combat)
 
 static func empty_population(bindings: RefCounted,world: Dictionary,rank: Variant,difficulty: Variant) -> Dictionary:
 	if not available(bindings) or not rank is int or rank<0 or rank>=bindings.opening_handoff.rank_thresholds.size() or difficulty not in [0.5,1.0]:return {}

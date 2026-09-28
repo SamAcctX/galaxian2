@@ -51,6 +51,22 @@ func configure_free(library: RefCounted,bindings: RefCounted,construction: RefCo
 func for_faction(faction: int) -> Dictionary:
 	return _state.get("variants",{}).get(faction,{}).duplicate(true) if _state.has("variants") else snapshot()
 
+func configure_contract(library: RefCounted,bindings: RefCounted,construction: RefCounted) -> bool:
+	error="";_state={}
+	if not construction is Construction:return reject("Contract freighter resources require their admitted population")
+	var packet: Dictionary=construction.snapshot()
+	var data: Dictionary=load("res://src/content/contract_ship_lifecycle_definitions.gd").population(bindings,packet,construction.mission_context_owner())
+	if data.is_empty():return reject("Contract freighter resources lost their admitted cast")
+	var variants:={}
+	for id in data.freighter_deaths:
+		var faction:=int(packet.actors[id].actor_kind)
+		if variants.has(faction):continue
+		var prepared: RefCounted=get_script().new()
+		if not prepared._configure_resources(library,bindings,data.freighter_deaths[id]):return reject(prepared.error)
+		variants[faction]=prepared.snapshot()
+	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(data.campaign_cursor),"variants":variants}
+	return true
+
 func faction_owner(faction: int) -> RefCounted:
 	var selected:=for_faction(faction)
 	if selected.is_empty():return null

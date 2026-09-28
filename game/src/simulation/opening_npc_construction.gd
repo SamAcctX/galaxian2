@@ -265,6 +265,14 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 		for resource_id in rules.junk.model_ids:
 			if bindings.resolve(int(resource_id),"mesh").is_empty():return reject(bindings.error)
 	var definition: Dictionary=rules.duplicate(true)
+	definition.freighter_hulls={};definition.freighter_assemblies={}
+	for group in recipe.cast.ship_groups:
+		if group.get("subtype",0)!=1:continue
+		var faction:=int(group.faction)
+		var assembly:=FreePopulation.freighter_assembly(bindings,faction)
+		if assembly.is_empty():return reject("The admitted freighter has no original assembly")
+		definition.freighter_hulls[faction]=FreePopulation.freighter_hull(bindings,faction)
+		definition.freighter_assemblies[faction]=assembly.duplicate(true)
 	definition.merge({"context":context,"actor_count":count,"debris_count":recipe.cast.debris_count,"ship_state":recipe.cast.ship_state,"player_position":player_position,"field_center":field_center})
 	definition.placement=recipe.cast.placement;definition.rival_actor_id=recipe.cast.rival_actor_id
 	definition.count_draw=recipe.cast.count_draw;definition.ship_groups=recipe.cast.ship_groups
@@ -1022,6 +1030,7 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 	else:
 		var placement: Dictionary=_contract.placement
 		match placement.kind:
+			"points":path=placement.points.duplicate()
 			"approach":
 				path=[Vector3(int(placement.horizontal_offset)-random.next_int(int(placement.horizontal_bound)),0,int(placement.horizontal_offset)-random.next_int(int(placement.horizontal_bound))),Vector3.ZERO]
 			"line":
@@ -1059,16 +1068,21 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 		var faction:=int(_contract.rival_faction if story else _contract.context.client_faction) if rival else int(_contract.pirate_actor_kind)
 		var options: Dictionary={} if story else load("res://src/content/mission_recipe.gd").contract_ship_options(_contract,id,enemy_faction,int(_contract.context.client_faction))
 		if not story:faction=int(options.faction)
-		var hull: int=int(_contract.rival_hull) if story and rival else _contract_hull(random,faction)
+		var freighter: bool=options.get("subtype",0)==1
+		var hull: int=int(_contract.freighter_hulls[faction]) if freighter else int(_contract.rival_hull) if story and rival else _contract_hull(random,faction)
 		var at_origin: bool=rival or path.is_empty() or options.get("origin")=="zero"
 		var origin: Vector3=Vector3.ZERO if at_origin else path[random.next_int(path.size())]
-		var sampled:=_sample_actor(id,origin,random)
+		var sampled:=_sample_actor(id,origin,random,freighter)
 		if sampled.is_empty():return {}
 		var actor: Dictionary=sampled.actor
 		var route: RefCounted=sampled.route
 		var position: Vector3=actor.factory_position
 		actor.merge({"actor_kind":faction,"hull_catalogue_id":hull,"subtype":int(_contract.subtype),"population_group":"rival" if rival else "pirate"})
 		if not story:actor.population_group=options.population_group
+		if freighter:
+			actor.subtype=1;actor.world_flag=true;actor.model_assembly_required=true
+			actor.assembly=_contract.freighter_assemblies[faction].duplicate(true)
+			if actor.assembly.has("container_count_bound"):actor.assembly.container_count=random.next_int(int(actor.assembly.container_count_bound))
 		if rival:
 			var rules: Dictionary=_contract.challenge
 			position=_contract.player_position
@@ -1091,6 +1105,7 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 				actor.special_cargo=bool(options.cargo_override.special)
 			if int(options.name_text_id)>=0:actor.name_text_id=int(options.name_text_id)
 			match options.position.get("kind",""):
+				"positions":position=options.position.points[int(options.group_index)]
 				"path_start":position=path[0]+Vector3(options.position.step)*int(options.group_index)
 				"scenery_midpoint":
 					var anchor:=int(scenery_positions.size()/2)+int(options.group_index)

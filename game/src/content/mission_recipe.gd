@@ -61,6 +61,21 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 			count=debris_count+int(Vitals.single(scaled*float(rules.junk.pirate_count_multiplier)))
 			ship_state={"mode":0,"active":true,"targeting_blocked":false}
 			placement={"kind":"debris_field"}
+		9:
+			var base:=int(Vitals.single(scaled*5.0))+3
+			attackers=int(Vitals.single(base+Vitals.single(base*Vitals.single(float(context.difficulty)-0.5))))
+			count=attackers+5
+			var faction:=int(context.client_faction) if int(context.client_faction)<4 else 0
+			var enemy:=int([1,0,3,2][int(context.client_faction)]) if int(context.client_faction)<4 else 8
+			var hull:=150+2*mini(int(context.rank),20)+(2*int(context.campaign_cursor) if int(context.campaign_cursor)<45 else 90)
+			if float(context.difficulty)>0.7:hull=int(Vitals.single(float(hull)*Vitals.single(1.4)))
+			placement={"kind":"points","points":[Vector3(10000,0,100000),Vector3(10000,0,150000),Vector3(10000,0,200000)]}
+			ship_state={"mode":0,"active":true,"targeting_blocked":false}
+			player_last_ids=range(attackers);player_only_ids=range(attackers,count)
+			ship_groups=[{"first_actor":0,"end_actor":attackers,"faction":enemy,"population_group":"pirate","origin":"path","policy":{"initial_hostile":true,"updated_hostile":true}},
+				{"first_actor":attackers,"end_actor":count,"faction":faction,"population_group":"freighter","subtype":1,"origin":"zero","clear_cargo":true,
+					"position":{"kind":"positions","points":[Vector3(-2500,-300,27000),Vector3(6500,3000,24000),Vector3(-4000,-2000,19000),Vector3(9000,-6000,17000),Vector3(3000,7000,15000)]},
+					"ship_state":{"hull_override":hull,"cruise_enabled":true},"policy":{"initial_hostile":false,"updated_hostile":false,"friendly":true}}]
 		12:
 			var base:=int(Vitals.single(scaled*float(rules.challenge.count_multiplier)))
 			count=base+(int(rules.challenge.count_odd_offset) if (base+int(rules.challenge.count_odd_offset))%2 else int(rules.challenge.count_even_offset))+1
@@ -74,7 +89,7 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 	match int(mission.kind):
 		0:success={"kind":"never"}
 		1:success={"kind":7,"end_actor":attackers}
-		2:
+		2,9:
 			success={"kind":18,"first_actor":0,"end_actor":attackers}
 			failure={"kind":18,"first_actor":attackers,"end_actor":count}
 		3,5:
@@ -103,11 +118,11 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 static func contract_ship_options(cast: Dictionary,id: int,enemy_faction: int,client_faction: int) -> Dictionary:
 	var rival: bool=id==int(cast.rival_actor_id)
 	var result:={"rival":rival,"faction":client_faction if rival else 8,"population_group":"rival" if rival else "pirate",
-		"origin":"zero" if rival else "path","policy":{},"ship_state":cast.ship_state.duplicate(true),"position":{},"route_start":-1,"clear_cargo":false,"group_index":id,"cargo_override":{},"name_text_id":-1}
+		"origin":"zero" if rival else "path","policy":{},"ship_state":cast.ship_state.duplicate(true),"position":{},"route_start":-1,"clear_cargo":false,"group_index":id,"cargo_override":{},"name_text_id":-1,"subtype":0}
 	for group in cast.get("ship_groups",[]):
 		if id<int(group.first_actor) or id>=int(group.end_actor):continue
 		result.faction=enemy_faction if int(group.faction)==-2 else int(group.faction)
-		for key in ["population_group","origin","policy","position","route_start","clear_cargo","cargo_override","name_text_id"]:result[key]=group.get(key,result[key])
+		for key in ["population_group","origin","policy","position","route_start","clear_cargo","cargo_override","name_text_id","subtype"]:result[key]=group.get(key,result[key])
 		result.group_index=id-int(group.first_actor)
 		result.ship_state.merge(group.get("ship_state",{}),true)
 		break
