@@ -61,14 +61,21 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 		for item in cat.tables.items:
 			if item.arrays[2][3]!=1:continue
 			var id:=int(item.id);var declaration:=Secondaries.Bomb.Definitions.declaration(id)
+			var mine: bool=not Secondaries.Mines.Definitions.declaration(id).is_empty()
+			if mine:declaration=Secondaries.Mines.Definitions.declaration(id)
 			if declaration.is_empty():continue
-			if not families.has(declaration.kind):
+			var family: int=Secondaries.Mines.Definitions.effect_family(id) if mine else declaration.kind
+			if not families.has(family):
 				var bursts:=BurstResources.new()
-				if not bursts.configure(library,bindings,int(declaration.kind)):return fail(bursts.error)
-				families[declaration.kind]=bursts
-			var bomb:=Secondaries.Bomb.new()
+				if not bursts.configure(library,bindings,family):return fail(bursts.error)
+				families[family]=bursts
+			var bomb: RefCounted=Secondaries.Mines.new() if mine else Secondaries.Bomb.new()
 			var supported: bool=bomb.configure(bindings,cat,id,[]) and bomb.prepare_visuals(library,bindings)
 			items[id]="" if supported else "This bomb's original body or glow is unavailable"
+			if mine:
+				for sound_id in [declaration.launch_sound,declaration.burst_sound]:
+					var clip: Dictionary=sounds.prepare(sound_id)
+					if clip.is_empty() or clip.has("unsupported"):items[id]="This mine's original sound is unavailable"
 		var resolver:=Weapons.new()
 		if not resolver.configure(bindings,cat,bindings.base_content_id):return fail(resolver.error)
 		for item in cat.tables.items:
@@ -142,6 +149,9 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 		return ""
 	if category==1:
 		if not Secondaries.Definitions.available(bindings):return "This secondary weapon's flight behavior is not yet supported"
+		if not Secondaries.Mines.Definitions.declaration(id).is_empty():
+			var mine:=Secondaries.Mines.new()
+			return "" if mine.configure(bindings,cat,id,ids) and NPCSystems.available(bindings) else "This mine's firing or systems behavior is not yet supported"
 		if not Secondaries.Bomb.Definitions.declaration(id).is_empty():
 			var bomb:=Secondaries.Bomb.new()
 			return "" if bomb.configure(bindings,cat,id,ids) else "This bomb's firing behavior is not yet supported"

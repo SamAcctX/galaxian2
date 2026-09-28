@@ -2894,6 +2894,12 @@
     "game/src/simulation/mine_projectiles.gd",
     "game/src/simulation/mine_projectiles.gd.uid",
     "game/tests/mine_projectiles.gd",
-    "game/tests/mine_projectiles.gd.uid"
+    "game/tests/mine_projectiles.gd.uid",
+    "game/src/simulation/mine_detonations.gd",
+    "game/src/simulation/mine_detonations.gd.uid",
+    "game/src/presentation/mine_projectile_geometry.gd",
+    "game/src/presentation/mine_projectile_geometry.gd.uid",
+    "game/tests/mine_ownership.gd",
+    "game/tests/mine_ownership.gd.uid"
   ]
 }

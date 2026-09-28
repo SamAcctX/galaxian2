@@ -11,6 +11,7 @@ const WeaponAudio=preload("res://src/content/weapon_audio_definitions.gd")
 const SecondaryAudio=preload("res://src/content/secondary_ownership_definitions.gd")
 const Conventional=preload("res://src/content/conventional_secondary_definitions.gd")
 const BombAudio=preload("res://src/content/emp_bombs_definitions.gd")
+const MineAudio=preload("res://src/content/mine_definitions.gd")
 const RadioVoice=preload("res://src/content/radio_audio_definitions.gd")
 const Dialogue=preload("res://src/content/dialogue_definitions.gd")
 const Story=preload("res://src/content/story_encounter_definitions.gd")
@@ -820,6 +821,8 @@ func prepare_secondaries(world: Dictionary) -> Dictionary:
 		if not gun is Dictionary or not Definitions.integer(gun.get("slot_index"),0,1020) or slots.has(gun.slot_index) or not gun.get("equipment") is Dictionary:return fail("Secondary sound lost its installed launcher")
 		if gun.has("bomb"):
 			if not gun.bomb is Dictionary or not gun.equipment.get("item_id") is int or BombAudio.declaration(gun.equipment.item_id).is_empty():return fail("Unsupported bomb sound item")
+		elif gun.has("mine"):
+			if not gun.mine is Dictionary or not gun.equipment.get("item_id") is int or MineAudio.declaration(gun.equipment.item_id).is_empty():return fail("Unsupported mine sound item")
 		elif not Conventional.resolved(gun.get("projectiles",{}).get("weapon",{})) or _weapon_audio.is_empty():return fail("Secondary sound lost its resolved conventional weapon")
 		slots[gun.slot_index]=gun
 	# Burst wrappers run in the early weapon pass, before late launch input.
@@ -835,12 +838,15 @@ func prepare_secondaries(world: Dictionary) -> Dictionary:
 			if not gun.has("projectiles") or not event.audio.is_empty() or event.get("ammunition_consumed")!=0:return fail("Projectile impact replayed launch audio or spent ammunition")
 			continue
 		var key:=str(event.slot_index)+":"+str(event.action)
+		if gun.has("mine") and event.action=="detonated":
+			if not Definitions.integer(event.get("blast",{}).get("projectile_id"),1,2147483647):return fail("Mine blast lost its projectile sound identity")
+			key+=":"+str(event.blast.projectile_id)
 		if seen.has(key):return fail("Secondary sound repeated an event in one frame")
 		seen[key]=true
 		if event.action=="detonated":
 			if not event.audio.is_empty() or event.get("ammunition_consumed")!=0:return fail("Detonation replayed launch audio or consumed ammunition")
 			continue
-		var id: int=int(BombAudio.declaration(event.item_id).launch_sound) if gun.has("bomb") else int(_weapon_audio.player_event_ids[event.item_id])
+		var id: int=int(BombAudio.declaration(event.item_id).launch_sound) if gun.has("bomb") else (int(MineAudio.declaration(event.item_id).launch_sound) if gun.has("mine") else int(_weapon_audio.player_event_ids[event.item_id]))
 		var cue: Dictionary=event.audio
 		if event.get("ammunition_consumed")!=1 or cue.size()!=3 or cue.get("source_id")!=id or cue.get("pitch_raw")!=_secondary_audio.launch_audio.pitch_raw or not cue.get("position") is Vector3 or not cue.position.is_finite():return fail("Secondary launch lost its declared sound, pitch or source position")
 		operations.append({"action":"start_spatial","source_id":id,"position":cue.position,"pitch_raw":float(cue.pitch_raw),"item_id":int(event.item_id),"secondary_slot":int(event.slot_index)})
@@ -851,14 +857,19 @@ func prepare_secondaries(world: Dictionary) -> Dictionary:
 func prepare_secondary_detonations(owner: Dictionary) -> Dictionary:
 	var operations: Array[Dictionary]=[]
 	var guns: Array=owner.guns
-	var attached: bool=guns.any(func(gun):return gun.has("detonation"))
+	var attached: bool=guns.any(func(gun):return gun.has("detonation") or gun.has("mine_bursts"))
 	if not attached:
 		return {"operations":operations} if not owner.has("detonation_audio") else fail("EMP sound has no retained burst wrappers")
 	var cues: Variant=owner.get("detonation_audio")
-	if not cues is Array or cues.size()>guns.size():return fail("Invalid EMP burst sound extent")
-	var sources:={}
+	if not cues is Array or cues.size()>guns.size()*MineAudio.CAPACITY:return fail("Invalid area burst sound extent")
+	var sources:={};var mines:={}
 	for index in range(guns.size()-1,-1,-1):
 		var gun: Dictionary=guns[index]
+		if gun.has("mine"):
+			var retained: Variant=gun.get("mine_bursts")
+			if not retained is Dictionary or retained.get("weapon")!=gun.mine.weapon or not retained.get("bursts") is Array or retained.bursts.size()!=MineAudio.CAPACITY:return fail("Mine sound lost its retained bursts")
+			mines[gun.slot_index]={"order":(guns.size()-1-index)*(MineAudio.CAPACITY+1),"slot_index":int(gun.slot_index),"item_id":int(gun.equipment.item_id),"bursts":retained.bursts}
+			continue
 		if not gun.has("bomb"):continue
 		var burst: Variant=gun.get("detonation")
 		if not burst is Dictionary or burst.get("item_id")!=gun.equipment.item_id:return fail("EMP sound lost its retained burst item")
@@ -868,13 +879,23 @@ func prepare_secondary_detonations(owner: Dictionary) -> Dictionary:
 		if declaration.is_empty():return fail("Burst sound lost its admitted bomb declaration")
 		var id: int=declaration.burst_sound
 		if sources.has(id):return fail("EMP sound repeated an equipped item")
-		sources[id]={"order":guns.size()-1-index,"slot_index":int(gun.slot_index),"item_id":int(gun.equipment.item_id)}
+		sources[id]={"order":(guns.size()-1-index)*(MineAudio.CAPACITY+1),"slot_index":int(gun.slot_index),"item_id":int(gun.equipment.item_id)}
 	var previous:=-1
 	for cue in cues:
-		if not cue is Dictionary or cue.size()!=4 or cue.get("action")!="start_spatial" or not Definitions.integer(cue.get("source_id"),0,19999) or not sources.has(cue.source_id) or cue.get("pitch_raw")!=0.0 or not cue.get("position") is Vector3 or not cue.position.is_finite():return fail("Invalid original EMP burst sound cue")
-		var source: Dictionary=sources[cue.source_id]
-		if source.order<=previous:return fail("EMP burst sounds changed wrapper order or repeated a cue")
-		previous=source.order
+		if not cue is Dictionary or cue.get("action")!="start_spatial" or not Definitions.integer(cue.get("source_id"),0,19999) or cue.get("pitch_raw")!=0.0 or not cue.get("position") is Vector3 or not cue.position.is_finite():return fail("Invalid original area burst sound cue")
+		var source: Dictionary
+		var order: int
+		if cue.has("projectile_slot"):
+			if cue.size()!=7 or not mines.has(cue.get("secondary_slot")) or not Definitions.integer(cue.projectile_slot,0,MineAudio.CAPACITY-1):return fail("Mine sound lost its projectile slot")
+			source=mines[cue.secondary_slot]
+			var burst: Dictionary=source.bursts[cue.projectile_slot]
+			if cue.get("item_id")!=source.item_id or cue.source_id!=MineAudio.declaration(source.item_id).burst_sound or burst.get("item_id")!=source.item_id or burst.get("effect",{}).get("position")!=cue.position:return fail("Mine sound changed its original burst or accepted position")
+			order=source.order+int(cue.projectile_slot)
+		else:
+			if cue.size()!=4 or not sources.has(cue.source_id):return fail("Area burst sound lost its source")
+			source=sources[cue.source_id];order=source.order
+		if order<=previous:return fail("Area burst sounds changed wrapper order or repeated a cue")
+		previous=order
 		var op: Dictionary=cue.duplicate(true)
 		op.item_id=source.item_id;op.secondary_slot=source.slot_index
 		operations.append(op)

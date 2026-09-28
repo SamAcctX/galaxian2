@@ -9,12 +9,14 @@ const Vitals=preload("res://src/simulation/combat_vitals.gd")
 const Vectors=preload("res://src/simulation/source_vectors.gd")
 const Geometry=preload("res://src/simulation/ordinary_hit_geometry.gd")
 const Random=preload("res://src/simulation/seeded_random.gd")
+const Visuals=preload("res://src/content/bomb_projectile_resources.gd")
 var error:=""
 var _weapon:={}
 var _slots:=[]
 var _elapsed_ms:=0
 var _next_id:=1
 var _random: RefCounted
+var _visuals:={}
 
 func configure(bindings: RefCounted,cat: RefCounted,item_id: Variant,equipment_ids: Array,muzzle_offset:=Vector3.ZERO,seed_value: int=0) -> bool:
 	error=""
@@ -33,7 +35,14 @@ func configure(bindings: RefCounted,cat: RefCounted,item_id: Variant,equipment_i
 	var random:=Random.new()
 	if not random.seed_from(seed_value):return reject(random.error)
 	_weapon=weapon;_random=random;_slots=[];_slots.resize(Definitions.CAPACITY)
-	_elapsed_ms=weapon.interval_ms;_next_id=1
+	_elapsed_ms=weapon.interval_ms;_next_id=1;_visuals={}
+	return true
+
+func prepare_visuals(library: RefCounted,bindings: RefCounted) -> bool:
+	if _weapon.is_empty() or _next_id!=1 or not _visuals.is_empty():return reject("Prepare mine models once before launching")
+	var prepared:=Visuals.prepare(library,bindings,_weapon)
+	if prepared.is_empty() or not prepared.models.all(func(model):return model.start_ms==0 and model.end_ms==0):return reject("The mine's original static models are unavailable")
+	_visuals=prepared
 	return true
 
 func trigger_action(ammunition: int,permitted:=true) -> String:
@@ -140,12 +149,13 @@ func discard_flying() -> void:
 static func _event() -> Dictionary:return {"action":"none","ammunition_consumed":0,"shot":{},"blasts":[],"attraction":{}}
 
 func snapshot() -> Dictionary:
-	return {"weapon":_weapon.duplicate(true),"slots":_slots.duplicate(true),"elapsed_ms":_elapsed_ms,"random_state":_random.snapshot() if _random!=null else {}}
+	return {"weapon":_weapon.duplicate(true),"slots":_slots.duplicate(true),"elapsed_ms":_elapsed_ms,"random_state":_random.snapshot() if _random!=null else {},"visuals":_visuals.duplicate(true)}
 
 func fork() -> RefCounted:
 	var next: RefCounted=get_script().new()
 	next._weapon=_weapon.duplicate(true);next._slots=_slots.duplicate(true);next._elapsed_ms=_elapsed_ms;next._next_id=_next_id
 	next._random=_random.fork() if _random!=null else null
+	next._visuals=_visuals.duplicate(true)
 	return next
 
 func reject(message: String) -> bool:error=message;return false

@@ -4,6 +4,8 @@ extends RefCounted
 const Definitions=preload("res://src/content/secondary_ownership_definitions.gd")
 const Loadout=preload("res://src/simulation/equipment_slots.gd")
 const Bomb=preload("res://src/simulation/emp_bombs.gd")
+const Mines=preload("res://src/simulation/mine_projectiles.gd")
+const MineBursts=preload("res://src/simulation/mine_detonations.gd")
 const Detonation=preload("res://src/simulation/emp_detonation.gd")
 const Combat=preload("res://src/simulation/opening_combat_group.gd")
 const Vitals=preload("res://src/simulation/combat_vitals.gd")
@@ -40,7 +42,15 @@ func configure(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,mounts: 
 		var index: int=int(checked.counts[0])+entry.slot
 		var gun:={"slot_index":index,"equipment":entry.duplicate(true),"ammunition":entry.quantity}
 		var declaration:=Bomb.Definitions.declaration(int(entry.item_id))
-		if not declaration.is_empty():
+		var mine_declaration:=Mines.Definitions.declaration(int(entry.item_id))
+		if not mine_declaration.is_empty():
+			if not is_instance_of(mounts,load("res://src/content/weapon_mounts.gd")):return reject("Mine launchers require the ship's authored mounts")
+			gun.mount=mounts.resolve(int(checked.ship_id),1,int(entry.slot))
+			if gun.mount.is_empty():return reject(mounts.error)
+			gun.mine=Mines.new()
+			if not gun.mine.configure(bindings,cat,entry.item_id,checked.equipment_ids,gun.mount.position+Vector3(0,0,100)):return reject(gun.mine.error)
+			gun.audio={"enabled":true,"source_id":int(mine_declaration.launch_sound),"pitch_raw":float(Definitions.VALUES.launch_audio.pitch_raw)}
+		elif not declaration.is_empty():
 			var bomb:=Bomb.new()
 			var muzzle:=Vector3(0,0,400)
 			if mounts!=null:
@@ -76,6 +86,13 @@ func configure_detonations(resources: RefCounted) -> bool:
 		if data.get(key)!=_loadout[key]:return reject("EMP burst resources belong to another weapon owner")
 	var prepared:={}
 	for gun in _guns:
+		if gun.has("mine"):
+			if Mines.Definitions.effect_family(gun.equipment.item_id)!=data.get("kind"):continue
+			if gun.has("mine_bursts"):return reject("This mine launcher already has prepared bursts")
+			var bursts:=MineBursts.new()
+			if not bursts.configure(resources,gun.mine.snapshot().weapon):return reject(bursts.error)
+			prepared[gun.slot_index]=bursts
+			continue
 		if not gun.has("bomb") or gun.bomb.snapshot().weapon.kind!=data.get("kind"):continue
 		if gun.has("detonation"):return reject("This bomb family already has its prepared bursts")
 		var burst:=Detonation.new()
@@ -83,14 +100,17 @@ func configure_detonations(resources: RefCounted) -> bool:
 		prepared[gun.slot_index]=burst
 	if prepared.is_empty():return reject("These burst resources do not match an installed bomb family")
 	for gun in _guns:
-		if prepared.has(gun.slot_index):gun.detonation=prepared[gun.slot_index]
+		if prepared.has(gun.slot_index):gun["mine_bursts" if gun.has("mine") else "detonation"]=prepared[gun.slot_index]
 	return true
 
-func has_bombs() -> bool:return _guns.any(func(gun):return gun.has("bomb"))
+func has_bombs() -> bool:return _guns.any(func(gun):return gun.has("bomb") or gun.has("mine"))
 
 func bomb_kinds() -> Array[int]:
 	var kinds: Array[int]=[]
 	for gun in _guns:
+		if gun.has("mine"):
+			var kind:=Mines.Definitions.effect_family(gun.equipment.item_id)
+			if kind not in kinds:kinds.append(kind)
 		if gun.has("bomb"):
 			var kind: int=gun.bomb.snapshot().weapon.kind
 			if kind not in kinds:kinds.append(kind)
@@ -104,6 +124,10 @@ func configure_projectile_visuals(library: RefCounted,bindings: RefCounted) -> b
 	var prepared:={}
 	var bombs:={}
 	for gun in _guns:
+		if gun.has("mine"):
+			var mine: RefCounted=gun.mine.fork()
+			if not mine.prepare_visuals(library,bindings):return reject(mine.error)
+			bombs[gun.slot_index]=mine
 		if gun.has("bomb"):
 			var bomb: RefCounted=gun.bomb.fork()
 			if not bomb.prepare_visuals(library,bindings):return reject(bomb.error)
@@ -115,16 +139,22 @@ func configure_projectile_visuals(library: RefCounted,bindings: RefCounted) -> b
 		prepared[gun.slot_index]=visual
 	for gun in _guns:
 		if prepared.has(gun.slot_index):gun.visuals=prepared[gun.slot_index]
-		if bombs.has(gun.slot_index):gun.bomb=bombs[gun.slot_index]
+		if bombs.has(gun.slot_index):gun["mine" if gun.has("mine") else "bomb"]=bombs[gun.slot_index]
 	return true
 
 func has_detonations() -> bool:
-	return has_bombs() and _guns.all(func(gun):return not gun.has("bomb") or gun.has("detonation"))
+	return has_bombs() and _guns.all(func(gun):return (not gun.has("bomb") or gun.has("detonation")) and (not gun.has("mine") or gun.has("mine_bursts")))
 
-func detonation_owner(slot_index: int) -> RefCounted:
+func detonation_owner(slot_index: int,projectile_slot: int=-1) -> RefCounted:
 	for gun in _guns:
-		if gun.slot_index==slot_index:return gun.get("detonation")
+		if gun.slot_index==slot_index:
+			if gun.has("mine_bursts"):return gun.mine_bursts.burst_owner(projectile_slot)
+			return gun.get("detonation")
 	return null
+
+static func _projectile_state(gun: Dictionary) -> Dictionary:
+	if gun.has("mine"):return gun.mine.snapshot()
+	return gun.bomb.snapshot() if gun.has("bomb") else gun.projectiles.snapshot()
 
 func evaluate_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted,ordered_actor_ids: Variant,permitted: Variant=true,bodies: RefCounted=null,inventory: RefCounted=null) -> Dictionary:
 	error=""
@@ -136,11 +166,14 @@ func evaluate_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted
 	var field: RefCounted=bodies
 	if permitted:
 		for gun in next._guns:
-			var before: Dictionary=gun.bomb.snapshot() if gun.has("bomb") else gun.projectiles.snapshot()
+			var before:=_projectile_state(gun)
 			var flying: bool=before.get("shot",{}).get("phase")=="flying"
 			if not flying and gun.equipment.item_id!=selected_item_id:continue
 			var event: Dictionary
-			if gun.has("bomb"):
+			if gun.has("mine"):
+				event=gun.mine.trigger(pose,gun.ammunition,true)
+				if event.is_empty():return fail(gun.mine.error)
+			elif gun.has("bomb"):
 				event=gun.bomb.trigger(pose,gun.ammunition,targets,true)
 				if event.is_empty():return fail(gun.bomb.error)
 			else:
@@ -183,6 +216,28 @@ func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Va
 	# Projectile wrappers update in creation order, independently of firing order.
 	for index in range(next._guns.size()-1,-1,-1):
 		var gun: Dictionary=next._guns[index]
+		if gun.has("mine"):
+			targets=next._targets(group,ordered_actor_ids,field,inventory,true)
+			if not next.error.is_empty():return fail(next.error)
+			var result: Dictionary=gun.mine.advance(delta_ms,targets)
+			if result.is_empty():return fail(gun.mine.error)
+			if gun.has("mine_bursts"):
+				var burst: Dictionary=gun.mine_bursts.advance(result.blasts,delta_ms,observer_position)
+				if burst.is_empty():return fail(gun.mine_bursts.error)
+				for cue in burst.audio:
+					cue.secondary_slot=gun.slot_index;cue.item_id=gun.equipment.item_id
+					next._detonation_events.append(cue)
+				if not burst.camera.is_empty():
+					var command: Dictionary=burst.camera.duplicate()
+					command.slot_index=gun.slot_index;command.item_id=gun.equipment.item_id
+					next._camera_commands.append(command)
+			for blast in result.blasts:
+				var event:={"action":"detonated","ammunition_consumed":0,"blast":blast}
+				if field!=null and field==bodies and _changes_scenery(event):field=bodies.fork_for_frame()
+				var committed: Dictionary=next._apply_event(gun,event,group,Vector3.ZERO,field)
+				if committed.is_empty():return fail(next.error)
+				events.append(committed)
+			continue
 		if gun.has("projectiles"):
 			if gun.has("visuals"):Playback.advance([gun.visuals.attachment],int(delta_ms),true)
 			var shots: Dictionary=gun.projectiles.snapshot()
@@ -255,7 +310,7 @@ func _targets(combat: RefCounted,ordered_actor_ids: Variant,bodies: RefCounted=n
 		if not id is int or id<0 or id>=state.actors.size() or seen.has(id):reject("Secondary target order names an unavailable or repeated actor");return []
 		var actor: Dictionary=state.actors[id]
 		if not actor.get("scenery") is bool or not actor.get("active") is bool or not actor.get("position") is Vector3 or not actor.position.is_finite():reject("Secondary target lacks current classification and position");return []
-		var target:={"actor_id":id,"position":actor.position,"active":actor.active,"emp_immune":actor.scenery}
+		var target:={"actor_id":id,"position":actor.position,"active":actor.active,"emp_immune":actor.scenery,"mine_sensitive":actor.get("hostile",false) and not actor.scenery}
 		if physical_contacts:
 			target.collision=combat.collision_context(id)
 			if target.collision.is_empty():reject(combat.error);return []
@@ -263,7 +318,7 @@ func _targets(combat: RefCounted,ordered_actor_ids: Variant,bodies: RefCounted=n
 		seen[id]=true
 	for index in scenery_indices:
 		var body: Dictionary=field.objects[index]
-		var target:={"actor_id":state.actors.size()+int(index),"position":body.position,"active":body.active,"emp_immune":true,"target":{"group":"scenery","index":int(index)}}
+		var target:={"actor_id":state.actors.size()+int(index),"position":body.position,"active":body.active,"emp_immune":true,"mine_sensitive":false,"target":{"group":"scenery","index":int(index)}}
 		if physical_contacts:
 			target.collision=bodies.collision_context(index)
 			if target.collision.is_empty():reject(bodies.error);return []
@@ -291,19 +346,22 @@ func _apply_event(gun: Dictionary,event: Dictionary,combat: RefCounted,origin: V
 		for hit in event.blast.hits:
 			if hit.has("normal_damage"):
 				var target: Dictionary=hit.get("target",{"group":"npc","index":hit.actor_id})
-				var normal: Dictionary
-				if target.group=="scenery":
-					if bodies==null:return fail("A scenery blast lost its retained body owner")
-					normal=bodies.normal_hit(target.index,hit.normal_damage)
-					if normal.is_empty() or not bodies.record_blast(target.index,hit.impact_vector,hit.motion_scalar):return fail(bodies.error)
+				if gun.has("mine") and hit.normal_damage==0:
+					if target.group=="scenery" and (bodies==null or not bodies.record_blast(target.index,hit.impact_vector,hit.motion_scalar)):return fail("Mine impact lost its scenery motion owner")
 				else:
-					normal=combat.normal_hit(target.index,hit.normal_damage,false)
-					if normal.is_empty():return fail(combat.error)
-				result.normal_hits.append({"target":target,"damage":hit.normal_damage,"result":normal})
-				continue
-			var applied: Dictionary=combat.systems_hit(hit.actor_id,hit.system_damage,false)
-			if applied.is_empty():return fail(combat.error)
-			result.systems_hits.append({"actor_id":hit.actor_id,"damage":hit.system_damage,"result":applied})
+					var normal: Dictionary
+					if target.group=="scenery":
+						if bodies==null:return fail("A scenery blast lost its retained body owner")
+						normal=bodies.normal_hit(target.index,hit.normal_damage)
+						if normal.is_empty() or not bodies.record_blast(target.index,hit.impact_vector,hit.motion_scalar):return fail(bodies.error)
+					else:
+						normal=combat.normal_hit(target.index,hit.normal_damage,false)
+						if normal.is_empty():return fail(combat.error)
+					result.normal_hits.append({"target":target,"damage":hit.normal_damage,"result":normal})
+			if (not hit.has("normal_damage") or hit.system_damage>0) and hit.get("target",{}).get("group")!="scenery":
+				var applied: Dictionary=combat.systems_hit(hit.actor_id,hit.system_damage,false)
+				if applied.is_empty():return fail(combat.error)
+				result.systems_hits.append({"actor_id":hit.actor_id,"damage":hit.system_damage,"result":applied})
 	return result
 
 ## Only the actual launcher history may reduce an existing equipped stack. The
@@ -384,11 +442,15 @@ func selection_feedback(selected_item_id: int) -> Dictionary:
 	if _loadout.is_empty() or (selected_item_id!=-1 and not _guns.any(func(gun):return gun.equipment.item_id==selected_item_id)):return fail("Secondary feedback requires the current launcher selection")
 	var weapons:=[];var actions:=[];var ended:=false
 	for gun in _guns:
-		var state: Dictionary=gun.bomb.snapshot() if gun.has("bomb") else gun.projectiles.snapshot()
+		var state:=_projectile_state(gun)
 		var flying: bool=state.get("shot",{}).get("phase")=="flying"
 		var wait_ms: int=maxi(0,int(state.weapon.interval_ms)-int(state.elapsed_ms)+1)
-		var action: String=gun.bomb.trigger_action(gun.ammunition) if gun.has("bomb") else ("launched" if gun.ammunition>0 and wait_ms==0 and state.available_slots>0 else "none")
+		var action: String
+		if gun.has("mine"):action=gun.mine.trigger_action(gun.ammunition)
+		elif gun.has("bomb"):action=gun.bomb.trigger_action(gun.ammunition)
+		else:action="launched" if gun.ammunition>0 and wait_ms==0 and state.available_slots>0 else "none"
 		var count: int=int(flying) if gun.has("bomb") else state.slots.filter(func(slot):return slot!=null).size()
+		if gun.has("mine"):count=state.slots.filter(func(slot):return slot!=null and slot.phase=="flying").size()
 		weapons.append({"item_id":int(gun.equipment.item_id),"quantity":int(gun.ammunition),"slot_index":int(gun.slot_index),"live":flying,"in_flight":count,"wait_ms":wait_ms})
 		if ended or (not flying and gun.equipment.item_id!=selected_item_id) or action=="none":continue
 		actions.append({"item_id":int(gun.equipment.item_id),"action":action})
@@ -413,6 +475,14 @@ func evaluate_camera(random_state: Dictionary) -> Dictionary:
 	var prior_slot:=-1
 	for command in _camera_commands:
 		if not command.get("slot_index") is int or command.slot_index<=prior_slot:return fail("EMP camera commands lost wrapper creation order")
+		var mine:=_guns.filter(func(gun):return gun.slot_index==command.slot_index and gun.has("mine_bursts"))
+		if not mine.is_empty():
+			var retained: Dictionary=mine[0].mine_bursts.snapshot().camera
+			for key in retained:
+				if command.get(key)!=retained[key]:return fail("Mine camera differs from its retained burst clock")
+			if command.item_id!=mine[0].equipment.item_id:return fail("Mine camera changed launcher identity")
+			prior_slot=command.slot_index
+			continue
 		var burst: RefCounted=detonation_owner(command.slot_index)
 		if burst==null:return fail("EMP camera command lost its retained launcher")
 		var retained: Dictionary=burst.snapshot()
@@ -429,7 +499,8 @@ func evaluate_camera(random_state: Dictionary) -> Dictionary:
 
 func discard_flying() -> void:
 	for gun in _guns:
-		if gun.has("bomb"):gun.bomb.discard_flying()
+		if gun.has("mine"):gun.mine.discard_flying()
+		elif gun.has("bomb"):gun.bomb.discard_flying()
 		else:gun.projectiles.discard_flying()
 
 func presentation_identity() -> RefCounted:return _presentation_identity
@@ -439,9 +510,11 @@ func snapshot() -> Dictionary:
 	var guns:=[]
 	for gun in _guns:
 		var row:={"slot_index":gun.slot_index,"equipment":gun.equipment.duplicate(true),"ammunition":gun.ammunition,"audio":gun.audio.duplicate()}
-		if gun.has("bomb"):row.bomb=gun.bomb.snapshot()
+		if gun.has("mine"):row.mine=gun.mine.snapshot();row.mount=gun.mount.duplicate(true)
+		elif gun.has("bomb"):row.bomb=gun.bomb.snapshot()
 		else:row.projectiles=gun.projectiles.snapshot();row.mount=gun.mount.duplicate(true)
 		if gun.has("detonation"):row.detonation=gun.detonation.snapshot()
+		if gun.has("mine_bursts"):row.mine_bursts=gun.mine_bursts.snapshot()
 		if gun.has("visuals"):row.visuals=gun.visuals.duplicate(true)
 		guns.append(row)
 	var state:={"initial_loadout":_initial_loadout.duplicate(true),"loadout":_loadout.duplicate(true),"launches":_launches,"guns":guns}
@@ -456,9 +529,11 @@ func fork() -> RefCounted:
 	next._presentation_identity=_presentation_identity;next._detonation_events=_detonation_events.duplicate(true);next._camera_commands=_camera_commands.duplicate(true)
 	for gun in _guns:
 		var copy: Dictionary=gun.duplicate();copy.equipment=gun.equipment.duplicate(true);copy.audio=gun.audio.duplicate()
-		if gun.has("bomb"):copy.bomb=gun.bomb.fork()
+		if gun.has("mine"):copy.mine=gun.mine.fork();copy.mount=gun.mount.duplicate(true)
+		elif gun.has("bomb"):copy.bomb=gun.bomb.fork()
 		else:copy.projectiles=gun.projectiles.fork_state();copy.mount=gun.mount.duplicate(true)
 		if gun.has("detonation"):copy.detonation=gun.detonation.fork()
+		if gun.has("mine_bursts"):copy.mine_bursts=gun.mine_bursts.fork()
 		if gun.has("visuals"):copy.visuals=gun.visuals.duplicate(true)
 		next._guns.append(copy)
 	return next

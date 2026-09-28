@@ -11,3 +11,6 @@ static func declaration(item_id: int) -> Dictionary:
 	if item_id not in [60,61,62]:return {}
 	return {"kind":11,"model_id":14050+(item_id-60)*2,"attachment_id":14051+(item_id-60)*2,
 		"effect_type":7 if item_id==61 else 0,"launch_sound":[1098,1100,1099][item_id-60],"burst_sound":22}
+
+static func effect_family(item_id: int) -> int:
+	return 6 if declaration(item_id).get("effect_type")==7 else 7

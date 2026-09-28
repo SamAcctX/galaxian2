@@ -126,13 +126,14 @@ func verify_fitting(args: PackedStringArray) -> void:
 
 func verify_secondary_fitting(bindings: RefCounted,cat: RefCounted,seed: Dictionary,assets: Dictionary,support: Dictionary) -> void:
 	var available: bool=Fitting.Secondaries.Definitions.available(bindings)
+	var supported_ids: Array=Array(range(31,47))+[60,61,62]
 	for item in cat.tables.items:
-		if item.arrays[2][3]==1 and (not available or item.id not in range(31,47)):
+		if item.arrays[2][3]==1 and (not available or item.id not in supported_ids):
 			check(not support[item.id].is_empty(),"Unimplemented secondary equipment was offered for fitting")
 	if not available:return
 	var fitting:=Fitting.new();var held: Dictionary=seed.duplicate(true)
 	var offset:=int(cat.tables.ships[seed.ship_id].stats.primary_slots)
-	for id in range(31,47):
+	for id in supported_ids:
 		var candidate:=seed.duplicate(true)
 		candidate.slots[offset]={"item_id":id,"category":1,"slot":0,"quantity":10}
 		candidate.equipment_ids=[id]

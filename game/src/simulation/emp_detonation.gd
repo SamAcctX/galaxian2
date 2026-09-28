@@ -9,17 +9,19 @@ const Vitals = preload("res://src/simulation/combat_vitals.gd")
 const Vectors = preload("res://src/simulation/source_vectors.gd")
 const Bomb = preload("res://src/simulation/emp_bombs.gd")
 const TypeZero = preload("res://src/simulation/type_zero_explosion.gd")
+const Mines=preload("res://src/content/mine_definitions.gd")
 var error := ""
 var _state := {}
 var _identity: RefCounted
 
 func configure(resources: RefCounted, item_id: int) -> bool:
 	error = ""
-	var declaration:=Bomb.Definitions.declaration(item_id)
+	var declaration:=declaration_for(item_id)
 	if not resources is Resources or declaration.is_empty():
 		return reject("EMP burst requires its prepared original resources and item")
 	var data: Dictionary = resources.snapshot()
-	if data.is_empty() or data.kind!=declaration.kind: return reject("Bomb burst resources are not prepared for this family")
+	var family: int=Mines.effect_family(item_id) if declaration.kind==11 else declaration.kind
+	if data.is_empty() or data.kind!=family: return reject("Bomb burst resources are not prepared for this family")
 	var effect: Dictionary
 	if data.effect_type==0:effect=TypeZero.create(data,[],-1)
 	else:effect={"active":false,"elapsed_ms":0,"duration_ms":data.duration_ms,"position":Vector3.ZERO,"models":[TypeZero.model_clock(data.models[0])]}
@@ -76,9 +78,10 @@ func advance(before: Dictionary, after: Dictionary, delta_ms: Variant, observer_
 		var attenuation := Vitals.single(1.0 - Vitals.single(minf(distance, Resources.CAMERA_RANGE) / Resources.CAMERA_RANGE))
 		next.camera = {"initial_strength": attenuation, "elapsed_ms": 0, "strength": attenuation, "spread": Resources.CAMERA_SPREAD}
 		next.triggered = true; next.effect.active = true; next.effect.position = next.cached_position
-		own_hit=Bomb.self_hit(before.weapon,next.cached_position,observer_position)
-		if own_hit.is_empty():return failed("Bomb self-damage observation exceeds finite world coordinates")
-		audio.append({"action": "start_spatial", "source_id": Bomb.Definitions.declaration(next.item_id).burst_sound,
+		if next.kind!=11:
+			own_hit=Bomb.self_hit(before.weapon,next.cached_position,observer_position)
+			if own_hit.is_empty():return failed("Bomb self-damage observation exceeds finite world coordinates")
+		audio.append({"action": "start_spatial", "source_id": declaration_for(next.item_id).burst_sound,
 			"position": next.cached_position, "pitch_raw": 0.0})
 	var retired := false
 	var camera := {}
@@ -109,6 +112,10 @@ func valid_sample(sample: Dictionary) -> bool:
 static func valid_shot(shot: Dictionary) -> bool:
 	if shot.is_empty(): return true
 	return Numbers.integer(shot.get("id"), 1, 2147483647) and shot.get("phase") in ["flying", "detonated"] and shot.get("position") is Vector3 and shot.position.is_finite() and shot.get("velocity") is Vector3 and shot.velocity.is_finite()
+
+static func declaration_for(item_id: int) -> Dictionary:
+	var declaration:=Bomb.Definitions.declaration(item_id)
+	return Mines.declaration(item_id) if declaration.is_empty() else declaration
 
 func presentation_identity() -> RefCounted: return _identity
 func snapshot() -> Dictionary: return _state.duplicate(true)

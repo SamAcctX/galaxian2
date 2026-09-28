@@ -17,6 +17,7 @@ var unsupported := {}
 var _library: RefCounted
 var _definitions := {}
 var _banks := {}
+var _bank_order: Array[String]=[]
 var _clips := {}
 var _sound_cache := {}
 var _channel_cache := {}
@@ -26,6 +27,7 @@ var _voice_ids := {}
 
 func configure(library: RefCounted, bindings: RefCounted, campaign_cursor: int = 0) -> bool:
 	error="";unsupported.clear();_banks.clear();_clips.clear();_sound_cache.clear();_channel_cache.clear();_decoded_bytes=0;_definitions={};_library=null
+	_bank_order.clear()
 	_language_index=0;_voice_ids.clear()
 	if library==null or bindings==null or bindings.base_content_id!=library.manifest.get("content_id"):return reject("Audio requires matching base content and bindings")
 	var message:=Definitions.validate(bindings.audio,library.manifest.files)
@@ -203,10 +205,15 @@ func load_sample(entry: Dictionary, looping: bool) -> Dictionary:
 		if bytes.is_empty():reject(_library.error);return {}
 		bank=Bank.new()
 		if not bank.open(bytes):reject(bank.error);return {}
-		if _banks.size()>=4:return {"unsupported":"The current audio session bank budget is full"}
-		_banks[variant.resource]=bank
 	if bank.hash_prefix!=variant.hash_prefix:reject("The FEV event refers to another sound bank");return {}
 	if int(entry.index)>=bank.samples.size():reject("Audio sample is absent from the selected bank");return {}
+	# Banks are decode inputs, not playback handles. Streams own their sample
+	# data, so replacing a cold bank leaves prepared and playing clips intact.
+	# Bound resident banks without permanently silencing later event families.
+	if not _banks.has(variant.resource):
+		if _banks.size()>=4:_banks.erase(_bank_order.pop_front())
+		_banks[variant.resource]=bank
+	_bank_order.erase(variant.resource);_bank_order.append(variant.resource)
 	var sample: Dictionary=bank.samples[int(entry.index)]
 	# MP3 supports a start offset; a partial authored loop end requires a separate
 	# bounded decoder. Do not silently turn it into a full-file loop.
