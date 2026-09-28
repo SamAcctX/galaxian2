@@ -27,6 +27,7 @@ const VoidSource=preload("res://src/simulation/ordinary_void_source.gd")
 const VoidAccess=preload("res://src/content/void_access_definitions.gd")
 const Blueprints=preload("res://src/simulation/blueprint_progress.gd")
 const ContractProgress=preload("res://src/simulation/contract_progress.gd")
+const Recipe=preload("res://src/content/mission_recipe.gd")
 var error:=""
 var _state:={}
 var _rules:={}
@@ -392,7 +393,7 @@ func _dekato_station_inventory(bindings: RefCounted,equipment: RefCounted,receip
 
 func poll_dekato_station(bindings: RefCounted,equipment: RefCounted,receipt: Dictionary) -> bool:
 	var owned:=_dekato_station_inventory(bindings,equipment,receipt)
-	return false if owned.is_empty() else _poll_station_results(owned)
+	return false if owned.is_empty() else _poll_station_results(owned,equipment)
 
 func acknowledge_dekato_delivery(bindings: RefCounted,equipment: RefCounted,receipt: Dictionary) -> RefCounted:
 	var owned:=_dekato_station_inventory(bindings,equipment,receipt)
@@ -665,6 +666,15 @@ static func acceptance_supported(rules: Dictionary,cursor: int,quote: Dictionary
 		return rules==bindings.early_contracts and Numbers.integer(quote.get("context",{}).get("campaign_cursor"),Definitions.first_generation_cursor(rules),cursor) and OrdinaryContracts.retained_mission(bindings,quote.get("mission"),cursor)
 	return not rules.is_empty() and Numbers.integer(cursor,Definitions.first_generation_cursor(rules),int(rules.last_cursor)) and Numbers.integer(quote.get("context",{}).get("campaign_cursor"),Definitions.first_generation_cursor(rules),int(rules.last_cursor)) and quote.get("choices",{}).has("kind_index")
 
+func inspect_contact(bindings: RefCounted,contact_id: int) -> bool:
+	error=""
+	if _lounges==null or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return reject("Resolve the current flight or result before inspecting a contact")
+	var cache: RefCounted=_lounges.fork()
+	var context:={"station_id":_state.station_id,"campaign_cursor":_state.campaign_cursor,"rank":_state.rank,"reputation":_state.reputation.duplicate(true)}
+	if not cache.inspect_contact(bindings,_catalogues,context,contact_id,_station_context):return reject(cache.error)
+	_lounges=cache;_state.offers=cache.location(int(_state.station_id)).offers
+	return true
+
 func accept(offer_id: int,equipment: RefCounted,replace_current: bool=false,bindings: RefCounted=null) -> RefCounted:
 	var terms:=preview(offer_id,equipment,bindings)
 	if terms.is_empty():return null
@@ -713,11 +723,12 @@ func accept(offer_id: int,equipment: RefCounted,replace_current: bool=false,bind
 
 func active_mission_for(station_id: int,bindings: RefCounted=null) -> Dictionary:
 	# The active world mission and the retained side slot are different things.
-	# Passenger delivery is handled by the station even at its destination.
+	# Station-only objectives never select a special flight at their destination.
 	var ordinary: bool=OrdinaryContracts.retained_mission(bindings,_state.get("mission"),int(_state.campaign_cursor)) and Campaign.supported(bindings,_state.get("campaign_cursor"))
 	if not _rules.has("delivery_results") or (station_id not in _stations and not ordinary) or _state.mission.is_empty() or not _state.pending_result.is_empty():return {}
 	var mission: Dictionary=_state.mission
-	if mission.station_id!=station_id or _rules.delivery_results.active_flight_excluded_kinds.any(func(value):return int(value)==int(mission.kind)):return {}
+	var delivery:=Recipe.station_delivery(_rules,mission)
+	if mission.station_id!=station_id or (not delivery.is_empty() and not delivery.select_flight):return {}
 	return mission.duplicate(true)
 
 func flight_context(station_id: int,bindings: RefCounted=null) -> Dictionary:
@@ -782,21 +793,27 @@ func poll_station(equipment: RefCounted,bindings: RefCounted=null) -> bool:
 	if not _rules.has("delivery_results"):return reject("This content has no supported delivery results")
 	var owned:=_station_inventory(equipment,bindings)
 	if owned.is_empty():return false
-	return _poll_station_results(owned)
+	return _poll_station_results(owned,equipment)
 
-func _poll_station_results(owned: Dictionary) -> bool:
+func _poll_station_results(owned: Dictionary,equipment: RefCounted) -> bool:
 	if not _rules.has("delivery_results"):return reject("This content has no supported delivery results")
 	if not _state.pending_result.is_empty():
 		return true if owned==_result_inventory else reject("The pending delivery must retain its destination inventory")
 	if _state.mission.is_empty():return true
 	var rules: Dictionary=_rules.delivery_results
 	var mission: Dictionary=_state.mission
-	if not rules.delivery_kinds.any(func(value):return int(value)==int(mission.kind)) or mission.station_id!=owned.loadout.station_id:return true
+	var delivery:=Recipe.station_delivery(_rules,mission)
+	if delivery.is_empty() or mission.station_id!=owned.loadout.station_id:return true
 	var retained: Dictionary=_state.get("accepted_contact",{})
 	var accepted: Dictionary=_state.offers.get(_state.active_offer_id,{}) if retained.is_empty() else {"consumed":true,"offer":retained.offer}
 	if accepted.is_empty() or not accepted.consumed:return reject("The delivery has no accepted contact")
 	var quote: Dictionary=accepted.offer
 	if not ContractProgress.matches(_state,quote,_catalogues) or mission.story:return reject("Only the retained non-story delivery can settle here")
+	if not delivery.required_cargo.is_empty():
+		var required: Dictionary=delivery.required_cargo
+		var observed: Dictionary=equipment.delivery_cargo(owned.loadout,int(required.item_id),int(required.quantity))
+		if observed.is_empty():return reject(equipment.error)
+		if not observed.satisfied:return true
 	var reward:=int(mission.reward)+int(mission.bonus)
 	if not Numbers.integer(reward,0,int(rules.maximum_station_reward)) or not Numbers.integer(_state.credits,0,2147483647):return reject("The delivery payment is outside the supported source range")
 	if not Reputation.valid_state(_state.reputation):return reject("The delivery lost the retained faction standing")
@@ -829,17 +846,23 @@ func _acknowledge_delivery_inventory(equipment: RefCounted,owned: Dictionary) ->
 	var earned:=Career.calculate_progress(_progress_rules,next.campaign_cursor,progress.player_kills,progress.pirate_kills,
 		int(progress.other_score)+int(rules.completion_rank_weight))
 	if earned.is_empty():reject("The delivery score exceeds the supported career range");return null
-	var hold: Dictionary=owned.cargo.duplicate(true)
-	for index in hold.entries.size():
-		var row: Dictionary=hold.entries[index]
-		if row.get("mission",false) and rules.clear_first_marked_item_ids.any(func(value):return int(value)==int(row.item_id)):
-			hold.used-=int(row.quantity);hold.free_space+=int(row.quantity)
-			hold.entries.remove_at(index);break
+	var delivery:=Recipe.station_delivery(_rules,next.mission)
+	if delivery.is_empty():reject("The retained job has no station settlement recipe");return null
 	var inventory: RefCounted=equipment.fork()
-	if not inventory.retain_flight_cargo(hold):reject(inventory.error);return null
-	if int(next.mission.kind)==int(_rules.passenger.kind):
+	if delivery.unload=="required_cargo":
+		var required: Dictionary=delivery.required_cargo
+		if not inventory.debit_delivery_cargo(int(required.item_id),int(required.quantity)):reject(inventory.error);return null
+	else:
+		var hold: Dictionary=owned.cargo.duplicate(true)
+		for index in hold.entries.size():
+			var row: Dictionary=hold.entries[index]
+			if row.get("mission",false) and rules.clear_first_marked_item_ids.any(func(value):return int(value)==int(row.item_id)):
+				hold.used-=int(row.quantity);hold.free_space+=int(row.quantity)
+				hold.entries.remove_at(index);break
+		if not inventory.retain_flight_cargo(hold):reject(inventory.error);return null
+	if delivery.statistic=="passengers":
 		next.passengers=0;next.delivery_statistics.passengers+=int(next.mission.quantity)
-	else:next.delivery_statistics.cargo+=int(next.mission.quantity)
+	elif delivery.statistic=="cargo":next.delivery_statistics.cargo+=int(next.mission.quantity)
 	var reward:=int(next.pending_result.reward_credits)
 	next.credits=credit_balance(int(next.credits),reward,rules)
 	next.completed_side_missions+=int(rules.completion_increment)

@@ -109,6 +109,53 @@ func remember(contacts: RefCounted,stock: RefCounted=null) -> bool:
 	_state.history=population.history.duplicate()
 	return true
 
+func inspect_contact(bindings: RefCounted,cat: RefCounted,context: Dictionary,contact_id: int,station_context: RefCounted=null) -> bool:
+	_read={}
+	error=""
+	if context.get("station_id")!=_state.get("current_station_id"):return reject("Inspect the currently retained lounge")
+	for entry in _state.locations:
+		if entry.station_id!=context.station_id:continue
+		var matches: Array=entry.population.contacts.filter(func(contact):return contact.contact_id==contact_id)
+		if matches.size()!=1:return reject("This lounge has no such contact")
+		if entry.offers.has(contact_id):return true
+		var contact: Dictionary=matches[0]
+		if Contacts.Recipe.contact_request(bindings.early_contracts,int(contact.role)).is_empty():return true
+		var offer_context:=context.duplicate(true)
+		offer_context.client_faction=contact.faction;offer_context.system_availability=_state.system_availability.duplicate()
+		var sampler:=Contacts.new()
+		var requested:=sampler.request_offer(bindings,cat,offer_context,contact,_state.random,_state.history,station_context)
+		if requested.is_empty():return reject(sampler.error)
+		if not entry.has("requested_offers"):entry.requested_offers={}
+		entry.requested_offers[contact_id]=requested
+		entry.offers[contact_id]={"offer":requested.offer.duplicate(true),"consumed":false}
+		_state.random=requested.random.duplicate(true);_state.history=requested.history.duplicate()
+		return true
+	return reject("The inspected contact has no retained lounge")
+
+## Save entry verifies lazy quotes against their own sampling inputs. Requests
+## may interleave visits to older cached stations, so population order alone
+## does not describe the current mission history.
+func restore_requested_offers(bindings: RefCounted,cat: RefCounted,station_id: int,requests: Dictionary,station_context: RefCounted=null) -> bool:
+	_read={}
+	error=""
+	for entry in _state.locations:
+		if entry.station_id!=station_id:continue
+		if requests.is_empty() or requests.size()>entry.population.contacts.size():return reject("Invalid requested-offer count")
+		var prepared:={}
+		for id in requests:
+			var record: Variant=requests[id]
+			if not id is int or not record is Dictionary or not record.get("offer") is Dictionary or not record.offer.get("context") is Dictionary or not record.get("initial_random") is Dictionary or not record.get("initial_history") is Array:return reject("Invalid requested-offer inputs")
+			var contacts: Array=entry.population.contacts.filter(func(contact):return contact.contact_id==id)
+			if contacts.size()!=1 or entry.offers.has(id) or record.offer.context.get("station_id")!=station_id:return reject("The requested offer lost its original contact")
+			var sampler:=Contacts.new()
+			var expected:=sampler.request_offer(bindings,cat,record.offer.context,contacts[0],record.initial_random,record.initial_history,station_context)
+			if expected.is_empty() or expected!=record:return reject("The requested offer changed its retained terms")
+			prepared[id]=expected
+		entry.requested_offers=prepared
+		for id in prepared:entry.offers[id]={"offer":prepared[id].offer.duplicate(true),"consumed":false}
+		return true
+	return reject("The requested offers have no retained lounge")
+
 func consume(station_id: int,offer_id: int) -> bool:
 	_read={}
 	error=""

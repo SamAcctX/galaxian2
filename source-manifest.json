@@ -2786,6 +2786,10 @@
     "game/src/presentation/flight_distance.gd",
     "game/src/presentation/flight_distance.gd.uid",
     "game/tests/target_information_application.gd",
-    "game/tests/target_information_application.gd.uid"
+    "game/tests/target_information_application.gd.uid",
+    "game/tests/purchase_contract.gd",
+    "game/tests/purchase_contract.gd.uid",
+    "game/tests/purchase_application.gd",
+    "game/tests/purchase_application.gd.uid"
   ]
 }

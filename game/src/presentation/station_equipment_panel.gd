@@ -302,7 +302,7 @@ func present(state: Dictionary) -> bool:
 	for i in _slot_categories.size():_add_installed_row(i)
 	_credits=int(state.get("contracts",{}).get("credits",0))
 	if _state!=state.equipment:_state=state.equipment.duplicate(true);_message.text=""
-	visible=true;_refresh();_relayout()
+	visible=state.get("contracts",{}).get("pending_result",{}).is_empty();_refresh();_relayout()
 	return true
 
 func select_tab(tab: String) -> void:

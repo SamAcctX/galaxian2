@@ -45,7 +45,8 @@ func configure(bindings: RefCounted,catalogues: RefCounted,context: Variant,choi
 	if not Numbers.integer(destination,0,stations.size()-1):return reject("The contract destination is absent")
 	var navigable:=base or ordinary
 	if not navigable and (destination not in station_ids or stations[destination].system_id!=system_id):return reject("An early Mido destination must remain in Mido")
-	if navigable and kind!=int(rules.local_challenge_kind) and not Navigation.eligible(rules.base_navigation,catalogues,system_id,context.system_availability,int(destination)):return reject("This destination is excluded or unavailable")
+	var local_request: bool=ordinary and kind==int(extra.collection.kind) and destination==context.station_id
+	if navigable and kind!=int(rules.local_challenge_kind) and not local_request and not Navigation.eligible(rules.base_navigation,catalogues,system_id,context.system_availability,int(destination)):return reject("This destination is excluded or unavailable")
 	if kind==int(rules.local_challenge_kind):
 		if destination!=context.station_id:return reject("The challenge takes place outside its contact's station")
 	elif (extra.different_destination_kinds if ordinary else rules.delivery_kinds).any(func(value):return int(value)==kind):

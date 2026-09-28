@@ -8,6 +8,7 @@ const SPANS = {"ordinary_contracts_reseed":[-31265,31],"ordinary_contracts_side_
 const Campaign=preload("res://src/content/free_campaign_definitions.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
 const Vitals=preload("res://src/simulation/combat_vitals.gd")
+const Recipe=preload("res://src/content/mission_recipe.gd")
 
 const MAC_SPANS = {"ordinary_contracts_reseed":[-31265,31],"ordinary_contracts_side_slot":[860132,22],"ordinary_contracts_count":[-31097,103],"ordinary_contracts_pirates":[-18932,503],"ordinary_contracts_dispatch":[-15605,124],"ordinary_contracts_empty_return":[-4930,38],"ordinary_contracts_divisor":[1532090,4],"ordinary_contracts_multiplier":[1532114,4],"ordinary_contracts_xz_offset":[1550190,4],"ordinary_contracts_y_offset":[1550206,4]}
 
@@ -18,7 +19,11 @@ static func available(bindings: RefCounted) -> bool:
 
 static func delivery_mission(bindings: RefCounted,mission: Variant) -> bool:
 	if not available(bindings) or not mission is Dictionary:return false
-	if not Numbers.integer(mission.get("kind"),0,11) or mission.kind not in [0,11] or mission.get("story")!=false or not Numbers.integer(mission.get("difficulty"),1,9):return false
+	var delivery:=Recipe.station_delivery(bindings.early_contracts,mission)
+	if delivery.is_empty():return false
+	var requested: bool=not delivery.required_cargo.is_empty()
+	var maximum:=int(bindings.early_contracts.ordinary_generation.offers.difficulty_maximum) if requested else 9
+	if not Numbers.integer(mission.get("difficulty"),0 if requested else 1,maximum):return false
 	return not load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,mission.get("station_id")).is_empty()
 
 static func active_courier(context: Dictionary) -> bool:
@@ -48,6 +53,7 @@ static func extra_count(bindings: RefCounted,context: Dictionary) -> int:
 	var side: Dictionary=context.get("side_mission",{})
 	if not delivery_mission(bindings,side):return 0
 	var data: Dictionary=bindings.mido_travel.ordinary_contracts.population
+	if not data.side_kinds.has(side.kind):return 0
 	return pirate_count(data,int(side.difficulty))
 
 static func pirate_count(data: Dictionary,difficulty: int) -> int:

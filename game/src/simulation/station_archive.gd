@@ -213,13 +213,17 @@ func _locations(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: V
 	if not random.restore(data.get("random")):return reject(random.error)
 	for index in data.locations.size():
 		var row: Variant=data.locations[index]
-		if not _keys(row,["station_id","population","offers","stock","market_items"]) or not row.get("population") is Dictionary or not row.get("offers") is Dictionary:return reject("Invalid saved lounge entry")
+		if not _keys(row,["station_id","population","offers","stock","market_items","requested_offers"]) or not row.get("population") is Dictionary or not row.get("offers") is Dictionary:return reject("Invalid saved lounge entry")
 		var stock:=Stock.new();var contacts:=Contacts.new()
 		var generation_context: RefCounted=null if station_context==null else station_context.historical(bindings,row.population.get("context",{}).get("campaign_cursor"))
 		if not stock.restore(bindings,cat,row.get("stock")) or not contacts.restore(bindings,cat,library,row.population,generation_context):return reject(stock.error+contacts.error)
 		if row.get("station_id")!=row.population.context.station_id:return reject("The cached lounge names another station")
-		if index==0:cache._state.history=row.population.initial_history.duplicate()
+		# Requested jobs can change history between visits to any cached lounge.
+		# Each population and request is independently checked from its inputs.
+		cache._state.history=row.population.initial_history.duplicate()
 		if not cache.remember(contacts,stock):return reject(cache.error)
+		if row.has("requested_offers"):
+			if not row.requested_offers is Dictionary or not cache.restore_requested_offers(bindings,cat,int(row.station_id),row.requested_offers,generation_context):return reject(cache.error if row.requested_offers is Dictionary else "Invalid saved requested offers")
 		var generated: Dictionary=cache.location(row.station_id)
 		if row.offers.size()!=generated.offers.size():return reject("The saved lounge changed its generated contacts")
 		for id in generated.offers:
@@ -229,7 +233,8 @@ func _locations(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: V
 		if row.has("market_items"):
 			if not Shopping.valid_stock(row.market_items,cat.tables.items.size()):return reject("Invalid mutable station stock")
 			cache._state.locations.back().market_items=row.market_items.duplicate(true)
-	if cache.snapshot().history!=data.get("history") or cache.location(data.get("current_station_id",-1)).is_empty():return reject("The saved station cache lost its history or current location")
+	if not data.get("history") is Array or data.history.size()!=int(bindings.early_contracts.generation.mission_history.size) or not data.history.all(func(value):return value is bool) or cache.location(data.get("current_station_id",-1)).is_empty():return reject("The saved station cache lost its history or current location")
+	cache._read={};cache._state.history=data.history.duplicate()
 	cache._state.current_station_id=data.current_station_id;cache._state.random=random.snapshot()
 	cache._state.system_availability=data.system_availability.duplicate()
 	if cache.snapshot()!=data:return reject("The saved location cache differs from its validated entries")

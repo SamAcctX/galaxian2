@@ -311,13 +311,15 @@ func _begin_station_story(panel: Control,campaign: bool) -> bool:
 
 func contract_action(action: String,id: int,panel: Control) -> bool:
 	error=""
-	if status!="running" or not _active or is_paused() or _world.contract_owner()==null or _world.snapshot().get("hangar_open",false):return reject("The space lounge is unavailable")
+	if status!="running" or not _active or is_paused() or _world.contract_owner()==null or (_world.snapshot().get("hangar_open",false) and action!="result_close"):return reject("The space lounge is unavailable")
 	var candidate: RefCounted=_world.fork();var opened:=_lounge_open
 	match action:
 		"open":
 			if candidate.snapshot().dialogue.visible:return reject("Acknowledge the story before opening the lounge")
 			opened=true
 		"close":opened=false
+		"select":
+			if not opened or not candidate.inspect_contract_contact(id,_bindings):return reject(candidate.error)
 		"accept","replace":
 			if not opened or not candidate.accept_contract(id,action=="replace",_bindings):return reject(candidate.error)
 		"result_close":
@@ -353,10 +355,16 @@ func _contract_previews(owner: RefCounted,opened: bool) -> Dictionary:
 	if not opened:return result
 	var career: Dictionary=owner.snapshot().get("contracts",{})
 	if not career.get("pending_result",{}).is_empty():return result
+	var requests:={}
+	for place in career.get("lounges",{}).get("locations",[]):
+		if place.station_id==career.station_id:requests=place.get("requested_offers",{});break
 	for id in career.get("offers",{}):
 		if not career.offers[id].consumed:
 			result[id]=owner.contract_preview(id,_bindings)
 			if result[id].is_empty():result[id]={"can_accept":false,"unsupported_reason":owner.error}
+		if requests.has(id):
+			if not result.has(id):result[id]={}
+			result[id].briefing_text_id=requests[id].briefing_text_id
 	return result
 
 func contract_owner() -> RefCounted:return null if _world==null else _world.contract_owner()

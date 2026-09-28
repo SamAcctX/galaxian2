@@ -529,9 +529,13 @@ func retain_flight_cargo(hold: Dictionary) -> bool:
 ## Kind8 checks any qualifying row, but removal uses the first matching row.
 ## Existing cargo and its row prices were validated on entry to this owner.
 func campaign_cargo(loadout: Dictionary,item_id: int,quantity: int) -> Dictionary:
+	if _state.get("ordinary_shopping_open",false):reject("Campaign cargo requires a closed inventory");return {}
+	return delivery_cargo(loadout,item_id,quantity)
+
+func delivery_cargo(loadout: Dictionary,item_id: int,quantity: int) -> Dictionary:
 	error=""
 	if not _campaign_cargo_context(item_id,quantity) or _state.loadout!=loadout:
-		reject("Campaign cargo requires the retained station inventory");return {}
+		reject("Delivery cargo requires the retained station inventory");return {}
 	var satisfied:=_campaign_cargo_index(item_id,quantity)>=0
 	return {"satisfied":satisfied,"cargo":_state.cargo.duplicate(true) if satisfied else {}}
 
@@ -539,10 +543,23 @@ func matches_cargo(hold: Dictionary) -> bool:
 	return not _state.is_empty() and _state.cargo==hold
 
 func debit_campaign_cargo(item_id: int,quantity: int) -> bool:
+	if _state.get("ordinary_shopping_open",false):return reject("Campaign cargo requires a closed inventory")
+	return debit_delivery_cargo(item_id,quantity)
+
+func debit_delivery_cargo(item_id: int,quantity: int) -> bool:
 	error=""
-	if not _campaign_cargo_context(item_id,quantity):return reject("Campaign cargo requires a closed, retained inventory")
+	if not _campaign_cargo_context(item_id,quantity):return reject("Delivery cargo requires its retained inventory")
 	var index:=_campaign_cargo_index(item_id,quantity)
-	if index<0:return reject("The required campaign cargo is unavailable")
+	if index<0:return reject("The required delivery cargo is unavailable")
+	if _state.get("ordinary_shopping_open",false):
+		var next:=_state.duplicate(true)
+		for row in next.market_rows:
+			if row.item_id!=item_id or row.owned<=0:continue
+			row.owned=maxi(0,int(row.owned)-quantity)
+			_retain_market_inventory(next)
+			_state=next
+			return true
+		return reject("The open shop lost its retained cargo row")
 	var hold: Dictionary=_state.cargo.duplicate(true)
 	var prices: Array=_state.prices.cargo.duplicate(true)
 	hold.entries[index].quantity-=quantity
@@ -553,7 +570,7 @@ func debit_campaign_cargo(item_id: int,quantity: int) -> bool:
 	return true
 
 func _campaign_cargo_context(item_id: int,quantity: int) -> bool:
-	return _state.get("training_inventory_released",false) and not _state.get("ordinary_shopping_open",false) and item_id>=0 and item_id<_completion_prices.size() and quantity>0 and quantity<=2147483647
+	return _state.get("training_inventory_released",false) and item_id>=0 and item_id<_completion_prices.size() and quantity>0 and quantity<=2147483647
 
 func _campaign_cargo_index(item_id: int,quantity: int) -> int:
 	var first:=-1;var satisfied:=false

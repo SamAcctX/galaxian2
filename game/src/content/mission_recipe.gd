@@ -117,6 +117,26 @@ static func contract_continuation(mission: Dictionary) -> Dictionary:
 	if mission.get("kind") not in [3,5]:return {}
 	return {"kind":"return_delivery","mission_kind":11,"result_text_id":378,"briefing_text_id":792,"source_parameter":-1}
 
+## Station objectives share settlement while recipes choose their inventory
+## requirement, unloading and optional delivered-quantity statistic.
+static func station_delivery(rules: Dictionary,mission: Dictionary) -> Dictionary:
+	if not rules.has("delivery_results") or mission.get("story")!=false:return {}
+	var kind: Variant=mission.get("kind")
+	if kind==rules.courier.kind:
+		return {"required_cargo":{},"unload":"marked_cargo","statistic":"cargo","select_flight":true}
+	if kind==rules.passenger.kind:
+		return {"required_cargo":{},"unload":"marked_cargo","statistic":"passengers","select_flight":false}
+	var collection: Dictionary=rules.get("ordinary_generation",{}).get("offers",{}).get("collection",{})
+	if not collection.is_empty() and kind==collection.kind:
+		return {"required_cargo":{"item_id":int(mission.get("source_parameter",-1)),"quantity":int(mission.get("quantity",0))},
+			"unload":"required_cargo","statistic":"","select_flight":false}
+	return {}
+
+static func contact_request(rules: Dictionary,role: int) -> Dictionary:
+	var collection: Dictionary=rules.get("ordinary_generation",{}).get("offers",{}).get("collection",{})
+	if role!=5 or collection.is_empty():return {}
+	return {"kind":int(collection.kind),"briefing_text_base":int(rules.briefing_text_base)-9,"briefing_count":2,"auxiliary_multiplier":0.5}
+
 static func select(bindings: RefCounted,cursor: Variant) -> Dictionary:
 	if bindings==null or not cursor is int:return {}
 	var station:=Epilogue.recipe(bindings,cursor)

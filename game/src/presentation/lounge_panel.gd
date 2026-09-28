@@ -4,6 +4,7 @@ extends Control
 signal action_requested(action: String,id: int)
 const Art=preload("res://src/presentation/original_ui.gd")
 const Portraits=preload("res://src/presentation/portrait_compositor.gd")
+const Recipe=preload("res://src/content/mission_recipe.gd")
 const MAC_LABEL_IDS={614:616,753:755,841:843,847:849,848:850,850:852}
 var error:=""
 var _art: RefCounted
@@ -136,6 +137,7 @@ func present(state: Dictionary) -> bool:
 func select_contact(id: int) -> void:
 	if not _active or not visible or not _state.pending_result.is_empty():return
 	if not _portraits.has(id):return
+	action_requested.emit("select",id)
 	_selected=id;_confirming=false;_body.scroll_to_line(0)
 	if is_instance_valid(_scene):_scene.select_contact(id)
 	_refresh();_layout()
@@ -152,7 +154,10 @@ func money(value: int) -> String:return str(value)+"$"
 func format_job(template: String,mission: Dictionary) -> String:
 	var station:=int(mission.get("station_id",-1))
 	var name: String=_catalogues.tables.stations[station].name if station>=0 and station<_catalogues.tables.stations.size() else ""
-	return template.replace("#S",name).replace("#N",str(mission.get("target_name",""))).replace("#Q",str(int(mission.get("quantity",0)))).replace("#P",text(int(mission.get("cargo_text_id",-1)))).replace("#C",money(int(mission.get("reward",0))+int(mission.get("bonus",0))))
+	var cargo_text:=int(mission.get("cargo_text_id",-1))
+	var required: Dictionary=Recipe.station_delivery(_bindings.early_contracts,mission).get("required_cargo",{})
+	if not required.is_empty():cargo_text=int(_bindings.station_equipment.item_text_offset)+int(required.item_id)
+	return template.replace("#S",name).replace("#N",str(mission.get("target_name",""))).replace("#Q",str(int(mission.get("quantity",0)))).replace("#P",text(cargo_text)).replace("#C",money(int(mission.get("reward",0))+int(mission.get("bonus",0))))
 
 func _refresh() -> void:
 	if _state.is_empty() or _art==null:return
@@ -183,7 +188,8 @@ func _refresh() -> void:
 			var client: Dictionary=_state.accepted_contact
 			if not _state.mission.is_empty() and client.get("station_id")==_state.station_id and client.get("offer_id")==_selected and client.get("offer")==row.offer:mission=_state.mission
 			_title.text=text(int(mission.title_text_id))
-			_body.text=format_job(text(int(mission.briefing_text_id)),mission)+"\n\n"+label_text(753).replace("#C",money(int(mission.reward)+int(mission.bonus)))
+			var brief: int=_previews.get(_selected,{}).get("briefing_text_id",mission.briefing_text_id)
+			_body.text=format_job(text(brief),mission)+"\n\n"+label_text(753).replace("#C",money(int(mission.reward)+int(mission.bonus)))
 			if row.consumed:_body.text+="\n\n"+label_text(841)
 			else:
 				var preview: Dictionary=_previews.get(_selected,{})

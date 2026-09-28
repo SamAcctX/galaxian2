@@ -11,6 +11,7 @@ const Reputation=preload("res://src/simulation/faction_reputation.gd")
 const Vitals=preload("res://src/simulation/combat_vitals.gd")
 const Navigation=preload("res://src/simulation/contract_navigation.gd")
 const Persistent=preload("res://src/content/persistent_contact_definitions.gd")
+const Recipe=preload("res://src/content/mission_recipe.gd")
 const MAX_DRAWS=65536
 var error:=""
 var _state:={}
@@ -288,7 +289,7 @@ func _destination() -> int:
 		if not error.is_empty():return -1
 	return selected
 
-func _offer(bindings: RefCounted,cat: RefCounted,context: Dictionary) -> Dictionary:
+func _offer(bindings: RefCounted,cat: RefCounted,context: Dictionary,request: Dictionary={}) -> Dictionary:
 	var sampled:=_destination() # The general candidate precedes the Mido override.
 	if not error.is_empty():return {}
 	var terms: Dictionary=bindings.early_contracts
@@ -300,6 +301,7 @@ func _offer(bindings: RefCounted,cat: RefCounted,context: Dictionary) -> Diction
 	if not ordinary:
 		kind_index=_draw(terms.kind_choices.size())
 		kind=int(terms.kind_choices[kind_index])
+	if not request.is_empty():kind=int(request.kind);destination=int(context.station_id)
 	if kind==int(terms.local_challenge_kind):destination=context.station_id
 	elif (extra.different_destination_kinds if ordinary else terms.delivery_kinds).any(func(value):return int(value)==kind):
 		while destination==context.station_id:
@@ -330,6 +332,32 @@ func _offer(bindings: RefCounted,cat: RefCounted,context: Dictionary) -> Diction
 	if ordinary and kind==6 and _generation_revision>0:choices.target_name=_name(int(_rules.identity.terran_faction),true)
 	if not offer.configure(bindings,cat,context,choices,_station_context):reject(offer.error);return {}
 	return offer.snapshot()
+
+## Requested jobs are sampled on inspection, independently of the original
+## population. Their inputs let save entry verify the quote without rerolling it.
+func request_offer(bindings: RefCounted,cat: RefCounted,context: Dictionary,contact: Dictionary,random_state: Dictionary,history: Array,station_context: RefCounted=null) -> Dictionary:
+	error=""
+	if not available(bindings) or cat==null or not Navigation.ordinary_context(bindings,cat,context,station_context):reject("The requested offer requires its current ordinary station career");return {}
+	var request:=Recipe.contact_request(bindings.early_contracts,int(contact.get("role",-1)))
+	if request.is_empty() or contact.get("faction")!=context.get("client_faction"):reject("This contact does not supply a requested job");return {}
+	var rules: Dictionary=bindings.early_contracts.generation
+	if history.size()!=int(rules.mission_history.size) or not history.all(func(value):return value is bool):reject("The requested offer lost its mission history");return {}
+	var sampler: RefCounted=get_script().new();sampler._rng=Random.new()
+	if not sampler._rng.restore(random_state):reject(sampler._rng.error);return {}
+	sampler._rules=rules;sampler._ordinary=bindings.early_contracts.ordinary_generation
+	sampler._navigation=bindings.early_contracts.base_navigation;sampler._catalogues=cat
+	sampler._context=context;sampler._history=history.duplicate();sampler._station_context=station_context
+	sampler._stations=cat.tables.systems[int(cat.tables.stations[int(context.station_id)].system_id)].station_ids
+	var quote: Dictionary=sampler._offer(bindings,cat,context,request)
+	if quote.is_empty():reject(sampler.error);return {}
+	var reward:=int(quote.mission.reward)
+	var roll: int=sampler._draw(auxiliary_bound(reward,int(rules.auxiliary_amount.draw_divisor)))
+	var amount:=int(Vitals.single(float(roll)+Vitals.single(float(reward)/float(rules.auxiliary_amount.divisor))))
+	amount=int(Vitals.single(float(amount)*float(request.auxiliary_multiplier)))
+	var text_id: int=int(request.briefing_text_base)+sampler._draw(int(request.briefing_count))
+	if not sampler.error.is_empty():reject(sampler.error);return {}
+	return {"offer":quote,"briefing_text_id":text_id,"source_auxiliary_amount":Offer.quantize_credits(float(amount),int(bindings.early_contracts.reward.credit_step)),
+		"initial_random":random_state.duplicate(true),"initial_history":history.duplicate(),"random":sampler._rng.snapshot(),"history":sampler._history.duplicate()}
 
 func _history_kind(faction: int) -> int:
 	var rules: Dictionary=_rules.mission_history
