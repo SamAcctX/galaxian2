@@ -10,6 +10,7 @@ const AEM = preload("res://src/content/aem.gd")
 const Model = preload("res://src/presentation/imported_model.gd")
 const Geometry = preload("res://src/presentation/opening_geometry.gd")
 const SpaceFog = preload("res://src/presentation/space_fog_geometry.gd")
+const ForegroundParticles = preload("res://src/presentation/foreground_particle_geometry.gd")
 const STAR_SHADER = preload("res://src/presentation/sky_stars.gdshader")
 const NEBULA_SHADER = preload("res://src/presentation/sky_nebula.gdshader")
 const STORED_STAR_SHADER = preload("res://src/presentation/sky_stored_stars.gdshader")
@@ -18,10 +19,23 @@ var error := ""
 var selection := {}
 var layers: Array[Node3D] = []
 var space_fog: MultiMeshInstance3D
+var foreground_particles: MultiMeshInstance3D
 var _orientation := Basis.IDENTITY
 var _initial_descriptors:=[]
 var _escape_descriptor:={}
 var _stored_channels:=false
+
+func enable_foreground_particles(library: RefCounted,visuals: RefCounted,bindings: RefCounted,environment: Dictionary,seed_value: Variant=null) -> bool:
+	if selection.is_empty() or foreground_particles!=null or bindings==null:
+		error="Prepare one exterior before its nearby particles";return false
+	for key in ["base_content_id","binding_id"]:
+		if selection.get(key)!=bindings.get(key):error="Nearby particles belong to another background identity";return false
+	var seed: int=int(Time.get_unix_time_from_system()) if seed_value==null else int(seed_value)
+	var particles:=ForegroundParticles.new()
+	if not particles.build(library,visuals,bindings,environment,seed):
+		error=particles.error;particles.free();return false
+	particles.name="ForegroundParticles";add_child(particles);foreground_particles=particles
+	error="";return true
 
 func enable_space_fog(library: RefCounted,visuals: RefCounted,bindings: RefCounted,catalogues: RefCounted) -> bool:
 	if selection.is_empty() or space_fog!=null or catalogues==null or bindings==null or catalogues.content_id!=selection.base_content_id:
@@ -236,7 +250,11 @@ func prepare_view(view: Dictionary, escape: Dictionary = {},elapsed_ms:=0) -> Di
 	if space_fog!=null:
 		clouds=space_fog.prepare_view(view.pose,elapsed_ms)
 		if clouds==null:error=space_fog.error;return {}
-	return {"pose":view.pose,"relocated":relocated,"clouds":clouds}
+	var particles: RefCounted
+	if foreground_particles!=null:
+		particles=foreground_particles.prepare_view(view.pose,elapsed_ms)
+		if particles==null:error=foreground_particles.error;return {}
+	return {"pose":view.pose,"relocated":relocated,"clouds":clouds,"particles":particles}
 
 func commit_view(prepared: Dictionary) -> void:
 	# Keep bounds near the viewer. Shader projection excludes this translation.
@@ -246,12 +264,14 @@ func commit_view(prepared: Dictionary) -> void:
 		layers[1].visible=not relocated;layers[2].visible=relocated
 		selection.layers=[_initial_descriptors[0].duplicate(),(_escape_descriptor if relocated else _initial_descriptors[1]).duplicate()]
 	if space_fog!=null:space_fog.commit_view(prepared.clouds)
+	if foreground_particles!=null:foreground_particles.commit_view(prepared.particles)
 
 func clear() -> void:
 	for child in get_children(): child.free()
 	layers.clear();selection.clear();_initial_descriptors=[];_escape_descriptor={};_orientation=Basis.IDENTITY;transform=Transform3D.IDENTITY;error=""
 	_stored_channels=false
 	space_fog=null
+	foreground_particles=null
 
 func reject(message: String) -> bool:
 	clear();error=message

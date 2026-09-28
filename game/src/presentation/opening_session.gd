@@ -114,6 +114,7 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted, n
 		if not sun.build(library,visuals,bindings,catalogues):return fail(sun.error)
 	var lights := Lighting.new();add_child(lights)
 	if not lights.build(bindings,catalogues,library.manifest.content_id,0,3,false):return fail(lights.error)
+	if not sky.enable_foreground_particles(library,visuals,bindings,lights.state):return fail(sky.error)
 	var seed_seconds: Variant = int(Time.get_unix_time_from_system()) if scenery_unix_seconds==null else scenery_unix_seconds
 	var body_resources := SceneryBodyResources.new()
 	if not body_resources.configure(library,bindings):return fail(body_resources.error)
@@ -358,7 +359,7 @@ func present(advance_sun := false) -> bool:
 		if sun_frame.has("error"):return reject(sun.error)
 	var message: String = _projection.apply(camera,view)
 	if not message.is_empty():return reject(message)
-	var sky_frame: Dictionary=sky.prepare_view(view,state.escape if escape_sequence else {})
+	var sky_frame: Dictionary=sky.prepare_view(view,state.escape if escape_sequence else {},int(state.elapsed_ms))
 	if sky_frame.is_empty():return reject(sky.error)
 	if planets!=null and not planets.apply_view(view,state.escape if escape_sequence else {}):return reject(planets.error)
 	var scenery_state: Dictionary = _scenery.read_snapshot()

@@ -28,6 +28,7 @@ func configure(library: RefCounted,visuals: RefCounted,bindings: RefCounted,cata
 		if not _void.build(library,visuals,bindings,world.void_environment_owner()):return reject(_void.error)
 		lights=Lighting.new();add_child(lights)
 		if not lights.build_void(bindings,world.void_environment_owner()):return reject(lights.error)
+		if not _void.sky.enable_foreground_particles(library,visuals,bindings,lights.state):return reject(_void.sky.error)
 		var owner: RefCounted=world.portal_owner()
 		if owner!=null:
 			var portal: Dictionary=owner.portal_snapshot()

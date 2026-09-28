@@ -128,6 +128,7 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 		sun=Sun.new();add_child(sun)
 		if not sun.build_departure(library,visuals,bindings,catalogues,state.player_cache,"high",flight.equipment_owner(),flight.mission_context_owner()):return fail(sun.error)
 		if not lighting.build_departure(bindings,catalogues,state.player_cache,flight.equipment_owner(),flight.mission_context_owner()):return fail(lighting.error)
+	if not sky.enable_foreground_particles(library,visuals,bindings,lighting.state):return fail(sky.error)
 	reflection=Reflection.new()
 	var reflected: bool=reflection.build_void(library,bindings,flight.void_environment_owner()) if state.has("void_environment") else reflection.build(library,bindings,catalogues,int(lighting.state.system_id),false)
 	if not reflected:return fail(reflection.error)

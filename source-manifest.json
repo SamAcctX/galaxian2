@@ -2876,6 +2876,16 @@
     "game/tests/area_bomb_application.gd",
     "game/tests/area_bomb_application.gd.uid",
     "game/tests/area_bomb_audio.gd",
-    "game/tests/area_bomb_audio.gd.uid"
+    "game/tests/area_bomb_audio.gd.uid",
+    "game/src/presentation/foreground_particle_field.gd",
+    "game/src/presentation/foreground_particle_field.gd.uid",
+    "game/src/presentation/foreground_particle_geometry.gd",
+    "game/src/presentation/foreground_particle_geometry.gd.uid",
+    "game/src/presentation/foreground_particles.gdshader",
+    "game/src/presentation/foreground_particles.gdshader.uid",
+    "game/tests/foreground_particles.gd",
+    "game/tests/foreground_particles.gd.uid",
+    "game/tests/foreground_particles_application.gd",
+    "game/tests/foreground_particles_application.gd.uid"
   ]
 }
