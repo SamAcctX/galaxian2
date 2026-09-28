@@ -51,7 +51,7 @@ func run_bomb_ownership() -> void:
 		var frame:=geometry.prepare_world(owner,camera.transform)
 		if frame.is_empty():check(false,geometry.error);geometry.free();continue
 		geometry.commit_world(frame)
-		check(geometry.error.is_empty() and geometry.bodies.size()==2 and geometry._bombs[0].models.all(func(model):return model.visible) and geometry.bodies[1].visible,"Combined presentation lost a live body or AMR glow")
+		check(geometry.error.is_empty() and geometry.bodies.size()==2 and geometry._bombs.size()==2 and geometry._bombs.values().all(func(body):return body.models.size()==2 and body.models.all(func(model):return model.visible)),"Combined presentation lost a live bomb body or its original glow")
 		check(state.guns.all(func(gun):return gun.ammunition==0 and gun.bomb.shot.phase=="flying"),"Last-round removal discarded a live mixed-family projectile")
 		await capture_geometry("mixed-amr-%d-live"%item)
 		var previous:=frame

@@ -1,5 +1,5 @@
 extends RefCounted
-## Original animated AMR body and its attached additive model.
+## Original area-bomb body and its attached additive model.
 const Bombs=preload("res://src/content/emp_bombs_definitions.gd")
 const AEM=preload("res://src/content/aem.gd")
 const Ranges=preload("res://src/content/scenery_effect_resources.gd")
@@ -7,7 +7,7 @@ const Surface=preload("res://src/presentation/animated_additive_model.gd")
 
 static func prepare(library: RefCounted,bindings: RefCounted,weapon: Dictionary) -> Dictionary:
 	var declaration:=Bombs.declaration(int(weapon.get("item_id",-1)))
-	if declaration.is_empty() or declaration.kind!=7 or weapon.get("kind")!=7:return {}
+	if declaration.is_empty() or weapon.get("kind")!=declaration.kind:return {}
 	if library==null or bindings==null or library.manifest.get("content_id")!=weapon.get("base_content_id") or bindings.base_content_id!=weapon.base_content_id or bindings.binding_id!=weapon.get("binding_id"):return {}
 	var models:=[]
 	for id in [declaration.model_id,declaration.attachment_id]:

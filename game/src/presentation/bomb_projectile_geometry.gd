@@ -18,6 +18,7 @@ var _revision:=0
 
 func build(bomb: Dictionary,library: RefCounted,visuals: RefCounted,bindings: RefCounted) -> bool:
 	clear()
+	hide()
 	var descriptor:=Resources.prepare(library,bindings,bomb.get("weapon",{}))
 	if descriptor.is_empty() or bomb.get("visuals",{}).get("models",[]).size()!=2:return reject("Prepare the bomb's original model clocks before geometry")
 	for index in 2:
@@ -49,7 +50,11 @@ func prepare(bomb: Dictionary) -> Dictionary:
 	for index in 2:
 		for key in ["model_id","resource","start_ms","end_ms","loop"]:
 			if clocks[index].get(key)!=_descriptor.models[index][key]:return failed("Bomb geometry changed its model identity")
-		if not Numbers.integer(clocks[index].get("time_ms"),clocks[index].start_ms,clocks[index].end_ms) or not clocks[index].get("playing") is bool:return failed("Invalid bomb animation time")
+		# Shared playback wraps by the absolute end, then adds the start. A
+		# looping clock may briefly pass its last key, which the sampler holds.
+		var maximum: int=clocks[index].end_ms
+		if clocks[index].loop:maximum+=maxi(0,clocks[index].start_ms-1)
+		if not Numbers.integer(clocks[index].get("time_ms"),clocks[index].start_ms,maximum) or not clocks[index].get("playing") is bool:return failed("Invalid bomb animation time")
 	var frame:={"generation":_generation,"revision":_revision+1,"visible":false}
 	var shot: Dictionary=bomb.shot
 	if shot.is_empty() or shot.get("phase")=="detonated":return frame
@@ -73,6 +78,7 @@ func prepare(bomb: Dictionary) -> Dictionary:
 func commit(frame: Dictionary) -> void:
 	if _generation==null or frame.get("generation")!=_generation or frame.get("revision")!=_revision+1:error="Bomb geometry cannot commit a stale frame";return
 	_revision+=1
+	visible=frame.visible
 	for model in models:model.visible=frame.visible
 	if not frame.visible:return
 	for index in models[0].instances.size():models[0].instances[index].transform=frame.surfaces[0][index].pose

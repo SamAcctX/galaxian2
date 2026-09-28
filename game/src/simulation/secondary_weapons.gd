@@ -104,7 +104,7 @@ func configure_projectile_visuals(library: RefCounted,bindings: RefCounted) -> b
 	var prepared:={}
 	var bombs:={}
 	for gun in _guns:
-		if gun.has("bomb") and gun.bomb.snapshot().weapon.kind==7:
+		if gun.has("bomb"):
 			var bomb: RefCounted=gun.bomb.fork()
 			if not bomb.prepare_visuals(library,bindings):return reject(bomb.error)
 			bombs[gun.slot_index]=bomb

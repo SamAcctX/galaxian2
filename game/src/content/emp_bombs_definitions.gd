@@ -16,7 +16,7 @@ static func available(bindings: RefCounted) -> bool:
 ## Damage, timing, speed and radius remain catalogue values.
 static func declaration(item_id: int) -> Dictionary:
 	var index: int=VALUES.item_ids.find(item_id)
-	if index>=0:return {"kind":6,"model_id":14684,"attachment_id":-1,"effect_type":7,"launch_sound":6+index,"burst_sound":15+index}
+	if index>=0:return {"kind":6,"model_id":14684,"attachment_id":14685,"effect_type":7,"launch_sound":6+index,"burst_sound":15+index}
 	if item_id not in [44,45,46]:return {}
 	return {"kind":7,"model_id":14682 if item_id==46 else 14680,
 		"attachment_id":14683 if item_id==46 else 14681,"effect_type":0,

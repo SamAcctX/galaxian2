@@ -52,7 +52,7 @@ func verify_detonations(args: PackedStringArray) -> void:
 func verify_item(item_id: int, lib: RefCounted, bindings: RefCounted, cat: RefCounted, visuals: RefCounted, resources: RefCounted, initial_group: RefCounted, viewport: SubViewport, camera: Camera3D, captures: String) -> void:
 	var initial := equipped(bindings, cat, [{"item_id": item_id, "slot": 0, "quantity": 1 if item_id == 41 else 2}])
 	var owner := Ownership.new()
-	if not owner.configure(bindings, cat, initial) or not owner.configure_detonations(resources): check(false, owner.error); return
+	if not owner.configure(bindings, cat, initial) or not owner.configure_detonations(resources) or not owner.configure_projectile_visuals(lib, bindings): check(false, owner.error); return
 	var group: RefCounted = initial_group.fork_for_frame()
 	var slot: int = owner.snapshot().guns[0].slot_index
 	check(owner.has_detonations() and owner.detonation_owner(slot) != null, "Original burst owner was not attached to the actual launcher")

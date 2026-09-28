@@ -11,7 +11,6 @@ const Audio=preload("res://src/simulation/weapon_audio.gd")
 const Recharge=preload("res://src/simulation/shield_recharge.gd")
 const Secondaries=preload("res://src/simulation/secondary_weapons.gd")
 const BurstResources=preload("res://src/content/emp_detonation_resources.gd")
-const Tracks=preload("res://src/content/animation_tracks.gd")
 const Materials=preload("res://src/presentation/material_library.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
 const AEM=preload("res://src/content/aem.gd")
@@ -61,19 +60,9 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 				var bursts:=BurstResources.new()
 				if not bursts.configure(library,bindings,int(declaration.kind)):return fail(bursts.error)
 				families[declaration.kind]=bursts
-			var model:=int(declaration.model_id)
-			if declaration.kind==7:
-				var bomb:=Secondaries.Bomb.new()
-				var supported: bool=bomb.configure(bindings,cat,id,[]) and bomb.prepare_visuals(library,bindings)
-				items[id]="" if supported else "This bomb's original animated body is unavailable"
-				continue
-			if not resources.has(model):
-				var path: String=bindings.resolve(model,"mesh");var reader:=AEM.new()
-				var decoded:=reader.decode(library.read_resource(path,AEM.MAX_BYTES))
-				if decoded.is_empty():return fail("An original EMP body could not be read: "+path)
-				var supported: bool=model==14684 and path.ends_with("/misc/bomb_emp_a.aem") and Tracks.has_identity_tracks(decoded.surfaces) and Materials.supports(bindings.material_for_mesh(path,"high"))
-				resources[model]="" if supported else "This EMP body's visual behavior is not yet supported"
-			items[id]=resources[model]
+			var bomb:=Secondaries.Bomb.new()
+			var supported: bool=bomb.configure(bindings,cat,id,[]) and bomb.prepare_visuals(library,bindings)
+			items[id]="" if supported else "This bomb's original body or glow is unavailable"
 		var resolver:=Weapons.new()
 		if not resolver.configure(bindings,cat,bindings.base_content_id):return fail(resolver.error)
 		for item in cat.tables.items:
