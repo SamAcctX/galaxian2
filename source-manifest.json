@@ -2808,6 +2808,8 @@
     "game/tests/emp_primary_application.gd",
     "game/tests/emp_primary_application.gd.uid",
     "game/tests/cargo_scanner_application.gd",
-    "game/tests/cargo_scanner_application.gd.uid"
+    "game/tests/cargo_scanner_application.gd.uid",
+    "game/tests/automatic_tractor_application.gd",
+    "game/tests/automatic_tractor_application.gd.uid"
   ]
 }
