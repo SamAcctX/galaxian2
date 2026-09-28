@@ -1,7 +1,7 @@
 # Galaxian2
 
-**A native, open-source Galaxy on Fire 2 remake.** Fly the opening story, take
-contracts, trade and explore the first supported star systems.
+**A native, open-source Galaxy on Fire 2 remake.** Play the main campaign through
+its ending, trade ships, take freelance jobs and explore the base-game galaxy.
 
 **You need your own Galaxy on Fire 2 Full HD Mac game files to play, on every platform.**
 The game imports it locally on first launch. Game assets and the original
@@ -35,9 +35,9 @@ A playable Web package is not available yet.
 3. Choose **Start new game**. Follow the opening instructions.
 
 Later launches reuse your local import. Cancelling an import preserves an existing
-installation and its saves. Mac Full HD 1.0.6 content is verified, including a
-disk image labelled 1.0.7 that contains those same game files. The newer App Store
-1.0.7 bundle and extracted `.app` folders are also supported. Application
+installation and its saves. This release is tested with the Mac App Store
+Full HD bundle. The older Mac Full HD 1.0.6 reader remains available but has not
+been retested for this release. Application
 folders and disk images use the same content preparation. Existing completed
 imports and their saves remain usable.
 
@@ -51,22 +51,21 @@ and saves; there is no need to import the same game again.
 
 ## What's playable
 
-- The opening encounter and rescue, mining and equipment tutorials, combat
-  training, early station journeys and four introductory jobs.
-- The convoy, capture at Alioth, battle and escape, through the original
-  conversation that unlocks free travel.
-- Local travel in Augmenta and the Gome C–Dis jumpgate journey to Magnetar and back.
-- Station docking, item buying and selling, supported equipment fitting, and
-  courier/passenger contracts to implemented destinations.
+- The main campaign, from the opening encounter and mining tutorials through
+  the final Void escape, ending and continued free travel.
+- Freelance combat, recovery, delivery, escort, informer and intercept jobs.
+- The galaxy overview, local travel, jumpgates and Khador Drive travel into
+  normal space and the Void, using owned energy cells.
+- Hangar ship exchanges with trade-in credit and retained cargo/equipment;
+  base-game hulls, cloaking devices, mounted turrets, boosters, mines and bombs.
+- Blueprint material supply, production and collection.
 - Station saves, autosaves, loading and retrying from a saved station after death.
 - Main menu, display and sound settings, language selection, mouse/controller input and optional
   larger touch controls. Play is landscape only.
 
-The story continues through Magnetar and Union, Suttnar, Kappa and the paid
-Deep Science return, Sahi's cargo recovery, the Void escape and pursuit, Thynome,
-Dima's portal expedition, the Void probe and the paid return to Alioth. These
-supported stages retain station saves, Resume and ordinary departure. The
-following Thynome story visit is unfinished in this release.
+Campaign rewards and freelance progress remain in station saves and fresh
+Resume. Desktop flight hides touch controls by default; mobile flight uses
+the original control artwork and exposes fitted equipment through Actions.
 
 ![Portal and freighters](screenshots/02-portal-and-freighters.png)
 
@@ -84,7 +83,7 @@ Follow the tutorial prompts for flying, targeting, firing and mining.
 | Secondary fire / selection | **R / G** |
 | Main menu / pause and controls reference | **P** or **Esc** |
 | Toggle fullscreen | **F11** |
-| Actions, including the navigation map | **E** |
+| Actions, including navigation and fitted devices | **E** |
 | Autopilot destinations / cancel guidance | **Q** / controller **Y** |
 | Dock at the locked station / mine selected asteroid / stop drilling | **F** |
 | Fast Forward when navigation permits | Hold **Tab** / controller **Back** |
@@ -151,10 +150,11 @@ folder before updating an early preview.
 
 ## Still in development
 
-The remaining campaign, Valkyrie, Supernova, broader galaxy travel, ship purchases,
-several weapon/device types, cross-system contracts and some menu presentation
-are unfinished. Unavailable missions and offers stay locked. The menu currently
-uses the Normal difficulty profile; Supernova Challenge is disabled.
+Valkyrie and Supernova, the status/medals/reputation screen and earned medal
+reward hull stock remain unfinished. Further work is needed on HUD composition,
+menu scenery, station and NPC sound, some UI sound transitions, and rendering
+effects and lighting. Unavailable offers stay locked. The menu currently uses
+the Normal difficulty profile; Supernova Challenge is disabled.
 
 Screenshots show the native engine using locally imported Mac content. They are
 promotional images, not game resources distributed with the engine.
