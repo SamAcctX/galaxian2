@@ -11,6 +11,9 @@ func verify_free_application() -> void:
 	await process_frame;resume_application_focus()
 	if app.session.station_owner().snapshot().get("hangar_open",false):
 		if not app.equipment_action("close"):check(false,app.session.error);return
+	if not OS.get_environment("GOF2_COORDINATE_JOURNEY").is_empty():
+		await verify_coordinate_journey(source_path,input_hash)
+		return
 	var retained: RefCounted=app.session.station_owner()
 	var original: Dictionary=retained.snapshot()
 	var contacts: Array=original.contracts.population.contacts.filter(func(row):return row.get("role")==4 and row.has("service"))
@@ -103,6 +106,54 @@ func verify_free_application() -> void:
 	await capture_free_application("coordinate-saved-station")
 	check(FileAccess.get_sha256(source_path)==input_hash,"The earned input save was modified")
 	print("Coordinates earned purchase: ",{"station":landed.loadout.station_id,"system":target,"price":price,"credits_before":before.contracts.credits,"credits_after":landed.contracts.credits,"input_sha256":input_hash})
+
+func verify_coordinate_journey(source_path: String,input_hash: String) -> void:
+	var original: Dictionary=app.session.station_owner().snapshot()
+	var target:=1
+	var gate_field:=int(definitions.mido_travel.free_navigation.gate_station_field)
+	var destination:=int(catalogue.tables.systems[target].fields[gate_field])
+	var resumed:=OS.get_environment("GOF2_COORDINATE_JOURNEY")=="resume"
+	check(original.contracts.lounges.system_availability[target],"The earned career lost its purchased destination")
+	check(original.contracts.credits==16626 and original.campaign_cursor==45,"The paid career changed its wallet or story before travel")
+	print("Coordinate journey retained cargo: ",original.cargo,"; equipment: ",original.loadout.equipment_ids)
+	if failures:return
+	if not resumed:
+		if not await visit_tractor_supplier(destination):return
+	var landed: Dictionary=app.session.station_owner().snapshot()
+	check(landed.loadout.system_id==target and landed.loadout.station_id==destination,"The purchased destination did not survive travel or fresh Resume")
+	check(landed.contracts.credits==original.contracts.credits and landed.contracts.lounges.system_availability==original.contracts.lounges.system_availability,"Travel charged again or changed the purchased coordinates")
+	check(landed.cargo==original.cargo and landed.loadout.equipment_ids==original.loadout.equipment_ids,"Travel lost earned cargo or equipment")
+	check(landed.campaign_cursor==original.campaign_cursor and landed.contracts.mission==original.contracts.mission and landed.contracts.passengers==original.contracts.passengers,"Travel changed the retained story or passenger job")
+	var automatic: Dictionary=app._save_file.load_document(app.station_save_path(),definitions,catalogue,source)
+	var archive=load("res://src/simulation/station_archive.gd").new()
+	var restored: RefCounted=archive.restore(definitions,catalogue,source,automatic)
+	check(restored!=null and restored.snapshot()==landed,"Destination autosave lost the actual docked career: "+archive.error)
+	await capture_free_application("pan-resumed" if resumed else "pan-docked")
+	if failures or not retain_recovery_save("pan-resumed" if resumed else "pan"):return
+	if OS.get_environment("GOF2_COORDINATE_MAP_UI")=="1":
+		if not app.open_map():check(false,app.status.text);return
+		check(app.map_panel.snapshot().get("selected_system_id")==target,"The galaxy overview did not select the visited purchased system")
+		await capture_free_application("pan-galaxy-overview")
+		await click_coordinate_button(app.map_panel._galaxy._open)
+		check(app.map_panel.snapshot().get("system_id")==target and app.map_panel._local.visible,"The actual overview Open button did not reveal Pan's planets")
+		await capture_free_application("pan-system-map")
+		if not app.close_map(now_us):check(false,app.status.text);return
+		check(app.session.station_owner().snapshot()==landed,"Browsing the purchased system changed the docked career")
+	if not app.contract_action("open",-1):check(false,app.session.error);return
+	for step in 20:
+		if not application_step():return
+	var population: Array=app.session.station_owner().snapshot().contracts.population.contacts
+	print("Earned Pan lounge: ",population)
+	await capture_free_application("pan-lounge-resumed" if resumed else "pan-lounge")
+	if not app.contract_action("close",-1):check(false,app.session.error);return
+	check(FileAccess.get_sha256(source_path)==input_hash,"The journey modified its immutable earned input")
+	print("Coordinate destination accepted: ",{"resumed":resumed,"system":target,"station":destination,"credits":landed.contracts.credits,"input_sha256":input_hash})
+
+func follow_gate_course(system_id: int,station_id: int) -> bool:
+	if not await super.follow_gate_course(system_id,station_id):return false
+	if OS.get_environment("GOF2_COORDINATE_JOURNEY")=="travel" and system_id==1:
+		await capture_free_application("pan-gate-arrival")
+	return true
 
 func press_coordinate_key(code: int) -> void:
 	resume_application_focus()
