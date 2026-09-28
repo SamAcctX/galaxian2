@@ -53,6 +53,8 @@ func verify_contract_boundaries(bindings: RefCounted,cat: RefCounted,library: Re
 			var next: RefCounted=branch.evaluate(0)
 			if next==null:check(false,branch.error);return
 			branch=next
+		verify_living_lock(bindings,cat,branch,carrier)
+		if failures:return
 		var combat: RefCounted=branch._encounter._combat
 		if not combat.begin_contact_pass(branch.snapshot().random_state,true) or combat.normal_hit(carrier,actors[carrier].vitals.hull,false).is_empty():check(false,combat.error);return
 		for tick in 160:
@@ -80,6 +82,27 @@ func verify_contract_boundaries(bindings: RefCounted,cat: RefCounted,library: Re
 		check(abandoned.contract_result_pending() and abandoned.snapshot().contracts.pending_result.failed,"Uncollected mission cargo never expired into failure")
 		check(frame.snapshot()==initial,"Cargo recovery or expiry changed the unplayed parent frame")
 	check(station.snapshot()==original,"Recovery fixtures changed the earned station")
+
+func verify_living_lock(bindings: RefCounted,cat: RefCounted,frame: RefCounted,id: int) -> void:
+	# Detached scanner/device fixture around the real generated, activated cast.
+	var before: Dictionary=frame.snapshot();var actor: Dictionary=before.encounter.combat.actors[id]
+	check(actor.active and actor.vitals.hull>0,"The scan fixture never activated its live carrier")
+	var tractor:=Recovery.new()
+	if not tractor.configure(bindings,cat,{"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"ship_id":0,"equipment_ids":[68,81]}):check(false,tractor.error);return
+	var initial: Dictionary=tractor.snapshot()
+	var projection: RefCounted=frame._scanner.prepare_projection(Vector2i(1280,720))
+	var camera:=Transform3D(Basis.IDENTITY,actor.position+Vector3(0,0,1000))
+	var context:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"enabled":true,
+		"guidance_active":false,"alternate_operation_active":false,"mining_approach_active":false,
+		"alternate_approach_active":false,"autopilot":false,"other_target_selected":false,
+		"ordinary_scan_enabled":true,"ordinary_scan_blocked":false,"aim_pixels":Vector2(640,360),"viewport_size":Vector2i(1280,720)}
+	var acquired: Dictionary=frame._encounter.acquire_cargo_target(tractor,100,projection,camera,context)
+	if acquired.is_empty():check(false,frame._encounter.error);return
+	check(acquired.tractor.snapshot().frame.ordinary_candidate_actor_id==id,"A fitted tractor suppressed the activated carrier's ordinary scan")
+	context.guidance_active=true
+	var guided: Dictionary=frame._encounter.acquire_cargo_target(tractor,100,projection,camera,context)
+	check(not guided.is_empty() and guided.tractor.snapshot().frame.ordinary_candidate_actor_id==-1,"Guided flight acquired an ordinary ship")
+	check(frame.snapshot()==before and tractor.snapshot()==initial,"Shared acquisition mutated its retained encounter or device")
 
 func verify_outer_station_contact(frame: RefCounted) -> void:
 	# An outer wall lies beyond the proximity fallback. Its physical projection

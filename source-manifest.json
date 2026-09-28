@@ -2782,6 +2782,10 @@
     "game/tests/recovery_application.gd",
     "game/tests/recovery_application.gd.uid",
     "game/tests/recovery_resume_application.gd",
-    "game/tests/recovery_resume_application.gd.uid"
+    "game/tests/recovery_resume_application.gd.uid",
+    "game/src/presentation/flight_distance.gd",
+    "game/src/presentation/flight_distance.gd.uid",
+    "game/tests/target_information_application.gd",
+    "game/tests/target_information_application.gd.uid"
   ]
 }

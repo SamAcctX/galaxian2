@@ -73,7 +73,7 @@ func present(frame: RefCounted) -> bool:
 	var index:=0 if _front<0 else 1-_front
 	var staged: Dictionary=_layers[index]
 	staged.root.visible=false
-	if not staged.gauges.present(sample) or not staged.reticle.present(sample.player_aim) or not staged.markers.present(sample.npc_scanner) or not staged.radio.present(sample.radio):return reject(staged.gauges.error+staged.reticle.error+staged.markers.error+staged.radio.error)
+	if not staged.gauges.present(sample) or not staged.reticle.present(sample.player_aim) or not staged.markers.present(sample.npc_scanner,sample.mining_targeting.get("selected_object_index",-1)>=0) or not staged.radio.present(sample.radio):return reject(staged.gauges.error+staged.reticle.error+staged.markers.error+staged.radio.error)
 	if not staged.scan.present(sample.mining_targeting) or not staged.notice.present(sample.flight_notices):return reject(staged.scan.error+staged.notice.error)
 	staged.gauges.set_active(sample.hud_visible);staged.target.set_active(sample.hud_visible)
 	if not sample.hud_visible:staged.reticle.visible=false;staged.markers.visible=false;staged.scan.visible=false;staged.notice.visible=false

@@ -474,8 +474,8 @@ func acquire_cargo_target(tractor: RefCounted,delta_ms: int,projection: RefCount
 	if not projection is Recovery.TargetProjection:return fail("Cargo targeting requires the original flight projection")
 	var combat:=_identity.duplicate();combat.actors=_combat.actor_snapshots()
 	var observations:=[]
-	# These native ordinary populations retain the constructor's clear exclusion
-	# and living-theft priority flags. Other actor lifecycles remain explicit.
+	# These native ordinary populations retain the constructor's clear scanner
+	# exclusion and theft flags. Dormant AI targeting is a separate permission.
 	for actor in combat.actors:
 		if not actor.active:continue
 		var eligible:=false
@@ -488,7 +488,7 @@ func acquire_cargo_target(tractor: RefCounted,delta_ms: int,projection: RefCount
 		if projected.has("error"):return fail(projection.error)
 		observations.append({"base_content_id":_identity.base_content_id,"binding_id":_identity.binding_id,
 			"actor_id":actor.actor_id,"actor_mode":actor.actor_mode,"active":actor.active,
-			"cargo_eligible":eligible,"excluded":false,"scan_blocked":actor.get("targeting_blocked",false),
+			"cargo_eligible":eligible,"excluded":false,"scan_blocked":false,
 			"priority":false,"pixels":projected.pixels,"in_view":projected.in_view})
 	var next: RefCounted=tractor.fork_for_frame()
 	if not next.acquire(delta_ms,observations,context):return fail(next.error)

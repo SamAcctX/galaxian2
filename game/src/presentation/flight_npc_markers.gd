@@ -1,12 +1,17 @@
 extends Control
 ## Original NPC marker art and scanner filmstrip in the compact native HUD.
-## Distance labels, auxiliary bars and selected-target information are pending.
+## Acquisition, target identity and health remain owned by the flight frame.
 const TargetProjection = preload("res://src/presentation/target_projection.gd")
 const Atlas = preload("res://src/content/atlas_region.gd")
 const Frame = preload("res://src/presentation/flight_target_frame.gd")
 const Definitions = preload("res://src/content/npc_scanner_definitions.gd")
 const Numbers = preload("res://src/content/opening_definitions.gd")
 const ScanAnimation = preload("res://src/presentation/flight_scan_animation.gd")
+const OriginalUI=preload("res://src/presentation/original_ui.gd")
+const FontMetrics=preload("res://src/content/image_font.gd")
+const Navigation=preload("res://src/content/combat_training_story_definitions.gd")
+const Distance=preload("res://src/presentation/flight_distance.gd")
+const BADGES={0:1185,1:1180,2:1183,3:1182,8:1184,9:1181}
 var error := ""
 var prepared := false
 var mobile_layout := false
@@ -14,6 +19,11 @@ var _textures := {}
 var _frames: Array[AtlasTexture] = []
 var _source := {}
 var _sample := {}
+var _information:={}
+var _information_art:={}
+var _strings:=[]
+var _font: FontFile
+var _distance_rules:={}
 
 func _init() -> void:
 	mouse_filter=Control.MOUSE_FILTER_IGNORE;clip_contents=true;visible=false
@@ -52,18 +62,39 @@ func prepare(library: RefCounted, bindings: RefCounted, visuals: RefCounted) -> 
 	var strip := reader.load(library,visuals,geometry.resource,geometry.region)
 	if strip==null:return fail(reader.error)
 	_frames=ScanAnimation.source_frames(strip,geometry)
+	var art:=OriginalUI.new();var atlases:={}
+	for id in Frame.BASELINE_ATLASES:atlases[str(id)]=Frame.BASELINE_ATLASES[id]
+	var information_art:=art.load_regions(library,bindings,visuals,[1220]+BADGES.values(),atlases)
+	if information_art.is_empty():return fail(art.error)
+	var metrics:=FontMetrics.new()
+	if not metrics.open_selected(library,bindings):return fail(metrics.error)
+	var font:=metrics.create_font(visuals)
+	if font==null:return fail(metrics.error)
+	_information_art=information_art;_font=font;_strings=library.strings.duplicate()
+	_distance_rules=Navigation.navigation(bindings)
 	_source={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"texture_id":texture_id,"resource":resource,"regions":regions,"animation":geometry}
 	prepared=true
 	return true
 
-func present(sample: Dictionary) -> bool:
+func present(sample: Dictionary,suppress_information:=false) -> bool:
 	error=""
-	if sample.is_empty():_sample={};visible=false;queue_redraw();return true
+	if sample.is_empty():_sample={};_information={};visible=false;queue_redraw();return true
 	if not prepared or sample.get("base_content_id")!=_source.base_content_id or sample.get("binding_id")!=_source.binding_id:return fail("NPC marker sample belongs to another profile")
 	if not sample.get("visible") is bool or not sample.get("markers") is Array or not sample.get("aim_pixels") is Vector2i or not Numbers.integer(sample.get("animation_frame"),-1,_frames.size()-1):return fail("Invalid NPC marker sample")
 	for marker in sample.markers:
 		if not marker is Dictionary or not marker.get("pixels") is Vector2i or not marker.get("near") is bool or not marker.get("selected") is bool or not marker.get("hostile") is bool or not Numbers.integer(marker.get("hull_percent"),0,100):return fail("Invalid NPC marker row")
-	_sample=sample.duplicate(true);visible=sample.visible;queue_redraw()
+	var information:={}
+	var selected: Variant=sample.get("selected_target",{})
+	if not selected is Dictionary:return fail("Invalid selected NPC information")
+	if sample.visible and not suppress_information and not selected.is_empty():
+		if not Numbers.integer(selected.get("actor_kind"),0,10) or not Numbers.integer(selected.get("name_text_id"),-1,_strings.size()-1) or not Numbers.integer(selected.get("hull_percent"),0,100):return fail("Selected NPC identity or hull is invalid")
+		var named: bool=selected.name_text_id>=0
+		var id: int=selected.name_text_id if named else 395+int(selected.actor_kind)
+		if id>=_strings.size() or _strings[id].is_empty():return fail("Selected NPC has no localized identity")
+		var special: bool=selected.name_text_id in [1600,1652]
+		information={"text":_strings[id] if special else "%s %d%%"%[_strings[id],selected.hull_percent],
+			"color":Color("ff2a00") if special else Color.WHITE,"badge_image_id":int(BADGES.get(int(selected.actor_kind),-1))}
+	_sample=sample.duplicate(true);_information=information;visible=sample.visible;queue_redraw()
 	return true
 
 func set_mobile_layout(value: bool) -> void:
@@ -89,7 +120,36 @@ func _draw() -> void:
 		else:
 			var id := (1224 if marker.hostile else 1225) if marker.selected else (1228 if marker.hostile else 1227)
 			_centered(_textures[id],point,scale_factor)
+			if marker.selected and marker.get("in_view",false) and not _distance_rules.is_empty() and marker.get("position") is Vector3 and _sample.get("camera_position") is Vector3:
+				var meters:=Distance.meters(marker.position,_sample.camera_position,_distance_rules)
+				if meters>=0:
+					var font_size:=20 if mobile_layout else 12
+					var text:=Distance.label(meters,_distance_rules)
+					var position:=point+Vector2((_textures[id].get_width()*0.5+3.0)*scale_factor,_font.get_ascent(font_size)*0.5)
+					draw_string_outline(_font,position,text,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,2,Color(0,0,0,0.8))
+					draw_string(_font,position,text,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,Color.WHITE)
 	if _sample.animation_frame>=0:_centered(_frames[_sample.animation_frame],Vector2(_sample.aim_pixels),1.0 if mobile_layout else 0.5)
+	_draw_information(1.0 if mobile_layout else 0.5)
+
+func _draw_information(art_scale: float) -> void:
+	if _information.is_empty():return
+	var panel: Texture2D=_information_art[1220]
+	var extent:=panel.get_size()*art_scale
+	var top:=Vector2((size.x-extent.x)*0.5,3.0*(1.0 if mobile_layout else 0.5))
+	draw_texture_rect(panel,Rect2(top,extent),false)
+	var font_size:=20 if mobile_layout else 12
+	var badge: Texture2D=_information_art.get(_information.badge_image_id)
+	var icon_size:=Vector2.ZERO if badge==null else badge.get_size()*art_scale
+	var gap:=3.0*(1.0 if mobile_layout else 0.5)
+	var width:=extent.x-24.0*art_scale-icon_size.x-gap
+	while font_size>8 and _font.get_string_size(_information.text,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size).x>width:font_size-=1
+	var text_size:=_font.get_string_size(_information.text,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size)
+	var x: float=(size.x-text_size.x)*0.5
+	var y: float=top.y+(extent.y-_font.get_height(font_size))*0.5+_font.get_ascent(font_size)
+	if badge!=null:draw_texture_rect(badge,Rect2(Vector2(x-gap-icon_size.x,top.y+(extent.y-icon_size.y)*0.5),icon_size),false)
+	draw_string(_font,Vector2(x,y),_information.text,HORIZONTAL_ALIGNMENT_LEFT,width,font_size,_information.color)
+
+func information_snapshot() -> Dictionary:return _information.duplicate(true)
 
 func _centered(texture: Texture2D, point: Vector2, scale_factor: float) -> void:
 	var extent := texture.get_size()
@@ -98,7 +158,8 @@ func _centered(texture: Texture2D, point: Vector2, scale_factor: float) -> void:
 
 func source() -> Dictionary:return _source.duplicate(true)
 func clear() -> void:
-	error="";prepared=false;visible=false;_textures={};_frames.clear();_source={};_sample={};queue_redraw()
+	error="";prepared=false;visible=false;_textures={};_frames.clear();_source={};_sample={}
+	_information={};_information_art={};_strings=[];_font=null;_distance_rules={};queue_redraw()
 func fail(message: String) -> bool:
 	error=message
 	return false
