@@ -63,23 +63,30 @@ func next_units(current: Vector2, commands: Vector2, seconds: float,mouse_captur
 	var milliseconds := seconds * 1000.0
 	var neutral := milliseconds * _factor / float(_parameters.neutral_divisor)
 	var drive := milliseconds * _factor / ((float(_parameters.ramp_bias) - _sensitivity) * float(_parameters.ramp_scale))
-	# Captured cursor steering has a faster, linear response. Express the
-	# original 60Hz acceleration per second so rendering rate does not alter it.
-	if mouse_capture:drive=minf(280.0,_factor*25.0/6.0)*60.0*seconds
 	if not is_finite(neutral) or not is_finite(drive):
 		error = "Pilot response exceeds supported time range"
 		return current
 	var result := current
 	for axis in 2:
-		var value := move_toward(current[axis], 0.0, neutral)
 		var command := commands[axis]
+		var value := move_toward(current[axis], 0.0, neutral)
+		var acceleration:=drive
+		if mouse_capture:
+			acceleration=milliseconds*_factor/12.0 if axis==0 else minf(280.0,_factor*25.0/6.0)*60.0*seconds
+			# A held cursor drives a target without neutral drag. Recentring or
+			# reducing deflection must also release the previous turn promptly.
+			value=current[axis]
 		# Preserve the source's integer target quantization, including commands
 		# too small to request a nonzero target. Do not accelerate away from a
 		# nearer target after neutral return has already left it behind.
 		var scaled := command * (1.0 if mouse_capture else absf(command)) * float(_parameters.target_gain) * _factor
 		var target := float(int(float(int(scaled)) / float(_parameters.target_divisor)))
-		if command > 0.0 and value < target: value = minf(value + drive, target)
-		elif command < 0.0 and value > target: value = maxf(value - drive, target)
+		if mouse_capture:
+			if absf(target)<absf(value) and signf(target)==signf(value) or target==0.0:
+				value=move_toward(value,target,neutral) if axis==0 else target+(value-target)*pow(0.7,seconds*60.0)
+			else:value=move_toward(value,target,acceleration)
+		elif command > 0.0 and value < target: value = minf(value + acceleration, target)
+		elif command < 0.0 and value > target: value = maxf(value - acceleration, target)
 		result[axis] = value
 	return result
 

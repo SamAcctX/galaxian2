@@ -234,7 +234,7 @@ func evaluate(timeline: RefCounted, scenery: RefCounted, delta_ms: Variant, pres
 	if next._engine_audio!=null and not next._engine_audio.follow_player(contact_pose,int(next._player_state.snapshot().vitals.hull),int(delta_ms)):return fail(next._engine_audio.error)
 	if next._aim!=null:
 		var preceding_camera: Transform3D=previous.camera.view.get("pose",Transform3D.IDENTITY)
-		if not next._aim.advance(contact_pose,preceding_camera,hud_viewport):return fail(next._aim.error)
+		if not next._aim.advance(contact_pose,preceding_camera,hud_viewport,commands,mouse_capture and previous.camera.shot.phase==4):return fail(next._aim.error)
 	# The ordinary player pass still precedes world weapons, so its shield pulse
 	# reaches the current frame's projectile accounting and fractional truncation.
 	if next._player_recharge and next._player_state.advance_recharge(delta_ms).is_empty():return fail(next._player_state.error)
@@ -261,6 +261,7 @@ func evaluate(timeline: RefCounted, scenery: RefCounted, delta_ms: Variant, pres
 	if next._engine_particles!=null:
 		if next._engine_particles.engine_enabled()!=(not (previous.camera.shot.phase==4 and brake)) and not next._engine_particles.set_engine_enabled(not (previous.camera.shot.phase==4 and brake)):return fail(next._engine_particles.error)
 		if not next._engine_particles.advance(contact_pose,delta_ms):return fail(next._engine_particles.error)
+	if next._flight!=null:next._player_motion_event.camera_response={"captured":mouse_capture,"handling":next._flight.response_factor()}
 	if not clock.begin_frame(delta_ms,false,detail,next._player_motion_event,{"random_state":field.random_state,"fade_active":fade_active}): return fail(clock.error)
 	var scene: Dictionary=clock.snapshot()
 	if next._engine_audio!=null and not next._engine_audio.apply_controller(scene.get("escape",{}),scene.scene.player_pose):return fail(next._engine_audio.error)

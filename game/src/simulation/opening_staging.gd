@@ -71,6 +71,20 @@ func adopt_player_motion(motion: Dictionary) -> bool:
 	_state.player_pose=next
 	return true
 
+func face_formation() -> bool:
+	error=""
+	if _state.is_empty() or not _state.formation_revealed:return reject("Reveal the opening formation before handing over control")
+	var center:=Vector3.ZERO;var count:=0
+	for actor in _state.actors:
+		if actor.visible:center+=actor.pose.origin;count+=1
+	if count==0:return reject("Opening handoff lost its formation")
+	var direction: Vector3=center/float(count)-_state.player_pose.origin
+	if direction.length_squared()<0.001:return reject("Opening formation coincides with the player")
+	var up: Vector3=_state.player_pose.basis.y
+	if absf(direction.normalized().dot(up))>0.999:up=_state.player_pose.basis.x
+	_state.player_pose.basis=Basis.looking_at(direction,up,true)
+	return true
+
 func adopt_actor_poses(combat: Dictionary) -> bool:
 	error=""
 	if _state.is_empty() or combat.get("base_content_id")!=_state.base_content_id or combat.get("binding_id")!=_state.binding_id:

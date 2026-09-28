@@ -67,6 +67,9 @@ func verify_profile(content: String, pack: String) -> void:
 		if after.camera.shot.phase==4:
 			check(before.camera.shot.phase==3,"Skipped cinematic release")
 			check(frame.player_motion.pose.basis==before.scene.player_pose.basis,"Release frame steered before the controller")
+			for actor in after.scene.actors:
+				check(after.scene.player_pose.basis.z.dot((actor.pose.origin-after.scene.player_pose.origin).normalized())>0.8,"Control began facing away from the pirates")
+			check((-after.camera.view.pose.basis.z).dot(after.scene.player_pose.basis.z)>0.95,"Combat handoff kept the departing cinematic view")
 			check(frame.player_flight.angular_units.y>0,"Release frame failed to sample steering")
 			check(frame.primary_fire.weapons.size()==2,"Release frame failed to dispatch both primaries")
 			for gun in frame.primaries.guns:

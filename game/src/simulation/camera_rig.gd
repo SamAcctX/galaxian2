@@ -101,6 +101,7 @@ func refresh_player_response(relative_capture: bool,handling: float) -> bool:
 	if not is_finite(handling) or handling<=0:return reject("Camera handling must be finite and positive")
 	var rounded:=single(handling)
 	if not is_finite(rounded):return reject("Camera handling exceeds source precision")
+	if relative_capture!=_relative_capture or rounded!=_player_handling:_response_dirty=true
 	if not _response_dirty or _fast:return true
 	var rates:=_handling_rates(rounded) if relative_capture else Vector2(float(_response_rules.fixed_normal_look_rate),float(_response_rules.fixed_normal_eye_rate))
 	if not _set_response_rates(rates.x,rates.y):return false
@@ -278,6 +279,21 @@ func update(delta_ms: Variant, shot: Dictionary, scene: Dictionary, fixed_refres
 		"look": look, "pose": view.pose, "mode": shot.mode}
 	_auxiliary_progress=auxiliary.travelled;_auxiliary_distance=auxiliary.initial_distance;_auxiliary_transition=auxiliary.transition_pending
 	_follow_offset=follow_offset
+	return true
+
+## A director may cut directly from a cinematic to controllable flight.
+func cut_to_follow(shot: Dictionary,scene: Dictionary) -> bool:
+	error=""
+	if _binding.is_empty() or shot.get("mode")!="follow" or shot.get("base_content_id")!=_base or shot.get("binding_id")!=_binding:return reject("Follow cut requires its configured shot")
+	var resolved:=Director.target_pose(shot,scene)
+	if resolved.has("error"):return reject(resolved.error)
+	var target: Transform3D=resolved.target
+	if not target.is_finite() or not target.basis.is_equal_approx(target.basis.orthonormalized()) or target.basis.determinant()<=0:return reject("Follow cut requires a rigid target pose")
+	var eye:=target*_follow_offset
+	var look:=target*Poses.vec(_data.look_offset)
+	var view:=CameraView.fixed_eye(eye,Transform3D(target.basis,look),true)
+	if view.has("error"):return reject(view.error)
+	_state={"base_content_id":_base,"binding_id":_binding,"eye":eye,"look":look,"pose":view.pose,"mode":"follow"}
 	return true
 
 func fixed_view(shot: Dictionary, scene: Dictionary) -> Dictionary:

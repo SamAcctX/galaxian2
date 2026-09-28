@@ -93,6 +93,9 @@ func advance(delta_ms: Variant, radio: Dictionary) -> bool:
 	_view_translation = translation
 	return true
 
+func releases_control(radio: Dictionary) -> bool:
+	return _state.get("phase")==3 and radio.get("finished",[]).size()==_event_count and radio.finished[int(_data.pan.follow_player_after_event_finished)]
+
 func fixed_refresh() -> Dictionary:
 	return _fixed_refresh.duplicate(true)
 

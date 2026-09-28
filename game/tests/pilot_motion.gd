@@ -71,7 +71,15 @@ func check_mouse_response(response: RefCounted) -> void:
 			value=response.next_units(value,Vector2(0.5,-0.5),step,true)
 			elapsed+=step;tick+=1
 		check(value.is_equal_approx(mouse),"Mouse response changed with frame cadence")
-		check(response.next_units(value,Vector2.ZERO,0.1,true).x<value.x,"Recentred mouse did not slow the turn")
+		var released:=value
+		var release_time:=0.0;tick=0
+		while release_time<0.2:
+			var step:=minf(cadence[tick%cadence.size()],0.2-release_time)
+			released=response.next_units(released,Vector2.ZERO,step,true)
+			release_time+=step;tick+=1
+		check(absf(released.y)<absf(value.y)*0.02,"Recentred horizontal mouse kept turning after 200ms")
+		var reversed: Vector2=response.next_units(value,-Vector2(0.5,-0.5),0.1,true)
+		check(reversed.x<0 and reversed.y>0,"Mouse reversal retained the previous direction")
 	check(response.next_units(mouse,Vector2.ONE,0.0,true)==mouse,"Paused mouse steering advanced")
 
 func check_response(response: RefCounted) -> void:

@@ -57,6 +57,9 @@ func update(delta_ms: Variant, elapsed_ms: Variant, radio: Dictionary, player_mo
 	if drift.has("error"): return reject(drift.error)
 	if elapsed_ms < _elapsed_ms: return reject("Opening elapsed time regressed; configure a new scene for a new clock")
 	if drift.apply and not stage.displace_actors(_data.actor_ids, drift.value): return reject(stage.error)
+	# Control starts with the retained pirate formation ahead, even after a
+	# fully watched introduction has carried the player past its initial pose.
+	if _view.releases_control(radio) and not stage.face_formation():return reject(stage.error)
 	var view: RefCounted=_view.fork_for_frame()
 	var escape: RefCounted=_escape.fork_for_frame() if _escape!=null else null
 	var active:=false
@@ -70,7 +73,7 @@ func update(delta_ms: Variant, elapsed_ms: Variant, radio: Dictionary, player_mo
 			var replacement: Dictionary=stage.snapshot()
 			replacement.prior_pose=replacement.player_pose;replacement.pose=escaped.frame.player_pose_override
 			if not stage.adopt_player_motion(replacement):return reject(stage.error)
-	if not active and not view.update(delta_ms, radio, stage.snapshot()):return reject(view.error)
+	if not active and not view.update(delta_ms, radio, stage.snapshot(),player_motion.get("camera_response",{})):return reject(view.error)
 	_view=view;_escape=escape
 	_staging = stage
 	_elapsed_ms = int(elapsed_ms)

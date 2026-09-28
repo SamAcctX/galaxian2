@@ -23,14 +23,21 @@ func configure(bindings: RefCounted) -> bool:
 	_rig = rig
 	return true
 
-func update(delta_ms: Variant, radio: Dictionary, scene: Dictionary) -> bool:
+func releases_control(radio: Dictionary) -> bool:
+	return _director!=null and _director.releases_control(radio)
+
+func update(delta_ms: Variant, radio: Dictionary, scene: Dictionary,response: Dictionary={}) -> bool:
 	error = ""
 	if _director == null: return reject("Configure opening view before updating")
+	if not response.is_empty() and not _rig.refresh_player_response(response.captured,response.handling):return reject(_rig.error)
+	var handoff: bool=_director.releases_control(radio)
 	var next: RefCounted = _director.fork_for_frame()
 	if not next.advance(delta_ms, radio): return reject(next.error)
 	# Mission camera changes precede the ordinary view update. A pan can refresh
 	# fixed-eye history before the same update changes the target to the player.
-	if not _rig.update(delta_ms, next.snapshot(), scene, next.fixed_refresh(), next.view_translation()): return reject(_rig.error)
+	if handoff:
+		if not _rig.cut_to_follow(next.snapshot(),scene):return reject(_rig.error)
+	elif not _rig.update(delta_ms, next.snapshot(), scene, next.fixed_refresh(), next.view_translation()): return reject(_rig.error)
 	_director = next
 	return true
 

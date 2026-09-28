@@ -54,6 +54,8 @@ func sample_commands(commands: Vector2, delta_ms: Variant,mouse_capture:=false) 
 	if not _pilot.sample_commands(commands,float(delta_ms)/1000.0,mouse_capture):return reject(_pilot.error)
 	return true
 
+func response_factor() -> float:return _pilot.response_factor()
+
 func boundary_event() -> int:
 	return int(_rules.get("postcombat_after_event_finished",-1))
 

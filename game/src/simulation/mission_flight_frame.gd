@@ -174,8 +174,6 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 		if not next._booster.cancel():return failed(next._booster.error)
 	next._state.physical_contacts=[]
 	if moving:
-		var response: Dictionary=next._camera.response_snapshot()
-		if response.relative_capture!=relative_mouse_capture or response.player_handling!=next._pilot.response_factor():next._camera.mark_response_dirty()
 		if not next._camera.refresh_player_response(relative_mouse_capture,next._pilot.response_factor()) or not next._engine_audio.before_ordinary_motion():return failed(next._camera.error+next._engine_audio.error)
 		next._pose=next._pilot.advance_prepared(_pose,throttle if enabled_before else _throttle,seconds,strafe if enabled_before and not next._encounter.turret_active() else 0.0,next._booster.speed_multiplier())
 		if not next._pilot.error.is_empty():return failed(next._pilot.error)
@@ -185,7 +183,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 			if operation.kind=="asteroid" and next._player.normal_hit(operation.player_damage).is_empty():return failed(next._player.error)
 		next._pose.origin=contact.center_after;next._state.physical_contacts=contact.operations
 		if next._player.advance_recharge(milliseconds).is_empty() or next._player.advance_repair(milliseconds).is_empty() or not next._player.advance_cloak(milliseconds,next._notices):return failed(next._player.error)
-		if not next._aim.advance(next._encounter.turret_aim_pose(next._pose),_camera.snapshot().pose,size):return failed(next._aim.error)
+		if not next._aim.advance(next._encounter.turret_aim_pose(next._pose),_camera.snapshot().pose,size,commands,relative_mouse_capture and enabled_before and not next._encounter.turret_active()):return failed(next._aim.error)
 		# Contact samples the preceding portal clock, after solid scenery and
 		# before weapons/radio. Opening later in this frame cannot teleport us.
 		if next._portal!=null:

@@ -1,6 +1,5 @@
 extends RefCounted
-## Retained projected-forward aim for native ordinary flight. Cursor-directed
-## original steering modes and special equipment paths are not implemented here.
+## Mouse cursor aim and retained projected-forward aim for ordinary flight.
 const Definitions = preload("res://src/content/player_aim_definitions.gd")
 const TargetProjection = preload("res://src/presentation/target_projection.gd")
 const Vectors = preload("res://src/simulation/source_vectors.gd")
@@ -16,6 +15,7 @@ var _contact := false
 var _contact_ms := 0
 var _flash := false
 var _visible := false
+var _cursor_mode := false
 
 func configure(bindings: RefCounted) -> bool:
 	clear()
@@ -28,9 +28,10 @@ func configure(bindings: RefCounted) -> bool:
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
 	return true
 
-func advance(player: Transform3D, preceding_camera: Transform3D, viewport_size: Vector2i) -> bool:
+func advance(player: Transform3D, preceding_camera: Transform3D, viewport_size: Vector2i,commands:=Vector2.ZERO,mouse_capture:=false) -> bool:
 	error=""
 	if _definition.is_empty():return reject("Configure opening aim before advancing")
+	if not commands.is_finite() or absf(commands.x)>1 or absf(commands.y)>1:return reject("Aim commands must be normalized finite axes")
 	if not player.is_finite():return reject("Opening aim requires a finite player pose")
 	var projection := TargetProjection.new()
 	if not projection.configure(_perspective,viewport_size):return reject(projection.error)
@@ -41,8 +42,11 @@ func advance(player: Transform3D, preceding_camera: Transform3D, viewport_size: 
 	if projected.has("error"):return reject(projection.error)
 	var raw := Vector3(projected.screen_position.x,projected.screen_position.y,projected.camera_position.z)
 	var point := raw if raw.z>0 else Vectors.added(Vectors.scaled(raw,_definition.new_weight),Vectors.scaled(_point,_definition.previous_weight))
+	if mouse_capture:
+		var cursor:=Vector2(viewport_size)*(Vector2(0.5,0.5)+Vector2(-commands.y,commands.x)*0.35)
+		point=Vector3(cursor.x,cursor.y,-1.0)
 	if not point.is_finite() or not TargetProjection.safe_pixel(point.x) or not TargetProjection.safe_pixel(point.y):return reject("Opening aim exceeds supported pixel coordinates")
-	_point=point;_raw=raw;_viewport=viewport_size
+	_point=point;_raw=raw;_viewport=viewport_size;_cursor_mode=mouse_capture
 	return true
 
 func sample_feedback(npc_contact: bool, delta_ms: Variant, draw_enabled: bool) -> bool:
@@ -65,7 +69,7 @@ func sample_feedback(npc_contact: bool, delta_ms: Variant, draw_enabled: bool) -
 func snapshot() -> Dictionary:
 	if _definition.is_empty():return {}
 	var result := _identity.duplicate()
-	result.merge({"mode":_definition.mode,"point":_point,"raw_point":_raw,"viewport_size":_viewport,
+	result.merge({"mode":"mouse_cursor" if _cursor_mode else _definition.mode,"point":_point,"raw_point":_raw,"viewport_size":_viewport,
 		"contact_active":_contact,"contact_ms":_contact_ms,"contact_flash":_flash,"visible":_visible,
 		"image_id":int(_definition.image_ids[1 if _flash else 0])})
 	return result
@@ -74,12 +78,12 @@ func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._identity=_identity.duplicate();copy._definition=_definition;copy._perspective=_perspective
 	copy._point=_point;copy._raw=_raw;copy._viewport=_viewport
-	copy._contact=_contact;copy._contact_ms=_contact_ms;copy._flash=_flash;copy._visible=_visible
+	copy._contact=_contact;copy._contact_ms=_contact_ms;copy._flash=_flash;copy._visible=_visible;copy._cursor_mode=_cursor_mode
 	return copy
 
 func clear() -> void:
 	error="";_identity={};_definition={};_perspective={};_point=Vector3.ZERO;_raw=Vector3.ZERO;_viewport=Vector2i.ZERO
-	_contact=false;_contact_ms=0;_flash=false;_visible=false
+	_contact=false;_contact_ms=0;_flash=false;_visible=false;_cursor_mode=false
 
 func reject(message: String) -> bool:
 	error=message

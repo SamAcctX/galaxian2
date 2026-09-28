@@ -691,7 +691,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 			if arrival.is_empty():reject(next._route.error);return null
 			if arrival.arrived and next._notices!=null and _navigation.has("progress_notice"):
 				if not next._notices.enqueue(int(_navigation.progress_notice.source_id)):reject(next._notices.error);return null
-		if next._aim!=null and not next._aim.advance(next._encounter.turret_aim_pose(next._pose) if next._encounter!=null else next._pose,_camera.snapshot().pose,viewport):reject(next._aim.error);return null
+		if next._aim!=null and not next._aim.advance(next._encounter.turret_aim_pose(next._pose) if next._encounter!=null else next._pose,_camera.snapshot().pose,viewport,commands,relative_mouse_capture and manual and not turret_active):reject(next._aim.error);return null
 		if next._player.advance_recharge(delta_ms).is_empty() or next._player.advance_repair(delta_ms).is_empty() or not next._player.advance_cloak(delta_ms,next._notices):reject(next._player.error);return null
 		if not next._advance_tractor(delta_ms):reject(next.error);return null
 		var portal_contact: RefCounted=next._sahi if next._sahi!=null else next._void_portal

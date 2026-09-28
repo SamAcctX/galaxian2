@@ -200,8 +200,8 @@ func check_mouse() -> void:
 	c.invert_pitch=true;c.mouse_sensitivity=2.0;motion.screen_relative=Vector2(224,-126);c.accept(motion);c.advance_mouse(1.0/240.0)
 	check(c.snapshot().command==Vector2(1,-1),"Mouse sensitivity or pitch inversion failed")
 	c.clear();c.invert_pitch=false;c.mouse_sensitivity=1.0
-	motion.screen_relative=Vector2(448,-252);c.accept(motion);c.advance_mouse(0.1,Vector2(2560,1440))
-	check(c.snapshot().command==slow,"A larger viewport reduced the response to the same relative movement")
+	motion.screen_relative=Vector2(224,-126);c.accept(motion);c.advance_mouse(0.1,Vector2(4897,2674))
+	check(c.snapshot().command==slow,"Native resolution changed the response to the same physical mouse movement")
 	motion.screen_relative=Vector2(5,-5);c.accept(motion);c.advance_mouse(1.0/60.0,Vector2(1280,720),true)
 	check(c.snapshot().command.is_equal_approx(slow),"Drilling inherited the retained flight cursor")
 	c.advance_mouse(1.0/60.0,Vector2(1280,720),true)

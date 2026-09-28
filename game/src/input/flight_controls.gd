@@ -12,6 +12,7 @@ const BUTTON_ACTIONS := {JOY_BUTTON_A: "boost", JOY_BUTTON_B: "missiles", JOY_BU
 	JOY_BUTTON_LEFT_SHOULDER: "map", JOY_BUTTON_RIGHT_SHOULDER: "jump"}
 const AXIS_ACTIONS := {JOY_AXIS_TRIGGER_RIGHT: "fire", JOY_AXIS_TRIGGER_LEFT: "missiles"}
 const ACTIONS := ["fire", "missiles", "secondary_next", "secondary_menu", "boost", "brake", "pause", "time", "autopilot", "dock", "map", "jump", "throttle_up", "throttle_down", "action_menu", "change_view", "cloak", "wingmen", "mouse_mode", "roll_left", "roll_right"]
+const MOUSE_REFERENCE_SIZE := Vector2(1280,720)
 const TURN_KEYS := [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]
 const STRAFE_KEYS := [KEY_A, KEY_D]
 const DIRECTIONS := [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_A, KEY_D]
@@ -160,7 +161,9 @@ func advance_mouse(seconds: float,viewport_size:=Vector2(1280,720),relative_poin
 	if relative_pointer!=_mouse_pointer_mode or relative_pointer:_mouse_command=Vector2.ZERO
 	_mouse_pointer_mode=relative_pointer
 	if _mouse_active and is_finite(seconds) and seconds>0 and viewport_size.x>0 and viewport_size.y>0:
-		var offset:=_mouse_delta*mouse_sensitivity/(Vector2.ONE*600.0*seconds if relative_pointer else viewport_size*0.35)
+		# Physical mouse distance keeps its meaning across native resolutions
+		# and UI scaling; viewport dimensions only place the visible cursor.
+		var offset:=_mouse_delta*mouse_sensitivity/(Vector2.ONE*600.0*seconds if relative_pointer else MOUSE_REFERENCE_SIZE*0.35)
 		_mouse_command=(_mouse_command+Vector2(offset.y,offset.x)).clamp(Vector2(-1,-1),Vector2.ONE)
 	_mouse_delta=Vector2.ZERO
 

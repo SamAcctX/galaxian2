@@ -117,7 +117,7 @@ func verify_camera(bindings: RefCounted) -> void:
 	check(rig.set_fast_forward(false) and rig.response_snapshot().dirty and rig.refresh_player_response(true,50),rig.error)
 	check(rig.response_snapshot().cached_handling==50 and rate_bits(rig)==[0x3c2c0830,0x3bd4fdf4],"Captured refresh did not use current handling")
 	check(rig.refresh_player_response(false,50),rig.error)
-	check(rate_bits(rig)==[0x3c2c0830,0x3bd4fdf4] and not rig.response_snapshot().dirty,"A policy change bypassed the player refresh flag")
+	check(rate_bits(rig)==[0x3ba3d70a,0x3bc49ba6] and not rig.response_snapshot().dirty,"Releasing capture left the mouse camera response active")
 	rig.mark_response_dirty()
 	check(rig.refresh_player_response(false,50),rig.error)
 	check(rig.response_snapshot().cached_handling==50 and rate_bits(rig)==[0x3ba3d70a,0x3bc49ba6],"Uncaptured refresh lost the cache or normal rates")
