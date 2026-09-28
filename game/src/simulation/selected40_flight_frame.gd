@@ -296,6 +296,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if not portal_random.restore(next._scenery.random_state()) or not next._portal.advance(milliseconds,view.camera.pose,portal_random):reject(portal_random.error+next._portal.error);return null
 	if not next._scanner.advance_selected40(next._encounter.combat_owner(),next._pose,view.camera.pose,view.player_aim,milliseconds,bool(cue.sequence.hud_visible)):reject(next._scanner.error);return null
 	var scan: Dictionary=next._scanner.snapshot()
+	if not next._notices.enqueue_scanner(scan.events,next._encounter):reject(next._notices.error);return null
 	var blocked_target: bool=scan.candidate_actor_id>=0 and scan.selected_actor_id<0
 	var suspended_target: bool=scan.get("found_actor_id",-1)>=0
 	if not next._targeting.advance(next._scenery,next._pose,view.camera.pose,view.player_aim,milliseconds,bool(cue.sequence.hud_visible),false,blocked_target,suspended_target):reject(next._targeting.error);return null
@@ -460,7 +461,7 @@ func audio_state() -> Dictionary:
 		"flight_music":_flight_music.duplicate(true),
 		"camera_view":context.view.camera,"death_events":_death.snapshot().events,
 		"radio":context.sequence.radio,"radio_events":context.sequence.radio_events,
-		"scanner_events":_scanner.snapshot().events}
+		"scanner_events":_scanner.sound_events()}
 
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}

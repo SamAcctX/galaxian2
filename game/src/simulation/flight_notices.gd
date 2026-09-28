@@ -15,6 +15,7 @@ var error:=""
 var _rules:={}
 var _identity:={}
 var _messages:={}
+var _item_names:={}
 var _pending:=[]
 var _elapsed:=0
 var _falling:=false
@@ -45,6 +46,7 @@ func configure_mission(bindings: RefCounted,library: RefCounted,context: RefCoun
 func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,location: Dictionary,catalogues: RefCounted) -> bool:
 	var messages:={}
 	var definitions: Dictionary=bindings.flight_notices.messages.duplicate(true)
+	definitions["22"]={"text_ids":[531],"separator":"","rgb":[255,255,255]}
 	if cursor==7:
 		var navigation:=TrainingStory.navigation(bindings)
 		if not navigation.is_empty():
@@ -81,7 +83,17 @@ func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,lo
 		var text: String=library.strings[display_ids[0]]+str(data.target_notice.separator)+name+str(data.target_notice.suffix_separator)+library.strings[display_ids[1]]
 		messages[int(data.target_notice.source_id)]={"source_id":int(data.target_notice.source_id),"text_ids":source_ids.slice(0,2),"display_text_ids":display_ids.slice(0,2),"text":text,"rgb":data.target_notice.rgb.duplicate(),"station_id":int(data.station_id)}
 		messages[int(data.restricted_notice.source_id)]={"source_id":int(data.restricted_notice.source_id),"text_ids":[source_ids[2]],"display_text_ids":[display_ids[2]],"text":library.strings[display_ids[2]],"rgb":data.restricted_notice.rgb.duplicate()}
-	_rules=bindings.flight_notices.duplicate(true);_messages=messages
+	var item_names:={}
+	if bindings.station_equipment.has("item_text_offset"):
+		var tables: RefCounted=catalogues
+		if tables==null:
+			tables=Catalogues.new()
+			if not tables.open(library):return reject(tables.error)
+		for item in tables.tables.items:
+			var text_id:=int(bindings.station_equipment.item_text_offset)+int(item.id)
+			if text_id<0 or text_id>=library.strings.size() or library.strings[text_id].is_empty():return reject("A cargo scan item has no localized name")
+			item_names[int(item.id)]={"text_id":text_id,"name":library.strings[text_id]}
+	_rules=bindings.flight_notices.duplicate(true);_messages=messages;_item_names=item_names
 	_max_ms=Frames.simulation_limit(bindings,int(_rules.max_frame_ms))
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language}
 	_pending=[];_elapsed=0;_falling=false;_suppressed=false
@@ -110,6 +122,34 @@ func advance(milliseconds: Variant, suppressed:=false, paused:=false) -> bool:
 	elif _elapsed>=int(_rules.falling_at_ms):_falling=true
 	return true
 
+## The scanner requests inspection; the encounter's cargo lifecycle owns the
+## contents. A readout cannot transfer goods or change the selected actor.
+func enqueue_scanner(events: Array,encounter: RefCounted) -> bool:
+	for event in events:
+		if event.kind=="notification":
+			if not enqueue(event.source_id):return false
+		elif event.kind=="cargo_scan":
+			var owner: RefCounted=encounter.npc_destruction_owner(int(event.actor_id))
+			var entries: Array=[] if owner==null else owner.snapshot().get("cargo",{}).get("entries",[])
+			if not enqueue_scanned_cargo(entries):return false
+	return true
+
+func enqueue_scanned_cargo(entries: Array) -> bool:
+	error=""
+	if _rules.is_empty():return reject("Configure flight notices before inspecting cargo")
+	if entries.is_empty():return enqueue(22)
+	# Living cargo is validated by its lifecycle. A spent first stack produces
+	# no readout, and inspection never searches or alters later stacks.
+	var row: Dictionary=entries[0]
+	if not Numbers.integer(row.get("quantity"),0,2147483647) or not _item_names.has(row.get("item_id")):return reject("Cargo inspection lost its retained item or quantity")
+	if row.quantity==0:return true
+	var item: Dictionary=_item_names[row.item_id]
+	var message:={"source_id":-1,"item_id":row.item_id,"quantity":row.quantity,
+		"text_ids":[item.text_id],"display_text_ids":[item.text_id],
+		"text":"%dt %s"%[row.quantity,item.name],"rgb":[255,255,255]}
+	if _pending.size()<int(_rules.pending_capacity):_pending.append(message)
+	return true
+
 func snapshot() -> Dictionary:
 	if _rules.is_empty():return {}
 	var value:=int(f32(f32(float(_elapsed)/float(_rules.fade_half_ms))*float(_rules.alpha_max)))
@@ -121,10 +161,10 @@ func snapshot() -> Dictionary:
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
-	copy._rules=_rules;copy._identity=_identity;copy._messages=_messages
+	copy._rules=_rules;copy._identity=_identity;copy._messages=_messages;copy._item_names=_item_names
 	copy._pending=_pending.duplicate(true);copy._elapsed=_elapsed;copy._falling=_falling;copy._suppressed=_suppressed
 	copy._max_ms=_max_ms;return copy
-func clear() -> void:_max_ms=0;error="";_rules={};_identity={};_messages={};_pending=[];_elapsed=0;_falling=false;_suppressed=false
+func clear() -> void:_max_ms=0;error="";_rules={};_identity={};_messages={};_item_names={};_pending=[];_elapsed=0;_falling=false;_suppressed=false
 static func f32(value: float) -> float:
 	var bytes:=PackedByteArray();bytes.resize(4);bytes.encode_float(0,value);return bytes.decode_float(0)
 func reject(message: String) -> bool:error=message;return false

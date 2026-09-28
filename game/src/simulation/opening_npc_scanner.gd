@@ -24,6 +24,7 @@ var _frame_count := 0
 var _equipment := -1
 var _duration := 0
 var _cargo := false
+var _retained_cargo := false
 var _selected := -1
 var _candidate := -1
 var _elapsed := 0
@@ -108,7 +109,6 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, frame_radii: Vecto
 		if not Numbers.integer(properties.get(int(data.duration_property)),1,2147483647):return reject("Unsupported scanner acquisition duration")
 		duration=int(properties[int(data.duration_property)])
 		cargo=properties.get(int(data.cargo_property))==1
-	if ordinary and cargo:return reject("Cargo inspection of ordinary traffic is not yet supported")
 	if training and not ordinary and (equipment!=81 or duration!=4000 or cargo):return reject("Training NPC scanning requires the source starter scanner without cargo inspection")
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
 	_definition=data.duplicate(true);_perspective=bindings.flight_projection.duplicate(true);_hulls=npc.hull.hull_catalogue_ids.duplicate()
@@ -127,7 +127,7 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, frame_radii: Vecto
 			if actor.get("population_group")=="travel" and actor.has("travel_cycle"):
 				if not TrafficLife.parameters(bindings.ambient_lifecycle):return reject("Travelling scanner targets lack their source lifecycle")
 				_departure_modes[id]=int(bindings.ambient_lifecycle.departure_mode)
-	_radii=frame_radii;_frame_count=animation_frames;_equipment=equipment;_duration=duration;_cargo=cargo
+	_radii=frame_radii;_frame_count=animation_frames;_equipment=equipment;_duration=duration;_cargo=cargo;_retained_cargo=local_flight
 	_selected40_world=selected_world
 	return true
 
@@ -203,9 +203,11 @@ func _advance(combat: Dictionary, player: Transform3D, camera: Transform3D, aim:
 				if selected!=candidate:
 					selected=candidate
 					events.append({"kind":"sound","source_id":int(_definition.acquisition_sound_id),"actor_id":selected})
-					# The original finite-coordinate cargo predicate always reaches
-					# inspection; fresh opening construction already discarded cargo.
-					if _cargo:events.append({"kind":"notification","source_id":int(_definition.empty_cargo_message_id),"actor_id":selected})
+					if _cargo:
+						# Inspection observes the retained cargo owner only on a new
+						# acquisition. Fresh opening construction discarded its cargo.
+						if _retained_cargo:events.append({"kind":"cargo_scan","actor_id":selected})
+						else:events.append({"kind":"notification","source_id":int(_definition.empty_cargo_message_id),"actor_id":selected})
 				elapsed=0
 			elif elapsed>0 and candidate!=selected:
 				animation=int(TargetProjection.single(float(_frame_count-1)*TargetProjection.single(TargetProjection.single(float(elapsed))/TargetProjection.single(float(_duration)))))
@@ -233,6 +235,9 @@ static func selection_retired(actor: Dictionary) -> bool:
 	# target active; an empty drop clears it. Ship breakup has another rule.
 	return not actor.active if actor.get("population_group")=="debris" else int(actor.actor_mode) in [3,4]
 
+func sound_events() -> Array:
+	return _sample.get("events",[]).filter(func(event):return event.kind=="sound").duplicate(true)
+
 func snapshot() -> Dictionary:
 	if _definition.is_empty():return {}
 	var result := _identity.duplicate()
@@ -243,7 +248,7 @@ func snapshot() -> Dictionary:
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._identity=_identity;copy._definition=_definition;copy._perspective=_perspective;copy._radii=_radii;copy._hulls=_hulls
-	copy._frame_count=_frame_count;copy._equipment=_equipment;copy._duration=_duration;copy._cargo=_cargo
+	copy._frame_count=_frame_count;copy._equipment=_equipment;copy._duration=_duration;copy._cargo=_cargo;copy._retained_cargo=_retained_cargo
 	copy._selected=_selected;copy._candidate=_candidate;copy._elapsed=_elapsed;copy._sample=_sample.duplicate(true)
 	copy._kinds=_kinds.duplicate();copy._campaign_cursor=_campaign_cursor
 	copy._departure_modes=_departure_modes.duplicate()
@@ -252,7 +257,7 @@ func fork_for_frame() -> RefCounted:
 
 func clear() -> void:
 	error="";_identity={};_definition={};_perspective={};_hulls=[];_radii=Vector2.ZERO;_frame_count=0;_equipment=-1;_duration=0;_cargo=false
-	_selected=-1;_candidate=-1;_elapsed=0;_sample={}
+	_selected=-1;_candidate=-1;_elapsed=0;_sample={};_retained_cargo=false
 	_kinds=[8,8,8];_campaign_cursor=0
 	_departure_modes={};_mission_combat=false
 	_selected40_world=null

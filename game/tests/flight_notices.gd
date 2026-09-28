@@ -56,6 +56,7 @@ func verify(args: Array):
 	construction=Construction.new()
 	if not construction.prepare(bindings,cat,station.prepare_departure(bindings,cat),4096,1789100000,true,bodies,effects):check(false,construction.error);return
 	verify_queue()
+	verify_cargo_scan_queue()
 	verify_languages()
 	verify_flight()
 	if args.size()==4 and failures==0:await verify_gpu(args)
@@ -93,11 +94,35 @@ func verify_queue():
 	lib.strings[529]=original
 	check(equal_text.snapshot().current.text==lib.strings[528],"Restoring library text mutated a captured notice")
 	queue.clear();check(queue.snapshot().is_empty() and not queue.enqueue(8),"Clear retained a configured queue")
+func verify_cargo_scan_queue():
+	var queue:=fresh()
+	var cargo:=[{"item_id":111,"quantity":9},{"item_id":107,"quantity":3}]
+	var original:=cargo.duplicate(true)
+	check(queue.enqueue_scanned_cargo(cargo),queue.error)
+	var message: Dictionary=queue.snapshot().current
+	check(message.text=="9t "+lib.strings[int(bindings.station_equipment.item_text_offset)+111] and message.rgb==[255,255,255],"Inspection lost cargo quantity/name or used pickup coloring")
+	check(cargo==original and queue.snapshot().pending.size()==1,"Inspection changed cargo or listed additional stacks")
+	advance_to(queue,1000)
+	var retained: Dictionary=queue.snapshot();var branch: RefCounted=queue.fork_for_frame()
+	check(branch.enqueue_scanned_cargo(cargo) and branch.snapshot().pending.size()==2 and branch.snapshot().elapsed_ms==1000,"Reacquiring cargo deduplicated the item or restarted the fade")
+	check(queue.snapshot()==retained,"Detached cargo inspection changed the parent notice")
+	check(branch.advance(100,false,true) and branch.snapshot().elapsed_ms==1000,"Paused cargo notice advanced")
+	check(branch.advance(100,true) and branch.snapshot().elapsed_ms==1000 and not branch.snapshot().visible,"Suppressed cargo notice advanced or remained visible")
+	for i in 25:check(branch.enqueue_scanned_cargo(cargo),branch.error)
+	check(branch.snapshot().pending.size()==19,"Repeated cargo acquisition exceeded the notice queue")
+	var empty:=fresh()
+	check(empty.enqueue_scanned_cargo([]) and empty.snapshot().current.text==lib.strings[531],"Empty cargo has no original notice")
+	check(empty.enqueue_scanned_cargo([]) and empty.snapshot().pending.size()==1,"Empty cargo repeated its pending ordinary notice")
+	var spent:=fresh()
+	check(spent.enqueue_scanned_cargo([{"item_id":111,"quantity":0},cargo[1]]) and spent.snapshot().pending.is_empty(),"An exhausted first stack revealed a different item")
+	var before: Dictionary=spent.snapshot()
+	check(not spent.enqueue_scanned_cargo([{"item_id":111,"quantity":-1}]) and spent.snapshot()==before,"An invalid cargo report changed the queue")
+
 func verify_languages():
 	for language in lib.manifest.languages:
 		check(lib.select_language(language),lib.error)
 		var queue:=fresh()
-		for id in [6,8,9,11,20,27]:
+		for id in [6,8,9,11,20,22,27]:
 			var single:=fresh();check(single.enqueue(id) and not single.snapshot().current.text.is_empty(),"Missing localized notice "+language+"/"+str(id))
 		check(queue.enqueue(11) and queue.snapshot().current.text==lib.strings[535]+": "+lib.strings[539],"Source target composition differs in "+language)
 	check(lib.select_language("gb"),lib.error)

@@ -48,6 +48,9 @@ func verify_fitting(args: PackedStringArray) -> void:
 	check(primary.configure(bindings,cat,mounts,seed) and primary.snapshot().guns.is_empty(),"An unarmed ship failed primary construction: "+primary.error)
 	verify_empty_effects(bindings,library,primary,textures)
 	verify_secondary_fitting(bindings,cat,seed,assets,empty.support)
+	for item in cat.tables.items:
+		if item.arrays[2][3]==3 and item.arrays[2][5]==17 and item.properties.get(31)==1:
+			check(empty.support[int(item.id)].is_empty(),"A cargo scanner cannot be fitted despite its connected flight readout")
 	var supported:=[];var guns:=[]
 	for id in empty.support:
 		if not empty.support[id].is_empty():continue

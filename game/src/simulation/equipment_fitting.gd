@@ -145,7 +145,6 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 			if not Numbers.integer(properties.get(int(bindings.vehicle_response.equipment_percent_property)),0,2147483647):return "The handling upgrade is unavailable"
 		17:
 			var scanner: Dictionary=bindings.opening_staging.npc_scanner
-			if properties.get(int(scanner.cargo_property))==1:return "Cargo inspection of ordinary traffic is not yet supported"
 			if not Numbers.integer(properties.get(int(scanner.duration_property)),1,2147483647):return "The scanner acquisition duration is unavailable"
 		19:
 			for property in [bindings.mining_drill.stability_property,bindings.mining_drill.rate_property]:

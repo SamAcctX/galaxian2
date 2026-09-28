@@ -5,6 +5,7 @@ signal layout_changed
 const Definitions=preload("res://src/content/flight_notice_definitions.gd")
 const Atlas=preload("res://src/content/atlas_region.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
+const FontMetrics=preload("res://src/content/image_font.gd")
 const RESOURCE:="resources/data/textures/gof2_interface.aei"
 var error:=""
 var _identity:={}
@@ -34,6 +35,11 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted) -
 	if not registered:return reject("The original notice atlas is not registered")
 	var reader:=Atlas.new();var texture:=reader.load(library,visuals,RESOURCE,int(bindings.flight_notices.background_region))
 	if texture==null:return reject(reader.error)
+	var metrics:=FontMetrics.new()
+	if not metrics.open_selected(library,bindings):return reject(metrics.error)
+	var font:=metrics.create_font(visuals)
+	if font==null:return reject(metrics.error)
+	_label.add_theme_font_override("normal_font",font)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language}
 	_bar.texture=texture;clear()
 	return true

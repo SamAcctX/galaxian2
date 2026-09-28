@@ -293,6 +293,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	var aim_state: Dictionary=next._aim.snapshot();var camera_pose: Transform3D=next._camera.snapshot().pose
 	if not next._scanner.advance_mission(next._encounter.combat_owner(),next._pose,camera_pose,aim_state,milliseconds,hud_on):return failed(next._scanner.error)
 	var scan: Dictionary=next._scanner.snapshot()
+	if not next._notices.enqueue_scanner(scan.events,next._encounter):return failed(next._notices.error)
 	if not next._targeting.advance(next._scenery,next._pose,camera_pose,aim_state,milliseconds,hud_on,false,scan.candidate_actor_id>=0 and scan.selected_actor_id<0,scan.get("found_actor_id",-1)>=0):return failed(next._targeting.error)
 	for event in next._targeting.snapshot().events:
 		if event.get("kind")=="notification" and not next._notices.enqueue(event.get("source_id")):return failed(next._notices.error)
@@ -477,7 +478,7 @@ func audio_state() -> Dictionary:
 		"actor_engines":actor_engines,
 		"radio":state.radio,"radio_events":state.radio_events,"death_events":_death.snapshot().events,
 		"sequence_revision":state.sequence.revision,"sequence_audio":state.sequence.frame.audio,"escape_audio":[] if _escape==null else _escape.snapshot().frame.audio,"dialogue":dialogue(),
-		"scanner_events":_scanner.snapshot().events,"flight_music":_flight_music.duplicate(true)}
+		"scanner_events":_scanner.sound_events(),"flight_music":_flight_music.duplicate(true)}
 func effects_state() -> Dictionary:
 	if _state.is_empty():return {}
 	var sequence: Dictionary=_encounter.frame_context().sequence

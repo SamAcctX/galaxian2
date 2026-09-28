@@ -892,7 +892,8 @@ func _advance_npc_hud(delta_ms: int,enabled: bool,camera: Transform3D,aim: Dicti
 		ordinary_candidate=int(_tractor.snapshot().frame.ordinary_candidate_actor_id)
 	else:combat=_encounter.combat_snapshot()
 	if not _scanner.advance(combat,_pose,camera,aim,delta_ms,enabled,ordinary_candidate,projection):return reject(_scanner.error)
-	_scanner_events=_scanner.snapshot().events
+	_scanner_events=_scanner.sound_events()
+	if _notices!=null and not _notices.enqueue_scanner(_scanner.snapshot().events,_encounter):return reject(_notices.error)
 	return true
 
 func _advance_tractor(delta_ms: int) -> bool:
