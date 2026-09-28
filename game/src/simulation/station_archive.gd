@@ -28,7 +28,7 @@ const STATION_KEYS=["base_content_id","binding_id","language","campaign_cursor",
 const CHAPTER_KEYS=["campaign_conversation","next_course"]
 const INVENTORY_KEYS=["loadout","stock","cargo","cargo_cache_stale","credit_delta","transactions","prices","protected_item_ids","training_inventory_released","prototype_drill_replaced","ship_affiliation","stock_station_id"]
 const CAREER_KEYS=["base_content_id","binding_id","campaign_cursor","station_id","rank","reputation","difficulty","credits","passengers","mission","active_offer_id","offers","progress","completed_side_missions","delivery_statistics","pending_result","result_serial","accepted_contact","travel_statistics","last_result","population"]
-const OPTIONAL_CAREER_KEYS=["contract_phase"]
+const OPTIONAL_CAREER_KEYS=["contract_phase","station_outcome"]
 var error:=""
 var restored_locations: RefCounted
 
@@ -265,7 +265,7 @@ func _career(bindings: RefCounted,cat: RefCounted,data: Dictionary,equipment: Re
 	if data.has("last_result"):
 		if not data.last_result is Dictionary or not Numbers.integer(data.last_result.get("serial"),1,data.result_serial) or data.last_result.get("acknowledgement_required")!=false:return reject("Invalid acknowledged result history")
 	if data.mission.is_empty():
-		if data.passengers!=0 or data.active_offer_id!=-1 or not data.accepted_contact.is_empty() or data.has("contract_phase"):return reject("The empty contract slot retains passengers, a client or a continuation")
+		if data.passengers!=0 or data.active_offer_id!=-1 or not data.accepted_contact.is_empty() or data.has("contract_phase") or data.has("station_outcome"):return reject("The empty contract slot retains passengers, a client or a continuation")
 	else:
 		var contact: Dictionary=data.accepted_contact
 		if not _keys(contact,["offer_id","station_id","offer","name","portrait"]) or contact.size()!=5 or not Numbers.integer(contact.get("offer_id"),0,4095) or contact.offer_id!=data.get("active_offer_id") or not contact.get("name") is String or not contact.get("portrait") is Dictionary:return reject("The accepted contract lost its original client")

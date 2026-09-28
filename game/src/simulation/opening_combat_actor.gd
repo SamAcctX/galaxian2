@@ -350,7 +350,7 @@ func _configure_ordinary_systems(bindings: RefCounted,rank: int,subtype: int) ->
 	return true
 
 func retain_ordinary_force(forced: bool,persistent: bool) -> bool:
-	if _systems==null or not (_state.get("ambient_traffic",false) or _state.get("authored_story",false) or _state.get("bakka_combat",false)) or (_state.script_hostile and not persistent):return reject("Ordinary reactions lost persistent faction hostility")
+	if _systems==null or not (_state.get("ambient_traffic",false) or _state.get("authored_story",false) or _state.get("bakka_combat",false) or _state.get("ordinary_hostility",false)) or (_state.script_hostile and not persistent):return reject("Ordinary reactions lost persistent faction hostility")
 	if not retain_local_force(forced):return false
 	_state.script_hostile=persistent
 	# Challenge friendship is authored independently of the persistent force
@@ -590,6 +590,9 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 		"statistics_targeting_blocked":bool(data.npc_statistics_targeting_blocked),"spatial_half_extent":int(data.engagement_half_extent),
 		"model_draw_enabled":bool(data.initial_model_draw_enabled),"node_draw_requested":bool(data.initial_node_draw_requested),"engine_draw_enabled":bool(data.initial_engine_draw_enabled)},true)
 	if rival:_state.name=row.name
+	if row.get("ordinary_hostility",false):
+		_state.ordinary_hostility=true
+		if not _configure_ordinary_systems(bindings,int(data.rank),int(row.subtype)):return false
 	if freighter:
 		var boxes: Dictionary=load("res://src/content/free_traffic_definitions.gd").freighter_boxes(bindings)
 		_state.point_boxes=boxes[int(row.actor_kind)].map(func(box):return {"offset":Vector3(box.offset[0],box.offset[1],box.offset[2]),"half_extents":Vector3(box.half_extents[0],box.half_extents[1],box.half_extents[2])})
@@ -673,9 +676,14 @@ func enable_bakka_combat(bindings: RefCounted) -> bool:
 	_state.bakka_combat=true;_state.forced_hostile=false
 	return true
 
-func refresh_contract_hostility(forced: bool) -> bool:
+func refresh_contract_hostility(forced: bool,reputation: Dictionary={},rules: Dictionary={}) -> bool:
 	if not _state.get("contract_combat",false):return reject("Contract hostility requires connected combat reactions")
 	_state.forced_hostile=forced
+	if _state.get("ordinary_hostility",false):
+		var standing:=FreeLife.standing(rules,int(_state.actor_kind),reputation,forced or _state.get("script_hostile",false))
+		if standing.is_empty():return reject("Ordinary contract hostility lost its faction standing")
+		_state.hostile=standing.hostile;_state.friendly=standing.friendly
+		return true
 	# The rival's authored friendship takes precedence over faction provocation.
 	return refresh_hostility()
 

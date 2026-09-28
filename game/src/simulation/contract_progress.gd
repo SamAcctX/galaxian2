@@ -19,6 +19,8 @@ static func mission_for(quote: Dictionary,phase: Variant="",catalogues: RefCount
 
 static func matches(state: Dictionary,quote: Dictionary,catalogues: RefCounted=null) -> bool:
 	var expected:=mission_for(quote,state.get("contract_phase",""),catalogues)
+	if state.has("station_outcome"):
+		if not Recipe.defers_station_result(expected) or not state.station_outcome is int or state.station_outcome not in [1,2]:return false
 	return not expected.is_empty() and state.get("mission")==expected
 
 static func occupied_passengers(state: Dictionary) -> int:

@@ -706,7 +706,7 @@ func accept(offer_id: int,equipment: RefCounted,replace_current: bool=false,bind
 	if not candidate.retain_flight_cargo(hold):reject(candidate.error);return null
 	next.credits-=int(terms.fee);next.active_offer_id=offer_id
 	next.mission=quote.mission.duplicate(true);next.offers[offer_id].consumed=true
-	next.erase("contract_phase")
+	next.erase("contract_phase");next.erase("station_outcome")
 	if next.has("accepted_contact"):
 		next.accepted_contact={"offer_id":offer_id,"station_id":int(next.station_id),"offer":quote.duplicate(true),"name":""}
 		for contact in next.get("population",{}).get("contacts",[]):
@@ -728,7 +728,7 @@ func active_mission_for(station_id: int,bindings: RefCounted=null) -> Dictionary
 	if not _rules.has("delivery_results") or (station_id not in _stations and not ordinary) or _state.mission.is_empty() or not _state.pending_result.is_empty():return {}
 	var mission: Dictionary=_state.mission
 	var delivery:=Recipe.station_delivery(_rules,mission)
-	if mission.station_id!=station_id or (not delivery.is_empty() and not delivery.select_flight):return {}
+	if mission.station_id!=station_id or _state.get("station_outcome",0)==2 or (not delivery.is_empty() and not delivery.select_flight):return {}
 	return mission.duplicate(true)
 
 func flight_context(station_id: int,bindings: RefCounted=null) -> Dictionary:
@@ -751,6 +751,7 @@ func _selected_contract_context(station_id: int,bindings: RefCounted) -> Diction
 	var accepted: Dictionary=_state.offers.get(_state.active_offer_id,{}) if retained.is_empty() else {"consumed":true,"offer":retained.offer}
 	if accepted.is_empty() or not accepted.consumed or not ContractProgress.matches(_state,accepted.offer,_catalogues):
 		reject("The flight mission has no retained accepted contact");return {}
+	if _state.has("station_outcome"):result.station_outcome=int(_state.station_outcome)
 	result.client_faction=int(accepted.offer.context.client_faction)
 	if not retained.is_empty():result.contact_name=retained.name
 	else:
@@ -803,7 +804,11 @@ func _poll_station_results(owned: Dictionary,equipment: RefCounted) -> bool:
 	var rules: Dictionary=_rules.delivery_results
 	var mission: Dictionary=_state.mission
 	var delivery:=Recipe.station_delivery(_rules,mission)
-	if delivery.is_empty() or mission.station_id!=owned.loadout.station_id:return true
+	if delivery.is_empty() or (not delivery.get("any_station",false) and mission.station_id!=owned.loadout.station_id):return true
+	var completed:=true
+	if delivery.get("deferred",false):
+		if not _state.has("station_outcome"):return true
+		completed=_state.station_outcome==1
 	var retained: Dictionary=_state.get("accepted_contact",{})
 	var accepted: Dictionary=_state.offers.get(_state.active_offer_id,{}) if retained.is_empty() else {"consumed":true,"offer":retained.offer}
 	if accepted.is_empty() or not accepted.consumed:return reject("The delivery has no accepted contact")
@@ -814,17 +819,17 @@ func _poll_station_results(owned: Dictionary,equipment: RefCounted) -> bool:
 		var observed: Dictionary=equipment.delivery_cargo(owned.loadout,int(required.item_id),int(required.quantity))
 		if observed.is_empty():return reject(equipment.error)
 		if not observed.satisfied:return true
-	var reward:=int(mission.reward)+int(mission.bonus)
+	var reward: int=int(mission.reward)+int(mission.bonus) if completed else 0
 	if not Numbers.integer(reward,0,int(rules.maximum_station_reward)) or not Numbers.integer(_state.credits,0,2147483647):return reject("The delivery payment is outside the supported source range")
 	if not Reputation.valid_state(_state.reputation):return reject("The delivery lost the retained faction standing")
 	# Opening the source success result marks it completed and changes faction
 	# standing. Money, delivered quantities and the success count wait for Close.
-	var standing:=Delivery.standing_after(rules,_state.reputation,int(quote.context.client_faction),float(_state.difficulty))
+	var standing: Dictionary=Delivery.standing_after(rules,_state.reputation,int(quote.context.client_faction),float(_state.difficulty)) if completed else _state.reputation.duplicate(true)
 	_state.reputation=standing;_state.progress.reputation=standing.duplicate(true)
 	_state.result_serial+=1
 	_state.pending_result={"serial":_state.result_serial,"offer_id":_state.active_offer_id,
-		"station_id":int(mission.station_id),"kind":int(mission.kind),"mode":int(rules.success_result_mode),
-		"acknowledgement_required":true,"reward_credits":reward,"completed":true}
+		"station_id":int(owned.loadout.station_id),"kind":int(mission.kind),"mode":int(rules.success_result_mode) if completed else int(_rules.flight_results.failure_result_mode),
+		"acknowledgement_required":true,"reward_credits":reward,"completed":completed,"failed":not completed}
 	_result_inventory=owned
 	return true
 
@@ -842,9 +847,10 @@ func _acknowledge_delivery_inventory(equipment: RefCounted,owned: Dictionary) ->
 	var next:=_state.duplicate(true)
 	var rules: Dictionary=_rules.delivery_results
 	if not Numbers.integer(next.completed_side_missions,0,2147483646):reject("The contract success count is outside its supported range");return null
+	var completed: bool=next.pending_result.completed
 	var progress: Dictionary=next.progress
 	var earned:=Career.calculate_progress(_progress_rules,next.campaign_cursor,progress.player_kills,progress.pirate_kills,
-		int(progress.other_score)+int(rules.completion_rank_weight))
+		int(progress.other_score)+(int(rules.completion_rank_weight) if completed else 0))
 	if earned.is_empty():reject("The delivery score exceeds the supported career range");return null
 	var delivery:=Recipe.station_delivery(_rules,next.mission)
 	if delivery.is_empty():reject("The retained job has no station settlement recipe");return null
@@ -852,7 +858,7 @@ func _acknowledge_delivery_inventory(equipment: RefCounted,owned: Dictionary) ->
 	if delivery.unload=="required_cargo":
 		var required: Dictionary=delivery.required_cargo
 		if not inventory.debit_delivery_cargo(int(required.item_id),int(required.quantity)):reject(inventory.error);return null
-	else:
+	elif delivery.unload=="marked_cargo":
 		var hold: Dictionary=owned.cargo.duplicate(true)
 		for index in hold.entries.size():
 			var row: Dictionary=hold.entries[index]
@@ -865,13 +871,13 @@ func _acknowledge_delivery_inventory(equipment: RefCounted,owned: Dictionary) ->
 	elif delivery.statistic=="cargo":next.delivery_statistics.cargo+=int(next.mission.quantity)
 	var reward:=int(next.pending_result.reward_credits)
 	next.credits=credit_balance(int(next.credits),reward,rules)
-	next.completed_side_missions+=int(rules.completion_increment)
+	next.completed_side_missions+=int(rules.completion_increment) if completed else 0
 	next.progress.merge(earned,true);next.rank=earned.rank
 	next.last_result=next.pending_result.duplicate(true)
 	next.last_result.acknowledgement_required=false
 	next.last_result.notification_sound_id=int(rules.notification_sound_id) if reward!=0 else -1
 	next.mission={};next.active_offer_id=-1;next.pending_result={}
-	next.erase("contract_phase")
+	next.erase("contract_phase");next.erase("station_outcome")
 	if next.has("accepted_contact"):next.accepted_contact={}
 	_state=next;_result_inventory={}
 	return inventory
@@ -998,7 +1004,7 @@ func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_result
 		if controller.snapshot()!=_pending_flight:return fail("The pending result must retain its frozen flight")
 		return {"session":next,"controller":flight,"opened":false}
 	if not next._retain_combat_progress(flight):return fail(next.error)
-	if _flight.has("ordinary_context") or not poll_results:return {"session":next,"controller":flight,"opened":false}
+	if _flight.has("ordinary_context") or not poll_results or flight.mission_context_owner().recipe().result.get("defer_to_station",false):return {"session":next,"controller":flight,"opened":false}
 	var result: Dictionary=flight.poll_contract_result(radio_active,periodic_poll_allowed)
 	if result.is_empty():return fail(flight.error)
 	var opened: bool=result.mode!=0
@@ -1046,7 +1052,7 @@ func acknowledge_flight_result(controller: RefCounted,serial: int) -> Dictionary
 	next._state.last_result.notification_sound_id=int(_rules.delivery_results.notification_sound_id) if pending.completed and pending.credit_delta!=0 else -1
 	if pending.get("continuation",{}).is_empty():
 		next._state.mission={};next._state.active_offer_id=-1
-		next._state.erase("contract_phase")
+		next._state.erase("contract_phase");next._state.erase("station_outcome")
 		if next._state.has("accepted_contact"):next._state.accepted_contact={}
 	next._state.pending_result={}
 	next._pending_flight={};next._flight.retired=true
@@ -1181,6 +1187,12 @@ func _retain_combat_progress(controller: RefCounted) -> bool:
 	_flight.accounting=accounting.duplicate(true);_flight.reputation_events=events.duplicate(true)
 	if recovered>0:_flight.cargo_recovered=recovered
 	_flight.elapsed_ms=scene.selected40_sequence.elapsed_ms if _flight.has("selected40_entry") else scene.get("contract_result",{}).get("elapsed_ms",0)
+	var capability: RefCounted=controller.mission_context_owner()
+	if _flight.has("encounter") and capability!=null and capability.recipe().result.get("defer_to_station",false):
+		var observed: Dictionary=controller.defeat_status()
+		if observed.is_empty():return reject("The deferred station objective lost its observed actors")
+		if observed.failed:_state.station_outcome=2
+		elif observed.satisfied and _state.get("station_outcome",0)!=2:_state.station_outcome=1
 	return true
 
 static func credit_balance(current: int,delta: int,rules: Dictionary) -> int:

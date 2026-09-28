@@ -20,7 +20,7 @@ static func available(bindings: RefCounted) -> bool:
 static func delivery_mission(bindings: RefCounted,mission: Variant) -> bool:
 	if not available(bindings) or not mission is Dictionary:return false
 	var delivery:=Recipe.station_delivery(bindings.early_contracts,mission)
-	if delivery.is_empty():return false
+	if delivery.is_empty() or delivery.get("deferred",false):return false
 	var requested: bool=not delivery.required_cargo.is_empty()
 	var maximum:=int(bindings.early_contracts.ordinary_generation.offers.difficulty_maximum) if requested else 9
 	if not Numbers.integer(mission.get("difficulty"),0 if requested else 1,maximum):return false

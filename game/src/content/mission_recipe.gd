@@ -82,6 +82,16 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 			placement={"kind":"patrol","field_choice_bound":0,"minimum_points":int(rules.challenge.path_count_offset),"point_count_bound":int(rules.challenge.path_count_bound)}
 			rival_actor_id=int(rules.challenge.rival_actor_id)
 			player_last_ids=range(1,count,2)
+		13:
+			var awaiting_target: bool=context.get("station_outcome",0)==0
+			count=7 if awaiting_target else 6
+			placement={"kind":"random_point","offsets":[-50000,0,50000],"bounds":[100000,0,50000]}
+			ship_state={"mode":0,"active":true,"targeting_blocked":false,"ordinary_hostility":true}
+			if awaiting_target:
+				ship_groups.append({"first_actor":0,"end_actor":1,"faction":local_faction,"population_group":"patrol","origin":"path","name_text_id":1652,
+					"policy":{"initial_hostile":false,"updated_hostile":false}})
+			ship_groups.append({"first_actor":1 if awaiting_target else 0,"end_actor":count,"faction":local_faction,"population_group":"patrol","origin":"path",
+				"policy":{"initial_hostile":false,"updated_hostile":false}})
 	var success:={"kind":18,"first_actor":0,"end_actor":count}
 	var failure:={"kind":"never"}
 	var periodic:={"kind":"never"}
@@ -105,13 +115,17 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 			success={"kind":int(objectives.challenge_success_kind),"rules":objectives}
 			failure={"kind":int(objectives.challenge_failure_kind),"rules":objectives}
 			readout={"kind":"contest","player_counter":"world_player_kills","other_counter":"world_other_kills"}
+		13:
+			var awaiting_target: bool=context.get("station_outcome",0)==0
+			success={"kind":"hull_empty","first_actor":0,"end_actor":1} if awaiting_target else {"kind":"never"}
+			failure={"kind":"hull_empty","first_actor":1 if awaiting_target else 0,"end_actor":count}
 	return {"track":"side_job","cursor":context.campaign_cursor,"station_id":context.station_id,"system_id":loadout.system_id,
 		"mission":mission.duplicate(true),"next_cursor":context.campaign_cursor,"entry":"ordinary_flight","world":{"station":true,"portal":true,"asteroid_field":true},
 		"cast":{"kind":"contract","actor_count":count,"debris_count":debris_count,"ship_state":ship_state,"placement":placement,
 			"rival_actor_id":rival_actor_id,"player_last_ids":player_last_ids,"player_only_ids":player_only_ids,"count_draw":count_draw,"ship_groups":ship_groups,"local_faction":local_faction,"operations":rules.duplicate(true)},"briefing":[],"radio":[],"sequences":[],"readout":readout,
 		"continuation":contract_continuation(mission),
 		"result":{"success":success,"failure":failure,"periodic_failure":periodic,"actor_count":count,
-			"retire_failure":true,"freeze_clock_on_result":true,"reset_while_blocked":false,"policy":bindings.early_contracts.flight_results.duplicate(true)}}
+			"defer_to_station":defers_station_result(mission),"retire_failure":true,"freeze_clock_on_result":true,"reset_while_blocked":false,"policy":bindings.early_contracts.flight_results.duplicate(true)}}
 
 ## Cast roles supply faction, initial placement and hostility to the shared
 ## small-ship factory. A sampled opposing faction is a construction input.
@@ -132,11 +146,16 @@ static func contract_continuation(mission: Dictionary) -> Dictionary:
 	if mission.get("kind") not in [3,5]:return {}
 	return {"kind":"return_delivery","mission_kind":11,"result_text_id":378,"briefing_text_id":792,"source_parameter":-1}
 
+static func defers_station_result(mission: Dictionary) -> bool:
+	return mission.get("kind")==13 and mission.get("story")==false
+
 ## Station objectives share settlement while recipes choose their inventory
 ## requirement, unloading and optional delivered-quantity statistic.
 static func station_delivery(rules: Dictionary,mission: Dictionary) -> Dictionary:
 	if not rules.has("delivery_results") or mission.get("story")!=false:return {}
 	var kind: Variant=mission.get("kind")
+	if defers_station_result(mission):
+		return {"required_cargo":{},"unload":"none","statistic":"","select_flight":true,"deferred":true,"any_station":true}
 	if kind==rules.courier.kind:
 		return {"required_cargo":{},"unload":"marked_cargo","statistic":"cargo","select_flight":true}
 	if kind==rules.passenger.kind:

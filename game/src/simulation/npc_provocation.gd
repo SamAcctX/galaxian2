@@ -74,6 +74,11 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	if data.is_empty():return reject("Unsupported contract reaction population")
 	if not _configure_population(bindings,catalogues,data,equipment,data.reputation_state):return false
 	_set_factions(data,int(data.mission.kind))
+	if not data.ordinary_standing.is_empty() and NPCSystems.available(bindings):
+		_rules.systems=bindings.mido_travel.kappa_lifecycle.systems.duplicate(true)
+		_rules.systems_primary=int(data.lifecycle.reactions.primary_faction)
+		_state.permanent_hostile=[];_state.permanent_hostile.resize(data.actor_count);_state.permanent_hostile.fill(false)
+		_state.systems_requested_damage=[];_state.systems_requested_damage.resize(data.actor_count);_state.systems_requested_damage.fill(0)
 	return true
 
 func configure_convoy(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,equipment: RefCounted,reputation: Dictionary) -> bool:

@@ -35,6 +35,9 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 	var data:=ShipCombat.population(bindings,packet,capability)
 	if data.is_empty():return {}
 	data.lifecycle=bindings.early_contracts.ship_lifecycle.duplicate(true)
+	if not data.ordinary_standing.is_empty():
+		data.lifecycle.reactions=load("res://src/content/free_lifecycle_definitions.gd").reactions(bindings,int(capability.recipe().cast.local_faction))
+		if data.lifecycle.reactions.is_empty():return {}
 	data.reputation_state=packet.contract_encounter.context.reputation.duplicate(true)
 	data.mission=packet.contract_encounter.mission.duplicate(true)
 	data.cargo=bindings.combat_training_destruction.cargo.duplicate(true)
@@ -52,7 +55,7 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 			data.actors.append(debris.actors[actor.actor_id]);continue
 		var row: Dictionary={}
 		for key in ["actor_id","actor_kind","hull_catalogue_id","subtype","population_group"]:row[key]=actor[key]
-		row.hostile=actor.population_group=="pirate"
+		row.hostile=actor.population_group=="pirate" if data.ordinary_standing.is_empty() else bool(data.actor_policies[actor.actor_id].initial_hostile)
 		for model in data.lifecycle.cargo_models:
 			if int(model.actor_kind)==actor.actor_kind:
 				row.cargo_model_id=int(model.cargo_model_id);row.cargo_model_resource=model.cargo_model_resource

@@ -1031,6 +1031,12 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 		var placement: Dictionary=_contract.placement
 		match placement.kind:
 			"points":path=placement.points.duplicate()
+			"random_point":
+				var point:=Vector3.ZERO
+				for axis in 3:
+					point[axis]=int(placement.offsets[axis])
+					if int(placement.bounds[axis])>0:point[axis]+=random.next_int(int(placement.bounds[axis]))
+				path=[point]
 			"approach":
 				path=[Vector3(int(placement.horizontal_offset)-random.next_int(int(placement.horizontal_bound)),0,int(placement.horizontal_offset)-random.next_int(int(placement.horizontal_bound))),Vector3.ZERO]
 			"line":

@@ -781,7 +781,7 @@ func refresh_hostility(actor_id: Variant) -> bool:
 			if not _writable(actor_id).refresh_convoy_hostility(current_reputation(),_provocation.snapshot().forced_hostile[actor_id],_reputation_rules):return reject(_actors[actor_id].error)
 			return true
 		if not _contract_encounter.is_empty():
-			if not _writable(actor_id).refresh_contract_hostility(_provocation.snapshot().forced_hostile[actor_id]):return reject(_actors[actor_id].error)
+			if not _writable(actor_id).refresh_contract_hostility(_provocation.snapshot().forced_hostile[actor_id],current_reputation(),_training_weapons.get("ordinary_standing",{})):return reject(_actors[actor_id].error)
 			return true
 		if not _writable(actor_id).apply_local_hostility(current_reputation(),_provocation.snapshot().forced_hostile[actor_id],_reputation_rules):return reject(_actors[actor_id].error)
 		return true
