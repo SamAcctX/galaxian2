@@ -14,6 +14,7 @@ func verify_source(content: String,pack: String,textures: String) -> void:
 	check(session.can_skip_cinematic() and preview._flight_hint.visible and "Skip cinematic" in preview._flight_hint.text,"Fresh cinematic omitted its desktop skip hint")
 	check(not preview._skip_button.visible,"Desktop cinematic ignored the touch-controls preference")
 	check(not preview.flight_vitals.visible,"Intro cinematic showed ordinary flight gauges")
+	check(not preview.status.visible,"Player cinematic retained the generic instruction strip")
 	await capture(preview,"opening-skip-desktop")
 	key_event(KEY_ENTER,true);Input.flush_buffered_events();key_event(KEY_ENTER,false);Input.flush_buffered_events()
 	check(session.cinematic_skipping() and session.audio.snapshot().paused,"Keyboard skip did not begin a muted source sequence")

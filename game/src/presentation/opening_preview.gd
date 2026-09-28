@@ -573,7 +573,7 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		if _save_notice!=null and not _transition_failed:_save_notice.hide()
 	if _player_mode and session is StationSession and (_station_map_open or state.get("dialogue",{}).get("visible",false) or state.get("hangar_open",false) or state.get("lounge_open",false) or not state.get("contracts",{}).get("pending_result",{}).is_empty()):
 		for button in [_menu_button,_launch_button,_hangar_button,_lounge_button,_station_map_button,_save_button,_load_button]:button.hide()
-	if status!=null and _player_mode:status.visible=_transition_failed or (not _station_map_open and not flight_menu.visible and not (session is StationSession) and not (flight_vitals!=null and flight_vitals.visible and session.can_control()))
+	if status!=null and _player_mode:status.visible=_transition_failed
 	if _station_map_open and _save_notice!=null:_save_notice.hide()
 	if viewport==null:return
 	var scene_view: Control=viewport.get_parent()
