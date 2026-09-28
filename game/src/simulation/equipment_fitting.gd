@@ -50,21 +50,30 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 				resources[model]="" if supported else "This weapon's animated model is not yet supported"
 			if not resources[model].is_empty():items[id]=resources[model]
 	if Secondaries.Definitions.available(bindings):
-		# Stock presence is not a capability. Verify the same original static
-		# body and animated burst used by the actual equipped flight renderer.
-		var bursts:=BurstResources.new()
-		if not bursts.configure(library,bindings):return fail(bursts.error)
-		var models: Array=Secondaries.Bomb.Definitions.VALUES.model_ids
-		var ids: Array=Secondaries.Definitions.VALUES.item_ids
-		for index in ids.size():
-			var model:=int(models[index])
+		# Resolve each bomb through its shared declaration and actual body/burst
+		# providers. Stock alone cannot admit unsupported animation or effects.
+		var families:={}
+		for item in cat.tables.items:
+			if item.arrays[2][3]!=1:continue
+			var id:=int(item.id);var declaration:=Secondaries.Bomb.Definitions.declaration(id)
+			if declaration.is_empty():continue
+			if not families.has(declaration.kind):
+				var bursts:=BurstResources.new()
+				if not bursts.configure(library,bindings,int(declaration.kind)):return fail(bursts.error)
+				families[declaration.kind]=bursts
+			var model:=int(declaration.model_id)
+			if declaration.kind==7:
+				var bomb:=Secondaries.Bomb.new()
+				var supported: bool=bomb.configure(bindings,cat,id,[]) and bomb.prepare_visuals(library,bindings)
+				items[id]="" if supported else "This bomb's original animated body is unavailable"
+				continue
 			if not resources.has(model):
 				var path: String=bindings.resolve(model,"mesh");var reader:=AEM.new()
 				var decoded:=reader.decode(library.read_resource(path,AEM.MAX_BYTES))
 				if decoded.is_empty():return fail("An original EMP body could not be read: "+path)
 				var supported: bool=model==14684 and path.ends_with("/misc/bomb_emp_a.aem") and Tracks.has_identity_tracks(decoded.surfaces) and Materials.supports(bindings.material_for_mesh(path,"high"))
 				resources[model]="" if supported else "This EMP body's visual behavior is not yet supported"
-			items[int(ids[index])]=resources[model]
+			items[id]=resources[model]
 		var resolver:=Weapons.new()
 		if not resolver.configure(bindings,cat,bindings.base_content_id):return fail(resolver.error)
 		for item in cat.tables.items:
@@ -137,9 +146,9 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 		return ""
 	if category==1:
 		if not Secondaries.Definitions.available(bindings):return "This secondary weapon's flight behavior is not yet supported"
-		if id in Secondaries.Definitions.VALUES.item_ids:
+		if not Secondaries.Bomb.Definitions.declaration(id).is_empty():
 			var bomb:=Secondaries.Bomb.new()
-			return "" if bomb.configure(bindings,cat,id,ids) else "This EMP bomb's firing behavior is not yet supported"
+			return "" if bomb.configure(bindings,cat,id,ids) else "This bomb's firing behavior is not yet supported"
 		var weapon: Dictionary=resolver.resolve(id,ids)
 		if not Conventional.resolved(weapon):return "This secondary weapon's flight behavior is not yet supported"
 		if weapon.ordinary_hit_policy.additional_damage_required and not NPCSystems.available(bindings):return "This weapon requires ship systems damage support"

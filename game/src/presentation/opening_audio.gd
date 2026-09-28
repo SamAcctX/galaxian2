@@ -10,7 +10,7 @@ const Death=preload("res://src/content/npc_destruction_definitions.gd")
 const WeaponAudio=preload("res://src/content/weapon_audio_definitions.gd")
 const SecondaryAudio=preload("res://src/content/secondary_ownership_definitions.gd")
 const Conventional=preload("res://src/content/conventional_secondary_definitions.gd")
-const DetonationAudio=preload("res://src/content/emp_detonation_resources.gd")
+const BombAudio=preload("res://src/content/emp_bombs_definitions.gd")
 const RadioVoice=preload("res://src/content/radio_audio_definitions.gd")
 const Dialogue=preload("res://src/content/dialogue_definitions.gd")
 const Story=preload("res://src/content/story_encounter_definitions.gd")
@@ -795,7 +795,7 @@ func prepare_secondaries(world: Dictionary) -> Dictionary:
 	for gun in guns:
 		if not gun is Dictionary or not Definitions.integer(gun.get("slot_index"),0,1020) or slots.has(gun.slot_index) or not gun.get("equipment") is Dictionary:return fail("Secondary sound lost its installed launcher")
 		if gun.has("bomb"):
-			if not gun.bomb is Dictionary or gun.equipment.get("item_id") not in _secondary_audio.item_ids:return fail("Unsupported bomb sound item")
+			if not gun.bomb is Dictionary or not gun.equipment.get("item_id") is int or BombAudio.declaration(gun.equipment.item_id).is_empty():return fail("Unsupported bomb sound item")
 		elif not Conventional.resolved(gun.get("projectiles",{}).get("weapon",{})) or _weapon_audio.is_empty():return fail("Secondary sound lost its resolved conventional weapon")
 		slots[gun.slot_index]=gun
 	# Burst wrappers run in the early weapon pass, before late launch input.
@@ -816,11 +816,11 @@ func prepare_secondaries(world: Dictionary) -> Dictionary:
 		if event.action=="detonated":
 			if not event.audio.is_empty() or event.get("ammunition_consumed")!=0:return fail("Detonation replayed launch audio or consumed ammunition")
 			continue
-		var id: int=int(_secondary_audio.launch_audio.event_ids[_secondary_audio.item_ids.find(event.item_id)]) if gun.has("bomb") else int(_weapon_audio.player_event_ids[event.item_id])
+		var id: int=int(BombAudio.declaration(event.item_id).launch_sound) if gun.has("bomb") else int(_weapon_audio.player_event_ids[event.item_id])
 		var cue: Dictionary=event.audio
 		if event.get("ammunition_consumed")!=1 or cue.size()!=3 or cue.get("source_id")!=id or cue.get("pitch_raw")!=_secondary_audio.launch_audio.pitch_raw or not cue.get("position") is Vector3 or not cue.position.is_finite():return fail("Secondary launch lost its declared sound, pitch or source position")
 		operations.append({"action":"start_spatial","source_id":id,"position":cue.position,"pitch_raw":float(cue.pitch_raw),"item_id":int(event.item_id),"secondary_slot":int(event.slot_index)})
-	return {"operations":operations}
+	return {"operations":operations,"detonation_count":bursts.operations.size()}
 
 ## Validate emitted wrapper cues, not a guessed sound inferred from a lingering
 ## effect. A same-frame relaunch can already have reset that wrapper's visuals.
@@ -840,7 +840,9 @@ func prepare_secondary_detonations(owner: Dictionary) -> Dictionary:
 		if not burst is Dictionary or burst.get("item_id")!=gun.equipment.item_id:return fail("EMP sound lost its retained burst item")
 		for key in _content_identity:
 			if burst.get(key)!=_content_identity[key]:return fail("EMP burst sound changed content identity")
-		var id: int=DetonationAudio.SOUND_IDS[DetonationAudio.ITEM_IDS.find(gun.equipment.item_id)]
+		var declaration:=BombAudio.declaration(gun.equipment.item_id)
+		if declaration.is_empty():return fail("Burst sound lost its admitted bomb declaration")
+		var id: int=declaration.burst_sound
 		if sources.has(id):return fail("EMP sound repeated an equipped item")
 		sources[id]={"order":guns.size()-1-index,"slot_index":int(gun.slot_index),"item_id":int(gun.equipment.item_id)}
 	var previous:=-1
@@ -865,8 +867,8 @@ func prepare_combat(world: Dictionary, elapsed_ms: int) -> Dictionary:
 	if secondary.is_empty():return {}
 	# Existing EMP wrappers update before late primary/secondary input. Split
 	# the validated secondary cues so their sound ordering matches that pass.
-	for operation in secondary.operations:
-		if operation.source_id in DetonationAudio.SOUND_IDS:operations.append(operation)
+	var burst_count: int=secondary.get("detonation_count",0)
+	operations.append_array(secondary.operations.slice(0,burst_count))
 	if not _weapon_audio.is_empty():
 		var primary:=prepare_primaries(world)
 		if primary.is_empty():return {}
@@ -876,8 +878,7 @@ func prepare_combat(world: Dictionary, elapsed_ms: int) -> Dictionary:
 		if world.get("primary_fire",{}).is_empty():
 			for id in _players:
 				if _players[id].get("primary_weapon",false) and _players[id].clip.get("release_at_sample_end",false):operations.append({"action":"stop","source_id":id})
-	for operation in secondary.operations:
-		if operation.source_id not in DetonationAudio.SOUND_IDS:operations.append(operation)
+	operations.append_array(secondary.operations.slice(burst_count))
 	var previous:=-1
 	for event in events:
 		if not event is Dictionary or not Definitions.integer(event.get("actor_id"),previous+1,_npc_count-1):return fail("Invalid NPC audio actor order")

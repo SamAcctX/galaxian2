@@ -2864,6 +2864,10 @@
     "game/tests/area_bomb_contacts.gd",
     "game/tests/area_bomb_contacts.gd.uid",
     "game/tests/area_bomb_ownership_visuals.gd",
-    "game/tests/area_bomb_ownership_visuals.gd.uid"
+    "game/tests/area_bomb_ownership_visuals.gd.uid",
+    "game/tests/area_bomb_application.gd",
+    "game/tests/area_bomb_application.gd.uid",
+    "game/tests/area_bomb_audio.gd",
+    "game/tests/area_bomb_audio.gd.uid"
   ]
 }

@@ -4,10 +4,13 @@ var _secondary_kind:=5
 var _secondary_item:=-1
 var _secondary_slot:=-1
 
+func secondary_kind() -> int:return 4 if OS.get_environment("GOF2_CONVENTIONAL_KIND")=="4" else 5
+func secondary_resumed() -> bool:return OS.get_environment("GOF2_CONVENTIONAL_RESUMED")=="1"
+
 func verify_free_application() -> void:
-	_secondary_kind=4 if OS.get_environment("GOF2_CONVENTIONAL_KIND")=="4" else 5
+	_secondary_kind=secondary_kind()
 	var original: Dictionary=app.session.station_owner().snapshot()
-	var resumed:=OS.get_environment("GOF2_CONVENTIONAL_RESUMED")=="1"
+	var resumed:=secondary_resumed()
 	var price:=0
 	if not resumed:
 		var purchase: Dictionary=await buy_secondary()
@@ -21,7 +24,7 @@ func verify_free_application() -> void:
 	for index in fitted.loadout.slots.size():
 		if fitted.loadout.slots[index]!=null and fitted.loadout.slots[index].item_id==_secondary_item:_secondary_slot=index;break
 	if _secondary_slot<0:check(false,"The paid launcher has no installed secondary slot");return
-	check(fitted.loadout.equipment_ids.has(81) and fitted.contracts.passengers==3 and fitted.contracts.mission==original.contracts.mission,"Secondary fitting lost the scanner or earned passenger job")
+	check(original.loadout.equipment_ids.all(func(id):return fitted.loadout.equipment_ids.has(id)) and fitted.contracts.passengers==3 and fitted.contracts.mission==original.contracts.mission,"Secondary fitting lost retained equipment or the earned passenger job")
 	if failures or not retain_recovery_save("fitted"):return
 	var quantity:=int(fitted.loadout.slots[_secondary_slot].quantity)
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
