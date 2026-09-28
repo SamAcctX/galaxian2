@@ -72,9 +72,10 @@ func start(scenery: RefCounted, selection: RefCounted, pose: Transform3D, model_
 	_state=next;_guidance_sample={}
 	return true
 
-func advance(scenery: RefCounted, delta_ms: Variant, paused:=false) -> bool:
+func advance(scenery: RefCounted, delta_ms: Variant, paused:=false, forward_multiplier:=1.0) -> bool:
 	error=""
 	if _state.is_empty() or _state.phase not in ["approach","docking"] or not Numbers.integer(delta_ms,0,_max_ms):return reject("Mining approach requires an active, bounded frame")
+	if not preload("res://src/simulation/cruise_motion.gd").valid_multiplier(forward_multiplier):return reject("Mining approach requires a finite forward speed multiplier")
 	var body:=target_body(scenery,_state.object_index)
 	if body.is_empty():return false
 	if paused:return true
@@ -99,7 +100,7 @@ func advance(scenery: RefCounted, delta_ms: Variant, paused:=false) -> bool:
 		var distance:=int(length)
 		if distance>=next.stand_off:
 			sample.before=pose
-			pose=guided_pose(pose,body.position,int(delta_ms),next.throttle)
+			pose=Guidance.advance(pose,body.position,int(delta_ms),_gain,_speed*forward_multiplier,float(_rules.turn_fraction),next.throttle)
 			if not proper_pose(pose):return reject("Mining guidance produced an unsupported pose")
 			sample.after=pose
 			next.player_pose=pose
@@ -128,6 +129,12 @@ func advance(scenery: RefCounted, delta_ms: Variant, paused:=false) -> bool:
 			else:alignment_open=false;aligned=true
 	if not proper_pose(Transform3D(next.model_basis,Vector3.ZERO)):return reject("Mining visual alignment produced an unsupported orientation")
 	_state=next;_aligned=aligned;_alignment_open=alignment_open;_reference_up=reference_up;_guidance_sample=sample
+	return true
+
+func set_throttle(value: float) -> bool:
+	error=""
+	if _state.is_empty() or _state.phase!="approach" or not is_finite(value) or value<0 or value>1:return reject("Throttle requires an active mining approach and a bounded setting")
+	_state.throttle=value
 	return true
 
 func guided_pose(pose: Transform3D, target: Vector3, milliseconds: int, throttle: float) -> Transform3D:

@@ -21,6 +21,7 @@ var error:=""
 var binding_id:=""
 var base_content_id:=""
 var _preset:={}
+var _birth_size:=-1.0
 var _slots: Array=[]
 var _random:=Random.new()
 var _cursor:=0
@@ -110,7 +111,7 @@ func emit_once(position: Variant) -> Dictionary:
 	return {"births":1}
 
 func clear() -> void:
-	error="";binding_id="";base_content_id="";_preset={};_slots=[];_random.clear()
+	error="";binding_id="";base_content_id="";_preset={};_birth_size=-1.0;_slots=[];_random.clear()
 	_cursor=0;_remainder_ms=0;_enabled=false;_visible=true;_update_existing=true
 	_dirty=true;_force_velocity=true;_baseline=Vector3.ZERO;_velocity=Vector3.ZERO
 	_fade_rgb=false
@@ -149,6 +150,13 @@ func reset() -> bool:
 	_remainder_ms=0;_dirty=true
 	return true
 
+## Changes only subsequent births. Live particle sizes and RNG stay retained.
+func set_birth_size(value: Variant) -> bool:
+	error=""
+	if _preset.is_empty() or not (value is float or value is int) or not is_finite(value) or value<=0 or value+int(_preset.size_jitter)>32767:return reject("Particle birth size is outside its finite appearance bounds")
+	_birth_size=single(value)
+	return true
+
 ## `shared` observations reuse the slot records read-only. Slots are replaced,
 ## never edited, so a frame's presentation state need not copy every particle.
 func snapshot(shared:=false) -> Dictionary:
@@ -159,7 +167,7 @@ func snapshot(shared:=false) -> Dictionary:
 			if not slot.is_read_only():Readonly.freeze(slot)
 		slots=_slots.duplicate()
 	else:slots=_slots.duplicate(true)
-	var result:={"binding_id":binding_id,"base_content_id":base_content_id,"preset":_preset,
+	var result:={"binding_id":binding_id,"base_content_id":base_content_id,"preset":_preset,"birth_size":_birth_size,
 		"slots":slots,"random":_random.snapshot(),"cursor":_cursor,
 		"remainder_ms":_remainder_ms,"enabled":_enabled,"visible":_visible,
 		"update_existing":_update_existing,"dirty":_dirty,"force_velocity":_force_velocity,
@@ -171,7 +179,7 @@ func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy.binding_id=binding_id;copy.base_content_id=base_content_id
 	# Slots are replaced before mutation; inactive sprites can stay shared.
-	copy._preset=_preset;copy._slots=_slots.duplicate();copy._random=_random.fork()
+	copy._preset=_preset;copy._birth_size=_birth_size;copy._slots=_slots.duplicate();copy._random=_random.fork()
 	copy._cursor=_cursor;copy._remainder_ms=_remainder_ms
 	copy._enabled=_enabled;copy._visible=_visible;copy._update_existing=_update_existing
 	copy._dirty=_dirty;copy._force_velocity=_force_velocity;copy._baseline=_baseline;copy._velocity=_velocity
@@ -298,7 +306,9 @@ func _new_appearance() -> Dictionary:
 		# Sprite geometry uses one size; both auxiliary dimensions still consume
 		# their own draws on this emitter's independent random stream.
 		_random.next_int(int(_preset.size_jitter));_random.next_int(int(_preset.size_jitter))
-	return Appearance.start_prepared(_preset,_cursor,size_sample)
+	var result:=Appearance.start_prepared(_preset,_cursor,size_sample)
+	if _birth_size>=0 and not result.has("error"):result.size=int(single(_birth_size+float(size_sample)))
+	return result
 
 func move_particle(index: int,delta_ms: float) -> bool:
 	var slot: Dictionary=_slots[index]

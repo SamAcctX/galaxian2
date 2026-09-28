@@ -7,6 +7,7 @@ const Encounter=preload("res://src/simulation/mission_encounter.gd")
 const Pilot=preload("res://src/simulation/pilot_motion.gd")
 const Contacts=preload("res://src/simulation/physical_scenery_contacts.gd")
 const Aim=preload("res://src/simulation/opening_aim.gd")
+const Booster=preload("res://src/simulation/player_booster.gd")
 const Engines=preload("res://src/simulation/player_engine_particles.gd")
 const EngineAudio=preload("res://src/simulation/opening_engine_audio.gd")
 const Music=preload("res://src/simulation/ordinary_music.gd")
@@ -41,6 +42,7 @@ var _pilot: RefCounted
 var _physical: RefCounted
 var _camera: RefCounted
 var _aim: RefCounted
+var _booster: RefCounted
 var _engines: RefCounted
 var _engine_audio: RefCounted
 var _music: RefCounted
@@ -84,6 +86,8 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,c
 	var pose: Transform3D=initialized_world.snapshot().player_pose
 	var scenery: RefCounted=initialized_world.scenery_owner();var camera: RefCounted=initialized_world.camera_owner()
 	var loadout: Dictionary=player.loadout()
+	var booster:=Booster.new()
+	if not booster.configure(bindings,catalogues,loadout.equipment_ids):return reject(booster.error)
 	if not runner.configure(context) or not runner.prepare_conversations(bindings,library):return reject(runner.error)
 	if not pilot.configure_vehicle(bindings,catalogues,bindings.base_content_id,int(loadout.ship_id),[],loadout.equipment_ids,sensitivity):return reject(pilot.error)
 	if not physical.configure(bindings.physical_scenery_contacts,context.identity(),{},scenery.read_snapshot().bodies):return reject(physical.error)
@@ -131,7 +135,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,c
 	_context=context;_world=initialized_world;_bindings=bindings;_library=library;_runner=runner;_encounter=encounter
 	_portal=portal
 	_player=player;_scenery=scenery;_equipment=equipment;_career=career;_pilot=pilot;_physical=physical
-	_camera=camera;_aim=aim;_engines=engines;_engine_audio=audio;_death=death;_particles=particles;_detail=detail
+	_camera=camera;_aim=aim;_engines=engines;_booster=booster;_engine_audio=audio;_death=death;_particles=particles;_detail=detail
 	_music=music;_radar=radar;_music_context=music_context
 	_scanner=scanner;_targeting=targeting;_notices=notices
 	_pose=pose;_viewport=viewport;_max_ms=Frames.simulation_limit(bindings);_random=initialized_world.snapshot().random_state.duplicate(true)
@@ -146,7 +150,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,c
 func prepare(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,context: RefCounted,initialized_world: RefCounted,sensitivity:=1.0,viewport:=Vector2i(1440,900)) -> bool:
 	return configure(bindings,catalogues,library,context,initialized_world,sensitivity,viewport)
 
-func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary_fire:=false,paused:=false,viewport:=Vector2i.ZERO,strafe:=0.0,secondary_fire:=false,current_music_id:=-1,relative_mouse_capture:=false) -> RefCounted:
+func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary_fire:=false,paused:=false,viewport:=Vector2i.ZERO,strafe:=0.0,secondary_fire:=false,current_music_id:=-1,relative_mouse_capture:=false,boost_requested:=false) -> RefCounted:
 	error=""
 	var size:=_viewport if viewport==Vector2i.ZERO else viewport
 	if _state.is_empty() or not Numbers.integer(milliseconds,0,_max_ms) or _state.elapsed_ms>2147483647-milliseconds or not valid_viewport(size) or not commands.is_finite() or absf(commands.x)>1 or absf(commands.y)>1 or not is_finite(throttle) or throttle<0 or throttle>1 or strafe not in [-1.0,0.0,1.0] or not Numbers.integer(current_music_id,-1,2292):return failed("Invalid mission flight time or pilot input")
@@ -160,12 +164,15 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	var moving: bool=(not blocked or automatic) and (not dying or _death.player_updates_enabled())
 	var enabled_before: bool=_state.entry_released and not blocked and not dying
 	var seconds:=float(milliseconds)/1000.0
+	if not next._booster.advance(milliseconds):return failed(next._booster.error)
+	if dying or blocked:
+		if not next._booster.cancel():return failed(next._booster.error)
 	next._state.physical_contacts=[]
 	if moving:
 		var response: Dictionary=next._camera.response_snapshot()
 		if response.relative_capture!=relative_mouse_capture or response.player_handling!=next._pilot.response_factor():next._camera.mark_response_dirty()
 		if not next._camera.refresh_player_response(relative_mouse_capture,next._pilot.response_factor()) or not next._engine_audio.before_ordinary_motion():return failed(next._camera.error+next._engine_audio.error)
-		next._pose=next._pilot.advance_prepared(_pose,throttle if enabled_before else _throttle,seconds,strafe if enabled_before else 0.0)
+		next._pose=next._pilot.advance_prepared(_pose,throttle if enabled_before else _throttle,seconds,strafe if enabled_before else 0.0,next._booster.speed_multiplier())
 		if not next._pilot.error.is_empty():return failed(next._pilot.error)
 		var contact: Dictionary=next._physical.plan(next._player.collision_context(next._pose),next._scenery.read_snapshot().bodies,enabled_before)
 		if contact.is_empty() or not next._scenery.apply_physical_contacts(contact.operations):return failed(next._physical.error+next._scenery.error)
@@ -196,6 +203,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 		if not next._death.start(next._player,next._pose,Vector3.ZERO,next._camera.snapshot().pose,_state.campaign_cursor,Basis.IDENTITY,next._pose,next._encounter.secondary_owner()):return failed(next._death.error)
 		if not next._player.set_permissions(false,next._player.snapshot().damage_allowed) or not next._engines.set_engine_enabled(false):return failed(next._player.error+next._engines.error)
 		dying=true
+		if not next._booster.cancel():return failed(next._booster.error)
 	if dying and not next._particles.apply_player_poll(next._death):return failed(next._particles.error)
 	# This poll cannot observe completion produced by the late sequence below.
 	var observation: Dictionary=next._encounter.result_observation()
@@ -204,6 +212,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	var result: Dictionary=next._runner.poll(observation.actors,radio.visible,_state.entry_released and not blocked,not dying,observation.sequences)
 	if result.is_empty():return failed(next._runner.error)
 	if result.mode!=0 and not next._runner.open_result():return failed(next._runner.error)
+	if result.mode!=0 and not next._booster.cancel():return failed(next._booster.error)
 	# Success returns before the late script, new firing, NPCs and camera.
 	# Failure has no corresponding early return. Preserve the completed early
 	# player/contact work and close its staged frame for the retained world.
@@ -237,6 +246,8 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if cue.frame.cancel_actions:
 		next._pilot.angular_units=Vector2.ZERO;next._pilot.lateral_units_per_millisecond=0.0
 		next._primary_released=false;next._secondary_released=false
+	if cue.input_blocked or (next._escape!=null and next._escape.snapshot().input_blocked):
+		if not next._booster.cancel():return failed(next._booster.error)
 	if not primary_fire:next._primary_released=true
 	if not secondary_fire:next._secondary_released=true
 	if not _state.entry_released:
@@ -274,7 +285,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if not next._aim.sample_feedback(next._encounter.primary_npc_contact(),milliseconds,enabled):return failed(next._aim.error)
 	if not next._engine_audio.follow_player(next._pose,int(next._player.snapshot().vitals.hull),milliseconds):return failed(next._engine_audio.error)
 	if not dying and not next._engines.set_engine_enabled((throttle if enabled else _throttle)>0):return failed(next._engines.error)
-	if not next._engines.advance(next._pose,milliseconds):return failed(next._engines.error)
+	if not next._engines.advance(next._pose,milliseconds,next._booster.envelope()):return failed(next._engines.error)
 	if not next._particles.advance(next._pose,milliseconds):return failed(next._particles.error)
 	var positions:={};var registered: Dictionary=next._detail.snapshot().selections
 	if registered.has("player"):positions["player"]=next._pose.origin
@@ -306,6 +317,10 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if music.is_empty():return failed(next._music.error)
 	next._flight_music={"operations":music.operations}
 	if enabled:next._throttle=throttle
+	if boost_requested and enabled:
+		var activation: int=next._booster.snapshot().activation
+		if not next._booster.request_start():return failed(next._booster.error)
+		if next._booster.snapshot().activation!=activation:next._throttle=1.0
 	next._state.elapsed_ms+=milliseconds;next._state.revision+=1
 	next._state.input={"enabled":enabled,"commands":commands if enabled else Vector2.ZERO,"primary_held":primary_fire and enabled and next._primary_released,"secondary_requested":secondary_fire and enabled and next._secondary_released,"throttle":next._throttle}
 	if not next._observe_progress():return failed(next.error)
@@ -455,6 +470,7 @@ func snapshot() -> Dictionary:
 	if state.is_empty():return state
 	var view: Dictionary=state.encounter.view;var sequence: Dictionary=state.encounter.sequence
 	state.encounter=_encounter.snapshot();state.encounter.view=view;state.encounter.sequence=sequence
+	state.booster=booster_state()
 	state.scenery=_scenery.snapshot();state.player_engines=_engines.snapshot();state.player_engine_audio=_engine_audio.snapshot()
 	state.radar=_radar.snapshot();state.music_context=_music_context.duplicate(true);state.flight_music=_flight_music.duplicate(true)
 	state.player_destruction=_death.snapshot();state.damage_particles=_particles.snapshot();state.npc_scanner=_scanner.snapshot();state.mining_targeting=_targeting.snapshot();state.flight_notices=_notices.snapshot();state.detail=_detail.snapshot();state.equipment=_equipment.snapshot()
@@ -477,7 +493,7 @@ func audio_state() -> Dictionary:
 	for declaration in _context.recipe().get("actor_engines",[]):
 		actor_engines[int(declaration.actor_id)]=_encounter.actor_engine_observation(int(declaration.actor_id))
 	return {"revision":_state.revision,"elapsed_ms":_state.elapsed_ms,"combat":combat,"camera_view":_camera.snapshot(),
-		"actor_engines":actor_engines,
+		"actor_engines":actor_engines,"booster":booster_state(),
 		"radio":state.radio,"radio_events":state.radio_events,"death_events":_death.snapshot().events,
 		"sequence_revision":state.sequence.revision,"sequence_audio":state.sequence.frame.audio,"escape_audio":[] if _escape==null else _escape.snapshot().frame.audio,"dialogue":dialogue(),
 		"scanner_events":_scanner.sound_events(),"flight_music":_flight_music.duplicate(true)}
@@ -548,8 +564,11 @@ func fork_for_frame() -> RefCounted:
 	copy._runner=_runner.fork();copy._encounter=_encounter.fork_for_frame();copy._player=_player.fork_for_frame();copy._scenery=_scenery.fork_for_frame()
 	copy._equipment=_equipment;copy._career=_career
 	copy._pilot=_pilot.fork_for_frame();copy._physical=_physical.fork_for_frame();copy._camera=_camera.fork_for_frame();copy._aim=_aim.fork_for_frame()
-	copy._engines=_engines.fork_for_frame();copy._engine_audio=_engine_audio.fork_for_frame();copy._death=_death.fork_for_frame();copy._particles=_particles.fork_for_frame();copy._scanner=_scanner.fork_for_frame();copy._targeting=_targeting.fork_for_frame();copy._notices=_notices.fork_for_frame();copy._detail=_detail.fork_for_frame()
+	copy._engines=_engines.fork_for_frame();copy._booster=_booster.fork_for_frame();copy._engine_audio=_engine_audio.fork_for_frame();copy._death=_death.fork_for_frame();copy._particles=_particles.fork_for_frame();copy._scanner=_scanner.fork_for_frame();copy._targeting=_targeting.fork_for_frame();copy._notices=_notices.fork_for_frame();copy._detail=_detail.fork_for_frame()
 	return copy
 static func valid_viewport(size: Vector2i) -> bool:return size.x>0 and size.y>0 and size.x<=32767 and size.y<=32767
 func reject(message: String) -> bool:error=message;return false
 func failed(message: String) -> RefCounted:reject(message);return null
+
+func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
+func control_throttle() -> float:return _throttle

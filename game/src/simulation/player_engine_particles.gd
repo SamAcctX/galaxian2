@@ -9,6 +9,8 @@ const Numbers=preload("res://src/content/opening_definitions.gd")
 var error:=""
 var _identity:={}
 var _emitters: Array=[]
+var _birth_sizes: Array=[]
+var _boost_envelope:=0.0
 var _manager_ms:=0
 var _elapsed_ms:=0
 var _engine_enabled:=true
@@ -29,6 +31,7 @@ func configure(bindings: RefCounted,mounts: RefCounted,ship_id: Variant,seed_sec
 		emitters.append(emitter)
 	_identity={"base_content_id":resolved.base_content_id,"binding_id":resolved.binding_id,"ship_id":int(ship_id)}
 	_emitters=emitters;_manager_ms=0;_elapsed_ms=0;_births={}
+	_birth_sizes=resolved.presets.map(func(row):return float(row.size));_boost_envelope=0.0
 	_engine_enabled=Definitions.VALUES.initial_engine_enabled
 	_player_hidden=Definitions.VALUES.initial_player_hidden
 	_draw_enabled=Definitions.VALUES.initial_draw_enabled
@@ -71,21 +74,23 @@ func retain_frame(delta_ms: Variant) -> bool:
 	_elapsed_ms+=int(delta_ms)
 	return true
 
-func advance(statistics_pose: Variant,delta_ms: Variant,boost_active: Variant=false) -> bool:
+func advance(statistics_pose: Variant,delta_ms: Variant,boost_envelope: Variant=0.0) -> bool:
 	error=""
 	if _identity.is_empty() or not Flight.rigid_pose(statistics_pose) or not Numbers.integer(delta_ms,0,1000):return reject("Player exhaust requires a rigid statistics pose and bounded milliseconds")
-	if not boost_active is bool or boost_active:return reject("Boost exhaust is unavailable; its envelope has not been verified")
+	if not (boost_envelope is float or boost_envelope is int) or not is_finite(boost_envelope) or boost_envelope<0 or boost_envelope>1:return reject("Player exhaust requires a finite booster envelope")
 	if delta_ms==0:return true
 	var next:=fork_for_frame();var interval:=_manager_ms+int(delta_ms)
 	next._births={}
 	# A hidden manager still updates every registered emitter, its movement
 	# baseline and its private RNG. No emitter visibility operation belongs here.
 	for index in next._emitters.size():
+		if not next._emitters[index].set_birth_size(_birth_sizes[index]*(1.0+0.5*float(boost_envelope))):return reject(next._emitters[index].error)
 		var result: Dictionary=next._emitters[index].advance(statistics_pose,delta_ms,interval)
 		if result.has("error"):return reject(next._emitters[index].error)
 		next._births["player_nozzle%d"%index]=int(result.births)
 	next._manager_ms=0 if interval>=int(Definitions.VALUES.manager_velocity_interval_ms) else interval
 	next._elapsed_ms+=int(delta_ms)
+	next._boost_envelope=float(boost_envelope)
 	adopt(next);return true
 
 func presentation_identity() -> RefCounted:return _presentation_identity
@@ -93,7 +98,8 @@ func presentation_identity() -> RefCounted:return _presentation_identity
 func snapshot(shared:=false) -> Dictionary:
 	if _identity.is_empty():return {}
 	var result:=_identity.duplicate()
-	result.mode="normal";result.manager_ms=_manager_ms;result.elapsed_ms=_elapsed_ms
+	result.mode="boost" if _boost_envelope>0 else "normal";result.manager_ms=_manager_ms;result.elapsed_ms=_elapsed_ms
+	result.boost_envelope=_boost_envelope
 	result.engine_enabled=_engine_enabled;result.player_hidden=_player_hidden;result.draw_enabled=_draw_enabled
 	result.births=_births.duplicate();result.owners={}
 	for index in _emitters.size():
@@ -105,6 +111,7 @@ func fork_for_frame() -> RefCounted:
 	copy._identity=_identity.duplicate();copy._manager_ms=_manager_ms;copy._elapsed_ms=_elapsed_ms
 	copy._engine_enabled=_engine_enabled;copy._player_hidden=_player_hidden;copy._draw_enabled=_draw_enabled
 	copy._births=_births.duplicate();copy._presentation_identity=_presentation_identity
+	copy._birth_sizes=_birth_sizes;copy._boost_envelope=_boost_envelope
 	for emitter in _emitters:copy._emitters.append(emitter.fork_for_frame())
 	return copy
 
@@ -112,9 +119,11 @@ func adopt(next: RefCounted) -> void:
 	_emitters=next._emitters;_manager_ms=next._manager_ms;_elapsed_ms=next._elapsed_ms
 	_engine_enabled=next._engine_enabled;_player_hidden=next._player_hidden;_draw_enabled=next._draw_enabled
 	_births=next._births
+	_boost_envelope=next._boost_envelope
 
 func clear() -> void:
 	error="";_identity={};_emitters=[];_manager_ms=0;_elapsed_ms=0;_births={}
+	_birth_sizes=[];_boost_envelope=0.0
 	_engine_enabled=true;_player_hidden=false;_draw_enabled=true;_presentation_identity=null
 
 func reject(message: String) -> bool:error=message;return false

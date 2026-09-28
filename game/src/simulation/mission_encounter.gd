@@ -43,27 +43,29 @@ func target(player: RefCounted,pose: Transform3D) -> Dictionary:
 	return {"base_content_id":_identity.base_content_id,"binding_id":_identity.binding_id,"ship_id":state.ship_id,
 		"pose":pose,"active":state.active,"hull":state.vitals.hull,"targeting_blocked":false,"special_flight":false,"alternate_position":null}
 
-func evaluate_weapons(player: RefCounted,pose: Transform3D,milliseconds: int,scenery: RefCounted=null,shared_random_state: Variant=null,display_available:=true,secondary_display_available:=true) -> Dictionary:
+func evaluate_weapons(player: RefCounted,pose: Transform3D,milliseconds: int,scenery: RefCounted=null,shared_random_state: Variant=null,display_available:=true,secondary_display_available:=true,guidance_actor_id: int=-1) -> Dictionary:
 	error=""
 	if _hook==null or _hook.composition_stage()!="ready" or not Numbers.integer(milliseconds,0,_max_ms) or target(player,pose).is_empty():return fail("Invalid mission contact frame")
 	if not scenery is Scenery or scenery.presentation_identity()!=_scenery_identity or not shared_random_state is Dictionary:return fail("Mission contacts require the retained field and random stream")
 	var prior:=_weapon_observation();var next:=fork_for_frame()
 	next._projectiles=_projectiles.fork_for_frame();next._impacts=_impacts.fork_for_frame()
 	if not next._projectiles.advance(milliseconds) or not next._impacts.advance(milliseconds):return fail(next._projectiles.error+next._impacts.error)
-	var primary: Dictionary=scenery.evaluate_primary_contacts(_primaries,_combat,_inventory,milliseconds,shared_random_state,display_available)
+	var primary: Dictionary=scenery.evaluate_primary_contacts(_primaries,_combat,_inventory,milliseconds,shared_random_state,display_available,guidance_actor_id)
 	if primary.is_empty():return fail(scenery.error)
 	next._primaries=primary.primaries;next._combat=primary.combat;next._primary_contacts=primary.weapons
-	var secondary: Dictionary=next.evaluate_secondary_motion(milliseconds,primary.random_state,secondary_display_available,pose.origin)
+	var secondary: Dictionary=next.evaluate_secondary_motion(milliseconds,primary.random_state,secondary_display_available,pose.origin,primary.scenery,guidance_actor_id)
 	if secondary.is_empty():return fail(next.error)
 	next=secondary.encounter
-	var composed: RefCounted=_hook.compose(player,next._combat,next._weapons,secondary.random_state)
+	var pilot: RefCounted=next._evaluate_bomb_damage(player,secondary.self_hits)
+	if pilot==null:return fail(next.error)
+	var composed: RefCounted=_hook.compose(pilot,next._combat,next._weapons,secondary.random_state)
 	if composed==null:return fail(_hook.error)
 	var contacts: RefCounted=composed.evaluate_contacts(milliseconds,pose,display_available)
 	if contacts==null:return fail(composed.error)
 	next._adopt_hook(contacts)
 	if not next._impacts.apply_contacts(prior,next._primary_contacts,next._weapon_events):return fail(next._impacts.error)
 	next._elapsed_ms+=milliseconds;next._primary_fire={}
-	return {"encounter":next,"player":contacts.player_owner(),"scenery":primary.scenery,"random_state":contacts.random_state()}
+	return {"encounter":next,"player":contacts.player_owner(),"scenery":secondary.get("scenery",primary.scenery),"random_state":contacts.random_state()}
 
 ## Commit the already evaluated early frame when success interrupts the late
 ## pass. The native hook enforces the contact boundary and retains its cast.

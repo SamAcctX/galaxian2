@@ -1,5 +1,13 @@
 {
   "files": [
+    "game/src/content/booster_definitions.gd",
+    "game/src/content/booster_definitions.gd.uid",
+    "game/src/simulation/player_booster.gd",
+    "game/src/simulation/player_booster.gd.uid",
+    "game/tests/player_booster.gd",
+    "game/tests/player_booster.gd.uid",
+    "game/tests/booster_application.gd",
+    "game/tests/booster_application.gd.uid",
     "game/src/content/beam_primary_definitions.gd",
     "game/src/content/beam_primary_definitions.gd.uid",
     "game/src/simulation/beam_primary.gd",

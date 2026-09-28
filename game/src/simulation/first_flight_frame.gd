@@ -48,6 +48,7 @@ const Vectors=preload("res://src/simulation/source_vectors.gd")
 const OrdinaryFlight=preload("res://src/content/ordinary_flight_definitions.gd")
 const Encounter=preload("res://src/simulation/full_hold_encounter.gd")
 const Particles=preload("res://src/simulation/full_hold_particles.gd")
+const Booster=preload("res://src/simulation/player_booster.gd")
 const Engines=preload("res://src/simulation/player_engine_particles.gd")
 const Mounts=preload("res://src/content/weapon_mounts.gd")
 const Death=preload("res://src/simulation/player_destruction.gd")
@@ -117,6 +118,7 @@ var _world_elapsed_ms:=0
 var _unsupported_boundary:=""
 var _death: RefCounted
 var _particles: RefCounted
+var _booster: RefCounted
 var _engine_particles: RefCounted
 var _equipment: RefCounted
 var _radio: RefCounted
@@ -287,6 +289,8 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 		if layout==null or not radio.configure(bindings,library,layout,int(entry.campaign_cursor)):return reject(resources.error+radio.error)
 	var pilot:=Pilot.new();var detail:=Detail.new()
 	var loadout: Dictionary=entry.departure.loadout
+	var booster:=Booster.new()
+	if not booster.configure(bindings,catalogues,loadout.equipment_ids):return reject(booster.error)
 	var tractor: RefCounted
 	if equipment!=null and encounter!=null and Tractor.Definitions.available(bindings):
 		var candidate:=Tractor.new()
@@ -436,7 +440,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_unsupported_boundary=""
 	_death=death;_statistics_pose=entry.player_pose;_camera_follow_enabled=true;_game_over_packet={}
 	_particles=particles;_equipment=equipment
-	_engine_particles=engine_particles
+	_engine_particles=engine_particles;_booster=booster
 	_radio=radio;_radio_events=[]
 	_scanner=scanner;_scanner_events=[]
 	_route=route;_navigation=navigation;_rescue=rescue;_sahi=sahi;_void_environment=void_environment;_void_portal=void_portal;_ordinary_void_source=void_source
@@ -472,7 +476,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 			_flight_music={"operations":[]}
 	return true
 
-func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paused:=false, viewport_size:=Vector2i.ZERO, drill_command:=Vector2.ZERO, primary_fire:=false, secondary_fire:=false, relative_mouse_capture:=false, current_music_id:=-1, strafe:=0.0) -> RefCounted:
+func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paused:=false, viewport_size:=Vector2i.ZERO, drill_command:=Vector2.ZERO, primary_fire:=false, secondary_fire:=false, relative_mouse_capture:=false, current_music_id:=-1, strafe:=0.0, boost_requested:=false) -> RefCounted:
 	error=""
 	if _briefing==null or not Numbers.integer(milliseconds,0,150) or not commands.is_finite() or absf(commands.x)>1.0 or absf(commands.y)>1.0 or not is_finite(throttle) or throttle<0.0 or throttle>1.0:
 		reject("Invalid first-flight frame, command or throttle");return null
@@ -532,6 +536,9 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 	var alive: bool=_player.snapshot().vitals.hull>0
 	var player_updates: bool=(not death_active() or _death.player_updates_enabled()) and not (_alioth!=null and _alioth.snapshot().player_update_suspended and not death_active())
 	var player_tail:=player_updates
+	if not next._booster.advance(delta_ms if player_updates else 0):reject(next._booster.error);return null
+	if not alive or cinematic_input_blocked() or local_departing() or gate_departing():
+		if not next._booster.cancel():reject(next._booster.error);return null
 	if player_updates and next._fast_forward!=null:
 		next._near_target=false
 		if not next._camera.refresh_player_response(relative_mouse_capture,next._autopilot.snapshot().response_factor):reject(next._camera.error);return null
@@ -576,12 +583,13 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 			active_throttle=next._throttle
 	elif _approach!=null and _approach.snapshot().phase!="idle":
 		var index: int=_approach.snapshot().object_index
-		if not next._approach.advance(next._scenery,delta_ms):reject(next._approach.error);return null
+		if not next._approach.advance(next._scenery,delta_ms,false,next._booster.speed_multiplier()):reject(next._approach.error);return null
 		var sample: Dictionary=next._approach.last_guidance_sample()
 		if next._fast_forward!=null and not sample.is_empty():next._near_target=sample.near_target
 		if next._autopilot!=null and not sample.is_empty():
 			if not next._autopilot.observe_mining_guidance(sample.before,sample.after):reject(next._autopilot.error);return null
 		var approach: Dictionary=next._approach.snapshot()
+		if not approach.engine_visible and _approach.snapshot().engine_visible:next._booster.finish_soon()
 		next._queue_mining_audio(approach.events)
 		if next._engine_particles!=null and (approach.phase=="idle" or approach.engine_visible!=_approach.snapshot().engine_visible):
 			if not next._engine_particles.set_engine_enabled(approach.engine_visible):reject(next._engine_particles.error);return null
@@ -611,7 +619,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		if _local_travel!=null and _autopilot.snapshot().target_kind=="planet":
 			var destination: Variant=_local_travel.target_position(int(_autopilot.snapshot().station_id))
 			if destination==null or not next._autopilot.refresh_planet_position(destination):reject(_local_travel.error+next._autopilot.error);return null
-		if not next._autopilot.advance(delta_ms,next._pilot.angular_units.x,active_throttle):reject(next._autopilot.error);return null
+		if not next._autopilot.advance(delta_ms,next._pilot.angular_units.x,active_throttle,false,next._booster.speed_multiplier()):reject(next._autopilot.error);return null
 		var guide: Dictionary=next._autopilot.snapshot()
 		if next._engine_particles!=null and next._engine_particles.engine_enabled()!=(guide.throttle>0.0) and not next._engine_particles.set_engine_enabled(guide.throttle>0.0):reject(next._engine_particles.error);return null
 		if next._fast_forward!=null:next._near_target=guide.near_target
@@ -623,7 +631,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		ordinary_motion=true
 	if ordinary_motion:
 		if next._engine_particles!=null and next._engine_particles.engine_enabled()!=(active_throttle>0.0) and not next._engine_particles.set_engine_enabled(active_throttle>0.0):reject(next._engine_particles.error);return null
-		next._pose=next._pilot.advance(_pose,commands if manual else Vector2.ZERO,active_throttle,float(delta_ms)/1000.0,strafe if manual else 0.0)
+		next._pose=next._pilot.advance(_pose,commands if manual else Vector2.ZERO,active_throttle,float(delta_ms)/1000.0,strafe if manual else 0.0,next._booster.speed_multiplier())
 		if not next._pilot.error.is_empty():reject(next._pilot.error);return null
 		next._statistics_pose=next._pose*Transform3D(_model_basis,Vector3.ZERO)
 		next._model_basis=Basis.IDENTITY;next._throttle=active_throttle
@@ -670,13 +678,14 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		if weapon_pass.has("scenery"):next._scenery=weapon_pass.scenery
 		if weapon_pass.has("random_state"):next._random=weapon_pass.random_state
 	if next._player.snapshot().vitals.hull<=0 and next._death==null:
+		if not next._booster.cancel():reject(next._booster.error);return null
 		# Any lethal damage belongs to the same death boundary, including scenery
 		# contacts in content that has no supported destruction presentation.
 		next._unsupported_boundary="player_death_required"
 		return next
 	# Geometry managers run in the early weapon phase, using preceding NPC
 	# roots and renderer reference. Scenery lifecycle belongs to the later pass.
-	if next._engine_particles!=null and not next._engine_particles.advance(next._statistics_pose,delta_ms):reject(next._engine_particles.error);return null
+	if next._engine_particles!=null and not next._engine_particles.advance(next._statistics_pose,delta_ms,next._booster.envelope()):reject(next._engine_particles.error);return null
 	if next._particles!=null:
 		if next._encounter!=null and not next._particles.apply_weapon_impacts(next._encounter.secondary_impacts()):reject(next._particles.error);return null
 		if not next._particles.advance(next._pose,delta_ms):reject(next._particles.error);return null
@@ -698,6 +707,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 			if not next._pilot.accept_visual_response(visual_response,float(delta_ms)/1000.0):reject(next._pilot.error);return null
 			next._preceding_commands=Vector2.ZERO
 	if next.death_active():
+		if not next._booster.cancel():reject(next._booster.error);return null
 		# The later poll follows every accepted destruction pass, including
 		# breakup; its emitted cue restores emission without restoring drawing.
 		if next._particles!=null and not next._particles.apply_player_poll(next._death):reject(next._particles.error);return null
@@ -750,6 +760,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		completion_opened=next._objective.snapshot().dialogue.visible
 	next._briefing.finish_mission_poll(completion_opened or instruction_opened)
 	if completion_opened or instruction_opened:
+		if not next._booster.cancel():reject(next._booster.error);return null
 		if ordinary_motion and next._autopilot!=null:
 			# Ordinary movement already cleared its input flags. Its rendered
 			# response settles, but opening a modal bypasses late commands.
@@ -773,7 +784,9 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 			next._preceding_commands=Vector2.ZERO
 	if next._convoy!=null and not next.death_active() and not cues.dialogue.visible:
 		if not next._advance_convoy(delta_ms):reject(next.error);return null
-		if next.convoy_arrival_required():return next
+		if next.convoy_arrival_required():
+			if not next._booster.cancel():reject(next._booster.error);return null
+			return next
 	if next._sahi!=null and not next.death_active() and not cues.dialogue.visible:
 		if not next._advance_sahi(delta_ms):reject(next.error);return null
 		if ordinary_motion and next.cinematic_input_blocked():
@@ -804,6 +817,14 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		if next._encounter.has_secondaries():
 			var enabled: bool=cues.entry_released and not cues.dialogue.visible and not next.death_active() and not next.local_departing() and not next.cinematic_input_blocked()
 			if not next._apply_secondary_input(secondary_fire,enabled):reject(next.error);return null
+	if next.cinematic_input_blocked():
+		if not next._booster.cancel():reject(next._booster.error);return null
+	if boost_requested and next.booster_input_permitted():
+		var activation: int=next._booster.snapshot().activation
+		if not next._booster.request_start():reject(next._booster.error);return null
+		if next._booster.snapshot().activation!=activation:
+			next._throttle=1.0
+			if next._approach!=null and next._approach.snapshot().phase=="approach" and not next._approach.set_throttle(1.0):reject(next._approach.error);return null
 	if delta_ms>0:next._reference=next._camera.snapshot().eye
 	if not next._advance_world(0 if cues.dialogue.visible else delta_ms,_reference):reject(next.error);return null
 	if next._gate_transit!=null and not next.gate_departing() and not next.death_active() and cues.entry_released:
@@ -811,6 +832,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		var target_is_gate: bool=guide.active and guide.target_kind=="gate"
 		if not next._gate_transit.observe_contact(next._pose,next._gate_cruise_speed*next._throttle,guide.active,target_is_gate,{"kind":-1,"completed":true}):reject(next._gate_transit.error);return null
 		if next.gate_modal() and not next._autopilot.clear_target():reject(next._autopilot.error);return null
+		if next.gate_modal() and not next._booster.cancel():reject(next._booster.error);return null
 	if next._local_travel!=null:
 		var selected_planet:=-1
 		if next._autopilot.snapshot().active and next._autopilot.snapshot().target_kind=="planet":selected_planet=int(next._autopilot.snapshot().station_id)
@@ -1399,6 +1421,7 @@ func launch_planet(paused:=false) -> RefCounted:
 	return next
 
 func _begin_local_departure() -> bool:
+	if not _booster.cancel():return reject(_booster.error)
 	# Source launch fixes the camera eye, but the next positive camera update
 	# still looks at the moving ship. Acquisition runs after this frame's camera;
 	# changing the shot must not recompute or move the already accepted view.
@@ -1478,6 +1501,7 @@ func close_gate_map(accepted: bool,destination: int=-1,paused:=false) -> RefCoun
 func _begin_gate_departure() -> bool:
 	var gate: Dictionary=_gate_transit.snapshot()
 	if not gate_departing() or not gate.has("departure_permissions"):return reject("Gate departure requires its original player permissions")
+	if not _booster.cancel():return reject(_booster.error)
 	if not _autopilot.clear_target() or not _player.set_permissions(true,gate.departure_permissions.damage_allowed):return reject(_autopilot.error+_player.error)
 	if gate.reset_primary_fire_intervals and not _encounter.reset_primary_fire_intervals():return reject(_encounter.error)
 	_pose=gate.player_pose;_statistics_pose=_pose;_model_basis=Basis.IDENTITY;_throttle=gate.speed/_gate_cruise_speed
@@ -1821,6 +1845,10 @@ func damage_particle_owner() -> RefCounted:return null if _particles==null else 
 ## Read-only during presentation of this accepted frame.
 func scenery_presentation_owner() -> RefCounted:return _scenery
 
+func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
+func booster_input_permitted() -> bool:
+	return _booster!=null and entry_released() and not death_active() and _player.snapshot().vitals.hull>0 and not dialogue_visible() and not cinematic_input_blocked() and not local_departing() and not gate_departing() and drill_owner()==null and (_approach==null or _approach.snapshot().phase in ["idle","approach"])
+
 func engine_particle_owner() -> RefCounted:return null if _engine_particles==null else _engine_particles.fork_for_frame()
 func death_active() -> bool:return _death!=null and _death.snapshot().phase!="ready"
 func game_over_waiting() -> bool:return death_active() and not _death.player_updates_enabled()
@@ -1896,6 +1924,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	var state: Dictionary=_briefing.snapshot()
 	var held: Dictionary=_cargo.snapshot()
 	state.cargo_used=held.used
+	state.booster=booster_state()
 	state.merge({"world_type":_entry.world_type,"location":_entry.location.duplicate(true),"activated":true,
 		"player_pose":_pose,"control_throttle":_throttle,"player":_player.snapshot(),"player_cache":_player.cache_snapshot(),"angular_units":_pilot.angular_units,
 		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),
@@ -2057,6 +2086,7 @@ func fork_for_frame() -> RefCounted:
 	if _death!=null:copy._death=_death.fork_for_frame()
 	if _particles!=null:copy._particles=_particles.fork_for_frame()
 	if _engine_particles!=null:copy._engine_particles=_engine_particles.fork_for_frame()
+	if _booster!=null:copy._booster=_booster.fork_for_frame()
 	if _equipment!=null:copy._equipment=_equipment.fork()
 	if _radio!=null:copy._radio=_radio.fork_for_frame()
 	copy._radio_events=_radio_events.duplicate(true)
@@ -2093,7 +2123,7 @@ func clear() -> void:
 	_unsupported_boundary=""
 	_death=null;_statistics_pose=Transform3D.IDENTITY;_camera_follow_enabled=true;_game_over_packet={}
 	_particles=null;_audio_frame={};_equipment=null;_radio=null;_radio_events=[]
-	_engine_particles=null
+	_engine_particles=null;_booster=null
 	_route=null;_navigation={};_world_path=[];_rescue=null;_sahi=null;_void_environment=null;_void_portal=null;_ordinary_void_source=null
 	_probe=null;_void_targeting=null
 	_scanner=null;_scanner_events=[]

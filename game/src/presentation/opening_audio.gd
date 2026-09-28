@@ -25,11 +25,13 @@ const OrdinaryFlight=preload("res://src/content/ordinary_flight_definitions.gd")
 const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const ContractWorld=preload("res://src/content/contract_world_definitions.gd")
 const LocalRadio=preload("res://src/simulation/local_traffic_radio.gd")
+const Booster=preload("res://src/content/booster_definitions.gd")
 const PLAYER_ENGINE="player_engine"
 var error := ""
 var _resources: RefCounted
 var _identity: RefCounted
 var _revision := -1
+var _booster_serial:=0
 var _players := {}
 var _retiring: Array[Dictionary]=[]
 var _music := -1
@@ -330,7 +332,7 @@ func _prepare_retained_flight(world: RefCounted) -> Dictionary:
 	for event in state.scanner_events:
 		if not event is Dictionary or event.get("kind")!="sound" or event.get("source_id")!=_npc_scan_sound or not Definitions.integer(event.get("actor_id"),0,_npc_count-1):return fail("Selected40 acquisition sound lost its native scanner")
 		commands.append({"action":"start","source_id":_npc_scan_sound})
-	var view:={"elapsed_ms":state.elapsed_ms,"camera":{"view":state.camera_view},"escape":{"frame":{"audio":commands}},"radio":state.radio,"radio_changes":state.radio_events}
+	var view:={"booster":state.get("booster",{}),"elapsed_ms":state.elapsed_ms,"camera":{"view":state.camera_view},"escape":{"frame":{"audio":commands}},"radio":state.radio,"radio_changes":state.radio_events}
 	var music:=prepare_flight_music(state)
 	if music.is_empty():return {}
 	var result:=prepare_frame(_revision+1,view,state.combat,music.operations)
@@ -416,11 +418,13 @@ func prepare_full_hold(world: RefCounted, state: Dictionary={}) -> Dictionary:
 	if mining.is_empty():return {}
 	var flight_music:=prepare_flight_music(state)
 	if flight_music.is_empty():return {}
+	var booster:=prepare_booster(state.get("booster",{}))
+	if booster.is_empty():return {}
 	if _mining_only:
 		var mining_elapsed: Variant=state.get("world_elapsed_ms")
 		if not Definitions.integer(mining_elapsed,_elapsed_ms,0x7fffffff) or state.get("campaign_cursor") not in [2,3]:return fail("First mining audio frame changed its mission or clock")
-		if _revision>=0 and mining_elapsed==_elapsed_ms and mining.serial==_mining_serial and flight_music.operations.is_empty():return {"identity":_identity,"revision":_revision,"repeat":true}
-		var mining_view:={"elapsed_ms":int(mining_elapsed),"camera":{"view":state.camera_view},"escape":{"frame":{"audio":mining.operations+flight_music.operations}}}
+		if _revision>=0 and mining_elapsed==_elapsed_ms and mining.serial==_mining_serial and flight_music.operations.is_empty() and booster.serial==_booster_serial:return {"identity":_identity,"revision":_revision,"repeat":true}
+		var mining_view:={"booster":state.get("booster",{}),"elapsed_ms":int(mining_elapsed),"camera":{"view":state.camera_view},"escape":{"frame":{"audio":mining.operations+flight_music.operations}}}
 		if mining.parameter!=null:mining_view.mining_drill_parameter=mining.parameter
 		var mining_frame:=prepare_frame(_revision+1,mining_view)
 		if mining_frame.is_empty():return {}
@@ -436,7 +440,7 @@ func prepare_full_hold(world: RefCounted, state: Dictionary={}) -> Dictionary:
 	var repeated: bool=cues.serial==_flight_serial
 	if repeated:
 		if elapsed!=_elapsed_ms:return fail("Repeated second-flight sound frame changed its clock")
-		if travel.operations.is_empty() and notification.serial==_notified_result_serial and travel.attached==_travel_attached and mining.serial==_mining_serial and flight_music.operations.is_empty():return {"identity":_identity,"revision":_revision,"repeat":true}
+		if travel.operations.is_empty() and notification.serial==_notified_result_serial and travel.attached==_travel_attached and mining.serial==_mining_serial and flight_music.operations.is_empty() and booster.serial==_booster_serial:return {"identity":_identity,"revision":_revision,"repeat":true}
 		if not travel.operations.is_empty() and (travel.operations.size()!=1 or travel.operations[0].source_id!=_travel_sounds[1]):return fail("A manual travel action emitted a flight acquisition cue")
 	var commands: Array[Dictionary]=[]
 	if not repeated:
@@ -481,7 +485,7 @@ func prepare_full_hold(world: RefCounted, state: Dictionary={}) -> Dictionary:
 			commands.append({"action":"start","source_id":_npc_scan_sound})
 	commands.append_array(mining.operations)
 	commands.append_array(flight_music.operations)
-	var view:={"elapsed_ms":int(elapsed),"camera":{"view":state.camera_view},"escape":{"frame":{"audio":commands}}}
+	var view:={"booster":state.get("booster",{}),"elapsed_ms":int(elapsed),"camera":{"view":state.camera_view},"escape":{"frame":{"audio":commands}}}
 	if mining.parameter!=null:view.mining_drill_parameter=mining.parameter
 	if state.has("radio"):
 		view.radio=state.radio;view.radio_changes=[] if repeated else state.radio_events
@@ -635,6 +639,9 @@ func prepare_frame(revision: int, state: Dictionary, world: Dictionary={}, follo
 	var commands: Variant=state.get("escape",{}).get("frame",{}).get("audio",[])
 	if not commands is Array or commands.size()>32:return fail("Invalid opening audio commands")
 	commands=commands.duplicate(true)
+	var booster:=prepare_booster(state.get("booster",{}))
+	if booster.is_empty():return {}
+	commands.append_array(booster.operations)
 	var combat_begin: int=commands.size()
 	if (not _death_audio.is_empty() or not _weapon_audio.is_empty()) and not world.is_empty():
 		var combat_frame:=prepare_combat(world,int(elapsed))
@@ -671,7 +678,24 @@ func prepare_frame(revision: int, state: Dictionary, world: Dictionary={}, follo
 		if record.node is ParameterLoop and not ParameterLoop.valid_context(record.position,view):return fail("Invalid retained engine sound spatial context")
 	var engine_frame:=prepare_engine(world,int(elapsed),view,operations)
 	if engine_frame.is_empty():return {}
-	return {"identity":_identity,"revision":revision,"repeat":false,"listener":view,"elapsed_ms":int(elapsed),"operations":operations,"layer_frames":layer_frames,"voice_displayed":radio_frame.displayed,"player_engine":engine_frame}
+	return {"identity":_identity,"revision":revision,"repeat":false,"listener":view,"elapsed_ms":int(elapsed),"operations":operations,"layer_frames":layer_frames,"voice_displayed":radio_frame.displayed,"player_engine":engine_frame,"booster_serial":booster.serial}
+
+func prepare_booster(state: Variant) -> Dictionary:
+	if not state is Dictionary:return fail("Invalid booster audio observation")
+	if state.is_empty():return {"serial":_booster_serial,"operations":[]}
+	for key in _content_identity:
+		if state.get(key)!=_content_identity[key]:return fail("Booster sound belongs to another flight content")
+	var serial: Variant=state.get("audio_serial")
+	if not Definitions.integer(serial,_booster_serial,_booster_serial+2):return fail("Booster sound lost its accepted activation")
+	if serial==_booster_serial:return {"serial":serial,"operations":[]}
+	var id: Variant=state.get("item_id")
+	var operations: Variant=state.get("audio")
+	var count:=int(serial)-_booster_serial
+	if not Booster.SOUND_IDS.has(id) or not operations is Array or operations.size()<count or operations.size()>2:return fail("Booster sound lost its fitted device")
+	var pending: Array=operations.slice(operations.size()-count)
+	for operation in pending:
+		if not operation is Dictionary or operation.get("source_id")!=Booster.SOUND_IDS[id] or operation.get("action") not in ["start","stop"]:return fail("Booster sound differs from its device cue")
+	return {"serial":int(serial),"operations":pending.duplicate(true)}
 
 func prepare_engine(world: Dictionary,elapsed_ms: int,view: Transform3D,operations: Array) -> Dictionary:
 	var state: Variant=world.get(PLAYER_ENGINE,{})
@@ -988,6 +1012,7 @@ func commit_frame(frame: Dictionary) -> void:
 	if frame.get("identity")!=_identity or frame.get("revision")!=_revision+1 or frame.get("repeat",true):return
 	var delta_ms: int=frame.elapsed_ms-_elapsed_ms
 	_elapsed_ms=frame.elapsed_ms;_revision=frame.revision;_listener=frame.listener
+	_booster_serial=int(frame.get("booster_serial",_booster_serial))
 	if frame.has("flight_serial"):_flight_serial=int(frame.flight_serial)
 	if frame.has("travel_serial"):_travel_serial=int(frame.travel_serial)
 	if frame.has("travel_attached"):_travel_attached=frame.travel_attached
@@ -1166,7 +1191,7 @@ func clear() -> void:
 	for child in get_children():
 		child.stop();child.free()
 	restore_listener()
-	_resources=null;_identity=null;_revision=-1;_elapsed_ms=0;_players.clear();_retiring.clear();_history.clear();_unsupported.clear();_music=-1;_engine=-1;_paused=false;_start_serial=0;error=""
+	_resources=null;_identity=null;_revision=-1;_elapsed_ms=0;_booster_serial=0;_players.clear();_retiring.clear();_history.clear();_unsupported.clear();_music=-1;_engine=-1;_paused=false;_start_serial=0;error=""
 	_last_samples.clear();_random.seed=0
 	_death_audio={};_freighter_audio={};_freighter_actors=[];_debris_actors=[];_debris_sound=-1;_notification_sound=-1;_notified_result_serial=0;_content_identity={};_weapon_audio={};_npc_weapon_sound=-1;_npc_weapon_sounds=[];_npc_scan_sound=-1
 	_radio_voice={};_local_radio_rules={};_radio_identity={};_voice_displayed=[];_voice_serial=0

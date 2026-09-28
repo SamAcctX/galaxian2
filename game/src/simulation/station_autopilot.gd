@@ -166,16 +166,17 @@ func observe_mining_guidance(before: Transform3D, after: Transform3D) -> bool:
 	_history=turn.history;_cursor=turn.cursor;_wrapped=turn.wrapped
 	return true
 
-func advance(milliseconds: Variant, pitch_units: float, throttle:=1.0, paused:=false) -> bool:
+func advance(milliseconds: Variant, pitch_units: float, throttle:=1.0, paused:=false, forward_multiplier:=1.0) -> bool:
 	error=""
 	if _state.is_empty() or not _state.active or not Numbers.integer(milliseconds,0,_max_ms) or not is_finite(pitch_units) or absf(pitch_units)>2147483647.0 or not is_finite(throttle) or throttle<0 or throttle>1:return reject("Station guidance requires an active bounded frame and throttle")
+	if not preload("res://src/simulation/cruise_motion.gd").valid_multiplier(forward_multiplier):return reject("Station guidance requires a finite forward speed multiplier")
 	if paused:return true
 	if int(_state.elapsed_ms)>2147483647-int(milliseconds):return reject("Station guidance time exceeds the source range")
 	var before: Transform3D=_state.player_pose
 	var offset:=Vectors.added(_state.target_position,-before.origin)
 	var distance:=single(sqrt(Vectors.dot(offset,offset)))
 	if not is_finite(distance) or distance>=2147483648.0:return reject("Station target distance exceeds source coordinates")
-	var pose:=Guidance.advance(before,_state.target_position,int(milliseconds),_gain,_speed,float(_rules.turn_fraction),throttle)
+	var pose:=Guidance.advance(before,_state.target_position,int(milliseconds),_gain,_speed*forward_multiplier,float(_rules.turn_fraction),throttle)
 	if not proper_pose(pose):return reject("Station guidance produced a degenerate orientation")
 	var turn:=_turn_sample(before.basis,pose.basis)
 	var target: float=turn.target

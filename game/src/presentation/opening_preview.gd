@@ -82,6 +82,7 @@ var _station_button: Button
 var _map_button: Button
 var _jump_button: Button
 var _time_button: Button
+var _boost_button: Button
 var map_panel: Control
 var flight_menu: Control
 var _station_map_open:=false
@@ -158,6 +159,10 @@ func _ready() -> void:
 	touch_overlay.firing.connect(func(held):_controls.set_touch_action("fire",held))
 	_flight_actions=Control.new();_flight_actions.mouse_filter=Control.MOUSE_FILTER_IGNORE;host.add_child(_flight_actions)
 	_flight_actions.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	_boost_button=Button.new();_boost_button.text="W";_boost_button.focus_mode=Control.FOCUS_NONE;host.add_child(_boost_button)
+	_boost_button.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	_boost_button.button_down.connect(func():_controls.set_touch_action("boost",true))
+	_boost_button.button_up.connect(func():_controls.set_touch_action("boost",false))
 	_mine_button=Button.new();_mine_button.text="Mine";_mine_button.focus_mode=Control.FOCUS_NONE;_flight_actions.add_child(_mine_button)
 	_station_button=Button.new();_station_button.text="Station";_station_button.focus_mode=Control.FOCUS_NONE;_flight_actions.add_child(_station_button)
 	_map_button=Button.new();_map_button.text="Map";_map_button.focus_mode=Control.FOCUS_NONE;_flight_actions.add_child(_map_button)
@@ -218,12 +223,28 @@ func _style_touch_buttons() -> void:
 	var art: Dictionary=touch_overlay.sprites
 	for row in [[_mine_button,1257,1258,"Mine / Stop"],[_station_button,1212,1213,"Station autopilot"],
 		[_map_button,1210,1211,"Map"],[_jump_button,1200,1201,"Jump"],[_time_button,1345,1344,"Fast Forward"],
-		[_pause_button,1208,1209,"Pause / Resume"]]:
+		[_pause_button,1208,1209,"Pause / Resume"],[_boost_button,1202,1203,"Boost (W / A)"]]:
 		var button: Button=row[0]
 		button.text="";button.tooltip_text=row[3]
 		for state in ["normal","hover","disabled"]:button.add_theme_stylebox_override(state,_touch_icon_style(art[row[1]]))
 		for state in ["pressed","hover_pressed"]:button.add_theme_stylebox_override(state,_touch_icon_style(art[row[2]]))
 		button.add_theme_stylebox_override("focus",OriginalUI.focus_style(true))
+
+func _sync_booster_indicator(flight: Dictionary={}) -> void:
+	if _boost_button==null:return
+	var state: Dictionary=flight.get("booster",{}) if session is FirstFlightSession else session.booster_state() if session is MissionSession else {}
+	_boost_button.visible=state.get("available",false)
+	if not _boost_button.visible:return
+	_boost_button.visible=session.flight_hud_visible() if session is MissionSession else session.flight_hud_visible(flight)
+	if not _boost_button.visible:return
+	_boost_button.disabled=not state.ready or not session.can_control() or not _focused
+	# The desktop glyph is a status indicator; touch enables its button surface.
+	_boost_button.mouse_filter=Control.MOUSE_FILTER_STOP if touch_actions_enabled() else Control.MOUSE_FILTER_IGNORE
+	_boost_button.modulate=Color(1,1,1,float(state.icon_alpha))
+	var extent:=52.0 if _mobile_layout else 34.0
+	_boost_button.offset_right=-16.0;_boost_button.offset_left=-16.0-extent
+	_boost_button.offset_bottom=-178.0 if _mobile_layout else -132.0
+	_boost_button.offset_top=_boost_button.offset_bottom-extent
 
 func _touch_icon_style(texture: Texture2D) -> StyleBoxTexture:
 	var style:=StyleBoxTexture.new();style.texture=texture
@@ -409,6 +430,7 @@ func _shopping_available() -> bool:
 
 func refresh_render_mode(state: Dictionary={}) -> void:
 	if session is MissionSession:
+		_sync_booster_indicator()
 		_sync_mouse_capture()
 		for node in [station_shell,station_panel,equipment_panel,flight_vitals,radio_panel,target_frame,aim_reticle,npc_markers,secondary_panel,lounge_panel,flight_menu,map_panel,gate_panel,touch_overlay,_flight_actions,_flight_hint,_launch_button,_hangar_button,_station_map_button,_lounge_button,_save_button,_load_button,_retry_button,_skip_button]:
 			if node!=null:node.hide()
@@ -422,6 +444,7 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		status.visible=true
 		return
 	if state.is_empty() and session!=null:state=session.snapshot()
+	_sync_booster_indicator(state)
 	_sync_mouse_capture()
 	var touch_actions:=touch_actions_enabled()
 	if _pause_button!=null:_pause_button.visible=touch_actions and session!=null and (session.flight_hud_visible(state) or session.can_control())
@@ -655,8 +678,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if session is FirstFlightSession:
 			if event is InputEventKey:
 				var key: int=event.physical_keycode if event.physical_keycode else event.keycode
-				supported=supported or key in Controls.DIRECTIONS or (Controls.KEY_ACTIONS.has(key) and Controls.KEY_ACTIONS[key] in ["fire","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu"]) or (session.secondary_available() and Controls.KEY_ACTIONS.get(key) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.KEY_ACTIONS.get(key)=="time")
-			elif event is InputEventJoypadButton:supported=supported or (Controls.BUTTON_ACTIONS.has(event.button_index) and Controls.BUTTON_ACTIONS[event.button_index] in ["fire","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu"]) or (session.secondary_available() and Controls.BUTTON_ACTIONS.get(event.button_index) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.BUTTON_ACTIONS.get(event.button_index)=="time")
+				supported=supported or key in Controls.DIRECTIONS or (Controls.KEY_ACTIONS.has(key) and Controls.KEY_ACTIONS[key] in ["fire","boost","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu"]) or (session.secondary_available() and Controls.KEY_ACTIONS.get(key) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.KEY_ACTIONS.get(key)=="time")
+			elif event is InputEventJoypadButton:supported=supported or (Controls.BUTTON_ACTIONS.has(event.button_index) and Controls.BUTTON_ACTIONS[event.button_index] in ["fire","boost","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu"]) or (session.secondary_available() and Controls.BUTTON_ACTIONS.get(event.button_index) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.BUTTON_ACTIONS.get(event.button_index)=="time")
 			elif event is InputEventJoypadMotion:supported=event.axis in [JOY_AXIS_LEFT_X,JOY_AXIS_LEFT_Y,JOY_AXIS_TRIGGER_RIGHT] or (session.secondary_available() and event.axis==JOY_AXIS_TRIGGER_LEFT)
 		elif event is InputEventKey:
 			var key: int=event.physical_keycode if event.physical_keycode else event.keycode

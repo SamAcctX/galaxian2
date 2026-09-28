@@ -10,6 +10,7 @@ const Player=preload("res://src/simulation/opening_player_state.gd")
 const Scenery=preload("res://src/simulation/opening_scenery.gd")
 const Pilot=preload("res://src/simulation/pilot_motion.gd")
 const Contacts=preload("res://src/simulation/physical_scenery_contacts.gd")
+const Booster=preload("res://src/simulation/player_booster.gd")
 const Engines=preload("res://src/simulation/player_engine_particles.gd")
 const Mounts=preload("res://src/content/weapon_mounts.gd")
 const Detail=preload("res://src/presentation/ship_detail_group.gd")
@@ -35,6 +36,7 @@ var _scenery: RefCounted
 var _encounter: RefCounted
 var _pilot: RefCounted
 var _physical: RefCounted
+var _booster: RefCounted
 var _engines: RefCounted
 var _detail: RefCounted
 var _equipment: RefCounted
@@ -74,6 +76,8 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,p
 	if not encounter.configure_selected40(bindings,catalogues,library,player,scenery,equipment,reputation) or not encounter.prepare_selected40_sequence(bindings,library) or not encounter.prepare_selected40_view(bindings,camera,aim,player):return reject(encounter.error)
 	if not encounter.configure_secondaries(bindings,catalogues,player,equipment,library):return reject(encounter.error)
 	var loadout: Dictionary=player.loadout()
+	var booster:=Booster.new()
+	if not booster.configure(bindings,catalogues,loadout.equipment_ids):return reject(booster.error)
 	if not pilot.configure_vehicle(bindings,catalogues,bindings.base_content_id,int(loadout.ship_id),[],loadout.equipment_ids,sensitivity):return reject(pilot.error)
 	var identity:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
 	var entry: Dictionary=scenery.snapshot().get("departure_population",{}).get("selected40_entry",{})
@@ -128,7 +132,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,p
 	_music_faction=int(catalogues.tables.systems[int(entry.system_id)].fields[int(bindings.station_exterior.system_faction_field)])
 	_death=death;_particles=particles;_statistics_pose=pose
 	_player=player.fork_for_frame();_scenery=scenery.fork_for_frame();_equipment=equipment.fork()
-	_encounter=encounter;_pilot=pilot;_physical=contacts;_engines=engines;_detail=detail
+	_encounter=encounter;_pilot=pilot;_physical=contacts;_engines=engines;_booster=booster;_detail=detail
 	_scanner=scanner;_cargo=cargo;_presentation_identity=RefCounted.new()
 	_targeting=targeting;_notices=notices
 	_pose=pose;_reference=Vector3.ZERO;_random=scenery.random_state();_viewport=viewport
@@ -167,7 +171,7 @@ func prepare_career(bindings: RefCounted,career: RefCounted) -> bool:
 	_encounter=encounter;_career=retained
 	return true
 
-func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary_fire:=false,paused:=false,viewport:=Vector2i.ZERO,strafe:=0.0,secondary_fire:=false,current_music_id:=-1,relative_mouse_capture:=false) -> RefCounted:
+func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary_fire:=false,paused:=false,viewport:=Vector2i.ZERO,strafe:=0.0,secondary_fire:=false,current_music_id:=-1,relative_mouse_capture:=false,boost_requested:=false) -> RefCounted:
 	error=""
 	var size:=_viewport if viewport==Vector2i.ZERO else viewport
 	if not Rules.Numbers.integer(current_music_id,-1,2292):reject("Invalid retained playback music selection");return null
@@ -181,8 +185,11 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	var death_before: Dictionary=_death.snapshot()
 	var dying: bool=death_before.phase!="ready"
 	var player_updates: bool=not dying or _death.player_updates_enabled()
-	var seconds:=float(milliseconds)/1000.0
 	var blocked: bool=prior.sequence.input_blocked or dying
+	var seconds:=float(milliseconds)/1000.0
+	if not next._booster.advance(milliseconds):reject(next._booster.error);return null
+	if dying or blocked:
+		if not next._booster.cancel():reject(next._booster.error);return null
 	var active_throttle: float=_throttle if blocked else throttle
 	# The script does not enable scripted-coast or suspend ordinary movement.
 	# Established angular response moves the root; NEW commands are sampled
@@ -192,7 +199,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if player_updates:
 		if not next._encounter.refresh_selected40_player_response(relative_mouse_capture,next._pilot.response_factor()):reject(next._encounter.error);return null
 		if not next._engine_audio.before_ordinary_motion():reject(next._engine_audio.error);return null
-		next._pose=next._pilot.advance_prepared(_pose,active_throttle,seconds,0.0 if blocked else strafe)
+		next._pose=next._pilot.advance_prepared(_pose,active_throttle,seconds,0.0 if blocked else strafe,next._booster.speed_multiplier())
 		if not next._pilot.error.is_empty():reject(next._pilot.error);return null
 		# The original environment pass shares one incoming entry permission
 		# and active-statistics sample across solid scenery and the live portal.
@@ -231,7 +238,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	# stopped engine cannot restart, and the frozen pose does not move its sound.
 	if not next._engine_audio.follow_player(next._pose,int(next._player.snapshot().vitals.hull),milliseconds):reject(next._engine_audio.error);return null
 	if not dying and next._engines.engine_enabled()!=(active_throttle>0) and not next._engines.set_engine_enabled(active_throttle>0):reject(next._engines.error);return null
-	if not next._engines.advance(next._statistics_pose,milliseconds):reject(next._engines.error);return null
+	if not next._engines.advance(next._statistics_pose,milliseconds,next._booster.envelope()):reject(next._engines.error);return null
 	if not next._particles.advance(next._pose,milliseconds):reject(next._particles.error);return null
 	var positions:={};var registered: Dictionary=next._detail.snapshot().selections
 	if registered.has("player"):positions["player"]=next._pose.origin
@@ -242,6 +249,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 		if not next._death.start(next._player,next._pose,Vector3.ZERO,prior.view.camera.pose,40,Basis.IDENTITY,next._statistics_pose,next._encounter.secondary_owner()):reject(next._death.error);return null
 		if not next._engines.set_engine_enabled(false) or not next._player.set_permissions(false,next._player.snapshot().damage_allowed):reject(next._engines.error+next._player.error);return null
 		dying=true
+		if not next._booster.cancel():reject(next._booster.error);return null
 	if dying and not next._particles.apply_player_poll(next._death):reject(next._particles.error);return null
 	# Source result polling precedes the selected script and later portal tail.
 	# Failure is completed freighter breakup (mode4), without the success
@@ -265,6 +273,8 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	# Existing shots and ordinary player systems survive the cinematic switch.
 	if cue.sequence.frame.cancel_actions:
 		if not next._player.set_permissions(next._player.snapshot().active,false):reject(next._player.error);return null
+	if cue.sequence.input_blocked or next.campaign_dialogue_visible():
+		if not next._booster.cancel():reject(next._booster.error);return null
 	for operation in cue.sequence.frame.camera_operations:
 		if operation.kind=="follow_player" and not next._player.set_permissions(next._player.snapshot().active,true):reject(next._player.error);return null
 	var enabled: bool=not cue.sequence.input_blocked and next._player.snapshot().active and not next.campaign_dialogue_visible()
@@ -315,9 +325,13 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if selection.is_empty():reject(next._music.error);return null
 	next._flight_music={"operations":selection.operations}
 	next._random=portal_random.snapshot();next._viewport=size;next._throttle=active_throttle
+	if boost_requested and enabled:
+		var activation: int=next._booster.snapshot().activation
+		if not next._booster.request_start():reject(next._booster.error);return null
+		if next._booster.snapshot().activation!=activation:next._throttle=1.0
 	if milliseconds>0:next._reference=next._encounter.selected40_frame_context().view.camera.eye
 	next._state.elapsed_ms+=int(milliseconds);next._state.revision+=1;next._state.phase="ready"
-	next._state.input={"enabled":enabled,"commands":commands if enabled else Vector2.ZERO,"primary_held":primary_fire and enabled,"secondary_requested":secondary_fire and enabled,"throttle":active_throttle}
+	next._state.input={"enabled":enabled,"commands":commands if enabled else Vector2.ZERO,"primary_held":primary_fire and enabled,"secondary_requested":secondary_fire and enabled,"throttle":next._throttle}
 	if next._career!=null:
 		var career: Dictionary=next._encounter.evaluate_contract_session(next._career,bool(cue.sequence.radio.visible),false,false)
 		if career.is_empty():reject(next._encounter.error);return null
@@ -462,7 +476,7 @@ func audio_state() -> Dictionary:
 		"flight_music":_flight_music.duplicate(true),
 		"camera_view":context.view.camera,"death_events":_death.snapshot().events,
 		"radio":context.sequence.radio,"radio_events":context.sequence.radio_events,
-		"scanner_events":_scanner.sound_events()}
+		"booster":booster_state(),"scanner_events":_scanner.sound_events()}
 
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}
@@ -471,6 +485,7 @@ func snapshot() -> Dictionary:
 	result.player_pose=_pose;result.player=_player.snapshot();result.encounter=_encounter.snapshot()
 	result.scenery=_scenery.snapshot();result.player_engines=_engines.snapshot();result.detail=_detail.snapshot()
 	result.player_destruction=_death.snapshot();result.damage_particles=_particles.snapshot();result.statistics_pose=_statistics_pose
+	result.booster=booster_state()
 	result.random_state=_random.duplicate(true);result.reference=_reference;result.throttle=_throttle
 	result.pilot={"angular_units":_pilot.angular_units,"lateral_rate":_pilot.lateral_units_per_millisecond}
 	result.npc_scanner=_scanner.snapshot();result.cargo=_cargo.snapshot()
@@ -575,7 +590,7 @@ func fork_for_frame() -> RefCounted:
 	copy._portal=_portal.fork_for_frame()
 	copy._player=_player.fork_for_frame();copy._scenery=_scenery.fork_for_frame();copy._encounter=_encounter.fork_for_frame()
 	copy._death=_death.fork_for_frame();copy._particles=_particles.fork_for_frame()
-	copy._pilot=_pilot.fork_for_frame();copy._physical=_physical.fork_for_frame();copy._engines=_engines.fork_for_frame();copy._detail=_detail.fork_for_frame()
+	copy._pilot=_pilot.fork_for_frame();copy._physical=_physical.fork_for_frame();copy._engines=_engines.fork_for_frame();copy._booster=_booster.fork_for_frame();copy._detail=_detail.fork_for_frame()
 	copy._equipment=_equipment
 	copy._scanner=_scanner.fork_for_frame();copy._cargo=_cargo
 	copy._targeting=_targeting.fork_for_frame();copy._notices=_notices.fork_for_frame()
@@ -583,3 +598,6 @@ func fork_for_frame() -> RefCounted:
 
 static func valid_viewport(size: Vector2i) -> bool:return size.x>0 and size.y>0 and size.x<=32767 and size.y<=32767
 func reject(message: String) -> bool:error=message;return false
+
+func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
+func control_throttle() -> float:return _throttle

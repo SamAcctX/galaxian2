@@ -168,8 +168,8 @@ func verify_transactional_lifetime():
 	var accepted: Dictionary=owner.snapshot();var identity: RefCounted=owner.presentation_identity()
 	for value in [-1,1001,0.5,"1"]:
 		check(not owner.advance(pose(90),value) and owner.snapshot()==accepted,"Invalid exhaust time changed accepted state")
-	for value in [true,1,null]:
-		check(not owner.advance(pose(90),10,value) and owner.snapshot()==accepted,"Unsupported boost state changed normal exhaust")
+	for value in [true,2,null,-0.1,NAN]:
+		check(not owner.advance(pose(90),10,value) and owner.snapshot()==accepted,"Invalid boost envelope changed accepted exhaust")
 	check(not owner.advance(Transform3D(Basis.from_scale(Vector3(2,1,1)),Vector3.ZERO),10) and owner.snapshot()==accepted,"Nonrigid statistics pose changed accepted exhaust")
 	check(not owner.advance(pose(2e10),1000) and owner.snapshot()==accepted,"Out-of-range source birth count partially committed emitters or clocks")
 	check(not owner.set_engine_enabled(1) and not owner.set_player_hidden(null) and owner.snapshot()==accepted,"Invalid manager flags changed accepted state")

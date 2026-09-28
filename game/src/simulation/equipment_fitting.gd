@@ -21,6 +21,7 @@ const NPCSystems=preload("res://src/content/npc_systems_definitions.gd")
 const Mounts=preload("res://src/content/weapon_mounts.gd")
 const Conventional=preload("res://src/content/conventional_secondary_definitions.gd")
 const ImpactSprites=preload("res://src/content/full_hold_particle_definitions.gd")
+const Booster=preload("res://src/simulation/player_booster.gd")
 var error:=""
 
 func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) -> Dictionary:
@@ -29,6 +30,11 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 	var resources:={};var items:={}
 	var mounts:=Mounts.new()
 	if not mounts.open(library,cat):return fail(mounts.error)
+	var sounds=preload("res://src/content/audio_resources.gd").new()
+	if not sounds.configure(library,bindings):return fail(sounds.error)
+	for id in Booster.Definitions.SOUND_IDS:
+		var clip: Dictionary=sounds.prepare(Booster.Definitions.SOUND_IDS[id])
+		items[id]="" if not clip.is_empty() and not clip.has("unsupported") else "This booster's original sound is unavailable"
 	for item in cat.tables.items:
 		if item.arrays[2][3]!=0:continue
 		var id:=int(item.id);var mapping:=Rules.primary(bindings.mido_travel.ordinary_fitting,id,int(item.arrays[2][5]))
@@ -97,6 +103,7 @@ func inspect(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,assets: Di
 		support[id]=_item_reason(bindings,cat,weapon,id,ids,int(ship))
 		if support[id].is_empty() and item.arrays[2][3] in [0,1]:support[id]=assets.items.get(id,"This weapon's model is unavailable")
 		if support[id].is_empty() and item.arrays[2][3]==3 and item.arrays[2][5]==13:support[id]=assets.items.get(id,"This tractor's beam is unavailable")
+		if support[id].is_empty() and item.arrays[2][3]==3 and item.arrays[2][5]==14:support[id]=assets.items.get(id,"This booster's sound is unavailable")
 	for id in ids:
 		if not support.has(id) or not support[id].is_empty():return fail("Installed equipment is unavailable: "+str(support.get(id,"unknown item")))
 	var slots: Variant=loadout.get("slots")
@@ -163,6 +170,10 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 			if not Tractor.Definitions.available(bindings):return "Tractor recovery is not yet supported by this content pack"
 			var tractor: Dictionary=bindings.mido_travel.tractor_recovery
 			if not tractor.pull.supported_player_hulls.any(func(hull):return int(hull)==ship):return "Tractor recovery is not yet supported for this ship"
+		14:
+			var booster:=Booster.new()
+			if not booster.configure(bindings,cat,[id]):return booster.error
+			if not preload("res://src/simulation/player_engine_particles.gd").Definitions.available_for(bindings,ship):return "This ship's booster exhaust is unavailable"
 		15:
 			if Stats.resolve_repair_device(cat.tables.items,[id],rule.repair).is_empty():return "The repair device is unavailable"
 		16:

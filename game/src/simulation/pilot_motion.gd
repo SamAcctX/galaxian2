@@ -80,7 +80,7 @@ func set_response_factor(value: float) -> bool:
 	if result: _response_factor = value
 	return result
 
-func advance(pose: Transform3D, commands: Vector2, throttle: float, seconds: float, strafe_command:=0.0) -> Transform3D:
+func advance(pose: Transform3D, commands: Vector2, throttle: float, seconds: float, strafe_command:=0.0, forward_multiplier:=1.0) -> Transform3D:
 	error = ""
 	if binding_id.is_empty():
 		error = "Configure this content's pilot motion before advancing"
@@ -89,14 +89,14 @@ func advance(pose: Transform3D, commands: Vector2, throttle: float, seconds: flo
 	if not _response.error.is_empty():
 		error = _response.error
 		return pose
-	var next_pose := advance_prepared(pose, throttle, seconds, strafe_command)
+	var next_pose := advance_prepared(pose, throttle, seconds, strafe_command, forward_multiplier)
 	if not error.is_empty(): return pose
 	angular_units = next_response
 	return next_pose
 
 ## Move with the response prepared by a preceding frame. Cinematic release
 ## samples current commands later, after its camera pass.
-func advance_prepared(pose: Transform3D, throttle: float, seconds: float, strafe_command:=0.0) -> Transform3D:
+func advance_prepared(pose: Transform3D, throttle: float, seconds: float, strafe_command:=0.0, forward_multiplier:=1.0) -> Transform3D:
 	error = ""
 	if binding_id.is_empty():
 		error = "Configure this content's pilot motion before advancing"
@@ -113,7 +113,7 @@ func advance_prepared(pose: Transform3D, throttle: float, seconds: float, strafe
 	if absf(rate) <= LATERAL_SETTLE_RATE:
 		rate = 0.0
 		gain = LATERAL_GAIN_START
-	var next_pose := _flight.advance(pose, angular_units, throttle, seconds, rate)
+	var next_pose := _flight.advance(pose, angular_units, throttle, seconds, rate, forward_multiplier)
 	if not _flight.error.is_empty():
 		error = _flight.error
 		return pose
@@ -145,11 +145,11 @@ func accept_visual_response(sample: Vector2, seconds: float, preceding_commands:
 	angular_units=next
 	return true
 
-func coast(pose: Transform3D, throttle: float, seconds: float) -> Transform3D:
+func coast(pose: Transform3D, throttle: float, seconds: float, forward_multiplier:=1.0) -> Transform3D:
 	# Scripted flight retains its root heading and speed without preparing
 	# steering input. Recharge and other player work belong to the caller.
 	var rate:=lateral_units_per_millisecond if absf(lateral_units_per_millisecond)>LATERAL_SETTLE_RATE else 0.0
-	var next:=_flight.advance(pose,Vector2.ZERO,throttle,seconds,rate)
+	var next:=_flight.advance(pose,Vector2.ZERO,throttle,seconds,rate,forward_multiplier)
 	error=_flight.error
 	if error.is_empty() and seconds>0.0:
 		lateral_units_per_millisecond=rate*LATERAL_RELEASE_RETENTION

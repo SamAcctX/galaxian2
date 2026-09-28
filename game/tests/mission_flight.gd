@@ -87,6 +87,7 @@ func verify_component(bindings: RefCounted,cat: RefCounted,library: RefCounted,w
 		if next==null:check(false,skipped.error);return
 		skipped=next
 	check(not skipped.campaign_dialogue_visible(),"Briefing did not release flight")
+	verify_booster(skipped,bindings,cat)
 	var active: RefCounted=skipped.evaluate(100,Vector2(.3,-.2),1,true)
 	if active==null:check(false,skipped.error);return
 	check(active.frame_context().player_pose!=skipped.frame_context().player_pose and active.frame_context().input.enabled,"Released mission did not fly with native motion")
@@ -95,6 +96,40 @@ func verify_component(bindings: RefCounted,cat: RefCounted,library: RefCounted,w
 	broken._scenery._detail=broken._scenery._detail.fork_for_frame();broken._scenery._detail.clear();broken._scenery._read_snapshot={}
 	var broken_before: Dictionary=broken.snapshot()
 	check(broken.evaluate(100,Vector2.ONE,1,true)==null and broken.snapshot()==broken_before,"Late flight failure leaked player, contacts or weapons")
+
+func verify_booster(origin: RefCounted,bindings: RefCounted,cat: RefCounted) -> void:
+	# Detached equipment stimulus exercises the recipe world's shared owner.
+	# It does not alter or claim an earned fitting of this mission's save.
+	var before: Dictionary=origin.snapshot();var fitted: RefCounted=origin.fork_for_frame()
+	if not fitted._booster.configure(bindings,cat,[71]):check(false,fitted._booster.error);return
+	var ordinary: RefCounted=fitted.evaluate(100,Vector2.ZERO,0.4)
+	var boosted: RefCounted=fitted.evaluate(100,Vector2.ZERO,0.4,false,false,Vector2i.ZERO,0.0,false,-1,false,true)
+	if ordinary==null or boosted==null:check(false,fitted.error);return
+	check(boosted.booster_state().active and boosted.control_throttle()==1.0,"Recipe flight omitted boost or full throttle")
+	check(boosted.frame_context().player_pose==ordinary.frame_context().player_pose,"Late boost input accelerated the preceding motion pass")
+	var advanced: RefCounted=boosted.evaluate(100,Vector2.ZERO,1.0)
+	var normal: RefCounted=ordinary.evaluate(100,Vector2.ZERO,1.0)
+	if advanced==null or normal==null:check(false,boosted.error+ordinary.error);return
+	var boosted_distance: float=advanced.frame_context().player_pose.origin.distance_to(boosted.frame_context().player_pose.origin)
+	var normal_distance: float=normal.frame_context().player_pose.origin.distance_to(ordinary.frame_context().player_pose.origin)
+	check(absf(boosted_distance-normal_distance*1.5)<0.2,"Recipe motion ignored the equipped acceleration")
+	var active: Dictionary=advanced.snapshot()
+	check(advanced.evaluate(100,Vector2.ONE,1.0,false,true).snapshot()==active,"Paused recipe flight advanced boost")
+	var broken: RefCounted=advanced.fork_for_frame()
+	broken._scenery._detail=broken._scenery._detail.fork_for_frame();broken._scenery._detail.clear();broken._scenery._read_snapshot={}
+	var rejected: Dictionary=broken.snapshot()
+	check(broken.evaluate(100)==null and broken.snapshot()==rejected,"Rejected recipe frame leaked boost time or exhaust")
+	var scripted: RefCounted=advanced.fork_for_frame()
+	scripted._encounter._hook=scripted._encounter._hook.fork_for_frame()
+	scripted._encounter._hook._radio=scripted._encounter._hook._radio.fork_for_frame()
+	scripted._encounter._hook._radio._started[4]=true
+	for cut in 3:
+		var next: RefCounted=scripted.evaluate(0,Vector2.ZERO,1.0,false,false,Vector2i.ZERO,0.0,false,-1,false,true)
+		if next==null:check(false,scripted.error);return
+		scripted=next
+		if scripted.frame_context().encounter.sequence.input_blocked:break
+	check(scripted.frame_context().encounter.sequence.input_blocked and not scripted.booster_state().active and scripted.booster_state().remaining_ms==0,"New cinematic retained boost or imposed a cooldown")
+	check(advanced.snapshot()==active and origin.snapshot()==before,"Recipe booster or cinematic mutated a retained parent")
 
 func verify_result_order(origin: RefCounted,context: RefCounted,bindings: RefCounted,library: RefCounted) -> void:
 	var npc: RefCounted=origin.fork_for_frame();var original: Dictionary=origin.snapshot()

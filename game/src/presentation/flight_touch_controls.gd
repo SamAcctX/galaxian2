@@ -2,7 +2,7 @@ extends Control
 ## Native remake touch steering and primary fire. Multiple fingers retain their
 ## own controls; pausing or hiding clears every held input.
 const OriginalUI=preload("res://src/presentation/original_ui.gd")
-const ART_IDS=[1200,1201,1204,1205,1206,1207,1208,1209,1210,1211,1212,1213,1214,1215,1217,1257,1258,1344,1345]
+const ART_IDS=[1200,1201,1202,1203,1204,1205,1206,1207,1208,1209,1210,1211,1212,1213,1214,1215,1217,1257,1258,1344,1345]
 signal steering(command: Vector2, held: bool)
 signal firing(held: bool)
 var active := false

@@ -33,7 +33,7 @@ func clear() -> void:
 	_radians_per_unit_second = 0.0
 	_cruise.clear()
 
-func advance(pose: Transform3D, angular_units: Vector2, throttle: float, seconds: float, lateral_units_per_millisecond:=0.0) -> Transform3D:
+func advance(pose: Transform3D, angular_units: Vector2, throttle: float, seconds: float, lateral_units_per_millisecond:=0.0, forward_multiplier:=1.0) -> Transform3D:
 	error = ""
 	if binding_id.is_empty():
 		error = "Configure flight motion from this session's content before advancing"
@@ -42,7 +42,7 @@ func advance(pose: Transform3D, angular_units: Vector2, throttle: float, seconds
 			or not is_finite(lateral_units_per_millisecond) or absf(lateral_units_per_millisecond)>2.0:
 		error = "Invalid manual angular input, lateral rate or elapsed simulation time"
 		return pose
-	_cruise.advance(pose, throttle, 0.0)
+	_cruise.advance(pose, throttle, 0.0, lateral_units_per_millisecond, forward_multiplier)
 	if not _cruise.error.is_empty():
 		error = _cruise.error
 		return pose
@@ -56,7 +56,7 @@ func advance(pose: Transform3D, angular_units: Vector2, throttle: float, seconds
 		error = "Manual rotation exceeds supported coordinates"
 		return pose
 	var heading := (pose.basis * Basis(Vector3.RIGHT, angles.x) * Basis(Vector3.UP, angles.y)).orthonormalized()
-	var next := _cruise.advance(Transform3D(heading, pose.origin), throttle, seconds, lateral_units_per_millisecond)
+	var next := _cruise.advance(Transform3D(heading, pose.origin), throttle, seconds, lateral_units_per_millisecond, forward_multiplier)
 	if not _cruise.error.is_empty():
 		error = _cruise.error
 		return pose

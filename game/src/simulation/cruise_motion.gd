@@ -32,14 +32,14 @@ func clear() -> void:
 	binding_id = ""
 	_speed_per_second = 0.0
 
-func advance(pose: Transform3D, throttle: float, seconds: float, lateral_units_per_millisecond:=0.0) -> Transform3D:
+func advance(pose: Transform3D, throttle: float, seconds: float, lateral_units_per_millisecond:=0.0, forward_multiplier:=1.0) -> Transform3D:
 	error = ""
 	if binding_id.is_empty():
 		error = "Configure ordinary cruise from this session's content before advancing"
 		return pose
 	if not is_finite(throttle) or throttle < 0.0 or throttle > 1.0 \
 			or not is_finite(seconds) or seconds < 0.0 or not is_finite(lateral_units_per_millisecond) \
-			or absf(lateral_units_per_millisecond) > 2.0:
+			or absf(lateral_units_per_millisecond) > 2.0 or not valid_multiplier(forward_multiplier):
 		error = "Invalid ordinary cruise throttle, lateral rate or elapsed simulation time"
 		return pose
 	if not pose.is_finite() or not is_finite(pose.basis.determinant()) or pose.basis.determinant() == 0.0:
@@ -47,11 +47,13 @@ func advance(pose: Transform3D, throttle: float, seconds: float, lateral_units_p
 		return pose
 	var forward := pose.basis.z.normalized()
 	var lateral := pose.basis.x.normalized()
-	var next := pose.origin + (forward * (_speed_per_second * throttle) + lateral * (lateral_units_per_millisecond * 1000.0)) * seconds
+	var next := pose.origin + (forward * (_speed_per_second * throttle * forward_multiplier) + lateral * (lateral_units_per_millisecond * 1000.0)) * seconds
 	if not forward.is_finite() or forward.is_zero_approx() or not lateral.is_finite() or lateral.is_zero_approx() or not next.is_finite():
 		error = "Cruise displacement exceeds supported coordinates"
 		return pose
 	return Transform3D(pose.basis, next)
+
+static func valid_multiplier(value: float) -> bool:return is_finite(value) and value>0.0 and value<=16.0
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
