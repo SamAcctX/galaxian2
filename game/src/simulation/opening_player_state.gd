@@ -212,8 +212,8 @@ func configure_ordinary_void(bindings: RefCounted,catalogues: RefCounted,equipme
 	var owned: Dictionary=equipment.snapshot();var loadout: Dictionary=owned.loadout
 	if loadout.get("station_id")!=-1 or loadout.get("system_id")!=-1:return reject("Void player requires equipment relocated by its portal")
 	if load("res://src/simulation/equipment_slots.gd").checked_slots(bindings,catalogues,loadout).is_empty():return reject("Void player requires valid retained equipment slots")
-	if not FlightCache.matches(previous_cache,loadout,33) or previous_cache.values.hull<=0:return reject("Void player requires its surviving portal cache")
-	if not _configure(bindings,catalogues,33,previous_cache,equipment,data):return false
+	if not FlightCache.matches(previous_cache,loadout,int(data.campaign_cursor)) or previous_cache.values.hull<=0:return reject("Void player requires its surviving portal cache")
+	if not _configure(bindings,catalogues,int(data.campaign_cursor),previous_cache,equipment,data):return false
 	_state.void_context=world.snapshot().void_context.duplicate(true)
 	return true
 
@@ -245,6 +245,7 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, cursor: int, previ
 	var selected: bool
 	if normal_return:selected=entry.configure_normal_return(bindings,contract.mission_context,owned.loadout)
 	elif contract.get("mission_context")!=null:selected=entry.configure_admitted(bindings,contract.mission_context,owned.loadout,previous_cache!=null and not (previous_cache is Dictionary and previous_cache.is_empty()))
+	elif contract.get("ordinary_void",false):selected=entry.configure_ordinary_void(bindings,contract.context,ship_id)
 	elif selected41:selected=entry.configure_selected41(bindings,contract.context,ship_id)
 	elif selected40:selected=entry.configure_selected40(bindings,contract.context,ship_id)
 	elif contract.get("context_key")=="dekato_context":selected=entry.configure_dekato(bindings,contract.context,ship_id)
@@ -322,7 +323,7 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, cursor: int, previ
 		if not FlightCache.matches(previous_cache,seed,cursor):return reject("Local arrival cache belongs to another equipped location")
 		current=FlightCache.restore_values(cache_parameters,base_hull,capacities,previous_cache.values)
 		if current.is_empty():return reject("Unsupported local arrival player values")
-		if cursor not in FlightStages.POST_SAHI and not selected41 and not normal_return and not (cursor==33 and seed.station_id==-1):current.gamma=Vitals.single(cache_parameters.gamma_full)
+		if cursor not in FlightStages.POST_SAHI and not selected41 and not normal_return and not contract.get("ordinary_void",false):current.gamma=Vitals.single(cache_parameters.gamma_full)
 	if base_hull>=0:
 		max_hull=maxi(base_hull,current.hull)
 		repair=Repair.new()

@@ -179,7 +179,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	var ordinary_void:=Story.prepared_ordinary_void(bindings,entry)
 	var void_source: RefCounted=construction.ordinary_void_source_owner()
 	var void_world: bool=ordinary_void or (sahi_world and entry.campaign_cursor in [25,29])
-	if ordinary_void and entry.departure.difficulty!=(1.0 if hard_difficulty else 0.5):return reject("Ordinary Void flight changed its retained difficulty")
+	if ordinary_void and construction.contract_owner()!=null and entry.departure.difficulty!=construction.contract_owner().snapshot().difficulty:return reject("Ordinary Void flight changed its retained difficulty")
 	var void_environment: RefCounted=construction.void_environment_owner() if void_world else null
 	if void_world and void_environment==null:return reject("Void flight requires its generated special environment")
 	if OrdinaryFlight.for_departure(bindings,entry).is_empty():return reject("This construction has no supported ordinary departure")
@@ -410,14 +410,16 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	var return_rules: Dictionary={} if sahi_world or void_world else OrdinaryFlight.docking(bindings,int(entry.campaign_cursor)+1)
 	var gate_animation: RefCounted;var gate_transit: RefCounted;var gate_destinations:=[]
 	var system_navigation: RefCounted;var navigation_destinations:=[];var drive: RefCounted
-	if free_world:
+	if free_world or (ordinary_void and construction.contract_owner()!=null):
 		system_navigation=SystemNavigation.new()
 		var career: Dictionary=construction.contract_owner().snapshot()
 		if not system_navigation.configure(bindings,catalogues,career.get("lounges",{}).get("system_availability")):return reject(system_navigation.error)
 		var observation:=entry.duplicate();observation.contracts=career;observation.mission=entry.departure.mission
-		navigation_destinations=Context.navigation_destinations(bindings,catalogues,observation)
+		navigation_destinations=[] if ordinary_void else Context.navigation_destinations(bindings,catalogues,observation)
+		var return_route:=Context.ordinary_void_route(bindings,void_source)
+		var return_location: Dictionary={} if return_route.is_empty() else {"station_id":return_route.source_station_id,"system_id":return_route.source_system_id}
 		drive=Drive.new()
-		if not drive.configure(bindings,catalogues,loadout,career.difficulty,system_navigation,navigation_destinations):return reject(drive.error)
+		if not drive.configure(bindings,catalogues,loadout,career.difficulty,system_navigation,navigation_destinations,return_location):return reject(drive.error)
 	if void_world:
 		var layout: RefCounted=load("res://src/simulation/gate_environment.gd").new()
 		gate_animation=GateAnimation.new()
@@ -470,7 +472,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_convoy_career=construction.contract_owner() if convoy!=null or alioth!=null or sahi_world or ordinary_void or bakka_world or mission_world else null
 	_selected_locations=construction.selected_locations_owner() if sahi_world and _convoy_career==null else null
 	_story_bindings=bindings if free_world or rescue_world or sahi_world or ordinary_void or bakka_world or mission_world or return_rules.get("alioth_return",false) else null
-	_story_catalogues=catalogues if sahi_world or free_world else null
+	_story_catalogues=catalogues if sahi_world or free_world or ordinary_void else null
 	_gate_animation=gate_animation;_gate_transit=gate_transit;_gate_destinations=gate_destinations
 	_system_navigation=system_navigation;_navigation_destinations=navigation_destinations
 	_drive=drive;_drive_arrival=null
@@ -1146,7 +1148,10 @@ func _construct_ordinary_portal_arrival(bindings: RefCounted,catalogues: RefCoun
 	if bindings==null or catalogues==null or bindings.base_content_id!=_entry.base_content_id or bindings.binding_id!=_entry.binding_id or catalogues.content_id!=bindings.base_content_id:reject("The ordinary portal belongs to another content identity");return null
 	var portal: Dictionary=_void_portal.snapshot()
 	var entering: bool=portal.ordinary_mode=="source_entry"
-	if _entry.campaign_cursor!=33 or portal.ordinary_mode not in ["source_entry","void_return"]:reject("The portal has no ordinary route");return null
+	if Context.ordinary_void_route(bindings,_ordinary_void_source).is_empty() or portal.ordinary_mode not in ["source_entry","void_return"]:reject("The portal has no ordinary route");return null
+	return _construct_void_trip(bindings,catalogues,_ordinary_void_source,entering,environment_seconds,unix_seconds,large_display,body_resources,effect_resources)
+
+func _construct_void_trip(bindings: RefCounted,catalogues: RefCounted,route: RefCounted,entering: bool,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted) -> RefCounted:
 	var current:=snapshot()
 	var contracts: RefCounted
 	if entering:
@@ -1157,16 +1162,16 @@ func _construct_ordinary_portal_arrival(bindings: RefCounted,catalogues: RefCoun
 	if contracts==null:reject("The ordinary portal lost its retained career");return null
 	var equipment: RefCounted=_equipment.fork()
 	var source: Dictionary=equipment.snapshot().loadout
-	if not equipment.retain_flight_cargo(current.cargo) or not equipment.relocate_ordinary_void(bindings,_ordinary_void_source,entering):reject(equipment.error);return null
-	var cache: Dictionary=load("res://src/simulation/flight_player_cache.gd").capture_ordinary_void(bindings,_ordinary_void_source,source,equipment.snapshot().loadout,current.player,entering)
+	if not equipment.retain_flight_cargo(current.cargo) or not equipment.relocate_ordinary_void(bindings,route,entering):reject(equipment.error);return null
+	var cache: Dictionary=load("res://src/simulation/flight_player_cache.gd").capture_ordinary_void(bindings,route,source,equipment.snapshot().loadout,current.player,entering)
 	if cache.is_empty():reject("The ordinary portal lost the surviving ship pools");return null
-	if not contracts.transfer_ordinary_void(bindings,current.progress,_ordinary_void_source,entering):reject(contracts.error);return null
+	if not contracts.transfer_ordinary_void(bindings,current.progress,route,entering):reject(contracts.error);return null
 	var candidate:=Construction.new()
 	var prepared: bool
 	if entering:
-		prepared=candidate.prepare_ordinary_void_selected(bindings,catalogues,equipment,_ordinary_void_source,cache,current.progress,_station_response_flags,contracts.snapshot().difficulty,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,contracts)
+		prepared=candidate.prepare_ordinary_void_selected(bindings,catalogues,equipment,route,cache,current.progress,_station_response_flags,contracts.snapshot().difficulty,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,contracts)
 	else:
-		prepared=candidate.prepare_portal_return(bindings,catalogues,equipment,contracts,_station_response_flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,cache)
+		prepared=candidate.prepare_portal_return(bindings,catalogues,equipment,contracts,_station_response_flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,cache,route)
 	if not prepared:reject(candidate.error);return null
 	return candidate
 
@@ -1809,6 +1814,7 @@ func _retain_mining_hint(seen: bool) -> void:
 func equipment_owner() -> RefCounted:return null if _equipment==null else _equipment.fork()
 
 func contract_owner() -> RefCounted:
+	if _ordinary_void_source!=null and _entry.location.station_id<0:return null if _convoy_career==null else _convoy_career.fork()
 	if _objective is ContractObjective:return _objective.retained_for_arrival(_encounter) if not _station_packet.is_empty() else _objective.contract_owner()
 	# Final mission Next already committed the complete career. The frozen
 	# pending station frame must not re-admit it through an older convoy stage.
@@ -1932,6 +1938,7 @@ func drive_available() -> bool:return _drive!=null and _drive.ready()
 func drive_quote(station_id: int) -> Dictionary:return {} if _drive==null else _drive.quote(station_id,_cargo.quantity(Drive.Definitions.ENERGY_ITEM))
 func drive_permits_mission() -> bool:
 	if _objective==null:return false
+	if _ordinary_void_source!=null and _entry.location.station_id<0:return true
 	var current: Dictionary=_objective.snapshot()
 	var job: Dictionary=current.get("contracts",{}).get("mission",{})
 	if not job.is_empty():return Drive.permits_mission(job)
@@ -1951,7 +1958,7 @@ func drive_map_observation() -> Dictionary:
 		if station_id==result.location.station_id:continue
 		var quote:=drive_quote(station_id)
 		if not quote.is_empty():quotes[station_id]=quote
-	result.drive_mode=true;result.drive_quotes=quotes
+	result.drive_mode=true;result.drive_quotes=quotes;result.drive_void_quote=drive_quote(-1);result.drive_void_prompt=true
 	return result
 
 func start_drive(station_id: int) -> RefCounted:
@@ -1966,7 +1973,10 @@ func start_drive(station_id: int) -> RefCounted:
 	next._equipment=next._equipment.fork()
 	if not next._equipment.retain_flight_cargo(operation.cargo.snapshot()):reject(next._equipment.error);return null
 	var capability:=Context.new()
-	if not capability.admit_drive_arrival(_story_bindings,_story_catalogues,next._equipment.snapshot().loadout,contract_owner(),station_id):reject(capability.error);return null
+	if operation.quote.mode=="void_entry":
+		if not capability.admit_drive_void(_story_bindings,_story_catalogues,next._equipment.snapshot().loadout,contract_owner()):reject(capability.error);return null
+	elif operation.quote.mode=="void_exit":capability=_ordinary_void_source
+	elif not capability.admit_drive_arrival(_story_bindings,_story_catalogues,next._equipment.snapshot().loadout,contract_owner(),station_id):reject(capability.error);return null
 	if not next._notices.enqueue_energy_spent(int(operation.quote.cost)):reject(next._notices.error);return null
 	next._drive=operation.drive;next._cargo=operation.cargo;next._drive_arrival=capability
 	next._pending_destination=-1;next._navigation_applied=true
@@ -1988,6 +1998,8 @@ func _advance_drive(milliseconds: int) -> bool:
 func prepare_drive_arrival() -> Dictionary:return {} if _drive==null or death_active() else _drive.arrival_request()
 func construct_drive_arrival(bindings: RefCounted,cat: RefCounted,environment_seconds: Variant,unix_seconds: Variant,large_display:=true,bodies: RefCounted=null,effects: RefCounted=null,settings: Dictionary={},library: RefCounted=null) -> RefCounted:
 	if prepare_drive_arrival().is_empty() or _drive_arrival==null:reject("Finish the Khador transit before arriving");return null
+	var trip:=prepare_drive_arrival()
+	if trip.mode in ["void_entry","void_exit"]:return _construct_void_trip(bindings,cat,_drive_arrival,trip.mode=="void_entry",environment_seconds,unix_seconds,large_display,bodies,effects)
 	return _construct_arrival(bindings,cat,_drive_arrival.arrival_packet(),environment_seconds,unix_seconds,large_display,bodies,effects,settings,library,false,_drive_arrival)
 
 func cloak_state() -> Dictionary:return {} if _player==null else _player.cloak_state()

@@ -137,7 +137,7 @@ func configure(library: RefCounted, bindings: RefCounted, audio_seed: int=0, cam
 		if not _resources.configure_local_traffic(library,bindings):return reject(_resources.error)
 	# Ordinary Void and the contest have combat but no timed radio. Resolve
 	# their original clips through the base bank without inventing a radio scene.
-	elif not _resources.configure(library,bindings,0 if admitted_silent or contest or campaign_cursor in [2,4,26,33] else campaign_cursor):return reject(_resources.error)
+	elif not _resources.configure(library,bindings,0 if admitted_silent or contest or local_combat.get("ordinary_void",false) or campaign_cursor in [2,4,26] else campaign_cursor):return reject(_resources.error)
 	for id in [_npc_scan_sound,_debris_sound,_notification_sound]:
 		if id>=0 and _resources.prepare(id).is_empty():return reject(_resources.error)
 	for id in _travel_sounds:

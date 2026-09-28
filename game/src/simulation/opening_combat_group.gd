@@ -705,6 +705,7 @@ func snapshot() -> Dictionary:
 	result.activated = _activated
 	result.phase = _phase
 	result.actors = actor_snapshots()
+	if _training_weapons.get("ordinary_void",false):result.ordinary_void=true
 	if _training_weapons.has("free_lifecycle"):result.free_context=_training_weapons.free_context.duplicate(true)
 	return result
 

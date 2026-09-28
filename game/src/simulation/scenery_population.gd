@@ -135,7 +135,7 @@ func for_void_crystals(context: Variant) -> Dictionary:
 	var result:=for_station(int(_void_crystal_field.station_seed))
 	if result.is_empty():return {}
 	result.center=Vector3(float(_void_crystal_field.center[0]),float(_void_crystal_field.center[1]),float(_void_crystal_field.center[2]))
-	result.campaign_cursor=int(_travel.void_crystals.mission33.campaign_cursor)
+	result.campaign_cursor=int(context.campaign_cursor)
 	result.count_random_state=result.random_state.duplicate(true)
 	return result
 

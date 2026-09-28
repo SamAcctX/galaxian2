@@ -68,6 +68,7 @@ func open_drive_selector() -> bool:
 		if not choose_free_keyboard_flight_action(KEY_E,"khador"):check(false,"Khador is absent from flight actions");return false
 	else:drive_key(KEY_K)
 	check(app.map_panel.visible and app.map_panel.snapshot().drive_mode,"Khador input did not open its galaxy selector")
+	if app.map_panel.snapshot().get("void_prompt",false):drive_key(KEY_ESCAPE)
 	return failures==0
 
 func drive_key(code: int) -> void:
@@ -76,7 +77,7 @@ func drive_key(code: int) -> void:
 
 func complete_drive(destination: int) -> bool:
 	var started: Dictionary=app.session.snapshot()
-	check(started.flight_notices.pending.any(func(row):return row.get("kind")=="energy_spent" and row.text.begins_with("-2t ")),"Charging omitted the spent-fuel notice")
+	check(started.flight_notices.pending.any(func(row):return row.get("kind")=="energy_spent" and row.text.begins_with("-%dt "%int(started.khador.trip.cost))),"Charging omitted the spent-fuel notice")
 	var phases:={};var began:=now_us
 	app.session.rebase_time(now_us)
 	while app.session.status=="running" and now_us-began<12000000:

@@ -93,7 +93,7 @@ func _configure_field(bindings: RefCounted, catalogues: RefCounted, unix_seconds
 	var field:=Field.new()
 	# Only the source-selected Void entry uses the special-location field.
 	# Field.configure still owns capability and location admission.
-	if not field.configure(bindings,catalogues,station_id,station_id==-1 and campaign_cursor in [25,29,33,41],false,campaign_cursor):return reject(field.error)
+	if not field.configure(bindings,catalogues,station_id,station_id==-1,false,campaign_cursor):return reject(field.error)
 	var random := Generator.new()
 	if retained_random.is_empty():random.seed_from(unix_seconds)
 	elif not random.restore(retained_random):return reject(random.error)
@@ -347,7 +347,7 @@ func configure_ordinary_void(bindings: RefCounted,catalogues: RefCounted,equipme
 	selected_context.merge(entry_conditions,true)
 	var selected:=population.for_void_crystals(selected_context)
 	if selected.is_empty():return reject(population.error)
-	if not _configure_field(bindings,catalogues,unix_seconds,-1,33,selected.center,large_display,body_resources,effect_resources):return false
+	if not _configure_field(bindings,catalogues,unix_seconds,-1,int(context.campaign_cursor),selected.center,large_display,body_resources,effect_resources):return false
 	if not _finish_world_initialization(world,equipment):
 		var message:=error;clear();return reject(message)
 	_departure_population=selected

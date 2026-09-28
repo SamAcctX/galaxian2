@@ -61,8 +61,8 @@ func configure(bindings: RefCounted, cursor: Variant, kinds: Variant, difficulty
 		for group in bindings.mido_travel.thynome_expedition.world28.cast.groups:
 			for _index in int(group.count):authored.append(int(group.actor_kind))
 		story=kinds==authored
-	var void_maximum: int=TrafficPopulation.maximum_void_actor_count_for_rank(bindings,ordinary_void_rank) if cursor==33 else -1
-	var ordinary_void: bool=cursor==33 and not rescue_context and Numbers.integer(ordinary_void_system_id,0,2147483647) and kinds.size()>=1 and kinds.size()<=void_maximum and kinds.all(func(kind):return kind is int and kind==9)
+	var void_maximum: int=TrafficPopulation.maximum_void_actor_count_for_rank(bindings,ordinary_void_rank) if ordinary_void_system_id!=null else -1
+	var ordinary_void: bool=not rescue_context and Numbers.integer(ordinary_void_system_id,0,2147483647) and kinds.size()>=1 and kinds.size()<=void_maximum and kinds.all(func(kind):return kind is int and kind==9)
 	if (ordinary_void_system_id!=null or ordinary_void_rank!=null) and not ordinary_void:return reject("Void reputation requires a source-system fighter population")
 	if rescue_context and not kappa:return reject("Rescue reputation requires its authored cast")
 	if bakka_context and not bakka:return reject("B'akka reputation requires its authored cast")

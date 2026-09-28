@@ -992,7 +992,10 @@ func open_map(now_microseconds: int=-1,drive_mode:=false) -> bool:
 	if not _focused or not is_visible_in_tree():return false
 	var docked: bool=_station_map_available()
 	if drive_mode and not docked and (not session is FirstFlightSession or not session.request_drive_map()):present_session();return false
-	if not docked and (not session is FirstFlightSession or not session.can_open_map()):return false
+	if drive_mode and not docked and session.snapshot().location.station_id<0 and session.flight_owner().drive_quote(-1).get("affordable",false):
+		var started: bool=session.activate_drive_return(Time.get_ticks_usec() if now_microseconds<0 else now_microseconds)
+		clear_input();present_session();return started
+	if not docked and (not session is FirstFlightSession or (not drive_mode and not session.can_open_map())):return false
 	var catalogues:=Catalogues.new()
 	if not catalogues.open(library):status.text=catalogues.error;return false
 	var observation: Dictionary=_station_map_observation() if docked else (session.drive_map_observation() if drive_mode and session.drive_available() else session.snapshot())
@@ -1001,7 +1004,7 @@ func open_map(now_microseconds: int=-1,drive_mode:=false) -> bool:
 	if docked:
 		if not session.set_pause("map",true,now):map_panel.clear();status.text=session.error;return false
 		_station_map_open=true
-	elif not session.open_map(now):map_panel.clear();status.text=session.error;return false
+	elif not session.open_map(now,drive_mode):map_panel.clear();status.text=session.error;return false
 	clear_input();present_session();return true
 
 func close_map(now_microseconds: int=-1) -> bool:
@@ -1065,7 +1068,7 @@ func confirm_map_planet(station_id: int, now_microseconds: int=-1) -> bool:
 	var now:=Time.get_ticks_usec() if now_microseconds<0 else now_microseconds
 	var accepted: bool
 	if session.status=="gate_map_required":accepted=session.close_gate_map(true,station_id,now)
-	elif map_panel.snapshot().get("drive_mode",false) and not map_panel.snapshot().get("gate_alternative",false) and map_panel.snapshot().system_id!=session.snapshot().location.system_id:accepted=session.confirm_drive_destination(station_id,now)
+	elif map_panel.snapshot().get("drive_mode",false) and not map_panel.snapshot().get("gate_alternative",false) and (station_id<0 or map_panel.snapshot().system_id!=session.snapshot().location.system_id):accepted=session.confirm_drive_destination(station_id,now)
 	elif map_panel.snapshot().route_mode=="gate":accepted=session.confirm_map_gate(station_id,now)
 	else:accepted=session.confirm_map_planet(station_id,now)
 	if not accepted:map_panel.set_error(session.error);return false

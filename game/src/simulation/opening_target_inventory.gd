@@ -105,7 +105,7 @@ func configure_ordinary_void(bindings: RefCounted,catalogues: RefCounted,player:
 	var world: RefCounted=scenery.world_initialization_owner()
 	var initial: Dictionary={} if world==null else world.snapshot()
 	var source: Dictionary=player.loadout();var field: Dictionary=scenery.snapshot()
-	if initial.get("campaign_cursor")!=33 or not initial.get("void_context") is Dictionary or source.get("campaign_cursor")!=33 or source.get("station_id")!=-1 or source.get("system_id")!=-1:return reject("Void target player differs from the selected location")
+	if initial.get("campaign_cursor")!=data.campaign_cursor or not initial.get("void_context") is Dictionary or source.get("campaign_cursor")!=data.campaign_cursor or source.get("station_id")!=-1 or source.get("system_id")!=-1:return reject("Void target player differs from the selected location")
 	for key in initial.void_context:
 		if data.context.get(key)!=initial.void_context[key]:return reject("Void target selection changed after fighter construction")
 	if source.get("base_content_id")!=bindings.base_content_id or source.get("binding_id")!=bindings.binding_id or initial.get("base_content_id")!=bindings.base_content_id or initial.get("binding_id")!=bindings.binding_id:return reject("Void target content identity changed")

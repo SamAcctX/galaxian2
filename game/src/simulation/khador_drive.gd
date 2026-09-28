@@ -61,7 +61,7 @@ func quote(station_id: int,energy: int) -> Dictionary:
 		if destination.system_id==_location.system_id:mode="local"
 	var result:=_device.duplicate()
 	result.merge({"mode":mode,"from_station_id":_location.station_id,"from_system_id":_location.system_id,
-		"station_id":destination.station_id,"system_id":destination.system_id,"cost":cost,"required":required,"affordable":energy>=required,
+		"station_id":destination.station_id,"system_id":destination.system_id,"cost":cost,"energy":energy,"required":required,"affordable":energy>=required,
 		"return_warning":mode=="normal" and destination.get("no_gate",false) and energy<cost*2,
 		"gate_alternative":mode=="normal" and cost==1 and energy<cost,
 		"return_location":_location.duplicate() if mode=="void_entry" else _return_location.duplicate()})

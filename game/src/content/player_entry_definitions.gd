@@ -83,6 +83,13 @@ func configure(bindings: RefCounted, value: int, station_id: int=-1, restoring_l
 
 ## Explicit native story selection, not an extension of generic free entry.
 ## The player adapter requires an actual surviving cache for this arrival.
+func configure_ordinary_void(bindings: RefCounted,context: Dictionary,ship_id: int) -> bool:
+	if not load("res://src/content/void_crystal_definitions.gd").selected_void(bindings.mido_travel,context):return reject("Void player entry lost its admitted world")
+	cursor=int(context.campaign_cursor);_kind="ordinary_void";_travel=bindings.mido_travel.duplicate(true)
+	equipped_entry=Cache.ordinary_void_entry(_travel,ship_id,cursor)
+	uses_equipment=true;is_arrival=false;is_departure=false;restores_local=true
+	return not equipped_entry.is_empty()
+
 func configure_dekato(bindings: RefCounted,context: Dictionary,ship_id: int) -> bool:
 	error="";cursor=-1;is_arrival=false;is_departure=false;uses_equipment=false
 	equipped_entry={};_kind="";_departure={};_training={};_pirate={};_travel={};restores_local=false
@@ -149,7 +156,7 @@ func player_cache(parameters: Dictionary, seed: Dictionary, hull: int, capacitie
 	if _kind=="kappa":return Cache.kappa_rescue_cache(parameters,_travel,seed,hull,capacities,reset)
 	if _kind=="sahi":return Cache.sahi_cache(parameters,_travel,seed,hull,capacities,reset,cursor)
 	if _kind=="post_sahi":return Cache.post_sahi_cache(parameters,_travel,seed,hull,capacities,reset,cursor)
-	if _kind=="ordinary_void":return Cache.ordinary_void_cache(parameters,_travel,seed,hull,capacities,reset)
+	if _kind=="ordinary_void":return Cache.ordinary_void_cache(parameters,_travel,seed,hull,capacities,reset,cursor)
 	if _kind=="free":return Cache._departure_cache(parameters,equipped_entry,seed,hull,capacities,reset)
 	if _kind in ["local","convoy"]:return Cache.local_travel_cache(parameters,_travel,seed,hull,capacities,reset,cursor)
 	if _kind=="training":return Cache.combat_training_cache(parameters,_training,seed,hull,capacities,reset)

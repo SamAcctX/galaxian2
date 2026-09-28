@@ -52,6 +52,22 @@ static func for_departure(bindings: RefCounted, entry: Dictionary) -> Dictionary
 
 ## Resource preparation is separate from supported flight construction. This
 ## lets the original lesson be checked without opening an unfinished mission.
+static func ordinary_void_briefing(bindings: RefCounted,entry: Dictionary) -> Dictionary:
+	if not Authored.prepared_ordinary_void(bindings,entry):return {}
+	var result:=MiningStory.briefing(bindings,2)
+	result.campaign_cursor=int(entry.campaign_cursor);result.mission_kind=-1;result.events=[]
+	result.entry_release_ms=int(bindings.mido_travel.free_flight.launch_clear_after_ms)+1
+	return result
+
+static func ordinary_void_objective(bindings: RefCounted,entry: Dictionary) -> Dictionary:
+	if not Authored.prepared_ordinary_void(bindings,entry):return {}
+	var result:=MiningStory.objective(bindings,2)
+	var mission: Dictionary=entry.departure.mission
+	result.campaign_cursor=int(entry.campaign_cursor);result.mission_kind=int(mission.get("kind",-1))
+	result.station_id=int(mission.get("station_id",-1));result.required_cargo=0;result.events=[]
+	result.portal_controlled=true;result.mission=mission.duplicate(true)
+	return result
+
 static func briefing_presentation(bindings: RefCounted,cursor: Variant,ordinary_world:=false) -> Dictionary:
 	var recipe:=MissionRecipe.select_flight(bindings,cursor)
 	if not recipe.is_empty() and not ordinary_world:return MissionRecipe.briefing(bindings,recipe)

@@ -17,10 +17,10 @@ func configure(bindings: RefCounted,random_state: Dictionary,cursor:=25) -> bool
 
 func configure_ordinary(bindings: RefCounted,random_state: Dictionary,source: RefCounted) -> bool:
 	error=""
-	if not Definitions.available(bindings) or not source is VoidSource or not Crystals.parameters(bindings.mido_travel.get("void_crystals")):return reject("The ordinary Void environment requires its retained source")
-	var retained: Dictionary=source.snapshot()
+	if not Definitions.available(bindings) or load("res://src/simulation/mission_context.gd").ordinary_void_route(bindings,source).is_empty() or not Crystals.parameters(bindings.mido_travel.get("void_crystals")):return reject("The ordinary Void environment requires its retained source")
+	var retained: Dictionary=load("res://src/simulation/mission_context.gd").ordinary_void_route(bindings,source)
 	if retained.get("base_content_id")!=bindings.base_content_id or retained.get("binding_id")!=bindings.binding_id:return reject("The Void source belongs to another content identity")
-	return _configure(bindings,random_state,33,int(retained.source_station_id),int(retained.source_system_id),bindings.mido_travel.void_crystals.field)
+	return _configure(bindings,random_state,int(retained.campaign_cursor),int(retained.source_station_id),int(retained.source_system_id),bindings.mido_travel.void_crystals.field)
 
 ## The real late portal selects the same Void station and incoming gate. The
 ## mission's later cast placement overrides the player, not these gate draws.

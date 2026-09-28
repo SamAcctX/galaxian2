@@ -91,13 +91,13 @@ func configure_ordinary(bindings: RefCounted,entry: Dictionary,source_owner: Ref
 	error=""
 	if bindings==null or not bindings.mido_travel is Dictionary or not Definitions.coherent(bindings.mido_travel) or not Access.parameters(bindings.mido_travel.get("void_access")):
 		return reject("Ordinary Void portal declarations are unavailable")
-	if not source_owner is Source:return reject("Ordinary Void portal requires its retained native source")
-	var source: Dictionary=source_owner.snapshot()
-	if source.size()!=5 or source.get("base_content_id")!=bindings.base_content_id or source.get("binding_id")!=bindings.binding_id or not source.get("source_system_id") is int or not source.get("source_station_id") is int or source.source_system_id<0 or source.source_station_id<0:
+	if load("res://src/simulation/mission_context.gd").ordinary_void_route(bindings,source_owner).is_empty():return reject("Ordinary Void portal requires its retained native source")
+	var source: Dictionary=load("res://src/simulation/mission_context.gd").ordinary_void_route(bindings,source_owner)
+	if source.get("base_content_id")!=bindings.base_content_id or source.get("binding_id")!=bindings.binding_id or not source.get("source_system_id") is int or not source.get("source_station_id") is int or source.source_system_id<0 or source.source_station_id<0:
 		return reject("Ordinary Void portal source belongs to another content or location")
 	var ordinary: Dictionary=bindings.mido_travel.void_access.ordinary_portal
-	if not entry.get("campaign_cursor") is int or entry.campaign_cursor!=int(ordinary.entry_cursor) or not entry.get("mission_kind") is int or entry.mission_kind!=int(ordinary.selected_mission_kind_at_source_flight):
-		return reject("Ordinary Void portal requires cursor33's sentinel selection")
+	if not entry.get("campaign_cursor") is int or entry.campaign_cursor!=source.campaign_cursor or not entry.get("mission_kind") is int or entry.mission_kind!=int(ordinary.selected_mission_kind_at_source_flight):
+		return reject("Ordinary Void portal requires its admitted sentinel selection")
 	if entry.get("mission_story")!=false or not entry.get("mission_story") is bool:
 		return reject("Ordinary Void portal requires a nonstory sentinel selection")
 	for key in ["system_id","station_id","current_station_id","void_station_id"]:

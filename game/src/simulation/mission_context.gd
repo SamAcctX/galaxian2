@@ -14,6 +14,7 @@ var _legacy_flight:={}
 var _live_cursors: Array=[]
 var _arrival_source:={}
 var _arrival_packet:={}
+var _void_visit:={}
 
 ## Map browsing and course entry share the same supported destination set.
 ## Availability comes from the retained career, never from visiting the map.
@@ -84,6 +85,46 @@ func admit_drive_arrival(bindings: RefCounted,cat: RefCounted,loadout: Dictionar
 	_arrival_packet=_identity.duplicate()
 	_arrival_packet.merge({"from_station_id":loadout.station_id,"from_system_id":loadout.system_id,"station_id":station_id,"system_id":station.system_id,"kind":"khador"})
 	return true
+
+## The return planet is the actual departure location, independent of the
+## career's randomly placed wormhole. This capability is immutable after entry.
+func admit_drive_void(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,career: RefCounted) -> bool:
+	error=""
+	if not _identity.is_empty() or drive_destinations(bindings,cat,career).is_empty():return reject("This career has no admitted drive travel")
+	if not _accept_equipment(bindings,cat,loadout):return false
+	var current: Dictionary=career.snapshot()
+	var station: int=int(loadout.get("station_id",-1))
+	if station<0 or station>=cat.tables.stations.size() or current.station_id!=station or loadout.get("system_id")!=cat.tables.stations[station].system_id or not loadout.equipment_ids.has(85):return reject("The Void visit lost its fitted ship or actual departure planet")
+	if not load("res://src/content/void_crystal_definitions.gd").parameters(bindings.mido_travel.get("void_crystals")):return reject("The ordinary Void world is unavailable")
+	for key in ["base_content_id","binding_id"]:
+		if current.get(key)!=bindings.get(key) or loadout.get(key)!=bindings.get(key):return reject("The Void visit belongs to another content source")
+	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(current.campaign_cursor)}
+	_void_visit=_identity.duplicate()
+	_void_visit.merge({"source_station_id":station,"source_system_id":int(loadout.system_id)})
+	_arrival_source=loadout.duplicate(true)
+	return true
+
+static func ordinary_void_route(bindings: RefCounted,owner: RefCounted) -> Dictionary:
+	if bindings==null or owner==null:return {}
+	var route: Dictionary={}
+	if is_instance_of(owner,load("res://src/simulation/mission_context.gd")):route=owner._void_visit.duplicate()
+	elif is_instance_of(owner,load("res://src/simulation/ordinary_void_source.gd")):
+		route=owner.snapshot();route.campaign_cursor=int(bindings.mido_travel.void_access.ordinary_portal.entry_cursor)
+	if route.get("base_content_id")!=bindings.base_content_id or route.get("binding_id")!=bindings.binding_id or route.get("source_station_id",-1)<0 or route.get("source_system_id",-1)<0:return {}
+	return route
+
+static func ordinary_void_selection(travel: Dictionary,context: Dictionary) -> bool:
+	if not context.get("campaign_cursor") is int:return false
+	var admission: Variant=context.get("void_admission")
+	if admission!=null:
+		if not is_instance_of(admission,load("res://src/simulation/mission_context.gd")) or admission._void_visit.is_empty() or context.get("campaign_cursor")!=admission._void_visit.campaign_cursor:return false
+	elif context.get("campaign_cursor")!=int(travel.get("void_crystals",{}).get("mission33",{}).get("campaign_cursor",-1)):return false
+	var expected:={"selected_system_id":-1,"selected_station_id":-1,"retained_system_id":-1,"retained_station_id":-1,"selected_mission_kind":-1,"selected_mission_story":false,"location_match":true}
+	for key in expected:
+		if typeof(context.get(key))!=typeof(expected[key]) or context[key]!=expected[key]:return false
+	return true
+
+func fork() -> RefCounted:return self # Admitted capabilities have no mutators.
 
 func arrival_source_matches(loadout: Dictionary) -> bool:return not _arrival_packet.is_empty() and loadout==_arrival_source
 func arrival_loadout() -> Dictionary:return {} if _arrival_packet.is_empty() else _loadout.duplicate(true)

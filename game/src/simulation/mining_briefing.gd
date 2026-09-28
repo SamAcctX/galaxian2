@@ -23,6 +23,7 @@ func configure(bindings: RefCounted, library: RefCounted, construction: RefCount
 	if Ordinary.for_departure(bindings,flight).is_empty():return reject("This construction has no connected ordinary flight context")
 	var training: bool=flight.get("campaign_cursor")==7
 	var rules:=Ordinary.briefing(bindings,flight.get("campaign_cursor"),(Ordinary.FreeFlight.ordinary_entry(bindings,flight) or flight.get("scenery",{}).get("world_initialization",{}).has("contract_context")),int(flight.location.station_id))
+	if Ordinary.Authored.prepared_ordinary_void(bindings,flight):rules=Ordinary.ordinary_void_briefing(bindings,flight)
 	var mission_context: RefCounted=construction.mission_context_owner()
 	if mission_context!=null and mission_context.advances_campaign():rules=Ordinary.MissionRecipe.briefing(bindings,mission_context.recipe())
 	if rules.is_empty():return reject("This departure has no supported mining briefing")

@@ -28,15 +28,7 @@ static func conversation(bindings: RefCounted,cursor: Variant,mission: Variant) 
 ## Detached world-component selection; campaign and portal admission remain
 ## with their native owners. Scenery and population share this boundary.
 static func selected_void(travel: Dictionary,context: Dictionary) -> bool:
-	if not parameters(travel.get("void_crystals")) or not VoidAccess.parameters(travel.get("void_access")):return false
-	var portal: Dictionary=travel.void_access.ordinary_portal
-	var expected:={"campaign_cursor":int(travel.void_crystals.mission33.campaign_cursor),
-		"selected_system_id":int(portal.selected_void_system_id),"selected_station_id":int(portal.selected_void_station_id),
-		"retained_system_id":int(portal.retained_void_system_id),"retained_station_id":int(portal.retained_void_station_id),
-		"selected_mission_kind":int(portal.selected_mission_kind_at_source_flight)}
-	for key in expected:
-		if not context.get(key) is int or context[key]!=expected[key]:return false
-	return context.get("selected_mission_story") is bool and context.selected_mission_story==portal.selected_mission_story_at_source_flight and context.get("location_match") is bool and context.location_match
+	return parameters(travel.get("void_crystals")) and VoidAccess.parameters(travel.get("void_access")) and load("res://src/simulation/mission_context.gd").ordinary_void_selection(travel,context)
 
 static func shared_field(population: Variant, resources: Variant) -> bool:
 	if not population is Dictionary or not resources is Dictionary:return false

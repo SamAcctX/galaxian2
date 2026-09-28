@@ -222,11 +222,11 @@ func return_from_void(bindings: RefCounted,progress: Dictionary,cursor:=26) -> b
 ## carries its earned counters and existing job between the two retained places.
 func transfer_ordinary_void(bindings: RefCounted,progress: Dictionary,source: RefCounted,entering: bool) -> bool:
 	error=""
-	if bindings==null or not Campaign.supported(bindings.mido_travel,33) or not source is VoidSource or _void_source==null:return reject("Ordinary Void travel requires its retained source career")
-	var route: Dictionary=source.snapshot()
-	if route!=_void_source.snapshot() or route.source_station_id<0:return reject("The portal changed the career's retained source")
-	if _lounges==null or _lounges.selection_state().current_station_id!=route.source_station_id:return reject("The portal lost its retained ordinary location")
-	return _retain_story_progress(bindings,progress,33,33,int(route.source_station_id) if entering else -1,-1 if entering else int(route.source_station_id),true)
+	var route: Dictionary=load("res://src/simulation/mission_context.gd").ordinary_void_route(bindings,source)
+	if route.is_empty():return reject("Ordinary Void travel requires its admitted return route")
+	if source is VoidSource and (_void_source==null or source.snapshot()!=_void_source.snapshot()):return reject("The portal changed the career's retained source")
+	if _lounges==null or _lounges.selection_state().current_station_id!=route.source_station_id:return reject("The Void visit lost its retained ordinary location")
+	return _retain_story_progress(bindings,progress,route.campaign_cursor,route.campaign_cursor,int(route.source_station_id) if entering else -1,-1 if entering else int(route.source_station_id),true)
 
 ## Keep the independent job and final combat counters while the world changes.
 var _station_context: RefCounted

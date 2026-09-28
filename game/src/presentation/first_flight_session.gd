@@ -193,8 +193,8 @@ func _configure_construction(library: RefCounted, bindings: RefCounted, visuals:
 	briefing_audio=Speech.new();add_child(briefing_audio)
 	objective_audio=Speech.new();add_child(objective_audio)
 	if FreeFlight.Campaign.active_visit(bindings.mido_travel,entry.departure.get("free_context",{})) and not objective_audio.configure_campaign_visit(library,bindings,cursor,entry.departure.mission):return fail(objective_audio.error)
-	var ordinary: bool=ContractWorld.ordinary_entry(bindings,entry) or FreeFlight.ordinary_entry(bindings,entry)
-	var speech:=Frame.OrdinaryFlight.briefing_presentation(bindings,cursor,ordinary)
+	var ordinary: bool=ContractWorld.ordinary_entry(bindings,entry) or FreeFlight.ordinary_entry(bindings,entry) or Frame.Story.prepared_ordinary_void(bindings,entry)
+	var speech:=Frame.OrdinaryFlight.ordinary_void_briefing(bindings,entry) if Frame.Story.prepared_ordinary_void(bindings,entry) else Frame.OrdinaryFlight.briefing_presentation(bindings,cursor,ordinary)
 	if not speech.get("events",[]).is_empty() and not briefing_audio.configure_mining_briefing(library,bindings,cursor):return fail(briefing_audio.error)
 	if not ordinary and not objective_audio.configure_mining_objective(library,bindings,cursor):return fail(objective_audio.error)
 	if entry.has("bakka_context") or entry.has("dekato_context"):
@@ -394,6 +394,13 @@ func drive_fitted() -> bool:return _world!=null and _world.drive_fitted()
 func drive_available() -> bool:return _world!=null and _world.drive_available()
 func drive_map_observation() -> Dictionary:return _world.drive_map_observation()
 
+func activate_drive_return(now_microseconds: int) -> bool:
+	if not can_control() or _world.snapshot().location.station_id>=0:return reject("Direct drive return requires released Void flight")
+	var world: RefCounted=_world.start_drive(-1)
+	if world==null:return reject(_world.error)
+	if not _commit(world,false):return false
+	return rebase_time(now_microseconds)
+
 func confirm_drive_destination(station_id: int,now_microseconds: int) -> bool:
 	if not map_active():return reject("The drive map does not own input")
 	var world: RefCounted=_world.start_drive(station_id)
@@ -437,8 +444,8 @@ func _commit_gate_choice(world: RefCounted,now_microseconds: int) -> bool:
 	_clock=clock;_throttle=_world.control_throttle()
 	return true
 
-func open_map(now_microseconds: int) -> bool:
-	if not can_open_map():return reject("The local map is unavailable during this flight phase")
+func open_map(now_microseconds: int,drive:=false) -> bool:
+	if not ((drive and can_control() and drive_available()) or can_open_map()):return reject("The local map is unavailable during this flight phase")
 	return set_pause("map",true,now_microseconds)
 
 func map_open() -> bool:return _pauses.has("map")

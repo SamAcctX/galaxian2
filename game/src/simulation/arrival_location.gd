@@ -131,12 +131,12 @@ func resolve_ordinary_void(bindings: RefCounted,catalogues: RefCounted,equipment
 	if bindings==null or catalogues==null or not equipment is Equipment or not is_instance_of(environment,load("res://src/simulation/void_environment.gd")):return reject("Ordinary Void location requires its native equipment and environment")
 	var seed: Dictionary=equipment.snapshot().get("loadout",{})
 	var place: Dictionary=environment.snapshot()
-	if catalogues.content_id!=bindings.base_content_id or Cache.ordinary_void_entry(bindings.mido_travel,int(seed.get("ship_id",-1))).is_empty() or not Cache.matches(player_cache,seed,33):return reject("Ordinary Void location requires its matching player cache")
+	if catalogues.content_id!=bindings.base_content_id or Cache.ordinary_void_entry(bindings.mido_travel,int(seed.get("ship_id",-1))).is_empty() or not Cache.matches(player_cache,seed,int(place.get("campaign_cursor",-1))):return reject("Ordinary Void location requires its matching player cache")
 	for key in ["base_content_id","binding_id"]:
 		if seed.get(key)!=bindings.get(key) or place.get(key)!=bindings.get(key):return reject("Ordinary Void location belongs to another identity")
-	if seed.get("station_id")!=-1 or seed.get("system_id")!=-1 or place.get("campaign_cursor")!=33 or place.get("return_station_id",-1)<0 or place.get("return_system_id",-1)<0:return reject("Ordinary Void location lost its retained return destination")
+	if seed.get("station_id")!=-1 or seed.get("system_id")!=-1 or place.get("return_station_id",-1)<0 or place.get("return_system_id",-1)<0:return reject("Ordinary Void location lost its retained return destination")
 	var result:=seed.duplicate(true)
-	result.merge({"campaign_cursor":33,"world_type":int(bindings.first_flight.world_type),"void_location":true,
+	result.merge({"campaign_cursor":int(place.campaign_cursor),"world_type":int(bindings.first_flight.world_type),"void_location":true,
 		"sky_index":-1,"sky_parameters":place.sky.duplicate(true),"current_planet_texture_id":-1,
 		"return_station_id":place.return_station_id,"return_system_id":place.return_system_id},true)
 	return result

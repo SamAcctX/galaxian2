@@ -304,12 +304,16 @@ func prepare_mission_return(bindings: RefCounted,catalogues: RefCounted,transfer
 	_equipment=candidate._equipment;_contracts=candidate._contracts;_selected_locations=contracts.location_owner()
 	return true
 
-func prepare_portal_return(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,contracts: RefCounted,flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,previous_cache: Dictionary) -> bool:
+func prepare_portal_return(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,contracts: RefCounted,flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,previous_cache: Dictionary,route_owner: RefCounted=null) -> bool:
 	if not Campaign.expedition_available(bindings.mido_travel) or contracts==null or not equipment is Equipment:return reject("The Void return requires its retained expedition career and ship")
 	var cursor: int=contracts.snapshot().get("campaign_cursor",-1)
-	if cursor not in [30,33]:return reject("This career has no ordinary portal return")
+	var route: Dictionary=MissionContext.ordinary_void_route(bindings,route_owner)
+	if route.is_empty() and cursor not in [30,33]:return reject("This career has no ordinary portal return")
 	var station_id:=91;var system_id:=18
-	if cursor==33:
+	if not route.is_empty():
+		if route.campaign_cursor!=cursor:return reject("The Void return changed its admitted career")
+		station_id=route.source_station_id;system_id=route.source_system_id
+	elif cursor==33:
 		var source: RefCounted=contracts.void_source_owner()
 		if source==null:return reject("The ordinary return lost its recorded source")
 		var retained: Dictionary=source.snapshot()
@@ -319,7 +323,7 @@ func prepare_portal_return(bindings: RefCounted,catalogues: RefCounted,equipment
 	if previous_cache.values.hull<=0:return reject("The Void return cannot restore a destroyed ship")
 	var incoming:=Incoming.new()
 	if not incoming.configure(bindings,catalogues,station_id,contracts.location_owner(),cursor):return reject(incoming.error)
-	return _prepare_free_owned(bindings,catalogues,equipment,contracts,Campaign.mission(bindings.mido_travel,cursor),flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,previous_cache,incoming,-1)
+	return _prepare_free_owned(bindings,catalogues,equipment,contracts,Campaign.mission(bindings,cursor),flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources,previous_cache,incoming,-1)
 
 ## Compose a selected Dekato arrival from the actual target-world owners.
 ## This never relocates equipment, creates a cache, authorizes travel or saves.
@@ -468,18 +472,21 @@ func prepare_post_sahi_selected(bindings: RefCounted,catalogues: RefCounted,equi
 ## neither advances the campaign nor grants navigation, crystals or rewards.
 func prepare_ordinary_void_selected(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,source: RefCounted,previous_cache: Dictionary,progress: Dictionary,station_response_flags: Dictionary,difficulty: Variant,environment_seconds: Variant,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null,contracts: RefCounted=null) -> bool:
 	error=""
-	if bindings==null or catalogues==null or not equipment is Equipment or not source is Story.VoidSource:return reject("Ordinary Void construction requires retained equipped content and its native source")
-	if not _valid_selected_progress(bindings,progress,33,progress.get("rank"),difficulty):return false
+	if bindings==null or catalogues==null or not equipment is Equipment:return reject("Ordinary Void construction requires retained equipped content and its native source")
+	var retained: Dictionary=MissionContext.ordinary_void_route(bindings,source)
+	if retained.is_empty():return reject("Void construction requires its admitted return route")
+	var cursor:=int(retained.campaign_cursor)
+	if not _valid_selected_progress(bindings,progress,cursor,progress.get("rank"),difficulty):return false
 	if not FreeFlight.response_flags(bindings,station_response_flags):return reject("Ordinary Void construction lost its station responses")
-	var retained: Dictionary=source.snapshot()
 	if retained.get("base_content_id")!=bindings.base_content_id or retained.get("binding_id")!=bindings.binding_id or retained.get("source_station_id",-1)<0 or retained.get("source_system_id",-1)<0:return reject("Ordinary Void construction lost its active source")
 	var career:={}
 	if contracts!=null:
 		if not is_instance_of(contracts,load("res://src/simulation/contract_session.gd")):return reject("Ordinary Void construction requires its native career")
 		career=contracts.snapshot()
-		if career.get("campaign_cursor")!=33 or career.get("station_id")!=-1 or career.get("progress")!=progress or career.get("void_source")!=retained:return reject("Ordinary Void construction differs from its relocated career")
-	var context:={"campaign_cursor":33,"selected_system_id":-1,"selected_station_id":-1,"retained_system_id":-1,"retained_station_id":-1,
+		if career.get("campaign_cursor")!=cursor or career.get("station_id")!=-1 or career.get("progress")!=progress or (source is Story.VoidSource and career.get("void_source")!=source.snapshot()):return reject("Ordinary Void construction differs from its relocated career")
+	var context:={"campaign_cursor":cursor,"selected_system_id":-1,"selected_station_id":-1,"retained_system_id":-1,"retained_station_id":-1,
 		"selected_mission_kind":-1,"selected_mission_story":false,"location_match":true,"rank":int(progress.rank)}
+	if source is MissionContext:context.void_admission=source
 	var data:=Story.ordinary_void_flight(bindings,context)
 	if data.is_empty():return reject("Ordinary Void construction lacks its source declarations")
 	var environment:=_prepare_environment(bindings,data,environment_seconds,null,source)
@@ -493,8 +500,8 @@ func prepare_ordinary_void_selected(bindings: RefCounted,catalogues: RefCounted,
 	var place:=location.resolve_ordinary_void(bindings,catalogues,equipment,player.cache_snapshot(),environment.void_environment)
 	if place.is_empty():return reject(location.error)
 	var owned: Dictionary=equipment.snapshot()
-	var mission:=Story.VoidCrystals.PostProbe.mission_values(bindings.mido_travel.void_crystals.mission33)
-	var packet:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":33,
+	var mission:=Campaign.mission(bindings,cursor)
+	var packet:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":cursor,
 		"loadout":owned.loadout.duplicate(true),"equipment":owned,"cargo":owned.cargo.duplicate(true),"cargo_used":int(owned.cargo.used),
 		"progress":progress.duplicate(true),"mission":mission,"player":player.snapshot(),"player_cache":player.cache_snapshot(),
 		"void_context":context,"difficulty":difficulty,"station_response_flags":station_response_flags.duplicate(true),"from_station_id":retained.source_station_id,
@@ -517,7 +524,7 @@ func _valid_selected_progress(bindings: RefCounted,progress: Dictionary,cursor: 
 	if progress.has("cargo_recovered"):
 		if not Numbers.integer(progress.cargo_recovered,0,2147483647):return reject("Selected construction lost its recovered-cargo statistic")
 		expected.cargo_recovered=progress.cargo_recovered
-	if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected or rank!=progress.get("rank") or difficulty not in [0.5,1.0]:return reject("Selected construction changed earned rank, difficulty or hint history")
+	if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected or rank!=progress.get("rank") or difficulty not in [0.5,1.0,1.5]:return reject("Selected construction changed earned rank, difficulty or hint history")
 	return true
 
 func _prepare_story_selected(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,progress: Dictionary,station_response_flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,previous_cache: Variant,contracts: RefCounted,from_station_id: int,incoming: RefCounted=null,locations: RefCounted=null) -> bool:
@@ -678,9 +685,9 @@ func _prepare_environment(bindings: RefCounted,data: Dictionary,environment_seco
 	# places the wormhole before selecting yaw. Field construction reseeds again.
 	var environment_position:=Vector3.ZERO
 	var void_environment: RefCounted
-	if int(data.campaign_cursor) in [25,29] or (int(data.campaign_cursor)==33 and data.station_id==-1):
+	if int(data.campaign_cursor) in [25,29] or (ordinary_void_source!=null and data.station_id==-1):
 		void_environment=load("res://src/simulation/void_environment.gd").new()
-		var configured: bool=void_environment.configure_ordinary(bindings,input_random,ordinary_void_source) if int(data.campaign_cursor)==33 else void_environment.configure(bindings,input_random,int(data.campaign_cursor))
+		var configured: bool=void_environment.configure_ordinary(bindings,input_random,ordinary_void_source) if ordinary_void_source!=null else void_environment.configure(bindings,input_random,int(data.campaign_cursor))
 		if not configured or not random.restore(void_environment.snapshot().random_state):reject(void_environment.error+random.error);return {}
 	# The Void incoming gate consumes its two placement draws first. Its slot3
 	# wormhole then uses the same source placement as other early story worlds.

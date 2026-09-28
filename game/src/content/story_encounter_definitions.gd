@@ -39,7 +39,7 @@ static func flight(bindings: RefCounted,context: Dictionary) -> Dictionary:
 static func ordinary_void_flight(bindings: RefCounted,context: Dictionary) -> Dictionary:
 	if bindings==null or not BaseFlight.parameters(bindings.first_flight) or not VoidCrystals.selected_void(bindings.mido_travel,context):return {}
 	var result: Dictionary=bindings.first_flight.duplicate(true)
-	result.merge({"scope":"ordinary_void_flight","campaign_cursor":33,"system_id":-1,"station_id":-1,"mission_kind":-1},true)
+	result.merge({"scope":"ordinary_void_flight","campaign_cursor":int(context.campaign_cursor),"system_id":-1,"station_id":-1,"mission_kind":-1},true)
 	result.erase("actor_count")
 	return result
 
@@ -48,7 +48,7 @@ static func prepared_ordinary_void(bindings: RefCounted,entry: Dictionary) -> bo
 	if ordinary_void_flight(bindings,context).is_empty():return false
 	for key in ["base_content_id","binding_id"]:
 		if entry.get(key)!=bindings.get(key):return false
-	return entry.get("campaign_cursor")==33 and entry.get("location",{}).get("station_id") == -1 and entry.location.get("system_id") == -1 and entry.get("departure",{}).get("void_context")==context and entry.get("scenery",{}).get("world_initialization",{}).get("void_context")==context
+	return entry.get("campaign_cursor")==context.campaign_cursor and entry.get("location",{}).get("station_id") == -1 and entry.location.get("system_id") == -1 and entry.get("departure",{}).get("void_context")==context and entry.get("scenery",{}).get("world_initialization",{}).get("void_context")==context
 
 static func prepared_entry(bindings: RefCounted,entry: Dictionary) -> bool:
 	var context: Dictionary=entry.get("sahi_context",{})
@@ -61,7 +61,7 @@ static func combat_population(bindings: RefCounted,combat: Dictionary) -> bool:
 	if bindings==null or not Sahi.coherent(bindings.mido_travel):return false
 	var cursor: Variant=combat.get("campaign_cursor")
 	var dima: bool=cursor==28 and Dima.Thynome.coherent(bindings.mido_travel)
-	var ordinary_void: bool=cursor is int and cursor==33 and VoidCrystals.parameters(bindings.mido_travel.get("void_crystals"))
+	var ordinary_void: bool=combat.get("ordinary_void",false) and cursor is int and VoidCrystals.parameters(bindings.mido_travel.get("void_crystals"))
 	if cursor!=24 and not dima and not ordinary_void and (cursor not in [25,26,29] or not Post.portal_available(bindings.mido_travel,cursor)):return false
 	var actors: Variant=combat.get("actors")
 	var cast: Array=bindings.mido_travel.sahi_encounter.population.actors
@@ -82,7 +82,7 @@ static func combat_population(bindings: RefCounted,combat: Dictionary) -> bool:
 		var rules: Dictionary=bindings.mido_travel.void_crystals.void_population
 		cast=[]
 		for actor in actors:
-			if not actor is Dictionary or not actor.get("rank") is int or actor.rank!=rank or actor.get("campaign_cursor")!=33 or actor.get("station_id")!=-1 or actor.get("population_group")!="fighter":return false
+			if not actor is Dictionary or not actor.get("rank") is int or actor.rank!=rank or actor.get("campaign_cursor")!=cursor or actor.get("station_id")!=-1 or actor.get("population_group")!="fighter":return false
 			cast.append({"actor_kind":int(rules.actor_kind),"subtype":int(rules.actor_subtype),"hull_catalogue_id":int(rules.hull_id)})
 	if not actors is Array or actors.size()!=cast.size():return false
 	for id in actors.size():
@@ -127,19 +127,20 @@ static func compose(bindings: RefCounted,catalogues: RefCounted,packet: Dictiona
 ## source owner supplies the real system and station used by faction reactions.
 ## The selected flight remains Void(-1,-1), kind-1, nonstory.
 static func compose_void(bindings: RefCounted,catalogues: RefCounted,generated_world: RefCounted,equipment: RefCounted,ordinary_void_source: RefCounted,difficulty: Variant) -> Dictionary:
-	if bindings==null or catalogues==null or catalogues.content_id!=bindings.base_content_id or not generated_world is World or not equipment is Equipment or not ordinary_void_source is VoidSource:return {}
+	if bindings==null or catalogues==null or catalogues.content_id!=bindings.base_content_id or not generated_world is World or not equipment is Equipment:return {}
 	if not Life.available(bindings) or not FreeLife.available(bindings) or not AliothLife.available(bindings) or not ControlRules.parameters(bindings.combat_training_control) or not Sahi.coherent(bindings.mido_travel):return {}
-	if difficulty not in [0.5,1.0]:return {}
+	if difficulty not in [0.5,1.0,1.5]:return {}
 	var world: Dictionary=generated_world.snapshot()
 	var packet: Variant=world.get("npc_construction")
-	if not packet is Dictionary or world.get("campaign_cursor")!=33 or world.get("station_id")!=-1 or world.get("system_id")!=-1:return {}
+	if not packet is Dictionary or world.get("station_id")!=-1 or world.get("system_id")!=-1:return {}
 	if world.get("entry_conditions")!={"companions_empty":true,"location_match":true,"special_placement":false}:return {}
 	var context: Variant=world.get("void_context")
 	if not context is Dictionary or not VoidCrystals.selected_void(bindings.mido_travel,context) or packet.get("void_context")!=context:return {}
 	for key in ["base_content_id","binding_id"]:
 		if world.get(key)!=bindings.get(key) or packet.get(key)!=bindings.get(key):return {}
 	if not Numbers.integer(context.get("rank"),0,bindings.opening_handoff.rank_thresholds.size()-1):return {}
-	var source: Dictionary=ordinary_void_source.snapshot()
+	var source: Dictionary=load("res://src/simulation/mission_context.gd").ordinary_void_route(bindings,ordinary_void_source)
+	if source.is_empty() or world.get("campaign_cursor")!=source.campaign_cursor:return {}
 	var source_system: Variant=source.get("source_system_id")
 	var source_station: Variant=source.get("source_station_id")
 	if source.get("base_content_id")!=bindings.base_content_id or source.get("binding_id")!=bindings.binding_id or not Numbers.integer(source_system,0,catalogues.tables.systems.size()-1) or not Numbers.integer(source_station,0,catalogues.tables.stations.size()-1):return {}
@@ -162,7 +163,7 @@ static func compose_void(bindings: RefCounted,catalogues: RefCounted,generated_w
 		if not row is Dictionary or row.get("actor_id")!=id or row.get("actor_kind")!=int(rules.actor_kind) or row.get("subtype")!=int(rules.actor_subtype) or row.get("hull_catalogue_id")!=int(rules.hull_id) or row.get("population_group")!="fighter":return {}
 		if not Flight.rigid_pose(row.get("body_pose")) or row.get("statistics_pose")!=row.body_pose or row.get("activation_setter_argument")!=int(rules.shared_activation_setter_argument) or row.get("activation_fields")!={"f8":1,"b60":1,"b61":0,"ec":1}:return {}
 	var selected: Dictionary=context.duplicate(true)
-	selected.merge({"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":33,"station_id":-1,"system_id":-1,"mission_kind":-1,"mission_story":false,"mission_completed":true,"difficulty":difficulty},true)
+	selected.merge({"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":context.campaign_cursor,"station_id":-1,"system_id":-1,"mission_kind":-1,"mission_story":false,"mission_completed":true,"difficulty":difficulty},true)
 	var weapon_source: Dictionary=bindings.mido_travel.sahi_encounter.duplicate(true)
 	var composed: Dictionary=_compose_population(bindings,catalogues,packet,selected,weapon_source,actors,false,int(source_system),int(source_station),true)
 	if not composed.is_empty():composed.equipment_station_id=int(loadout.station_id)

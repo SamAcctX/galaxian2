@@ -99,6 +99,9 @@ func configure_campaign_failure(library: RefCounted,bindings: RefCounted,visuals
 func configure_flight(library: RefCounted,bindings: RefCounted,visuals: RefCounted,state: Dictionary,mission_context: RefCounted=null) -> bool:
 	if state.is_empty() or not state.get("player") is Dictionary:return reject("Flight conversation has no player state")
 	var cursor:=int(state.player.get("campaign_cursor",-1))
+	if state.player.has("void_context"):
+		if not MiningStory.Authored.VoidCrystals.selected_void(bindings.mido_travel,state.player.void_context):return reject("Void dialogue lost its admitted world")
+		return configure(library,bindings,visuals)
 	if mission_context!=null and mission_context.advances_campaign():
 		if not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or mission_context.identity().campaign_cursor!=cursor:return reject("Flight dialogue lost its admitted mission")
 		return _configure_resources(library,bindings,visuals,load("res://src/content/mission_recipe.gd").objective(bindings,mission_context.recipe()))

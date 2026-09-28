@@ -532,8 +532,8 @@ func relocate_post_sahi(bindings: RefCounted,cursor: int) -> bool:
 ## slots or prices. Ordinary entry and return keep the same campaign cursor.
 func relocate_ordinary_void(bindings: RefCounted,source_owner: RefCounted,entering: bool) -> bool:
 	error=""
-	if bindings==null or not is_instance_of(source_owner,load("res://src/simulation/ordinary_void_source.gd")) or not _state.get("training_inventory_released",false) or not _state.get("prototype_drill_replaced",false):return reject("The ordinary portal requires its retained source and earned inventory")
-	var source: Dictionary=source_owner.snapshot()
+	if bindings==null or load("res://src/simulation/mission_context.gd").ordinary_void_route(bindings,source_owner).is_empty() or not _state.get("training_inventory_released",false) or not _state.get("prototype_drill_replaced",false):return reject("The ordinary portal requires its retained source and earned inventory")
+	var source: Dictionary=load("res://src/simulation/mission_context.gd").ordinary_void_route(bindings,source_owner)
 	var seed: Dictionary=_state.loadout
 	var location: Dictionary=load("res://src/simulation/flight_player_cache.gd").ordinary_void_entry(bindings.mido_travel,int(seed.ship_id))
 	if location.is_empty():return reject("The ordinary Void equipment location is unavailable")

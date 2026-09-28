@@ -29,7 +29,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, station_id: Variant
 	var items: Variant = catalogues.tables.get("items")
 	if not stations is Array or not systems is Array or not items is Array or not station_id is int:return reject("Scenery station is outside its catalogue")
 	var old_void: bool=station_id==-1 and campaign_cursor in [25,29] and location_match and load("res://src/content/post_sahi_definitions.gd").portal_available(bindings.mido_travel,campaign_cursor)
-	var crystal_void: bool=station_id==-1 and campaign_cursor==33 and location_match and not special_ore_flag and not Population.void_crystal_field(bindings).is_empty()
+	var crystal_void: bool=station_id==-1 and location_match and not special_ore_flag and not Population.void_crystal_field(bindings).is_empty()
 	var selected41: bool=station_id==-1 and campaign_cursor==41 and location_match and not special_ore_flag and load("res://src/content/selected41_population_definitions.gd").available(bindings) and load("res://src/content/post_sahi_definitions.gd").available(bindings)
 	var void_world:=old_void or crystal_void or selected41
 	var here: Variant=null

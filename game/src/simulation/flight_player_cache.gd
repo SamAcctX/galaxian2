@@ -145,20 +145,21 @@ static func capture_local_arrival(content: Variant, source: Dictionary, destinat
 		if key!="station_id" and source[key]!=destination[key]:return {}
 	return _capture_arrival(travel,source,destination,player)
 
-static func ordinary_void_entry(travel: Dictionary,ship_id: int) -> Dictionary:
+static func ordinary_void_entry(travel: Dictionary,ship_id: int,cursor: int=33) -> Dictionary:
 	if not Travel.parameters(travel) or ship_id<0 or not load("res://src/content/void_crystal_definitions.gd").parameters(travel.get("void_crystals")) or not load("res://src/content/void_access_definitions.gd").parameters(travel.get("void_access")):return {}
 	var entry: Dictionary=travel.player_entry.duplicate(true)
-	entry.merge({"campaign_cursor":33,"ship_id":ship_id,"station_id":-1,"system_id":-1},true)
+	entry.merge({"campaign_cursor":cursor,"ship_id":ship_id,"station_id":-1,"system_id":-1},true)
 	return entry
 
-static func ordinary_void_cache(parameters: Dictionary,travel: Dictionary,seed: Dictionary,hull: int,capacities: Dictionary,reset:=false) -> Dictionary:
-	var entry:=ordinary_void_entry(travel,int(seed.get("ship_id",-1)))
+static func ordinary_void_cache(parameters: Dictionary,travel: Dictionary,seed: Dictionary,hull: int,capacities: Dictionary,reset:=false,cursor: int=33) -> Dictionary:
+	var entry:=ordinary_void_entry(travel,int(seed.get("ship_id",-1)),cursor)
 	return {} if entry.is_empty() else _departure_cache(parameters,entry,seed,hull,capacities,reset,true)
 
 static func capture_ordinary_void(bindings: RefCounted,retained_source: RefCounted,source: Dictionary,destination: Dictionary,player: Dictionary,entering: bool) -> Dictionary:
-	if bindings==null or not is_instance_of(retained_source,load("res://src/simulation/ordinary_void_source.gd")) or ordinary_void_entry(bindings.mido_travel,int(source.get("ship_id",-1))).is_empty():return {}
-	if not valid_seed(source,not entering) or not valid_seed(destination,entering) or player.get("campaign_cursor")!=33:return {}
-	var route: Dictionary=retained_source.snapshot()
+	if bindings==null or load("res://src/simulation/mission_context.gd").ordinary_void_route(bindings,retained_source).is_empty() or ordinary_void_entry(bindings.mido_travel,int(source.get("ship_id",-1))).is_empty():return {}
+	if not valid_seed(source,not entering) or not valid_seed(destination,entering):return {}
+	var route: Dictionary=load("res://src/simulation/mission_context.gd").ordinary_void_route(bindings,retained_source)
+	if player.get("campaign_cursor")!=route.campaign_cursor:return {}
 	for key in ["base_content_id","binding_id"]:
 		if route.get(key)!=bindings.get(key) or source[key]!=bindings.get(key):return {}
 	var ordinary: Dictionary=source if entering else destination
@@ -208,7 +209,7 @@ static func _departure_cache(parameters: Dictionary, departure: Dictionary, seed
 	return result
 
 static func matches(cache: Variant, seed: Dictionary, cursor: int) -> bool:
-	if not cache is Dictionary or cache.size()!=IDENTITY_KEYS.size()+2 or not valid_seed(seed,cursor in [25,29,41] or (cursor==33 and seed.get("station_id")==-1)):return false
+	if not cache is Dictionary or cache.size()!=IDENTITY_KEYS.size()+2 or not valid_seed(seed,seed.get("station_id")==-1):return false
 	if not cache.get("campaign_cursor") is int or cache.campaign_cursor!=cursor or not valid_values(cache.get("values")):return false
 	for key in IDENTITY_KEYS:
 		if typeof(cache.get(key))!=typeof(seed[key]) or cache[key]!=seed[key]:return false

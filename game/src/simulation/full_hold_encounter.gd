@@ -305,9 +305,9 @@ func configure_ordinary_void(bindings: RefCounted,catalogues: RefCounted,library
 	if loadout.station_id!=-1 or loadout.system_id!=-1:return reject("Void combat requires equipment relocated by the source portal")
 	var initial: Dictionary=world.snapshot()
 	if player.snapshot().get("void_context")!=initial.void_context:return reject("Void combat differs from the player's selected flight")
-	var seed: Dictionary=loadout.duplicate(true);seed.campaign_cursor=33
+	var seed: Dictionary=loadout.duplicate(true);seed.campaign_cursor=int(data.campaign_cursor)
 	if player.loadout()!=seed:return reject("Void combat differs from its earned equipment")
-	return _configure_equipped(bindings,catalogues,library,player,scenery,data.rank,data.difficulty,33,equipment,reputation,data)
+	return _configure_equipped(bindings,catalogues,library,player,scenery,data.rank,data.difficulty,int(data.campaign_cursor),equipment,reputation,data)
 
 func apply_sahi_view(stage: RefCounted) -> bool:
 	if not is_instance_of(stage,load("res://src/simulation/sahi_encounter_stage.gd")):return reject("Sahi target changes require their native stage")
