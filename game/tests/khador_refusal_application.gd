@@ -32,4 +32,3 @@ func verify_free_application() -> void:
 	var landed: Dictionary=app.session.station_owner().snapshot()
 	check(landed.cargo==empty.cargo and landed.contracts.credits==empty.contracts.credits and landed.campaign_cursor==empty.campaign_cursor,"Refused jump or cancelled gate course changed the earned state")
 	retain_recovery_save("returned")
-
