@@ -99,9 +99,15 @@ func verify(args: PackedStringArray) -> void:
 	for key in CONTEXT:
 		var changed:=CONTEXT.duplicate();changed.erase(key)
 		check(not Population.new().configure_free(bindings,cat,changed,0),"An omitted source input was inferred: "+key)
-	for patch in [{"rank":-1},{"rank":21},{"difficulty":1.5},{"difficulty":NAN},{"difficulty":true},{"system_id":15},{"station_id":56},{"campaign_cursor":17},{"mission_kind":156},{"mission_completed":false},{"mission_story":true},{"companions_empty":false},{"side_missions_empty":false},{"station_response":true},{"special_arrival":true},{"void_encounter":true}]:
+	for patch in [{"rank":-1},{"rank":21},{"difficulty":1.5},{"difficulty":NAN},{"difficulty":true},{"system_id":15},{"station_id":56},{"campaign_cursor":17},{"mission_kind":156},{"mission_completed":false},{"mission_story":true},{"companions_empty":false},{"side_missions_empty":false},{"station_response":1},{"special_arrival":true},{"void_encounter":true}]:
 		var changed:=CONTEXT.duplicate();changed.merge(patch,true)
 		check(not Population.new().configure_free(bindings,cat,changed,0),"Unsupported encounter context produced ordinary traffic")
+	for seed in [0,2,22,30]:
+		var ordinary:=Population.new();var response:=Population.new();var alerted:=CONTEXT.duplicate();alerted.station_response=true
+		if not ordinary.configure_free(bindings,cat,CONTEXT,seed) or not response.configure_free(bindings,cat,alerted,seed):check(false,ordinary.error+response.error);return
+		var before:=ordinary.generate({"state":98765});var after:=response.generate({"state":98765})
+		check(after.groups.patrol>=7 and after.actor_count<=Definitions.maximum_actor_count(bindings,0,0.5,alerted),"Returning to an alerted station lost its security patrol or exceeded its admitted count")
+		for role in ["travel","freighter","hostile"]:check(after.groups[role]==before.groups[role],"Station response changed unrelated traffic")
 	for invalid in [{},{"campaign_cursor":18,"rank":-1,"difficulty":0.5},{"campaign_cursor":17,"rank":0,"difficulty":0.5},{"campaign_cursor":18,"rank":0,"difficulty":NAN}]:check(not Routes.new().configure_free_generated(bindings,0,invalid),"Invalid route context was accepted")
 	for seconds in [-1,2147483648,0.5,true]:check(not Population.new().configure_free(bindings,cat,CONTEXT,seconds),"Invalid Unix seed was accepted")
 	for station in [95,96,97,98,99]:
@@ -114,6 +120,33 @@ func verify(args: PackedStringArray) -> void:
 	for key in Definitions.SPANS:
 		var broken: Dictionary=bindings.mido_travel.duplicate(true);broken.provenance.erase(key)
 		check(not Travel.validate(broken,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing population source proof was accepted")
+	verify_response_radio(lib,bindings,args[2])
+
+func verify_response_radio(library: RefCounted,bindings: RefCounted,visual_path: String) -> void:
+	var metrics=load("res://src/content/image_font.gd").new();var layout=load("res://src/presentation/source_text_layout.gd").new()
+	var visuals=load("res://src/content/visual_library.gd").new();var resources=load("res://src/presentation/opening_radio_resources.gd").new()
+	if not library.select_language("gb") or not metrics.open_selected(library,bindings,0) or not layout.configure_from_bindings(metrics,350,5,bindings) or not visuals.open(visual_path,library.manifest):check(false,library.error+metrics.error+layout.error+visuals.error);return
+	if not resources.prepare_local_traffic(library,bindings,visuals,18):check(false,resources.error);return
+	var audio=load("res://src/content/audio_resources.gd").new()
+	if not audio.configure_local_traffic(library,bindings):check(false,audio.error);return
+	var radio_type=load("res://src/simulation/local_traffic_radio.gd")
+	for faction in 4:
+		for choice in 3:
+			var radio=radio_type.new()
+			if not radio.configure(bindings,library,layout,18):check(false,radio.error);return
+			var reaction:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":18,"radio_serial":1,"pending_radio":radio_type.arrival_message(faction,choice,1)}
+			var started: Dictionary=radio.evaluate(0,reaction,{"state":98765})
+			if started.is_empty():check(false,radio.error);return
+			check(radio.snapshot().last_serial==0,"Prospective re-entry radio changed the parent frame")
+			var shown: Dictionary=started.radio.evaluate(2001,reaction,started.random_state)
+			if shown.is_empty():check(false,started.radio.error);return
+			var state: Dictionary=shown.radio.snapshot();var speaker: Dictionary=resources.local_speaker(state)
+			check(state.visible and not speaker.is_empty() and speaker.get("portrait") is Texture2D,"The re-entry transmission lost a faction portrait: "+resources.error)
+			var clip: Dictionary=audio.prepare(state.message.voice_event_id)
+			check(not clip.is_empty() and not clip.has("unsupported") and clip.get("voice",false),"The re-entry line has no playable original voice: "+audio.error+str(clip.get("unsupported","")))
+			var finished: Dictionary=shown.radio.evaluate(20000,reaction,shown.random_state)
+			var repeated: Dictionary=finished.radio.evaluate(20001,reaction,finished.random_state)
+			check(repeated.events.is_empty() and not repeated.radio.snapshot().visible,"The unchanged station alert replayed after finishing")
 
 func point(values: Array) -> Vector3:return Vector3(float(values[0]),float(values[1]),float(values[2]))
 func check(value: bool,message: String) -> void:

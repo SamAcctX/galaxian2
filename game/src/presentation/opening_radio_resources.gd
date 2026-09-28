@@ -69,6 +69,10 @@ func prepare_local_traffic(library: RefCounted, bindings: RefCounted, visuals: R
 	var label: String=bindings.resolve_speaker_name(id,library)
 	if not bindings.error.is_empty():return fail(bindings.error)
 	speakers={id:{"name":label}}
+	for profile in LocalRadio.ARRIVAL_PROFILES:
+		var name: String=bindings.resolve_speaker_name(profile.speaker_id,library)
+		if not bindings.error.is_empty():return fail(bindings.error)
+		speakers[profile.speaker_id]={"name":name}
 	_local_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":cursor,"language":library.active_language}
 	_local_rules=bindings.mido_travel.traffic_combat.radio.duplicate(true)
 	_library=library;_bindings=bindings;_visuals=visuals

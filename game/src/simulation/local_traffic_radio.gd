@@ -6,6 +6,13 @@ const ContractWorld=preload("res://src/content/contract_world_definitions.gd")
 const FreeFlight=preload("res://src/content/free_flight_definitions.gd")
 const Sequence=preload("res://src/simulation/radio_sequence.gd")
 const Random=preload("res://src/simulation/seeded_random.gd")
+const ARRIVAL_TEXTS=[434,435,436]
+const ARRIVAL_PROFILES=[
+	{"speaker_id":64,"family":0,"voice_ids":[700,701,702]},
+	{"speaker_id":63,"family":1,"voice_ids":[736,737,738]},
+	{"speaker_id":65,"family":2,"voice_ids":[639,641,642]},
+	{"speaker_id":21,"family":-1,"voice_ids":[639,641,642]}]
+const ARRIVAL_PART_BOUNDS={0:[11,11,11,11],1:[4,5,6,9],2:[5,5,5,5]}
 var error:=""
 var _identity:={}
 var _rules:={}
@@ -26,6 +33,12 @@ func configure(bindings: RefCounted, library: RefCounted, layout: RefCounted,cur
 			var owner:=Sequence.new()
 			if not owner.configure_local_message(bindings,library,layout,int(value),cursor):return reject(owner.error)
 			templates[int(value)]=owner
+	for profile in ARRIVAL_PROFILES:
+		for index in ARRIVAL_TEXTS.size():
+			var owner:=Sequence.new()
+			var event:={"speaker_id":profile.speaker_id,"text_id":ARRIVAL_TEXTS[index],"condition":5,"values":[0],"voice_event_id":profile.voice_ids[index]}
+			if not owner.configure_scripted(bindings,library,layout,cursor,[event]):return reject(owner.error)
+			templates[str([profile.speaker_id,ARRIVAL_TEXTS[index]])]=owner
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":cursor,"language":library.active_language}
 	_templates=templates;_rules=rules.duplicate(true)
 	return true
@@ -51,10 +64,14 @@ func evaluate(elapsed_ms: int, reaction: Dictionary, random_state: Dictionary) -
 	if next._active==null:
 		if not next._pending.is_empty():
 			next._message=next._pending;next._pending={}
-			next._active=_templates[next._message.text_id].fork_for_frame()
-			var family: int=int(_rules.portrait_zero_family) if random.next_int(int(_rules.portrait_family_bound))==0 else int(_rules.portrait_other_family)
+			var arrival: bool=next._message.kind=="arrival_response"
+			var template: Variant=str([next._message.speaker_id,next._message.text_id]) if arrival else next._message.text_id
+			next._active=_templates[template].fork_for_frame()
+			var family: int=int(arrival_profile(next._message.speaker_id).family) if arrival else -1
+			if family<0:family=int(_rules.portrait_zero_family) if random.next_int(int(_rules.portrait_family_bound))==0 else int(_rules.portrait_other_family)
 			var parts:=[]
-			for bound in _rules.portrait_part_bounds[str(family)]:parts.append(random.next_int(int(bound)))
+			var bounds: Array=ARRIVAL_PART_BOUNDS[family] if arrival else _rules.portrait_part_bounds[str(family)]
+			for bound in bounds:parts.append(random.next_int(int(bound)))
 			# Resolved procedural parts use the existing fixed-layer compositor.
 			next._portrait={"status":"fixed","family":family,"parts":parts}
 			events=next._step(elapsed_ms)
@@ -76,6 +93,11 @@ func valid_message(message: Dictionary) -> bool:
 	return valid_payload(_rules,message)
 
 static func valid_payload(rules: Dictionary, message: Dictionary) -> bool:
+	if message.get("kind")=="arrival_response":
+		if message.size()!=5 or not message.get("serial") is int or message.serial<1 or message.serial>2 or not message.get("speaker_id") is int:return false
+		var profile:=arrival_profile(message.speaker_id)
+		var index:=ARRIVAL_TEXTS.find(message.get("text_id"))
+		return not profile.is_empty() and index>=0 and message.get("voice_event_id")==profile.voice_ids[index]
 	if rules.is_empty() or message.size()!=5 or not message.get("serial") is int or message.serial<1 or message.serial>2 or message.get("kind") not in ["warning","response"] or message.get("speaker_id")!=int(rules.speaker_id):return false
 	for key in ["text_id","voice_event_id"]:
 		if not message.get(key) is int:return false
@@ -85,11 +107,21 @@ static func valid_payload(rules: Dictionary, message: Dictionary) -> bool:
 
 static func valid_portrait(rules: Dictionary, portrait: Dictionary) -> bool:
 	if rules.is_empty() or portrait.size()!=3 or portrait.get("status")!="fixed" or not portrait.get("family") is int or not portrait.get("parts") is Array:return false
-	var bounds: Array=rules.portrait_part_bounds.get(str(portrait.family),[])
+	var bounds: Array=rules.portrait_part_bounds.get(str(portrait.family),ARRIVAL_PART_BOUNDS.get(portrait.family,[]))
 	if bounds.size()!=4 or portrait.parts.size()!=4:return false
 	for i in 4:
 		if not portrait.parts[i] is int or portrait.parts[i]<0 or portrait.parts[i]>=int(bounds[i]):return false
 	return true
+
+static func arrival_profile(speaker_id: int) -> Dictionary:
+	for profile in ARRIVAL_PROFILES:
+		if profile.speaker_id==speaker_id:return profile
+	return {}
+
+static func arrival_message(faction: int,index: int,serial: int) -> Dictionary:
+	if faction<0 or faction>=ARRIVAL_PROFILES.size() or index<0 or index>=ARRIVAL_TEXTS.size():return {}
+	var profile: Dictionary=ARRIVAL_PROFILES[faction]
+	return {"serial":serial,"kind":"arrival_response","speaker_id":profile.speaker_id,"text_id":ARRIVAL_TEXTS[index],"voice_event_id":profile.voice_ids[index]}
 
 func snapshot() -> Dictionary:
 	if _identity.is_empty():return {}

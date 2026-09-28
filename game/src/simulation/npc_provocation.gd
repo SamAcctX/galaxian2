@@ -65,6 +65,13 @@ func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction:
 		_state.actor_kinds=packet.actors.map(func(actor):return int(actor.actor_kind))
 		_state.permanent_hostile=[];_state.permanent_hostile.resize(data.actor_count);_state.permanent_hostile.fill(false)
 		_state.systems_requested_damage=[];_state.systems_requested_damage.resize(data.actor_count);_state.systems_requested_damage.fill(0)
+	if data.get("station_response",false):
+		_state.response_issued=true;_state.station_response_flag=true
+		_state.arrival_response_pending=true
+		for id in int(data.actor_count):
+			if _state.actor_kinds[id]!=int(data.lifecycle.reactions.primary_faction):continue
+			_state.forced_hostile[id]=true
+			if _state.has("permanent_hostile"):_state.permanent_hostile[id]=true
 	return true
 
 func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,equipment: RefCounted) -> bool:
@@ -273,6 +280,17 @@ func _queue_radio(kind: String, random: RefCounted, display_available: bool, eve
 	_state.pending_radio=event.duplicate(true);events.append(event)
 
 func snapshot() -> Dictionary:return _state.duplicate(true)
+
+func evaluate_arrival(random_state: Dictionary,display_available: bool) -> Dictionary:
+	var random:=Random.new()
+	if not random.restore(random_state):return fail(random.error)
+	var next:=fork_for_frame()
+	if next._state.get("arrival_response_pending",false) and display_available:
+		next._state.erase("arrival_response_pending")
+		if next._state.active_mission_kind==int(_rules.contract.empty_mission_kind):
+			next._state.radio_serial+=1
+			next._state.pending_radio=load("res://src/simulation/local_traffic_radio.gd").arrival_message(int(_rules.contract.primary_faction),random.next_int(3),next._state.radio_serial)
+	return {"owner":next,"random_state":random.snapshot()}
 
 func retire_contract() -> bool:
 	error=""

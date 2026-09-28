@@ -11,6 +11,27 @@ func contract_destination_allowed(station_id: int) -> bool:return station_id in 
 func accepts_requested_contract(mission: Dictionary) -> bool:return mission.kind==13
 func expects_contract_success() -> bool:return OS.get_environment("GOF2_INFORMER_FAILURE")!="1"
 
+func release_application_flight() -> bool:
+	if not await super.release_application_flight():return false
+	if OS.get_environment("GOF2_PIRATE_RESUME_PAID")!="1":return true
+	var state: Dictionary=app.session.snapshot();var combat: Dictionary=state.encounter.combat
+	check(combat.free_context.station_response and combat.actors.filter(func(actor):return actor.population_group=="patrol").size()>=7,"Departure lost the saved station response or its security patrol")
+	var faction: int=int(catalogue.tables.systems[int(combat.free_context.system_id)].fields[2])
+	check(combat.actors.filter(func(actor):return actor.actor_kind==faction).all(func(actor):return actor.hostile and actor.script_hostile),"The alerted local faction did not retain its hostility")
+	var elapsed:=now_us
+	while now_us-elapsed<5000000 and not app.session.snapshot().radio.visible:
+		if not application_step():return false
+	var heard: Dictionary=app.session.snapshot();var radio: Dictionary=heard.radio
+	check(radio.visible and radio.text_id in [434,435,436] and radio.message.kind=="arrival_response","The returning player did not receive the original station-response radio")
+	check(app.session.scene.radio._portrait.visible and app.session.scene.radio._portrait.texture!=null,"The faction transmission lost its procedural portrait")
+	if failures:return false
+	await capture_free_application("informer-return-alert")
+	var serial: int=heard.encounter.combat.provocation.radio_serial
+	for tick in 5:
+		if not application_step():return false
+	check(app.session.snapshot().encounter.combat.provocation.radio_serial==serial,"The station repeated its re-entry warning")
+	return failures==0
+
 func verify_delivery_route(original: Dictionary,before: Dictionary,offer: Dictionary,accepted: Dictionary,requested_kind: int) -> void:
 	check(requested_kind==13,"The pilot selected a different contract")
 	if OS.get_environment("GOF2_INFORMER_TARGET_CAPTURE")=="1" or OS.get_environment("GOF2_INFORMER_EQUIP")=="1":

@@ -78,8 +78,7 @@ static func context_valid(bindings: RefCounted,context: Variant,mission_context:
 		if not load("res://src/simulation/mission_context.gd").normal_population_matches(bindings,context,mission_context):return false
 	elif not Campaign.supported(bindings,context.get("campaign_cursor")) or not Delivery.mission_context_valid(bindings,context):return false
 	if context.get("companions_empty")!=true:return false
-	for key in ["station_response","void_encounter"]:
-		if context.get(key)!=false:return false
+	if not context.get("station_response") is bool or context.get("void_encounter")!=false:return false
 	if not load("res://src/content/free_arrival_definitions.gd").context_supported(bindings,context):return false
 	return Numbers.integer(context.get("rank"),0,20) and context.get("difficulty") in [0.5,1.0]
 

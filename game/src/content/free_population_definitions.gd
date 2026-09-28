@@ -60,4 +60,6 @@ static func maximum_actor_count(bindings: RefCounted,rank: int,difficulty: float
 	var groups: Dictionary=bindings.ambient_population
 	var hostiles:=int(3.0*(1.0+difficulty+float(rules.hostile_difficulty_offset)))+int(float(rank)/float(rules.hostile_rank_divisor))
 	if difficulty<float(rules.easy_difficulty_threshold):hostiles=int(rules.easy_count_bound)
-	return 3+int(groups.extra_patrol_count_bound)-1+1+int(groups.travel_count_bound)-1+int(groups.freighter_count_bound)-1+hostiles+delivery.extra_count(bindings,context)
+	var patrols:=3+int(groups.extra_patrol_count_bound)-1+1
+	if context.get("station_response",false):patrols=maxi(patrols,int(rules.station_response_minimum))
+	return patrols+int(groups.travel_count_bound)-1+int(groups.freighter_count_bound)-1+hostiles+delivery.extra_count(bindings,context)

@@ -552,6 +552,8 @@ func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction:
 	for id in int(data.actor_count):
 		var actor:=Actor.new()
 		if not actor.configure_ambient(bindings,catalogues,construction,id,rank,difficulty) or not actor.enable_local_combat():return reject(actor.error)
+		var retained: Dictionary=reaction.snapshot()
+		if retained.has("permanent_hostile") and not actor.retain_ordinary_force(retained.forced_hostile[id],retained.permanent_hostile[id]):return reject(actor.error)
 		actors.append(actor)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(data.campaign_cursor)}
 	_owned={};_actors=actors;_hit_policy=policy.duplicate(true);_provocation=reaction
@@ -568,6 +570,10 @@ func begin_contact_pass(random_state: Dictionary, display_available: bool) -> bo
 	var random:=Random.new()
 	if not random.restore(random_state):return reject(random.error)
 	_contact_random=random.snapshot();_display_available=display_available
+	if _provocation!=null and _provocation.snapshot().get("arrival_response_pending",false):
+		var arrival: Dictionary=_provocation.evaluate_arrival(_contact_random,display_available)
+		if arrival.is_empty():return reject(_provocation.error)
+		_provocation=arrival.owner;_contact_random=arrival.random_state
 	return true
 
 func contact_random_state() -> Dictionary:return _contact_random.duplicate(true)
