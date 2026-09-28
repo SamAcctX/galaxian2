@@ -8,7 +8,7 @@ import signal
 import sys
 import time
 
-from gof2_content.game_install import prepare
+from gof2_content.game_install import prepare, refresh
 
 
 def write_status(path, record):
@@ -31,11 +31,14 @@ def write_status(path, record):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('source', type=Path, help='Mac .dmg file or extracted .app directory')
+    parser.add_argument('source', type=Path, nargs='?', help='Mac .dmg file or extracted .app directory')
+    parser.add_argument('--refresh', type=Path, help='Refresh a remembered import when its data preparation changes')
     parser.add_argument('--store', type=Path, required=True)
     parser.add_argument('--status', type=Path)
     parser.add_argument('--cancel-file', type=Path)
     args = parser.parse_args()
+    if (args.source is None) == (args.refresh is None):
+        parser.error('Choose either a Mac source or --refresh installation.json')
     cancelled = False
     last = 0.0
 
@@ -58,7 +61,7 @@ def main():
     signal.signal(signal.SIGINT, cancel)
     signal.signal(signal.SIGTERM, cancel)
     try:
-        receipt, record = prepare(args.source, args.store, checkpoint)
+        receipt, record = refresh(args.refresh, args.store, checkpoint) if args.refresh is not None else prepare(args.source, args.store, checkpoint)
         write_status(args.status, {'state': 'ready', 'message': 'Mac game is ready', 'receipt': str(receipt)})
         if args.status is None:
             print(json.dumps({'receipt': str(receipt), **record}, indent=2))

@@ -15,6 +15,42 @@ from .formats import ContentError
 from .importer import checked_path, encoded, install, verify_cache
 
 
+def pipeline_id():
+    """Invalidate derived data when the importer changes, even without a version bump."""
+    digest = hashlib.sha256()
+    for path in sorted(Path(__file__).parent.glob('*.py')):
+        digest.update(path.name.encode('utf-8'))
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def refresh(receipt, store, checkpoint=lambda *_: None):
+    """Reuse current derived data, or rebuild from the remembered original source."""
+    from .registrations import READER
+    from .visuals import SCHEMA
+    receipt, store = Path(receipt), Path(store)
+    original = read_receipt(receipt)
+    recipe = pipeline_id()
+    for candidate in [receipt, *sorted(store.glob('*/installation.json'))]:
+        try:
+            record = read_receipt(candidate)
+        except (OSError, ValueError, ContentError):
+            continue
+        if (record.get('source_sha256') == original['source_sha256']
+                and record.get('format') == original['format']
+                and record.get('reader') == READER and record.get('visual_schema') == SCHEMA
+                and record.get('pipeline_id') == recipe
+                and all((candidate.parent / record[key]).is_dir() for key in ('content', 'bindings', 'visuals'))):
+            return candidate, record
+    source = original.get('source_path')
+    if not isinstance(source, str) or not Path(source).is_absolute() or not Path(source).exists():
+        raise ContentError('Choose your Mac game once to update these older game files. Your existing imports and saves are preserved.')
+    source_format, source_hash, _ = source_fingerprint(Path(source), checkpoint)
+    if source_hash != original['source_sha256'] or source_format != original['format']:
+        raise ContentError('The remembered Mac game has changed. Choose the original source again; your existing imports and saves are preserved.')
+    return prepare(source, store, checkpoint)
+
+
 def requirements():
     for name, expected in [('capstone', '5.0.6'), ('texture2ddecoder', '1.0.6')]:
         try:
@@ -124,15 +160,16 @@ def prepare(source, store, checkpoint=lambda *_: None):
         raise ContentError('Source app and import store must be separate directories')
     source_format, source_hash, count = source_fingerprint(source, checkpoint)
     # Keep the original DMG identity recipe so existing installations stay reusable.
+    recipe = pipeline_id()
     identity = hashlib.sha256(encoded({('dmg_sha256' if source_format == 'mac-dmg' else 'app_sha256'): source_hash, 'reader': READER,
-                                      'visual_schema': SCHEMA, 'install_schema': 1})).hexdigest()
+                                      'visual_schema': SCHEMA, 'install_schema': 1, 'pipeline_id': recipe})).hexdigest()
     store.mkdir(parents=True, exist_ok=True)
     destination = store / identity
     if destination.exists():
         receipt = destination / 'installation.json'
         record = read_receipt(receipt)
         if (record.get('source_sha256') != source_hash or record.get('format') != source_format or record.get('reader') != READER
-                or record.get('visual_schema') != SCHEMA):
+                or record.get('visual_schema') != SCHEMA or record.get('pipeline_id') != recipe):
             raise ContentError('An existing import has different provenance; keep it unchanged')
         manifest = verify_cache(destination / record['content'], lambda *_: checkpoint('Checking the existing import', 0.0))
         verify_derivatives(destination, record, manifest, checkpoint)
@@ -162,6 +199,7 @@ def prepare(source, store, checkpoint=lambda *_: None):
         if source_fingerprint(source, checkpoint) != (source_format, source_hash, count):
             raise ContentError('The source Mac game changed during preparation')
         record = {'schema': 1, 'format': source_format, 'source_name': source.name,
+                  'source_path': str(source), 'pipeline_id': recipe,
                   'source_sha256': source_hash, 'source_bytes': count,
                   'reader': READER, 'visual_schema': SCHEMA,
                   'base_content_id': manifest['content_id'], 'binding_id': header['binding_id'],

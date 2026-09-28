@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from gof2_content.game_install import prepare, read_receipt, source_fingerprint
+from gof2_content.game_install import prepare, read_receipt, source_fingerprint, refresh
 from gof2_content.formats import ContentError
 from test_content import fixture
 
@@ -66,6 +66,50 @@ class InstallationTests(unittest.TestCase):
         self.assertEqual(record['source_sha256'], hashlib.sha256(self.dmg.read_bytes()).hexdigest())
         self.assertFalse(any(p.suffix == '.app' for p in path.parent.rglob('*')))
         self.unchanged()
+
+    def test_current_import_starts_without_original_source_or_rebuilding(self):
+        with ExitStack() as stack:
+            self.mocks(stack)
+            path, record = prepare(self.dmg, self.store)
+        self.dmg.unlink()
+        with patch('gof2_content.game_install.prepare', side_effect=AssertionError('Unchanged import was rebuilt')):
+            self.assertEqual(refresh(path, self.store), (path, record))
+
+    def test_importer_change_refreshes_without_relabeling_previous_import(self):
+        with ExitStack() as stack:
+            self.mocks(stack)
+            path, record = prepare(self.dmg, self.store)
+            before = path.read_bytes()
+            with patch('gof2_content.game_install.pipeline_id', return_value='f' * 64):
+                updated, newer = refresh(path, self.store)
+                self.assertNotEqual(updated, path)
+                self.assertEqual(newer['source_sha256'], record['source_sha256'])
+                self.assertEqual(newer['source_path'], str(self.dmg))
+                self.assertEqual(path.read_bytes(), before)
+                self.dmg.unlink()
+                self.assertEqual(refresh(path, self.store), (updated, newer))
+
+    def test_legacy_import_without_source_requests_picker_and_preserves_receipt(self):
+        with ExitStack() as stack:
+            self.mocks(stack)
+            path, record = prepare(self.dmg, self.store)
+        record.pop('source_path');record.pop('pipeline_id')
+        path.write_text(json.dumps(record))
+        before = path.read_bytes()
+        with self.assertRaisesRegex(ContentError, 'Choose your Mac game once'):
+            refresh(path, self.store)
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_changed_remembered_source_is_not_activated_as_an_update(self):
+        with ExitStack() as stack:
+            self.mocks(stack)
+            path, record = prepare(self.dmg, self.store)
+        self.dmg.write_bytes(b'a different original')
+        before = path.read_bytes()
+        with patch('gof2_content.game_install.pipeline_id', return_value='f' * 64):
+            with self.assertRaisesRegex(ContentError, 'remembered Mac game has changed'):
+                refresh(path, self.store)
+        self.assertEqual(path.read_bytes(), before)
 
     def test_cancel_before_activation_leaves_previous_import(self):
         def checkpoint(message, _ratio):
