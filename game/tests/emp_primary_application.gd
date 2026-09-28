@@ -23,6 +23,11 @@ func verify_free_application() -> void:
 		check(mounted.contracts.credits==quote.contracts.credits+proceeds-price and mounted.cargo.entries.has({"item_id":2,"quantity":1}),"The EMP purchase lost the spare sale price or retained primary")
 		await capture_free_application("emp-primary-purchased-fitted")
 		if not app.equipment_action("close"):check(false,app.session.error);return
+	else:
+		if not app.equipment_action("open"):check(false,app.session.error);return
+		app.equipment_panel.select_tab("ship")
+		await capture_free_application("emp-primary-resumed-fitting")
+		if not app.equipment_action("close"):check(false,app.session.error);return
 	var fitted: Dictionary=app.session.station_owner().snapshot()
 	check(fitted.loadout.equipment_ids.has(item) and fitted.loadout.equipment_ids.has(81) and fitted.loadout.equipment_ids.has(55),"The actual EMP fitting lost its scanner or armor")
 	check(fitted.contracts.completed_side_missions==original.contracts.completed_side_missions and fitted.mission==original.mission,"Fitting an EMP gun advanced a mission")
