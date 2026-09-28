@@ -45,7 +45,7 @@ func present(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalo
 	if not _prepare_art(library,bindings,visuals):return false
 	_accept_result=int(rules.accept_result);_map_result=int(rules.map_result)
 	_text.text=library.strings[int(ids[0])]+str(rules.separators[0])+str(catalogues.tables.stations[destination].name)+str(rules.separators[1])+library.strings[int(ids[1])]
-	_yes.text=library.strings[133];_no.text=library.strings[134]
+	_yes.text=library.strings[133];_no.text=library.strings[134];_no.show()
 	_state={"destination_station_id":destination,"text":_text.text,"text_ids":ids.duplicate()}
 	visible=true;_relayout()
 	return true
@@ -58,10 +58,17 @@ func present_departure(library: RefCounted,bindings: RefCounted,visuals: RefCoun
 		if id<0 or id>=library.strings.size() or library.strings[id].is_empty():return reject("Departure confirmation text is missing")
 	if not _prepare_art(library,bindings,visuals):return false
 	_accept_result=1;_map_result=0
-	_text.text=library.strings[text_id];_yes.text=library.strings[133];_no.text=library.strings[134]
+	_text.text=library.strings[text_id];_yes.text=library.strings[133];_no.text=library.strings[134];_no.show()
 	_state={"text":_text.text,"text_ids":[text_id]}
 	visible=true;_relayout()
 	return true
+
+func present_message(library: RefCounted,bindings: RefCounted,visuals: RefCounted,text_id: int,suffix: String="") -> bool:
+	if text_id<0 or text_id>=library.strings.size() or not _prepare_art(library,bindings,visuals):return reject("Message text or artwork is unavailable")
+	_accept_result=1;_map_result=1
+	_text.text=library.strings[text_id]+suffix;_yes.text=library.strings[130];_no.hide()
+	_state={"text":_text.text,"text_ids":[text_id]}
+	visible=true;_relayout();return true
 
 func _prepare_art(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> bool:
 	var identity:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language}

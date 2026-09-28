@@ -179,6 +179,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	var cargo:=Cargo.new()
 	if not cargo.configure_departure(bindings,catalogues,construction):return reject(cargo.error)
 	var player: RefCounted=construction.player_owner()
+	if not player.configure_cloak(bindings,catalogues,entry.departure.get("difficulty",1.0 if hard_difficulty else 0.5)):return reject(player.error)
 	var equipment: RefCounted=construction.equipment_owner()
 	if entry.campaign_cursor==7 and equipment!=null and not equipment.prepare_training_completion(bindings,catalogues):return reject(equipment.error)
 	var encounter: RefCounted
@@ -476,7 +477,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 			_flight_music={"operations":[]}
 	return true
 
-func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paused:=false, viewport_size:=Vector2i.ZERO, drill_command:=Vector2.ZERO, primary_fire:=false, secondary_fire:=false, relative_mouse_capture:=false, current_music_id:=-1, strafe:=0.0, boost_requested:=false) -> RefCounted:
+func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paused:=false, viewport_size:=Vector2i.ZERO, drill_command:=Vector2.ZERO, primary_fire:=false, secondary_fire:=false, relative_mouse_capture:=false, current_music_id:=-1, strafe:=0.0, boost_requested:=false,cloak_requested:=false) -> RefCounted:
 	error=""
 	if _briefing==null or not Numbers.integer(milliseconds,0,150) or not commands.is_finite() or absf(commands.x)>1.0 or absf(commands.y)>1.0 or not is_finite(throttle) or throttle<0.0 or throttle>1.0:
 		reject("Invalid first-flight frame, command or throttle");return null
@@ -656,7 +657,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 			if arrival.arrived and next._notices!=null and _navigation.has("progress_notice"):
 				if not next._notices.enqueue(int(_navigation.progress_notice.source_id)):reject(next._notices.error);return null
 		if next._aim!=null and not next._aim.advance(next._pose,_camera.snapshot().pose,viewport):reject(next._aim.error);return null
-		if next._player.advance_recharge(delta_ms).is_empty() or next._player.advance_repair(delta_ms).is_empty():reject(next._player.error);return null
+		if next._player.advance_recharge(delta_ms).is_empty() or next._player.advance_repair(delta_ms).is_empty() or not next._player.advance_cloak(delta_ms,next._notices):reject(next._player.error);return null
 		if not next._advance_tractor(delta_ms):reject(next.error);return null
 		var portal_contact: RefCounted=next._sahi if next._sahi!=null else next._void_portal
 		if portal_contact!=null and not next._apply_portal_contact(portal_contact):reject(next.error);return null
@@ -819,6 +820,14 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 			if not next._apply_secondary_input(secondary_fire,enabled):reject(next.error);return null
 	if next.cinematic_input_blocked():
 		if not next._booster.cancel():reject(next._booster.error);return null
+	if cloak_requested:
+		var activation: Dictionary=next._player.evaluate_cloak_request(next._cargo,next.cloak_input_permitted())
+		if activation.is_empty():reject(next._player.error);return null
+		next._player=activation.player;next._cargo=activation.cargo
+		if activation.started:
+			next._equipment=next._equipment.fork()
+			if not next._equipment.retain_flight_cargo(next._cargo.snapshot()):reject(next._equipment.error);return null
+			if not next._notices.enqueue_cloak_spent(activation.consumed):reject(next._notices.error);return null
 	if boost_requested and next.booster_input_permitted():
 		var activation: int=next._booster.snapshot().activation
 		if not next._booster.request_start():reject(next._booster.error);return null
@@ -1845,7 +1854,11 @@ func damage_particle_owner() -> RefCounted:return null if _particles==null else 
 ## Read-only during presentation of this accepted frame.
 func scenery_presentation_owner() -> RefCounted:return _scenery
 
+func cloak_state() -> Dictionary:return {} if _player==null else _player.cloak_state()
 func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
+func cloak_input_permitted() -> bool:
+	return _equipment!=null and entry_released() and not death_active() and _player.snapshot().vitals.hull>0 and not dialogue_visible() and not cinematic_input_blocked() and not local_departing() and not gate_departing()
+
 func booster_input_permitted() -> bool:
 	return _booster!=null and entry_released() and not death_active() and _player.snapshot().vitals.hull>0 and not dialogue_visible() and not cinematic_input_blocked() and not local_departing() and not gate_departing() and drill_owner()==null and (_approach==null or _approach.snapshot().phase in ["idle","approach"])
 
@@ -1924,7 +1937,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	var state: Dictionary=_briefing.snapshot()
 	var held: Dictionary=_cargo.snapshot()
 	state.cargo_used=held.used
-	state.booster=booster_state()
+	state.booster=booster_state();state.cloak=cloak_state()
 	state.merge({"world_type":_entry.world_type,"location":_entry.location.duplicate(true),"activated":true,
 		"player_pose":_pose,"control_throttle":_throttle,"player":_player.snapshot(),"player_cache":_player.cache_snapshot(),"angular_units":_pilot.angular_units,
 		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),

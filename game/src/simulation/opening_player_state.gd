@@ -24,6 +24,7 @@ const CacheDefinitions = preload("res://src/content/flight_player_cache_definiti
 const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const Entry = preload("res://src/content/player_entry_definitions.gd")
 const Stats=preload("res://src/simulation/equipment_stats.gd")
+const Cloak=preload("res://src/simulation/player_cloak.gd")
 const Fitting=preload("res://src/content/ordinary_fitting_definitions.gd")
 const StationEquipment = preload("res://src/simulation/station_equipment.gd")
 const Construction=preload("res://src/simulation/opening_npc_construction.gd")
@@ -36,6 +37,7 @@ var _npc_weapons := []
 var _loadout := {}
 var _recharge: RefCounted
 var _repair: RefCounted
+var _cloak: RefCounted
 var _flight_cache := {}
 var _selected40_construction: RefCounted
 var _selected41_construction: RefCounted
@@ -365,6 +367,39 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, cursor: int, previ
 		_state.contact=false;_state.impact_vector=Vector3.ZERO
 	return true
 
+func configure_cloak(bindings: RefCounted,catalogues: RefCounted,difficulty: Variant) -> bool:
+	error=""
+	if _state.is_empty():return reject("Configure cloaking on the admitted player")
+	var cloak:=Cloak.new()
+	if not cloak.configure(bindings,catalogues,_loadout.equipment_ids,int(_loadout.ship_id),difficulty):return reject(cloak.error)
+	if _cloak!=null:
+		for key in ["item_id","base_content_id","binding_id","cooldown_ms"]:
+			if _cloak.snapshot().get(key)!=cloak.snapshot().get(key):return reject("Retained cloak changed its admitted equipment or difficulty")
+		return true
+	_cloak=cloak
+	return true
+
+func advance_cloak(milliseconds: int,notices: RefCounted) -> bool:
+	if _cloak==null or not _cloak.available():return true
+	var previous: int=_cloak.snapshot().ready_serial
+	if not _cloak.advance(milliseconds):return reject(_cloak.error)
+	if _cloak.snapshot().ready_serial!=previous and not notices.enqueue_cloak_ready():return reject(notices.error)
+	return true
+
+func evaluate_cloak_request(cargo: RefCounted,permitted: bool) -> Dictionary:
+	error=""
+	if _cloak==null:return {}
+	var request: Dictionary=_cloak.evaluate_request(cargo,permitted)
+	if request.is_empty():reject(_cloak.error);return {}
+	var next:=fork_for_frame();next._cloak=request.cloak
+	request.erase("cloak");request.player=next
+	return request
+
+func cloak_state() -> Dictionary:return {} if _cloak==null or not _cloak.available() else _cloak.snapshot()
+
+## Target suppression does not alter collision eligibility or damage permission.
+func targeting_blocked() -> bool:return _cloak!=null and _cloak.active()
+
 func advance_recharge(delta_ms: Variant) -> Dictionary:
 	error=""
 	if _recharge==null: reject("This player has no supported shield recharge");return {}
@@ -477,6 +512,7 @@ func snapshot() -> Dictionary:
 	var result := _state.duplicate(true)
 	if _recharge!=null: result.recharge=_recharge.snapshot()
 	if _repair!=null: result.repair=_repair.snapshot()
+	if _cloak!=null and _cloak.available():result.cloak=_cloak.snapshot()
 	return result
 
 func cache_snapshot() -> Dictionary:
@@ -491,12 +527,14 @@ func fork_for_frame() -> RefCounted:
 	copy._selected41_construction=_selected41_construction
 	if _recharge!=null: copy._recharge=_recharge.fork_for_frame()
 	if _repair!=null: copy._repair=_repair.fork_for_frame()
+	if _cloak!=null: copy._cloak=_cloak.fork_for_frame()
 	return copy
 
 func clear() -> void:
 	error="";_state={};_hit_policy={};_npc_weapons=[];_loadout={};_flight_cache={};_selected40_construction=null;_selected41_construction=null
 	_recharge=null
 	_repair=null
+	_cloak=null
 
 func reject(message: String) -> bool:
 	error=message

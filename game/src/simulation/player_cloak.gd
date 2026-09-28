@@ -12,12 +12,13 @@ var _activation:=0
 var _audio_serial:=0
 var _audio: Array=[]
 var _ready_serial:=0
+var _failure_serial:=0
 
 func configure(bindings: RefCounted,catalogues: RefCounted,equipment_ids: Array,ship_id: int,difficulty: Variant) -> bool:
 	error=""
 	var device:=Definitions.resolve(bindings,catalogues,equipment_ids,ship_id,difficulty)
 	if device.has("error"):return reject(device.error)
-	_equipment=Readonly.freeze(device);_phase="ready";_elapsed_ms=-1;_cooldown_ms=0;_activation=0;_audio_serial=0;_audio=[];_ready_serial=0
+	_equipment=Readonly.freeze(device);_phase="ready";_elapsed_ms=-1;_cooldown_ms=0;_activation=0;_audio_serial=0;_audio=[];_ready_serial=0;_failure_serial=0
 	return true
 
 func available() -> bool:return not _equipment.is_empty() and _equipment.item_id>=0
@@ -29,7 +30,8 @@ func request_start(energy_units: Variant,permitted: Variant=true) -> Dictionary:
 	if _equipment.is_empty() or not Definitions.Numbers.integer(energy_units,0,2147483647) or not permitted is bool:return failed("Cloak activation requires a retained cargo quantity and input permission")
 	var result:={"started":false,"energy_item":Definitions.ENERGY_ITEM,"consumed":0,"insufficient_energy":false}
 	if not permitted or not ready():return result
-	if energy_units<_equipment.energy_cost:result.insufficient_energy=true;return result
+	if energy_units<_equipment.energy_cost:
+		_failure_serial+=1;result.insufficient_energy=true;return result
 	_phase="charging";_activation+=1
 	result.started=true;result.consumed=int(_equipment.energy_cost)
 	return result
@@ -85,13 +87,13 @@ func snapshot() -> Dictionary:
 		"progress":clampf(float(_elapsed_ms)/float(_equipment.charge_ms),0.0,1.0) if _phase=="charging" else 0.0,
 		"charge":1.0-float(_cooldown_ms)/float(_equipment.cooldown_ms),"dissolve":amount,"animation_seconds":float(_elapsed_ms)/1000.0 if active() else 0.0,
 		"attachment_alpha":maxf(50.0/255.0,1.0-amount),"exhaust_alpha":(221.0-201.0*amount)/255.0,
-		"audio_serial":_audio_serial,"audio":_audio.duplicate(true),"ready_serial":_ready_serial})
+		"audio_serial":_audio_serial,"audio":_audio.duplicate(true),"ready_serial":_ready_serial,"failure_serial":_failure_serial})
 	return result
 
 func fork_for_frame() -> RefCounted:
 	var next: RefCounted=get_script().new()
 	next._equipment=_equipment;next._phase=_phase;next._elapsed_ms=_elapsed_ms;next._cooldown_ms=_cooldown_ms;next._activation=_activation
-	next._audio_serial=_audio_serial;next._audio=_audio.duplicate(true);next._ready_serial=_ready_serial
+	next._audio_serial=_audio_serial;next._audio=_audio.duplicate(true);next._ready_serial=_ready_serial;next._failure_serial=_failure_serial
 	return next
 func reject(message: String) -> bool:error=message;return false
 func failed(message: String) -> Dictionary:error=message;return {}

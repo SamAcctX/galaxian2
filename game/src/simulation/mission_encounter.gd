@@ -41,7 +41,7 @@ func target(player: RefCounted,pose: Transform3D) -> Dictionary:
 	for key in _identity:
 		if state.get(key)!=_identity[key]:return {}
 	return {"base_content_id":_identity.base_content_id,"binding_id":_identity.binding_id,"ship_id":state.ship_id,
-		"pose":pose,"active":state.active,"hull":state.vitals.hull,"targeting_blocked":false,"special_flight":false,"alternate_position":null}
+		"pose":pose,"active":state.active,"hull":state.vitals.hull,"targeting_blocked":player.targeting_blocked(),"special_flight":false,"alternate_position":null}
 
 func evaluate_weapons(player: RefCounted,pose: Transform3D,milliseconds: int,scenery: RefCounted=null,shared_random_state: Variant=null,display_available:=true,secondary_display_available:=true,guidance_actor_id: int=-1) -> Dictionary:
 	error=""

@@ -132,6 +132,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,p
 	_music_faction=int(catalogues.tables.systems[int(entry.system_id)].fields[int(bindings.station_exterior.system_faction_field)])
 	_death=death;_particles=particles;_statistics_pose=pose
 	_player=player.fork_for_frame();_scenery=scenery.fork_for_frame();_equipment=equipment.fork()
+	if not _player.configure_cloak(bindings,catalogues,player.snapshot().selected40_context.difficulty):return reject(_player.error)
 	_encounter=encounter;_pilot=pilot;_physical=contacts;_engines=engines;_booster=booster;_detail=detail
 	_scanner=scanner;_cargo=cargo;_presentation_identity=RefCounted.new()
 	_targeting=targeting;_notices=notices
@@ -171,7 +172,7 @@ func prepare_career(bindings: RefCounted,career: RefCounted) -> bool:
 	_encounter=encounter;_career=retained
 	return true
 
-func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary_fire:=false,paused:=false,viewport:=Vector2i.ZERO,strafe:=0.0,secondary_fire:=false,current_music_id:=-1,relative_mouse_capture:=false,boost_requested:=false) -> RefCounted:
+func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary_fire:=false,paused:=false,viewport:=Vector2i.ZERO,strafe:=0.0,secondary_fire:=false,current_music_id:=-1,relative_mouse_capture:=false,boost_requested:=false,cloak_requested:=false) -> RefCounted:
 	error=""
 	var size:=_viewport if viewport==Vector2i.ZERO else viewport
 	if not Rules.Numbers.integer(current_music_id,-1,2292):reject("Invalid retained playback music selection");return null
@@ -215,7 +216,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 		next._pose.origin=contact.center_after;next._state.physical_contacts=contact.operations
 		aim_pose=next._pose
 		next._statistics_pose=next._pose*Transform3D(death_before.rendered_model_basis if dying else Basis.IDENTITY,Vector3.ZERO)
-		if next._player.advance_recharge(milliseconds).is_empty() or next._player.advance_repair(milliseconds).is_empty():reject(next._player.error);return null
+		if next._player.advance_recharge(milliseconds).is_empty() or next._player.advance_repair(milliseconds).is_empty() or not next._player.advance_cloak(milliseconds,next._notices):reject(next._player.error);return null
 		# The source reticle sampled the preceding view BEFORE portal pull.
 		# Contact observes the previous portal clock; its animation/facing is
 		# advanced with the environment only after the NPC/scenery pass below.
@@ -325,6 +326,14 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if selection.is_empty():reject(next._music.error);return null
 	next._flight_music={"operations":selection.operations}
 	next._random=portal_random.snapshot();next._viewport=size;next._throttle=active_throttle
+	if cloak_requested:
+		var activation: Dictionary=next._player.evaluate_cloak_request(next._cargo,enabled)
+		if activation.is_empty():reject(next._player.error);return null
+		next._player=activation.player;next._cargo=activation.cargo
+		if activation.started:
+			next._equipment=next._equipment.fork()
+			if not next._equipment.retain_flight_cargo(next._cargo.snapshot()):reject(next._equipment.error);return null
+			if not next._notices.enqueue_cloak_spent(activation.consumed):reject(next._notices.error);return null
 	if boost_requested and enabled:
 		var activation: int=next._booster.snapshot().activation
 		if not next._booster.request_start():reject(next._booster.error);return null
@@ -476,7 +485,7 @@ func audio_state() -> Dictionary:
 		"flight_music":_flight_music.duplicate(true),
 		"camera_view":context.view.camera,"death_events":_death.snapshot().events,
 		"radio":context.sequence.radio,"radio_events":context.sequence.radio_events,
-		"booster":booster_state(),"scanner_events":_scanner.sound_events()}
+		"booster":booster_state(),"cloak":cloak_state(),"scanner_events":_scanner.sound_events()}
 
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}
@@ -545,7 +554,7 @@ func exhaust_state() -> Dictionary:
 	var particles: Dictionary=_engines.snapshot()
 	if particles.elapsed_ms!=_state.elapsed_ms:return {}
 	return {"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,
-		"revision":_state.revision,"elapsed_ms":_state.elapsed_ms,"engine_particles":particles,
+		"revision":_state.revision,"elapsed_ms":_state.elapsed_ms,"engine_particles":particles,"cloak":cloak_state(),
 		"camera_pose":_encounter.selected40_frame_context().view.camera.pose}
 
 func engine_particles_owner() -> RefCounted:return null if _engines==null else _engines.fork_for_frame()
@@ -599,5 +608,6 @@ func fork_for_frame() -> RefCounted:
 static func valid_viewport(size: Vector2i) -> bool:return size.x>0 and size.y>0 and size.x<=32767 and size.y<=32767
 func reject(message: String) -> bool:error=message;return false
 
+func cloak_state() -> Dictionary:return {} if _player==null else _player.cloak_state()
 func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
 func control_throttle() -> float:return _throttle

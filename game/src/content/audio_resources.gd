@@ -59,7 +59,7 @@ func prepare(id: int) -> Dictionary:
 	# maximum across separately acquired instances does not create extra voices.
 	# Both 2D modes share playback behavior; their distance-rolloff bit only
 	# affects spatial events. Authored cutscene sounds also use 0x280008.
-	if int(p.mode) not in [0x180008,0x280008,0x280010] or p.pitch!=0 or not Definitions.number(p.pitch_random,0,1) or p.volume_random!=0 or not Definitions.integer(p.max_playbacks,1,3) or p.max_playbacks_behavior!=1 or int(p.flags) not in [0,0x80000]:return unavailable(id,"This event needs additional native playback behavior")
+	if int(p.mode) not in [0x180008,0x280008,0x280010] or p.pitch!=0 or not Definitions.number(p.pitch_random,0,1) or not Definitions.number(p.volume_random,0,1) or not Definitions.integer(p.max_playbacks,1,3) or p.max_playbacks_behavior!=1 or int(p.flags) not in [0,0x80000]:return unavailable(id,"This event needs additional native playback behavior")
 	for key in ["distance_filter","speaker_spread","position_random_min","position_random_max","spawn_random"]:
 		if p.get(key)!=0:return unavailable(id,"This event needs additional native spatial behavior")
 	# A unity outside volume leaves the entire cone unattenuated, including the
@@ -67,7 +67,7 @@ func prepare(id: int) -> Dictionary:
 	if not Definitions.number(p.get("cone_inside"),0,360) or p.get("cone_outside")!=360 or p.get("cone_outside_volume")!=1 or p.get("pan_level")!=1 or p.get("spawn_intensity")!=1:return unavailable(id,"Unsupported event cone, pan or spawn settings")
 	if p.volume<0 or p.volume>4 or p.min_distance<0 or p.max_distance<=p.min_distance or p.fade_in_ms>60000 or p.fade_out_ms>60000:return unavailable(id,"Unsupported event level, range or fade")
 	if not event.has("sound") and not event.parameters.is_empty():
-		if p.pitch_random!=0:return unavailable(id,"Parameter-controlled event pitch variation is unsupported")
+		if p.pitch_random!=0 or p.volume_random!=0:return unavailable(id,"Parameter-controlled event variation is unsupported")
 		if not EngineParameters.read_program(event).is_empty():return prepare_engine(id,event)
 		if id==1:return prepare_mining_drill(id,event)
 		return prepare_layered(id,event)
@@ -244,6 +244,7 @@ func event_header(event: Dictionary) -> Dictionary:
 		"fade_in_ms":int(p.fade_in_ms),"fade_out_ms":int(p.fade_out_ms),
 		"voice":_voice_ids.has(int(event.id)) and event.categories==["voice"]}
 	if p.pitch_random!=0:result.event_pitch_random=float(p.pitch_random)
+	if p.volume_random!=0:result.event_volume_random=float(p.volume_random)
 	return result
 
 func prepare_layered(id: int, event: Dictionary) -> Dictionary:

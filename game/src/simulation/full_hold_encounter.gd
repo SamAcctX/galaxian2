@@ -952,12 +952,10 @@ func target(player: RefCounted, pose: Transform3D) -> Dictionary:
 	if _selected40_world!=null and (player.selected40_construction_owner()!=_selected40_world.npc_construction_owner() or state.get("selected40_context")!=_selected40_context):return {}
 	for key in _identity:
 		if state.get(key)!=_identity[key]:return {}
-	if state.get("ship_id")!=0:return {}
-	# Ordinary starter construction keeps these source flags clear. Damage
-	# permission is independently controlled by the departure controller.
+	# Entry admission owns ship support; targeting and damage permissions differ.
 	return {"base_content_id":_identity.base_content_id,"binding_id":_identity.binding_id,
-		"ship_id":0,"pose":pose,"active":state.active,"hull":state.vitals.hull,
-		"targeting_blocked":false,"special_flight":false,"alternate_position":null}
+		"ship_id":state.ship_id,"pose":pose,"active":state.active,"hull":state.vitals.hull,
+		"targeting_blocked":player.targeting_blocked(),"special_flight":false,"alternate_position":null}
 
 func snapshot() -> Dictionary:
 	if _control==null:return {}

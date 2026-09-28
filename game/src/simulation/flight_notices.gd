@@ -62,6 +62,11 @@ func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,lo
 		for component in rule.rgb:rgb.append(int(component))
 		for source_id in rule.text_ids:text_ids.append(int(source_id))
 		messages[int(key)]={"source_id":int(key),"text_ids":text_ids,"display_text_ids":display_ids,"text":str(rule.separator).join(pieces),"rgb":rgb}
+	for key in {"cloak_ready":305,"cloak_spent":1385}:
+		var text_id: int={"cloak_ready":305,"cloak_spent":1385}[key]
+		var display_id:=Desktop.select_id(bindings.desktop_text,text_id)
+		if display_id<0 or display_id>=library.strings.size() or library.strings[display_id].is_empty():return reject("A cloak notice is missing in this language")
+		messages[key]={"kind":key,"text_ids":[text_id],"display_text_ids":[display_id],"text":library.strings[display_id],"rgb":[255,255,255]}
 	if location.get("station_id",-1)>=0 and not bindings.station_flight.is_empty():
 		var data: Dictionary=bindings.station_flight
 		if not StationFlight.parameters(data):return reject("Station notices require their verified declarations")
@@ -102,7 +107,16 @@ func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,lo
 func enqueue(source_id: Variant) -> bool:
 	error=""
 	if _rules.is_empty() or not Numbers.integer(source_id,0,65534) or not _messages.has(int(source_id)):return reject("Unsupported first-flight notice")
-	var message: Dictionary=_messages[int(source_id)]
+	return _enqueue(_messages[int(source_id)])
+
+func enqueue_cloak_ready() -> bool:return _enqueue(_messages.cloak_ready)
+func enqueue_cloak_spent(units: int) -> bool:
+	if units<=0:return reject("Cloak notice requires spent energy")
+	var message: Dictionary=_messages.cloak_spent.duplicate(true)
+	message.text="-%dt " % units+message.text
+	return _enqueue(message)
+
+func _enqueue(message: Dictionary) -> bool:
 	# The source compares pending localized text, excluding the previous retired
 	# entry. A duplicate neither replaces its slot nor restarts the current fade.
 	for pending in _pending:

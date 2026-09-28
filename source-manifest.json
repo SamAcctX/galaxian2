@@ -2906,6 +2906,22 @@
     "game/src/simulation/player_cloak.gd",
     "game/src/simulation/player_cloak.gd.uid",
     "game/tests/player_cloak.gd",
-    "game/tests/player_cloak.gd.uid"
+    "game/tests/player_cloak.gd.uid",
+    "game/src/presentation/cloak_background.gd",
+    "game/src/presentation/cloak_background.gd.uid",
+    "game/src/presentation/cloak_charge_panel.gd",
+    "game/src/presentation/cloak_charge_panel.gd.uid",
+    "game/src/presentation/cloaked_ship.gdshader",
+    "game/src/presentation/cloaked_ship.gdshader.uid",
+    "game/src/presentation/cloaked_surface.gdshader",
+    "game/src/presentation/cloaked_surface.gdshader.uid",
+    "game/src/presentation/player_cloak_geometry.gd",
+    "game/src/presentation/player_cloak_geometry.gd.uid",
+    "game/src/presentation/surface_response_program.gdshaderinc",
+    "game/src/presentation/surface_response_program.gdshaderinc.uid",
+    "game/tests/cloak_application.gd",
+    "game/tests/cloak_application.gd.uid",
+    "game/tests/cloak_presentation.gd",
+    "game/tests/cloak_presentation.gd.uid"
   ]
 }

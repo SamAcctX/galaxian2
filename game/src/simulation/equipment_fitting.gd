@@ -21,6 +21,7 @@ const NPCSystems=preload("res://src/content/npc_systems_definitions.gd")
 const Mounts=preload("res://src/content/weapon_mounts.gd")
 const Conventional=preload("res://src/content/conventional_secondary_definitions.gd")
 const ImpactSprites=preload("res://src/content/full_hold_particle_definitions.gd")
+const Cloak=preload("res://src/simulation/player_cloak.gd")
 const Booster=preload("res://src/simulation/player_booster.gd")
 var error:=""
 
@@ -35,6 +36,9 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 	for id in Booster.Definitions.SOUND_IDS:
 		var clip: Dictionary=sounds.prepare(Booster.Definitions.SOUND_IDS[id])
 		items[id]="" if not clip.is_empty() and not clip.has("unsupported") else "This booster's original sound is unavailable"
+	var cloak_clip: Dictionary=sounds.prepare(Cloak.Definitions.SOUND_ID)
+	var cloak_ready: bool=not cloak_clip.is_empty() and not cloak_clip.has("unsupported") and library.manifest.files.has(Cloak.Definitions.CLOAK_MAP)
+	for id in [94,95,96]:items[id]="" if cloak_ready else "This cloak's original mask or sound is unavailable"
 	for item in cat.tables.items:
 		if item.arrays[2][3]!=0:continue
 		var id:=int(item.id);var mapping:=Rules.primary(bindings.mido_travel.ordinary_fitting,id,int(item.arrays[2][5]))
@@ -111,6 +115,7 @@ func inspect(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,assets: Di
 		if support[id].is_empty() and item.arrays[2][3] in [0,1]:support[id]=assets.items.get(id,"This weapon's model is unavailable")
 		if support[id].is_empty() and item.arrays[2][3]==3 and item.arrays[2][5]==13:support[id]=assets.items.get(id,"This tractor's beam is unavailable")
 		if support[id].is_empty() and item.arrays[2][3]==3 and item.arrays[2][5]==14:support[id]=assets.items.get(id,"This booster's sound is unavailable")
+		if support[id].is_empty() and item.arrays[2][3]==3 and item.arrays[2][5]==21:support[id]=assets.items.get(id,"This cloak's mask or sound is unavailable")
 	for id in ids:
 		if not support.has(id) or not support[id].is_empty():return fail("Installed equipment is unavailable: "+str(support.get(id,"unknown item")))
 	var slots: Variant=loadout.get("slots")
@@ -194,6 +199,9 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 		19:
 			for property in [bindings.mining_drill.stability_property,bindings.mining_drill.rate_property]:
 				if not Numbers.integer(properties.get(int(property)),1,100000):return "The drill performance is unavailable"
+		21:
+			var cloak:=Cloak.new()
+			if not cloak.configure(bindings,cat,[id],ship,0.5):return cloak.error
 		28:
 			for property in [bindings.weapon_parameters.interval_percent_property,bindings.weapon_parameters.damage_percent_property]:
 				if not Weapons.signed_integer(properties.get(int(property))):return "The weapon modifier is unavailable"

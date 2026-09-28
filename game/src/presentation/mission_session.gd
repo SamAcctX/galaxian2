@@ -8,7 +8,7 @@ const Construction=preload("res://src/simulation/selected40_flight_construction.
 const Scene=preload("res://src/presentation/mission_scene.gd")
 const Clock=preload("res://src/simulation/frame_clock.gd")
 const Controls=preload("res://src/input/flight_controls.gd")
-const ACTIONS=["boost","fire","brake","mouse_mode","throttle_up","throttle_down","missiles","secondary_next","secondary_menu","change_view"]
+const ACTIONS=["boost","cloak","action_menu","fire","brake","mouse_mode","throttle_up","throttle_down","missiles","secondary_next","secondary_menu","change_view"]
 var error:=""
 var status:="idle"
 var scene: Node3D
@@ -19,6 +19,7 @@ var _pauses:={}
 var _active:=false
 var _secondary_pending:=false
 var _boost_pending:=false
+var _cloak_pending:=false
 var _throttle:=1.0
 var _observed_world: RefCounted
 var _flight_read:={}
@@ -65,7 +66,7 @@ func step(now_microseconds: int,commands:=Vector2.ZERO,primary_fire:=false,mouse
 			_world=view
 		_clock=clock;clear_flight_input();return true
 	var current_music: int=scene.feedback.audio.current_music_id()
-	var next: RefCounted=_world.evaluate(int(round(seconds*1000.0)),commands,0.0 if brake else _throttle,primary_fire,false,viewport,strafe,_secondary_pending,current_music,mouse_captured,_boost_pending)
+	var next: RefCounted=_world.evaluate(int(round(seconds*1000.0)),commands,0.0 if brake else _throttle,primary_fire,false,viewport,strafe,_secondary_pending,current_music,mouse_captured,_boost_pending,_cloak_pending)
 	if next==null:return reject(_world.error)
 	var state: Dictionary=next.frame_context()
 	if not state.boundary.is_empty():
@@ -75,7 +76,7 @@ func step(now_microseconds: int,commands:=Vector2.ZERO,primary_fire:=false,mouse
 		return true
 	if not scene.present(next,viewport):return reject(scene.error)
 	if next.booster_state().activation!=_world.booster_state().activation:_throttle=1.0
-	_world=next;_clock=clock;_secondary_pending=false;_boost_pending=false
+	_world=next;_clock=clock;_secondary_pending=false;_boost_pending=false;_cloak_pending=false
 	if not can_control():clear_flight_input()
 	return true
 
@@ -89,6 +90,7 @@ func action(name: String) -> bool:
 			return set_pause("secondary_menu",true,Time.get_ticks_usec())
 		"missiles":_secondary_pending=true;return true
 		"boost":_boost_pending=true;return true
+		"cloak":_cloak_pending=true;return true
 		"throttle_up":_throttle=minf(1.0,_throttle+0.1);return true
 		"throttle_down":_throttle=maxf(0.0,_throttle-0.1);return true
 		"change_view":next=_world.camera_input(3 if _flight_observation().camera_mode==0 else 0)
@@ -147,7 +149,7 @@ func _external_pause() -> bool:
 	return false
 
 func set_pause(reason: String,value: bool,now_microseconds: int) -> bool:
-	if _clock==null or reason not in ["user","focus","hidden","transition","secondary_menu"]:return reject("Unknown selected-flight pause reason")
+	if _clock==null or reason not in ["user","focus","hidden","transition","cloak_notice","flight_menu","secondary_menu"]:return reject("Unknown selected-flight pause reason")
 	var clock: RefCounted=_clock.fork_for_frame()
 	if not clock.rebase(now_microseconds):return reject(clock.error)
 	_pauses[reason]=value;_clock=clock;clear_flight_input();scene.set_paused(is_paused() or status not in ["prepared","running"])
@@ -171,7 +173,8 @@ func request_cinematic_skip() -> bool:
 	return true
 
 func rebase_time(now_microseconds: int) -> bool:return _clock!=null and _clock.rebase(now_microseconds)
-func clear_flight_input() -> void:_secondary_pending=false;_boost_pending=false
+func clear_flight_input() -> void:_secondary_pending=false;_boost_pending=false;_cloak_pending=false
+func cloak_state() -> Dictionary:return {} if _world==null else _world.cloak_state()
 func booster_state() -> Dictionary:return {} if _world==null else _world.booster_state()
 func is_paused() -> bool:return _pauses.values().has(true)
 func can_control() -> bool:

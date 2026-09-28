@@ -283,7 +283,7 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	var engine_frame:={}
 	if engine_particles!=null:
 		var sample: Dictionary=state.get("engine_particles",{})
-		var world:={"base_content_id":state.get("base_content_id"),"binding_id":state.get("binding_id"),"engine_particles":sample,"elapsed_ms":sample.get("elapsed_ms")}
+		var world:={"base_content_id":state.get("base_content_id"),"binding_id":state.get("binding_id"),"engine_particles":sample,"cloak":state.get("cloak",{}),"elapsed_ms":sample.get("elapsed_ms")}
 		engine_frame=engine_particles.prepare_world(engines,world,state.camera_view.pose)
 		if engine_frame.is_empty():return reject(engine_particles.error)
 	var particle_frame:={}

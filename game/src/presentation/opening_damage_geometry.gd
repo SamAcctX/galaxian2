@@ -69,6 +69,8 @@ func prepare_world(owner: RefCounted,world: Dictionary,camera_pose: Variant) -> 
 		elapsed=world.get("damage_particles",{}).get("elapsed_ms") if int(world.get("player_destruction",{}).get("departure_cursor",-1))==2 else world.get("encounter",{}).get("elapsed_ms")
 	if elapsed!=state.elapsed_ms:return failed("Damage sprite presentation requires its current world clock")
 	if not Flight.rigid_pose(camera_pose):return failed("Damage sprite camera must be finite and rigid")
+	var cloak: Dictionary=world.get("cloak",{}) if owner is Engines else {}
+	var exhaust_opacity: float=float(cloak.get("exhaust_alpha",221.0/255.0))/(221.0/255.0)
 	var prepared:=[];var counts:=[]
 	var view: Transform3D=camera_pose.affine_inverse()
 	for item in items:
@@ -83,6 +85,7 @@ func prepare_world(owner: RefCounted,world: Dictionary,camera_pose: Variant) -> 
 			var appearance:=Appearance.sample_prepared(item.preset,slot.appearance,emitter.get("fade_in_rgb",false))
 			if appearance.has("error"):return failed(appearance.error)
 			if not appearance.active or not emitter.visible or not draw_enabled:continue
+			if owner is Engines and cloak.get("active",false):appearance.color.a*=exhaust_opacity
 			var quad:=sprite(view*slot.position,appearance)
 			if quad.is_empty():return failed("Damage sprite exceeded finite view bounds")
 			var offset:=vertices.size()

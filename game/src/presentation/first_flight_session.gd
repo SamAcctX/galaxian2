@@ -37,6 +37,7 @@ var _pauses:={}
 var _active:=false
 var _throttle:=1.0
 var _boost_requested:=false
+var _cloak_requested:=false
 var _generation:=0
 var _presentation_ms:=0
 var _secondary_requested:=false
@@ -240,11 +241,11 @@ func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false, re
 	if is_paused() or status!="running" or _world.contract_result_pending():_clock=clock;return true
 	var drilling: bool=_world.drill_owner()!=null
 	var music_id: int=-1 if flight_audio==null else flight_audio.current_music_id()
-	var world: RefCounted=_world.evaluate(milliseconds,Vector2.ZERO if drilling else commands,0.0 if brake else _throttle,false,Vector2i(camera.get_viewport().get_visible_rect().size),commands if drilling else Vector2.ZERO,fire_primary,fire_secondary,relative_mouse_capture,music_id,strafe,_boost_requested)
+	var world: RefCounted=_world.evaluate(milliseconds,Vector2.ZERO if drilling else commands,0.0 if brake else _throttle,false,Vector2i(camera.get_viewport().get_visible_rect().size),commands if drilling else Vector2.ZERO,fire_primary,fire_secondary,relative_mouse_capture,music_id,strafe,_boost_requested,_cloak_requested)
 	if world==null:return reject(_world.error)
 	var activated: bool=world.booster_state().activation!=_world.booster_state().activation
 	if not _commit(world,true,floori(float(now_microseconds)/1000.0)):return false
-	_boost_requested=false
+	_boost_requested=false;_cloak_requested=false
 	if activated:_throttle=1.0
 	_clock=clock
 	return true
@@ -272,6 +273,7 @@ func action(name: String) -> bool:
 	match name:
 		"time":world=_world.press_fast_forward()
 		"boost":_boost_requested=true;return true
+		"cloak":_cloak_requested=true;return true
 		"missiles":
 			if not secondary_available():return reject("No supported secondary launcher is installed")
 			# A button edge requests one late-input pass, not an immediate pulse.
@@ -300,6 +302,7 @@ func action(name: String) -> bool:
 	if name in ["autopilot","field_autopilot","station_autopilot"] and _world.snapshot().station_autopilot.active:_throttle=1.0
 	return true
 
+func cloak_state() -> Dictionary:return {} if _world==null else _world.cloak_state()
 func booster_state() -> Dictionary:return {} if _world==null else _world.booster_state()
 
 func fast_forward_available() -> bool:return _world!=null and _world.fast_forward_available()
@@ -311,7 +314,7 @@ func release_action(name: String) -> bool:
 	return _commit(world,false)
 
 func clear_flight_input() -> bool:
-	_boost_requested=false
+	_boost_requested=false;_cloak_requested=false
 	_secondary_requested=false
 	if not fast_forward_available():return true
 	var state: Dictionary=_world.fast_forward_state()
@@ -495,7 +498,7 @@ func present_current() -> bool:
 	return scene!=null and scene.present(_world,false,_presentation_ms)
 
 func set_pause(reason: String, paused: bool, now_microseconds: int) -> bool:
-	if _clock==null or reason not in ["user","focus","hidden","transition","map","secondary_menu","flight_menu"] or now_microseconds<0:return reject("Invalid mining pause")
+	if _clock==null or reason not in ["user","focus","hidden","transition","cloak_notice","map","secondary_menu","flight_menu"] or now_microseconds<0:return reject("Invalid mining pause")
 	if _pauses.has(reason)==paused:return true
 	if not clear_flight_input():return false
 	if not _clock.rebase(now_microseconds):return reject(_clock.error)
@@ -542,6 +545,6 @@ func clear() -> void:
 	error="";status="idle";camera=null;scene=null;briefing_audio=null;objective_audio=null;objective_failure_audio=null;flight_audio=null
 	_world=null;_clock=null;_pauses={};_active=false;_throttle=1.0;_generation=0
 	_presentation_state={}
-	_presentation_ms=0;_secondary_requested=false;_boost_requested=false
+	_presentation_ms=0;_secondary_requested=false;_boost_requested=false;_cloak_requested=false
 func fail(message: String) -> bool:clear();status="error";error=message;return false
 func reject(message: String) -> bool:error=message;return false

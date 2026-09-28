@@ -7,6 +7,7 @@ const Encounter=preload("res://src/simulation/mission_encounter.gd")
 const Pilot=preload("res://src/simulation/pilot_motion.gd")
 const Contacts=preload("res://src/simulation/physical_scenery_contacts.gd")
 const Aim=preload("res://src/simulation/opening_aim.gd")
+const Cargo=preload("res://src/simulation/flight_cargo.gd")
 const Booster=preload("res://src/simulation/player_booster.gd")
 const Engines=preload("res://src/simulation/player_engine_particles.gd")
 const EngineAudio=preload("res://src/simulation/opening_engine_audio.gd")
@@ -37,6 +38,7 @@ var _encounter: RefCounted
 var _player: RefCounted
 var _scenery: RefCounted
 var _equipment: RefCounted
+var _cargo: RefCounted
 var _career: RefCounted
 var _pilot: RefCounted
 var _physical: RefCounted
@@ -82,6 +84,8 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,c
 	var player: RefCounted=initialized_world.construction_owner().player_owner()
 	var equipment: RefCounted=entry.equipment_owner();var career: RefCounted=entry.career_owner()
 	if not context.matches_loadout(equipment.snapshot().loadout) or not equipment.cargo_cache_valid():return reject("Mission entry lost its retained equipment")
+	var cargo:=Cargo.new()
+	if not cargo.configure_equipment(bindings,catalogues,equipment) or not player.configure_cloak(bindings,catalogues,career.snapshot().difficulty):return reject(cargo.error+player.error)
 	var runner:=Runner.new();var pilot:=Pilot.new();var physical:=Contacts.new();var aim:=Aim.new()
 	var pose: Transform3D=initialized_world.snapshot().player_pose
 	var scenery: RefCounted=initialized_world.scenery_owner();var camera: RefCounted=initialized_world.camera_owner()
@@ -134,6 +138,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,c
 	if not player.set_permissions(player.snapshot().active,false):return reject(player.error)
 	_context=context;_world=initialized_world;_bindings=bindings;_library=library;_runner=runner;_encounter=encounter
 	_portal=portal
+	_cargo=cargo
 	_player=player;_scenery=scenery;_equipment=equipment;_career=career;_pilot=pilot;_physical=physical
 	_camera=camera;_aim=aim;_engines=engines;_booster=booster;_engine_audio=audio;_death=death;_particles=particles;_detail=detail
 	_music=music;_radar=radar;_music_context=music_context
@@ -150,7 +155,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,c
 func prepare(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,context: RefCounted,initialized_world: RefCounted,sensitivity:=1.0,viewport:=Vector2i(1440,900)) -> bool:
 	return configure(bindings,catalogues,library,context,initialized_world,sensitivity,viewport)
 
-func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary_fire:=false,paused:=false,viewport:=Vector2i.ZERO,strafe:=0.0,secondary_fire:=false,current_music_id:=-1,relative_mouse_capture:=false,boost_requested:=false) -> RefCounted:
+func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary_fire:=false,paused:=false,viewport:=Vector2i.ZERO,strafe:=0.0,secondary_fire:=false,current_music_id:=-1,relative_mouse_capture:=false,boost_requested:=false,cloak_requested:=false) -> RefCounted:
 	error=""
 	var size:=_viewport if viewport==Vector2i.ZERO else viewport
 	if _state.is_empty() or not Numbers.integer(milliseconds,0,_max_ms) or _state.elapsed_ms>2147483647-milliseconds or not valid_viewport(size) or not commands.is_finite() or absf(commands.x)>1 or absf(commands.y)>1 or not is_finite(throttle) or throttle<0 or throttle>1 or strafe not in [-1.0,0.0,1.0] or not Numbers.integer(current_music_id,-1,2292):return failed("Invalid mission flight time or pilot input")
@@ -179,7 +184,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 		for operation in contact.operations:
 			if operation.kind=="asteroid" and next._player.normal_hit(operation.player_damage).is_empty():return failed(next._player.error)
 		next._pose.origin=contact.center_after;next._state.physical_contacts=contact.operations
-		if next._player.advance_recharge(milliseconds).is_empty() or next._player.advance_repair(milliseconds).is_empty():return failed(next._player.error)
+		if next._player.advance_recharge(milliseconds).is_empty() or next._player.advance_repair(milliseconds).is_empty() or not next._player.advance_cloak(milliseconds,next._notices):return failed(next._player.error)
 		if not next._aim.advance(next._pose,_camera.snapshot().pose,size):return failed(next._aim.error)
 		# Contact samples the preceding portal clock, after solid scenery and
 		# before weapons/radio. Opening later in this frame cannot teleport us.
@@ -317,6 +322,14 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if music.is_empty():return failed(next._music.error)
 	next._flight_music={"operations":music.operations}
 	if enabled:next._throttle=throttle
+	if cloak_requested:
+		var activation: Dictionary=next._player.evaluate_cloak_request(next._cargo,enabled)
+		if activation.is_empty():return failed(next._player.error)
+		next._player=activation.player;next._cargo=activation.cargo
+		if activation.started:
+			next._equipment=next._equipment.fork()
+			if not next._equipment.retain_flight_cargo(next._cargo.snapshot()):return failed(next._equipment.error)
+			if not next._notices.enqueue_cloak_spent(activation.consumed):return failed(next._notices.error)
 	if boost_requested and enabled:
 		var activation: int=next._booster.snapshot().activation
 		if not next._booster.request_start():return failed(next._booster.error)
@@ -470,7 +483,7 @@ func snapshot() -> Dictionary:
 	if state.is_empty():return state
 	var view: Dictionary=state.encounter.view;var sequence: Dictionary=state.encounter.sequence
 	state.encounter=_encounter.snapshot();state.encounter.view=view;state.encounter.sequence=sequence
-	state.booster=booster_state()
+	state.booster=booster_state();state.cloak=cloak_state()
 	state.scenery=_scenery.snapshot();state.player_engines=_engines.snapshot();state.player_engine_audio=_engine_audio.snapshot()
 	state.radar=_radar.snapshot();state.music_context=_music_context.duplicate(true);state.flight_music=_flight_music.duplicate(true)
 	state.player_destruction=_death.snapshot();state.damage_particles=_particles.snapshot();state.npc_scanner=_scanner.snapshot();state.mining_targeting=_targeting.snapshot();state.flight_notices=_notices.snapshot();state.detail=_detail.snapshot();state.equipment=_equipment.snapshot()
@@ -493,7 +506,7 @@ func audio_state() -> Dictionary:
 	for declaration in _context.recipe().get("actor_engines",[]):
 		actor_engines[int(declaration.actor_id)]=_encounter.actor_engine_observation(int(declaration.actor_id))
 	return {"revision":_state.revision,"elapsed_ms":_state.elapsed_ms,"combat":combat,"camera_view":_camera.snapshot(),
-		"actor_engines":actor_engines,"booster":booster_state(),
+		"actor_engines":actor_engines,"booster":booster_state(),"cloak":cloak_state(),
 		"radio":state.radio,"radio_events":state.radio_events,"death_events":_death.snapshot().events,
 		"sequence_revision":state.sequence.revision,"sequence_audio":state.sequence.frame.audio,"escape_audio":[] if _escape==null else _escape.snapshot().frame.audio,"dialogue":dialogue(),
 		"scanner_events":_scanner.sound_events(),"flight_music":_flight_music.duplicate(true)}
@@ -507,7 +520,7 @@ func effects_state() -> Dictionary:
 func exhaust_state() -> Dictionary:
 	if _state.is_empty():return {}
 	var state: Dictionary=_context.identity()
-	state.merge({"revision":_state.revision,"elapsed_ms":_state.elapsed_ms,"engine_particles":_engines.snapshot(),"camera_pose":_camera.snapshot().pose})
+	state.merge({"revision":_state.revision,"elapsed_ms":_state.elapsed_ms,"engine_particles":_engines.snapshot(),"cloak":cloak_state(),"camera_pose":_camera.snapshot().pose})
 	return state
 func environment_state() -> Dictionary:return {} if _world==null else _world.environment_owner().snapshot()
 func void_environment_owner() -> RefCounted:return null if _world==null else _world.environment_owner()
@@ -562,7 +575,7 @@ func fork_for_frame() -> RefCounted:
 	if _state.is_empty():return copy
 	copy._music=_music;copy._radar=_radar.fork_for_frame();copy._music_context=_music_context.duplicate(true);copy._flight_music=_flight_music.duplicate(true)
 	copy._runner=_runner.fork();copy._encounter=_encounter.fork_for_frame();copy._player=_player.fork_for_frame();copy._scenery=_scenery.fork_for_frame()
-	copy._equipment=_equipment;copy._career=_career
+	copy._equipment=_equipment;copy._career=_career;copy._cargo=_cargo
 	copy._pilot=_pilot.fork_for_frame();copy._physical=_physical.fork_for_frame();copy._camera=_camera.fork_for_frame();copy._aim=_aim.fork_for_frame()
 	copy._engines=_engines.fork_for_frame();copy._booster=_booster.fork_for_frame();copy._engine_audio=_engine_audio.fork_for_frame();copy._death=_death.fork_for_frame();copy._particles=_particles.fork_for_frame();copy._scanner=_scanner.fork_for_frame();copy._targeting=_targeting.fork_for_frame();copy._notices=_notices.fork_for_frame();copy._detail=_detail.fork_for_frame()
 	return copy
@@ -570,5 +583,6 @@ static func valid_viewport(size: Vector2i) -> bool:return size.x>0 and size.y>0 
 func reject(message: String) -> bool:error=message;return false
 func failed(message: String) -> RefCounted:reject(message);return null
 
+func cloak_state() -> Dictionary:return {} if _player==null else _player.cloak_state()
 func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
 func control_throttle() -> float:return _throttle

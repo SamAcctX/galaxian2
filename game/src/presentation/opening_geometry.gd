@@ -288,6 +288,7 @@ func apply_state(state: Dictionary, escape: Dictionary = {}) -> bool:
 		if detail.size()!=actors.size()+1 or not player.valid_selection(detail.get("player")): return reject("Invalid opening player detail selection")
 		for id in actors:
 			if not actors[id].valid_selection(detail.get(id)): return reject("Invalid opening actor detail selection")
+	if _with_detail and not player.apply_cloak(state.get("player",{}).get("cloak",{})):return reject(player.error)
 	var player_pose: Transform3D=state.player_pose
 	var player_visible:=true
 	if state.has("player_model_basis"):

@@ -15,6 +15,8 @@ var engine_glow: Node3D
 var _actor_engine_parts: Array[Node3D]=[]
 var _detail: RefCounted
 var _camera_suppressed := false
+var _cloak: RefCounted
+var _visuals: RefCounted
 
 func build(ship_id: int, library: RefCounted, visuals: RefCounted, bindings: RefCounted, quality := "high", shared_resources: RefCounted = null, with_player_glow := false) -> bool:
 	clear()
@@ -137,8 +139,17 @@ func _build(ship_id: int,selected: Dictionary,detail: RefCounted,library: RefCou
 		add_child(engine_glow)
 		engine_glow.hide()
 	if shared_resources==null: resources.clear()
-	_detail=detail
+	_detail=detail;_visuals=visuals
 	set_meta("source_ship_id",ship_id)
+	return true
+
+func apply_cloak(state: Dictionary) -> bool:
+	if state.is_empty():return true
+	if _cloak==null:
+		var candidate=preload("res://src/presentation/player_cloak_geometry.gd").new()
+		if not candidate.prepare(self,_visuals):return reject(candidate.error)
+		_cloak=candidate
+	if not _cloak.present(state):return reject(_cloak.error)
 	return true
 
 func apply_detail(distance_squared: Variant, detail: Variant) -> bool:
@@ -190,7 +201,7 @@ func clear() -> void:
 	_actor_engine_parts.clear()
 	selection={}
 	_detail=null
-	_camera_suppressed=false
+	_camera_suppressed=false;_cloak=null;_visuals=null
 	if has_meta("source_ship_id"): remove_meta("source_ship_id")
 
 func reject(message: String) -> bool:

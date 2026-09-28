@@ -36,6 +36,7 @@ func verify_requests() -> void:
 	owner=configured();initial=owner.snapshot()
 	check(not owner.request_start(20,false).started and owner.snapshot()==initial,"A blocked press started charging")
 	var empty: Dictionary=owner.request_start(0)
+	initial.failure_serial+=1
 	check(empty.insufficient_energy and empty.consumed==0 and owner.snapshot()==initial,"Insufficient cells consumed energy or changed readiness")
 	var start: Dictionary=owner.request_start(1)
 	check(start.started and start.consumed==1 and owner.snapshot().phase=="charging" and not owner.active(),"One bought cell did not start U'tool charging")

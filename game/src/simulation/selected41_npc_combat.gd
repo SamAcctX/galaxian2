@@ -140,7 +140,7 @@ func evaluate_motion() -> RefCounted:
 	if _stage!="sequence":return failed("Visit source41 movement after the late sequence exactly once")
 	var state: Dictionary=_player.snapshot()
 	var target:={"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,"ship_id":state.ship_id,
-		"pose":_state.player_pose,"active":state.active,"hull":state.vitals.hull,"targeting_blocked":false,"special_flight":false,"alternate_position":null}
+		"pose":_state.player_pose,"active":state.active,"hull":state.vitals.hull,"targeting_blocked":_player.targeting_blocked(),"special_flight":false,"alternate_position":null}
 	var operation: Dictionary=_control.evaluate(_combat,_weapons,_frame_ms,target,_random,_player)
 	if operation.is_empty():return failed(_control.error)
 	var sequence: RefCounted=_sequence.fork_for_frame()

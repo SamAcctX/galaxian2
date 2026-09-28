@@ -83,6 +83,11 @@ var _map_button: Button
 var _jump_button: Button
 var _time_button: Button
 var _boost_button: Button
+var _cloak_button: Button
+var _cloak_charge: Control
+var _cloak_dialog: Control
+var _cloak_generation:=0
+var _cloak_failure_serial:=0
 var map_panel: Control
 var flight_menu: Control
 var _station_map_open:=false
@@ -202,6 +207,15 @@ func _ready() -> void:
 	_skip_button.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
 	_skip_button.offset_left=-224;_skip_button.offset_right=-16;_skip_button.offset_top=-76;_skip_button.offset_bottom=-24
 	_skip_button.pressed.connect(skip_cinematic)
+	_cloak_button=Button.new();_cloak_button.focus_mode=Control.FOCUS_NONE;host.add_child(_cloak_button)
+	_cloak_button.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	_cloak_button.button_down.connect(func():_touch_flight_action("cloak",true))
+	_cloak_button.button_up.connect(func():_touch_flight_action("cloak",false))
+	_cloak_charge=preload("res://src/presentation/cloak_charge_panel.gd").new();host.add_child(_cloak_charge)
+	_cloak_charge.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_cloak_dialog=GateConfirmationPanel.new();host.add_child(_cloak_dialog)
+	_cloak_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_cloak_dialog.choice_requested.connect(func(_choice):_close_cloak_notice())
 	_launch_dialog=GateConfirmationPanel.new();host.add_child(_launch_dialog)
 	_launch_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_launch_dialog.choice_requested.connect(choose_departure)
@@ -217,20 +231,51 @@ func set_context(content: RefCounted, definitions: RefCounted, prepared_visuals:
 	if library!=null and library.strings.size()>406:_launch_button.text=library.strings[406]
 	if library!=null and bindings!=null and visuals!=null and touch_overlay.configure(library,bindings,visuals):
 		_style_touch_buttons()
+		if not _cloak_charge.configure(library,bindings,visuals):status.text=_cloak_charge.error
 	refresh_render_mode()
 
 func _style_touch_buttons() -> void:
 	var art: Dictionary=touch_overlay.sprites
 	for row in [[_mine_button,1257,1258,"Mine / Stop"],[_station_button,1212,1213,"Station autopilot"],
 		[_map_button,1210,1211,"Map"],[_jump_button,1200,1201,"Jump"],[_time_button,1345,1344,"Fast Forward"],
-		[_pause_button,1208,1209,"Pause / Resume"],[_boost_button,1202,1203,"Boost (W / A)"]]:
+		[_pause_button,1208,1209,"Pause / Resume"],[_boost_button,1202,1203,"Boost (W / A)"],[_cloak_button,1206,1207,"Cloak (C)"]]:
 		var button: Button=row[0]
 		button.text="";button.tooltip_text=row[3]
 		for state in ["normal","hover","disabled"]:button.add_theme_stylebox_override(state,_touch_icon_style(art[row[1]]))
 		for state in ["pressed","hover_pressed"]:button.add_theme_stylebox_override(state,_touch_icon_style(art[row[2]]))
 		button.add_theme_stylebox_override("focus",OriginalUI.focus_style(true))
 
+func _sync_cloak_ui(flight: Dictionary={}) -> void:
+	if _cloak_button==null:return
+	var generation: int=0 if session==null else session.get_instance_id()
+	if generation!=_cloak_generation:
+		_cloak_generation=generation;_cloak_failure_serial=0;_cloak_dialog.clear()
+	var state: Dictionary=session.cloak_state() if session is FirstFlightSession or session is MissionSession else {}
+	var hud: bool=session.flight_hud_visible() if session is MissionSession else session.flight_hud_visible(flight) if session is FirstFlightSession else false
+	_cloak_charge.present(state,hud,_mobile_layout)
+	_cloak_button.visible=hud and state.get("available",false)
+	if _cloak_button.visible:
+		_cloak_button.disabled=not state.ready or not session.can_control() or not _focused
+		_cloak_button.mouse_filter=Control.MOUSE_FILTER_STOP if touch_actions_enabled() else Control.MOUSE_FILTER_IGNORE
+		_cloak_button.modulate.a=1.0 if state.ready else 0.3
+		var extent:=52.0 if _mobile_layout else 34.0
+		_cloak_button.offset_right=-16.0;_cloak_button.offset_left=-16.0-extent
+		_cloak_button.offset_bottom=-238.0 if _mobile_layout else -174.0
+		_cloak_button.offset_top=_cloak_button.offset_bottom-extent
+	if int(state.get("failure_serial",0))>_cloak_failure_serial:
+		if not _cloak_dialog.present_message(library,bindings,visuals,572," %d."%int(state.energy_cost)):status.text=_cloak_dialog.error;return
+		if not session.set_pause("cloak_notice",true,Time.get_ticks_usec()):status.text=session.error;return
+		_cloak_failure_serial=int(state.failure_serial);clear_input()
+	_cloak_dialog.set_mobile_layout(_mobile_layout)
+	_cloak_dialog.set_active(_focused and is_visible_in_tree() and not _user_paused)
+
+func _close_cloak_notice() -> void:
+	if not _cloak_dialog.visible or session==null:return
+	if not session.set_pause("cloak_notice",false,Time.get_ticks_usec()):status.text=session.error;return
+	_cloak_dialog.clear();clear_input();present_session()
+
 func _sync_booster_indicator(flight: Dictionary={}) -> void:
+	_sync_cloak_ui(flight)
 	if _boost_button==null:return
 	var state: Dictionary=flight.get("booster",{}) if session is FirstFlightSession else session.booster_state() if session is MissionSession else {}
 	_boost_button.visible=state.get("available",false)
@@ -329,6 +374,8 @@ func load_station(now_microseconds: int=-1) -> bool:
 
 func reset() -> void:
 	if lounge_panel!=null:lounge_panel.clear()
+	if _cloak_dialog!=null:_cloak_dialog.clear()
+	_cloak_generation=0;_cloak_failure_serial=0
 	cancel_departure()
 	if map_panel!=null:map_panel.clear()
 	if gate_panel!=null:gate_panel.clear()
@@ -432,7 +479,8 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 	if session is MissionSession:
 		_sync_booster_indicator()
 		_sync_mouse_capture()
-		for node in [station_shell,station_panel,equipment_panel,flight_vitals,radio_panel,target_frame,aim_reticle,npc_markers,secondary_panel,lounge_panel,flight_menu,map_panel,gate_panel,touch_overlay,_flight_actions,_flight_hint,_launch_button,_hangar_button,_station_map_button,_lounge_button,_save_button,_load_button,_retry_button,_skip_button]:
+		flight_menu.set_active(_focused and is_visible_in_tree() and not _user_paused)
+		for node in [station_shell,station_panel,equipment_panel,flight_vitals,radio_panel,target_frame,aim_reticle,npc_markers,secondary_panel,lounge_panel,map_panel,gate_panel,touch_overlay,_flight_actions,_flight_hint,_launch_button,_hangar_button,_station_map_button,_lounge_button,_save_button,_load_button,_retry_button,_skip_button]:
 			if node!=null:node.hide()
 		_pause_button.visible=_controls.touch_controls;_pause_button.disabled=false
 		var skip_available: bool=_focused and is_visible_in_tree() and session.can_skip_cinematic()
@@ -598,6 +646,13 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _cloak_dialog.visible:
+		_controls.discard_modal_event(event)
+		if _focused and is_visible_in_tree():_cloak_dialog.handle_event(event)
+		get_viewport().set_input_as_handled();return
+	if session is MissionSession and flight_menu.visible:
+		if _focused and is_visible_in_tree():flight_menu.handle_event(event)
+		get_viewport().set_input_as_handled();return
 	if session is MissionSession:
 		_selected40_input(event)
 		return
@@ -678,8 +733,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if session is FirstFlightSession:
 			if event is InputEventKey:
 				var key: int=event.physical_keycode if event.physical_keycode else event.keycode
-				supported=supported or key in Controls.DIRECTIONS or (Controls.KEY_ACTIONS.has(key) and Controls.KEY_ACTIONS[key] in ["fire","boost","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu"]) or (session.secondary_available() and Controls.KEY_ACTIONS.get(key) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.KEY_ACTIONS.get(key)=="time")
-			elif event is InputEventJoypadButton:supported=supported or (Controls.BUTTON_ACTIONS.has(event.button_index) and Controls.BUTTON_ACTIONS[event.button_index] in ["fire","boost","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu"]) or (session.secondary_available() and Controls.BUTTON_ACTIONS.get(event.button_index) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.BUTTON_ACTIONS.get(event.button_index)=="time")
+				supported=supported or key in Controls.DIRECTIONS or (Controls.KEY_ACTIONS.has(key) and Controls.KEY_ACTIONS[key] in ["fire","boost","cloak","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu"]) or (session.secondary_available() and Controls.KEY_ACTIONS.get(key) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.KEY_ACTIONS.get(key)=="time")
+			elif event is InputEventJoypadButton:supported=supported or (Controls.BUTTON_ACTIONS.has(event.button_index) and Controls.BUTTON_ACTIONS[event.button_index] in ["fire","boost","cloak","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu"]) or (session.secondary_available() and Controls.BUTTON_ACTIONS.get(event.button_index) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.BUTTON_ACTIONS.get(event.button_index)=="time")
 			elif event is InputEventJoypadMotion:supported=event.axis in [JOY_AXIS_LEFT_X,JOY_AXIS_LEFT_Y,JOY_AXIS_TRIGGER_RIGHT] or (session.secondary_available() and event.axis==JOY_AXIS_TRIGGER_LEFT)
 		elif event is InputEventKey:
 			var key: int=event.physical_keycode if event.physical_keycode else event.keycode
@@ -842,6 +897,7 @@ func handle_actions(actions: Array) -> void:
 		elif action=="mouse_mode":
 			_mouse_steering=not _mouse_steering;clear_input();_sync_mouse_capture()
 		elif session is MissionSession:
+			if action=="action_menu":open_flight_menu(false);continue
 			if not session.action(action):status.text=session.error
 		elif session is FirstFlightSession:flight_action(action)
 
@@ -940,16 +996,18 @@ func close_map(now_microseconds: int=-1) -> bool:
 	map_panel.clear();clear_input();present_session();return true
 
 func open_flight_menu(autopilot: bool=true) -> bool:
-	if not session is FirstFlightSession or not session.can_control() or not _focused:return false
+	if not (session is FirstFlightSession or session is MissionSession) or not session.can_control() or not _focused:return false
 	var state: Dictionary=session.snapshot();var rows:=[]
-	if autopilot:
+	if autopilot and session is FirstFlightSession:
 		if state.get("station_autopilot",{}).get("active",false):rows.append({"action":"cancel_autopilot","label":library.strings[134]})
 		if not state.get("scenery",{}).get("objects",[]).is_empty():rows.append({"action":"field_autopilot","label":library.strings[538]})
 		if int(state.location.station_id)>=0:rows.append({"action":"station_autopilot","label":state.station_exterior.name+" "+library.strings[135]})
-	else:
+	elif session is FirstFlightSession:
 		rows.append({"action":"autopilot","label":"Autopilot"})
 		if session.can_open_map():rows.append({"action":"map","label":library.strings[176]})
 		if session.secondary_available():rows.append({"action":"secondary_menu","label":"Secondary weapons"})
+	var cloak: Dictionary=session.cloak_state()
+	if not autopilot and cloak.get("ready",false):rows.append({"action":"cloak","label":library.strings[int(bindings.station_equipment.item_text_offset)+int(cloak.item_id)]})
 	if rows.is_empty() or not flight_menu.configure(library,bindings,visuals):return false
 	if not flight_menu.present(rows,KEY_Q if autopilot else KEY_E):return false
 	if not session.set_pause("flight_menu",true,Time.get_ticks_usec()):flight_menu.close();status.text=session.error;return false
@@ -962,7 +1020,10 @@ func close_flight_menu() -> void:
 
 func choose_flight_menu(action: String) -> void:
 	if not flight_menu.visible or not flight_menu.snapshot().active:return
-	close_flight_menu();flight_action(action)
+	close_flight_menu()
+	if session is MissionSession:
+		if not session.action(action):status.text=session.error
+	else:flight_action(action)
 
 func confirm_map_planet(station_id: int, now_microseconds: int=-1) -> bool:
 	if _station_map_open:

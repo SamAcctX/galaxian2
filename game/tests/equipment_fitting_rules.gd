@@ -111,8 +111,9 @@ func verify_fitting(args: PackedStringArray) -> void:
 	mixed=bindings.mido_travel.duplicate(true)
 	mixed.ordinary_fitting=(FittingRules.VALUES if alternate else FittingRules.MAC_VALUES).duplicate(true)
 	check(not Travel.parameters(mixed),"Another source supplied its different fitting confirmation policy")
-	# These ships' source-specific prompt exception does not establish device
-	# flight support. Diagnostic loadouts never grant owned ships or progress.
+	for id in [94,95,96]:check(supported.has(id),"A base-game cloak is still refused by fitting")
+	# Built-in cloaks preserve fitting compatibility. Hull entry admission and
+	# ownership remain separate; these diagnostics grant no ships or progress.
 	for ship in [44,49]:
 		var candidate:=seed.duplicate(true);candidate.ship_id=ship;candidate.equipment_ids=[95]
 		var ship_counts:=[]
@@ -120,9 +121,9 @@ func verify_fitting(args: PackedStringArray) -> void:
 		candidate.slots.clear();candidate.slots.resize(ship_counts.reduce(func(total,count):return total+count,0))
 		var category:=int(cat.tables.items[95].arrays[2][3]);var offset:=0
 		for index in category:offset+=ship_counts[index]
-		check(ship_counts[category]>0 and not empty.support[95].is_empty(),"The original device guard or compatible slot was lost")
+		check(ship_counts[category]>0 and empty.support[95].is_empty(),"The original cloak compatibility or slot was lost")
 		candidate.slots[offset]={"item_id":95,"category":category,"slot":0,"quantity":1}
-		check(fitting.inspect(bindings,cat,candidate,assets).is_empty(),"A confirmation exception enabled unfinished device flight")
+		check(not fitting.inspect(bindings,cat,candidate,assets).is_empty(),"A compatible built-in-cloak hull refused its fitted device: "+fitting.error)
 
 func verify_secondary_fitting(bindings: RefCounted,cat: RefCounted,seed: Dictionary,assets: Dictionary,support: Dictionary) -> void:
 	var available: bool=Fitting.Secondaries.Definitions.available(bindings)

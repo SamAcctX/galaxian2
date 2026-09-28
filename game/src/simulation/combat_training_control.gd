@@ -268,7 +268,7 @@ func evaluate_selected40(weapons: RefCounted,milliseconds: Variant,player: RefCo
 	var body: Dictionary=player.snapshot()
 	if body.get("selected40_context")!=_rules.selected40_context:return fail("Selected40 phase player context changed")
 	var target:={"base_content_id":_identity.base_content_id,"binding_id":_identity.binding_id,"ship_id":body.ship_id,
-		"pose":pose,"active":body.active,"hull":body.vitals.hull,"targeting_blocked":false,"special_flight":false,"alternate_position":null}
+		"pose":pose,"active":body.active,"hull":body.vitals.hull,"targeting_blocked":player.targeting_blocked(),"special_flight":false,"alternate_position":null}
 	var staged:=fork_for_frame(false);var guns: RefCounted=weapons.fork_for_frame()
 	if guns.advance(milliseconds).is_empty():return fail(guns.error)
 	var operation: Dictionary=staged.advance(milliseconds,target)

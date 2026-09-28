@@ -159,6 +159,7 @@ func present(world: RefCounted,viewport: Vector2i) -> bool:
 	if float(escape.get("vertical_fov_radians",0.0))>0:camera.fov=rad_to_deg(float(escape.vertical_fov_radians))
 	encounter.commit_world(cast)
 	if not animation.is_empty() and not animation.get("repeat",false) and not sequence_effects.commit_state(animation):return failed_display("Sequence model frame was superseded")
+	if not player.apply_cloak(state.player.get("cloak",{})):return failed_display(player.error)
 	player.transform=state.player_pose;player.apply_selection(selection)
 	player.apply_camera_suppression(view.player_render_suppressed)
 	var destruction: Dictionary=world.destruction_owner().snapshot()
