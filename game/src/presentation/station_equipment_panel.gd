@@ -348,13 +348,14 @@ func _refresh() -> void:
 		row.detail.text=row.caption
 		row.detail.visible=not row.detail.text.is_empty()
 		row.detail.add_theme_color_override("font_color",Color(0.48,0.68,0.24) if _tab=="shop" and stock>0 and price<=_credits else Color(0.52,0.62,0.66))
-		var reason: String=_state.get("fitting_support",{}).get(id,"")
+		var mountable: bool=int(_item_categories.get(id,-1)) in [0,1,2,3]
+		var reason: String=_state.get("fitting_support",{}).get(id,"") if mountable else ""
 		row.node.tooltip_text=reason
 		row.actions.mount.tooltip_text=reason
 		for action in row.actions:
 			var button: Button=row.actions[action]
 			button.text=_labels[action]
-			button.visible=(action=="buy" and _tab=="shop") or (action=="sell" and _tab=="cargo") or (action=="mount" and _tab in ["cargo","ship"])
+			button.visible=(action=="buy" and _tab=="shop") or (action=="sell" and _tab=="cargo") or (action=="mount" and mountable and _tab in ["cargo","ship"])
 			if ordinary and not fitting and action in ["mount","unmount"]:button.visible=false
 			button.disabled=not controls or protected or (action=="buy" and (stock==0 or (ordinary and price>_credits))) or (action=="mount" and (not _mount_has_position(int(id)) or (fitting and not reason.is_empty())))
 	for index in _installed_rows:
