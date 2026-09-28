@@ -2900,6 +2900,12 @@
     "game/src/presentation/mine_projectile_geometry.gd",
     "game/src/presentation/mine_projectile_geometry.gd.uid",
     "game/tests/mine_ownership.gd",
-    "game/tests/mine_ownership.gd.uid"
+    "game/tests/mine_ownership.gd.uid",
+    "game/src/content/cloak_definitions.gd",
+    "game/src/content/cloak_definitions.gd.uid",
+    "game/src/simulation/player_cloak.gd",
+    "game/src/simulation/player_cloak.gd.uid",
+    "game/tests/player_cloak.gd",
+    "game/tests/player_cloak.gd.uid"
   ]
 }

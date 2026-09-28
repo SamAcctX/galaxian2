@@ -125,6 +125,29 @@ func retain_recovery(owner: RefCounted) -> bool:
 	_state.entries=next.entries;_state.used=next.used;_recovery_serial=plan.serial
 	return true
 
+## Device fuel is ordinary inventory. Mission-marked goods are never available
+## for consumption, even when they share an item with a regular cargo row.
+func quantity(item_id: int) -> int:
+	if _state.is_empty() or item_id<0 or item_id>=_item_count:return -1
+	var count:=0
+	for row in _state.entries:
+		if row.item_id==item_id and not row.get("mission",false):count+=int(row.quantity)
+	return count
+
+func consume(item_id: Variant,units: Variant) -> bool:
+	error=""
+	if _state.is_empty() or not Numbers.integer(item_id,0,_item_count-1) or not Numbers.integer(units,1,2147483647):return reject("Cargo consumption requires an item and positive quantity")
+	if quantity(item_id)<units:return reject("The cargo hold has insufficient unprotected units")
+	var rows: Array=_state.entries.duplicate(true);var remaining:=int(units)
+	for row in rows:
+		if remaining==0:break
+		if row.item_id!=item_id or row.get("mission",false):continue
+		var taken:=mini(remaining,int(row.quantity))
+		row.quantity-=taken;remaining-=taken
+	rows=rows.filter(func(row):return row.quantity>0)
+	_state.entries=rows;_state.used=_used(rows)
+	return true
+
 func _valid_retained_hold(hold: Dictionary) -> bool:
 	for key in ["base_content_id","binding_id","ship_id","capacity"]:
 		if hold.get(key)!=_state.get(key):return false
