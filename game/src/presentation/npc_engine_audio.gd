@@ -30,14 +30,19 @@ func configure(library: RefCounted,bindings: RefCounted,seed_value:=0) -> bool:
 	if _clips.is_empty():error=adapter.error;return false
 	return true
 
-## Reads visible ships from a flight observation: ordinary actors (freighters
-## carry a multi-body assembly) and paid wingmen.
+## Reads visible ships from a flight observation: ordinary and encounter actors
+## (freighters carry a multi-body assembly) and paid wingmen.
 static func sources(state: Dictionary) -> Array:
 	var rows:=[]
 	for actor in state.get("actors",[]):
 		if not actor is Dictionary or not actor.get("visible",false) or not actor.get("position") is Vector3 or int(actor.get("hull_catalogue_id",-1))<0:continue
 		if actor.has("current_hull") and int(actor.current_hull)<=0:continue
 		rows.append({"key":"actor:"+str(actor.actor_id),"event":FREIGHTER if actor.has("assembly") else FIGHTER,"position":actor.position})
+	# Freelance encounters keep their ships in the combat frame; a ship's engine
+	# sounds while its exhaust is drawn.
+	for actor in state.get("encounter",{}).get("combat",{}).get("actors",[]):
+		if actor is Dictionary and actor.get("active",false) and actor.get("engine_draw_enabled",false) and actor.get("pose") is Transform3D and int(actor.get("hull_catalogue_id",-1))>=0:
+			rows.append({"key":"encounter:"+str(actor.actor_id),"event":FREIGHTER if actor.has("assembly") else FIGHTER,"position":actor.pose.origin})
 	for actor in state.get("wingman_actors",{}).get("actors",[]):
 		if actor is Dictionary and actor.get("active",false) and actor.get("pose") is Transform3D:
 			rows.append({"key":"wingman:"+str(actor.get("actor_id",actor.get("wingman_index",0))),"event":WINGMAN,"position":actor.pose.origin})
