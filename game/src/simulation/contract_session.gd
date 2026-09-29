@@ -96,6 +96,14 @@ func settle_base_medals() -> bool:
 	_state.base_medals=retained
 	return true
 
+func retain_asteroid_destruction_total(total: int) -> bool:
+	error=""
+	if _state.is_empty() or _flight.is_empty():return reject("Asteroid destruction progress requires the retained living flight")
+	var current:=int(_state.get("progress",{}).get("asteroids_destroyed",0))
+	if not Numbers.integer(total,current,2147483647):return reject("Asteroid destruction progress regressed or exceeded the supported career range")
+	if total>0 or _state.progress.has("asteroids_destroyed"):_state.progress.asteroids_destroyed=total
+	return true
+
 func complete_story_wait(bindings: RefCounted,story_mission: Dictionary) -> bool:
 	# Stage this on the station's fork. The caller publishes it only when the
 	# final original story line is acknowledged. A side job can remain accepted.
@@ -280,7 +288,7 @@ func _retain_story_progress(bindings: RefCounted,progress: Dictionary,previous: 
 	if current.is_empty() or not Reputation.valid_state(progress.get("reputation")):return reject("The capture lost its earned career")
 	for key in current:
 		if progress.get(key)!=current[key]:return reject("The capture career counters disagree")
-	for key in ["player_kills","pirate_kills","other_score","debris_destroyed","capital_ship_kills","cargo_recovered"]:
+	for key in ["player_kills","pirate_kills","other_score","debris_destroyed","capital_ship_kills","cargo_recovered","asteroids_destroyed"]:
 		if not Numbers.integer(progress.get(key,0),int(_state.progress.get(key,0)),2147483647):return reject("The capture lost a retained career counter")
 	var earned:=Career.calculate_progress(_progress_rules,next_cursor,current.player_kills,current.pirate_kills,current.other_score)
 	if earned.is_empty():return reject("The Alioth story exceeds the supported career range")

@@ -40,6 +40,16 @@ func verify_save(args: PackedStringArray) -> void:
 	check(archive.capture(restored,bindings)==record,"The restored station changed its persistent record")
 	check(restored.prepare_departure(bindings,cat)==station.prepare_departure(bindings,cat),"The loaded station prepares a different departure")
 	check(station.snapshot()==original,"Detached save restoration changed the running station")
+	var mason: RefCounted=station.fork();mason._contracts=mason._contracts.fork()
+	mason._contracts._state.progress.asteroids_destroyed=51
+	check(mason._contracts.settle_base_medals(),mason._contracts.error)
+	mason._state.progress=mason._contracts.snapshot().progress.duplicate(true)
+	var mason_record:=archive.capture(mason,bindings)
+	var mason_restored:=archive.restore(bindings,cat,library,mason_record)
+	check(mason_restored!=null and mason_restored.snapshot().contracts.progress.asteroids_destroyed==51 and mason_restored.snapshot().contracts.base_medals.levels[29]==3,"Mason progress or bronze medal did not survive station archive restore")
+	if OS.get_environment("GOF2_MASON_SAVE_ONLY")=="1":
+		verify_mason_file(bindings,cat,library,mason)
+		return
 	for mutation in [
 		[["version"],2],[["binding_id"],"0".repeat(64)],[["station","mission","station_id"],98],[["station","mission"],[]],
 		[["station","acknowledged"],false],[["station","player_cache","values","hull"],0],
@@ -113,3 +123,17 @@ func verify_files(bindings: RefCounted,cat: RefCounted,library: RefCounted,stati
 	corrupt=FileAccess.open(path,FileAccess.WRITE);corrupt.store_buffer(damaged);corrupt.close()
 	check(file.load_document(path,bindings,cat,library)==original and file.recovered_backup,"A damaged payload bypassed the checksum or viable backup")
 	print("Private save round trip: ",path)
+
+func verify_mason_file(bindings: RefCounted,cat: RefCounted,library: RefCounted,mason: RefCounted) -> void:
+	var directory:=OS.get_environment("GOF2_SAVE_TEST_DIRECTORY")
+	if directory.is_empty() or not Checkpoint.private_path(directory+"/save.bin"):check(false,"Set a private Mason save-test directory");return
+	var path:=SaveFile.path_for(directory.path_join(str(Time.get_ticks_usec())),bindings);var file:=SaveFile.new()
+	if not file.save(path,mason,bindings,cat,library):check(false,file.error);return
+	var document:=file.load_document(path,bindings,cat,library);var archive:=Archive.new();var loaded:=archive.restore(bindings,cat,library,document)
+	check(loaded!=null and loaded.snapshot().contracts.progress.asteroids_destroyed==51 and loaded.snapshot().contracts.base_medals.levels[29]==3,"Mason progress or bronze medal did not survive the physical save file")
+	if loaded==null:return
+	var departure: Dictionary=loaded.prepare_departure(bindings,cat)
+	check(not departure.is_empty() and departure.progress.get("asteroids_destroyed",0)==51,"Mason progress did not survive station departure")
+	var construction:=Construction.new()
+	check(construction.prepare_free(bindings,cat,loaded,4096,1789100000),construction.error)
+	if not construction.snapshot().is_empty():check(construction.snapshot().departure.progress.get("asteroids_destroyed",0)==51,"Mason progress did not survive first-flight construction")

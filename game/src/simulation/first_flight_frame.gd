@@ -1442,6 +1442,7 @@ func _advance_world(milliseconds: int, preceding_reference: Vector3) -> bool:
 		if not _objective.observe_combat(_encounter):return reject(_objective.error)
 		if not _audio_frame.is_empty():_audio_frame.actors=_encounter.actor_events()
 	if not _scenery.update(milliseconds,preceding_reference,1.0,null,_random):return reject(_scenery.error)
+	if _objective!=null and not _objective.observe_scenery(_scenery):return reject(_objective.error)
 	if _portal!=null and not _portal.advance(milliseconds,_camera.snapshot().pose):return reject(_portal.error)
 	if _sahi!=null and not _sahi.advance_portal(milliseconds,_camera.snapshot().pose):return reject(_sahi.error)
 	_random=_scenery.random_state()

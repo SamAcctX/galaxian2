@@ -524,6 +524,9 @@ func _valid_selected_progress(bindings: RefCounted,progress: Dictionary,cursor: 
 	if progress.has("cargo_recovered"):
 		if not Numbers.integer(progress.cargo_recovered,0,2147483647):return reject("Selected construction lost its recovered-cargo statistic")
 		expected.cargo_recovered=progress.cargo_recovered
+	if progress.has("asteroids_destroyed"):
+		if not Numbers.integer(progress.asteroids_destroyed,0,2147483647):return reject("Selected construction lost its asteroid-destruction statistic")
+		expected.asteroids_destroyed=progress.asteroids_destroyed
 	if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected or rank!=progress.get("rank") or difficulty not in [0.5,1.0,1.5]:return reject("Selected construction changed earned rank, difficulty or hint history")
 	return true
 
@@ -624,6 +627,9 @@ func _prepare_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dictio
 		var expected:=Career.calculate_progress(bindings.opening_handoff,packet.campaign_cursor,progress.get("player_kills"),progress.get("pirate_kills"),progress.get("other_score"))
 		if expected.is_empty():return reject("Local arrival has unsupported career counters")
 		expected.reputation=progress.reputation.duplicate(true)
+		if progress.has("asteroids_destroyed"):
+			if not Numbers.integer(progress.asteroids_destroyed,0,2147483647):return reject("Local arrival lost its asteroid-destruction statistic")
+			expected.asteroids_destroyed=progress.asteroids_destroyed
 		if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected:return reject("Local arrival career disagrees with its counters")
 	var flags: Variant=objective.get("station_response_flags")
 	var valid_flags: bool=FreeFlight.response_flags(bindings,flags) if free_arrival else (ContractWorld.response_flags(bindings,flags) if contract_arrival else Travel.valid_response_flags(bindings.mido_travel,flags,packet.campaign_cursor))
@@ -857,6 +863,9 @@ func _valid_packet(bindings: RefCounted, packet: Dictionary, context: Dictionary
 	if ContractWorld.supports(bindings,packet.campaign_cursor):
 		if not Numbers.integer(progress.get("debris_destroyed"),0,2147483647):return reject("Contract departure lost its debris statistic")
 		expected_progress.debris_destroyed=progress.debris_destroyed
+	if progress.has("asteroids_destroyed"):
+		if not Numbers.integer(progress.asteroids_destroyed,0,2147483647):return reject("Departure lost its asteroid-destruction statistic")
+		expected_progress.asteroids_destroyed=progress.asteroids_destroyed
 	if not MiningSession.retain_hint_history(progress,expected_progress,bindings.mining_session) or progress!=expected_progress:return reject("First flight changed earned campaign progress")
 	if ContractWorld.supports(bindings,packet.campaign_cursor):
 		if not Travel.navigation_mission(bindings.mido_travel,packet.campaign_cursor,packet.mission) or packet.contracts.progress!=progress or not ContractWorld.response_flags(bindings,packet.station_response_flags):return reject("Contract departure changed the retained career, responses or pending story")

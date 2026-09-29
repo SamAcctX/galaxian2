@@ -17,6 +17,8 @@ var _rescue_result:=false
 var _result_observation: RefCounted
 var _wingman_cast:={}
 var _wingman_losses:={}
+var _initial_asteroids_destroyed:=0
+var _asteroids_destroyed:=0
 
 func configure(bindings: RefCounted,construction: RefCounted,encounter: RefCounted,library: RefCounted=null) -> bool:
 	error=""
@@ -40,6 +42,7 @@ func configure(bindings: RefCounted,construction: RefCounted,encounter: RefCount
 		"combat_objective_satisfied":false,"combat_objective_acknowledged":false,"mining_completed":false,
 		"reward_credits":0,"dialogue":{"visible":false,"index":0,"count":0,"previous_available":false}}
 	_contracts=contracts;_field_identity=construction.scenery_owner().presentation_identity()
+	_initial_asteroids_destroyed=int(contracts.snapshot().get("progress",{}).get("asteroids_destroyed",0));_asteroids_destroyed=0
 	_visit=visit;_bindings=bindings
 	_rescue_result=rescue;_result_observation=null
 	_wingman_cast=contracts.snapshot().get("wingmen",{}).get("active",{}).duplicate(true)
@@ -87,9 +90,22 @@ func navigate(action: String,encounter: RefCounted) -> bool:
 func poll_contract(cargo: RefCounted,scenery: RefCounted,encounter: RefCounted,alive: bool,radio_active: bool,periodic_due: bool) -> bool:
 	error=""
 	if _contracts==null or not encounter is Encounter or cargo.field_identity()!=_field_identity or scenery.presentation_identity()!=_field_identity or not cargo.matches_mined_field(scenery.mining_snapshot()):return reject("The contract objective lost its actual flight field and cargo")
+	if not observe_scenery(scenery):return false
 	var result: Dictionary=encounter.evaluate_contract_session(_contracts,radio_active,alive,periodic_due)
 	if result.is_empty():return reject(encounter.error)
 	_contracts=result.session
+	return true
+
+func observe_scenery(scenery: RefCounted) -> bool:
+	error=""
+	if _contracts==null or scenery==null or scenery.presentation_identity()!=_field_identity:return reject("Asteroid progress requires this contract flight's retained scenery field")
+	var observed: Variant=scenery.read_snapshot().get("destroyed_count",0)
+	if not observed is int or observed<_asteroids_destroyed or observed>2147483647:return reject("Asteroid destruction history regressed or exceeded the supported career range")
+	_asteroids_destroyed=observed
+	var progress: Dictionary=_contracts.snapshot().get("progress",{})
+	if _asteroids_destroyed>0 or progress.has("asteroids_destroyed"):
+		var total:=_initial_asteroids_destroyed+_asteroids_destroyed
+		if total>2147483647 or not _contracts.retain_asteroid_destruction_total(total):return reject(_contracts.error if not _contracts.error.is_empty() else "Asteroid destruction progress exceeds the supported career range")
 	return true
 
 func observe_combat(encounter: RefCounted) -> bool:
@@ -163,6 +179,7 @@ func fork_for_frame() -> RefCounted:
 	copy._visit=null if _visit==null else _visit.fork();copy._bindings=_bindings
 	copy._rescue_result=_rescue_result;copy._result_observation=null if _result_observation==null else _result_observation.fork()
 	copy._wingman_cast=_wingman_cast;copy._wingman_losses=_wingman_losses.duplicate()
+	copy._initial_asteroids_destroyed=_initial_asteroids_destroyed;copy._asteroids_destroyed=_asteroids_destroyed
 	return copy
 
 func reject(message: String) -> bool:error=message;return false

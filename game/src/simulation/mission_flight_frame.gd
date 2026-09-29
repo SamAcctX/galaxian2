@@ -353,6 +353,9 @@ func _observe_progress() -> bool:
 	var progress:=_initial_progress.duplicate(true)
 	for key in ["player_kills","pirate_kills","debris_destroyed","capital_ship_kills"]:
 		if progress.has(key) or totals.has(key):progress[key]=int(_initial_progress.get(key,0))+int(totals.get(key,0))
+	var asteroids: Variant=_scenery.read_snapshot().get("destroyed_count",0)
+	if not asteroids is int or asteroids<0 or asteroids>2147483647-int(_initial_progress.get("asteroids_destroyed",0)):return reject("Mission asteroid progress exceeds the supported career range")
+	if asteroids>0 or progress.has("asteroids_destroyed"):progress.asteroids_destroyed=int(_initial_progress.get("asteroids_destroyed",0))+asteroids
 	var recovered: int=_encounter.recovery_totals().get("accepted_quantity",0)
 	if recovered>0 or progress.has("cargo_recovered"):progress.cargo_recovered=Career.recovered_cargo_total(int(_initial_progress.get("cargo_recovered",0)),recovered)
 	progress.reputation=_encounter.combat_owner().reputation_after(_initial_progress.reputation)
