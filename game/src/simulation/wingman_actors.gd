@@ -371,6 +371,12 @@ func snapshot() -> Dictionary:
 func body_owner(index: int) -> RefCounted:
 	return null if index<0 or index>=_actors.size() else _actors[index].fork_for_frame()
 
+func casualty_bodies() -> Array:
+	var result:=[]
+	for actor in _actors:
+		if actor.snapshot().vitals.hull==0:result.append(actor.fork_for_frame())
+	return result
+
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._identity=_identity;copy._actors=_actors;copy._detail_positions=_detail_positions

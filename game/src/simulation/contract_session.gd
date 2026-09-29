@@ -717,6 +717,26 @@ func advance_wingmen(milliseconds: Variant) -> bool:
 	if not active.is_empty():active.remaining_ms=maxi(0,int(active.remaining_ms)-milliseconds)
 	return true
 
+## The flight reports one native casualty when that pilot enters destruction.
+## Loss changes the paid roster, not its terms or the freelance mission.
+func record_wingman_loss(pilot: RefCounted) -> bool:
+	error=""
+	if not is_instance_of(pilot,load("res://src/simulation/opening_combat_actor.gd")):return reject("A companion casualty requires its native body")
+	var body: Dictionary=pilot.snapshot()
+	if not body.get("wingman",false) or body.get("vitals",{}).get("hull",1)!=0:return reject("Only a destroyed companion can leave the paid roster")
+	for key in ["base_content_id","binding_id"]:
+		if body.get(key)!=_state.get(key):return reject("The companion casualty belongs to another career")
+	var active: Dictionary=_state.get("wingmen",{}).get("active",{})
+	if active.is_empty():return true
+	if body.get("actor_kind")!=active.faction:return reject("The companion casualty changed its hired faction")
+	var index: int=active.names.find(body.get("name",""))
+	if index<0:return true
+	var names: Array=active.names.duplicate()
+	names.remove_at(index)
+	if names.is_empty():_state.wingmen.active={}
+	else:active.names=names
+	return true
+
 func expired_wingmen() -> Dictionary:
 	if not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return {}
 	var active: Dictionary=_state.get("wingmen",{}).get("active",{})

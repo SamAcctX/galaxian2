@@ -1427,6 +1427,10 @@ func _advance_world(milliseconds: int, preceding_reference: Vector3) -> bool:
 		var crew: Dictionary=_wingmen.advance_targeting(milliseconds,_pose,_player.snapshot(),[] if _encounter==null else _encounter.combat_snapshot().actors,_random)
 		if crew.is_empty():return reject(_wingmen.error)
 		_random=crew.random_state
+		# A casualty is recorded once in this departure's career, independently
+		# of hostile kill/reward accounting and the later wreck presentation.
+		for casualty in _wingmen.casualty_bodies():
+			if not _objective.record_wingman_loss(casualty):return reject(_objective.error)
 	if _encounter!=null:
 		var before: Dictionary={} if _particles==null else _encounter.combat_snapshot()
 		var actors: Dictionary=_encounter.evaluate_world(_player,_pose,milliseconds,_random)

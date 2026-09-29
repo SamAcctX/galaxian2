@@ -15,6 +15,8 @@ var _visit: RefCounted
 var _bindings: RefCounted
 var _rescue_result:=false
 var _result_observation: RefCounted
+var _wingman_cast:={}
+var _wingman_losses:={}
 
 func configure(bindings: RefCounted,construction: RefCounted,encounter: RefCounted,library: RefCounted=null) -> bool:
 	error=""
@@ -40,6 +42,8 @@ func configure(bindings: RefCounted,construction: RefCounted,encounter: RefCount
 	_contracts=contracts;_field_identity=construction.scenery_owner().presentation_identity()
 	_visit=visit;_bindings=bindings
 	_rescue_result=rescue;_result_observation=null
+	_wingman_cast=contracts.snapshot().get("wingmen",{}).get("active",{}).duplicate(true)
+	_wingman_losses={}
 	return true
 
 func poll_visit(world_ms: int,hud_ms: int,blocked: bool) -> bool:
@@ -118,6 +122,24 @@ func advance_wingmen(milliseconds: int) -> bool:
 	if _contracts==null:return reject("Wingman flight time requires the retained career")
 	return true if _contracts.advance_wingmen(milliseconds) else reject(_contracts.error)
 
+## Stable departure indices make a death notification idempotent even when two
+## hired pilots have the same display name. New departures own a new ledger.
+func record_wingman_loss(pilot: RefCounted) -> bool:
+	error=""
+	if _contracts==null or not is_instance_of(pilot,load("res://src/simulation/opening_combat_actor.gd")):return reject("The flight requires its native companion casualty")
+	var body: Dictionary=pilot.snapshot()
+	var index: Variant=body.get("wingman_index")
+	var names: Array=_wingman_cast.get("names",[])
+	if not index is int or index<0 or index>=names.size() or body.get("actor_id")!=index or body.get("name")!=names[index] or body.get("actor_kind")!=_wingman_cast.get("faction"):return reject("The casualty is outside this departure's paid cast")
+	for key in ["base_content_id","binding_id","campaign_cursor"]:
+		if body.get(key)!=_state.get(key):return reject("The casualty belongs to another flight")
+	if not body.get("wingman",false) or body.get("vitals",{}).get("hull",1)!=0:return reject("A living pilot cannot leave as a casualty")
+	if _wingman_losses.has(index):return true
+	var candidate: RefCounted=_contracts.fork()
+	if not candidate.record_wingman_loss(pilot):return reject(candidate.error)
+	_contracts=candidate;_wingman_losses[index]=body.name
+	return true
+
 func result_pending() -> bool:return _contracts!=null and _contracts.result_pending()
 func dialogue_visible() -> bool:return _visit!=null and _visit.snapshot().dialogue.visible
 
@@ -140,6 +162,7 @@ func fork_for_frame() -> RefCounted:
 	copy._state=_state.duplicate(true);copy._contracts=null if _contracts==null else _contracts.fork();copy._field_identity=_field_identity
 	copy._visit=null if _visit==null else _visit.fork();copy._bindings=_bindings
 	copy._rescue_result=_rescue_result;copy._result_observation=null if _result_observation==null else _result_observation.fork()
+	copy._wingman_cast=_wingman_cast;copy._wingman_losses=_wingman_losses.duplicate()
 	return copy
 
 func reject(message: String) -> bool:error=message;return false

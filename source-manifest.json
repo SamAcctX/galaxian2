@@ -1890,6 +1890,8 @@
     "game/tests/wingman_orders_application.gd.uid",
     "game/tests/wingman_primary_application.gd",
     "game/tests/wingman_primary_application.gd.uid",
+    "game/tests/wingman_casualty_application.gd",
+    "game/tests/wingman_casualty_application.gd.uid",
     "game/tests/wingman_route_application.gd",
     "game/tests/wingman_route_application.gd.uid",
     "game/tests/wingman_waypoint_application.gd",
