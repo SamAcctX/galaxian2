@@ -347,6 +347,8 @@ func contract_action(action: String,id: int,panel: Control,checkpoint: Callable=
 			if not opened or not candidate.purchase_lounge_blueprint(id,_bindings):return reject(candidate.error)
 		"buy_diplomat":
 			if not opened or not candidate.purchase_lounge_diplomat(id,_bindings):return reject(candidate.error)
+		"hire_wingmen":
+			if not opened or not candidate.hire_lounge_wingmen(id,_bindings):return reject(candidate.error)
 		"accept","replace":
 			if not opened or not candidate.accept_contract(id,action=="replace",_bindings):return reject(candidate.error)
 		"result_close":
@@ -362,7 +364,7 @@ func contract_action(action: String,id: int,panel: Control,checkpoint: Callable=
 	if panel!=null and not panel.present(staged):
 		if prepared!=null:prepared.free()
 		return reject(panel.error)
-	if action in ["buy_coordinates","buy_blueprint","buy_diplomat"] and checkpoint.is_valid() and not checkpoint.call(candidate):
+	if action in ["buy_coordinates","buy_blueprint","buy_diplomat","hire_wingmen"] and checkpoint.is_valid() and not checkpoint.call(candidate):
 		if prepared!=null:prepared.free()
 		if panel!=null:
 			var previous: Dictionary=_world.snapshot();previous.lounge_open=_lounge_open
@@ -398,6 +400,9 @@ func _contract_previews(owner: RefCounted,opened: bool) -> Dictionary:
 			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
 		elif contact.get("role")==3 and contact.has("blueprint"):
 			result[contact.contact_id]=owner.blueprint_preview(contact.contact_id,_bindings)
+			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
+		elif contact.get("role")==6:
+			result[contact.contact_id]=owner.wingman_preview(contact.contact_id,_bindings)
 			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
 		elif contact.get("role")==7:
 			result[contact.contact_id]=owner.diplomat_preview(contact.contact_id,_bindings)

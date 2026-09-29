@@ -210,6 +210,15 @@ func _refresh() -> void:
 				show_yes=true
 				if _confirming:_yes.text=text(133);show_no=true;_no.text=text(134)
 			else:_body.text+="\n\n"+text(192).replace("#C",money(int(service.missing_credits)))
+		elif service.get("kind")=="wingmen":
+			_body.text=text(int(service.intro_text_id)).replace("#C",money(int(service.total_price)))
+			if service.busy:_body.text=text(774)
+			elif service.can_accept:
+				show_yes=true
+				if _confirming:
+					_body.text=text(855).replace("#Q",str(service.crew_size)).replace("#C",money(int(service.total_price)))
+					_yes.text=text(133);show_no=true;_no.text=text(134)
+			else:_body.text+="\n\n"+text(192).replace("#C",money(int(service.missing_credits)))
 		elif service.get("kind")=="diplomat":
 			_body.text=text(int(service.intro_text_id)).replace("#C",money(int(service.total_price)))
 			if service.consumed:_body.text=text(int(service.response_text_id))
@@ -255,6 +264,7 @@ func confirm() -> void:
 	elif preview.get("kind")=="coordinates":action_requested.emit("buy_coordinates",_selected)
 	elif preview.get("kind")=="blueprint":action_requested.emit("buy_blueprint",_selected)
 	elif preview.get("kind")=="diplomat":action_requested.emit("buy_diplomat",_selected)
+	elif preview.get("kind")=="wingmen":action_requested.emit("hire_wingmen",_selected)
 	else:action_requested.emit("replace" if preview.replacement_required else "accept",_selected)
 
 func back() -> void:

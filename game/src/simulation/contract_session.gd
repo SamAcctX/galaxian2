@@ -27,6 +27,7 @@ const VoidSource=preload("res://src/simulation/ordinary_void_source.gd")
 const VoidAccess=preload("res://src/content/void_access_definitions.gd")
 const Blueprints=preload("res://src/simulation/blueprint_progress.gd")
 const ContractProgress=preload("res://src/simulation/contract_progress.gd")
+const Wingmen=preload("res://src/simulation/wingman_contract.gd")
 const Recipe=preload("res://src/content/mission_recipe.gd")
 var error:=""
 var _state:={}
@@ -706,6 +707,35 @@ static func acceptance_supported(rules: Dictionary,cursor: int,quote: Dictionary
 	if OrdinaryContracts.available(bindings) and Campaign.supported(bindings,cursor):
 		return rules==bindings.early_contracts and Numbers.integer(quote.get("context",{}).get("campaign_cursor"),Definitions.first_generation_cursor(rules),cursor) and OrdinaryContracts.retained_mission(bindings,quote.get("mission"),cursor)
 	return not rules.is_empty() and Numbers.integer(cursor,Definitions.first_generation_cursor(rules),int(rules.last_cursor)) and Numbers.integer(quote.get("context",{}).get("campaign_cursor"),Definitions.first_generation_cursor(rules),int(rules.last_cursor)) and quote.get("choices",{}).has("kind_index")
+
+func wingman_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> Dictionary:
+	error=""
+	if _lounges==null or not equipment is Equipment or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the current flight or result before hiring wingmen")
+	if not preload("res://src/simulation/lounge_dialogue.gd").available(bindings):return fail("Wingman dialogue is unavailable for this content")
+	var owned: Dictionary=equipment.snapshot()
+	for key in ["base_content_id","binding_id"]:
+		if _state.get(key)!=bindings.get(key) or owned.get("loadout",{}).get(key)!=bindings.get(key):return fail("The wingmen and career belong to different content")
+	if owned.loadout.station_id!=_state.station_id or _lounges.selection_state().current_station_id!=_state.station_id or owned.get("ordinary_shopping_open",false):return fail("Open the current station lounge with the hangar closed")
+	var active:={}
+	for contact in _lounges.location(int(_state.station_id)).get("population",{}).get("contacts",[]):
+		if contact.contact_id==contact_id:active=Wingmen.offer(contact,int(_state.station_id),bindings);break
+	if active.is_empty():return fail("This contact has no valid wingman roster")
+	var retained: Dictionary=_state.get("wingmen",{"hired_total":0,"active":{}})
+	var busy: bool=not retained.active.is_empty()
+	var count: int=active.names.size()
+	var price: int=active.price
+	return {"kind":"wingmen","contract":active,"crew_size":count,"total_price":price,
+		"intro_text_id":767+count,"busy":busy,"missing_credits":maxi(0,price-int(_state.credits)),
+		"can_accept":not busy and price<=int(_state.credits) and int(retained.hired_total)<=2147483647-count}
+
+func hire_lounge_wingmen(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> bool:
+	var quote:=wingman_preview(bindings,contact_id,equipment)
+	if quote.is_empty():return false
+	if not quote.can_accept:return reject("Another wingman roster is active or this hire exceeds the current credits")
+	var hired: int=_state.get("wingmen",{}).get("hired_total",0)
+	_state.wingmen={"hired_total":hired+int(quote.crew_size),"active":quote.contract.duplicate(true)}
+	_state.credits-=int(quote.total_price)
+	return true
 
 func diplomat_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> Dictionary:
 	error=""

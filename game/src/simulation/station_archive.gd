@@ -28,7 +28,7 @@ const STATION_KEYS=["base_content_id","binding_id","language","campaign_cursor",
 const CHAPTER_KEYS=["campaign_conversation","next_course"]
 const INVENTORY_KEYS=["loadout","stock","cargo","cargo_cache_stale","credit_delta","transactions","prices","protected_item_ids","training_inventory_released","prototype_drill_replaced","ship_affiliation","stock_station_id"]
 const CAREER_KEYS=["base_content_id","binding_id","campaign_cursor","station_id","rank","reputation","difficulty","credits","passengers","mission","active_offer_id","offers","progress","completed_side_missions","delivery_statistics","pending_result","result_serial","accepted_contact","travel_statistics","last_result","population"]
-const OPTIONAL_CAREER_KEYS=["contract_phase","station_outcome"]
+const OPTIONAL_CAREER_KEYS=["contract_phase","station_outcome","wingmen"]
 var error:=""
 var restored_locations: RefCounted
 
@@ -269,6 +269,9 @@ func _career(bindings: RefCounted,cat: RefCounted,data: Dictionary,equipment: Re
 	if (cursor not in [13,14,16] and not FreeFlight.Campaign.supported(bindings.mido_travel,cursor) and not dekato and not onward and not continuation) or not _identity(data,bindings) or data.get("campaign_cursor")!=cursor or data.get("station_id")!=equipment.snapshot().loadout.station_id or data.get("station_id")!=locations.snapshot().current_station_id:return reject("The saved career belongs to another station")
 	if data.get("difficulty") not in [0.5,1.0,1.5] or not data.get("difficulty") is float or not data.get("progress") is Dictionary or not Reputation.valid_state(data.get("reputation")):return reject("The saved difficulty or career is invalid")
 	var progress: Dictionary=data.progress
+	if data.has("wingmen"):
+		if not Contracts.Wingmen.valid_state(data.wingmen,bindings):return reject("The saved wingman contract is invalid")
+		if not data.wingmen.active.is_empty() and data.wingmen.active.station_id>=cat.tables.stations.size():return reject("The saved wingmen have no hiring station")
 	if not Opening.new().valid_progress(self,bindings,progress,cursor):return null
 	if (dekato or onward or continuation or FreeFlight.Campaign.supported(bindings.mido_travel,cursor)) and progress.size()!=9+int(progress.has("mining_failure_hint_seen"))+int(progress.has("cargo_recovered")):return reject("The saved unlocked career lacks its counters")
 	var earned:=Career.calculate_progress(bindings.opening_handoff,cursor,progress.player_kills,progress.pirate_kills,progress.other_score)
