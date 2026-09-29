@@ -28,7 +28,7 @@ const STATION_KEYS=["base_content_id","binding_id","language","campaign_cursor",
 const CHAPTER_KEYS=["campaign_conversation","next_course"]
 const INVENTORY_KEYS=["loadout","stock","cargo","cargo_cache_stale","credit_delta","transactions","prices","protected_item_ids","training_inventory_released","prototype_drill_replaced","ship_affiliation","stock_station_id"]
 const CAREER_KEYS=["base_content_id","binding_id","campaign_cursor","station_id","rank","reputation","difficulty","credits","passengers","mission","active_offer_id","offers","progress","completed_side_missions","delivery_statistics","pending_result","result_serial","accepted_contact","travel_statistics","last_result","population"]
-const OPTIONAL_CAREER_KEYS=["contract_phase","station_outcome","wingmen"]
+const OPTIONAL_CAREER_KEYS=["contract_phase","station_outcome","wingmen","base_medals"]
 var error:=""
 var restored_locations: RefCounted
 
@@ -327,6 +327,9 @@ func _career(bindings: RefCounted,cat: RefCounted,data: Dictionary,equipment: Re
 	career._state.erase("void_source")
 	career._state.erase("blueprints")
 	if not career.restore_void_career(bindings,cat,data.get("void_source"),data.get("blueprints")):return reject(career.error)
+	if data.has("base_medals"):
+		if not Locations.Medals.valid_retained(data.base_medals,data,career.blueprint_state()):return reject("The saved medals disagree with the earned native career")
+	elif not career.settle_base_medals():return reject(career.error)
 	if FreeFlight.Campaign.supported(bindings.mido_travel,cursor) and career.retained_station_context(bindings,data.station_id).is_empty():return reject(career.error)
 	if onward and cursor==int(Nehma.declarations(bindings).mission.campaign_cursor) and career.retained_station_context(bindings,data.station_id).is_empty():return reject(career.error)
 	if cursor in [13,14] and career.flight_context(data.station_id,bindings).is_empty():return reject(career.error)

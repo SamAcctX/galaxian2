@@ -87,6 +87,13 @@ func configure(bindings: RefCounted,catalogues: RefCounted,station: Dictionary,e
 	if LoungeLifecycle.available(bindings):
 		_lounges=LoungeCache.new()
 		if not _lounges.configure(bindings):return reject(_lounges.error)
+	return settle_base_medals()
+
+func settle_base_medals() -> bool:
+	if _state.is_empty() or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return reject("Medals require an acknowledged station career")
+	var retained:=LoungeCache.Medals.commit(_state.get("base_medals",{}),_state,blueprint_state())
+	if retained.is_empty():return reject("The station lost its earned medal evidence")
+	_state.base_medals=retained
 	return true
 
 func complete_story_wait(bindings: RefCounted,story_mission: Dictionary) -> bool:
@@ -339,7 +346,8 @@ func rebase_station(equipment: RefCounted,bindings: RefCounted=null) -> bool:
 	var owned:=_station_inventory(equipment,bindings)
 	if owned.is_empty():return false
 	var station: int=owned.loadout.station_id
-	return _adopt_station(station)
+	if not _adopt_station(station):return false
+	return settle_base_medals()
 
 ## Only the real local-arrival transaction uses this authored-world adapter.
 ## Generic station inventory/cache admission remains closed at pending38/22.
@@ -513,7 +521,7 @@ func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,st
 	var previous_station: int=_lounges.selection_state().current_station_id
 	var candidate: RefCounted=_lounges.fork()
 	var context:={"station_id":station_id,"campaign_cursor":_state.campaign_cursor,"rank":_state.rank,"reputation":_state.reputation.duplicate(true)}
-	var medals:=LoungeCache.Medals.blueprint_counts(blueprint_state())
+	var medals:=LoungeCache.Medals.stock_progress(_state,blueprint_state())
 	if not candidate.select_location(bindings,cat,library,context,settings,random_state,unix_seconds,station_context,medals):return reject(candidate.error)
 	var source: RefCounted=_void_source
 	var selected_entry: RefCounted
@@ -1012,7 +1020,8 @@ func poll_station(equipment: RefCounted,bindings: RefCounted=null) -> bool:
 	if not _rules.has("delivery_results"):return reject("This content has no supported delivery results")
 	var owned:=_station_inventory(equipment,bindings)
 	if owned.is_empty():return false
-	return _poll_station_results(owned,equipment)
+	if not _poll_station_results(owned,equipment):return false
+	return true if not _state.pending_result.is_empty() else settle_base_medals()
 
 func _poll_station_results(owned: Dictionary,equipment: RefCounted) -> bool:
 	if not _rules.has("delivery_results"):return reject("This content has no supported delivery results")
@@ -1099,6 +1108,9 @@ func _acknowledge_delivery_inventory(equipment: RefCounted,owned: Dictionary) ->
 	next.mission={};next.active_offer_id=-1;next.pending_result={}
 	next.erase("contract_phase");next.erase("station_outcome")
 	if next.has("accepted_contact"):next.accepted_contact={}
+	var medals:=LoungeCache.Medals.commit(next.get("base_medals",{}),next,blueprint_state())
+	if medals.is_empty():reject("The acknowledged delivery lost its medal evidence");return null
+	next.base_medals=medals
 	_state=next;_result_inventory={}
 	return inventory
 
