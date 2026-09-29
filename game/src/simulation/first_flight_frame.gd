@@ -1111,12 +1111,23 @@ func wingmen_available() -> bool:
 ## The original menu broadcasts its weapon toggle to eligible companions.
 ## Stage the complete cast before publishing any pilot's changed selection.
 func switch_wingman_weapons(paused:=false) -> RefCounted:
+	return command_wingmen(0,paused)
+
+func command_wingmen(command: int,paused:=false) -> RefCounted:
 	error=""
+	if command not in [0,1,3]:reject("Unsupported companion order");return null
 	if paused or not wingmen_available() or dialogue_visible() or death_active() or cinematic_input_blocked() or local_departing() or not _briefing.snapshot().entry_released or not _station_packet.is_empty() or not _unsupported_boundary.is_empty() or contract_result_pending():reject("Companion commands are unavailable in this flight phase");return null
 	var crew: RefCounted=_wingmen.fork_for_frame()
-	var actors: Array=crew.snapshot().actors
-	for index in actors.size():
-		if actors[index].active and actors[index].vitals.hull>0 and not crew.toggle_weapon_group(index):reject(crew.error);return null
+	if command==0:
+		var actors: Array=crew.snapshot().actors
+		for index in actors.size():
+			if actors[index].active and actors[index].vitals.hull>0 and not crew.toggle_weapon_group(index):reject(crew.error);return null
+	else:
+		var target_id: int=-1 if command!=3 or _scanner==null else int(_scanner.snapshot().selected_actor_id)
+		if target_id>=0:
+			var targets: Array=[] if _encounter==null else _encounter.combat_snapshot().actors
+			if not targets.any(func(actor):return actor.actor_id==target_id and actor.active and actor.vitals.hull>0 and not actor.get("contract_debris",false)):target_id=-1
+		if not crew.issue_order(command,target_id):reject(crew.error);return null
 	var next:=fork_for_frame();next._wingmen=crew
 	return next
 

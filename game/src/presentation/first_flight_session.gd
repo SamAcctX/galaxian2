@@ -276,6 +276,8 @@ func action(name: String) -> bool:
 	var world: RefCounted
 	match name:
 		"wingman_weapon_switch":world=_world.switch_wingman_weapons()
+		"wingman_fire_at_will":world=_world.command_wingmen(1)
+		"wingman_attack_target":world=_world.command_wingmen(3)
 		"turret","change_view":world=_world.toggle_turret()
 		"time":world=_world.press_fast_forward()
 		"boost":_boost_requested=true;return true

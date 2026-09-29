@@ -1042,9 +1042,10 @@ func open_flight_menu(autopilot: bool=true) -> bool:
 func open_wingmen_menu() -> bool:
 	if not session is FirstFlightSession or not session.can_control() or not session.wingmen_available() or not _focused or not is_visible_in_tree():return false
 	var groups: Array=session.snapshot().wingman_actors.weapon_groups
-	# Preserve the source row order without pretending the other orders work.
-	var rows:=[]
-	for text_id in [296,297,298]:rows.append({"action":"","label":library.strings[text_id],"disabled":true})
+	# Waypoint orders need their own route owner; do not substitute follow.
+	var rows:=[{"action":"wingman_fire_at_will","label":library.strings[296]},
+		{"action":"wingman_attack_target","label":library.strings[297]},
+		{"action":"","label":library.strings[298],"disabled":true}]
 	rows.append({"action":"wingman_weapon_switch","label":library.strings[300 if groups[0]==0 else 299]})
 	if not flight_menu.configure(library,bindings,visuals) or not flight_menu.present(rows,KEY_V):return false
 	if not session.set_pause("flight_menu",true,Time.get_ticks_usec()):flight_menu.close();status.text=session.error;return false

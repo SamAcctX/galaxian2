@@ -164,6 +164,23 @@ func toggle_weapon_group(index: Variant) -> bool:
 	_weapon_groups=groups
 	return true
 
+## The command owns only behavior and its refresh request. No motion, shots,
+## contacts or weapon selection occur until the ordinary flight update.
+func issue_order(command: Variant,target_actor_id: Variant=-1) -> bool:
+	error=""
+	if not command is int or command not in [1,3] or not target_actor_id is int or target_actor_id< -1 or _identity.is_empty():return reject("Unsupported companion order")
+	var actors:=[];var selections:=_selections.duplicate(true)
+	for index in _actors.size():
+		var actor: RefCounted=_actors[index].fork_for_frame()
+		var body: Dictionary=actor.snapshot()
+		if body.active and body.vitals.hull>0:
+			var retained: int=body.wingman_command if command==3 and target_actor_id<0 else command
+			if not actor.set_wingman_order(retained,target_actor_id):return reject(actor.error)
+			if command==3:selections[index].selection_elapsed_ms=int(_targeting_tuning.selection_period_ms)+1
+		actors.append(actor)
+	_actors=actors;_selections=selections
+	return true
+
 static func hull_for_pilot(bindings: RefCounted,pilot_name: String,faction: int) -> int:
 	if bindings==null or pilot_name.is_empty() or faction<0 or faction>=int(bindings.early_contracts.generation.identity.faction_bound):return -1
 	var rules: Dictionary=bindings.early_contracts.encounter_construction.hulls
@@ -211,15 +228,23 @@ func advance_targeting(milliseconds: Variant,player_pose: Variant,player: Dictio
 		# Debris has a combat body for weapon hits, but is not a pilot opponent.
 		targets.append({"actor_id":row.actor_id,"actor_kind":row.actor_kind,"pose":row.pose,
 			"active":row.active and not row.get("contract_debris",false),"hull":int(row.vitals.hull),"hostile":row.hostile,
+			"retired":int(row.get("actor_mode",0))==4,
 			"targeting_blocked":row.get("targeting_blocked",false) or row.get("statistics_targeting_blocked",false)})
 	var random:=Random.new()
 	if not random.restore(random_state):reject(random.error);return {}
-	var selections:=[];var decisions:=[];var requests:=[];var systems_requests:=[];var poses:={}
+	var selections:=[];var decisions:=[];var requests:=[];var systems_requests:=[];var poses:={};var bodies:=[]
 	for index in _actors.size():
 		var prior: Dictionary=_selections[index].duplicate(true)
 		if prior.selection_elapsed_ms>Vitals.MAX_INTEGER-milliseconds:reject("Wingman target clock overflow");return {}
 		prior.selection_elapsed_ms+=milliseconds
-		var body: Dictionary=_actors[index].snapshot()
+		var actor: RefCounted=_actors[index].fork_for_frame()
+		var body: Dictionary=actor.snapshot()
+		if body.wingman_command==3 and body.wingman_target_actor_id>=0 and prior.selection_elapsed_ms>int(_targeting_tuning.selection_period_ms):
+			var retained: Array=targets.filter(func(target):return target.actor_id==body.wingman_target_actor_id)
+			if retained.is_empty() or retained[0].get("retired",false):
+				if not actor.set_wingman_order(1):reject(actor.error);return {}
+				body=actor.snapshot()
+		bodies.append(actor)
 		var selected:=Targeting.select(prior,body,targets,random,_targeting_tuning,_targeting_rules)
 		var destination:=follow_position(player_pose,index)
 		selected.target_actor_id=-1
@@ -254,23 +279,23 @@ func advance_targeting(milliseconds: Variant,player_pose: Variant,player: Dictio
 	var systems_weapons: RefCounted=_systems_weapons.fork_for_frame()
 	var systems_firing: Dictionary=systems_weapons.fire_wingmen(_actors,systems_requests,poses)
 	if systems_firing.is_empty():reject(systems_weapons.error);return {}
-	if not _advance_motion(milliseconds,player_pose,decisions):return {}
+	if not _advance_motion(milliseconds,player_pose,decisions,bodies):return {}
 	_selections=selections
 	_weapons=weapons;_firing=firing
 	_systems_weapons=systems_weapons;_systems_firing=systems_firing
 	return {"random_state":random.snapshot()}
 
-func _advance_motion(milliseconds: Variant,player: Variant,decisions: Array) -> bool:
+func _advance_motion(milliseconds: Variant,player: Variant,decisions: Array,bodies: Array=[]) -> bool:
 	error=""
 	if _identity.is_empty() or not Vitals.integer(milliseconds) or milliseconds<0 or milliseconds>2147483647 or not Flight.rigid_pose(player):return reject("Following requires an accepted duration and finite player frame")
 	# Fork each writer into this candidate. An invalid later pilot must not
 	# partially move an earlier one or alter a retained parent/sibling frame.
 	var actors:=[];var flights:=[];var targets:=[];var positions:=_detail_positions.duplicate()
 	for index in _actors.size():
-		var actor: RefCounted=_actors[index].fork_for_frame()
+		var actor: RefCounted=(_actors[index] if bodies.is_empty() else bodies[index]).fork_for_frame()
 		var motion: RefCounted=_flight[index].fork_for_frame()
 		var body: Dictionary=actor.snapshot()
-		if body.wingman_command!=1:return reject("This wingman owner only admits the retained follow command")
+		if body.wingman_command not in [1,3]:return reject("This wingman owner has no supported behavior order")
 		var destination: Vector3=follow_position(player,index) if decisions.is_empty() else decisions[index].destination
 		var root: Transform3D=motion.snapshot().root_pose
 		var direction: Vector3=Vectors.added(destination,-root.origin) if decisions.is_empty() else decisions[index].direction
@@ -298,6 +323,7 @@ func snapshot() -> Dictionary:
 	state.primary_weapons_connected=_weapons!=null
 	state.systems_weapons_connected=_systems_weapons!=null
 	state.weapon_command_input_connected=true
+	state.behavior_command_input_connected=true
 	state.systems_audio_connected=true
 	state.weapon_groups=_weapon_groups.duplicate()
 	state.systems_weapon_world=systems_weapon_world()

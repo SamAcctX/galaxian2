@@ -189,12 +189,19 @@ func _configure_wingman(bindings: RefCounted,catalogues: RefCounted,initial: Dic
 	var actor:=initial.duplicate(true)
 	actor.hull_resource=model;actor.current_hull=600
 	if not _initialize_body(bindings,bindings.opening_actors.npc_initialization,actor,difficulty,factory_hull,float(rules.percentage_scale),{"initial_hostile":false,"updated_hostile":false}):return false
-	_state.merge({"name":initial.name,"wingman":true,"wingman_index":initial.actor_id,"wingman_command":1,
+	_state.merge({"name":initial.name,"wingman":true,"wingman_index":initial.actor_id,"wingman_command":1,"wingman_target_actor_id":-1,
 		"campaign_cursor":cursor,"rank":rank,"subtype":0,"population_group":"wingman",
 		"friendly":true,"permanent_friendly":true,"active":true,
 		"model_draw_enabled":bool(rules.initial_model_draw_enabled),"node_draw_requested":bool(rules.initial_node_draw_requested),
 		"engine_draw_enabled":bool(rules.initial_engine_draw_enabled)},true)
 	return set_pose(initial.pose)
+
+## The cast stages this body before publishing a player-issued order.
+func set_wingman_order(command: int,target_actor_id: int=-1) -> bool:
+	if not _state.get("wingman",false) or command not in [1,3] or target_actor_id< -1:return reject("Invalid companion behavior order")
+	_state.wingman_command=command
+	_state.wingman_target_actor_id=target_actor_id if command==3 else -1
+	return true
 
 func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant,rank: Variant,difficulty: Variant) -> bool:
 	clear()

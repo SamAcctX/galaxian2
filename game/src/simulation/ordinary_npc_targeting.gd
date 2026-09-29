@@ -5,6 +5,7 @@ const Vectors=preload("res://src/simulation/source_vectors.gd")
 
 static func select(state: Dictionary, actor: Dictionary, targets: Array, random: RefCounted, tuning: Dictionary, rules: Dictionary) -> Dictionary:
 	var next:=state.duplicate(true)
+	var commanded: bool=actor.get("wingman",false) and actor.get("wingman_command")==3
 	var selected:=int(next.target_index)
 	if selected>=targets.size() or selected<0 or not next.fire_desired:selected=-1
 	if selected>=0 and not targets[selected].active:next.fire_desired=false
@@ -19,6 +20,12 @@ static func select(state: Dictionary, actor: Dictionary, targets: Array, random:
 				var candidate: int=random.next_int(targets.size())
 				if targets[candidate].active and in_range(actor,targets[candidate]):
 					selected=candidate;next.fire_desired=true;break
+		# Explicit orders use the retained target identity, not hostile-list order.
+		# The existing refresh still owns range, fire desire and random cadence.
+		if commanded:
+			for index in range(1,targets.size()):
+				if targets[index].actor_id==actor.get("wingman_target_actor_id",-1) and targets[index].active and not targets[index].get("targeting_blocked",false):
+					selected=index;break
 		if not alive(targets[selected]):
 			selected=-1;next.fire_desired=false
 		elif not in_range(actor,targets[selected]):
@@ -30,7 +37,7 @@ static func select(state: Dictionary, actor: Dictionary, targets: Array, random:
 				selected=index;next.fire_desired=true;break
 	if not actor.hostile and selected==0:
 		selected=1;next.fire_desired=false
-	if selected>0:
+	if selected>0 and not commanded:
 		selected=-1
 		# Scan in retained membership order. Range is deliberately not retested.
 		for index in range(1,targets.size()):
