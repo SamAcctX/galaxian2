@@ -15,7 +15,7 @@ const PHASES={2:"ready_to_launch",4:"ready_to_launch",6:"station_equipment_requi
 const EXTRA_KEYS=["rescue_disposition","equipment_conversation","equipment_acknowledged","training_return","training_return_acknowledged","station_reloaded","local_conversation","local_conversation_acknowledged","contract_conversation","contract_conversation_acknowledged","convoy_arrival","alioth_conversation_acknowledged"]
 const INVENTORY_BASE=["loadout","stock","cargo","cargo_cache_stale","credit_delta","transactions"]
 const PROGRESS_KEYS=["campaign_cursor","rank","rank_score","player_kills","pirate_kills","other_score","reputation","debris_destroyed","capital_ship_kills","mining_failure_hint_seen"]
-const OPTIONAL_PROGRESS_KEYS=["asteroids_destroyed"]
+const OPTIONAL_PROGRESS_KEYS=["asteroids_destroyed","mined_ore_tons","mined_cores","nuclear_bomb_detonations"]
 
 static func accepts(state: Dictionary) -> bool:
 	if state.get("campaign_cursor")==13:
@@ -121,7 +121,7 @@ func valid_progress(a: RefCounted,bindings: RefCounted,data: Variant,cursor: int
 	if not a._keys(data,keys) or not a._required(data,PROGRESS_KEYS.slice(0,7)) or not Reputation.valid_state(data.reputation):return a._invalid("The opening checkpoint has invalid career data")
 	if not MiningSession.retain_hint_history(data,{},bindings.mining_session):return a._invalid("The checkpoint has invalid mining instruction history")
 	if data.has("cargo_recovered") and not data.cargo_recovered is int:return a._invalid("The checkpoint has an invalid recovery counter type")
-	for key in ["player_kills","pirate_kills","other_score","debris_destroyed","capital_ship_kills","cargo_recovered","asteroids_destroyed"]:
+	for key in ["player_kills","pirate_kills","other_score","debris_destroyed","capital_ship_kills","cargo_recovered","asteroids_destroyed","mined_ore_tons","mined_cores","nuclear_bomb_detonations"]:
 		if data.has(key) and not Numbers.integer(data[key],0,2147483647):return a._invalid("The opening checkpoint has invalid career counters")
 	var earned:=Career.calculate_progress(bindings.opening_handoff,cursor,data.player_kills,data.pirate_kills,data.other_score)
 	if earned.is_empty():return a._invalid("The opening checkpoint has invalid career progress")

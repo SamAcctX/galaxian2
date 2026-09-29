@@ -358,6 +358,10 @@ func _observe_progress() -> bool:
 	if asteroids>0 or progress.has("asteroids_destroyed"):progress.asteroids_destroyed=int(_initial_progress.get("asteroids_destroyed",0))+asteroids
 	var recovered: int=_encounter.recovery_totals().get("accepted_quantity",0)
 	if recovered>0 or progress.has("cargo_recovered"):progress.cargo_recovered=Career.recovered_cargo_total(int(_initial_progress.get("cargo_recovered",0)),recovered)
+	var secondaries: RefCounted=_encounter.secondary_owner()
+	var nuclear: Variant=0 if secondaries==null else secondaries.snapshot().get("nuclear_bomb_detonations",0)
+	if not Numbers.integer(nuclear,0,2147483647-int(_initial_progress.get("nuclear_bomb_detonations",0))):return reject("Mission Nuclear Armament progress exceeds the supported career range")
+	if nuclear>0 or progress.has("nuclear_bomb_detonations"):progress.nuclear_bomb_detonations=int(_initial_progress.get("nuclear_bomb_detonations",0))+int(nuclear)
 	progress.reputation=_encounter.combat_owner().reputation_after(_initial_progress.reputation)
 	var score:=Career.calculate_progress(_bindings.opening_handoff,_state.campaign_cursor,progress.player_kills,progress.pirate_kills,progress.other_score)
 	if score.is_empty() or progress.reputation.is_empty() or progress.get("cargo_recovered",0)<0:return reject("Mission combat lost its retained career counters")

@@ -9,6 +9,37 @@ const Scenery=preload("res://src/simulation/opening_scenery.gd")
 const Cargo=preload("res://src/simulation/flight_cargo.gd")
 var error:=""
 
+## Retain only quantities that the accepted extraction actually inserted. Missing
+## fields stay missing until a successful extraction establishes lifetime history.
+static func retained_lifetime(progress: Dictionary, receipt: Dictionary) -> Dictionary:
+	var ore: Variant=receipt.get("ore_tons")
+	var core_id: Variant=receipt.get("core_item_id")
+	if not Numbers.integer(ore,0,2147483647) or not core_id is int or core_id < -1 or core_id > 2147483647:return {}
+	var retained:=progress.duplicate(true)
+	var current_ore: Variant=retained.get("mined_ore_tons",0)
+	var current_cores: Variant=retained.get("mined_cores",0)
+	if not Numbers.integer(current_ore,0,2147483647) or not Numbers.integer(current_cores,0,2147483647):return {}
+	if int(ore)>2147483647-int(current_ore):return {}
+	var core_delta:=1 if int(core_id)>=0 else 0
+	if core_delta>2147483647-int(current_cores):return {}
+	if int(ore)>0 or retained.has("mined_ore_tons"):retained.mined_ore_tons=int(current_ore)+int(ore)
+	if core_delta>0 or retained.has("mined_cores"):retained.mined_cores=int(current_cores)+core_delta
+	return retained
+
+static func retain_contract_owner(owner: RefCounted,receipt: Dictionary) -> bool:
+	if owner==null:return false
+	var script: Script=owner.get_script()
+	if script==null or script.resource_path!="res://src/simulation/contract_session.gd":return false
+	var state: Variant=owner.get("_state")
+	if not state is Dictionary or state.is_empty():return false
+	for key in ["base_content_id","binding_id"]:
+		if receipt.get(key)!=state.get(key):return false
+	var retained:=retained_lifetime(state.get("progress",{}),receipt)
+	if retained.is_empty():return false
+	var next: Dictionary=state.duplicate(true);next.progress=retained
+	owner.set("_state",next)
+	return true
+
 func evaluate(bindings: RefCounted, catalogues: RefCounted, drill: RefCounted, scenery: RefCounted, cargo: RefCounted, hard_difficulty: bool) -> Dictionary:
 	error=""
 	if drill==null or drill.get_script()!=Drill or scenery==null or scenery.get_script()!=Scenery or cargo==null or cargo.get_script()!=Cargo:return fail("Extraction requires its live drill, scenery and cargo owners")

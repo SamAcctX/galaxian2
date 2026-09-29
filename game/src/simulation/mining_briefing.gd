@@ -6,6 +6,7 @@ const Ordinary=preload("res://src/content/ordinary_flight_definitions.gd")
 const Construction=preload("res://src/simulation/first_flight_construction.gd")
 const Lines=preload("res://src/content/dialogue_lines.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
+const Extraction=preload("res://src/simulation/mining_extraction.gd")
 var error:=""
 var _state:={}
 var _rules:={}
@@ -95,6 +96,12 @@ func show_mining_failure_instruction() -> bool:
 
 func retain_mining_hint(seen: bool) -> void:
 	_state.progress.mining_failure_hint_seen=seen
+
+func retain_mining_extraction(receipt: Dictionary) -> bool:
+	var retained:=Extraction.retained_lifetime(_state.get("progress",{}),receipt)
+	if retained.is_empty():return reject("Mining extraction lost its retained lifetime counters")
+	_state.progress=retained
+	return true
 
 func finish_mission_poll(opened: bool) -> void:
 	# An unsuccessful due poll resets to zero, including on the frame that

@@ -31,6 +31,7 @@ const TargetFrame=preload("res://src/presentation/flight_target_frame.gd")
 const ScanAnimation=preload("res://src/presentation/flight_scan_animation.gd")
 const Approach=preload("res://src/simulation/mining_approach.gd")
 const Mining=preload("res://src/simulation/mining_session.gd")
+const MiningExtraction=preload("res://src/simulation/mining_extraction.gd")
 const Notices=preload("res://src/simulation/flight_notices.gd")
 const Objective=preload("res://src/simulation/mining_objective.gd")
 const ContractObjective=preload("res://src/simulation/contract_flight_objective.gd")
@@ -620,6 +621,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		next._queue_mining_audio(mining_events)
 		if not next._queue_notice_events(mining_events):reject(next.error);return null
 		if operation.release_approach:
+			if not next._retain_mining_extraction(next._mining.snapshot().extraction):reject(next.error);return null
 			if not next._release_mining_approach():reject(next.error);return null
 			ordinary_motion=operation.resume_motion and not convoy_input_blocked()
 			player_tail=operation.outcome!="target_unavailable"
@@ -1722,6 +1724,7 @@ func stop_mining(paused:=false) -> RefCounted:
 	next._mining=operation.session;next._scenery=operation.scenery;next._cargo=operation.cargo;next._random=operation.random_state
 	next._queue_mining_audio(next._mining.snapshot().events)
 	if next._equipment!=null and not next._equipment.retain_flight_cargo(next._cargo.snapshot()):reject(next._equipment.error);return null
+	if operation.get("release_approach",false) and not next._retain_mining_extraction(next._mining.snapshot().extraction):reject(next.error);return null
 	if not next._release_mining_approach():reject(next.error);return null
 	return next
 
@@ -1873,6 +1876,15 @@ func _retain_mining_hint(seen: bool) -> void:
 	if _convoy_career!=null:
 		_convoy_career=_convoy_career.fork()
 		_convoy_career.retain_mining_hint(seen)
+
+func _retain_mining_extraction(receipt: Dictionary) -> bool:
+	if not _briefing.retain_mining_extraction(receipt):return reject(_briefing.error)
+	if _objective!=null and not _objective.retain_mining_extraction(receipt):return reject(_objective.error)
+	if _convoy_career!=null:
+		var candidate: RefCounted=_convoy_career.fork()
+		if not MiningExtraction.retain_contract_owner(candidate,receipt):return reject("Mining lifetime progress belongs to another retained career")
+		_convoy_career=candidate
+	return true
 
 func equipment_owner() -> RefCounted:return null if _equipment==null else _equipment.fork()
 

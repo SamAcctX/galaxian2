@@ -774,11 +774,14 @@ func prepare_selected40_career(bindings: RefCounted,session: RefCounted,scenery:
 func evaluate_contract_session(session: RefCounted,radio_active: bool=false,poll_results: bool=true,periodic_poll_allowed: bool=true) -> Dictionary:
 	error=""
 	if _contract_context.is_empty() or not is_instance_of(session,load("res://src/simulation/contract_session.gd")):return fail("The encounter has no retained contract career")
+	var career: RefCounted=session.fork()
+	var nuclear_count:=0 if _secondaries==null else int(_secondaries.snapshot().get("nuclear_bomb_detonations",0))
+	if not career.retain_nuclear_bomb_detonations(nuclear_count):return fail(career.error)
 	# Contacts have already changed the encounter bodies. Retain that exact
 	# body state without inserting an extra actor/guidance update before polling.
 	var control: RefCounted=_control.fork_for_frame(false,_combat)
-	var result: Dictionary=session.evaluate_flight(control,radio_active,poll_results,periodic_poll_allowed)
-	if result.is_empty():return fail(session.error)
+	var result: Dictionary=career.evaluate_flight(control,radio_active,poll_results,periodic_poll_allowed)
+	if result.is_empty():return fail(career.error)
 	_control=result.controller;_combat=_control.combat_owner()
 	return {"session":result.session,"opened":result.opened}
 
@@ -806,9 +809,12 @@ func prepare_successor41_career(bindings: RefCounted,session: RefCounted,departu
 func finish_contract_session(session: RefCounted) -> RefCounted:
 	error=""
 	if _contract_context.is_empty() or not is_instance_of(session,load("res://src/simulation/contract_session.gd")):reject("The encounter has no retained contract career");return null
+	var career: RefCounted=session.fork()
+	var nuclear_count:=0 if _secondaries==null else int(_secondaries.snapshot().get("nuclear_bomb_detonations",0))
+	if not career.retain_nuclear_bomb_detonations(nuclear_count):reject(career.error);return null
 	var control: RefCounted=_control.fork_for_frame();control._combat=_combat.fork_for_frame()
-	var result: RefCounted=session.finish_flight(control,true)
-	if result==null:reject(session.error)
+	var result: RefCounted=career.finish_flight(control,true)
+	if result==null:reject(career.error)
 	return result
 
 func acknowledge_campaign_visit(bindings: RefCounted,session: RefCounted,visit: RefCounted) -> RefCounted:

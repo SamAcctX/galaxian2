@@ -1,6 +1,7 @@
 extends SceneTree
 const Drill=preload("res://src/simulation/mining_drill.gd")
 const Extraction=preload("res://src/simulation/mining_extraction.gd")
+const Contracts=preload("res://src/simulation/contract_session.gd")
 const Cargo=preload("res://src/simulation/flight_cargo.gd")
 const Construction=preload("res://src/simulation/first_flight_construction.gd")
 const Station=preload("res://src/simulation/station_entry.gd")
@@ -122,6 +123,16 @@ func verify(args: Array):
 	var full:=extract(complete,spare,false)
 	check(not full.is_empty() and full.cargo.snapshot()==full_hold and full.extraction.entries.is_empty(),"Full hold accepted ore or a core")
 	if not full.is_empty():check_retirement(full,complete)
+	var lifetime_seed:={"player_kills":0}
+	var lifetime:=Extraction.retained_lifetime(lifetime_seed,filled.extraction)
+	check(lifetime.get("mined_ore_tons")==filled.extraction.ore_tons and lifetime.get("mined_cores")==1,"Accepted extraction receipt did not retain ore/core lifetime deltas")
+	check(Extraction.retained_lifetime(lifetime_seed,full.extraction)==lifetime_seed,"Full hold invented lifetime mining progress")
+	var capped:=lifetime_seed.duplicate(true);capped.mined_ore_tons=2147483647
+	check(Extraction.retained_lifetime(capped,filled.extraction).is_empty(),"Mining lifetime overflow was accepted")
+	var contract:=Contracts.new();contract._state={"base_content_id":filled.extraction.base_content_id,"binding_id":filled.extraction.binding_id,"progress":lifetime_seed.duplicate(true)}
+	check(Extraction.retain_contract_owner(contract,filled.extraction) and contract._state.progress.get("mined_ore_tons")==filled.extraction.ore_tons and contract._state.progress.get("mined_cores")==1,"Accepted extraction did not reach the retained free-flight career")
+	var retained_contract: Dictionary=contract._state.duplicate(true);var foreign: Dictionary=filled.extraction.duplicate(true);foreign.binding_id="0".repeat(64)
+	check(not Extraction.retain_contract_owner(contract,foreign) and contract._state==retained_contract,"Foreign extraction changed retained free-flight mining history")
 	check(construction.snapshot().departure==departure and station.prepare_departure(bindings,cat)==departure,"Extraction changed campaign state, mission or station progress")
 	spare.clear();check(spare.snapshot().is_empty() and cargo.snapshot()==initial_hold,"Clearing a fork changed original cargo")
 	# A second asteroid updates the same accepted hold and count independently.

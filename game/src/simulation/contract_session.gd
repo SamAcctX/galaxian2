@@ -104,6 +104,21 @@ func retain_asteroid_destruction_total(total: int) -> bool:
 	if total>0 or _state.progress.has("asteroids_destroyed"):_state.progress.asteroids_destroyed=total
 	return true
 
+## The secondary owner reports its cumulative count within this flight. Retain
+## only the new committed kind-7 blasts so repeated polling and docking remain
+## idempotent while the career keeps the lifetime total.
+func retain_nuclear_bomb_detonations(observed: int) -> bool:
+	error=""
+	if _state.is_empty() or _flight.is_empty():return reject("Nuclear Armament progress requires the retained living flight")
+	var retained: Variant=_flight.get("nuclear_bomb_detonations",0)
+	if not Numbers.integer(retained,0,2147483647) or not Numbers.integer(observed,int(retained),2147483647):return reject("Nuclear bomb detonation history regressed or exceeded the supported flight range")
+	var current: Variant=_state.get("progress",{}).get("nuclear_bomb_detonations",0)
+	var delta:=observed-int(retained)
+	if not Numbers.integer(current,0,2147483647) or delta>2147483647-int(current):return reject("Nuclear Armament progress exceeds the supported career range")
+	if delta>0 or _state.progress.has("nuclear_bomb_detonations"):_state.progress.nuclear_bomb_detonations=int(current)+delta
+	_flight.nuclear_bomb_detonations=observed
+	return true
+
 func complete_story_wait(bindings: RefCounted,story_mission: Dictionary) -> bool:
 	# Stage this on the station's fork. The caller publishes it only when the
 	# final original story line is acknowledged. A side job can remain accepted.
@@ -288,7 +303,7 @@ func _retain_story_progress(bindings: RefCounted,progress: Dictionary,previous: 
 	if current.is_empty() or not Reputation.valid_state(progress.get("reputation")):return reject("The capture lost its earned career")
 	for key in current:
 		if progress.get(key)!=current[key]:return reject("The capture career counters disagree")
-	for key in ["player_kills","pirate_kills","other_score","debris_destroyed","capital_ship_kills","cargo_recovered","asteroids_destroyed"]:
+	for key in ["player_kills","pirate_kills","other_score","debris_destroyed","capital_ship_kills","cargo_recovered","asteroids_destroyed","mined_ore_tons","mined_cores","nuclear_bomb_detonations"]:
 		if not Numbers.integer(progress.get(key,0),int(_state.progress.get(key,0)),2147483647):return reject("The capture lost a retained career counter")
 	var earned:=Career.calculate_progress(_progress_rules,next_cursor,current.player_kills,current.pirate_kills,current.other_score)
 	if earned.is_empty():return reject("The Alioth story exceeds the supported career range")

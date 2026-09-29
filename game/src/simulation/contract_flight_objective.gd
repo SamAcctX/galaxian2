@@ -7,6 +7,7 @@ const World=preload("res://src/content/contract_world_definitions.gd")
 const FreeFlight=preload("res://src/content/free_flight_definitions.gd")
 const Visit=preload("res://src/simulation/campaign_visit.gd")
 const Kappa=preload("res://src/content/kappa_population_definitions.gd")
+const MiningExtraction=preload("res://src/simulation/mining_extraction.gd")
 var error:=""
 var _state:={}
 var _contracts: RefCounted
@@ -161,6 +162,13 @@ func dialogue_visible() -> bool:return _visit!=null and _visit.snapshot().dialog
 
 func retain_mining_hint(seen: bool) -> void:
 	_contracts.retain_mining_hint(seen)
+
+func retain_mining_extraction(receipt: Dictionary) -> bool:
+	if _contracts==null:return reject("Mining lifetime progress requires the retained contract career")
+	var candidate: RefCounted=_contracts.fork()
+	if not MiningExtraction.retain_contract_owner(candidate,receipt):return reject("Mining lifetime progress belongs to another contract career")
+	_contracts=candidate
+	return true
 
 func snapshot() -> Dictionary:
 	if _contracts==null:return {}

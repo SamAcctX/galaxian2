@@ -527,6 +527,10 @@ func _valid_selected_progress(bindings: RefCounted,progress: Dictionary,cursor: 
 	if progress.has("asteroids_destroyed"):
 		if not Numbers.integer(progress.asteroids_destroyed,0,2147483647):return reject("Selected construction lost its asteroid-destruction statistic")
 		expected.asteroids_destroyed=progress.asteroids_destroyed
+	for key in ["mined_ore_tons","mined_cores","nuclear_bomb_detonations"]:
+		if progress.has(key):
+			if not Numbers.integer(progress[key],0,2147483647):return reject("Selected construction lost a lifetime statistic")
+			expected[key]=progress[key]
 	if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected or rank!=progress.get("rank") or difficulty not in [0.5,1.0,1.5]:return reject("Selected construction changed earned rank, difficulty or hint history")
 	return true
 
@@ -630,6 +634,10 @@ func _prepare_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dictio
 		if progress.has("asteroids_destroyed"):
 			if not Numbers.integer(progress.asteroids_destroyed,0,2147483647):return reject("Local arrival lost its asteroid-destruction statistic")
 			expected.asteroids_destroyed=progress.asteroids_destroyed
+		for key in ["mined_ore_tons","mined_cores","nuclear_bomb_detonations"]:
+			if progress.has(key):
+				if not Numbers.integer(progress[key],0,2147483647):return reject("Local arrival lost a lifetime statistic")
+				expected[key]=progress[key]
 		if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected:return reject("Local arrival career disagrees with its counters")
 	var flags: Variant=objective.get("station_response_flags")
 	var valid_flags: bool=FreeFlight.response_flags(bindings,flags) if free_arrival else (ContractWorld.response_flags(bindings,flags) if contract_arrival else Travel.valid_response_flags(bindings.mido_travel,flags,packet.campaign_cursor))
@@ -866,6 +874,10 @@ func _valid_packet(bindings: RefCounted, packet: Dictionary, context: Dictionary
 	if progress.has("asteroids_destroyed"):
 		if not Numbers.integer(progress.asteroids_destroyed,0,2147483647):return reject("Departure lost its asteroid-destruction statistic")
 		expected_progress.asteroids_destroyed=progress.asteroids_destroyed
+	for key in ["mined_ore_tons","mined_cores","nuclear_bomb_detonations"]:
+		if progress.has(key):
+			if not Numbers.integer(progress[key],0,2147483647):return reject("Departure lost a lifetime statistic")
+			expected_progress[key]=progress[key]
 	if not MiningSession.retain_hint_history(progress,expected_progress,bindings.mining_session) or progress!=expected_progress:return reject("First flight changed earned campaign progress")
 	if ContractWorld.supports(bindings,packet.campaign_cursor):
 		if not Travel.navigation_mission(bindings.mido_travel,packet.campaign_cursor,packet.mission) or packet.contracts.progress!=progress or not ContractWorld.response_flags(bindings,packet.station_response_flags):return reject("Contract departure changed the retained career, responses or pending story")

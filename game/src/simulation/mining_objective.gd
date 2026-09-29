@@ -8,8 +8,10 @@ const Cargo=preload("res://src/simulation/flight_cargo.gd")
 const Scenery=preload("res://src/simulation/opening_scenery.gd")
 const Encounter=preload("res://src/simulation/full_hold_encounter.gd")
 const Career=preload("res://src/simulation/opening_handoff.gd")
+const Numbers=preload("res://src/content/opening_definitions.gd")
 const ProbeStage=preload("res://src/simulation/void_probe_stage.gd")
 const Failure=preload("res://src/content/kappa_outcome_definitions.gd")
+const Extraction=preload("res://src/simulation/mining_extraction.gd")
 var error:=""
 var _state:={}
 var _rules:={}
@@ -184,6 +186,10 @@ func observe_combat(encounter: RefCounted,state: Dictionary={}) -> bool:
 		var count:=Career.recovered_cargo_total(int(_initial_progress.get("cargo_recovered",0)),recovered)
 		if count<0:return reject("Recovered cargo exceeds the supported career range")
 		progress.cargo_recovered=count
+	var secondaries: RefCounted=encounter.secondary_owner()
+	var nuclear: Variant=0 if secondaries==null else secondaries.snapshot().get("nuclear_bomb_detonations",0)
+	if not Numbers.integer(nuclear,0,2147483647-int(_initial_progress.get("nuclear_bomb_detonations",0))):return reject("Nuclear Armament progress exceeds the supported career range")
+	if nuclear>0 or progress.has("nuclear_bomb_detonations"):progress.nuclear_bomb_detonations=int(_initial_progress.get("nuclear_bomb_detonations",0))+int(nuclear)
 	if progress.has("reputation"):
 		var combat: RefCounted=encounter.combat_owner()
 		progress.reputation=combat.reputation_after(_initial_progress.reputation)
@@ -251,6 +257,13 @@ func navigate(action: String) -> bool:
 func retain_mining_hint(seen: bool) -> void:
 	_state.progress.mining_failure_hint_seen=seen
 	_initial_progress.mining_failure_hint_seen=seen
+
+func retain_mining_extraction(receipt: Dictionary) -> bool:
+	var retained:=Extraction.retained_lifetime(_state.get("progress",{}),receipt)
+	var initial:=Extraction.retained_lifetime(_initial_progress,receipt)
+	if retained.is_empty() or initial.is_empty():return reject("Mining extraction lost its retained lifetime counters")
+	_state.progress=retained;_initial_progress=initial
+	return true
 
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}

@@ -22,7 +22,7 @@ func recipes(owned: int,built: int) -> Dictionary:
 	return {"entries":entries}
 
 func career() -> Dictionary:
-	return {"campaign_cursor":45,"progress":{"player_kills":49,"cargo_recovered":49,"debris_destroyed":30,"asteroids_destroyed":50},
+	return {"campaign_cursor":45,"progress":{"player_kills":49,"cargo_recovered":49,"debris_destroyed":30,"asteroids_destroyed":50,"mined_ore_tons":100,"mined_cores":3,"nuclear_bomb_detonations":5},
 		"completed_side_missions":5,"delivery_statistics":{"cargo":25,"passengers":5},
 		"travel_statistics":{"jumpgates_used":9},"conversations":20,"rejected_jobs":50,"pending_result":{}}
 
@@ -32,15 +32,15 @@ func _initialize() -> void:
 	check(Medals.valid_retained(first,native,blueprints),"Fresh cumulative observations must validate")
 	check(first.levels[0]==1 and first.levels[30]==1,"Service and completed campaign medals have separate evidence")
 	check(first.levels[13]==3 and first.levels[14]==0,"Owning three blueprints does not construct them")
-	for id in [4,5,10,16,17,18,24,26,29,32]:check(first.levels[id]==0,"A below-threshold counter awarded medal %d"%id)
-	for id in [1,2,3,6,7,8,9,11,12,15,19,20,21,22,23,25,27,28,31,33,34,35]:
+	for id in [4,5,6,7,10,16,17,18,20,24,26,29,32]:check(first.levels[id]==0,"A below-threshold counter awarded medal %d"%id)
+	for id in [1,2,3,8,9,11,12,15,19,21,22,23,25,27,28,31,33,34,35]:
 		check(first.levels[id]==Medals.UNKNOWN,"Missing history was invented for medal %d"%id)
 	check(native==before,"Observing medals mutated the career")
 	native.progress.player_kills=50;native.progress.cargo_recovered=50
-	native.progress.debris_destroyed=31;native.progress.asteroids_destroyed=51;native.completed_side_missions=6
+	native.progress.debris_destroyed=31;native.progress.asteroids_destroyed=51;native.progress.mined_ore_tons=101;native.progress.mined_cores=4;native.progress.nuclear_bomb_detonations=6;native.completed_side_missions=6
 	native.delivery_statistics.cargo=26;native.delivery_statistics.passengers=6;native.travel_statistics.jumpgates_used=10;native.conversations=21
 	var bronze:=Medals.commit(first,native,recipes(6,3))
-	for id in [4,5,10,16,17,18,24,26,29]:check(bronze.levels[id]==3,"Actual threshold crossing did not award bronze %d"%id)
+	for id in [4,5,6,7,10,16,17,18,20,24,26,29]:check(bronze.levels[id]==3,"Actual threshold crossing did not award bronze %d"%id)
 	check(first.levels[4]==0 and bronze.levels[13]==2 and bronze.levels[14]==3,"Promotion mutated retained history or confused blueprint counters")
 	check(Medals.commit(bronze,native,recipes(6,3))==bronze,"Repeated station observations changed awards")
 	for vector in [[99,3],[100,2],[249,2],[250,1]]:
@@ -49,6 +49,15 @@ func _initialize() -> void:
 	for vector in [[100,3],[101,2],[200,2],[201,1]]:
 		native.delivery_statistics.cargo=vector[0]
 		check(Medals.observe(native).levels[5]==vector[1],"Courier totals require strictly exceeding the threshold")
+	for vector in [[100,0],[101,3],[500,3],[501,2],[1000,2],[1001,1]]:
+		native.progress.mined_ore_tons=vector[0]
+		check(Medals.observe(native).levels[6]==vector[1],"Miner requires strictly exceeding inserted ore thresholds")
+	for vector in [[3,0],[4,3],[10,3],[11,2],[25,2],[26,1]]:
+		native.progress.mined_cores=vector[0]
+		check(Medals.observe(native).levels[7]==vector[1],"Advanced Miner requires strictly exceeding inserted core thresholds")
+	for vector in [[5,0],[6,3],[20,3],[21,2],[50,2],[51,1]]:
+		native.progress.nuclear_bomb_detonations=vector[0]
+		check(Medals.observe(native).levels[20]==vector[1],"Nuclear Armament requires strictly exceeding committed detonation thresholds")
 	for vector in [[30,0],[31,3],[100,3],[101,2],[150,2],[151,1]]:
 		native.progress.debris_destroyed=vector[0]
 		check(Medals.observe(native).levels[10]==vector[1],"Garbage Man requires strictly exceeding destroyed-junk thresholds")
@@ -72,6 +81,10 @@ func _initialize() -> void:
 	var unavailable:=career();unavailable.progress.erase("cargo_recovered")
 	check(Medals.observe(unavailable).levels[24]==Medals.UNKNOWN,"Absent legacy recovery is not zero")
 	check(not Medals.valid_retained(bronze,unavailable,recipes(6,3)),"A retained award without its durable evidence was accepted")
+	var legacy_mining:=career();legacy_mining.progress.erase("mined_ore_tons");legacy_mining.progress.erase("mined_cores")
+	check(Medals.observe(legacy_mining).levels[6]==Medals.UNKNOWN and Medals.observe(legacy_mining).levels[7]==Medals.UNKNOWN,"Absent legacy mining history became zero")
+	var legacy_nuclear:=career();legacy_nuclear.progress.erase("nuclear_bomb_detonations")
+	check(Medals.observe(legacy_nuclear).levels[20]==Medals.UNKNOWN,"Absent legacy Nuclear Armament history became zero")
 	for bad in [-1,1.0,true,2147483648]:
 		var malformed:=career();malformed.progress.player_kills=bad
 		check(Medals.observe(malformed).is_empty(),"Invalid counter type/range was coerced")
@@ -84,7 +97,7 @@ func _initialize() -> void:
 	check(Medals.commit(bronze,career(),recipes(6,3)).is_empty() and bronze.levels[4]==3,"Regressed native evidence silently downgraded an award")
 	check(Medals.all_base_gold(44)==false,"Incomplete campaign admitted the reward")
 	check(Medals.all_base_gold(45,{"blueprints_owned":13,"blueprints_constructed":13})==null,"Legacy blueprint counts invented all-gold")
-	var all_known:=career();all_known.progress={"player_kills":250,"cargo_recovered":500,"debris_destroyed":151,"asteroids_destroyed":251};all_known.completed_side_missions=51;all_known.conversations=101;all_known.rejected_jobs=51
+	var all_known:=career();all_known.progress={"player_kills":250,"cargo_recovered":500,"debris_destroyed":151,"asteroids_destroyed":251,"mined_ore_tons":1001,"mined_cores":26,"nuclear_bomb_detonations":51};all_known.completed_side_missions=51;all_known.conversations=101;all_known.rejected_jobs=51
 	all_known.delivery_statistics={"cargo":201,"passengers":51};all_known.travel_statistics.jumpgates_used=100
 	all_known.base_medals=Medals.commit({},all_known,recipes(13,13))
 	var receipt:=Medals.stock_progress(all_known,recipes(13,13))
@@ -98,6 +111,10 @@ func _initialize() -> void:
 	var mason:=Contracts.new();mason._state=career();mason._state.progress.erase("asteroids_destroyed");mason._flight={"active":true}
 	check(mason.retain_asteroid_destruction_total(51) and mason.snapshot().progress.asteroids_destroyed==51,"A living flight did not retain Mason destruction progress")
 	var mason_held:=mason.snapshot();check(not mason.retain_asteroid_destruction_total(50) and mason.snapshot()==mason_held,"Mason destruction progress regressed inside one retained flight")
+	var nuclear_owner:=Contracts.new();nuclear_owner._state=career();nuclear_owner._flight={"active":true}
+	check(nuclear_owner.retain_nuclear_bomb_detonations(1) and nuclear_owner.snapshot().progress.nuclear_bomb_detonations==6,"One committed kind-7 detonation did not advance the lifetime Nuclear Armament counter")
+	check(nuclear_owner.retain_nuclear_bomb_detonations(1) and nuclear_owner.snapshot().progress.nuclear_bomb_detonations==6,"Repeated observation duplicated Nuclear Armament progress")
+	var nuclear_held:=nuclear_owner.snapshot();check(not nuclear_owner.retain_nuclear_bomb_detonations(0) and nuclear_owner.snapshot()==nuclear_held,"Nuclear Armament flight history regressed without rejection")
 	var objective_owner:=Contracts.new();objective_owner._state=career();objective_owner._flight={"active":true}
 	var mason_scenery:=MasonScenery.new();var mason_objective:=ContractObjective.new()
 	mason_objective._contracts=objective_owner;mason_objective._field_identity=mason_scenery.presentation_identity();mason_objective._initial_asteroids_destroyed=50

@@ -23,6 +23,7 @@ var _initial_loadout:={}
 var _loadout:={}
 var _guns:=[]
 var _launches:=0
+var _nuclear_bomb_detonations:=0
 var _detonation_events: Array[Dictionary]=[]
 var _camera_commands: Array[Dictionary]=[]
 var _presentation_identity: RefCounted
@@ -72,7 +73,7 @@ func configure(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,mounts: 
 			gun.audio={"enabled":true,"source_id":int(bindings.weapon_parameters.audio.player_event_ids[entry.item_id]),"pitch_raw":0.0}
 		guns.append(gun)
 		seen[entry.item_id]=true
-	_initial_loadout=loadout.duplicate(true);_loadout=loadout.duplicate(true);_guns=guns;_launches=0;_detonation_events=[];_camera_commands=[]
+	_initial_loadout=loadout.duplicate(true);_loadout=loadout.duplicate(true);_guns=guns;_launches=0;_nuclear_bomb_detonations=0;_detonation_events=[];_camera_commands=[]
 	_presentation_identity=RefCounted.new()
 	return true
 
@@ -362,6 +363,11 @@ func _apply_event(gun: Dictionary,event: Dictionary,combat: RefCounted,origin: V
 				var applied: Dictionary=combat.systems_hit(hit.actor_id,hit.system_damage,false)
 				if applied.is_empty():return fail(combat.error)
 				result.systems_hits.append({"actor_id":hit.actor_id,"damage":hit.system_damage,"result":applied})
+		# Nuclear Armament advances only after a committed kind-7 blast. EMP
+		# bombs share this wrapper but do not advance the source statistic.
+		if gun.has("bomb") and int(gun.bomb.snapshot().weapon.kind)==7:
+			if _nuclear_bomb_detonations>=Vitals.MAX_INTEGER:return fail("Nuclear bomb detonation history exceeds the supported career range")
+			_nuclear_bomb_detonations+=1
 	return result
 
 ## Only the actual launcher history may reduce an existing equipped stack. The
@@ -517,7 +523,7 @@ func snapshot() -> Dictionary:
 		if gun.has("mine_bursts"):row.mine_bursts=gun.mine_bursts.snapshot()
 		if gun.has("visuals"):row.visuals=gun.visuals.duplicate(true)
 		guns.append(row)
-	var state:={"initial_loadout":_initial_loadout.duplicate(true),"loadout":_loadout.duplicate(true),"launches":_launches,"guns":guns}
+	var state:={"initial_loadout":_initial_loadout.duplicate(true),"loadout":_loadout.duplicate(true),"launches":_launches,"nuclear_bomb_detonations":_nuclear_bomb_detonations,"guns":guns}
 	if has_detonations():
 		state.detonation_audio=_detonation_events.duplicate(true)
 		state.detonation_camera=_camera_commands.duplicate(true)
@@ -525,7 +531,7 @@ func snapshot() -> Dictionary:
 
 func fork() -> RefCounted:
 	var next: RefCounted=get_script().new()
-	next._initial_loadout=_initial_loadout.duplicate(true);next._loadout=_loadout.duplicate(true);next._launches=_launches
+	next._initial_loadout=_initial_loadout.duplicate(true);next._loadout=_loadout.duplicate(true);next._launches=_launches;next._nuclear_bomb_detonations=_nuclear_bomb_detonations
 	next._presentation_identity=_presentation_identity;next._detonation_events=_detonation_events.duplicate(true);next._camera_commands=_camera_commands.duplicate(true)
 	for gun in _guns:
 		var copy: Dictionary=gun.duplicate();copy.equipment=gun.equipment.duplicate(true);copy.audio=gun.audio.duplicate()

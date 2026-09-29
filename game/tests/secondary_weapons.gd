@@ -58,6 +58,7 @@ func verify(content: String,pack: String) -> void:
 	if pulse.is_empty():check(false,owner.error);return
 	owner=pulse.owner;group=pulse.combat
 	check(pulse.events.size()==1 and pulse.events[0].action=="detonated" and pulse.events[0].ammunition_consumed==0 and pulse.events[0].audio.is_empty(),"Manual detonation spent ammunition or replayed the launch sound")
+	check(owner.snapshot().nuclear_bomb_detonations==0,"EMP detonation advanced Nuclear Armament")
 	check(group.snapshot().actors[0].systems.disabled and group.current_reputation().axes==[-2,0] and group.snapshot().actors[0].vitals==bodies.actors[0].vitals,"Equipped EMP failed to disable the actual target without hull damage")
 	step=owner.evaluate_advance(6000,group,targets)
 	if step.is_empty():check(false,owner.error);return
@@ -84,6 +85,7 @@ func verify(content: String,pack: String) -> void:
 		check(owner.reconcile_loadout(bad).is_empty() and owner.snapshot()==retained,"Ammo reconciliation accepted a changed inventory: "+key)
 	verify_multiple(bindings,cat,built)
 	verify_expiry(bindings,cat,built)
+	verify_nuclear(bindings,cat,built)
 
 static func equipped(bindings: RefCounted,cat: RefCounted,secondaries: Array,ship_id:=0) -> Dictionary:
 	var counts:=[];var total:=0
@@ -145,3 +147,18 @@ func verify_expiry(bindings: RefCounted,cat: RefCounted,built: RefCounted) -> vo
 	if operation.is_empty():check(false,owner.error);return
 	check(operation.events.size()==1 and operation.events[0].action=="detonated" and operation.events[0].blast.position.is_equal_approx(group.snapshot().actors[0].position) and operation.events[0].systems_hits[0].result.disabled_now,"Expiry did not move its full step and apply the blast")
 	check(operation.owner.snapshot().launches==1 and operation.owner.snapshot().guns[0].ammunition==1 and operation.events[0].audio.is_empty(),"Automatic detonation spent a second round or repeated launch audio")
+
+func verify_nuclear(bindings: RefCounted,cat: RefCounted,built: RefCounted) -> void:
+	var owner:=Ownership.new();var group:=active_group(bindings,cat,built,0)
+	if group==null or not owner.configure(bindings,cat,equipped(bindings,cat,[{"item_id":44,"slot":0,"quantity":1}])):check(false,owner.error);return
+	var targets:=[0,1,2,3];var pose:=Transform3D(Basis.IDENTITY,group.snapshot().actors[0].position-Vector3(0,0,400))
+	var operation:=owner.evaluate_advance(1,group,targets)
+	if operation.is_empty():check(false,owner.error);return
+	owner=operation.owner
+	operation=owner.evaluate_trigger(pose,44,group,targets)
+	if operation.is_empty():check(false,owner.error);return
+	check(operation.events.size()==1 and operation.events[0].action=="launched" and operation.owner.snapshot().nuclear_bomb_detonations==0 and owner.snapshot().nuclear_bomb_detonations==0,"Kind-7 launch counted before its committed blast")
+	owner=operation.owner;group=operation.combat
+	operation=owner.evaluate_trigger(pose,44,group,targets)
+	if operation.is_empty():check(false,owner.error);return
+	check(operation.events.size()==1 and operation.events[0].action=="detonated" and operation.owner.snapshot().nuclear_bomb_detonations==1 and owner.snapshot().nuclear_bomb_detonations==0,"Committed kind-7 detonation did not advance exactly once on the prospective owner")

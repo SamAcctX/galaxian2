@@ -225,7 +225,11 @@ func verify_flight(lib: RefCounted,args: Array):
 	check(success.mining_session.extraction.all_layers and success.cargo.used==25 and success.scenery.mined_count==1 and complete.drill_owner()==null,"Live full extraction did not fill the owned cargo hold once")
 	for state in [result,failure,success]:
 		var progress: Dictionary=state.progress.duplicate(true);progress.erase("mining_failure_hint_seen")
-		check(progress==departure.progress,"Mining changed earned counters while recording instruction history")
+		var expected_progress: Dictionary=departure.progress.duplicate(true);expected_progress.erase("mining_failure_hint_seen")
+		var receipt: Dictionary=state.mining_session.extraction
+		if int(receipt.ore_tons)>0 or expected_progress.has("mined_ore_tons"):expected_progress.mined_ore_tons=int(expected_progress.get("mined_ore_tons",0))+int(receipt.ore_tons)
+		if int(receipt.core_item_id)>=0 or expected_progress.has("mined_cores"):expected_progress.mined_cores=int(expected_progress.get("mined_cores",0))+int(int(receipt.core_item_id)>=0)
+		check(progress==expected_progress,"Mining did not retain exactly the accepted ore/core lifetime deltas")
 		for key in ["mission","campaign_cursor","mining_completed","reward_credits"]:check(state[key]==departure[key],"Mining granted unearned campaign progress: "+key)
 	if complete._objective!=null:
 		var objective: RefCounted=complete
