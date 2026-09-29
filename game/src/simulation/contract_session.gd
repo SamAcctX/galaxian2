@@ -73,7 +73,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,station: Dictionary,e
 		"campaign_cursor":int(terms.first_cursor),"station_id":owned.loadout.station_id,
 		"rank":progress.rank,"reputation":progress.reputation.duplicate(true),"difficulty":difficulty,
 		"credits":int(terms.acceptance.initial_credits),"passengers":int(terms.acceptance.initial_passengers),
-		"mission":{},"active_offer_id":-1,"offers":{}}
+		"mission":{},"active_offer_id":-1,"offers":{},"conversations":0}
 	if Definitions.delivery_parameters(terms):
 		_progress_rules=bindings.opening_handoff.duplicate(true)
 		_stations=catalogues.tables.systems[int(terms.system_id)].station_ids.duplicate()
@@ -895,10 +895,13 @@ func begin_lounge_visit() -> bool:
 func inspect_contact(bindings: RefCounted,contact_id: int,library: RefCounted=null) -> bool:
 	error=""
 	if _lounges==null or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return reject("Resolve the current flight or result before inspecting a contact")
+	var conversations: Variant=_state.get("conversations",0)
+	if not Numbers.integer(conversations,0,2147483646):return reject("The retained conversation count is invalid")
 	var cache: RefCounted=_lounges.fork()
 	var context:={"station_id":_state.station_id,"campaign_cursor":_state.campaign_cursor,"rank":_state.rank,"reputation":_state.reputation.duplicate(true)}
 	if not cache.inspect_contact(bindings,_catalogues,context,contact_id,_station_context,library):return reject(cache.error)
 	_lounges=cache;_state.offers=cache.location(int(_state.station_id)).offers
+	_state.conversations=int(conversations)+1
 	return true
 
 func accept(offer_id: int,equipment: RefCounted,replace_current: bool=false,bindings: RefCounted=null) -> RefCounted:

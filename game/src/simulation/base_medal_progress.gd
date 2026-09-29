@@ -14,6 +14,7 @@ const COUNTERS := {
 	17:{"path":["travel_statistics","jumpgates_used"],"thresholds":[100,50,10],"strict":false},
 	18:{"path":["delivery_statistics","passengers"],"thresholds":[50,20,5],"strict":true},
 	24:{"path":["progress","cargo_recovered"],"thresholds":[500,200,50],"strict":false},
+	26:{"path":["conversations"],"thresholds":[100,50,20],"strict":true},
 }
 
 static func _count(value: Variant) -> bool:
@@ -40,6 +41,13 @@ static func _tier(value: int,rule: Dictionary) -> int:
 		if reached:return index+1
 	return 0
 
+static func _champion_level(levels: Array) -> int:
+	if levels.size()!=BASE_COUNT:return UNKNOWN
+	for id in 35:
+		if levels[id]==UNKNOWN:return UNKNOWN
+		if levels[id]<=0:return 0
+	return 1
+
 static func observe(career: Dictionary,blueprints: Dictionary={}) -> Dictionary:
 	if not _count(career.get("campaign_cursor")):return {}
 	var counts:=blueprint_counts(blueprints)
@@ -56,6 +64,7 @@ static func observe(career: Dictionary,blueprints: Dictionary={}) -> Dictionary:
 		if value==null:continue
 		if not _count(value):return {}
 		levels[id]=_tier(value,rule)
+	levels[35]=_champion_level(levels)
 	return {"version":1,"levels":levels}
 
 static func valid_state(value: Variant) -> bool:
@@ -67,7 +76,10 @@ static func valid_state(value: Variant) -> bool:
 			if level!=1:return false
 		elif id==30:
 			if level not in [0,1]:return false
+		elif id==35:
+			if level not in [UNKNOWN,0,1]:return false
 		elif not COUNTERS.has(id) and level!=UNKNOWN:return false
+	if value.levels[35]!=_champion_level(value.levels):return false
 	return true
 
 static func valid_retained(value: Variant,career: Dictionary,blueprints: Dictionary={}) -> bool:

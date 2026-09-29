@@ -1,6 +1,7 @@
 extends "res://tests/lounge_coordinates_application.gd"
 ## Social conversation on an unchanged earned visit, through real app input.
 const Social=preload("res://src/simulation/lounge_dialogue.gd")
+const Medals=preload("res://src/simulation/base_medal_progress.gd")
 
 func verify_free_application() -> void:
 	var directory:=OS.get_environment("GOF2_SAVE_TEST_DIRECTORY")
@@ -19,7 +20,12 @@ func verify_free_application() -> void:
 	var person: Dictionary=people[0]
 	var id:=int(person.contact_id)
 	var initial:=social_record(original,id)
+	var initial_conversations:=conversation_count(original)
 	check((not initial.is_empty())==resumed,"The earned input has the wrong conversation lifetime")
+	if resumed:
+		check(initial_conversations>=21 and medal_level(original,26)==3,"Fresh Resume lost the earned Chatterbox bronze history")
+	else:
+		check(initial_conversations==0,"The immutable pre-Chatterbox source unexpectedly contains conversation history")
 	check(not app.session.contract_action("select",id,null),"A closed lounge selected a social contact")
 	check(app.session.set_pause("user",true,now_us),app.session.error)
 	check(not app.contract_action("select",id),"Paused input selected a conversation")
@@ -33,6 +39,7 @@ func verify_free_application() -> void:
 	check(not app.session.contract_action("select",-1,app.lounge_panel) and app.session.station_owner().snapshot()==opened,"Invalid input changed a lounge")
 	if not await select_social_keys(id,false):return
 	var first: Dictionary=app.session.station_owner().snapshot()
+	check(conversation_count(first)>initial_conversations,"Successful lounge-contact navigation did not increment durable conversation history")
 	var record:=social_record(first,id)
 	if record.is_empty():check(false,"Contact selection did not retain a social topic");return
 	var body: String=app.lounge_panel.snapshot().body
@@ -41,6 +48,22 @@ func verify_free_application() -> void:
 	check(social_career_unchanged(original,first),"Talking changed earned goods, money, recipe, job or story")
 	check(parent.snapshot()==original,"Talking mutated its retained parent")
 	if resumed:check(record==initial,"Fresh Resume changed the retained topic or references")
+	if not resumed:
+		# Exercise the real contact-selection producer up to the strict original
+		# bronze boundary. The medal itself is banked later at the station boundary.
+		check(conversation_count(first)<=20,"Initial earned lounge navigation skipped past the Chatterbox bronze boundary")
+		while conversation_count(app.session.station_owner().snapshot())<20:
+			var previous_count:=conversation_count(app.session.station_owner().snapshot())
+			app.lounge_panel.select_contact(id)
+			var advanced: Dictionary=app.session.station_owner().snapshot()
+			check(conversation_count(advanced)==previous_count+1,"Repeated successful conversation did not advance its lifetime counter exactly once")
+			if failures:return
+		var before_threshold: Dictionary=app.session.station_owner().snapshot()
+		check(conversation_count(before_threshold)==20 and observed_level(before_threshold,26)==0,"Chatterbox awarded at the strict threshold instead of beyond it")
+		app.lounge_panel.select_contact(id)
+		var crossed: Dictionary=app.session.station_owner().snapshot()
+		check(conversation_count(crossed)==21 and observed_level(crossed,26)==3,"The real 20-to-21 conversation crossing did not earn Chatterbox bronze")
+		first=crossed
 	for frame in 30:app.present_session()
 	check(app.session.station_owner().snapshot()==first and app.lounge_panel.snapshot().body==body,"Display refresh rerolled the conversation or advanced the career")
 	press_coordinate_key(KEY_ENTER)
@@ -54,8 +77,11 @@ func verify_free_application() -> void:
 	var repeated:=social_record(reread,id)
 	check(repeated.topic==record.topic and repeated.revisited,"Rereading replaced the selected social topic")
 	var stable_body: String=app.lounge_panel.snapshot().body
+	var reread_count:=conversation_count(reread)
 	app.lounge_panel.select_contact(id)
-	check(app.session.station_owner().snapshot()==reread and app.lounge_panel.snapshot().body==stable_body,"Repeated contact input rerolled stable references")
+	var reread_again: Dictionary=app.session.station_owner().snapshot()
+	check(social_record(reread_again,id)==repeated and conversation_count(reread_again)==reread_count+1 and app.lounge_panel.snapshot().body==stable_body,"Repeated contact input changed stable dialogue or lost its conversation event")
+	reread=reread_again
 	press_coordinate_key(KEY_BACKSPACE)
 	check(not app.lounge_panel.visible,"Keyboard Back did not close social dialogue")
 	if not verify_social_autosave(id,repeated):return
@@ -70,7 +96,8 @@ func verify_free_application() -> void:
 		if not application_step():return
 	check(app.session.station_owner().contract_owner()._lounges._social_used.is_empty(),"Reopening retained the transient topic exclusion pool")
 	if not await select_social_keys(id,true):return
-	check(social_record(app.session.station_owner().snapshot(),id)==repeated and app.lounge_panel.snapshot().body==stable_body,"Controller reopening changed the retained social dialogue")
+	var reopened: Dictionary=app.session.station_owner().snapshot()
+	check(social_record(reopened,id)==repeated and conversation_count(reopened)>conversation_count(reread) and app.lounge_panel.snapshot().body==stable_body,"Controller reopening changed the retained social dialogue or failed to count lounge-contact navigation")
 	await capture_free_application("social-reread-resumed" if resumed else "social-reread")
 	await click_coordinate_button(app.lounge_panel._back)
 	check(not app.lounge_panel.visible,"Mouse Back did not close social dialogue")
@@ -84,7 +111,8 @@ func verify_free_application() -> void:
 		await capture_free_application("social-departure")
 		if not await dock_application():return
 		var landed: Dictionary=app.session.station_owner().snapshot()
-		check(social_record(landed,id)==repeated and social_career_unchanged(original,landed),"Departure or docking lost the conversation or changed earned progress")
+		check(social_record(landed,id)==repeated and social_career_unchanged(original,landed),"Departure or docking lost the conversation or changed unrelated earned progress")
+		check(conversation_count(landed)>=21 and medal_level(landed,26)==3,"Physical docking did not bank the earned Chatterbox bronze medal")
 		if not verify_social_autosave(id,repeated) or not retain_recovery_save("returned"):return
 		await capture_free_application("social-docked")
 	check(FileAccess.get_sha256(source_path)==input_hash,"The earned source save was modified")
@@ -94,6 +122,18 @@ func social_record(state: Dictionary,id: int) -> Dictionary:
 	for place in state.contracts.lounges.locations:
 		if place.station_id==state.contracts.station_id:return place.get("dialogues",{}).get(id,{}).duplicate(true)
 	return {}
+
+func conversation_count(state: Dictionary) -> int:
+	return int(state.get("contracts",{}).get("conversations",0))
+
+func medal_level(state: Dictionary,id: int) -> int:
+	var levels: Variant=state.get("contracts",{}).get("base_medals",{}).get("levels")
+	return int(levels[id]) if levels is Array and id>=0 and id<levels.size() else Medals.UNKNOWN
+
+func observed_level(state: Dictionary,id: int) -> int:
+	var career: Dictionary=state.get("contracts",{})
+	var observed:=Medals.observe(career,career.get("blueprints",{}))
+	return int(observed.levels[id]) if not observed.is_empty() else Medals.UNKNOWN
 
 func social_career_unchanged(before: Dictionary,after: Dictionary) -> bool:
 	for key in ["credits","blueprints","mission","passengers","population"]:
