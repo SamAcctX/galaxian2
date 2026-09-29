@@ -1872,6 +1872,8 @@
     "game/tests/lounge_reading.gd.uid",
     "game/tests/lounge_diplomat_components.gd",
     "game/tests/lounge_diplomat_components.gd.uid",
+    "game/tests/lounge_diplomat_journey.gd",
+    "game/tests/lounge_diplomat_journey.gd.uid",
     "game/tests/lounge_social_application.gd",
     "game/tests/lounge_social_application.gd.uid",
     "game/tests/lounge_social_pointer.gd",
