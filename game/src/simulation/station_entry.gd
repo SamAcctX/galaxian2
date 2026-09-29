@@ -491,7 +491,7 @@ func equipment_action(action: String, item_id: int, bindings: RefCounted=null, c
 		var career: RefCounted=_contracts.fork()
 		var inventory: RefCounted=career.transact_shopping(bindings,catalogues,_equipment,action,item_id,slot_index,quantity)
 		if inventory==null:return fail(career.error)
-		_contracts=career;_retain_equipment(inventory)
+		_contracts=career;_retain_equipment(inventory);_sync_booze_progress(career)
 		return true
 	if _state.phase!="station_equipment_required":return fail("The equipment hangar is unavailable")
 	var candidate: RefCounted=_equipment.fork()
@@ -670,7 +670,7 @@ func purchase_lounge_goods(contact_id: int,bindings: RefCounted) -> bool:
 	if inventory==null:return fail(contracts.error)
 	var owned: Dictionary=inventory.snapshot()
 	_equipment=inventory;_contracts=contracts
-	_state.loadout=owned.loadout;_state.cargo=owned.cargo;_state.cargo_cache_stale=owned.cargo_cache_stale
+	_state.loadout=owned.loadout;_state.cargo=owned.cargo;_state.cargo_cache_stale=owned.cargo_cache_stale;_sync_booze_progress(contracts)
 	return true
 
 func accept_contract(offer_id: int,replace_current: bool=false,bindings: RefCounted=null) -> bool:
@@ -714,15 +714,22 @@ func close_equipment() -> bool:
 	if _contracts!=null and not _contracts.snapshot().get("pending_result",{}).is_empty():return fail("Acknowledge the delivery before changing its inventory")
 	if _equipment==null or not _state.get("hangar_open",false):return fail("The equipment hangar is not open")
 	if _state.phase=="free_play_required":
-		var candidate: RefCounted=_equipment.fork()
-		if not candidate.close_ordinary_shopping():return fail(candidate.error)
-		_retain_equipment(candidate);_state.hangar_open=false
+		if _contracts==null:return fail("The ordinary Hangar lost its retained career")
+		var contracts: RefCounted=_contracts.fork()
+		var candidate: RefCounted=contracts.close_shopping(_equipment)
+		if candidate==null:return fail(contracts.error)
+		_contracts=contracts;_retain_equipment(candidate);_sync_booze_progress(contracts);_state.hangar_open=false
 		return true
 	_state.hangar_open=false
 	if _equipment.requirements().satisfied:
 		_state.phase="conversation";_state.equipment_conversation=true;_state.acknowledged=false;_state.line_index=0
 		_lines=_equipment_lines.duplicate(true)
 	return true
+
+func _sync_booze_progress(contracts: RefCounted) -> void:
+	var progress: Dictionary=contracts.snapshot().progress
+	for key in ["purchased_booze_quantity","booze_types_mask"]:
+		if progress.has(key):_state.progress[key]=progress[key]
 
 func previous() -> bool:
 	error=""

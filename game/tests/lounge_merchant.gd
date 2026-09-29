@@ -50,6 +50,7 @@ func verify(args: PackedStringArray) -> void:
 	if not captures.is_empty():
 		DirAccess.make_dir_recursive_absolute(captures);await RenderingServer.frame_post_draw
 		root.get_texture().get_image().save_png(captures.path_join("merchant-existing-save.png"))
+	var booze_purchases:=0
 	for id in merchants:
 		var quote: Dictionary=station.merchant_preview(id,bindings)
 		check(not quote.is_empty() and quote.kind=="merchant",station.error)
@@ -69,7 +70,10 @@ func verify(args: PackedStringArray) -> void:
 		check(not panel.snapshot().accept_visible,"Purchased contact retained its Buy button")
 		var bought: Dictionary=branch.snapshot()
 		check(bought.contracts.credits==0 and bought.cargo.used==before.cargo.used+quote.quantity,"Bundle changed the quoted total or cargo quantity")
-		check(bought.loadout==before.loadout and bought.progress==before.progress and bought.mission==before.mission,"Purchase changed equipment fitting or the campaign")
+		var expected_progress: Dictionary=before.progress.duplicate(true);var expected_contract_progress: Dictionary=before.contracts.progress.duplicate(true)
+		if int(quote.item_id)>=132 and int(quote.item_id)<=153:
+			booze_purchases+=1;var bit:=1 << (int(quote.item_id)-132);expected_progress.booze_types_mask=int(expected_progress.get("booze_types_mask",0)) | bit;expected_contract_progress.booze_types_mask=int(expected_contract_progress.get("booze_types_mask",0)) | bit
+		check(bought.loadout==before.loadout and bought.progress==expected_progress and bought.contracts.progress==expected_contract_progress and bought.mission==before.mission,"Purchase changed unrelated fitting/campaign state or lost Barkeeper history: contact %d item %d"%[id,int(quote.item_id)])
 		check(not branch.purchase_lounge_goods(id,bindings) and branch.snapshot()==bought,"Merchant bundle could be purchased twice")
 		check(station.snapshot()==original,"Forked purchase corrupted the original frame")
 		var record:=archive.capture(branch,bindings)
@@ -88,4 +92,5 @@ func verify(args: PackedStringArray) -> void:
 		for entry in damaged.locations.locations:
 			if entry.station_id==before.loadout.station_id:entry.purchased_goods.append(id)
 		check(archive.restore(bindings,cat,library,damaged)==null,"Save accepted duplicate merchant purchase records")
+	check(booze_purchases>0,"Fixture has no source booze merchant to cover the Barkeeper purchase writer")
 	session.free();panel.free()

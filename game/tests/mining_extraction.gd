@@ -125,12 +125,24 @@ func verify(args: Array):
 	if not full.is_empty():check_retirement(full,complete)
 	var lifetime_seed:={"player_kills":0}
 	var lifetime:=Extraction.retained_lifetime(lifetime_seed,filled.extraction)
-	check(lifetime.get("mined_ore_tons")==filled.extraction.ore_tons and lifetime.get("mined_cores")==1,"Accepted extraction receipt did not retain ore/core lifetime deltas")
+	var ore_bit:=1 << (int(filled.extraction.ore_item_id)-Extraction.MEDAL_ORE_FIRST)
+	var core_bit:=1 << (int(filled.extraction.core_item_id)-Extraction.MEDAL_CORE_FIRST)
+	check(lifetime.get("mined_ore_tons")==filled.extraction.ore_tons and lifetime.get("mined_cores")==1 and lifetime.get("mined_ore_types_mask")==ore_bit and lifetime.get("mined_core_types_mask")==core_bit,"Accepted extraction receipt did not retain ore/core lifetime deltas and distinct types")
+	var repeated:=Extraction.retained_lifetime(lifetime,filled.extraction)
+	check(repeated.get("mined_ore_types_mask")==ore_bit and repeated.get("mined_core_types_mask")==core_bit,"Mining the same ore/core type duplicated distinct history")
 	check(Extraction.retained_lifetime(lifetime_seed,full.extraction)==lifetime_seed,"Full hold invented lifetime mining progress")
+	var crystal_receipt: Dictionary=filled.extraction.duplicate(true);crystal_receipt.ore_item_id=164;crystal_receipt.ore_tons=1;crystal_receipt.core_item_id=175
+	var crystal_history:=Extraction.retained_lifetime(lifetime_seed,crystal_receipt)
+	check(crystal_history.get("mined_ore_types_mask")==1024 and crystal_history.get("mined_core_types_mask")==1024,"The eleventh source ore/core type was not retained")
+	var special_receipt: Dictionary=filled.extraction.duplicate(true);special_receipt.ore_item_id=217;special_receipt.ore_tons=1;special_receipt.core_item_id=218
+	var special_history:=Extraction.retained_lifetime(lifetime_seed,special_receipt)
+	check(not special_history.has("mined_ore_types_mask") and not special_history.has("mined_core_types_mask"),"Special ore/core 217/218 entered the base Geologist bitsets")
 	var capped:=lifetime_seed.duplicate(true);capped.mined_ore_tons=2147483647
 	check(Extraction.retained_lifetime(capped,filled.extraction).is_empty(),"Mining lifetime overflow was accepted")
+	var malformed_history:=lifetime_seed.duplicate(true);malformed_history.mined_ore_types_mask=2048
+	check(Extraction.retained_lifetime(malformed_history,filled.extraction).is_empty(),"Malformed distinct mining history was extended")
 	var contract:=Contracts.new();contract._state={"base_content_id":filled.extraction.base_content_id,"binding_id":filled.extraction.binding_id,"progress":lifetime_seed.duplicate(true)}
-	check(Extraction.retain_contract_owner(contract,filled.extraction) and contract._state.progress.get("mined_ore_tons")==filled.extraction.ore_tons and contract._state.progress.get("mined_cores")==1,"Accepted extraction did not reach the retained free-flight career")
+	check(Extraction.retain_contract_owner(contract,filled.extraction) and contract._state.progress.get("mined_ore_tons")==filled.extraction.ore_tons and contract._state.progress.get("mined_cores")==1 and contract._state.progress.get("mined_ore_types_mask")==ore_bit and contract._state.progress.get("mined_core_types_mask")==core_bit,"Accepted extraction did not reach the retained free-flight career")
 	var retained_contract: Dictionary=contract._state.duplicate(true);var foreign: Dictionary=filled.extraction.duplicate(true);foreign.binding_id="0".repeat(64)
 	check(not Extraction.retain_contract_owner(contract,foreign) and contract._state==retained_contract,"Foreign extraction changed retained free-flight mining history")
 	check(construction.snapshot().departure==departure and station.prepare_departure(bindings,cat)==departure,"Extraction changed campaign state, mission or station progress")

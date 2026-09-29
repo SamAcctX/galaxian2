@@ -1,7 +1,5 @@
 extends "res://tests/ordinary_contracts.gd"
 ## Save/load checks begin with the actual earned opening career.
-const Archive=preload("res://src/simulation/station_archive.gd")
-const SaveFile=preload("res://src/simulation/station_save_file.gd")
 
 class InterruptedSave extends "res://src/simulation/station_save_file.gd":
 	func _write(path: String,bytes: PackedByteArray) -> bool:
@@ -26,6 +24,13 @@ func verify_save(args: PackedStringArray) -> void:
 		station=checkpoint.open(OS.get_environment("GOF2_FREE_PLAY_STATION_SCENARIO"),bindings)
 		if station==null:check(false,checkpoint.error);return
 	else:
+		for key in ["GOF2_DEKATO_SOURCE_ARGS","GOF2_NEHMA_SOURCE_ARGS"]:
+			var supplement_path:=OS.get_environment(key)
+			if supplement_path.is_empty():continue
+			var supplement: Variant=JSON.parse_string(FileAccess.get_file_as_string(supplement_path))
+			if not supplement is Array or supplement.size()!=3:check(false,"Malformed explicit source declarations: "+key);return
+			var attached: bool=bindings.attach_dekato_source(supplement[1],library.manifest) if key=="GOF2_DEKATO_SOURCE_ARGS" else bindings.attach_nehma_source(supplement[1],library.manifest)
+			if not attached:check(false,bindings.error);return
 		var file:=SaveFile.new();var loader:=Archive.new()
 		var document:=file.load_document(source_save,bindings,cat,library)
 		if document.is_empty():check(false,file.error);return
@@ -41,13 +46,21 @@ func verify_save(args: PackedStringArray) -> void:
 	check(restored.prepare_departure(bindings,cat)==station.prepare_departure(bindings,cat),"The loaded station prepares a different departure")
 	check(station.snapshot()==original,"Detached save restoration changed the running station")
 	var mason: RefCounted=station.fork();mason._contracts=mason._contracts.fork()
-	mason._contracts._state.progress.asteroids_destroyed=51
-	mason._contracts._state.progress.mined_ore_tons=101;mason._contracts._state.progress.mined_cores=4;mason._contracts._state.progress.nuclear_bomb_detonations=6
+	mason._contracts._state.progress.asteroids_destroyed=51;mason._contracts._state.progress.debris_destroyed=31
+	mason._contracts._state.progress.mined_ore_tons=101;mason._contracts._state.progress.mined_cores=4;mason._contracts._state.progress.mined_ore_types_mask=31;mason._contracts._state.progress.mined_core_types_mask=31;mason._contracts._state.progress.nuclear_bomb_detonations=6
+	mason._contracts._state.progress.purchased_booze_quantity=26;mason._contracts._state.progress.booze_types_mask=31
+	mason._contracts._state.completed_side_missions=6
 	check(mason._contracts.settle_base_medals(),mason._contracts.error)
-	mason._state.progress=mason._contracts.snapshot().progress.duplicate(true)
+	var mason_career: Dictionary=mason._contracts.snapshot();mason._state.progress=mason_career.progress.duplicate(true);mason._state.completed_side_missions=mason_career.completed_side_missions
 	var mason_record:=archive.capture(mason,bindings)
 	var mason_restored:=archive.restore(bindings,cat,library,mason_record)
-	check(mason_restored!=null and mason_restored.snapshot().contracts.progress.asteroids_destroyed==51 and mason_restored.snapshot().contracts.progress.mined_ore_tons==101 and mason_restored.snapshot().contracts.progress.mined_cores==4 and mason_restored.snapshot().contracts.progress.nuclear_bomb_detonations==6 and mason_restored.snapshot().contracts.base_medals.levels[6]==3 and mason_restored.snapshot().contracts.base_medals.levels[7]==3 and mason_restored.snapshot().contracts.base_medals.levels[20]==3 and mason_restored.snapshot().contracts.base_medals.levels[29]==3,"M5 lifetime progress or bronze medals did not survive station archive restore")
+	check(mason_restored!=null and mason_restored.snapshot().contracts.progress.asteroids_destroyed==51 and mason_restored.snapshot().contracts.progress.mined_ore_tons==101 and mason_restored.snapshot().contracts.progress.mined_cores==4 and mason_restored.snapshot().contracts.progress.mined_ore_types_mask==31 and mason_restored.snapshot().contracts.progress.mined_core_types_mask==31 and mason_restored.snapshot().contracts.progress.nuclear_bomb_detonations==6 and mason_restored.snapshot().contracts.base_medals.levels[2]==3 and mason_restored.snapshot().contracts.base_medals.levels[3]==3 and mason_restored.snapshot().contracts.base_medals.levels[6]==3 and mason_restored.snapshot().contracts.base_medals.levels[7]==3 and mason_restored.snapshot().contracts.base_medals.levels[20]==3 and mason_restored.snapshot().contracts.base_medals.levels[29]==3,"M5 lifetime progress or bronze medals did not survive station archive restore")
+	check(mason_restored!=null and mason_restored.snapshot().contracts.progress.purchased_booze_quantity==26 and mason_restored.snapshot().contracts.progress.booze_types_mask==31 and mason_restored.snapshot().contracts.base_medals.levels[8]==3 and mason_restored.snapshot().contracts.base_medals.levels[9]==3,"Personal Need/Barkeeper history did not survive station archive restore")
+	check(mason_restored!=null and mason_restored.snapshot().contracts.progress.debris_destroyed==31 and mason_restored.snapshot().contracts.completed_side_missions==6 and mason_restored.snapshot().contracts.base_medals.levels[10]==3 and mason_restored.snapshot().contracts.base_medals.levels[16]==3,"Garbage Man/Workaholic history did not survive station archive restore")
+	var malformed_mining:=mason_record.duplicate(true);malformed_mining.career.progress.mined_ore_types_mask=2048
+	check(archive.restore(bindings,cat,library,malformed_mining)==null,"Out-of-domain mining-type history survived station restore")
+	var malformed_booze:=mason_record.duplicate(true);malformed_booze.career.progress.booze_types_mask=4194304
+	check(archive.restore(bindings,cat,library,malformed_booze)==null,"Out-of-domain Barkeeper history survived station restore")
 	if OS.get_environment("GOF2_MASON_SAVE_ONLY")=="1":
 		verify_mason_file(bindings,cat,library,mason)
 		return
@@ -131,10 +144,16 @@ func verify_mason_file(bindings: RefCounted,cat: RefCounted,library: RefCounted,
 	var path:=SaveFile.path_for(directory.path_join(str(Time.get_ticks_usec())),bindings);var file:=SaveFile.new()
 	if not file.save(path,mason,bindings,cat,library):check(false,file.error);return
 	var document:=file.load_document(path,bindings,cat,library);var archive:=Archive.new();var loaded:=archive.restore(bindings,cat,library,document)
-	check(loaded!=null and loaded.snapshot().contracts.progress.asteroids_destroyed==51 and loaded.snapshot().contracts.progress.mined_ore_tons==101 and loaded.snapshot().contracts.progress.mined_cores==4 and loaded.snapshot().contracts.progress.nuclear_bomb_detonations==6 and loaded.snapshot().contracts.base_medals.levels[6]==3 and loaded.snapshot().contracts.base_medals.levels[7]==3 and loaded.snapshot().contracts.base_medals.levels[20]==3 and loaded.snapshot().contracts.base_medals.levels[29]==3,"M5 lifetime progress or bronze medals did not survive the physical save file")
+	check(loaded!=null and loaded.snapshot().contracts.progress.asteroids_destroyed==51 and loaded.snapshot().contracts.progress.mined_ore_tons==101 and loaded.snapshot().contracts.progress.mined_cores==4 and loaded.snapshot().contracts.progress.mined_ore_types_mask==31 and loaded.snapshot().contracts.progress.mined_core_types_mask==31 and loaded.snapshot().contracts.progress.nuclear_bomb_detonations==6 and loaded.snapshot().contracts.base_medals.levels[2]==3 and loaded.snapshot().contracts.base_medals.levels[3]==3 and loaded.snapshot().contracts.base_medals.levels[6]==3 and loaded.snapshot().contracts.base_medals.levels[7]==3 and loaded.snapshot().contracts.base_medals.levels[20]==3 and loaded.snapshot().contracts.base_medals.levels[29]==3,"M5 lifetime progress or bronze medals did not survive the physical save file")
+	check(loaded!=null and loaded.snapshot().contracts.progress.purchased_booze_quantity==26 and loaded.snapshot().contracts.progress.booze_types_mask==31 and loaded.snapshot().contracts.base_medals.levels[8]==3 and loaded.snapshot().contracts.base_medals.levels[9]==3,"Personal Need/Barkeeper history did not survive the physical save file")
+	check(loaded!=null and loaded.snapshot().contracts.progress.debris_destroyed==31 and loaded.snapshot().contracts.completed_side_missions==6 and loaded.snapshot().contracts.base_medals.levels[10]==3 and loaded.snapshot().contracts.base_medals.levels[16]==3,"Garbage Man/Workaholic history did not survive the physical save file")
 	if loaded==null:return
 	var departure: Dictionary=loaded.prepare_departure(bindings,cat)
-	check(not departure.is_empty() and departure.progress.get("asteroids_destroyed",0)==51 and departure.progress.get("mined_ore_tons",0)==101 and departure.progress.get("mined_cores",0)==4 and departure.progress.get("nuclear_bomb_detonations",0)==6,"M5 lifetime progress did not survive station departure")
+	check(not departure.is_empty() and departure.progress.get("asteroids_destroyed",0)==51 and departure.progress.get("mined_ore_tons",0)==101 and departure.progress.get("mined_cores",0)==4 and departure.progress.get("mined_ore_types_mask",0)==31 and departure.progress.get("mined_core_types_mask",0)==31 and departure.progress.get("nuclear_bomb_detonations",0)==6,"M5 lifetime progress did not survive station departure")
+	check(not departure.is_empty() and departure.progress.get("purchased_booze_quantity",0)==26 and departure.progress.get("booze_types_mask",0)==31,"Personal Need/Barkeeper history did not survive station departure")
+	check(not departure.is_empty() and departure.progress.get("debris_destroyed",0)==31 and departure.get("contracts",{}).get("completed_side_missions",-1)==6,"Garbage Man/Workaholic history did not survive station departure")
 	var construction:=Construction.new()
 	check(construction.prepare_free(bindings,cat,loaded,4096,1789100000),construction.error)
-	if not construction.snapshot().is_empty():check(construction.snapshot().departure.progress.get("asteroids_destroyed",0)==51 and construction.snapshot().departure.progress.get("mined_ore_tons",0)==101 and construction.snapshot().departure.progress.get("mined_cores",0)==4 and construction.snapshot().departure.progress.get("nuclear_bomb_detonations",0)==6,"M5 lifetime progress did not survive first-flight construction")
+	if not construction.snapshot().is_empty():check(construction.snapshot().departure.progress.get("asteroids_destroyed",0)==51 and construction.snapshot().departure.progress.get("mined_ore_tons",0)==101 and construction.snapshot().departure.progress.get("mined_cores",0)==4 and construction.snapshot().departure.progress.get("mined_ore_types_mask",0)==31 and construction.snapshot().departure.progress.get("mined_core_types_mask",0)==31 and construction.snapshot().departure.progress.get("nuclear_bomb_detonations",0)==6,"M5 lifetime progress did not survive first-flight construction")
+	if not construction.snapshot().is_empty():check(construction.snapshot().departure.progress.get("purchased_booze_quantity",0)==26 and construction.snapshot().departure.progress.get("booze_types_mask",0)==31,"Personal Need/Barkeeper history did not survive first-flight construction")
+	if not construction.snapshot().is_empty():check(construction.snapshot().departure.progress.get("debris_destroyed",0)==31 and construction.snapshot().departure.get("contracts",{}).get("completed_side_missions",-1)==6,"Garbage Man/Workaholic history did not survive first-flight construction")

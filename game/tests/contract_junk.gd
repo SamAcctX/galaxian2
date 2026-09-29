@@ -8,6 +8,7 @@ var _junk_populations:=0
 var _junk_drops:=0
 var _junk_empty:=0
 var _junk_deadlines:=false
+var _junk_medal_thresholds:=false
 var _junk_recovered:=0
 var _junk_recovery_checks:=0
 
@@ -53,7 +54,14 @@ func after_encounter_population(bindings: RefCounted,cat: RefCounted,owner: RefC
 	var expected: Dictionary=matching[0]
 	check(int(expected.initial_state)==before.random_state.state,"Junk drop fixture lost the actual constructor RNG")
 	var session: RefCounted=contracts.fork()
-	if not session.bind_flight(controller):check(false,session.error);return
+	var medal_session: RefCounted=null
+	if not _junk_medal_thresholds:
+		medal_session=contracts.fork()
+		medal_session._state.progress.debris_destroyed=30
+		medal_session._state.completed_side_missions=5
+		medal_session._state.erase("base_medals")
+	if not session.bind_flight(controller) or (medal_session!=null and not medal_session.bind_flight(controller)):
+		check(false,session.error if not session.error.is_empty() else medal_session.error);return
 	var combat: RefCounted=controller.combat_owner()
 	if not combat.begin_contact_pass(before.random_state,true):check(false,combat.error);return
 	for id in before.combat.actors.size():
@@ -90,6 +98,7 @@ func after_encounter_population(bindings: RefCounted,cat: RefCounted,owner: RefC
 	result=session.evaluate_flight(controller)
 	if result.is_empty():check(false,session.error);return
 	check(result.opened and result.session.snapshot().completed_side_missions==contracts.snapshot().completed_side_missions+1,"Destroyed debris did not earn its contract result")
+	if medal_session!=null:verify_junk_medal_thresholds(medal_session,controller,count)
 	verify_junk_settlement(contracts,result,true,count)
 	if not _junk_deadlines:
 		verify_drop_boundaries(owner,bindings,cat,resources)
@@ -149,6 +158,20 @@ func verify_junk_settlement(original: RefCounted,operation: Dictionary,success: 
 	check(closed.session.acknowledge_flight_result(closed.controller,pending.pending_result.serial).is_empty(),"Junk paid twice")
 	var finished: RefCounted=closed.session.finish_flight(closed.controller)
 	check(finished!=null and finished.snapshot().progress==settled.progress and not finished.snapshot().has("flight"),"Junk arrival release lost its retained career")
+
+func verify_junk_medal_thresholds(session: RefCounted,controller: RefCounted,debris_count: int) -> void:
+	var operation: Dictionary=session.evaluate_flight(controller)
+	if operation.is_empty():check(false,session.error);return
+	var pending: Dictionary=operation.session.snapshot()
+	check(operation.opened and pending.progress.debris_destroyed==30+debris_count and pending.completed_side_missions==6,"Real Junk success did not cross Garbage Man/Workaholic producer thresholds")
+	var closed: Dictionary=operation.session.acknowledge_flight_result(operation.controller,pending.pending_result.serial)
+	if closed.is_empty():check(false,operation.session.error);return
+	var finished: RefCounted=closed.session.finish_flight(closed.controller)
+	if finished==null:check(false,closed.session.error);return
+	check(finished.settle_base_medals(),finished.error)
+	var banked: Dictionary=finished.snapshot()
+	check(banked.progress.debris_destroyed==30+debris_count and banked.completed_side_missions==6 and banked.base_medals.levels[10]==3 and banked.base_medals.levels[16]==3,"Real Junk producer did not bank Garbage Man and Workaholic bronze")
+	_junk_medal_thresholds=true
 
 func verify_drop_boundaries(owner: RefCounted,bindings: RefCounted,cat: RefCounted,resources: RefCounted) -> void:
 	for vector in _junk_vectors.boundaries:
@@ -216,7 +239,7 @@ func verify_burst(bindings: RefCounted) -> void:
 func finish_ship_checks(bindings: RefCounted) -> void:
 	super.finish_ship_checks(bindings)
 	if JunkRules.available(bindings):
-		check(_junk_populations==20 and _junk_deadlines,"Junk did not cover every accepted early population and deadline branch")
+		check(_junk_populations==20 and _junk_deadlines and _junk_medal_thresholds,"Junk did not cover every accepted early population, deadline branch and medal producer threshold")
 		check(_junk_drops>0 and _junk_empty>0,"Junk did not exercise both cargo outcomes")
 	if load("res://src/content/tractor_recovery_definitions.gd").available(bindings):
 		check(_junk_recovered==_junk_drops and _junk_recovered>0,"Junk recovery did not exercise every actual generated cargo drop")

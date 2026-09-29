@@ -29,6 +29,7 @@ const Blueprints=preload("res://src/simulation/blueprint_progress.gd")
 const ContractProgress=preload("res://src/simulation/contract_progress.gd")
 const Wingmen=preload("res://src/simulation/wingman_contract.gd")
 const Recipe=preload("res://src/content/mission_recipe.gd")
+const BaseMedals=preload("res://src/simulation/base_medal_progress.gd")
 var error:=""
 var _state:={}
 var _rules:={}
@@ -44,6 +45,7 @@ var _catalogues: RefCounted
 var _void_source: RefCounted
 var _blueprints: RefCounted
 var _selected40_entry: RefCounted
+var _shopping_booze_quantity:=-1
 
 static func available(bindings: RefCounted) -> bool:
 	return bindings!=null and Definitions.acceptance_parameters(bindings.early_contracts)
@@ -303,8 +305,12 @@ func _retain_story_progress(bindings: RefCounted,progress: Dictionary,previous: 
 	if current.is_empty() or not Reputation.valid_state(progress.get("reputation")):return reject("The capture lost its earned career")
 	for key in current:
 		if progress.get(key)!=current[key]:return reject("The capture career counters disagree")
-	for key in ["player_kills","pirate_kills","other_score","debris_destroyed","capital_ship_kills","cargo_recovered","asteroids_destroyed","mined_ore_tons","mined_cores","nuclear_bomb_detonations"]:
+	for key in ["player_kills","pirate_kills","other_score","debris_destroyed","capital_ship_kills","cargo_recovered","asteroids_destroyed","mined_ore_tons","mined_cores","nuclear_bomb_detonations","purchased_booze_quantity"]:
 		if not Numbers.integer(progress.get(key,0),int(_state.progress.get(key,0)),2147483647):return reject("The capture lost a retained career counter")
+	for key in ["mined_ore_types_mask","mined_core_types_mask","booze_types_mask"]:
+		var previous_mask:=int(_state.progress.get(key,0));var next_mask: Variant=progress.get(key,0)
+		var maximum:=BaseMedals.BOOZE_TYPE_MASK if key=="booze_types_mask" else 2047
+		if not Numbers.integer(next_mask,0,maximum) or (int(next_mask) & previous_mask)!=previous_mask:return reject("The capture lost retained type history")
 	var earned:=Career.calculate_progress(_progress_rules,next_cursor,current.player_kills,current.pirate_kills,current.other_score)
 	if earned.is_empty():return reject("The Alioth story exceeds the supported career range")
 	var source: RefCounted=_void_source
@@ -439,6 +445,7 @@ func locations_snapshot() -> Dictionary:return {} if _lounges==null else _lounge
 
 func open_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,unix_seconds: Array,library: RefCounted=null) -> RefCounted:
 	error=""
+	if _shopping_booze_quantity>=0:return _shopping_reject("Close the current Hangar quote before opening another")
 	var owned:=_shopping_inventory(bindings,cat,equipment)
 	if owned.is_empty():return null
 	if unix_seconds.size()!=3:return _shopping_reject("Supply the three station price timestamps")
@@ -455,7 +462,9 @@ func open_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,un
 	if not inventory.open_ship_market(bindings,cat,_lounges.ship_stock(_state.station_id),ship_percent):return _shopping_reject(inventory.error)
 	var locations: RefCounted=_lounges.fork()
 	if not locations.replace_item_stock(bindings,cat,_state.station_id,stock,inventory.snapshot().stock,receipt.random):return _shopping_reject(locations.error)
-	_lounges=locations
+	var booze_quantity:=_booze_quantity(owned.cargo.entries)
+	if booze_quantity<0:return _shopping_reject("The retained booze quantity exceeds the supported career range")
+	_lounges=locations;_shopping_booze_quantity=booze_quantity
 	return inventory
 
 func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,action: String,item_id: int,slot_index: int=-1,quantity: int=1) -> RefCounted:
@@ -494,7 +503,43 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 	if action=="buy_ship" and not locations.replace_ship_stock(bindings,cat,_state.station_id,owned.market_ships,accepted.market_ships):return _shopping_reject(locations.error)
 	var credits:=credit_balance(_state.credits,accepted.credit_delta,_rules.delivery_results)
 	_lounges=locations;_state.credits=credits
+	if action=="buy" and not _retain_booze_type(item_id):return _shopping_reject(error)
 	return inventory
+
+func close_shopping(equipment: RefCounted) -> RefCounted:
+	error=""
+	if _shopping_booze_quantity<0 or not equipment is Equipment:return _shopping_reject("No retained Hangar transaction awaits closing")
+	var owned: Dictionary=equipment.snapshot()
+	if not owned.get("ordinary_shopping_open",false) or not owned.get("cargo",{}).get("entries") is Array:return _shopping_reject("The retained Hangar transaction lost its cargo")
+	var observed:=_booze_quantity(owned.cargo.entries)
+	if observed<0:return _shopping_reject("The retained booze quantity exceeds the supported career range")
+	var current: Variant=_state.get("progress",{}).get("purchased_booze_quantity",0)
+	var gained:=maxi(0,observed-_shopping_booze_quantity)
+	if not Numbers.integer(current,0,2147483647) or gained>2147483647-int(current):return _shopping_reject("Personal Need progress exceeds the supported career range")
+	var inventory: RefCounted=equipment.fork()
+	if not inventory.close_ordinary_shopping():return _shopping_reject(inventory.error)
+	if gained>0 or _state.progress.has("purchased_booze_quantity"):_state.progress.purchased_booze_quantity=int(current)+gained
+	_shopping_booze_quantity=-1
+	if not settle_base_medals():return null
+	return inventory
+
+func _retain_booze_type(item_id: int) -> bool:
+	var bit:=BaseMedals.booze_type_bit(item_id)
+	if bit==0:return true
+	var current: Variant=_state.get("progress",{}).get("booze_types_mask",0)
+	if not Numbers.integer(current,0,BaseMedals.BOOZE_TYPE_MASK):return reject("Barkeeper type history exceeds the supported source domain")
+	_state.progress.booze_types_mask=int(current) | bit
+	return true
+
+static func _booze_quantity(entries: Array) -> int:
+	var total:=0
+	for entry in entries:
+		if not entry is Dictionary:continue
+		if BaseMedals.booze_type_bit(int(entry.get("item_id",-1)))==0:continue
+		var quantity: Variant=entry.get("quantity")
+		if not quantity is int or quantity<0 or total>2147483647-int(quantity):return -1
+		total+=int(quantity)
+	return total
 
 func collect_blueprint_products(equipment: RefCounted) -> RefCounted:
 	error=""
@@ -907,6 +952,8 @@ func purchase_lounge_goods(bindings: RefCounted,contact_id: int,equipment: RefCo
 	var cache: RefCounted=_lounges.fork()
 	if not cache.consume_goods(int(_state.station_id),contact_id):return _shopping_reject(cache.error)
 	_state.credits-=int(quote.total_price);_lounges=cache
+	if not _retain_booze_type(int(quote.item_id)):return null
+	if BaseMedals.booze_type_bit(int(quote.item_id))!=0 and not settle_base_medals():return null
 	return inventory
 
 func begin_lounge_visit() -> bool:
@@ -1448,6 +1495,14 @@ func _retain_combat_progress(controller: RefCounted) -> bool:
 		var count:=Career.recovered_cargo_total(int(progress.get("cargo_recovered",0)),recovered,retained)
 		if count<0:return reject("The flight lost its retained recovery quantity or exceeded the supported career range")
 		earned.cargo_recovered=count
+	var booze_flags: Variant=scene.combat.get("recovery",{}).get("item_flags",[])
+	if not booze_flags is Array:return reject("The flight lost its retained Barkeeper item history")
+	var booze_mask: Variant=progress.get("booze_types_mask",0)
+	if not Numbers.integer(booze_mask,0,BaseMedals.BOOZE_TYPE_MASK):return reject("The retained Barkeeper type history exceeds the supported source domain")
+	for index in booze_flags:
+		if not Numbers.integer(index,0,BaseMedals.BOOZE_LAST_ID-BaseMedals.BOOZE_FIRST_ID):return reject("The flight has an invalid Barkeeper item index")
+		booze_mask=int(booze_mask) | (1 << int(index))
+	if not booze_flags.is_empty() or progress.has("booze_types_mask"):earned.booze_types_mask=int(booze_mask)
 	var standing: Dictionary=scene.combat.get("current_reputation",{})
 	if not Reputation.valid_state(standing):return reject("The flight lost its retained reputation")
 	_state.progress.merge(earned,true);_state.rank=earned.rank
@@ -1515,6 +1570,7 @@ func fork() -> RefCounted:
 	result._blueprints=_blueprints.fork_for_transaction() if _blueprints!=null else null
 	result._selected40_entry=_selected40_entry.fork() if _selected40_entry!=null else null
 	result._station_context=_station_context
+	result._shopping_booze_quantity=_shopping_booze_quantity
 	return result
 
 func reject(message: String) -> bool:error=message;return false

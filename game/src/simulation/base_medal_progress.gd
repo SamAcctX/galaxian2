@@ -4,11 +4,18 @@ extends RefCounted
 const UNKNOWN := -1
 const BASE_COUNT := 36
 const BLUEPRINT_GOLD_COUNT := 13
+const BOOZE_FIRST_ID := 132
+const BOOZE_LAST_ID := 153
+const BOOZE_TYPE_MASK := (1 << (BOOZE_LAST_ID-BOOZE_FIRST_ID+1))-1
 const COUNTERS := {
+	2:{"path":["progress","mined_ore_types_mask"],"thresholds":[11,8,5],"strict":false,"bit_mask":2047},
+	3:{"path":["progress","mined_core_types_mask"],"thresholds":[11,8,5],"strict":false,"bit_mask":2047},
 	4:{"path":["progress","player_kills"],"thresholds":[250,100,50],"strict":false},
 	5:{"path":["delivery_statistics","cargo"],"thresholds":[200,100,25],"strict":true},
 	6:{"path":["progress","mined_ore_tons"],"thresholds":[1000,500,100],"strict":true},
 	7:{"path":["progress","mined_cores"],"thresholds":[25,10,3],"strict":true},
+	8:{"path":["progress","purchased_booze_quantity"],"thresholds":[1000,100,25],"strict":true},
+	9:{"path":["progress","booze_types_mask"],"thresholds":[22,16,5],"strict":false,"bit_mask":BOOZE_TYPE_MASK},
 	10:{"path":["progress","debris_destroyed"],"thresholds":[150,100,30],"strict":true},
 	13:{"path":["blueprints_owned"],"thresholds":[13,6,3],"strict":false},
 	14:{"path":["blueprints_constructed"],"thresholds":[13,6,3],"strict":false},
@@ -22,8 +29,18 @@ const COUNTERS := {
 	32:{"path":["rejected_jobs"],"thresholds":[50],"strict":true},
 }
 
+static func booze_type_bit(item_id: int) -> int:
+	if item_id<BOOZE_FIRST_ID or item_id>BOOZE_LAST_ID:return 0
+	return 1 << (item_id-BOOZE_FIRST_ID)
+
 static func _count(value: Variant) -> bool:
 	return value is int and value>=0 and value<=2147483647
+
+static func _bit_count(value: int) -> int:
+	var remaining:=value;var result:=0
+	while remaining>0:
+		result+=int(remaining & 1);remaining>>=1
+	return result
 
 static func blueprint_counts(state: Dictionary) -> Dictionary:
 	if not state.get("entries") is Array:return {}
@@ -68,6 +85,9 @@ static func observe(career: Dictionary,blueprints: Dictionary={}) -> Dictionary:
 			value=value.get(key) if value is Dictionary else null
 		if value==null:continue
 		if not _count(value):return {}
+		if rule.has("bit_mask"):
+			if int(value)>int(rule.bit_mask):return {}
+			value=_bit_count(int(value))
 		levels[id]=_tier(value,rule)
 	levels[35]=_champion_level(levels)
 	return {"version":1,"levels":levels}

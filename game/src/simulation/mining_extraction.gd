@@ -8,22 +8,35 @@ const Numbers=preload("res://src/content/opening_definitions.gd")
 const Scenery=preload("res://src/simulation/opening_scenery.gd")
 const Cargo=preload("res://src/simulation/flight_cargo.gd")
 var error:=""
+const MEDAL_ORE_FIRST:=154
+const MEDAL_CORE_FIRST:=165
+const MEDAL_TYPE_COUNT:=11
+const MEDAL_TYPE_MASK_MAX:=(1 << MEDAL_TYPE_COUNT)-1
 
 ## Retain only quantities that the accepted extraction actually inserted. Missing
 ## fields stay missing until a successful extraction establishes lifetime history.
 static func retained_lifetime(progress: Dictionary, receipt: Dictionary) -> Dictionary:
 	var ore: Variant=receipt.get("ore_tons")
+	var ore_id: Variant=receipt.get("ore_item_id")
 	var core_id: Variant=receipt.get("core_item_id")
-	if not Numbers.integer(ore,0,2147483647) or not core_id is int or core_id < -1 or core_id > 2147483647:return {}
+	if not Numbers.integer(ore,0,2147483647) or not Numbers.integer(ore_id,0,2147483647) or not core_id is int or core_id < -1 or core_id > 2147483647:return {}
 	var retained:=progress.duplicate(true)
 	var current_ore: Variant=retained.get("mined_ore_tons",0)
 	var current_cores: Variant=retained.get("mined_cores",0)
-	if not Numbers.integer(current_ore,0,2147483647) or not Numbers.integer(current_cores,0,2147483647):return {}
+	var current_ore_types: Variant=retained.get("mined_ore_types_mask",0)
+	var current_core_types: Variant=retained.get("mined_core_types_mask",0)
+	if not Numbers.integer(current_ore,0,2147483647) or not Numbers.integer(current_cores,0,2147483647) or not Numbers.integer(current_ore_types,0,MEDAL_TYPE_MASK_MAX) or not Numbers.integer(current_core_types,0,MEDAL_TYPE_MASK_MAX):return {}
 	if int(ore)>2147483647-int(current_ore):return {}
 	var core_delta:=1 if int(core_id)>=0 else 0
 	if core_delta>2147483647-int(current_cores):return {}
+	var ore_type_delta:=0
+	if int(ore)>0 and int(ore_id)>=MEDAL_ORE_FIRST and int(ore_id)<MEDAL_ORE_FIRST+MEDAL_TYPE_COUNT:ore_type_delta=1 << (int(ore_id)-MEDAL_ORE_FIRST)
+	var core_type_delta:=0
+	if int(core_id)>=MEDAL_CORE_FIRST and int(core_id)<MEDAL_CORE_FIRST+MEDAL_TYPE_COUNT:core_type_delta=1 << (int(core_id)-MEDAL_CORE_FIRST)
 	if int(ore)>0 or retained.has("mined_ore_tons"):retained.mined_ore_tons=int(current_ore)+int(ore)
 	if core_delta>0 or retained.has("mined_cores"):retained.mined_cores=int(current_cores)+core_delta
+	if ore_type_delta>0 or retained.has("mined_ore_types_mask"):retained.mined_ore_types_mask=int(current_ore_types) | ore_type_delta
+	if core_type_delta>0 or retained.has("mined_core_types_mask"):retained.mined_core_types_mask=int(current_core_types) | core_type_delta
 	return retained
 
 static func retain_contract_owner(owner: RefCounted,receipt: Dictionary) -> bool:
