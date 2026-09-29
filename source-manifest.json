@@ -1884,6 +1884,8 @@
     "game/tests/lounge_wingmen_application.gd.uid",
     "game/tests/wingman_actors_application.gd",
     "game/tests/wingman_actors_application.gd.uid",
+    "game/tests/wingman_follow_application.gd",
+    "game/tests/wingman_follow_application.gd.uid",
     "game/tests/wingman_lifetime_application.gd",
     "game/tests/wingman_lifetime_application.gd.uid",
     "game/tests/lounge_social_application.gd",

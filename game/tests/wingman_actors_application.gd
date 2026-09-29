@@ -31,7 +31,7 @@ func verify_free_application() -> void:
 	check(actor.hull_catalogue_id==CrewActors.hull_for_pilot(definitions,actor.name,actor.actor_kind),"The hired fighter ignored its stable native hull choice")
 	var expected: Vector3=initial.player_pose.origin-initial.player_pose.basis.x*1000.0-initial.player_pose.basis.z*2000.0
 	check(actor.pose.origin.distance_to(expected)<0.1 and actor.pose.basis.z.dot(initial.player_pose.basis.z)>.9999,"The first pilot did not spawn left/behind facing the player heading")
-	check(not cast.interactions_connected,"Construction falsely claims combat/follow acceptance")
+	check(not cast.interactions_connected,"Construction falsely claims combat acceptance")
 	verify_actor_components(crew,initial.player_pose)
 	if failures or not await release_application_flight():return
 	var scene: Node3D=find_flight_scene(app)
@@ -41,7 +41,7 @@ func verify_free_application() -> void:
 	check(geometry.get_meta("source_ship_id")==actor.hull_catalogue_id and geometry.get_meta("wingman_name")==actor.name,"The rendered ship is not the retained native pilot")
 	if not await inspect_pilot_in_flight(actor.pose.origin,scene):return
 	var observed: Dictionary=app.session.snapshot()
-	check(observed.wingman_actors.actors[0].pose==actor.pose,"Construction-only actor unexpectedly invented a flight path")
+	check(observed.wingman_actors.actors[0].pose==geometry.transform,"The rendered pilot diverged from its native body")
 	check(observed.contracts.wingmen.active.remaining_ms<paid.active.remaining_ms,"Real actor inspection did not consume ordinary hired flight time")
 	var paused: Dictionary=app.session.flight_owner().snapshot().wingman_actors
 	check(app.session.set_pause("user",true,now_us),app.session.error)
@@ -82,6 +82,7 @@ func verify_actor_components(crew: RefCounted,player: Transform3D) -> void:
 func inspect_pilot_in_flight(position: Vector3,scene: Node3D) -> bool:
 	for tick in 1800:
 		var state: Dictionary=app.session.snapshot()
+		position=state.wingman_actors.actors[0].pose.origin
 		var distance: float=state.player_pose.origin.distance_to(position)
 		var input:={"commands":PiratePilot.Steering.steering_toward(state.player_pose,position),"throttle":1.0 if distance>2800.0 else 0.0,"fire":false,"strafe":0.0}
 		if not pirate_step(input):return false

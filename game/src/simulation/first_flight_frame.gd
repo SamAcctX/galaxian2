@@ -1385,6 +1385,7 @@ func _observe_radio() -> bool:
 	return true if _radio.error.is_empty() else reject(_radio.error)
 
 func _advance_world(milliseconds: int, preceding_reference: Vector3) -> bool:
+	if _wingmen!=null and not _wingmen.advance_follow(milliseconds,_pose):return reject(_wingmen.error)
 	if _encounter!=null:
 		var before: Dictionary={} if _particles==null else _encounter.combat_snapshot()
 		var actors: Dictionary=_encounter.evaluate_world(_player,_pose,milliseconds,_random)
