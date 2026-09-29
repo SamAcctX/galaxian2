@@ -816,6 +816,8 @@
     "game/src/presentation/space_fog_field.gd.uid",
     "game/src/presentation/space_fog_geometry.gd",
     "game/src/presentation/space_fog_geometry.gd.uid",
+    "game/src/presentation/station_ambience.gd",
+    "game/src/presentation/station_ambience.gd.uid",
     "game/src/presentation/station_audio.gd",
     "game/src/presentation/station_audio.gd.uid",
     "game/src/presentation/station_dialogue_panel.gd",

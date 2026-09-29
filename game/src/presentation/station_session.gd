@@ -9,6 +9,7 @@ const Catalogues=preload("res://src/content/catalogues.gd")
 const Clock=preload("res://src/simulation/frame_clock.gd")
 const Geometry=preload("res://src/presentation/hangar_geometry.gd")
 const Speech=preload("res://src/presentation/station_audio.gd")
+const Ambience=preload("res://src/presentation/station_ambience.gd")
 const Conversations=preload("res://src/content/ordinary_flight_definitions.gd")
 const Locations=preload("res://src/simulation/lounge_cache.gd")
 const LoungeScene=preload("res://src/presentation/lounge_scene.gd")
@@ -25,6 +26,7 @@ var status:="idle"
 var camera: Camera3D
 var geometry: Node3D
 var audio: Node
+var ambience: Node
 var station_name:=""
 var _world: RefCounted
 var _motion: RefCounted
@@ -148,6 +150,8 @@ func _build_scene(library: RefCounted, bindings: RefCounted, visuals: RefCounted
 	if station_planets!=null and not station_planets.apply_view({"pose":camera.global_transform}):return fail(station_planets.error)
 	if not build_lighting(int(seed.station_id)):return false
 	audio=Speech.new();add_child(audio)
+	# Room atmosphere is optional presentation; a missing event leaves the room silent.
+	ambience=Ambience.new();add_child(ambience);ambience.configure(library,bindings)
 	var state: Dictionary=_world.snapshot()
 	var voice_ready: bool=true
 	if not state.dialogue.visible:
@@ -226,6 +230,7 @@ func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false) ->
 	var result_open: bool=not world_state.get("contracts",{}).get("pending_result",{}).is_empty()
 	var milliseconds:=roundi(clock.sample(now_microseconds,is_paused() or result_open or not _wingman_notice.is_empty())*1000)
 	if not clock.error.is_empty():return reject(clock.error)
+	if ambience!=null:ambience.advance("hangar" if world_state.get("hangar_open",false) else "lounge" if _lounge_open else "main",milliseconds)
 	if is_paused() or result_open or not _wingman_notice.is_empty():_clock=clock;return true
 	if _released_presentation!=null and not _released_presentation.advance_release(milliseconds):
 		_released_presentation.free();_released_presentation=null
@@ -511,6 +516,8 @@ func set_pause(reason: String, paused: bool, now_microseconds: int) -> bool:
 	if paused:_pauses[reason]=true
 	else:_pauses.erase(reason)
 	if audio!=null:audio.set_paused(is_paused())
+	# Station menus (map, status, missions) keep the room atmosphere running.
+	if ambience!=null:ambience.set_paused(_pauses.has("user") or _pauses.has("focus") or _pauses.has("hidden"))
 	if _presentation_view!=null:_presentation_view.set_paused(is_paused())
 	if _released_presentation!=null:_released_presentation.set_paused(is_paused())
 	return true

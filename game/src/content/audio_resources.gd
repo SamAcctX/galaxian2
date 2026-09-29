@@ -272,6 +272,27 @@ func prepare_layered(id: int, event: Dictionary) -> Dictionary:
 	_clips[id]=result
 	return result
 
+## Room atmospheres: layered loops whose layer envelopes are single constant
+## points. A gain point scales its layer; the paired 0x804 points are a neutral
+## surround pan for these 2D events (assumption: no audible panning).
+func prepare_constant_layers(id: int) -> Dictionary:
+	var ordinary:=prepare(id)
+	if ordinary.is_empty() or not ordinary.has("unsupported"):return ordinary
+	var event: Dictionary=_definitions.events[id].duplicate(true)
+	if event.get("type")!=8 or event.has("sound") or event.parameters.size()!=1 or int(event.properties.mode) not in [0x180008,0x280008]:return ordinary
+	for layer in event.layers:
+		var gain:=1.0
+		for envelope in layer.envelopes:
+			if envelope.get("points",[]).size()!=1 or int(envelope.flags) not in [12,2052] or envelope.get("dsp")!="":return ordinary
+			if int(envelope.flags)==12:gain*=float(envelope.points[0][1])
+		layer.envelopes=[]
+		for sound in layer.sounds:sound.volume=float(sound.volume)*gain
+	event.parameters[0].envelopes=0
+	unsupported.erase(id)
+	var result:=prepare_layered(id,event)
+	if result.has("unsupported"):unsupported[id]=ordinary.unsupported
+	return result
+
 func prepare_mining_drill(id: int, event: Dictionary) -> Dictionary:
 	# Both Mac projects use the same four-layer, externally controlled drill.
 	# Its parameter windows are stored normalized even though drill_speed is 0..3.

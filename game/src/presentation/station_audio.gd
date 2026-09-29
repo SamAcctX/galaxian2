@@ -60,9 +60,6 @@ func configure(library: RefCounted, bindings: RefCounted) -> bool:
 			ids.append(int(spoken[voice_index]));voice_index+=1
 	if voice_index!=spoken.size():return reject("Initial station has unused voice declarations")
 	if not _prepare_voices(ids):return false
-	# This event has authored envelopes that require their own native owner.
-	# Keep its unsupported status explicit rather than substituting another loop.
-	diagnostics.atmosphere="Station atmosphere envelopes are not connected"
 	return true
 
 func configure_mining_briefing(library: RefCounted, bindings: RefCounted, campaign_cursor:=2) -> bool:

@@ -6,6 +6,21 @@ extends "res://tests/beam_primary_application.gd"
 func verify_free_application() -> void:
 	app.set_player_mode(true);app.show();app.present_session()
 	await process_frame;resume_application_focus()
+	# Room atmosphere: the main view loops its own event and fades it in.
+	for frame in 30:
+		await process_frame;app.session.step(Time.get_ticks_usec())
+	var air: Dictionary=app.session.ambience.snapshot()
+	print("AMBIENCE ",air)
+	check(air.prepared.size()==3 and air.room=="main" and air.levels.get("main",0.0)>0.0 and air.playing_voices>0,"The station main view has no atmosphere")
+	check(app.equipment_action("open"),"The hangar did not open")
+	for frame in 10:
+		await process_frame;app.session.step(Time.get_ticks_usec())
+	air=app.session.ambience.snapshot()
+	check(air.room=="hangar" and air.levels.has("hangar"),"The hangar did not switch to its atmosphere")
+	check(app.equipment_action("close"),"The hangar did not close")
+	for frame in 3:
+		await process_frame;app.session.step(Time.get_ticks_usec())
+	check(app.session.ambience.snapshot().room=="main","Closing the hangar did not return to the main atmosphere")
 	# A newly reached tier pays its reward and shows one notice at the idle station.
 	var wallet: int=app.session.station_owner().snapshot().contracts.credits
 	check(app.session._world.record_stats({"max_free_cargo":101}),"Stats could not reach Space Saver bronze")
