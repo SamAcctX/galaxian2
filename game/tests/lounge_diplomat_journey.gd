@@ -250,4 +250,11 @@ func check_consumed_diplomat() -> bool:
 		press_coordinate_key(KEY_ENTER)
 		check(app.session.station_owner().snapshot()==state,"The used contact charged the earned career again")
 	check(consumed==1,"The earned paid lounge lost its consumed diplomat")
+	if failures:return false
+	# Keep a viewed fresh-process proof of the used contact itself, not only
+	# the station wallet after the lounge has already closed.
+	for step in 40:
+		if not application_step():return false
+	check(not String(app.lounge_panel.snapshot().body).is_empty(),"The retained used diplomat lost its response")
+	await capture_free_application("diplomat-consumed-contact")
 	return app.contract_action("close",-1) and failures==0
