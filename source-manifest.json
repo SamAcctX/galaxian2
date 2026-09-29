@@ -650,6 +650,8 @@
     "game/src/presentation/material_uv.gdshaderinc.uid",
     "game/src/presentation/medal_notice_panel.gd",
     "game/src/presentation/medal_notice_panel.gd.uid",
+    "game/src/presentation/missions_panel.gd",
+    "game/src/presentation/missions_panel.gd.uid",
     "game/src/presentation/mine_projectile_geometry.gd",
     "game/src/presentation/mine_projectile_geometry.gd.uid",
     "game/src/presentation/mining_panel.gd",

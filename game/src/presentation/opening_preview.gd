@@ -31,6 +31,8 @@ const FlightActionMenu = preload("res://src/presentation/flight_action_menu.gd")
 const TravelDefinitions = preload("res://src/content/mido_travel_definitions.gd")
 const LocalMapPanel = preload("res://src/presentation/navigation_map_panel.gd")
 const StatusPanel = preload("res://src/presentation/status_panel.gd")
+const MissionsPanel = preload("res://src/presentation/missions_panel.gd")
+const MISSIONS_FIRST_CURSOR:=9
 const MedalNoticePanel = preload("res://src/presentation/medal_notice_panel.gd")
 const GateConfirmationPanel = preload("res://src/presentation/gate_confirmation_panel.gd")
 const LocationCache = preload("res://src/simulation/lounge_cache.gd")
@@ -95,6 +97,8 @@ var flight_menu: Control
 var _station_map_open:=false
 var status_panel: Control
 var _status_open:=false
+var missions_panel: Control
+var _missions_open:=false
 var medal_notice: Control
 ## Career stats observed by the application and banked at the next station.
 var _career_play_ms:=0.0
@@ -199,6 +203,10 @@ func _ready() -> void:
 	map_panel=LocalMapPanel.new();host.add_child(map_panel);map_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	status_panel=StatusPanel.new();host.add_child(status_panel);status_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	status_panel.close_requested.connect(func():close_status())
+	missions_panel=MissionsPanel.new();host.add_child(missions_panel);missions_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	missions_panel.close_requested.connect(func():close_missions())
+	missions_panel.map_requested.connect(func():if close_missions():open_map())
+	missions_panel.discard_requested.connect(func():discard_mission())
 	medal_notice=MedalNoticePanel.new();host.add_child(medal_notice);medal_notice.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	medal_notice.acknowledged.connect(func():acknowledge_medal_notice())
 	gate_panel=GateConfirmationPanel.new();host.add_child(gate_panel);gate_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -399,6 +407,8 @@ func reset() -> void:
 	cancel_departure()
 	if map_panel!=null:map_panel.clear()
 	if status_panel!=null:status_panel.clear()
+	if missions_panel!=null:missions_panel.clear()
+	_missions_open=false
 	if medal_notice!=null:medal_notice.clear()
 	_status_open=false
 	if gate_panel!=null:gate_panel.clear()
@@ -604,7 +614,7 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		for node in [station_shell,station_panel,equipment_panel,lounge_panel,map_panel,_menu_button,_launch_button,_hangar_button,_lounge_button,_station_map_button,_save_button,_load_button,_flight_hint,_skip_button]:
 			if node!=null:node.hide()
 		if _save_notice!=null and not _transition_failed:_save_notice.hide()
-	if _player_mode and session is StationSession and (_station_map_open or _status_open or state.get("dialogue",{}).get("visible",false) or state.get("hangar_open",false) or state.get("lounge_open",false) or not state.get("contracts",{}).get("pending_result",{}).is_empty()):
+	if _player_mode and session is StationSession and (_station_map_open or _status_open or _missions_open or state.get("dialogue",{}).get("visible",false) or state.get("hangar_open",false) or state.get("lounge_open",false) or not state.get("contracts",{}).get("pending_result",{}).is_empty()):
 		for button in [_menu_button,_launch_button,_hangar_button,_lounge_button,_station_map_button,_save_button,_load_button]:button.hide()
 	if status!=null and _player_mode:status.visible=_transition_failed
 	if _station_map_open and _save_notice!=null:_save_notice.hide()
@@ -625,7 +635,7 @@ func _prepare_chrome() -> bool:
 
 func _refresh_station_shell(state: Dictionary) -> void:
 	if station_shell==null:return
-	if _station_map_open or _status_open or not _player_mode or _chrome_context.is_empty() or not session is StationSession or state.get("dialogue",{}).get("visible",false) or state.get("hangar_open",false) or state.get("lounge_open",false) or not state.get("contracts",{}).get("pending_result",{}).is_empty():
+	if _station_map_open or _status_open or _missions_open or not _player_mode or _chrome_context.is_empty() or not session is StationSession or state.get("dialogue",{}).get("visible",false) or state.get("hangar_open",false) or state.get("lounge_open",false) or not state.get("contracts",{}).get("pending_result",{}).is_empty():
 		station_shell.clear();return
 	var buttons:={"map":_station_map_button,"hangar":_hangar_button,"lounge":_lounge_button,"depart":_launch_button,"save":_save_button,"load":_load_button,"menu":_menu_button}
 	var displayed:=state.duplicate();displayed.ui_actions={}
@@ -633,6 +643,9 @@ func _refresh_station_shell(state: Dictionary) -> void:
 		var button: Button=buttons[action]
 		displayed.ui_actions[action]={"visible":button.visible,"enabled":not button.disabled}
 	displayed.ui_actions.status={"visible":session.has_contracts(),"enabled":session.has_contracts()}
+	# The original station menu offers the Missions log once training is over.
+	var log_ready: bool=session.has_contracts() and int(state.get("campaign_cursor",0))>MISSIONS_FIRST_CURSOR-1
+	displayed.ui_actions.missions={"visible":log_ready,"enabled":log_ready}
 	if not station_shell.present(displayed):status.text=station_shell.error;return
 	_sync_medal_notice(state)
 	station_shell.set_active(not session.is_paused() and _focused and is_visible_in_tree() and _launch_packet.is_empty())
@@ -649,6 +662,7 @@ func _station_shell_action(action: String) -> void:
 		"load":load_station()
 		"menu":menu_requested.emit()
 		"status":open_status()
+		"missions":open_missions()
 
 func _sync_mouse_capture() -> void:
 	var active: bool=_player_mode and _mouse_steering and not _mobile_layout and not touch_actions_enabled() and _focused and is_visible_in_tree() and session!=null and (session.can_control() or (session is FirstFlightSession and session.can_stop_mining()))
@@ -721,6 +735,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		medal_notice.handle_event(event);get_viewport().set_input_as_handled();return
 	if _status_open:
 		status_panel.handle_event(event);get_viewport().set_input_as_handled();return
+	if _missions_open:
+		missions_panel.handle_event(event);get_viewport().set_input_as_handled();return
 	if session is FirstFlightSession and session.secondary_menu_open():
 		_controls.discard_modal_event(event)
 		var resume_key: bool=_user_paused and event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode if event.physical_keycode else event.keycode)==KEY_ESCAPE
@@ -1073,6 +1089,24 @@ func close_status(now_microseconds: int=-1) -> bool:
 	if not _status_open:return false
 	if session is StationSession:session.set_pause("status",false,Time.get_ticks_usec() if now_microseconds<0 else now_microseconds)
 	_status_open=false;status_panel.clear();clear_input();present_session();return true
+
+func open_missions(now_microseconds: int=-1) -> bool:
+	if not session is StationSession or not session.has_contracts() or not _focused or not is_visible_in_tree() or session.is_paused():return false
+	if not status_panel.configure(library,bindings,visuals) or not missions_panel.configure(status_panel,library,bindings,visuals) or not missions_panel.present(session.station_owner().snapshot()):status.text=status_panel.error+missions_panel.error;return false
+	if not session.set_pause("missions",true,Time.get_ticks_usec() if now_microseconds<0 else now_microseconds):missions_panel.clear();status.text=session.error;return false
+	_missions_open=true;clear_input();present_session();return true
+
+func close_missions(now_microseconds: int=-1) -> bool:
+	if not _missions_open:return false
+	if session is StationSession:session.set_pause("missions",false,Time.get_ticks_usec() if now_microseconds<0 else now_microseconds)
+	_missions_open=false;missions_panel.clear();clear_input();present_session();return true
+
+## Missions log "Discard": the job's cargo and passengers leave, then the career autosaves.
+func discard_mission() -> bool:
+	if not _missions_open or not session is StationSession:return false
+	if not session._world.discard_mission():status.text=session._world.error;return false
+	_autosave_station()
+	missions_panel.present(session.station_owner().snapshot());present_session();return true
 
 func close_map(now_microseconds: int=-1) -> bool:
 	if not _focused or not is_visible_in_tree():return false

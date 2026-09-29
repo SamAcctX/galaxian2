@@ -1,6 +1,7 @@
 extends "res://tests/beam_primary_application.gd"
 ## Station Status screen from a real earned career: open from the station menu,
-## read pilot/ship/statistics, select an earned medal, close, save and reload.
+## read pilot/ship/statistics, select an earned medal, close, save and reload;
+## then accept a job, read it in the Missions log and discard it.
 
 func verify_free_application() -> void:
 	app.set_player_mode(true);app.show();app.present_session()
@@ -44,6 +45,35 @@ func verify_free_application() -> void:
 	var saved: Dictionary=app._save_file.load_document(app.station_save_path(),definitions,catalogue,source)
 	check(not saved.is_empty() and saved.career.get("stats",{}).get("max_primaries",0)==stats.max_primaries,"The station save lost the career stats")
 	await capture("station-after-status")
+	# Missions log: story objective beside an accepted freelance job, then Discard.
+	var career: Dictionary=app.session.station_owner().snapshot().contracts
+	var accepted:=0 if not career.mission.is_empty() else -1
+	for offer_id in career.offers.size():
+		if accepted<0 and app.session._world.accept_contract(offer_id,true,app.bindings):accepted=offer_id
+	check(accepted>=0,"No lounge job could be accepted for the Missions log")
+	app.present_session();await process_frame
+	check(app.station_shell._actions.missions.visible,"The station menu has no Missions entry")
+	app.station_shell._actions.missions.pressed.emit();await process_frame
+	check(app._missions_open and app.missions_panel.visible and app.session.is_paused(),"Missions did not open from the station menu")
+	var log: Dictionary=app.missions_panel.snapshot()
+	print("MISSIONS ",log)
+	var docked_state: Dictionary=app.session.station_owner().snapshot()
+	var target: int=int(docked_state.mission.get("station_id",-1))
+	if int(docked_state.campaign_cursor)>=app.missions_panel.WON_CURSOR:check(log.story in [app.missions_panel.text("won"),app.missions_panel.text("won_gold")] and not log.story_map,"A won career does not show the original after-game line")
+	else:check(not log.story.contains("#") and (target<0 or log.story.contains(app.status_panel._catalogues.tables.stations[target].name)),"Missions shows no story objective")
+	check(log.discard and not log.job.is_empty() and not log.job.contains("#") and not log.client.is_empty(),"Missions does not show the accepted job and its client")
+	await capture("missions-log")
+	app.missions_panel._job_discard.pressed.emit();await process_frame
+	check(app.missions_panel.snapshot().confirming,"Discard did not ask for confirmation")
+	app.missions_panel._yes.pressed.emit();await process_frame
+	var dropped: Dictionary=app.session.station_owner().snapshot()
+	check(dropped.contracts.mission.is_empty() and dropped.contracts.active_offer_id==-1 and dropped.contracts.passengers==0,"Discard kept the freelance job")
+	check(not dropped.cargo.entries.any(func(row):return row.get("mission",false)),"Discard kept the job's protected cargo")
+	check(app.missions_panel.snapshot().job==app.missions_panel.text("no_job") and not app.missions_panel.snapshot().discard,"Missions still shows the discarded job")
+	app._unhandled_input(escape);await process_frame
+	check(not app._missions_open and not app.session.is_paused(),"Escape did not close Missions")
+	var reloaded: Dictionary=app._save_file.load_document(app.station_save_path(),definitions,catalogue,source)
+	check(not reloaded.is_empty() and reloaded.career.mission.is_empty(),"The autosave kept the discarded job")
 
 func capture(label: String) -> void:
 	if DisplayServer.get_name()=="headless":return

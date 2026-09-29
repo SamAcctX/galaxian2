@@ -1060,12 +1060,7 @@ func accept(offer_id: int,equipment: RefCounted,replace_current: bool=false,bind
 	var candidate: RefCounted=equipment.fork()
 	var hold: Dictionary=candidate.snapshot().cargo
 	var mission_cargo:=int(_rules.courier.cargo_item_id)
-	if not next.mission.is_empty():
-		if _rules.acceptance.clear_cargo_kinds.any(func(value):return int(value)==int(next.mission.kind)):
-			for index in hold.entries.size():
-				var row: Dictionary=hold.entries[index]
-				if row.item_id==mission_cargo and row.get("mission",false):hold.entries.remove_at(index);break
-		elif int(next.mission.kind)==int(_rules.passenger.kind):next.passengers=0
+	_drop_mission_goods(next,hold)
 	if int(quote.mission.kind)==int(_rules.courier.kind):
 		var merged:=false
 		for row in hold.entries:
@@ -1095,6 +1090,35 @@ func accept(offer_id: int,equipment: RefCounted,replace_current: bool=false,bind
 	# Procedural contacts have source ID -1. Their consumed flag remains set
 	# when replaced; re-registering the same contact cannot duplicate its cargo.
 	_state=next;_lounges=lounges
+	return candidate
+
+## Removes the current job's protected cargo or passengers from `next`/`hold`.
+func _drop_mission_goods(next: Dictionary,hold: Dictionary) -> void:
+	if next.mission.is_empty():return
+	var mission_cargo:=int(_rules.courier.cargo_item_id)
+	if _rules.acceptance.clear_cargo_kinds.any(func(value):return int(value)==int(next.mission.kind)):
+		for index in hold.entries.size():
+			var row: Dictionary=hold.entries[index]
+			if row.item_id==mission_cargo and row.get("mission",false):hold.entries.remove_at(index);break
+	elif int(next.mission.kind)==int(_rules.passenger.kind):next.passengers=0
+
+## Missions log "Discard": the docked pilot drops the accepted freelance job.
+## Its protected cargo and passengers leave the ship; nothing is paid or charged.
+func discard_mission(equipment: RefCounted) -> RefCounted:
+	error=""
+	if _state.get("mission",{}).is_empty() or not _state.get("pending_result",{}).is_empty() or equipment==null:reject("There is no freelance mission to discard");return null
+	var next: Dictionary=_state.duplicate(true)
+	var candidate: RefCounted=equipment.fork()
+	var hold: Dictionary=candidate.snapshot().cargo
+	_drop_mission_goods(next,hold)
+	hold.used=0
+	for row in hold.entries:hold.used+=int(row.quantity)
+	hold.free_space=int(hold.capacity)-int(hold.used)
+	if not candidate.retain_flight_cargo(hold):reject(candidate.error);return null
+	next.mission={};next.active_offer_id=-1
+	next.erase("contract_phase");next.erase("station_outcome")
+	if next.has("accepted_contact"):next.accepted_contact={}
+	_state=next
 	return candidate
 
 func active_mission_for(station_id: int,bindings: RefCounted=null) -> Dictionary:

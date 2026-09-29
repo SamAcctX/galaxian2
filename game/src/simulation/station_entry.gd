@@ -686,6 +686,15 @@ func accept_contract(offer_id: int,replace_current: bool=false,bindings: RefCoun
 	_state.loadout=owned.loadout;_state.cargo=owned.cargo;_state.cargo_cache_stale=owned.cargo_cache_stale
 	return true
 
+func discard_mission() -> bool:
+	error=""
+	if _contracts==null or _equipment==null:return fail("The lounge is not open")
+	var contracts: RefCounted=_contracts.fork()
+	var inventory: RefCounted=contracts.discard_mission(_equipment)
+	if inventory==null:return fail(contracts.error)
+	_contracts=contracts;_retain_equipment(inventory)
+	return true
+
 func poll_contract_result(bindings: RefCounted=null) -> bool:
 	error=""
 	if _contracts==null or _equipment==null or not _contract_station(bindings):return fail("Station contracts are unavailable")

@@ -152,15 +152,19 @@ func label_text(id: int) -> String:
 	return text(id)
 func money(value: int) -> String:return str(value)+"$"
 
-func format_job(template: String,mission: Dictionary) -> String:
+func format_job(template: String,mission: Dictionary) -> String:return format_job_text(_library,_catalogues,_bindings,template,mission)
+
+## Shared with the Missions log: fills a job text's station, target, goods and pay tokens.
+static func format_job_text(library: RefCounted,catalogues: RefCounted,bindings: RefCounted,template: String,mission: Dictionary) -> String:
 	var station:=int(mission.get("station_id",-1))
-	var name: String=_catalogues.tables.stations[station].name if station>=0 and station<_catalogues.tables.stations.size() else ""
+	var name: String=catalogues.tables.stations[station].name if station>=0 and station<catalogues.tables.stations.size() else ""
 	var cargo_text:=int(mission.get("cargo_text_id",-1))
-	var delivery:=Recipe.station_delivery(_bindings.early_contracts,mission)
-	if delivery.get("briefing_location")=="system":name=_catalogues.tables.systems[int(mission.system_id)].name
+	var delivery:=Recipe.station_delivery(bindings.early_contracts,mission)
+	if delivery.get("briefing_location")=="system":name=catalogues.tables.systems[int(mission.system_id)].name
 	var required: Dictionary=delivery.get("required_cargo",{})
-	if not required.is_empty():cargo_text=int(_bindings.station_equipment.item_text_offset)+int(required.item_id)
-	return template.replace("#S",name).replace("#N",str(mission.get("target_name",""))).replace("#Q",str(int(mission.get("quantity",0)))).replace("#P",text(cargo_text)).replace("#C",money(int(mission.get("reward",0))+int(mission.get("bonus",0))))
+	if not required.is_empty():cargo_text=int(bindings.station_equipment.item_text_offset)+int(required.item_id)
+	var goods: String=library.strings[cargo_text] if cargo_text>=0 and cargo_text<library.strings.size() else ""
+	return template.replace("#S",name).replace("#N",str(mission.get("target_name",""))).replace("#Q",str(int(mission.get("quantity",0)))).replace("#P",goods).replace("#C",str(int(mission.get("reward",0))+int(mission.get("bonus",0)))+"$")
 
 func _refresh() -> void:
 	if _state.is_empty() or _art==null:return

@@ -5,8 +5,8 @@ const Catalogues=preload("res://src/content/catalogues.gd")
 const Atlas=preload("res://src/content/atlas_region.gd")
 const OriginalUI=preload("res://src/presentation/original_ui.gd")
 const INTERFACE_ATLAS="resources/data/textures/gof2_interface_ipad_1440.aei"
-const ACTION_LABELS={"map":176,"hangar":166,"lounge":387,"depart":406,"save":495,"load":494,"menu":170,"status":168}
-const ACTION_ORDER=["map","hangar","lounge","status","depart","save","load","menu"]
+const ACTION_LABELS={"map":176,"hangar":166,"lounge":387,"depart":406,"save":495,"load":494,"menu":170,"status":168,"missions":128}
+const ACTION_ORDER=["map","hangar","lounge","missions","status","depart","save","load","menu"]
 var error:=""
 var _identity:={}
 var _catalogues: RefCounted
