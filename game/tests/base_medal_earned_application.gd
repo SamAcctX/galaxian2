@@ -10,6 +10,14 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		return state.campaign_cursor==45 and state.contracts.progress.player_kills==50 and state.contracts.base_medals.levels[4]==3
 	if stage=="naysayer_resume":
 		return state.campaign_cursor==45 and state.contracts.get("rejected_jobs",0)==51 and state.contracts.base_medals.levels[32]==1
+	if stage=="renegade_earn":
+		return state.campaign_cursor==45 and state.contracts.reputation.axes==[-71,3] and state.contracts.base_medals.levels[28] in [MedalLedger.UNKNOWN,1]
+	if stage=="renegade_resume":
+		return state.campaign_cursor==45 and state.contracts.reputation.axes==[-71,3] and state.contracts.base_medals.levels[28]==1
+	if stage=="visits_earn":
+		return state.campaign_cursor==45 and state.contracts.base_medals.levels[28]==1
+	if stage=="visits_resume":
+		return state.campaign_cursor==45 and state.contracts.travel_statistics.get("visited_station_ids",[])==[8] and state.contracts.travel_statistics.get("visited_system_ids",[])==[1]
 	return state.campaign_cursor==45 and state.loadout.station_id==99 and state.contracts.progress.player_kills==43
 
 func seek_smaller_patrol() -> bool:
@@ -86,11 +94,73 @@ func verify_free_application() -> void:
 		check(MedalLedger.valid_retained(original.contracts.base_medals,original.contracts,original.contracts.get("blueprints",{})),"Fresh Resume restored an invalid Naysayer ledger")
 		if failures:return
 		await capture_free_application("medal-naysayer-gold-resumed")
+	elif stage=="renegade_earn":
+		var source_document: Dictionary=app._save_file.load_document(input_path,definitions,catalogue,source)
+		check(not source_document.is_empty() and source_document.career.reputation.axes==[-71,3],"The immutable Renegade source is not the genuine hostile diplomat checkpoint")
+		var source_medals: Dictionary=source_document.career.get("base_medals",{})
+		check(source_medals.is_empty() or source_medals.get("levels",[]).size()==MedalLedger.BASE_COUNT and source_medals.levels[28]==MedalLedger.UNKNOWN,"The immutable hostile source already contained Renegade gold")
+		check(original.contracts.reputation.axes==[-71,3],"Use the genuine hostile diplomat checkpoint for Renegade")
+		check(original.contracts.base_medals.levels[28] in [MedalLedger.UNKNOWN,1],"Station preparation produced an invalid Renegade tier")
+		if failures:return
+		if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+		if not await release_application_flight() or not await dock_application():return
+		var docked: Dictionary=app.session.station_owner().snapshot()
+		check(docked.contracts.reputation.axes==[-71,3],"Physical Renegade docking changed the earned hostile standing")
+		check(docked.contracts.base_medals.levels[28]==1,"Physical docking did not bank Renegade gold")
+		var automatic: Dictionary=app._save_file.load_document(app.station_save_path(),definitions,catalogue,source)
+		check(not automatic.is_empty() and automatic.career.reputation.axes==[-71,3] and automatic.career.base_medals.levels[28]==1,"The physical-dock autosave lost Renegade gold")
+		if failures:return
+		await capture_free_application("medal-renegade-gold-docked")
+		var destination:=OS.get_environment("GOF2_SAVE_TEST_DIRECTORY").path_join("renegade-gold.gof2save")
+		check(DirAccess.copy_absolute(app.station_save_path(),destination)==OK,"Could not retain the physical Renegade autosave")
+		var retained: Dictionary=app._save_file.load_document(destination,definitions,catalogue,source)
+		check(not retained.is_empty() and retained.career.reputation.axes==[-71,3] and retained.career.base_medals.levels[28]==1,"Retained Renegade autosave lost the earned award")
+	elif stage=="renegade_resume":
+		check(original.contracts.reputation.axes==[-71,3] and original.contracts.base_medals.levels[28]==1,"Fresh Resume did not open the earned Renegade checkpoint")
+		if failures:return
+		var saved: Dictionary=app._save_file.load_document(input_path,definitions,catalogue,source)
+		check(not saved.is_empty() and saved.career.reputation.axes==[-71,3] and saved.career.base_medals.levels[28]==1,"Fresh Resume lost Renegade gold")
+		check(MedalLedger.valid_retained(original.contracts.base_medals,original.contracts,original.contracts.get("blueprints",{})),"Fresh Resume restored invalid Renegade medal evidence")
+		if failures:return
+		await capture_free_application("medal-renegade-gold-resumed")
+	elif stage=="visits_earn":
+		check(original.loadout.station_id==7 and original.loadout.system_id==1,"Use the retained Binon Renegade checkpoint for the visit producer proof")
+		check(not original.contracts.travel_statistics.has("visited_station_ids") and not original.contracts.travel_statistics.has("visited_system_ids"),"The legacy visit producer input already contains native visit history")
+		if failures:return
+		if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+		if not await release_application_flight() or not await travel_application(8):return
+		var arrived: Dictionary=app.session.snapshot()
+		check(arrived.location.station_id==8 and arrived.location.system_id==1,"The visit producer did not physically arrive at the selected planet")
+		check(arrived.contracts.travel_statistics.visited_station_ids==[8] and arrived.contracts.travel_statistics.visited_system_ids==[1],"The real local arrival did not record exactly its new station and system")
+		check(arrived.contracts.base_medals.levels[11]==0 and arrived.contracts.base_medals.levels[12]==0,"A single real visit crossed a medal threshold")
+		if failures or not await dock_application():return
+		var docked: Dictionary=app.session.station_owner().snapshot()
+		check(docked.loadout.station_id==8 and docked.loadout.system_id==1,"Physical docking lost the visit destination")
+		check(docked.contracts.travel_statistics.visited_station_ids==[8] and docked.contracts.travel_statistics.visited_system_ids==[1],"Docking duplicated or lost the source-equivalent visit history")
+		check(docked.contracts.base_medals.levels[11]==0 and docked.contracts.base_medals.levels[12]==0,"Docking invented a Space Tourist or Explorer tier")
+		var automatic: Dictionary=app._save_file.load_document(app.station_save_path(),definitions,catalogue,source)
+		check(not automatic.is_empty() and automatic.career.travel_statistics.visited_station_ids==[8] and automatic.career.travel_statistics.visited_system_ids==[1],"The physical-dock autosave lost visit history")
+		if failures:return
+		await capture_free_application("medal-visit-history-docked")
+		var destination:=OS.get_environment("GOF2_SAVE_TEST_DIRECTORY").path_join("visit-history.gof2save")
+		check(DirAccess.copy_absolute(app.station_save_path(),destination)==OK,"Could not retain the physical visit-history autosave")
+		var retained: Dictionary=app._save_file.load_document(destination,definitions,catalogue,source)
+		check(not retained.is_empty() and retained.career.travel_statistics.visited_station_ids==[8] and retained.career.travel_statistics.visited_system_ids==[1],"Retained autosave lost its earned visit history")
+	elif stage=="visits_resume":
+		check(original.loadout.station_id==8 and original.loadout.system_id==1,"Fresh Resume did not open the physical visit destination")
+		check(original.contracts.travel_statistics.visited_station_ids==[8] and original.contracts.travel_statistics.visited_system_ids==[1],"Fresh Resume lost the native visit sets")
+		check(original.contracts.base_medals.levels[11]==0 and original.contracts.base_medals.levels[12]==0,"Fresh Resume invented a visit medal tier")
+		check(MedalLedger.valid_retained(original.contracts.base_medals,original.contracts,original.contracts.get("blueprints",{})),"Fresh Resume restored invalid visit-medal evidence")
+		if failures:return
+		var saved: Dictionary=app._save_file.load_document(input_path,definitions,catalogue,source)
+		check(not saved.is_empty() and saved.career.travel_statistics.visited_station_ids==[8] and saved.career.travel_statistics.visited_system_ids==[1],"Fresh Resume changed the physical visit-history save")
+		if failures:return
+		await capture_free_application("medal-visit-history-resumed")
 	else:
 		check(false,"Select an explicit earned-medal stage");return
 	check(FileAccess.get_sha256(input_path)==input_hash,"The immutable earned input was modified")
 	var final: Dictionary=app.session.station_owner().snapshot()
-	print("Earned medal threshold result: ",{"stage":stage,"kills":final.contracts.progress.player_kills,"killer":final.contracts.base_medals.levels[4],"rejected_jobs":final.contracts.get("rejected_jobs",0),"naysayer":final.contracts.base_medals.levels[32],"input_sha256":input_hash})
+	print("Earned medal threshold result: ",{"stage":stage,"kills":final.contracts.progress.player_kills,"killer":final.contracts.base_medals.levels[4],"rejected_jobs":final.contracts.get("rejected_jobs",0),"naysayer":final.contracts.base_medals.levels[32],"renegade":final.contracts.base_medals.levels[28],"visited_stations":final.contracts.travel_statistics.get("visited_station_ids",[]),"visited_systems":final.contracts.travel_statistics.get("visited_system_ids",[]),"input_sha256":input_hash})
 
 func earn_naysayer(original: Dictionary) -> void:
 	var initial_refusals:=int(original.contracts.get("rejected_jobs",0))

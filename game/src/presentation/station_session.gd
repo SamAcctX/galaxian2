@@ -505,7 +505,7 @@ func equipment_action(action: String, item_id: int, library: RefCounted, binding
 	return true
 
 func set_pause(reason: String, paused: bool, now_microseconds: int) -> bool:
-	if _clock==null or reason not in ["user","focus","hidden","map"] or now_microseconds<0:return reject("Invalid station pause")
+	if _clock==null or reason not in ["user","focus","hidden","map","status"] or now_microseconds<0:return reject("Invalid station pause")
 	if _pauses.has(reason)==paused:return true
 	if not _clock.rebase(now_microseconds):return reject(_clock.error)
 	if paused:_pauses[reason]=true

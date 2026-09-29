@@ -46,4 +46,13 @@ static func packet_matches(bindings: RefCounted,catalogues: RefCounted,arrival: 
 	return true
 
 static func valid_statistics(statistics: Variant) -> bool:
-	return statistics is Dictionary and statistics.size()==1 and load("res://src/content/opening_definitions.gd").integer(statistics.get("jumpgates_used"),0,2147483647)
+	if not statistics is Dictionary or statistics.size() not in [1,3] or not load("res://src/content/opening_definitions.gd").integer(statistics.get("jumpgates_used"),0,2147483647):return false
+	if statistics.size()==1:return true
+	for key in ["visited_station_ids","visited_system_ids"]:
+		var ids: Variant=statistics.get(key)
+		if not ids is Array:return false
+		var previous:=-1
+		for id in ids:
+			if not id is int or id<0 or id>2147483647 or id<=previous:return false
+			previous=id
+	return true

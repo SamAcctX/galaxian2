@@ -34,8 +34,10 @@ func _initialize() -> void:
 	check(first.levels[0]==1 and first.levels[30]==1,"Service and completed campaign medals have separate evidence")
 	check(first.levels[13]==3 and first.levels[14]==0,"Owning three blueprints does not construct them")
 	for id in [2,3,4,5,6,7,10,16,17,18,20,24,26,29,32]:check(first.levels[id]==0,"A below-threshold counter awarded medal %d"%id)
-	for id in [1,8,9,11,12,15,19,21,22,23,25,27,28,31,33,34,35]:
+	for id in [8,9,11,12,28]:
 		check(first.levels[id]==Medals.UNKNOWN,"Missing history was invented for medal %d"%id)
+	# Station-observed stats start counting from zero when absent.
+	for id in [1,15,19,21,22,23,25,27,31,33,34]:check(first.levels[id]==0,"An absent stat awarded medal %d"%id)
 	check(native==before,"Observing medals mutated the career")
 	native.progress.player_kills=50;native.progress.cargo_recovered=50
 	native.progress.debris_destroyed=31;native.progress.asteroids_destroyed=51;native.progress.mined_ore_tons=101;native.progress.mined_cores=4;native.progress.mined_ore_types_mask=31;native.progress.mined_core_types_mask=31;native.progress.nuclear_bomb_detonations=6;native.completed_side_missions=6
@@ -85,6 +87,32 @@ func _initialize() -> void:
 	for vector in [[50,0],[51,1]]:
 		native.rejected_jobs=vector[0]
 		check(Medals.observe(native).levels[32]==vector[1],"Naysayer requires more than fifty explicit job refusals")
+	var visits:=career()
+	visits.travel_statistics={"jumpgates_used":9,"visited_station_ids":[],"visited_system_ids":[]}
+	for id in 24:visits.travel_statistics.visited_station_ids.append(id)
+	for id in 4:visits.travel_statistics.visited_system_ids.append(id)
+	check(Medals.observe(visits).levels[11]==0 and Medals.observe(visits).levels[12]==0,"Visit medals crossed before their source thresholds")
+	visits.travel_statistics.visited_station_ids.append(24);visits.travel_statistics.visited_system_ids.append(4)
+	check(Medals.observe(visits).levels[11]==3 and Medals.observe(visits).levels[12]==3,"Visit medals missed their bronze source thresholds")
+	for id in range(25,50):visits.travel_statistics.visited_station_ids.append(id)
+	for id in range(5,10):visits.travel_statistics.visited_system_ids.append(id)
+	check(Medals.observe(visits).levels[11]==2 and Medals.observe(visits).levels[12]==2,"Visit medals missed their silver source thresholds")
+	for id in range(50,100):visits.travel_statistics.visited_station_ids.append(id)
+	for id in range(10,22):visits.travel_statistics.visited_system_ids.append(id)
+	check(Medals.observe(visits).levels[11]==1 and Medals.observe(visits).levels[12]==1,"Visit medals missed their gold source thresholds")
+	visits.travel_statistics.visited_system_ids.append(22)
+	check(Medals.observe(visits).levels[12]==1,"Explorer counted systems beyond the original first twenty-two bits")
+	var renegade:=career();renegade.reputation={"axes":[-70,70],"override":-1}
+	check(Medals.observe(renegade).levels[28]==Medals.UNKNOWN,"Neutral boundary standing invented Renegade history")
+	for axes in [[-71,0],[71,0],[0,-71],[0,71]]:
+		renegade.reputation={"axes":axes,"override":-1}
+		check(Medals.observe(renegade).levels[28]==1,"Source-equivalent hostile standing did not award Renegade gold")
+	var hostile:=career();hostile.reputation={"axes":[-71,3],"override":-1}
+	var hostile_award:=Medals.commit(first,hostile,blueprints)
+	check(hostile_award.levels[28]==1,"Current hostile standing did not bank Renegade gold")
+	var repaired:=hostile.duplicate(true);repaired.reputation={"axes":[-35,3],"override":-1}
+	check(Medals.valid_retained(hostile_award,repaired,blueprints),"Diplomatic repair invalidated retained Renegade gold")
+	check(Medals.commit(hostile_award,repaired,blueprints).levels[28]==1,"Diplomatic repair erased retained Renegade gold")
 	var champion: Array=[];champion.resize(Medals.BASE_COUNT);champion.fill(3);champion[0]=1;champion[30]=1
 	check(Medals._champion_level(champion)==1,"Thirty-five earned base medals did not grant Champion gold")
 	champion[12]=0;check(Medals._champion_level(champion)==0,"An unearned base medal still granted Champion")
@@ -105,10 +133,14 @@ func _initialize() -> void:
 	check(Medals.observe(malformed_types).is_empty(),"Out-of-domain mining type bits were accepted")
 	var malformed_booze:=career();malformed_booze.progress.booze_types_mask=4194304
 	check(Medals.observe(malformed_booze).is_empty(),"Out-of-domain Barkeeper type bits were accepted")
+	var malformed_reputation:=career();malformed_reputation.reputation={"axes":[-101,0],"override":-1}
+	check(Medals.observe(malformed_reputation).is_empty(),"Out-of-domain reputation was accepted as Renegade evidence")
+	var malformed_visits:=career();malformed_visits.travel_statistics={"jumpgates_used":0,"visited_station_ids":[2,1],"visited_system_ids":[0]}
+	check(Medals.observe(malformed_visits).is_empty(),"Non-canonical visit history was accepted as medal evidence")
 	var forged:=bronze.duplicate(true);forged.levels[4]=1
 	check(not Medals.valid_retained(forged,career(),recipes(6,3)),"A forged gold medal bypassed the native kill count")
-	forged=bronze.duplicate(true);forged.levels[11]=1
-	check(not Medals.valid_state(forged),"An unmapped history became an award")
+	forged=bronze.duplicate(true);forged.levels[15]=1
+	check(not Medals.valid_retained(forged,career(),recipes(6,3)),"An unearned play-time award was accepted")
 	forged=bronze.duplicate(true);forged.levels.append(1)
 	check(not Medals.valid_state(forged),"Additional medals entered the base aggregate")
 	check(Medals.commit(bronze,career(),recipes(6,3)).is_empty() and bronze.levels[4]==3,"Regressed native evidence silently downgraded an award")
@@ -116,6 +148,8 @@ func _initialize() -> void:
 	check(Medals.all_base_gold(45,{"blueprints_owned":13,"blueprints_constructed":13})==null,"Legacy blueprint counts invented all-gold")
 	var all_known:=career();all_known.progress={"player_kills":250,"cargo_recovered":500,"debris_destroyed":151,"asteroids_destroyed":251,"mined_ore_tons":1001,"mined_cores":26,"mined_ore_types_mask":2047,"mined_core_types_mask":2047,"nuclear_bomb_detonations":51,"purchased_booze_quantity":1001,"booze_types_mask":4194303};all_known.completed_side_missions=51;all_known.conversations=101;all_known.rejected_jobs=51
 	all_known.delivery_statistics={"cargo":201,"passengers":51};all_known.travel_statistics.jumpgates_used=100
+	all_known.stats={"min_arrival_hull_percent":1,"play_ms":21*3600000,"cloak_ms":5*60000,"alien_remains":26,"unarmed_departures":1,"max_primaries":4,"max_free_cargo":501,"accepted_jobs":13}
+	all_known.credits=1000000;all_known.wingmen={"hired_total":21}
 	all_known.base_medals=Medals.commit({},all_known,recipes(13,13))
 	var receipt:=Medals.stock_progress(all_known,recipes(13,13))
 	check(Medals.valid_counts(receipt) and Medals.all_base_gold(45,receipt)==null,"Known gold medals erased unknown eligibility")

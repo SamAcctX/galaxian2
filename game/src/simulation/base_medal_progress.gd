@@ -7,6 +7,8 @@ const BLUEPRINT_GOLD_COUNT := 13
 const BOOZE_FIRST_ID := 132
 const BOOZE_LAST_ID := 153
 const BOOZE_TYPE_MASK := (1 << (BOOZE_LAST_ID-BOOZE_FIRST_ID+1))-1
+const STATION_VISIT_THRESHOLDS := [100,50,25]
+const SYSTEM_VISIT_THRESHOLDS := [22,10,5]
 const COUNTERS := {
 	2:{"path":["progress","mined_ore_types_mask"],"thresholds":[11,8,5],"strict":false,"bit_mask":2047},
 	3:{"path":["progress","mined_core_types_mask"],"thresholds":[11,8,5],"strict":false,"bit_mask":2047},
@@ -27,7 +29,25 @@ const COUNTERS := {
 	26:{"path":["conversations"],"thresholds":[100,50,20],"strict":true},
 	29:{"path":["progress","asteroids_destroyed"],"thresholds":[250,150,50],"strict":true},
 	32:{"path":["rejected_jobs"],"thresholds":[50],"strict":true},
+	# Station-observed career stats. These start counting when first seen, so a
+	# missing value means zero progress rather than unknown history.
+	1:{"path":["stats","min_arrival_hull_percent"],"thresholds":[5,15,30],"below":true,"default":-1},
+	15:{"path":["stats","play_ms"],"thresholds":[20,10,5],"strict":true,"default":0,"scale":3600000},
+	19:{"path":["stats","cloak_ms"],"thresholds":[5,3,2],"strict":false,"default":0,"scale":60000},
+	21:{"path":["stats","alien_remains"],"thresholds":[25,10,5],"strict":true,"default":0},
+	22:{"path":["stats","unarmed_departures"],"thresholds":[0],"strict":true,"default":0},
+	23:{"path":["stats","max_primaries"],"thresholds":[4,3,2],"strict":false,"default":0},
+	25:{"path":["credits"],"thresholds":[1000000,500000,125000],"strict":false,"default":0},
+	27:{"path":["wingmen","hired_total"],"thresholds":[20,10,3],"strict":true,"default":0},
+	31:{"path":["stats","max_free_cargo"],"thresholds":[500,250,100],"strict":true,"default":0},
+	33:{"path":["stats","accepted_jobs"],"thresholds":[10],"strict":true,"default":0},
+	34:{"path":["stats","accepted_jobs"],"thresholds":[12],"strict":true,"default":0},
 }
+## Rows whose evidence can later fall (current credits) keep their award.
+const STICKY:=[25,28]
+## Original description thresholds for rows without a counter rule.
+const FIXED_THRESHOLDS:={0:[0],28:[1],30:[0],35:[0]}
+const STAT_KEYS:=["play_ms","cloak_ms","alien_remains","unarmed_departures","max_primaries","max_free_cargo","accepted_jobs"]
 
 static func booze_type_bit(item_id: int) -> int:
 	if item_id<BOOZE_FIRST_ID or item_id>BOOZE_LAST_ID:return 0
@@ -41,6 +61,14 @@ static func _bit_count(value: int) -> int:
 	while remaining>0:
 		result+=int(remaining & 1);remaining>>=1
 	return result
+
+static func _visit_ids(value: Variant) -> int:
+	if not value is Array:return -1
+	var previous:=-1
+	for id in value:
+		if not id is int or id<0 or id>2147483647 or id<=previous:return -1
+		previous=id
+	return value.size()
 
 static func blueprint_counts(state: Dictionary) -> Dictionary:
 	if not state.get("entries") is Array:return {}
@@ -59,7 +87,11 @@ static func _blueprint_counts_valid(counts: Dictionary) -> bool:
 
 static func _tier(value: int,rule: Dictionary) -> int:
 	for index in rule.thresholds.size():
-		var reached: bool=value>rule.thresholds[index] if rule.strict else value>=rule.thresholds[index]
+		var limit: int=int(rule.thresholds[index])*int(rule.get("scale",1))
+		if rule.get("below",false):
+			if value>=0 and value<limit:return index+1
+			continue
+		var reached: bool=value>limit if rule.strict else value>=limit
 		if reached:return index+1
 	return 0
 
@@ -83,12 +115,33 @@ static func observe(career: Dictionary,blueprints: Dictionary={}) -> Dictionary:
 		var value: Variant=counts if id in [13,14] else career
 		for key in rule.path:
 			value=value.get(key) if value is Dictionary else null
-		if value==null:continue
-		if not _count(value):return {}
+		if value==null:
+			if not rule.has("default"):continue
+			value=rule.default
+		if not _count(value) and not (rule.get("below",false) and value is int and value==-1):return {}
 		if rule.has("bit_mask"):
 			if int(value)>int(rule.bit_mask):return {}
 			value=_bit_count(int(value))
 		levels[id]=_tier(value,rule)
+	var travel: Variant=career.get("travel_statistics")
+	if travel!=null:
+		if not travel is Dictionary:return {}
+		var station_ids: Variant=travel.get("visited_station_ids")
+		var system_ids: Variant=travel.get("visited_system_ids")
+		if station_ids!=null or system_ids!=null:
+			var stations:=_visit_ids(station_ids);var systems:=_visit_ids(system_ids)
+			if stations<0 or systems<0:return {}
+			levels[11]=_tier(stations,{"thresholds":STATION_VISIT_THRESHOLDS,"strict":false})
+			var first_22:=0
+			for id in system_ids:
+				if id<22:first_22+=1
+			levels[12]=_tier(first_22,{"thresholds":SYSTEM_VISIT_THRESHOLDS,"strict":false})
+	var reputation: Variant=career.get("reputation")
+	if reputation!=null:
+		if not reputation is Dictionary or reputation.size()!=2 or reputation.get("override")!=-1:return {}
+		var axes: Variant=reputation.get("axes")
+		if not axes is Array or axes.size()!=2 or not axes.all(func(value):return value is int and value>=-100 and value<=100):return {}
+		if axes.any(func(value):return int(value)<-70 or int(value)>70):levels[28]=1
 	levels[35]=_champion_level(levels)
 	return {"version":1,"levels":levels}
 
@@ -101,6 +154,10 @@ static func valid_state(value: Variant) -> bool:
 			if level!=1:return false
 		elif id==30:
 			if level not in [0,1]:return false
+		elif id in [11,12]:
+			pass
+		elif id in [22,28,33,34]:
+			if level not in [UNKNOWN,0,1]:return false
 		elif id==35:
 			if level not in [UNKNOWN,0,1]:return false
 		elif not COUNTERS.has(id) and level!=UNKNOWN:return false
@@ -115,6 +172,9 @@ static func valid_retained(value: Variant,career: Dictionary,blueprints: Diction
 		var prior: int=value.levels[id];var current: int=observed.levels[id]
 		# Every supported predicate is cumulative. A retained award needs at
 		# least its original evidence; absent legacy fields do not mean zero.
+		# Renegade is the exception: current standing can establish the award,
+		# while the original retained medal survives later diplomatic repair.
+		if id in STICKY and prior>0:continue
 		if prior!=UNKNOWN and current==UNKNOWN:return false
 		if prior>0 and (current<=0 or current>prior):return false
 	return true
@@ -159,3 +219,17 @@ static func all_base_gold(cursor: int,counts: Dictionary={}) -> Variant:
 		if level==UNKNOWN:unknown=true
 		elif level!=1:return false
 	return null if unknown else true
+
+## Threshold shown in a medal's description for an earned level (1 gold .. 3 bronze).
+static func description_value(id: int,level: int) -> int:
+	var thresholds: Array=COUNTERS[id].thresholds if COUNTERS.has(id) else FIXED_THRESHOLDS.get(id,[0])
+	return int(thresholds[clampi(level-1,0,thresholds.size()-1)])
+
+## Station-observed stats are plain non-negative counters (hull percent may be -1).
+static func valid_stats(value: Variant) -> bool:
+	if not value is Dictionary:return false
+	for key in value:
+		if key=="min_arrival_hull_percent":
+			if not value[key] is int or value[key]<-1 or value[key]>100:return false
+		elif key not in STAT_KEYS or not _count(value[key]):return false
+	return true

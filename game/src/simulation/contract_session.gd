@@ -86,6 +86,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,station: Dictionary,e
 		if Junk.available(bindings):_state.progress.debris_destroyed=int(terms.junk_lifecycle.initial_debris_destroyed)
 	if terms.has("world_initialization"):_state.accepted_contact={}
 	if GateArrival.available(bindings):_state.travel_statistics={"jumpgates_used":int(bindings.mido_travel.gate_arrival.career.initial_jumpgates_used)}
+	if _state.has("travel_statistics") and not retain_location_visit(int(owned.loadout.station_id),int(owned.loadout.system_id)):return false
 	if LoungeLifecycle.available(bindings):
 		_lounges=LoungeCache.new()
 		if not _lounges.configure(bindings):return reject(_lounges.error)
@@ -97,6 +98,26 @@ func settle_base_medals() -> bool:
 	if retained.is_empty():return reject("The station lost its earned medal evidence")
 	_state.base_medals=retained
 	return true
+
+## Station-observed medal stats. Counters add; hull keeps the lowest arrival
+## percentage and the other maxima keep the highest value seen.
+func record_stats(observed: Dictionary) -> bool:
+	error=""
+	if _state.is_empty():return reject("Career stats require a station career")
+	var stats: Dictionary=_state.get("stats",{}).duplicate()
+	for key in observed:
+		var value: int=int(observed[key])
+		if key in ["play_ms","cloak_ms","alien_remains","unarmed_departures","accepted_jobs"]:
+			if value>0:stats[key]=mini(int(stats.get(key,0))+value,2147483647)
+		elif key in ["max_primaries","max_free_cargo"]:
+			if value>int(stats.get(key,0)):stats[key]=value
+		elif key=="min_arrival_hull_percent":
+			var current: int=int(stats.get(key,-1))
+			if value>=0 and value<=100 and (current<0 or value<current):stats[key]=value
+		else:return reject("Unknown career stat")
+	if not LoungeCache.Medals.valid_stats(stats):return reject("Career stats are out of range")
+	_state.stats=stats
+	return settle_base_medals() if _flight.is_empty() and _pending_flight.is_empty() and _state.get("pending_result",{}).is_empty() else true
 
 func retain_asteroid_destruction_total(total: int) -> bool:
 	error=""
@@ -274,8 +295,9 @@ func enter_mission_station(bindings: RefCounted,cat: RefCounted,library: RefCoun
 	if not _flight.is_empty() or not _pending_flight.is_empty() or not _result_inventory.is_empty() or not _state.pending_result.is_empty():return reject("Station continuation cannot discard an unresolved independent result")
 	if not select_location(bindings,cat,library,destination.station_id,settings,entry.source_random(),unix_seconds,context):return false
 	if not _adopt_station(destination.station_id):return false
+	if _state.has("travel_statistics") and not retain_location_visit(int(destination.station_id),int(destination.system_id)):return false
 	_state.erase("location_generation_pending");_station_context=context
-	return true
+	return settle_base_medals()
 
 func transfer_mission_return(bindings: RefCounted,entry: RefCounted) -> bool:
 	error=""
@@ -376,6 +398,7 @@ func rebase_station(equipment: RefCounted,bindings: RefCounted=null) -> bool:
 	if owned.is_empty():return false
 	var station: int=owned.loadout.station_id
 	if not _adopt_station(station):return false
+	if _state.has("travel_statistics") and not retain_location_visit(station,int(owned.loadout.system_id)):return false
 	return settle_base_medals()
 
 ## Only the real local-arrival transaction uses this authored-world adapter.
@@ -399,7 +422,9 @@ func rebase_dekato_arrival(bindings: RefCounted,equipment: RefCounted,arrival: D
 	for key in expected:
 		if typeof(arrival.get(key))!=typeof(expected[key]):return reject("The convoy transit fields require their exact native types")
 	if arrival!=expected or _lounges.selection_state().current_station_id!=seed.station_id or _lounges.location(seed.station_id).is_empty():return reject("The convoy arrival lost its actual transit or destination location")
-	return _adopt_station(int(seed.station_id))
+	if not _adopt_station(int(seed.station_id)):return false
+	if _state.has("travel_statistics") and not retain_location_visit(int(seed.station_id),int(seed.system_id)):return false
+	return settle_base_medals()
 
 func _adopt_station(station: int) -> bool:
 	if station==_state.station_id:return true
@@ -408,6 +433,23 @@ func _adopt_station(station: int) -> bool:
 	var cached: Dictionary=_lounges.location(station)
 	if not cached.is_empty():
 		_state.offers=cached.offers;_state.population=cached.population
+	return true
+
+func retain_location_visit(station_id: int,system_id: int) -> bool:
+	error=""
+	var statistics: Variant=_state.get("travel_statistics")
+	if not GateArrival.valid_statistics(statistics):return reject("Location history requires retained travel statistics")
+	if station_id<0 or system_id<0:return reject("Location history cannot retain a negative station or system")
+	var next: Dictionary=statistics.duplicate(true)
+	if next.size()==1:
+		next.visited_station_ids=[];next.visited_system_ids=[]
+	for pair in [["visited_station_ids",station_id],["visited_system_ids",system_id]]:
+		var ids: Array=next[pair[0]]
+		if pair[1] not in ids:
+			ids.append(pair[1]);ids.sort()
+			next[pair[0]]=ids
+	if not GateArrival.valid_statistics(next):return reject("Location history produced an invalid travel ledger")
+	_state.travel_statistics=next
 	return true
 
 ## The physically docked post-convoy career already owns this exact location.
@@ -576,8 +618,9 @@ func rebase_gate_arrival(bindings: RefCounted,catalogues: RefCounted,equipment: 
 	var count: int=statistics.jumpgates_used+int(bindings.mido_travel.gate_arrival.career.jump_increment)
 	if not Numbers.integer(count,0,2147483647):return reject("The gate count exceeds its supported range")
 	if not rebase_station(equipment,bindings):return false
-	_state.travel_statistics={"jumpgates_used":count}
-	return true
+	var retained: Dictionary=_state.travel_statistics.duplicate(true)
+	retained.jumpgates_used=count;_state.travel_statistics=retained
+	return settle_base_medals()
 
 func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,station_id: int,settings: Dictionary,random_state: Dictionary,unix_seconds: Variant,station_context: RefCounted=null) -> bool:
 	# Called on the detached arrival career, after retiring its old flight
@@ -1014,6 +1057,7 @@ func accept(offer_id: int,equipment: RefCounted,replace_current: bool=false,bind
 	hold.free_space=int(hold.capacity)-int(hold.used)
 	if not candidate.retain_flight_cargo(hold):reject(candidate.error);return null
 	next.credits-=int(terms.fee);next.active_offer_id=offer_id
+	var stats: Dictionary=next.get("stats",{}).duplicate();stats.accepted_jobs=int(stats.get("accepted_jobs",0))+1;next.stats=stats
 	next.mission=quote.mission.duplicate(true);next.offers[offer_id].consumed=true
 	next.erase("contract_phase");next.erase("station_outcome")
 	if next.has("accepted_contact"):

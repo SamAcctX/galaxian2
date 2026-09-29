@@ -30,6 +30,7 @@ const AimReticle = preload("res://src/presentation/flight_aim_reticle.gd")
 const FlightActionMenu = preload("res://src/presentation/flight_action_menu.gd")
 const TravelDefinitions = preload("res://src/content/mido_travel_definitions.gd")
 const LocalMapPanel = preload("res://src/presentation/navigation_map_panel.gd")
+const StatusPanel = preload("res://src/presentation/status_panel.gd")
 const GateConfirmationPanel = preload("res://src/presentation/gate_confirmation_panel.gd")
 const LocationCache = preload("res://src/simulation/lounge_cache.gd")
 const StationGeneration = preload("res://src/content/station_generation_definitions.gd")
@@ -91,6 +92,12 @@ var _cloak_failure_serial:=0
 var map_panel: Control
 var flight_menu: Control
 var _station_map_open:=false
+var status_panel: Control
+var _status_open:=false
+## Career stats observed by the application and banked at the next station.
+var _career_play_ms:=0.0
+var _career_cloak_ms:=0.0
+var _last_flight_hull_percent:=-1
 var _station_course_id:=-1
 var _station_drive_course:=false
 var _station_map_button: Button
@@ -188,6 +195,8 @@ func _ready() -> void:
 	flight_menu=FlightActionMenu.new();host.add_child(flight_menu);flight_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	flight_menu.cancelled.connect(close_flight_menu);flight_menu.chosen.connect(choose_flight_menu)
 	map_panel=LocalMapPanel.new();host.add_child(map_panel);map_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	status_panel=StatusPanel.new();host.add_child(status_panel);status_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	status_panel.close_requested.connect(func():close_status())
 	gate_panel=GateConfirmationPanel.new();host.add_child(gate_panel);gate_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	gate_panel.choice_requested.connect(func(result):choose_gate_confirmation(result))
 	lounge_panel=LoungePanel.new();host.add_child(lounge_panel);lounge_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -298,8 +307,24 @@ func _can_save_station(state: Dictionary={}) -> bool:
 	if state.is_empty():state=session.snapshot()
 	return StationArchive.can_capture(state)
 
+## Fold application-observed stats into the docked career (medals settle there).
+func bank_career_stats(arrived:=false) -> void:
+	if not session is StationSession or session._world==null or not session._world.has_contracts():return
+	var state: Dictionary=session.station_owner().snapshot()
+	var observed:={"play_ms":int(_career_play_ms),"cloak_ms":int(_career_cloak_ms)}
+	var primaries:=0
+	for slot in state.get("loadout",{}).get("slots",[]):
+		if slot is Dictionary and int(slot.get("category",-1))==0:primaries+=1
+	observed.max_primaries=primaries
+	var cargo: Variant=state.get("cargo")
+	if cargo is Dictionary and cargo.get("capacity") is int and cargo.get("used") is int:observed.max_free_cargo=maxi(0,cargo.capacity-cargo.used)
+	if arrived and _last_flight_hull_percent>=0:observed.min_arrival_hull_percent=_last_flight_hull_percent
+	if session._world.record_stats(observed):_career_play_ms-=int(_career_play_ms);_career_cloak_ms-=int(_career_cloak_ms)
+	_last_flight_hull_percent=-1
+
 func save_station(announce: bool=true) -> bool:
 	if not _focused or not is_visible_in_tree() or not _can_save_station():return _save_message("Finish the station conversation and close its panels before saving",false)
+	bank_career_stats()
 	var cat:=Catalogues.new()
 	if not cat.open(library):return _save_message(cat.error,false)
 	if not _save_file.save(station_save_path(),session.station_owner(),bindings,cat,library,session.location_owner()):return _save_message(_save_file.error,false)
@@ -369,6 +394,8 @@ func reset() -> void:
 	_cloak_generation=0;_cloak_failure_serial=0
 	cancel_departure()
 	if map_panel!=null:map_panel.clear()
+	if status_panel!=null:status_panel.clear()
+	_status_open=false
 	if gate_panel!=null:gate_panel.clear()
 	if session!=null:session.free();session=null
 	_transition_failed=false
@@ -572,7 +599,7 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		for node in [station_shell,station_panel,equipment_panel,lounge_panel,map_panel,_menu_button,_launch_button,_hangar_button,_lounge_button,_station_map_button,_save_button,_load_button,_flight_hint,_skip_button]:
 			if node!=null:node.hide()
 		if _save_notice!=null and not _transition_failed:_save_notice.hide()
-	if _player_mode and session is StationSession and (_station_map_open or state.get("dialogue",{}).get("visible",false) or state.get("hangar_open",false) or state.get("lounge_open",false) or not state.get("contracts",{}).get("pending_result",{}).is_empty()):
+	if _player_mode and session is StationSession and (_station_map_open or _status_open or state.get("dialogue",{}).get("visible",false) or state.get("hangar_open",false) or state.get("lounge_open",false) or not state.get("contracts",{}).get("pending_result",{}).is_empty()):
 		for button in [_menu_button,_launch_button,_hangar_button,_lounge_button,_station_map_button,_save_button,_load_button]:button.hide()
 	if status!=null and _player_mode:status.visible=_transition_failed
 	if _station_map_open and _save_notice!=null:_save_notice.hide()
@@ -593,13 +620,14 @@ func _prepare_chrome() -> bool:
 
 func _refresh_station_shell(state: Dictionary) -> void:
 	if station_shell==null:return
-	if _station_map_open or not _player_mode or _chrome_context.is_empty() or not session is StationSession or state.get("dialogue",{}).get("visible",false) or state.get("hangar_open",false) or state.get("lounge_open",false) or not state.get("contracts",{}).get("pending_result",{}).is_empty():
+	if _station_map_open or _status_open or not _player_mode or _chrome_context.is_empty() or not session is StationSession or state.get("dialogue",{}).get("visible",false) or state.get("hangar_open",false) or state.get("lounge_open",false) or not state.get("contracts",{}).get("pending_result",{}).is_empty():
 		station_shell.clear();return
 	var buttons:={"map":_station_map_button,"hangar":_hangar_button,"lounge":_lounge_button,"depart":_launch_button,"save":_save_button,"load":_load_button,"menu":_menu_button}
 	var displayed:=state.duplicate();displayed.ui_actions={}
 	for action in buttons:
 		var button: Button=buttons[action]
 		displayed.ui_actions[action]={"visible":button.visible,"enabled":not button.disabled}
+	displayed.ui_actions.status={"visible":session.has_contracts(),"enabled":session.has_contracts()}
 	if not station_shell.present(displayed):status.text=station_shell.error;return
 	station_shell.set_active(not session.is_paused() and _focused and is_visible_in_tree() and _launch_packet.is_empty())
 	for button in buttons.values():button.hide()
@@ -614,6 +642,7 @@ func _station_shell_action(action: String) -> void:
 		"save":save_station()
 		"load":load_station()
 		"menu":menu_requested.emit()
+		"status":open_status()
 
 func _sync_mouse_capture() -> void:
 	var active: bool=_player_mode and _mouse_steering and not _mobile_layout and not touch_actions_enabled() and _focused and is_visible_in_tree() and session!=null and (session.can_control() or (session is FirstFlightSession and session.can_stop_mining()))
@@ -682,6 +711,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		flight_menu.handle_event(event);get_viewport().set_input_as_handled();return
 	if _station_map_open:
 		map_panel.handle_event(event);get_viewport().set_input_as_handled();return
+	if _status_open:
+		status_panel.handle_event(event);get_viewport().set_input_as_handled();return
 	if session is FirstFlightSession and session.secondary_menu_open():
 		_controls.discard_modal_event(event)
 		var resume_key: bool=_user_paused and event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode if event.physical_keycode else event.keycode)==KEY_ESCAPE
@@ -840,6 +871,9 @@ func _process(_delta: float) -> void:
 		return
 	if session==null or session.status not in ["running","arrival_transition_required","station_transition_required","station_reload_required","local_arrival_transition_required","gate_confirmation_required","gate_map_required","gate_arrival_transition_required","drive_arrival_transition_required","game_over_transition_required","convoy_arrival_transition_required","sahi_arrival_transition_required","void_return_transition_required","mission_station_return_required"] or _transition_failed:return
 	if session.status=="running":
+		if not session.is_paused() and _focused:
+			_career_play_ms+=_delta*1000.0
+			if (session is FirstFlightSession) and session.cloak_state().get("active",false):_career_cloak_ms+=_delta*1000.0
 		handle_action_events(_controls.take_events())
 		var input: Dictionary=_controls.snapshot() if session.can_control() else {"command":Vector2.ZERO,"held":{"fire":false}}
 		if session is FirstFlightSession and session.can_stop_mining():input.command=Controls.pointer_command(input.command)
@@ -1004,6 +1038,19 @@ func open_map(now_microseconds: int=-1,drive_mode:=false) -> bool:
 	elif not session.open_map(now,drive_mode):map_panel.clear();status.text=session.error;return false
 	clear_input();present_session();return true
 
+func open_status(now_microseconds: int=-1) -> bool:
+	if not session is StationSession or not session.has_contracts() or not _focused or not is_visible_in_tree() or session.is_paused():return false
+	bank_career_stats()
+	if not status_panel.configure(library,bindings,visuals) or not status_panel.present(session.station_owner().snapshot()):status.text=status_panel.error;return false
+	if not session.set_pause("status",true,Time.get_ticks_usec() if now_microseconds<0 else now_microseconds):status_panel.clear();status.text=session.error;return false
+	status_panel.set_mobile_layout(_mobile_layout)
+	_status_open=true;clear_input();present_session();return true
+
+func close_status(now_microseconds: int=-1) -> bool:
+	if not _status_open:return false
+	if session is StationSession:session.set_pause("status",false,Time.get_ticks_usec() if now_microseconds<0 else now_microseconds)
+	_status_open=false;status_panel.clear();clear_input();present_session();return true
+
 func close_map(now_microseconds: int=-1) -> bool:
 	if not _focused or not is_visible_in_tree():return false
 	var now:=Time.get_ticks_usec() if now_microseconds<0 else now_microseconds
@@ -1106,6 +1153,8 @@ func request_departure() -> bool:
 	if state.get("lounge_open",false) or not _departure_available(int(state.campaign_cursor)):return false
 	var cat:=Catalogues.new()
 	if not cat.open(library):status.text=cat.error;return false
+	bank_career_stats()
+	if session._world!=null and session._world.has_contracts() and state.get("loadout",{}).get("slots",[]).all(func(slot):return slot==null):session._world.record_stats({"unarmed_departures":1})
 	var packet: Dictionary=session.prepare_departure(bindings,cat)
 	if packet.is_empty():status.text=session.error;return false
 	if not _launch_dialog.present_departure(library,bindings,visuals,packet):status.text=_launch_dialog.error;return false
@@ -1497,6 +1546,7 @@ func enter_station(now_microseconds: int, camera_seed: int=0, unix_seconds: Vari
 	target_frame.set_active(false);aim_reticle.clear();npc_markers.clear()
 	session.rebase_time(Time.get_ticks_usec());_transition_failed=false;_pause_button.disabled=false;clear_input()
 	refresh_render_mode()
+	bank_career_stats(returning)
 	if transfer==null:_autosave_station()
 	return true
 
@@ -1622,6 +1672,8 @@ func present_session() -> void:
 	if not bindings.mido_travel.get("map",{}).get("ui",{}).is_empty() and (session is FirstFlightSession or (session is Session and session.interactive) or session is StationSession):
 		if not _prepare_chrome():return
 		if session is FirstFlightSession and not flight_vitals.present(state):transition_error(flight_vitals.error);return
+		if session is FirstFlightSession and state.get("player") is Dictionary and int(state.player.get("max_hull",0))>0:
+			_last_flight_hull_percent=clampi(int(state.player.get("vitals",{}).get("hull",-1))*100/int(state.player.max_hull),-1,100)
 		# Opening flight has accepted ship pools but no cargo owner. Keep its
 		# scripted hull reserve as a gauge, without displaying the internal count.
 		if session is Session and not flight_vitals.present(state.world_frame,false):transition_error(flight_vitals.error);return
