@@ -92,6 +92,17 @@ func fork_for_transaction() -> RefCounted:
 	copy._station_count=_station_count
 	return copy
 
+func unlock(item_id: int) -> bool:
+	error=""
+	var before:=entry(item_id)
+	if before.is_empty() or before.available:return reject("This blueprint is unknown or already owned")
+	# Acquisition grants the recipe only, never materials or a finished product.
+	for row in _state.entries:
+		if row.item_id==item_id:
+			row.available=true
+			return true
+	return reject("This blueprint has no retained recipe")
+
 func recipe(item_id: int) -> Dictionary:return _recipes.get(item_id,{}).duplicate(true)
 
 func shipping_cost(item_id: int,station_id: int,quantity: int) -> int:

@@ -567,6 +567,21 @@ func inspect_contract_contact(contact_id: int,bindings: RefCounted) -> bool:
 	_contracts=contracts
 	return true
 
+func blueprint_preview(contact_id: int,bindings: RefCounted) -> Dictionary:
+	error=""
+	if _contracts==null or not _contract_station(bindings):fail("The station lounge is unavailable");return {}
+	var preview: Dictionary=_contracts.blueprint_preview(bindings,contact_id,_equipment)
+	if preview.is_empty():fail(_contracts.error)
+	return preview
+
+func purchase_lounge_blueprint(contact_id: int,bindings: RefCounted) -> bool:
+	error=""
+	if _contracts==null or not _contract_station(bindings):return fail("The station lounge is unavailable")
+	var contracts: RefCounted=_contracts.fork()
+	if not contracts.purchase_lounge_blueprint(bindings,contact_id,_equipment):return fail(contracts.error)
+	_contracts=contracts
+	return true
+
 func coordinate_preview(contact_id: int,bindings: RefCounted) -> Dictionary:
 	error=""
 	if _contracts==null or not _contract_station(bindings):fail("The station lounge is unavailable");return {}

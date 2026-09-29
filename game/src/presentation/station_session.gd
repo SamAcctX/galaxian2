@@ -342,6 +342,8 @@ func contract_action(action: String,id: int,panel: Control,checkpoint: Callable=
 			if not opened or not candidate.purchase_lounge_goods(id,_bindings):return reject(candidate.error)
 		"buy_coordinates":
 			if not opened or not candidate.purchase_lounge_coordinates(id,_bindings):return reject(candidate.error)
+		"buy_blueprint":
+			if not opened or not candidate.purchase_lounge_blueprint(id,_bindings):return reject(candidate.error)
 		"accept","replace":
 			if not opened or not candidate.accept_contract(id,action=="replace",_bindings):return reject(candidate.error)
 		"result_close":
@@ -357,13 +359,13 @@ func contract_action(action: String,id: int,panel: Control,checkpoint: Callable=
 	if panel!=null and not panel.present(staged):
 		if prepared!=null:prepared.free()
 		return reject(panel.error)
-	if action=="buy_coordinates" and checkpoint.is_valid() and not checkpoint.call(candidate):
+	if action in ["buy_coordinates","buy_blueprint"] and checkpoint.is_valid() and not checkpoint.call(candidate):
 		if prepared!=null:prepared.free()
 		if panel!=null:
 			var previous: Dictionary=_world.snapshot();previous.lounge_open=_lounge_open
 			previous.contract_previews=_contract_previews(_world,_lounge_open)
 			panel.present(previous)
-		return reject("The coordinate purchase could not be saved; no credits were spent")
+		return reject("The lounge purchase could not be saved; no credits were spent")
 	if prepared!=null:lounge_scene=prepared
 	_world=candidate;_lounge_open=opened;_generation+=1
 	if lounge_scene!=null:
@@ -390,6 +392,9 @@ func _contract_previews(owner: RefCounted,opened: bool) -> Dictionary:
 			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
 		elif contact.get("role")==4 and contact.has("service"):
 			result[contact.contact_id]=owner.coordinate_preview(contact.contact_id,_bindings)
+			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
+		elif contact.get("role")==3 and contact.has("blueprint"):
+			result[contact.contact_id]=owner.blueprint_preview(contact.contact_id,_bindings)
 			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
 	var requests:={}
 	for place in career.get("lounges",{}).get("locations",[]):

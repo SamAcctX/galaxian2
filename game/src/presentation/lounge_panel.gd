@@ -5,7 +5,7 @@ signal action_requested(action: String,id: int)
 const Art=preload("res://src/presentation/original_ui.gd")
 const Portraits=preload("res://src/presentation/portrait_compositor.gd")
 const Recipe=preload("res://src/content/mission_recipe.gd")
-const MAC_LABEL_IDS={614:616,753:755,841:843,847:849,848:850,850:852,855:857,857:859}
+const MAC_LABEL_IDS={614:616,753:755,841:843,847:849,848:850,850:852,855:857,856:858,857:859}
 var error:=""
 var _art: RefCounted
 var _library: RefCounted
@@ -201,6 +201,14 @@ func _refresh() -> void:
 				show_yes=true
 				if _confirming:_yes.text=text(133);show_no=true;_no.text=text(134)
 			else:_body.text+="\n\n"+text(192).replace("#C",money(int(service.missing_credits)))
+		elif service.get("kind")=="blueprint":
+			var item_name:=text(int(_bindings.station_equipment.item_text_offset)+int(service.item_id))
+			_body.text=label_text(856).replace("#P",item_name).replace("#C",money(int(service.total_price)))
+			if service.consumed:_body.text=label_text(841)
+			elif service.can_accept:
+				show_yes=true
+				if _confirming:_yes.text=text(133);show_no=true;_no.text=text(134)
+			else:_body.text+="\n\n"+text(192).replace("#C",money(int(service.missing_credits)))
 		elif row.is_empty():
 			_body.text=label_text(614) if _selected<0 else "This contact's service is not yet available."
 		else:
@@ -233,6 +241,7 @@ func confirm() -> void:
 	if not _confirming:_confirming=true;_refresh();return
 	if preview.get("kind")=="merchant":action_requested.emit("buy_goods",_selected)
 	elif preview.get("kind")=="coordinates":action_requested.emit("buy_coordinates",_selected)
+	elif preview.get("kind")=="blueprint":action_requested.emit("buy_blueprint",_selected)
 	else:action_requested.emit("replace" if preview.replacement_required else "accept",_selected)
 
 func back() -> void:

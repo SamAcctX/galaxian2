@@ -168,6 +168,14 @@ func consume(station_id: int,offer_id: int) -> bool:
 		return true
 	return reject("The accepted contact has no retained lounge")
 
+func blueprint_quote(station_id: int,contact_id: int) -> Dictionary:
+	for contact in location(station_id).get("population",{}).get("contacts",[]):
+		if contact.contact_id!=contact_id or contact.get("role")!=3 or contact.get("generated",true) or not contact.has("blueprint"):continue
+		var terms: Dictionary=contact.blueprint
+		if not Numbers.integer(terms.get("item_id"),0,2147483647) or not Numbers.integer(terms.get("price"),0,2147483647):return {}
+		return {"item_id":int(terms.item_id),"total_price":int(terms.price)}
+	return {}
+
 func coordinate_quote(station_id: int,contact_id: int) -> Dictionary:
 	var available: Array=_state.get("system_availability",[])
 	for contact in location(station_id).get("population",{}).get("contacts",[]):
