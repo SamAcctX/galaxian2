@@ -109,7 +109,7 @@ func _bank_medals(state: Dictionary) -> bool:
 			var level: int=retained.levels[id];var prior: int=previous.levels[id]
 			if level>0 and (prior<=0 or level<prior):
 				notices.append([id,level])
-				state.credits=mini(int(state.credits)+LoungeCache.Medals.reward_credits(level),2147483647)
+				if state.has("credits"):state.credits=mini(int(state.credits)+LoungeCache.Medals.reward_credits(level),2147483647)
 		if not notices.is_empty():state.medal_notices=notices
 	state.base_medals=retained
 	return true
