@@ -9,6 +9,8 @@ var actors:=[]
 var _identity:={}
 var projectiles: Node3D
 var impacts: Node3D
+var systems_projectiles: Node3D
+var systems_impacts: Node3D
 
 func build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: RefCounted) -> bool:
 	clear()
@@ -27,6 +29,11 @@ func build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: R
 		impacts=Impacts.new();add_child(impacts)
 		if not projectiles.build(owner.projectile_visual_owner(),library,visuals,bindings):return fail(projectiles.error)
 		if not impacts.build(owner.impact_visual_owner(),library,visuals,bindings):return fail(impacts.error)
+	if owner.systems_projectile_visual_owner()!=null:
+		systems_projectiles=Projectiles.new();add_child(systems_projectiles)
+		systems_impacts=Impacts.new();add_child(systems_impacts)
+		if not systems_projectiles.build(owner.systems_projectile_visual_owner(),library,visuals,bindings):return fail(systems_projectiles.error)
+		if not systems_impacts.build(owner.systems_impact_visual_owner(),library,visuals,bindings):return fail(systems_impacts.error)
 	return true
 
 func prepare(state: Dictionary,owner: RefCounted=null,camera:=Transform3D.IDENTITY) -> Dictionary:
@@ -47,6 +54,12 @@ func prepare(state: Dictionary,owner: RefCounted=null,camera:=Transform3D.IDENTI
 		if frame.projectiles.is_empty():return failed(projectiles.error)
 		frame.impacts=impacts.prepare_world(owner.impact_visual_owner(),state.weapon_world,camera)
 		if frame.impacts.is_empty():return failed(impacts.error)
+	if systems_projectiles!=null:
+		if not owner is Crew or owner.systems_weapon_world()!=state.get("systems_weapon_world"):return failed("Companion systems shots lost their native owner")
+		frame.systems_projectiles=systems_projectiles.prepare_world(owner.systems_projectile_visual_owner(),state.systems_weapon_world,camera)
+		if frame.systems_projectiles.is_empty():return failed(systems_projectiles.error)
+		frame.systems_impacts=systems_impacts.prepare_world(owner.systems_impact_visual_owner(),state.systems_weapon_world,camera)
+		if frame.systems_impacts.is_empty():return failed(systems_impacts.error)
 	return frame
 
 func commit(frame: Dictionary) -> void:
@@ -56,11 +69,13 @@ func commit(frame: Dictionary) -> void:
 		actors[index].ship.visible=current.visible
 		actors[index].ship.apply_selection(current.selection)
 	if projectiles!=null:projectiles.commit_world(frame.projectiles);impacts.commit_world(frame.impacts)
+	if systems_projectiles!=null:systems_projectiles.commit_world(frame.systems_projectiles);systems_impacts.commit_world(frame.systems_impacts)
 
 func clear() -> void:
 	for child in get_children():child.free()
 	actors=[];_identity={};error=""
 	projectiles=null;impacts=null
+	systems_projectiles=null;systems_impacts=null
 
 func fail(message: String) -> bool:clear();error=message;return false
 func failed(message: String) -> Dictionary:error=message;return {}

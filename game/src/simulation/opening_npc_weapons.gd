@@ -206,7 +206,7 @@ func apply_alioth_sequence(owner: RefCounted) -> bool:
 
 ## Companions keep their own body population, but use the ordinary primary
 ## factory after their saved faction has replaced the temporary factory kind.
-func configure_wingmen(bindings: RefCounted,catalogues: RefCounted,departure: RefCounted,bodies: Array) -> bool:
+func configure_wingmen(bindings: RefCounted,catalogues: RefCounted,departure: RefCounted,bodies: Array,systems:=false) -> bool:
 	clear()
 	if not is_instance_of(departure,load("res://src/simulation/first_flight_construction.gd")) or bodies.is_empty() or bodies.size()>3:return reject("Companion guns require the retained paid departure")
 	var career: RefCounted=departure.contract_owner()
@@ -225,16 +225,32 @@ func configure_wingmen(bindings: RefCounted,catalogues: RefCounted,departure: Re
 		var enhanced: bool=int(state.get("mission",{}).get("kind",-1))==6
 		var row:=ContractCombat.shared_weapon(bindings.early_contracts.ship_combat.weapons,int(entry.campaign_cursor),int(state.rank),float(state.difficulty),faction,enhanced)
 		if row.is_empty():return reject("Companion primary lacks its native faction declaration")
+		if systems:
+			row={"item_id":18,"category":0,"kind":1,"damage":0,"interval_ms":400,"lifetime_ms":3000,
+				"projectile_capacity":4,"speed_units_per_millisecond":16.0,"model_resource_id":6794,
+				"nonplayer_source":true,"wingman_systems":true}
+			if not actor.firing_allowed:row.unarmed=true
 		row.actor_id=id;row.actor_kind=int(actor.actor_kind);row.hull_catalogue_id=int(actor.hull_catalogue_id);row.name=actor.name
 		rows.append(row)
 	if not _configure_rows(bindings,catalogues,rows,int(entry.campaign_cursor)):return false
 	_identity.campaign_cursor=int(entry.campaign_cursor)
 	_training={"wingmen":roster.names.duplicate()}
+	if systems:_training.wingman_systems=true
 	return true
 
 func wingman_primary_declarations() -> Array:
-	if not _training.has("wingmen"):return []
+	if not _training.has("wingmen") or _training.get("wingman_systems",false):return []
 	return _guns.map(func(gun):return gun.snapshot().weapon)
+
+func wingman_systems_declarations() -> Array:
+	if not _training.get("wingman_systems",false):return []
+	return _guns.filter(func(gun):return gun!=null).map(func(gun):return gun.snapshot().weapon)
+
+func is_wingman_systems() -> bool:
+	return _training.get("wingman_systems",false) and _training.has("wingmen") and not _guns.is_empty()
+
+func has_wingman_gun(index: int) -> bool:
+	return _training.has("wingmen") and index>=0 and index<_guns.size() and _guns[index]!=null
 
 func fire_wingmen(bodies: Array,requested_actor_ids: Array,poses: Dictionary) -> Dictionary:
 	if not _training.has("wingmen") or bodies.size()!=_guns.size():return fail("Companion firing needs its own retained body population")
@@ -251,27 +267,41 @@ func fire_wingmen(bodies: Array,requested_actor_ids: Array,poses: Dictionary) ->
 ## The companion's native target list includes other NPCs, even its own faction.
 ## Do not collapse it to the selected hostile; source geometry decides the hit.
 ## Reciprocal enemy/companion-body contacts remain a separate membership owner.
-func evaluate_wingman_contacts(combat: RefCounted,delta_ms: int) -> Dictionary:
+func evaluate_wingman_contacts(combat: RefCounted,delta_ms: int,systems: RefCounted=null) -> Dictionary:
 	if not _training.has("wingmen") or delta_ms<0:return fail("Invalid companion primary contact pass")
 	if combat!=null and not combat is Combat:return fail("Companion contacts need the native combat owner")
+	if systems!=null:
+		if not is_instance_of(systems,get_script()) or not systems._training.get("wingman_systems",false) or systems._identity!=_identity or systems._training.get("wingmen")!=_training.wingmen or systems._guns.size()!=_guns.size() or _training.get("wingman_systems",false):return fail("Companion weapon groups belong to different paid populations")
 	var next:=fork_for_frame();var targets:=[];var events:=[]
+	var second: RefCounted=null if systems==null else systems.fork_for_frame();var systems_events:=[]
 	var updated: RefCounted=null if combat==null else combat.fork_for_frame()
 	if updated!=null:
-		if not updated.bind_wingman_primaries(self):return fail(updated.error)
+		if _training.get("wingman_systems",false):
+			if not updated.bind_wingman_systems(self):return fail(updated.error)
+		elif not updated.bind_wingman_primaries(self):return fail(updated.error)
+		if second!=null and not updated.bind_wingman_systems(systems):return fail(updated.error)
 		for actor in updated.actor_snapshots():
 			if not actor.get("contract_debris",false):targets.append(int(actor.actor_id))
 	for id in next._guns.size():
-		var gun: RefCounted=next._guns[id];var hits:=[];var last: Variant=null
-		if updated!=null:
-			var contacts:=NPCContacts.new()
-			var result:=contacts.evaluate_staged(gun,updated,targets)
-			if result.is_empty():return fail(contacts.error)
-			gun=result.projectiles;updated=result.combat;hits=result.contacts;last=result.last_contact_actor_id
-		var motion: Dictionary=gun.advance(delta_ms)
-		if motion.is_empty():return fail(gun.error)
-		next._guns[id]=gun
-		events.append({"actor_id":id,"contacts":[],"npc_contacts":hits,"last_contact_actor":last,"motion":motion})
-	return {"weapons":next,"combat":updated,"actors":events}
+		# Preserve construction order: primary then systems for each pilot,
+		# not every primary followed by every systems gun.
+		for owner in [next,second]:
+			if owner==null or owner._guns[id]==null:continue
+			var gun: RefCounted=owner._guns[id];var hits:=[];var last: Variant=null
+			if updated!=null:
+				var contacts:=NPCContacts.new()
+				var result:=contacts.evaluate_staged(gun,updated,targets)
+				if result.is_empty():return fail(contacts.error)
+				gun=result.projectiles;updated=result.combat;hits=result.contacts;last=result.last_contact_actor_id
+			var motion: Dictionary=gun.advance(delta_ms)
+			if motion.is_empty():return fail(gun.error)
+			owner._guns[id]=gun
+			var event:={"actor_id":id,"contacts":[],"npc_contacts":hits,"last_contact_actor":last,"motion":motion}
+			if owner==next:events.append(event)
+			else:systems_events.append(event)
+	var result:={"weapons":next,"combat":updated,"actors":events}
+	if second!=null:result.systems_weapons=second;result.systems_actors=systems_events
+	return result
 
 func _configure_rows(bindings: RefCounted, catalogues: RefCounted, rows: Array, cursor: int=-1, selected40:=false, selected41:=false) -> bool:
 	var guns:=[];var sounds:=[]
@@ -282,6 +312,9 @@ func _configure_rows(bindings: RefCounted, catalogues: RefCounted, rows: Array, 
 		var gun:=Projectiles.new()
 		if not gun.configure(weapon):return reject(gun.error)
 		guns.append(gun)
+		# The systems gun's command/sound consumer is not yet connected. Do
+		# not substitute the faction primary cue for an unverified second gun.
+		if data.get("wingman_systems",false):sounds.append({});continue
 		var selected_audio:={}
 		var audio: Dictionary=bindings.weapon_parameters.get("audio",{})
 		if not audio.is_empty():
@@ -306,11 +339,15 @@ func _resolve_weapon(bindings: RefCounted, catalogues: RefCounted, data: Diction
 		var policy: Dictionary=bindings.weapon_parameters.get("ordinary_hit_policy",{})
 		var properties: Dictionary=items[int(data.item_id)].get("properties",{})
 		var extra: Variant=properties.get(int(policy.get("additional_damage_property",-1)),int(policy.get("missing_additional_damage",0)))
-		if extra!=int(policy.get("missing_additional_damage",0)) or policy.is_empty():return fail("NPC weapon requires unsupported additional damage")
+		var systems: bool=data.get("wingman_systems",false)
+		if policy.is_empty() or (not systems and extra!=int(policy.get("missing_additional_damage",0))):return fail("NPC weapon requires unsupported additional damage")
+		if systems:
+			if data.item_id!=18 or data.category!=0 or data.kind!=1 or data.damage!=0 or data.interval_ms!=400 or data.lifetime_ms!=3000 or data.projectile_capacity!=4 or data.speed_units_per_millisecond!=16.0 or data.model_resource_id!=6794 or not Vitals.integer(extra) or extra<=0 or int(policy.additional_damage_property)!=10:return fail("Companion systems gun differs from its native declaration")
+			weapon.wingman_systems=true
 		if cursor<0:return fail("NPC weapons require their constructed encounter identity")
 		weapon.campaign_cursor=cursor
 		weapon.nonplayer_source=bool(data.nonplayer_source)
-		weapon.ordinary_hit_policy={"additional_damage":int(extra),"additional_damage_required":false,"nonplayer_damage":weapon.damage}
+		weapon.ordinary_hit_policy={"additional_damage":int(extra),"additional_damage_required":systems,"nonplayer_damage":weapon.damage}
 		weapon.collision_bounds={"mode":bindings.weapon_parameters.collision_bounds.mode}
 	return weapon
 

@@ -73,6 +73,13 @@ func fork_for_frame() -> RefCounted:
 func reject(message: String) -> bool:error=message;return false
 
 static func model_mapping(bindings: RefCounted, weapon: Dictionary, key: String, impact: bool) -> Dictionary:
+	if key.begins_with("npc:") and weapon.get("wingman_systems",false):
+		if not key.substr(4).is_valid_int() or int(key.substr(4))<0 or weapon.get("item_id")!=18 or weapon.get("kind")!=1 or weapon.get("category")!=0 or weapon.get("nonplayer_source")!=true or weapon.get("projectile_capacity")!=4 or not Fitting.available(bindings):return {}
+		var row:=Fitting.primary(bindings.mido_travel.ordinary_fitting,18,1)
+		if row.is_empty():return {}
+		var id: int=row.impact_model_id if impact else row.projectile_model_id
+		var path: String=bindings.resolve(id,"mesh")
+		return {} if path.is_empty() else {"id":id,"resource":path,"captured_up":false}
 	# Fitting already admitted this player's weapon. Its original model does
 	# not change with the campaign cursor or the encounter's NPC population.
 	if key.begins_with("player:") and Fitting.ordinary(weapon):

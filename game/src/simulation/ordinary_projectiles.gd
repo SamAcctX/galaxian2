@@ -65,6 +65,8 @@ func configure(weapon: Dictionary, capacity: Variant = null) -> bool:
 		return reject("Invalid resolved ordinary hit policy")
 	if weapon.has("collision_bounds") and not Bounds.resolved(weapon.collision_bounds):
 		return reject("Invalid resolved weapon collision bounds")
+	if weapon.has("wingman_systems"):
+		if weapon.wingman_systems!=true or weapon.item_id!=18 or weapon.category!=0 or weapon.kind!=1 or weapon.damage!=0 or weapon.interval_ms!=400 or weapon.lifetime_ms!=3000 or capacity!=4 or weapon.get("speed_units_per_millisecond")!=16.0 or weapon.get("nonplayer_source")!=true or not weapon.get("ordinary_hit_policy",{}).get("additional_damage_required",false):return reject("Invalid companion systems projectile declaration")
 	var speed: Variant = weapon.get("speed_units_per_millisecond")
 	if not (speed is int or speed is float) or not is_finite(float(speed)) or speed<=0 or not is_finite(Vitals.single(float(speed))) or weapon.interval_ms<1 or weapon.lifetime_ms<1:
 		return reject("Projectile speed, interval and lifetime must be positive and finite")
@@ -78,6 +80,7 @@ func configure(weapon: Dictionary, capacity: Variant = null) -> bool:
 	if secondary:_weapon.secondary_projectile=weapon.secondary_projectile.duplicate(true)
 	if weapon.has("campaign_cursor"):_weapon.campaign_cursor=weapon.campaign_cursor
 	if weapon.has("nonplayer_source"):_weapon.nonplayer_source=weapon.nonplayer_source
+	if weapon.get("wingman_systems",false):_weapon.wingman_systems=true
 	if weapon.has("dispersion"):_weapon.dispersion=weapon.dispersion.duplicate(true)
 	if weapon.has("fitting_primary"):_weapon.fitting_primary=weapon.fitting_primary
 	if weapon.has("ordinary_hit_policy"): _weapon.ordinary_hit_policy=weapon.ordinary_hit_policy.duplicate(true)

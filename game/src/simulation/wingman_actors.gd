@@ -35,6 +35,12 @@ var _impacts: RefCounted
 var _weapon_elapsed_ms:=0
 var _weapon_events:=[]
 var _firing:={"actors":[]}
+var _systems_weapons: RefCounted
+var _systems_projectiles: RefCounted
+var _systems_impacts: RefCounted
+var _systems_events:=[]
+var _systems_firing:={"actors":[]}
+var _weapon_groups:=[]
 
 func configure(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,library: RefCounted=null) -> bool:
 	error=""
@@ -46,6 +52,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,construction: RefCoun
 		_identity={};_actors=[];_flight=[];_follow_targets=[];_cruise_speed=0.0;_detail=null;_detail_positions={}
 		_selections=[];_targeting_tuning={};_targeting_rules={}
 		_weapons=null;_projectiles=null;_impacts=null;_weapon_elapsed_ms=0;_weapon_events=[];_firing={"actors":[]}
+		_systems_weapons=null;_systems_projectiles=null;_systems_impacts=null;_systems_events=[];_systems_firing={"actors":[]};_weapon_groups=[]
 		return true
 	if not Contracts.valid_active(roster,bindings) or not Flight.rigid_pose(entry.player_pose):return reject("The flight lost its paid roster or player pose")
 	var speed: Variant=bindings.opening_actors.npc_initialization.get("guidance",{}).get("cruise_speed")
@@ -77,11 +84,18 @@ func configure(bindings: RefCounted,catalogues: RefCounted,construction: RefCoun
 		if not detail.configure(bindings,ships) or not detail.refresh(positions,entry.player_pose.origin,1.0):return reject(detail.error)
 	var weapons:=Weapons.new()
 	if not weapons.configure_wingmen(bindings,catalogues,construction,actors):return reject(weapons.error)
+	var systems_weapons:=Weapons.new()
+	if not systems_weapons.configure_wingmen(bindings,catalogues,construction,actors,true):return reject(systems_weapons.error)
 	var projectiles: RefCounted;var impacts: RefCounted
+	var systems_projectiles: RefCounted;var systems_impacts: RefCounted
 	if library!=null:
 		var world:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"elapsed_ms":0,"weapons":weapons.snapshot()}
 		projectiles=ProjectileVisuals.new();impacts=ImpactVisuals.new()
 		if not projectiles.configure(bindings,library,world) or not impacts.configure(bindings,library,world):return reject(projectiles.error+impacts.error)
+		if not systems_weapons.wingman_systems_declarations().is_empty():
+			var systems_world:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"elapsed_ms":0,"weapons":systems_weapons.snapshot()}
+			systems_projectiles=ProjectileVisuals.new();systems_impacts=ImpactVisuals.new()
+			if not systems_projectiles.configure(bindings,library,systems_world) or not systems_impacts.configure(bindings,library,systems_world):return reject(systems_projectiles.error+systems_impacts.error)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
 	_actors=actors;_detail=detail;_detail_positions=positions
 	_flight=flights;_follow_targets=targets;_cruise_speed=float(speed)
@@ -89,6 +103,9 @@ func configure(bindings: RefCounted,catalogues: RefCounted,construction: RefCoun
 	_targeting_rules={"random_selection_chance":int(bindings.combat_training_control.random_selection_chance),
 		"random_selection_attempts":int(bindings.combat_training_control.random_selection_attempts)}
 	_weapons=weapons;_projectiles=projectiles;_impacts=impacts;_weapon_elapsed_ms=0;_weapon_events=[];_firing={"actors":[]}
+	_systems_weapons=systems_weapons;_systems_projectiles=systems_projectiles;_systems_impacts=systems_impacts
+	_systems_events=[];_systems_firing={"actors":[]};_weapon_groups=[]
+	for actor in actors:_weapon_groups.append(0)
 	return true
 
 ## Existing shots contact retained NPC bodies before movement. The outer frame
@@ -96,14 +113,21 @@ func configure(bindings: RefCounted,catalogues: RefCounted,construction: RefCoun
 func advance_weapons(milliseconds: int,encounter: RefCounted) -> Dictionary:
 	if _weapons==null or milliseconds<0 or _weapon_elapsed_ms>Vitals.MAX_INTEGER-milliseconds:reject("Invalid companion weapon clock");return {}
 	var prior:=weapon_world()
-	var result: Dictionary=_weapons.evaluate_wingman_contacts(null,milliseconds) if encounter==null else encounter.evaluate_wingman_contacts(_weapons,milliseconds)
+	var systems_prior:=systems_weapon_world()
+	var result: Dictionary=_weapons.evaluate_wingman_contacts(null,milliseconds,_systems_weapons) if encounter==null else encounter.evaluate_wingman_contacts(_weapons,milliseconds,_systems_weapons)
 	if result.is_empty():reject(_weapons.error if encounter==null else encounter.error);return {}
 	var projectiles: RefCounted=null if _projectiles==null else _projectiles.fork_for_frame()
 	var impacts: RefCounted=null if _impacts==null else _impacts.fork_for_frame()
 	if projectiles!=null and not projectiles.advance(milliseconds):reject(projectiles.error);return {}
 	if impacts!=null and (not impacts.advance(milliseconds) or not impacts.apply_contacts(prior,[],result.actors)):reject(impacts.error);return {}
+	var systems_projectiles: RefCounted=null if _systems_projectiles==null else _systems_projectiles.fork_for_frame()
+	var systems_impacts: RefCounted=null if _systems_impacts==null else _systems_impacts.fork_for_frame()
+	if systems_projectiles!=null and not systems_projectiles.advance(milliseconds):reject(systems_projectiles.error);return {}
+	if systems_impacts!=null and (not systems_impacts.advance(milliseconds) or not systems_impacts.apply_contacts(systems_prior,[],result.systems_actors)):reject(systems_impacts.error);return {}
 	_weapons=result.weapons;_weapon_events=result.actors;_projectiles=projectiles;_impacts=impacts;_weapon_elapsed_ms+=milliseconds
 	_firing={"actors":[]}
+	_systems_weapons=result.systems_weapons;_systems_events=result.systems_actors
+	_systems_projectiles=systems_projectiles;_systems_impacts=systems_impacts;_systems_firing={"actors":[]}
 	return {"encounter":result.get("encounter",encounter)}
 
 func weapon_world() -> Dictionary:
@@ -117,6 +141,28 @@ func weapon_world() -> Dictionary:
 func projectile_visual_owner() -> RefCounted:return null if _projectiles==null else _projectiles.fork_for_frame()
 func impact_visual_owner() -> RefCounted:return null if _impacts==null else _impacts.fork_for_frame()
 func primary_weapon_owner() -> RefCounted:return null if _weapons==null else _weapons.fork_for_frame()
+
+func systems_weapon_world() -> Dictionary:
+	if _systems_weapons==null:return {}
+	var result:=_identity.duplicate()
+	result.elapsed_ms=_weapon_elapsed_ms;result.weapons=_systems_weapons.snapshot()
+	if _systems_projectiles!=null:result.projectile_visuals=_systems_projectiles.snapshot()
+	if _systems_impacts!=null:result.impact_visuals=_systems_impacts.snapshot()
+	return result
+
+func systems_weapon_owner() -> RefCounted:return null if _systems_weapons==null else _systems_weapons.fork_for_frame()
+func systems_projectile_visual_owner() -> RefCounted:return null if _systems_projectiles==null else _systems_projectiles.fork_for_frame()
+func systems_impact_visual_owner() -> RefCounted:return null if _systems_impacts==null else _systems_impacts.fork_for_frame()
+
+## Command zero switches guns without replacing the current follow/attack order.
+## The flight-command UI must stage this capability; snapshots are observations.
+func toggle_weapon_group(index: Variant) -> bool:
+	error=""
+	if not index is int or index<0 or index>=_actors.size() or _systems_weapons==null or not _systems_weapons.has_wingman_gun(index):return reject("Weapon switching requires an armed native companion")
+	var groups:=_weapon_groups.duplicate()
+	groups[index]=1 if groups[index]==0 else 0
+	_weapon_groups=groups
+	return true
 
 static func hull_for_pilot(bindings: RefCounted,pilot_name: String,faction: int) -> int:
 	if bindings==null or pilot_name.is_empty() or faction<0 or faction>=int(bindings.early_contracts.generation.identity.faction_bound):return -1
@@ -168,7 +214,7 @@ func advance_targeting(milliseconds: Variant,player_pose: Variant,player: Dictio
 			"targeting_blocked":row.get("targeting_blocked",false) or row.get("statistics_targeting_blocked",false)})
 	var random:=Random.new()
 	if not random.restore(random_state):reject(random.error);return {}
-	var selections:=[];var decisions:=[];var requests:=[];var poses:={}
+	var selections:=[];var decisions:=[];var requests:=[];var systems_requests:=[];var poses:={}
 	for index in _actors.size():
 		var prior: Dictionary=_selections[index].duplicate(true)
 		if prior.selection_elapsed_ms>Vitals.MAX_INTEGER-milliseconds:reject("Wingman target clock overflow");return {}
@@ -196,15 +242,22 @@ func advance_targeting(milliseconds: Variant,player_pose: Variant,player: Dictio
 			var fire: bool=selected.fire_desired and aligned and separation.x<reach and separation.y<reach and separation.z<reach
 			if target.targeting_blocked or (fire and (not target.active or target.hull<=0)):
 				fire=false;selected.fire_desired=false
-			if fire:requests.append(index);poses[index]=body.pose
+			if fire:
+				poses[index]=body.pose
+				if _weapon_groups[index]==0:requests.append(index)
+				elif _systems_weapons.has_wingman_gun(index):systems_requests.append(index)
 		decisions.append({"destination":destination,"direction":direction,"steering":not selected.target_selected or not selected.straight})
 		selections.append(selected)
 	var weapons: RefCounted=_weapons.fork_for_frame()
 	var firing: Dictionary=weapons.fire_wingmen(_actors,requests,poses)
 	if firing.is_empty():reject(weapons.error);return {}
+	var systems_weapons: RefCounted=_systems_weapons.fork_for_frame()
+	var systems_firing: Dictionary=systems_weapons.fire_wingmen(_actors,systems_requests,poses)
+	if systems_firing.is_empty():reject(systems_weapons.error);return {}
 	if not _advance_motion(milliseconds,player_pose,decisions):return {}
 	_selections=selections
 	_weapons=weapons;_firing=firing
+	_systems_weapons=systems_weapons;_systems_firing=systems_firing
 	return {"random_state":random.snapshot()}
 
 func _advance_motion(milliseconds: Variant,player: Variant,decisions: Array) -> bool:
@@ -243,6 +296,12 @@ func snapshot() -> Dictionary:
 	state.targeting_connected=true
 	state.weapons_connected=false
 	state.primary_weapons_connected=_weapons!=null
+	state.systems_weapons_connected=_systems_weapons!=null
+	state.weapon_command_input_connected=false
+	state.systems_audio_connected=false
+	state.weapon_groups=_weapon_groups.duplicate()
+	state.systems_weapon_world=systems_weapon_world()
+	state.systems_firing=_systems_firing.duplicate(true);state.systems_contacts=_systems_events.duplicate(true)
 	state.weapon_world=weapon_world()
 	state.primary_firing=_firing.duplicate(true)
 	state.primary_contacts=_weapon_events.duplicate(true)
@@ -261,6 +320,8 @@ func fork_for_frame() -> RefCounted:
 	copy._detail=null if _detail==null else _detail.fork_for_frame()
 	copy._weapons=_weapons;copy._projectiles=_projectiles;copy._impacts=_impacts
 	copy._weapon_elapsed_ms=_weapon_elapsed_ms;copy._weapon_events=_weapon_events;copy._firing=_firing
+	copy._systems_weapons=_systems_weapons;copy._systems_projectiles=_systems_projectiles;copy._systems_impacts=_systems_impacts
+	copy._systems_events=_systems_events;copy._systems_firing=_systems_firing;copy._weapon_groups=_weapon_groups
 	# Shared bodies and flight state stay immutable until advance_follow stages
 	# detached writers. Public observations/body owners are detached as well.
 	return copy

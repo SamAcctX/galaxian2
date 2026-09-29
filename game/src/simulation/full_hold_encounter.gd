@@ -959,13 +959,15 @@ func evaluate_cue(player: RefCounted, pose: Transform3D, cursor: int) -> RefCoun
 	var next:=fork_for_frame();next._control=operation.controller;next._combat=operation.combat
 	return next
 
-func evaluate_wingman_contacts(weapons: RefCounted,milliseconds: int) -> Dictionary:
+func evaluate_wingman_contacts(weapons: RefCounted,milliseconds: int,systems: RefCounted=null) -> Dictionary:
 	if not is_instance_of(weapons,load("res://src/simulation/opening_npc_weapons.gd")) or not Numbers.integer(milliseconds,0,_max_ms):return fail("Invalid retained companion contact pass")
-	var result: Dictionary=weapons.evaluate_wingman_contacts(_combat,milliseconds)
+	var result: Dictionary=weapons.evaluate_wingman_contacts(_combat,milliseconds,systems)
 	if result.is_empty():return fail(weapons.error)
 	var next:=fork_for_frame()
 	next._combat=result.combat
-	return {"encounter":next,"weapons":result.weapons,"actors":result.actors}
+	var frame:={"encounter":next,"weapons":result.weapons,"actors":result.actors}
+	if result.has("systems_weapons"):frame.systems_weapons=result.systems_weapons;frame.systems_actors=result.systems_actors
+	return frame
 
 func evaluate_world(player: RefCounted, pose: Transform3D, milliseconds: int, random_state: Dictionary) -> Dictionary:
 	error=""

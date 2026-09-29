@@ -47,6 +47,7 @@ var _recovery_totals:={}
 var _selected40_world: RefCounted
 var _selected41_world: RefCounted
 var _wingman_primaries:=[]
+var _wingman_systems:=[]
 
 func clear() -> void:
 	error = ""
@@ -67,6 +68,7 @@ func clear() -> void:
 	_recovery_totals={}
 	_selected40_world=null;_selected41_world=null
 	_wingman_primaries=[]
+	_wingman_systems=[]
 
 ## Retain the actual field -> cast -> weapon initialization. This group enables
 ## native targeting and firing, but cannot silently apply incomplete encounter
@@ -844,12 +846,24 @@ func bind_wingman_primaries(owner: RefCounted) -> bool:
 	_wingman_primaries=declarations.duplicate(true)
 	return true
 
+func bind_wingman_systems(owner: RefCounted) -> bool:
+	if not is_instance_of(owner,load("res://src/simulation/opening_npc_weapons.gd")):return reject("Companion systems damage requires its native weapon owner")
+	var declarations: Array=owner.wingman_systems_declarations()
+	if not owner.is_wingman_systems() or declarations.size()>3:return reject("Invalid companion systems population")
+	for weapon in declarations:
+		for key in _identity:
+			if weapon.get(key)!=_identity[key]:return reject("Companion systems gun belongs to another combat world")
+		if weapon.get("wingman_systems")!=true or weapon.get("nonplayer_source")!=true or weapon.get("item_id")!=18 or weapon.get("kind")!=1 or weapon.get("damage")!=0 or not weapon.get("ordinary_hit_policy",{}).get("additional_damage_required",false):return reject("Companion systems gun changed its damage policy")
+	if not _wingman_systems.is_empty() and _wingman_systems!=declarations:return reject("Companion systems declarations changed during combat")
+	_wingman_systems=declarations.duplicate(true)
+	return true
+
 func supports_weapon_hit(weapon: Variant) -> bool:
 	if _selected40_world!=null and not has_local_reactions():return reject("Selected40 weapon contacts require complete consequence owners")
 	var fitted: bool=weapon is Dictionary and preload("res://src/content/ordinary_fitting_definitions.gd").ordinary(weapon)
 	var secondary: bool=weapon is Dictionary and preload("res://src/content/conventional_secondary_definitions.gd").resolved(weapon)
 	var kinds: Array=[int(weapon.kind)] if fitted or secondary else [0]
-	if weapon is Dictionary and _wingman_primaries.has(weapon):
+	if weapon is Dictionary and (_wingman_primaries.has(weapon) or _wingman_systems.has(weapon)):
 		kinds=[0,1]
 	elif not _training_weapons.is_empty() and weapon is Dictionary:
 		if weapon.get("nonplayer_source",false)==true:
@@ -914,6 +928,7 @@ func fork_for_frame() -> RefCounted:
 	copy._hit_policy = _hit_policy
 	copy._training_weapons = _training_weapons
 	copy._wingman_primaries=_wingman_primaries
+	copy._wingman_systems=_wingman_systems
 	copy._activated = _activated
 	copy._phase = _phase
 	copy._event_count = _event_count
