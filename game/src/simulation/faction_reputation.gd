@@ -33,6 +33,18 @@ static func valid_state(data: Variant) -> bool:
 	var axes: Variant=data.get("axes")
 	return axes is Array and axes.size()==2 and axes.all(func(value):return value is int and value>=-100 and value<=100)
 
+static func diplomat_quote(standing: Dictionary,faction: int) -> Dictionary:
+	if not valid_state(standing) or faction<0 or faction>3:return {}
+	var axis:=0 if faction<2 else 1
+	var value:=int(standing.axes[axis])
+	var negative:=faction in [0,2]
+	var eligible:=value < -70 if negative else value > 70
+	var repaired: Dictionary=standing.duplicate(true)
+	if eligible:repaired.axes[axis]=-35 if negative else 35
+	var price:=int(Vitals.single(Vitals.single(float(absi(value))/100.0)*16000.0)) if eligible else 0
+	return {"faction":faction,"eligible":eligible,"total_price":price,"reputation_after":repaired,
+		"intro_text_id":[870,871,867,869][faction] if eligible else 872}
+
 func configure(bindings: RefCounted, cursor: Variant, kinds: Variant, difficulty: Variant, rescue_context:=false, ordinary_void_system_id: Variant=null, ordinary_void_rank: Variant=null, bakka_context:=false, native_cast: Dictionary={}) -> bool:
 	error="";_rules={};_state={}
 	_selected40_world=null

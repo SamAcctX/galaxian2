@@ -222,7 +222,7 @@ func _locations(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: V
 	if not random.restore(data.get("random")):return reject(random.error)
 	for index in data.locations.size():
 		var row: Variant=data.locations[index]
-		if not _keys(row,["station_id","population","offers","stock","market_items","market_ships","requested_offers","medal_progress","purchased_goods","dialogues"]) or not row.get("population") is Dictionary or not row.get("offers") is Dictionary or not row.get("medal_progress",{}) is Dictionary:return reject("Invalid saved lounge entry")
+		if not _keys(row,["station_id","population","offers","stock","market_items","market_ships","requested_offers","medal_progress","purchased_goods","dialogues","used_diplomats"]) or not row.get("population") is Dictionary or not row.get("offers") is Dictionary or not row.get("medal_progress",{}) is Dictionary:return reject("Invalid saved lounge entry")
 		var stock:=Stock.new();var contacts:=Contacts.new()
 		var generation_context: RefCounted=null if station_context==null else station_context.historical(bindings,row.population.get("context",{}).get("campaign_cursor"))
 		if not stock.restore(bindings,cat,row.get("stock")) or not contacts.restore(bindings,cat,library,row.population,generation_context):return reject(stock.error+contacts.error)
@@ -244,6 +244,11 @@ func _locations(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: V
 			if not row.purchased_goods is Array or row.purchased_goods.is_empty() or row.purchased_goods.size()>row.population.contacts.size():return reject("Invalid purchased lounge goods")
 			for id in row.purchased_goods:
 				if not id is int or not cache.consume_goods(row.station_id,id):return reject("The saved purchase lost its merchant or was repeated")
+		if row.has("used_diplomats"):
+			if not row.used_diplomats is Dictionary or row.used_diplomats.is_empty() or row.used_diplomats.size()>row.population.contacts.size():return reject("Invalid saved diplomat services")
+			for id in row.used_diplomats:
+				var response: Variant=row.used_diplomats[id]
+				if not id is int or not response is int or response<843 or response>845 or not cache.consume_diplomat(row.station_id,id,response):return reject("The saved service lost its diplomat or response")
 		if row.has("market_items"):
 			if not Shopping.valid_stock(row.market_items,cat.tables.items.size()):return reject("Invalid mutable station stock")
 			cache._state.locations.back().market_items=row.market_items.duplicate(true)

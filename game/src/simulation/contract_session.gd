@@ -707,6 +707,35 @@ static func acceptance_supported(rules: Dictionary,cursor: int,quote: Dictionary
 		return rules==bindings.early_contracts and Numbers.integer(quote.get("context",{}).get("campaign_cursor"),Definitions.first_generation_cursor(rules),cursor) and OrdinaryContracts.retained_mission(bindings,quote.get("mission"),cursor)
 	return not rules.is_empty() and Numbers.integer(cursor,Definitions.first_generation_cursor(rules),int(rules.last_cursor)) and Numbers.integer(quote.get("context",{}).get("campaign_cursor"),Definitions.first_generation_cursor(rules),int(rules.last_cursor)) and quote.get("choices",{}).has("kind_index")
 
+func diplomat_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> Dictionary:
+	error=""
+	if _lounges==null or not equipment is Equipment or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the current flight or result before using a diplomat")
+	if not preload("res://src/simulation/lounge_dialogue.gd").available(bindings):return fail("Diplomat dialogue is unavailable for this content")
+	var owned: Dictionary=equipment.snapshot()
+	for key in ["base_content_id","binding_id"]:
+		if _state.get(key)!=bindings.get(key) or owned.get("loadout",{}).get(key)!=bindings.get(key):return fail("The diplomat and career belong to different content")
+	if owned.loadout.station_id!=_state.station_id or _lounges.selection_state().current_station_id!=_state.station_id or owned.get("ordinary_shopping_open",false):return fail("Open the current station lounge with the hangar closed")
+	var contact: Dictionary=_lounges.diplomat_contact(int(_state.station_id),contact_id)
+	if contact.is_empty():return fail("This contact is not a diplomat")
+	var quote:=Reputation.diplomat_quote(_state.reputation,int(contact.faction))
+	if quote.is_empty():return fail("The diplomat requires valid retained faction standing")
+	quote.merge(contact);quote.kind="diplomat"
+	quote.can_accept=quote.eligible and not quote.consumed and int(_state.credits)>=int(quote.total_price)
+	quote.missing_credits=maxi(0,int(quote.total_price)-int(_state.credits))
+	return quote
+
+func purchase_lounge_diplomat(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> bool:
+	var quote:=diplomat_preview(bindings,contact_id,equipment)
+	if quote.is_empty():return false
+	if not quote.can_accept:return reject("This diplomat is not needed, has already been used, or exceeds the current credits")
+	var cache: RefCounted=_lounges.fork()
+	if not cache.consume_diplomat(int(_state.station_id),contact_id):return reject(cache.error)
+	_state.credits-=int(quote.total_price)
+	_state.reputation=quote.reputation_after.duplicate(true)
+	_state.progress.reputation=_state.reputation.duplicate(true)
+	_lounges=cache
+	return true
+
 func blueprint_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> Dictionary:
 	error=""
 	if _lounges==null or _blueprints==null or not equipment is Equipment or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the current flight or result before buying a blueprint")

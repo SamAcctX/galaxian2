@@ -203,6 +203,32 @@ func consume(station_id: int,offer_id: int) -> bool:
 		return true
 	return reject("The accepted contact has no retained lounge")
 
+func diplomat_contact(station_id: int,contact_id: int) -> Dictionary:
+	var entry:=location(station_id)
+	for contact in entry.get("population",{}).get("contacts",[]):
+		if contact.contact_id!=contact_id or contact.get("role")!=7:continue
+		if not Numbers.integer(contact.get("faction"),0,3):return {}
+		var response: int=entry.get("used_diplomats",{}).get(contact_id,-1)
+		return {"faction":int(contact.faction),"consumed":response>=0,"response_text_id":response}
+	return {}
+
+func consume_diplomat(station_id: int,contact_id: int,response_text_id: int=-1) -> bool:
+	_read={};error=""
+	var contact:=diplomat_contact(station_id,contact_id)
+	if contact.is_empty() or contact.consumed:return reject("This diplomat is absent or has already been used")
+	if response_text_id!=-1 and (response_text_id<843 or response_text_id>845):return reject("Invalid retained diplomat response")
+	var random:=Random.new()
+	if response_text_id<0:
+		if not random.restore(_state.random):return reject(random.error)
+		response_text_id=843+random.next_int(3)
+	for entry in _state.locations:
+		if entry.station_id!=station_id:continue
+		if not entry.has("used_diplomats"):entry.used_diplomats={}
+		entry.used_diplomats[contact_id]=response_text_id
+		if not random.snapshot().is_empty():_state.random=random.snapshot()
+		return true
+	return reject("The diplomat lost its retained lounge")
+
 func blueprint_quote(station_id: int,contact_id: int) -> Dictionary:
 	for contact in location(station_id).get("population",{}).get("contacts",[]):
 		if contact.contact_id!=contact_id or contact.get("role")!=3 or contact.get("generated",true) or not contact.has("blueprint"):continue
