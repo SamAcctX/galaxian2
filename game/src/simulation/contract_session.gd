@@ -73,7 +73,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,station: Dictionary,e
 		"campaign_cursor":int(terms.first_cursor),"station_id":owned.loadout.station_id,
 		"rank":progress.rank,"reputation":progress.reputation.duplicate(true),"difficulty":difficulty,
 		"credits":int(terms.acceptance.initial_credits),"passengers":int(terms.acceptance.initial_passengers),
-		"mission":{},"active_offer_id":-1,"offers":{},"conversations":0}
+		"mission":{},"active_offer_id":-1,"offers":{},"conversations":0,"rejected_jobs":0}
 	if Definitions.delivery_parameters(terms):
 		_progress_rules=bindings.opening_handoff.duplicate(true)
 		_stations=catalogues.tables.systems[int(terms.system_id)].station_ids.duplicate()
@@ -903,6 +903,16 @@ func inspect_contact(bindings: RefCounted,contact_id: int,library: RefCounted=nu
 	_lounges=cache;_state.offers=cache.location(int(_state.station_id)).offers
 	_state.conversations=int(conversations)+1
 	return true
+
+func decline(offer_id: int) -> bool:
+	error=""
+	if not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return reject("Resolve the current flight or result before refusing a job")
+	var row: Variant=_state.get("offers",{}).get(offer_id)
+	if not row is Dictionary or row.get("consumed")!=false or not row.get("offer") is Dictionary:return reject("This contact has no available job to refuse")
+	var rejected: Variant=_state.get("rejected_jobs",0)
+	if not Numbers.integer(rejected,0,2147483646):return reject("The retained refused-job count is invalid")
+	_state.rejected_jobs=int(rejected)+1
+	return settle_base_medals()
 
 func accept(offer_id: int,equipment: RefCounted,replace_current: bool=false,bindings: RefCounted=null) -> RefCounted:
 	var terms:=preview(offer_id,equipment,bindings)

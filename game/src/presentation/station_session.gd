@@ -378,6 +378,8 @@ func contract_action(action: String,id: int,panel: Control,checkpoint: Callable=
 			if not opened or not candidate.purchase_lounge_diplomat(id,_bindings):return reject(candidate.error)
 		"hire_wingmen":
 			if not opened or not candidate.hire_lounge_wingmen(id,_bindings):return reject(candidate.error)
+		"decline":
+			if not opened or not candidate.decline_contract(id,_bindings):return reject(candidate.error)
 		"accept","replace":
 			if not opened or not candidate.accept_contract(id,action=="replace",_bindings):return reject(candidate.error)
 		"result_close":

@@ -81,14 +81,14 @@ func run() -> void:
 	await pointer_event(okay_point,false)
 	check(lounge.snapshot().confirming and lounge_actions.size()==1,"Mouse Okay moved away during the lounge camera transition")
 	await click_lounge(lounge,state,lounge._no.get_global_rect().get_center())
-	check(not lounge.snapshot().confirming and lounge_actions.size()==1,"Mouse No thanks missed cancellation")
+	check(not lounge.snapshot().confirming and lounge_actions.size()==2 and lounge_actions[1]=={"action":"decline","id":17},"Mouse No thanks missed the explicit job refusal")
 	await click_lounge(lounge,state,lounge._yes.get_global_rect().get_center())
 	await click_lounge(lounge,state,lounge._yes.get_global_rect().get_center())
-	check(lounge_actions.size()==2 and lounge_actions[1]=={"action":"accept","id":17},"Mouse confirmation missed contract acceptance")
+	check(lounge_actions.size()==3 and lounge_actions[2]=={"action":"accept","id":17},"Mouse confirmation missed contract acceptance")
 	# In the application the accepted state is presented immediately by the host.
 	lounge._confirming=false;lounge._refresh()
 	await click_lounge(lounge,state,lounge._back.get_global_rect().get_center())
-	check(lounge_actions.size()==3 and lounge_actions[2]=={"action":"close","id":-1},"Mouse click missed lounge Back")
+	check(lounge_actions.size()==4 and lounge_actions[3]=={"action":"close","id":-1},"Mouse click missed lounge Back")
 	host.free();finish()
 
 func click(point: Vector2) -> void:

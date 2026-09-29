@@ -17,7 +17,7 @@ func recipes(owned: int,built: int) -> Dictionary:
 func career() -> Dictionary:
 	return {"campaign_cursor":45,"progress":{"player_kills":49,"cargo_recovered":49,"debris_destroyed":30},
 		"completed_side_missions":5,"delivery_statistics":{"cargo":25,"passengers":5},
-		"travel_statistics":{"jumpgates_used":9},"conversations":20,"pending_result":{}}
+		"travel_statistics":{"jumpgates_used":9},"conversations":20,"rejected_jobs":50,"pending_result":{}}
 
 func _initialize() -> void:
 	var native:=career();var before:=native.duplicate(true);var blueprints:=recipes(3,0)
@@ -25,8 +25,8 @@ func _initialize() -> void:
 	check(Medals.valid_retained(first,native,blueprints),"Fresh cumulative observations must validate")
 	check(first.levels[0]==1 and first.levels[30]==1,"Service and completed campaign medals have separate evidence")
 	check(first.levels[13]==3 and first.levels[14]==0,"Owning three blueprints does not construct them")
-	for id in [4,5,10,16,17,18,24,26]:check(first.levels[id]==0,"A below-threshold counter awarded medal %d"%id)
-	for id in [1,2,3,6,7,8,9,11,12,15,19,20,21,22,23,25,27,28,29,31,32,33,34,35]:
+	for id in [4,5,10,16,17,18,24,26,32]:check(first.levels[id]==0,"A below-threshold counter awarded medal %d"%id)
+	for id in [1,2,3,6,7,8,9,11,12,15,19,20,21,22,23,25,27,28,29,31,33,34,35]:
 		check(first.levels[id]==Medals.UNKNOWN,"Missing history was invented for medal %d"%id)
 	check(native==before,"Observing medals mutated the career")
 	native.progress.player_kills=50;native.progress.cargo_recovered=50
@@ -51,6 +51,9 @@ func _initialize() -> void:
 	for vector in [[20,0],[21,3],[50,3],[51,2],[100,2],[101,1]]:
 		native.conversations=vector[0]
 		check(Medals.observe(native).levels[26]==vector[1],"Chatterbox requires strictly exceeding successful-conversation thresholds")
+	for vector in [[50,0],[51,1]]:
+		native.rejected_jobs=vector[0]
+		check(Medals.observe(native).levels[32]==vector[1],"Naysayer requires more than fifty explicit job refusals")
 	var champion: Array=[];champion.resize(Medals.BASE_COUNT);champion.fill(3);champion[0]=1;champion[30]=1
 	check(Medals._champion_level(champion)==1,"Thirty-five earned base medals did not grant Champion gold")
 	champion[12]=0;check(Medals._champion_level(champion)==0,"An unearned base medal still granted Champion")
@@ -71,7 +74,7 @@ func _initialize() -> void:
 	check(Medals.commit(bronze,career(),recipes(6,3)).is_empty() and bronze.levels[4]==3,"Regressed native evidence silently downgraded an award")
 	check(Medals.all_base_gold(44)==false,"Incomplete campaign admitted the reward")
 	check(Medals.all_base_gold(45,{"blueprints_owned":13,"blueprints_constructed":13})==null,"Legacy blueprint counts invented all-gold")
-	var all_known:=career();all_known.progress={"player_kills":250,"cargo_recovered":500,"debris_destroyed":151};all_known.completed_side_missions=51;all_known.conversations=101
+	var all_known:=career();all_known.progress={"player_kills":250,"cargo_recovered":500,"debris_destroyed":151};all_known.completed_side_missions=51;all_known.conversations=101;all_known.rejected_jobs=51
 	all_known.delivery_statistics={"cargo":201,"passengers":51};all_known.travel_statistics.jumpgates_used=100
 	all_known.base_medals=Medals.commit({},all_known,recipes(13,13))
 	var receipt:=Medals.stock_progress(all_known,recipes(13,13))
@@ -89,5 +92,9 @@ func _initialize() -> void:
 	check(not copy.settle_base_medals() and copy.snapshot()==held,"Reading a living flight committed station medals")
 	copy._flight={};copy._state.pending_result={"completed":true};held=copy.snapshot()
 	check(not copy.settle_base_medals() and copy.snapshot()==held,"An unacknowledged result committed medals")
+	var refusal:=Contracts.new();refusal._state=career();refusal._state.offers={7:{"offer":{"mission":{}},"consumed":false}}
+	check(refusal.decline(7),refusal.error)
+	check(refusal.snapshot().rejected_jobs==51 and refusal.snapshot().base_medals.levels[32]==1,"A real explicit refusal did not bank Naysayer gold")
+	held=refusal.snapshot();check(not refusal.decline(8) and refusal.snapshot()==held,"An unavailable job changed the refusal history")
 	print("Base medal progress: %d checks; %d failures"%[checks,failures])
 	quit(1 if failures else 0)

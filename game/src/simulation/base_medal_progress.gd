@@ -15,6 +15,7 @@ const COUNTERS := {
 	18:{"path":["delivery_statistics","passengers"],"thresholds":[50,20,5],"strict":true},
 	24:{"path":["progress","cargo_recovered"],"thresholds":[500,200,50],"strict":false},
 	26:{"path":["conversations"],"thresholds":[100,50,20],"strict":true},
+	32:{"path":["rejected_jobs"],"thresholds":[50],"strict":true},
 }
 
 static func _count(value: Variant) -> bool:

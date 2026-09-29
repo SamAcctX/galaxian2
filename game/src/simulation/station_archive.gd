@@ -28,7 +28,7 @@ const STATION_KEYS=["base_content_id","binding_id","language","campaign_cursor",
 const CHAPTER_KEYS=["campaign_conversation","next_course"]
 const INVENTORY_KEYS=["loadout","stock","cargo","cargo_cache_stale","credit_delta","transactions","prices","protected_item_ids","training_inventory_released","prototype_drill_replaced","ship_affiliation","stock_station_id"]
 const CAREER_KEYS=["base_content_id","binding_id","campaign_cursor","station_id","rank","reputation","difficulty","credits","passengers","mission","active_offer_id","offers","progress","completed_side_missions","delivery_statistics","pending_result","result_serial","accepted_contact","travel_statistics","last_result","population"]
-const OPTIONAL_CAREER_KEYS=["contract_phase","station_outcome","wingmen","base_medals","conversations"]
+const OPTIONAL_CAREER_KEYS=["contract_phase","station_outcome","wingmen","base_medals","conversations","rejected_jobs"]
 var error:=""
 var restored_locations: RefCounted
 
@@ -281,6 +281,7 @@ func _career(bindings: RefCounted,cat: RefCounted,data: Dictionary,equipment: Re
 	for key in ["credits","passengers","completed_side_missions","result_serial"]:
 		if not Numbers.integer(data.get(key),0,2147483647):return reject("The saved wallet or contract counter is invalid")
 	if data.has("conversations") and not Numbers.integer(data.conversations,0,2147483647):return reject("The saved conversation count is invalid")
+	if data.has("rejected_jobs") and not Numbers.integer(data.rejected_jobs,0,2147483647):return reject("The saved refused-job count is invalid")
 	if (cursor!=13 and data.completed_side_missions<4) or not data.get("mission") is Dictionary or data.get("pending_result")!={} or not data.get("accepted_contact") is Dictionary:return reject("The save has an unresolved result or unsupported career boundary")
 	if not preload("res://src/content/gate_arrival_definitions.gd").valid_statistics(data.get("travel_statistics")):return reject("The saved career lost its travel statistics")
 	if not data.get("delivery_statistics") is Dictionary or data.delivery_statistics.size()!=2:return reject("Missing delivery statistics")

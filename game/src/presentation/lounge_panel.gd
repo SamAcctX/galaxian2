@@ -57,7 +57,7 @@ func _init() -> void:
 	_body.size_flags_vertical=Control.SIZE_EXPAND_FILL;text_column.add_child(_body)
 	var actions:=VBoxContainer.new();column.add_child(actions)
 	_yes=Button.new();_yes.pressed.connect(confirm);actions.add_child(_yes)
-	_no=Button.new();_no.pressed.connect(back);actions.add_child(_no)
+	_no=Button.new();_no.pressed.connect(decline);actions.add_child(_no)
 	resized.connect(_layout)
 	_panel.minimum_size_changed.connect(_layout)
 	gui_input.connect(_room_input)
@@ -266,6 +266,14 @@ func confirm() -> void:
 	elif preview.get("kind")=="diplomat":action_requested.emit("buy_diplomat",_selected)
 	elif preview.get("kind")=="wingmen":action_requested.emit("hire_wingmen",_selected)
 	else:action_requested.emit("replace" if preview.replacement_required else "accept",_selected)
+
+func decline() -> void:
+	if not _active or not visible or _state.is_empty() or not _state.pending_result.is_empty():return
+	var row: Variant=_state.get("offers",{}).get(_selected)
+	var preview: Dictionary=_previews.get(_selected,{})
+	if _confirming and row is Dictionary and row.get("consumed")==false and preview.get("can_accept",false):
+		_confirming=false;action_requested.emit("decline",_selected);return
+	back()
 
 func back() -> void:
 	if not _active or not visible or not _state.pending_result.is_empty():return

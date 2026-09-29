@@ -575,6 +575,16 @@ func inspect_contract_contact(contact_id: int,bindings: RefCounted,library: RefC
 	_contracts=contracts
 	return true
 
+func decline_contract(offer_id: int,bindings: RefCounted) -> bool:
+	error=""
+	if _contracts==null or not _contract_station(bindings):return fail("The station lounge is unavailable")
+	var preview: Dictionary=_contracts.preview(offer_id,_equipment,bindings)
+	if preview.is_empty() or not preview.get("can_accept",false):return fail(_contracts.error if not _contracts.error.is_empty() else "This job cannot be refused from the current offer")
+	var contracts: RefCounted=_contracts.fork()
+	if not contracts.decline(offer_id):return fail(contracts.error)
+	_contracts=contracts
+	return true
+
 func expired_wingmen() -> Dictionary:
 	return {} if _contracts==null else _contracts.expired_wingmen()
 
