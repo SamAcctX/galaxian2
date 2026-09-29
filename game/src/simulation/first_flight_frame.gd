@@ -541,6 +541,8 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		if timing.is_empty():reject(next._fast_forward.error);return null
 		if timing.reset and not next._camera.set_fast_forward(false):reject(next._camera.error);return null
 		delta_ms=timing.simulation_ms;next._camera_ms=timing.camera_ms;next._camera_passes=timing.camera_passes
+	if next._objective is ContractObjective:
+		if not next._objective.advance_wingmen(delta_ms):reject(next._objective.error);return null
 	if _mission_context!=null and _mission_context.advances_campaign():
 		var timing: Dictionary=next._briefing.snapshot()
 		if not next._encounter.sample_mission_clock(int(timing.world_elapsed_ms),int(timing.hud_elapsed_ms)):reject(next._encounter.error);return null

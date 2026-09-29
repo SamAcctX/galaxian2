@@ -114,6 +114,10 @@ func retained_for_arrival(encounter: RefCounted) -> RefCounted:
 
 func contract_owner() -> RefCounted:return null if _contracts==null else _contracts.fork()
 
+func advance_wingmen(milliseconds: int) -> bool:
+	if _contracts==null:return reject("Wingman flight time requires the retained career")
+	return true if _contracts.advance_wingmen(milliseconds) else reject(_contracts.error)
+
 func result_pending() -> bool:return _contracts!=null and _contracts.result_pending()
 func dialogue_visible() -> bool:return _visit!=null and _visit.snapshot().dialogue.visible
 

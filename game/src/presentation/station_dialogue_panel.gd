@@ -17,6 +17,8 @@ var _labels:={}
 var _mobile:=false
 var _centered:=false
 var _snapshot:={}
+var _contact_portrait: Texture2D
+var _contact_final_text:=""
 var _active:=true
 var _panel: PanelContainer
 var _body: RichTextLabel
@@ -144,6 +146,24 @@ func _configure_resources(library: RefCounted, bindings: RefCounted, visuals: Re
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language}
 	return true
 
+## A generated contact can speak without replacing the campaign's speaker
+## catalogue. The notice lifetime belongs to the station session, not this view.
+func prepare_contact_notice(library: RefCounted,bindings: RefCounted,visuals: RefCounted,portrait: Dictionary) -> bool:
+	var composer:=Portraits.new()
+	var composed: Dictionary=composer.compose_definition(library,bindings,visuals,0,"large",portrait)
+	if composed.is_empty():return reject(composer.error)
+	var label_id:=int(bindings.station_presentation.dialogue.final_text_id)
+	if label_id<0 or label_id>=library.strings.size() or library.strings[label_id].is_empty():return reject("The contact notice has no acknowledgement label")
+	if _art==null:
+		var art:=Art.new()
+		if not art.configure(library,bindings,visuals):return reject(art.error)
+		_art=art
+		var original:=Theme.new();original.default_font=art.font;theme=original
+		set_mobile_layout(_mobile)
+	_contact_portrait=ImageTexture.create_from_image(composed.image)
+	_contact_final_text=library.strings[label_id]
+	return true
+
 func present(state: Dictionary) -> bool:
 	error=""
 	if state.is_empty():clear();return true
@@ -152,13 +172,14 @@ func present(state: Dictionary) -> bool:
 	if _identity.is_empty() or not state.get("dialogue") is Dictionary:return reject("Invalid station conversation")
 	var line: Dictionary=state.dialogue
 	if not line.get("visible",false):clear();return true
-	if not _portraits.has(line.get("speaker_id")) or not line.get("text") is String or not line.get("speaker_name") is String:return reject("Invalid station conversation line")
+	var contact_notice: bool=line.get("contact_notice",false)
+	if (_contact_portrait==null if contact_notice else not _portraits.has(line.get("speaker_id"))) or not line.get("text") is String or not line.get("speaker_name") is String:return reject("Invalid station conversation line")
 	if not line.get("desktop_text",line.text) is String:return reject("Invalid desktop station text")
 	if _snapshot==line:return true
 	_snapshot=line.duplicate(true);_name.text=line.speaker_name;_body.text=line.text
-	_body.scroll_to_line(0);_portrait.texture=_portraits.get(int(line.speaker_id))
+	_body.scroll_to_line(0);_portrait.texture=_contact_portrait if contact_notice else _portraits.get(int(line.speaker_id))
 	_portrait.visible=_portrait.texture!=null
-	_next.text=_labels.final_text_id if line.index==line.count-1 else _labels.next_text_id
+	_next.text=_contact_final_text if contact_notice else (_labels.final_text_id if line.index==line.count-1 else _labels.next_text_id)
 	_counter.text="%d / %d"%[int(line.index)+1,int(line.count)]
 	visible=true;set_active(_active);_relayout()
 	return true

@@ -1878,6 +1878,8 @@
     "game/tests/lounge_diplomat_journey.gd.uid",
     "game/tests/lounge_wingmen_application.gd",
     "game/tests/lounge_wingmen_application.gd.uid",
+    "game/tests/wingman_lifetime_application.gd",
+    "game/tests/wingman_lifetime_application.gd.uid",
     "game/tests/lounge_social_application.gd",
     "game/tests/lounge_social_application.gd.uid",
     "game/tests/lounge_social_pointer.gd",

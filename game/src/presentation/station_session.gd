@@ -188,6 +188,31 @@ func build_lighting(station_id: int) -> bool:
 	_environment=lighting.environment;_hangar_environment=lighting.environment.environment
 	return true
 
+var _wingman_notice:={}
+
+## Preparing the view and the durable candidate precedes publishing either.
+## An expired roster remains recoverable if the save or portrait cannot load.
+func poll_wingman_farewell(panel: Control,checkpoint: Callable=Callable()) -> bool:
+	if _world==null or not _active or status!="running" or is_paused() or not _dialogue_started or not _wingman_notice.is_empty():return true
+	if _lounge_open or _presentation!=null or _released_presentation!=null or (is_instance_valid(_blueprint_pickup) and _blueprint_pickup.visible):return true
+	var before: Dictionary=_world.snapshot()
+	if before.dialogue.visible or before.get("hangar_open",false) or not before.get("contracts",{}).get("pending_result",{}).is_empty():return true
+	var crew: Dictionary=_world.expired_wingmen()
+	if crew.is_empty():return true
+	if panel==null or _library.strings.size()<=302 or _library.strings[302].is_empty():return reject("The crew farewell is unavailable")
+	if not panel.prepare_contact_notice(_library,_bindings,_visuals,crew.portrait):return reject(panel.error)
+	var candidate: RefCounted=_world.fork()
+	if not candidate.dismiss_expired_wingmen():return reject(candidate.error)
+	var line:={"visible":true,"contact_notice":true,"index":0,"count":1,"previous_available":false,
+		"speaker_id":0,"speaker_name":crew.names[0],"text_id":302,"text":_library.strings[302]}
+	var staged: Dictionary=candidate.snapshot();staged.dialogue=line
+	if not panel.present(staged):return reject(panel.error)
+	if checkpoint.is_valid() and not checkpoint.call(candidate):
+		panel.present(before)
+		return reject("Could not save the crew farewell; the paid roster has been retained")
+	_world=candidate;_wingman_notice=line;_generation+=1
+	return true
+
 func activate() -> bool:
 	if status!="running" or _active:return reject("Station scene cannot be activated")
 	_active=true;camera.make_current()
@@ -199,9 +224,9 @@ func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false) ->
 	var clock: RefCounted=_clock.fork_for_frame()
 	var world_state: Dictionary=_world.snapshot()
 	var result_open: bool=not world_state.get("contracts",{}).get("pending_result",{}).is_empty()
-	var milliseconds:=roundi(clock.sample(now_microseconds,is_paused() or result_open)*1000)
+	var milliseconds:=roundi(clock.sample(now_microseconds,is_paused() or result_open or not _wingman_notice.is_empty())*1000)
 	if not clock.error.is_empty():return reject(clock.error)
-	if is_paused() or result_open:_clock=clock;return true
+	if is_paused() or result_open or not _wingman_notice.is_empty():_clock=clock;return true
 	if _released_presentation!=null and not _released_presentation.advance_release(milliseconds):
 		_released_presentation.free();_released_presentation=null
 	if _presentation!=null:
@@ -235,6 +260,10 @@ func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false) ->
 func navigate(action: String, panel: Control, checkpoint: Callable=Callable()) -> bool:
 	error=""
 	if status!="running" or not _active or not _dialogue_started or is_paused() or action not in ["next","previous"] or panel==null:return reject("Station conversation is inactive")
+	if not _wingman_notice.is_empty():
+		if action!="next":return reject("The crew farewell has no previous line")
+		_wingman_notice={};_generation+=1
+		return true if panel.present(snapshot()) else reject(panel.error)
 	var candidate: RefCounted=_world.fork()
 	if not (candidate.acknowledge() if action=="next" else candidate.previous()):return reject(candidate.error)
 	if candidate.snapshot().get("phase")=="contracts_required" and _locations!=null:
@@ -292,7 +321,7 @@ func complete_presentation(panel: Control,checkpoint: Callable=Callable()) -> bo
 
 func prepare_departure(bindings: RefCounted, catalogues: RefCounted) -> Dictionary:
 	error=""
-	if status!="running" or not _active or not _dialogue_started or is_paused():
+	if status!="running" or not _active or not _dialogue_started or is_paused() or not _wingman_notice.is_empty():
 		reject("Station departure is inactive");return {}
 	var packet: Dictionary=_world.prepare_contract_departure(bindings,catalogues) if _world.snapshot().campaign_cursor in [13,14] else _world.prepare_departure(bindings,catalogues)
 	if packet.is_empty():reject(_world.error)
@@ -303,13 +332,13 @@ func prepare_departure(bindings: RefCounted, catalogues: RefCounted) -> Dictiona
 	return packet
 
 func contract_story_ready() -> bool:
-	return _world!=null and Transit.available(_bindings.mido_travel) and not _lounge_open and _world.contract_story_ready()
+	return _world!=null and _wingman_notice.is_empty() and Transit.available(_bindings.mido_travel) and not _lounge_open and _world.contract_story_ready()
 
 func begin_contract_story(panel: Control) -> bool:
 	return _begin_station_story(panel,false)
 
 func campaign_story_ready() -> bool:
-	return _world!=null and not _lounge_open and _presentation==null and _world.campaign_conversation_ready(_bindings,_catalogues,_library,_story_elapsed_ms)
+	return _world!=null and _wingman_notice.is_empty() and not _lounge_open and _presentation==null and _world.campaign_conversation_ready(_bindings,_catalogues,_library,_story_elapsed_ms)
 
 func begin_campaign_story(panel: Control) -> bool:
 	return _begin_station_story(panel,true)
@@ -329,7 +358,7 @@ func _begin_station_story(panel: Control,campaign: bool) -> bool:
 
 func contract_action(action: String,id: int,panel: Control,checkpoint: Callable=Callable()) -> bool:
 	error=""
-	if status!="running" or not _active or is_paused() or _world.contract_owner()==null or (_world.snapshot().get("hangar_open",false) and action!="result_close"):return reject("The space lounge is unavailable")
+	if status!="running" or not _active or is_paused() or not _wingman_notice.is_empty() or _world.contract_owner()==null or (_world.snapshot().get("hangar_open",false) and action!="result_close"):return reject("The space lounge is unavailable")
 	var candidate: RefCounted=_world.fork();var opened:=_lounge_open
 	match action:
 		"open":
@@ -432,7 +461,7 @@ func location_owner() -> RefCounted:
 
 func equipment_action(action: String, item_id: int, library: RefCounted, bindings: RefCounted, panel: Control, hangar: Control, unix_seconds: Variant=null, slot_index: int=-1,quantity: int=1) -> bool:
 	error=""
-	if status!="running" or not _active or not _dialogue_started or is_paused() or _lounge_open or panel==null or hangar==null:return reject("Equipment controls are inactive")
+	if status!="running" or not _active or not _dialogue_started or is_paused() or _lounge_open or not _wingman_notice.is_empty() or panel==null or hangar==null:return reject("Equipment controls are inactive")
 	var candidate: RefCounted=_world.fork()
 	if action=="open":
 		var cat:=Catalogues.new()
@@ -507,6 +536,8 @@ func snapshot() -> Dictionary:
 	state.camera=_motion.snapshot();state.generation=_generation
 	state.conversation_started=_dialogue_started
 	state.dialogue.visible=state.dialogue.visible and _dialogue_started
+	if not _wingman_notice.is_empty():
+		state.dialogue=_wingman_notice.duplicate(true);state.wingman_notice=true;state.phase="conversation"
 	if _presentation!=null:state.presentation=_presentation.snapshot()
 	var locations: Dictionary=_world.contract_locations_snapshot() if _world.has_contracts() else ({} if _locations==null else _locations.snapshot())
 	if not locations.is_empty():state.locations=locations
@@ -525,6 +556,7 @@ func clear() -> void:
 	_visuals=null;lounge_scene=null;station_sky=null;station_planets=null;_environment=null;_hangar_environment=null;_hangar_lights=[]
 	lighting=null;reflection=null
 	_story_elapsed_ms=0
+	_wingman_notice={}
 
 func _clear_presentations() -> void:
 	if is_instance_valid(_blueprint_pickup):_blueprint_pickup.free()

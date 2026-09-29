@@ -575,6 +575,16 @@ func inspect_contract_contact(contact_id: int,bindings: RefCounted,library: RefC
 	_contracts=contracts
 	return true
 
+func expired_wingmen() -> Dictionary:
+	return {} if _contracts==null else _contracts.expired_wingmen()
+
+func dismiss_expired_wingmen() -> bool:
+	if _contracts==null or _state.get("hangar_open",false) or snapshot().dialogue.visible:return fail("The crew farewell requires an idle station")
+	var candidate: RefCounted=_contracts.fork()
+	if not candidate.dismiss_expired_wingmen():return fail(candidate.error)
+	_contracts=candidate
+	return true
+
 func wingman_preview(contact_id: int,bindings: RefCounted) -> Dictionary:
 	error=""
 	if _contracts==null or not _contract_station(bindings):fail("The station lounge is unavailable");return {}

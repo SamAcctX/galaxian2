@@ -708,6 +708,25 @@ static func acceptance_supported(rules: Dictionary,cursor: int,quote: Dictionary
 		return rules==bindings.early_contracts and Numbers.integer(quote.get("context",{}).get("campaign_cursor"),Definitions.first_generation_cursor(rules),cursor) and OrdinaryContracts.retained_mission(bindings,quote.get("mission"),cursor)
 	return not rules.is_empty() and Numbers.integer(cursor,Definitions.first_generation_cursor(rules),int(rules.last_cursor)) and Numbers.integer(quote.get("context",{}).get("campaign_cursor"),Definitions.first_generation_cursor(rules),int(rules.last_cursor)) and quote.get("choices",{}).has("kind_index")
 
+## The enclosing accepted flight frame owns this clock. Zero stays active until
+## the station can present the crew's farewell; it is not an airborne death.
+func advance_wingmen(milliseconds: Variant) -> bool:
+	error=""
+	if not milliseconds is int or not Numbers.integer(milliseconds,0,2147483647):return reject("Invalid wingman flight duration")
+	var active: Dictionary=_state.get("wingmen",{}).get("active",{})
+	if not active.is_empty():active.remaining_ms=maxi(0,int(active.remaining_ms)-milliseconds)
+	return true
+
+func expired_wingmen() -> Dictionary:
+	if not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return {}
+	var active: Dictionary=_state.get("wingmen",{}).get("active",{})
+	return active.duplicate(true) if not active.is_empty() and active.remaining_ms==0 else {}
+
+func dismiss_expired_wingmen() -> bool:
+	if expired_wingmen().is_empty():return reject("No expired crew awaits its station farewell")
+	_state.wingmen.active={}
+	return true
+
 func wingman_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> Dictionary:
 	error=""
 	if _lounges==null or not equipment is Equipment or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the current flight or result before hiring wingmen")
