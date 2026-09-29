@@ -788,6 +788,8 @@
     "game/src/presentation/ship_detail_group.gd.uid",
     "game/src/presentation/status_panel.gd",
     "game/src/presentation/status_panel.gd.uid",
+    "game/src/presentation/ui_sounds.gd",
+    "game/src/presentation/ui_sounds.gd.uid",
     "game/src/presentation/wingman_geometry.gd",
     "game/src/presentation/wingman_geometry.gd.uid",
     "game/src/presentation/ship_geometry.gd",

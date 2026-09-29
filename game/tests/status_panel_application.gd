@@ -35,7 +35,10 @@ func verify_free_application() -> void:
 	check(app.session._world.record_stats({"max_free_cargo":101}) and not app.session.station_owner().snapshot().contracts.has("medal_notices"),"The same tier was announced twice")
 	var before: Dictionary=app.session.station_owner().snapshot()
 	check(app.station_shell._actions.status.visible,"The station menu has no Status entry")
+	check(preload("res://src/presentation/ui_sounds.gd").prepared().size()==2,"Original button sounds are not prepared")
+	var sounds_before: int=root.get_children().filter(func(node):return node is AudioStreamPlayer).size()
 	app.station_shell._actions.status.pressed.emit()
+	check(root.get_children().filter(func(node):return node is AudioStreamPlayer and node.playing).size()>sounds_before,"The station menu button made no sound")
 	await process_frame
 	check(app._status_open and app.status_panel.visible and app.session.is_paused(),"Status did not open from the station menu")
 	var view: Dictionary=app.status_panel.snapshot()
