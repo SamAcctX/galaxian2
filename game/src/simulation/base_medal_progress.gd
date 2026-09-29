@@ -7,8 +7,10 @@ const BLUEPRINT_GOLD_COUNT := 13
 const COUNTERS := {
 	4:{"path":["progress","player_kills"],"thresholds":[250,100,50],"strict":false},
 	5:{"path":["delivery_statistics","cargo"],"thresholds":[200,100,25],"strict":true},
+	10:{"path":["progress","debris_destroyed"],"thresholds":[150,100,30],"strict":true},
 	13:{"path":["blueprints_owned"],"thresholds":[13,6,3],"strict":false},
 	14:{"path":["blueprints_constructed"],"thresholds":[13,6,3],"strict":false},
+	16:{"path":["completed_side_missions"],"thresholds":[50,25,5],"strict":true},
 	17:{"path":["travel_statistics","jumpgates_used"],"thresholds":[100,50,10],"strict":false},
 	18:{"path":["delivery_statistics","passengers"],"thresholds":[50,20,5],"strict":true},
 	24:{"path":["progress","cargo_recovered"],"thresholds":[500,200,50],"strict":false},
