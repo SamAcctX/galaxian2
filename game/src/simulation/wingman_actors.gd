@@ -297,8 +297,8 @@ func snapshot() -> Dictionary:
 	state.weapons_connected=false
 	state.primary_weapons_connected=_weapons!=null
 	state.systems_weapons_connected=_systems_weapons!=null
-	state.weapon_command_input_connected=false
-	state.systems_audio_connected=false
+	state.weapon_command_input_connected=true
+	state.systems_audio_connected=true
 	state.weapon_groups=_weapon_groups.duplicate()
 	state.systems_weapon_world=systems_weapon_world()
 	state.systems_firing=_systems_firing.duplicate(true);state.systems_contacts=_systems_events.duplicate(true)

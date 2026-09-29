@@ -731,6 +731,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if session is FirstFlightSession:
 			if event is InputEventKey:
 				var key: int=event.physical_keycode if event.physical_keycode else event.keycode
+				supported=supported or (session.wingmen_available() and Controls.KEY_ACTIONS.get(key)=="wingmen")
 				supported=supported or key in Controls.DIRECTIONS or (Controls.KEY_ACTIONS.has(key) and Controls.KEY_ACTIONS[key] in ["fire","boost","cloak","change_view","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu"]) or ((session.secondary_available() or session.turret_state().get("active",false)) and Controls.KEY_ACTIONS.get(key) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.KEY_ACTIONS.get(key)=="time")
 			elif event is InputEventJoypadButton:supported=supported or (Controls.BUTTON_ACTIONS.has(event.button_index) and Controls.BUTTON_ACTIONS[event.button_index] in ["fire","boost","cloak","change_view","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu"]) or ((session.secondary_available() or session.turret_state().get("active",false)) and Controls.BUTTON_ACTIONS.get(event.button_index) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.BUTTON_ACTIONS.get(event.button_index)=="time")
 			elif event is InputEventJoypadMotion:supported=event.axis in [JOY_AXIS_LEFT_X,JOY_AXIS_LEFT_Y,JOY_AXIS_TRIGGER_RIGHT] or ((session.secondary_available() or session.turret_state().get("active",false)) and event.axis==JOY_AXIS_TRIGGER_LEFT)
@@ -913,6 +914,7 @@ func handle_action_events(events: Array) -> void:
 			present_session()
 
 func flight_action(action: String) -> void:
+	if action=="wingmen":open_wingmen_menu();return
 	if action in ["autopilot","action_menu"]:open_flight_menu(action=="autopilot");return
 	if action=="khador" or (action=="jump" and session is FirstFlightSession and session.drive_fitted()):open_map(-1,true);return
 	if action=="map":open_map();return
@@ -1026,6 +1028,7 @@ func open_flight_menu(autopilot: bool=true) -> bool:
 		if session.can_open_map():rows.append({"action":"map","label":library.strings[176]})
 		if session.drive_available():rows.append({"action":"khador","label":library.strings[int(bindings.station_equipment.item_text_offset)+85]})
 		if session.secondary_available():rows.append({"action":"secondary_menu","label":library.strings[255]})
+		if session.wingmen_available():rows.append({"action":"wingmen","label":library.strings[295]})
 	if session is MissionSession and not autopilot and not session.flight_owner().secondary_feedback().get("weapons",[]).is_empty():rows.append({"action":"secondary_menu","label":library.strings[255]})
 	var turret: Dictionary=session.turret_state()
 	if not autopilot and turret.get("ready",false):rows.append({"action":"turret","label":library.strings[207]})
@@ -1033,6 +1036,17 @@ func open_flight_menu(autopilot: bool=true) -> bool:
 	if not autopilot and cloak.get("ready",false):rows.append({"action":"cloak","label":library.strings[int(bindings.station_equipment.item_text_offset)+int(cloak.item_id)]})
 	if rows.is_empty() or not flight_menu.configure(library,bindings,visuals):return false
 	if not flight_menu.present(rows,KEY_Q if autopilot else KEY_E):return false
+	if not session.set_pause("flight_menu",true,Time.get_ticks_usec()):flight_menu.close();status.text=session.error;return false
+	clear_input();refresh_render_mode();return true
+
+func open_wingmen_menu() -> bool:
+	if not session is FirstFlightSession or not session.can_control() or not session.wingmen_available() or not _focused or not is_visible_in_tree():return false
+	var groups: Array=session.snapshot().wingman_actors.weapon_groups
+	# Preserve the source row order without pretending the other orders work.
+	var rows:=[]
+	for text_id in [296,297,298]:rows.append({"action":"","label":library.strings[text_id],"disabled":true})
+	rows.append({"action":"wingman_weapon_switch","label":library.strings[300 if groups[0]==0 else 299]})
+	if not flight_menu.configure(library,bindings,visuals) or not flight_menu.present(rows,KEY_V):return false
 	if not session.set_pause("flight_menu",true,Time.get_ticks_usec()):flight_menu.close();status.text=session.error;return false
 	clear_input();refresh_render_mode();return true
 

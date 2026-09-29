@@ -312,9 +312,8 @@ func _configure_rows(bindings: RefCounted, catalogues: RefCounted, rows: Array, 
 		var gun:=Projectiles.new()
 		if not gun.configure(weapon):return reject(gun.error)
 		guns.append(gun)
-		# The systems gun's command/sound consumer is not yet connected. Do
-		# not substitute the faction primary cue for an unverified second gun.
-		if data.get("wingman_systems",false):sounds.append({});continue
+		# Both companion groups retain the same native NPC sound owner. Its
+		# linked faction, not the player's item table, selects the firing cue.
 		var selected_audio:={}
 		var audio: Dictionary=bindings.weapon_parameters.get("audio",{})
 		if not audio.is_empty():

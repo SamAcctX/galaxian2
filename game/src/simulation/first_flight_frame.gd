@@ -1103,6 +1103,23 @@ func _apply_secondary_input(requested: bool,input_enabled: bool) -> bool:
 
 func secondary_available() -> bool:return _encounter!=null and _encounter.has_secondaries()
 
+func wingmen_available() -> bool:
+	if _wingmen==null:return false
+	var cast: Dictionary=_wingmen.snapshot()
+	return cast.actors.any(func(actor):return actor.active and actor.vitals.hull>0)
+
+## The original menu broadcasts its weapon toggle to eligible companions.
+## Stage the complete cast before publishing any pilot's changed selection.
+func switch_wingman_weapons(paused:=false) -> RefCounted:
+	error=""
+	if paused or not wingmen_available() or dialogue_visible() or death_active() or cinematic_input_blocked() or local_departing() or not _briefing.snapshot().entry_released or not _station_packet.is_empty() or not _unsupported_boundary.is_empty() or contract_result_pending():reject("Companion commands are unavailable in this flight phase");return null
+	var crew: RefCounted=_wingmen.fork_for_frame()
+	var actors: Array=crew.snapshot().actors
+	for index in actors.size():
+		if actors[index].active and actors[index].vitals.hull>0 and not crew.toggle_weapon_group(index):reject(crew.error);return null
+	var next:=fork_for_frame();next._wingmen=crew
+	return next
+
 func secondary_feedback() -> Dictionary:
 	return {} if _encounter==null else _encounter.secondary_feedback()
 

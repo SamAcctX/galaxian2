@@ -44,11 +44,13 @@ func present(rows: Array,close_key: int=KEY_Q) -> bool:
 		var button:=Button.new();button.text="%d.  %s"%[index+1,row.label]
 		button.focus_mode=Control.FOCUS_NONE;button.pressed.connect(func():_choose(index))
 		_rows_box.add_child(button);_buttons.append(button);_art.apply_button(button,_mobile)
+	for index in _rows.size():
+		if not _rows[index].get("disabled",false):_selection=index;break
 	visible=true;set_active(true);_layout();return true
 
 func set_active(value: bool) -> void:
 	_active=value
-	for button in _buttons:button.disabled=not value
+	for index in _buttons.size():_buttons[index].disabled=not value or _rows[index].get("disabled",false)
 	_cancel.disabled=not value
 
 func close() -> void:visible=false;set_active(false)
@@ -75,7 +77,7 @@ func handle_event(event: InputEvent) -> bool:
 	return true
 
 func _choose(index: int) -> void:
-	if _active and index>=0 and index<_rows.size():chosen.emit(_rows[index].action)
+	if _active and index>=0 and index<_rows.size() and not _rows[index].get("disabled",false):chosen.emit(_rows[index].action)
 
 func _layout() -> void:
 	if _panel==null:return

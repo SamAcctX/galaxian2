@@ -275,6 +275,7 @@ func action(name: String) -> bool:
 	if not can_control() and not (can_stop_mining() and name in ["dock","fire"]):return reject("Mining controls are inactive")
 	var world: RefCounted
 	match name:
+		"wingman_weapon_switch":world=_world.switch_wingman_weapons()
 		"turret","change_view":world=_world.toggle_turret()
 		"time":world=_world.press_fast_forward()
 		"boost":_boost_requested=true;return true
@@ -369,6 +370,7 @@ func confirm_secondary(item_id: int,now_microseconds: int) -> bool:
 	return set_pause("secondary_menu",false,now_microseconds)
 
 func secondary_available() -> bool:return _world!=null and _world.secondary_available()
+func wingmen_available() -> bool:return _world!=null and _world.wingmen_available()
 
 func secondary_feedback() -> Dictionary:
 	return {} if _world==null else _world.secondary_feedback()
