@@ -94,6 +94,7 @@ var _probe: RefCounted
 var _void_targeting: RefCounted
 var _navigation:={}
 var _world_path:=[]
+var _world_route: RefCounted
 var _player: RefCounted
 var _scenery: RefCounted
 var _camera: RefCounted
@@ -473,6 +474,10 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_route=route;_navigation=navigation;_rescue=rescue;_sahi=sahi;_void_environment=void_environment;_void_portal=void_portal;_ordinary_void_source=void_source
 	_probe=probe;_void_targeting=void_targeting
 	_world_path=entry.scenery.world_initialization.npc_construction.get("contract_encounter",{}).get("path",[]).duplicate(true) if ordinary_world else []
+	_world_route=null
+	if not _world_path.is_empty():
+		_world_route=Route.new()
+		if not _world_route.configure_world_path(bindings,_world_path):return reject(_world_route.error)
 	_audio_frame={} if death==null else {"serial":0,"player_tail":{},"player_poll":{},"actors":[]}
 	_local_travel=local_travel
 	_station_response_flags=entry.departure.get("station_response_flags",{}).duplicate(true)
@@ -1115,7 +1120,7 @@ func switch_wingman_weapons(paused:=false) -> RefCounted:
 
 func command_wingmen(command: int,paused:=false) -> RefCounted:
 	error=""
-	if command not in [0,1,3]:reject("Unsupported companion order");return null
+	if command not in [0,1,2,3]:reject("Unsupported companion order");return null
 	if paused or not wingmen_available() or dialogue_visible() or death_active() or cinematic_input_blocked() or local_departing() or not _briefing.snapshot().entry_released or not _station_packet.is_empty() or not _unsupported_boundary.is_empty() or contract_result_pending():reject("Companion commands are unavailable in this flight phase");return null
 	var crew: RefCounted=_wingmen.fork_for_frame()
 	if command==0:
@@ -1127,7 +1132,8 @@ func command_wingmen(command: int,paused:=false) -> RefCounted:
 		if target_id>=0:
 			var targets: Array=[] if _encounter==null else _encounter.combat_snapshot().actors
 			if not targets.any(func(actor):return actor.actor_id==target_id and actor.active and actor.vitals.hull>0 and not actor.get("contract_debris",false)):target_id=-1
-		if not crew.issue_order(command,target_id):reject(crew.error);return null
+		var route: RefCounted=_world_route if _route==null else _route
+		if not crew.issue_order(command,target_id,route if command==2 else null):reject(crew.error);return null
 	var next:=fork_for_frame();next._wingmen=crew
 	return next
 
@@ -1947,6 +1953,7 @@ func acknowledge_contract_result(serial: int,paused:=false) -> RefCounted:
 		# Contract routes are copied into each actor at construction. Clearing
 		# the shared path does not destroy their retained individual routes.
 		next._world_path=[]
+		next._world_route=null
 	return next
 
 func drill_owner() -> RefCounted:return null if _mining==null else _mining.drill_owner()
@@ -2318,6 +2325,7 @@ func fork_for_frame() -> RefCounted:
 	if _rescue!=null:copy._rescue=_rescue.fork()
 	copy._navigation=_navigation
 	copy._world_path=_world_path.duplicate(true)
+	copy._world_route=_world_route # Immutable shared path; commands fork per pilot.
 	copy._audio_frame=_audio_frame.duplicate(true)
 	if _local_travel!=null:copy._local_travel=_local_travel.fork()
 	if _fast_forward!=null:copy._fast_forward=_fast_forward.fork_for_frame()
@@ -2350,7 +2358,7 @@ func clear() -> void:
 	_particles=null;_audio_frame={};_equipment=null;_radio=null;_radio_events=[]
 	_engine_particles=null;_booster=null
 	_engine_audio=null
-	_route=null;_navigation={};_world_path=[];_rescue=null;_sahi=null;_void_environment=null;_void_portal=null;_ordinary_void_source=null
+	_route=null;_navigation={};_world_path=[];_world_route=null;_rescue=null;_sahi=null;_void_environment=null;_void_portal=null;_ordinary_void_source=null
 	_probe=null;_void_targeting=null
 	_scanner=null;_scanner_events=[]
 	_local_travel=null;_station_response_flags={}

@@ -198,7 +198,7 @@ func _configure_wingman(bindings: RefCounted,catalogues: RefCounted,initial: Dic
 
 ## The cast stages this body before publishing a player-issued order.
 func set_wingman_order(command: int,target_actor_id: int=-1) -> bool:
-	if not _state.get("wingman",false) or command not in [1,3] or target_actor_id< -1:return reject("Invalid companion behavior order")
+	if not _state.get("wingman",false) or command not in [1,2,3] or target_actor_id< -1:return reject("Invalid companion behavior order")
 	_state.wingman_command=command
 	_state.wingman_target_actor_id=target_actor_id if command==3 else -1
 	return true

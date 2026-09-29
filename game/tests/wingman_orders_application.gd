@@ -29,9 +29,7 @@ func verify_free_application() -> void:
 	check(app.flight_menu.visible and app.session.is_paused(),"V did not open wingman orders")
 	var rows: Array=app.flight_menu.snapshot().rows
 	check(rows.map(func(row):return row.label)==[app.library.strings[296],app.library.strings[297],app.library.strings[298],app.library.strings[300]],"Order menu labels changed")
-	check(not rows[0].get("disabled",false) and not rows[1].get("disabled",false) and rows[2].disabled,"Supported behavior orders are disabled or waypoint is falsely enabled")
-	command_key(KEY_3)
-	check(app.flight_menu.visible and app.session.snapshot().wingman_actors==before,"Disabled waypoint changed the cast")
+	check(rows.all(func(row):return not row.get("disabled",false)),"A supported behavior order is disabled")
 	await capture_free_application("wingman-orders-menu")
 	resume_application_focus();command_key(KEY_V);app.session.rebase_time(now_us)
 	check(not app.flight_menu.visible and app.session.snapshot().wingman_actors==before,"Cancel mutated the order")
@@ -175,7 +173,7 @@ func verify_order_components(crew: RefCounted,initial: Dictionary) -> void:
 	var no_target: RefCounted=crew.fork_for_frame();check(no_target.issue_order(3),no_target.error)
 	check(no_target.snapshot().actors[0].wingman_command==1,"A missing player target invented an attack order")
 	var guarded: Dictionary=candidate.snapshot()
-	check(not candidate.issue_order(2) and not candidate.issue_order(3,"11") and not candidate.issue_order(3,-2),"Malformed or unsupported behavior order was accepted")
+	check(not candidate.issue_order(4) and not candidate.issue_order(3,"11") and not candidate.issue_order(3,-2),"Malformed or unsupported behavior order was accepted")
 	check(candidate.snapshot()==guarded,"Rejected orders leaked partial state")
 	check(crew.snapshot()==original and sibling.snapshot()==original,"Order/target updates mutated a retained parent or sibling")
 	for delta in [7,17,100]:

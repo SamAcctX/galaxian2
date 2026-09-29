@@ -18,6 +18,7 @@ const Guidance=preload("res://src/content/opening_npc_guidance_definitions.gd")
 const Weapons=preload("res://src/simulation/opening_npc_weapons.gd")
 const ProjectileVisuals=preload("res://src/simulation/projectile_visual_state.gd")
 const ImpactVisuals=preload("res://src/simulation/ordinary_impact_state.gd")
+const Route=preload("res://src/simulation/npc_route.gd")
 var error:=""
 var _identity:={}
 var _actors:=[]
@@ -41,6 +42,8 @@ var _systems_impacts: RefCounted
 var _systems_events:=[]
 var _systems_firing:={"actors":[]}
 var _weapon_groups:=[]
+var _waypoint_routes:=[]
+var _waypoint_start_indices:=[]
 
 func configure(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,library: RefCounted=null) -> bool:
 	error=""
@@ -50,7 +53,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,construction: RefCoun
 	var entry: Dictionary=construction.snapshot()
 	if roster.is_empty() or not (Ordinary.ordinary_entry(bindings,entry) or FreeFlight.ordinary_entry(bindings,entry)):
 		_identity={};_actors=[];_flight=[];_follow_targets=[];_cruise_speed=0.0;_detail=null;_detail_positions={}
-		_selections=[];_targeting_tuning={};_targeting_rules={}
+		_selections=[];_targeting_tuning={};_targeting_rules={};_waypoint_routes=[];_waypoint_start_indices=[]
 		_weapons=null;_projectiles=null;_impacts=null;_weapon_elapsed_ms=0;_weapon_events=[];_firing={"actors":[]}
 		_systems_weapons=null;_systems_projectiles=null;_systems_impacts=null;_systems_events=[];_systems_firing={"actors":[]};_weapon_groups=[]
 		return true
@@ -105,7 +108,9 @@ func configure(bindings: RefCounted,catalogues: RefCounted,construction: RefCoun
 	_weapons=weapons;_projectiles=projectiles;_impacts=impacts;_weapon_elapsed_ms=0;_weapon_events=[];_firing={"actors":[]}
 	_systems_weapons=systems_weapons;_systems_projectiles=systems_projectiles;_systems_impacts=systems_impacts
 	_systems_events=[];_systems_firing={"actors":[]};_weapon_groups=[]
-	for actor in actors:_weapon_groups.append(0)
+	_waypoint_routes=[];_waypoint_start_indices=[]
+	for actor in actors:
+		_weapon_groups.append(0);_waypoint_routes.append(null);_waypoint_start_indices.append(0)
 	return true
 
 ## Existing shots contact retained NPC bodies before movement. The outer frame
@@ -166,19 +171,27 @@ func toggle_weapon_group(index: Variant) -> bool:
 
 ## The command owns only behavior and its refresh request. No motion, shots,
 ## contacts or weapon selection occur until the ordinary flight update.
-func issue_order(command: Variant,target_actor_id: Variant=-1) -> bool:
+func issue_order(command: Variant,target_actor_id: Variant=-1,world_route: RefCounted=null) -> bool:
 	error=""
-	if not command is int or command not in [1,3] or not target_actor_id is int or target_actor_id< -1 or _identity.is_empty():return reject("Unsupported companion order")
+	if not command is int or command not in [1,2,3] or not target_actor_id is int or target_actor_id< -1 or _identity.is_empty():return reject("Unsupported companion order")
+	if world_route!=null:
+		if not world_route is Route:return reject("Companion waypoints require a native coordinate route")
+		var route_state: Dictionary=world_route.snapshot()
+		if route_state.get("base_content_id")!=_identity.base_content_id or route_state.get("binding_id")!=_identity.binding_id or route_state.get("waypoints",[]).is_empty():return reject("Companion route belongs to another world identity")
 	var actors:=[];var selections:=_selections.duplicate(true)
+	var routes:=_waypoint_routes.duplicate();var starts:=_waypoint_start_indices.duplicate()
 	for index in _actors.size():
 		var actor: RefCounted=_actors[index].fork_for_frame()
 		var body: Dictionary=actor.snapshot()
 		if body.active and body.vitals.hull>0:
-			var retained: int=body.wingman_command if command==3 and target_actor_id<0 else command
+			var missing: bool=(command==3 and target_actor_id<0) or (command==2 and world_route==null)
+			var retained: int=body.wingman_command if missing else command
 			if not actor.set_wingman_order(retained,target_actor_id):return reject(actor.error)
-			if command==3:selections[index].selection_elapsed_ms=int(_targeting_tuning.selection_period_ms)+1
+			if command in [2,3]:selections[index].selection_elapsed_ms=int(_targeting_tuning.selection_period_ms)+1
+			if command==2 and world_route!=null:
+				routes[index]=world_route.fork_for_frame();starts[index]=int(world_route.snapshot().index)
 		actors.append(actor)
-	_actors=actors;_selections=selections
+	_actors=actors;_selections=selections;_waypoint_routes=routes;_waypoint_start_indices=starts
 	return true
 
 static func hull_for_pilot(bindings: RefCounted,pilot_name: String,faction: int) -> int:
@@ -233,6 +246,7 @@ func advance_targeting(milliseconds: Variant,player_pose: Variant,player: Dictio
 	var random:=Random.new()
 	if not random.restore(random_state):reject(random.error);return {}
 	var selections:=[];var decisions:=[];var requests:=[];var systems_requests:=[];var poses:={};var bodies:=[]
+	var routes:=_waypoint_routes.duplicate()
 	for index in _actors.size():
 		var prior: Dictionary=_selections[index].duplicate(true)
 		if prior.selection_elapsed_ms>Vitals.MAX_INTEGER-milliseconds:reject("Wingman target clock overflow");return {}
@@ -252,12 +266,28 @@ func advance_targeting(milliseconds: Variant,player_pose: Variant,player: Dictio
 			var target: Dictionary=targets[selected.target_index]
 			selected.target_actor_id=target.actor_id;destination=target.pose.origin
 		var root: Transform3D=_flight[index].snapshot().root_pose
+		var waypoint_destination:=false
+		# Waypoint progress is private to this pilot and is sampled before motion.
+		# Keep ordinary target/weapon selection independent from this destination.
+		if body.wingman_command==2 and body.active and body.vitals.hull>0:
+			var route: RefCounted=null if routes[index]==null else routes[index].fork_for_frame()
+			if route==null:
+				if not actor.set_wingman_order(1):reject(actor.error);return {}
+			else:
+				var arrival: Dictionary=route.advance(root.origin)
+				if arrival.is_empty():reject(route.error);return {}
+				if arrival.index>_waypoint_start_indices[index]:
+					route=null
+					if not actor.set_wingman_order(1):reject(actor.error);return {}
+				elif arrival.target is Vector3:
+					destination=arrival.target;waypoint_destination=true
+			routes[index]=route
 		var direction:=Vectors.added(destination,-root.origin)
 		var close_extent:=float(_targeting_tuning.close_half_extent)
-		if selected.target_selected and direction.abs().x<close_extent and direction.abs().y<close_extent and direction.abs().z<close_extent:direction=root.basis.z
+		if not waypoint_destination and selected.target_selected and direction.abs().x<close_extent and direction.abs().y<close_extent and direction.abs().z<close_extent:direction=root.basis.z
 		# Shared ordinary fighter window: strict local X/Y alignment, a source
 		# per-axis range, and the retained pre-motion statistics pose.
-		if selected.target_selected and selected.target_index>0:
+		if not waypoint_destination and selected.target_selected and selected.target_index>0:
 			var target: Dictionary=targets[selected.target_index]
 			var heading:=Vectors.normalized(direction)
 			var aim:=Vector2(Vectors.dot(body.pose.basis.x,heading),-Vectors.dot(body.pose.basis.y,heading))
@@ -280,7 +310,7 @@ func advance_targeting(milliseconds: Variant,player_pose: Variant,player: Dictio
 	var systems_firing: Dictionary=systems_weapons.fire_wingmen(_actors,systems_requests,poses)
 	if systems_firing.is_empty():reject(systems_weapons.error);return {}
 	if not _advance_motion(milliseconds,player_pose,decisions,bodies):return {}
-	_selections=selections
+	_selections=selections;_waypoint_routes=routes
 	_weapons=weapons;_firing=firing
 	_systems_weapons=systems_weapons;_systems_firing=systems_firing
 	return {"random_state":random.snapshot()}
@@ -295,7 +325,7 @@ func _advance_motion(milliseconds: Variant,player: Variant,decisions: Array,bodi
 		var actor: RefCounted=(_actors[index] if bodies.is_empty() else bodies[index]).fork_for_frame()
 		var motion: RefCounted=_flight[index].fork_for_frame()
 		var body: Dictionary=actor.snapshot()
-		if body.wingman_command not in [1,3]:return reject("This wingman owner has no supported behavior order")
+		if body.wingman_command not in [1,2,3]:return reject("This wingman owner has no supported behavior order")
 		var destination: Vector3=follow_position(player,index) if decisions.is_empty() else decisions[index].destination
 		var root: Transform3D=motion.snapshot().root_pose
 		var direction: Vector3=Vectors.added(destination,-root.origin) if decisions.is_empty() else decisions[index].direction
@@ -324,6 +354,9 @@ func snapshot() -> Dictionary:
 	state.systems_weapons_connected=_systems_weapons!=null
 	state.weapon_command_input_connected=true
 	state.behavior_command_input_connected=true
+	state.waypoint_command_input_connected=true
+	state.waypoint_routes=_waypoint_routes.map(func(route):return {} if route==null else route.snapshot())
+	state.waypoint_start_indices=_waypoint_start_indices.duplicate()
 	state.systems_audio_connected=true
 	state.weapon_groups=_weapon_groups.duplicate()
 	state.systems_weapon_world=systems_weapon_world()
@@ -343,6 +376,7 @@ func fork_for_frame() -> RefCounted:
 	copy._identity=_identity;copy._actors=_actors;copy._detail_positions=_detail_positions
 	copy._flight=_flight;copy._follow_targets=_follow_targets;copy._cruise_speed=_cruise_speed
 	copy._selections=_selections;copy._targeting_tuning=_targeting_tuning;copy._targeting_rules=_targeting_rules
+	copy._waypoint_routes=_waypoint_routes;copy._waypoint_start_indices=_waypoint_start_indices
 	copy._detail=null if _detail==null else _detail.fork_for_frame()
 	copy._weapons=_weapons;copy._projectiles=_projectiles;copy._impacts=_impacts
 	copy._weapon_elapsed_ms=_weapon_elapsed_ms;copy._weapon_events=_weapon_events;copy._firing=_firing

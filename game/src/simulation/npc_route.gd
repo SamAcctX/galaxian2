@@ -275,6 +275,18 @@ func replace_with_contract_path(points: Array,start_index:=0) -> bool:
 	_points=points.duplicate();_candidates=[];_index=start_index;_start_index=start_index;_loop=false;_authored=true
 	return true
 
+## A world coordinate path is already authored. Constructing its private copy
+## must not generate a patrol or consume the world's random stream.
+func configure_world_path(bindings: RefCounted,points: Array) -> bool:
+	error=""
+	if bindings==null or points.is_empty() or points.any(func(point):return not point is Vector3 or not point.is_finite()):return reject("A world path requires finite retained coordinates")
+	var data: Dictionary=bindings.opening_actors.get("npc_initialization",{}).get("routes",{})
+	if not Definitions.parameters(data):return reject("World path arrival rules are unavailable")
+	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"owner":"world"}
+	_definition=data.duplicate(true);_points=points.duplicate();_candidates=[]
+	_index=0;_start_index=0;_loop=false;_authored=true
+	return true
+
 func is_at_start() -> bool:return not _points.is_empty() and _index==_start_index
 
 func replace_with_ambient_destination(point: Variant) -> bool:
