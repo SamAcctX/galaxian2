@@ -5,6 +5,18 @@ extends "res://tests/beam_primary_application.gd"
 func verify_free_application() -> void:
 	app.set_player_mode(true);app.show();app.present_session()
 	await process_frame;resume_application_focus()
+	# A newly reached tier pays its reward and shows one notice at the idle station.
+	var wallet: int=app.session.station_owner().snapshot().contracts.credits
+	check(app.session._world.record_stats({"max_free_cargo":101}),"Stats could not reach Space Saver bronze")
+	app.present_session();await process_frame
+	var docked: Dictionary=app.session.station_owner().snapshot()
+	check(docked.contracts.credits==wallet+1000 and docked.contracts.base_medals.levels[31]==3,"Space Saver bronze did not pay its original 1000 credits")
+	check(app.medal_notice.visible and app.medal_notice.shown()==[31,3],"The new medal notice did not appear")
+	await capture("new-medal")
+	var enter:=InputEventKey.new();enter.keycode=KEY_ENTER;enter.physical_keycode=KEY_ENTER;enter.pressed=true
+	app._unhandled_input(enter);await process_frame
+	check(not app.medal_notice.visible and not app.session.station_owner().snapshot().contracts.has("medal_notices"),"Enter did not acknowledge the medal notice")
+	check(app.session._world.record_stats({"max_free_cargo":101}) and not app.session.station_owner().snapshot().contracts.has("medal_notices"),"The same tier was announced twice")
 	var before: Dictionary=app.session.station_owner().snapshot()
 	check(app.station_shell._actions.status.visible,"The station menu has no Status entry")
 	app.station_shell._actions.status.pressed.emit()

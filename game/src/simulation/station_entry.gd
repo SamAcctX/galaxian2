@@ -929,6 +929,12 @@ func prepare_contract_departure(bindings: RefCounted,catalogues: RefCounted) -> 
 	return packet
 
 func contract_owner() -> RefCounted:return null if _contracts==null else _contracts.fork()
+func acknowledge_medal_notice() -> bool:
+	if _contracts==null:return false
+	var candidate: RefCounted=_contracts.fork()
+	if not candidate.acknowledge_medal_notice():return fail(candidate.error)
+	_contracts=candidate
+	return true
 func record_stats(observed: Dictionary) -> bool:
 	if _contracts==null:return false
 	var candidate: RefCounted=_contracts.fork()

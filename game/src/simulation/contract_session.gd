@@ -94,9 +94,32 @@ func configure(bindings: RefCounted,catalogues: RefCounted,station: Dictionary,e
 
 func settle_base_medals() -> bool:
 	if _state.is_empty() or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return reject("Medals require an acknowledged station career")
-	var retained:=LoungeCache.Medals.commit(_state.get("base_medals",{}),_state,blueprint_state())
-	if retained.is_empty():return reject("The station lost its earned medal evidence")
-	_state.base_medals=retained
+	if not _bank_medals(_state):return reject("The station lost its earned medal evidence")
+	return true
+
+## Each newly reached tier pays its original reward and queues a notice. The
+## first observation of a career is its baseline, not a new award.
+func _bank_medals(state: Dictionary) -> bool:
+	var previous: Dictionary=state.get("base_medals",{})
+	var retained:=LoungeCache.Medals.commit(previous,state,blueprint_state())
+	if retained.is_empty():return false
+	if not previous.is_empty():
+		var notices: Array=state.get("medal_notices",[]).duplicate()
+		for id in retained.levels.size():
+			var level: int=retained.levels[id];var prior: int=previous.levels[id]
+			if level>0 and (prior<=0 or level<prior):
+				notices.append([id,level])
+				state.credits=mini(int(state.credits)+LoungeCache.Medals.reward_credits(level),2147483647)
+		if not notices.is_empty():state.medal_notices=notices
+	state.base_medals=retained
+	return true
+
+func acknowledge_medal_notice() -> bool:
+	var notices: Array=_state.get("medal_notices",[])
+	if notices.is_empty():return reject("No medal notice is waiting")
+	notices=notices.slice(1)
+	if notices.is_empty():_state.erase("medal_notices")
+	else:_state.medal_notices=notices
 	return true
 
 ## Station-observed medal stats. Counters add; hull keeps the lowest arrival
@@ -1235,9 +1258,7 @@ func _acknowledge_delivery_inventory(equipment: RefCounted,owned: Dictionary) ->
 	next.mission={};next.active_offer_id=-1;next.pending_result={}
 	next.erase("contract_phase");next.erase("station_outcome")
 	if next.has("accepted_contact"):next.accepted_contact={}
-	var medals:=LoungeCache.Medals.commit(next.get("base_medals",{}),next,blueprint_state())
-	if medals.is_empty():reject("The acknowledged delivery lost its medal evidence");return null
-	next.base_medals=medals
+	if not _bank_medals(next):reject("The acknowledged delivery lost its medal evidence");return null
 	_state=next;_result_inventory={}
 	return inventory
 

@@ -31,6 +31,7 @@ const FlightActionMenu = preload("res://src/presentation/flight_action_menu.gd")
 const TravelDefinitions = preload("res://src/content/mido_travel_definitions.gd")
 const LocalMapPanel = preload("res://src/presentation/navigation_map_panel.gd")
 const StatusPanel = preload("res://src/presentation/status_panel.gd")
+const MedalNoticePanel = preload("res://src/presentation/medal_notice_panel.gd")
 const GateConfirmationPanel = preload("res://src/presentation/gate_confirmation_panel.gd")
 const LocationCache = preload("res://src/simulation/lounge_cache.gd")
 const StationGeneration = preload("res://src/content/station_generation_definitions.gd")
@@ -94,6 +95,7 @@ var flight_menu: Control
 var _station_map_open:=false
 var status_panel: Control
 var _status_open:=false
+var medal_notice: Control
 ## Career stats observed by the application and banked at the next station.
 var _career_play_ms:=0.0
 var _career_cloak_ms:=0.0
@@ -197,6 +199,8 @@ func _ready() -> void:
 	map_panel=LocalMapPanel.new();host.add_child(map_panel);map_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	status_panel=StatusPanel.new();host.add_child(status_panel);status_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	status_panel.close_requested.connect(func():close_status())
+	medal_notice=MedalNoticePanel.new();host.add_child(medal_notice);medal_notice.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	medal_notice.acknowledged.connect(func():acknowledge_medal_notice())
 	gate_panel=GateConfirmationPanel.new();host.add_child(gate_panel);gate_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	gate_panel.choice_requested.connect(func(result):choose_gate_confirmation(result))
 	lounge_panel=LoungePanel.new();host.add_child(lounge_panel);lounge_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -395,6 +399,7 @@ func reset() -> void:
 	cancel_departure()
 	if map_panel!=null:map_panel.clear()
 	if status_panel!=null:status_panel.clear()
+	if medal_notice!=null:medal_notice.clear()
 	_status_open=false
 	if gate_panel!=null:gate_panel.clear()
 	if session!=null:session.free();session=null
@@ -629,6 +634,7 @@ func _refresh_station_shell(state: Dictionary) -> void:
 		displayed.ui_actions[action]={"visible":button.visible,"enabled":not button.disabled}
 	displayed.ui_actions.status={"visible":session.has_contracts(),"enabled":session.has_contracts()}
 	if not station_shell.present(displayed):status.text=station_shell.error;return
+	_sync_medal_notice(state)
 	station_shell.set_active(not session.is_paused() and _focused and is_visible_in_tree() and _launch_packet.is_empty())
 	for button in buttons.values():button.hide()
 
@@ -711,6 +717,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		flight_menu.handle_event(event);get_viewport().set_input_as_handled();return
 	if _station_map_open:
 		map_panel.handle_event(event);get_viewport().set_input_as_handled();return
+	if medal_notice.visible and session is StationSession:
+		medal_notice.handle_event(event);get_viewport().set_input_as_handled();return
 	if _status_open:
 		status_panel.handle_event(event);get_viewport().set_input_as_handled();return
 	if session is FirstFlightSession and session.secondary_menu_open():
@@ -1045,6 +1053,21 @@ func open_status(now_microseconds: int=-1) -> bool:
 	if not session.set_pause("status",true,Time.get_ticks_usec() if now_microseconds<0 else now_microseconds):status_panel.clear();status.text=session.error;return false
 	status_panel.set_mobile_layout(_mobile_layout)
 	_status_open=true;clear_input();present_session();return true
+
+## The idle station shows each newly reached medal tier once, in order.
+func _sync_medal_notice(state: Dictionary) -> void:
+	var notices: Array=state.get("contracts",{}).get("medal_notices",[])
+	if notices.is_empty() or not _focused:
+		if notices.is_empty():medal_notice.clear()
+		return
+	if medal_notice.shown()==notices[0]:return
+	if not status_panel.configure(library,bindings,visuals):status.text=status_panel.error;return
+	medal_notice.present(status_panel,notices[0])
+
+func acknowledge_medal_notice() -> bool:
+	if not session is StationSession or not medal_notice.visible:return false
+	if not session._world.acknowledge_medal_notice():status.text=session._world.error;return false
+	medal_notice.clear();clear_input();_autosave_station();present_session();return true
 
 func close_status(now_microseconds: int=-1) -> bool:
 	if not _status_open:return false

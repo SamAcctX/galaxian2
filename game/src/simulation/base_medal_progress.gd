@@ -220,6 +220,14 @@ static func all_base_gold(cursor: int,counts: Dictionary={}) -> Variant:
 		elif level!=1:return false
 	return null if unknown else true
 
+## Original credit reward for reaching a tier (1 gold, 2 silver, 3 bronze).
+static func reward_credits(level: int) -> int:
+	return [0,5000,2500,1000][level] if level>=1 and level<=3 else 0
+
+static func valid_notices(value: Variant) -> bool:
+	if not value is Array or value.is_empty() or value.size()>BASE_COUNT*3:return false
+	return value.all(func(row):return row is Array and row.size()==2 and row[0] is int and row[0]>=0 and row[0]<BASE_COUNT and row[1] is int and row[1]>=1 and row[1]<=3)
+
 ## Threshold shown in a medal's description for an earned level (1 gold .. 3 bronze).
 static func description_value(id: int,level: int) -> int:
 	var thresholds: Array=COUNTERS[id].thresholds if COUNTERS.has(id) else FIXED_THRESHOLDS.get(id,[0])
