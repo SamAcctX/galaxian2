@@ -189,9 +189,10 @@ func _configure_wingman(bindings: RefCounted,catalogues: RefCounted,initial: Dic
 	var actor:=initial.duplicate(true)
 	actor.hull_resource=model;actor.current_hull=600
 	if not _initialize_body(bindings,bindings.opening_actors.npc_initialization,actor,difficulty,factory_hull,float(rules.percentage_scale),{"initial_hostile":false,"updated_hostile":false}):return false
+	if not _configure_ordinary_systems(bindings,rank,0):return false
 	_state.merge({"name":initial.name,"wingman":true,"wingman_index":initial.actor_id,"wingman_command":1,"wingman_target_actor_id":-1,
 		"campaign_cursor":cursor,"rank":rank,"subtype":0,"population_group":"wingman",
-		"friendly":true,"permanent_friendly":true,"active":true,
+		"friendly":true,"permanent_friendly":true,"active":true,"actor_mode":0,
 		"model_draw_enabled":bool(rules.initial_model_draw_enabled),"node_draw_requested":bool(rules.initial_node_draw_requested),
 		"engine_draw_enabled":bool(rules.initial_engine_draw_enabled)},true)
 	return set_pose(initial.pose)
@@ -954,7 +955,7 @@ func apply_scene(scene: Variant) -> bool:
 func set_pose(pose: Variant, physical_pose: Variant=null) -> bool:
 	error = ""
 	if _state.is_empty() or not pose is Transform3D or not pose.is_finite(): return reject("Actor pose requires a configured body and finite transform")
-	if physical_pose!=null and ((_state.get("campaign_cursor") not in [4,7,10] and not _state.get("ambient_traffic",false) and not _state.get("contract_ship",false) and not _state.get("contract_debris",false) and not _state.get("bakka_ship",false) and not _state.get("convoy",false) and not _state.get("alioth_attack",false) and not _state.get("kappa_rescue",false) and not _state.get("authored_story",false)) or not Flight.rigid_pose(physical_pose)):return reject("Separate physical motion requires a supported finite flight root")
+	if physical_pose!=null and ((_state.get("campaign_cursor") not in [4,7,10] and not _state.get("ambient_traffic",false) and not _state.get("contract_ship",false) and not _state.get("contract_debris",false) and not _state.get("bakka_ship",false) and not _state.get("convoy",false) and not _state.get("alioth_attack",false) and not _state.get("kappa_rescue",false) and not _state.get("authored_story",false) and not _state.get("wingman",false)) or not Flight.rigid_pose(physical_pose)):return reject("Separate physical motion requires a supported finite flight root")
 	# The actor's source-space transform is also the collision-center authority.
 	var source_pose: Transform3D = pose
 	for axis in 3:
@@ -985,7 +986,7 @@ func apply_destruction(death: Dictionary) -> bool:
 	var phase: Variant=death.get("phase")
 	if phase not in ["tumble","explosion","retired"] or death.get("mode")!=(3 if phase=="tumble" else 4): return reject("Unsupported NPC destruction phase")
 	var previous: Variant=_state.get("actor_mode")
-	var initial_death: bool=previous==0 and (_initial_training_death or _state.get("local_combat",false) or _state.get("contract_combat",false) or _state.get("bakka_combat",false))
+	var initial_death: bool=previous==0 and (_initial_training_death or _state.get("wingman",false) or _state.get("local_combat",false) or _state.get("contract_combat",false) or _state.get("bakka_combat",false))
 	if previous==6 and _state.has("travel_cycle"):initial_death=true
 	if _state.has("spawn_generation") and death.get("spawn_generation")!=_state.spawn_generation:return reject("Destruction belongs to an earlier traffic instance")
 	if (previous not in [1,3,4] and not initial_death) or (previous==4 and phase=="tumble") or (not _state.active and phase!="retired"): return reject("NPC destruction phase regressed")

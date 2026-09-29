@@ -827,7 +827,7 @@ func acknowledge_campaign_result(bindings: RefCounted,session: RefCounted,visit:
 	if result==null:reject(session.error)
 	return result
 
-func evaluate_weapons(player: RefCounted, pose: Transform3D, milliseconds: int, scenery: RefCounted=null, shared_random_state: Variant=null, display_available:=true, secondary_display_available:=true,guidance_actor_id: int=-1) -> Dictionary:
+func evaluate_weapons(player: RefCounted, pose: Transform3D, milliseconds: int, scenery: RefCounted=null, shared_random_state: Variant=null, display_available:=true, secondary_display_available:=true,guidance_actor_id: int=-1,wingmen: RefCounted=null) -> Dictionary:
 	error=""
 	if _control==null or not Numbers.integer(milliseconds,0,_max_ms) or target(player,pose).is_empty():return fail("Invalid encounter weapon frame")
 	if _primaries!=null and (not scenery is Scenery or scenery.presentation_identity()!=_scenery_identity):return fail("Equipped contacts require the retained complete scenery")
@@ -858,13 +858,14 @@ func evaluate_weapons(player: RefCounted, pose: Transform3D, milliseconds: int, 
 	if next._primaries==null:
 		pass_result=next._weapons.evaluate_player_update(pilot,pose,next._combat.shooter_states(),false,milliseconds)
 	else:
-		pass_result=next._weapons.evaluate_selected40_update(pilot,pose,next._combat,milliseconds) if _selected40_world!=null else next._weapons.evaluate_combat_training_update(pilot,pose,next._combat,false,milliseconds)
+		pass_result=next._weapons.evaluate_selected40_update(pilot,pose,next._combat,milliseconds) if _selected40_world!=null else next._weapons.evaluate_combat_training_update(pilot,pose,next._combat,false,milliseconds,wingmen)
 	if pass_result.is_empty():return fail(next._weapons.error)
 	if not next._impacts.apply_contacts(prior,next._primary_contacts,pass_result.actors):return fail(next._impacts.error)
 	if next._primaries!=null:next._combat=pass_result.combat
 	next._weapons=pass_result.weapons;next._weapon_events=pass_result.actors;next._elapsed_ms+=milliseconds
 	next._primary_fire={}
 	var result:={"encounter":next,"player":pass_result.player}
+	if pass_result.has("wingmen"):result.wingmen=pass_result.wingmen
 	if field!=null:result.scenery=field
 	if not contact_random.is_empty():result.random_state=contact_random
 	return result

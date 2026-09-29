@@ -84,11 +84,12 @@ func apply_contacts(previous_world: Dictionary, primary_events: Array, npc_event
 		events.append({"key":by_mount[int(event.mount_id)],"contacts":event.get("contacts")})
 	for event in npc_events:
 		if not event is Dictionary or not Numbers.integer(event.get("actor_id"),0,2147483647):return reject("Unknown impact NPC owner")
-		if not event.get("contacts") is Array or not event.get("npc_contacts",[]) is Array:return reject("Invalid NPC impact contact lists")
+		if not event.get("contacts") is Array or not event.get("npc_contacts",[]) is Array or not event.get("wingman_contacts",[]) is Array:return reject("Invalid NPC impact contact lists")
 		# These weapons visit player then NPCs before cleanup. Keep all
 		# overlapping hits and their order, including non-player damage.
 		var contacts: Array=event.contacts.duplicate()
 		contacts.append_array(event.get("npc_contacts",[]))
+		contacts.append_array(event.get("wingman_contacts",[]))
 		events.append({"key":"npc:%d"%int(event.actor_id),"contacts":contacts})
 	if events.size()!=inputs.size():return reject("Impact frame omitted a weapon contact pass")
 	var staged: Dictionary=_state.duplicate(true)

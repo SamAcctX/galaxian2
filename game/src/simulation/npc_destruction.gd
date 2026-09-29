@@ -61,6 +61,20 @@ func _configure_motion(bindings: RefCounted, resources: RefCounted, actor_id: in
 	_presentation_identity=RefCounted.new()
 	return true
 
+## Paid pilots retain the ordinary fighter effect without inventing cargo or
+## entering the encounter's mission population. The cast owns their fragments.
+func configure_wingman(bindings: RefCounted,resources: RefCounted,body: RefCounted,fragments: Array) -> bool:
+	clear()
+	if not is_instance_of(body,load("res://src/simulation/opening_combat_actor.gd")):return reject("Companion destruction requires its native body")
+	var actor: Dictionary=body.snapshot()
+	if not actor.get("wingman",false) or actor.get("population_group")!="wingman" or actor.get("wingman_index")!=actor.get("actor_id"):return reject("This body is not a retained paid pilot")
+	for key in ["base_content_id","binding_id"]:
+		if bindings==null or actor.get(key)!=bindings.get(key):return reject("Companion destruction belongs to another content identity")
+	if not _configure_motion(bindings,resources,int(actor.actor_id),actor.pose,0.0,fragments):return false
+	_state.wingman=true;_state.campaign_cursor=int(actor.campaign_cursor)
+	_state.statistics_pose=actor.pose;_state.bank_basis=Basis.IDENTITY
+	return true
+
 func configure_full_hold(bindings: RefCounted, resources: RefCounted, actor: Dictionary) -> bool:
 	clear()
 	if not bindings is Bindings or not resources is Resources or not FullHold.parameters(bindings.full_hold_destruction):return reject("Second-trip death requires verified cargo resources and declarations")
@@ -221,9 +235,9 @@ func capture(pose: Variant, speed: Variant, bank: Basis=Basis.IDENTITY) -> bool:
 	if _state.is_empty() or _state.phase!="ready": return reject("Capture NPC motion before starting its death")
 	if not Flight.rigid_pose(pose) or not (speed is float or speed is int) or not is_finite(speed) or speed<0 or not is_finite(Vitals.single(speed)): return reject("Invalid initial NPC death motion")
 	if not Flight.rigid_pose(Transform3D(bank,Vector3.ZERO)):return reject("Invalid retained NPC bank")
-	if _cargo_rules.is_empty() and bank!=Basis.IDENTITY:return reject("This death context has no separate bank owner")
+	if not _state.has("bank_basis") and bank!=Basis.IDENTITY:return reject("This death context has no separate bank owner")
 	_state.pose=pose;_state.forward=pose.basis.z;_state.speed=Vitals.single(speed)
-	if not _cargo_rules.is_empty():
+	if _state.has("bank_basis"):
 		_state.bank_basis=bank
 		_state.statistics_pose=pose*Transform3D(bank,Vector3.ZERO)
 	return true
@@ -272,7 +286,7 @@ func advance(delta_ms: Variant, random_state: Variant) -> Dictionary:
 	if next.phase!="retired" and retires_before_update():
 		next.phase="retired";retired=true
 	elif next.phase!="retired":
-		if not _cargo_rules.is_empty():next.statistics_pose=next.pose*Transform3D(next.bank_basis,Vector3.ZERO)
+		if next.has("statistics_pose"):next.statistics_pose=next.pose*Transform3D(next.bank_basis,Vector3.ZERO)
 		if next.phase=="ready":
 			next.phase="tumble";next.mode=int(_parameters.dying_mode);started=true
 			next.countdown_ms=int(_parameters.delay_base_ms)+random.next_int(int(_parameters.delay_bound_ms))

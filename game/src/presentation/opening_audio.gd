@@ -982,17 +982,24 @@ func prepare_combat(world: Dictionary, elapsed_ms: int) -> Dictionary:
 			var freight:=prepare_freighter_audio(death,previous)
 			if freight.is_empty():return {}
 			operations.append_array(freight.operations);continue
-		var cues: Variant=death.get("audio_events")
-		var ids: Variant=death.get("sound_events")
-		if not cues is Array or not ids is Array or cues.size()!=ids.size() or cues.size()>2 or not death.get("started") is bool or not death.get("breakup") is bool:return fail("Invalid NPC destruction audio events")
-		if cues.size()!=int(death.started)+int(death.breakup):return fail("NPC sound events differ from their death transitions")
-		for i in cues.size():
-			var cue: Variant=cues[i]
-			if not cue is Dictionary or not cue.get("position") is Vector3 or not cue.position.is_finite() or not Definitions.integer(cue.get("source_id"),0,19999) or cue.source_id!=ids[i]:return fail("Invalid NPC destruction sound position or identifier")
-			if death.started and i==0:
-				if cue.source_id!=_death_audio.initial_source_id:return fail("Wrong NPC death initialization sound")
-			elif cue.source_id not in _death_audio.breakup_source_ids:return fail("Wrong NPC breakup sound")
-			operations.append({"action":"start_spatial","source_id":int(cue.source_id),"position":cue.position,"actor_id":previous})
+		var fighter:=prepare_fighter_destruction_audio(death,previous)
+		if fighter.is_empty():return {}
+		operations.append_array(fighter.operations)
+	return {"operations":operations}
+
+func prepare_fighter_destruction_audio(death: Dictionary,actor_id: int) -> Dictionary:
+	var operations: Array[Dictionary]=[]
+	var cues: Variant=death.get("audio_events")
+	var ids: Variant=death.get("sound_events")
+	if _death_audio.is_empty() or not cues is Array or not ids is Array or cues.size()!=ids.size() or cues.size()>2 or not death.get("started") is bool or not death.get("breakup") is bool:return fail("Invalid NPC destruction audio events")
+	if cues.size()!=int(death.started)+int(death.breakup):return fail("NPC sound events differ from their death transitions")
+	for i in cues.size():
+		var cue: Variant=cues[i]
+		if not cue is Dictionary or not cue.get("position") is Vector3 or not cue.position.is_finite() or not Definitions.integer(cue.get("source_id"),0,19999) or cue.source_id!=ids[i]:return fail("Invalid NPC destruction sound position or identifier")
+		if death.started and i==0:
+			if cue.source_id!=_death_audio.initial_source_id:return fail("Wrong NPC death initialization sound")
+		elif cue.source_id not in _death_audio.breakup_source_ids:return fail("Wrong NPC breakup sound")
+		operations.append({"action":"start_spatial","source_id":int(cue.source_id),"position":cue.position,"actor_id":actor_id})
 	return {"operations":operations}
 
 func prepare_debris_audio(death: Dictionary,actor_id: int) -> Dictionary:
@@ -1065,7 +1072,19 @@ func prepare_wingman_weapons(owner: RefCounted,state: Dictionary) -> Dictionary:
 				operation.wingman_index=id;operation.weapon_group=group;ordered[id].append(operation)
 	# Keep each pilot's primary then systems cue operations together; do not
 	# sort individual position/pitch/start operations out of their cue order.
-	for id in state.actors.size():operations.append_array(ordered.get(id,[]))
+	var deaths:={};var previous:=-1
+	for event in state.get("death_events",[]):
+		var id: Variant=event.get("actor_id")
+		if not Definitions.integer(id,previous+1,state.actors.size()-1):return fail("Companion death sounds changed their pilot order")
+		previous=int(id)
+		var frame:=prepare_fighter_destruction_audio(event,int(id))
+		if frame.is_empty():return {}
+		for operation in frame.operations:
+			operation.erase("actor_id");operation.wingman_index=id
+		deaths[id]=frame.operations
+	for id in state.actors.size():
+		operations.append_array(ordered.get(id,[]))
+		operations.append_array(deaths.get(id,[]))
 	return {"operations":operations}
 
 func prepare_npc_weapon(event: Dictionary, actor_id: int) -> Dictionary:

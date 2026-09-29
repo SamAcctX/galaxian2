@@ -720,9 +720,10 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 	# The later mission cue must not move their retained shooter/launch poses.
 	if next._encounter!=null:
 		var guidance_id: int=-1 if next._scanner==null else next._scanner.guidance_target_id(not next._camera.orbit_snapshot().get("enabled",false))
-		var weapon_pass: Dictionary=next._encounter.evaluate_weapons(next._player,next._pose,delta_ms,next._scenery if _equipment!=null else null,next._random,true,next._radio==null or not next._radio.snapshot().get("visible",false),guidance_id)
+		var weapon_pass: Dictionary=next._encounter.evaluate_weapons(next._player,next._pose,delta_ms,next._scenery if _equipment!=null else null,next._random,true,next._radio==null or not next._radio.snapshot().get("visible",false),guidance_id,next._wingmen)
 		if weapon_pass.is_empty():reject(next._encounter.error);return null
 		next._encounter=weapon_pass.encounter;next._player=weapon_pass.player
+		if weapon_pass.has("wingmen"):next._wingmen=weapon_pass.wingmen
 		if weapon_pass.has("scenery"):next._scenery=weapon_pass.scenery
 		if weapon_pass.has("random_state"):next._random=weapon_pass.random_state
 	if next._wingmen!=null:

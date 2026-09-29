@@ -17,9 +17,14 @@ func evaluate(projectiles: RefCounted, combat: RefCounted, ordered_actor_ids: Va
 func evaluate_staged(projectiles: RefCounted, combat: RefCounted, ordered_actor_ids: Variant, bounds_selection: Variant = null) -> Dictionary:
 	return _evaluate(projectiles,combat,ordered_actor_ids,bounds_selection,true)
 
-func _evaluate(projectiles: RefCounted, combat: RefCounted, ordered_actor_ids: Variant, bounds_selection: Variant, staged: bool) -> Dictionary:
+## A separate native cast shares geometry and slot ordering, never mission IDs.
+func evaluate_wingmen_staged(projectiles: RefCounted,crew: RefCounted,ordered_actor_ids: Array) -> Dictionary:
+	return _evaluate(projectiles,crew,ordered_actor_ids,null,true,true)
+
+func _evaluate(projectiles: RefCounted, combat: RefCounted, ordered_actor_ids: Variant, bounds_selection: Variant, staged: bool, companions:=false) -> Dictionary:
 	error = ""
-	if projectiles==null or combat==null or projectiles.get_script()!=Projectiles or combat.get_script()!=Combat:
+	var supported: bool=is_instance_of(combat,load("res://src/simulation/wingman_actors.gd")) if companions else combat is Combat
+	if projectiles==null or not supported or projectiles.get_script()!=Projectiles:
 		return fail("NPC contacts require ordinary projectile and opening NPC owners")
 	if not ordered_actor_ids is Array or ordered_actor_ids.size()>65536:
 		return fail("NPC contacts require an explicit bounded ordered target list")

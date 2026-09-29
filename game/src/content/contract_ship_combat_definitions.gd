@@ -76,6 +76,8 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 		if weapon.is_empty():return {}
 		weapon.actor_id=id;weapon.hull_catalogue_id=hull;data.npc_weapons.append(weapon)
 	data.target_memberships=target_memberships(data.actor_kinds,cast.player_last_ids)
+	data.companion_player_last_ids=cast.player_last_ids.duplicate()
+	data.companion_player_only_ids=cast.player_only_ids.duplicate()
 	for id in cast.player_only_ids:data.target_memberships[id]=[int(data.player_target_id)]
 	for id in int(cast.debris_count):data.target_memberships[id]=[]
 	return data

@@ -19,6 +19,8 @@ const Weapons=preload("res://src/simulation/opening_npc_weapons.gd")
 const ProjectileVisuals=preload("res://src/simulation/projectile_visual_state.gd")
 const ImpactVisuals=preload("res://src/simulation/ordinary_impact_state.gd")
 const Route=preload("res://src/simulation/npc_route.gd")
+const Destruction=preload("res://src/simulation/npc_destruction.gd")
+const DeathResources=preload("res://src/content/npc_destruction_resources.gd")
 var error:=""
 var _identity:={}
 var _actors:=[]
@@ -44,9 +46,14 @@ var _systems_firing:={"actors":[]}
 var _weapon_groups:=[]
 var _waypoint_routes:=[]
 var _waypoint_start_indices:=[]
+var _deaths:=[]
+var _death_events:=[]
+var _incoming_declarations:=[]
+var _campaign_cursor:=-1
 
 func configure(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,library: RefCounted=null) -> bool:
 	error=""
+	_deaths=[];_death_events=[];_incoming_declarations=[];_campaign_cursor=-1
 	if not construction is Construction:return reject("Wingmen require the retained native departure")
 	var career: RefCounted=construction.contract_owner()
 	var roster: Dictionary={} if career==null else career.snapshot().get("wingmen",{}).get("active",{})
@@ -63,7 +70,11 @@ func configure(bindings: RefCounted,catalogues: RefCounted,construction: RefCoun
 	var tuning: Dictionary=bindings.opening_actors.npc_initialization.guidance
 	if not Guidance.parameters(tuning):return reject("Wingmen require ordinary target-selection tuning")
 	var retained: Dictionary=career.snapshot()
-	var actors:=[];var flights:=[];var targets:=[];var ships:={};var positions:={};var selections:=[]
+	var actors:=[];var flights:=[];var targets:=[];var ships:={};var positions:={};var selections:=[];var deaths:=[]
+	var death_resources: RefCounted
+	if library!=null:
+		death_resources=DeathResources.new()
+		if not death_resources.configure(library,bindings):return reject(death_resources.error)
 	for index in roster.names.size():
 		var hull:=hull_for_pilot(bindings,roster.names[index],int(roster.faction))
 		if hull<0:return reject("The hired pilot has no eligible original fighter")
@@ -72,6 +83,13 @@ func configure(bindings: RefCounted,catalogues: RefCounted,construction: RefCoun
 			"name":roster.names[index],"position":pose.origin,"pose":pose}
 		var actor:=Body.new()
 		if not actor._configure_wingman(bindings,catalogues,initial,int(retained.rank),int(entry.campaign_cursor),float(retained.difficulty)):return reject(actor.error)
+		if death_resources!=null:
+			var local_random:=Random.new()
+			if not local_random.seed_from(String(roster.names[index]).length()*5):return reject(local_random.error)
+			var fragments:=Factory.sample_fragments(local_random,bindings.opening_actors.npc_initialization.construction)
+			var death:=Destruction.new()
+			if not death.configure_wingman(bindings,death_resources,actor,fragments):return reject(death.error)
+			deaths.append(death)
 		var motion:=Flight.new()
 		if not motion.configure(bindings,pose):return reject(motion.error)
 		actors.append(actor)
@@ -101,6 +119,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,construction: RefCoun
 			if not systems_projectiles.configure(bindings,library,systems_world) or not systems_impacts.configure(bindings,library,systems_world):return reject(systems_projectiles.error+systems_impacts.error)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
 	_actors=actors;_detail=detail;_detail_positions=positions
+	_deaths=deaths;_campaign_cursor=int(entry.campaign_cursor)
 	_flight=flights;_follow_targets=targets;_cruise_speed=float(speed)
 	_selections=selections;_targeting_tuning=tuning
 	_targeting_rules={"random_selection_chance":int(bindings.combat_training_control.random_selection_chance),
@@ -252,6 +271,7 @@ func advance_targeting(milliseconds: Variant,player_pose: Variant,player: Dictio
 		if prior.selection_elapsed_ms>Vitals.MAX_INTEGER-milliseconds:reject("Wingman target clock overflow");return {}
 		prior.selection_elapsed_ms+=milliseconds
 		var actor: RefCounted=_actors[index].fork_for_frame()
+		if actor.systems_for_frame()!=null and not actor.advance_systems(milliseconds):reject(actor.error);return {}
 		var body: Dictionary=actor.snapshot()
 		if body.wingman_command==3 and body.wingman_target_actor_id>=0 and prior.selection_elapsed_ms>int(_targeting_tuning.selection_period_ms):
 			var retained: Array=targets.filter(func(target):return target.actor_id==body.wingman_target_actor_id)
@@ -294,7 +314,7 @@ func advance_targeting(milliseconds: Variant,player_pose: Variant,player: Dictio
 			var separation:=Vectors.added(target.pose.origin,-body.pose.origin).abs()
 			var reach:=float(_targeting_tuning.fire_half_extent)
 			var aligned: bool=absf(aim.x)<float(_targeting_tuning.fire_alignment) and absf(aim.y)<float(_targeting_tuning.fire_alignment)
-			var fire: bool=selected.fire_desired and aligned and separation.x<reach and separation.y<reach and separation.z<reach
+			var fire: bool=selected.fire_desired and not body.get("systems_disabled",false) and aligned and separation.x<reach and separation.y<reach and separation.z<reach
 			if target.targeting_blocked or (fire and (not target.active or target.hull<=0)):
 				fire=false;selected.fire_desired=false
 			if fire:
@@ -313,7 +333,7 @@ func advance_targeting(milliseconds: Variant,player_pose: Variant,player: Dictio
 	_selections=selections;_waypoint_routes=routes
 	_weapons=weapons;_firing=firing
 	_systems_weapons=systems_weapons;_systems_firing=systems_firing
-	return {"random_state":random.snapshot()}
+	return _advance_destruction(milliseconds,random.snapshot())
 
 func _advance_motion(milliseconds: Variant,player: Variant,decisions: Array,bodies: Array=[]) -> bool:
 	error=""
@@ -327,13 +347,17 @@ func _advance_motion(milliseconds: Variant,player: Variant,decisions: Array,bodi
 		var body: Dictionary=actor.snapshot()
 		if body.wingman_command not in [1,2,3]:return reject("This wingman owner has no supported behavior order")
 		var destination: Vector3=follow_position(player,index) if decisions.is_empty() else decisions[index].destination
+		if body.vitals.hull<=0:
+			actors.append(actor);flights.append(motion);targets.append(destination)
+			continue
 		var root: Transform3D=motion.snapshot().root_pose
 		var direction: Vector3=Vectors.added(destination,-root.origin) if decisions.is_empty() else decisions[index].direction
 		var moving: bool=body.active and body.vitals.hull>0
 		var steering: bool=moving and (decisions.is_empty() or decisions[index].steering)
-		var moved: Dictionary=motion.advance(milliseconds,direction,_cruise_speed,steering,moving)
+		var systems: RefCounted=actor.systems_for_frame()
+		var moved: Dictionary=motion.advance(milliseconds,direction,_cruise_speed,steering,moving) if systems==null else motion.advance_with_systems(milliseconds,direction,_cruise_speed,steering,moving,systems)
 		if moved.is_empty():return reject(motion.error)
-		if not actor.set_pose(moved.pose):return reject(actor.error)
+		if not actor.set_pose(moved.get("statistics_pose",moved.pose),moved.pose):return reject(actor.error)
 		actors.append(actor);flights.append(motion);targets.append(destination)
 		if positions.has(index):positions[index]=moved.root_pose.origin
 	_actors=actors;_flight=flights;_follow_targets=targets;_detail_positions=positions
@@ -358,6 +382,10 @@ func snapshot() -> Dictionary:
 	state.waypoint_routes=_waypoint_routes.map(func(route):return {} if route==null else route.snapshot())
 	state.waypoint_start_indices=_waypoint_start_indices.duplicate()
 	state.systems_audio_connected=true
+	state.destruction_connected=_deaths.size()==_actors.size()
+	state.incoming_contacts_connected=not _incoming_declarations.is_empty()
+	state.destruction=_deaths.map(func(death):return death.snapshot())
+	state.death_events=_death_events.duplicate(true)
 	state.weapon_groups=_weapon_groups.duplicate()
 	state.systems_weapon_world=systems_weapon_world()
 	state.systems_firing=_systems_firing.duplicate(true);state.systems_contacts=_systems_events.duplicate(true)
@@ -370,6 +398,77 @@ func snapshot() -> Dictionary:
 
 func body_owner(index: int) -> RefCounted:
 	return null if index<0 or index>=_actors.size() else _actors[index].fork_for_frame()
+
+## Only the constructed enemy weapon owner can admit damage declarations.
+## Public observations cannot turn an arbitrary damage dictionary into a hit.
+func bind_incoming_weapons(owner: RefCounted) -> bool:
+	error=""
+	if not owner is Weapons or _deaths.size()!=_actors.size():return reject("Incoming contacts require native weapons and prepared companion destruction")
+	var packet: Dictionary=owner.companion_contact_packet()
+	if packet.is_empty() or packet.get("campaign_cursor")!=_campaign_cursor:return reject("Incoming companion weapons belong to another departure")
+	for key in _identity:
+		if packet.get(key)!=_identity[key]:return reject("Incoming weapons changed companion content identity")
+	_incoming_declarations=packet.declarations.duplicate(true)
+	return true
+
+func contact_memberships(shooter_kind: int) -> Array:
+	var result:=[]
+	for index in _actors.size():
+		if _actors[index].snapshot().actor_kind!=shooter_kind:result.append(index)
+	return result
+
+func supports_weapon_hit(weapon: Variant) -> bool:
+	error=""
+	return true if weapon is Dictionary and _incoming_declarations.has(weapon) else reject("Companion damage lacks its retained enemy weapon declaration")
+
+func collision_context(index: Variant) -> Dictionary:
+	error=""
+	if not index is int or index<0 or index>=_actors.size():reject("Companion contact names an unavailable paid pilot");return {}
+	return _actors[index].collision_context()
+
+func weapon_hit(index: Variant,weapon: Variant) -> Dictionary:
+	if not supports_weapon_hit(weapon) or collision_context(index).is_empty():return {}
+	var actor: RefCounted=_actors[index].fork_for_frame()
+	var policy: Dictionary=weapon.ordinary_hit_policy
+	var systems:={}
+	if policy.additional_damage_required:
+		systems=actor.systems_hit(policy.additional_damage)
+		if systems.is_empty():reject(actor.error);return {}
+	var result: Dictionary=actor.normal_hit(policy.nonplayer_damage,true)
+	if result.is_empty():reject(actor.error);return {}
+	if not systems.is_empty():result.systems=systems
+	var actors:=_actors.duplicate();actors[index]=actor;_actors=actors
+	return result
+
+func record_contact(index: Variant,velocity: Variant,point_box: Variant=null) -> bool:
+	if collision_context(index).is_empty():return false
+	var actor: RefCounted=_actors[index].fork_for_frame()
+	if not actor.record_contact(velocity,point_box):return reject(actor.error)
+	var actors:=_actors.duplicate();actors[index]=actor;_actors=actors
+	return true
+
+func destruction_owner(index: int) -> RefCounted:
+	return null if index<0 or index>=_deaths.size() else _deaths[index].fork_for_frame()
+
+func _advance_destruction(milliseconds: int,random_state: Dictionary) -> Dictionary:
+	var random: Dictionary=random_state
+	var actors:=_actors.duplicate();var deaths:=_deaths.duplicate();var positions:=_detail_positions.duplicate();var events:=[]
+	for index in actors.size():
+		var state: Dictionary=actors[index].snapshot()
+		if state.vitals.hull>0:continue
+		if index>=deaths.size():reject("A depleted companion has no prepared native destruction");return {}
+		var death: RefCounted=deaths[index].fork_for_frame()
+		if death.snapshot().phase=="ready":
+			if not death.capture(_flight[index].snapshot().root_pose,_cruise_speed,_flight[index].bank_basis()):reject(death.error);return {}
+		var result: Dictionary=death.advance(milliseconds,random)
+		if result.is_empty():reject(death.error);return {}
+		var actor: RefCounted=actors[index].fork_for_frame()
+		if not actor.apply_destruction(result.state):reject(actor.error);return {}
+		actors[index]=actor;deaths[index]=death;random=result.random_state
+		if positions.has(index):positions[index]=result.state.pose.origin
+		events.append({"actor_id":index,"started":result.started,"breakup":result.breakup,"retired_now":result.retired_now,"audio_events":result.audio_events,"sound_events":result.sound_events})
+	_actors=actors;_deaths=deaths;_detail_positions=positions;_death_events=events
+	return {"random_state":random}
 
 func casualty_bodies() -> Array:
 	var result:=[]
@@ -388,6 +487,7 @@ func fork_for_frame() -> RefCounted:
 	copy._weapon_elapsed_ms=_weapon_elapsed_ms;copy._weapon_events=_weapon_events;copy._firing=_firing
 	copy._systems_weapons=_systems_weapons;copy._systems_projectiles=_systems_projectiles;copy._systems_impacts=_systems_impacts
 	copy._systems_events=_systems_events;copy._systems_firing=_systems_firing;copy._weapon_groups=_weapon_groups
+	copy._deaths=_deaths;copy._death_events=_death_events;copy._incoming_declarations=_incoming_declarations;copy._campaign_cursor=_campaign_cursor
 	# Shared bodies and flight state stay immutable until advance_follow stages
 	# detached writers. Public observations/body owners are detached as well.
 	return copy

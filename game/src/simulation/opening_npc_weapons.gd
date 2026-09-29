@@ -539,11 +539,34 @@ func evaluate_player_update(player: RefCounted, pose: Variant, shooter_states: V
 		events.append({"actor_id":id,"contacts":contact.contacts,"last_contact_actor":contact.last_contact_actor,"motion":motion})
 	return {"weapons":next,"player":staged_player,"actors":events}
 
-func evaluate_combat_training_update(player: RefCounted, pose: Variant, combat: RefCounted, special_flight: Variant, delta_ms: Variant) -> Dictionary:
+func evaluate_combat_training_update(player: RefCounted, pose: Variant, combat: RefCounted, special_flight: Variant, delta_ms: Variant,wingmen: RefCounted=null) -> Dictionary:
 	error=""
 	if _selected41_world!=null:return fail("Source41 mixed contacts require their explicit native owners")
 	if _selected40_world!=null:return fail("Selected40 mixed contacts require complete consequence and lifecycle owners")
-	return _evaluate_mixed_update(player,pose,combat,special_flight,delta_ms)
+	return _evaluate_mixed_update(player,pose,combat,special_flight,delta_ms,wingmen)
+
+func companion_contact_packet() -> Dictionary:
+	if _selected40_world!=null or _selected41_world!=null or not (_training.has("contract_encounter") or _training.has("free_traffic")):return {}
+	var result:=_identity.duplicate();var declarations:=[]
+	for gun in _guns:
+		if gun==null:continue
+		var weapon: Dictionary=gun.snapshot().weapon
+		if not weapon.get("nonplayer_source",false):return {}
+		declarations.append(weapon)
+	result.declarations=declarations
+	return result
+
+func companion_target_order(actor_id: int,crew: RefCounted) -> Array:
+	error=""
+	if not is_instance_of(crew,load("res://src/simulation/wingman_actors.gd")) or actor_id<0 or actor_id>=_guns.size() or not _training.has("target_memberships"):
+		reject("Companion target order requires its native cast and shooter");return []
+	var targets: Array=_training.target_memberships[actor_id].duplicate()
+	if actor_id in _training.get("companion_player_only_ids",[]):return targets
+	var insertion: int=targets.find(-1) if actor_id in _training.get("companion_player_last_ids",[]) else targets.size()
+	if insertion<0:insertion=targets.size()
+	for index in crew.contact_memberships(int(_definitions[actor_id].actor_kind)):
+		targets.insert(insertion,{"group":"wingman","index":index});insertion+=1
+	return targets
 
 func evaluate_selected41_update(player: RefCounted,pose: Variant,combat: RefCounted,delta_ms: Variant) -> Dictionary:
 	error=""
@@ -557,7 +580,7 @@ func evaluate_selected40_update(player: RefCounted,pose: Variant,combat: RefCoun
 	if player.selected40_construction_owner()!=_selected40_world.npc_construction_owner() or player.snapshot().get("selected40_context")!=_selected40.context:return fail("Selected40 contacts differ from their retained native player")
 	return _evaluate_mixed_update(player,pose,combat,false,delta_ms)
 
-func _evaluate_mixed_update(player: RefCounted,pose: Variant,combat: RefCounted,special_flight: Variant,delta_ms: Variant) -> Dictionary:
+func _evaluate_mixed_update(player: RefCounted,pose: Variant,combat: RefCounted,special_flight: Variant,delta_ms: Variant,wingmen: RefCounted=null) -> Dictionary:
 	if _training.is_empty() or not player is Player or not combat is Combat or not Vitals.integer(delta_ms) or not special_flight is bool:return fail("Mixed contacts require the verified training weapon, player and combat owners")
 	var player_state: Dictionary=player.snapshot();var scene: Dictionary=combat.snapshot()
 	for key in _identity:
@@ -570,13 +593,24 @@ func _evaluate_mixed_update(player: RefCounted,pose: Variant,combat: RefCounted,
 	if _training.has("contract_encounter") and (scene.get("contract_encounter")!=_training.contract_encounter or player_state.get("contract_encounter")!=_training.contract_encounter):return fail("Mixed contacts belong to another accepted contract")
 	var shooters: Array=combat.shooter_states()
 	var next:=fork_for_frame();var staged_player: RefCounted=player.fork_for_frame();var staged_combat: RefCounted=combat.fork_for_frame()
+	var staged_wingmen: RefCounted
+	if wingmen!=null:
+		if not is_instance_of(wingmen,load("res://src/simulation/wingman_actors.gd")):return fail("Incoming contacts require the native paid cast")
+		staged_wingmen=wingmen.fork_for_frame()
+		if not staged_wingmen.bind_incoming_weapons(self):return fail(staged_wingmen.error)
 	var player_contacts:=PlayerContacts.new();var npc_contacts:=NPCContacts.new();var events:=[]
 	for id in _guns.size():
 		if _guns[id]==null:continue
 		var gun: RefCounted=next._guns[id]
-		var player_hits:=[];var npc_hits:=[];var last: Variant=null
-		for target in _training.target_memberships[id]:
-			if int(target)==-1:
+		var player_hits:=[];var npc_hits:=[];var wingman_hits:=[];var last: Variant=null
+		var memberships: Array=_training.target_memberships[id] if staged_wingmen==null else companion_target_order(id,staged_wingmen)
+		for target in memberships:
+			if target is Dictionary:
+				var contact:=npc_contacts.evaluate_wingmen_staged(gun,staged_wingmen,[int(target.index)])
+				if contact.is_empty():return fail(npc_contacts.error)
+				gun=contact.projectiles;staged_wingmen=contact.combat;wingman_hits.append_array(contact.contacts)
+				if contact.last_contact_actor_id!=null:last={"group":"wingman","index":contact.last_contact_actor_id}
+			elif int(target)==-1:
 				var contact:=player_contacts.evaluate(gun,staged_player,pose,shooters[id].present,shooters[id].hostile,special_flight)
 				if contact.is_empty():return fail(player_contacts.error)
 				gun=contact.projectiles;staged_player=contact.player;player_hits.append_array(contact.contacts)
@@ -593,8 +627,10 @@ func _evaluate_mixed_update(player: RefCounted,pose: Variant,combat: RefCounted,
 		var motion: Dictionary=gun.advance(delta_ms)
 		if motion.is_empty():return fail(gun.error)
 		next._guns[id]=gun
-		events.append({"actor_id":id,"contacts":player_hits,"npc_contacts":npc_hits,"last_contact_actor":last,"motion":motion})
-	return {"weapons":next,"player":staged_player,"combat":staged_combat,"actors":events}
+		events.append({"actor_id":id,"contacts":player_hits,"npc_contacts":npc_hits,"wingman_contacts":wingman_hits,"last_contact_actor":last,"motion":motion})
+	var result:={"weapons":next,"player":staged_player,"combat":staged_combat,"actors":events}
+	if staged_wingmen!=null:result.wingmen=staged_wingmen
+	return result
 
 func reject(message: String) -> bool:
 	error=message
