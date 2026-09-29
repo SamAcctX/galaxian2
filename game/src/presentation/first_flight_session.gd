@@ -12,6 +12,7 @@ const Effects=preload("res://src/content/scenery_effect_resources.gd")
 const Scene=preload("res://src/presentation/first_flight_scene.gd")
 const Speech=preload("res://src/presentation/station_audio.gd")
 const FlightAudio=preload("res://src/presentation/opening_audio.gd")
+const NpcEngines=preload("res://src/presentation/npc_engine_audio.gd")
 const SecondReturn=preload("res://src/content/full_hold_return_definitions.gd")
 const PlayerDeath=preload("res://src/content/player_destruction_definitions.gd")
 const GameOver=preload("res://src/content/game_over_definitions.gd")
@@ -31,6 +32,7 @@ var briefing_audio: Node
 var objective_audio: Node
 var objective_failure_audio: Node
 var flight_audio: Node3D
+var engine_audio: Node3D
 var _world: RefCounted
 var _clock: RefCounted
 var _pauses:={}
@@ -207,6 +209,10 @@ func _configure_construction(library: RefCounted, bindings: RefCounted, visuals:
 	if _world.destruction_owner()!=null or cursor==2:
 		flight_audio=FlightAudio.new();add_child(flight_audio)
 		if not flight_audio.configure_full_hold(library,bindings,_world,int(field_seed)):return fail(flight_audio.error)
+	# Other ships' engine loops (the original has none in the first rescue flight).
+	if cursor>1:
+		engine_audio=NpcEngines.new();add_child(engine_audio)
+		if not engine_audio.configure(library,bindings,int(field_seed)):engine_audio.free();engine_audio=null
 	if _world.destruction_owner()!=null:
 		if scene.game_over==null:return fail("Flight continuation display is unavailable")
 		scene.game_over.set_active(false)
@@ -514,6 +520,7 @@ func _commit(world: RefCounted, advance_sun: bool, absolute_milliseconds: int=-1
 		if sound.is_empty():return reject(flight_audio.error)
 	var presentation_time: int=_presentation_ms if absolute_milliseconds<0 else absolute_milliseconds
 	if not scene.present(world,advance_sun,presentation_time,state):return reject(scene.error)
+	if engine_audio!=null and camera!=null:engine_audio.update(NpcEngines.sources(state),camera.global_position,maxi(0,presentation_time-_presentation_ms))
 	_world=world;_presentation_state=state;_generation+=1
 	_presentation_ms=presentation_time
 	briefing_audio.present(briefing_line)
@@ -558,6 +565,7 @@ func set_pause(reason: String, paused: bool, now_microseconds: int) -> bool:
 	briefing_audio.set_paused(is_paused());objective_audio.set_paused(is_paused())
 	if objective_failure_audio!=null:objective_failure_audio.set_paused(is_paused())
 	if flight_audio!=null:flight_audio.set_paused(is_paused())
+	if engine_audio!=null:engine_audio.set_paused(is_paused())
 	_sync_input()
 	return true
 
@@ -593,7 +601,7 @@ func presentation_snapshot() -> Dictionary:
 	return preload("res://src/simulation/readonly_state.gd").freeze(state) if OS.is_debug_build() else state
 func clear() -> void:
 	for child in get_children():child.free()
-	error="";status="idle";camera=null;scene=null;briefing_audio=null;objective_audio=null;objective_failure_audio=null;flight_audio=null
+	error="";status="idle";camera=null;scene=null;briefing_audio=null;objective_audio=null;objective_failure_audio=null;flight_audio=null;engine_audio=null
 	_world=null;_clock=null;_pauses={};_active=false;_throttle=1.0;_generation=0
 	_presentation_state={}
 	_presentation_ms=0;_secondary_requested=false;_boost_requested=false;_cloak_requested=false

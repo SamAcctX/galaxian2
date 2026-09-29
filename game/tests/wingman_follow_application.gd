@@ -39,6 +39,10 @@ func verify_free_application() -> void:
 	check(scene.wingmen.actors[0].ship.transform==cast.actors[0].pose,"Ship rendering ignored the moving native body")
 	check(cast.actors[0].name==entry.contracts.wingmen.active.names[0],"Following replaced the earned pilot")
 	if failures or not await view_following_pilot(scene):return
+	# Other ships' engines: the hired pilot loops the original wingman engine.
+	var engines: Dictionary=app.session.engine_audio.snapshot() if app.session.engine_audio!=null else {}
+	print("ENGINES ",engines)
+	check(engines.get("prepared",[]).size()==3 and engines.playing.keys().any(func(key):return key.begins_with("wingman:") and engines.playing[key].level>0.0),"The wingman has no engine sound")
 	var paused: Dictionary=app.session.flight_owner().snapshot().wingman_actors
 	check(app.session.set_pause("user",true,now_us),app.session.error)
 	for tick in 10:
