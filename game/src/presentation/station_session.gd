@@ -334,10 +334,11 @@ func contract_action(action: String,id: int,panel: Control,checkpoint: Callable=
 	match action:
 		"open":
 			if candidate.snapshot().dialogue.visible:return reject("Acknowledge the story before opening the lounge")
+			if not opened and not candidate.begin_lounge_visit(_bindings):return reject(candidate.error)
 			opened=true
 		"close":opened=false
 		"select":
-			if not opened or not candidate.inspect_contract_contact(id,_bindings):return reject(candidate.error)
+			if not opened or not candidate.inspect_contract_contact(id,_bindings,_library):return reject(candidate.error)
 		"buy_goods":
 			if not opened or not candidate.purchase_lounge_goods(id,_bindings):return reject(candidate.error)
 		"buy_coordinates":
@@ -398,7 +399,11 @@ func _contract_previews(owner: RefCounted,opened: bool) -> Dictionary:
 			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
 	var requests:={}
 	for place in career.get("lounges",{}).get("locations",[]):
-		if place.station_id==career.station_id:requests=place.get("requested_offers",{});break
+		if place.station_id!=career.station_id:continue
+		requests=place.get("requested_offers",{})
+		for id in place.get("dialogues",{}):
+			result[id]={"kind":"social","dialogue":place.dialogues[id],"can_accept":false}
+		break
 	for id in career.get("offers",{}):
 		if not career.offers[id].consumed:
 			result[id]=owner.contract_preview(id,_bindings)

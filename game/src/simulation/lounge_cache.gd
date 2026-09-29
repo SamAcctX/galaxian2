@@ -13,11 +13,16 @@ const Random=preload("res://src/simulation/seeded_random.gd")
 const Shopping=preload("res://src/content/ordinary_shopping_definitions.gd")
 const DeepScience=preload("res://src/content/deep_science_stock_definitions.gd")
 const Medals=preload("res://src/simulation/base_medal_progress.gd")
+const Dialogue=preload("res://src/simulation/lounge_dialogue.gd")
 var error:=""
 var _state:={}
 var _deep_science:={}
 # Frozen observation of _state; every mutator clears it before changing state.
 var _read:={}
+var _social_used: Array=[]
+
+func begin_social_visit() -> void:
+	_read={};_social_used=[]
 
 func configure(bindings: RefCounted) -> bool:
 	_read={}
@@ -111,7 +116,7 @@ func remember(contacts: RefCounted,stock: RefCounted=null,medal_progress: Dictio
 	_state.history=population.history.duplicate()
 	return true
 
-func inspect_contact(bindings: RefCounted,cat: RefCounted,context: Dictionary,contact_id: int,station_context: RefCounted=null) -> bool:
+func inspect_contact(bindings: RefCounted,cat: RefCounted,context: Dictionary,contact_id: int,station_context: RefCounted=null,library: RefCounted=null) -> bool:
 	_read={}
 	error=""
 	if context.get("station_id")!=_state.get("current_station_id"):return reject("Inspect the currently retained lounge")
@@ -121,6 +126,22 @@ func inspect_contact(bindings: RefCounted,cat: RefCounted,context: Dictionary,co
 		if matches.size()!=1:return reject("This lounge has no such contact")
 		if entry.offers.has(contact_id):return true
 		var contact: Dictionary=matches[0]
+		if contact.role==1 and Dialogue.available(bindings):
+			var previous: Dictionary=entry.get("dialogues",{}).get(contact_id,{})
+			var prepared:={};var record:={}
+			if previous.is_empty():
+				prepared=Dialogue.prepare(contact,_state.random,_social_used)
+				if prepared.is_empty():return reject("This lounge has no unused social topic")
+				record=prepared.dialogue
+			else:
+				if not Dialogue.valid(previous,contact,cat,library):return reject("This contact lost its retained dialogue")
+				record=Dialogue.revisit(previous,contact,int(context.station_id),library)
+			if not Dialogue.valid(record,contact,cat,library):return reject("The original social dialogue is unavailable")
+			if not entry.has("dialogues"):entry.dialogues={}
+			entry.dialogues[contact_id]=record
+			if not prepared.is_empty():
+				_social_used.append(prepared.raw_topic);_state.random=prepared.random
+			return true
 		if Contacts.Recipe.contact_request(bindings.early_contracts,int(contact.role)).is_empty():return true
 		var offer_context:=context.duplicate(true)
 		offer_context.client_faction=contact.faction;offer_context.system_availability=_state.system_availability.duplicate()
@@ -133,6 +154,20 @@ func inspect_contact(bindings: RefCounted,cat: RefCounted,context: Dictionary,co
 		_state.random=requested.random.duplicate(true);_state.history=requested.history.duplicate()
 		return true
 	return reject("The inspected contact has no retained lounge")
+
+func restore_dialogues(bindings: RefCounted,cat: RefCounted,library: RefCounted,station_id: int,records: Variant) -> bool:
+	_read={};error=""
+	if not Dialogue.available(bindings) or not records is Dictionary or records.is_empty():return reject("Invalid saved social dialogue")
+	for entry in _state.locations:
+		if entry.station_id!=station_id:continue
+		if records.size()>entry.population.contacts.size():return reject("Invalid social contact count")
+		for id in records:
+			if not id is int:return reject("Invalid saved social contact")
+			var contacts: Array=entry.population.contacts.filter(func(contact):return contact.contact_id==id)
+			if contacts.size()!=1 or not Dialogue.valid(records[id],contacts[0],cat,library):return reject("The saved dialogue lost its contact or original text")
+		entry.dialogues=records.duplicate(true)
+		return true
+	return reject("The social dialogue has no retained lounge")
 
 ## Save entry verifies lazy quotes against their own sampling inputs. Requests
 ## may interleave visits to older cached stations, so population order alone
@@ -308,5 +343,6 @@ func fork() -> RefCounted:
 	var result: RefCounted=get_script().new()
 	result._state=_state.duplicate(true)
 	result._deep_science=_deep_science.duplicate(true);result._read=_read
+	result._social_used=_social_used.duplicate()
 	return result
 func reject(message: String) -> bool:error=message;return false

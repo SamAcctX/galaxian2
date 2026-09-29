@@ -559,11 +559,19 @@ func contract_preview(offer_id: int,bindings: RefCounted=null) -> Dictionary:
 func _contract_station(bindings: RefCounted) -> bool:
 	return _state.get("phase") in ["contracts_required","convoy_departure_required"] or (_state.get("phase")=="free_play_required" and preload("res://src/content/ordinary_contracts_definitions.gd").available(bindings))
 
-func inspect_contract_contact(contact_id: int,bindings: RefCounted) -> bool:
+func begin_lounge_visit(bindings: RefCounted) -> bool:
 	error=""
 	if _contracts==null or not _contract_station(bindings):return fail("The station lounge is unavailable")
 	var contracts: RefCounted=_contracts.fork()
-	if not contracts.inspect_contact(bindings,contact_id):return fail(contracts.error)
+	if not contracts.begin_lounge_visit():return fail(contracts.error)
+	_contracts=contracts
+	return true
+
+func inspect_contract_contact(contact_id: int,bindings: RefCounted,library: RefCounted=null) -> bool:
+	error=""
+	if _contracts==null or not _contract_station(bindings):return fail("The station lounge is unavailable")
+	var contracts: RefCounted=_contracts.fork()
+	if not contracts.inspect_contact(bindings,contact_id,library):return fail(contracts.error)
 	_contracts=contracts
 	return true
 

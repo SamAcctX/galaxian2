@@ -780,12 +780,18 @@ func purchase_lounge_goods(bindings: RefCounted,contact_id: int,equipment: RefCo
 	_state.credits-=int(quote.total_price);_lounges=cache
 	return inventory
 
-func inspect_contact(bindings: RefCounted,contact_id: int) -> bool:
+func begin_lounge_visit() -> bool:
+	error=""
+	if _lounges==null:return reject("The lounge is unavailable")
+	_lounges=_lounges.fork();_lounges.begin_social_visit()
+	return true
+
+func inspect_contact(bindings: RefCounted,contact_id: int,library: RefCounted=null) -> bool:
 	error=""
 	if _lounges==null or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return reject("Resolve the current flight or result before inspecting a contact")
 	var cache: RefCounted=_lounges.fork()
 	var context:={"station_id":_state.station_id,"campaign_cursor":_state.campaign_cursor,"rank":_state.rank,"reputation":_state.reputation.duplicate(true)}
-	if not cache.inspect_contact(bindings,_catalogues,context,contact_id,_station_context):return reject(cache.error)
+	if not cache.inspect_contact(bindings,_catalogues,context,contact_id,_station_context,library):return reject(cache.error)
 	_lounges=cache;_state.offers=cache.location(int(_state.station_id)).offers
 	return true
 

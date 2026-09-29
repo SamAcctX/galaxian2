@@ -5,6 +5,7 @@ signal action_requested(action: String,id: int)
 const Art=preload("res://src/presentation/original_ui.gd")
 const Portraits=preload("res://src/presentation/portrait_compositor.gd")
 const Recipe=preload("res://src/content/mission_recipe.gd")
+const Dialogue=preload("res://src/simulation/lounge_dialogue.gd")
 const MAC_LABEL_IDS={614:616,753:755,841:843,847:849,848:850,850:852,855:857,856:858,857:859}
 var error:=""
 var _art: RefCounted
@@ -209,6 +210,8 @@ func _refresh() -> void:
 				show_yes=true
 				if _confirming:_yes.text=text(133);show_no=true;_no.text=text(134)
 			else:_body.text+="\n\n"+text(192).replace("#C",money(int(service.missing_credits)))
+		elif service.get("kind")=="social":
+			_body.text=Dialogue.text(_library,_catalogues,service.dialogue,_name.text)
 		elif row.is_empty():
 			_body.text=label_text(614) if _selected<0 else "This contact's service is not yet available."
 		else:
