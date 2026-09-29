@@ -34,8 +34,10 @@ static func select(state: Dictionary, actor: Dictionary, targets: Array, random:
 		selected=-1
 		# Scan in retained membership order. Range is deliberately not retested.
 		for index in range(1,targets.size()):
-			if alive(targets[index]) and opposed(int(actor.actor_kind),int(targets[index].actor_kind),rules):
+			var enemy: bool=targets[index].get("hostile",false) if actor.get("wingman",false) else opposed(int(actor.actor_kind),int(targets[index].actor_kind),rules)
+			if alive(targets[index]) and enemy:
 				selected=index;next.fire_desired=true;break
+	if actor.get("wingman",false) and actor.get("wingman_command")==1 and not next.fire_desired:selected=-1
 	next.target_index=selected
 	next.target_selected=selected>=0
 	return next

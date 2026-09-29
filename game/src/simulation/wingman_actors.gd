@@ -1,7 +1,7 @@
 extends RefCounted
 ## Paid companions are a separate cast, not extra ambient patrol slots.
 ## Ordinary flight retains unboosted formation steering and detail selection.
-## Targeting, boosts, hit/loss accounting and command changes remain separate.
+## Command-one pursuit shares ordinary targeting; weapons and loss are separate.
 const Construction=preload("res://src/simulation/first_flight_construction.gd")
 const Contracts=preload("res://src/simulation/wingman_contract.gd")
 const Ordinary=preload("res://src/content/contract_world_definitions.gd")
@@ -13,6 +13,8 @@ const Flight=preload("res://src/simulation/npc_flight.gd")
 const Vectors=preload("res://src/simulation/source_vectors.gd")
 const Vitals=preload("res://src/simulation/combat_vitals.gd")
 const Detail=preload("res://src/presentation/ship_detail_group.gd")
+const Targeting=preload("res://src/simulation/ordinary_npc_targeting.gd")
+const Guidance=preload("res://src/content/opening_npc_guidance_definitions.gd")
 var error:=""
 var _identity:={}
 var _actors:=[]
@@ -21,6 +23,9 @@ var _follow_targets:=[]
 var _cruise_speed:=0.0
 var _detail: RefCounted
 var _detail_positions:={}
+var _selections:=[]
+var _targeting_tuning:={}
+var _targeting_rules:={}
 
 func configure(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted) -> bool:
 	error=""
@@ -30,12 +35,15 @@ func configure(bindings: RefCounted,catalogues: RefCounted,construction: RefCoun
 	var entry: Dictionary=construction.snapshot()
 	if roster.is_empty() or not (Ordinary.ordinary_entry(bindings,entry) or FreeFlight.ordinary_entry(bindings,entry)):
 		_identity={};_actors=[];_flight=[];_follow_targets=[];_cruise_speed=0.0;_detail=null;_detail_positions={}
+		_selections=[];_targeting_tuning={};_targeting_rules={}
 		return true
 	if not Contracts.valid_active(roster,bindings) or not Flight.rigid_pose(entry.player_pose):return reject("The flight lost its paid roster or player pose")
 	var speed: Variant=bindings.opening_actors.npc_initialization.get("guidance",{}).get("cruise_speed")
 	if (not speed is float and not speed is int) or not is_finite(float(speed)) or speed<=0:return reject("Wingmen require the retained ordinary fighter cruise speed")
+	var tuning: Dictionary=bindings.opening_actors.npc_initialization.guidance
+	if not Guidance.parameters(tuning):return reject("Wingmen require ordinary target-selection tuning")
 	var retained: Dictionary=career.snapshot()
-	var actors:=[];var flights:=[];var targets:=[];var ships:={};var positions:={}
+	var actors:=[];var flights:=[];var targets:=[];var ships:={};var positions:={};var selections:=[]
 	for index in roster.names.size():
 		var hull:=hull_for_pilot(bindings,roster.names[index],int(roster.faction))
 		if hull<0:return reject("The hired pilot has no eligible original fighter")
@@ -48,6 +56,9 @@ func configure(bindings: RefCounted,catalogues: RefCounted,construction: RefCoun
 		if not motion.configure(bindings,pose):return reject(motion.error)
 		actors.append(actor)
 		flights.append(motion);targets.append(follow_position(entry.player_pose,index))
+		selections.append({"target_index":int(bindings.combat_training_control.initial_target_index),"target_actor_id":-1,
+			"selection_elapsed_ms":int(bindings.opening_actors.npc_initialization.get("holding",{}).get("selection_elapsed_ms",0)),
+			"straight":false,"fire_desired":false,"target_selected":false})
 		if int(bindings.ship_lod.body_resource_ids[hull][0])!=65535:
 			ships[index]=hull;positions[index]=pose.origin
 	var detail: RefCounted
@@ -57,6 +68,9 @@ func configure(bindings: RefCounted,catalogues: RefCounted,construction: RefCoun
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
 	_actors=actors;_detail=detail;_detail_positions=positions
 	_flight=flights;_follow_targets=targets;_cruise_speed=float(speed)
+	_selections=selections;_targeting_tuning=tuning
+	_targeting_rules={"random_selection_chance":int(bindings.combat_training_control.random_selection_chance),
+		"random_selection_attempts":int(bindings.combat_training_control.random_selection_attempts)}
 	return true
 
 static func hull_for_pilot(bindings: RefCounted,pilot_name: String,faction: int) -> int:
@@ -87,6 +101,50 @@ static func follow_position(player: Transform3D,index: int) -> Vector3:
 	return Vectors.added(Vectors.added(player.origin,side),-behind)
 
 func advance_follow(milliseconds: Variant,player: Variant) -> bool:
+	return _advance_motion(milliseconds,player,[])
+
+## The flight supplies retained statistics in encounter order. A candidate owns
+## both its selection history and movement; no failed frame leaks either one.
+func advance_targeting(milliseconds: Variant,player_pose: Variant,player: Dictionary,opponents: Array,random_state: Dictionary) -> Dictionary:
+	error=""
+	if _identity.is_empty() or not Vitals.integer(milliseconds) or milliseconds<0 or milliseconds>2147483647 or not Flight.rigid_pose(player_pose):
+		reject("Wingman targeting requires an accepted duration and player frame");return {}
+	if not player.get("active") is bool or not Vitals.integer(player.get("vitals",{}).get("hull")):
+		reject("Wingman targeting lost the player's native statistics");return {}
+	var targets:=[{"actor_id":-1,"actor_kind":0,"pose":player_pose,"active":player.active,"hull":int(player.vitals.hull),"hostile":false}]
+	for row in opponents:
+		if not row is Dictionary or not row.get("actor_id") is int or not row.get("actor_kind") is int or not row.get("active") is bool or not row.get("hostile") is bool or not Vitals.integer(row.get("vitals",{}).get("hull")) or not Flight.rigid_pose(row.get("pose")):
+			reject("Wingman targeting requires native encounter statistics");return {}
+		if row.get("base_content_id")!=_identity.base_content_id or row.get("binding_id")!=_identity.binding_id:
+			reject("Wingman target statistics belong to another content identity");return {}
+		# Debris has a combat body for weapon hits, but is not a pilot opponent.
+		targets.append({"actor_id":row.actor_id,"actor_kind":row.actor_kind,"pose":row.pose,
+			"active":row.active and not row.get("contract_debris",false),"hull":int(row.vitals.hull),"hostile":row.hostile})
+	var random:=Random.new()
+	if not random.restore(random_state):reject(random.error);return {}
+	var selections:=[];var decisions:=[]
+	for index in _actors.size():
+		var prior: Dictionary=_selections[index].duplicate(true)
+		if prior.selection_elapsed_ms>Vitals.MAX_INTEGER-milliseconds:reject("Wingman target clock overflow");return {}
+		prior.selection_elapsed_ms+=milliseconds
+		var body: Dictionary=_actors[index].snapshot()
+		var selected:=Targeting.select(prior,body,targets,random,_targeting_tuning,_targeting_rules)
+		var destination:=follow_position(player_pose,index)
+		selected.target_actor_id=-1
+		if selected.target_index>0:
+			var target: Dictionary=targets[selected.target_index]
+			selected.target_actor_id=target.actor_id;destination=target.pose.origin
+		var root: Transform3D=_flight[index].snapshot().root_pose
+		var direction:=Vectors.added(destination,-root.origin)
+		var close_extent:=float(_targeting_tuning.close_half_extent)
+		if selected.target_selected and direction.abs().x<close_extent and direction.abs().y<close_extent and direction.abs().z<close_extent:direction=root.basis.z
+		decisions.append({"destination":destination,"direction":direction,"steering":not selected.target_selected or not selected.straight})
+		selections.append(selected)
+	if not _advance_motion(milliseconds,player_pose,decisions):return {}
+	_selections=selections
+	return {"random_state":random.snapshot()}
+
+func _advance_motion(milliseconds: Variant,player: Variant,decisions: Array) -> bool:
 	error=""
 	if _identity.is_empty() or not Vitals.integer(milliseconds) or milliseconds<0 or milliseconds>2147483647 or not Flight.rigid_pose(player):return reject("Following requires an accepted duration and finite player frame")
 	# Fork each writer into this candidate. An invalid later pilot must not
@@ -97,11 +155,12 @@ func advance_follow(milliseconds: Variant,player: Variant) -> bool:
 		var motion: RefCounted=_flight[index].fork_for_frame()
 		var body: Dictionary=actor.snapshot()
 		if body.wingman_command!=1:return reject("This wingman owner only admits the retained follow command")
-		var destination:=follow_position(player,index)
+		var destination: Vector3=follow_position(player,index) if decisions.is_empty() else decisions[index].destination
 		var root: Transform3D=motion.snapshot().root_pose
-		var direction:=Vectors.added(destination,-root.origin)
+		var direction: Vector3=Vectors.added(destination,-root.origin) if decisions.is_empty() else decisions[index].direction
 		var moving: bool=body.active and body.vitals.hull>0
-		var moved: Dictionary=motion.advance(milliseconds,direction,_cruise_speed,moving,moving)
+		var steering: bool=moving and (decisions.is_empty() or decisions[index].steering)
+		var moved: Dictionary=motion.advance(milliseconds,direction,_cruise_speed,steering,moving)
 		if moved.is_empty():return reject(motion.error)
 		if not actor.set_pose(moved.pose):return reject(actor.error)
 		actors.append(actor);flights.append(motion);targets.append(destination)
@@ -118,6 +177,9 @@ func snapshot() -> Dictionary:
 		if not state.detail.has(actor.actor_id):state.detail[actor.actor_id]={"visible":true,"level":0}
 	state.interactions_connected=false
 	state.following_connected=true
+	state.targeting_connected=true
+	state.weapons_connected=false
+	state.targeting={"selections":_selections.duplicate(true)}
 	state.following={"cruise_speed":_cruise_speed,"targets":_follow_targets.duplicate(),"motion":_flight.map(func(motion):return motion.snapshot())}
 	return state
 
@@ -128,6 +190,7 @@ func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._identity=_identity;copy._actors=_actors;copy._detail_positions=_detail_positions
 	copy._flight=_flight;copy._follow_targets=_follow_targets;copy._cruise_speed=_cruise_speed
+	copy._selections=_selections;copy._targeting_tuning=_targeting_tuning;copy._targeting_rules=_targeting_rules
 	copy._detail=null if _detail==null else _detail.fork_for_frame()
 	# Shared bodies and flight state stay immutable until advance_follow stages
 	# detached writers. Public observations/body owners are detached as well.
