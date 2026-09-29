@@ -374,10 +374,10 @@ func fire(combat: RefCounted, requested_actor_ids: Array) -> Dictionary:
 	if _selected40_world!=null:return fail("Selected40 firing requires its live target owner")
 	return _fire(combat,requested_actor_ids,{})
 
-func fire_combat_training(combat: RefCounted, requests: Array) -> Dictionary:
+func fire_combat_training(combat: RefCounted, requests: Array,wingmen: RefCounted=null) -> Dictionary:
 	if _selected41_world!=null:return fail("Source41 firing requires its retained native target owner")
 	if _selected40_world!=null:return fail("Selected40 firing requires its live target owner")
-	return _fire_requests(combat,requests)
+	return _fire_requests(combat,requests,wingmen)
 
 func _restart_selected41_attack(sequence: RefCounted) -> bool:
 	error=""
@@ -426,15 +426,24 @@ func fire_selected40(combat: RefCounted,player: RefCounted,requests: Array) -> D
 		elif not actors[target].active or actors[target].vitals.hull<=0 or actors[target].statistics_targeting_blocked:return fail("Selected40 gun cannot target inactive, destroyed or blocked statistics")
 	return _fire_requests(combat,requests)
 
-func _fire_requests(combat: RefCounted, requests: Array) -> Dictionary:
+func _fire_requests(combat: RefCounted, requests: Array,wingmen: RefCounted=null) -> Dictionary:
 	error=""
 	if _training.is_empty():return fail("This weapon owner has no combat-training firing requests")
+	if wingmen!=null:
+		if not is_instance_of(wingmen,load("res://src/simulation/wingman_actors.gd")):return fail("NPC firing requires a native paid-cast owner")
+		if not wingmen.matches_target_context(_identity):return fail(wingmen.error)
 	var ids:=[];var poses:={}
 	for request in requests:
-		if not request is Dictionary or request.size()!=3 or not request.get("actor_id") is int or not request.get("target_actor_id") is int:return fail("Invalid combat-training firing request")
+		if not request is Dictionary or request.size()!=(4 if request.has("wingman_index") else 3) or not request.get("actor_id") is int or not request.get("target_actor_id") is int:return fail("Invalid combat-training firing request")
 		var id: int=request.actor_id
 		if id<0 or id>=_guns.size() or poses.has(id) or not request.get("pose") is Transform3D or not request.pose.is_finite():return fail("Invalid combat-training firing pose")
-		if not request.target_actor_id in _training.target_memberships[id]:return fail("Combat-training request names a target outside its membership")
+		if request.has("wingman_index"):
+			if wingmen==null or request.target_actor_id!=-1 or not request.wingman_index is int:return fail("Invalid separate companion firing target")
+			var member:={"group":"wingman","index":request.wingman_index}
+			if member not in companion_target_order(id,wingmen):return fail("NPC firing names an excluded companion")
+			var target: Dictionary=wingmen.body_owner(request.wingman_index).snapshot()
+			if not target.active or target.vitals.hull<=0 or target.statistics_targeting_blocked:return fail("NPC firing cannot target a dead or blocked companion")
+		elif not request.target_actor_id in _training.target_memberships[id]:return fail("Combat-training request names a target outside its membership")
 		ids.append(id);poses[id]=request.pose
 	return _fire(combat,ids,poses)
 
@@ -560,13 +569,7 @@ func companion_target_order(actor_id: int,crew: RefCounted) -> Array:
 	error=""
 	if not is_instance_of(crew,load("res://src/simulation/wingman_actors.gd")) or actor_id<0 or actor_id>=_guns.size() or not _training.has("target_memberships"):
 		reject("Companion target order requires its native cast and shooter");return []
-	var targets: Array=_training.target_memberships[actor_id].duplicate()
-	if actor_id in _training.get("companion_player_only_ids",[]):return targets
-	var insertion: int=targets.find(-1) if actor_id in _training.get("companion_player_last_ids",[]) else targets.size()
-	if insertion<0:insertion=targets.size()
-	for index in crew.contact_memberships(int(_definitions[actor_id].actor_kind)):
-		targets.insert(insertion,{"group":"wingman","index":index});insertion+=1
-	return targets
+	return crew.mixed_target_memberships(_training.target_memberships[actor_id],actor_id,int(_definitions[actor_id].actor_kind),_training)
 
 func evaluate_selected41_update(player: RefCounted,pose: Variant,combat: RefCounted,delta_ms: Variant) -> Dictionary:
 	error=""

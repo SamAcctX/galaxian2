@@ -1434,7 +1434,7 @@ func _advance_world(milliseconds: int, preceding_reference: Vector3) -> bool:
 			if not _objective.record_wingman_loss(casualty):return reject(_objective.error)
 	if _encounter!=null:
 		var before: Dictionary={} if _particles==null else _encounter.combat_snapshot()
-		var actors: Dictionary=_encounter.evaluate_world(_player,_pose,milliseconds,_random)
+		var actors: Dictionary=_encounter.evaluate_world(_player,_pose,milliseconds,_random,_wingmen)
 		if actors.is_empty():return reject(_encounter.error)
 		if _particles!=null:
 			if not _particles.finish_npc_pass(before,actors.encounter.combat_snapshot(),actors.encounter.actor_events(),milliseconds,1.0):return reject(_particles.error)

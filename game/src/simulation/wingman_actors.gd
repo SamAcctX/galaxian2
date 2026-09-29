@@ -417,6 +417,23 @@ func contact_memberships(shooter_kind: int) -> Array:
 		if _actors[index].snapshot().actor_kind!=shooter_kind:result.append(index)
 	return result
 
+## Aim and projectile contact lists share paid membership, not mission IDs.
+## Keep dead slots in place: eligibility changes, but selected indices do not.
+func mixed_target_memberships(original: Array,shooter_id: int,shooter_kind: int,rules: Dictionary) -> Array:
+	var targets: Array=original.duplicate()
+	if shooter_id in rules.get("companion_player_only_ids",[]):return targets
+	var insertion: int=targets.find(-1) if shooter_id in rules.get("companion_player_last_ids",[]) else targets.size()
+	if insertion<0:insertion=targets.size()
+	for index in contact_memberships(shooter_kind):
+		targets.insert(insertion,{"group":"wingman","index":index});insertion+=1
+	return targets
+
+func matches_target_context(identity: Dictionary) -> bool:
+	error=""
+	for key in _identity:
+		if identity.get(key)!=_identity[key]:return reject("Companion targets belong to another content identity")
+	return true if not _identity.is_empty() and identity.get("campaign_cursor")==_campaign_cursor else reject("Companion targets belong to another departure context")
+
 func supports_weapon_hit(weapon: Variant) -> bool:
 	error=""
 	return true if weapon is Dictionary and _incoming_declarations.has(weapon) else reject("Companion damage lacks its retained enemy weapon declaration")

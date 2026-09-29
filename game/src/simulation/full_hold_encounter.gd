@@ -970,12 +970,15 @@ func evaluate_wingman_contacts(weapons: RefCounted,milliseconds: int,systems: Re
 	if result.has("systems_weapons"):frame.systems_weapons=result.systems_weapons;frame.systems_actors=result.systems_actors
 	return frame
 
-func evaluate_world(player: RefCounted, pose: Transform3D, milliseconds: int, random_state: Dictionary) -> Dictionary:
+func evaluate_world(player: RefCounted, pose: Transform3D, milliseconds: int, random_state: Dictionary,wingmen: RefCounted=null) -> Dictionary:
 	error=""
 	if _selected40_sequence!=null and (not _selected40_pending_world or _selected40_sequence.snapshot().elapsed_ms!=_world_elapsed_ms+milliseconds):return fail("Selected40 actor frame requires its ordered radio and choreography frame")
 	var input:=target(player,pose)
 	if _control==null or not Numbers.integer(milliseconds,0,_max_ms) or input.is_empty():return fail("Invalid encounter NPC frame")
-	var operation: Dictionary=_control.evaluate(_combat,_weapons,milliseconds,input,random_state,player) if _selected40_world!=null else _control.evaluate(_combat,_weapons,milliseconds,input,random_state)
+	var operation: Dictionary
+	if wingmen!=null:operation=_control.evaluate(_combat,_weapons,milliseconds,input,random_state,null,wingmen)
+	elif _selected40_world!=null:operation=_control.evaluate(_combat,_weapons,milliseconds,input,random_state,player)
+	else:operation=_control.evaluate(_combat,_weapons,milliseconds,input,random_state)
 	if operation.is_empty():return fail(_control.error)
 	var next:=fork_for_frame()
 	next._control=operation.controller;next._combat=operation.combat;next._weapons=operation.weapons

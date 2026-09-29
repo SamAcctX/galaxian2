@@ -193,6 +193,7 @@ func _configure_wingman(bindings: RefCounted,catalogues: RefCounted,initial: Dic
 	_state.merge({"name":initial.name,"wingman":true,"wingman_index":initial.actor_id,"wingman_command":1,"wingman_target_actor_id":-1,
 		"campaign_cursor":cursor,"rank":rank,"subtype":0,"population_group":"wingman",
 		"friendly":true,"permanent_friendly":true,"active":true,"actor_mode":0,
+		"statistics_targeting_blocked":bool(rules.npc_statistics_targeting_blocked),
 		"model_draw_enabled":bool(rules.initial_model_draw_enabled),"node_draw_requested":bool(rules.initial_node_draw_requested),
 		"engine_draw_enabled":bool(rules.initial_engine_draw_enabled)},true)
 	return set_pose(initial.pose)
