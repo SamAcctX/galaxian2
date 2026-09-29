@@ -446,7 +446,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	elif sahi_world and entry.campaign_cursor==26:return_rules=OrdinaryFlight.docking(bindings,26)
 	if entry.campaign_cursor==4 and not bindings.full_hold_return.is_empty() and (return_rules.is_empty() or autopilot==null or objective==null):return reject("This departure has incomplete second station return support")
 	var wingmen:=Wingmen.new()
-	if not wingmen.configure(bindings,catalogues,construction):return reject(wingmen.error)
+	if not wingmen.configure(bindings,catalogues,construction,library):return reject(wingmen.error)
 	# Every mutable owner is detached from the station and construction. Failed
 	# preparation cannot replace the current good flight.
 	_entry=entry;_pose=entry.player_pose;_shot=shot;_random=entry.random_state.duplicate(true)
@@ -720,6 +720,10 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		next._encounter=weapon_pass.encounter;next._player=weapon_pass.player
 		if weapon_pass.has("scenery"):next._scenery=weapon_pass.scenery
 		if weapon_pass.has("random_state"):next._random=weapon_pass.random_state
+	if next._wingmen!=null:
+		var companion_pass: Dictionary=next._wingmen.advance_weapons(delta_ms,next._encounter)
+		if companion_pass.is_empty():reject(next._wingmen.error);return null
+		next._encounter=companion_pass.encounter
 	if not next._engine_audio.follow_player(next._statistics_pose,int(next._player.snapshot().vitals.hull),delta_ms):reject(next._engine_audio.error);return null
 	if next._player.snapshot().vitals.hull<=0 and next._death==null:
 		if not next._booster.cancel():reject(next._booster.error);return null

@@ -959,6 +959,14 @@ func evaluate_cue(player: RefCounted, pose: Transform3D, cursor: int) -> RefCoun
 	var next:=fork_for_frame();next._control=operation.controller;next._combat=operation.combat
 	return next
 
+func evaluate_wingman_contacts(weapons: RefCounted,milliseconds: int) -> Dictionary:
+	if not is_instance_of(weapons,load("res://src/simulation/opening_npc_weapons.gd")) or not Numbers.integer(milliseconds,0,_max_ms):return fail("Invalid retained companion contact pass")
+	var result: Dictionary=weapons.evaluate_wingman_contacts(_combat,milliseconds)
+	if result.is_empty():return fail(weapons.error)
+	var next:=fork_for_frame()
+	next._combat=result.combat
+	return {"encounter":next,"weapons":result.weapons,"actors":result.actors}
+
 func evaluate_world(player: RefCounted, pose: Transform3D, milliseconds: int, random_state: Dictionary) -> Dictionary:
 	error=""
 	if _selected40_sequence!=null and (not _selected40_pending_world or _selected40_sequence.snapshot().elapsed_ms!=_world_elapsed_ms+milliseconds):return fail("Selected40 actor frame requires its ordered radio and choreography frame")

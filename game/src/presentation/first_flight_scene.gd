@@ -30,6 +30,7 @@ const NoticePanel=preload("res://src/presentation/flight_notice_panel.gd")
 const EncounterGeometry=preload("res://src/presentation/full_hold_encounter_geometry.gd")
 const WingmanGeometry=preload("res://src/presentation/wingman_geometry.gd")
 var wingmen: Node3D
+var _last_crew: RefCounted
 const TractorGeometry=preload("res://src/presentation/tractor_geometry.gd")
 const DeathEffect=preload("res://src/presentation/npc_death_effect_geometry.gd")
 const GameOver=preload("res://src/presentation/game_over_panel.gd")
@@ -239,9 +240,10 @@ func present(flight: RefCounted, advance_sun:=false, absolute_milliseconds: Vari
 	var prior: float=0.0 if sun==null else sun.frame.get("next_intensity" if advance_sun else "previous_intensity",0.0)
 	var recovery: RefCounted=flight.tractor_owner()
 	var scenery_world: RefCounted=flight.scenery_presentation_owner()
-	if not _apply(state,prior,drill,pirates,death,absolute_milliseconds,particles,gate_animation,engines,recovery,scenery_world):
+	var crew: RefCounted=flight.wingman_owner()
+	if not _apply(state,prior,drill,pirates,death,absolute_milliseconds,particles,gate_animation,engines,recovery,scenery_world,crew):
 		var reason:=error
-		if not _last.is_empty() and not _apply(_last,0.0 if sun==null else sun.frame.get("previous_intensity",0.0),_last_drill,_last_encounter,_last_death,_last_absolute_ms,_last_particles,_last_gate_animation,_last_engines,_last_tractor,_last_scenery):reason+="; previous scene: "+error
+		if not _last.is_empty() and not _apply(_last,0.0 if sun==null else sun.frame.get("previous_intensity",0.0),_last_drill,_last_encounter,_last_death,_last_absolute_ms,_last_particles,_last_gate_animation,_last_engines,_last_tractor,_last_scenery,_last_crew):reason+="; previous scene: "+error
 		return reject(reason)
 	_last=state
 	_last_drill=drill
@@ -251,10 +253,11 @@ func present(flight: RefCounted, advance_sun:=false, absolute_milliseconds: Vari
 	_last_engines=engines
 	_last_tractor=recovery
 	_last_scenery=scenery_world
+	_last_crew=crew
 	_last_gate_animation=gate_animation
 	return true
 
-func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirates: RefCounted, death: RefCounted, absolute_milliseconds: int, particles: RefCounted,gate_animation: RefCounted=null,engines: RefCounted=null,recovery: RefCounted=null,scenery_world: RefCounted=null) -> bool:
+func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirates: RefCounted, death: RefCounted, absolute_milliseconds: int, particles: RefCounted,gate_animation: RefCounted=null,engines: RefCounted=null,recovery: RefCounted=null,scenery_world: RefCounted=null,crew: RefCounted=null) -> bool:
 	if (encounter!=null)!=(pirates!=null):return reject("Pirate presentation support changed within this flight")
 	if (player_destruction!=null)!=(death!=null):return reject("Player destruction support changed within this flight")
 	if (damage_particles!=null)!=(particles!=null):return reject("Damage particle support changed within this flight")
@@ -318,7 +321,7 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	var wingman_frame:={}
 	if (wingmen!=null)!=state.has("wingman_actors"):return reject("Wingman presentation support changed within its flight")
 	if wingmen!=null:
-		wingman_frame=wingmen.prepare(state.wingman_actors)
+		wingman_frame=wingmen.prepare(state.wingman_actors,crew,state.camera_view.pose)
 		if wingman_frame.is_empty():return reject(wingmen.error)
 	if encounter!=null:
 		# Both come from the same flight owner; checking costs a full rebuild.
@@ -462,6 +465,7 @@ func clear() -> void:
 	station=null;gates=null;void_environment=null;lighting=null;reflection=null
 	encounter=null;_last_encounter=null
 	wingmen=null
+	_last_crew=null
 	tractor=null;_last_tractor=null
 	_last_scenery=null
 	player_destruction=null;game_over=null;_last_death=null;_last_absolute_ms=0

@@ -46,6 +46,7 @@ const EMPTY_RECOVERY={"accepted_quantity":0,"kind9_quantity":0,"friendly_cargo_t
 var _recovery_totals:={}
 var _selected40_world: RefCounted
 var _selected41_world: RefCounted
+var _wingman_primaries:=[]
 
 func clear() -> void:
 	error = ""
@@ -65,6 +66,7 @@ func clear() -> void:
 	_contract_settlement={}
 	_recovery_totals={}
 	_selected40_world=null;_selected41_world=null
+	_wingman_primaries=[]
 
 ## Retain the actual field -> cast -> weapon initialization. This group enables
 ## native targeting and firing, but cannot silently apply incomplete encounter
@@ -828,12 +830,28 @@ func shooter_states() -> Array:
 		result.append({"present":true,"hostile":state.hostile})
 	return result
 
+## Register only declarations resolved by the retained native companion pool.
+## This extends the source weapon population, not the permitted damage policy.
+func bind_wingman_primaries(owner: RefCounted) -> bool:
+	if not is_instance_of(owner,load("res://src/simulation/opening_npc_weapons.gd")):return reject("Companion damage requires its native weapon owner")
+	var declarations: Array=owner.wingman_primary_declarations()
+	if declarations.is_empty() or declarations.size()>3:return reject("Companion primary declaration is absent")
+	for weapon in declarations:
+		for key in _identity:
+			if weapon.get(key)!=_identity[key]:return reject("Companion weapons belong to another combat world")
+		if weapon.get("nonplayer_source")!=true or weapon.get("ordinary_hit_policy",{}).get("additional_damage_required")!=false:return reject("Companion primary changed its ordinary damage policy")
+	if not _wingman_primaries.is_empty() and _wingman_primaries!=declarations:return reject("Companion weapon declarations changed during combat")
+	_wingman_primaries=declarations.duplicate(true)
+	return true
+
 func supports_weapon_hit(weapon: Variant) -> bool:
 	if _selected40_world!=null and not has_local_reactions():return reject("Selected40 weapon contacts require complete consequence owners")
 	var fitted: bool=weapon is Dictionary and preload("res://src/content/ordinary_fitting_definitions.gd").ordinary(weapon)
 	var secondary: bool=weapon is Dictionary and preload("res://src/content/conventional_secondary_definitions.gd").resolved(weapon)
 	var kinds: Array=[int(weapon.kind)] if fitted or secondary else [0]
-	if not _training_weapons.is_empty() and weapon is Dictionary:
+	if weapon is Dictionary and _wingman_primaries.has(weapon):
+		kinds=[0,1]
+	elif not _training_weapons.is_empty() and weapon is Dictionary:
 		if weapon.get("nonplayer_source",false)==true:
 			var valid: bool=Story.npc_hit(_training_weapons,weapon) if _training_weapons.get("authored_story",false) else Kappa.npc_hit(_training_weapons,weapon) if _training_weapons.has("kappa_lifecycle") else FreeLife.npc_hit(_training_weapons,weapon) if _training_weapons.has("free_lifecycle") else Alioth.npc_hit(_training_weapons,weapon) if _training_weapons.has("alioth_lifecycle") else Convoy.npc_hit(_training_weapons,weapon) if _training_weapons.has("capital_death") else (BakkaCombat.npc_hit(_training_weapons,weapon) if not _bakka_encounter.is_empty() else (ContractLife.npc_hit(_training_weapons,weapon) if not _contract_encounter.is_empty() else (Travel.npc_hit(_training_weapons,weapon) if _provocation!=null else TrainingWeapons.npc_hit(_training_weapons,weapon))))
 			if not valid:return reject("NPC damage differs from this encounter's weapon declaration")
@@ -895,6 +913,7 @@ func fork_for_frame() -> RefCounted:
 	copy._activation = _activation
 	copy._hit_policy = _hit_policy
 	copy._training_weapons = _training_weapons
+	copy._wingman_primaries=_wingman_primaries
 	copy._activated = _activated
 	copy._phase = _phase
 	copy._event_count = _event_count

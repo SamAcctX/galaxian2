@@ -451,6 +451,9 @@ func prepare_full_hold(world: RefCounted, state: Dictionary={}) -> Dictionary:
 		if not travel.operations.is_empty() and (travel.operations.size()!=1 or travel.operations[0].source_id!=_travel_sounds[1]):return fail("A manual travel action emitted a flight acquisition cue")
 	var commands: Array[Dictionary]=[]
 	if not repeated:
+		var companion:=prepare_wingman_primaries(world.wingman_owner(),state.get("wingman_actors",{}))
+		if companion.is_empty():return {}
+		commands.append_array(companion.operations)
 		for phase in ["player_tail","player_poll"]:
 			var prepared:=prepare_player_death(cues.get(phase),phase)
 			if prepared.is_empty():return {}
@@ -1037,6 +1040,25 @@ func prepare_primaries(world: Dictionary) -> Dictionary:
 		if cues.is_empty():return {}
 		for op in cues.operations:
 			op.mount_id=event.mount_id;op.item_id=int(item);operations.append(op)
+	return {"operations":operations}
+
+func prepare_wingman_primaries(owner: RefCounted,state: Dictionary) -> Dictionary:
+	if owner==null:return {"operations":[]} if state.is_empty() else fail("Companion sound lost its native actor owner")
+	if not is_instance_of(owner,load("res://src/simulation/wingman_actors.gd")) or owner.snapshot()!=state:return fail("Companion sound differs from the accepted flight frame")
+	for key in _content_identity:
+		if state.get(key)!=_content_identity[key]:return fail("Companion sound belongs to another source")
+	var guns: Array=state.weapon_world.weapons.actors
+	var events: Array=state.primary_firing.actors
+	var operations: Array[Dictionary]=[];var seen:={}
+	for event in events:
+		var id: Variant=event.get("actor_id")
+		if not Definitions.integer(id,0,guns.size()-1) or seen.has(id):return fail("Companion sound names a missing or repeated primary")
+		seen[id]=true
+		var entry: Dictionary=load("res://src/simulation/weapon_audio.gd").npc_entry(_weapon_audio,int(guns[id].definition.actor_kind))
+		if entry.is_empty() or entry!=guns[id].audio:return fail("Companion primary sound differs from its original faction")
+		var frame:=prepare_weapon_cues(event.get("audio_events"),event.get("outcome",{}).get("fired"),entry)
+		if frame.is_empty():return {}
+		for operation in frame.operations:operation.wingman_index=id;operations.append(operation)
 	return {"operations":operations}
 
 func prepare_npc_weapon(event: Dictionary, actor_id: int) -> Dictionary:
