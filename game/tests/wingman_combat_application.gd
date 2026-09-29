@@ -29,10 +29,20 @@ func verify_free_application() -> void:
 	if failures:return
 	combat_metrics.paused_order_refused=true
 	var pilot:=PiratePilot.new()
+	# Exercise the failure path through real guns, not detached fixture damage.
+	# Protection's earlier targets keep their native order and health. The pilot
+	# must physically reach and destroy them before expecting paid targets.
+	var earlier_targets: Array=before.encounter.combat.actors.filter(func(actor):return not actor.hostile and actor.actor_kind==before.wingman_actors.actors[0].actor_kind).map(func(actor):return int(actor.actor_id))
+	combat_metrics.strategy="input-only-protection-failure"
+	combat_metrics.earlier_targets=earlier_targets
+	combat_metrics.observations=[]
+	var budget_ms:=mini(150000,int(before.contracts.wingmen.active.remaining_ms)-90000)
+	check(budget_ms>0 and not earlier_targets.is_empty(),"The earned Protection career lacks time or its earlier targets")
+	if failures:return
 	var started:=now_us;var next_yield:=now_us;var next_log:=now_us;var loss_at:=-1
 	var minimum_hull: Array=before.wingman_actors.actors.map(func(actor):return int(actor.vitals.hull))
 	var captured_fight:=false
-	while now_us-started<220000000:
+	while now_us-started<budget_ms*1000:
 		var state: Dictionary=app.session.snapshot()
 		if app.session.flight_owner().death_active():
 			await capture_free_application("wingman-combat-player-loss")
@@ -63,16 +73,27 @@ func verify_free_application() -> void:
 				await capture_free_application("wingman-combat-earned-loss")
 			if now_us-loss_at>=12000000:break
 		var hostiles: Array=state.encounter.combat.actors.filter(func(actor):return actor.active and actor.vitals.hull>0 and actor.hostile).map(func(actor):return int(actor.actor_id))
+		var earlier_alive: Array=earlier_targets.filter(func(id):return state.encounter.combat.actors[id].active and state.encounter.combat.actors[id].vitals.hull>0)
 		var input: Dictionary
-		if not hostiles.is_empty():
+		if not earlier_alive.is_empty():
+			input=pilot.controls_at_time(state,float(state.world_elapsed_ms),earlier_alive,true)
+			input.throttle=1.0 if input.distance>6000.0 else 0.0
+			input.strafe=0.0
+		elif not hostiles.is_empty():
 			input=pilot.controls_at_time(state,float(state.world_elapsed_ms),hostiles,false)
-			input.throttle=1.0 if input.distance>18000.0 else 0.0
-			input.fire=input.fire and now_us-started<15000000
+			input.throttle=1.0 if input.distance>8000.0 else 0.0
+			input.fire=false
 			input.strafe=1.0 if input.distance<40000.0 else 0.0
 		else:
 			input={"commands":PiratePilot.Steering.steering_toward(state.player_pose,state.player_pose.origin+state.player_pose.basis.z*10000.0),"throttle":0.0,"fire":false,"strafe":0.0}
 		if not pirate_step(input):return
 		if now_us>=next_log:
+			var observation:={"elapsed_ms":int((now_us-started)/1000),"player_position":state.player_pose.origin,"input_target":input.get("target",-1),"input_distance":input.get("distance",0.0),
+				"actors":state.encounter.combat.actors.map(func(actor):return {"id":actor.actor_id,"kind":actor.actor_kind,"hostile":actor.hostile,"hull":actor.vitals.hull,"position":actor.position}),
+				"targets":state.encounter.actor_events.map(func(event):return {"id":event.get("actor_id",-1),"kind":event.get("decision",{}).get("target_kind",""),"target":event.get("decision",{}).get("target_actor_id",-1),"paid_slot":event.get("decision",{}).get("target_wingman_index",-1)}),
+				"crew":state.wingman_actors.actors.map(func(actor):return {"name":actor.name,"hull":actor.vitals.hull,"position":actor.pose.origin})}
+			combat_metrics.observations.append(observation)
+			print("Earned target observation: ",observation)
 			print("Earned crew combat: ",{"elapsed_ms":int((now_us-started)/1000),"minimum_hull":minimum_hull,"lost":combat_metrics.lost,"incoming":combat_metrics.incoming_contacts,"enemy_aim":combat_metrics.enemy_aim_frames,"crew_shots":combat_metrics.crew_shots,"player":state.player.vitals})
 			next_log=now_us+20000000
 		if now_us>=next_yield:
@@ -80,6 +101,7 @@ func verify_free_application() -> void:
 			if not captured_fight and now_us-started>=15000000:
 				await capture_free_application("wingman-combat-live-fight");captured_fight=true
 	combat_metrics.minimum_hull=minimum_hull;combat_metrics.elapsed_ms=int((now_us-started)/1000)
+	await capture_free_application("wingman-combat-bounded-outcome")
 	print("Earned combat observation: ",combat_metrics)
 	check(not combat_metrics.lost.is_empty() and combat_metrics.enemy_aim_frames>0 and combat_metrics.incoming_contacts>0 and combat_metrics.crew_shots>0,"The bounded earned fight did not produce a reciprocal companion combat loss")
 	if failures:return
