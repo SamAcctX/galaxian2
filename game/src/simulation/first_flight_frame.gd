@@ -34,6 +34,8 @@ const Mining=preload("res://src/simulation/mining_session.gd")
 const Notices=preload("res://src/simulation/flight_notices.gd")
 const Objective=preload("res://src/simulation/mining_objective.gd")
 const ContractObjective=preload("res://src/simulation/contract_flight_objective.gd")
+const Wingmen=preload("res://src/simulation/wingman_actors.gd")
+var _wingmen: RefCounted
 const ContractWorld=preload("res://src/content/contract_world_definitions.gd")
 const FreeFlight=preload("res://src/content/free_flight_definitions.gd")
 const DeathResources=preload("res://src/content/npc_destruction_resources.gd")
@@ -443,6 +445,8 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	elif free_world:return_rules=FreeFlight.docking(bindings,int(entry.location.station_id),entry.campaign_cursor)
 	elif sahi_world and entry.campaign_cursor==26:return_rules=OrdinaryFlight.docking(bindings,26)
 	if entry.campaign_cursor==4 and not bindings.full_hold_return.is_empty() and (return_rules.is_empty() or autopilot==null or objective==null):return reject("This departure has incomplete second station return support")
+	var wingmen:=Wingmen.new()
+	if not wingmen.configure(bindings,catalogues,construction):return reject(wingmen.error)
 	# Every mutable owner is detached from the station and construction. Failed
 	# preparation cannot replace the current good flight.
 	_entry=entry;_pose=entry.player_pose;_shot=shot;_random=entry.random_state.duplicate(true)
@@ -452,6 +456,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_aim=aim;_targeting=targeting;_viewport=viewport_size
 	_approach=approach;_model_basis=Basis.IDENTITY;_throttle=1.0
 	_mining=mining;_notices=notices;_objective=objective
+	_wingmen=null if wingmen.snapshot().is_empty() else wingmen
 	_station=station;_station_targeting=station_targeting
 	_autopilot=autopilot;_preceding_commands=Vector2.ZERO
 	_return_rules=return_rules;_departure_station=null
@@ -734,6 +739,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 			if actor.get("population_group")=="debris":continue
 			positions[actor.actor_id]=actor.get("body_pose",actor.pose).origin
 	if not next._detail.update(delta_ms,positions,_reference,1.0,false):reject(next._detail.error);return null
+	if next._wingmen!=null and not next._wingmen.advance_detail(delta_ms,_reference):reject(next._wingmen.error);return null
 	if next._death!=null and next._player.snapshot().vitals.hull<=0 and not next.death_active():
 		var secondaries: RefCounted=next._encounter.secondary_owner() if next._encounter!=null else null
 		if not next._death.start(next._player,next._pose,Vector3.ZERO,next._camera.snapshot().pose,int(next._objective.snapshot().campaign_cursor),next._model_basis,next._statistics_pose,secondaries):reject(next._death.error);return null
@@ -1925,6 +1931,7 @@ func mission_context_owner() -> RefCounted:return _mission_context
 func mission_station_return_required() -> bool:return not _mission_station_return.is_empty()
 func mission_station_return_identity() -> RefCounted:return _mission_station_identity
 func encounter_owner() -> RefCounted:return null if _encounter==null else _encounter.fork_for_frame()
+func wingman_owner() -> RefCounted:return null if _wingmen==null else _wingmen.fork_for_frame()
 func tractor_owner() -> RefCounted:return null if _tractor==null else _tractor.fork_for_frame()
 func destruction_owner() -> RefCounted:return null if _death==null else _death.fork_for_frame()
 func damage_particle_owner() -> RefCounted:return null if _particles==null else _particles.fork_for_frame()
@@ -2096,6 +2103,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	state.cargo_used=held.used
 	state.booster=booster_state();state.cloak=cloak_state();state.turret=turret_state();state.khador=drive_state()
 	state.player_engine=_engine_audio.snapshot()
+	if _wingmen!=null:state.wingman_actors=_wingmen.snapshot()
 	state.merge({"world_type":_entry.world_type,"location":_entry.location.duplicate(true),"activated":true,
 		"player_pose":_pose,"control_throttle":_throttle,"player":_player.snapshot(),"player_cache":_player.cache_snapshot(),"angular_units":_pilot.angular_units,
 		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),
@@ -2247,6 +2255,7 @@ func fork_for_frame() -> RefCounted:
 	copy._music=_music;copy._music_context=_music_context;copy._music_faction=_music_faction;copy._flight_music=_flight_music.duplicate(true)
 	if _notices!=null:copy._notices=_notices.fork_for_frame()
 	if _objective!=null:copy._objective=_objective.fork_for_frame()
+	if _wingmen!=null:copy._wingmen=_wingmen.fork_for_frame()
 	if _station!=null:copy._station=_station.fork_for_frame()
 	if _station_targeting!=null:copy._station_targeting=_station_targeting.fork_for_frame()
 	if _autopilot!=null:copy._autopilot=_autopilot.fork_for_frame()
@@ -2293,6 +2302,7 @@ func clear() -> void:
 	_aim=null;_targeting=null;_viewport=Vector2i(1280,720)
 	_approach=null;_model_basis=Basis.IDENTITY;_throttle=1.0
 	_mining=null;_mining_audio={};_notices=null;_objective=null
+	_wingmen=null
 	_physical_contacts=null
 	_music=null;_music_context={};_music_faction=-1;_flight_music={}
 	_station=null

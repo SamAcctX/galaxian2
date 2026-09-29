@@ -177,6 +177,25 @@ func configure_local_patrol(bindings: RefCounted, catalogues: RefCounted, world:
 		"node_draw_requested":bool(data.initial_node_draw_requested),"engine_draw_enabled":bool(data.initial_engine_draw_enabled)},true)
 	return set_pose(row.statistics_pose,row.body_pose)
 
+## Internal factory primitive. The retained wingman owner admits the paid cast.
+func _configure_wingman(bindings: RefCounted,catalogues: RefCounted,initial: Dictionary,rank: int,cursor: int,difficulty: float) -> bool:
+	clear()
+	if bindings==null or catalogues==null or catalogues.content_id!=bindings.base_content_id or not Flight.rigid_pose(initial.get("pose")):return reject("Wingman bodies require their original content and spawn pose")
+	var model: String=bindings.resolve_ship_model(initial.hull_catalogue_id)
+	if model.is_empty():return reject(bindings.error)
+	var rules: Dictionary=bindings.combat_training_control
+	var base:=int(rules.rank_base)+int(rules.rank_multiplier)*rank+int(rules.cursor_multiplier)*cursor
+	var factory_hull:=scaled_hull(float(base),difficulty,float(rules.difficulty_offset))
+	var actor:=initial.duplicate(true)
+	actor.hull_resource=model;actor.current_hull=600
+	if not _initialize_body(bindings,bindings.opening_actors.npc_initialization,actor,difficulty,factory_hull,float(rules.percentage_scale),{"initial_hostile":false,"updated_hostile":false}):return false
+	_state.merge({"name":initial.name,"wingman":true,"wingman_index":initial.actor_id,"wingman_command":1,
+		"campaign_cursor":cursor,"rank":rank,"subtype":0,"population_group":"wingman",
+		"friendly":true,"permanent_friendly":true,"active":true,
+		"model_draw_enabled":bool(rules.initial_model_draw_enabled),"node_draw_requested":bool(rules.initial_node_draw_requested),
+		"engine_draw_enabled":bool(rules.initial_engine_draw_enabled)},true)
+	return set_pose(initial.pose)
+
 func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant,rank: Variant,difficulty: Variant) -> bool:
 	clear()
 	if not construction is NPCConstruction or catalogues==null:return reject("Ambient combat requires its generated population")

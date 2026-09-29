@@ -28,6 +28,8 @@ const TargetProjection=preload("res://src/presentation/target_projection.gd")
 const MiningPanel=preload("res://src/presentation/mining_panel.gd")
 const NoticePanel=preload("res://src/presentation/flight_notice_panel.gd")
 const EncounterGeometry=preload("res://src/presentation/full_hold_encounter_geometry.gd")
+const WingmanGeometry=preload("res://src/presentation/wingman_geometry.gd")
+var wingmen: Node3D
 const TractorGeometry=preload("res://src/presentation/tractor_geometry.gd")
 const DeathEffect=preload("res://src/presentation/npc_death_effect_geometry.gd")
 const GameOver=preload("res://src/presentation/game_over_panel.gd")
@@ -100,6 +102,10 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 		encounter=EncounterGeometry.new();add_child(encounter)
 		if not encounter.build(pirates,library,visuals,bindings):return fail(encounter.error)
 	var recovery: RefCounted=flight.tractor_owner()
+	var crew: RefCounted=flight.wingman_owner()
+	if crew!=null:
+		wingmen=WingmanGeometry.new();add_child(wingmen)
+		if not wingmen.build(crew,library,visuals,bindings):return fail(wingmen.error)
 	if recovery!=null:
 		tractor=TractorGeometry.new();add_child(tractor)
 		if not tractor.build(recovery,library,visuals,bindings):return fail(tractor.error)
@@ -215,7 +221,7 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 		for key in ["pose","scale","visible","animation"]:identity.erase(key)
 		if not drive_effect._build_portal(library,visuals,bindings,identity):return fail(drive_effect.error)
 	var surfaces:=SurfaceResponse.new()
-	if not surfaces.apply_branches([geometry,encounter,station,gates,void_environment,scenery,planets],bindings,lighting.state,reflection):return fail(surfaces.error)
+	if not surfaces.apply_branches([geometry,encounter,wingmen,station,gates,void_environment,scenery,planets],bindings,lighting.state,reflection):return fail(surfaces.error)
 	if not present(flight):return fail(error)
 	return true
 
@@ -309,6 +315,11 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 		death_frame=player_destruction.prepare_effect(death,state.camera_view.pose,PackedByteArray([255,255,255,255]),Vector4.ONE,1.0)
 		if death_frame.is_empty():return reject(player_destruction.error)
 	var pirate_frame:={}
+	var wingman_frame:={}
+	if (wingmen!=null)!=state.has("wingman_actors"):return reject("Wingman presentation support changed within its flight")
+	if wingmen!=null:
+		wingman_frame=wingmen.prepare(state.wingman_actors)
+		if wingman_frame.is_empty():return reject(wingmen.error)
 	if encounter!=null:
 		# Both come from the same flight owner; checking costs a full rebuild.
 		assert(pirates.snapshot()==state.get("encounter"),"Pirate geometry lost its current encounter owner")
@@ -354,6 +365,7 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if not gate_frame.is_empty():gates.commit_animation(gate_frame)
 	if sun!=null:sun.commit_frame(sun_frame)
 	if encounter!=null:encounter.commit_world(pirate_frame)
+	if wingmen!=null:wingmen.commit(wingman_frame)
 	if tractor!=null:tractor.commit_world(tractor_frame)
 	if radio!=null:
 		var transmission: Dictionary=state.get("radio",{}).duplicate(true)
@@ -449,6 +461,7 @@ func clear() -> void:
 	mining_panel=null;_last_drill=null;notice_panel=null
 	station=null;gates=null;void_environment=null;lighting=null;reflection=null
 	encounter=null;_last_encounter=null
+	wingmen=null
 	tractor=null;_last_tractor=null
 	_last_scenery=null
 	player_destruction=null;game_over=null;_last_death=null;_last_absolute_ms=0
