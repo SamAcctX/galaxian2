@@ -618,8 +618,13 @@ func disarm_story_actors(first: int,end: int) -> bool:
 func retire_story_actor(id: int) -> bool:
 	error=""
 	if _contract_encounter.is_empty() or id<0 or id>=_actors.size():return reject("Story retirement requires contract ships")
+	# A ship goes back to sleep where it is parked, so a later story
+	# placement can wake it again (92: the cloaked ships return).
+	if not _actors[id].snapshot().get("static_object",false):
+		if not _writable(id).sleep_story():return reject(_actors[id].error)
+		return true
 	if not _writable(id).set_permissions(false,false,false):return reject(_actors[id].error)
-	if _actors[id].snapshot().get("static_object",false) and not _writable(id).hide_static():return reject(_actors[id].error)
+	if not _writable(id).hide_static():return reject(_actors[id].error)
 	return true
 
 ## Story actions on a range of actors: "destroy" (hull to 0) or "show" (a

@@ -166,8 +166,13 @@ func _bind_faction_weapon_effects(bindings: RefCounted,data: Dictionary) -> bool
 	data.weapon_item_sequence=[];data.weapon_effect_sequence=[];data.faction_weapon_effects={}
 	var default_model:=ContractWorld.impact_model(bindings,0)
 	if default_model<0 or bindings.resolve(default_model,"mesh").is_empty():return reject("Default weapon impact art is unavailable")
-	for row in bindings.early_contracts.ship_combat.weapons.factions:
+	for row in load("res://src/content/contract_ship_combat_definitions.gd").factions(bindings.early_contracts.ship_combat.weapons):
 		var model:=ContractWorld.impact_model(bindings,int(row.item_id))
+		# Expansion races without an imported impact use the default impact
+		# (assumption); packs without their projectile art leave them out.
+		if row.has("damage_scale"):
+			if bindings.resolve(int(row.model_resource_id),"mesh").is_empty():continue
+			if model<0:model=default_model
 		if model<0 or bindings.resolve(model,"mesh").is_empty():return reject("Faction weapon impact art is unavailable")
 		data.faction_weapon_effects[int(row.actor_kind)]={"items":[0,int(row.item_id)],"resources":[default_model,model]}
 	return true

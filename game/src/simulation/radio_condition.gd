@@ -12,10 +12,10 @@ static func valid_clock(value: Variant) -> bool:
 	return value is int and value >= 0 and value <= MAX_INTEGER
 
 static func valid_row(row: Dictionary, event_count: int) -> bool:
-	if not Numbers.integer(row.get("condition"), 0, 31) or not row.get("values") is Array: return false
+	if not Numbers.integer(row.get("condition"), 0, 35) or not row.get("values") is Array: return false
 	var kind := int(row.condition)
-	if kind not in [1, 5, 6, 8, 9, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]: return false
-	if row.values.is_empty() or row.values.size() > 256 or (kind not in [1, 9, 29, 30, 31] and row.values.size() != 1) or (kind == 29 and row.values.size() != 2) or (kind in [30, 31] and row.values.size() != 3): return false
+	if kind not in [1, 5, 6, 8, 9, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]: return false
+	if row.values.is_empty() or row.values.size() > 256 or (kind not in [1, 9, 29, 30, 31, 35] and row.values.size() != 1) or (kind == 29 and row.values.size() != 2) or (kind in [30, 31, 35] and row.values.size() != 3): return false
 	for value in row.values:
 		if not Numbers.integer(value, -2147483648 if kind == 26 else 0, MAX_INTEGER): return false
 	return kind != 6 or int(row.values[0]) < event_count
@@ -115,4 +115,14 @@ static func evaluate(row: Dictionary, condition_clock: int, observations: Dictio
 			for actor in range(int(row.values[0]), int(row.values[1])):
 				if emp.has(actor) and emp[actor][clampi(int(row.values[2]), 0, 1)]: return true
 			return false
+		# Remake story conditions for people moved: docked at actor values[0];
+		# at least values[0] aboard; the story status at most values[0].
+		32: return int(observations.get("story_docked", -1)) == value
+		33: return int(observations.get("story_aboard", 0)) >= value
+		34: return observations.has("story_status") and int(observations.story_status) <= value
+		# Remake story condition: line values[0] started (values[2]=0) or
+		# finished (1) at least values[1] ms ago.
+		35:
+			var mark: Variant = observations.get("radio_marks", {}).get("finished" if int(row.values[2]) == 1 else "started", {}).get(value)
+			return mark != null and condition_clock - int(mark) >= int(row.values[1])
 	return false

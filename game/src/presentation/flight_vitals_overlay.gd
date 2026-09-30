@@ -6,6 +6,9 @@ const SOURCE_IMAGES={"hull_badge":1195,"armor_badge":1194,"shield_badge":1196,
 	"gauge_frame":1193,"hull_back":1191,"shield_back":1198,
 	"hull_fill":1316,"armor_fill":1192,"shield_fill":1199,"throttle_frame":1352,
 	"timer_frame":1221,"cargo_frame":1312}
+# Supernova gamma row (badge, track, fill) on the third interface atlas.
+const GAMMA_IMAGES={"gamma_badge":8025,"gamma_back":8026,"gamma_fill":8027}
+const GAMMA_ATLAS:={"10089":"resources/data/textures/gof2_interface3_ipad_large.aei"}
 # Remake presentation timing: the throttle reading appears after a change and
 # then fades. The original display duration has not been recovered.
 const THROTTLE_HOLD_MS:=1500
@@ -25,6 +28,13 @@ var _armor_visible:=false
 var _hull_ratio:=1.0
 var _armor_ratio:=0.0
 var _shield_ratio:=0.0
+var _gamma_visible:=false
+var _gamma_ratio:=1.0
+var _gamma_badge: TextureRect
+var _gamma_frame: TextureRect
+var _gamma_back: TextureRect
+var _gamma_clip: Control
+var _gamma_fill: TextureRect
 var _throttle_visible:=false
 var _throttle_percent:=0
 var _throttle_seen:=-1
@@ -66,6 +76,9 @@ func _init() -> void:
 	_shield_clip=Control.new();_shield_clip.mouse_filter=Control.MOUSE_FILTER_IGNORE;_shield_clip.clip_contents=true;add_child(_shield_clip)
 	_shield_fill=_texture(_shield_clip)
 	_hull_text=_value_label();_armor_text=_value_label();_shield_text=_value_label()
+	_gamma_badge=_texture(self);_gamma_frame=_texture(self);_gamma_back=_texture(self)
+	_gamma_clip=Control.new();_gamma_clip.mouse_filter=Control.MOUSE_FILTER_IGNORE;_gamma_clip.clip_contents=true;add_child(_gamma_clip)
+	_gamma_fill=_texture(_gamma_clip)
 	_cargo_frame=_texture(self)
 	_cargo_text=Label.new();_cargo_text.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	_cargo_text.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER;add_child(_cargo_text)
@@ -106,6 +119,12 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> 
 	_hull_back.texture=sprites.hull_back;_armor_back.texture=sprites.hull_back;_shield_back.texture=sprites.shield_back
 	_hull_fill.texture=sprites.hull_fill;_armor_fill.texture=sprites.armor_fill;_shield_fill.texture=sprites.shield_fill
 	_cargo_frame.texture=sprites.cargo_frame
+	# Packs without the third atlas simply have no gamma row.
+	var atlases: Dictionary=bindings.mido_travel.map.ui.atlas_resources.duplicate()
+	atlases.merge(GAMMA_ATLAS)
+	var gamma:=art.load_regions(library,bindings,visuals,GAMMA_IMAGES.values(),atlases)
+	_gamma_badge.texture=gamma.get(8025);_gamma_back.texture=gamma.get(8026);_gamma_fill.texture=gamma.get(8027)
+	_gamma_frame.texture=sprites.gauge_frame if not gamma.is_empty() else null
 	_throttle_frame.texture=sprites.get("throttle_frame")
 	var theme:=Theme.new();theme.default_font=art.font;self.theme=theme
 	set_mobile_layout(_mobile)
@@ -141,6 +160,8 @@ func present(state: Dictionary,show_hull_value:=true) -> bool:
 	_shield_ratio=clampf(shield/float(maxi(1,shield_max)),0,1)
 	_armor_visible=armor_max>0
 	_shield_visible=shield_max>0
+	_gamma_visible=float(state.get("gamma_rate",0.0))>0.0 and _gamma_frame.texture!=null
+	_gamma_ratio=clampf(float(player.get("gamma",100.0))/100.0,0,1)
 	_hull_back.tooltip_text="%d / %d"%[hull,hull_max] if show_hull_value else ""
 	_armor_back.tooltip_text="%s %d / %d"%[_armor_label,armor,armor_max]
 	_shield_back.tooltip_text="%s %d / %d"%[_shield_label,roundi(shield),shield_max]
@@ -241,6 +262,13 @@ func _relayout() -> void:
 	_shield_back.position=Vector2(track_left,margin+track_top);_shield_back.size=track_size
 	_shield_clip.position=_shield_back.position;_shield_clip.size=Vector2(width*_shield_ratio,track_height)
 	_shield_fill.position=Vector2.ZERO;_shield_fill.size=Vector2(width,track_height)
+	var gamma_y:=hull_y+spacing
+	for node in [_gamma_badge,_gamma_frame,_gamma_back,_gamma_clip]:node.visible=_gamma_visible
+	_gamma_badge.position=Vector2(margin,gamma_y);_gamma_badge.size=Vector2.ONE*badge
+	_gamma_frame.position=Vector2(track_left,gamma_y);_gamma_frame.size=frame_size
+	_gamma_back.position=Vector2(track_left,gamma_y+track_top);_gamma_back.size=track_size
+	_gamma_clip.position=_gamma_back.position;_gamma_clip.size=Vector2(width*_gamma_ratio,track_height)
+	_gamma_fill.position=Vector2.ZERO;_gamma_fill.size=Vector2(width,track_height)
 	for row in [[_hull_text,hull_y],[_armor_text,armor_y],[_shield_text,margin]]:
 		row[0].position=Vector2(track_left+width+4,float(row[1])+badge*0.20)
 		row[0].size=Vector2(110,badge*0.8)
@@ -263,6 +291,7 @@ func clear() -> void:
 	for label in [_hull_text,_armor_text,_shield_text]:label.text=""
 
 func top_inset() -> float:
-	return _hull_badge.position.y+_hull_badge.size.y+8.0 if visible else 0.0
+	var bottom:=_gamma_badge if _gamma_visible else _hull_badge
+	return bottom.position.y+bottom.size.y+8.0 if visible else 0.0
 
 func reject(message: String) -> bool:error=message;return false

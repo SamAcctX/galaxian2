@@ -175,6 +175,14 @@ static func protected_items(bindings: RefCounted,cursor: Variant) -> Array:
 	return PROTECTED_ITEMS.get(cursor,[]).duplicate()
 
 static func entry_requirement(cursor: int) -> Dictionary:return ENTRY_REQUIREMENTS.get(cursor,{}).duplicate()
+## Flight notices for refused courses are keyed ENTRY_NOTICE_BASE + text id.
+const ENTRY_NOTICE_BASE:=40000
+## The notice to show when a course to `station_id` is refused at this cursor
+## (too few passenger berths for the mission there), else -1.
+static func entry_refusal(cursor: int,station_id: int,berths: int) -> int:
+	var need:=entry_requirement(cursor)
+	if need.is_empty() or int(MISSIONS.get(cursor,[0,0,-2])[2])!=station_id:return -1
+	return ENTRY_NOTICE_BASE+int(need.text_id) if berths<int(need.get("passenger_berths",0)) else -1
 static func story_move(cursor: int) -> Dictionary:return MOVE_ON_ENTRY.get(cursor,{}).duplicate()
 static func story_status(cursor: int) -> int:return int(STORY_STATUS.get(cursor,-1))
 

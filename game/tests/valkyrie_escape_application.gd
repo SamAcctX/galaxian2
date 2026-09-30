@@ -43,6 +43,7 @@ func verify_free_application() -> void:
 	if staged=="escape78":await fly_valkyrie_escape()
 	if staged=="supernova":await fly_supernova_start()
 	if staged=="supernova89":await fly_supernova_blast()
+	if staged=="supernova91":await fly_supernova_rescue()
 
 ## 49-52: the K'Suukk flees with a Vossk escort that turns on the player at
 ## Makke S'ik, through the gate to S'inokk and away, then home to Kanado.
@@ -897,6 +898,168 @@ func fly_supernova_blast() -> void:
 	check(app.session.station_owner().snapshot().campaign_cursor==91,"Fresh Resume lost Gunant's talk")
 	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-91.gof2save"))==OK,"The Gunant checkpoint could not be kept")
 
+## 91: without ten passenger berths the drive refuses Valpatro; with cabins
+## fitted the player jumps there, docks at the damaged freighter under gamma
+## rays, the ten miners board, the player pulls away, the freighter explodes
+## and the drive takes the ship on to Tadram (92).
+func fly_supernova_rescue() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==91,"The rescue checkpoint is not at cursor 91")
+	var hold: Dictionary=app.session.station_owner().snapshot().get("cargo",{})
+	if failures or not seed_cargo([],400000):return
+	var berths: int=load("res://src/simulation/first_flight_frame.gd")._passenger_berths(catalogue,app.session.station_owner().snapshot().loadout)
+	print("SUPERNOVA berths before ",berths)
+	if berths<10:
+		if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+		if not await release_application_flight():return
+		resume_application_focus()
+		for pressed in [true,false]:
+			var key:=InputEventKey.new();key.physical_keycode=KEY_K;key.keycode=KEY_K;key.pressed=pressed;app._unhandled_input(key)
+		if app.map_panel.snapshot().get("void_prompt",false):
+			for pressed in [true,false]:
+				var key:=InputEventKey.new();key.physical_keycode=KEY_ESCAPE;key.keycode=KEY_ESCAPE;key.pressed=pressed;app._unhandled_input(key)
+		app.map_panel.show_system(int(catalogue.tables.stations[110].system_id))
+		app.map_panel.select_station(110);app.map_panel.request_confirmation()
+		print("SUPERNOVA refusal map ",app.map_panel.snapshot().get("selected_station_id")," confirm ",app.map_panel.snapshot().get("confirmation_visible")," drive ",app.map_panel.snapshot().get("drive_mode"))
+		var confirmed: bool=app.confirm_map_planet(110,now_us)
+		print("SUPERNOVA refusal confirm ",confirmed," ",app.status.text," map ",app.map_panel.error," session ",app.session.error," cursor ",app.session.flight_owner()._entry.campaign_cursor," drive ",app.session.flight_owner()._drive.snapshot().phase," notices ",app.session.flight_owner()._notices.snapshot().get("pending",[]).size())
+		for tick in 20:
+			if not application_step():return
+		var pending: Array=app.session.flight_owner()._notices.snapshot().get("pending",[])
+		print("SUPERNOVA refusal notices ",pending.map(func(row):return [row.get("source_id"),row.get("text")]))
+		check(app.session.flight_owner()._drive.snapshot().phase not in ["charging","departing"] and pending.any(func(row):return int(row.get("source_id",-1))==43203),"The drive did not refuse Valpatro without ten berths")
+		await capture_free_application("supernova-berths-refused")
+		if failures or not await dock_application():return
+		if not await fit_cabins(10):return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight() or not await khador_jump(110):return
+	var radio_ids:=[];var docked_at:=-1;var boarded:=false;var gone:=false;var gamma_seen:=false
+	var began:=now_us
+	app.session.rebase_time(now_us)
+	for tick in 20000:
+		if app.session.status!="running":break
+		var frame: RefCounted=app.session.flight_owner()
+		var radio: Dictionary=frame._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		if frame.death_active():check(false,"The pilot died at Valpatro: gamma "+str(frame._player.snapshot().get("gamma")));return
+		var state: Dictionary=app.session.snapshot()
+		var dock: Dictionary=frame._story_dock
+		if not gamma_seen and float(state.player.get("gamma",100.0))<99.0:
+			gamma_seen=true;print("SUPERNOVA gamma falling ",state.player.gamma," rate ",frame._gamma_rate);await capture_free_application("supernova-valpatro-gamma")
+		if int(dock.docked)==0 and docked_at<0:docked_at=tick;print("SUPERNOVA docked at tick ",tick," radio ",radio_ids);await capture_free_application("supernova-valpatro-docked")
+		if int(dock.aboard)>=10 and not boarded:boarded=true;print("SUPERNOVA ten aboard ",(now_us-began)/1000000," s")
+		var freighter: Dictionary=frame._encounter.combat_snapshot().actors[0]
+		if int(freighter.vitals.hull)<=0 and not gone:gone=true;print("SUPERNOVA freighter destroyed ",(now_us-began)/1000000," s");await capture_free_application("supernova-valpatro-explosion")
+		var target: Vector3=freighter.get("pose",Transform3D()).origin
+		var steer:=Vector2.ZERO;var want:=0.0
+		var heard: Array=radio.get("finished",[])
+		if not boarded or heard.size()<7 or heard[6]!=true:
+			# Before the lines allow docking, wait near; then fly in and hold.
+			var distance: float=state.player_pose.origin.distance_to(target)
+			steer=EmpSteering.steering_toward(state.player_pose,target);want=1.0 if distance>2000.0 and heard.size()>3 and heard[3]==true or distance>8000.0 else 0.0
+		elif not gone:
+			steer=EmpSteering.steering_toward(state.player_pose,state.player_pose.origin-(target-state.player_pose.origin));want=1.0
+		for adjustment in 10:
+			var current: float=app.session.snapshot().input_throttle
+			if absf(current-want)<.01 or frame.cinematic_input_blocked():break
+			if not app.session.action("throttle_up" if current<want else "throttle_down"):check(false,app.session.error);return
+		now_us+=100000
+		if not app.session.step(now_us,steer if not frame.cinematic_input_blocked() else Vector2.ZERO):check(false,app.session.error);return
+		app.present_session()
+		await dismiss_medal()
+		if tick%20==0:await process_frame
+	print("SUPERNOVA Valpatro radio ",radio_ids," status ",app.session.status," cursor ",app.session.snapshot().campaign_cursor)
+	check(docked_at>=0 and boarded and gone and gamma_seen and range(2493,2500).all(func(id):return id in radio_ids),"The Valpatro rescue did not play through")
+	check(app.session.status=="local_arrival_transition_required" and app.session.snapshot().campaign_cursor==92,"The story did not take the ship on to Tadram: "+app.session.status)
+	if failures or not app.enter_local_arrival(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	check(int(app.session.snapshot().location.station_id)==113,"The ship did not arrive at Tadram")
+	print("SUPERNOVA Tadram gamma ",app.session.snapshot().player.get("gamma")," vitals ",app.session.snapshot().player.vitals)
+	if failures:return
+	await fly_supernova_handover()
+
+## 92: dock at the Tadram freighter, the ten leave; three unknown ships appear,
+## cloak and come back; destroy them; the freighter leaves; Gunant's call.
+func fly_supernova_handover() -> void:
+	var radio_ids:=[];var unloaded:=false;var cloaked:=false
+	var began:=now_us
+	app.session.rebase_time(now_us)
+	for tick in 30000:
+		if app.session.status!="running":break
+		var frame: RefCounted=app.session.flight_owner()
+		var radio: Dictionary=frame._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		if frame.death_active():check(false,"The pilot died at Tadram: gamma "+str(frame._player.snapshot().get("gamma"))+" vitals "+str(frame._player.snapshot().vitals));return
+		if frame._objective.snapshot().campaign_cursor==93:break
+		var state: Dictionary=app.session.snapshot()
+		var dock: Dictionary=frame._story_dock
+		var actors: Array=frame._encounter.combat_snapshot().actors
+		if int(dock.get("status",10))==0 and not unloaded:unloaded=true;print("SUPERNOVA ten off at ",(now_us-began)/1000000," s radio ",radio_ids);await capture_free_application("supernova-tadram-docked")
+		var heard: Array=radio.get("finished",[])
+		if heard.size()>5 and heard[5]==true and not cloaked:cloaked=true;print("SUPERNOVA cloak at ",(now_us-began)/1000000," s");await capture_free_application("supernova-tadram-ambush")
+		var steer:=Vector2.ZERO;var want:=0.0
+		var hunting: bool=heard.size()>6 and heard[6]==true and range(1,4).any(func(id):return int(actors[id].vitals.hull)>0 and actors[id].get("active",false))
+		if hunting:
+			var alive:=func(): return [1,2,3].filter(func(id):return int(app.session.flight_owner()._encounter.combat_snapshot().actors[id].vitals.hull)>0)
+			if not await fight_until("tadram",func():return alive.call().is_empty(),func(_actors):return alive.call(),radio_ids):return
+			print("SUPERNOVA ambush destroyed at ",(now_us-began)/1000000," s")
+			continue
+		if true:
+			if not unloaded:
+				var target: Vector3=actors[0].get("pose",Transform3D()).origin
+				var distance: float=state.player_pose.origin.distance_to(target)
+				steer=EmpSteering.steering_toward(state.player_pose,target);want=1.0 if distance>2000.0 else 0.0
+			for adjustment in 10:
+				var current: float=app.session.snapshot().input_throttle
+				if absf(current-want)<.01 or frame.cinematic_input_blocked():break
+				if not app.session.action("throttle_up" if current<want else "throttle_down"):check(false,app.session.error);return
+			now_us+=100000
+			if not app.session.step(now_us,steer if not frame.cinematic_input_blocked() else Vector2.ZERO):check(false,app.session.error);return
+		app.present_session()
+		await dismiss_medal()
+		if tick%20==0:await process_frame
+	print("SUPERNOVA Tadram radio ",radio_ids," cursor ",app.session.snapshot().campaign_cursor," status ",app.session.status)
+	check(unloaded and cloaked and range(2502,2512).all(func(id):return id in radio_ids) and 2518 in radio_ids and app.session.snapshot().campaign_cursor==93,"The Tadram hand-over did not play through")
+	if failures or not await dock_application():return
+	check(app.save_station(false) and app.load_station(),"Saving and resuming at Tadram failed: "+app._save_notice.text)
+	if failures:return
+	var resumed: Dictionary=app.session.station_owner().snapshot()
+	check(resumed.campaign_cursor==93 and int(resumed.loadout.station_id)==113,"Fresh Resume lost the Tadram hand-over: "+str([resumed.campaign_cursor,resumed.loadout.station_id]))
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-93.gof2save"))==OK,"The Tadram checkpoint could not be kept")
+
+## Buy and fit passenger cabins at the current station until the ship has
+## `needed` berths, making room by unfitting non-essential equipment.
+func fit_cabins(needed: int) -> bool:
+	if not app.equipment_action("open"):check(false,app.session.error);return false
+	for attempt in 12:
+		var shop: Dictionary=app.session.station_owner().snapshot()
+		if load("res://src/simulation/first_flight_frame.gd")._passenger_berths(catalogue,shop.loadout)>=needed:break
+		var cabin:={}
+		for row in shop.equipment.market_rows:
+			var properties: Dictionary=catalogue.tables.items[row.item_id].properties
+			if int(properties.get(2,-1))==20 and row.stock>0 and row.unit_price<=shop.contracts.credits:
+				if cabin.is_empty() or int(properties.get(34,0))>cabin.places:cabin={"item_id":row.item_id,"price":row.unit_price,"places":int(properties.get(34,0))}
+		if cabin.is_empty():check(false,"No passenger cabin on sale at station "+str(shop.loadout.station_id));return false
+		if not shop.equipment.fitting_support.get(cabin.item_id,{}).is_empty():
+			var category: int=int(catalogue.tables.items[cabin.item_id].properties.get(1,-1))
+			var freed:=false
+			for index in shop.loadout.slots.size():
+				var slot: Variant=shop.loadout.slots[index]
+				if slot==null or int(slot.item_id)==85:continue
+				var own: Dictionary=catalogue.tables.items[int(slot.item_id)].properties
+				if int(own.get(1,-1))==category and int(own.get(2,-1))!=20:
+					if not app.equipment_action("unmount",int(slot.item_id),index):check(false,app.session.error);return false
+					freed=true;break
+			if not freed:check(false,"No slot to free for a cabin: "+str(shop.equipment.fitting_support.get(cabin.item_id)));return false
+		if not app.equipment_action("buy",int(cabin.item_id)) or not app.equipment_action("mount",int(cabin.item_id)):check(false,app.session.error);return false
+		print("SUPERNOVA fitted cabin ",cabin)
+	var fitted: Dictionary=app.session.station_owner().snapshot()
+	check(load("res://src/simulation/first_flight_frame.gd")._passenger_berths(catalogue,fitted.loadout)>=needed,"The ship still lacks passenger berths")
+	await capture_free_application("supernova-cabins")
+	if not app.equipment_action("close"):check(false,app.session.error);return false
+	return failures==0
+
 ## The hangar's ship offers, as the player sees them.
 func shipyard() -> Array:
 	if not app.equipment_action("open"):check(false,"The hangar did not open: "+app.session.error);return [-1]
@@ -1165,6 +1328,7 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"escape78":return state.campaign_cursor==77
 		"supernova":return state.campaign_cursor==84
 		"supernova89":return state.campaign_cursor==89
+		"supernova91":return state.campaign_cursor==91
 	return super.resumed_contract_valid(state)
 
 ## A player crossing hostile Vossk space fights off the ships closing in

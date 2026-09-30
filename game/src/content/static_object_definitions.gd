@@ -8,7 +8,8 @@ const Volumes=preload("res://src/content/station_collision_volumes.gd")
 const Vitals=preload("res://src/simulation/combat_vitals.gd")
 const Valkyrie=preload("res://src/content/valkyrie_campaign_definitions.gd")
 
-## layers: hull, emissive and light meshes drawn together.
+## layers: hull, emissive and light meshes drawn together; a [mesh, offset]
+## entry places that mesh at an offset in the model's own coordinates.
 ## collision: record in collision.bin; spheres x0.6, boxes x1.2, tested in the
 ## object's own (unrotated) axes. wreck_model: animation shown after death.
 ## wake_half_extent: an opposing active body this close on every axis wakes it.
@@ -36,6 +37,16 @@ const MODELS:={
 	# loader yet) are left out: the twin is the station with its lights out.
 	21876:{"layers":[21076,21876],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
 		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
+	# 91: Valpatro's damaged freighter; the script ends it with an explosion.
+	18766:{"layers":[18766],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":20,
+		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
+	# 92/94: the Midorian freighter: hull, two fixed parts and three cargo pods
+	# in a row along its length (verified createStaticObject 17049). Hit as a
+	# box over its length (its two bounding volumes are not decoded yet); the
+	# 35 km LOD mesh is not used; death sound as the outpost's (assumption).
+	17049:{"layers":[17049,17055,17054,[17052,Vector3(0,0,-2150)],[17053,Vector3(0,0,-2150)],[17052,Vector3.ZERO],[17053,Vector3.ZERO],
+		[17052,Vector3(0,0,2150)],[17053,Vector3(0,0,2150)]],"collision_record":-1,"hit_radius":1000,"hit_extents":Vector3(1000,1000,3500),
+		"wreck_model":18300,"death_sound":20,"wake_half_extent":0,"hull":"story_freighter","enemy_count_excluded":true},
 	16992:{"layers":[16992],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
 		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
 }
@@ -46,6 +57,12 @@ const MAX_BOXES:=64
 
 static func supported(model: Variant) -> bool:
 	return model is int and MODELS.has(model)
+
+## How far the object reaches from its centre (its hit box), for docking.
+static func reach(model: int) -> float:
+	if not supported(model):return 0.0
+	var extents: Vector3=MODELS[model].get("hit_extents",Vector3.ONE*float(MODELS[model].get("hit_radius",0)))
+	return maxf(extents.x,maxf(extents.y,extents.z))
 
 static func rules(model: int) -> Dictionary:
 	return MODELS.get(model,{}).duplicate(true)
@@ -58,9 +75,10 @@ static func hull(model: int,rank: int,cursor: int,difficulty: float) -> int:
 		"indestructible":return 9999999
 		# 80's weak points: no difficulty scale.
 		"weak_point":return rank*15+220 if rank<21 else 520
-		"outpost":pass
+		"outpost","story_freighter":pass
 		_:return -1
-	var level:=rank*15+20 if rank<21 else 320
+	# The story freighter (92/94) uses the outpost rule with a larger base.
+	var level:=(rank*15+20 if rank<21 else 320) if MODELS[model].hull=="outpost" else (rank*15+100 if rank<21 else 400)
 	var bonus:=180 if cursor>=Valkyrie.FIRST_CURSOR else cursor*4
 	var base:=Vitals.single(float((level+bonus)*5))
 	return int(Vitals.single(Vitals.single(Vitals.single(difficulty-0.5)*base)+base))
@@ -79,10 +97,11 @@ func resolve(library: RefCounted,bindings: RefCounted,model: int) -> Dictionary:
 	if not supported(model):error="Unsupported static object model %d"%model;return {}
 	var data: Dictionary=MODELS[model]
 	var layers:=[]
-	for id in data.layers:
-		var path: String=bindings.resolve(int(id),"mesh")
+	for entry in data.layers:
+		var id: int=int(entry[0]) if entry is Array else int(entry)
+		var path: String=bindings.resolve(id,"mesh")
 		if path.is_empty():error=bindings.error;return {}
-		layers.append({"resource_id":int(id),"path":path})
+		layers.append({"resource_id":id,"path":path,"offset":entry[1] if entry is Array else Vector3.ZERO})
 	# No wreck model: the object simply vanishes (an empty wreck path).
 	var wreck:="";var timing:={"start_ms":0,"end_ms":0}
 	if int(data.wreck_model)>=0:
@@ -95,7 +114,7 @@ func resolve(library: RefCounted,bindings: RefCounted,model: int) -> Dictionary:
 		"death_sound":int(data.death_sound),"wake_half_extent":int(data.wake_half_extent),"enemy_count_excluded":bool(data.enemy_count_excluded)}
 	# No collision record: hit as a cube of the hit radius, like a ship.
 	if int(data.collision_record)<0:
-		result.boxes=[{"offset":Vector3.ZERO,"half_extents":Vector3.ONE*float(data.hit_radius)}]
+		result.boxes=[{"offset":Vector3.ZERO,"half_extents":data.get("hit_extents",Vector3.ONE*float(data.hit_radius))}]
 		return result
 	var reader:=Volumes.new()
 	var shapes: Dictionary=reader.decode(library.read_resource(data.collision_resource,Volumes.MAX_BYTES),int(data.collision_record),int(data.collision_record_limit),float(data.sphere_scale),float(data.box_scale))

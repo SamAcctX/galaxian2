@@ -471,6 +471,19 @@ func normal_hit(amount: Variant) -> Dictionary:
 	_state.vitals=pools.snapshot()
 	return result
 
+## Supernova radiation: gamma falls by `amount` (0-100). Below 1 the ship is
+## destroyed (a ship already dying is left alone). "warned" when gamma has
+## just dropped below `warning`.
+func drain_gamma(amount: float, warning: float) -> Dictionary:
+	error=""
+	if _state.is_empty():reject("Configure player statistics before radiation");return {}
+	var before:=float(_state.get("gamma",100.0))
+	if amount<=0.0 or _state.vitals.hull<=0:return {"warned":false,"gamma":before}
+	var after:=maxf(0.0,before-amount)
+	_state.gamma=Vitals.single(after)
+	if after<1.0:_state.vitals.hull=0
+	return {"warned":before>=warning and after<warning,"gamma":after}
+
 func collision_context(pose: Variant) -> Dictionary:
 	error=""
 	if _state.is_empty() or _hit_policy.is_empty() or not pose is Transform3D or not pose.is_finite():

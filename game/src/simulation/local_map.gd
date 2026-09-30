@@ -14,7 +14,9 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 	if library==null or bindings==null or catalogues==null or not Definitions.parameters(bindings.mido_travel):return reject("This content has no supported local map")
 	var base: String=bindings.base_content_id
 	if library.manifest.get("content_id")!=base or catalogues.content_id!=base or flight.get("base_content_id")!=base or flight.get("binding_id")!=bindings.binding_id:return reject("Local map belongs to another flight or content identity")
-	var rules: Dictionary=bindings.mido_travel.map
+	var rules: Dictionary=bindings.mido_travel.map.duplicate()
+	var sizes: Array=load("res://src/content/valkyrie_world_definitions.gd").map_planet_sizes(bindings,rules.planet_sizes)
+	rules.planet_sizes=sizes
 	var location: Dictionary=flight.get("location",{})
 	var travel: Dictionary=flight.get("local_travel",{})
 	var docked: bool=flight.get("station_map",false)
@@ -86,7 +88,9 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 		var path: String=bindings.resolve(resource_id,"mesh")
 		if path.is_empty():return reject(bindings.error)
 		var material: Dictionary=bindings.material_for_mesh(path,"high")
-		if material.is_empty() or material.get("id")!=int(rules.material_id) or material.get("render_type")!=int(rules.render_type) or int(material.texture_ids[0])!=int(rules.texture_id):return reject("Local map planet material is unsupported")
+		# Types past the imported table (Talidor, Ginoya) draw with their own material.
+		var imported: bool=type<bindings.mido_travel.map.planet_sizes.size()
+		if material.is_empty() or (imported and (material.get("id")!=int(rules.material_id) or material.get("render_type")!=int(rules.render_type) or int(material.texture_ids[0])!=int(rules.texture_id))):return reject("Local map planet material is unsupported")
 		rows.append({"station_id":int(station.id),"name":station.name,"planet_type":type,
 			"jumpgate":int(station.id)==int(system.fields[6]),
 			"current":int(station.id)==int(location.station_id),

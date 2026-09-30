@@ -212,7 +212,8 @@ func record_lethal(actor: Dictionary) -> bool:
 
 func _append_event(id: int, nonplayer: bool, generation: int=0) -> bool:
 	if _state.events.any(func(event):return event.get("event_kind","") not in ["systems_disabled","cargo_recovered"] and event.actor_id==id and int(event.get("spawn_generation",0))>=generation):return reject("This traffic instance has already received its lethal hit")
-	var change:=0 if nonplayer else int(_rules.lethal_changes[str(_state.actor_kinds[id])])
+	# Races without a standing (Supernova's race 10) change nothing.
+	var change:=0 if nonplayer else int(_rules.lethal_changes.get(str(_state.actor_kinds[id]),0))
 	if _state.difficulty==float(_rules.hardest_difficulty):change*=int(_rules.hardest_multiplier)
 	var axis:=int(_rules.get("faction_axes",{}).get(str(_state.actor_kinds[id]),_rules.axis))
 	_state.events.append({"actor_id":id,"actor_kind":_state.actor_kinds[id],"nonplayer_kill":nonplayer,"axis":axis,"change":change})

@@ -728,12 +728,22 @@ func wake_story() -> bool:
 		_state.active=true;_state.actor_mode=1;_state.targeting_blocked=false
 	return true
 
+## A story ship leaves the scene asleep (inactive, untargetable, mode 5).
+func sleep_story() -> bool:
+	error=""
+	if not _state.get("contract_ship",false):return reject("Only a contract ship sleeps for the story")
+	_state.active=false;_state.actor_mode=5;_state.targeting_blocked=true
+	return true
+
 ## A sleeping static object wakes when an opposing active body is close.
 ## A story event destroys this body outright (89: the supernova). It is not
 ## the player's kill.
 func destroy_story() -> bool:
 	error=""
 	if _vitals.snapshot().hull<=0:return true
+	# A sleeping static object (91: the damaged freighter) dies awake, so its
+	# ordinary destruction path runs.
+	if _state.get("static_object",false) and not wake_static():return false
 	var pools:=Vitals.new()
 	if not pools.configure(0,0,0):return reject(pools.error)
 	_vitals=pools

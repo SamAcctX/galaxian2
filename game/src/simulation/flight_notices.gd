@@ -48,6 +48,11 @@ func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,lo
 	var definitions: Dictionary=bindings.flight_notices.messages.duplicate(true)
 	definitions["21"]={"text_ids":[514],"separator":"","rgb":[255,255,255]}
 	definitions["22"]={"text_ids":[531],"separator":"","rgb":[255,255,255]}
+	definitions["44"]={"text_ids":[3190],"separator":"","rgb":[255,255,255]}
+	# Refused story courses (Supernova passenger berths); optional like 44.
+	var campaign:=load("res://src/content/valkyrie_campaign_definitions.gd")
+	for need in campaign.ENTRY_REQUIREMENTS.values():
+		definitions[str(campaign.ENTRY_NOTICE_BASE+int(need.text_id))]={"text_ids":[int(need.text_id)],"separator":"","rgb":[255,255,255]}
 	if cursor==7:
 		var navigation:=TrainingStory.navigation(bindings)
 		if not navigation.is_empty():
@@ -57,8 +62,10 @@ func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,lo
 		var rule: Dictionary=definitions[key];var pieces:=PackedStringArray();var display_ids:=[]
 		for source_id in rule.text_ids:
 			var id:=Desktop.select_id(bindings.desktop_text,int(source_id))
+			if (id<0 or id>=library.strings.size() or library.strings[id].is_empty()) and (key=="44" or int(key)>=40000):pieces=PackedStringArray();break
 			if id<0 or id>=library.strings.size() or library.strings[id].is_empty():return reject("A flight notice is missing in this language")
 			pieces.append(library.strings[id]);display_ids.append(id)
+		if pieces.is_empty():continue
 		var rgb:=[];var text_ids:=[]
 		for component in rule.rgb:rgb.append(int(component))
 		for source_id in rule.text_ids:text_ids.append(int(source_id))

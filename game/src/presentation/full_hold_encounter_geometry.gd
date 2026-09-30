@@ -150,7 +150,7 @@ func _build_static(owner: RefCounted,id: int,actor: Dictionary,library: RefCount
 		var model: Node3D=resources.instantiate(layer.path)
 		if model==null:
 			var reason: String=resources.error;resources.clear();return fail(reason)
-		model.set_meta("source_resource_id",layer.resource_id);body.add_child(model)
+		model.set_meta("source_resource_id",layer.resource_id);model.position=layer.get("offset",Vector3.ZERO);body.add_child(model)
 	# Without a wreck the object just vanishes (80's weak points).
 	var wreck: Node3D=resources.instantiate(placed.wreck.path) if wrecked else Node3D.new()
 	resources.clear()

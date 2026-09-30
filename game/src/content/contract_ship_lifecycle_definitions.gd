@@ -30,6 +30,7 @@ static func npc_hit(data: Dictionary,weapon: Dictionary) -> bool:
 		if matches:return true
 	return false
 
+const OTHER_CARGO_MODEL:=16993
 static func population(bindings: RefCounted,packet: Dictionary,capability: RefCounted=null) -> Dictionary:
 	if not available(bindings):return {}
 	var data:=ShipCombat.population(bindings,packet,capability)
@@ -60,6 +61,11 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 		for model in data.lifecycle.cargo_models:
 			if int(model.actor_kind)==actor.actor_kind:
 				row.cargo_model_id=int(model.cargo_model_id);row.cargo_model_resource=model.cargo_model_resource
+		# Races without their own container (Supernova's race 10) drop the shared
+		# one, as the tractor-recovery table's "other" row (16993).
+		if not row.has("cargo_model_id"):
+			for model in data.lifecycle.cargo_models:
+				if int(model.cargo_model_id)==OTHER_CARGO_MODEL:row.cargo_model_id=OTHER_CARGO_MODEL;row.cargo_model_resource=model.cargo_model_resource
 		if not row.has("cargo_model_id"):return {}
 		if actor.subtype==1:
 			var death: Dictionary=load("res://src/content/freighter_destruction_definitions.gd").for_faction(bindings,int(actor.actor_kind))

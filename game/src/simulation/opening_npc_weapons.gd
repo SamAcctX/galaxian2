@@ -328,7 +328,7 @@ func _resolve_weapon(bindings: RefCounted, catalogues: RefCounted, data: Diction
 	var items: Variant = catalogues.tables.get("items")
 	if not items is Array or data.item_id>=items.size(): return fail("NPC weapon names an absent catalogue item")
 	var arrays: Variant = items[int(data.item_id)].get("arrays")
-	if not arrays is Array or arrays.size()!=3 or arrays[2].size()<6 or arrays[2][3]!=data.category or arrays[2][5]!=data.get("catalogue_kind",data.kind):
+	if not arrays is Array or arrays.size()!=3 or arrays[2].size()<6 or arrays[2][3]!=data.category or (int(data.get("catalogue_kind",data.kind))>=0 and arrays[2][5]!=data.get("catalogue_kind",data.kind)):
 		return fail("NPC weapon catalogue category or kind disagrees with its declaration")
 	if bindings.resolve(int(data.model_resource_id),"mesh").is_empty(): return fail("NPC weapon visual resource is unavailable")
 	var weapon := {"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"launch_mode":"ordinary"}

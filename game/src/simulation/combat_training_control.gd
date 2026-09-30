@@ -1245,7 +1245,8 @@ func place_story_actors(first: int,end: int,center: Vector3,radius: float) -> bo
 		if _flight[id]==null:return reject("Story placement requires flying ships")
 		var angle:=TAU*float(id-first)/float(end-first)
 		var pose:=Transform3D(Basis.IDENTITY,center+Vector3(cos(angle)*radius,5000.0 if (id-first)%2==0 else -5000.0,sin(angle)*radius))
-		if not _flight[id].apply_scripted_pose(pose) or not _combat.set_pose(id,pose,pose):return reject(_flight[id].error+_combat.error)
+		# The combat pose follows the motion's, which keeps the ship's bank.
+		if not _flight[id].apply_scripted_pose(pose) or not _combat.set_pose(id,_flight[id].snapshot().get("pose",pose),pose):return reject(_flight[id].error+_combat.error)
 	return true
 
 ## Story ships or objects leave: parked far away (per-ship offsets), inactive.
@@ -1259,7 +1260,8 @@ func retire_story_actors(first: int,end: int,point: Vector3) -> bool:
 			continue
 		var pose:=Transform3D(Basis.IDENTITY,point+Vector3(20000.0*(id-first),0,0))
 		if _flight[id]!=null and not _flight[id].apply_scripted_pose(pose):return reject(_flight[id].error)
-		if not _combat.set_pose(id,pose,pose) or not _combat.retire_story_actor(id):return reject(_combat.error)
+		var shown: Transform3D=pose if _flight[id]==null else _flight[id].snapshot().get("pose",pose)
+		if not _combat.set_pose(id,shown,pose) or not _combat.retire_story_actor(id):return reject(_combat.error)
 	return true
 
 func fork_for_frame(copy_motion:=true, incoming_combat: RefCounted=null) -> RefCounted:

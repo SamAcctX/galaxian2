@@ -26,7 +26,7 @@ const RADIO:={
 ## 28 = the player's armour is gone. Combat flights play their result lines
 ## over the radio once the objective ships are gone (assumption: the original
 ## shows them as its in-flight result conversation).
-const RESULT_RADIO:={80:[[0,2415,1391],[6,2416,1392],[0,2417,1393],[6,2418,1394],[0,2419,1395],[6,2420,1396]],56:[[27,2149,1206],[0,2150,1207]],63:[[28,2215,1260],[0,2216,1261]],
+const RESULT_RADIO:={92:[[0,2512,1587],[2,2513,1588],[0,2514,1589],[2,2515,1590],[0,2516,1591],[2,2517,1592],[0,2518,1593]],80:[[0,2415,1391],[6,2416,1392],[0,2417,1393],[6,2418,1394],[0,2419,1395],[6,2420,1396]],56:[[27,2149,1206],[0,2150,1207]],63:[[28,2215,1260],[0,2216,1261]],
 	64:[[0,2224,1262],[20,2225,1263],[0,2226,1264],[20,2227,1265],[0,2228,1266]],
 	67:[[0,2288,1296],[20,2289,1297],[0,2290,1298],[20,2291,1299],[0,2292,1300],[20,2293,1301],[0,2294,1302],[0,2295,1303]],
 	70:[[0,2313,1314]],
@@ -63,6 +63,45 @@ const ESCORT_HULL:=9999999
 ## 40 km back, the cutscene cameras and the pirates' flight away are not built,
 ## and the result lines play over the radio instead of opening a dialogue.
 const SCRIPTED:={
+	# 92: Tadram hand-over and the cloaked ambush. #0 the freighter (people
+	# leave while docked, one per 1.5 s, status -1 each); #1-#3 unknown ships
+	# (race 10, hull 44) parked asleep. All ten off: they appear around the
+	# player (line #4) and docking ends; after line #5 they cloak (vanish) and
+	# 22 s after it come back awake (line #6); all three dead: line #8, the
+	# player is held and unharmed 10 s and the freighter leaves 7 s in; line #9
+	# at 10 s; Gunant's call follows over the radio. Failure: the freighter
+	# destroyed. Assumptions: they appear 20 km from the player; no cutscene
+	# cameras (player held and unharmed instead); a cloak shows as the ships
+	# vanishing until they attack.
+	92:{"points":[Vector3(80000,0,110000),Vector3(70000,-100000,-140000),Vector3(-300000,300000,-300000)],
+		"groups":[{"count":1,"faction":3,"friendly":true,"static":{"model":17049,"jitter":0,"offset":Vector3.ZERO},"name_text_id":3198,"dock":"leave","dockable":true},
+			{"count":3,"faction":10,"hull":44,"friendly":false,"sleeping":true,"index":2,"offsets":[-1000,-1000,-1000],"bounds":[2000,2000,2000]}],
+		"radio":[[59,2502,2071,5,[1500]],[0,2503,2073,6,[0]],[59,2504,2074,6,[1]],[0,2505,2075,6,[2]],
+			[0,2506,2076,34,[0]],[0,2507,2077,6,[4]],[0,2508,2078,35,[5,22000,1]],[0,2509,2079,6,[6]],
+			[0,2510,2080,9,[1,2,3]],[59,2511,2081,35,[8,10000,0]]],
+		"radio_actions":[{"radio_index":4,"action":"place","first_actor":1,"end_actor":4,"center":"player","radius":20000.0},
+			{"radio_index":4,"action":"dockable","first_actor":0,"end_actor":1,"enabled":false},
+			{"radio_index":4,"action":"lock_player","duration_ms":6000,"invulnerable":true},
+			{"radio_index":5,"on":"finished","action":"retire","first_actor":1,"end_actor":4},
+			{"radio_index":6,"action":"place","first_actor":1,"end_actor":4,"center":"player","radius":15000.0,"wake":true},
+			{"radio_index":8,"action":"lock_player","duration_ms":10000,"invulnerable":true},
+			{"radio_index":8,"delay_ms":7000,"action":"retire","first_actor":0,"end_actor":1}],
+		"success":{"kind":"radio_finished","index":16},"failure":{"kind":1,"actor_id":0}},
+	# 91: Valpatro rescue (empty orbit, gamma rays). #0 the damaged freighter
+	# turns dockable and named as line #3 starts. Docked: line #5; after it the
+	# ten miners board one per 1.5 s; at ten line #6; undocked after #6 -> 3 s
+	# -> the freighter explodes and the story moves on (the drive takes the
+	# player to Tadram, vitals and gamma kept). Assumptions: no cutscene camera;
+	# docking = holding within range of the freighter; the alarm loop and the
+	# freighter's 1/20 hull (it cannot be harmed) are left out.
+	91:{"points":[Vector3(-20000,0,60000)],
+		"groups":[{"count":1,"faction":3,"friendly":true,"static":{"model":18766,"jitter":0,"offset":Vector3.ZERO},"name_text_id":3200,"dock":"board","dockable":false}],
+		"radio":[[0,2493,2063,5,[1500]],[60,2494,2064,6,[0]],[0,2495,2065,6,[1]],[60,2496,2066,6,[2]],[0,2497,2067,6,[3]],
+			[60,2498,2068,32,[0]],[60,2499,2069,33,[10]]],
+		"radio_actions":[{"radio_index":3,"action":"dockable","first_actor":0,"end_actor":1,"enabled":true},
+			{"radio_index":5,"on":"finished","action":"transfer","first_actor":0,"end_actor":1},
+			{"radio_index":6,"on":"finished","when":"undocked","delay_ms":3000,"action":"destroy","first_actor":0,"end_actor":1}],
+		"success":{"kind":1,"actor_id":0}},
 	# 87: Carla and Keith fly to Thynome. No cast; six lines from 1.5 s; done
 	# when the last is over (then the 88 talk on docking at Thynome).
 	87:{"points":[Vector3.ZERO],"groups":[],
@@ -348,7 +387,12 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 	for index in result.size():
 		var row: Array=result[index];var own: bool=index==0 and not after.is_empty()
 		radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":int(after[0]) if own else 6,"values":after[1].duplicate() if own else [radio.size()-1]})
-	return {"actor_count":first,"ship_groups":groups,"placement":{"kind":"points","points":plan.points.duplicate()},"radio":radio,
+	# Story docking points: people board or leave here while the player is docked.
+	var docks:={};var actor:=0
+	for row in plan.groups:
+		if row.has("dock"):docks[actor]={"mode":row.dock,"dockable":row.get("dockable",true),"transfer":row.get("dockable",true)}
+		actor+=1 if row.has("static") else int(row.count)
+	return {"actor_count":first,"ship_groups":groups,"placement":{"kind":"points","points":plan.points.duplicate()},"radio":radio,"docks":docks,
 		"success":plan.success.duplicate(),"failure":plan.get("failure",{"kind":"never"}).duplicate(),"story":_advance(cursor),"turn_hostile":plan.get("turn_hostile",{}).duplicate(),"radio_actions":plan.get("radio_actions",[]).duplicate(true),"timed_actions":plan.get("timed_actions",[]).duplicate(true)}
 
 ## A static row with an offset stands at its point plus that offset (80: the

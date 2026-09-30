@@ -27,9 +27,10 @@ func build(owner: RefCounted, library: RefCounted, visuals: RefCounted, bindings
 	if library==null or visuals==null or bindings==null or library.manifest.get("content_id")!=state.base_content_id or visuals.base_content_id!=state.base_content_id or bindings.base_content_id!=state.base_content_id or bindings.binding_id!=state.binding_id:return reject("Projectile resources belong to another content identity")
 	var paths:=[]
 	for model in state.models:
-		# Expansion projectiles use the two-sided additive material (type 3).
+		# Expansion projectiles use the two-sided additive material (type 3);
+		# Supernova's race-10 shot is alpha-blended (type 1).
 		var render_type: Variant=bindings.material_for_mesh(model.resource,"high").get("render_type")
-		if bindings.resolve(model.model_id,"mesh")!=model.resource or (render_type!=state.rules.render_type and render_type!=3):return reject("Unsupported projectile material mapping")
+		if bindings.resolve(model.model_id,"mesh")!=model.resource or (render_type!=state.rules.render_type and int(render_type) not in [1,3]):return reject("Unsupported projectile material mapping")
 		if not model.has("beam"):paths.append(model.resource)
 	var resources:=Models.new()
 	if not paths.is_empty() and not resources.prepare(paths,library,visuals,bindings,"high",false,true):return reject(resources.error)

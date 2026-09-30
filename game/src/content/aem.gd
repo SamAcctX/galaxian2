@@ -166,7 +166,9 @@ func read_track(dimensions: int) -> Dictionary:
 	if total_keys > MAX_KEYS:
 		cursor.reject("Animation key budget exceeded")
 		return {}
-	var values: PackedFloat32Array = cursor.floats(count * (dimensions + 1))
+	# The wrecked freighter's broken piece has a NaN/inf scale track: it reads
+	# as scale 0, so the piece is not drawn (as a NaN scale draws nothing).
+	var values: PackedFloat32Array = cursor.floats(count * (dimensions + 1), true)
 	if not cursor.error.is_empty():
 		return {}
 	var previous := -INF

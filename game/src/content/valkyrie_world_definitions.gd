@@ -14,6 +14,13 @@ static func station_models(bindings: RefCounted,station_id: int) -> Array:
 	if not Valkyrie.available(bindings) or not STATION_MODELS.has(station_id):return []
 	return STATION_MODELS[station_id].duplicate()
 
+## Star-map planet sizes past the imported 22: the App Store table goes on
+## 256, 0, 256, 256 for types 22-25 (Talidor and Ginoya planets).
+const MAP_PLANET_SIZES:=[256,0,256,256]
+static func map_planet_sizes(bindings: RefCounted,imported: Array) -> Array:
+	if not Valkyrie.available(bindings) or imported.size()!=22:return imported
+	return imported+MAP_PLANET_SIZES
+
 static func empty_orbit(station_id: int,cursor: int) -> bool:
 	return station_id in EMPTY_ORBITS or (DESTROYED_AFTER.has(station_id) and cursor>int(DESTROYED_AFTER[station_id]))
 
@@ -51,6 +58,7 @@ const GAMMA_RATES:={109:[[0,0.7],[106,3.0],[158,1.0]],110:[[0,0.4],[106,2.0],[15
 const GAMMA_SHIELD_SORT:=38
 const GAMMA_SHIELD_ATTRIBUTE:=52
 const GAMMA_WARNING:=15
+const GAMMA_NOTICE:=44
 
 static func gamma_rate(station_id: int,cursor: int) -> float:
 	var rate:=0.0

@@ -114,12 +114,19 @@ static func weapon_for(data: Dictionary,rank: int,difficulty: float,faction: int
 	if not parameters(data) or rank<0 or rank>20 or difficulty not in [0.5,1.0] or (rival and faction not in [0,1,2,3]) or (not rival and faction!=8):return {}
 	return shared_weapon(data.weapons,int(data.campaign_cursor),rank,difficulty,faction,rival)
 
+## Races past the imported table (verified Level::assignGuns): Supernova's
+## stealth ships (race 10) fire item 229 with its own projectile at 0.7x the
+## ordinary damage. catalogue_kind -1: the item's own catalogue kind.
+const EXTRA_FACTIONS:=[{"actor_kind":10,"item_id":229,"kind":0,"catalogue_kind":-1,"model_resource_id":19091,"damage_scale":0.7}]
+static func factions(rules: Dictionary) -> Array:return rules.factions+EXTRA_FACTIONS
+
 static func shared_weapon(rules: Dictionary,cursor: int,rank: int,difficulty: float,faction: int,enhanced:=false) -> Dictionary:
-	if not Equal.equal_value(rules,VALUES.weapons) or cursor<0 or cursor>2147483647 or rank<0 or rank>20 or difficulty not in [0.5,1.0] or faction not in [0,1,2,3,8]:return {}
-	for source in rules.factions:
+	if not Equal.equal_value(rules,VALUES.weapons) or cursor<0 or cursor>2147483647 or rank<0 or rank>20 or difficulty not in [0.5,1.0] or faction not in [0,1,2,3,8,10]:return {}
+	for source in factions(rules):
 		if int(source.actor_kind)!=faction:continue
 		var row:=scaled_parameters(rules,cursor,rank,difficulty,enhanced)
 		for key in ["actor_kind","item_id","kind","catalogue_kind","model_resource_id"]:row[key]=int(source[key])
+		if source.has("damage_scale"):row.damage=int(float(row.damage)*float(source.damage_scale))
 		return row
 	return {}
 

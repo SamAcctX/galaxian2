@@ -119,6 +119,11 @@ var _return_rules:={}
 var _departure_station: RefCounted
 var _station_contact:=false
 ## Where retired story ships are parked, far outside any scene.
+const Worlds=preload("res://src/content/valkyrie_world_definitions.gd")
+## Remake docking reach beyond a story docking point's hit box (the original's
+## docking point distance was not recovered) and the original 1.5 s per person.
+const STORY_DOCK_RANGE:=2500.0
+const STORY_TRANSFER_MS:=1500
 const RETIRE_POINT:=Vector3(800000,800000,800000)
 ## The station has left this flight (a story action): not drawn, no docking.
 var _station_hidden:=false
@@ -168,6 +173,14 @@ var _queued_drive:=false
 var _story_jump:=-2
 ## A story scene holds the player (89: the supernova), set by lock_player.
 var _story_locked:=false
+## Supernova people-moving flights: docking points, people aboard, the story
+## status and the flight time a delayed radio action was first cued.
+var _story_dock:={}
+var _action_marks:={}
+var _line_marks:={"started":{},"finished":{}}
+## Gamma radiation in this orbit: loss per second after the fitted gamma
+## shield's cut (0 = no radiation). Fixed for the flight.
+var _gamma_rate:=0.0
 var _navigation_applied:=false
 var _fast_forward: RefCounted
 var _near_target:=false
@@ -482,11 +495,13 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_return_rules=return_rules if station!=null else {};_departure_station=null
 	_station_contact=false;_station_packet={};_encounter=encounter;_world_elapsed_ms=0
 	_mission_context=mission_context
+	_story_dock=_story_people(catalogues,entry)
 	_engine_audio=EngineAudio.new()
 	if not _engine_audio.configure_player(bindings,catalogues,player,_pose):return reject(_engine_audio.error)
 	_unsupported_boundary=""
 	_death=death;_statistics_pose=entry.player_pose;_camera_follow_enabled=true;_game_over_packet={}
 	_particles=particles;_equipment=equipment
+	_gamma_rate=_radiation(bindings,catalogues,entry,equipment)
 	_engine_particles=engine_particles;_booster=booster
 	_radio=radio;_radio_events=[]
 	_scanner=scanner;_scanner_events=[]
@@ -509,7 +524,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_gate_animation=gate_animation;_gate_transit=gate_transit;_gate_destinations=gate_destinations
 	_system_navigation=system_navigation;_navigation_destinations=navigation_destinations
 	_drive=drive;_drive_arrival=null
-	_pending_destination=int(entry.get("navigation_destination_id",-1));_navigation_applied=false;_queued_drive=false;_story_jump=-2;_story_locked=false
+	_pending_destination=int(entry.get("navigation_destination_id",-1));_navigation_applied=false;_queued_drive=false;_story_jump=-2;_story_locked=false;_action_marks={};_line_marks={"started":{},"finished":{}}
 	# A story waiting in another orbit (89: Naneroh) takes the ship there at once.
 	var move: Dictionary=load("res://src/content/valkyrie_campaign_definitions.gd").story_move(int(entry.get("campaign_cursor",-1)))
 	if move.get("arrive","")=="gate" and _drive!=null and int(entry.get("location",{}).get("station_id",-1))!=int(move.station_id):_story_jump=int(move.station_id)
@@ -617,7 +632,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 			next._encounter=next._encounter.steer_guided_missile(commands if manual else Vector2.ZERO)
 			commands=Vector2.ZERO;strafe=0.0
 	var active_throttle: float=(throttle if _briefing.snapshot().entry_released else 1.0) if alive else _throttle
-	if convoy_input_blocked():active_throttle=0.0
+	if convoy_input_blocked() or story_dock_held():active_throttle=0.0
 	var ordinary_motion:=false
 	var visual_response: Vector2=next._pilot.angular_units
 	# Proximity uses the cached position; physical hull contact can also set this
@@ -968,6 +983,10 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 	if next._notices!=null:
 		if not next._notices.advance(delta_ms,next._mining!=null and next._mining.has_active_drill()):reject(next._notices.error);return null
 	if not next._observe_radio():reject(next.error);return null
+	if next._gamma_rate>0.0 and not next.death_active() and cues.entry_released and not next.local_departing() and not next.drive_departing():
+		var hit: Dictionary=next._player.drain_gamma(next._gamma_rate*float(delta_ms)/1000.0,float(Worlds.GAMMA_WARNING))
+		if hit.is_empty():reject(next._player.error);return null
+		if hit.warned and not next._notices.enqueue(Worlds.GAMMA_NOTICE):reject(next._notices.error);return null
 	if next._fast_forward!=null:
 		var radar_visible: bool=not next.death_active() and cues.entry_released and not cues.dialogue.visible and not next.cinematic_input_blocked() and not next.local_departing()
 		if not next._fast_forward.publish_radar([] if next._encounter==null else next._encounter.combat_snapshot().actors,radar_visible,current_music_id):reject(next._fast_forward.error);return null
@@ -980,8 +999,15 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		var guided: RefCounted=next.start_drive(next._pending_destination) if next._queued_drive else next.select_map_destination(next._pending_destination)
 		if guided==null:reject(next.error);return null
 		next=guided
-	# A jump the drive cannot make (no route to it) is left to the player.
-	if next._story_jump>=0 and next._drive!=null and next._drive.ready() and next.drive_quote(next._story_jump).get("mode","local")=="local":next._story_jump=-2
+	# A move inside this system goes by ordinary local travel (91: Valpatro to
+	# Tadram); a jump the drive cannot make otherwise is left to the player.
+	if next._story_jump>=0 and next._drive!=null and next._drive.ready() and next.drive_quote(next._story_jump).get("mode","local")=="local":
+		if next._local_travel!=null and next._local_travel.supports_destination(next._story_jump):
+			if cues.entry_released and not next.dialogue_visible() and not next.death_active() and not next.cinematic_input_blocked() and not next.local_departing():
+				var travel: RefCounted=next.select_planet(next._story_jump)
+				if travel==null:reject(next.error);return null
+				next=travel;next._story_jump=-2
+		else:next._story_jump=-2
 	if next._story_jump>-2 and cues.entry_released and not next.dialogue_visible() and not next.death_active() and not next.cinematic_input_blocked() and next.drive_available() and next._drive.snapshot().get("phase","")=="ready":
 		var jumped: RefCounted=next.start_drive(next._story_jump,true)
 		if jumped==null:reject(next.error);return null
@@ -1205,8 +1231,67 @@ func select_secondary(item_id: int,paused:=false) -> RefCounted:
 	var next:=fork_for_frame();next._encounter=selected
 	return next
 
+## Ginoya's radiation for this flight: the orbit's rate for the story cursor,
+## cut by the best fitted gamma shield (subtype 38, percent in property 52).
+func _radiation(bindings: RefCounted,catalogues: RefCounted,entry: Dictionary,equipment: RefCounted) -> float:
+	if catalogues==null or not load("res://src/content/valkyrie_campaign_definitions.gd").available(bindings):return 0.0
+	var rate: float=Worlds.gamma_rate(int(entry.get("location",{}).get("station_id",-1)),int(entry.get("campaign_cursor",-1)))
+	if rate<=0.0:return rate
+	var cut:=0
+	for id in entry.get("departure",{}).get("loadout",{}).get("equipment_ids",[]):
+		if int(id)<0 or int(id)>=catalogues.tables.items.size():continue
+		var properties: Dictionary=catalogues.tables.items[int(id)].properties
+		if int(properties.get(2,-1))==int(Worlds.GAMMA_SHIELD_SORT):cut=maxi(cut,int(properties.get(int(Worlds.GAMMA_SHIELD_ATTRIBUTE),0)))
+	return rate*maxf(0.0,1.0-float(cut)/100.0)
+
+## People-moving flights (Supernova kind 184): who can dock where, how many
+## are aboard and the story status that counts people delivered down to 0.
+## Boarding stops at the ship's passenger berths.
+func _story_people(catalogues: RefCounted,entry: Dictionary) -> Dictionary:
+	if _mission_context==null or _mission_context.recipe().get("docks",{}).is_empty():return {}
+	var docks: Dictionary=_mission_context.recipe().docks
+	var status:=maxi(0,load("res://src/content/valkyrie_campaign_definitions.gd").story_status(int(entry.get("campaign_cursor",-1))))
+	var boards:=docks.values().any(func(row):return row.mode=="board")
+	var berths:=_passenger_berths(catalogues,entry.get("departure",{}).get("loadout",{}))
+	return {"actors":docks.duplicate(true),"docked":-1,"elapsed":0,"last_ms":0,"aboard":0 if boards else status,"status":status,"berths":berths}
+
+## Docked = within reach of a visible, dockable docking point. While docked
+## the ship is held until that point's transfer is over; one person moves
+## every 1.5 s once its transfer is on.
+static func _passenger_berths(catalogues: RefCounted,loadout: Dictionary) -> int:
+	if catalogues==null or not loadout.get("slots") is Array:return 0
+	var sessions:=load("res://src/simulation/contract_session.gd")
+	return sessions.passenger_capacity(sessions.cabin_catalogue(catalogues,load("res://src/content/early_contract_definitions.gd").MAC_ACCEPTANCE),loadout)
+
+func _advance_story_dock(elapsed: int) -> bool:
+	if _story_dock.is_empty():return true
+	var step:=maxi(0,elapsed-int(_story_dock.last_ms));_story_dock.last_ms=elapsed
+	var actors: Array=_encounter.combat_snapshot().actors
+	var docked:=-1
+	for id in _story_dock.actors:
+		var row: Dictionary=_story_dock.actors[id]
+		if not row.dockable or id>=actors.size() or int(actors[id].vitals.hull)<=0 or not actors[id].get("model_draw_enabled",true):continue
+		var pose: Variant=actors[id].get("pose",actors[id].get("body_pose"))
+		var reach: float=STORY_DOCK_RANGE+load("res://src/content/static_object_definitions.gd").reach(int(actors[id].get("static_model",-1)))
+		if pose is Transform3D and _pose.origin.distance_to(pose.origin)<=reach:docked=int(id)
+	if docked!=int(_story_dock.docked):_story_dock.docked=docked;_story_dock.elapsed=0
+	if docked<0 or not _story_dock.actors[docked].transfer:return true
+	_story_dock.elapsed=int(_story_dock.elapsed)+step
+	while int(_story_dock.elapsed)>=STORY_TRANSFER_MS and not _story_transfer_done(docked):
+		_story_dock.elapsed=int(_story_dock.elapsed)-STORY_TRANSFER_MS
+		if _story_dock.actors[docked].mode=="board":_story_dock.aboard=int(_story_dock.aboard)+1
+		else:_story_dock.aboard=int(_story_dock.aboard)-1;_story_dock.status=maxi(0,int(_story_dock.status)-1)
+	return true
+
+func _story_transfer_done(id: int) -> bool:
+	if _story_dock.actors[id].mode=="board":return int(_story_dock.aboard)>=mini(int(_story_dock.berths),int(_story_dock.status))
+	return int(_story_dock.aboard)<=0
+
+func story_dock_held() -> bool:
+	return not _story_dock.is_empty() and int(_story_dock.docked)>=0 and not _story_transfer_done(int(_story_dock.docked))
+
 func cinematic_input_blocked() -> bool:
-	return _story_locked or convoy_input_blocked() or (_alioth!=null and _alioth.snapshot().input_blocked) or (_sahi!=null and _sahi.snapshot().input_blocked) or (_probe!=null and _probe.snapshot().input_blocked) or gate_modal() or gate_coasting() or gate_departing() or drive_departing()
+	return _story_locked or story_dock_held() or convoy_input_blocked() or (_alioth!=null and _alioth.snapshot().input_blocked) or (_sahi!=null and _sahi.snapshot().input_blocked) or (_probe!=null and _probe.snapshot().input_blocked) or gate_modal() or gate_coasting() or gate_departing() or drive_departing()
 
 func void_environment_owner() -> RefCounted:return null if _void_environment==null else _void_environment.fork()
 func ordinary_void_source_owner() -> RefCounted:return null if _ordinary_void_source==null else _ordinary_void_source.fork()
@@ -1466,35 +1551,69 @@ func _observe_radio() -> bool:
 		return true
 	if _mission_context!=null and (_mission_context.advances_campaign() or not _mission_context.contract_context().is_empty()):
 		var elapsed: int=int(_briefing.snapshot().world_elapsed_ms)
+		# When each recipe line started and finished (condition 35).
+		var lines: Dictionary=_radio.snapshot()
+		for kind in ["started","finished"]:
+			var seen: Array=lines.get(kind,[])
+			for index in seen.size():
+				if seen[index]==true and not _line_marks[kind].has(index):_line_marks[kind][index]=elapsed
 		if not _radio.bind_context(_mission_context.radio_observation(elapsed,_story_radio_facts())):return reject(_radio.error)
 		_radio_events=_radio.step_context(elapsed)
 		var turn: Dictionary=_mission_context.recipe().get("turn_hostile",{})
 		if not turn.is_empty() and _radio.error.is_empty() and _radio.snapshot().finished[int(turn.radio_index)] and not _encounter.story_hostility_applied():
 			if not _encounter.apply_story_hostility(int(turn.get("reputation_axis",-1)),int(turn.get("reputation_value",0))):return reject(_encounter.error)
 		# Recipe actions cued by a radio line starting (e.g. pirates give up at "Fall back!").
-		for action in _mission_context.recipe().get("radio_actions",[]):
+		if not _advance_story_dock(elapsed):return false
+		var radio_actions: Array=_mission_context.recipe().get("radio_actions",[])
+		var radio_lock:=false;var radio_invulnerable:=false
+		for index in radio_actions.size():
+			var action: Dictionary=radio_actions[index]
 			# Cued when the line starts, or with on:"finished" when it is over.
 			var started: Array=_radio.snapshot().get("finished" if action.get("on","")=="finished" else "started",[])
 			if int(action.radio_index)>=started.size() or started[int(action.radio_index)]!=true:continue
-			if action.action=="disarm":
+			# when:"undocked" waits for the player to leave the docking point;
+			# delay_ms counts from the moment the cue (and its when) first held.
+			if not _action_marks.has(index):
+				if action.get("when","")=="undocked" and int(_story_dock.get("docked",-1))>=0:continue
+				_action_marks[index]=elapsed
+			if elapsed<int(_action_marks[index])+int(action.get("delay_ms",0)):continue
+			if action.action=="lock_player":
+				# No steering for the scene; "invulnerable" also keeps the ship unharmed.
+				if elapsed<int(_action_marks[index])+int(action.get("delay_ms",0))+int(action.duration_ms):
+					radio_lock=true;radio_invulnerable=radio_invulnerable or action.get("invulnerable",false)
+			elif action.action in ["dockable","transfer"]:
+				for id in range(int(action.first_actor),int(action.end_actor)):
+					if _story_dock.get("actors",{}).has(id):_story_dock.actors[id][action.action]=action.get("enabled",true)
+			elif action.action in ["show","destroy"]:
+				var actors: Array=_encounter.combat_snapshot().actors
+				var pending: bool=range(int(action.first_actor),int(action.end_actor)).any(func(id):return int(actors[id].vitals.hull)>0 and (action.action=="destroy" or not actors[id].get("model_draw_enabled",true)))
+				if pending and not _encounter.story_actor_action(int(action.first_actor),int(action.end_actor),action.action):return reject(_encounter.error)
+			elif action.action=="disarm":
 				var actors: Array=_encounter.combat_snapshot().actors
 				if range(int(action.first_actor),int(action.end_actor)).any(func(id):return actors[id].get("firing_allowed",false) and int(actors[id].vitals.hull)>0):
 					if not _encounter.disarm_story_actors(int(action.first_actor),int(action.end_actor)):return reject(_encounter.error)
 			elif action.action=="place":
-				# Parked (asleep, far away) reserve ships arrive once.
+				# Parked (asleep, far away) reserve ships arrive once per action.
+				if _action_marks.has("placed%d"%index):continue
 				var actors: Array=_encounter.combat_snapshot().actors
 				# centre "player": a ring around the player; wake: they attack at once.
 				var center:=_pose.origin if action.center is String and action.center=="player" else Vector3(action.center)
 				if actors[int(action.first_actor)].get("active",false)!=true and int(actors[int(action.first_actor)].vitals.hull)>0 and (action.center is String or actors[int(action.first_actor)].pose.origin.distance_to(center)>2.0*float(action.radius)):
 					if not _encounter.place_story_actors(int(action.first_actor),int(action.end_actor),center,float(action.radius)):return reject(_encounter.error)
+					_action_marks["placed%d"%index]=true
 					if action.get("wake",false) and not _encounter.wake_story_actors(int(action.first_actor),int(action.end_actor)):return reject(_encounter.error)
 			elif action.action=="retire":
 				# The ship or object leaves the scene (80: the Valkyrie jumps away).
 				var actors: Array=_encounter.combat_snapshot().actors
 				var parked: Variant=actors[int(action.first_actor)].get("pose",actors[int(action.first_actor)].get("body_pose"))
 				var gone: bool=not actors[int(action.first_actor)].get("model_draw_enabled",true) if actors[int(action.first_actor)].get("static_object",false) else not actors[int(action.first_actor)].get("active",false) and parked is Transform3D and parked.origin.distance_to(RETIRE_POINT)<=100000.0
-				if not gone:
+				# Once per action: a later "place" may bring the same ships back.
+				if not gone and not _action_marks.has("retired%d"%index):
 					if not _encounter.retire_story_actors(int(action.first_actor),int(action.end_actor),RETIRE_POINT):return reject(_encounter.error)
+					_action_marks["retired%d"%index]=true
+		if radio_actions.any(func(action):return action.action=="lock_player") and radio_lock!=_story_locked:
+			_story_locked=radio_lock
+			if (radio_invulnerable or not radio_lock) and not _player.set_permissions(bool(_player.snapshot().active),not radio_lock):return reject(_player.error)
 		# Recipe actions at a flight time (78: the station leaves, the pirates wake).
 		for action in _mission_context.recipe().get("timed_actions",[]):
 			if elapsed<int(action.after_ms):continue
@@ -1553,7 +1672,10 @@ func _story_radio_facts() -> Dictionary:
 		hulls[id]=int(actor.vitals.hull)
 		if actor.get("pose") is Transform3D:distances[id]=_pose.origin.distance_to(actor.pose.origin)
 		emp[id]=[int(actor.get("systems_hit_serial",0))>0,actor.get("systems_disabled",false)==true]
-	return {"hostile_active":hostile_active,"defeated_targets":defeated,"player_armor_depleted":int(_player.snapshot().vitals.armor)<1,"hulls":hulls,"player_distances":distances,"emp":emp}
+	var facts:={"hostile_active":hostile_active,"defeated_targets":defeated,"player_armor_depleted":int(_player.snapshot().vitals.armor)<1,"hulls":hulls,"player_distances":distances,"emp":emp}
+	facts.radio_marks=_line_marks.duplicate(true)
+	if not _story_dock.is_empty():facts.merge({"story_docked":int(_story_dock.docked),"story_aboard":int(_story_dock.aboard),"story_status":int(_story_dock.status)})
+	return facts
 
 func _advance_world(milliseconds: int, preceding_reference: Vector3) -> bool:
 	if _wingmen!=null:
@@ -2208,6 +2330,11 @@ func start_drive(station_id: int,story_jump:=false) -> RefCounted:
 	if not story_jump and not drive_permits_mission():
 		if not next._notices.enqueue(21):reject(next._notices.error);return null
 		return next
+	# A story mission may need passenger berths before its target can be set.
+	var refusal: int=load("res://src/content/valkyrie_campaign_definitions.gd").entry_refusal(int(_entry.campaign_cursor),station_id,_passenger_berths(_story_catalogues,next._equipment.snapshot().loadout))
+	if not story_jump and refusal>=0:
+		if not next._notices.enqueue(refusal):reject(next._notices.error);return null
+		return next
 	var operation: Dictionary=next._drive.evaluate_request(station_id,next._cargo,story_jump)
 	if operation.is_empty() or not operation.started:reject(next._drive.error if operation.is_empty() else "Not enough energy cells for this jump");return null
 	next._equipment=next._equipment.fork()
@@ -2329,7 +2456,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	state.player_engine=_engine_audio.snapshot()
 	if _wingmen!=null:state.wingman_actors=_wingmen.snapshot()
 	state.merge({"world_type":_entry.world_type,"location":_entry.location.duplicate(true),"activated":true,
-		"player_pose":_pose,"control_throttle":_throttle,"player":_player.snapshot(),"player_cache":_player.cache_snapshot(),"angular_units":_pilot.angular_units,
+		"player_pose":_pose,"control_throttle":_throttle,"player":_player.snapshot(),"gamma_rate":_gamma_rate,"player_cache":_player.cache_snapshot(),"angular_units":_pilot.angular_units,
 		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),
 		"ship_detail":_detail.snapshot(),"detail_reference":_reference,"actors":[],"random_state":_random.duplicate(true),
 		"cargo":held,"arrival_from_station_id":int(_entry.departure.get("from_station_id",-1)),
@@ -2463,7 +2590,7 @@ func fork_for_frame() -> RefCounted:
 	if _gate_transit!=null:copy._gate_transit=_gate_transit.fork_for_frame()
 	copy._gate_destinations=_gate_destinations.duplicate();copy._gate_cruise_speed=_gate_cruise_speed
 	copy._system_navigation=_system_navigation;copy._navigation_destinations=_navigation_destinations
-	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied;copy._queued_drive=_queued_drive;copy._story_jump=_story_jump;copy._story_locked=_story_locked
+	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied;copy._queued_drive=_queued_drive;copy._story_jump=_story_jump;copy._story_locked=_story_locked;copy._story_dock=_story_dock.duplicate(true);copy._action_marks=_action_marks.duplicate();copy._line_marks=_line_marks.duplicate(true);copy._gamma_rate=_gamma_rate
 	copy._briefing=_briefing.fork();copy._player=_player.fork_for_frame();copy._scenery=_scenery.fork_for_frame()
 	copy._camera=_camera.fork_for_frame();copy._pilot=_pilot.fork_for_frame();copy._detail=_detail.fork_for_frame()
 	copy._collision_enabled=_collision_enabled
