@@ -42,6 +42,9 @@ func prepare(paths: Array, library: RefCounted, visuals: RefCounted, bindings: R
 		var fixed_poses: Array=[]
 		if require_static and not Tracks.has_identity_tracks(decoded.surfaces):
 			fixed_poses=fixed_surface_poses(decoded.surfaces)
+			# Additive overlays (e.g. a sweeping ship light) are drawn at the
+			# clip's first pose in static scenes; they do not animate yet.
+			if fixed_poses.is_empty() and path.get_file().ends_with("_anim_add.aem"):fixed_poses=first_surface_poses(decoded.surfaces)
 			if fixed_poses.is_empty():return reject(path.get_file() + ": source animation semantics are not yet supported in this scene")
 		var prototype := Model.new()
 		prototype.build(decoded, images.get(texture_paths[0]), images.get(texture_paths[1]), mode, texture_cache, source_uv)
@@ -72,6 +75,11 @@ static func fixed_surface_poses(surfaces: Array) -> Array:
 	if timing.start_ms!=timing.end_ms:return []
 	var sampled: Dictionary=sampler.sample(timing.start_ms,Transform3D.IDENTITY)
 	return sampled.surfaces.map(func(row):return row.pose)
+
+static func first_surface_poses(surfaces: Array) -> Array:
+	var sampler:=SourceAnimation.new()
+	if not sampler.configure(surfaces):return []
+	return sampler.sample(sampler.snapshot().range.start_ms,Transform3D.IDENTITY).surfaces.map(func(row):return row.pose)
 
 func covers(paths: Array, bindings: RefCounted, quality: String, require_static: bool, source_uv := true) -> bool:
 	if _base!=bindings.base_content_id or _binding!=bindings.binding_id or _quality!=quality or (require_static and not _static) or _source_uv!=source_uv: return false

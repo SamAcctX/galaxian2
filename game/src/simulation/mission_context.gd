@@ -280,10 +280,15 @@ static func contract_combat_matches(bindings: RefCounted,combat: Dictionary) -> 
 	if kind!=context.mission.get("kind"):return false
 	# Cast admission owns location and population size; presentation observes it.
 	var hulls: Dictionary=bindings.early_contracts.encounter_construction.hulls
+	# Story recipes may name hulls outside a faction's pool (Khador's prototype).
+	var flights=load("res://src/content/valkyrie_flight_definitions.gd")
+	var named: Array=flights.named_hulls(context.mission) if flights.is_story_job(context.mission) else []
 	for id in actors.size():
 		var actor: Variant=actors[id]
 		if not actor is Dictionary or actor.get("actor_id")!=id:return false
-		if actor.get("population_group")=="debris":
+		if actor.get("population_group")=="static":
+			if actor.get("hull_catalogue_id")!=-1 or not actor.get("contract_ship",false) or not actor.get("static_model") is int:return false
+		elif actor.get("population_group")=="debris":
 			if actor.get("actor_kind")!=-1 or actor.get("hull_catalogue_id")!=-1:return false
 		else:
 			var hull: Variant=actor.get("hull_catalogue_id")
@@ -293,7 +298,7 @@ static func contract_combat_matches(bindings: RefCounted,combat: Dictionary) -> 
 				if actor.get("population_group")!="freighter" or hull!=load("res://src/content/free_population_definitions.gd").freighter_hull(bindings,int(faction)):return false
 				continue
 			if actor.get("subtype")!=0:return false
-			if not hull is int or hull<0 or hull>=hulls.factions.size() or int(hulls.factions[hull])!=faction:return false
+			if not hull is int or hull<0 or (hull not in named and (hull>=hulls.factions.size() or int(hulls.factions[hull])!=faction)):return false
 	return true
 
 

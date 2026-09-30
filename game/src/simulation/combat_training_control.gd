@@ -26,6 +26,8 @@ const Convoy=preload("res://src/content/convoy_world_definitions.gd")
 const ContractResults=preload("res://src/content/contract_flight_result_definitions.gd")
 const ResultPoll=preload("res://src/simulation/mission_result_poll.gd")
 const DebrisDeath=preload("res://src/simulation/debris_destruction.gd")
+const StaticDeath=preload("res://src/simulation/static_object_destruction.gd")
+const Statics=preload("res://src/content/static_object_definitions.gd")
 const LaunchClock=preload("res://src/simulation/traffic_launch_clock.gd")
 const FreightMotion=preload("res://src/simulation/freighter_motion.gd")
 const FreightDeath=preload("res://src/simulation/freighter_destruction.gd")
@@ -364,7 +366,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	if not combat.configure_contract(bindings,catalogues,construction,equipment):return reject(combat.error)
 	var guidance:=[];var flight:=[]
 	for id in int(rules.actor_count):
-		if rules.actors[id].population_group=="debris":
+		if rules.actors[id].population_group in ["debris","static"]:
 			guidance.append(null);flight.append(null)
 			continue
 		if rules.actors[id].subtype==1:
@@ -397,6 +399,13 @@ func _set_contract_destruction(bindings: RefCounted,resources: RefCounted,freigh
 		if _initial_actors[id].population_group=="debris":
 			var owner:=DebrisDeath.new()
 			if not owner.configure(bindings,resources,_construction,id):return reject(owner.error)
+			owners.append(owner)
+			continue
+		if _initial_actors[id].population_group=="static":
+			var owner:=StaticDeath.new()
+			if not owner.configure(bindings,resources,_construction,id):return reject(owner.error)
+			var placed: Dictionary=resources.snapshot().static_objects[int(_initial_actors[id].static_model)]
+			if not _combat.set_static_geometry(id,placed.boxes):return reject(_combat.error)
 			owners.append(owner)
 			continue
 		var seed: Dictionary=_initial_actors[id].duplicate(true)
@@ -863,6 +872,12 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 			decisions.append(debris.decision)
 			if debris.has("death"):death_events.append(debris.death)
 			continue
+		if _contract and _initial_actors[id].population_group=="static":
+			var fixed: Dictionary=staged._advance_static(id,int(delta_ms),player)
+			if fixed.is_empty():return fail(staged.error)
+			decisions.append(fixed.decision)
+			if fixed.has("death"):death_events.append(fixed.death)
+			continue
 		if staged._flight[id] is FreightMotion:
 			var freight: Dictionary=staged._advance_freighter(id,int(delta_ms))
 			if freight.is_empty():return fail(staged.error)
@@ -877,7 +892,7 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 			if life.phase=="ready":
 				var departing: bool=_ambient and old.get("travel_cycle",-1)>=0 and old.actor_mode in [4,6]
 				var placed: bool=(_ambient or _alioth or _selected40_world!=null or _selected41_world!=null) and not staged._launch_pending.is_empty() and staged._launch_pending[id]
-				if old.body_pose!=motion.root_pose or (not departing and not ((_alioth or _selected40_world!=null or _selected41_world!=null) and placed) and old.pose!=(motion.root_pose if placed else staged._flight[id].systems_statistics_pose() if old.has("systems") else motion.pose)):return fail("Combat pose disagrees with retained flight")
+				if old.body_pose!=motion.root_pose or (not departing and not ((_alioth or _selected40_world!=null or _selected41_world!=null) and placed) and old.pose!=(motion.root_pose if placed else staged._flight[id].systems_statistics_pose() if old.has("systems") else motion.pose)):return fail("Combat pose disagrees with retained flight (actor %d)"%id)
 				if placed:
 					if not staged._combat.set_pose(id,motion.pose,motion.root_pose):return fail(staged._combat.error)
 					staged._launch_pending[id]=false
@@ -958,6 +973,35 @@ func _advance_debris(id: int,delta_ms: int) -> Dictionary:
 		death.accounting_event=credit;result.death=death
 	return result
 
+## A static object never moves or fires. Asleep, it wakes when the player or
+## an active body of another faction is within its range on every axis.
+func _advance_static(id: int,delta_ms: int,player: Dictionary) -> Dictionary:
+	if not _combat.refresh_hostility(id):return fail(_combat.error)
+	var actor: Dictionary=_combat.actor_snapshot(id)
+	var life: Dictionary=_destruction[id].snapshot()
+	var credit:={}
+	if life.phase=="ready" and actor.vitals.hull>0 and not actor.active and actor.actor_mode==5 and _static_disturbed(actor,player):
+		if not _combat.wake_static(id):return fail(_combat.error)
+		actor=_combat.actor_snapshot(id)
+	elif life.phase=="ready" and actor.vitals.hull==0:
+		credit=_accounting.record(actor)
+		if credit.is_empty():return fail(_accounting.error)
+	var death: Dictionary=_destruction[id].advance(delta_ms,actor)
+	if death.is_empty():return fail(_destruction[id].error)
+	if death.state.phase!="ready" and not _combat.apply_static_destruction(id,_destruction[id]):return fail(_combat.error)
+	var result:={"decision":{"actor_id":id,"fire_requested":false,"dying":actor.vitals.hull==0,"stationary":true}}
+	if death.started:
+		death.accounting_event=credit;result.death=death
+	return result
+
+func _static_disturbed(actor: Dictionary,player: Dictionary) -> bool:
+	var reach:=float(actor.wake_half_extent);var center: Vector3=actor.pose.origin
+	var player_pose: Variant=player.get("pose")
+	if player.get("active",false) and player_pose is Transform3D and Statics.within_reach(center,player_pose.origin,reach):return true
+	for other in _combat.actor_snapshots():
+		if other.actor_id!=actor.actor_id and other.active and other.actor_kind!=actor.actor_kind and other.vitals.hull>0 and Statics.within_reach(center,other.pose.origin,reach):return true
+	return false
+
 func _advance_freighter(id: int,delta_ms: int) -> Dictionary:
 	if _combat.actor_snapshot(id).has("systems") and not _combat.advance_systems(id,delta_ms):return fail(_combat.error)
 	if not _combat.refresh_hostility(id):return fail(_combat.error)
@@ -1022,13 +1066,14 @@ func sample_scene_clock(world_ms: int,poll_ms: int) -> bool:
 	_scene_clocked=true;_contract_result.elapsed_ms=world_ms;_contract_result.clock_ms=poll_ms
 	return true
 
-func poll_contract_result(radio_active: bool,periodic_poll_allowed: bool=true) -> Dictionary:
+func poll_contract_result(radio_active: bool,periodic_poll_allowed: bool=true,radio_finished: Array=[]) -> Dictionary:
 	error=""
 	if not _contract or _mission_runner==null or _accounting==null:return fail("Contract flight results are unavailable")
 	var current: Dictionary=_mission_runner.snapshot()
 	if current.retired or current.mode!=0:return current
 	var staged: RefCounted=_mission_runner.fork()
-	var result: Dictionary=staged.poll(_combat.actor_snapshots(),radio_active,periodic_poll_allowed,true,{},_result_world())
+	var facts:=_result_world();facts.radio_finished=radio_finished.duplicate()
+	var result: Dictionary=staged.poll(_combat.actor_snapshots(),radio_active,periodic_poll_allowed,true,{},facts)
 	if result.is_empty():return fail(staged.error)
 	if result.mode!=0 and not _combat.open_contract_result(_bindings,int(result.mode)):return fail(_combat.error)
 	_mission_runner=staged
@@ -1190,6 +1235,18 @@ func evaluate_blast_motion(events: Array) -> RefCounted:
 			next._destruction[id]=next._destruction[id].fork_for_frame()
 			if not next._destruction[id].apply_blast_strength(float(hit.motion_scalar)):reject(next._destruction[id].error);return null
 	return next
+
+## Bring parked story ships onto a ring around a point (a reserve arriving);
+## their flight and combat bodies move together.
+func place_story_actors(first: int,end: int,center: Vector3,radius: float) -> bool:
+	error=""
+	if _combat==null or first<0 or end>_flight.size() or end<=first or radius<=0.0:return reject("Story placement requires contract ships")
+	for id in range(first,end):
+		if _flight[id]==null:return reject("Story placement requires flying ships")
+		var angle:=TAU*float(id-first)/float(end-first)
+		var pose:=Transform3D(Basis.IDENTITY,center+Vector3(cos(angle)*radius,5000.0 if (id-first)%2==0 else -5000.0,sin(angle)*radius))
+		if not _flight[id].apply_scripted_pose(pose) or not _combat.set_pose(id,pose,pose):return reject(_flight[id].error+_combat.error)
+	return true
 
 func fork_for_frame(copy_motion:=true, incoming_combat: RefCounted=null) -> RefCounted:
 	var copy: RefCounted=get_script().new()

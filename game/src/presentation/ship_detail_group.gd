@@ -37,8 +37,11 @@ func configure(bindings: RefCounted, ships: Dictionary,freighters: Array=[],asse
 		var selector := Detail.new()
 		var ready: bool=selector.configure_assembly(bindings,assemblies[key]) if assemblies.has(key) else selector.configure_convoy(bindings.mido_travel.get("convoy_ship",{}),bindings.ship_lod) if key in freighters and ships[key]==14 else selector.configure_freighter(bindings.ambient_population,bindings.ship_lod) if key in freighters else selector.configure(bindings.ship_lod,ships[key])
 		if not ready:return reject(selector.error)
-		if key not in freighters and bindings.ship_lod.body_resource_ids[ships[key]][0]==65535: return reject("Ships without alternate meshes are not registered with the source LOD manager")
+		# Ships without alternate meshes (player-class hulls flown by story NPCs)
+		# keep their one mesh and never join the source LOD manager.
+		if key not in freighters and bindings.ship_lod.body_resource_ids[ships[key]][0]==65535:continue
 		staged[key]=selector
+	if staged.is_empty() and not ships.is_empty():clear();return true
 	return configure_selectors(bindings,staged)
 
 func configure_selectors(bindings: RefCounted, selectors: Dictionary) -> bool:
@@ -75,7 +78,7 @@ func update(delta_ms: Variant, positions: Dictionary, reference: Variant, detail
 func refresh(positions: Dictionary, reference: Variant, detail: Variant) -> bool:
 	error=""
 	if _selectors.is_empty(): return reject("Configure ship detail group before refreshing")
-	if not reference is Vector3 or not reference.is_finite() or positions.size()!=_selectors.size(): return reject("Invalid LOD reference or ship position set")
+	if not reference is Vector3 or not reference.is_finite() or not _selectors.keys().all(func(key):return positions.has(key)): return reject("Invalid LOD reference or ship position set")
 	var staged := {}
 	var selectors := {}
 	for key in _selectors:

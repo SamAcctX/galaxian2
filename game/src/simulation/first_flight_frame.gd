@@ -327,7 +327,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	var ships:={"player":int(loadout.ship_id)};var positions:={"player":entry.player_pose.origin};var freighters:=[];var assemblies:={}
 	if encounter!=null:
 		for actor in encounter.snapshot().combat.actors:
-			if actor.get("population_group")=="debris":continue
+			if actor.get("population_group") in ["debris","static"]:continue
 			ships[actor.actor_id]=int(actor.hull_catalogue_id);positions[actor.actor_id]=actor.position
 			if actor.get("population_group") in ["freighter","capital"]:
 				freighters.append(actor.actor_id);assemblies[actor.actor_id]=encounter.freighter_assembly(actor.actor_id)
@@ -593,6 +593,14 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		if not manual or (_autopilot!=null and _autopilot.snapshot().active) or (_approach!=null and _approach.snapshot().phase!="idle"):
 			next._encounter=next._encounter.set_turret_active(false);turret_active=false
 		else:commands=Vector2.ZERO;strafe=0.0
+	# A live guided missile takes the stick; the ship keeps its motion.
+	var guided_missile: bool=next._encounter!=null and next._encounter.guided_missile_active()
+	if guided_missile:
+		if not alive or local_departing() or cinematic_input_blocked():
+			next._encounter=next._encounter.discard_guided_missile();guided_missile=false
+		else:
+			next._encounter=next._encounter.steer_guided_missile(commands if manual else Vector2.ZERO)
+			commands=Vector2.ZERO;strafe=0.0
 	var active_throttle: float=(throttle if _briefing.snapshot().entry_released else 1.0) if alive else _throttle
 	if convoy_input_blocked():active_throttle=0.0
 	var ordinary_motion:=false
@@ -754,7 +762,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 	var positions:={"player":next._pose.origin}
 	if next._encounter!=null:
 		for actor in next._encounter.combat_snapshot().actors:
-			if actor.get("population_group")=="debris":continue
+			if actor.get("population_group") in ["debris","static"]:continue
 			positions[actor.actor_id]=actor.get("body_pose",actor.pose).origin
 	if not next._detail.update(delta_ms,positions,_reference,1.0,false):reject(next._detail.error);return null
 	if next._wingmen!=null and not next._wingmen.advance_detail(delta_ms,_reference):reject(next._wingmen.error);return null
@@ -812,13 +820,16 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 	elif not instruction_opened and next._objective is ContractObjective:
 		var radio_active: bool=next._radio!=null and next._radio.snapshot().get("visible",false)
 		var before_cursor: int=next._objective.snapshot().campaign_cursor
-		if not next._objective.poll_contract(next._cargo,next._scenery,next._encounter,next._player.snapshot().vitals.hull>0,radio_active,next._briefing.mission_poll_due()):reject(next._objective.error);return null
+		var radio_finished: Array=next._radio.snapshot().get("finished",[]) if next._radio!=null else []
+		if not next._objective.poll_contract(next._cargo,next._scenery,next._encounter,next._player.snapshot().vitals.hull>0,radio_active,next._briefing.mission_poll_due(),radio_finished):reject(next._objective.error);return null
 		var story_state: Dictionary=next._objective.snapshot()
 		if story_state.campaign_cursor!=before_cursor:
 			# A story flight has moved on in space: navigation and docking follow it.
 			if next._local_travel==null or not next._local_travel.rebase_story_flight(_story_bindings,story_state.campaign_cursor,story_state.mission):reject("Story navigation: "+str(next._local_travel.error if next._local_travel!=null else "missing travel"));return null
 			next._return_rules={} if next._station==null else FreeFlight.docking(_story_bindings,int(_entry.location.station_id),story_state.campaign_cursor)
 			if next._system_navigation!=null and _story_catalogues!=null and not next._refresh_story_navigation(story_state):return null
+			var disarm: Array=_mission_context.recipe().get("disarm_on_advance",[]) if _mission_context!=null else []
+			if not disarm.is_empty() and not next._encounter.disarm_story_actors(int(disarm[0]),int(disarm[1])):reject(next._encounter.error);return null
 		var visit_clock: Dictionary=next._briefing.snapshot()
 		if next._rescue!=null:
 			if not next._objective.poll_campaign_result(next._encounter,next._radio,next._rescue,next._briefing.mission_poll_due() and not next.death_active() and not next.contract_result_pending()):reject(next._objective.error);return null
@@ -882,6 +893,8 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		if not next._advance_follow_camera(next._camera_ms,scene,next._camera_passes):reject(next.error);return null
 	if turret_active:
 		if not next._encounter.present_turret_camera(next._camera,next._pose) or not next._aim.advance(next._encounter.turret_aim_pose(next._pose),next._camera.snapshot().pose,viewport):reject(next._camera.error+next._aim.error);return null
+	if next._encounter!=null and next._encounter.guided_missile_active():
+		if not next._encounter.present_guided_camera(next._camera):reject(next._camera.error);return null
 	if next.death_active() and not next._death.sample_camera(next._camera.snapshot().pose,next._camera_follow_enabled):reject(next._death.error);return null
 	if next._mining!=null and next._mining.has_active_drill() and next._player.snapshot().vitals.hull>0 and not cues.dialogue.visible and not next.cinematic_input_blocked():
 		if not next._mining.set_command(drill_command):reject(next._mining.error);return null
@@ -902,7 +915,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 			next._equipment=next._equipment.fork()
 			if not next._equipment.retain_flight_cargo(next._cargo.snapshot()):reject(next._equipment.error);return null
 			if not next._notices.enqueue_energy_spent(activation.consumed):reject(next._notices.error);return null
-	if boost_requested and next.booster_input_permitted():
+	if boost_requested and not guided_missile and next.booster_input_permitted():
 		var activation: int=next._booster.snapshot().activation
 		if not next._booster.request_start():reject(next._booster.error);return null
 		if next._booster.snapshot().activation!=activation:
@@ -1424,6 +1437,20 @@ func _observe_radio() -> bool:
 		var turn: Dictionary=_mission_context.recipe().get("turn_hostile",{})
 		if not turn.is_empty() and _radio.error.is_empty() and _radio.snapshot().finished[int(turn.radio_index)] and not _encounter.story_hostility_applied():
 			if not _encounter.apply_story_hostility(int(turn.get("reputation_axis",-1)),int(turn.get("reputation_value",0))):return reject(_encounter.error)
+		# Recipe actions cued by a radio line starting (e.g. pirates give up at "Fall back!").
+		for action in _mission_context.recipe().get("radio_actions",[]):
+			var started: Array=_radio.snapshot().get("started",[])
+			if int(action.radio_index)>=started.size() or started[int(action.radio_index)]!=true:continue
+			if action.action=="disarm":
+				var actors: Array=_encounter.combat_snapshot().actors
+				if range(int(action.first_actor),int(action.end_actor)).any(func(id):return actors[id].get("firing_allowed",false) and int(actors[id].vitals.hull)>0):
+					if not _encounter.disarm_story_actors(int(action.first_actor),int(action.end_actor)):return reject(_encounter.error)
+			elif action.action=="place":
+				# Parked (asleep, far away) reserve ships arrive once.
+				var actors: Array=_encounter.combat_snapshot().actors
+				var center:=Vector3(action.center)
+				if actors[int(action.first_actor)].get("active",false)!=true and actors[int(action.first_actor)].pose.origin.distance_to(center)>2.0*float(action.radius):
+					if not _encounter.place_story_actors(int(action.first_actor),int(action.end_actor),center,float(action.radius)):return reject(_encounter.error)
 	elif _void_environment!=null or _entry.campaign_cursor==28:
 		_radio_events=_radio.step(int(_briefing.snapshot().world_elapsed_ms),{},0)
 	elif _sahi!=null:

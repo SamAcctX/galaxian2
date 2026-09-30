@@ -16,13 +16,16 @@ const RADIO:={
 	50:[[63,2110,1470,5,8000],[0,2111,1471,6,0],[63,2112,1472,6,1],[0,2113,1473,6,2]],
 	51:[[63,2114,1474,5,8000],[0,2115,1475,6,0]],
 	52:[[63,2116,1476,5,8000],[0,2117,1477,6,0]],
+	63:[[0,2212,1488,5,8000],[0,2213,1489,6,0]],
 	56:[[27,2143,1481,5,8000],[0,2144,1482,6,0],[28,2145,1483,16,0],[0,2146,1484,20,3],[0,2147,1485,6,3],[27,2148,1486,28,0]],
 }
 ## Condition 16 = a non-friendly ship is awake, 20 = ships destroyed,
 ## 28 = the player's armour is gone. Combat flights play their result lines
 ## over the radio once the objective ships are gone (assumption: the original
 ## shows them as its in-flight result conversation).
-const RESULT_RADIO:={56:[[27,2149,1206],[0,2150,1207]]}
+const RESULT_RADIO:={56:[[27,2149,1206],[0,2150,1207]],63:[[28,2215,1260],[0,2216,1261]],
+	64:[[0,2224,1262],[20,2225,1263],[0,2226,1264],[20,2227,1265],[0,2228,1266]],
+	67:[[0,2288,1296],[20,2289,1297],[0,2290,1298],[20,2291,1299],[0,2292,1300],[20,2293,1301],[0,2294,1302],[0,2295,1303]]}
 ## [count, faction, hull, hostile]. All Vossk (faction 1); hull 13 is their
 ## large ship, built as the Vossk freighter-class assembly (subtype 1).
 const CASTS:={
@@ -39,8 +42,45 @@ const LARGE_HULL:=13
 const COMBAT:={
 	56:{"points":[Vector3(0,0,-60000),Vector3(-12000,-7000,-110000),Vector3(15000,3000,-160000)],
 		"groups":[[3,8,24,"escort",0],[2,8,-1,"target",0],[4,8,-1,"target",1]]},
+	# 63: six sleeping pirates -10..+30 km per axis around the outpost at the
+	# origin; three destroyed is enough, then the rest give up their guns.
+	# Line 2214 is never shown by the original (its trigger never holds).
+	# The outpost sits at the origin +-10 km; it does not count toward the three.
+	63:{"points":[Vector3.ZERO],"static":{"model":14243,"name_text_id":430,"jitter":10000},"groups":[[6,8,-1,"target",0]],"scatter":[-10000,40000],"success_count":3,"disarm":true},
 }
 const ESCORT_HULL:=9999999
+## Scripted flights (kind 4) with their own cast, radio [speaker, text, voice,
+## condition, values] and success. 64: Khador's prototype (race 0, hull 38)
+## flies from the origin toward +x escorted by eight awake pirates. The pirates
+## give up at "Fall back!" and the flight succeeds once "Cowards!" is over.
+## Assumptions: Khador's ship cannot be destroyed (the original fails the
+## mission then; no in-flight failure screen yet), the player is not moved
+## 40 km back, the cutscene cameras and the pirates' flight away are not built,
+## and the result lines play over the radio instead of opening a dialogue.
+const SCRIPTED:={
+	64:{"points":[Vector3.ZERO,Vector3(100000,0,0)],
+		"groups":[{"count":1,"faction":0,"hull":38,"friendly":true,"route_start":1,"hull_override":ESCORT_HULL,"offsets":[-1,-1,-1],"bounds":[2,2,2]},
+			{"count":8,"faction":8,"hull":-1,"friendly":false,"route_start":1,"offsets":[-2500,-2500,-2500],"bounds":[5000,5000,5000]}],
+		"radio":[[0,2217,1491,5,[8000]],[20,2218,1492,6,[0]],[0,2219,1493,6,[1]],[30,2220,1494,30,[2,2,6]],[0,2221,1495,6,[3]],[30,2222,1496,20,[5]],[0,2223,1497,6,[5]]],
+		"radio_actions":[{"radio_index":5,"action":"disarm","first_actor":1,"end_actor":9}],
+		"success":{"kind":"radio_finished","index":6}},
+	# 67: the outpost (friendly for now) at the waypoint with four sleeping
+	# pirates; four more wait parked and arrive at line #5; Tenner flies along.
+	# Assumptions: no cutscenes, Tenner never hides inside the station, the
+	# outpost-destroyed failure holds all mission, the unused 5th reserve is left out.
+	# The reserve waits parked out of sight (the original's 800 km per axis is
+	# beyond the remake's single-precision flight range).
+	67:{"points":[Vector3(220000,-20000,-10000),Vector3(-300000,300000,-300000)],
+		"groups":[{"count":1,"faction":8,"friendly":true,"static":{"model":14243,"jitter":0},"name_text_id":430},
+			{"count":4,"faction":8,"hull":-1,"friendly":false,"sleeping":true,"offsets":[-20000,-20000,-20000],"bounds":[40000,40000,40000]},
+			{"count":4,"faction":8,"hull":-1,"friendly":false,"sleeping":true,"index":1,"offsets":[-1000,-1000,-1000],"bounds":[2000,2000,2000]},
+			{"count":1,"faction":0,"hull":27,"friendly":true,"name_text_id":1622,"hull_override":ESCORT_HULL,"position":{"kind":"player_offset","offset":Vector3(2000,500,-7000),"bound":Vector3(1,1,1)}}],
+		"radio":[[0,2276,1501,16,[0]],[31,2277,1502,6,[0]],[30,2278,1505,6,[1]],[0,2279,1506,20,[2]],[31,2280,1507,6,[3]],[0,2281,1508,6,[4]],
+			[0,2282,1509,20,[8]],[31,2283,1510,6,[6]],[0,2284,1511,6,[7]],[31,2285,1512,6,[8]],[0,2286,1503,6,[9]],[31,2287,1504,6,[10]]],
+		"radio_actions":[{"radio_index":5,"action":"place","first_actor":5,"end_actor":9,"center":Vector3(220000,-20000,-10000),"radius":20000.0}],
+		"success":{"kind":"radio_finished","index":11},"failure":{"kind":1,"actor_id":0}},
+}
+
 ## Convoy hunts (kind 163): at each listed station a transport of the system's
 ## race waits with five fighters around a point far from the station. Within
 ## CONVOY_RANGE the convoy turns hostile; destroying the transport clears the
@@ -67,10 +107,10 @@ const TURN_HOSTILE_AFTER:={50:{"radio_index":2,"reputation_axis":0,"reputation_v
 
 ## The story job selected at this location, if the career is in a story flight.
 static func story_job(bindings: RefCounted,cursor: Variant,station_id: Variant,progress: Dictionary={}) -> Dictionary:
-	if not cursor is int or not station_id is int or not Campaign.saved_story(bindings,cursor) or not (CASTS.has(cursor) or COMBAT.has(cursor) or CONVOY.has(cursor) or CALLS.has(cursor)):return {}
+	if not cursor is int or not station_id is int or not Campaign.saved_story(bindings,cursor) or not (CASTS.has(cursor) or COMBAT.has(cursor) or CONVOY.has(cursor) or CALLS.has(cursor) or SCRIPTED.has(cursor)):return {}
 	var mission:=Campaign.mission(cursor)
 	if mission.is_empty() or int(mission.kind) not in FLIGHT_KINDS:return {}
-	if COMBAT.has(cursor) and station_id!=int(mission.station_id):return {}
+	if (COMBAT.has(cursor) or SCRIPTED.has(cursor)) and station_id!=int(mission.station_id):return {}
 	var job:={"kind":int(mission.kind),"station_id":station_id,"reward":0,"bonus":0,"difficulty":1,"quantity":0,
 		"story":false,"story_job":true,"campaign_cursor":cursor,"target_station_id":int(mission.station_id)}
 	if CONVOY.has(cursor):
@@ -86,6 +126,13 @@ static func story_job(bindings: RefCounted,cursor: Variant,station_id: Variant,p
 static func counts_kill(cursor: Variant,kill: Dictionary,excluded: Array) -> bool:
 	return cursor is int and CONVOY.has(cursor) and int(kill.get("item_id",-1))==int(CONVOY[cursor].item_id) and not excluded.has(kill.get("actor_id"))
 
+## Hulls a story recipe names explicitly for its ships.
+static func named_hulls(job: Dictionary) -> Array:
+	var result:=[]
+	for group in recipe(job).get("ship_groups",[]):
+		if group.has("hull_catalogue_id"):result.append(int(group.hull_catalogue_id))
+	return result
+
 static func is_story_job(mission: Variant) -> bool:
 	return mission is Dictionary and mission.get("story_job",false)==true
 
@@ -94,6 +141,7 @@ static func recipe(job: Dictionary) -> Dictionary:
 	var cursor:=int(job.campaign_cursor)
 	if COMBAT.has(cursor):return _combat_recipe(job)
 	if CONVOY.has(cursor):return _convoy_recipe(job)
+	if SCRIPTED.has(cursor):return _scripted_recipe(cursor)
 	if CALLS.has(cursor):
 		var radio:=[]
 		for row in CALLS[cursor]:radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":5 if radio.is_empty() else 6,"values":[CALL_AFTER_MS if radio.is_empty() else radio.size()-1]})
@@ -119,6 +167,13 @@ static func _combat_recipe(job: Dictionary) -> Dictionary:
 	var cursor:=int(job.campaign_cursor)
 	var plan: Dictionary=COMBAT[cursor]
 	var groups:=[];var first:=0;var targets:=[];var escorts:=0
+	# A static object (the pirate outpost) is actor 0. It is not an enemy for
+	# the objective count; the sleeping pirates around it wake near it.
+	if plan.has("static"):
+		groups.append({"first_actor":0,"end_actor":1,"faction":8,"origin":"zero","name_text_id":int(plan.static.name_text_id),
+			"static_object":{"model":int(plan.static.model),"jitter":int(plan.static.jitter)},
+			"ship_state":{"mode":5,"active":false,"targeting_blocked":true},"policy":{"initial_hostile":true,"updated_hostile":true}})
+		first=1
 	for row in plan.groups:
 		var escort: bool=row[3]=="escort"
 		var group:={"first_actor":first,"end_actor":first+int(row[0]),"faction":int(row[1]),"population_group":"story","origin":"zero",
@@ -131,14 +186,40 @@ static func _combat_recipe(job: Dictionary) -> Dictionary:
 			group.route_start=int(row[4])
 			group.ship_state.hull_override=ESCORT_HULL
 		else:
-			group.position={"kind":"path_scatter","index":int(row[4]),"offsets":[-1500,-1500,-1500],"bounds":[3000,3000,3000]}
+			var scatter: Array=plan.get("scatter",[-1500,3000])
+			group.position={"kind":"path_scatter","index":int(row[4]),"offsets":[scatter[0],scatter[0],scatter[0]],"bounds":[scatter[1],scatter[1],scatter[1]]}
 			targets.append_array(range(first,first+int(row[0])))
 		groups.append(group)
 		first+=int(row[0])
+	var success:={"kind":18,"first_actor":targets.min(),"end_actor":targets.max()+1}
+	if plan.has("success_count"):success.count=int(plan.success_count)
 	return {"actor_count":first,"ship_groups":groups,"placement":{"kind":"points","points":plan.points.duplicate()},
-		"radio":_radio(cursor,targets.size()),
-		"success":{"kind":18,"first_actor":targets.min(),"end_actor":targets.max()+1},
-		"story":_advance(cursor),"turn_hostile":{}}
+		"radio":_radio(cursor,int(plan.get("success_count",targets.size()))),"success":success,
+		"story":_advance(cursor),"turn_hostile":{},"disarm_on_advance":[targets.min(),targets.max()+1] if plan.get("disarm",false) else []}
+
+static func _scripted_recipe(cursor: int) -> Dictionary:
+	var plan: Dictionary=SCRIPTED[cursor];var groups:=[];var first:=0
+	for row in plan.groups:
+		var friendly: bool=row.friendly
+		if row.has("static"):
+			groups.append({"first_actor":first,"end_actor":first+1,"faction":int(row.faction),"origin":"zero","name_text_id":int(row.name_text_id),
+				"static_object":row.static.duplicate(),"ship_state":{"mode":5,"active":false,"targeting_blocked":true},
+				"policy":{"initial_hostile":not friendly,"updated_hostile":not friendly,"friendly":friendly}})
+			first+=1;continue
+		var group:={"first_actor":first,"end_actor":first+int(row.count),"faction":int(row.faction),"population_group":"story","origin":"zero",
+			"ship_state":{"mode":5,"active":false,"targeting_blocked":true} if row.get("sleeping",false) else {"mode":0,"active":true,"targeting_blocked":false},"route_start":int(row.get("route_start",-1)),
+			"policy":{"initial_hostile":not friendly,"updated_hostile":not friendly,"friendly":friendly},
+			"position":row.position.duplicate() if row.has("position") else {"kind":"path_scatter","index":int(row.get("index",0)),"offsets":row.offsets.duplicate(),"bounds":row.bounds.duplicate()}}
+		if row.has("name_text_id"):group.name_text_id=int(row.name_text_id)
+		if int(row.get("hull",-1))>=0:group.hull_catalogue_id=int(row.hull)
+		if row.has("hull_override"):group.ship_state.hull_override=int(row.hull_override)
+		groups.append(group);first+=int(row.count)
+	var radio:=[]
+	for row in plan.radio:radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":row[3],"values":row[4].duplicate()})
+	var result: Array=RESULT_RADIO.get(cursor,[])
+	for row in result:radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":6,"values":[radio.size()-1]})
+	return {"actor_count":first,"ship_groups":groups,"placement":{"kind":"points","points":plan.points.duplicate()},"radio":radio,
+		"success":plan.success.duplicate(),"failure":plan.get("failure",{"kind":"never"}).duplicate(),"story":_advance(cursor),"turn_hostile":{},"radio_actions":plan.radio_actions.duplicate(true)}
 
 static func _convoy_recipe(job: Dictionary) -> Dictionary:
 	var cursor:=int(job.campaign_cursor);var plan: Dictionary=CONVOY[cursor]

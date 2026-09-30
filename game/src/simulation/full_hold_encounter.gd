@@ -590,7 +590,7 @@ func _supports_cargo_lifecycle(death: RefCounted,actor: Dictionary) -> bool:
 	return _control is TrainingControl and _control._flight[actor.actor_id] is TrainingControl.FreightMotion
 
 ## Join the existing encounter using its actual equipped player and complete
-## target membership. Unsupported systems owners cannot acquire EMP behavior.
+## target membership. Actors without a systems pool take hull damage only.
 func configure_secondaries(bindings: RefCounted,cat: RefCounted,player: RefCounted,equipment: RefCounted,library: RefCounted=null) -> bool:
 	error=""
 	if _control==null or _combat==null or _secondaries!=null or _elapsed_ms!=0 or _world_elapsed_ms!=0 or _primaries==null or _inventory==null:return reject("Secondaries must join the prepared equipped encounter before flight")
@@ -598,8 +598,9 @@ func configure_secondaries(bindings: RefCounted,cat: RefCounted,player: RefCount
 	var expected: Array=_inventory.snapshot().get("npc_ids",[])
 	var actors: Array=_combat.snapshot().actors
 	if expected.size()!=actors.size():return reject("Secondary targets omit part of the encounter")
+	# Every actor is a target; ones without a systems pool only take hull damage.
 	for id in expected.size():
-		if expected[id]!=id or _combat.systems_for_frame(id)==null:return reject("This encounter lacks supported target systems")
+		if expected[id]!=id:return reject("Secondary targets omit part of the encounter")
 	var owner:=Secondaries.new()
 	var mounts: RefCounted
 	if library!=null:
@@ -687,6 +688,26 @@ func evaluate_secondary_motion(milliseconds: int,random_state: Dictionary,displa
 
 func secondary_owner() -> RefCounted:return null if _secondaries==null else _secondaries.fork()
 
+## Guided missile, shaped like the manual turret: the frame routes the stick
+## here and shows the missile camera while one is live.
+func guided_missile_active() -> bool:return _secondaries!=null and _secondaries.guided_active()
+
+func steer_guided_missile(command: Vector2) -> RefCounted:
+	var next:=fork_for_frame()
+	if guided_missile_active():
+		var owner: RefCounted=_secondaries.steer_guided(command)
+		if owner==null:reject(_secondaries.error);return self
+		next._secondaries=owner
+	return next
+
+func discard_guided_missile() -> RefCounted:
+	var next:=fork_for_frame()
+	if guided_missile_active():next._secondaries=_secondaries.discard_guided()
+	return next
+
+func present_guided_camera(camera: RefCounted) -> bool:
+	return not guided_missile_active() or camera.set_mounted_view(_secondaries.guided_camera_pose())
+
 func _retain_blast_motion(events: Array) -> bool:
 	if not _control is TrainingControl:return true
 	var next: RefCounted=_control.evaluate_blast_motion(events)
@@ -771,7 +792,7 @@ func prepare_selected40_career(bindings: RefCounted,session: RefCounted,scenery:
 	_contract_context=career.snapshot().flight.ordinary_context.duplicate(true)
 	return career
 
-func evaluate_contract_session(session: RefCounted,radio_active: bool=false,poll_results: bool=true,periodic_poll_allowed: bool=true) -> Dictionary:
+func evaluate_contract_session(session: RefCounted,radio_active: bool=false,poll_results: bool=true,periodic_poll_allowed: bool=true,radio_finished: Array=[]) -> Dictionary:
 	error=""
 	if _contract_context.is_empty() or not is_instance_of(session,load("res://src/simulation/contract_session.gd")):return fail("The encounter has no retained contract career")
 	var career: RefCounted=session.fork()
@@ -780,7 +801,7 @@ func evaluate_contract_session(session: RefCounted,radio_active: bool=false,poll
 	# Contacts have already changed the encounter bodies. Retain that exact
 	# body state without inserting an extra actor/guidance update before polling.
 	var control: RefCounted=_control.fork_for_frame(false,_combat)
-	var result: Dictionary=career.evaluate_flight(control,radio_active,poll_results,periodic_poll_allowed)
+	var result: Dictionary=career.evaluate_flight(control,radio_active,poll_results,periodic_poll_allowed,radio_finished)
 	if result.is_empty():return fail(career.error)
 	_control=result.controller;_combat=_control.combat_owner()
 	return {"session":result.session,"opened":result.opened}
@@ -795,6 +816,22 @@ func apply_story_hostility(axis: int,value: int) -> bool:
 	return true
 
 func story_hostility_applied() -> bool:return _combat!=null and _combat.story_hostility_applied()
+
+func place_story_actors(first: int,end: int,center: Vector3,radius: float) -> bool:
+	error=""
+	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story placement requires a contract encounter")
+	var control: RefCounted=_control.fork_for_frame(true,_combat)
+	if not control.place_story_actors(first,end,center,radius):return reject(control.error)
+	_control=control;_combat=control._combat
+	return true
+
+func disarm_story_actors(first: int,end: int) -> bool:
+	error=""
+	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story disarm requires a contract encounter")
+	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	if not control._combat.disarm_story_actors(first,end):return reject(control._combat.error)
+	_control=control;_combat=control._combat
+	return true
 
 func acknowledge_contract_result(session: RefCounted,serial: int) -> Dictionary:
 	error=""

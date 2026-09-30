@@ -7,6 +7,14 @@ const SPANS = {"emp_factory_case":[67190,4],"emp_factory":[65815,232],"emp_muzzl
 # Native composition.
 const MAC_SPANS = {"emp_factory_case":[67190,4],"emp_factory":[65815,232],"emp_muzzle_offset":[1549982,4],"emp_models":[1551686,12],"emp_radius_assignment":[-35845,29],"emp_radius_setter":[-188804,12],"emp_initial_clock":[-190079,54],"emp_owner_trigger":[544066,362],"emp_launch_quantity":[-188263,81],"emp_launch_position":[-188161,706],"emp_launch_direction":[-187034,206],"emp_launch_motion":[-186616,147],"emp_launch_consume":[-186469,281],"emp_frame_clock":[-180841,57],"emp_frame_motion":[-180687,539],"emp_collision_kind":[-183529,134],"emp_collision_detonation":[-182880,18],"emp_collision_tail":[-180874,13],"emp_pulse":[-185022,1454],"emp_active_getter":[541460,14],"emp_immune_getter":[536076,28],"emp_system_configuration":[536244,56],"emp_system_damage_gates":[538630,81],"emp_system_subtract":[539001,23],"emp_system_disabled":[539406,40],"emp_system_recovery":[545299,112]}
 
+## Valkyrie guided antimatter missile (Liberator). The catalogue's guidance
+## attribute decides steering; this row only names its original assets/sounds.
+## Chase camera and turn factor come from the original launcher; the turn time
+## unit is an assumption (radians per 60 Hz frame, see research note).
+const GUIDED = {"item_id":179,"model_id":14293,"attachment_id":14294,"launch_sound":1117,"burst_sound":12,
+	"guidance_sound":1116,"guided_property":15,"camera_offset":[0.0,450.0,-1400.0],"camera_target":[0.0,0.0,1700.0],
+	"turn_factor":0.003,"turn_frame_ms":1000.0/60.0}
+
 static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALUES)
 
 static func available(bindings: RefCounted) -> bool:
@@ -17,6 +25,9 @@ static func available(bindings: RefCounted) -> bool:
 static func declaration(item_id: int) -> Dictionary:
 	var index: int=VALUES.item_ids.find(item_id)
 	if index>=0:return {"kind":6,"model_id":14684,"attachment_id":14685,"effect_type":7,"launch_sound":6+index,"burst_sound":15+index}
+	if item_id==int(GUIDED.item_id):
+		return {"kind":7,"model_id":int(GUIDED.model_id),"attachment_id":int(GUIDED.attachment_id),"effect_type":0,
+			"launch_sound":int(GUIDED.launch_sound),"burst_sound":int(GUIDED.burst_sound)}
 	if item_id not in [44,45,46]:return {}
 	return {"kind":7,"model_id":14682 if item_id==46 else 14680,
 		"attachment_id":14683 if item_id==46 else 14681,"effect_type":0,

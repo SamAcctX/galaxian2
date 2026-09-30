@@ -51,6 +51,18 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 			data.actor_policies.append({})
 			continue
 		var options: Dictionary=load("res://src/content/mission_recipe.gd").contract_ship_options(cast,id,int(source.unused_enemy_faction),int(context.client_faction))
+		# A cast static object (e.g. the Valkyrie pirate outpost): no hull
+		# catalogue entry, no weapon; its placement was admitted at entry.
+		if not options.get("static_object",{}).is_empty():
+			if not actor is Dictionary or actor.get("actor_id")!=id or actor.get("population_group")!="static" or actor.get("static_model")!=int(options.static_object.model) or actor.get("actor_kind")!=options.faction or actor.get("hull_catalogue_id")!=-1:return {}
+			for key in options.ship_state:
+				if actor.get(key)!=options.ship_state[key]:return {}
+			var fixed: Dictionary=rules.pirate.duplicate(true)
+			fixed.merge(options.policy,true)
+			data.actor_policies.append(fixed)
+			data.actor_kinds.append(options.faction);data.hull_catalogue_ids.append(-1);data.player_weapon_targets.append(id)
+			data.npc_weapons.append({"actor_id":id,"actor_kind":options.faction,"hull_catalogue_id":-1,"unarmed":true})
+			continue
 		var rival: bool=options.rival
 		if not actor is Dictionary or actor.get("actor_id")!=id or actor.get("subtype")!=options.subtype or actor.get("population_group")!=options.population_group:return {}
 		var faction: Variant=actor.get("actor_kind")
@@ -60,7 +72,9 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 		if freighter:
 			var population=load("res://src/content/free_population_definitions.gd")
 			if hull!=population.freighter_hull(bindings,faction) or not population.freighter_assembly_matches(bindings,faction,actor.get("assembly")) or not actor.get("world_flag",false):return {}
-		elif not hull is int or hull<0 or hull>=hulls.factions.size() or int(hulls.factions[hull])!=faction or (faction!=1 and hull<=int(hulls.mask_limit) and (int(hulls.excluded_mask)>>hull)&1):return {}
+		# A story recipe that names its hull (e.g. Khador's prototype) is trusted;
+		# generated ships must come from their faction's pool.
+		elif not hull is int or hull<0 or (hull!=int(options.hull_catalogue_id) and (hull>=hulls.factions.size() or int(hulls.factions[hull])!=faction or (faction!=1 and hull<=int(hulls.mask_limit) and (int(hulls.excluded_mask)>>hull)&1))):return {}
 		if rival and (actor.get("friendly")!=true or actor.get("name","").is_empty() or actor.name!=context.get("contact_name") or actor.get("current_hull_override")!=9999999):return {}
 		if not rival:
 			for key in options.ship_state:

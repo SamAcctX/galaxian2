@@ -226,6 +226,9 @@ func snapshot() -> Dictionary:
 	result.game_over_alpha_byte=mini(255,int(Vitals.single(Vitals.single(float(result.fade_elapsed_ms)/float(_rules.fade_ms))*255.0)))
 	return result
 
+## A story flight's death owner also covers the cursor its silent advance reaches.
+func covers_cursor(cursor: int) -> bool:return not _state.is_empty() and (cursor==int(_state.departure_cursor) or cursor in _rules.get("story_cursors",[]))
+
 func presentation_identity() -> RefCounted:return _presentation_identity
 
 func fork_for_frame() -> RefCounted:

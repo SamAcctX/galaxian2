@@ -9,9 +9,9 @@ const SPANS := {"x86_64":{"duration":[-352,32],"selection":[-212,44],"text_gette
 const MAC_ALTERNATE := {"duration":[-352,32],"selection":[-212,44],"text_getter":[1153,10],"lookup":[-899909,59],"lookup_return":[-897594,14],"display_delay":[0,26],"display":[22,39],"finish":[443,90],"language":[-1353935,52],"language_init":[-1355805,16],"language_getter":[435753,13],"lookup_table":[851481,12032],"language_table":[1691001,16],"default_name":[981897,8],"override_name":[981905,8]}
 
 static func parameters(data: Variant, count: int = 23) -> bool:
-	# Selected40/41 supply seven/eight separately source-verified timed lines. The
+	# Missions supply their own timed lines (story scripts reach a dozen). The
 	# caller still validates their scene-specific text/event mapping first.
-	if count not in [1, 2, 3, 4, 5, 6, 7, 8, 23]: return false
+	if count<1 or count>32: return false
 	if not data is Dictionary or data.size()!=VALUES.size()+3 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
 		var value: Variant=data.get(key)

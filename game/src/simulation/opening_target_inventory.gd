@@ -199,7 +199,7 @@ func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dic
 		# The native world already validated its cast and assemblies. Target
 		# resources follow those semantic records, not the campaign cursor.
 		var assembled: bool=actor.get("population_group") in ["freighter","capital"]
-		var debris: bool=actor.get("population_group")=="debris"
+		var debris: bool=actor.get("population_group") in ["debris","static"]
 		var root_id:=-1
 		if assembled:
 			var assembly: Variant=actor.get("assembly")

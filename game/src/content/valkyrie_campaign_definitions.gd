@@ -25,8 +25,11 @@ const SHIPS:={
 const GOODS_KIND:=166
 ## Kinds whose target is an ordinary station you dock at and leave: talks, goods,
 ## convoy hunts (finished elsewhere) and the 10 s flight (164).
-const STATION_KINDS:=[11,163,166]
-const GOODS:={58:{"item_id":179,"quantity":10}}
+const STATION_KINDS:=[8,11,163,166]
+## Kind 8 (68) is a delivery: the goods are handed over ("consume").
+## Assumption: one Void Essence (the amount the original takes is not recovered).
+const DELIVERY_KIND:=8
+const GOODS:={58:{"item_id":179,"quantity":10},68:{"item_id":175,"quantity":1,"consume":true}}
 ## Blueprints handed over as the story enters a cursor: mission 58 grants item
 ## 179 with 5 of material 127 already supplied at the Valkyrie; 59 takes it back.
 const BLUEPRINTS:={58:{"item_id":179,"grant":true,"material_id":127,"quantity":5,"station_id":101},59:{"item_id":179,"grant":false}}
@@ -65,11 +68,11 @@ static func conversation(bindings: RefCounted,cursor: Variant,story_mission: Var
 		if int(story_mission.get("kind",0))!=-1:return {}
 		return _rules(cursor,story_mission,47,Dialogue.events(Dialogue.RESULT,46),false)
 	var expected:=mission(cursor)
-	if expected.is_empty() or int(expected.kind) not in [TALK,GOODS_KIND] or not _same(story_mission,expected):return {}
+	if expected.is_empty() or int(expected.kind) not in [TALK,GOODS_KIND,DELIVERY_KIND] or not _same(story_mission,expected):return {}
 	var next:=next_cursor(cursor)
 	if next>LAST_CURSOR:return {}
 	var rules:=_rules(cursor,expected,next,Dialogue.events(Dialogue.RESULT,cursor),true)
-	if int(expected.kind)==GOODS_KIND and not rules.is_empty():
+	if int(expected.kind) in [GOODS_KIND,DELIVERY_KIND] and not rules.is_empty():
 		if not GOODS.has(cursor):return {}
 		rules.goods_requirement=GOODS[cursor].duplicate()
 	return rules

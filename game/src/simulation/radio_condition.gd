@@ -14,8 +14,8 @@ static func valid_clock(value: Variant) -> bool:
 static func valid_row(row: Dictionary, event_count: int) -> bool:
 	if not Numbers.integer(row.get("condition"), 0, 31) or not row.get("values") is Array: return false
 	var kind := int(row.condition)
-	if kind not in [1, 5, 6, 8, 9, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]: return false
-	if row.values.is_empty() or row.values.size() > 256 or (kind not in [1, 9, 29] and row.values.size() != 1) or (kind == 29 and row.values.size() != 2): return false
+	if kind not in [1, 5, 6, 8, 9, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]: return false
+	if row.values.is_empty() or row.values.size() > 256 or (kind not in [1, 9, 29, 30] and row.values.size() != 1) or (kind == 29 and row.values.size() != 2) or (kind == 30 and row.values.size() != 3): return false
 	for value in row.values:
 		if not Numbers.integer(value, -2147483648 if kind == 26 else 0, MAX_INTEGER): return false
 	return kind != 6 or int(row.values[0]) < event_count
@@ -101,4 +101,10 @@ static func evaluate(row: Dictionary, condition_clock: int, observations: Dictio
 		29:
 			var distance: Variant = observations.get("player_distances", {}).get(value)
 			return distance != null and hulls.get(value, 0) > 0 and float(distance) <= float(row.values[1])
+		# Remake story condition: at least values[0] of ships values[1]..values[2]-1 destroyed.
+		30:
+			var destroyed := 0
+			for actor in range(int(row.values[1]), int(row.values[2])):
+				if hulls.has(actor) and hulls[actor] <= 0: destroyed += 1
+			return destroyed >= value
 	return false

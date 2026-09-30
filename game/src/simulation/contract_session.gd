@@ -784,6 +784,8 @@ func acknowledge_station_campaign(bindings: RefCounted,equipment: RefCounted,sto
 			"from_cursor":receipt.from_cursor,"to_cursor":receipt.campaign_cursor,
 			"item_id":int(required.item_id),"quantity":int(required.quantity),"expected_entry":next._blueprints.entry(85)}
 		if not next._blueprints.precredit_story33(credit):return fail(next._blueprints.error)
+	if rules.get("goods_requirement",{}).get("consume",false):
+		if not inventory.debit_campaign_cargo(int(rules.goods_requirement.item_id),int(rules.goods_requirement.quantity)):return fail(inventory.error)
 	if rules.has("story_blueprint"):
 		if next._blueprints==null:return fail("The story blueprint lost its retained blueprints")
 		var plan: Dictionary=rules.story_blueprint
@@ -1423,7 +1425,7 @@ func _bind_accounted_world(controller: RefCounted,context: Dictionary,scene: Dic
 	_flight_identity=controller.flight_identity()
 	return true
 
-func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_results: bool=true,periodic_poll_allowed: bool=true) -> Dictionary:
+func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_results: bool=true,periodic_poll_allowed: bool=true,radio_finished: Array=[]) -> Dictionary:
 	# The session and controller commit together. A failed result preparation
 	# cannot pay, change career, discard actors or partially freeze a live flight.
 	error=""
@@ -1434,7 +1436,7 @@ func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_result
 		return {"session":next,"controller":flight,"opened":false}
 	if not next._retain_combat_progress(flight):return fail(next.error)
 	if _flight.has("ordinary_context") or not poll_results or flight.mission_context_owner().recipe().result.get("defer_to_station",false):return {"session":next,"controller":flight,"opened":false}
-	var result: Dictionary=flight.poll_contract_result(radio_active,periodic_poll_allowed)
+	var result: Dictionary=flight.poll_contract_result(radio_active,periodic_poll_allowed,radio_finished)
 	if result.is_empty():return fail(flight.error)
 	var advance: Dictionary=flight.mission_context_owner().recipe().get("story_advance",{})
 	if not advance.is_empty():
@@ -1643,8 +1645,11 @@ func _retain_combat_progress(controller: RefCounted) -> bool:
 	var story_owner: RefCounted=controller.mission_context_owner() if controller.has_method("mission_context_owner") else null
 	var excluded: Array=[] if story_owner==null else story_owner.recipe().get("story_excluded_actors",[])
 	var counted: Array=scene.combat.get("lethal_items",[]).filter(func(kill):return StoryFlights.counts_kill(_state.campaign_cursor,kill,excluded))
+	# Each jump builds a new combat world whose kill log starts empty; a
+	# shorter log than the retained count means a new world (kills are polled
+	# every frame, so none are lost across the switch).
 	var retained_kills: int=_flight.get("story_kills",0)
-	if counted.size()<retained_kills:return reject("The flight lost its retained story kills")
+	if counted.size()<retained_kills:retained_kills=0;_flight.story_kills=0
 	if counted.size()>retained_kills:
 		var total:=int(progress.get("story_counter",0))+counted.size()-retained_kills
 		if not Numbers.integer(total,0,2147483647):return reject("The story counter exceeds the supported career range")

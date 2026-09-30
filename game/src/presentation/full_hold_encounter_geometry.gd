@@ -15,6 +15,8 @@ const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const Junk=preload("res://src/content/contract_junk_definitions.gd")
 const Selected=preload("res://src/content/selected40_population_definitions.gd")
 const MissionContext=preload("res://src/simulation/mission_context.gd")
+const Statics=preload("res://src/content/static_object_definitions.gd")
+const Sampler=preload("res://src/presentation/scenery_animation.gd")
 const ENGINES={2:{"id":18002,"path":"resources/data/assets/main/3d/meshes/ships/ship_002_pirates_engine_add.aem"},
 	30:{"id":18030,"path":"resources/data/assets/main/3d/meshes/ships/ship_030_midorian_engine_add.aem"}}
 var error:=""
@@ -63,6 +65,9 @@ func _build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: 
 		var actor: Dictionary=state.combat.actors[id]
 		if actor.get("population_group")=="debris":
 			if not _build_debris(owner,id,actor,library,visuals,bindings):return false
+			continue
+		if actor.get("population_group")=="static":
+			if not _build_static(owner,id,actor,library,visuals,bindings):return false
 			continue
 		var native_cast: bool=local_traffic or selected40 or admitted!=null
 		var ship_id: int=int(actor.hull_catalogue_id) if native_cast else (30 if id==3 else 2)
@@ -128,6 +133,46 @@ func _build_debris(owner: RefCounted,id: int,actor: Dictionary,library: RefCount
 		"ship_id":-1,"resource_id":actor.resource_id,"hull_resource":actor.hull_resource,"cargo_resource":rules.cargo_model_resource})
 	return true
 
+## Static objects draw their model layers; after death the wreck animation
+## replaces them and holds its last pose.
+func _build_static(owner: RefCounted,id: int,actor: Dictionary,library: RefCounted,visuals: RefCounted,bindings: RefCounted) -> bool:
+	var death: RefCounted=owner.npc_destruction_owner(id)
+	if death==null or not actor.get("static_object",false) or actor.actor_id!=id:return fail("Static geometry requires its object and destruction owner")
+	var reader:=Statics.new();var placed: Dictionary=reader.resolve(library,bindings,int(actor.static_model))
+	if placed.is_empty():return fail(reader.error)
+	var paths: Array=placed.layers.map(func(layer):return layer.path)
+	paths.append(placed.wreck.path)
+	var resources:=Models.new()
+	if not resources.prepare(paths,library,visuals,bindings,"high",false,true):return fail(resources.error)
+	var body:=Node3D.new();body.name="StaticObject%d"%id;add_child(body)
+	for layer in placed.layers:
+		var model: Node3D=resources.instantiate(layer.path)
+		if model==null:
+			var reason: String=resources.error;resources.clear();return fail(reason)
+		model.set_meta("source_resource_id",layer.resource_id);body.add_child(model)
+	var wreck: Node3D=resources.instantiate(placed.wreck.path)
+	resources.clear()
+	if wreck==null:return fail("Static wreck model preparation failed")
+	add_child(wreck);wreck.hide();wreck.set_meta("source_resource_id",placed.wreck.resource_id)
+	for instance in wreck.instances:instance.top_level=true
+	var sampler:=Sampler.new()
+	if not sampler.configure(wreck.surfaces):return fail(sampler.error)
+	actors.append({"hull":body,"engine":null,"cargo":wreck,"explosion":null,"static":true,"sampler":sampler,
+		"ship_id":-1,"resource_id":int(actor.resource_id),"hull_resource":actor.hull_resource})
+	return true
+
+func _prepare_static(actor: Dictionary,nodes: Dictionary,death: RefCounted) -> Dictionary:
+	var state: Dictionary=death.snapshot()
+	if state.get("pose")!=actor.body_pose or state.get("static_model")!=actor.static_model:return failed("Static presentation lost its object or pose")
+	var wrecked: bool=state.phase!="ready"
+	var sampler: RefCounted=nodes.sampler
+	var animated:={}
+	if wrecked:
+		sampler=nodes.sampler.fork_for_frame()
+		animated=sampler.sample(int(state.animation.time_ms),state.pose)
+		if animated.is_empty():return failed(sampler.error)
+	return {"pose":actor.body_pose,"body_visible":actor.model_draw_enabled,"cargo_visible":wrecked,"cargo_pose":state.pose,"animated":animated,"sampler":sampler}
+
 func _prepare_debris(actor: Dictionary,nodes: Dictionary,death: RefCounted) -> Dictionary:
 	var state: Dictionary=death.snapshot()
 	if actor.resource_id!=nodes.resource_id or state.resource_id!=nodes.resource_id or state.pose!=actor.body_pose or state.statistics_pose!=actor.pose or state.active!=actor.active or state.model_draw_enabled!=actor.model_draw_enabled:return failed("Debris presentation lost its retained body or lifecycle")
@@ -189,12 +234,16 @@ func prepare_world(owner: RefCounted, camera: Transform3D, detail: Dictionary, o
 			var current:=_prepare_debris(actor,nodes,death)
 			if current.is_empty():return {}
 			prepared.append(current);continue
+		if nodes.get("static",false):
+			var current:=_prepare_static(actor,nodes,death)
+			if current.is_empty():return {}
+			prepared.append(current);continue
 		for key in ["active","node_draw_requested","model_draw_enabled","engine_draw_enabled"]:
 			if not actor.get(key) is bool:return failed("NPC visibility flag is missing")
 		var selection: Dictionary=detail.get("selections",{}).get(id,{})
 		# The source never registers geometry with no alternate meshes in the
 		# periodic LOD manager. Its sole detailed body still renders normally.
-		if selection.is_empty() and _selected40_generation!=null and nodes.hull.levels.size()==1:selection={"visible":true,"level":0}
+		if selection.is_empty() and nodes.hull.levels.size()==1:selection={"visible":true,"level":0}
 		if not nodes.hull.valid_selection(selection):return failed("NPC detail selection is unavailable")
 		if nodes.get("freighter",false):
 			var current:=_prepare_freighter(owner,actor,nodes,death,camera,selection)
@@ -237,6 +286,12 @@ func commit_world(frame: Dictionary) -> void:
 		nodes.hull.transform=current.pose;nodes.hull.visible=current.body_visible
 		if nodes.get("debris",false):
 			nodes.cargo.transform=current.cargo_pose;nodes.cargo.visible=current.cargo_visible
+			continue
+		if nodes.get("static",false):
+			nodes.cargo.visible=current.cargo_visible
+			if not current.animated.is_empty():
+				for i in nodes.cargo.instances.size():nodes.cargo.instances[i].transform=current.animated.surfaces[i].pose
+			nodes.sampler=current.sampler
 			continue
 		nodes.hull.apply_selection(current.selection)
 		if nodes.get("freighter",false):

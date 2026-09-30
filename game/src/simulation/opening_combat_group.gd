@@ -401,7 +401,7 @@ func _reaction_actors(reaction: RefCounted,actors: Array) -> Array:
 	var state: Dictionary=reaction.snapshot();var result:=[]
 	for id in actors.size():
 		var actor: RefCounted=actors[id].fork_for_frame()
-		if actor.snapshot().get("contract_debris",false):result.append(actor);continue
+		if actor.snapshot().get("contract_debris",false) or actor.snapshot().get("static_object",false):result.append(actor);continue
 		if _training_weapons.has("kappa_lifecycle"):
 			if not actor.retain_kappa_force(state.forced_hostile[id],state.permanent_hostile[id]):reject(actor.error);return []
 		elif state.has("systems_requested_damage"):
@@ -605,6 +605,15 @@ func apply_story_hostility(axis: int,value: int) -> bool:
 
 func story_hostility_applied() -> bool:return not _story_standing.is_empty()
 
+## Story ships that give up keep flying but never fire again.
+func disarm_story_actors(first: int,end: int) -> bool:
+	error=""
+	if _contract_encounter.is_empty() or first<0 or end>_actors.size() or end<=first:return reject("Story disarm requires contract ships")
+	for id in range(first,end):
+		var actor: Dictionary=_actors[id].snapshot()
+		if actor.get("contract_ship",false) and not _writable(id).set_permissions(actor.active,actor.damage_allowed,false):return reject(_actors[id].error)
+	return true
+
 func _current_reputation() -> Dictionary:
 	if _provocation==null and not _contract_encounter.is_empty():
 		return _contract_settlement.reputation.duplicate(true) if not _contract_settlement.is_empty() else _contract_encounter.context.reputation.duplicate(true)
@@ -769,13 +778,13 @@ func normal_hit(actor_id: Variant, amount: Variant, nonplayer_source: Variant=fa
 		return {}
 	var actor: RefCounted=_actors[actor_id].fork_for_frame()
 	var reaction:={}
-	if _provocation!=null and not actor.snapshot().get("contract_debris",false):
+	if _provocation!=null and not actor.snapshot().get("contract_debris",false) and not actor.snapshot().get("static_object",false):
 		reaction=_provocation.evaluate(actor.snapshot(),amount,nonplayer_source,_contact_random,_display_available)
 		if reaction.is_empty():reject(_provocation.error);return {}
 	var result: Dictionary = actor.normal_hit(amount,nonplayer_source)
 	if result.is_empty():reject(actor.error);return {}
 	var history: RefCounted=_reputation
-	if result.destroyed_now and _reputation!=null and not actor.snapshot().get("contract_debris",false):
+	if result.destroyed_now and _reputation!=null and not actor.snapshot().get("contract_debris",false) and not actor.snapshot().get("static_object",false):
 		history=_reputation.fork_for_frame()
 		if not history.record_lethal(actor.snapshot()):reject(history.error);return {}
 	var staged:=_actors.duplicate();staged[actor_id]=actor
@@ -841,6 +850,24 @@ func apply_debris_destruction(actor_id: int,owner: RefCounted) -> bool:
 	error=""
 	if actor_id<0 or actor_id>=_actors.size():return reject("Debris destruction names an unavailable actor")
 	if not _writable(actor_id).apply_debris_destruction(owner):return reject(_actors[actor_id].error)
+	return true
+
+func set_static_geometry(actor_id: int,boxes: Array) -> bool:
+	error=""
+	if actor_id<0 or actor_id>=_actors.size():return reject("Static geometry names an unavailable actor")
+	if not _writable(actor_id).set_static_geometry(boxes):return reject(_actors[actor_id].error)
+	return true
+
+func wake_static(actor_id: int) -> bool:
+	error=""
+	if actor_id<0 or actor_id>=_actors.size():return reject("Static wake names an unavailable actor")
+	if not _writable(actor_id).wake_static():return reject(_actors[actor_id].error)
+	return true
+
+func apply_static_destruction(actor_id: int,owner: RefCounted) -> bool:
+	error=""
+	if actor_id<0 or actor_id>=_actors.size():return reject("Static destruction names an unavailable actor")
+	if not _writable(actor_id).apply_static_destruction(owner):return reject(_actors[actor_id].error)
 	return true
 
 func shooter_states() -> Array:
@@ -910,7 +937,7 @@ func weapon_hit(actor_id: Variant, weapon: Variant) -> Dictionary:
 	# A projectile applies both pools as one transaction. Later normal-contact
 	# failure must not leave a disabled ship or a reputation change behind.
 	var next: RefCounted=fork_for_frame();var systems:={}
-	if not _actors[actor_id].snapshot().get("contract_debris",false):
+	if not _actors[actor_id].snapshot().get("contract_debris",false) and not _actors[actor_id].snapshot().get("static_object",false):
 		systems=next.systems_hit(actor_id,weapon.ordinary_hit_policy.additional_damage,weapon.get("nonplayer_source",false))
 		if systems.is_empty():return _failed_weapon_hit(next.error)
 	var result: Dictionary=next.normal_hit(actor_id,weapon.ordinary_hit_policy.nonplayer_damage,weapon.get("nonplayer_source",false))

@@ -26,6 +26,8 @@ const FreighterDeath=preload("res://src/simulation/freighter_destruction.gd")
 const SmallShipDeath=preload("res://src/simulation/npc_destruction.gd")
 const Junk=preload("res://src/content/contract_junk_definitions.gd")
 const DebrisDeath=preload("res://src/simulation/debris_destruction.gd")
+const Statics=preload("res://src/content/static_object_definitions.gd")
+const StaticDeath=preload("res://src/simulation/static_object_destruction.gd")
 const Hull = preload("res://src/content/npc_hull_definitions.gd")
 const InitialActors = preload("res://src/simulation/opening_actor_state.gd")
 const Definitions = preload("res://src/content/npc_initialization_definitions.gd")
@@ -599,6 +601,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	var data:=ContractCombat.population(bindings,packet,construction.mission_context_owner())
 	if data.is_empty() or catalogues.content_id!=bindings.base_content_id or not actor_id is int or actor_id<0 or actor_id>=data.actor_count:return reject("Unsupported contract ship population or identity")
 	var row: Dictionary=packet.actors[actor_id]
+	if row.get("population_group")=="static":return _configure_static(bindings,data,row,actor_id)
 	if not Flight.rigid_pose(row.get("body_pose")) or row.body_pose!=row.get("statistics_pose"):return reject("Contract ship factory poses disagree")
 	var freighter: bool=row.subtype==1
 	var root_id: int=int(row.assembly.root_model_id if row.assembly.has("root_model_id") else row.assembly.body_resource_ids[0]) if freighter else -1
@@ -685,6 +688,53 @@ func _configure_debris(bindings: RefCounted,catalogues: RefCounted,construction:
 		"half_extent":int(row.half_extent),"spatial_half_extent":int(row.half_extent),
 		"model_draw_enabled":bool(rules.initial_model_draw_enabled)},true)
 	return set_pose(row.statistics_pose,row.body_pose)
+
+## A cast static object: an unarmed, unmoving body drawn from its model. It
+## has no guidance; control wakes it and runs its own destruction owner.
+func _configure_static(bindings: RefCounted,data: Dictionary,row: Dictionary,actor_id: int) -> bool:
+	if not Flight.rigid_pose(row.get("body_pose")) or row.body_pose!=row.get("statistics_pose") or row.body_pose.basis!=Basis.IDENTITY:return reject("A static object needs its unrotated placement")
+	if not Statics.supported(row.get("static_model")) or not row.get("hull_override") is int or row.hull_override<=0:return reject("Unsupported static object model or hull")
+	var model: String=bindings.resolve(int(row.resource_id),"mesh")
+	if model.is_empty():return reject(bindings.error)
+	var hull: int=row.hull_override
+	var initial:={"actor_id":actor_id,"actor_kind":int(row.actor_kind),"hull_catalogue_id":-1,"hull_resource":model,"position":row.statistics_pose.origin,"current_hull":hull}
+	var policy: Dictionary=data.actor_policies[actor_id]
+	if not _initialize_body(bindings,bindings.opening_actors.npc_initialization,initial,float(data.difficulty),hull,float(data.percentage_scale),policy):return false
+	var rules:=Statics.rules(int(row.static_model))
+	_state.merge({"campaign_cursor":int(data.campaign_cursor),"station_id":int(data.station_id),"rank":int(data.rank),"contract_ship":true,"static_object":true,
+		"static_model":int(row.static_model),"resource_id":int(row.resource_id),"population_group":"static","subtype":0,"friendly":bool(policy.friendly),
+		"actor_mode":int(row.mode),"active":bool(row.active),"targeting_blocked":bool(row.targeting_blocked),
+		"statistics_targeting_blocked":bool(data.npc_statistics_targeting_blocked),"spatial_half_extent":int(data.engagement_half_extent),
+		"model_draw_enabled":true,"node_draw_requested":true,"engine_draw_enabled":false,
+		"wake_half_extent":int(rules.wake_half_extent),"enemy_count_excluded":bool(rules.enemy_count_excluded)},true)
+	if int(row.get("name_text_id",-1))>=0:_state.name_text_id=int(row.name_text_id)
+	return set_pose(row.statistics_pose,row.body_pose)
+
+## Collision boxes come from the imported record once destruction resources
+## are staged, before flight. Until then the object cannot be hit.
+func set_static_geometry(boxes: Variant) -> bool:
+	error=""
+	if not _state.get("static_object",false) or _state.has("point_boxes") or not boxes is Array or boxes.is_empty() or boxes.size()>Statics.MAX_BOXES:return reject("Static geometry is set once on a static object")
+	_state.point_boxes=boxes.duplicate(true);_state.point_box_index=0
+	return true
+
+## A sleeping static object wakes when an opposing active body is close.
+func wake_static() -> bool:
+	error=""
+	if not _state.get("static_object",false):return reject("Only a static object wakes this way")
+	if not _state.active and _state.actor_mode==5 and _vitals.snapshot().hull>0:
+		_state.active=true;_state.actor_mode=Statics.WAKE_MODE
+	return true
+
+func apply_static_destruction(owner: RefCounted) -> bool:
+	error=""
+	if not owner is StaticDeath or not _state.get("static_object",false) or not _state.get("contract_combat",false) or _vitals.snapshot().hull!=0:return reject("Static destruction requires its exhausted object")
+	var death: Dictionary=owner.snapshot()
+	for key in ["base_content_id","binding_id","campaign_cursor","actor_id","static_model"]:
+		if death.get(key)!=_state.get(key):return reject("Static destruction belongs to another object")
+	if death.get("mode") not in [Statics.DEAD_MODE,Statics.WRECK_MODE] or death.get("pose")!=_state.body_pose:return reject("Static destruction changed its pose or phase")
+	_state.actor_mode=int(death.mode);_state.active=false;_state.model_draw_enabled=false
+	return true
 
 func apply_contract_guidance(decision: Dictionary) -> bool:
 	error=""
@@ -1057,7 +1107,7 @@ func collision_context() -> Dictionary:
 	# Capture once per target before visiting projectile slots. A later death in
 	# that inner pass does not retroactively change its already-selected geometry.
 	var result:={"base_content_id":_state.base_content_id,"actor_id":_state.actor_id,
-		"eligible":_state.active and _state.collision_enabled and _vitals.snapshot().hull > 0,
+		"eligible":_state.active and _state.collision_enabled and _vitals.snapshot().hull > 0 and (not _state.get("static_object",false) or _state.has("point_boxes")),
 		"path":"bounds","center":_state.position,"half_extent":_state.half_extent}
 	if _state.has("point_boxes"):
 		result.path="point_geometry";result.boxes=_state.point_boxes.duplicate(true)

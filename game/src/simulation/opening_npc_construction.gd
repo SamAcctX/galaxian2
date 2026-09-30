@@ -32,6 +32,7 @@ const Sahi = preload("res://src/content/sahi_encounter_definitions.gd")
 const Dima = preload("res://src/content/dima_encounter_definitions.gd")
 const Numbers = preload("res://src/content/opening_definitions.gd")
 const Vectors = preload("res://src/simulation/source_vectors.gd")
+const Statics = preload("res://src/content/static_object_definitions.gd")
 var error := ""
 var _identity := {}
 var _definition := {}
@@ -266,6 +267,9 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 			if int(group.get("hull_catalogue_id",-1))>=0:possible_hulls.append(int(group.hull_catalogue_id))
 	for hull in possible_hulls:
 		if bindings.resolve_ship_model(hull).is_empty():return reject(bindings.error)
+	for group in recipe.cast.ship_groups:
+		var placed: Variant=group.get("static_object",{})
+		if not placed is Dictionary or (not placed.is_empty() and not Statics.supported(placed.get("model"))):return reject("The cast places an unsupported static object")
 	if int(recipe.cast.debris_count)>0:
 		for resource_id in rules.junk.model_ids:
 			if bindings.resolve(int(resource_id),"mesh").is_empty():return reject(bindings.error)
@@ -1089,6 +1093,8 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 		var faction:=int(_contract.rival_faction if story else _contract.context.client_faction) if rival else int(_contract.pirate_actor_kind)
 		var options: Dictionary={} if story else load("res://src/content/mission_recipe.gd").contract_ship_options(_contract,id,enemy_faction,int(_contract.context.client_faction))
 		if not story:faction=int(options.faction)
+		if not story and not options.get("static_object",{}).is_empty():
+			actors.append(_static_row(id,faction,options,path,random));routes.append(null);continue
 		var freighter: bool=options.get("subtype",0)==1
 		var fixed_hull: int=int(options.get("hull_catalogue_id",-1))
 		var hull: int=fixed_hull if fixed_hull>=0 else int(_contract.freighter_hulls[faction]) if freighter else int(_contract.rival_hull) if story and rival else _contract_hull(random,faction)
@@ -1153,6 +1159,26 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 	_contract_layout={"kind":kind,"context":_contract.context.duplicate(true),"mission":_contract.context.mission.duplicate(true),"path":path,
 		"debris_center":center,"unused_enemy_faction":enemy_faction,"actor_count":actors.size()}
 	return snapshot()
+
+## A cast static object: no ship sampling, route or cargo. It sits at its
+## group position (or the origin) plus the optional per-axis jitter.
+func _static_row(id: int,faction: int,options: Dictionary,path: Array,random: RefCounted) -> Dictionary:
+	var placed: Dictionary=options.static_object
+	var model:=int(placed.model)
+	var position:=Vector3.ZERO
+	if options.position.get("kind","")=="positions":position=Vector3(options.position.points[int(options.group_index)])
+	elif options.get("origin")!="zero" and not path.is_empty():position=path[0]
+	var jitter:=int(placed.get("jitter",0))
+	if jitter>0:
+		for axis in 3:position[axis]=Vitals.single(position[axis]+float(random.next_int(2*jitter)-jitter))
+	var context: Dictionary=_contract.context
+	var hull:=int(placed.hull_override) if placed.has("hull_override") else Statics.hull(model,int(context.rank),int(context.campaign_cursor),float(context.difficulty))
+	var body:=Transform3D(Basis.IDENTITY,position)
+	var row:={"actor_id":id,"actor_kind":faction,"hull_catalogue_id":-1,"subtype":0,"population_group":"static","static_model":model,"resource_id":model,
+		"hull_override":hull,"name_text_id":int(options.name_text_id),"cargo":[],"fragments":[],"route":{},
+		"body_pose":body,"statistics_pose":body,"model_local_pose":Transform3D.IDENTITY}
+	row.merge(options.ship_state,true)
+	return row
 
 func _sample_traffic(random: RefCounted) -> Dictionary:
 	if _population_owner!=null:

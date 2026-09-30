@@ -85,7 +85,7 @@ func configure_mission(bindings: RefCounted,context: RefCounted,combat: RefCount
 	var keys:=[];var modes:=[]
 	for actor in state.actors:
 		modes.append(int(actor.actor_mode))
-		if actor.get("population_group") not in ["freighter","capital"]:keys.append("npc%d"%int(actor.actor_id))
+		if actor.get("population_group") not in ["freighter","capital","static"]:keys.append("npc%d"%int(actor.actor_id))
 	if not candidate._configure_owners(bindings,state,seed_seconds,keys,modes):return reject(candidate.error)
 	_identity=candidate._identity;_rules=candidate._rules;_npc_count=candidate._npc_count;_presentation_identity=candidate._presentation_identity
 	adopt(candidate)
@@ -140,7 +140,7 @@ func configure_local_traffic(bindings: RefCounted,combat: Dictionary,seed_second
 	if not valid_combat(combat):clear();return reject("Local smoke/fire requires its initialized ships")
 	var keys:=[]
 	for actor in actors:
-		if actor.get("population_group") not in ["freighter","capital","debris"]:keys.append("npc%d"%int(actor.actor_id))
+		if actor.get("population_group") not in ["freighter","capital","debris","static"]:keys.append("npc%d"%int(actor.actor_id))
 	# An admitted contract cast starts in the modes its recipe constructed.
 	var recipe_cast: bool=mission_context!=null and not mission_context.contract_context().is_empty()
 	return _configure_owners(bindings,combat,seed_seconds,keys,actors.map(func(actor):return int(actor.actor_mode) if recipe_cast or actor.get("authored_story",false) or combat.has("free_context") or combat.campaign_cursor in FlightStages.FACTIONS else (4 if actor.get("population_group")=="travel" else 0)))

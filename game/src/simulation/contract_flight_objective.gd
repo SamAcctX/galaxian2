@@ -88,11 +88,11 @@ func navigate(action: String,encounter: RefCounted) -> bool:
 	_visit=visit
 	return true
 
-func poll_contract(cargo: RefCounted,scenery: RefCounted,encounter: RefCounted,alive: bool,radio_active: bool,periodic_due: bool) -> bool:
+func poll_contract(cargo: RefCounted,scenery: RefCounted,encounter: RefCounted,alive: bool,radio_active: bool,periodic_due: bool,radio_finished: Array=[]) -> bool:
 	error=""
 	if _contracts==null or not encounter is Encounter or cargo.field_identity()!=_field_identity or scenery.presentation_identity()!=_field_identity or not cargo.matches_mined_field(scenery.mining_snapshot()):return reject("The contract objective lost its actual flight field and cargo")
 	if not observe_scenery(scenery):return false
-	var result: Dictionary=encounter.evaluate_contract_session(_contracts,radio_active,alive,periodic_due)
+	var result: Dictionary=encounter.evaluate_contract_session(_contracts,radio_active,alive,periodic_due,radio_finished)
 	if result.is_empty():return reject(encounter.error)
 	_contracts=result.session
 	var story: Dictionary=_contracts.story_transition()

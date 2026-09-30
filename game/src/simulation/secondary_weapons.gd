@@ -310,8 +310,9 @@ func _targets(combat: RefCounted,ordered_actor_ids: Variant,bodies: RefCounted=n
 	for id in ordered_actor_ids:
 		if not id is int or id<0 or id>=state.actors.size() or seen.has(id):reject("Secondary target order names an unavailable or repeated actor");return []
 		var actor: Dictionary=state.actors[id]
-		if not actor.get("scenery") is bool or not actor.get("active") is bool or not actor.get("position") is Vector3 or not actor.position.is_finite():reject("Secondary target lacks current classification and position");return []
-		var target:={"actor_id":id,"position":actor.position,"active":actor.active,"emp_immune":actor.scenery,"mine_sensitive":actor.get("hostile",false) and not actor.scenery}
+		# Only systems-pool ships carry the scenery flag; any other ship is not scenery.
+		if not actor.get("scenery",false) is bool or not actor.get("active") is bool or not actor.get("position") is Vector3 or not actor.position.is_finite():reject("Secondary target lacks current classification and position");return []
+		var target:={"actor_id":id,"position":actor.position,"active":actor.active,"emp_immune":actor.get("scenery",false),"mine_sensitive":actor.get("hostile",false) and not actor.get("scenery",false)}
 		if physical_contacts:
 			target.collision=combat.collision_context(id)
 			if target.collision.is_empty():reject(combat.error);return []
@@ -359,7 +360,9 @@ func _apply_event(gun: Dictionary,event: Dictionary,combat: RefCounted,origin: V
 						normal=combat.normal_hit(target.index,hit.normal_damage,false,int(gun.equipment.item_id))
 						if normal.is_empty():return fail(combat.error)
 					result.normal_hits.append({"target":target,"damage":hit.normal_damage,"result":normal})
-			if (not hit.has("normal_damage") or hit.system_damage>0) and hit.get("target",{}).get("group")!="scenery":
+			# Ships built without a systems pool (e.g. contract casts) still take
+			# the blast's hull damage; there is simply nothing for EMP to disable.
+			if (not hit.has("normal_damage") or hit.system_damage>0) and hit.get("target",{}).get("group")!="scenery" and combat.actor_snapshot(hit.actor_id).has("systems"):
 				var applied: Dictionary=combat.systems_hit(hit.actor_id,hit.system_damage,false)
 				if applied.is_empty():return fail(combat.error)
 				result.systems_hits.append({"actor_id":hit.actor_id,"damage":hit.system_damage,"result":applied})
@@ -508,6 +511,33 @@ func discard_flying() -> void:
 		if gun.has("mine"):gun.mine.discard_flying()
 		elif gun.has("bomb"):gun.bomb.discard_flying()
 		else:gun.projectiles.discard_flying()
+
+## Guided missile (catalogue-guided bombs). At most one launcher is live.
+func _guided_gun() -> Dictionary:
+	for gun in _guns:
+		if gun.has("bomb") and gun.bomb.guided_live():return gun
+	return {}
+
+func guided_active() -> bool:return not _guided_gun().is_empty()
+
+func guided_camera_pose() -> Transform3D:
+	var gun:=_guided_gun()
+	return Transform3D() if gun.is_empty() else gun.bomb.guided_camera_pose()
+
+## Copy-on-write: the returned owner carries the new stick command.
+func steer_guided(command: Vector2) -> RefCounted:
+	error=""
+	var next:=fork()
+	var gun: Dictionary=next._guided_gun()
+	if not gun.is_empty() and not gun.bomb.set_steering(command):reject(gun.bomb.error);return null
+	return next
+
+## Script/phase removal: the live guided missile vanishes without a blast.
+func discard_guided() -> RefCounted:
+	var next:=fork()
+	var gun: Dictionary=next._guided_gun()
+	if not gun.is_empty():gun.bomb.discard_flying()
+	return next
 
 func presentation_identity() -> RefCounted:return _presentation_identity
 

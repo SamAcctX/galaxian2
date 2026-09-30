@@ -27,6 +27,7 @@ const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const ContractWorld=preload("res://src/content/contract_world_definitions.gd")
 const LocalRadio=preload("res://src/simulation/local_traffic_radio.gd")
 const Booster=preload("res://src/content/booster_definitions.gd")
+const Statics=preload("res://src/content/static_object_definitions.gd")
 const PLAYER_ENGINE="player_engine"
 var error := ""
 var _resources: RefCounted
@@ -55,6 +56,8 @@ var _freighter_audio:={}
 var _freighter_actors:=[]
 var _debris_actors:=[]
 var _debris_sound:=-1
+var _static_actors:=[]
+var _static_sounds:=[]
 var _notification_sound:=-1
 var _notified_result_serial:=0
 var _content_identity:={}
@@ -138,6 +141,11 @@ func configure(library: RefCounted, bindings: RefCounted, audio_seed: int=0, cam
 	if local_flight and (local_combat.has("free_context") or local_combat.has("contract_encounter")):
 		_debris_actors=local_combat.actors.filter(func(actor):return actor.get("population_group")=="debris").map(func(actor):return int(actor.actor_id))
 		_debris_sound=int(bindings.early_contracts.junk_lifecycle.sound_id)
+		for actor in local_combat.actors:
+			if actor.get("population_group")!="static":continue
+			_static_actors.append(int(actor.actor_id))
+			var sound:=int(Statics.rules(int(actor.static_model)).get("death_sound",-1))
+			if sound>=0 and sound not in _static_sounds:_static_sounds.append(sound)
 		_notification_sound=int(bindings.early_contracts.delivery_results.notification_sound_id)
 	_seed_value=audio_seed
 	_random.seed=audio_seed
@@ -149,7 +157,7 @@ func configure(library: RefCounted, bindings: RefCounted, audio_seed: int=0, cam
 	# Ordinary Void and the contest have combat but no timed radio. Resolve
 	# their original clips through the base bank without inventing a radio scene.
 	elif not _resources.configure(library,bindings,0 if admitted_silent or contest or local_combat.get("ordinary_void",false) or campaign_cursor in [2,4,26] else campaign_cursor):return reject(_resources.error)
-	for id in [_npc_scan_sound,_debris_sound,_notification_sound]:
+	for id in [_npc_scan_sound,_debris_sound,_notification_sound]+_static_sounds:
 		if id>=0 and _resources.prepare(id).is_empty():return reject(_resources.error)
 	for id in _travel_sounds:
 		var clip: Dictionary=_resources.prepare(id)
@@ -985,6 +993,11 @@ func prepare_combat(world: Dictionary, elapsed_ms: int) -> Dictionary:
 		var death: Variant=event.get("destruction",{})
 		if not death is Dictionary:return fail("Invalid NPC audio death frame")
 		if death.is_empty() or _death_audio.is_empty():continue
+		if previous in _static_actors:
+			for cue in death.get("audio_events",[]):
+				if not cue is Dictionary or int(cue.get("source_id",-1)) not in _static_sounds or not cue.get("position") is Vector3:return fail("Static object sound lost its source or position")
+				operations.append({"action":"start_spatial","source_id":int(cue.source_id),"position":cue.position,"actor_id":previous})
+			continue
 		if previous in _debris_actors:
 			var debris:=prepare_debris_audio(death,previous)
 			if debris.is_empty():return {}
@@ -1314,7 +1327,7 @@ func clear() -> void:
 	restore_listener()
 	_resources=null;_identity=null;_revision=-1;_elapsed_ms=0;_booster_serial=0;_cloak_serial=0;_drive_serial=0;_players.clear();_retiring.clear();_history.clear();_unsupported.clear();_music=-1;_engine=-1;_paused=false;_start_serial=0;error=""
 	_last_samples.clear();_random.seed=0
-	_death_audio={};_freighter_audio={};_freighter_actors=[];_debris_actors=[];_debris_sound=-1;_notification_sound=-1;_notified_result_serial=0;_content_identity={};_weapon_audio={};_npc_weapon_sound=-1;_npc_weapon_sounds=[];_npc_scan_sound=-1
+	_death_audio={};_freighter_audio={};_freighter_actors=[];_debris_actors=[];_debris_sound=-1;_static_actors=[];_static_sounds=[];_notification_sound=-1;_notified_result_serial=0;_content_identity={};_weapon_audio={};_npc_weapon_sound=-1;_npc_weapon_sounds=[];_npc_scan_sound=-1
 	_radio_voice={};_local_radio_rules={};_radio_identity={};_voice_displayed=[];_voice_serial=0
 	_engine_ids=[];_arrival_engine_id=-1;_engine_generation=-1;_initial_engine_id=-1
 	_npc_count=3;_player_death_rules={};_flight_identity=null;_flight_serial=-1

@@ -34,7 +34,7 @@ func configure(bindings: RefCounted,combat: Dictionary,death: RefCounted,seed_se
 		if initial.get(key)!=bindings.get(key) or combat.get(key)!=bindings.get(key):return reject("Second-flight particles belong to another departure")
 	var training: bool=combat.get("campaign_cursor")==7
 	var local_flight: bool=load("res://src/content/ordinary_flight_definitions.gd").combat_population(bindings,combat,mission_context)
-	if initial.get("phase")!="ready" or initial.get("departure_cursor")!=(int(combat.campaign_cursor) if local_flight else (7 if training else 4)):return reject("Register ordinary-flight particles before player death in the same encounter")
+	if initial.get("phase")!="ready" or (initial.get("departure_cursor")!=(int(combat.campaign_cursor) if local_flight else (7 if training else 4)) and not (local_flight and death.covers_cursor(int(combat.campaign_cursor)))):return reject("Register ordinary-flight particles before player death in the same encounter")
 	var smoke:=Smoke.new()
 	var ready:=smoke.configure_local_traffic(bindings,combat,seed_seconds,mission_context) if local_flight else (smoke.configure_combat_training(bindings,combat,seed_seconds) if training else smoke.configure_full_hold(bindings,combat,seed_seconds))
 	if not ready:return reject(smoke.error)
@@ -81,7 +81,7 @@ func _configure_registered(bindings: RefCounted,combat: Dictionary,death: RefCou
 	var emitters:={}
 	var keys:=["player"]
 	for id in combat.actors.size():
-		if combat.actors[id].get("population_group") not in ["freighter","capital","debris"]:keys.append("npc%d"%id)
+		if combat.actors[id].get("population_group") not in ["freighter","capital","debris","static"]:keys.append("npc%d"%id)
 	keys.append("world")
 	for key in keys:
 		var emitter:=Emitter.new()
