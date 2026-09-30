@@ -356,7 +356,7 @@ func _apply_event(gun: Dictionary,event: Dictionary,combat: RefCounted,origin: V
 						normal=bodies.normal_hit(target.index,hit.normal_damage)
 						if normal.is_empty() or not bodies.record_blast(target.index,hit.impact_vector,hit.motion_scalar):return fail(bodies.error)
 					else:
-						normal=combat.normal_hit(target.index,hit.normal_damage,false)
+						normal=combat.normal_hit(target.index,hit.normal_damage,false,int(gun.equipment.item_id))
 						if normal.is_empty():return fail(combat.error)
 					result.normal_hits.append({"target":target,"damage":hit.normal_damage,"result":normal})
 			if (not hit.has("normal_damage") or hit.system_damage>0) and hit.get("target",{}).get("group")!="scenery":

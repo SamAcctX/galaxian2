@@ -31,6 +31,7 @@ func verify_free_application() -> void:
 	if staged=="home":await fly_home()
 	if staged=="turret":await fly_turret()
 	if staged=="blueprint":await fly_blueprint()
+	if staged=="convoy":await fly_convoys()
 
 ## 49-52: the K'Suukk flees with a Vossk escort that turns on the player at
 ## Makke S'ik, through the gate to S'inokk and away, then home to Kanado.
@@ -217,6 +218,138 @@ func fly_blueprint() -> void:
 	check(app.session.station_owner().snapshot().campaign_cursor==59,"Fresh Resume lost the blueprint result")
 	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("valkyrie-59.gof2save"))==OK,"The blueprint checkpoint could not be kept")
 
+## 59-60: the Liberator field test hunts a convoy at stations 56, 45 and 22;
+## the base then pays 50,000 plus 50,000 per ship a Liberator destroyed.
+func fly_convoys() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==59,"The convoy checkpoint is not at cursor 59")
+	var known: Array=app.session.station_owner().snapshot().contracts.lounges.system_availability
+	if failures or not seed_cargo([[122,5]]):return
+	# The Liberator itself cannot be flown yet (see the gaps file), so this run
+	# earns no Liberator kills and the base pays its base 50,000.
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	# This career still flies its starter ship; a player would trade up first.
+	var refitted:=false
+	var yards:=[]
+	for station in catalogue.tables.stations.size():
+		var system:=int(catalogue.tables.stations[station].system_id)
+		if system<known.size() and known[system] and system not in [4,9,11,14,22,23,24,25,26] and not yards.any(func(id):return int(catalogue.tables.stations[id].system_id)==system):yards.append(station)
+	print("VALKYRIE yard candidates ",yards)
+	for yard in yards.slice(0,6):
+		if not await khador_jump(yard) or not await dock_application():return
+		if not app.equipment_action("open"):check(false,app.session.error);return
+		var ships: Array=app.session.station_owner().snapshot().equipment.market_ships
+		if not app.equipment_action("close"):check(false,app.session.error);return
+		print("VALKYRIE yard ",yard," ships ",ships.size())
+		if not ships.is_empty():
+			if not await outfit_for_combat():return
+			refitted=true;break
+		if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+		if not await release_application_flight():return
+	check(refitted,"No shipyard found for the convoy refit")
+	if failures:return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	var radio_ids:=[]
+	for station in [56,45,22]:
+		if not await khador_jump(station):return
+		var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+		print("VALKYRIE convoy ",station," cast ",actors.map(func(actor):return [actor.hull_catalogue_id,actor.actor_kind,actor.population_group,actor.hostile]))
+		check(actors.size()==6 and actors[0].population_group=="freighter" and actors.all(func(actor):return not actor.hostile),"The convoy at "+str(station)+" differs from its recipe")
+		if failures or not await hunt_convoy(station,radio_ids):return
+	var progress: Dictionary=app.session.flight_owner()._objective._contracts.snapshot().progress
+	check(app.session.flight_owner()._objective.snapshot().campaign_cursor==60,"The third convoy did not finish the field test")
+	for tick in 300:
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		if 2179 in radio_ids:break
+		if not application_step():return
+		if tick%10==0:await process_frame
+	print("VALKYRIE convoy radio ",radio_ids," progress ",progress)
+	check([2174,2175,2176,2177,2178,2179].all(func(id):return id in radio_ids),"The convoy radio lines did not all play")
+	if failures or not await khador_jump(101) or not await dock_application():return
+	var docked: Dictionary=app.session.station_owner().snapshot()
+	var kills:=int(docked.contracts.progress.get("story_counter",0))
+	if not await take_station_talk(60,61):return
+	var paid: Dictionary=app.session.station_owner().snapshot()
+	print("VALKYRIE field test kills=",kills," paid=",paid.contracts.credits-docked.contracts.credits)
+	check(paid.contracts.credits-docked.contracts.credits==50000*(kills+1),"The field test did not pay 50,000 per Liberator kill plus 50,000")
+	check(app.save_station(false) and app.load_station(),"Saving and resuming after the field test failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==61,"Fresh Resume lost the field test result")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("valkyrie-61.gof2save"))==OK,"The field test checkpoint could not be kept")
+
+## Buy the toughest hull that leaves money for guns, refit the old gear and
+## fill the gun slots with the best affordable primary weapon.
+func outfit_for_combat() -> bool:
+	# An old passenger job blocks changing ships; the player discards it.
+	if int(app.session.station_owner().snapshot().contracts.passengers)>0:
+		if not app.open_missions(now_us) or not app.discard_mission():check(false,"The passenger job could not be discarded: "+app.status.text);return false
+		app.close_missions(now_us)
+	if not app.equipment_action("open"):check(false,app.session.error);return false
+	var quote: Dictionary=app.session.station_owner().snapshot()
+	var budget:=int(quote.contracts.credits)+int(quote.loadout.ship_instance.unit_price)-120000
+	var offers: Array=quote.equipment.market_ships.filter(func(row):return int(row.unit_price)<=budget and catalogue.tables.ships[row.ship_id].stats.equipment_slots>=3 and catalogue.tables.ships[row.ship_id].stats.primary_slots>=2)
+	offers.sort_custom(func(a,b):return catalogue.tables.ships[a.ship_id].stats.armor>catalogue.tables.ships[b.ship_id].stats.armor)
+	print("VALKYRIE shipyard all ",quote.equipment.market_ships.map(func(row):return [row.ship_id,row.unit_price,catalogue.tables.ships[row.ship_id].stats.armor,catalogue.tables.ships[row.ship_id].stats.equipment_slots])," budget ",budget)
+	print("VALKYRIE shipyard ",quote.loadout.station_id," offers ",offers.map(func(row):return [row.ship_id,row.unit_price,catalogue.tables.ships[row.ship_id].stats.armor]))
+	if offers.is_empty():check(false,"No affordable combat hull at station "+str(quote.loadout.station_id));return false
+	var index: int=quote.equipment.market_ships.find(offers[0])
+	if not app.equipment_action("buy_ship",index):check(false,"The hull exchange was refused: "+app.session.error);return false
+	check(app.session.station_owner().snapshot().loadout.ship_id==offers[0].ship_id,"The hull exchange failed")
+	if failures:return false
+	for id in [85,51,91,2]:
+		if app.session.station_owner().snapshot().cargo.entries.any(func(row):return row.item_id==id):app.equipment_action("mount",id)
+	var guns: Array=app.session.station_owner().snapshot().equipment.market_rows.filter(func(row):return int(catalogue.tables.items[row.item_id].properties.get(1,-1))==0 and int(row.stock)>0)
+	guns.sort_custom(func(a,b):return int(a.unit_price)>int(b.unit_price))
+	print("VALKYRIE guns ",guns.map(func(row):return [row.item_id,row.unit_price,row.stock])," primary slots ",catalogue.tables.ships[offers[0].ship_id].stats.primary_slots)
+	for gun in guns:
+		if int(gun.unit_price)*int(catalogue.tables.ships[offers[0].ship_id].stats.primary_slots)>int(app.session.station_owner().snapshot().contracts.credits):continue
+		for unit in int(catalogue.tables.ships[offers[0].ship_id].stats.primary_slots):
+			if not app.equipment_action("buy",int(gun.item_id)):print("VALKYRIE buy refused ",app.session.error);break
+			if not app.equipment_action("mount",int(gun.item_id)):print("VALKYRIE mount refused ",app.session.error);break
+		break
+	var fitted: Dictionary=app.session.station_owner().snapshot()
+	print("VALKYRIE refit ship ",fitted.loadout.ship_id," items ",fitted.loadout.equipment_ids," credits ",fitted.contracts.credits)
+	check(fitted.loadout.equipment_ids.has(85),"The refit lost the Khador Drive")
+	return app.equipment_action("close") and failures==0
+
+func hunt_convoy(station: int,radio_ids: Array) -> bool:
+	var pilot:=CombatPilot.new();var captured:=false
+	for tick in 30000:
+		var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+		if int(actors[0].vitals.hull)<=0:break
+		var state: Dictionary=app.session.snapshot()
+		if app.session.flight_owner().death_active():check(false,"The player died at the convoy of "+str(station)+": "+str(state.player.vitals));return false
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		# Once the convoy turns, fight off the escorts, then take the transport.
+		var escorts: Array=range(1,6).filter(func(id):return int(actors[id].vitals.hull)>0)
+		var input:=pilot.controls(state,tick,escorts if actors[0].hostile and not escorts.is_empty() else [0],true)
+		if not captured and input.distance>0 and input.distance<6000:captured=true;await capture_free_application("valkyrie-convoy-%d"%station)
+		for adjustment in 10:
+			var current: float=app.session.snapshot().input_throttle
+			if absf(current-float(input.throttle))<.01:break
+			if not app.session.action("throttle_up" if current<float(input.throttle) else "throttle_down"):check(false,app.session.error);return false
+		var key: InputEventKey
+		if tick%25==0 and input.target>0 and input.distance<9000:
+			resume_application_focus();key=InputEventKey.new();key.physical_keycode=KEY_R;key.keycode=KEY_R;key.pressed=true;app._unhandled_input(key)
+		now_us+=100000
+		if not app.session.step(now_us,input.commands,input.fire,false,input.strafe):check(false,app.session.error);return false
+		if key!=null:key.pressed=false;app._unhandled_input(key)
+		app.present_session()
+		if tick%20==0:await process_frame
+		if tick%600==0:print("VALKYRIE convoy ",station," ",tick," target ",input.target," distance ",int(input.distance)," vitals ",state.player.vitals," radio ",radio_ids)
+	check(int(app.session.flight_owner()._encounter.combat_snapshot().actors[0].vitals.hull)<=0,"The convoy transport at "+str(station)+" survived")
+	for tick in 200:
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		if not application_step():return false
+		if tick%10==0:await process_frame
+	return failures==0
+
 func khador_jump(destination: int) -> bool:
 	resume_application_focus()
 	for pressed in [true,false]:
@@ -303,6 +436,7 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"home":return state.campaign_cursor==54
 		"turret":return state.campaign_cursor==55
 		"blueprint":return state.campaign_cursor==58
+		"convoy":return state.campaign_cursor==59
 	return super.resumed_contract_valid(state)
 
 ## A player crossing hostile Vossk space fights off the ships closing in

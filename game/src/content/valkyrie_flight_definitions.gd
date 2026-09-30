@@ -7,7 +7,7 @@ extends RefCounted
 ## are destroyed. Read from the Mac mission factory, radio factory and level
 ## script.
 const Campaign=preload("res://src/content/valkyrie_campaign_definitions.gd")
-const FLIGHT_KINDS:=[4,156,160]
+const FLIGHT_KINDS:=[4,156,160,163]
 const ADVANCE_AFTER_MS:=10000
 ## [speaker, text, voice, condition, value]: 5 = after the level time,
 ## 6 = after the given earlier line.
@@ -41,18 +41,41 @@ const COMBAT:={
 		"groups":[[3,8,24,"escort",0],[2,8,-1,"target",0],[4,8,-1,"target",1]]},
 }
 const ESCORT_HULL:=9999999
+## Convoy hunts (kind 163): at each listed station a transport of the system's
+## race waits with five fighters around a point far from the station. Within
+## CONVOY_RANGE the convoy turns hostile; destroying the transport clears the
+## station. Every other ship destroyed with the mission item adds to the career's
+## story counter. Radio texts step by two per cleared station.
+## Assumptions: the transport keeps the +x side (the original picks either side),
+## its two attached containers and the extra traffic ships are not built.
+const CONVOY:={59:{"stations":[56,45,22],"item_id":179,"approach_text":2180,"destroyed_text":2179,"final":[0,2179,1228],
+	"voices":{2174:1130,2175:1131,2176:1132,2177:1133,2178:1134}}}
+const CONVOY_RANGE:=50000
+const CONVOY_ESCORTS:=5
 ## Once this radio line has finished, every story ship turns hostile and the
 ## Vossk standing drops to its worst value (standing 0 = 100).
 const TURN_HOSTILE_AFTER:={50:{"radio_index":2,"reputation_axis":0,"reputation_value":100}}
 
 ## The story job selected at this location, if the career is in a story flight.
-static func story_job(bindings: RefCounted,cursor: Variant,station_id: Variant) -> Dictionary:
-	if not cursor is int or not station_id is int or not Campaign.saved_story(bindings,cursor) or not (CASTS.has(cursor) or COMBAT.has(cursor)):return {}
+static func story_job(bindings: RefCounted,cursor: Variant,station_id: Variant,progress: Dictionary={}) -> Dictionary:
+	if not cursor is int or not station_id is int or not Campaign.saved_story(bindings,cursor) or not (CASTS.has(cursor) or COMBAT.has(cursor) or CONVOY.has(cursor)):return {}
 	var mission:=Campaign.mission(cursor)
 	if mission.is_empty() or int(mission.kind) not in FLIGHT_KINDS:return {}
 	if COMBAT.has(cursor) and station_id!=int(mission.station_id):return {}
-	return {"kind":int(mission.kind),"station_id":station_id,"reward":0,"bonus":0,"difficulty":1,"quantity":0,
+	var job:={"kind":int(mission.kind),"station_id":station_id,"reward":0,"bonus":0,"difficulty":1,"quantity":0,
 		"story":false,"story_job":true,"campaign_cursor":cursor,"target_station_id":int(mission.station_id)}
+	if CONVOY.has(cursor):
+		var index: int=CONVOY[cursor].stations.find(station_id)
+		var cleared:=int(progress.get("story_stations_mask",0))
+		if index<0 or cleared & (1<<index):return {}
+		var faction:=int(load("res://src/content/ordinary_world_definitions.gd").location(bindings,station_id).get("faction",-1))
+		if faction<0:return {}
+		job.merge({"convoy_index":index,"cleared_mask":cleared,"faction":faction})
+	return job
+
+## Kills that count toward a convoy mission's story counter.
+static func counts_kill(cursor: Variant,kill: Dictionary,excluded: Array) -> bool:
+	return cursor is int and CONVOY.has(cursor) and int(kill.get("item_id",-1))==int(CONVOY[cursor].item_id) and not excluded.has(kill.get("actor_id"))
 
 static func is_story_job(mission: Variant) -> bool:
 	return mission is Dictionary and mission.get("story_job",false)==true
@@ -61,6 +84,7 @@ static func is_story_job(mission: Variant) -> bool:
 static func recipe(job: Dictionary) -> Dictionary:
 	var cursor:=int(job.campaign_cursor)
 	if COMBAT.has(cursor):return _combat_recipe(job)
+	if CONVOY.has(cursor):return _convoy_recipe(job)
 	var groups:=[];var first:=0
 	for row in CASTS[cursor]:
 		var hostile: bool=row[3]
@@ -102,6 +126,33 @@ static func _combat_recipe(job: Dictionary) -> Dictionary:
 		"radio":_radio(cursor,targets.size()),
 		"success":{"kind":18,"first_actor":targets.min(),"end_actor":targets.max()+1},
 		"story":_advance(cursor),"turn_hostile":{}}
+
+static func _convoy_recipe(job: Dictionary) -> Dictionary:
+	var cursor:=int(job.campaign_cursor);var plan: Dictionary=CONVOY[cursor]
+	var mask:=int(job.cleared_mask) | (1<<int(job.convoy_index))
+	var left:=0
+	for index in plan.stations.size():
+		if not mask & (1<<index):left+=1
+	var neutral:={"initial_hostile":false,"updated_hostile":false,"friendly":false}
+	var state:={"mode":0,"active":true,"targeting_blocked":false}
+	var groups:=[
+		{"first_actor":0,"end_actor":1,"faction":int(job.faction),"subtype":1,"population_group":"freighter","origin":"zero",
+			"ship_state":state.merged({"cruise_enabled":false}),"policy":neutral.duplicate(),
+			"position":{"kind":"path_scatter","index":0,"offsets":[-15000,-1500,-25000],"bounds":[30000,3000,50000]}},
+		{"first_actor":1,"end_actor":1+CONVOY_ESCORTS,"faction":int(job.faction),"population_group":"story","origin":"zero",
+			"ship_state":state.duplicate(),"policy":neutral.duplicate(),"route_start":0,
+			"position":{"kind":"path_scatter","index":0,"offsets":[-4000,-1500,-4000],"bounds":[8000,3000,8000]}}]
+	# Text for this station: 2174/2176/2178 on approach, 2175/2177 when the
+	# transport dies; the last station ends with the result line instead.
+	var approach:=int(plan.approach_text)-2*(left+1);var destroyed:=int(plan.destroyed_text)-2*left
+	var radio:=[{"speaker_id":0,"text_id":approach,"voice_event_id":int(plan.voices[approach]),"condition":29,"values":[0,CONVOY_RANGE]}]
+	var last: Array=plan.final if left==0 else [0,destroyed,int(plan.voices[destroyed])]
+	radio.append({"speaker_id":int(last[0]),"text_id":int(last[1]),"voice_event_id":int(last[2]),"condition":1,"values":[0]})
+	var story:=_advance(cursor) if left==0 else {"from_cursor":cursor,"campaign_cursor":cursor,"mission":Campaign.mission(cursor),"previous_mission":Campaign.mission(cursor)}
+	story.progress={"story_stations_mask":mask}
+	return {"actor_count":1+CONVOY_ESCORTS,"ship_groups":groups,"placement":{"kind":"points","points":[Vector3(95000,-4500,145000)]},
+		"radio":radio,"success":{"kind":18,"first_actor":0,"end_actor":1},"story":story,"turn_hostile":{"radio_index":0},
+		"story_excluded_actors":[0]}
 
 static func _radio(cursor: int,targets: int) -> Array:
 	var radio:=[]

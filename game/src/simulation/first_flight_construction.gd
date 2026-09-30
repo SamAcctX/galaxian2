@@ -527,9 +527,9 @@ func _valid_selected_progress(bindings: RefCounted,progress: Dictionary,cursor: 
 	if progress.has("asteroids_destroyed"):
 		if not Numbers.integer(progress.asteroids_destroyed,0,2147483647):return reject("Selected construction lost its asteroid-destruction statistic")
 		expected.asteroids_destroyed=progress.asteroids_destroyed
-	for key in ["mined_ore_tons","mined_cores","mined_ore_types_mask","mined_core_types_mask","nuclear_bomb_detonations","purchased_booze_quantity","booze_types_mask"]:
+	for key in preload("res://src/simulation/opening_station_archive.gd").LIFETIME_KEYS:
 		if progress.has(key):
-			var maximum:=4194303 if key=="booze_types_mask" else (2047 if key in ["mined_ore_types_mask","mined_core_types_mask"] else 2147483647)
+			var maximum:=preload("res://src/simulation/opening_station_archive.gd").counter_maximum(key)
 			if not Numbers.integer(progress[key],0,maximum):return reject("Selected construction lost a lifetime statistic")
 			expected[key]=progress[key]
 	if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected or rank!=progress.get("rank") or difficulty not in [0.5,1.0,1.5]:return reject("Selected construction changed earned rank, difficulty or hint history")
@@ -635,9 +635,9 @@ func _prepare_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dictio
 		if progress.has("asteroids_destroyed"):
 			if not Numbers.integer(progress.asteroids_destroyed,0,2147483647):return reject("Local arrival lost its asteroid-destruction statistic")
 			expected.asteroids_destroyed=progress.asteroids_destroyed
-		for key in ["mined_ore_tons","mined_cores","mined_ore_types_mask","mined_core_types_mask","nuclear_bomb_detonations","purchased_booze_quantity","booze_types_mask"]:
+		for key in preload("res://src/simulation/opening_station_archive.gd").LIFETIME_KEYS:
 			if progress.has(key):
-				var maximum:=4194303 if key=="booze_types_mask" else (2047 if key in ["mined_ore_types_mask","mined_core_types_mask"] else 2147483647)
+				var maximum:=preload("res://src/simulation/opening_station_archive.gd").counter_maximum(key)
 				if not Numbers.integer(progress[key],0,maximum):return reject("Local arrival lost a lifetime statistic")
 				expected[key]=progress[key]
 		if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected:return reject("Local arrival career disagrees with its counters")
@@ -876,9 +876,9 @@ func _valid_packet(bindings: RefCounted, packet: Dictionary, context: Dictionary
 	if progress.has("asteroids_destroyed"):
 		if not Numbers.integer(progress.asteroids_destroyed,0,2147483647):return reject("Departure lost its asteroid-destruction statistic")
 		expected_progress.asteroids_destroyed=progress.asteroids_destroyed
-	for key in ["mined_ore_tons","mined_cores","mined_ore_types_mask","mined_core_types_mask","nuclear_bomb_detonations","purchased_booze_quantity","booze_types_mask"]:
+	for key in preload("res://src/simulation/opening_station_archive.gd").LIFETIME_KEYS:
 		if progress.has(key):
-			var maximum:=4194303 if key=="booze_types_mask" else (2047 if key in ["mined_ore_types_mask","mined_core_types_mask"] else 2147483647)
+			var maximum:=preload("res://src/simulation/opening_station_archive.gd").counter_maximum(key)
 			if not Numbers.integer(progress[key],0,maximum):return reject("Departure lost a lifetime statistic")
 			expected_progress[key]=progress[key]
 	if not MiningSession.retain_hint_history(progress,expected_progress,bindings.mining_session) or progress!=expected_progress:return reject("First flight changed earned campaign progress")

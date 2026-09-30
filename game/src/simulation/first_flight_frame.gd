@@ -1422,7 +1422,7 @@ func _observe_radio() -> bool:
 		_radio_events=_radio.step_context(elapsed)
 		var turn: Dictionary=_mission_context.recipe().get("turn_hostile",{})
 		if not turn.is_empty() and _radio.error.is_empty() and _radio.snapshot().finished[int(turn.radio_index)] and not _encounter.story_hostility_applied():
-			if not _encounter.apply_story_hostility(int(turn.reputation_axis),int(turn.reputation_value)):return reject(_encounter.error)
+			if not _encounter.apply_story_hostility(int(turn.get("reputation_axis",-1)),int(turn.get("reputation_value",0))):return reject(_encounter.error)
 	elif _void_environment!=null or _entry.campaign_cursor==28:
 		_radio_events=_radio.step(int(_briefing.snapshot().world_elapsed_ms),{},0)
 	elif _sahi!=null:
@@ -1444,12 +1444,16 @@ func _observe_radio() -> bool:
 ## an awake non-friendly ship, ships destroyed so far, and the player's armour.
 func _story_radio_facts() -> Dictionary:
 	if _mission_context.contract_context().is_empty() or _mission_context.recipe().get("radio",[]).is_empty():return {}
-	var hostile_active:=false;var defeated:=0
-	for actor in _encounter.combat_snapshot().actors:
+	var hostile_active:=false;var defeated:=0;var hulls:={};var distances:={}
+	var actors: Array=_encounter.combat_snapshot().actors
+	for id in actors.size():
+		var actor: Dictionary=actors[id]
 		if actor.get("scenery",false):continue
 		hostile_active=hostile_active or (actor.get("active",false)==true and actor.get("friendly",false)!=true)
 		if int(actor.vitals.hull)<=0:defeated+=1
-	return {"hostile_active":hostile_active,"defeated_targets":defeated,"player_armor_depleted":int(_player.snapshot().vitals.armor)<1}
+		hulls[id]=int(actor.vitals.hull)
+		if actor.get("pose") is Transform3D:distances[id]=_pose.origin.distance_to(actor.pose.origin)
+	return {"hostile_active":hostile_active,"defeated_targets":defeated,"player_armor_depleted":int(_player.snapshot().vitals.armor)<1,"hulls":hulls,"player_distances":distances}
 
 func _advance_world(milliseconds: int, preceding_reference: Vector3) -> bool:
 	if _wingmen!=null:

@@ -23,10 +23,16 @@ const SHIPS:={
 ## Kind 166 finishes docked at its station with the goods in the hold (or the
 ## item fitted); the goods stay with the player (assumption: no removal found).
 const GOODS_KIND:=166
+## Kinds whose target is an ordinary station you dock at and leave: talks, goods,
+## convoy hunts (finished elsewhere) and the 10 s flight (164).
+const STATION_KINDS:=[11,163,164,166]
 const GOODS:={58:{"item_id":179,"quantity":10}}
 ## Blueprints handed over as the story enters a cursor: mission 58 grants item
 ## 179 with 5 of material 127 already supplied at the Valkyrie; 59 takes it back.
 const BLUEPRINTS:={58:{"item_id":179,"grant":true,"material_id":127,"quantity":5,"station_id":101},59:{"item_id":179,"grant":false}}
+## Talks paying extra per story-counter kill (60: 50000 x (Liberator kills + 1)).
+## The counter and cleared-station mask end with that talk.
+const COUNTER_REWARD:={60:50000}
 ## cursor: [kind, reward, station]; -1 station means any station.
 const MISSIONS:={
 	47:[11,0,74],48:[11,0,58],49:[156,0,58],50:[156,0,62],51:[156,0,25],52:[160,0,25],
@@ -74,6 +80,7 @@ static func _rules(cursor: int,current: Dictionary,next: int,events: Array,targe
 	var result:={"campaign_cursor":cursor,"mission":current.duplicate(true),"next_cursor":next,"next_mission":next_mission,
 		"reward_credits":int(current.get("reward",0)),"events":events,"target_station_required":target_required}
 	if UNLOCKS.has(cursor):result.unlock_system_ids=UNLOCKS[cursor].duplicate()
+	if COUNTER_REWARD.has(cursor):result.reward_per_story_counter=int(COUNTER_REWARD[cursor])
 	if SHIPS.has(next):result.story_ship=SHIPS[next].duplicate(true)
 	if BLUEPRINTS.has(next):result.story_blueprint=BLUEPRINTS[next].duplicate()
 	return result

@@ -798,7 +798,13 @@ func acknowledge_station_campaign(bindings: RefCounted,equipment: RefCounted,sto
 	if rules.has("unlock_system_ids"):
 		next._lounges=next._lounges.fork()
 		if not next._lounges.acknowledge_campaign_coordinates(bindings,visit):return fail(next._lounges.error)
-	next._state.credits=credit_balance(_state.credits,receipt.reward_credits,_rules.delivery_results)
+	var reward: int=int(receipt.reward_credits)
+	if rules.has("reward_per_story_counter"):
+		var kills:=int(next._state.progress.get("story_counter",0))
+		if kills>(2147483647-reward)/maxi(1,int(rules.reward_per_story_counter)):return fail("The story reward exceeds the supported credit range")
+		reward+=kills*int(rules.reward_per_story_counter)
+		next._state.progress.erase("story_counter");next._state.progress.erase("story_stations_mask")
+	next._state.credits=credit_balance(_state.credits,reward,_rules.delivery_results)
 	return {"career":next,"equipment":inventory}
 
 func _campaign_station_inventory(bindings: RefCounted,equipment: RefCounted,story_mission: Dictionary) -> Dictionary:
@@ -1164,7 +1170,7 @@ func _selected_contract_context(station_id: int,bindings: RefCounted) -> Diction
 	if mission.is_empty():
 		# A story flight here takes the cast; a kept side job without a flight
 		# at this station stays accepted.
-		result.mission=StoryFlights.story_job(bindings,_state.campaign_cursor,station_id)
+		result.mission=StoryFlights.story_job(bindings,_state.campaign_cursor,station_id,_state.progress)
 		return result
 	var retained: Dictionary=_state.get("accepted_contact",{})
 	var accepted: Dictionary=_state.offers.get(_state.active_offer_id,{}) if retained.is_empty() else {"consumed":true,"offer":retained.offer}
@@ -1205,7 +1211,7 @@ func retained_station_context(bindings: RefCounted,station_id: int) -> Dictionar
 	return {"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,
 		"campaign_cursor":_state.campaign_cursor,"station_id":station_id,"rank":_state.rank,
 		"difficulty":_state.difficulty,"reputation":_state.reputation.duplicate(true),
-		"mission":StoryFlights.story_job(bindings,_state.campaign_cursor,station_id),"client_faction":-1,"contact_name":""}
+		"mission":StoryFlights.story_job(bindings,_state.campaign_cursor,station_id,_state.progress),"client_faction":-1,"contact_name":""}
 
 func poll_station(equipment: RefCounted,bindings: RefCounted=null) -> bool:
 	error=""
@@ -1440,6 +1446,7 @@ func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_result
 		var earned:=Career.calculate_progress(_progress_rules,int(advance.campaign_cursor),progress.player_kills,progress.pirate_kills,progress.other_score)
 		if earned.is_empty():return fail("The story advance exceeds the supported career range")
 		next._state.progress.merge(earned,true);next._state.rank=earned.rank
+		next._state.progress.merge(advance.get("progress",{}),true)
 		next._state.campaign_cursor=int(advance.campaign_cursor);next._state.progress.campaign_cursor=int(advance.campaign_cursor)
 		next._flight.story_transition=advance.merged({"station_id":_state.station_id},true)
 		next._flight.retired=true
@@ -1629,12 +1636,23 @@ func _retain_combat_progress(controller: RefCounted) -> bool:
 		if not Numbers.integer(index,0,BaseMedals.BOOZE_LAST_ID-BaseMedals.BOOZE_FIRST_ID):return reject("The flight has an invalid Barkeeper item index")
 		booze_mask=int(booze_mask) | (1 << int(index))
 	if not booze_flags.is_empty() or progress.has("booze_types_mask"):earned.booze_types_mask=int(booze_mask)
+	# A story mission may count ships its weapon destroys (Valkyrie 59: Liberators).
+	var story_owner: RefCounted=controller.mission_context_owner() if controller.has_method("mission_context_owner") else null
+	var excluded: Array=[] if story_owner==null else story_owner.recipe().get("story_excluded_actors",[])
+	var counted: Array=scene.combat.get("lethal_items",[]).filter(func(kill):return StoryFlights.counts_kill(_state.campaign_cursor,kill,excluded))
+	var retained_kills: int=_flight.get("story_kills",0)
+	if counted.size()<retained_kills:return reject("The flight lost its retained story kills")
+	if counted.size()>retained_kills:
+		var total:=int(progress.get("story_counter",0))+counted.size()-retained_kills
+		if not Numbers.integer(total,0,2147483647):return reject("The story counter exceeds the supported career range")
+		earned.story_counter=total
 	var standing: Dictionary=scene.combat.get("current_reputation",{})
 	if not Reputation.valid_state(standing):return reject("The flight lost its retained reputation")
 	_state.progress.merge(earned,true);_state.rank=earned.rank
 	_state.reputation=standing;_state.progress.reputation=standing.duplicate(true)
 	_flight.accounting=accounting.duplicate(true);_flight.reputation_events=events.duplicate(true)
 	if recovered>0:_flight.cargo_recovered=recovered
+	if counted.size()>retained_kills:_flight.story_kills=counted.size()
 	_flight.elapsed_ms=scene.selected40_sequence.elapsed_ms if _flight.has("selected40_entry") else scene.get("contract_result",{}).get("elapsed_ms",0)
 	var capability: RefCounted=controller.mission_context_owner()
 	if _flight.has("encounter") and capability!=null and capability.recipe().result.get("defer_to_station",false):

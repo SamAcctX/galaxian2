@@ -14,15 +14,15 @@ static func valid_clock(value: Variant) -> bool:
 static func valid_row(row: Dictionary, event_count: int) -> bool:
 	if not Numbers.integer(row.get("condition"), 0, 31) or not row.get("values") is Array: return false
 	var kind := int(row.condition)
-	if kind not in [1, 5, 6, 8, 9, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28]: return false
-	if row.values.is_empty() or row.values.size() > 256 or (kind not in [1, 9] and row.values.size() != 1): return false
+	if kind not in [1, 5, 6, 8, 9, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]: return false
+	if row.values.is_empty() or row.values.size() > 256 or (kind not in [1, 9, 29] and row.values.size() != 1) or (kind == 29 and row.values.size() != 2): return false
 	for value in row.values:
 		if not Numbers.integer(value, -2147483648 if kind == 26 else 0, MAX_INTEGER): return false
 	return kind != 6 or int(row.values[0]) < event_count
 
 static func observation_error(observation: Dictionary, condition_clock: Variant) -> String:
 	if not valid_clock(condition_clock): return "Radio requires an explicit integer condition clock"
-	for key in ["hulls", "maximum_hulls", "activity", "positions_z"]:
+	for key in ["hulls", "maximum_hulls", "activity", "positions_z", "player_distances"]:
 		if not observation.has(key): continue
 		var values: Variant = observation[key]
 		if not values is Dictionary: return "Invalid radio actor observations: " + key
@@ -36,6 +36,8 @@ static func observation_error(observation: Dictionary, condition_clock: Variant)
 					if not Numbers.integer(value, 1, MAX_INTEGER): return "Invalid radio maximum hull"
 				"activity":
 					if not value is bool: return "Invalid radio actor activity"
+				"player_distances":
+					if not (value is int or value is float) or not is_finite(value) or value < 0: return "Invalid radio player distance"
 				"positions_z":
 					if not (value is int or value is float) or not is_finite(value) or not is_finite(Vitals.single(float(value))): return "Invalid radio statistics Z position"
 	for key in ["phase", "defeated_targets", "collected_cargo_quantity", "survivors", "route_index"]:
@@ -95,4 +97,8 @@ static func evaluate(row: Dictionary, condition_clock: int, observations: Dictio
 			return position != null and absf(Vitals.single(float(position) - float(value))) < Z_TOLERANCE
 		27: return int(observations.get("phase", 0)) == value
 		28: return observations.get("player_armor_depleted", false)
+		# Remake story condition: the player is within values[1] of ship values[0].
+		29:
+			var distance: Variant = observations.get("player_distances", {}).get(value)
+			return distance != null and hulls.get(value, 0) > 0 and float(distance) <= float(row.values[1])
 	return false

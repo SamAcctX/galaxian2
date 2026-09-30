@@ -145,7 +145,7 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 		"mission":mission.duplicate(true),"next_cursor":context.campaign_cursor,"entry":"ordinary_flight","world":{"station":true,"portal":true,"asteroid_field":true},
 		"cast":{"kind":"contract","actor_count":count,"debris_count":debris_count,"ship_state":ship_state,"placement":placement,
 			"rival_actor_id":rival_actor_id,"player_last_ids":player_last_ids,"player_only_ids":player_only_ids,"count_draw":count_draw,"ship_groups":ship_groups,"local_faction":local_faction,"operations":rules.duplicate(true)},"briefing":[],"radio":story.get("radio",[]),"sequences":[],"readout":readout,
-		"story_advance":story.get("story",{}),"turn_hostile":story.get("turn_hostile",{}),
+		"story_advance":story.get("story",{}),"turn_hostile":story.get("turn_hostile",{}),"story_excluded_actors":story.get("story_excluded_actors",[]),
 		"continuation":contract_continuation(mission),
 		"result":{"success":success,"failure":failure,"periodic_failure":periodic,"actor_count":count,
 			"defer_to_station":defers_station_result(mission),"retire_failure":true,"freeze_clock_on_result":story.is_empty(),"reset_while_blocked":false,"policy":bindings.early_contracts.flight_results.duplicate(true)}}

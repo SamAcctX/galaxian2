@@ -177,7 +177,8 @@ func matches_location(bindings: RefCounted,location: Dictionary) -> bool:
 static func supports_contract(bindings: RefCounted,mission: Variant,cursor: int) -> bool:
 	if bindings==null or not mission is Dictionary or mission.get("story")!=false:return false
 	var flights=load("res://src/content/valkyrie_flight_definitions.gd")
-	if flights.is_story_job(mission):return flights.story_job(bindings,cursor,mission.get("station_id"))==mission
+	# A convoy job carries the career's cleared stations; rebuild it with them.
+	if flights.is_story_job(mission):return flights.story_job(bindings,cursor,mission.get("station_id"),{"story_stations_mask":mission.get("cleared_mask",0)})==mission
 	if mission.get("kind")==6 and (not mission.get("target_name") is String or mission.target_name.is_empty()):return false
 	var rules: Dictionary=bindings.early_contracts.get("encounter_construction",{})
 	if rules.is_empty():return false

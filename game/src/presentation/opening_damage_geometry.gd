@@ -28,7 +28,7 @@ func build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: R
 			var current: Dictionary=state.owners[key][kind].preset
 			if not Appearance.Definitions.sprite_preset(current):return reject("Unsupported damage sprite preset")
 			if kind=="exhaust":
-				if not EngineDefinitions.parameters(bindings.engine_particles) or key!="player_nozzle%d"%(int(current.preset_id)-int(bindings.engine_particles.first_preset)) or int(current.preset_id)<29 or int(current.preset_id)>32 or not state.owners[key].get("draw_enabled") is bool:return reject("Unsupported player nozzle owner")
+				if not EngineDefinitions.parameters(bindings.engine_particles) or key!="player_nozzle%d"%(int(current.preset_id)-int(bindings.engine_particles.first_preset)) or int(current.preset_id)<int(bindings.engine_particles.first_preset) or int(current.preset_id)>=int(bindings.engine_particles.first_preset)+32 or not state.owners[key].get("draw_enabled") is bool:return reject("Unsupported player nozzle owner")
 			# Registered emitters may use authored variants of the same sprite
 			# kind. Each item retains and checks its own complete preset below.
 			preset=current

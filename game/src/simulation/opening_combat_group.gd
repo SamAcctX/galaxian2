@@ -35,6 +35,9 @@ var _phase := -1
 var _event_count := 0
 var _escape_enabled:=false
 var _reputation: RefCounted
+## Ships destroyed by a named item this flight: [{actor_id, item_id, population_group}].
+## Replaced, never mutated, so frames can share it.
+var _lethal_items:=[]
 var _provocation: RefCounted
 var _reputation_rules:={}
 var _contact_random:={}
@@ -68,7 +71,7 @@ func clear() -> void:
 	_story_standing={}
 	_bakka_encounter={}
 	_contract_settlement={}
-	_recovery_totals={}
+	_recovery_totals={};_lethal_items=[]
 	_selected40_world=null;_selected41_world=null
 	_wingman_primaries=[]
 	_wingman_systems=[]
@@ -587,13 +590,14 @@ func contact_random_state() -> Dictionary:return _contact_random.duplicate(true)
 
 func current_reputation() -> Dictionary:
 	var standing:=_current_reputation()
-	if not _story_standing.is_empty() and not standing.is_empty():standing.axes[int(_story_standing.axis)]=int(_story_standing.value)
+	if not _story_standing.is_empty() and not standing.is_empty() and int(_story_standing.axis)>=0:standing.axes[int(_story_standing.axis)]=int(_story_standing.value)
 	return standing
 
 ## The story turns every contract ship hostile and fixes one faction standing.
 func apply_story_hostility(axis: int,value: int) -> bool:
 	error=""
-	if _contract_encounter.is_empty() or axis not in [0,1] or value<-100 or value>100:return reject("Story hostility requires a contract cast and a valid standing")
+	# Axis -1 turns the cast hostile without changing any faction standing.
+	if _contract_encounter.is_empty() or axis not in [-1,0,1] or value<-100 or value>100:return reject("Story hostility requires a contract cast and a valid standing")
 	for id in _actors.size():
 		if _actors[id].snapshot().get("contract_ship",false) and not _writable(id).apply_story_hostility():return reject(_actors[id].error)
 	_story_standing={"axis":axis,"value":value}
@@ -745,6 +749,7 @@ func career_snapshot() -> Dictionary:
 	if not _bakka_encounter.is_empty():result.bakka_encounter=_bakka_encounter.duplicate(true)
 	if not _contract_settlement.is_empty():result.contract_settlement=_contract_settlement.duplicate(true)
 	if not _recovery_totals.is_empty():result.recovery=_recovery_totals.duplicate(true)
+	if not _lethal_items.is_empty():result.lethal_items=_lethal_items.duplicate(true)
 	return result
 
 func actor_snapshot(actor_id: int) -> Dictionary:
@@ -756,7 +761,7 @@ func actor_snapshots() -> Array:
 	for actor in _actors:result.append(actor.snapshot())
 	return result
 
-func normal_hit(actor_id: Variant, amount: Variant, nonplayer_source: Variant=false) -> Dictionary:
+func normal_hit(actor_id: Variant, amount: Variant, nonplayer_source: Variant=false, item_id:=-1) -> Dictionary:
 	error = ""
 	if _selected40_world!=null and _provocation==null:reject("Selected40 group consequences are not prepared");return {}
 	if not actor_id is int or actor_id<0 or actor_id>=_actors.size():
@@ -779,6 +784,8 @@ func normal_hit(actor_id: Variant, amount: Variant, nonplayer_source: Variant=fa
 		if staged.is_empty():return {}
 		_provocation=reaction.owner;_contact_random=reaction.random_state
 		result.reactions=reaction.events.duplicate(true)
+	if result.destroyed_now and item_id>=0 and not nonplayer_source:
+		_lethal_items=_lethal_items+[{"actor_id":actor_id,"item_id":item_id,"population_group":actor.snapshot().get("population_group","")}]
 	_owned={};_actors=staged;_reputation=history
 	return result
 
@@ -958,6 +965,7 @@ func fork_for_frame() -> RefCounted:
 	copy._contract_encounter=_contract_encounter
 	copy._bakka_encounter=_bakka_encounter
 	copy._contract_settlement=_contract_settlement.duplicate(true)
+	copy._lethal_items=_lethal_items
 	copy._story_standing=_story_standing
 	# Recovery replaces its small observation only on pickup.
 	copy._recovery_totals=_recovery_totals

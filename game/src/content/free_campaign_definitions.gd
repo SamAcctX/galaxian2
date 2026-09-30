@@ -166,7 +166,7 @@ static func active_visit(travel: Dictionary,context: Dictionary) -> bool:
 static func ordinary_story_at(source: Variant,cursor: Variant,station_id: Variant) -> bool:
 	var travel:=source_travel(source)
 	# An expansion talk mission's target is an ordinary station until docking.
-	if source is RefCounted and Valkyrie.saved_story(source,cursor):return station_id is int and Valkyrie.mission(cursor).get("kind")==Valkyrie.TALK and station_id==Valkyrie.mission(cursor).station_id
+	if source is RefCounted and Valkyrie.saved_story(source,cursor):return station_id is int and int(Valkyrie.mission(cursor).get("kind",-1)) in Valkyrie.STATION_KINDS and station_id==Valkyrie.mission(cursor).station_id
 	if cursor==39:return supported(source,cursor) and station_id is int and station_id==mission(source,cursor).station_id
 	if visit_at(travel,cursor,station_id):return true
 	if cursor==27 and expedition_available(travel):return station_id==int(travel.post_sahi.missions["27"].station_id)
