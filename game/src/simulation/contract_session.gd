@@ -768,7 +768,9 @@ func acknowledge_station_campaign(bindings: RefCounted,equipment: RefCounted,sto
 	if rules.has("unlock_system_ids") and (not equal.equal_value(receipt.get("unlock_system_ids"),rules.unlock_system_ids) or not equal.equal_value(receipt.get("next_course"),rules.next_course)):return fail("The station conversation changed its next destination")
 	var next: RefCounted=fork()
 	var inventory: RefCounted=equipment.fork()
-	if _station_context!=null:
+	# A completed career's station chapter ends when the expansion story takes over.
+	if _station_context!=null and _station_context.recipe().is_empty():next._station_context=null
+	elif _station_context!=null:
 		next._station_context=_station_context.successor(bindings,receipt)
 		if next._station_context==null:return fail(_station_context.error)
 	if rules.has("cargo_requirement"):

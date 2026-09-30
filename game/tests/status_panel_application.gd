@@ -6,13 +6,22 @@ extends "res://tests/beam_primary_application.gd"
 func verify_free_application() -> void:
 	app.set_player_mode(true);app.show();app.present_session()
 	await process_frame;resume_application_focus()
+	# A finished career first takes the expansion story's incoming call.
+	var clock:=Time.get_ticks_usec()
+	for tick in 30:
+		if app.session.snapshot().dialogue.visible:break
+		clock+=100000;app.session.step(clock);app.present_session();await process_frame
+	for line in 40:
+		if not app.session.snapshot().dialogue.visible:break
+		app.station_navigation("next");await process_frame
+	print("CALL cursor=",app.session.station_owner().snapshot().campaign_cursor," phase=",app.session.station_owner().snapshot().phase," dialogue=",app.session.snapshot().dialogue.visible)
 	# Room atmosphere: the main view loops its own event and fades it in.
 	for frame in 30:
 		await process_frame;app.session.step(Time.get_ticks_usec())
 	var air: Dictionary=app.session.ambience.snapshot()
 	print("AMBIENCE ",air)
 	check(air.prepared.size()==3 and air.room=="main" and air.levels.get("main",0.0)>0.0 and air.playing_voices>0,"The station main view has no atmosphere")
-	check(app.equipment_action("open"),"The hangar did not open")
+	check(app.equipment_action("open"),"The hangar did not open: "+app.status.text+" paused="+str(app.session.is_paused()))
 	for frame in 10:
 		await process_frame;app.session.step(Time.get_ticks_usec())
 	air=app.session.ambience.snapshot()
@@ -90,7 +99,7 @@ func verify_free_application() -> void:
 	print("MISSIONS ",log)
 	var docked_state: Dictionary=app.session.station_owner().snapshot()
 	var target: int=int(docked_state.mission.get("station_id",-1))
-	if int(docked_state.campaign_cursor)>=app.missions_panel.WON_CURSOR:check(log.story in [app.missions_panel.text("won"),app.missions_panel.text("won_gold")] and not log.story_map,"A won career does not show the original after-game line")
+	if app.missions_panel.won(int(docked_state.campaign_cursor)):check(log.story in [app.missions_panel.text("won"),app.missions_panel.text("won_gold")] and not log.story_map,"A won career does not show the original after-game line")
 	else:check(not log.story.contains("#") and (target<0 or log.story.contains(app.status_panel._catalogues.tables.stations[target].name)),"Missions shows no story objective")
 	check(log.discard and not log.job.is_empty() and not log.job.contains("#") and not log.client.is_empty(),"Missions does not show the accepted job and its client")
 	await capture("missions-log")

@@ -13,6 +13,7 @@ const Crystals=preload("res://src/content/void_crystal_definitions.gd")
 const Nehma=preload("res://src/content/nehma_visit_definitions.gd")
 const Gakkrr=preload("res://src/content/gakkrr_visit_definitions.gd")
 const BakkaReturn=preload("res://src/content/bakka_return_definitions.gd")
+const Valkyrie=preload("res://src/content/valkyrie_campaign_definitions.gd")
 
 static func result_rules(bindings: RefCounted,cursor: Variant,mission: Variant) -> Dictionary:
 	return Outcome.conversation(bindings,cursor,mission)
@@ -32,6 +33,8 @@ static func result_presentation(bindings: RefCounted,cursor: Variant,mission: Va
 ## Preparing original dialogue does not authorize a campaign departure.
 static func dialogue_rules(bindings: RefCounted,cursor: Variant,mission: Variant,station_only:=false) -> Dictionary:
 	if station_only:
+		var expansion:=Valkyrie.conversation(bindings,cursor,mission)
+		if not expansion.is_empty():return expansion
 		var recipe: Dictionary=load("res://src/content/mission_recipe.gd").select(bindings,cursor)
 		if recipe.get("entry")=="station" and recipe.mission==mission:
 			return {"campaign_cursor":recipe.cursor,"mission":recipe.mission,"next_cursor":recipe.next_cursor,
@@ -76,6 +79,7 @@ static func supported(source: Variant,cursor: Variant) -> bool:
 	var travel:=source_travel(source)
 	if not cursor is int or not travel.has("free_flight"):return false
 	if not completed_mission(source,cursor).is_empty():return true
+	if source is RefCounted and Valkyrie.saved_story(source,cursor):return true
 	if cursor in [39,40]:return onward_available(source)
 	if cursor==27:return Post.parameters(travel.get("post_sahi",{}))
 	if cursor in [28,30,31]:return expedition_available(travel)
@@ -112,6 +116,7 @@ static func mission(source: Variant,cursor: int) -> Dictionary:
 	if not supported(source,cursor):return {}
 	var completed:=completed_mission(source,cursor)
 	if not completed.is_empty():return completed
+	if source is RefCounted and Valkyrie.saved_story(source,cursor):return Valkyrie.mission(cursor)
 	var travel:=source_travel(source)
 	if cursor==39:return PostProbe.mission_values(load("res://src/content/nehma_return_definitions.gd").declarations(source).mission)
 	if cursor==40:return PostProbe.mission_values(load("res://src/content/nehma_return_definitions.gd").declarations(source).next_mission)
@@ -160,6 +165,8 @@ static func active_visit(travel: Dictionary,context: Dictionary) -> bool:
 ## clocks/dialogue still belong to the visit or station conversation owners.
 static func ordinary_story_at(source: Variant,cursor: Variant,station_id: Variant) -> bool:
 	var travel:=source_travel(source)
+	# An expansion talk mission's target is an ordinary station until docking.
+	if source is RefCounted and Valkyrie.saved_story(source,cursor):return station_id is int and Valkyrie.mission(cursor).get("kind")==Valkyrie.TALK and station_id==Valkyrie.mission(cursor).station_id
 	if cursor==39:return supported(source,cursor) and station_id is int and station_id==mission(source,cursor).station_id
 	if visit_at(travel,cursor,station_id):return true
 	if cursor==27 and expedition_available(travel):return station_id==int(travel.post_sahi.missions["27"].station_id)

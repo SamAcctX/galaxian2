@@ -9,11 +9,13 @@ const Lounge=preload("res://src/presentation/lounge_panel.gd")
 const Portraits=preload("res://src/presentation/portrait_compositor.gd")
 const Medals=preload("res://src/simulation/base_medal_progress.gd")
 const TEXT:={"title":128,"story":544,"freelance":545,"no_job":173,"map":413,"discard":412,"confirm":853,"yes":133,"no":134,"back":169,"won":659,"won_gold":639}
-## Story text per campaign cursor; cursors without their own line use 738.
-const STORY_TEXT:={10:641,11:642,12:643,13:644,14:645,16:646,18:647,20:648,21:648,23:649,24:650,28:651,32:652,33:653,34:654,35:655,36:656,38:657,40:658,44:659,45:659,46:660,48:661,49:661}
+## Story text per campaign cursor, read from the original story table.
+const STORY_TEXT:=[738,738,738,738,738,738,738,738,738,738,641,642,643,644,645,738,646,738,647,738,648,648,738,649,650,738,738,738,651,738,738,738,652,653,654,655,656,738,657,738,658,738,738,738,659,659,660,738,661,661,661,661,661,661,661,662,663,738,664,665,738,666,667,668,669,738,670,671,672,673,673,674,675,676,677,738,738,678,679,679,680,680,738,738,681,681,682,683,683,683,683,684,685,686,687,687,688,689,690,690,691,691,692,693,694,695,696,697,698,699,699,700,701,702,703,704,705,706,707,707,708,708,709,710,710,711,711,712,713,713,714,715,715,715,716,717,718,719,720,721,722,723,724,725,725,726,727,728,729,729,729,729,730,731,732,732,733,734,735,736,737,737,737]
 const STORY_DEFAULT:=738
-## The epilogue hands the career on at cursor 45 with no further story target.
+## The epilogue hands the career on at cursor 45; without the expansion story
+## there is no further story target.
 const WON_CURSOR:=45
+const Valkyrie=preload("res://src/content/valkyrie_campaign_definitions.gd")
 const GOLD_EXCEPTION_SHIP:=8
 var error:=""
 var _status: Control
@@ -95,16 +97,19 @@ func configure(status: Control,library: RefCounted,bindings: RefCounted,visuals:
 func story_text(state: Dictionary) -> String:
 	var career: Dictionary=state.get("contracts",{})
 	var cursor: int=int(state.get("campaign_cursor",career.get("campaign_cursor",0)))
-	if cursor>=WON_CURSOR:
+	if won(cursor):
 		var levels: Array=career.get("base_medals",{}).get("levels",[])
 		var all_gold: bool=levels.size()>=Medals.BASE_COUNT and levels.slice(0,Medals.BASE_COUNT).all(func(level):return int(level)==1)
 		return text("won_gold") if all_gold and int(state.get("loadout",{}).get("ship_id",-1))!=GOLD_EXCEPTION_SHIP else text("won")
-	var id: int=STORY_TEXT.get(cursor,STORY_DEFAULT)
+	var id: int=STORY_TEXT[cursor] if cursor>=0 and cursor<STORY_TEXT.size() else STORY_DEFAULT
 	var line: String=_library.strings[id] if id<_library.strings.size() else ""
 	var mission: Dictionary=state.get("mission",{})
 	if line.contains("#Q"):return line.replace("#Q",str(int(mission.get("quantity",0))))
 	var station: int=int(mission.get("station_id",-1))
 	return line.replace("#",_catalogues.tables.stations[station].name if station>=0 and station<_catalogues.tables.stations.size() else "")
+
+func won(cursor: int) -> bool:
+	return cursor>=WON_CURSOR and not Valkyrie.active(_bindings,cursor)
 
 func job_text(mission: Dictionary) -> String:
 	if mission.is_empty():return text("no_job")
@@ -128,9 +133,9 @@ func present(state: Dictionary) -> bool:
 			var composite: Dictionary=Portraits.new().compose_definition(_library,_bindings,_visuals,0,"large",client)
 			if not composite.is_empty():_client_portrait=ImageTexture.create_from_image(composite.image)
 		_client=client.duplicate(true)
-	var won: bool=int(state.get("campaign_cursor",0))>=WON_CURSOR
+	var finished: bool=won(int(state.get("campaign_cursor",0)))
 	_story_text.text=story_text(state)
-	_story_map.visible=not won
+	_story_map.visible=not finished
 	_job_portrait.texture=null if job.is_empty() else _client_portrait
 	_job_portrait.visible=_job_portrait.texture!=null
 	_job_name.text="" if job.is_empty() else str(contact.get("name",""))

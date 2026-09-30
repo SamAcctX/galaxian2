@@ -753,8 +753,7 @@ func campaign_conversation_ready(bindings: RefCounted,catalogues: RefCounted,lib
 func _ready_campaign_visit(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,elapsed_ms: int=0) -> RefCounted:
 	if _state.get("phase")!="free_play_required" or not _state.get("acknowledged",false) or _state.get("hangar_open",false) or _contracts==null or _equipment==null or _contracts.result_pending():return null
 	var visit: RefCounted
-	if _mission_station_context!=null:
-		if _mission_station_context.recipe().is_empty():return null
+	if _mission_station_context!=null and not _mission_station_context.recipe().is_empty():
 		visit=load("res://src/simulation/station_mission_visit.gd").new()
 		if not visit.prepare(bindings,library,catalogues,_mission_station_context,elapsed_ms):return null
 	else:
@@ -805,6 +804,7 @@ func _commit_campaign_visit(visit: RefCounted) -> bool:
 	_state.mission=receipt.mission.duplicate(true);_state.reward_credits=receipt.reward_credits
 	_mission_station_context=_contracts.station_context_owner()
 	if _mission_station_context!=null:_state.mission_station_return=_mission_station_context.snapshot()
+	else:_state.erase("mission_station_return")
 	_state.phase="free_play_required";_state.acknowledged=true;_state.campaign_conversation=false
 	if receipt.has("next_course") and not receipt.next_course.is_empty():_state.next_course=receipt.next_course.duplicate(true)
 	_campaign_visit=null;_campaign_bindings=null;_state.line_index=0
