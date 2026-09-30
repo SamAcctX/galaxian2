@@ -784,6 +784,12 @@ func acknowledge_station_campaign(bindings: RefCounted,equipment: RefCounted,sto
 			"from_cursor":receipt.from_cursor,"to_cursor":receipt.campaign_cursor,
 			"item_id":int(required.item_id),"quantity":int(required.quantity),"expected_entry":next._blueprints.entry(85)}
 		if not next._blueprints.precredit_story33(credit):return fail(next._blueprints.error)
+	if rules.has("story_blueprint"):
+		if next._blueprints==null:return fail("The story blueprint lost its retained blueprints")
+		var plan: Dictionary=rules.story_blueprint
+		next._blueprints=next._blueprints.fork_for_transaction()
+		var granted: bool=next._blueprints.story_grant(int(plan.item_id),int(plan.material_id),int(plan.quantity),int(plan.station_id)) if plan.grant else next._blueprints.story_lock(int(plan.item_id))
+		if not granted:return fail(next._blueprints.error)
 	if rules.has("story_ship"):
 		var ship: Dictionary=rules.story_ship
 		var changed: bool=inventory.return_story_ship(bindings,_catalogues) if ship.has("restore") else inventory.lend_story_ship(bindings,_catalogues,int(ship.ship_id),Valkyrie.ship_equipment(ship),bool(ship.store))

@@ -109,6 +109,13 @@ func poll_station(loadout: Variant,docked: Variant,poll_blocked:=false,equipment
 		if observed.is_empty():return reject(equipment.error)
 		if not observed.satisfied:return true
 		_station_cargo=observed.cargo
+	if _rules.has("goods_requirement") and int(_rules.goods_requirement.item_id) not in loadout.get("equipment_ids",[]):
+		if not equipment is Equipment:return reject("The campaign goods result requires its native inventory")
+		var goods: Dictionary=_rules.goods_requirement
+		var held: Dictionary=equipment.campaign_cargo(loadout,int(goods.item_id),int(goods.quantity))
+		if held.is_empty():return reject(equipment.error)
+		if not held.satisfied:return true
+		_station_cargo=held.cargo
 	_station_loadout=loadout.duplicate(true)
 	_state.station_id=loadout.station_id;_state.phase="conversation";_state.mission_completed=true
 	return true

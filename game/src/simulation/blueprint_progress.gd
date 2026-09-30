@@ -103,6 +103,25 @@ func unlock(item_id: int) -> bool:
 			return true
 	return reject("This blueprint has no retained recipe")
 
+## A story mission hands over a recipe with some material already supplied at
+## its station, and a later one takes the recipe back (progress is kept).
+func story_grant(item_id: int,material_id: int,quantity: int,station_id: int) -> bool:
+	error=""
+	var index: int=_recipes.get(item_id,{}).get("material_ids",[]).find(material_id)
+	if entry(item_id).is_empty() or index<0 or quantity<1 or station_id<0 or station_id>=_station_count:return reject("This story blueprint has no matching recipe")
+	for row in _state.entries:
+		if row.item_id!=item_id:continue
+		row.available=true
+		row.remaining[index]=maxi(0,int(row.remaining[index])-quantity)
+		if row.station_id<0:row.station_id=station_id
+	return true
+
+func story_lock(item_id: int) -> bool:
+	error=""
+	for row in _state.entries:
+		if row.item_id==item_id:row.available=false;return true
+	return reject("This story blueprint has no retained recipe")
+
 func recipe(item_id: int) -> Dictionary:return _recipes.get(item_id,{}).duplicate(true)
 
 func shipping_cost(item_id: int,station_id: int,quantity: int) -> int:

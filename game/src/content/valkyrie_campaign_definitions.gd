@@ -20,6 +20,13 @@ const SHIPS:={
 	56:{"ship_id":39,"equipment":[[181,0],[52,0],[58,1],[83,2]],"store":true},
 	58:{"restore":true},
 }
+## Kind 166 finishes docked at its station with the goods in the hold (or the
+## item fitted); the goods stay with the player (assumption: no removal found).
+const GOODS_KIND:=166
+const GOODS:={58:{"item_id":179,"quantity":10}}
+## Blueprints handed over as the story enters a cursor: mission 58 grants item
+## 179 with 5 of material 127 already supplied at the Valkyrie; 59 takes it back.
+const BLUEPRINTS:={58:{"item_id":179,"grant":true,"material_id":127,"quantity":5,"station_id":101},59:{"item_id":179,"grant":false}}
 ## cursor: [kind, reward, station]; -1 station means any station.
 const MISSIONS:={
 	47:[11,0,74],48:[11,0,58],49:[156,0,58],50:[156,0,62],51:[156,0,25],52:[160,0,25],
@@ -52,10 +59,14 @@ static func conversation(bindings: RefCounted,cursor: Variant,story_mission: Var
 		if int(story_mission.get("kind",0))!=-1:return {}
 		return _rules(cursor,story_mission,47,Dialogue.events(Dialogue.RESULT,46),false)
 	var expected:=mission(cursor)
-	if expected.is_empty() or expected.kind!=TALK or not _same(story_mission,expected):return {}
+	if expected.is_empty() or int(expected.kind) not in [TALK,GOODS_KIND] or not _same(story_mission,expected):return {}
 	var next:=next_cursor(cursor)
 	if next>LAST_CURSOR:return {}
-	return _rules(cursor,expected,next,Dialogue.events(Dialogue.RESULT,cursor),true)
+	var rules:=_rules(cursor,expected,next,Dialogue.events(Dialogue.RESULT,cursor),true)
+	if int(expected.kind)==GOODS_KIND and not rules.is_empty():
+		if not GOODS.has(cursor):return {}
+		rules.goods_requirement=GOODS[cursor].duplicate()
+	return rules
 
 static func _rules(cursor: int,current: Dictionary,next: int,events: Array,target_required: bool) -> Dictionary:
 	var next_mission:=mission(next)
@@ -64,6 +75,7 @@ static func _rules(cursor: int,current: Dictionary,next: int,events: Array,targe
 		"reward_credits":int(current.get("reward",0)),"events":events,"target_station_required":target_required}
 	if UNLOCKS.has(cursor):result.unlock_system_ids=UNLOCKS[cursor].duplicate()
 	if SHIPS.has(next):result.story_ship=SHIPS[next].duplicate(true)
+	if BLUEPRINTS.has(next):result.story_blueprint=BLUEPRINTS[next].duplicate()
 	return result
 
 static func _same(a: Dictionary,b: Dictionary) -> bool:

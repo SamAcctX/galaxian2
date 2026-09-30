@@ -30,6 +30,7 @@ func verify_free_application() -> void:
 	if staged=="escape":await fly_escape()
 	if staged=="home":await fly_home()
 	if staged=="turret":await fly_turret()
+	if staged=="blueprint":await fly_blueprint()
 
 ## 49-52: the K'Suukk flees with a Vossk escort that turns on the player at
 ## Makke S'ik, through the gate to S'inokk and away, then home to Kanado.
@@ -160,23 +161,62 @@ func fly_turret() -> void:
 	check(app.session.station_owner().snapshot().campaign_cursor==58,"Fresh Resume lost the turret test result")
 	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("valkyrie-58.gof2save"))==OK,"The turret result checkpoint could not be kept")
 
-func seed_khador_drive() -> bool:
+func seed_khador_drive() -> bool:return seed_cargo([[85,1],[122,12]])
+
+## Test shortcut: put goods the career could buy elsewhere into the hold.
+func seed_cargo(rows: Array) -> bool:
 	var file:=StationSaveFile.new()
 	var path: String=app.station_save_path()
 	var document: Dictionary=file.read_document(path)
 	if document.is_empty():check(false,file.error);return false
 	var entries: Array=document.inventory.cargo.entries
-	entries.append({"item_id":85,"quantity":1});entries.append({"item_id":122,"quantity":12})
-	document.inventory.prices.cargo.append({"item_id":85,"unit_price":0});document.inventory.prices.cargo.append({"item_id":122,"unit_price":0})
-	document.inventory.cargo.used=int(document.inventory.cargo.used)+13
+	for row in rows:
+		entries.append({"item_id":int(row[0]),"quantity":int(row[1])})
+		document.inventory.prices.cargo.append({"item_id":int(row[0]),"unit_price":0})
+		document.inventory.cargo.used=int(document.inventory.cargo.used)+int(row[1])
 	document.inventory.cargo.free_space=int(document.inventory.cargo.capacity)-int(document.inventory.cargo.used)
 	document.station.cargo=document.inventory.cargo.duplicate(true)
 	var bytes:=file.encode(document)
 	if bytes.is_empty() or not file._write(path,bytes):check(false,file.error);return false
-	check(app.load_station(),"The Khador-seeded save did not load: "+app._save_notice.text)
+	check(app.load_station(),"The seeded save did not load: "+app._save_notice.text)
 	return failures==0
 
-## Jump with the Khador Drive the way a player does: K opens the drive map.
+## 58: the Valkyrie hands over the item-179 blueprint with part of its material
+## already supplied; the talk opens only once ten are built and in the hold.
+func fly_blueprint() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	var state: Dictionary=app.session.station_owner().snapshot()
+	check(state.campaign_cursor==58 and state.loadout.station_id==101,"The blueprint checkpoint is not docked at the Valkyrie at cursor 58")
+	var project: Array=state.contracts.blueprints.entries.filter(func(row):return row.item_id==179)
+	check(not project.is_empty() and project[0].available and int(project[0].station_id)==101,"Mission 58 did not hand over the item-179 blueprint at the Valkyrie")
+	if failures:return
+	var materials: Array=Array(catalogue.tables.items[179].arrays[0])
+	print("VALKYRIE blueprint 179 materials=",materials," needs=",Array(catalogue.tables.items[179].arrays[1])," remaining=",project[0].remaining," capacity=",state.cargo.capacity," used=",state.cargo.used)
+	check(int(project[0].remaining[materials.find(127)])==int(catalogue.tables.items[179].arrays[1][materials.find(127)])-5,"The Valkyrie did not pre-supply five of material 127")
+	check(not app.session.campaign_story_ready() and not app.session.snapshot().dialogue.visible,"The base talk opened before the goods were built")
+	if failures:return
+	var seeds:=[]
+	for index in materials.size():
+		if int(project[0].remaining[index])>0:seeds.append([int(materials[index]),int(project[0].remaining[index])])
+	if not seed_cargo(seeds):return
+	if not app.equipment_action("open"):check(false,app.session.error);return
+	for row in seeds:
+		if not app.equipment_action("supply_blueprint",179,row[0],row[1]):check(false,"Supplying material "+str(row[0])+" failed: "+app.session.error);return
+	app.equipment_panel.select_tab("cargo");await capture_free_application("valkyrie-blueprint-built")
+	if not app.equipment_action("close"):check(false,app.session.error);return
+	var built: Dictionary=app.session.station_owner().snapshot()
+	var goods: Array=built.cargo.entries.filter(func(row):return row.item_id==179)
+	print("VALKYRIE blueprint built=",goods)
+	check(not goods.is_empty() and int(goods[0].quantity)>=10,"The blueprint did not build ten of item 179")
+	if failures or not await take_station_talk(58,59):return
+	var locked: Dictionary=app.session.station_owner().snapshot()
+	check(not locked.contracts.blueprints.entries.filter(func(row):return row.item_id==179)[0].available,"Mission 59 did not take the item-179 blueprint back")
+	check(app.save_station(false) and app.load_station(),"Saving and resuming after the blueprint failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==59,"Fresh Resume lost the blueprint result")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("valkyrie-59.gof2save"))==OK,"The blueprint checkpoint could not be kept")
+
 func khador_jump(destination: int) -> bool:
 	resume_application_focus()
 	for pressed in [true,false]:
@@ -262,6 +302,7 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"escape":return state.campaign_cursor==49
 		"home":return state.campaign_cursor==54
 		"turret":return state.campaign_cursor==55
+		"blueprint":return state.campaign_cursor==58
 	return super.resumed_contract_valid(state)
 
 ## A player crossing hostile Vossk space fights off the ships closing in
