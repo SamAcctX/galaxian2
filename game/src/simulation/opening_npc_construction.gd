@@ -1135,6 +1135,8 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 				actor.cargo=options.cargo_override.entries.duplicate(true)
 				actor.special_cargo=bool(options.cargo_override.special)
 			if int(options.name_text_id)>=0:actor.name_text_id=int(options.name_text_id)
+			# A named story criminal (W1) shows his own name when targeted.
+			if not String(options.get("display_name","")).is_empty():actor.display_name=String(options.display_name)
 			match options.position.get("kind",""):
 				"positions":position=options.position.points[int(options.group_index)]
 				"path_start":position=path[0]+Vector3(options.position.step)*int(options.group_index)
@@ -1144,6 +1146,16 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 				"player_offset":
 					position=_contract.player_position+Vector3(options.position.offset)
 					for axis in 3:position[axis]+=random.next_int(int(options.position.bound[axis]))
+				"player_side":
+					# Beside the player, alternating left and right.
+					position=_contract.player_position+Vector3(float(options.position.side)*(1 if int(options.group_index)%2==0 else -1),0,0)
+				"player_band":
+					# Each axis: a distance in [min,max] on a random side of the player.
+					position=_contract.player_position
+					for axis in 3:
+						var low:=int(Vector3(options.position.min)[axis]);var gap:=int(Vector3(options.position.max)[axis])-low
+						var distance: int=low+(random.next_int(gap) if gap>0 else 0)
+						position[axis]+=distance if random.next_int(2)==0 else -distance
 				"scenery_midpoint":
 					var anchor:=int(scenery_positions.size()/2)+int(options.group_index)
 					if anchor>=scenery_positions.size() or not scenery_positions[anchor] is Vector3 or not scenery_positions[anchor].is_finite():return fail("The admitted cast requires its world scenery anchors")

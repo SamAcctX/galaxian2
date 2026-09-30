@@ -484,6 +484,13 @@ func drain_gamma(amount: float, warning: float) -> Dictionary:
 	if after<1.0:_state.vitals.hull=0
 	return {"warned":before>=warning and after<warning,"gamma":after}
 
+## Volatile cargo gives way: the ship is destroyed outright.
+func destroy_hull() -> bool:
+	error=""
+	if _state.is_empty():return reject("Configure player statistics before destruction")
+	_state.vitals.hull=0
+	return true
+
 func collision_context(pose: Variant) -> Dictionary:
 	error=""
 	if _state.is_empty() or _hit_policy.is_empty() or not pose is Transform3D or not pose.is_finite():

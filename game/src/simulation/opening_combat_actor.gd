@@ -444,6 +444,7 @@ func configure_selected40(bindings: RefCounted,catalogues: RefCounted,constructi
 		"actor_mode":int(row.mode),"active":bool(row.active),"targeting_blocked":bool(row.targeting_blocked),
 		"model_draw_enabled":bool(row.model_draw_enabled)},true)
 	if row.has("name_text_id"):_state.name_text_id=int(row.name_text_id)
+	if row.has("display_name"):_state.display_name=String(row.display_name)
 	return true
 
 func configure_selected41(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
@@ -456,6 +457,7 @@ func configure_selected41(bindings: RefCounted,catalogues: RefCounted,constructi
 	if not _configure_story(bindings,data,row):return false
 	_state.selected41_component=true
 	if row.has("name_text_id"):_state.name_text_id=int(row.name_text_id)
+	if row.has("display_name"):_state.display_name=String(row.display_name)
 	return true
 
 func apply_story_guidance(decision: Dictionary) -> bool:
@@ -636,6 +638,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 		if not _configure_ordinary_systems(bindings,int(data.rank),int(row.subtype)):return false
 		_state.permanent_friendly=bool(policy.friendly)
 	if row.has("name_text_id"):_state.name_text_id=int(row.name_text_id)
+	if row.has("display_name"):_state.display_name=String(row.display_name)
 	if row.get("special_cargo",false):
 		_state.merge({"special_cargo":true,"special_cargo_accepted":false,"special_cargo_rejected":false})
 	return set_pose(row.statistics_pose,row.body_pose)
@@ -735,6 +738,29 @@ func sleep_story() -> bool:
 	_state.active=false;_state.actor_mode=5;_state.targeting_blocked=true
 	return true
 
+## A destroyed story ship returns (respawn): full hull, awake, visible.
+func revive_story() -> bool:
+	error=""
+	if not _state.get("contract_ship",false) or _state.get("static_object",false):return reject("Only a contract ship returns for the story")
+	if _vitals.snapshot().hull>0 or _state.active:return reject("Only a retired story ship returns")
+	var pools:=Vitals.new()
+	if not pools.configure(int(_state.max_hull),0,0.0):return reject(pools.error)
+	_vitals=pools
+	for key in ["active","damage_allowed","engine_draw_enabled","node_draw_requested","model_draw_enabled"]:_state[key]=true
+	for key in ["statistics_targeting_blocked","nonplayer_kill","contact","targeting_blocked","cloaked"]:_state[key]=false
+	_state.impact_vector=Vector3.ZERO;_state.actor_mode=1
+	return true
+
+## A stealth ship cloaks or uncloaks: while cloaked it is not drawn and
+## cannot be targeted.
+func set_story_cloak(cloaked: bool) -> bool:
+	error=""
+	if not _state.get("contract_ship",false) or _state.get("static_object",false):return reject("Only a contract ship cloaks for the story")
+	if bool(_state.get("cloaked",false))==cloaked:return true
+	if cloaked and (not _state.active or _vitals.snapshot().hull<=0):return true
+	_state.cloaked=cloaked;_state.model_draw_enabled=not cloaked;_state.targeting_blocked=cloaked
+	return true
+
 ## A sleeping static object wakes when an opposing active body is close.
 ## A story event destroys this body outright (89: the supernova). It is not
 ## the player's kill.
@@ -805,6 +831,12 @@ func apply_story_hostility() -> bool:
 	_state.script_hostile=true;_state.hostile=true;_state.friendly=false
 	_hostility.updated_hostile=true
 	return true
+
+## A surrendering story ship: no longer hostile, guns silent.
+func stand_down_story() -> bool:
+	_state.script_hostile=false;_state.hostile=false;_state.forced_hostile=false
+	if not _hostility.is_empty():_hostility.updated_hostile=false;_hostility.initial_hostile=false
+	return set_permissions(bool(_state.get("active",false)),bool(_state.get("damage_allowed",true)),false)
 
 func enable_bakka_combat(bindings: RefCounted) -> bool:
 	if not _state.get("bakka_ship",false) or bindings==null:return reject("B'akka damage requires its prepared story ship")

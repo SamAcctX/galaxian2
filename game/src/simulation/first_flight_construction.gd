@@ -529,8 +529,7 @@ func _valid_selected_progress(bindings: RefCounted,progress: Dictionary,cursor: 
 		expected.asteroids_destroyed=progress.asteroids_destroyed
 	for key in preload("res://src/simulation/opening_station_archive.gd").LIFETIME_KEYS:
 		if progress.has(key):
-			var maximum:=preload("res://src/simulation/opening_station_archive.gd").counter_maximum(key)
-			if not Numbers.integer(progress[key],0,maximum):return reject("Selected construction lost a lifetime statistic")
+			if not preload("res://src/simulation/opening_station_archive.gd").valid_lifetime(key,progress[key]):return reject("Selected construction lost a lifetime statistic")
 			expected[key]=progress[key]
 	if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected or rank!=progress.get("rank") or difficulty not in [0.5,1.0,1.5]:return reject("Selected construction changed earned rank, difficulty or hint history")
 	return true
@@ -637,8 +636,7 @@ func _prepare_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dictio
 			expected.asteroids_destroyed=progress.asteroids_destroyed
 		for key in preload("res://src/simulation/opening_station_archive.gd").LIFETIME_KEYS:
 			if progress.has(key):
-				var maximum:=preload("res://src/simulation/opening_station_archive.gd").counter_maximum(key)
-				if not Numbers.integer(progress[key],0,maximum):return reject("Local arrival lost a lifetime statistic")
+				if not preload("res://src/simulation/opening_station_archive.gd").valid_lifetime(key,progress[key]):return reject("Local arrival lost a lifetime statistic")
 				expected[key]=progress[key]
 		if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected:return reject("Local arrival career disagrees with its counters")
 	var flags: Variant=objective.get("station_response_flags")
@@ -878,8 +876,7 @@ func _valid_packet(bindings: RefCounted, packet: Dictionary, context: Dictionary
 		expected_progress.asteroids_destroyed=progress.asteroids_destroyed
 	for key in preload("res://src/simulation/opening_station_archive.gd").LIFETIME_KEYS:
 		if progress.has(key):
-			var maximum:=preload("res://src/simulation/opening_station_archive.gd").counter_maximum(key)
-			if not Numbers.integer(progress[key],0,maximum):return reject("Departure lost a lifetime statistic")
+			if not preload("res://src/simulation/opening_station_archive.gd").valid_lifetime(key,progress[key]):return reject("Departure lost a lifetime statistic")
 			expected_progress[key]=progress[key]
 	if not MiningSession.retain_hint_history(progress,expected_progress,bindings.mining_session) or progress!=expected_progress:return reject("First flight changed earned campaign progress")
 	if ContractWorld.supports(bindings,packet.campaign_cursor):

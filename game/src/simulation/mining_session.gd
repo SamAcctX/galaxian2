@@ -25,6 +25,8 @@ var _equipment:=[]
 var _center:=Vector2.ZERO
 var _hard:=false
 var _drill: RefCounted
+## A story orbit where every asteroid gives one ore (135: Titanium), or -1.
+var ore_override:=-1
 var _phase:="idle"
 var _last_drill:={}
 var _receipt:={}
@@ -59,7 +61,7 @@ func begin(approach: RefCounted, scenery: RefCounted, cargo: RefCounted, command
 	if body.is_empty():return false
 	if not Approach.intact(body):return reject("The docked asteroid is no longer intact")
 	if state.object_index not in scenery.snapshot().get("spin_disabled_indices",[]):return reject("The flight has not applied the docked asteroid's spin stop")
-	var drill:=Drill.new()
+	var drill:=Drill.new();drill.ore_override=ore_override
 	if not drill.configure_for_scenery(_bindings,_catalogues,_equipment,scenery,int(state.object_index),_center):return reject(drill.error)
 	if not drill.set_command(command):return reject(drill.error)
 	# Construction does not call advance or consume random draws. Input may be
@@ -177,7 +179,7 @@ func fork_for_frame() -> RefCounted:
 	copy._equipment=_equipment;copy._center=_center;copy._hard=_hard;copy._phase=_phase
 	copy._drill=null if _drill==null else _drill.fork()
 	copy._last_drill=_last_drill.duplicate(true);copy._receipt=_receipt.duplicate(true);copy._events=_events.duplicate(true)
-	copy._failure_instruction_shown=_failure_instruction_shown
+	copy._failure_instruction_shown=_failure_instruction_shown;copy.ore_override=ore_override
 	copy._max_ms=_max_ms;return copy
 func clear() -> void:
 	_max_ms=0

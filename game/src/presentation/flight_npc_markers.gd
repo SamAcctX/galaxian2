@@ -92,7 +92,8 @@ func present(sample: Dictionary,suppress_information:=false) -> bool:
 		var id: int=selected.name_text_id if named else 395+int(selected.actor_kind)
 		if id>=_strings.size() or _strings[id].is_empty():return fail("Selected NPC has no localized identity")
 		var special: bool=selected.name_text_id in [1600,1652]
-		information={"text":_strings[id] if special else "%s %d%%"%[_strings[id],selected.hull_percent],
+		var label: String=String(selected.get("display_name",_strings[id]))
+		information={"text":label if special else "%s %d%%"%[label,selected.hull_percent],
 			"color":Color("ff2a00") if special else Color.WHITE,"badge_image_id":int(BADGES.get(int(selected.actor_kind),-1))}
 	_sample=sample.duplicate(true);_information=information;visible=sample.visible;queue_redraw()
 	return true

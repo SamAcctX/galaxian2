@@ -10,13 +10,13 @@ const LAST_CURSOR:=83
 ## after the main game).
 const WON_CURSOR:=84
 ## Supernova continues a won Valkyrie career: the in-flight call at 84 plays
-## cursor 85's lines and moves the story to 86. The story is built up to 117.
-const STORY_END:=117
+## cursor 85's lines and moves the story to 86. The story is built up to 141.
+const STORY_END:=141
 const TALK:=11
 ## Systems revealed when a conversation is acknowledged. The original reveals
 ## Herjaza and Skavac as missions 55 and 63 begin; Loma is visible to every
 ## expansion owner, so a continued career receives it with the first call.
-const UNLOCKS:={45:[25],54:[23],62:[24],88:[27,28],116:[30]}
+const UNLOCKS:={45:[25],54:[23],62:[24],88:[27,28],116:[30],138:[31]}
 ## Ship changes applied as the story enters a cursor: a loaned hull with its
 ## fitted items [item, slot], or the owned ship handed back.
 const SHIPS:={
@@ -36,7 +36,9 @@ const STATION_KINDS:=[8,11,163,166,171,172]
 ## Assumption: one Void Essence (the amount the original takes is not recovered).
 const DELIVERY_KIND:=8
 const GOODS:={58:{"item_id":179,"quantity":10},68:{"item_id":175,"quantity":1,"consume":true},
-	104:{"item_id":206,"quantity":1},112:{"item_id":146,"quantity":1}}
+	104:{"item_id":206,"quantity":1},112:{"item_id":146,"quantity":1},
+	118:{"item_id":209,"quantity":1},121:{"item_id":209,"quantity":1},
+}
 ## Bar talks (171) finish in the target station's lounge once its intro is
 ## over; 172 also needs GOODS in the hold (112: one Magnetar Juice).
 const BAR_KINDS:=[171,172]
@@ -67,7 +69,7 @@ const HOLD_GRANTS:={72:[[175,1]],84:[[137,1],[85,1]],94:[[205,1]],102:[[207,1]]}
 const STATION_SHIPS:={75:{"clear":true,"ships":[]},77:{"ships":[[37,0]]},84:{"ships":[[37,-1],[38,-1],[40,-1]]}}
 ## Items that cannot be sold or demounted while the career is at the cursor
 ## (77: Alice is about to take the Khador Drive).
-const PROTECTED_ITEMS:={77:[85]}
+const PROTECTED_ITEMS:={77:[85],119:[209],120:[209],121:[209]}
 ## Items taken away (the fitted one, else the hold stack) and a station whose
 ## blueprint construction is reset as the story enters the cursor (78: Alice's
 ## men strip the drive; the Valkyrie workshop is gone).
@@ -76,17 +78,20 @@ const BLUEPRINT_RESET:={78:101}
 ## Goods taken from the hold as the story enters the cursor [item, quantity]
 ## (89: ten Luxury, 104; assumption: fewer are simply all taken).
 ## 113: the Magnetar Juice handed over at Nepis (112).
-const REMOVED_GOODS:={89:[[104,10]],113:[[146,1]]}
+const REMOVED_GOODS:={89:[[104,10]],113:[[146,1]],122:[[209,1]]}
 ## Stations whose visit is undone as the story enters the cursor (90: the 89
 ## cutscene's forced Naneroh visit; the visited-stations count drops by one).
 const UNVISIT:={90:[109]}
 ## Kind 184 counts people down from this value (the mission's status value);
 ## it completes at 0. Kept in career progress as "story_status".
-const STORY_STATUS:={91:10,92:10,94:83,102:1700,116:0}
+const STORY_STATUS:={91:10,92:10,94:83,102:1700,116:0,135:0,139:10}
 ## Required before the mission's target can be picked on the star map or
 ## docked at; otherwise text_id is shown and the course is refused.
 const ENTRY_REQUIREMENTS:={91:{"passenger_berths":10,"text_id":3203},94:{"passenger_berths":1,"text_id":3203},
-	105:{"fitted_item":206,"text_id":3206}}
+	105:{"fitted_item":206,"text_id":3206},
+	135:{"fitted_sort":19,"text_id":3202},
+	139:{"any":[{"ship_ids":[42]},{"ship_ids":[9,39,41,42,44,49,50,53,54,61,63],"fitted_item":190}],"text_id":3204},
+}
 ## Where the player is put as the story enters the cursor (from a talk's
 ## acknowledgement or a flight's advance): "gate" = arrive at the station's
 ## orbit through the gate in flight, "docked" = the station screen.
@@ -95,7 +100,19 @@ const MOVE_ON_ENTRY:={89:{"station_id":109,"arrive":"gate"},90:{"station_id":10,
 	92:{"station_id":113,"arrive":"gate","keep_vitals":true},95:{"station_id":10,"arrive":"gate","keep_vitals":true},
 	96:{"station_id":98,"arrive":"gate","keep_vitals":true},99:{"station_id":10,"arrive":"gate"},100:{"station_id":120,"arrive":"docked"},
 	106:{"station_id":111,"arrive":"gate","keep_vitals":true},108:{"station_id":10,"arrive":"gate","keep_vitals":true},
-	109:{"station_id":114,"arrive":"gate"},110:{"station_id":10,"arrive":"docked"}}
+	109:{"station_id":114,"arrive":"gate"},110:{"station_id":10,"arrive":"docked"},
+	119:{"station_id":10,"arrive":"gate"},120:{"station_id":126,"arrive":"docked"},
+	126:{"station_id":120,"arrive":"launch","keep_vitals":true},
+	127:{"station_id":98,"arrive":"gate","keep_vitals":true},133:{"station_id":120,"arrive":"gate"},
+	134:{"station_id":112,"arrive":"docked"},
+}
+## Terran Wanted boards (W1), open from 128's entry (127's talk): a one-time
+## notice (text 590) at the next station. The first two wanted.bin entries are
+## the story's criminals; each is listed from the cursor its entry names (Pal
+## Tyyrt 128, Kehnor 130). Below a third of his hull he surrenders (no longer
+## hostile, cannot be hurt); the story then plays that cursor's result in
+## flight and moves on (128 -> 130, 130 -> 131).
+const WANTED:={"from_cursor":128,"notice_text_id":590,"story_entries":{0:128,1:130},"surrender_hull_fraction":0.3333}
 ## cursor: [kind, reward, station]; -1 station means any station.
 const MISSIONS:={
 	84:[-1,0,0],
@@ -115,6 +132,10 @@ const MISSIONS:={
 	103:[11,0,10],104:[166,0,10],105:[4,0,109],106:[4,0,111],108:[11,0,10],109:[170,0,114],
 	110:[171,0,10],111:[171,0,38],112:[172,0,38],113:[171,0,82],114:[4,0,83],115:[171,0,82],116:[171,0,93],
 	117:[11,0,126],
+	118:[8,0,126],119:[170,0,10],120:[4,0,40],121:[8,0,93],122:[11,0,10],123:[4,0,121],124:[11,0,121],125:[4,0,55],
+	126:[170,0,120],127:[11,0,98],128:[-1,0,0],130:[-1,0,0],131:[4,0,112],132:[11,0,112],133:[170,0,120],
+	134:[11,0,22],135:[174,0,103],136:[11,0,112],137:[4,0,58],138:[11,0,58],139:[168,0,131],140:[11,0,112],
+	141:[11,0,78],
 }
 
 ## The pack must carry the App Store campaign tables these rows were read from.
@@ -130,6 +151,7 @@ static func mission(cursor: int) -> Dictionary:
 static func next_cursor(cursor: int) -> int:
 	if cursor==52:return 54
 	if cursor==WON_CURSOR:return 86
+	if cursor==128:return 130
 	if cursor==106:return 108
 	return cursor+1
 
@@ -202,12 +224,23 @@ static func entry_requirement(cursor: int) -> Dictionary:return ENTRY_REQUIREMEN
 ## Flight notices for refused courses are keyed ENTRY_NOTICE_BASE + text id.
 const ENTRY_NOTICE_BASE:=40000
 ## The notice to show when a course to `station_id` is refused at this cursor
-## (too few passenger berths for the mission there), else -1.
-static func entry_refusal(cursor: int,station_id: int,berths: int) -> int:
+## (too few passenger berths, or a required item not fitted), else -1.
+## `sorts` are the fitted items' sorts (135: a mining drill, 19); "any"
+## passes when one of its alternatives does (139: a Vossk ship).
+static func entry_refusal(cursor: int,station_id: int,berths: int,fitted: Array=[],sorts: Array=[],ship_id:=-1) -> int:
 	var need:=entry_requirement(cursor)
 	if need.is_empty() or int(MISSIONS.get(cursor,[0,0,-2])[2])!=station_id:return -1
-	return ENTRY_NOTICE_BASE+int(need.text_id) if berths<int(need.get("passenger_berths",0)) else -1
+	return -1 if _entry_met(need,berths,fitted,sorts,ship_id) else ENTRY_NOTICE_BASE+int(need.text_id)
+static func _entry_met(need: Dictionary,berths: int,fitted: Array,sorts: Array,ship_id: int) -> bool:
+	if need.has("any"):return need.any.any(func(option):return _entry_met(option,berths,fitted,sorts,ship_id))
+	if berths<int(need.get("passenger_berths",0)):return false
+	if need.has("fitted_item") and not fitted.has(int(need.fitted_item)):return false
+	if need.has("fitted_sort") and not sorts.has(int(need.fitted_sort)):return false
+	return not need.has("ship_ids") or ship_id in need.ship_ids
 static func story_move(cursor: int) -> Dictionary:return MOVE_ON_ENTRY.get(cursor,{}).duplicate()
+## The cursor a surrendering story criminal completes, or -1.
+static func wanted_story_cursor(cursor: int,entry: int) -> int:
+	return cursor if int(WANTED.story_entries.get(entry,-1))==cursor else -1
 static func story_status(cursor: int) -> int:return int(STORY_STATUS.get(cursor,-1))
 
 ## The 116 bar-hunt line for a first lounge visit at station_id, or {} (not

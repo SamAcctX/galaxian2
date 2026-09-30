@@ -12,6 +12,7 @@ var error:=""
 var _rules:={}
 var _state:={}
 var _field_identity: RefCounted
+var ore_override:=-1
 
 func configure_for_scenery(bindings: RefCounted, catalogues: RefCounted, equipment_ids: Array, scenery: RefCounted, object_index: int, reference_center: Vector2) -> bool:
 	error=""
@@ -37,8 +38,8 @@ func configure(bindings: RefCounted, catalogues: RefCounted, equipment_ids: Arra
 	if not vitals is Dictionary or not Numbers.integer(vitals.get("hull",1),1,2147483647) or body.get("active",true)!=true or body.get("destruction_pending",false):return reject("Cannot drill an exhausted asteroid")
 	var items: Array=catalogues.tables.get("items",[])
 	if not Numbers.integer(body.get("item_id"),0,items.size()-1):return reject("Asteroid ore is absent from this catalogue")
-	var ore_id:=int(body.item_id)
-	var ore_supported:=ore_id==int(bindings.scenery_resources.get("override_item_id",-1)) or ore_id==int(bindings.scenery_resources.get("fallback_item_id",-1))
+	var ore_id:=int(body.item_id) if ore_override<0 else ore_override
+	var ore_supported:=ore_override>=0 or ore_id==int(bindings.scenery_resources.get("override_item_id",-1)) or ore_id==int(bindings.scenery_resources.get("fallback_item_id",-1))
 	for id in bindings.scenery_resources.get("ore_item_ids",[]):
 		if ore_id==int(id):ore_supported=true
 	if not ore_supported:return reject("Asteroid does not declare a supported ore")

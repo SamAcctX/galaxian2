@@ -226,6 +226,7 @@ func _advance(combat: Dictionary, player: Transform3D, camera: Transform3D, aim:
 	if enabled and _equipment>=0 and selected>=0:
 		var actor: Dictionary=population[selected]
 		_sample.selected_target={"actor_id":selected,"actor_kind":int(actor.actor_kind),"name_text_id":int(actor.get("name_text_id",-1)),"hull_percent":int(actor.hull_percent)}
+		if actor.has("display_name"):_sample.selected_target.display_name=String(actor.display_name)
 	return true
 
 func valid_mode(actor_id: int,mode: Variant) -> bool:

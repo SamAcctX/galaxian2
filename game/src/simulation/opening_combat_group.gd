@@ -614,6 +614,15 @@ func disarm_story_actors(first: int,end: int) -> bool:
 		if actor.get("contract_ship",false) and not _writable(id).set_permissions(actor.active,actor.damage_allowed,false):return reject(_actors[id].error)
 	return true
 
+## Story ships that surrender stop being hostile and stop firing.
+func stand_down_story_actors(first: int,end: int) -> bool:
+	error=""
+	if _contract_encounter.is_empty() or first<0 or end>_actors.size() or end<=first:return reject("Story surrender requires contract ships")
+	for id in range(first,end):
+		var actor: Dictionary=_actors[id].snapshot()
+		if actor.get("contract_ship",false) and int(actor.vitals.hull)>0 and not _writable(id).stand_down_story():return reject(_actors[id].error)
+	return true
+
 ## A story ship or object leaves the scene: inactive, unharmable, silent.
 func retire_story_actor(id: int) -> bool:
 	error=""
@@ -635,6 +644,19 @@ func story_actor_action(first: int,end: int,action: String) -> bool:
 	for id in range(first,end):
 		var done: bool=_writable(id).destroy_story() if action=="destroy" else _writable(id).show_static() if action=="show" else false
 		if not done:return reject(_actors[id].error if not _actors[id].error.is_empty() else "Unknown story action "+action)
+	return true
+
+func revive_story_actor(id: int) -> bool:
+	error=""
+	if _contract_encounter.is_empty() or id<0 or id>=_actors.size():return reject("Story respawn requires contract ships")
+	if not _writable(id).revive_story():return reject(_actors[id].error)
+	return true
+
+func set_story_cloak(id: int,cloaked: bool) -> bool:
+	error=""
+	if _contract_encounter.is_empty() or id<0 or id>=_actors.size():return reject("Story cloaking requires contract ships")
+	if bool(_actors[id].snapshot().get("cloaked",false))==cloaked:return true
+	if not _writable(id).set_story_cloak(cloaked):return reject(_actors[id].error)
 	return true
 
 func wake_story_actors(first: int,end: int) -> bool:

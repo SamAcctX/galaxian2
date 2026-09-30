@@ -32,6 +32,7 @@ const Recipe=preload("res://src/content/mission_recipe.gd")
 const BaseMedals=preload("res://src/simulation/base_medal_progress.gd")
 const StoryFlights=preload("res://src/content/valkyrie_flight_definitions.gd")
 const Valkyrie=preload("res://src/content/valkyrie_campaign_definitions.gd")
+const Wanted=preload("res://src/simulation/wanted_board.gd")
 var error:=""
 var _state:={}
 var _rules:={}
@@ -760,6 +761,7 @@ func apply_station_entry(bindings: RefCounted,cat: RefCounted,equipment: RefCoun
 	# Called only on a detached, actually docked station candidate. Location
 	# generation, opening the shop and restoring a save do not call this path.
 	error=""
+	if not _dock_wanted(bindings,cat):return false
 	var delivery:=Recipe.station_delivery(_rules,_state.get("mission",{}))
 	var item: Dictionary=delivery.get("entry_stock",{})
 	if not item.is_empty() and _state.station_id==_state.mission.station_id:
@@ -784,6 +786,23 @@ func apply_station_entry(bindings: RefCounted,cat: RefCounted,equipment: RefCoun
 	var locations: RefCounted=_lounges.fork()
 	if not locations.replace_item_stock(bindings,cat,_state.station_id,before,prepared.items):return reject(locations.error)
 	_lounges=locations
+	return true
+
+## Most Wanted boards (expansion, from the story's cursor 128): each docking
+## stands for the departure before it (every criminal moves one step), then
+## the boards of this station's race unlock their due entries.
+## Assumption: the original moves them as the player departs; the boards only
+## show while docked, so moving them at the next docking looks the same.
+func _dock_wanted(bindings: RefCounted,cat: RefCounted) -> bool:
+	var table: Array=cat.tables.get("wanted",[])
+	var cursor: int=int(_state.campaign_cursor)
+	if table.is_empty() or not Valkyrie.saved_story(bindings,cursor) or cursor<int(Valkyrie.WANTED.from_cursor):return true
+	var state: Variant=_state.progress.get("wanted")
+	if not Wanted.valid(state,table):state=Wanted.fresh(table)
+	var known: Array=_lounges.snapshot().get("system_availability",[])
+	var seed_value:=hash([cursor,int(_state.station_id),int(_state.get("travel_statistics",{}).get("jumpgates_used",0)),int(_state.completed_side_missions)])
+	state=Wanted.travel(state,cat,int(_state.station_id),known,seed_value)
+	_state.progress.wanted=Wanted.activate(state,table,cat,cursor,int(_state.station_id),known,seed_value+1).state
 	return true
 
 func acknowledge_station_campaign(bindings: RefCounted,equipment: RefCounted,story_mission: Dictionary,visit: RefCounted) -> Dictionary:
@@ -1246,7 +1265,7 @@ func _selected_contract_context(station_id: int,bindings: RefCounted) -> Diction
 	if mission.is_empty():
 		# A story flight here takes the cast; a kept side job without a flight
 		# at this station stays accepted.
-		result.mission=StoryFlights.story_job(bindings,_state.campaign_cursor,station_id,_state.progress)
+		result.mission=StoryFlights.story_job(bindings,_state.campaign_cursor,station_id,_state.progress.merged({"difficulty":float(_state.difficulty)}))
 		return result
 	var retained: Dictionary=_state.get("accepted_contact",{})
 	var accepted: Dictionary=_state.offers.get(_state.active_offer_id,{}) if retained.is_empty() else {"consumed":true,"offer":retained.offer}
@@ -1287,7 +1306,7 @@ func retained_station_context(bindings: RefCounted,station_id: int) -> Dictionar
 	return {"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,
 		"campaign_cursor":_state.campaign_cursor,"station_id":station_id,"rank":_state.rank,
 		"difficulty":_state.difficulty,"reputation":_state.reputation.duplicate(true),
-		"mission":StoryFlights.story_job(bindings,_state.campaign_cursor,station_id,_state.progress),"client_faction":-1,"contact_name":""}
+		"mission":StoryFlights.story_job(bindings,_state.campaign_cursor,station_id,_state.progress.merged({"difficulty":float(_state.difficulty)})),"client_faction":-1,"contact_name":""}
 
 func poll_station(equipment: RefCounted,bindings: RefCounted=null) -> bool:
 	error=""

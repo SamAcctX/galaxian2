@@ -83,8 +83,16 @@ func prepare(bindings: RefCounted,cat: RefCounted,context: Variant,random_state:
 			var dx: int=there[0]-here[0];var dy: int=there[1]-here[1]
 			if absi(dx)>46340 or absi(dy)>46340 or dx*dx+dy*dy>2147483647:return reject("Stock distance exceeds supported source arithmetic")
 			metadata.affinity=int(rules.quantity.affinity_base)-int(Vitals.single(sqrt(Vitals.single(float(dx*dx+dy*dy)))))
+			# Story goods (the Toad Mutagen) never come from the random stock;
+			# their draws still run so the stream is unchanged. Offered below.
 			var row: Dictionary=candidate._sample_item(metadata)
-			if not row.is_empty():stock.append(row)
+			if not row.is_empty() and not ValkyrieWorlds.STORY_OFFER_ITEMS.has(int(metadata.item_id)):stock.append(row)
+		# The story's own offers at this station and cursor (V1).
+		for offer in ValkyrieWorlds.story_offers(int(context.station_id),int(station.system_id),int(context.campaign_cursor)):
+			var metadata:=item_metadata(cat.tables.items[int(offer.item_id)],rules)
+			var span: Array=offer.quantity
+			var amount: int=int(span[0])+(candidate._draw(int(span[1])-int(span[0])+1) if int(span[1])>int(span[0]) else 0)
+			stock.append({"item_id":int(offer.item_id),"quantity":amount,"unit_price":int(metadata.get("unit_price",0))})
 	var ships: Array=candidate._sample_ships(cat)
 	if not candidate.error.is_empty():return reject(candidate.error)
 	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,

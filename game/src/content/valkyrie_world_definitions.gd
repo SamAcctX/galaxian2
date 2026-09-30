@@ -6,7 +6,7 @@ const Valkyrie=preload("res://src/content/valkyrie_campaign_definitions.gd")
 ## use their station-ID meshes: Kothar's research station and the Valkyrie base.
 const STATION_MODELS:={100:[16931,16932,16933],101:[16928,16929,16930]}
 ## Orbits without a station while their story is active.
-const EMPTY_ORBITS:=[102,103,104,109,110]
+const EMPTY_ORBITS:=[102,103,104,109,110,128,129,130]
 ## The Valkyrie base is destroyed once its story is over.
 const DESTROYED_AFTER:={101:83,111:93}
 
@@ -15,8 +15,9 @@ static func station_models(bindings: RefCounted,station_id: int) -> Array:
 	return STATION_MODELS[station_id].duplicate()
 
 ## Star-map planet sizes past the imported 22: the App Store table goes on
-## 256, 0, 256, 256 for types 22-25 (Talidor and Ginoya planets).
-const MAP_PLANET_SIZES:=[256,0,256,256]
+## 256, 0, 256, 256, 192, 256 for types 22-27 (Talidor and Ginoya planets,
+## Katashán's type 26).
+const MAP_PLANET_SIZES:=[256,0,256,256,192,256]
 static func map_planet_sizes(bindings: RefCounted,imported: Array) -> Array:
 	if not Valkyrie.available(bindings) or imported.size()!=22:return imported
 	return imported+MAP_PLANET_SIZES
@@ -49,6 +50,35 @@ const STOCK:={
 	113:{"items":"none","ships":[],"until_cursor":157},
 }
 const WEAPON_CATEGORIES:=[0,1,2]
+
+## Story items added to a station's buy list (V1; verified
+## Generator::getItemBuyList): Bak S'ondorr (126) always sells K'mirkk Toad
+## Mutagen (209), one unit while the cursor is 117, else 1-10; every Loma (25)
+## station sells Signature: Vossk (190) while the cursor is 139. These items
+## never come from the random stock.
+const STORY_OFFERS:=[{"station_id":126,"item_id":209,"quantity":[1,10],"quantity_at":{117:1}},
+	{"system_id":25,"item_id":190,"quantity":[1,1],"cursors":[139,139]}]
+## Volatile cargo (V2; verified Ship::hasVolatileGoods, PlayerEgo::update,
+## StarMap::OnTouchEnd): while any of these is in the hold the Khador Drive is
+## refused (text 601), blueprint shipping is refused (text 278), and an
+## instability level 0..1 rises: per second of boost 0.13 (Polytron Boost 195:
+## 0.17), 0.5 per second in state OPEN (see s117-140.md), plus twice the
+## largest per-frame steering change. At 1 the ship explodes. It returns to 0
+## only once no volatile cargo is carried. A warning sound loops meanwhile.
+const VOLATILE_GOODS:={"items":[209,204],"boost_rate":0.13,"boost_rates":{195:0.17},"steer_scale":2.0,"drive_text_id":601,"shipping_text_id":278}
+
+## Items that never come from the random stock (verified getItemBuyList).
+const STORY_OFFER_ITEMS:=[209,210,217]
+static func story_offers(station_id: int,system_id: int,cursor: int) -> Array:
+	var result:=[]
+	for row in STORY_OFFERS:
+		if int(row.get("station_id",station_id))!=station_id or int(row.get("system_id",system_id))!=system_id:continue
+		var span: Array=row.get("cursors",[cursor,cursor])
+		if cursor<int(span[0]) or cursor>int(span[1]):continue
+		var amount: Array=row.quantity
+		if row.get("quantity_at",{}).has(cursor):amount=[int(row.quantity_at[cursor]),int(row.quantity_at[cursor])]
+		result.append({"item_id":int(row.item_id),"quantity":amount.duplicate()})
+	return result
 
 ## Ginoya's supernova (verified Level::createSpace, Level::update,
 ## Status::getGammaRayDamagePerSecond). While the cursor is below 158 Ginoya

@@ -45,6 +45,13 @@ func verify_free_application() -> void:
 	if staged=="supernova89":await fly_supernova_blast()
 	if staged=="supernova91":await fly_supernova_rescue()
 	if staged=="supernova93":await fly_supernova_luur()
+	if staged=="supernova97":await fly_supernova_genoh()
+	if staged=="supernova100":await fly_supernova_stealth()
+	if staged=="supernova102":await fly_supernova_tadram()
+	if staged=="supernova105":await fly_supernova_bomb()
+	if staged=="supernova109":await fly_supernova_bars()
+	if staged=="supernova117":await fly_supernova_meenkk()
+	if staged=="supernova128":await fly_supernova_wanted()
 
 ## 49-52: the K'Suukk flees with a Vossk escort that turns on the player at
 ## Makke S'ik, through the gate to S'inokk and away, then home to Kanado.
@@ -363,6 +370,12 @@ func outfit_for_combat() -> bool:
 	print("VALKYRIE guns ",guns.map(func(row):return [row.item_id,row.unit_price,row.stock])," primary slots ",catalogue.tables.ships[offers[0].ship_id].stats.primary_slots)
 	for gun in guns:
 		if int(gun.unit_price)*int(catalogue.tables.ships[offers[0].ship_id].stats.primary_slots)>int(app.session.station_owner().snapshot().contracts.credits):continue
+		# Supernova careers already carry guns: make room for the better ones.
+		if OS.get_environment("GOF2_VALKYRIE_STAGE").begins_with("supernova"):
+			var slots: Array=app.session.station_owner().snapshot().loadout.slots
+			for index in range(slots.size()-1,-1,-1):
+				if slots[index]!=null and int(catalogue.tables.items[int(slots[index].item_id)].properties.get(1,-1))==0 and int(slots[index].item_id)!=int(gun.item_id):
+					if not app.equipment_action("unmount",int(slots[index].item_id),index):print("VALKYRIE unmount refused ",app.session.error)
 		for unit in int(catalogue.tables.ships[offers[0].ship_id].stats.primary_slots):
 			if not app.equipment_action("buy",int(gun.item_id)):print("VALKYRIE buy refused ",app.session.error);break
 			if not app.equipment_action("mount",int(gun.item_id)):print("VALKYRIE mount refused ",app.session.error);break
@@ -376,8 +389,8 @@ func outfit_for_combat() -> bool:
 		if not app.equipment_action("buy",id) or not app.equipment_action("mount",id):print("VALKYRIE protection refused ",id," ",app.session.error)
 	var fitted: Dictionary=app.session.station_owner().snapshot()
 	print("VALKYRIE refit ship ",fitted.loadout.ship_id," items ",fitted.loadout.equipment_ids," credits ",fitted.contracts.credits)
-	check(fitted.loadout.equipment_ids.has(85),"The refit lost the Khador Drive")
-	check(fitted.loadout.equipment_ids.has(179),"The refit did not mount the Liberators from the hold")
+	check(fitted.loadout.equipment_ids.has(85) or int(fitted.loadout.ship_id) in [37,38,40],"The refit lost the Khador Drive")
+	check(fitted.loadout.equipment_ids.has(179) or OS.get_environment("GOF2_VALKYRIE_STAGE").begins_with("supernova"),"The refit did not mount the Liberators from the hold")
 	return app.equipment_action("close") and failures==0
 
 ## 63: at the pirate outpost in Skavac three of the six sleeping pirates must
@@ -1123,6 +1136,493 @@ func enter_story_arrival(label: String,release:=true) -> bool:
 	if not release:return failures==0
 	return failures==0 and await release_application_flight()
 
+## 97: the pirate battle at Genoh (12 pirates beside Nivelian ships); 98:
+## Harval's talk at Katashán; 99: the Thynome cutaway; 100: docked at Katashán.
+func fly_supernova_genoh() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==97,"The Genoh checkpoint is not at cursor 97")
+	# Test shortcut: the money the career would have earned, spent on protection,
+	# plus the top shield and armour a long career would have found by now.
+	var top:=top_protection()
+	if failures or not seed_cargo([[85,1]]+top.map(func(id):return [id,1]),5000000) or not await outfit_for_combat() or not fit_same_type(top):return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight() or not await khador_jump(85):return
+	var radio_ids:=[]
+	var cast: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+	print("SUPERNOVA Genoh cast ",cast.map(func(actor):return [actor.actor_kind,actor.hull_catalogue_id,int(actor.vitals.hull)]))
+	await capture_free_application("supernova-genoh")
+	var pirates:=func(): return range(0,12).filter(func(id):return int(app.session.flight_owner()._encounter.combat_snapshot().actors[id].vitals.hull)>0)
+	if not await fight_until("genoh",func():return pirates.call().is_empty(),func(_actors):return pirates.call(),radio_ids):return
+	if not await wait_story_cursor(98,"supernova-genoh-won"):return
+	var heard:=[]
+	for tick in 1200:
+		if app.session.status!="running":break
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in heard:heard.append(int(radio.text_id))
+		if not application_step():return
+		if tick%10==0:await process_frame
+	print("SUPERNOVA Genoh radio ",radio_ids," after ",heard)
+	if not await khador_jump(120) or not await dock_application() or not await take_station_talk(98,99):return
+	# 99: the story takes the ship to Thynome for the cutaway, then docks it at Katashán (100).
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	var moved:=[]
+	if not await ride_story_jump(moved,30) or not await enter_story_arrival("Katashán",false):return
+	check(int(app.session.snapshot().location.station_id)==10 and app.session.snapshot().campaign_cursor==99,"The ship did not arrive at Thynome for 99")
+	await capture_free_application("supernova-thynome-99")
+	var scene:=[]
+	if not await ride_story_jump(scene,300):return
+	print("SUPERNOVA Thynome 99 radio ",scene)
+	check(2589 in scene and scene.size()>=13,"The 99 cutaway did not play through")
+	if failures or not await enter_story_arrival("Thynome"):return
+	check(int(app.session.snapshot().location.station_id)==120 and app.session.snapshot().campaign_cursor==100,"The ship did not come to Katashán for 100: "+str([app.session.snapshot().location.station_id,app.session.snapshot().campaign_cursor]))
+	if failures or not await dock_application():return
+	check(app.save_station(false) and app.load_station(),"Saving and resuming at Katashán failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==100,"Fresh Resume lost the 99 cutaway")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-100.gof2save"))==OK,"The Katashán checkpoint could not be kept")
+
+## 100-101: two stealth fighters ambush the player at Alioth; then Brent's
+## talk puts the Nirai SPP-C1 in the hold for the Tadram evacuation.
+func fly_supernova_stealth() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==100,"The Alioth checkpoint is not at cursor 100")
+	if failures or not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight() or not await khador_jump(98):return
+	var cast: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+	print("SUPERNOVA Alioth cast ",cast.map(func(actor):return [actor.actor_kind,actor.hull_catalogue_id,int(actor.vitals.hull),int(actor.pose.origin.distance_to(app.session.snapshot().player_pose.origin))]))
+	await capture_free_application("supernova-alioth-stealth")
+	var radio_ids:=[];var cloaked:=[]
+	var stealth:=func():
+		var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+		for id in 2:
+			if actors[id].get("cloaked",false) and id not in cloaked:cloaked.append(id)
+		return range(0,2).filter(func(id):return int(actors[id].vitals.hull)>0)
+	if not await fight_until("alioth-stealth",func():return stealth.call().is_empty(),func(_actors):return stealth.call(),radio_ids):return
+	print("SUPERNOVA Alioth radio ",radio_ids," cloaked ",cloaked)
+	check(2602 in radio_ids and 2603 in radio_ids,"Keith's two ambush lines did not play")
+	check(not cloaked.is_empty(),"The stealth fighters never cloaked")
+	if not await wait_story_cursor(101,"supernova-alioth-won"):return
+	if not await dock_application() or not await take_station_talk(101,102):return
+	print("SUPERNOVA hold after 101 ",app.session.station_owner().snapshot().cargo.entries.map(func(row):return [row.item_id,row.quantity]))
+	check(app.save_station(false) and app.load_station(),"Saving and resuming at Alioth failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==102,"Fresh Resume lost Brent's talk")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-102.gof2save"))==OK,"The Alioth checkpoint could not be kept")
+
+## 102-104: the Tadram carrier evacuation (dropships ferry 1700 people while
+## stealth fighters attack), Khador's plan at Thynome and the Gamma Shield II
+## built from its blueprint and handed over.
+func fly_supernova_tadram() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==102,"The Tadram checkpoint is not at cursor 102")
+	if failures or not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight() or not await khador_jump(113):return
+	var cast: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+	print("SUPERNOVA Tadram cast ",cast.map(func(actor):return [actor.actor_kind,actor.hull_catalogue_id,int(actor.vitals.hull)]))
+	await capture_free_application("supernova-tadram-carrier")
+	var radio_ids:=[];var first_status:=int(app.session.flight_owner()._story_dock.get("status",-1))
+	var fighters:=func():
+		var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+		return range(6,10).filter(func(id):return int(actors[id].vitals.hull)>0 and actors[id].get("active",false) and actors[id].pose.origin.distance_to(app.session.snapshot().player_pose.origin)<60000)
+	var over:=func():return app.session.status!="running" or app.session.snapshot().campaign_cursor!=102
+	var captured:=false
+	for tick in 60000:
+		if over.call():break
+		if app.session.flight_owner().death_active():check(false,"The player died at Tadram: "+str(app.session.snapshot().player.vitals));return
+		if not fighters.call().is_empty():
+			if not captured:captured=true;await capture_free_application("supernova-tadram-fighters")
+			if not await fight_until("tadram",func():return over.call() or fighters.call().is_empty(),func(_actors):return fighters.call(),radio_ids):return
+			continue
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		if not application_step():return
+		if tick%10==0:await process_frame
+		if tick%600==0:print("SUPERNOVA Tadram ",tick/10," s status ",app.session.flight_owner()._story_dock.get("status")," radio ",radio_ids)
+	print("SUPERNOVA Tadram radio ",radio_ids," status ",first_status," -> ",app.session.flight_owner()._story_dock.get("status"))
+	check(first_status==1700,"Tadram did not start with 1700 people waiting")
+	check(2621 in radio_ids,"Everyone's-on-board line did not play")
+	if not await wait_story_cursor(103,"supernova-tadram-done"):return
+	if not await khador_jump(10) or not await dock_application() or not await take_station_talk(103,104):return
+	# The Gamma Shield II blueprint (10 Hypanium supplied); the test supplies the rest.
+	var state: Dictionary=app.session.station_owner().snapshot()
+	var project: Array=state.contracts.blueprints.entries.filter(func(row):return row.item_id==206)
+	check(not project.is_empty() and project[0].available,"Khador's plan did not hand over the Gamma Shield II blueprint")
+	if failures:return
+	var materials: Array=Array(catalogue.tables.items[206].arrays[0]);var seeds:=[]
+	for index in materials.size():
+		if int(project[0].remaining[index])>0:seeds.append([int(materials[index]),int(project[0].remaining[index])])
+	print("SUPERNOVA blueprint 206 remaining ",project[0].remaining," seeds ",seeds)
+	if not seed_cargo(seeds) or not app.equipment_action("open"):check(false,app.session.error);return
+	for row in seeds:
+		if not app.equipment_action("supply_blueprint",206,row[0],row[1]):check(false,"Supplying material "+str(row[0])+" failed: "+app.session.error);return
+	if not app.equipment_action("close"):check(false,app.session.error);return
+	check(app.session.station_owner().snapshot().cargo.entries.any(func(row):return row.item_id==206),"The Gamma Shield II was not built")
+	if failures or not await take_station_talk(104,105):return
+	check(app.save_station(false) and app.load_station(),"Saving and resuming at Thynome failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==105,"Fresh Resume lost the Gamma Shield II hand-over")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-105.gof2save"))==OK,"The Thynome checkpoint could not be kept")
+
+## 105-108: the Naneroh bomb run (Gamma Shield II fitted, fly toward the sun,
+## stealth fighters on the way, "Bombs away!"), the Luur aftermath scene,
+## then Thynome and Carla's talk.
+func fly_supernova_bomb() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==105,"The Naneroh checkpoint is not at cursor 105")
+	if failures or not fit_same_type([206]):return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight() or not await khador_jump(109):return
+	await capture_free_application("supernova-naneroh-route")
+	var radio_ids:=[];var captured:=false
+	var fighters:=func():
+		var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+		return range(2,5).filter(func(id):return int(actors[id].vitals.hull)>0 and actors[id].get("active",false) and actors[id].pose.origin.distance_to(app.session.snapshot().player_pose.origin)<15000)
+	var over:=func():return app.session.status!="running" or app.session.snapshot().campaign_cursor!=105
+	for tick in 40000:
+		if over.call():break
+		if app.session.flight_owner().death_active():check(false,"The player died at Naneroh: "+str(app.session.snapshot().player.vitals)+" gamma "+str(app.session.snapshot().get("gamma")));return
+		if not fighters.call().is_empty():
+			if not captured:captured=true;await capture_free_application("supernova-naneroh-fighters")
+			if not await fight_until("naneroh",func():return over.call() or fighters.call().is_empty(),func(_actors):return fighters.call(),radio_ids):return
+			continue
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		# Head for the route's end at full throttle.
+		var state: Dictionary=app.session.snapshot()
+		var point: Variant=app.session.flight_owner().story_route_point()
+		var commands:=Vector2.ZERO
+		if point is Vector3:commands=missile_steering({"basis":state.player_pose.basis,"position":state.player_pose.origin},point)
+		for adjustment in 10:
+			if app.session.snapshot().input_throttle>=.99 or not app.session.action("throttle_up"):break
+		now_us+=100000
+		if not app.session.step(now_us,commands,false,false,Vector2.ZERO):check(false,app.session.error);return
+		app.present_session()
+		if tick%10==0:await process_frame
+		if tick%600==0:print("SUPERNOVA Naneroh ",tick/10," s to go ",int(state.player_pose.origin.distance_to(point)) if point is Vector3 else -1," radio ",radio_ids)
+	print("SUPERNOVA Naneroh radio ",radio_ids)
+	check(2654 in radio_ids,"Bombs away did not play")
+	if failures or not await wait_story_cursor(106,"supernova-bombs-away"):return
+	var moved:=[]
+	if not await ride_story_jump(moved,120) or not await enter_story_arrival("Naneroh",false):return
+	check(int(app.session.snapshot().location.station_id)==111,"The story did not take the ship to Luur for 106")
+	await capture_free_application("supernova-luur-106")
+	var scene:=[]
+	if not await ride_story_jump(scene,300):return
+	print("SUPERNOVA Luur 106 radio ",scene)
+	check(2660 in scene,"The 106 scene did not play through")
+	if failures or not await enter_story_arrival("Luur"):return
+	check(int(app.session.snapshot().location.station_id)==10 and app.session.snapshot().campaign_cursor==108,"The story did not bring the ship to Thynome for 108: "+str([app.session.snapshot().location.station_id,app.session.snapshot().campaign_cursor]))
+	if failures or not await dock_application() or not await take_station_talk(108,109):return
+	check(app.save_station(false) and app.load_station(),"Saving and resuming at Thynome failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==109,"Fresh Resume lost Carla's talk")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-109.gof2save"))==OK,"The 109 checkpoint could not be kept")
+
+## 109-116: the Midantha cutaway, the bar trail (Thynome, Nepis with the
+## Magnetar Juice, Plural Z), the Marktesh asteroid ambush and the Maissa
+## bar hunt that opens Me'enkk (117).
+func fly_supernova_bars() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==109,"The Thynome checkpoint is not at cursor 109")
+	# Test shortcut: the Magnetar Juice 112 asks for (bought on the way in play).
+	if failures or not seed_cargo([[146,1],[122,12]]):return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	var moved:=[]
+	if not await ride_story_jump(moved,30) or not await enter_story_arrival("Thynome",false):return
+	check(int(app.session.snapshot().location.station_id)==114 and app.session.snapshot().campaign_cursor==109,"The ship did not arrive at Midantha for 109")
+	await capture_free_application("supernova-midantha-109")
+	var scene:=[]
+	if not await ride_story_jump(scene,300):return
+	print("SUPERNOVA Midantha 109 radio ",scene)
+	check(scene.size()>=4,"The 109 cutaway did not play through")
+	if failures or not await enter_story_arrival("Midantha"):return
+	check(int(app.session.snapshot().location.station_id)==10 and app.session.snapshot().campaign_cursor==110,"The story did not bring the ship to Thynome for 110")
+	if failures or not await dock_application() or not await take_station_talk(110,111):return
+	for leg in [[38,111,112],[38,112,113],[82,113,114]]:
+		if int(app.session.station_owner().snapshot().station_id)!=leg[0] or not app.session.snapshot().dialogue.visible:
+			if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+			if not await release_application_flight():return
+			if int(app.session.snapshot().location.station_id)!=leg[0] and not await khador_jump(leg[0]):return
+			if not await dock_application():return
+		if not await take_station_talk(leg[1],leg[2]):return
+		if leg[1]==112:check(not app.session.station_owner().snapshot().cargo.entries.any(func(row):return int(row.item_id)==146),"The Magnetar Juice stayed in the hold after 113 began")
+	# 114: six pirates asleep at Marktesh's asteroids; they wake as the player nears.
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight() or not await khador_jump(83):return
+	await capture_free_application("supernova-marktesh")
+	var radio_ids:=[]
+	var pirates:=func(): return range(0,6).filter(func(id):return int(app.session.flight_owner()._encounter.combat_snapshot().actors[id].vitals.hull)>0)
+	if not await fight_until("marktesh",func():return pirates.call().is_empty(),func(_actors):return pirates.call(),radio_ids):return
+	print("SUPERNOVA Marktesh radio ",radio_ids)
+	if not await wait_story_cursor(115,"supernova-marktesh-won"):return
+	if not await khador_jump(82) or not await dock_application() or not await take_station_talk(115,116):return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight() or not await khador_jump(93) or not await dock_application() or not await take_station_talk(116,117):return
+	check(app.save_station(false) and app.load_station(),"Saving and resuming at Maissa failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==117,"Fresh Resume lost the Flabbergaster talk")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-117.gof2save"))==OK,"The 117 checkpoint could not be kept")
+
+## 117-127: Me'enkk and the Mutagen (117-118), the Thynome cutaway (119),
+## the Valadon stealth pair (120), Maissa and Thynome (121-122), Névan
+## (123-124), the Kappa black box with three container hacks (125), the
+## Katashán cutaway (126) and Alioth's talk that opens the Wanted boards.
+func fly_supernova_meenkk() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==117,"The Maissa checkpoint is not at cursor 117")
+	if failures or not seed_cargo([[122,12]],2000000):return
+	if not await travel_and_talk(126,117,118):return
+	# 118: the Mutagen is on sale here (a story offer); buying it completes 118.
+	var bought: bool=app.equipment_action("open") and app.equipment_action("buy",209)
+	print("SUPERNOVA Mutagen bought ",bought," ",app.session.error)
+	check(bought,"The Mutagen (209) was not on sale at Bak S'ondorr")
+	# Closing the shop re-checks the station: 118's talk opens without undocking.
+	app.equipment_action("close")
+	if failures or not await take_station_talk(118,119):return
+	# 119: the Thynome cutaway, then docked back at Bak S'ondorr (120).
+	if not await story_cutaway(10,126,120,"supernova-thynome-119"):return
+	# 120: two stealth fighters at Valadon; done when Keith's line ends.
+	if not await depart_to(40):return
+	var radio_ids:=[]
+	var stealth:=func():return range(0,2).filter(func(id):return int(app.session.flight_owner()._encounter.combat_snapshot().actors[id].vitals.hull)>0)
+	await capture_free_application("supernova-valadon")
+	if not await fight_until("valadon",func():return stealth.call().is_empty() or app.session.flight_owner()._objective.snapshot().campaign_cursor!=120,func(_actors):return stealth.call(),radio_ids):return
+	if not await wait_story_cursor(121,"supernova-valadon-done"):return
+	for leg in [[93,121,122],[10,122,123]]:
+		if not await khador_jump(leg[0]) or not await dock_application() or not await take_station_talk(leg[1],leg[2]):return
+		if leg[1]==122:check(not app.session.station_owner().snapshot().cargo.entries.any(func(row):return int(row.item_id)==209),"The Mutagen stayed in the hold after 122")
+		if leg[1]!=122 and (not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()) or not await release_application_flight()):check(false,app.status.text);return
+	# 123: Névan, four lines in flight; 124 the talk there.
+	if not await depart_to(121) or not await wait_story_cursor(124,"supernova-nevan"):return
+	if not await dock_application() or not await take_station_talk(124,125):return
+	# Two of Keith's search sites first: each gives an opener and "no reading".
+	for site in [[40,2],[45,3]]:
+		if not await depart_to(site[0]):return
+		var heard:=[]
+		for tick in 250:
+			var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+			if radio.get("visible",false) and int(radio.get("text_id",-1)) not in heard:heard.append(int(radio.text_id))
+			if not application_step():return
+			if tick%10==0:await process_frame
+		print("SUPERNOVA search site ",site[0]," radio ",heard)
+		check(heard.any(func(id):return id>=2793 and id<=2796) and heard.any(func(id):return id>=2799 and id<=2802),"Station %d gave no search lines"%site[0])
+		if failures or not await dock_application():return
+		check(int(app.session.station_owner().snapshot().contracts.progress.get("story_stations_mask",0)) & (1<<site[1]),"Station %d was not marked searched"%site[0])
+		if failures:return
+	if not await depart_to(55) or not await kappa_black_box():return
+	# 126: launched at Katashán for the cutaway, then Alioth's gate (127).
+	var scene:=[]
+	if not await ride_story_jump(scene,300):return
+	print("SUPERNOVA Katashán 126 radio ",scene)
+	if failures or not await enter_story_arrival("Kappa",false):return
+	check(int(app.session.snapshot().location.station_id)==120,"The story did not launch the ship at Katashán for 126")
+	await capture_free_application("supernova-katashan-126")
+	scene=[]
+	if not await ride_story_jump(scene,300) or not await enter_story_arrival("Katashán"):return
+	check(int(app.session.snapshot().location.station_id)==98 and app.session.snapshot().campaign_cursor==127,"The story did not bring the ship to Alioth for 127")
+	if failures or not await dock_application() or not await take_station_talk(127,128):return
+	check(app.save_station(false) and app.load_station(),"Saving and resuming at Alioth failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==128,"Fresh Resume lost Alioth's talk")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-128.gof2save"))==OK,"The 128 checkpoint could not be kept")
+
+## 128-134: at a Terran station the Most Wanted board lists Pal Tyyrt; the
+## pilot flies to where the board's criminal is, beats him below a third of
+## his hull and he gives up (128 -> 130); the same for Kehnor (130 -> 131).
+## Then Var Lupra (131-132), the Katashán cutaway (133) and Dekato (134).
+const TERRAN_BOARD_STATION:=5
+func fly_supernova_wanted() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==128,"The Alioth checkpoint is not at cursor 128")
+	if failures or not seed_cargo([[122,12]]):return
+	for entry in [0,1]:
+		var cursor: int=[128,130][entry];var name: String=["Pal Tyyrt","Kehnor"][entry]
+		if not await depart_to(TERRAN_BOARD_STATION) or not await dock_application():return
+		app.open_missions();await process_frame
+		app.missions_panel.toggle_wanted();await process_frame
+		var log: Dictionary=app.missions_panel.snapshot()
+		print("SUPERNOVA board ",log.get("wanted_available")," ",String(log.get("wanted","")).get_slice("\n\n",0).replace("\n"," | "))
+		check(log.get("wanted_available",false) and String(log.wanted).begins_with("Pal Tyyrt"),"The Terran Most Wanted board is not open at cursor %d"%cursor)
+		await capture_free_application("supernova-wanted-board-%d"%cursor)
+		app.close_missions();await process_frame
+		var board: Dictionary=app.session.station_owner().snapshot().contracts.progress.get("wanted",{})
+		var at: int=int(board.get("entries",[{},{}])[entry].get("at",-1))
+		check(board.entries[entry].active and at>=0,name+" is not on the board")
+		if failures or not await depart_to(at):return
+		var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+		print("SUPERNOVA ",name," at ",at," cast ",actors.map(func(actor):return [actor.hull_catalogue_id,int(actor.vitals.hull),actor.get("display_name","")]))
+		check(actors.size()>=1 and String(actors[0].get("display_name",""))==name,name+" was not met at his station")
+		if failures:return
+		await capture_free_application("supernova-wanted-%d"%cursor)
+		var radio_ids:=[]
+		var criminal:=func(_now):
+			var him: Dictionary=app.session.flight_owner()._encounter.combat_snapshot().actors[0]
+			return [0] if int(him.vitals.hull)*3>=int(him.max_hull) else []
+		if not await fight_until("wanted-%d"%cursor,func():return app.session.flight_owner()._objective.snapshot().campaign_cursor!=cursor,criminal,radio_ids):return
+		var him: Dictionary=app.session.flight_owner()._encounter.combat_snapshot().actors[0]
+		print("SUPERNOVA ",name," gave up: hull ",him.vitals.hull,"/",him.max_hull," hostile ",him.get("hostile")," radio ",radio_ids)
+		check(int(him.vitals.hull)>0 and not him.get("hostile",true),name+" did not give up alive")
+		check(int(app.session.flight_owner()._objective.snapshot().campaign_cursor)==[130,131][entry],"The story did not move on after "+name)
+		await capture_free_application("supernova-wanted-%d-surrender"%cursor)
+		if failures:return
+		if entry==0 and (not await dock_application()):return
+	# 131: Var Lupra, held until Keith's line ends; 132 the talk there.
+	if not await khador_jump(112) or not await wait_story_cursor(132,"supernova-varlupra"):return
+	if not await dock_application() or not await take_station_talk(132,133):return
+	if not await story_cutaway(120,112,134,"supernova-katashan-133"):return
+	if not await travel_and_talk(22,134,135):return
+	check(app.save_station(false) and app.load_station(),"Saving and resuming for 135 failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==135,"Fresh Resume lost the 134 talk")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-135.gof2save"))==OK,"The 135 checkpoint could not be kept")
+
+## Leave the station and Khador-jump to `station` (no jump when already there).
+func depart_to(station: int) -> bool:
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return false
+	if not await release_application_flight():return false
+	if int(app.session.snapshot().location.station_id)==station:return true
+	return await khador_jump(station)
+
+## Fly to `station`, dock and take the talk from `cursor` to `next`.
+func travel_and_talk(station: int,cursor: int,next: int,redock:=false) -> bool:
+	if redock or int(app.session.station_owner().snapshot().station_id)!=station:
+		if not await depart_to(station) or not await dock_application():return false
+	return await take_station_talk(cursor,next)
+
+## A kind-170 cutaway at `at`, then the story's move to `after` for `next`.
+func story_cutaway(at: int,after: int,next: int,label: String) -> bool:
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return false
+	if not await release_application_flight():return false
+	var moved:=[]
+	if not await ride_story_jump(moved,30) or not await enter_story_arrival(label,false):return false
+	check(int(app.session.snapshot().location.station_id)==at,"The story did not take the ship to %d for its cutaway"%at)
+	await capture_free_application(label)
+	var scene:=[]
+	if not await ride_story_jump(scene,300):return false
+	print("SUPERNOVA cutaway ",label," radio ",scene)
+	if failures or not await enter_story_arrival(label):return false
+	check(int(app.session.snapshot().location.station_id)==after and app.session.snapshot().campaign_cursor==next,"The cutaway did not end at %d for %d"%[after,next])
+	return failures==0 and await dock_application()
+
+## 125: fly the course, beat the pirates, dock at each Secure Container and
+## solve its puzzle with the arrow keys.
+func kappa_black_box() -> bool:
+	var radio_ids:=[];var hacked:=[];var hacking:=false
+	var began:=now_us
+	app.session.rebase_time(now_us)
+	for tick in 60000:
+		var frame: RefCounted=app.session.flight_owner()
+		if app.session.status!="running" or frame._objective.snapshot().campaign_cursor!=125:break
+		if frame.death_active():check(false,"The player died at Kappa: "+str(app.session.snapshot().player.vitals));return false
+		var radio: Dictionary=frame._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		var actors: Array=frame._encounter.combat_snapshot().actors
+		var state: Dictionary=app.session.snapshot()
+		var puzzle: Dictionary=frame.story_hack_state()
+		if not puzzle.is_empty():
+			if not hacking:hacking=true;print("SUPERNOVA hacking container ",frame._story_dock.docked," at ",(now_us-began)/1000000," s");await capture_free_application("supernova-kappa-hack-%d"%hacked.size())
+			if not bool(puzzle.get("won",false)) and String(puzzle.turning).is_empty() and int(puzzle.solved_ms)<0:
+				var moves:=hack_solution(puzzle.board,puzzle.target)
+				if not moves.is_empty():
+					for pressed in [true,false]:
+						var key:=InputEventKey.new();key.physical_keycode=KEY_LEFT if moves[0]=="left" else KEY_RIGHT;key.keycode=key.physical_keycode;key.pressed=pressed;app._unhandled_input(key)
+			if not application_step():return false
+			if tick%5==0:await process_frame
+			continue
+		if hacking:
+			hacking=false
+			if int(frame._story_dock.get("last_hacked",-1))>=0 and int(frame._story_dock.last_hacked) not in hacked:hacked.append(int(frame._story_dock.last_hacked))
+		var hostile: Array=range(0,8).filter(func(id):return int(actors[id].vitals.hull)>0 and actors[id].get("active",false) and actors[id].get("model_draw_enabled",true) and actors[id].pose.origin.distance_to(state.player_pose.origin)<20000)
+		if not hostile.is_empty():
+			var living:=func():
+				var now: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+				return range(0,8).filter(func(id):return int(now[id].vitals.hull)>0 and now[id].get("active",false) and now[id].get("model_draw_enabled",true))
+			if not await fight_until("kappa",func():return living.call().is_empty() or app.session.flight_owner()._objective.snapshot().campaign_cursor!=125,func(_actors):return living.call(),radio_ids):return false
+			continue
+		var target: Variant=frame.story_route_point()
+		var open: bool=2806 in radio_ids
+		var left: Array=range(8,11).filter(func(id):return id not in hacked and actors[id].get("model_draw_enabled",true))
+		if open and not left.is_empty():
+			left.sort_custom(func(a,b):return actors[a].pose.origin.distance_to(state.player_pose.origin)<actors[b].pose.origin.distance_to(state.player_pose.origin))
+			target=actors[left[0]].pose.origin
+		var steer:=Vector2.ZERO;var want:=0.0
+		if target is Vector3:
+			var distance: float=state.player_pose.origin.distance_to(target)
+			steer=missile_steering({"basis":state.player_pose.basis,"position":state.player_pose.origin},target);want=1.0 if distance>(2500.0 if open else 3000.0) else 0.15
+		for adjustment in 10:
+			var current: float=app.session.snapshot().input_throttle
+			if absf(current-want)<.01 or frame.cinematic_input_blocked():break
+			if not app.session.action("throttle_up" if current<want else "throttle_down"):check(false,app.session.error);return false
+		now_us+=100000
+		if not app.session.step(now_us,steer if not frame.cinematic_input_blocked() else Vector2.ZERO,false,false,Vector2.ZERO):check(false,app.session.error);return false
+		app.present_session()
+		await dismiss_medal()
+		if tick%10==0:await process_frame
+		if tick%600==0:print("SUPERNOVA Kappa ",(now_us-began)/1000000," s hacked ",hacked," radio ",radio_ids)
+	print("SUPERNOVA Kappa radio ",radio_ids," hacked ",hacked," status ",app.session.status)
+	check(hacked.size()==3 and 2810 in radio_ids,"The three containers were not all hacked")
+	return failures==0
+
+## The shortest button sequence that turns `board` into `target`.
+func hack_solution(board: Array,target: Array) -> Array:
+	var Hacking=load("res://src/simulation/hacking_game.gd")
+	var frontier:=[[board,[]]];var seen:={str(board):true}
+	while not frontier.is_empty():
+		var next:=[]
+		for row in frontier:
+			if row[0]==target:return row[1]
+			for button in ["left","right"]:
+				var turned: Array=Hacking._turned(row[0],button)
+				if not seen.has(str(turned)):seen[str(turned)]=true;next.append([turned,row[1]+[button]])
+		frontier=next
+	return []
+
+## Swap passenger cabins for the best shield, armour and repair device on sale.
+func refit_protection() -> bool:
+	if not app.equipment_action("open"):check(false,app.session.error);return false
+	var shop: Dictionary=app.session.station_owner().snapshot()
+	for index in range(shop.loadout.slots.size()-1,-1,-1):
+		var slot: Variant=shop.loadout.slots[index]
+		if slot!=null and int(catalogue.tables.items[int(slot.item_id)].properties.get(2,-1))==20:
+			if not app.equipment_action("unmount",int(slot.item_id),index):check(false,app.session.error);return false
+	for kind in [9,10,15]:
+		var rows: Array=app.session.station_owner().snapshot().equipment.market_rows.filter(func(row):return int(catalogue.tables.items[row.item_id].properties.get(2,-1))==kind and int(row.stock)>0 and int(row.unit_price)<=int(app.session.station_owner().snapshot().contracts.credits))
+		rows.sort_custom(func(a,b):return int(a.unit_price)>int(b.unit_price))
+		if rows.is_empty():continue
+		if not app.equipment_action("buy",int(rows[0].item_id)) or not app.equipment_action("mount",int(rows[0].item_id)):print("SUPERNOVA protection refused ",rows[0].item_id," ",app.session.error)
+	print("SUPERNOVA refit items ",app.session.station_owner().snapshot().loadout.equipment_ids)
+	return app.equipment_action("close")
+
+## The highest-tier shield (type 9) and armour (type 10) item ids.
+func top_protection() -> Array:
+	var best:=[]
+	for kind in [9,10]:
+		var ids: Array=catalogue.tables.items.keys().filter(func(id):return int(catalogue.tables.items[id].properties.get(2,-1))==kind) if catalogue.tables.items is Dictionary else range(catalogue.tables.items.size()).filter(func(id):return catalogue.tables.items[id]!=null and int(catalogue.tables.items[id].properties.get(2,-1))==kind)
+		if not ids.is_empty():best.append(int(ids.max()))
+	print("SUPERNOVA top protection ",best)
+	return best
+
+## Fit hold items in place of any fitted item of the same type.
+func fit_same_type(ids: Array) -> bool:
+	if not app.equipment_action("open"):check(false,app.session.error);return false
+	for id in ids:
+		var slots: Array=app.session.station_owner().snapshot().loadout.slots
+		for index in range(slots.size()-1,-1,-1):
+			if slots[index]!=null and int(catalogue.tables.items[int(slots[index].item_id)].properties.get(2,-1))==int(catalogue.tables.items[id].properties.get(2,-1)):
+				if not app.equipment_action("unmount",int(slots[index].item_id),index):check(false,app.session.error);return false
+		if not app.equipment_action("mount",id):check(false,"Item "+str(id)+" could not be fitted: "+app.session.error);return false
+	print("SUPERNOVA protection fitted ",app.session.station_owner().snapshot().loadout.equipment_ids)
+	return app.equipment_action("close")
+
 ## Fit an item from the hold, making room in its category if needed.
 func fit_item(item_id: int) -> bool:
 	if not app.equipment_action("open"):check(false,app.session.error);return false
@@ -1226,8 +1726,9 @@ func go_to(station: int) -> bool:
 
 ## Fight the story cast like a player until done() holds; targets(actors)
 ## lists the actor ids to attack in order.
-func fight_until(label: String,done: Callable,targets: Callable,radio_ids: Array,ticks:=30000,liberate:=false,standoff:=9000.0) -> bool:
+func fight_until(label: String,done: Callable,targets: Callable,radio_ids: Array,ticks:=30000,liberate:=false,standoff:=9000.0,refuge:=-1) -> bool:
 	var pilot:=CombatPilot.new();var captured:=false;var closest:=INF
+	var best_shield:=0.0;var retreating:=false
 	if liberate and not select_liberator():return false
 	for tick in ticks:
 		if done.call():return true
@@ -1237,6 +1738,15 @@ func fight_until(label: String,done: Callable,targets: Callable,radio_ids: Array
 		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
 		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
 		var input:=pilot.controls(state,tick,targets.call(actors),true)
+		# With a friendly refuge, fall back to it while the shield recharges,
+		# as a player would against a large pack.
+		if refuge>=0:
+			var shield:=float(state.player.vitals.shield);best_shield=maxf(best_shield,shield)
+			if shield<best_shield*.1:retreating=true
+			elif shield>=best_shield*.9:retreating=false
+			if retreating:
+				input=pilot.controls(state,tick,[refuge],true);input.fire=false
+				if input.distance>0 and input.distance<2500:input.throttle=0.0
 		# Against many snipers, hold back and let the Liberators do the work.
 		if standoff>9000.0 and input.distance>0 and input.distance<standoff:input.throttle=0.0
 		var pool:=float(state.player.vitals.hull)+float(state.player.vitals.armor)+float(state.player.vitals.shield)
@@ -1388,7 +1898,7 @@ func check_story_cast(hulls: Array,hostile: bool) -> bool:
 ## Hold in space until the story silently moves on, like the original's 10 s rule.
 func wait_story_cursor(cursor: int,label: String) -> bool:
 	var started:=now_us;var radio_seen:=false
-	while app.session.flight_owner()._objective.snapshot().campaign_cursor!=cursor and now_us-started<30000000:
+	while app.session.flight_owner()._objective.snapshot().campaign_cursor!=cursor and now_us-started<90000000:
 		if not application_step():return false
 		if app.session.flight_owner().death_active():check(false,"The escape pilot died waiting for cursor "+str(cursor));return false
 		if int(now_us/1000000)%2==0:await process_frame
@@ -1447,6 +1957,13 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"supernova89":return state.campaign_cursor==89
 		"supernova91":return state.campaign_cursor==91
 		"supernova93":return state.campaign_cursor==93
+		"supernova97":return state.campaign_cursor==97
+		"supernova100":return state.campaign_cursor==100
+		"supernova102":return state.campaign_cursor==102
+		"supernova105":return state.campaign_cursor==105
+		"supernova109":return state.campaign_cursor==109
+		"supernova117":return state.campaign_cursor==117
+		"supernova128":return state.campaign_cursor==128
 	return super.resumed_contract_valid(state)
 
 ## A player crossing hostile Vossk space fights off the ships closing in

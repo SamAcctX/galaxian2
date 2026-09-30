@@ -177,10 +177,25 @@ var _story_locked:=false
 ## status and the flight time a delayed radio action was first cued.
 var _story_dock:={}
 var _action_marks:={}
+var _story_cloaks:={}
+## 105: the player's route toward the sun (N3); its end point is set from
+## where the flight starts.
+var _story_route:={}
+## The hacking puzzle while docked at a story "hack" point (125, 139, 154).
+var _story_hack: RefCounted
+## Assumption: a story course point counts as reached within 5 km (the
+## original's waypoint radius is not recovered).
+const STORY_ROUTE_REACH:=5000.0
+const STORY_DELIVER_MS:=1000
 var _line_marks:={"started":{},"finished":{}}
 ## Gamma radiation in this orbit: loss per second after the fitted gamma
 ## shield's cut (0 = no radiation). Fixed for the flight.
 var _gamma_rate:=0.0
+## Volatile cargo (V2): instability 0..1 while the Mutagen or Red Plasma is
+## aboard; the ship explodes at 1.
+var _instability:=0.0
+## The last frame's steering, for the volatile cargo's steering term.
+var _volatile_steer:=Vector2.ZERO
 var _navigation_applied:=false
 var _fast_forward: RefCounted
 var _near_target:=false
@@ -496,6 +511,8 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_station_contact=false;_station_packet={};_encounter=encounter;_world_elapsed_ms=0
 	_mission_context=mission_context
 	_story_dock=_story_people(catalogues,entry)
+	if _mining!=null and _mission_context!=null and int(_mission_context.recipe().get("asteroid_ore",-1))>=0:_mining.ore_override=int(_mission_context.recipe().asteroid_ore)
+	_story_route=_player_route(catalogues,entry)
 	_engine_audio=EngineAudio.new()
 	if not _engine_audio.configure_player(bindings,catalogues,player,_pose):return reject(_engine_audio.error)
 	_unsupported_boundary=""
@@ -524,10 +541,11 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_gate_animation=gate_animation;_gate_transit=gate_transit;_gate_destinations=gate_destinations
 	_system_navigation=system_navigation;_navigation_destinations=navigation_destinations
 	_drive=drive;_drive_arrival=null
-	_pending_destination=int(entry.get("navigation_destination_id",-1));_navigation_applied=false;_queued_drive=false;_story_jump=-2;_story_locked=false;_action_marks={};_line_marks={"started":{},"finished":{}}
+	_pending_destination=int(entry.get("navigation_destination_id",-1));_navigation_applied=false;_queued_drive=false;_story_jump=-2;_story_locked=false;_action_marks={};_story_cloaks={};_line_marks={"started":{},"finished":{}}
 	# A story waiting in another orbit (89: Naneroh) takes the ship there at once.
 	var move: Dictionary=load("res://src/content/valkyrie_campaign_definitions.gd").story_move(int(entry.get("campaign_cursor",-1)))
-	if move.get("arrive","")=="gate" and _drive!=null and int(entry.get("location",{}).get("station_id",-1))!=int(move.station_id):_story_jump=int(move.station_id)
+	# "launch" (126) arrives the same way: in flight at the story's station.
+	if move.get("arrive","") in ["gate","launch"] and _drive!=null and int(entry.get("location",{}).get("station_id",-1))!=int(move.station_id):_story_jump=int(move.station_id)
 	_gate_cruise_speed=float(bindings.cruise.speed_units_per_millisecond)
 	_fast_forward=fast_forward;_near_target=false;_camera_ms=0;_camera_passes=1
 	_mining_audio={} if targeting==null else {"serial":0,"events":[]}
@@ -983,6 +1001,17 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 	if next._notices!=null:
 		if not next._notices.advance(delta_ms,next._mining!=null and next._mining.has_active_drill()):reject(next._notices.error);return null
 	if not next._observe_radio():reject(next.error);return null
+	if not next.death_active() and cues.entry_released and next._volatile_carried():
+		var rules: Dictionary=Worlds.VOLATILE_GOODS
+		if next._booster.active():
+			var boost_id:=int(next._booster.snapshot().get("item_id",-1))
+			next._instability=minf(1.0,next._instability+float(rules.boost_rates.get(boost_id,rules.boost_rate))*float(delta_ms)/1000.0)
+		# Sharp steering shakes it too: twice the largest change this frame.
+		var change: Vector2=(commands-next._volatile_steer).abs()
+		next._instability=minf(1.0,next._instability+2.0*maxf(change.x,change.y))
+		next._volatile_steer=commands
+		if next._instability>=1.0 and not next._player.destroy_hull():reject(next._player.error);return null
+	elif not next._volatile_carried():next._instability=0.0;next._volatile_steer=Vector2.ZERO
 	if next._gamma_rate>0.0 and not next.death_active() and cues.entry_released and not next.local_departing() and not next.drive_departing():
 		var hit: Dictionary=next._player.drain_gamma(next._gamma_rate*float(delta_ms)/1000.0,float(Worlds.GAMMA_WARNING))
 		if hit.is_empty():reject(next._player.error);return null
@@ -1255,7 +1284,9 @@ func _story_people(catalogues: RefCounted,entry: Dictionary) -> Dictionary:
 	var berths:=_passenger_berths(catalogues,entry.get("departure",{}).get("loadout",{}))
 	var shuttles: Dictionary=_mission_context.recipe().get("shuttles",{}).duplicate(true)
 	if not shuttles.is_empty():shuttles.visits={}
-	return {"actors":docks.duplicate(true),"docked":-1,"elapsed":0,"last_ms":0,"aboard":0 if boards else status,"status":status,"berths":berths,"shuttles":shuttles}
+	# With only drop-off docks the ship arrives with the people it can carry
+	# (92: the ten from Valpatro; 102: the rest wait at the station).
+	return {"actors":docks.duplicate(true),"docked":-1,"elapsed":0,"last_ms":0,"aboard":0 if boards else mini(status,berths),"status":status,"berths":berths,"shuttles":shuttles}
 
 ## Docked = within reach of a visible, dockable docking point. While docked
 ## the ship is held until that point's transfer is over; one person moves
@@ -1276,14 +1307,116 @@ func _advance_story_dock(elapsed: int) -> bool:
 		var pose: Variant=actors[id].get("pose",actors[id].get("body_pose"))
 		var reach: float=STORY_DOCK_RANGE+load("res://src/content/static_object_definitions.gd").reach(int(actors[id].get("static_model",-1)))
 		if pose is Transform3D and _pose.origin.distance_to(pose.origin)<=reach:docked=int(id)
-	if docked!=int(_story_dock.docked):_story_dock.docked=docked;_story_dock.elapsed=0
+	if docked!=int(_story_dock.docked):_story_dock.docked=docked;_story_dock.elapsed=0;_story_hack=null
 	_advance_story_shuttles(elapsed,actors)
+	# A hack point opens the puzzle (difficulty 1 at cursor 91, else 4); a
+	# win closes the point and counts for condition 50. Leaving drops it.
+	if docked>=0 and _story_dock.actors[docked].mode=="hack":
+		if _story_hack==null:
+			_story_hack=load("res://src/simulation/hacking_game.gd").new()
+			if not _story_hack.configure(1 if int(_entry.get("campaign_cursor",-1))==91 else 4,absi(hash([docked,elapsed]))):return reject(_story_hack.error)
+		_story_hack.advance(step)
+		if _story_hack.won():
+			_story_dock.actors[docked].dockable=false;_story_dock.hacks=int(_story_dock.get("hacks",0))+1;_story_dock.last_hacked=docked
+			_story_hack=null;_story_dock.docked=-1
+		return true
 	if docked<0 or not _story_dock.actors[docked].transfer:return true
+	# A delivery point (kind 174, 135's Mining Plant): one unit of the good
+	# leaves the hold each second and the story status rises by one.
+	if _story_dock.actors[docked].mode=="deliver":
+		var good:=int(_mission_context.recipe().get("deliver_item",_mission_context.recipe().get("asteroid_ore",-1)))
+		_story_dock.elapsed=int(_story_dock.elapsed)+step
+		while int(_story_dock.elapsed)>=STORY_DELIVER_MS and good>=0 and _cargo!=null and _cargo.quantity(good)>0:
+			_story_dock.elapsed=int(_story_dock.elapsed)-STORY_DELIVER_MS
+			if not _cargo.consume(good,1):return reject(_cargo.error)
+			_story_dock.status=int(_story_dock.status)+1
+		return true
 	_story_dock.elapsed=int(_story_dock.elapsed)+step
 	while int(_story_dock.elapsed)>=STORY_TRANSFER_MS and not _story_transfer_done(docked):
 		_story_dock.elapsed=int(_story_dock.elapsed)-STORY_TRANSFER_MS
 		if _story_dock.actors[docked].mode=="board":_story_dock.aboard=int(_story_dock.aboard)+1
 		else:_story_dock.aboard=int(_story_dock.aboard)-1;_story_dock.status=maxi(0,int(_story_dock.status)-1)
+	return true
+
+## The recipe's route toward the sun: `toward_sun` metres along the station's
+## sun direction, flattened to x/z (assumption: the flight starts at the
+## player's arrival point).
+func _player_route(catalogues: RefCounted,entry: Dictionary) -> Dictionary:
+	if _mission_context==null or _mission_context.recipe().get("player_route",{}).is_empty() or catalogues==null:return {}
+	var plan: Dictionary=_mission_context.recipe().player_route
+	var station_id:=int(entry.get("location",{}).get("station_id",-1))
+	var station: Variant=catalogues.tables.stations.get(station_id) if catalogues.tables.stations is Dictionary else (catalogues.tables.stations[station_id] if station_id>=0 and station_id<catalogues.tables.stations.size() else null)
+	if station==null:return {}
+	var sun: Dictionary=load("res://src/simulation/sun_placement.gd").new().for_station(station_id,int(station.get("planet_type",0)))
+	if sun.is_empty():return {}
+	var flat:=Vector3(sun.direction_to_sun.x,0,sun.direction_to_sun.z).normalized()
+	return {"direction":flat,"distance":float(plan.toward_sun),"reach":float(plan.get("reach_radius",10000)),"point":null}
+
+func story_route_point() -> Variant:return _story_route.get("point")
+
+func _volatile_carried() -> bool:
+	if _cargo==null:return false
+	return Worlds.VOLATILE_GOODS.items.any(func(id):return _cargo.quantity(int(id))>0)
+
+func instability() -> float:return _instability
+
+func _story_course() -> bool:
+	if _mission_context==null or _mission_context.contract_context().is_empty():return false
+	var recipe: Dictionary=_mission_context.recipe()
+	return not recipe.get("player_route",{}).is_empty() or recipe.get("radio_actions",[]).any(func(action):return action.action=="route")
+
+## Where story ships appear: ahead of the player, round a random living ship
+## of near_actors (or by player_chance the player), round the player, or at
+## a fixed centre; the ring radius is drawn from radius [min,max].
+func _story_spot(action: Dictionary,index: int,elapsed: int) -> Array:
+	var roll:=absi(hash([index,elapsed]))
+	var radius_row: Array=action.get("radius",[3000,3000])
+	var radius:=maxf(1000.0,float(radius_row[0])+float(roll%maxi(1,int(radius_row[1])-int(radius_row[0]))))
+	if action.has("ahead_of_player"):return [_pose.origin-_pose.basis.z.normalized()*float(action.ahead_of_player),radius]
+	if action.has("near_actors"):
+		var actors: Array=_encounter.combat_snapshot().actors
+		var living: Array=range(int(action.near_actors[0]),int(action.near_actors[1])).filter(func(id):return int(actors[id].vitals.hull)>0)
+		if living.is_empty() or float(roll%1000)<1000.0*float(action.get("player_chance",0.0)):return [_pose.origin,radius]
+		return [actors[living[(roll/1000)%living.size()]].pose.origin,radius]
+	if action.has("center") and not action.center is String:return [Vector3(action.center),radius]
+	return [_pose.origin,radius]
+
+## Condition 35 for story actions: [35,[line, ms, 0 started / 1 finished]].
+func _story_line_passed(condition: Array,elapsed: int) -> bool:
+	if condition.size()!=2 or int(condition[0])!=35:return false
+	var values: Array=condition[1]
+	var mark: Variant=_line_marks["finished" if int(values[2])==1 else "started"].get(int(values[0]))
+	return mark!=null and elapsed-int(mark)>=int(values[1])
+
+## Stealth fighters (verified behaviour): every 8 s a 30% chance to cloak,
+## or 50% straight away after being hit; a cloak lasts 9-14 s, fading 2 s
+## each way, and the ship cannot be targeted meanwhile. Rolls come from a
+## hash of the ship and roll number, so a replayed frame rolls the same.
+func _advance_story_cloaks(elapsed: int) -> bool:
+	var ids: Array=_mission_context.recipe().get("cloakers",[])
+	if ids.is_empty():return true
+	var actors: Array=_encounter.combat_snapshot().actors
+	for id in ids:
+		if id>=actors.size():continue
+		var actor: Dictionary=actors[id]
+		var pool:=float(actor.vitals.hull)+float(actor.vitals.get("armor",0))+float(actor.vitals.get("shield",0))
+		var mark: Dictionary=_story_cloaks.get(id,{"next_ms":elapsed+8000,"until_ms":-1,"pool":pool,"rolls":0})
+		var awake: bool=actor.active and int(actor.get("actor_mode",0))!=5 and float(actor.vitals.hull)>0
+		var cloak:=false
+		if int(mark.until_ms)>=0:
+			cloak=awake and elapsed<int(mark.until_ms)
+			if not cloak:mark.until_ms=-1;mark.next_ms=elapsed+8000
+		elif awake:
+			var hit:=pool<float(mark.pool)
+			if hit or elapsed>=int(mark.next_ms):
+				mark.rolls=int(mark.rolls)+1
+				var roll:=absi(hash([id,int(mark.rolls)]))%100
+				if roll<(50 if hit else 30):
+					cloak=true;mark.until_ms=elapsed+2000+9000+absi(hash([id,int(mark.rolls),1]))%5001+2000
+				if not hit or cloak:mark.next_ms=elapsed+8000
+		else:mark.next_ms=elapsed+8000
+		mark.pool=pool;_story_cloaks[id]=mark
+		if not _encounter.set_story_cloak(id,cloak):return reject(_encounter.error)
 	return true
 
 ## Story shuttles (94's Midorian fighters): each arrival at the drop-off
@@ -1302,7 +1435,8 @@ func _advance_story_shuttles(elapsed: int,actors: Array) -> void:
 		if near and visit.away and int(visit.start)<0:visit={"start":elapsed,"given":0,"away":false}
 		if not near:visit.away=true
 		if int(visit.start)>=0:
-			var due:=mini(int(plan.visit_ms)/STORY_TRANSFER_MS,(elapsed-int(visit.start))/STORY_TRANSFER_MS)
+			var rate:=int(plan.get("transfer_ms",STORY_TRANSFER_MS))
+			var due:=mini(int(plan.visit_ms)/rate,(elapsed-int(visit.start))/rate)
 			while int(visit.given)<due:
 				visit.given=int(visit.given)+1
 				var floor_left:=int(_story_dock.berths) if plan.get("hold_at_berths",false) else 0
@@ -1311,11 +1445,22 @@ func _advance_story_shuttles(elapsed: int,actors: Array) -> void:
 		plan.visits[id]=visit
 
 func _story_transfer_done(id: int) -> bool:
-	if _story_dock.actors[id].mode=="board":return int(_story_dock.aboard)>=mini(int(_story_dock.berths),int(_story_dock.status))
+	if _story_dock.actors[id].mode=="board":return int(_story_dock.aboard)>=(int(_story_dock.status) if _story_dock.actors[id].get("ignore_berths",false) else mini(int(_story_dock.berths),int(_story_dock.status)))
 	return int(_story_dock.aboard)<=0
 
 func story_dock_held() -> bool:
-	return not _story_dock.is_empty() and int(_story_dock.docked)>=0 and not _story_transfer_done(int(_story_dock.docked))
+	if _story_hack!=null:return true
+	return not _story_dock.is_empty() and int(_story_dock.docked)>=0 and _story_dock.actors[int(_story_dock.docked)].mode not in ["hack","deliver"] and not _story_transfer_done(int(_story_dock.docked))
+
+## The open hacking puzzle for the panel, or {}.
+func story_hack_state() -> Dictionary:
+	if _story_hack==null:return {}
+	var state: Dictionary=_story_hack.snapshot();state.highlighted=_story_hack.highlighted()
+	return state
+
+## A hacking button ("left"/"right"); false when no puzzle takes it.
+func story_hack_press(button: String) -> bool:
+	return _story_hack!=null and _story_hack.press(button)
 
 func cinematic_input_blocked() -> bool:
 	return _story_locked or story_dock_held() or convoy_input_blocked() or (_alioth!=null and _alioth.snapshot().input_blocked) or (_sahi!=null and _sahi.snapshot().input_blocked) or (_probe!=null and _probe.snapshot().input_blocked) or gate_modal() or gate_coasting() or gate_departing() or drive_departing()
@@ -1591,6 +1736,17 @@ func _observe_radio() -> bool:
 			if not _encounter.apply_story_hostility(int(turn.get("reputation_axis",-1)),int(turn.get("reputation_value",0))):return reject(_encounter.error)
 		# Recipe actions cued by a radio line starting (e.g. pirates give up at "Fall back!").
 		if not _advance_story_dock(elapsed):return false
+		if not _advance_story_cloaks(elapsed):return false
+		# Sleeping ships wake when the player comes within range; then every
+		# sleeper of the group within all_range wakes too (114).
+		for wake in _mission_context.recipe().get("proximity_wakes",[]):
+			var actors: Array=_encounter.combat_snapshot().actors
+			var ids: Array=range(int(wake.first_actor),int(wake.end_actor))
+			var asleep: Callable=func(id):return not actors[id].get("active",false) and int(actors[id].get("actor_mode",-1))==5 and int(actors[id].vitals.hull)>0
+			if ids.any(func(id):return asleep.call(id) and actors[id].pose.origin.distance_to(_pose.origin)<=float(wake.range)):
+				for id in ids.filter(func(id):return asleep.call(id) and actors[id].pose.origin.distance_to(_pose.origin)<=float(wake.all_range)):
+					if not _encounter.wake_story_actors(id,id+1):return reject(_encounter.error)
+		if not _story_route.is_empty() and _story_route.point==null:_story_route.point=_pose.origin+_story_route.direction*float(_story_route.distance)
 		var radio_actions: Array=_mission_context.recipe().get("radio_actions",[])
 		var radio_lock:=false;var radio_invulnerable:=false
 		for index in radio_actions.size():
@@ -1606,15 +1762,89 @@ func _observe_radio() -> bool:
 			if elapsed<int(_action_marks[index])+int(action.get("delay_ms",0)):continue
 			if action.action=="lock_player":
 				# No steering for the scene; "invulnerable" also keeps the ship unharmed.
-				if elapsed<int(_action_marks[index])+int(action.get("delay_ms",0))+int(action.duration_ms):
+				# "until" holds it until a line has started/finished that long ago
+				# (condition 35) instead of for a duration.
+				var held: bool=not _story_line_passed(action.until,elapsed) if action.has("until") else elapsed<int(_action_marks[index])+int(action.get("delay_ms",0))+int(action.duration_ms)
+				if held:
 					radio_lock=true;radio_invulnerable=radio_invulnerable or action.get("invulnerable",false)
 			elif action.action in ["dockable","transfer"]:
-				for id in range(int(action.first_actor),int(action.end_actor)):
-					if _story_dock.get("actors",{}).has(id):_story_dock.actors[id][action.action]=action.get("enabled",true)
+				# target "last_hacked": the point of the latest won hack (139).
+				if action.get("target","")=="last_hacked" and _action_marks.has("applied%d"%index):continue
+				var ids: Array=[int(_story_dock.get("last_hacked",-1))] if action.get("target","")=="last_hacked" else range(int(action.first_actor),int(action.end_actor))
+				for id in ids:
+					if not _story_dock.get("actors",{}).has(id):continue
+					_story_dock.actors[id][action.action]=action.get("enabled",true)
+					# 139: the hacked battleship becomes a boarding point, count from 0.
+					# Its count is goods, not passengers: cabins don't limit it.
+					if action.has("mode"):_story_dock.actors[id].mode=action.mode;_story_dock.actors[id].dockable=true;_story_dock.actors[id].ignore_berths=true
+					if action.get("reset",false):_story_dock.aboard=0
+				_action_marks["applied%d"%index]=true
+			elif action.action=="respawn":
+				# Every every_ms the range's dead ships come back, until line
+				# until_radio starts (102, 105, 135).
+				var until:=int(action.get("until_radio",-1))
+				var begun: Array=_radio.snapshot().get("started",[])
+				if until>=0 and until<begun.size() and begun[until]==true:continue
+				var last:=int(_action_marks.get("respawn%d"%index,int(_action_marks[index])))
+				if elapsed-last<int(action.every_ms):continue
+				_action_marks["respawn%d"%index]=elapsed
+				var count:=0
+				if action.has("offset"):
+					for id in range(int(action.first_actor),int(action.end_actor)):
+						var at:=_pose.origin+Vector3(action.offset)+Vector3(action.get("step",Vector3.ZERO))*float(id-int(action.first_actor))
+						var back: int=_encounter.respawn_story_actors(id,id+1,at,1.0)
+						if back<0:return reject(_encounter.error)
+						count+=back
+				else:
+					var spot:=_story_spot(action,index,elapsed)
+					count=_encounter.respawn_story_actors(int(action.first_actor),int(action.end_actor),spot[0],spot[1])
+					if count<0:return reject(_encounter.error)
+				if count>0:_action_marks["respawned"]=elapsed
+			elif action.action=="route":
+				# A course for the player to a fixed point (125: the black box site).
+				if _story_route.get("point")==null:_story_route={"direction":Vector3.ZERO,"distance":0.0,"reach":float(action.get("reach",STORY_ROUTE_REACH)),"point":Vector3(action.points[0])}
+			elif action.action=="show" and action.get("center","")=="player":
+				# Parked ships appear once on a ring round the player.
+				if _action_marks.has("placed%d"%index):continue
+				if action.has("offset"):
+					# 135: each ship at the player + offset + step x its index.
+					for id in range(int(action.first_actor),int(action.end_actor)):
+						var at:=_pose.origin+Vector3(action.offset)+Vector3(action.get("step",Vector3.ZERO))*float(id-int(action.first_actor))
+						if _encounter.respawn_story_actors(id,id+1,at,1.0)<0 or not _encounter.place_story_actors(id,id+1,at,1.0,true):return reject(_encounter.error)
+				else:
+					var radius:=float(action.radius[0])+float(absi(hash([index,elapsed]))%maxi(1,int(action.radius[1])-int(action.radius[0])))
+					if not _encounter.place_story_actors(int(action.first_actor),int(action.end_actor),_pose.origin,radius):return reject(_encounter.error)
+				_action_marks["placed%d"%index]=true
+				if action.get("wake",false) and not _encounter.wake_story_actors(int(action.first_actor),int(action.end_actor)):return reject(_encounter.error)
+			elif action.action=="show" and action.has("ahead_of_player"):
+				# Parked ships appear once, ahead of the player.
+				if _action_marks.has("placed%d"%index):continue
+				var ahead:=_pose.origin-_pose.basis.z.normalized()*float(action.ahead_of_player)
+				if not _encounter.place_story_actors(int(action.first_actor),int(action.end_actor),ahead,maxf(1000.0,float(action.radius[1]))):return reject(_encounter.error)
+				_action_marks["placed%d"%index]=true
+			elif action.action=="show" and action.has("near_actors"):
+				# Parked ships appear once, on a ring round a random living ship
+				# of near_actors (or, by player_chance, round the player).
+				if _action_marks.has("placed%d"%index):continue
+				var actors: Array=_encounter.combat_snapshot().actors
+				var living: Array=range(int(action.near_actors[0]),int(action.near_actors[1])).filter(func(id):return int(actors[id].vitals.hull)>0)
+				var roll:=absi(hash([index,elapsed]))
+				var center: Vector3=_pose.origin if living.is_empty() or float(roll%1000)<1000.0*float(action.get("player_chance",0.0)) else actors[living[(roll/1000)%living.size()]].pose.origin
+				var radius:=float(action.radius[0])+float(roll%maxi(1,int(action.radius[1])-int(action.radius[0])))
+				if not _encounter.place_story_actors(int(action.first_actor),int(action.end_actor),center,radius):return reject(_encounter.error)
+				_action_marks["placed%d"%index]=true
 			elif action.action in ["show","destroy"]:
 				var actors: Array=_encounter.combat_snapshot().actors
 				var pending: bool=range(int(action.first_actor),int(action.end_actor)).any(func(id):return int(actors[id].vitals.hull)>0 and (action.action=="destroy" or not actors[id].get("model_draw_enabled",true)))
 				if pending and not _encounter.story_actor_action(int(action.first_actor),int(action.end_actor),action.action):return reject(_encounter.error)
+			elif action.action=="hostile":
+				# The cast turns on the player (W1: the criminal is found or hit).
+				if not _encounter.story_hostility_applied() and not _encounter.apply_story_hostility(-1,0):return reject(_encounter.error)
+			elif action.action=="stand_down":
+				# Once: the ships give up, neither hostile nor firing (W1 surrender).
+				if not _action_marks.has("stood%d"%index):
+					if not _encounter.stand_down_story_actors(int(action.first_actor),int(action.end_actor)):return reject(_encounter.error)
+					_action_marks["stood%d"%index]=true
 			elif action.action=="disarm":
 				var actors: Array=_encounter.combat_snapshot().actors
 				if range(int(action.first_actor),int(action.end_actor)).any(func(id):return actors[id].get("firing_allowed",false) and int(actors[id].vitals.hull)>0):
@@ -1661,7 +1891,7 @@ func _observe_radio() -> bool:
 				_station_hidden=true;_return_rules={}
 			elif action.action=="lock_player":
 				# No steering for the scene; "invulnerable" also keeps the ship unharmed.
-				var locked: bool=elapsed<int(action.after_ms)+int(action.duration_ms)
+				var locked: bool=not _story_line_passed(action.until,elapsed) if action.has("until") else elapsed<int(action.after_ms)+int(action.duration_ms)
 				if locked!=_story_locked:
 					_story_locked=locked
 					if action.get("invulnerable",false) and not _player.set_permissions(bool(_player.snapshot().active),not locked):return reject(_player.error)
@@ -1702,7 +1932,7 @@ func _observe_radio() -> bool:
 ## an awake non-friendly ship, ships destroyed so far, and the player's armour.
 func _story_radio_facts() -> Dictionary:
 	if _mission_context.contract_context().is_empty() or _mission_context.recipe().get("radio",[]).is_empty():return {}
-	var hostile_active:=false;var defeated:=0;var hulls:={};var distances:={};var emp:={}
+	var hostile_active:=false;var defeated:=0;var hulls:={};var distances:={};var emp:={};var maximum:={}
 	var actors: Array=_encounter.combat_snapshot().actors
 	for id in actors.size():
 		var actor: Dictionary=actors[id]
@@ -1710,11 +1940,21 @@ func _story_radio_facts() -> Dictionary:
 		hostile_active=hostile_active or (actor.get("active",false)==true and actor.get("friendly",false)!=true)
 		if int(actor.vitals.hull)<=0:defeated+=1
 		hulls[id]=int(actor.vitals.hull)
+		if int(actor.get("max_hull",0))>0:maximum[id]=int(actor.max_hull)
 		if actor.get("pose") is Transform3D:distances[id]=_pose.origin.distance_to(actor.pose.origin)
 		emp[id]=[int(actor.get("systems_hit_serial",0))>0,actor.get("systems_disabled",false)==true]
 	var facts:={"hostile_active":hostile_active,"defeated_targets":defeated,"player_armor_depleted":int(_player.snapshot().vitals.armor)<1,"hulls":hulls,"player_distances":distances,"emp":emp}
 	facts.radio_marks=_line_marks.duplicate(true)
-	if not _story_dock.is_empty():facts.merge({"story_docked":int(_story_dock.docked),"story_aboard":int(_story_dock.aboard),"story_status":int(_story_dock.status)})
+	facts.maximum_hulls=maximum
+	if _scanner!=null:facts.player_target=int(_scanner.snapshot().get("selected_actor_id",-1))
+	if _action_marks.has("respawned"):facts.story_respawned_ms=int(_action_marks.respawned)
+	if not _story_route.is_empty() and _story_route.point is Vector3:facts.player_route_reached=_pose.origin.distance_to(_story_route.point)<=float(_story_route.reach)
+	if not _story_dock.is_empty():
+		# When the status first reached each value (condition 34's hold time).
+		var marks: Dictionary=_story_dock.get("status_marks",{})
+		if not marks.has(int(_story_dock.status)):marks[int(_story_dock.status)]=int(_briefing.snapshot().world_elapsed_ms)
+		_story_dock.status_marks=marks
+		facts.merge({"story_hacks":int(_story_dock.get("hacks",0)),"story_docked":int(_story_dock.docked),"story_aboard":int(_story_dock.aboard),"story_status":int(_story_dock.status),"story_status_marks":marks.duplicate()})
 	return facts
 
 func _advance_world(milliseconds: int, preceding_reference: Vector3) -> bool:
@@ -2371,9 +2611,15 @@ func start_drive(station_id: int,story_jump:=false) -> RefCounted:
 		if not next._notices.enqueue(21):reject(next._notices.error);return null
 		return next
 	# A story mission may need passenger berths before its target can be set.
-	var refusal: int=load("res://src/content/valkyrie_campaign_definitions.gd").entry_refusal(int(_entry.campaign_cursor),station_id,_passenger_berths(_story_catalogues,next._equipment.snapshot().loadout))
+	var loadout: Dictionary=next._equipment.snapshot().loadout;var fitted: Array=Array(loadout.get("equipment_ids",[]))
+	var sorts: Array=[] if _story_catalogues==null else fitted.map(func(id):return int(_story_catalogues.tables.items[int(id)].properties.get(2,-1)))
+	var refusal: int=load("res://src/content/valkyrie_campaign_definitions.gd").entry_refusal(int(_entry.campaign_cursor),station_id,_passenger_berths(_story_catalogues,loadout),fitted,sorts,int(loadout.get("ship_id",-1)))
 	if not story_jump and refusal>=0:
 		if not next._notices.enqueue(refusal):reject(next._notices.error);return null
+		return next
+	# Volatile cargo aboard: the Khador Drive refuses to jump (text 601).
+	if not story_jump and next._volatile_carried():
+		if not next._notices.enqueue(load("res://src/content/valkyrie_campaign_definitions.gd").ENTRY_NOTICE_BASE+int(Worlds.VOLATILE_GOODS.drive_text_id)):reject(next._notices.error);return null
 		return next
 	var operation: Dictionary=next._drive.evaluate_request(station_id,next._cargo,story_jump)
 	if operation.is_empty() or not operation.started:reject(next._drive.error if operation.is_empty() else "Not enough energy cells for this jump");return null
@@ -2496,7 +2742,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	state.player_engine=_engine_audio.snapshot()
 	if _wingmen!=null:state.wingman_actors=_wingmen.snapshot()
 	state.merge({"world_type":_entry.world_type,"location":_entry.location.duplicate(true),"activated":true,
-		"player_pose":_pose,"control_throttle":_throttle,"player":_player.snapshot(),"gamma_rate":_gamma_rate,"player_cache":_player.cache_snapshot(),"angular_units":_pilot.angular_units,
+		"player_pose":_pose,"control_throttle":_throttle,"player":_player.snapshot(),"gamma_rate":_gamma_rate,"volatile":_volatile_carried(),"instability":_instability,"player_cache":_player.cache_snapshot(),"angular_units":_pilot.angular_units,
 		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),
 		"ship_detail":_detail.snapshot(),"detail_reference":_reference,"actors":[],"random_state":_random.duplicate(true),
 		"cargo":held,"arrival_from_station_id":int(_entry.departure.get("from_station_id",-1)),
@@ -2551,6 +2797,9 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 		state.local_travel=_local_travel.snapshot()
 		if state.local_travel.phase=="arrival_required" and not death_active():state.boundary="local_arrival_transition_required"
 	if not _navigation.is_empty() or _rescue!=null:state.player_route={} if _route==null else _route.snapshot()
+	elif _story_course():
+		# A story course (105 toward the sun, 125 the black box site).
+		state.player_route={} if not _story_route.get("point") is Vector3 else {"base_content_id":_entry.base_content_id,"binding_id":_entry.binding_id,"owner":"player","story":true,"point":_story_route.point}
 	if _rescue!=null:state.kappa_rescue=_rescue.snapshot()
 	if _objective is ContractObjective:state.world_path=_world_path.duplicate(true)
 	if not _audio_frame.is_empty():state.flight_audio=_audio_frame.duplicate(true)
@@ -2630,7 +2879,7 @@ func fork_for_frame() -> RefCounted:
 	if _gate_transit!=null:copy._gate_transit=_gate_transit.fork_for_frame()
 	copy._gate_destinations=_gate_destinations.duplicate();copy._gate_cruise_speed=_gate_cruise_speed
 	copy._system_navigation=_system_navigation;copy._navigation_destinations=_navigation_destinations
-	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied;copy._queued_drive=_queued_drive;copy._story_jump=_story_jump;copy._story_locked=_story_locked;copy._story_dock=_story_dock.duplicate(true);copy._action_marks=_action_marks.duplicate();copy._line_marks=_line_marks.duplicate(true);copy._gamma_rate=_gamma_rate
+	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied;copy._queued_drive=_queued_drive;copy._story_jump=_story_jump;copy._story_locked=_story_locked;copy._story_dock=_story_dock.duplicate(true);copy._action_marks=_action_marks.duplicate();copy._line_marks=_line_marks.duplicate(true);copy._gamma_rate=_gamma_rate;copy._instability=_instability;copy._volatile_steer=_volatile_steer;copy._story_cloaks=_story_cloaks.duplicate(true);copy._story_hack=_story_hack;copy._story_route=_story_route.duplicate()
 	copy._briefing=_briefing.fork();copy._player=_player.fork_for_frame();copy._scenery=_scenery.fork_for_frame()
 	copy._camera=_camera.fork_for_frame();copy._pilot=_pilot.fork_for_frame();copy._detail=_detail.fork_for_frame()
 	copy._collision_enabled=_collision_enabled

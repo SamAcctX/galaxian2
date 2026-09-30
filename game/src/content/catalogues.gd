@@ -43,6 +43,13 @@ func open(library: RefCounted) -> bool:
 			return false
 		staged[name] = rows
 		origins[name] = {"resource": path, "sha256": library.manifest.files[path].sha256}
+	# The expansion's Most Wanted list; packs without it have no boards.
+	var wanted_path: String = load("res://src/content/wanted_table.gd").RESOURCE
+	if library.manifest.files.has(wanted_path):
+		var wanted: Array = load("res://src/content/wanted_table.gd").decode(library.read_resource(wanted_path, MAX_TABLE_BYTES))
+		if wanted.is_empty():
+			return fail("Unsupported Most Wanted list")
+		staged.wanted = wanted
 	if not validate_relationships(staged):
 		return false
 	# Publish only after every table and reference is valid; a failed open is empty.

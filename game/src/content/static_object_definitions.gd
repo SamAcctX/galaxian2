@@ -52,6 +52,14 @@ const MODELS:={
 	# parts 18781-18784 (registration type 6, no loader yet) are left out.
 	18781:{"layers":[21076,21876,22076],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
 		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
+	# 102: the Terran carrier, its hull and six parts (verified
+	# createStaticObject 18804); the story keeps it unharmed.
+	18804:{"layers":[18804,18805,18807,18808,18809,18810,18806],"collision_record":-1,"hit_radius":1500,"wreck_model":-1,"death_sound":-1,
+		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
+	# 102: Tadram's exterior, drawn with station mesh 16800 (verified
+	# createStaticObject 21113); invulnerable.
+	21113:{"layers":[16800],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
+		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
 	16992:{"layers":[16992],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
 		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
 }

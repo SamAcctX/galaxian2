@@ -89,6 +89,7 @@ var _jump_button: Button
 var _time_button: Button
 var _boost_button: Button
 var _cloak_charge: Control
+var _hacking: Control
 var _cloak_dialog: Control
 var _cloak_generation:=0
 var _cloak_failure_serial:=0
@@ -234,6 +235,9 @@ func _ready() -> void:
 	_cloak_charge.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_cloak_dialog=GateConfirmationPanel.new();host.add_child(_cloak_dialog)
 	_cloak_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_hacking=preload("res://src/presentation/hacking_panel.gd").new();host.add_child(_hacking)
+	_hacking.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_hacking.turn_requested.connect(hack_press)
 	_cloak_dialog.choice_requested.connect(func(_choice):_close_cloak_notice())
 	_launch_dialog=GateConfirmationPanel.new();host.add_child(_launch_dialog)
 	_launch_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -251,6 +255,7 @@ func set_context(content: RefCounted, definitions: RefCounted, prepared_visuals:
 	if library!=null and bindings!=null and visuals!=null and touch_overlay.configure(library,bindings,visuals):
 		_style_touch_buttons()
 		if not _cloak_charge.configure(library,bindings,visuals):status.text=_cloak_charge.error
+		if not _hacking.configure(library,bindings,visuals):status.text=_hacking.error
 	refresh_render_mode()
 
 func _style_touch_buttons() -> void:
@@ -264,7 +269,19 @@ func _style_touch_buttons() -> void:
 		for state in ["pressed","hover_pressed"]:button.add_theme_stylebox_override(state,_touch_icon_style(art[row[2]]))
 		button.add_theme_stylebox_override("focus",OriginalUI.focus_style(true))
 
+## The story hacking puzzle while docked at a hack point.
+func _sync_hacking() -> void:
+	if _hacking==null:return
+	var state: Dictionary=session.flight_owner().story_hack_state() if session is FirstFlightSession and session.flight_owner()!=null else {}
+	_hacking.present(state if _hacking.available() else {},bool(state.get("highlighted",false)))
+
+## A hacking button press (on-screen, keys or controller).
+func hack_press(button: String) -> bool:
+	if not session is FirstFlightSession or session.flight_owner()==null or not session.flight_owner().story_hack_press(button):return false
+	present_session();return true
+
 func _sync_cloak_ui(flight: Dictionary={}) -> void:
+	_sync_hacking()
 	if _cloak_charge==null:return
 	var generation: int=0 if session==null else session.get_instance_id()
 	if generation!=_cloak_generation:
@@ -782,6 +799,17 @@ func _unhandled_input(event: InputEvent) -> void:
 			elif session.snapshot().phase=="station_equipment_required" and action=="next":equipment_action("open")
 			else:station_navigation(action)
 			get_viewport().set_input_as_handled();return
+	# Hacking: left/right (arrows, A/D, shoulder buttons) turn the blocks.
+	if session is FirstFlightSession and session.flight_owner()!=null and not session.flight_owner().story_hack_state().is_empty() and not session.is_paused():
+		var turn:=""
+		if event is InputEventKey and event.pressed and not event.echo:
+			var key: int=event.physical_keycode if event.physical_keycode else event.keycode
+			if key in [KEY_LEFT,KEY_A]:turn="left"
+			elif key in [KEY_RIGHT,KEY_D]:turn="right"
+		elif event is InputEventJoypadButton and event.pressed:
+			if event.button_index in [JOY_BUTTON_LEFT_SHOULDER,JOY_BUTTON_DPAD_LEFT]:turn="left"
+			elif event.button_index in [JOY_BUTTON_RIGHT_SHOULDER,JOY_BUTTON_DPAD_RIGHT]:turn="right"
+		if not turn.is_empty():hack_press(turn);get_viewport().set_input_as_handled();return
 	if session.can_control():
 		if session is FirstFlightSession:
 			if event is InputEventKey:

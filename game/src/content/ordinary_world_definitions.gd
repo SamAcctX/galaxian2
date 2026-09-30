@@ -28,8 +28,8 @@ const SYSTEMS={
 	17:{"system_id":17,"station_ids":[85,86,87,88,89],"planet_types":[13,9,8,7,16],"station_models":[10,8,3,2,5],"system_fields":[1,1,2,26,21,79,85,8],"system_arrays":[[14,0,0],[85,86,87,88,89],[2,4,9,26,29],[0,1,2]],"faction":2,"security":1,"gate_station_id":85,"sky_index":8},
 }
 
-const EXPANSION_LAST_SYSTEM:=30
-const EXPANSION_LAST_STATION:=127
+const EXPANSION_LAST_SYSTEM:=31
+const EXPANSION_LAST_STATION:=131
 
 const MAC_SPANS = {"ordinary_world_special_planet":[873058,80],"ordinary_world_station_equality":[853920,22],"ordinary_world_station_id":[851984,10],"ordinary_world_special_size":[844005,59]}
 

@@ -7,14 +7,15 @@ extends RefCounted
 ## are destroyed. Read from the Mac mission factory, radio factory and level
 ## script.
 const Campaign=preload("res://src/content/valkyrie_campaign_definitions.gd")
+const Wanted=preload("res://src/simulation/wanted_board.gd")
 const FLIGHT_KINDS:=[1,4,6,10,156,160,163,164]
 const ADVANCE_AFTER_MS:=10000
 ## Supernova's people-moving flights (kind 184) are scripted flights at their
 ## target station.
-const STORY_FLIGHT_KINDS:=[184,170]
+const STORY_FLIGHT_KINDS:=[184,170,174,168]
 ## Scripted flights whose result conversation plays in flight (over the radio,
 ## after the recipe's own lines); the lines live in the dialogue RESULT table.
-const IN_FLIGHT_RESULTS:=[95,97,99,102,109,114]
+const IN_FLIGHT_RESULTS:=[95,97,99,102,109,114,119,125,126,133,135]
 ## [speaker, text, voice, condition, value]: 5 = after the level time,
 ## 6 = after the given earlier line.
 const RADIO:={
@@ -67,6 +68,117 @@ const ESCORT_HULL:=9999999
 ## 40 km back, the cutscene cameras and the pirates' flight away are not built,
 ## and the result lines play over the radio instead of opening a dialogue.
 const SCRIPTED:={
+	# 119: cutaway at Thynome (N1): caption at 2 s, the result 2 s after it ends,
+	# then the story moves on (MOVE_ON_ENTRY 120).
+	119:{"points":[Vector3.ZERO],"groups":[],"radio":[[17,2734,-1,5,[2000]]],
+		"timed_actions":[{"after_ms":0,"action":"cutaway"}],"result_after":[35,[0,2000,1]],
+		"success":{"kind":"radio_finished","index":11}},
+	# 126: cutaway at Katashán (N1): caption at 2 s, the result 2 s after it ends,
+	# then the story moves on (MOVE_ON_ENTRY 127).
+	126:{"points":[Vector3.ZERO],"groups":[],"radio":[[17,2817,-1,5,[2000]]],
+		"timed_actions":[{"after_ms":0,"action":"cutaway"}],"result_after":[35,[0,2000,1]],
+		"success":{"kind":"radio_finished","index":6}},
+	# 133: cutaway at Katashán (N1): caption at 2 s, the result 2 s after it ends,
+	# then the story moves on (MOVE_ON_ENTRY 134).
+	133:{"points":[Vector3.ZERO],"groups":[],"radio":[[17,2856,-1,5,[2000]]],
+		"timed_actions":[{"after_ms":0,"action":"cutaway"}],"result_after":[35,[0,2000,1]],
+		"success":{"kind":"radio_finished","index":3}},
+	# 120: Valadon. Two stealth fighters (race 10, hull 44, hostile) appear
+	# beside the player, one 4 km ahead and one 4 km behind; Keith at 1.5 s;
+	# done when his line is over (the fight is optional; they stay).
+	# Assumption: the sideways part of their offset (not recovered) is 0.
+	120:{"points":[Vector3(0,0,-80000)],
+		"groups":[{"count":1,"faction":10,"hull":44,"friendly":false,"position":{"kind":"player_offset","offset":Vector3(0,0,4000),"bound":Vector3.ZERO}},
+			{"count":1,"faction":10,"hull":44,"friendly":false,"position":{"kind":"player_offset","offset":Vector3(0,0,-4000),"bound":Vector3.ZERO}}],
+		"radio":[[0,2746,2121,5,[1500]]],
+		"success":{"kind":"radio_finished","index":0}},
+	# 123: Névan clearance. No cast; security at 8 s, Moonsprocket, security,
+	# Keith; done when Keith's line is over.
+	123:{"points":[Vector3.ZERO],"groups":[],
+		"radio":[[22,2774,2122,5,[8000]],[38,2775,2123,6,[0]],[22,2776,2124,6,[1]],[0,2777,2125,6,[2]]],
+		"success":{"kind":"radio_finished","index":3}},
+	# 125: Kappa, the freighter's black box. #0-#1 pirates awake at the
+	# origin; #2-#7 pirates hidden and asleep; #8-#10 Secure Containers
+	# (18785, hacking docks, off until the site is reached); #11-#14 debris.
+	# Line #1 gives the player a course to (-70000,0,-130000) (action route);
+	# reaching it (52) names the containers and plays #2. After #2: #2-#5
+	# appear 1-2 km around the player, 7 s scene (#3); then they attack and
+	# the containers can be hacked (#4). Each won hack (50): #5 black box,
+	# #6 nothing (and #6-#7 appear and attack), #7 "Bingo!". Then Brent's
+	# result over the radio; the story moves on (Katashán launch, 126).
+	# Assumptions: the debris spread (random in the original) is fixed.
+	125:{"points":[Vector3.ZERO,Vector3(-70000,0,-130000)],
+		"groups":[{"count":2,"faction":8,"hull":-1,"friendly":false,"index":0,"offsets":[-1500,-1500,-1500],"bounds":[3000,3000,3000]},
+			{"count":6,"faction":8,"hull":-1,"friendly":false,"sleeping":true,"hidden":true,"index":0,"offsets":[-1500,-1500,-1500],"bounds":[3000,3000,3000]},
+			{"count":1,"faction":8,"friendly":true,"static":{"model":18785,"jitter":0,"offset":Vector3(-80000,0,-160000)},"name_text_id":3201,"name_number":1,"dock":"hack","dockable":false,"hidden":true},
+			{"count":1,"faction":8,"friendly":true,"static":{"model":18785,"jitter":0,"offset":Vector3(-72000,0,-190000)},"name_text_id":3201,"name_number":2,"dock":"hack","dockable":false,"hidden":true},
+			{"count":1,"faction":8,"friendly":true,"static":{"model":18785,"jitter":0,"offset":Vector3(-66000,53000,-170000)},"name_text_id":3201,"name_number":3,"dock":"hack","dockable":false,"hidden":true},
+			{"count":1,"faction":8,"friendly":true,"static":{"model":18786,"jitter":0,"offset":Vector3(-72000,0,-145000)},"name_text_id":-1},
+			{"count":1,"faction":8,"friendly":true,"static":{"model":18786,"jitter":0,"offset":Vector3(-68000,-200,-149000)},"name_text_id":-1},
+			{"count":1,"faction":8,"friendly":true,"static":{"model":18786,"jitter":0,"offset":Vector3(-64000,-400,-153000)},"name_text_id":-1},
+			{"count":1,"faction":8,"friendly":true,"static":{"model":18786,"jitter":0,"offset":Vector3(-60000,-600,-157000)},"name_text_id":-1}],
+		"radio":[[0,2793,2126,5,[1500]],[0,2803,2136,6,[0]],[0,2804,2137,52,[0]],[10,2805,2138,6,[2]],
+			[0,2806,2139,35,[3,7000,0]],[0,2807,2140,50,[1]],[0,2809,2142,50,[2]],[0,2810,2143,50,[3]]],
+		"radio_actions":[{"radio_index":1,"action":"route","points":[Vector3(-70000,0,-130000)]},
+			{"radio_index":2,"action":"show","first_actor":8,"end_actor":11},
+			{"radio_index":3,"action":"show","first_actor":2,"end_actor":6,"center":"player","radius":[1000,2000]},
+			{"radio_index":3,"action":"lock_player","hidden":true,"invulnerable":true,"duration_ms":7000},
+			{"radio_index":4,"action":"wake","first_actor":2,"end_actor":6},
+			{"radio_index":4,"action":"dockable","first_actor":8,"end_actor":11,"enabled":true},
+			{"radio_index":6,"action":"show","first_actor":6,"end_actor":8,"center":"player","radius":[1000,2000],"wake":true}],
+		"success":{"kind":"radio_finished","index":13}},
+	# 131: Var Lupra, the plasma array platform. No cast; the player is held
+	# for the fly-past; Keith at 3 s; control returns and the flight is done
+	# when his line is over. Assumption: no camera path (fixed view).
+	131:{"points":[Vector3.ZERO],"groups":[],
+		"radio":[[0,2848,2144,5,[3000]]],
+		"timed_actions":[{"after_ms":0,"action":"lock_player","invulnerable":true,"until":[6,[0]]}],
+		"success":{"kind":"radio_finished","index":0}},
+	# 135: Coromesk mining contract (kind 174; gate: a mining drill). The
+	# orbit's asteroids all give Titanium (155). #0 the Mining Plant (19080,
+	# "Mining Plant", docking point "deliver": one Titanium from the hold per
+	# second, status +1, HUD event 0x2a); #1-#2 pirates hidden and asleep.
+	# The foreman's briefing at 1.5 s. Docked at the plant or 60 s: the
+	# pirates appear 25/26 km out (+5 km up) from the player and attack (#4);
+	# status >= 70: #6; every 75 s from #4 the dead ones come back at the same
+	# offsets, and the first return after #6 plays #7. Status 140: the
+	# foreman's result, then the story moves on (136).
+	# Assumptions: the briefing plays in flight (Coromesk has no station);
+	# a docking delivers what is in the hold (the limit is not recovered).
+	135:{"points":[Vector3.ZERO],"asteroid_ore":155,
+		"groups":[{"count":1,"faction":8,"friendly":true,"static":{"model":19080,"jitter":0},"name_text_id":3199,"dock":"deliver","dockable":true},
+			{"count":2,"faction":8,"hull":-1,"friendly":false,"sleeping":true,"hidden":true,"index":0,"offsets":[0,0,0],"bounds":[1,1,1]}],
+		"radio":[[49,2868,2035,5,[1500]],[0,2869,2036,6,[0]],[49,2870,2037,6,[1]],[0,2871,2038,6,[2]],
+			[49,2872,2145,36,[[32,[0]],[5,[60000]]]],[0,2873,2146,6,[4]],[0,2874,2147,51,[70]],[0,2875,2148,53,[6]]],
+		"radio_actions":[{"radio_index":4,"action":"show","first_actor":1,"end_actor":3,"center":"player","offset":Vector3(25000,5000,25000),"step":Vector3(1000,0,0),"wake":true},
+			{"radio_index":4,"action":"respawn","first_actor":1,"end_actor":3,"every_ms":75000,"center":"player","offset":Vector3(25000,5000,25000),"step":Vector3(1000,0,0)}],
+		"result_after":[51,[140]],
+		"success":{"kind":"radio_finished","index":9}},
+	# 137: B'akrram. No cast; Vossk control at 1.5 s, four more lines; done
+	# when "You may proceed to the conference area." is over.
+	137:{"points":[Vector3.ZERO],"groups":[],
+		"radio":[[50,2884,2149,5,[1500]],[0,2885,2150,6,[0]],[50,2886,2151,6,[1]],[0,2887,2152,6,[2]],[50,2888,2153,6,[3]]],
+		"success":{"kind":"radio_finished","index":4}},
+	# 139: Bra'Murr, the Vossk prism (kind 168; gate: a Vossk ship). #0-#1
+	# Vossk Battleships (19051, "Battleship 1/2", hacking docks, cannot be
+	# destroyed); #2-#6 and #7-#11 Vossk fighters looping near each ship,
+	# friendly. Keith at 8 s. The first won hack (either ship): no prism, its
+	# dock closes, #1 and every Vossk ship turns hostile, #2-#3. The second
+	# won hack: that ship becomes a transfer point with the player docked
+	# (story_aboard reset to 0; +1 per 1.5 s while docked); #4. Ten counted:
+	# #5 (the result line) and the story moves on (140).
+	# Assumptions: the ten turrets on the battleships are not built (their
+	# placement is not recovered and story turrets do not fire yet).
+	139:{"points":[Vector3(-50000,-1500,70000),Vector3(-200000,-1500,30000),Vector3(-70000,0,80000),Vector3(-30000,0,60000),Vector3(-220000,0,40000),Vector3(-180000,0,20000)],
+		"groups":[{"count":1,"faction":1,"friendly":true,"static":{"model":19051,"jitter":0,"offset":Vector3.ZERO},"index":0,"name_text_id":1656,"name_number":1,"dock":"hack","dockable":true,"unharmable":true},
+			{"count":1,"faction":1,"friendly":true,"static":{"model":19051,"jitter":0,"offset":Vector3.ZERO},"index":1,"name_text_id":1656,"name_number":2,"dock":"hack","dockable":true,"unharmable":true},
+			{"count":5,"faction":1,"hull":-1,"friendly":true,"index":0,"route_start":2,"route_loop":[2,3],"offsets":[-1000,-1000,-1000],"bounds":[2000,2000,2000]},
+			{"count":5,"faction":1,"hull":-1,"friendly":true,"index":1,"route_start":4,"route_loop":[4,5],"offsets":[-1000,-1000,-1000],"bounds":[2000,2000,2000]}],
+		"radio":[[0,2913,2237,5,[8000]],[0,2914,2154,50,[1]],[50,2915,2155,6,[1]],[50,2916,2156,6,[2]],[0,2917,2157,50,[2]],[0,2918,1902,33,[10]]],
+		"radio_actions":[{"radio_index":1,"action":"dockable","target":"last_hacked","enabled":false},
+			{"radio_index":4,"action":"transfer","target":"last_hacked","mode":"board","reset":true}],
+		"turn_hostile":{"radio_index":1},
+		"success":{"kind":"radio_finished","index":5}},
 	# 95: cutaway at Thynome (N1): the player is held out of sight while the
 	# camera drifts; caption at 2 s; the result 2 s after it ends; the story
 	# moves on when the last line is over (MOVE_ON_ENTRY 96).
@@ -93,7 +205,9 @@ const SCRIPTED:={
 	97:{"points":[Vector3(0,0,50000)],
 		"groups":[{"count":12,"faction":8,"hull":-1,"friendly":false,"index":0,"offsets":[-5000,-5000,-5000],"bounds":[10000,10000,10000]},
 			{"count":4,"faction":2,"hull":-1,"friendly":true,"index":0,"offsets":[-5000,-5000,-5000],"bounds":[10000,10000,10000]},
-			{"count":3,"faction":2,"hull":15,"friendly":true,"freighter":true,"moving":false,"index":0,"offsets":[-8000,-2000,-8000],"bounds":[16000,4000,16000]}],
+			# Assumption: the three capitals (hull 15, built from parts) are drawn
+			# as the Nivelian freighter assembly.
+			{"count":3,"faction":2,"hull":-1,"friendly":true,"freighter":true,"moving":false,"index":0,"offsets":[-8000,-2000,-8000],"bounds":[16000,4000,16000]}],
 		"radio":[[0,2571,2089,5,[1500]],[22,2572,2090,6,[0]],[0,2573,2091,6,[1]]],
 		"result_after":[30,[12,0,12]],
 		"success":{"kind":"radio_finished","index":5}},
@@ -135,6 +249,8 @@ const SCRIPTED:={
 			{"radio_index":3,"action":"wake","first_actor":6,"end_actor":10},
 			{"radio_index":3,"action":"respawn","first_actor":6,"end_actor":10,"every_ms":60000,"near_actors":[2,6],"player_chance":0.2,"radius":[35000,45000],"until_radio":7},
 			{"radio_index":7,"action":"lock_player","hidden":true,"duration_ms":12000,"invulnerable":true}],
+		# Dropships unload at the carrier, one person per 0.2 s while there (N2).
+		"shuttles":{"first_actor":2,"end_actor":6,"dock":0,"visit_ms":20000,"transfer_ms":200},
 		"success":{"kind":"radio_finished","index":14},"failure":{"kind":18,"first_actor":2,"end_actor":6}},
 	# 105: Naneroh bomb run (gate: Gamma Shield II fitted). The player flies a
 	# route 650 km toward the sun (N3); #0-#1 Cronus escorts beside them with
@@ -405,6 +521,13 @@ const CALLS:={84:[[6,2463,1565],[0,2464,1566]],
 ## Systems opened when a story flight moves the career on: [cursor]: systems.
 const STORY_UNLOCKS:={61:[22],97:[29]}
 const CALL_AFTER_MS:=12000
+## Search sites (R1): while the cursor is here, the first flight at each
+## listed station marks it searched (progress "story_search_mask", one bit per
+## station in list order) and Keith says one random opener at 1.5 s, then one
+## random "no reading" line. The star map and radar mark unsearched stations.
+## The real site (55, Kappa) is the scripted flight. [text, voice].
+const SEARCH_SITES:={125:{"stations":[15,30,40,45,60,70,80,85,95],
+	"openers":[[2793,2126],[2794,2127],[2795,2128],[2796,2129]],"misses":[[2799,2132],[2800,2133],[2801,2134],[2802,2135]]}}
 ## Carla's one-shot calls, armed while the cursor is in [from, to]: in flight
 ## outside the alien world, with no freelance job, 12 s into the flight
 ## (original: 12 s of play after the cursor moved). [speaker, text, voice];
@@ -417,6 +540,13 @@ const TURN_HOSTILE_AFTER:={50:{"radio_index":2,"reputation_axis":0,"reputation_v
 
 ## The story job selected at this location, if the career is in a story flight.
 static func story_job(bindings: RefCounted,cursor: Variant,station_id: Variant,progress: Dictionary={}) -> Dictionary:
+	if cursor is int and station_id is int and Campaign.saved_story(bindings,cursor) and _wanted_entry(cursor)>=0:return _wanted_job(cursor,station_id,progress)
+	if cursor is int and station_id is int and Campaign.saved_story(bindings,cursor) and SEARCH_SITES.has(cursor) and SEARCH_SITES[cursor].stations.has(station_id):
+		var index: int=SEARCH_SITES[cursor].stations.find(station_id)
+		var searched:=int(progress.get("story_stations_mask",0))
+		if searched & (1<<index):return {}
+		return {"kind":-1,"station_id":station_id,"reward":0,"bonus":0,"difficulty":1,"quantity":0,"story":false,"story_job":true,
+			"campaign_cursor":cursor,"target_station_id":int(Campaign.mission(cursor).station_id),"search_index":index,"cleared_mask":searched}
 	if not cursor is int or not station_id is int or not Campaign.saved_story(bindings,cursor) or not (CASTS.has(cursor) or COMBAT.has(cursor) or CONVOY.has(cursor) or CALLS.has(cursor) or SCRIPTED.has(cursor)):return {}
 	var mission:=Campaign.mission(cursor)
 	if mission.is_empty() or (int(mission.kind) not in FLIGHT_KINDS+STORY_FLIGHT_KINDS and not CALLS.has(cursor)):return {}
@@ -431,6 +561,73 @@ static func story_job(bindings: RefCounted,cursor: Variant,station_id: Variant,p
 		if faction<0:return {}
 		job.merge({"convoy_index":index,"cleared_mask":cleared,"faction":faction})
 	return job
+
+## The story's Most Wanted criminal (W1: Pal Tyyrt at 128, Kehnor at 130)
+## is met flying at the station where he currently is (progress "wanted").
+## The job carries his stats, his hull and the board state after he gives up;
+## `progress.wanted_job` rebuilds a retained job unchanged.
+static func _wanted_entry(cursor: int) -> int:
+	for entry in Campaign.WANTED.story_entries:
+		if int(Campaign.WANTED.story_entries[entry])==cursor:return int(entry)
+	return -1
+
+static func _wanted_job(cursor: int,station_id: int,progress: Dictionary) -> Dictionary:
+	var index:=_wanted_entry(cursor)
+	var wanted: Variant=progress.get("wanted_job")
+	if wanted==null:
+		var state: Variant=progress.get("wanted")
+		if Wanted.criminal_at(state,station_id)!=index:return {}
+		var stats: Dictionary=state.entries[index].stats
+		var hull:=Wanted.spawn_hull(stats,int(progress.get("rank",0)),cursor,false,float(progress.get("difficulty",0.5)))
+		wanted={"index":index,"stats":stats.duplicate(true),"hull":hull,"after":Wanted.surrendered(state,index)}
+	if not wanted is Dictionary or int(wanted.get("index",-1))!=index:return {}
+	return {"kind":-1,"station_id":station_id,"reward":0,"bonus":0,"difficulty":1,"quantity":0,
+		"story":false,"story_job":true,"campaign_cursor":cursor,"target_station_id":station_id,"wanted":wanted.duplicate(true)}
+
+## [speaker, text, voice]: his lines when the player targets him ("uncover",
+## Keith first) and when first hit ("attack"). Speakers 45/46 are the
+## original's Pal Tyyrt and Kehnor.
+const WANTED_RADIO:={0:{"uncover":[[0,3123,2215],[45,3124,2216]],"attack":[[45,3121,2213],[0,3122,2214]]},
+	1:{"uncover":[[0,3128,2220],[46,3129,2221]],"attack":[[46,3125,2217],[0,3126,2218],[46,3127,2219]]}}
+## Where he flies as the player arrives. Assumption: ahead of the player
+## (the original puts him at the orbit's first route point).
+const WANTED_OFFSET:=Vector3(0,0,-15000)
+
+## His ship (and wingmen at half his hull) of his race, not yet hostile.
+## Targeting him or hitting him makes them hostile; below a third of his hull
+## he gives up (stops fighting), the cursor's result plays over the radio and
+## the story moves on with him off the board (not dead, no bounty).
+static func _wanted_recipe(job: Dictionary) -> Dictionary:
+	var cursor:=int(job.campaign_cursor);var wanted: Dictionary=job.wanted;var stats: Dictionary=wanted.stats
+	var faction:=8 if int(stats.race)>=4 else int(stats.race)
+	var calm:={"initial_hostile":false,"updated_hostile":false,"friendly":false}
+	var groups:=[{"first_actor":0,"end_actor":1,"faction":faction,"population_group":"story","origin":"zero","hull_catalogue_id":int(stats.ship),
+		"display_name":String(stats.name),"cargo_override":{"entries":[{"item_id":int(stats.loot[0]),"quantity":int(stats.loot[1])}],"special":false},
+		"ship_state":{"mode":0,"active":true,"targeting_blocked":false,"hull_override":int(wanted.hull)},"policy":calm.duplicate(),
+		"position":{"kind":"player_offset","offset":WANTED_OFFSET,"bound":Vector3.ZERO}}]
+	var count:=1+int(stats.wingmen)
+	if count>1:
+		groups.append({"first_actor":1,"end_actor":count,"faction":faction,"population_group":"story","origin":"zero",
+			"ship_state":{"mode":0,"active":true,"targeting_blocked":false,"hull_override":int(wanted.hull)/2},"policy":calm.duplicate(),
+			"position":{"kind":"player_offset","offset":WANTED_OFFSET-Vector3(1500,0,1500),"bound":Vector3(3000,1000,3000)}})
+	var lines: Dictionary=WANTED_RADIO.get(int(wanted.index),{})
+	var radio:=[];var actions:=[]
+	for part in ["uncover","attack"]:
+		var first:=radio.size()
+		for row in lines.get(part,[]):
+			var own: bool=radio.size()==first
+			radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":(55 if part=="uncover" else 54) if own else 6,
+				"values":([0] if part=="uncover" else [0,1,1]) if own else [radio.size()-1]})
+		actions.append({"radio_index":first,"action":"hostile"})
+	var result: Array=Campaign.Dialogue.RESULT.get(cursor,[])
+	var surrender:=radio.size()
+	for row in result:
+		radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":54 if radio.size()==surrender else 6,
+			"values":[0,1,Wanted.SURRENDER_DIVISOR] if radio.size()==surrender else [radio.size()-1]})
+	actions.append({"radio_index":surrender,"action":"stand_down","first_actor":0,"end_actor":count})
+	var advance:=_advance(cursor);advance.progress={"wanted":wanted.after.duplicate(true)}
+	return {"actor_count":count,"ship_groups":groups,"radio":radio,"radio_actions":actions,
+		"success":{"kind":"radio_finished","index":radio.size()-1},"story":advance,"turn_hostile":{}}
 
 ## Kills that count toward a convoy mission's story counter.
 static func counts_kill(cursor: Variant,kill: Dictionary,excluded: Array) -> bool:
@@ -449,6 +646,8 @@ static func is_story_job(mission: Variant) -> bool:
 ## Recipe parts for the shared contract cast factory and result runner.
 static func recipe(job: Dictionary) -> Dictionary:
 	var cursor:=int(job.campaign_cursor)
+	if job.has("wanted"):return _wanted_recipe(job)
+	if job.has("search_index"):return _search_recipe(job)
 	if COMBAT.has(cursor):return _combat_recipe(job)
 	if CONVOY.has(cursor):return _convoy_recipe(job)
 	if SCRIPTED.has(cursor):return _scripted_recipe(cursor)
@@ -508,7 +707,7 @@ static func _combat_recipe(job: Dictionary) -> Dictionary:
 		"story":_advance(cursor),"turn_hostile":{},"disarm_on_advance":[targets.min(),targets.max()+1] if plan.get("disarm",false) else []}
 
 static func _scripted_recipe(cursor: int) -> Dictionary:
-	var plan: Dictionary=SCRIPTED[cursor];var groups:=[];var first:=0
+	var plan: Dictionary=SCRIPTED[cursor];var groups:=[];var first:=0;var cloakers:=[];var wakes:=[]
 	for row in plan.groups:
 		var friendly: bool=row.friendly
 		if row.has("static"):
@@ -523,10 +722,16 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 		if row.has("name_text_id"):group.name_text_id=int(row.name_text_id)
 		if int(row.get("hull",-1))>=0:group.hull_catalogue_id=int(row.hull)
 		if row.has("hull_override"):group.ship_state.hull_override=int(row.hull_override)
+		if row.has("hull_scale"):group.ship_state.hull_scales=[float(row.hull_scale)]
+		# 114: pirates hidden at the field's asteroids (the middle ones first).
+		if row.get("position",{}).get("kind","")=="asteroids":group.position={"kind":"scenery_midpoint","offset":Vector3.ZERO}
+		if row.has("wake_range"):wakes.append({"first_actor":first,"end_actor":first+int(row.count),"range":float(row.wake_range),"all_range":float(row.get("wake_all_range",row.wake_range))})
 		if row.has("ship_state"):group.ship_state.merge(row.ship_state,true)
 		# A transport of the group's race (the faction's freighter hull and assembly).
 		if row.get("freighter",false):
 			group.merge({"subtype":1,"population_group":"freighter"},true);group.ship_state.cruise_enabled=false
+		# Race-10 stealth fighters cloak on their own unless the row says not.
+		if int(row.faction)==10 and row.get("cloaking",true):cloakers.append_array(range(first,first+int(row.count)))
 		groups.append(group);first+=int(row.count)
 	var radio:=[]
 	for row in plan.radio:radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":row[3],"values":row[4].duplicate()})
@@ -540,7 +745,7 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 	for row in plan.groups:
 		if row.has("dock"):docks[actor]={"mode":row.dock,"dockable":row.get("dockable",true),"transfer":row.get("dockable",true)}
 		actor+=1 if row.has("static") else int(row.count)
-	return {"actor_count":first,"ship_groups":groups,"placement":{"kind":"points","points":plan.points.duplicate()},"radio":radio,"docks":docks,"shuttles":plan.get("shuttles",{}).duplicate(true),
+	return {"actor_count":first,"ship_groups":groups,"placement":{"kind":"points","points":plan.points.duplicate()},"radio":radio,"docks":docks,"shuttles":plan.get("shuttles",{}).duplicate(true),"cloakers":cloakers,"proximity_wakes":wakes,"player_route":plan.get("player_route",{}).duplicate(),
 		"success":plan.success.duplicate(),"failure":plan.get("failure",{"kind":"never"}).duplicate(),"story":_advance(cursor),"turn_hostile":plan.get("turn_hostile",{}).duplicate(),"radio_actions":plan.get("radio_actions",[]).duplicate(true),"timed_actions":plan.get("timed_actions",[]).duplicate(true)}
 
 ## A static row with an offset stands at its point plus that offset (80: the
@@ -576,6 +781,19 @@ static func _convoy_recipe(job: Dictionary) -> Dictionary:
 	return {"actor_count":1+CONVOY_ESCORTS,"ship_groups":groups,"placement":{"kind":"points","points":[Vector3(95000,-4500,145000)]},
 		"radio":radio,"success":{"kind":18,"first_actor":0,"end_actor":1},"story":story,"turn_hostile":{"radio_index":0},
 		"story_excluded_actors":[0]}
+
+## A search site: Keith's opener at 1.5 s, then a "no reading" line; when
+## it ends the station counts as searched (the story stays at the cursor).
+## Assumption: the lines are picked per station (random in the original).
+static func _search_recipe(job: Dictionary) -> Dictionary:
+	var cursor:=int(job.campaign_cursor);var plan: Dictionary=SEARCH_SITES[cursor]
+	var roll:=absi(hash([cursor,int(job.station_id)]))
+	var opener: Array=plan.openers[roll%plan.openers.size()];var miss: Array=plan.misses[(roll/7)%plan.misses.size()]
+	var radio:=[{"speaker_id":0,"text_id":int(opener[0]),"voice_event_id":int(opener[1]),"condition":5,"values":[1500]},
+		{"speaker_id":0,"text_id":int(miss[0]),"voice_event_id":int(miss[1]),"condition":6,"values":[0]}]
+	var story:={"from_cursor":cursor,"campaign_cursor":cursor,"mission":Campaign.mission(cursor),"previous_mission":Campaign.mission(cursor)}
+	story.progress={"story_stations_mask":int(job.cleared_mask) | (1<<int(job.search_index))}
+	return {"actor_count":0,"ship_groups":[],"radio":radio,"success":{"kind":"radio_finished","index":1},"story":story,"turn_hostile":{}}
 
 static func _radio(cursor: int,targets: int) -> Array:
 	var radio:=[]

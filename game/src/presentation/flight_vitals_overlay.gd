@@ -35,6 +35,14 @@ var _gamma_frame: TextureRect
 var _gamma_back: TextureRect
 var _gamma_clip: Control
 var _gamma_fill: TextureRect
+## Volatile cargo instability (Supernova Mutagen / Red Plasma). Assumption:
+## the gauge frame with a plain fill that turns from amber to red (the
+## original's indicator art is not identified).
+var _instability_visible:=false
+var _instability_ratio:=0.0
+var _instability_frame: TextureRect
+var _instability_back: ColorRect
+var _instability_fill: ColorRect
 var _throttle_visible:=false
 var _throttle_percent:=0
 var _throttle_seen:=-1
@@ -79,6 +87,9 @@ func _init() -> void:
 	_gamma_badge=_texture(self);_gamma_frame=_texture(self);_gamma_back=_texture(self)
 	_gamma_clip=Control.new();_gamma_clip.mouse_filter=Control.MOUSE_FILTER_IGNORE;_gamma_clip.clip_contents=true;add_child(_gamma_clip)
 	_gamma_fill=_texture(_gamma_clip)
+	_instability_frame=_texture(self)
+	_instability_back=ColorRect.new();_instability_back.mouse_filter=Control.MOUSE_FILTER_IGNORE;_instability_back.color=Color(0.1,0.05,0.02,0.8);add_child(_instability_back)
+	_instability_fill=ColorRect.new();_instability_fill.mouse_filter=Control.MOUSE_FILTER_IGNORE;add_child(_instability_fill)
 	_cargo_frame=_texture(self)
 	_cargo_text=Label.new();_cargo_text.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	_cargo_text.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER;add_child(_cargo_text)
@@ -125,6 +136,7 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> 
 	var gamma:=art.load_regions(library,bindings,visuals,GAMMA_IMAGES.values(),atlases)
 	_gamma_badge.texture=gamma.get(8025);_gamma_back.texture=gamma.get(8026);_gamma_fill.texture=gamma.get(8027)
 	_gamma_frame.texture=sprites.gauge_frame if not gamma.is_empty() else null
+	_instability_frame.texture=sprites.gauge_frame
 	_throttle_frame.texture=sprites.get("throttle_frame")
 	var theme:=Theme.new();theme.default_font=art.font;self.theme=theme
 	set_mobile_layout(_mobile)
@@ -162,6 +174,8 @@ func present(state: Dictionary,show_hull_value:=true) -> bool:
 	_shield_visible=shield_max>0
 	_gamma_visible=float(state.get("gamma_rate",0.0))>0.0 and _gamma_frame.texture!=null
 	_gamma_ratio=clampf(float(player.get("gamma",100.0))/100.0,0,1)
+	_instability_visible=bool(state.get("volatile",false))
+	_instability_ratio=clampf(float(state.get("instability",0.0)),0,1)
 	_hull_back.tooltip_text="%d / %d"%[hull,hull_max] if show_hull_value else ""
 	_armor_back.tooltip_text="%s %d / %d"%[_armor_label,armor,armor_max]
 	_shield_back.tooltip_text="%s %d / %d"%[_shield_label,roundi(shield),shield_max]
@@ -269,6 +283,12 @@ func _relayout() -> void:
 	_gamma_back.position=Vector2(track_left,gamma_y+track_top);_gamma_back.size=track_size
 	_gamma_clip.position=_gamma_back.position;_gamma_clip.size=Vector2(width*_gamma_ratio,track_height)
 	_gamma_fill.position=Vector2.ZERO;_gamma_fill.size=Vector2(width,track_height)
+	var instability_y:=gamma_y+(spacing if _gamma_visible else 0.0)
+	for node in [_instability_frame,_instability_back,_instability_fill]:node.visible=_instability_visible
+	_instability_frame.position=Vector2(track_left,instability_y);_instability_frame.size=frame_size
+	_instability_back.position=Vector2(track_left,instability_y+track_top);_instability_back.size=track_size
+	_instability_fill.position=_instability_back.position;_instability_fill.size=Vector2(width*_instability_ratio,track_height)
+	_instability_fill.color=Color(1.0,0.75,0.1).lerp(Color(1.0,0.12,0.0),_instability_ratio)
 	for row in [[_hull_text,hull_y],[_armor_text,armor_y],[_shield_text,margin]]:
 		row[0].position=Vector2(track_left+width+4,float(row[1])+badge*0.20)
 		row[0].size=Vector2(110,badge*0.8)
@@ -291,7 +311,7 @@ func clear() -> void:
 	for label in [_hull_text,_armor_text,_shield_text]:label.text=""
 
 func top_inset() -> float:
-	var bottom:=_gamma_badge if _gamma_visible else _hull_badge
+	var bottom: Control=_instability_frame if _instability_visible else (_gamma_badge if _gamma_visible else _hull_badge)
 	return bottom.position.y+bottom.size.y+8.0 if visible else 0.0
 
 func reject(message: String) -> bool:error=message;return false

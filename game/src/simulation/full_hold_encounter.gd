@@ -817,19 +817,36 @@ func apply_story_hostility(axis: int,value: int) -> bool:
 
 func story_hostility_applied() -> bool:return _combat!=null and _combat.story_hostility_applied()
 
-func place_story_actors(first: int,end: int,center: Vector3,radius: float) -> bool:
+func place_story_actors(first: int,end: int,center: Vector3,radius: float,flat:=false) -> bool:
 	error=""
 	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story placement requires a contract encounter")
 	var control: RefCounted=_control.fork_for_frame(true,_combat)
-	if not control.place_story_actors(first,end,center,radius):return reject(control.error)
+	if not control.place_story_actors(first,end,center,radius,flat):return reject(control.error)
 	_control=control;_combat=control._combat
 	return true
+
+func respawn_story_actors(first: int,end: int,center: Vector3,radius: float) -> int:
+	error=""
+	if _contract_context.is_empty() or _control==null or _combat==null:reject("Story respawn requires a contract encounter");return -1
+	var control: RefCounted=_control.fork_for_frame(true,_combat)
+	var count: int=control.respawn_story_actors(first,end,center,radius)
+	if count<0:reject(control.error);return -1
+	_control=control;_combat=control._combat
+	return count
 
 func disarm_story_actors(first: int,end: int) -> bool:
 	error=""
 	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story disarm requires a contract encounter")
 	var control: RefCounted=_control.fork_for_frame(false,_combat)
 	if not control._combat.disarm_story_actors(first,end):return reject(control._combat.error)
+	_control=control;_combat=control._combat
+	return true
+
+func stand_down_story_actors(first: int,end: int) -> bool:
+	error=""
+	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story surrender requires a contract encounter")
+	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	if not control._combat.stand_down_story_actors(first,end):return reject(control._combat.error)
 	_control=control;_combat=control._combat
 	return true
 
@@ -854,6 +871,15 @@ func wake_story_actors(first: int,end: int) -> bool:
 	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story wake requires a contract encounter")
 	var control: RefCounted=_control.fork_for_frame(false,_combat)
 	if not control._combat.wake_story_actors(first,end):return reject(control._combat.error)
+	_control=control;_combat=control._combat
+	return true
+
+func set_story_cloak(id: int,cloaked: bool) -> bool:
+	error=""
+	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story cloaking requires a contract encounter")
+	if bool(_combat.actor_snapshot(id).get("cloaked",false))==cloaked:return true
+	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	if not control._combat.set_story_cloak(id,cloaked):return reject(control._combat.error)
 	_control=control;_combat=control._combat
 	return true
 

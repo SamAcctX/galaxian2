@@ -1238,16 +1238,37 @@ func evaluate_blast_motion(events: Array) -> RefCounted:
 
 ## Bring parked story ships onto a ring around a point (a reserve arriving);
 ## their flight and combat bodies move together.
-func place_story_actors(first: int,end: int,center: Vector3,radius: float) -> bool:
+func place_story_actors(first: int,end: int,center: Vector3,radius: float,flat:=false) -> bool:
 	error=""
 	if _combat==null or first<0 or end>_flight.size() or end<=first or radius<=0.0:return reject("Story placement requires contract ships")
 	for id in range(first,end):
 		if _flight[id]==null:return reject("Story placement requires flying ships")
 		var angle:=TAU*float(id-first)/float(end-first)
-		var pose:=Transform3D(Basis.IDENTITY,center+Vector3(cos(angle)*radius,5000.0 if (id-first)%2==0 else -5000.0,sin(angle)*radius))
+		var rise:=0.0 if flat else (5000.0 if (id-first)%2==0 else -5000.0)
+		var pose:=Transform3D(Basis.IDENTITY,center+Vector3(cos(angle)*radius,rise,sin(angle)*radius))
 		# The combat pose follows the motion's, which keeps the ship's bank.
 		if not _flight[id].apply_scripted_pose(pose) or not _combat.set_pose(id,_flight[id].snapshot().get("pose",pose),pose):return reject(_flight[id].error+_combat.error)
 	return true
+
+## Destroyed story ships whose death is over come back on a ring round
+## `center` with a fresh death lifecycle (respawn). Returns how many came back.
+func respawn_story_actors(first: int,end: int,center: Vector3,radius: float) -> int:
+	error=""
+	if _combat==null or first<0 or end>_flight.size() or end<=first or radius<=0.0 or _destruction.size()!=_flight.size():reject("Story respawn requires contract ships");return -1
+	var owners: Array=_destruction.duplicate();var count:=0
+	for id in range(first,end):
+		var actor: Dictionary=_combat.actor_snapshot(id)
+		if int(actor.vitals.hull)>0 or actor.get("active",false) or owners[id].snapshot().get("phase")!="retired" or _flight[id]==null:continue
+		var seed: Dictionary=_initial_actors[id].duplicate(true);seed.merge(_identity,true)
+		var owner:=Death.new()
+		if not owner.configure_contract(_bindings,_death_resources,_construction,seed):reject(owner.error);return -1
+		owners[id]=owner
+		var angle:=TAU*float(count)/float(end-first)
+		var pose:=Transform3D(Basis.IDENTITY,center+Vector3(cos(angle)*radius,0,sin(angle)*radius))
+		if not _combat.revive_story_actor(id) or not _flight[id].apply_scripted_pose(pose) or not _combat.set_pose(id,_flight[id].snapshot().get("pose",pose),pose):reject(_flight[id].error+_combat.error);return -1
+		count+=1
+	_destruction=owners
+	return count
 
 ## Story ships or objects leave: parked far away (per-ship offsets), inactive.
 func retire_story_actors(first: int,end: int,point: Vector3) -> bool:
