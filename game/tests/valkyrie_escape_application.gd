@@ -44,6 +44,7 @@ func verify_free_application() -> void:
 	if staged=="supernova":await fly_supernova_start()
 	if staged=="supernova89":await fly_supernova_blast()
 	if staged=="supernova91":await fly_supernova_rescue()
+	if staged=="supernova93":await fly_supernova_luur()
 
 ## 49-52: the K'Suukk flees with a Vossk escort that turns on the player at
 ## Makke S'ik, through the gate to S'inokk and away, then home to Kanado.
@@ -1028,9 +1029,106 @@ func fly_supernova_handover() -> void:
 	check(resumed.campaign_cursor==93 and int(resumed.loadout.station_id)==113,"Fresh Resume lost the Tadram hand-over: "+str([resumed.campaign_cursor,resumed.loadout.station_id]))
 	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-93.gof2save"))==OK,"The Tadram checkpoint could not be kept")
 
+## 93: fly to Midantha for Bargand's talk (a Gamma Shield I in the hold);
+## fit it. 94: jump to Luur, ferry the 83 people from the platform to the
+## freighter while the raiders come in three pairs; Bargand's lines; the story
+## takes the ship to Thynome (95).
+func fly_supernova_luur() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==93,"The Luur checkpoint is not at cursor 93")
+	if failures or not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight() or not await khador_jump(114) or not await dock_application() or not await take_station_talk(93,94):return
+	var hold: Dictionary=app.session.station_owner().snapshot().get("cargo",{})
+	print("SUPERNOVA Midantha hold ",hold)
+	if not await fit_item(205):return
+	# The 83 must move within the shielded gamma budget: carry as many as fit.
+	if not seed_cargo([],2000000) or not await fit_cabins(83,true):return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight() or not await khador_jump(111):return
+	var radio_ids:=[];var raiders:=0;var moved_seen:=0;var rate_seen:=false
+	var began:=now_us
+	app.session.rebase_time(now_us)
+	for tick in 60000:
+		if app.session.status!="running" or app.session.flight_owner()._objective.snapshot().campaign_cursor!=94:break
+		var frame: RefCounted=app.session.flight_owner()
+		var radio: Dictionary=frame._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		if frame.death_active():check(false,"The pilot died at Luur: gamma "+str(frame._player.snapshot().get("gamma"))+" vitals "+str(frame._player.snapshot().vitals)+" dock "+str(frame._story_dock));return
+		var state: Dictionary=app.session.snapshot()
+		var dock: Dictionary=frame._story_dock
+		if not rate_seen:rate_seen=true;print("SUPERNOVA Luur gamma rate ",frame._gamma_rate," berths ",dock.get("berths")," status ",dock.get("status"));await capture_free_application("supernova-luur")
+		var actors: Array=frame._encounter.combat_snapshot().actors
+		var moved: int=83-int(dock.get("status",83))
+		if moved>=moved_seen+20:moved_seen=moved;print("SUPERNOVA Luur moved ",moved," at ",(now_us-began)/1000000," s gamma ",state.player.get("gamma")," radio ",radio_ids)
+		# Awake raiders near the ship: fight them off first.
+		var awake: Callable=func():
+			var cast: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+			var pose: Vector3=app.session.snapshot().player_pose.origin
+			return range(1,7).filter(func(id):return int(cast[id].vitals.hull)>0 and cast[id].get("active",false) and cast[id].pose.origin.distance_to(pose)<12000.0)
+		if not awake.call().is_empty() and not frame.cinematic_input_blocked():
+			raiders+=awake.call().size()
+			if raiders<=2:await capture_free_application("supernova-luur-raiders")
+			var over:=func():return app.session.status!="running" or app.session.flight_owner()._objective.snapshot().campaign_cursor!=94
+			if not await fight_until("luur",func():return over.call() or awake.call().is_empty(),func(_actors):return awake.call(),radio_ids):return
+			print("SUPERNOVA Luur raiders cleared at ",(now_us-began)/1000000," s")
+			continue
+		var cap:=mini(int(dock.berths),int(dock.status))
+		var steer:=Vector2.ZERO;var want:=0.0
+		if int(dock.status)>0:
+			var goal:=0 if int(dock.aboard)==0 or (int(dock.docked)==0 and int(dock.aboard)<cap) else 7
+			var target: Vector3=actors[goal].get("pose",Transform3D()).origin
+			var distance: float=state.player_pose.origin.distance_to(target)
+			steer=EmpSteering.steering_toward(state.player_pose,target);want=1.0 if distance>2000.0 else 0.0
+		for adjustment in 10:
+			var current: float=app.session.snapshot().input_throttle
+			if absf(current-want)<.01 or frame.cinematic_input_blocked():break
+			if not app.session.action("throttle_up" if current<want else "throttle_down"):check(false,app.session.error);return
+		now_us+=100000
+		if not app.session.step(now_us,steer if not frame.cinematic_input_blocked() else Vector2.ZERO):check(false,app.session.error);return
+		app.present_session()
+		await dismiss_medal()
+		if tick%20==0:await process_frame
+	print("SUPERNOVA Luur radio ",radio_ids," status ",app.session.status," cursor ",app.session.snapshot().campaign_cursor," raiders ",raiders," in ",(now_us-began)/1000000," s")
+	check(range(2530,2536).all(func(id):return id in radio_ids) and 2543 in radio_ids and raiders>=6,"The Luur evacuation did not play through")
+	var waited:=now_us
+	while app.session.status=="running" and now_us-waited<30000000:
+		await dismiss_medal()
+		if not application_step():return
+	match app.session.status:
+		"drive_arrival_transition_required":check(app.enter_drive_arrival(now_us,4096,flight_world_seconds()),app.status.text)
+		"local_arrival_transition_required":check(app.enter_local_arrival(now_us,4096,flight_world_seconds()),app.status.text)
+		_:check(false,"The story did not take the ship on after Luur: "+app.session.status)
+	if failures or not await release_application_flight():return
+	check(int(app.session.snapshot().location.station_id)==10 and app.session.snapshot().campaign_cursor==95,"The ship did not arrive at Thynome for 95")
+	await capture_free_application("supernova-thynome-95")
+	if failures or not await dock_application():return
+	check(app.save_station(false) and app.load_station(),"Saving and resuming at Thynome failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==95,"Fresh Resume lost the Luur evacuation")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-95.gof2save"))==OK,"The Thynome checkpoint could not be kept")
+
+## Fit an item from the hold, making room in its category if needed.
+func fit_item(item_id: int) -> bool:
+	if not app.equipment_action("open"):check(false,app.session.error);return false
+	var shop: Dictionary=app.session.station_owner().snapshot()
+	if not shop.equipment.fitting_support.get(item_id,{}).is_empty():
+		var category: int=int(catalogue.tables.items[item_id].properties.get(1,-1))
+		for index in shop.loadout.slots.size():
+			var slot: Variant=shop.loadout.slots[index]
+			if slot==null or int(slot.item_id)==85:continue
+			var own: Dictionary=catalogue.tables.items[int(slot.item_id)].properties
+			if int(own.get(1,-1))==category and int(own.get(2,-1))!=20:
+				if not app.equipment_action("unmount",int(slot.item_id),index):check(false,app.session.error);return false
+				break
+	if not app.equipment_action("mount",item_id):check(false,"Item "+str(item_id)+" could not be fitted: "+app.session.error+" "+str(app.session.station_owner().snapshot().equipment.fitting_support.get(item_id)));return false
+	print("SUPERNOVA fitted ",item_id," properties ",catalogue.tables.items[item_id].properties)
+	if not app.equipment_action("close"):check(false,app.session.error);return false
+	return true
+
 ## Buy and fit passenger cabins at the current station until the ship has
 ## `needed` berths, making room by unfitting non-essential equipment.
-func fit_cabins(needed: int) -> bool:
+func fit_cabins(needed: int,best_effort:=false) -> bool:
 	if not app.equipment_action("open"):check(false,app.session.error);return false
 	for attempt in 12:
 		var shop: Dictionary=app.session.station_owner().snapshot()
@@ -1040,6 +1138,7 @@ func fit_cabins(needed: int) -> bool:
 			var properties: Dictionary=catalogue.tables.items[row.item_id].properties
 			if int(properties.get(2,-1))==20 and row.stock>0 and row.unit_price<=shop.contracts.credits:
 				if cabin.is_empty() or int(properties.get(34,0))>cabin.places:cabin={"item_id":row.item_id,"price":row.unit_price,"places":int(properties.get(34,0))}
+		if cabin.is_empty() and best_effort:break
 		if cabin.is_empty():check(false,"No passenger cabin on sale at station "+str(shop.loadout.station_id));return false
 		if not shop.equipment.fitting_support.get(cabin.item_id,{}).is_empty():
 			var category: int=int(catalogue.tables.items[cabin.item_id].properties.get(1,-1))
@@ -1051,11 +1150,14 @@ func fit_cabins(needed: int) -> bool:
 				if int(own.get(1,-1))==category and int(own.get(2,-1))!=20:
 					if not app.equipment_action("unmount",int(slot.item_id),index):check(false,app.session.error);return false
 					freed=true;break
+			if not freed and best_effort:break
 			if not freed:check(false,"No slot to free for a cabin: "+str(shop.equipment.fitting_support.get(cabin.item_id)));return false
 		if not app.equipment_action("buy",int(cabin.item_id)) or not app.equipment_action("mount",int(cabin.item_id)):check(false,app.session.error);return false
 		print("SUPERNOVA fitted cabin ",cabin)
 	var fitted: Dictionary=app.session.station_owner().snapshot()
-	check(load("res://src/simulation/first_flight_frame.gd")._passenger_berths(catalogue,fitted.loadout)>=needed,"The ship still lacks passenger berths")
+	var berths: int=load("res://src/simulation/first_flight_frame.gd")._passenger_berths(catalogue,fitted.loadout)
+	print("SUPERNOVA berths now ",berths)
+	check(best_effort or berths>=needed,"The ship still lacks passenger berths")
 	await capture_free_application("supernova-cabins")
 	if not app.equipment_action("close"):check(false,app.session.error);return false
 	return failures==0
@@ -1329,6 +1431,7 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"supernova":return state.campaign_cursor==84
 		"supernova89":return state.campaign_cursor==89
 		"supernova91":return state.campaign_cursor==91
+		"supernova93":return state.campaign_cursor==93
 	return super.resumed_contract_valid(state)
 
 ## A player crossing hostile Vossk space fights off the ships closing in

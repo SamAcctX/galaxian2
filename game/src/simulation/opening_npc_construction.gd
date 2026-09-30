@@ -1148,7 +1148,14 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 					var anchor:=int(scenery_positions.size()/2)+int(options.group_index)
 					if anchor>=scenery_positions.size() or not scenery_positions[anchor] is Vector3 or not scenery_positions[anchor].is_finite():return fail("The admitted cast requires its world scenery anchors")
 					position=scenery_positions[anchor]+Vector3(options.position.offset)
-			if int(options.route_start)>=0:
+			# route_loop: the ship flies round these path points for ever.
+			var loop: Array=options.get("route_loop",[])
+			if not loop.is_empty():
+				if loop.any(func(index):return not index is int or index<0 or index>=path.size()):return fail("A looping route names a missing path point")
+				actor.discarded_route=route.snapshot()
+				if not route.replace_with_contract_path(loop.map(func(index):return path[index]),0,true):return fail(route.error)
+				actor.route=route.snapshot()
+			elif int(options.route_start)>=0:
 				actor.discarded_route=route.snapshot()
 				if not route.replace_with_contract_path(path,int(options.route_start)):return fail(route.error)
 				actor.route=route.snapshot()
@@ -1176,7 +1183,7 @@ func _static_row(id: int,faction: int,options: Dictionary,path: Array,random: Re
 	var context: Dictionary=_contract.context
 	var hull:=int(placed.hull_override) if placed.has("hull_override") else Statics.hull(model,int(context.rank),int(context.campaign_cursor),float(context.difficulty))
 	var body:=Transform3D(Basis.from_euler(Vector3(placed.get("rotation",Vector3.ZERO))),position)
-	var row:={"actor_id":id,"actor_kind":faction,"hull_catalogue_id":-1,"subtype":0,"population_group":"static","static_model":model,"resource_id":model,
+	var row:={"actor_id":id,"actor_kind":faction,"hull_catalogue_id":-1,"subtype":0,"population_group":"static","static_model":model,"resource_id":Statics.body_mesh(model),
 		"hull_override":hull,"name_text_id":int(options.name_text_id),"cargo":[],"fragments":[],"route":{},
 		"body_pose":body,"statistics_pose":body,"model_local_pose":Transform3D.IDENTITY}
 	row.merge(options.ship_state,true)

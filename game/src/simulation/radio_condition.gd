@@ -12,9 +12,15 @@ static func valid_clock(value: Variant) -> bool:
 	return value is int and value >= 0 and value <= MAX_INTEGER
 
 static func valid_row(row: Dictionary, event_count: int) -> bool:
-	if not Numbers.integer(row.get("condition"), 0, 35) or not row.get("values") is Array: return false
+	if not Numbers.integer(row.get("condition"), 0, 36) or not row.get("values") is Array: return false
 	var kind := int(row.condition)
-	if kind not in [1, 5, 6, 8, 9, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]: return false
+	if kind not in [1, 5, 6, 8, 9, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]: return false
+	# 36: any of [condition, value, ...] pairs of single-value conditions.
+	if kind == 36:
+		if row.values.is_empty() or row.values.size() % 2 != 0: return false
+		for index in range(0, row.values.size(), 2):
+			if not row.values[index] is int or int(row.values[index]) not in [5, 6, 32, 33, 34] or not valid_row({"condition": row.values[index], "values": [row.values[index + 1]]}, event_count): return false
+		return true
 	if row.values.is_empty() or row.values.size() > 256 or (kind not in [1, 9, 29, 30, 31, 35] and row.values.size() != 1) or (kind == 29 and row.values.size() != 2) or (kind in [30, 31, 35] and row.values.size() != 3): return false
 	for value in row.values:
 		if not Numbers.integer(value, -2147483648 if kind == 26 else 0, MAX_INTEGER): return false
@@ -122,6 +128,10 @@ static func evaluate(row: Dictionary, condition_clock: int, observations: Dictio
 		34: return observations.has("story_status") and int(observations.story_status) <= value
 		# Remake story condition: line values[0] started (values[2]=0) or
 		# finished (1) at least values[1] ms ago.
+		36:
+			for index in range(0, row.values.size(), 2):
+				if evaluate({"condition": row.values[index], "values": [row.values[index + 1]]}, condition_clock, observations, started, waypoint_indices, event_index): return true
+			return false
 		35:
 			var mark: Variant = observations.get("radio_marks", {}).get("finished" if int(row.values[2]) == 1 else "started", {}).get(value)
 			return mark != null and condition_clock - int(mark) >= int(row.values[1])

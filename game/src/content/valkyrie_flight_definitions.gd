@@ -26,7 +26,8 @@ const RADIO:={
 ## 28 = the player's armour is gone. Combat flights play their result lines
 ## over the radio once the objective ships are gone (assumption: the original
 ## shows them as its in-flight result conversation).
-const RESULT_RADIO:={92:[[0,2512,1587],[2,2513,1588],[0,2514,1589],[2,2515,1590],[0,2516,1591],[2,2517,1592],[0,2518,1593]],80:[[0,2415,1391],[6,2416,1392],[0,2417,1393],[6,2418,1394],[0,2419,1395],[6,2420,1396]],56:[[27,2149,1206],[0,2150,1207]],63:[[28,2215,1260],[0,2216,1261]],
+const RESULT_RADIO:={94:[[0,2537,1605],[37,2538,1606],[0,2539,1607],[37,2540,1608],[0,2541,1609],[37,2542,1610],[0,2543,1611]],
+	92:[[0,2512,1587],[2,2513,1588],[0,2514,1589],[2,2515,1590],[0,2516,1591],[2,2517,1592],[0,2518,1593]],80:[[0,2415,1391],[6,2416,1392],[0,2417,1393],[6,2418,1394],[0,2419,1395],[6,2420,1396]],56:[[27,2149,1206],[0,2150,1207]],63:[[28,2215,1260],[0,2216,1261]],
 	64:[[0,2224,1262],[20,2225,1263],[0,2226,1264],[20,2227,1265],[0,2228,1266]],
 	67:[[0,2288,1296],[20,2289,1297],[0,2290,1298],[20,2291,1299],[0,2292,1300],[20,2293,1301],[0,2294,1302],[0,2295,1303]],
 	70:[[0,2313,1314]],
@@ -73,6 +74,34 @@ const SCRIPTED:={
 	# destroyed. Assumptions: they appear 20 km from the player; no cutscene
 	# cameras (player held and unharmed instead); a cloak shows as the ships
 	# vanishing until they attack.
+	# 94: Luur platform evacuation. #0 the station platform (people board),
+	# #1-#6 the unknown ships parked asleep, #7 the freighter (people leave,
+	# the status counts 83 down), #8-#23 unarmed Midorian fighters shuttling
+	# platform <-> freighter. Over 6 aboard or at 60 s two raiders appear
+	# (line #3) and attack 6 s later; two more 100 s later, the last two another
+	# 100 s later. Status 0: Bargand's lines, then the story moves on (95,
+	# Thynome gate). Failure: the freighter destroyed. Assumptions: the first
+	# pair appears on a 20 km ring round the platform; the player is held
+	# (unharmable) instead of the short cutscene; boarding stops at the berths.
+	94:{"points":[Vector3.ZERO,Vector3(30000,-5000,40000),Vector3(-35500,3000,20000),Vector3(-29500,3000,20000),Vector3(-300000,300000,-300000),Vector3(20000,-3000,30000)],
+		"groups":[{"count":1,"faction":3,"friendly":true,"static":{"model":18781,"jitter":0,"offset":Vector3.ZERO},"name_text_id":3197,"dock":"board","dockable":true},
+			{"count":6,"faction":10,"hull":44,"friendly":false,"sleeping":true,"index":4,"offsets":[-1000,-1000,-1000],"bounds":[2000,2000,2000]},
+			{"count":1,"faction":3,"friendly":true,"index":1,"static":{"model":17049,"jitter":0,"offset":Vector3.ZERO},"name_text_id":3198,"dock":"leave","dockable":true},
+			{"count":16,"faction":3,"friendly":true,"index":0,"route_loop":[0,5,1],"offsets":[-3000,-3000,-3000],"bounds":[6000,6000,6000]}],
+		# The fighters carry most of the 83 (verified PlayerFighter::update):
+		# 12 s at the freighter, one person per 1.5 s, until the rest fit the
+		# player's berths. Assumption: they fly through instead of stopping.
+		"shuttles":{"first_actor":8,"end_actor":24,"dock":7,"visit_ms":12000,"hold_at_berths":true},
+		"radio":[[0,2530,2082,5,[1500]],[59,2531,2083,6,[0]],[0,2532,2084,6,[1]],
+			[0,2533,2085,36,[33,7,5,60000]],[0,2534,2086,6,[3]],[0,2535,2087,6,[4]]],
+		"radio_actions":[{"radio_index":0,"action":"disarm","first_actor":8,"end_actor":24},
+			{"radio_index":3,"action":"place","first_actor":1,"end_actor":3,"center":Vector3.ZERO,"radius":20000.0},
+			{"radio_index":3,"action":"lock_player","duration_ms":6000,"invulnerable":true},
+			{"radio_index":3,"delay_ms":6000,"action":"wake","first_actor":1,"end_actor":3},
+			{"radio_index":3,"delay_ms":106000,"action":"place","first_actor":3,"end_actor":5,"center":Vector3(-35500,3000,20000),"radius":1500.0,"wake":true},
+			{"radio_index":3,"delay_ms":206000,"action":"place","first_actor":5,"end_actor":7,"center":Vector3(-29500,3000,20000),"radius":1500.0,"wake":true}],
+		"result_after":[34,[0]],
+		"success":{"kind":"radio_finished","index":12},"failure":{"kind":1,"actor_id":7}},
 	92:{"points":[Vector3(80000,0,110000),Vector3(70000,-100000,-140000),Vector3(-300000,300000,-300000)],
 		"groups":[{"count":1,"faction":3,"friendly":true,"static":{"model":17049,"jitter":0,"offset":Vector3.ZERO},"name_text_id":3198,"dock":"leave","dockable":true},
 			{"count":3,"faction":10,"hull":44,"friendly":false,"sleeping":true,"index":2,"offsets":[-1000,-1000,-1000],"bounds":[2000,2000,2000]}],
@@ -369,7 +398,7 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 				"policy":{"initial_hostile":not friendly,"updated_hostile":not friendly,"friendly":friendly}})
 			first+=1;continue
 		var group:={"first_actor":first,"end_actor":first+int(row.count),"faction":int(row.faction),"population_group":"story","origin":"zero",
-			"ship_state":{"mode":5,"active":false,"targeting_blocked":true} if row.get("sleeping",false) else {"mode":0,"active":true,"targeting_blocked":false},"route_start":int(row.get("route_start",-1)),
+			"ship_state":{"mode":5,"active":false,"targeting_blocked":true} if row.get("sleeping",false) else {"mode":0,"active":true,"targeting_blocked":false},"route_start":int(row.get("route_start",-1)),"route_loop":row.get("route_loop",[]).duplicate(),
 			"policy":{"initial_hostile":not friendly,"updated_hostile":not friendly,"friendly":friendly},
 			"position":row.position.duplicate() if row.has("position") else {"kind":"path_scatter","index":int(row.get("index",0)),"offsets":row.offsets.duplicate(),"bounds":row.bounds.duplicate()}}
 		if row.has("name_text_id"):group.name_text_id=int(row.name_text_id)
@@ -392,7 +421,7 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 	for row in plan.groups:
 		if row.has("dock"):docks[actor]={"mode":row.dock,"dockable":row.get("dockable",true),"transfer":row.get("dockable",true)}
 		actor+=1 if row.has("static") else int(row.count)
-	return {"actor_count":first,"ship_groups":groups,"placement":{"kind":"points","points":plan.points.duplicate()},"radio":radio,"docks":docks,
+	return {"actor_count":first,"ship_groups":groups,"placement":{"kind":"points","points":plan.points.duplicate()},"radio":radio,"docks":docks,"shuttles":plan.get("shuttles",{}).duplicate(true),
 		"success":plan.success.duplicate(),"failure":plan.get("failure",{"kind":"never"}).duplicate(),"story":_advance(cursor),"turn_hostile":plan.get("turn_hostile",{}).duplicate(),"radio_actions":plan.get("radio_actions",[]).duplicate(true),"timed_actions":plan.get("timed_actions",[]).duplicate(true)}
 
 ## A static row with an offset stands at its point plus that offset (80: the

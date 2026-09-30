@@ -145,7 +145,7 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 		"mission":mission.duplicate(true),"next_cursor":context.campaign_cursor,"entry":"ordinary_flight","world":{"station":true,"portal":true,"asteroid_field":true},
 		"cast":{"kind":"contract","actor_count":count,"debris_count":debris_count,"ship_state":ship_state,"placement":placement,
 			"rival_actor_id":rival_actor_id,"player_last_ids":player_last_ids,"player_only_ids":player_only_ids,"count_draw":count_draw,"ship_groups":ship_groups,"local_faction":local_faction,"operations":rules.duplicate(true)},"briefing":[],"radio":story.get("radio",[]),"sequences":[],"readout":readout,
-		"story_advance":story.get("story",{}),"turn_hostile":story.get("turn_hostile",{}),"story_excluded_actors":story.get("story_excluded_actors",[]),"disarm_on_advance":story.get("disarm_on_advance",[]),"radio_actions":story.get("radio_actions",[]),"timed_actions":story.get("timed_actions",[]),"docks":story.get("docks",{}),
+		"story_advance":story.get("story",{}),"turn_hostile":story.get("turn_hostile",{}),"story_excluded_actors":story.get("story_excluded_actors",[]),"disarm_on_advance":story.get("disarm_on_advance",[]),"radio_actions":story.get("radio_actions",[]),"timed_actions":story.get("timed_actions",[]),"docks":story.get("docks",{}),"shuttles":story.get("shuttles",{}),
 		"continuation":contract_continuation(mission),
 		"result":{"success":success,"failure":failure,"periodic_failure":periodic,"actor_count":count,
 			"defer_to_station":defers_station_result(mission),"retire_failure":true,"freeze_clock_on_result":story.is_empty(),"reset_while_blocked":false,"policy":bindings.early_contracts.flight_results.duplicate(true)}}
@@ -155,11 +155,11 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 static func contract_ship_options(cast: Dictionary,id: int,enemy_faction: int,client_faction: int) -> Dictionary:
 	var rival: bool=id==int(cast.rival_actor_id)
 	var result:={"rival":rival,"faction":client_faction if rival else 8,"population_group":"rival" if rival else "pirate",
-		"origin":"zero" if rival else "path","policy":{},"hull_catalogue_id":-1,"ship_state":cast.ship_state.duplicate(true),"position":{},"route_start":-1,"clear_cargo":false,"group_index":id,"cargo_override":{},"name_text_id":-1,"subtype":0,"static_object":{}}
+		"origin":"zero" if rival else "path","policy":{},"hull_catalogue_id":-1,"ship_state":cast.ship_state.duplicate(true),"position":{},"route_start":-1,"route_loop":[],"clear_cargo":false,"group_index":id,"cargo_override":{},"name_text_id":-1,"subtype":0,"static_object":{}}
 	for group in cast.get("ship_groups",[]):
 		if id<int(group.first_actor) or id>=int(group.end_actor):continue
 		result.faction=enemy_faction if int(group.faction)==-2 else int(group.faction)
-		for key in ["population_group","origin","policy","position","route_start","clear_cargo","cargo_override","name_text_id","subtype","hull_catalogue_id","static_object"]:result[key]=group.get(key,result[key])
+		for key in ["population_group","origin","policy","position","route_start","route_loop","clear_cargo","cargo_override","name_text_id","subtype","hull_catalogue_id","static_object"]:result[key]=group.get(key,result[key])
 		result.group_index=id-int(group.first_actor)
 		result.ship_state.merge(group.get("ship_state",{}),true)
 		break

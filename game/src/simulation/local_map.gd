@@ -106,7 +106,10 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 	for row in rows:row.orbit_angle=float(random.next_int(int(art.orbit_angle_bound)))/float(art.orbit_angle_divisor)
 	var ui: Dictionary=rules.ui
 	var faction:=int(system.fields[2]);var security:=int(system.fields[1])
-	if faction<0 or faction>=ui.faction_image_ids.size() or security<0 or security*3+2>=ui.security_colors.size():return reject("Unsupported system map classification")
+	# Races past the first three share the last icon (Supernova's Talidor is 17).
+	if faction<0 or int(ui.faction_text_base)+faction>=library.strings.size() or security<0 or security*3+2>=ui.security_colors.size():return reject("Unsupported system map classification")
+	var sun: int=load("res://src/content/valkyrie_world_definitions.gd").map_sun_texture(bindings,art.sun_texture_ids,display_system_id,int(system.sky_index))
+	if sun<0:return reject("Unsupported system map sun")
 	labels.faction=library.strings[int(ui.faction_text_base)+faction]
 	labels.security=library.strings[int(ui.security_text_base)+security]
 	labels.legend=[]
@@ -121,7 +124,7 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 		"selected_station_id":-1,"confirmation_visible":false,"diagnostic":"",
 		"ambient":float(rules.ambient),"diffuse":float(rules.diffuse),"layout_random":layout_random,
 		"orbit_random":random.snapshot(),"visuals":art.duplicate(true),"ui":ui.duplicate(true),
-		"sun_texture_id":int(art.sun_texture_ids[int(system.sky_index)]),"faction_image_id":int(ui.faction_image_ids[faction]),
+		"sun_texture_id":sun,"faction_image_id":int(ui.faction_image_ids[mini(faction,ui.faction_image_ids.size()-1)]),
 		"security_color":Color(float(ui.security_colors[security*3])/255.0,float(ui.security_colors[security*3+1])/255.0,float(ui.security_colors[security*3+2])/255.0)}
 	return true
 

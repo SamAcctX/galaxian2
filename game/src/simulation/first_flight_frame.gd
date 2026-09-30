@@ -1253,7 +1253,9 @@ func _story_people(catalogues: RefCounted,entry: Dictionary) -> Dictionary:
 	var status:=maxi(0,load("res://src/content/valkyrie_campaign_definitions.gd").story_status(int(entry.get("campaign_cursor",-1))))
 	var boards:=docks.values().any(func(row):return row.mode=="board")
 	var berths:=_passenger_berths(catalogues,entry.get("departure",{}).get("loadout",{}))
-	return {"actors":docks.duplicate(true),"docked":-1,"elapsed":0,"last_ms":0,"aboard":0 if boards else status,"status":status,"berths":berths}
+	var shuttles: Dictionary=_mission_context.recipe().get("shuttles",{}).duplicate(true)
+	if not shuttles.is_empty():shuttles.visits={}
+	return {"actors":docks.duplicate(true),"docked":-1,"elapsed":0,"last_ms":0,"aboard":0 if boards else status,"status":status,"berths":berths,"shuttles":shuttles}
 
 ## Docked = within reach of a visible, dockable docking point. While docked
 ## the ship is held until that point's transfer is over; one person moves
@@ -1275,6 +1277,7 @@ func _advance_story_dock(elapsed: int) -> bool:
 		var reach: float=STORY_DOCK_RANGE+load("res://src/content/static_object_definitions.gd").reach(int(actors[id].get("static_model",-1)))
 		if pose is Transform3D and _pose.origin.distance_to(pose.origin)<=reach:docked=int(id)
 	if docked!=int(_story_dock.docked):_story_dock.docked=docked;_story_dock.elapsed=0
+	_advance_story_shuttles(elapsed,actors)
 	if docked<0 or not _story_dock.actors[docked].transfer:return true
 	_story_dock.elapsed=int(_story_dock.elapsed)+step
 	while int(_story_dock.elapsed)>=STORY_TRANSFER_MS and not _story_transfer_done(docked):
@@ -1282,6 +1285,30 @@ func _advance_story_dock(elapsed: int) -> bool:
 		if _story_dock.actors[docked].mode=="board":_story_dock.aboard=int(_story_dock.aboard)+1
 		else:_story_dock.aboard=int(_story_dock.aboard)-1;_story_dock.status=maxi(0,int(_story_dock.status)-1)
 	return true
+
+## Story shuttles (94's Midorian fighters): each arrival at the drop-off
+## point delivers one person per 1.5 s for the visit (12 s); with
+## hold_at_berths they stop once the people left fit the player's berths.
+func _advance_story_shuttles(elapsed: int,actors: Array) -> void:
+	var plan: Dictionary=_story_dock.get("shuttles",{})
+	if plan.is_empty():return
+	var dock: int=int(plan.dock)
+	if dock>=actors.size() or int(actors[dock].vitals.hull)<=0:return
+	var target: Vector3=actors[dock].get("pose",actors[dock].get("body_pose",Transform3D())).origin
+	var reach: float=STORY_DOCK_RANGE+load("res://src/content/static_object_definitions.gd").reach(int(actors[dock].get("static_model",-1)))
+	for id in range(int(plan.first_actor),mini(int(plan.end_actor),actors.size())):
+		var visit: Dictionary=plan.visits.get(id,{"start":-1,"given":0,"away":true})
+		var near: bool=int(actors[id].vitals.hull)>0 and actors[id].get("pose",Transform3D()).origin.distance_to(target)<=reach
+		if near and visit.away and int(visit.start)<0:visit={"start":elapsed,"given":0,"away":false}
+		if not near:visit.away=true
+		if int(visit.start)>=0:
+			var due:=mini(int(plan.visit_ms)/STORY_TRANSFER_MS,(elapsed-int(visit.start))/STORY_TRANSFER_MS)
+			while int(visit.given)<due:
+				visit.given=int(visit.given)+1
+				var floor_left:=int(_story_dock.berths) if plan.get("hold_at_berths",false) else 0
+				if int(_story_dock.status)>floor_left:_story_dock.status=int(_story_dock.status)-1
+			if elapsed-int(visit.start)>=int(plan.visit_ms):visit.start=-1
+		plan.visits[id]=visit
 
 func _story_transfer_done(id: int) -> bool:
 	if _story_dock.actors[id].mode=="board":return int(_story_dock.aboard)>=mini(int(_story_dock.berths),int(_story_dock.status))
@@ -1602,6 +1629,11 @@ func _observe_radio() -> bool:
 					if not _encounter.place_story_actors(int(action.first_actor),int(action.end_actor),center,float(action.radius)):return reject(_encounter.error)
 					_action_marks["placed%d"%index]=true
 					if action.get("wake",false) and not _encounter.wake_story_actors(int(action.first_actor),int(action.end_actor)):return reject(_encounter.error)
+			elif action.action=="wake":
+				# Once per action: sleeping ships start to fight.
+				if not _action_marks.has("woken%d"%index):
+					if not _encounter.wake_story_actors(int(action.first_actor),int(action.end_actor)):return reject(_encounter.error)
+					_action_marks["woken%d"%index]=true
 			elif action.action=="retire":
 				# The ship or object leaves the scene (80: the Valkyrie jumps away).
 				var actors: Array=_encounter.combat_snapshot().actors

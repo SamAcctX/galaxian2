@@ -268,11 +268,11 @@ func configure_kappa_player(bindings: RefCounted) -> bool:
 	_identity.erase("actor_id");_identity.owner="player"
 	return true
 
-func replace_with_contract_path(points: Array,start_index:=0) -> bool:
+func replace_with_contract_path(points: Array,start_index:=0,loop:=false) -> bool:
 	error=""
 	if _identity.is_empty() or _points.is_empty() or _authored or points.is_empty() or start_index<0 or start_index>=points.size():return reject("Generate the ship route before replacing it with a valid mission path")
 	if points.any(func(point):return not point is Vector3 or not point.is_finite()):return reject("The mission path contains an invalid waypoint")
-	_points=points.duplicate();_candidates=[];_index=start_index;_start_index=start_index;_loop=false;_authored=true
+	_points=points.duplicate();_candidates=[];_index=start_index;_start_index=start_index;_loop=loop;_authored=true
 	return true
 
 ## A world coordinate path is already authored. Constructing its private copy

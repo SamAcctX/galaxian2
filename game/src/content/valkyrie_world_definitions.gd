@@ -21,6 +21,15 @@ static func map_planet_sizes(bindings: RefCounted,imported: Array) -> Array:
 	if not Valkyrie.available(bindings) or imported.size()!=22:return imported
 	return imported+MAP_PLANET_SIZES
 
+## Star-map sun textures past the imported 16 (sky textures 16-18), and
+## Ginoya's map sun, which is always texture 10036 (verified initStarSystem).
+const MAP_SUN_TEXTURES:=[10038,10033,10037]
+const GINOYA_MAP_SUN:=10036
+static func map_sun_texture(bindings: RefCounted,imported: Array,system_id: int,sky_index: int) -> int:
+	var known: Array=imported+MAP_SUN_TEXTURES if Valkyrie.available(bindings) and imported.size()==16 else imported
+	if Valkyrie.available(bindings) and system_id==int(SUPERNOVA.system_id):return GINOYA_MAP_SUN
+	return int(known[sky_index]) if sky_index>=0 and sky_index<known.size() else -1
+
 static func empty_orbit(station_id: int,cursor: int) -> bool:
 	return station_id in EMPTY_ORBITS or (DESTROYED_AFTER.has(station_id) and cursor>int(DESTROYED_AFTER[station_id]))
 

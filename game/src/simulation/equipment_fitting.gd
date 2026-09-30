@@ -217,6 +217,10 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 		28:
 			for property in [bindings.weapon_parameters.interval_percent_property,bindings.weapon_parameters.damage_percent_property]:
 				if not Weapons.signed_integer(properties.get(int(property))):return "The weapon modifier is unavailable"
+		# Supernova gamma shields cut the gamma-ray drain by a percentage.
+		38:
+			var worlds:=preload("res://src/content/valkyrie_world_definitions.gd")
+			if not load("res://src/content/valkyrie_campaign_definitions.gd").available(bindings) or not Numbers.integer(properties.get(worlds.GAMMA_SHIELD_ATTRIBUTE),0,100):return "The gamma shield is unavailable"
 		_:
 			return "This device's flight behavior is not yet supported"
 	return ""

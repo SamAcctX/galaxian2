@@ -47,6 +47,11 @@ const MODELS:={
 	17049:{"layers":[17049,17055,17054,[17052,Vector3(0,0,-2150)],[17053,Vector3(0,0,-2150)],[17052,Vector3.ZERO],[17053,Vector3.ZERO],
 		[17052,Vector3(0,0,2150)],[17053,Vector3(0,0,2150)]],"collision_record":-1,"hit_radius":1000,"hit_extents":Vector3(1000,1000,3500),
 		"wreck_model":18300,"death_sound":20,"wake_half_extent":0,"hull":"story_freighter","enemy_count_excluded":true},
+	# 94: Luur's station platform: the Midorian station body with its platform
+	# parts (verified createStaticObject 18781). It cannot die. The burning
+	# parts 18781-18784 (registration type 6, no loader yet) are left out.
+	18781:{"layers":[21076,21876,22076],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
+		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
 	16992:{"layers":[16992],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
 		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
 }
@@ -57,6 +62,12 @@ const MAX_BOXES:=64
 
 static func supported(model: Variant) -> bool:
 	return model is int and MODELS.has(model)
+
+## The object's first drawn mesh (its body in target lists).
+static func body_mesh(model: int) -> int:
+	if not supported(model):return -1
+	var first: Variant=MODELS[model].layers[0]
+	return int(first[0]) if first is Array else int(first)
 
 ## How far the object reaches from its centre (its hit box), for docking.
 static func reach(model: int) -> float:

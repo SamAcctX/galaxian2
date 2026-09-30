@@ -40,10 +40,10 @@ func configure(library: RefCounted,bindings: RefCounted,cat: RefCounted,observat
 		if not availability[system.id]:continue
 		var position:=Vector3((100.0-system.fields[3])*140.0-10000.0,(100.0-system.fields[4])*130.0-9000.0,(100.0-system.fields[5])*60.0+1000.0)
 		var faction:=int(system.fields[2])
-		if not position.is_finite() or faction<0 or faction>=rules.ui.faction_image_ids.size():return reject("Galaxy system has invalid coordinates or faction")
+		if not position.is_finite() or faction<0:return reject("Galaxy system has invalid coordinates or faction")
 		var supported: bool=Array(system.station_ids).any(func(id):return destinations.has(id))
 		rows.append({"system_id":int(system.id),"name":system.name,"position":position,"model_id":18070+int(system.sky_index),
-			"faction_image_id":int(rules.ui.faction_image_ids[faction]),"current":system.id==location.system_id,
+			"faction_image_id":int(rules.ui.faction_image_ids[mini(faction,rules.ui.faction_image_ids.size()-1)]),"current":system.id==location.system_id,
 			"story_target":system.station_ids.has(observation.get("mission",{}).get("station_id",-1)),"contract_target":system.id==target_system,
 			"void_source":system.id==warning.get("system_id",-1),"supported":supported,
 			"connected":system.id==location.system_id or origin.linked_system_ids.has(system.id)})
