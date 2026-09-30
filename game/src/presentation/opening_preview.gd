@@ -1137,6 +1137,7 @@ func open_flight_menu(autopilot: bool=true) -> bool:
 	if session is MissionSession and not autopilot and not session.flight_owner().secondary_feedback().get("weapons",[]).is_empty():rows.append({"action":"secondary_menu","label":library.strings[255]})
 	var turret: Dictionary=session.turret_state()
 	if not autopilot and turret.get("ready",false):rows.append({"action":"turret","label":library.strings[207]})
+	if not autopilot and turret.get("auto",false) and not session is MissionSession:rows.append({"action":"auto_turret","label":library.strings[207]+" "+library.strings[39 if turret.get("auto_enabled",true) else 38]})
 	var cloak: Dictionary=session.cloak_state()
 	if not autopilot and cloak.get("ready",false):rows.append({"action":"cloak","label":library.strings[int(bindings.station_equipment.item_text_offset)+int(cloak.item_id)]})
 	if rows.is_empty() or not flight_menu.configure(library,bindings,visuals):return false

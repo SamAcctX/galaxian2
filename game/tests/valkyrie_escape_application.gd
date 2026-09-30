@@ -122,6 +122,16 @@ func fly_turret() -> void:
 	check(actors.size()==9 and actors.slice(0,3).all(func(actor):return actor.hull_catalogue_id==24 and not actor.hostile) and actors.slice(3).all(func(actor):return actor.actor_kind==8 and actor.hostile),"The turret test cast differs from its recipe")
 	if failures:return
 	await capture_free_application("valkyrie-turret-start")
+	# The player switches the auto turret off and on from the action menu.
+	for enabled in [false,true]:
+		if not app.open_flight_menu(false):check(false,"The action menu did not open: "+app.status.text);return
+		await process_frame
+		app.choose_flight_menu("auto_turret");await process_frame
+		var turret: Dictionary=app.session.flight_owner().turret_state()
+		var notices: Array=app.session.flight_owner().snapshot().get("flight_notices",{}).get("pending",[])
+		print("VALKYRIE auto turret enabled=",turret.get("auto_enabled")," notices=",notices.map(func(row):return row.get("text")))
+		check(turret.get("auto_enabled",true)==enabled and notices.any(func(row):return row.get("kind")==("auto_turret_on" if enabled else "auto_turret_off")),"The auto turret toggle did not switch or show its notice")
+		if failures:return
 	var pilot:=CombatPilot.new();var radio_ids:=[];var captured:=false
 	for tick in 24000:
 		if app.session.flight_owner()._objective.snapshot().campaign_cursor==57:break
@@ -303,10 +313,7 @@ func fly_call() -> void:
 	print("VALKYRIE call radio ",radio_ids)
 	check(range(2190,2198).all(func(id):return id in radio_ids),"The call's lines did not all play")
 	# Kothar has no gate route; the player jumps there with the Khador drive.
-	# The map opened at departure, so the new system shows after docking.
-	if failures or not await dock_application():return
-	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
-	if not await release_application_flight() or not await khador_jump(100) or not await dock_application() or not await take_station_talk(62,63):return
+	if failures or not await khador_jump(100) or not await dock_application() or not await take_station_talk(62,63):return
 	check(app.save_station(false) and app.load_station(),"Saving and resuming after the call failed: "+app._save_notice.text)
 	if failures:return
 	check(app.session.station_owner().snapshot().campaign_cursor==63,"Fresh Resume lost the Kothar talk")

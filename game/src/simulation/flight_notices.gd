@@ -68,6 +68,11 @@ func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,lo
 		var display_id:=Desktop.select_id(bindings.desktop_text,text_id)
 		if display_id<0 or display_id>=library.strings.size() or library.strings[display_id].is_empty():return reject("A cloak notice is missing in this language")
 		messages[key]={"kind":key,"text_ids":[text_id],"display_text_ids":[display_id],"text":library.strings[display_id],"rgb":[255,255,255]}
+	# Auto turret switched on/off: "<turret> <activated/deactivated>" (Hud event 0x20/0x21).
+	for key in {"auto_turret_on":38,"auto_turret_off":39}:
+		var ids:=[Desktop.select_id(bindings.desktop_text,207),Desktop.select_id(bindings.desktop_text,{"auto_turret_on":38,"auto_turret_off":39}[key])]
+		if ids.any(func(id):return id<0 or id>=library.strings.size() or library.strings[id].is_empty()):return reject("An auto-turret notice is missing in this language")
+		messages[key]={"kind":key,"text_ids":[207,38 if key=="auto_turret_on" else 39],"display_text_ids":ids,"text":library.strings[ids[0]]+" "+library.strings[ids[1]],"rgb":[255,255,255]}
 	if location.get("station_id",-1)>=0 and not bindings.station_flight.is_empty():
 		var data: Dictionary=bindings.station_flight
 		if not StationFlight.parameters(data):return reject("Station notices require their verified declarations")
@@ -111,6 +116,7 @@ func enqueue(source_id: Variant) -> bool:
 	return _enqueue(_messages[int(source_id)])
 
 func enqueue_cloak_ready() -> bool:return _enqueue(_messages.cloak_ready)
+func enqueue_auto_turret(enabled: bool) -> bool:return _enqueue(_messages.auto_turret_on if enabled else _messages.auto_turret_off)
 func enqueue_energy_spent(units: int) -> bool:
 	if units<=0:return reject("Fuel notice requires spent energy")
 	var message: Dictionary=_messages.energy_spent.duplicate(true)

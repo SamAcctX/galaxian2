@@ -919,6 +919,11 @@ func set_turret_active(active: bool) -> RefCounted:
 		if not next._primaries.reset_fire_intervals():reject(next._primaries.error);return null
 	return next
 
+func set_auto_turret_enabled(enabled: bool) -> RefCounted:
+	var next:=fork_for_frame()
+	if _primaries!=null:next._primaries=_primaries.fork_state();next._primaries.set_auto_turret_enabled(enabled)
+	return next
+
 func advance_turret(command: Vector2,milliseconds: int,inverted:=false) -> RefCounted:
 	var next:=fork_for_frame()
 	if turret_active():

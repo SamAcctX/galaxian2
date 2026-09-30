@@ -818,6 +818,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 			# A story flight has moved on in space: navigation and docking follow it.
 			if next._local_travel==null or not next._local_travel.rebase_story_flight(_story_bindings,story_state.campaign_cursor,story_state.mission):reject("Story navigation: "+str(next._local_travel.error if next._local_travel!=null else "missing travel"));return null
 			next._return_rules={} if next._station==null else FreeFlight.docking(_story_bindings,int(_entry.location.station_id),story_state.campaign_cursor)
+			if next._system_navigation!=null and _story_catalogues!=null and not next._refresh_story_navigation(story_state):return null
 		var visit_clock: Dictionary=next._briefing.snapshot()
 		if next._rescue!=null:
 			if not next._objective.poll_campaign_result(next._encounter,next._radio,next._rescue,next._briefing.mission_poll_due() and not next.death_active() and not next.contract_result_pending()):reject(next._objective.error);return null
@@ -2037,6 +2038,32 @@ func toggle_turret() -> RefCounted:
 	next._encounter=_encounter.set_turret_active(not _encounter.turret_active())
 	next._pilot.angular_units=Vector2.ZERO;next._pilot.lateral_units_per_millisecond=0.0
 	return next
+
+## Ships with an automatic turret switch its fire off and on (original HUD button).
+func toggle_auto_turret() -> RefCounted:
+	error=""
+	var turret:=turret_state()
+	if not turret.get("auto",false) or not entry_released() or dialogue_visible() or death_active():reject("The auto turret is unavailable now");return null
+	var enabled: bool=not turret.get("auto_enabled",true)
+	var next:=fork_for_frame()
+	next._encounter=_encounter.set_auto_turret_enabled(enabled)
+	if next._notices!=null:
+		if not next._notices.enqueue_auto_turret(enabled):reject(next._notices.error);return null
+	return next
+
+## Systems the story opened in flight join the map and the drive at once.
+func _refresh_story_navigation(story_state: Dictionary) -> bool:
+	var career: Dictionary=contract_owner().snapshot()
+	var navigation:=SystemNavigation.new()
+	if not navigation.configure(_story_bindings,_story_catalogues,career.get("lounges",{}).get("system_availability")):return reject(navigation.error)
+	var observation:=_entry.duplicate();observation.contracts=career;observation.mission=story_state.mission;observation.campaign_cursor=story_state.campaign_cursor
+	var destinations:=Context.navigation_destinations(_story_bindings,_story_catalogues,observation)
+	if _drive!=null:
+		var drive: RefCounted=_drive.with_navigation(_story_catalogues,navigation,destinations)
+		if drive==null:return reject(_drive.error)
+		_drive=drive
+	_system_navigation=navigation;_navigation_destinations=destinations
+	return true
 
 func drive_state() -> Dictionary:return {} if _drive==null else _drive.snapshot()
 func drive_departing() -> bool:return _drive!=null and _drive.departing()

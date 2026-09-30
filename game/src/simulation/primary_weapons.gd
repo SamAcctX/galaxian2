@@ -287,6 +287,8 @@ func observe_beam_pose(pose: Transform3D) -> bool:
 	return true
 
 func turret_automatic() -> bool:return _turret!=null and _turret.automatic()
+func set_auto_turret_enabled(value: bool) -> void:
+	if _turret!=null:_turret.set_auto_enabled(value)
 func advance_auto_turret(ship: Transform3D,actors: Array,milliseconds: int) -> bool:
 	return _turret!=null and _turret.advance_auto(ship,actors,milliseconds)
 

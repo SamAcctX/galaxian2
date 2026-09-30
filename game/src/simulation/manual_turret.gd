@@ -15,7 +15,11 @@ func configure(item: Dictionary,mount: Dictionary) -> bool:
 	if row.get("auto",false):_state.merge({"auto":true,"auto_clock":Definitions.AUTO_RETARGET_MS,"target_id":-1})
 	return true
 
-func automatic() -> bool:return not _state.is_empty() and _state.get("auto",false)
+func automatic() -> bool:return not _state.is_empty() and _state.get("auto",false) and _state.get("auto_enabled",true)
+func has_auto() -> bool:return not _state.is_empty() and _state.get("auto",false)
+## The player can switch automatic fire off and on again; it starts on.
+func set_auto_enabled(value: bool) -> void:
+	if has_auto():_state.auto_enabled=value;_state.target_id=-1
 
 ## Turn toward the chosen hostile; true when the barrel is on target.
 func advance_auto(ship: Transform3D,actors: Array,milliseconds: int) -> bool:

@@ -293,6 +293,7 @@ func action(name: String) -> bool:
 		"wingman_attack_target":world=_world.command_wingmen(3)
 		"wingman_secure_waypoint":world=_world.command_wingmen(2)
 		"turret","change_view":world=_world.toggle_turret()
+		"auto_turret":world=_world.toggle_auto_turret()
 		"time":world=_world.press_fast_forward()
 		"boost":_boost_requested=true;return true
 		"cloak":_cloak_requested=true;return true
