@@ -26,10 +26,14 @@ static func validate(data: Variant,source_bytes: int,architecture: String,arriva
 
 # Additional native locations using the same proved blueprint-contact branch.
 # Identity, portrait, offer and price remain in the player's original table.
-const BLUEPRINT_LOCATIONS={5:{"system_id":1,"contact_ids":[6]},20:{"system_id":4,"contact_ids":[2]},32:{"system_id":2,"contact_ids":[1]},43:{"system_id":8,"contact_ids":[4]},90:{"system_id":18,"contact_ids":[9]}}
+const BLUEPRINT_LOCATIONS={3:{"system_id":0,"contact_ids":[0]},5:{"system_id":1,"contact_ids":[6]},14:{"system_id":21,"contact_ids":[7]},20:{"system_id":4,"contact_ids":[2]},
+	32:{"system_id":2,"contact_ids":[1]},43:{"system_id":8,"contact_ids":[4]},51:{"system_id":10,"contact_ids":[8]},54:{"system_id":10,"contact_ids":[3]},
+	59:{"system_id":20,"contact_ids":[10]},78:{"system_id":15,"contact_ids":[11]},90:{"system_id":18,"contact_ids":[9]},
+	105:{"system_id":25,"contact_ids":[16]},106:{"system_id":25,"contact_ids":[18]},107:{"system_id":25,"contact_ids":[17]}}
 
 # Authored role-4 contacts retain their terms; purchases remain separate.
-const ROLE4_LOCATIONS={18:{"system_id":3,"contact_ids":[12],"parameter":0},26:{"system_id":5,"contact_ids":[13],"parameter":1},88:{"system_id":17,"contact_ids":[15],"parameter":21}}
+const ROLE4_LOCATIONS={18:{"system_id":3,"contact_ids":[12],"parameter":0},26:{"system_id":5,"contact_ids":[13],"parameter":1},65:{"system_id":13,"contact_ids":[14],"parameter":10},
+	88:{"system_id":17,"contact_ids":[15],"parameter":21},122:{"system_id":29,"contact_ids":[19],"parameter":32},127:{"system_id":30,"contact_ids":[20],"parameter":33}}
 
 static func contact_ids(data: Dictionary,station_id: int,system_id: int) -> Array:
 	if not parameters(data):return []

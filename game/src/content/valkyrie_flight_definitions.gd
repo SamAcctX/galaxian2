@@ -7,7 +7,7 @@ extends RefCounted
 ## are destroyed. Read from the Mac mission factory, radio factory and level
 ## script.
 const Campaign=preload("res://src/content/valkyrie_campaign_definitions.gd")
-const FLIGHT_KINDS:=[4,156,160,163,164]
+const FLIGHT_KINDS:=[4,6,10,156,160,163,164]
 const ADVANCE_AFTER_MS:=10000
 ## [speaker, text, voice, condition, value]: 5 = after the level time,
 ## 6 = after the given earlier line.
@@ -25,7 +25,9 @@ const RADIO:={
 ## shows them as its in-flight result conversation).
 const RESULT_RADIO:={56:[[27,2149,1206],[0,2150,1207]],63:[[28,2215,1260],[0,2216,1261]],
 	64:[[0,2224,1262],[20,2225,1263],[0,2226,1264],[20,2227,1265],[0,2228,1266]],
-	67:[[0,2288,1296],[20,2289,1297],[0,2290,1298],[20,2291,1299],[0,2292,1300],[20,2293,1301],[0,2294,1302],[0,2295,1303]]}
+	67:[[0,2288,1296],[20,2289,1297],[0,2290,1298],[20,2291,1299],[0,2292,1300],[20,2293,1301],[0,2294,1302],[0,2295,1303]],
+	70:[[0,2313,1314]],
+	73:[[0,2344,1337],[33,2345,1338],[0,2346,1339],[33,2347,1340],[0,2348,1341],[33,2349,1342],[0,2350,1343],[33,2351,1344],[0,2352,1345]]}
 ## [count, faction, hull, hostile]. All Vossk (faction 1); hull 13 is their
 ## large ship, built as the Vossk freighter-class assembly (subtype 1).
 const CASTS:={
@@ -79,6 +81,32 @@ const SCRIPTED:={
 			[0,2282,1509,20,[8]],[31,2283,1510,6,[6]],[0,2284,1511,6,[7]],[31,2285,1512,6,[8]],[0,2286,1503,6,[9]],[31,2287,1504,6,[10]]],
 		"radio_actions":[{"radio_index":5,"action":"place","first_actor":5,"end_actor":9,"center":Vector3(220000,-20000,-10000),"radius":20000.0}],
 		"success":{"kind":"radio_finished","index":11},"failure":{"kind":1,"actor_id":0}},
+	# 69: Trot Lykkt (Netor's assistant, hull 12, friendly) leaves Inari Onu
+	# with four ordinary Terran fighters around (0,0,20000). Done when
+	# "After him!" is over; the story moves on to 70 silently.
+	# Assumptions: no cutscene, so Trot starts beside the player (the original
+	# puts him at 4x the second planet's position, seen only by the cutscene
+	# camera) and flies out along -z to 10x his first point. He leaves the scene
+	# when line #1 is over (action "retire", feature G; ignored until then).
+	69:{"points":[Vector3(0,0,20000),Vector3(0,0,-150000),Vector3(0,0,-1500000)],
+		"groups":[{"count":1,"faction":0,"hull":12,"friendly":true,"name_text_id":1620,"route_start":1,"position":{"kind":"player_offset","offset":Vector3(3000,1000,-9000),"bound":Vector3(1,1,1)}},
+			{"count":4,"faction":0,"hull":-1,"friendly":true,"offsets":[-20000,-20000,-20000],"bounds":[40000,40000,40000]}],
+		"radio":[[0,2307,1513,5,[8000]],[0,2308,1514,6,[0]]],
+		"radio_actions":[{"radio_index":1,"on":"finished","action":"retire","first_actor":0,"end_actor":1}],
+		"success":{"kind":"radio_finished","index":1}},
+	# 70: Trot at Lopat, friendly until "Surrender, or I'll open fire!" is over,
+	# then hostile. His hull is 2.5x an ordinary ship's (the later "max x3" only
+	# rescales the bar). Done when he is destroyed; 2313 then plays.
+	# Assumptions: the player is not moved 120 km back and Trot starts 40 km
+	# away flying toward the station (the original: 1/4 of the way from the gate
+	# toward the moved player); no cutscenes; his Disruptor is the enhanced
+	# story gun (feature H would give him item 183 at 2.5x damage).
+	70:{"points":[Vector3.ZERO],
+		"groups":[{"count":1,"faction":0,"hull":12,"friendly":true,"name_text_id":1620,"route_start":0,"ship_state":{"hull_scales":[2.5],"enhanced_weapon":true},
+			"position":{"kind":"player_offset","offset":Vector3(-5000,2000,-40000),"bound":Vector3(1,1,1)}}],
+		"radio":[[0,2309,1515,5,[8000]],[0,2310,1516,6,[0]],[34,2311,1517,6,[1]],[0,2312,1518,6,[2]]],
+		"turn_hostile":{"radio_index":1,"reputation_axis":-1,"reputation_value":0},
+		"success":{"kind":18,"first_actor":0,"end_actor":1},"result_after":[1,[0]]},
 }
 
 ## Convoy hunts (kind 163): at each listed station a transport of the system's
@@ -96,7 +124,9 @@ const CONVOY_ESCORTS:=5
 ## and the mission's result conversation plays over the radio, one line after
 ## another (assumption, as for the combat results: the original shows it as an
 ## in-flight conversation). [speaker, text, voice].
-const CALLS:={61:[[15,2190,1239],[0,2191,1240],[6,2192,1241],[0,2193,1242],[6,2194,1243],[0,2195,1244],[6,2196,1245],[0,2197,1246]]}
+const CALLS:={61:[[15,2190,1239],[0,2191,1240],[6,2192,1241],[0,2193,1242],[6,2194,1243],[0,2195,1244],[6,2196,1245],[0,2197,1246]],
+	72:[[0,2321,1322],[26,2322,1323],[0,2323,1329],[26,2324,1330],[0,2325,1331],[26,2326,1332],[0,2327,1333],[26,2328,1334],
+		[0,2329,1335],[26,2330,1336],[0,2331,1324],[26,2332,1325],[0,2333,1326],[26,2334,1327],[0,2335,1328]]}
 ## The call starts once the story has moved on (radio holds the result poll).
 ## Systems opened when a story flight moves the career on: [cursor]: systems.
 const STORY_UNLOCKS:={61:[22]}
@@ -213,13 +243,20 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 		if row.has("name_text_id"):group.name_text_id=int(row.name_text_id)
 		if int(row.get("hull",-1))>=0:group.hull_catalogue_id=int(row.hull)
 		if row.has("hull_override"):group.ship_state.hull_override=int(row.hull_override)
+		if row.has("ship_state"):group.ship_state.merge(row.ship_state,true)
+		# A transport of the group's race (the faction's freighter hull and assembly).
+		if row.get("freighter",false):
+			group.merge({"subtype":1,"population_group":"freighter"},true);group.ship_state.cruise_enabled=false
 		groups.append(group);first+=int(row.count)
 	var radio:=[]
 	for row in plan.radio:radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":row[3],"values":row[4].duplicate()})
 	var result: Array=RESULT_RADIO.get(cursor,[])
-	for row in result:radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":6,"values":[radio.size()-1]})
+	var after: Array=plan.get("result_after",[])
+	for index in result.size():
+		var row: Array=result[index];var own: bool=index==0 and not after.is_empty()
+		radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":int(after[0]) if own else 6,"values":after[1].duplicate() if own else [radio.size()-1]})
 	return {"actor_count":first,"ship_groups":groups,"placement":{"kind":"points","points":plan.points.duplicate()},"radio":radio,
-		"success":plan.success.duplicate(),"failure":plan.get("failure",{"kind":"never"}).duplicate(),"story":_advance(cursor),"turn_hostile":{},"radio_actions":plan.radio_actions.duplicate(true)}
+		"success":plan.success.duplicate(),"failure":plan.get("failure",{"kind":"never"}).duplicate(),"story":_advance(cursor),"turn_hostile":plan.get("turn_hostile",{}).duplicate(),"radio_actions":plan.get("radio_actions",[]).duplicate(true)}
 
 static func _convoy_recipe(job: Dictionary) -> Dictionary:
 	var cursor:=int(job.campaign_cursor);var plan: Dictionary=CONVOY[cursor]

@@ -35,6 +35,8 @@ func verify_free_application() -> void:
 	if staged=="call":await fly_call()
 	if staged=="outpost":await fly_outpost()
 	if staged=="distraction":await fly_distraction()
+	if staged=="delivery":await fly_delivery()
+	if staged=="trot":await fly_trot()
 
 ## 49-52: the K'Suukk flees with a Vossk escort that turns on the player at
 ## Makke S'ik, through the gate to S'inokk and away, then home to Kanado.
@@ -485,6 +487,110 @@ func acquire_application_planet(destination: int) -> bool:
 		if tick%100==0:await process_frame
 	check(false,"Local travel to %d never arrived"%destination);return false
 
+## Test shortcut while the 67 playtest is open: move a copied checkpoint's story
+## on to the given cursor (the station's story mission follows the table).
+func seed_story_cursor(cursor: int) -> bool:
+	var file:=StationSaveFile.new();var path: String=app.station_save_path()
+	var document: Dictionary=file.read_document(path)
+	if document.is_empty():check(false,file.error);return false
+	var row: Array=load("res://src/content/valkyrie_campaign_definitions.gd").MISSIONS[cursor]
+	print("VALKYRIE seed story from station mission ",document.station.get("mission")," career mission ",document.career.get("mission"))
+	var from:=int(document.station.campaign_cursor)
+	_move_cursor(document.station,from,cursor);_move_cursor(document.career,from,cursor)
+	# Rank and score follow the story cursor.
+	for part in [document.station,document.career]:
+		var progress: Variant=part.get("progress")
+		if not progress is Dictionary or not progress.has("player_kills"):continue
+		var earned: Dictionary=load("res://src/simulation/opening_handoff.gd").calculate_progress(definitions.opening_handoff,cursor,progress.player_kills,progress.pirate_kills,progress.other_score)
+		progress.merge(earned,true)
+		if part.has("rank") and earned.has("rank"):part.rank=earned.rank
+	var mission: Dictionary=document.station.mission.duplicate(true)
+	mission.merge({"kind":row[0],"station_id":row[2],"reward":row[1]},true)
+	document.station.mission=mission
+	var bytes:=file.encode(document)
+	if bytes.is_empty() or not file._write(path,bytes):check(false,file.error);return false
+	check(app.load_station(),"The story-seeded save did not load: "+app._save_notice.text)
+	return failures==0
+
+static func _move_cursor(node: Variant,from: int,to: int) -> void:
+	if node is Dictionary:
+		for key in node.keys():
+			if str(key)=="campaign_cursor" and node[key] is int and node[key]==from:node[key]=to
+			else:_move_cursor(node[key],from,to)
+	elif node is Array:
+		for item in node:_move_cursor(item,from,to)
+
+## 68: Netor at Inari Onu (Vulpes) takes the Void Essence; entering 69 removes it.
+func fly_delivery() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	if failures or not seed_story_cursor(68) or not seed_cargo([[122,12],[175,1]]):return
+	check(app.session.station_owner().snapshot().campaign_cursor==68,"The delivery checkpoint is not at cursor 68")
+	if failures:return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight() or not await go_to(66) or not await dock_application() or not await take_station_talk(68,69):return
+	var docked: Dictionary=app.session.station_owner().snapshot()
+	check(not docked.cargo.entries.any(func(row):return int(row.item_id)==175),"Netor did not take the Void Essence")
+	check(app.save_station(false) and app.load_station(),"Saving and resuming after the delivery failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==69,"Fresh Resume lost the delivery")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("valkyrie-69.gof2save"))==OK,"The delivery checkpoint could not be kept")
+
+## 69: Trot Lykkt leaves Inari Onu; 70: he is stopped at Lopat; 71: Netor's
+## talk; 72: Alice calls after 10 s in space.
+func fly_trot() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==69,"The Trot checkpoint is not at cursor 69")
+	if failures or not seed_cargo([[122,12]]):return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+	print("VALKYRIE leaving cast ",actors.map(func(actor):return [actor.hull_catalogue_id,actor.actor_kind,actor.hostile,actor.get("friendly")]))
+	check(actors.size()==5 and actors[0].hull_catalogue_id==12 and actors.all(func(actor):return actor.get("friendly")==true),"The Inari Onu cast differs from its recipe")
+	var radio_ids:=[]
+	for tick in 1200:
+		if app.session.flight_owner()._objective.snapshot().campaign_cursor==70:break
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		if not application_step():return
+		if tick%10==0:await process_frame
+	check(app.session.flight_owner()._objective.snapshot().campaign_cursor==70 and [2307,2308].all(func(id):return id in radio_ids),"Trot's departure did not play: "+str(radio_ids))
+	if failures:return
+	await capture_free_application("valkyrie-trot-leaves")
+	if not await go_to(65):return
+	var chase: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+	check(chase.size()==1 and chase[0].hull_catalogue_id==12,"The Lopat cast differs from its recipe")
+	if failures:return
+	var chase_radio:=[]
+	if not await fight_until("trot",func():return app.session.flight_owner()._objective.snapshot().campaign_cursor==71,
+		func(list):return [0] if int(list[0].vitals.hull)>0 and list[0].hostile else [],chase_radio,30000,true,30000.0):return
+	for tick in 600:
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in chase_radio:chase_radio.append(int(radio.text_id))
+		if 2313 in chase_radio:break
+		if not application_step():return
+		if tick%10==0:await process_frame
+	print("VALKYRIE trot radio ",chase_radio)
+	check(range(2309,2314).all(func(id):return id in chase_radio),"The Lopat radio lines did not all play")
+	await capture_free_application("valkyrie-trot-stopped")
+	if failures or not await go_to(66) or not await dock_application() or not await take_station_talk(71,72):return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	var call:=[]
+	for tick in 3000:
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in call:call.append(int(radio.text_id))
+		if 2335 in call:break
+		if not application_step():return
+		if tick%10==0:await process_frame
+	check(app.session.flight_owner()._objective.snapshot().campaign_cursor==73 and range(2321,2336).all(func(id):return id in call),"Alice's call did not play: "+str(call))
+	if failures or not await dock_application():return
+	check(app.save_station(false) and app.load_station(),"Saving and resuming after the call failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==73,"Fresh Resume lost Alice's call")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("valkyrie-73.gof2save"))==OK,"The call checkpoint could not be kept")
+
 ## Local travel inside the current system, the Khador Drive otherwise.
 func go_to(station: int) -> bool:
 	if int(catalogue.tables.stations[station].system_id)==int(app.session.snapshot().location.system_id):return await travel_application(station)
@@ -705,6 +811,8 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"call":return state.campaign_cursor==61
 		"outpost":return state.campaign_cursor==63
 		"distraction":return state.campaign_cursor==66
+		"delivery":return state.campaign_cursor==66
+		"trot":return state.campaign_cursor==69
 	return super.resumed_contract_valid(state)
 
 ## A player crossing hostile Vossk space fights off the ships closing in
