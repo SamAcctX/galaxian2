@@ -334,6 +334,7 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if not geometry.player.present_turret(state.get("turret",{})):return reject(geometry.player.error)
 	if (station!=null)!=state.has("station_exterior"):return reject("Station exterior support changed within a flight")
 	if station!=null and not station.apply_state(state.station_exterior,absolute_milliseconds):return reject(station.error)
+	if station!=null:station.visible=not state.get("station_hidden",false)
 	var message: String=_projection.apply(camera,state.camera_view)
 	if not message.is_empty():return reject(message)
 	var sky_frame: Dictionary=sky.prepare_view(state.camera_view,{},int(state.world_elapsed_ms))
@@ -352,6 +353,7 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 		if not scan_animation.present(scan.sample):return reject(scan_animation.error)
 		target_frame.set_active(state.get("player_aim",{}).get("visible",false))
 	if station_target_overlay!=null and not station_target_overlay.present(state.get("station_targeting",{}),state.camera_view.pose,state.get("player_aim",{}).get("visible",false)):return reject(station_target_overlay.error)
+	if station_target_overlay!=null and state.get("station_hidden",false):station_target_overlay.visible=false
 	if npc_markers!=null and not npc_markers.present(state.get("npc_scanner",{}),state.get("mining_targeting",{}).get("selected_object_index",-1)>=0):return reject(npc_markers.error)
 	if waypoint_marker!=null and not waypoint_marker.present(state.get("player_route",{}),state.camera_view.pose,Vector2i(get_viewport().get_visible_rect().size),state.get("player_aim",{}).get("visible",false)):return reject(waypoint_marker.error)
 	if mining_panel!=null:

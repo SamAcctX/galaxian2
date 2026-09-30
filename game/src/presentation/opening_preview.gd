@@ -1051,6 +1051,10 @@ func open_map(now_microseconds: int=-1,drive_mode:=false) -> bool:
 	if not _focused or not is_visible_in_tree():return false
 	var docked: bool=_station_map_available()
 	if drive_mode and not docked and (not session is FirstFlightSession or not session.request_drive_map()):present_session();return false
+	if drive_mode and not docked and session.story_drive_destination()!=null:
+		var jumped: bool=session.activate_story_drive(Time.get_ticks_usec() if now_microseconds<0 else now_microseconds)
+		if not jumped:status.text=session.error
+		clear_input();present_session();return jumped
 	if drive_mode and not docked and session.snapshot().location.station_id<0 and session.flight_owner().drive_quote(-1).get("affordable",false):
 		var started: bool=session.activate_drive_return(Time.get_ticks_usec() if now_microseconds<0 else now_microseconds)
 		clear_input();present_session();return started

@@ -60,6 +60,16 @@ const ESCORT_HULL:=9999999
 ## 40 km back, the cutscene cameras and the pirates' flight away are not built,
 ## and the result lines play over the radio instead of opening a dialogue.
 const SCRIPTED:={
+	# 78: escape from the Valkyrie. Twenty pirates sleep in a row ~160 km out;
+	# they wake at ~47 s. Only the Khador Drive ends the flight (DRIVE): the
+	# story moves on as it charges. Assumptions: no cinematic cameras or
+	# player lock, the two sliding hangar objects are left out, the row is a
+	# 40x10x10 km box.
+	78:{"points":[Vector3(0,0,160000)],
+		"groups":[{"count":20,"faction":8,"hull":-1,"friendly":false,"sleeping":true,"offsets":[-17000,-5000,-5000],"bounds":[40000,10000,10000]}],
+		"radio":[[0,2398,1527,5,[2000]],[0,2399,1528,5,[30000]],[0,2400,1529,5,[44000]],[11,2401,1530,6,[2]]],
+		"timed_actions":[{"after_ms":42000,"action":"hide_station"},{"after_ms":47000,"action":"wake","first_actor":0,"end_actor":20}],
+		"success":{"kind":"drive_started"}},
 	64:{"points":[Vector3.ZERO,Vector3(100000,0,0)],
 		"groups":[{"count":1,"faction":0,"hull":38,"friendly":true,"route_start":1,"hull_override":ESCORT_HULL,"offsets":[-1,-1,-1],"bounds":[2,2,2]},
 			{"count":8,"faction":8,"hull":-1,"friendly":false,"route_start":1,"offsets":[-2500,-2500,-2500],"bounds":[5000,5000,5000]}],
@@ -272,7 +282,7 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 		var row: Array=result[index];var own: bool=index==0 and not after.is_empty()
 		radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":int(after[0]) if own else 6,"values":after[1].duplicate() if own else [radio.size()-1]})
 	return {"actor_count":first,"ship_groups":groups,"placement":{"kind":"points","points":plan.points.duplicate()},"radio":radio,
-		"success":plan.success.duplicate(),"failure":plan.get("failure",{"kind":"never"}).duplicate(),"story":_advance(cursor),"turn_hostile":plan.get("turn_hostile",{}).duplicate(),"radio_actions":plan.get("radio_actions",[]).duplicate(true)}
+		"success":plan.success.duplicate(),"failure":plan.get("failure",{"kind":"never"}).duplicate(),"story":_advance(cursor),"turn_hostile":plan.get("turn_hostile",{}).duplicate(),"radio_actions":plan.get("radio_actions",[]).duplicate(true),"timed_actions":plan.get("timed_actions",[]).duplicate(true)}
 
 static func _convoy_recipe(job: Dictionary) -> Dictionary:
 	var cursor:=int(job.campaign_cursor);var plan: Dictionary=CONVOY[cursor]
@@ -310,6 +320,14 @@ static func _radio(cursor: int,targets: int) -> Array:
 		var after: Array=[20,targets] if index==0 else [6,radio.size()-1]
 		radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":after[0],"values":[after[1]]})
 	return radio
+
+## Khador Drive rules a story flight sets (owner: the drive's mission check).
+## allow: usable whatever the mission kind; destination: the only jump, with
+## no star map (-1 = the alien world); void_exit: leaving the alien world
+## goes to this station instead of the planet the player came from.
+const DRIVE:={78:{"allow":true,"destination":-1},80:{"void_exit":100}}
+
+static func drive_rule(cursor: int) -> Dictionary:return DRIVE.get(cursor,{}).duplicate()
 
 static func _advance(cursor: int) -> Dictionary:
 	var next:=Campaign.next_cursor(cursor)

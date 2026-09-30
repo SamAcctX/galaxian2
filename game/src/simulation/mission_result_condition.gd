@@ -30,6 +30,9 @@ static func evaluate(condition: Dictionary,observation: Dictionary) -> Dictionar
 				var finished: Variant=observation.get("world",{}).get("radio_finished",[])
 				var index:=int(condition.get("index",-1))
 				return {"satisfied":finished is Array and index>=0 and index<finished.size() and finished[index]==true}
+			"drive_started":
+				# The player has set the Khador Drive charging (78 ends here).
+				return {"satisfied":observation.get("world",{}).get("drive_started",false)==true}
 			"world_elapsed":
 				var world: Dictionary=observation.get("world",{})
 				if not world.get("features",{}).get(condition.get("feature",""),false):return {"satisfied":false}

@@ -42,9 +42,10 @@ func prepare(paths: Array, library: RefCounted, visuals: RefCounted, bindings: R
 		var fixed_poses: Array=[]
 		if require_static and not Tracks.has_identity_tracks(decoded.surfaces):
 			fixed_poses=fixed_surface_poses(decoded.surfaces)
-			# Additive overlays (e.g. a sweeping ship light) are drawn at the
-			# clip's first pose in static scenes; they do not animate yet.
-			if fixed_poses.is_empty() and path.get_file().ends_with("_anim_add.aem"):fixed_poses=first_surface_poses(decoded.surfaces)
+			# Additive overlays (e.g. a sweeping ship light) and animated hulls
+			# (the Cronus) are drawn at the clip's first pose in static scenes;
+			# they do not animate yet.
+			if fixed_poses.is_empty() and (path.get_file().ends_with("_anim_add.aem") or path.get_file().begins_with("v_ship_")):fixed_poses=first_surface_poses(decoded.surfaces)
 			if fixed_poses.is_empty():return reject(path.get_file() + ": source animation semantics are not yet supported in this scene")
 		var prototype := Model.new()
 		prototype.build(decoded, images.get(texture_paths[0]), images.get(texture_paths[1]), mode, texture_cache, source_uv)

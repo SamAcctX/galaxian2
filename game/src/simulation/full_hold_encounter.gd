@@ -792,7 +792,7 @@ func prepare_selected40_career(bindings: RefCounted,session: RefCounted,scenery:
 	_contract_context=career.snapshot().flight.ordinary_context.duplicate(true)
 	return career
 
-func evaluate_contract_session(session: RefCounted,radio_active: bool=false,poll_results: bool=true,periodic_poll_allowed: bool=true,radio_finished: Array=[]) -> Dictionary:
+func evaluate_contract_session(session: RefCounted,radio_active: bool=false,poll_results: bool=true,periodic_poll_allowed: bool=true,radio_finished: Array=[],world_facts: Dictionary={}) -> Dictionary:
 	error=""
 	if _contract_context.is_empty() or not is_instance_of(session,load("res://src/simulation/contract_session.gd")):return fail("The encounter has no retained contract career")
 	var career: RefCounted=session.fork()
@@ -801,7 +801,7 @@ func evaluate_contract_session(session: RefCounted,radio_active: bool=false,poll
 	# Contacts have already changed the encounter bodies. Retain that exact
 	# body state without inserting an extra actor/guidance update before polling.
 	var control: RefCounted=_control.fork_for_frame(false,_combat)
-	var result: Dictionary=career.evaluate_flight(control,radio_active,poll_results,periodic_poll_allowed,radio_finished)
+	var result: Dictionary=career.evaluate_flight(control,radio_active,poll_results,periodic_poll_allowed,radio_finished,world_facts)
 	if result.is_empty():return fail(career.error)
 	_control=result.controller;_combat=_control.combat_owner()
 	return {"session":result.session,"opened":result.opened}

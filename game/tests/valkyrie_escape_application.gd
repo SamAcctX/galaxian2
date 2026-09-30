@@ -40,6 +40,7 @@ func verify_free_application() -> void:
 	if staged=="trot":await fly_trot()
 	if staged=="teres":await fly_teres(false)
 	if staged=="teres-lost":await fly_teres(true)
+	if staged=="escape78":await fly_valkyrie_escape()
 
 ## 49-52: the K'Suukk flees with a Vossk escort that turns on the player at
 ## Makke S'ik, through the gate to S'inokk and away, then home to Kanado.
@@ -662,6 +663,67 @@ func fly_teres(lose: bool) -> void:
 	check(app.session.station_owner().snapshot().campaign_cursor==77,"Fresh Resume lost the Kothar talks")
 	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("valkyrie-77.gof2save"))==OK,"The Kothar checkpoint could not be kept")
 
+## 77: take the free Cronus (drive built in) to the Valkyrie; Alice takes
+## the Khador Drive. 78: the station leaves, twenty pirates wake, and the
+## drive jumps straight to the alien world.
+func fly_valkyrie_escape() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==77,"The escape checkpoint is not at cursor 77")
+	if failures or not seed_cargo([[122,20],[175,2]]):return
+	if not app.equipment_action("open"):check(false,"The hangar did not open: "+app.session.error);return
+	var yard: Array=app.session.station_owner().snapshot().equipment.market_ships
+	var index:=-1
+	for i in yard.size():
+		if int(yard[i].ship_id)==37:index=i
+	if index<0 or not app.equipment_action("buy_ship",index):check(false,"The Cronus could not be taken: "+app.session.error);return
+	var fitted: Dictionary=app.session.station_owner().snapshot()
+	print("VALKYRIE Cronus ship ",fitted.loadout.ship_id," items ",fitted.loadout.equipment_ids," credits ",fitted.contracts.credits," hold ",fitted.cargo.entries)
+	check(int(fitted.loadout.ship_id)==37,"The Cronus purchase did not change ships")
+	for id in [179,41,51,57,75,91]:
+		if fitted.cargo.entries.any(func(row):return row.item_id==id):app.equipment_action("mount",id)
+	if failures or not app.equipment_action("close"):return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight() or not await go_to(101) or not await dock_application() or not await take_station_talk(77,78):return
+	var taken: Dictionary=app.session.station_owner().snapshot()
+	check(not taken.loadout.equipment_ids.has(85) and not taken.cargo.entries.any(func(row):return int(row.item_id)==85),"Alice did not take the Khador Drive")
+	if failures:return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+	check(actors.size()==20 and actors.all(func(actor):return actor.actor_kind==8 and actor.hostile and not actor.active),"The ambush cast differs from its recipe")
+	if failures:return
+	await capture_free_application("valkyrie-escape-start")
+	var radio_ids:=[];var hidden_seen:=false
+	for tick in 600:
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		if not hidden_seen and app.session.snapshot().get("station_hidden",false):hidden_seen=true;await capture_free_application("valkyrie-escape-station-gone")
+		if 2401 in radio_ids and app.session.flight_owner()._encounter.combat_snapshot().actors.all(func(actor):return actor.active):break
+		if not application_step():return
+		if tick%10==0:await process_frame
+	print("VALKYRIE escape radio ",radio_ids," hidden ",hidden_seen)
+	check(range(2398,2402).all(func(id):return id in radio_ids) and hidden_seen,"The escape did not play: "+str(radio_ids))
+	check(app.session.flight_owner()._encounter.combat_snapshot().actors.all(func(actor):return actor.active),"The pirates did not wake")
+	if failures:return
+	await capture_free_application("valkyrie-escape-ambush")
+	resume_application_focus()
+	for pressed in [true,false]:
+		var key:=InputEventKey.new();key.physical_keycode=KEY_K;key.keycode=KEY_K;key.pressed=pressed;app._unhandled_input(key)
+	check(not app.map_panel.visible,"The escape drive opened the star map: "+app.status.text)
+	var began:=now_us
+	app.session.rebase_time(now_us)
+	while app.session.status=="running" and now_us-began<15000000:
+		if not application_step():return
+	print("VALKYRIE escape drive status ",app.session.status," cursor ",app.session.snapshot().campaign_cursor)
+	check(app.session.status=="drive_arrival_transition_required","The escape jump did not complete: "+app.session.status+" "+app.status.text)
+	if failures or not app.enter_drive_arrival(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	var arrived: Dictionary=app.session.snapshot()
+	print("VALKYRIE alien world cursor ",arrived.campaign_cursor," location ",arrived.location)
+	await capture_free_application("valkyrie-alien-world")
+	check(int(arrived.location.station_id)<0 and int(arrived.campaign_cursor)>=79,"The escape did not reach the alien world at 79")
+
 ## The hangar's ship offers, as the player sees them.
 func shipyard() -> Array:
 	if not app.equipment_action("open"):check(false,"The hangar did not open: "+app.session.error);return [-1]
@@ -927,6 +989,7 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"delivery":return state.campaign_cursor==66
 		"trot":return state.campaign_cursor==69
 		"teres","teres-lost":return state.campaign_cursor==73
+		"escape78":return state.campaign_cursor==77
 	return super.resumed_contract_valid(state)
 
 ## A player crossing hostile Vossk space fights off the ships closing in

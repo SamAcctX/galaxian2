@@ -1066,13 +1066,13 @@ func sample_scene_clock(world_ms: int,poll_ms: int) -> bool:
 	_scene_clocked=true;_contract_result.elapsed_ms=world_ms;_contract_result.clock_ms=poll_ms
 	return true
 
-func poll_contract_result(radio_active: bool,periodic_poll_allowed: bool=true,radio_finished: Array=[]) -> Dictionary:
+func poll_contract_result(radio_active: bool,periodic_poll_allowed: bool=true,radio_finished: Array=[],world_facts: Dictionary={}) -> Dictionary:
 	error=""
 	if not _contract or _mission_runner==null or _accounting==null:return fail("Contract flight results are unavailable")
 	var current: Dictionary=_mission_runner.snapshot()
 	if current.retired or current.mode!=0:return current
 	var staged: RefCounted=_mission_runner.fork()
-	var facts:=_result_world();facts.radio_finished=radio_finished.duplicate()
+	var facts:=_result_world();facts.radio_finished=radio_finished.duplicate();facts.merge(world_facts)
 	var result: Dictionary=staged.poll(_combat.actor_snapshots(),radio_active,periodic_poll_allowed,true,{},facts)
 	if result.is_empty():return fail(staged.error)
 	if result.mode!=0 and not _combat.open_contract_result(_bindings,int(result.mode)):return fail(_combat.error)

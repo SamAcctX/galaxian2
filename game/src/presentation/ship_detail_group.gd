@@ -16,12 +16,14 @@ var _selectors := {}
 var _selections := {}
 var _base := ""
 var _binding := ""
+## A single-mesh player hull (e.g. the Cronus) always shows that one mesh.
+var _fixed := {}
 
 func configure(bindings: RefCounted, ships: Dictionary,freighters: Array=[],assemblies: Dictionary={}) -> bool:
 	clear()
 	if bindings==null:return reject("Ship detail group requires source declarations")
 	if ships.is_empty(): return reject("Ship detail group requires registered ships")
-	var staged := {}
+	var staged := {};var fixed := {}
 	for key in freighters:
 		if not key is int or not ships.get(key) is int:return reject("Invalid freighter detail identity")
 		if ships[key] in [14,15]:continue
@@ -39,10 +41,15 @@ func configure(bindings: RefCounted, ships: Dictionary,freighters: Array=[],asse
 		if not ready:return reject(selector.error)
 		# Ships without alternate meshes (player-class hulls flown by story NPCs)
 		# keep their one mesh and never join the source LOD manager.
-		if key not in freighters and bindings.ship_lod.body_resource_ids[ships[key]][0]==65535:continue
+		if key not in freighters and bindings.ship_lod.body_resource_ids[ships[key]][0]==65535:
+			if key is String and key=="player":fixed[key]={"visible":true,"level":0}
+			continue
 		staged[key]=selector
-	if staged.is_empty() and not ships.is_empty():clear();return true
-	return configure_selectors(bindings,staged)
+	if staged.is_empty() and not ships.is_empty():
+		clear();_fixed=fixed;_base=bindings.base_content_id;_binding=bindings.binding_id;return true
+	if not configure_selectors(bindings,staged):return false
+	_fixed=fixed
+	return true
 
 func configure_selectors(bindings: RefCounted, selectors: Dictionary) -> bool:
 	clear()
@@ -63,6 +70,7 @@ func configure_selectors(bindings: RefCounted, selectors: Dictionary) -> bool:
 
 func update(delta_ms: Variant, positions: Dictionary, reference: Variant, detail: Variant, suppressed: Variant) -> bool:
 	error=""
+	if _selectors.is_empty() and not _fixed.is_empty():return true
 	if _selectors.is_empty(): return reject("Configure ship detail group before updating")
 	if not Numbers.integer(delta_ms,0,_max_ms) or not suppressed is bool: return reject("Invalid LOD frame or suppression state")
 	# Suppressed source updates neither accumulate time nor select geometry.
@@ -77,6 +85,7 @@ func update(delta_ms: Variant, positions: Dictionary, reference: Variant, detail
 
 func refresh(positions: Dictionary, reference: Variant, detail: Variant) -> bool:
 	error=""
+	if _selectors.is_empty() and not _fixed.is_empty():return true
 	if _selectors.is_empty(): return reject("Configure ship detail group before refreshing")
 	if not reference is Vector3 or not reference.is_finite() or not _selectors.keys().all(func(key):return positions.has(key)): return reject("Invalid LOD reference or ship position set")
 	var staged := {}
@@ -98,11 +107,12 @@ func refresh(positions: Dictionary, reference: Variant, detail: Variant) -> bool
 	return true
 
 func snapshot() -> Dictionary:
-	if _selectors.is_empty(): return {}
-	return {"base_content_id":_base,"binding_id":_binding,"counter_ms":_counter,"selections":_selections.duplicate(true)}
+	if _selectors.is_empty() and _fixed.is_empty(): return {}
+	var selections: Dictionary=_selections.duplicate(true);selections.merge(_fixed.duplicate(true))
+	return {"base_content_id":_base,"binding_id":_binding,"counter_ms":_counter,"selections":selections}
 
 func clear() -> void:
-	error="";_clock={};_counter=0;_max_ms=0;_selectors={};_selections={};_base="";_binding=""
+	error="";_clock={};_counter=0;_max_ms=0;_selectors={};_selections={};_base="";_binding="";_fixed={}
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted = get_script().new()
@@ -115,6 +125,7 @@ func fork_for_frame() -> RefCounted:
 	copy._selections = _selections
 	copy._base = _base
 	copy._binding = _binding
+	copy._fixed = _fixed
 	return copy
 
 func reject(message: String) -> bool:

@@ -127,6 +127,16 @@ static func ordinary_void_selection(travel: Dictionary,context: Dictionary) -> b
 	return true
 
 func fork() -> RefCounted:return self # Admitted capabilities have no mutators.
+## A Void trip admitted just before the story moved on in the same flight
+## (78: the drive charges, the story reaches 79) carries the new cursor.
+func rebased_void_story(cursor: int) -> RefCounted:
+	if _void_visit.is_empty():return self
+	var copy: RefCounted=get_script().new()
+	for name in ["_recipe","_identity","_loadout","_normal_progress","_contract_context","_legacy_flight","_live_cursors","_arrival_source","_arrival_packet","_void_visit"]:
+		copy.set(name,get(name).duplicate(true))
+	copy._normal_return=_normal_return
+	copy._identity.campaign_cursor=cursor;copy._void_visit.campaign_cursor=cursor
+	return copy
 
 func arrival_source_matches(loadout: Dictionary) -> bool:return not _arrival_packet.is_empty() and loadout==_arrival_source
 func arrival_loadout() -> Dictionary:return {} if _arrival_packet.is_empty() else _loadout.duplicate(true)

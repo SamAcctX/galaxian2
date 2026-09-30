@@ -1473,7 +1473,7 @@ func _bind_accounted_world(controller: RefCounted,context: Dictionary,scene: Dic
 	_flight_identity=controller.flight_identity()
 	return true
 
-func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_results: bool=true,periodic_poll_allowed: bool=true,radio_finished: Array=[]) -> Dictionary:
+func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_results: bool=true,periodic_poll_allowed: bool=true,radio_finished: Array=[],world_facts: Dictionary={}) -> Dictionary:
 	# The session and controller commit together. A failed result preparation
 	# cannot pay, change career, discard actors or partially freeze a live flight.
 	error=""
@@ -1484,7 +1484,7 @@ func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_result
 		return {"session":next,"controller":flight,"opened":false}
 	if not next._retain_combat_progress(flight):return fail(next.error)
 	if _flight.has("ordinary_context") or not poll_results or flight.mission_context_owner().recipe().result.get("defer_to_station",false):return {"session":next,"controller":flight,"opened":false}
-	var result: Dictionary=flight.poll_contract_result(radio_active,periodic_poll_allowed,radio_finished)
+	var result: Dictionary=flight.poll_contract_result(radio_active,periodic_poll_allowed,radio_finished,world_facts)
 	if result.is_empty():return fail(flight.error)
 	var advance: Dictionary=flight.mission_context_owner().recipe().get("story_advance",{})
 	# A failed story flight shows the ordinary failure result (no pay, cursor

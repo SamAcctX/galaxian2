@@ -118,6 +118,8 @@ var _preceding_commands:=Vector2.ZERO
 var _return_rules:={}
 var _departure_station: RefCounted
 var _station_contact:=false
+## The station has left this flight (a story action): not drawn, no docking.
+var _station_hidden:=false
 var _station_packet:={}
 var _model_basis:=Basis.IDENTITY
 var _throttle:=1.0
@@ -821,12 +823,13 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		var radio_active: bool=next._radio!=null and next._radio.snapshot().get("visible",false)
 		var before_cursor: int=next._objective.snapshot().campaign_cursor
 		var radio_finished: Array=next._radio.snapshot().get("finished",[]) if next._radio!=null else []
-		if not next._objective.poll_contract(next._cargo,next._scenery,next._encounter,next._player.snapshot().vitals.hull>0,radio_active,next._briefing.mission_poll_due(),radio_finished):reject(next._objective.error);return null
+		if not next._objective.poll_contract(next._cargo,next._scenery,next._encounter,next._player.snapshot().vitals.hull>0,radio_active,next._briefing.mission_poll_due(),radio_finished,{"drive_started":next._drive!=null and next._drive.snapshot().get("phase","ready")!="ready"}):reject(next._objective.error);return null
 		var story_state: Dictionary=next._objective.snapshot()
 		if story_state.campaign_cursor!=before_cursor:
 			# A story flight has moved on in space: navigation and docking follow it.
 			if next._local_travel==null or not next._local_travel.rebase_story_flight(_story_bindings,story_state.campaign_cursor,story_state.mission):reject("Story navigation: "+str(next._local_travel.error if next._local_travel!=null else "missing travel"));return null
-			next._return_rules={} if next._station==null else FreeFlight.docking(_story_bindings,int(_entry.location.station_id),story_state.campaign_cursor)
+			next._return_rules={} if next._station==null or next._station_hidden else FreeFlight.docking(_story_bindings,int(_entry.location.station_id),story_state.campaign_cursor)
+			if next._drive_arrival is Context:next._drive_arrival=next._drive_arrival.rebased_void_story(story_state.campaign_cursor)
 			if next._system_navigation!=null and _story_catalogues!=null and not next._refresh_story_navigation(story_state):return null
 			var disarm: Array=_mission_context.recipe().get("disarm_on_advance",[]) if _mission_context!=null else []
 			if not disarm.is_empty() and not next._encounter.disarm_story_actors(int(disarm[0]),int(disarm[1])):reject(next._encounter.error);return null
@@ -1245,7 +1248,12 @@ func _construct_void_trip(bindings: RefCounted,catalogues: RefCounted,route: Ref
 	var equipment: RefCounted=_equipment.fork()
 	var source: Dictionary=equipment.snapshot().loadout
 	if not equipment.retain_flight_cargo(current.cargo) or not equipment.relocate_ordinary_void(bindings,route,entering):reject(equipment.error);return null
-	var cache: Dictionary=load("res://src/simulation/flight_player_cache.gd").capture_ordinary_void(bindings,route,source,equipment.snapshot().loadout,current.player,entering)
+	# A story that moved on during this flight (78 -> 79) is the trip's cursor.
+	var pilot_state: Dictionary=current.player
+	var trip_cursor: int=int(Context.ordinary_void_route(bindings,route).get("campaign_cursor",-1))
+	if entering and pilot_state.get("campaign_cursor")!=trip_cursor and contracts.snapshot().get("campaign_cursor")==trip_cursor:
+		pilot_state=pilot_state.duplicate(true);pilot_state.campaign_cursor=trip_cursor
+	var cache: Dictionary=load("res://src/simulation/flight_player_cache.gd").capture_ordinary_void(bindings,route,source,equipment.snapshot().loadout,pilot_state,entering)
 	if cache.is_empty():reject("The ordinary portal lost the surviving ship pools");return null
 	if not contracts.transfer_ordinary_void(bindings,current.progress,route,entering):reject(contracts.error);return null
 	var candidate:=Construction.new()
@@ -1453,6 +1461,15 @@ func _observe_radio() -> bool:
 				if actors[int(action.first_actor)].get("active",false)!=true and int(actors[int(action.first_actor)].vitals.hull)>0 and (action.center is String or actors[int(action.first_actor)].pose.origin.distance_to(center)>2.0*float(action.radius)):
 					if not _encounter.place_story_actors(int(action.first_actor),int(action.end_actor),center,float(action.radius)):return reject(_encounter.error)
 					if action.get("wake",false) and not _encounter.wake_story_actors(int(action.first_actor),int(action.end_actor)):return reject(_encounter.error)
+		# Recipe actions at a flight time (78: the station leaves, the pirates wake).
+		for action in _mission_context.recipe().get("timed_actions",[]):
+			if elapsed<int(action.after_ms):continue
+			if action.action=="hide_station" and not _station_hidden:
+				_station_hidden=true;_return_rules={}
+			elif action.action=="wake":
+				var actors: Array=_encounter.combat_snapshot().actors
+				if range(int(action.first_actor),int(action.end_actor)).any(func(id):return actors[id].get("active",false)!=true and int(actors[id].get("actor_mode",-1))==5 and int(actors[id].vitals.hull)>0):
+					if not _encounter.wake_story_actors(int(action.first_actor),int(action.end_actor)):return reject(_encounter.error)
 	elif _void_environment!=null or _entry.campaign_cursor==28:
 		_radio_events=_radio.step(int(_briefing.snapshot().world_elapsed_ms),{},0)
 	elif _sahi!=null:
@@ -2102,6 +2119,7 @@ func drive_available() -> bool:return _drive!=null and _drive.ready()
 func drive_quote(station_id: int) -> Dictionary:return {} if _drive==null else _drive.quote(station_id,_cargo.quantity(Drive.Definitions.ENERGY_ITEM))
 func drive_permits_mission() -> bool:
 	if _objective==null:return false
+	if story_drive_rule().get("allow",false):return true
 	if _ordinary_void_source!=null and _entry.location.station_id<0:return true
 	var current: Dictionary=_objective.snapshot()
 	var job: Dictionary=current.get("contracts",{}).get("mission",{})
@@ -2109,6 +2127,12 @@ func drive_permits_mission() -> bool:
 	var context: Dictionary=_entry.departure.get("free_context",{})
 	if not context.get("mission_story",false):return true
 	return Drive.permits_mission({"kind":context.get("mission_kind",-1),"completed":context.get("mission_completed",false)})
+
+## The story's drive rule for this flight (see valkyrie_flight_definitions.DRIVE).
+func story_drive_rule() -> Dictionary:
+	var flights=load("res://src/content/valkyrie_flight_definitions.gd")
+	if _story_bindings==null or not flights.Campaign.saved_story(_story_bindings,_entry.get("campaign_cursor")):return {}
+	return flights.drive_rule(int(_entry.campaign_cursor))
 
 func drive_selection() -> RefCounted:
 	if not drive_available():reject("Khador Drive is not ready");return null
@@ -2318,6 +2342,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	if _entry.campaign_cursor in [10,11,12,26,36] or _entry.has("dekato_context") or _objective is ContractObjective:state.station_response_flags=station_response_flags()
 	if _station!=null:
 		state.station_exterior=_station.snapshot()
+		state.station_hidden=_station_hidden
 		state.station_volume_index=_station.point_volume(_pose.origin)
 	if _autopilot!=null:state.station_autopilot=_autopilot.snapshot()
 	if not _return_rules.is_empty():
@@ -2409,7 +2434,7 @@ func fork_for_frame() -> RefCounted:
 	if _autopilot!=null:copy._autopilot=_autopilot.fork_for_frame()
 	copy._preceding_commands=_preceding_commands
 	copy._departure_station=_departure_station
-	copy._return_rules=_return_rules;copy._station_contact=_station_contact;copy._station_packet=_station_packet.duplicate(true)
+	copy._return_rules=_return_rules;copy._station_contact=_station_contact;copy._station_hidden=_station_hidden;copy._station_packet=_station_packet.duplicate(true)
 	copy._model_basis=_model_basis;copy._throttle=_throttle
 	if _encounter!=null:copy._encounter=_encounter.fork_for_frame()
 	copy._world_elapsed_ms=_world_elapsed_ms

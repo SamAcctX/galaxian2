@@ -420,6 +420,20 @@ func activate_drive_return(now_microseconds: int) -> bool:
 	if not _commit(world,false):return false
 	return rebase_time(now_microseconds)
 
+## A story flight whose drive has one destination jumps there without the map.
+func story_drive_destination() -> Variant:
+	if _world==null:return null
+	var rule: Dictionary=_world.story_drive_rule()
+	return int(rule.destination) if rule.has("destination") else null
+
+func activate_story_drive(now_microseconds: int) -> bool:
+	var destination: Variant=story_drive_destination()
+	if destination==null or not can_control():return reject("This flight has no story drive destination")
+	var world: RefCounted=_world.start_drive(int(destination))
+	if world==null:return reject(_world.error)
+	if not _commit(world,false):return false
+	return rebase_time(now_microseconds)
+
 func confirm_drive_destination(station_id: int,now_microseconds: int) -> bool:
 	if not map_active():return reject("The drive map does not own input")
 	var world: RefCounted=_world.start_drive(station_id)
