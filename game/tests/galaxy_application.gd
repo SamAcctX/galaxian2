@@ -134,6 +134,7 @@ func follow_selected_course(destination: int,gate_destination: int=-1) -> bool:
 		while app.session.status=="running" and now_us-started<10000000:
 			if not application_step():return false
 		check(app.session.status=="gate_arrival_transition_required","Gate animation failed to finish")
+		check(app.session.gate_jump_plays==1,"The gate jump played its sound %d times (clip %s)"%[app.session.gate_jump_plays,str(app.session._gate_jump_clip.keys())])
 		if failures or not app.enter_gate_arrival(now_us,4096,flight_world_seconds()):check(false,app.status.text);return false
 		check(app.session.snapshot().location.station_id==chosen,"Gate arrived at a different planet from the confirmed destination")
 		break

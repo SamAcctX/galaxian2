@@ -690,6 +690,8 @@
     "game/src/presentation/npc_destruction_pose.gd.uid",
     "game/src/presentation/npc_engine_audio.gd",
     "game/src/presentation/npc_engine_audio.gd.uid",
+    "game/src/presentation/one_shot_audio.gd",
+    "game/src/presentation/one_shot_audio.gd.uid",
     "game/src/presentation/opening_audio.gd",
     "game/src/presentation/opening_audio.gd.uid",
     "game/src/presentation/opening_damage_geometry.gd",
