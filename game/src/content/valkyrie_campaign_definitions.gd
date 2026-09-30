@@ -9,11 +9,14 @@ const LAST_CURSOR:=83
 ## A won Valkyrie career rests here with an empty story mission (as 45 does
 ## after the main game).
 const WON_CURSOR:=84
+## Supernova continues a won Valkyrie career: the in-flight call at 84 plays
+## cursor 85's lines and moves the story to 86. The story is built up to 95.
+const STORY_END:=95
 const TALK:=11
 ## Systems revealed when a conversation is acknowledged. The original reveals
 ## Herjaza and Skavac as missions 55 and 63 begin; Loma is visible to every
 ## expansion owner, so a continued career receives it with the first call.
-const UNLOCKS:={45:[25],54:[23],62:[24]}
+const UNLOCKS:={45:[25],54:[23],62:[24],88:[27,28]}
 ## Ship changes applied as the story enters a cursor: a loaned hull with its
 ## fitted items [item, slot], or the owned ship handed back.
 const SHIPS:={
@@ -45,7 +48,7 @@ const COUNTER_REWARD:={60:50000}
 ## Goods put in the hold [item, quantity]; the original ignores hold space.
 ## 72: Netor gives the Void Essence back (175). 84 (the win): one S'kloptorr
 ## Rum (137) and a Khador Drive (85).
-const HOLD_GRANTS:={72:[[175,1]],84:[[137,1],[85,1]]}
+const HOLD_GRANTS:={72:[[175,1]],84:[[137,1],[85,1]],94:[[205,1]]}
 ## Shipyard changes: "clear" empties the shipyard first; each [ship, price] is
 ## then offered (price -1 = the normal local price, added only when missing).
 ## 75: Kothar's shipyard is emptied. 77: Khador's Cronus (37) for free. 84:
@@ -59,6 +62,24 @@ const PROTECTED_ITEMS:={77:[85]}
 ## men strip the drive; the Valkyrie workshop is gone).
 const REMOVED_ITEMS:={78:[85]}
 const BLUEPRINT_RESET:={78:101}
+## Goods taken from the hold as the story enters the cursor [item, quantity]
+## (89: ten Luxury, 104; assumption: fewer are simply all taken).
+const REMOVED_GOODS:={89:[[104,10]]}
+## Stations whose visit is undone as the story enters the cursor (90: the 89
+## cutscene's forced Naneroh visit; the visited-stations count drops by one).
+const UNVISIT:={90:[109]}
+## Kind 184 counts people down from this value (the mission's status value);
+## it completes at 0. Kept in career progress as "story_status".
+const STORY_STATUS:={91:10,92:10,94:83}
+## Required before the mission's target can be picked on the star map or
+## docked at; otherwise text_id is shown and the course is refused.
+const ENTRY_REQUIREMENTS:={91:{"passenger_berths":10,"text_id":3203},94:{"passenger_berths":1,"text_id":3203}}
+## Where the player is put as the story enters the cursor (from a talk's
+## acknowledgement or a flight's advance): "gate" = arrive at the station's
+## orbit through the gate in flight, "docked" = the station screen.
+## keep_vitals: hull, shield, armour and gamma carry over.
+const MOVE_ON_ENTRY:={89:{"station_id":109,"arrive":"gate"},90:{"station_id":10,"arrive":"docked"},
+	92:{"station_id":113,"arrive":"gate","keep_vitals":true},95:{"station_id":10,"arrive":"gate","keep_vitals":true}}
 ## cursor: [kind, reward, station]; -1 station means any station.
 const MISSIONS:={
 	84:[-1,0,0],
@@ -68,6 +89,10 @@ const MISSIONS:={
 	66:[11,0,101],67:[4,0,104],68:[8,0,66],69:[6,0,66],70:[6,0,65],71:[11,0,66],
 	72:[164,150000,101],73:[10,0,81],74:[11,0,100],75:[11,0,100],76:[11,0,100],77:[11,0,101],
 	78:[4,0,101],79:[165,0,-1],80:[1,0,100],81:[4,0,-1],82:[11,0,100],83:[11,0,100],
+	# Supernova. 85 (10 s in space) is skipped by the call at 84. 184 = people
+	# moved (STORY_STATUS counts down); 95 is the next block's first cutaway.
+	85:[164,0,0],86:[11,0,100],87:[4,0,10],88:[11,0,10],89:[4,0,109],90:[11,0,10],
+	91:[184,0,110],92:[184,0,113],93:[11,0,114],94:[184,0,111],95:[170,0,10],
 }
 
 ## The pack must carry the App Store campaign tables these rows were read from.
@@ -81,7 +106,9 @@ static func mission(cursor: int) -> Dictionary:
 	return {"kind":row[0],"station_id":row[2],"reward":row[1],"bonus":0,"source_parameter":0}
 
 static func next_cursor(cursor: int) -> int:
-	return 54 if cursor==52 else cursor+1
+	if cursor==52:return 54
+	if cursor==WON_CURSOR:return 86
+	return cursor+1
 
 ## Station conversations. A finished main career takes the expansion's incoming
 ## call at whichever station it is docked in; talk missions play their authored
@@ -94,7 +121,7 @@ static func conversation(bindings: RefCounted,cursor: Variant,story_mission: Var
 	var expected:=mission(cursor)
 	if expected.is_empty() or int(expected.kind) not in [TALK,GOODS_KIND,DELIVERY_KIND] or not _same(story_mission,expected):return {}
 	var next:=next_cursor(cursor)
-	if next>WON_CURSOR:return {}
+	if next>STORY_END:return {}
 	var rules:=_rules(cursor,expected,next,Dialogue.events(Dialogue.RESULT,cursor),true)
 	if int(expected.kind) in [GOODS_KIND,DELIVERY_KIND] and not rules.is_empty():
 		if not GOODS.has(cursor):return {}
@@ -114,6 +141,10 @@ static func _rules(cursor: int,current: Dictionary,next: int,events: Array,targe
 	if STATION_SHIPS.has(next):result.story_station_ships=STATION_SHIPS[next].duplicate(true)
 	if REMOVED_ITEMS.has(next):result.story_removed_items=REMOVED_ITEMS[next].duplicate()
 	if BLUEPRINT_RESET.has(next):result.story_blueprint_reset=int(BLUEPRINT_RESET[next])
+	if REMOVED_GOODS.has(next):result.story_removed_goods=REMOVED_GOODS[next].duplicate(true)
+	if UNVISIT.has(next):result.story_unvisit=UNVISIT[next].duplicate()
+	if STORY_STATUS.has(next):result.story_status=int(STORY_STATUS[next])
+	if MOVE_ON_ENTRY.has(next):result.story_move=MOVE_ON_ENTRY[next].duplicate()
 	return result
 
 static func _same(a: Dictionary,b: Dictionary) -> bool:
@@ -124,11 +155,11 @@ static func _same(a: Dictionary,b: Dictionary) -> bool:
 ## True for careers inside the expansion story, including the finished main
 ## career that is about to take its first call.
 static func active(bindings: RefCounted,cursor: Variant) -> bool:
-	return cursor is int and cursor>=FIRST_CURSOR and cursor<=LAST_CURSOR+1 and available(bindings)
+	return cursor is int and cursor>=FIRST_CURSOR and cursor<=STORY_END and available(bindings)
 
 ## Careers saved inside the expansion story after its first call.
 static func saved_story(bindings: RefCounted,cursor: Variant) -> bool:
-	return cursor is int and cursor>FIRST_CURSOR and cursor<=LAST_CURSOR+1 and available(bindings)
+	return cursor is int and cursor>FIRST_CURSOR and cursor<=STORY_END and available(bindings)
 
 static func saved_mission(cursor: Variant,value: Variant) -> bool:
 	if not cursor is int or not value is Dictionary:return false
@@ -142,6 +173,10 @@ static func saved_mission(cursor: Variant,value: Variant) -> bool:
 static func protected_items(bindings: RefCounted,cursor: Variant) -> Array:
 	if not saved_story(bindings,cursor):return []
 	return PROTECTED_ITEMS.get(cursor,[]).duplicate()
+
+static func entry_requirement(cursor: int) -> Dictionary:return ENTRY_REQUIREMENTS.get(cursor,{}).duplicate()
+static func story_move(cursor: int) -> Dictionary:return MOVE_ON_ENTRY.get(cursor,{}).duplicate()
+static func story_status(cursor: int) -> int:return int(STORY_STATUS.get(cursor,-1))
 
 static func ship_equipment(ship: Dictionary) -> Array:
 	return ship.get("equipment",[]).map(func(row):return {"item_id":int(row[0]),"slot":int(row[1]),"quantity":1})

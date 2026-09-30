@@ -9,6 +9,9 @@ extends RefCounted
 const Campaign=preload("res://src/content/valkyrie_campaign_definitions.gd")
 const FLIGHT_KINDS:=[1,4,6,10,156,160,163,164]
 const ADVANCE_AFTER_MS:=10000
+## Supernova's people-moving flights (kind 184) are scripted flights at their
+## target station.
+const STORY_FLIGHT_KINDS:=[184]
 ## [speaker, text, voice, condition, value]: 5 = after the level time,
 ## 6 = after the given earlier line.
 const RADIO:={
@@ -60,6 +63,11 @@ const ESCORT_HULL:=9999999
 ## 40 km back, the cutscene cameras and the pirates' flight away are not built,
 ## and the result lines play over the radio instead of opening a dialogue.
 const SCRIPTED:={
+	# 87: Carla and Keith fly to Thynome. No cast; six lines from 1.5 s; done
+	# when the last is over (then the 88 talk on docking at Thynome).
+	87:{"points":[Vector3.ZERO],"groups":[],
+		"radio":[[6,2469,2057,5,[1500]],[0,2470,2058,6,[0]],[6,2471,2059,6,[1]],[0,2472,2060,6,[2]],[6,2473,2061,6,[3]],[0,2474,2062,6,[4]]],
+		"success":{"kind":"radio_finished","index":5}},
 	# 80: Battle of Kothar. #0 the Valkyrie battlestation (hostile, not
 	# destroyable), #1-#12 its weak points, #13-#18 pirates and #19-#21 Ward
 	# defenders around (0,0,80000). "Retreat!" once #1-#18 are gone; the
@@ -181,13 +189,20 @@ const CONVOY_ESCORTS:=5
 ## and the mission's result conversation plays over the radio, one line after
 ## another (assumption, as for the combat results: the original shows it as an
 ## in-flight conversation). [speaker, text, voice].
-const CALLS:={61:[[15,2190,1239],[0,2191,1240],[6,2192,1241],[0,2193,1242],[6,2194,1243],[0,2195,1244],[6,2196,1245],[0,2197,1246]],
+const CALLS:={84:[[6,2463,1565],[0,2464,1566]],
+	61:[[15,2190,1239],[0,2191,1240],[6,2192,1241],[0,2193,1242],[6,2194,1243],[0,2195,1244],[6,2196,1245],[0,2197,1246]],
 	72:[[0,2321,1322],[26,2322,1323],[0,2323,1329],[26,2324,1330],[0,2325,1331],[26,2326,1332],[0,2327,1333],[26,2328,1334],
 		[0,2329,1335],[26,2330,1336],[0,2331,1324],[26,2332,1325],[0,2333,1326],[26,2334,1327],[0,2335,1328]]}
 ## The call starts once the story has moved on (radio holds the result poll).
 ## Systems opened when a story flight moves the career on: [cursor]: systems.
 const STORY_UNLOCKS:={61:[22]}
 const CALL_AFTER_MS:=12000
+## Carla's one-shot calls, armed while the cursor is in [from, to]: in flight
+## outside the alien world, with no freelance job, 12 s into the flight
+## (original: 12 s of play after the cursor moved). [speaker, text, voice];
+## the first line comes 1.5 s after the call opens. Once heard, the career
+## keeps "nag_heard" = from (saved in progress).
+const NAG_CALLS:={93:{"to":110,"lines":[[6,3157,1553],[0,3158,1554]]}}
 ## Once this radio line has finished, every story ship turns hostile and the
 ## Vossk standing drops to its worst value (standing 0 = 100).
 const TURN_HOSTILE_AFTER:={50:{"radio_index":2,"reputation_axis":0,"reputation_value":100}}
@@ -196,7 +211,7 @@ const TURN_HOSTILE_AFTER:={50:{"radio_index":2,"reputation_axis":0,"reputation_v
 static func story_job(bindings: RefCounted,cursor: Variant,station_id: Variant,progress: Dictionary={}) -> Dictionary:
 	if not cursor is int or not station_id is int or not Campaign.saved_story(bindings,cursor) or not (CASTS.has(cursor) or COMBAT.has(cursor) or CONVOY.has(cursor) or CALLS.has(cursor) or SCRIPTED.has(cursor)):return {}
 	var mission:=Campaign.mission(cursor)
-	if mission.is_empty() or int(mission.kind) not in FLIGHT_KINDS:return {}
+	if mission.is_empty() or (int(mission.kind) not in FLIGHT_KINDS+STORY_FLIGHT_KINDS and not CALLS.has(cursor)):return {}
 	if (COMBAT.has(cursor) or SCRIPTED.has(cursor)) and station_id!=int(mission.station_id):return {}
 	var job:={"kind":int(mission.kind),"station_id":station_id,"reward":0,"bonus":0,"difficulty":1,"quantity":0,
 		"story":false,"story_job":true,"campaign_cursor":cursor,"target_station_id":int(mission.station_id)}
@@ -397,4 +412,8 @@ static func _advance(cursor: int) -> Dictionary:
 	var advance:={"from_cursor":cursor,"campaign_cursor":next,"mission":Campaign.mission(next),"previous_mission":Campaign.mission(cursor)}
 	# Entering the next mission may open a system (mission 62 opens Kothar's).
 	if STORY_UNLOCKS.has(cursor):advance.unlock_system_ids=STORY_UNLOCKS[cursor].duplicate()
+	if Campaign.REMOVED_GOODS.has(next):advance.story_removed_goods=Campaign.REMOVED_GOODS[next].duplicate(true)
+	if Campaign.UNVISIT.has(next):advance.story_unvisit=Campaign.UNVISIT[next].duplicate()
+	if Campaign.STORY_STATUS.has(next):advance.story_status=int(Campaign.STORY_STATUS[next])
+	if Campaign.MOVE_ON_ENTRY.has(next):advance.story_move=Campaign.MOVE_ON_ENTRY[next].duplicate()
 	return advance

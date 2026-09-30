@@ -41,6 +41,7 @@ func verify_free_application() -> void:
 	if staged=="teres":await fly_teres(false)
 	if staged=="teres-lost":await fly_teres(true)
 	if staged=="escape78":await fly_valkyrie_escape()
+	if staged=="supernova":await fly_supernova_start()
 
 ## 49-52: the K'Suukk flees with a Vossk escort that turns on the player at
 ## Makke S'ik, through the gate to S'inokk and away, then home to Kanado.
@@ -812,6 +813,47 @@ func ride_story_jump(radio_ids: Array,seconds: int) -> bool:
 	check(app.session.status=="drive_arrival_transition_required","The story's drive jump did not happen: "+app.session.status+" "+app.status.text)
 	return failures==0
 
+## Supernova 84-88 from the won Valkyrie career: Carla's call in flight (84 ->
+## 86), Kothar talk, the flight to Thynome with her six lines, Thynome talk.
+func fly_supernova_start() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==84,"The Supernova checkpoint is not at cursor 84")
+	if failures or not seed_cargo([[122,20]]):return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight() or not await wait_story_cursor(86,"supernova-call"):return
+	var radio_ids:=[]
+	for tick in 1500:
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		if 2464 in radio_ids:break
+		if not application_step():return
+		if tick%10==0:await process_frame
+	print("SUPERNOVA call radio ",radio_ids)
+	check([2463,2464].all(func(id):return id in radio_ids),"The Supernova call's lines did not play")
+	if failures or not await dock_application() or not await take_station_talk(86,87):return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight() or not await khador_jump(10):return
+	var home_radio:=[]
+	for tick in 3000:
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in home_radio:home_radio.append(int(radio.text_id))
+		if app.session.flight_owner()._objective.snapshot().campaign_cursor==88:break
+		if not application_step():return
+		if tick%10==0:await process_frame
+	print("SUPERNOVA Thynome radio ",home_radio," cursor ",app.session.flight_owner()._objective.snapshot().campaign_cursor)
+	await capture_free_application("supernova-thynome")
+	# The first line starts 1.5 s in, while the arrival settles: read the radio's own record.
+	var heard: Array=app.session.flight_owner()._radio.snapshot().get("finished",[])
+	check(heard.size()==6 and heard.all(func(done):return done==true) and range(2470,2475).all(func(id):return id in home_radio) and app.session.flight_owner()._objective.snapshot().campaign_cursor==88,"Carla's lines at Thynome did not play or finish 87")
+	if failures or not await dock_application() or not await take_station_talk(88,89):return
+	var opened: Dictionary=app.session.station_owner().snapshot()
+	print("SUPERNOVA after 88 systems ",opened.get("progress",{}).get("unlocked_system_ids",opened.get("progress",{}).keys()))
+	check(app.save_station(false) and app.load_station(),"Saving and resuming after the Thynome talk failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==89,"Fresh Resume lost the Thynome talk")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-89.gof2save"))==OK,"The Thynome checkpoint could not be kept")
+
 ## The hangar's ship offers, as the player sees them.
 func shipyard() -> Array:
 	if not app.equipment_action("open"):check(false,"The hangar did not open: "+app.session.error);return [-1]
@@ -1078,6 +1120,7 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"trot":return state.campaign_cursor==69
 		"teres","teres-lost":return state.campaign_cursor==73
 		"escape78":return state.campaign_cursor==77
+		"supernova":return state.campaign_cursor==84
 	return super.resumed_contract_valid(state)
 
 ## A player crossing hostile Vossk space fights off the ships closing in
