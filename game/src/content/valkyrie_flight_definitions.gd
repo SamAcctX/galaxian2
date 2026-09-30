@@ -7,7 +7,7 @@ extends RefCounted
 ## are destroyed. Read from the Mac mission factory, radio factory and level
 ## script.
 const Campaign=preload("res://src/content/valkyrie_campaign_definitions.gd")
-const FLIGHT_KINDS:=[4,156,160,163]
+const FLIGHT_KINDS:=[4,156,160,163,164]
 const ADVANCE_AFTER_MS:=10000
 ## [speaker, text, voice, condition, value]: 5 = after the level time,
 ## 6 = after the given earlier line.
@@ -52,13 +52,22 @@ const CONVOY:={59:{"stations":[56,45,22],"item_id":179,"approach_text":2180,"des
 	"voices":{2174:1130,2175:1131,2176:1132,2177:1133,2178:1134}}}
 const CONVOY_RANGE:=50000
 const CONVOY_ESCORTS:=5
+## Incoming calls (kind 164): after 10 s in space anywhere the story moves on
+## and the mission's result conversation plays over the radio, one line after
+## another (assumption, as for the combat results: the original shows it as an
+## in-flight conversation). [speaker, text, voice].
+const CALLS:={61:[[15,2190,1239],[0,2191,1240],[6,2192,1241],[0,2193,1242],[6,2194,1243],[0,2195,1244],[6,2196,1245],[0,2197,1246]]}
+## The call starts once the story has moved on (radio holds the result poll).
+## Systems opened when a story flight moves the career on: [cursor]: systems.
+const STORY_UNLOCKS:={61:[22]}
+const CALL_AFTER_MS:=12000
 ## Once this radio line has finished, every story ship turns hostile and the
 ## Vossk standing drops to its worst value (standing 0 = 100).
 const TURN_HOSTILE_AFTER:={50:{"radio_index":2,"reputation_axis":0,"reputation_value":100}}
 
 ## The story job selected at this location, if the career is in a story flight.
 static func story_job(bindings: RefCounted,cursor: Variant,station_id: Variant,progress: Dictionary={}) -> Dictionary:
-	if not cursor is int or not station_id is int or not Campaign.saved_story(bindings,cursor) or not (CASTS.has(cursor) or COMBAT.has(cursor) or CONVOY.has(cursor)):return {}
+	if not cursor is int or not station_id is int or not Campaign.saved_story(bindings,cursor) or not (CASTS.has(cursor) or COMBAT.has(cursor) or CONVOY.has(cursor) or CALLS.has(cursor)):return {}
 	var mission:=Campaign.mission(cursor)
 	if mission.is_empty() or int(mission.kind) not in FLIGHT_KINDS:return {}
 	if COMBAT.has(cursor) and station_id!=int(mission.station_id):return {}
@@ -85,6 +94,10 @@ static func recipe(job: Dictionary) -> Dictionary:
 	var cursor:=int(job.campaign_cursor)
 	if COMBAT.has(cursor):return _combat_recipe(job)
 	if CONVOY.has(cursor):return _convoy_recipe(job)
+	if CALLS.has(cursor):
+		var radio:=[]
+		for row in CALLS[cursor]:radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":5 if radio.is_empty() else 6,"values":[CALL_AFTER_MS if radio.is_empty() else radio.size()-1]})
+		return {"actor_count":0,"ship_groups":[],"radio":radio,"success":{"kind":"elapsed","after_ms":ADVANCE_AFTER_MS},"story":_advance(cursor),"turn_hostile":{}}
 	var groups:=[];var first:=0
 	for row in CASTS[cursor]:
 		var hostile: bool=row[3]
@@ -166,4 +179,7 @@ static func _radio(cursor: int,targets: int) -> Array:
 
 static func _advance(cursor: int) -> Dictionary:
 	var next:=Campaign.next_cursor(cursor)
-	return {"from_cursor":cursor,"campaign_cursor":next,"mission":Campaign.mission(next),"previous_mission":Campaign.mission(cursor)}
+	var advance:={"from_cursor":cursor,"campaign_cursor":next,"mission":Campaign.mission(next),"previous_mission":Campaign.mission(cursor)}
+	# Entering the next mission may open a system (mission 62 opens Kothar's).
+	if STORY_UNLOCKS.has(cursor):advance.unlock_system_ids=STORY_UNLOCKS[cursor].duplicate()
+	return advance

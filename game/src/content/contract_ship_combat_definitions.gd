@@ -24,9 +24,10 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 	for key in ["base_content_id","binding_id"]:
 		if packet.get(key)!=bindings.get(key) or context.get(key)!=bindings.get(key):return {}
 	if not is_instance_of(capability,load("res://src/simulation/mission_context.gd")) or not capability.matches_contract_population(bindings,packet):return {}
-	if actors.is_empty():return {}
 	var mission: Dictionary=source.mission
 	var cast: Dictionary=capability.recipe().cast
+	# Only a recipe that declares no ships (an incoming call) flies an empty cast.
+	if actors.is_empty() and int(cast.actor_count)!=0:return {}
 	var debris: Dictionary={}
 	if int(cast.debris_count)>0:
 		debris=load("res://src/content/contract_junk_definitions.gd").population(bindings,packet,capability)

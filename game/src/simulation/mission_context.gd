@@ -227,7 +227,8 @@ func admit_contract(bindings: RefCounted,catalogues: RefCounted,contracts: RefCo
 	return true
 
 func contract_context() -> Dictionary:return _contract_context.duplicate(true)
-func has_contract_actors() -> bool:return not _contract_context.is_empty() and int(_recipe.cast.actor_count)>0
+## A story call may be admitted as a contract whose recipe declares no ships.
+func has_contract_actors() -> bool:return not _contract_context.is_empty() and (int(_recipe.cast.actor_count)>0 or load("res://src/content/valkyrie_flight_definitions.gd").is_story_job(_contract_context.get("mission")))
 
 ## Construction resolves a variable cast once before exposing any actors. The
 ## admitted parent remains unchanged; result and actor owners share this copy.

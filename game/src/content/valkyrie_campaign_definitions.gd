@@ -25,7 +25,7 @@ const SHIPS:={
 const GOODS_KIND:=166
 ## Kinds whose target is an ordinary station you dock at and leave: talks, goods,
 ## convoy hunts (finished elsewhere) and the 10 s flight (164).
-const STATION_KINDS:=[11,163,164,166]
+const STATION_KINDS:=[11,163,166]
 const GOODS:={58:{"item_id":179,"quantity":10}}
 ## Blueprints handed over as the story enters a cursor: mission 58 grants item
 ## 179 with 5 of material 127 already supplied at the Valkyrie; 59 takes it back.

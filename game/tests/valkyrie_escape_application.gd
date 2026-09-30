@@ -32,6 +32,7 @@ func verify_free_application() -> void:
 	if staged=="turret":await fly_turret()
 	if staged=="blueprint":await fly_blueprint()
 	if staged=="convoy":await fly_convoys()
+	if staged=="call":await fly_call()
 
 ## 49-52: the K'Suukk flees with a Vossk escort that turns on the player at
 ## Makke S'ik, through the gate to S'inokk and away, then home to Kanado.
@@ -281,6 +282,36 @@ func fly_convoys() -> void:
 	check(app.session.station_owner().snapshot().campaign_cursor==61,"Fresh Resume lost the field test result")
 	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("valkyrie-61.gof2save"))==OK,"The field test checkpoint could not be kept")
 
+## 61-62: ten seconds out of the Valkyrie the call comes in over the radio,
+## then the base sends the player to Kothar.
+func fly_call() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==61,"The call checkpoint is not at cursor 61")
+	if failures or not seed_cargo([[122,5]]):return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	check(app.session.flight_owner()._encounter.combat_snapshot().actors.is_empty(),"The call built story ships")
+	if failures or not await wait_story_cursor(62,"valkyrie-call"):return
+	var radio_ids:=[]
+	for tick in 3000:
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		if 2197 in radio_ids:break
+		if not application_step():return
+		if tick%10==0:await process_frame
+	print("VALKYRIE call radio ",radio_ids)
+	check(range(2190,2198).all(func(id):return id in radio_ids),"The call's lines did not all play")
+	# Kothar has no gate route; the player jumps there with the Khador drive.
+	# The map opened at departure, so the new system shows after docking.
+	if failures or not await dock_application():return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight() or not await khador_jump(100) or not await dock_application() or not await take_station_talk(62,63):return
+	check(app.save_station(false) and app.load_station(),"Saving and resuming after the call failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==63,"Fresh Resume lost the Kothar talk")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("valkyrie-63.gof2save"))==OK,"The Kothar checkpoint could not be kept")
+
 ## Buy the toughest hull that leaves money for guns, refit the old gear and
 ## fill the gun slots with the best affordable primary weapon.
 func outfit_for_combat() -> bool:
@@ -437,6 +468,7 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"turret":return state.campaign_cursor==55
 		"blueprint":return state.campaign_cursor==58
 		"convoy":return state.campaign_cursor==59
+		"call":return state.campaign_cursor==61
 	return super.resumed_contract_valid(state)
 
 ## A player crossing hostile Vossk space fights off the ships closing in

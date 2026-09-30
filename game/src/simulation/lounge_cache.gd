@@ -343,6 +343,18 @@ func adopt_selection_random(random_state: Dictionary) -> bool:
 	_state.random=random.snapshot()
 	return true
 
+## A story flight that moves the career on in space opens its systems here.
+func unlock_story_systems(navigation: Dictionary,ids: Array) -> bool:
+	_read={};error=""
+	var available: Variant=_state.get("system_availability")
+	if not Navigation.valid_availability(navigation,available):return reject("Story coordinates lost the career's existing available systems")
+	var next: Array=available.duplicate()
+	for id in ids:
+		if not id is int or id<0 or id>=next.size():return reject("The story names an invalid system")
+		next[id]=true
+	_state.system_availability=next
+	return true
+
 func acknowledge_campaign_coordinates(bindings: RefCounted,visit: RefCounted) -> bool:
 	_read={}
 	# The career transaction supplies the same acknowledged native dialogue.

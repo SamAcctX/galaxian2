@@ -1447,6 +1447,9 @@ func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_result
 		if earned.is_empty():return fail("The story advance exceeds the supported career range")
 		next._state.progress.merge(earned,true);next._state.rank=earned.rank
 		next._state.progress.merge(advance.get("progress",{}),true)
+		if not advance.get("unlock_system_ids",[]).is_empty():
+			next._lounges=next._lounges.fork()
+			if not next._lounges.unlock_story_systems(_rules.base_navigation,advance.unlock_system_ids):return fail(next._lounges.error)
 		next._state.campaign_cursor=int(advance.campaign_cursor);next._state.progress.campaign_cursor=int(advance.campaign_cursor)
 		next._flight.story_transition=advance.merged({"station_id":_state.station_id},true)
 		next._flight.retired=true
