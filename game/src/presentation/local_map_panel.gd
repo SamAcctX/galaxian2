@@ -3,6 +3,7 @@ extends Control
 signal destination_requested(station_id: int)
 signal close_requested
 signal system_requested(system_id: int)
+const Sounds=preload("res://src/presentation/ui_sounds.gd")
 const OriginalUI=preload("res://src/presentation/original_ui.gd")
 const Navigation=preload("res://src/simulation/local_map.gd")
 const Models=preload("res://src/presentation/model_resources.gd")
@@ -258,13 +259,13 @@ func select_station(station_id: int) -> void:
 	if int(state.selected_station_id)==station_id:request_confirmation();return
 	if not _navigation.select_station(station_id):set_error(_navigation.error);return
 	error=""
-	_present()
+	_present();Sounds.event(self,Sounds.MAP_STATION)
 
 func request_confirmation() -> void:
 	if not _active or _navigation==null:return
 	if not _navigation.request_confirmation():set_error(_navigation.error);return
 	error=""
-	_present()
+	_present();Sounds.event(self,Sounds.MAP_CONFIRM)
 
 func confirm_destination() -> void:
 	if not _active or _navigation==null or _navigation.destination()<0:return

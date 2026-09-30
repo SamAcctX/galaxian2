@@ -1340,6 +1340,9 @@ func _advance_gas(delta_ms: int,turret_active: bool) -> bool:
 	_gas=result.state
 	var taken:=[]
 	for item in result.picked:taken.append({"item_id":int(item),"quantity":int(result.picked[item])})
+	# The HUD shows the caught plasma like any caught cargo ("1t <plasma>").
+	if not taken.is_empty() and _notices!=null:
+		if not _notices.enqueue_scanned_cargo(taken):return reject(_notices.error)
 	if not taken.is_empty() and _cargo!=null:
 		_cargo=_cargo.fork_for_frame()
 		if not _cargo.add_entries(taken):return reject(_cargo.error)

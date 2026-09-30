@@ -66,6 +66,7 @@ func verify(args: Array) -> void:
 	check(Clouds.step(waited,1,at,false,Vector3.FORWARD,{},100).picked.is_empty(),"Plasma taken outside turret view")
 	var full:=Clouds.step(waited,1,at,true,Vector3.FORWARD,{},0)
 	check(full.picked.is_empty() and full.lost>=1,"A full hold kept the spark")
+	check(int(taken.state.caught)==count and int(full.state.caught)==full.lost and Clouds.snapshot_for_view(taken.state).caught==count,"Caught sparks are not counted for the extractor sound")
 	# Collector: a spark straight ahead is pulled at property 49 speed; one behind is not.
 	var ahead:={"clouds":[],"ionized":true,"elapsed_ms":5000,"sparks":[{"position":Vector3(0,0,-20000),"velocity":Vector3(3,0,0),"base_speed":3.0,"age_ms":0,"life_ms":20000,"item_id":202,"ready_ms":2000}]}
 	var collector:={"speed":26,"box":80,"range":40000}

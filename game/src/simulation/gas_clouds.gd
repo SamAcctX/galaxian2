@@ -145,8 +145,10 @@ static func step(state: Dictionary,delta_ms: int,player_position: Vector3,turret
 		spark.alpha=alpha
 		kept.append(spark)
 	next.sparks=kept
+	# Every caught spark plays the extractor sound, also when the hold is full.
+	next.caught=int(next.get("caught",0))+taken+lost
 	return {"state":next,"picked":picked,"lost":lost}
 
 static func snapshot_for_view(state: Dictionary) -> Dictionary:
-	return {"clouds":state.clouds.map(func(cloud):return {"position":cloud.position,"item_id":int(cloud.item_id),"ionized":bool(cloud.ionized)}),
+	return {"caught":int(state.get("caught",0)),"clouds":state.clouds.map(func(cloud):return {"position":cloud.position,"item_id":int(cloud.item_id),"ionized":bool(cloud.ionized)}),
 		"sparks":state.sparks.map(func(spark):return {"position":spark.position,"item_id":int(spark.item_id),"alpha":float(spark.get("alpha",1.0))})}

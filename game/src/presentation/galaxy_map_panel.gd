@@ -2,6 +2,7 @@ extends Control
 ## Original galaxy meshes and atlas, with native mouse, touch and pad input.
 signal system_requested(system_id: int)
 signal close_requested
+const Sounds=preload("res://src/presentation/ui_sounds.gd")
 const Navigation=preload("res://src/simulation/galaxy_map.gd")
 const OriginalUI=preload("res://src/presentation/original_ui.gd")
 const Models=preload("res://src/presentation/model_resources.gd")
@@ -213,7 +214,7 @@ func _pointer(point: Vector2,pressed: bool) -> void:
 				if d<distance:distance=d;closest=row.system_id
 			if closest>=0:
 				if _navigation.snapshot().selected_system_id==closest:open_selected()
-				else:_navigation.select_system(closest);_center_selected();_present()
+				else:_navigation.select_system(closest);_center_selected();_present();Sounds.event(self,Sounds.MAP_SYSTEM)
 		_dragging=false
 	accept_event()
 
@@ -236,7 +237,7 @@ func handle_event(event: InputEvent) -> bool:
 		elif event.button_index==JOY_BUTTON_DPAD_DOWN:direction=Vector2.DOWN
 	if back:close_requested.emit()
 	elif open:open_selected()
-	elif not direction.is_zero_approx():_navigation.move_selection(direction);_center_selected();_present()
+	elif not direction.is_zero_approx():_navigation.move_selection(direction);_center_selected();_present();Sounds.event(self,Sounds.MAP_SYSTEM)
 	return true
 
 func _center_selected() -> void:

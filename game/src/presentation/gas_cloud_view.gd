@@ -15,6 +15,10 @@ extends Node3D
 const AEM=preload("res://src/content/aem.gd")
 const Model=preload("res://src/presentation/imported_model.gd")
 const Materials=preload("res://src/presentation/material_library.gd")
+const Audio=preload("res://src/content/audio_resources.gd")
+const OneShot=preload("res://src/presentation/one_shot_audio.gd")
+## Plasma extractor "suck" played for each caught spark.
+const CATCH_EVENT:=2256
 const CORE_MESHES:={201:18997,202:18998,203:18999,204:19000}
 const SPARK_MESHES:={201:19001,202:19002,203:19003,204:19004}
 const LOOKAT_ADD:=39
@@ -24,6 +28,8 @@ var error:=""
 var _prototypes:={}
 var _clouds: Array[Node3D]=[]
 var _sparks:={}
+var _catch_clip:={}
+var _caught:=-1
 
 func build(library: RefCounted,visuals: RefCounted,bindings: RefCounted) -> bool:
 	clear()
@@ -43,6 +49,8 @@ func build(library: RefCounted,visuals: RefCounted,bindings: RefCounted) -> bool
 			multi.set_meta("pose",instance.transform)
 			add_child(multi);layers.append(multi)
 		_sparks[item]=layers
+	var resources:=Audio.new()
+	if resources.configure(library,bindings):_catch_clip=OneShot.prepare(resources,CATCH_EVENT)
 	return true
 
 func _load(id: int,library: RefCounted,visuals: RefCounted,bindings: RefCounted) -> Node3D:
@@ -63,6 +71,9 @@ func _load(id: int,library: RefCounted,visuals: RefCounted,bindings: RefCounted)
 
 func present(view: Dictionary) -> void:
 	if _prototypes.is_empty():error="Gas cloud view was not built";return
+	var caught:=int(view.get("caught",0))
+	if _caught>=0 and caught>_caught and not _catch_clip.is_empty() and is_inside_tree():OneShot.play(self,_catch_clip)
+	_caught=caught
 	var facing:=Basis.IDENTITY
 	if view.get("camera") is Transform3D:facing=view.camera.basis.orthonormalized()
 	var shown:=0
