@@ -331,7 +331,7 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if not geometry.apply_state(_player_geometry_state(state)):return reject(geometry.error)
 	if not geometry.player.present_turret(state.get("turret",{})):return reject(geometry.player.error)
 	if (station!=null)!=state.has("station_exterior"):return reject("Station exterior support changed within a flight")
-	if station!=null and not station.apply_state(state.station_exterior):return reject(station.error)
+	if station!=null and not station.apply_state(state.station_exterior,absolute_milliseconds):return reject(station.error)
 	var message: String=_projection.apply(camera,state.camera_view)
 	if not message.is_empty():return reject(message)
 	var sky_frame: Dictionary=sky.prepare_view(state.camera_view,{},int(state.world_elapsed_ms))
