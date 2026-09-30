@@ -23,6 +23,9 @@ var _base:={}
 var _deep_science:={}
 var _special:={}
 const MAX_SELECTION_DRAWS:=65536
+## The imported stock rules are checked up to the Valkyrie finale (83); they
+## hold unchanged to the end of Supernova (162).
+const LAST_CURSOR:=162
 
 static func available(bindings: RefCounted) -> bool:return Definitions.available(bindings)
 
@@ -41,8 +44,8 @@ func prepare(bindings: RefCounted,cat: RefCounted,context: Variant,random_state:
 		if base.excluded_station_ids.any(func(id):return int(id)==int(context.station_id)):
 			if not DeepScience.available(bindings):return reject("This special location's stock is not supported yet")
 			deep_science=bindings.get("deep_science_stock")
-			if int(context.station_id)!=int(deep_science.station_id) or not context.get("all_base_medals_gold") is bool or not Numbers.integer(context.get("campaign_cursor"),int(deep_science.first_cursor),int(deep_science.last_cursor)):return reject("Deep Science stock requires its supported cursor and retained base-medal result")
-		if context.size()!=8+int(not deep_science.is_empty()) or not Numbers.integer(context.get("campaign_cursor"),int(base.first_cursor),int(base.last_cursor)) or not Numbers.integer(context.get("ship_price_percent"),-100,1000):return reject("Base station stock requires its supported cursor and retained ship price modifier")
+			if int(context.station_id)!=int(deep_science.station_id) or not context.get("all_base_medals_gold") is bool or not Numbers.integer(context.get("campaign_cursor"),int(deep_science.first_cursor),LAST_CURSOR):return reject("Deep Science stock requires its supported cursor and retained base-medal result")
+		if context.size()!=8+int(not deep_science.is_empty()) or not Numbers.integer(context.get("campaign_cursor"),int(base.first_cursor),LAST_CURSOR) or not Numbers.integer(context.get("ship_price_percent"),-100,1000):return reject("Base station stock requires its supported cursor and retained ship price modifier")
 		var expansion: bool=ValkyrieWorlds.stock_station(bindings,int(context.station_id))
 		if not expansion and (int(context.station_id)>int(base.last_station_id) or int(station.system_id)>int(base.last_system_id)):return reject("This special location's stock is not supported yet")
 	if not context.get("valkyrie_owned") is bool or not context.get("supernova_owned") is bool or context.get("difficulty") not in [0.5,1.0,1.5]:return reject("Retain explicit expansion ownership and game difficulty")
@@ -130,6 +133,10 @@ func _sample_ships(cat: RefCounted) -> Array:
 	# Source-specific offers precede expansion and system offers.
 	for extra in rules.get("faction_extras",[]):
 		if _faction==int(extra.faction) and _draw(int(extra.draw_bound))==0:result.append(_ship_offer(cat,int(extra.ship_id),int(extra.faction_id)))
+	var won: Dictionary=ValkyrieWorlds.WON_SHIPS
+	if _context.valkyrie_owned and int(_context.campaign_cursor)>int(won.after_cursor) and _faction==int(won.faction):
+		for extra in won.ships:
+			if _draw(int(won.draw_bound))==0:result.append(_ship_offer(cat,int(extra[0]),int(extra[1])))
 	if _context.supernova_owned:
 		for extra in rules.owned_supernova_extras:
 			if _faction==int(extra.faction) and _draw(int(extra.draw_bound))==0:result.append(_ship_offer(cat,int(extra.ship_id),int(extra.faction_id)))

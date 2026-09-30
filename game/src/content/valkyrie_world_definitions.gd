@@ -31,6 +31,10 @@ const STOCK:={
 }
 const WEAPON_CATEGORIES:=[0,1,2]
 
+## Once Valkyrie is won (cursor above 83) and owned, Vossk stations may also
+## sell the S'Kanarr (39) and ship 41, each on a 1-in-2 draw.
+const WON_SHIPS:={"after_cursor":83,"faction":1,"draw_bound":2,"ships":[[39,1],[41,1]]}
+
 static func stock_station(bindings: RefCounted,station_id: int) -> bool:
 	return load("res://src/content/ordinary_world_definitions.gd").location(bindings,station_id).get("expansion",false)
 

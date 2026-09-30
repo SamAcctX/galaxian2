@@ -23,12 +23,13 @@ func verify(args: PackedStringArray):
 	var stations:=[]
 	for station in cat.tables.stations:
 		if station.id<=99 and station.id!=10 and station.system_id<=21:stations.append(station.id)
-	for cursor in [15,16,17,24,25,58,59,83]:
+	var won_ships:=0
+	for cursor in [15,16,17,24,25,58,59,83,84,162]:
 		context.campaign_cursor=cursor
 		for station in stations:
 			context.station_id=station
 			context.supernova_owned=(station%2)==0
-			context.valkyrie_owned=(station%3)==0
+			context.valkyrie_owned=(station%3)==0 or cursor>83
 			context.difficulty=1.5 if cursor==83 else 0.5
 			var stock:=Stock.new()
 			if not stock.prepare(bindings,cat,context,rng.snapshot(),1789423200+station):check(false,stock.error);return
@@ -39,10 +40,14 @@ func verify(args: PackedStringArray):
 			for item in state.items:
 				if item.item_id>=132 and item.item_id<=153:check(item.item_id==132+cat.tables.stations[station].system_id,"A station sold another system's local commodity")
 			if cursor==15 and station==98:alioth=state
+			var extras: int=state.ships.filter(func(row):return int(row.ship_id) in [39,41]).size()
+			check(extras==0 or cursor>83,"Khador's Vossk ships were sold before Valkyrie was won")
+			won_ships+=extras
 	check(ship_offers>0 and not alioth.is_empty(),"The base station generator did not reach Alioth")
+	check(won_ships>0,"No Vossk station sold ships 39/41 after the Valkyrie win")
 	check(cat.tables==catalogues,"Stock changed source catalogue prototypes")
 	var retained:=Stock.new();check(retained.restore(bindings,cat,alioth),retained.error)
-	for change in [{"campaign_cursor":84},{"campaign_cursor":14},{"station_id":10},{"station_id":100},{"station_id":108},{"ship_price_percent":null}]:
+	for change in [{"campaign_cursor":163},{"campaign_cursor":14},{"station_id":10},{"station_id":100},{"station_id":108},{"ship_price_percent":null}]:
 		var bad: Dictionary=alioth.context.duplicate(true);bad.merge(change,true)
 		check(not retained.prepare(bindings,cat,bad,rng.snapshot(),1789423200) and retained.snapshot()==alioth,"Unsupported context replaced retained stock")
 	var changed: Dictionary=alioth.duplicate(true)
