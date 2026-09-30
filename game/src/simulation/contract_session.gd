@@ -308,6 +308,15 @@ func transfer_ordinary_void(bindings: RefCounted,progress: Dictionary,source: Re
 	if _lounges==null or _lounges.selection_state().current_station_id!=route.source_station_id:return reject("The Void visit lost its retained ordinary location")
 	return _retain_story_progress(bindings,progress,route.campaign_cursor,route.campaign_cursor,int(route.source_station_id) if entering else -1,-1 if entering else int(route.source_station_id),true)
 
+## Leaving the alien world moves the story on and to its next station (79:
+## the way out leads to Kothar at 80).
+func leave_void_for_story(bindings: RefCounted,progress: Dictionary,source: RefCounted,cursor: int,station_id: int) -> bool:
+	error=""
+	var route: Dictionary=load("res://src/simulation/mission_context.gd").ordinary_void_route(bindings,source)
+	if route.is_empty():return reject("Ordinary Void travel requires its admitted return route")
+	if _lounges==null or _lounges.selection_state().current_station_id!=route.source_station_id:return reject("The Void visit lost its retained ordinary location")
+	return _retain_story_progress(bindings,progress,route.campaign_cursor,cursor,-1,station_id,true)
+
 ## Keep the independent job and final combat counters while the world changes.
 var _station_context: RefCounted
 

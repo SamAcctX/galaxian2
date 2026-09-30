@@ -44,7 +44,8 @@ func advance(delta_ms: Variant,actor: Dictionary) -> Dictionary:
 	var next:=_state.duplicate(true);var started:=false;var sounds:=[]
 	if _state.phase=="ready":
 		if hull==0:
-			started=true;sounds.append(int(_state.death_sound))
+			started=true
+			if int(_state.death_sound)>=0:sounds.append(int(_state.death_sound))
 			next.phase="wrecking";next.mode=Statics.DEAD_MODE
 	elif hull!=0:return fail("A destroyed static object cannot regain hull")
 	else:

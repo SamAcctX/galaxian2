@@ -141,7 +141,8 @@ func _build_static(owner: RefCounted,id: int,actor: Dictionary,library: RefCount
 	var reader:=Statics.new();var placed: Dictionary=reader.resolve(library,bindings,int(actor.static_model))
 	if placed.is_empty():return fail(reader.error)
 	var paths: Array=placed.layers.map(func(layer):return layer.path)
-	paths.append(placed.wreck.path)
+	var wrecked: bool=not placed.wreck.path.is_empty()
+	if wrecked:paths.append(placed.wreck.path)
 	var resources:=Models.new()
 	if not resources.prepare(paths,library,visuals,bindings,"high",false,true):return fail(resources.error)
 	var body:=Node3D.new();body.name="StaticObject%d"%id;add_child(body)
@@ -150,13 +151,16 @@ func _build_static(owner: RefCounted,id: int,actor: Dictionary,library: RefCount
 		if model==null:
 			var reason: String=resources.error;resources.clear();return fail(reason)
 		model.set_meta("source_resource_id",layer.resource_id);body.add_child(model)
-	var wreck: Node3D=resources.instantiate(placed.wreck.path)
+	# Without a wreck the object just vanishes (80's weak points).
+	var wreck: Node3D=resources.instantiate(placed.wreck.path) if wrecked else Node3D.new()
 	resources.clear()
 	if wreck==null:return fail("Static wreck model preparation failed")
 	add_child(wreck);wreck.hide();wreck.set_meta("source_resource_id",placed.wreck.resource_id)
-	for instance in wreck.instances:instance.top_level=true
-	var sampler:=Sampler.new()
-	if not sampler.configure(wreck.surfaces):return fail(sampler.error)
+	var sampler: RefCounted=null
+	if wrecked:
+		for instance in wreck.instances:instance.top_level=true
+		sampler=Sampler.new()
+		if not sampler.configure(wreck.surfaces):return fail(sampler.error)
 	actors.append({"hull":body,"engine":null,"cargo":wreck,"explosion":null,"static":true,"sampler":sampler,
 		"ship_id":-1,"resource_id":int(actor.resource_id),"hull_resource":actor.hull_resource})
 	return true
@@ -164,7 +168,7 @@ func _build_static(owner: RefCounted,id: int,actor: Dictionary,library: RefCount
 func _prepare_static(actor: Dictionary,nodes: Dictionary,death: RefCounted) -> Dictionary:
 	var state: Dictionary=death.snapshot()
 	if state.get("pose")!=actor.body_pose or state.get("static_model")!=actor.static_model:return failed("Static presentation lost its object or pose")
-	var wrecked: bool=state.phase!="ready"
+	var wrecked: bool=state.phase!="ready" and nodes.sampler!=null
 	var sampler: RefCounted=nodes.sampler
 	var animated:={}
 	if wrecked:

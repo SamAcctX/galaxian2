@@ -1248,6 +1248,20 @@ func place_story_actors(first: int,end: int,center: Vector3,radius: float) -> bo
 		if not _flight[id].apply_scripted_pose(pose) or not _combat.set_pose(id,pose,pose):return reject(_flight[id].error+_combat.error)
 	return true
 
+## Story ships or objects leave: parked far away (per-ship offsets), inactive.
+func retire_story_actors(first: int,end: int,point: Vector3) -> bool:
+	error=""
+	if _combat==null or first<0 or end>_flight.size() or end<=first:return reject("Story retirement requires contract ships")
+	for id in range(first,end):
+		# A static object stays where it is and is hidden instead.
+		if _combat.actor_snapshot(id).get("static_object",false):
+			if not _combat.retire_story_actor(id):return reject(_combat.error)
+			continue
+		var pose:=Transform3D(Basis.IDENTITY,point+Vector3(20000.0*(id-first),0,0))
+		if _flight[id]!=null and not _flight[id].apply_scripted_pose(pose):return reject(_flight[id].error)
+		if not _combat.set_pose(id,pose,pose) or not _combat.retire_story_actor(id):return reject(_combat.error)
+	return true
+
 func fork_for_frame(copy_motion:=true, incoming_combat: RefCounted=null) -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	# Configuration is immutable after setup; only live state needs a private copy.

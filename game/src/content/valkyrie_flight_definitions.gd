@@ -7,7 +7,7 @@ extends RefCounted
 ## are destroyed. Read from the Mac mission factory, radio factory and level
 ## script.
 const Campaign=preload("res://src/content/valkyrie_campaign_definitions.gd")
-const FLIGHT_KINDS:=[4,6,10,156,160,163,164]
+const FLIGHT_KINDS:=[1,4,6,10,156,160,163,164]
 const ADVANCE_AFTER_MS:=10000
 ## [speaker, text, voice, condition, value]: 5 = after the level time,
 ## 6 = after the given earlier line.
@@ -23,7 +23,7 @@ const RADIO:={
 ## 28 = the player's armour is gone. Combat flights play their result lines
 ## over the radio once the objective ships are gone (assumption: the original
 ## shows them as its in-flight result conversation).
-const RESULT_RADIO:={56:[[27,2149,1206],[0,2150,1207]],63:[[28,2215,1260],[0,2216,1261]],
+const RESULT_RADIO:={80:[[0,2415,1391],[6,2416,1392],[0,2417,1393],[6,2418,1394],[0,2419,1395],[6,2420,1396]],56:[[27,2149,1206],[0,2150,1207]],63:[[28,2215,1260],[0,2216,1261]],
 	64:[[0,2224,1262],[20,2225,1263],[0,2226,1264],[20,2227,1265],[0,2228,1266]],
 	67:[[0,2288,1296],[20,2289,1297],[0,2290,1298],[20,2291,1299],[0,2292,1300],[20,2293,1301],[0,2294,1302],[0,2295,1303]],
 	70:[[0,2313,1314]],
@@ -60,6 +60,37 @@ const ESCORT_HULL:=9999999
 ## 40 km back, the cutscene cameras and the pirates' flight away are not built,
 ## and the result lines play over the radio instead of opening a dialogue.
 const SCRIPTED:={
+	# 80: Battle of Kothar. #0 the Valkyrie battlestation (hostile, not
+	# destroyable), #1-#12 its weak points, #13-#18 pirates and #19-#21 Ward
+	# defenders around (0,0,80000). "Retreat!" once #1-#18 are gone; the
+	# station jumps away after "I'm not done with you". Success once Carla's
+	# result lines are over; then STORY_JUMP takes the ship to the alien world.
+	# Assumptions: no cutscenes (Alice-drive beam on Kothar, station
+	# close-ups), line #10 follows #9 directly (original: ~4 s later), the
+	# weak points do not aim or fire (the turret barrels are not drawn), the
+	# player start is the default one (original: (-70000,0,-30000)), the
+	# station is unnamed and drawn in its first pose.
+	80:{"points":[Vector3(0,0,160000),Vector3(0,0,80000)],
+		"groups":[{"count":1,"faction":8,"friendly":false,"static":{"model":16928,"jitter":0,"offset":Vector3.ZERO,"rotation":Vector3(0,PI,0)},"name_text_id":-1},
+			{"count":1,"faction":8,"friendly":false,"static":{"model":14363,"jitter":0,"offset":Vector3(-3994.97,23359.0,-7378.1),"rotation":Vector3(0,0,1.5708)},"name_text_id":1655},
+			{"count":1,"faction":8,"friendly":false,"static":{"model":14363,"jitter":0,"offset":Vector3(3994.96,23359.0,-7378.1),"rotation":Vector3(0,0,-1.5708)},"name_text_id":1655},
+			{"count":1,"faction":8,"friendly":false,"static":{"model":14365,"jitter":0,"offset":Vector3(1988.03,-37327.1,-4511.46),"rotation":Vector3(0,0,-1.5708)},"name_text_id":1654},
+			{"count":1,"faction":8,"friendly":false,"static":{"model":14365,"jitter":0,"offset":Vector3(-1995.02,-37327.1,-4511.46),"rotation":Vector3(0,0,1.5708)},"name_text_id":1654},
+			{"count":1,"faction":8,"friendly":false,"static":{"model":14363,"jitter":0,"offset":Vector3(-3264.75,-22848.6,791.524),"rotation":Vector3(0,0,1.5708)},"name_text_id":1655},
+			{"count":1,"faction":8,"friendly":false,"static":{"model":14363,"jitter":0,"offset":Vector3(3273.29,-22848.6,791.524),"rotation":Vector3(0,0,-1.5708)},"name_text_id":1655},
+			{"count":1,"faction":8,"friendly":false,"static":{"model":14363,"jitter":0,"offset":Vector3(-29726.7,-10994.8,-3765.53),"rotation":Vector3(0,0,3.1416)},"name_text_id":1655},
+			{"count":1,"faction":8,"friendly":false,"static":{"model":14363,"jitter":0,"offset":Vector3(29716.2,-10994.8,-3765.53),"rotation":Vector3(0,0,3.1416)},"name_text_id":1655},
+			{"count":1,"faction":8,"friendly":false,"static":{"model":14363,"jitter":0,"offset":Vector3(29716.2,4854.22,-3758.77),"rotation":Vector3(0,0,0.0)},"name_text_id":1655},
+			{"count":1,"faction":8,"friendly":false,"static":{"model":14365,"jitter":0,"offset":Vector3(17013.0,-764.391,-1690.65),"rotation":Vector3(0,0,0.0)},"name_text_id":1654},
+			{"count":1,"faction":8,"friendly":false,"static":{"model":14365,"jitter":0,"offset":Vector3(-17013.3,-764.512,-1690.65),"rotation":Vector3(0,0,0.0)},"name_text_id":1654},
+			{"count":1,"faction":8,"friendly":false,"static":{"model":14363,"jitter":0,"offset":Vector3(-29726.7,4854.22,-3758.77),"rotation":Vector3(0,0,0.0)},"name_text_id":1655},
+			{"count":6,"faction":8,"hull":-1,"friendly":false,"index":1,"offsets":[-20000,-20000,-20000],"bounds":[40000,40000,40000]},
+			{"count":3,"faction":0,"hull":17,"friendly":true,"index":1,"offsets":[-20000,-20000,-20000],"bounds":[40000,40000,40000]}],
+		"radio":[[0,2403,1532,5,[8000]],[6,2404,1533,5,[25000]],[26,2405,1536,6,[1]],[0,2406,1537,6,[2]],[6,2407,1538,6,[3]],
+			[26,2408,1539,6,[4]],[6,2409,1540,6,[5]],[26,2410,1541,6,[6]],[0,2411,1542,6,[7]],
+			[26,2412,1543,30,[18,1,19]],[26,2413,1534,6,[9]],[0,2414,1535,6,[10]]],
+		"radio_actions":[{"radio_index":11,"action":"retire","on":"finished","first_actor":0,"end_actor":1}],
+		"success":{"kind":"radio_finished","index":17}},
 	# 78: escape from the Valkyrie. Twenty pirates sleep in a row ~160 km out;
 	# they wake at ~47 s. Only the Khador Drive ends the flight (DRIVE): the
 	# story moves on as it charges. Assumptions: no cinematic cameras or
@@ -259,7 +290,7 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 		var friendly: bool=row.friendly
 		if row.has("static"):
 			groups.append({"first_actor":first,"end_actor":first+1,"faction":int(row.faction),"origin":"zero","name_text_id":int(row.name_text_id),
-				"static_object":row.static.duplicate(),"ship_state":{"mode":5,"active":false,"targeting_blocked":true},
+				"static_object":_placed_static(plan,row),"ship_state":{"mode":5,"active":false,"targeting_blocked":true},
 				"policy":{"initial_hostile":not friendly,"updated_hostile":not friendly,"friendly":friendly}})
 			first+=1;continue
 		var group:={"first_actor":first,"end_actor":first+int(row.count),"faction":int(row.faction),"population_group":"story","origin":"zero",
@@ -283,6 +314,13 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 		radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":int(after[0]) if own else 6,"values":after[1].duplicate() if own else [radio.size()-1]})
 	return {"actor_count":first,"ship_groups":groups,"placement":{"kind":"points","points":plan.points.duplicate()},"radio":radio,
 		"success":plan.success.duplicate(),"failure":plan.get("failure",{"kind":"never"}).duplicate(),"story":_advance(cursor),"turn_hostile":plan.get("turn_hostile",{}).duplicate(),"radio_actions":plan.get("radio_actions",[]).duplicate(true),"timed_actions":plan.get("timed_actions",[]).duplicate(true)}
+
+## A static row with an offset stands at its point plus that offset (80: the
+## battlestation and its weak points); without one it keeps the origin.
+static func _placed_static(plan: Dictionary,row: Dictionary) -> Dictionary:
+	var placed: Dictionary=row.static.duplicate()
+	if placed.has("offset"):placed.offset=Vector3(plan.points[int(row.get("index",0))])+Vector3(placed.offset)
+	return placed
 
 static func _convoy_recipe(job: Dictionary) -> Dictionary:
 	var cursor:=int(job.campaign_cursor);var plan: Dictionary=CONVOY[cursor]
@@ -323,11 +361,36 @@ static func _radio(cursor: int,targets: int) -> Array:
 
 ## Khador Drive rules a story flight sets (owner: the drive's mission check).
 ## allow: usable whatever the mission kind; destination: the only jump, with
-## no star map (-1 = the alien world); void_exit: leaving the alien world
-## goes to this station instead of the planet the player came from.
-const DRIVE:={78:{"allow":true,"destination":-1},80:{"void_exit":100}}
+## no star map (-1 = the alien world).
+const DRIVE:={78:{"allow":true,"destination":-1}}
 
 static func drive_rule(cursor: int) -> Dictionary:return DRIVE.get(cursor,{}).duplicate()
+
+## Story in the alien world. 79: arriving there, "Let's try this again!"
+## at 6 s; the story reaches 80 and the drive's way out leads to Kothar.
+## Assumptions: the ordinary alien-world fighters stand in for the seven
+## Void ships; the cursor moves as the player leaves (the original moves it
+## at 5 s, which the player cannot see in flight).
+## 81: Alice stranded; after the last line the drive jumps back to Kothar
+## by itself ("auto") and the story reaches 82 there.
+## Assumptions (81): the player is not hidden or made unharmable, the camera is
+## the normal flight camera, the ordinary alien-world ships stand in for the
+## eight VoidX and the Valkyrie is not drawn; the player docks at Kothar.
+const VOID_RADIO:={79:[[0,2402,1531,5,[6000]]],
+	81:[[26,2421,1544,5,[16000]],[31,2422,1545,6,[0]],[26,2423,1546,6,[1]],[26,2424,1547,6,[2]]]}
+const VOID_EXIT:={79:{"campaign_cursor":80,"station_id":100},81:{"campaign_cursor":82,"station_id":100,"auto":true}}
+## A story that reaches this cursor in flight jumps there at once, without
+## fuel (80's battle ends -> the alien world for 81).
+const STORY_JUMP:={81:{"destination":-1}}
+
+static func story_jump(cursor: int) -> Dictionary:return STORY_JUMP.get(cursor,{}).duplicate()
+
+static func void_radio(cursor: int) -> Array:
+	var rows:=[]
+	for row in VOID_RADIO.get(cursor,[]):rows.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":row[3],"values":row[4].duplicate()})
+	return rows
+
+static func void_exit(cursor: int) -> Dictionary:return VOID_EXIT.get(cursor,{}).duplicate()
 
 static func _advance(cursor: int) -> Dictionary:
 	var next:=Campaign.next_cursor(cursor)

@@ -723,6 +723,94 @@ func fly_valkyrie_escape() -> void:
 	print("VALKYRIE alien world cursor ",arrived.campaign_cursor," location ",arrived.location)
 	await capture_free_application("valkyrie-alien-world")
 	check(int(arrived.location.station_id)<0 and int(arrived.campaign_cursor)>=79,"The escape did not reach the alien world at 79")
+	if failures:return
+	# 79: "Let's try this again!", then the drive's way out leads to Kothar (80).
+	var void_radio:=[]
+	for tick in 200:
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot() if app.session.flight_owner()._radio!=null else {}
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in void_radio:void_radio.append(int(radio.text_id))
+		if 2402 in void_radio:break
+		if not application_step():return
+		if tick%10==0:await process_frame
+	check(2402 in void_radio,"The alien-world line did not play: "+str(void_radio))
+	if failures:return
+	resume_application_focus()
+	for pressed in [true,false]:
+		var key:=InputEventKey.new();key.physical_keycode=KEY_K;key.keycode=KEY_K;key.pressed=pressed;app._unhandled_input(key)
+	began=now_us
+	app.session.rebase_time(now_us)
+	while app.session.status=="running" and now_us-began<15000000:
+		if not application_step():return
+	check(app.session.status=="drive_arrival_transition_required","The way out of the alien world did not complete: "+app.session.status+" "+app.status.text)
+	if failures or not app.enter_drive_arrival(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	var kothar: Dictionary=app.session.snapshot()
+	print("VALKYRIE back from the alien world cursor ",kothar.campaign_cursor," station ",kothar.location.station_id)
+	await capture_free_application("valkyrie-kothar-battle-start")
+	check(int(kothar.location.station_id)==100 and int(kothar.campaign_cursor)==80,"Leaving the alien world did not reach Kothar at 80")
+	if failures:return
+	# 80: break the battlestation's weak points (#1-#12) and the pirates
+	# (#13-#18); "Retreat!", the station jumps away, Carla's lines, then the
+	# drive takes the ship to the alien world by itself (81).
+	var cast: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+	print("VALKYRIE kothar cast ",cast.map(func(actor):return [actor.hull_catalogue_id,actor.actor_kind,actor.hostile,actor.get("friendly"),int(actor.vitals.hull)]))
+	check(cast.size()==22,"The Kothar battle cast differs from its recipe")
+	if failures:return
+	var battle_radio:=[]
+	if not await fight_until("kothar",func():return range(1,19).all(func(id):return int(app.session.flight_owner()._encounter.combat_snapshot().actors[id].vitals.hull)<=0),
+		func(list):return range(1,19).filter(func(id):return int(list[id].vitals.hull)>0),battle_radio,60000,true,30000.0):return
+	await capture_free_application("valkyrie-kothar-won")
+	if not await ride_story_jump(battle_radio,180):return
+	print("VALKYRIE kothar radio ",battle_radio)
+	check(range(2403,2421).all(func(id):return id in battle_radio),"The Kothar battle lines did not all play")
+	if failures or not app.enter_drive_arrival(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	var stranded: Dictionary=app.session.snapshot()
+	print("VALKYRIE alice stranded cursor ",stranded.campaign_cursor," location ",stranded.location)
+	await capture_free_application("valkyrie-alice-stranded")
+	check(int(stranded.location.station_id)<0 and int(stranded.campaign_cursor)==81,"The battle did not move the ship to the alien world at 81")
+	if failures:return
+	# 81: four lines, then the drive takes the ship back to Kothar (82).
+	var stranded_radio:=[]
+	if not await ride_story_jump(stranded_radio,120):return
+	check(range(2421,2425).all(func(id):return id in stranded_radio),"Alice's lines did not all play: "+str(stranded_radio))
+	if failures or not app.enter_drive_arrival(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	var home: Dictionary=app.session.snapshot()
+	print("VALKYRIE home cursor ",home.campaign_cursor," station ",home.location.station_id)
+	check(int(home.location.station_id)==100 and int(home.campaign_cursor)==82,"The story did not bring the ship back to Kothar at 82")
+	if failures or not await dock_application():return
+	await capture_free_application("valkyrie-kothar-82")
+	# 82 -> 83 -> 84: the last talks and the win. Khador's three ships in the
+	# yard, a bottle of Rum and a Khador Drive in the hold.
+	if not await take_station_talk(82,83) or not await take_station_talk(83,84):return
+	var won: Dictionary=app.session.station_owner().snapshot()
+	print("VALKYRIE won hold ",won.cargo.entries)
+	check([137,85].all(func(id):return won.cargo.entries.any(func(row):return int(row.item_id)==id)),"The win did not put the Rum and a Khador Drive in the hold")
+	var final_yard: Array=await shipyard()
+	print("VALKYRIE Kothar yard at 84 ",final_yard.map(func(offer):return [offer.ship_id,offer.unit_price]))
+	check([37,38,40].all(func(id):return final_yard.any(func(offer):return int(offer.ship_id)==id)),"Kothar's yard does not offer Khador's three ships after the win")
+	check(app.save_station(false) and app.load_station(),"Saving and resuming after the win failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==84,"Fresh Resume lost the win")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("valkyrie-84.gof2save"))==OK,"The win checkpoint could not be kept")
+
+## Fly on (radio lines collected) until the story's own drive jump arrives.
+func ride_story_jump(radio_ids: Array,seconds: int) -> bool:
+	var began:=now_us
+	app.session.rebase_time(now_us)
+	var tick:=0
+	while app.session.status=="running" and now_us-began<seconds*1000000:
+		var radio: RefCounted=app.session.flight_owner()._radio
+		if radio!=null and radio.snapshot().get("visible",false) and int(radio.snapshot().get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.snapshot().text_id))
+		if app.session.flight_owner().death_active():check(false,"The pilot died waiting for the story jump");return false
+		await dismiss_medal()
+		if not application_step():return false
+		tick+=1
+		if tick%10==0:await process_frame
+	print("VALKYRIE story jump status ",app.session.status," cursor ",app.session.snapshot().campaign_cursor," radio ",radio_ids)
+	check(app.session.status=="drive_arrival_transition_required","The story's drive jump did not happen: "+app.session.status+" "+app.status.text)
+	return failures==0
 
 ## The hangar's ship offers, as the player sees them.
 func shipyard() -> Array:

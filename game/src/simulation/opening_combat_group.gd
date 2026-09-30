@@ -614,6 +614,14 @@ func disarm_story_actors(first: int,end: int) -> bool:
 		if actor.get("contract_ship",false) and not _writable(id).set_permissions(actor.active,actor.damage_allowed,false):return reject(_actors[id].error)
 	return true
 
+## A story ship or object leaves the scene: inactive, unharmable, silent.
+func retire_story_actor(id: int) -> bool:
+	error=""
+	if _contract_encounter.is_empty() or id<0 or id>=_actors.size():return reject("Story retirement requires contract ships")
+	if not _writable(id).set_permissions(false,false,false):return reject(_actors[id].error)
+	if _actors[id].snapshot().get("static_object",false) and not _writable(id).hide_static():return reject(_actors[id].error)
+	return true
+
 func wake_story_actors(first: int,end: int) -> bool:
 	error=""
 	if _contract_encounter.is_empty() or first<0 or end>_actors.size() or end<=first:return reject("Story wake requires contract ships")

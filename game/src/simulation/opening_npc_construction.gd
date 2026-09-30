@@ -1168,12 +1168,14 @@ func _static_row(id: int,faction: int,options: Dictionary,path: Array,random: Re
 	var position:=Vector3.ZERO
 	if options.position.get("kind","")=="positions":position=Vector3(options.position.points[int(options.group_index)])
 	elif options.get("origin")!="zero" and not path.is_empty():position=path[0]
+	# An offset from the anchor and a fixed rotation (80: the weak points on the Valkyrie).
+	if placed.has("offset"):position+=Vector3(placed.offset)
 	var jitter:=int(placed.get("jitter",0))
 	if jitter>0:
 		for axis in 3:position[axis]=Vitals.single(position[axis]+float(random.next_int(2*jitter)-jitter))
 	var context: Dictionary=_contract.context
 	var hull:=int(placed.hull_override) if placed.has("hull_override") else Statics.hull(model,int(context.rank),int(context.campaign_cursor),float(context.difficulty))
-	var body:=Transform3D(Basis.IDENTITY,position)
+	var body:=Transform3D(Basis.from_euler(Vector3(placed.get("rotation",Vector3.ZERO))),position)
 	var row:={"actor_id":id,"actor_kind":faction,"hull_catalogue_id":-1,"subtype":0,"population_group":"static","static_model":model,"resource_id":model,
 		"hull_override":hull,"name_text_id":int(options.name_text_id),"cargo":[],"fragments":[],"route":{},
 		"body_pose":body,"statistics_pose":body,"model_local_pose":Transform3D.IDENTITY}

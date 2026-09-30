@@ -833,6 +833,14 @@ func disarm_story_actors(first: int,end: int) -> bool:
 	_control=control;_combat=control._combat
 	return true
 
+func retire_story_actors(first: int,end: int,point: Vector3) -> bool:
+	error=""
+	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story retirement requires a contract encounter")
+	var control: RefCounted=_control.fork_for_frame(true,_combat)
+	if not control.retire_story_actors(first,end,point):return reject(control.error)
+	_control=control;_combat=control._combat
+	return true
+
 func wake_story_actors(first: int,end: int) -> bool:
 	error=""
 	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story wake requires a contract encounter")

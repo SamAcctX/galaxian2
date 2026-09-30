@@ -81,7 +81,8 @@ func quote(station_id: int,energy: int) -> Dictionary:
 		"return_location":_location.duplicate() if mode=="void_entry" else _return_location.duplicate()})
 	return result
 
-func evaluate_request(station_id: int,cargo: RefCounted) -> Dictionary:
+## free: a story jump (80 -> 81 -> 82) that burns no fuel.
+func evaluate_request(station_id: int,cargo: RefCounted,free:=false) -> Dictionary:
 	error=""
 	if not is_instance_of(cargo,load("res://src/simulation/flight_cargo.gd")):return failed("Khador Drive requires the current cargo owner")
 	for key in ["base_content_id","binding_id"]:
@@ -90,6 +91,7 @@ func evaluate_request(station_id: int,cargo: RefCounted) -> Dictionary:
 	if trip.is_empty():return {}
 	var next:=fork_for_frame();var hold: RefCounted=cargo
 	if trip.mode=="local":return failed("Local destinations use ordinary flight")
+	if free:trip.cost=0;trip.affordable=true
 	if trip.affordable:
 		hold=cargo.fork_for_frame()
 		if trip.cost>0 and not hold.consume(Definitions.ENERGY_ITEM,trip.cost):return failed(hold.error)

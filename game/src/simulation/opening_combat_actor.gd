@@ -692,7 +692,7 @@ func _configure_debris(bindings: RefCounted,catalogues: RefCounted,construction:
 ## A cast static object: an unarmed, unmoving body drawn from its model. It
 ## has no guidance; control wakes it and runs its own destruction owner.
 func _configure_static(bindings: RefCounted,data: Dictionary,row: Dictionary,actor_id: int) -> bool:
-	if not Flight.rigid_pose(row.get("body_pose")) or row.body_pose!=row.get("statistics_pose") or row.body_pose.basis!=Basis.IDENTITY:return reject("A static object needs its unrotated placement")
+	if not Flight.rigid_pose(row.get("body_pose")) or row.body_pose!=row.get("statistics_pose") or not row.body_pose.basis.is_conformal():return reject("A static object needs a rigid placement")
 	if not Statics.supported(row.get("static_model")) or not row.get("hull_override") is int or row.hull_override<=0:return reject("Unsupported static object model or hull")
 	var model: String=bindings.resolve(int(row.resource_id),"mesh")
 	if model.is_empty():return reject(bindings.error)
@@ -727,6 +727,14 @@ func wake_story() -> bool:
 	return true
 
 ## A sleeping static object wakes when an opposing active body is close.
+## A static story object leaves the scene (80: the Valkyrie jumps away):
+## it is no longer drawn, targeted or active.
+func hide_static() -> bool:
+	error=""
+	if not _state.get("static_object",false):return reject("Only a static object hides this way")
+	_state.active=false;_state.model_draw_enabled=false;_state.targeting_blocked=true
+	return true
+
 func wake_static() -> bool:
 	error=""
 	if not _state.get("static_object",false):return reject("Only a static object wakes this way")
