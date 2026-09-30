@@ -539,6 +539,7 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 	var owned:=_shopping_inventory(bindings,cat,equipment)
 	if owned.is_empty():return null
 	if not owned.get("ordinary_shopping_open",false) or owned.stock!=_lounges.item_stock(_state.station_id):return _shopping_reject("Open the current station's hangar quote before trading")
+	if _story_protects(bindings,owned,action,item_id,slot_index):return _shopping_reject("This item cannot be sold or demounted at the moment.")
 	if action=="supply_blueprint":
 		if _blueprints==null:return _shopping_reject("No blueprint is available")
 		var shipping: int=_blueprints.shipping_cost(item_id,_state.station_id,quantity)
@@ -572,6 +573,15 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 	_lounges=locations;_state.credits=credits
 	if action=="buy" and not _retain_booze_type(item_id):return _shopping_reject(error)
 	return inventory
+
+## The story keeps an item on board while the career is at its cursor (77:
+## the Khador Drive Alice is about to take): it cannot be sold or demounted.
+func _story_protects(bindings: RefCounted,owned: Dictionary,action: String,item_id: int,slot_index: int) -> bool:
+	var ids: Array=Valkyrie.protected_items(bindings,_state.get("campaign_cursor"))
+	if ids.is_empty() or action not in ["sell","unmount","replace"]:return false
+	if action!="replace":return item_id in ids
+	var slots: Array=owned.loadout.slots
+	return slot_index>=0 and slot_index<slots.size() and slots[slot_index]!=null and int(slots[slot_index].item_id) in ids
 
 func close_shopping(equipment: RefCounted) -> RefCounted:
 	error=""
@@ -790,12 +800,16 @@ func acknowledge_station_campaign(bindings: RefCounted,equipment: RefCounted,sto
 		if next._blueprints==null:return fail("The story blueprint lost its retained blueprints")
 		var plan: Dictionary=rules.story_blueprint
 		next._blueprints=next._blueprints.fork_for_transaction()
-		var granted: bool=next._blueprints.story_grant(int(plan.item_id),int(plan.material_id),int(plan.quantity),int(plan.station_id)) if plan.grant else next._blueprints.story_lock(int(plan.item_id))
+		var granted: bool
+		if not plan.grant:granted=next._blueprints.story_lock(int(plan.item_id))
+		elif plan.has("material_id"):granted=next._blueprints.story_grant(int(plan.item_id),int(plan.material_id),int(plan.quantity),int(plan.station_id))
+		else:granted=next._blueprints.story_unlock(int(plan.item_id))
 		if not granted:return fail(next._blueprints.error)
 	if rules.has("story_ship"):
 		var ship: Dictionary=rules.story_ship
 		var changed: bool=inventory.return_story_ship(bindings,_catalogues) if ship.has("restore") else inventory.lend_story_ship(bindings,_catalogues,int(ship.ship_id),Valkyrie.ship_equipment(ship),bool(ship.store))
 		if not changed:return fail(inventory.error)
+	if not next._apply_story_station_rules(bindings,inventory,rules):return fail(next.error)
 	if not next._retain_story_progress(bindings,next._state.progress,_state.campaign_cursor,receipt.campaign_cursor,_state.station_id,_state.station_id,false):return fail(next.error)
 	if rules.has("unlock_system_ids"):
 		next._lounges=next._lounges.fork()
@@ -808,6 +822,40 @@ func acknowledge_station_campaign(bindings: RefCounted,equipment: RefCounted,sto
 		next._state.progress.erase("story_counter");next._state.progress.erase("story_stations_mask")
 	next._state.credits=credit_balance(_state.credits,reward,_rules.delivery_results)
 	return {"career":next,"equipment":inventory}
+
+## Station-side story changes as a talk enters its next cursor (tables in
+## valkyrie_campaign_definitions): items taken away, a construction site
+## reset, goods put in the hold and this station's shipyard changed.
+## Call on the staged career with the staged inventory.
+func _apply_story_station_rules(bindings: RefCounted,inventory: RefCounted,rules: Dictionary) -> bool:
+	error=""
+	for id in rules.get("story_removed_items",[]):
+		if not inventory.remove_story_item(bindings,_catalogues,int(id)):return reject(inventory.error)
+	if rules.has("story_blueprint_reset"):
+		if _blueprints==null:return reject("The blueprint reset lost its retained blueprints")
+		_blueprints=_blueprints.fork_for_transaction()
+		if not _blueprints.story_reset_station(int(rules.story_blueprint_reset)):return reject(_blueprints.error)
+	for row in rules.get("story_hold_grants",[]):
+		if not inventory.receive_lounge_goods(int(row[0]),int(row[1])):return reject(inventory.error)
+	if rules.has("story_station_ships"):
+		var station:=int(_state.station_id);var plan: Dictionary=rules.story_station_ships
+		var before: Array=_lounges.ship_stock(station)
+		var ships: Array=[] if plan.get("clear",false) else before.duplicate(true)
+		var affiliations: Array=bindings.early_contracts.base_station_stock.ships.affiliations
+		var percent:=int(_lounges.location(station).get("stock",{}).get("context",{}).get("ship_price_percent",0))
+		for row in plan.get("ships",[]):
+			var id:=int(row[0]);var price:=int(row[1]);var at:=-1
+			for i in ships.size():
+				if int(ships[i].ship_id)==id:at=i
+			if price<0:
+				if at>=0:continue
+				price=load("res://src/simulation/station_stock.gd").local_ship_price(bindings,_catalogues,id,station,percent)
+			var offer:={"ship_id":id,"faction_id":int(affiliations[id]),"unit_price":price}
+			if at>=0:ships[at]=offer
+			else:ships.append(offer)
+		_lounges=_lounges.fork()
+		if not _lounges.replace_ship_stock(bindings,_catalogues,station,before,ships):return reject(_lounges.error)
+	return true
 
 func _campaign_station_inventory(bindings: RefCounted,equipment: RefCounted,story_mission: Dictionary) -> Dictionary:
 	if bindings==null or not equipment is Equipment or _lounges==null or _state.is_empty():return fail("Campaign station progress requires its retained career and inventory")
@@ -1439,6 +1487,9 @@ func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_result
 	var result: Dictionary=flight.poll_contract_result(radio_active,periodic_poll_allowed,radio_finished)
 	if result.is_empty():return fail(flight.error)
 	var advance: Dictionary=flight.mission_context_owner().recipe().get("story_advance",{})
+	# A failed story flight shows the ordinary failure result (no pay, cursor
+	# unchanged); the player retries by flying the mission again.
+	if not advance.is_empty() and result.mode!=0 and result.mode!=int(_rules.flight_results.success_result_mode) and not _flight.has("story_transition"):advance={}
 	if not advance.is_empty():
 		# A story flight moves the career on without a result screen or pay;
 		# its cast and radio keep running in the same world.
@@ -1449,6 +1500,8 @@ func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_result
 		if earned.is_empty():return fail("The story advance exceeds the supported career range")
 		next._state.progress.merge(earned,true);next._state.rank=earned.rank
 		next._state.progress.merge(advance.get("progress",{}),true)
+		var pay:=int(advance.get("previous_mission",{}).get("reward",0))
+		if pay>0:next._state.credits=credit_balance(next._state.credits,pay,_rules.delivery_results)
 		if not advance.get("unlock_system_ids",[]).is_empty():
 			next._lounges=next._lounges.fork()
 			if not next._lounges.unlock_story_systems(_rules.base_navigation,advance.unlock_system_ids):return fail(next._lounges.error)
@@ -1461,7 +1514,8 @@ func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_result
 	if opened:
 		var rules: Dictionary=_rules.delivery_results
 		var succeeded: bool=result.mode==int(_rules.flight_results.success_result_mode)
-		var mission: Dictionary=next._state.mission
+		# A failed story flight has no accepted job; its story job stands in.
+		var mission: Dictionary=next._state.mission if not next._state.mission.is_empty() else flight.mission_context_owner().recipe().mission
 		var continuation: Dictionary=flight.mission_context_owner().recipe().get("continuation",{}) if succeeded else {}
 		# The admitted mission runner owns whether this flight has failed. Only
 		# the wager rule changes the balance when an ordinary job is lost.

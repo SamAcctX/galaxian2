@@ -116,6 +116,23 @@ func story_grant(item_id: int,material_id: int,quantity: int,station_id: int) ->
 		if row.station_id<0:row.station_id=station_id
 	return true
 
+## A story hands over a recipe only; no material is supplied.
+func story_unlock(item_id: int) -> bool:
+	error=""
+	for row in _state.entries:
+		if row.item_id==item_id:row.available=true;return true
+	return reject("This story blueprint has no retained recipe")
+
+## The story closes a construction site: blueprints being built at this
+## station lose their supplied materials; the recipes stay owned.
+func story_reset_station(station_id: int) -> bool:
+	error=""
+	if station_id<0 or station_id>=_station_count:return reject("The blueprint reset has no station")
+	for row in _state.entries:
+		if int(row.get("station_id",-1))!=station_id:continue
+		row.remaining=_recipes[row.item_id].quantities.duplicate();row.material_value=0;row.station_id=-1
+	return true
+
 func story_lock(item_id: int) -> bool:
 	error=""
 	for row in _state.entries:

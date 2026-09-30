@@ -936,6 +936,10 @@ func station_navigation(action: String) -> void:
 		status.text=session.error;return
 	present_session()
 	if action=="next" and not recipe_checkpoint:_autosave_station()
+	# The original reloads the station after a story talk, so a talk now
+	# ready at this same station (e.g. Kothar 74 -> 75 -> 76) opens at once.
+	if action=="next" and not session.snapshot().dialogue.visible and session.campaign_story_ready():
+		if _begin_campaign_story():present_session()
 
 func equipment_action(action: String, item_id: int=-1, slot_index: int=-1,quantity: int=1) -> bool:
 	if not session is StationSession or not _focused or not is_visible_in_tree() or session.is_paused() or not _launch_packet.is_empty():return false
@@ -1029,7 +1033,7 @@ func _station_map_observation() -> Dictionary:
 	var id: int=int(state.loadout.station_id)
 	state.location={"station_id":id,"system_id":int(cat.tables.stations[id].system_id)}
 	state.station_map=true
-	if state.loadout.equipment_ids.has(85):
+	if load("res://src/content/khador_drive_definitions.gd").fitted(state.loadout):
 		var navigation=load("res://src/simulation/system_navigation.gd").new()
 		if navigation.configure(bindings,cat,state.contracts.lounges.system_availability):
 			var drive=load("res://src/simulation/khador_drive.gd").new()

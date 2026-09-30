@@ -14,15 +14,15 @@ static func valid_clock(value: Variant) -> bool:
 static func valid_row(row: Dictionary, event_count: int) -> bool:
 	if not Numbers.integer(row.get("condition"), 0, 31) or not row.get("values") is Array: return false
 	var kind := int(row.condition)
-	if kind not in [1, 5, 6, 8, 9, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]: return false
-	if row.values.is_empty() or row.values.size() > 256 or (kind not in [1, 9, 29, 30] and row.values.size() != 1) or (kind == 29 and row.values.size() != 2) or (kind == 30 and row.values.size() != 3): return false
+	if kind not in [1, 5, 6, 8, 9, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]: return false
+	if row.values.is_empty() or row.values.size() > 256 or (kind not in [1, 9, 29, 30, 31] and row.values.size() != 1) or (kind == 29 and row.values.size() != 2) or (kind in [30, 31] and row.values.size() != 3): return false
 	for value in row.values:
 		if not Numbers.integer(value, -2147483648 if kind == 26 else 0, MAX_INTEGER): return false
 	return kind != 6 or int(row.values[0]) < event_count
 
 static func observation_error(observation: Dictionary, condition_clock: Variant) -> String:
 	if not valid_clock(condition_clock): return "Radio requires an explicit integer condition clock"
-	for key in ["hulls", "maximum_hulls", "activity", "positions_z", "player_distances"]:
+	for key in ["hulls", "maximum_hulls", "activity", "positions_z", "player_distances", "emp"]:
 		if not observation.has(key): continue
 		var values: Variant = observation[key]
 		if not values is Dictionary: return "Invalid radio actor observations: " + key
@@ -36,6 +36,8 @@ static func observation_error(observation: Dictionary, condition_clock: Variant)
 					if not Numbers.integer(value, 1, MAX_INTEGER): return "Invalid radio maximum hull"
 				"activity":
 					if not value is bool: return "Invalid radio actor activity"
+				"emp":
+					if not value is Array or value.size() != 2 or not value[0] is bool or not value[1] is bool: return "Invalid radio EMP observation"
 				"player_distances":
 					if not (value is int or value is float) or not is_finite(value) or value < 0: return "Invalid radio player distance"
 				"positions_z":
@@ -107,4 +109,10 @@ static func evaluate(row: Dictionary, condition_clock: int, observations: Dictio
 			for actor in range(int(row.values[1]), int(row.values[2])):
 				if hulls.has(actor) and hulls[actor] <= 0: destroyed += 1
 			return destroyed >= value
+		# Remake story condition: any of ships values[0]..values[1]-1 was EMP-hit (values[2]=0) or is EMP-disabled (1).
+		31:
+			var emp: Dictionary = observations.get("emp", {})
+			for actor in range(int(row.values[0]), int(row.values[1])):
+				if emp.has(actor) and emp[actor][clampi(int(row.values[2]), 0, 1)]: return true
+			return false
 	return false

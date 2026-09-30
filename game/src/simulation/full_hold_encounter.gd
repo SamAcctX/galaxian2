@@ -833,6 +833,14 @@ func disarm_story_actors(first: int,end: int) -> bool:
 	_control=control;_combat=control._combat
 	return true
 
+func wake_story_actors(first: int,end: int) -> bool:
+	error=""
+	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story wake requires a contract encounter")
+	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	if not control._combat.wake_story_actors(first,end):return reject(control._combat.error)
+	_control=control;_combat=control._combat
+	return true
+
 func acknowledge_contract_result(session: RefCounted,serial: int) -> Dictionary:
 	error=""
 	if _contract_context.is_empty() or not is_instance_of(session,load("res://src/simulation/contract_session.gd")):return fail("No retained contract result is available")

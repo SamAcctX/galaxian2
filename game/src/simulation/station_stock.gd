@@ -53,7 +53,7 @@ func prepare(bindings: RefCounted,cat: RefCounted,context: Variant,random_state:
 	if not candidate._rng.restore(random_state):return reject(candidate._rng.error)
 	candidate._rules=rules.duplicate(true);candidate._context=context.duplicate(true)
 	candidate._base=base.duplicate(true);candidate._deep_science=deep_science.duplicate(true);candidate._system=int(station.system_id)
-	candidate._special=ValkyrieWorlds.stock_rules(int(context.station_id)) if not base.is_empty() else {}
+	candidate._special=ValkyrieWorlds.stock_rules(int(context.station_id),int(context.campaign_cursor)) if not base.is_empty() else {}
 	candidate._tech=int(station.fields[int(rules.catalogue.station_tech_field)])
 	var system: Dictionary=cat.tables.systems[station.system_id]
 	candidate._faction=int(system.fields[int(rules.catalogue.system_faction_field)])

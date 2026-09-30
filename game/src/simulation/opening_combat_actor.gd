@@ -718,6 +718,14 @@ func set_static_geometry(boxes: Variant) -> bool:
 	_state.point_boxes=boxes.duplicate(true);_state.point_box_index=0
 	return true
 
+## A parked (dormant) story ship joins the fight at once, as a proximity wake would.
+func wake_story() -> bool:
+	error=""
+	if not _state.get("contract_ship",false):return reject("Only a contract ship wakes for the story")
+	if not _state.active and _state.actor_mode==5 and _vitals.snapshot().hull>0:
+		_state.active=true;_state.actor_mode=1;_state.targeting_blocked=false
+	return true
+
 ## A sleeping static object wakes when an opposing active body is close.
 func wake_static() -> bool:
 	error=""

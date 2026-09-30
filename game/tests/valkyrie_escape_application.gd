@@ -1,5 +1,6 @@
 extends "res://tests/valkyrie_start_application.gd"
 const CombatPilot=preload("res://tests/fixtures/bakka_flight_pilot.gd")
+const EmpSteering=preload("res://tests/fixtures/expedition_flight_pilot.gd")
 const StationSaveFile=preload("res://src/simulation/station_save_file.gd")
 ## Valkyrie opening chain from the earned call: Kanado talk, the Vossk loan
 ## ship to B'akrram and the K'Suukk handover, then the escape flights.
@@ -37,6 +38,8 @@ func verify_free_application() -> void:
 	if staged=="distraction":await fly_distraction()
 	if staged=="delivery":await fly_delivery()
 	if staged=="trot":await fly_trot()
+	if staged=="teres":await fly_teres(false)
+	if staged=="teres-lost":await fly_teres(true)
 
 ## 49-52: the K'Suukk flees with a Vossk escort that turns on the player at
 ## Makke S'ik, through the gate to S'inokk and away, then home to Kanado.
@@ -334,20 +337,21 @@ func outfit_for_combat() -> bool:
 	if not app.equipment_action("open"):check(false,app.session.error);return false
 	var quote: Dictionary=app.session.station_owner().snapshot()
 	var budget:=int(quote.contracts.credits)+int(quote.loadout.ship_instance.unit_price)-120000
-	var offers: Array=quote.equipment.market_ships.filter(func(row):return int(row.unit_price)<=budget and catalogue.tables.ships[row.ship_id].stats.equipment_slots>=3 and catalogue.tables.ships[row.ship_id].stats.primary_slots>=2 and catalogue.tables.ships[row.ship_id].stats.secondary_slots>=1)
+	var secondaries:=2 if OS.get_environment("GOF2_VALKYRIE_STAGE").begins_with("teres") else 1
+	var offers: Array=quote.equipment.market_ships.filter(func(row):return int(row.unit_price)<=budget and catalogue.tables.ships[row.ship_id].stats.equipment_slots>=3 and catalogue.tables.ships[row.ship_id].stats.primary_slots>=2 and catalogue.tables.ships[row.ship_id].stats.secondary_slots>=secondaries)
 	offers.sort_custom(func(a,b):return catalogue.tables.ships[a.ship_id].stats.armor>catalogue.tables.ships[b.ship_id].stats.armor)
 	print("VALKYRIE shipyard all ",quote.equipment.market_ships.map(func(row):return [row.ship_id,row.unit_price,catalogue.tables.ships[row.ship_id].stats.armor,catalogue.tables.ships[row.ship_id].stats.equipment_slots])," budget ",budget)
 	print("VALKYRIE shipyard ",quote.loadout.station_id," offers ",offers.map(func(row):return [row.ship_id,row.unit_price,catalogue.tables.ships[row.ship_id].stats.armor]))
 	var current:=int(quote.loadout.ship_id)
 	# Keep the current hull when the yard has nothing tougher.
-	if offers.is_empty() or catalogue.tables.ships[offers[0].ship_id].stats.armor<=catalogue.tables.ships[current].stats.armor:offers=[{"ship_id":current}]
+	if offers.is_empty() or (catalogue.tables.ships[offers[0].ship_id].stats.armor<=catalogue.tables.ships[current].stats.armor and catalogue.tables.ships[current].stats.secondary_slots>=secondaries):offers=[{"ship_id":current}]
 	if offers.is_empty():check(false,"No affordable combat hull at station "+str(quote.loadout.station_id));return false
 	if int(offers[0].ship_id)!=current:
 		var index: int=quote.equipment.market_ships.find(offers[0])
 		if not app.equipment_action("buy_ship",index):check(false,"The hull exchange was refused: "+app.session.error);return false
 		check(app.session.station_owner().snapshot().loadout.ship_id==offers[0].ship_id,"The hull exchange failed")
 	if failures:return false
-	for id in [85,51,91,2,179]:
+	for id in [85,51,91,2,179,41]:
 		if app.session.station_owner().snapshot().cargo.entries.any(func(row):return row.item_id==id):app.equipment_action("mount",id)
 	var guns: Array=app.session.station_owner().snapshot().equipment.market_rows.filter(func(row):return int(catalogue.tables.items[row.item_id].properties.get(1,-1))==0 and int(row.stock)>0)
 	guns.sort_custom(func(a,b):return int(a.unit_price)>int(b.unit_price))
@@ -575,6 +579,7 @@ func fly_trot() -> void:
 	check(range(2309,2314).all(func(id):return id in chase_radio),"The Lopat radio lines did not all play")
 	await capture_free_application("valkyrie-trot-stopped")
 	if failures or not await go_to(66) or not await dock_application() or not await take_station_talk(71,72):return
+	var before_call:=int(app.session.station_owner().snapshot().contracts.credits)
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
 	if not await release_application_flight():return
 	var call:=[]
@@ -589,7 +594,115 @@ func fly_trot() -> void:
 	check(app.save_station(false) and app.load_station(),"Saving and resuming after the call failed: "+app._save_notice.text)
 	if failures:return
 	check(app.session.station_owner().snapshot().campaign_cursor==73,"Fresh Resume lost Alice's call")
+	check(int(app.session.station_owner().snapshot().contracts.credits)==before_call+150000,"Alice's call did not pay 150000: "+str(before_call)+" -> "+str(app.session.station_owner().snapshot().contracts.credits))
 	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("valkyrie-73.gof2save"))==OK,"The call checkpoint could not be kept")
+
+## 73: the Teres convoy. Four pirates at the first point; EMP one of the
+## Terran transports and four more pirates close in around the player. All
+## eight down: the result plays and the story moves to Kothar (74). The
+## failure case loses all four transports: a failure result, cursor stays 73.
+func fly_teres(lose: bool) -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==73,"The Teres checkpoint is not at cursor 73")
+	# Test shortcut: the money the career would have earned, a full launcher and EMP bombs.
+	if failures or not seed_cargo([[122,12],[179,4],[41,10]],3000000) or not outfit_for_combat():return
+	var fitted: Array=app.session.station_owner().snapshot().loadout.equipment_ids
+	check(fitted.has(41),"The refit did not mount the EMP bombs: "+str(fitted))
+	if failures:return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight() or not await go_to(81):return
+	var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+	print("VALKYRIE teres cast ",actors.map(func(actor):return [actor.hull_catalogue_id,actor.actor_kind,actor.hostile,actor.get("friendly"),actor.active]))
+	check(actors.size()==12 and actors.slice(0,8).all(func(actor):return actor.actor_kind==8 and actor.hostile and not actor.active) and actors.slice(8).all(func(actor):return actor.get("friendly")==true),"The Teres cast differs from its recipe")
+	if failures:return
+	await capture_free_application("valkyrie-teres-start")
+	var radio_ids:=[]
+	if not await fight_until("teres",func():return range(0,4).all(func(id):return int(app.session.flight_owner()._encounter.combat_snapshot().actors[id].vitals.hull)<=0),
+		func(list):return range(0,4).filter(func(id):return int(list[id].vitals.hull)>0),radio_ids,30000,true,30000.0):return
+	if lose:
+		# Shoot the transports down instead of guarding them.
+		if not await fight_until("teres-lost",func():return range(8,12).all(func(id):return int(app.session.flight_owner()._encounter.combat_snapshot().actors[id].vitals.hull)<=0),
+			func(list):return range(8,12).filter(func(id):return int(list[id].vitals.hull)>0),radio_ids,30000,false):return
+		for tick in 600:
+			if app.session.status!="running" or app.session.snapshot().contracts.get("pending_result",{}).get("failed",false):break
+			if not application_step():return
+			if tick%10==0:await process_frame
+		var state: Dictionary=app.session.snapshot()
+		print("VALKYRIE teres failure ",state.contracts.get("pending_result",{})," status ",app.session.status)
+		await capture_free_application("valkyrie-teres-lost")
+		check(state.campaign_cursor==73,"Losing the convoy moved the story on")
+		return
+	if not await emp_transport(8,radio_ids):return
+	var reserve: Array=app.session.flight_owner()._encounter.combat_snapshot().actors.slice(4,8)
+	var player: Vector3=app.session.snapshot().player_pose.origin
+	print("VALKYRIE teres reserve ",reserve.map(func(actor):return [int(actor.pose.origin.distance_to(player)),actor.active]))
+	check(reserve.all(func(actor):return actor.active and actor.pose.origin.distance_to(player)<60000),"The reserve did not close in around the player")
+	if failures:return
+	if not await fight_until("teres-reserve",func():return app.session.flight_owner()._objective.snapshot().campaign_cursor==74,
+		func(list):return range(4,8).filter(func(id):return int(list[id].vitals.hull)>0),radio_ids,30000,true,30000.0):return
+	for tick in 1500:
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		if 2352 in radio_ids:break
+		if not application_step():return
+		if tick%10==0:await process_frame
+	print("VALKYRIE teres radio ",radio_ids)
+	check(range(2336,2353).all(func(id):return id in radio_ids),"The Teres radio lines did not all play")
+	await capture_free_application("valkyrie-teres-won")
+	# 74-76: three Kothar talks back to back; afterwards the yard offers only
+	# Khador's Cronus, for nothing.
+	if failures or not await go_to(100) or not await dock_application() or not await take_station_talk(74,75) or not await take_station_talk(75,76):return
+	if failures or not await take_station_talk(76,77):return
+	var yard: Array=await shipyard()
+	print("VALKYRIE Kothar yard at 77 ",yard)
+	check(yard.size()==1 and int(yard[0].ship_id)==37 and int(yard[0].unit_price)==0,"The Cronus is not free at Kothar")
+	check(app.save_station(false) and app.load_station(),"Saving and resuming after the Kothar talks failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==77,"Fresh Resume lost the Kothar talks")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("valkyrie-77.gof2save"))==OK,"The Kothar checkpoint could not be kept")
+
+## The hangar's ship offers, as the player sees them.
+func shipyard() -> Array:
+	if not app.equipment_action("open"):check(false,"The hangar did not open: "+app.session.error);return [-1]
+	var offers: Array=app.session.station_owner().snapshot().equipment.market_ships.duplicate(true)
+	await capture_free_application("valkyrie-kothar-yard-%d"%int(app.session.station_owner().snapshot().campaign_cursor))
+	if not app.equipment_action("close"):check(false,"The hangar did not close: "+app.session.error)
+	return offers
+
+## Fly at a transport and set off an EMP bomb beside it, as a player would.
+func emp_transport(id: int,radio_ids: Array) -> bool:
+	if not app.open_secondary_menu(now_us) or not app.session.confirm_secondary(41,now_us):check(false,"The secondary menu did not select the EMP bomb: "+app.status.text+app.session.error);return false
+	app.present_session();resume_application_focus()
+	var launched:=false
+	for tick in 6000:
+		var state: Dictionary=app.session.snapshot()
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		if 2343 in radio_ids and app.session.flight_owner()._encounter.combat_snapshot().actors[4].active:return true
+		var target: Dictionary=state.encounter.combat.actors[id]
+		var gun: Dictionary={}
+		for row in state.encounter.secondaries.guns:
+			if int(row.equipment.item_id)==41:gun=row
+		var distance: float=target.position.distance_to(state.player_pose.origin)
+		var fire:=false
+		if not launched and distance<1500.0 and int(gun.ammunition)>0 and int(gun.bomb.elapsed_ms)>int(gun.bomb.weapon.interval_ms):fire=true;launched=true
+		elif launched and gun.bomb.get("shot",{}).get("phase")=="flying":fire=true
+		elif launched and gun.bomb.get("shot",{}).get("phase")!="flying" and not target.get("systems_disabled",false):launched=false
+		if fire and not app.session.action("missiles"):check(false,app.session.error);return false
+		for adjustment in 10:
+			var current: float=app.session.snapshot().input_throttle
+			var want:=1.0 if distance>1500.0 else 0.0
+			if absf(current-want)<.01:break
+			if not app.session.action("throttle_up" if current<want else "throttle_down"):check(false,app.session.error);return false
+		now_us+=100000
+		if not app.session.step(now_us,EmpSteering.steering_toward(state.player_pose,target.position)):check(false,app.session.error);return false
+		app.present_session()
+		if app.session.flight_owner().death_active():check(false,"The player died at the convoy");return false
+		if tick%20==0:await process_frame
+		if tick%300==0:print("VALKYRIE emp ",tick," distance ",int(distance)," hit ",target.get("systems_hit_serial")," disabled ",target.get("systems_disabled")," radio ",radio_ids)
+	check(false,"The EMP never reached a transport: "+str(radio_ids))
+	return false
 
 ## Local travel inside the current system, the Khador Drive otherwise.
 func go_to(station: int) -> bool:
@@ -813,6 +926,7 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"distraction":return state.campaign_cursor==66
 		"delivery":return state.campaign_cursor==66
 		"trot":return state.campaign_cursor==69
+		"teres","teres-lost":return state.campaign_cursor==73
 	return super.resumed_contract_valid(state)
 
 ## A player crossing hostile Vossk space fights off the ships closing in

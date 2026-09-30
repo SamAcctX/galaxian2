@@ -404,7 +404,7 @@ func _reaction_actors(reaction: RefCounted,actors: Array) -> Array:
 		if actor.snapshot().get("contract_debris",false) or actor.snapshot().get("static_object",false):result.append(actor);continue
 		if _training_weapons.has("kappa_lifecycle"):
 			if not actor.retain_kappa_force(state.forced_hostile[id],state.permanent_hostile[id]):reject(actor.error);return []
-		elif state.has("systems_requested_damage"):
+		elif state.has("systems_requested_damage") and state.has("permanent_hostile"):
 			if not actor.retain_ordinary_force(state.forced_hostile[id],state.permanent_hostile[id]):reject(actor.error);return []
 		else:
 			if not actor.retain_local_force(state.forced_hostile[id]):reject(actor.error);return []
@@ -612,6 +612,13 @@ func disarm_story_actors(first: int,end: int) -> bool:
 	for id in range(first,end):
 		var actor: Dictionary=_actors[id].snapshot()
 		if actor.get("contract_ship",false) and not _writable(id).set_permissions(actor.active,actor.damage_allowed,false):return reject(_actors[id].error)
+	return true
+
+func wake_story_actors(first: int,end: int) -> bool:
+	error=""
+	if _contract_encounter.is_empty() or first<0 or end>_actors.size() or end<=first:return reject("Story wake requires contract ships")
+	for id in range(first,end):
+		if not _writable(id).wake_story():return reject(_actors[id].error)
 	return true
 
 func _current_reputation() -> Dictionary:

@@ -374,6 +374,29 @@ func _story_capacity(bindings: RefCounted,cat: RefCounted) -> bool:
 	_state.cargo.capacity=capacity;_state.cargo.free_space=capacity-int(_state.cargo.used)
 	return true
 
+## The story takes an item away: the first fitted one, else its hold stack.
+## Nothing is refunded; an item the player no longer has is simply not taken.
+func remove_story_item(bindings: RefCounted,cat: RefCounted,item_id: int) -> bool:
+	error=""
+	if not _state.get("training_inventory_released",false) or _state.get("ordinary_shopping_open",false) or not cargo_cache_valid():return reject("Close the hangar before the story takes an item")
+	var next:=_state.duplicate(true);var index:=-1
+	for i in next.loadout.slots.size():
+		if next.loadout.slots[i]!=null and int(next.loadout.slots[i].item_id)==item_id:index=i;break
+	if index>=0:
+		next.loadout.slots[index]=null;next.prices.installed[index]=null;next.loadout.equipment_ids=[]
+		for slot in next.loadout.slots:
+			if slot!=null:next.loadout.equipment_ids.append(slot.item_id)
+	else:
+		for i in next.cargo.entries.size():
+			if int(next.cargo.entries[i].item_id)==item_id and not next.cargo.entries[i].get("mission",false):index=i;break
+		if index<0:return true
+		next.cargo.entries.remove_at(index);next.prices.cargo.remove_at(index)
+		next.cargo.used=_used(next.cargo.entries);next.cargo.free_space=int(next.cargo.capacity)-int(next.cargo.used);next.cargo_cache_stale=false
+	var staged:=fork();staged._state=next
+	if not staged._story_capacity(bindings,cat):return reject(staged.error)
+	_state=staged._state
+	return true
+
 func supply_blueprint_material(item_id: int,quantity: int) -> int:
 	error=""
 	if not _state.get("ordinary_shopping_open",false) or quantity<1:reject("Open the Hangar before supplying materials");return -1

@@ -107,6 +107,22 @@ const SCRIPTED:={
 		"radio":[[0,2309,1515,5,[8000]],[0,2310,1516,6,[0]],[34,2311,1517,6,[1]],[0,2312,1518,6,[2]]],
 		"turn_hostile":{"radio_index":1,"reputation_axis":-1,"reputation_value":0},
 		"success":{"kind":18,"first_actor":0,"end_actor":1},"result_after":[1,[0]]},
+	# 73: the Teres convoy. Four sleeping pirates at the first waypoint, four
+	# more parked; four friendly Terran transports near the second waypoint.
+	# EMP a transport: "That should do it!", then "even more of them!" brings
+	# the reserve around the player awake. Done when all eight pirates are
+	# gone; failed when all four transports are. Assumptions: default player
+	# start (the original's is not recovered); transports +-20 km around the
+	# waypoint; a disabled transport restarts when the EMP wears off; the
+	# player flies to Kothar with the Khador drive (feature J would dock him).
+	73:{"points":[Vector3(80000,0,60000),Vector3(150000,0,-50000),Vector3(-800000,-800000,-800000)],
+		"groups":[{"count":4,"faction":8,"hull":-1,"friendly":false,"sleeping":true,"offsets":[-20000,-20000,-20000],"bounds":[40000,40000,40000]},
+			{"count":4,"faction":8,"hull":-1,"friendly":false,"sleeping":true,"index":2,"offsets":[-1000,-1000,-1000],"bounds":[2000,2000,2000]},
+			{"count":4,"faction":0,"hull":-1,"friendly":true,"freighter":true,"index":1,"offsets":[-20000,-20000,-20000],"bounds":[40000,40000,40000]}],
+		"radio":[[0,2336,1519,5,[8000]],[0,2337,1520,16,[0]],[11,2338,1521,6,[1]],[0,2339,1522,6,[2]],[0,2340,1523,29,[8,50000]],
+			[33,2341,1524,31,[8,12,0]],[0,2342,1525,31,[8,12,1]],[0,2343,1526,6,[6]]],
+		"radio_actions":[{"radio_index":7,"action":"place","first_actor":4,"end_actor":8,"center":"player","radius":40000.0,"wake":true}],
+		"success":{"kind":18,"first_actor":0,"end_actor":8},"failure":{"kind":18,"first_actor":8,"end_actor":12},"result_after":[30,[8,0,8]]},
 }
 
 ## Convoy hunts (kind 163): at each listed station a transport of the system's

@@ -81,10 +81,13 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	if data.is_empty():return reject("Unsupported contract reaction population")
 	if not _configure_population(bindings,catalogues,data,equipment,data.reputation_state):return false
 	_set_factions(data,int(data.mission.kind))
-	if not data.ordinary_standing.is_empty() and NPCSystems.available(bindings):
+	# Story ships take EMP hits too (Valkyrie 73 has the player disable a transport).
+	if (not data.ordinary_standing.is_empty() or data.mission.get("story_job",false)) and NPCSystems.available(bindings):
 		_rules.systems=bindings.mido_travel.kappa_lifecycle.systems.duplicate(true)
 		_rules.systems_primary=int(data.lifecycle.reactions.primary_faction)
 		_state.permanent_hostile=[];_state.permanent_hostile.resize(data.actor_count);_state.permanent_hostile.fill(false)
+		# Story ships keep their scripted hostility; only the EMP pools are new.
+		if data.ordinary_standing.is_empty():_state.erase("permanent_hostile")
 		_state.systems_requested_damage=[];_state.systems_requested_damage.resize(data.actor_count);_state.systems_requested_damage.fill(0)
 	return true
 

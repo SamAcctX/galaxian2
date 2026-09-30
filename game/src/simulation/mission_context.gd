@@ -96,7 +96,7 @@ func admit_drive_void(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,c
 	if not _accept_equipment(bindings,cat,loadout):return false
 	var current: Dictionary=career.snapshot()
 	var station: int=int(loadout.get("station_id",-1))
-	if station<0 or station>=cat.tables.stations.size() or current.station_id!=station or loadout.get("system_id")!=cat.tables.stations[station].system_id or not loadout.equipment_ids.has(85):return reject("The Void visit lost its fitted ship or actual departure planet")
+	if station<0 or station>=cat.tables.stations.size() or current.station_id!=station or loadout.get("system_id")!=cat.tables.stations[station].system_id or not load("res://src/content/khador_drive_definitions.gd").fitted(loadout):return reject("The Void visit lost its fitted ship or actual departure planet")
 	if not load("res://src/content/void_crystal_definitions.gd").parameters(bindings.mido_travel.get("void_crystals")):return reject("The ordinary Void world is unavailable")
 	for key in ["base_content_id","binding_id"]:
 		if current.get(key)!=bindings.get(key) or loadout.get(key)!=bindings.get(key):return reject("The Void visit belongs to another content source")

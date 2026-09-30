@@ -1448,9 +1448,11 @@ func _observe_radio() -> bool:
 			elif action.action=="place":
 				# Parked (asleep, far away) reserve ships arrive once.
 				var actors: Array=_encounter.combat_snapshot().actors
-				var center:=Vector3(action.center)
-				if actors[int(action.first_actor)].get("active",false)!=true and actors[int(action.first_actor)].pose.origin.distance_to(center)>2.0*float(action.radius):
+				# centre "player": a ring around the player; wake: they attack at once.
+				var center:=_pose.origin if action.center is String and action.center=="player" else Vector3(action.center)
+				if actors[int(action.first_actor)].get("active",false)!=true and int(actors[int(action.first_actor)].vitals.hull)>0 and (action.center is String or actors[int(action.first_actor)].pose.origin.distance_to(center)>2.0*float(action.radius)):
 					if not _encounter.place_story_actors(int(action.first_actor),int(action.end_actor),center,float(action.radius)):return reject(_encounter.error)
+					if action.get("wake",false) and not _encounter.wake_story_actors(int(action.first_actor),int(action.end_actor)):return reject(_encounter.error)
 	elif _void_environment!=null or _entry.campaign_cursor==28:
 		_radio_events=_radio.step(int(_briefing.snapshot().world_elapsed_ms),{},0)
 	elif _sahi!=null:
@@ -1472,7 +1474,7 @@ func _observe_radio() -> bool:
 ## an awake non-friendly ship, ships destroyed so far, and the player's armour.
 func _story_radio_facts() -> Dictionary:
 	if _mission_context.contract_context().is_empty() or _mission_context.recipe().get("radio",[]).is_empty():return {}
-	var hostile_active:=false;var defeated:=0;var hulls:={};var distances:={}
+	var hostile_active:=false;var defeated:=0;var hulls:={};var distances:={};var emp:={}
 	var actors: Array=_encounter.combat_snapshot().actors
 	for id in actors.size():
 		var actor: Dictionary=actors[id]
@@ -1481,7 +1483,8 @@ func _story_radio_facts() -> Dictionary:
 		if int(actor.vitals.hull)<=0:defeated+=1
 		hulls[id]=int(actor.vitals.hull)
 		if actor.get("pose") is Transform3D:distances[id]=_pose.origin.distance_to(actor.pose.origin)
-	return {"hostile_active":hostile_active,"defeated_targets":defeated,"player_armor_depleted":int(_player.snapshot().vitals.armor)<1,"hulls":hulls,"player_distances":distances}
+		emp[id]=[int(actor.get("systems_hit_serial",0))>0,actor.get("systems_disabled",false)==true]
+	return {"hostile_active":hostile_active,"defeated_targets":defeated,"player_armor_depleted":int(_player.snapshot().vitals.armor)<1,"hulls":hulls,"player_distances":distances,"emp":emp}
 
 func _advance_world(milliseconds: int, preceding_reference: Vector3) -> bool:
 	if _wingmen!=null:

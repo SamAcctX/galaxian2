@@ -27,11 +27,16 @@ const STOCK:={
 	106:{"items":"goods_list","list":[101,102,103,107,108,109,114,124,0],"category":4},
 	107:{"items":"category","category":3,"low_tech":false,"ships":[2,11,23,24,25,32,48,60]},
 	108:{"items":"none","ships":[]},
+	100:{"ships":[37,38,40],"from_cursor":84},
 }
 const WEAPON_CATEGORIES:=[0,1,2]
 
 static func stock_station(bindings: RefCounted,station_id: int) -> bool:
 	return load("res://src/content/ordinary_world_definitions.gd").location(bindings,station_id).get("expansion",false)
 
-static func stock_rules(station_id: int) -> Dictionary:
-	return STOCK.get(station_id,{}).duplicate(true)
+## A rule with "from_cursor" applies only from that campaign cursor on.
+static func stock_rules(station_id: int,cursor: int=-1) -> Dictionary:
+	var rules: Dictionary=STOCK.get(station_id,{}).duplicate(true)
+	if cursor<int(rules.get("from_cursor",-1)):return {}
+	rules.erase("from_cursor")
+	return rules
