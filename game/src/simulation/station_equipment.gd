@@ -733,6 +733,19 @@ func debit_campaign_cargo(item_id: int,quantity: int) -> bool:
 	if _state.get("ordinary_shopping_open",false):return reject("Campaign cargo requires a closed inventory")
 	return debit_delivery_cargo(item_id,quantity)
 
+## The story takes goods from the hold (89: ten Luxury); fewer are all taken.
+func remove_story_goods(item_id: int,quantity: int) -> bool:
+	error=""
+	var left:=quantity
+	while left>0:
+		var held:=0
+		for row in _state.cargo.entries:
+			if int(row.item_id)==item_id:held=maxi(held,int(row.quantity))
+		if held<=0:return true
+		if not debit_delivery_cargo(item_id,mini(held,left)):return false
+		left-=mini(held,left)
+	return true
+
 func debit_delivery_stack(item_id: int) -> bool:
 	error=""
 	if not _campaign_cargo_context(item_id,1):return reject("Delivery cargo requires its retained inventory")

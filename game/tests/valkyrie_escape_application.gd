@@ -42,6 +42,7 @@ func verify_free_application() -> void:
 	if staged=="teres-lost":await fly_teres(true)
 	if staged=="escape78":await fly_valkyrie_escape()
 	if staged=="supernova":await fly_supernova_start()
+	if staged=="supernova89":await fly_supernova_blast()
 
 ## 49-52: the K'Suukk flees with a Vossk escort that turns on the player at
 ## Makke S'ik, through the gate to S'inokk and away, then home to Kanado.
@@ -854,6 +855,48 @@ func fly_supernova_start() -> void:
 	check(app.session.station_owner().snapshot().campaign_cursor==89,"Fresh Resume lost the Thynome talk")
 	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-89.gof2save"))==OK,"The Thynome checkpoint could not be kept")
 
+## 89: launching from Thynome, the drive takes the ship to Naneroh; the
+## supernova destroys the station and its ships while the player is held;
+## then the drive brings the ship back to Thynome (90) for Gunant's talk.
+func fly_supernova_blast() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==89,"The supernova checkpoint is not at cursor 89")
+	if failures or not seed_cargo([[122,20]]):return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	var radio:=[]
+	if not await ride_story_jump(radio,30):return
+	if not app.enter_drive_arrival(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	# The scene holds the player from the start: step it instead of taking control.
+	app.session.rebase_time(now_us)
+	for tick in 30:
+		if not application_step():return
+	check(app.session.flight_owner().cinematic_input_blocked(),"The supernova scene did not hold the player")
+	var naneroh: Dictionary=app.session.snapshot()
+	var cast: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+	print("SUPERNOVA Naneroh station ",naneroh.location.station_id," cast ",cast.map(func(actor):return [actor.hull_catalogue_id,actor.get("static_model",-1),int(actor.vitals.hull),actor.get("model_draw_enabled")]))
+	await capture_free_application("supernova-naneroh")
+	check(int(naneroh.location.station_id)==109 and cast.size()==12,"The drive did not bring the ship to Naneroh's scene")
+	if failures:return
+	var blast:=false
+	var began:=now_us
+	while app.session.status=="running" and now_us-began<90000000:
+		if not blast and app.session.flight_owner()._encounter.combat_snapshot().actors.slice(3).all(func(actor):return int(actor.vitals.hull)<=0):
+			blast=true;print("SUPERNOVA blast after ",(now_us-began)/1000000," s");await capture_free_application("supernova-blast")
+		if not application_step():return
+		if int((now_us-began)/100000)%20==0:await process_frame
+	check(blast,"The supernova did not destroy Naneroh's ships")
+	check(app.session.status=="drive_arrival_transition_required" and app.session.snapshot().campaign_cursor==90,"The story did not take the ship home after the blast: "+app.session.status)
+	if failures or not app.enter_drive_arrival(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	check(int(app.session.snapshot().location.station_id)==10,"The ship did not come back to Thynome")
+	if failures or not await dock_application() or not await take_station_talk(90,91):return
+	check(app.save_station(false) and app.load_station(),"Saving and resuming after Gunant's talk failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==91,"Fresh Resume lost Gunant's talk")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-91.gof2save"))==OK,"The Gunant checkpoint could not be kept")
+
 ## The hangar's ship offers, as the player sees them.
 func shipyard() -> Array:
 	if not app.equipment_action("open"):check(false,"The hangar did not open: "+app.session.error);return [-1]
@@ -1121,6 +1164,7 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"teres","teres-lost":return state.campaign_cursor==73
 		"escape78":return state.campaign_cursor==77
 		"supernova":return state.campaign_cursor==84
+		"supernova89":return state.campaign_cursor==89
 	return super.resumed_contract_valid(state)
 
 ## A player crossing hostile Vossk space fights off the ships closing in

@@ -28,6 +28,16 @@ const MODELS:={
 		"wake_half_extent":100000000,"hull":"weak_point","enemy_count_excluded":false},
 	14365:{"layers":[14365],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":22,
 		"wake_half_extent":100000000,"hull":"weak_point","enemy_count_excluded":false},
+	# 89: Naneroh's Midorian station, its burning twin after the blast, and a
+	# container floating at the origin. Scenery only (no collision, no death).
+	21076:{"layers":[21076,21876,22076],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
+		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
+	# Assumption: the fire meshes (18832/18833, a registration type with no
+	# loader yet) are left out: the twin is the station with its lights out.
+	21876:{"layers":[21076,21876],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
+		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
+	16992:{"layers":[16992],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
+		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
 }
 const WAKE_MODE:=1
 const DEAD_MODE:=3

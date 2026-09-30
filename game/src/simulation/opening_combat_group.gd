@@ -622,6 +622,16 @@ func retire_story_actor(id: int) -> bool:
 	if _actors[id].snapshot().get("static_object",false) and not _writable(id).hide_static():return reject(_actors[id].error)
 	return true
 
+## Story actions on a range of actors: "destroy" (hull to 0) or "show" (a
+## hidden static object appears).
+func story_actor_action(first: int,end: int,action: String) -> bool:
+	error=""
+	if _contract_encounter.is_empty() or first<0 or end>_actors.size() or end<=first:return reject("Story actions require contract ships")
+	for id in range(first,end):
+		var done: bool=_writable(id).destroy_story() if action=="destroy" else _writable(id).show_static() if action=="show" else false
+		if not done:return reject(_actors[id].error if not _actors[id].error.is_empty() else "Unknown story action "+action)
+	return true
+
 func wake_story_actors(first: int,end: int) -> bool:
 	error=""
 	if _contract_encounter.is_empty() or first<0 or end>_actors.size() or end<=first:return reject("Story wake requires contract ships")

@@ -68,6 +68,27 @@ const SCRIPTED:={
 	87:{"points":[Vector3.ZERO],"groups":[],
 		"radio":[[6,2469,2057,5,[1500]],[0,2470,2058,6,[0]],[6,2471,2059,6,[1]],[0,2472,2060,6,[2]],[6,2473,2061,6,[3]],[0,2474,2062,6,[4]]],
 		"success":{"kind":"radio_finished","index":5}},
+	# 89: the supernova at Naneroh (empty orbit; the cast brings the station).
+	# #0 a container, #1 the station, #2 its burning twin (hidden), #3-#10
+	# Midorian fighters, #11 a Midorian capital ship. Caption at 2 s; at 39 s
+	# the twin replaces the station and every ship dies; at 54 s the story
+	# moves on and the drive takes the player to Thynome (MOVE_ON_ENTRY 90).
+	# Assumptions: no camera work or flash yet (player held and unharmed
+	# instead), the fighters wait at their loop points, a Midorian transport
+	# beside the station stands in for the capital ship (its hull 15 has no
+	# ordinary mesh), success at 54 s (39 + 7 + 8).
+	89:{"points":[Vector3.ZERO,Vector3(-63000,0,75000),Vector3(-60000,0,110000),Vector3(-63000,-5000,75000),Vector3(-60000,-5000,110000),Vector3(-77000,-3000,90000)],
+		"groups":[{"count":1,"faction":3,"friendly":true,"static":{"model":16992,"jitter":0},"name_text_id":-1},
+			{"count":1,"faction":3,"friendly":true,"static":{"model":21076,"jitter":0,"offset":Vector3.ZERO,"rotation":Vector3(0,PI,0)},"index":5,"name_text_id":-1},
+			{"count":1,"faction":3,"friendly":true,"static":{"model":21876,"jitter":0,"offset":Vector3.ZERO,"rotation":Vector3(0,PI,0)},"index":5,"name_text_id":-1,"hidden":true},
+			{"count":4,"faction":3,"hull":-1,"friendly":true,"index":1,"offsets":[-1000,-1000,-1000],"bounds":[2000,2000,2000]},
+			{"count":4,"faction":3,"hull":-1,"friendly":true,"index":3,"offsets":[-1000,-1000,-1000],"bounds":[2000,2000,2000]},
+			{"count":1,"faction":3,"hull":-1,"friendly":true,"freighter":true,"index":5,"offsets":[-8000,-2000,-8000],"bounds":[4000,4000,4000]}],
+		"radio":[[17,2483,-1,5,[2000]]],
+		"timed_actions":[{"after_ms":0,"action":"lock_player","duration_ms":54000,"invulnerable":true},
+			{"after_ms":39000,"action":"hide","first_actor":1,"end_actor":2},{"after_ms":39000,"action":"show","first_actor":2,"end_actor":3},
+			{"after_ms":39000,"action":"destroy","first_actor":3,"end_actor":12}],
+		"success":{"kind":"elapsed","after_ms":54000}},
 	# 80: Battle of Kothar. #0 the Valkyrie battlestation (hostile, not
 	# destroyable), #1-#12 its weak points, #13-#18 pirates and #19-#21 Ward
 	# defenders around (0,0,80000). "Retreat!" once #1-#18 are gone; the
@@ -305,7 +326,7 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 		var friendly: bool=row.friendly
 		if row.has("static"):
 			groups.append({"first_actor":first,"end_actor":first+1,"faction":int(row.faction),"origin":"zero","name_text_id":int(row.name_text_id),
-				"static_object":_placed_static(plan,row),"ship_state":{"mode":5,"active":false,"targeting_blocked":true},
+				"static_object":_placed_static(plan,row),"ship_state":{"mode":5,"active":false,"targeting_blocked":true,"hidden":row.get("hidden",false)},
 				"policy":{"initial_hostile":not friendly,"updated_hostile":not friendly,"friendly":friendly}})
 			first+=1;continue
 		var group:={"first_actor":first,"end_actor":first+int(row.count),"faction":int(row.faction),"population_group":"story","origin":"zero",
@@ -398,7 +419,13 @@ const VOID_EXIT:={79:{"campaign_cursor":80,"station_id":100},81:{"campaign_curso
 ## fuel (80's battle ends -> the alien world for 81).
 const STORY_JUMP:={81:{"destination":-1}}
 
-static func story_jump(cursor: int) -> Dictionary:return STORY_JUMP.get(cursor,{}).duplicate()
+## A story move (Campaign.MOVE_ON_ENTRY) reached in flight is the same free
+## jump. Assumption: the drive's jump stands in for the original's gate
+## arrival or docking; the player docks themselves after a "docked" move.
+static func story_jump(cursor: int) -> Dictionary:
+	if STORY_JUMP.has(cursor):return STORY_JUMP[cursor].duplicate()
+	var move: Dictionary=Campaign.story_move(cursor)
+	return {} if move.is_empty() else {"destination":int(move.station_id)}
 
 static func void_radio(cursor: int) -> Array:
 	var rows:=[]

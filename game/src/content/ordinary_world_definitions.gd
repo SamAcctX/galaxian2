@@ -50,7 +50,7 @@ static func from_catalogues(bindings: RefCounted,cat: RefCounted) -> Dictionary:
 		if system.id>EXPANSION_LAST_SYSTEM:continue
 		var faction:=int(system.fields[int(population.faction_field)])
 		var security:=int(system.fields[int(population.security_field)])
-		if faction not in [0,1,2,3] or system.sky_index<0 or system.sky_index>14:continue
+		if faction not in [0,1,2,3] or system.sky_index<0 or system.sky_index>18:continue
 		if faction==1 and not vossk_available(bindings.mido_travel):continue
 		var ids: Array=Array(system.station_ids)
 		if ids.is_empty():continue

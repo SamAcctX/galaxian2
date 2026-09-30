@@ -70,7 +70,7 @@ func _for_location(bindings: RefCounted, catalogues: RefCounted, opening: Dictio
 	var travel_context:=ordinary and Travel.location_supported(bindings,int(opening.station_id),int(opening.system_id),int(station.planet_type))
 	var local_arrival:=ordinary and LocalArrival.location_supported(bindings,catalogues,int(opening.station_id),int(opening.get("campaign_cursor",-1)),mission_context)
 	travel_context=travel_context or local_arrival or station_preview
-	if (station.planet_type!=0 and not travel_context) or opening.system_id==27 or not Numbers.integer(system.get("sky_index"),0,14):
+	if (station.planet_type!=0 and not travel_context) or not Numbers.integer(system.get("sky_index"),0,18):
 		return reject("This planet layout requires an ordinary supported location")
 	var ordered:=[]
 	# The original station loader scans catalogue records, filtering membership.

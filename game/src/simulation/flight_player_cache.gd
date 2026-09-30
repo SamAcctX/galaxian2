@@ -19,7 +19,8 @@ const POOL_KEYS=["hull","armor","shield","gamma"]
 static func base_cache(parameters: Dictionary, seed: Dictionary, hull: int, capacities: Dictionary, cursor: int, void_location:=false) -> Dictionary:
 	if not Definitions.parameters(parameters) or cursor not in [0,int(parameters.arrival_cursor)]:return {}
 	if not valid_seed(seed,void_location) or not valid_capacities(hull,capacities):return {}
-	if seed.station_id>=int(parameters.hazard_station_min) and seed.station_id<=int(parameters.hazard_station_max):return {}
+	# Ginoya's radiation orbits (hazard stations) start at full gamma too; the
+	# drain itself is the flight's gamma rule (Supernova).
 	var result:={"campaign_cursor":cursor,"values":{"hull":hull,"armor":capacities.armor,"shield":capacities.shield,"gamma":int(parameters.gamma_full)}}
 	for key in IDENTITY_KEYS:result[key]=seed[key]
 	return result.duplicate(true)

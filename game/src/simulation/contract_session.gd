@@ -469,6 +469,19 @@ func _adopt_station(station: int) -> bool:
 		_state.offers=cached.offers;_state.population=cached.population
 	return true
 
+## The story undoes a visit (90: the 89 scene's stop at Naneroh); the
+## visited-stations count drops with it.
+func forget_location_visit(station_id: int) -> bool:
+	error=""
+	var statistics: Variant=_state.get("travel_statistics")
+	if not GateArrival.valid_statistics(statistics):return reject("Location history requires retained travel statistics")
+	if statistics.size()==1 or station_id not in statistics.visited_station_ids:return true
+	var next: Dictionary=statistics.duplicate(true)
+	next.visited_station_ids.erase(station_id)
+	if not GateArrival.valid_statistics(next):return reject("Location history produced an invalid travel ledger")
+	_state.travel_statistics=next
+	return true
+
 func retain_location_visit(station_id: int,system_id: int) -> bool:
 	error=""
 	var statistics: Variant=_state.get("travel_statistics")
@@ -846,6 +859,10 @@ func _apply_story_station_rules(bindings: RefCounted,inventory: RefCounted,rules
 		if not _blueprints.story_reset_station(int(rules.story_blueprint_reset)):return reject(_blueprints.error)
 	for row in rules.get("story_hold_grants",[]):
 		if not inventory.receive_lounge_goods(int(row[0]),int(row[1])):return reject(inventory.error)
+	for row in rules.get("story_removed_goods",[]):
+		if not inventory.remove_story_goods(int(row[0]),int(row[1])):return reject(inventory.error)
+	for station in rules.get("story_unvisit",[]):
+		if not forget_location_visit(int(station)):return false
 	if rules.has("story_station_ships"):
 		var station:=int(_state.station_id);var plan: Dictionary=rules.story_station_ships
 		var before: Array=_lounges.ship_stock(station)
@@ -1511,6 +1528,8 @@ func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_result
 		next._state.progress.merge(advance.get("progress",{}),true)
 		var pay:=int(advance.get("previous_mission",{}).get("reward",0))
 		if pay>0:next._state.credits=credit_balance(next._state.credits,pay,_rules.delivery_results)
+		for station in advance.get("story_unvisit",[]):
+			if not next.forget_location_visit(int(station)):return fail(next.error)
 		if not advance.get("unlock_system_ids",[]).is_empty():
 			next._lounges=next._lounges.fork()
 			if not next._lounges.unlock_story_systems(_rules.base_navigation,advance.unlock_system_ids):return fail(next._lounges.error)

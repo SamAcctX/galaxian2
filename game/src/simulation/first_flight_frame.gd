@@ -166,6 +166,8 @@ var _pending_destination:=-1
 var _queued_drive:=false
 ## A free story jump waiting to start (STORY_JUMP / an automatic Void exit); -2 = none.
 var _story_jump:=-2
+## A story scene holds the player (89: the supernova), set by lock_player.
+var _story_locked:=false
 var _navigation_applied:=false
 var _fast_forward: RefCounted
 var _near_target:=false
@@ -507,7 +509,10 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_gate_animation=gate_animation;_gate_transit=gate_transit;_gate_destinations=gate_destinations
 	_system_navigation=system_navigation;_navigation_destinations=navigation_destinations
 	_drive=drive;_drive_arrival=null
-	_pending_destination=int(entry.get("navigation_destination_id",-1));_navigation_applied=false;_queued_drive=false;_story_jump=-2
+	_pending_destination=int(entry.get("navigation_destination_id",-1));_navigation_applied=false;_queued_drive=false;_story_jump=-2;_story_locked=false
+	# A story waiting in another orbit (89: Naneroh) takes the ship there at once.
+	var move: Dictionary=load("res://src/content/valkyrie_campaign_definitions.gd").story_move(int(entry.get("campaign_cursor",-1)))
+	if move.get("arrive","")=="gate" and _drive!=null and int(entry.get("location",{}).get("station_id",-1))!=int(move.station_id):_story_jump=int(move.station_id)
 	_gate_cruise_speed=float(bindings.cruise.speed_units_per_millisecond)
 	_fast_forward=fast_forward;_near_target=false;_camera_ms=0;_camera_passes=1
 	_mining_audio={} if targeting==null else {"serial":0,"events":[]}
@@ -975,6 +980,8 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		var guided: RefCounted=next.start_drive(next._pending_destination) if next._queued_drive else next.select_map_destination(next._pending_destination)
 		if guided==null:reject(next.error);return null
 		next=guided
+	# A jump the drive cannot make (no route to it) is left to the player.
+	if next._story_jump>=0 and next._drive!=null and next._drive.ready() and next.drive_quote(next._story_jump).get("mode","local")=="local":next._story_jump=-2
 	if next._story_jump>-2 and cues.entry_released and not next.dialogue_visible() and not next.death_active() and not next.cinematic_input_blocked() and next.drive_available() and next._drive.snapshot().get("phase","")=="ready":
 		var jumped: RefCounted=next.start_drive(next._story_jump,true)
 		if jumped==null:reject(next.error);return null
@@ -1199,7 +1206,7 @@ func select_secondary(item_id: int,paused:=false) -> RefCounted:
 	return next
 
 func cinematic_input_blocked() -> bool:
-	return convoy_input_blocked() or (_alioth!=null and _alioth.snapshot().input_blocked) or (_sahi!=null and _sahi.snapshot().input_blocked) or (_probe!=null and _probe.snapshot().input_blocked) or gate_modal() or gate_coasting() or gate_departing() or drive_departing()
+	return _story_locked or convoy_input_blocked() or (_alioth!=null and _alioth.snapshot().input_blocked) or (_sahi!=null and _sahi.snapshot().input_blocked) or (_probe!=null and _probe.snapshot().input_blocked) or gate_modal() or gate_coasting() or gate_departing() or drive_departing()
 
 func void_environment_owner() -> RefCounted:return null if _void_environment==null else _void_environment.fork()
 func ordinary_void_source_owner() -> RefCounted:return null if _ordinary_void_source==null else _ordinary_void_source.fork()
@@ -1493,6 +1500,20 @@ func _observe_radio() -> bool:
 			if elapsed<int(action.after_ms):continue
 			if action.action=="hide_station" and not _station_hidden:
 				_station_hidden=true;_return_rules={}
+			elif action.action=="lock_player":
+				# No steering for the scene; "invulnerable" also keeps the ship unharmed.
+				var locked: bool=elapsed<int(action.after_ms)+int(action.duration_ms)
+				if locked!=_story_locked:
+					_story_locked=locked
+					if action.get("invulnerable",false) and not _player.set_permissions(bool(_player.snapshot().active),not locked):return reject(_player.error)
+			elif action.action in ["show","destroy"]:
+				var actors: Array=_encounter.combat_snapshot().actors
+				var pending: bool=range(int(action.first_actor),int(action.end_actor)).any(func(id):return int(actors[id].vitals.hull)>0 and (action.action=="destroy" or not actors[id].get("model_draw_enabled",true)))
+				if pending and not _encounter.story_actor_action(int(action.first_actor),int(action.end_actor),action.action):return reject(_encounter.error)
+			elif action.action=="hide":
+				var actors: Array=_encounter.combat_snapshot().actors
+				if range(int(action.first_actor),int(action.end_actor)).any(func(id):return actors[id].get("model_draw_enabled",true) and actors[id].get("static_object",false)):
+					if not _encounter.retire_story_actors(int(action.first_actor),int(action.end_actor),RETIRE_POINT):return reject(_encounter.error)
 			elif action.action=="wake":
 				var actors: Array=_encounter.combat_snapshot().actors
 				if range(int(action.first_actor),int(action.end_actor)).any(func(id):return actors[id].get("active",false)!=true and int(actors[id].get("actor_mode",-1))==5 and int(actors[id].vitals.hull)>0):
@@ -2442,7 +2463,7 @@ func fork_for_frame() -> RefCounted:
 	if _gate_transit!=null:copy._gate_transit=_gate_transit.fork_for_frame()
 	copy._gate_destinations=_gate_destinations.duplicate();copy._gate_cruise_speed=_gate_cruise_speed
 	copy._system_navigation=_system_navigation;copy._navigation_destinations=_navigation_destinations
-	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied;copy._queued_drive=_queued_drive;copy._story_jump=_story_jump
+	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied;copy._queued_drive=_queued_drive;copy._story_jump=_story_jump;copy._story_locked=_story_locked
 	copy._briefing=_briefing.fork();copy._player=_player.fork_for_frame();copy._scenery=_scenery.fork_for_frame()
 	copy._camera=_camera.fork_for_frame();copy._pilot=_pilot.fork_for_frame();copy._detail=_detail.fork_for_frame()
 	copy._collision_enabled=_collision_enabled

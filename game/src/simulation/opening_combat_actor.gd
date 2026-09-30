@@ -708,6 +708,8 @@ func _configure_static(bindings: RefCounted,data: Dictionary,row: Dictionary,act
 		"model_draw_enabled":true,"node_draw_requested":true,"engine_draw_enabled":false,
 		"wake_half_extent":int(rules.wake_half_extent),"enemy_count_excluded":bool(rules.enemy_count_excluded)},true)
 	if int(row.get("name_text_id",-1))>=0:_state.name_text_id=int(row.name_text_id)
+	# A hidden story object waits unseen for its "show" action.
+	if row.get("hidden",false):_state.model_draw_enabled=false;_state.targeting_blocked=true
 	return set_pose(row.statistics_pose,row.body_pose)
 
 ## Collision boxes come from the imported record once destruction resources
@@ -727,6 +729,24 @@ func wake_story() -> bool:
 	return true
 
 ## A sleeping static object wakes when an opposing active body is close.
+## A story event destroys this body outright (89: the supernova). It is not
+## the player's kill.
+func destroy_story() -> bool:
+	error=""
+	if _vitals.snapshot().hull<=0:return true
+	var pools:=Vitals.new()
+	if not pools.configure(0,0,0):return reject(pools.error)
+	_vitals=pools
+	if _state.has("nonplayer_kill"):_state.nonplayer_kill=true
+	return true
+
+## A hidden static story object appears (89: Naneroh's damaged twin).
+func show_static() -> bool:
+	error=""
+	if not _state.get("static_object",false):return reject("Only a static object shows this way")
+	if _vitals.snapshot().hull>0:_state.model_draw_enabled=true;_state.targeting_blocked=false
+	return true
+
 ## A static story object leaves the scene (80: the Valkyrie jumps away):
 ## it is no longer drawn, targeted or active.
 func hide_static() -> bool:

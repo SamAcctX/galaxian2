@@ -69,14 +69,13 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,chosen_s
 			paths.append(path)
 	var station_row: Dictionary=catalogues.tables.stations[station_id]
 	var system_id:=int(station_row.system_id)
-	if system_id==27:return reject("Light-oriented menu sky is not supported")
 	var system: Dictionary=catalogues.tables.systems[system_id]
 	var sky_index:=int(system.sky_index)
 	if sky_index<0 or sky_index>18:return reject("Menu system has no supported source sky")
 	var scene:=Node3D.new();scene.name="MenuWorld";add_child(scene)
 	var prepared_sky:=SourceSky.new();scene.add_child(prepared_sky)
 	var orientation:=Orientation.new()
-	var rotation: Dictionary=orientation.for_station(station_id,sky_index in [17,18])
+	var rotation: Dictionary=orientation.for_location(station_id,system_id,sky_index,int(station_row.get("planet_type",0)))
 	if rotation.is_empty():scene.free();return reject(orientation.error)
 	var star_variant:=system_id%3
 	var descriptors:=[{"mesh_id":17850+star_variant,"texture_id":10086+star_variant,"mode":0},

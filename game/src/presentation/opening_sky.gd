@@ -111,14 +111,14 @@ func build_station(library: RefCounted,visuals: RefCounted,bindings: RefCounted,
 		return reject("Station background belongs to another content identity")
 	if station_id<0 or station_id>=catalogues.tables.stations.size():return reject("Unknown station background location")
 	var system_id:=int(catalogues.tables.stations[station_id].system_id)
-	if system_id<0 or system_id>=catalogues.tables.systems.size() or system_id==27:return reject("This station background uses an unsupported source orientation")
+	if system_id<0 or system_id>=catalogues.tables.systems.size():return reject("This station background uses an unsupported source orientation")
 	var sky_index:=int(catalogues.tables.systems[system_id].sky_index)
 	var sky: Dictionary=bindings.opening_sky
 	var arrival: Dictionary=bindings.arrival_environment
-	if not Definitions.parameters(sky) or sky_index<0 or sky_index>int(arrival.get("maximum_sky_index",-1)):
+	if not Definitions.parameters(sky) or sky_index<0 or sky_index>Orientation.LAST_SKY_INDEX:
 		return reject("Station background has no supported source sky")
 	var orientation:=Orientation.new()
-	var rotation_value: Dictionary=orientation.for_station(station_id,sky_index in [17,18])
+	var rotation_value: Dictionary=orientation.for_location(station_id,system_id,sky_index,int(catalogues.tables.stations[station_id].get("planet_type",0)))
 	if rotation_value.is_empty():return reject(orientation.error)
 	var variant:=system_id%int(sky.star_variants)
 	var descriptors:=[{"mesh_id":int(sky.star_mesh_base)+variant,"texture_id":int(sky.star_texture_base)+variant,"mode":0},
@@ -140,11 +140,8 @@ func _build_location(library: RefCounted, visuals: RefCounted, bindings: RefCoun
 	if visuals.base_content_id!=bindings.base_content_id: return reject("Sky textures belong to another content identity")
 	var system: Dictionary = catalogues.tables.systems[opening.system_id]
 	if not Numbers.integer(system.get("sky_index"),0,65535): return reject("Opening system has no valid sky index")
-	# System 27 uses a light-direction basis in the source, not the seeded Euler
-	# basis. That additional background path is outside this opening renderer.
-	if opening.system_id==27: return reject("Light-oriented background is not implemented")
 	var orientation := Orientation.new()
-	var rotation_value := orientation.for_station(opening.station_id,int(system.sky_index) in [17,18])
+	var rotation_value := orientation.for_location(int(opening.station_id),int(opening.system_id),int(system.sky_index),int(catalogues.tables.stations[int(opening.station_id)].get("planet_type",0)))
 	if rotation_value.is_empty(): return reject(orientation.error)
 	var variant := int(opening.system_id)%int(data.star_variants)
 	var descriptors := [
