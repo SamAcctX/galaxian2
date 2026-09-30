@@ -765,7 +765,7 @@ func acknowledge_station_campaign(bindings: RefCounted,equipment: RefCounted,sto
 		if receipt.get(key)!=_state[key]:return fail("The station acknowledgement belongs to another content identity")
 	var equal=load("res://src/content/opening_escape_definitions.gd")
 	if receipt.from_cursor!=_state.campaign_cursor or receipt.station_id!=_state.station_id or receipt.previous_mission!=story_mission or receipt.campaign_cursor!=int(rules.next_cursor) or not equal.equal_value(receipt.mission,rules.next_mission) or receipt.reward_credits!=int(rules.reward_credits):return fail("The station conversation changed its earned transition")
-	if rules.has("unlock_system_ids") and (not equal.equal_value(receipt.get("unlock_system_ids"),rules.unlock_system_ids) or not equal.equal_value(receipt.get("next_course"),rules.next_course)):return fail("The station conversation changed its next destination")
+	if rules.has("unlock_system_ids") and (not equal.equal_value(receipt.get("unlock_system_ids"),rules.unlock_system_ids) or not equal.equal_value(receipt.get("next_course"),rules.get("next_course"))):return fail("The station conversation changed its next destination")
 	var next: RefCounted=fork()
 	var inventory: RefCounted=equipment.fork()
 	# A completed career's station chapter ends when the expansion story takes over.

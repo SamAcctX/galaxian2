@@ -7,6 +7,10 @@ const Epilogue=preload("res://src/content/campaign_epilogue_definitions.gd")
 const FIRST_CURSOR:=45
 const LAST_CURSOR:=83
 const TALK:=11
+## Systems revealed when a conversation is acknowledged. The original reveals
+## Herjaza and Skavac as missions 55 and 63 begin; Loma is visible to every
+## expansion owner, so a continued career receives it with the first call.
+const UNLOCKS:={45:[25],54:[23],62:[24]}
 ## cursor: [kind, reward, station]; -1 station means any station.
 const MISSIONS:={
 	47:[11,0,74],48:[11,0,58],49:[156,0,58],50:[156,0,62],51:[156,0,25],52:[160,0,25],
@@ -47,8 +51,10 @@ static func conversation(bindings: RefCounted,cursor: Variant,story_mission: Var
 static func _rules(cursor: int,current: Dictionary,next: int,events: Array,target_required: bool) -> Dictionary:
 	var next_mission:=mission(next)
 	if next_mission.is_empty() or events.is_empty():return {}
-	return {"campaign_cursor":cursor,"mission":current.duplicate(true),"next_cursor":next,"next_mission":next_mission,
+	var result:={"campaign_cursor":cursor,"mission":current.duplicate(true),"next_cursor":next,"next_mission":next_mission,
 		"reward_credits":int(current.get("reward",0)),"events":events,"target_station_required":target_required}
+	if UNLOCKS.has(cursor):result.unlock_system_ids=UNLOCKS[cursor].duplicate()
+	return result
 
 static func _same(a: Dictionary,b: Dictionary) -> bool:
 	for key in ["kind","station_id","reward"]:

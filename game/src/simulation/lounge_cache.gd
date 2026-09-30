@@ -351,7 +351,7 @@ func acknowledge_campaign_coordinates(bindings: RefCounted,visit: RefCounted) ->
 	if not is_instance_of(visit,load("res://src/simulation/campaign_visit.gd")):return reject("Coordinates require an acknowledged campaign conversation")
 	var receipt: Dictionary=visit.transition()
 	if receipt.is_empty():return reject("Acknowledge the complete conversation before receiving coordinates")
-	var rules: Dictionary=load("res://src/content/kappa_return_definitions.gd").conversation(bindings,receipt.get("from_cursor"),receipt.get("previous_mission"))
+	var rules: Dictionary=load("res://src/content/free_campaign_definitions.gd").dialogue_rules(bindings,receipt.get("from_cursor"),receipt.get("previous_mission"),true)
 	if rules.is_empty() or not load("res://src/content/opening_escape_definitions.gd").equal_value(receipt.get("unlock_system_ids"),rules.unlock_system_ids):return reject("The conversation changed its declared coordinates")
 	for key in ["base_content_id","binding_id"]:
 		if _state.get(key)!=bindings.get(key) or receipt.get(key)!=_state[key]:return reject("Coordinates belong to another content identity")

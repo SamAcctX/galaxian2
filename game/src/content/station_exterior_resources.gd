@@ -64,11 +64,13 @@ func _prepare_location(library: RefCounted,bindings: RefCounted,catalogues: RefC
 	var collision:=volume_reader.decode(bytes,int(data.get("collision_record_id",data.station_id)),int(data.collision_record_limit),float(data.get("collision_sphere_scale",0.0)))
 	if collision.is_empty():return reject(volume_reader.error)
 	var layers:=[];var sphere:=Vector4.ZERO
+	# Valkyrie's special assemblies are animated; their rest pose bounds them.
+	var animated: bool=not load("res://src/content/valkyrie_world_definitions.gd").station_models(bindings,int(data.station_id)).is_empty()
 	for index in data.model_ids.size():
 		var id:=int(data.model_ids[index])
 		# Some original stations register an optional light mesh absent from
 		# the supplied bundle. Their hull and docking geometry remain complete.
-		if index==2 and bindings.records.has(id) and bindings.records[id].all(func(row):return row.kind=="mesh" and not library.manifest.files.has(row.resource)):continue
+		if index==2 and (not bindings.records.has(id) or bindings.records[id].all(func(row):return row.kind=="mesh" and not library.manifest.files.has(row.resource))):continue
 		var path: String=bindings.resolve(id,"mesh")
 		if path.is_empty():return reject(bindings.error)
 		var material: Dictionary=bindings.material_for_mesh(path,"high")
@@ -78,10 +80,10 @@ func _prepare_location(library: RefCounted,bindings: RefCounted,catalogues: RefC
 		if model_bytes.is_empty():return reject(library.error)
 		var reader:=AEM.new();var model:=reader.decode(model_bytes)
 		if model.is_empty():return reject(reader.error)
-		if model.version!=4 or model.surfaces.is_empty() or model.surfaces.size()>256:return reject("Unsupported station exterior mesh layout: "+path)
+		if model.version not in [4,5] or model.surfaces.is_empty() or model.surfaces.size()>256:return reject("Unsupported station exterior mesh layout: "+path)
 		var layer_sphere:=Vector4.ZERO
 		for surface in model.surfaces:
-			if not initial_transform_supported(surface,index==2):return reject("Unsupported station exterior transform or initial light sample: "+path)
+			if not animated and not initial_transform_supported(surface,index==2):return reject("Unsupported station exterior transform or initial light sample: "+path)
 			var raw: Vector4=surface.sphere
 			if not raw.is_finite() or raw.w<=0:return reject("Invalid station exterior sphere: "+path)
 			var center:=SPHERE_AXES*Vector3(raw.x,raw.y,raw.z)

@@ -153,7 +153,7 @@ func transition() -> Dictionary:
 	if _rules.has("unlock_system_ids"):
 		result.unlock_system_ids=[]
 		for id in _rules.unlock_system_ids:result.unlock_system_ids.append(int(id))
-		result.next_course=_native_mission(_rules.next_course)
+		if _rules.has("next_course"):result.next_course=_native_mission(_rules.next_course)
 	return result
 
 func snapshot() -> Dictionary:
