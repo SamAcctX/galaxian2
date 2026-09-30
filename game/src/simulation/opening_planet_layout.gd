@@ -50,7 +50,7 @@ static func supports_station(bindings: RefCounted,catalogues: RefCounted,station
 	var world: Dictionary=Worlds.catalogue_location(bindings,catalogues,station_id)
 	if world.is_empty():return false
 	var station: Dictionary=catalogues.tables.stations[station_id]
-	return LocalArrival.available(bindings) and int(station.planet_type) in LocalArrival.SUPPORTED_TYPES and int(world.sky_index) not in [11,12] and int(world.sky_index)<=14
+	return LocalArrival.available(bindings) and int(station.planet_type) in LocalArrival.SUPPORTED_TYPES and int(world.sky_index)<=14
 
 func for_station(bindings: RefCounted,catalogues: RefCounted,station_id: int,cursor: int,quality:="high") -> Dictionary:
 	error=""

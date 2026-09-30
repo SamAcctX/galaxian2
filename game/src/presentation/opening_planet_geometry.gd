@@ -7,6 +7,10 @@ const Numbers = preload("res://src/content/opening_definitions.gd")
 const AEM = preload("res://src/content/aem.gd")
 const Model = preload("res://src/presentation/imported_model.gd")
 const SHADER = preload("res://src/presentation/sky_planet.gdshader")
+const DistanceFog = preload("res://src/simulation/distance_fog.gd")
+const MaterialFog = preload("res://src/presentation/material_fog.gd")
+## Fogged systems draw planets fading toward 70% of the location fog colour.
+const PLANET_FOG_SHADE := 0.7
 var error := ""
 var selection := {}
 var models: Array[Node3D]=[]
@@ -43,7 +47,8 @@ func _build(library: RefCounted, visuals: RefCounted, bindings: RefCounted, cata
 		4:_layout=layout.for_station(bindings,catalogues,location_cache.station_id,location_cache.campaign_cursor,quality)
 		_:return reject("Unsupported planet scene")
 	if _layout.is_empty():return reject(layout.error)
-	if _layout.sky_index in [11,12]:return reject("Fogged planet drawing is not yet supported")
+	var fog: Dictionary=DistanceFog.for_sky(int(_layout.sky_index))
+	if not fog.is_empty():fog.color*=PLANET_FOG_SHADE
 	var reader:=AEM.new()
 	var bytes: PackedByteArray=library.read_resource(_layout.mesh_path,AEM.MAX_BYTES)
 	if bytes.is_empty():return reject(library.error)
@@ -76,6 +81,7 @@ func _build(library: RefCounted, visuals: RefCounted, bindings: RefCounted, cata
 		for instance in model.instances:
 			instance.custom_aabb=AABB(Vector3.ONE*-1e9,Vector3.ONE*2e9)
 			instance.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		MaterialFog.apply_models([model],fog)
 		add_child(model);models.append(model);_textures.append(cache[image])
 	selection={"base_content_id":_layout.base_content_id,"binding_id":_layout.binding_id,
 		"station_id":_layout.station_id,"system_id":_layout.system_id,"selected_index":_layout.selected_index,
