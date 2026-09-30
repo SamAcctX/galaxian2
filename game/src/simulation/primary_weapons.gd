@@ -286,7 +286,13 @@ func observe_beam_pose(pose: Transform3D) -> bool:
 		if gun.projectiles.has_beam() and not gun.projectiles.observe_beam_pose(pose):return reject(gun.projectiles.error)
 	return true
 
-func fire(firing_transform: Variant, firing_allowed: Variant, random_state: Variant=null, beam_targets: Array=[]) -> Dictionary:
+func turret_automatic() -> bool:return _turret!=null and _turret.automatic()
+func advance_auto_turret(ship: Transform3D,actors: Array,milliseconds: int) -> bool:
+	return _turret!=null and _turret.advance_auto(ship,actors,milliseconds)
+
+## The trigger fires the forward guns (or the turret in turret view); an
+## automatic turret on target fires on its own.
+func fire(firing_transform: Variant, firing_allowed: Variant, random_state: Variant=null, beam_targets: Array=[], trigger:=true, auto_turret:=false) -> Dictionary:
 	error = ""
 	if _loadout.is_empty(): return fail("Configure primary ownership before firing")
 	if not firing_transform is Transform3D or not firing_transform.is_finite() or not firing_allowed is bool:
@@ -302,7 +308,8 @@ func fire(firing_transform: Variant, firing_allowed: Variant, random_state: Vari
 		var projectiles: RefCounted = gun.projectiles.fork_state()
 		var result := {"fired":false,"reason":"inactive_group"}
 		var firing_pose: Transform3D=_turret.barrel_pose(firing_transform) if gun.equipment.category==2 else firing_transform
-		if gun.equipment.quantity > 0 and (gun.equipment.category==2)==turret_active():
+		var selected: bool=(trigger and (gun.equipment.category==2)==turret_active()) or (auto_turret and gun.equipment.category==2 and not turret_active())
+		if gun.equipment.quantity > 0 and selected:
 			if projectiles.has_beam():result=projectiles.fire_beam_from_mount(gun.mount,firing_transform,firing_allowed,beam_targets)
 			else:result = projectiles.fire_forward_from_mount(gun.mount,firing_pose,firing_allowed,next_random)
 		if result.is_empty(): return fail(projectiles.error)

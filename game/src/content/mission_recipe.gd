@@ -25,10 +25,12 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 	var attackers:=0
 	var ship_state:={"mode":int(rules.pirate.mode),"active":bool(rules.pirate.active),"targeting_blocked":bool(rules.pirate.targeting_blocked)}
 	var story:=StoryFlights.recipe(mission) if StoryFlights.is_story_job(mission) else {}
-	match int(mission.kind):
-		156,160:
+	# A story job's cast and result come from its story recipe, whatever its kind.
+	match -1 if not story.is_empty() else int(mission.kind):
+		-1:
 			count=int(story.actor_count);ship_groups=story.ship_groups
 			ship_state={"mode":0,"active":true,"targeting_blocked":false}
+			placement=story.get("placement",placement)
 		1:
 			var base:=int(Vitals.single(scaled*5.0))+3
 			attackers=int(Vitals.single(base+Vitals.single(base*Vitals.single(float(context.difficulty)-0.5))))
@@ -113,9 +115,10 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 	var failure:={"kind":"never"}
 	var periodic:={"kind":"never"}
 	var readout:={}
-	match int(mission.kind):
+	match -1 if not story.is_empty() else int(mission.kind):
+		-1:
+			success=story.success;failure=story.get("failure",failure)
 		0:success={"kind":"never"}
-		156,160:success=story.success
 		1:success={"kind":7,"end_actor":attackers}
 		2,9:
 			success={"kind":18,"first_actor":0,"end_actor":attackers}

@@ -12,7 +12,40 @@ func configure(item: Dictionary,mount: Dictionary) -> bool:
 		error="Manual turret requires its original mount and handling";return false
 	_state={"ready":true,"active":false,"item_id":int(item.id),"mount":mount.position,"yaw":0.0,"pitch":0.0,"camera_pitch":0.0,
 		"yaw_speed":deg_to_rad(float(handling)*0.6591796875),"declaration":row}
+	if row.get("auto",false):_state.merge({"auto":true,"auto_clock":Definitions.AUTO_RETARGET_MS,"target_id":-1})
 	return true
+
+func automatic() -> bool:return not _state.is_empty() and _state.get("auto",false)
+
+## Turn toward the chosen hostile; true when the barrel is on target.
+func advance_auto(ship: Transform3D,actors: Array,milliseconds: int) -> bool:
+	if not automatic() or active():return false
+	var mount: Vector3=ship*(_state.mount+Vector3(0,_state.declaration.height,0))
+	_state.auto_clock+=milliseconds
+	var target: Dictionary={}
+	for actor in actors:
+		if actor.get("actor_id")==_state.target_id:target=actor
+	if _state.auto_clock>Definitions.AUTO_RETARGET_MS or not _auto_candidate(target,mount):
+		_state.auto_clock=0;_state.target_id=-1;target={}
+		var nearest:=Definitions.AUTO_RANGE
+		for actor in actors:
+			if not _auto_candidate(actor,mount):continue
+			var distance: float=Vector3(actor.position).distance_to(mount)
+			if distance<nearest:nearest=distance;target=actor;_state.target_id=int(actor.actor_id)
+	if target.is_empty():return false
+	var aim: Vector3=target.position
+	var body: Variant=target.get("body_pose")
+	if body is Transform3D:aim+=body.basis.z.normalized()*Definitions.AUTO_LEAD
+	var local: Vector3=(barrel_pose(ship).affine_inverse()*aim).normalized()
+	var seconds:=float(milliseconds)/1000.0
+	var yaw_error:=atan2(local.x,local.z);var pitch_error:=atan2(-local.y,Vector2(local.x,local.z).length())
+	_state.yaw=wrapf(_state.yaw+clampf(yaw_error,-_state.yaw_speed*seconds,_state.yaw_speed*seconds),-PI,PI)
+	_state.pitch=clampf(_state.pitch+clampf(pitch_error,-Definitions.PITCH_SPEED*seconds,Definitions.PITCH_SPEED*seconds),-300.0*TAU/4096.0,70.0*TAU/4096.0)
+	return absf(local.x)<=Definitions.AUTO_TOLERANCE and absf(local.y)<=Definitions.AUTO_TOLERANCE
+
+static func _auto_candidate(actor: Dictionary,mount: Vector3) -> bool:
+	if actor.is_empty() or actor.get("scenery",false) or actor.get("hostile")!=true or actor.get("active")!=true or int(actor.get("vitals",{}).get("hull",0))<=0:return false
+	return actor.get("position") is Vector3 and Vector3(actor.position).distance_to(mount)<Definitions.AUTO_RANGE
 
 func snapshot() -> Dictionary:return _state.duplicate(true)
 func active() -> bool:return not _state.is_empty() and _state.active

@@ -383,7 +383,8 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 		objective=Objective.new()
 		if not objective.configure(bindings,library,construction,autopilot_key,dock_key):return reject(objective.error)
 	var station: RefCounted
-	if not void_world and not bindings.station_exterior.is_empty():
+	var flight_context: RefCounted=construction.flight_context_owner()
+	if not void_world and not bindings.station_exterior.is_empty() and (flight_context==null or not flight_context.has_method("station_present") or flight_context.station_present()):
 		station=Station.new()
 		if not station.configure(library,bindings,catalogues,construction):return reject(station.error)
 	var station_targeting: RefCounted
@@ -465,7 +466,8 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_wingmen=null if wingmen.snapshot().is_empty() else wingmen
 	_station=station;_station_targeting=station_targeting
 	_autopilot=autopilot;_preceding_commands=Vector2.ZERO
-	_return_rules=return_rules;_departure_station=null
+	# Docking needs a station; an empty orbit has none to return to.
+	_return_rules=return_rules if station!=null else {};_departure_station=null
 	_station_contact=false;_station_packet={};_encounter=encounter;_world_elapsed_ms=0
 	_mission_context=mission_context
 	_engine_audio=EngineAudio.new()
@@ -815,7 +817,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		if story_state.campaign_cursor!=before_cursor:
 			# A story flight has moved on in space: navigation and docking follow it.
 			if next._local_travel==null or not next._local_travel.rebase_story_flight(_story_bindings,story_state.campaign_cursor,story_state.mission):reject("Story navigation: "+str(next._local_travel.error if next._local_travel!=null else "missing travel"));return null
-			next._return_rules=FreeFlight.docking(_story_bindings,int(_entry.location.station_id),story_state.campaign_cursor)
+			next._return_rules={} if next._station==null else FreeFlight.docking(_story_bindings,int(_entry.location.station_id),story_state.campaign_cursor)
 		var visit_clock: Dictionary=next._briefing.snapshot()
 		if next._rescue!=null:
 			if not next._objective.poll_campaign_result(next._encounter,next._radio,next._rescue,next._briefing.mission_poll_due() and not next.death_active() and not next.contract_result_pending()):reject(next._objective.error);return null
@@ -883,7 +885,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 	if next._mining!=null and next._mining.has_active_drill() and next._player.snapshot().vitals.hull>0 and not cues.dialogue.visible and not next.cinematic_input_blocked():
 		if not next._mining.set_command(drill_command):reject(next._mining.error);return null
 	if next._equipment!=null:
-		var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,primary_fire or (secondary_fire and turret_active),cues.entry_released and not cues.dialogue.visible and not next.death_active() and not next.local_departing() and not next.cinematic_input_blocked(),next._random,[] if next._scanner==null else next._scanner.weapon_target_ids())
+		var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,primary_fire or (secondary_fire and turret_active),cues.entry_released and not cues.dialogue.visible and not next.death_active() and not next.local_departing() and not next.cinematic_input_blocked(),next._random,[] if next._scanner==null else next._scanner.weapon_target_ids(),delta_ms)
 		if fired.is_empty():reject(next._encounter.error);return null
 		next._encounter=fired.encounter;next._random=fired.random_state
 		if next._encounter.has_secondaries():
@@ -1416,7 +1418,7 @@ func _observe_radio() -> bool:
 		return true
 	if _mission_context!=null and (_mission_context.advances_campaign() or not _mission_context.contract_context().is_empty()):
 		var elapsed: int=int(_briefing.snapshot().world_elapsed_ms)
-		if not _radio.bind_context(_mission_context.radio_observation(elapsed)):return reject(_radio.error)
+		if not _radio.bind_context(_mission_context.radio_observation(elapsed,_story_radio_facts())):return reject(_radio.error)
 		_radio_events=_radio.step_context(elapsed)
 		var turn: Dictionary=_mission_context.recipe().get("turn_hostile",{})
 		if not turn.is_empty() and _radio.error.is_empty() and _radio.snapshot().finished[int(turn.radio_index)] and not _encounter.story_hostility_applied():
@@ -1437,6 +1439,17 @@ func _observe_radio() -> bool:
 		_radio_events=_radio.step_convoy(int(_briefing.snapshot().world_elapsed_ms),targets)
 	else:_radio_events=_radio.step_combat_training(int(_briefing.snapshot().world_elapsed_ms),_encounter.combat_owner())
 	return true if _radio.error.is_empty() else reject(_radio.error)
+
+## Story radio reads the live cast the way the original's radio conditions do:
+## an awake non-friendly ship, ships destroyed so far, and the player's armour.
+func _story_radio_facts() -> Dictionary:
+	if _mission_context.contract_context().is_empty() or _mission_context.recipe().get("radio",[]).is_empty():return {}
+	var hostile_active:=false;var defeated:=0
+	for actor in _encounter.combat_snapshot().actors:
+		if actor.get("scenery",false):continue
+		hostile_active=hostile_active or (actor.get("active",false)==true and actor.get("friendly",false)!=true)
+		if int(actor.vitals.hull)<=0:defeated+=1
+	return {"hostile_active":hostile_active,"defeated_targets":defeated,"player_armor_depleted":int(_player.snapshot().vitals.armor)<1}
 
 func _advance_world(milliseconds: int, preceding_reference: Vector3) -> bool:
 	if _wingmen!=null:

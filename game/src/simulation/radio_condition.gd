@@ -14,7 +14,7 @@ static func valid_clock(value: Variant) -> bool:
 static func valid_row(row: Dictionary, event_count: int) -> bool:
 	if not Numbers.integer(row.get("condition"), 0, 31) or not row.get("values") is Array: return false
 	var kind := int(row.condition)
-	if kind not in [1, 5, 6, 8, 9, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27]: return false
+	if kind not in [1, 5, 6, 8, 9, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28]: return false
 	if row.values.is_empty() or row.values.size() > 256 or (kind not in [1, 9] and row.values.size() != 1): return false
 	for value in row.values:
 		if not Numbers.integer(value, -2147483648 if kind == 26 else 0, MAX_INTEGER): return false
@@ -40,7 +40,7 @@ static func observation_error(observation: Dictionary, condition_clock: Variant)
 					if not (value is int or value is float) or not is_finite(value) or not is_finite(Vitals.single(float(value))): return "Invalid radio statistics Z position"
 	for key in ["phase", "defeated_targets", "collected_cargo_quantity", "survivors", "route_index"]:
 		if observation.has(key) and not Numbers.integer(observation[key], -1 if key in ["phase", "route_index"] else 0, MAX_INTEGER): return "Invalid radio quantity: " + key
-	for key in ["hostile_active", "mother_ship_locked"]:
+	for key in ["hostile_active", "mother_ship_locked", "player_armor_depleted"]:
 		if observation.has(key) and not observation[key] is bool: return "Invalid radio activity: " + key
 	if observation.has("targets"):
 		var targets: Variant = observation.targets
@@ -94,4 +94,5 @@ static func evaluate(row: Dictionary, condition_clock: int, observations: Dictio
 			var position: Variant = observations.get("positions_z", {}).get(0)
 			return position != null and absf(Vitals.single(float(position) - float(value))) < Z_TOLERANCE
 		27: return int(observations.get("phase", 0)) == value
+		28: return observations.get("player_armor_depleted", false)
 	return false

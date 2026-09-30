@@ -13,6 +13,10 @@ const ROW_ONE={"position":[1787,1086,-1632],
 const ROW_TWO={"position":[-2247,1010,-1845],
 	"angles":[-0.18000000715255737,-2.049999952316284,-0.029999999329447746],
 	"ambient":[0.15000000596046448,0.15000000596046448,0.3499999940395355]}
+## Kothar (row 7) and Valkyrie (row 8) replace the system's hangar. Their
+## systems are race 0, so they keep the default ambient light.
+const EXPANSION_ROWS={7:{"position":[1200,800,-2678],"angles":[-0.20000000298023224,3.0,-0.029999999329447746]},
+	8:{"position":[2200,800,-1678],"angles":[-0.20000000298023224,2.3499999046325684,-0.029999999329447746]}}
 const VALUES := {"scope":"first_station_presentation","station_id":78,"hangar_row":3,"camera":{"position":[1800,800,-1778],"angles":[-0.20000000298023224,2.569999933242798,-0.029999999329447746],"rotation_order":"YXZ","projection":[0.800000011920929,200.0,100000.0],"initial_jitter_bound":150,"phase_start":4.71238899230957,"phase_limit":7.853981852531433,"phase_rate":9.58738019107841e-05,"endpoint_tolerance":5.0,"endpoint_min":[18,30,50],"endpoint_range":[131,120,100],"max_frame_ms":150},"light":{"initial_camera_yaw":0.39269909262657166,"direction_bias":[-0.20000000298023224,-0.30000001192092896,0],"material_ambient":0.699999988079071,"diffuse":[1,1,1],"ambient":[0.44999998807907104,0.25,0.25],"specular":[0.5,0.5,0.5],"specular_power":96.0},"portraits":{"0":{"status":"fixed","family":0,"parts":[0,0,0,0]},"2":{"status":"fixed","family":2,"parts":[1,1,1,1]},"16":{"status":"fixed","family":11,"parts":[1,0,0,2]}},"dialogue":{"next_text_id":179,"final_text_id":180,"start_delay_ms":1000,"silent_text_id":1696,"voice_event_ids":[267,268,277,278,279,280,281,282,283,284,269,270,271,272,273,274,275,276],"stop_previous_voice":true,"atmosphere_event_id":122}}
 const SPANS := {"scene_kind":[414874,39],"projection":[-700407,39],"initial_camera":[-700353,193],"light_direction":[422340,141],"station_lights":[425834,467],"environment_row":[422497,222],"camera_seed":[422719,800],"camera_jitter":[423519,273],"frame_clock":[442938,75],"camera_update":[444038,942],"rotation_dispatch":[1243229,38],"rotation_yxz":[1243901,307],"tween_sample":[1324538,180],"tween_reset":[1324826,74],"tween_clock":[1324906,166],"next_label_and_voice_stop":[-692441,90],"final_label_and_voice_start":[-686960,143],"voice_lookup":[-215216,68],"voice_not_found":[-212901,14],"atmosphere_start":[425005,38],"dialogue_delay":[444980,14],"portrait_selection":[-692155,24],"portrait_composition":[-86396,159],"mission_no_actor":[399358,16],"mission_actor_getter":[401310,10],"position_table":[1585242,120],"pitch_table":[1585370,40],"yaw_table":[1585418,40],"alternate_yaw_table":[1585466,40],"roll":[1585034,4],"projection_values":[1545978,12],"initial_yaw":[1545998,4],"direction_x_bias":[1582946,4],"direction_y_bias":[1582914,4],"light_material_ambient":[1556918,4],"light_diffuse":[1544610,4],"light_ambient_rg":[1585054,8],"light_ambient_gb":[1556906,4],"light_specular":[1544586,4],"light_power":[1585062,4],"tween_phase":[1596354,16],"tween_tau":[1587986,8],"tween_half":[1582354,8],"endpoint_tolerance":[1557114,4],"rotation_slots":[1245194,24],"light_slots":[426302,32],"voice_lookup_table":[1560154,12032],"portrait_pointer_0":[2396762,8],"portrait_pointer_2":[2396778,8],"portrait_pointer_16":[2396890,8],"portrait_gunant":[2411386,20],"portrait_instruction":[2411834,20],"zero_fill_section":[-750798,80]}
 
@@ -58,7 +62,7 @@ static func source_hangar_row(world: Dictionary,field: int) -> int:
 	return int(world.system_fields[field])
 
 static func ordinary_view(shared: Dictionary,station_id: int,row: int=0) -> Dictionary:
-	if not parameters(shared) or station_id<0 or row not in [0,1,2,3]:return {}
+	if not parameters(shared) or station_id<0 or row not in [0,1,2,3,7,8]:return {}
 	# Mido uses the already-verified first-station camera and light table row.
 	var data:=shared.duplicate(true) if row==3 else alioth_view(shared)
 	data.hangar_row=row
@@ -68,6 +72,9 @@ static func ordinary_view(shared: Dictionary,station_id: int,row: int=0) -> Dict
 		data.camera.position=selected.position.duplicate()
 		data.camera.angles=selected.angles.duplicate()
 		data.light.ambient=selected.ambient.duplicate()
+	if EXPANSION_ROWS.has(row):
+		data.camera.position=EXPANSION_ROWS[row].position.duplicate()
+		data.camera.angles=EXPANSION_ROWS[row].angles.duplicate()
 	data.scope="augmenta_station_presentation" if station_id in [95,96,97,99] else "ordinary_station_presentation";data.station_id=station_id
 	return data
 

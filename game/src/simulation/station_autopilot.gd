@@ -36,6 +36,8 @@ func configure(bindings: RefCounted, catalogues: RefCounted, construction: RefCo
 	if context==null or not context.matches_location(bindings,entry.get("location",{})) or not context.matches_loadout(entry.departure.loadout):return reject("Station guidance lost its admitted flight")
 	var void_world: bool=context.has_feature("void_environment")
 	if void_world and construction.void_environment_owner()==null:return reject("Void guidance requires its constructed environment")
+	# An empty orbit is guided like the Void: toward the location's origin.
+	if not void_world and context.has_method("station_present") and not context.station_present():void_world=true
 	if not void_world and (station==null or station.get_script()!=Station):return reject("This flight requires its actual station exterior")
 	var target: Dictionary={} if void_world else station.snapshot()
 	for data in ([entry] if void_world else [entry,target]):

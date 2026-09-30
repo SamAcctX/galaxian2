@@ -1073,8 +1073,9 @@ func open_status(now_microseconds: int=-1) -> bool:
 ## The idle station shows each newly reached medal tier once, in order.
 func _sync_medal_notice(state: Dictionary) -> void:
 	var notices: Array=state.get("contracts",{}).get("medal_notices",[])
-	if notices.is_empty() or not _focused:
-		if notices.is_empty():medal_notice.clear()
+	# A medal waits while a station conversation is on screen.
+	if notices.is_empty() or not _focused or state.get("dialogue",{}).get("visible",false):
+		if notices.is_empty() or medal_notice.visible:medal_notice.clear()
 		return
 	if medal_notice.shown()==notices[0]:return
 	if not status_panel.configure(library,bindings,visuals):status.text=status_panel.error;return

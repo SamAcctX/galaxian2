@@ -141,7 +141,9 @@ func configure_local_traffic(bindings: RefCounted,combat: Dictionary,seed_second
 	var keys:=[]
 	for actor in actors:
 		if actor.get("population_group") not in ["freighter","capital","debris"]:keys.append("npc%d"%int(actor.actor_id))
-	return _configure_owners(bindings,combat,seed_seconds,keys,actors.map(func(actor):return int(actor.actor_mode) if actor.get("authored_story",false) or combat.has("free_context") or combat.campaign_cursor in FlightStages.FACTIONS else (4 if actor.get("population_group")=="travel" else 0)))
+	# An admitted contract cast starts in the modes its recipe constructed.
+	var recipe_cast: bool=mission_context!=null and not mission_context.contract_context().is_empty()
+	return _configure_owners(bindings,combat,seed_seconds,keys,actors.map(func(actor):return int(actor.actor_mode) if recipe_cast or actor.get("authored_story",false) or combat.has("free_context") or combat.campaign_cursor in FlightStages.FACTIONS else (4 if actor.get("population_group")=="travel" else 0)))
 
 func presentation_identity() -> RefCounted:return _presentation_identity
 

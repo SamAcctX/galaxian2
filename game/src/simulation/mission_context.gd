@@ -407,6 +407,12 @@ func has_feature(name: String) -> bool:
 		if name=="station":return int(_legacy_flight.station_id)>=0
 		if name=="void_environment":return int(_legacy_flight.station_id)<0
 	return not _recipe.is_empty() and _recipe.world.get(name,false)
+## Whether a station stands at this location. Some expansion orbits have none;
+## flight, guidance and presentation all follow this one answer.
+func station_present() -> bool:
+	if not has_feature("station"):return false
+	var station:=int(_loadout.get("station_id",_recipe.get("station_id",-1)))
+	return not load("res://src/content/valkyrie_world_definitions.gd").empty_orbit(station,int(_identity.get("campaign_cursor",-1)))
 func ship_id() -> int:return int(_loadout.get("ship_id",-1))
 func matches_factory(player_ship_id: int,equipment_ids: Array) -> bool:
 	return not _recipe.is_empty() and player_ship_id==ship_id() and equipment_ids==_loadout.get("equipment_ids",[])

@@ -264,7 +264,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if turret_active:
 		next._encounter=next._encounter.advance_turret(commands if enabled else Vector2.ZERO,milliseconds,turret_inverted)
 		if not enabled:next._encounter=next._encounter.set_turret_active(false);turret_active=false
-	var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,(primary_fire and next._primary_released) or (secondary_fire and next._secondary_released and turret_active),enabled,next._random,[] if next._scanner==null else next._scanner.weapon_target_ids())
+	var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,(primary_fire and next._primary_released) or (secondary_fire and next._secondary_released and turret_active),enabled,next._random,[] if next._scanner==null else next._scanner.weapon_target_ids(),milliseconds)
 	if fired.is_empty():return failed(next._encounter.error)
 	next._encounter=fired.encounter;next._random=fired.random_state
 	var secondary: Dictionary=next._encounter.evaluate_secondary_fire(next._player,next._equipment,next._pose,secondary_fire and next._secondary_released and not turret_active,enabled,next._random,not radio.visible,next._scenery)
