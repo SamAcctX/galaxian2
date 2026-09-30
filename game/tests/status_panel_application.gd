@@ -21,6 +21,19 @@ func verify_free_application() -> void:
 	for frame in 3:
 		await process_frame;app.session.step(Time.get_ticks_usec())
 	check(app.session.ambience.snapshot().room=="main","Closing the hangar did not return to the main atmosphere")
+	# Lounge room: authored room animation loops on the lounge clock.
+	check(app.contract_action("open",-1),"The lounge did not open")
+	var lounge: Node3D=app.session.lounge_scene
+	var before_pose: Array=lounge.get_children().filter(func(node):return node.has_meta("source_resource_id") and "instances" in node).map(func(node):return node.instances.map(func(instance):return instance.transform))
+	for frame in 20:
+		await process_frame;app.session.step(Time.get_ticks_usec())
+	var after_pose: Array=lounge.get_children().filter(func(node):return node.has_meta("source_resource_id") and "instances" in node).map(func(node):return node.instances.map(func(instance):return instance.transform))
+	print("LOUNGE animated parts=",lounge.animated_parts()," moved=",before_pose!=after_pose)
+	check(app.session.ambience.snapshot().room=="lounge","The lounge did not switch to its atmosphere")
+	await capture("lounge-animated")
+	check(app.contract_action("close",-1),"The lounge did not close")
+	for frame in 3:
+		await process_frame;app.session.step(Time.get_ticks_usec())
 	# A newly reached tier pays its reward and shows one notice at the idle station.
 	var wallet: int=app.session.station_owner().snapshot().contracts.credits
 	check(app.session._world.record_stats({"max_free_cargo":101}),"Stats could not reach Space Saver bronze")
