@@ -77,6 +77,7 @@ def prepare(source: Path, base: Path, output: Path, checkpoint=lambda *_: None):
         audio['source_sha256'] = manifest['files'][event_resource]['sha256']
     rows = declarations.pop('registrations')
     materials = declarations.pop('materials')
+    payload_meshes = declarations.pop('payload_meshes')
     ship_models = declarations.pop('ship_models')
     hangars = declarations.pop('hangars')
     ship_placement = declarations.pop('ship_placement')
@@ -177,6 +178,7 @@ def prepare(source: Path, base: Path, output: Path, checkpoint=lambda *_: None):
     for row in materials:
         material_variants.setdefault(row['id'], set()).add((row['render_type'], tuple(row['texture_ids']), tuple(row['parameter_bits'])))
     payload = encoded({'schema': 1, 'reader': declarations['reader'], 'registrations': rows, 'materials': materials,
+                       'payload_meshes': payload_meshes,
                        'texture_variants': texture_variants,
                        'audio': audio,
                        'ship_models': ship_models,

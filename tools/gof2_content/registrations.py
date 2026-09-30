@@ -133,7 +133,7 @@ from .camera_follow import extract_camera_follow
 MAX_EXECUTABLE = 64 * 1024 * 1024
 MAX_SECTIONS = 256
 MAX_RECORDS = 20000
-READER = 'resource-registration-v204'
+READER = 'resource-registration-v205'
 
 
 class MachO:
@@ -263,11 +263,15 @@ def mac_records(mach, checkpoint):
                 row['texture_parameter_bits'] = struct.unpack('<I', match[2])[0]
             prefix_start = max(0, match.start() - 64)
             prefix = metadata.search(text[prefix_start:match.start()])
-            if kind == 4 and path.endswith('.aem') and prefix is not None:
+            if kind in (4, 6) and path.endswith('.aem') and prefix is not None:
                 first_address = section['address'] + prefix_start + prefix.start() + 21 + struct.unpack('<i', prefix[3])[0]
                 if mach.resource_string(first_address) == path:
-                    row['material_id'] = struct.unpack('<H', prefix[1])[0]
-                    row['mesh_flags'] = prefix[2][0]
+                    # Type 6 meshes carry the same material payload as type 4.
+                    # Their rows stay unchanged so earlier imports remain
+                    # compatible; extract() lists the payload separately.
+                    target = row if kind == 4 else row.setdefault('_payload', {})
+                    target['material_id'] = struct.unpack('<H', prefix[1])[0]
+                    target['mesh_flags'] = prefix[2][0]
             rows.append(row)
         if len(rows) > MAX_RECORDS:
             raise ContentError('Too many resource declarations')
@@ -436,6 +440,8 @@ def extract(source, edition, checkpoint=lambda *_: None, *, ship_count=None):
     # Repeated declarations and alternatives remain explicit. No game branches
     # are followed to choose an active registration or variant.
     rows.sort(key=lambda row: (row['id'], row['resource'], row['source_offset']))
+    payload_meshes = [{'id': row['id'], 'resource': row['resource'], **row.pop('_payload')}
+                      for row in rows if '_payload' in row]
     hangars = extract_hangars(mach, rows)
     ship_models = extract_ship_models(mach, rows, ship_count)
     cruise = extract_cruise(mach)
@@ -550,6 +556,7 @@ def extract(source, edition, checkpoint=lambda *_: None, *, ship_count=None):
     return {'reader': READER, 'architecture': mach.architecture,
             'source_executable_sha256': mach.source_sha256,
             'source_executable_bytes': mach.source_bytes, 'registrations': rows,
+            'payload_meshes': payload_meshes,
             'materials': extract_materials(mach, checkpoint),
             'ship_models': ship_models,
             'hangars': hangars,

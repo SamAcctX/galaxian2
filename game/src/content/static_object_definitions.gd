@@ -12,6 +12,8 @@ const Valkyrie=preload("res://src/content/valkyrie_campaign_definitions.gd")
 ## entry places that mesh at an offset in the model's own coordinates.
 ## collision: record in collision.bin; spheres x0.6, boxes x1.2, tested in the
 ## object's own (unrotated) axes. wreck_model: animation shown after death.
+## payload_layers: meshes whose material comes from their registration
+## payload; an import made before that reader draws the object without them.
 ## wake_half_extent: an opposing active body this close on every axis wakes it.
 ## enemy_count_excluded: left out of the starting enemies-left count.
 const MODELS:={
@@ -33,9 +35,9 @@ const MODELS:={
 	# container floating at the origin. Scenery only (no collision, no death).
 	21076:{"layers":[21076,21876,22076],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
 		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
-	# Assumption: the fire meshes (18832/18833, a registration type with no
-	# loader yet) are left out: the twin is the station with its lights out.
-	21876:{"layers":[21076,21876],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
+	# The twin is the station with its lights out and the intro fire meshes
+	# 18832/18833 (drawn at their first pose; the fire does not animate yet).
+	21876:{"layers":[21076,21876],"payload_layers":[18832,18833],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
 		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
 	# 91: Valpatro's damaged freighter; the script ends it with an explosion.
 	18766:{"layers":[18766],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":20,
@@ -48,9 +50,10 @@ const MODELS:={
 		[17052,Vector3(0,0,2150)],[17053,Vector3(0,0,2150)]],"collision_record":-1,"hit_radius":1000,"hit_extents":Vector3(1000,1000,3500),
 		"wreck_model":18300,"death_sound":20,"wake_half_extent":0,"hull":"story_freighter","enemy_count_excluded":true},
 	# 94: Luur's station platform: the Midorian station body with its platform
-	# parts (verified createStaticObject 18781). It cannot die. The burning
-	# parts 18781-18784 (registration type 6, no loader yet) are left out.
-	18781:{"layers":[21076,21876,22076],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
+	# parts and burning meshes 18781-18784 (verified createStaticObject 18781;
+	# the original adds 18781 twice, drawn once here). It cannot die. The fire
+	# is drawn at its first pose and does not animate yet.
+	18781:{"layers":[21076,21876,22076],"payload_layers":[18781,18782,18783,18784],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
 		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
 	# 102: the Terran carrier, its hull and six parts (verified
 	# createStaticObject 18804); the story keeps it unharmed.
@@ -129,6 +132,9 @@ func resolve(library: RefCounted,bindings: RefCounted,model: int) -> Dictionary:
 		var path: String=bindings.resolve(id,"mesh")
 		if path.is_empty():error=bindings.error;return {}
 		layers.append({"resource_id":id,"path":path,"offset":entry[1] if entry is Array else Vector3.ZERO})
+	for id in data.get("payload_layers",[]):
+		var path: String=bindings.resolve(int(id),"mesh")
+		if not path.is_empty():layers.append({"resource_id":int(id),"path":path,"offset":Vector3.ZERO})
 	# No wreck model: the object simply vanishes (an empty wreck path).
 	var wreck:="";var timing:={"start_ms":0,"end_ms":0}
 	if int(data.wreck_model)>=0:
