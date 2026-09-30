@@ -5,9 +5,17 @@ const AEM=preload("res://src/content/aem.gd")
 const Tracks=preload("res://src/content/animation_tracks.gd")
 const Ranges=preload("res://src/content/scenery_effect_resources.gd")
 
+const ION_KIND:=34
+const ION_LAMBDA:=197
+const ION_BLAST_RADIUS:=10000.0
+
 static func declaration(item_id: int, kind: int) -> Dictionary:
-	if not ((kind==4 and item_id>=31 and item_id<=35) or (kind==5 and item_id>=36 and item_id<=40)):return {}
-	return {"guided":kind==5,"trail_id":39,"retention_ms":2000,"attached_model_id":14250,"scenery_damage":9999,"penetrates_scenery":true}
+	if not ((kind==4 and item_id>=31 and item_id<=35) or (kind==5 and item_id>=36 and item_id<=40) or (kind==ION_KIND and item_id==ION_LAMBDA)):return {}
+	var row:={"guided":kind==5,"trail_id":39,"retention_ms":2000,"attached_model_id":14250,"scenery_damage":9999,"penetrates_scenery":true}
+	# Supernova's ionizing missile flies as an unguided rocket; where it ends
+	# (a hit or the end of its flight) gas clouds within its blast ionize.
+	if kind==ION_KIND:row.ion_blast_radius=ION_BLAST_RADIUS
+	return row
 
 static func resolved(weapon: Dictionary) -> bool:
 	var row:=declaration(int(weapon.get("item_id",-1)),int(weapon.get("kind",-1)))

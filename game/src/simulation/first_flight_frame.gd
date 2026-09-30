@@ -24,6 +24,12 @@ const Pilot=preload("res://src/simulation/pilot_motion.gd")
 const Detail=preload("res://src/presentation/ship_detail_group.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
 const Cargo=preload("res://src/simulation/flight_cargo.gd")
+const Gas=preload("res://src/simulation/gas_clouds.gd")
+const Conventional=preload("res://src/content/conventional_secondary_definitions.gd")
+const GAS_FILTER_SORT:=33
+const GAS_COLLECTOR_SORT:=35
+## An Ion Lambda bursts this close to a cloud centre (assumption: its hit body).
+const GAS_HIT_RADIUS:=1500.0
 const Tractor=preload("res://src/simulation/tractor_recovery.gd")
 const Aim=preload("res://src/simulation/opening_aim.gd")
 const Targeting=preload("res://src/simulation/mining_targeting.gd")
@@ -178,6 +184,17 @@ var _story_locked:=false
 var _story_dock:={}
 var _action_marks:={}
 var _story_cloaks:={}
+## Story-forced cloaks (144): actor -> until elapsed ms (-1 = the whole flight).
+var _forced_cloaks:={}
+## A story countdown's end in world ms (154), or -1.
+var _countdown_end:=-1
+## A gas cloud was ionized this flight (radio condition 57).
+var _gas_ionized:=false
+## Supernova gas clouds (a spectral filter fitted, outside the Void): the
+## clouds and sparks, the fitted collector and the live Ion Lambda shots.
+var _gas:={}
+var _gas_collector:={}
+var _ion_shots:={}
 ## 105: the player's route toward the sun (N3); its end point is set from
 ## where the flight starts.
 var _story_route:={}
@@ -519,6 +536,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_death=death;_statistics_pose=entry.player_pose;_camera_follow_enabled=true;_game_over_packet={}
 	_particles=particles;_equipment=equipment
 	_gamma_rate=_radiation(bindings,catalogues,entry,equipment)
+	_gas=_gas_clouds(bindings,catalogues,entry,void_environment)
 	_engine_particles=engine_particles;_booster=booster
 	_radio=radio;_radio_events=[]
 	_scanner=scanner;_scanner_events=[]
@@ -541,11 +559,11 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_gate_animation=gate_animation;_gate_transit=gate_transit;_gate_destinations=gate_destinations
 	_system_navigation=system_navigation;_navigation_destinations=navigation_destinations
 	_drive=drive;_drive_arrival=null
-	_pending_destination=int(entry.get("navigation_destination_id",-1));_navigation_applied=false;_queued_drive=false;_story_jump=-2;_story_locked=false;_action_marks={};_story_cloaks={};_line_marks={"started":{},"finished":{}}
+	_pending_destination=int(entry.get("navigation_destination_id",-1));_navigation_applied=false;_queued_drive=false;_story_jump=-2;_story_locked=false;_action_marks={};_story_cloaks={};_forced_cloaks={};_countdown_end=-1;_gas_ionized=false;_ion_shots={};_line_marks={"started":{},"finished":{}}
 	# A story waiting in another orbit (89: Naneroh) takes the ship there at once.
 	var move: Dictionary=load("res://src/content/valkyrie_campaign_definitions.gd").story_move(int(entry.get("campaign_cursor",-1)))
 	# "launch" (126) arrives the same way: in flight at the story's station.
-	if move.get("arrive","") in ["gate","launch"] and _drive!=null and int(entry.get("location",{}).get("station_id",-1))!=int(move.station_id):_story_jump=int(move.station_id)
+	if move.get("arrive","") in ["gate","launch"] and int(move.get("station_id",-1))>=0 and _drive!=null and int(entry.get("location",{}).get("station_id",-1))!=int(move.station_id):_story_jump=int(move.station_id)
 	_gate_cruise_speed=float(bindings.cruise.speed_units_per_millisecond)
 	_fast_forward=fast_forward;_near_target=false;_camera_ms=0;_camera_passes=1
 	_mining_audio={} if targeting==null else {"serial":0,"events":[]}
@@ -869,7 +887,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		var radio_active: bool=next._radio!=null and next._radio.snapshot().get("visible",false)
 		var before_cursor: int=next._objective.snapshot().campaign_cursor
 		var radio_finished: Array=next._radio.snapshot().get("finished",[]) if next._radio!=null else []
-		if not next._objective.poll_contract(next._cargo,next._scenery,next._encounter,next._player.snapshot().vitals.hull>0,radio_active,next._briefing.mission_poll_due(),radio_finished,{"drive_started":next._drive!=null and next._drive.snapshot().get("phase","ready")!="ready"}):reject(next._objective.error);return null
+		if not next._objective.poll_contract(next._cargo,next._scenery,next._encounter,next._player.snapshot().vitals.hull>0,radio_active,next._briefing.mission_poll_due(),radio_finished,next._story_result_facts()):reject(next._objective.error);return null
 		var story_state: Dictionary=next._objective.snapshot()
 		if story_state.campaign_cursor!=before_cursor:
 			# A story flight has moved on in space: navigation and docking follow it.
@@ -1012,6 +1030,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		next._volatile_steer=commands
 		if next._instability>=1.0 and not next._player.destroy_hull():reject(next._player.error);return null
 	elif not next._volatile_carried():next._instability=0.0;next._volatile_steer=Vector2.ZERO
+	if not next._gas.is_empty() and not next.death_active() and not next._advance_gas(delta_ms,turret_active):reject(next.error);return null
 	if next._gamma_rate>0.0 and not next.death_active() and cues.entry_released and not next.local_departing() and not next.drive_departing():
 		var hit: Dictionary=next._player.drain_gamma(next._gamma_rate*float(delta_ms)/1000.0,float(Worlds.GAMMA_WARNING))
 		if hit.is_empty():reject(next._player.error);return null
@@ -1273,6 +1292,61 @@ func _radiation(bindings: RefCounted,catalogues: RefCounted,entry: Dictionary,eq
 		if int(properties.get(2,-1))==int(Worlds.GAMMA_SHIELD_SORT):cut=maxi(cut,int(properties.get(int(Worlds.GAMMA_SHIELD_ATTRIBUTE),0)))
 	return rate*maxf(0.0,1.0-float(cut)/100.0)
 
+## Gas clouds for this flight: with a spectral filter (sort 33) fitted and
+## outside the Void; a story recipe may add clouds and fix the first (142).
+## The fitted collector (sort 35) pulls sparks: properties 49 speed, 50 box, 51 range.
+func _gas_clouds(bindings: RefCounted,catalogues: RefCounted,entry: Dictionary,void_environment: RefCounted) -> Dictionary:
+	_gas_collector={}
+	if catalogues==null or void_environment!=null or not load("res://src/content/valkyrie_campaign_definitions.gd").available(bindings):return {}
+	var station:=int(entry.get("location",{}).get("station_id",-1))
+	if station<0 or station>=catalogues.tables.stations.size():return {}
+	var filter:=false
+	for id in entry.get("departure",{}).get("loadout",{}).get("equipment_ids",[]):
+		if int(id)<0 or int(id)>=catalogues.tables.items.size():continue
+		var properties: Dictionary=catalogues.tables.items[int(id)].properties
+		if int(properties.get(2,-1))==GAS_FILTER_SORT:filter=true
+		if int(properties.get(2,-1))==GAS_COLLECTOR_SORT:_gas_collector={"speed":float(properties.get(49,0)),"box":float(properties.get(50,0)),"range":float(properties.get(51,0))}
+	if not filter:return {}
+	var plan: Dictionary=_mission_context.recipe().get("gas_clouds",{}) if _mission_context!=null else {}
+	var state: Dictionary=Gas.spawn(catalogues,int(catalogues.tables.stations[station].system_id),hash([station,int(entry.get("unix_seconds",0))]),int(plan.get("extra",0)),plan.get("first_position"))
+	return state if not state.get("clouds",[]).is_empty() else {}
+
+## One flight step of the gas clouds: Ion Lambda shots that ended (a hit or
+## the end of their flight) ionize the clouds in their blast; sparks move and
+## are taken into the hold in turret view (1 plasma each, lost when it is full).
+func _advance_gas(delta_ms: int,turret_active: bool) -> bool:
+	var live:={}
+	var secondaries: Dictionary=_encounter.snapshot().get("secondaries",{}) if _encounter!=null else {}
+	for gun in secondaries.get("guns",[]):
+		if int(gun.get("equipment",{}).get("item_id",-1))!=Conventional.ION_LAMBDA:continue
+		for slot in gun.get("projectiles",{}).get("slots",[]):
+			if slot is Dictionary and int(slot.get("remaining_ms",0))>0:live[int(slot.id)]=Vector3(slot.position)
+	# A shot bursts on reaching a cloud (the cloud is its target body) or where
+	# it ends; a burst shot is kept as null so it cannot burst again.
+	for id in live:
+		if _ion_shots.has(id) and _ion_shots[id]==null:live[id]=null;continue
+		if _gas.clouds.any(func(cloud):return not cloud.ionized and Vector3(cloud.position).distance_to(live[id])<=GAS_HIT_RADIUS):
+			_gas=Gas.ionize(_gas,live[id],Conventional.ION_BLAST_RADIUS,hash([id,_world_elapsed_ms]));live[id]=null
+	for id in _ion_shots:
+		if not live.has(id) and _ion_shots[id]!=null:_gas=Gas.ionize(_gas,Vector3(_ion_shots[id]),Conventional.ION_BLAST_RADIUS,hash([id,_world_elapsed_ms]))
+	_gas_ionized=_gas_ionized or _gas.get("ionized",false)
+	_ion_shots=live
+	var free_space:=int(_cargo.snapshot().get("free_space",0)) if _cargo!=null else 0
+	# Assumption (gaps file): the collector is not a turret-view device yet, so
+	# with one fitted sparks are drawn in along the ship's nose and taken near
+	# the ship without turret view; turret view (a turret fitted) works too.
+	var aim: Vector3=-(_encounter.turret_aim_pose(_pose) if _encounter!=null and turret_active else _pose).basis.z
+	var result: Dictionary=Gas.step(_gas,delta_ms,_pose.origin,turret_active or not _gas_collector.is_empty(),aim,_gas_collector,free_space)
+	_gas=result.state
+	var taken:=[]
+	for item in result.picked:taken.append({"item_id":int(item),"quantity":int(result.picked[item])})
+	if not taken.is_empty() and _cargo!=null:
+		_cargo=_cargo.fork_for_frame()
+		if not _cargo.add_entries(taken):return reject(_cargo.error)
+		_equipment=_equipment.fork()
+		if not _equipment.retain_flight_cargo(_cargo.snapshot()):return reject(_equipment.error)
+	return true
+
 ## People-moving flights (Supernova kind 184): who can dock where, how many
 ## are aboard and the story status that counts people delivered down to 0.
 ## Boarding stops at the ship's passenger berths.
@@ -1393,11 +1467,13 @@ func _story_line_passed(condition: Array,elapsed: int) -> bool:
 ## each way, and the ship cannot be targeted meanwhile. Rolls come from a
 ## hash of the ship and roll number, so a replayed frame rolls the same.
 func _advance_story_cloaks(elapsed: int) -> bool:
+	for id in _forced_cloaks:
+		if not _encounter.set_story_cloak(int(id),int(_forced_cloaks[id])<0 or elapsed<int(_forced_cloaks[id])):return reject(_encounter.error)
 	var ids: Array=_mission_context.recipe().get("cloakers",[])
 	if ids.is_empty():return true
 	var actors: Array=_encounter.combat_snapshot().actors
 	for id in ids:
-		if id>=actors.size():continue
+		if id>=actors.size() or _forced_cloaks.has(id):continue
 		var actor: Dictionary=actors[id]
 		var pool:=float(actor.vitals.hull)+float(actor.vitals.get("armor",0))+float(actor.vitals.get("shield",0))
 		var mark: Dictionary=_story_cloaks.get(id,{"next_ms":elapsed+8000,"until_ms":-1,"pool":pool,"rolls":0})
@@ -1526,6 +1602,8 @@ func _construct_void_trip(bindings: RefCounted,catalogues: RefCounted,route: Ref
 	var equipment: RefCounted=_equipment.fork()
 	var source: Dictionary=equipment.snapshot().loadout
 	var exit: Dictionary={} if entering else load("res://src/content/valkyrie_flight_definitions.gd").void_exit(int(Context.ordinary_void_route(bindings,route).get("campaign_cursor",-1)))
+	# station -1: the story moves on and the drive's ordinary return stands (147, 152).
+	if not exit.is_empty() and int(exit.station_id)<0:exit.station_id=int(Context.ordinary_void_route(bindings,route).get("source_station_id",-1))
 	if not exit.is_empty():
 		if not contracts.leave_void_for_story(bindings,current.progress,route,int(exit.campaign_cursor),int(exit.station_id)):reject(contracts.error);return null
 		if location_library==null or not contracts.select_location(bindings,catalogues,location_library,int(exit.station_id),location_settings,_random,unix_seconds):reject("The story's way out lost its destination: "+contracts.error);return null
@@ -1764,7 +1842,13 @@ func _observe_radio() -> bool:
 				# No steering for the scene; "invulnerable" also keeps the ship unharmed.
 				# "until" holds it until a line has started/finished that long ago
 				# (condition 35) instead of for a duration.
-				var held: bool=not _story_line_passed(action.until,elapsed) if action.has("until") else elapsed<int(_action_marks[index])+int(action.get("delay_ms",0))+int(action.duration_ms)
+				# until_radio holds it until that line starts (157); a negative
+				# duration for the rest of the flight.
+				var held: bool
+				if action.has("until"):held=not _story_line_passed(action.until,elapsed)
+				elif action.has("until_radio"):held=not _line_marks.started.has(int(action.until_radio))
+				elif int(action.duration_ms)<0:held=true
+				else:held=elapsed<int(_action_marks[index])+int(action.get("delay_ms",0))+int(action.duration_ms)
 				if held:
 					radio_lock=true;radio_invulnerable=radio_invulnerable or action.get("invulnerable",false)
 			elif action.action in ["dockable","transfer"]:
@@ -1863,7 +1947,27 @@ func _observe_radio() -> bool:
 				# Once per action: sleeping ships start to fight.
 				if not _action_marks.has("woken%d"%index):
 					if not _encounter.wake_story_actors(int(action.first_actor),int(action.end_actor)):return reject(_encounter.error)
+					# attack_range 0: they fly their course without attacking (144).
+					if int(action.get("attack_range",-1))==0 and not _encounter.stand_down_story_actors(int(action.first_actor),int(action.end_actor)):return reject(_encounter.error)
 					_action_marks["woken%d"%index]=true
+			elif action.action=="cloak":
+				# Once: the ships cloak, for duration_ms or (negative) the rest of the flight.
+				if not _action_marks.has("cloaked%d"%index):
+					for id in range(int(action.first_actor),int(action.end_actor)):_forced_cloaks[id]=-1 if int(action.get("duration_ms",-1))<0 else elapsed+int(action.duration_ms)
+					_action_marks["cloaked%d"%index]=true
+			elif action.action=="hide":
+				# A static object disappears (145: the intact array gives way to its damaged twin).
+				var actors: Array=_encounter.combat_snapshot().actors
+				if range(int(action.first_actor),int(action.end_actor)).any(func(id):return actors[id].get("model_draw_enabled",true) and actors[id].get("static_object",false)):
+					if not _encounter.retire_story_actors(int(action.first_actor),int(action.end_actor),RETIRE_POINT):return reject(_encounter.error)
+			elif action.action=="countdown":
+				# A HUD countdown from this moment; failure "countdown" when it runs out (154).
+				if _countdown_end<0:_countdown_end=elapsed+int(action.duration_ms)
+			elif action.action in ["attack","supernova_reversal"]:
+				# Assumptions (gaps file): the ships do not fire on the object (no
+				# forced NPC target yet), and Ginoya's supernova look is not drawn
+				# in flight yet, so the reversal changes nothing on screen.
+				pass
 			elif action.action=="retire":
 				# The ship or object leaves the scene (80: the Valkyrie jumps away).
 				var actors: Array=_encounter.combat_snapshot().actors
@@ -1891,7 +1995,7 @@ func _observe_radio() -> bool:
 				_station_hidden=true;_return_rules={}
 			elif action.action=="lock_player":
 				# No steering for the scene; "invulnerable" also keeps the ship unharmed.
-				var locked: bool=not _story_line_passed(action.until,elapsed) if action.has("until") else elapsed<int(action.after_ms)+int(action.duration_ms)
+				var locked: bool=not _story_line_passed(action.until,elapsed) if action.has("until") else int(action.duration_ms)<0 or elapsed<int(action.after_ms)+int(action.duration_ms)
 				if locked!=_story_locked:
 					_story_locked=locked
 					if action.get("invulnerable",false) and not _player.set_permissions(bool(_player.snapshot().active),not locked):return reject(_player.error)
@@ -1930,6 +2034,12 @@ func _observe_radio() -> bool:
 
 ## Story radio reads the live cast the way the original's radio conditions do:
 ## an awake non-friendly ship, ships destroyed so far, and the player's armour.
+## World facts for story results: the drive, line end times (hold_ms) and the countdown.
+func _story_result_facts() -> Dictionary:
+	var elapsed:=int(_briefing.snapshot().world_elapsed_ms)
+	return {"drive_started":_drive!=null and _drive.snapshot().get("phase","ready")!="ready","radio_marks":_line_marks.duplicate(true),
+		"story_elapsed_ms":elapsed,"countdown_expired":_countdown_end>=0 and elapsed>=_countdown_end}
+
 func _story_radio_facts() -> Dictionary:
 	if _mission_context.contract_context().is_empty() or _mission_context.recipe().get("radio",[]).is_empty():return {}
 	var hostile_active:=false;var defeated:=0;var hulls:={};var distances:={};var emp:={};var maximum:={}
@@ -1948,6 +2058,13 @@ func _story_radio_facts() -> Dictionary:
 	facts.maximum_hulls=maximum
 	if _scanner!=null:facts.player_target=int(_scanner.snapshot().get("selected_actor_id",-1))
 	if _action_marks.has("respawned"):facts.story_respawned_ms=int(_action_marks.respawned)
+	# Goods the story asks about (142: any plasma in the hold) and a gas cloud ionized this flight.
+	var asked:=[]
+	for row in _mission_context.recipe().get("radio",[]):
+		for part in ([[row.condition,row.values]] if int(row.condition)!=37 and int(row.condition)!=36 else row.values if row.values[0] is Array else []):
+			if int(part[0])==56:asked.append_array(part[1])
+	if _cargo!=null and not asked.is_empty():facts.hold_item_ids=asked.filter(func(id):return _cargo.quantity(int(id))>0)
+	facts.gas_cloud_ionized=_gas_ionized
 	if not _story_route.is_empty() and _story_route.point is Vector3:facts.player_route_reached=_pose.origin.distance_to(_story_route.point)<=float(_story_route.reach)
 	if not _story_dock.is_empty():
 		# When the status first reached each value (condition 34's hold time).
@@ -2124,10 +2241,27 @@ func select_gate_destination(station_id: int,paused:=false) -> RefCounted:
 	next._pending_destination=station_id;next._navigation_applied=true
 	return next
 
+## The notice refusing a course to a story target whose needs are not met
+## (passenger berths, fitted items, free cargo), or -1. Checked for drive
+## jumps and courses in the map alike.
+func story_entry_refusal(station_id: int) -> int:
+	if _equipment==null:return -1
+	var loadout: Dictionary=_equipment.snapshot().loadout;var fitted: Array=Array(loadout.get("equipment_ids",[]))
+	var sorts: Array=[] if _story_catalogues==null else fitted.map(func(id):return int(_story_catalogues.tables.items[int(id)].properties.get(2,-1)))
+	var counts:={}
+	for slot in loadout.get("slots",[]):
+		if slot is Dictionary:counts[int(slot.get("item_id",-1))]=int(counts.get(int(slot.get("item_id",-1)),0))+int(slot.get("quantity",1))
+	var free_cargo:=int(_cargo.snapshot().get("free_space",-1)) if _cargo!=null else -1
+	return load("res://src/content/valkyrie_campaign_definitions.gd").entry_refusal(int(_entry.campaign_cursor),station_id,_passenger_berths(_story_catalogues,loadout),fitted,sorts,int(loadout.get("ship_id",-1)),counts,free_cargo)
+
 func select_map_destination(station_id: int,paused:=false) -> RefCounted:
 	error=""
 	if _system_navigation==null:return select_planet(station_id,paused)
 	if not _navigation_destinations.has(station_id):reject("This destination has no admitted flight");return null
+	if story_entry_refusal(station_id)>=0:
+		var refused:=fork_for_frame()
+		if not refused._notices.enqueue(story_entry_refusal(station_id)):reject(refused._notices.error);return null
+		return refused
 	var course: Dictionary=_system_navigation.course(int(_entry.location.station_id),station_id)
 	if course.is_empty() or int(course.jump_count)>1:reject("Choose a location in this system or a directly linked system");return null
 	var next: RefCounted
@@ -2610,10 +2744,7 @@ func start_drive(station_id: int,story_jump:=false) -> RefCounted:
 	if not story_jump and not drive_permits_mission():
 		if not next._notices.enqueue(21):reject(next._notices.error);return null
 		return next
-	# A story mission may need passenger berths before its target can be set.
-	var loadout: Dictionary=next._equipment.snapshot().loadout;var fitted: Array=Array(loadout.get("equipment_ids",[]))
-	var sorts: Array=[] if _story_catalogues==null else fitted.map(func(id):return int(_story_catalogues.tables.items[int(id)].properties.get(2,-1)))
-	var refusal: int=load("res://src/content/valkyrie_campaign_definitions.gd").entry_refusal(int(_entry.campaign_cursor),station_id,_passenger_berths(_story_catalogues,loadout),fitted,sorts,int(loadout.get("ship_id",-1)))
+	var refusal:=story_entry_refusal(station_id)
 	if not story_jump and refusal>=0:
 		if not next._notices.enqueue(refusal):reject(next._notices.error);return null
 		return next
@@ -2806,6 +2937,9 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	if _encounter!=null:
 		state.encounter=_encounter.snapshot();state.actors=state.encounter.combat.actors.duplicate(true)
 		state.mission_readout=state.encounter.controller.get("mission_readout",{})
+		if not _gas.is_empty():state.gas_clouds=Gas.snapshot_for_view(_gas)
+		var left:=_countdown_end-int(_briefing.snapshot().world_elapsed_ms)
+		if _countdown_end>=0 and left>0 and state.mission_readout.is_empty():state.mission_readout={"kind":"countdown","remaining_ms":left}
 		state.station_return_supported=not _return_rules.is_empty()
 	if _entry.campaign_cursor in [10,11,12,26,36] or _entry.has("dekato_context") or _objective is ContractObjective:state.station_response_flags=station_response_flags()
 	if _station!=null:
@@ -2879,7 +3013,7 @@ func fork_for_frame() -> RefCounted:
 	if _gate_transit!=null:copy._gate_transit=_gate_transit.fork_for_frame()
 	copy._gate_destinations=_gate_destinations.duplicate();copy._gate_cruise_speed=_gate_cruise_speed
 	copy._system_navigation=_system_navigation;copy._navigation_destinations=_navigation_destinations
-	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied;copy._queued_drive=_queued_drive;copy._story_jump=_story_jump;copy._story_locked=_story_locked;copy._story_dock=_story_dock.duplicate(true);copy._action_marks=_action_marks.duplicate();copy._line_marks=_line_marks.duplicate(true);copy._gamma_rate=_gamma_rate;copy._instability=_instability;copy._volatile_steer=_volatile_steer;copy._story_cloaks=_story_cloaks.duplicate(true);copy._story_hack=_story_hack;copy._story_route=_story_route.duplicate()
+	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied;copy._queued_drive=_queued_drive;copy._story_jump=_story_jump;copy._story_locked=_story_locked;copy._story_dock=_story_dock.duplicate(true);copy._action_marks=_action_marks.duplicate();copy._line_marks=_line_marks.duplicate(true);copy._gamma_rate=_gamma_rate;copy._instability=_instability;copy._volatile_steer=_volatile_steer;copy._story_cloaks=_story_cloaks.duplicate(true);copy._forced_cloaks=_forced_cloaks.duplicate();copy._countdown_end=_countdown_end;copy._gas_ionized=_gas_ionized;copy._gas=_gas;copy._gas_collector=_gas_collector;copy._ion_shots=_ion_shots.duplicate();copy._story_hack=_story_hack;copy._story_route=_story_route.duplicate()
 	copy._briefing=_briefing.fork();copy._player=_player.fork_for_frame();copy._scenery=_scenery.fork_for_frame()
 	copy._camera=_camera.fork_for_frame();copy._pilot=_pilot.fork_for_frame();copy._detail=_detail.fork_for_frame()
 	copy._collision_enabled=_collision_enabled

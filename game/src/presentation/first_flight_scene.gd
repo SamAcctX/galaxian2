@@ -20,6 +20,7 @@ const SurfaceResponse=preload("res://src/presentation/surface_response.gd")
 const Station=preload("res://src/presentation/station_exterior_geometry.gd")
 const Gates=preload("res://src/presentation/gate_geometry.gd")
 const FlightProjection=preload("res://src/presentation/flight_camera.gd")
+const GasView=preload("res://src/presentation/gas_cloud_view.gd")
 const Dialogue=preload("res://src/presentation/station_dialogue_panel.gd")
 const TargetFrame=preload("res://src/presentation/flight_target_frame.gd")
 const Reticle=preload("res://src/presentation/flight_aim_reticle.gd")
@@ -55,6 +56,8 @@ var lighting: Node3D
 var reflection: RefCounted
 var gates: Node3D
 var camera: Camera3D
+## Supernova gas clouds and plasma sparks, when the flight has any.
+var gas_clouds: Node3D
 var dialogue: Control
 var target_frame: Control
 var reticle: Control
@@ -98,6 +101,9 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 	var ordinary_void_environment: RefCounted=flight.void_environment_owner() if state.player.has("void_context") else null
 	if not geometry.build_departure(library,visuals,bindings,catalogues,state.player_cache,_player_geometry_state(state),"high",true,flight.equipment_owner(),ordinary_void_environment,flight.mission_context_owner()):return fail(geometry.error)
 	if not geometry.player.build_turret(flight.turret_state(),library,visuals,bindings):return fail(geometry.player.error)
+	if state.has("gas_clouds"):
+		gas_clouds=GasView.new();add_child(gas_clouds)
+		if not gas_clouds.build(library,visuals,bindings):return fail(gas_clouds.error)
 	var pirates: RefCounted=flight.encounter_owner()
 	if pirates!=null:
 		encounter=EncounterGeometry.new();add_child(encounter)
@@ -342,6 +348,7 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if planets!=null and not planets.apply_view(state.camera_view):return reject(planets.error)
 	if not scenery.apply_state(state.scenery) or not scenery.apply_detail(state.scenery.detail):return reject(scenery.error)
 	if state.scenery.has("bodies") and not scenery.apply_activity(state.scenery.bodies):return reject(scenery.error)
+	if gas_clouds!=null and state.has("gas_clouds"):gas_clouds.present(state.gas_clouds.merged({"camera":camera.transform}))
 	if scenery.destruction!=null and not scenery.apply_destruction(scenery_world,camera.transform,PackedByteArray([255,255,255,255]),Vector4.ONE,1.0):return reject(scenery.error)
 	var sun_frame: Dictionary={} if sun==null else sun.prepare_frame(state.camera_view,Vector2i(camera.get_viewport().get_visible_rect().size),prior_intensity)
 	if sun_frame.has("error"):return reject(sun.error)
@@ -463,7 +470,7 @@ func clear() -> void:
 	if is_instance_valid(portal):portal.free()
 	portal=null;probe=null
 	for child in get_children():child.free()
-	error="";geometry=null;sky=null;planets=null;sun=null;scenery=null;camera=null;dialogue=null;_projection=null;_last={}
+	error="";geometry=null;gas_clouds=null;sky=null;planets=null;sun=null;scenery=null;camera=null;dialogue=null;_projection=null;_last={}
 	target_frame=null;reticle=null;scan_animation=null
 	mining_panel=null;_last_drill=null;notice_panel=null
 	station=null;gates=null;void_environment=null;lighting=null;reflection=null

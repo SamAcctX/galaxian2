@@ -61,7 +61,8 @@ func run():
 		var context:={"system_id":world.system_id,"station_id":station,"campaign_cursor":47,"difficulty":0.5,"rank":0,"mission_kind":-1,"mission_completed":true,"mission_story":false,"companions_empty":true,"side_missions_empty":true,"station_response":false,"special_arrival":false,"void_encounter":false}
 		var factory:=Factory.new()
 		check(factory.configure_free_factory(bindings,cat,0,[81,86],context,1),str(station)+": "+factory.error)
-	check(Worlds.location(bindings,120).is_empty(),"Valkyrie worlds admitted Supernova")
+	# Supernova's stations are expansion worlds too (Katashán, 120).
+	check(not Worlds.location(bindings,120).is_empty(),"Supernova's Katashán is not an expansion world")
 	finish()
 func check(ok: bool,message: String):
 	checks+=1

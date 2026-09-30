@@ -60,6 +60,14 @@ const MODELS:={
 	# createStaticObject 21113); invulnerable.
 	21113:{"layers":[16800],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
 		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
+	# 145/157: the plasma array platform (verified model 19050); its damaged
+	# twin's model is open, so both draw 19050. The story keeps it unharmed.
+	19050:{"layers":[19050],"collision_record":-1,"hit_radius":1500,"wreck_model":-1,"death_sound":-1,
+		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
+	# 158: three hostile objects at Luur with 100 hull each (model 18882; what
+	# it depicts is open). Destroyable, no wreck.
+	18882:{"layers":[18882],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":20,
+		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
 	16992:{"layers":[16992],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
 		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
 }

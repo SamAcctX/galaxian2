@@ -639,6 +639,8 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 		_state.permanent_friendly=bool(policy.friendly)
 	if row.has("name_text_id"):_state.name_text_id=int(row.name_text_id)
 	if row.has("display_name"):_state.display_name=String(row.display_name)
+	# A story ship whose hull cannot drop below this share of its full hull (157: Harval).
+	if row.has("hull_floor"):_state.hull_floor=int(float(factory_hull)*float(row.hull_floor))
 	if row.get("special_cargo",false):
 		_state.merge({"special_cargo":true,"special_cargo_accepted":false,"special_cargo_rejected":false})
 	return set_pose(row.statistics_pose,row.body_pose)
@@ -1205,6 +1207,9 @@ func normal_hit(amount: Variant, nonplayer_source: Variant=false) -> Dictionary:
 		reject("NPC hit attribution requires a supported explicit source flag")
 		return {}
 	var result: Dictionary = _vitals.normal_hit(amount,_state.active and _state.damage_allowed)
+	if not result.is_empty() and int(_state.get("hull_floor",0))>0 and int(result.after.hull)<int(_state.hull_floor):
+		var kept: Dictionary=result.after.duplicate();kept.hull=mini(int(result.before.hull),int(_state.hull_floor))
+		_vitals.configure(kept.hull,kept.armor,kept.shield);result.after=_vitals.snapshot();result.destroyed_now=false
 	if result.is_empty(): reject(_vitals.error)
 	elif result.destroyed_now and nonplayer_source: _state.nonplayer_kill=true
 	return result

@@ -12,16 +12,17 @@ static func valid_clock(value: Variant) -> bool:
 	return value is int and value >= 0 and value <= MAX_INTEGER
 
 static func valid_row(row: Dictionary, event_count: int) -> bool:
-	if not Numbers.integer(row.get("condition"), 0, 36) or not row.get("values") is Array: return false
+	if not Numbers.integer(row.get("condition"), 0, 63) or not row.get("values") is Array: return false
 	var kind := int(row.condition)
-	if kind not in [1, 5, 6, 8, 9, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 50, 51, 52, 53, 54, 55]: return false
+	if kind not in [1, 5, 6, 8, 9, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 50, 51, 52, 53, 54, 55, 56, 57]: return false
 	# Remake story conditions: 38 = the player reached the end of their route;
 	# 37 = all of [[condition, values], ...].
 	if kind == 38: return row.values.is_empty()
-	if kind == 37:
+	# 36 also takes 37's form: any of [[condition, values], ...] (157).
+	if kind == 37 or (kind == 36 and not row.values.is_empty() and row.values[0] is Array):
 		if row.values.is_empty() or row.values.size() > 8: return false
 		for part in row.values:
-			if not part is Array or part.size() != 2 or not part[1] is Array or int(part[0]) in [36, 37] or not valid_row({"condition": part[0], "values": part[1]}, event_count): return false
+			if not part is Array or part.size() != 2 or not part[1] is Array or int(part[0]) == kind or not valid_row({"condition": part[0], "values": part[1]}, event_count): return false
 		return true
 	# 36: any of [condition, value, ...] pairs of single-value conditions.
 	if kind == 36:
@@ -29,7 +30,7 @@ static func valid_row(row: Dictionary, event_count: int) -> bool:
 		for index in range(0, row.values.size(), 2):
 			if not row.values[index] is int or int(row.values[index]) not in [5, 6, 32, 33, 34] or not valid_row({"condition": row.values[index], "values": [row.values[index + 1]]}, event_count): return false
 		return true
-	if row.values.is_empty() or row.values.size() > 256 or (kind not in [1, 9, 29, 30, 31, 34, 35, 54] and row.values.size() != 1) or (kind == 54 and (row.values.size() != 3 or int(row.values[2]) < 1)) or (kind == 34 and row.values.size() > 2) or (kind == 29 and row.values.size() != 2) or (kind in [30, 31, 35] and row.values.size() != 3): return false
+	if row.values.is_empty() or row.values.size() > 256 or (kind not in [1, 9, 29, 30, 31, 34, 35, 54, 56] and row.values.size() != 1) or (kind == 54 and (row.values.size() != 3 or int(row.values[2]) < 1)) or (kind == 34 and row.values.size() > 2) or (kind == 29 and row.values.size() != 2) or (kind in [30, 31, 35] and row.values.size() != 3): return false
 	for value in row.values:
 		if not Numbers.integer(value, -2147483648 if kind == 26 else 0, MAX_INTEGER): return false
 	return kind != 6 or int(row.values[0]) < event_count
@@ -144,6 +145,10 @@ static func evaluate(row: Dictionary, condition_clock: int, observations: Dictio
 		# Remake story condition: line values[0] started (values[2]=0) or
 		# finished (1) at least values[1] ms ago.
 		36:
+			if row.values[0] is Array:
+				for part in row.values:
+					if evaluate({"condition": part[0], "values": part[1]}, condition_clock, observations, started, waypoint_indices, event_index): return true
+				return false
 			for index in range(0, row.values.size(), 2):
 				if evaluate({"condition": row.values[index], "values": [row.values[index + 1]]}, condition_clock, observations, started, waypoint_indices, event_index): return true
 			return false
@@ -165,6 +170,12 @@ static func evaluate(row: Dictionary, condition_clock: int, observations: Dictio
 			var maximum: Variant = observations.get("maximum_hulls", {}).get(value)
 			return maximum != null and hulls.has(value) and int(hulls[value]) * int(row.values[2]) < int(maximum) * int(row.values[1])
 		55: return int(observations.get("player_target", -1)) == value
+		# The player's hold has at least one of items values; a gas cloud was
+		# ionized this flight (142).
+		56:
+			var hold: Array = observations.get("hold_item_ids", [])
+			return row.values.any(func(item): return hold.has(int(item)))
+		57: return observations.get("gas_cloud_ionized", false) == true
 		37:
 			for part in row.values:
 				if not evaluate({"condition": part[0], "values": part[1]}, condition_clock, observations, started, waypoint_indices, event_index): return false

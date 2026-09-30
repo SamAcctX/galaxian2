@@ -844,6 +844,10 @@ func acknowledge_station_campaign(bindings: RefCounted,equipment: RefCounted,sto
 		var granted: bool
 		if not plan.grant:granted=next._blueprints.story_lock(int(plan.item_id))
 		elif plan.has("material_id"):granted=next._blueprints.story_grant(int(plan.item_id),int(plan.material_id),int(plan.quantity),int(plan.station_id))
+		elif plan.has("materials"):
+			# Several materials already supplied (141: the four plasmas).
+			granted=true
+			for pair in plan.materials:granted=granted and next._blueprints.story_grant(int(plan.item_id),int(pair[0]),int(pair[1]),int(plan.station_id))
 		else:granted=next._blueprints.story_unlock(int(plan.item_id))
 		if not granted:return fail(next._blueprints.error)
 	if rules.has("story_ship"):

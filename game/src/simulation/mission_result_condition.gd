@@ -29,7 +29,16 @@ static func evaluate(condition: Dictionary,observation: Dictionary) -> Dictionar
 				# The recipe's radio line has been shown and is over.
 				var finished: Variant=observation.get("world",{}).get("radio_finished",[])
 				var index:=int(condition.get("index",-1))
-				return {"satisfied":finished is Array and index>=0 and index<finished.size() and finished[index]==true}
+				var over: bool=finished is Array and index>=0 and index<finished.size() and finished[index]==true
+				# hold_ms: that long after the line ended (144's 7 s, 157's 6.5 s).
+				if over and int(condition.get("hold_ms",0))>0:
+					var world: Dictionary=observation.get("world",{})
+					var mark: Variant=world.get("radio_marks",{}).get("finished",{}).get(index)
+					over=mark!=null and world.get("story_elapsed_ms") is int and int(world.story_elapsed_ms)-int(mark)>=int(condition.hold_ms)
+				return {"satisfied":over}
+			"countdown":
+				# A story countdown ran out (154).
+				return {"satisfied":observation.get("world",{}).get("countdown_expired",false)==true}
 			"drive_started":
 				# The player has set the Khador Drive charging (78 ends here).
 				return {"satisfied":observation.get("world",{}).get("drive_started",false)==true}

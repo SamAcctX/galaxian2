@@ -35,7 +35,13 @@ const RESULT_RADIO:={94:[[0,2537,1605],[37,2538,1606],[0,2539,1607],[37,2540,160
 	64:[[0,2224,1262],[20,2225,1263],[0,2226,1264],[20,2227,1265],[0,2228,1266]],
 	67:[[0,2288,1296],[20,2289,1297],[0,2290,1298],[20,2291,1299],[0,2292,1300],[20,2293,1301],[0,2294,1302],[0,2295,1303]],
 	70:[[0,2313,1314]],
-	73:[[0,2344,1337],[33,2345,1338],[0,2346,1339],[33,2347,1340],[0,2348,1341],[33,2349,1342],[0,2350,1343],[33,2351,1344],[0,2352,1345]]}
+	73:[[0,2344,1337],[33,2345,1338],[0,2346,1339],[33,2347,1340],[0,2348,1341],[33,2349,1342],[0,2350,1343],[33,2351,1344],[0,2352,1345]],
+	142:[[0,2946,1925],[2,2947,1926],[0,2948,1927],[2,2949,1928],[0,2950,1929]],
+	145:[[6,2964,1936]],
+	154:[[0,3040,1984],[26,3041,1985],[0,3042,1986],[56,3043,1987],[0,3044,1988],[26,3045,1989],[56,3046,1990],[0,3047,1991],[26,3048,1992],[56,3049,1993],[0,3050,1994],[26,3051,1995],[0,3052,1996],[56,3053,1997],[55,3054,1998],[0,3055,1999]],
+	158:[[0,3094,2010],[1,3095,2011],[0,3096,2012],[1,3097,2013],[0,3098,2014]],
+	160:[[6,3111,2026],[17,3112,2027],[6,3113,2028]],
+	161:[[4,3115,2029],[0,3116,2030],[38,3117,2031],[0,3118,2032],[38,3119,2033],[40,3120,2034]]}
 ## [count, faction, hull, hostile]. All Vossk (faction 1); hull 13 is their
 ## large ship, built as the Vossk freighter-class assembly (subtype 1).
 const CASTS:={
@@ -496,6 +502,151 @@ const SCRIPTED:={
 			[33,2341,1524,31,[8,12,0]],[0,2342,1525,31,[8,12,1]],[0,2343,1526,6,[6]]],
 		"radio_actions":[{"radio_index":7,"action":"place","first_actor":4,"end_actor":8,"center":"player","radius":40000.0,"wake":true}],
 		"success":{"kind":18,"first_actor":0,"end_actor":8},"failure":{"kind":18,"first_actor":8,"end_actor":12},"result_after":[30,[8,0,8]]},
+	# 142: Kernstal plasma lesson. #0 Gunant Breh (Midorian, hull 30,
+	# invulnerable) starts beside the player and flies to the waypoint, stopping
+	# within 3 km of it. Lines: 1.5 s; player at the waypoint (N6 cond 41); the
+	# lesson; once a gas cloud has been ionized (43) and a plasma (201-204, the
+	# original also accepts 205) is in the hold (42): "There you go!". The
+	# result lines follow; success on the last. Gas clouds: the Kernstal field
+	# gets 3 extra clouds and the first at (92000,0,36000) (N2). Assumptions:
+	# the waypoint counts as reached within 3 km; Gunant 1.5 km to the right.
+	142:{"points":[Vector3(90000,0,42000)],
+		"groups":[{"count":1,"faction":3,"hull":30,"friendly":true,"name_text_id":1588,"hull_override":ESCORT_HULL,"route_start":0,"route_stop_within":3000,
+			"position":{"kind":"player_offset","offset":Vector3(1500,0,0),"bound":Vector3(1,1,1)}}],
+		"gas_clouds":{"extra":3,"first_position":Vector3(92000,0,36000)},
+		# A course to the waypoint from the start; reached within 3 km (assumption).
+		"radio_actions":[{"radio_index":0,"action":"route","points":[Vector3(90000,0,42000)],"reach":3000.0}],
+		"radio":[[2,2941,2158,5,[1500]],[2,2942,2159,52,[0]],[0,2943,2160,6,[1]],[2,2944,2161,6,[2]],
+			[2,2945,2162,37,[[57,[0]],[56,[201,202,203,204,205]]]]],
+		"success":{"kind":"radio_finished","index":9}},
+	# 144: cutaway at Var Lupra (kind 170). #0 Trunt Harval (Nivelian
+	# Scimitar 49) and #1-#12 stealth fighters (race 10, hull 44), asleep at the
+	# first point, facing the second. Four lines from 7 s; then the fighters fly
+	# on (no attack) and cloak 1 s later, Harval follows at 4 s; 7 s after the
+	# last line the story moves on to 145 (a fresh flight at the Var Lupra
+	# launch point). Assumptions: no camera work (player locked, unharmable);
+	# the wedge formation is a 13x5 km box behind Harval; all cloak at 1 s
+	# (original: 10% chance per tick each).
+	144:{"points":[Vector3(60000,10000,100000),Vector3(-50000,0,50000)],
+		"groups":[{"count":1,"faction":2,"hull":49,"friendly":false,"sleeping":true,"unharmable":true,"name_text_id":1625,"index":0,"route_start":1,"offsets":[-1,-1,-1],"bounds":[2,2,2]},
+			{"count":12,"faction":10,"hull":44,"friendly":false,"sleeping":true,"unharmable":true,"index":0,"route_start":1,"offsets":[-6500,-400,-5000],"bounds":[13000,700,5200]}],
+		"radio":[[39,2957,2163,5,[7000]],[39,2958,2164,6,[0]],[0,2959,2165,6,[1]],[39,2960,2166,6,[2]]],
+		"timed_actions":[{"after_ms":0,"action":"lock_player","duration_ms":-1,"invulnerable":true}],
+		"radio_actions":[{"radio_index":3,"on":"finished","action":"wake","first_actor":1,"end_actor":13,"attack_range":0},
+			{"radio_index":3,"on":"finished","delay_ms":1000,"action":"cloak","first_actor":1,"end_actor":13,"duration_ms":-1},
+			{"radio_index":3,"on":"finished","delay_ms":4000,"action":"wake","first_actor":0,"end_actor":1,"attack_range":0}],
+		"success":{"kind":"radio_finished","index":3,"hold_ms":7000}},
+	# 145: Harval destroys the plasma array (not winnable by combat). #0
+	# Harval at (30000,0,80000), #1-#12 stealth fighters around the first
+	# point, all unharmable and asleep; #13 the array (named, unharmable), #14
+	# its damaged twin (hidden). 7 s: "They're after the plasma array!",
+	# "Say goodbye". Then (player locked 16 s): 1 s they fire on the array
+	# (N7 attack), 5.3 s the twin replaces it and they fly off, 15.3 s they are
+	# gone; "That should teach you a lesson" 16 s after; Carla's result line;
+	# success. Assumptions: the array stands at the origin (original: origin
+	# +-10 km random); the damaged twin's model is OPEN (same mesh placeholder);
+	# the attackers are unharmable (the original's flight cannot be won).
+	145:{"points":[Vector3(-45000,0,60000),Vector3(30000,0,80000)],
+		"groups":[{"count":1,"faction":2,"hull":49,"friendly":false,"sleeping":true,"unharmable":true,"name_text_id":1625,"index":1,"route_start":0,"offsets":[-1,-1,-1],"bounds":[2,2,2]},
+			{"count":12,"faction":10,"hull":44,"friendly":false,"sleeping":true,"unharmable":true,"index":0,"offsets":[-1000,-1000,-2500],"bounds":[2000,2000,5000]},
+			{"count":1,"faction":3,"friendly":true,"static":{"model":19050,"jitter":0},"name_text_id":3196,"unharmable":true},
+			{"count":1,"faction":3,"friendly":true,"static":{"model":19050,"jitter":0},"name_text_id":3196,"unharmable":true,"hidden":true,"damaged":true}],
+		"radio":[[0,2961,2167,5,[7000]],[39,2962,2168,6,[0]],[39,2963,2169,35,[1,16000,1]]],
+		"radio_actions":[{"radio_index":1,"on":"finished","action":"lock_player","duration_ms":16000,"invulnerable":true},
+			{"radio_index":1,"on":"finished","delay_ms":1000,"action":"attack","first_actor":0,"end_actor":13,"target_actor":13},
+			{"radio_index":1,"on":"finished","delay_ms":5300,"action":"hide","first_actor":13,"end_actor":14},
+			{"radio_index":1,"on":"finished","delay_ms":5300,"action":"show","first_actor":14,"end_actor":15},
+			{"radio_index":1,"on":"finished","delay_ms":5300,"action":"retire","first_actor":0,"end_actor":13}],
+		"success":{"kind":"radio_finished","index":3}},
+	# 154: the Valkyrie ambush, built in the alien world (station -1, N4).
+	# #0 the Terran Rhino (hull 51) with the energy cells beside the player,
+	# invulnerable; #1 Valkyrie (named, docking = hacking, N8); #2-#21 twenty
+	# Void fighters shown asleep near it. 9 s: "a welcoming party!"; Alice and
+	# Keith (#1-#6). After "Proceed to Valkyrie" the freighter flies in (player
+	# locked 8 s); "Void minions, terminate him!" and they attack; Keith's
+	# "90 seconds", the captain, Keith. After line #8 a 91 s countdown (N9):
+	# dock at Valkyrie and win the hack -> "Ready to go on board" -> the result
+	# (Alice arrested) -> success; then back at the last docked station's gate
+	# (MOVE_ON_ENTRY 155). Failure: the countdown runs out. Assumptions: the
+	# freighter's ~1 s cutscene steps are one 8 s lock; all fighters target the
+	# player (original: every third the freighter); the ring is a 3.4 km box.
+	154:{"points":[Vector3(200000,0,70000),Vector3(-10000,1000,15000),Vector3(0,0,40000)],
+		"groups":[{"count":1,"faction":0,"hull":51,"friendly":true,"sleeping":true,"hull_override":ESCORT_HULL,"route_start":1,
+			"position":{"kind":"player_offset","offset":Vector3(1500,0,1500),"bound":Vector3(1,1,1)}},
+			{"count":1,"faction":3,"friendly":true,"static":{"model":16928,"layers":[16929,16930],"jitter":0},"name_text_id":76,"dock":"hack","dockable":false,"unharmable":true},
+			{"count":20,"faction":9,"hull":-1,"friendly":false,"sleeping":true,"index":2,"offsets":[-1700,-200,-200],"bounds":[3400,200,1700]}],
+		"radio":[[0,3028,2172,5,[9000]],[26,3029,2173,6,[0]],[0,3030,2174,6,[1]],[26,3031,2175,6,[2]],[0,3032,2176,6,[3]],[26,3033,2177,6,[4]],[0,3034,2178,6,[5]],
+			[26,3035,2179,35,[6,8000,1]],[0,3036,2180,6,[7]],[55,3037,2181,6,[8]],[0,3038,2182,6,[9]],[0,3039,2183,50,[1]]],
+		"radio_actions":[{"radio_index":6,"on":"finished","action":"lock_player","duration_ms":8000,"invulnerable":true},
+			{"radio_index":6,"on":"finished","action":"wake","first_actor":0,"end_actor":1},
+			{"radio_index":7,"action":"wake","first_actor":2,"end_actor":22,"attack_range":50000},
+			{"radio_index":8,"on":"finished","action":"dockable","first_actor":1,"end_actor":2,"enabled":true},
+			{"radio_index":8,"on":"finished","action":"countdown","duration_ms":91000}],
+		"success":{"kind":"radio_finished","index":27},"failure":{"kind":"countdown"}},
+	# 157: the final battle at Var Lupra. #0-#9 Terran fighters (random
+	# hulls) on a route, #10 the Terran carrier (18804), #11-#20 stealth fighters
+	# and #21 Trunt Harval (hidden, asleep, in formation far out), #22 Alice
+	# (Midorian Cicero 20, hidden), #23 Valkyrie with the array (station 101's
+	# exterior). 7 s: "the whole Terran armada is here!"; lines #1-#3 during a
+	# locked scene (the enemies appear 16 s in); 42 s after #0: Brent's order
+	# and the attack. Harval under half hull: Carla "Control has been hit!".
+	# Once Harval is under 1/4 hull, or 200 s have passed with 9 of the 11
+	# enemies (#11-#21) dead: Alice appears and boards (#8-#11, player locked),
+	# Harval blocks the way (#12), Keith pleads (#13-#15, 12 s after #10), Alice
+	# fires the array (#16). Then the supernova reverses (N5) and 6.5 s later
+	# the story moves on: through the gate to Luur, vitals kept (MOVE 158).
+	# Assumptions: no camera work; Harval cannot drop below 20% here (the lead's
+	# "kept topped up"); Valkyrie does not move away; Harval's 25 s flag toggle
+	# (likely cloak) is left out; line #4 ignores the "#3 finished" guard.
+	157:{"points":[Vector3(70000,0,20000),Vector3(30000,10000,60000),Vector3(-110000,10000,170000),Vector3(-110000,0,20000),
+			Vector3(-120000,0,20000),Vector3(120000,0,-72000),Vector3(20000,0,-4000)],
+		"groups":[{"count":10,"faction":0,"hull":-1,"friendly":true,"index":0,"route_start":1,"offsets":[-2000,-2000,-2000],"bounds":[4000,4000,4000]},
+			{"count":1,"faction":0,"friendly":true,"static":{"model":18804,"jitter":10000},"name_text_id":-1},
+			{"count":10,"faction":10,"hull":44,"friendly":false,"sleeping":true,"hidden":true,"index":2,"offsets":[-5000,-100,5000],"bounds":[10000,200,6000]},
+			{"count":1,"faction":2,"hull":49,"friendly":false,"sleeping":true,"hidden":true,"name_text_id":1625,"hull_floor":0.2,"index":2,"offsets":[-1,-1,-1],"bounds":[2,2,2]},
+			{"count":1,"faction":3,"hull":20,"friendly":true,"sleeping":true,"hidden":true,"name_text_id":1612,"index":4,"offsets":[-3000,-3000,-3000],"bounds":[6000,6000,6000]},
+			{"count":1,"faction":0,"friendly":true,"static":{"model":16928,"layers":[16929,16930],"jitter":0,"offset":Vector3.ZERO},"index":4,"name_text_id":-1,"name_station_id":101,"unharmable":true}],
+		"radio":[[0,3066,2184,5,[7000]],[38,3067,2185,6,[0]],[0,3068,2186,6,[1]],[39,3069,2187,6,[2]],
+			[1,3070,2188,35,[0,42000,1]],[0,3071,2189,6,[4]],[6,3072,2190,12,[21]],[0,3073,2191,6,[6]],
+			[6,3074,2192,36,[[54,[21,25,100]],[37,[[5,[200000]],[30,[9,11,22]]]]]],[26,3075,2193,6,[8]],[6,3076,2194,6,[9]],[1,3077,2195,6,[10]],
+			[39,3078,2196,6,[11]],[0,3079,2197,37,[[35,[10,12000,1]],[6,[12]]]],[26,3080,2198,6,[13]],[0,3081,2199,6,[14]],[26,3082,2200,6,[15]]],
+		"radio_actions":[{"radio_index":0,"on":"finished","action":"lock_player","duration_ms":42000,"invulnerable":true},
+			{"radio_index":0,"on":"finished","delay_ms":16000,"action":"place","first_actor":11,"end_actor":21,"center":Vector3(120000,0,-72000),"radius":15000.0},
+			{"radio_index":0,"on":"finished","delay_ms":16000,"action":"place","first_actor":21,"end_actor":22,"center":Vector3(20000,0,-4000),"radius":3000.0},
+			{"radio_index":4,"action":"wake","first_actor":11,"end_actor":22},
+			{"radio_index":8,"action":"lock_player","until_radio":10,"invulnerable":true},
+			{"radio_index":8,"action":"place","first_actor":22,"end_actor":23,"center":Vector3(-120000,0,20000),"radius":8000.0},
+			{"radio_index":10,"on":"finished","action":"retire","first_actor":22,"end_actor":23},
+			{"radio_index":16,"on":"finished","action":"supernova_reversal"}],
+		"success":{"kind":"radio_finished","index":16,"hold_ms":6500}},
+	# 158: Luur, after the reversal. #0 Trunt Harval (race 10 in the original
+	# cast, Scimitar 49, named, hull x3) and #1-#3 three hostile 100-hull objects
+	# (model 18882, origin +-10 km). 10 s: "The sun is back to normal!"; the
+	# confession (#1-#4), after which he attacks; taunts at 3/4, 1/2, 1/4 hull
+	# (N6 cond 40, 12); "The end of a tyrant." when he dies; Brent's result;
+	# success on the last. Assumptions: Harval waits 20 km ahead of the gate
+	# arrival and wakes after #4 (his start point and wake moment are not read).
+	158:{"points":[Vector3(0,0,20000)],
+		"groups":[{"count":1,"faction":10,"hull":49,"friendly":false,"sleeping":true,"name_text_id":1625,"ship_state":{"hull_scales":[3.0]},"index":0,"offsets":[-1,-1,-1],"bounds":[2,2,2]},
+			{"count":1,"faction":10,"friendly":false,"static":{"model":18882,"jitter":10000},"name_text_id":-1,"hull":100},
+			{"count":1,"faction":10,"friendly":false,"static":{"model":18882,"jitter":10000},"name_text_id":-1,"hull":100},
+			{"count":1,"faction":10,"friendly":false,"static":{"model":18882,"jitter":10000},"name_text_id":-1,"hull":100}],
+		"radio":[[0,3083,2201,5,[10000]],[0,3084,2202,6,[0]],[39,3085,2203,6,[1]],[0,3086,2204,6,[2]],[39,3087,2205,6,[3]],
+			[39,3088,2206,54,[0,75,100]],[0,3089,2207,6,[5]],[39,3090,2208,12,[0]],[0,3091,2209,6,[7]],[39,3092,2210,54,[0,25,100]],[0,3093,2211,1,[0]]],
+		"radio_actions":[{"radio_index":4,"on":"finished","action":"wake","first_actor":0,"end_actor":1,"attack_range":50000}],
+		"success":{"kind":"radio_finished","index":15}},
+	# 160: cutaway at Thynome (kind 170, sketch of s84-94): caption at 2 s, the
+	# result 2 s after it; success on the last line; then MOVE_ON_ENTRY 161.
+	160:{"points":[Vector3.ZERO],"groups":[],
+		"radio":[[17,3110,-1,5,[2000]]],"result_after":[35,[0,2000,1]],
+		"timed_actions":[{"after_ms":0,"action":"lock_player","duration_ms":-1,"invulnerable":true}],
+		"success":{"kind":"radio_finished","index":3}},
+	# 161: cutaway at Maissa (kind 170, sketch of s84-94): caption at 2 s, the
+	# result 2 s after it; success on the last line; then MOVE_ON_ENTRY 162.
+	161:{"points":[Vector3.ZERO],"groups":[],
+		"radio":[[17,3114,-1,5,[2000]]],"result_after":[35,[0,2000,1]],
+		"timed_actions":[{"after_ms":0,"action":"lock_player","duration_ms":-1,"invulnerable":true}],
+		"success":{"kind":"radio_finished","index":6}},
 }
 
 ## Convoy hunts (kind 163): at each listed station a transport of the system's
@@ -516,7 +667,8 @@ const CONVOY_ESCORTS:=5
 const CALLS:={84:[[6,2463,1565],[0,2464,1566]],
 	61:[[15,2190,1239],[0,2191,1240],[6,2192,1241],[0,2193,1242],[6,2194,1243],[0,2195,1244],[6,2196,1245],[0,2197,1246]],
 	72:[[0,2321,1322],[26,2322,1323],[0,2323,1329],[26,2324,1330],[0,2325,1331],[26,2326,1332],[0,2327,1333],[26,2328,1334],
-		[0,2329,1335],[26,2330,1336],[0,2331,1324],[26,2332,1325],[0,2333,1326],[26,2334,1327],[0,2335,1328]]}
+		[0,2329,1335],[26,2330,1336],[0,2331,1324],[26,2332,1325],[0,2333,1326],[26,2334,1327],[0,2335,1328]],
+155:[[0,3056,2000],[1,3057,2001],[0,3058,2002],[26,3059,2003]]}
 ## The call starts once the story has moved on (radio holds the result poll).
 ## Systems opened when a story flight moves the career on: [cursor]: systems.
 const STORY_UNLOCKS:={61:[22],97:[29]}
@@ -533,7 +685,8 @@ const SEARCH_SITES:={125:{"stations":[15,30,40,45,60,70,80,85,95],
 ## (original: 12 s of play after the cursor moved). [speaker, text, voice];
 ## the first line comes 1.5 s after the call opens. Once heard, the career
 ## keeps "nag_heard" = from (saved in progress).
-const NAG_CALLS:={93:{"to":110,"lines":[[6,3157,1553],[0,3158,1554]]},111:{"to":142,"lines":[[6,3159,1555],[0,3160,1556]]}}
+const NAG_CALLS:={93:{"to":110,"lines":[[6,3157,1553],[0,3158,1554]]},111:{"to":142,"lines":[[6,3159,1555],[0,3160,1556]]},
+143:{"to":161,"lines":[[6,3161,1557],[0,3162,1558]]}}
 ## Once this radio line has finished, every story ship turns hostile and the
 ## Vossk standing drops to its worst value (standing 0 = 100).
 const TURN_HOSTILE_AFTER:={50:{"radio_index":2,"reputation_axis":0,"reputation_value":100}}
@@ -541,6 +694,12 @@ const TURN_HOSTILE_AFTER:={50:{"radio_index":2,"reputation_axis":0,"reputation_v
 ## The story job selected at this location, if the career is in a story flight.
 static func story_job(bindings: RefCounted,cursor: Variant,station_id: Variant,progress: Dictionary={}) -> Dictionary:
 	if cursor is int and station_id is int and Campaign.saved_story(bindings,cursor) and _wanted_entry(cursor)>=0:return _wanted_job(cursor,station_id,progress)
+	var job:=_story_flight_job(bindings,cursor,station_id,progress)
+	# Where no story flight waits, a Most Wanted criminal may (bounties).
+	if job.is_empty() and cursor is int and station_id is int and Campaign.saved_story(bindings,cursor):job=_bounty_job(cursor,station_id,progress)
+	return job
+
+static func _story_flight_job(bindings: RefCounted,cursor: Variant,station_id: Variant,progress: Dictionary) -> Dictionary:
 	if cursor is int and station_id is int and Campaign.saved_story(bindings,cursor) and SEARCH_SITES.has(cursor) and SEARCH_SITES[cursor].stations.has(station_id):
 		var index: int=SEARCH_SITES[cursor].stations.find(station_id)
 		var searched:=int(progress.get("story_stations_mask",0))
@@ -584,6 +743,29 @@ static func _wanted_job(cursor: int,station_id: int,progress: Dictionary) -> Dic
 	return {"kind":-1,"station_id":station_id,"reward":0,"bonus":0,"difficulty":1,"quantity":0,
 		"story":false,"story_job":true,"campaign_cursor":cursor,"target_station_id":station_id,"wanted":wanted.duplicate(true)}
 
+## A board criminal (not the story's) at this station: killing him pays the
+## bounty and counts toward the board's next tier; the story stays put.
+static func _bounty_job(cursor: int,station_id: int,progress: Dictionary) -> Dictionary:
+	var wanted: Variant=progress.get("wanted_job")
+	if wanted==null:
+		var state: Variant=progress.get("wanted")
+		var index:=Wanted.criminal_at(state,station_id)
+		if index<Wanted.STORY_ENTRIES:return {}
+		var stats: Dictionary=state.entries[index].stats
+		var hull:=Wanted.spawn_hull(stats,int(progress.get("rank",0)),cursor,false,float(progress.get("difficulty",0.5)))
+		wanted={"index":index,"stats":stats.duplicate(true),"hull":hull,"after":Wanted.killed(state,index)}
+	if not wanted is Dictionary or int(wanted.get("index",-1))<Wanted.STORY_ENTRIES:return {}
+	return {"kind":-1,"station_id":station_id,"reward":0,"bonus":0,"difficulty":1,"quantity":0,
+		"story":false,"story_job":true,"campaign_cursor":cursor,"target_station_id":station_id,"wanted":wanted.duplicate(true)}
+
+## Board criminals' lines: Keith on finding one (random), the criminal when
+## hit (entries 2 and 6 only; speaker 10, a pirate: assumption), Keith on the
+## kill (random). [text, voice].
+const BOUNTY_UNCOVER:=[[3130,2232],[3131,2233],[3132,2234],[3133,2235],[3134,2236]]
+const BOUNTY_ATTACK:=[[3135,2222],[3136,2223],[3137,2224],[3138,2225],[3139,2226]]
+const BOUNTY_ATTACK_ENTRIES:=[2,6]
+const BOUNTY_KILL:=[[3140,2227],[3141,2228],[3142,2229],[3143,2230],[3144,2231]]
+
 ## [speaker, text, voice]: his lines when the player targets him ("uncover",
 ## Keith first) and when first hit ("attack"). Speakers 45/46 are the
 ## original's Pal Tyyrt and Kehnor.
@@ -599,7 +781,9 @@ const WANTED_OFFSET:=Vector3(0,0,-15000)
 ## the story moves on with him off the board (not dead, no bounty).
 static func _wanted_recipe(job: Dictionary) -> Dictionary:
 	var cursor:=int(job.campaign_cursor);var wanted: Dictionary=job.wanted;var stats: Dictionary=wanted.stats
-	var faction:=8 if int(stats.race)>=4 else int(stats.race)
+	# Flown as pirates whatever his race: hitting him never costs standing
+	# (the original changes no standing for wanted ships). His ship is his own.
+	var faction:=8
 	var calm:={"initial_hostile":false,"updated_hostile":false,"friendly":false}
 	var groups:=[{"first_actor":0,"end_actor":1,"faction":faction,"population_group":"story","origin":"zero","hull_catalogue_id":int(stats.ship),
 		"display_name":String(stats.name),"cargo_override":{"entries":[{"item_id":int(stats.loot[0]),"quantity":int(stats.loot[1])}],"special":false},
@@ -610,7 +794,10 @@ static func _wanted_recipe(job: Dictionary) -> Dictionary:
 		groups.append({"first_actor":1,"end_actor":count,"faction":faction,"population_group":"story","origin":"zero",
 			"ship_state":{"mode":0,"active":true,"targeting_blocked":false,"hull_override":int(wanted.hull)/2},"policy":calm.duplicate(),
 			"position":{"kind":"player_offset","offset":WANTED_OFFSET-Vector3(1500,0,1500),"bound":Vector3(3000,1000,3000)}})
-	var lines: Dictionary=WANTED_RADIO.get(int(wanted.index),{})
+	var story: bool=int(wanted.index)<Wanted.STORY_ENTRIES
+	var roll:=absi(hash([int(wanted.index),int(job.station_id),int(wanted.hull)]))
+	var lines: Dictionary=WANTED_RADIO.get(int(wanted.index),{}) if story else {"uncover":[[0]+BOUNTY_UNCOVER[roll%5]],
+		"attack":[[10]+BOUNTY_ATTACK[(roll/5)%5]] if int(wanted.index) in BOUNTY_ATTACK_ENTRIES else []}
 	var radio:=[];var actions:=[]
 	for part in ["uncover","attack"]:
 		var first:=radio.size()
@@ -618,7 +805,15 @@ static func _wanted_recipe(job: Dictionary) -> Dictionary:
 			var own: bool=radio.size()==first
 			radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":(55 if part=="uncover" else 54) if own else 6,
 				"values":([0] if part=="uncover" else [0,1,1]) if own else [radio.size()-1]})
-		actions.append({"radio_index":first,"action":"hostile"})
+		if radio.size()>first:actions.append({"radio_index":first,"action":"hostile"})
+	if not story:
+		# Found or hit, he fights; dead, Keith's line and the bounty.
+		var kill: Array=BOUNTY_KILL[(roll/25)%5]
+		radio.append({"speaker_id":0,"text_id":kill[0],"voice_event_id":kill[1],"condition":1,"values":[0]})
+		var bounty:={"from_cursor":cursor,"campaign_cursor":cursor,"mission":Campaign.mission(cursor),
+			"previous_mission":{"reward":int(stats.reward)},"progress":{"wanted":wanted.after.duplicate(true)}}
+		return {"actor_count":count,"ship_groups":groups,"radio":radio,"radio_actions":actions,
+			"success":{"kind":18,"first_actor":0,"end_actor":1},"story":bounty,"turn_hostile":{}}
 	var result: Array=Campaign.Dialogue.RESULT.get(cursor,[])
 	var surrender:=radio.size()
 	for row in result:
@@ -712,7 +907,7 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 		var friendly: bool=row.friendly
 		if row.has("static"):
 			groups.append({"first_actor":first,"end_actor":first+1,"faction":int(row.faction),"origin":"zero","name_text_id":int(row.name_text_id),
-				"static_object":_placed_static(plan,row),"ship_state":{"mode":5,"active":false,"targeting_blocked":true,"hidden":row.get("hidden",false)},
+				"static_object":_placed_static(plan,row).merged({"hull_override":int(row.hull)} if row.has("hull") else {}),"ship_state":{"mode":5,"active":false,"targeting_blocked":true,"hidden":row.get("hidden",false)},
 				"policy":{"initial_hostile":not friendly,"updated_hostile":not friendly,"friendly":friendly}})
 			first+=1;continue
 		var group:={"first_actor":first,"end_actor":first+int(row.count),"faction":int(row.faction),"population_group":"story","origin":"zero",
@@ -723,6 +918,9 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 		if int(row.get("hull",-1))>=0:group.hull_catalogue_id=int(row.hull)
 		if row.has("hull_override"):group.ship_state.hull_override=int(row.hull_override)
 		if row.has("hull_scale"):group.ship_state.hull_scales=[float(row.hull_scale)]
+		# Unharmable story ships (144/145) and a hull floor (157: Harval stays above 20%).
+		if row.get("unharmable",false):group.ship_state.hull_override=ESCORT_HULL
+		if row.has("hull_floor"):group.ship_state.hull_floor=float(row.hull_floor)
 		# 114: pirates hidden at the field's asteroids (the middle ones first).
 		if row.get("position",{}).get("kind","")=="asteroids":group.position={"kind":"scenery_midpoint","offset":Vector3.ZERO}
 		if row.has("wake_range"):wakes.append({"first_actor":first,"end_actor":first+int(row.count),"range":float(row.wake_range),"all_range":float(row.get("wake_all_range",row.wake_range))})
@@ -823,8 +1021,13 @@ static func drive_rule(cursor: int) -> Dictionary:return DRIVE.get(cursor,{}).du
 ## the normal flight camera, the ordinary alien-world ships stand in for the
 ## eight VoidX and the Valkyrie is not drawn; the player docks at Kothar.
 const VOID_RADIO:={79:[[0,2402,1531,5,[6000]]],
-	81:[[26,2421,1544,5,[16000]],[31,2422,1545,6,[0]],[26,2423,1546,6,[1]],[26,2424,1547,6,[2]]]}
-const VOID_EXIT:={79:{"campaign_cursor":80,"station_id":100},81:{"campaign_cursor":82,"station_id":100,"auto":true}}
+	81:[[26,2421,1544,5,[16000]],[31,2422,1545,6,[0]],[26,2423,1546,6,[1]],[26,2424,1547,6,[2]]],
+	147:[[0,2977,2170,5,[7000]],[0,2978,2171,6,[0]],[26,2979,1949,6,[1]],[0,2980,1950,6,[2]],[26,2981,1951,6,[3]],[0,2982,1952,6,[4]],
+		[26,2983,1953,6,[5]],[0,2984,1954,6,[6]],[26,2985,1955,6,[7]],[0,2986,1956,6,[8]]],
+	152:[[0,3009,1965,5,[5000]],[26,3010,1966,6,[0]],[26,3011,1967,6,[1]],[0,3012,1968,6,[2]],[26,3013,1969,6,[3]],[0,3014,1970,6,[4]],
+		[26,3015,1971,6,[5]],[0,3016,1972,6,[6]]]}
+const VOID_EXIT:={79:{"campaign_cursor":80,"station_id":100},81:{"campaign_cursor":82,"station_id":100,"auto":true},
+147:{"campaign_cursor":148,"station_id":-1},154:{"campaign_cursor":155,"station_id":-1,"auto":true},152:{"campaign_cursor":153,"station_id":-1}}
 ## A story that reaches this cursor in flight jumps there at once, without
 ## fuel (80's battle ends -> the alien world for 81).
 const STORY_JUMP:={81:{"destination":-1}}
@@ -835,11 +1038,26 @@ const STORY_JUMP:={81:{"destination":-1}}
 static func story_jump(cursor: int) -> Dictionary:
 	if STORY_JUMP.has(cursor):return STORY_JUMP[cursor].duplicate()
 	var move: Dictionary=Campaign.story_move(cursor)
-	return {} if move.is_empty() else {"destination":int(move.station_id)}
+	# Station -1 (155): back through the last docked station's gate, which the
+	# Void's ordinary way out already does; no jump.
+	return {} if move.is_empty() or int(move.station_id)<0 else {"destination":int(move.station_id)}
+
+## Story scenes in the alien world played as their lines only (154, the
+## Valkyrie ambush). Assumption (gaps file): the Void flight cannot build a
+## story cast yet, so the fight, hack and countdown are left out; the lines
+## and the arrest result play one after another from 9 s and the story moves
+## on when they are over (VOID_EXIT).
+const VOID_SCENES:=[154]
 
 static func void_radio(cursor: int) -> Array:
 	var rows:=[]
 	for row in VOID_RADIO.get(cursor,[]):rows.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":row[3],"values":row[4].duplicate()})
+	if cursor in VOID_SCENES:
+		var lines: Array=SCRIPTED[cursor].radio.duplicate()
+		lines.append_array(RESULT_RADIO.get(cursor,Campaign.Dialogue.RESULT.get(cursor,[])))
+		for index in lines.size():
+			var row: Array=lines[index]
+			rows.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":5 if index==0 else 6,"values":[9000] if index==0 else [index-1]})
 	return rows
 
 static func void_exit(cursor: int) -> Dictionary:return VOID_EXIT.get(cursor,{}).duplicate()

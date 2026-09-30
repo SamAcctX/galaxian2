@@ -52,6 +52,8 @@ func verify_free_application() -> void:
 	if staged=="supernova109":await fly_supernova_bars()
 	if staged=="supernova117":await fly_supernova_meenkk()
 	if staged=="supernova128":await fly_supernova_wanted()
+	if staged=="supernova135":await fly_supernova_coromesk()
+	if staged=="supernova141":await fly_supernova_finale()
 
 ## 49-52: the K'Suukk flees with a Vossk escort that turns on the player at
 ## Makke S'ik, through the gate to S'inokk and away, then home to Kanado.
@@ -1485,6 +1487,332 @@ func fly_supernova_wanted() -> void:
 	check(app.session.station_owner().snapshot().campaign_cursor==135,"Fresh Resume lost the 134 talk")
 	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-135.gof2save"))==OK,"The 135 checkpoint could not be kept")
 
+## 135-140: a Most Wanted bounty first (Gendol Ethor, on the Terran board
+## since 131); Coromesk is refused without a drill, then the pilot delivers
+## 140 Titanium at the Mining Plant while pirates keep coming back (the test
+## tops the hold up where the player would mine); Var Lupra; B'akrram's
+## clearance and talk; a Vol Noor for Bra'Murr, two won hacks and the
+## transfer; Var Lupra's talk for 141.
+const COROMESK:=103
+const DRILL:=86
+const TITANIUM:=155
+const VOL_NOOR:=42
+func fly_supernova_coromesk() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==135,"The Dekato checkpoint is not at cursor 135")
+	if failures or not seed_cargo([[122,12]]):return
+	# The bounty: fly to where the board's third entry is and destroy him.
+	var board: Dictionary=app.session.station_owner().snapshot().contracts.progress.get("wanted",{})
+	var gendol: Dictionary=board.get("entries",[{},{},{}])[2]
+	print("SUPERNOVA Gendol Ethor ",gendol)
+	check(gendol.get("active",false),"Gendol Ethor was not activated by a Terran docking after 131")
+	if failures:return
+	var credits:=int(app.session.station_owner().snapshot().contracts.credits)
+	if not await depart_to(int(gendol.at)):return
+	var bounty_radio:=[]
+	var him:=func(_actors):return [0] if int(app.session.flight_owner()._encounter.combat_snapshot().actors[0].vitals.hull)>0 else []
+	await capture_free_application("supernova-bounty")
+	if not await fight_until("bounty",func():return him.call([]).is_empty(),him,bounty_radio):return
+	if not await wait_story_cursor(135,"") or not await dock_application():return
+	var after: Dictionary=app.session.station_owner().snapshot()
+	print("SUPERNOVA bounty paid ",int(after.contracts.credits)-credits," board ",after.contracts.progress.wanted.bounties," radio ",bounty_radio)
+	check(after.contracts.progress.wanted.entries[2].dead and int(after.contracts.progress.wanted.bounties[0])==1 and int(after.contracts.credits)>credits,"The bounty on Gendol Ethor was not paid")
+	if failures:return
+	# Refused without a drill (3202).
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	var refused: RefCounted=app.session.flight_owner().start_drive(COROMESK)
+	print("SUPERNOVA Coromesk without a drill: ",refused._notices.snapshot() if refused!=null else app.session.flight_owner().error)
+	check(refused!=null and refused._drive.snapshot().get("phase","ready")=="ready","The drive jumped to Coromesk without a drill")
+	if failures or not await dock_application():return
+	var free:=int(app.session.station_owner().snapshot().cargo.free_space)
+	if not seed_cargo([[DRILL,1],[TITANIUM,maxi(1,free-1)]]) or not fit_item(DRILL):return
+	if not await depart_to(COROMESK):return
+	await capture_free_application("supernova-coromesk")
+	var radio_ids:=[];var topped:=[0]
+	var pirates:=func(frame):
+		var actors: Array=frame._encounter.combat_snapshot().actors;var at: Vector3=app.session.snapshot().player_pose.origin
+		return range(1,3).filter(func(id):return int(actors[id].vitals.hull)>0 and actors[id].get("active",false) and actors[id].pose.origin.distance_to(at)<30000)
+	var plant:=func(frame):
+		# Out of Titanium at the plant: the test adds what mining would have.
+		var status:=int(frame._story_dock.get("status",0))
+		if int(frame._story_dock.get("docked",-1))==0 and frame._cargo.quantity(TITANIUM)==0 and status<140:
+			var load:=mini(140-status,int(frame._cargo.snapshot().free_space))
+			if load>0 and frame._cargo.add_entries([{"item_id":TITANIUM,"quantity":load}]):topped[0]+=load
+		return frame._encounter.combat_snapshot().actors[0].pose.origin
+	if not await story_flight(135,"coromesk",plant,pirates,radio_ids,900,1500.0):return
+	print("SUPERNOVA Coromesk radio ",radio_ids," topped up ",topped[0])
+	check(2875 in radio_ids or 2874 in radio_ids,"The pirates' lines at the plant did not play")
+	check(app.session.flight_owner()._objective.snapshot().campaign_cursor==136,"Coromesk did not move the story to 136")
+	if failures or not await khador_jump(112) or not await dock_application() or not await take_station_talk(136,137):return
+	# 137: B'akrram's control in flight; 138 the talk there.
+	if not await depart_to(58) or not await wait_story_cursor(138,"supernova-bakrram"):return
+	if not await dock_application() or not await take_station_talk(138,139):return
+	# 139: a Vossk ship is required. The test keeps a Khador Drive for the new hull.
+	if not seed_cargo([[85,1]]):return
+	var offers: Array=await shipyard()
+	print("SUPERNOVA B'akrram yard ",offers.map(func(row):return [row.get("ship_id"),row.get("unit_price")]))
+	var index: int=offers.find(offers.filter(func(row):return int(row.get("ship_id",-1))==VOL_NOOR).front() if offers.any(func(row):return int(row.get("ship_id",-1))==VOL_NOOR) else null)
+	if index<0 or not app.equipment_action("open") or not app.equipment_action("buy_ship",index):check(false,"No Vol Noor at B'akrram: "+app.session.error);return
+	app.equipment_action("close")
+	if not fit_item(85):return
+	if not await depart_to(131):return
+	await capture_free_application("supernova-bramurr")
+	radio_ids=[]
+	var battleship:=func(frame):
+		var dock: Dictionary=frame._story_dock;var actors: Array=frame._encounter.combat_snapshot().actors;var at: Vector3=app.session.snapshot().player_pose.origin
+		var open: Array=[0,1].filter(func(id):return dock.get("actors",{}).get(id,{}).get("dockable",false))
+		if open.is_empty():return null
+		open.sort_custom(func(a,b):return actors[a].pose.origin.distance_to(at)<actors[b].pose.origin.distance_to(at))
+		return actors[open[0]].pose.origin
+	if not await story_flight(139,"bramurr",battleship,func(_frame):return [],radio_ids,900,2000.0):return
+	print("SUPERNOVA Bra'Murr radio ",radio_ids)
+	check(2918 in radio_ids and app.session.flight_owner()._objective.snapshot().campaign_cursor==140,"Bra'Murr's transfer did not finish")
+	await capture_free_application("supernova-bramurr-transfer")
+	if failures or not await khador_jump(112) or not await dock_application() or not await take_station_talk(140,141):return
+	check(app.save_station(false) and app.load_station(),"Saving and resuming at Var Lupra failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==141,"Fresh Resume lost the 140 talk")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-141.gof2save"))==OK,"The 141 checkpoint could not be kept")
+
+## 141-162: Gunant's talk and the plasma kit; Kernstal refused until the kit
+## is fitted, then the lesson: the waypoint, an Ion Lambda into the cloud and
+## the sparks gathered into the hold; the Chromo Plasma built and handed over
+## at Var Lupra (the test supplies the plasma a player would gather); Harval's
+## fly-past and the destroyed array; the Void calls (147/152) and the
+## penthouse bar; Brent; the Valkyrie ambush lines in the Void (154); the
+## call and Damarque; the final battle at Var Lupra and Harval's end at Luur;
+## the hero's talk, the two cutaways and docked at Maissa at 162, the
+## Supernova campaign won. Then a Ginoya flight without radiation.
+const VAR_HASTRA:=78
+const KERNSTAL:=79
+const VAR_LUPRA:=112
+const KERNSTAL_WAYPOINT:=Vector3(90000,0,42000)
+const KERNSTAL_CLOUD:=Vector3(92000,0,36000)
+func fly_supernova_finale() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==141,"The Var Lupra checkpoint is not at cursor 141")
+	if failures or not seed_cargo([[122,12]]):return
+	if not await travel_and_talk(VAR_HASTRA,141,142):return
+	var docked: Dictionary=app.session.station_owner().snapshot()
+	var project: Array=docked.contracts.blueprints.entries.filter(func(row):return row.item_id==210)
+	print("SUPERNOVA 141 blueprint ",project," hold ",docked.cargo.entries.map(func(row):return [row.item_id,row.quantity]))
+	check(not project.is_empty() and project[0].available and [196,197,198].all(func(id):return docked.cargo.entries.any(func(row):return int(row.item_id)==id)),"141 did not hand over the Chromo Plasma blueprint and the plasma kit")
+	if failures:return
+	# 142 refused while the kit is not fitted (3205).
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()) or not await release_application_flight():check(false,app.status.text);return
+	var refused: RefCounted=app.session.flight_owner().select_map_destination(KERNSTAL)
+	print("SUPERNOVA Kernstal without the kit: ",refused._notices.snapshot() if refused!=null else app.session.flight_owner().error)
+	check(refused!=null and int(refused._pending_destination)!=KERNSTAL,"A course to Kernstal was set without the plasma kit")
+	if failures or not await dock_application():return
+	# The collector needs a turret slot: change to a hull with one if needed.
+	if int(catalogue.tables.ships[int(docked.loadout.ship_id)].stats.turret_slots)<1:
+		var offers: Array=await shipyard()
+		var credits:=int(app.session.station_owner().snapshot().contracts.credits)
+		var fit: Array=offers.filter(func(row):var stats: Dictionary=catalogue.tables.ships[int(row.ship_id)].stats;return stats.turret_slots>=1 and stats.secondary_slots>=1 and stats.equipment_slots>=4 and int(row.unit_price)<credits)
+		print("SUPERNOVA Var Hastra yard ",offers.map(func(row):return [row.ship_id,row.unit_price])," turret hulls ",fit.map(func(row):return row.ship_id))
+		if fit.is_empty() or not app.equipment_action("open") or not app.equipment_action("buy_ship",offers.find(fit[0])):check(false,"No turret hull for the plasma collector: "+app.session.error);return
+		app.equipment_action("close")
+		if not fit_item(85):return
+	for id in [196,198,197]:
+		if not fit_item(id):return
+	var slots: Array=app.session.station_owner().snapshot().loadout.slots
+	print("SUPERNOVA plasma kit fitted ",slots.filter(func(slot):return slot!=null).map(func(slot):return [slot.item_id,slot.get("quantity",1)]))
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()) or not await release_application_flight():check(false,app.status.text);return
+	if not await travel_application(KERNSTAL):return
+	check(not app.session.flight_owner()._gas.is_empty(),"Kernstal has no gas clouds with the spectral filter fitted")
+	if failures or not app.open_secondary_menu(now_us) or not app.session.confirm_secondary(197,now_us):check(false,"The Ion Lambda could not be selected: "+app.status.text+app.session.error);return
+	await capture_free_application("supernova-kernstal-cloud")
+	var radio_ids:=[];var shots:=[0]
+	var lesson:=func(frame):
+		var heard: Array=frame._radio.snapshot().get("finished",[])
+		if heard.size()<4 or heard[3]!=true:return KERNSTAL_WAYPOINT
+		var sparks: Array=frame._gas.get("sparks",[]);var at: Vector3=app.session.snapshot().player_pose.origin
+		if not frame._gas_ionized or sparks.is_empty():return KERNSTAL_CLOUD
+		sparks.sort_custom(func(a,b):return Vector3(a.position).distance_to(at)<Vector3(b.position).distance_to(at))
+		return Vector3(sparks[0].position)
+	var fire:=func(frame):
+		var heard: Array=frame._radio.snapshot().get("finished",[])
+		var pose: Transform3D=app.session.snapshot().player_pose;var to: Vector3=KERNSTAL_CLOUD-pose.origin
+		if frame._gas_ionized or heard.size()<4 or heard[3]!=true or to.length()>9000 or (-pose.basis.z).angle_to(to)>0.05 or shots[0]>=10:return false
+		shots[0]+=1;return true
+	if not await story_flight(142,"kernstal",lesson,func(_frame):return [],radio_ids,900,600.0,fire):return
+	var plasma: Array=app.session.snapshot().cargo.entries.filter(func(row):return int(row.item_id) in [201,202,203,204])
+	print("SUPERNOVA Kernstal radio ",radio_ids," shots ",shots[0]," plasma ",plasma.map(func(row):return [row.item_id,row.quantity]))
+	check(2945 in radio_ids and not plasma.is_empty(),"The Kernstal lesson ended without plasma in the hold")
+	await capture_free_application("supernova-kernstal-sparks")
+	if failures or not await khador_jump(VAR_LUPRA) or not await dock_application():return
+	# 143: build the Chromo Plasma at Var Lupra; the test supplies what is missing.
+	project=app.session.station_owner().snapshot().contracts.blueprints.entries.filter(func(row):return row.item_id==210)
+	var materials: Array=Array(catalogue.tables.items[210].arrays[0]);var seeds:=[];var supply:=[]
+	var hold: Array=app.session.station_owner().snapshot().cargo.entries
+	for index in materials.size():
+		var need:=int(project[0].remaining[index]);var have:=0
+		for row in hold:if int(row.item_id)==int(materials[index]):have+=int(row.quantity)
+		if need>have:seeds.append([int(materials[index]),need-have])
+		if need>0:supply.append([int(materials[index]),need])
+	print("SUPERNOVA blueprint 210 remaining ",project[0].remaining," seeds ",seeds)
+	if not seeds.is_empty() and not seed_cargo(seeds):return
+	if not app.equipment_action("open"):check(false,app.session.error);return
+	for row in supply:
+		if not app.equipment_action("supply_blueprint",210,row[0],row[1]):check(false,"Supplying plasma "+str(row[0])+" failed: "+app.session.error);return
+	app.equipment_action("close")
+	check(app.session.station_owner().snapshot().cargo.entries.any(func(row):return row.item_id==210),"The Chromo Plasma was not built")
+	if failures or not await take_station_talk(143,144):return
+	# 144: launched at Var Lupra for Harval's fly-past; 145: the array destroyed.
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()) or not await release_application_flight():check(false,app.status.text);return
+	await capture_free_application("supernova-harval-144")
+	var scene:=[]
+	if not await ride_story_jump(scene,120) or not await enter_story_arrival("supernova-145"):return
+	print("SUPERNOVA 144 radio ",scene)
+	check(app.session.snapshot().campaign_cursor==145 and [2957,2958,2959,2960].all(func(id):return id in scene),"Harval's fly-past did not play through to 145")
+	if failures or not await wait_story_cursor(146,"supernova-array"):return
+	if not await dock_application() or not await take_station_talk(146,147):return
+	# 147: Alice's call in the Void; the story moves on as the pilot leaves.
+	if not await void_visit(147,148,[2977,2986]):return
+	# 148: the penthouse bar at Kalun Amir plays 151's talk (-> 152).
+	if not await travel_and_talk(96,148,152):return
+	if not await void_visit(152,153,[3009,3016]):return
+	if not await travel_and_talk(98,153,154):return
+	# 154: the Valkyrie ambush lines in the Void; the story takes the pilot out.
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()) or not await release_application_flight():check(false,app.status.text);return
+	if not await void_drive(true):return
+	scene=[]
+	if not await ride_story_jump(scene,400) or not await enter_story_arrival("supernova-155"):return
+	print("SUPERNOVA 154 radio ",scene," at ",app.session.snapshot().location.station_id)
+	check(3028 in scene and 3055 in scene and app.session.snapshot().campaign_cursor==155,"The Valkyrie scene did not play through to 155")
+	if failures or not await wait_story_cursor(156,"supernova-brent-call"):return
+	if not await travel_and_talk(99,156,157,true):return
+	# 157: the final battle at Var Lupra; the reversal; through to Luur (158).
+	if not await depart_to(VAR_LUPRA):return
+	await capture_free_application("supernova-armada")
+	radio_ids=[]
+	var enemies:=func(frame):
+		var actors: Array=frame._encounter.combat_snapshot().actors;var at: Vector3=app.session.snapshot().player_pose.origin
+		return range(11,22).filter(func(id):return int(actors[id].vitals.hull)>0 and actors[id].get("active",false) and int(actors[id].get("actor_mode",0))!=5 and actors[id].pose.origin.distance_to(at)<40000)
+	if not await story_flight(157,"armada",func(_frame):return null,enemies,radio_ids,1200):return
+	print("SUPERNOVA 157 radio ",radio_ids)
+	scene=[]
+	if app.session.status=="running" and not await ride_story_jump(scene,60):return
+	if not await enter_story_arrival("supernova-158"):return
+	check(int(app.session.snapshot().location.station_id)==111 and app.session.snapshot().campaign_cursor==158,"The reversal did not take the ship to Luur for 158")
+	await capture_free_application("supernova-luur-158")
+	radio_ids=[]
+	var harval:=func(frame):
+		var actors: Array=frame._encounter.combat_snapshot().actors
+		return [0] if int(actors[0].vitals.hull)>0 and actors[0].get("active",false) and int(actors[0].get("actor_mode",0))!=5 else []
+	if failures or not await story_flight(158,"harval",func(_frame):return null,harval,radio_ids,1200):return
+	print("SUPERNOVA 158 radio ",radio_ids)
+	check(3093 in radio_ids and app.session.flight_owner()._objective.snapshot().campaign_cursor==159,"Harval's end did not move the story to 159")
+	await capture_free_application("supernova-harval-dead")
+	if failures or not await khador_jump(10) or not await dock_application() or not await take_station_talk(159,160):return
+	# 160-161: the two cutaways; then docked at Maissa at 162.
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()) or not await release_application_flight():check(false,app.status.text);return
+	for leg in [[93,161,"supernova-maissa-161"],[93,162,"supernova-maissa-162"]]:
+		scene=[]
+		if not await ride_story_jump(scene,300) or not await enter_story_arrival(leg[2]):return
+		print("SUPERNOVA ",leg[2]," radio ",scene)
+		check(int(app.session.snapshot().location.station_id)==leg[0] and app.session.snapshot().campaign_cursor==leg[1],"The story did not reach %d at Maissa"%leg[1])
+		if failures:return
+	if not await dock_application():return
+	await capture_free_application("supernova-won")
+	check(app.save_station(false) and app.load_station(),"Saving and resuming the won Supernova career failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==162,"Fresh Resume lost the end of Supernova")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-162.gof2save"))==OK,"The 162 checkpoint could not be kept")
+	# After the end: Ginoya without radiation.
+	if failures or not await depart_to(VAR_LUPRA):return
+	await capture_free_application("supernova-ginoya-after")
+	check(float(app.session.flight_owner()._gamma_rate)==0.0,"Var Lupra still drains gamma after the reversal")
+
+## A call in the alien world: into the Void, the lines from `lines[0]` to
+## `lines[1]`, then back out with the drive; the story moves to `next`.
+func void_visit(cursor: int,next: int,lines: Array) -> bool:
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()) or not await release_application_flight():check(false,app.status.text);return false
+	if not await void_drive(true):return false
+	var heard:=[]
+	for tick in 1200:
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in heard:heard.append(int(radio.text_id))
+		if int(lines[1]) in heard and not radio.get("visible",false):break
+		if not application_step():return false
+		if tick%10==0:await process_frame
+	print("SUPERNOVA Void ",cursor," radio ",heard)
+	check(int(lines[0]) in heard and int(lines[1]) in heard,"The Void call for %d did not play"%cursor)
+	await capture_free_application("supernova-void-%d"%cursor)
+	if failures or not await void_drive(false):return false
+	check(app.session.snapshot().campaign_cursor==next,"Leaving the Void did not move the story to %d"%next)
+	return failures==0 and await dock_application()
+
+## The Khador Drive into the Void (its question answered yes) or back out.
+func void_drive(into: bool) -> bool:
+	resume_application_focus()
+	for pressed in [true,false]:
+		var key:=InputEventKey.new();key.physical_keycode=KEY_K;key.keycode=KEY_K;key.pressed=pressed;app._unhandled_input(key)
+	if into:
+		check(app.map_panel.visible and app.map_panel.snapshot().get("void_prompt",false),"The drive did not offer the Void")
+		if failures:return false
+		for pressed in [true,false]:
+			var key:=InputEventKey.new();key.physical_keycode=KEY_ENTER;key.keycode=KEY_ENTER;key.pressed=pressed;app._unhandled_input(key)
+	var began:=now_us
+	app.session.rebase_time(now_us)
+	while app.session.status=="running" and now_us-began<15000000:
+		if not application_step():return false
+	check(app.session.status=="drive_arrival_transition_required","The drive did not leave %s: %s"%["for the Void" if into else "the Void",app.session.status])
+	if failures or not app.enter_drive_arrival(now_us,4096,flight_world_seconds()):check(false,app.status.text);return false
+	return failures==0 and await release_application_flight()
+
+## One story flight until the story leaves `cursor`: hacking puzzles are
+## solved with the arrow keys, `hostiles` (frame -> ids) are fought, and
+## otherwise the ship flies to `goal` (frame -> point or null to hold),
+## slowing to a stop within `slow` of it (a docking point).
+func story_flight(cursor: int,label: String,goal: Callable,hostiles: Callable,radio_ids: Array,seconds:=1200,slow:=2500.0,fire: Callable=Callable()) -> bool:
+	var began:=now_us;var hacking:=false
+	app.session.rebase_time(now_us)
+	for tick in seconds*10:
+		var frame: RefCounted=app.session.flight_owner()
+		if app.session.status!="running" or frame._objective.snapshot().campaign_cursor!=cursor:return true
+		if frame.death_active():check(false,label+": the player died "+str(app.session.snapshot().player.vitals));return false
+		var radio: Dictionary=frame._radio.snapshot() if frame._radio!=null else {}
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		var puzzle: Dictionary=frame.story_hack_state()
+		if not puzzle.is_empty():
+			if not hacking:hacking=true;print("SUPERNOVA ",label," hacking at ",(now_us-began)/1000000," s");await capture_free_application("supernova-%s-hack"%label)
+			if not bool(puzzle.get("won",false)) and String(puzzle.turning).is_empty() and int(puzzle.solved_ms)<0:
+				var moves:=hack_solution(puzzle.board,puzzle.target)
+				if not moves.is_empty():
+					for pressed in [true,false]:
+						var key:=InputEventKey.new();key.physical_keycode=KEY_LEFT if moves[0]=="left" else KEY_RIGHT;key.keycode=key.physical_keycode;key.pressed=pressed;app._unhandled_input(key)
+			if not application_step():return false
+			if tick%5==0:await process_frame
+			continue
+		hacking=false
+		if not hostiles.call(frame).is_empty():
+			var over:=func():return hostiles.call(app.session.flight_owner()).is_empty() or app.session.flight_owner()._objective.snapshot().campaign_cursor!=cursor
+			if not await fight_until(label,over,func(_actors):return hostiles.call(app.session.flight_owner()),radio_ids):return false
+			continue
+		var state: Dictionary=app.session.snapshot()
+		var target: Variant=goal.call(frame)
+		var steer:=Vector2.ZERO;var want:=0.0
+		if target is Vector3:
+			steer=missile_steering({"basis":state.player_pose.basis,"position":state.player_pose.origin},target)
+			want=1.0 if state.player_pose.origin.distance_to(target)>slow else 0.0
+		for adjustment in 10:
+			var current: float=app.session.snapshot().input_throttle
+			if absf(current-want)<.01 or frame.cinematic_input_blocked():break
+			if not app.session.action("throttle_up" if current<want else "throttle_down"):check(false,app.session.error);return false
+		if fire.is_valid() and fire.call(frame) and not app.session.action("missiles"):check(false,app.session.error);return false
+		now_us+=100000
+		if not app.session.step(now_us,steer if not frame.cinematic_input_blocked() else Vector2.ZERO,false,false,Vector2.ZERO):check(false,app.session.error);return false
+		app.present_session()
+		await dismiss_medal()
+		if tick%10==0:await process_frame
+		if tick%600==0:print("SUPERNOVA ",label," ",(now_us-began)/1000000," s dock ",frame._story_dock.get("docked")," status ",frame._story_dock.get("status")," radio ",radio_ids)
+	check(false,label+": the story stayed at "+str(cursor)+" radio "+str(radio_ids))
+	return false
+
 ## Leave the station and Khador-jump to `station` (no jump when already there).
 func depart_to(station: int) -> bool:
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return false
@@ -1964,6 +2292,8 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"supernova109":return state.campaign_cursor==109
 		"supernova117":return state.campaign_cursor==117
 		"supernova128":return state.campaign_cursor==128
+		"supernova135":return state.campaign_cursor==135
+		"supernova141":return state.campaign_cursor==141
 	return super.resumed_contract_valid(state)
 
 ## A player crossing hostile Vossk space fights off the ships closing in

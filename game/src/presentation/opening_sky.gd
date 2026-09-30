@@ -24,6 +24,8 @@ var _orientation := Basis.IDENTITY
 var _initial_descriptors:=[]
 var _escape_descriptor:={}
 var _stored_channels:=false
+## Animated supernova flare layers: [{model, speed}] (Ginoya, 90-157).
+var _flares:=[]
 
 func enable_foreground_particles(library: RefCounted,visuals: RefCounted,bindings: RefCounted,environment: Dictionary,seed_value: Variant=null) -> bool:
 	if selection.is_empty() or foreground_particles!=null or bindings==null:
@@ -148,6 +150,8 @@ func _build_location(library: RefCounted, visuals: RefCounted, bindings: RefCoun
 		{"mesh_id":int(data.star_mesh_base)+variant,"texture_id":int(data.star_texture_base)+variant,"mode":0},
 		{"mesh_id":int(data.sky_mesh_id),"texture_id":int(data.sky_texture_id),"mode":2}]
 	_initial_descriptors=descriptors.duplicate(true)
+	var World=load("res://src/content/valkyrie_world_definitions.gd")
+	descriptors.append_array(World.supernova_flares(int(opening.system_id),int(opening.get("campaign_cursor",-1))))
 	if with_escape:
 		var escape: Dictionary=bindings.opening_staging.get("escape",{})
 		if bindings.opening_staging.get("escape_camera",{}).is_empty() or escape.is_empty():return reject("Escape sky requires supported escape declarations")
@@ -185,13 +189,14 @@ func _build_layers(library: RefCounted,visuals: RefCounted,bindings: RefCounted,
 		if bytes.is_empty(): return reject(library.error)
 		var decoded := reader.decode(bytes)
 		if decoded.is_empty(): return reject(reader.error)
-		if int(decoded.keyframes)!=0: return reject("Animated opening sky is not supported")
+		var animated: bool=descriptor.has("speed")
+		if int(decoded.keyframes)!=0 and not animated: return reject("Animated opening sky is not supported")
 		var image: Image = visuals.load_image(texture_path)
 		if image==null: return reject(visuals.error)
 		var model := Model.new()
 		model.build(decoded,image,null,descriptor.mode,cache)
 		model.name="Stars" if descriptor.mode==0 else ("Nebula" if layers.size()==1 else "ArrivalNebula")
-		model.visible=layers.size()<2
+		model.visible=layers.size()<2 or animated
 		model.set_meta("source_resource_id",descriptor.mesh_id)
 		model.set_meta("source_texture_id",descriptor.texture_id)
 		model.set_meta("source_texture_path",texture_path)
@@ -208,6 +213,12 @@ func _build_layers(library: RefCounted,visuals: RefCounted,bindings: RefCounted,
 		for instance in model.instances:
 			instance.custom_aabb=AABB(Vector3.ONE*-1e9,Vector3.ONE*2e9)
 			instance.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if animated:
+			# Flares scroll their texture and fade to half strength (scalar
+			# track 100 -> 50; assumed to be brightness), drawn additively.
+			model.name="SupernovaFlares";_flares.append({"model":model,"speed":float(descriptor.speed),"length":maxf(load("res://src/content/animation_tracks.gd").range_of(model.surfaces).y,1.0)})
+			for material in model.materials:material.set_shader_parameter("surface_tint",Color(0.5,0.5,0.5,1.0))
+			add_child(model);continue
 		add_child(model);layers.append(model)
 	_orientation=rotation_value.basis
 	basis=_orientation
@@ -251,7 +262,7 @@ func prepare_view(view: Dictionary, escape: Dictionary = {},elapsed_ms:=0) -> Di
 	if foreground_particles!=null:
 		particles=foreground_particles.prepare_view(view.pose,elapsed_ms)
 		if particles==null:error=foreground_particles.error;return {}
-	return {"pose":view.pose,"relocated":relocated,"clouds":clouds,"particles":particles}
+	return {"pose":view.pose,"relocated":relocated,"clouds":clouds,"particles":particles,"elapsed_ms":elapsed_ms}
 
 func commit_view(prepared: Dictionary) -> void:
 	# Keep bounds near the viewer. Shader projection excludes this translation.
@@ -261,11 +272,15 @@ func commit_view(prepared: Dictionary) -> void:
 		layers[1].visible=not relocated;layers[2].visible=relocated
 		selection.layers=[_initial_descriptors[0].duplicate(),(_escape_descriptor if relocated else _initial_descriptors[1]).duplicate()]
 	if space_fog!=null:space_fog.commit_view(prepared.clouds)
+	var World=load("res://src/content/valkyrie_world_definitions.gd")
+	for flare in _flares:
+		# Looping animation (assumed to loop, as the sun's).
+		flare.model.set_source_time(fmod(float(World.SUPERNOVA.overlay_start_ms)+float(prepared.get("elapsed_ms",0))*float(flare.speed),float(flare.length)))
 	if foreground_particles!=null:foreground_particles.commit_view(prepared.particles)
 
 func clear() -> void:
 	for child in get_children(): child.free()
-	layers.clear();selection.clear();_initial_descriptors=[];_escape_descriptor={};_orientation=Basis.IDENTITY;transform=Transform3D.IDENTITY;error=""
+	layers.clear();_flares=[];selection.clear();_initial_descriptors=[];_escape_descriptor={};_orientation=Basis.IDENTITY;transform=Transform3D.IDENTITY;error=""
 	_stored_channels=false
 	space_fog=null
 	foreground_particles=null

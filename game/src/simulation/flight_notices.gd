@@ -52,7 +52,8 @@ func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,lo
 	# Refused story courses (Supernova passenger berths); optional like 44.
 	var campaign:=load("res://src/content/valkyrie_campaign_definitions.gd")
 	for need in campaign.ENTRY_REQUIREMENTS.values():
-		definitions[str(campaign.ENTRY_NOTICE_BASE+int(need.text_id))]={"text_ids":[int(need.text_id)],"separator":"","rgb":[255,255,255]}
+		for text in [int(need.text_id),int(need.get("free_cargo_text_id",need.text_id))]:
+			definitions[str(campaign.ENTRY_NOTICE_BASE+text)]={"text_ids":[text],"separator":"","rgb":[255,255,255]}
 	# Volatile cargo refuses the Khador Drive (text 601).
 	var volatile_text:=int(load("res://src/content/valkyrie_world_definitions.gd").VOLATILE_GOODS.drive_text_id)
 	definitions[str(campaign.ENTRY_NOTICE_BASE+volatile_text)]={"text_ids":[volatile_text],"separator":"","rgb":[255,255,255]}

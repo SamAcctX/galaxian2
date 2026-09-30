@@ -96,6 +96,9 @@ func _for_location(bindings: RefCounted, catalogues: RefCounted, opening: Dictio
 	layout.sky_index=int(system.sky_index)
 	layout.mesh_id=int(data.mesh_id);layout.mesh_path=mesh_path
 	if ordinary:layout.campaign_cursor=int(opening.campaign_cursor)
+	var swell: float=load("res://src/content/valkyrie_world_definitions.gd").supernova_sun_scale(int(opening.system_id),int(opening.get("campaign_cursor",-1)))
+	for entry in layout.entries:
+		if entry.kind=="sun" and swell!=1.0:entry.scale=f32(float(entry.scale)*swell)
 	return layout
 
 func arrange(station_id: Variant, planet_type: Variant, ordered_station_ids: Variant, opening_scale := true,arrival_rules: Dictionary={}) -> Dictionary:

@@ -86,7 +86,28 @@ static func story_offers(station_id: int,system_id: int,cursor: int) -> Array:
 ## the pre-supernova sky (mesh 17805, texture 10070). The sun grows 1.37x after
 ## the 89 blast.
 const SUPERNOVA:={"system_id":27,"until_cursor":157,"intro_cursor":89,"intro_sky":[17805,10070],
-	"sky":[17815,10080],"overlay_meshes":[17824,17825],"overlay_textures":[[105,10084],[158,10085]],"sun_scale":1.37}
+	"sky":[17815,10080],"overlay_meshes":[17824,17825],"overlay_textures":[[105,10084],[158,10085]],
+	# Sun size factor: [up to cursor, scale] (it swells at 106).
+	"sun_scales":[[105,0.9918],[157,1.3733]],
+	# Flares: [up to cursor, animation speed]; they start 1 s into their loop.
+	"overlay_speeds":[[106,1.0],[157,1.5]],"overlay_start_ms":1000}
+
+## The supernova flare layers at this location: [{mesh_id, texture_id, speed}],
+## none outside Ginoya, at the blast (89) or after the reversal.
+static func supernova_sun_scale(system_id: int,cursor: int) -> float:
+	if system_id!=int(SUPERNOVA.system_id):return 1.0
+	for row in SUPERNOVA.sun_scales:
+		if cursor<=int(row[0]):return float(row[1])
+	return 1.0
+
+static func supernova_flares(system_id: int,cursor: int) -> Array:
+	if system_id!=int(SUPERNOVA.system_id) or cursor==int(SUPERNOVA.intro_cursor) or cursor>int(SUPERNOVA.until_cursor):return []
+	var texture:=-1;var speed:=0.0
+	for row in SUPERNOVA.overlay_textures:
+		if cursor<=int(row[0]):texture=int(row[1]);break
+	for row in SUPERNOVA.overlay_speeds:
+		if cursor<=int(row[0]):speed=float(row[1]);break
+	return SUPERNOVA.overlay_meshes.map(func(id):return {"mesh_id":int(id),"texture_id":texture,"mode":2,"speed":speed})
 ## Gamma loss per second in each Ginoya orbit: [[from cursor, rate], ...]
 ## (the last band whose cursor is reached applies). A fitted gamma shield
 ## (sort 38) cuts it by its attribute-52 percentage. Below 15 a HUD warning;

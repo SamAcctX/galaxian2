@@ -88,9 +88,8 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 		var path: String=bindings.resolve(resource_id,"mesh")
 		if path.is_empty():return reject(bindings.error)
 		var material: Dictionary=bindings.material_for_mesh(path,"high")
-		# Types past the imported table (Talidor, Ginoya) draw with their own material.
-		var imported: bool=type<bindings.mido_travel.map.planet_sizes.size()
-		if material.is_empty() or (imported and (material.get("id")!=int(rules.material_id) or material.get("render_type")!=int(rules.render_type) or int(material.texture_ids[0])!=int(rules.texture_id))):return reject("Local map planet material is unsupported")
+		# Expansion planets (Valkyrie types 20-21, Talidor, Ginoya) draw with their own material.
+		if material.is_empty() or material.get("render_type")!=int(rules.render_type):return reject("Local map planet material is unsupported")
 		rows.append({"station_id":int(station.id),"name":station.name,"planet_type":type,
 			"jumpgate":int(station.id)==int(system.fields[6]),
 			"current":int(station.id)==int(location.station_id),

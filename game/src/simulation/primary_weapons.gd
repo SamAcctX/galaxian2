@@ -3,6 +3,7 @@ extends RefCounted
 ## Actor permission, world scheduling, target lists and consequences belong to
 ## the encounter owner. No unsupported primary is silently replaced or omitted.
 const Turret=preload("res://src/simulation/manual_turret.gd")
+const COLLECTOR_SORT:=35
 const Projectiles = preload("res://src/simulation/ordinary_projectiles.gd")
 const Weapons = preload("res://src/simulation/weapon_loadout.gd")
 const Slots = preload("res://src/simulation/equipment_slots.gd")
@@ -93,7 +94,9 @@ func _configure_loadout(bindings: RefCounted,catalogues: RefCounted,mounts: RefC
 	# Empty slots stay absent; they do not shift the authored category-slot number.
 	primary.reverse()
 	var forward_count:=primary.size()
-	primary.append_array(checked.categories[2])
+	# A plasma collector (sort 35) sits in the turret slot but fires nothing;
+	# the flight's gas clouds own what it does.
+	primary.append_array(checked.categories[2].filter(func(entry):return int(items[entry.item_id].properties.get(2,-1))!=COLLECTOR_SORT))
 	var staged := []
 	var resolved := []
 	if _next_mount_id > 9223372036854775807 - primary.size(): return reject("Weapon handle limit exceeded")
