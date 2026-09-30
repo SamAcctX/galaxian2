@@ -19,12 +19,15 @@ func prepare_model(model: Node3D) -> bool:
 			error="Unsupported additive model vertex or UV animation layout";return false
 		var material:=ShaderMaterial.new();material.shader=ShaderSource
 		material.set_shader_parameter("diffuse_texture",model.materials[i].get_shader_parameter("diffuse_texture"))
+		material.set_shader_parameter("vertex_colors",not surface.colors.is_empty())
 		model.materials[i]=material;model.instances[i].material_override=material
 		model.instances[i].top_level=true
 	return true
 
 static func supported_surface(surface: Dictionary) -> bool:
-	return not surface.uvs.is_empty() and not surface.normals.is_empty() and surface.colors.is_empty() and surface.tracks.get("uv",[]).is_empty()
+	# Expansion projectiles also scroll their texture; that scroll is not drawn
+	# yet and the texture stays still.
+	return not surface.uvs.is_empty() and not surface.normals.is_empty()
 
 func prepare_surfaces(animation: Dictionary, root: Transform3D, parent_rgba: PackedByteArray, global_tint: Vector4) -> Array:
 	error=""

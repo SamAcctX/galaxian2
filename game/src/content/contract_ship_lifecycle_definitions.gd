@@ -55,7 +55,8 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 			data.actors.append(debris.actors[actor.actor_id]);continue
 		var row: Dictionary={}
 		for key in ["actor_id","actor_kind","hull_catalogue_id","subtype","population_group"]:row[key]=actor[key]
-		row.hostile=actor.population_group=="pirate" if data.ordinary_standing.is_empty() else bool(data.actor_policies[actor.actor_id].initial_hostile)
+		# Story casts declare their hostility per group.
+		row.hostile=actor.population_group=="pirate" if data.ordinary_standing.is_empty() and not data.mission.get("story_job",false) else bool(data.actor_policies[actor.actor_id].initial_hostile)
 		for model in data.lifecycle.cargo_models:
 			if int(model.actor_kind)==actor.actor_kind:
 				row.cargo_model_id=int(model.cargo_model_id);row.cargo_model_resource=model.cargo_model_resource

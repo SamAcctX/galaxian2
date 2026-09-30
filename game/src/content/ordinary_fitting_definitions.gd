@@ -1,5 +1,6 @@
 extends RefCounted
 ## Ordinary installed slots, additive capacities and primary model assignments.
+const GENERIC_IMPACT_MODEL_ID:=14600
 const Beams=preload("res://src/content/beam_primary_definitions.gd")
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
 const VALUES = {"scope":"ordinary_station_fitting","unit_quantity":1,"stack_category":1,"demount_capacity_guard":false,"passenger_subtype":20,"passenger_property":34,"cargo_subtype":12,"cargo_property":22,"replacement_text_id":276,"protected_text_id":312,"tutorial_departure_cursors":[6,7],"primary":{"ordinary_kinds":[0,1,2],"capacity":20,"dispersed_kind":2,"dispersed_capacity":25,"dispersion":{"steps":2,"draw_scale":0.01,"center_scale":0.005},"projectile_model_ids":[6754,6755,6756,6760,6761,6762,6763,6764,6765,-1,-1,-1,6788,6789,6790,6791,6792,6793,6794,6795,6796,6797,6798,6799,6800,6801,6802,6803,14236,14237,14238,14247,14247,14247,14247,14247,14249,14249,14249,14249,14249,14684,14684,14684,14680,14680,14682,6792,6797,6789,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,14050,14052,14054,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,6900,6901,6902,14293,6905,6906,6799,14297,-1,-1,-1,-1,-1,-1,-1,-1,-1,14239,14235,-1,-1,14247,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,6788,6788,6788,14247,14247,14247,-1,-1,-1,-1,14247,-1,-1,6796,-1,-1,-1,-1,19091,6803,19094,27338],"impact_model_ids":[14600,14600,14600,14601,14601,14602,14602,14603,14603,14600,14603,14602,14601,14601,14601,14601,14604,14604,14604,14605,14605,14605,14606,14606,14606,14606,14606,14606,14606,14605,14602,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,14603,14605,14601,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,14600,14600,14600,14603,-1,-1,-1,-1,-1,-1,-1,-1,-1,14600,-1,-1,-1,14600,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,14600,-1,-1,14600,-1,-1,-1,14601,14601,14606,14602,-1]}}
@@ -23,6 +24,9 @@ static func _primary_row(data: Dictionary,item_id: int,kind: int) -> Dictionary:
 	var thermal:=preload("res://src/content/thermal_primary_definitions.gd").primary(item_id,kind)
 	if item_id<0 or item_id>=data.primary.projectile_model_ids.size() or (kind not in [0,1,2] and thermal.is_empty()):return {}
 	var model:=int(data.primary.projectile_model_ids[item_id]);var impact:=int(data.primary.impact_model_ids[item_id])
+	# Expansion guns carry a projectile but no impact row; they use the generic
+	# impact (assumption: the table gives no other effect for them).
+	if impact<0 and model>=0:impact=GENERIC_IMPACT_MODEL_ID
 	var beam:=Beams.primary(item_id,kind)
 	if not beam.is_empty():model=beam.model_id
 	if model<0 or impact<0:return {}

@@ -183,6 +183,8 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 		_radio_resources=RadioResources.new()
 		if state.radio.has("message"):
 			if not _radio_resources.prepare_local_traffic(library,bindings,visuals,int(state.campaign_cursor)):return fail(_radio_resources.error)
+		elif state.radio.has("scripted_events"):
+			if not _radio_resources.prepare_events(library,bindings,visuals,state.radio.scripted_events):return fail(_radio_resources.error)
 		elif not _radio_resources.prepare(library,bindings,visuals,state.campaign_cursor):return fail(_radio_resources.error)
 		radio=RadioPanel.new();overlay.add_child(radio);radio.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		if not radio.configure(bindings.base_content_id,bindings.binding_id,library.active_language,_radio_resources.speakers,state.campaign_cursor) or not radio.configure_art(library,bindings,visuals):return fail(radio.error)

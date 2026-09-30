@@ -95,6 +95,9 @@ func poll_contract(cargo: RefCounted,scenery: RefCounted,encounter: RefCounted,a
 	var result: Dictionary=encounter.evaluate_contract_session(_contracts,radio_active,alive,periodic_due)
 	if result.is_empty():return reject(encounter.error)
 	_contracts=result.session
+	var story: Dictionary=_contracts.story_transition()
+	if not story.is_empty() and story.campaign_cursor!=_state.campaign_cursor:
+		_state.campaign_cursor=int(story.campaign_cursor);_state.mission=story.mission.duplicate(true)
 	return true
 
 func observe_scenery(scenery: RefCounted) -> bool:

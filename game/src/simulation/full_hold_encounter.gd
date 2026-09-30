@@ -785,6 +785,17 @@ func evaluate_contract_session(session: RefCounted,radio_active: bool=false,poll
 	_control=result.controller;_combat=_control.combat_owner()
 	return {"session":result.session,"opened":result.opened}
 
+## A story recipe's radio cue turns its cast hostile and fixes one standing.
+func apply_story_hostility(axis: int,value: int) -> bool:
+	error=""
+	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story hostility requires a contract encounter")
+	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	if not control._combat.apply_story_hostility(axis,value):return reject(control._combat.error)
+	_control=control;_combat=control._combat
+	return true
+
+func story_hostility_applied() -> bool:return _combat!=null and _combat.story_hostility_applied()
+
 func acknowledge_contract_result(session: RefCounted,serial: int) -> Dictionary:
 	error=""
 	if _contract_context.is_empty() or not is_instance_of(session,load("res://src/simulation/contract_session.gd")):return fail("No retained contract result is available")

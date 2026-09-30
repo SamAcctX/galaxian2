@@ -6,6 +6,7 @@ const Story=preload("res://src/content/full_hold_story_definitions.gd")
 const Vitals=preload("res://src/simulation/combat_vitals.gd")
 const Ambush=preload("res://src/content/selected41_population_definitions.gd")
 const Epilogue=preload("res://src/content/campaign_epilogue_definitions.gd")
+const StoryFlights=preload("res://src/content/valkyrie_flight_definitions.gd")
 
 ## The entry owner has already admitted the retained side job. Cast counts and
 ## result conditions share this recipe; downstream owners do not infer them.
@@ -23,7 +24,11 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 	var ship_groups:=[]
 	var attackers:=0
 	var ship_state:={"mode":int(rules.pirate.mode),"active":bool(rules.pirate.active),"targeting_blocked":bool(rules.pirate.targeting_blocked)}
+	var story:=StoryFlights.recipe(mission) if StoryFlights.is_story_job(mission) else {}
 	match int(mission.kind):
+		156,160:
+			count=int(story.actor_count);ship_groups=story.ship_groups
+			ship_state={"mode":0,"active":true,"targeting_blocked":false}
 		1:
 			var base:=int(Vitals.single(scaled*5.0))+3
 			attackers=int(Vitals.single(base+Vitals.single(base*Vitals.single(float(context.difficulty)-0.5))))
@@ -110,6 +115,7 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 	var readout:={}
 	match int(mission.kind):
 		0:success={"kind":"never"}
+		156,160:success=story.success
 		1:success={"kind":7,"end_actor":attackers}
 		2,9:
 			success={"kind":18,"first_actor":0,"end_actor":attackers}
@@ -135,21 +141,22 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 	return {"track":"side_job","cursor":context.campaign_cursor,"station_id":context.station_id,"system_id":loadout.system_id,
 		"mission":mission.duplicate(true),"next_cursor":context.campaign_cursor,"entry":"ordinary_flight","world":{"station":true,"portal":true,"asteroid_field":true},
 		"cast":{"kind":"contract","actor_count":count,"debris_count":debris_count,"ship_state":ship_state,"placement":placement,
-			"rival_actor_id":rival_actor_id,"player_last_ids":player_last_ids,"player_only_ids":player_only_ids,"count_draw":count_draw,"ship_groups":ship_groups,"local_faction":local_faction,"operations":rules.duplicate(true)},"briefing":[],"radio":[],"sequences":[],"readout":readout,
+			"rival_actor_id":rival_actor_id,"player_last_ids":player_last_ids,"player_only_ids":player_only_ids,"count_draw":count_draw,"ship_groups":ship_groups,"local_faction":local_faction,"operations":rules.duplicate(true)},"briefing":[],"radio":story.get("radio",[]),"sequences":[],"readout":readout,
+		"story_advance":story.get("story",{}),"turn_hostile":story.get("turn_hostile",{}),
 		"continuation":contract_continuation(mission),
 		"result":{"success":success,"failure":failure,"periodic_failure":periodic,"actor_count":count,
-			"defer_to_station":defers_station_result(mission),"retire_failure":true,"freeze_clock_on_result":true,"reset_while_blocked":false,"policy":bindings.early_contracts.flight_results.duplicate(true)}}
+			"defer_to_station":defers_station_result(mission),"retire_failure":true,"freeze_clock_on_result":story.is_empty(),"reset_while_blocked":false,"policy":bindings.early_contracts.flight_results.duplicate(true)}}
 
 ## Cast roles supply faction, initial placement and hostility to the shared
 ## small-ship factory. A sampled opposing faction is a construction input.
 static func contract_ship_options(cast: Dictionary,id: int,enemy_faction: int,client_faction: int) -> Dictionary:
 	var rival: bool=id==int(cast.rival_actor_id)
 	var result:={"rival":rival,"faction":client_faction if rival else 8,"population_group":"rival" if rival else "pirate",
-		"origin":"zero" if rival else "path","policy":{},"ship_state":cast.ship_state.duplicate(true),"position":{},"route_start":-1,"clear_cargo":false,"group_index":id,"cargo_override":{},"name_text_id":-1,"subtype":0}
+		"origin":"zero" if rival else "path","policy":{},"hull_catalogue_id":-1,"ship_state":cast.ship_state.duplicate(true),"position":{},"route_start":-1,"clear_cargo":false,"group_index":id,"cargo_override":{},"name_text_id":-1,"subtype":0}
 	for group in cast.get("ship_groups",[]):
 		if id<int(group.first_actor) or id>=int(group.end_actor):continue
 		result.faction=enemy_faction if int(group.faction)==-2 else int(group.faction)
-		for key in ["population_group","origin","policy","position","route_start","clear_cargo","cargo_override","name_text_id","subtype"]:result[key]=group.get(key,result[key])
+		for key in ["population_group","origin","policy","position","route_start","clear_cargo","cargo_override","name_text_id","subtype","hull_catalogue_id"]:result[key]=group.get(key,result[key])
 		result.group_index=id-int(group.first_actor)
 		result.ship_state.merge(group.get("ship_state",{}),true)
 		break

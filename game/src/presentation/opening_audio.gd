@@ -98,9 +98,18 @@ func configure(library: RefCounted, bindings: RefCounted, audio_seed: int=0, cam
 	var local_flight: bool=OrdinaryFlight.combat_population(bindings,local_combat,mission_context)
 	var admitted_silent: bool=mission_context!=null and mission_context.recipe().radio.is_empty()
 	if admitted_silent:dialogue={}
+	# A side-job recipe with its own radio (story flights) voices those lines.
+	var scripted: Array=mission_context.recipe().radio if mission_context!=null and not mission_context.advances_campaign() else []
+	if not scripted.is_empty():
+		if not RadioVoice.parameters(bindings.opening_dialogue.get("voice")):return reject("Recipe radio requires the verified voice declarations")
+		var voice: Dictionary=bindings.opening_dialogue.voice.duplicate(true)
+		voice.event_ids=scripted.map(func(row):return int(row.voice_event_id))
+		voice.text_ids=scripted.map(func(row):return int(row.text_id))
+		dialogue={"campaign_cursor":campaign_cursor,"events":scripted,"voice":voice}
 	var authored_radio: bool=Dialogue.valid_parameters(dialogue,campaign_cursor) and ((campaign_cursor in [28,29] and Story.combat_population(bindings,local_combat)) or OrdinaryFlight.Dekato.combat_population(bindings,local_combat))
 	var story_radio: bool=(campaign_cursor==14 and local_combat.get("actors",[]).any(func(actor):return actor.get("convoy",false))) or campaign_cursor==16 or OrdinaryFlight.Kappa.combat_population(bindings,local_combat) or OrdinaryFlight.Authored.combat_population(bindings,local_combat) or authored_radio
 	if admitted_silent:story_radio=mission_context.advances_campaign()
+	if not scripted.is_empty():story_radio=true
 	if campaign_cursor==29 and not authored_radio and not admitted_silent:return reject("Authored radio requires its selected story cast")
 	if campaign_cursor==2:
 		_npc_count=0
@@ -135,6 +144,8 @@ func configure(library: RefCounted, bindings: RefCounted, audio_seed: int=0, cam
 	_resources=Resources.new()
 	if local_flight and not story_radio and not contest:
 		if not _resources.configure_local_traffic(library,bindings):return reject(_resources.error)
+	elif not scripted.is_empty():
+		if not _resources.configure(library,bindings,campaign_cursor,dialogue):return reject(_resources.error)
 	# Ordinary Void and the contest have combat but no timed radio. Resolve
 	# their original clips through the base bank without inventing a radio scene.
 	elif not _resources.configure(library,bindings,0 if admitted_silent or contest or local_combat.get("ordinary_void",false) or campaign_cursor in [2,4,26] else campaign_cursor):return reject(_resources.error)

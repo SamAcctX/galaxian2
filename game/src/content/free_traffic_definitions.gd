@@ -43,8 +43,7 @@ static func population(bindings: RefCounted,packet: Dictionary,rank: Variant,dif
 	if visit and (source.get("mission_kind")!=context.mission_kind or not actors.is_empty()):return {}
 	if not source.get("hostile_selected") is bool or source.get("hostile_faction") not in [int(rules.enemy_factions[int(world.faction)]),int(rules.pirate_faction)]:return {}
 	if not source.hostile_selected and source.groups.get("hostile")!=0:return {}
-	var hulls: Dictionary=bindings.early_contracts.encounter_construction.hulls
-	if not Numbers.integer(packet.get("player_ship_id"),0,hulls.factions.size()-1):return {}
+	if not packet.get("player_ship_id") is int or not load("res://src/simulation/mission_context.gd").base_player_hull(bindings,packet.player_ship_id):return {}
 	var count:=0
 	for role in Delivery.group_order(bindings,context):
 		var n: Variant=source.groups.get(role)

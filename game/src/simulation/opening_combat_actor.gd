@@ -703,6 +703,13 @@ func enable_contract_combat(bindings: RefCounted) -> bool:
 	_state.contract_combat=true;_state.forced_hostile=false
 	return true
 
+## A story recipe turns its whole cast against the player mid-flight.
+func apply_story_hostility() -> bool:
+	if not _state.get("contract_combat",false) or _hostility.is_empty():return reject("Story hostility requires a connected contract ship")
+	_state.script_hostile=true;_state.hostile=true;_state.friendly=false
+	_hostility.updated_hostile=true
+	return true
+
 func enable_bakka_combat(bindings: RefCounted) -> bool:
 	if not _state.get("bakka_ship",false) or bindings==null:return reject("B'akka damage requires its prepared story ship")
 	if bindings.base_content_id!=_state.base_content_id or bindings.binding_id!=_state.binding_id:return reject("B'akka lifecycle belongs to another content pack")

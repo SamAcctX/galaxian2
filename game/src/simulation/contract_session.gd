@@ -30,6 +30,7 @@ const ContractProgress=preload("res://src/simulation/contract_progress.gd")
 const Wingmen=preload("res://src/simulation/wingman_contract.gd")
 const Recipe=preload("res://src/content/mission_recipe.gd")
 const BaseMedals=preload("res://src/simulation/base_medal_progress.gd")
+const StoryFlights=preload("res://src/content/valkyrie_flight_definitions.gd")
 const Valkyrie=preload("res://src/content/valkyrie_campaign_definitions.gd")
 var error:=""
 var _state:={}
@@ -1154,7 +1155,11 @@ func _selected_contract_context(station_id: int,bindings: RefCounted) -> Diction
 		"campaign_cursor":_state.campaign_cursor,"station_id":station_id,
 		"rank":_state.rank,"difficulty":_state.difficulty,"reputation":_state.reputation.duplicate(true),
 		"mission":mission,"client_faction":-1,"contact_name":""}
-	if mission.is_empty():return result
+	if mission.is_empty():
+		# A story flight here takes the cast; a kept side job without a flight
+		# at this station stays accepted.
+		result.mission=StoryFlights.story_job(bindings,_state.campaign_cursor,station_id)
+		return result
 	var retained: Dictionary=_state.get("accepted_contact",{})
 	var accepted: Dictionary=_state.offers.get(_state.active_offer_id,{}) if retained.is_empty() else {"consumed":true,"offer":retained.offer}
 	if accepted.is_empty() or not accepted.consumed or not ContractProgress.matches(_state,accepted.offer,_catalogues):
@@ -1194,7 +1199,7 @@ func retained_station_context(bindings: RefCounted,station_id: int) -> Dictionar
 	return {"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,
 		"campaign_cursor":_state.campaign_cursor,"station_id":station_id,"rank":_state.rank,
 		"difficulty":_state.difficulty,"reputation":_state.reputation.duplicate(true),
-		"mission":{},"client_faction":-1,"contact_name":""}
+		"mission":StoryFlights.story_job(bindings,_state.campaign_cursor,station_id),"client_faction":-1,"contact_name":""}
 
 func poll_station(equipment: RefCounted,bindings: RefCounted=null) -> bool:
 	error=""
@@ -1419,6 +1424,21 @@ func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_result
 	if _flight.has("ordinary_context") or not poll_results or flight.mission_context_owner().recipe().result.get("defer_to_station",false):return {"session":next,"controller":flight,"opened":false}
 	var result: Dictionary=flight.poll_contract_result(radio_active,periodic_poll_allowed)
 	if result.is_empty():return fail(flight.error)
+	var advance: Dictionary=flight.mission_context_owner().recipe().get("story_advance",{})
+	if not advance.is_empty():
+		# A story flight moves the career on without a result screen or pay;
+		# its cast and radio keep running in the same world.
+		if result.mode==0 or _flight.has("story_transition"):return {"session":next,"controller":flight,"opened":false}
+		if result.mode!=int(_rules.flight_results.success_result_mode) or not flight.acknowledge_contract_result():return fail("The story flight has no silent advance: "+flight.error)
+		var progress: Dictionary=next._state.progress
+		var earned:=Career.calculate_progress(_progress_rules,int(advance.campaign_cursor),progress.player_kills,progress.pirate_kills,progress.other_score)
+		if earned.is_empty():return fail("The story advance exceeds the supported career range")
+		next._state.progress.merge(earned,true);next._state.rank=earned.rank
+		next._state.campaign_cursor=int(advance.campaign_cursor);next._state.progress.campaign_cursor=int(advance.campaign_cursor)
+		next._flight.story_transition=advance.merged({"station_id":_state.station_id},true)
+		next._flight.retired=true
+		next._flight.settlement=flight.snapshot().combat.get("contract_settlement",{}).duplicate(true)
+		return {"session":next,"controller":flight,"opened":false}
 	var opened: bool=result.mode!=0
 	if opened:
 		var rules: Dictionary=_rules.delivery_results
@@ -1546,6 +1566,9 @@ func _acknowledge_flight_campaign(controller: RefCounted,transition: Dictionary)
 	next._flight.story_transition=transition.duplicate(true)
 	return next
 
+## The story step a live flight has already taken, if any.
+func story_transition() -> Dictionary:return _flight.get("story_transition",{}).duplicate(true)
+
 func _valid_flight(controller: RefCounted) -> bool:
 	if _flight.is_empty() or not is_instance_of(controller,load("res://src/simulation/combat_training_control.gd")):return reject("The retained contract has no matching flight owner")
 	if _flight_identity==null or controller.flight_identity()!=_flight_identity:return reject("The contract lost its retained native flight")
@@ -1555,7 +1578,7 @@ func _valid_flight(controller: RefCounted) -> bool:
 	var transition: Dictionary=_flight.get("story_transition",{})
 	if transition.is_empty():
 		if scene.get("campaign_cursor")!=_state.campaign_cursor:return reject("The contract flight belongs to another campaign stage")
-	elif not _flight.has("ordinary_context") or scene.get("campaign_cursor")!=transition.from_cursor or _state.campaign_cursor!=transition.campaign_cursor or _state.station_id!=transition.station_id:
+	elif (not _flight.has("ordinary_context") and not _flight.has("encounter")) or scene.get("campaign_cursor")!=transition.from_cursor or _state.campaign_cursor!=transition.campaign_cursor or _state.station_id!=transition.station_id:
 		return reject("The retained world lost its acknowledged story transition")
 	if _flight.has("ordinary_context"):
 		if _flight.has("selected40_entry") and scene.get("selected40_sequence",{}).get("elapsed_ms",-1)<_flight.elapsed_ms:return reject("Selected40 career lost its retained native sequence clock")

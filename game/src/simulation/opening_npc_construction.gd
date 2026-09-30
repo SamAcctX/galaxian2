@@ -262,6 +262,8 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 			var faction:=int(rules.hulls.factions[hull])
 			if faction in factions:possible_hulls.append(hull)
 		if int(rules.hulls.early_vossk_faction) in factions:possible_hulls.append(int(rules.hulls.early_vossk_hull))
+		for group in recipe.cast.ship_groups:
+			if int(group.get("hull_catalogue_id",-1))>=0:possible_hulls.append(int(group.hull_catalogue_id))
 	for hull in possible_hulls:
 		if bindings.resolve_ship_model(hull).is_empty():return reject(bindings.error)
 	if int(recipe.cast.debris_count)>0:
@@ -1088,7 +1090,8 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 		var options: Dictionary={} if story else load("res://src/content/mission_recipe.gd").contract_ship_options(_contract,id,enemy_faction,int(_contract.context.client_faction))
 		if not story:faction=int(options.faction)
 		var freighter: bool=options.get("subtype",0)==1
-		var hull: int=int(_contract.freighter_hulls[faction]) if freighter else int(_contract.rival_hull) if story and rival else _contract_hull(random,faction)
+		var fixed_hull: int=int(options.get("hull_catalogue_id",-1))
+		var hull: int=fixed_hull if fixed_hull>=0 else int(_contract.freighter_hulls[faction]) if freighter else int(_contract.rival_hull) if story and rival else _contract_hull(random,faction)
 		var at_origin: bool=rival or path.is_empty() or options.get("origin")=="zero"
 		var origin: Vector3=Vector3.ZERO if at_origin else path[random.next_int(path.size())]
 		var sampled:=_sample_actor(id,origin,random,freighter)
@@ -1132,6 +1135,9 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 				"path_scatter":
 					position=path[int(options.position.index)]
 					for axis in 3:position[axis]+=int(options.position.offsets[axis])+random.next_int(int(options.position.bounds[axis]))
+				"player_offset":
+					position=_contract.player_position+Vector3(options.position.offset)
+					for axis in 3:position[axis]+=random.next_int(int(options.position.bound[axis]))
 				"scenery_midpoint":
 					var anchor:=int(scenery_positions.size()/2)+int(options.group_index)
 					if anchor>=scenery_positions.size() or not scenery_positions[anchor] is Vector3 or not scenery_positions[anchor].is_finite():return fail("The admitted cast requires its world scenery anchors")

@@ -11,7 +11,7 @@ const MAC_ALTERNATE := {"duration":[-352,32],"selection":[-212,44],"text_getter"
 static func parameters(data: Variant, count: int = 23) -> bool:
 	# Selected40/41 supply seven/eight separately source-verified timed lines. The
 	# caller still validates their scene-specific text/event mapping first.
-	if count not in [1, 2, 3, 5, 6, 7, 8, 23]: return false
+	if count not in [1, 2, 3, 4, 5, 6, 7, 8, 23]: return false
 	if not data is Dictionary or data.size()!=VALUES.size()+3 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
 		var value: Variant=data.get(key)

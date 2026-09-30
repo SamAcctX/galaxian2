@@ -98,7 +98,7 @@ func configure_scripted(bindings: RefCounted,library: RefCounted,layout: RefCoun
 		var lines: PackedStringArray=layout.wrap(library.strings[int(row.text_id)])
 		if not layout.error.is_empty():return fail(layout.error)
 		counts.append(lines.size())
-	var data:={"events":events.duplicate(true),"timing":bindings.opening_dialogue.timing.duplicate(true)}
+	var data:={"events":events.duplicate(true),"timing":bindings.opening_dialogue.timing.duplicate(true),"scripted":true}
 	return _configure_records(bindings,library,data,counts,cursor)
 
 func configure_from_layout(bindings: RefCounted, library: RefCounted, layout: RefCounted, campaign_cursor: int = 0) -> bool:
@@ -411,6 +411,8 @@ func snapshot() -> Dictionary:
 	var result := _identity.duplicate(true)
 	result.merge({"started": _started.duplicate(), "finished": _finished.duplicate(), "active_event": _active, "visible": _visible})
 	if _definition.events.any(func(row): return int(row.condition) == 25): result.waypoint_observations = _waypoint_indices.duplicate()
+	# Presentation prepares speakers and line layout from recipe radio events.
+	if _definition.get("scripted",false): result.scripted_events = _definition.events.duplicate(true)
 	if _active >= 0:
 		var row: Dictionary = _definition.events[_active]
 		result["text_id"] = int(row.text_id)

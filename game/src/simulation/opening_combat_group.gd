@@ -42,6 +42,8 @@ var _display_available:=false
 var _contract_encounter:={}
 var _bakka_encounter:={}
 var _contract_settlement:={}
+## Standing fixed by a story hostility turn: {axis, value}.
+var _story_standing:={}
 const EMPTY_RECOVERY={"accepted_quantity":0,"kind9_quantity":0,"friendly_cargo_taken":false,"item_flags":[]}
 var _recovery_totals:={}
 var _selected40_world: RefCounted
@@ -63,6 +65,7 @@ func clear() -> void:
 	_reputation=null
 	_provocation=null;_reputation_rules={};_contact_random={};_display_available=false
 	_contract_encounter={}
+	_story_standing={}
 	_bakka_encounter={}
 	_contract_settlement={}
 	_recovery_totals={}
@@ -583,6 +586,22 @@ func begin_contact_pass(random_state: Dictionary, display_available: bool) -> bo
 func contact_random_state() -> Dictionary:return _contact_random.duplicate(true)
 
 func current_reputation() -> Dictionary:
+	var standing:=_current_reputation()
+	if not _story_standing.is_empty() and not standing.is_empty():standing.axes[int(_story_standing.axis)]=int(_story_standing.value)
+	return standing
+
+## The story turns every contract ship hostile and fixes one faction standing.
+func apply_story_hostility(axis: int,value: int) -> bool:
+	error=""
+	if _contract_encounter.is_empty() or axis not in [0,1] or value<-100 or value>100:return reject("Story hostility requires a contract cast and a valid standing")
+	for id in _actors.size():
+		if _actors[id].snapshot().get("contract_ship",false) and not _writable(id).apply_story_hostility():return reject(_actors[id].error)
+	_story_standing={"axis":axis,"value":value}
+	return true
+
+func story_hostility_applied() -> bool:return not _story_standing.is_empty()
+
+func _current_reputation() -> Dictionary:
 	if _provocation==null and not _contract_encounter.is_empty():
 		return _contract_settlement.reputation.duplicate(true) if not _contract_settlement.is_empty() else _contract_encounter.context.reputation.duplicate(true)
 	if _provocation==null:return {}
@@ -939,6 +958,7 @@ func fork_for_frame() -> RefCounted:
 	copy._contract_encounter=_contract_encounter
 	copy._bakka_encounter=_bakka_encounter
 	copy._contract_settlement=_contract_settlement.duplicate(true)
+	copy._story_standing=_story_standing
 	# Recovery replaces its small observation only on pickup.
 	copy._recovery_totals=_recovery_totals
 	# Actors are copy-on-write: both groups share them until _writable() detaches one.

@@ -25,7 +25,9 @@ var _decoded_bytes := 0
 var _language_index := 0
 var _voice_ids := {}
 
-func configure(library: RefCounted, bindings: RefCounted, campaign_cursor: int = 0) -> bool:
+## `scripted` is a prepared recipe dialogue (events and voice) used in place
+## of the cursor's scene radio.
+func configure(library: RefCounted, bindings: RefCounted, campaign_cursor: int = 0, scripted: Dictionary = {}) -> bool:
 	error="";unsupported.clear();_banks.clear();_clips.clear();_sound_cache.clear();_channel_cache.clear();_decoded_bytes=0;_definitions={};_library=null
 	_bank_order.clear()
 	_language_index=0;_voice_ids.clear()
@@ -35,8 +37,8 @@ func configure(library: RefCounted, bindings: RefCounted, campaign_cursor: int =
 	if bindings.audio.is_empty():return reject("This binding pack has no audio declarations")
 	_definitions=Definitions.normalized(bindings.audio);_library=library
 	_language_index=int(_definitions.default_language)
-	var dialogue: Dictionary=Dialogue.select(bindings,campaign_cursor)
-	if campaign_cursor!=0 and not Dialogue.valid_parameters(dialogue,campaign_cursor):return reject("Scene radio is unavailable")
+	var dialogue: Dictionary=scripted if not scripted.is_empty() else Dialogue.select(bindings,campaign_cursor)
+	if scripted.is_empty() and campaign_cursor!=0 and not Dialogue.valid_parameters(dialogue,campaign_cursor):return reject("Scene radio is unavailable")
 	var voice: Dictionary=dialogue.get("voice",{})
 	if not voice.is_empty():
 		if not RadioVoice.parameters(voice,dialogue.events.size()):return reject("Invalid radio voice capability")

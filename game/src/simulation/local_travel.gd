@@ -89,6 +89,18 @@ func rebase_campaign(bindings: RefCounted,cursor: int,mission: Dictionary) -> bo
 	if not _stations.has(_state.acquired_station_id):_state.acquired_station_id=-1
 	return true
 
+## A story flight moves the career on silently in space.
+func rebase_story_flight(bindings: RefCounted,cursor: int,mission: Dictionary) -> bool:
+	error=""
+	var flights=load("res://src/content/valkyrie_flight_definitions.gd")
+	var current: Variant=_state.get("campaign_cursor")
+	if _state.get("phase")!="flight" or flights.story_job(bindings,current,_state.get("station_id")).is_empty() or cursor!=flights.Campaign.next_cursor(int(current)) or mission!=flights.Campaign.mission(cursor):return reject("Local navigation lost its story flight")
+	_state.campaign_cursor=cursor
+	_stations=Definitions.navigation_stations(bindings,cursor,_state.station_id).filter(func(id):return id==_state.station_id or load("res://src/content/free_navigation_definitions.gd").destination_supported(bindings,cursor,mission,id))
+	if not _stations.has(_state.candidate_station_id):_state.candidate_station_id=-1;_state.acquisition_ms=0
+	if not _stations.has(_state.acquired_station_id):_state.acquired_station_id=-1
+	return true
+
 func supports_destination(station_id: int) -> bool:
 	return not _state.is_empty() and station_id!=_state.station_id and _stations.has(station_id)
 

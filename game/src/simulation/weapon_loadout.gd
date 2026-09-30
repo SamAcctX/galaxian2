@@ -53,6 +53,8 @@ func resolve(item_id: Variant, equipment_ids: Array) -> Dictionary:
 	var category: Variant = item_value(item,int(_data.item_category_value_index))
 	var kind: Variant = item_value(item,int(_data.item_type_value_index))
 	if not Vitals.integer(category) or category>2 or not Vitals.integer(kind): return fail("Selected item has no supported weapon category/type")
+	# The expansion's type-25 guns are built exactly like the type-2 spread gun.
+	if category==0 and kind==25:kind=2
 	var properties: Variant = item.get("properties")
 	if not properties is Dictionary: return fail("Weapon has no property table")
 	var values := {}

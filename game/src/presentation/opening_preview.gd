@@ -1713,6 +1713,8 @@ func present_session() -> void:
 		if session.has_station_recipe_context() and not session.presentation_active() and not session.is_paused() and session.campaign_story_ready():
 			if not _begin_campaign_story():return
 		if not session.poll_wingman_farewell(station_panel,_save_station_candidate):transition_error(session.error);return
+	# Medal notices belong to the idle station; one left open at launch waits for the next dock.
+	if not session is StationSession and medal_notice.visible:medal_notice.clear()
 	if session is MissionSession:
 		if not session.can_control():clear_input()
 		if session.is_paused():status.text="Paused · Esc / controller Start resumes"

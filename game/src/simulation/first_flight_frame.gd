@@ -299,6 +299,10 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	if entry.campaign_cursor in [7,16] or (mission_world and not mission_context.recipe().radio.is_empty()) or rescue_world or (sahi_world and entry.campaign_cursor in [24,25,28,29]) or (entry.campaign_cursor==14 and not ordinary_world):
 		var resources:=RadioResources.new();radio=Radio.new()
 		if not resources.prepare(library,bindings,null,int(entry.campaign_cursor)) or not radio.configure(bindings,library,resources.line_counts,int(entry.campaign_cursor)):return reject(resources.error+radio.error)
+	elif mission_context!=null and not mission_world and not mission_context.recipe().radio.is_empty():
+		var resources:=RadioResources.new();radio=Radio.new()
+		var layout:=resources.prepare_layout(library,bindings)
+		if layout==null or not radio.configure_scripted(bindings,library,layout,int(entry.campaign_cursor),mission_context.recipe().radio):return reject(resources.error+radio.error)
 	elif entry.campaign_cursor in [10,11,12] or ordinary_world or free_world:
 		var resources:=RadioResources.new();radio=LocalRadio.new()
 		var layout:=resources.prepare_layout(library,bindings)
@@ -805,7 +809,13 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		completion_opened=next._objective.snapshot().dialogue.visible
 	elif not instruction_opened and next._objective is ContractObjective:
 		var radio_active: bool=next._radio!=null and next._radio.snapshot().get("visible",false)
+		var before_cursor: int=next._objective.snapshot().campaign_cursor
 		if not next._objective.poll_contract(next._cargo,next._scenery,next._encounter,next._player.snapshot().vitals.hull>0,radio_active,next._briefing.mission_poll_due()):reject(next._objective.error);return null
+		var story_state: Dictionary=next._objective.snapshot()
+		if story_state.campaign_cursor!=before_cursor:
+			# A story flight has moved on in space: navigation and docking follow it.
+			if next._local_travel==null or not next._local_travel.rebase_story_flight(_story_bindings,story_state.campaign_cursor,story_state.mission):reject("Story navigation: "+str(next._local_travel.error if next._local_travel!=null else "missing travel"));return null
+			next._return_rules=FreeFlight.docking(_story_bindings,int(_entry.location.station_id),story_state.campaign_cursor)
 		var visit_clock: Dictionary=next._briefing.snapshot()
 		if next._rescue!=null:
 			if not next._objective.poll_campaign_result(next._encounter,next._radio,next._rescue,next._briefing.mission_poll_due() and not next.death_active() and not next.contract_result_pending()):reject(next._objective.error);return null
@@ -1404,10 +1414,13 @@ func _observe_radio() -> bool:
 		if result.is_empty():return reject(_radio.error)
 		_radio=result.radio;_radio_events=result.events;_random=result.random_state
 		return true
-	if _mission_context!=null and _mission_context.advances_campaign():
+	if _mission_context!=null and (_mission_context.advances_campaign() or not _mission_context.contract_context().is_empty()):
 		var elapsed: int=int(_briefing.snapshot().world_elapsed_ms)
 		if not _radio.bind_context(_mission_context.radio_observation(elapsed)):return reject(_radio.error)
 		_radio_events=_radio.step_context(elapsed)
+		var turn: Dictionary=_mission_context.recipe().get("turn_hostile",{})
+		if not turn.is_empty() and _radio.error.is_empty() and _radio.snapshot().finished[int(turn.radio_index)] and not _encounter.story_hostility_applied():
+			if not _encounter.apply_story_hostility(int(turn.reputation_axis),int(turn.reputation_value)):return reject(_encounter.error)
 	elif _void_environment!=null or _entry.campaign_cursor==28:
 		_radio_events=_radio.step(int(_briefing.snapshot().world_elapsed_ms),{},0)
 	elif _sahi!=null:
