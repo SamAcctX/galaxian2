@@ -1649,7 +1649,15 @@ func _observe_radio() -> bool:
 		# Recipe actions at a flight time (78: the station leaves, the pirates wake).
 		for action in _mission_context.recipe().get("timed_actions",[]):
 			if elapsed<int(action.after_ms):continue
-			if action.action=="hide_station" and not _station_hidden:
+			# A cutaway (kind 170 scenes): the player is held and unharmable for
+			# the whole flight. Assumption: the camera stays on the ship.
+			# It ends once the story has moved on, so the story's jump can go.
+			if action.action=="cutaway":
+				var held: bool=int(_objective.snapshot().campaign_cursor)==int(_entry.get("campaign_cursor",-1))
+				if held!=_story_locked:
+					_story_locked=held
+					if not _player.set_permissions(bool(_player.snapshot().active),not held):return reject(_player.error)
+			elif action.action=="hide_station" and not _station_hidden:
 				_station_hidden=true;_return_rules={}
 			elif action.action=="lock_player":
 				# No steering for the scene; "invulnerable" also keeps the ship unharmed.

@@ -1095,18 +1095,33 @@ func fly_supernova_luur() -> void:
 	while app.session.status=="running" and now_us-waited<30000000:
 		await dismiss_medal()
 		if not application_step():return
+	# The cutaway holds the ship from the start: no controls to release.
+	if not await enter_story_arrival("Luur",false):return
+	# 95: the cutaway at Thynome plays with the ship held; then on to Alioth.
+	check(int(app.session.snapshot().location.station_id)==10 and app.session.snapshot().campaign_cursor==95,"The ship did not arrive at Thynome for 95")
+	await capture_free_application("supernova-thynome-95")
+	if failures:return
+	var heard:=[]
+	if not await ride_story_jump(heard,300):return
+	print("SUPERNOVA Thynome cutaway radio ",heard)
+	check(2544 in heard and heard.size()>=17,"The Thynome cutaway did not play through")
+	if failures or not await enter_story_arrival("Thynome"):return
+	check(int(app.session.snapshot().location.station_id)==98 and app.session.snapshot().campaign_cursor==96,"The ship did not arrive at Alioth for 96: "+str([app.session.snapshot().location.station_id,app.session.snapshot().campaign_cursor]))
+	await capture_free_application("supernova-alioth-96")
+	if failures or not await dock_application() or not await take_station_talk(96,97):return
+	check(app.save_station(false) and app.load_station(),"Saving and resuming at Alioth failed: "+app._save_notice.text)
+	if failures:return
+	check(app.session.station_owner().snapshot().campaign_cursor==97,"Fresh Resume lost Brent's talk at Alioth")
+	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-97.gof2save"))==OK,"The Alioth checkpoint could not be kept")
+
+## Take the story's move out of a finished flight (drive or local arrival).
+func enter_story_arrival(label: String,release:=true) -> bool:
 	match app.session.status:
 		"drive_arrival_transition_required":check(app.enter_drive_arrival(now_us,4096,flight_world_seconds()),app.status.text)
 		"local_arrival_transition_required":check(app.enter_local_arrival(now_us,4096,flight_world_seconds()),app.status.text)
-		_:check(false,"The story did not take the ship on after Luur: "+app.session.status)
-	if failures or not await release_application_flight():return
-	check(int(app.session.snapshot().location.station_id)==10 and app.session.snapshot().campaign_cursor==95,"The ship did not arrive at Thynome for 95")
-	await capture_free_application("supernova-thynome-95")
-	if failures or not await dock_application():return
-	check(app.save_station(false) and app.load_station(),"Saving and resuming at Thynome failed: "+app._save_notice.text)
-	if failures:return
-	check(app.session.station_owner().snapshot().campaign_cursor==95,"Fresh Resume lost the Luur evacuation")
-	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-95.gof2save"))==OK,"The Thynome checkpoint could not be kept")
+		_:check(false,"The story did not take the ship on after "+label+": "+app.session.status)
+	if not release:return failures==0
+	return failures==0 and await release_application_flight()
 
 ## Fit an item from the hold, making room in its category if needed.
 func fit_item(item_id: int) -> bool:

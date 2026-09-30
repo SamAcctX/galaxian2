@@ -6,8 +6,8 @@ const SPANS = {"local_arrival_planet_initial":[843293,157],"local_arrival_planet
 
 # Native composition.
 ## Types 20–22 are the Valkyrie planets; the resource tables carry them.
-## Types 24-25 are Supernova planets (Var Lupra, Midantha).
-const SUPPORTED_TYPES=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,24,25]
+## Types 24-26 are Supernova planets (Var Lupra, Midantha, Katashán).
+const SUPPORTED_TYPES=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,24,25,26]
 const MAC_SPANS = {"local_arrival_planet_initial":[843925,157],"local_arrival_planet_sizes":[843105,103],"local_arrival_special_planet":[873058,80],"local_arrival_planet_type":[852056,10],"local_arrival_pose_selection":[-43078,586],"local_arrival_cache_getter":[856000,14],"local_arrival_station_list":[735926,10],"local_arrival_list_constructor":[734764,236],"local_arrival_list_loader":[-679366,1100],"local_arrival_face_origin":[-729894,480],"local_arrival_planet_scale":[1550078,4],"local_arrival_distance_scale":[1550114,4]}
 
 static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALUES)

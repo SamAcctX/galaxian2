@@ -10,13 +10,13 @@ const LAST_CURSOR:=83
 ## after the main game).
 const WON_CURSOR:=84
 ## Supernova continues a won Valkyrie career: the in-flight call at 84 plays
-## cursor 85's lines and moves the story to 86. The story is built up to 95.
-const STORY_END:=95
+## cursor 85's lines and moves the story to 86. The story is built up to 117.
+const STORY_END:=117
 const TALK:=11
 ## Systems revealed when a conversation is acknowledged. The original reveals
 ## Herjaza and Skavac as missions 55 and 63 begin; Loma is visible to every
 ## expansion owner, so a continued career receives it with the first call.
-const UNLOCKS:={45:[25],54:[23],62:[24],88:[27,28]}
+const UNLOCKS:={45:[25],54:[23],62:[24],88:[27,28],116:[30]}
 ## Ship changes applied as the story enters a cursor: a loaned hull with its
 ## fitted items [item, slot], or the owned ship handed back.
 const SHIPS:={
@@ -31,15 +31,25 @@ const SHIPS:={
 const GOODS_KIND:=166
 ## Kinds whose target is an ordinary station you dock at and leave: talks, goods,
 ## convoy hunts (finished elsewhere) and the 10 s flight (164).
-const STATION_KINDS:=[8,11,163,166]
+const STATION_KINDS:=[8,11,163,166,171,172]
 ## Kind 8 (68) is a delivery: the goods are handed over ("consume").
 ## Assumption: one Void Essence (the amount the original takes is not recovered).
 const DELIVERY_KIND:=8
-const GOODS:={58:{"item_id":179,"quantity":10},68:{"item_id":175,"quantity":1,"consume":true}}
+const GOODS:={58:{"item_id":179,"quantity":10},68:{"item_id":175,"quantity":1,"consume":true},
+	104:{"item_id":206,"quantity":1},112:{"item_id":146,"quantity":1}}
+## Bar talks (171) finish in the target station's lounge once its intro is
+## over; 172 also needs GOODS in the hold (112: one Magnetar Juice).
+const BAR_KINDS:=[171,172]
+const BAR_GOODS_KIND:=172
+## 116: the first lounge visit at each of these Pescal Inartu (18) stations
+## shows its line once [speaker, text, voice]; the visits are kept as bits of
+## story_status (Sobotnik 94 shares Maissa's bit 3). Maissa (93) ends the hunt.
+const BAR_HUNT:={116:{"system_id":18,"stations":{90:[0,0,2705,1561],91:[1,57,2706,1562],92:[2,0,2707,1563],94:[3,58,2708,1564]}}}
 ## Blueprints handed over as the story enters a cursor: mission 58 grants item
 ## 179 with 5 of material 127 already supplied at the Valkyrie; 59 takes it back.
 ## 72: Netor hands over the Disruptor blueprint (183), recipe only.
-const BLUEPRINTS:={58:{"item_id":179,"grant":true,"material_id":127,"quantity":5,"station_id":101},59:{"item_id":179,"grant":false},72:{"item_id":183,"grant":true}}
+const BLUEPRINTS:={58:{"item_id":179,"grant":true,"material_id":127,"quantity":5,"station_id":101},59:{"item_id":179,"grant":false},72:{"item_id":183,"grant":true},
+	104:{"item_id":206,"grant":true,"material_id":163,"quantity":10,"station_id":10}}
 ## Talks paying extra per story-counter kill (60: 50000 x (Liberator kills + 1)).
 ## The counter and cleared-station mask end with that talk.
 const COUNTER_REWARD:={60:50000}
@@ -48,7 +58,8 @@ const COUNTER_REWARD:={60:50000}
 ## Goods put in the hold [item, quantity]; the original ignores hold space.
 ## 72: Netor gives the Void Essence back (175). 84 (the win): one S'kloptorr
 ## Rum (137) and a Khador Drive (85).
-const HOLD_GRANTS:={72:[[175,1]],84:[[137,1],[85,1]],94:[[205,1]]}
+## 102: Brent's Nirai SPP-C1 (207) for the Tadram evacuation.
+const HOLD_GRANTS:={72:[[175,1]],84:[[137,1],[85,1]],94:[[205,1]],102:[[207,1]]}
 ## Shipyard changes: "clear" empties the shipyard first; each [ship, price] is
 ## then offered (price -1 = the normal local price, added only when missing).
 ## 75: Kothar's shipyard is emptied. 77: Khador's Cronus (37) for free. 84:
@@ -64,22 +75,27 @@ const REMOVED_ITEMS:={78:[85]}
 const BLUEPRINT_RESET:={78:101}
 ## Goods taken from the hold as the story enters the cursor [item, quantity]
 ## (89: ten Luxury, 104; assumption: fewer are simply all taken).
-const REMOVED_GOODS:={89:[[104,10]]}
+## 113: the Magnetar Juice handed over at Nepis (112).
+const REMOVED_GOODS:={89:[[104,10]],113:[[146,1]]}
 ## Stations whose visit is undone as the story enters the cursor (90: the 89
 ## cutscene's forced Naneroh visit; the visited-stations count drops by one).
 const UNVISIT:={90:[109]}
 ## Kind 184 counts people down from this value (the mission's status value);
 ## it completes at 0. Kept in career progress as "story_status".
-const STORY_STATUS:={91:10,92:10,94:83}
+const STORY_STATUS:={91:10,92:10,94:83,102:1700,116:0}
 ## Required before the mission's target can be picked on the star map or
 ## docked at; otherwise text_id is shown and the course is refused.
-const ENTRY_REQUIREMENTS:={91:{"passenger_berths":10,"text_id":3203},94:{"passenger_berths":1,"text_id":3203}}
+const ENTRY_REQUIREMENTS:={91:{"passenger_berths":10,"text_id":3203},94:{"passenger_berths":1,"text_id":3203},
+	105:{"fitted_item":206,"text_id":3206}}
 ## Where the player is put as the story enters the cursor (from a talk's
 ## acknowledgement or a flight's advance): "gate" = arrive at the station's
 ## orbit through the gate in flight, "docked" = the station screen.
 ## keep_vitals: hull, shield, armour and gamma carry over.
 const MOVE_ON_ENTRY:={89:{"station_id":109,"arrive":"gate"},90:{"station_id":10,"arrive":"docked"},
-	92:{"station_id":113,"arrive":"gate","keep_vitals":true},95:{"station_id":10,"arrive":"gate","keep_vitals":true}}
+	92:{"station_id":113,"arrive":"gate","keep_vitals":true},95:{"station_id":10,"arrive":"gate","keep_vitals":true},
+	96:{"station_id":98,"arrive":"gate","keep_vitals":true},99:{"station_id":10,"arrive":"gate"},100:{"station_id":120,"arrive":"docked"},
+	106:{"station_id":111,"arrive":"gate","keep_vitals":true},108:{"station_id":10,"arrive":"gate","keep_vitals":true},
+	109:{"station_id":114,"arrive":"gate"},110:{"station_id":10,"arrive":"docked"}}
 ## cursor: [kind, reward, station]; -1 station means any station.
 const MISSIONS:={
 	84:[-1,0,0],
@@ -93,6 +109,12 @@ const MISSIONS:={
 	# moved (STORY_STATUS counts down); 95 is the next block's first cutaway.
 	85:[164,0,0],86:[11,0,100],87:[4,0,10],88:[11,0,10],89:[4,0,109],90:[11,0,10],
 	91:[184,0,110],92:[184,0,113],93:[11,0,114],94:[184,0,111],95:[170,0,10],
+	# 170 = cutaway scene, 171/172 = bar talk. 107 does not exist: 106 moves
+	# the story twice. 117 is the next block's first talk.
+	96:[11,0,98],97:[4,0,85],98:[11,0,120],99:[170,0,10],100:[4,0,98],101:[11,0,98],102:[184,0,113],
+	103:[11,0,10],104:[166,0,10],105:[4,0,109],106:[4,0,111],108:[11,0,10],109:[170,0,114],
+	110:[171,0,10],111:[171,0,38],112:[172,0,38],113:[171,0,82],114:[4,0,83],115:[171,0,82],116:[171,0,93],
+	117:[11,0,126],
 }
 
 ## The pack must carry the App Store campaign tables these rows were read from.
@@ -108,6 +130,7 @@ static func mission(cursor: int) -> Dictionary:
 static func next_cursor(cursor: int) -> int:
 	if cursor==52:return 54
 	if cursor==WON_CURSOR:return 86
+	if cursor==106:return 108
 	return cursor+1
 
 ## Station conversations. A finished main career takes the expansion's incoming
@@ -119,11 +142,12 @@ static func conversation(bindings: RefCounted,cursor: Variant,story_mission: Var
 		if int(story_mission.get("kind",0))!=-1:return {}
 		return _rules(cursor,story_mission,47,Dialogue.events(Dialogue.RESULT,46),false)
 	var expected:=mission(cursor)
-	if expected.is_empty() or int(expected.kind) not in [TALK,GOODS_KIND,DELIVERY_KIND] or not _same(story_mission,expected):return {}
+	if expected.is_empty() or int(expected.kind) not in [TALK,GOODS_KIND,DELIVERY_KIND]+BAR_KINDS or not _same(story_mission,expected):return {}
 	var next:=next_cursor(cursor)
 	if next>STORY_END:return {}
 	var rules:=_rules(cursor,expected,next,Dialogue.events(Dialogue.RESULT,cursor),true)
-	if int(expected.kind) in [GOODS_KIND,DELIVERY_KIND] and not rules.is_empty():
+	if int(expected.kind) in BAR_KINDS and not rules.is_empty():rules.place="lounge"
+	if int(expected.kind) in [GOODS_KIND,DELIVERY_KIND,BAR_GOODS_KIND] and not rules.is_empty():
 		if not GOODS.has(cursor):return {}
 		rules.goods_requirement=GOODS[cursor].duplicate()
 	return rules
@@ -185,6 +209,13 @@ static func entry_refusal(cursor: int,station_id: int,berths: int) -> int:
 	return ENTRY_NOTICE_BASE+int(need.text_id) if berths<int(need.get("passenger_berths",0)) else -1
 static func story_move(cursor: int) -> Dictionary:return MOVE_ON_ENTRY.get(cursor,{}).duplicate()
 static func story_status(cursor: int) -> int:return int(STORY_STATUS.get(cursor,-1))
+
+## The 116 bar-hunt line for a first lounge visit at station_id, or {} (not
+## this cursor, not a hunt station, or its bit is already in status).
+static func bar_hunt_line(cursor: int,station_id: int,status: int) -> Dictionary:
+	var row: Array=BAR_HUNT.get(cursor,{}).get("stations",{}).get(station_id,[])
+	if row.is_empty() or status & (1<<int(row[0])):return {}
+	return {"status":status | (1<<int(row[0])),"speaker_id":int(row[1]),"text_id":int(row[2]),"voice_event_id":int(row[3])}
 
 static func ship_equipment(ship: Dictionary) -> Array:
 	return ship.get("equipment",[]).map(func(row):return {"item_id":int(row[0]),"slot":int(row[1]),"quantity":1})

@@ -11,7 +11,10 @@ const FLIGHT_KINDS:=[1,4,6,10,156,160,163,164]
 const ADVANCE_AFTER_MS:=10000
 ## Supernova's people-moving flights (kind 184) are scripted flights at their
 ## target station.
-const STORY_FLIGHT_KINDS:=[184]
+const STORY_FLIGHT_KINDS:=[184,170]
+## Scripted flights whose result conversation plays in flight (over the radio,
+## after the recipe's own lines); the lines live in the dialogue RESULT table.
+const IN_FLIGHT_RESULTS:=[95,97,99,102,109,114]
 ## [speaker, text, voice, condition, value]: 5 = after the level time,
 ## 6 = after the given earlier line.
 const RADIO:={
@@ -64,6 +67,122 @@ const ESCORT_HULL:=9999999
 ## 40 km back, the cutscene cameras and the pirates' flight away are not built,
 ## and the result lines play over the radio instead of opening a dialogue.
 const SCRIPTED:={
+	# 95: cutaway at Thynome (N1): the player is held out of sight while the
+	# camera drifts; caption at 2 s; the result 2 s after it ends; the story
+	# moves on when the last line is over (MOVE_ON_ENTRY 96).
+	95:{"points":[Vector3.ZERO],"groups":[],"radio":[[17,2544,-1,5,[2000]]],
+		"timed_actions":[{"after_ms":0,"action":"cutaway"}],"result_after":[35,[0,2000,1]],
+		"success":{"kind":"radio_finished","index":16}},
+	# 99: cutaway at Thynome (N1): the player is held out of sight while the
+	# camera drifts; caption at 2 s; the result 2 s after it ends; the story
+	# moves on when the last line is over (MOVE_ON_ENTRY 100).
+	99:{"points":[Vector3.ZERO],"groups":[],"radio":[[17,2589,-1,5,[2000]]],
+		"timed_actions":[{"after_ms":0,"action":"cutaway"}],"result_after":[35,[0,2000,1]],
+		"success":{"kind":"radio_finished","index":12}},
+	# 109: cutaway at Midantha (N1): the player is held out of sight while the
+	# camera drifts; caption at 2 s; the result 2 s after it ends; the story
+	# moves on when the last line is over (MOVE_ON_ENTRY 110).
+	109:{"points":[Vector3.ZERO],"groups":[],"radio":[[17,2676,-1,5,[2000]]],
+		"timed_actions":[{"after_ms":0,"action":"cutaway"}],"result_after":[35,[0,2000,1]],
+		"success":{"kind":"radio_finished","index":4}},
+	# 97: Genoh pirate battle. #0-#11 pirates (their random fighters), #12-#15
+	# Nivelian fighters and #16-#18 Nivelian capital ships (hull 15, held in
+	# place), all around (0,0,50000). Three lines from 1.5 s; all twelve
+	# pirates dead -> the result over the radio -> 98 (Paréah opens).
+	# Assumption: the spawn spread (+-5 km; the original's own scatter).
+	97:{"points":[Vector3(0,0,50000)],
+		"groups":[{"count":12,"faction":8,"hull":-1,"friendly":false,"index":0,"offsets":[-5000,-5000,-5000],"bounds":[10000,10000,10000]},
+			{"count":4,"faction":2,"hull":-1,"friendly":true,"index":0,"offsets":[-5000,-5000,-5000],"bounds":[10000,10000,10000]},
+			{"count":3,"faction":2,"hull":15,"friendly":true,"freighter":true,"moving":false,"index":0,"offsets":[-8000,-2000,-8000],"bounds":[16000,4000,16000]}],
+		"radio":[[0,2571,2089,5,[1500]],[22,2572,2090,6,[0]],[0,2573,2091,6,[1]]],
+		"result_after":[30,[12,0,12]],
+		"success":{"kind":"radio_finished","index":5}},
+	# 100: Alioth stealth ambush. Two stealth fighters (race 10, hull 44)
+	# 20-70 / 10-60 / 20-70 km from the player on a random side of each axis
+	# (N4), awake and hostile; they cloak by themselves (N5). Done when the
+	# second line is over; the fight goes on (no follow-up move).
+	100:{"points":[Vector3.ZERO],
+		"groups":[{"count":2,"faction":10,"hull":44,"friendly":false,"position":{"kind":"player_band","min":Vector3(20000,10000,20000),"max":Vector3(70000,60000,70000)}}],
+		"radio":[[0,2602,2092,5,[1500]],[0,2603,2093,6,[0]]],
+		"success":{"kind":"radio_finished","index":1}},
+	# 102: Tadram carrier evacuation (kind 184, 1700 people). #0 the carrier
+	# (unloading point, never destroyed) at (-50000,1000,70000); #1 Tadram's
+	# exterior (turned 180 deg, not dockable); #2-#5 Terran dropships (Rhino,
+	# hull 51) looping carrier <-> station, 20 s at each stop, unloading at
+	# the carrier (N2: one person per 0.2 s); #6-#9 stealth fighters, hidden
+	# and asleep. Opening scene until 2 s after line #2 (player held, hidden);
+	# 30 s later the fighters appear around a random dropship (1 in 5: the
+	# player) 35-45 km out, 10 s scene, then they attack (#3) and dead ones
+	# come back every 60 s. Keith counts lost dropships (#4-#6). Status <= 9:
+	# 8 s scene, "Everyone's on board" (#7), 4 s later Keith (#8), then Carla's
+	# call (result) and the story moves on. Failure: all four dropships dead.
+	# Assumptions: #1 stands at the origin (OPEN), the dropships' route is the
+	# two stops, the stop time 20 s is read from the route values.
+	102:{"points":[Vector3(-50000,1000,70000),Vector3.ZERO],
+		"groups":[{"count":1,"faction":0,"friendly":true,"static":{"model":18804,"jitter":0},"index":0,"name_text_id":-1,"dock":"leave","dockable":true,"unharmable":true},
+			{"count":1,"faction":0,"friendly":true,"static":{"model":21113,"jitter":0,"offset":Vector3.ZERO,"rotation":Vector3(0,PI,0)},"index":1,"name_text_id":-1},
+			{"count":1,"faction":0,"hull":51,"friendly":true,"index":0,"offsets":[10000,6000,-20000],"bounds":[1,1,1],"route_start":0,"route_loop":[0,1],"stop_ms":20000},
+			{"count":1,"faction":0,"hull":51,"friendly":true,"index":0,"offsets":[30000,8000,-35000],"bounds":[1,1,1],"route_start":0,"route_loop":[0,1],"stop_ms":20000},
+			{"count":1,"faction":0,"hull":51,"friendly":true,"index":0,"offsets":[35000,8000,-40000],"bounds":[1,1,1],"route_start":0,"route_loop":[0,1],"stop_ms":20000},
+			{"count":1,"faction":0,"hull":51,"friendly":true,"index":0,"offsets":[40000,8000,-45000],"bounds":[1,1,1],"route_start":0,"route_loop":[0,1],"stop_ms":20000},
+			{"count":4,"faction":10,"hull":44,"friendly":false,"sleeping":true,"hidden":true,"position":{"kind":"player_offset","offset":Vector3(1000000,1000000,1000000),"bound":Vector3(1,1,1)}}],
+		"radio":[[18,2614,2094,5,[8000]],[18,2615,2095,6,[0]],[18,2616,2096,6,[1]],[18,2617,2097,35,[2,42000,1]],
+			[0,2618,2098,30,[1,2,6]],[0,2619,2099,30,[2,2,6]],[0,2620,2100,30,[3,2,6]],
+			[18,2621,2101,34,[9,8000]],[0,2622,2102,35,[7,4000,1]]],
+		"radio_actions":[{"radio_index":0,"action":"lock_player","hidden":true,"invulnerable":true,"until":[35,[2,2000,1]]},
+			{"radio_index":2,"on":"finished","delay_ms":32000,"action":"show","first_actor":6,"end_actor":10,"near_actors":[2,6],"player_chance":0.2,"radius":[35000,45000],"target":"near"},
+			{"radio_index":2,"on":"finished","delay_ms":32000,"action":"lock_player","duration_ms":10000,"invulnerable":true},
+			{"radio_index":3,"action":"wake","first_actor":6,"end_actor":10},
+			{"radio_index":3,"action":"respawn","first_actor":6,"end_actor":10,"every_ms":60000,"near_actors":[2,6],"player_chance":0.2,"radius":[35000,45000],"until_radio":7},
+			{"radio_index":7,"action":"lock_player","hidden":true,"duration_ms":12000,"invulnerable":true}],
+		"success":{"kind":"radio_finished","index":14},"failure":{"kind":18,"first_actor":2,"end_actor":6}},
+	# 105: Naneroh bomb run (gate: Gamma Shield II fitted). The player flies a
+	# route 650 km toward the sun (N3); #0-#1 Cronus escorts beside them with
+	# weapons off; #2-#4 stealth fighters hidden and asleep far away. Opening
+	# scene (player on autopilot) until 6 s after the escort's line #1; the
+	# escorts then turn aside and leave. #5 at 24 s after #3: the fighters
+	# appear ahead (10 s scene) and attack; from #7 dead ones return every
+	# 110 s. At the sun point the player becomes unharmable and "Bombs away!"
+	# (#8); 16 s bomb scene: the supernova grows, flash at ~9 s; the story
+	# moves on to 106 at Luur (gate, vitals and gamma kept). Gamma applies.
+	# Assumptions: escorts 3 km either side, the fighters appear 20 km ahead,
+	# the sun point counts as reached within 10 km, the scene tail is 16 s.
+	105:{"points":[Vector3(7000000,7000000,7000000)],"player_route":{"toward_sun":650000,"reach_radius":10000},
+		"groups":[{"count":2,"faction":0,"hull":37,"friendly":true,"position":{"kind":"player_side","side":3000},"follow_player_route":true,"ship_state":{"firing_allowed":false}},
+			{"count":3,"faction":10,"hull":44,"friendly":false,"sleeping":true,"hidden":true,"index":0,"offsets":[-1000,-1000,-1000],"bounds":[2000,2000,2000]}],
+		"radio":[[20,2646,2103,5,[0]],[61,2647,2104,5,[13000]],[0,2648,2105,35,[1,6000,1]],[20,2649,2106,35,[2,10000,0]],[0,2650,2107,6,[3]],
+			[0,2651,2108,35,[3,24000,0]],[20,2652,2109,6,[5]],[0,2653,2110,35,[5,70000,0]],[0,2654,2111,37,[[6,[7]],[38,[]]]]],
+		"radio_actions":[{"radio_index":0,"action":"lock_player","autopilot":true,"until":[35,[1,6000,1]]},
+			{"radio_index":1,"on":"finished","action":"retire","first_actor":0,"end_actor":2},
+			{"radio_index":5,"action":"show","first_actor":2,"end_actor":5,"ahead_of_player":20000,"radius":[0,3000]},
+			{"radio_index":5,"action":"lock_player","hidden":true,"duration_ms":10000,"invulnerable":true},
+			{"radio_index":5,"delay_ms":10000,"action":"wake","first_actor":2,"end_actor":5},
+			{"radio_index":7,"action":"respawn","first_actor":2,"end_actor":5,"every_ms":110000,"ahead_of_player":20000,"radius":[0,3000],"until_radio":8},
+			{"radio_index":8,"action":"lock_player","hidden":true,"invulnerable":true,"duration_ms":16000},
+			{"radio_index":8,"on":"finished","delay_ms":2500,"action":"supernova","grow":true}],
+		"success":{"kind":"radio_finished","index":8,"hold_ms":16000}},
+	# 106: Luur aftermath, all one scene (player held). #0 a stealth fighter
+	# (1 hp, cannot cloak, friendly) far out on a route, hidden until line #2
+	# ends; then the camera follows it; line #4 over -> it breaks apart; 3 s
+	# later "On second thoughts..." (#5); when it ends the story moves twice
+	# (107 skipped) and the player arrives at Thynome through the gate.
+	106:{"points":[Vector3(-500000,0,-1700000),Vector3(-500000,0,-3700000)],
+		"groups":[{"count":1,"faction":10,"hull":44,"friendly":true,"hidden":true,"hull_override":1,"cloaking":false,"index":0,"offsets":[0,0,0],"bounds":[1,1,1],"route_start":0,"ship_state":{"firing_allowed":false}}],
+		"radio":[[0,2655,2112,5,[1500]],[20,2656,2113,6,[0]],[20,2657,2114,6,[1]],[0,2658,2115,6,[2]],[0,2659,2116,6,[3]],[0,2660,2117,35,[4,3000,1]]],
+		"timed_actions":[{"after_ms":0,"action":"lock_player","invulnerable":true,"until":[35,[5,0,1]]}],
+		"radio_actions":[{"radio_index":2,"on":"finished","action":"show","first_actor":0,"end_actor":1,"camera":true},
+			{"radio_index":4,"on":"finished","action":"destroy","first_actor":0,"end_actor":1}],
+		"success":{"kind":"radio_finished","index":5}},
+	# 114: Marktesh asteroid ambush. Six pirates (hull doubled) asleep at
+	# asteroids of the field around (0,0,30000); one wakes within 7 km and
+	# then all six attack (the existing sleeping wake with range 50 km).
+	# Keith at 8 s; the pirate's line when one is awake; all dead -> the
+	# result line over the radio.
+	114:{"points":[Vector3(0,0,30000)],
+		"groups":[{"count":6,"faction":8,"hull":-1,"friendly":false,"sleeping":true,"hull_scale":2,"wake_range":7000,"wake_all_range":50000,"position":{"kind":"asteroids","from":"middle"}}],
+		"radio":[[0,2697,2118,5,[8000]],[10,2698,2119,16,[0]],[0,2699,2120,6,[1]]],
+		"result_after":[30,[6,0,6]],
+		"success":{"kind":"radio_finished","index":3}},
 	# 92: Tadram hand-over and the cloaked ambush. #0 the freighter (people
 	# leave while docked, one per 1.5 s, status -1 each); #1-#3 unknown ships
 	# (race 10, hull 44) parked asleep. All ten off: they appear around the
@@ -284,14 +403,14 @@ const CALLS:={84:[[6,2463,1565],[0,2464,1566]],
 		[0,2329,1335],[26,2330,1336],[0,2331,1324],[26,2332,1325],[0,2333,1326],[26,2334,1327],[0,2335,1328]]}
 ## The call starts once the story has moved on (radio holds the result poll).
 ## Systems opened when a story flight moves the career on: [cursor]: systems.
-const STORY_UNLOCKS:={61:[22]}
+const STORY_UNLOCKS:={61:[22],97:[29]}
 const CALL_AFTER_MS:=12000
 ## Carla's one-shot calls, armed while the cursor is in [from, to]: in flight
 ## outside the alien world, with no freelance job, 12 s into the flight
 ## (original: 12 s of play after the cursor moved). [speaker, text, voice];
 ## the first line comes 1.5 s after the call opens. Once heard, the career
 ## keeps "nag_heard" = from (saved in progress).
-const NAG_CALLS:={93:{"to":110,"lines":[[6,3157,1553],[0,3158,1554]]}}
+const NAG_CALLS:={93:{"to":110,"lines":[[6,3157,1553],[0,3158,1554]]},111:{"to":142,"lines":[[6,3159,1555],[0,3160,1556]]}}
 ## Once this radio line has finished, every story ship turns hostile and the
 ## Vossk standing drops to its worst value (standing 0 = 100).
 const TURN_HOSTILE_AFTER:={50:{"radio_index":2,"reputation_axis":0,"reputation_value":100}}
@@ -411,7 +530,7 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 		groups.append(group);first+=int(row.count)
 	var radio:=[]
 	for row in plan.radio:radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":row[3],"values":row[4].duplicate()})
-	var result: Array=RESULT_RADIO.get(cursor,[])
+	var result: Array=RESULT_RADIO.get(cursor,Campaign.Dialogue.RESULT.get(cursor,[]) if cursor in IN_FLIGHT_RESULTS else [])
 	var after: Array=plan.get("result_after",[])
 	for index in result.size():
 		var row: Array=result[index];var own: bool=index==0 and not after.is_empty()
