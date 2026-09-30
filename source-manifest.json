@@ -1910,6 +1910,8 @@
     "game/tests/lounge_wingmen_application.gd.uid",
     "game/tests/status_panel_application.gd",
     "game/tests/status_panel_application.gd.uid",
+    "game/tests/valkyrie_escape_application.gd",
+    "game/tests/valkyrie_escape_application.gd.uid",
     "game/tests/valkyrie_start_application.gd",
     "game/tests/valkyrie_start_application.gd.uid",
     "game/tests/valkyrie_worlds.gd",

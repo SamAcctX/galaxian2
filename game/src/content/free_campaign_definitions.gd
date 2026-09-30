@@ -187,6 +187,7 @@ static func empty_story(source: Variant,context: Dictionary) -> bool:
 	if context.campaign_cursor in [31,32]:system=int(travel.post_probe_visits.missions[str(context.campaign_cursor)].system_id)
 	if context.campaign_cursor==34:system=int(travel.nehma_visit.mission34.system_id)
 	if context.campaign_cursor==35:system=int(travel.gakkrr_visit.mission35.system_id)
+	if source is RefCounted and Valkyrie.saved_story(source,context.campaign_cursor):system=int(load("res://src/content/ordinary_world_definitions.gd").location(source,context.station_id).get("system_id",-1))
 	return context.get("system_id")==system and context.get("mission_kind")==expected.get("kind")
 
 static func rescue_at(travel: Dictionary,cursor: Variant,station_id: Variant) -> bool:

@@ -25,7 +25,7 @@ func verify_free_application() -> void:
 		app.station_navigation("next");lines+=1
 		await process_frame
 	var after: Dictionary=app.session.station_owner().snapshot()
-	print("VALKYRIE after call cursor=",after.campaign_cursor," mission=",after.mission," phase=",after.phase)
+	print("VALKYRIE after call cursor=",after.campaign_cursor," mission=",after.mission," phase=",after.phase," conversation=",after.get("campaign_conversation")," line=",after.get("line_index")," dialogue=",app.session.snapshot().dialogue)
 	check(after.campaign_cursor==47 and after.mission==Valkyrie.mission(47),"The call did not set the Kanado talk mission")
 	app.open_missions();await process_frame
 	var log: Dictionary=app.missions_panel.snapshot()
@@ -55,5 +55,5 @@ func take_station_talk(cursor: int,next: int) -> bool:
 		if event==rules.events[0]:await capture_free_application("valkyrie-talk-%d"%cursor)
 		app.station_navigation("next");await process_frame
 	var after: Dictionary=app.session.station_owner().snapshot()
-	check(after.campaign_cursor==next,"The station talk did not advance the story to "+str(next))
+	check(after.campaign_cursor==next,"The station talk did not advance the story to "+str(next)+": "+app.session.error+" "+app.status.text)
 	return failures==0

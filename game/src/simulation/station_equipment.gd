@@ -16,6 +16,7 @@ const Fitting=preload("res://src/simulation/equipment_fitting.gd")
 const RecoveryRules=preload("res://src/content/tractor_recovery_definitions.gd")
 const Ship=preload("res://src/simulation/ship_instance.gd")
 const ShipStock=preload("res://src/simulation/station_stock.gd")
+const Numbers=preload("res://src/content/opening_definitions.gd")
 var error:=""
 var _state:={}
 var _rules:={}
@@ -322,6 +323,55 @@ func _transact_ordinary(action: String,item_id: int,credits: int) -> bool:
 		row.owned-=1;row.stock+=1;next.credit_delta=price
 	_retain_market_inventory(next)
 	next.transactions+=1;_state=next
+	return true
+
+## A story mission lends the player a ship. The owned ship keeps its cargo,
+## installed items and prices aside until the story hands it back.
+func lend_story_ship(bindings: RefCounted,cat: RefCounted,ship_id: int,equipment: Array,store: bool) -> bool:
+	error=""
+	if _state.get("ordinary_shopping_open",false):return reject("Close the shop before changing ships")
+	if not Numbers.integer(ship_id,0,cat.tables.ships.size()-1):return reject("The story ship is outside the ship catalogue")
+	var next:=_state.duplicate(true)
+	if store:
+		if next.has("stored_ship"):return reject("A story ship is already on loan")
+		# Older careers keep only the ship's affiliation; give the stored hull its quote.
+		var owned:=Ship.from_inventory(bindings,cat,next)
+		if owned.is_empty():return reject("The owned ship has no valid quote to keep")
+		next.stored_ship={"loadout":next.loadout.duplicate(true),"cargo":next.cargo.duplicate(true),"prices":next.prices.duplicate(true)}
+		next.stored_ship.loadout.ship_instance=owned;next.erase("ship_affiliation")
+	elif not next.has("stored_ship"):return reject("The story ship replaces no stored ship")
+	var assembled:=Loadout.new()
+	if not assembled.assemble({"ship_id":ship_id,"station_id":next.loadout.station_id,"equipment":equipment,"item_category_value_index":int(_rules.item_category_value_index)},cat,bindings.base_content_id,bindings.binding_id):return reject(assembled.error)
+	var affiliations: Array=bindings.early_contracts.get("base_station_stock",{}).get("ships",{}).get("affiliations",[])
+	next.loadout=assembled.snapshot()
+	next.loadout.ship_instance={"unit_price":int(cat.tables.ships[ship_id].stats.base_price),"faction_id":int(affiliations[ship_id]) if ship_id<affiliations.size() else 1,"upgrade_tags":[]}
+	next.prices.installed=[]
+	for slot in next.loadout.slots:next.prices.installed.append(null if slot==null else {"item_id":slot.item_id,"unit_price":int(_completion_prices[slot.item_id]) if slot.item_id<_completion_prices.size() else 0})
+	next.cargo.ship_id=ship_id;next.cargo.entries=[];next.prices.cargo=[]
+	var staged:=fork();staged._state=next;staged._counts=[]
+	for key in Loadout.SLOT_PROPERTIES:staged._counts.append(int(cat.tables.ships[ship_id].stats[key]))
+	staged._state.cargo.used=0
+	if not staged._story_capacity(bindings,cat):return false
+	_state=staged._state;_counts=staged._counts
+	return true
+
+func return_story_ship(bindings: RefCounted,cat: RefCounted) -> bool:
+	error=""
+	var stored: Variant=_state.get("stored_ship")
+	if not stored is Dictionary:return reject("No owned ship waits for the story to return it")
+	var next:=_state.duplicate(true)
+	next.loadout=stored.loadout.duplicate(true);next.loadout.station_id=_state.loadout.station_id;next.loadout.system_id=_state.loadout.system_id
+	next.cargo=stored.cargo.duplicate(true);next.prices=stored.prices.duplicate(true);next.erase("stored_ship")
+	var staged:=fork();staged._state=next;staged._counts=[]
+	for key in Loadout.SLOT_PROPERTIES:staged._counts.append(int(cat.tables.ships[int(next.loadout.ship_id)].stats[key]))
+	if not staged._story_capacity(bindings,cat):return false
+	_state=staged._state;_counts=staged._counts
+	return true
+
+func _story_capacity(bindings: RefCounted,cat: RefCounted) -> bool:
+	var capacity: int=load("res://src/simulation/equipment_stats.gd").cargo_capacity(bindings,cat,_state.loadout)
+	if capacity<int(_state.cargo.used):return reject("The story ship cannot hold its cargo")
+	_state.cargo.capacity=capacity;_state.cargo.free_space=capacity-int(_state.cargo.used)
 	return true
 
 func supply_blueprint_material(item_id: int,quantity: int) -> int:

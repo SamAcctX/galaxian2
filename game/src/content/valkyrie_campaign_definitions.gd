@@ -11,6 +11,15 @@ const TALK:=11
 ## Herjaza and Skavac as missions 55 and 63 begin; Loma is visible to every
 ## expansion owner, so a continued career receives it with the first call.
 const UNLOCKS:={45:[25],54:[23],62:[24]}
+## Ship changes applied as the story enters a cursor: a loaned hull with its
+## fitted items [item, slot], or the owned ship handed back.
+const SHIPS:={
+	48:{"ship_id":9,"equipment":[[58,0],[83,1]],"store":true},
+	49:{"ship_id":41,"equipment":[[177,0],[177,1],[177,2],[58,0],[83,1],[52,2]],"store":false},
+	55:{"restore":true},
+	56:{"ship_id":39,"equipment":[[181,0],[52,0],[58,1],[83,2]],"store":true},
+	58:{"restore":true},
+}
 ## cursor: [kind, reward, station]; -1 station means any station.
 const MISSIONS:={
 	47:[11,0,74],48:[11,0,58],49:[156,0,58],50:[156,0,62],51:[156,0,25],52:[160,0,25],
@@ -54,6 +63,7 @@ static func _rules(cursor: int,current: Dictionary,next: int,events: Array,targe
 	var result:={"campaign_cursor":cursor,"mission":current.duplicate(true),"next_cursor":next,"next_mission":next_mission,
 		"reward_credits":int(current.get("reward",0)),"events":events,"target_station_required":target_required}
 	if UNLOCKS.has(cursor):result.unlock_system_ids=UNLOCKS[cursor].duplicate()
+	if SHIPS.has(next):result.story_ship=SHIPS[next].duplicate(true)
 	return result
 
 static func _same(a: Dictionary,b: Dictionary) -> bool:
@@ -77,3 +87,6 @@ static func saved_mission(cursor: Variant,value: Variant) -> bool:
 	for key in ["kind","station_id","reward","bonus","source_parameter"]:
 		if not value.get(key) is int or value[key]!=expected[key]:return false
 	return value.size()==expected.size()
+
+static func ship_equipment(ship: Dictionary) -> Array:
+	return ship.get("equipment",[]).map(func(row):return {"item_id":int(row[0]),"slot":int(row[1]),"quantity":1})

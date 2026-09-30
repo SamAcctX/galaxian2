@@ -54,6 +54,8 @@ static func base_player_hull(bindings: RefCounted,ship_id: Variant) -> bool:
 	if not preload("res://src/content/base_station_stock_definitions.gd").available(bindings):
 		return ship_id==bindings.opening_loadout.get("ship_id",-1) or ship_id==bindings.station_entry.get("ship_id",-1)
 	var ships: Dictionary=bindings.early_contracts.base_station_stock.ships
+	# Expansion hulls (story loans and the Loma shipyard) join the base catalogue.
+	if int(ship_id)>=int(ships.selection_draw_bound) and int(ship_id)<ships.affiliations.size():return load("res://src/content/valkyrie_campaign_definitions.gd").available(bindings)
 	if not preload("res://src/content/opening_definitions.gd").integer(ship_id,0,int(ships.selection_draw_bound)-1):return false
 	if preload("res://src/content/deep_science_stock_definitions.gd").available(bindings) and ship_id==int(bindings.deep_science_stock.all_base_gold_ship_id):return true
 	if int(ship_id)==int(ships.vossk_ship_id) or ships.fixed_first_ships.values().any(func(id):return int(id)==int(ship_id)):return true

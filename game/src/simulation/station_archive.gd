@@ -27,7 +27,7 @@ const Valkyrie=preload("res://src/content/valkyrie_campaign_definitions.gd")
 const StationContext=preload("res://src/simulation/mission_station_context.gd")
 const STATION_KEYS=["base_content_id","binding_id","language","campaign_cursor","phase","line_index","loadout","source_ship_configuration","display_ship_configuration","source_marked_item_ids","progress","mission","cargo","player_cache","arrival_player","docking","flight_elapsed_ms","return_visit","delivery_acknowledged","acknowledged","reward_credits","mining_completed","alioth_return","completed_side_missions","alioth_return_acknowledged","station_response_flags","local_visit","contract_station","local_visit_acknowledged","hangar_open","cargo_cache_stale"]
 const CHAPTER_KEYS=["campaign_conversation","next_course"]
-const INVENTORY_KEYS=["loadout","stock","cargo","cargo_cache_stale","credit_delta","transactions","prices","protected_item_ids","training_inventory_released","prototype_drill_replaced","ship_affiliation","stock_station_id"]
+const INVENTORY_KEYS=["loadout","stored_ship","stock","cargo","cargo_cache_stale","credit_delta","transactions","prices","protected_item_ids","training_inventory_released","prototype_drill_replaced","ship_affiliation","stock_station_id"]
 const CAREER_KEYS=["base_content_id","binding_id","campaign_cursor","station_id","rank","reputation","difficulty","credits","passengers","mission","active_offer_id","offers","progress","completed_side_missions","delivery_statistics","pending_result","result_serial","accepted_contact","travel_statistics","last_result","population"]
 const OPTIONAL_CAREER_KEYS=["contract_phase","station_outcome","wingmen","base_medals","conversations","rejected_jobs","stats","medal_notices"]
 var error:=""
@@ -46,14 +46,14 @@ func capture(station: RefCounted,bindings: RefCounted,locations: RefCounted=null
 	if not station is Station or not available(bindings):return fail("This game has no supported station save")
 	var state: Dictionary=station.snapshot()
 	var continuation: RefCounted=station.mission_station_context_owner()
+	if Valkyrie.saved_story(bindings,state.get("campaign_cursor")):
+		if not can_capture(state) or not _expansion_station(bindings,state):return fail("Finish the station conversation before saving")
+		return _capture_career(station,bindings,12)
 	if continuation!=null:
 		if not can_capture(state):return fail("Finish the station conversation before saving")
 		if not _continuation_station(bindings,state,continuation):return {}
 		return _capture_career(station,bindings,11)
 	if Opening.accepts(state):return Opening.new().capture(self,station,bindings,locations)
-	if Valkyrie.saved_story(bindings,state.get("campaign_cursor")):
-		if not can_capture(state) or not _expansion_station(bindings,state):return fail("Finish the station conversation before saving")
-		return _capture_career(station,bindings,12)
 	if state.has("nehma_source_receipt"):
 		if not can_capture(state) or not _onward_station(bindings,state):return fail("The onward checkpoint requires its actual docking and both explicit sources")
 		return _capture_career(station,bindings,10)
@@ -93,7 +93,7 @@ func restore(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: Vari
 	if data.version==2:return Opening.new().restore(self,bindings,cat,library,data)
 	_expansion=data.version==12
 	var career_keys: Array=CAREER_KEYS+OPTIONAL_CAREER_KEYS+(["void_source","blueprints"] if data.version in [8,9,10,11,12] else [])
-	var station_keys: Array=STATION_KEYS+(CHAPTER_KEYS if data.version in [4,6,7,8,10,11,12] else [])+(["dekato_source_receipt"] if data.version in [9,10,11,12] else [])+(["nehma_source_receipt"] if data.version in [10,11,12] else [])+(["mission_station_return"] if data.version==11 else [])
+	var station_keys: Array=STATION_KEYS+(CHAPTER_KEYS if data.version in [4,6,7,8,10,11,12] else [])+(["dekato_source_receipt"] if data.version in [9,10,11,12] else [])+(["nehma_source_receipt"] if data.version in [10,11,12] else [])+(["mission_station_return"] if data.version in [11,12] else [])
 	if not _keys(data.get("station"),station_keys) or not _keys(data.get("inventory"),INVENTORY_KEYS) or not _keys(data.get("career"),career_keys):return reject("The save contains an unknown station, inventory or career field")
 	if data.version in [8,9,10,11,12] and not data.career.get("void_source") is Dictionary:return reject("The save is missing its retained Void source")
 	if data.version in [8,9,10,11,12] and not data.career.get("blueprints") is Dictionary:return reject("The save is missing its retained blueprint progress")
@@ -102,9 +102,13 @@ func restore(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: Vari
 		continuation=StationContext.new()
 		if not continuation.restore(bindings,cat,data.station.get("mission_station_return")):return reject(continuation.error)
 		if not _continuation_station(bindings,data.station,continuation):return null
+	elif data.version==12 and data.station.has("mission_station_return"):
+		# The finished main chapter remains only as history for its lounges.
+		continuation=StationContext.new()
+		if not continuation.restore(bindings,cat,data.station.mission_station_return) or not continuation.recipe().is_empty():return reject("The expansion career has an invalid finished chapter")
 	if data.version==9 and not _dekato_station(bindings,data.station):return reject("The v9 checkpoint requires its exact explicitly attached source and actual station boundary")
 	if data.version==10 and not _onward_station(bindings,data.station):return reject("The v10 checkpoint requires its exact explicit sources and actual onward station boundary")
-	if not _required(data.inventory,INVENTORY_KEYS.filter(func(key):return key not in ["stock_station_id","ship_affiliation"])) or not _required(data.career,CAREER_KEYS):return reject("The save is missing required inventory or career data")
+	if not _required(data.inventory,INVENTORY_KEYS.filter(func(key):return key not in ["stock_station_id","ship_affiliation","stored_ship"])) or not _required(data.career,CAREER_KEYS):return reject("The save is missing required inventory or career data")
 	var owned:=_inventory(bindings,cat,data.inventory)
 	if owned==null:return null
 	var locations:=_locations(bindings,cat,library,data.locations,continuation)
@@ -128,7 +132,7 @@ func restore(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: Vari
 	if data.version==9:mission_supported=Dekato.station_mission(bindings,cursor,inventory.loadout.station_id,saved.mission)
 	if data.version==10:mission_supported=Nehma.station_mission(bindings,cursor,inventory.loadout.station_id,saved.mission)
 	if data.version==12:mission_supported=Valkyrie.saved_mission(cursor,saved.mission)
-	if continuation!=null:mission_supported=StationContext.permits(bindings,cursor,inventory.loadout.station_id,continuation) and saved.mission==continuation.snapshot().mission
+	if continuation!=null and data.version==11:mission_supported=StationContext.permits(bindings,cursor,inventory.loadout.station_id,continuation) and saved.mission==continuation.snapshot().mission
 	if not mission_supported or not FreeFlight.response_flags(bindings,saved.get("station_response_flags",{})):return reject("The saved station has an unsupported story or response state")
 	if saved.get("source_ship_configuration")!=int(bindings.station_entry.source_ship_configuration) or saved.get("display_ship_configuration")!=int(bindings.station_entry.display_ship_configuration) or saved.get("source_marked_item_ids")!=[]:return reject("The station's ship presentation disagrees with its content")
 	if not saved.get("language") is String or not Numbers.integer(saved.get("line_index"),0,128) or not Numbers.integer(saved.get("flight_elapsed_ms"),0,2147483647):return reject("The station has invalid retained conversation or flight metadata")
@@ -183,6 +187,11 @@ func _inventory(bindings: RefCounted,cat: RefCounted,data: Dictionary) -> RefCou
 	if data.get("training_inventory_released")!=true or data.get("prototype_drill_replaced")!=true or data.get("protected_item_ids")!=[]:return reject("The save lost its earned equipment transitions")
 	if not seed.has("ship_instance") and data.get("ship_affiliation")!=int(bindings.mido_travel.alioth_return.next_player_ship_affiliation):return reject("The save lost its earned ship affiliation")
 	if not equipment.cargo_cache_valid():return reject(equipment.error)
+	if data.has("stored_ship"):
+		var stored: Variant=data.stored_ship
+		if not stored is Dictionary or stored.size()!=3 or not stored.get("loadout") is Dictionary or not stored.get("cargo") is Dictionary or not stored.get("prices") is Dictionary:return reject("The save has an invalid ship waiting for its owner")
+		if not _identity(stored.loadout,bindings) or not preload("res://src/simulation/mission_context.gd").base_player_hull(bindings,stored.loadout.get("ship_id")) or stored.cargo.get("ship_id")!=stored.loadout.ship_id:return reject("The stored ship belongs to another content or hull")
+		if not stored.loadout.get("slots") is Array or not stored.cargo.get("entries") is Array or not _price_list(stored.prices.get("installed"),stored.loadout.slots) or not _price_list(stored.prices.get("cargo"),stored.cargo.entries):return reject("The stored ship lost its installed items, cargo or prices")
 	if not _price_list(data.prices.get("cargo"),hold.entries) or not _price_list(data.prices.get("installed"),seed.slots) or data.prices.size()!=2:return reject("Saved prices differ from the retained inventory order")
 	return equipment
 
@@ -332,7 +341,7 @@ func _career(bindings: RefCounted,cat: RefCounted,data: Dictionary,equipment: Re
 		# retained accepted terms above; cached offers/consumption belong to their
 		# own validated population and must not be joined by station and row ID.
 		var passengers: int=Contracts.ContractProgress.occupied_passengers(data)
-		if data.passengers!=passengers or passengers>Contracts.passenger_capacity(Contracts.cabin_catalogue(cat,bindings.early_contracts.acceptance),equipment.snapshot().loadout):return reject("The accepted passengers disagree with their mission or installed berths")
+		if data.passengers!=passengers or passengers>Contracts.passenger_capacity(Contracts.cabin_catalogue(cat,bindings.early_contracts.acceptance),equipment.snapshot().get("stored_ship",{}).get("loadout",equipment.snapshot().loadout)):return reject("The accepted passengers disagree with their mission or installed berths")
 	var career:=Contracts.new()
 	career._state=data.duplicate(true);career._rules=bindings.early_contracts.duplicate(true)
 	career._cabins=Contracts.cabin_catalogue(cat,bindings.early_contracts.acceptance)
@@ -418,7 +427,12 @@ func _expansion_station(bindings: RefCounted,state: Dictionary) -> bool:
 	var flight: Variant=state.get("arrival_player",{}).get("campaign_cursor") if state.get("arrival_player") is Dictionary else null
 	if not flight is int or flight<39 or flight>cursor:return false
 	# The last story payment is shown once; it is not part of the docked boundary.
-	var docked: Dictionary=state.duplicate();docked.reward_credits=0
+	var docked: Dictionary=state.duplicate();docked.reward_credits=0;docked.line_index=0
+	if not state.has("docking"):
+		# A finished main career takes the first call at its final story station.
+		var seed: Dictionary=state.get("loadout",{})
+		if state.get("phase")!="free_play_required" or state.get("acknowledged")!=true or not state.get("player_cache") is Dictionary or load("res://src/content/ordinary_world_definitions.gd").location(bindings,int(seed.get("station_id",-1))).is_empty():return false
+		return Cache.matches(state.player_cache,_arrival_loadout(seed,state.arrival_player),cursor) and state.player_cache.values.hull>0
 	return _ordinary_docked_station(bindings,docked,flight)
 
 func _onward_station(bindings: RefCounted,state: Dictionary) -> bool:

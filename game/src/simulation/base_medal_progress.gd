@@ -230,7 +230,8 @@ static func valid_notices(value: Variant) -> bool:
 
 ## Threshold shown in a medal's description for an earned level (1 gold .. 3 bronze).
 static func description_value(id: int,level: int) -> int:
-	var thresholds: Array=COUNTERS[id].thresholds if COUNTERS.has(id) else FIXED_THRESHOLDS.get(id,[0])
+	var visits:={11:STATION_VISIT_THRESHOLDS,12:SYSTEM_VISIT_THRESHOLDS}
+	var thresholds: Array=COUNTERS[id].thresholds if COUNTERS.has(id) else visits[id] if visits.has(id) else FIXED_THRESHOLDS.get(id,[0])
 	return int(thresholds[clampi(level-1,0,thresholds.size()-1)])
 
 ## Station-observed stats are plain non-negative counters (hull percent may be -1).

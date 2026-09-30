@@ -30,6 +30,7 @@ const ContractProgress=preload("res://src/simulation/contract_progress.gd")
 const Wingmen=preload("res://src/simulation/wingman_contract.gd")
 const Recipe=preload("res://src/content/mission_recipe.gd")
 const BaseMedals=preload("res://src/simulation/base_medal_progress.gd")
+const Valkyrie=preload("res://src/content/valkyrie_campaign_definitions.gd")
 var error:=""
 var _state:={}
 var _rules:={}
@@ -768,8 +769,9 @@ func acknowledge_station_campaign(bindings: RefCounted,equipment: RefCounted,sto
 	if rules.has("unlock_system_ids") and (not equal.equal_value(receipt.get("unlock_system_ids"),rules.unlock_system_ids) or not equal.equal_value(receipt.get("next_course"),rules.get("next_course"))):return fail("The station conversation changed its next destination")
 	var next: RefCounted=fork()
 	var inventory: RefCounted=equipment.fork()
-	# A completed career's station chapter ends when the expansion story takes over.
-	if _station_context!=null and _station_context.recipe().is_empty():next._station_context=null
+	# A completed career keeps its finished chapter only as lounge history once
+	# the expansion story takes over.
+	if _station_context!=null and _station_context.recipe().is_empty():pass
 	elif _station_context!=null:
 		next._station_context=_station_context.successor(bindings,receipt)
 		if next._station_context==null:return fail(_station_context.error)
@@ -781,6 +783,10 @@ func acknowledge_station_campaign(bindings: RefCounted,equipment: RefCounted,sto
 			"from_cursor":receipt.from_cursor,"to_cursor":receipt.campaign_cursor,
 			"item_id":int(required.item_id),"quantity":int(required.quantity),"expected_entry":next._blueprints.entry(85)}
 		if not next._blueprints.precredit_story33(credit):return fail(next._blueprints.error)
+	if rules.has("story_ship"):
+		var ship: Dictionary=rules.story_ship
+		var changed: bool=inventory.return_story_ship(bindings,_catalogues) if ship.has("restore") else inventory.lend_story_ship(bindings,_catalogues,int(ship.ship_id),Valkyrie.ship_equipment(ship),bool(ship.store))
+		if not changed:return fail(inventory.error)
 	if not next._retain_story_progress(bindings,next._state.progress,_state.campaign_cursor,receipt.campaign_cursor,_state.station_id,_state.station_id,false):return fail(next.error)
 	if rules.has("unlock_system_ids"):
 		next._lounges=next._lounges.fork()
