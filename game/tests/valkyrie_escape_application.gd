@@ -1690,13 +1690,24 @@ func fly_supernova_finale() -> void:
 	if not await travel_and_talk(96,148,152):return
 	if not await void_visit(152,153,[3009,3016]):return
 	if not await travel_and_talk(98,153,154):return
-	# 154: the Valkyrie ambush lines in the Void; the story takes the pilot out.
+	# 154: the Valkyrie ambush in the Void: the freighter, Valkyrie and twenty
+	# Void fighters; after Keith's "90 seconds" dock at Valkyrie (actor 1) and
+	# win the hack before the countdown ends; the drive then takes the pilot out.
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()) or not await release_application_flight():check(false,app.status.text);return
+	var before_void: int=int(app.session.snapshot().location.station_id)
 	if not await void_drive(true):return
+	var cast: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+	check(cast.size()==22 and cast[1].get("static_object",false) and range(2,22).all(func(id):return int(cast[id].actor_kind)==9),"The Void at 154 has no Valkyrie ambush cast")
+	await capture_free_application("supernova-void-154")
+	radio_ids=[]
+	var valkyrie:=func(frame):return frame._encounter.combat_snapshot().actors[1].pose.origin if int(frame._countdown_end)>=0 else null
+	if failures or not await story_flight(154,"valkyrie",valkyrie,func(_frame):return [],radio_ids,600,1500.0):return
+	print("SUPERNOVA 154 radio ",radio_ids)
+	check(3039 in radio_ids and app.session.flight_owner()._objective.snapshot().campaign_cursor==155,"Boarding Valkyrie did not move the story to 155")
 	scene=[]
-	if not await ride_story_jump(scene,400) or not await enter_story_arrival("supernova-155"):return
-	print("SUPERNOVA 154 radio ",scene," at ",app.session.snapshot().location.station_id)
-	check(3028 in scene and 3055 in scene and app.session.snapshot().campaign_cursor==155,"The Valkyrie scene did not play through to 155")
+	if failures or not await ride_story_jump(scene,120) or not await enter_story_arrival("supernova-155"):return
+	print("SUPERNOVA 154 out at ",app.session.snapshot().location.station_id)
+	check(app.session.snapshot().campaign_cursor==155 and int(app.session.snapshot().location.station_id)==before_void,"The drive did not bring the pilot back from the Valkyrie ambush at 155")
 	if failures or not await wait_story_cursor(156,"supernova-brent-call"):return
 	if not await travel_and_talk(99,156,157,true):return
 	# 157: the final battle at Var Lupra; the reversal; through to Luur (158).

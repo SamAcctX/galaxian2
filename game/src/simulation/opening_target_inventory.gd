@@ -129,9 +129,12 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, player: R
 	if initial.get("campaign_cursor")!=cursor:return reject("Equipped targets require completed world construction")
 	var population:=Population.new()
 	if not population.configure(bindings):return reject(population.error)
-	var count:=population.for_dekato(bindings,story.context,initial.entry_conditions) if story.get("context_key")=="dekato_context" else population.for_departure(source.station_id,initial.entry_conditions,cursor)
+	# A story cast in the alien world (154) flies over the Void's crystal field.
+	var void_world: bool=initial.get("void_context") is Dictionary and source.get("station_id")==-1
+	var selected_void: Dictionary=initial.get("void_context",{}).merged(initial.entry_conditions,true) if void_world else {}
+	var count:=population.for_void_crystals(selected_void) if void_world else population.for_dekato(bindings,story.context,initial.entry_conditions) if story.get("context_key")=="dekato_context" else population.for_departure(source.station_id,initial.entry_conditions,cursor)
 	if count.is_empty():return reject(population.error)
-	return _configure_source(bindings,catalogues,source,initial.npc_construction.actors,field,count,story,initial.entry_conditions.location_match)
+	return _configure_source(bindings,catalogues,source,initial.npc_construction.actors,field,count,story,initial.entry_conditions.location_match,void_world)
 
 func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dictionary, actor_rows: Array, opening_field: Dictionary, count: Dictionary, story: Dictionary={},location_match:=false,ordinary_void:=false) -> bool:
 	if catalogues==null or catalogues.content_id!=bindings.base_content_id or not Vehicle.valid_parameters(bindings.vehicle_response):return reject("Target inventory requires matching equipment type declarations")

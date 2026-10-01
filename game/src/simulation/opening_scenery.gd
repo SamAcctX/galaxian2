@@ -334,19 +334,19 @@ func configure_selected41(bindings: RefCounted,catalogues: RefCounted,entry: Ref
 
 ## Compose the crystal field and its ordinary Void fighters on one stream.
 ## The owning flight transaction supplies the actual portal-selected context.
-func configure_ordinary_void(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,entry_conditions: Dictionary,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null) -> bool:
+func configure_ordinary_void(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,entry_conditions: Dictionary,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null,player_position:=Vector3.ZERO) -> bool:
 	clear()
 	if not is_instance_of(equipment,load("res://src/simulation/station_equipment.gd")):return reject("Void scenery requires its retained native inventory")
 	var owned: Dictionary=equipment.snapshot()
 	if bindings==null or owned.is_empty() or owned.loadout.get("base_content_id")!=bindings.base_content_id or owned.loadout.get("binding_id")!=bindings.binding_id:return reject("Void scenery inventory belongs to another content identity")
-	var world:=WorldInitialization.new()
-	if not world.configure_void_factory(bindings,catalogues,int(owned.loadout.ship_id),owned.loadout.equipment_ids,context,entry_conditions):return reject(world.error)
 	var population:=Population.new()
 	if not population.configure(bindings):return reject(population.error)
 	var selected_context:=context.duplicate()
 	selected_context.merge(entry_conditions,true)
 	var selected:=population.for_void_crystals(selected_context)
 	if selected.is_empty():return reject(population.error)
+	var world:=WorldInitialization.new()
+	if not world.configure_void_factory(bindings,catalogues,int(owned.loadout.ship_id),owned.loadout.equipment_ids,context,entry_conditions,equipment,player_position,selected.center):return reject(world.error)
 	if not _configure_field(bindings,catalogues,unix_seconds,-1,int(context.campaign_cursor),selected.center,large_display,body_resources,effect_resources):return false
 	if not _finish_world_initialization(world,equipment):
 		var message:=error;clear();return reject(message)

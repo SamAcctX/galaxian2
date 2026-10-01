@@ -87,7 +87,7 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 			policy.initial_hostile=standing.hostile;policy.updated_hostile=standing.hostile;policy.friendly=standing.friendly
 		data.actor_policies.append(policy)
 		data.actor_kinds.append(faction);data.hull_catalogue_ids.append(hull);data.player_weapon_targets.append(id)
-		var weapon:={"unarmed":true,"actor_kind":faction} if freighter else shared_weapon(rules.weapons,context.campaign_cursor,context.rank,float(context.difficulty),faction,bool(options.ship_state.get("enhanced_weapon",rival)))
+		var weapon:={"unarmed":true,"actor_kind":faction} if freighter else void_weapon(bindings,context.campaign_cursor,context.rank,float(context.difficulty)) if faction==VOID_RACE else shared_weapon(rules.weapons,context.campaign_cursor,context.rank,float(context.difficulty),faction,bool(options.ship_state.get("enhanced_weapon",rival)))
 		if weapon.is_empty():return {}
 		weapon.actor_id=id;weapon.hull_catalogue_id=hull;data.npc_weapons.append(weapon)
 	data.target_memberships=target_memberships(data.actor_kinds,cast.player_last_ids)
@@ -113,6 +113,18 @@ static func target_memberships(kinds: Array,player_last_ids: Array=[]) -> Array:
 static func weapon_for(data: Dictionary,rank: int,difficulty: float,faction: int,rival: bool) -> Dictionary:
 	if not parameters(data) or rank<0 or rank>20 or difficulty not in [0.5,1.0] or (rival and faction not in [0,1,2,3]) or (not rival and faction!=8):return {}
 	return shared_weapon(data.weapons,int(data.campaign_cursor),rank,difficulty,faction,rival)
+
+## The alien world's fighters (race 9) in a story cast (154) fire the Void
+## weapon at its own damage multiplier, the way the ordinary Void flight arms them.
+const VOID_RACE:=9
+static func void_weapon(bindings: RefCounted,cursor: int,rank: int,difficulty: float) -> Dictionary:
+	var weapon:=scaled_parameters(bindings.early_contracts.ship_combat.weapons,cursor,rank,difficulty)
+	var original: Dictionary=bindings.mido_travel.get("sahi_encounter",{}).get("weapons",{}).get("void",{})
+	if weapon.is_empty() or original.is_empty():return {}
+	for key in ["item_id","kind","catalogue_kind","model_resource_id"]:weapon[key]=int(original[key])
+	weapon.actor_kind=VOID_RACE
+	weapon.damage=int(Vitals.single(Vitals.single(float(weapon.damage))*float(original.damage_multiplier)))
+	return weapon
 
 ## Races past the imported table (verified Level::assignGuns): Supernova's
 ## stealth ships (race 10) fire item 229 with its own projectile at 0.7x the

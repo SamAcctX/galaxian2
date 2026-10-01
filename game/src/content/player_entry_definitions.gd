@@ -126,6 +126,12 @@ func configure_admitted(bindings: RefCounted,mission_context: RefCounted,loadout
 	equipped_entry={};_kind="";_departure={};_training={};_pirate={};_travel={};restores_local=false
 	if not is_instance_of(mission_context,load("res://src/simulation/mission_context.gd")) or not mission_context.matches_loadout(loadout):return reject("Player entry requires its admitted equipment")
 	var identity: Dictionary=mission_context.identity()
+	# A story cast in the alien world (154): the drive's Void entry, its pools kept.
+	if mission_context.void_story():
+		cursor=int(identity.campaign_cursor);_kind="ordinary_void";_travel=bindings.mido_travel.duplicate(true)
+		equipped_entry=Cache.ordinary_void_entry(_travel,int(loadout.ship_id),cursor)
+		uses_equipment=true;restores_local=true
+		return true if not equipped_entry.is_empty() else reject("Void player entry lost its admitted world")
 	if not mission_context.ordinary_location(bindings,int(loadout.station_id),int(identity.campaign_cursor)):return reject("Player entry requires its admitted ordinary location")
 	equipped_entry=bindings.mido_travel.player_entry.duplicate(true)
 	equipped_entry.merge({"campaign_cursor":identity.campaign_cursor,"station_id":loadout.station_id,"system_id":loadout.system_id,"ship_id":loadout.ship_id},true)

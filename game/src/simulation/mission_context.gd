@@ -104,7 +104,23 @@ func admit_drive_void(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,c
 	_void_visit=_identity.duplicate()
 	_void_visit.merge({"source_station_id":station,"source_system_id":int(loadout.system_id)})
 	_arrival_source=loadout.duplicate(true)
+	_admit_void_story(bindings,cat,career.void_story_context(bindings),loadout)
 	return true
+
+## A story flight set in the alien world (its station is -1, e.g. 154) is
+## built by this Void visit: its cast, lines and results come with the entry.
+## Ships are built by the story-cast factory in place of the Void fighters.
+func _admit_void_story(bindings: RefCounted,cat: RefCounted,context: Dictionary,loadout: Dictionary) -> void:
+	if context.is_empty():return
+	# The source system's faction stands in for the Void's (it has none).
+	var faction:=int(cat.tables.systems[int(loadout.system_id)].fields[int(bindings.early_contracts.generation.system_faction_field)])
+	var recipe: Dictionary=Recipe.from_contract(bindings,context,loadout,faction)
+	recipe.system_id=-1;recipe.world={"void_environment":true,"asteroid_field":true}
+	_recipe=recipe;_contract_context=context
+	_loadout=loadout.duplicate(true);_loadout.station_id=-1;_loadout.system_id=-1
+
+## The Void visit carries a story cast (see _admit_void_story).
+func void_story() -> bool:return not _void_visit.is_empty() and not _contract_context.is_empty()
 
 static func ordinary_void_route(bindings: RefCounted,owner: RefCounted) -> Dictionary:
 	if bindings==null or owner==null:return {}

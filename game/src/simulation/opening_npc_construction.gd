@@ -242,7 +242,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 	if capability==null:
 		capability=load("res://src/simulation/mission_context.gd").new()
 		if not capability.admit_contract(bindings,catalogues,contracts,equipment):return reject(capability.error)
-	elif not capability.matches_loadout(equipment.snapshot().loadout) or capability.contract_context()!=contracts.flight_context(int(equipment.snapshot().loadout.station_id),bindings):return reject("Contract construction differs from its admitted career and equipment")
+	elif not capability.matches_loadout(equipment.snapshot().loadout) or (not capability.void_story() and capability.contract_context()!=contracts.flight_context(int(equipment.snapshot().loadout.station_id),bindings)):return reject("Contract construction differs from its admitted career and equipment")
 	if not player_position.is_finite() or not field_center.is_finite():return reject("Contract construction requires finite player and asteroid-field positions")
 	var seed: Dictionary=equipment.snapshot().loadout
 	var context: Dictionary=capability.contract_context()

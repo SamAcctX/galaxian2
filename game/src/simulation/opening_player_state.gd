@@ -217,6 +217,12 @@ func configure_ordinary_void(bindings: RefCounted,catalogues: RefCounted,equipme
 	_state.void_context=world.snapshot().void_context.duplicate(true)
 	return true
 
+## A story cast in the alien world (154): the cast's player in the Void.
+func configure_void_story(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,world: RefCounted,previous_cache: Variant) -> bool:
+	if world==null or not configure_contract(bindings,catalogues,equipment,world.npc_construction_owner(),previous_cache):return false
+	_state.void_context=world.snapshot().void_context.duplicate(true)
+	return true
+
 func configure_free(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,construction: RefCounted,previous_cache: Variant=null,mission_context: RefCounted=null) -> bool:
 	clear()
 	if not FreeFlight.available(bindings) or not construction is Construction:return reject("Ordinary player requires its source-bound population")

@@ -1283,6 +1283,16 @@ func _selected_contract_context(station_id: int,bindings: RefCounted) -> Diction
 			if contact.contact_id==_state.active_offer_id:result.contact_name=contact.name;break
 	return result
 
+## A story flight set in the alien world (station -1, 154): the job the Void
+## visit builds. It depends on the career's cursor and progress only.
+func void_story_context(bindings: RefCounted) -> Dictionary:
+	if bindings==null or _state.is_empty():return {}
+	var job:=StoryFlights.story_job(bindings,_state.campaign_cursor,-1,_state.progress.merged({"difficulty":float(_state.difficulty)}))
+	if job.is_empty():return {}
+	return {"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,
+		"campaign_cursor":_state.campaign_cursor,"station_id":-1,"rank":_state.rank,"difficulty":_state.difficulty,
+		"reputation":_state.reputation.duplicate(true),"mission":job,"client_faction":-1,"contact_name":""}
+
 func free_flight_context(bindings: RefCounted,station_id: int) -> Dictionary:
 	var context:=retained_station_context(bindings,station_id)
 	if context.is_empty():return {}
@@ -1417,7 +1427,8 @@ func bind_flight(controller: RefCounted,bindings: RefCounted=null) -> bool:
 	var clock: Dictionary=scene.get("contract_result",{})
 	var encounter: Dictionary=scene.get("combat",{}).get("contract_encounter",{})
 	if clock.is_empty() or clock.elapsed_ms!=0 or clock.mode!=0 or clock.retired or not scene.has("accounting"):return reject("Bind the prepared flight before its first actor update")
-	var context:=flight_context(int(encounter.get("context",{}).get("station_id",-1)),bindings)
+	var station:=int(encounter.get("context",{}).get("station_id",-1))
+	var context:=void_story_context(bindings) if station==-1 and _state.get("station_id")==-1 else flight_context(station,bindings)
 	var capability: RefCounted=controller.mission_context_owner()
 	var supported: bool=capability!=null and capability.has_contract_actors() and capability.contract_context()==context
 	if not supported or context!=encounter.get("context"):return reject("This flight does not belong to the accepted contract")
@@ -1431,7 +1442,7 @@ func bind_flight(controller: RefCounted,bindings: RefCounted=null) -> bool:
 func bind_world(controller: RefCounted,context: Dictionary,bindings: RefCounted=null) -> bool:
 	error=""
 	if not _rules.has("world_initialization") or not _flight.is_empty() or not is_instance_of(controller,load("res://src/simulation/combat_training_control.gd")):return reject("Bind an ordinary world to its retained contract session")
-	var expected:=free_flight_context(bindings,int(context.get("station_id",-1))) if bindings!=null and Campaign.supported(bindings,context.get("campaign_cursor")) else flight_context(int(context.get("station_id",-1)))
+	var expected:=void_story_context(bindings) if context.get("station_id")==-1 and _state.get("station_id")==-1 else free_flight_context(bindings,int(context.get("station_id",-1))) if bindings!=null and Campaign.supported(bindings,context.get("campaign_cursor")) else flight_context(int(context.get("station_id",-1)))
 	if expected.is_empty() or context!=expected:return reject("The prepared world changed its retained contract context")
 	var scene: Dictionary=controller.snapshot()
 	if not scene.get("contract_result",{}).is_empty():return bind_flight(controller,bindings)

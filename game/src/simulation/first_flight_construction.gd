@@ -493,9 +493,11 @@ func prepare_ordinary_void_selected(bindings: RefCounted,catalogues: RefCounted,
 	if environment.is_empty():return false
 	var scenery:=Scenery.new()
 	var conditions:={"companions_empty":true,"location_match":true,"special_placement":false}
-	if not scenery.configure_ordinary_void(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources):return reject(scenery.error)
+	if not scenery.configure_ordinary_void(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources,environment.player_pose.origin):return reject(scenery.error)
 	var player:=Player.new()
-	if not player.configure_ordinary_void(bindings,catalogues,equipment,scenery.world_initialization_owner(),source,difficulty,previous_cache):return reject(player.error)
+	var story: bool=source is MissionContext and source.void_story()
+	var ready: bool=player.configure_void_story(bindings,catalogues,equipment,scenery.world_initialization_owner(),previous_cache) if story else player.configure_ordinary_void(bindings,catalogues,equipment,scenery.world_initialization_owner(),source,difficulty,previous_cache)
+	if not ready:return reject(player.error)
 	var location:=Location.new()
 	var place:=location.resolve_ordinary_void(bindings,catalogues,equipment,player.cache_snapshot(),environment.void_environment)
 	if place.is_empty():return reject(location.error)
@@ -511,6 +513,8 @@ func prepare_ordinary_void_selected(bindings: RefCounted,catalogues: RefCounted,
 	_state.void_context=context;_state.system_id=-1;_state.station_id=-1;_state.current_station_id=-1;_state.void_station_id=-1
 	_state.mission_kind=-1;_state.mission_story=false;_state.return_station_id=retained.source_station_id;_state.return_system_id=retained.source_system_id
 	_ordinary_void_source=source.fork()
+	# The story flight's runner, radio and results follow its admitted cast.
+	if story:_state.mission_context=source
 	return true
 
 func _valid_selected_progress(bindings: RefCounted,progress: Dictionary,cursor: int,rank: Variant,difficulty: Variant) -> bool:

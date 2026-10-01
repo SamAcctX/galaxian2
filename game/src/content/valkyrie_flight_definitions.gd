@@ -565,23 +565,26 @@ const SCRIPTED:={
 	# Keith (#1-#6). After "Proceed to Valkyrie" the freighter flies in (player
 	# locked 8 s); "Void minions, terminate him!" and they attack; Keith's
 	# "90 seconds", the captain, Keith. After line #8 a 91 s countdown (N9):
-	# dock at Valkyrie and win the hack -> "Ready to go on board" -> the result
+	# dock at Valkyrie and win the hack -> "Ready to go on board" (the countdown
+	# stops) -> the result
 	# (Alice arrested) -> success; then back at the last docked station's gate
 	# (MOVE_ON_ENTRY 155). Failure: the countdown runs out. Assumptions: the
 	# freighter's ~1 s cutscene steps are one 8 s lock; all fighters target the
-	# player (original: every third the freighter); the ring is a 3.4 km box.
+	# player (original: every third the freighter); the ring is a 3.4 km box;
+	# the fighters are the alien world's own Void hull (8).
 	154:{"points":[Vector3(200000,0,70000),Vector3(-10000,1000,15000),Vector3(0,0,40000)],
 		"groups":[{"count":1,"faction":0,"hull":51,"friendly":true,"sleeping":true,"hull_override":ESCORT_HULL,"route_start":1,
 			"position":{"kind":"player_offset","offset":Vector3(1500,0,1500),"bound":Vector3(1,1,1)}},
 			{"count":1,"faction":3,"friendly":true,"static":{"model":16928,"layers":[16929,16930],"jitter":0},"name_text_id":76,"dock":"hack","dockable":false,"unharmable":true},
-			{"count":20,"faction":9,"hull":-1,"friendly":false,"sleeping":true,"index":2,"offsets":[-1700,-200,-200],"bounds":[3400,200,1700]}],
+			{"count":20,"faction":9,"hull":8,"friendly":false,"sleeping":true,"index":2,"offsets":[-1700,-200,-200],"bounds":[3400,200,1700]}],
 		"radio":[[0,3028,2172,5,[9000]],[26,3029,2173,6,[0]],[0,3030,2174,6,[1]],[26,3031,2175,6,[2]],[0,3032,2176,6,[3]],[26,3033,2177,6,[4]],[0,3034,2178,6,[5]],
 			[26,3035,2179,35,[6,8000,1]],[0,3036,2180,6,[7]],[55,3037,2181,6,[8]],[0,3038,2182,6,[9]],[0,3039,2183,50,[1]]],
 		"radio_actions":[{"radio_index":6,"on":"finished","action":"lock_player","duration_ms":8000,"invulnerable":true},
 			{"radio_index":6,"on":"finished","action":"wake","first_actor":0,"end_actor":1},
 			{"radio_index":7,"action":"wake","first_actor":2,"end_actor":22,"attack_range":50000},
 			{"radio_index":8,"on":"finished","action":"dockable","first_actor":1,"end_actor":2,"enabled":true},
-			{"radio_index":8,"on":"finished","action":"countdown","duration_ms":91000}],
+			{"radio_index":8,"on":"finished","action":"countdown","duration_ms":91000},
+			{"radio_index":11,"action":"countdown","stop":true}],
 		"success":{"kind":"radio_finished","index":27},"failure":{"kind":"countdown"}},
 	# 157: the final battle at Var Lupra. #0-#9 Terran fighters (random
 	# hulls) on a route, #10 the Terran carrier (18804), #11-#20 stealth fighters
@@ -1059,22 +1062,9 @@ static func story_jump(cursor: int) -> Dictionary:
 	# Void's ordinary way out already does; no jump.
 	return {} if move.is_empty() or int(move.station_id)<0 else {"destination":int(move.station_id)}
 
-## Story scenes in the alien world played as their lines only (154, the
-## Valkyrie ambush). Assumption (gaps file): the Void flight cannot build a
-## story cast yet, so the fight, hack and countdown are left out; the lines
-## and the arrest result play one after another from 9 s and the story moves
-## on when they are over (VOID_EXIT).
-const VOID_SCENES:=[154]
-
 static func void_radio(cursor: int) -> Array:
 	var rows:=[]
 	for row in VOID_RADIO.get(cursor,[]):rows.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":row[3],"values":row[4].duplicate()})
-	if cursor in VOID_SCENES:
-		var lines: Array=SCRIPTED[cursor].radio.duplicate()
-		lines.append_array(RESULT_RADIO.get(cursor,Campaign.Dialogue.RESULT.get(cursor,[])))
-		for index in lines.size():
-			var row: Array=lines[index]
-			rows.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":5 if index==0 else 6,"values":[9000] if index==0 else [index-1]})
 	return rows
 
 static func void_exit(cursor: int) -> Dictionary:return VOID_EXIT.get(cursor,{}).duplicate()

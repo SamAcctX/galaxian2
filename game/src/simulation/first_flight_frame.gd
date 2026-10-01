@@ -238,6 +238,8 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	var ordinary_void:=Story.prepared_ordinary_void(bindings,entry)
 	var void_source: RefCounted=construction.ordinary_void_source_owner()
 	var void_world: bool=ordinary_void or (sahi_world and entry.campaign_cursor in [25,29])
+	# A story flight admitted with the Void visit (154) brings its own cast and results.
+	var void_story: bool=ordinary_void and mission_context!=null and mission_context.void_story()
 	if ordinary_void and construction.contract_owner()!=null and entry.departure.difficulty!=construction.contract_owner().snapshot().difficulty:return reject("Ordinary Void flight changed its retained difficulty")
 	var void_environment: RefCounted=construction.void_environment_owner() if void_world else null
 	if void_world and void_environment==null:return reject("Void flight requires its generated special environment")
@@ -272,6 +274,9 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	elif mission_world:
 		encounter=Encounter.new()
 		if not encounter.configure_mission(bindings,catalogues,library,player,construction.scenery_owner(),equipment,entry.departure.progress.reputation,mission_context) or not encounter.sample_mission_clock(0,0):return reject(encounter.error)
+	elif void_story:
+		encounter=Encounter.new()
+		if not encounter.configure_contract_world(bindings,catalogues,library,construction) or not encounter.sample_contract_clock(0,0):return reject(encounter.error)
 	elif ordinary_void:
 		encounter=Encounter.new()
 		if not encounter.configure_ordinary_void(bindings,catalogues,library,player,construction.scenery_owner(),equipment,entry.departure.progress.reputation,void_source,entry.departure.difficulty):return reject(encounter.error)
@@ -433,7 +438,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 		notices=Notices.new()
 		if not notices.configure(bindings,library,construction,catalogues):return reject(notices.error)
 	var objective: RefCounted
-	if ordinary_world or free_world or rescue_world:
+	if ordinary_world or free_world or rescue_world or void_story:
 		objective=ContractObjective.new()
 		if not objective.configure(bindings,construction,encounter,library):return reject(objective.error)
 	elif not bindings.mining_objective.is_empty():
@@ -889,7 +894,13 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		var radio_finished: Array=next._radio.snapshot().get("finished",[]) if next._radio!=null else []
 		if not next._objective.poll_contract(next._cargo,next._scenery,next._encounter,next._player.snapshot().vitals.hull>0,radio_active,next._briefing.mission_poll_due(),radio_finished,next._story_result_facts()):reject(next._objective.error);return null
 		var story_state: Dictionary=next._objective.snapshot()
-		if story_state.campaign_cursor!=before_cursor:
+		if story_state.campaign_cursor!=before_cursor and next._void_environment!=null and next._ordinary_void_source is Context:
+			# A story flight in the alien world has moved on (154 -> 155): the
+			# way out follows the new cursor and, where the story says, the
+			# drive takes the pilot back out on its own.
+			next._ordinary_void_source=next._ordinary_void_source.rebased_void_story(story_state.campaign_cursor)
+			if load("res://src/content/valkyrie_flight_definitions.gd").void_exit(before_cursor).get("auto",false):next._story_jump=0
+		elif story_state.campaign_cursor!=before_cursor:
 			# A story flight has moved on in space: navigation and docking follow it.
 			if next._local_travel==null or not next._local_travel.rebase_story_flight(_story_bindings,story_state.campaign_cursor,story_state.mission):reject("Story navigation: "+str(next._local_travel.error if next._local_travel!=null else "missing travel"));return null
 			next._return_rules={} if next._station==null or next._station_hidden else FreeFlight.docking(_story_bindings,int(_entry.location.station_id),story_state.campaign_cursor)
@@ -1599,12 +1610,17 @@ func _construct_void_trip(bindings: RefCounted,catalogues: RefCounted,route: Ref
 	if entering:
 		if not _objective is ContractObjective:reject("The source portal lost its ordinary flight ledger");return null
 		contracts=_objective.retained_for_arrival(_encounter)
+	elif _objective is ContractObjective:
+		# A story flight in the alien world (154) settles its career on the way out.
+		contracts=_objective.retained_for_arrival(_encounter)
 	else:
 		contracts=_convoy_career.fork() if _convoy_career!=null else null
 	if contracts==null:reject("The ordinary portal lost its retained career");return null
 	var equipment: RefCounted=_equipment.fork()
 	var source: Dictionary=equipment.snapshot().loadout
-	var exit: Dictionary={} if entering else load("res://src/content/valkyrie_flight_definitions.gd").void_exit(int(Context.ordinary_void_route(bindings,route).get("campaign_cursor",-1)))
+	# A story flight in the alien world moves the story itself (its result), not the way out.
+	var story_owned: bool=route is Context and route.void_story()
+	var exit: Dictionary={} if entering or story_owned else load("res://src/content/valkyrie_flight_definitions.gd").void_exit(int(Context.ordinary_void_route(bindings,route).get("campaign_cursor",-1)))
 	# station -1: the story moves on and the drive's ordinary return stands (147, 152).
 	if not exit.is_empty() and int(exit.station_id)<0:exit.station_id=int(Context.ordinary_void_route(bindings,route).get("source_station_id",-1))
 	if not exit.is_empty():
@@ -1965,7 +1981,9 @@ func _observe_radio() -> bool:
 					if not _encounter.retire_story_actors(int(action.first_actor),int(action.end_actor),RETIRE_POINT):return reject(_encounter.error)
 			elif action.action=="countdown":
 				# A HUD countdown from this moment; failure "countdown" when it runs out (154).
-				if _countdown_end<0:_countdown_end=elapsed+int(action.duration_ms)
+				# "stop" ends it for good (154: aboard Valkyrie in time).
+				if action.get("stop",false):_countdown_end=-2
+				elif _countdown_end==-1:_countdown_end=elapsed+int(action.duration_ms)
 			elif action.action in ["attack","supernova_reversal"]:
 				# Assumptions (gaps file): the ships do not fire on the object (no
 				# forced NPC target yet), and Ginoya's supernova look is not drawn
@@ -2558,7 +2576,7 @@ func _retain_mining_extraction(receipt: Dictionary) -> bool:
 func equipment_owner() -> RefCounted:return null if _equipment==null else _equipment.fork()
 
 func contract_owner() -> RefCounted:
-	if _ordinary_void_source!=null and _entry.location.station_id<0:return null if _convoy_career==null else _convoy_career.fork()
+	if _ordinary_void_source!=null and _entry.location.station_id<0 and not _objective is ContractObjective:return null if _convoy_career==null else _convoy_career.fork()
 	if _objective is ContractObjective:return _objective.retained_for_arrival(_encounter) if not _station_packet.is_empty() else _objective.contract_owner()
 	# Final mission Next already committed the complete career. The frozen
 	# pending station frame must not re-admit it through an older convoy stage.

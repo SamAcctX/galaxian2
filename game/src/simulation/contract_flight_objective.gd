@@ -27,7 +27,9 @@ func configure(bindings: RefCounted,construction: RefCounted,encounter: RefCount
 	var entry: Dictionary=construction.snapshot()
 	var contracts: RefCounted=construction.contract_owner()
 	var rescue:=Kappa.prepared_entry(bindings,entry)
-	if contracts==null or not (World.ordinary_entry(bindings,entry) or FreeFlight.ordinary_entry(bindings,entry) or rescue):return reject("The objective lost its prepared encounter or retained career")
+	var mission_context: RefCounted=construction.mission_context_owner()
+	var void_story: bool=mission_context!=null and mission_context.void_story()
+	if contracts==null or not (World.ordinary_entry(bindings,entry) or FreeFlight.ordinary_entry(bindings,entry) or rescue or void_story):return reject("The objective lost its prepared encounter or retained career")
 	var visit: RefCounted
 	if rescue:
 		visit=Visit.new()

@@ -119,12 +119,26 @@ func configure_free_factory(bindings: RefCounted,catalogues: RefCounted,player_s
 	if not construction.configure_free_factory(bindings,catalogues,player_ship_id,equipment_ids,context,unix_seconds):return reject(construction.error)
 	return _configure_free(bindings,catalogues,construction,player_ship_id,equipment_ids,context,entry_conditions)
 
-func configure_void_factory(bindings: RefCounted,catalogues: RefCounted,player_ship_id: int,equipment_ids: Array,context: Dictionary,entry_conditions: Dictionary) -> bool:
+func configure_void_factory(bindings: RefCounted,catalogues: RefCounted,player_ship_id: int,equipment_ids: Array,context: Dictionary,entry_conditions: Dictionary,story_equipment: RefCounted=null,player_position:=Vector3.ZERO,field_center:=Vector3.ZERO) -> bool:
 	clear()
 	if bindings==null or not VoidCrystals.selected_void(bindings.mido_travel,context):return reject("Void initialization requires its selected nonstory crystal world")
 	if entry_conditions!={"companions_empty":true,"location_match":true,"special_placement":false}:return reject("Void initialization requires its matched ordinary placement")
 	if not Sahi.coherent(bindings.mido_travel):return reject("Void fighter weapon effects require their imported source declarations")
 	var construction:=Construction.new()
+	# A story flight admitted with the Void visit (154) builds its own cast.
+	var admission: Variant=context.get("void_admission")
+	if admission is RefCounted and admission.has_method("void_story") and admission.void_story():
+		if not construction.configure_contract(bindings,catalogues,story_equipment,null,player_position,field_center,admission):return reject(construction.error)
+		var story:={"scope":"ordinary_void_story_initialization","weapon_groups":["pirate","rival"]}
+		for group in admission.recipe().cast.ship_groups:
+			if group.has("population_group") and group.population_group not in story.weapon_groups:story.weapon_groups.append(group.population_group)
+		if not _bind_faction_weapon_effects(bindings,story):return false
+		var void_weapon: Dictionary=bindings.mido_travel.sahi_encounter.weapons["void"]
+		story.faction_weapon_effects[int(void_weapon.actor_kind)]={"items":[0,int(void_weapon.item_id)],"resources":[ContractWorld.impact_model(bindings,0),int(void_weapon.impact_model_id)]}
+		if not _configure(bindings,catalogues,story,construction,[],story_equipment.snapshot().loadout.slots.filter(func(slot):return slot!=null)):return false
+		_identity.merge({"campaign_cursor":int(context.campaign_cursor),"station_id":-1,"system_id":-1,
+			"entry_conditions":entry_conditions.duplicate(true),"void_context":context.duplicate(true),"contract_context":admission.contract_context()})
+		return true
 	if not construction.configure_void_factory(bindings,catalogues,player_ship_id,equipment_ids,context):return reject(construction.error)
 	var shared: Dictionary=bindings.opening_actors.get("npc_initialization",{}).get("world_initialization",{})
 	var ordinary: int=ContractWorld.impact_model(bindings,0)
