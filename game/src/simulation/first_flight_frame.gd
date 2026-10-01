@@ -1035,9 +1035,10 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		if next._booster.active():
 			var boost_id:=int(next._booster.snapshot().get("item_id",-1))
 			next._instability=minf(1.0,next._instability+float(rules.boost_rates.get(boost_id,rules.boost_rate))*float(delta_ms)/1000.0)
-		# Sharp steering shakes it too: twice the largest change this frame.
+		# Sharp steering shakes it too: twice the largest change this frame,
+		# scaled by the frame's seconds.
 		var change: Vector2=(commands-next._volatile_steer).abs()
-		next._instability=minf(1.0,next._instability+2.0*maxf(change.x,change.y))
+		next._instability=minf(1.0,next._instability+2.0*maxf(change.x,change.y)*float(delta_ms)/1000.0)
 		next._volatile_steer=commands
 		if next._instability>=1.0 and not next._player.destroy_hull():reject(next._player.error);return null
 	elif not next._volatile_carried():next._instability=0.0;next._volatile_steer=Vector2.ZERO
