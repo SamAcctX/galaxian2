@@ -25,6 +25,9 @@ const Flight = preload("res://src/simulation/npc_flight.gd")
 const Vitals = preload("res://src/simulation/combat_vitals.gd")
 const Vectors = preload("res://src/simulation/source_vectors.gd")
 const Random = preload("res://src/simulation/seeded_random.gd")
+const VOID_KIND:=9
+const VOID_REMAINS_ITEM:=131
+const VOID_REMAINS_MAX:=3
 const Explosion = preload("res://src/simulation/type_zero_explosion.gd")
 var error := ""
 var _parameters := {}
@@ -272,7 +275,9 @@ func retires_before_update() -> bool:
 	if _state.is_empty():return false
 	return _state.phase=="retired" or (_state.phase=="explosion" and not _state.effect.active and (_cargo_rules.is_empty() or not _state.cargo.eligible or _state.cleanup_elapsed_ms>int(_cargo_rules.cleanup_after_ms)))
 
-func advance(delta_ms: Variant, random_state: Variant) -> Dictionary:
+## lethal_actor is the combat body at death start. A hostile Void (kind 9)
+## ship drops Alien Remains (item 131, 1..3 units) instead of its cargo.
+func advance(delta_ms: Variant, random_state: Variant, lethal_actor: Dictionary={}) -> Dictionary:
 	error=""
 	if _state.is_empty() or not Vitals.integer(delta_ms) or delta_ms>_max_ms: return fail("Invalid NPC death frame duration")
 	var random := Random.new()
@@ -292,6 +297,8 @@ func advance(delta_ms: Variant, random_state: Variant) -> Dictionary:
 			next.countdown_ms=int(_parameters.delay_base_ms)+random.next_int(int(_parameters.delay_bound_ms))
 			next.spin=Vectors.scaled(random_direction(random),float(_parameters.spin_scale))
 			sounds.append(int(_parameters.death_sound))
+			if not _cargo_rules.is_empty() and lethal_actor.get("actor_kind")==VOID_KIND and lethal_actor.get("friendly",false)!=true:
+				next.cargo.entries=[{"item_id":VOID_REMAINS_ITEM,"quantity":1+random.next_int(VOID_REMAINS_MAX)}];next.cargo.eligible=true
 			audio_events.append({"source_id":int(_parameters.death_sound),"position":next.pose.origin})
 		if next.phase=="tumble":
 			next.retire_on_transfer=false

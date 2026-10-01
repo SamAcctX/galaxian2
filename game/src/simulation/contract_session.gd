@@ -1749,6 +1749,13 @@ func _retain_combat_progress(controller: RefCounted) -> bool:
 		var count:=Career.recovered_cargo_total(int(progress.get("cargo_recovered",0)),recovered,retained)
 		if count<0:return reject("The flight lost its retained recovery quantity or exceeded the supported career range")
 		earned.cargo_recovered=count
+	# Alien Hunter: units picked up from Void (kind 9) crates. Like story kills,
+	# a smaller total than retained means a new combat world after a jump.
+	var remains: Variant=scene.combat.get("recovery",{}).get("kind9_quantity",0)
+	if not Numbers.integer(remains,0,2147483647):return reject("The flight lost its retained Void cargo quantity")
+	var retained_remains: int=_flight.get("alien_remains",0)
+	if remains<retained_remains:retained_remains=0;_flight.alien_remains=0
+	var new_remains: int=int(remains)-retained_remains
 	var booze_flags: Variant=scene.combat.get("recovery",{}).get("item_flags",[])
 	if not booze_flags is Array:return reject("The flight lost its retained Barkeeper item history")
 	var booze_mask: Variant=progress.get("booze_types_mask",0)
@@ -1776,6 +1783,10 @@ func _retain_combat_progress(controller: RefCounted) -> bool:
 	_state.reputation=standing;_state.progress.reputation=standing.duplicate(true)
 	_flight.accounting=accounting.duplicate(true);_flight.reputation_events=events.duplicate(true)
 	if recovered>0:_flight.cargo_recovered=recovered
+	if new_remains>0:
+		_state.stats=_state.get("stats",{}).duplicate()
+		_state.stats.alien_remains=mini(int(_state.stats.get("alien_remains",0))+new_remains,2147483647)
+		_flight.alien_remains=int(remains)
 	if counted.size()>retained_kills:_flight.story_kills=counted.size()
 	_flight.elapsed_ms=scene.selected40_sequence.elapsed_ms if _flight.has("selected40_entry") else scene.get("contract_result",{}).get("elapsed_ms",0)
 	var capability: RefCounted=controller.mission_context_owner()

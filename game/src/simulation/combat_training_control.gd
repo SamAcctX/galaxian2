@@ -923,7 +923,7 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 				accounting_event=staged._accounting.record(actor)
 				if accounting_event.is_empty():return fail(staged._accounting.error)
 				if not staged._destruction[id].capture(root,decision.speed,staged._flight[id].bank_basis()):return fail(staged._destruction[id].error)
-			var death: Dictionary=staged._destruction[id].advance(delta_ms,decision.random_state)
+			var death: Dictionary=staged._destruction[id].advance(delta_ms,decision.random_state,actor if life.phase=="ready" else {})
 			if death.is_empty() or not staged._combat.apply_destruction(id,death.state):return fail(staged._destruction[id].error+staged._combat.error)
 			death.accounting_event=accounting_event;death_events.append(death)
 			staged._random=death.random_state.duplicate(true);decisions.append(decision)
