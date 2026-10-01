@@ -1802,12 +1802,27 @@ func fly_supernova_finale() -> void:
 	await process_frame;resume_application_focus()
 	check(app.session.station_owner().snapshot().campaign_cursor==141,"The Var Lupra checkpoint is not at cursor 141")
 	if failures or not seed_cargo([[122,12]]):return
+	# 142's plasma collector needs a turret slot: a player buys such a hull
+	# where one is sold (here, or B'akrram's yard).
+	if int(catalogue.tables.ships[int(app.session.station_owner().snapshot().loadout.ship_id)].stats.turret_slots)<1 and not await buy_turret_hull():
+		if failures or not await depart_to(58) or not await dock_application() or not await buy_turret_hull():check(false,"No turret hull at Var Lupra or B'akrram");return
 	if not await travel_and_talk(VAR_HASTRA,141,142):return
 	var docked: Dictionary=app.session.station_owner().snapshot()
 	var project: Array=docked.contracts.blueprints.entries.filter(func(row):return row.item_id==210)
 	print("SUPERNOVA 141 blueprint ",project," hold ",docked.cargo.entries.map(func(row):return [row.item_id,row.quantity]))
 	check(not project.is_empty() and project[0].available and [196,197,198].all(func(id):return docked.cargo.entries.any(func(row):return int(row.item_id)==id)),"141 did not hand over the Chromo Plasma blueprint and the plasma kit")
 	if failures:return
+	# The kit fills the hold: sell the leftovers (not the kit or the recipe's goods).
+	if not app.equipment_action("open"):check(false,app.session.error);return
+	sell_hold([196,197,198,175,137]+Array(catalogue.tables.items[210].arrays[0]))
+	# Earlier stages each topped up item 122: keep one stack of 12.
+	var spare:=0
+	for row in app.session.station_owner().snapshot().cargo.entries:
+		if int(row.item_id)==122:spare+=int(row.quantity)
+	for unit in maxi(0,spare-12):
+		if not app.equipment_action("sell",122):break
+	print("SUPERNOVA 141 hold cleared ",app.session.station_owner().snapshot().cargo.entries.map(func(row):return [row.item_id,row.quantity])," free ",app.session.station_owner().snapshot().cargo.free_space)
+	app.equipment_action("close")
 	# 142 refused while the kit is not fitted (3205).
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()) or not await release_application_flight():check(false,app.status.text);return
 	var refused: RefCounted=app.session.flight_owner().select_map_destination(KERNSTAL)
@@ -1843,7 +1858,7 @@ func fly_supernova_finale() -> void:
 	var fire:=func(frame):
 		var heard: Array=frame._radio.snapshot().get("finished",[])
 		var pose: Transform3D=app.session.snapshot().player_pose;var to: Vector3=KERNSTAL_CLOUD-pose.origin
-		if frame._gas_ionized or heard.size()<4 or heard[3]!=true or to.length()>9000 or (-pose.basis.z).angle_to(to)>0.05 or shots[0]>=10:return false
+		if frame._gas_ionized or heard.size()<4 or heard[3]!=true or to.length()>9000 or shots[0]>=10:return false
 		shots[0]+=1;return true
 	if not await story_flight(142,"kernstal",lesson,func(_frame):return [],radio_ids,900,600.0,fire):return
 	var plasma: Array=app.session.snapshot().cargo.entries.filter(func(row):return int(row.item_id) in [201,202,203,204])
@@ -2232,6 +2247,19 @@ func fit_cabins(needed: int,best_effort:=false) -> bool:
 	return failures==0
 
 ## The hangar's ship offers, as the player sees them.
+## Buy the toughest affordable hull with a turret slot here (keeping the
+## Khador Drive fitted); false when the yard has none.
+func buy_turret_hull() -> bool:
+	var offers: Array=await shipyard()
+	var credits:=int(app.session.station_owner().snapshot().contracts.credits)
+	var fit: Array=offers.filter(func(row):var stats: Dictionary=catalogue.tables.ships[int(row.ship_id)].stats;return stats.turret_slots>=1 and stats.secondary_slots>=1 and stats.equipment_slots>=4 and int(row.unit_price)<credits)
+	print("SUPERNOVA turret yard ",docked_station()," ",offers.map(func(row):return row.ship_id)," turret hulls ",fit.map(func(row):return row.ship_id))
+	if fit.is_empty():return false
+	fit.sort_custom(func(a,b):return int(catalogue.tables.ships[int(a.ship_id)].stats.armor)>int(catalogue.tables.ships[int(b.ship_id)].stats.armor))
+	if not app.equipment_action("open") or not app.equipment_action("buy_ship",offers.find(fit[0])):check(false,"The turret hull could not be bought: "+app.session.error);return false
+	app.equipment_action("close")
+	return fit_item(85)
+
 func shipyard() -> Array:
 	if not app.equipment_action("open"):check(false,"The hangar did not open: "+app.session.error);return [-1]
 	var offers: Array=app.session.station_owner().snapshot().equipment.market_ships.duplicate(true)
@@ -2595,9 +2623,14 @@ func fit_best_guns() -> bool:
 		if not app.equipment_action("mount",best):check(false,"Gun "+str(best)+" could not be fitted: "+app.session.error);return false
 	print("SUPERNOVA guns fitted ",best," x",fitted.size()," ",app.session.station_owner().snapshot().loadout.equipment_ids)
 	# Sell the replaced equipment so the hold has room again.
+	sell_hold([])
+	return app.equipment_action("close")
+
+## With the shop open: sell what the hold carries except story goods,
+## fuel and `keep` (a player clearing room).
+func sell_hold(keep: Array) -> void:
 	for row in app.session.station_owner().snapshot().cargo.entries:
-		if int(row.item_id) in [122,146,204,209] or catalogue.tables.items[int(row.item_id)].arrays[2][3]==4:continue
+		if int(row.item_id) in [122,146,204,209]+keep or catalogue.tables.items[int(row.item_id)].arrays[2][3]==4:continue
 		for unit in int(row.quantity):
 			if not app.equipment_action("sell",int(row.item_id)):break
-	return app.equipment_action("close")
 

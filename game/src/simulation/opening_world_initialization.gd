@@ -337,6 +337,9 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, data: Dictionary, 
 	# The retained initial equipment excludes both optional population groups.
 	for item in (equipment if explicit_equipment or not equipment.is_empty() else bindings.opening_loadout.equipment):
 		var equipment_type: int=catalogues.tables.items[int(item.item_id)].arrays[2][5]
+		# The spectral filter's optional group (gas clouds, sort 33) is built
+		# by the gas clouds owner, not here.
+		if equipment_type==33:continue
 		if shared.absent_equipment_types.any(func(value): return int(value)==equipment_type):
 			return reject("Initial equipment does not exclude the optional population")
 	for hull in hulls:

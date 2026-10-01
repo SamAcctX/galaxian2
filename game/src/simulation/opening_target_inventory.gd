@@ -144,8 +144,10 @@ func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dic
 		var values: Variant = catalogues.tables.items[id].arrays[2]
 		if values.size()<=type_index or not Numbers.integer(values[type_index],0,65535):
 			return reject("Opening equipment has no supported source type")
+		# The spectral filter's third group (gas clouds) is built by the gas
+		# clouds owner, so this inventory leaves it out.
 		if int(values[type_index])==REQUIRED_EQUIPMENT_TYPE:
-			return reject("Opening equipment requires an unsupported additional target group")
+			continue
 	for key in ["base_content_id","binding_id"]:
 		if not exact_value(opening_field.get(key),source[key]):return reject("Opening target field has a different identity or location")
 	if ordinary_void:

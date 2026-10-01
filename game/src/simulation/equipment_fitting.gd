@@ -42,6 +42,8 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 	for id in [94,95,96]:items[id]="" if cloak_ready else "This cloak's original mask or sound is unavailable"
 	for item in cat.tables.items:
 		if item.arrays[2][3] not in [0,2]:continue
+		# The plasma collector (turret sort 35) fires nothing: no weapon model.
+		if item.arrays[2][3]==2 and item.arrays[2][5]==35:items[int(item.id)]="";continue
 		var id:=int(item.id);var mapping:=Rules.primary(bindings.mido_travel.ordinary_fitting,id,int(item.arrays[2][5]))
 		if item.arrays[2][3]==2 and not Turrets.declaration(id).is_empty():
 			mapping={"projectile_model_id":int(bindings.mido_travel.ordinary_fitting.primary.projectile_model_ids[id]),"impact_model_id":int(bindings.mido_travel.ordinary_fitting.primary.impact_model_ids[id])}
@@ -151,6 +153,9 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 	var item: Dictionary=cat.tables.items[id]
 	var category: int=item.arrays[2][3];var subtype: int=item.arrays[2][5]
 	var properties: Dictionary=item.properties
+	# The plasma collector (turret sort 35) fires nothing: the gas clouds
+	# read it in turret view.
+	if category==2 and subtype==35:return ""
 	if category in [0,2]:
 		var weapon: Dictionary=resolver.resolve(id,ids)
 		if weapon.is_empty():return "This weapon's firing behavior is not yet supported"
