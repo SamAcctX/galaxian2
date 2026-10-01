@@ -970,7 +970,7 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 		if row.has("dock"):docks[actor]={"mode":row.dock,"dockable":row.get("dockable",true),"transfer":row.get("dockable",true)}
 		actor+=1 if row.has("static") else int(row.count)
 	return {"actor_count":first,"ship_groups":groups,"placement":{"kind":"points","points":plan.points.duplicate()},"radio":radio,"docks":docks,"shuttles":plan.get("shuttles",{}).duplicate(true),"cloakers":cloakers,"proximity_wakes":wakes,"player_route":plan.get("player_route",{}).duplicate(),
-		"success":plan.success.duplicate(),"failure":plan.get("failure",{"kind":"never"}).duplicate(),"story":_advance(cursor),"turn_hostile":plan.get("turn_hostile",{}).duplicate(),"radio_actions":plan.get("radio_actions",[]).duplicate(true),"timed_actions":plan.get("timed_actions",[]).duplicate(true),"asteroid_ore":int(plan.get("asteroid_ore",-1))}
+		"success":plan.success.duplicate(),"failure":plan.get("failure",{"kind":"never"}).duplicate(),"story":_advance(cursor),"turn_hostile":plan.get("turn_hostile",{}).duplicate(),"radio_actions":plan.get("radio_actions",[]).duplicate(true),"timed_actions":plan.get("timed_actions",[]).duplicate(true),"asteroid_ore":int(plan.get("asteroid_ore",-1)),"gas_clouds":plan.get("gas_clouds",{}).duplicate(true)}
 
 ## A static row with an offset stands at its point plus that offset (80: the
 ## battlestation and its weak points); without one it keeps the origin.
