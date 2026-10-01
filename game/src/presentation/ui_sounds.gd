@@ -13,10 +13,13 @@ const MAP_STATION:=104
 const MAP_CONFIRM:=105
 const MAP_ZOOM_IN:=106
 const MAP_ZOOM_OUT:=107
-## Hangar item window (HangarWindow touch handling): buy, sell. Its info
-## sound (97) has no counterpart: item details are shown inline.
-const HANGAR_BUY:=100
-const HANGAR_SELL:=101
+## Hangar item window (HangarWindow touch handling): buy (+1), sell (-1),
+## mount, unmount. Its info sound (97) has no counterpart: item details are
+## shown inline.
+const HANGAR_BUY:=101
+const HANGAR_SELL:=100
+const HANGAR_MOUNT:=98
+const HANGAR_UNMOUNT:=96
 static var _identity:={}
 static var _clips:={}
 
@@ -26,7 +29,7 @@ static func configure(library: RefCounted,bindings: RefCounted) -> void:
 	_identity=identity;_clips={}
 	var resources:=Audio.new()
 	if not resources.configure(library,bindings):return
-	for id in [PRESS_EVENT,ACTIVATE_EVENT,MAP_SYSTEM,MAP_STATION,MAP_CONFIRM,MAP_ZOOM_IN,MAP_ZOOM_OUT,HANGAR_BUY,HANGAR_SELL]:
+	for id in [PRESS_EVENT,ACTIVATE_EVENT,MAP_SYSTEM,MAP_STATION,MAP_CONFIRM,MAP_ZOOM_IN,MAP_ZOOM_OUT,HANGAR_BUY,HANGAR_SELL,HANGAR_MOUNT,HANGAR_UNMOUNT]:
 		var clip:=OneShot.prepare(resources,id)
 		if not clip.is_empty():_clips[id]=clip
 

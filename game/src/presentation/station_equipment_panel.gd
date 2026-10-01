@@ -163,7 +163,8 @@ func _request_action(action: String,id: int) -> void:
 		_replacement.popup_centered(Vector2i(600 if _mobile else 420,160))
 		_refresh()
 	else:
-		if action in ["buy","sell"]:Sounds.event(self,Sounds.HANGAR_BUY if action=="buy" else Sounds.HANGAR_SELL)
+		var sounds:={"buy":Sounds.HANGAR_BUY,"sell":Sounds.HANGAR_SELL,"mount":Sounds.HANGAR_MOUNT,"unmount":Sounds.HANGAR_UNMOUNT}
+		if sounds.has(action):Sounds.event(self,sounds[action])
 		action_requested.emit(action,id)
 
 func _add_ship_offer(index: int) -> void:
@@ -199,7 +200,7 @@ func _confirm_replacement() -> void:
 	elif pending.has("ship_index"):
 		if pending.ship_index>=_state.get("market_ships",[]).size() or _state.market_ships[pending.ship_index]!=pending.offer:return
 		action_requested.emit("buy_ship",pending.ship_index)
-	else:slot_action_requested.emit("replace",pending.item_id,pending.index)
+	else:Sounds.event(self,Sounds.HANGAR_MOUNT);slot_action_requested.emit("replace",pending.item_id,pending.index)
 	_refresh()
 
 func _add_installed_row(index: int) -> void:
@@ -223,7 +224,7 @@ func _add_installed_row(index: int) -> void:
 	button.pressed.connect(func():
 		if not _active or not visible or not _pending_replace.is_empty() or button.disabled:return
 		var slot: Variant=_state.loadout.slots[index]
-		if slot!=null:slot_action_requested.emit("unmount",int(slot.item_id),index))
+		if slot!=null:Sounds.event(self,Sounds.HANGAR_UNMOUNT);slot_action_requested.emit("unmount",int(slot.item_id),index))
 	_installed_rows[index]={"node":row,"number":number,"icon":icon,"name":label,"detail":detail,"button":button}
 	for text in [label,detail,number]:text.add_theme_font_size_override("font_size",20 if _mobile else 15)
 
