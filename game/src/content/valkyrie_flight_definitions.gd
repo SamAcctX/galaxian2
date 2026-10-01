@@ -923,6 +923,10 @@ static func _combat_recipe(job: Dictionary) -> Dictionary:
 		"radio":_radio(cursor,int(plan.get("success_count",targets.size()))),"success":success,
 		"story":_advance(cursor),"turn_hostile":{},"disarm_on_advance":[targets.min(),targets.max()+1] if plan.get("disarm",false) else []}
 
+## Hidden ships wait far off-scene, where nothing wakes them, until a
+## "show" or "place" action brings them in.
+const HIDDEN_PARK:={"kind":"player_offset","offset":Vector3(1000000,1000000,1000000),"bound":Vector3(1,1,1)}
+
 static func _scripted_recipe(cursor: int) -> Dictionary:
 	var plan: Dictionary=SCRIPTED[cursor];var groups:=[];var first:=0;var cloakers:=[];var wakes:=[]
 	for row in plan.groups:
@@ -935,7 +939,7 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 		var group:={"first_actor":first,"end_actor":first+int(row.count),"faction":int(row.faction),"population_group":"story","origin":"zero",
 			"ship_state":{"mode":5,"active":false,"targeting_blocked":true} if row.get("sleeping",false) else {"mode":0,"active":true,"targeting_blocked":false},"route_start":int(row.get("route_start",-1)),"route_loop":row.get("route_loop",[]).duplicate(),
 			"policy":{"initial_hostile":not friendly,"updated_hostile":not friendly,"friendly":friendly},
-			"position":row.position.duplicate() if row.has("position") else {"kind":"path_scatter","index":int(row.get("index",0)),"offsets":row.offsets.duplicate(),"bounds":row.bounds.duplicate()}}
+			"position":row.position.duplicate() if row.has("position") else HIDDEN_PARK.duplicate() if row.get("hidden",false) else {"kind":"path_scatter","index":int(row.get("index",0)),"offsets":row.offsets.duplicate(),"bounds":row.bounds.duplicate()}}
 		if row.has("name_text_id"):group.name_text_id=int(row.name_text_id)
 		if int(row.get("hull",-1))>=0:group.hull_catalogue_id=int(row.hull)
 		if row.has("hull_override"):group.ship_state.hull_override=int(row.hull_override)

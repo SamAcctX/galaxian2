@@ -171,7 +171,7 @@ func fly_turret() -> void:
 		if not captured and input.distance>0 and input.distance<5000:captured=true;await capture_free_application("valkyrie-turret-fight")
 		for adjustment in 10:
 			var current: float=app.session.snapshot().input_throttle
-			if absf(current-float(input.throttle))<.01:break
+			if absf(current-float(input.throttle))<.01 or not app.session.can_control():break
 			if not app.session.action("throttle_up" if current<float(input.throttle) else "throttle_down"):check(false,app.session.error);return
 		now_us+=100000
 		if not app.session.step(now_us,input.commands,input.fire,false,input.strafe):check(false,app.session.error);return
@@ -1420,7 +1420,10 @@ func fly_supernova_meenkk() -> void:
 	app.set_player_mode(true);app.show();app.present_session()
 	await process_frame;resume_application_focus()
 	check(app.session.station_owner().snapshot().campaign_cursor==117,"The Maissa checkpoint is not at cursor 117")
-	if failures or not seed_cargo([[122,12]],2000000):return
+	# Test shortcut (as at Genoh): a long career's money spent on the
+	# toughest hull on sale, top shield and armour, and the best guns.
+	var top:=top_protection()
+	if failures or not seed_cargo([[122,12]]+top.map(func(id):return [id,1]),7000000) or not await outfit_for_combat() or not fit_same_type(top) or not fit_best_guns():return
 	if not await travel_and_talk(126,117,118):return
 	# 118: the Mutagen is on sale here (a story offer); buying it completes 118.
 	var bought: bool=app.equipment_action("open") and app.equipment_action("buy",209)
@@ -2050,7 +2053,7 @@ func kappa_black_box() -> bool:
 			steer=missile_steering({"basis":state.player_pose.basis,"position":state.player_pose.origin},target);want=1.0 if distance>(2500.0 if open else 3000.0) else 0.15
 		for adjustment in 10:
 			var current: float=app.session.snapshot().input_throttle
-			if absf(current-want)<.01 or frame.cinematic_input_blocked():break
+			if absf(current-want)<.01 or frame.cinematic_input_blocked() or not app.session.can_control():break
 			if not app.session.action("throttle_up" if current<want else "throttle_down"):check(false,app.session.error);return false
 		now_us+=100000
 		if not app.session.step(now_us,steer if not frame.cinematic_input_blocked() else Vector2.ZERO,false,false,0.0):check(false,app.session.error);return false
@@ -2249,7 +2252,7 @@ func fight_until(label: String,done: Callable,targets: Callable,radio_ids: Array
 		if not captured and input.distance>0 and input.distance<6000:captured=true;await capture_free_application("valkyrie-"+label+"-fight")
 		for adjustment in 10:
 			var current: float=app.session.snapshot().input_throttle
-			if absf(current-float(input.throttle))<.01:break
+			if absf(current-float(input.throttle))<.01 or not app.session.can_control():break
 			if not app.session.action("throttle_up" if current<float(input.throttle) else "throttle_down"):check(false,app.session.error);return false
 		# With Liberators aboard, launch one at a target inside 9 km, fly it
 		# to the nearest target and set it off close by, as a player would.
@@ -2295,7 +2298,7 @@ func hunt_convoy(station: int,radio_ids: Array) -> bool:
 		if not captured and input.distance>0 and input.distance<6000:captured=true;await capture_free_application("valkyrie-convoy-%d"%station)
 		for adjustment in 10:
 			var current: float=app.session.snapshot().input_throttle
-			if absf(current-float(input.throttle))<.01:break
+			if absf(current-float(input.throttle))<.01 or not app.session.can_control():break
 			if not app.session.action("throttle_up" if current<float(input.throttle) else "throttle_down"):check(false,app.session.error);return false
 		# Finish a damaged escort as a player would: R launches the Liberator,
 		# the stick flies it at the nearest escort, a second R sets it off close by.
@@ -2489,7 +2492,7 @@ func fight_nearby_hostiles(radius: float) -> bool:
 			input.commands=steer+(input.commands-steer).limit_length(.05);steer=input.commands
 		for adjustment in 10:
 			var current: float=app.session.snapshot().input_throttle
-			if absf(current-float(input.throttle))<.01:break
+			if absf(current-float(input.throttle))<.01 or not app.session.can_control():break
 			if not app.session.action("throttle_up" if current<float(input.throttle) else "throttle_down"):check(false,app.session.error);return false
 		now_us+=100000
 		if not app.session.step(now_us,input.commands,input.fire,false,input.strafe):check(false,app.session.error);return false
@@ -2514,7 +2517,15 @@ func fit_best_guns() -> bool:
 	if fitted.is_empty():return true
 	var sort:=int(items[fitted[0]].properties.get(2,-1))
 	var rate:=func(id):return float(items[id].properties.get(int(weapons.damage_property),0))/float(items[id].properties.get(int(weapons.interval_property),1))
-	var best: int=range(items.size()).filter(func(id):return gun.call(id) and int(items[id].properties.get(2,-1))==sort).reduce(func(a,b):return b if rate.call(b)>rate.call(a) else a)
+	# The strongest primary gun whose firing the remake supports.
+	if not app.equipment_action("open"):check(false,app.session.error);return false
+	var support: Dictionary=app.session.station_owner().equipment_owner().snapshot().get("fitting_support",{})
+	app.equipment_action("close")
+	var candidates: Array=range(items.size()).filter(func(id):return gun.call(id) and String(support.get(id,"x")).is_empty())
+	candidates.sort_custom(func(a,b):return rate.call(a)>rate.call(b))
+	check(not candidates.is_empty(),"No supported primary gun")
+	if failures:return false
+	var best: int=candidates[0]
 	if not seed_cargo([[best,fitted.size()]]) or not app.equipment_action("open"):check(false,"Seeding guns failed: "+app.session.error);return false
 	for index in range(slots.size()-1,-1,-1):
 		if slots[index]!=null and gun.call(int(slots[index].item_id)):
@@ -2522,5 +2533,10 @@ func fit_best_guns() -> bool:
 	for count in fitted.size():
 		if not app.equipment_action("mount",best):check(false,"Gun "+str(best)+" could not be fitted: "+app.session.error);return false
 	print("SUPERNOVA guns fitted ",best," x",fitted.size()," ",app.session.station_owner().snapshot().loadout.equipment_ids)
+	# Sell the replaced equipment so the hold has room again.
+	for row in app.session.station_owner().snapshot().cargo.entries:
+		if int(row.item_id) in [122,146,204,209] or catalogue.tables.items[int(row.item_id)].arrays[2][3]==4:continue
+		for unit in int(row.quantity):
+			if not app.equipment_action("sell",int(row.item_id)):break
 	return app.equipment_action("close")
 

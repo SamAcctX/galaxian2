@@ -1872,8 +1872,9 @@ func _observe_radio() -> bool:
 				if held:
 					radio_lock=true;radio_invulnerable=radio_invulnerable or action.get("invulnerable",false)
 			elif action.action in ["dockable","transfer"]:
+				# Once per action, so a won hack point stays closed.
 				# target "last_hacked": the point of the latest won hack (139).
-				if action.get("target","")=="last_hacked" and _action_marks.has("applied%d"%index):continue
+				if _action_marks.has("applied%d"%index):continue
 				var ids: Array=[int(_story_dock.get("last_hacked",-1))] if action.get("target","")=="last_hacked" else range(int(action.first_actor),int(action.end_actor))
 				for id in ids:
 					if not _story_dock.get("actors",{}).has(id):continue
