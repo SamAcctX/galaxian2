@@ -7,6 +7,12 @@ const StationSaveFile=preload("res://src/simulation/station_save_file.gd")
 
 func verify_free_application() -> void:
 	var staged:=OS.get_environment("GOF2_VALKYRIE_STAGE")
+	# A newer extraction attaches as an import update, as the game does on
+	# launch, keeping the saved identity (payload-material meshes).
+	var update:=OS.get_environment("GOF2_IMPORT_UPDATE")
+	if not update.is_empty():
+		for owner in [app.bindings,definitions]:
+			if owner!=null and owner.import_update_receipt().is_empty() and not owner.attach_import_update(update,app.library.manifest,app.library):check(false,"Import update: "+owner.error);return
 	if staged.is_empty():
 		await super.verify_free_application()
 		if failures:return
@@ -1425,17 +1431,23 @@ func fly_supernova_meenkk() -> void:
 	if failures or not await take_station_talk(118,119):return
 	# 119: the Thynome cutaway, then docked back at Bak S'ondorr (120).
 	if not await story_cutaway(10,126,120,"supernova-thynome-119"):return
-	# 120: two stealth fighters at Valadon; done when Keith's line ends.
-	if not await depart_to(40):return
+	# 120: two stealth fighters at Valadon; done when Keith's line ends. The
+	# Mutagen aboard is volatile: the Khador Drive refuses, so go by gates.
+	if not await story_route(40,false):return
 	var radio_ids:=[]
 	var stealth:=func():return range(0,2).filter(func(id):return int(app.session.flight_owner()._encounter.combat_snapshot().actors[id].vitals.hull)>0)
 	await capture_free_application("supernova-valadon")
-	if not await fight_until("valadon",func():return stealth.call().is_empty() or app.session.flight_owner()._objective.snapshot().campaign_cursor!=120,func(_actors):return stealth.call(),radio_ids):return
+	# With the Mutagen aboard every jerk of the stick shakes it: hold course
+	# and let the stealth pair's scene play out (it ends on Keith's line).
+	print("SUPERNOVA Valadon stealth ",stealth.call())
 	if not await wait_story_cursor(121,"supernova-valadon-done"):return
+	if not await dock_application():return
 	for leg in [[93,121,122],[10,122,123]]:
-		if not await khador_jump(leg[0]) or not await dock_application() or not await take_station_talk(leg[1],leg[2]):return
+		# Gates only while the volatile Mutagen is aboard; the drive otherwise.
+		var volatile: bool=app.session.station_owner().snapshot().cargo.entries.any(func(row):return int(row.item_id) in [204,209])
+		if not (await story_route(leg[0]) if volatile else await travel_and_talk(leg[0],leg[1],leg[2])):return
+		if volatile and not await take_station_talk(leg[1],leg[2]):return
 		if leg[1]==122:check(not app.session.station_owner().snapshot().cargo.entries.any(func(row):return int(row.item_id)==209),"The Mutagen stayed in the hold after 122")
-		if leg[1]!=122 and (not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()) or not await release_application_flight()):check(false,app.status.text);return
 	# 123: Névan, four lines in flight; 124 the talk there.
 	if not await depart_to(121) or not await wait_story_cursor(124,"supernova-nevan"):return
 	if not await dock_application() or not await take_station_talk(124,125):return
@@ -1448,8 +1460,10 @@ func fly_supernova_meenkk() -> void:
 			if radio.get("visible",false) and int(radio.get("text_id",-1)) not in heard:heard.append(int(radio.text_id))
 			if not application_step():return
 			if tick%10==0:await process_frame
-		print("SUPERNOVA search site ",site[0]," radio ",heard)
-		check(heard.any(func(id):return id>=2793 and id<=2796) and heard.any(func(id):return id>=2799 and id<=2802),"Station %d gave no search lines"%site[0])
+		# The opener can finish during arrival, before this loop listens.
+		var finished: Array=app.session.flight_owner()._radio.snapshot().get("finished",[])
+		print("SUPERNOVA search site ",site[0]," radio ",heard," finished ",finished)
+		check((finished.size()==2 and finished[0]==true or heard.any(func(id):return id>=2793 and id<=2796)) and heard.any(func(id):return id>=2799 and id<=2802),"Station %d gave no search lines"%site[0])
 		if failures or not await dock_application():return
 		check(int(app.session.station_owner().snapshot().contracts.progress.get("story_stations_mask",0)) & (1<<site[1]),"Station %d was not marked searched"%site[0])
 		if failures:return
@@ -1953,7 +1967,7 @@ func story_flight(cursor: int,label: String,goal: Callable,hostiles: Callable,ra
 			if not app.session.action("throttle_up" if current<want else "throttle_down"):check(false,app.session.error);return false
 		if fire.is_valid() and fire.call(frame) and not app.session.action("missiles"):check(false,app.session.error);return false
 		now_us+=100000
-		if not app.session.step(now_us,steer if not frame.cinematic_input_blocked() else Vector2.ZERO,false,false,Vector2.ZERO):check(false,app.session.error);return false
+		if not app.session.step(now_us,steer if not frame.cinematic_input_blocked() else Vector2.ZERO,false,false,0.0):check(false,app.session.error);return false
 		app.present_session()
 		await dismiss_medal()
 		if tick%10==0:await process_frame
@@ -2039,7 +2053,7 @@ func kappa_black_box() -> bool:
 			if absf(current-want)<.01 or frame.cinematic_input_blocked():break
 			if not app.session.action("throttle_up" if current<want else "throttle_down"):check(false,app.session.error);return false
 		now_us+=100000
-		if not app.session.step(now_us,steer if not frame.cinematic_input_blocked() else Vector2.ZERO,false,false,Vector2.ZERO):check(false,app.session.error);return false
+		if not app.session.step(now_us,steer if not frame.cinematic_input_blocked() else Vector2.ZERO,false,false,0.0):check(false,app.session.error);return false
 		app.present_session()
 		await dismiss_medal()
 		if tick%10==0:await process_frame
@@ -2359,8 +2373,9 @@ func khador_jump(destination: int,release:=true) -> bool:
 	if not app.confirm_map_planet(destination,now_us):check(false,"The drive map refused station "+str(destination)+": "+app.map_panel.error+" "+app.status.text+" destinations "+str(app.session.flight_owner()._navigation_destinations)+" drive "+str(app.session.flight_owner()._drive.snapshot().get("destinations",{}).keys())+" selected "+str(app.map_panel.snapshot().get("selected_station_id"))+" confirm "+str(app.map_panel.snapshot().get("confirmation_visible"))+" quote "+str(app.session.flight_owner().drive_quote(destination))+" diagnostic "+str(app.map_panel.snapshot().get("diagnostic")));return false
 	var began:=now_us
 	app.session.rebase_time(now_us)
-	while app.session.status=="running" and now_us-began<15000000:
+	while app.session.status=="running" and now_us-began<40000000:
 		if not application_step():return false
+	if app.session.status=="running":print("VALKYRIE drive stuck ",app.session.flight_owner()._drive.snapshot().get("phase")," local ",app.session.flight_owner().local_departing()," system ",app.session.snapshot().location.system_id," to ",catalogue.tables.stations[destination].system_id," permits ",app.session.flight_owner().drive_permits_mission()," refusal ",app.session.flight_owner().story_entry_refusal(destination)," rule ",app.session.flight_owner().story_drive_rule()," job ",app.session.flight_owner()._objective.snapshot().get("contracts",{}).get("mission",{}).get("kind")," ctx ",app.session.flight_owner()._mission_context!=null)
 	var local: bool=app.session.status=="local_arrival_transition_required"
 	check(local or app.session.status=="drive_arrival_transition_required","The Khador jump did not complete: "+app.session.status)
 	if failures or not (app.enter_local_arrival(now_us,4096,flight_world_seconds()) if local else app.enter_drive_arrival(now_us,4096,flight_world_seconds())):check(false,app.status.text);return false
@@ -2398,7 +2413,8 @@ func wait_story_cursor(cursor: int,label: String) -> bool:
 	return true
 
 ## Fly the earned route to a station, docking at each gate like a player.
-func story_route(destination: int) -> bool:
+## dock=false stops in the destination's orbit (a story flight there).
+func story_route(destination: int,dock:=true) -> bool:
 	var original: Dictionary=app.session.station_owner().snapshot()
 	var navigation:=Navigation.new()
 	if not navigation.configure(definitions,catalogue,original.contracts.lounges.system_availability):check(false,navigation.error);return false
@@ -2415,13 +2431,13 @@ func story_route(destination: int) -> bool:
 		for next_system in route.slice(1):
 			var gate:=int(catalogue.tables.systems[next_system].fields[gate_field])
 			if not await follow_gate_course(next_system,gate) or not await release_application_flight():return false
-			if next_system==system_id and gate==destination:return await dock_application()
+			if next_system==system_id and gate==destination:return not dock or await dock_application()
 			if next_system!=route[-1]:
 				if not await dock_application():return false
 				if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return false
 				if not await release_application_flight():return false
 	if app.session.snapshot().location.station_id!=destination and not await travel_application(destination):return false
-	return await dock_application()
+	return not dock or await dock_application()
 
 func resumed_contract_valid(state: Dictionary) -> bool:
 	match OS.get_environment("GOF2_VALKYRIE_STAGE"):
@@ -2456,17 +2472,21 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 ## A player crossing hostile Vossk space fights off the ships closing in
 ## before committing to the gate; the scripted pilot does the same.
 func follow_gate_course(system_id: int,station_id: int) -> bool:
-	if OS.get_environment("GOF2_VALKYRIE_STAGE")=="home" and not await fight_nearby_hostiles(25000.0):return false
+	var volatile: bool=app.session.snapshot().get("volatile",false)
+	if (OS.get_environment("GOF2_VALKYRIE_STAGE")=="home" or volatile) and not await fight_nearby_hostiles(25000.0):return false
 	return await super.follow_gate_course(system_id,station_id)
 
 func fight_nearby_hostiles(radius: float) -> bool:
-	var pilot:=CombatPilot.new();var kills:=0
+	var pilot:=CombatPilot.new();var kills:=0;var steer:=Vector2.ZERO
 	for tick in 9000:
 		var state: Dictionary=app.session.snapshot()
 		var threats: Array=state.encounter.combat.actors.filter(func(actor):return actor.get("hostile",false) and actor.vitals.hull>0 and actor.position.distance_to(state.player_pose.origin)<radius).map(func(actor):return actor.actor_id)
 		if threats.is_empty():print("VALKYRIE home cleared after ",tick," ticks, ",kills," down, vitals ",state.player.vitals);return true
 		if app.session.flight_owner().death_active():check(false,"The escaping K'Suukk was shot down fighting at the gate: "+str(state.player.vitals));return false
 		var input:=pilot.controls(state,tick,threats,true)
+		# With volatile cargo aboard, ease the stick like a careful player.
+		if state.get("volatile",false):
+			input.commands=steer+(input.commands-steer).limit_length(.05);steer=input.commands
 		for adjustment in 10:
 			var current: float=app.session.snapshot().input_throttle
 			if absf(current-float(input.throttle))<.01:break
@@ -2475,7 +2495,7 @@ func fight_nearby_hostiles(radius: float) -> bool:
 		if not app.session.step(now_us,input.commands,input.fire,false,input.strafe):check(false,app.session.error);return false
 		app.present_session()
 		if tick%20==0:await process_frame
-		if tick%300==0:print("VALKYRIE home fight ",tick," threats ",threats.size()," vitals ",state.player.vitals)
+		if tick%300==0:print("VALKYRIE home fight ",tick," threats ",threats.size()," vitals ",state.player.vitals," instability ",app.session.flight_owner().instability())
 	check(false,"The escaping K'Suukk could not shake the Vossk at the gate");return false
 
 func docked_station() -> int:

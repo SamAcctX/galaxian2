@@ -76,7 +76,7 @@ func follow_gate_course(system_id: int,station_id: int) -> bool:
 	while app.session.status=="running" and now_us-started<240000000:
 		if not application_step():return false
 		coasting=coasting or app.session.snapshot().gate_transit.coasting
-		if app.session.flight_owner().death_active():check(false,"The supplier pilot died on its gate approach");return false
+		if app.session.flight_owner().death_active():check(false,"The supplier pilot died on its gate approach: "+str(app.session.snapshot().player.vitals)+" instability "+str(app.session.flight_owner().instability())+" system "+str(app.session.snapshot().location.system_id)+" hostiles "+str(app.session.snapshot().encounter.combat.actors.filter(func(actor):return actor.get("hostile",false) and actor.vitals.hull>0).map(func(actor):return [actor.get("hull_catalogue_id"),actor.get("faction",actor.get("race")),int(actor.position.distance_to(app.session.snapshot().player_pose.origin))])));return false
 		if now_us>=next_yield:await process_frame;next_yield=now_us+1000000
 	check(app.session.status=="gate_confirmation_required" and coasting,"The supplier gate course never reached its physical confirmation")
 	if failures or not app.choose_gate_confirmation(0,now_us):check(false,app.session.error);return false

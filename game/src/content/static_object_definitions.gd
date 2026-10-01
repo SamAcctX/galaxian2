@@ -82,6 +82,15 @@ const MODELS:={
 		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
 	16992:{"layers":[16992],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":-1,
 		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
+	# 125 Kappa: the Secure Container (mesh 18785 with child 18831) and a
+	# junk piece (18786, wreck 18300) (verified createStaticObject). Both are
+	# payload-material meshes (importer v205; an older import places them
+	# undrawn). Assumption: the container's 1000 hull is kept unharmed (it is
+	# hacked, not shot).
+	18785:{"layers":[],"payload_layers":[18785,18831],"collision_record":-1,"hit_radius":600,"wreck_model":-1,"death_sound":-1,
+		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
+	18786:{"layers":[],"payload_layers":[18786],"collision_record":-1,"hit_radius":600,"wreck_model":-1,"death_sound":-1,
+		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
 }
 const WAKE_MODE:=1
 const DEAD_MODE:=3
@@ -94,7 +103,7 @@ static func supported(model: Variant) -> bool:
 ## The object's first drawn mesh (its body in target lists).
 static func body_mesh(model: int) -> int:
 	if not supported(model):return -1
-	var first: Variant=MODELS[model].layers[0]
+	var first: Variant=(MODELS[model].layers+MODELS[model].get("payload_layers",[]))[0]
 	return int(first[0]) if first is Array else int(first)
 
 ## How far the object reaches from its centre (its hit box), for docking.
