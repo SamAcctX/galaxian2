@@ -705,6 +705,10 @@ func fly_valkyrie_escape() -> void:
 	for id in [179,41,51,57,75,91]:
 		if fitted.cargo.entries.any(func(row):return row.item_id==id):app.equipment_action("mount",id)
 	if failures or not app.equipment_action("close"):return
+	# Test shortcut: the top shield and armour a long career would have; the
+	# scripted pilot cannot outlast Kothar's fighters under turret fire.
+	var top:=top_protection()
+	if not seed_cargo(top.map(func(id):return [id,1])) or not fit_same_type(top):return
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
 	if not await release_application_flight() or not await go_to(101) or not await dock_application() or not await take_station_talk(77,78):return
 	var taken: Dictionary=app.session.station_owner().snapshot()
@@ -2106,7 +2110,8 @@ func fight_until(label: String,done: Callable,targets: Callable,radio_ids: Array
 				input=pilot.controls(state,tick,[refuge],true);input.fire=false
 				if input.distance>0 and input.distance<2500:input.throttle=0.0
 		# Against many snipers, hold back and let the Liberators do the work.
-		if not retreating and standoff>9000.0 and input.distance>0 and input.distance<standoff:input.throttle=0.0
+		# (Out of Liberators, close in to gun range.)
+		if not retreating and standoff>9000.0 and (not liberate or int(liberator_gun(state).get("ammunition",0))>0) and input.distance>0 and input.distance<standoff:input.throttle=0.0
 		var pool:=float(state.player.vitals.hull)+float(state.player.vitals.armor)+float(state.player.vitals.shield)
 		if not captured and input.distance>0 and input.distance<6000:captured=true;await capture_free_application("valkyrie-"+label+"-fight")
 		for adjustment in 10:
