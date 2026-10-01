@@ -28,6 +28,7 @@ const ResultPoll=preload("res://src/simulation/mission_result_poll.gd")
 const DebrisDeath=preload("res://src/simulation/debris_destruction.gd")
 const StaticDeath=preload("res://src/simulation/static_object_destruction.gd")
 const Statics=preload("res://src/content/static_object_definitions.gd")
+const StaticTurret=preload("res://src/simulation/static_turret.gd")
 const LaunchClock=preload("res://src/simulation/traffic_launch_clock.gd")
 const FreightMotion=preload("res://src/simulation/freighter_motion.gd")
 const FreightDeath=preload("res://src/simulation/freighter_destruction.gd")
@@ -877,6 +878,7 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 			if fixed.is_empty():return fail(staged.error)
 			decisions.append(fixed.decision)
 			if fixed.has("death"):death_events.append(fixed.death)
+			if fixed.has("firing"):firing.append(fixed.firing)
 			continue
 		if staged._flight[id] is FreightMotion:
 			var freight: Dictionary=staged._advance_freighter(id,int(delta_ms))
@@ -992,6 +994,25 @@ func _advance_static(id: int,delta_ms: int,player: Dictionary) -> Dictionary:
 	var result:={"decision":{"actor_id":id,"fire_requested":false,"dying":actor.vitals.hull==0,"stationary":true}}
 	if death.started:
 		death.accounting_event=credit;result.death=death
+	var turret: Dictionary=Statics.rules(int(actor.static_model)).get("turret",{})
+	if not turret.is_empty() and actor.has("turret_aim") and actor.active and actor.vitals.hull>0 and death.state.phase=="ready":
+		var aimed: Dictionary=StaticTurret.advance(actor.turret_aim,turret,actor.body_pose,_turret_candidates(actor,player),delta_ms)
+		if not _combat.set_turret_aim(id,aimed.aim):return fail(_combat.error)
+		if aimed.fire:
+			result.decision.merge({"fire_requested":true,"target_actor_id":int(aimed.target_id)},true)
+			result.firing={"actor_id":id,"target_actor_id":int(aimed.target_id),"pose":aimed.barrel}
+	return result
+
+## Living, active bodies a turret object may aim at: the player while the
+## object is hostile, and ships of another faction.
+func _turret_candidates(actor: Dictionary,player: Dictionary) -> Array:
+	var result:=[]
+	var pose: Variant=player.get("pose")
+	if actor.get("hostile",false) and player.get("active",false) and int(player.get("hull",0))>0 and not player.get("targeting_blocked",false) and pose is Transform3D:
+		result.append({"actor_id":-1,"position":pose.origin,"forward":pose.basis.z})
+	for other in _combat.actor_snapshots():
+		if other.actor_id==actor.actor_id or not other.active or other.vitals.hull<=0 or int(other.actor_kind)<0 or other.actor_kind==actor.actor_kind:continue
+		result.append({"actor_id":int(other.actor_id),"position":other.pose.origin,"forward":other.body_pose.basis.z})
 	return result
 
 func _static_disturbed(actor: Dictionary,player: Dictionary) -> bool:

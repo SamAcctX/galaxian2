@@ -16,6 +16,8 @@ const Valkyrie=preload("res://src/content/valkyrie_campaign_definitions.gd")
 ## payload; an import made before that reader draws the object without them.
 ## wake_half_extent: an opposing active body this close on every axis wakes it.
 ## enemy_count_excluded: left out of the starting enemies-left count.
+## turret: a barrel that turns toward the nearest opposing body in range and
+## fires its own gun (rules in simulation/static_turret.gd).
 const MODELS:={
 	14243:{"layers":[14243,14244,14245],"collision_resource":"resources/data/bin/collision.bin","collision_record":1002,
 		"collision_record_limit":128,"sphere_scale":0.6,"box_scale":1.2,"wreck_model":14246,"death_sound":20,
@@ -27,8 +29,15 @@ const MODELS:={
 		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
 	# Its weak points: turret and shield. Hit as a 1000-unit cube, no wreck;
 	# they vanish on death. Awake from the start (no sleeping).
+	# The turret aims and fires on its own; its base and barrel 14364 are
+	# drawn turned 180 deg about Y.
 	14363:{"layers":[14363],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":22,
-		"wake_half_extent":100000000,"hull":"weak_point","enemy_count_excluded":false},
+		"wake_half_extent":100000000,"hull":"weak_point","enemy_count_excluded":false,
+		"turret":{"barrel":14364,"barrel_offset":Vector3(0,565,-528),"range":50000,"retarget_ms":3000,"lead":1500.0,
+			"turn_ms":4096,"aim_tolerance":0.05,"pitch_up_ms":600,"pitch_down_ms":100,
+			# Gun: item 20 with its own shot 6796 and the ordinary race-8 NPC
+			# level damage x1.7 (the weak points' turret bonus).
+			"weapon":{"item_id":20,"kind":1,"catalogue_kind":-1,"model_resource_id":6796,"damage_scale":1.7}}},
 	14365:{"layers":[14365],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":22,
 		"wake_half_extent":100000000,"hull":"weak_point","enemy_count_excluded":false},
 	# 89: Naneroh's Midorian station, its burning twin after the blast, and a
@@ -143,7 +152,12 @@ func resolve(library: RefCounted,bindings: RefCounted,model: int) -> Dictionary:
 		var mesh: Dictionary=AEM.new().decode(library.read_resource(wreck,AEM.MAX_BYTES))
 		timing={} if mesh.is_empty() else Timing.playback_range(mesh.surfaces)
 		if timing.is_empty() or int(timing.end_ms)<=int(timing.start_ms):error="Static object wreck animation is unavailable";return {}
-	var result:={"model":model,"layers":layers,"wreck":{"resource_id":int(data.wreck_model),"path":wreck,"start_ms":int(timing.start_ms),"end_ms":int(timing.end_ms)},
+	var turret:={}
+	if data.has("turret"):
+		var barrel: String=bindings.resolve(int(data.turret.barrel),"mesh")
+		if barrel.is_empty():error=bindings.error;return {}
+		turret={"resource_id":int(data.turret.barrel),"path":barrel,"offset":data.turret.barrel_offset}
+	var result:={"model":model,"layers":layers,"turret":turret,"wreck":{"resource_id":int(data.wreck_model),"path":wreck,"start_ms":int(timing.start_ms),"end_ms":int(timing.end_ms)},
 		"death_sound":int(data.death_sound),"wake_half_extent":int(data.wake_half_extent),"enemy_count_excluded":bool(data.enemy_count_excluded)}
 	# No collision record: hit as a cube of the hit radius, like a ship.
 	if int(data.collision_record)<0:

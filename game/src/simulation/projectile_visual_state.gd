@@ -163,7 +163,7 @@ static func model_mapping(bindings: RefCounted, weapon: Dictionary, key: String,
 		if not key.begins_with("npc:") or not key.substr(4).is_valid_int() or int(key.substr(4))<0 or weapon.get("projectile_capacity")!=int(bindings.early_contracts.ship_combat.weapons.capacity) or weapon.get("nonplayer_source")!=true:return {}
 		if kappa:
 			if int(key.substr(4))>=int(bindings.mido_travel.kappa_rescue.population.actor_count) or weapon.get("item_id")!=int(bindings.early_contracts.ship_combat.weapons.factions[0].item_id):return {}
-		for row in load("res://src/content/contract_ship_combat_definitions.gd").factions(bindings.early_contracts.ship_combat.weapons):
+		for row in load("res://src/content/contract_ship_combat_definitions.gd").gun_rows(bindings.early_contracts.ship_combat.weapons):
 			if int(row.item_id)!=weapon.get("item_id") or int(row.kind)!=weapon.get("kind"):continue
 			var id:=ContractWorld.impact_model(bindings,int(row.item_id)) if impact else int(row.model_resource_id)
 			if impact and id<0 and row.has("damage_scale"):id=ContractWorld.impact_model(bindings,0)

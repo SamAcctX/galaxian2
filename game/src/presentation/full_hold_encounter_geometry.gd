@@ -16,6 +16,7 @@ const Junk=preload("res://src/content/contract_junk_definitions.gd")
 const Selected=preload("res://src/content/selected40_population_definitions.gd")
 const MissionContext=preload("res://src/simulation/mission_context.gd")
 const Statics=preload("res://src/content/static_object_definitions.gd")
+const StaticTurret=preload("res://src/simulation/static_turret.gd")
 const Sampler=preload("res://src/presentation/scenery_animation.gd")
 const ENGINES={2:{"id":18002,"path":"resources/data/assets/main/3d/meshes/ships/ship_002_pirates_engine_add.aem"},
 	30:{"id":18030,"path":"resources/data/assets/main/3d/meshes/ships/ship_030_midorian_engine_add.aem"}}
@@ -143,14 +144,26 @@ func _build_static(owner: RefCounted,id: int,actor: Dictionary,library: RefCount
 	var paths: Array=placed.layers.map(func(layer):return layer.path)
 	var wrecked: bool=not placed.wreck.path.is_empty()
 	if wrecked:paths.append(placed.wreck.path)
+	var turret: Dictionary=placed.get("turret",{})
+	if not turret.is_empty():paths.append(turret.path)
 	var resources:=Models.new()
 	if not resources.prepare(paths,library,visuals,bindings,"high",false,true):return fail(resources.error)
 	var body:=Node3D.new();body.name="StaticObject%d"%id;add_child(body)
+	# A turret's base and barrel swivel together; the base is turned 180 deg.
+	var swivel: Node3D=body
+	var barrel: Node3D=null
+	if not turret.is_empty():
+		swivel=Node3D.new();swivel.name="Swivel";body.add_child(swivel)
+		barrel=resources.instantiate(turret.path)
+		if barrel==null:
+			var reason: String=resources.error;resources.clear();return fail(reason)
+		barrel.set_meta("source_resource_id",turret.resource_id);swivel.add_child(barrel)
 	for layer in placed.layers:
 		var model: Node3D=resources.instantiate(layer.path)
 		if model==null:
 			var reason: String=resources.error;resources.clear();return fail(reason)
-		model.set_meta("source_resource_id",layer.resource_id);model.position=layer.get("offset",Vector3.ZERO);body.add_child(model)
+		model.set_meta("source_resource_id",layer.resource_id);model.position=layer.get("offset",Vector3.ZERO);swivel.add_child(model)
+		if barrel!=null:model.basis=Basis(Vector3.UP,PI)
 	# Without a wreck the object just vanishes (80's weak points).
 	var wreck: Node3D=resources.instantiate(placed.wreck.path) if wrecked else Node3D.new()
 	resources.clear()
@@ -161,7 +174,8 @@ func _build_static(owner: RefCounted,id: int,actor: Dictionary,library: RefCount
 		for instance in wreck.instances:instance.top_level=true
 		sampler=Sampler.new()
 		if not sampler.configure(wreck.surfaces):return fail(sampler.error)
-	actors.append({"hull":body,"engine":null,"cargo":wreck,"explosion":null,"static":true,"sampler":sampler,
+	actors.append({"hull":body,"engine":null,"cargo":wreck,"explosion":null,"static":true,"sampler":sampler,"swivel":swivel,"barrel":barrel,
+		"turret_rule":Statics.rules(int(actor.static_model)).get("turret",{}),
 		"ship_id":-1,"resource_id":int(actor.resource_id),"hull_resource":actor.hull_resource})
 	return true
 
@@ -175,7 +189,8 @@ func _prepare_static(actor: Dictionary,nodes: Dictionary,death: RefCounted) -> D
 		sampler=nodes.sampler.fork_for_frame()
 		animated=sampler.sample(int(state.animation.time_ms),state.pose)
 		if animated.is_empty():return failed(sampler.error)
-	return {"pose":actor.body_pose,"body_visible":actor.model_draw_enabled,"cargo_visible":wrecked,"cargo_pose":state.pose,"animated":animated,"sampler":sampler}
+	return {"pose":actor.body_pose,"body_visible":actor.model_draw_enabled,"cargo_visible":wrecked,"cargo_pose":state.pose,"animated":animated,"sampler":sampler,
+		"turret_aim":actor.get("turret_aim",{})}
 
 func _prepare_debris(actor: Dictionary,nodes: Dictionary,death: RefCounted) -> Dictionary:
 	var state: Dictionary=death.snapshot()
@@ -296,6 +311,9 @@ func commit_world(frame: Dictionary) -> void:
 			if not current.animated.is_empty():
 				for i in nodes.cargo.instances.size():nodes.cargo.instances[i].transform=current.animated.surfaces[i].pose
 			nodes.sampler=current.sampler
+			if nodes.barrel!=null and not current.turret_aim.is_empty():
+				nodes.swivel.transform=StaticTurret.group_pose(Transform3D.IDENTITY,current.turret_aim)
+				nodes.barrel.transform=StaticTurret.barrel_local(nodes.turret_rule,current.turret_aim)
 			continue
 		nodes.hull.apply_selection(current.selection)
 		if nodes.get("freighter",false):

@@ -61,7 +61,13 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 			fixed.merge(options.policy,true)
 			data.actor_policies.append(fixed)
 			data.actor_kinds.append(options.faction);data.hull_catalogue_ids.append(-1);data.player_weapon_targets.append(id)
-			data.npc_weapons.append({"actor_id":id,"actor_kind":options.faction,"hull_catalogue_id":-1,"unarmed":true})
+			var gun:={"unarmed":true}
+			var turret: Dictionary=load("res://src/content/static_object_definitions.gd").rules(int(options.static_object.model)).get("turret",{})
+			if not turret.is_empty():
+				gun=turret_weapon(rules.weapons,context.campaign_cursor,context.rank,float(context.difficulty),options.faction,turret.weapon)
+				if gun.is_empty():return {}
+			gun.merge({"actor_id":id,"actor_kind":options.faction,"hull_catalogue_id":-1},true)
+			data.npc_weapons.append(gun)
 			continue
 		var rival: bool=options.rival
 		if not actor is Dictionary or actor.get("actor_id")!=id or actor.get("subtype")!=options.subtype or actor.get("population_group")!=options.population_group:return {}
@@ -132,6 +138,14 @@ static func void_weapon(bindings: RefCounted,cursor: int,rank: int,difficulty: f
 const EXTRA_FACTIONS:=[{"actor_kind":10,"item_id":229,"kind":0,"catalogue_kind":-1,"model_resource_id":19091,"damage_scale":0.7}]
 static func factions(rules: Dictionary) -> Array:return rules.factions+EXTRA_FACTIONS
 
+## Every NPC gun's shot model: the faction guns plus static objects' turret guns.
+static func gun_rows(rules: Dictionary) -> Array:
+	var rows:=factions(rules)
+	var statics: Dictionary=load("res://src/content/static_object_definitions.gd").MODELS
+	for model in statics:
+		if statics[model].has("turret"):rows.append(statics[model].turret.weapon)
+	return rows
+
 static func shared_weapon(rules: Dictionary,cursor: int,rank: int,difficulty: float,faction: int,enhanced:=false) -> Dictionary:
 	if not Equal.equal_value(rules,VALUES.weapons) or cursor<0 or cursor>2147483647 or rank<0 or rank>20 or difficulty not in [0.5,1.0] or faction not in [0,1,2,3,8,10]:return {}
 	for source in factions(rules):
@@ -141,6 +155,15 @@ static func shared_weapon(rules: Dictionary,cursor: int,rank: int,difficulty: fl
 		if source.has("damage_scale"):row.damage=int(float(row.damage)*float(source.damage_scale))
 		return row
 	return {}
+
+## A static object's turret gun: the faction's ordinary level arithmetic with
+## the turret's own item, shot and damage scale.
+static func turret_weapon(rules: Dictionary,cursor: int,rank: int,difficulty: float,faction: int,gun: Dictionary) -> Dictionary:
+	var row:=shared_weapon(rules,cursor,rank,difficulty,faction)
+	if row.is_empty():return {}
+	for key in ["item_id","kind","catalogue_kind","model_resource_id"]:row[key]=int(gun[key])
+	row.damage=int(float(row.damage)*float(gun.get("damage_scale",1.0)))
+	return row
 
 static func scaled_parameters(rules: Dictionary,cursor: int,rank: int,difficulty: float,enhanced:=false) -> Dictionary:
 	# Shared factory arithmetic only. The encounter still supplies a verified

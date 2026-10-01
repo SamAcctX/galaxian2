@@ -780,7 +780,7 @@ func fly_valkyrie_escape() -> void:
 	if failures:return
 	var battle_radio:=[]
 	if not await fight_until("kothar",func():return range(1,19).all(func(id):return int(app.session.flight_owner()._encounter.combat_snapshot().actors[id].vitals.hull)<=0),
-		func(list):return range(1,19).filter(func(id):return int(list[id].vitals.hull)>0),battle_radio,60000,true,30000.0):return
+		func(list):return range(1,19).filter(func(id):return int(list[id].vitals.hull)>0),battle_radio,60000,true,30000.0,-1,0):return
 	await capture_free_application("valkyrie-kothar-won")
 	if not await ride_story_jump(battle_radio,180):return
 	print("VALKYRIE kothar radio ",battle_radio)
@@ -2079,7 +2079,7 @@ func go_to(station: int) -> bool:
 
 ## Fight the story cast like a player until done() holds; targets(actors)
 ## lists the actor ids to attack in order.
-func fight_until(label: String,done: Callable,targets: Callable,radio_ids: Array,ticks:=30000,liberate:=false,standoff:=9000.0,refuge:=-1) -> bool:
+func fight_until(label: String,done: Callable,targets: Callable,radio_ids: Array,ticks:=30000,liberate:=false,standoff:=9000.0,refuge:=-1,withdraw_from:=-1) -> bool:
 	var pilot:=CombatPilot.new();var captured:=false;var closest:=INF
 	var best_shield:=0.0;var retreating:=false
 	if liberate and not select_liberator():return false
@@ -2093,15 +2093,20 @@ func fight_until(label: String,done: Callable,targets: Callable,radio_ids: Array
 		var input:=pilot.controls(state,tick,targets.call(actors),true)
 		# With a friendly refuge, fall back to it while the shield recharges,
 		# as a player would against a large pack.
-		if refuge>=0:
+		if refuge>=0 or withdraw_from>=0:
 			var shield:=float(state.player.vitals.shield);best_shield=maxf(best_shield,shield)
 			if shield<best_shield*.1:retreating=true
 			elif shield>=best_shield*.9:retreating=false
-			if retreating:
+			if retreating and withdraw_from>=0:
+				# Against gun turrets, pull out of their reach to recharge.
+				var away: Vector3=state.player_pose.origin-Vector3(actors[withdraw_from].position)
+				input.commands=CombatPilot.Steering.steering_toward(state.player_pose,state.player_pose.origin+away.normalized()*100000.0)
+				input.throttle=1.0;input.fire=false;input.strafe=0.0
+			elif retreating:
 				input=pilot.controls(state,tick,[refuge],true);input.fire=false
 				if input.distance>0 and input.distance<2500:input.throttle=0.0
 		# Against many snipers, hold back and let the Liberators do the work.
-		if standoff>9000.0 and input.distance>0 and input.distance<standoff:input.throttle=0.0
+		if not retreating and standoff>9000.0 and input.distance>0 and input.distance<standoff:input.throttle=0.0
 		var pool:=float(state.player.vitals.hull)+float(state.player.vitals.armor)+float(state.player.vitals.shield)
 		if not captured and input.distance>0 and input.distance<6000:captured=true;await capture_free_application("valkyrie-"+label+"-fight")
 		for adjustment in 10:
@@ -2122,7 +2127,7 @@ func fight_until(label: String,done: Callable,targets: Callable,radio_ids: Array
 					input.commands=missile_steering(missile,actors[aim[0]].position);input.fire=false
 					press=gap<1500.0 or gap>closest+500.0
 					closest=minf(closest,gap)
-			elif input.target>0 and input.distance<standoff and liberator_ready(state):press=true;closest=INF
+			elif not retreating and input.target>0 and input.distance<standoff and liberator_ready(state):press=true;closest=INF
 		var key: InputEventKey
 		if press:
 			resume_application_focus();key=InputEventKey.new();key.physical_keycode=KEY_R;key.keycode=KEY_R;key.pressed=true;app._unhandled_input(key)

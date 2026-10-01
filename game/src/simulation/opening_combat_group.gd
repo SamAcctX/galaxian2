@@ -910,6 +910,12 @@ func set_static_geometry(actor_id: int,boxes: Array) -> bool:
 	if not _writable(actor_id).set_static_geometry(boxes):return reject(_actors[actor_id].error)
 	return true
 
+func set_turret_aim(actor_id: int,aim: Dictionary) -> bool:
+	error=""
+	if actor_id<0 or actor_id>=_actors.size():return reject("Turret aim names an unavailable actor")
+	if not _writable(actor_id).set_turret_aim(aim):return reject(_actors[actor_id].error)
+	return true
+
 func wake_static(actor_id: int) -> bool:
 	error=""
 	if actor_id<0 or actor_id>=_actors.size():return reject("Static wake names an unavailable actor")

@@ -713,6 +713,7 @@ func _configure_static(bindings: RefCounted,data: Dictionary,row: Dictionary,act
 		"model_draw_enabled":true,"node_draw_requested":true,"engine_draw_enabled":false,
 		"wake_half_extent":int(rules.wake_half_extent),"enemy_count_excluded":bool(rules.enemy_count_excluded)},true)
 	if int(row.get("name_text_id",-1))>=0:_state.name_text_id=int(row.name_text_id)
+	if rules.has("turret"):_state.turret_aim=load("res://src/simulation/static_turret.gd").initial()
 	# A hidden story object waits unseen for its "show" action.
 	if row.get("hidden",false):_state.model_draw_enabled=false;_state.targeting_blocked=true
 	return set_pose(row.statistics_pose,row.body_pose)
@@ -791,6 +792,13 @@ func hide_static() -> bool:
 	error=""
 	if not _state.get("static_object",false):return reject("Only a static object hides this way")
 	_state.active=false;_state.model_draw_enabled=false;_state.targeting_blocked=true
+	return true
+
+## A turret object's barrel turned this frame (simulation/static_turret.gd).
+func set_turret_aim(aim: Dictionary) -> bool:
+	error=""
+	if not _state.has("turret_aim") or aim.keys()!=_state.turret_aim.keys():return reject("Only a turret object aims")
+	_state.turret_aim=aim.duplicate()
 	return true
 
 func wake_static() -> bool:
