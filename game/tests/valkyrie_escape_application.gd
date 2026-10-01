@@ -835,7 +835,7 @@ func ride_story_jump(radio_ids: Array,seconds: int) -> bool:
 		tick+=1
 		if tick%10==0:await process_frame
 	print("VALKYRIE story jump status ",app.session.status," cursor ",app.session.snapshot().campaign_cursor," radio ",radio_ids)
-	check(app.session.status=="drive_arrival_transition_required","The story's drive jump did not happen: "+app.session.status+" "+app.status.text)
+	check(app.session.status in ["drive_arrival_transition_required","local_arrival_transition_required"],"The story's drive jump did not happen: "+app.session.status+" "+app.status.text)
 	return failures==0
 
 ## Supernova 84-88 from the won Valkyrie career: Carla's call in flight (84 ->
@@ -1296,19 +1296,29 @@ func fly_supernova_bomb() -> void:
 	check(app.session.station_owner().snapshot().campaign_cursor==105,"The Naneroh checkpoint is not at cursor 105")
 	if failures or not fit_same_type([206]):return
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
-	if not await release_application_flight() or not await khador_jump(109):return
+	# Leaving Thynome away from Naneroh: drive there (Carla's nag call may
+	# already hold this ordinary flight's story slot).
+	if int(app.session.snapshot().location.station_id)!=109:
+		for t in 600:
+			if app.session.can_control() or not application_step():break
+			if t%10==0:await process_frame
+		check(app.session.can_control(),"The Thynome launch did not release the controls")
+		if failures or not await khador_jump(109,false):return
 	await capture_free_application("supernova-naneroh-route")
-	var radio_ids:=[];var captured:=false
+	var radio_ids:=[];var captured:=false;var press_on_us:=0
 	var fighters:=func():
 		var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
-		return range(2,5).filter(func(id):return int(actors[id].vitals.hull)>0 and actors[id].get("active",false) and actors[id].pose.origin.distance_to(app.session.snapshot().player_pose.origin)<15000)
+		return range(2,mini(5,actors.size())).filter(func(id):return int(actors[id].vitals.hull)>0 and actors[id].get("active",false) and actors[id].pose.origin.distance_to(app.session.snapshot().player_pose.origin)<30000)
 	var over:=func():return app.session.status!="running" or app.session.snapshot().campaign_cursor!=105
 	for tick in 40000:
 		if over.call():break
 		if app.session.flight_owner().death_active():check(false,"The player died at Naneroh: "+str(app.session.snapshot().player.vitals)+" gamma "+str(app.session.snapshot().get("gamma")));return
-		if not fighters.call().is_empty():
+		# Gamma keeps draining: fight for at most 25 s, then press on 25 s.
+		if now_us>=press_on_us and not fighters.call().is_empty():
 			if not captured:captured=true;await capture_free_application("supernova-naneroh-fighters")
-			if not await fight_until("naneroh",func():return over.call() or fighters.call().is_empty(),func(_actors):return fighters.call(),radio_ids):return
+			var engaged:=now_us
+			if not await fight_until("naneroh",func():return over.call() or fighters.call().is_empty() or now_us-engaged>25000000,func(_actors):return fighters.call(),radio_ids):return
+			press_on_us=now_us+25000000
 			continue
 		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
 		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
@@ -1320,10 +1330,10 @@ func fly_supernova_bomb() -> void:
 		for adjustment in 10:
 			if app.session.snapshot().input_throttle>=.99 or not app.session.action("throttle_up"):break
 		now_us+=100000
-		if not app.session.step(now_us,commands,false,false,Vector2.ZERO):check(false,app.session.error);return
+		if not app.session.step(now_us,commands,false,false,0.0):check(false,app.session.error);return
 		app.present_session()
 		if tick%10==0:await process_frame
-		if tick%600==0:print("SUPERNOVA Naneroh ",tick/10," s to go ",int(state.player_pose.origin.distance_to(point)) if point is Vector3 else -1," radio ",radio_ids)
+		if tick%300==0:print("SUPERNOVA Naneroh ",tick/10," s to go ",int(state.player_pose.origin.distance_to(point)) if point is Vector3 else -1," radio ",radio_ids," vitals ",state.player.vitals," gamma ",state.player.get("gamma"))
 	print("SUPERNOVA Naneroh radio ",radio_ids)
 	check(2654 in radio_ids,"Bombs away did not play")
 	if failures or not await wait_story_cursor(106,"supernova-bombs-away"):return
@@ -2222,7 +2232,8 @@ static func missile_steering(missile: Dictionary,point: Vector3) -> Vector2:
 	var length:=maxf(local.length(),1.0)
 	return Vector2(clampf(-4.0*local.y/length,-1.0,1.0),clampf(4.0*local.x/length,-1.0,1.0))
 
-func khador_jump(destination: int) -> bool:
+## release=false: the arrival opens a story scene that holds the controls.
+func khador_jump(destination: int,release:=true) -> bool:
 	resume_application_focus()
 	for pressed in [true,false]:
 		var key:=InputEventKey.new();key.physical_keycode=KEY_K;key.keycode=KEY_K;key.pressed=pressed;app._unhandled_input(key)
@@ -2244,7 +2255,7 @@ func khador_jump(destination: int) -> bool:
 	check(app.session.status=="drive_arrival_transition_required","The Khador jump did not complete: "+app.session.status)
 	if failures or not app.enter_drive_arrival(now_us,4096,flight_world_seconds()):check(false,app.status.text);return false
 	check(app.session.snapshot().location.station_id==destination,"The Khador jump arrived elsewhere")
-	return failures==0 and await release_application_flight()
+	return failures==0 and (not release or await release_application_flight())
 
 ## Acknowledge a medal notice the way a player would, so it doesn't cover the view.
 func dismiss_medal() -> void:

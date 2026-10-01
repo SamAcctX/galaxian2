@@ -30,7 +30,7 @@ func release_application_flight() -> bool:
 			check(after.entry_released and after.world_elapsed_ms==before.world_elapsed_ms and after.contracts==before.contracts and after.player.vitals==before.player.vitals,"Enter skipped more than the ordinary introduction")
 			await capture_free_application("freelance-pirate-skipped-entry")
 		if now_us>=next_yield:await process_frame;next_yield=now_us+1000000
-	check(app.session.can_control() and app.session.flight_audio!=null,"The freelance introduction did not release original flight controls and sound")
+	check(app.session.can_control() and app.session.flight_audio!=null,"The freelance introduction did not release original flight controls and sound: control %s audio %s blocked %s"%[app.session.can_control(),app.session.flight_audio!=null,app.session._world.cinematic_input_blocked()])
 	return failures==0
 
 func requested_contract_kind() -> int:return 4

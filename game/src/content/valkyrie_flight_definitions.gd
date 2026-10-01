@@ -259,7 +259,7 @@ const SCRIPTED:={
 		"shuttles":{"first_actor":2,"end_actor":6,"dock":0,"visit_ms":20000,"transfer_ms":200},
 		"success":{"kind":"radio_finished","index":14},"failure":{"kind":18,"first_actor":2,"end_actor":6}},
 	# 105: Naneroh bomb run (gate: Gamma Shield II fitted). The player flies a
-	# route 650 km toward the sun (N3); #0-#1 Cronus escorts beside them with
+	# route 300 km toward the sun (N3); #0-#1 Cronus escorts beside them with
 	# weapons off; #2-#4 stealth fighters hidden and asleep far away. Opening
 	# scene (player on autopilot) until 6 s after the escort's line #1; the
 	# escorts then turn aside and leave. #5 at 24 s after #3: the fighters
@@ -267,9 +267,11 @@ const SCRIPTED:={
 	# 110 s. At the sun point the player becomes unharmable and "Bombs away!"
 	# (#8); 16 s bomb scene: the supernova grows, flash at ~9 s; the story
 	# moves on to 106 at Luur (gate, vitals and gamma kept). Gamma applies.
-	# Assumptions: escorts 3 km either side, the fighters appear 20 km ahead,
+	# Assumptions: the route length (not recovered) lets a cruising player
+	# arrive soon after "my eyes are hurting" (~150 s, gamma about half gone);
+	# escorts 3 km either side, the fighters appear 20 km ahead,
 	# the sun point counts as reached within 10 km, the scene tail is 16 s.
-	105:{"points":[Vector3(7000000,7000000,7000000)],"player_route":{"toward_sun":650000,"reach_radius":10000},
+	105:{"points":[Vector3(7000000,7000000,7000000)],"player_route":{"toward_sun":300000,"reach_radius":10000},
 		"groups":[{"count":2,"faction":0,"hull":37,"friendly":true,"position":{"kind":"player_side","side":3000},"follow_player_route":true,"ship_state":{"firing_allowed":false}},
 			{"count":3,"faction":10,"hull":44,"friendly":false,"sleeping":true,"hidden":true,"index":0,"offsets":[-1000,-1000,-1000],"bounds":[2000,2000,2000]}],
 		"radio":[[20,2646,2103,5,[0]],[61,2647,2104,5,[13000]],[0,2648,2105,35,[1,6000,1]],[20,2649,2106,35,[2,10000,0]],[0,2650,2107,6,[3]],
