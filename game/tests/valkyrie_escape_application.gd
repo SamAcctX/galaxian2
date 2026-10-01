@@ -54,6 +54,7 @@ func verify_free_application() -> void:
 	if staged=="supernova128":await fly_supernova_wanted()
 	if staged=="supernova135":await fly_supernova_coromesk()
 	if staged=="supernova141":await fly_supernova_finale()
+	if staged=="bounty":await fly_supernova_bounty()
 
 ## 49-52: the K'Suukk flees with a Vossk escort that turns on the player at
 ## Makke S'ik, through the gate to S'inokk and away, then home to Kanado.
@@ -1604,6 +1605,109 @@ func fly_supernova_coromesk() -> void:
 	check(app.session.station_owner().snapshot().campaign_cursor==141,"Fresh Resume lost the 140 talk")
 	check(DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-141.gof2save"))==OK,"The 141 checkpoint could not be kept")
 
+## Most Wanted bounties (board entries 2+): the test puts a board criminal
+## at the docked station (seeded board state on the 105 checkpoint, as no
+## later earned save exists yet). Leaving without the kill keeps him on the
+## board; flying out again meets him, the kill pays his bounty with Keith's
+## line, the story stays put and it all survives docking, saving and a
+## fresh Resume.
+const BOUNTY_ENTRY:=2
+func fly_supernova_bounty() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	var protection: Array=top_protection()
+	if failures or not seed_cargo(protection.map(func(id):return [id,1])) or not fit_same_type(protection):return
+	var station:=int(app.session.station_owner().snapshot().contracts.station_id)
+	var stats:=seed_board_criminal(BOUNTY_ENTRY,station)
+	if stats.is_empty():return
+	var cursor:=int(app.session.station_owner().snapshot().campaign_cursor)
+	var credits:=int(app.session.station_owner().snapshot().contracts.credits)
+	print("SUPERNOVA bounty ",stats.name," at ",station," cursor ",cursor," reward ",stats.reward," credits ",credits)
+	# Failure: out and straight back in without the kill.
+	if not await depart_to(station):return
+	var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+	print("SUPERNOVA bounty cast ",actors.map(func(actor):return [actor.hull_catalogue_id,int(actor.vitals.hull),actor.get("display_name","")]))
+	check(actors.size()>=1 and String(actors[0].get("display_name",""))==String(stats.name),String(stats.name)+" was not met at his station")
+	if failures or not await dock_application():return
+	var kept: Dictionary=app.session.station_owner().snapshot()
+	check(kept.contracts.progress.wanted.entries[BOUNTY_ENTRY].active and not kept.contracts.progress.wanted.entries[BOUNTY_ENTRY].dead and int(kept.contracts.credits)==credits,"Leaving without the kill changed the board or paid: "+str(kept.contracts.progress.wanted.entries[BOUNTY_ENTRY]))
+	if failures:return
+	# The kill.
+	if not await depart_to(station):return
+	await capture_free_application("supernova-bounty-met")
+	var radio_ids:=[]
+	var him:=func(_actors):return [0] if int(app.session.flight_owner()._encounter.combat_snapshot().actors[0].vitals.hull)>0 else []
+	if not await fight_until("bounty",func():return him.call([]).is_empty(),him,radio_ids):return
+	var killed_at: Vector3=app.session.snapshot().player_pose.origin
+	await capture_free_application("supernova-bounty-kill")
+	# Keith's kill line; the ship stays under the pilot's control meanwhile.
+	var kill_lines:=range(3140,3145)
+	var started:=now_us
+	while now_us-started<20000000 and not radio_ids.any(func(id):return id in kill_lines):
+		if not application_step():return
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		if int((now_us-started)/1000000)%2==0:await process_frame
+	await capture_free_application("supernova-bounty-keith")
+	var drift: float=app.session.snapshot().player_pose.origin.distance_to(killed_at)
+	var flight: Dictionary=app.session.flight_owner()._objective.snapshot()
+	print("SUPERNOVA bounty radio ",radio_ids," cursor ",flight.campaign_cursor," drift ",int(drift)," status ",app.session.status)
+	check(radio_ids.any(func(id):return id in kill_lines),"Keith's bounty line did not play: "+str(radio_ids))
+	check(int(flight.campaign_cursor)==cursor,"The bounty moved the story")
+	check(app.session.status!="station_transition_required" and drift<20000.0,"The pilot was moved after the bounty: "+str(int(drift))+" "+app.session.status)
+	if failures:return
+	# The chase can end hundreds of km out: the autopilot takes its time home.
+	resume_application_focus()
+	if not app.session.action("autopilot"):check(false,app.session.error);return
+	started=now_us
+	while now_us-started<900000000 and app.session.status!="station_transition_required":
+		if not application_step():return
+		if int((now_us-started)/1000000)%4==0:await process_frame
+	check(app.session.status=="station_transition_required","The autopilot never brought the pilot home after the bounty")
+	if failures or not app.enter_station(now_us,42):check(false,app.status.text);return
+	app.session.rebase_time(now_us)
+	var after: Dictionary=app.session.station_owner().snapshot()
+	var board: Dictionary=after.contracts.progress.wanted
+	print("SUPERNOVA bounty paid ",int(after.contracts.credits)-credits," board ",board.bounties," entry ",board.entries[BOUNTY_ENTRY])
+	check(board.entries[BOUNTY_ENTRY].dead and not board.entries[BOUNTY_ENTRY].active and int(board.bounties[int(stats.board)])==1,"The board did not mark "+String(stats.name)+" killed")
+	check(int(after.contracts.credits)-credits==int(stats.reward),"The bounty paid %d, not %d"%[int(after.contracts.credits)-credits,int(stats.reward)])
+	check(int(after.campaign_cursor)==cursor,"The docked career left cursor %d"%cursor)
+	if failures:return
+	check(app.save_station(false) and app.load_station(),"Saving and resuming after the bounty failed: "+app._save_notice.text)
+	if failures:return
+	var resumed: Dictionary=app.session.station_owner().snapshot()
+	check(resumed.contracts.progress.wanted==board and int(resumed.contracts.credits)==int(after.contracts.credits) and int(resumed.campaign_cursor)==cursor,"Fresh Resume lost the bounty")
+	await capture_free_application("supernova-bounty-resumed")
+	# Out again: he is gone.
+	if failures or not await depart_to(station):return
+	actors=app.session.flight_owner()._encounter.combat_snapshot().actors
+	check(not actors.any(func(actor):return String(actor.get("display_name",""))==String(stats.name)),String(stats.name)+" came back after his death")
+
+## Test shortcut: board entry `index` active at `station` in the saved career.
+func seed_board_criminal(index: int,station: int) -> Dictionary:
+	var file:=StationSaveFile.new();var path: String=app.station_save_path()
+	var document: Dictionary=file.read_document(path)
+	if document.is_empty():check(false,file.error);return {}
+	var Wanted=load("res://src/simulation/wanted_board.gd")
+	var table: Array=catalogue.tables.get("wanted",[])
+	check(table.size()>index,"No Most Wanted table imported")
+	if failures:return {}
+	var row: Dictionary=table[index]
+	var state: Dictionary=Wanted.fresh(table)
+	var stats:={"name":row.name,"ship":int(row.ship),"race":int(row.race),"weapon":int(row.weapon),"hull":int(row.hull),
+		"loot":[int(row.loot_item),int(row.loot_amount)],"reward":int(row.reward),"wingmen":int(row.wingmen),"board":int(row.board),"tier":int(row.required_bounties)}
+	state.entries[index].merge({"active":true,"at":station,"to":station,"from":station,"stats":stats},true)
+	var seeded:=0
+	for part in [document.station,document.career]:
+		if part.get("progress") is Dictionary:
+			part.progress.wanted=state.duplicate(true);seeded+=1
+	check(seeded>0,"The save has no career progress to seed")
+	if failures:return {}
+	var bytes:=file.encode(document)
+	if bytes.is_empty() or not file._write(path,bytes):check(false,file.error);return {}
+	check(app.load_station(),"The board-seeded save did not load: "+app._save_notice.text)
+	return stats if failures==0 else {}
+
 ## 141-162: Gunant's talk and the plasma kit; Kernstal refused until the kit
 ## is fitted, then the lesson: the waypoint, an Ion Lambda into the cloud and
 ## the sparks gathered into the hold; the Chromo Plasma built and handed over
@@ -2340,6 +2444,7 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"supernova128":return state.campaign_cursor==128
 		"supernova135":return state.campaign_cursor==135
 		"supernova141":return state.campaign_cursor==141
+		"bounty":return state.campaign_cursor==105
 	return super.resumed_contract_valid(state)
 
 ## A player crossing hostile Vossk space fights off the ships closing in

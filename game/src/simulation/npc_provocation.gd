@@ -297,7 +297,9 @@ func evaluate_arrival(random_state: Dictionary,display_available: bool) -> Dicti
 
 func retire_contract() -> bool:
 	error=""
-	if not _rules.has("contract") or _state.active_mission_kind==int(_rules.contract.empty_mission_kind):return reject("There is no active contract reaction context")
+	if not _rules.has("contract"):return reject("There is no active contract reaction context")
+	# A story job flown without a contract (kind -1, e.g. a Most Wanted
+	# criminal) has nothing to retire; its traffic already reacts freely.
 	_state.active_mission_kind=int(_rules.contract.empty_mission_kind)
 	return true
 
