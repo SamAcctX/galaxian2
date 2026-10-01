@@ -697,7 +697,19 @@ static func story_job(bindings: RefCounted,cursor: Variant,station_id: Variant,p
 	var job:=_story_flight_job(bindings,cursor,station_id,progress)
 	# Where no story flight waits, a Most Wanted criminal may (bounties).
 	if job.is_empty() and cursor is int and station_id is int and Campaign.saved_story(bindings,cursor):job=_bounty_job(cursor,station_id,progress)
+	# Otherwise Carla may nag once per stage (NAG_CALLS).
+	if job.is_empty() and cursor is int and station_id is int and Campaign.saved_story(bindings,cursor):job=_nag_job(cursor,station_id,progress)
 	return job
+
+## Carla's call for the stage the cursor is in, until heard. Not at the story
+## mission's own station (that stop belongs to the story). No cursor move.
+static func _nag_job(cursor: int,station_id: int,progress: Dictionary) -> Dictionary:
+	for from in NAG_CALLS:
+		if cursor<int(from) or cursor>int(NAG_CALLS[from].to) or int(progress.get("nag_heard",-1))>=int(from):continue
+		if station_id==int(Campaign.mission(cursor).get("station_id",-1)):return {}
+		return {"kind":-1,"station_id":station_id,"reward":0,"bonus":0,"difficulty":1,"quantity":0,
+			"story":false,"story_job":true,"campaign_cursor":cursor,"target_station_id":station_id,"nag":int(from)}
+	return {}
 
 static func _story_flight_job(bindings: RefCounted,cursor: Variant,station_id: Variant,progress: Dictionary) -> Dictionary:
 	if cursor is int and station_id is int and Campaign.saved_story(bindings,cursor) and SEARCH_SITES.has(cursor) and SEARCH_SITES[cursor].stations.has(station_id):
@@ -842,6 +854,11 @@ static func is_story_job(mission: Variant) -> bool:
 static func recipe(job: Dictionary) -> Dictionary:
 	var cursor:=int(job.campaign_cursor)
 	if job.has("wanted"):return _wanted_recipe(job)
+	if job.has("nag"):
+		var lines:=[]
+		for row in NAG_CALLS[int(job.nag)].lines:lines.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":5 if lines.is_empty() else 6,"values":[CALL_AFTER_MS if lines.is_empty() else lines.size()-1]})
+		var heard:={"from_cursor":cursor,"campaign_cursor":cursor,"mission":Campaign.mission(cursor),"previous_mission":{"reward":0},"progress":{"nag_heard":int(job.nag)}}
+		return {"actor_count":0,"ship_groups":[],"radio":lines,"success":{"kind":"radio_finished","index":lines.size()-1},"story":heard,"turn_hostile":{}}
 	if job.has("search_index"):return _search_recipe(job)
 	if COMBAT.has(cursor):return _combat_recipe(job)
 	if CONVOY.has(cursor):return _convoy_recipe(job)

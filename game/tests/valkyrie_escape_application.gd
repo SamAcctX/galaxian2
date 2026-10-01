@@ -461,8 +461,11 @@ func fly_distraction() -> void:
 	app.set_player_mode(true);app.show();app.present_session()
 	await process_frame;resume_application_focus()
 	check(app.session.station_owner().snapshot().campaign_cursor==66,"The distraction checkpoint is not at cursor 66")
-	# Test shortcut: the launcher refilled to ten (the Valkyrie builds them).
-	if failures or not seed_cargo([[122,12],[179,4]],3000000) or not outfit_for_combat():return
+	# Test shortcut: the launcher refilled to ten (the Valkyrie builds them),
+	# plus the top shield and armour a long career would have found; the
+	# scripted pilot cannot outlast the reserve wave on the Kothar-era stock.
+	var top:=top_protection()
+	if failures or not seed_cargo([[122,12],[179,4]]+top.map(func(id):return [id,1]),3000000) or not outfit_for_combat() or not fit_same_type(top):return
 	var slots: Array=app.session.station_owner().snapshot().loadout.slots
 	var launcher:=range(slots.size()).filter(func(i):return slots[i]!=null and int(slots[i].item_id)==179)
 	if launcher.is_empty() or not app.equipment_action("open") or not app.equipment_action("unmount",179,launcher[0]) or not app.equipment_action("mount",179) or not app.equipment_action("close"):check(false,"Loading the Liberators failed: "+app.session.error);return
@@ -1053,9 +1056,20 @@ func fly_supernova_luur() -> void:
 	await process_frame;resume_application_focus()
 	check(app.session.station_owner().snapshot().campaign_cursor==93,"The Luur checkpoint is not at cursor 93")
 	if failures or not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
-	if not await release_application_flight() or not await khador_jump(114) or not await dock_application() or not await take_station_talk(93,94):return
+	if not await release_application_flight():return
+	# Carla's nag call (stage 93) about 12 s into an ordinary flight, once.
+	var nag:=[]
+	for tick in 350:
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in nag:nag.append(int(radio.text_id))
+		if not application_step():return
+		if tick%10==0:await process_frame
+	print("SUPERNOVA nag radio ",nag," progress ",app.session.flight_owner()._objective._contracts.snapshot().progress.get("nag_heard"))
+	check(3157 in nag and 3158 in nag,"Carla's nag call did not play: "+str(nag))
+	if failures or not await khador_jump(114) or not await dock_application() or not await take_station_talk(93,94):return
 	var hold: Dictionary=app.session.station_owner().snapshot().get("cargo",{})
 	print("SUPERNOVA Midantha hold ",hold)
+	check(int(app.session.station_owner().snapshot().contracts.progress.get("nag_heard",-1))==93,"Carla's call was not kept as heard")
 	if not await fit_item(205):return
 	# The 83 must move within the shielded gamma budget: carry as many as fit.
 	if not seed_cargo([],2000000) or not await fit_cabins(83,true):return
