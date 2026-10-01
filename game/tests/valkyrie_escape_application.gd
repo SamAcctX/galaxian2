@@ -1362,7 +1362,7 @@ func fly_supernova_bars() -> void:
 	await process_frame;resume_application_focus()
 	check(app.session.station_owner().snapshot().campaign_cursor==109,"The Thynome checkpoint is not at cursor 109")
 	# Test shortcut: the Magnetar Juice 112 asks for (bought on the way in play).
-	if failures or not seed_cargo([[146,1],[122,12]]):return
+	if failures or not seed_cargo([[146,1],[122,12]]) or not fit_best_guns():return
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
 	if not await release_application_flight():return
 	var moved:=[]
@@ -1377,7 +1377,12 @@ func fly_supernova_bars() -> void:
 	check(int(app.session.snapshot().location.station_id)==10 and app.session.snapshot().campaign_cursor==110,"The story did not bring the ship to Thynome for 110")
 	if failures or not await dock_application() or not await take_station_talk(110,111):return
 	for leg in [[38,111,112],[38,112,113],[82,113,114]]:
-		if int(app.session.station_owner().snapshot().station_id)!=leg[0] or not app.session.snapshot().dialogue.visible:
+		# A follow-on talk at the same station opens a moment after the last.
+		var clock:=Time.get_ticks_usec()
+		for tick in 30:
+			if docked_station()!=leg[0] or app.session.snapshot().dialogue.visible:break
+			clock+=100000;app.session.step(clock);app.present_session();await process_frame
+		if docked_station()!=leg[0] or not app.session.snapshot().dialogue.visible:
 			if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
 			if not await release_application_flight():return
 			if int(app.session.snapshot().location.station_id)!=leg[0] and not await khador_jump(leg[0]):return
@@ -1965,7 +1970,7 @@ func depart_to(station: int) -> bool:
 
 ## Fly to `station`, dock and take the talk from `cursor` to `next`.
 func travel_and_talk(station: int,cursor: int,next: int,redock:=false) -> bool:
-	if redock or int(app.session.station_owner().snapshot().station_id)!=station:
+	if redock or docked_station()!=station:
 		if not await depart_to(station) or not await dock_application():return false
 	return await take_station_talk(cursor,next)
 
@@ -2356,8 +2361,9 @@ func khador_jump(destination: int,release:=true) -> bool:
 	app.session.rebase_time(now_us)
 	while app.session.status=="running" and now_us-began<15000000:
 		if not application_step():return false
-	check(app.session.status=="drive_arrival_transition_required","The Khador jump did not complete: "+app.session.status)
-	if failures or not app.enter_drive_arrival(now_us,4096,flight_world_seconds()):check(false,app.status.text);return false
+	var local: bool=app.session.status=="local_arrival_transition_required"
+	check(local or app.session.status=="drive_arrival_transition_required","The Khador jump did not complete: "+app.session.status)
+	if failures or not (app.enter_local_arrival(now_us,4096,flight_world_seconds()) if local else app.enter_drive_arrival(now_us,4096,flight_world_seconds())):check(false,app.status.text);return false
 	check(app.session.snapshot().location.station_id==destination,"The Khador jump arrived elsewhere")
 	return failures==0 and (not release or await release_application_flight())
 
@@ -2471,3 +2477,30 @@ func fight_nearby_hostiles(radius: float) -> bool:
 		if tick%20==0:await process_frame
 		if tick%300==0:print("VALKYRIE home fight ",tick," threats ",threats.size()," vitals ",state.player.vitals)
 	check(false,"The escaping K'Suukk could not shake the Vossk at the gate");return false
+
+func docked_station() -> int:
+	var state: Dictionary=app.session.station_owner().snapshot()
+	return int(state.get("contracts",{}).get("station_id",state.get("location",{}).get("station_id",-1)))
+
+## Test shortcut: refit every gun of the fitted gun type with that type's
+## strongest gun (damage per second), as a long career would have by now.
+func fit_best_guns() -> bool:
+	var items: Array=catalogue.tables.items
+	var weapons: Dictionary=definitions.weapon_parameters
+	var slots: Array=app.session.station_owner().snapshot().loadout.slots
+	# Primary guns: weapon category 0 with a firing interval.
+	var gun:=func(id):return items[id]!=null and items[id].get("arrays") is Array and items[id].arrays.size()==3 and items[id].arrays[2].size()>int(weapons.item_category_value_index) and int(items[id].arrays[2][int(weapons.item_category_value_index)])==0 and int(items[id].properties.get(int(weapons.interval_property),0))>0
+	var fitted: Array=slots.filter(func(slot):return slot!=null and gun.call(int(slot.item_id))).map(func(slot):return int(slot.item_id))
+	if fitted.is_empty():return true
+	var sort:=int(items[fitted[0]].properties.get(2,-1))
+	var rate:=func(id):return float(items[id].properties.get(int(weapons.damage_property),0))/float(items[id].properties.get(int(weapons.interval_property),1))
+	var best: int=range(items.size()).filter(func(id):return gun.call(id) and int(items[id].properties.get(2,-1))==sort).reduce(func(a,b):return b if rate.call(b)>rate.call(a) else a)
+	if not seed_cargo([[best,fitted.size()]]) or not app.equipment_action("open"):check(false,"Seeding guns failed: "+app.session.error);return false
+	for index in range(slots.size()-1,-1,-1):
+		if slots[index]!=null and gun.call(int(slots[index].item_id)):
+			if not app.equipment_action("unmount",int(slots[index].item_id),index):check(false,app.session.error);return false
+	for count in fitted.size():
+		if not app.equipment_action("mount",best):check(false,"Gun "+str(best)+" could not be fitted: "+app.session.error);return false
+	print("SUPERNOVA guns fitted ",best," x",fitted.size()," ",app.session.station_owner().snapshot().loadout.equipment_ids)
+	return app.equipment_action("close")
+
