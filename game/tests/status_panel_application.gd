@@ -58,7 +58,7 @@ func verify_free_application() -> void:
 	var before: Dictionary=app.session.station_owner().snapshot()
 	check(app.station_shell._actions.status.visible,"The station menu has no Status entry")
 	var sounds: Array=preload("res://src/presentation/ui_sounds.gd").prepared()
-	check([123,124,103,104,105,106,107].all(func(id):return id in sounds),"Original button and star map sounds are not prepared: "+str(sounds))
+	check([123,124,103,104,105,106,107,100,101].all(func(id):return id in sounds),"Original button and star map sounds are not prepared: "+str(sounds))
 	var sounds_before: int=root.get_children().filter(func(node):return node is AudioStreamPlayer).size()
 	app.station_shell._actions.status.pressed.emit()
 	check(root.get_children().filter(func(node):return node is AudioStreamPlayer and node.playing).size()>sounds_before,"The station menu button made no sound")

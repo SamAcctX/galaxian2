@@ -8,6 +8,7 @@ const Shopping=preload("res://src/content/ordinary_shopping_definitions.gd")
 const Catalogues=preload("res://src/content/catalogues.gd")
 const Atlas=preload("res://src/content/atlas_region.gd")
 const OriginalUI=preload("res://src/presentation/original_ui.gd")
+const Sounds=preload("res://src/presentation/ui_sounds.gd")
 const ITEM_ATLAS="resources/data/textures/gof2_items_ipad_1440.aei"
 const CATEGORY_LABELS=[254,255,256,258,259]
 # Verified source interface regions: normal row/cap, category band/cap,
@@ -161,7 +162,9 @@ func _request_action(action: String,id: int) -> void:
 		_replacement.dialog_text="Replace %s with %s?"%[_names[conflict.item_id],_names[id]]
 		_replacement.popup_centered(Vector2i(600 if _mobile else 420,160))
 		_refresh()
-	else:action_requested.emit(action,id)
+	else:
+		if action in ["buy","sell"]:Sounds.event(self,Sounds.HANGAR_BUY if action=="buy" else Sounds.HANGAR_SELL)
+		action_requested.emit(action,id)
 
 func _add_ship_offer(index: int) -> void:
 	if _ship_offers.has(index):return
