@@ -1028,6 +1028,8 @@ func _contract_hull(random: RefCounted,faction: int) -> int:
 
 static func _select_hull(random: RefCounted,faction: int,rules: Dictionary) -> int:
 	if faction==int(rules.early_vossk_faction):return int(rules.early_vossk_hull)
+	# A faction with no hull in the pool would never be drawn (refuse, don't hang).
+	if not range(mini(int(rules.draw_bound),rules.factions.size())).any(func(hull):return int(rules.factions[hull])==faction and (hull>int(rules.mask_limit) or (int(rules.excluded_mask)&(1<<hull))==0)):return -1
 	while true:
 		var hull: int=random.next_int(int(rules.draw_bound))
 		if hull<=int(rules.mask_limit) and (int(rules.excluded_mask)&(1<<hull))!=0:continue
