@@ -84,7 +84,10 @@ func _build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: 
 			var engine_id:=int(bindings.mido_travel.traffic_presentation.engine_model_base)+ship_id
 			exhaust={"id":engine_id,"path":bindings.resolve(engine_id,"mesh")}
 		else:exhaust=ENGINES[ship_id]
-		if bindings.resolve(exhaust.id,"mesh")!=exhaust.path or bindings.material_for_mesh(exhaust.path,"high").get("render_type")!=2:return fail("Unsupported NPC engine model/material mapping")
+		# A cast hull without its own exhaust mesh (W1: Kehnor's ship 42) flies
+		# without the flame; the fixed opening ships must have theirs.
+		var flame: bool=exhaust.path is String and not String(exhaust.path).is_empty() and bindings.resolve(exhaust.id,"mesh")==exhaust.path and bindings.material_for_mesh(exhaust.path,"high").get("render_type")==2
+		if not flame and not native_cast:return fail("Unsupported NPC engine model/material mapping")
 		var death: RefCounted=owner.npc_destruction_owner(id)
 		if death==null:return fail("NPC model lacks its retained destruction owner")
 		var held: Dictionary=death.snapshot().cargo
@@ -92,8 +95,8 @@ func _build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: 
 		var body:=Ship.new();add_child(body)
 		if not body.build(ship_id,library,visuals,bindings):return fail(body.error)
 		var resources:=Models.new()
-		if not resources.prepare([exhaust.path,held.resource],library,visuals,bindings,"high",true,true):return fail(resources.error)
-		var motor: Node3D=resources.instantiate(exhaust.path);var container: Node3D=resources.instantiate(held.resource)
+		if not resources.prepare(([exhaust.path] if flame else [])+[held.resource],library,visuals,bindings,"high",true,true):return fail(resources.error)
+		var motor: Node3D=resources.instantiate(exhaust.path) if flame else Node3D.new();var container: Node3D=resources.instantiate(held.resource)
 		resources.clear();add_child(motor);add_child(container);motor.hide();container.hide()
 		motor.set_meta("source_resource_id",exhaust.id);container.set_meta("source_resource_id",held.model_id)
 		var effect:=DeathEffect.new();add_child(effect)

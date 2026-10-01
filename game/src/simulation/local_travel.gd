@@ -94,7 +94,8 @@ func rebase_story_flight(bindings: RefCounted,cursor: int,mission: Dictionary) -
 	error=""
 	var flights=load("res://src/content/valkyrie_flight_definitions.gd")
 	var current: Variant=_state.get("campaign_cursor")
-	if _state.get("phase")!="flight" or flights.story_job(bindings,current,_state.get("station_id")).is_empty() or cursor!=flights.Campaign.next_cursor(int(current)) or mission!=flights.Campaign.mission(cursor):return reject("Local navigation lost its story flight")
+	# Forward only; a step may skip an empty cursor (W1: 128 -> 130).
+	if _state.get("phase")!="flight" or not current is int or cursor<=int(current) or mission!=flights.Campaign.mission(cursor):return reject("Local navigation lost its story flight")
 	_state.campaign_cursor=cursor
 	_stations=Definitions.navigation_stations(bindings,cursor,_state.station_id).filter(func(id):return id==_state.station_id or load("res://src/content/free_navigation_definitions.gd").destination_supported(bindings,cursor,mission,id))
 	if not _stations.has(_state.candidate_station_id):_state.candidate_station_id=-1;_state.acquisition_ms=0

@@ -1369,9 +1369,11 @@ func resolve_ship_layers(ship_id: int) -> Dictionary:
 			var id := int(ship_lights.resource_ids[ship_id][slot])
 			if id == 65535: continue
 			var light_path := resolve(id, "mesh")
+			# An undeclared light layer (ship 42's 18742) is left off; the
+			# body still flies.
 			if light_path.is_empty():
-				error = "Ship %d light layer %d: " % [ship_id, slot] + error
-				return {}
+				error = ""
+				continue
 			lights.append({"resource_id": id, "path": light_path, "slot": slot})
 	return {"ship_id": ship_id, "resource_id": int(ship_model_resources[ship_id]), "path": path,
 		"lights": lights, "light_bindings_available": not ship_lights.is_empty()}

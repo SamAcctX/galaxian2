@@ -133,6 +133,14 @@ func verify_delivery_route(original: Dictionary,before: Dictionary,offer: Dictio
 
 func dock_application() -> bool:
 	resume_application_focus()
+	# A story hold (a line still playing) ends before the pilot can dock.
+	for wait in 300:
+		if app.session.can_control() or app.session.status!="running":break
+		if not application_step():return false
+		if wait%20==0:await process_frame
+	if not app.session.can_control():
+		var w: RefCounted=app.session.flight_owner()
+		print("Dock blocked: paused ",app.session.is_paused()," death ",w.death_active()," departing ",w.local_departing()," cinematic ",w.cinematic_input_blocked()," released ",w.entry_released()," dialogue ",w.dialogue_visible()," status ",app.session.status)
 	if not app.session.action("autopilot"):check(false,app.session.error);return false
 	var started:=now_us;var next_yield:=now_us+2000000
 	while now_us-started<200000000 and app.session.status!="station_transition_required":
@@ -229,6 +237,12 @@ func run_resumed_job() -> void:
 	if directory.is_empty() or saved.is_empty():check(false,"Resume requires an earned source file and an isolated destination");quit(1);return
 	app=Host.new();root.add_child(app);app.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	app.set_context(source,definitions,visual);app.set_process(false);app.enable_saves(directory)
+	# A save written with a newer extraction needs it attached first, as the
+	# game does on launch.
+	var update:=OS.get_environment("GOF2_IMPORT_UPDATE")
+	if not update.is_empty():
+		for owner in [app.bindings,definitions]:
+			if owner!=null and owner.import_update_receipt().is_empty() and not owner.attach_import_update(update,app.library.manifest,app.library):check(false,"Import update: "+owner.error);app.free();quit(1);return
 	DirAccess.make_dir_recursive_absolute(app.station_save_path().get_base_dir())
 	if DirAccess.copy_absolute(saved,app.station_save_path())!=OK:check(false,"Could not retain the source checkpoint for Resume");app.free();quit(1);return
 	app.show();app.present_session();await process_frame;resume_application_focus()

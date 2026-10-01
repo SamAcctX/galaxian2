@@ -138,7 +138,7 @@ const SCRIPTED:={
 	# when his line is over. Assumption: no camera path (fixed view).
 	131:{"points":[Vector3.ZERO],"groups":[],
 		"radio":[[0,2848,2144,5,[3000]]],
-		"timed_actions":[{"after_ms":0,"action":"lock_player","invulnerable":true,"until":[6,[0]]}],
+		"timed_actions":[{"after_ms":0,"action":"lock_player","invulnerable":true,"until":[35,[0,0,1]]}],
 		"success":{"kind":"radio_finished","index":0}},
 	# 135: Coromesk mining contract (kind 174; gate: a mining drill). The
 	# orbit's asteroids all give Titanium (155). #0 the Mining Plant (19080,

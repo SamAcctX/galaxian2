@@ -1492,6 +1492,31 @@ func fly_supernova_meenkk() -> void:
 ## his hull and he gives up (128 -> 130); the same for Kehnor (130 -> 131).
 ## Then Var Lupra (131-132), the Katashán cutaway (133) and Dekato (134).
 const TERRAN_BOARD_STATION:=5
+## A Terran board station in a system this career knows (the drive only
+## reaches known systems); the docked station when it is one.
+func terran_board_station() -> int:
+	var document: Dictionary=StationSaveFile.new().read_document(app.station_save_path())
+	var known: Array=find_value(document,"system_availability")
+	var race_of:=func(id):return int(catalogue.tables.systems[int(catalogue.tables.stations[id].system_id)].fields[2])
+	var race: int=race_of.call(TERRAN_BOARD_STATION)
+	var ids: Array=[docked_station()]+range(catalogue.tables.stations.size())
+	for id in ids:
+		var system:=int(catalogue.tables.stations[id].system_id) if id>=0 else -1
+		if system>=0 and system<known.size() and known[system] and race_of.call(id)==race and id!=load("res://src/simulation/wanted_board.gd").CLOSED_STATION:return id
+	return TERRAN_BOARD_STATION
+
+static func find_value(value: Variant,key: String) -> Variant:
+	if value is Dictionary:
+		if value.has(key):return value[key]
+		for child in value.values():
+			var found: Variant=find_value(child,key)
+			if found!=null:return found
+	elif value is Array:
+		for child in value:
+			var found: Variant=find_value(child,key)
+			if found!=null:return found
+	return null
+
 func fly_supernova_wanted() -> void:
 	app.set_player_mode(true);app.show();app.present_session()
 	await process_frame;resume_application_focus()
@@ -1499,7 +1524,8 @@ func fly_supernova_wanted() -> void:
 	if failures or not seed_cargo([[122,12]]):return
 	for entry in [0,1]:
 		var cursor: int=[128,130][entry];var name: String=["Pal Tyyrt","Kehnor"][entry]
-		if not await depart_to(TERRAN_BOARD_STATION) or not await dock_application():return
+		var board_station:=terran_board_station()
+		if not await depart_to(board_station) or not await dock_application():return
 		app.open_missions();await process_frame
 		app.missions_panel.toggle_wanted();await process_frame
 		var log: Dictionary=app.missions_panel.snapshot()
@@ -1529,7 +1555,7 @@ func fly_supernova_wanted() -> void:
 		if failures:return
 		if entry==0 and (not await dock_application()):return
 	# 131: Var Lupra, held until Keith's line ends; 132 the talk there.
-	if not await khador_jump(112) or not await wait_story_cursor(132,"supernova-varlupra"):return
+	if not await khador_jump(112,false) or not await wait_story_cursor(132,"supernova-varlupra"):return
 	if not await dock_application() or not await take_station_talk(132,133):return
 	if not await story_cutaway(120,112,134,"supernova-katashan-133"):return
 	if not await travel_and_talk(22,134,135):return
