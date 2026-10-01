@@ -1297,6 +1297,12 @@ func resolve(identifier: int, kind := "") -> String:
 	var alternatives := {}
 	for row in records[identifier]:
 		alternatives[row.resource + "|" + str(int(row.registration_type))] = row
+	# A DLC asset reuses an id of a base test mesh (19080: the Mining Plant
+	# over test_dock.aem); the DLC declaration is the one the game shows.
+	if alternatives.size() > 1:
+		var dlc := alternatives.keys().filter(func(key): return "/data/assets/" in String(key))
+		if dlc.size() == 1:
+			alternatives = {dlc[0]: alternatives[dlc[0]]}
 	if alternatives.size() != 1:
 		fail("Resource ID %d has multiple source declarations; active selection is unverified" % identifier)
 		return ""

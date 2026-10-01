@@ -588,6 +588,13 @@ func begin_contact_pass(random_state: Dictionary, display_available: bool) -> bo
 
 func contact_random_state() -> Dictionary:return _contact_random.duplicate(true)
 
+## The standing hostility reads: the career's, or a fitted signature's.
+func hostility_reputation() -> Dictionary:
+	var standing:=current_reputation()
+	var axes: Array=_provocation.signature_axes(int(_provocation.snapshot().get("signature_race",-1))) if _provocation!=null else []
+	if not axes.is_empty() and not standing.is_empty():standing.axes=axes.duplicate()
+	return standing
+
 func current_reputation() -> Dictionary:
 	var standing:=_current_reputation()
 	if not _story_standing.is_empty() and not standing.is_empty() and int(_story_standing.axis)>=0:standing.axes[int(_story_standing.axis)]=int(_story_standing.value)
@@ -867,21 +874,21 @@ func refresh_hostility(actor_id: Variant) -> bool:
 			return true
 		if _training_weapons.has("kappa_lifecycle"):
 			var state: Dictionary=_provocation.snapshot()
-			if not _writable(actor_id).refresh_kappa_hostility(current_reputation(),state.forced_hostile[actor_id],state.permanent_hostile[actor_id],_reputation_rules):return reject(_actors[actor_id].error)
+			if not _writable(actor_id).refresh_kappa_hostility(hostility_reputation(),state.forced_hostile[actor_id],state.permanent_hostile[actor_id],_reputation_rules):return reject(_actors[actor_id].error)
 			return true
 		if _training_weapons.has("free_lifecycle") or _training_weapons.get("authored_story",false):
-			if not _writable(actor_id).apply_free_hostility(current_reputation(),_provocation.snapshot().forced_hostile[actor_id],_reputation_rules):return reject(_actors[actor_id].error)
+			if not _writable(actor_id).apply_free_hostility(hostility_reputation(),_provocation.snapshot().forced_hostile[actor_id],_reputation_rules):return reject(_actors[actor_id].error)
 			return true
 		if _training_weapons.has("alioth_lifecycle"):
 			if not _writable(actor_id).refresh_alioth_hostility(_provocation.snapshot().forced_hostile[actor_id]):return reject(_actors[actor_id].error)
 			return true
 		if _training_weapons.has("capital_death"):
-			if not _writable(actor_id).refresh_convoy_hostility(current_reputation(),_provocation.snapshot().forced_hostile[actor_id],_reputation_rules):return reject(_actors[actor_id].error)
+			if not _writable(actor_id).refresh_convoy_hostility(hostility_reputation(),_provocation.snapshot().forced_hostile[actor_id],_reputation_rules):return reject(_actors[actor_id].error)
 			return true
 		if not _contract_encounter.is_empty():
-			if not _writable(actor_id).refresh_contract_hostility(_provocation.snapshot().forced_hostile[actor_id],current_reputation(),_training_weapons.get("ordinary_standing",{})):return reject(_actors[actor_id].error)
+			if not _writable(actor_id).refresh_contract_hostility(_provocation.snapshot().forced_hostile[actor_id],hostility_reputation(),_training_weapons.get("ordinary_standing",{})):return reject(_actors[actor_id].error)
 			return true
-		if not _writable(actor_id).apply_local_hostility(current_reputation(),_provocation.snapshot().forced_hostile[actor_id],_reputation_rules):return reject(_actors[actor_id].error)
+		if not _writable(actor_id).apply_local_hostility(hostility_reputation(),_provocation.snapshot().forced_hostile[actor_id],_reputation_rules):return reject(_actors[actor_id].error)
 		return true
 	if not _writable(actor_id).refresh_hostility(): return reject(_actors[actor_id].error)
 	return true

@@ -142,9 +142,8 @@ func configure_kappa_rescue(bindings: RefCounted,catalogues: RefCounted,construc
 	var source: Dictionary=data.kappa_lifecycle
 	if catalogues.tables.systems[int(data.system_id)].fields[int(source.system_faction_field)]!=int(source.primary_faction):return reject("Kappa system faction disagrees with the original encounter")
 	var rules: Dictionary=bindings.mido_travel.traffic_combat
-	for id in packet.kappa_loadout.equipment_ids:
-		if catalogues.tables.items[id].properties.get(2)==int(rules.credential_subtype):return reject("Faction credentials require an unsupported reaction path")
 	if not _initialize_population(bindings,data,rules,reputation):return false
+	_state.signature_race=signature_race(catalogues,packet.kappa_loadout.equipment_ids,rules)
 	_set_factions(data,int(data.mission_kind))
 	_rules.kappa_lifecycle=source.duplicate(true)
 	_rules.systems=source.systems.duplicate(true);_rules.systems_primary=int(source.primary_faction)
@@ -176,9 +175,23 @@ func _configure_population(bindings: RefCounted,catalogues: RefCounted,data: Dic
 		if owned.get("loadout",{}).get(key)!=bindings.get(key):return reject("Local combat equipment belongs to another content identity")
 	var rules: Dictionary=bindings.mido_travel.traffic_combat
 	if owned.loadout.station_id!=int(data.get("equipment_station_id",data.station_id)):return reject("Local combat belongs to another station")
-	for id in owned.loadout.equipment_ids:
-		if catalogues.tables.items[id].properties.get(2)==int(rules.credential_subtype):return reject("Faction credentials require an unsupported reaction path")
-	return _initialize_population(bindings,data,rules,reputation)
+	if not _initialize_population(bindings,data,rules,reputation):return false
+	_state.signature_race=signature_race(catalogues,owned.loadout.equipment_ids,rules)
+	return true
+
+## A fitted race signature (189-192: Terran, Vossk, Nivelian, Midorian;
+## verified Ship::refreshValue, race = item - 189), or -1.
+const SIGNATURE_FIRST_ITEM:=189
+static func signature_race(catalogues: RefCounted,equipment_ids: Array,rules: Dictionary) -> int:
+	for id in equipment_ids:
+		if catalogues.tables.items[id].properties.get(2)==int(rules.credential_subtype):return clampi(int(id)-SIGNATURE_FIRST_ITEM,0,3)
+	return -1
+
+## While a signature is fitted, standing is ignored (verified Standing::
+## isEnemy/isFriend): its race is a friend, the other race on its axis an
+## enemy, the other axis neutral. Not saved: hostility reads only.
+static func signature_axes(race: int) -> Array:
+	return [[100,0],[-100,0],[0,100],[0,-100]][race] if race>=0 and race<4 else []
 
 func _initialize_population(bindings: RefCounted,data: Dictionary,rules: Dictionary,reputation: Dictionary) -> bool:
 	_selected40_world=null

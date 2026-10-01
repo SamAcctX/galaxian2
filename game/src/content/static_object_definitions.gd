@@ -76,6 +76,13 @@ const MODELS:={
 	# twin's model is open, so both draw 19050. The story keeps it unharmed.
 	19050:{"layers":[19050],"collision_record":-1,"hit_radius":1500,"wreck_model":-1,"death_sound":-1,
 		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
+	# 135: the Coromesk Mining Plant, 19080 with its eight parts; 139: the
+	# Vossk battleship (19051). Both invulnerable. Assumption: hit radius
+	# 1500 (not recovered).
+	19080:{"layers":[19080,19085,19084,19081,19086,19088,19087,19082,19083],"collision_record":-1,"hit_radius":1500,"wreck_model":-1,"death_sound":-1,
+		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
+	19051:{"layers":[19051,19052,19053],"collision_record":-1,"hit_radius":1500,"wreck_model":-1,"death_sound":-1,
+		"wake_half_extent":0,"hull":"indestructible","enemy_count_excluded":true},
 	# 158: three hostile objects at Luur with 100 hull each (model 18882; what
 	# it depicts is open). Destroyable, no wreck.
 	18882:{"layers":[18882],"collision_record":-1,"hit_radius":1000,"wreck_model":-1,"death_sound":20,

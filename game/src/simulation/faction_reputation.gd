@@ -208,6 +208,9 @@ func record_lethal(actor: Dictionary) -> bool:
 	if _state.has("spawn_generations"):
 		if actor.get("campaign_cursor")!=_state.campaign_cursor or actor.get("spawn_generation")!=_state.spawn_generations[id]:return reject("Lethal hit belongs to an earlier traffic instance")
 		generation=_state.spawn_generations[id]
+	else:
+		# A story ship that came back (revive) dies as a new instance.
+		generation=int(actor.get("story_life",0))
 	return _append_event(id,actor.nonplayer_kill,generation)
 
 func _append_event(id: int, nonplayer: bool, generation: int=0) -> bool:
@@ -217,7 +220,7 @@ func _append_event(id: int, nonplayer: bool, generation: int=0) -> bool:
 	if _state.difficulty==float(_rules.hardest_difficulty):change*=int(_rules.hardest_multiplier)
 	var axis:=int(_rules.get("faction_axes",{}).get(str(_state.actor_kinds[id]),_rules.axis))
 	_state.events.append({"actor_id":id,"actor_kind":_state.actor_kinds[id],"nonplayer_kill":nonplayer,"axis":axis,"change":change})
-	if _state.has("spawn_generations"):_state.events[-1].spawn_generation=generation
+	if _state.has("spawn_generations") or generation>0:_state.events[-1].spawn_generation=generation
 	return true
 
 func record_cargo_recovery(actor: Dictionary) -> bool:

@@ -752,6 +752,7 @@ func revive_story() -> bool:
 	for key in ["active","damage_allowed","engine_draw_enabled","node_draw_requested","model_draw_enabled"]:_state[key]=true
 	for key in ["statistics_targeting_blocked","nonplayer_kill","contact","targeting_blocked","cloaked"]:_state[key]=false
 	_state.impact_vector=Vector3.ZERO;_state.actor_mode=1
+	_state.story_life=int(_state.get("story_life",0))+1
 	return true
 
 ## A stealth ship cloaks or uncloaks: while cloaked it is not drawn and

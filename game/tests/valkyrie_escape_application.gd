@@ -360,6 +360,10 @@ func outfit_for_combat() -> bool:
 	var budget:=int(quote.contracts.credits)+int(quote.loadout.ship_instance.unit_price)-120000
 	var secondaries:=2 if OS.get_environment("GOF2_VALKYRIE_STAGE").begins_with("teres") else 1
 	var offers: Array=quote.equipment.market_ships.filter(func(row):return int(row.unit_price)<=budget and catalogue.tables.ships[row.ship_id].stats.equipment_slots>=3 and catalogue.tables.ships[row.ship_id].stats.primary_slots>=2 and catalogue.tables.ships[row.ship_id].stats.secondary_slots>=secondaries)
+	# A Supernova career keeps its drive and fittings: no hull with fewer slots.
+	if OS.get_environment("GOF2_VALKYRIE_STAGE").begins_with("supernova"):
+		var slots: int=int(catalogue.tables.ships[int(quote.loadout.ship_id)].stats.equipment_slots)
+		offers=offers.filter(func(row):return int(catalogue.tables.ships[row.ship_id].stats.equipment_slots)>=slots)
 	offers.sort_custom(func(a,b):return catalogue.tables.ships[a.ship_id].stats.armor>catalogue.tables.ships[b.ship_id].stats.armor)
 	print("VALKYRIE shipyard all ",quote.equipment.market_ships.map(func(row):return [row.ship_id,row.unit_price,catalogue.tables.ships[row.ship_id].stats.armor,catalogue.tables.ships[row.ship_id].stats.equipment_slots])," budget ",budget)
 	print("VALKYRIE shipyard ",quote.loadout.station_id," offers ",offers.map(func(row):return [row.ship_id,row.unit_price,catalogue.tables.ships[row.ship_id].stats.armor]))
@@ -1582,6 +1586,17 @@ func fly_supernova_coromesk() -> void:
 	# The bounty: fly to where the board's third entry is and destroy him.
 	var board: Dictionary=app.session.station_owner().snapshot().contracts.progress.get("wanted",{})
 	var gendol: Dictionary=board.get("entries",[{},{},{}])[2]
+	# He joins the Terran board at the first Terran docking after 131.
+	if not gendol.get("active",false):
+		if not await depart_to(terran_board_station()) or not await dock_application():return
+		gendol=app.session.station_owner().snapshot().contracts.progress.get("wanted",{}).get("entries",[{},{},{}])[2]
+	# A rich career trades up where the yard has a tougher hull.
+	var hull_before: int=int(app.session.station_owner().snapshot().loadout.ship_id)
+	if not await outfit_for_combat():return
+	if int(app.session.station_owner().snapshot().loadout.ship_id)!=hull_before:
+		var top:=top_protection()
+		if not seed_cargo(top.map(func(id):return [id,1])) or not fit_same_type(top):return
+	if not fit_best_guns():return
 	print("SUPERNOVA Gendol Ethor ",gendol)
 	check(gendol.get("active",false),"Gendol Ethor was not activated by a Terran docking after 131")
 	if failures:return
@@ -1589,8 +1604,14 @@ func fly_supernova_coromesk() -> void:
 	if not await depart_to(int(gendol.at)):return
 	var bounty_radio:=[]
 	var him:=func(_actors):return [0] if int(app.session.flight_owner()._encounter.combat_snapshot().actors[0].vitals.hull)>0 else []
+	# His wingman first (lighter), then him: one gun on the player sooner.
+	var pack:=func(_actors):
+		var now: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+		var alive: Array=range(now.size()).filter(func(id):return int(now[id].vitals.hull)>0 and now[id].get("active",false) and now[id].get("hostile",false))
+		var wing: Array=alive.filter(func(id):return id!=0)
+		return wing if not wing.is_empty() else alive
 	await capture_free_application("supernova-bounty")
-	if not await fight_until("bounty",func():return him.call([]).is_empty(),him,bounty_radio):return
+	if not await fight_until("bounty",func():return him.call([]).is_empty(),pack,bounty_radio):return
 	if not await wait_story_cursor(135,"") or not await dock_application():return
 	var after: Dictionary=app.session.station_owner().snapshot()
 	print("SUPERNOVA bounty paid ",int(after.contracts.credits)-credits," board ",after.contracts.progress.wanted.bounties," radio ",bounty_radio)
@@ -1616,7 +1637,8 @@ func fly_supernova_coromesk() -> void:
 		var status:=int(frame._story_dock.get("status",0))
 		if int(frame._story_dock.get("docked",-1))==0 and frame._cargo.quantity(TITANIUM)==0 and status<140:
 			var load:=mini(140-status,int(frame._cargo.snapshot().free_space))
-			if load>0 and frame._cargo.add_entries([{"item_id":TITANIUM,"quantity":load}]):topped[0]+=load
+			# The live world's hold (flight_owner() hands out a copy).
+			if load>0 and app.session._world._cargo.add_entries([{"item_id":TITANIUM,"quantity":load}]):topped[0]+=load
 		return frame._encounter.combat_snapshot().actors[0].pose.origin
 	if not await story_flight(135,"coromesk",plant,pirates,radio_ids,900,1500.0):return
 	print("SUPERNOVA Coromesk radio ",radio_ids," topped up ",topped[0])
@@ -1630,10 +1652,15 @@ func fly_supernova_coromesk() -> void:
 	if not seed_cargo([[85,1]]):return
 	var offers: Array=await shipyard()
 	print("SUPERNOVA B'akrram yard ",offers.map(func(row):return [row.get("ship_id"),row.get("unit_price")]))
-	var index: int=offers.find(offers.filter(func(row):return int(row.get("ship_id",-1))==VOL_NOOR).front() if offers.any(func(row):return int(row.get("ship_id",-1))==VOL_NOOR) else null)
-	if index<0 or not app.equipment_action("open") or not app.equipment_action("buy_ship",index):check(false,"No Vol Noor at B'akrram: "+app.session.error);return
+	# A Vol Noor, or another Vossk hull with item 190 fitted (the gate's two ways).
+	var vossk:=[VOL_NOOR,9,39,41,44,49,50,53,54,61,63]
+	var usable: Array=offers.filter(func(row):return int(row.get("ship_id",-1)) in vossk)
+	usable.sort_custom(func(a,b):return int(a.ship_id)==VOL_NOOR)
+	var index: int=offers.find(usable.front()) if not usable.is_empty() else -1
+	if index<0 or not app.equipment_action("open") or not app.equipment_action("buy_ship",index):check(false,"No Vossk ship at B'akrram: "+app.session.error);return
 	app.equipment_action("close")
 	if not fit_item(85):return
+	if int(app.session.station_owner().snapshot().loadout.ship_id)!=VOL_NOOR and (not seed_cargo([[190,1]]) or not fit_item(190)):return
 	if not await depart_to(131):return
 	await capture_free_application("supernova-bramurr")
 	radio_ids=[]
@@ -2155,7 +2182,15 @@ func fit_item(item_id: int) -> bool:
 			if int(own.get(1,-1))==category and int(own.get(2,-1))!=20:
 				if not app.equipment_action("unmount",int(slot.item_id),index):check(false,app.session.error);return false
 				break
-	if not app.equipment_action("mount",item_id):check(false,"Item "+str(item_id)+" could not be fitted: "+app.session.error+" "+str(app.session.station_owner().snapshot().equipment.fitting_support.get(item_id)));return false
+	# All slots taken: unfit one item of its category (not the drive or the
+	# top shield/armour) and try again.
+	if not app.equipment_action("mount",item_id):
+		var slots: Array=app.session.station_owner().snapshot().loadout.slots
+		var category: int=int(catalogue.tables.items[item_id].properties.get(1,-1))
+		for index in range(slots.size()-1,-1,-1):
+			if slots[index]!=null and int(slots[index].item_id) not in [85,225,59] and int(catalogue.tables.items[int(slots[index].item_id)].properties.get(1,-1))==category:
+				app.equipment_action("unmount",int(slots[index].item_id),index);break
+	if not app.session.station_owner().snapshot().loadout.equipment_ids.has(item_id) and not app.equipment_action("mount",item_id):check(false,"Item "+str(item_id)+" could not be fitted: "+app.session.error+" "+str(app.session.station_owner().snapshot().equipment.fitting_support.get(item_id)));return false
 	print("SUPERNOVA fitted ",item_id," properties ",catalogue.tables.items[item_id].properties)
 	if not app.equipment_action("close"):check(false,app.session.error);return false
 	return true
