@@ -1,6 +1,8 @@
 extends Node3D
 ## Original animated bomb body and glow. The weapon owns both clocks; geometry
 ## samples accepted state without advancing physics or restarting animation.
+## Visual roll at full left/right stick (assumption: the original amount is not recovered).
+const BANK_RADIANS:=0.6
 const Resources=preload("res://src/content/bomb_projectile_resources.gd")
 const Models=preload("res://src/presentation/model_resources.gd")
 const Sampler=preload("res://src/presentation/scenery_animation.gd")
@@ -63,6 +65,9 @@ func prepare(bomb: Dictionary) -> Dictionary:
 	var right:=Vectors.normalized(Vectors.cross(Vector3.UP,forward))
 	var up:=Vectors.normalized(Vectors.cross(forward,right))
 	var pose:=Transform3D(Basis(right,up,forward),shot.position)
+	# A guided missile banks into its turns (left/right stick).
+	var bank: float=float(shot.get("bank",0.0))
+	if bank!=0.0:pose.basis=pose.basis*Basis(Vector3(0,0,1),-bank*BANK_RADIANS)
 	if not pose.is_finite():return failed("Bomb pose exceeds finite world coordinates")
 	var samplers:=[];var surfaces:=[]
 	for index in 2:
