@@ -1488,7 +1488,9 @@ func _story_spot(action: Dictionary,index: int,elapsed: int) -> Array:
 	return [_pose.origin,radius]
 
 ## Condition 35 for story actions: [35,[line, ms, 0 started / 1 finished]].
+## Actor -1 is the player's own ship (105: the bomb run).
 func _cutscene_pose(actor: int) -> Transform3D:
+	if actor<0:return _pose
 	var state: Dictionary=_encounter.combat_snapshot().actors[actor]
 	var pose: Variant=state.get("pose",state.get("body_pose"))
 	return pose if pose is Transform3D else Transform3D(Basis.IDENTITY,_pose.origin)
@@ -1899,7 +1901,8 @@ func _observe_radio() -> bool:
 				# Story cutscene (Valkyrie 64-70): the player is held, unharmable,
 				# guns stopped and the HUD hidden, while a fixed camera looks at
 				# ship "actor" until the "until" line mark. The eye is set once, at
-				# the ship's position + "ahead" along its heading (+z) + world "offset".
+				# the ship's position + "ahead" along its heading (+z), "right"/"up"
+				# along its side/up axes, + world "offset".
 				if _story_line_passed(action.until,elapsed):continue
 				radio_lock=true;radio_invulnerable=true;cutscene=action.merged({"key":index})
 			elif action.action in ["dockable","transfer"]:
@@ -2033,7 +2036,9 @@ func _observe_radio() -> bool:
 					_action_marks["retired%d"%index]=true
 		if not cutscene.is_empty() and int(_cutscene.get("key",-1))!=int(cutscene.key):
 			var pose: Transform3D=_cutscene_pose(int(cutscene.actor))
-			_cutscene={"key":cutscene.key,"actor":int(cutscene.actor),"eye":pose.origin+pose.basis.z.normalized()*float(cutscene.get("ahead",0.0))+Vector3(cutscene.get("offset",Vector3.ZERO))}
+			# "right"/"up" step along the ship's own side and up axes (Supernova).
+			var eye: Vector3=pose.origin+pose.basis.z.normalized()*float(cutscene.get("ahead",0.0))+pose.basis.x.normalized()*float(cutscene.get("right",0.0))+pose.basis.y.normalized()*float(cutscene.get("up",0.0))
+			_cutscene={"key":cutscene.key,"actor":int(cutscene.actor),"eye":eye+Vector3(cutscene.get("offset",Vector3.ZERO))}
 		elif cutscene.is_empty() and _cutscene.has("eye"):_cutscene={"ended":true}
 		if radio_actions.any(func(action):return action.action in ["lock_player","cutscene"]) and radio_lock!=_story_locked:
 			_story_locked=radio_lock

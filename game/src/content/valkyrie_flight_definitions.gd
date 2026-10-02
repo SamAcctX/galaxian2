@@ -137,7 +137,7 @@ const SCRIPTED:={
 		"radio_actions":[{"radio_index":1,"action":"route","points":[Vector3(-70000,0,-130000)]},
 			{"radio_index":2,"action":"show","first_actor":8,"end_actor":11},
 			{"radio_index":3,"action":"show","first_actor":2,"end_actor":6,"center":"player","radius":[1000,2000]},
-			{"radio_index":3,"action":"lock_player","hidden":true,"invulnerable":true,"duration_ms":7000},
+			{"radio_index":3,"action":"cutscene","actor":4,"ahead":4000.0,"right":-500.0,"up":-500.0,"until":[35,[3,7000,0]]},
 			{"radio_index":4,"action":"wake","first_actor":2,"end_actor":6},
 			{"radio_index":4,"action":"dockable","first_actor":8,"end_actor":11,"enabled":true},
 			{"radio_index":6,"action":"show","first_actor":6,"end_actor":8,"center":"player","radius":[1000,2000],"wake":true}],
@@ -258,12 +258,12 @@ const SCRIPTED:={
 		"radio":[[18,2614,2094,5,[8000]],[18,2615,2095,6,[0]],[18,2616,2096,6,[1]],[18,2617,2097,35,[2,42000,1]],
 			[0,2618,2098,30,[1,2,6]],[0,2619,2099,30,[2,2,6]],[0,2620,2100,30,[3,2,6]],
 			[18,2621,2101,34,[9,8000]],[0,2622,2102,35,[7,4000,1]]],
-		"radio_actions":[{"radio_index":0,"action":"lock_player","hidden":true,"invulnerable":true,"until":[35,[2,2000,1]]},
+		"radio_actions":[{"radio_index":0,"action":"cutscene","actor":0,"offset":Vector3(9000,-7000,40000),"until":[35,[2,2000,1]]},
 			{"radio_index":2,"on":"finished","delay_ms":32000,"action":"show","first_actor":6,"end_actor":10,"near_actors":[2,6],"player_chance":0.2,"radius":[35000,45000],"target":"near"},
-			{"radio_index":2,"on":"finished","delay_ms":32000,"action":"lock_player","duration_ms":10000,"invulnerable":true},
+			{"radio_index":2,"on":"finished","delay_ms":32000,"action":"cutscene","actor":6,"ahead":4500.0,"right":600.0,"up":400.0,"until":[35,[2,42000,1]]},
 			{"radio_index":3,"action":"wake","first_actor":6,"end_actor":10},
 			{"radio_index":3,"action":"respawn","first_actor":6,"end_actor":10,"every_ms":60000,"near_actors":[2,6],"player_chance":0.2,"radius":[35000,45000],"until_radio":7},
-			{"radio_index":7,"action":"lock_player","hidden":true,"duration_ms":12000,"invulnerable":true}],
+			{"radio_index":7,"action":"cutscene","actor":0,"offset":Vector3(9000,-7000,40000),"until":[35,[7,12000,0]]}],
 		# Dropships unload at the carrier, one person per 0.2 s while there (N2).
 		"shuttles":{"first_actor":2,"end_actor":6,"dock":0,"visit_ms":20000,"transfer_ms":200},
 		"success":{"kind":"radio_finished","index":14},"failure":{"kind":18,"first_actor":2,"end_actor":6}},
@@ -288,10 +288,11 @@ const SCRIPTED:={
 		"radio_actions":[{"radio_index":0,"action":"lock_player","autopilot":true,"until":[35,[1,6000,1]]},
 			{"radio_index":1,"on":"finished","action":"retire","first_actor":0,"end_actor":2},
 			{"radio_index":5,"action":"show","first_actor":2,"end_actor":5,"ahead_of_player":20000,"radius":[0,3000]},
-			{"radio_index":5,"action":"lock_player","hidden":true,"duration_ms":10000,"invulnerable":true},
+			{"radio_index":5,"action":"cutscene","actor":2,"ahead":6800.0,"right":1200.0,"up":400.0,"until":[35,[5,10000,0]]},
 			{"radio_index":5,"delay_ms":10000,"action":"wake","first_actor":2,"end_actor":5},
 			{"radio_index":7,"action":"respawn","first_actor":2,"end_actor":5,"every_ms":110000,"ahead_of_player":20000,"radius":[0,3000],"until_radio":8},
 			{"radio_index":8,"action":"lock_player","hidden":true,"invulnerable":true,"duration_ms":16000},
+			{"radio_index":8,"action":"cutscene","actor":-1,"ahead":8000.0,"right":1000.0,"up":1000.0,"until":[35,[8,6000,0]]},
 			{"radio_index":8,"on":"finished","delay_ms":2500,"action":"supernova","grow":true}],
 		"success":{"kind":"radio_finished","index":8,"hold_ms":16000}},
 	# 106: Luur aftermath, all one scene (player held). #0 a stealth fighter
@@ -303,7 +304,8 @@ const SCRIPTED:={
 		"groups":[{"count":1,"faction":10,"hull":44,"friendly":true,"hidden":true,"hull_override":1,"cloaking":false,"index":0,"offsets":[0,0,0],"bounds":[1,1,1],"route_start":0,"ship_state":{"firing_allowed":false}}],
 		"radio":[[0,2655,2112,5,[1500]],[20,2656,2113,6,[0]],[20,2657,2114,6,[1]],[0,2658,2115,6,[2]],[0,2659,2116,6,[3]],[0,2660,2117,35,[4,3000,1]]],
 		"timed_actions":[{"after_ms":0,"action":"lock_player","invulnerable":true,"until":[35,[5,0,1]]}],
-		"radio_actions":[{"radio_index":2,"on":"finished","action":"show","first_actor":0,"end_actor":1,"camera":true},
+		"radio_actions":[{"radio_index":2,"on":"finished","action":"show","first_actor":0,"end_actor":1},
+			{"radio_index":2,"on":"finished","delay_ms":3000,"action":"cutscene","actor":0,"ahead":8000.0,"right":1000.0,"up":500.0,"until":[35,[4,3000,1]]},
 			{"radio_index":4,"on":"finished","action":"destroy","first_actor":0,"end_actor":1}],
 		"success":{"kind":"radio_finished","index":5}},
 	# 114: Marktesh asteroid ambush. Six pirates (hull doubled) asleep at
@@ -348,7 +350,7 @@ const SCRIPTED:={
 			[0,2533,2085,36,[33,7,5,60000]],[0,2534,2086,6,[3]],[0,2535,2087,6,[4]]],
 		"radio_actions":[{"radio_index":0,"action":"disarm","first_actor":8,"end_actor":24},
 			{"radio_index":3,"action":"place","first_actor":1,"end_actor":3,"center":Vector3.ZERO,"radius":20000.0},
-			{"radio_index":3,"action":"lock_player","duration_ms":6000,"invulnerable":true},
+			{"radio_index":3,"action":"cutscene","actor":1,"ahead":8000.0,"right":1200.0,"up":-300.0,"until":[35,[3,6000,0]]},
 			{"radio_index":3,"delay_ms":6000,"action":"wake","first_actor":1,"end_actor":3},
 			{"radio_index":3,"delay_ms":106000,"action":"place","first_actor":3,"end_actor":5,"center":Vector3(-35500,3000,20000),"radius":1500.0,"wake":true},
 			{"radio_index":3,"delay_ms":206000,"action":"place","first_actor":5,"end_actor":7,"center":Vector3(-29500,3000,20000),"radius":1500.0,"wake":true}],
@@ -362,10 +364,12 @@ const SCRIPTED:={
 			[0,2510,2080,9,[1,2,3]],[59,2511,2081,35,[8,10000,0]]],
 		"radio_actions":[{"radio_index":4,"action":"place","first_actor":1,"end_actor":4,"center":"player","radius":20000.0},
 			{"radio_index":4,"action":"dockable","first_actor":0,"end_actor":1,"enabled":false},
-			{"radio_index":4,"action":"lock_player","duration_ms":6000,"invulnerable":true},
+			{"radio_index":4,"action":"cutscene","actor":1,"ahead":7000.0,"right":700.0,"up":300.0,"until":[35,[5,0,0]]},
+			{"radio_index":5,"action":"cutscene","actor":1,"ahead":3900.0,"right":500.0,"up":400.0,"until":[35,[5,0,1]]},
 			{"radio_index":5,"on":"finished","action":"retire","first_actor":1,"end_actor":4},
 			{"radio_index":6,"action":"place","first_actor":1,"end_actor":4,"center":"player","radius":15000.0,"wake":true},
 			{"radio_index":8,"action":"lock_player","duration_ms":10000,"invulnerable":true},
+			{"radio_index":8,"action":"cutscene","actor":0,"ahead":7000.0,"right":700.0,"until":[35,[8,7000,0]]},
 			{"radio_index":8,"delay_ms":7000,"action":"retire","first_actor":0,"end_actor":1}],
 		"success":{"kind":"radio_finished","index":16},"failure":{"kind":1,"actor_id":0}},
 	# 91: Valpatro rescue (empty orbit, gamma rays). #0 the damaged freighter
@@ -589,8 +593,8 @@ const SCRIPTED:={
 	# dock at Valkyrie and win the hack -> "Ready to go on board" (the countdown
 	# stops) -> the result
 	# (Alice arrested) -> success; then back at the last docked station's gate
-	# (MOVE_ON_ENTRY 155). Failure: the countdown runs out. Assumptions: the
-	# freighter's ~1 s cutscene steps are one 8 s lock; all fighters target the
+	# (MOVE_ON_ENTRY 155). Failure: the countdown runs out. Lines 0-6 hold the
+	# player with the original's camera shots (Supernova lead). Assumptions: all fighters target the
 	# player (original: every third the freighter); the ring is a 3.4 km box;
 	# the fighters are the alien world's own Void hull (8).
 	# Valkyrie stands at the centre of the fighters' ring (point 2).
@@ -601,7 +605,14 @@ const SCRIPTED:={
 			{"count":20,"faction":9,"hull":8,"friendly":false,"sleeping":true,"index":2,"offsets":[-1700,-200,-200],"bounds":[3400,200,1700]}],
 		"radio":[[0,3028,2172,5,[9000]],[26,3029,2173,6,[0]],[0,3030,2174,6,[1]],[26,3031,2175,6,[2]],[0,3032,2176,6,[3]],[26,3033,2177,6,[4]],[0,3034,2178,6,[5]],
 			[26,3035,2179,35,[6,8000,1]],[0,3036,2180,6,[7]],[55,3037,2181,6,[8]],[0,3038,2182,6,[9]],[0,3039,2183,50,[1]]],
-		"radio_actions":[{"radio_index":6,"on":"finished","action":"lock_player","duration_ms":8000,"invulnerable":true},
+		"radio_actions":[{"radio_index":0,"action":"lock_player","invulnerable":true,"until":[35,[6,8000,1]]},
+			# Original eye: fighter + (300,300,5800). Here the fighters' ring sits
+			# inside Valkyrie's hull (which runs along +z), so the shot looks at
+			# the ring from outside Valkyrie's front end (assumption).
+			{"radio_index":0,"action":"cutscene","actor":2,"offset":Vector3(300,3000,-20000),"until":[35,[1,1500,1]]},
+			{"radio_index":2,"on":"finished","delay_ms":1000,"action":"cutscene","actor":1,"offset":Vector3(0,4000,26000),"until":[35,[3,1000,1]]},
+			{"radio_index":4,"on":"finished","delay_ms":1000,"action":"cutscene","actor":1,"offset":Vector3(0,4000,42000),"until":[35,[5,1000,1]]},
+			{"radio_index":6,"on":"finished","delay_ms":1000,"action":"cutscene","actor":0,"offset":Vector3(200,300,1800),"until":[35,[6,8000,1]]},
 			{"radio_index":6,"on":"finished","action":"wake","first_actor":0,"end_actor":1},
 			{"radio_index":7,"action":"wake","first_actor":2,"end_actor":22,"attack_range":50000},
 			{"radio_index":8,"on":"finished","action":"dockable","first_actor":1,"end_actor":2,"enabled":true},
