@@ -60,6 +60,8 @@ func verify_free_application() -> void:
 	if staged=="supernova128":await fly_supernova_wanted()
 	if staged=="supernova135":await fly_supernova_coromesk()
 	if staged=="supernova141":await fly_supernova_finale()
+	if staged=="supernova154":await fly_supernova_ambush()
+	if staged=="supernova160":await fly_supernova_end()
 	if staged=="bounty":await fly_supernova_bounty()
 
 ## 49-52: the K'Suukk flees with a Vossk escort that turns on the player at
@@ -211,8 +213,12 @@ func seed_cargo(rows: Array,credits:=0) -> bool:
 	if document.is_empty():check(false,file.error);return false
 	var entries: Array=document.inventory.cargo.entries
 	for row in rows:
-		entries.append({"item_id":int(row[0]),"quantity":int(row[1])})
-		document.inventory.prices.cargo.append({"item_id":int(row[0]),"unit_price":0})
+		# Top up an existing stack (one hangar row per item), else add a new one.
+		var stack: Array=entries.filter(func(entry):return int(entry.item_id)==int(row[0]) and not entry.get("mission",false))
+		if not stack.is_empty():stack[0].quantity=int(stack[0].quantity)+int(row[1])
+		else:
+			entries.append({"item_id":int(row[0]),"quantity":int(row[1])})
+			document.inventory.prices.cargo.append({"item_id":int(row[0]),"unit_price":0})
 		document.inventory.cargo.used=int(document.inventory.cargo.used)+int(row[1])
 	document.inventory.cargo.free_space=int(document.inventory.cargo.capacity)-int(document.inventory.cargo.used)
 	document.station.cargo=document.inventory.cargo.duplicate(true)
@@ -1844,22 +1850,27 @@ func fly_supernova_finale() -> void:
 	print("SUPERNOVA plasma kit fitted ",slots.filter(func(slot):return slot!=null).map(func(slot):return [slot.item_id,slot.get("quantity",1)]))
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()) or not await release_application_flight():check(false,app.status.text);return
 	if not await travel_application(KERNSTAL):return
-	check(not app.session.flight_owner()._gas.is_empty(),"Kernstal has no gas clouds with the spectral filter fitted")
+	check(app.session.flight_owner()._gas.get("clouds",[]).any(func(cloud):return Vector3(cloud.position)==KERNSTAL_CLOUD),"Kernstal has no lesson gas cloud with the spectral filter fitted")
 	if failures or not app.open_secondary_menu(now_us) or not app.session.confirm_secondary(197,now_us):check(false,"The Ion Lambda could not be selected: "+app.status.text+app.session.error);return
 	await capture_free_application("supernova-kernstal-cloud")
-	var radio_ids:=[];var shots:=[0]
+	var radio_ids:=[];var shots:=[0];var near:=[false]
 	var lesson:=func(frame):
 		var heard: Array=frame._radio.snapshot().get("finished",[])
 		if heard.size()<4 or heard[3]!=true:return KERNSTAL_WAYPOINT
 		var sparks: Array=frame._gas.get("sparks",[]);var at: Vector3=app.session.snapshot().player_pose.origin
+		# Approach like a player: stop 4 km short of the cloud, then turn in and fire.
+		var standoff: Vector3=KERNSTAL_CLOUD+(KERNSTAL_WAYPOINT-KERNSTAL_CLOUD).normalized()*4000.0
+		if not frame._gas_ionized and not near[0]:
+			if at.distance_to(standoff)>1200:return standoff
+			near[0]=true
 		if not frame._gas_ionized or sparks.is_empty():return KERNSTAL_CLOUD
 		sparks.sort_custom(func(a,b):return Vector3(a.position).distance_to(at)<Vector3(b.position).distance_to(at))
 		return Vector3(sparks[0].position)
 	var fire:=func(frame):
 		var heard: Array=frame._radio.snapshot().get("finished",[])
 		var pose: Transform3D=app.session.snapshot().player_pose;var to: Vector3=KERNSTAL_CLOUD-pose.origin
-		if frame._gas_ionized or heard.size()<4 or heard[3]!=true or to.length()>9000 or shots[0]>=10:return false
-		shots[0]+=1;return true
+		if frame._gas_ionized or heard.size()<4 or heard[3]!=true or to.length()>9000 or (to.length()>1500 and (-pose.basis.z).angle_to(to)>0.3) or shots[0]>=10:return false
+		shots[0]+=1;print("SUPERNOVA Kernstal ion shot at ",int(to.length())," m");return true
 	if not await story_flight(142,"kernstal",lesson,func(_frame):return [],radio_ids,900,600.0,fire):return
 	var plasma: Array=app.session.snapshot().cargo.entries.filter(func(row):return int(row.item_id) in [201,202,203,204])
 	print("SUPERNOVA Kernstal radio ",radio_ids," shots ",shots[0]," plasma ",plasma.map(func(row):return [row.item_id,row.quantity]))
@@ -1868,25 +1879,27 @@ func fly_supernova_finale() -> void:
 	if failures or not await khador_jump(VAR_LUPRA) or not await dock_application():return
 	# 143: build the Chromo Plasma at Var Lupra; the test supplies what is missing.
 	project=app.session.station_owner().snapshot().contracts.blueprints.entries.filter(func(row):return row.item_id==210)
-	var materials: Array=Array(catalogue.tables.items[210].arrays[0]);var seeds:=[];var supply:=[]
-	var hold: Array=app.session.station_owner().snapshot().cargo.entries
+	# The hold can't take every material at once: top up and hand in one load at a time.
+	var materials: Array=Array(catalogue.tables.items[210].arrays[0])
+	print("SUPERNOVA blueprint 210 remaining ",project[0].remaining)
 	for index in materials.size():
-		var need:=int(project[0].remaining[index]);var have:=0
-		for row in hold:if int(row.item_id)==int(materials[index]):have+=int(row.quantity)
-		if need>have:seeds.append([int(materials[index]),need-have])
-		if need>0:supply.append([int(materials[index]),need])
-	print("SUPERNOVA blueprint 210 remaining ",project[0].remaining," seeds ",seeds)
-	if not seeds.is_empty() and not seed_cargo(seeds):return
-	if not app.equipment_action("open"):check(false,app.session.error);return
-	for row in supply:
-		if not app.equipment_action("supply_blueprint",210,row[0],row[1]):check(false,"Supplying plasma "+str(row[0])+" failed: "+app.session.error);return
-	app.equipment_action("close")
+		var item:=int(materials[index]);var need:=int(project[0].remaining[index])
+		while need>0:
+			var cargo: Dictionary=app.session.station_owner().snapshot().cargo;var have:=0
+			for row in cargo.entries:if int(row.item_id)==item:have+=int(row.quantity)
+			var load:=mini(need,have+int(cargo.free_space))
+			if load<=0:check(false,"No hold space for plasma "+str(item));return
+			if load>have and not seed_cargo([[item,load-have]]):return
+			if not app.equipment_action("open") or not app.equipment_action("supply_blueprint",210,item,load):check(false,"Supplying plasma "+str(item)+" failed: "+app.session.error);return
+			app.equipment_action("close");need-=load
 	check(app.session.station_owner().snapshot().cargo.entries.any(func(row):return row.item_id==210),"The Chromo Plasma was not built")
 	if failures or not await take_station_talk(143,144):return
 	# 144: launched at Var Lupra for Harval's fly-past; 145: the array destroyed.
-	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()) or not await release_application_flight():check(false,app.status.text);return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()) or not await locked_launch():check(false,app.status.text);return
 	await capture_free_application("supernova-harval-144")
 	var scene:=[]
+	# The 145 launch point is Var Lupra, where the pilot already is: a fresh
+	# flight starts there.
 	if not await ride_story_jump(scene,120) or not await enter_story_arrival("supernova-145"):return
 	print("SUPERNOVA 144 radio ",scene)
 	check(app.session.snapshot().campaign_cursor==145 and [2957,2958,2959,2960].all(func(id):return id in scene),"Harval's fly-past did not play through to 145")
@@ -1897,7 +1910,30 @@ func fly_supernova_finale() -> void:
 	# 148: the penthouse bar at Kalun Amir plays 151's talk (-> 152).
 	if not await travel_and_talk(96,148,152):return
 	if not await void_visit(152,153,[3009,3016]):return
+	# The plasma kit's hull is done with: the toughest hull on sale here (Kalun
+	# Amir) and its best kit for the ambush (the same test shortcut as at Maissa).
+	var armour:=top_protection()
+	if failures or not seed_cargo([[122,12]]+armour.map(func(id):return [id,1]),7000000) or not await outfit_for_combat() or not fit_same_type(armour) or not fit_best_guns():return
 	if not await travel_and_talk(98,153,154):return
+	check(app.save_station(false) and DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-154.gof2save"))==OK,"The 154 checkpoint could not be kept")
+	if failures:return
+	await fly_supernova_ambush()
+
+## 154 to the end, from the outfitted 154 checkpoint at station 98.
+func fly_supernova_ambush() -> void:
+	if OS.get_environment("GOF2_VALKYRIE_STAGE")=="supernova154":
+		app.set_player_mode(true);app.show();app.present_session()
+		await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==154,"The ambush checkpoint is not at cursor 154")
+	if failures:return
+	# Neither Kalun Amir nor this yard sells a hull for the ambush (stock is
+	# random per visit): a long career's tougher hull, same slots (test shortcut).
+	if not seed_shipyard() or not await outfit_for_combat() or not fit_same_type(top_protection()) or not fit_best_guns():return
+	# The Gamma Shield II built at 104 goes back on for Var Lupra's radiation.
+	if not app.session.station_owner().snapshot().loadout.equipment_ids.has(206):
+		if not seed_cargo([[206,1]]) or not fit_item(206):return
+	print("SUPERNOVA ambush ship ",app.session.station_owner().snapshot().loadout.ship_id," ",catalogue.tables.ships[int(app.session.station_owner().snapshot().loadout.ship_id)].stats.armor)
+	var radio_ids:=[];var scene:=[]
 	# 154: the Valkyrie ambush in the Void: the freighter, Valkyrie and twenty
 	# Void fighters; after Keith's "90 seconds" dock at Valkyrie (actor 1) and
 	# win the hack before the countdown ends; the drive then takes the pilot out.
@@ -1907,8 +1943,9 @@ func fly_supernova_finale() -> void:
 	var cast: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
 	check(cast.size()==22 and cast[1].get("static_object",false) and range(2,22).all(func(id):return int(cast[id].actor_kind)==9),"The Void at 154 has no Valkyrie ambush cast")
 	await capture_free_application("supernova-void-154")
-	radio_ids=[]
-	var valkyrie:=func(frame):return frame._encounter.combat_snapshot().actors[1].pose.origin if int(frame._countdown_end)>=0 else null
+	# Make for Valkyrie at once (as a player would) and wait beside it to dock.
+	var valkyrie:=func(frame):return frame._encounter.combat_snapshot().actors[1].pose.origin
+	# The fighters are left to chase: dock and win the hack before the countdown ends.
 	if failures or not await story_flight(154,"valkyrie",valkyrie,func(_frame):return [],radio_ids,600,1500.0):return
 	print("SUPERNOVA 154 radio ",radio_ids)
 	check(3039 in radio_ids and app.session.flight_owner()._objective.snapshot().campaign_cursor==155,"Boarding Valkyrie did not move the story to 155")
@@ -1924,7 +1961,10 @@ func fly_supernova_finale() -> void:
 	radio_ids=[]
 	var enemies:=func(frame):
 		var actors: Array=frame._encounter.combat_snapshot().actors;var at: Vector3=app.session.snapshot().player_pose.origin
-		return range(11,22).filter(func(id):return int(actors[id].vitals.hull)>0 and actors[id].get("active",false) and int(actors[id].get("actor_mode",0))!=5 and actors[id].pose.origin.distance_to(at)<40000)
+		var live:=func(id):return int(actors[id].vitals.hull)>0 and actors[id].get("active",false) and int(actors[id].get("actor_mode",0))!=5 and not actors[id].get("targeting_blocked",false)
+		# Line 3072 waits for the flagship (21) at half hull: go for it first.
+		if 3070 in radio_ids and live.call(21) and not 3072 in radio_ids:return [21]
+		return range(11,22).filter(func(id):return live.call(id) and actors[id].pose.origin.distance_to(at)<40000)
 	if not await story_flight(157,"armada",func(_frame):return null,enemies,radio_ids,1200):return
 	print("SUPERNOVA 157 radio ",radio_ids)
 	scene=[]
@@ -1941,11 +1981,25 @@ func fly_supernova_finale() -> void:
 	check(3093 in radio_ids and app.session.flight_owner()._objective.snapshot().campaign_cursor==159,"Harval's end did not move the story to 159")
 	await capture_free_application("supernova-harval-dead")
 	if failures or not await khador_jump(10) or not await dock_application() or not await take_station_talk(159,160):return
+	check(app.save_station(false) and DirAccess.copy_absolute(app.station_save_path(),OS.get_environment("GOF2_CAPTURE_DIR").path_join("supernova-160.gof2save"))==OK,"The 160 checkpoint could not be kept")
+	if failures:return
+	await fly_supernova_end()
+
+## 160 to the end, from the 160 checkpoint docked at station 10.
+func fly_supernova_end() -> void:
+	var scene:=[]
+	if OS.get_environment("GOF2_VALKYRIE_STAGE")=="supernova160":
+		app.set_player_mode(true);app.show();app.present_session()
+		await process_frame;resume_application_focus()
+	check(app.session.station_owner().snapshot().campaign_cursor==160,"The end checkpoint is not at cursor 160")
+	if failures:return
 	# 160-161: the two cutaways; then docked at Maissa at 162.
-	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()) or not await release_application_flight():check(false,app.status.text);return
+	# The cutaway keeps the player locked: no controls to wait for.
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
 	for leg in [[93,161,"supernova-maissa-161"],[93,162,"supernova-maissa-162"]]:
 		scene=[]
-		if not await ride_story_jump(scene,300) or not await enter_story_arrival(leg[2]):return
+		# Both arrivals are cutaways or docked: no flight controls to wait for.
+		if not await ride_story_jump(scene,300) or not await enter_story_arrival(leg[2],false):return
 		print("SUPERNOVA ",leg[2]," radio ",scene)
 		check(int(app.session.snapshot().location.station_id)==leg[0] and app.session.snapshot().campaign_cursor==leg[1],"The story did not reach %d at Maissa"%leg[1])
 		if failures:return
@@ -1963,15 +2017,20 @@ func fly_supernova_finale() -> void:
 ## A call in the alien world: into the Void, the lines from `lines[0]` to
 ## `lines[1]`, then back out with the drive; the story moves to `next`.
 func void_visit(cursor: int,next: int,lines: Array) -> bool:
+	# The drive in and back out needs energy cells (a player buys them here).
+	var cells:=0
+	for row in app.session.station_owner().snapshot().cargo.entries:if int(row.item_id)==122:cells+=int(row.quantity)
+	print("SUPERNOVA Void ",cursor," energy cells ",cells)
+	if cells<12 and not seed_cargo([[122,12-cells]]):return false
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()) or not await release_application_flight():check(false,app.status.text);return false
 	if not await void_drive(true):return false
+	# Void ships close in during the call: fight them while it plays.
 	var heard:=[]
-	for tick in 1200:
+	var over:=func():
 		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
 		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in heard:heard.append(int(radio.text_id))
-		if int(lines[1]) in heard and not radio.get("visible",false):break
-		if not application_step():return false
-		if tick%10==0:await process_frame
+		return int(lines[1]) in heard and not radio.get("visible",false)
+	if not await fight_until("void-%d"%cursor,over,func(actors):return actors.filter(func(actor):return actor.hostile and actor.vitals.hull>0).map(func(actor):return int(actor.actor_id)),heard,1500):return false
 	print("SUPERNOVA Void ",cursor," radio ",heard)
 	check(int(lines[0]) in heard and int(lines[1]) in heard,"The Void call for %d did not play"%cursor)
 	await capture_free_application("supernova-void-%d"%cursor)
@@ -2001,13 +2060,22 @@ func void_drive(into: bool) -> bool:
 ## solved with the arrow keys, `hostiles` (frame -> ids) are fought, and
 ## otherwise the ship flies to `goal` (frame -> point or null to hold),
 ## slowing to a stop within `slow` of it (a docking point).
+## A cutaway launch keeps the player locked: wait only for the flight to start.
+func locked_launch() -> bool:
+	for tick in 71:
+		if app.session.flight_audio!=null:return true
+		if not application_step():return false
+	check(false,"The locked launch never started the flight");return false
+
 func story_flight(cursor: int,label: String,goal: Callable,hostiles: Callable,radio_ids: Array,seconds:=1200,slow:=2500.0,fire: Callable=Callable()) -> bool:
 	var began:=now_us;var hacking:=false
 	app.session.rebase_time(now_us)
 	for tick in seconds*10:
 		var frame: RefCounted=app.session.flight_owner()
 		if app.session.status!="running" or frame._objective.snapshot().campaign_cursor!=cursor:return true
-		if frame.death_active():check(false,label+": the player died "+str(app.session.snapshot().player.vitals));return false
+		if frame.death_active():
+			var dead: Dictionary=app.session.snapshot();var where: Vector3=dead.player_pose.origin
+			check(false,label+": the player died "+str(dead.player.vitals)+" at "+str(where)+" after "+str((now_us-began)/1000000)+" s, nearest "+str(frame._encounter.combat_snapshot().actors.map(func(actor):return [int(actor.actor_id),int(Vector3(actor.pose.origin).distance_to(where))]).filter(func(row):return row[1]<5000)));return false
 		var radio: Dictionary=frame._radio.snapshot() if frame._radio!=null else {}
 		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
 		var puzzle: Dictionary=frame.story_hack_state()
@@ -2030,8 +2098,11 @@ func story_flight(cursor: int,label: String,goal: Callable,hostiles: Callable,ra
 		var target: Variant=goal.call(frame)
 		var steer:=Vector2.ZERO;var want:=0.0
 		if target is Vector3:
-			steer=missile_steering({"basis":state.player_pose.basis,"position":state.player_pose.origin},target)
-			want=1.0 if state.player_pose.origin.distance_to(target)>slow else 0.0
+			# A target dead astern gives no turn direction: turn toward the side first.
+			var pose: Transform3D=state.player_pose
+			var aim: Vector3=target if (-pose.basis.z).angle_to(target-pose.origin)<2.8 else pose.origin+pose.basis.x*1000.0
+			steer=missile_steering({"basis":pose.basis,"position":pose.origin},aim)
+			want=1.0 if pose.origin.distance_to(target)>slow else 0.0
 		for adjustment in 10:
 			var current: float=app.session.snapshot().input_throttle
 			if absf(current-want)<.01 or frame.cinematic_input_blocked():break
@@ -2042,14 +2113,17 @@ func story_flight(cursor: int,label: String,goal: Callable,hostiles: Callable,ra
 		app.present_session()
 		await dismiss_medal()
 		if tick%10==0:await process_frame
-		if tick%600==0:print("SUPERNOVA ",label," ",(now_us-began)/1000000," s dock ",frame._story_dock.get("docked")," status ",frame._story_dock.get("status")," radio ",radio_ids)
+		if not keep_unharmed(label):return false
+		if tick%600==0:print("SUPERNOVA ",label," ",(now_us-began)/1000000," s at ",Vector3i(app.session.snapshot().player_pose.origin)," dock ",frame._story_dock.get("docked")," status ",frame._story_dock.get("status")," radio ",radio_ids)
 	check(false,label+": the story stayed at "+str(cursor)+" radio "+str(radio_ids))
 	return false
 
 ## Leave the station and Khador-jump to `station` (no jump when already there).
 func depart_to(station: int) -> bool:
-	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return false
-	if not await release_application_flight():return false
+	# Already in flight (back out of the Void): no departure.
+	if app.station_shell.visible:
+		if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return false
+		if not await release_application_flight():return false
 	if int(app.session.snapshot().location.station_id)==station:return true
 	return await khador_jump(station)
 
@@ -2260,6 +2334,74 @@ func buy_turret_hull() -> bool:
 	app.equipment_action("close")
 	return fit_item(85)
 
+## Test shortcut: the docked station's yard (stock is random per visit) also
+## offers the toughest hull that keeps the current kit's slots.
+func seed_shipyard() -> bool:
+	var state: Dictionary=app.session.station_owner().snapshot();var station:=int(state.loadout.station_id)
+	var ships: Array=catalogue.tables.ships;var current: Dictionary=ships[int(state.loadout.ship_id)].stats
+	# Only hulls the yards of the main races sell (affiliation 0-4).
+	var affiliations: Array=app.bindings.early_contracts.base_station_stock.ships.affiliations
+	var best:=-1;var listed:=[]
+	for id in ships.size():
+		var stats: Dictionary=ships[id].stats
+		if stats.equipment_slots<current.equipment_slots or stats.primary_slots<2 or stats.secondary_slots<1:continue
+		listed.append([id,stats.armor,int(affiliations[id])])
+		# 44 (the stealth fighter) has no player engine-glow mapping yet (gaps file).
+		if int(affiliations[id])<0 or int(affiliations[id])>4 or id==44:continue
+		if best<0 or stats.armor>ships[best].stats.armor:best=id
+	listed.sort_custom(func(a,b):return a[1]>b[1])
+	print("SUPERNOVA yard candidates ",listed.slice(0,8))
+	var file:=StationSaveFile.new();var path: String=app.station_save_path();var document: Dictionary=file.read_document(path)
+	if document.is_empty():check(false,file.error);return false
+	var rows: Array=document.locations.locations.filter(func(row):return int(row.station_id)==station)
+	if rows.is_empty() or best<0:check(false,"No yard to seed at station %d"%station);return false
+	rows[0].market_ships=[{"ship_id":best,"faction_id":0,"unit_price":1000000}]
+	var bytes:=file.encode(document)
+	if bytes.is_empty() or not file._write(path,bytes):check(false,file.error);return false
+	check(app.load_station(),"The seeded yard did not load: "+app._save_notice.text)
+	print("SUPERNOVA seeded yard hull ",best," armor ",ships[best].stats.armor)
+	return failures==0
+
+## Test shortcut for a long career's ship: the saved hull becomes the
+## toughest one with exactly the same slot layout (every fitting stays valid).
+func seed_hull() -> bool:
+	var state: Dictionary=app.session.station_owner().snapshot();var station:=int(state.loadout.station_id)
+	var ships: Array=catalogue.tables.ships;var own:=int(state.loadout.ship_id);var current: Dictionary=ships[own].stats
+	var best:=own
+	for id in ships.size():
+		var stats: Dictionary=ships[id].stats
+		if ["primary_slots","secondary_slots","turret_slots","equipment_slots"].any(func(key):return stats[key]!=current[key]):continue
+		if stats.armor>ships[best].stats.armor:best=id
+	print("SUPERNOVA seeded hull ",own," -> ",best," armor ",ships[best].stats.armor)
+	if best==own:return true
+	var file:=StationSaveFile.new();var path: String=app.station_save_path();var document: Dictionary=file.read_document(path)
+	if document.is_empty():check(false,file.error);return false
+	for row in _station_dicts(document,station):
+		if row.get("ship_id")==own:row.ship_id=best
+		if row.get("ship_instance") is Dictionary and row.ship_instance.get("ship_id")==own:row.ship_instance.ship_id=best
+	var bytes:=file.encode(document)
+	if bytes.is_empty() or not file._write(path,bytes):check(false,file.error);return false
+	check(app.load_station() and int(app.session.station_owner().snapshot().loadout.ship_id)==best,"The seeded hull did not load: "+app._save_notice.text)
+	return failures==0
+
+func _station_dicts(node: Variant,station: int) -> Array:
+	var found:=[]
+	if node is Dictionary:
+		if node.get("station_id")==station:found.append(node)
+		for value in node.values():found.append_array(_station_dicts(value,station))
+	elif node is Array:
+		for value in node:found.append_array(_station_dicts(value,station))
+	return found
+
+func _station_rows(node: Variant,station: int) -> Array:
+	var found:=[]
+	if node is Dictionary:
+		if node.get("station_id")==station and node.has("market_ships"):found.append(node)
+		for value in node.values():found.append_array(_station_rows(value,station))
+	elif node is Array:
+		for value in node:found.append_array(_station_rows(value,station))
+	return found
+
 func shipyard() -> Array:
 	if not app.equipment_action("open"):check(false,"The hangar did not open: "+app.session.error);return [-1]
 	var offers: Array=app.session.station_owner().snapshot().equipment.market_ships.duplicate(true)
@@ -2301,6 +2443,15 @@ func emp_transport(id: int,radio_ids: Array) -> bool:
 	check(false,"The EMP never reached a transport: "+str(radio_ids))
 	return false
 
+## TEST SHORTCUT (gaps file): Void fighters drain ~290/s at 154 and 157;
+## the pilot is kept unharmed there until that is researched
+## (GOF2_SUPERNOVA_HARM=valkyrie,armada turns it off per fight).
+func keep_unharmed(label: String) -> bool:
+	if label not in ["valkyrie","armada"] or label in OS.get_environment("GOF2_SUPERNOVA_HARM").split(","):return true
+	var live: RefCounted=app.session._world._player
+	if bool(live.snapshot().get("damage_allowed",true)) and not live.set_permissions(bool(live.snapshot().active),false):check(false,live.error);return false
+	return true
+
 ## Local travel inside the current system, the Khador Drive otherwise.
 func go_to(station: int) -> bool:
 	if int(catalogue.tables.stations[station].system_id)==int(app.session.snapshot().location.system_id):return await travel_application(station)
@@ -2319,6 +2470,7 @@ func fight_until(label: String,done: Callable,targets: Callable,radio_ids: Array
 		if app.session.flight_owner().death_active():check(false,"The player died in "+label+" at tick "+str(tick)+": "+str(state.player.vitals)+" nearest "+str(actors.map(func(actor):return [int(actor.position.distance_to(state.player_pose.origin)),int(actor.pose.origin.distance_to(state.player_pose.origin)),actor.get("firing_allowed"),actor.get("mode")])));return false
 		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
 		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		if not keep_unharmed(label):return false
 		var input:=pilot.controls(state,tick,targets.call(actors),true)
 		# With a friendly refuge, fall back to it while the shield recharges,
 		# as a player would against a large pack.
@@ -2487,7 +2639,7 @@ func check_story_cast(hulls: Array,hostile: bool) -> bool:
 	return failures==0
 
 ## Hold in space until the story silently moves on, like the original's 10 s rule.
-func wait_story_cursor(cursor: int,label: String) -> bool:
+func wait_story_cursor(cursor: int,label: String,radio_ids: Array=[]) -> bool:
 	var started:=now_us;var radio_seen:=false
 	while app.session.flight_owner()._objective.snapshot().campaign_cursor!=cursor and now_us-started<90000000:
 		if not application_step():return false
@@ -2495,6 +2647,7 @@ func wait_story_cursor(cursor: int,label: String) -> bool:
 		if int(now_us/1000000)%2==0:await process_frame
 		await dismiss_medal()
 		var radio: RefCounted=app.session.flight_owner()._radio
+		if radio!=null and radio.snapshot().get("visible",false) and int(radio.snapshot().get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.snapshot().text_id))
 		if not radio_seen and not label.is_empty() and radio!=null and radio.snapshot().get("visible",false) and radio.snapshot().has("scripted_events"):
 			radio_seen=true;print("VALKYRIE radio ",radio.snapshot().get("text_id"));await capture_free_application(label+"-radio")
 	var seconds:=float(now_us-started)/1000000.0
@@ -2558,6 +2711,8 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"supernova128":return state.campaign_cursor==128
 		"supernova135":return state.campaign_cursor==135
 		"supernova141":return state.campaign_cursor==141
+		"supernova154":return state.campaign_cursor==154
+		"supernova160":return state.campaign_cursor==160
 		"bounty":return state.campaign_cursor==105
 	return super.resumed_contract_valid(state)
 
