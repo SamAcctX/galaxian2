@@ -42,6 +42,8 @@ static func select(state: Dictionary, actor: Dictionary, targets: Array, random:
 		# Scan in retained membership order. Range is deliberately not retested.
 		for index in range(1,targets.size()):
 			var enemy: bool=targets[index].get("hostile",false) if actor.get("wingman",false) else opposed(int(actor.actor_kind),int(targets[index].actor_kind),rules)
+			# Story casts fight by side: hostile ships against friendly ones.
+			if actor.get("authored_story",false):enemy=targets[index].get("story_shootable",false) and bool(targets[index].get("hostile",false))!=bool(actor.hostile)
 			if alive(targets[index]) and enemy:
 				selected=index;next.fire_desired=true;break
 	if actor.get("wingman",false) and actor.get("wingman_command")==1 and not next.fire_desired:selected=-1

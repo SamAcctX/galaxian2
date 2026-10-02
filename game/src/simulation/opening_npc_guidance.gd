@@ -593,7 +593,8 @@ func training_targets(player: Dictionary, actors: Array,wingmen: RefCounted=null
 		else:
 			var row: Dictionary=actors[int(id)]
 			result.append({"actor_id":int(id),"actor_kind":int(row.actor_kind),"target_kind":"npc","pose":row.pose,
-				"active":row.active,"hull":int(row.vitals.hull),"targeting_blocked":row.statistics_targeting_blocked,"special_flight":false})
+				"active":row.active,"hull":int(row.vitals.hull),"targeting_blocked":row.statistics_targeting_blocked,"special_flight":false,
+				"hostile":bool(row.get("hostile",false)),"story_shootable":not row.get("static_object",false) and not row.get("targeting_blocked",false)})
 	return result
 
 func set_initial_route(route: RefCounted) -> bool:
