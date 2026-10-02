@@ -6,6 +6,9 @@ const ControlRules=preload("res://src/content/combat_training_control_definition
 const Vitals=preload("res://src/simulation/combat_vitals.gd")
 const Transit=preload("res://src/content/convoy_transit_definitions.gd")
 const VALUES = {"scope":"mido_contract_ship_combat","campaign_cursor":13,"mission_kinds":[4,12],"weapons":{"rank_offset":-2,"rank_multiplier":0.8999999761581421,"rank_level_min":0,"rank_level_max":20,"scaled_level_max":22,"zero_level_damage":3,"damage_offset":2,"game_difficulty_offset":-0.5,"category":0,"capacity":4,"lifetime_ms":3000,"interval_base_ms":600,"interval_cursor_multiplier":-2,"speed":16.0,"rival_speed":28.0,"rival_adds_rank_to_damage":true,"factions":[{"actor_kind":0,"item_id":0,"kind":0,"catalogue_kind":0,"model_resource_id":6754},{"actor_kind":1,"item_id":3,"kind":0,"catalogue_kind":0,"model_resource_id":6760},{"actor_kind":2,"item_id":7,"kind":0,"catalogue_kind":0,"model_resource_id":6764},{"actor_kind":3,"item_id":25,"kind":0,"catalogue_kind":2,"model_resource_id":6802},{"actor_kind":8,"item_id":19,"kind":1,"catalogue_kind":1,"model_resource_id":6795}]},"player_target_id":-1,"initial_target_index":0,"challenge_player_last_for_odd_actor_ids":true,"rival":{"initial_mode":0,"initial_active":true,"initial_targeting_blocked":false,"boost_enabled":false,"motion_speed":2.0,"initial_hostile":false,"updated_hostile":false,"friendly":true},"pirate":{"initial_hostile":false,"updated_hostile":true,"friendly":false,"boost_enabled":true}}
+## After the main game is won (cursor above 44) guns use mission 45 for
+## their firing interval.
+const WON_CURSOR:=45
 const SPANS = {"ship_combat_weapon_level":[54868,245],"ship_combat_damage":[55500,423],"ship_combat_weapon_factions":[55923,217],"ship_combat_special_guards":[56140,1125],"ship_combat_weapon_constructor":[57315,197],"ship_combat_weapon_table":[58994,44],"ship_combat_targets":[59632,1421],"ship_combat_boost_gate":[621413,474],"ship_combat_hostility":[610958,487],"ship_combat_speed_initialization":[606944,55],"ship_combat_motion_speed":[627033,118],"ship_combat_level_constants":[1575346,12]}
 
 const MAC_SPANS = {"ship_combat_weapon_level":[54868,245],"ship_combat_damage":[55500,423],"ship_combat_weapon_factions":[55923,217],"ship_combat_special_guards":[56140,1125],"ship_combat_weapon_constructor":[57315,197],"ship_combat_weapon_table":[58994,44],"ship_combat_targets":[59632,1421],"ship_combat_boost_gate":[621961,474],"ship_combat_hostility":[611506,487],"ship_combat_speed_initialization":[607492,55],"ship_combat_motion_speed":[627581,118],"ship_combat_level_constants":[1550410,12]}
@@ -175,5 +178,5 @@ static func scaled_parameters(rules: Dictionary,cursor: int,rank: int,difficulty
 	var damage:=int(rules.zero_level_damage) if level==0 else level+int(rules.damage_offset)
 	if enhanced:damage+=rank
 	return {"category":int(rules.category),"damage":damage,"projectile_capacity":int(rules.capacity),"lifetime_ms":int(rules.lifetime_ms),
-		"interval_ms":int(rules.interval_base_ms)+cursor*int(rules.interval_cursor_multiplier),
+		"interval_ms":int(rules.interval_base_ms)+mini(cursor,WON_CURSOR)*int(rules.interval_cursor_multiplier),
 		"speed_units_per_millisecond":float(rules.rival_speed if enhanced else rules.speed),"nonplayer_source":true}
