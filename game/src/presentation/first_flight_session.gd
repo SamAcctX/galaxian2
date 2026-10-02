@@ -26,6 +26,13 @@ const StationGeneration=preload("res://src/content/station_generation_definition
 const BOUNDARIES=["station_transition_required","game_over_transition_required","local_arrival_transition_required","convoy_arrival_transition_required","gate_confirmation_required","gate_map_required","gate_arrival_transition_required","drive_arrival_transition_required","sahi_arrival_transition_required","void_return_transition_required","mission_station_return_required"]
 ## Add-on medal streaks, shared by the application across flights.
 var elite_tracker: RefCounted
+## Add-on medal progress ("<medal>: NN%") shown in the notice bar while it is
+## free, each for MEDAL_LINE_MS.
+const MEDAL_NAME_BASE:=1496
+const MEDAL_LINE_MS:=3000
+var _medal_names:={}
+var _medal_lines:=[]
+var _medal_line_ms:=-1
 var error:=""
 var _presentation_state:={}
 var status:="idle"
@@ -195,6 +202,9 @@ func _configure_construction(library: RefCounted, bindings: RefCounted, visuals:
 	if not _world.configure(bindings,cat,library,construction,"F",.5,viewport_size,mobile_layout,false,"Q","Space","Tab"):return fail(_world.error)
 	_clock=Clock.new()
 	if not _clock.configure(bindings,bindings.base_content_id) or not _clock.rebase(now_microseconds):return fail(_clock.error)
+	_medal_names={};_medal_lines=[];_medal_line_ms=-1
+	for id in range(36,45):
+		if MEDAL_NAME_BASE+id<library.strings.size():_medal_names[id]=library.strings[MEDAL_NAME_BASE+id]
 	scene=Scene.new();add_child(scene)
 	if not scene.build(library,bindings,visuals,cat,_world,false):return fail(scene.error)
 	scene.set_display_active(false)
@@ -543,12 +553,15 @@ func _commit(world: RefCounted, advance_sun: bool, absolute_milliseconds: int=-1
 		sound=flight_audio.prepare_full_hold(world,state)
 		if sound.is_empty():return reject(flight_audio.error)
 	var presentation_time: int=_presentation_ms if absolute_milliseconds<0 else absolute_milliseconds
+	if elite_tracker!=null:
+		elite_tracker.observe(state)
+		_medal_lines.append_array(elite_tracker.take_progress())
+	state=_with_medal_line(state,presentation_time)
 	if not scene.present(world,advance_sun,presentation_time,state):return reject(scene.error)
 	if not _gate_jump_clip.is_empty() and state.get("gate_transit",{}).get("phase")=="departing" and _presentation_state.get("gate_transit",{}).get("phase")!="departing":
 		OneShot.play(self,_gate_jump_clip);gate_jump_plays+=1
 	if engine_audio!=null and camera!=null:engine_audio.update(NpcEngines.sources(state),camera.global_position,maxi(0,presentation_time-_presentation_ms))
 	_world=world;_presentation_state=state;_generation+=1
-	if elite_tracker!=null:elite_tracker.observe(state)
 	_presentation_ms=presentation_time
 	briefing_audio.present(briefing_line)
 	objective_audio.present(-1 if failed else objective_line)
@@ -578,6 +591,22 @@ func _sync_input() -> void:
 	if not can_control():_secondary_requested=false
 	scene.dialogue.set_active(enabled)
 	if scene.game_over!=null:scene.game_over.set_active(enabled)
+
+## The oldest medal line takes the notice bar when no flight notice is showing.
+func _with_medal_line(state: Dictionary,now_ms: int) -> Dictionary:
+	if _medal_lines.is_empty():return state
+	var notices: Variant=state.get("flight_notices")
+	if not notices is Dictionary or notices.is_empty() or notices.get("visible",false):return state
+	if _medal_line_ms<0 or now_ms<_medal_line_ms:_medal_line_ms=now_ms
+	if now_ms-_medal_line_ms>=MEDAL_LINE_MS:
+		_medal_lines.pop_front();_medal_line_ms=now_ms
+		if _medal_lines.is_empty():_medal_line_ms=-1;return state
+	var row: Array=_medal_lines[0]
+	var shown: Dictionary=notices.duplicate(true)
+	shown.current={"source_id":-1,"text":"%s: %d%%"%[_medal_names.get(int(row[0]),""),int(row[1])],"rgb":[255,255,255]}
+	shown.visible=true;shown.alpha=255
+	var result: Dictionary=state.duplicate();result.flight_notices=shown
+	return result
 
 func present_current() -> bool:
 	return scene!=null and scene.present(_world,false,_presentation_ms)

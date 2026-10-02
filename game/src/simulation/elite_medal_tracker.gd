@@ -9,6 +9,9 @@ var _mines:=0
 var _blind_kills:=0
 var _mining_phase:=""
 var _kills:=-1
+## Medals the career already holds: their counters show no progress.
+var owned:=[]
+var _progress:=[]
 
 ## Docking (and leaving the station) resets the docking-bound streaks.
 func reset() -> void:
@@ -21,7 +24,16 @@ func take_reached() -> Array:
 func reached() -> Array:
 	var ids: Array=_reached.keys();ids.sort();return ids
 
-func _latch(id: int) -> void:_reached[id]=true
+func _latch(id: int) -> void:
+	if not _reached.has(id):_note(id,100)
+	_reached[id]=true
+
+## In-flight "<medal>: NN%" lines, oldest first ([id, percent]).
+func take_progress() -> Array:
+	var rows: Array=_progress;_progress=[];return rows
+
+func _note(id: int,percent: int) -> void:
+	if id not in owned and not _reached.has(id):_progress.append([id,percent])
 
 func observe(state: Dictionary) -> void:
 	_observe_mining(state.get("mining_session",{}))
@@ -32,8 +44,10 @@ func observe(state: Dictionary) -> void:
 		var scanner: Variant=state.get("fast_forward",{}).get("scanner_present")
 		if scanner==true:_blind_kills=0
 		elif scanner==false and _kills>=0 and kills>_kills:
-			_blind_kills+=kills-_kills
+			var before:=_blind_kills;_blind_kills+=kills-_kills
+			# Shown at every 10% step.
 			if _blind_kills>=Elite.THRESHOLDS[40]:_latch(40)
+			elif _blind_kills*10/Elite.THRESHOLDS[40]>before*10/Elite.THRESHOLDS[40]:_note(40,_blind_kills*100/Elite.THRESHOLDS[40]/10*10)
 		_kills=kills
 	else:_kills=-1
 	# 42 Jammer: ships disabled by EMP at the same moment.
@@ -60,6 +74,8 @@ func _observe_mining(mining: Dictionary) -> void:
 	if _mining_phase=="drilling":
 		if phase=="finished" and mining.get("last_drill",{}).get("phase")=="extracted":
 			_mines+=1
+			# Shown at every 10% step from 30%.
 			if _mines>=Elite.THRESHOLDS[38]:_latch(38)
+			elif _mines*100/Elite.THRESHOLDS[38]>=30:_note(38,_mines*100/Elite.THRESHOLDS[38])
 		else:_mines=0
 	_mining_phase=phase

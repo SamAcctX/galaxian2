@@ -138,6 +138,9 @@ func verify_elite_medals() -> void:
 	for mine in 3:
 		for phase in mining:app._elite_tracker.observe({"mining_session":{"phase":phase,"last_drill":{"phase":"extracted"}}})
 	check(app._elite_tracker.reached()==[44],"The flight tracker did not latch Hot Shot alone: "+str(app._elite_tracker.reached()))
+	# In flight: "Hot Shot: 100%", then Ore Athlete at 30% (3 of 10 mines).
+	var lines: Array=app._elite_tracker.take_progress()
+	check(lines==[[44,100],[38,30]],"The add-on medal progress lines are wrong: "+str(lines))
 	app.bank_career_stats(true)
 	app.present_session();await process_frame
 	var career: Dictionary=app.session.station_owner().snapshot().contracts
