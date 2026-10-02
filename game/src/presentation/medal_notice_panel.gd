@@ -2,7 +2,6 @@ extends Control
 ## Docked "New medal!" window: the medal's ribbon, name and description.
 ## The station career owns the reward and the queue; this view only shows one.
 signal acknowledged
-const Medals=preload("res://src/simulation/base_medal_progress.gd")
 const NOTICE_TEXT:=342
 const OK_TEXT:=130
 var _status: Control
@@ -35,10 +34,11 @@ func present(status: Control,notice: Array) -> bool:
 	_status=status;theme=status.theme
 	var id: int=notice[0];var level: int=notice[1]
 	_title.text=status._strings[NOTICE_TEXT];_ok.text=status._strings[OK_TEXT]
-	_ribbon.texture=status._art[status.RIBBONS[level]]
-	_icon.texture=status._art[status.MEDAL_ICON_BASE+id];_icon.modulate=status.TINTS[level]
+	var look: Dictionary=status.medal_art(id,level)
+	_ribbon.texture=status._art[look.ribbon]
+	_icon.texture=status._art[look.icon];_icon.modulate=look.tint
 	_name.text=status._strings[status.MEDAL_NAME_BASE+id]
-	_text.text=status._strings[status.MEDAL_TEXT_BASE+id].replace("#",str(Medals.description_value(id,level)))
+	_text.text=status.description(id,level)
 	if status._ui!=null:
 		_box.add_theme_stylebox_override("panel",status._ui.styles[status._mobile].panel)
 		status._ui.apply_button(_ok,status._mobile)

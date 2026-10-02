@@ -8,6 +8,7 @@ const Session = preload("res://src/presentation/opening_session.gd")
 const ArrivalSession = preload("res://src/presentation/arrival_session.gd")
 const StationSession = preload("res://src/presentation/station_session.gd")
 const FirstFlightSession = preload("res://src/presentation/first_flight_session.gd")
+const EliteMedals=preload("res://src/simulation/elite_medal_progress.gd")
 const Selected40Session = preload("res://src/presentation/selected40_session.gd")
 const MissionSession = preload("res://src/presentation/mission_session.gd")
 const StationPanel = preload("res://src/presentation/station_dialogue_panel.gd")
@@ -103,6 +104,7 @@ var _missions_open:=false
 var medal_notice: Control
 ## Career stats observed by the application and banked at the next station.
 var _career_play_ms:=0.0
+var _elite_tracker:=preload("res://src/simulation/elite_medal_tracker.gd").new()
 var _career_cloak_ms:=0.0
 var _last_flight_hull_percent:=-1
 var _station_course_id:=-1
@@ -349,6 +351,12 @@ func bank_career_stats(arrived:=false) -> void:
 	if cargo is Dictionary and cargo.get("capacity") is int and cargo.get("used") is int:observed.max_free_cargo=maxi(0,cargo.capacity-cargo.used)
 	if arrived and _last_flight_hull_percent>=0:observed.min_arrival_hull_percent=_last_flight_hull_percent
 	if session._world.record_stats(observed):_career_play_ms-=int(_career_play_ms);_career_cloak_ms-=int(_career_cloak_ms)
+	# Add-on medals: flight streaks latched since the last docking, plus the
+	# docked ship's cargo capacity. Docking resets the streaks.
+	var elite: Array=_elite_tracker.take_reached()
+	if cargo is Dictionary and cargo.get("capacity") is int:elite.append_array(EliteMedals.dock_reached(cargo.capacity))
+	_elite_tracker.reset()
+	if not session._world.record_elite_medals(elite):status.text=session._world.error
 	_last_flight_hull_percent=-1
 
 func save_station(announce: bool=true) -> bool:
@@ -930,6 +938,7 @@ func _process(_delta: float) -> void:
 		var input: Dictionary=_controls.snapshot() if session.can_control() else {"command":Vector2.ZERO,"held":{"fire":false}}
 		if session is FirstFlightSession and session.can_stop_mining():input.command=Controls.pointer_command(input.command)
 		var accepted: bool
+		if session is FirstFlightSession:session.elite_tracker=_elite_tracker
 		if session is FirstFlightSession:accepted=session.step(Time.get_ticks_usec(),input.command,input.held.fire,_mouse_captured,input.get("strafe",0.0),input.held.get("brake",false),_controls.invert_pitch)
 		elif session is Session:accepted=session.step(Time.get_ticks_usec(),input.command,input.held.fire,input.get("strafe",0.0),input.held.get("brake",false),_mouse_captured)
 		else:accepted=session.step(Time.get_ticks_usec(),input.command,input.held.fire)

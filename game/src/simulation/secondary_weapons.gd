@@ -24,6 +24,9 @@ var _loadout:={}
 var _guns:=[]
 var _launches:=0
 var _nuclear_bomb_detonations:=0
+## Asteroids broken by each penetrating rocket this flight, and the best one.
+var _projectile_breaks:={}
+var _max_projectile_breaks:=0
 var _detonation_events: Array[Dictionary]=[]
 var _camera_commands: Array[Dictionary]=[]
 var _presentation_identity: RefCounted
@@ -73,7 +76,7 @@ func configure(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,mounts: 
 			gun.audio={"enabled":true,"source_id":int(bindings.weapon_parameters.audio.player_event_ids[entry.item_id]),"pitch_raw":0.0}
 		guns.append(gun)
 		seen[entry.item_id]=true
-	_initial_loadout=loadout.duplicate(true);_loadout=loadout.duplicate(true);_guns=guns;_launches=0;_nuclear_bomb_detonations=0;_detonation_events=[];_camera_commands=[]
+	_initial_loadout=loadout.duplicate(true);_loadout=loadout.duplicate(true);_guns=guns;_launches=0;_nuclear_bomb_detonations=0;_projectile_breaks={};_max_projectile_breaks=0;_detonation_events=[];_camera_commands=[]
 	_presentation_identity=RefCounted.new()
 	return true
 
@@ -249,7 +252,12 @@ func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Va
 				gun.projectiles=result.projectiles;group=result.combat
 				if field!=null:field=result.bodies
 				for hit in result.contacts:
-					if hit.get("projectile_continues",false):continue
+					if hit.get("projectile_continues",false):
+						if hit.get("target",{}).get("group")=="scenery":
+							var key:=str(gun.slot_index)+":"+str(hit.get("projectile_id",-1))
+							next._projectile_breaks[key]=int(next._projectile_breaks.get(key,0))+1
+							next._max_projectile_breaks=maxi(next._max_projectile_breaks,next._projectile_breaks[key])
+						continue
 					var projectile: Dictionary=shots.slots[hit.slot]
 					var contact: Dictionary=hit.duplicate(true)
 					contact.merge({"action":"impact","slot_index":gun.slot_index,"item_id":gun.equipment.item_id,"position":projectile.position,"audio":{},"ammunition_consumed":0})
@@ -557,11 +565,13 @@ func snapshot() -> Dictionary:
 	if has_detonations():
 		state.detonation_audio=_detonation_events.duplicate(true)
 		state.detonation_camera=_camera_commands.duplicate(true)
+	if _max_projectile_breaks>0:state.max_projectile_scenery_breaks=_max_projectile_breaks
 	return state
 
 func fork() -> RefCounted:
 	var next: RefCounted=get_script().new()
 	next._initial_loadout=_initial_loadout.duplicate(true);next._loadout=_loadout.duplicate(true);next._launches=_launches;next._nuclear_bomb_detonations=_nuclear_bomb_detonations
+	next._projectile_breaks=_projectile_breaks.duplicate();next._max_projectile_breaks=_max_projectile_breaks
 	next._presentation_identity=_presentation_identity;next._detonation_events=_detonation_events.duplicate(true);next._camera_commands=_camera_commands.duplicate(true)
 	for gun in _guns:
 		var copy: Dictionary=gun.duplicate();copy.equipment=gun.equipment.duplicate(true);copy.audio=gun.audio.duplicate()

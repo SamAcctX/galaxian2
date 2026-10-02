@@ -7,11 +7,14 @@ const Atlas=preload("res://src/content/atlas_region.gd")
 const OriginalUI=preload("res://src/presentation/original_ui.gd")
 const Portraits=preload("res://src/presentation/portrait_compositor.gd")
 const Medals=preload("res://src/simulation/base_medal_progress.gd")
+const Elite=preload("res://src/simulation/elite_medal_progress.gd")
 const Stats=preload("res://src/simulation/equipment_stats.gd")
 const Weapons=preload("res://src/simulation/weapon_loadout.gd")
 const ShipInstance=preload("res://src/simulation/ship_instance.gd")
 const ITEM_ATLAS="resources/data/textures/gof2_items_ipad_1440.aei"
 const ITEM_TEXTURE_ID:=10064
+const ELITE_ATLAS="resources/data/textures/gof2_interface3_ipad_large.aei"
+const ELITE_TEXTURE_ID:=10089
 const MEDAL_ICON_BASE:=2376
 const MEDAL_FRAME:=2412
 ## Ribbon per level: none, gold, silver, bronze.
@@ -19,7 +22,7 @@ const RIBBONS:=[2416,2414,2415,2413]
 const TINTS:=[Color8(33,152,255,110),Color8(250,208,0),Color8(255,255,255),Color8(206,130,88)]
 const SHIP_IMAGE_BASE:=2417
 const TEXT:={"title":168,"medals":167,"back":169,"level":310,"fire_power":558,"defense":559,"reputation":565,"statistics":566,
-	"missions":557,"kills":175,"asteroids":541,"salvaged":548,"stations":546,"jumpgates":553,"goods":547,"ore":549,"cores":550,"wingmen":556,"pilot":1586}
+	"missions":557,"kills":175,"asteroids":541,"salvaged":548,"stations":546,"jumpgates":553,"goods":547,"ore":549,"cores":550,"wingmen":556,"pilot":1586,"battleships":3224}
 const MEDAL_NAME_BASE:=1496
 const MEDAL_TEXT_BASE:=1541
 const FACTION_TEXT_BASE:=395
@@ -36,6 +39,7 @@ var _portrait: Texture2D
 var _mobile:=false
 var _state:={}
 var _levels:=[]
+var _elite:=[]
 var _selected:=-1
 var _root: Control
 var _header: Label
@@ -101,7 +105,7 @@ func _init() -> void:
 	_bar_label(right).set_meta("key","medals")
 	var scroll:=ScrollContainer.new();scroll.size_flags_vertical=Control.SIZE_EXPAND_FILL;scroll.horizontal_scroll_mode=ScrollContainer.SCROLL_MODE_DISABLED;scroll.follow_focus=true;right.add_child(scroll)
 	_medal_grid=GridContainer.new();_medal_grid.columns=3;_medal_grid.size_flags_horizontal=Control.SIZE_EXPAND_FILL;scroll.add_child(_medal_grid)
-	for id in Medals.BASE_COUNT:
+	for id in Elite.TOTAL:
 		var cell:=Button.new();cell.flat=true;cell.size_flags_horizontal=Control.SIZE_EXPAND_FILL;cell.focus_mode=Control.FOCUS_ALL
 		var box:=VBoxContainer.new();box.mouse_filter=Control.MOUSE_FILTER_IGNORE;box.alignment=BoxContainer.ALIGNMENT_CENTER;cell.add_child(box);box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		var ribbon:=TextureRect.new();ribbon.name="Ribbon";ribbon.mouse_filter=Control.MOUSE_FILTER_IGNORE;ribbon.expand_mode=TextureRect.EXPAND_IGNORE_SIZE;ribbon.stretch_mode=TextureRect.STRETCH_KEEP_ASPECT_CENTERED;box.add_child(ribbon)
@@ -133,7 +137,11 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> 
 	if not ui.configure(library,bindings,visuals):return reject(ui.error)
 	var ids:=[MEDAL_FRAME]+RIBBONS
 	for id in Medals.BASE_COUNT:ids.append(MEDAL_ICON_BASE+id)
+	ids.append_array([Elite.FRAME_EARNED,Elite.FRAME_NONE])
+	for id in range(Elite.FIRST,Elite.TOTAL):ids.append(Elite.icon_id(id))
 	var resources: Dictionary=map_rules.atlas_resources.duplicate();resources[str(ITEM_TEXTURE_ID)]=ITEM_ATLAS
+	# Add-on medal frames and icons live on the third interface atlas.
+	resources[str(ELITE_TEXTURE_ID)]=ELITE_ATLAS
 	var art: Dictionary=ui.load_regions(library,bindings,visuals,ids,resources)
 	if art.is_empty():return reject(ui.error)
 	for ship in cat.tables.ships.size():
@@ -165,7 +173,7 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> 
 	var font_theme:=Theme.new();font_theme.default_font=ui.font;theme=font_theme
 	_header.text=_text("title");_back.text=_text("back")
 	for label in _find_bars():label.text=_strings[1586] if label.get_meta("key")=="pilot" else _text(label.get_meta("key"))
-	_stats_left.text="\n".join(["missions","kills","asteroids","salvaged","stations"].map(func(key):return _text(key)+":"))
+	_stats_left.text="\n".join(["missions","kills","asteroids","salvaged","stations","battleships"].map(func(key):return _text(key)+":"))
 	_stats_right.text="\n".join(["jumpgates","goods","ore","cores","wingmen"].map(func(key):return _text(key)+":"))
 	(_left.find_child("Portrait",true,false) as TextureRect).texture=_portrait
 	for axis in 2:
@@ -173,9 +181,9 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> 
 			var faction: int=axis*2+(0 if side=="low" else 1)
 			_reputation_bars[axis][side][0].texture=icons[faction] if faction<icons.size() else null
 			_reputation_bars[axis][side][1].text=_strings[FACTION_TEXT_BASE+faction]
-	for id in Medals.BASE_COUNT:
+	for id in Elite.TOTAL:
 		var cell: Button=_medal_buttons[id]
-		(cell.find_child("Icon",true,false) as TextureRect).texture=art[MEDAL_ICON_BASE+id]
+		(cell.find_child("Icon",true,false) as TextureRect).texture=art[medal_art(id,0).icon]
 		(cell.find_child("Name",true,false) as Label).text=_strings[MEDAL_NAME_BASE+id]
 	ui.apply_button(_back,_mobile,true)
 	_relayout()
@@ -211,31 +219,46 @@ func present(state: Dictionary) -> bool:
 	var goods:=0
 	for row in career.get("blueprints",{}).get("entries",[]):
 		if row is Dictionary:goods+=int(row.get("completed",0))
-	_stats_left_values.text="%d\n%d\n%d\n%d\n%d"%[int(career.get("completed_side_missions",0)),int(progress.get("player_kills",0)),int(progress.get("asteroids_destroyed",0)),int(progress.get("cargo_recovered",0)),travel.get("visited_station_ids",[]).size()]
+	_stats_left_values.text="%d\n%d\n%d\n%d\n%d\n%d"%[int(career.get("completed_side_missions",0)),int(progress.get("player_kills",0)),int(progress.get("asteroids_destroyed",0)),int(progress.get("cargo_recovered",0)),travel.get("visited_station_ids",[]).size(),int(progress.get("capital_ship_kills",0))]
 	_stats_right_values.text="%d\n%d\n%d\n%d\n%d"%[int(travel.get("jumpgates_used",0)),goods,int(progress.get("mined_ore_tons",0)),int(progress.get("mined_cores",0)),int(career.get("wingmen",{}).get("hired_total",0))]
 	_levels=career.get("base_medals",{}).get("levels",[])
-	for id in Medals.BASE_COUNT:
-		var level: int=maxi(0,int(_levels[id])) if id<_levels.size() else 0
+	_elite=Elite.earned(career)
+	for id in Elite.TOTAL:
+		var look:=medal_art(id,maxi(0,_level(id)))
 		var cell: Button=_medal_buttons[id]
-		(cell.find_child("Ribbon",true,false) as TextureRect).texture=_art[RIBBONS[level]]
-		(cell.find_child("Icon",true,false) as TextureRect).modulate=TINTS[level]
+		(cell.find_child("Ribbon",true,false) as TextureRect).texture=_art[look.ribbon]
+		(cell.find_child("Icon",true,false) as TextureRect).modulate=look.tint
 		(cell.find_child("Frame",true,false) as TextureRect).texture=_art[MEDAL_FRAME] if id==_selected else null
-	if _selected>=0 and _level(_selected)<=0:_selected=-1
+	if _selected>=0 and not _selectable(_selected):_selected=-1
 	_hint.text="" if _selected<0 else medal_text(_selected)
 	visible=true;_relayout()
 	return true
 
 func _level(id: int) -> int:
+	if Elite.is_elite(id):return Elite.GOLD if id in _elite else 0
 	return int(_levels[id]) if id<_levels.size() else 0
 
-## Earned medals show their description with the earned tier's threshold.
+## Add-on medals are always selectable; base medals once earned.
+func _selectable(id: int) -> bool:return Elite.is_elite(id) or _level(id)>0
+
+## Ribbon art, icon art and icon tint for a medal at a level (0 = not earned).
+func medal_art(id: int,level: int) -> Dictionary:
+	if Elite.is_elite(id):
+		return {"ribbon":Elite.FRAME_EARNED if level>0 else Elite.FRAME_NONE,"icon":Elite.icon_id(id),"tint":Color.WHITE if level>0 else TINTS[0]}
+	return {"ribbon":RIBBONS[level],"icon":MEDAL_ICON_BASE+id,"tint":TINTS[level]}
+
+## Original description with the threshold of the earned (or, for an
+## add-on medal, its only) tier.
+func description(id: int,level: int) -> String:
+	var value: int=int(Elite.THRESHOLDS[id]) if Elite.is_elite(id) else Medals.description_value(id,level)
+	return _strings[MEDAL_TEXT_BASE+id].replace("#",str(value))
+
 func medal_text(id: int) -> String:
-	var level:=_level(id)
-	if level<=0:return ""
-	return "%s\n%s"%[_strings[MEDAL_NAME_BASE+id],_strings[MEDAL_TEXT_BASE+id].replace("#",str(Medals.description_value(id,level)))]
+	if not _selectable(id):return ""
+	return "%s\n%s"%[_strings[MEDAL_NAME_BASE+id],description(id,_level(id))]
 
 func select_medal(id: int) -> void:
-	if _level(id)<=0:return
+	if id<0 or id>=Elite.TOTAL or not _selectable(id):return
 	_selected=id
 	if not _state.is_empty():present(_state)
 

@@ -30,6 +30,7 @@ const ContractProgress=preload("res://src/simulation/contract_progress.gd")
 const Wingmen=preload("res://src/simulation/wingman_contract.gd")
 const Recipe=preload("res://src/content/mission_recipe.gd")
 const BaseMedals=preload("res://src/simulation/base_medal_progress.gd")
+const EliteMedals=preload("res://src/simulation/elite_medal_progress.gd")
 const StoryFlights=preload("res://src/content/valkyrie_flight_definitions.gd")
 const Valkyrie=preload("res://src/content/valkyrie_campaign_definitions.gd")
 const Wanted=preload("res://src/simulation/wanted_board.gd")
@@ -115,6 +116,13 @@ func _bank_medals(state: Dictionary) -> bool:
 				if state.has("credits"):state.credits=mini(int(state.credits)+LoungeCache.Medals.reward_credits(level),2147483647)
 		if not notices.is_empty():state.medal_notices=notices
 	state.base_medals=retained
+	return EliteMedals.bank(state,[],LoungeCache.Medals.reward_credits(EliteMedals.GOLD))
+
+## Add-on medals reached in flight or at docking (see elite_medal_progress.gd).
+func record_elite_medals(reached: Array) -> bool:
+	error=""
+	if _state.is_empty():return reject("Add-on medals require a station career")
+	if not EliteMedals.bank(_state,reached,LoungeCache.Medals.reward_credits(EliteMedals.GOLD)):return reject("Add-on medal evidence is invalid")
 	return true
 
 func acknowledge_medal_notice() -> bool:

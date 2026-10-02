@@ -225,8 +225,9 @@ static func reward_credits(level: int) -> int:
 	return [0,5000,2500,1000][level] if level>=1 and level<=3 else 0
 
 static func valid_notices(value: Variant) -> bool:
-	if not value is Array or value.is_empty() or value.size()>BASE_COUNT*3:return false
-	return value.all(func(row):return row is Array and row.size()==2 and row[0] is int and row[0]>=0 and row[0]<BASE_COUNT and row[1] is int and row[1]>=1 and row[1]<=3)
+	# Add-on rows 36-44 have their gold tier only.
+	if not value is Array or value.is_empty() or value.size()>BASE_COUNT*3+9:return false
+	return value.all(func(row):return row is Array and row.size()==2 and row[0] is int and row[0]>=0 and row[0]<BASE_COUNT+9 and row[1] is int and row[1]>=1 and row[1]<=(1 if row[0]>=BASE_COUNT else 3))
 
 ## Threshold shown in a medal's description for an earned level (1 gold .. 3 bronze).
 static func description_value(id: int,level: int) -> int:

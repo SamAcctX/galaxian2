@@ -55,6 +55,7 @@ func verify_free_application() -> void:
 	app._unhandled_input(enter);await process_frame
 	check(not app.medal_notice.visible and not app.session.station_owner().snapshot().contracts.has("medal_notices"),"Enter did not acknowledge the medal notice")
 	check(app.session._world.record_stats({"max_free_cargo":101}) and not app.session.station_owner().snapshot().contracts.has("medal_notices"),"The same tier was announced twice")
+	await verify_elite_medals()
 	var before: Dictionary=app.session.station_owner().snapshot()
 	check(app.station_shell._actions.status.visible,"The station menu has no Status entry")
 	var sounds: Array=preload("res://src/presentation/ui_sounds.gd").prepared()
@@ -76,6 +77,15 @@ func verify_free_application() -> void:
 	app.status_panel.select_medal(10)
 	check(app.status_panel.snapshot().hint.contains("Garbage Man") and app.status_panel.snapshot().hint.contains("30"),"Earned bronze Garbage Man lacks its original description")
 	await capture("status-screen")
+	# Add-on rows: all 45 cells; an earned and an unearned add-on medal both read.
+	check(app.status_panel._medal_buttons.size()==45,"Status does not list the 45 medals")
+	app.status_panel.select_medal(44)
+	check(app.status_panel.snapshot().hint.contains("8"),"Hot Shot shows no description: "+app.status_panel.snapshot().hint)
+	app.status_panel.select_medal(37)
+	check(app.status_panel.snapshot().selected==37 and app.status_panel.snapshot().hint.contains("50"),"An unearned add-on medal is not readable")
+	check(view.stats_left.split("\n").size()==6,"Status lacks the battleships line")
+	app.status_panel._medal_buttons[44].grab_focus()
+	await capture("status-elite-rows")
 	var escape:=InputEventKey.new();escape.keycode=KEY_ESCAPE;escape.physical_keycode=KEY_ESCAPE;escape.pressed=true
 	app._unhandled_input(escape)
 	await process_frame
@@ -115,6 +125,36 @@ func verify_free_application() -> void:
 	check(not app._missions_open and not app.session.is_paused(),"Escape did not close Missions")
 	var reloaded: Dictionary=app._save_file.load_document(app.station_save_path(),definitions,catalogue,source)
 	check(not reloaded.is_empty() and reloaded.career.mission.is_empty(),"The autosave kept the discarded job")
+
+## Add-on medals: an in-flight Liberator streak latched by the flight tracker
+## and a docked cargo hold over 3000 t each pay 5000 and show a notice once.
+func verify_elite_medals() -> void:
+	var Elite:=preload("res://src/simulation/elite_medal_progress.gd")
+	var wallet: int=app.session.station_owner().snapshot().contracts.credits
+	var blast:={"action":"detonated","item_id":179,"normal_hits":[]}
+	for index in 8:blast.normal_hits.append({"target":{"group":"scenery","index":index},"result":{"destroyed_now":true}})
+	app._elite_tracker.observe({"encounter":{"secondary_events":[blast]}})
+	var mining:=["drilling","finished"]
+	for mine in 3:
+		for phase in mining:app._elite_tracker.observe({"mining_session":{"phase":phase,"last_drill":{"phase":"extracted"}}})
+	check(app._elite_tracker.reached()==[44],"The flight tracker did not latch Hot Shot alone: "+str(app._elite_tracker.reached()))
+	app.bank_career_stats(true)
+	app.present_session();await process_frame
+	var career: Dictionary=app.session.station_owner().snapshot().contracts
+	print("ELITE ",career.get("elite_medals")," notices=",career.get("medal_notices")," credits=",career.credits-wallet)
+	check(career.get("elite_medals")==[44] and career.credits==wallet+5000,"Hot Shot did not pay its 5000 credits")
+	check(app.medal_notice.visible and app.medal_notice.shown()==[44,1],"The Hot Shot notice did not appear")
+	await capture("new-elite-medal")
+	check(app.session._world.record_elite_medals(Elite.dock_reached(3001)),"A 3001 t hold was refused")
+	check(app.session.station_owner().snapshot().contracts.elite_medals==[36,44],"Space Saver Pro was not earned")
+	check(app.session._world.record_elite_medals([37,43,44]) and app.session.station_owner().snapshot().contracts.credits==wallet+10000,"An unavailable or owned add-on medal paid again")
+	var enter:=InputEventKey.new();enter.keycode=KEY_ENTER;enter.physical_keycode=KEY_ENTER;enter.pressed=true
+	for notice in 2:
+		app._unhandled_input(enter);await process_frame;app.present_session();await process_frame
+	check(not app.session.station_owner().snapshot().contracts.has("medal_notices"),"The add-on notices were not acknowledged")
+	check(app.save_station(false),"Saving the add-on medals failed")
+	var saved: Dictionary=app._save_file.load_document(app.station_save_path(),definitions,catalogue,source)
+	check(not saved.is_empty() and saved.career.get("elite_medals")==[36,44],"The save lost the add-on medals")
 
 func capture(label: String) -> void:
 	if DisplayServer.get_name()=="headless":return

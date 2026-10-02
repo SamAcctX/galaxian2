@@ -24,6 +24,8 @@ const ContractWorld=preload("res://src/content/contract_world_definitions.gd")
 const FreeFlight=preload("res://src/content/free_flight_definitions.gd")
 const StationGeneration=preload("res://src/content/station_generation_definitions.gd")
 const BOUNDARIES=["station_transition_required","game_over_transition_required","local_arrival_transition_required","convoy_arrival_transition_required","gate_confirmation_required","gate_map_required","gate_arrival_transition_required","drive_arrival_transition_required","sahi_arrival_transition_required","void_return_transition_required","mission_station_return_required"]
+## Add-on medal streaks, shared by the application across flights.
+var elite_tracker: RefCounted
 var error:=""
 var _presentation_state:={}
 var status:="idle"
@@ -546,6 +548,7 @@ func _commit(world: RefCounted, advance_sun: bool, absolute_milliseconds: int=-1
 		OneShot.play(self,_gate_jump_clip);gate_jump_plays+=1
 	if engine_audio!=null and camera!=null:engine_audio.update(NpcEngines.sources(state),camera.global_position,maxi(0,presentation_time-_presentation_ms))
 	_world=world;_presentation_state=state;_generation+=1
+	if elite_tracker!=null:elite_tracker.observe(state)
 	_presentation_ms=presentation_time
 	briefing_audio.present(briefing_line)
 	objective_audio.present(-1 if failed else objective_line)

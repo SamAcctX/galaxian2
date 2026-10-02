@@ -950,6 +950,12 @@ func record_stats(observed: Dictionary) -> bool:
 	if not candidate.record_stats(observed):return fail(candidate.error)
 	_contracts=candidate
 	return true
+func record_elite_medals(reached: Array) -> bool:
+	if _contracts==null:return false
+	var candidate: RefCounted=_contracts.fork()
+	if not candidate.record_elite_medals(reached):return fail(candidate.error)
+	_contracts=candidate
+	return true
 func has_contracts() -> bool:return _contracts!=null
 func contract_locations_snapshot() -> Dictionary:return {} if _contracts==null else _contracts.locations_snapshot()
 
