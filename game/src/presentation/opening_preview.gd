@@ -584,7 +584,7 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		_launch_button.disabled=session==null or session.is_paused() or not _focused or not _launch_packet.is_empty()
 	if secondary_panel!=null:
 		secondary_panel.set_interaction(session is FirstFlightSession and session.can_control() and _focused and is_visible_in_tree() and not _transition_failed,touch_actions)
-		secondary_panel.set_hud_visible(session is FirstFlightSession and session.flight_hud_visible(state) and not session.map_open())
+		secondary_panel.set_hud_visible(session is FirstFlightSession and session.flight_hud_visible(state) and not session.map_open() and not state.get("guided_missile",false))
 		secondary_panel.set_selection_active(session is FirstFlightSession and session.secondary_menu_active() and _focused and is_visible_in_tree() and not _transition_failed)
 	if _flight_actions!=null:
 		_flight_actions.visible=touch_actions and ((session is FirstFlightSession and session.flight_hud_visible(state) and not session.map_open()) or (session is MissionSession and session.flight_hud_visible()))
@@ -1258,6 +1258,8 @@ func request_departure() -> bool:
 	var cat:=Catalogues.new()
 	if not cat.open(library):status.text=cat.error;return false
 	bank_career_stats()
+	var owner: RefCounted=session.station_owner()
+	if owner!=null:_elite_tracker.owned=EliteMedals.earned(owner.snapshot().get("contracts",{}))
 	if session._world!=null and session._world.has_contracts() and state.get("loadout",{}).get("slots",[]).all(func(slot):return slot==null):session._world.record_stats({"unarmed_departures":1})
 	var packet: Dictionary=session.prepare_departure(bindings,cat)
 	if packet.is_empty():status.text=session.error;return false

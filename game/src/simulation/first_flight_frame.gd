@@ -2940,7 +2940,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	if _wingmen!=null:state.wingman_actors=_wingmen.snapshot()
 	state.merge({"world_type":_entry.world_type,"location":_entry.location.duplicate(true),"activated":true,
 		"player_pose":_pose,"control_throttle":_throttle,"player":_player.snapshot(),"gamma_rate":_gamma_rate,"volatile":_volatile_carried(),"instability":_instability,"player_cache":_player.cache_snapshot(),"angular_units":_pilot.angular_units,
-		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),
+		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"guided_missile":_encounter!=null and _encounter.guided_missile_active(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),
 		"ship_detail":_detail.snapshot(),"detail_reference":_reference,"actors":[],"random_state":_random.duplicate(true),
 		"cargo":held,"arrival_from_station_id":int(_entry.departure.get("from_station_id",-1)),
 		"navigation_destination_id":_pending_destination,

@@ -373,6 +373,10 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if not probe_stage.get("target_overlay_visible",true):
 		for control in [target_frame,reticle,scan_animation,npc_markers,waypoint_marker,station_target_overlay]:
 			if control!=null:control.visible=false
+	# Guiding a Liberator: only the hull/shield bars and the crosshair stay.
+	if state.get("guided_missile",false):
+		for control in [target_frame,scan_animation,mining_panel,npc_markers,waypoint_marker,station_target_overlay]:
+			if control!=null:control.visible=false
 	if game_over!=null and not game_over.present(death,absolute_milliseconds):return reject(game_over.error)
 	if drive_effect!=null:drive_effect.commit_state(drive_frame)
 	if portal!=null:portal.commit_state(portal_frame)
