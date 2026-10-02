@@ -1059,6 +1059,12 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		var guided: RefCounted=next.start_drive(next._pending_destination) if next._queued_drive else next.select_map_destination(next._pending_destination)
 		if guided==null:reject(next.error);return null
 		next=guided
+	# A story launch at the planet the ship is already at (144 -> 145 at Var
+	# Lupra) starts a fresh flight at its launch point, like the original's.
+	if next._story_jump>=0 and next._story_jump==int(_entry.location.station_id) and next._local_travel!=null and next._local_travel.snapshot().get("phase")=="flight":
+		if cues.entry_released and not next.dialogue_visible() and not next.death_active():
+			if not next._local_travel.relaunch() or not next._begin_local_departure():reject(next._local_travel.error+next.error);return null
+			next._story_jump=-2
 	# A move inside this system goes by ordinary local travel (91: Valpatro to
 	# Tadram); a jump the drive cannot make otherwise is left to the player.
 	if next._story_jump>=0 and next._drive!=null and next._drive.ready() and next.drive_quote(next._story_jump).get("mode","local")=="local":

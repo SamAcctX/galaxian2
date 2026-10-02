@@ -178,6 +178,15 @@ func launch_acquired() -> bool:
 	_launch(next);_state=next
 	return true
 
+## A story launch at the planet the ship is already at: depart and arrive
+## back at its launch point as a fresh flight.
+func relaunch() -> bool:
+	error=""
+	if _state.is_empty() or _state.phase!="flight":return reject("A story relaunch needs ordinary local flight")
+	var next:=_state.duplicate(true);next.events=[]
+	next.acquired_station_id=next.station_id;_launch(next);_state=next
+	return true
+
 func _launch(next: Dictionary) -> void:
 	next.phase="launch";next.launch_ms=0
 	next.destination_station_id=next.acquired_station_id

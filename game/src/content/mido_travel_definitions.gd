@@ -279,7 +279,9 @@ static func navigation_stations(source: Variant, cursor: int, station_id: int) -
 
 static func route(source: Variant, cursor: int, from_station_id: int, station_id: int) -> Dictionary:
 	var stations:=navigation_stations(source,cursor,from_station_id)
-	if stations.is_empty() or not stations.has(station_id) or from_station_id==station_id:return {}
+	# A trip to the same station is a story relaunch (local_travel.relaunch);
+	# ordinary planet selection never offers the current station.
+	if stations.is_empty() or not stations.has(station_id):return {}
 	return {"campaign_cursor":cursor,"from_station_id":from_station_id,"station_id":station_id,"system_id":navigation_system(source,cursor,from_station_id)}
 
 static func navigation_mission(source: Variant, cursor: int, mission: Dictionary) -> bool:
