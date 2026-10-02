@@ -454,11 +454,15 @@ const SCRIPTED:={
 		"groups":[{"count":1,"faction":0,"hull":38,"friendly":true,"route_start":1,"hull_override":ESCORT_HULL,"offsets":[-1,-1,-1],"bounds":[2,2,2]},
 			{"count":8,"faction":8,"hull":-1,"friendly":false,"route_start":1,"offsets":[-2500,-2500,-2500],"bounds":[5000,5000,5000]}],
 		"radio":[[0,2217,1491,5,[8000]],[20,2218,1492,6,[0]],[0,2219,1493,6,[1]],[30,2220,1494,30,[2,2,6]],[0,2221,1495,6,[3]],[30,2222,1496,20,[5]],[0,2223,1497,6,[5]]],
-		"radio_actions":[{"radio_index":5,"action":"disarm","first_actor":1,"end_actor":9}],
+		# Cutscene on Khador from line #0 until #2 starts. Assumption: the eye's
+		# distance ahead along his heading is not recovered (0 here).
+		"radio_actions":[{"radio_index":5,"action":"disarm","first_actor":1,"end_actor":9},
+			{"radio_index":0,"action":"cutscene","actor":0,"offset":Vector3(0,300,3000),"until":[35,[2,0,0]]}],
 		"success":{"kind":"radio_finished","index":6}},
 	# 67: the outpost (friendly for now) at the waypoint with four sleeping
 	# pirates; four more wait parked and arrive at line #5; Tenner flies along.
-	# Assumptions: no cutscenes, Tenner never hides inside the station, the
+	# Cutscenes on Tenner after #3 until #4 is over, and from #7 until #9 starts.
+	# Assumptions: Tenner never hides inside the station, the
 	# outpost-destroyed failure holds all mission, the unused 5th reserve is left out.
 	# The reserve waits parked out of sight (the original's 800 km per axis is
 	# beyond the remake's single-precision flight range).
@@ -469,33 +473,39 @@ const SCRIPTED:={
 			{"count":1,"faction":0,"hull":27,"friendly":true,"name_text_id":1622,"hull_override":ESCORT_HULL,"position":{"kind":"player_offset","offset":Vector3(2000,500,-7000),"bound":Vector3(1,1,1)}}],
 		"radio":[[0,2276,1501,16,[0]],[31,2277,1502,6,[0]],[30,2278,1505,6,[1]],[0,2279,1506,20,[2]],[31,2280,1507,6,[3]],[0,2281,1508,6,[4]],
 			[0,2282,1509,20,[8]],[31,2283,1510,6,[6]],[0,2284,1511,6,[7]],[31,2285,1512,6,[8]],[0,2286,1503,6,[9]],[31,2287,1504,6,[10]]],
-		"radio_actions":[{"radio_index":5,"action":"place","first_actor":5,"end_actor":9,"center":Vector3(220000,-20000,-10000),"radius":20000.0}],
+		"radio_actions":[{"radio_index":5,"action":"place","first_actor":5,"end_actor":9,"center":Vector3(220000,-20000,-10000),"radius":20000.0},
+			{"radio_index":3,"on":"finished","action":"cutscene","actor":9,"offset":Vector3(6000,-200,1000),"until":[35,[4,0,1]]},
+			{"radio_index":7,"action":"cutscene","actor":9,"offset":Vector3(6000,-200,10000),"until":[35,[9,0,0]]}],
 		"success":{"kind":"radio_finished","index":11},"failure":{"kind":1,"actor_id":0}},
 	# 69: Trot Lykkt (Netor's assistant, hull 12, friendly) leaves Inari Onu
 	# with four ordinary Terran fighters around (0,0,20000). Done when
 	# "After him!" is over; the story moves on to 70 silently.
-	# Assumptions: no cutscene, so Trot starts beside the player (the original
-	# puts him at 4x the second planet's position, seen only by the cutscene
-	# camera) and flies out along -z to 10x his first point. He leaves the scene
+	# Cutscene on Trot from #0 until #1 is over (eye 10 km ahead of him).
+	# Assumptions: Trot starts beside the player (the original puts him at 4x
+	# the second planet's position) and flies out along -z to 10x his first point. He leaves the scene
 	# when line #1 is over (action "retire", feature G; ignored until then).
 	69:{"points":[Vector3(0,0,20000),Vector3(0,0,-150000),Vector3(0,0,-1500000)],
 		"groups":[{"count":1,"faction":0,"hull":12,"friendly":true,"name_text_id":1620,"route_start":1,"position":{"kind":"player_offset","offset":Vector3(3000,1000,-9000),"bound":Vector3(1,1,1)}},
 			{"count":4,"faction":0,"hull":-1,"friendly":true,"offsets":[-20000,-20000,-20000],"bounds":[40000,40000,40000]}],
 		"radio":[[0,2307,1513,5,[8000]],[0,2308,1514,6,[0]]],
-		"radio_actions":[{"radio_index":1,"on":"finished","action":"retire","first_actor":0,"end_actor":1}],
+		"radio_actions":[{"radio_index":1,"on":"finished","action":"retire","first_actor":0,"end_actor":1},
+			{"radio_index":0,"action":"cutscene","actor":0,"ahead":10000.0,"offset":Vector3(600,300,1000),"until":[35,[1,0,1]]}],
 		"success":{"kind":"radio_finished","index":1}},
 	# 70: Trot at Lopat, friendly until "Surrender, or I'll open fire!" is over,
 	# then hostile. His hull is 2.5x an ordinary ship's (the later "max x3" only
 	# rescales the bar). Done when he is destroyed; 2313 then plays.
 	# Assumptions: the player is not moved 120 km back and Trot starts 40 km
 	# away flying toward the station (the original: 1/4 of the way from the gate
-	# toward the moved player); no cutscenes; his Disruptor is the enhanced
+	# toward the moved player); his Disruptor is the enhanced
 	# story gun (feature H would give him item 183 at 2.5x damage).
 	70:{"points":[Vector3.ZERO],
 		"groups":[{"count":1,"faction":0,"hull":12,"friendly":true,"name_text_id":1620,"route_start":0,"ship_state":{"hull_scales":[2.5],"enhanced_weapon":true},
 			"position":{"kind":"player_offset","offset":Vector3(-5000,2000,-40000),"bound":Vector3(1,1,1)}}],
 		"radio":[[0,2309,1515,5,[8000]],[0,2310,1516,6,[0]],[34,2311,1517,6,[1]],[0,2312,1518,6,[2]]],
 		"turn_hostile":{"radio_index":1,"reputation_axis":-1,"reputation_value":0},
+		# Cutscene on Trot from #0 until #2 is over; the eye moves when #1 is over.
+		"radio_actions":[{"radio_index":0,"action":"cutscene","actor":0,"ahead":3000.0,"offset":Vector3(-600,-300,-1000),"until":[35,[1,0,1]]},
+			{"radio_index":1,"on":"finished","action":"cutscene","actor":0,"ahead":2000.0,"offset":Vector3(-600,800,-1000),"until":[35,[2,0,1]]}],
 		"success":{"kind":18,"first_actor":0,"end_actor":1},"result_after":[1,[0]]},
 	# 73: the Teres convoy. Four sleeping pirates at the first waypoint, four
 	# more parked; four friendly Terran transports near the second waypoint.
