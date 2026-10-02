@@ -467,7 +467,9 @@ func _adopt_station(station: int) -> bool:
 	_state.offers={};_state.erase("population")
 	var cached: Dictionary=_lounges.location(station)
 	if not cached.is_empty():
-		_state.offers=cached.offers;_state.population=cached.population
+		# A station already in the cache needs no fresh location generation
+		# (a story move elsewhere may have left that pending: 155 -> jump to 99).
+		_state.offers=cached.offers;_state.population=cached.population;_state.erase("location_generation_pending")
 	return true
 
 ## The story undoes a visit (90: the 89 scene's stop at Naneroh); the

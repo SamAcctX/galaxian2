@@ -247,6 +247,11 @@ func _is_story_flight_advance(state: Dictionary) -> bool:
 	var transition: Dictionary=state.get("contracts",{}).get("flight",{}).get("story_transition",{})
 	return not transition.is_empty() and transition.get("from_cursor")==_campaign_cursor and transition.get("campaign_cursor")==state.get("campaign_cursor")
 
+## A story flight in the alien world moves on in the same flight (154 -> 155,
+## the arrest after boarding Valkyrie); its scene stays until the drive leaves.
+func _is_void_story_advance(state: Dictionary) -> bool:
+	return int(state.get("location",{}).get("station_id",0))<0 and int(state.get("campaign_cursor",0))==_campaign_cursor+1
+
 func _is_acknowledged_visit(state: Dictionary) -> bool:
 	if _visit_transition.is_empty():return false
 	var visit: Dictionary=state.get("mining_objective",{}).get("campaign_visit",{})
@@ -266,7 +271,7 @@ func apply_state(state: Dictionary, escape: Dictionary = {}) -> bool:
 		return reject("Opening geometry received another content identity")
 	# Acknowledged objectives change the mission while retaining this
 	# same world and ship. It does not construct a new station or flight scene.
-	if state.get("campaign_cursor",0)!=_campaign_cursor and not _is_departure_return(state) and not _is_acknowledged_visit(state) and not _is_story_flight_advance(state):return reject("Flight geometry received another campaign scene")
+	if state.get("campaign_cursor",0)!=_campaign_cursor and not _is_departure_return(state) and not _is_acknowledged_visit(state) and not _is_story_flight_advance(state) and not _is_void_story_advance(state):return reject("Flight geometry received another campaign scene")
 	if not valid_pose(state.get("player_pose")): return reject("Opening player pose is unavailable or invalid")
 	var rows: Variant = state.get("actors")
 	if not rows is Array or rows.size() != actors.size(): return reject("Opening actor set changed")
