@@ -574,10 +574,11 @@ const SCRIPTED:={
 	# freighter's ~1 s cutscene steps are one 8 s lock; all fighters target the
 	# player (original: every third the freighter); the ring is a 3.4 km box;
 	# the fighters are the alien world's own Void hull (8).
+	# Valkyrie stands at the centre of the fighters' ring (point 2).
 	154:{"points":[Vector3(200000,0,70000),Vector3(-10000,1000,15000),Vector3(0,0,40000)],
 		"groups":[{"count":1,"faction":0,"hull":51,"friendly":true,"sleeping":true,"hull_override":ESCORT_HULL,"route_start":1,
 			"position":{"kind":"player_offset","offset":Vector3(1500,0,1500),"bound":Vector3(1,1,1)}},
-			{"count":1,"faction":3,"friendly":true,"static":{"model":16928,"layers":[16929,16930],"jitter":0},"name_text_id":76,"dock":"hack","dockable":false,"unharmable":true},
+			{"count":1,"faction":3,"friendly":true,"static":{"model":16928,"layers":[16929,16930],"jitter":0,"offset":Vector3.ZERO},"index":2,"name_text_id":76,"dock":"hack","dockable":false,"unharmable":true},
 			{"count":20,"faction":9,"hull":8,"friendly":false,"sleeping":true,"index":2,"offsets":[-1700,-200,-200],"bounds":[3400,200,1700]}],
 		"radio":[[0,3028,2172,5,[9000]],[26,3029,2173,6,[0]],[0,3030,2174,6,[1]],[26,3031,2175,6,[2]],[0,3032,2176,6,[3]],[26,3033,2177,6,[4]],[0,3034,2178,6,[5]],
 			[26,3035,2179,35,[6,8000,1]],[0,3036,2180,6,[7]],[55,3037,2181,6,[8]],[0,3038,2182,6,[9]],[0,3039,2183,50,[1]]],
