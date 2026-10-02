@@ -1145,6 +1145,15 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 				"path_scatter":
 					position=path[int(options.position.index)]
 					for axis in 3:position[axis]+=int(options.position.offsets[axis])+random.next_int(int(options.position.bounds[axis]))
+				"path_fan":
+					# Ship n steps (first+n) times a random base offset away from the
+					# point, alternating left/right (a fan of ships either side).
+					position=Vector3(options.position.center) if options.position.has("center") else path[int(options.position.index)]
+					var side:=1 if (int(options.group_index)+int(options.position.get("flip",0)))%2==0 else -1
+					var step:=Vector3.ZERO
+					for axis in 3:step[axis]=int(options.position.offsets[axis])+random.next_int(int(options.position.bounds[axis]))
+					step.x*=side
+					position+=step*(int(options.position.first)+int(options.group_index))
 				"player_offset":
 					position=_contract.player_position+Vector3(options.position.offset)
 					for axis in 3:position[axis]+=random.next_int(int(options.position.bound[axis]))

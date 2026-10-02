@@ -418,8 +418,11 @@ const SCRIPTED:={
 	# defenders around (0,0,80000). "Retreat!" once #1-#18 are gone; the
 	# station jumps away after "I'm not done with you". Success once Carla's
 	# result lines are over; then STORY_JUMP takes the ship to the alien world.
-	# Assumptions: no cutscenes (Alice-drive beam on Kothar, station
-	# close-ups), line #10 follows #9 directly (original: ~4 s later), the
+	# Cutscenes (original eyes, world offsets from the station): 5 s after
+	# line #0 ends, and 22 s from the end of "Retreat!" (#9) while it jumps.
+	# Assumptions: the Alice-drive beam shot on Kothar between them (~9.6 s,
+	# eye on a point near Kothar, not on a ship) is left out; the eye stays
+	# fixed (the original drifts); line #10 follows #9 directly (original: ~4 s later), the
 	# weak points do not aim or fire (the turret barrels are not drawn), the
 	# player start is the default one (original: (-70000,0,-30000)), the
 	# station is unnamed and drawn in its first pose.
@@ -442,7 +445,9 @@ const SCRIPTED:={
 		"radio":[[0,2403,1532,5,[8000]],[6,2404,1533,5,[25000]],[26,2405,1536,6,[1]],[0,2406,1537,6,[2]],[6,2407,1538,6,[3]],
 			[26,2408,1539,6,[4]],[6,2409,1540,6,[5]],[26,2410,1541,6,[6]],[0,2411,1542,6,[7]],
 			[26,2412,1543,30,[18,1,19]],[26,2413,1534,6,[9]],[0,2414,1535,6,[10]]],
-		"radio_actions":[{"radio_index":11,"action":"retire","on":"finished","first_actor":0,"end_actor":1}],
+		"radio_actions":[{"radio_index":11,"action":"retire","on":"finished","first_actor":0,"end_actor":1},
+			{"radio_index":0,"on":"finished","action":"cutscene","actor":0,"offset":Vector3(-20000,5000,-35000),"until":[35,[0,5000,1]]},
+			{"radio_index":9,"on":"finished","action":"cutscene","actor":0,"offset":Vector3(20000,5000,-20000),"until":[35,[9,22000,1]]}],
 		"success":{"kind":"radio_finished","index":17}},
 	# 78: escape from the Valkyrie. Twenty pirates sleep in a row ~160 km out;
 	# they wake at ~47 s. Only the Khador Drive ends the flight (DRIVE): the
@@ -565,9 +570,11 @@ const SCRIPTED:={
 	# Harval at (30000,0,80000), #1-#12 stealth fighters around the first
 	# point, all unharmable and asleep; #13 the array (named, unharmable), #14
 	# its damaged twin (hidden). 7 s: "They're after the plasma array!",
-	# "Say goodbye". Then (player locked 16 s): 1 s they fire on the array
-	# (N7 attack), 5.3 s the twin replaces it and they fly off, 15.3 s they are
-	# gone; "That should teach you a lesson" 16 s after; Carla's result line;
+	# "Say goodbye". Then a cutscene (player held, camera on Harval from 18 km
+	# ahead, 3 km right): they wake and fly their course without attacking
+	# (asleep ships are not drawn), 1 s they fire on the array (N7 attack),
+	# 5.3 s the twin replaces it, 15.3 s they are gone and the cutscene ends;
+	# "That should teach you a lesson" 16 s after; Carla's result line;
 	# success. Assumptions: the array stands at the origin (original: origin
 	# +-10 km random); the damaged twin's model is OPEN (same mesh placeholder);
 	# the attackers are unharmable (the original's flight cannot be won).
@@ -577,11 +584,12 @@ const SCRIPTED:={
 			{"count":1,"faction":3,"friendly":true,"static":{"model":19050,"jitter":0},"name_text_id":3196,"unharmable":true},
 			{"count":1,"faction":3,"friendly":true,"static":{"model":19050,"jitter":0},"name_text_id":3196,"unharmable":true,"hidden":true,"damaged":true}],
 		"radio":[[0,2961,2167,5,[7000]],[39,2962,2168,6,[0]],[39,2963,2169,35,[1,16000,1]]],
-		"radio_actions":[{"radio_index":1,"on":"finished","action":"lock_player","duration_ms":16000,"invulnerable":true},
+		"radio_actions":[{"radio_index":1,"on":"finished","action":"cutscene","actor":0,"ahead":18000.0,"right":3000.0,"until":[35,[1,15300,1]]},
+			{"radio_index":1,"on":"finished","action":"wake","first_actor":0,"end_actor":13,"attack_range":0},
 			{"radio_index":1,"on":"finished","delay_ms":1000,"action":"attack","first_actor":0,"end_actor":13,"target_actor":13},
 			{"radio_index":1,"on":"finished","delay_ms":5300,"action":"hide","first_actor":13,"end_actor":14},
 			{"radio_index":1,"on":"finished","delay_ms":5300,"action":"show","first_actor":14,"end_actor":15},
-			{"radio_index":1,"on":"finished","delay_ms":5300,"action":"retire","first_actor":0,"end_actor":13}],
+			{"radio_index":1,"on":"finished","delay_ms":15300,"action":"retire","first_actor":0,"end_actor":13}],
 		"success":{"kind":"radio_finished","index":3}},
 	# 154: the Valkyrie ambush, built in the alien world (station -1, N4).
 	# #0 the Terran Rhino (hull 51) with the energy cells beside the player,
@@ -595,21 +603,21 @@ const SCRIPTED:={
 	# (Alice arrested) -> success; then back at the last docked station's gate
 	# (MOVE_ON_ENTRY 155). Failure: the countdown runs out. Lines 0-6 hold the
 	# player with the original's camera shots (Supernova lead). Assumptions: all fighters target the
-	# player (original: every third the freighter); the ring is a 3.4 km box;
+	# player (original: every third the freighter);
 	# the fighters are the alien world's own Void hull (8).
-	# Valkyrie stands at the centre of the fighters' ring (point 2).
-	154:{"points":[Vector3(200000,0,70000),Vector3(-10000,1000,15000),Vector3(0,0,40000)],
+	# Valkyrie stands at the origin (point 2, the freighter's route end); the
+	# fighters fan out either side of (0,0,40000), 40 km ahead of it (two lines,
+	# ship n about (n+2) km out, the second line further out and ahead).
+	154:{"points":[Vector3(200000,0,70000),Vector3(-10000,1000,15000),Vector3.ZERO],
 		"groups":[{"count":1,"faction":0,"hull":51,"friendly":true,"sleeping":true,"hull_override":ESCORT_HULL,"route_start":1,
 			"position":{"kind":"player_offset","offset":Vector3(1500,0,1500),"bound":Vector3(1,1,1)}},
 			{"count":1,"faction":3,"friendly":true,"static":{"model":16928,"layers":[16929,16930],"jitter":0,"offset":Vector3.ZERO},"index":2,"name_text_id":76,"dock":"hack","dockable":false,"unharmable":true},
-			{"count":20,"faction":9,"hull":8,"friendly":false,"sleeping":true,"index":2,"offsets":[-1700,-200,-200],"bounds":[3400,200,1700]}],
+			{"count":9,"faction":9,"hull":8,"friendly":false,"sleeping":true,"position":{"kind":"path_fan","center":Vector3(0,0,40000),"offsets":[900,-200,-200],"bounds":[100,200,400],"first":2}},
+			{"count":11,"faction":9,"hull":8,"friendly":false,"sleeping":true,"position":{"kind":"path_fan","center":Vector3(0,0,40000),"offsets":[1600,-200,1000],"bounds":[100,100,500],"first":11,"flip":1}}],
 		"radio":[[0,3028,2172,5,[9000]],[26,3029,2173,6,[0]],[0,3030,2174,6,[1]],[26,3031,2175,6,[2]],[0,3032,2176,6,[3]],[26,3033,2177,6,[4]],[0,3034,2178,6,[5]],
 			[26,3035,2179,35,[6,8000,1]],[0,3036,2180,6,[7]],[55,3037,2181,6,[8]],[0,3038,2182,6,[9]],[0,3039,2183,50,[1]]],
 		"radio_actions":[{"radio_index":0,"action":"lock_player","invulnerable":true,"until":[35,[6,8000,1]]},
-			# Original eye: fighter + (300,300,5800). Here the fighters' ring sits
-			# inside Valkyrie's hull (which runs along +z), so the shot looks at
-			# the ring from outside Valkyrie's front end (assumption).
-			{"radio_index":0,"action":"cutscene","actor":2,"offset":Vector3(300,3000,-20000),"until":[35,[1,1500,1]]},
+			{"radio_index":0,"action":"cutscene","actor":2,"offset":Vector3(300,300,5800),"until":[35,[1,1500,1]]},
 			{"radio_index":2,"on":"finished","delay_ms":1000,"action":"cutscene","actor":1,"offset":Vector3(0,4000,26000),"until":[35,[3,1000,1]]},
 			{"radio_index":4,"on":"finished","delay_ms":1000,"action":"cutscene","actor":1,"offset":Vector3(0,4000,42000),"until":[35,[5,1000,1]]},
 			{"radio_index":6,"on":"finished","delay_ms":1000,"action":"cutscene","actor":0,"offset":Vector3(200,300,1800),"until":[35,[6,8000,1]]},

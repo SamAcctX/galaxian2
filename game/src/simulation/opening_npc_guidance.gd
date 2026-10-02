@@ -398,8 +398,9 @@ func update(delta_ms: Variant, actor: Dictionary, root_pose: Variant, player: Di
 		next.target_selected=true
 		if not _training.is_empty():
 			next.target_index=0;next.desired_position=player.pose.origin;target=targets[0]
-		# Sleeping friends (story escorts) hold until the player targets them.
-		if actor.get("hostile")!=true and actor.get("friendly")!=true and not _training.get("kappa_rescue",false):return fail("Second-trip holding requires its source hostility")
+		# Sleeping friends (story escorts) hold until the player targets them;
+		# a story ship that stood down and then left the scene holds too (145).
+		if actor.get("hostile")!=true and actor.get("friendly")!=true and not _training.get("kappa_rescue",false) and not actor.get("contract_ship",false):return fail("Second-trip holding requires its source hostility")
 		if player.alternate_position!=null:
 			steering_separation=Vectors.added(player.alternate_position,-root_pose.origin)
 			if not steering_separation.is_finite():return fail("Alternate player separation exceeds source precision")
