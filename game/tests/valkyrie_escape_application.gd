@@ -348,7 +348,7 @@ func fly_call() -> void:
 	print("VALKYRIE call radio ",radio_ids)
 	check(range(2190,2198).all(func(id):return id in radio_ids),"The call's lines did not all play")
 	# Kothar has no gate route; the player jumps there with the Khador drive.
-	if failures or not await khador_jump(100) or not await dock_application() or not await take_station_talk(62,63):return
+	if failures or not await khador_jump(100) or not await hear_lines("kothar-62",[2198]) or not await dock_application() or not await take_station_talk(62,63):return
 	check(app.save_station(false) and app.load_station(),"Saving and resuming after the call failed: "+app._save_notice.text)
 	if failures:return
 	check(app.session.station_owner().snapshot().campaign_cursor==63,"Fresh Resume lost the Kothar talk")
@@ -465,7 +465,10 @@ func fly_outpost() -> void:
 	check(int(app.session.flight_owner()._encounter.combat_snapshot().actors[0].vitals.hull)>0,"Khador's ship was lost")
 	await capture_free_application("valkyrie-rescue-won")
 	# Home to Kothar (Beidan) with the drive (assumption: no automatic jump).
-	if failures or not await go_to(100) or not await dock_application() or not await take_station_talk(65,66):return
+	if failures or not await khador_jump(100,false):return
+	var khador: Dictionary=app.session.flight_owner()._encounter.combat_snapshot().actors[0] if app.session.flight_owner()._encounter!=null else {}
+	check(int(khador.get("hull_catalogue_id",-1))==38 and khador.get("friendly",false) and khador.pose.origin.distance_to(app.session.snapshot().player_pose.origin)<6000,"Khador's Typhon is not beside the player at Kothar: "+str(khador.get("hull_catalogue_id")))
+	if failures or not await release_application_flight() or not await hear_lines("kothar-65",[2240,2241,2242]) or not await dock_application() or not await take_station_talk(65,66):return
 	check(app.save_station(false) and app.load_station(),"Saving and resuming after the rescue failed: "+app._save_notice.text)
 	if failures:return
 	check(app.session.station_owner().snapshot().campaign_cursor==66,"Fresh Resume lost the rescue result")
@@ -2013,6 +2016,20 @@ func fly_supernova_end() -> void:
 	if failures or not await depart_to(VAR_LUPRA):return
 	await capture_free_application("supernova-ginoya-after")
 	check(float(app.session.flight_owner()._gamma_rate)==0.0,"Var Lupra still drains gamma after the reversal")
+
+## Flies on until the radio has shown every line in `ids` (talk arrivals).
+func hear_lines(label: String,ids: Array,seconds:=90) -> bool:
+	var heard:=[];var began:=now_us
+	app.session.rebase_time(now_us)
+	while now_us-began<seconds*1000000 and not ids.all(func(id):return id in heard):
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot() if app.session.flight_owner()._radio!=null else {}
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in heard:heard.append(int(radio.text_id))
+		if not application_step():return false
+		if (now_us-began)%1000000<100000:await process_frame
+	print("VALKYRIE ",label," radio ",heard)
+	var f: RefCounted=app.session.flight_owner()
+	check(ids.all(func(id):return id in heard),label+": the arrival lines did not all play: "+str(heard))
+	return failures==0
 
 ## A call in the alien world: into the Void, the lines from `lines[0]` to
 ## `lines[1]`, then back out with the drive; the story moves to `next`.
