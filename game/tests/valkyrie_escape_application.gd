@@ -855,6 +855,7 @@ func ride_story_jump(radio_ids: Array,seconds: int) -> bool:
 		if app.session.flight_owner().death_active():check(false,"The pilot died waiting for the story jump");return false
 		await dismiss_medal()
 		if not application_step():return false
+		await watch_cutscene("story")
 		tick+=1
 		if tick%10==0:await process_frame
 	print("VALKYRIE story jump status ",app.session.status," cursor ",app.session.snapshot().campaign_cursor," radio ",radio_ids)
@@ -1063,6 +1064,7 @@ func fly_supernova_handover() -> void:
 			now_us+=100000
 			if not app.session.step(now_us,steer if not frame.cinematic_input_blocked() else Vector2.ZERO):check(false,app.session.error);return
 		app.present_session()
+		await watch_cutscene("tadram92")
 		await dismiss_medal()
 		if tick%20==0:await process_frame
 	print("SUPERNOVA Tadram radio ",radio_ids," cursor ",app.session.snapshot().campaign_cursor," status ",app.session.status)
@@ -1143,6 +1145,7 @@ func fly_supernova_luur() -> void:
 		now_us+=100000
 		if not app.session.step(now_us,steer if not frame.cinematic_input_blocked() else Vector2.ZERO):check(false,app.session.error);return
 		app.present_session()
+		await watch_cutscene("luur94")
 		await dismiss_medal()
 		if tick%20==0:await process_frame
 	print("SUPERNOVA Luur radio ",radio_ids," status ",app.session.status," cursor ",app.session.snapshot().campaign_cursor," raiders ",raiders," in ",(now_us-began)/1000000," s")
@@ -1283,6 +1286,7 @@ func fly_supernova_tadram() -> void:
 		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
 		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
 		if not application_step():return
+		await watch_cutscene("tadram102")
 		if tick%10==0:await process_frame
 		if tick%600==0:print("SUPERNOVA Tadram ",tick/10," s status ",app.session.flight_owner()._story_dock.get("status")," radio ",radio_ids)
 	print("SUPERNOVA Tadram radio ",radio_ids," status ",first_status," -> ",app.session.flight_owner()._story_dock.get("status"))
@@ -1355,6 +1359,7 @@ func fly_supernova_bomb() -> void:
 		now_us+=100000
 		if not app.session.step(now_us,commands,false,false,0.0):check(false,app.session.error);return
 		app.present_session()
+		await watch_cutscene("naneroh105")
 		if tick%10==0:await process_frame
 		if tick%300==0:print("SUPERNOVA Naneroh ",tick/10," s to go ",int(state.player_pose.origin.distance_to(point)) if point is Vector3 else -1," radio ",radio_ids," vitals ",state.player.vitals," gamma ",state.player.get("gamma"))
 	print("SUPERNOVA Naneroh radio ",radio_ids)
@@ -2131,6 +2136,7 @@ func story_flight(cursor: int,label: String,goal: Callable,hostiles: Callable,ra
 		now_us+=100000
 		if not app.session.step(now_us,steer if not frame.cinematic_input_blocked() else Vector2.ZERO,false,false,0.0):check(false,app.session.error);return false
 		app.present_session()
+		await watch_cutscene(label)
 		await dismiss_medal()
 		if tick%10==0:await process_frame
 		if not keep_unharmed(label):return false
@@ -2220,6 +2226,7 @@ func kappa_black_box() -> bool:
 		now_us+=100000
 		if not app.session.step(now_us,steer if not frame.cinematic_input_blocked() else Vector2.ZERO,false,false,0.0):check(false,app.session.error);return false
 		app.present_session()
+		await watch_cutscene("kappa125")
 		await dismiss_medal()
 		if tick%10==0:await process_frame
 		if tick%600==0:print("SUPERNOVA Kappa ",(now_us-began)/1000000," s hacked ",hacked," radio ",radio_ids)
@@ -2483,6 +2490,7 @@ func go_to(station: int) -> bool:
 ## and the camera looks at the named ship; one capture per cutscene.
 var cutscene_marks:={}
 func watch_cutscene(label: String) -> void:
+	if app.session.flight_owner()==null:return
 	var scene: Dictionary=app.session.flight_owner()._cutscene
 	if not scene.has("eye"):return
 	var key:="%s-cutscene%d"%[label,int(scene.key)];var clock:=int(app.session.snapshot().world_elapsed_ms)
@@ -2681,6 +2689,7 @@ func wait_story_cursor(cursor: int,label: String,radio_ids: Array=[]) -> bool:
 	var started:=now_us;var radio_seen:=false
 	while app.session.flight_owner()._objective.snapshot().campaign_cursor!=cursor and now_us-started<90000000:
 		if not application_step():return false
+		await watch_cutscene("story%d"%cursor)
 		if app.session.flight_owner().death_active():check(false,"The escape pilot died waiting for cursor "+str(cursor));return false
 		if int(now_us/1000000)%2==0:await process_frame
 		await dismiss_medal()
