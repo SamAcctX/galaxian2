@@ -186,8 +186,10 @@ func present(state: Dictionary,show_hull_value:=true) -> bool:
 	_readout_kind=readout.get("kind","")
 	_cargo_text.text="%d / %dt"%[used,capacity] if readout.is_empty() else readout_text
 	_cargo_frame.texture=_sprites.timer_frame if _readout_kind=="countdown" else _sprites.cargo_frame
-	_cargo_frame.visible=not cargo.is_empty() or not readout.is_empty();_cargo_text.visible=_cargo_frame.visible
-	_throttle_visible=has_throttle and _throttle_frame.texture!=null
+	# Guiding a Liberator: only the bars stay (no cargo/timer box or throttle).
+	var guiding: bool=state.get("guided_missile",false)
+	_cargo_frame.visible=(not cargo.is_empty() or not readout.is_empty()) and not guiding;_cargo_text.visible=_cargo_frame.visible
+	_throttle_visible=has_throttle and _throttle_frame.texture!=null and not guiding
 	_throttle_percent=roundi(float(throttle)*100.0) if has_throttle else 0
 	_throttle_text.text=str(_throttle_percent) if has_throttle else ""
 	_throttle_frame.tooltip_text="Throttle %d%%"%_throttle_percent if has_throttle else ""

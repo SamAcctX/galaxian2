@@ -2594,7 +2594,7 @@ func hunt_convoy(station: int,radio_ids: Array) -> bool:
 		if not missile.is_empty() and not guided_seen:
 			# Guiding: only the bars and crosshair (no target frame or weapon list).
 			guided_seen=true;app.present_session();await capture_free_application("valkyrie-liberator-hud")
-			check(state.get("guided_missile",false) and not app.session.scene.target_frame.visible and not app.secondary_panel.visible,"The HUD stayed full while guiding a Liberator")
+			check(state.get("guided_missile",false) and not app.session.scene.target_frame.visible and not app.secondary_panel.visible and not app.flight_vitals._cargo_frame.visible,"The HUD stayed full while guiding a Liberator")
 		if not missile.is_empty():
 			var aim: Array=escorts.duplicate()
 			aim.sort_custom(func(a,b):return actors[a].position.distance_squared_to(missile.position)<actors[b].position.distance_squared_to(missile.position))
