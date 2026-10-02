@@ -6,8 +6,9 @@ const OneShot=preload("res://src/presentation/one_shot_audio.gd")
 const PRESS_EVENT:=124
 const ACTIVATE_EVENT:=123
 ## Star map (StarMap touch handling): pick a system, pick a station, confirm a
-## station, zoom into a system, zoom out. The drag whoosh (102) is driven by a
-## native FMOD parameter and is left out.
+## station, zoom into a system, zoom out, and the drag whoosh (102: a
+## speed-parameter event, played once when a drag starts).
+const MAP_DRAG:=102
 const MAP_SYSTEM:=103
 const MAP_STATION:=104
 const MAP_CONFIRM:=105
@@ -29,7 +30,7 @@ static func configure(library: RefCounted,bindings: RefCounted) -> void:
 	_identity=identity;_clips={}
 	var resources:=Audio.new()
 	if not resources.configure(library,bindings):return
-	for id in [PRESS_EVENT,ACTIVATE_EVENT,MAP_SYSTEM,MAP_STATION,MAP_CONFIRM,MAP_ZOOM_IN,MAP_ZOOM_OUT,HANGAR_BUY,HANGAR_SELL,HANGAR_MOUNT,HANGAR_UNMOUNT]:
+	for id in [PRESS_EVENT,ACTIVATE_EVENT,MAP_SYSTEM,MAP_STATION,MAP_CONFIRM,MAP_ZOOM_IN,MAP_ZOOM_OUT,MAP_DRAG,HANGAR_BUY,HANGAR_SELL,HANGAR_MOUNT,HANGAR_UNMOUNT]:
 		var clip:=OneShot.prepare(resources,id)
 		if not clip.is_empty():_clips[id]=clip
 

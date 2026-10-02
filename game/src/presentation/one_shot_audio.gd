@@ -8,7 +8,7 @@ static var _last:={}
 
 ## Returns a playable clip, or {} when the event is missing or needs other behaviour.
 static func prepare(resources: Audio,id: int) -> Dictionary:
-	var clip: Dictionary=resources.prepare(id)
+	var clip: Dictionary=resources.prepare_trigger_once(id)
 	if clip.is_empty() or clip.has("unsupported") or clip.get("spatial",false):return {}
 	return clip if clip.get("stream") is AudioStream or clip.get("kind")=="playlist" else {}
 

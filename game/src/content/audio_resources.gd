@@ -53,7 +53,9 @@ func prepare(id: int) -> Dictionary:
 	if id<0 or id>=_definitions.get("events",[]).size():reject("Audio event is absent from this content profile");return {}
 	if _clips.has(id):return _clips[id]
 	if unsupported.has(id):return {"unsupported":unsupported[id],"id":id}
-	var event: Dictionary=_definitions.events[id]
+	return _prepare_event(id,_definitions.events[id])
+
+func _prepare_event(id: int, event: Dictionary) -> Dictionary:
 	var p: Dictionary=event.properties
 	if _voice_ids.has(id) and (event.categories!=["voice"] or p.mode!=0x180008 or p.max_playbacks!=1):return unavailable(id,"This radio mapping requires another voice event layout")
 	if (event.has("sound") and event.get("simple_flags")!=1) or not compatible_category(event.categories,id):return unavailable(id,"This event needs additional native category or instance behavior")
@@ -292,6 +294,31 @@ func prepare_constant_layers(id: int) -> Dictionary:
 	event.parameters[0].envelopes=0
 	unsupported.erase(id)
 	var result:=prepare_layered(id,event)
+	if result.has("unsupported"):unsupported[id]=ordinary.unsupported
+	return result
+
+## Parameter-triggered one-shots (the star-map whoosh): every parameter window
+## fires the same one-shot sound with no layer effects. Played once per trigger,
+## as the event's first window at a fixed parameter value (assumption: the
+## original's speed sweep repeats the same whoosh; one play per drag start).
+func prepare_trigger_once(id: int) -> Dictionary:
+	var ordinary:=prepare(id)
+	if ordinary.is_empty() or not ordinary.has("unsupported"):return ordinary
+	var event: Dictionary=_definitions.events[id]
+	if event.get("type")!=8 or event.has("sound") or event.parameters.is_empty() or event.layers.is_empty():return ordinary
+	var first: Dictionary={}
+	for layer in event.layers:
+		if layer.get("flags")!=2 or not layer.envelopes.is_empty():return ordinary
+		for sound in layer.sounds:
+			if int(sound.flags)!=1:return ordinary
+			if first.is_empty():first=sound
+			elif sound.sound_def!=first.sound_def or sound.volume!=first.volume:return ordinary
+	if first.is_empty():return ordinary
+	var single:=event.duplicate(true)
+	var sound: Dictionary=first.duplicate(true);sound.x=0.0;sound.width=1.0
+	single.parameters=[];single.layers=[{"flags":2,"priority":65535,"parameter":65535,"envelopes":[],"sounds":[sound]}]
+	unsupported.erase(id)
+	var result:=_prepare_event(id,single)
 	if result.has("unsupported"):unsupported[id]=ordinary.unsupported
 	return result
 

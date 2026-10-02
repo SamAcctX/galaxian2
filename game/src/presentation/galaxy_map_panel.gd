@@ -199,7 +199,7 @@ func _gui_input(event: InputEvent) -> void:
 		elif event.button_index==MOUSE_BUTTON_LEFT:_pointer(event.position,event.pressed)
 	elif event is InputEventScreenTouch:_pointer(event.position,event.pressed)
 	elif (event is InputEventMouseMotion and _dragging) or event is InputEventScreenDrag:
-		if event.position.distance_to(_pressed)>5:_dragged=true
+		if not _dragged and event.position.distance_to(_pressed)>5:_dragged=true;Sounds.event(self,Sounds.MAP_DRAG)
 		if _dragged:
 			_centering=false;_pan+=Vector2(-event.relative.x,event.relative.y)*(2500*_zoom+5000)/maxf(1,size.y);_project();accept_event()
 	elif event is InputEventMagnifyGesture:_zoom=clampf(_zoom/event.factor,0.4,8.0);_project();accept_event()
