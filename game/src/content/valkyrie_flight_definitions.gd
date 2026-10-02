@@ -74,6 +74,15 @@ const ESCORT_HULL:=9999999
 ## 40 km back, the cutscene cameras and the pirates' flight away are not built,
 ## and the result lines play over the radio instead of opening a dialogue.
 const SCRIPTED:={
+	# Talk arrivals ("talk_arrival"): in space at the talk's station the lines
+	# play and the story stays put; docking still holds the talk.
+	# 62: Keith at Kothar, no cast.
+	62:{"points":[Vector3.ZERO],"groups":[],"radio":[[0,2198,1487,5,[8000]]],"success":{"kind":"never"},"talk_arrival":true},
+	# 65: Khador's Typhon (unkillable) 3 km to the player's side. Assumptions:
+	# on the world -x side, and it waits there instead of flying to the station.
+	65:{"points":[Vector3.ZERO],"groups":[{"count":1,"faction":0,"hull":38,"friendly":true,"hull_override":ESCORT_HULL,"name_text_id":1606,
+			"position":{"kind":"player_offset","offset":Vector3(-3000,0,0),"bound":Vector3(1,1,1)}}],
+		"radio":[[0,2240,1498,5,[12000]],[20,2241,1499,6,[0]],[0,2242,1500,6,[1]]],"success":{"kind":"never"},"talk_arrival":true},
 	# 119: cutaway at Thynome (N1): caption at 2 s, the result 2 s after it ends,
 	# then the story moves on (MOVE_ON_ENTRY 120).
 	119:{"points":[Vector3.ZERO],"groups":[],"radio":[[17,2734,-1,5,[2000]]],
@@ -728,9 +737,10 @@ static func _story_flight_job(bindings: RefCounted,cursor: Variant,station_id: V
 			"campaign_cursor":cursor,"target_station_id":int(Campaign.mission(cursor).station_id),"search_index":index,"cleared_mask":searched}
 	if not cursor is int or not station_id is int or not Campaign.saved_story(bindings,cursor) or not (CASTS.has(cursor) or COMBAT.has(cursor) or CONVOY.has(cursor) or CALLS.has(cursor) or SCRIPTED.has(cursor)):return {}
 	var mission:=Campaign.mission(cursor)
-	if mission.is_empty() or (int(mission.kind) not in FLIGHT_KINDS+STORY_FLIGHT_KINDS and not CALLS.has(cursor)):return {}
+	if mission.is_empty() or (int(mission.kind) not in FLIGHT_KINDS+STORY_FLIGHT_KINDS and not CALLS.has(cursor) and not SCRIPTED.get(cursor,{}).get("talk_arrival",false)):return {}
 	if (COMBAT.has(cursor) or SCRIPTED.has(cursor)) and station_id!=int(mission.station_id):return {}
-	var job:={"kind":int(mission.kind),"station_id":station_id,"reward":0,"bonus":0,"difficulty":1,"quantity":0,
+	# A talk arrival is not the talk itself: like a search site it has no kind.
+	var job:={"kind":-1 if SCRIPTED.get(cursor,{}).get("talk_arrival",false) else int(mission.kind),"station_id":station_id,"reward":0,"bonus":0,"difficulty":1,"quantity":0,
 		"story":false,"story_job":true,"campaign_cursor":cursor,"target_station_id":int(mission.station_id)}
 	if CONVOY.has(cursor):
 		var index: int=CONVOY[cursor].stations.find(station_id)
