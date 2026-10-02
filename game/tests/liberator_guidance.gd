@@ -4,8 +4,11 @@ extends "res://tests/secondary_weapons.gd"
 const GuidedBombs=preload("res://src/simulation/emp_bombs.gd")
 const BombRules=preload("res://src/content/emp_bombs_definitions.gd")
 const LIBERATOR:=179
+const FlightAudio=preload("res://src/presentation/opening_audio.gd")
 
-func _initialize() -> void:
+func _initialize() -> void:call_deferred("run_liberator")
+
+func run_liberator() -> void:
 	var args:=OS.get_cmdline_user_args()
 	if args.size()==3:verify_liberator(args)
 	else:check(false,"Expected content, bindings and visuals")
@@ -59,10 +62,10 @@ func verify_liberator(args: PackedStringArray) -> void:
 		for id in [int(BombRules.GUIDED.launch_sound),int(BombRules.GUIDED.burst_sound)]:
 			var sound:=audio.prepare(id)
 			check(not sound.is_empty() and not sound.has("unsupported"),"Liberator sound could not be decoded: "+str(id)+" "+str(sound.get("unsupported",audio.error)))
-	verify_owner(bindings,cat)
+	verify_owner(lib,bindings,cat)
 
 ## Owner path: fit, launch, steer, manual detonation with kill credit to 179.
-func verify_owner(bindings: RefCounted,cat: RefCounted) -> void:
+func verify_owner(lib: RefCounted,bindings: RefCounted,cat: RefCounted) -> void:
 	var built:=construction(bindings,cat,0.5)
 	if built==null:return
 	var owner:=Ownership.new();var group:=active_group(bindings,cat,built,0)
@@ -77,6 +80,15 @@ func verify_owner(bindings: RefCounted,cat: RefCounted) -> void:
 	if operation.is_empty():check(false,owner.error);return
 	check(operation.events.size()==1 and operation.events[0].action=="launched" and operation.owner.guided_active(),"Owner did not launch a guided Liberator")
 	owner=operation.owner;group=operation.combat
+	# Guidance loop 1116 plays while the missile flies and stops on its blast.
+	var audio:=FlightAudio.new();root.add_child(audio)
+	if not audio.configure(lib,bindings,730):check(false,audio.error)
+	var world:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"elapsed_ms":1,"actor_events":[],"secondaries":owner.snapshot(),"secondary_events":operation.events}
+	var frame:=audio.prepare_frame(0,{"elapsed_ms":1},world)
+	if frame.is_empty():check(false,"Guided launch audio frame rejected: "+audio.error)
+	else:audio.commit_frame(frame)
+	var loop: Dictionary=audio._players.get(FlightAudio.GUIDANCE_SOUND,{})
+	check(not loop.is_empty() and loop.node.playing and loop.clip.looping and audio.snapshot().unsupported.is_empty(),"Guidance loop did not start with the guided missile")
 	var steered: RefCounted=owner.steer_guided(Vector2(0,0.5))
 	check(steered!=null and steered.guided_active() and owner.guided_camera_pose()!=Transform3D(),"Owner steering or camera unavailable")
 	var hull: Variant=group.actor_snapshot(0).get("vitals",{}).get("hull")
@@ -90,5 +102,11 @@ func verify_owner(bindings: RefCounted,cat: RefCounted) -> void:
 	var lethal: Array=operation.combat.career_snapshot().get("lethal_items",[])
 	check(not lethal.is_empty() and lethal.all(func(row):return row.item_id==LIBERATOR),"Liberator kill was not credited to item 179: "+str(lethal)+" hull "+str(hull))
 	check(not operation.owner.guided_active() and operation.owner.snapshot().nuclear_bomb_detonations==1,"Guidance outlived the blast or the kind-7 statistic missed it")
+	world.elapsed_ms=2;world.secondaries=operation.owner.snapshot();world.secondary_events=operation.events
+	frame=audio.prepare_frame(1,{"elapsed_ms":2},world)
+	if frame.is_empty():check(false,"Detonation audio frame rejected: "+audio.error)
+	else:audio.commit_frame(frame)
+	check(not audio._players.has(FlightAudio.GUIDANCE_SOUND),"Guidance loop outlived the blast")
+	audio.free()
 	var gone: RefCounted=owner.discard_guided()
 	check(not gone.guided_active() and owner.guided_active(),"Silent removal changed the parent owner or kept guidance")

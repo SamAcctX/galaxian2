@@ -11,6 +11,7 @@ const WeaponAudio=preload("res://src/content/weapon_audio_definitions.gd")
 const SecondaryAudio=preload("res://src/content/secondary_ownership_definitions.gd")
 const Conventional=preload("res://src/content/conventional_secondary_definitions.gd")
 const BombAudio=preload("res://src/content/emp_bombs_definitions.gd")
+const GUIDANCE_SOUND:int=BombAudio.GUIDED.guidance_sound
 const MineAudio=preload("res://src/content/mine_definitions.gd")
 const RadioVoice=preload("res://src/content/radio_audio_definitions.gd")
 const Dialogue=preload("res://src/content/dialogue_definitions.gd")
@@ -867,6 +868,7 @@ func prepare_secondaries(world: Dictionary) -> Dictionary:
 	var events: Variant=world.get("secondary_events",[])
 	if not events is Array:return fail("Invalid secondary sound event list")
 	if not world.has("secondaries"):
+		if _players.has(GUIDANCE_SOUND):operations.append({"action":"stop","source_id":GUIDANCE_SOUND})
 		return {"operations":operations} if events.is_empty() else fail("Secondary sound lost its launcher")
 	var owner: Variant=world.secondaries
 	if _secondary_audio.is_empty() or not owner is Dictionary or not owner.get("guns") is Array or not owner.get("loadout") is Dictionary:return fail("Secondary sound requires supported equipped ownership")
@@ -908,6 +910,10 @@ func prepare_secondaries(world: Dictionary) -> Dictionary:
 		var cue: Dictionary=event.audio
 		if event.get("ammunition_consumed")!=1 or cue.size()!=3 or cue.get("source_id")!=id or cue.get("pitch_raw")!=_secondary_audio.launch_audio.pitch_raw or not cue.get("position") is Vector3 or not cue.position.is_finite():return fail("Secondary launch lost its declared sound, pitch or source position")
 		operations.append({"action":"start_spatial","source_id":id,"position":cue.position,"pitch_raw":float(cue.pitch_raw),"item_id":int(event.item_id),"secondary_slot":int(event.slot_index)})
+	# Guidance loop: plays while a guided missile flies, stops on its blast or removal.
+	var guided: bool=guns.any(func(gun):return gun.has("bomb") and gun.bomb.get("weapon",{}).get("guided",false) and gun.bomb.get("shot",{}).get("phase")=="flying")
+	if guided and not _players.has(GUIDANCE_SOUND) and _resources.prepare_plain_loop(GUIDANCE_SOUND).has("stream"):operations.append({"action":"start","source_id":GUIDANCE_SOUND})
+	elif not guided and _players.has(GUIDANCE_SOUND):operations.append({"action":"stop","source_id":GUIDANCE_SOUND})
 	return {"operations":operations,"detonation_count":bursts.operations.size()}
 
 ## Validate emitted wrapper cues, not a guessed sound inferred from a lingering

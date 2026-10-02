@@ -322,6 +322,31 @@ func prepare_trigger_once(id: int) -> Dictionary:
 	if result.has("unsupported"):unsupported[id]=ordinary.unsupported
 	return result
 
+## Parameter-steered loops (the Liberator guidance engine): played as a plain
+## loop of the event's full-width looping layer at the event's base pitch and
+## volume. Assumption: parameter windows, pitch/gain envelopes and narrower
+## layers are dropped; the original bends this loop's pitch with steering.
+func prepare_plain_loop(id: int) -> Dictionary:
+	var ordinary:=prepare(id)
+	if ordinary.is_empty() or not ordinary.has("unsupported"):return ordinary
+	var event: Dictionary=_definitions.events[id]
+	if event.get("type")!=8 or event.has("sound") or event.parameters.is_empty():return ordinary
+	var main: Dictionary={}
+	for layer in event.layers:
+		for sound in layer.sounds:
+			if int(sound.flags)==0 and sound.x==0 and sound.width==1 and main.is_empty():main=sound
+	if main.is_empty():return ordinary
+	var single:=event.duplicate(true)
+	single.properties.pitch=0.0
+	single.parameters=[];single.layers=[{"flags":2,"priority":65535,"parameter":65535,"envelopes":[],"sounds":[main.duplicate(true)]}]
+	unsupported.erase(id)
+	var result:=_prepare_event(id,single)
+	if result.has("unsupported") or result.get("kind")=="playlist":
+		_clips.erase(id);unsupported[id]=ordinary.unsupported;return ordinary
+	# FMOD Designer raw pitch: four octaves per unit.
+	result.pitch=pow(2.0,4.0*float(event.properties.pitch))
+	return result
+
 func prepare_mining_drill(id: int, event: Dictionary) -> Dictionary:
 	# Both Mac projects use the same four-layer, externally controlled drill.
 	# Its parameter windows are stored normalized even though drill_speed is 0..3.
