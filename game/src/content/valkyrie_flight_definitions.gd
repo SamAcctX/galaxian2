@@ -606,7 +606,9 @@ const SCRIPTED:={
 	# (likely cloak) is left out; line #4 ignores the "#3 finished" guard.
 	157:{"points":[Vector3(70000,0,20000),Vector3(30000,10000,60000),Vector3(-110000,10000,170000),Vector3(-110000,0,20000),
 			Vector3(-120000,0,20000),Vector3(120000,0,-72000),Vector3(20000,0,-4000)],
-		"groups":[{"count":10,"faction":0,"hull":-1,"friendly":true,"index":0,"route_start":1,"offsets":[-2000,-2000,-2000],"bounds":[4000,4000,4000]},
+		# Assumption: the armada is round the player on arrival ("the whole Terran
+		# armada is here!") and fights there instead of flying its route away.
+		"groups":[{"count":10,"faction":0,"hull":-1,"friendly":true,"position":{"kind":"player_offset","offset":Vector3(-3000,-1000,-3000),"bound":Vector3(6000,2000,6000)}},
 			{"count":1,"faction":0,"friendly":true,"static":{"model":18804,"jitter":10000},"name_text_id":-1},
 			{"count":10,"faction":10,"hull":44,"friendly":false,"sleeping":true,"hidden":true,"index":2,"offsets":[-5000,-100,5000],"bounds":[10000,200,6000]},
 			{"count":1,"faction":2,"hull":49,"friendly":false,"sleeping":true,"hidden":true,"name_text_id":1625,"hull_floor":0.2,"index":2,"offsets":[-1,-1,-1],"bounds":[2,2,2]},
@@ -645,13 +647,13 @@ const SCRIPTED:={
 	# result 2 s after it; success on the last line; then MOVE_ON_ENTRY 161.
 	160:{"points":[Vector3.ZERO],"groups":[],
 		"radio":[[17,3110,-1,5,[2000]]],"result_after":[35,[0,2000,1]],
-		"timed_actions":[{"after_ms":0,"action":"lock_player","duration_ms":-1,"invulnerable":true}],
+		"timed_actions":[{"after_ms":0,"action":"cutaway"}],
 		"success":{"kind":"radio_finished","index":3}},
 	# 161: cutaway at Maissa (kind 170, sketch of s84-94): caption at 2 s, the
 	# result 2 s after it; success on the last line; then MOVE_ON_ENTRY 162.
 	161:{"points":[Vector3.ZERO],"groups":[],
 		"radio":[[17,3114,-1,5,[2000]]],"result_after":[35,[0,2000,1]],
-		"timed_actions":[{"after_ms":0,"action":"lock_player","duration_ms":-1,"invulnerable":true}],
+		"timed_actions":[{"after_ms":0,"action":"cutaway"}],
 		"success":{"kind":"radio_finished","index":6}},
 }
 
