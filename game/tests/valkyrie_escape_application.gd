@@ -2570,7 +2570,7 @@ func fight_until(label: String,done: Callable,targets: Callable,radio_ids: Array
 
 func hunt_convoy(station: int,radio_ids: Array) -> bool:
 	var pilot:=CombatPilot.new();var captured:=false
-	var liberators:=0;var closest:=INF
+	var liberators:=0;var closest:=INF;var guided_seen:=false
 	if not select_liberator():return false
 	for tick in 30000:
 		var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
@@ -2591,6 +2591,10 @@ func hunt_convoy(station: int,radio_ids: Array) -> bool:
 		# the stick flies it at the nearest escort, a second R sets it off close by.
 		var missile: Dictionary=liberator_shot(state)
 		var press:=false
+		if not missile.is_empty() and not guided_seen:
+			# Guiding: only the bars and crosshair (no target frame or weapon list).
+			guided_seen=true;app.present_session();await capture_free_application("valkyrie-liberator-hud")
+			check(state.get("guided_missile",false) and not app.session.scene.target_frame.visible and not app.secondary_panel.visible,"The HUD stayed full while guiding a Liberator")
 		if not missile.is_empty():
 			var aim: Array=escorts.duplicate()
 			aim.sort_custom(func(a,b):return actors[a].position.distance_squared_to(missile.position)<actors[b].position.distance_squared_to(missile.position))
