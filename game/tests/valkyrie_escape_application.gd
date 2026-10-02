@@ -600,6 +600,7 @@ func fly_trot() -> void:
 	var radio_ids:=[]
 	for tick in 1200:
 		if app.session.flight_owner()._objective.snapshot().campaign_cursor==70:break
+		await watch_cutscene("leaving")
 		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
 		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
 		if not application_step():return
@@ -2478,6 +2479,23 @@ func go_to(station: int) -> bool:
 
 ## Fight the story cast like a player until done() holds; targets(actors)
 ## lists the actor ids to attack in order.
+## Story cutscenes (64-70): ~1 s in, the player is held, the HUD is hidden
+## and the camera looks at the named ship; one capture per cutscene.
+var cutscene_marks:={}
+func watch_cutscene(label: String) -> void:
+	var scene: Dictionary=app.session.flight_owner()._cutscene
+	if not scene.has("eye"):return
+	var key:="%s-cutscene%d"%[label,int(scene.key)];var clock:=int(app.session.snapshot().world_elapsed_ms)
+	if not cutscene_marks.has(key):cutscene_marks[key]=clock
+	if int(cutscene_marks[key])<0 or clock-int(cutscene_marks[key])<1000:return
+	cutscene_marks[key]=-1
+	var view: Transform3D=app.session.flight_owner()._camera.snapshot().pose
+	var target: Vector3=app.session.flight_owner()._cutscene_target()
+	var facing:=(-view.basis.z).normalized().dot((target-view.origin).normalized())
+	print("VALKYRIE ",key," camera to ship ",int(view.origin.distance_to(target))," facing ",facing)
+	check(app.session.flight_owner().cinematic_input_blocked() and not app.session.flight_hud_visible() and facing>.99,"The "+key+" does not hold the player, hide the HUD and look at the ship")
+	await capture_free_application("valkyrie-"+key)
+
 func fight_until(label: String,done: Callable,targets: Callable,radio_ids: Array,ticks:=30000,liberate:=false,standoff:=9000.0,refuge:=-1,withdraw_from:=-1) -> bool:
 	var pilot:=CombatPilot.new();var captured:=false;var closest:=INF
 	var best_shield:=0.0;var retreating:=false
@@ -2489,6 +2507,7 @@ func fight_until(label: String,done: Callable,targets: Callable,radio_ids: Array
 		if app.session.flight_owner().death_active():check(false,"The player died in "+label+" at tick "+str(tick)+": "+str(state.player.vitals)+" nearest "+str(actors.map(func(actor):return [int(actor.position.distance_to(state.player_pose.origin)),int(actor.pose.origin.distance_to(state.player_pose.origin)),actor.get("firing_allowed"),actor.get("mode")])));return false
 		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
 		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		await watch_cutscene(label)
 		if not keep_unharmed(label):return false
 		var input:=pilot.controls(state,tick,targets.call(actors),true)
 		# With a friendly refuge, fall back to it while the shield recharges,
