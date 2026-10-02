@@ -1044,8 +1044,8 @@ static func _radio(cursor: int,targets: int) -> Array:
 
 ## Khador Drive rules a story flight sets (owner: the drive's mission check).
 ## allow: usable whatever the mission kind; destination: the only jump, with
-## no star map (-1 = the alien world).
-const DRIVE:={78:{"allow":true,"destination":-1}}
+## no star map (-1 = the alien world); refuse_at: no jumps in that station's space.
+const DRIVE:={78:{"allow":true,"destination":-1},65:{"refuse_at":100}}
 
 static func drive_rule(cursor: int) -> Dictionary:return DRIVE.get(cursor,{}).duplicate()
 

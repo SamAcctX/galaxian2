@@ -2736,7 +2736,10 @@ func drive_available() -> bool:return _drive!=null and _drive.ready()
 func drive_quote(station_id: int) -> Dictionary:return {} if _drive==null else _drive.quote(station_id,_cargo.quantity(Drive.Definitions.ENERGY_ITEM))
 func drive_permits_mission() -> bool:
 	if _objective==null:return false
-	if story_drive_rule().get("allow",false):return true
+	var rule:=story_drive_rule()
+	if rule.get("allow",false):return true
+	# A story may hold the player at a station's space (65: Khador at Kothar).
+	if int(rule.get("refuse_at",-2))==int(_entry.location.station_id):return false
 	if _ordinary_void_source!=null and _entry.location.station_id<0:return true
 	var current: Dictionary=_objective.snapshot()
 	var job: Dictionary=current.get("contracts",{}).get("mission",{})

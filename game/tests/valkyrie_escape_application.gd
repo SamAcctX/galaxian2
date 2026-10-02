@@ -468,7 +468,9 @@ func fly_outpost() -> void:
 	if failures or not await khador_jump(100,false):return
 	var khador: Dictionary=app.session.flight_owner()._encounter.combat_snapshot().actors[0] if app.session.flight_owner()._encounter!=null else {}
 	check(int(khador.get("hull_catalogue_id",-1))==38 and khador.get("friendly",false) and khador.pose.origin.distance_to(app.session.snapshot().player_pose.origin)<6000,"Khador's Typhon is not beside the player at Kothar: "+str(khador.get("hull_catalogue_id")))
-	if failures or not await release_application_flight() or not await hear_lines("kothar-65",[2240,2241,2242]) or not await dock_application() or not await take_station_talk(65,66):return
+	if failures or not await release_application_flight() or not await hear_lines("kothar-65",[2240,2241,2242]):return
+	check(not app.session.flight_owner().drive_permits_mission(),"The Khador Drive is not refused at Kothar during 65")
+	if failures or not await dock_application() or not await take_station_talk(65,66):return
 	check(app.save_station(false) and app.load_station(),"Saving and resuming after the rescue failed: "+app._save_notice.text)
 	if failures:return
 	check(app.session.station_owner().snapshot().campaign_cursor==66,"Fresh Resume lost the rescue result")
