@@ -704,12 +704,20 @@ const SCRIPTED:={
 ## CONVOY_RANGE the convoy turns hostile; destroying the transport clears the
 ## station. Every other ship destroyed with the mission item adds to the career's
 ## story counter. Radio texts step by two per cleared station.
-## Assumptions: the transport keeps the +x side (the original picks either side),
-## its two attached containers and the extra traffic ships are not built.
+## The transport stands at (+-(80000+r30000), -6000+r3000, 120000+r50000) and
+## carries two gun turrets (model 14363, 1000 hp) at its race's mounts; they go
+## with it. Assumptions: the side and point come from a hash of the station (a
+## random draw in the original); the extra traffic ships are not built.
 const CONVOY:={59:{"stations":[56,45,22],"item_id":179,"approach_text":2180,"destroyed_text":2179,"final":[0,2179,1228],
 	"voices":{2174:1130,2175:1131,2176:1132,2177:1133,2178:1134}}}
 const CONVOY_RANGE:=50000
 const CONVOY_ESCORTS:=5
+## Turret mounts per transport race: [offset, rotation] (original table).
+const CONVOY_TURRETS:={0:[[Vector3(0,-1097.14,-4178.23),Vector3(0,0,PI)],[Vector3(0,1158.09,1180.59),Vector3.ZERO]],
+	1:[[Vector3(0,-1096.98,-2691.52),Vector3(0,0,PI)],[Vector3(0,1893.48,1068.07),Vector3.ZERO]],
+	2:[[Vector3(0,-484.719,1741.22),Vector3(0,0,PI)],[Vector3(0,1458.84,-2304.28),Vector3.ZERO]],
+	3:[[Vector3(0,-516.08,-3744.45),Vector3(0,0,PI)],[Vector3(0,515.766,-3744.45),Vector3.ZERO]]}
+const CONVOY_TURRET_HULL:=1000
 ## Incoming calls (kind 164): after 10 s in space anywhere the story moves on
 ## and the mission's result conversation plays over the radio, one line after
 ## another (assumption, as for the combat results: the original shows it as an
@@ -1124,13 +1132,22 @@ static func _convoy_recipe(job: Dictionary) -> Dictionary:
 		if not mask & (1<<index):left+=1
 	var neutral:={"initial_hostile":false,"updated_hostile":false,"friendly":false}
 	var state:={"mode":0,"active":true,"targeting_blocked":false}
+	var roll:=absi(hash([cursor,int(job.station_id),"convoy"]))
+	var point:=Vector3((1 if roll%2==0 else -1)*(80000+(roll/2)%30000),-6000+(roll/60000)%3000,120000+(roll/180000)%50000)
 	var groups:=[
 		{"first_actor":0,"end_actor":1,"faction":int(job.faction),"subtype":1,"population_group":"freighter","origin":"zero",
 			"ship_state":state.merged({"cruise_enabled":false}),"policy":neutral.duplicate(),
-			"position":{"kind":"path_scatter","index":0,"offsets":[-15000,-1500,-25000],"bounds":[30000,3000,50000]}},
+			"position":{"kind":"positions","points":[point]}},
 		{"first_actor":1,"end_actor":1+CONVOY_ESCORTS,"faction":int(job.faction),"population_group":"story","origin":"zero",
 			"ship_state":state.duplicate(),"policy":neutral.duplicate(),"route_start":0,
 			"position":{"kind":"path_scatter","index":0,"offsets":[-4000,-1500,-4000],"bounds":[8000,3000,8000]}}]
+	var turrets: Array=CONVOY_TURRETS.get(int(job.faction),[])
+	for index in turrets.size():
+		var actor:=1+CONVOY_ESCORTS+index
+		groups.append({"first_actor":actor,"end_actor":actor+1,"faction":int(job.faction),"origin":"zero","name_text_id":-1,
+			"static_object":{"model":14363,"jitter":0,"offset":point+Vector3(turrets[index][0]),"rotation":Vector3(turrets[index][1]),"hull_override":CONVOY_TURRET_HULL},
+			"ship_state":state.duplicate(),"policy":neutral.duplicate()})
+	var count:=1+CONVOY_ESCORTS+turrets.size()
 	# Text for this station: 2174/2176/2178 on approach, 2175/2177 when the
 	# transport dies; the last station ends with the result line instead.
 	var approach:=int(plan.approach_text)-2*(left+1);var destroyed:=int(plan.destroyed_text)-2*left
@@ -1139,9 +1156,10 @@ static func _convoy_recipe(job: Dictionary) -> Dictionary:
 	radio.append({"speaker_id":int(last[0]),"text_id":int(last[1]),"voice_event_id":int(last[2]),"condition":1,"values":[0]})
 	var story:=_advance(cursor) if left==0 else {"from_cursor":cursor,"campaign_cursor":cursor,"mission":Campaign.mission(cursor),"previous_mission":Campaign.mission(cursor)}
 	story.progress={"story_stations_mask":mask}
-	return {"actor_count":1+CONVOY_ESCORTS,"ship_groups":groups,"placement":{"kind":"points","points":[Vector3(95000,-4500,145000)]},
+	var actions:=[] if turrets.is_empty() else [{"radio_index":1,"on":"started","action":"destroy","first_actor":1+CONVOY_ESCORTS,"end_actor":count}]
+	return {"actor_count":count,"ship_groups":groups,"placement":{"kind":"points","points":[point]},
 		"radio":radio,"success":{"kind":18,"first_actor":0,"end_actor":1},"story":story,"turn_hostile":{"radio_index":0},
-		"story_excluded_actors":[0]}
+		"story_excluded_actors":[0]+range(1+CONVOY_ESCORTS,count),"radio_actions":actions}
 
 ## A search site: Keith's opener at 1.5 s, then a "no reading" line; when
 ## it ends the station counts as searched (the story stays at the cursor).
