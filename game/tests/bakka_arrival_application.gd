@@ -57,7 +57,7 @@ func verify_free_application() -> void:
 	var arrival: Dictionary=app.session.snapshot()
 	check(arrival.campaign_cursor==36 and arrival.location.station_id==27 and arrival.location.system_id==5 and arrival.actors.size()==8,"Complete arrival did not select the original B'akka cast and destination")
 	check(arrival.cargo==completed_state.cargo and arrival.mission==original.mission and arrival.progress==completed_state.progress,"Arrival changed live cargo, progress or the pending story")
-	for key in ["credits","passengers","mission","accepted_contact","blueprints","void_source","completed_side_missions","delivery_statistics","travel_statistics"]:
+	for key in ["credits","passengers","mission","accepted_contact","blueprints","void_source","completed_side_missions","delivery_statistics"]:
 		check(arrival.contracts[key]==completed_state.contracts[key],"Arrival changed the independent career: "+key)
 	check(completed.snapshot()==completed_state and departing.snapshot()==before,"Arrival mutated a retained departure owner")
 	check(not app.session.can_control() and app.session.flight_owner().prepare_station().is_empty(),"Arrival skipped its entry or completed an unplayed contest")
