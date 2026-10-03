@@ -260,11 +260,11 @@ func present(flight: RefCounted, advance_sun:=false, absolute_milliseconds: Vari
 	if not absolute_milliseconds is int or absolute_milliseconds<0:return reject("Flight presentation requires a nonnegative absolute clock")
 	if state.is_empty():state=flight.snapshot()
 	var drill: RefCounted=flight.drill_owner()
-	var pirates: RefCounted=flight.encounter_owner()
-	var death: RefCounted=flight.destruction_owner()
-	var particles: RefCounted=flight.damage_particle_owner()
+	var pirates: RefCounted=flight.encounter_view()
+	var death: RefCounted=flight.destruction_view()
+	var particles: RefCounted=flight.damage_particle_view()
 	var gate_animation: RefCounted=flight.gate_animation_owner()
-	var engines: RefCounted=flight.engine_particle_owner()
+	var engines: RefCounted=flight.engine_particle_view()
 	var prior: float=0.0 if sun==null else sun.frame.get("next_intensity" if advance_sun else "previous_intensity",0.0)
 	var recovery: RefCounted=flight.tractor_owner()
 	var scenery_world: RefCounted=flight.scenery_presentation_owner()
@@ -315,12 +315,6 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if (void_environment!=null)!=state.has("void_environment"):return reject("Void presentation support changed within this flight")
 	if (gates!=null)!=(state.has("gate_environment") or void_environment!=null):return reject("Gate presentation support changed within this flight")
 	if state.has("gate_environment") and not gates.apply_state(state.gate_environment):return reject(gates.error)
-	var gate_frame:={}
-	if state.has("gate_animation"):
-		# The animation owner and state come from the same accepted flight frame.
-		if gates==null or gate_animation==null:return reject("Gate geometry lost its current native clock")
-		gate_frame=gates.prepare_animation(gate_animation)
-		if gate_frame.is_empty():return reject(gates.error)
 	var drive_frame:={}
 	if drive_effect!=null:
 		drive_frame=drive_effect.prepare_state(state.khador.effect)
@@ -364,6 +358,13 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if station!=null:station.visible=not state.get("station_hidden",false)
 	var message: String=_projection.apply(camera,state.camera_view)
 	if not message.is_empty():return reject(message)
+	var gate_frame:={}
+	if state.has("gate_animation"):
+		# The animation owner and state come from the same accepted flight frame.
+		# Prepared after the camera so off-screen gates can skip sampling.
+		if gates==null or gate_animation==null:return reject("Gate geometry lost its current native clock")
+		gate_frame=gates.prepare_animation(gate_animation,camera)
+		if gate_frame.is_empty():return reject(gates.error)
 	var sky_frame: Dictionary=sky.prepare_view(state.camera_view,{},int(state.world_elapsed_ms))
 	if sky_frame.is_empty():return reject(sky.error)
 	if planets!=null and not planets.apply_view(state.camera_view):return reject(planets.error)

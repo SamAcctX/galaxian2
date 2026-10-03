@@ -2838,12 +2838,19 @@ func mission_context_owner() -> RefCounted:return _mission_context
 func mission_station_return_required() -> bool:return not _mission_station_return.is_empty()
 func mission_station_return_identity() -> RefCounted:return _mission_station_identity
 func encounter_owner() -> RefCounted:return null if _encounter==null else _encounter.fork_for_frame()
+## The accepted encounter itself, for read-only presentation; never change it.
+func encounter_view() -> RefCounted:return _encounter
 func wingman_owner() -> RefCounted:return null if _wingmen==null else _wingmen.fork_for_frame()
 func tractor_owner() -> RefCounted:return null if _tractor==null else _tractor.fork_for_frame()
 func destruction_owner() -> RefCounted:return null if _death==null else _death.fork_for_frame()
 func damage_particle_owner() -> RefCounted:return null if _particles==null else _particles.fork_for_frame()
 ## Read-only during presentation of this accepted frame.
 func scenery_presentation_owner() -> RefCounted:return _scenery
+## Accepted owners lent to presentation, which only reads them. Later frames
+## fork before changing anything, so these stay as this frame accepted them.
+func destruction_view() -> RefCounted:return _death
+func damage_particle_view() -> RefCounted:return _particles
+func engine_particle_view() -> RefCounted:return _engine_particles
 
 func turret_state() -> Dictionary:return {} if _encounter==null else _encounter.turret_state()
 func toggle_turret() -> RefCounted:

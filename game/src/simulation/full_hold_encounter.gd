@@ -803,7 +803,7 @@ func evaluate_contract_session(session: RefCounted,radio_active: bool=false,poll
 	var control: RefCounted=_control.fork_for_frame(false,_combat)
 	var result: Dictionary=career.evaluate_flight(control,radio_active,poll_results,periodic_poll_allowed,radio_finished,world_facts,true)
 	if result.is_empty():return fail(career.error)
-	_control=result.controller;_combat=_control.combat_owner()
+	_control=result.controller;_combat=_control._combat
 	return {"session":result.session,"opened":result.opened}
 
 ## A story recipe's radio cue turns its cast hostile and fixes one standing.
