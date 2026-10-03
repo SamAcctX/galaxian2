@@ -233,6 +233,14 @@ func poll_kaamo(panel: Control,checkpoint: Callable=Callable()) -> bool:
 	_kaamo_checked=true
 	var event:=Kaamo.docking_event(int(before.loadout.station_id),before.contracts.get("progress",{}),int(before.contracts.get("credits",0)),before.cargo.get("entries",[]))
 	var StoryFlights=load("res://src/content/valkyrie_flight_definitions.gd")
+	if event.is_empty() and StoryFlights.pirate_base_thanks_pending(before.contracts.get("progress",{})):
+		var base: Dictionary=StoryFlights.PIRATE_BASE
+		var paid: RefCounted=_world.fork()
+		if not paid.collect_pirate_base_thanks(int(base.thanks_pending),int(base.reward)):return reject(paid.error)
+		if checkpoint.is_valid() and not checkpoint.call(paid):return reject("Could not save the pirate-base reward")
+		if not _start_kaamo(panel,[[int(StoryFlights.UNMANNED_STATION.speaker_id),int(base.thanks[0]),int(base.thanks[1])]],false):return false
+		_world=paid;_generation+=1
+		return true
 	if event.is_empty() and StoryFlights.unmanned_station(_bindings,int(before.loadout.station_id),before.contracts.get("progress",{})):
 		var line: Dictionary=StoryFlights.UNMANNED_STATION
 		if not _start_kaamo(panel,[[int(line.speaker_id),int(line.text_id),int(line.voice_event_id)]],false):return false

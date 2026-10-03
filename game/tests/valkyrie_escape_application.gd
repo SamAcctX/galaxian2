@@ -1680,10 +1680,10 @@ func fly_pirate_base() -> void:
 	# Like a player: the outpost first, then the guards still awake before flying home.
 	var cleared:=func():
 		var list: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
-		return 431 in radio_ids and list.all(func(actor):return int(actor.vitals.hull)<=0)
+		return radio_ids.any(func(id):return id in [427,428,429]) and list.all(func(actor):return int(actor.vitals.hull)<=0)
 	if not await fight_until("pirate_base",func():return cleared.call() or app.session.status!="running",standing,radio_ids,90000):return
 	print("PIRATE BASE radio ",radio_ids)
-	check(radio_ids.any(func(id):return id in [424,425,426]) and radio_ids.any(func(id):return id in [427,428,429]) and 431 in radio_ids,"The guard call, the outpost's end or the thanks did not play")
+	check(radio_ids.any(func(id):return id in [424,425,426]) and radio_ids.any(func(id):return id in [427,428,429]) and not 431 in radio_ids,"The guard call or the outpost's end did not play, or the thanks came by radio")
 	for tick in 300:
 		if app.session.status!="running" or app.session.flight_owner()._radio.snapshot().get("visible",false)==false:break
 		now_us+=100000
@@ -1691,9 +1691,12 @@ func fly_pirate_base() -> void:
 		if tick%10==0:await process_frame
 	await capture_free_application("pirate-base-won")
 	if failures or not await collect_base_loot(base) or not await dock_application():return
+	# The original thanks the player at the next docking and pays there.
+	if not await kaamo_talk(431,1,"pirate-base-thanks"):return
 	var docked: Dictionary=app.session.station_owner().snapshot()
-	check(int(docked.contracts.progress.get("pirate_bases",0)) & bit,"The career did not record the destroyed base")
+	check(int(docked.contracts.progress.get("pirate_bases",0)) & bit and not int(docked.contracts.progress.pirate_bases) & 16,"The career did not record the destroyed base and the paid thanks")
 	print("PIRATE BASE credits ",wallet," -> ",int(docked.contracts.credits))
+	check(int(docked.contracts.credits)==wallet+20000,"The docking thanks did not pay 20000")
 	check(app.load_station() and int(app.session.station_owner().snapshot().contracts.progress.get("pirate_bases",0)) & bit,"Fresh Resume lost the destroyed base")
 	if failures or not await depart_to(base):return
 	check(not app.session.flight_owner()._encounter.combat_snapshot().actors.any(func(actor):return actor.get("static_object",false)),"The destroyed base came back")
@@ -2289,7 +2292,7 @@ func fly_supernova_finale() -> void:
 	check(app.session.flight_owner()._gas.get("clouds",[]).any(func(cloud):return Vector3(cloud.position)==KERNSTAL_CLOUD),"Kernstal has no lesson gas cloud with the spectral filter fitted")
 	if failures or not app.open_secondary_menu(now_us) or not app.session.confirm_secondary(197,now_us):check(false,"The Ion Lambda could not be selected: "+app.status.text+app.session.error);return
 	await capture_free_application("supernova-kernstal-cloud")
-	var radio_ids:=[];var shots:=[0];var near:=[false]
+	var radio_ids:=[];var shots:=[0,0];var near:=[false]
 	var lesson:=func(frame):
 		var heard: Array=frame._radio.snapshot().get("finished",[])
 		if heard.size()<4 or heard[3]!=true:return KERNSTAL_WAYPOINT
@@ -2301,6 +2304,17 @@ func fly_supernova_finale() -> void:
 			near[0]=true
 		if not frame._gas_ionized or sparks.is_empty():return KERNSTAL_CLOUD
 		sparks.sort_custom(func(a,b):return Vector3(a.position).distance_to(at)<Vector3(b.position).distance_to(at))
+		# The collector works in turret view only: point the nose at the
+		# nearest spark, switch to turret view and hold still while it pulls;
+		# leave turret view to re-aim when the sparks drift out of view.
+		var to_spark: Vector3=Vector3(sparks[0].position)-at
+		var turret: bool=app.session.turret_state().get("active",false)
+		var looking: Vector3=-Transform3D(frame._camera.snapshot().pose).basis.z if turret else -app.session.snapshot().player_pose.basis.z
+		shots[1]+=1
+		if shots[1]%300==0:printerr("DBGLESSON sparks ",sparks.size()," turret ",turret," state ",app.session.turret_state().keys()," angle ",looking.angle_to(to_spark)," dist ",to_spark.length())
+		if turret and looking.angle_to(to_spark)>0.15:app.session.action("change_view");return Vector3(sparks[0].position)
+		if not turret and looking.angle_to(to_spark)<0.1 and to_spark.length()<30000 and app.session.action("change_view"):print("SUPERNOVA Kernstal turret view at ",int(to_spark.length())," m")
+		if app.session.turret_state().get("active",false):return null
 		return Vector3(sparks[0].position)
 	var fire:=func(frame):
 		var heard: Array=frame._radio.snapshot().get("finished",[])

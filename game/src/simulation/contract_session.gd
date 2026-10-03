@@ -1079,6 +1079,14 @@ func advance_kaamo(purchase: bool) -> bool:
 	_state.progress.kaamo_state=current+1
 	return true
 
+## Pays a destroyed pirate base's reward once, at the next idle docking.
+func collect_pirate_base_thanks(pending_bit: int,reward: int) -> bool:
+	if not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return reject("Pirate-base thanks require an idle docking")
+	var mask:=int(_state.progress.get("pirate_bases",0))
+	if mask & pending_bit==0:return reject("No pirate-base thanks are pending")
+	_state.progress.pirate_bases=mask & ~pending_bit;_state.credits+=reward
+	return true
+
 func wingman_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> Dictionary:
 	error=""
 	if _lounges==null or not equipment is Equipment or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the current flight or result before hiring wingmen")

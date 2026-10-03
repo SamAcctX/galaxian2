@@ -28,7 +28,7 @@ const LIFETIME_KEYS=["mined_ore_tons","mined_cores","mined_ore_types_mask","mine
 static func valid_lifetime(key: String,value: Variant) -> bool:
 	if key=="hints_seen":return preload("res://src/simulation/flight_hints.gd").valid_seen(value)
 	if key=="kaamo_state":return Numbers.integer(value,0,3)
-	if key=="pirate_bases":return Numbers.integer(value,0,15)
+	if key=="pirate_bases":return Numbers.integer(value,0,31)
 	if key=="loma_toll":return Numbers.integer(value,1,2)
 	if key=="kaamo_storage":return value is Dictionary and value.size()==2 and value.get("items") is Array and value.get("ships") is Array and value.items.size()<=4096 and value.ships.size()<=128 and (value.items+value.ships).all(func(row):return row is Dictionary and row.get("item_id",row.get("ship_id")) is int)
 	if key=="wanted":return value is Dictionary and value.get("entries") is Array and value.entries.size()<=64 and value.get("bounties") is Array and value.bounties.size()==4

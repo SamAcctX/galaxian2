@@ -766,12 +766,12 @@ const KAAMO:={"station_id":108,"model":14243,"name_text_id":430,"speaker_id":4,
 ## Progress "pirate_bases" keeps the destroyed bases as bits.
 ## While it stands its station is unmanned (UNMANNED_STATION). Its fixed loot
 ## drops in a container. Assumption: the thanks plays as a radio line right
-## after the outpost falls (the original shows it at the next docking).
+## at the next docking anywhere (thanks_pending).
 # Each base drops its fixed loot ([item, quantity]) when destroyed.
 const PIRATE_BASES:={1:{"bit":1,"point":Vector3(-200000,-100000,50000),"loot":[45,20]},33:{"bit":2,"point":Vector3(50000,200000,-100000),"loot":[48,2]},
 	47:{"bit":4,"point":Vector3(140000,-150000,7000),"loot":[58,2]},86:{"bit":8,"point":Vector3(170000,-170000,10000),"loot":[19,2]}}
 const PIRATE_BASE:={"model":14243,"name_text_id":430,"guards":5,"jitter":10000,"pirate_speaker":9,"nivelian_speaker":65,
-	"wake":[[424,590],[425,591],[426,592]],"destroyed":[[427,593],[428,594],[429,595]],"thanks":[431,589],"reward":20000}
+	"wake":[[424,590],[425,591],[426,592]],"destroyed":[[427,593],[428,594],[429,595]],"thanks":[431,589],"reward":20000,"thanks_pending":16}
 
 ## Docking where an outpost still stands: the station is unmanned. Security
 ## says so (423, voice 586) and the ship leaves again. Not built: the original
@@ -779,6 +779,11 @@ const PIRATE_BASE:={"model":14243,"name_text_id":430,"guards":5,"jitter":10000,"
 const UNMANNED_STATION:={"speaker_id":16,"text_id":423,"voice_event_id":586}
 static func unmanned_station(bindings: RefCounted,station_id: int,progress: Dictionary) -> bool:
 	return Campaign.available(bindings) and PIRATE_BASES.has(station_id) and not (int(progress.get("pirate_bases",0)) & int(PIRATE_BASES[station_id].bit))
+
+## The next docking anywhere after a kill: the Nivelians thank the player
+## (431, voice 589) and pay the reward.
+static func pirate_base_thanks_pending(progress: Dictionary) -> bool:
+	return int(progress.get("pirate_bases",0)) & int(PIRATE_BASE.thanks_pending)!=0
 
 static func _pirate_base_job(cursor: int,station_id: int,progress: Dictionary) -> Dictionary:
 	if not PIRATE_BASES.has(station_id):return {}
@@ -798,14 +803,14 @@ static func _pirate_base_recipe(job: Dictionary) -> Dictionary:
 		"ship_state":{"mode":5,"active":false,"targeting_blocked":true},"policy":{"initial_hostile":true,"updated_hostile":true,"friendly":false},
 		"position":{"kind":"path_scatter","index":0,"offsets":[-10000,-10000,-10000],"bounds":[40000,40000,40000]}}]
 	var pirate:=int(PIRATE_BASE.pirate_speaker)
-	var wake: Array=PIRATE_BASE.wake[pick];var lost: Array=PIRATE_BASE.destroyed[pick];var thanks: Array=PIRATE_BASE.thanks
+	var wake: Array=PIRATE_BASE.wake[pick];var lost: Array=PIRATE_BASE.destroyed[pick]
 	var radio:=[{"speaker_id":pirate,"text_id":int(wake[0]),"voice_event_id":int(wake[1]),"condition":16,"values":[0]},
-		{"speaker_id":pirate,"text_id":int(lost[0]),"voice_event_id":int(lost[1]),"condition":9,"values":[0]},
-		{"speaker_id":int(PIRATE_BASE.nivelian_speaker),"text_id":int(thanks[0]),"voice_event_id":int(thanks[1]),"condition":6,"values":[1]}]
-	var story:={"from_cursor":cursor,"campaign_cursor":cursor,"mission":Campaign.mission(cursor),"previous_mission":{"reward":int(PIRATE_BASE.reward)},
-		"progress":{"pirate_bases":int(job.pirate_base)|int(base.bit)}}
+		{"speaker_id":pirate,"text_id":int(lost[0]),"voice_event_id":int(lost[1]),"condition":9,"values":[0]}]
+	# The thanks and the reward wait for the next docking (thanks_pending).
+	var story:={"from_cursor":cursor,"campaign_cursor":cursor,"mission":Campaign.mission(cursor),"previous_mission":{"reward":0},
+		"progress":{"pirate_bases":int(job.pirate_base)|int(base.bit)|int(PIRATE_BASE.thanks_pending)}}
 	return {"actor_count":1+guards,"ship_groups":groups,"placement":{"kind":"points","points":[base.point]},"radio":radio,
-		"success":{"kind":"radio_finished","index":2},"story":story,"turn_hostile":{}}
+		"success":{"kind":"radio_finished","index":1},"story":story,"turn_hostile":{}}
 
 static func _kaamo_job(cursor: int,station_id: int,progress: Dictionary) -> Dictionary:
 	if station_id!=int(KAAMO.station_id) or int(progress.get("kaamo_state",0))!=0:return {}

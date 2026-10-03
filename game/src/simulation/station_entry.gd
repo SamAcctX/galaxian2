@@ -624,6 +624,13 @@ func advance_kaamo(purchase: bool) -> bool:
 	_retain_equipment(inventory)
 	return true
 
+func collect_pirate_base_thanks(pending_bit: int,reward: int) -> bool:
+	if _contracts==null or _state.get("hangar_open",false) or snapshot().dialogue.visible:return fail("Pirate-base thanks require an idle station")
+	var career: RefCounted=_contracts.fork()
+	if not career.collect_pirate_base_thanks(pending_bit,reward):return fail(career.error)
+	_contracts=career;_state.progress=career.snapshot().progress
+	return true
+
 func wingman_preview(contact_id: int,bindings: RefCounted) -> Dictionary:
 	error=""
 	if _contracts==null or not _contract_station(bindings):fail("The station lounge is unavailable");return {}
