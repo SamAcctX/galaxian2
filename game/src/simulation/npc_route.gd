@@ -1,6 +1,7 @@
 extends RefCounted
 ## Native generated coordinate patrol. The caller supplies the shared RNG at the
 ## source constructor's route-draw boundary, before any actor updates.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Definitions = preload("res://src/content/npc_route_definitions.gd")
 const OpeningContext = preload("res://src/content/opening_sky_definitions.gd")
 const ArrivalConstruction = preload("res://src/content/arrival_actor_construction_definitions.gd")
@@ -114,7 +115,7 @@ func configure_free_generated(bindings: RefCounted,actor_id: int,context: Dictio
 	var population: Dictionary=bindings.mido_travel.free_population
 	if not load("res://src/content/free_campaign_definitions.gd").supported(bindings,context.get("campaign_cursor")) or not limits.integer(context.get("rank"),0,bindings.opening_handoff.rank_thresholds.size()-1):return reject("Invalid ordinary route context")
 	var difficulty: Variant=context.get("difficulty")
-	if (not difficulty is float and not difficulty is int) or not population.supported_difficulties.any(func(value):return float(value)==float(difficulty)):return reject("Invalid ordinary route difficulty")
+	if (not difficulty is float and not difficulty is int) or not Difficulty.valid(difficulty):return reject("Invalid ordinary route difficulty")
 	if actor_id<0 or actor_id>=rules.maximum_actor_count(bindings,int(context.rank),float(context.difficulty),context):return reject("Unknown ordinary traffic route owner")
 	var data: Dictionary=bindings.opening_actors.get("npc_initialization",{}).get("routes",{})
 	if not Definitions.parameters(data):return reject("Generated NPC routes are unavailable in this pack")

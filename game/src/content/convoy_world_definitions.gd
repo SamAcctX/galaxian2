@@ -1,6 +1,7 @@
 extends RefCounted
 ## Composition of already imported convoy and shared factory declarations.
 ## This describes the active encounter at Kernstal, not permission to start it.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Capture=preload("res://src/content/convoy_capture_definitions.gd")
 const Ship=preload("res://src/content/convoy_ship_definitions.gd")
 const Combat=preload("res://src/content/contract_ship_combat_definitions.gd")
@@ -45,7 +46,7 @@ static func context_valid(bindings: RefCounted,context: Dictionary) -> bool:
 		if context.get(key)!=bindings.get(key):return false
 	for key in ["campaign_cursor","station_id","system_id","mission_kind"]:
 		if not context.get(key) is int or context[key]!=int(data[key]):return false
-	return context.get("mission_story")==true and context.get("mission_completed")==false and context.get("rank") is int and context.rank>=0 and context.rank<=20 and context.get("difficulty") in [0.5,1.0]
+	return context.get("mission_story")==true and context.get("mission_completed")==false and context.get("rank") is int and context.rank>=0 and context.rank<=20 and Difficulty.valid(context.get("difficulty"))
 
 static func initialization(bindings: RefCounted) -> Dictionary:
 	if not available(bindings):return {}

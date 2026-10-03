@@ -1,4 +1,5 @@
 extends RefCounted
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Live motion, scenery and entry control for supported early ordinary flights.
 ## Mining approach, drilling and cargo share one field and random stream.
@@ -264,7 +265,11 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	var cargo:=Cargo.new()
 	if not cargo.configure_departure(bindings,catalogues,construction):return reject(cargo.error)
 	var player: RefCounted=construction.player_owner()
-	if not player.configure_cloak(bindings,catalogues,entry.departure.get("difficulty",1.0 if hard_difficulty else 0.5)):return reject(player.error)
+	# The career owns difficulty once contracts open; earlier departures carry
+	# the chosen value (absent = Normal). hard_difficulty is a test fallback.
+	var difficulty: float=float(construction.contract_owner().snapshot().difficulty) if construction.contract_owner()!=null else float(entry.departure.get("difficulty",1.0 if hard_difficulty else 0.5))
+	if not Difficulty.valid(difficulty):return reject("First flight requires a supported difficulty")
+	if not player.configure_cloak(bindings,catalogues,difficulty):return reject(player.error)
 	var equipment: RefCounted=construction.equipment_owner()
 	if entry.campaign_cursor==7 and equipment!=null and not equipment.prepare_training_completion(bindings,catalogues):return reject(equipment.error)
 	var encounter: RefCounted
@@ -276,13 +281,13 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 			route=Route.new()
 			if not route.configure_training_player(bindings):return reject(route.error)
 		encounter=Encounter.new()
-		if not encounter.configure_combat_training(bindings,catalogues,library,player,construction.scenery_owner(),int(entry.departure.progress.rank),1.0 if hard_difficulty else .5):return reject(encounter.error)
+		if not encounter.configure_combat_training(bindings,catalogues,library,player,construction.scenery_owner(),int(entry.departure.progress.rank),difficulty):return reject(encounter.error)
 	elif entry.campaign_cursor==4:
 		encounter=Encounter.new()
-		if not encounter.configure(bindings,catalogues,library,construction,1.0 if hard_difficulty else .5):return reject(encounter.error)
+		if not encounter.configure(bindings,catalogues,library,construction,difficulty):return reject(encounter.error)
 	elif entry.campaign_cursor in [10,11,12]:
 		encounter=Encounter.new()
-		if not encounter.configure_local_traffic(bindings,catalogues,library,construction,1.0 if hard_difficulty else .5):return reject(encounter.error)
+		if not encounter.configure_local_traffic(bindings,catalogues,library,construction,difficulty):return reject(encounter.error)
 	elif bakka_world:
 		encounter=Encounter.new()
 		if not encounter.configure_bakka(bindings,catalogues,library,construction) or not encounter.sample_bakka_clock(0,0):return reject(encounter.error)
@@ -445,7 +450,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	var mining: RefCounted
 	if not bindings.mining_session.is_empty():
 		mining=Mining.new()
-		if not mining.configure(bindings,catalogues,construction,hard_difficulty):return reject(mining.error)
+		if not mining.configure(bindings,catalogues,construction,difficulty==Difficulty.EXTREME):return reject(mining.error)
 	var notices: RefCounted
 	# Shared station guidance names this constructed location; it does not
 	# add mission-specific B'akka dialogue or change result ownership.

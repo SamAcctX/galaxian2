@@ -1,6 +1,7 @@
 extends RefCounted
 ## Completes supported flight initialization from the post-scenery RNG.
 ## Every NPC constructor precedes the shared weapon-effect allocation sequence.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const FirstFlight=preload("res://src/content/first_flight_definitions.gd")
 const MiningFlight=preload("res://src/content/full_hold_flight_definitions.gd")
 const Training=preload("res://src/content/combat_training_definitions.gd")
@@ -373,7 +374,7 @@ func configure_local_traffic(bindings: RefCounted, catalogues: RefCounted, equip
 	if trip.is_empty():return reject("Unsupported local traffic mission context")
 	var data:=Travel.flight(bindings,int(trip.from_station_id),cursor)
 	if data.is_empty():return reject("Local traffic lacks its verified lifecycle")
-	if not data.supported_difficulties.any(func(value):return float(value)==difficulty):return reject("This local traffic profile does not support that difficulty")
+	if not Difficulty.valid(difficulty):return reject("This local traffic profile does not support that difficulty")
 	var construction:=Construction.new()
 	if cursor in [11,12]:
 		var context:={"system_id":int(trip.system_id),"station_id":int(trip.from_station_id),"campaign_cursor":cursor,"difficulty":difficulty,

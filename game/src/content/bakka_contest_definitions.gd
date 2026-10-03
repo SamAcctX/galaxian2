@@ -1,6 +1,7 @@
 extends RefCounted
 ## Partial contest content, not authorization to enter or complete the mission.
 ## Construction is available separately from flight and career progression.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
 const VALUES = {"scope":"bakka_pirate_contest36","mission":{"campaign_cursor":36,"kind":12,"station_id":27,"system_id":5,"story":true,"reward":0,"bonus":0,"briefing_events":[{"speaker_id":7,"text_id":2005,"voice_event_id":182},{"speaker_id":0,"text_id":2006,"voice_event_id":183}]},"encounter_kind":12,"objectives":{"pirate_kind":18,"challenge_success_kind":20,"challenge_failure_kind":21,"challenge_first_actor":1,"challenge_actor_kind":8,"destroyed_mode":4,"challenge_requires_player_majority":true},"result_events":[{"speaker_id":7,"text_id":2007,"voice_event_id":389},{"speaker_id":0,"text_id":2008,"voice_event_id":390}],"authored_radio_events":[],"population":{"actor_count":8,"subtype":0,"pirate_actor_kind":8,"rival_actor_id":0,"rival_actor_kind":1,"rival_hull_catalogue_id":9,"rival_name_text_id":1593,"rival_position_bound":1400,"rival_position_offset":-700,"rival_position_z_offset":1000.0,"rival_base_speed":3.0,"rival_speed":3.0,"rival_current_hull_override":9999999,"rival_friendly":true,"rival_retains_cargo":false,"rival_retains_generated_route":false,"pirate_mode":5,"pirate_active":false,"pirate_targeting_blocked":true,"pirates_retain_cargo_and_routes":true,"route_initial_index":0,"route_loop":false,"waypoints":[[110000,-10000,-80000],[70000,0,-100000],[-100000,10000,-80000],[-130000,-50000,-150000]],"condition_first_actor":1,"condition_end_actor":8}}
@@ -27,7 +28,7 @@ static func context_valid(bindings: RefCounted,context: Dictionary) -> bool:
 		if context.get(key)!=bindings.get(key):return false
 	for key in ["campaign_cursor","station_id","system_id"]:
 		if not context.get(key) is int or context[key]!=int(mission[key]):return false
-	return context.get("mission_kind") is int and context.get("mission_kind")==int(mission.kind) and context.get("mission_story")==true and context.get("mission_completed")==false and Numbers.integer(context.get("rank"),0,20) and context.get("difficulty") in [0.5,1.0]
+	return context.get("mission_kind") is int and context.get("mission_kind")==int(mission.kind) and context.get("mission_story")==true and context.get("mission_completed")==false and Numbers.integer(context.get("rank"),0,20) and Difficulty.valid(context.get("difficulty"))
 
 static func construction_recipe(bindings: RefCounted,context: Dictionary,player_position: Vector3) -> Dictionary:
 	# Internal factory data, not an accepted lounge contract. The entry owns

@@ -41,6 +41,7 @@ func play_opening() -> void:
 	dismiss_title()
 	await process_frame;await process_frame
 	click(app.menu._buttons.new_game);await process_frame
+	app.choose_difficulty(0.5)
 	check(app.phase=="game" and app.has_session(),app.error)
 	if failures:return
 	var host: Control=app.game

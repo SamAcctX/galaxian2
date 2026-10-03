@@ -1,6 +1,7 @@
 extends RefCounted
 ## Composition of original Alioth actors and the shared NPC body factory.
 ## This validates construction; it does not authorize a campaign departure.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Attack=preload("res://src/content/alioth_attack_definitions.gd")
 const Ambient=preload("res://src/content/ambient_combat_definitions.gd")
 const ControlRules=preload("res://src/content/combat_training_control_definitions.gd")
@@ -49,7 +50,7 @@ static func population(bindings: RefCounted,packet: Dictionary) -> Dictionary:
 	for key in ["campaign_cursor","station_id","system_id","mission_kind"]:
 		if not context.get(key) is int or context[key]!=int(source[key]):return {}
 	if packet.get("campaign_cursor")!=context.campaign_cursor or packet.get("station_id")!=context.station_id:return {}
-	if context.get("mission_story")!=true or context.get("mission_completed")!=false or not Numbers.integer(context.get("rank"),0,20) or context.get("difficulty") not in [0.5,1.0]:return {}
+	if context.get("mission_story")!=true or context.get("mission_completed")!=false or not Numbers.integer(context.get("rank"),0,20) or not Difficulty.valid(context.get("difficulty")):return {}
 	var actors: Variant=packet.get("actors")
 	if not actors is Array or actors.size()!=int(source.population.actor_count):return {}
 	for id in actors.size():

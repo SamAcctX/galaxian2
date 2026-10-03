@@ -80,7 +80,7 @@ func verify_rejections(owner: RefCounted, world: RefCounted, bindings: RefCounte
 	check(owner.evaluate(combat,null,150,target,before.random_state).is_empty() and owner.snapshot()==before,"Patrol borrowed training weapons")
 	for invalid_rank in [-1,3,0.5]:
 		check(not TrafficControl.new().configure_local_patrol(bindings,cat,world,invalid_rank,difficulty),"Patrol invented an unsupported career rank")
-	check(not TrafficControl.new().configure_local_patrol(bindings,cat,world,rank,1.5),"Patrol ignored unsupported hardest traffic")
+	check(not TrafficControl.new().configure_local_patrol(bindings,cat,world,rank,2.0),"Patrol ignored unsupported hardest traffic")
 	check(not TrafficBody.new().configure_local_patrol(bindings,cat,world,-1,rank,difficulty),"Patrol accepted a missing actor")
 	var malformed: Dictionary=world.snapshot()
 	malformed.npc_construction.actors[0].actor_kind=8

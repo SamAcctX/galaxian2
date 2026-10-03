@@ -1,6 +1,7 @@
 extends RefCounted
 ## The authored rescue cast uses the ordinary fighter factory. These definitions
 ## validate detached construction; the campaign session owns earned departures.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Rescue=preload("res://src/content/kappa_rescue_definitions.gd")
 const Fighters=preload("res://src/content/kappa_fighters_definitions.gd")
 const Ambient=preload("res://src/content/ambient_combat_definitions.gd")
@@ -36,7 +37,7 @@ static func context_valid(bindings: RefCounted,context: Dictionary) -> bool:
 		if context.get(key)!=bindings.get(key):return false
 	for key in ["campaign_cursor","station_id","system_id","mission_kind"]:
 		if not context.get(key) is int or context[key]!=int(bindings.mido_travel.kappa_rescue[key]):return false
-	return context.get("mission_story")==true and context.get("mission_completed")==false and Numbers.integer(context.get("rank"),0,20) and context.get("difficulty") in [0.5,1.0]
+	return context.get("mission_story")==true and context.get("mission_completed")==false and Numbers.integer(context.get("rank"),0,20) and Difficulty.valid(context.get("difficulty"))
 
 static func combat_population(bindings: RefCounted,combat: Dictionary) -> bool:
 	if combat.get("campaign_cursor")!=21 or flight(bindings).is_empty():return false

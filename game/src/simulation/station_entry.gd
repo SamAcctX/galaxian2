@@ -26,6 +26,7 @@ const FreeFlight=preload("res://src/content/free_flight_definitions.gd")
 const FreeNavigation=preload("res://src/content/free_navigation_definitions.gd")
 const CampaignVisit=preload("res://src/simulation/campaign_visit.gd")
 const CampaignPreparation=preload("res://src/simulation/campaign_preparation.gd")
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 var error := ""
 var _departure_refusal:=-1
 var _state := {}
@@ -518,8 +519,22 @@ func collect_blueprint_products() -> bool:
 	_contracts=career;_retain_equipment(inventory)
 	return true
 
-func open_contracts(bindings: RefCounted,catalogues: RefCounted,difficulty: float=0.5) -> bool:
+## Before contracts open the station state carries the chosen difficulty
+## (absent means Normal, as in older saves); contracts then own it.
+func retain_difficulty(value: Variant) -> bool:
 	error=""
+	if not Difficulty.valid(value) or _state.is_empty():return fail("The game difficulty is invalid")
+	if _contracts!=null:return true
+	if float(value)==Difficulty.NORMAL:_state.erase("difficulty")
+	else:_state.difficulty=float(value)
+	return true
+
+func career_difficulty() -> float:
+	return float(_contracts.snapshot().difficulty) if _contracts!=null else float(_state.get("difficulty",Difficulty.NORMAL))
+
+func open_contracts(bindings: RefCounted,catalogues: RefCounted,difficulty: Variant=null) -> bool:
+	error=""
+	if difficulty==null:difficulty=float(_state.get("difficulty",Difficulty.NORMAL))
 	if _state.get("phase")!="contracts_required" or _equipment==null:return fail("The station has no available lounge introduction")
 	if _contracts!=null:
 		var retained: Dictionary=_contracts.snapshot()
@@ -529,7 +544,7 @@ func open_contracts(bindings: RefCounted,catalogues: RefCounted,difficulty: floa
 	if not inventory.prepare_contract_cargo(bindings):return fail(inventory.error)
 	var contracts:=Contracts.new()
 	if not contracts.configure(bindings,catalogues,_state,inventory,difficulty):return fail(contracts.error)
-	_equipment=inventory;_contracts=contracts
+	_equipment=inventory;_contracts=contracts;_state.erase("difficulty")
 	return true
 
 func retain_contract_locations(cache: RefCounted) -> bool:
@@ -886,7 +901,7 @@ func prepare_departure(bindings: RefCounted, catalogues: RefCounted) -> Dictiona
 		"loadout":seed,"reset_cache":reset,"player_cache":cache,"player":state,
 		"progress":_state.progress.duplicate(true),"mission":_state.mission.duplicate(true),
 		"cargo_used":int(rules.initial_cargo_used),"source_ship_configuration":_state.source_ship_configuration,
-		"confirmation_required":rules.confirmation_required,"confirmation_text_id":int(rules.confirmation_text_id)}
+		"confirmation_required":rules.confirmation_required,"confirmation_text_id":int(rules.confirmation_text_id)}.merged({"difficulty":_state.difficulty} if _state.has("difficulty") else {})
 
 func _prepare_combat_training(bindings: RefCounted, catalogues: RefCounted) -> Dictionary:
 	if bindings==null or catalogues==null or TrainingStory.flight(bindings).is_empty() or not Departure.parameters(bindings.station_departure):fail("This pack has no supported training departure");return {}
@@ -1028,6 +1043,7 @@ func _equipment_departure_packet(bindings: RefCounted, player: RefCounted, reset
 		"source_ship_configuration":_state.source_ship_configuration,
 		"confirmation_required":rules.confirmation_required,"confirmation_text_id":int(rules.confirmation_text_id)}
 	if _state.campaign_cursor in [11,12]:packet.station_response_flags=_state.station_response_flags.duplicate(true)
+	if _state.has("difficulty"):packet.difficulty=_state.difficulty
 	return packet
 
 func snapshot() -> Dictionary:

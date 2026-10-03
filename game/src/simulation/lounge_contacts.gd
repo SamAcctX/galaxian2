@@ -2,6 +2,7 @@ extends RefCounted
 ## Native lounge population assembled from imported names, portrait parts,
 ## catalogue offers and verified distributions. The supplied random state and
 ## mission-type history are retained explicitly, including discarded draws.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Terms=preload("res://src/content/early_contract_definitions.gd")
 const Offer=preload("res://src/simulation/contract_offer.gd")
 const Random=preload("res://src/simulation/seeded_random.gd")
@@ -38,7 +39,7 @@ func prepare(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: V
 	if not available(bindings) or cat==null or library==null or cat.content_id!=bindings.base_content_id or library.manifest.get("content_id")!=bindings.base_content_id:return reject("Early lounge population requires matching supported content")
 	var rules: Dictionary=bindings.early_contracts.generation
 	if not context is Dictionary or not Numbers.integer(context.get("rank"),0,bindings.opening_handoff.rank_thresholds.size()-1) or not Reputation.valid_state(context.get("reputation")):return reject("Lounge population requires its retained career")
-	var ordinary: bool=context.size()==6 and Navigation.ordinary_context(bindings,cat,context,station_context) and context.get("difficulty") in [0.5,1.0,1.5]
+	var ordinary: bool=context.size()==6 and Navigation.ordinary_context(bindings,cat,context,station_context) and Difficulty.valid(context.get("difficulty"))
 	var base: bool=context.size()==5 and Navigation.arrival_context(bindings,cat,context)
 	if not ordinary and (not Numbers.integer(context.get("campaign_cursor"),Terms.first_generation_cursor(bindings.early_contracts),int(rules.last_cursor)) or (not base and context.size()!=4)):return reject("Unsupported lounge generation context")
 	var system_id:=int(bindings.early_contracts.base_navigation.arrival_system_id) if base else int(rules.system_id)

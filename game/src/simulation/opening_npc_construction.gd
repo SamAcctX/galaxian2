@@ -1,4 +1,5 @@
 extends RefCounted
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Contracts=preload("res://src/simulation/contract_session.gd")
 const Transit=preload("res://src/content/convoy_transit_definitions.gd")
 const ContractDefinitions=preload("res://src/content/early_contract_definitions.gd")
@@ -316,7 +317,7 @@ func configure_alioth_attack(bindings: RefCounted,catalogues: RefCounted,seed: D
 		if context.get(key)!=bindings.get(key) or seed.get(key)!=bindings.get(key):return reject("Alioth construction belongs to another content identity")
 	for key in ["campaign_cursor","station_id","system_id","mission_kind"]:
 		if not context.get(key) is int or context[key]!=int(source[key]):return reject("Alioth construction requires its selected station attack")
-	if context.get("mission_story")!=true or context.get("mission_completed")!=false or not Numbers.integer(context.get("rank"),0,20) or context.get("difficulty") not in [0.5,1.0]:return reject("Alioth construction has an unsupported mission context")
+	if context.get("mission_story")!=true or context.get("mission_completed")!=false or not Numbers.integer(context.get("rank"),0,20) or not Difficulty.valid(context.get("difficulty")):return reject("Alioth construction has an unsupported mission context")
 	if catalogues.content_id!=bindings.base_content_id or not load("res://src/simulation/mission_context.gd").base_player_hull(bindings,seed.get("ship_id")) or seed.get("station_id")!=context.station_id or seed.get("system_id")!=context.system_id:return reject("Alioth construction requires the retained ship at Alioth")
 	var ids: Variant=seed.get("equipment_ids")
 	if not ids is Array or ids.any(func(id):return not Numbers.integer(id,0,catalogues.tables.items.size()-1)):return reject("Alioth construction requires installed catalogue equipment")

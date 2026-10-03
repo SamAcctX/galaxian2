@@ -1,5 +1,6 @@
 extends RefCounted
 ## Source declarations and construction recipes. This does not admit travel.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
 const Previous=preload("res://src/content/bakka_return_definitions.gd")
 const VALUES = {"scope":"dekato_convoy38_declarations","mission":{"campaign_cursor":38,"kind":4,"station_id":22,"story":true,"reward":0,"bonus":0,"source_parameter":0,"system_id":4,"briefing_events":[{"speaker_id":0,"text_id":2017,"voice_event_id":184}],"result_events":[{"speaker_id":0,"text_id":2019,"voice_event_id":399},{"speaker_id":1,"text_id":2020,"voice_event_id":400}]},"population":{"actor_count":7,"freighter_count":2,"freighter_actor_kind":2,"freighter_subtype":1,"freighter_hull_catalogue_id":15,"freighter_forced_friendly":true,"freighter_position_bound":20000,"freighter_position_offset":-10000,"escort_actor_kind":3,"escort_subtype":0,"escort_hull_picker_faction":3,"escort_forced_hostile":true,"path_points":[[90000,10000,80000]]},"objectives":{"actor_count":7,"destroyed_mode":4,"success":{"kind":18,"first_actor":2,"end_actor":7,"requires_all":true},"failure":{"kind":7,"first_actor":0,"end_actor":2,"requires_all":true},"filters_actor_kind":false,"requires_player_kill_majority":false},"radio_events":[{"speaker_id":21,"text_id":2018,"voice_event_id":523,"condition_kind":5,"condition_value":15000}],"next_mission":{"campaign_cursor":39,"kind":11,"station_id":30,"story":true,"reward":0,"bonus":0,"source_parameter":0}}
@@ -76,7 +77,7 @@ static func context_valid(bindings: RefCounted,context: Dictionary) -> bool:
 		if not context.get(key) is int or context[key]!=int(mission[key]):return false
 	if not context.get("mission_kind") is int or context.mission_kind!=int(mission.kind):return false
 	if context.get("mission_story")!=true or context.get("mission_completed")!=false or context.get("mission_failed")!=false:return false
-	return load("res://src/content/opening_definitions.gd").integer(context.get("rank"),0,20) and context.get("difficulty") in [0.5,1.0]
+	return load("res://src/content/opening_definitions.gd").integer(context.get("rank"),0,20) and Difficulty.valid(context.get("difficulty"))
 
 static func construction_recipe(bindings: RefCounted,context: Dictionary) -> Dictionary:
 	if not context_valid(bindings,context):return {}

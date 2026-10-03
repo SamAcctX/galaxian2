@@ -1,6 +1,7 @@
 extends RefCounted
 ## Native inventory sampling. The scene supplies time and retained settings;
 ## stock generation never chooses expansion ownership or enables shopping itself.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Definitions=preload("res://src/content/station_generation_definitions.gd")
 const BaseStock=preload("res://src/content/base_station_stock_definitions.gd")
 const DeepScience=preload("res://src/content/deep_science_stock_definitions.gd")
@@ -48,7 +49,7 @@ func prepare(bindings: RefCounted,cat: RefCounted,context: Variant,random_state:
 		if context.size()!=8+int(not deep_science.is_empty()) or not Numbers.integer(context.get("campaign_cursor"),int(base.first_cursor),LAST_CURSOR) or not Numbers.integer(context.get("ship_price_percent"),-100,1000):return reject("Base station stock requires its supported cursor and retained ship price modifier")
 		var expansion: bool=ValkyrieWorlds.stock_station(bindings,int(context.station_id))
 		if not expansion and (int(context.station_id)>int(base.last_station_id) or int(station.system_id)>int(base.last_system_id)):return reject("This special location's stock is not supported yet")
-	if not context.get("valkyrie_owned") is bool or not context.get("supernova_owned") is bool or context.get("difficulty") not in [0.5,1.0,1.5]:return reject("Retain explicit expansion ownership and game difficulty")
+	if not context.get("valkyrie_owned") is bool or not context.get("supernova_owned") is bool or not Difficulty.valid(context.get("difficulty")):return reject("Retain explicit expansion ownership and game difficulty")
 	for key in ["energy_availability_percent","missile_availability_percent"]:
 		if not Numbers.integer(context.get(key),-100,1000):return reject("Unsupported retained stock modifier")
 	var candidate: RefCounted=get_script().new()
