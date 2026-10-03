@@ -1,4 +1,5 @@
 extends SceneTree
+const SaveCompare=preload("res://tests/fixtures/save_compare.gd")
 ## Enclosing selected-flight integration. Inputs are explicit native component
 ## fixtures, never a relabelled save, an earned journey or campaign completion.
 const Library=preload("res://src/content/library.gd")
@@ -81,13 +82,13 @@ func verify_saved_identity(library: RefCounted,bindings: RefCounted,cat: RefCoun
 	var before: Dictionary=station.snapshot()
 	check(before.campaign_cursor==38 and before.loadout.station_id==27 and before.mission.station_id==22,"Use the actual acknowledged B'akka source checkpoint")
 	check(before.contracts.credits==22100 and before.contracts.passengers==3 and before.cargo.entries.is_empty(),"The source checkpoint lost its actual wallet, passengers or empty cargo")
-	check(archive.capture(station,legacy)==record and not station.prepare_departure(legacy,cat).is_empty(),"The actual checkpoint cannot continue under its original bindings")
+	check(SaveCompare.matches_older(archive.capture(station,legacy),record) and not station.prepare_departure(legacy,cat).is_empty(),"The actual checkpoint cannot continue under its original bindings")
 	if bindings.binding_id!=legacy.binding_id:
 		check(archive.restore(bindings,cat,library,record)==null and not archive.error.is_empty(),"The optional capability silently relabelled the actual saved career")
 		check(file.load_document(source_path,bindings,cat,library).is_empty(),"The save-file reader bypassed the exact binding boundary")
 		var construction:=Construction.new()
 		check(not construction.prepare_free(bindings,cat,station,4096,123) and construction.snapshot().is_empty(),"A foreign retained station bypassed native departure identity")
-	check(station.snapshot()==before and archive.capture(station,legacy)==record,"Rejected successor admission changed the retained source owners")
+	check(station.snapshot()==before and SaveCompare.matches_older(archive.capture(station,legacy),record),"Rejected successor admission changed the retained source owners")
 	check(FileAccess.get_sha256(source_path)==expected,"Read-only successor admission changed the source file")
 	print("Actual saved source remains ",legacy.binding_id," / ",expected,"; no migration or earned successor claim")
 

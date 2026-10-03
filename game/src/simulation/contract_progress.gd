@@ -26,7 +26,11 @@ static func matches(state: Dictionary,quote: Dictionary,catalogues: RefCounted=n
 static func occupied_passengers(state: Dictionary) -> int:
 	if state.get("contract_phase","")!="":return 0
 	var mission: Dictionary=state.get("mission",{})
-	return int(mission.get("quantity",0)) if mission.get("kind")==11 else 0
+	if mission.get("kind")!=11:return 0
+	# A malformed count is reported as -1 so the berth guard refuses it.
+	var quantity: Variant=mission.get("quantity",0)
+	if quantity is float and is_finite(quantity) and quantity==floorf(quantity) and absf(quantity)<2147483648.0:return int(quantity)
+	return quantity if quantity is int else -1
 
 static func continue_delivery(state: Dictionary,continuation: Dictionary,catalogues: RefCounted) -> bool:
 	if not state.get("contract_phase","").is_empty() or continuation.is_empty():return false

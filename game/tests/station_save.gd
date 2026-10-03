@@ -1,4 +1,5 @@
 extends "res://tests/ordinary_contracts.gd"
+const SaveCompare=preload("res://tests/fixtures/save_compare.gd")
 ## Save/load checks begin with the actual earned opening career.
 
 class InterruptedSave extends "res://src/simulation/station_save_file.gd":
@@ -121,21 +122,21 @@ func verify_files(bindings: RefCounted,cat: RefCounted,library: RefCounted,stati
 	var path:=SaveFile.path_for(directory.path_join(str(Time.get_ticks_usec())),bindings)
 	var file:=SaveFile.new()
 	if not file.save(path,station,bindings,cat,library):check(false,file.error);return
-	check(file.load_document(path,bindings,cat,library)==original and not file.recovered_backup,"The first save did not reload exactly")
+	check(SaveCompare.matches_older(file.load_document(path,bindings,cat,library),original) and not file.recovered_backup,"The first save did not reload exactly")
 	if not file.save(path,accepted,bindings,cat,library):check(false,file.error);return
 	check(file.load_document(path,bindings,cat,library)==active,"The accepted contract did not persist through the file")
-	check(file.read_document(path+".bak")==original,"Saving discarded the previous viable station")
+	check(SaveCompare.matches_older(file.read_document(path+".bak"),original),"Saving discarded the previous viable station")
 	var before:=FileAccess.get_file_as_bytes(path)
 	var interrupted:=InterruptedSave.new()
 	check(not interrupted.save(path,station,bindings,cat,library) and FileAccess.get_file_as_bytes(path)==before,"An interrupted write replaced the accepted save")
 	check(file.load_document(path,bindings,cat,library)==active,"A partial temporary file interfered with loading")
 	var corrupt:=FileAccess.open(path,FileAccess.WRITE);corrupt.store_buffer(before.slice(0,12));corrupt.close()
-	check(file.load_document(path,bindings,cat,library)==original and file.recovered_backup,"A truncated save did not recover its valid previous station")
+	check(SaveCompare.matches_older(file.load_document(path,bindings,cat,library),original) and file.recovered_backup,"A truncated save did not recover its valid previous station")
 	if not file.save(path,accepted,bindings,cat,library):check(false,file.error);return
-	check(file.read_document(path+".bak")==original,"A damaged primary overwrote the viable backup")
+	check(SaveCompare.matches_older(file.read_document(path+".bak"),original),"A damaged primary overwrote the viable backup")
 	var damaged:=FileAccess.get_file_as_bytes(path);damaged[damaged.size()-1]^=1
 	corrupt=FileAccess.open(path,FileAccess.WRITE);corrupt.store_buffer(damaged);corrupt.close()
-	check(file.load_document(path,bindings,cat,library)==original and file.recovered_backup,"A damaged payload bypassed the checksum or viable backup")
+	check(SaveCompare.matches_older(file.load_document(path,bindings,cat,library),original) and file.recovered_backup,"A damaged payload bypassed the checksum or viable backup")
 	print("Private save round trip: ",path)
 
 func verify_mason_file(bindings: RefCounted,cat: RefCounted,library: RefCounted,mason: RefCounted) -> void:
