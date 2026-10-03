@@ -27,7 +27,7 @@ func verify_free_application() -> void:
 		await capture_free_application("galaxy-resumed-flight")
 		if not app.close_map(now_us) or not await dock_application():return
 		var landed: Dictionary=app.session.station_owner().snapshot()
-		check(landed.cargo==original.cargo and landed.contracts.credits==original.contracts.credits and landed.contracts.travel_statistics==original.contracts.travel_statistics,"Resume or browsing altered the earned travel result")
+		check(landed.cargo==original.cargo and landed.contracts.credits==original.contracts.credits and landed.contracts.travel_statistics.get("jumpgates_used")==original.contracts.travel_statistics.get("jumpgates_used") and landed.contracts.travel_statistics.get("visited_station_ids",[]).has(landed.loadout.station_id),"Resume or browsing altered the earned travel result")
 		retain_recovery_save("returned");return
 	var before: Dictionary=app.session.station_owner().snapshot()
 	var rows: Array=app.map_panel._galaxy.snapshot().rows

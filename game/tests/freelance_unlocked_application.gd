@@ -230,6 +230,22 @@ func fly_contract_job(initial: Dictionary) -> bool:
 			next_log=now_us+20000000
 	check(false,"The input-only Pirate pilot did not reach an outcome");return false
 
+## A finished career gets the Valkyrie call at the first docked station; a
+## player reads it before the free-career errands these tests fly.
+func reads_finished_career_call() -> bool:return true
+
+func read_finished_career_call() -> bool:
+	for tick in 50:
+		if app.session.snapshot().dialogue.visible or not app.session._dialogue_started:break
+		now_us+=100000;app.session.step(now_us);app.present_session();await process_frame
+	for page in 64:
+		for tick in 100:
+			if app.session._dialogue_started:break
+			now_us+=100000;app.session.step(now_us);app.present_session();await process_frame
+		if not app.session.snapshot().dialogue.visible:return true
+		app.station_navigation("next");await process_frame
+	check(false,"The finished-career call never closed");return false
+
 func run_resumed_job() -> void:
 	if not open_application_content(OS.get_cmdline_user_args()):quit(1);return
 	var directory:=OS.get_environment("GOF2_SAVE_TEST_DIRECTORY")
@@ -265,6 +281,7 @@ func run_resumed_job() -> void:
 		else:check(false,app.status.text)
 	else:
 		check(resumed_contract_valid(restored),"Fresh Resume discarded the accepted freelance job")
+		if failures==0 and restored.campaign_cursor==45 and reads_finished_career_call():await read_finished_career_call()
 		if failures==0:await verify_free_application()
 	app.free();print("Freelance Resume: %d checks; %d failures"%[checks,failures]);quit(1 if failures else 0)
 

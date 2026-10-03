@@ -4,6 +4,8 @@ extends "res://tests/automatic_tractor_application.gd"
 ## and a fresh Resume.
 const Valkyrie=preload("res://src/content/valkyrie_campaign_definitions.gd")
 
+func reads_finished_career_call() -> bool:return false
+
 func verify_free_application() -> void:
 	app.set_player_mode(true);app.show();app.present_session()
 	await process_frame;resume_application_focus()
