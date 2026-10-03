@@ -99,7 +99,7 @@ func verify(args: PackedStringArray) -> void:
 	for key in CONTEXT:
 		var changed:=CONTEXT.duplicate();changed.erase(key)
 		check(not Population.new().configure_free(bindings,cat,changed,0),"An omitted source input was inferred: "+key)
-	for patch in [{"rank":-1},{"rank":21},{"difficulty":1.5},{"difficulty":NAN},{"difficulty":true},{"system_id":15},{"station_id":56},{"campaign_cursor":17},{"mission_kind":156},{"mission_completed":false},{"mission_story":true},{"companions_empty":false},{"side_missions_empty":false},{"station_response":1},{"special_arrival":true},{"void_encounter":true}]:
+	for patch in [{"rank":-1},{"rank":21},{"difficulty":2.0},{"difficulty":NAN},{"difficulty":true},{"system_id":15},{"station_id":56},{"campaign_cursor":17},{"mission_kind":156},{"mission_completed":false},{"mission_story":true},{"companions_empty":false},{"side_missions_empty":false},{"station_response":1},{"special_arrival":true},{"void_encounter":true}]:
 		var changed:=CONTEXT.duplicate();changed.merge(patch,true)
 		check(not Population.new().configure_free(bindings,cat,changed,0),"Unsupported encounter context produced ordinary traffic")
 	for seed in [0,2,22,30]:

@@ -168,7 +168,7 @@ func component_owner(bindings: RefCounted,cat: RefCounted,seed: Dictionary) -> R
 	var equipment:=Equipment.new();var scene_seed:=equipped_seed(bindings,cat,seed)
 	if scene_seed.is_empty():check(false,"Cannot build a valid equipped component loadout");return null
 	var capacity:=int(cat.tables.ships[int(scene_seed.ship_id)].stats.cargo_capacity)
-	equipment._rules=bindings.station_equipment.duplicate(true);equipment._items={};equipment._completion_prices=[]
+	equipment._rules=bindings.station_equipment.duplicate(true);equipment._items={};equipment._completion_prices=[];equipment._catalogue_size=cat.tables.items.size()
 	for id in scene_seed.equipment_ids:equipment._items[id]=equipment._item_metadata(cat,int(id),equipment._rules)
 	equipment._completion_prices=Equipment.prototype_prices(bindings,cat)
 	equipment._recovery_cargo_ids=bindings.mido_travel.tractor_recovery.transfer.special_item_ids.map(func(id):return int(id))
