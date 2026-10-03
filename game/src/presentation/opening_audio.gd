@@ -67,6 +67,8 @@ var _secondary_audio:={}
 var _npc_weapon_sound:=-1
 var _npc_weapon_sounds:=[]
 var _npc_scan_sound:=-1
+## Combo voice lines of a recipe kill score (Supernova Challenge).
+var _kill_voices:=[]
 var _radio_voice:={}
 var _local_radio_rules:={}
 var _radio_identity:={}
@@ -158,7 +160,9 @@ func configure(library: RefCounted, bindings: RefCounted, audio_seed: int=0, cam
 	# Ordinary Void and the contest have combat but no timed radio. Resolve
 	# their original clips through the base bank without inventing a radio scene.
 	elif not _resources.configure(library,bindings,0 if admitted_silent or contest or local_combat.get("ordinary_void",false) or campaign_cursor in [2,4,26] else campaign_cursor):return reject(_resources.error)
-	for id in [_npc_scan_sound,_debris_sound,_notification_sound]+_static_sounds:
+	var score: Dictionary=mission_context.recipe().get("kill_score",{}) if mission_context!=null else {}
+	if not score.is_empty():_kill_voices=range(int(score.voice_base)+1,int(score.voice_max)+1)
+	for id in [_npc_scan_sound,_debris_sound,_notification_sound]+_static_sounds+_kill_voices:
 		if id>=0 and _resources.prepare(id).is_empty():return reject(_resources.error)
 	for id in _travel_sounds:
 		var clip: Dictionary=_resources.prepare(id)
@@ -513,6 +517,9 @@ func prepare_full_hold(world: RefCounted, state: Dictionary={}) -> Dictionary:
 		for event in state.get("npc_scanner_events",[]):
 			if not event is Dictionary or event.get("kind")!="sound" or event.get("source_id")!=_npc_scan_sound or not Definitions.integer(event.get("actor_id"),0,_npc_count-1):return fail("Invalid training acquisition sound")
 			commands.append({"action":"start","source_id":_npc_scan_sound})
+		for id in state.get("kill_score_voice",[]):
+			if not id in _kill_voices:return fail("Kill score asked for another voice line")
+			commands.append({"action":"start","source_id":int(id)})
 	commands.append_array(mining.operations)
 	commands.append_array(flight_music.operations)
 	var view:={"booster":state.get("booster",{}),"cloak":state.get("cloak",{}),"khador":state.get("khador",{}),"elapsed_ms":int(elapsed),"camera":{"view":state.camera_view},"escape":{"frame":{"audio":commands}}}
@@ -1337,7 +1344,7 @@ func clear() -> void:
 	restore_listener()
 	_resources=null;_identity=null;_revision=-1;_elapsed_ms=0;_booster_serial=0;_cloak_serial=0;_drive_serial=0;_players.clear();_retiring.clear();_history.clear();_unsupported.clear();_music=-1;_engine=-1;_paused=false;_start_serial=0;error=""
 	_last_samples.clear();_random.seed=0
-	_death_audio={};_freighter_audio={};_freighter_actors=[];_debris_actors=[];_debris_sound=-1;_static_actors=[];_static_sounds=[];_notification_sound=-1;_notified_result_serial=0;_content_identity={};_weapon_audio={};_npc_weapon_sound=-1;_npc_weapon_sounds=[];_npc_scan_sound=-1
+	_death_audio={};_freighter_audio={};_freighter_actors=[];_debris_actors=[];_debris_sound=-1;_static_actors=[];_static_sounds=[];_notification_sound=-1;_notified_result_serial=0;_content_identity={};_weapon_audio={};_npc_weapon_sound=-1;_npc_weapon_sounds=[];_npc_scan_sound=-1;_kill_voices=[]
 	_radio_voice={};_local_radio_rules={};_radio_identity={};_voice_displayed=[];_voice_serial=0
 	_engine_ids=[];_arrival_engine_id=-1;_engine_generation=-1;_initial_engine_id=-1
 	_npc_count=3;_player_death_rules={};_flight_identity=null;_flight_serial=-1

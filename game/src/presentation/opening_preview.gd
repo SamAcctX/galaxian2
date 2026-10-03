@@ -2,6 +2,8 @@ extends VBoxContainer
 const FlightStages=preload("res://src/content/flight_stages.gd")
 signal menu_requested
 signal game_over_requested
+## Supernova Challenge: the timed run is over with this score.
+signal challenge_finished(score: int)
 ## Application host for the recovered opening and its supported ordinary fight.
 ## Unimplemented transitions stop without completing a mission or creating a save.
 const Session = preload("res://src/presentation/opening_session.gd")
@@ -1873,6 +1875,7 @@ func present_session() -> void:
 	if not bindings.mido_travel.get("map",{}).get("ui",{}).is_empty() and (session is FirstFlightSession or (session is Session and session.interactive) or session is StationSession):
 		if not _prepare_chrome():return
 		if session is FirstFlightSession and not flight_vitals.present(state):transition_error(flight_vitals.error);return
+		if session is FirstFlightSession:_present_challenge(state.get("kill_score",{}))
 		if session is FirstFlightSession and state.get("player") is Dictionary and int(state.player.get("max_hull",0))>0:
 			_last_flight_hull_percent=clampi(int(state.player.get("vitals",{}).get("hull",-1))*100/int(state.player.max_hull),-1,100)
 		# Opening flight has accepted ship pools but no cargo owner. Keep its
@@ -2010,3 +2013,38 @@ func freeze_pivot() -> Vector3:
 ## transitions keep the main menu.
 func flight_pausable() -> bool:
 	return _player_mode and (session is FirstFlightSession or session is MissionSession) and session.status=="running"
+
+## Supernova Challenge (main menu 282): a fresh flight of its own, built from
+## an in-memory career. This host never has saves enabled for it.
+var _challenge_hud: Control
+var _challenge_done:=false
+
+func start_challenge() -> bool:
+	if viewport==null or library==null or bindings==null or visuals==null or not _save_directory.is_empty():return false
+	var cat:=Catalogues.new();var bodies:=FirstFlightSession.Bodies.new();var effects:=FirstFlightSession.Effects.new()
+	if not cat.open(library) or not bodies.configure(library,bindings) or not effects.configure(library,bindings):status.text=cat.error+bodies.error+effects.error;return false
+	var entry:=preload("res://src/simulation/supernova_challenge_entry.gd").new()
+	var seconds:=int(Time.get_unix_time_from_system())
+	var construction: RefCounted=entry.prepare(bindings,cat,seconds,seconds,bodies,effects)
+	if construction==null:status.text=entry.error;return false
+	reset()
+	var now:=Time.get_ticks_usec()
+	var candidate:=FirstFlightSession.new();viewport.add_child(candidate)
+	if not candidate.configure_prepared_arrival(library,bindings,visuals,cat,construction,now,seconds,_controls.touch_controls):
+		status.text=candidate.error;candidate.free();return false
+	candidate.transition_rejected.connect(transition_error)
+	for reason in ["user","hidden","focus"]:
+		candidate.set_pause(reason,_user_paused if reason=="user" else not is_visible_in_tree() if reason=="hidden" else not _focused,now)
+	if not candidate.activate():status.text=candidate.error;candidate.free();return false
+	session=candidate;_challenge_done=false
+	_transition_failed=false;clear_input();session.rebase_time(Time.get_ticks_usec());refresh_render_mode()
+	present_session();return true
+
+func _present_challenge(readout: Dictionary) -> void:
+	if readout.is_empty() and _challenge_hud==null:return
+	if _challenge_hud==null:
+		_challenge_hud=preload("res://src/presentation/kill_score_overlay.gd").new();flight_vitals.get_parent().add_child(_challenge_hud)
+		_challenge_hud.configure(flight_vitals.theme.default_font,int(readout.get("window_ms",7500)),_mobile_layout)
+	_challenge_hud.present(readout)
+	if readout.get("finished",false) and not _challenge_done:
+		_challenge_done=true;hold_paused(true);challenge_finished.emit(int(readout.score))

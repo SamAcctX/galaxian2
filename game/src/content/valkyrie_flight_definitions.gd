@@ -815,6 +815,8 @@ static func _kaamo_recipe(job: Dictionary) -> Dictionary:
 
 ## The story job selected at this location, if the career is in a story flight.
 static func story_job(bindings: RefCounted,cursor: Variant,station_id: Variant,progress: Dictionary={}) -> Dictionary:
+	# A Supernova Challenge career selects only its timed run.
+	if progress.get("supernova_challenge",false):return load("res://src/content/supernova_challenge_definitions.gd").job(cursor,station_id,progress)
 	if cursor is int and station_id is int and Campaign.saved_story(bindings,cursor) and station_id==int(KAAMO.station_id):
 		var siege:=_kaamo_job(cursor,station_id,progress)
 		if not siege.is_empty():return siege
@@ -980,6 +982,7 @@ static func is_story_job(mission: Variant) -> bool:
 ## Recipe parts for the shared contract cast factory and result runner.
 static func recipe(job: Dictionary) -> Dictionary:
 	var cursor:=int(job.campaign_cursor)
+	if job.has("supernova_challenge"):return load("res://src/content/supernova_challenge_definitions.gd").recipe()
 	if job.has("wanted"):return _wanted_recipe(job)
 	if job.has("kaamo"):return _kaamo_recipe(job)
 	if job.has("pirate_base"):return _pirate_base_recipe(job)

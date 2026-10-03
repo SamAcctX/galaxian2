@@ -158,6 +158,9 @@ var _radio: RefCounted
 var _radio_events:=[]
 var _scanner: RefCounted
 var _scanner_events:=[]
+## Recipe kill score (Supernova Challenge) and this frame's combo voice lines.
+var _kill_score: RefCounted
+var _kill_voice:=[]
 # Action-only forks retain this serial. The audio presenter commits each native
 # pass once, after the corresponding scene has been accepted.
 var _audio_frame:={}
@@ -234,6 +237,7 @@ var _mission_station_return:={}
 var _mission_station_identity: RefCounted
 const TollRules=preload("res://src/content/loma_toll_definitions.gd")
 const LomaToll=preload("res://src/simulation/loma_toll.gd")
+const KillScore=preload("res://src/simulation/kill_score.gd")
 ## Loma pirate toll for an ordinary flight in system 25 (null elsewhere).
 var _toll: RefCounted
 
@@ -547,6 +551,13 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_return_rules=return_rules if station!=null else {};_departure_station=null
 	_station_contact=false;_station_packet={};_encounter=encounter;_world_elapsed_ms=0
 	_mission_context=mission_context
+	_kill_score=null;_kill_voice=[]
+	var kill_rules: Dictionary=mission_context.recipe().get("kill_score",{}) if mission_context!=null else {}
+	if not kill_rules.is_empty():
+		_kill_score=KillScore.new()
+		if not _kill_score.configure(kill_rules):return reject(_kill_score.error)
+	# A run the player cannot lose by dying (the challenge): the hull stops at 1.
+	if mission_context!=null and mission_context.recipe().get("player_survives",false):player.set_hull_floor(1)
 	_story_dock=_story_people(catalogues,entry)
 	if _mining!=null and _mission_context!=null and int(_mission_context.recipe().get("asteroid_ore",-1))>=0:_mining.ore_override=int(_mission_context.recipe().asteroid_ore)
 	_story_route=_player_route(catalogues,entry)
@@ -627,7 +638,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 	if contract_result_pending() or convoy_arrival_required() or sahi_arrival_required() or void_return_required():return next
 	if gate_modal() or not prepare_gate_arrival().is_empty() or not prepare_drive_arrival().is_empty():return next
 	if _local_travel!=null and _local_travel.snapshot().phase=="arrival_required" and not death_active():return next
-	next._radio_events=[];next._scanner_events=[]
+	next._radio_events=[];next._scanner_events=[];next._kill_voice=[]
 	next._begin_mining_audio_batch()
 	if next._music!=null:next._flight_music={"operations":[]}
 	next._tractor_frame={}
@@ -1892,7 +1903,36 @@ func answer_toll(yes: bool) -> RefCounted:
 	if not next._radio.queue_scripted(int(result.radio)):reject(next._radio.error);return null
 	return next
 
+## A timed score run (Supernova Challenge), with or without radio: player
+## kills feed the kill score, and every `every_ms` each destroyed ship of a
+## box "respawn" returns at a random point of a box round the player: per
+## axis a distance in [min, max], either sign.
+func _advance_score_run() -> bool:
+	if _kill_score==null or _briefing==null or _encounter==null:return true
+	var elapsed: int=int(_briefing.snapshot().world_elapsed_ms)
+	var kills: int=_encounter.player_kill_count()
+	while int(_kill_score.snapshot().kills)<kills and not _kill_score.snapshot().finished:
+		var voice: int=_kill_score.kill()
+		if voice>=0:_kill_voice.append(voice)
+	_kill_score.advance(elapsed-int(_kill_score.snapshot().elapsed_ms))
+	if _kill_score.snapshot().finished:return true
+	for action in _mission_context.recipe().get("timed_actions",[]):
+		if action.action!="respawn" or not action.has("box") or elapsed<int(action.after_ms):continue
+		var key:="box_respawn%d"%int(action.first_actor)
+		if elapsed-int(_action_marks.get(key,int(action.after_ms)))<int(action.every_ms):continue
+		_action_marks[key]=elapsed
+		for id in range(int(action.first_actor),int(action.end_actor)):
+			var at:=_pose.origin
+			for axis in 3:
+				var roll:=absi(hash([id,axis,elapsed]))
+				var span: Array=action.box[axis]
+				var distance:=float(span[0])+float(roll%maxi(1,int(span[1])-int(span[0])))
+				at[axis]+=distance if (roll/65536)%2==0 else -distance
+			if _encounter.respawn_story_actors(id,id+1,at,1.0,true)<0:return reject(_encounter.error)
+	return true
+
 func _observe_radio() -> bool:
+	if not _advance_score_run():return false
 	if _radio==null:return true
 	if _probe!=null:return true # Its ordered radio/stage pass precedes mission polling.
 	if _radio is LocalRadio:
@@ -2109,6 +2149,7 @@ func _observe_radio() -> bool:
 		# Recipe actions at a flight time (78: the station leaves, the pirates wake).
 		for action in _mission_context.recipe().get("timed_actions",[]):
 			if elapsed<int(action.after_ms):continue
+			if action.action=="respawn" and action.has("box"):continue # _advance_score_run
 			# A cutaway (kind 170 scenes): the player is held and unharmable for
 			# the whole flight. Assumption: the camera stays on the ship.
 			# It ends once the story has moved on, so the story's jump can go.
@@ -3055,6 +3096,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	if _engine_particles!=null:state.engine_particles=_engine_particles.snapshot(shared_scenery)
 	if _radio!=null:state.radio=_radio.snapshot();state.radio_events=_radio_events.duplicate(true)
 	if _scanner!=null:state.npc_scanner=_scanner.snapshot();state.npc_scanner_events=_scanner_events.duplicate(true)
+	if _kill_score!=null:state.kill_score=_kill_score.readout();state.kill_score_voice=_kill_voice.duplicate()
 	if _tractor!=null:state.tractor=_tractor.snapshot();state.tractor_frame=_tractor_frame.duplicate(true)
 	if _local_travel!=null:
 		state.local_travel=_local_travel.snapshot()
@@ -3187,6 +3229,7 @@ func fork_for_frame() -> RefCounted:
 	copy._radio_events=_radio_events.duplicate(true)
 	if _scanner!=null:copy._scanner=_scanner.fork_for_frame()
 	copy._scanner_events=_scanner_events.duplicate(true)
+	copy._kill_score=null if _kill_score==null else _kill_score.fork();copy._kill_voice=_kill_voice.duplicate()
 	if _route!=null:copy._route=_route.fork_for_frame()
 	if _rescue!=null:copy._rescue=_rescue.fork()
 	copy._navigation=_navigation

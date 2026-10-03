@@ -520,7 +520,13 @@ func normal_hit(amount: Variant) -> Dictionary:
 	var result: Dictionary=pools.normal_hit(amount,_state.active and _state.damage_allowed and not emergency_active())
 	if result.is_empty(): reject(pools.error);return {}
 	_state.vitals=pools.snapshot()
+	if int(_state.get("hull_floor",0))>0 and float(_state.vitals.hull)<float(_state.hull_floor):_state.vitals.hull=_state.hull_floor
 	return result
+
+## A ship that cannot be destroyed (the Supernova Challenge): no damage takes
+## the hull below `floor`.
+func set_hull_floor(floor: int) -> void:
+	if not _state.is_empty():_state.hull_floor=floor
 
 ## Supernova radiation: gamma falls by `amount` (0-100). Below 1 the ship is
 ## destroyed (a ship already dying is left alone). "warned" when gamma has
@@ -532,14 +538,14 @@ func drain_gamma(amount: float, warning: float) -> Dictionary:
 	if amount<=0.0 or _state.vitals.hull<=0:return {"warned":false,"gamma":before}
 	var after:=maxf(0.0,before-amount)
 	_state.gamma=Vitals.single(after)
-	if after<1.0:_state.vitals.hull=0
+	if after<1.0 and int(_state.get("hull_floor",0))<=0:_state.vitals.hull=0
 	return {"warned":before>=warning and after<warning,"gamma":after}
 
 ## Volatile cargo gives way: the ship is destroyed outright.
 func destroy_hull() -> bool:
 	error=""
 	if _state.is_empty():return reject("Configure player statistics before destruction")
-	_state.vitals.hull=0
+	_state.vitals.hull=maxi(0,int(_state.get("hull_floor",0)))
 	return true
 
 func collision_context(pose: Variant) -> Dictionary:

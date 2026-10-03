@@ -836,11 +836,11 @@ func place_story_actors(first: int,end: int,center: Vector3,radius: float,flat:=
 	_control=control;_combat=control._combat
 	return true
 
-func respawn_story_actors(first: int,end: int,center: Vector3,radius: float) -> int:
+func respawn_story_actors(first: int,end: int,center: Vector3,radius: float,burnt_out:=false) -> int:
 	error=""
 	if _contract_context.is_empty() or _control==null or _combat==null:reject("Story respawn requires a contract encounter");return -1
 	var control: RefCounted=_control.fork_for_frame(true,_combat)
-	var count: int=control.respawn_story_actors(first,end,center,radius)
+	var count: int=control.respawn_story_actors(first,end,center,radius,burnt_out)
 	if count<0:reject(control.error);return -1
 	_control=control;_combat=control._combat
 	return count
@@ -1200,6 +1200,7 @@ func audio_snapshot() -> Dictionary:
 	return result
 
 func projectile_visual_owner() -> RefCounted:return null if _projectiles==null else _projectiles.fork_for_frame()
+func player_kill_count() -> int:return 0 if _control==null or not _control.has_method("player_kill_count") else _control.player_kill_count()
 func combat_owner() -> RefCounted:return null if _combat==null else _combat.fork_for_frame()
 func impact_visual_owner() -> RefCounted:return null if _impacts==null else _impacts.fork_for_frame()
 func npc_destruction_owner(actor_id: int) -> RefCounted:return null if _control==null else _control.destruction_owner(actor_id)

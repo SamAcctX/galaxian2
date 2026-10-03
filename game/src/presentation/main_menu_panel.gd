@@ -81,9 +81,14 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> 
 		button.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
 		button.pressed.connect(func():_request(row.action))
 		_column.add_child(button);_buttons[row.action]=button
-	_buttons.supernova.disabled=true
-	_buttons.supernova.tooltip_text="Supernova Challenge is not implemented yet"
+	set_challenge_available(false)
 	_ready_for_input=true;present(false,false);return true
+
+## The challenge needs the imported Supernova content.
+func set_challenge_available(value: bool) -> void:
+	if not _buttons.has("supernova"):return
+	_buttons.supernova.disabled=not value
+	_buttons.supernova.tooltip_text=_buttons.supernova.get_meta("source_text") if value else "The Supernova Challenge needs the Supernova content in your game files"
 
 func present(has_resume: bool,has_save: bool) -> void:
 	if _resources==null:return

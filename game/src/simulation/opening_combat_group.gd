@@ -665,10 +665,10 @@ func story_actor_action(first: int,end: int,action: String) -> bool:
 		if not done:return reject(_actors[id].error if not _actors[id].error.is_empty() else "Unknown story action "+action)
 	return true
 
-func revive_story_actor(id: int) -> bool:
+func revive_story_actor(id: int,burnt_out:=false) -> bool:
 	error=""
 	if _contract_encounter.is_empty() or id<0 or id>=_actors.size():return reject("Story respawn requires contract ships")
-	if not _writable(id).revive_story():return reject(_actors[id].error)
+	if not _writable(id).revive_story(burnt_out):return reject(_actors[id].error)
 	return true
 
 func set_story_cloak(id: int,cloaked: bool) -> bool:
