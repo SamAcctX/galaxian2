@@ -70,6 +70,9 @@ var viewport: SubViewport
 var _pause_button: Button
 var _touch_toggle: CheckButton
 var _user_paused := false
+## Last docked career, for the in-flight pause window (Missions, Cargo hold).
+var _docked_state:={}
+var _hud_hidden:={}
 var _focused := true
 var _controls := Controls.new()
 var touch_overlay: Control
@@ -515,7 +518,7 @@ func reset() -> void:
 	_last_game_over={}
 	if _save_notice!=null:_save_notice.hide()
 	_locations=null;_location_error=""
-	clear_input();_user_paused=false;_station_map_open=false;_station_course_id=-1
+	clear_input();_user_paused=false;_station_map_open=false;_station_course_id=-1;_docked_state={};set_action_freeze(false)
 	if flight_menu!=null:flight_menu.close()
 	if _pause_button!=null:_pause_button.set_pressed_no_signal(false)
 	if _pause_button!=null:_pause_button.disabled=false
@@ -566,12 +569,16 @@ func _prepare_player_overlays() -> String:
 	return ""
 
 func set_user_paused(value: bool) -> void:
+	hold_paused(value)
+	if value and _player_mode:menu_requested.emit()
+
+## Freeze or release the session for a menu without asking for the menu again.
+func hold_paused(value: bool) -> void:
 	_user_paused=value;clear_input()
 	release_action_focus()
 	_pause_button.set_pressed_no_signal(value)
 	if session!=null and session.status in ["running","gate_confirmation_required","gate_map_required"]:session.set_pause("user",value,Time.get_ticks_usec())
 	refresh_render_mode()
-	if value and _player_mode:menu_requested.emit()
 
 func _visibility_changed() -> void:
 	clear_input()
@@ -763,7 +770,7 @@ func _station_shell_action(action: String) -> void:
 		"missions":open_missions()
 
 func _sync_mouse_capture() -> void:
-	var active: bool=_player_mode and _mouse_steering and not _mobile_layout and not touch_actions_enabled() and _focused and is_visible_in_tree() and session!=null and (session.can_control() or (session is FirstFlightSession and session.can_stop_mining()))
+	var active: bool=_player_mode and _mouse_steering and not _mobile_layout and not touch_actions_enabled() and _focused and is_visible_in_tree() and not _user_paused and session!=null and (session.can_control() or (session is FirstFlightSession and session.can_stop_mining()))
 	if session is MissionSession and session.flight_observation().camera_mode==3:active=false
 	_controls.set_mouse_active(active)
 	if active==_mouse_captured:return
@@ -1506,6 +1513,7 @@ func _accept_first_flight(candidate: Node3D, now_microseconds: int,normal_return
 	if not candidate.activate():
 		var message: String=candidate.error;candidate.free();session.camera.make_current();cancel_departure()
 		return transition_error(message)
+	_remember_docked()
 	var previous:=session;session=candidate;previous.free();cancel_departure()
 	_station_course_id=-1;_station_drive_course=false
 	_save_notice.hide()
@@ -1537,6 +1545,7 @@ func enter_mission_prepared(construction: RefCounted,now_microseconds: int) -> b
 		status.text=candidate.error;candidate.free()
 		if previous_camera!=null:previous_camera.make_current()
 		return false
+	_remember_docked()
 	var previous:=session;session=candidate
 	if previous!=null:previous.free()
 	cancel_departure();station_panel.clear();radio_panel.clear();target_frame.clear();aim_reticle.clear();npc_markers.clear();lounge_panel.clear();map_panel.clear();gate_panel.clear()
@@ -1942,3 +1951,62 @@ func present_session() -> void:
 func show_error(message: String) -> void:
 	reset()
 	status.text=message
+
+# --- In-flight pause window support (read-only career view, Action Freeze).
+
+func _remember_docked() -> void:
+	if session is StationSession and session.has_method("station_owner"):
+		var owner: RefCounted=session.station_owner()
+		if owner!=null:_docked_state=owner.snapshot()
+
+## Career observation for the pause window: the last docked career with the
+## flight's current story cursor, story mission and cargo hold.
+func pause_state() -> Dictionary:
+	var state: Dictionary=_docked_state.duplicate(true)
+	if session==null or session is StationSession:return state
+	var flight: Dictionary=session.snapshot()
+	for key in ["campaign_cursor","mission","contracts","cargo"]:
+		if flight.get(key) is Dictionary or (key=="campaign_cursor" and flight.has(key)):state[key]=flight[key]
+	return state
+
+## Action Freeze: hide every HUD layer and keep rendering only the 3D view
+## while the paused world stays still.
+func set_action_freeze(value: bool) -> void:
+	if not value:
+		if _hud_hidden.is_empty():return
+		for node in _hud_hidden:
+			if is_instance_valid(node) and node!=self:node.visible=true
+		_hud_hidden={};refresh_render_mode();return
+	if not _hud_hidden.is_empty() or viewport==null:return
+	var view: Node=viewport.get_parent()
+	var nodes:=[]
+	for node in view.get_parent().get_children():
+		if node!=view:nodes.append(node)
+	for node in get_children():
+		if node is CanvasItem and not node.is_ancestor_of(view):nodes.append(node)
+	for node in view.get_children():
+		if node is CanvasItem:nodes.append(node)
+	nodes.append_array(viewport.find_children("*","CanvasLayer",true,false))
+	for node in nodes:
+		if (node is CanvasItem or node is CanvasLayer) and node.visible:_hud_hidden[node]=true;node.visible=false
+	_hud_hidden[self]=true
+	viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS
+
+func freeze_camera() -> Camera3D:return null if viewport==null else viewport.get_camera_3d()
+
+## The player's ship position in the flight scene.
+func freeze_pivot() -> Vector3:
+	var scene: Variant=null if session==null else session.get("scene")
+	if not scene is Node3D:return Vector3.ZERO
+	var ship: Variant=scene.get("player")
+	var geometry: Variant=scene.get("geometry")
+	if not ship is Node3D and geometry is Node3D:ship=geometry.get("player")
+	if ship is Node3D:return ship.global_position
+	var pose: Variant=session.snapshot().get("player_pose")
+	if pose is Transform3D:return scene.global_transform*pose.origin
+	return Vector3.ZERO
+
+## The original pause window belongs to free flight; cinematics, maps and
+## transitions keep the main menu.
+func flight_pausable() -> bool:
+	return _player_mode and (session is FirstFlightSession or session is MissionSession) and session.status=="running"

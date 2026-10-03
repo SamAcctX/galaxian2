@@ -19,6 +19,8 @@ const WON_CURSOR:=45
 const Valkyrie=preload("res://src/content/valkyrie_campaign_definitions.gd")
 const GOLD_EXCEPTION_SHIP:=8
 var error:=""
+## In-flight pause view: shows the log without Map or Discard.
+var read_only:=false
 var _status: Control
 var _library: RefCounted
 var _catalogues: RefCounted
@@ -157,15 +159,15 @@ func present(state: Dictionary) -> bool:
 		_client=client.duplicate(true)
 	var finished: bool=won(int(state.get("campaign_cursor",0)))
 	_story_text.text=story_text(state)
-	_story_map.visible=not finished
+	_story_map.visible=not finished and not read_only
 	_job_portrait.texture=null if job.is_empty() else _client_portrait
 	_job_portrait.visible=_job_portrait.texture!=null
 	_job_name.text="" if job.is_empty() else str(contact.get("name",""))
 	_job_text.text=job_text(job)
 	if _confirming and not job.is_empty():_job_text.text=text("confirm")
 	else:_confirming=false
-	_job_map.visible=not job.is_empty() and not _confirming
-	_job_discard.visible=not job.is_empty() and not _confirming
+	_job_map.visible=not job.is_empty() and not _confirming and not read_only
+	_job_discard.visible=not job.is_empty() and not _confirming and not read_only
 	_yes.visible=_confirming;_no.visible=_confirming
 	_present_wanted(state,career)
 	visible=true
@@ -223,7 +225,7 @@ func select_wanted(index: int) -> void:
 	if not _state.is_empty():present(_state)
 
 func ask_discard() -> void:
-	if _state.get("contracts",{}).get("mission",{}).is_empty():return
+	if read_only or _state.get("contracts",{}).get("mission",{}).is_empty():return
 	_confirming=true;present(_state);_yes.grab_focus()
 
 func confirm_discard() -> void:

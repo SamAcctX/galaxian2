@@ -84,7 +84,7 @@ func verify_departure(app: Control) -> void:
 	if failures:return
 	# Physical P should expose the control reference; Q must remain destination UI.
 	_press(KEY_P);await process_frame
-	check(app.phase=="menu" and app._pause_controls.is_visible_in_tree(),"P did not show Pause with the controls reference")
+	check(app.phase=="pause" and app._flight_pause.is_visible_in_tree() and app._pause_controls.is_visible_in_tree(),"P did not show Pause with the controls reference")
 	await capture("pause-control-reference")
 	_press(KEY_P);await process_frame
 	check(app.phase=="game" and not app._pause_controls.visible,"P did not resume the retained flight")
