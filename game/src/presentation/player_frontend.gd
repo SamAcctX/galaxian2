@@ -10,6 +10,7 @@ const DmgImport=preload("res://src/content/dmg_import.gd")
 const SaveFile=preload("res://src/simulation/station_save_file.gd")
 const Menu=preload("res://src/presentation/main_menu_panel.gd")
 const PauseControls=preload("res://src/presentation/pause_controls_panel.gd")
+const FlightPause=preload("res://src/presentation/flight_pause_panel.gd")
 const MenuAudio=preload("res://src/presentation/main_menu_audio.gd")
 const Host=preload("res://src/presentation/opening_preview.gd")
 const Streams=preload("res://src/presentation/audio_stream_control.gd")
@@ -22,6 +23,7 @@ var visuals: RefCounted
 var game: Control
 var menu: Control
 var _pause_controls: PanelContainer
+var _flight_pause: Control
 var music: Node
 var preferences:=Preferences.new()
 var _display:=DisplaySettings.new()
@@ -50,6 +52,9 @@ func _ready() -> void:
 	menu=Menu.new();add_child(menu);menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	menu.action_requested.connect(request_action)
 	_pause_controls=PauseControls.new();add_child(_pause_controls)
+	_flight_pause=FlightPause.new();add_child(_flight_pause);_flight_pause.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_flight_pause.action_requested.connect(_flight_pause_action)
+	_flight_pause.view_changed.connect(func(_view):_sync_flight_controls.call_deferred())
 	_details=PanelContainer.new();add_child(_details)
 	_details.minimum_size_changed.connect(func():_layout.call_deferred())
 	var margins:=MarginContainer.new();_details.add_child(margins)
@@ -141,6 +146,7 @@ func set_mobile_layout(value: bool) -> void:
 	_mobile=value;menu.set_mobile_layout(value)
 	if game!=null:game.set_mobile_layout(value)
 	if _pause_controls.visible:_show_pause_controls()
+	_flight_pause.set_mobile_layout(value)
 	_layout()
 
 func has_save() -> bool:
@@ -152,12 +158,46 @@ func has_session() -> bool:return game!=null and game.session!=null
 func show_menu() -> void:
 	_pending_action=""
 	if library==null:show_setup();return
-	if game!=null:game.hide()
+	if has_session() and game.flight_pausable() and _show_flight_pause():return
+	_flight_pause.clear()
+	if game!=null:game.hide();game.process_mode=Node.PROCESS_MODE_INHERIT
 	phase="menu";error="";_details.hide()
 	music.set_active(true)
 	menu.present(has_session() or has_save(),has_save());menu.set_mobile_layout(_mobile);menu.focus_first()
 	if has_session():_show_pause_controls()
 	else:_pause_controls.hide()
+
+## Flight pause: the original pause window over the frozen flight.
+func _show_flight_pause() -> bool:
+	if not game.status_panel.configure(library,bindings,visuals) or not _flight_pause.configure(library,bindings,visuals,game.status_panel,_mobile):return false
+	phase="pause";error="";_details.hide();menu.hide();_pause_controls.hide()
+	music.set_active(false)
+	game.hold_paused(true);game.show();game.process_mode=Node.PROCESS_MODE_DISABLED
+	move_child(_flight_pause,-1);move_child(_pause_controls,-1);_flight_pause.present(game.pause_state())
+	return true
+
+## The controls reference stays beside the pause window's main list.
+func _sync_flight_controls() -> void:
+	if phase!="pause" or _flight_pause.view!="menu" or not has_session() or menu._ui==null:
+		if phase=="pause":_pause_controls.hide()
+		return
+	_pause_controls.present(PauseControls.reference_rows(library.strings,preferences.values.mouse_steering),menu._ui,_mobile,library.strings[487])
+	_flight_pause._layout()
+	_pause_controls.layout_in_viewport(size,_flight_pause.window_rect().position.x)
+
+func _flight_pause_action(action: String) -> void:
+	if phase!="pause" or not has_session():return
+	match action:
+		"resume":_resume()
+		"options":_flight_pause.clear();show_options()
+		"main_menu":
+			# The original warns that unsaved progress is lost; the last station
+			# save remains for Resume / Load.
+			_flight_pause.clear();game.free();game=null;show_menu()
+		"freeze":
+			game.set_action_freeze(true)
+			if not _flight_pause.begin_freeze(game.freeze_camera(),game.freeze_pivot()):game.set_action_freeze(false)
+		"unfreeze":game.set_action_freeze(false)
 
 func _show_pause_controls() -> void:
 	if not has_session() or game.session.status not in ["running","gate_confirmation_required","gate_map_required"] or menu._ui==null:
@@ -166,6 +206,7 @@ func _show_pause_controls() -> void:
 	_pause_controls.layout_in_viewport(size,menu.snapshot().menu_rect.position.x)
 
 func request_action(action: String) -> void:
+	if phase=="pause" and action=="resume":_resume();return
 	if phase!="menu":return
 	match action:
 		"new_game":
@@ -242,6 +283,8 @@ func _enter_game(action: String) -> bool:
 
 func _resume() -> void:
 	if not has_session():return
+	if _flight_pause.view=="freeze":game.set_action_freeze(false)
+	_flight_pause.clear();game.process_mode=Node.PROCESS_MODE_INHERIT
 	phase="game";error="";menu.hide();_pause_controls.hide();_details.hide();game.show()
 	music.set_active(false)
 	game.apply_preferences(preferences.values);game.set_user_paused(false);game.clear_input()
@@ -466,6 +509,9 @@ func show_info() -> void:
 	button.tooltip_text="The source game can be changed before starting or loading a game"
 
 func _show_details(next: String,title: String) -> void:
+	if _flight_pause.view=="freeze" and game!=null:game.set_action_freeze(false)
+	_flight_pause.clear()
+	if game!=null:game.hide()
 	phase=next;menu.show_background_only();_pause_controls.hide();_details.show();_detail_title.text=title;_notice.text="";error=""
 	for child in _body.get_children():_body.remove_child(child);child.queue_free()
 	_back.visible=true;_back.text=library.strings[178] if library!=null else "Back"
@@ -489,7 +535,8 @@ func _layout() -> void:
 	_details.size=Vector2(minf(600,size.x-32),minf(620,size.y-32));_details.position=(size-_details.size)*0.5
 	_detail_title.add_theme_font_size_override("font_size",24 if _mobile else 20)
 	_notice.add_theme_font_size_override("font_size",18 if _mobile else 14)
-	if _pause_controls.visible:_pause_controls.layout_in_viewport(size,menu.snapshot().menu_rect.position.x)
+	if _pause_controls.visible and phase=="pause":_sync_flight_controls.call_deferred()
+	elif _pause_controls.visible:_pause_controls.layout_in_viewport(size,menu.snapshot().menu_rect.position.x)
 
 func _input(event: InputEvent) -> void:
 	if not _mobile and event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode if event.physical_keycode else event.keycode)==KEY_F11:
@@ -510,10 +557,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not is_visible_in_tree() or phase=="game":return
 	var pressed_key: bool=event is InputEventKey and event.pressed and not event.echo
 	var back_key: bool=pressed_key and (event.physical_keycode if event.physical_keycode else event.keycode)==KEY_ESCAPE
-	var resume_key: bool=pressed_key and phase=="menu" and has_session() and (event.physical_keycode if event.physical_keycode else event.keycode)==KEY_P
+	var resume_key: bool=pressed_key and phase in ["menu","pause"] and has_session() and (event.physical_keycode if event.physical_keycode else event.keycode)==KEY_P
 	var back_button: bool=event is InputEventJoypadButton and event.pressed and event.button_index in [JOY_BUTTON_B,JOY_BUTTON_START]
 	if back_key or back_button or resume_key:
-		if phase=="import":_importer.cancel()
+		if phase=="pause":
+			# Escape / B step back inside the window; P / Start resume at once.
+			var stepped: bool=(back_key or (back_button and event.button_index==JOY_BUTTON_B)) and _flight_pause.back()
+			if not stepped:_resume()
+		elif phase=="import":_importer.cancel()
 		elif phase=="menu" and has_session():_resume()
 		elif phase!="setup":show_menu()
 		get_viewport().set_input_as_handled()
