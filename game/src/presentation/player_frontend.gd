@@ -406,6 +406,12 @@ func show_options() -> void:
 		_settings_controls.resolution.disabled=preferences.values.window_mode=="fullscreen"
 		_choice("aspect_ratio","Aspect ratio",Preferences.ASPECTS,["Automatic (match window)","Native display","4:3","16:9","16:10","21:9","32:9"])
 	_choice("frame_rate","Frame rate",Preferences.FRAME_RATES,["Display refresh (V-Sync)","Unlimited (V-Sync off)","30 FPS","60 FPS","90 FPS","120 FPS","144 FPS","165 FPS","240 FPS","360 FPS"])
+	var upscalers: Array=preload("res://src/presentation/scene_effect_settings.gd").supported_upscalers()
+	if upscalers.size()>1:
+		var names:={"off":"Off (native)","fsr1":"AMD FSR 1.0","fsr2":"AMD FSR 2.2","metalfx_spatial":"MetalFX spatial","metalfx_temporal":"MetalFX temporal"}
+		_choice("upscaler","Upscaling",upscalers,upscalers.map(func(mode):return names[mode]))
+		_choice("render_scale","Upscaling quality",Preferences.RENDER_SCALES,["Native (100%)","Ultra quality (77%)","Quality (67%)","Balanced (59%)","Performance (50%)"])
+		_settings_controls.render_scale.disabled=preferences.values.upscaler=="off"
 	_settings_toggle("bloom","Bloom")
 	_settings_heading(library.strings[490])
 	for pair in [["music",34],["fx",35],["voice",36]]:
@@ -499,7 +505,7 @@ func _setting_row(title: String,control: Control) -> void:
 		scroll.ensure_control_visible.call_deferred(row))
 
 func change_preference(key: String,value: Variant) -> bool:
-	if key not in ["music","fx","voice","invert_pitch","touch_controls","mouse_steering","mouse_sensitivity","bloom"]+Preferences.DISPLAY_KEYS:return false
+	if key not in ["music","fx","voice","invert_pitch","touch_controls","mouse_steering","mouse_sensitivity","bloom","upscaler","render_scale"]+Preferences.DISPLAY_KEYS:return false
 	var candidate:=preferences.values.duplicate(true);candidate[key]=value
 	if not Preferences.valid(candidate):return reject("Invalid game preference")
 	if not preferences.save_file(_preferences_path,candidate):return reject(preferences.error)
@@ -508,6 +514,7 @@ func change_preference(key: String,value: Variant) -> bool:
 		if is_instance_valid(_settings_controls.get("resolution")):_settings_controls.resolution.disabled=candidate.window_mode=="fullscreen"
 		if is_instance_valid(_settings_controls.get("window_mode")):_settings_controls.window_mode.select(1 if candidate.window_mode=="fullscreen" else 0)
 	else:apply_preferences()
+	if key=="upscaler" and is_instance_valid(_settings_controls.get("render_scale")):_settings_controls.render_scale.disabled=value=="off"
 	return true
 
 func show_languages() -> void:

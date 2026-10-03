@@ -17,21 +17,33 @@ func run() -> void:
 	var path:=directory.path_join("player.json")
 	check(not FileAccess.file_exists(path),"Use a fresh display test directory")
 	var original:=Preferences.defaults();original.schema=1
-	for key in Preferences.DISPLAY_KEYS+["mouse_steering","mouse_sensitivity","bloom"]:original.erase(key)
+	for key in Preferences.DISPLAY_KEYS+["mouse_steering","mouse_sensitivity","bloom","upscaler","render_scale"]:original.erase(key)
 	original.content="/example/content";original.import_record="/example/installation.json";original.music=0.4;original.invert_pitch=true
 	var file:=FileAccess.open(path,FileAccess.WRITE);file.store_string(JSON.stringify(original));file.close()
 	var prefs:=Preferences.new();check(prefs.read_file(path),prefs.error)
 	for key in original:
 		if key!="schema":check(prefs.values[key]==original[key],"Preferences upgrade lost "+key)
-	check(prefs.values.schema==4 and prefs.values.mouse_steering and prefs.values.ui_scale==0 and prefs.values.bloom,"Preferences upgrade omitted desktop controls, automatic UI scale or Bloom")
+	check(prefs.values.schema==5 and prefs.values.mouse_steering and prefs.values.ui_scale==0 and prefs.values.bloom,"Preferences upgrade omitted desktop controls, automatic UI scale or Bloom")
 	var version2:=prefs.values.duplicate(true);version2.schema=2;version2.erase("ui_scale")
 	file=FileAccess.open(path,FileAccess.WRITE);file.store_string(JSON.stringify(version2));file.close()
-	check(prefs.read_file(path) and prefs.values.schema==4 and prefs.values.content==original.content and prefs.values.music==original.music,"Version 2 upgrade lost the existing installation/preferences")
+	check(prefs.read_file(path) and prefs.values.schema==5 and prefs.values.content==original.content and prefs.values.music==original.music,"Version 2 upgrade lost the existing installation/preferences")
 	var version3:=prefs.values.duplicate(true);version3.schema=3;version3.erase("bloom");version3.ui_scale=150
 	file=FileAccess.open(path,FileAccess.WRITE);file.store_string(JSON.stringify(version3));file.close()
 	check(prefs.read_file(path) and prefs.values.bloom and prefs.values.ui_scale==150 and prefs.values.content==original.content,"Version 3 upgrade lost settings or omitted Bloom")
+	var version4:=prefs.values.duplicate(true);version4.schema=4;version4.erase("upscaler");version4.erase("render_scale")
+	file=FileAccess.open(path,FileAccess.WRITE);file.store_string(JSON.stringify(version4));file.close()
+	check(prefs.read_file(path) and prefs.values.upscaler=="off" and prefs.values.render_scale==0.77 and prefs.values.ui_scale==150,"Version 4 upgrade lost settings or omitted upscaling")
+	# Upscaling reaches the 3D viewport only in a mode the renderer supports.
+	var Effects:=preload("res://src/presentation/scene_effect_settings.gd")
+	check(Effects.supported_upscalers().has("off"),"Native rendering is not offered")
+	var probe:=SubViewport.new();root.add_child(probe)
+	Effects.configure_viewport(probe,"fsr1",0.67)
+	check(probe.scaling_3d_mode==Viewport.SCALING_3D_MODE_FSR and is_equal_approx(probe.scaling_3d_scale,0.67),"FSR 1.0 did not reach the 3D viewport")
+	Effects.configure_viewport(probe,"off",0.5)
+	check(probe.scaling_3d_mode==Viewport.SCALING_3D_MODE_BILINEAR and probe.scaling_3d_scale==1.0,"Native rendering kept a reduced scale")
+	probe.free()
 	prefs.values.ui_scale=0
-	for pair in [["resolution","0x0"],["aspect_ratio","portrait"],["frame_rate",true],["frame_rate",61],["mouse_sensitivity",NAN],["mouse_sensitivity",0],["window_mode","invalid"],["ui_scale",true],["ui_scale",101],["ui_scale",NAN],["ui_scale",400]]:
+	for pair in [["resolution","0x0"],["aspect_ratio","portrait"],["frame_rate",true],["frame_rate",61],["mouse_sensitivity",NAN],["mouse_sensitivity",0],["window_mode","invalid"],["ui_scale",true],["ui_scale",101],["ui_scale",NAN],["ui_scale",400],["upscaler","dlss"],["render_scale",0.3]]:
 		var invalid:=prefs.values.duplicate();invalid[pair[0]]=pair[1]
 		check(not Preferences.valid(invalid),"Invalid display/input preference accepted: "+pair[0])
 	var settings:=DisplaySettings.new()

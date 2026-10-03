@@ -7,6 +7,7 @@ var owns_viewport:=true
 var error:=""
 var _bloom: Node
 var _bloom_requested:=false
+var _upscaling:=["off",1.0]
 var _settings: RefCounted
 var _overlays: Array[CanvasLayer]=[]
 var _overlay_viewport: SubViewport
@@ -38,7 +39,12 @@ func set_external_viewport(source: SubViewport) -> bool:
 	var enabled:=_bloom_requested
 	set_bloom_enabled(false)
 	viewport=source;texture=source.get_texture();refresh_size()
+	Effects.configure_viewport(viewport,_upscaling[0],_upscaling[1])
 	return set_bloom_enabled(enabled)
+
+func apply_upscaling(mode: String,scale: float) -> void:
+	_upscaling=[mode,scale]
+	Effects.configure_viewport(viewport,mode,scale)
 
 func apply_bloom_preference(enabled: bool) -> void:
 	_bloom_requested=enabled
