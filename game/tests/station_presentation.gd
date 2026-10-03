@@ -69,7 +69,10 @@ func run() -> void:
 		var station:=identity.duplicate();station.loadout={"station_id":78};station.cargo={"used":3,"capacity":25};station.contracts={"credits":1234567}
 		station.ui_actions={}
 		for action in shell.ACTION_ORDER:station.ui_actions[action]={"visible":true,"enabled":true}
+		var hidden_ticker:=station.duplicate(true);hidden_ticker.loadout={"station_id":101}
+		check(shell.present(hidden_ticker) and not shell._ticker.visible,"News ticker appeared at a station without one")
 		check(shell.present(station),shell.error)
+		check(shell._ticker.visible and shell._ticker.text().contains("+++") and not shell._ticker.text().contains("#"),"Station news ticker did not compose original headlines")
 		shell.set_active(false);var navigation_count:=navigation.size();shell._actions.depart.pressed.emit()
 		check(navigation.size()==navigation_count,"Inactive station shell emitted departure")
 		shell.set_active(true);shell._actions.depart.pressed.emit()

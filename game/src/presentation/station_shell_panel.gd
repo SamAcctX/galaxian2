@@ -4,6 +4,7 @@ signal action_requested(action: String)
 const Catalogues=preload("res://src/content/catalogues.gd")
 const Atlas=preload("res://src/content/atlas_region.gd")
 const OriginalUI=preload("res://src/presentation/original_ui.gd")
+const NewsTicker=preload("res://src/presentation/news_ticker.gd")
 const INTERFACE_ATLAS="resources/data/textures/gof2_interface_ipad_1440.aei"
 const ACTION_LABELS={"map":176,"hangar":166,"lounge":387,"depart":406,"save":495,"load":494,"menu":170,"status":168,"missions":128}
 const ACTION_ORDER=["map","hangar","lounge","missions","status","depart","save","load","menu"]
@@ -32,6 +33,7 @@ var _credits: Label
 var _actions:={}
 var _navigation: VBoxContainer
 var _navigation_scroll: ScrollContainer
+var _ticker: Control
 
 func _init() -> void:
 	visible=false;mouse_filter=Control.MOUSE_FILTER_IGNORE
@@ -51,6 +53,7 @@ func _init() -> void:
 	_tech=Label.new();_tech.mouse_filter=Control.MOUSE_FILTER_IGNORE;add_child(_tech)
 	_cargo=Label.new();_cargo.mouse_filter=Control.MOUSE_FILTER_IGNORE;_cargo.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER;add_child(_cargo)
 	_credits=Label.new();_credits.mouse_filter=Control.MOUSE_FILTER_IGNORE;_credits.horizontal_alignment=HORIZONTAL_ALIGNMENT_RIGHT;add_child(_credits)
+	_ticker=NewsTicker.new();add_child(_ticker)
 	_navigation_scroll=ScrollContainer.new();add_child(_navigation_scroll)
 	_navigation_scroll.horizontal_scroll_mode=ScrollContainer.SCROLL_MODE_DISABLED;_navigation_scroll.follow_focus=true
 	_navigation=VBoxContainer.new();_navigation_scroll.add_child(_navigation)
@@ -107,6 +110,8 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> 
 	var prepared_theme:=Theme.new();prepared_theme.default_font=art.font
 	var previous_theme: Theme=theme
 	theme=prepared_theme
+	# The ticker is decoration: content without its table or texts keeps the station usable.
+	if not _ticker.configure(library,cat):push_warning(_ticker.error)
 	for action in ACTION_ORDER:
 		_actions[action].text=labels[action];_actions[action].tooltip_text=labels[action]
 	set_mobile_layout(_mobile)
@@ -146,6 +151,7 @@ func present(state: Dictionary) -> bool:
 	_credits.text="%d$"%credits
 	for label in [_station,_system,_faction,_tech]:label.tooltip_text=label.text
 	_state=state
+	_ticker.present(station_id,int(state.get("campaign_cursor",0)))
 	for action in ACTION_ORDER:
 		var policy: Dictionary=actions.get(action,{"visible":false,"enabled":false})
 		_actions[action].visible=policy.visible
@@ -170,6 +176,10 @@ func set_mobile_layout(value: bool) -> void:
 	var font_size:=20 if value else 15
 	for label in [_station,_system,_faction,_tech,_cargo,_credits]:
 		label.add_theme_font_size_override("font_size",font_size);label.clip_text=true
+	# Scroll at the original 50 source pixels per second, measured in the original font's pixels.
+	_ticker.font_size=font_size
+	var source_height: int=int(_ui.font.get_meta("source_height",font_size)) if _ui!=null else font_size
+	_ticker.speed=NewsTicker.RULES.speed*float(font_size)/float(maxi(1,source_height))
 	for action in ACTION_ORDER:
 		var button: Button=_actions[action]
 		if _ui!=null:_ui.apply_button(button,value,action=="menu")
@@ -201,6 +211,8 @@ func _relayout() -> void:
 	var wallet_width:=minf(170 if _mobile else 140,size.x*0.22)
 	_credits.position=Vector2(size.x-depart_width-wallet_width-12,size.y-bar_height+3)
 	_credits.size=Vector2(wallet_width,bar_height-6)
+	var ticker_height:=float(_ticker.font_size)+4.0
+	_ticker.position=Vector2(side_width,size.y-bar_height-ticker_height);_ticker.size=Vector2(maxf(0,size.x-side_width),ticker_height)
 	_cargo.position=Vector2(side_width,size.y-bar_height+3)
 	_cargo.size=Vector2(maxf(0,_credits.position.x-side_width-8),bar_height-6)
 
