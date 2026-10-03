@@ -232,6 +232,10 @@ var _camera_passes:=1
 var _mission_context: RefCounted
 var _mission_station_return:={}
 var _mission_station_identity: RefCounted
+const TollRules=preload("res://src/content/loma_toll_definitions.gd")
+const LomaToll=preload("res://src/simulation/loma_toll.gd")
+## Loma pirate toll for an ordinary flight in system 25 (null elsewhere).
+var _toll: RefCounted
 
 func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted, construction: RefCounted, dock_key: String, sensitivity: float, viewport_size:=Vector2i(1280,720), mobile_layout:=false, hard_difficulty:=false, autopilot_key:="Q", primary_key:="Space", fast_forward_key:="Tab") -> bool:
 	error=""
@@ -587,6 +591,17 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	if not bindings.physical_scenery_contacts.is_empty():
 		_physical_contacts=PhysicalContacts.new()
 		if not _physical_contacts.configure(bindings.physical_scenery_contacts,{"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id},{} if station==null else station.snapshot(),_scenery.read_snapshot().get("bodies",{})):return reject(_physical_contacts.error)
+	_toll=null
+	if free_world and _objective is ContractObjective and _radio is LocalRadio and encounter!=null and not mission_world:
+		var career: Dictionary=_objective.contract_owner().snapshot()
+		var status:=TollRules.status(career.get("progress",{}))
+		if TollRules.active(int(entry.location.system_id)):
+			var toll:=LomaToll.new()
+			var line:=toll.start(status,randi())
+			if toll.holds_fire() and not encounter.set_truce([TollRules.PIRATE_KIND]):return reject(encounter.error)
+			if line>=0 and not _radio.queue_scripted(line):return reject(_radio.error)
+			_toll=toll
+		elif status!=0 and not _objective.set_loma_toll(0):return reject(_objective.error)
 	_music=null;_music_context={};_music_faction=-1;_flight_music={}
 	# The source station is fixed before cursor32. From32 onward, the career
 	# must supply its actual rerolling Void-source owner before music can attach.
@@ -1848,16 +1863,43 @@ func _apply_convoy_engine_cue(frame: Dictionary) -> bool:
 			if not _engine_particles.set_nozzle_emitting(index,false):return reject(_engine_particles.error)
 	return true
 
+## Loma toll: a hit pirate breaks the truce; the finished welcome asks the question.
+func _advance_toll() -> bool:
+	if _toll==null:return true
+	if _encounter.truce_broken() and _toll.provoke():
+		if not _objective.set_loma_toll(TollRules.REFUSED):return reject(_objective.error)
+	for event in _radio_events:
+		if event.get("kind")!="finished" or event.get("message_kind")!="scripted":continue
+		var career: Dictionary=_objective.contract_owner().snapshot()
+		var prices: Array=[] if _equipment==null else _equipment.snapshot().get("prices",{}).get("cargo",[])
+		var value:=TollRules.cargo_value(_cargo.snapshot().get("entries",[]),prices,_story_catalogues.tables.items)
+		_toll.observe_finished(int(event.get("text_id",-1)),value,float(career.get("difficulty",0.5)))
+	return true
+
+func toll_state() -> Dictionary:return {} if _toll==null else _toll.snapshot()
+
+## The player's answer to the paused toll question.
+func answer_toll(yes: bool) -> RefCounted:
+	error=""
+	if _toll==null or not _toll.question:reject("No toll question awaits an answer");return null
+	var next:=fork_for_frame()
+	var credits:=int(next._objective.contract_owner().snapshot().get("credits",0))
+	var result: Dictionary=next._toll.answer(yes,credits)
+	if not next._objective.set_loma_toll(int(result.status),int(result.debit)):reject(next._objective.error);return null
+	if int(result.status)==TollRules.REFUSED and not next._encounter.set_truce([]):reject(next._encounter.error);return null
+	if not next._radio.queue_scripted(int(result.radio)):reject(next._radio.error);return null
+	return next
+
 func _observe_radio() -> bool:
 	if _radio==null:return true
 	if _probe!=null:return true # Its ordered radio/stage pass precedes mission polling.
 	if _radio is LocalRadio:
 		var reaction: Dictionary=_encounter.career_snapshot().get("provocation",{})
-		if reaction.is_empty():return true
-		var result: Dictionary=_radio.evaluate(int(_briefing.snapshot().world_elapsed_ms),reaction,_random)
-		if result.is_empty():return reject(_radio.error)
-		_radio=result.radio;_radio_events=result.events;_random=result.random_state
-		return true
+		if not reaction.is_empty():
+			var result: Dictionary=_radio.evaluate(int(_briefing.snapshot().world_elapsed_ms),reaction,_random)
+			if result.is_empty():return reject(_radio.error)
+			_radio=result.radio;_radio_events=result.events;_random=result.random_state
+		return _advance_toll()
 	if _mission_context!=null and (_mission_context.advances_campaign() or not _mission_context.contract_context().is_empty()):
 		var elapsed: int=int(_briefing.snapshot().world_elapsed_ms)
 		# When each recipe line started and finished (condition 35).
@@ -3047,6 +3089,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 		state.mining_approach=_approach.snapshot()
 		state.mining_boundary="drill_required" if _mining==null and state.mining_approach.phase=="drill_required" else ""
 	if _approach!=null or _autopilot!=null:state.player_model_basis=_model_basis
+	if _toll!=null:state.loma_toll=_toll.snapshot()
 	if _mining!=null:state.mining_session=_mining.snapshot()
 	if not _mining_audio.is_empty():state.mining_audio=_mining_audio.duplicate(true)
 	if _notices!=null:state.flight_notices=_notices.snapshot()
@@ -3151,10 +3194,12 @@ func fork_for_frame() -> RefCounted:
 	if _local_travel!=null:copy._local_travel=_local_travel.fork()
 	if _fast_forward!=null:copy._fast_forward=_fast_forward.fork_for_frame()
 	copy._near_target=_near_target;copy._camera_ms=_camera_ms;copy._camera_passes=_camera_passes
+	copy._toll=null if _toll==null else _toll.fork()
 	return copy
 
 func clear() -> void:
 	error="";_entry={};_pose=Transform3D.IDENTITY;_shot={};_random={};_reference=Vector3.ZERO
+	_toll=null
 	_alioth=null;_portal=null;_alioth_camera={}
 	_convoy=null;_convoy_camera={};_convoy_career=null;_selected_locations=null
 	_story_bindings=null

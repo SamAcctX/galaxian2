@@ -1015,7 +1015,7 @@ func apply_local_hostility(reputation: Dictionary, forced: bool, rules: Dictiona
 	_state.forced_hostile=forced
 	return true
 
-func apply_free_hostility(reputation: Dictionary,forced: bool,rules: Dictionary) -> bool:
+func apply_free_hostility(reputation: Dictionary,forced: bool,rules: Dictionary,truce:=false) -> bool:
 	if not (_state.get("free_traffic",false) or _state.get("authored_story",false)) or not _state.get("local_combat",false):return reject("Ordinary hostility requires connected faction reactions")
 	# Both small-ship and freighter updates apply the persistent friendly bit
 	# last, after standing and persistent hostility. Damage history is retained.
@@ -1027,6 +1027,8 @@ func apply_free_hostility(reputation: Dictionary,forced: bool,rules: Dictionary)
 		return true
 	var standing:=FreeLife.standing(rules,int(_state.actor_kind),reputation,forced or _state.get("script_hostile",false))
 	if standing.is_empty():return reject("Unsupported ordinary faction standing")
+	# A truce (e.g. a paid toll) holds fire unless this ship was provoked.
+	if truce and not forced and not _state.get("script_hostile",false):standing={"hostile":false,"friendly":false}
 	_state.merge(standing,true);_state.forced_hostile=forced
 	return true
 

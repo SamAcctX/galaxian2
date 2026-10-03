@@ -452,6 +452,8 @@ func rebase_station(equipment: RefCounted,bindings: RefCounted=null) -> bool:
 	var station: int=owned.loadout.station_id
 	if not _adopt_station(station):return false
 	if _state.has("travel_statistics") and not retain_location_visit(station,int(owned.loadout.system_id)):return false
+	# Docking outside Loma ends its toll (assumed: the source clears on leaving).
+	if int(owned.loadout.get("system_id",-1))!=preload("res://src/content/loma_toll_definitions.gd").SYSTEM_ID:_state.progress.erase("loma_toll")
 	return settle_base_medals()
 
 ## Only the real local-arrival transaction uses this authored-world adapter.
@@ -1013,6 +1015,17 @@ func advance_wingmen(milliseconds: Variant) -> bool:
 	if not milliseconds is int or not Numbers.integer(milliseconds,0,2147483647):return reject("Invalid wingman flight duration")
 	var active: Dictionary=_state.get("wingmen",{}).get("active",{})
 	if not active.is_empty():active.remaining_ms=maxi(0,int(active.remaining_ms)-milliseconds)
+	return true
+
+## Loma pirate toll (loma_toll_definitions.gd): 0 clears, 1 paid, 2 refused.
+## Paying debits the toll from the wallet.
+func set_loma_toll(status: int,debit:=0) -> bool:
+	error=""
+	var Toll=preload("res://src/content/loma_toll_definitions.gd")
+	if status not in [0,Toll.PAID,Toll.REFUSED] or debit<0 or (debit>0 and status!=Toll.PAID) or debit>int(_state.get("credits",0)) or not _state.get("progress") is Dictionary:return reject("Invalid Loma toll change")
+	_state.credits=int(_state.credits)-debit
+	if status==0:_state.progress.erase(Toll.PROGRESS_KEY)
+	else:_state.progress[Toll.PROGRESS_KEY]=status
 	return true
 
 ## The flight reports one native casualty when that pilot enters destruction.

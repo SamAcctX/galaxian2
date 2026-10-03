@@ -94,6 +94,9 @@ var _cloak_charge: Control
 var _hacking: Control
 var _cloak_dialog: Control
 var _hint_dialog: Control
+## Loma toll question, then the shortfall notice when the player can't pay.
+var _toll_dialog: Control
+var _toll_notice:=false
 var _hints:=FlightHints.new()
 var _cloak_generation:=0
 var _cloak_failure_serial:=0
@@ -247,6 +250,9 @@ func _ready() -> void:
 	_hint_dialog=GateConfirmationPanel.new();host.add_child(_hint_dialog)
 	_hint_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_hint_dialog.choice_requested.connect(func(_choice):_close_flight_hint())
+	_toll_dialog=GateConfirmationPanel.new();host.add_child(_toll_dialog)
+	_toll_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_toll_dialog.choice_requested.connect(_answer_toll)
 	_launch_dialog=GateConfirmationPanel.new();host.add_child(_launch_dialog)
 	_launch_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_launch_dialog.choice_requested.connect(choose_departure)
@@ -332,8 +338,39 @@ func _close_flight_hint() -> void:
 	if session is FirstFlightSession and not session.set_pause("hint",false,Time.get_ticks_usec()):status.text=session.error;return
 	_hint_dialog.clear();clear_input();present_session()
 
+## Loma toll: when the flight asks, pause on "toll" and show the question.
+func _sync_toll(flight: Dictionary) -> void:
+	if _toll_dialog==null:return
+	if not session is FirstFlightSession:
+		if _toll_dialog.visible:_toll_dialog.clear()
+		return
+	_toll_dialog.set_mobile_layout(_mobile_layout)
+	_toll_dialog.set_active(_focused and is_visible_in_tree() and not _user_paused)
+	var toll: Dictionary=flight.get("loma_toll",{})
+	if _toll_dialog.visible or _hint_dialog.visible or _cloak_dialog.visible or not toll.get("question",false) or session.status!="running" or session.is_paused():return
+	var Toll=preload("res://src/content/loma_toll_definitions.gd")
+	var text: String=Toll.question_text(library.strings[Toll.QUESTION_TEXT],int(toll.percent),int(toll.amount))
+	if not _toll_dialog.present_question(library,bindings,visuals,text,Toll.QUESTION_TEXT):status.text=_toll_dialog.error;return
+	if not session.set_pause("toll",true,Time.get_ticks_usec()):_toll_dialog.clear();status.text=session.error;return
+	_toll_notice=false;clear_input()
+
+func _answer_toll(choice: int) -> void:
+	if not _toll_dialog.visible or not session is FirstFlightSession:return
+	if not _toll_notice:
+		if not session.answer_toll(choice==1):status.text=session.error;return
+		var missing:=int(session.toll_state().get("shortfall",0))
+		if choice==1 and missing>0:
+			var Toll=preload("res://src/content/loma_toll_definitions.gd")
+			_toll_dialog.clear()
+			if _toll_dialog.present_text(library,bindings,visuals,Toll.shortfall_text(library.strings[Toll.SHORTFALL_TEXT],missing),Toll.SHORTFALL_TEXT):
+				_toll_notice=true;_toll_dialog.set_active(_focused and is_visible_in_tree());clear_input();return
+	_toll_notice=false
+	if not session.set_pause("toll",false,Time.get_ticks_usec()):status.text=session.error;return
+	_toll_dialog.clear();clear_input();present_session()
+
 func _sync_booster_indicator(flight: Dictionary={}) -> void:
 	_sync_cloak_ui(flight)
+	_sync_toll(flight)
 	_sync_flight_hints(flight)
 	if _boost_button==null:return
 	var state: Dictionary=flight.get("booster",{}) if session is FirstFlightSession else session.booster_state() if session is MissionSession else {}
@@ -461,6 +498,8 @@ func reset() -> void:
 	if lounge_panel!=null:lounge_panel.clear()
 	if _cloak_dialog!=null:_cloak_dialog.clear()
 	if _hint_dialog!=null:_hint_dialog.clear()
+	if _toll_dialog!=null:_toll_dialog.clear()
+	_toll_notice=false
 	_hints.reset()
 	_cloak_generation=0;_cloak_failure_serial=0
 	cancel_departure()
@@ -752,6 +791,10 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _toll_dialog!=null and _toll_dialog.visible:
+		_controls.discard_modal_event(event)
+		if _focused and is_visible_in_tree():_toll_dialog.handle_event(event)
+		get_viewport().set_input_as_handled();return
 	if _hint_dialog!=null and _hint_dialog.visible:
 		_controls.discard_modal_event(event)
 		if _focused and is_visible_in_tree():_hint_dialog.handle_event(event)

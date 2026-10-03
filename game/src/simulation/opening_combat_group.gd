@@ -53,6 +53,10 @@ var _selected40_world: RefCounted
 var _selected41_world: RefCounted
 var _wingman_primaries:=[]
 var _wingman_systems:=[]
+## Actor kinds holding fire under a truce (e.g. a paid toll). A player hit on
+## one of them breaks the truce for every actor; the owner reads truce_broken().
+var _truce_kinds:=[]
+var _truce_broken:=false
 
 func clear() -> void:
 	error = ""
@@ -75,6 +79,7 @@ func clear() -> void:
 	_selected40_world=null;_selected41_world=null
 	_wingman_primaries=[]
 	_wingman_systems=[]
+	_truce_kinds=[];_truce_broken=false
 
 ## Retain the actual field -> cast -> weapon initialization. This group enables
 ## native targeting and firing, but cannot silently apply incomplete encounter
@@ -612,6 +617,13 @@ func apply_story_hostility(axis: int,value: int) -> bool:
 
 func story_hostility_applied() -> bool:return not _story_standing.is_empty()
 
+## Ordinary-traffic truce: these actor kinds are not hostile unless forced.
+func set_truce(kinds: Array) -> void:
+	_truce_kinds=kinds.duplicate();_truce_broken=false
+
+func truce_kinds() -> Array:return _truce_kinds.duplicate()
+func truce_broken() -> bool:return _truce_broken
+
 ## Story ships that give up keep flying but never fire again.
 func disarm_story_actors(first: int,end: int) -> bool:
 	error=""
@@ -852,6 +864,8 @@ func normal_hit(actor_id: Variant, amount: Variant, nonplayer_source: Variant=fa
 		if staged.is_empty():return {}
 		_provocation=reaction.owner;_contact_random=reaction.random_state
 		result.reactions=reaction.events.duplicate(true)
+	if not nonplayer_source and not _truce_kinds.is_empty() and int(actor.snapshot().get("actor_kind",-1)) in _truce_kinds:
+		_truce_kinds=[];_truce_broken=true
 	if result.destroyed_now and item_id>=0 and not nonplayer_source:
 		_lethal_items=_lethal_items+[{"actor_id":actor_id,"item_id":item_id,"population_group":actor.snapshot().get("population_group","")}]
 	_owned={};_actors=staged;_reputation=history
@@ -882,7 +896,8 @@ func refresh_hostility(actor_id: Variant) -> bool:
 			if not _writable(actor_id).refresh_kappa_hostility(hostility_reputation(),state.forced_hostile[actor_id],state.permanent_hostile[actor_id],_reputation_rules):return reject(_actors[actor_id].error)
 			return true
 		if _training_weapons.has("free_lifecycle") or _training_weapons.get("authored_story",false):
-			if not _writable(actor_id).apply_free_hostility(hostility_reputation(),_provocation.snapshot().forced_hostile[actor_id],_reputation_rules):return reject(_actors[actor_id].error)
+			var truce: bool=int(_actors[actor_id].snapshot().get("actor_kind",-1)) in _truce_kinds
+			if not _writable(actor_id).apply_free_hostility(hostility_reputation(),_provocation.snapshot().forced_hostile[actor_id],_reputation_rules,truce):return reject(_actors[actor_id].error)
 			return true
 		if _training_weapons.has("alioth_lifecycle"):
 			if not _writable(actor_id).refresh_alioth_hostility(_provocation.snapshot().forced_hostile[actor_id]):return reject(_actors[actor_id].error)
@@ -1016,6 +1031,7 @@ func weapon_hit(actor_id: Variant, weapon: Variant) -> Dictionary:
 		result.systems=systems
 		result.reactions=systems.get("reactions",[])+result.get("reactions",[])
 	_owned={};_actors=next._actors;_provocation=next._provocation;_reputation=next._reputation;_contact_random=next._contact_random
+	_truce_kinds=next._truce_kinds;_truce_broken=next._truce_broken
 	return result
 
 func _failed_weapon_hit(message: String) -> Dictionary:
@@ -1052,6 +1068,7 @@ func fork_for_frame() -> RefCounted:
 	copy._training_weapons = _training_weapons
 	copy._wingman_primaries=_wingman_primaries
 	copy._wingman_systems=_wingman_systems
+	copy._truce_kinds=_truce_kinds;copy._truce_broken=_truce_broken
 	copy._activated = _activated
 	copy._phase = _phase
 	copy._event_count = _event_count

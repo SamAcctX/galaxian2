@@ -144,6 +144,15 @@ func advance_wingmen(milliseconds: int) -> bool:
 	if _contracts==null:return reject("Wingman flight time requires the retained career")
 	return true if _contracts.advance_wingmen(milliseconds) else reject(_contracts.error)
 
+## Loma toll career change (contract_session.set_loma_toll) on a private copy.
+func set_loma_toll(status: int,debit:=0) -> bool:
+	error=""
+	if _contracts==null:return reject("The Loma toll requires the retained career")
+	var candidate: RefCounted=_contracts.fork()
+	if not candidate.set_loma_toll(status,debit):return reject(candidate.error)
+	_contracts=candidate
+	return true
+
 ## Stable departure indices make a death notification idempotent even when two
 ## hired pilots have the same display name. New departures own a new ledger.
 func record_wingman_loss(pilot: RefCounted) -> bool:
