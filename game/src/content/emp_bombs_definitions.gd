@@ -24,8 +24,25 @@ const SHOCK = {"item_id":226,"kind":42,"glow_model_id":18996,"glow_scale":50000.
 ## Supernova Fireworks: an unguided bomb with no glow attachment that bursts
 ## as the firework look-at model (explosion type 13) at a quarter of its size.
 ## It has its own burst family (43). Assumptions: sound 2280 is its launch
-## sound; the burst is silent; the flying particle trail is not drawn.
+## sound; the burst is silent.
 const FIREWORKS = {"item_id":232,"model_id":27338,"family":43,"burst_model_id":16809,"burst_scale":0.25,"launch_sound":2280}
+
+## While it flies, the Fireworks bomb trails sprite system 47: the shared
+## rocket-trail sprite settings (system 12) drawn with the firework sparks
+## sheet (material 27321, 4x4 animated cells). Sparks start 700 units behind
+## the bomb and stream backwards at 6000 units/s; each lives 1.25 s, grows
+## 250 units/s from 250-300 and fades white to transparent. Emission stops at
+## the burst; live sparks finish their lifetime.
+const FIREWORKS_TRAIL = {"preset_id":47,"material_id":27321,"flags":0x02000021,"capacity":76,
+	"size_jitter":50,"lifetime_ms":1250,"even_spacing":1,"fade_in_ms":150,"size_growth_per_second":250,
+	"scatter_xz":0,"scatter_y":0,"velocity_scatter":0,"animation_frames":16,"size":250.0,
+	"emission_per_second":60.0,"relative_velocity_factor":0.0,"local_velocity_z":-6000.0,
+	"local_offset_y":0.0,"local_offset_z":-700.0,"local_offset_z_jitter":0.0,
+	"start_rgba":[255,255,255,255],"end_rgba":[255,255,255,0],"uv_rect":[0.0,0.0,0.25,0.25]}
+
+## The sprite trail an area bomb emits while flying (empty when it has none).
+static func flight_trail(item_id: int) -> Dictionary:
+	return FIREWORKS_TRAIL.duplicate(true) if item_id==int(FIREWORKS.item_id) else {}
 
 static func available(bindings: RefCounted) -> bool:
 	return bindings!=null and parameters(bindings.mido_travel.get("emp_bombs"))

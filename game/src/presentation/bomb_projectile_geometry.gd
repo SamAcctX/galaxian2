@@ -9,6 +9,8 @@ const Sampler=preload("res://src/presentation/scenery_animation.gd")
 const Additive=preload("res://src/presentation/animated_additive_model.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
 const Vectors=preload("res://src/simulation/source_vectors.gd")
+const Definitions=preload("res://src/content/emp_bombs_definitions.gd")
+const Trail=preload("res://src/presentation/bomb_trail_geometry.gd")
 var error:=""
 var models: Array[Node3D]=[]
 var _samplers:=[]
@@ -17,6 +19,8 @@ var _weapon:={}
 var _descriptor:={}
 var _generation: RefCounted
 var _revision:=0
+## The sprite trail of a bomb that emits one in flight (Fireworks), else null.
+var trail: Node3D
 
 func build(bomb: Dictionary,library: RefCounted,visuals: RefCounted,bindings: RefCounted) -> bool:
 	clear()
@@ -47,6 +51,11 @@ func build(bomb: Dictionary,library: RefCounted,visuals: RefCounted,bindings: Re
 			for instance in model.instances:instance.top_level=true
 		_samplers.append(sampler)
 	resources.clear();_descriptor=descriptor;_weapon=bomb.weapon.duplicate(true);_generation=RefCounted.new()
+	var preset:=Definitions.flight_trail(int(bomb.weapon.get("item_id",-1)))
+	if not preset.is_empty():
+		var built:=Trail.new();add_child(built)
+		if not built.configure(preset,bindings,visuals,int(bomb.get("elapsed_ms",0))):return reject(built.error)
+		trail=built
 	return true
 
 func prepare(bomb: Dictionary) -> Dictionary:
@@ -65,7 +74,7 @@ func prepare(bomb: Dictionary) -> Dictionary:
 		if not Numbers.integer(clocks[index].get("time_ms"),clocks[index].start_ms,maximum) or not clocks[index].get("playing") is bool:return failed("Invalid bomb animation time")
 	var frame:={"generation":_generation,"revision":_revision+1,"visible":false}
 	var shot: Dictionary=bomb.shot
-	if shot.is_empty() or shot.get("phase")=="detonated":return frame
+	if shot.is_empty() or shot.get("phase")=="detonated":return _with_trail(frame,bomb,null)
 	if shot.get("phase")!="flying" or not shot.get("position") is Vector3 or not shot.position.is_finite() or not shot.get("velocity") is Vector3 or not shot.velocity.is_finite():return failed("Bomb geometry lost its finite flying body")
 	var forward:=Vectors.normalized(shot.velocity)
 	var right:=Vectors.normalized(Vectors.cross(Vector3.UP,forward))
@@ -84,12 +93,22 @@ func prepare(bomb: Dictionary) -> Dictionary:
 		if rows.is_empty():return failed(_surface.error)
 		samplers.append(sampler);surfaces.append(rows)
 	frame.visible=true;frame.samplers=samplers;frame.surfaces=surfaces
+	return _with_trail(frame,bomb,pose)
+
+## The trail follows the bomb's own simulation clock, before and after the burst.
+func _with_trail(frame: Dictionary,bomb: Dictionary,pose: Variant) -> Dictionary:
+	if trail==null:return frame
+	var prepared: Dictionary=trail.prepare(bomb,pose)
+	if prepared.is_empty():return failed(trail.error)
+	frame.trail=prepared
 	return frame
 
 func commit(frame: Dictionary) -> void:
 	if _generation==null or frame.get("generation")!=_generation or frame.get("revision")!=_revision+1:error="Bomb geometry cannot commit a stale frame";return
 	_revision+=1
-	visible=frame.visible
+	# A trail outlives the body, so its parent stays shown.
+	visible=frame.visible or trail!=null
+	if trail!=null:trail.commit(frame.get("trail",{}))
 	if models.is_empty():return
 	for model in models:model.visible=frame.visible
 	if not frame.visible:return
@@ -99,6 +118,6 @@ func commit(frame: Dictionary) -> void:
 
 func clear() -> void:
 	for child in get_children():child.free()
-	models.clear();_samplers=[];_surface=null;_weapon={};_descriptor={};_generation=null;_revision=0;error=""
+	models.clear();trail=null;_samplers=[];_surface=null;_weapon={};_descriptor={};_generation=null;_revision=0;error=""
 func reject(message: String) -> bool:clear();error=message;return false
 func failed(message: String) -> Dictionary:error=message;return {}
