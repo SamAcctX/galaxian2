@@ -206,6 +206,17 @@ func open_free_transfers() -> bool:
 	_state.free_transfers=true
 	return true
 
+## A ship parked at the owned club can be sold for its listed price; it then
+## leaves the storage (original hangar "Sell" on parked rows).
+func sell_parked_ship(index: int,credits: int) -> bool:
+	error=""
+	if not _data.get("free_transfers",false) or not _data.get("market_ships") is Array or index<0 or index>=_data.market_ships.size():return reject("Select a parked ship to sell")
+	var price:=int(_data.market_ships[index].unit_price)
+	if price<0 or credits<0 or credits+price>2147483647:return reject("The ship sale exceeds the supported wallet range")
+	var next: Dictionary=_state
+	next.market_ships.remove_at(index);next.credit_delta=price;next.transactions+=1
+	return true
+
 ## Elsewhere, a bought ship may send the former one to the club ("Keep").
 ## stored: the ship types already parked there (one per type).
 func offer_kaamo_keep(stored: Array) -> void:

@@ -182,7 +182,18 @@ func _add_ship_offer(index: int) -> void:
 	var detail:=Label.new();detail.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART;copy.add_child(detail)
 	var button:=Button.new();line.add_child(button);_buttons.append(button)
 	button.pressed.connect(func():_request_ship(index));_style_button(button)
-	_ship_offers[index]={"node":row,"name":name,"detail":detail,"button":button}
+	# Parked ships at the owned Kaamo Club can also be sold (original 323).
+	var sell:=Button.new();line.add_child(sell);_buttons.append(sell)
+	sell.pressed.connect(func():_request_ship_sale(index));_style_button(sell)
+	_ship_offers[index]={"node":row,"name":name,"detail":detail,"button":button,"sell":sell}
+
+func _request_ship_sale(index: int) -> void:
+	if not _active or not visible or not _pending_replace.is_empty() or not _state.get("free_transfers",false) or index<0 or index>=_state.get("market_ships",[]).size():return
+	var offer: Dictionary=_state.market_ships[index]
+	_pending_replace={"sell_index":index,"offer":offer.duplicate(true),"loadout":_state.loadout.duplicate(true)}
+	_replacement.title=_labels.sell
+	_replacement.dialog_text=_labels.sell_question+"\n"+_ship_names[int(offer.ship_id)]+"\n%d$"%int(offer.unit_price)
+	_replacement.popup_centered(Vector2i(600 if _mobile else 440,180));_refresh()
 
 func _request_ship(index: int) -> void:
 	if not _active or not visible or not _pending_replace.is_empty() or index<0 or index>=_state.get("market_ships",[]).size():return
@@ -203,6 +214,9 @@ func _confirm_replacement() -> void:
 		var entries: Array=_blueprints.get("entries",[]).filter(func(row):return row.item_id==pending.blueprint)
 		if entries.is_empty() or entries[0]!=pending.entry:return
 		blueprint_action_requested.emit("supply_blueprint",pending.blueprint,pending.material_id,pending.quantity)
+	elif pending.has("sell_index"):
+		if pending.sell_index>=_state.get("market_ships",[]).size() or _state.market_ships[pending.sell_index]!=pending.offer:return
+		action_requested.emit("sell_ship",pending.sell_index)
 	elif pending.has("ship_index"):
 		if pending.ship_index>=_state.get("market_ships",[]).size() or _state.market_ships[pending.ship_index]!=pending.offer:return
 		if _state.get("kaamo_keep") is Array:
@@ -269,7 +283,7 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted=nu
 			if ship_base+id<library.strings.size():ship_names[id]=library.strings[ship_base+id]
 	var label_ids:={"hangar":166,"shop":184,"cargo":183,"ship":182,"close":169,"buy":351,"mount":270,"unmount":271,"sell":319,"instruction":1724,"protected":312,"overfilled":193,"blank":173,"primary":254,"secondary":255,"turret":256,"equipment":258,"commodities":259}
 	label_ids.merge({"buy_ship":293,"same_ship":318,"ship_passengers":325,"insufficient":192})
-	label_ids.merge({"keep_question":316,"keep_exists":317,"keep_sell":319,"keep_keep":320,"use":321,"switch":322})
+	label_ids.merge({"keep_question":316,"keep_exists":317,"keep_sell":319,"keep_keep":320,"use":321,"switch":322,"sell_question":323})
 	label_ids.merge({"blueprints":261,"available_blueprints":262,"finished":263,"at":264,"missing":265,"owned":273,"store":185,"start_production":201,"shipping":277,"constructed_here":200,"constructed_there":199})
 	for key in label_ids:
 		var text_id: int=label_ids[key]
@@ -416,6 +430,7 @@ func _refresh() -> void:
 		row.detail.text="%s %d   %s %d   %s %d   %s %d   %s %dt"%[_labels.primary,hull.primary_slots,_labels.secondary,hull.secondary_slots,_labels.turret,hull.turret_slots,_labels.equipment,hull.equipment_slots,_labels.cargo,hull.cargo_capacity]
 		# Parked ships at the owned Kaamo Club are switched to with "Use".
 		row.button.text=_labels.use if _state.get("free_transfers",false) else _labels.buy;row.button.disabled=not controls
+		row.sell.text=_labels.sell;row.sell.visible=_state.get("free_transfers",false);row.sell.disabled=not controls
 		row.node.add_theme_stylebox_override("panel",_row_styles[false])
 		for label in [row.name,row.detail]:label.add_theme_font_size_override("font_size",20 if _mobile else 15)
 	if _state.loadout.has("ship_instance"):_ship_name.text+="   %d$"%int(_state.loadout.ship_instance.unit_price)

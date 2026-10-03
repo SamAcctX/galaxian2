@@ -614,6 +614,9 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 		var passengers: Variant=_state.get("passengers")
 		if not Numbers.integer(passengers,0,2147483647) or passengers!=ContractProgress.occupied_passengers(_state):return _shopping_reject("Ship exchange lost the retained contract's passengers")
 		if not inventory.purchase_ship(bindings,cat,item_id,_state.credits,passengers,action=="keep_ship"):return _shopping_reject(inventory.error)
+	elif action=="sell_ship":
+		if owned.get("market_ships")!=_lounges.ship_stock(_state.station_id):return _shopping_reject("The station's ship quote changed")
+		if not inventory.sell_parked_ship(item_id,_state.credits):return _shopping_reject(inventory.error)
 	elif action in ["mount","unmount","replace"]:
 		# A retained delivery does not lock unrelated equipment. Its actual
 		# passengers must reach the shared occupied-berth guard; never assume
@@ -627,7 +630,7 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 	var accepted: Dictionary=inventory.snapshot()
 	var locations: RefCounted=_lounges.fork()
 	if not locations.replace_item_stock(bindings,cat,_state.station_id,owned.stock,accepted.stock):return _shopping_reject(locations.error)
-	if action in ["buy_ship","keep_ship"] and not locations.replace_ship_stock(bindings,cat,_state.station_id,owned.market_ships,accepted.market_ships):return _shopping_reject(locations.error)
+	if action in ["buy_ship","keep_ship","sell_ship"] and not locations.replace_ship_stock(bindings,cat,_state.station_id,owned.market_ships,accepted.market_ships):return _shopping_reject(locations.error)
 	var credits:=credit_balance(_state.credits,accepted.credit_delta,_rules.delivery_results)
 	_lounges=locations;_state.credits=credits
 	if accepted.get("free_transfers",false):_state.progress.kaamo_storage={"items":accepted.stock.duplicate(true),"ships":accepted.market_ships.duplicate(true)}

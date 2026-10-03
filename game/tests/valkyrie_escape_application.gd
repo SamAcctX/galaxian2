@@ -1628,6 +1628,18 @@ func fly_kaamo_siege() -> void:
 	check(app.save_station(false) and app.load_station(),"Saving the modded ship failed: "+app._save_notice.text)
 	var resumed: Dictionary=app.session.station_owner().snapshot()
 	check(resumed.loadout.ship_instance.upgrade_tags==tags and resumed.contracts.progress.kaamo_storage.ships.size()==1,"Fresh Resume lost the mods or the parked ship")
+	# A parked ship can be sold from the club hangar for its listed price.
+	var parked: Dictionary=resumed.contracts.progress.kaamo_storage.ships[0]
+	var purse:=int(resumed.contracts.credits)
+	check(app.equipment_action("open"),"The club hangar did not reopen: "+app.status.text)
+	var quote: Array=app.session.station_owner().snapshot().get("equipment",{}).get("market_ships",[])
+	var index:=quote.find(parked)
+	check(index>=0,"The parked ship is not listed in the club hangar: %s"%str(quote))
+	await capture_free_application("kaamo-parked")
+	check(index>=0 and app.equipment_action("sell_ship",index),"Selling the parked ship failed: "+app.status.text)
+	var sold: Dictionary=app.session.station_owner().snapshot()
+	check(int(sold.contracts.credits)==purse+int(parked.unit_price) and sold.contracts.progress.kaamo_storage.ships.is_empty(),"Selling the parked ship paid %d (expected %d) or kept it"%[int(sold.contracts.credits)-purse,int(parked.unit_price)])
+	check(app.equipment_action("close") and app.save_station(false) and app.load_station() and app.session.station_owner().snapshot().contracts.progress.kaamo_storage.ships.is_empty(),"Fresh Resume brought the sold ship back")
 
 ## Waits for a club talk opening with first_text, pages through it and captures it.
 ## Pirate base at station 1: the outpost and five sleeping guards, a guard's
