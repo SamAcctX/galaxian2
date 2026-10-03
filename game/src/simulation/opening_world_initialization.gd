@@ -339,7 +339,8 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, data: Dictionary, 
 		var equipment_type: int=catalogues.tables.items[int(item.item_id)].arrays[2][5]
 		# The spectral filter's optional group (gas clouds, sort 33) is built
 		# by the gas clouds owner, not here.
-		if equipment_type==33:continue
+		# Sentry guns (sort 39) are placed by the secondary weapon owner.
+		if equipment_type==33 or equipment_type==39:continue
 		if shared.absent_equipment_types.any(func(value): return int(value)==equipment_type):
 			return reject("Initial equipment does not exclude the optional population")
 	for hull in hulls:
