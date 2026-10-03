@@ -28,6 +28,11 @@ const MAX_SELECTION_DRAWS:=65536
 ## hold unchanged to the end of Supernova (162).
 const LAST_CURSOR:=162
 
+## Station 120 after the Supernova ending keeps the career's all-medals result.
+static func medal_station(station_id: Variant,cursor: Variant) -> bool:
+	var ending: Dictionary=ValkyrieWorlds.SUPERNOVA_END_SHIPS
+	return int(station_id)==int(ending.station_id) and int(cursor)>int(ending.after_cursor)
+
 static func available(bindings: RefCounted) -> bool:return Definitions.available(bindings)
 
 func prepare(bindings: RefCounted,cat: RefCounted,context: Variant,random_state: Variant,unix_seconds: Variant) -> bool:
@@ -46,8 +51,10 @@ func prepare(bindings: RefCounted,cat: RefCounted,context: Variant,random_state:
 			if not DeepScience.available(bindings):return reject("This special location's stock is not supported yet")
 			deep_science=bindings.get("deep_science_stock")
 			if int(context.station_id)!=int(deep_science.station_id) or not context.get("all_base_medals_gold") is bool or not Numbers.integer(context.get("campaign_cursor"),int(deep_science.first_cursor),LAST_CURSOR):return reject("Deep Science stock requires its supported cursor and retained base-medal result")
-		if context.size()!=8+int(not deep_science.is_empty()) or not Numbers.integer(context.get("campaign_cursor"),int(base.first_cursor),LAST_CURSOR) or not Numbers.integer(context.get("ship_price_percent"),-100,1000):return reject("Base station stock requires its supported cursor and retained ship price modifier")
+		if context.size()!=8+int(not deep_science.is_empty())+int(context.has("all_supernova_medals")) or not Numbers.integer(context.get("campaign_cursor"),int(base.first_cursor),LAST_CURSOR) or not Numbers.integer(context.get("ship_price_percent"),-100,1000):return reject("Base station stock requires its supported cursor and retained ship price modifier")
 		var expansion: bool=ValkyrieWorlds.stock_station(bindings,int(context.station_id))
+		# Stock cached before the ending ships were added has no medal key.
+		if context.has("all_supernova_medals") and (not context.all_supernova_medals is bool or not medal_station(context.station_id,context.campaign_cursor)):return reject("Unsupported retained medal result")
 		if not expansion and (int(context.station_id)>int(base.last_station_id) or int(station.system_id)>int(base.last_system_id)):return reject("This special location's stock is not supported yet")
 	if not context.get("valkyrie_owned") is bool or not context.get("supernova_owned") is bool or not Difficulty.valid(context.get("difficulty")):return reject("Retain explicit expansion ownership and game difficulty")
 	for key in ["energy_availability_percent","missile_availability_percent"]:
@@ -151,7 +158,8 @@ func _sample_ships(cat: RefCounted) -> Array:
 		for index in rules.owned_supernova_extras.size():
 			var extra: Dictionary=rules.owned_supernova_extras[index]
 			if _faction==int(extra.faction) and _draw(int(extra.draw_bound))==0:result.append(_ship_offer(cat,int(extra.ship_id),int(extra.faction_id)))
-			if index==0 and int(_context.station_id)==int(ending.station_id) and int(_context.campaign_cursor)>int(ending.after_cursor):
+			if index==0 and _context.has("all_supernova_medals"):
+				if _context.get("all_supernova_medals",false):result.append(_ship_offer(cat,int(ending.all_medals_ship[0]),int(ending.all_medals_ship[1])))
 				for ship in ending.ships:result.append(_ship_offer(cat,int(ship[0]),int(ship[1])))
 	var special: Dictionary=rules.system_extras
 	if _system==int(special.system_id):

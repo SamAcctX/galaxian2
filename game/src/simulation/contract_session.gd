@@ -734,7 +734,8 @@ func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,st
 	var candidate: RefCounted=_lounges.fork()
 	var context:={"station_id":station_id,"campaign_cursor":_state.campaign_cursor,"rank":_state.rank,"reputation":_state.reputation.duplicate(true)}
 	var medals:=LoungeCache.Medals.stock_progress(_state,blueprint_state())
-	if not candidate.select_location(bindings,cat,library,context,settings,random_state,unix_seconds,station_context,medals):return reject(candidate.error)
+	var all_medals: bool=LoungeCache.Medals.all_base_gold(int(_state.campaign_cursor),medals)==true and EliteMedals.earned(_state).size()==EliteMedals.TOTAL-EliteMedals.FIRST
+	if not candidate.select_location(bindings,cat,library,context,settings,random_state,unix_seconds,station_context,medals,all_medals):return reject(candidate.error)
 	var source: RefCounted=_void_source
 	var selected_entry: RefCounted
 	# The native arrival path represents the set-location wrapper. An unchanged

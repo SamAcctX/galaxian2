@@ -36,7 +36,7 @@ func configure(bindings: RefCounted) -> bool:
 		_state.current_station_id=-1;_state.random={}
 	return true
 
-func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: Variant,settings: Variant,random_state: Variant,unix_seconds: Variant,station_context: RefCounted=null,medal_progress: Dictionary={}) -> bool:
+func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: Variant,settings: Variant,random_state: Variant,unix_seconds: Variant,station_context: RefCounted=null,medal_progress: Dictionary={},all_medals:=false) -> bool:
 	_read={}
 	error=""
 	if _state.is_empty() or not Stock.available(bindings) or cat==null or library==null:return reject("This cache cannot generate early station stock")
@@ -68,6 +68,7 @@ func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,co
 		var gold: Variant=Medals.all_base_gold(context.campaign_cursor,medal_progress)
 		if gold==null:return reject("Deep Science requires the career's retained medal progress")
 		stock_context.all_base_medals_gold=gold
+	if Stock.medal_station(context.station_id,context.campaign_cursor):stock_context.all_supernova_medals=all_medals
 	var stock:=Stock.new()
 	if not stock.prepare(bindings,cat,stock_context,random.snapshot(),unix_seconds):return reject(stock.error)
 	var contacts:=Contacts.new()
