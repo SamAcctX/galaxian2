@@ -756,14 +756,21 @@ const KAAMO:={"station_id":108,"model":14243,"name_text_id":430,"speaker_id":4,
 ## Pirate Outpost ~200 km out with five sleeping guards. A guard waking calls
 ## 424-426, the outpost's end 427-429; the Nivelians then pay 20,000 (431).
 ## Progress "pirate_bases" keeps the destroyed bases as bits.
-## Assumptions: the thanks plays as a radio line right after the outpost falls
-## (the original shows it at the next docking); no loot crate; the station
-## stays open while the base stands.
+## While it stands its station is unmanned (UNMANNED_STATION). Its fixed loot
+## drops in a container. Assumption: the thanks plays as a radio line right
+## after the outpost falls (the original shows it at the next docking).
 # Each base drops its fixed loot ([item, quantity]) when destroyed.
 const PIRATE_BASES:={1:{"bit":1,"point":Vector3(-200000,-100000,50000),"loot":[45,20]},33:{"bit":2,"point":Vector3(50000,200000,-100000),"loot":[48,2]},
 	47:{"bit":4,"point":Vector3(140000,-150000,7000),"loot":[58,2]},86:{"bit":8,"point":Vector3(170000,-170000,10000),"loot":[19,2]}}
 const PIRATE_BASE:={"model":14243,"name_text_id":430,"guards":5,"jitter":10000,"pirate_speaker":9,"nivelian_speaker":65,
 	"wake":[[424,590],[425,591],[426,592]],"destroyed":[[427,593],[428,594],[429,595]],"thanks":[431,589],"reward":20000}
+
+## Docking where an outpost still stands: the station is unmanned. Security
+## says so (423, voice 586) and the ship leaves again. Not built: the original
+## shows this as a plain window titled "Security" (1598).
+const UNMANNED_STATION:={"speaker_id":16,"text_id":423,"voice_event_id":586}
+static func unmanned_station(bindings: RefCounted,station_id: int,progress: Dictionary) -> bool:
+	return Campaign.available(bindings) and PIRATE_BASES.has(station_id) and not (int(progress.get("pirate_bases",0)) & int(PIRATE_BASES[station_id].bit))
 
 static func _pirate_base_job(cursor: int,station_id: int,progress: Dictionary) -> Dictionary:
 	if not PIRATE_BASES.has(station_id):return {}
@@ -824,7 +831,8 @@ static func story_job(bindings: RefCounted,cursor: Variant,station_id: Variant,p
 		if not siege.is_empty():return siege
 	if cursor is int and station_id is int and Campaign.saved_story(bindings,cursor) and _wanted_entry(cursor)>=0:return _wanted_job(cursor,station_id,progress)
 	var job:=_story_flight_job(bindings,cursor,station_id,progress)
-	if job.is_empty() and cursor is int and station_id is int and Campaign.saved_story(bindings,cursor):job=_pirate_base_job(cursor,station_id,progress)
+	# The outposts stand from a new game: any free-flight career meets them.
+	if job.is_empty() and cursor is int and station_id is int and Campaign.available(bindings) and load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor):job=_pirate_base_job(cursor,station_id,progress)
 	# Where no story flight waits, a Most Wanted criminal may (bounties).
 	if job.is_empty() and cursor is int and station_id is int and Campaign.saved_story(bindings,cursor):job=_bounty_job(cursor,station_id,progress)
 	# Otherwise Carla may nag once per stage (NAG_CALLS).

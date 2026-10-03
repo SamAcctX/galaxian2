@@ -1685,6 +1685,16 @@ func fly_pirate_base() -> void:
 	check(app.load_station() and int(app.session.station_owner().snapshot().contracts.progress.get("pirate_bases",0)) & bit,"Fresh Resume lost the destroyed base")
 	if failures or not await depart_to(base):return
 	check(not app.session.flight_owner()._encounter.combat_snapshot().actors.any(func(actor):return actor.get("static_object",false)),"The destroyed base came back")
+	# With the base gone the station is manned again; with it standing (the
+	# kill undone in the save) Security turns the ship away at docking.
+	if failures or not await dock_application():return
+	check(not app.session.snapshot().dialogue.get("visible",false),"The freed station still refused docking")
+	if failures or not seed_pirate_bases(int(app.session.station_owner().snapshot().contracts.progress.get("pirate_bases",0)) & ~bit):return
+	if not await kaamo_talk(423,1,"pirate-base-unmanned"):return
+	for tick in 120:
+		if app.session.has_method("flight_owner"):break
+		app.present_session();await process_frame
+	check(app.session.has_method("flight_owner") and app.session.flight_owner()._encounter!=null and app.session.flight_owner()._encounter.combat_snapshot().actors.any(func(actor):return actor.get("static_object",false)),"The unmanned station did not send the ship back to its outpost")
 
 ## Expansion weapons in one flight: fitted in the hangar from the hold, then
 ## the cluster salvo, the Shock Blast and the new guns fire, with captures.
@@ -1900,6 +1910,19 @@ func collect_base_loot(base: int) -> bool:
 		if tick%10==0:await process_frame
 	print("PIRATE BASE loot ",loot," held ",before," -> ",held.call())
 	check(held.call()==before+int(loot[1]),"The outpost's loot did not reach the hold")
+	return failures==0
+
+## Test shortcut: set the career's destroyed-base bits.
+func seed_pirate_bases(mask: int) -> bool:
+	var file:=StationSaveFile.new();var path: String=app.station_save_path()
+	var document: Dictionary=file.read_document(path)
+	if document.is_empty():check(false,file.error);return false
+	for part in [document.station,document.career]:
+		if part.get("progress") is Dictionary:part.progress.pirate_bases=mask
+	var bytes:=file.encode(document)
+	if bytes.is_empty() or not file._write(path,bytes):check(false,file.error);return false
+	check(app.load_station(),"The base-seeded save did not load: "+app._save_notice.text)
+	app.set_player_mode(true);app.show();app.present_session()
 	return failures==0
 
 func pirate_base_station() -> int:

@@ -1075,6 +1075,8 @@ func station_navigation(action: String) -> void:
 	if not session.navigate(action,station_panel,_save_station_candidate):
 		status.text=session.error;return
 	present_session()
+	# An unmanned station's notice launches the ship as it closes.
+	if not session is StationSession:return
 	if action=="next" and not recipe_checkpoint:_autosave_station()
 	# The original reloads the station after a story talk, so a talk now
 	# ready at this same station (e.g. Kothar 74 -> 75 -> 76) opens at once.
@@ -1355,6 +1357,16 @@ func choose_gate_confirmation(result: int,now_microseconds: int=-1) -> bool:
 	var now:=Time.get_ticks_usec() if now_microseconds<0 else now_microseconds
 	if not session.choose_gate_confirmation(result,now):status.text=session.error;return false
 	gate_panel.clear();clear_input();present_session();return true
+
+## An unmanned station sends the ship straight back out, without the
+## departure question.
+func _force_departure() -> bool:
+	var cat:=Catalogues.new()
+	if not cat.open(library):return transition_error(cat.error)
+	bank_career_stats()
+	_launch_packet=session.prepare_departure(bindings,cat)
+	if _launch_packet.is_empty():return transition_error(session.error)
+	return enter_first_flight(Time.get_ticks_usec())
 
 func request_departure() -> bool:
 	if not session is StationSession or not _focused or not is_visible_in_tree() or session.is_paused() or not _launch_packet.is_empty():return false
@@ -1878,6 +1890,7 @@ func present_session() -> void:
 			if not _begin_campaign_story():return
 		if not session.poll_wingman_farewell(station_panel,_save_station_candidate):transition_error(session.error);return
 		if not session.poll_kaamo(station_panel,_save_station_candidate):transition_error(session.error);return
+		if session.take_forced_departure() and not _force_departure():return
 	# Medal notices belong to the idle station; one left open at launch waits for the next dock.
 	if not session is StationSession and medal_notice.visible:medal_notice.clear()
 	if session is MissionSession:

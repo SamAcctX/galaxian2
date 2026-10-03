@@ -75,7 +75,19 @@ func run():
 	var cat:=Catalogues.new()
 	check(cat.open(lib),cat.error)
 	if not failures:turret(lib,bindings,cat,data)
+	pirate_bases(bindings)
 	finish()
+
+## The outposts stand from a new game: base-game careers meet them too, and
+## their stations stay unmanned until each is destroyed.
+func pirate_bases(bindings: RefCounted) -> void:
+	var Flights=load("res://src/content/valkyrie_flight_definitions.gd")
+	var Campaign=load("res://src/content/valkyrie_campaign_definitions.gd")
+	# Without the expansion content there is no outpost, so nothing may block docking.
+	check(not Campaign.available(bindings) or not Flights.story_job(bindings,20,33,{}).is_empty(),"Expansion pack lost its pirate base")
+	check(Flights.story_job(bindings,20,33,{"pirate_bases":2}).get("pirate_base")==null,"A destroyed base returned")
+	var live: bool=Campaign.available(bindings)
+	check(Flights.unmanned_station(bindings,33,{})==live and not Flights.unmanned_station(bindings,33,{"pirate_bases":2}) and Flights.unmanned_station(bindings,1,{"pirate_bases":2})==live and not Flights.unmanned_station(bindings,4,{}),"Unmanned stations do not follow the outposts")
 
 ## 80's weak-point turret: picks the player within 50 km every 3 s, turns at
 ## one turn per 4.096 s, fires only on aim, with its own 1.7x gun.

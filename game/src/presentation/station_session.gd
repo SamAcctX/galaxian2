@@ -220,6 +220,8 @@ func poll_wingman_farewell(panel: Control,checkpoint: Callable=Callable()) -> bo
 const Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
 var _kaamo:={}
 var _kaamo_checked:=false
+## Set when a docking talk sends the ship away (an unmanned station).
+var _forced_departure:=false
 
 ## The Kaamo Club speaks once per docking, like the crew farewell: its talk,
 ## the "not ready" notice or the Yes/No purchase offer.
@@ -230,6 +232,12 @@ func poll_kaamo(panel: Control,checkpoint: Callable=Callable()) -> bool:
 	if before.dialogue.visible or before.get("hangar_open",false) or not before.has("contracts") or not before.contracts.get("pending_result",{}).is_empty():return true
 	_kaamo_checked=true
 	var event:=Kaamo.docking_event(int(before.loadout.station_id),before.contracts.get("progress",{}),int(before.contracts.get("credits",0)),before.cargo.get("entries",[]))
+	var StoryFlights=load("res://src/content/valkyrie_flight_definitions.gd")
+	if event.is_empty() and StoryFlights.unmanned_station(_bindings,int(before.loadout.station_id),before.contracts.get("progress",{})):
+		var line: Dictionary=StoryFlights.UNMANNED_STATION
+		if not _start_kaamo(panel,[[int(line.speaker_id),int(line.text_id),int(line.voice_event_id)]],false):return false
+		_kaamo.depart=true
+		return true
 	if event.is_empty():return true
 	var candidate: RefCounted=_world.fork()
 	if event=="talk":
@@ -239,6 +247,11 @@ func poll_kaamo(panel: Control,checkpoint: Callable=Callable()) -> bool:
 	if not _start_kaamo(panel,pages,event=="offer"):return false
 	_world=candidate;_generation+=1
 	return true
+
+## True once, after an unmanned station's notice closes: launch at once.
+func take_forced_departure() -> bool:
+	var pending:=_forced_departure;_forced_departure=false
+	return pending
 
 func _start_kaamo(panel: Control,pages: Array,offer: bool) -> bool:
 	var events:=[];var speakers:=[]
@@ -280,7 +293,8 @@ func _navigate_kaamo(action: String,panel: Control,checkpoint: Callable) -> bool
 		_kaamo.index-=1;return _show_kaamo(panel)
 	elif int(_kaamo.index)<_kaamo.lines.size()-1:
 		_kaamo.index+=1;return _show_kaamo(panel)
-	else:_kaamo={}
+	else:
+		_forced_departure=_kaamo.get("depart",false);_kaamo={}
 	_wingman_notice={};_generation+=1;audio.present(-1)
 	return true if panel.present(snapshot()) else reject(panel.error)
 
@@ -643,7 +657,7 @@ func clear() -> void:
 	_visuals=null;lounge_scene=null;station_sky=null;station_planets=null;_environment=null;_hangar_environment=null;_hangar_lights=[]
 	lighting=null;reflection=null
 	_story_elapsed_ms=0
-	_wingman_notice={};_kaamo={};_kaamo_checked=false
+	_wingman_notice={};_kaamo={};_kaamo_checked=false;_forced_departure=false
 
 func _clear_presentations() -> void:
 	if is_instance_valid(_blueprint_pickup):_blueprint_pickup.free()
