@@ -26,14 +26,15 @@ func build(bomb: Dictionary,library: RefCounted,visuals: RefCounted,bindings: Re
 	if not descriptor.is_empty() and descriptor.models.is_empty() and bomb.get("visuals",{}).get("models",[]).is_empty():
 		_descriptor=descriptor;_weapon=bomb.weapon.duplicate(true);_generation=RefCounted.new()
 		return true
-	if descriptor.is_empty() or bomb.get("visuals",{}).get("models",[]).size()!=2:return reject("Prepare the bomb's original model clocks before geometry")
-	for index in 2:
+	# A body and its glow, or a body alone (Fireworks).
+	if descriptor.is_empty() or bomb.get("visuals",{}).get("models",[]).size()!=descriptor.models.size():return reject("Prepare the bomb's original model clocks before geometry")
+	for index in descriptor.models.size():
 		for key in ["model_id","resource","start_ms","end_ms","loop"]:
 			if bomb.visuals.models[index].get(key)!=descriptor.models[index][key]:return reject("Bomb animation metadata changed")
 	var resources:=Models.new()
 	if not resources.prepare(descriptor.models.map(func(row):return row.resource),library,visuals,bindings,"high",false,true):return reject(resources.error)
 	_surface=Additive.new()
-	for index in 2:
+	for index in descriptor.models.size():
 		var model: Node3D=resources.instantiate(descriptor.models[index].resource)
 		if model==null:resources.clear();return reject("Original bomb model could not be instantiated")
 		models.append(model);add_child(model);model.hide()
@@ -53,8 +54,8 @@ func prepare(bomb: Dictionary) -> Dictionary:
 	if _generation==null or bomb.get("weapon")!=_weapon or not bomb.get("shot") is Dictionary:return failed("Bomb geometry lost its retained weapon")
 	var clocks: Variant=bomb.get("visuals",{}).get("models")
 	if _descriptor.models.is_empty():return {"generation":_generation,"revision":_revision+1,"visible":false}
-	if not clocks is Array or clocks.size()!=2:return failed("Bomb geometry lost its model clocks")
-	for index in 2:
+	if not clocks is Array or clocks.size()!=_descriptor.models.size():return failed("Bomb geometry lost its model clocks")
+	for index in clocks.size():
 		for key in ["model_id","resource","start_ms","end_ms","loop"]:
 			if clocks[index].get(key)!=_descriptor.models[index][key]:return failed("Bomb geometry changed its model identity")
 		# Shared playback wraps by the absolute end, then adds the start. A
@@ -75,7 +76,7 @@ func prepare(bomb: Dictionary) -> Dictionary:
 	if bank!=0.0:pose.basis=pose.basis*Basis(Vector3(0,0,1),-bank*BANK_RADIANS)
 	if not pose.is_finite():return failed("Bomb pose exceeds finite world coordinates")
 	var samplers:=[];var surfaces:=[]
-	for index in 2:
+	for index in clocks.size():
 		var sampler: RefCounted=_samplers[index].fork_for_frame()
 		var sample: Dictionary=sampler.sample(clocks[index].time_ms,pose)
 		if sample.is_empty():return failed(sampler.error)
@@ -93,7 +94,7 @@ func commit(frame: Dictionary) -> void:
 	for model in models:model.visible=frame.visible
 	if not frame.visible:return
 	for index in models[0].instances.size():models[0].instances[index].transform=frame.surfaces[0][index].pose
-	_surface.apply_surfaces(models[1],frame.surfaces[1],1.0)
+	if models.size()>1:_surface.apply_surfaces(models[1],frame.surfaces[1],1.0)
 	_samplers=frame.samplers
 
 func clear() -> void:

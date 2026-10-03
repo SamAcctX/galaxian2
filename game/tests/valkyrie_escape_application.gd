@@ -1688,7 +1688,7 @@ func fly_pirate_base() -> void:
 func fly_dlc_weapons() -> void:
 	app.set_player_mode(true);app.show();app.present_session()
 	await process_frame;resume_application_focus()
-	if not seed_cargo([[214,6],[226,3],[211,3],[228,1],[176,1]]):return
+	if not seed_cargo([[214,6],[226,3],[211,3],[228,1],[176,1],[232,3],[224,1]]):return
 	# Make room: take off the guns and secondaries already fitted.
 	if not app.equipment_action("open"):check(false,app.session.error);return
 	var slots: Array=app.session.station_owner().snapshot().loadout.slots
@@ -1696,15 +1696,20 @@ func fly_dlc_weapons() -> void:
 		if slots[index]!=null and int(catalogue.tables.items[int(slots[index].item_id)].properties.get(1,-1)) in [0,1]:
 			if not app.equipment_action("unmount",int(slots[index].item_id),index):check(false,app.session.error);return
 	if not app.equipment_action("close"):check(false,app.session.error);return
-	# Two secondary slots: the cluster salvo passed this run before; now the sentry.
-	for id in [226,211,228,176]:
+	# Two secondary slots: the cluster salvo and sentry passed this run before;
+	# now the Shock Blast and the Fireworks. The Matador needs a turret slot.
+	var ship:=int(app.session.station_owner().snapshot().loadout.ship_id)
+	var turret_slots:=int(catalogue.tables.ships[ship].stats.turret_slots)
+	var wanted:=[226,232,228,176]+([224] if turret_slots>0 else [])
+	print("WEAPONS ship ",ship," turret slots ",turret_slots)
+	for id in wanted:
 		if not await fit_item(id):return
 	var fitted: Array=app.session.station_owner().snapshot().loadout.equipment_ids
-	check([226,211,228,176].all(func(id):return id in fitted),"Not every expansion weapon was fitted: "+str(fitted))
+	check(wanted.all(func(id):return id in fitted),"Not every expansion weapon was fitted: "+str(fitted))
 	if failures:return
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
 	if not await release_application_flight():return
-	for item in [226,211]:
+	for item in [226,232]:
 		check(app.session.select_secondary(item),"Selecting %d failed: %s"%[item,app.session.error])
 		var before:=weapon_rounds(item)
 		check(app.session.action("missiles"),"Launching %d failed: %s"%[item,app.session.error])
@@ -1717,8 +1722,23 @@ func fly_dlc_weapons() -> void:
 		print("WEAPONS ",item," rounds ",before," -> ",weapon_rounds(item)," live shots ",most)
 		check(weapon_rounds(item)<before,"Launching %d used no round"%item)
 		if item==214:check(most>=3,"The cluster launch fired no salvo")
-		for tick in 80:
+		# Fireworks burst when their 8 s fuse runs out.
+		var burst:=false
+		for tick in (240 if item==232 else 80):
 			if not application_step():return
+			if item==232 and not burst and burst_active(item):burst=true;await capture_free_application("weapons-fireworks-burst")
+		if item==232:check(burst,"The Fireworks never burst")
+	# Matador TS: turret view, hold fire.
+	if 224 in wanted:
+		check(app.session.action("turret"),"Turret view failed: "+app.session.error)
+		for tick in 30:
+			now_us+=50000
+			if not app.session.step(now_us,Vector2.ZERO,true):check(false,app.session.error);return
+			app.present_session()
+			if tick==15:await capture_free_application("weapons-matador")
+			await process_frame
+		check(app.session.error.is_empty(),"Firing the Matador failed: "+app.session.error)
+		check(app.session.action("turret"),"Leaving turret view failed: "+app.session.error)
 	# Primary guns: hold fire for a moment.
 	for tick in 20:
 		now_us+=50000
@@ -1727,6 +1747,14 @@ func fly_dlc_weapons() -> void:
 		if tick==10:await capture_free_application("weapons-primaries")
 		await process_frame
 	check(app.session.error.is_empty(),"Firing the expansion guns failed: "+app.session.error)
+
+func burst_active(item: int) -> bool:
+	var owner: RefCounted=app.session.flight_owner()._encounter._secondaries
+	for gun in owner.snapshot().guns:
+		if int(gun.equipment.item_id)!=item:continue
+		var burst: RefCounted=owner.detonation_owner(int(gun.slot_index))
+		return burst!=null and burst.snapshot().get("effect",{}).get("active",false)
+	return false
 
 func weapon_rounds(item: int) -> int:
 	for gun in app.session.flight_owner()._encounter.snapshot().get("secondaries",{}).get("guns",[]):

@@ -957,6 +957,8 @@ func prepare_secondary_detonations(owner: Dictionary) -> Dictionary:
 		var declaration:=BombAudio.declaration(gun.equipment.item_id)
 		if declaration.is_empty():return fail("Burst sound lost its admitted bomb declaration")
 		var id: int=declaration.burst_sound
+		# Silent bursts (Shock Blast, Fireworks) register no source.
+		if id<0:continue
 		if sources.has(id):return fail("EMP sound repeated an equipped item")
 		sources[id]={"order":(guns.size()-1-index)*(MineAudio.CAPACITY+1),"slot_index":int(gun.slot_index),"item_id":int(gun.equipment.item_id)}
 	var previous:=-1
