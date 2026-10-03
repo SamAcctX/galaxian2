@@ -368,7 +368,7 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	var sky_frame: Dictionary=sky.prepare_view(state.camera_view,{},int(state.world_elapsed_ms))
 	if sky_frame.is_empty():return reject(sky.error)
 	if planets!=null and not planets.apply_view(state.camera_view):return reject(planets.error)
-	if not scenery.apply_state(state.scenery) or not scenery.apply_detail(state.scenery.detail):return reject(scenery.error)
+	if not scenery.apply_state(state.scenery,camera) or not scenery.apply_detail(state.scenery.detail):return reject(scenery.error)
 	if state.scenery.has("bodies") and not scenery.apply_activity(state.scenery.bodies):return reject(scenery.error)
 	if gas_clouds!=null and state.has("gas_clouds"):gas_clouds.present(state.gas_clouds.merged({"camera":camera.transform}))
 	if scenery.destruction!=null and not scenery.apply_destruction(scenery_world,camera.transform,PackedByteArray([255,255,255,255]),Vector4.ONE,1.0):return reject(scenery.error)

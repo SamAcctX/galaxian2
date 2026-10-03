@@ -44,6 +44,9 @@ static func sample(preset: Dictionary,state: Dictionary,fade_in_rgb:=false) -> D
 
 ## Geometry validates and retains its immutable preset when building surfaces.
 ## Debug builds still validate each changing slot, including inactive ones.
+## Per-slot mirror draws depend only on the slot number.
+static var _flips:={}
+
 static func sample_prepared(preset: Dictionary,state: Dictionary,fade_in_rgb:=false) -> Dictionary:
 	if OS.is_debug_build() and not valid_slot(preset,state):return {"error":"Invalid damage particle appearance state"}
 	if int(state.age_ms)==-1:return {"active":false}
@@ -70,8 +73,10 @@ static func sample_prepared(preset: Dictionary,state: Dictionary,fade_in_rgb:=fa
 	# and world RNG streams. Creating this local generator advances neither.
 	var flip:=0
 	if (int(preset.flags)&0x02000000)!=0:
-		var random:=Random.new();random.seed_from(int(state.slot))
-		flip=random.next_int(40000)
+		flip=_flips.get(int(state.slot),-1)
+		if flip<0:
+			var random:=Random.new();random.seed_from(int(state.slot))
+			flip=random.next_int(40000);_flips[int(state.slot)]=flip
 	var x_index:=flip&1;var y_index:=(flip>>1)&1
 	# Unanimated EMP sprites retain their initial per-slot mirror. Nozzle sprites
 	# have no mirror flag, so their zero-frame rectangle remains unchanged.

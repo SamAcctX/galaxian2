@@ -89,7 +89,11 @@ func prepare_world(owner: RefCounted,world: Dictionary,camera_pose: Variant) -> 
 		if (not drawn or emitter.get("idle",false)) and not checked:
 			prepared.append(null);counts.append(0);continue
 		var slots: Array=emitter.slots
-		for index in slots.size():
+		# Buffers are sized for every slot once, filled in place and trimmed.
+		var capacity:=slots.size()
+		vertices.resize(capacity*4);uvs.resize(capacity*4);colors.resize(capacity*16)
+		var quads:=0
+		for index in capacity:
 			var slot: Dictionary=slots[index]
 			# Idle slots draw nothing; release skips checking and sampling them.
 			if not checked and int(slot.appearance.age_ms)==-1:continue
@@ -101,18 +105,20 @@ func prepare_world(owner: RefCounted,world: Dictionary,camera_pose: Variant) -> 
 			var c: Color=appearance.color
 			if cloaked:c.a*=exhaust_opacity
 			var center: Vector3=view*slot.position
-			var half:=int(appearance["size"])>>1
-			var offset:=vertices.size()
-			for corner in CORNERS:
-				var point:=Vector3(center.x+corner.x*half,center.y+corner.y*half,center.z)
-				if not point.is_finite():return failed("Damage sprite exceeded finite view bounds")
-				vertices.append(point)
+			var half:=float(int(appearance["size"])>>1)
+			# Corners round each sum to binary32 like the source float casts.
+			var left:=Vector3(center.x-half,center.y-half,center.z);var right:=Vector3(center.x+half,center.y+half,center.z)
+			if not left.is_finite() or not right.is_finite():return failed("Damage sprite exceeded finite view bounds")
+			var v:=quads*4
+			vertices[v]=left;vertices[v+1]=Vector3(right.x,left.y,center.z);vertices[v+2]=right;vertices[v+3]=Vector3(left.x,right.y,center.z)
 			var rect: Vector4=appearance.uv_rect
-			uvs.append(Vector2(rect.x,rect.y));uvs.append(Vector2(rect.z,rect.y));uvs.append(Vector2(rect.z,rect.w));uvs.append(Vector2(rect.x,rect.w))
+			uvs[v]=Vector2(rect.x,rect.y);uvs[v+1]=Vector2(rect.z,rect.y);uvs[v+2]=Vector2(rect.z,rect.w);uvs[v+3]=Vector2(rect.x,rect.w)
+			var k:=quads*16
 			for corner in 4:
-				colors.append(c.r);colors.append(c.g);colors.append(c.b);colors.append(c.a)
-			indices.append(offset);indices.append(offset+2);indices.append(offset+1)
-			indices.append(offset);indices.append(offset+3);indices.append(offset+2)
+				colors[k]=c.r;colors[k+1]=c.g;colors[k+2]=c.b;colors[k+3]=c.a;k+=4
+			quads+=1
+		vertices.resize(quads*4);uvs.resize(quads*4);colors.resize(quads*16)
+		indices=_quad_indices(quads)
 		var mesh: ArrayMesh
 		if not vertices.is_empty():
 			var arrays:=[];arrays.resize(Mesh.ARRAY_MAX)
@@ -126,6 +132,16 @@ func prepare_world(owner: RefCounted,world: Dictionary,camera_pose: Variant) -> 
 			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},Mesh.ARRAY_CUSTOM_RGBA_FLOAT<<Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 		prepared.append(mesh);counts.append(vertices.size()>>2)
 	return {"meshes":prepared,"counts":counts,"pose":camera_pose,"elapsed_ms":state.elapsed_ms}
+
+static var _indices:=PackedInt32Array()
+
+## Two triangles per quad; one shared template is sliced per mesh.
+static func _quad_indices(quads: int) -> PackedInt32Array:
+	if _indices.size()<quads*6:
+		@warning_ignore("integer_division")
+		for offset in range(_indices.size()/6*4,quads*4,4):
+			_indices.append_array(PackedInt32Array([offset,offset+2,offset+1,offset,offset+3,offset+2]))
+	return _indices.slice(0,quads*6)
 
 static func sprite(center: Vector3,appearance: Dictionary) -> Dictionary:
 	if not center.is_finite():return {}

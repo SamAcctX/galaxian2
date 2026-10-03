@@ -14,6 +14,10 @@ var _selected := PackedInt32Array()
 # Read-only observations applied last frame; the same shared value needs no pass.
 var _applied_selections: Variant
 var _applied_activity: Variant
+# Bounding sphere radius per body (any rotation, all detail levels) and the
+# position each node was last posed at.
+var _radii := PackedFloat32Array()
+var _posed := PackedVector3Array()
 var destruction: Node3D
 
 func prepare_destruction(field: Dictionary, library: RefCounted, visuals: RefCounted, bindings: RefCounted, resources: RefCounted, lighting: Dictionary, reflection: RefCounted, response: Dictionary, quality := "high") -> bool:
@@ -84,22 +88,40 @@ func build(field: Dictionary, library: RefCounted, visuals: RefCounted, bindings
 			body.add_child(alternate);levels.append(alternate)
 		_levels.append(levels)
 	resources.clear()
+	for index in staged.size():
+		var radius:=0.0
+		for level in _levels[index]:
+			for mesh in level.find_children("*","MeshInstance3D",true,false):
+				var box: AABB=mesh.get_aabb()
+				radius=maxf(radius,Vector3(maxf(absf(box.position.x),absf(box.end.x)),maxf(absf(box.position.y),absf(box.end.y)),maxf(absf(box.position.z),absf(box.end.z))).length())
+		_radii.append(INF if radius==0.0 else radius*float(rows[index].scale))
+		_posed.append(rows[index].position)
 	for body in staged:add_child(body)
 	objects=staged
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
 	return true
 
-func apply_state(field: Dictionary) -> bool:
+func apply_state(field: Dictionary, camera: Camera3D=null) -> bool:
 	error=""
 	if _identity.is_empty() or field.get("base_content_id")!=_identity.base_content_id or field.get("binding_id")!=_identity.binding_id:return reject("Scenery pose belongs to another content identity")
 	var rows: Variant = field.get("objects")
 	if not rows is Array or rows.size()!=objects.size():return reject("Scenery pose count changed")
 	# The motion owner validated every source pose when it built the field;
 	# this per-frame pass only moves the bodies whose pose changed.
+	# A body outside the view keeps its last pose until it can be seen; its
+	# bounding sphere covers every orientation, so the test needs no rotation.
+	var planes: Array=[] if camera==null or not camera.is_inside_tree() else camera.get_frustum()
 	for index in rows.size():
 		var row: Dictionary = rows[index]
+		if not planes.is_empty() and row.position==_posed[index] and not _in_view(planes,row.position,_radii[index]):continue
 		var pose := Transform3D(Motion.current_basis(field,row).scaled(Vector3.ONE*row.scale),row.position)
 		if objects[index].transform!=pose:objects[index].transform=pose
+		_posed[index]=row.position
+	return true
+
+static func _in_view(planes: Array,center: Vector3,radius: float) -> bool:
+	for plane in planes:
+		if plane.distance_to(center)>radius:return false
 	return true
 
 func apply_detail(state: Dictionary) -> bool:
@@ -140,7 +162,7 @@ func apply_activity(bodies: Dictionary) -> bool:
 func clear() -> void:
 	for child in get_children():child.free()
 	objects.clear();_levels.clear();_selected.clear();_identity={};destruction=null;error=""
-	_applied_selections=null;_applied_activity=null
+	_applied_selections=null;_applied_activity=null;_radii=PackedFloat32Array();_posed=PackedVector3Array()
 
 func reject(message: String) -> bool:
 	error=message;return false

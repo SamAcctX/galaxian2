@@ -218,12 +218,33 @@ func advance_in_frame(pose: Variant,delta_ms: Variant,manager_elapsed_ms: Varian
 
 func _advance(pose: Transform3D,delta_ms: float,manager_elapsed_ms: float) -> Dictionary:
 	if _update_existing and not _idle:
+		# Same rules as move_particle, with the per-frame terms hoisted out of
+		# the slot loop; this runs for every live exhaust sprite each frame.
+		if not is_finite(delta_ms) or delta_ms<0 or delta_ms>60000:return fail("Invalid damage particle appearance interval")
+		var debug:=OS.is_debug_build()
+		var delta:=single(delta_ms)
+		var lifetime:=int(_preset.lifetime_ms)
+		var growth:=Appearance.signed_short(int(single(single(single(_preset.size_growth_per_second)*delta)*single(0.001))))
+		var unit:=single(0.001)
 		var live:=false
 		for index in _slots.size():
-			# Idle slots stay idle; skip the call for them.
-			if _slots[index].appearance.age_ms<0:continue
-			if not move_particle(index,delta_ms):return fail(error)
-			live=live or _slots[index].appearance.age_ms>=0
+			var slot: Dictionary=_slots[index]
+			var appearance: Dictionary=slot.appearance
+			var age: int=appearance.age_ms
+			if age<0:continue
+			if debug and not Appearance.valid_slot(_preset,appearance):return fail("Invalid damage particle appearance state")
+			age=int(single(single(age)+delta))
+			if age>lifetime:
+				_slots[index]={"appearance":{"slot":appearance.slot,"age_ms":-1,"size":0},"position":RESET_POSITION,"velocity":slot.velocity}
+				continue
+			var velocity: Vector3=slot.velocity
+			var moved:=Vector3(velocity.x*delta_ms,velocity.y*delta_ms,velocity.z*delta_ms)
+			var step:=Vector3(moved.x*unit,moved.y*unit,moved.z*unit)
+			var position: Vector3=slot.position
+			position=Vector3(position.x+step.x,position.y+step.y,position.z+step.z)
+			if not position.is_finite():return fail("Damage particle movement exceeds finite source bounds")
+			_slots[index]={"appearance":{"slot":appearance.slot,"age_ms":age,"size":Appearance.signed_short(int(appearance.size)+growth)},"position":position,"velocity":velocity}
+			live=true
 		_idle=not live
 	if _dirty:
 		_velocity=Vector3.ZERO;_baseline=pose.origin;_force_velocity=true;_dirty=false
