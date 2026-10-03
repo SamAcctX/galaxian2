@@ -219,6 +219,8 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 		21:
 			var cloak:=Cloak.new()
 			if not cloak.configure(bindings,cat,[id],ship,0.5):return cloak.error
+		26:
+			if not Numbers.integer(properties.get(42),1,2147483647) or not Numbers.integer(properties.get(43),0,2147483647):return "The Time Extender has no supported duration"
 		28:
 			for property in [bindings.weapon_parameters.interval_percent_property,bindings.weapon_parameters.damage_percent_property]:
 				if not Weapons.signed_integer(properties.get(int(property))):return "The weapon modifier is unavailable"

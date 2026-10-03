@@ -29,6 +29,8 @@ const StationResources=preload("res://src/content/station_exterior_resources.gd"
 const VoidPortal=preload("res://src/simulation/void_portal.gd")
 const CampaignFailure=preload("res://src/content/kappa_outcome_definitions.gd")
 const Sequence=preload("res://src/simulation/selected40_sequence.gd")
+## The Time Extender runs the player at a different rate from the world.
+var player_time_scale:=1.0
 var error:=""
 var _state:={}
 var _player: RefCounted
@@ -200,7 +202,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if player_updates:
 		if not next._encounter.refresh_selected40_player_response(relative_mouse_capture,next._pilot.response_factor()):reject(next._encounter.error);return null
 		if not next._engine_audio.before_ordinary_motion():reject(next._engine_audio.error);return null
-		next._pose=next._pilot.advance_prepared(_pose,active_throttle,seconds,0.0 if blocked or next._encounter.turret_active() else strafe,next._booster.speed_multiplier())
+		next._pose=next._pilot.advance_prepared(_pose,active_throttle,seconds*player_time_scale,0.0 if blocked or next._encounter.turret_active() else strafe,next._booster.speed_multiplier())
 		if not next._pilot.error.is_empty():reject(next._pilot.error);return null
 		# The original environment pass shares one incoming entry permission
 		# and active-statistics sample across solid scenery and the live portal.
@@ -591,6 +593,7 @@ func career_owner() -> RefCounted:return null if _career==null else _career.fork
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
+	copy.player_time_scale=player_time_scale
 	copy._state=_state.duplicate(true);copy._pose=_pose;copy._reference=_reference;copy._random=_random.duplicate(true)
 	copy._throttle=_throttle;copy._viewport=_viewport;copy._max_ms=_max_ms
 	copy._presentation_identity=_presentation_identity
@@ -623,5 +626,6 @@ func toggle_turret() -> RefCounted:
 	return next
 
 func cloak_state() -> Dictionary:return {} if _player==null else _player.cloak_state()
+func player_equipment_ids() -> Array:return [] if _player==null else _player.snapshot().get("equipment_ids",[])
 func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
 func control_throttle() -> float:return _throttle

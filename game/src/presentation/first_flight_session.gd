@@ -14,6 +14,8 @@ const Speech=preload("res://src/presentation/station_audio.gd")
 const FlightAudio=preload("res://src/presentation/opening_audio.gd")
 const NpcEngines=preload("res://src/presentation/npc_engine_audio.gd")
 const OneShot=preload("res://src/presentation/one_shot_audio.gd")
+const TimeExtender=preload("res://src/simulation/time_extender.gd")
+const TimeExtenderFeedback=preload("res://src/presentation/time_extender_feedback.gd")
 const SecondReturn=preload("res://src/content/full_hold_return_definitions.gd")
 const PlayerDeath=preload("res://src/content/player_destruction_definitions.gd")
 const GameOver=preload("res://src/content/game_over_definitions.gd")
@@ -46,6 +48,8 @@ var engine_audio: Node3D
 ## The jumpgate departure plays the original jump event once as the jump starts.
 const GATE_JUMP_SOUND:=32
 var _gate_jump_clip:={}
+var _extender: RefCounted
+var _extender_feedback: Node
 var gate_jump_plays:=0
 var _world: RefCounted
 var _clock: RefCounted
@@ -229,6 +233,10 @@ func _configure_construction(library: RefCounted, bindings: RefCounted, visuals:
 	# Other ships' engine loops (the original has none in the first rescue flight).
 	var sounds:=preload("res://src/content/audio_resources.gd").new()
 	_gate_jump_clip=OneShot.prepare(sounds,GATE_JUMP_SOUND) if sounds.configure(library,bindings) else {}
+	_extender=TimeExtender.new()
+	if _extender.configure(cat.tables.items,_world.player_equipment_ids()):
+		_extender_feedback=TimeExtenderFeedback.new();add_child(_extender_feedback);_extender_feedback.configure(library,bindings)
+	else:_extender=null
 	if cursor>1:
 		engine_audio=NpcEngines.new();add_child(engine_audio)
 		if not engine_audio.configure(library,bindings,int(field_seed)):engine_audio.free();engine_audio=null
@@ -268,6 +276,10 @@ func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false, re
 	var milliseconds:=roundi(clock.sample(now_microseconds,blocked)*1000)
 	if not clock.error.is_empty():return reject(clock.error)
 	if is_paused() or status!="running" or _world.contract_result_pending():_clock=clock;return true
+	if _extender!=null:
+		_extender_feedback.present(_extender,_extender.advance(milliseconds))
+		milliseconds=_extender.scale(milliseconds)
+		_world.player_time_scale=_extender.player_scale()
 	var drilling: bool=_world.drill_owner()!=null
 	var music_id: int=-1 if flight_audio==null else flight_audio.current_music_id()
 	var world: RefCounted=_world.evaluate(milliseconds,Vector2.ZERO if drilling else commands,0.0 if brake else _throttle,false,Vector2i(camera.get_viewport().get_visible_rect().size),commands if drilling else Vector2.ZERO,fire_primary,fire_secondary,relative_mouse_capture,music_id,strafe,_boost_requested,_cloak_requested,turret_inverted)
@@ -309,6 +321,9 @@ func action(name: String) -> bool:
 		"time":world=_world.press_fast_forward()
 		"boost":_boost_requested=true;return true
 		"cloak":_cloak_requested=true;return true
+		"time_extender":
+			if _extender==null:return true
+			_extender_feedback.present(_extender,_extender.press());return true
 		"missiles":
 			if not secondary_available() and not turret_state().get("active",false):return reject("No supported secondary launcher is installed")
 			# A button edge requests one late-input pass, not an immediate pulse.
@@ -340,6 +355,7 @@ func action(name: String) -> bool:
 
 func turret_state() -> Dictionary:return {} if _world==null else _world.turret_state()
 func cloak_state() -> Dictionary:return {} if _world==null else _world.cloak_state()
+func time_extender_state() -> Dictionary:return {} if _extender==null else _extender.snapshot()
 func booster_state() -> Dictionary:return {} if _world==null else _world.booster_state()
 
 func fast_forward_available() -> bool:return _world!=null and _world.fast_forward_available()
@@ -657,7 +673,7 @@ func presentation_snapshot() -> Dictionary:
 	return preload("res://src/simulation/readonly_state.gd").freeze(state) if OS.is_debug_build() else state
 func clear() -> void:
 	for child in get_children():child.free()
-	error="";status="idle";camera=null;scene=null;briefing_audio=null;objective_audio=null;objective_failure_audio=null;flight_audio=null;engine_audio=null;_gate_jump_clip={}
+	error="";status="idle";camera=null;scene=null;briefing_audio=null;objective_audio=null;objective_failure_audio=null;flight_audio=null;engine_audio=null;_gate_jump_clip={};_extender=null;_extender_feedback=null
 	_world=null;_clock=null;_pauses={};_active=false;_throttle=1.0;_generation=0
 	_presentation_state={}
 	_presentation_ms=0;_secondary_requested=false;_boost_requested=false;_cloak_requested=false

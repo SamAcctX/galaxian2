@@ -823,8 +823,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			if event is InputEventKey:
 				var key: int=event.physical_keycode if event.physical_keycode else event.keycode
 				supported=supported or (session.wingmen_available() and Controls.KEY_ACTIONS.get(key)=="wingmen")
-				supported=supported or key in Controls.DIRECTIONS or (Controls.KEY_ACTIONS.has(key) and Controls.KEY_ACTIONS[key] in ["fire","boost","cloak","change_view","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu"]) or ((session.secondary_available() or session.turret_state().get("active",false)) and Controls.KEY_ACTIONS.get(key) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.KEY_ACTIONS.get(key)=="time")
-			elif event is InputEventJoypadButton:supported=supported or (Controls.BUTTON_ACTIONS.has(event.button_index) and Controls.BUTTON_ACTIONS[event.button_index] in ["fire","boost","cloak","change_view","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu"]) or ((session.secondary_available() or session.turret_state().get("active",false)) and Controls.BUTTON_ACTIONS.get(event.button_index) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.BUTTON_ACTIONS.get(event.button_index)=="time")
+				supported=supported or key in Controls.DIRECTIONS or (Controls.KEY_ACTIONS.has(key) and Controls.KEY_ACTIONS[key] in ["fire","boost","cloak","change_view","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu","time_extender"]) or ((session.secondary_available() or session.turret_state().get("active",false)) and Controls.KEY_ACTIONS.get(key) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.KEY_ACTIONS.get(key)=="time")
+			elif event is InputEventJoypadButton:supported=supported or (Controls.BUTTON_ACTIONS.has(event.button_index) and Controls.BUTTON_ACTIONS[event.button_index] in ["fire","boost","cloak","change_view","dock","autopilot","map","jump","throttle_up","throttle_down","brake","mouse_mode","action_menu","time_extender"]) or ((session.secondary_available() or session.turret_state().get("active",false)) and Controls.BUTTON_ACTIONS.get(event.button_index) in ["missiles","secondary_menu"]) or (session.fast_forward_available() and Controls.BUTTON_ACTIONS.get(event.button_index)=="time")
 			elif event is InputEventJoypadMotion:supported=event.axis in [JOY_AXIS_LEFT_X,JOY_AXIS_LEFT_Y,JOY_AXIS_TRIGGER_RIGHT] or ((session.secondary_available() or session.turret_state().get("active",false)) and event.axis==JOY_AXIS_TRIGGER_LEFT)
 		elif event is InputEventKey:
 			var key: int=event.physical_keycode if event.physical_keycode else event.keycode
@@ -1185,6 +1185,8 @@ func open_flight_menu(autopilot: bool=true) -> bool:
 	if not autopilot and turret.get("auto",false) and not session is MissionSession:rows.append({"action":"auto_turret","label":library.strings[207]+" "+library.strings[39 if turret.get("auto_enabled",true) else 38]})
 	var cloak: Dictionary=session.cloak_state()
 	if not autopilot and cloak.get("ready",false):rows.append({"action":"cloak","label":library.strings[int(bindings.station_equipment.item_text_offset)+int(cloak.item_id)]})
+	var extender: Dictionary=session.time_extender_state()
+	if not autopilot and extender.get("phase") in ["ready","active"]:rows.append({"action":"time_extender","label":library.strings[int(bindings.station_equipment.item_text_offset)+int(extender.item_id)]})
 	if rows.is_empty() or not flight_menu.configure(library,bindings,visuals):return false
 	if not flight_menu.present(rows,KEY_Q if autopilot else KEY_E):return false
 	if not session.set_pause("flight_menu",true,Time.get_ticks_usec()):flight_menu.close();status.text=session.error;return false

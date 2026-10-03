@@ -29,6 +29,8 @@ const Career=preload("res://src/simulation/opening_handoff.gd")
 const VoidPortal=preload("res://src/simulation/void_portal.gd")
 const Escape=preload("res://src/simulation/mission_escape_sequence.gd")
 const Random=preload("res://src/simulation/seeded_random.gd")
+## The Time Extender runs the player at a different rate from the world.
+var player_time_scale:=1.0
 var error:=""
 var _state:={}
 var _context: RefCounted
@@ -175,7 +177,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	next._state.physical_contacts=[]
 	if moving:
 		if not next._camera.refresh_player_response(relative_mouse_capture,next._pilot.response_factor()) or not next._engine_audio.before_ordinary_motion():return failed(next._camera.error+next._engine_audio.error)
-		next._pose=next._pilot.advance_prepared(_pose,throttle if enabled_before else _throttle,seconds,strafe if enabled_before and not next._encounter.turret_active() else 0.0,next._booster.speed_multiplier())
+		next._pose=next._pilot.advance_prepared(_pose,throttle if enabled_before else _throttle,seconds*player_time_scale,strafe if enabled_before and not next._encounter.turret_active() else 0.0,next._booster.speed_multiplier())
 		if not next._pilot.error.is_empty():return failed(next._pilot.error)
 		var contact: Dictionary=next._physical.plan(next._player.collision_context(next._pose),next._scenery.read_snapshot().bodies,enabled_before)
 		if contact.is_empty() or not next._scenery.apply_physical_contacts(contact.operations):return failed(next._physical.error+next._scenery.error)
@@ -575,6 +577,7 @@ func engine_particles_owner() -> RefCounted:return null if _engines==null else _
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
+	copy.player_time_scale=player_time_scale
 	copy._state=_state.duplicate(true);copy._context=_context;copy._world=_world;copy._bindings=_bindings;copy._library=_library
 	copy._pose=_pose;copy._reference=_reference;copy._random=_random.duplicate(true)
 	copy._initial_progress=_initial_progress;copy._progress=_progress.duplicate(true);copy._viewport=_viewport
@@ -604,5 +607,6 @@ func toggle_turret() -> RefCounted:
 	return next
 
 func cloak_state() -> Dictionary:return {} if _player==null else _player.cloak_state()
+func player_equipment_ids() -> Array:return [] if _player==null else _player.snapshot().get("equipment_ids",[])
 func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
 func control_throttle() -> float:return _throttle

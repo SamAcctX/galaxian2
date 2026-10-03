@@ -5,13 +5,13 @@ const KEY_ACTIONS := {KEY_SPACE: "fire", KEY_R: "missiles", KEY_F: "dock", KEY_W
 	KEY_P: "pause", KEY_ESCAPE: "pause", KEY_E: "action_menu", KEY_T: "change_view", KEY_Q: "autopilot",
 	KEY_K: "jump", KEY_C: "cloak", KEY_V: "wingmen", KEY_BRACKETRIGHT: "throttle_up",
 	KEY_SLASH: "throttle_down", KEY_S: "brake", KEY_G: "secondary_menu", KEY_M: "mouse_mode",
-	KEY_1: "roll_left", KEY_3: "roll_right"}
+	KEY_1: "roll_left", KEY_3: "roll_right", KEY_X: "time_extender"}
 const BUTTON_ACTIONS := {JOY_BUTTON_A: "boost", JOY_BUTTON_B: "missiles", JOY_BUTTON_X: "dock",
 	JOY_BUTTON_Y: "autopilot", JOY_BUTTON_START: "pause", JOY_BUTTON_BACK: "time",
 	JOY_BUTTON_DPAD_UP: "throttle_up", JOY_BUTTON_DPAD_DOWN: "throttle_down", JOY_BUTTON_DPAD_RIGHT: "secondary_menu",
-	JOY_BUTTON_LEFT_SHOULDER: "map", JOY_BUTTON_RIGHT_SHOULDER: "jump"}
+	JOY_BUTTON_LEFT_SHOULDER: "map", JOY_BUTTON_RIGHT_SHOULDER: "jump", JOY_BUTTON_LEFT_STICK: "time_extender"}
 const AXIS_ACTIONS := {JOY_AXIS_TRIGGER_RIGHT: "fire", JOY_AXIS_TRIGGER_LEFT: "missiles"}
-const ACTIONS := ["fire", "missiles", "secondary_next", "secondary_menu", "boost", "brake", "pause", "time", "autopilot", "dock", "map", "jump", "throttle_up", "throttle_down", "action_menu", "change_view", "cloak", "wingmen", "mouse_mode", "roll_left", "roll_right"]
+const ACTIONS := ["fire", "missiles", "secondary_next", "secondary_menu", "boost", "brake", "pause", "time", "autopilot", "dock", "map", "jump", "throttle_up", "throttle_down", "action_menu", "change_view", "cloak", "wingmen", "mouse_mode", "roll_left", "roll_right", "time_extender"]
 const MOUSE_REFERENCE_SIZE := Vector2(1280,720)
 const TURN_KEYS := [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]
 const STRAFE_KEYS := [KEY_A, KEY_D]
