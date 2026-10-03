@@ -817,6 +817,17 @@ func apply_story_hostility(axis: int,value: int) -> bool:
 
 func story_hostility_applied() -> bool:return _combat!=null and _combat.story_hostility_applied()
 
+## Ordinary-traffic truce for these actor kinds (opening_combat_group.set_truce).
+func set_truce(kinds: Array) -> bool:
+	error=""
+	if _control==null or _combat==null:return reject("A truce requires a combat encounter")
+	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	control._combat.set_truce(kinds)
+	_control=control;_combat=control._combat
+	return true
+
+func truce_broken() -> bool:return _combat!=null and _combat.truce_broken()
+
 func place_story_actors(first: int,end: int,center: Vector3,radius: float,flat:=false) -> bool:
 	error=""
 	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story placement requires a contract encounter")

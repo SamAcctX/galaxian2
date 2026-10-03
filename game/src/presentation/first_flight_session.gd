@@ -490,6 +490,16 @@ func choose_gate_confirmation(result: int,now_microseconds: int) -> bool:
 	if world==null:return reject(_world.error)
 	return _commit_gate_choice(world,now_microseconds)
 
+## Loma toll question (first_flight_frame.answer_toll); the flight stays
+## paused for "toll" until the presentation closes its window.
+func toll_state() -> Dictionary:return {} if _world==null else _world.toll_state()
+
+func answer_toll(yes: bool) -> bool:
+	if not _active or not _pauses.has("toll"):return reject("No paused toll question awaits an answer")
+	var world: RefCounted=_world.answer_toll(yes)
+	if world==null:return reject(_world.error)
+	return _commit(world,false)
+
 func gate_modal_active() -> bool:
 	return _active and not is_paused() and status in ["gate_confirmation_required","gate_map_required"]
 
@@ -632,7 +642,7 @@ func present_current() -> bool:
 	return scene!=null and scene.present(_world,false,_presentation_ms)
 
 func set_pause(reason: String, paused: bool, now_microseconds: int) -> bool:
-	if _clock==null or reason not in ["user","focus","hidden","transition","cloak_notice","hint","map","secondary_menu","flight_menu"] or now_microseconds<0:return reject("Invalid mining pause")
+	if _clock==null or reason not in ["user","focus","hidden","transition","cloak_notice","hint","map","secondary_menu","flight_menu","toll"] or now_microseconds<0:return reject("Invalid mining pause")
 	if _pauses.has(reason)==paused:return true
 	if not clear_flight_input():return false
 	if not _clock.rebase(now_microseconds):return reject(_clock.error)

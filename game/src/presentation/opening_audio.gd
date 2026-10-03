@@ -849,6 +849,10 @@ func prepare_local_radio(state: Dictionary) -> Dictionary:
 		if not transition_message.is_empty() and selected!=transition_message:return fail("Local voice changed message within one update")
 		transition_message=selected
 		if change.kind!="display":continue
+		if selected.kind=="scripted":
+			# Scripted lines sit outside the faction message serials.
+			operations.append({"action":"start","source_id":selected.voice_event_id,"radio_event":0,"text_id":selected.text_id})
+			continue
 		var index: int=selected.serial-1
 		if displayed[index]:return fail("Local voice repeated an accepted display")
 		displayed[index]=true;displayed_now=selected.serial
@@ -856,7 +860,7 @@ func prepare_local_radio(state: Dictionary) -> Dictionary:
 	if not transition_message.is_empty():
 		var finished: bool=changes[-1].kind=="finished"
 		if finished:
-			if radio.active_event!=-1 or not displayed[transition_message.serial-1]:return fail("Local voice finished without an accepted display")
+			if radio.active_event!=-1 or (transition_message.kind!="scripted" and not displayed[transition_message.serial-1]):return fail("Local voice finished without an accepted display")
 		elif message!=transition_message:return fail("Local voice transition differs from the active transmission")
 	if displayed_now>0 and radio.active_event==0 and not radio.visible:return fail("Local voice has no accepted text display")
 	return {"operations":operations,"displayed":displayed}
