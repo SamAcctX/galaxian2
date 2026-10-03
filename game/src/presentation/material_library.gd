@@ -12,13 +12,16 @@ const SHADERS := {
 	28: preload("res://src/presentation/imported_material.gdshader"),
 	# Source mode 39 (animated "add", fire and gas clouds) names a second
 	# texture; assumption: drawn additive from the diffuse texture only.
-	39: preload("res://src/presentation/material_additive.gdshader")}
+	39: preload("res://src/presentation/material_additive.gdshader"),
+	# Source mode 34 (Valkyrie shield bubble: noise + normal map); assumption:
+	# drawn additive from the noise texture only.
+	34: preload("res://src/presentation/material_additive.gdshader")}
 
 static func supports(descriptor: Dictionary) -> bool:
 	if not SHADERS.has(int(descriptor.get("render_type", -1))):
 		return false
 	var slots: Array = descriptor.get("texture_paths", [])
-	var used := 2 if int(descriptor.render_type) in [28, 39] else 1
+	var used := 2 if int(descriptor.render_type) in [28, 34, 39] else 1
 	return slots.size() == 8 and slots.slice(used).all(func(path): return path.is_empty())
 
 static func create(render_type: int, diffuse: Texture2D, normal_specular: Texture2D, colors: bool) -> ShaderMaterial:

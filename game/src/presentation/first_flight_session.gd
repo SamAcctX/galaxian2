@@ -240,6 +240,7 @@ func _configure_construction(library: RefCounted, bindings: RefCounted, visuals:
 	else:_extender=null
 	if _world.has_method("player_devices") and not _world.player_devices().is_empty():
 		_devices_feedback=preload("res://src/presentation/flight_devices_feedback.gd").new();add_child(_devices_feedback);_devices_feedback.configure(library,bindings)
+		if scene!=null and scene.geometry!=null:_devices_feedback.attach_bubble(scene.geometry.player,library,visuals,bindings)
 	if cursor>1:
 		engine_audio=NpcEngines.new();add_child(engine_audio)
 		if not engine_audio.configure(library,bindings,int(field_seed)):engine_audio.free();engine_audio=null

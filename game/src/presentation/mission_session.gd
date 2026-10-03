@@ -51,6 +51,7 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cata
 	else:_extender=null
 	if world.has_method("player_devices") and not world.player_devices().is_empty():
 		_devices_feedback=preload("res://src/presentation/flight_devices_feedback.gd").new();add_child(_devices_feedback);_devices_feedback.configure(library,bindings)
+		_devices_feedback.attach_bubble(next_scene.player,library,visuals,bindings)
 	_world=world;_clock=clock;scene=next_scene;camera=scene.camera;status="prepared"
 	return true
 

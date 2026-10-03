@@ -124,6 +124,25 @@ func verify_sounds() -> void:
 	feedback.present({"emergency":{"active":false},"injector":{"filling":false}})
 	check(not feedback.snapshot().emergency and not feedback.snapshot().filling,"Feedback missed the device end")
 	feedback.free()
+	verify_bubble()
+
+## The bubble model surrounds a stand-in 100-unit ship while the system runs.
+func verify_bubble() -> void:
+	var args:=OS.get_cmdline_user_args()
+	var visuals=preload("res://src/content/visual_library.gd").new()
+	if args.size()<3 or not visuals.open(args[2],library.manifest):check(false,"Bubble check needs the visuals pack");return
+	var ship:=Node3D.new();get_root().add_child(ship)
+	var hull:=MeshInstance3D.new();var box:=BoxMesh.new();box.size=Vector3.ONE*100;hull.mesh=box;ship.add_child(hull)
+	var feedback: Node=load("res://src/presentation/flight_devices_feedback.gd").new();get_root().add_child(feedback)
+	feedback.configure(library,bindings);feedback.attach_bubble(ship,library,visuals,bindings)
+	check(is_equal_approx(feedback.snapshot().bubble_scale,(Vector3.ONE*100.0).length()*0.5/500.0+0.1),"Bubble scale is not ship radius/500 + 0.1")
+	feedback.present({"emergency":{"active":true,"duration_ms":10000,"remaining_ms":5000}})
+	check(feedback.snapshot().bubble_visible and feedback._bubble.get_parent()==ship,"Emergency bubble is not drawn around the ship")
+	feedback.present({"emergency":{"active":true,"duration_ms":10000,"remaining_ms":9990}})
+	check(feedback.snapshot().bubble_visible and feedback._bubble.get_child_count()>=0,"Bubble vanished while growing")
+	feedback.present({"emergency":{"active":false,"duration_ms":10000,"remaining_ms":0}})
+	check(not feedback.snapshot().bubble_visible,"Bubble stayed after the emergency ended")
+	feedback.free();ship.free()
 
 func check(value: bool,message: String) -> void:
 	checks+=1
