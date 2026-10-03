@@ -59,7 +59,19 @@ func run_station() -> void:
 	var paid_resume: RefCounted=archive.restore(bindings,cat,library,paid_document)
 	check(paid_resume!=null,archive.error)
 	if paid_resume!=null:
-		check(paid_resume.snapshot().contracts==paid.contracts and not paid_resume.campaign_conversation_ready(bindings,cat,library,100000),"Paid Resume replayed a station recipe or reward")
+		check(paid_resume.snapshot().contracts==paid.contracts,"Paid Resume replayed a station recipe or reward")
+		# A finished career may receive the Valkyrie call here; it must not be
+		# the ending note again and must not pay anything.
+		if paid_resume.campaign_conversation_ready(bindings,cat,library,100000):
+			var call: RefCounted=paid_resume.fork()
+			check(call.begin_campaign_conversation(bindings,cat,library,100000),call.error)
+			var heard:=[]
+			for line in 64:
+				if not call.snapshot().dialogue.visible:break
+				heard.append(call.snapshot().dialogue.voice_event_id)
+				if not call.acknowledge():check(false,call.error);break
+			var after: Dictionary=call.snapshot()
+			check(not heard.any(func(id):return id in [427,428,429,430]) and after.campaign_cursor==47 and after.contracts.credits==paid.contracts.credits,"Paid Resume replayed a station recipe or reward")
 	verify_tampering(archive,paid_document)
 	check(FileAccess.get_file_as_bytes(path)==bytes,"The component test changed its earned input file")
 	print("Earned station recipes: %d checks; %d failures"%[checks,failures]);quit(1 if failures else 0)

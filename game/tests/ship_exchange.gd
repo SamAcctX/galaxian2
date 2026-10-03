@@ -51,6 +51,8 @@ func verify(args: PackedStringArray) -> void:
 	check(not Context.base_player_hull(bindings,-1),"A missing hull passed player entry")
 	for hull in cat.tables.ships.size():
 		if not Context.base_player_hull(bindings,hull) or hull==quoted.loadout.ship_id:continue
+		# Expansion hulls (Valkyrie loans, Loma shipyard) belong to the DLC work, not this base-game exchange.
+		if hull>=int(bindings.early_contracts.base_station_stock.ships.selection_draw_bound):continue
 		var engine:=Engines.new()
 		check(engine.configure(bindings,mounts,hull,1234) and engine.advance(Transform3D.IDENTITY,100),"Hull %d exhaust: %s"%[hull,engine.error])
 		check(not bindings.resolve_player_engine_glow(hull).is_empty(),"Hull %d engine glow: %s"%[hull,bindings.error])

@@ -25,6 +25,9 @@ func verify() -> void:
 		if not supplement is Array:check(false,"Missing retained campaign source");finish();return
 		var accepted: bool=bindings.attach_dekato_source(supplement[1],lib.manifest) if key=="GOF2_DEKATO_SOURCE_ARGS" else bindings.attach_nehma_source(supplement[1],lib.manifest)
 		if not accepted:check(false,bindings.error);finish();return
+	# A save written with a newer extraction needs it attached first, as the game does on launch.
+	var update:=OS.get_environment("GOF2_IMPORT_UPDATE")
+	if not update.is_empty() and not bindings.attach_import_update(update,lib.manifest,lib):check(false,"Import update: "+bindings.error);finish();return
 	var save:=Save.new();var archive:=Archive.new()
 	var document:=save.load_document(OS.get_environment("GOF2_SOURCE_SAVE"),bindings,cat,lib)
 	if document.is_empty():check(false,save.error);finish();return

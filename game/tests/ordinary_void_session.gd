@@ -120,7 +120,10 @@ func verify_session_mining(live: Node,bindings: RefCounted) -> void:
 	if receipt.is_empty():check(false,"Actual crystal drilling did not produce an extraction receipt");return
 	check(receipt.ore_item_id==164 and receipt.ore_tons>0 and receipt.cargo_added<=before.cargo.free_space and mined.cargo.used==before.cargo.used+receipt.cargo_added,"Crystal yield was missing, fabricated or exceeded the retained hold")
 	check(mined.scenery.mined_count==before.scenery.mined_count+1 and mined.mining_session.drill.is_empty() and not live.flight_audio.snapshot().active.has(1),"Crystal extraction did not retire its asteroid and stop the drill once")
-	check(mined.campaign_cursor==33 and mined.mission==before.mission and mined.progress==before.progress and mined.player.vitals.hull>0,"Crystal extraction completed the mission, granted progress or lost the living player")
+	# Mining statistics (medal producers) are recorded; the story progress is unchanged.
+	var story: Dictionary=mined.progress.duplicate()
+	for key in ["mined_ore_tons","mined_cores","mined_ore_types_mask","mined_core_types_mask"]:story.erase(key)
+	check(mined.campaign_cursor==33 and mined.mission==before.mission and story==before.progress and mined.player.vitals.hull>0,"Crystal extraction completed the mission, granted progress or lost the living player")
 	var held: Dictionary=live.snapshot();var sound: Dictionary=live.flight_audio.snapshot()
 	check(live.flight_owner().stop_mining()==null and live.snapshot()==held and live.flight_audio.snapshot()==sound,"Repeating extraction changed the hold or sound")
 	var inventory: RefCounted=live.flight_owner().equipment_owner()
