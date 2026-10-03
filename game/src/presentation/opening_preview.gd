@@ -413,9 +413,10 @@ func _can_save_station(state: Dictionary={}) -> bool:
 	return StationArchive.can_capture(state)
 
 ## Fold application-observed stats into the docked career (medals settle there).
-func bank_career_stats(arrived:=false) -> void:
-	if not session is StationSession or session._world==null or not session._world.has_contracts():return
-	var state: Dictionary=session.station_owner().snapshot()
+func bank_career_stats(arrived:=false,target: Node=null) -> void:
+	var docked: Node=session if target==null else target
+	if not docked is StationSession or docked._world==null or not docked._world.has_contracts():return
+	var state: Dictionary=docked.station_owner().snapshot()
 	var observed:={"play_ms":int(_career_play_ms),"cloak_ms":int(_career_cloak_ms)}
 	var primaries:=0
 	for slot in state.get("loadout",{}).get("slots",[]):
@@ -424,16 +425,16 @@ func bank_career_stats(arrived:=false) -> void:
 	var cargo: Variant=state.get("cargo")
 	if cargo is Dictionary and cargo.get("capacity") is int and cargo.get("used") is int:observed.max_free_cargo=maxi(0,cargo.capacity-cargo.used)
 	if arrived and _last_flight_hull_percent>=0:observed.min_arrival_hull_percent=_last_flight_hull_percent
-	if session._world.record_stats(observed):_career_play_ms-=int(_career_play_ms);_career_cloak_ms-=int(_career_cloak_ms)
+	if docked._world.record_stats(observed):_career_play_ms-=int(_career_play_ms);_career_cloak_ms-=int(_career_cloak_ms)
 	if not _hints.pending().is_empty():
-		if session._world.record_hints(_hints.pending()):_hints.banked()
-		else:status.text=session._world.error
+		if docked._world.record_hints(_hints.pending()):_hints.banked()
+		else:status.text=docked._world.error
 	# Add-on medals: flight streaks latched since the last docking, plus the
 	# docked ship's cargo capacity. Docking resets the streaks.
 	var elite: Array=_elite_tracker.take_reached()
 	if cargo is Dictionary and cargo.get("capacity") is int:elite.append_array(EliteMedals.dock_reached(cargo.capacity))
 	_elite_tracker.reset()
-	if not session._world.record_elite_medals(elite):status.text=session._world.error
+	if not docked._world.record_elite_medals(elite):status.text=docked._world.error
 	_last_flight_hull_percent=-1
 
 func save_station(announce: bool=true) -> bool:
@@ -1747,8 +1748,10 @@ func enter_station(now_microseconds: int, camera_seed: int=0, unix_seconds: Vari
 	if not candidate.activate():
 		var message:=candidate.error;panel.free();candidate.free();session.camera.make_current()
 		return transition_error(message)
-	# A continuation autosave is part of this transaction. A checked atomic
-	# file failure keeps the pending world, camera and previous save retryable.
+	# A continuation autosave is part of this transaction, so the flight's
+	# career stats are banked into it first. A checked atomic file failure
+	# keeps the pending world, camera and previous save retryable.
+	if transfer!=null:bank_career_stats(returning,candidate)
 	if transfer!=null and not _save_directory.is_empty() and not _save_file.save(station_save_path(),candidate.station_owner(),bindings,continuation_catalogues,library,candidate.location_owner()):
 		var message: String=_save_file.error;panel.free();candidate.free();session.camera.make_current()
 		return transition_error(message)
@@ -1759,8 +1762,9 @@ func enter_station(now_microseconds: int, camera_seed: int=0, unix_seconds: Vari
 	target_frame.set_active(false);aim_reticle.clear();npc_markers.clear()
 	session.rebase_time(Time.get_ticks_usec());_transition_failed=false;_pause_button.disabled=false;clear_input()
 	refresh_render_mode()
-	bank_career_stats(returning)
-	if transfer==null:_autosave_station()
+	if transfer==null:
+		bank_career_stats(returning)
+		_autosave_station()
 	return true
 
 func _prepare_locations(station_id: int,progress: Dictionary,random_state: Dictionary,unix_seconds: Variant) -> RefCounted:
