@@ -821,7 +821,9 @@ func evaluate_ambient_world_logic(delta_ms: Variant,combat: RefCounted,random_st
 		staged._destruction[id]=death;staged._launch_pending[id]=true
 	return {"controller":staged,"combat":staged._combat,"random_state":staged._random.duplicate(true),"relaunches":ids,"clock":request}
 
-func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, random_state: Variant=null,wingmen: RefCounted=null) -> Dictionary:
+## With commit=false the accepted owner stays untouched and the result
+## carries the advanced private copy as "controller".
+func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, random_state: Variant=null,wingmen: RefCounted=null,commit:=true) -> Dictionary:
 	error=""
 	if _selected41_world!=null:
 		if not Vitals.integer(delta_ms) or delta_ms>_max_ms:return fail("Invalid source41 actor frame duration")
@@ -958,15 +960,19 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 	if staged._mission_runner!=null and not _scene_clocked:
 		var clock: Dictionary=staged._mission_runner.snapshot()
 		if not staged._mission_runner.sample_clock(int(clock.elapsed_ms)+int(delta_ms),int(clock.clock_ms)+int(delta_ms)):return fail(staged._mission_runner.error)
-	_mission_runner=staged._mission_runner
-	_combat=staged._combat;_guidance=staged._guidance;_flight=staged._flight;_random=staged._random
-	_destruction=staged._destruction;_accounting=staged._accounting;_started=true
-	_launch_pending=staged._launch_pending
-	if not _contract_result.is_empty() and not _scene_clocked:
-		_contract_result.clock_ms+=int(delta_ms);_contract_result.elapsed_ms+=int(delta_ms)
+	var target: RefCounted=staged
+	if commit:
+		target=self;_mission_runner=staged._mission_runner
+		_combat=staged._combat;_guidance=staged._guidance;_flight=staged._flight;_random=staged._random
+		_destruction=staged._destruction;_accounting=staged._accounting
+		_launch_pending=staged._launch_pending
+	target._started=true
+	if not target._contract_result.is_empty() and not _scene_clocked:
+		target._contract_result.clock_ms+=int(delta_ms);target._contract_result.elapsed_ms+=int(delta_ms)
 	var result:=_identity.duplicate()
-	result.merge({"decisions":decisions,"firing_requests":firing,"random_state":_random.duplicate(true),"combat":_combat.read_snapshot()})
-	if not _destruction.is_empty():result.death_events=death_events;result.defeat_status=defeat_status()
+	result.merge({"decisions":decisions,"firing_requests":firing,"random_state":target._random.duplicate(true),"combat":target._combat.read_snapshot()})
+	if not target._destruction.is_empty():result.death_events=death_events;result.defeat_status=target.defeat_status()
+	if not commit:result.controller=staged
 	return result
 
 func _advance_debris(id: int,delta_ms: int) -> Dictionary:
@@ -1157,9 +1163,10 @@ func evaluate(combat: RefCounted, weapons: RefCounted, milliseconds: int, player
 	error=""
 	if _local_patrol and not _combat.has_local_reactions():return fail("Local traffic weapon control is not connected")
 	if not weapons is Weapons:return fail("Training actor updates require their retained weapon pools")
-	var staged:=fork_for_frame(false);var next_weapons: RefCounted=weapons.fork_for_frame()
-	var operation: Dictionary=staged.advance(milliseconds,player,combat,random_state,wingmen)
-	if operation.is_empty():return fail(staged.error)
+	var next_weapons: RefCounted=weapons.fork_for_frame()
+	var operation: Dictionary=advance(milliseconds,player,combat,random_state,wingmen,false)
+	if operation.is_empty():return {}
+	var staged: RefCounted=operation.controller
 	# These ordinary NPC shots consume no random values and cannot contact
 	# anything until the next weapon phase. Preserve each pre-motion pose and
 	# actor order while committing their independent pools with the whole pass.
