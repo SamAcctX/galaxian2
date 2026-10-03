@@ -218,6 +218,7 @@ func poll_wingman_farewell(panel: Control,checkpoint: Callable=Callable()) -> bo
 	return true
 
 const Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
+const Fee=preload("res://src/content/docking_fee_definitions.gd")
 var _kaamo:={}
 var _kaamo_checked:=false
 ## Set when a docking talk sends the ship away (an unmanned station).
@@ -246,6 +247,12 @@ func poll_kaamo(panel: Control,checkpoint: Callable=Callable()) -> bool:
 		if not _start_kaamo(panel,[[int(line.speaker_id),int(line.text_id),int(line.voice_event_id)]],false):return false
 		_kaamo.depart=true
 		return true
+	if event.is_empty():
+		var fee:=_docking_fee(before)
+		if not fee.is_empty():
+			if not _start_kaamo(panel,[[Fee.SPEAKER,int(fee.text_id),-1]],true,{"#C":_money(int(fee.amount))}):return false
+			_kaamo.fee=int(fee.amount)
+			return true
 	if event.is_empty():return true
 	var candidate: RefCounted=_world.fork()
 	if event=="talk":
@@ -261,7 +268,21 @@ func take_forced_departure() -> bool:
 	var pending:=_forced_departure;_forced_departure=false
 	return pending
 
-func _start_kaamo(panel: Control,pages: Array,offer: bool) -> bool:
+## The unwelcome-pilot fee for this docking, or {} (docking_fee_definitions).
+func _docking_fee(state: Dictionary) -> Dictionary:
+	# A docking that opened with a story conversation is not charged.
+	if int(state.get("dialogue",{}).get("count",0))>0:return {}
+	var station:=int(state.loadout.station_id)
+	var cat:=Catalogues.new()
+	if not cat.open(_library) or station<0 or station>=cat.tables.stations.size():return {}
+	var system:=int(cat.tables.stations[station].system_id)
+	var race:=int(cat.tables.systems[system].fields[Fee.SYSTEM_RACE_FIELD])
+	var attacked: bool=state.get("station_response_flags",{}).get(station,false)
+	return Fee.quote(station,system,race,int(state.contracts.get("campaign_cursor",-1)),state.contracts,attacked,randi_range(0,199))
+
+func _money(value: int) -> String:return str(value)+"$"
+
+func _start_kaamo(panel: Control,pages: Array,offer: bool,tokens: Dictionary={}) -> bool:
 	var events:=[];var speakers:=[]
 	for page in pages:
 		events.append({"speaker_id":page[0],"text_id":page[1],"voice_event_id":page[2]})
@@ -269,6 +290,9 @@ func _start_kaamo(panel: Control,pages: Array,offer: bool) -> bool:
 	var resolver=load("res://src/content/dialogue_lines.gd").new()
 	var lines: Array=resolver.read(_bindings,_library,events)
 	if lines.size()!=events.size():return reject(resolver.error)
+	for line in lines:
+		for token in tokens:
+			for key in ["text","desktop_text"]:line[key]=str(line.get(key,"")).replace(token,tokens[token])
 	if panel==null or not panel.prepare_speakers(_library,_bindings,_visuals,speakers):return reject("The Kaamo Club talk is unavailable: "+("" if panel==null else panel.error))
 	var speech:=Speech.new();add_child(speech)
 	if not speech.configure_events(_library,_bindings,events):
@@ -288,7 +312,20 @@ func _show_kaamo(panel: Control) -> bool:
 	return true
 
 func _navigate_kaamo(action: String,panel: Control,checkpoint: Callable) -> bool:
-	if _kaamo.offer:
+	if _kaamo.has("fee"):
+		var amount:=int(_kaamo.fee)
+		if action=="next" and int(_world.snapshot().contracts.credits)>=amount:
+			var paid: RefCounted=_world.fork()
+			if not paid.pay_docking_fee(amount):return reject(paid.error)
+			if checkpoint.is_valid() and not checkpoint.call(paid):return reject("Could not save the docking fee")
+			_world=paid;_kaamo={}
+		elif action=="next":
+			var missing:=amount-int(_world.snapshot().contracts.credits)
+			if not _start_kaamo(panel,[[Fee.SPEAKER,Fee.SHORT_TEXT,-1]],false,{"#C":_money(missing)}):return false
+			_kaamo.depart=true;return true
+		else:
+			_kaamo={};_forced_departure=true
+	elif _kaamo.offer:
 		if action=="next":
 			var candidate: RefCounted=_world.fork()
 			if not candidate.advance_kaamo(true):return reject(candidate.error)

@@ -1704,6 +1704,7 @@ func fly_pirate_base() -> void:
 	# kill undone in the save) Security turns the ship away at docking.
 	if failures or not await dock_application():return
 	check(not app.session.snapshot().dialogue.get("visible",false),"The freed station still refused docking")
+	if failures or not await docking_fee():return
 	if failures or not seed_pirate_bases(int(app.session.station_owner().snapshot().contracts.progress.get("pirate_bases",0)) & ~bit):return
 	if not await kaamo_talk(423,1,"pirate-base-unmanned"):return
 	for tick in 120:
@@ -1925,6 +1926,47 @@ func collect_base_loot(base: int) -> bool:
 		if tick%10==0:await process_frame
 	print("PIRATE BASE loot ",loot," held ",before," -> ",held.call())
 	check(held.call()==before+int(loot[1]),"The outpost's loot did not reach the hold")
+	return failures==0
+
+## Docking as an enemy of the system's race: the station asks 194 with a fee.
+## Yes pays it and opens the station; with too few credits 192 sends the ship out.
+func docking_fee() -> bool:
+	var station:=int(app.session.station_owner().snapshot().loadout.station_id)
+	var cat: RefCounted=load("res://src/content/catalogues.gd").new()
+	if not cat.open(app.library):check(false,cat.error);return false
+	var race:=int(cat.tables.systems[int(cat.tables.stations[station].system_id)].fields[2])
+	var axes:=[0,0];axes[0 if race<2 else 1]=-100 if race in [0,2] else 100
+	var credits:=int(app.session.station_owner().snapshot().contracts.credits)
+	if not seed_career(axes,-1):return false
+	if not await kaamo_talk(194,1,"docking-fee"):return false
+	var paid: Dictionary=app.session.station_owner().snapshot()
+	print("DOCKING FEE race ",race," credits ",credits," -> ",int(paid.contracts.credits))
+	check(int(paid.contracts.credits)<credits and int(paid.contracts.credits)>=credits-2900 and not app.session.has_method("flight_owner") and not app.session.snapshot().dialogue.get("visible",false),"Paying the docking fee did not take 2700..2899 credits and open the station")
+	if failures or not seed_career(axes,100):return false
+	if not await kaamo_talk(194,1,"docking-fee-short",false):return false
+	if not await kaamo_talk(192,1,"docking-fee-missing"):return false
+	for tick in 120:
+		if app.session.has_method("flight_owner"):break
+		app.present_session();await process_frame
+	check(app.session.has_method("flight_owner"),"Too few credits for the fee did not send the ship out")
+	if failures:return false
+	if not await dock_application() or not seed_career([0,0],credits):return false
+	return true
+
+## Test shortcut: set the career's standing axes and (when >= 0) credits.
+func seed_career(axes: Array,credits: int) -> bool:
+	var file:=StationSaveFile.new();var path: String=app.station_save_path()
+	var document: Dictionary=file.read_document(path)
+	if document.is_empty():check(false,file.error);return false
+	var standing:={"axes":axes,"override":-1}
+	for part in [document.station,document.career]:
+		if part.has("reputation"):part.reputation=standing.duplicate(true)
+		if part.get("progress") is Dictionary and part.progress.has("reputation"):part.progress.reputation=standing.duplicate(true)
+	if credits>=0:document.career.credits=credits
+	var bytes:=file.encode(document)
+	if bytes.is_empty() or not file._write(path,bytes):check(false,file.error);return false
+	check(app.load_station(),"The seeded career did not load: "+app._save_notice.text)
+	app.set_player_mode(true);app.show();app.present_session()
 	return failures==0
 
 ## Test shortcut: set the career's destroyed-base bits.

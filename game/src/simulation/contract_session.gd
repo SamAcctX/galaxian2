@@ -1079,6 +1079,13 @@ func advance_kaamo(purchase: bool) -> bool:
 	_state.progress.kaamo_state=current+1
 	return true
 
+## The fee an unwelcome pilot pays before the hangar opens.
+func pay_docking_fee(amount: int) -> bool:
+	if not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return reject("The docking fee requires an idle docking")
+	if amount<0 or _state.credits<amount:return reject("Insufficient credits.")
+	_state.credits-=amount
+	return true
+
 ## Pays a destroyed pirate base's reward once, at the next idle docking.
 func collect_pirate_base_thanks(pending_bit: int,reward: int) -> bool:
 	if not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return reject("Pirate-base thanks require an idle docking")

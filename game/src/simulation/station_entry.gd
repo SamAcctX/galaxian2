@@ -624,6 +624,16 @@ func advance_kaamo(purchase: bool) -> bool:
 	_retain_equipment(inventory)
 	return true
 
+## Paying the docking fee also forgives an attack on this station's forces.
+func pay_docking_fee(amount: int) -> bool:
+	if _contracts==null or _state.get("hangar_open",false) or snapshot().dialogue.visible:return fail("The docking fee requires an idle station")
+	var career: RefCounted=_contracts.fork()
+	if not career.pay_docking_fee(amount):return fail(career.error)
+	_contracts=career
+	var station:=int(_state.loadout.station_id)
+	if _state.get("station_response_flags",{}).has(station):_state.station_response_flags[station]=false
+	return true
+
 func collect_pirate_base_thanks(pending_bit: int,reward: int) -> bool:
 	if _contracts==null or _state.get("hangar_open",false) or snapshot().dialogue.visible:return fail("Pirate-base thanks require an idle station")
 	var career: RefCounted=_contracts.fork()
