@@ -12,6 +12,7 @@ class MasonScenery extends "res://src/simulation/opening_scenery.gd":
 	var mason_destroyed:=0
 	func presentation_identity() -> RefCounted:return mason_identity
 	func read_snapshot() -> Dictionary:return {"destroyed_count":mason_destroyed}
+	func destroyed_count() -> int:return mason_destroyed
 
 func check(condition: bool,message: String) -> void:
 	checks+=1

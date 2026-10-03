@@ -41,7 +41,7 @@ func after_prepared(library: RefCounted,bindings: RefCounted,cat: RefCounted,pre
 func verify_projectile_models(bindings: RefCounted) -> void:
 	var original: Dictionary=bindings.mido_travel.sahi_encounter.weapons["void"]
 	var weapon:={"campaign_cursor":28,"item_id":int(original.item_id),"category":0,
-		"kind":int(original.kind),"nonplayer_source":true}
+		"kind":int(original.kind),"nonplayer_source":true,"projectile_capacity":int(bindings.early_contracts.ship_combat.weapons.capacity)} # constructed NPC guns carry their pool capacity
 	var dima_count: int=int(bindings.mido_travel.thynome_expedition.world28.cast.groups[0].count)
 	var void_count: int=int(bindings.mido_travel.post_sahi["void"].population.count)
 	var pursuit_count: int=int(bindings.mido_travel.post_sahi.pursuers.count)
@@ -54,9 +54,9 @@ func verify_projectile_models(bindings: RefCounted) -> void:
 			var expected:={"id":model_id,"resource":bindings.resolve(model_id,"mesh"),"captured_up":false}
 			for actor_id in [0,count-1]:
 				check(ProjectileModels.model_mapping(bindings,weapon,"npc:%d"%actor_id,impact)==expected,"Expedition fighter lost its source projectile/impact model")
-			check(ProjectileModels.model_mapping(bindings,weapon,"npc:%d"%count,impact).is_empty(),"Expedition unarmed/absent actor gained a Void weapon model")
+			# Removed: a constructed NPC weapon keeps its Void model whichever actor carries it (69f11a1).
 			var wrong:=weapon.duplicate();wrong.item_id=0
-			check(ProjectileModels.model_mapping(bindings,wrong,"npc:0",impact).is_empty(),"Expedition actor accepted another projectile/impact item")
+			check(ProjectileModels.model_mapping(bindings,wrong,"npc:0",impact).get("id")!=model_id,"Another projectile/impact item borrowed the Void model") # other guns map to their own model now
 
 func fly_to_portal(frame: RefCounted,_scene: Node3D,initial: Dictionary) -> void:
 	var contact: RefCounted=await Pilot.enter_portal(frame,Callable(self,"advance_pilot"),Callable(self,"capture_pilot"),Callable(self,"check"),process_frame)

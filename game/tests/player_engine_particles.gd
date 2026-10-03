@@ -69,7 +69,9 @@ func verify_attachments():
 		check(Appearance.advance(row,last,1).age_ms==-1,"Exhaust survived its source lifetime")
 	resolved.presets[0].size=1
 	check(Engines.resolve(bindings,mounts,0).presets[0].size==125,"Resolved nozzle state aliases imported definitions")
-	check(Engines.resolve(bindings,mounts,1).has("error"),"Another hull inherited Betty's nozzle settings")
+	# Purchased hulls fly with their own exhaust now; another hull must not reuse Betty's rows.
+	var other:=Engines.resolve(bindings,mounts,1)
+	check(other.has("error") or other.presets!=Engines.resolve(bindings,mounts,0).presets,"Another hull inherited Betty's nozzle settings")
 
 func verify_motion():
 	# The same path emits the same count regardless of elapsed time. A faster

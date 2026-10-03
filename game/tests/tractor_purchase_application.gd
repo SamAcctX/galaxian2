@@ -208,7 +208,12 @@ func verify_supplier_reopen(retained: Dictionary) -> void:
 	var after_quotes: Dictionary=without_station_quotes(reopened)
 	before_quotes.contracts.lounges.erase("random")
 	after_quotes.contracts.lounges.erase("random")
-	check(before_quotes==after_quotes,"Reopening the supplier changed more than its source-defined pricing")
+	# Fields a reopened hangar newly records (e.g. loadout.ship_instance) are allowed; every retained field must match.
+	# The hangar moves the saved ship_affiliation into loadout.ship_instance.faction_id.
+	if before_quotes.equipment.has("ship_affiliation") and after_quotes.loadout.has("ship_instance"):
+		check(after_quotes.loadout.ship_instance.faction_id==before_quotes.equipment.ship_affiliation,"Reopening the supplier changed the ship's faction")
+		before_quotes.equipment.erase("ship_affiliation")
+	check(preload("res://tests/fixtures/save_compare.gd").matches_older(after_quotes,before_quotes),"Reopening the supplier changed more than its source-defined pricing: "+str(quote_diff(after_quotes,before_quotes,"")).left(1500))
 	check(app.request_departure(),app.session.error)
 	app.cancel_departure()
 
@@ -268,3 +273,10 @@ func prepare_supplier_trip() -> bool:
 	check(after.campaign_cursor==24 and after.mission==before.mission and after.contracts.mission==retained_job and after.contracts.passengers==3,"The paid upgrade changed pending story or passengers")
 	print("Paid primary upgrade2: ",offer.unit_price," credits; remaining wallet ",after.contracts.credits,"; original gun and scanner retained in cargo")
 	return failures==0
+
+func quote_diff(current: Variant,older: Variant,path: String) -> Array:
+	if current is Dictionary and older is Dictionary:
+		var out:=[]
+		for key in older:out+=quote_diff(current.get(key),older[key],path+"."+str(key)) if current.has(key) else [path+"."+str(key)+" missing"]
+		return out
+	return [] if preload("res://tests/fixtures/save_compare.gd").matches_older(current,older) else [path+": "+str(current).left(200)+" vs "+str(older).left(200)]

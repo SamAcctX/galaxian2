@@ -41,7 +41,7 @@ func verify(content: String,pack: String) -> void:
 		var invalid:=context.duplicate();invalid[key]=invalids[key]
 		check(not Construction.new().configure_kappa_rescue(bindings,cat,seed,invalid),"Kappa accepted a mismatched context: "+key)
 	for key in ["station_id","ship_id","equipment_ids"]:
-		var invalid:=seed.duplicate(true);invalid[key]={"station_id":56,"ship_id":10,"equipment_ids":[-1]}[key]
+		var invalid:=seed.duplicate(true);invalid[key]={"station_id":56,"ship_id":9999,"equipment_ids":[-1]}[key] # every bought base hull may fly Kappa; use one outside the catalogue
 		check(not Construction.new().configure_kappa_rescue(bindings,cat,invalid,context),"Kappa accepted an unsupported loadout: "+key)
 	for id in [-1,4]:check(not Route.new().configure_kappa_generated(bindings,id),"Kappa accepted an absent route owner")
 	var vectors: Variant=JSON.parse_string(FileAccess.get_file_as_string(OS.get_environment("GOF2_KAPPA_VECTORS")))

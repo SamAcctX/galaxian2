@@ -53,7 +53,7 @@ func verify_selected_mapping_guards() -> void:
 	for impact in [false,true]:
 		var model_id: int=int(void_weapon.impact_model_id if impact else void_weapon.model_resource_id)
 		check(DepartureProjectiles.model_mapping(definitions,weapon,"npc:0",impact)=={"id":model_id,"resource":definitions.resolve(model_id,"mesh"),"captured_up":false},"Selected Dima fighter lost its exact Void model")
-		check(DepartureProjectiles.model_mapping(definitions,weapon,"npc:5",impact).is_empty(),"Absent Dima fighter gained a Void effect")
+		# Removed: a constructed NPC weapon now keeps its Void model whichever fighter carries it (69f11a1).
 		for cursor in [25,26,29]:
 			weapon.campaign_cursor=cursor
 			var ordinary:=weapon.duplicate();ordinary.item_id=0

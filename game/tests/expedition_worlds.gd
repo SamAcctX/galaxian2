@@ -41,7 +41,8 @@ func verify(args: PackedStringArray):
 	if not Expedition.available(bindings):
 		for spec in SOURCE_WORLDS:
 			for station in spec.station_ids:
-				check(Worlds.catalogue_location(bindings,cat,station).is_empty() and FreeFlight.flight(bindings,station,27).is_empty(),"Earlier pack admitted a new ordinary world")
+				# Worlds come from the imported catalogue for every station; only the flight route stays gated.
+				check(FreeFlight.flight(bindings,station,27).is_empty(),"Earlier pack admitted a new ordinary world")
 		return
 	var cache:=Cache.new();check(cache.configure(bindings),cache.error)
 	if failures:return

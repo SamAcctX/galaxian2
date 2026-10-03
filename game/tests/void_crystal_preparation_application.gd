@@ -97,7 +97,8 @@ func verify_crystal_departure(fitted: Dictionary) -> void:
 	var landed: Dictionary=app.session.station_owner().snapshot()
 	check(landed.loadout.station_id==95 and landed.loadout.system_id==19 and landed.campaign_cursor==32 and landed.mission==fitted.mission,"The actual local flight did not reach the gate station with its pending mission")
 	check(landed.cargo==fitted.cargo and landed.loadout.equipment_ids==fitted.loadout.equipment_ids and landed.contracts.credits==route_credits and landed.contracts.mission==retained_job and landed.contracts.passengers==3,"Local flight/docking lost the paid preparation or passenger job")
-	check(landed.contracts.travel_statistics==fitted.contracts.travel_statistics and landed.player_cache.values.hull>0,"A local trip counted an unflown gate or saved a destroyed pilot")
+	# Docking records the visited station/system; only the gate count must stay put.
+	check(landed.contracts.travel_statistics.get("jumpgates_used")==fitted.contracts.travel_statistics.get("jumpgates_used") and landed.player_cache.values.hull>0,"A local trip counted an unflown gate or saved a destroyed pilot")
 	check(landed.contracts.void_source.source_station_id==91 and landed.contracts.void_source.eligible_selection_count==fitted.contracts.void_source.eligible_selection_count+1,"The actual changed location reset or skipped the retained Void source counter")
 	if failures or not retain_chapter_save("thynome32-route-95"):return
 	await capture_free_application("crystal-preparation-gate-station")

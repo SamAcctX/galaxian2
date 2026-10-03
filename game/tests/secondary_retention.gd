@@ -145,7 +145,7 @@ func detached_views(bindings: RefCounted,cat: RefCounted,lib: RefCounted,initial
 	equipment._rules={"weapon_category":0,"armor_subtype":10}
 	var capacity: int=preload("res://src/simulation/equipment_stats.gd").cargo_capacity(bindings,cat,held)
 	equipment._state.cargo.merge({"base_content_id":initial.base_content_id,"binding_id":initial.binding_id,"ship_id":initial.ship_id,"capacity":capacity,"free_space":capacity-1})
-	equipment._completion_prices.resize(cat.tables.items.size());equipment._completion_prices.fill(104)
+	equipment._completion_prices.resize(cat.tables.items.size());equipment._completion_prices.fill(104);equipment._catalogue_size=cat.tables.items.size()
 	equipment._items={22:{"category":0,"subtype":0},41:{"category":1,"subtype":6}}
 	var primary:=Primaries.new();var mounts:=Mounts.new()
 	# The shared weapon utility supports detached loadouts without a mission;

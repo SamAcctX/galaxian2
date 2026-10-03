@@ -76,6 +76,7 @@ func verify_free_application() -> void:
 		if row.item_id==85:
 			row.available=true;row.remaining[material_index]-=50
 			row.material_value+=50*int(catalogue.tables.items[164].properties[7])
+			if row.has("station_id"):row.station_id=int(delivered.loadout.station_id) # the blueprint now remembers where its materials were handed in
 	check(not delivered.loadout.equipment_ids.has(85) and delivered.contracts.blueprints==expected_blueprints,"The crystal hand-in changed the exact blueprint precredit or installed an unearned drive")
 	var owner: RefCounted=app.session.station_owner()
 	check(not owner.acknowledge() and not owner.begin_campaign_conversation(definitions,catalogue,source) and owner.snapshot()==delivered,"The crystal hand-in committed or opened twice")
