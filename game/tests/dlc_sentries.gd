@@ -8,7 +8,7 @@ const Sentries=preload("res://src/simulation/sentry_guns.gd")
 const SentryGeometry=preload("res://src/presentation/sentry_gun_geometry.gd")
 const VisualLibrary=preload("res://src/content/visual_library.gd")
 const ADMITTED:=[211,212,213]
-const REFUSED:=[232]
+const REFUSED:=[]
 
 func _initialize() -> void:
 	var args:=OS.get_cmdline_user_args()
@@ -86,6 +86,7 @@ func verify_owner(bindings: RefCounted,cat: RefCounted,mounts: RefCounted,built:
 	var fresh: Dictionary=again.owner.snapshot().guns[0].sentry.slots[0]
 	var arming: Dictionary=again.owner.evaluate_sentry_damage(owner.snapshot().guns[0].slot_index,int(fresh.id),100)
 	check(not arming.is_empty() and arming.hit.applied==0,"A new sentry took damage while arming")
+	verify_enemy_fire(bindings,cat,owner)
 	# Catalogue values carried by the turret's shot.
 	var sentry:=Sentries.new()
 	check(sentry.configure(bindings,cat,213),sentry.error)
@@ -107,3 +108,33 @@ func verify_geometry(lib: RefCounted,bindings: RefCounted,visual_path: String) -
 		var frame: Dictionary=geometry.prepare(sentry.snapshot(),Transform3D.IDENTITY)
 		check(not frame.is_empty() and frame.sentries[0].visible and not frame.sentries[1].visible,"Placed sentry is not drawn: "+geometry.error)
 	geometry.free()
+
+## Enemy fire: a hostile shot flying at an armed sentry strikes it and costs
+## it hull; a friendly shooter's shot does not.
+func verify_enemy_fire(bindings: RefCounted,cat: RefCounted,owner: RefCounted) -> void:
+	var step: Dictionary=owner.evaluate_advance(3500,active_group(bindings,cat,construction(bindings,cat,0.5),-50),[0,1,2,3])
+	if step.is_empty():check(false,owner.error);return
+	owner=step.owner
+	var targets: Array=owner.sentry_targets()
+	check(not targets.is_empty(),"No armed sentry is offered to enemy fire")
+	if targets.is_empty():return
+	var target: Dictionary=targets[0]
+	var source:=Sentries.new();check(source.configure(bindings,cat,213),source.error)
+	var shots: RefCounted=source.projectiles().fork_state();shots.advance(1000)
+	var muzzle: Vector3=target.center+Vector3(0,0,-3000)
+	var fired: Dictionary=shots.fire(muzzle,Vector3(0,0,1),true)
+	check(not fired.is_empty() and fired.fired,"The test shot did not fire: "+shots.error)
+	var weapons:=preload("res://src/simulation/opening_npc_weapons.gd").new();weapons._guns=[shots]
+	var friendly: Dictionary=weapons.evaluate_sentry_contacts([{"present":true,"hostile":false}],targets)
+	check(not friendly.is_empty() and friendly.hits.is_empty(),"A friendly shot struck a sentry")
+	var hits:=[]
+	for frame in 20:
+		var struck: Dictionary=weapons.evaluate_sentry_contacts([{"present":true,"hostile":true}],targets)
+		if struck.is_empty():check(false,weapons.error);return
+		weapons=struck.weapons;hits=struck.hits
+		if not hits.is_empty():break
+		if weapons._guns[0].advance(16).is_empty():check(false,weapons._guns[0].error);return
+	check(hits.size()==1 and hits[0].sentry_id==target.sentry_id and hits[0].damage==14,"A hostile shot did not strike the sentry: "+str(hits))
+	if hits.is_empty():return
+	var damaged: Dictionary=owner.evaluate_sentry_damage(int(hits[0].slot_index),int(hits[0].sentry_id),int(hits[0].damage))
+	check(not damaged.is_empty() and damaged.hit.applied==14,"The enemy hit did not cost the sentry hull")

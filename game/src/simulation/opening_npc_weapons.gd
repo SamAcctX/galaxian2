@@ -548,6 +548,32 @@ func evaluate_player_update(player: RefCounted, pose: Variant, shooter_states: V
 		events.append({"actor_id":id,"contacts":contact.contacts,"last_contact_actor":contact.last_contact_actor,"motion":motion})
 	return {"weapons":next,"player":staged_player,"actors":events}
 
+## Hostile shots reaching a placed sentry (Supernova): the original keeps
+## sentries among the level's ships, so enemy fire hits them. Each shot marks
+## its impact on the first sentry it reaches and reports its gun's damage.
+const SENTRY_HALF_EXTENT:=800
+func evaluate_sentry_contacts(shooter_states: Array,targets: Array) -> Dictionary:
+	error=""
+	if shooter_states.size()!=_guns.size():return fail("Sentry contacts require every shooter's state")
+	var next: RefCounted=fork_for_frame();var geometry:=PlayerContacts.Geometry.new();var hits:=[]
+	for id in _guns.size():
+		var gun: RefCounted=next._guns[id]
+		var state: Variant=shooter_states[id]
+		if gun==null or not state is Dictionary or not state.get("present",false) or not state.get("hostile",false) or not gun.has_retained_projectiles():continue
+		var shots: Dictionary=gun.snapshot();var staged: RefCounted=null
+		for shot in shots.get("slots",[]):
+			if shot==null or int(shot.get("remaining_ms",0))==int(Projectiles.HIT_LIFETIME_SENTINEL):continue
+			for target in targets:
+				var query:=geometry.bounds(shot.position,shot.velocity,target.center,SENTRY_HALF_EXTENT)
+				if query.is_empty():return fail(geometry.error)
+				if not query.hit:continue
+				if staged==null:staged=gun.fork_state()
+				if not staged.mark_impact(shot.id):return fail(staged.error)
+				hits.append({"slot_index":int(target.slot_index),"sentry_id":int(target.sentry_id),"damage":int(shots.weapon.damage)})
+				break
+		if staged!=null:next._guns[id]=staged
+	return {"weapons":next,"hits":hits}
+
 func evaluate_combat_training_update(player: RefCounted, pose: Variant, combat: RefCounted, special_flight: Variant, delta_ms: Variant,wingmen: RefCounted=null) -> Dictionary:
 	error=""
 	if _selected41_world!=null:return fail("Source41 mixed contacts require their explicit native owners")

@@ -979,6 +979,17 @@ func evaluate_weapons(player: RefCounted, pose: Transform3D, milliseconds: int, 
 	if not next._impacts.apply_contacts(prior,next._primary_contacts,pass_result.actors):return fail(next._impacts.error)
 	if next._primaries!=null:next._combat=pass_result.combat
 	next._weapons=pass_result.weapons;next._weapon_events=Readonly.freeze(pass_result.actors);next._elapsed_ms+=milliseconds
+	# Enemy shots also strike the player's placed sentries.
+	if next._secondaries!=null:
+		var sentries: Array=next._secondaries.sentry_targets()
+		if not sentries.is_empty():
+			var struck: Dictionary=next._weapons.evaluate_sentry_contacts(next._combat.shooter_states(),sentries)
+			if struck.is_empty():return fail(next._weapons.error)
+			next._weapons=struck.weapons
+			for hit in struck.hits:
+				var damaged: Dictionary=next._secondaries.evaluate_sentry_damage(int(hit.slot_index),int(hit.sentry_id),int(hit.damage))
+				if damaged.is_empty():return fail(next._secondaries.error)
+				next._secondaries=damaged.owner
 	next._primary_fire={}
 	var result:={"encounter":next,"player":pass_result.player}
 	if pass_result.has("wingmen"):result.wingmen=pass_result.wingmen

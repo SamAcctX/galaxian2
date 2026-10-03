@@ -322,6 +322,15 @@ func _sentry_candidates(combat: RefCounted,ordered_actor_ids: Variant) -> Array:
 		result.append({"actor_id":id,"position":actor.pose.origin,"forward":body.basis.z if body is Transform3D else Vector3.ZERO})
 	return result
 
+## Placed sentries enemy fire can hit: [{slot_index, sentry_id, center}].
+func sentry_targets() -> Array:
+	var result:=[]
+	for gun in _guns:
+		if not gun.has("sentry"):continue
+		for sentry in gun.sentry.snapshot().slots:
+			if sentry!=null and sentry.phase=="active":result.append({"slot_index":int(gun.slot_index),"sentry_id":int(sentry.id),"center":sentry.pose.origin})
+	return result
+
 ## A hostile hit on a placed sentry, staged on a fork like any other frame.
 func evaluate_sentry_damage(slot_index: int,sentry_id: int,amount: int) -> Dictionary:
 	error=""
