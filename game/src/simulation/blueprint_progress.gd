@@ -9,6 +9,7 @@ const STORY_MATERIAL_QUANTITY := 50
 const SHIPPING_UNIT_COST := 20
 const Catalogues = preload("res://src/content/catalogues.gd")
 const Library = preload("res://src/content/library.gd")
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 var error := ""
 var _recipes: Dictionary = {}
 var _material_unit_value := 0
@@ -77,6 +78,14 @@ func restore(catalogues: RefCounted, binding_id: String, saved: Dictionary) -> b
 func snapshot() -> Dictionary:
 	return _state.duplicate(true)
 
+## Read-only state shared with forks and frame observations; never edit it.
+func read_snapshot() -> Dictionary:
+	return Readonly.freeze(_state)
+
+## Mutators edit a private copy once the state has been shared.
+func _edit() -> void:
+	if _state.is_read_only():_state=_state.duplicate(true)
+
 
 func entry(item_id: int) -> Dictionary:
 	for row in _state.get("entries", []):
@@ -88,12 +97,13 @@ func fork_for_transaction() -> RefCounted:
 	var copy: RefCounted = get_script().new()
 	copy._recipes = _recipes
 	copy._material_unit_value = _material_unit_value
-	copy._state = _state.duplicate(true)
+	copy._state = read_snapshot()
 	copy._station_count=_station_count
 	return copy
 
 func unlock(item_id: int) -> bool:
 	error=""
+	_edit()
 	var before:=entry(item_id)
 	if before.is_empty() or before.available:return reject("This blueprint is unknown or already owned")
 	# Acquisition grants the recipe only, never materials or a finished product.
@@ -109,6 +119,7 @@ func story_grant(item_id: int,material_id: int,quantity: int,station_id: int) ->
 	error=""
 	var index: int=_recipes.get(item_id,{}).get("material_ids",[]).find(material_id)
 	if entry(item_id).is_empty() or index<0 or quantity<1 or station_id<0 or station_id>=_station_count:return reject("This story blueprint has no matching recipe")
+	_edit()
 	for row in _state.entries:
 		if row.item_id!=item_id:continue
 		row.available=true
@@ -119,6 +130,7 @@ func story_grant(item_id: int,material_id: int,quantity: int,station_id: int) ->
 ## A story hands over a recipe only; no material is supplied.
 func story_unlock(item_id: int) -> bool:
 	error=""
+	_edit()
 	for row in _state.entries:
 		if row.item_id==item_id:row.available=true;return true
 	return reject("This story blueprint has no retained recipe")
@@ -128,6 +140,7 @@ func story_unlock(item_id: int) -> bool:
 func story_reset_station(station_id: int) -> bool:
 	error=""
 	if station_id<0 or station_id>=_station_count:return reject("The blueprint reset has no station")
+	_edit()
 	for row in _state.entries:
 		if int(row.get("station_id",-1))!=station_id:continue
 		row.remaining=_recipes[row.item_id].quantities.duplicate();row.material_value=0;row.station_id=-1
@@ -135,6 +148,7 @@ func story_reset_station(station_id: int) -> bool:
 
 func story_lock(item_id: int) -> bool:
 	error=""
+	_edit()
 	for row in _state.entries:
 		if row.item_id==item_id:row.available=false;return true
 	return reject("This story blueprint has no retained recipe")
@@ -219,6 +233,7 @@ func precredit_story33(transaction: Dictionary) -> bool:
 	var material_value: int = STORY_MATERIAL_QUANTITY * _material_unit_value
 	if before.remaining[index] < MIN_I32 + STORY_MATERIAL_QUANTITY or before.material_value > MAX_I32 - material_value:
 		return reject("Blueprint material credit exceeds the source integer range")
+	_edit()
 	for row in _state.entries:
 		if row.item_id == STORY_BLUEPRINT_ID:
 			row.available = true

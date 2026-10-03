@@ -197,7 +197,7 @@ func evaluate(timeline: RefCounted, scenery: RefCounted, delta_ms: Variant, pres
 	if previous.camera.shot.phase>=4 and _flight==null: return fail("The live encounter requires connected player flight and weapons")
 	if _flight!=null and _player_state.snapshot().vitals.hull<=0: return fail("The player death transition is not yet supported")
 	if _flight!=null and previous.radio.finished[_flight.boundary_event()] and not previous.has("escape"): return fail("The postcombat mission transition is not yet supported")
-	if _impacts!=null and _impacts.snapshot().elapsed_ms!=_elapsed_ms:return fail("Impact clock differs from its world")
+	if _impacts!=null and _impacts.read_snapshot().elapsed_ms!=_elapsed_ms:return fail("Impact clock differs from its world")
 	if _damage_particles!=null and _damage_particles.elapsed_ms()!=_elapsed_ms:return fail("Damage particle clock differs from its world")
 	if previous.get("escape",{}).get("boundary","")!="":return fail("The following arrival scene is not yet connected")
 	var previous_weapons:=snapshot() if _impacts!=null else {}

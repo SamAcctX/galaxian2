@@ -1,4 +1,5 @@
 extends RefCounted
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 const Frames=preload("res://src/simulation/frame_clock.gd")
 var _max_ms:=0
 ## Retained combat for supported early flights. The enclosing flight stages
@@ -977,7 +978,7 @@ func evaluate_weapons(player: RefCounted, pose: Transform3D, milliseconds: int, 
 	if pass_result.is_empty():return fail(next._weapons.error)
 	if not next._impacts.apply_contacts(prior,next._primary_contacts,pass_result.actors):return fail(next._impacts.error)
 	if next._primaries!=null:next._combat=pass_result.combat
-	next._weapons=pass_result.weapons;next._weapon_events=pass_result.actors;next._elapsed_ms+=milliseconds
+	next._weapons=pass_result.weapons;next._weapon_events=Readonly.freeze(pass_result.actors);next._elapsed_ms+=milliseconds
 	next._primary_fire={}
 	var result:={"encounter":next,"player":pass_result.player}
 	if pass_result.has("wingmen"):result.wingmen=pass_result.wingmen
@@ -1104,7 +1105,7 @@ func evaluate_world(player: RefCounted, pose: Transform3D, milliseconds: int, ra
 	if operation.is_empty():return fail(_control.error)
 	var next:=fork_for_frame()
 	next._control=operation.controller;next._combat=operation.combat;next._weapons=operation.weapons
-	next._actor_events=operation.actors;next._world_elapsed_ms+=milliseconds
+	next._actor_events=Readonly.freeze(operation.actors);next._world_elapsed_ms+=milliseconds
 	next._selected40_pending_world=false
 	return {"encounter":next,"random_state":operation.random_state}
 
@@ -1131,8 +1132,8 @@ func snapshot(shared:=false) -> Dictionary:
 	var shares: bool=_control.has_method("shares_combat") and _control.shares_combat(_combat)
 	result.merge({"elapsed_ms":_elapsed_ms,"world_elapsed_ms":_world_elapsed_ms,
 		"combat":combat,"controller":_control.snapshot(combat if shared else combat.duplicate(true)) if shares else _control.snapshot(),"weapons":_weapons.snapshot(),
-		"weapon_events":_weapon_events.duplicate(true),"actor_events":_actor_events.duplicate(true),
-		"projectile_visuals":_projectiles.snapshot(),"impact_visuals":_impacts.snapshot()})
+		"weapon_events":_weapon_events if shared else _weapon_events.duplicate(true),"actor_events":_actor_events if shared else _actor_events.duplicate(true),
+		"projectile_visuals":_projectiles.snapshot(),"impact_visuals":_impacts.read_snapshot() if shared else _impacts.snapshot()})
 	if _primaries!=null:
 		result.primaries=_primaries.snapshot();result.primary_contacts=_primary_contacts.duplicate(true);result.primary_fire=_primary_fire.duplicate(true)
 	if _secondaries!=null:
@@ -1146,7 +1147,7 @@ func presentation_snapshot() -> Dictionary:
 	var result:=_identity.duplicate()
 	result.merge({"elapsed_ms":_elapsed_ms,"combat":{"actors":_combat.actor_snapshots()},
 		"weapons":_weapons.snapshot(),"projectile_visuals":_projectiles.snapshot(),
-		"impact_visuals":_impacts.snapshot()})
+		"impact_visuals":_impacts.read_snapshot()})
 	if _primaries!=null:result.primaries=_primaries.snapshot()
 	return result
 
@@ -1191,6 +1192,8 @@ func selected40_frame_context() -> Dictionary:
 		"pending_world":_selected40_pending_world,"sequence":_selected40_sequence.snapshot(),
 		"view":_selected40_view.snapshot(),"freighter_mode":_combat.actor_snapshot(0).actor_mode}
 func actor_events() -> Array:return _actor_events.duplicate(true)
+## This frame's actor events, read-only.
+func read_actor_events() -> Array:return Readonly.freeze(_actor_events)
 func actor_engine_observation(actor_id: int) -> Dictionary:
 	return {} if _control==null else _control.actor_engine_observation(actor_id)
 
@@ -1239,7 +1242,7 @@ func fork_for_frame() -> RefCounted:
 	copy._selected_secondary=_selected_secondary;copy._secondary_events=_secondary_events.duplicate(true)
 	copy._primary_contacts=_primary_contacts.duplicate(true);copy._primary_fire=_primary_fire.duplicate(true)
 	copy._elapsed_ms=_elapsed_ms;copy._world_elapsed_ms=_world_elapsed_ms
-	copy._weapon_events=_weapon_events.duplicate(true);copy._actor_events=_actor_events.duplicate(true)
+	copy._weapon_events=Readonly.freeze(_weapon_events);copy._actor_events=Readonly.freeze(_actor_events)
 	return copy
 func reject(message: String) -> bool:error=message;return false
 func fail(message: String) -> Dictionary:reject(message);return {}

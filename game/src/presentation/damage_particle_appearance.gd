@@ -48,13 +48,15 @@ static func sample_prepared(preset: Dictionary,state: Dictionary,fade_in_rgb:=fa
 	if OS.is_debug_build() and not valid_slot(preset,state):return {"error":"Invalid damage particle appearance state"}
 	if int(state.age_ms)==-1:return {"active":false}
 	var fraction:=minf(1.0,single(single(state.age_ms)/single(preset.lifetime_ms)))
-	var remaining:=single(1.0-fraction);var color:=[]
-	for channel in 4:
-		var value:=single(single(single(preset.start_rgba[channel])*remaining)+single(single(preset.end_rgba[channel])*fraction))
-		color.append(single(value*single(1.0/255.0)))
+	var remaining:=single(1.0-fraction)
+	# Color channels are binary32: each product, the sum and the 1/255 scale
+	# round exactly like the per-channel source float casts.
+	var start: Array=preset.start_rgba;var end: Array=preset.end_rgba
+	var color:=(Color(start[0],start[1],start[2],start[3])*remaining+Color(end[0],end[1],end[2],end[3])*fraction)*(1.0/255.0)
 	if state.age_ms<preset.fade_in_ms:
 		var ramp:=single(single(state.age_ms)/single(preset.fade_in_ms))
-		for channel in ([0,1,2] if fade_in_rgb else [3]):color[channel]=single(color[channel]*ramp)
+		if fade_in_rgb:color.r*=ramp;color.g*=ramp;color.b*=ramp
+		else:color.a*=ramp
 	# The last animation tile lasts through the inclusive lifetime boundary.
 	@warning_ignore("integer_division")
 	var frame:=maxi(0,(int(state.age_ms)-1)*int(preset.animation_frames)/int(preset.lifetime_ms))
@@ -75,7 +77,7 @@ static func sample_prepared(preset: Dictionary,state: Dictionary,fade_in_rgb:=fa
 	# have no mirror flag, so their zero-frame rectangle remains unchanged.
 	var uv:=Vector4(us[x_index],vs[y_index],us[1-x_index],vs[1-y_index])
 	return {"active":true,"size":state.size,"age_ms":state.age_ms,"frame":frame,
-		"color":Color(color[0],color[1],color[2],color[3]),
+		"color":color,
 		"uv_rect":uv}
 
 static func valid_state(preset: Dictionary,state: Dictionary) -> bool:

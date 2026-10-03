@@ -1,4 +1,5 @@
 extends RefCounted
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Live motion, scenery and entry control for supported early ordinary flights.
@@ -2271,7 +2272,7 @@ func _advance_world(milliseconds: int, preceding_reference: Vector3) -> bool:
 			if not _particles.finish_npc_pass(before,actors.encounter.read_combat(),actors.encounter.actor_events(),milliseconds,1.0):return reject(_particles.error)
 		_encounter=actors.encounter;_random=actors.random_state
 		if not _objective.observe_combat(_encounter):return reject(_objective.error)
-		if not _audio_frame.is_empty():_audio_frame.actors=_encounter.actor_events()
+		if not _audio_frame.is_empty():_audio_frame.actors=_encounter.read_actor_events()
 	if not _scenery.update(milliseconds,preceding_reference,1.0,null,_random):return reject(_scenery.error)
 	if _objective!=null and not _objective.observe_scenery(_scenery):return reject(_objective.error)
 	if _portal!=null and not _portal.advance(milliseconds,_camera.snapshot().pose):return reject(_portal.error)
@@ -3065,7 +3066,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	state.booster=booster_state();state.cloak=cloak_state();state.turret=turret_state();state.khador=drive_state()
 	state.player_engine=_engine_audio.snapshot()
 	if _wingmen!=null:state.wingman_actors=_wingmen.snapshot()
-	state.merge({"world_type":_entry.world_type,"location":_entry.location.duplicate(true),"activated":true,
+	state.merge({"world_type":_entry.world_type,"location":Readonly.freeze(_entry.location) if shared_scenery else _entry.location.duplicate(true),"activated":true,
 		"player_pose":_pose,"control_throttle":_throttle,"player":_player.snapshot(),"gamma_rate":_gamma_rate,"volatile":_volatile_carried(),"instability":_instability,"player_cache":_player.cache_snapshot(),"angular_units":_pilot.angular_units,
 		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"supernova_reversed":_supernova_reversed,"supernova_grown_ms":_supernova_grown_ms,"guided_missile":_encounter!=null and _encounter.guided_missile_active(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),
 		"ship_detail":_detail.snapshot(),"detail_reference":_reference,"actors":[],"random_state":_random.duplicate(true),
@@ -3094,7 +3095,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 		state.fast_forward=fast_forward_state()
 		state.fast_forward.camera_ms=_camera_ms;state.fast_forward.camera_passes=_camera_passes
 		state.fast_forward.camera_response=_camera.response_snapshot()
-	if _entry.has("gate_environment"):state.gate_environment=_entry.gate_environment.duplicate(true)
+	if _entry.has("gate_environment"):state.gate_environment=Readonly.freeze(_entry.gate_environment) if shared_scenery else _entry.gate_environment.duplicate(true)
 	var gate_animation: RefCounted=gate_animation_owner()
 	if gate_animation!=null:state.gate_animation=gate_animation.snapshot()
 	if _gate_transit!=null:
@@ -3127,7 +3128,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 		state.player_route={} if not _story_route.get("point") is Vector3 else {"base_content_id":_entry.base_content_id,"binding_id":_entry.binding_id,"owner":"player","story":true,"point":_story_route.point}
 	if _rescue!=null:state.kappa_rescue=_rescue.snapshot()
 	if _objective is ContractObjective:state.world_path=_world_path.duplicate(true)
-	if not _audio_frame.is_empty():state.flight_audio=_audio_frame.duplicate(true)
+	if not _audio_frame.is_empty():state.flight_audio=Readonly.freeze(_audio_frame.duplicate()) if shared_scenery else _audio_frame.duplicate(true)
 	if _encounter!=null:
 		state.encounter=_encounter.snapshot(shared_scenery)
 		state.actors=state.encounter.combat.actors if shared_scenery else state.encounter.combat.actors.duplicate(true)
@@ -3168,7 +3169,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 			state.progress=state.mining_objective.progress
 			state.combat_objective_satisfied=state.mining_objective.combat_objective_satisfied
 			state.combat_objective_acknowledged=state.mining_objective.combat_objective_acknowledged
-			state.equipment=_equipment.snapshot()
+			state.equipment=_equipment.read_snapshot() if shared_scenery else _equipment.snapshot()
 		if _convoy_career!=null:
 			state.contracts=_convoy_career.snapshot()
 			state.contracts.progress=state.mining_objective.progress
@@ -3256,7 +3257,8 @@ func fork_for_frame() -> RefCounted:
 	copy._navigation=_navigation
 	copy._world_path=_world_path.duplicate(true)
 	copy._world_route=_world_route # Immutable shared path; commands fork per pilot.
-	copy._audio_frame=_audio_frame.duplicate(true)
+	# Frames replace audio rows whole; the nested rows stay shared.
+	copy._audio_frame=_audio_frame.duplicate()
 	if _local_travel!=null:copy._local_travel=_local_travel.fork()
 	if _fast_forward!=null:copy._fast_forward=_fast_forward.fork_for_frame()
 	copy._near_target=_near_target;copy._camera_ms=_camera_ms;copy._camera_passes=_camera_passes

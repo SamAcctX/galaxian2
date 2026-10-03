@@ -111,6 +111,11 @@ func snapshot() -> Dictionary:
 	var selections: Dictionary=_selections.duplicate(true);selections.merge(_fixed.duplicate(true))
 	return {"base_content_id":_base,"binding_id":_binding,"counter_ms":_counter,"selections":selections}
 
+## Shares the frozen selections with read-only frame observations.
+func read_snapshot() -> Dictionary:
+	if not _fixed.is_empty() or _selectors.is_empty():return snapshot()
+	return {"base_content_id":_base,"binding_id":_binding,"counter_ms":_counter,"selections":Readonly.freeze(_selections)}
+
 func clear() -> void:
 	error="";_clock={};_counter=0;_max_ms=0;_selectors={};_selections={};_base="";_binding="";_fixed={}
 

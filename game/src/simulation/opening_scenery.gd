@@ -428,7 +428,7 @@ func _build_snapshot(shared:=false) -> Dictionary:
 	if _motion==null:return {}
 	# The shared motion rows stay read-only; this observation adds its own keys.
 	var field: Dictionary = _motion.frame_snapshot().duplicate() if shared else _motion.snapshot()
-	field.detail=_detail.snapshot()
+	field.detail=_detail.read_snapshot() if shared else _detail.snapshot()
 	if _escape_relocated:field.escape_relocated=true
 	if _bodies!=null:field.bodies=_bodies.read_snapshot() if shared else _bodies.snapshot()
 	field.random_state=_random_state.duplicate(true)

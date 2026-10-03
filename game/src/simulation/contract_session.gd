@@ -4,6 +4,7 @@ extends RefCounted
 ## and fees together. Delivery results require the destination inventory and
 ## acknowledgement; ordinary contract travel and combat have separate owners.
 const Difficulty=preload("res://src/content/difficulty_definitions.gd")
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 const Definitions=preload("res://src/content/early_contract_definitions.gd")
 const Offer=preload("res://src/simulation/contract_offer.gd")
 const Equipment=preload("res://src/simulation/station_equipment.gd")
@@ -424,7 +425,7 @@ func populate(bindings: RefCounted,cat: RefCounted,library: RefCounted,random_st
 	if next._lounges!=null:
 		next._lounges=next._lounges.fork()
 		if not next._lounges.remember(contacts):return reject(next._lounges.error)
-	next._state.population=population
+	next._state.population=Readonly.freeze(population.duplicate(true))
 	_state=next._state;_lounges=next._lounges
 	return true
 
@@ -439,7 +440,7 @@ func retain_locations(cache: RefCounted) -> bool:
 	if retained.get("current_station_id")!=_state.station_id:return reject("The retained locations do not select the current station")
 	var local: Dictionary=cache.location(_state.station_id)
 	if local.is_empty() or not local.has("stock") or local.population.context.campaign_cursor>_state.campaign_cursor:return reject("The current station lacks its earlier generated stock and contacts")
-	_lounges=cache.fork();_state.population=local.population;_state.offers=local.offers
+	_lounges=cache.fork();_state.population=Readonly.freeze(local.population.duplicate(true));_state.offers=local.offers
 	_state.erase("location_generation_pending")
 	return true
 
@@ -490,7 +491,7 @@ func _adopt_station(station: int) -> bool:
 	if not cached.is_empty():
 		# A station already in the cache needs no fresh location generation
 		# (a story move elsewhere may have left that pending: 155 -> jump to 99).
-		_state.offers=cached.offers;_state.population=cached.population;_state.erase("location_generation_pending")
+		_state.offers=cached.offers;_state.population=Readonly.freeze(cached.population.duplicate(true));_state.erase("location_generation_pending")
 	return true
 
 ## The story undoes a visit (90: the 89 scene's stop at Naneroh); the
@@ -1947,17 +1948,28 @@ func station_id() -> int:return int(_state.get("station_id",-1))
 func has_progress(key: String) -> bool:return _state.get("progress",{}).has(key)
 
 func snapshot() -> Dictionary:
-	var result:=_state.duplicate(true)
+	var result:=_copy_state()
 	if not _flight.is_empty():result.flight=_flight.duplicate(true)
 	if _lounges!=null:result.lounges=_lounges.read_snapshot()
 	if _void_source!=null:result.void_source=_void_source.snapshot()
-	if _blueprints!=null:result.blueprints=_blueprints.snapshot()
+	if _blueprints!=null:result.blueprints=_blueprints.read_snapshot()
 	return result
+
+## A private copy of the live state. The generated contact population is only
+## ever replaced whole, so its read-only copy is shared instead of copied.
+func _copy_state() -> Dictionary:
+	var population: Variant=_state.get("population")
+	if not population is Dictionary:return _state.duplicate(true)
+	# Restored saves arrive editable; the same value is frozen on first copy.
+	if not population.is_read_only():population=Readonly.freeze(population.duplicate(true));_state.population=population
+	var copy: Dictionary=_state.duplicate();copy.erase("population")
+	copy=copy.duplicate(true);copy.population=population
+	return copy
 
 func fork() -> RefCounted:
 	var result: RefCounted=get_script().new()
 	# Configuration is immutable after setup; only live state needs a private copy.
-	result._state=_state.duplicate(true);result._rules=_rules;result._cabins=_cabins
+	result._state=_copy_state();result._rules=_rules;result._cabins=_cabins
 	result._progress_rules=_progress_rules;result._stations=_stations;result._result_inventory=_result_inventory.duplicate(true)
 	result._flight=_flight.duplicate(true);result._pending_flight=_pending_flight.duplicate(true)
 	result._flight_identity=_flight_identity

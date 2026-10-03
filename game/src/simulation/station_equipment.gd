@@ -17,8 +17,19 @@ const RecoveryRules=preload("res://src/content/tractor_recovery_definitions.gd")
 const Ship=preload("res://src/simulation/ship_instance.gd")
 const ShipStock=preload("res://src/simulation/station_stock.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 var error:=""
-var _state:={}
+## Forks share the inventory state until either side touches it. Every use of
+## _state takes a private copy first; read-only observers use _data directly.
+var _data:={}
+var _owned:=true
+var _read:={}
+var _state: Dictionary:
+	get:
+		if not _owned:_data=_data.duplicate(true);_owned=true
+		_read={}
+		return _data
+	set(value):_data=value;_owned=true;_read={}
 var _rules:={}
 var _items:={}
 var _counts:=[]
@@ -480,8 +491,8 @@ func _retain_market_inventory(state: Dictionary,refresh_used:=true) -> void:
 
 func requirements() -> Dictionary:
 	var weapon:=false;var armor:=false
-	if not _state.is_empty():
-		for slot in _state.loadout.slots:
+	if not _data.is_empty():
+		for slot in _data.loadout.slots:
 			if slot==null:continue
 			var item: Dictionary=_items[slot.item_id]
 			if item.category==int(_rules.weapon_category):weapon=true
@@ -489,9 +500,14 @@ func requirements() -> Dictionary:
 	return {"weapon_installed":weapon,"armor_installed":armor,"satisfied":weapon and armor}
 
 func snapshot() -> Dictionary:
-	if _state.is_empty():return {}
-	var result:=_state.duplicate(true);result.requirements=requirements()
+	if _data.is_empty():return {}
+	var result:=_data.duplicate(true);result.requirements=requirements()
 	return result
+
+## The snapshot, read-only and cached until the state is next used for a change.
+func read_snapshot() -> Dictionary:
+	if _read.is_empty():_read=Readonly.freeze(snapshot())
+	return _read
 
 func relocate_convoy_arrival(bindings: RefCounted,catalogues: RefCounted,arrival: Dictionary) -> bool:
 	error=""
@@ -905,7 +921,8 @@ func fork() -> RefCounted:
 	var result: RefCounted=get_script().new()
 	# Rules, item rows and fitting assets are replaced, never edited, after
 	# configuration; share them. Inventory state is the fork's own copy.
-	result._state=_state.duplicate(true);result._rules=_rules;result._items=_items;result._counts=_counts.duplicate()
+	result._data=_data;result._owned=false;_owned=false;result._read=_read
+	result._rules=_rules;result._items=_items;result._counts=_counts.duplicate()
 	result._completion_prices=_completion_prices.duplicate()
 	result._catalogue_size=_catalogue_size
 	result._mission_cargo_id=_mission_cargo_id

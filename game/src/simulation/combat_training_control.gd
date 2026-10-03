@@ -1251,7 +1251,7 @@ func snapshot(combat_view: Dictionary={}) -> Dictionary:
 		else:result.contract_result=_contract_result.duplicate(true)
 	if _ambient:result.traffic_clock=_launch_clock.snapshot();result.cargo=_cargo.duplicate(true)
 	if _accounting!=null:
-		result.destruction=_destruction.map(func(owner):return owner.snapshot())
+		result.destruction=_destruction.map(func(owner):return owner.read_snapshot() if not combat_view.is_empty() and owner.has_method("read_snapshot") else owner.snapshot())
 		result.accounting=_accounting.snapshot();result.defeat_status=defeat_status()
 	if _mission_runner!=null:result.mission_readout=_mission_runner.flight_readout(result.get("accounting",{}).get("counter_deltas",{}))
 	return result

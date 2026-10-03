@@ -94,8 +94,8 @@ func verify_observation(owner: RefCounted) -> void:
 		view.combat.actors.reverse()
 	for row in view.weapons.actors:row.projectiles["observation_mutation"]=true
 	for row in view.projectile_visuals.models:row.time_ms=-1
-	for row in view.impact_visuals.weapons:
-		if not row.slots.is_empty():row.slots[0].position=Vector3.INF
+	# Impact clocks are shared read-only; presentation cannot write into them.
+	check(view.impact_visuals.is_read_only() and view.impact_visuals.weapons.all(func(row):return row.is_read_only()),"Impact observation is editable")
 	if view.has("primaries"):
 		for gun in view.primaries.guns:gun.projectiles["observation_mutation"]=true
 	view.clear()

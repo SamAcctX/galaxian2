@@ -233,6 +233,10 @@ func snapshot() -> Dictionary:
 func destruction_owner(actor_id: int) -> RefCounted:
 	return null if actor_id<0 or actor_id>=_destruction.size() else _destruction[actor_id].fork_for_frame()
 
+## The accepted wreck for read-only presentation; never edit it.
+func destruction_view(actor_id: int) -> RefCounted:
+	return null if actor_id<0 or actor_id>=_destruction.size() else _destruction[actor_id]
+
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._identity=_identity.duplicate();copy._bindings=_bindings
