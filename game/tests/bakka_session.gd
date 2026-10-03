@@ -44,7 +44,7 @@ func verify_application(args: PackedStringArray) -> void:
 	var start_event:=InputEventKey.new();start_event.physical_keycode=KEY_ENTER;start_event.pressed=true
 	app.menu._unhandled_input(start_event)
 	check(app.menu._buttons.new_game.is_visible_in_tree() and not app.menu._buttons.new_game.disabled,"Title dismissal did not expose New Game")
-	app.menu._buttons.new_game.pressed.emit()
+	app.menu._buttons.new_game.pressed.emit();app.choose_difficulty(0.5)
 	if not app.has_session():check(false,"Cannot start native player host: "+app.error);return
 	app.game.set_process(false);app.game._notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN)
 	check(not app.has_save(),"A new diagnostic profile contains unearned saved progress")

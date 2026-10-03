@@ -1,4 +1,5 @@
 extends RefCounted
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const FreeLife=preload("res://src/content/free_lifecycle_definitions.gd")
 const OrdinaryContracts=preload("res://src/content/ordinary_contracts_definitions.gd")
 const Kappa=preload("res://src/content/kappa_population_definitions.gd")
@@ -83,7 +84,7 @@ func configure(bindings: RefCounted, cursor: Variant, kinds: Variant, difficulty
 	# can extend the ordinary list beyond the no-job population bound.
 	var free: bool=not kappa and not bakka and not constructed and load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) and FreeLife.available(bindings) and (not kinds.is_empty() or OrdinaryContracts.available(bindings)) and kinds.size()<=FreeLife.Traffic.Population.maximum_actor_count(bindings,20,float(difficulty))+OrdinaryContracts.maximum_extra_count(bindings) and kinds.all(func(kind):return kind is int and kind in [0,1,2,3,8])
 	if contract or convoy or alioth or free or kappa or story or ordinary_void or bakka or constructed:
-		if float(difficulty) not in [0.5,1.0]:return reject("Reputation requires the supported contract ship population")
+		if not Difficulty.valid(float(difficulty)):return reject("Reputation requires the supported contract ship population")
 		expected=kinds.duplicate()
 		_set_faction_rules(bindings,rules)
 		if kappa:
@@ -100,7 +101,7 @@ func configure(bindings: RefCounted, cursor: Variant, kinds: Variant, difficulty
 		if kinds.size() not in [0,1,4]:return reject("Reputation requires the generated Mido population")
 		expected=[];expected.resize(kinds.size());expected.fill(3)
 	elif not AmbientCombat.for_context(bindings,cursor).is_empty():
-		if (kinds.is_empty() and bindings.mido_travel.get("continuation",{}).is_empty()) or kinds.size()>Ambient.maximum_actor_count(bindings.ambient_population,bindings.mido_travel.departure_traffic) or not bindings.ambient_population.supported_difficulties.any(func(value):return float(value)==float(difficulty)):return reject("Reputation requires the supported mixed Mido population")
+		if (kinds.is_empty() and bindings.mido_travel.get("continuation",{}).is_empty()) or kinds.size()>Ambient.maximum_actor_count(bindings.ambient_population,bindings.mido_travel.departure_traffic) or not Difficulty.valid(difficulty):return reject("Reputation requires the supported mixed Mido population")
 		expected=[];expected.resize(kinds.size());expected.fill(int(bindings.ambient_combat.actor_kind))
 	if not expected is Array or kinds.size()!=expected.size():return reject("Reputation has an unsupported encounter population")
 	for id in kinds.size():

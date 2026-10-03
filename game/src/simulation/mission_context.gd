@@ -1,6 +1,7 @@
 extends RefCounted
 ## The entry boundary admits the world and equipment once. Flight subsystems
 ## consume this immutable capability instead of maintaining campaign ID lists.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Slots=preload("res://src/simulation/equipment_slots.gd")
 const Recipe=preload("res://src/content/mission_recipe.gd")
 var error:=""
@@ -242,7 +243,7 @@ func admit_contract(bindings: RefCounted,catalogues: RefCounted,contracts: RefCo
 	var flight: Dictionary=load("res://src/content/contract_world_definitions.gd").flight(bindings,context.station_id,context.campaign_cursor)
 	if flight.is_empty():flight=load("res://src/content/free_flight_definitions.gd").flight(bindings,context.station_id,context.campaign_cursor)
 	if flight.is_empty() or loadout.system_id!=int(flight.system_id):return reject("This contract location has no complete flight recipe")
-	if not context.get("rank") is int or context.rank<0 or context.rank>=bindings.opening_handoff.rank_thresholds.size() or not rules.supported_game_difficulties.has(context.difficulty):return reject("Unsupported contract career or difficulty")
+	if not context.get("rank") is int or context.rank<0 or context.rank>=bindings.opening_handoff.rank_thresholds.size() or not Difficulty.valid(context.difficulty):return reject("Unsupported contract career or difficulty")
 	var mission: Dictionary=context.mission
 	if not supports_contract(bindings,mission,int(context.campaign_cursor)):return reject("This active contract has no complete cast recipe")
 	if int(mission.kind)==12 and (context.client_faction not in [0,1,2,3] or context.contact_name.is_empty()):return reject("The contest lost its generated rival")

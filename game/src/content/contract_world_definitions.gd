@@ -1,5 +1,6 @@
 extends RefCounted
 ## Shared ordinary world setup using imported contract and flight declarations.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
 const FirstFlight=preload("res://src/content/first_flight_definitions.gd")
 const Travel=preload("res://src/content/mido_travel_definitions.gd")
@@ -61,7 +62,7 @@ static func combat_population(bindings: RefCounted,combat: Dictionary) -> bool:
 	return load("res://src/simulation/mission_context.gd").contract_combat_matches(bindings,combat)
 
 static func empty_population(bindings: RefCounted,world: Dictionary,rank: Variant,difficulty: Variant) -> Dictionary:
-	if not available(bindings) or not rank is int or rank<0 or rank>=bindings.opening_handoff.rank_thresholds.size() or difficulty not in [0.5,1.0]:return {}
+	if not available(bindings) or not rank is int or rank<0 or rank>=bindings.opening_handoff.rank_thresholds.size() or not Difficulty.valid(difficulty):return {}
 	for key in ["base_content_id","binding_id"]:
 		if world.get(key)!=bindings.get(key):return {}
 	var generated: Dictionary=world.get("npc_construction",{})

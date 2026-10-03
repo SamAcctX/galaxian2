@@ -14,6 +14,7 @@ const FlightPause=preload("res://src/presentation/flight_pause_panel.gd")
 const MenuAudio=preload("res://src/presentation/main_menu_audio.gd")
 const Host=preload("res://src/presentation/opening_preview.gd")
 const Streams=preload("res://src/presentation/audio_stream_control.gd")
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const LANGUAGE_NAMES={"de":1,"gb":2,"es":3,"fr":4,"it":5,"ptl":14,"pl":7,"ru":8,"zt":10,"zs":11,"ko":12,"ja":13}
 var error:=""
 var phase:="setup"
@@ -42,6 +43,7 @@ var _notice: Label
 var _picker: FileDialog
 var _selection:={}
 var _pending_action:=""
+var _new_game_difficulty:=Difficulty.NORMAL
 var _quit_after_import:=false
 var _refresh_receipt:=""
 var _updated_import:=""
@@ -234,9 +236,33 @@ func _needs_import_update() -> bool:
 	var record:=DmgImport.read_receipt(preferences.values.import_record)
 	return not record.is_empty() and bindings.import_update_receipt().is_empty() and Bindings.reader_version(record.get("reader"))<Bindings.MAX_READER_VERSION
 
+## New Game asks for the difficulty first (Extreme warns), then the usual
+## replace-the-current-game confirmation when a game or save exists.
 func _start_new_game() -> void:
-	if has_session() or has_save():_confirm("new_game",library.strings[51])
-	else:_enter_game("new_game")
+	_show_details("difficulty",library.strings[Difficulty.TITLE_TEXT])
+	_label(library.strings[Difficulty.PROMPT_TEXT])
+	for level in Difficulty.LEVELS:
+		var value: float=level
+		var button:=_button(library.strings[Difficulty.label_text(value)],func():choose_difficulty(value))
+		if value==_new_game_difficulty:button.grab_focus.call_deferred()
+
+func choose_difficulty(value: float) -> bool:
+	if phase!="difficulty" or not Difficulty.valid(value):return false
+	_new_game_difficulty=value
+	if value==Difficulty.EXTREME:
+		_show_details("extreme_warning",library.strings[Difficulty.LABEL_TEXTS[3]])
+		_label(library.strings[Difficulty.EXTREME_WARNING_TEXT])
+		_button(library.strings[133],accept_extreme)
+		_button(library.strings[134],_start_new_game).grab_focus.call_deferred()
+		return true
+	return _begin_new_game()
+
+func accept_extreme() -> bool:
+	return phase=="extreme_warning" and _begin_new_game()
+
+func _begin_new_game() -> bool:
+	if has_session() or has_save():_confirm("new_game",library.strings[51]);return true
+	return _enter_game("new_game")
 
 func request_close() -> void:
 	if _importer.busy():
@@ -250,7 +276,7 @@ func request_close() -> void:
 func _confirm(action: String,message: String) -> void:
 	_pending_action=action;_show_details("confirm",library.strings[28 if action=="new_game" else 29 if action=="load" else 33])
 	_label(message)
-	if action=="new_game":_label("Difficulty: "+library.strings[508]+". Other difficulty levels are not available yet.")
+	if action=="new_game":_label(library.strings[Difficulty.TITLE_TEXT]+": "+library.strings[Difficulty.label_text(_new_game_difficulty)])
 	_button("Continue",confirm_pending)
 
 func confirm_pending() -> void:
@@ -271,7 +297,7 @@ func _enter_game(action: String) -> bool:
 	candidate.set_mobile_layout(_mobile);candidate.apply_preferences(preferences.values);candidate.enable_saves(_save_directory)
 	var accepted:=false
 	if action=="new_game":
-		candidate.start();accepted=candidate.session!=null and candidate.session.status=="running"
+		candidate.start(_new_game_difficulty);accepted=candidate.session!=null and candidate.session.status=="running"
 	else:accepted=candidate.load_station()
 	if not accepted:
 		var message: String=candidate._save_notice.text if action=="load" else candidate.status.text
@@ -503,7 +529,7 @@ func show_info() -> void:
 	_show_details("info",library.strings[43])
 	_label("Galaxy on Fire 2 Remake\nAn independent native engine using your locally imported game content.")
 	_label("The opening through free travel, supported jumpgate routes, shopping and courier/passenger contracts are playable. Station saves retain acknowledged opening and free-play progress. The remaining campaign and expansions are unfinished.")
-	_label("Additional difficulty levels remain unfinished. Saving during flight or conversations and original game save files are not supported yet.")
+	_label("Saving during flight or conversations and original game save files are not supported yet.")
 	_label("Engine: Apache-2.0. Original game content remains the property of its respective owners.")
 	var button:=_button("Choose another Mac game…",show_setup);button.disabled=has_session()
 	button.tooltip_text="The source game can be changed before starting or loading a game"

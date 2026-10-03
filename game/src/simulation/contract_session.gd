@@ -3,6 +3,7 @@ extends RefCounted
 ## Generated contacts are supplied by the lounge owner. Acceptance stages cargo
 ## and fees together. Delivery results require the destination inventory and
 ## acknowledgement; ordinary contract travel and combat have separate owners.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Definitions=preload("res://src/content/early_contract_definitions.gd")
 const Offer=preload("res://src/simulation/contract_offer.gd")
 const Equipment=preload("res://src/simulation/station_equipment.gd")
@@ -59,7 +60,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,station: Dictionary,e
 	if not _state.is_empty():return reject("Retain the current contract session instead of resetting it")
 	if not available(bindings) or catalogues==null or catalogues.content_id!=bindings.base_content_id:return reject("Contract acceptance is unavailable for this content")
 	if not bindings.bind_catalogues(catalogues):return reject(bindings.error)
-	if not is_finite(difficulty) or difficulty<=0.0:return reject("The game difficulty is invalid")
+	if not Difficulty.valid(difficulty):return reject("The game difficulty is invalid")
 	var terms: Dictionary=bindings.early_contracts
 	var visit: Dictionary=bindings.mido_travel.get("return_visit",{})
 	var gate: Dictionary=visit.get("contract_gate",{})

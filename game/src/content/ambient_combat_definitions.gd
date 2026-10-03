@@ -1,4 +1,5 @@
 extends RefCounted
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Layouts=preload("res://src/content/declaration_layouts.gd")
 ## Verified ordinary hits and source freighter boxes. No travel permission.
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
@@ -34,7 +35,7 @@ static func population(bindings: RefCounted,packet: Dictionary,rank: Variant,dif
 	var rules:=for_context(bindings,packet.get("campaign_cursor"),packet.get("population",{}).get("station_id"))
 	if rules.is_empty():return {}
 	if not rank is int or not rules.supported_ranks.any(func(value):return int(value)==rank):return {}
-	if (not difficulty is int and not difficulty is float) or not bindings.ambient_population.supported_difficulties.any(func(value):return float(value)==float(difficulty)):return {}
+	if (not difficulty is int and not difficulty is float) or not Difficulty.valid(difficulty):return {}
 	for key in ["base_content_id","binding_id"]:
 		if packet.get(key)!=bindings.get(key):return {}
 	if packet.get("campaign_cursor")!=int(rules.campaign_cursor):return {}

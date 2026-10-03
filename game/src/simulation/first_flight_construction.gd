@@ -1,6 +1,7 @@
 extends RefCounted
 ## Prepares a detached supported mining world. Activation, entry-camera time,
 ## acknowledged briefing, manual flight and mining have separate native owners.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Reputation=preload("res://src/simulation/faction_reputation.gd")
 const MiningFlight=preload("res://src/content/full_hold_flight_definitions.gd")
 const Handoff=preload("res://src/content/opening_handoff_definitions.gd")
@@ -538,7 +539,7 @@ func _valid_selected_progress(bindings: RefCounted,progress: Dictionary,cursor: 
 		if progress.has(key):
 			if not preload("res://src/simulation/opening_station_archive.gd").valid_lifetime(key,progress[key]):return reject("Selected construction lost a lifetime statistic")
 			expected[key]=progress[key]
-	if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected or rank!=progress.get("rank") or difficulty not in [0.5,1.0,1.5]:return reject("Selected construction changed earned rank, difficulty or hint history")
+	if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected or rank!=progress.get("rank") or not Difficulty.valid(difficulty):return reject("Selected construction changed earned rank, difficulty or hint history")
 	return true
 
 func _prepare_story_selected(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,progress: Dictionary,station_response_flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,previous_cache: Variant,contracts: RefCounted,from_station_id: int,incoming: RefCounted=null,locations: RefCounted=null) -> bool:
@@ -784,7 +785,7 @@ func _construct(bindings: RefCounted, catalogues: RefCounted, packet: Dictionary
 		if not scenery.configure_combat_training(bindings,catalogues,equipment,pose.origin,conditions,unix_seconds,large_display,body_resources,effect_resources):return reject(scenery.error)
 	elif local_entry:
 		var trip:=Travel.journey(bindings.mido_travel,int(data.campaign_cursor))
-		var ready: bool=scenery.configure_local_departure(bindings,catalogues,equipment,player.cache_snapshot(),conditions,unix_seconds,large_display,body_resources,effect_resources,0.5,int(data.campaign_cursor)) if int(context.station_id)==int(trip.from_station_id) else scenery.configure_local_arrival(bindings,catalogues,equipment,player.cache_snapshot(),conditions,unix_seconds,large_display,body_resources,effect_resources)
+		var ready: bool=scenery.configure_local_departure(bindings,catalogues,equipment,player.cache_snapshot(),conditions,unix_seconds,large_display,body_resources,effect_resources,float(packet.get("difficulty",Difficulty.NORMAL)),int(data.campaign_cursor)) if int(context.station_id)==int(trip.from_station_id) else scenery.configure_local_arrival(bindings,catalogues,equipment,player.cache_snapshot(),conditions,unix_seconds,large_display,body_resources,effect_resources)
 		if not ready:return reject(scenery.error)
 	else:
 		if not scenery.configure_departure(bindings,catalogues,packet.player_cache,conditions,unix_seconds,large_display,body_resources,effect_resources):return reject(scenery.error)
@@ -843,7 +844,8 @@ func _valid_packet(bindings: RefCounted, packet: Dictionary, context: Dictionary
 	if equipped:
 		if not equipment is Equipment:return reject("Departure requires its native equipment owner")
 		data=data.duplicate(true);data.campaign_cursor=packet.campaign_cursor if local_departure else 7;data.mission_kind=11 if local_departure else 4;data.mission_parameter=0
-	if packet.size()!=(20 if ContractWorld.supports(bindings,packet.campaign_cursor) else ((19 if packet.campaign_cursor in [11,12] else 18) if equipped else 16)):return reject("First flight requires a complete departure packet")
+	if packet.has("difficulty") and not Difficulty.valid(packet.difficulty):return reject("First flight requires a supported difficulty")
+	if packet.size()-int(packet.has("difficulty"))!=(20 if ContractWorld.supports(bindings,packet.campaign_cursor) else ((19 if packet.campaign_cursor in [11,12] else 18) if equipped else 16)):return reject("First flight requires a complete departure packet")
 	for key in ["base_content_id","binding_id"]:
 		if packet.get(key)!=bindings.get(key):return reject("First-flight packet belongs to another content identity")
 	for key in ["campaign_cursor","source_state","world_type","audio_selector","confirmation_required","confirmation_text_id"]:

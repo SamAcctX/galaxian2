@@ -1,5 +1,6 @@
 extends RefCounted
 ## Original ship setup for accepted early contracts.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
 const Encounters=preload("res://src/content/contract_encounter_definitions.gd")
 const ControlRules=preload("res://src/content/combat_training_control_definitions.gd")
@@ -120,7 +121,7 @@ static func target_memberships(kinds: Array,player_last_ids: Array=[]) -> Array:
 	return result
 
 static func weapon_for(data: Dictionary,rank: int,difficulty: float,faction: int,rival: bool) -> Dictionary:
-	if not parameters(data) or rank<0 or rank>20 or difficulty not in [0.5,1.0] or (rival and faction not in [0,1,2,3]) or (not rival and faction!=8):return {}
+	if not parameters(data) or rank<0 or rank>20 or not Difficulty.valid(difficulty) or (rival and faction not in [0,1,2,3]) or (not rival and faction!=8):return {}
 	return shared_weapon(data.weapons,int(data.campaign_cursor),rank,difficulty,faction,rival)
 
 ## The alien world's fighters (race 9) in a story cast (154) fire the Void
@@ -150,7 +151,7 @@ static func gun_rows(rules: Dictionary) -> Array:
 	return rows
 
 static func shared_weapon(rules: Dictionary,cursor: int,rank: int,difficulty: float,faction: int,enhanced:=false) -> Dictionary:
-	if not Equal.equal_value(rules,VALUES.weapons) or cursor<0 or cursor>2147483647 or rank<0 or rank>20 or difficulty not in [0.5,1.0] or faction not in [0,1,2,3,8,10]:return {}
+	if not Equal.equal_value(rules,VALUES.weapons) or cursor<0 or cursor>2147483647 or rank<0 or rank>20 or not Difficulty.valid(difficulty) or faction not in [0,1,2,3,8,10]:return {}
 	for source in factions(rules):
 		if int(source.actor_kind)!=faction:continue
 		var row:=scaled_parameters(rules,cursor,rank,difficulty,enhanced)
@@ -172,7 +173,7 @@ static func scaled_parameters(rules: Dictionary,cursor: int,rank: int,difficulty
 	# Shared factory arithmetic only. The encounter still supplies a verified
 	# faction, ship and any authored damage override before creating a gun.
 	# A cursor scales the authored firing interval; it does not grant flight.
-	if not Equal.equal_value(rules,VALUES.weapons) or cursor<0 or cursor>2147483647 or rank<0 or rank>20 or difficulty not in [0.5,1.0]:return {}
+	if not Equal.equal_value(rules,VALUES.weapons) or cursor<0 or cursor>2147483647 or rank<0 or rank>20 or not Difficulty.valid(difficulty):return {}
 	var level:=int(clampf(Vitals.single(float(rank+int(rules.rank_offset))*float(rules.rank_multiplier)),float(rules.rank_level_min),float(rules.rank_level_max)))
 	level=mini(int(rules.scaled_level_max),int(Vitals.single(float(level)+Vitals.single(float(level)*Vitals.single(difficulty+float(rules.game_difficulty_offset))))))
 	var damage:=int(rules.zero_level_damage) if level==0 else level+int(rules.damage_offset)

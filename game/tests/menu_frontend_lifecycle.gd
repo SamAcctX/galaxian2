@@ -41,6 +41,7 @@ func run() -> void:
 	if app.phase=="update":
 		for control in app._body.get_children():
 			if control is Button and control.text=="Use current game files":control.pressed.emit();break
+	if app.phase=="difficulty":app.choose_difficulty(0.5)
 	if not app.has_session():check(false,app.error);app.free();quit(1);return
 	var session: Node=app.game.session
 	check(app.phase=="game" and not app.menu.visible and not background._active and not app.music.player.playing,"New game retained the menu scene or music")

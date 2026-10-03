@@ -1,6 +1,7 @@
 extends RefCounted
 ## Versioned, data-only station records. Restore detached native owners before
 ## presenting or replacing a running game. Imported rules are never read from saves.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Station=preload("res://src/simulation/station_entry.gd")
 const Equipment=preload("res://src/simulation/station_equipment.gd")
 const Contracts=preload("res://src/simulation/contract_session.gd")
@@ -285,7 +286,7 @@ func _career(bindings: RefCounted,cat: RefCounted,data: Dictionary,equipment: Re
 	var continuation:=StationContext.permits(bindings,cursor,data.get("station_id"),station_context)
 	var expansion: bool=_expansion and Valkyrie.saved_story(bindings,cursor)
 	if (cursor not in [13,14,16] and not FreeFlight.Campaign.supported(bindings.mido_travel,cursor) and not dekato and not onward and not continuation and not expansion) or not _identity(data,bindings) or data.get("campaign_cursor")!=cursor or data.get("station_id")!=equipment.snapshot().loadout.station_id or data.get("station_id")!=locations.snapshot().current_station_id:return reject("The saved career belongs to another station")
-	if data.get("difficulty") not in [0.5,1.0,1.5] or not data.get("difficulty") is float or not data.get("progress") is Dictionary or not Reputation.valid_state(data.get("reputation")):return reject("The saved difficulty or career is invalid")
+	if not Difficulty.valid(data.get("difficulty")) or not data.get("difficulty") is float or not data.get("progress") is Dictionary or not Reputation.valid_state(data.get("reputation")):return reject("The saved difficulty or career is invalid")
 	var progress: Dictionary=data.progress
 	if data.has("wingmen"):
 		if not Contracts.Wingmen.valid_state(data.wingmen,bindings):return reject("The saved wingman contract is invalid")

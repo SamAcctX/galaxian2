@@ -1,5 +1,6 @@
 extends RefCounted
 ## Ordinary ship setup; the session separately owns earned departure permission.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
 const Campaign=preload("res://src/content/free_campaign_definitions.gd")
 const Population=preload("res://src/content/free_population_definitions.gd")
@@ -21,7 +22,7 @@ static func available(bindings: RefCounted) -> bool:
 	return load("res://src/content/ambient_combat_definitions.gd").parameters(bindings.ambient_combat) and load("res://src/content/contract_ship_combat_definitions.gd").parameters(bindings.early_contracts.get("ship_combat"))
 
 static func population(bindings: RefCounted,packet: Dictionary,rank: Variant,difficulty: Variant,mission_context: RefCounted=null) -> Dictionary:
-	if not available(bindings) or not Numbers.integer(rank,0,20) or difficulty not in [0.5,1.0]:return {}
+	if not available(bindings) or not Numbers.integer(rank,0,20) or not Difficulty.valid(difficulty):return {}
 	for key in ["base_content_id","binding_id"]:
 		if packet.get(key)!=bindings.get(key):return {}
 	var context: Variant=packet.get("free_context")
@@ -79,7 +80,7 @@ static func context_valid(bindings: RefCounted,context: Variant,mission_context:
 	if context.get("companions_empty")!=true:return false
 	if not context.get("station_response") is bool or context.get("void_encounter")!=false:return false
 	if not load("res://src/content/free_arrival_definitions.gd").context_supported(bindings,context):return false
-	return Numbers.integer(context.get("rank"),0,20) and context.get("difficulty") in [0.5,1.0]
+	return Numbers.integer(context.get("rank"),0,20) and Difficulty.valid(context.get("difficulty"))
 
 static func actor_matches(bindings: RefCounted,row: Dictionary,role: String,hostile_faction: int=-1,live:=false,system_faction: int=0) -> bool:
 	var faction: Variant=row.get("actor_kind");var hull: Variant=row.get("hull_catalogue_id")

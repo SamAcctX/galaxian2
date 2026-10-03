@@ -41,8 +41,9 @@ const LocationCache = preload("res://src/simulation/lounge_cache.gd")
 const StationGeneration = preload("res://src/content/station_generation_definitions.gd")
 const StationArchive=preload("res://src/simulation/station_archive.gd")
 const StationSaveFile=preload("res://src/simulation/station_save_file.gd")
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 # Current base-campaign run profile. Expansion activation is explicit; bundled
-# files are not treated as evidence of ownership. Menu settings remain pending.
+# files are not treated as evidence of ownership. Difficulty is the career's.
 const BASE_STOCK_SETTINGS={"difficulty":0.5,"valkyrie_owned":false,"supernova_owned":false,
 	"energy_availability_percent":0,"missile_availability_percent":0}
 const STATION_DEPARTURE_PHASES=["ready_to_launch","combat_departure_required","local_departure_required","contracts_required","convoy_departure_required","alioth_departure_required","free_play_required"]
@@ -136,6 +137,8 @@ var _mouse_steering:=false
 var _mouse_captured:=false
 var _preview_controls: Array[Control]=[]
 var _menu_button: Button
+## Career difficulty chosen at New Game or read from the loaded save.
+var _difficulty:=Difficulty.NORMAL
 const BOUNDARIES = Session.BOUNDARIES + ArrivalSession.BOUNDARIES + FirstFlightSession.BOUNDARIES + StationSession.BOUNDARIES
 
 func _ready() -> void:
@@ -491,6 +494,7 @@ func load_station(now_microseconds: int=-1) -> bool:
 	reset()
 	var previous_panel:=station_panel
 	session=candidate;station_panel=panel;connect_station_panel(panel);previous_panel.free()
+	_difficulty=session.career_difficulty()
 	_locations=session.location_owner();session.camera.make_current()
 	session.rebase_time(now);refresh_render_mode();present_session()
 	if _save_file.recovered_backup:_save_message("Recovered the previous saved station",true)
@@ -535,16 +539,18 @@ func reset() -> void:
 	if status!=null:status.text="Reconstructed opening · Mouse / arrows or left stick steer · Space / right trigger fires · Esc / Start pauses"
 	refresh_render_mode()
 
-func start() -> void:
+func start(difficulty: Variant=Difficulty.NORMAL) -> void:
 	reset()
 	if viewport==null:return
+	if not Difficulty.valid(difficulty):show_error("The game difficulty is invalid");return
+	_difficulty=float(difficulty)
 	session=Session.new();viewport.add_child(session)
 	# Native desktop presentation uses the source large-display scenery setting.
 	# Mobile follows physical display dimensions, not the embedded preview size.
 	var screen := DisplayServer.screen_get_size()
 	var mac_profile: bool = library!=null and library.manifest.get("profile",{}).get("edition")=="mac-full-hd"
 	var large_display := mac_profile or not OS.has_feature("mobile") or (maxi(screen.x,screen.y)>=1024 and mini(screen.x,screen.y)>=768)
-	if not session.configure(library,bindings,visuals,Time.get_ticks_usec(),0.5,null,large_display,Session.supports_player_controls(bindings),Session.supports_escape(bindings)):
+	if not session.configure(library,bindings,visuals,Time.get_ticks_usec(),_difficulty,null,large_display,Session.supports_player_controls(bindings),Session.supports_escape(bindings)):
 		show_error(session.error);return
 	var overlay_error: String=_prepare_player_overlays() if session.interactive else ""
 	if not overlay_error.is_empty():show_error(overlay_error);return
@@ -1454,7 +1460,7 @@ func _enter_flight_arrival(now_microseconds: int,environment_seconds: Variant,un
 	var locations: RefCounted
 	var contract_trip: bool=session.flight_owner().contract_owner()!=null
 	if gate and not contract_trip:return transition_error("Gate arrival lost its retained career")
-	var settings:=BASE_STOCK_SETTINGS.duplicate(true) if contract_trip else {}
+	var settings:=_stock_settings() if contract_trip else {}
 	if contract_trip and FirstFlightSession.FreeFlight.Campaign.supported(bindings,session.snapshot().campaign_cursor):settings.ship_price_percent=0
 	if not drive and session.snapshot().campaign_cursor==40:return _enter_navigation40_arrival(now_microseconds,environment_seconds,unix_seconds,gate,settings)
 	if StationGeneration.available(bindings) and not contract_trip:
@@ -1676,7 +1682,7 @@ func enter_station(now_microseconds: int, camera_seed: int=0, unix_seconds: Vari
 	var alioth_return: bool=returning and session.snapshot().get("campaign_cursor")==17
 	var ordinary_return: bool=returning and FirstFlightSession.FreeFlight.Campaign.supported(bindings,session.snapshot().get("campaign_cursor"))
 	var dekato_return: bool=returning and load("res://src/content/dekato_convoy_definitions.gd").station_supported(bindings,session.snapshot().get("campaign_cursor"),session.snapshot().get("equipment",{}).get("loadout",{}).get("station_id"))
-	var captured_settings:=BASE_STOCK_SETTINGS.duplicate(true) if captured or alioth_return or mission_return else {}
+	var captured_settings:=_stock_settings() if captured or alioth_return or mission_return else {}
 	if captured or mission_return:captured_settings.ship_price_percent=0
 	var seconds: Variant=int(Time.get_unix_time_from_system()) if unix_seconds==null else unix_seconds
 	var transfer: RefCounted
@@ -1698,6 +1704,7 @@ func enter_station(now_microseconds: int, camera_seed: int=0, unix_seconds: Vari
 	elif mission_return:prepared=candidate.configure_mission_return(library,bindings,visuals,transfer,now_microseconds,camera_seed)
 	elif returning:prepared=candidate.configure_return(library,bindings,visuals,session.flight_owner(),now_microseconds,camera_seed,captured_settings,seconds)
 	else:prepared=candidate.configure(library,bindings,visuals,packet,now_microseconds,camera_seed)
+	if prepared:prepared=candidate.retain_difficulty(_difficulty)
 	if not prepared:
 		var message:=candidate.error;candidate.free();session.camera.make_current()
 		return transition_error(message)
@@ -1761,9 +1768,13 @@ func _prepare_locations(station_id: int,progress: Dictionary,random_state: Dicti
 	var context:={"station_id":station_id,"campaign_cursor":progress.get("campaign_cursor"),
 		"rank":progress.get("rank"),"reputation":progress.get("reputation")}
 	var seconds: Variant=int(Time.get_unix_time_from_system()) if unix_seconds==null else unix_seconds
-	if not locations.select_location(bindings,cat,library,context,BASE_STOCK_SETTINGS,random_state,seconds):
+	if not locations.select_location(bindings,cat,library,context,_stock_settings(),random_state,seconds):
 		_location_error=locations.error;return null
 	return locations
+
+func _stock_settings() -> Dictionary:
+	var settings:=BASE_STOCK_SETTINGS.duplicate(true);settings.difficulty=_difficulty
+	return settings
 
 func current_locations() -> RefCounted:
 	if session is StationSession:return session.location_owner() if session.location_owner()!=null else (null if _locations==null else _locations.fork())

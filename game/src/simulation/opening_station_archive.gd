@@ -11,8 +11,9 @@ const Reputation=preload("res://src/simulation/faction_reputation.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
 const MiningSession=preload("res://src/content/mining_session_definitions.gd")
 const CareerStations=preload("res://src/simulation/campaign_station_archive.gd")
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const PHASES={2:"ready_to_launch",4:"ready_to_launch",6:"station_equipment_required",7:"combat_departure_required",10:"local_departure_required",11:"local_departure_required",12:"local_departure_required",13:"contracts_required",14:"convoy_departure_required",16:"alioth_departure_required"}
-const EXTRA_KEYS=["rescue_disposition","equipment_conversation","equipment_acknowledged","training_return","training_return_acknowledged","station_reloaded","local_conversation","local_conversation_acknowledged","contract_conversation","contract_conversation_acknowledged","convoy_arrival","alioth_conversation_acknowledged"]
+const EXTRA_KEYS=["difficulty","rescue_disposition","equipment_conversation","equipment_acknowledged","training_return","training_return_acknowledged","station_reloaded","local_conversation","local_conversation_acknowledged","contract_conversation","contract_conversation_acknowledged","convoy_arrival","alioth_conversation_acknowledged"]
 const INVENTORY_BASE=["loadout","stock","cargo","cargo_cache_stale","credit_delta","transactions"]
 const PROGRESS_KEYS=["campaign_cursor","rank","rank_score","player_kills","pirate_kills","other_score","reputation","debris_destroyed","capital_ship_kills","mining_failure_hint_seen"]
 const OPTIONAL_PROGRESS_KEYS=["asteroids_destroyed","mined_ore_tons","mined_cores","mined_ore_types_mask","mined_core_types_mask","nuclear_bomb_detonations","purchased_booze_quantity","booze_types_mask","story_stations_mask","story_counter","wanted","nag_heard","hints_seen","kaamo_state","kaamo_storage","pirate_bases","loma_toll"]
@@ -64,6 +65,8 @@ func restore(a: RefCounted,bindings: RefCounted,cat: RefCounted,library: RefCoun
 	for key in a.STATION_KEYS+EXTRA_KEYS:
 		if saved.has(key) and (key.ends_with("acknowledged") or key in ["return_visit","alioth_return","local_visit","contract_station","hangar_open","cargo_cache_stale","equipment_conversation","training_return","station_reloaded","local_conversation","contract_conversation","convoy_arrival"]):
 			if not saved[key] is bool:return a.reject("Invalid opening acknowledgement flag")
+	# A non-Normal choice rides on the opening station until contracts own it.
+	if saved.has("difficulty") and (not saved.difficulty is float or not Difficulty.valid(saved.difficulty)):return a.reject("The saved difficulty is invalid")
 	if not valid_progress(a,bindings,saved.progress,cursor):return null
 	if cursor>=13:return CareerStations.new().restore(a,self,bindings,cat,library,data)
 	if not data.career.is_empty():return a.reject("The early opening checkpoint has an unexpected contract career")
