@@ -13,10 +13,12 @@ var _positions:=PackedVector3Array()
 var _velocities:=PackedVector3Array()
 var _sizes:=PackedInt32Array()
 var _weights:=PackedFloat32Array()
+## MultiMesh rows kept between updates; sizes and colour never change.
+var _buffer:=PackedFloat32Array()
 
 func configure(placement_seed: int) -> void:
 	_seed=placement_seed;_random_state=0;_elapsed_ms=-1;_camera=Vector3.ZERO
-	_positions.clear();_velocities.clear();_sizes.clear();_weights.clear();error=""
+	_positions.clear();_velocities.clear();_sizes.clear();_weights.clear();_buffer.clear();error=""
 
 func sample(camera_pose: Transform3D,elapsed_ms: int) -> RefCounted:
 	error=""
@@ -26,7 +28,7 @@ func sample(camera_pose: Transform3D,elapsed_ms: int) -> RefCounted:
 	var next: RefCounted=get_script().new()
 	next._seed=_seed;next._elapsed_ms=elapsed_ms;next._camera=camera_pose.origin
 	next._positions=_positions.duplicate();next._velocities=_velocities.duplicate()
-	next._sizes=_sizes;next._weights.resize(COUNT)
+	next._sizes=_sizes;next._weights.resize(COUNT);next._buffer=_buffer.duplicate()
 	var random:=RandomNumberGenerator.new()
 	if _elapsed_ms<0:
 		random.seed=_seed
@@ -42,7 +44,9 @@ func sample(camera_pose: Transform3D,elapsed_ms: int) -> RefCounted:
 			var distance_squared:=position.distance_squared_to(camera_pose.origin)
 			if not position.is_finite() or not is_finite(distance_squared):
 				error="Nearby particle motion exceeded finite coordinates";return null
-			next._weights[index]=opacity(distance_squared)
+			# Distance fading is evaluated by the shader; this keeps only the
+			# gate that hides startup and recycled particles for one update.
+			next._weights[index]=1.0
 			if distance_squared>RADIUS*RADIUS*1.01:
 				var height:=random.randf_range(-1.0,1.0)
 				var azimuth:=random.randf_range(0.0,TAU)
@@ -51,7 +55,11 @@ func sample(camera_pose: Transform3D,elapsed_ms: int) -> RefCounted:
 				next._velocities[index]=Vector3.ZERO
 				next._weights[index]=0.0
 			next._positions[index]=position
+			var offset:=index*16
+			next._buffer[offset+3]=position.x;next._buffer[offset+7]=position.y;next._buffer[offset+11]=position.z
+			next._buffer[offset+15]=next._weights[index]
 	next._random_state=random.state
+	if _elapsed_ms<0:next._buffer=next._full_buffer()
 	return next
 
 static func opacity(distance_squared: float) -> float:
@@ -59,11 +67,20 @@ static func opacity(distance_squared: float) -> float:
 	var far_weight:=clampf((RADIUS*RADIUS-distance_squared)/75000000.0,0.0,1.0)
 	return minf(near_weight,far_weight)
 
+## Displayed opacity: the recycle gate times the shader's distance fade.
+func weights() -> PackedFloat32Array:
+	var result:=_weights.duplicate()
+	for index in result.size():
+		if result[index]>0.0:result[index]=opacity(_positions[index].distance_squared_to(_camera))
+	return result
+
 func snapshot() -> Dictionary:
 	return {"elapsed_ms":_elapsed_ms,"camera":_camera,"positions":_positions.duplicate(),
-		"velocities":_velocities.duplicate(),"sizes":_sizes.duplicate(),"weights":_weights.duplicate()}
+		"velocities":_velocities.duplicate(),"sizes":_sizes.duplicate(),"weights":weights()}
 
-func instance_buffer() -> PackedFloat32Array:
+func instance_buffer() -> PackedFloat32Array:return _buffer
+
+func _full_buffer() -> PackedFloat32Array:
 	var buffer:=PackedFloat32Array();buffer.resize(COUNT*16)
 	for index in COUNT:
 		var offset:=index*16

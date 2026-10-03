@@ -20,7 +20,9 @@ void vertex() {
 	VERTEX = center + VERTEX*half_size;
 	key_in_view = mat3(VIEW_MATRIX)*light_direction;
 	half_in_view = normalize(normalize(-VERTEX)+key_in_view);
-	opacity = COLOR.a;
+	// Same fade as the field's opacity(): in from 2000 units, out near 10000.
+	float distance_squared = dot(center,center);
+	opacity = COLOR.a*min(clamp(distance_squared/4000000.0,0.0,1.0),clamp((100000000.0-distance_squared)/75000000.0,0.0,1.0));
 }
 
 vec3 display_to_linear(vec3 value) {
