@@ -107,8 +107,8 @@ func commit(frame: Dictionary) -> void:
 	if _generation==null or frame.get("generation")!=_generation or frame.get("revision")!=_revision+1:error="Bomb geometry cannot commit a stale frame";return
 	_revision+=1
 	# A trail outlives the body, so its parent stays shown.
-	visible=frame.visible or trail!=null
 	if trail!=null:trail.commit(frame.get("trail",{}))
+	visible=frame.visible or (trail!=null and trail.sprites>0)
 	if models.is_empty():return
 	for model in models:model.visible=frame.visible
 	if not frame.visible:return

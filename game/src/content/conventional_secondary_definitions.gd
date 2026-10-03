@@ -20,7 +20,7 @@ const CLUSTER_SWIRL_RATE:=0.003
 static func declaration(item_id: int, kind: int) -> Dictionary:
 	var cluster: bool=kind==CLUSTER_KIND and item_id>=214 and item_id<=216
 	if not ((kind==4 and item_id>=31 and item_id<=35) or (kind==5 and item_id>=36 and item_id<=40) or (kind==ION_KIND and ION_RADII.has(item_id)) or cluster):return {}
-	var row:={"guided":kind==5 or cluster,"trail_id":39,"retention_ms":2000,"attached_model_id":14250,"scenery_damage":9999,"penetrates_scenery":true}
+	var row:={"guided":kind==5 or cluster,"trail_id":25 if cluster else 39,"retention_ms":2000,"attached_model_id":14250,"scenery_damage":9999,"penetrates_scenery":true}
 	# Supernova's ionizing missile flies as an unguided rocket; where it ends
 	# (a hit or the end of its flight) gas clouds within its blast ionize.
 	if kind==ION_KIND:row.ion_blast_radius=ION_RADII[item_id]
