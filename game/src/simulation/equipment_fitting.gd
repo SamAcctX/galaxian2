@@ -221,6 +221,12 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 			if not cloak.configure(bindings,cat,[id],ship,0.5):return cloak.error
 		26:
 			if not Numbers.integer(properties.get(42),1,2147483647) or not Numbers.integer(properties.get(43),0,2147483647):return "The Time Extender has no supported duration"
+		# Supernova Emergency System: invulnerability duration (ms).
+		27:
+			if not Numbers.integer(properties.get(41),1,2147483647):return "The Emergency System has no supported duration"
+		# Supernova Shield Injector: Blue Plasma tons per refill.
+		43:
+			if not Numbers.integer(properties.get(59),1,2147483647):return "The Shield Injector has no supported plasma amount"
 		28:
 			for property in [bindings.weapon_parameters.interval_percent_property,bindings.weapon_parameters.damage_percent_property]:
 				if not Weapons.signed_integer(properties.get(int(property))):return "The weapon modifier is unavailable"

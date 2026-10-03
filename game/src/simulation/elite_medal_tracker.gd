@@ -7,6 +7,7 @@ const LIBERATOR_ITEM:=179
 var _reached:={}
 var _mines:=0
 var _blind_kills:=0
+var _emergency_kills:=0
 var _mining_phase:=""
 var _kills:=-1
 ## Medals the career already holds: their counters show no progress.
@@ -15,7 +16,7 @@ var _progress:=[]
 
 ## Docking (and leaving the station) resets the docking-bound streaks.
 func reset() -> void:
-	_mines=0;_blind_kills=0;_mining_phase="";_kills=-1
+	_mines=0;_blind_kills=0;_emergency_kills=0;_mining_phase="";_kills=-1
 
 func take_reached() -> Array:
 	var ids: Array=_reached.keys();ids.sort();_reached={}
@@ -40,6 +41,13 @@ func observe(state: Dictionary) -> void:
 	var encounter: Dictionary=state.get("encounter",{})
 	# 40 Blindfolded Killer: player kills while no scanner is fitted.
 	var kills: Variant=encounter.get("controller",{}).get("accounting",{}).get("counter_deltas",{}).get("player_kills")
+	# 43 Grave Riser: kills while the Emergency System holds the ship; the
+	# count restarts whenever it is not running (it ends, or a new flight).
+	var emergency: bool=state.get("player",{}).get("devices",{}).get("emergency",{}).get("active",false)
+	if not emergency:_emergency_kills=0
+	elif kills is int and _kills>=0 and kills>_kills:
+		_emergency_kills+=kills-_kills
+		if _emergency_kills>=Elite.THRESHOLDS[43]:_latch(43)
 	if kills is int:
 		var scanner: Variant=state.get("fast_forward",{}).get("scanner_present")
 		if scanner==true:_blind_kills=0

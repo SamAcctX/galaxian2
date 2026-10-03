@@ -43,6 +43,7 @@ const Objective=preload("res://src/simulation/mining_objective.gd")
 const ContractObjective=preload("res://src/simulation/contract_flight_objective.gd")
 const Wingmen=preload("res://src/simulation/wingman_actors.gd")
 const Beams=preload("res://src/simulation/repair_beams.gd")
+const Devices=preload("res://src/simulation/flight_devices.gd")
 ## The Time Extender runs the player at a different rate from the world.
 var player_time_scale:=1.0
 var _wingmen: RefCounted
@@ -828,6 +829,10 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		if companion_pass.is_empty():reject(next._wingmen.error);return null
 		next._encounter=companion_pass.encounter
 	Beams.advance_flight(next._player,next._pose,next._encounter,next._wingmen,delta_ms)
+	if not next.death_active():
+		var devices: Dictionary=Devices.advance(next._player,next._cargo,next._equipment,next._notices,delta_ms)
+		if devices.has("error"):reject(devices.error);return null
+		next._cargo=devices.cargo;next._equipment=devices.equipment
 	if not next._engine_audio.follow_player(next._statistics_pose,int(next._player.snapshot().vitals.hull),delta_ms):reject(next._engine_audio.error);return null
 	if next._player.snapshot().vitals.hull<=0 and next._death==null:
 		if not next._booster.cancel():reject(next._booster.error);return null
@@ -2864,6 +2869,8 @@ func construct_drive_arrival(bindings: RefCounted,cat: RefCounted,environment_se
 
 func cloak_state() -> Dictionary:return {} if _player==null else _player.cloak_state()
 func player_equipment_ids() -> Array:return [] if _player==null else _player.snapshot().get("equipment_ids",[])
+## Emergency System / Shield Injector state for sound and medals.
+func player_devices() -> Dictionary:return {} if _player==null else _player.devices_snapshot()
 func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
 func cloak_input_permitted() -> bool:
 	return _equipment!=null and entry_released() and not death_active() and _player.snapshot().vitals.hull>0 and not dialogue_visible() and not cinematic_input_blocked() and not local_departing() and not gate_departing()
