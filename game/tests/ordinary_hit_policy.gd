@@ -82,6 +82,10 @@ func check_profile(content: String,pack: String) -> void:
 		var weapon: Dictionary = resolver.resolve(id,[])
 		check(not weapon.is_empty(),resolver.error)
 		if weapon.is_empty():continue
+		if weapon.launch_mode=="beam":
+			# Fitted beams hit through the shared ordinary contact owner.
+			check(weapon.has("ordinary_hit_policy") and weapon.ordinary_hit_policy.nonplayer_damage==weapon.damage,"Beam weapon lost the shared ordinary hit policy")
+			continue
 		if weapon.launch_mode!="ordinary":
 			check(not weapon.has("ordinary_hit_policy") and not weapon.has("collision_bounds"),"Alternate weapon inferred ordinary hit behavior")
 			continue

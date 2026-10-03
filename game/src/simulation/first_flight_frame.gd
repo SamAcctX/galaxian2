@@ -814,7 +814,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 		ordinary_motion=true
 	if ordinary_motion:
 		if not next._engine_audio.before_ordinary_motion():reject(next._engine_audio.error);return null
-		if next._engine_particles!=null and next._engine_particles.engine_enabled()!=(active_throttle>0.0) and not next._engine_particles.set_engine_enabled(active_throttle>0.0):reject(next._engine_particles.error);return null
+		if next._engine_particles!=null and not death_active() and next._engine_particles.engine_enabled()!=(active_throttle>0.0) and not next._engine_particles.set_engine_enabled(active_throttle>0.0):reject(next._engine_particles.error);return null
 		next._pose=next._pilot.advance(_pose,commands if manual else Vector2.ZERO,active_throttle,float(delta_ms)/1000.0*player_time_scale,strafe if manual else 0.0,next._booster.speed_multiplier(),relative_mouse_capture)
 		if not next._pilot.error.is_empty():reject(next._pilot.error);return null
 		next._statistics_pose=next._pose*Transform3D(_model_basis,Vector3.ZERO)

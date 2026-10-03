@@ -127,7 +127,7 @@ func verify_death(ready: RefCounted) -> void:
 	check(state.engine_particles.elapsed_ms==before.elapsed_ms+100 and not state.engine_particles.draw_enabled and state.engine_particles.owners.values().all(func(row):return row.exhaust.visible),"Death deleted live slots or left its manager drawing")
 	var later:=step(dead,100)
 	if later==null:return
-	check(later.snapshot().engine_particles.births.values()==[0,0,0,0] and later.snapshot().engine_particles.elapsed_ms==before.elapsed_ms+200,"Death tail stopped the exhaust clock or resumed emission")
+	check(later.snapshot().engine_particles.births.values()==[0,0,0,0] and later.snapshot().engine_particles.elapsed_ms==before.elapsed_ms+200,"Death tail stopped the exhaust clock or resumed emission: %s %s vs %s"%[later.snapshot().engine_particles.births,later.snapshot().engine_particles.elapsed_ms,before.elapsed_ms])
 	captures.death=dead
 
 func verify_capture(bindings: RefCounted,ready: RefCounted) -> void:
@@ -156,6 +156,12 @@ func verify_capture(bindings: RefCounted,ready: RefCounted) -> void:
 	check(births.player_nozzle0==0 and births.player_nozzle1==0 and births.player_nozzle2>0 and births.player_nozzle3>0,"Stopped and continuing convoy nozzles were conflated")
 	check(ready.snapshot().engine_particles==before,"Capture fixture modified the accepted flight")
 
+func fresh_scene(viewport: SubViewport,old: Node,library: RefCounted,bindings: RefCounted,visuals: RefCounted,cat: RefCounted,frame: RefCounted) -> Node:
+	old.free()
+	var scene:=Scene.new();viewport.add_child(scene)
+	if not scene.build(library,bindings,visuals,cat,frame):check(false,scene.error);viewport.free();return null
+	return scene
+
 func render(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cat: RefCounted,frames: Dictionary):
 	var viewport:=SubViewport.new();viewport.size=Vector2i(1280,720);viewport.own_world_3d=true;viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS;root.add_child(viewport)
 	var scene:=Scene.new();viewport.add_child(scene)
@@ -169,12 +175,17 @@ func render(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cat: Re
 	if not directory.is_empty():DirAccess.make_dir_recursive_absolute(directory)
 	for label in frames:
 		var frame: RefCounted=frames[label];var state: Dictionary=frame.snapshot()
+		# Each capture is its own flight; world-time presenters only run forward.
+		scene=fresh_scene(viewport,scene,library,bindings,visuals,cat,frame)
+		if scene==null:return
 		check(scene.present(frame,true,987654321),scene.error)
 		check(scene.engine_particles.frame.elapsed_ms==state.engine_particles.elapsed_ms,"Scene used wall time or the NPC clock for exhaust: "+label)
 		if label in ["mining","death"]:check(scene.engine_particles.frame.counts==[0,0,0,0],"Disabled manager remained visible: "+label)
 		if DisplayServer.get_name()!="headless":
 			var picture: Image=await rendered(viewport)
 			if not directory.is_empty():check(picture.save_png(directory.path_join("engine-flight-"+label+".png"))==OK,"Live exhaust capture failed")
+	scene=fresh_scene(viewport,scene,library,bindings,visuals,cat,first)
+	if scene==null:return
 	check(scene.present(first),scene.error)
 	var accepted: Dictionary=scene.engine_particles.frame
 	var wrong: Dictionary=first.snapshot();wrong.engine_particles.elapsed_ms+=1

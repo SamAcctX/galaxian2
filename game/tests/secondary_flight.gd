@@ -29,6 +29,8 @@ func verify_flight(content: String,pack: String) -> void:
 	var initial:=equipped(bindings,cat,[{"item_id":41,"slot":0,"quantity":2}])
 	var views:=detached_views(bindings,cat,lib,initial,built.snapshot().random_state)
 	if views.is_empty():return
+	# Hand-built station inventories declare their catalogue extent.
+	views.equipment._catalogue_size=cat.tables.items.size()
 	verify_kappa_composition(bindings,cat,lib,views.equipment,built.snapshot().kappa_context)
 	var encounter:=detached_encounter(bindings,cat,lib,built,views)
 	if encounter==null:return
@@ -63,8 +65,13 @@ func verify_flight(content: String,pack: String) -> void:
 	check(fired.encounter.snapshot().secondary_events.size()==1 and fired.encounter.snapshot().secondary_events[0].action=="launched" and fired.encounter.snapshot().secondaries.guns[0].ammunition==1,"Encounter failed to consume exactly one launch")
 	check(fired.player.loadout().slots==fired.equipment.snapshot().loadout.slots and fired.random_state==random,"Encounter launch lost inventory or consumed gameplay randomness")
 	verify_sound(lib,bindings,fired.encounter.snapshot())
+	# Live flight frames always carry their retained scenery, so the frame input
+	# path runs on the native Kappa composition with its first EMP launched.
+	fired=native_launch(bindings,cat,lib,views.equipment,built.snapshot().kappa_context)
+	if fired.is_empty():return
+	pose=fired.pose
 	var frame:=WorldFrame.new()
-	frame._encounter=fired.encounter;frame._player=fired.player;frame._equipment=fired.equipment;frame._pose=pose;frame._random=fired.random_state
+	frame._encounter=fired.encounter;frame._player=fired.player;frame._equipment=fired.equipment;frame._pose=pose;frame._random=fired.random_state;frame._scenery=fired.scenery
 	var stable: Dictionary=frame._encounter.snapshot()
 	if not frame._apply_secondary_input(false,true):check(false,frame.error);return
 	check(frame._encounter.snapshot().secondaries==stable.secondaries,"A held frame detonated without an edge")
@@ -140,6 +147,27 @@ func prepare_kappa_composition(bindings: RefCounted,cat: RefCounted,lib: RefCoun
 	var encounter:=Encounter.new()
 	if not encounter.configure_kappa_rescue(bindings,cat,lib,player,scenery,equipment,{"axes":[0,0],"override":-1}):check(false,"Kappa encounter composition: "+encounter.error);return {}
 	return {"encounter":encounter,"player":player,"scenery":scenery,"equipment":equipment,"random_state":scenery.random_state()}
+
+## Native Kappa encounter with its target active and one EMP launched.
+func native_launch(bindings: RefCounted,cat: RefCounted,lib: RefCounted,equipment: RefCounted,context: Dictionary) -> Dictionary:
+	var prepared:=prepare_kappa_composition(bindings,cat,lib,equipment,context)
+	if prepared.is_empty():return {}
+	var encounter: RefCounted=prepared.encounter;var player: RefCounted=prepared.player;var scenery: RefCounted=prepared.scenery
+	var pose:=Transform3D(Basis.IDENTITY,encounter.snapshot().combat.actors[0].position-Vector3(0,0,400))
+	player.set_permissions(true,true)
+	var step: Dictionary=encounter.evaluate_weapons(player,pose,1,scenery,prepared.random_state,false,false)
+	if step.is_empty():check(false,"Native frame weapon pass: "+encounter.error);return {}
+	scenery=step.scenery;step=step.encounter.evaluate_world(step.player,pose,0,step.random_state)
+	if step.is_empty():check(false,"Native frame NPC pass failed");return {}
+	encounter=step.encounter.select_secondary(41)
+	if encounter==null:check(false,"Native frame could not select its installed EMP");return {}
+	var fired: Dictionary=encounter.evaluate_secondary_fire(player,equipment,pose,true,true,step.random_state,false,scenery)
+	if fired.is_empty():check(false,"Native frame launch: "+encounter.error);return {}
+	check(fired.encounter.snapshot().secondaries.guns[0].ammunition==1,"Native frame launch did not consume one round")
+	fired.encounter.clear_secondary_events()
+	fired.pose=pose
+	if not fired.has("scenery"):fired.scenery=scenery
+	return fired
 
 func verify_kappa_composition(bindings: RefCounted,cat: RefCounted,lib: RefCounted,equipment: RefCounted,context: Dictionary) -> void:
 	var prepared:=prepare_kappa_composition(bindings,cat,lib,equipment,context)
