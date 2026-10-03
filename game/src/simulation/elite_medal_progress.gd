@@ -8,9 +8,9 @@ const TOTAL := 45
 const GOLD := 1
 ## Description threshold per row ("#" in the original text).
 const THRESHOLDS := {36:3000,37:50,38:10,39:20,40:100,41:3,42:15,43:5,44:8}
-## Ship storage (37) and the emergency system (43) do not exist in the remake:
-## shown on Status, never awarded.
-const UNAVAILABLE := [37,43]
+## The emergency system (43) does not exist in the remake: shown on Status,
+## never awarded.
+const UNAVAILABLE := [43]
 ## Earned-medal frame, unearned frame and the first row icon.
 const FRAME_EARNED := 8035
 const FRAME_NONE := 8045
@@ -36,6 +36,9 @@ static func valid_earned(value: Variant) -> bool:
 static func career_reached(career: Dictionary) -> Array:
 	var reached:=[]
 	if int(career.get("progress",{}).get("capital_ship_kills",0))>=THRESHOLDS[39]:reached.append(39)
+	# 37: different ships parked at the owned Kaamo Club (one per type).
+	var parked: Variant=career.get("progress",{}).get("kaamo_storage",{}).get("ships",[])
+	if parked is Array and parked.size()>=THRESHOLDS[37]:reached.append(37)
 	return reached
 
 ## Checked at docking: the docked ship's cargo capacity (the original reads the

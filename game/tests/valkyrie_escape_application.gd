@@ -1,4 +1,5 @@
 extends "res://tests/valkyrie_start_application.gd"
+const StoryFlights=preload("res://src/content/valkyrie_flight_definitions.gd")
 const CombatPilot=preload("res://tests/fixtures/bakka_flight_pilot.gd")
 const EmpSteering=preload("res://tests/fixtures/expedition_flight_pilot.gd")
 const StationSaveFile=preload("res://src/simulation/station_save_file.gd")
@@ -59,6 +60,8 @@ func verify_free_application() -> void:
 	if staged=="supernova117":await fly_supernova_meenkk()
 	if staged=="supernova128":await fly_supernova_wanted()
 	if staged=="supernova135":await fly_supernova_coromesk()
+	if staged=="kaamo":await fly_kaamo_siege()
+	if staged=="pirate-base":await fly_pirate_base()
 	if staged=="supernova141":await fly_supernova_finale()
 	if staged=="supernova154":await fly_supernova_ambush()
 	if staged=="supernova160":await fly_supernova_end()
@@ -1541,6 +1544,159 @@ static func find_value(value: Variant,key: String) -> Variant:
 			if found!=null:return found
 	return null
 
+## Kaamo Club siege (from the earned 135 save): the drive to Shima, four
+## pirate outposts and six pirates, Mkkt Bkkt's call; pirates come back while
+## an outpost stands; all ten down -> his thanks, kaamo_state 1, docking at
+## the club, save and fresh Resume. The pilot is kept unharmed (shortcut).
+const KAAMO:=108
+func fly_kaamo_siege() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	if not seed_cargo([[122,12]]) or not await depart_to(KAAMO):return
+	var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+	print("KAAMO cast ",actors.map(func(actor):return [actor.get("static_object",false),int(actor.vitals.hull),String(actor.get("display_name",""))]))
+	check(actors.size()==10 and range(4).all(func(id):return actors[id].get("static_object",false)) and range(4,10).all(func(id):return not actors[id].get("static_object",false)),"The Kaamo siege cast is not four outposts and six pirates")
+	if failures:return
+	await capture_free_application("kaamo-siege")
+	var radio_ids:=[]
+	# Like a player: break the outposts (which keep calling pirates in), then the rest.
+	var standing:=func(list):
+		var alive:=range(list.size()).filter(func(id):return int(list[id].vitals.hull)>0)
+		var outposts:=alive.filter(func(id):return id<4)
+		return outposts if not outposts.is_empty() else alive
+	if not await fight_until("kaamo",func():return 447 in radio_ids or app.session.status!="running",standing,radio_ids,60000):return
+	print("KAAMO radio ",radio_ids)
+	check(446 in radio_ids and 447 in radio_ids,"Mkkt Bkkt's call or thanks did not play")
+	for tick in 300:
+		if app.session.status!="running" or app.session.flight_owner()._radio.snapshot().get("visible",false)==false:break
+		now_us+=100000
+		if not app.session.step(now_us,Vector2.ZERO,false,false,0.0):check(false,app.session.error);return
+		if tick%10==0:await process_frame
+	await capture_free_application("kaamo-won")
+	if failures or not await dock_application():return
+	check(docked_station()==KAAMO,"The club did not open for docking after the siege")
+	check(int(app.session.station_owner().snapshot().contracts.progress.get("kaamo_state",0))>=1,"The career did not keep the rescued club")
+	# Mkkt Bkkt's first-visit talk, then the purchase offer once 30 M and 50 t Buskat are aboard.
+	if failures or not await kaamo_talk(448,18,"kaamo-talk"):return
+	check(int(app.session.station_owner().snapshot().contracts.progress.get("kaamo_state",0))==2,"The first talk did not open the club offer")
+	check(app.load_station() and int(app.session.station_owner().snapshot().contracts.progress.get("kaamo_state",0))==2,"Fresh Resume lost the club offer")
+	if not seed_cargo([[109,50]],30000001):return
+	var before: Dictionary=app.session.station_owner().snapshot()
+	if not await kaamo_talk(466,1,"kaamo-offer",false):return
+	var after: Dictionary=app.session.station_owner().snapshot()
+	check(int(after.contracts.progress.get("kaamo_state",0))==3,"Buying the club did not make it the player's")
+	check(int(before.contracts.credits)-int(after.contracts.credits)==30000000,"The club did not cost 30,000,000 credits")
+	check(not after.cargo.entries.any(func(row):return int(row.item_id)==109),"The 50 t Buskat stayed in the hold")
+	if not await kaamo_talk(468,7,"kaamo-farewell"):return
+	check(app.load_station() and int(app.session.station_owner().snapshot().contracts.progress.get("kaamo_state",0))==3,"Fresh Resume lost the bought club")
+	for tick in 20:
+		app.session.step(Time.get_ticks_usec());app.present_session();await process_frame
+	check(not app.session.snapshot().dialogue.visible,"The owned club talked again")
+	# The owned club's hangar stores goods for free and keeps them across Resume.
+	var wallet:=int(app.session.station_owner().snapshot().contracts.credits)
+	check(app.equipment_action("open") and app.equipment_action("sell",122),"Storing goods at the club failed: "+app.status.text)
+	var opened: Dictionary=app.session.station_owner().snapshot()
+	check(int(opened.contracts.credits)==wallet,"Storing goods at the club was not free")
+	check(opened.get("stock",opened.get("equipment",{}).get("stock",[])) is Array,"The club storage has no stock")
+	check(app.equipment_action("close") and app.load_station(),"Resuming after storing goods failed")
+	var kept: Dictionary=app.session.station_owner().snapshot().contracts.progress.get("kaamo_storage",{})
+	print("KAAMO storage ",kept)
+	check(kept.get("items",[]).any(func(row):return int(row.item_id)==122),"The stored goods were lost on Resume")
+	await capture_free_application("kaamo-storage")
+	# The club's mechanics mod the flown hull; the ship dealer parks a ship in storage.
+	if failures or not seed_cargo([],20000000):return
+	var before_mods: Dictionary=app.session.station_owner().snapshot()
+	check(app.contract_action("open",-1),"The Kaamo lounge did not open: "+app.session.error)
+	var agents: Array=app.session.station_owner().snapshot().contracts.get("population",{}).get("contacts",[])
+	print("KAAMO lounge ",agents.map(func(contact):return [contact.name,contact.get("kaamo",{})]))
+	check(agents.size()==6 and agents.all(func(contact):return contact.has("kaamo")),"The Kaamo lounge does not hold its six agents")
+	for kind in [0,1,"ship"]:
+		var found: Array=agents.filter(func(contact):return contact.get("kaamo",{}).get("mod",-1)==kind if kind is int else contact.get("kaamo",{}).get("kind")==kind)
+		if found.is_empty():check(false,"No Kaamo agent for "+str(kind));return
+		var id: int=int(found[0].contact_id)
+		check(app.contract_action("select",id) and app.contract_action("buy_kaamo",id),"Buying from the Kaamo agent %s failed: %s"%[str(kind),app.session.error])
+	await capture_free_application("kaamo-lounge")
+	check(app.contract_action("close",-1),"The Kaamo lounge did not close")
+	var modded: Dictionary=app.session.station_owner().snapshot()
+	var tags: Array=modded.loadout.ship_instance.upgrade_tags
+	check(0 in tags and 1 in tags,"The mechanics' mods are not on the hull: "+str(tags))
+	check(int(modded.cargo.capacity)==int(before_mods.cargo.capacity)+30,"The cargo mod did not add 30 t")
+	check(int(modded.contracts.credits)<int(before_mods.contracts.credits),"The Kaamo agents charged nothing")
+	check(modded.contracts.progress.kaamo_storage.ships.size()==1,"The dealer's ship was not parked in storage")
+	check(app.save_station(false) and app.load_station(),"Saving the modded ship failed: "+app._save_notice.text)
+	var resumed: Dictionary=app.session.station_owner().snapshot()
+	check(resumed.loadout.ship_instance.upgrade_tags==tags and resumed.contracts.progress.kaamo_storage.ships.size()==1,"Fresh Resume lost the mods or the parked ship")
+
+## Waits for a club talk opening with first_text, pages through it and captures it.
+## Pirate base at station 1: the outpost and five sleeping guards, a guard's
+## wake call, the outpost's end, the Nivelian thanks and 20,000 credits; the
+## base stays gone after docking and a fresh Resume.
+func fly_pirate_base() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	var base:=pirate_base_station()
+	if base<0:return
+	var bit:=int(StoryFlights.PIRATE_BASES[base].bit)
+	var wallet:=int(app.session.station_owner().snapshot().contracts.credits) if app.station_shell.visible else 0
+	if not seed_khador_drive() or not await depart_to(base):return
+	var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+	print("PIRATE BASE cast ",actors.map(func(actor):return [actor.get("static_object",false),int(actor.vitals.hull),actor.get("position",Vector3.ZERO)]))
+	check(actors.size()==6 and actors[0].get("static_object",false) and range(1,6).all(func(id):return not actors[id].get("static_object",false)),"The pirate base cast is not an outpost and five guards")
+	if failures:return
+	await capture_free_application("pirate-base")
+	var radio_ids:=[]
+	var standing:=func(list):
+		var alive:=range(list.size()).filter(func(id):return int(list[id].vitals.hull)>0)
+		return [0] if 0 in alive else alive
+	# Like a player: the outpost first, then the guards still awake before flying home.
+	var cleared:=func():
+		var list: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+		return 431 in radio_ids and list.all(func(actor):return int(actor.vitals.hull)<=0)
+	if not await fight_until("pirate_base",func():return cleared.call() or app.session.status!="running",standing,radio_ids,90000):return
+	print("PIRATE BASE radio ",radio_ids)
+	check(radio_ids.any(func(id):return id in [424,425,426]) and radio_ids.any(func(id):return id in [427,428,429]) and 431 in radio_ids,"The guard call, the outpost's end or the thanks did not play")
+	for tick in 300:
+		if app.session.status!="running" or app.session.flight_owner()._radio.snapshot().get("visible",false)==false:break
+		now_us+=100000
+		if not app.session.step(now_us,Vector2.ZERO,false,false,0.0):check(false,app.session.error);return
+		if tick%10==0:await process_frame
+	await capture_free_application("pirate-base-won")
+	if failures or not await dock_application():return
+	var docked: Dictionary=app.session.station_owner().snapshot()
+	check(int(docked.contracts.progress.get("pirate_bases",0)) & bit,"The career did not record the destroyed base")
+	print("PIRATE BASE credits ",wallet," -> ",int(docked.contracts.credits))
+	check(app.load_station() and int(app.session.station_owner().snapshot().contracts.progress.get("pirate_bases",0)) & bit,"Fresh Resume lost the destroyed base")
+	if failures or not await depart_to(base):return
+	check(not app.session.flight_owner()._encounter.combat_snapshot().actors.any(func(actor):return actor.get("static_object",false)),"The destroyed base came back")
+
+## The first pirate base in a system the career knows (test shortcut: else
+## open the first base's system, as a bought map would).
+func pirate_base_station() -> int:
+	var file:=StationSaveFile.new();var path: String=app.station_save_path()
+	var document: Dictionary=file.read_document(path)
+	if document.is_empty():check(false,file.error);return -1
+	var open: Array=document.locations.system_availability
+	for station in StoryFlights.PIRATE_BASES:
+		if open[int(catalogue.tables.stations[station].system_id)]:return int(station)
+	open[int(catalogue.tables.stations[1].system_id)]=true
+	var bytes:=file.encode(document)
+	if bytes.is_empty() or not file._write(path,bytes):check(false,file.error);return -1
+	check(app.load_station(),"The seeded save did not load: "+app._save_notice.text)
+	return 1 if failures==0 else -1
+
+## `closes`: false when the line leads straight into the next talk (Yes on the offer).
+func kaamo_talk(first_text: int,pages: int,capture: String,closes:=true) -> bool:
+	for tick in 60:
+		if app.session.snapshot().dialogue.visible:break
+		app.session.step(Time.get_ticks_usec());app.present_session();await process_frame
+	var line: Dictionary=app.session.snapshot().dialogue
+	check(line.get("visible",false) and int(line.get("text_id",-1))==first_text and int(line.get("count",0))==pages,"The club talk %d did not open: %s"%[first_text,str(line)])
+	if failures:return false
+	await capture_free_application(capture)
+	for page in pages:app.station_navigation("next");await process_frame
+	check(app.session.snapshot().dialogue.visible!=closes,"The club talk %d did not %s"%[first_text,"close" if closes else "lead on"])
+	return failures==0
+
 func fly_supernova_wanted() -> void:
 	app.set_player_mode(true);app.show();app.present_session()
 	await process_frame;resume_application_focus()
@@ -2481,7 +2637,7 @@ func emp_transport(id: int,radio_ids: Array) -> bool:
 ## the pilot is kept unharmed there until that is researched
 ## (GOF2_SUPERNOVA_HARM=valkyrie,armada turns it off per fight).
 func keep_unharmed(label: String) -> bool:
-	if label not in ["valkyrie","armada"] or label in OS.get_environment("GOF2_SUPERNOVA_HARM").split(","):return true
+	if label not in ["valkyrie","armada","kaamo","pirate_base"] or label in OS.get_environment("GOF2_SUPERNOVA_HARM").split(","):return true
 	var live: RefCounted=app.session._world._player
 	if bool(live.snapshot().get("damage_allowed",true)) and not live.set_permissions(bool(live.snapshot().active),false):check(false,live.error);return false
 	return true
@@ -2767,7 +2923,7 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"supernova109":return state.campaign_cursor==109
 		"supernova117":return state.campaign_cursor==117
 		"supernova128":return state.campaign_cursor==128
-		"supernova135":return state.campaign_cursor==135
+		"supernova135","kaamo","pirate-base":return state.campaign_cursor==135
 		"supernova141":return state.campaign_cursor==141
 		"supernova154":return state.campaign_cursor==154
 		"supernova160":return state.campaign_cursor==160

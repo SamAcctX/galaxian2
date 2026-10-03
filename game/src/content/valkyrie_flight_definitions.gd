@@ -741,10 +741,86 @@ const NAG_CALLS:={93:{"to":110,"lines":[[6,3157,1553],[0,3158,1554]]},111:{"to":
 ## Vossk standing drops to its worst value (standing 0 = 100).
 const TURN_HOSTILE_AFTER:={50:{"radio_index":2,"reputation_axis":0,"reputation_value":100}}
 
+## Kaamo Club siege (station 108, Shima): until the club's owner has been
+## rescued (progress "kaamo_state" 0), four pirate outposts and six pirates
+## hold the orbit. Mkkt Bkkt calls at 5 s (457); while an outpost stands, dead
+## pirates return every 22.5 s 60-100 km from the player; when all ten are
+## down he thanks the player (458) and the club opens (kaamo_state 1).
+## Assumptions: the call is a radio line (the original pauses in a window);
+## the pirates use the story pirate hulls.
+const KAAMO:={"station_id":108,"model":14243,"name_text_id":430,"speaker_id":4,
+	"outposts":[Vector3(45000,5000,55000),Vector3(80000,-30000,-12000),Vector3(-15000,45000,55000),Vector3(-65000,-20000,-45000)],
+	"pirates":6,"respawn_ms":22500,"call":[446,1468],"thanks":[447,1467]}
+
+## Pirate bases (base game, from the new game until destroyed): a sleeping
+## Pirate Outpost ~200 km out with five sleeping guards. A guard waking calls
+## 424-426, the outpost's end 427-429; the Nivelians then pay 20,000 (431).
+## Progress "pirate_bases" keeps the destroyed bases as bits.
+## Assumptions: the thanks plays as a radio line right after the outpost falls
+## (the original shows it at the next docking); no loot crate; the station
+## stays open while the base stands.
+const PIRATE_BASES:={1:{"bit":1,"point":Vector3(-200000,-100000,50000)},33:{"bit":2,"point":Vector3(50000,200000,-100000)},
+	47:{"bit":4,"point":Vector3(140000,-150000,7000)},86:{"bit":8,"point":Vector3(170000,-170000,10000)}}
+const PIRATE_BASE:={"model":14243,"name_text_id":430,"guards":5,"jitter":10000,"pirate_speaker":9,"nivelian_speaker":65,
+	"wake":[[424,590],[425,591],[426,592]],"destroyed":[[427,593],[428,594],[429,595]],"thanks":[431,589],"reward":20000}
+
+static func _pirate_base_job(cursor: int,station_id: int,progress: Dictionary) -> Dictionary:
+	if not PIRATE_BASES.has(station_id):return {}
+	var mask:=int(progress.get("pirate_bases",0))
+	if mask & int(PIRATE_BASES[station_id].bit):return {}
+	return {"kind":-1,"station_id":station_id,"reward":0,"bonus":0,"difficulty":1,"quantity":0,"story":false,"story_job":true,
+		"campaign_cursor":cursor,"target_station_id":station_id,"pirate_base":mask}
+
+static func _pirate_base_recipe(job: Dictionary) -> Dictionary:
+	var cursor:=int(job.campaign_cursor);var base: Dictionary=PIRATE_BASES[int(job.station_id)]
+	var guards:=int(PIRATE_BASE.guards);var pick:=int(job.station_id)%3
+	var groups:=[{"first_actor":0,"end_actor":1,"faction":8,"name_text_id":int(PIRATE_BASE.name_text_id),
+		"static_object":{"model":int(PIRATE_BASE.model),"jitter":int(PIRATE_BASE.jitter)},
+		"ship_state":{"mode":5,"active":false,"targeting_blocked":true},"policy":{"initial_hostile":true,"updated_hostile":true}},
+		{"first_actor":1,"end_actor":1+guards,"faction":8,"population_group":"story","origin":"zero",
+		"ship_state":{"mode":5,"active":false,"targeting_blocked":true},"policy":{"initial_hostile":true,"updated_hostile":true,"friendly":false},
+		"position":{"kind":"path_scatter","index":0,"offsets":[-10000,-10000,-10000],"bounds":[40000,40000,40000]}}]
+	var pirate:=int(PIRATE_BASE.pirate_speaker)
+	var wake: Array=PIRATE_BASE.wake[pick];var lost: Array=PIRATE_BASE.destroyed[pick];var thanks: Array=PIRATE_BASE.thanks
+	var radio:=[{"speaker_id":pirate,"text_id":int(wake[0]),"voice_event_id":int(wake[1]),"condition":16,"values":[0]},
+		{"speaker_id":pirate,"text_id":int(lost[0]),"voice_event_id":int(lost[1]),"condition":9,"values":[0]},
+		{"speaker_id":int(PIRATE_BASE.nivelian_speaker),"text_id":int(thanks[0]),"voice_event_id":int(thanks[1]),"condition":6,"values":[1]}]
+	var story:={"from_cursor":cursor,"campaign_cursor":cursor,"mission":Campaign.mission(cursor),"previous_mission":{"reward":int(PIRATE_BASE.reward)},
+		"progress":{"pirate_bases":int(job.pirate_base)|int(base.bit)}}
+	return {"actor_count":1+guards,"ship_groups":groups,"placement":{"kind":"points","points":[base.point]},"radio":radio,
+		"success":{"kind":"radio_finished","index":2},"story":story,"turn_hostile":{}}
+
+static func _kaamo_job(cursor: int,station_id: int,progress: Dictionary) -> Dictionary:
+	if station_id!=int(KAAMO.station_id) or int(progress.get("kaamo_state",0))!=0:return {}
+	return {"kind":-1,"station_id":station_id,"reward":0,"bonus":0,"difficulty":1,"quantity":0,"story":false,"story_job":true,
+		"campaign_cursor":cursor,"target_station_id":station_id,"kaamo":true}
+
+static func _kaamo_recipe(job: Dictionary) -> Dictionary:
+	var cursor:=int(job.campaign_cursor);var groups:=[];var outposts: Array=KAAMO.outposts
+	for index in outposts.size():
+		groups.append({"first_actor":index,"end_actor":index+1,"faction":8,"origin":"zero","name_text_id":int(KAAMO.name_text_id),
+			"static_object":{"model":int(KAAMO.model),"jitter":0,"offset":Vector3(outposts[index])},
+			"ship_state":{"mode":5,"active":false,"targeting_blocked":true},"policy":{"initial_hostile":true,"updated_hostile":true}})
+	var first:=outposts.size();var end:=first+int(KAAMO.pirates)
+	groups.append({"first_actor":first,"end_actor":end,"faction":8,"population_group":"story","origin":"zero",
+		"ship_state":{"mode":0,"active":true,"targeting_blocked":false},"policy":{"initial_hostile":true,"updated_hostile":true,"friendly":false},
+		"position":{"kind":"path_scatter","index":0,"offsets":[-20000,-20000,-20000],"bounds":[40000,40000,40000]}})
+	var speaker:=int(KAAMO.speaker_id)
+	var radio:=[{"speaker_id":speaker,"text_id":int(KAAMO.call[0]),"voice_event_id":int(KAAMO.call[1]),"condition":5,"values":[5000]},
+		{"speaker_id":speaker,"text_id":int(KAAMO.thanks[0]),"voice_event_id":int(KAAMO.thanks[1]),"condition":20,"values":[end]}]
+	var story:={"from_cursor":cursor,"campaign_cursor":cursor,"mission":Campaign.mission(cursor),"previous_mission":{"reward":0},"progress":{"kaamo_state":1}}
+	return {"actor_count":end,"ship_groups":groups,"placement":{"kind":"points","points":[Vector3.ZERO]},"radio":radio,
+		"radio_actions":[{"radio_index":0,"action":"respawn","first_actor":first,"end_actor":end,"every_ms":int(KAAMO.respawn_ms),"while_alive":[0,first],"radius":[60000,100000]}],
+		"success":{"kind":"radio_finished","index":1},"story":story,"turn_hostile":{}}
+
 ## The story job selected at this location, if the career is in a story flight.
 static func story_job(bindings: RefCounted,cursor: Variant,station_id: Variant,progress: Dictionary={}) -> Dictionary:
+	if cursor is int and station_id is int and Campaign.saved_story(bindings,cursor) and station_id==int(KAAMO.station_id):
+		var siege:=_kaamo_job(cursor,station_id,progress)
+		if not siege.is_empty():return siege
 	if cursor is int and station_id is int and Campaign.saved_story(bindings,cursor) and _wanted_entry(cursor)>=0:return _wanted_job(cursor,station_id,progress)
 	var job:=_story_flight_job(bindings,cursor,station_id,progress)
+	if job.is_empty() and cursor is int and station_id is int and Campaign.saved_story(bindings,cursor):job=_pirate_base_job(cursor,station_id,progress)
 	# Where no story flight waits, a Most Wanted criminal may (bounties).
 	if job.is_empty() and cursor is int and station_id is int and Campaign.saved_story(bindings,cursor):job=_bounty_job(cursor,station_id,progress)
 	# Otherwise Carla may nag once per stage (NAG_CALLS).
@@ -905,6 +981,8 @@ static func is_story_job(mission: Variant) -> bool:
 static func recipe(job: Dictionary) -> Dictionary:
 	var cursor:=int(job.campaign_cursor)
 	if job.has("wanted"):return _wanted_recipe(job)
+	if job.has("kaamo"):return _kaamo_recipe(job)
+	if job.has("pirate_base"):return _pirate_base_recipe(job)
 	if job.has("nag"):
 		var lines:=[]
 		for row in NAG_CALLS[int(job.nag)].lines:lines.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":5 if lines.is_empty() else 6,"values":[CALL_AFTER_MS if lines.is_empty() else lines.size()-1]})

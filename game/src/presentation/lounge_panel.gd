@@ -198,6 +198,23 @@ func _refresh() -> void:
 				show_yes=true
 				if _confirming:_yes.text=text(133);show_no=true;_no.text=text(134)
 			else:_body.text+="\n\n"+text(192).replace("#C",money(int(service.missing_credits)))
+		elif service.get("kind")=="kaamo":
+			# Kaamo Club agents (Mac text ids): mods 896-899, item 900, ship 901.
+			var ship_name:=text(902+int(service.ship_id))
+			match service.kaamo_kind:
+				"mod":
+					_body.text=text(896+int(service.mod)).replace("#SHIP_NAME",ship_name).replace("#N",str([40,30,1,20][int(service.mod)]))+" "+text(868).replace("#C",money(int(service.total_price)))
+				"item":
+					_body.text=text(900)+"\n"+text(int(_bindings.station_equipment.item_text_offset)+int(service.item_id))+"   "+money(int(service.total_price))
+				"ship":
+					_body.text=text(739+_selected%6) if service.get("greeting",false) else text(901)+"\n"+text(902+int(service.offer_ship_id))+"   "+money(int(service.total_price))
+			if service.consumed and not service.get("greeting",false):_body.text=text(847)
+			elif service.can_accept:
+				show_yes=true
+				if _confirming:
+					_body.text=text({"mod":860,"item":861,"ship":862}[service.kaamo_kind]).replace("#C",money(int(service.total_price)))
+					_yes.text=text(133);show_no=true;_no.text=text(134)
+			elif not service.consumed:_body.text+="\n\n"+text(192).replace("#C",money(int(service.missing_credits)))
 		elif service.get("kind")=="coordinates":
 			var system_name: String=_catalogues.tables.systems[int(service.system_id)].name
 			_body.text=label_text(857).replace("#S",system_name).replace("#C",money(int(service.total_price)))
@@ -265,6 +282,7 @@ func confirm() -> void:
 	if not preview.get("can_accept",false):return
 	if not _confirming:_confirming=true;_refresh();return
 	if preview.get("kind")=="merchant":action_requested.emit("buy_goods",_selected)
+	elif preview.get("kind")=="kaamo":action_requested.emit("buy_kaamo",_selected)
 	elif preview.get("kind")=="coordinates":action_requested.emit("buy_coordinates",_selected)
 	elif preview.get("kind")=="blueprint":action_requested.emit("buy_blueprint",_selected)
 	elif preview.get("kind")=="diplomat":action_requested.emit("buy_diplomat",_selected)

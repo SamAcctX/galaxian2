@@ -312,7 +312,8 @@ func _close_cloak_notice() -> void:
 
 ## One-time hint windows (flight_hints.gd): pause the flight until confirmed.
 func _sync_flight_hints(flight: Dictionary) -> void:
-	if _hint_dialog==null:return
+	# Automated checks turn hint windows off unless they test them.
+	if _hint_dialog==null or OS.get_environment("GOF2_FLIGHT_HINTS")=="0":return
 	if not session is FirstFlightSession:
 		if _hint_dialog.visible:_hint_dialog.clear()
 		return
@@ -1328,7 +1329,7 @@ func contract_action(action: String,id: int) -> bool:
 	if not prepare_lounge():return false
 	var accepted: bool=false
 	if session is StationSession:
-		var checkpoint: Callable=_save_station_candidate if action in ["buy_coordinates","buy_blueprint","buy_diplomat","hire_wingmen"] else Callable()
+		var checkpoint: Callable=_save_station_candidate if action in ["buy_coordinates","buy_blueprint","buy_diplomat","hire_wingmen","buy_kaamo"] else Callable()
 		accepted=session.contract_action(action,id,lounge_panel,checkpoint)
 	elif session is FirstFlightSession and action=="result_close":accepted=session.acknowledge_contract_result(id)
 	if not accepted:lounge_panel.show_error(session.error);return false
@@ -1801,6 +1802,7 @@ func present_session() -> void:
 		if session.has_station_recipe_context() and not session.presentation_active() and not session.is_paused() and session.campaign_story_ready():
 			if not _begin_campaign_story():return
 		if not session.poll_wingman_farewell(station_panel,_save_station_candidate):transition_error(session.error);return
+		if not session.poll_kaamo(station_panel,_save_station_candidate):transition_error(session.error);return
 	# Medal notices belong to the idle station; one left open at launch waits for the next dock.
 	if not session is StationSession and medal_notice.visible:medal_notice.clear()
 	if session is MissionSession:

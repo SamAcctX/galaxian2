@@ -1935,6 +1935,10 @@ func _observe_radio() -> bool:
 				var until:=int(action.get("until_radio",-1))
 				var begun: Array=_radio.snapshot().get("started",[])
 				if until>=0 and until<begun.size() and begun[until]==true:continue
+				# ...or only while one of these ships still stands (Kaamo siege outposts).
+				if action.has("while_alive"):
+					var standing: Array=_encounter.combat_snapshot().actors
+					if not range(int(action.while_alive[0]),int(action.while_alive[1])).any(func(id):return float(standing[id].vitals.hull)>0):continue
 				var last:=int(_action_marks.get("respawn%d"%index,int(_action_marks[index])))
 				if elapsed-last<int(action.every_ms):continue
 				_action_marks["respawn%d"%index]=elapsed

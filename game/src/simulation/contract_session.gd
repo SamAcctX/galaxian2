@@ -561,6 +561,14 @@ func open_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,un
 	if unix_seconds.size()!=3:return _shopping_reject("Supply the three station price timestamps")
 	for value in unix_seconds:
 		if not value is int or value<0:return _shopping_reject("Station price timestamps must be nonnegative integers")
+	var Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
+	var storage: bool=_state.station_id==Kaamo.STATION_ID and Kaamo.state(_state.progress)==Kaamo.OWNED
+	if storage:
+		# The owned club's hangar is the player's storage (kept in the career).
+		var kept: Dictionary=_state.progress.get("kaamo_storage",{"items":[],"ships":[]})
+		var restored: RefCounted=_lounges.fork()
+		if not restored.replace_item_stock(bindings,cat,_state.station_id,_lounges.item_stock(_state.station_id),kept.items) or not restored.replace_ship_stock(bindings,cat,_state.station_id,_lounges.ship_stock(_state.station_id),kept.ships):return _shopping_reject(restored.error)
+		_lounges=restored
 	var stock: Array=_lounges.item_stock(_state.station_id)
 	var times:=unix_seconds.duplicate()
 	if owned.cargo.entries.is_empty():times[0]=null
@@ -570,6 +578,8 @@ func open_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,un
 	if receipt.is_empty():return _shopping_reject(inventory.error)
 	var ship_percent:=int(_lounges.location(_state.station_id).stock.context.get("ship_price_percent",0))
 	if not inventory.open_ship_market(bindings,cat,_lounges.ship_stock(_state.station_id),ship_percent):return _shopping_reject(inventory.error)
+	if storage and not inventory.open_free_transfers():return _shopping_reject(inventory.error)
+	if not storage and Kaamo.state(_state.progress)==Kaamo.OWNED:inventory.offer_kaamo_keep(_state.progress.get("kaamo_storage",{}).get("ships",[]).map(func(row):return int(row.ship_id)))
 	var locations: RefCounted=_lounges.fork()
 	if not locations.replace_item_stock(bindings,cat,_state.station_id,stock,inventory.snapshot().stock,receipt.random):return _shopping_reject(locations.error)
 	var booze_quantity:=_booze_quantity(owned.cargo.entries)
@@ -593,11 +603,13 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 		_blueprints=project;_state.credits-=shipping
 		return supplied
 	var inventory: RefCounted=equipment.fork()
-	if action=="buy_ship":
+	var Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
+	if action in ["buy_ship","keep_ship"]:
 		if owned.get("market_ships")!=_lounges.ship_stock(_state.station_id):return _shopping_reject("The station's ship quote changed")
+		if action=="keep_ship" and (not owned.get("kaamo_keep") is Array or _state.progress.get("kaamo_storage",{}).get("ships",[]).any(func(row):return int(row.ship_id)==int(owned.loadout.ship_id))):return _shopping_reject("There is already a ship of this type at your station. The sale was cancelled.")
 		var passengers: Variant=_state.get("passengers")
 		if not Numbers.integer(passengers,0,2147483647) or passengers!=ContractProgress.occupied_passengers(_state):return _shopping_reject("Ship exchange lost the retained contract's passengers")
-		if not inventory.purchase_ship(bindings,cat,item_id,_state.credits,passengers):return _shopping_reject(inventory.error)
+		if not inventory.purchase_ship(bindings,cat,item_id,_state.credits,passengers,action=="keep_ship"):return _shopping_reject(inventory.error)
 	elif action in ["mount","unmount","replace"]:
 		# A retained delivery does not lock unrelated equipment. Its actual
 		# passengers must reach the shared occupied-berth guard; never assume
@@ -611,9 +623,13 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 	var accepted: Dictionary=inventory.snapshot()
 	var locations: RefCounted=_lounges.fork()
 	if not locations.replace_item_stock(bindings,cat,_state.station_id,owned.stock,accepted.stock):return _shopping_reject(locations.error)
-	if action=="buy_ship" and not locations.replace_ship_stock(bindings,cat,_state.station_id,owned.market_ships,accepted.market_ships):return _shopping_reject(locations.error)
+	if action in ["buy_ship","keep_ship"] and not locations.replace_ship_stock(bindings,cat,_state.station_id,owned.market_ships,accepted.market_ships):return _shopping_reject(locations.error)
 	var credits:=credit_balance(_state.credits,accepted.credit_delta,_rules.delivery_results)
 	_lounges=locations;_state.credits=credits
+	if accepted.get("free_transfers",false):_state.progress.kaamo_storage={"items":accepted.stock.duplicate(true),"ships":accepted.market_ships.duplicate(true)}
+	elif action=="keep_ship":
+		var kept: Dictionary=_state.progress.get("kaamo_storage",{"items":[],"ships":[]}).duplicate(true)
+		kept.ships.append(accepted.kept_ship.duplicate(true));_state.progress.kaamo_storage=kept
 	if action=="buy" and not _retain_booze_type(item_id):return _shopping_reject(error)
 	return inventory
 
@@ -1029,6 +1045,21 @@ func dismiss_expired_wingmen() -> bool:
 	_state.wingmen.active={}
 	return true
 
+## Kaamo Club docking: the first talk opens the offer; the purchase pays here
+## (the station owner debits the Buskat from the hold).
+func advance_kaamo(purchase: bool) -> bool:
+	var Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
+	if not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty() or _state.station_id!=Kaamo.STATION_ID:return reject("The Kaamo Club requires an idle docking")
+	var current:=Kaamo.state(_state.progress)
+	if current!=(Kaamo.OFFERED if purchase else Kaamo.OPEN):return reject("The Kaamo Club is not at this step")
+	if purchase:
+		if _state.credits<=Kaamo.PRICE:return reject("Insufficient credits.")
+		_state.credits-=Kaamo.PRICE
+		# Anything sold to the club before is gone; the storage starts empty.
+		_state.progress.kaamo_storage={"items":[],"ships":[]}
+	_state.progress.kaamo_state=current+1
+	return true
+
 func wingman_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> Dictionary:
 	error=""
 	if _lounges==null or not equipment is Equipment or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the current flight or result before hiring wingmen")
@@ -1148,6 +1179,56 @@ func merchant_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted
 	quote.kind="merchant";quote.can_accept=not quote.consumed and int(_state.credits)>=int(quote.total_price)
 	quote.missing_credits=maxi(0,int(quote.total_price)-int(_state.credits))
 	return quote
+
+## The Kaamo Club's mechanics (mods for the flown ship) and dealers (one
+## special item; one ship for the club's storage once the club is owned).
+func kaamo_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> Dictionary:
+	error=""
+	var Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
+	var Agents=preload("res://src/content/persistent_contact_definitions.gd")
+	if _lounges==null or not equipment is Equipment or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the current flight or result before trading")
+	var owned: Dictionary=equipment.snapshot()
+	if owned.loadout.station_id!=_state.station_id or _lounges.selection_state().current_station_id!=_state.station_id or owned.get("ordinary_shopping_open",false):return fail("Open the current station lounge with the hangar closed")
+	var quote: Dictionary=_lounges.kaamo_contact(int(_state.station_id),contact_id)
+	if quote.is_empty():return fail("This contact sells nothing")
+	quote.kaamo_kind=quote.kind;quote.kind="kaamo";quote.ship_id=int(owned.loadout.ship_id)
+	match quote.kaamo_kind:
+		"mod":
+			var ship: Dictionary=owned.loadout.get("ship_instance",{})
+			quote.total_price=int(ship.get("unit_price",0))*int(Agents.KAAMO_MOD_PERCENT[int(quote.mod)])/100*Agents.KAAMO_PRICE_FACTOR
+			# Mechanics sell again for the next ship; a hull takes each mod once.
+			quote.consumed=int(quote.mod) in ship.get("upgrade_tags",[])
+		"item":quote.total_price=int(quote.price)*Agents.KAAMO_PRICE_FACTOR
+		"ship":
+			var stored: Array=_state.progress.get("kaamo_storage",{}).get("ships",[]).map(func(row):return int(row.ship_id))
+			var left: Array=Agents.KAAMO_SHIPS.filter(func(id):return id!=int(owned.loadout.ship_id) and id not in stored)
+			quote.greeting=Kaamo.state(_state.progress)!=Kaamo.OWNED
+			quote.consumed=quote.consumed or left.is_empty() or quote.greeting
+			quote.offer_ship_id=-1 if left.is_empty() else int(left[0])
+			quote.total_price=0 if left.is_empty() else int(_catalogues.tables.ships[int(left[0])].stats.base_price)*Agents.KAAMO_PRICE_FACTOR
+	quote.can_accept=not quote.consumed and int(_state.credits)>=int(quote.total_price)
+	quote.missing_credits=maxi(0,int(quote.total_price)-int(_state.credits))
+	return quote
+
+func purchase_kaamo(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> RefCounted:
+	var quote:=kaamo_preview(bindings,contact_id,equipment)
+	if quote.is_empty():return null
+	if not quote.can_accept:return _shopping_reject("This purchase is unavailable or exceeds the current credits")
+	var inventory: RefCounted=equipment.fork()
+	var cache: RefCounted=_lounges.fork()
+	match quote.kaamo_kind:
+		"mod":
+			if not inventory.add_ship_mod(bindings,_catalogues,int(quote.mod)):return _shopping_reject(inventory.error)
+		"item":
+			if not inventory.receive_lounge_goods(int(quote.item_id),1) or not cache.consume_kaamo(int(_state.station_id),contact_id):return _shopping_reject(inventory.error+cache.error)
+		"ship":
+			if not cache.consume_kaamo(int(_state.station_id),contact_id):return _shopping_reject(cache.error)
+			# A bare hull, parked in the club's storage (use it from the hangar).
+			var kept: Dictionary=_state.progress.get("kaamo_storage",{"items":[],"ships":[]}).duplicate(true)
+			kept.ships.append({"ship_id":int(quote.offer_ship_id),"unit_price":int(_catalogues.tables.ships[int(quote.offer_ship_id)].stats.base_price),"faction_id":0})
+			_state.progress.kaamo_storage=kept
+	_state.credits-=int(quote.total_price);_lounges=cache
+	return inventory
 
 func purchase_lounge_goods(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> RefCounted:
 	var quote:=merchant_preview(bindings,contact_id,equipment)

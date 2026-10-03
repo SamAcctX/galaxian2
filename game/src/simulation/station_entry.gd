@@ -595,6 +595,17 @@ func dismiss_expired_wingmen() -> bool:
 	_contracts=candidate
 	return true
 
+func advance_kaamo(purchase: bool) -> bool:
+	var Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
+	if _contracts==null or _equipment==null or _state.get("hangar_open",false) or snapshot().dialogue.visible:return fail("The Kaamo Club requires an idle station")
+	var inventory: RefCounted=_equipment.fork()
+	if purchase and not inventory.debit_campaign_cargo(Kaamo.BUSKAT,Kaamo.BUSKAT_TONS):return fail(inventory.error)
+	var career: RefCounted=_contracts.fork()
+	if not career.advance_kaamo(purchase):return fail(career.error)
+	_contracts=career;_state.progress=career.snapshot().progress
+	_retain_equipment(inventory)
+	return true
+
 func wingman_preview(contact_id: int,bindings: RefCounted) -> Dictionary:
 	error=""
 	if _contracts==null or not _contract_station(bindings):fail("The station lounge is unavailable");return {}
@@ -661,6 +672,23 @@ func merchant_preview(contact_id: int,bindings: RefCounted) -> Dictionary:
 	var preview: Dictionary=_contracts.merchant_preview(bindings,contact_id,_equipment)
 	if preview.is_empty():fail(_contracts.error)
 	return preview
+
+func kaamo_preview(contact_id: int,bindings: RefCounted) -> Dictionary:
+	error=""
+	if _contracts==null or not _contract_station(bindings):fail("The station lounge is unavailable");return {}
+	var preview: Dictionary=_contracts.kaamo_preview(bindings,contact_id,_equipment)
+	if preview.is_empty():fail(_contracts.error)
+	return preview
+
+func purchase_kaamo(contact_id: int,bindings: RefCounted) -> bool:
+	error=""
+	if _contracts==null or not _contract_station(bindings):return fail("The station lounge is unavailable")
+	var contracts: RefCounted=_contracts.fork()
+	var inventory: RefCounted=contracts.purchase_kaamo(bindings,contact_id,_equipment)
+	if inventory==null:return fail(contracts.error)
+	_contracts=contracts;_retain_equipment(inventory)
+	_state.progress=contracts.snapshot().progress
+	return true
 
 func purchase_lounge_goods(contact_id: int,bindings: RefCounted) -> bool:
 	error=""
@@ -737,7 +765,7 @@ func close_equipment() -> bool:
 
 func _sync_booze_progress(contracts: RefCounted) -> void:
 	var progress: Dictionary=contracts.snapshot().progress
-	for key in ["purchased_booze_quantity","booze_types_mask"]:
+	for key in ["purchased_booze_quantity","booze_types_mask","kaamo_storage"]:
 		if progress.has(key):_state.progress[key]=progress[key]
 
 func previous() -> bool:

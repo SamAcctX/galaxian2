@@ -268,6 +268,28 @@ func merchant_quote(station_id: int,contact_id: int) -> Dictionary:
 			return result
 	return {}
 
+func kaamo_contact(station_id: int,contact_id: int) -> Dictionary:
+	var entry:=location(station_id)
+	for contact in entry.get("population",{}).get("contacts",[]):
+		if contact.contact_id==contact_id and contact.has("kaamo"):
+			var result: Dictionary=contact.kaamo.duplicate(true)
+			result.consumed=contact_id in entry.get("purchased_goods",[])
+			return result
+	return {}
+
+## A Kaamo dealer sells once per bar generation ("nothing left" afterwards).
+func consume_kaamo(station_id: int,contact_id: int) -> bool:
+	_read={};error=""
+	var contact:=kaamo_contact(station_id,contact_id)
+	if contact.is_empty():return reject("This Kaamo agent is not in the lounge")
+	if contact.consumed:return reject("This Kaamo agent has nothing left")
+	for entry in _state.locations:
+		if entry.station_id==station_id:
+			if not entry.has("purchased_goods"):entry.purchased_goods=[]
+			entry.purchased_goods.append(contact_id)
+			return true
+	return reject("The Kaamo agent lost its retained lounge")
+
 func consume_goods(station_id: int,contact_id: int) -> bool:
 	_read={};error=""
 	var quote:=merchant_quote(station_id,contact_id)

@@ -47,8 +47,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, station: Dictionary
 		var item:=_item_metadata(catalogues,id,rules)
 		if item.is_empty():return reject("Tutorial item has no category or subtype")
 		items[id]=item
-	var counts:=[]
-	for name in Loadout.SLOT_PROPERTIES:counts.append(int(catalogues.tables.ships[seed.ship_id].stats[name]))
+	var counts:=Loadout.slot_counts(catalogues.tables.ships[seed.ship_id].stats,seed)
 	var capacity:=int(catalogues.tables.ships[seed.ship_id].stats.cargo_capacity)
 	if station.cargo.get("capacity")!=capacity:return reject("Tutorial cargo capacity differs from the ship catalogue")
 	_rules=rules.duplicate(true);_items=items;_counts=counts;_completion_prices=[];_catalogue_size=catalogues.tables.items.size();_mission_cargo_id=-1;_fitting_assets={}
@@ -155,7 +154,7 @@ func close_ordinary_shopping() -> bool:
 	error=""
 	if not _state.get("ordinary_shopping_open",false):return reject("The ordinary hangar is not open")
 	_state.erase("ordinary_shopping_open");_state.erase("market_rows");_state.erase("market_rules")
-	for key in ["fitting_support","fitting_conflicts","fitting_stats","market_ships","ship_price_percent"]:_state.erase(key)
+	for key in ["fitting_support","fitting_conflicts","fitting_stats","market_ships","ship_price_percent","free_transfers","kaamo_keep","kept_ship"]:_state.erase(key)
 	_fitting_assets={}
 	return true
 
@@ -172,7 +171,38 @@ func open_ship_market(bindings: RefCounted,cat: RefCounted,offers: Array,price_p
 	_state.market_ships=offers.duplicate(true);_state.ship_price_percent=price_percent
 	return true
 
-func purchase_ship(bindings: RefCounted,cat: RefCounted,index: int,credits: int,passengers: int) -> bool:
+## A Kaamo mechanic fits a mod to the flown hull (each mod once per hull).
+func add_ship_mod(bindings: RefCounted,cat: RefCounted,mod: int) -> bool:
+	error=""
+	if not _state.get("loadout",{}).get("ship_instance") is Dictionary or _state.get("ordinary_shopping_open",false):return reject("Close the hangar before modding the ship")
+	var tags: Array=_state.loadout.ship_instance.get("upgrade_tags",[])
+	if mod in tags:return reject("This ship already has that mod")
+	var next:=_state.duplicate(true)
+	next.loadout.ship_instance.upgrade_tags.append(mod)
+	var counts:=_counts.duplicate()
+	if mod==Loadout.SLOT_MOD:
+		next.loadout.slots.append(null);next.prices.installed.append(null);counts[3]+=1
+	if mod==Loadout.CARGO_MOD:
+		next.cargo.capacity=load("res://src/simulation/equipment_stats.gd").cargo_capacity(bindings,cat,next.loadout)
+		next.cargo.free_space=int(next.cargo.capacity)-int(next.cargo.used)
+	_state=next;_counts=counts
+	return true
+
+## The owned Kaamo Club's hangar is the player's storage: goods and parked
+## ships move without payment.
+func open_free_transfers() -> bool:
+	if not _state.get("ordinary_shopping_open",false):return reject("Open the station hangar first")
+	_state.free_transfers=true
+	return true
+
+## Elsewhere, a bought ship may send the former one to the club ("Keep").
+## stored: the ship types already parked there (one per type).
+func offer_kaamo_keep(stored: Array) -> void:
+	if _state.get("ordinary_shopping_open",false):_state.kaamo_keep=stored.duplicate()
+
+## keep: the owned Kaamo Club parks the former ship (bare hull) instead of
+## trading it in; the new ship costs its full price.
+func purchase_ship(bindings: RefCounted,cat: RefCounted,index: int,credits: int,passengers: int,keep:=false) -> bool:
 	error=""
 	if not _state.get("ordinary_shopping_open",false) or not _state.get("market_ships") is Array or index<0 or index>=_state.market_ships.size():return reject("Select a ship from the current Hangar quote")
 	var offer: Dictionary=_state.market_ships[index]
@@ -181,8 +211,10 @@ func purchase_ship(bindings: RefCounted,cat: RefCounted,index: int,credits: int,
 	if not load("res://src/simulation/mission_context.gd").base_player_hull(bindings,offer.ship_id):return reject("This ship is outside the supported base game")
 	if offer.ship_id==_state.loadout.ship_id:return reject("You already own this type of ship.")
 	if passengers>0:return reject("You cannot change ships while carrying passengers.")
-	if int(offer.unit_price)>credits+int(current.unit_price):return reject("Insufficient credits. You need %d more."%(int(offer.unit_price)-credits-int(current.unit_price)))
-	var delta:=int(current.unit_price)-int(offer.unit_price)
+	var free: bool=_state.get("free_transfers",false)
+	if keep and int(offer.unit_price)>credits:return reject("Insufficient credits. You need %d more."%(int(offer.unit_price)-credits))
+	if not free and not keep and int(offer.unit_price)>credits+int(current.unit_price):return reject("Insufficient credits. You need %d more."%(int(offer.unit_price)-credits-int(current.unit_price)))
+	var delta:=0 if free else -int(offer.unit_price) if keep else int(current.unit_price)-int(offer.unit_price)
 	if absi(delta)>int(_state.market_rules.transfer.maximum_credit_delta) or credits+delta>2147483647:return reject("The ship exchange exceeds the supported wallet range")
 	var staged:=fork();var next: Dictionary=staged._state
 	var previous: Dictionary=next.loadout.duplicate(true);var prices: Array=next.prices.installed.duplicate(true)
@@ -191,8 +223,9 @@ func purchase_ship(bindings: RefCounted,cat: RefCounted,index: int,credits: int,
 	next.loadout=empty.snapshot();next.loadout.ship_instance=Ship.from_offer(offer)
 	next.loadout.ship_instance.unit_price=ShipStock.local_ship_price(bindings,cat,int(offer.ship_id),int(previous.station_id),int(next.ship_price_percent))
 	if not Ship.valid(next.loadout.ship_instance):return reject("The purchased ship has an invalid local quote")
-	staged._counts=[]
-	for key in Loadout.SLOT_PROPERTIES:staged._counts.append(int(cat.tables.ships[int(offer.ship_id)].stats[key]))
+	# A stored hull keeps its own mods (an added slot among them).
+	if Loadout.SLOT_MOD in next.loadout.ship_instance.upgrade_tags:next.loadout.slots.append(null)
+	staged._counts=Loadout.slot_counts(cat.tables.ships[int(offer.ship_id)].stats,next.loadout)
 	next.prices.installed=[];next.prices.installed.resize(next.loadout.slots.size())
 	for i in previous.slots.size():
 		var slot: Variant=previous.slots[i]
@@ -216,7 +249,9 @@ func purchase_ship(bindings: RefCounted,cat: RefCounted,index: int,credits: int,
 	var resale:=current.duplicate(true);resale.ship_id=int(previous.ship_id)
 	resale.unit_price=ShipStock.local_ship_price(bindings,cat,int(previous.ship_id),int(previous.station_id),int(next.ship_price_percent))
 	if not Ship.valid_offers([resale],cat):return reject("The former ship has an invalid local resale quote")
-	next.market_ships[index]=resale;next.credit_delta=delta;next.transactions+=1
+	if keep:next.market_ships.remove_at(index);next.kept_ship=resale
+	else:next.market_ships[index]=resale
+	next.credit_delta=delta;next.transactions+=1
 	_state=next;_counts=staged._counts
 	return true
 
@@ -310,7 +345,8 @@ func _transact_ordinary(action: String,item_id: int,credits: int) -> bool:
 		if candidate.item_id==item_id:row=candidate;break
 	if row.is_empty():return reject("This item is absent from the current stock and cargo")
 	if row.mission or item_id in next.get("protected_item_ids",[]):return reject("This item cannot be sold or demounted at the moment.")
-	var price: int=row.unit_price
+	# The owned Kaamo Club stores goods for free.
+	var price: int=0 if next.get("free_transfers",false) else row.unit_price
 	if price<0 or price>int(next.market_rules.transfer.maximum_credit_delta):return reject("This item price is outside the supported wallet range")
 	if action=="buy":
 		if row.stock<1:return reject("This offer is out of stock")
@@ -348,8 +384,8 @@ func lend_story_ship(bindings: RefCounted,cat: RefCounted,ship_id: int,equipment
 	next.prices.installed=[]
 	for slot in next.loadout.slots:next.prices.installed.append(null if slot==null else {"item_id":slot.item_id,"unit_price":int(_completion_prices[slot.item_id]) if slot.item_id<_completion_prices.size() else 0})
 	next.cargo.ship_id=ship_id;next.cargo.entries=[];next.prices.cargo=[]
-	var staged:=fork();staged._state=next;staged._counts=[]
-	for key in Loadout.SLOT_PROPERTIES:staged._counts.append(int(cat.tables.ships[ship_id].stats[key]))
+	var staged:=fork();staged._state=next
+	staged._counts=Loadout.slot_counts(cat.tables.ships[ship_id].stats,next.loadout)
 	staged._state.cargo.used=0
 	if not staged._story_capacity(bindings,cat):return false
 	_state=staged._state;_counts=staged._counts
@@ -362,8 +398,8 @@ func return_story_ship(bindings: RefCounted,cat: RefCounted) -> bool:
 	var next:=_state.duplicate(true)
 	next.loadout=stored.loadout.duplicate(true);next.loadout.station_id=_state.loadout.station_id;next.loadout.system_id=_state.loadout.system_id
 	next.cargo=stored.cargo.duplicate(true);next.prices=stored.prices.duplicate(true);next.erase("stored_ship")
-	var staged:=fork();staged._state=next;staged._counts=[]
-	for key in Loadout.SLOT_PROPERTIES:staged._counts.append(int(cat.tables.ships[int(next.loadout.ship_id)].stats[key]))
+	var staged:=fork();staged._state=next
+	staged._counts=Loadout.slot_counts(cat.tables.ships[int(next.loadout.ship_id)].stats,next.loadout)
 	if not staged._story_capacity(bindings,cat):return false
 	_state=staged._state;_counts=staged._counts
 	return true

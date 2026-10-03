@@ -108,6 +108,7 @@ func adopt_conversation(prepared: Node) -> void:
 	# Retain currently playing payment/equipment effects when story speech opens.
 	if _player!=null:_player.free();_player=null
 	_resources=prepared._resources;_clips=prepared._clips.duplicate();_line=-1
+	_mission_voice_lines=prepared._mission_voice_lines.duplicate()
 	diagnostics=prepared.diagnostics.duplicate(true)
 
 func _prepare_voices(ids: Array) -> bool:

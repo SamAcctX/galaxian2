@@ -5,6 +5,17 @@ const Definitions = preload("res://src/content/opening_definitions.gd")
 const StationDefinitions = preload("res://src/content/station_entry_definitions.gd")
 const Library = preload("res://src/content/library.gd")
 const SLOT_PROPERTIES := ["primary_slots", "secondary_slots", "turret_slots", "equipment_slots"]
+## Kaamo ship mods on the hull: 1 adds 30 t of cargo, 2 one equipment slot.
+const CARGO_MOD := 1
+const SLOT_MOD := 2
+
+## Slot counts per category for this hull, including an added equipment slot
+## (the last category, so earlier slot positions never move).
+static func slot_counts(stats: Dictionary, loadout: Dictionary) -> Array:
+	var counts := []
+	for name in SLOT_PROPERTIES: counts.append(int(stats.get(name, 0)))
+	if SLOT_MOD in loadout.get("ship_instance", {}).get("upgrade_tags", []): counts[3] += 1
+	return counts
 var error := ""
 var _seed := {}
 

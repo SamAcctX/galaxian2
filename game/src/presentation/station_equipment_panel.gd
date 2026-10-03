@@ -60,6 +60,7 @@ var _list: VBoxContainer
 var _credits:=0
 var _installed_rows:={}
 var _replacement: ConfirmationDialog
+var _keep_choice: ConfirmationDialog
 var _pending_replace:={}
 var _ship_offers:={}
 var _passengers:=0
@@ -122,6 +123,11 @@ func _init() -> void:
 	_replacement=ConfirmationDialog.new();_replacement.title="Replace equipment";add_child(_replacement)
 	_replacement.confirmed.connect(_confirm_replacement)
 	_replacement.canceled.connect(func():_pending_replace={};_refresh())
+	# Owning the Kaamo Club: the former ship is sold (330) or parked there (331).
+	_keep_choice=ConfirmationDialog.new();add_child(_keep_choice)
+	_keep_choice.confirmed.connect(func():_choose_keep(false))
+	_keep_choice.custom_action.connect(func(_action):_keep_choice.hide();_choose_keep(true))
+	_keep_choice.canceled.connect(func():_pending_replace={};_refresh())
 	set_mobile_layout(false)
 
 func _add_row(id: int) -> void:
@@ -183,11 +189,11 @@ func _request_ship(index: int) -> void:
 	var offer: Dictionary=_state.market_ships[index]
 	if offer.ship_id==_state.loadout.ship_id:_message.text=_labels.same_ship;return
 	if _passengers>0:_message.text=_labels.ship_passengers;return
-	var shortfall:=int(offer.unit_price)-_credits-int(_state.loadout.ship_instance.unit_price)
+	var shortfall:=-1 if _state.get("free_transfers",false) else int(offer.unit_price)-_credits-int(_state.loadout.ship_instance.unit_price)
 	if shortfall>0:_message.text=_labels.insufficient.replace("#C","%d$"%shortfall);return
 	_pending_replace={"ship_index":index,"offer":offer.duplicate(true),"loadout":_state.loadout.duplicate(true)}
 	_replacement.title=_labels.buy
-	_replacement.dialog_text=_labels.buy_ship+"\n"+_ship_names[int(offer.ship_id)]+"\n%d$"%(int(offer.unit_price)-int(_state.loadout.ship_instance.unit_price))
+	_replacement.dialog_text=(_labels.switch if _state.get("free_transfers",false) else _labels.buy_ship)+"\n"+_ship_names[int(offer.ship_id)]+("" if _state.get("free_transfers",false) else "\n%d$"%(int(offer.unit_price)-int(_state.loadout.ship_instance.unit_price)))
 	_replacement.popup_centered(Vector2i(600 if _mobile else 440,180));_refresh()
 
 func _confirm_replacement() -> void:
@@ -199,8 +205,25 @@ func _confirm_replacement() -> void:
 		blueprint_action_requested.emit("supply_blueprint",pending.blueprint,pending.material_id,pending.quantity)
 	elif pending.has("ship_index"):
 		if pending.ship_index>=_state.get("market_ships",[]).size() or _state.market_ships[pending.ship_index]!=pending.offer:return
+		if _state.get("kaamo_keep") is Array:
+			_pending_replace=pending
+			_keep_choice.title=_labels.buy;_keep_choice.dialog_text=_labels.keep_question
+			_keep_choice.get_ok_button().text=_labels.keep_sell
+			if _keep_button==null:_keep_button=_keep_choice.add_button(_labels.keep_keep,true,"keep")
+			_keep_choice.popup_centered(Vector2i(600 if _mobile else 440,180));return
 		action_requested.emit("buy_ship",pending.ship_index)
 	else:Sounds.event(self,Sounds.HANGAR_MOUNT);slot_action_requested.emit("replace",pending.item_id,pending.index)
+	_refresh()
+
+var _keep_button: Button
+
+func _choose_keep(keep: bool) -> void:
+	var pending:=_pending_replace;_pending_replace={}
+	if not _active or not visible or pending.is_empty() or _state.get("loadout")!=pending.loadout:return
+	if keep:
+		if int(_state.loadout.ship_id) in _state.get("kaamo_keep",[]):_message.text=_labels.keep_exists;_refresh();return
+		if int(pending.offer.unit_price)>_credits:_message.text=_labels.insufficient.replace("#C","%d$"%(int(pending.offer.unit_price)-_credits));_refresh();return
+	action_requested.emit("keep_ship" if keep else "buy_ship",pending.ship_index)
 	_refresh()
 
 func _add_installed_row(index: int) -> void:
@@ -246,6 +269,7 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted=nu
 			if ship_base+id<library.strings.size():ship_names[id]=library.strings[ship_base+id]
 	var label_ids:={"hangar":166,"shop":184,"cargo":183,"ship":182,"close":169,"buy":351,"mount":270,"unmount":271,"sell":319,"instruction":1724,"protected":312,"overfilled":193,"blank":173,"primary":254,"secondary":255,"turret":256,"equipment":258,"commodities":259}
 	label_ids.merge({"buy_ship":293,"same_ship":318,"ship_passengers":325,"insufficient":192})
+	label_ids.merge({"keep_question":316,"keep_exists":317,"keep_sell":319,"keep_keep":320,"use":321,"switch":322})
 	label_ids.merge({"blueprints":261,"available_blueprints":262,"finished":263,"at":264,"missing":265,"owned":273,"store":185,"start_production":201,"shipping":277,"constructed_here":200,"constructed_there":199})
 	for key in label_ids:
 		var text_id: int=label_ids[key]
@@ -343,9 +367,9 @@ func present(state: Dictionary) -> bool:
 	if ship_id<0 or ship_id>=_catalogues.tables.ships.size():return reject("The displayed ship is absent from this content pack")
 	_slot_categories=[]
 	var stats: Dictionary=_catalogues.tables.ships[ship_id].stats
-	var slot_properties:=["primary_slots","secondary_slots","turret_slots","equipment_slots"]
-	for category in slot_properties.size():
-		for slot in int(stats[slot_properties[category]]):_slot_categories.append(category)
+	var counts: Array=load("res://src/simulation/opening_loadout.gd").slot_counts(stats,state.equipment.loadout)
+	for category in counts.size():
+		for slot in int(counts[category]):_slot_categories.append(category)
 	if _slot_categories.size()!=state.equipment.loadout.slots.size():return reject("The ship slot display disagrees with its loadout")
 	for i in _slot_categories.size():_add_installed_row(i)
 	for i in state.equipment.get("market_ships",[]).size():_add_ship_offer(i)
@@ -390,7 +414,8 @@ func _refresh() -> void:
 		var offer: Dictionary=_state.market_ships[index];var hull: Dictionary=_catalogues.tables.ships[int(offer.ship_id)].stats
 		row.name.text="%s   %d$"%[_ship_names[int(offer.ship_id)],int(offer.unit_price)]
 		row.detail.text="%s %d   %s %d   %s %d   %s %d   %s %dt"%[_labels.primary,hull.primary_slots,_labels.secondary,hull.secondary_slots,_labels.turret,hull.turret_slots,_labels.equipment,hull.equipment_slots,_labels.cargo,hull.cargo_capacity]
-		row.button.text=_labels.buy;row.button.disabled=not controls
+		# Parked ships at the owned Kaamo Club are switched to with "Use".
+		row.button.text=_labels.use if _state.get("free_transfers",false) else _labels.buy;row.button.disabled=not controls
 		row.node.add_theme_stylebox_override("panel",_row_styles[false])
 		for label in [row.name,row.detail]:label.add_theme_font_size_override("font_size",20 if _mobile else 15)
 	if _state.loadout.has("ship_instance"):_ship_name.text+="   %d$"%int(_state.loadout.ship_instance.unit_price)
@@ -419,6 +444,8 @@ func _refresh() -> void:
 		row.name.text=_names.get(id,"")
 		row.quantity.text=str(stock) if _tab=="shop" else str(owned)
 		row.icon.texture=_icon_texture(int(id))
+		# The owned Kaamo Club's storage shows no prices (original).
+		if _state.get("free_transfers",false):price_known=false;price=0
 		row.caption=_labels.protected if protected else "%d$"%price if price_known else ""
 		row.detail.text=row.caption
 		row.detail.visible=not row.detail.text.is_empty()

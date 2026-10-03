@@ -164,6 +164,31 @@ func prepare_contact_notice(library: RefCounted,bindings: RefCounted,visuals: Re
 	_contact_final_text=library.strings[label_id]
 	return true
 
+## Station-owned talks (the Kaamo Club) add their speakers beside the
+## campaign's own, without replacing them.
+func prepare_speakers(library: RefCounted,bindings: RefCounted,visuals: RefCounted,ids: Array) -> bool:
+	if _identity.is_empty() and not configure_empty(library,bindings):return false
+	var composer:=Portraits.new()
+	for id in ids:
+		if _portraits.has(int(id)):continue
+		var definition: Dictionary=bindings.station_presentation.portraits.get(str(id),{})
+		if definition.is_empty():definition=bindings.resolve_speaker_portrait(int(id))
+		if definition.is_empty():return reject(bindings.error)
+		var portrait: Dictionary=composer.compose_definition(library,bindings,visuals,int(id),"large",definition)
+		if portrait.is_empty():return reject(composer.error)
+		_portraits[int(id)]=ImageTexture.create_from_image(portrait.image)
+	for key in ["next_text_id","final_text_id"]:
+		if not _labels.has(key):
+			var label:=int(bindings.station_presentation.dialogue[key])
+			_labels[key]=library.strings[label] if label>=0 and label<library.strings.size() else ""
+	if _art==null:
+		var art:=Art.new()
+		if not art.configure(library,bindings,visuals):return reject(art.error)
+		_art=art
+		var original:=Theme.new();original.default_font=art.font;theme=original
+		set_mobile_layout(_mobile)
+	return true
+
 func present(state: Dictionary) -> bool:
 	error=""
 	if state.is_empty():clear();return true
@@ -180,6 +205,9 @@ func present(state: Dictionary) -> bool:
 	_body.scroll_to_line(0);_portrait.texture=_contact_portrait if contact_notice else _portraits.get(int(line.speaker_id))
 	_portrait.visible=_portrait.texture!=null
 	_next.text=_contact_final_text if contact_notice else (_labels.final_text_id if line.index==line.count-1 else _labels.next_text_id)
+	# A Yes/No line answers with next (yes) and previous (no).
+	_previous.text=line.get("no_text","‹")
+	if line.has("yes_text"):_next.text=line.yes_text
 	_counter.text="%d / %d"%[int(line.index)+1,int(line.count)]
 	visible=true;set_active(_active);_relayout()
 	return true

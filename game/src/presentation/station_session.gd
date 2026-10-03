@@ -217,6 +217,73 @@ func poll_wingman_farewell(panel: Control,checkpoint: Callable=Callable()) -> bo
 	_world=candidate;_wingman_notice=line;_generation+=1
 	return true
 
+const Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
+var _kaamo:={}
+var _kaamo_checked:=false
+
+## The Kaamo Club speaks once per docking, like the crew farewell: its talk,
+## the "not ready" notice or the Yes/No purchase offer.
+func poll_kaamo(panel: Control,checkpoint: Callable=Callable()) -> bool:
+	if _kaamo_checked or _world==null or not _active or status!="running" or is_paused() or not _dialogue_started or not _wingman_notice.is_empty():return true
+	if _lounge_open or _presentation!=null or _released_presentation!=null or (is_instance_valid(_blueprint_pickup) and _blueprint_pickup.visible):return true
+	var before: Dictionary=_world.snapshot()
+	if before.dialogue.visible or before.get("hangar_open",false) or not before.has("contracts") or not before.contracts.get("pending_result",{}).is_empty():return true
+	_kaamo_checked=true
+	var event:=Kaamo.docking_event(int(before.loadout.station_id),before.contracts.get("progress",{}),int(before.contracts.get("credits",0)),before.cargo.get("entries",[]))
+	if event.is_empty():return true
+	var candidate: RefCounted=_world.fork()
+	if event=="talk":
+		if not candidate.advance_kaamo(false):return reject(candidate.error)
+		if checkpoint.is_valid() and not checkpoint.call(candidate):return reject("Could not save the Kaamo Club visit")
+	var pages: Array=Kaamo.FIRST_TALK if event=="talk" else [[16,Kaamo.OFFER_TEXT if event=="offer" else Kaamo.NOT_READY_TEXT,-1]]
+	if not _start_kaamo(panel,pages,event=="offer"):return false
+	_world=candidate;_generation+=1
+	return true
+
+func _start_kaamo(panel: Control,pages: Array,offer: bool) -> bool:
+	var events:=[];var speakers:=[]
+	for page in pages:
+		events.append({"speaker_id":page[0],"text_id":page[1],"voice_event_id":page[2]})
+		if not speakers.has(page[0]):speakers.append(page[0])
+	var resolver=load("res://src/content/dialogue_lines.gd").new()
+	var lines: Array=resolver.read(_bindings,_library,events)
+	if lines.size()!=events.size():return reject(resolver.error)
+	if panel==null or not panel.prepare_speakers(_library,_bindings,_visuals,speakers):return reject("The Kaamo Club talk is unavailable: "+("" if panel==null else panel.error))
+	var speech:=Speech.new();add_child(speech)
+	if not speech.configure_events(_library,_bindings,events):
+		var problem: String=speech.error;speech.free();return reject(problem)
+	audio.adopt_conversation(speech);speech.free()
+	_kaamo={"lines":lines,"index":0,"offer":offer}
+	return _show_kaamo(panel)
+
+func _show_kaamo(panel: Control) -> bool:
+	var index:=int(_kaamo.index)
+	var line: Dictionary=_kaamo.lines[index].duplicate(true)
+	line.merge({"visible":true,"index":index,"count":_kaamo.lines.size(),"previous_available":index>0 or _kaamo.offer})
+	if _kaamo.offer:line.yes_text=_library.strings[Kaamo.YES_TEXT];line.no_text=_library.strings[Kaamo.NO_TEXT]
+	_wingman_notice=line;_generation+=1
+	if not panel.present(snapshot()):return reject(panel.error)
+	audio.present_mission(line)
+	return true
+
+func _navigate_kaamo(action: String,panel: Control,checkpoint: Callable) -> bool:
+	if _kaamo.offer:
+		if action=="next":
+			var candidate: RefCounted=_world.fork()
+			if not candidate.advance_kaamo(true):return reject(candidate.error)
+			if checkpoint.is_valid() and not checkpoint.call(candidate):return reject("Could not save the Kaamo Club purchase")
+			_world=candidate
+			return _start_kaamo(panel,Kaamo.FAREWELL_TALK+[[16,Kaamo.OWNED_TEXT,-1]],false)
+		_kaamo={}
+	elif action=="previous":
+		if int(_kaamo.index)==0:return reject("No previous line")
+		_kaamo.index-=1;return _show_kaamo(panel)
+	elif int(_kaamo.index)<_kaamo.lines.size()-1:
+		_kaamo.index+=1;return _show_kaamo(panel)
+	else:_kaamo={}
+	_wingman_notice={};_generation+=1;audio.present(-1)
+	return true if panel.present(snapshot()) else reject(panel.error)
+
 func activate() -> bool:
 	if status!="running" or _active:return reject("Station scene cannot be activated")
 	_active=true;camera.make_current()
@@ -265,6 +332,7 @@ func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false) ->
 func navigate(action: String, panel: Control, checkpoint: Callable=Callable()) -> bool:
 	error=""
 	if status!="running" or not _active or not _dialogue_started or is_paused() or action not in ["next","previous"] or panel==null:return reject("Station conversation is inactive")
+	if not _kaamo.is_empty():return _navigate_kaamo(action,panel,checkpoint)
 	if not _wingman_notice.is_empty():
 		if action!="next":return reject("The crew farewell has no previous line")
 		_wingman_notice={};_generation+=1
@@ -375,6 +443,8 @@ func contract_action(action: String,id: int,panel: Control,checkpoint: Callable=
 			if not opened or not candidate.inspect_contract_contact(id,_bindings,_library):return reject(candidate.error)
 		"buy_goods":
 			if not opened or not candidate.purchase_lounge_goods(id,_bindings):return reject(candidate.error)
+		"buy_kaamo":
+			if not opened or not candidate.purchase_kaamo(id,_bindings):return reject(candidate.error)
 		"buy_coordinates":
 			if not opened or not candidate.purchase_lounge_coordinates(id,_bindings):return reject(candidate.error)
 		"buy_blueprint":
@@ -400,7 +470,7 @@ func contract_action(action: String,id: int,panel: Control,checkpoint: Callable=
 	if panel!=null and not panel.present(staged):
 		if prepared!=null:prepared.free()
 		return reject(panel.error)
-	if action in ["buy_coordinates","buy_blueprint","buy_diplomat","hire_wingmen"] and checkpoint.is_valid() and not checkpoint.call(candidate):
+	if action in ["buy_coordinates","buy_blueprint","buy_diplomat","hire_wingmen","buy_kaamo"] and checkpoint.is_valid() and not checkpoint.call(candidate):
 		if prepared!=null:prepared.free()
 		if panel!=null:
 			var previous: Dictionary=_world.snapshot();previous.lounge_open=_lounge_open
@@ -430,6 +500,9 @@ func _contract_previews(owner: RefCounted,opened: bool) -> Dictionary:
 	for contact in career.get("population",{}).get("contacts",[]):
 		if contact.has("trade"):
 			result[contact.contact_id]=owner.merchant_preview(contact.contact_id,_bindings)
+			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
+		elif contact.has("kaamo"):
+			result[contact.contact_id]=owner.kaamo_preview(contact.contact_id,_bindings)
 			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
 		elif contact.get("role")==4 and contact.has("service"):
 			result[contact.contact_id]=owner.coordinate_preview(contact.contact_id,_bindings)
@@ -565,7 +638,7 @@ func clear() -> void:
 	_visuals=null;lounge_scene=null;station_sky=null;station_planets=null;_environment=null;_hangar_environment=null;_hangar_lights=[]
 	lighting=null;reflection=null
 	_story_elapsed_ms=0
-	_wingman_notice={}
+	_wingman_notice={};_kaamo={};_kaamo_checked=false
 
 func _clear_presentations() -> void:
 	if is_instance_valid(_blueprint_pickup):_blueprint_pickup.free()

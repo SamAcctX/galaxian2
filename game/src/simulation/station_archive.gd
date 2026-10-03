@@ -225,7 +225,7 @@ func _inventory_base(bindings: RefCounted,cat: RefCounted,data: Dictionary) -> R
 	equipment._catalogue_size=cat.tables.items.size()
 	if equipment._completion_prices.is_empty():return reject("The source inventory prices are unavailable")
 	for item in cat.tables.items:equipment._items[int(item.id)]=Equipment._item_metadata(cat,int(item.id),equipment._rules)
-	for key in Loadout.SLOT_PROPERTIES:equipment._counts.append(int(cat.tables.ships[seed.ship_id].stats[key]))
+	equipment._counts.append_array(Loadout.slot_counts(cat.tables.ships[seed.ship_id].stats,seed))
 	equipment._mission_cargo_id=int(bindings.early_contracts.courier.cargo_item_id)
 	equipment._recovery_cargo_ids=Equipment.RecoveryRules.cargo_marker_ids(bindings)
 	return equipment
@@ -260,7 +260,7 @@ func _locations(bindings: RefCounted,cat: RefCounted,library: RefCounted,data: V
 		if row.has("purchased_goods"):
 			if not row.purchased_goods is Array or row.purchased_goods.is_empty() or row.purchased_goods.size()>row.population.contacts.size():return reject("Invalid purchased lounge goods")
 			for id in row.purchased_goods:
-				if not id is int or not cache.consume_goods(row.station_id,id):return reject("The saved purchase lost its merchant or was repeated")
+				if not id is int or not (cache.consume_kaamo(row.station_id,id) if not cache.kaamo_contact(row.station_id,id).is_empty() else cache.consume_goods(row.station_id,id)):return reject("The saved purchase lost its merchant or was repeated")
 		if row.has("used_diplomats"):
 			if not row.used_diplomats is Dictionary or row.used_diplomats.is_empty() or row.used_diplomats.size()>row.population.contacts.size():return reject("Invalid saved diplomat services")
 			for id in row.used_diplomats:
@@ -291,7 +291,7 @@ func _career(bindings: RefCounted,cat: RefCounted,data: Dictionary,equipment: Re
 		if not Contracts.Wingmen.valid_state(data.wingmen,bindings):return reject("The saved wingman contract is invalid")
 		if not data.wingmen.active.is_empty() and data.wingmen.active.station_id>=cat.tables.stations.size():return reject("The saved wingmen have no hiring station")
 	if not Opening.new().valid_progress(self,bindings,progress,cursor):return null
-	if (dekato or onward or continuation or expansion or FreeFlight.Campaign.supported(bindings.mido_travel,cursor)) and progress.size()!=9+int(progress.has("mining_failure_hint_seen"))+int(progress.has("cargo_recovered"))+int(progress.has("asteroids_destroyed"))+int(progress.has("mined_ore_tons"))+int(progress.has("mined_cores"))+int(progress.has("mined_ore_types_mask"))+int(progress.has("mined_core_types_mask"))+int(progress.has("nuclear_bomb_detonations"))+int(progress.has("purchased_booze_quantity"))+int(progress.has("booze_types_mask"))+int(progress.has("story_stations_mask"))+int(progress.has("story_counter"))+int(progress.has("wanted"))+int(progress.has("nag_heard"))+int(progress.has("hints_seen")):return reject("The saved unlocked career lacks its counters")
+	if (dekato or onward or continuation or expansion or FreeFlight.Campaign.supported(bindings.mido_travel,cursor)) and progress.size()!=9+int(progress.has("mining_failure_hint_seen"))+int(progress.has("cargo_recovered"))+int(progress.has("asteroids_destroyed"))+int(progress.has("mined_ore_tons"))+int(progress.has("mined_cores"))+int(progress.has("mined_ore_types_mask"))+int(progress.has("mined_core_types_mask"))+int(progress.has("nuclear_bomb_detonations"))+int(progress.has("purchased_booze_quantity"))+int(progress.has("booze_types_mask"))+int(progress.has("story_stations_mask"))+int(progress.has("story_counter"))+int(progress.has("wanted"))+int(progress.has("nag_heard"))+int(progress.has("hints_seen"))+int(progress.has("kaamo_state"))+int(progress.has("kaamo_storage"))+int(progress.has("pirate_bases")):return reject("The saved unlocked career lacks its counters")
 	var earned:=Career.calculate_progress(bindings.opening_handoff,cursor,progress.player_kills,progress.pirate_kills,progress.other_score)
 	if earned.is_empty() or progress.get("reputation")!=data.reputation or data.get("rank")!=earned.rank:return reject("The saved rank or faction standing disagrees with its career")
 	for key in earned:

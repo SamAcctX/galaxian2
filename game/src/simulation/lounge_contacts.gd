@@ -82,9 +82,13 @@ func prepare(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: V
 			"category":int(values[int(rules.merchant.category_value_index)]),"availability":int(values[int(rules.merchant.availability_value_index)]),
 			"price":prototype_price(int(values[int(rules.merchant.minimum_price_value_index)]),int(values[int(rules.merchant.maximum_price_value_index)]))})
 	if not range(candidate._items.size()).any(func(id):return candidate._merchant_eligible(id)):return reject("There are no eligible source contact trade items")
+	for contact in contacts:
+		if contact.get("kaamo",{}).get("kind")=="item":contact.kaamo.price=int(candidate._items[int(contact.kaamo.item_id)].price)
 	var system_faction:=int(cat.tables.systems[system_id].fields[int(rules.system_faction_field)])
 	var authored_count:=contacts.size()
-	var count: int=candidate._population_count(authored_count,persistent_rules)
+	# The Kaamo Club's bar holds only its own agents (none before they arrive).
+	var kaamo: bool=ordinary and int(context.get("station_id",-1))==Persistent.KAAMO_STATION
+	var count: int=authored_count if kaamo else candidate._population_count(authored_count,persistent_rules)
 	var roster_seen:=false
 	for id in range(authored_count,count):
 		var contact: Dictionary=candidate._contact(system_faction)
@@ -105,7 +109,7 @@ func prepare(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: V
 			var amount:=int(Vitals.single(float(roll)+Vitals.single(float(reward)/float(rules.auxiliary_amount.divisor))))
 			contact.source_auxiliary_amount=Offer.quantize_credits(float(amount),int(bindings.early_contracts.reward.credit_step))
 		contacts.append(contact)
-	candidate._replace_hostile(contacts)
+	if not kaamo:candidate._replace_hostile(contacts)
 	if not candidate.error.is_empty():return reject(candidate.error)
 	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,
 		"context":context.duplicate(true),"initial_random":random_state.duplicate(true),"initial_history":history.duplicate(),
@@ -126,6 +130,7 @@ func _population_count(authored_count: int,persistent_rules: Dictionary) -> int:
 func _authored_contacts(records: Array,system_id: int,rules: Dictionary) -> Array:
 	var selected:=records.filter(func(record):return record.fields[int(_ordinary.persistent.station_field)]==_context.station_id)
 	if selected.is_empty():return []
+	if int(_context.station_id)==Persistent.KAAMO_STATION:return _kaamo_contacts(selected,rules)
 	var supported:=Persistent.contact_ids(rules,int(_context.station_id),system_id)
 	if supported.is_empty():reject("This location requires an unsupported persistent contact");return []
 	if _context.campaign_cursor<int(rules.first_cursor):return []
@@ -143,21 +148,9 @@ func _authored_contacts(records: Array,system_id: int,rules: Dictionary) -> Arra
 			if values[int(fields.role4_parameter)]!=role4.parameter or item_id!=-1:reject("Unsupported authored role-4 service");return []
 			role=4
 		if values[int(fields.price)]<0:reject("Invalid authored contact price");return []
-		if not Numbers.integer(values[int(fields.faction)],0,int(_rules.identity.faction_bound)-1) or values[int(fields.male)] not in [0,1] or not record.name is String or record.name.is_empty():reject("Invalid authored contact identity");return []
-		var portrait: Array=record.portrait
-		if portrait.size()!=int(rules.portrait.part_count)+1 or not Numbers.integer(portrait[int(rules.portrait.family_index)],0,_rules.portraits.counts.size()-1):reject("Unsupported authored contact portrait");return []
-		var family:=int(portrait[int(rules.portrait.family_index)])
-		var parts:=portrait.slice(int(rules.portrait.parts_start))
-		for index in parts.size():
-			var maximum:=int(_rules.portraits.counts[family][index])-1
-			# Fixed portraits retain signed-byte values for absent layers. The
-			# source compositor skips these; random-generation counts do not apply.
-			if family<_portrait_bases.size() and _portrait_bases[family][index]==-1:maximum=127
-			if not Numbers.integer(parts[index],-1,maximum):reject("Invalid authored portrait part");return []
-		result.append({"contact_id":result.size(),"source_contact_id":int(values[int(fields.id)]),"generated":false,
-			"faction":int(values[int(fields.faction)]),"male":values[int(fields.male)]==int(rules.male_value),
-			"role":role,"name":record.name,"portrait":{"status":"fixed","family":family,"parts":parts},
-			"offer":{}})
+		var contact:=_authored_identity(record,rules,result.size(),role)
+		if contact.is_empty():return []
+		result.append(contact)
 		var terms:={"price":int(values[int(fields.price)])}
 		if role4.is_empty():
 			terms.item_id=item_id
@@ -165,6 +158,41 @@ func _authored_contacts(records: Array,system_id: int,rules: Dictionary) -> Arra
 		else:
 			terms.parameter=int(values[int(fields.role4_parameter)])
 			result[-1].service=terms
+	return result
+
+func _authored_identity(record: Dictionary,rules: Dictionary,contact_id: int,role: int) -> Dictionary:
+	var fields: Dictionary=rules.fields;var values: Array=record.fields
+	if not Numbers.integer(values[int(fields.faction)],0,int(_rules.identity.faction_bound)-1) or values[int(fields.male)] not in [0,1] or not record.name is String or record.name.is_empty():reject("Invalid authored contact identity");return {}
+	var portrait: Array=record.portrait
+	if portrait.size()!=int(rules.portrait.part_count)+1 or not Numbers.integer(portrait[int(rules.portrait.family_index)],0,_rules.portraits.counts.size()-1):reject("Unsupported authored contact portrait");return {}
+	var family:=int(portrait[int(rules.portrait.family_index)])
+	var parts:=portrait.slice(int(rules.portrait.parts_start))
+	for index in parts.size():
+		var maximum:=int(_rules.portraits.counts[family][index])-1
+		# Fixed portraits retain signed-byte values for absent layers. The
+		# source compositor skips these; random-generation counts do not apply.
+		if family<_portrait_bases.size() and _portrait_bases[family][index]==-1:maximum=127
+		if not Numbers.integer(parts[index],-1,maximum):reject("Invalid authored portrait part");return {}
+	return {"contact_id":contact_id,"source_contact_id":int(values[int(fields.id)]),"generated":false,
+		"faction":int(values[int(fields.faction)]),"male":values[int(fields.male)]==int(rules.male_value),
+		"role":role,"name":record.name,"portrait":{"status":"fixed","family":family,"parts":parts},
+		"offer":{}}
+
+## The Kaamo Club's lounge holds only its own six agents: four mechanics
+## selling ship mods (their mod index in the role-8 field) and two dealers.
+func _kaamo_contacts(selected: Array,rules: Dictionary) -> Array:
+	if _context.campaign_cursor<int(rules.first_cursor):return []
+	var result:=[]
+	for record in selected:
+		var id:=int(record.fields[int(rules.fields.id)])
+		var contact:=_authored_identity(record,rules,result.size(),8)
+		if contact.is_empty():return []
+		var mod:=int(record.fields[int(rules.fields.role8_parameter)])
+		if Numbers.integer(mod,0,3):contact.kaamo={"kind":"mod","mod":mod}
+		elif id==Persistent.KAAMO_ITEM_DEALER:contact.kaamo={"kind":"item","item_id":int(Persistent.KAAMO_ITEMS[_draw(Persistent.KAAMO_ITEMS.size())])}
+		elif id==Persistent.KAAMO_SHIP_DEALER:contact.kaamo={"kind":"ship"}
+		else:reject("Unsupported Kaamo Club agent");return []
+		result.append(contact)
 	return result
 
 func _replace_hostile(contacts: Array) -> void:

@@ -35,6 +35,18 @@ const BLUEPRINT_LOCATIONS={3:{"system_id":0,"contact_ids":[0]},5:{"system_id":1,
 const ROLE4_LOCATIONS={18:{"system_id":3,"contact_ids":[12],"parameter":0},26:{"system_id":5,"contact_ids":[13],"parameter":1},65:{"system_id":13,"contact_ids":[14],"parameter":10},
 	88:{"system_id":17,"contact_ids":[15],"parameter":21},122:{"system_id":29,"contact_ids":[19],"parameter":32},127:{"system_id":30,"contact_ids":[20],"parameter":33}}
 
+## The Kaamo Club (108): mechanics 21-24 sell ship mods, 25 one special item
+## from KAAMO_ITEMS, 26 a ship from KAAMO_SHIPS (only once the club is owned).
+const KAAMO_STATION:=108
+const KAAMO_ITEM_DEALER:=25
+const KAAMO_SHIP_DEALER:=26
+const KAAMO_ITEMS:=[200,220,208,213,216,228,229,230,231]
+const KAAMO_SHIPS:=[55,56,57,58,59,60]
+## Mod price as a percentage of the flown ship's price.
+const KAAMO_MOD_PERCENT:=[20,30,40,20]
+## Without the (in-app) VIP card the dealers charge double.
+const KAAMO_PRICE_FACTOR:=2
+
 static func contact_ids(data: Dictionary,station_id: int,system_id: int) -> Array:
 	if not parameters(data):return []
 	if station_id==int(data.station_id) and system_id==int(data.system_id):return data.supported_contact_ids
