@@ -30,6 +30,7 @@ const StationEquipment = preload("res://src/simulation/station_equipment.gd")
 const Construction=preload("res://src/simulation/opening_npc_construction.gd")
 const Convoy=preload("res://src/content/convoy_world_definitions.gd")
 const ContractLife=preload("res://src/content/contract_ship_lifecycle_definitions.gd")
+const Beams=preload("res://src/simulation/repair_beams.gd")
 var error := ""
 var _state := {}
 var _hit_policy := {}
@@ -38,6 +39,8 @@ var _loadout := {}
 var _recharge: RefCounted
 var _repair: RefCounted
 var _cloak: RefCounted
+## Supernova repair/transfusion beams (sorts 37 and 41), or null.
+var _beams: RefCounted
 var _flight_cache := {}
 var _selected40_construction: RefCounted
 var _selected41_construction: RefCounted
@@ -367,6 +370,7 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, cursor: int, previ
 	_hit_policy=policy.duplicate(true);_npc_weapons=weapons;_loadout=seed.duplicate(true)
 	_recharge=recharge
 	_repair=repair
+	_beams=Beams.create(catalogues.tables.items,seed.equipment_ids)
 	_flight_cache=next_cache
 	if repair!=null: _state.max_hull=max_hull
 	if arrival or departure or entry.restores_local:_state.gamma=current.gamma;_state.campaign_cursor=cursor
@@ -414,6 +418,14 @@ func advance_recharge(delta_ms: Variant) -> Dictionary:
 	if result.is_empty(): reject(_recharge.error);return {}
 	_state.vitals.shield=result.after
 	return result
+
+## This frame's beam owner (each frame forks its own), or null without beams.
+func beams_owner() -> RefCounted:return _beams
+
+## Transfusion charge: raises the fitted shield, never above its capacity.
+func add_shield(amount: float) -> void:
+	if _state.is_empty() or int(_state.capacities.get("shield_item_id",-1))<0 or not is_finite(amount) or amount<=0.0:return
+	_state.vitals.shield=minf(float(_state.vitals.shield)+amount,float(_state.capacities.shield))
 
 func advance_repair(delta_ms: Variant) -> Dictionary:
 	error=""
@@ -540,6 +552,7 @@ func snapshot() -> Dictionary:
 	if _recharge!=null: result.recharge=_recharge.snapshot()
 	if _repair!=null: result.repair=_repair.snapshot()
 	if _cloak!=null and _cloak.available():result.cloak=_cloak.snapshot()
+	if _beams!=null:result.beams=_beams.snapshot()
 	return result
 
 func cache_snapshot() -> Dictionary:
@@ -555,6 +568,7 @@ func fork_for_frame() -> RefCounted:
 	if _recharge!=null: copy._recharge=_recharge.fork_for_frame()
 	if _repair!=null: copy._repair=_repair.fork_for_frame()
 	if _cloak!=null: copy._cloak=_cloak.fork_for_frame()
+	if _beams!=null:copy._beams=_beams.fork()
 	return copy
 
 func clear() -> void:
@@ -562,6 +576,7 @@ func clear() -> void:
 	_recharge=null
 	_repair=null
 	_cloak=null
+	_beams=null
 
 func reject(message: String) -> bool:
 	error=message

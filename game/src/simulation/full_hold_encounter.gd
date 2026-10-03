@@ -1145,6 +1145,18 @@ func _weapon_observation() -> Dictionary:
 	return result
 
 func combat_snapshot() -> Dictionary:return {} if _combat==null else _combat.snapshot()
+## NPC bodies for the repair/transfusion beams (repair_beams.gd).
+func beam_bodies() -> Array:return _combat.actor_snapshots() if _combat!=null and _combat.has_method("heal_hull") else []
+## Beam healing and draining on a private copy of the NPC owner. A drain is
+## one ordinary player hit of 1 per whole point; a refused hit is skipped.
+func apply_beam_effects(heal: Dictionary,drain: Dictionary) -> void:
+	if _combat==null or not _combat.has_method("heal_hull"):return
+	var combat: RefCounted=_combat.fork_for_frame()
+	for id in heal:combat.heal_hull(int(id),int(heal[id]))
+	for id in drain:
+		for i in int(drain[id]):
+			if combat.normal_hit(int(id),1).is_empty():break
+	_combat=combat
 ## Accounting/provocation only; skips per-actor pose and systems copies.
 func career_snapshot() -> Dictionary:return {} if _combat==null else _combat.career_snapshot()
 func primary_contacts() -> Array:return _primary_contacts.duplicate(true)

@@ -228,6 +228,10 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 		38:
 			var worlds:=preload("res://src/content/valkyrie_world_definitions.gd")
 			if not load("res://src/content/valkyrie_campaign_definitions.gd").available(bindings) or not Numbers.integer(properties.get(worlds.GAMMA_SHIELD_ATTRIBUTE),0,100):return "The gamma shield is unavailable"
+		# Supernova repair (37) and transfusion (41) beams: range, rate, beam count.
+		37,41:
+			for property in [53,54,55]:
+				if not Numbers.integer(properties.get(property),1,2147483647):return "The beam device is unavailable"
 		# 29: a race signature (190, Signature: Vossk; read by the 139 gate);
 		# 33: the spectral filter (read by the gas clouds). Assumption: the
 		# signature's in-flight effect, if any, is not built.

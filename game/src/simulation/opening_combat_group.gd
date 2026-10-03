@@ -857,6 +857,11 @@ func normal_hit(actor_id: Variant, amount: Variant, nonplayer_source: Variant=fa
 	_owned={};_actors=staged;_reputation=history
 	return result
 
+## Repair beam healing (see repair_beams.gd).
+func heal_hull(actor_id: int,amount: int) -> bool:
+	if actor_id<0 or actor_id>=_actors.size() or amount<=0:return false
+	return _writable(actor_id).heal_hull(amount)
+
 func set_pose(actor_id: Variant, pose: Variant, physical_pose: Variant=null) -> bool:
 	error=""
 	if not actor_id is int or actor_id<0 or actor_id>=_actors.size(): return reject("Pose names an unavailable opening actor")

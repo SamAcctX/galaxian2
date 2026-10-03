@@ -29,6 +29,7 @@ const Career=preload("res://src/simulation/opening_handoff.gd")
 const VoidPortal=preload("res://src/simulation/void_portal.gd")
 const Escape=preload("res://src/simulation/mission_escape_sequence.gd")
 const Random=preload("res://src/simulation/seeded_random.gd")
+const Beams=preload("res://src/simulation/repair_beams.gd")
 ## The Time Extender runs the player at a different rate from the world.
 var player_time_scale:=1.0
 var error:=""
@@ -203,6 +204,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	var contacts: Dictionary=next._encounter.evaluate_weapons(next._player,next._pose,milliseconds,next._scenery,next._random,true,not prior.radio.visible,-1 if next._scanner==null else next._scanner.guidance_target_id())
 	if contacts.is_empty():return failed(next._encounter.error)
 	next._encounter=contacts.encounter;next._player=contacts.player;next._scenery=contacts.scenery;next._random=contacts.random_state
+	Beams.advance_flight(next._player,next._pose,next._encounter,null,milliseconds)
 	if not next._particles.apply_weapon_impacts(next._encounter.secondary_impacts()):return failed(next._particles.error)
 	if not dying and next._player.snapshot().vitals.hull<=0:
 		if not next._death.start(next._player,next._pose,Vector3.ZERO,next._camera.snapshot().pose,_state.campaign_cursor,Basis.IDENTITY,next._pose,next._encounter.secondary_owner()):return failed(next._death.error)

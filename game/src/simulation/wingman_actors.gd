@@ -457,6 +457,15 @@ func weapon_hit(index: Variant,weapon: Variant) -> Dictionary:
 	var actors:=_actors.duplicate();actors[index]=actor;_actors=actors
 	return result
 
+## Bodies for the repair beams (repair_beams.gd), indexed like the cast.
+func beam_bodies() -> Array:return _actors.map(func(actor):return actor.snapshot())
+
+func beam_heal(index: int,amount: int) -> void:
+	if index<0 or index>=_actors.size():return
+	var actor: RefCounted=_actors[index].fork_for_frame()
+	if not actor.heal_hull(amount):return
+	var actors:=_actors.duplicate();actors[index]=actor;_actors=actors
+
 func record_contact(index: Variant,velocity: Variant,point_box: Variant=null) -> bool:
 	if collision_context(index).is_empty():return false
 	var actor: RefCounted=_actors[index].fork_for_frame()

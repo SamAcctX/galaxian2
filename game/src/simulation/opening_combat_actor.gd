@@ -1223,6 +1223,13 @@ func normal_hit(amount: Variant, nonplayer_source: Variant=false) -> Dictionary:
 	elif result.destroyed_now and nonplayer_source: _state.nonplayer_kill=true
 	return result
 
+## Repair beam: whole hull points up to the ship's maximum; wrecks stay wrecks.
+func heal_hull(amount: int) -> bool:
+	if _vitals==null or not _state.has("max_hull") or amount<=0:return false
+	var pools: Dictionary=_vitals.snapshot()
+	if int(pools.hull)<=0:return false
+	return _vitals.configure(mini(int(pools.hull)+amount,maxi(int(_state.max_hull),int(pools.hull))),pools.armor,pools.shield)
+
 func fail_hit(message: String) -> Dictionary:
 	reject(message)
 	return {}

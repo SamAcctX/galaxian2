@@ -33,6 +33,8 @@ const OrbitBanner=preload("res://src/presentation/orbit_banner.gd")
 const EncounterGeometry=preload("res://src/presentation/full_hold_encounter_geometry.gd")
 const WingmanGeometry=preload("res://src/presentation/wingman_geometry.gd")
 var wingmen: Node3D
+## Repair/transfusion beams (repair_beam_view.gd), when fitted.
+var beams: Node3D
 var _last_crew: RefCounted
 const TractorGeometry=preload("res://src/presentation/tractor_geometry.gd")
 const DeathEffect=preload("res://src/presentation/npc_death_effect_geometry.gd")
@@ -122,6 +124,10 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 	if crew!=null:
 		wingmen=WingmanGeometry.new();add_child(wingmen)
 		if not wingmen.build(crew,library,visuals,bindings):return fail(wingmen.error)
+	# Repair/transfusion beams; packs without the beam art fly without them.
+	if state.player.has("beams"):
+		beams=load("res://src/presentation/repair_beam_view.gd").new();add_child(beams)
+		if not beams.build(state.player.beams,library,visuals,bindings):beams.free();beams=null
 	if recovery!=null:
 		tractor=TractorGeometry.new();add_child(tractor)
 		if not tractor.build(recovery,library,visuals,bindings):return fail(tractor.error)
@@ -398,6 +404,7 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if sun!=null:sun.commit_frame(sun_frame)
 	if encounter!=null:encounter.commit_world(pirate_frame)
 	if wingmen!=null:wingmen.commit(wingman_frame)
+	if is_instance_valid(beams):beams.present(state.player.get("beams",{}))
 	if tractor!=null:tractor.commit_world(tractor_frame)
 	if radio!=null:
 		var transmission: Dictionary=state.get("radio",{}).duplicate(true)

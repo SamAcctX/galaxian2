@@ -42,6 +42,7 @@ const Notices=preload("res://src/simulation/flight_notices.gd")
 const Objective=preload("res://src/simulation/mining_objective.gd")
 const ContractObjective=preload("res://src/simulation/contract_flight_objective.gd")
 const Wingmen=preload("res://src/simulation/wingman_actors.gd")
+const Beams=preload("res://src/simulation/repair_beams.gd")
 ## The Time Extender runs the player at a different rate from the world.
 var player_time_scale:=1.0
 var _wingmen: RefCounted
@@ -826,6 +827,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 		var companion_pass: Dictionary=next._wingmen.advance_weapons(delta_ms,next._encounter)
 		if companion_pass.is_empty():reject(next._wingmen.error);return null
 		next._encounter=companion_pass.encounter
+	Beams.advance_flight(next._player,next._pose,next._encounter,next._wingmen,delta_ms)
 	if not next._engine_audio.follow_player(next._statistics_pose,int(next._player.snapshot().vitals.hull),delta_ms):reject(next._engine_audio.error);return null
 	if next._player.snapshot().vitals.hull<=0 and next._death==null:
 		if not next._booster.cancel():reject(next._booster.error);return null

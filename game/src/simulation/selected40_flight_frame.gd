@@ -29,6 +29,7 @@ const StationResources=preload("res://src/content/station_exterior_resources.gd"
 const VoidPortal=preload("res://src/simulation/void_portal.gd")
 const CampaignFailure=preload("res://src/content/kappa_outcome_definitions.gd")
 const Sequence=preload("res://src/simulation/selected40_sequence.gd")
+const Beams=preload("res://src/simulation/repair_beams.gd")
 ## The Time Extender runs the player at a different rate from the world.
 var player_time_scale:=1.0
 var error:=""
@@ -237,6 +238,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	var weapons: Dictionary=next._encounter.evaluate_weapons(next._player,next._pose,milliseconds,next._scenery,next._random,true,not prior.sequence.radio.visible,-1 if next._scanner==null else next._scanner.guidance_target_id())
 	if weapons.is_empty():reject(next._encounter.error);return null
 	next._encounter=weapons.encounter;next._player=weapons.player;next._scenery=weapons.scenery;next._random=weapons.random_state
+	Beams.advance_flight(next._player,next._pose,next._encounter,null,milliseconds)
 	# Transport time remains aligned after the player-update gate closes; the
 	# stopped engine cannot restart, and the frozen pose does not move its sound.
 	if not next._engine_audio.follow_player(next._pose,int(next._player.snapshot().vitals.hull),milliseconds):reject(next._engine_audio.error);return null

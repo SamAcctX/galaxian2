@@ -48,6 +48,8 @@ var _revision:=-1
 var _elapsed_ms:=-1
 var _viewport:=Vector2i.ZERO
 var _transition:={}
+## Repair/transfusion beams (repair_beam_view.gd), when fitted.
+var beams: Node3D
 
 func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogues: RefCounted,world: RefCounted,viewport:=Vector2i(1440,900)) -> bool:
 	error=""
@@ -75,6 +77,10 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cata
 		var adapter:=SurfaceResponse.new()
 		if not adapter.apply_branches([player,encounter]+environment.surface_roots(),bindings,environment.lights.state,reflection):return failed_build(adapter.error)
 	if not exhaust.configure(library,bindings,visuals,world) or not effects.configure(library,bindings,visuals,world):return failed_build(exhaust.error+effects.error)
+	# Repair/transfusion beams; packs without the beam art fly without them.
+	if state.player.has("beams"):
+		beams=load("res://src/presentation/repair_beam_view.gd").new();add_child(beams)
+		if not beams.build(state.player.beams,library,visuals,bindings):beams.free();beams=null
 	if context!=null:
 		var recipe: Dictionary=context.recipe()
 		if not recipe.get("sequence_models",[]).is_empty():
@@ -159,6 +165,7 @@ func present(world: RefCounted,viewport: Vector2i) -> bool:
 	if not problem.is_empty():return failed_display(problem)
 	if float(escape.get("vertical_fov_radians",0.0))>0:camera.fov=rad_to_deg(float(escape.vertical_fov_radians))
 	encounter.commit_world(cast)
+	if is_instance_valid(beams):beams.present(state.player.get("beams",{}))
 	if not animation.is_empty() and not animation.get("repeat",false) and not sequence_effects.commit_state(animation):return failed_display("Sequence model frame was superseded")
 	if not player.present_turret(world.turret_state()) or not player.apply_cloak(state.player.get("cloak",{})):return failed_display(player.error)
 	player.transform=state.player_pose;player.apply_selection(selection)
