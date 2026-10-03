@@ -84,7 +84,9 @@ func verify(args: PackedStringArray):
 	check(ship.get_child_count()==0 and ship.engine_glow==null and ship.selection.is_empty() and not ship.apply_camera_suppression(false),"Cleared geometry retained drawable children or accepted a camera mask")
 	check(ship.build(0,library,visuals,bindings,"high",null,true) and ship.apply_selection({"visible":true,"level":0}),ship.error)
 	check(ship.engine_glow!=null and ship.engine_glow.visible and ship.levels.filter(func(node):return node.visible).size()==1,"Rebuilding geometry retained its previous camera mask")
-	check(not ship.build(2,library,visuals,bindings,"high",null,true) and ship.get_child_count()==0 and ship.engine_glow==null,"Unsupported player hull reused Betty's glow")
+	# Every purchasable base hull has a glow now; NPC-only hulls stay excluded.
+	var unsupported:=13 # excluded from every shipyard
+	check(not ship.build(unsupported,library,visuals,bindings,"high",null,true) and ship.get_child_count()==0 and ship.engine_glow==null,"Unsupported player hull reused Betty's glow")
 	var material: Array=bindings.materials[34813].duplicate(true)
 	for row in bindings.materials[34813]:row.render_type=1
 	check(not ship.build(0,library,visuals,bindings,"high",null,true) and ship.get_child_count()==0,"Changed source glow material built a partial ship")

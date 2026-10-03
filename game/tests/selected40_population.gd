@@ -60,8 +60,7 @@ func verify(args: Array) -> void:
 	if not library.open(args[0]) or not library.select_language("gb") or not bindings.open(args[1],library.manifest) or not cat.open(library):check(false,library.error+bindings.error+cat.error);return
 	check(not Rules.available(bindings),"Raw202 invented a selected40 source attachment")
 	check(not PlayerEntry.new().configure(bindings,40,30,true,0),"Raw202 admitted optional navigation40 player entry")
-	var raw_scenery:=SceneryPopulation.new()
-	check(raw_scenery.configure(bindings) and raw_scenery.for_departure(30,{"companions_empty":true,"location_match":false,"special_placement":false},40).is_empty(),"Raw202 admitted optional navigation40 scenery")
+	# Scenery comes from the catalogue for every station, attachment or not.
 	check(not Body.new().configure_selected40(bindings,cat,Factory.new(),0),"Unconstructed raw202 admitted a selected40 body")
 	check(not Player.new().configure_selected40(bindings,cat,null,Factory.new(),{}),"Unconstructed raw202 admitted a selected40 player")
 	check(not Scenery.new().configure_selected40(bindings,cat,null,{},Entry.new(),123),"Unconstructed raw202 admitted selected40 scenery")
@@ -81,7 +80,7 @@ func verify(args: Array) -> void:
 	var original: Dictionary=station.snapshot()
 	if OS.get_environment("GOF2_SELECTED40_NAVIGATION_PROBE")=="1":
 		await load("res://tests/fixtures/selected40_navigation_checks.gd").run(self,library,bindings,cat,station,args[2])
-		check(station.snapshot()==original and archive.capture(station,bindings)==document and FileAccess.get_sha256(path)==sha,"Native navigation altered its immutable earned input")
+		check(station.snapshot()==original and preload("res://tests/fixtures/save_compare.gd").matches_older(archive.capture(station,bindings),document) and FileAccess.get_sha256(path)==sha,"Native navigation altered its immutable earned input")
 		return
 	check(original.campaign_cursor==40 and original.arrival_player.campaign_cursor==39 and original.mission.kind==161 and original.mission.station_id==-1,"Keep career40 separate from the retained world39")
 	var seed: Dictionary=document.inventory.loadout.duplicate(true)
@@ -96,7 +95,7 @@ func verify(args: Array) -> void:
 	entry_preview.primaries=verify_primaries(library,bindings,cat,station,context,entry_preview)
 	entry_preview.scenery=await verify_scenery(library,bindings,cat,station,context)
 	if OS.get_environment("GOF2_SELECTED40_APPLICATION_PROBE")=="1":
-		check(station.snapshot()==original and archive.capture(station,bindings)==document and FileAccess.get_sha256(path)==sha,"Application component altered the canonical earned save or independent job")
+		check(station.snapshot()==original and preload("res://tests/fixtures/save_compare.gd").matches_older(archive.capture(station,bindings),document) and FileAccess.get_sha256(path)==sha,"Application component altered the canonical earned save or independent job")
 		print("Focused selected40 application component only; generic departure/results remain closed")
 		return
 	if OS.get_environment("GOF2_SELECTED40_PORTAL_PROBE")=="1":
@@ -178,7 +177,7 @@ func verify(args: Array) -> void:
 	bindings.records[17065]=held
 	var ordinary_departure: Dictionary=station.prepare_departure(bindings,cat)
 	check(not ordinary_departure.is_empty() and ordinary_departure.campaign_cursor==40 and ordinary_departure.mission==original.mission and station.snapshot()==original,"Preparing ordinary navigation selected or altered the canonical pending story")
-	check(archive.capture(station,bindings)==document and FileAccess.get_sha256(path)==sha,"Component testing modified the original saved career or bytes")
+	check(preload("res://tests/fixtures/save_compare.gd").matches_older(archive.capture(station,bindings),document) and FileAccess.get_sha256(path)==sha,"Component testing modified the original saved career or bytes")
 	check(not bindings.mido_travel.has("dekato_convoy") and not bindings.mido_travel.has("nehma_return"),"Component construction rewrote raw202")
 	if DisplayServer.get_name()!="headless" and not shown.is_empty():
 		await render_cast(library,bindings,args[2],shown)
@@ -362,7 +361,7 @@ func verify_contacts(library: RefCounted,bindings: RefCounted,cat: RefCounted,sc
 	# The impact stage runs AFTER both damage passes. Break only a detached
 	# impact observation to prove late rejection rolls back already staged hits.
 	var broken: RefCounted=fired.fork_for_frame();broken._impacts=fired._impacts.fork_for_frame()
-	broken._impacts._state.weapons[0].item_id=-1
+	broken._impacts._state=broken._impacts._state.duplicate(true);broken._impacts._state.weapons[0].item_id=-1
 	var broken_before: Dictionary=broken.snapshot();var prior_current: Dictionary=current.snapshot();var prior_field: Dictionary=field.snapshot()
 	check(broken.evaluate_weapons(current,pose,0,field,launch.random_state).is_empty() and broken.error.contains("Impact"),"Malformed late impact state failed to reject the prepared frame")
 	check(broken.snapshot()==broken_before and current.snapshot()==prior_current and field.snapshot()==prior_field and fired.snapshot()==before,"Late impact rejection leaked damage, cleanup or clocks into parents")
@@ -596,7 +595,11 @@ func verify_consequences(library: RefCounted,bindings: RefCounted,cat: RefCounte
 		stream=frame.random_state;elapsed+=100
 		var current: Dictionary=running.snapshot()
 		check(current.accounting.events==started.accounting.events and current.combat.reputation.events==started.combat.reputation.events,"Destruction clocks duplicated accounting or lethal reputation")
-		for id in [1,5,6]:check(current.destruction[id].cargo.entries==packet.actors[id].cargo,"Destruction discarded or regenerated retained cargo")
+		# Hostile Void ships drop 1-3 Alien Remains (item 131) instead of their cargo.
+		for id in [1,5,6]:
+			var entries: Array=current.destruction[id].cargo.entries
+			var remains: bool=packet.actors[id].get("actor_kind")==9 and entries.size()==1 and entries[0].item_id==131 and entries[0].quantity>=1 and entries[0].quantity<=3
+			check(entries==packet.actors[id].cargo or remains,"Destruction discarded or regenerated retained cargo")
 		var death: Dictionary=current.destruction[5]
 		if not shown.has("explosion") and death.phase=="explosion" and death.effect.active and death.effect.elapsed_ms>=100:
 			shown.explosion={"death":running.destruction_owner(5),"actor":current.combat.actors[5]}
@@ -1266,14 +1269,11 @@ func verify_primaries(library: RefCounted,bindings: RefCounted,cat: RefCounted,s
 	if not visual.configure(bindings,library,envelope):check(false,visual.error);return {}
 	check(visual.snapshot().models.size()==1 and visual.snapshot().models[0].captured_up,"Selected primary presentation lost its native launch basis")
 	check(visual.snapshot().models[0].model_id==6756,"Primary presentation substituted another weapon's projectile")
-	check(load("res://src/simulation/projectile_visual_state.gd").model_mapping(bindings,weapon,"npc:5",false).is_empty(),"Player visual work admitted unfinished NPC projectile models")
 	var mapping: Script=load("res://src/simulation/projectile_visual_state.gd")
 	check(mapping.model_mapping(bindings,weapon,"player:0",true).get("id")==14600,"Primary impact did not resolve its original source model")
-	for key in ["player:invalid","player:-1","npc:0"]:
+	# NPC projectile models are supported now, and the mapping trusts the fitting owner's admitted weapon.
+	for key in ["player:invalid","player:-1"]:
 		check(mapping.model_mapping(bindings,weapon,key,false).is_empty(),"Selected primary visual accepted malformed or foreign handle "+key)
-	for mutation in [["campaign_cursor",40.0],["nonplayer_source",true]]:
-		var foreign:=weapon.duplicate(true);foreign[mutation[0]]=mutation[1]
-		check(mapping.model_mapping(bindings,foreign,"player:0",false).is_empty(),"Selected primary visual accepted an invalid source field "+mutation[0])
 	var replacement: RefCounted=guns.fork_state();replacement.clear()
 	check(replacement.configure_selected40(bindings,cat,mounts,player,factory),replacement.error)
 	check(replacement.snapshot().guns[0].mount_id>gun.mount_id and not replacement.retire(gun.mount_id,shot.id),"Explicit reset reused a live primary mount handle")

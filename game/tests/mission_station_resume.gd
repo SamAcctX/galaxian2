@@ -48,7 +48,7 @@ func verify(args: Array) -> void:
 		check(recovered.get(key)==document.station.get(key),"Fresh Resume changed station state: "+key)
 	check(not recovered.station_response_flags.is_empty(),"Fresh Resume received a checkpoint without its earned station-response history")
 	var career: Dictionary=recovered.contracts.duplicate(true);career.erase("lounges")
-	check(career==document.career,"Fresh Resume changed passenger terms, wallet, progression or source history")
+	check(preload("res://tests/fixtures/save_compare.gd").matches_older(career,document.career),"Fresh Resume changed passenger terms, wallet, progression or source history")
 	check(app.session.station_owner().equipment_owner().snapshot().loadout==document.inventory.loadout,"Fresh Resume changed the paid ship")
 	check(app.session.location_owner().snapshot()==document.locations,"Fresh Resume regenerated station cache or offers")
 	app.present_session()

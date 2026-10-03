@@ -245,7 +245,10 @@ func verify_render(args: PackedStringArray, lib: RefCounted, bindings: RefCounte
 	if not scene.build(lib,bindings,visuals,cat,ready):check(false,scene.error);scene.free();return
 	check(scene.player_destruction!=null and scene.game_over!=null and not scene.player_destruction.visible and not scene.game_over.visible,"Ready scene omitted death support or showed it early")
 	check((scene.station_target_overlay!=null)==(ready.snapshot().has("station_targeting") and not bindings.combat_training_story.get("navigation",{}).is_empty()),"Station overlay ignored the imported HUD capability boundary")
-	var stages:=captures.keys();stages.erase("game_over");stages.append("game_over")
+	var stages:=captures.keys();stages.erase("game_over")
+	# One live scene sees time only move forward (space clouds drift with it).
+	stages.sort_custom(func(a,b):return int(captures[a].snapshot().encounter.elapsed_ms)<int(captures[b].snapshot().encounter.elapsed_ms))
+	stages.append("game_over")
 	for stage in stages:
 		var world: RefCounted=captures[stage];var state: Dictionary=world.snapshot()
 		if not scene.present(world,true,524):check(false,stage+": "+scene.error);continue

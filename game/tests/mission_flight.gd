@@ -146,6 +146,7 @@ func verify_blast_composition(origin: RefCounted) -> void:
 	var death: RefCounted=control._destruction[actor_id].fork_for_frame()
 	# Detached cargo and a completed breakup isolate the later blast handoff.
 	# Neither is written to the earned campaign or the original encounter.
+	death._state=death._state.duplicate(true) # forks share a frozen state
 	death._state.cargo.entries=[{"item_id":0,"quantity":1}];death._state.cargo.eligible=true
 	if not death.capture(Transform3D.IDENTITY,2.0):check(false,death.error);return
 	var random: Dictionary=encounter._hook.random_state()

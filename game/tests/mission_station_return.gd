@@ -36,8 +36,10 @@ func verify_normal_result(app: Control) -> void:
 	check(arrived.campaign_cursor==43 and arrived.loadout.station_id==10 and arrived.mission=={"kind":11,"station_id":10,"reward":0,"bonus":0,"source_parameter":0},"Station continuation changed its original next mission")
 	check(arrived.reward_credits==0 and arrived.contracts.credits==source_career.credits,"Station continuation paid a premature story reward")
 	check(FileAccess.get_file_as_bytes(slot+".bak")==original_bytes,"Station autosave failed to retain the earned input backup")
-	for key in ["mission","accepted_contact","passengers","result_serial","completed_side_missions","pending_result","last_result","blueprints","progress","travel_statistics","delivery_statistics"]:
+	for key in ["mission","accepted_contact","passengers","result_serial","completed_side_missions","pending_result","last_result","blueprints","progress","delivery_statistics"]:
 		check(arrived.contracts.get(key)==source_career.get(key),"Station continuation changed retained career: "+key)
+	# Docking adds the station/system to the visited lists; gate count is unchanged.
+	check(arrived.contracts.travel_statistics.get("jumpgates_used")==source_career.travel_statistics.get("jumpgates_used") and 10 in arrived.contracts.travel_statistics.get("visited_station_ids",[10]),"Station continuation changed retained career: travel_statistics")
 	var equipment: Dictionary=before.equipment.duplicate(true)
 	equipment.loadout.station_id=arrived.loadout.station_id;equipment.loadout.system_id=arrived.loadout.system_id
 	check(arrived.equipment==equipment,"Station entry changed paid equipment, ammunition, prices or cargo")

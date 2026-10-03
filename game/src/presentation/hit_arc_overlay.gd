@@ -23,8 +23,10 @@ func prepare(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> bo
 	error="";_textures={};_lit={};_last_total=-1.0
 	var frame:=TargetFrame.source_geometry(library,bindings)
 	if frame.has("error"):return reject(frame.error)
+	var ui: Dictionary=bindings.mido_travel.get("map",{}).get("ui",{})
+	if not ui.has("atlas_resources"):return reject("This content has no hit-arc art")
 	var art:=OriginalUI.new()
-	var images:=art.load_regions(library,bindings,visuals,Definitions.HIT_ARC_IMAGES.values(),bindings.mido_travel.map.ui.atlas_resources)
+	var images:=art.load_regions(library,bindings,visuals,Definitions.HIT_ARC_IMAGES.values(),ui.atlas_resources)
 	if images.is_empty():return reject(art.error)
 	for key in Definitions.HIT_ARC_IMAGES:_textures[key]=images[Definitions.HIT_ARC_IMAGES[key]]
 	_quarter=frame.quarter_size

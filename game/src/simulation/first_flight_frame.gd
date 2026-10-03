@@ -2725,6 +2725,8 @@ func _retain_mining_hint(seen: bool) -> void:
 		_convoy_career.retain_mining_hint(seen)
 
 func _retain_mining_extraction(receipt: Dictionary) -> bool:
+	# A drill cancelled because its asteroid was destroyed extracts nothing.
+	if receipt.is_empty():return true
 	if not _briefing.retain_mining_extraction(receipt):return reject(_briefing.error)
 	if _objective!=null and not _objective.retain_mining_extraction(receipt):return reject(_objective.error)
 	if _convoy_career!=null:
