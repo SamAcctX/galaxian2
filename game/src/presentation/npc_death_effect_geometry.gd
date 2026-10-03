@@ -91,11 +91,12 @@ func prepare_effect(death: RefCounted, camera: Transform3D, parent_rgba: PackedB
 		var sampler: RefCounted=_samplers[index].fork_for_frame()
 		var sampled: Dictionary=sampler.sample(state.effect.models[index].get("time_ms"),roots.roots[index])
 		if sampled.is_empty(): return failed_frame(sampler.error)
+		var tinted := []
 		for surface in sampled.surfaces:
 			var color := Colors.tint(parent_rgba,global_tint,surface.get("color_byte",-1))
 			if color.is_empty(): return failed_frame("Explosion effect color exceeded source precision")
-			surface.tint=color.value
-		samplers.append(sampler);surfaces.append(sampled.surfaces)
+			var row: Dictionary=surface.duplicate();row.tint=color.value;tinted.append(row)
+		samplers.append(sampler);surfaces.append(tinted)
 	return {"visible":true,"body_visible":roots.body_visible,"samplers":samplers,"surfaces":surfaces,"darken":Colors.single(darken) if _edition=="mac-full-hd" else 1.0}
 
 func commit_effect(prepared: Dictionary) -> void:

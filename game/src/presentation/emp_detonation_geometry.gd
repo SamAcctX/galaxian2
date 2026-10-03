@@ -44,7 +44,7 @@ func build(burst: RefCounted, library: RefCounted, visuals: RefCounted, bindings
 	add_child(model); model.set_meta("source_resource_id", data.models[0].model_id)
 	_sampler = Sampler.new()
 	if not _sampler.configure(model.surfaces): return reject(_sampler.error)
-	if _sampler.snapshot().range != {"start_ms": timing.start_ms, "end_ms": timing.end_ms}: return reject("EMP sampler changed its playback range")
+	if _sampler.time_range() != {"start_ms": timing.start_ms, "end_ms": timing.end_ms}: return reject("EMP sampler changed its playback range")
 	for index in model.surfaces.size():
 		var surface: Dictionary = model.surfaces[index]
 		if surface.uvs.is_empty() or surface.normals.is_empty() or not surface.colors.is_empty(): return reject("Unsupported EMP burst vertex attributes")
@@ -83,12 +83,14 @@ func prepare_effect(burst: RefCounted, camera: Transform3D, parent_rgba: PackedB
 	var sampler: RefCounted = _sampler.fork_for_frame()
 	var sampled: Dictionary = sampler.sample(clock.time_ms, root.pose)
 	if sampled.is_empty(): return failed(sampler.error)
-	for surface in sampled.surfaces:
+	# Samples are read-only; tint private copies of the surface rows.
+	var tinted: Array=sampled.surfaces.map(func(row):return row.duplicate())
+	for surface in tinted:
 		var color := Colors.tint(parent_rgba, global_tint, surface.get("color_byte", -1))
 		if color.is_empty(): return failed("EMP burst exceeded source color precision")
 		surface.tint = color.value
 	return {"generation": _generation, "revision": _revision + 1,
-		"visible": true, "sampler": sampler, "surfaces": sampled.surfaces,
+		"visible": true, "sampler": sampler, "surfaces": tinted,
 		"darken": Colors.single(darken) if _edition == "mac-full-hd" else 1.0}
 
 func commit_effect(prepared: Dictionary) -> void:

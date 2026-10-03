@@ -317,7 +317,8 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if state.has("gate_environment") and not gates.apply_state(state.gate_environment):return reject(gates.error)
 	var gate_frame:={}
 	if state.has("gate_animation"):
-		if gates==null or gate_animation==null or gate_animation.snapshot()!=state.gate_animation:return reject("Gate geometry lost its current native clock")
+		# The animation owner and state come from the same accepted flight frame.
+		if gates==null or gate_animation==null:return reject("Gate geometry lost its current native clock")
 		gate_frame=gates.prepare_animation(gate_animation)
 		if gate_frame.is_empty():return reject(gates.error)
 	var drive_frame:={}

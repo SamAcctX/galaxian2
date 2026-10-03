@@ -72,7 +72,7 @@ static func fixed_surface_poses(surfaces: Array) -> Array:
 				if not Tracks.identity_track(track,3 if group.size()==1 else 1,1.0 if name=="scale" else 0.0):return []
 	var sampler:=SourceAnimation.new()
 	if not sampler.configure(surfaces):return []
-	var timing: Dictionary=sampler.snapshot().range
+	var timing: Dictionary=sampler.time_range()
 	if timing.start_ms!=timing.end_ms:return []
 	var sampled: Dictionary=sampler.sample(timing.start_ms,Transform3D.IDENTITY)
 	return sampled.surfaces.map(func(row):return row.pose)
@@ -80,7 +80,7 @@ static func fixed_surface_poses(surfaces: Array) -> Array:
 static func first_surface_poses(surfaces: Array) -> Array:
 	var sampler:=SourceAnimation.new()
 	if not sampler.configure(surfaces):return []
-	return sampler.sample(sampler.snapshot().range.start_ms,Transform3D.IDENTITY).surfaces.map(func(row):return row.pose)
+	return sampler.sample(sampler.time_range().start_ms,Transform3D.IDENTITY).surfaces.map(func(row):return row.pose)
 
 func covers(paths: Array, bindings: RefCounted, quality: String, require_static: bool, source_uv := true) -> bool:
 	if _base!=bindings.base_content_id or _binding!=bindings.binding_id or _quality!=quality or (require_static and not _static) or _source_uv!=source_uv: return false

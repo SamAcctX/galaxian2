@@ -368,6 +368,9 @@ func random_direction(random: RefCounted) -> Vector3:
 func snapshot() -> Dictionary:
 	return _state.duplicate(true)
 
+## Live state for same-frame reads only; never mutate or retain it.
+func read_state() -> Dictionary:return _state
+
 ## Breakup chooses its own drift direction. A later radius hit replaces the
 ## cargo's retained strength without restarting death or moving its effect.
 func apply_blast_strength(strength: float) -> bool:

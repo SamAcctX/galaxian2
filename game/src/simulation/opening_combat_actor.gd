@@ -45,12 +45,15 @@ const AliothAttack = preload("res://src/simulation/alioth_attack.gd")
 var error := ""
 var _initial_training_death := false
 var _state := {}
+## Frozen snapshot() for readers; every other method clears it.
+var _read := {}
 var _vitals: RefCounted
 var _systems: RefCounted
 var _hostility := {}
 var _hull_percentage_scale := 0.0
 
 func clear() -> void:
+	_read={}
 	_initial_training_death=false
 	error = ""
 	_state = {}
@@ -60,6 +63,7 @@ func clear() -> void:
 	_hull_percentage_scale = 0.0
 
 func configure(bindings: RefCounted, catalogues: RefCounted, actor_id: Variant, difficulty: Variant) -> bool:
+	_read={}
 	clear()
 	if bindings == null or catalogues == null: return reject("Opening combat actors require content bindings and catalogues")
 	if not actor_id is int or actor_id < 0: return reject("Opening combat actors require an explicit actor ID")
@@ -92,6 +96,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, actor_id: Variant, 
 	return _initialize_body(bindings,data,actor,source_difficulty,factory_hull,percentage_scale)
 
 func configure_full_hold(bindings: RefCounted, catalogues: RefCounted, construction: RefCounted, difficulty: Variant) -> bool:
+	_read={}
 	clear()
 	var initial:=full_hold_initial(bindings,catalogues,construction)
 	if initial.is_empty():return reject("Second pirate combat requires its matching detached flight construction")
@@ -124,6 +129,7 @@ func configure_full_hold(bindings: RefCounted, catalogues: RefCounted, construct
 
 
 func configure_combat_training(bindings: RefCounted, catalogues: RefCounted, world: RefCounted, actor_id: Variant, rank: Variant, difficulty: Variant) -> bool:
+	_read={}
 	clear()
 	if bindings==null or catalogues==null or not world is TrainingWorld or not TrainingControl.parameters(bindings.combat_training_control):return reject("Combat-training bodies require verified world initialization")
 	var data: Dictionary=bindings.combat_training_control
@@ -158,6 +164,7 @@ func configure_combat_training(bindings: RefCounted, catalogues: RefCounted, wor
 	return set_pose(row.statistics_pose,row.body_pose)
 
 func configure_local_patrol(bindings: RefCounted, catalogues: RefCounted, world: RefCounted, actor_id: Variant, rank: Variant, difficulty: Variant) -> bool:
+	_read={}
 	clear()
 	if not world is TrainingWorld or catalogues==null:return reject("Local patrol bodies require prepared source traffic")
 	var data:=Travel.patrol(bindings,world.snapshot(),rank,difficulty)
@@ -181,6 +188,7 @@ func configure_local_patrol(bindings: RefCounted, catalogues: RefCounted, world:
 
 ## Internal factory primitive. The retained wingman owner admits the paid cast.
 func _configure_wingman(bindings: RefCounted,catalogues: RefCounted,initial: Dictionary,rank: int,cursor: int,difficulty: float) -> bool:
+	_read={}
 	clear()
 	if bindings==null or catalogues==null or catalogues.content_id!=bindings.base_content_id or not Flight.rigid_pose(initial.get("pose")):return reject("Wingman bodies require their original content and spawn pose")
 	var model: String=bindings.resolve_ship_model(initial.hull_catalogue_id)
@@ -202,12 +210,14 @@ func _configure_wingman(bindings: RefCounted,catalogues: RefCounted,initial: Dic
 
 ## The cast stages this body before publishing a player-issued order.
 func set_wingman_order(command: int,target_actor_id: int=-1) -> bool:
+	_read={}
 	if not _state.get("wingman",false) or command not in [1,2,3] or target_actor_id< -1:return reject("Invalid companion behavior order")
 	_state.wingman_command=command
 	_state.wingman_target_actor_id=target_actor_id if command==3 else -1
 	return true
 
 func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant,rank: Variant,difficulty: Variant) -> bool:
+	_read={}
 	clear()
 	if not construction is NPCConstruction or catalogues==null:return reject("Ambient combat requires its generated population")
 	var packet: Dictionary=construction.snapshot()
@@ -247,6 +257,7 @@ func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction:
 	return set_pose(row.statistics_pose,row.body_pose)
 
 func configure_convoy(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
+	_read={}
 	clear()
 	if not construction is NPCConstruction or catalogues==null:return reject("Convoy bodies require their generated original population")
 	var packet: Dictionary=construction.snapshot()
@@ -276,11 +287,13 @@ func configure_convoy(bindings: RefCounted,catalogues: RefCounted,construction: 
 	return set_pose(row.statistics_pose,row.body_pose)
 
 func enable_convoy_combat() -> bool:
+	_read={}
 	if not _state.get("convoy",false):return reject("Convoy combat requires its generated body")
 	_state.local_combat=true;_state.forced_hostile=false
 	return true
 
 func configure_kappa_rescue(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
+	_read={}
 	clear()
 	if not construction is NPCConstruction or catalogues==null:return reject("Kappa bodies require their generated rescue population")
 	var packet: Dictionary=construction.snapshot()
@@ -308,17 +321,20 @@ func configure_kappa_rescue(bindings: RefCounted,catalogues: RefCounted,construc
 	return set_pose(row.statistics_pose,row.body_pose)
 
 func enable_kappa_combat() -> bool:
+	_read={}
 	if not _state.get("kappa_rescue",false):return reject("Kappa combat requires its generated body")
 	_state.local_combat=true;_state.forced_hostile=_state.script_hostile
 	return true
 
 func retain_kappa_force(forced: bool,persistent: bool) -> bool:
+	_read={}
 	if not _state.get("kappa_rescue",false) or not _state.get("local_combat",false) or (_state.script_hostile and not persistent):return reject("Kappa reactions lost persistent mission hostility")
 	_state.forced_hostile=forced;_state.script_hostile=persistent
 	if persistent:_state.hostile=true;_state.friendly=false
 	return true
 
 func refresh_kappa_hostility(reputation: Dictionary,forced: bool,persistent: bool,rules: Dictionary) -> bool:
+	_read={}
 	if not retain_kappa_force(forced,persistent):return false
 	var standing: int=reputation.axes[int(rules.axis)]
 	_state.hostile=persistent or forced or standing<int(rules.hostile_below)
@@ -326,10 +342,12 @@ func refresh_kappa_hostility(reputation: Dictionary,forced: bool,persistent: boo
 	return true
 
 func apply_kappa_guidance(decision: Dictionary) -> bool:
+	_read={}
 	if not _state.get("kappa_rescue",false):return reject("Kappa guidance requires its generated fighter")
 	return _apply_guidance_activity(decision,true)
 
 func apply_kappa_hostile_cue(owner: RefCounted) -> bool:
+	_read={}
 	if not _state.get("kappa_rescue",false) or not owner is KappaRescue:return reject("Kappa hostility requires its rescue sequence")
 	var sequence: Dictionary=owner.snapshot()
 	for key in ["base_content_id","binding_id","campaign_cursor"]:
@@ -340,6 +358,7 @@ func apply_kappa_hostile_cue(owner: RefCounted) -> bool:
 	return true
 
 func systems_hit(amount: Variant) -> Dictionary:
+	_read={}
 	# This is the damage-pool transaction. The encounter stages faction reactions
 	# separately before committing a frame, just as for ordinary hull hits.
 	error=""
@@ -353,6 +372,7 @@ func systems_hit(amount: Variant) -> Dictionary:
 	return result
 
 func advance_systems(delta_ms: Variant) -> bool:
+	_read={}
 	error=""
 	if _systems==null or not Vitals.integer(delta_ms):return reject("This actor has no supported systems recovery frame")
 	var freighter: bool=_state.get("population_group")=="freighter"
@@ -367,9 +387,11 @@ func advance_systems(delta_ms: Variant) -> bool:
 	return true
 
 func systems_for_frame() -> RefCounted:
+	_read={}
 	return null if _systems==null else _systems.fork()
 
 func _configure_ordinary_systems(bindings: RefCounted,rank: int,subtype: int) -> bool:
+	_read={}
 	if not NPCSystems.available(bindings):return true
 	var rules:=NPCSystems.systems(bindings,rank,subtype)
 	var systems:=ShipSystems.new()
@@ -380,6 +402,7 @@ func _configure_ordinary_systems(bindings: RefCounted,rank: int,subtype: int) ->
 	return true
 
 func retain_ordinary_force(forced: bool,persistent: bool) -> bool:
+	_read={}
 	if _systems==null or not (_state.get("ambient_traffic",false) or _state.get("authored_story",false) or _state.get("bakka_combat",false) or _state.get("ordinary_hostility",false)) or (_state.script_hostile and not persistent):return reject("Ordinary reactions lost persistent faction hostility")
 	if not retain_local_force(forced):return false
 	_state.script_hostile=persistent
@@ -389,6 +412,7 @@ func retain_ordinary_force(forced: bool,persistent: bool) -> bool:
 	return true
 
 func _configure_story(bindings: RefCounted,data: Dictionary,row: Dictionary) -> bool:
+	_read={}
 	clear()
 	var freight: bool=row.population_group=="freighter"
 	var model: String=bindings.resolve(int(row.assembly.body_resource_ids[0]),"mesh") if freight else bindings.resolve_ship_model(int(row.hull_catalogue_id))
@@ -433,6 +457,7 @@ func _configure_story(bindings: RefCounted,data: Dictionary,row: Dictionary) -> 
 ## the constructor's parked/visible/target gates instead of ordinary traffic's
 ## initial activity. Shared vitals, systems and contact geometry stay native.
 func configure_selected40(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
+	_read={}
 	clear()
 	if not construction is NPCConstruction or catalogues==null or bindings==null:return reject("Selected40 bodies require their retained native construction")
 	var packet: Dictionary=construction.snapshot()
@@ -448,6 +473,7 @@ func configure_selected40(bindings: RefCounted,catalogues: RefCounted,constructi
 	return true
 
 func configure_selected41(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
+	_read={}
 	clear()
 	if not construction is NPCConstruction or catalogues==null or bindings==null:return reject("Source41 bodies require their retained native construction")
 	var packet: Dictionary=construction.snapshot()
@@ -461,10 +487,12 @@ func configure_selected41(bindings: RefCounted,catalogues: RefCounted,constructi
 	return true
 
 func apply_story_guidance(decision: Dictionary) -> bool:
+	_read={}
 	if not _state.get("authored_story",false) or _state.population_group!="fighter":return reject("Story guidance requires its retained fighter")
 	return _apply_guidance_activity(decision,true)
 
 func configure_alioth_attack(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
+	_read={}
 	clear()
 	if not construction is NPCConstruction or catalogues==null:return reject("Alioth bodies require their generated original population")
 	var packet: Dictionary=construction.snapshot()
@@ -508,11 +536,13 @@ func configure_alioth_attack(bindings: RefCounted,catalogues: RefCounted,constru
 	return set_pose(row.statistics_pose,row.body_pose)
 
 func enable_alioth_combat() -> bool:
+	_read={}
 	if not _state.get("alioth_attack",false):return reject("Alioth combat requires its generated body")
 	_state.local_combat=true;_state.forced_hostile=false;_initial_training_death=true
 	return true
 
 func refresh_alioth_hostility(forced: bool) -> bool:
+	_read={}
 	if not _state.get("alioth_attack",false) or not _state.get("local_combat",false):return reject("Alioth hostility requires connected combat")
 	# The mission's persistent friendship overrides standing AND retaliation.
 	# The requested-damage/force history still belongs to the normal hit owner.
@@ -521,10 +551,12 @@ func refresh_alioth_hostility(forced: bool) -> bool:
 	return true
 
 func apply_alioth_guidance(decision: Dictionary) -> bool:
+	_read={}
 	if not _state.get("alioth_attack",false) or _state.population_group!="fighter":return reject("Alioth guidance requires a small ship")
 	return _apply_guidance_activity(decision,true)
 
 func apply_alioth_retirement(owner: RefCounted) -> bool:
+	_read={}
 	error=""
 	if not _state.get("alioth_attack",false) or not owner is AliothAttack:return reject("Alioth retirement requires its native body and sequence")
 	var sequence: Dictionary=owner.snapshot()
@@ -542,6 +574,7 @@ func apply_alioth_retirement(owner: RefCounted) -> bool:
 	return true
 
 func apply_selected40_sequence(owner: RefCounted) -> bool:
+	_read={}
 	error=""
 	if not _state.get("selected40_component",false) or not is_instance_of(owner,load("res://src/simulation/selected40_sequence.gd")):return reject("Selected40 activity requires its native sequence")
 	var data: Dictionary=owner.snapshot()
@@ -560,6 +593,7 @@ func apply_selected40_sequence(owner: RefCounted) -> bool:
 	return true
 
 func refresh_convoy_hostility(reputation: Dictionary,forced: bool,rules: Dictionary) -> bool:
+	_read={}
 	if not _state.get("convoy",false) or not _state.get("local_combat",false):return reject("Convoy hostility requires connected combat")
 	if _state.actor_kind==8:
 		_state.hostile=bool(_hostility.updated_hostile);_state.friendly=false
@@ -573,10 +607,12 @@ func refresh_convoy_hostility(reputation: Dictionary,forced: bool,rules: Diction
 	return true
 
 func apply_convoy_guidance(decision: Dictionary) -> bool:
+	_read={}
 	if not _state.get("convoy",false) or _state.population_group!="fighter":return reject("Convoy guidance requires a small ship")
 	return _apply_guidance_activity(decision,true)
 
 func apply_convoy_capture(owner: RefCounted) -> bool:
+	_read={}
 	error=""
 	if not _state.get("convoy",false) or not owner is ConvoyCapture:return reject("Capture retirement requires its native convoy actors and choreography")
 	var state: Dictionary=owner.snapshot()
@@ -596,6 +632,7 @@ func apply_convoy_capture(owner: RefCounted) -> bool:
 	return true
 
 func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
+	_read={}
 	clear()
 	if not construction is NPCConstruction or catalogues==null:return reject("Contract ship bodies require their generated accepted population")
 	var packet: Dictionary=construction.snapshot()
@@ -646,6 +683,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	return set_pose(row.statistics_pose,row.body_pose)
 
 func configure_bakka(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
+	_read={}
 	clear()
 	if not construction is NPCConstruction or catalogues==null:return reject("B'akka ship bodies require their generated story population")
 	var packet: Dictionary=construction.snapshot()
@@ -675,6 +713,7 @@ func configure_bakka(bindings: RefCounted,catalogues: RefCounted,construction: R
 	return set_pose(row.statistics_pose,row.body_pose)
 
 func _configure_debris(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant) -> bool:
+	_read={}
 	var packet: Dictionary=construction.snapshot()
 	var data:=Junk.population(bindings,packet,construction.mission_context_owner())
 	if data.is_empty() or catalogues.content_id!=bindings.base_content_id or not actor_id is int or actor_id<0 or actor_id>=data.debris_count:return reject("Unsupported contract debris population or identity")
@@ -697,6 +736,7 @@ func _configure_debris(bindings: RefCounted,catalogues: RefCounted,construction:
 ## A cast static object: an unarmed, unmoving body drawn from its model. It
 ## has no guidance; control wakes it and runs its own destruction owner.
 func _configure_static(bindings: RefCounted,data: Dictionary,row: Dictionary,actor_id: int) -> bool:
+	_read={}
 	if not Flight.rigid_pose(row.get("body_pose")) or row.body_pose!=row.get("statistics_pose") or not row.body_pose.basis.is_conformal():return reject("A static object needs a rigid placement")
 	if not Statics.supported(row.get("static_model")) or not row.get("hull_override") is int or row.hull_override<=0:return reject("Unsupported static object model or hull")
 	var model: String=bindings.resolve(int(row.resource_id),"mesh")
@@ -721,6 +761,7 @@ func _configure_static(bindings: RefCounted,data: Dictionary,row: Dictionary,act
 ## Collision boxes come from the imported record once destruction resources
 ## are staged, before flight. Until then the object cannot be hit.
 func set_static_geometry(boxes: Variant) -> bool:
+	_read={}
 	error=""
 	if not _state.get("static_object",false) or _state.has("point_boxes") or not boxes is Array or boxes.is_empty() or boxes.size()>Statics.MAX_BOXES:return reject("Static geometry is set once on a static object")
 	_state.point_boxes=boxes.duplicate(true);_state.point_box_index=0
@@ -728,6 +769,7 @@ func set_static_geometry(boxes: Variant) -> bool:
 
 ## A parked (dormant) story ship joins the fight at once, as a proximity wake would.
 func wake_story() -> bool:
+	_read={}
 	error=""
 	if not _state.get("contract_ship",false):return reject("Only a contract ship wakes for the story")
 	if not _state.active and _state.actor_mode==5 and _vitals.snapshot().hull>0:
@@ -736,6 +778,7 @@ func wake_story() -> bool:
 
 ## A story ship leaves the scene asleep (inactive, untargetable, mode 5).
 func sleep_story() -> bool:
+	_read={}
 	error=""
 	if not _state.get("contract_ship",false):return reject("Only a contract ship sleeps for the story")
 	_state.active=false;_state.actor_mode=5;_state.targeting_blocked=true
@@ -744,6 +787,7 @@ func sleep_story() -> bool:
 ## A destroyed story ship returns (respawn): full hull, awake, visible.
 ## `burnt_out`: the caller has seen the explosion finish (see the control).
 func revive_story(burnt_out:=false) -> bool:
+	_read={}
 	error=""
 	if not _state.get("contract_ship",false) or _state.get("static_object",false):return reject("Only a contract ship returns for the story")
 	if _vitals.snapshot().hull>0 or (_state.active and not burnt_out):return reject("Only a retired story ship returns")
@@ -759,6 +803,7 @@ func revive_story(burnt_out:=false) -> bool:
 ## A stealth ship cloaks or uncloaks: while cloaked it is not drawn and
 ## cannot be targeted.
 func set_story_cloak(cloaked: bool) -> bool:
+	_read={}
 	error=""
 	if not _state.get("contract_ship",false) or _state.get("static_object",false):return reject("Only a contract ship cloaks for the story")
 	if bool(_state.get("cloaked",false))==cloaked:return true
@@ -770,6 +815,7 @@ func set_story_cloak(cloaked: bool) -> bool:
 ## A story event destroys this body outright (89: the supernova). It is not
 ## the player's kill.
 func destroy_story() -> bool:
+	_read={}
 	error=""
 	if _vitals.snapshot().hull<=0:return true
 	# A sleeping static object (91: the damaged freighter) dies awake, so its
@@ -783,6 +829,7 @@ func destroy_story() -> bool:
 
 ## A hidden static story object appears (89: Naneroh's damaged twin).
 func show_static() -> bool:
+	_read={}
 	error=""
 	if not _state.get("static_object",false):return reject("Only a static object shows this way")
 	if _vitals.snapshot().hull>0:_state.model_draw_enabled=true;_state.targeting_blocked=false
@@ -791,6 +838,7 @@ func show_static() -> bool:
 ## A static story object leaves the scene (80: the Valkyrie jumps away):
 ## it is no longer drawn, targeted or active.
 func hide_static() -> bool:
+	_read={}
 	error=""
 	if not _state.get("static_object",false):return reject("Only a static object hides this way")
 	_state.active=false;_state.model_draw_enabled=false;_state.targeting_blocked=true
@@ -798,12 +846,14 @@ func hide_static() -> bool:
 
 ## A turret object's barrel turned this frame (simulation/static_turret.gd).
 func set_turret_aim(aim: Dictionary) -> bool:
+	_read={}
 	error=""
 	if not _state.has("turret_aim") or aim.keys()!=_state.turret_aim.keys():return reject("Only a turret object aims")
 	_state.turret_aim=aim.duplicate()
 	return true
 
 func wake_static() -> bool:
+	_read={}
 	error=""
 	if not _state.get("static_object",false):return reject("Only a static object wakes this way")
 	if not _state.active and _state.actor_mode==5 and _vitals.snapshot().hull>0:
@@ -811,6 +861,7 @@ func wake_static() -> bool:
 	return true
 
 func apply_static_destruction(owner: RefCounted) -> bool:
+	_read={}
 	error=""
 	if not owner is StaticDeath or not _state.get("static_object",false) or not _state.get("contract_combat",false) or _vitals.snapshot().hull!=0:return reject("Static destruction requires its exhausted object")
 	var death: Dictionary=owner.snapshot()
@@ -821,16 +872,19 @@ func apply_static_destruction(owner: RefCounted) -> bool:
 	return true
 
 func apply_contract_guidance(decision: Dictionary) -> bool:
+	_read={}
 	error=""
 	if not _state.get("contract_ship",false):return reject("Contract guidance requires its prepared ship body")
 	return _apply_guidance_activity(decision,true)
 
 func apply_bakka_guidance(decision: Dictionary) -> bool:
+	_read={}
 	error=""
 	if not _state.get("bakka_ship",false):return reject("B'akka guidance requires its prepared story ship")
 	return _apply_guidance_activity(decision,true)
 
 func enable_contract_combat(bindings: RefCounted) -> bool:
+	_read={}
 	var supported: bool=Junk.available(bindings) if _state.get("contract_debris",false) else _state.get("contract_ship",false) and ContractLife.available(bindings)
 	if not supported:return reject("Contract damage requires verified lifecycle declarations")
 	if bindings.base_content_id!=_state.base_content_id or bindings.binding_id!=_state.binding_id:return reject("Contract lifecycle belongs to another content pack")
@@ -839,6 +893,7 @@ func enable_contract_combat(bindings: RefCounted) -> bool:
 
 ## A story recipe turns its whole cast against the player mid-flight.
 func apply_story_hostility() -> bool:
+	_read={}
 	if not _state.get("contract_combat",false) or _hostility.is_empty():return reject("Story hostility requires a connected contract ship")
 	_state.script_hostile=true;_state.hostile=true;_state.friendly=false
 	_hostility.updated_hostile=true
@@ -846,17 +901,20 @@ func apply_story_hostility() -> bool:
 
 ## A surrendering story ship: no longer hostile, guns silent.
 func stand_down_story() -> bool:
+	_read={}
 	_state.script_hostile=false;_state.hostile=false;_state.forced_hostile=false
 	if not _hostility.is_empty():_hostility.updated_hostile=false;_hostility.initial_hostile=false
 	return set_permissions(bool(_state.get("active",false)),bool(_state.get("damage_allowed",true)),false)
 
 func enable_bakka_combat(bindings: RefCounted) -> bool:
+	_read={}
 	if not _state.get("bakka_ship",false) or bindings==null:return reject("B'akka damage requires its prepared story ship")
 	if bindings.base_content_id!=_state.base_content_id or bindings.binding_id!=_state.binding_id:return reject("B'akka lifecycle belongs to another content pack")
 	_state.bakka_combat=true;_state.forced_hostile=false
 	return true
 
 func refresh_contract_hostility(forced: bool,reputation: Dictionary={},rules: Dictionary={}) -> bool:
+	_read={}
 	if not _state.get("contract_combat",false):return reject("Contract hostility requires connected combat reactions")
 	_state.forced_hostile=forced
 	if _state.get("ordinary_hostility",false):
@@ -868,6 +926,7 @@ func refresh_contract_hostility(forced: bool,reputation: Dictionary={},rules: Di
 	return refresh_hostility()
 
 func relaunch_ambient(bindings: RefCounted,death_owner: RefCounted=null,origin: Vector3=Vector3.ZERO) -> bool:
+	_read={}
 	error=""
 	if bindings==null or not AmbientLife.parameters(bindings.ambient_lifecycle):return reject("Traffic launch requires supported lifecycle declarations")
 	var recycling:=AmbientLife.recycling_parameters(bindings.ambient_lifecycle)
@@ -904,6 +963,7 @@ func relaunch_ambient(bindings: RefCounted,death_owner: RefCounted=null,origin: 
 	return true
 
 func apply_ambient_guidance(decision: Dictionary) -> bool:
+	_read={}
 	error=""
 	if not _state.get("ambient_traffic",false) or _state.get("population_group")=="freighter":return reject("Ambient guidance requires its small-ship body")
 	for key in ["base_content_id","binding_id","campaign_cursor","actor_id"]:
@@ -917,6 +977,7 @@ func apply_ambient_guidance(decision: Dictionary) -> bool:
 	return _apply_guidance_activity(decision,true)
 
 func apply_ambient_departure_pose(root: Variant) -> bool:
+	_read={}
 	error=""
 	if not _state.has("travel_cycle") or _state.actor_mode not in [4,6] or _vitals.snapshot().hull==0 or not Flight.rigid_pose(root):return reject("Departure motion requires a living outbound traffic ship")
 	_state.body_pose=root
@@ -949,6 +1010,7 @@ static func scaled_hull(base_hull: float, difficulty: float, offset: float) -> i
 	return int(Vitals.single(Vitals.single(adjustment*base)+base))
 
 func _initialize_body(bindings: RefCounted, data: Dictionary, actor: Dictionary, source_difficulty: float, factory_hull: int, percentage_scale: float, encounter_hostility: Dictionary={}) -> bool:
+	_read={}
 	if not Definitions.parameters(data) or data.is_player or data.initial_point_geometry or data.initial_special_impact_state:
 		return reject("Unsupported ordinary NPC initialization")
 	var vitals:=Vitals.new()
@@ -996,6 +1058,7 @@ func _initialize_body(bindings: RefCounted, data: Dictionary, actor: Dictionary,
 	return true
 
 func refresh_hostility() -> bool:
+	_read={}
 	error=""
 	if _state.is_empty() or _hostility.is_empty(): return reject("Fresh NPC hostility is unavailable")
 	# The source updates this flag before the holding/activity decision.
@@ -1003,11 +1066,13 @@ func refresh_hostility() -> bool:
 	return true
 
 func enable_local_combat() -> bool:
+	_read={}
 	if not _state.get("local_patrol",false) and not _state.get("ambient_traffic",false):return reject("Local combat requires its generated body")
 	_state.local_combat=true;_state.forced_hostile=false
 	return true
 
 func apply_local_hostility(reputation: Dictionary, forced: bool, rules: Dictionary) -> bool:
+	_read={}
 	if not _state.get("local_combat",false):return reject("Local hostility requires connected combat reactions")
 	var value: int=reputation.axes[int(rules.axis)]
 	var hostile: bool=forced or _state.get("script_hostile",false)
@@ -1017,6 +1082,7 @@ func apply_local_hostility(reputation: Dictionary, forced: bool, rules: Dictiona
 	return true
 
 func apply_free_hostility(reputation: Dictionary,forced: bool,rules: Dictionary,truce:=false) -> bool:
+	_read={}
 	if not (_state.get("free_traffic",false) or _state.get("authored_story",false)) or not _state.get("local_combat",false):return reject("Ordinary hostility requires connected faction reactions")
 	# Both small-ship and freighter updates apply the persistent friendly bit
 	# last, after standing and persistent hostility. Damage history is retained.
@@ -1034,6 +1100,7 @@ func apply_free_hostility(reputation: Dictionary,forced: bool,rules: Dictionary,
 	return true
 
 func retain_local_force(forced: bool) -> bool:
+	_read={}
 	if not _state.get("local_combat",false) and not _state.get("contract_combat",false) and not _state.get("bakka_combat",false):return reject("Local force requires connected combat reactions")
 	# The hit changes the force flag now; ordinary actor update refreshes the
 	# displayed/targeting hostility later in the same frame.
@@ -1044,6 +1111,7 @@ func retain_local_force(forced: bool) -> bool:
 ## Restore represented statistics and lifecycle, retaining construction, source
 ## faction force and systems recovery history. This is not a factory reroll.
 func _restart_selected41_attack(statistics: Transform3D,physical: Transform3D) -> bool:
+	_read={}
 	error=""
 	if not _state.get("selected41_component",false) or _state.actor_id not in [1,2,3] or _state.actor_kind!=9 or _state.get("selected41_attack_reset",false):return reject("Source41 fighter reset requires its first authored attack")
 	if not Flight.rigid_pose(statistics) or not Flight.rigid_pose(physical):return reject("Source41 fighter reset needs finite source poses")
@@ -1055,6 +1123,10 @@ func _restart_selected41_attack(statistics: Transform3D,physical: Transform3D) -
 	for key in ["statistics_targeting_blocked","nonplayer_kill","contact","systems_disabled"]:_state[key]=false
 	_state.impact_vector=Vector3.ZERO;_state.actor_mode=1;_state.selected41_attack_reset=true
 	return set_pose(statistics,physical)
+
+func read_snapshot() -> Dictionary:
+	if _read.is_empty():_read=preload("res://src/simulation/readonly_state.gd").freeze(snapshot());return _read
+	return preload("res://src/simulation/read_cache.gd").checked(_read,snapshot,"NPC body")
 
 func snapshot() -> Dictionary:
 	if _state.is_empty(): return {}
@@ -1077,6 +1149,7 @@ func kappa_observation() -> Dictionary:
 	return result
 
 func apply_scene(scene: Variant) -> bool:
+	_read={}
 	error = ""
 	if _state.is_empty() or not scene is Dictionary or scene.get("base_content_id") != _state.base_content_id or scene.get("binding_id") != _state.binding_id:
 		return reject("Actor scene must belong to its configured content and bindings")
@@ -1103,6 +1176,7 @@ func apply_scene(scene: Variant) -> bool:
 	return true
 
 func set_pose(pose: Variant, physical_pose: Variant=null) -> bool:
+	_read={}
 	error = ""
 	if _state.is_empty() or not pose is Transform3D or not pose.is_finite(): return reject("Actor pose requires a configured body and finite transform")
 	if physical_pose!=null and ((_state.get("campaign_cursor") not in [4,7,10] and not _state.get("ambient_traffic",false) and not _state.get("contract_ship",false) and not _state.get("contract_debris",false) and not _state.get("bakka_ship",false) and not _state.get("convoy",false) and not _state.get("alioth_attack",false) and not _state.get("kappa_rescue",false) and not _state.get("authored_story",false) and not _state.get("wingman",false)) or not Flight.rigid_pose(physical_pose)):return reject("Separate physical motion requires a supported finite flight root")
@@ -1118,6 +1192,7 @@ func set_pose(pose: Variant, physical_pose: Variant=null) -> bool:
 	return true
 
 func set_permissions(active: Variant, damage_allowed: Variant, firing_allowed: Variant) -> bool:
+	_read={}
 	error = ""
 	if _state.is_empty() or not active is bool or not damage_allowed is bool or not firing_allowed is bool:
 		return reject("Actor lifecycle requires explicit activity, damage and firing permissions")
@@ -1127,6 +1202,7 @@ func set_permissions(active: Variant, damage_allowed: Variant, firing_allowed: V
 	return true
 
 func apply_destruction(death: Dictionary) -> bool:
+	_read={}
 	error=""
 	if _state.get("population_group") in ["freighter","debris"]:return reject("This actor requires its separate destruction lifecycle")
 	if _state.is_empty() or _vitals.snapshot().hull!=0: return reject("NPC destruction requires an exhausted hull")
@@ -1153,6 +1229,7 @@ func apply_destruction(death: Dictionary) -> bool:
 	return true
 
 func apply_freighter_destruction(owner: RefCounted) -> bool:
+	_read={}
 	error=""
 	if not owner is FreighterDeath or _state.get("population_group") not in ["freighter","capital"] or _vitals.snapshot().get("hull")!=0:return reject("Freighter lifecycle requires its exhausted combat body")
 	var death: Dictionary=owner.snapshot()
@@ -1171,6 +1248,7 @@ func apply_freighter_destruction(owner: RefCounted) -> bool:
 ## Internal half of the encounter's native wreck transaction. Pulling moves the
 ## physical root without refreshing statistics; model recreation updates both.
 func _retain_recovery_frame(frame: Dictionary) -> void:
+	_read={}
 	var changes: Dictionary=frame.actor_changes
 	if changes.has("body_pose"):_state.body_pose=changes.body_pose
 	if changes.has("statistics_pose"):
@@ -1181,6 +1259,7 @@ func _retain_recovery_frame(frame: Dictionary) -> void:
 		elif event.kind=="special_cargo_rejected":_state.special_cargo_rejected=true
 
 func apply_debris_destruction(owner: RefCounted) -> bool:
+	_read={}
 	error=""
 	if not owner is DebrisDeath or not _state.get("contract_combat",false) or not _state.get("contract_debris",false) or _vitals.snapshot().hull!=0:return reject("Debris destruction requires its exhausted prepared body")
 	var death: Dictionary=owner.snapshot()
@@ -1206,6 +1285,7 @@ func collision_context() -> Dictionary:
 	return result
 
 func normal_hit(amount: Variant, nonplayer_source: Variant=false) -> Dictionary:
+	_read={}
 	error = ""
 	# A body prepared for patrol cannot take damage until the group also owns
 	# reputation, warning requests and faction retaliation.
@@ -1228,16 +1308,19 @@ func normal_hit(amount: Variant, nonplayer_source: Variant=false) -> Dictionary:
 
 ## Repair beam: whole hull points up to the ship's maximum; wrecks stay wrecks.
 func heal_hull(amount: int) -> bool:
+	_read={}
 	if _vitals==null or not _state.has("max_hull") or amount<=0:return false
 	var pools: Dictionary=_vitals.snapshot()
 	if int(pools.hull)<=0:return false
 	return _vitals.configure(mini(int(pools.hull)+amount,maxi(int(_state.max_hull),int(pools.hull))),pools.armor,pools.shield)
 
 func fail_hit(message: String) -> Dictionary:
+	_read={}
 	reject(message)
 	return {}
 
 func record_contact(incoming_velocity: Variant,point_box_index: Variant=null) -> bool:
+	_read={}
 	error = ""
 	if _state.is_empty() or not incoming_velocity is Vector3 or not incoming_velocity.is_finite():
 		return reject("NPC contact requires a configured body and finite incoming velocity")
@@ -1258,6 +1341,7 @@ func reject(message: String) -> bool:
 	return false
 
 func apply_activation(data: Dictionary) -> bool:
+	_read={}
 	error = ""
 	if _state.is_empty() or _state.has("campaign_cursor") or not Activation.parameters(data):
 		return reject("Opening activation must name this configured actor")
@@ -1270,21 +1354,25 @@ func apply_activation(data: Dictionary) -> bool:
 	return true
 
 func apply_full_hold_guidance(data: Dictionary, decision: Dictionary) -> bool:
+	_read={}
 	error=""
 	if not ControlDefinitions.parameters(data) or _state.get("campaign_cursor")!=data.campaign_cursor or not _state.has("node_draw_requested"):return reject("Second-trip activity requires its configured source context")
 	return _apply_guidance_activity(decision)
 
 func apply_combat_training_guidance(data: Dictionary, decision: Dictionary) -> bool:
+	_read={}
 	error=""
 	if not TrainingControl.parameters(data) or _state.get("campaign_cursor")!=data.campaign_cursor or not _state.has("statistics_targeting_blocked"):return reject("Combat-training activity requires its configured context")
 	return _apply_guidance_activity(decision,true)
 
 func apply_local_patrol_guidance(decision: Dictionary) -> bool:
+	_read={}
 	error=""
 	if not _state.get("local_patrol",false):return reject("Local patrol activity requires its configured source body")
 	return _apply_guidance_activity(decision,true)
 
 func _apply_guidance_activity(decision: Dictionary, training: bool=false) -> bool:
+	_read={}
 	for key in ["base_content_id","binding_id","campaign_cursor","actor_id"]:
 		if decision.get(key)!=_state[key]:return reject("Second-trip activity belongs to another actor")
 	var activation: Variant=decision.get("activation")
@@ -1303,6 +1391,7 @@ func _apply_guidance_activity(decision: Dictionary, training: bool=false) -> boo
 	return true
 
 func apply_full_hold_appearance(data: Dictionary, root: Variant, statistics: Variant) -> bool:
+	_read={}
 	error=""
 	if not Appearance.parameters(data) or _state.get("campaign_cursor")!=data.campaign_cursor or _state.get("appearance_applied",false):return reject("Appearance requires the unplaced second-trip actor")
 	for key in ["actor_id","actor_kind","hull_catalogue_id"]:

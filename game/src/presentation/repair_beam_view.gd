@@ -34,7 +34,7 @@ func build(state: Dictionary,library: RefCounted,visuals: RefCounted,bindings: R
 			models.append(model)
 		resources.clear()
 		if models.is_empty() or not sampler.configure(models[0].surfaces,true):return reject("Beam model has no supported animation")
-		var row:={"models":models,"sampler":sampler,"range":sampler.snapshot().range,"sound":null}
+		var row:={"models":models,"sampler":sampler,"range":sampler.time_range(),"sound":null}
 		if audio and int(beam.sound_id)>=0:row.sound=_loop(sounds,int(beam.sound_id))
 		_rows.append(row)
 	return true

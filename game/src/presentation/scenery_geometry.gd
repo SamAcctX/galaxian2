@@ -9,6 +9,7 @@ var error := ""
 var objects: Array[Node3D] = []
 var _identity := {}
 var _levels: Array = []
+var _selected := PackedInt32Array()
 var destruction: Node3D
 
 func prepare_destruction(field: Dictionary, library: RefCounted, visuals: RefCounted, bindings: RefCounted, resources: RefCounted, lighting: Dictionary, reflection: RefCounted, response: Dictionary, quality := "high") -> bool:
@@ -89,14 +90,12 @@ func apply_state(field: Dictionary) -> bool:
 	if _identity.is_empty() or field.get("base_content_id")!=_identity.base_content_id or field.get("binding_id")!=_identity.binding_id:return reject("Scenery pose belongs to another content identity")
 	var rows: Variant = field.get("objects")
 	if not rows is Array or rows.size()!=objects.size():return reject("Scenery pose count changed")
-	var poses: Array[Transform3D] = []
+	# The motion owner validated every source pose when it built the field;
+	# this per-frame pass only moves the bodies whose pose changed.
 	for index in rows.size():
-		var row: Variant = rows[index]
-		if not row is Dictionary or row.get("index")!=index or row.get("model_id")!=objects[index].get_meta("source_resource_id"):return reject("Scenery pose model changed")
-		if not row.get("position") is Vector3 or not row.position.is_finite() or not row.get("basis") is Basis or not row.basis.is_finite() or not row.basis.is_equal_approx(row.basis.orthonormalized()) or row.basis.determinant()<=0.0:return reject("Invalid scenery source pose")
-		if not row.get("scale") is float or not is_finite(row.scale) or row.scale<=0.0 or row.scale>10.0:return reject("Invalid scenery source scale")
-		poses.append(Transform3D(row.basis.scaled(Vector3.ONE*row.scale),row.position))
-	for index in poses.size():objects[index].transform=poses[index]
+		var row: Dictionary = rows[index]
+		var pose := Transform3D(row.basis.scaled(Vector3.ONE*row.scale),row.position)
+		if objects[index].transform!=pose:objects[index].transform=pose
 	return true
 
 func apply_detail(state: Dictionary) -> bool:
@@ -104,11 +103,14 @@ func apply_detail(state: Dictionary) -> bool:
 	if _identity.is_empty() or state.get("base_content_id")!=_identity.base_content_id or state.get("binding_id")!=_identity.binding_id:return reject("Scenery detail belongs to another content identity")
 	var selections: Variant = state.get("selections")
 	if not selections is Dictionary or selections.size()!=objects.size():return reject("Scenery detail count changed")
+	if _selected.size()!=objects.size():_selected.resize(objects.size());_selected.fill(-1)
 	for index in objects.size():
 		var selection: Variant = selections.get(index)
 		if not selection is Dictionary or selection.get("visible")!=true or not selection.get("level") is int or selection.level<0 or selection.level>=_levels[index].size():return reject("Invalid scenery detail selection")
 	for index in objects.size():
 		var selected: int = selections[index].level
+		if _selected[index]==selected:continue
+		_selected[index]=selected
 		# The base ImportedModel is also the transform owner of its LOD children.
 		# Hide its surfaces, not their common ancestor, when an alternate is active.
 		for instance in objects[index].instances:instance.visible=selected==0
@@ -129,7 +131,7 @@ func apply_activity(bodies: Dictionary) -> bool:
 
 func clear() -> void:
 	for child in get_children():child.free()
-	objects.clear();_levels.clear();_identity={};destruction=null;error=""
+	objects.clear();_levels.clear();_selected.clear();_identity={};destruction=null;error=""
 
 func reject(message: String) -> bool:
 	error=message;return false

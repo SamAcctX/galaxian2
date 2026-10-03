@@ -226,6 +226,8 @@ func _flight_observation() -> Dictionary:
 	_observed_world=_world
 	return _flight_read
 func flight_owner() -> RefCounted:return null if _world==null else _world.fork_for_frame()
+## The accepted flight for per-frame reads only; never mutate it.
+func flight_reader() -> RefCounted:return _world
 func handle_game_over_event(event: InputEvent) -> bool:return scene!=null and scene.handle_event(event)
 func prepare_game_over() -> Dictionary:return {} if _world==null else _world.prepare_game_over()
 

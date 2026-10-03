@@ -198,7 +198,7 @@ func evaluate(timeline: RefCounted, scenery: RefCounted, delta_ms: Variant, pres
 	if _flight!=null and _player_state.snapshot().vitals.hull<=0: return fail("The player death transition is not yet supported")
 	if _flight!=null and previous.radio.finished[_flight.boundary_event()] and not previous.has("escape"): return fail("The postcombat mission transition is not yet supported")
 	if _impacts!=null and _impacts.snapshot().elapsed_ms!=_elapsed_ms:return fail("Impact clock differs from its world")
-	if _damage_particles!=null and _damage_particles.snapshot().elapsed_ms!=_elapsed_ms:return fail("Damage particle clock differs from its world")
+	if _damage_particles!=null and _damage_particles.elapsed_ms()!=_elapsed_ms:return fail("Damage particle clock differs from its world")
 	if previous.get("escape",{}).get("boundary","")!="":return fail("The following arrival scene is not yet connected")
 	var previous_weapons:=snapshot() if _impacts!=null else {}
 	var next: RefCounted=fork_for_frame()
@@ -322,9 +322,9 @@ func snapshot() -> Dictionary:
 	if _impacts!=null:result.impact_visuals=_impacts.snapshot()
 	if _aim!=null:result.player_aim=_aim.snapshot()
 	if _scanner!=null:result.npc_scanner=_scanner.snapshot()
-	if _damage_particles!=null:result.damage_particles=_damage_particles.snapshot()
+	if _damage_particles!=null:result.damage_particles=_damage_particles.snapshot(true)
 	if _engine_audio!=null:result.player_engine=_engine_audio.snapshot()
-	if _engine_particles!=null:result.engine_particles=_engine_particles.snapshot()
+	if _engine_particles!=null:result.engine_particles=_engine_particles.snapshot(true)
 	if _music!=null:result.flight_music=_flight_music.duplicate(true)
 	result.scenery_collision_supported=_physical_contacts!=null
 	result.elapsed_ms=_elapsed_ms;result.random_state=_random_state.duplicate(true)

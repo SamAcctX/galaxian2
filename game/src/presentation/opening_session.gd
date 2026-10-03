@@ -391,12 +391,17 @@ func prepare_arrival(bindings: RefCounted, catalogues: RefCounted) -> Dictionary
 	if result.is_empty():reject(handoff.error)
 	return result
 
-func snapshot() -> Dictionary:
+func snapshot() -> Dictionary:return _snapshot_with(false)
+
+## Per-frame presentation read: scenery and targets are cached read-only observations.
+func presentation_snapshot() -> Dictionary:return _snapshot_with(true)
+
+func _snapshot_with(cached: bool) -> Dictionary:
 	if _timeline==null:return {}
 	var state: Dictionary = _timeline.snapshot()
 	if _fade!=null:state.fade=_fade.snapshot()
-	state.scenery={} if _scenery==null else _scenery.snapshot()
-	state.target_inventory={} if _targets==null else _targets.snapshot()
+	state.scenery={} if _scenery==null else (_scenery.read_snapshot() if cached else _scenery.snapshot())
+	state.target_inventory={} if _targets==null else (_targets.read_snapshot() if cached else _targets.snapshot())
 	state.world_frame={} if _world_frame==null else _world_frame.snapshot()
 	return state
 

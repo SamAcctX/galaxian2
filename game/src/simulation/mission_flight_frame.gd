@@ -119,7 +119,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,c
 	var detail:=Detail.new();var selectors:={};var positions:={};var player_detail:=ShipDetail.new()
 	if not player_detail.configure(bindings.ship_lod,int(loadout.ship_id)):return reject(player_detail.error)
 	if player_detail.has_alternates():selectors["player"]=player_detail;positions["player"]=pose.origin
-	for actor in encounter.combat_snapshot().actors:
+	for actor in encounter.read_combat().actors:
 		var selector:=ShipDetail.new();var assembly: Dictionary=encounter.freighter_assembly(actor.actor_id)
 		var ready: bool=selector.configure(bindings.ship_lod,int(actor.hull_catalogue_id)) if assembly.is_empty() else selector.configure_assembly(bindings,assembly)
 		if not ready:return reject(selector.error)
@@ -280,12 +280,12 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if secondary.is_empty():return failed(next._encounter.error)
 	next._encounter=secondary.encounter;next._player=secondary.player;next._equipment=secondary.equipment;next._random=secondary.random_state
 	next._scenery=secondary.scenery
-	var before_actors: Dictionary=next._encounter.combat_snapshot()
+	var before_actors: Dictionary=next._encounter.read_combat()
 	var motion: Dictionary=next._encounter.evaluate_world(next._player,next._pose,milliseconds,next._random)
 	if motion.is_empty():return failed(next._encounter.error)
-	if not next._particles.finish_npc_pass(before_actors,motion.encounter.combat_snapshot(),motion.encounter.actor_events(),milliseconds,1.0):return failed(next._particles.error)
+	if not next._particles.finish_npc_pass(before_actors,motion.encounter.read_combat(),motion.encounter.actor_events(),milliseconds,1.0):return failed(next._particles.error)
 	next._encounter=motion.encounter;next._random=motion.random_state
-	if not next._particles.apply_sequence(cue.frame.get("effects",[]),next._encounter.combat_snapshot().actors):return failed(next._particles.error)
+	if not next._particles.apply_sequence(cue.frame.get("effects",[]),next._encounter.read_combat().actors):return failed(next._particles.error)
 	var completed: Dictionary=next._encounter.frame_context().sequence
 	if not dying:
 		if completed.phase>0:next._camera=next._encounter.camera_owner()
@@ -307,7 +307,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if not next._particles.advance(next._pose,milliseconds):return failed(next._particles.error)
 	var positions:={};var registered: Dictionary=next._detail.snapshot().selections
 	if registered.has("player"):positions["player"]=next._pose.origin
-	for actor in next._encounter.combat_snapshot().actors:
+	for actor in next._encounter.read_combat().actors:
 		if registered.has(actor.actor_id):positions[actor.actor_id]=actor.body_pose.origin
 	if not next._detail.update(milliseconds,positions,_reference,1.0,false):return failed(next._detail.error)
 	var immediate: Variant=next._camera.snapshot().eye if cue.frame.refresh_geometry_detail else null
@@ -440,7 +440,7 @@ func advance_result_view(milliseconds: int) -> RefCounted:
 	if not next._camera.update(milliseconds,shot,target):return failed(next._camera.error)
 	var positions:={};var registered: Dictionary=next._detail.snapshot().selections
 	if registered.has("player"):positions["player"]=_pose.origin
-	for actor in _encounter.combat_snapshot().actors:
+	for actor in _encounter.read_combat().actors:
 		if registered.has(actor.actor_id):positions[actor.actor_id]=actor.body_pose.origin
 	next._reference=next._camera.snapshot().eye
 	if not next._detail.refresh(positions,next._reference,1.0):return failed(next._detail.error)

@@ -19,6 +19,8 @@ var failures:=0
 class FakeActor extends RefCounted:
 	var kind:=8
 	var truce:=false
+	var _read:={}
+	func read_snapshot() -> Dictionary:return snapshot()
 	func fork_for_frame() -> RefCounted:
 		var copy:=FakeActor.new();copy.kind=kind;copy.truce=truce;return copy
 	func snapshot() -> Dictionary:return {"actor_kind":kind,"active":true}
@@ -28,6 +30,7 @@ class FakeActor extends RefCounted:
 class FakeProvocation extends RefCounted:
 	func fork_for_frame() -> RefCounted:return self
 	func snapshot() -> Dictionary:return {"forced_hostile":[false,false],"initial_reputation":{"override":-1,"axes":[0,0]}}
+	func read_state() -> Dictionary:return snapshot()
 	func signature_axes(_race) -> Array:return []
 	func evaluate(_a,_b,_c,_d,_e) -> Dictionary:return {"owner":self,"random_state":{},"events":[]}
 

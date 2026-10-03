@@ -137,13 +137,20 @@ func arrival_request() -> Dictionary:
 		"from_station_id":_state.station_id,"destination_station_id":_state.course.destination_station_id}
 
 func animation() -> RefCounted:return _animation.fork_for_frame() if _animation!=null else null
+## Per-frame reads without copying the whole transit and its animation.
+func phase() -> String:return "" if _state.is_empty() else String(_state.phase)
+func coasting() -> bool:return not _state.is_empty() and bool(_state.coasting)
+func speed() -> float:return 0.0 if _state.is_empty() else float(_state.speed)
+func player_pose() -> Transform3D:return Transform3D.IDENTITY if _state.is_empty() else _state.player_pose
+func camera_position() -> Vector3:return Vector3.ZERO if _state.is_empty() else _state.camera_position
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}
 	var result:=_state.duplicate(true);result.animation=_animation.snapshot();return result
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
-	copy._state=_state.duplicate(true);copy._rules=_rules.duplicate(true);copy._gate=_gate.duplicate(true)
-	copy._departure=_departure.duplicate(true)
+	# Rules, gate and departure are fixed after configure; share them.
+	copy._state=_state.duplicate(true);copy._rules=_rules;copy._gate=_gate
+	copy._departure=_departure
 	copy._animation=_animation.fork_for_frame() if _animation!=null else null;copy._navigation=_navigation.fork() if _navigation!=null else null
 	copy._max_ms=_max_ms;return copy
 static func vec(value: Array) -> Vector3:return Vector3(value[0],value[1],value[2])

@@ -35,24 +35,35 @@ func update(presentation_delta_ms: Variant, skip_motion: Array = []) -> bool:
 		return reject("Scenery motion mask must match the ordered field")
 	if presentation_delta_ms==0:return true
 	var seconds := Field.f32(Field.f32(float(presentation_delta_ms))*Field.f32(0.001))
-	for row in _field.objects:
-		if not skip_motion.is_empty() and skip_motion[row.index]:continue
-		var angles: Vector3 = row.angles
-		for axis in 3:angles[axis]=Field.f32(angles[axis]+Field.f32(row.spin[axis]*seconds))
-		row.angles=angles
-		row.basis=Basis.from_euler(angles,EULER_ORDER_XYZ)
+	for index in _field.objects.size():
+		if not skip_motion.is_empty() and skip_motion[index]:continue
+		var current: Dictionary=_field.objects[index]
+		var angles: Vector3 = current.angles
+		for axis in 3:angles[axis]=Field.f32(angles[axis]+Field.f32(current.spin[axis]*seconds))
+		var basis:=Basis.from_euler(angles,EULER_ORDER_XYZ)
+		if angles==current.angles and basis==current.basis:continue
+		var row: Dictionary=_own_row(index)
+		row.angles=angles;row.basis=basis
 	return true
+
+## Published frames share their field and rows read-only. A frame copies the
+## row list and only the rows it changes, never the unchanged field.
+func _own_row(index: int) -> Dictionary:
+	if _field.is_read_only():_field=_field.duplicate()
+	if _field.objects.is_read_only():_field.objects=_field.objects.duplicate()
+	if _field.objects[index].is_read_only():_field.objects[index]=_field.objects[index].duplicate()
+	return _field.objects[index]
 
 ## Tractor translation changes the physical model only. Statistics and contact
 ## bounds belong to the scenery body and deliberately retain their old origin.
 func _retain_recovery_frame(index: int,frame: Dictionary) -> void:
-	if frame.actor_changes.has("body_pose"):_field.objects[index].position=frame.actor_changes.body_pose.origin
+	if frame.actor_changes.has("body_pose"):_own_row(index).position=frame.actor_changes.body_pose.origin
 
 func translate(index: int,offset: Vector3) -> bool:
 	if _field.is_empty() or index<0 or index>=_field.objects.size() or not offset.is_finite():return reject("Scenery translation requires an owned object and finite displacement")
 	var position: Vector3=preload("res://src/simulation/source_vectors.gd").added(_field.objects[index].position,offset)
 	if not position.is_finite():return reject("Scenery translation exceeds finite world coordinates")
-	_field.objects[index].position=position
+	_own_row(index).position=position
 	return true
 
 func snapshot() -> Dictionary:
@@ -65,10 +76,9 @@ func object_pose(index: int) -> Transform3D:
 	var row: Dictionary=_field.objects[index]
 	return Transform3D(row.basis.scaled(Vector3.ONE*row.scale),row.position)
 
+## The current field, read-only and shared with later frames until they change it.
 func frame_snapshot() -> Dictionary:
-	var result:=_field.duplicate()
-	if not result.is_empty():result.objects=_field.objects.map(func(row):return row.duplicate())
-	return result
+	return preload("res://src/simulation/readonly_state.gd").freeze(_field)
 
 func identity() -> Dictionary:
 	return {} if _field.is_empty() else {"base_content_id":_field.base_content_id,"binding_id":_field.binding_id}

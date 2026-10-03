@@ -99,7 +99,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,p
 	var positions:={};var selectors:={};var player_detail:=ShipDetail.new()
 	if not player_detail.configure(bindings.ship_lod,int(loadout.ship_id)):return reject(player_detail.error)
 	if player_detail.has_alternates():selectors["player"]=player_detail;positions["player"]=pose.origin
-	for actor in encounter.combat_snapshot().actors:
+	for actor in encounter.read_combat().actors:
 		# This source-selected freighter retains statistics hull13 while its
 		# original Terran assembly normally maps to free-traffic hull15. Build
 		# the shared source-checked selector from that actual assembly; do not
@@ -252,7 +252,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if not next._particles.advance(next._pose,milliseconds):reject(next._particles.error);return null
 	var positions:={};var registered: Dictionary=next._detail.snapshot().selections
 	if registered.has("player"):positions["player"]=next._pose.origin
-	for actor in next._encounter.combat_snapshot().actors:
+	for actor in next._encounter.read_combat().actors:
 		if registered.has(actor.actor_id):positions[actor.actor_id]=actor.body_pose.origin
 	if not next._detail.update(milliseconds,positions,_reference,1.0,false):reject(next._detail.error);return null
 	if not dying and next._player.snapshot().vitals.hull<=0:
@@ -276,7 +276,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 		# The original cinematic refresh visits the same registered geometry
 		# after reveal placement, before NPC motion. Reuse the native selectors;
 		# an immediate visit neither resets their periodic clock nor draws RNG.
-		for actor in next._encounter.combat_snapshot().actors:
+		for actor in next._encounter.read_combat().actors:
 			if registered.has(actor.actor_id):positions[actor.actor_id]=actor.body_pose.origin
 		if not next._detail.refresh(positions,detail_reference,1.0):reject(next._detail.error);return null
 	# Source damage permission is separate from activity/target eligibility.
@@ -304,11 +304,11 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if secondary.is_empty():reject(next._encounter.error);return null
 	next._encounter=secondary.encounter;next._player=secondary.player;next._equipment=secondary.equipment;next._random=secondary.random_state
 	next._scenery=secondary.scenery
-	var before_actors: Dictionary=next._encounter.combat_snapshot()
+	var before_actors: Dictionary=next._encounter.read_combat()
 	if turret_active and not next._encounter.present_selected_turret(next._pose,size):reject(next._encounter.error);return null
 	var world: Dictionary=next._encounter.evaluate_world(next._player,next._pose,milliseconds,next._random)
 	if world.is_empty():reject(next._encounter.error);return null
-	if not next._particles.finish_npc_pass(before_actors,world.encounter.combat_snapshot(),world.encounter.actor_events(),milliseconds,1.0):reject(next._particles.error);return null
+	if not next._particles.finish_npc_pass(before_actors,world.encounter.read_combat(),world.encounter.actor_events(),milliseconds,1.0):reject(next._particles.error);return null
 	next._encounter=world.encounter;next._random=world.random_state
 	# Asteroid centers do not move in this owner. Its shared detail transaction
 	# stages periodic selection before the optional cinematic refresh, exactly
@@ -373,7 +373,7 @@ func _resolve_portal_tail() -> bool:
 			_state.portal_outcome={"kind":"early_entry","script_phase":phase,"hull_after":0}
 			_state.input.enabled=false
 		else:
-			var freighter: Dictionary=_encounter.combat_snapshot().actors[0]
+			var freighter: Dictionary=_encounter.read_combat().actors[0]
 			_state.campaign_phase="portal_ready"
 			_state.portal_outcome={"kind":"prepared_onward","script_phase":phase,
 				"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,
@@ -423,7 +423,7 @@ func successor41_ready(bindings: RefCounted) -> bool:
 	if _state.get("base_content_id")!=bindings.base_content_id or _state.get("binding_id")!=bindings.binding_id or _state.get("campaign_phase")!="portal_ready" or _state.get("boundary","") not in ["","selected40_portal_transition_required"] or not portal_transition_required():return false
 	var outcome:=prepare_portal_transition()
 	var sequence: Dictionary=_encounter.selected40_frame_context().sequence
-	var actors: Array=_encounter.combat_snapshot().actors
+	var actors: Array=_encounter.read_combat().actors
 	if sequence.phase<Sequence.Stage.PORTAL_ESCAPE or actors.size()!=13 or actors[0].actor_id!=0:return false
 	return outcome.get("next_cursor")==41 and outcome.get("from_cursor")==40 and outcome.get("source_state")==2 and outcome.get("mission")=={"kind":4,"station_id":-1} and outcome.get("source_before")==_entry.source_before and outcome.get("freighter_hull")==actors[0].vitals.hull and outcome.get("player")==_player.snapshot() and outcome.get("loadout")==_player.loadout()
 

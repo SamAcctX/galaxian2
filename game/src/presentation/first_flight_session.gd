@@ -672,6 +672,8 @@ func flight_hud_visible(state: Dictionary={}) -> bool:
 	if state.is_empty():state=_world.snapshot()
 	return status=="running" and not _world.cinematic_input_blocked() and state.entry_released and not state.dialogue.visible and state.get("contracts",{}).get("pending_result",{}).is_empty() and state.get("player_destruction",{}).get("hud_visible",true)
 func flight_owner() -> RefCounted:return null if _world==null else _world.fork_for_frame()
+## The accepted flight for per-frame reads only; never mutate it.
+func flight_reader() -> RefCounted:return _world
 func snapshot() -> Dictionary:
 	if _world==null:return {}
 	var state: Dictionary=_world.snapshot() if _presentation_state.is_empty() else _presentation_state.duplicate(true)

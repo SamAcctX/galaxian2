@@ -84,7 +84,7 @@ func prepare_animation(owner: RefCounted) -> Dictionary:
 			if not instance.animated.has(clock.model_id):reject("Original animated gate layer is absent");return {}
 			var row: Dictionary=instance.animated[clock.model_id]
 			var sampler: RefCounted=row.sampler.fork_for_frame()
-			var range: Dictionary=sampler.snapshot().range
+			var range: Dictionary=sampler.time_range()
 			if range.start_ms!=clock.start_ms or range.end_ms!=clock.end_ms:reject("Gate playback differs from its original keys");return {}
 			var sample: Dictionary=sampler.sample(clock.time_ms,Transform3D.IDENTITY)
 			if sample.is_empty():reject(sampler.error);return {}

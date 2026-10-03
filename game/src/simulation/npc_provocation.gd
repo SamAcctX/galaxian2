@@ -297,6 +297,9 @@ func _queue_radio(kind: String, random: RefCounted, display_available: bool, eve
 
 func snapshot() -> Dictionary:return _state.duplicate(true)
 
+## Live state for same-frame reads only; never mutate or retain it.
+func read_state() -> Dictionary:return _state
+
 func evaluate_arrival(random_state: Dictionary,display_available: bool) -> Dictionary:
 	var random:=Random.new()
 	if not random.restore(random_state):return fail(random.error)
@@ -328,7 +331,8 @@ func reset_actor_damage(actor_id: int) -> bool:
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
-	copy._rules=_rules.duplicate(true);copy._state=_state.duplicate(true)
+	# Rules are replaced, never edited, after configuration.
+	copy._rules=_rules;copy._state=_state.duplicate(true)
 	copy._selected40_world=_selected40_world
 	return copy
 

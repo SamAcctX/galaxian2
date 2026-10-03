@@ -108,8 +108,7 @@ func observe_scenery(scenery: RefCounted) -> bool:
 	var observed: Variant=scenery.read_snapshot().get("destroyed_count",0)
 	if not observed is int or observed<_asteroids_destroyed or observed>2147483647:return reject("Asteroid destruction history regressed or exceeded the supported career range")
 	_asteroids_destroyed=observed
-	var progress: Dictionary=_contracts.snapshot().get("progress",{})
-	if _asteroids_destroyed>0 or progress.has("asteroids_destroyed"):
+	if _asteroids_destroyed>0 or _contracts.has_progress("asteroids_destroyed"):
 		var total:=_initial_asteroids_destroyed+_asteroids_destroyed
 		if total>2147483647 or not _contracts.retain_asteroid_destruction_total(total):return reject(_contracts.error if not _contracts.error.is_empty() else "Asteroid destruction progress exceeds the supported career range")
 	return true
@@ -172,6 +171,7 @@ func record_wingman_loss(pilot: RefCounted) -> bool:
 	return true
 
 func result_pending() -> bool:return _contracts!=null and _contracts.result_pending()
+func campaign_cursor() -> int:return -1 if _state.is_empty() else int(_state.campaign_cursor)
 func dialogue_visible() -> bool:return _visit!=null and _visit.snapshot().dialogue.visible
 
 func retain_mining_hint(seen: bool) -> void:

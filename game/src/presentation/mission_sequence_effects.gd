@@ -74,11 +74,12 @@ func prepare_state(context: Context,state: Dictionary,renderer_forward: Vector3)
 		var sampler: RefCounted=_samplers[i].fork_for_frame()
 		var animated: Dictionary=sampler.sample(row.time_ms,root)
 		if animated.is_empty():return failed(sampler.error)
-		for surface in animated.surfaces:
+		var tinted: Array=animated.surfaces.map(func(row):return row.duplicate())
+		for surface in tinted:
 			var color:=Colors.tint(PackedByteArray([255,255,255,255]),Vector4.ONE,surface.get("color_byte",-1))
 			if color.is_empty():return failed("Invalid authored sequence animation color")
 			surface.tint=color.value
-		prepared.append({"root":root,"surfaces":animated.surfaces,"visible":row.visible,"animation_range":sampler.snapshot().range})
+		prepared.append({"root":root,"surfaces":tinted,"visible":row.visible,"animation_range":sampler.time_range()})
 		samplers.append(sampler)
 	return {"identity":_generation,"previous_revision":_sample.get("revision",-1),"sample":sample,"models":prepared,"samplers":samplers}
 

@@ -54,7 +54,7 @@ func build(owner: RefCounted, library: RefCounted, visuals: RefCounted, bindings
 			guns[-1].trail=trail
 		var sampler:=Sampler.new()
 		if not sampler.configure(slots[0].surfaces,row.end_ms==0):resources.clear();return reject(sampler.error)
-		if sampler.snapshot().range!={"start_ms":row.start_ms,"end_ms":row.end_ms}:resources.clear();return reject("Projectile animation metadata changed")
+		if sampler.time_range()!={"start_ms":row.start_ms,"end_ms":row.end_ms}:resources.clear();return reject("Projectile animation metadata changed")
 		_samplers.append(sampler)
 	resources.clear();_identity=owner.presentation_identity();_descriptor=state;_edition=library.manifest.profile.edition;_reduced=reduced_scale
 	return true

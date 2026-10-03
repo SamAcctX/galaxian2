@@ -18,6 +18,7 @@ const VoidCrystals=preload("res://src/content/void_crystal_definitions.gd")
 const REQUIRED_EQUIPMENT_TYPE := 33
 var error := ""
 var _state := {}
+var _read := {}
 var _actors := []
 var _scenery := []
 var _selected40_construction: RefCounted
@@ -51,7 +52,7 @@ func configure_selected40(bindings: RefCounted,catalogues: RefCounted,player: Re
 	if not _configure_source(bindings,catalogues,source,construction.snapshot().actors,field,count,data):return false
 	_selected40_construction=construction;_selected40_context=data.context.duplicate(true)
 	_state.selected40_context=_selected40_context.duplicate(true)
-	_state.target_station_id=int(data.station_id);_state.target_system_id=int(data.system_id)
+	_state.target_station_id=int(data.station_id);_state.target_system_id=int(data.system_id);_read={}
 	return true
 
 func matches_selected40(combat: RefCounted,construction: RefCounted,context: Dictionary) -> bool:
@@ -220,6 +221,7 @@ func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dic
 	var canonical := {}
 	for key in ["base_content_id","binding_id","ship_id","slots","equipment_ids"]:canonical[key]=source[key]
 	if source.has("campaign_cursor"):canonical.campaign_cursor=source.campaign_cursor
+	_read={}
 	_state={"base_content_id":source.base_content_id,"binding_id":source.binding_id,
 		"station_id":source.station_id,"system_id":source.system_id,"ship_id":source.ship_id,
 		"equipment_ids":source.equipment_ids.duplicate(),"npc_ids":npc_ids,"scenery_indices":indices,
@@ -236,12 +238,12 @@ func retain_secondary_ammunition(owner: RefCounted) -> bool:
 	if _state.get("equipment_ids")!=_state.loadout.get("equipment_ids"):return reject("Target inventory lost its retained equipment order")
 	var next: Dictionary=owner.reconcile_weapon_loadout(_state.loadout)
 	if next.is_empty():return reject(owner.error)
-	_state.loadout=next;_state.equipment_ids=next.equipment_ids.duplicate()
+	_state.loadout=next;_state.equipment_ids=next.equipment_ids.duplicate();_read={}
 	return true
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
-	copy._state=_state.duplicate(true)
+	copy._state=_state.duplicate(true);copy._read=_read
 	# Construction membership and geometry are immutable after configuration.
 	copy._actors=_actors;copy._scenery=_scenery
 	copy._selected40_construction=_selected40_construction;copy._selected40_context=_selected40_context
@@ -283,11 +285,16 @@ func validate_owners(combat: Dictionary, bodies: Dictionary) -> bool:
 func snapshot() -> Dictionary:
 	return _state.duplicate(true)
 
+## Cached read-only observation for per-frame presentation reads.
+func read_snapshot() -> Dictionary:
+	if _read.is_empty():_read=preload("res://src/simulation/readonly_state.gd").freeze(_state.duplicate(true))
+	return preload("res://src/simulation/read_cache.gd").checked(_read,snapshot,"Target inventory")
+
 func npc_ids() -> Array:
 	return _state.get("npc_ids",[]).duplicate()
 
 func clear() -> void:
-	error="";_state={};_actors=[];_scenery=[];_selected40_construction=null;_selected40_context={}
+	error="";_state={};_read={};_actors=[];_scenery=[];_selected40_construction=null;_selected40_context={}
 
 static func exact_value(left: Variant, right: Variant) -> bool:
 	if typeof(left)!=typeof(right):return false

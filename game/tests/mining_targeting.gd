@@ -176,7 +176,7 @@ func verify_tractor_targeting(debris: RefCounted) -> void:
 		check(fork.advance(debris,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,100,true,false,true) and fork.snapshot().recovery_object_index==-1 and fork.snapshot().elapsed_ms==0 and fork.snapshot().candidate_object_index==-1,"A retained request, planet or route allowed another scenery acquisition")
 		check(fork.advance(debris,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,100,true) and fork.snapshot().recovery_object_index==-1 and fork.snapshot().elapsed_ms==100,"A cleared competing target bypassed fresh scenery acquisition")
 		var moved: RefCounted=debris.fork_for_frame();moved._motion=moved._motion.fork_for_frame()
-		moved._motion._field.objects[0].position.x=50000.0;refresh_fixture(moved)
+		moved._motion._own_row(0).position.x=50000.0;refresh_fixture(moved)
 		check(tractor.advance(moved,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,100,true) and tractor.snapshot().candidate_indices.is_empty(),"Scenery HUD followed stale statistics instead of its moved physical model")
 	check(debris.snapshot()==original,"Acquiring cargo changed its world, RNG or lifecycle")
 	equipped._state.departure.loadout.equipment_ids=[68]
@@ -195,7 +195,7 @@ func verify_tractor_targeting(debris: RefCounted) -> void:
 func verify_automatic_tractors(equipped: RefCounted,debris: RefCounted) -> void:
 	var off_aim:=aim.duplicate(true);off_aim.point.x=600
 	var behind: RefCounted=debris.fork_for_frame();behind._motion=behind._motion.fork_for_frame()
-	behind._motion._field.objects[0].position=Vector3(0,0,1000);refresh_fixture(behind)
+	behind._motion._own_row(0).position=Vector3(0,0,1000);refresh_fixture(behind)
 	var original: Dictionary=debris.snapshot()
 	for id in [70,194]:
 		# These are acquisition fixtures. The expansion device's separate mesh
@@ -229,7 +229,7 @@ func verify_automatic_tractors(equipped: RefCounted,debris: RefCounted) -> void:
 	ordered._destruction[0].disable_drop();refresh_fixture(ordered)
 	check(first.advance(ordered,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,0,true) and first.recovery_object_index()==1,"Automatic recovery selected already consumed cargo")
 	ordered._motion=ordered._motion.fork_for_frame()
-	ordered._motion._field.objects[1].position.z=-2000000.0;refresh_fixture(ordered)
+	ordered._motion._own_row(1).position.z=-2000000.0;refresh_fixture(ordered)
 	check(first.advance(ordered,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,0,true) and first.recovery_object_index()==1,"Automatic recovery inherited the timed selection distance sentinel")
 
 func verify_flight(lib: RefCounted,args: Array):
@@ -279,7 +279,7 @@ func verify_flight(lib: RefCounted,args: Array):
 	var crossing: RefCounted=next.fork_for_frame()
 	crossing._scenery=arranged([0.0001])
 	crossing._scenery._bodies._rows[0].position=Vector3(10000,0,-0.0001)
-	crossing._scenery._motion._field.objects[0].position=Vector3(10000,0,-0.0001)
+	crossing._scenery._motion._own_row(0).position=Vector3(10000,0,-0.0001)
 	crossing._pose=Transform3D(Basis(Vector3.UP,PI),Vector3(0,0,1000))
 	crossing._pilot.angular_units=Vector2.ZERO
 	crossing._camera_follow_enabled=false
@@ -349,7 +349,7 @@ func arranged(distances: Array) -> RefCounted:
 	for i in result._bodies._rows.size():
 		var point:=Vector3(10000+i,0,100000)
 		if i<distances.size():point=Vector3(0,0,-float(distances[i]))
-		result._bodies._rows[i].position=point;result._motion._field.objects[i].position=point
+		result._bodies._rows[i].position=point;result._motion._own_row(i).position=point
 	refresh_fixture(result)
 	return result
 func refresh_fixture(field: RefCounted) -> void:

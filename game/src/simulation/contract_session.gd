@@ -1648,12 +1648,14 @@ func _bind_accounted_world(controller: RefCounted,context: Dictionary,scene: Dic
 	_flight_identity=controller.flight_identity()
 	return true
 
-func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_results: bool=true,periodic_poll_allowed: bool=true,radio_finished: Array=[],world_facts: Dictionary={}) -> Dictionary:
+func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_results: bool=true,periodic_poll_allowed: bool=true,radio_finished: Array=[],world_facts: Dictionary={},private_copies: bool=false) -> Dictionary:
 	# The session and controller commit together. A failed result preparation
 	# cannot pay, change career, discard actors or partially freeze a live flight.
 	error=""
 	if not _valid_flight(controller):return {}
-	var next:=fork();var flight: RefCounted=controller.fork_for_frame(false)
+	# A caller that already passes private forks of both skips the second copy.
+	var next: RefCounted=self if private_copies else fork()
+	var flight: RefCounted=controller if private_copies else controller.fork_for_frame(false)
 	if not _pending_flight.is_empty():
 		if controller.snapshot()!=_pending_flight:return fail("The pending result must retain its frozen flight")
 		return {"session":next,"controller":flight,"opened":false}
@@ -1941,6 +1943,8 @@ func _station_inventory(equipment: RefCounted,bindings: RefCounted=null) -> Dict
 
 func result_pending() -> bool:return not _state.get("pending_result",{}).is_empty()
 func station_id() -> int:return int(_state.get("station_id",-1))
+
+func has_progress(key: String) -> bool:return _state.get("progress",{}).has(key)
 
 func snapshot() -> Dictionary:
 	var result:=_state.duplicate(true)

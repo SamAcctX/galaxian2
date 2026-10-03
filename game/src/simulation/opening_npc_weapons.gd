@@ -452,7 +452,7 @@ func _fire(combat: RefCounted, requested_actor_ids: Array, poses: Dictionary) ->
 	if _identity.is_empty() or not combat is Combat: return fail("NPC firing requires configured weapons and matching combat actors")
 	if _selected41_world!=null and combat.selected41_world_owner()!=_selected41_world:return fail("Source41 firing uses a different native generation")
 	if _selected40_world!=null and combat.selected40_world_owner()!=_selected40_world:return fail("Selected40 firing uses a different generated world")
-	var scene: Dictionary = combat.snapshot()
+	var scene: Dictionary = combat.read_snapshot()
 	for key in _identity:
 		if scene.get(key)!=_identity[key]: return fail("NPC firing actors belong to another source profile")
 	if not scene.get("actors") is Array or scene.actors.size()!=_guns.size():return fail("NPC firing population differs from its weapon pools")
@@ -585,7 +585,7 @@ func evaluate_selected40_update(player: RefCounted,pose: Variant,combat: RefCoun
 
 func _evaluate_mixed_update(player: RefCounted,pose: Variant,combat: RefCounted,special_flight: Variant,delta_ms: Variant,wingmen: RefCounted=null) -> Dictionary:
 	if _training.is_empty() or not player is Player or not combat is Combat or not Vitals.integer(delta_ms) or not special_flight is bool:return fail("Mixed contacts require the verified training weapon, player and combat owners")
-	var player_state: Dictionary=player.snapshot();var scene: Dictionary=combat.snapshot()
+	var player_state: Dictionary=player.snapshot();var scene: Dictionary=combat.read_snapshot()
 	for key in _identity:
 		if player_state.get(key)!=_identity[key] or scene.get(key)!=_identity[key]:return fail("Mixed contact owners belong to another encounter")
 	if not scene.get("actors") is Array or scene.actors.size()!=_guns.size():return fail("Mixed contacts require the complete NPC population")

@@ -213,6 +213,8 @@ func sample_camera(pose: Variant, follow_enabled: Variant) -> bool:
 	_state.camera_pose=pose;_state.camera_follow_enabled=follow_enabled
 	return true
 
+func phase() -> String:return "" if _state.is_empty() else String(_state.phase)
+
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}
 	var result:=_state.duplicate(true)

@@ -11,6 +11,11 @@ func run() -> void:
 	app.boot(PackedStringArray(),directory)
 	var selection:=Preferences.defaults();selection.content=args[0];selection.bindings=args[1];selection.visuals=args[2]
 	if not app.select_content(selection):check(false,app.error);finish();return
+	for key in ["GOF2_DEKATO_SOURCE_ARGS","GOF2_NEHMA_SOURCE_ARGS"]:
+		if OS.get_environment(key).is_empty():continue
+		var supplement: Variant=JSON.parse_string(FileAccess.get_file_as_string(OS.get_environment(key)))
+		if not supplement is Array or supplement.size()!=3:check(false,"Missing "+key);finish();return
+		if not (app.bindings.attach_dekato_source(supplement[1],app.library.manifest) if key=="GOF2_DEKATO_SOURCE_ARGS" else app.bindings.attach_nehma_source(supplement[1],app.library.manifest)):check(false,app.bindings.error);finish();return
 	var update:=OS.get_environment("GOF2_IMPORT_UPDATE")
 	if not update.is_empty() and app.bindings.import_update_receipt().is_empty() and not app.bindings.attach_import_update(update,app.library.manifest,app.library):check(false,"Import update: "+app.bindings.error);finish();return
 	app.change_preference("frame_rate",0);root.size=Vector2i(1920,1080);root.grab_focus()
@@ -26,6 +31,10 @@ func run() -> void:
 		if DirAccess.copy_absolute(source_save,path)!=OK:check(false,"Could not stage the earned save");finish();return
 		if not app._enter_game("load"):check(false,app.error);finish();return
 		await measure("station")
+		# Step through any arrival conversation the save resumes into.
+		for line in 64:
+			if app.game.session.snapshot().phase in app.game.STATION_DEPARTURE_PHASES:break
+			app.game.station_navigation("next")
 		if not app.game.request_departure() or not app.game.enter_first_flight(0,4096,1789100000):
 			check(false,app.game.status.text);finish();return
 		await measure("flight")
@@ -36,7 +45,7 @@ func measure(label: String) -> void:
 	app.game.session.rebase_time(0);now_us=0
 	print("BENCHMARK_BEGIN ",label," paused=",app.game.session.is_paused())
 	var steps: Array=[];var ui: Array=[];var frames: Array=[]
-	for tick in 150:
+	for tick in (int(OS.get_environment("GOF2_BENCH_TICKS")) if OS.get_environment("GOF2_BENCH_TICKS")!="" else 150):
 		# Window-manager focus events use wall time. Rebase the deterministic
 		# sample so such an event cannot silently turn subsequent frames into 0ms.
 		app.game.session.set_pause("focus",false,now_us)

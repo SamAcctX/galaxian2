@@ -294,7 +294,7 @@ func _style_touch_buttons() -> void:
 ## The story hacking puzzle while docked at a hack point.
 func _sync_hacking() -> void:
 	if _hacking==null:return
-	var state: Dictionary=session.flight_owner().story_hack_state() if session is FirstFlightSession and session.flight_owner()!=null else {}
+	var state: Dictionary=session.flight_reader().story_hack_state() if session is FirstFlightSession and session.flight_reader()!=null else {}
 	_hacking.present(state if _hacking.available() else {},bool(state.get("highlighted",false)))
 
 ## A hacking button press (on-screen, keys or controller).
@@ -904,7 +904,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:station_navigation(action)
 			get_viewport().set_input_as_handled();return
 	# Hacking: left/right (arrows, A/D, shoulder buttons) turn the blocks.
-	if session is FirstFlightSession and session.flight_owner()!=null and not session.flight_owner().story_hack_state().is_empty() and not session.is_paused():
+	if session is FirstFlightSession and session.flight_reader()!=null and not session.flight_reader().story_hack_state().is_empty() and not session.is_paused():
 		var turn:=""
 		if event is InputEventKey and event.pressed and not event.echo:
 			var key: int=event.physical_keycode if event.physical_keycode else event.keycode
@@ -1188,7 +1188,7 @@ func open_map(now_microseconds: int=-1,drive_mode:=false) -> bool:
 		var jumped: bool=session.activate_story_drive(Time.get_ticks_usec() if now_microseconds<0 else now_microseconds)
 		if not jumped:status.text=session.error
 		clear_input();present_session();return jumped
-	if drive_mode and not docked and session.snapshot().location.station_id<0 and session.flight_owner().drive_quote(-1).get("affordable",false):
+	if drive_mode and not docked and session.snapshot().location.station_id<0 and session.flight_reader().drive_quote(-1).get("affordable",false):
 		var started: bool=session.activate_drive_return(Time.get_ticks_usec() if now_microseconds<0 else now_microseconds)
 		clear_input();present_session();return started
 	if not docked and (not session is FirstFlightSession or (not drive_mode and not session.can_open_map())):return false
@@ -1275,7 +1275,7 @@ func open_flight_menu(autopilot: bool=true) -> bool:
 		if session.drive_available():rows.append({"action":"khador","label":library.strings[int(bindings.station_equipment.item_text_offset)+85]})
 		if session.secondary_available():rows.append({"action":"secondary_menu","label":library.strings[255]})
 		if session.wingmen_available():rows.append({"action":"wingmen","label":library.strings[295]})
-	if session is MissionSession and not autopilot and not session.flight_owner().secondary_feedback().get("weapons",[]).is_empty():rows.append({"action":"secondary_menu","label":library.strings[255]})
+	if session is MissionSession and not autopilot and not session.flight_reader().secondary_feedback().get("weapons",[]).is_empty():rows.append({"action":"secondary_menu","label":library.strings[255]})
 	var turret: Dictionary=session.turret_state()
 	if not autopilot and turret.get("ready",false):rows.append({"action":"turret","label":library.strings[207]})
 	if not autopilot and turret.get("auto",false) and not session is MissionSession:rows.append({"action":"auto_turret","label":library.strings[207]+" "+library.strings[39 if turret.get("auto_enabled",true) else 38]})

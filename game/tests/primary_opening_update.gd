@@ -123,7 +123,7 @@ func check_profile(content: String, pack: String) -> void:
 	# Inject a failing body query after NPC hits have already been staged. This
 	# tests transactional failure, not a reachable source-population bound.
 	var invalid_bodies: RefCounted = bodies.fork_for_frame()
-	invalid_bodies._rows[0].half_extent=-1
+	invalid_bodies._rows[0].half_extent=-1;invalid_bodies._read_snapshot={}
 	var projectile: RefCounted = owner._guns[0].projectiles.fork_state()
 	var old_projectile: Dictionary = projectile.snapshot();var old_invalid_bodies: Dictionary = invalid_bodies.snapshot()
 	var operation := Mixed.new()

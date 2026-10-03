@@ -96,7 +96,7 @@ func evaluate_selected40_sequence(owner: RefCounted,combat: RefCounted,random_st
 		else:
 			if id not in [9,10,11,12] or command.action!="reserve":return fail("Selected40 choreography names an unrelated actor")
 			var prior: Dictionary=staged._combat.actor_snapshot(id)
-			if staged._destruction[id].snapshot().phase!="ready":return fail("Selected40 reserve is no longer its parked live body")
+			if staged._destruction[id].read_state().phase!="ready":return fail("Selected40 reserve is no longer its parked live body")
 			var motion: Dictionary=staged._flight[id].snapshot()
 			if motion.is_empty() or not Flight.rigid_pose(motion.get("root_pose")):return fail("Selected40 reserve lost its retained native motion")
 			var pose: Transform3D=motion.root_pose;pose.origin=command.position
@@ -661,7 +661,7 @@ func evaluate_alioth_sequence(owner: RefCounted,weapons: RefCounted,shared_rando
 		if id not in [3,4,5,6] or not row.get("clear_targets",false):return fail("Alioth sequence changed the wrong ship")
 		if not staged._guidance[id].apply_alioth_escape(owner) or not staged._flight[id].apply_scripted_pose(row.body_pose):return fail(staged._guidance[id].error+staged._flight[id].error)
 		var prior: Dictionary=staged._combat.snapshot().actors[id]
-		if staged._destruction[id].snapshot().phase!="ready":
+		if staged._destruction[id].read_state().phase!="ready":
 			if not staged._destruction[id].apply_alioth_escape(owner):return fail(staged._destruction[id].error)
 		else:staged._launch_pending[id]=true
 		# Body placement happens immediately. The ordinary pass refreshes the
@@ -783,7 +783,7 @@ func _ambient_seed(id: int) -> Dictionary:
 func evaluate_ambient_world_logic(delta_ms: Variant,combat: RefCounted,random_state: Dictionary,player_pose: Variant=null,energy_cells: int=-1) -> Dictionary:
 	error=""
 	if not _ambient or _launch_clock==null or _accounting==null or not combat is Combat:return fail("World traffic logic requires its prepared mixed controller")
-	var incoming: Dictionary=combat.snapshot()
+	var incoming: Dictionary=combat.read_snapshot()
 	var generations: Array=_accounting.snapshot().spawn_generations
 	if not incoming.get("actors") is Array or incoming.actors.size()!=generations.size():return fail("Incoming traffic population changed")
 	for id in generations.size():
@@ -792,7 +792,7 @@ func evaluate_ambient_world_logic(delta_ms: Variant,combat: RefCounted,random_st
 	var random:=Random.new()
 	if not random.restore(random_state):return fail(random.error)
 	staged._random=random.snapshot()
-	var request: Dictionary=staged._launch_clock.advance(delta_ms,staged._combat.snapshot())
+	var request: Dictionary=staged._launch_clock.advance(delta_ms,staged._combat.read_snapshot())
 	if request.is_empty():return fail(staged._launch_clock.error)
 	var ids:=[]
 	if request.actor_id>=0:ids.append(request.actor_id)
@@ -844,7 +844,7 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 		if not random.restore(random_state):return fail(random.error)
 		staged._random=random.snapshot()
 	var decisions:=[];var firing:=[];var death_events:=[]
-	var body: Dictionary=staged._combat.snapshot()
+	var body: Dictionary=staged._combat.read_snapshot()
 	for key in ["base_content_id","binding_id","campaign_cursor"]:
 		if body.get(key)!=_identity[key]:return fail("Incoming combat bodies belong to another encounter")
 	if not body.get("actors") is Array or body.actors.size()!=int(_rules.actor_count):return fail("Incoming combat population changed")
@@ -853,9 +853,14 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 	if _kappa and not _validate_kappa_combat(body):return {}
 	if _bakka and not _validate_bakka_combat(body):return {}
 	if _contract and body.get("contract_encounter")!=_construction.snapshot().contract_encounter:return fail("Incoming combat belongs to another accepted contract")
-	if _contract and body.get("contract_settlement",{})!=_combat.snapshot().get("contract_settlement",{}):return fail("Incoming combat lost its acknowledged result standing")
+	if _contract and body.get("contract_settlement",{})!=_combat.read_snapshot().get("contract_settlement",{}):return fail("Incoming combat lost its acknowledged result standing")
 	if _local_patrol and _combat.has_local_reactions() and body.get("provocation",{}).get("station_id")!=int(_rules.station_id):return fail("Incoming local combat belongs to another station")
+	# Guidance sees the whole population as already updated this frame. Each
+	# step below changes only its own actor, so refresh just the actors handled
+	# since the last sample instead of copying every actor for every actor.
+	var population:=[];var changed:=[]
 	for id in int(_rules.actor_count):
+		changed.append(id)
 		if _selected40_world!=null and id==0 and staged._flight[0]==null:
 			decisions.append({"actor_id":0,"fire_requested":false,"parked":true})
 			continue
@@ -911,7 +916,10 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 		var systems_supported: bool=body.actors[id].has("systems")
 		if systems_supported and not staged._combat.advance_systems(id,delta_ms):return fail(staged._combat.error)
 		if not staged._combat.refresh_hostility(id):return fail(staged._combat.error)
-		body.actors=staged._combat.actor_snapshots()
+		if population.is_empty():population=staged._combat.read_actors()
+		else:
+			for other in changed:population[other]=staged._combat.read_actor(other)
+		changed=[id];body.actors=population
 		var actor: Dictionary=body.actors[id]
 		var root: Transform3D=motion.root_pose if life.is_empty() or life.phase=="ready" else life.pose
 		var decision: Dictionary=staged._guidance[id].update(delta_ms,actor,root,player,staged._random,body.actors,wingmen)
@@ -945,6 +953,7 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 			if moved.is_empty():return fail(staged._flight[id].error)
 		if not decision.get("traffic_departure",false) and not decision.get("traffic_waiting",false) and not staged._combat.set_pose(id,staged._flight[id].systems_statistics_pose() if systems_supported else moved.pose,moved.root_pose):return fail(staged._combat.error)
 		staged._random=decision.random_state.duplicate(true);decisions.append(decision)
+
 	if staged._mission_runner!=null and not _scene_clocked:
 		var clock: Dictionary=staged._mission_runner.snapshot()
 		if not staged._mission_runner.sample_clock(int(clock.elapsed_ms)+int(delta_ms),int(clock.clock_ms)+int(delta_ms)):return fail(staged._mission_runner.error)
@@ -955,7 +964,7 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 	if not _contract_result.is_empty() and not _scene_clocked:
 		_contract_result.clock_ms+=int(delta_ms);_contract_result.elapsed_ms+=int(delta_ms)
 	var result:=_identity.duplicate()
-	result.merge({"decisions":decisions,"firing_requests":firing,"random_state":_random.duplicate(true),"combat":_combat.snapshot()})
+	result.merge({"decisions":decisions,"firing_requests":firing,"random_state":_random.duplicate(true),"combat":_combat.read_snapshot()})
 	if not _destruction.is_empty():result.death_events=death_events;result.defeat_status=defeat_status()
 	return result
 
@@ -1060,12 +1069,12 @@ func defeat_status() -> Dictionary:
 		if _contract and (_accounting==null or _mission_runner.snapshot().retired):return {}
 		return _mission_runner.observe(_combat.actor_snapshots(),{},_result_world())
 	if _bakka:
-		return preload("res://src/simulation/pirate_defeat_condition.gd").evaluate(_combat.snapshot().actors,_accounting.snapshot().counter_deltas,_bindings.mido_travel.bakka_contest.objectives,true)
+		return preload("res://src/simulation/pirate_defeat_condition.gd").evaluate(_combat.read_actors(),_accounting.snapshot().counter_deltas,_bindings.mido_travel.bakka_contest.objectives,true)
 	if _convoy or _alioth or _kappa or _story:return {}
 	if _death_rules.is_empty() or _local_patrol:return {}
 	var rule: Dictionary=_death_rules.defeat_condition
 	var count:=0
-	var actors: Array=_combat.snapshot().actors
+	var actors: Array=_combat.read_actors()
 	for id in range(int(rule.begin),int(rule.end)):
 		if actors[id].actor_mode==int(rule.actor_mode):count+=1
 	return {"kind":int(rule.kind),"defeated":count,"required":int(rule.end)-int(rule.begin),"satisfied":count==int(rule.end)-int(rule.begin)}

@@ -265,6 +265,10 @@ func retain_mining_extraction(receipt: Dictionary) -> bool:
 	_state.progress=retained;_initial_progress=initial
 	return true
 
+## Cheap per-frame reads of the snapshot's cursor and dialogue flag.
+func campaign_cursor() -> int:return -1 if _state.is_empty() else int(_state.campaign_cursor)
+func dialogue_visible() -> bool:return not _state.is_empty() and _state.phase in ["return_instructions","failure_instructions"]
+
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}
 	var result:=_state.duplicate(true)

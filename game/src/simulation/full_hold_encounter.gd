@@ -801,7 +801,7 @@ func evaluate_contract_session(session: RefCounted,radio_active: bool=false,poll
 	# Contacts have already changed the encounter bodies. Retain that exact
 	# body state without inserting an extra actor/guidance update before polling.
 	var control: RefCounted=_control.fork_for_frame(false,_combat)
-	var result: Dictionary=career.evaluate_flight(control,radio_active,poll_results,periodic_poll_allowed,radio_finished,world_facts)
+	var result: Dictionary=career.evaluate_flight(control,radio_active,poll_results,periodic_poll_allowed,radio_finished,world_facts,true)
 	if result.is_empty():return fail(career.error)
 	_control=result.controller;_combat=_control.combat_owner()
 	return {"session":result.session,"opened":result.opened}
@@ -1156,6 +1156,8 @@ func _weapon_observation() -> Dictionary:
 	return result
 
 func combat_snapshot() -> Dictionary:return {} if _combat==null else _combat.snapshot()
+## Same-frame read with cached read-only actor rows; never edit it.
+func read_combat() -> Dictionary:return {} if _combat==null else _combat.read_snapshot()
 ## NPC bodies for the repair/transfusion beams (repair_beams.gd).
 func beam_bodies() -> Array:return _combat.actor_snapshots() if _combat!=null and _combat.has_method("heal_hull") else []
 ## Beam healing and draining on a private copy of the NPC owner. A drain is

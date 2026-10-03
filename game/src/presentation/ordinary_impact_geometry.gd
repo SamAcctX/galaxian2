@@ -36,7 +36,7 @@ func build(owner: RefCounted, library: RefCounted, visuals: RefCounted, bindings
 			if not _surface.prepare_model(model):resources.clear();return reject(_surface.error)
 			var sampler:=Sampler.new()
 			if not sampler.configure(model.surfaces):resources.clear();return reject(sampler.error)
-			if sampler.snapshot().range!={"start_ms":row.start_ms,"end_ms":row.end_ms}:resources.clear();return reject("Impact animation metadata changed")
+			if sampler.time_range()!={"start_ms":row.start_ms,"end_ms":row.end_ms}:resources.clear();return reject("Impact animation metadata changed")
 			samplers.append(sampler)
 		guns.append({"key":weapon.key,"slots":slots});_samplers.append(samplers)
 	resources.clear();_identity=owner.presentation_identity();_descriptor=state;_edition=library.manifest.profile.edition

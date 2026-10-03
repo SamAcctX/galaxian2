@@ -155,7 +155,7 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cat:
 		var pose:=Transform3D(Basis.from_scale(Vector3(1,1,0.0001)),Vector3.ZERO)
 		for row in state.rows:
 			if row.void_source:pose.origin=_position(row.position)+Vector3(0,0,1)
-		var animation: Dictionary=warning._sampler.snapshot().range
+		var animation: Dictionary=warning._sampler.time_range()
 		animation.time_ms=animation.start_ms;animation.playing=true
 		warning_state=identity.duplicate();warning_state.merge({"pose":pose,"scale":0.02,"visible":true,"animation":animation})
 	clear();_navigation=navigation;_art=art;_warning=warning;_warning_state=warning_state;_world.add_child(stage)

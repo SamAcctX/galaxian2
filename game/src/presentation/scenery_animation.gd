@@ -4,6 +4,7 @@ extends RefCounted
 const Keys = preload("res://src/content/scenery_animation_keys.gd")
 const Resources = preload("res://src/content/scenery_effect_resources.gd")
 const Rotation = preload("res://src/presentation/scenery_animation_rotation.gd")
+const Readonly = preload("res://src/simulation/readonly_state.gd")
 var error := ""
 var _tables: Array = []
 var _pivots: Array[Vector3] = []
@@ -39,8 +40,9 @@ func sample(time_ms: Variant, parent: Transform3D) -> Dictionary:
 	if not parent.is_finite():return reject("Scenery animation parent must be finite")
 	# Inactive effect slots keep the same retained time for many frames. Reuse
 	# that exact sample, including its first-key/rewind state, until inputs change.
-	if time_ms==_sample_time and parent==_sample_parent:return _sample_result.duplicate(true)
-	var next := _state.duplicate(true)
+	if time_ms==_sample_time and parent==_sample_parent:return _sample_result
+	# Rows are frozen and shared with forks; a sampled row is replaced, not edited.
+	var next := _state.duplicate()
 	var output := []
 	for surface in _tables.size():
 		var table: Dictionary=_tables[surface]
@@ -52,6 +54,7 @@ func sample(time_ms: Variant, parent: Transform3D) -> Dictionary:
 		var index := lower_bound(times,at)
 		# The first-record branch changes only source UV state. It leaves the
 		# geometry matrix and packed color intact, including after a rewind.
+		if index>0:next[surface]=next[surface].duplicate()
 		if index>0 and not update_row(next[surface],table.values,index,Keys.ratio(at-times[index-1],times[index]-times[index-1])):
 			return {}
 		var row: Dictionary=next[surface]
@@ -66,9 +69,10 @@ func sample(time_ms: Variant, parent: Transform3D) -> Dictionary:
 		world=multiply(world,Transform3D(Basis.IDENTITY,-_pivots[surface]))
 		if not world.is_finite():return reject("Scenery animation world transform exceeds source precision")
 		output.append({"animated":true,"pose":world,"color_byte":row.color_byte})
-	_state=next
-	_sample_time=time_ms;_sample_parent=parent;_sample_result={"surfaces":output}
-	return _sample_result.duplicate(true)
+	_state=Readonly.freeze(next)
+	# Samples are read-only; callers copy one before editing it.
+	_sample_time=time_ms;_sample_parent=parent;_sample_result=Readonly.freeze({"surfaces":output})
+	return _sample_result
 
 func update_row(row: Dictionary, values: PackedFloat32Array, index: int, weight: float) -> bool:
 	var a := (index-1)*Keys.WIDTH
@@ -93,6 +97,8 @@ func update_row(row: Dictionary, values: PackedFloat32Array, index: int, weight:
 	row.color_byte=int(color)&255
 	return true
 
+func time_range() -> Dictionary:return _range
+
 func snapshot() -> Dictionary:
 	return {} if _tables.is_empty() else {"range":_range.duplicate(),"surfaces":_state.duplicate(true)}
 
@@ -100,7 +106,7 @@ func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	# Compiled tables and pivots are private and immutable after configuration.
 	copy._tables=_tables;copy._pivots=_pivots
-	copy._state=_state.duplicate(true);copy._range=_range.duplicate()
+	copy._state=_state;copy._range=_range.duplicate()
 	copy._sample_time=_sample_time;copy._sample_parent=_sample_parent;copy._sample_result=_sample_result
 	return copy
 

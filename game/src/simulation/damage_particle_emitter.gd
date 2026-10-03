@@ -188,6 +188,18 @@ func fork_for_frame() -> RefCounted:
 
 func advance(pose: Variant,delta_ms: Variant,manager_elapsed_ms: Variant) -> Dictionary:
 	error=""
+	var staged:=fork_for_frame()
+	var result: Dictionary=staged.advance_in_frame(pose,delta_ms,manager_elapsed_ms)
+	if result.has("error"):return fail(result.error)
+	_slots=staged._slots;_random=staged._random;_cursor=staged._cursor
+	_remainder_ms=staged._remainder_ms;_dirty=staged._dirty;_force_velocity=staged._force_velocity
+	_baseline=staged._baseline;_velocity=staged._velocity
+	return result
+
+## Managers advance emitters inside their own frame copy and discard that copy
+## on failure, so this skips the emitter's private staging copy.
+func advance_in_frame(pose: Variant,delta_ms: Variant,manager_elapsed_ms: Variant) -> Dictionary:
+	error=""
 	if _preset.is_empty():return fail("Configure damage particles before advancing")
 	if not pose is Transform3D or not pose.is_finite():return fail("Damage particles require a finite source world transform")
 	for interval in [delta_ms,manager_elapsed_ms]:
@@ -196,17 +208,15 @@ func advance(pose: Variant,delta_ms: Variant,manager_elapsed_ms: Variant) -> Dic
 	# A paused native frame changes nothing. In particular, never force a velocity
 	# division by a zero manager interval after reset.
 	if delta_ms==0:return {"births":0}
-	var staged:=fork_for_frame()
-	var result: Dictionary=staged._advance(pose,single(delta_ms),single(manager_elapsed_ms))
+	var result: Dictionary=_advance(pose,single(delta_ms),single(manager_elapsed_ms))
 	if result.has("error"):return fail(result.error)
-	_slots=staged._slots;_random=staged._random;_cursor=staged._cursor
-	_remainder_ms=staged._remainder_ms;_dirty=staged._dirty;_force_velocity=staged._force_velocity
-	_baseline=staged._baseline;_velocity=staged._velocity
 	return result
 
 func _advance(pose: Transform3D,delta_ms: float,manager_elapsed_ms: float) -> Dictionary:
 	if _update_existing:
 		for index in _slots.size():
+			# Idle slots stay idle; skip the call for them.
+			if _slots[index].appearance.age_ms<0:continue
 			if not move_particle(index,delta_ms):return fail(error)
 	if _dirty:
 		_velocity=Vector3.ZERO;_baseline=pose.origin;_force_velocity=true;_dirty=false
