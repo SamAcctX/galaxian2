@@ -44,12 +44,14 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 		if item.arrays[2][3] not in [0,2]:continue
 		# The plasma collector (turret sort 35) fires nothing: no weapon model.
 		if item.arrays[2][3]==2 and item.arrays[2][5]==35:items[int(item.id)]="";continue
-		var id:=int(item.id);var mapping:=Rules.primary(bindings.mido_travel.ordinary_fitting,id,int(item.arrays[2][5]))
+		# Expansion type-25 guns are built like the type-2 spread gun.
+		var kind:=int(item.arrays[2][5]);if item.arrays[2][3]==0 and kind==25:kind=2
+		var id:=int(item.id);var mapping:=Rules.primary(bindings.mido_travel.ordinary_fitting,id,kind)
 		if item.arrays[2][3]==2 and not Turrets.declaration(id).is_empty():
 			mapping={"projectile_model_id":int(bindings.mido_travel.ordinary_fitting.primary.projectile_model_ids[id]),"impact_model_id":int(bindings.mido_travel.ordinary_fitting.primary.impact_model_ids[id])}
 		if mapping.is_empty():continue
 		items[id]=""
-		if mapping.has("thermal") and not preload("res://src/presentation/projectile_trail_geometry.gd").supported_material(bindings):items[id]="This weapon's trail atlas is unavailable"
+		if mapping.has("thermal") and not preload("res://src/presentation/projectile_trail_geometry.gd").supported_material(bindings,int(preload("res://src/content/projectile_trail_definitions.gd").trail(int(mapping.thermal.trail_id)).material_id)):items[id]="This weapon's trail atlas is unavailable"
 		var model_keys:=["projectile_model_id","impact_model_id"]
 		if mapping.has("muzzle_model_id"):model_keys.append("muzzle_model_id")
 		for key in model_keys:
@@ -60,7 +62,8 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 				if decoded.is_empty():return fail("An original weapon model could not be read: "+path)
 				var sampler:=Sampler.new()
 				var supported: bool=decoded.surfaces.all(func(surface):return Surface.supported_surface(surface)) and sampler.configure(decoded.surfaces,key=="projectile_model_id")
-				supported=supported and bindings.material_for_mesh(path,"high").get("render_type")==2
+				# Flight draws expansion shots two-sided additive (3) or alpha (1).
+				supported=supported and int(bindings.material_for_mesh(path,"high").get("render_type",-1)) in ([1,2,3] if key=="projectile_model_id" else [2])
 				resources[model]="" if supported else "This weapon's animated model is not yet supported"
 			if not resources[model].is_empty():items[id]=resources[model]
 		if item.arrays[2][3]==2:

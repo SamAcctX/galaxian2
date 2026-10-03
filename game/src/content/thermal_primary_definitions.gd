@@ -3,6 +3,8 @@ extends RefCounted
 const DISPERSION := {"steps":20,"draw_scale":0.01,"center_scale":0.005}
 
 static func primary(item_id: int, kind: int) -> Dictionary:
+	# Valkyrie's SunFire o50 (193) draws its own ribbon, preset 28.
+	if kind==3 and item_id==193:return {"trail_id":28,"camera_facing":true}
 	if kind!=3 or item_id<28 or item_id>30:return {}
 	return {"trail_id":25+item_id-28,"camera_facing":true}
 

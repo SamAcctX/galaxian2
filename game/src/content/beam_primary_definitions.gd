@@ -1,6 +1,8 @@
 extends RefCounted
 ## Endpoint primaries share normal contacts, with a separate animated beam.
-const MODELS := {9:[14229,14500],10:[14230,14503],11:[14231,14502]}
+## Supernova's M6 A4 "Raccoon" (228) is the same endpoint beam with its own
+## beam model and muzzle flash.
+const MODELS := {9:[14229,14500],10:[14230,14503],11:[14231,14502],228:[19090,14501]}
 const EMPTY_DISTANCE := 30000
 const AIM_DISTANCE := 60000
 
