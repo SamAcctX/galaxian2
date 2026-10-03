@@ -6,12 +6,15 @@ const Burst=preload("res://src/simulation/emp_detonation.gd")
 const Mounts=preload("res://src/content/weapon_mounts.gd")
 const Ownership=preload("res://src/simulation/secondary_weapons.gd")
 const Loadouts=preload("res://tests/secondary_weapons.gd")
+const TrailBody=preload("res://src/presentation/bomb_projectile_geometry.gd")
+const TrailVisuals=preload("res://src/content/visual_library.gd")
 
 func _initialize() -> void:
 	var args:=OS.get_cmdline_user_args()
 	if args.size()==3:
 		verify(args)
 		verify_area(args)
+		verify_trails(args)
 	else:check(false,"Expected content, bindings and visuals")
 	print("Area bomb components: %d checks; %d failures"%[checks,failures])
 	quit(1 if failures else 0)
@@ -105,3 +108,24 @@ func verify_effect(initial: RefCounted,resources: RefCounted,launch: Dictionary,
 	event=burst.advance(before,body.snapshot(),remaining+1,origin)
 	check(event.retired and not burst.snapshot().effect.active and event.camera.strength==0.0,"AMR animation or camera outlived the original effect")
 	check(not burst.configure(Resources.new(),int(weapon.item_id)),"Unprepared original explosion resources were accepted")
+
+## EMP and AMR bombs trail fire sprites while flying; the trail fades out
+## after the burst. The Liberator missile and Shock Blast have none.
+func verify_trails(args: PackedStringArray) -> void:
+	var lib:=Library.new();var bindings:=Bindings.new();var cat:=Catalogues.new();var visuals:=TrailVisuals.new()
+	if not lib.open(args[0]) or not bindings.open(args[1],lib.manifest) or not cat.open(lib) or not visuals.open(args[2],lib.manifest):check(false,lib.error+bindings.error+cat.error+visuals.error);return
+	check(Definitions.flight_trail(179).is_empty() and Definitions.flight_trail(226).is_empty(),"Liberator or Shock Blast gained a bomb trail")
+	for id in [41,44,46]:
+		var bomb:=Bombs.new();var body:=TrailBody.new()
+		if not bomb.configure(bindings,cat,id,[]) or not bomb.prepare_visuals(lib,bindings) or not body.build(bomb.snapshot(),lib,visuals,bindings) or body.trail==null:check(false,"Bomb %d trail unavailable: %s%s"%[id,bomb.error,body.error]);body.free();continue
+		bomb.advance(20000,[])
+		check(bomb.trigger(Transform3D.IDENTITY,1,[]).action=="launched",bomb.error)
+		for tick in 60:
+			bomb.advance(16,[]);body.commit(body.prepare(bomb.snapshot()))
+		var flying: int=body.trail.sprites
+		check(flying>=40 and body.trail.get_child(0).get_meta("source_material_id")==27250,"Bomb %d drew %d fire trail sprites in flight"%[id,flying])
+		check(bomb.trigger(Transform3D.IDENTITY,0,[]).action=="detonated",bomb.error)
+		for tick in 90:
+			bomb.advance(16,[]);body.commit(body.prepare(bomb.snapshot()))
+		check(body.trail.sprites==0,"Bomb %d still drew %d trail sprites 1.4 s after the burst"%[id,body.trail.sprites])
+		body.free()

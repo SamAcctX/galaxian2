@@ -1,5 +1,5 @@
 extends Node3D
-## Sprite trail emitted by a flying bomb (Fireworks sparks). It reuses the
+## Sprite trail emitted by a flying bomb (fire or firework sparks). It reuses the
 ## shared sprite emitter and appearance rules and advances only by the bomb
 ## owner's simulation clock (its elapsed milliseconds), never by wall time.
 ## Preparation forks the emitter; commit adopts the fork and draws it.
