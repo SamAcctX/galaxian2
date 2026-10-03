@@ -885,6 +885,8 @@ func prepare_secondaries(world: Dictionary) -> Dictionary:
 		if not gun is Dictionary or not Definitions.integer(gun.get("slot_index"),0,1020) or slots.has(gun.slot_index) or not gun.get("equipment") is Dictionary:return fail("Secondary sound lost its installed launcher")
 		if gun.has("bomb"):
 			if not gun.bomb is Dictionary or not gun.equipment.get("item_id") is int or BombAudio.declaration(gun.equipment.item_id).is_empty():return fail("Unsupported bomb sound item")
+		elif gun.has("sentry"):
+			if not gun.sentry is Dictionary or not gun.equipment.get("item_id") is int:return fail("Unsupported sentry sound item")
 		elif gun.has("mine"):
 			if not gun.mine is Dictionary or not gun.equipment.get("item_id") is int or MineAudio.declaration(gun.equipment.item_id).is_empty():return fail("Unsupported mine sound item")
 		elif not Conventional.resolved(gun.get("projectiles",{}).get("weapon",{})) or _weapon_audio.is_empty():return fail("Secondary sound lost its resolved conventional weapon")
@@ -907,10 +909,12 @@ func prepare_secondaries(world: Dictionary) -> Dictionary:
 			key+=":"+str(event.blast.projectile_id)
 		if seen.has(key):return fail("Secondary sound repeated an event in one frame")
 		seen[key]=true
+		# A sentry launcher without a catalogue launch sound places silently.
+		if gun.has("sentry") and event.audio.is_empty():continue
 		if event.action=="detonated":
 			if not event.audio.is_empty() or event.get("ammunition_consumed")!=0:return fail("Detonation replayed launch audio or consumed ammunition")
 			continue
-		var id: int=int(BombAudio.declaration(event.item_id).launch_sound) if gun.has("bomb") else (int(MineAudio.declaration(event.item_id).launch_sound) if gun.has("mine") else int(_weapon_audio.player_event_ids[event.item_id]))
+		var id: int=int(gun.audio.get("source_id",-1)) if gun.has("sentry") else int(BombAudio.declaration(event.item_id).launch_sound) if gun.has("bomb") else (int(MineAudio.declaration(event.item_id).launch_sound) if gun.has("mine") else int(_weapon_audio.player_event_ids[event.item_id]))
 		var cue: Dictionary=event.audio
 		if event.get("ammunition_consumed")!=1 or cue.size()!=3 or cue.get("source_id")!=id or cue.get("pitch_raw")!=_secondary_audio.launch_audio.pitch_raw or not cue.get("position") is Vector3 or not cue.position.is_finite():return fail("Secondary launch lost its declared sound, pitch or source position")
 		operations.append({"action":"start_spatial","source_id":id,"position":cue.position,"pitch_raw":float(cue.pitch_raw),"item_id":int(event.item_id),"secondary_slot":int(event.slot_index)})

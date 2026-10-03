@@ -5,6 +5,7 @@ const Definitions=preload("res://src/content/secondary_ownership_definitions.gd"
 const Loadout=preload("res://src/simulation/equipment_slots.gd")
 const Bomb=preload("res://src/simulation/emp_bombs.gd")
 const Mines=preload("res://src/simulation/mine_projectiles.gd")
+const Sentries=preload("res://src/simulation/sentry_guns.gd")
 const MineBursts=preload("res://src/simulation/mine_detonations.gd")
 const Detonation=preload("res://src/simulation/emp_detonation.gd")
 const Combat=preload("res://src/simulation/opening_combat_group.gd")
@@ -47,7 +48,12 @@ func configure(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,mounts: 
 		var gun:={"slot_index":index,"equipment":entry.duplicate(true),"ammunition":entry.quantity}
 		var declaration:=Bomb.Definitions.declaration(int(entry.item_id))
 		var mine_declaration:=Mines.Definitions.declaration(int(entry.item_id))
-		if not mine_declaration.is_empty():
+		if not Sentries.Definitions.declaration(int(entry.item_id)).is_empty():
+			gun.sentry=Sentries.new()
+			if not gun.sentry.configure(bindings,cat,entry.item_id,loadout.get("campaign_cursor")):return reject(gun.sentry.error)
+			var sound: Variant=bindings.weapon_parameters.audio.player_event_ids[entry.item_id] if entry.item_id<bindings.weapon_parameters.audio.player_event_ids.size() else -1
+			gun.audio={"enabled":sound is int and sound>=0,"source_id":int(sound) if sound is int else -1,"pitch_raw":float(Definitions.VALUES.launch_audio.pitch_raw)}
+		elif not mine_declaration.is_empty():
 			if not is_instance_of(mounts,load("res://src/content/weapon_mounts.gd")):return reject("Mine launchers require the ship's authored mounts")
 			gun.mount=mounts.resolve(int(checked.ship_id),1,int(entry.slot))
 			if gun.mount.is_empty():return reject(mounts.error)
@@ -157,6 +163,7 @@ func detonation_owner(slot_index: int,projectile_slot: int=-1) -> RefCounted:
 	return null
 
 static func _projectile_state(gun: Dictionary) -> Dictionary:
+	if gun.has("sentry"):return gun.sentry.snapshot()
 	if gun.has("mine"):return gun.mine.snapshot()
 	return gun.bomb.snapshot() if gun.has("bomb") else gun.projectiles.snapshot()
 
@@ -174,7 +181,10 @@ func evaluate_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted
 			var flying: bool=before.get("shot",{}).get("phase")=="flying"
 			if not flying and gun.equipment.item_id!=selected_item_id:continue
 			var event: Dictionary
-			if gun.has("mine"):
+			if gun.has("sentry"):
+				event=gun.sentry.trigger(pose,gun.ammunition,true)
+				if event.is_empty():return fail(gun.sentry.error)
+			elif gun.has("mine"):
 				event=gun.mine.trigger(pose,gun.ammunition,true)
 				if event.is_empty():return fail(gun.mine.error)
 			elif gun.has("bomb"):
@@ -220,6 +230,18 @@ func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Va
 	# Projectile wrappers update in creation order, independently of firing order.
 	for index in range(next._guns.size()-1,-1,-1):
 		var gun: Dictionary=next._guns[index]
+		if gun.has("sentry"):
+			var placed: Dictionary=gun.sentry.advance(delta_ms,next._sentry_candidates(group,ordered_actor_ids))
+			if placed.is_empty():return fail(gun.sentry.error)
+			var shots: RefCounted=gun.sentry.projectiles()
+			if shots.has_retained_projectiles():
+				var contacts: RefCounted=Contacts.new() if field!=null else NpcContacts.new()
+				var result: Dictionary=contacts.evaluate(shots,group,field,inventory) if field!=null else contacts.evaluate(shots,group,ordered_actor_ids)
+				if result.is_empty():return fail(contacts.error)
+				gun.sentry.set_projectiles(result.projectiles);group=result.combat
+				if field!=null:field=result.bodies
+			if gun.sentry.projectiles().advance(delta_ms).is_empty():return fail(gun.sentry.projectiles().error)
+			continue
 		if gun.has("mine"):
 			targets=next._targets(group,ordered_actor_ids,field,inventory,true)
 			if not next.error.is_empty():return fail(next.error)
@@ -286,6 +308,30 @@ func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Va
 		if committed.is_empty():return fail(next.error)
 		events.append(committed)
 	return {"owner":next,"combat":group,"bodies":field,"events":events,"self_hits":self_hits,"loadout":next._loadout.duplicate(true)}
+
+## Living, active hostile ships a sentry may aim at, in target order.
+func _sentry_candidates(combat: RefCounted,ordered_actor_ids: Variant) -> Array:
+	var result:=[]
+	if not ordered_actor_ids is Array:return result
+	var actors: Array=combat.snapshot().actors
+	for id in ordered_actor_ids:
+		if not id is int or id<0 or id>=actors.size():continue
+		var actor: Dictionary=actors[id]
+		if not actor.get("hostile",false) or actor.get("scenery",false) or not actor.get("active",false) or int(actor.get("vitals",{}).get("hull",0))<=0 or not actor.get("pose") is Transform3D:continue
+		var body: Variant=actor.get("body_pose",actor.pose)
+		result.append({"actor_id":id,"position":actor.pose.origin,"forward":body.basis.z if body is Transform3D else Vector3.ZERO})
+	return result
+
+## A hostile hit on a placed sentry, staged on a fork like any other frame.
+func evaluate_sentry_damage(slot_index: int,sentry_id: int,amount: int) -> Dictionary:
+	error=""
+	var next:=fork()
+	for gun in next._guns:
+		if gun.slot_index!=slot_index or not gun.has("sentry"):continue
+		var hit: Dictionary=gun.sentry.damage(sentry_id,amount)
+		if hit.is_empty():return fail(gun.sentry.error)
+		return {"owner":next,"hit":hit}
+	return fail("Sentry damage names an unavailable launcher")
 
 func evaluate_contact(slot_index: Variant,projectile_id: Variant,combat: RefCounted,ordered_actor_ids: Variant) -> Dictionary:
 	error=""
@@ -463,7 +509,8 @@ func selection_feedback(selected_item_id: int) -> Dictionary:
 		var flying: bool=state.get("shot",{}).get("phase")=="flying"
 		var wait_ms: int=maxi(0,int(state.weapon.interval_ms)-int(state.elapsed_ms)+1)
 		var action: String
-		if gun.has("mine"):action=gun.mine.trigger_action(gun.ammunition)
+		if gun.has("sentry"):action=gun.sentry.trigger_action(gun.ammunition)
+		elif gun.has("mine"):action=gun.mine.trigger_action(gun.ammunition)
 		elif gun.has("bomb"):action=gun.bomb.trigger_action(gun.ammunition)
 		else:action="launched" if gun.ammunition>0 and wait_ms==0 and state.available_slots>0 else "none"
 		var count: int=int(flying) if gun.has("bomb") else state.slots.filter(func(slot):return slot!=null).size()
@@ -516,7 +563,8 @@ func evaluate_camera(random_state: Dictionary) -> Dictionary:
 
 func discard_flying() -> void:
 	for gun in _guns:
-		if gun.has("mine"):gun.mine.discard_flying()
+		if gun.has("sentry"):gun.sentry.discard_flying()
+		elif gun.has("mine"):gun.mine.discard_flying()
 		elif gun.has("bomb"):gun.bomb.discard_flying()
 		else:gun.projectiles.discard_flying()
 
@@ -554,7 +602,8 @@ func snapshot() -> Dictionary:
 	var guns:=[]
 	for gun in _guns:
 		var row:={"slot_index":gun.slot_index,"equipment":gun.equipment.duplicate(true),"ammunition":gun.ammunition,"audio":gun.audio.duplicate()}
-		if gun.has("mine"):row.mine=gun.mine.snapshot();row.mount=gun.mount.duplicate(true)
+		if gun.has("sentry"):row.sentry=gun.sentry.snapshot()
+		elif gun.has("mine"):row.mine=gun.mine.snapshot();row.mount=gun.mount.duplicate(true)
 		elif gun.has("bomb"):row.bomb=gun.bomb.snapshot()
 		else:row.projectiles=gun.projectiles.snapshot();row.mount=gun.mount.duplicate(true)
 		if gun.has("detonation"):row.detonation=gun.detonation.snapshot()
@@ -575,7 +624,8 @@ func fork() -> RefCounted:
 	next._presentation_identity=_presentation_identity;next._detonation_events=_detonation_events.duplicate(true);next._camera_commands=_camera_commands.duplicate(true)
 	for gun in _guns:
 		var copy: Dictionary=gun.duplicate();copy.equipment=gun.equipment.duplicate(true);copy.audio=gun.audio.duplicate()
-		if gun.has("mine"):copy.mine=gun.mine.fork();copy.mount=gun.mount.duplicate(true)
+		if gun.has("sentry"):copy.sentry=gun.sentry.fork()
+		elif gun.has("mine"):copy.mine=gun.mine.fork();copy.mount=gun.mount.duplicate(true)
 		elif gun.has("bomb"):copy.bomb=gun.bomb.fork()
 		else:copy.projectiles=gun.projectiles.fork_state();copy.mount=gun.mount.duplicate(true)
 		if gun.has("detonation"):copy.detonation=gun.detonation.fork()
