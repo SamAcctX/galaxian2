@@ -220,6 +220,9 @@ func prepare_arrival() -> Dictionary:
 		"source_state":int(_rules.source_state),"world_type":int(_rules.world_type),"audio_selector":int(_rules.audio_selector)})
 	return result
 
+## Live state for an immediate field read; never keep or edit it.
+func read_state() -> Dictionary:return _state
+
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}
 	var result:=_identity.duplicate();result.merge(_state.duplicate(true))

@@ -903,12 +903,14 @@ func _valid_cargo(hold: Dictionary,station_only: bool) -> bool:
 
 func fork() -> RefCounted:
 	var result: RefCounted=get_script().new()
-	result._state=_state.duplicate(true);result._rules=_rules.duplicate(true);result._items=_items.duplicate(true);result._counts=_counts.duplicate()
+	# Rules, item rows and fitting assets are replaced, never edited, after
+	# configuration; share them. Inventory state is the fork's own copy.
+	result._state=_state.duplicate(true);result._rules=_rules;result._items=_items;result._counts=_counts.duplicate()
 	result._completion_prices=_completion_prices.duplicate()
 	result._catalogue_size=_catalogue_size
 	result._mission_cargo_id=_mission_cargo_id
 	result._recovery_cargo_ids=_recovery_cargo_ids.duplicate()
-	result._fitting_assets=_fitting_assets.duplicate(true)
+	result._fitting_assets=_fitting_assets
 	return result
 
 func _used(entries: Array) -> int:

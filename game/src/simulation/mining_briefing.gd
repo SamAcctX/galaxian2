@@ -130,6 +130,10 @@ func navigate(action: String) -> bool:
 	return true
 
 func simulation_delta_ms() -> int:return _simulation_ms
+## Live state for an immediate field read; never keep or edit it.
+func read_state() -> Dictionary:return _state
+func dialogue_visible() -> bool:return not _state.is_empty() and _state.phase in ["mining_instruction","briefing"]
+
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}
 	var result:=_state.duplicate(true)

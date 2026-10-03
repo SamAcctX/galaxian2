@@ -607,6 +607,8 @@ func _evaluate_mixed_update(player: RefCounted,pose: Variant,combat: RefCounted,
 		var gun: RefCounted=next._guns[id]
 		var player_hits:=[];var npc_hits:=[];var wingman_hits:=[];var last: Variant=null
 		var memberships: Array=_training.target_memberships[id] if staged_wingmen==null else companion_target_order(id,staged_wingmen)
+		# A gun with nothing in flight cannot touch any target this frame.
+		if not gun.has_beam() and not gun.has_retained_projectiles():memberships=[]
 		for target in memberships:
 			if target is Dictionary:
 				var contact:=npc_contacts.evaluate_wingmen_staged(gun,staged_wingmen,[int(target.index)])

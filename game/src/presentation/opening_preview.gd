@@ -662,8 +662,10 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		_save_button.visible=not _save_directory.is_empty() and session is StationSession
 		_save_button.disabled=not _can_save_station(state) or not _focused or not _launch_packet.is_empty()
 	if _load_button!=null:
-		var path:=station_save_path()
-		_load_button.visible=not path.is_empty() and (session==null or session is StationSession or not _last_game_over.is_empty())
+		# Flight hides Load; skip the save path and disk checks every frame there.
+		var offered: bool=session==null or session is StationSession or not _last_game_over.is_empty()
+		var path:=station_save_path() if offered else ""
+		_load_button.visible=not path.is_empty()
 		_load_button.disabled=path.is_empty() or not _focused or not (FileAccess.file_exists(path) or FileAccess.file_exists(path+".bak"))
 		_load_button.text="Retry saved game" if not _last_game_over.is_empty() else "Load"
 	if _retry_button!=null:_retry_button.visible=_transition_failed and session!=null

@@ -5,6 +5,7 @@ const Definitions=preload("res://src/content/free_navigation_definitions.gd")
 const ContractNavigation=preload("res://src/simulation/contract_navigation.gd")
 const Catalogues=preload("res://src/content/catalogues.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 var error:=""
 var _identity:={}
 var _systems:=[]
@@ -29,6 +30,8 @@ func configure(bindings: RefCounted,cat: RefCounted,availability: Variant) -> bo
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
 	_systems=systems;_stations=cat.tables.stations.duplicate(true)
 	_availability=availability.duplicate();_rules=rules.duplicate(true)
+	# Fixed after configuration; forks share these tables read-only.
+	for value in [_identity,_systems,_stations,_availability,_rules]:Readonly.freeze(value)
 	return true
 
 func route(from_system: int,to_system: int) -> Array:
@@ -79,8 +82,8 @@ func snapshot() -> Dictionary:
 
 func fork() -> RefCounted:
 	var copy: RefCounted=get_script().new()
-	copy._identity=_identity.duplicate();copy._systems=_systems.duplicate(true);copy._stations=_stations.duplicate(true)
-	copy._availability=_availability.duplicate();copy._rules=_rules.duplicate(true)
+	copy._identity=_identity;copy._systems=_systems;copy._stations=_stations
+	copy._availability=_availability;copy._rules=_rules
 	return copy
 
 func reject(message: String) -> bool:
