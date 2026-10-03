@@ -1,7 +1,7 @@
 extends "res://tests/secondary_weapons.gd"
 ## Supernova secondaries: cluster missiles launch a corkscrewing guided salvo
 ## for one round, the Shock Blast hits everything around the ship once, the
-## Ion Lambda Mk2 is a wider Ion Lambda, and the hangar fits all of them.
+## Ion Lambda is a manually detonated bomb, and the hangar fits all of them.
 const Mounts=preload("res://src/content/weapon_mounts.gd")
 const Fitting=preload("res://src/simulation/equipment_fitting.gd")
 const ShockBombs=preload("res://src/simulation/emp_bombs.gd")
@@ -10,7 +10,6 @@ const BurstResources=preload("res://src/content/emp_detonation_resources.gd")
 const Burst=preload("res://src/simulation/emp_detonation.gd")
 const BombBody=preload("res://src/presentation/bomb_projectile_geometry.gd")
 const VisualLibrary=preload("res://src/content/visual_library.gd")
-const RocketBody=preload("res://src/presentation/conventional_secondary_geometry.gd")
 const ADMITTED:=[214,215,216,221,226,232]
 const REFUSED:=[]
 
@@ -70,11 +69,34 @@ func verify_cluster(lib: RefCounted,bindings: RefCounted,cat: RefCounted,mounts:
 	var forward: float=moved[0].position.z-pose.origin.z
 	check(moved.size()==count and spread>300.0 and forward>1000.0,"Cluster %d salvo did not fly ahead in a spreading corkscrew (spread %.0f, ahead %.0f)"%[item,spread,forward])
 
+## Ion Lambda is a bomb (kind 34): catalogue radius per launcher, one shot in
+## flight (fire again = manual detonation), a falloff pulse, and asteroids it
+## touches break (9999) while the shot flies on.
 func verify_ion(bindings: RefCounted,cat: RefCounted) -> void:
-	var resolver:=preload("res://src/simulation/weapon_loadout.gd").new()
-	if not resolver.configure(bindings,cat,bindings.base_content_id):check(false,resolver.error);return
-	var weapon: Dictionary=resolver.resolve(221,[])
-	check(Conventional.resolved(weapon) and Conventional.ion_radius(221)==15000.0 and Conventional.ion_radius(197)==10000.0,"Ion Lambda Mk2 is not a wider Ion Lambda")
+	check(Conventional.declaration(221,34).is_empty() and Conventional.declaration(197,34).is_empty(),"Ion Lambda still flies as a conventional rocket")
+	var mk1:=ShockBombs.new();var bomb:=ShockBombs.new()
+	if not mk1.configure(bindings,cat,197,[]) or not bomb.configure(bindings,cat,221,[]):check(false,mk1.error+bomb.error);return
+	var weapon: Dictionary=bomb.snapshot().weapon
+	check(weapon.kind==34 and weapon.radius==15000 and mk1.snapshot().weapon.radius==10000,"Ion Lambda Mk2 is not a wider Ion Lambda bomb: "+str(weapon.radius))
+	var near:={"actor_id":0,"position":Vector3(0,0,3400),"active":true,"emp_immune":false}
+	var far:={"actor_id":1,"position":Vector3(0,0,30000),"active":true,"emp_immune":false}
+	var origin:=Transform3D.IDENTITY
+	bomb.advance(100000,[near,far])
+	var launch:=bomb.trigger(origin,5,[near,far])
+	check(launch.action=="launched" and launch.shot.position==Vector3(0,0,400),"Ion Lambda did not launch 400 ahead")
+	check(bomb.trigger_action(4)=="detonated","A second Ion Lambda could launch while one flies")
+	var blast:=bomb.trigger(origin,4,[near,far])
+	var hits: Array=blast.get("blast",{}).get("hits",[])
+	check(blast.action=="detonated" and blast.ammunition_consumed==0 and hits.size()==1 and hits[0].actor_id==0 and hits[0].normal_damage==int(float(weapon.damage)*0.8),"Ion Lambda manual detonation did not pulse with falloff: "+str(hits))
+	# Asteroid in the path: broken once, the shot keeps flying.
+	var rock:={"actor_id":2,"position":Vector3(0,0,2000),"active":true,"emp_immune":true,"target":{"group":"scenery","index":0},
+		"collision":{"eligible":true,"path":"bounds","center":Vector3(0,0,2000),"half_extent":2500}}
+	bomb.advance(100000,[rock])
+	launch=bomb.trigger(origin,4,[rock])
+	var passing:=bomb.advance(16,[rock])
+	var struck: Array=passing.get("blast",{}).get("hits",[])
+	check(passing.action=="none" and struck.size()==1 and struck[0].normal_damage==9999 and bomb.snapshot().shot.phase=="flying","Ion Lambda did not break the asteroid and fly on: "+str(passing))
+	check(bomb.advance(16,[rock]).get("blast",{}).get("hits",[]).is_empty(),"Ion Lambda struck the same asteroid twice")
 
 func verify_shock(lib: RefCounted,bindings: RefCounted,cat: RefCounted,mounts: RefCounted,built: RefCounted) -> void:
 	var bomb:=ShockBombs.new()
@@ -158,34 +180,51 @@ func verify_fireworks(lib: RefCounted,bindings: RefCounted,cat: RefCounted,mount
 	var burst: RefCounted=current.detonation_owner(current.snapshot().guns[0].slot_index)
 	check(burst!=null and burst.snapshot().effect.active and burst.snapshot().effect.get("scale")==0.25,"Fireworks glow did not start at quarter size")
 
-## Ion Lambda streams the bomb fire sprites (not a ribbon) while it flies; they
-## stop with the shot and have faded out shortly after it ends.
+## Ion Lambda through the owner: fire, then fire again to detonate near a real
+## ship; the ship takes damage, the antimatter burst (type 0) starts with sound
+## 2253, and the fire trail (no glow) streams in flight and fades afterwards.
 func verify_ion_trail(lib: RefCounted,bindings: RefCounted,cat: RefCounted,mounts: RefCounted,built: RefCounted,visuals: RefCounted) -> void:
 	var owner:=Ownership.new();var group:=active_group(bindings,cat,built,0)
-	if group==null or not owner.configure(bindings,cat,equipped(bindings,cat,[{"item_id":221,"slot":0,"quantity":2}]),mounts) or not owner.configure_projectile_visuals(lib,bindings):check(false,owner.error);return
+	if group==null or not owner.configure(bindings,cat,equipped(bindings,cat,[{"item_id":221,"slot":0,"quantity":2}]),mounts):check(false,owner.error);return
+	var bursts:=BurstResources.new()
+	check(bursts.configure(lib,bindings,34) and owner.configure_detonations(bursts) and owner.configure_projectile_visuals(lib,bindings),"Ion Lambda burst unavailable: "+bursts.error+owner.error)
 	var targets:=[0,1,2,3]
-	var pose:=Transform3D(Basis.IDENTITY,group.snapshot().actors[0].position+Vector3(0,0,300000))
-	var step:=owner.evaluate_advance(100000,group,targets)
+	var pose:=Transform3D(Basis.IDENTITY,group.snapshot().actors[0].position-Vector3(0,0,8000))
+	var step:=owner.evaluate_advance(100000,group,targets,pose.origin)
 	if step.is_empty():check(false,owner.error);return
 	var fired: Dictionary=step.owner.evaluate_trigger(pose,221,group,targets)
 	if fired.is_empty():check(false,step.owner.error);return
 	var current: RefCounted=fired.owner;var combat: RefCounted=fired.combat
-	var body:=RocketBody.new()
-	if not body.build(current.snapshot().guns[0],lib,visuals,bindings) or body.fire_trails.is_empty():check(false,"Ion Lambda fire trail unavailable: "+body.error);body.free();return
-	check(body.trail==null and body.fire_trails[0].get_child(0).get_meta("source_material_id")==27250,"Ion Lambda still draws a ribbon or not the fire sheet")
-	var flying:=0;var ended:=-1
-	for tick in 1000:
-		step=current.evaluate_advance(16,combat,targets)
+	var body:=BombBody.new()
+	if not body.build(current.snapshot().guns[0].bomb,lib,visuals,bindings) or body.trail==null:check(false,"Ion Lambda fire trail unavailable: "+body.error);body.free();return
+	check(body.models.size()==1 and body.trail.get_child(0).get_meta("source_material_id")==27250,"Ion Lambda draws a glow or not the fire sheet")
+	var flying:=0
+	for tick in 61:
+		step=current.evaluate_advance(16,combat,targets,pose.origin)
 		if step.is_empty():check(false,current.error);body.free();return
 		current=step.owner;combat=step.get("combat",combat)
-		var frame:=body.prepare(current.snapshot().guns[0],Transform3D.IDENTITY)
-		if frame.is_empty():check(false,body.error);body.free();return
-		body.commit(frame)
-		if tick==60:flying=body.fire_trails[0].sprites
-		var slot: Variant=current.snapshot().guns[0].projectiles.slots[0]
-		if ended<0 and (slot==null or int(slot.remaining_ms)<=0):ended=tick
-		if ended>=0 and tick==ended+1:check(body.fire_trails[0].sprites>0,"Ion Lambda fire sprites vanished when the shot ended")
-		if ended>=0 and tick>=ended+90:break
+		body.commit(body.prepare(current.snapshot().guns[0].bomb))
+		flying=body.trail.sprites
+	check(current.snapshot().guns[0].bomb.shot.get("phase")=="flying","Ion Lambda ended before the manual detonation")
+	var hull_before: int=int(combat.snapshot().actors[0].vitals.hull)
+	var manual: Dictionary=current.evaluate_trigger(pose,221,combat,targets)
+	if manual.is_empty():check(false,current.error);body.free();return
+	var events: Array=manual.events.filter(func(event):return event.action=="detonated")
+	check(events.size()==1 and not events[0].normal_hits.is_empty() and int(manual.combat.snapshot().actors[0].vitals.hull)<hull_before and manual.owner.snapshot().guns[0].ammunition==1,"Ion Lambda manual detonation did not damage the nearby ship")
+	current=manual.owner;combat=manual.combat
+	step=current.evaluate_advance(16,combat,targets,pose.origin)
+	if step.is_empty():check(false,current.error);body.free();return
+	current=step.owner;combat=step.combat
+	var burst: RefCounted=current.detonation_owner(current.snapshot().guns[0].slot_index)
+	var sounds: Array=current.snapshot().get("detonation_audio",[]).map(func(cue):return cue.source_id)
+	check(burst!=null and burst.snapshot().effect_type==0 and burst.snapshot().effect.active and sounds==[2253],"Ion Lambda burst is not the antimatter burst with sound 2253: "+str(sounds))
 	check(flying>=40,"Ion Lambda drew %d fire sprites in flight"%flying)
-	check(ended>0 and body.fire_trails[0].sprites==0,"Ion Lambda still drew %d fire sprites 1.4 s after its shot ended"%body.fire_trails[0].sprites)
+	body.commit(body.prepare(current.snapshot().guns[0].bomb))
+	check(body.trail.sprites>0,"Ion Lambda fire sprites vanished at the burst")
+	for tick in 90:
+		step=current.evaluate_advance(16,combat,targets,pose.origin)
+		if step.is_empty():check(false,current.error);body.free();return
+		current=step.owner;combat=step.get("combat",combat)
+		body.commit(body.prepare(current.snapshot().guns[0].bomb))
+	check(body.trail.sprites==0,"Ion Lambda still drew %d fire sprites 1.4 s after its burst"%body.trail.sprites)
 	body.free()

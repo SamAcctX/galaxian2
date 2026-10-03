@@ -959,8 +959,9 @@ func prepare_secondary_detonations(owner: Dictionary) -> Dictionary:
 		var id: int=declaration.burst_sound
 		# Silent bursts (Shock Blast, Fireworks) register no source.
 		if id<0:continue
-		if sources.has(id):return fail("EMP sound repeated an equipped item")
-		sources[id]={"order":(guns.size()-1-index)*(MineAudio.CAPACITY+1),"slot_index":int(gun.slot_index),"item_id":int(gun.equipment.item_id)}
+		# Ion Lambda Mk1 and Mk2 share one burst sound: queue them in wrapper order.
+		if not sources.has(id):sources[id]=[]
+		sources[id].append({"order":(guns.size()-1-index)*(MineAudio.CAPACITY+1),"slot_index":int(gun.slot_index),"item_id":int(gun.equipment.item_id)})
 	var previous:=-1
 	for cue in cues:
 		if not cue is Dictionary or cue.get("action")!="start_spatial" or not Definitions.integer(cue.get("source_id"),0,19999) or cue.get("pitch_raw")!=0.0 or not cue.get("position") is Vector3 or not cue.position.is_finite():return fail("Invalid original area burst sound cue")
@@ -973,8 +974,8 @@ func prepare_secondary_detonations(owner: Dictionary) -> Dictionary:
 			if cue.get("item_id")!=source.item_id or cue.source_id!=MineAudio.declaration(source.item_id).burst_sound or burst.get("item_id")!=source.item_id or burst.get("effect",{}).get("position")!=cue.position:return fail("Mine sound changed its original burst or accepted position")
 			order=source.order+int(cue.projectile_slot)
 		else:
-			if cue.size()!=4 or not sources.has(cue.source_id):return fail("Area burst sound lost its source")
-			source=sources[cue.source_id];order=source.order
+			if cue.size()!=4 or sources.get(cue.source_id,[]).is_empty():return fail("Area burst sound lost its source")
+			source=sources[cue.source_id].pop_front();order=source.order
 		if order<=previous:return fail("Area burst sounds changed wrapper order or repeated a cue")
 		previous=order
 		var op: Dictionary=cue.duplicate(true)

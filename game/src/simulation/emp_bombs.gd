@@ -83,11 +83,16 @@ func advance(delta_ms: Variant,targets: Variant) -> Dictionary:
 	var result:=_event();var next: Dictionary=_shot.duplicate(true)
 	if next.get("phase")=="detonated":next={}
 	elif not next.is_empty():
-		var contact:={"hit":false} if _weapon.launch_mode=="shock_blast" else contact_target(next,targets)
+		var passes: bool=_weapon.kind==int(Definitions.ION_LAMBDA.kind)
+		var contact:={"hit":false} if _weapon.launch_mode=="shock_blast" else contact_target(next,targets,passes)
 		if contact.has("error"):return fail(contact.error)
+		# Ion Lambda breaks each asteroid it touches and flies on.
+		var struck: Array=_struck_hits(next,contact.get("passed",[]))
+		if not struck.is_empty():result.blast={"base_content_id":_weapon.base_content_id,"binding_id":_weapon.binding_id,"projectile_id":next.id,"item_id":_weapon.item_id,"position":next.position,"hits":struck}
 		if contact.get("hit",false):
 			var blast:=_blast(next,targets)
 			if blast.is_empty():return {}
+			blast.hits=struck+blast.hits
 			next.phase="detonated";next.remaining_ms=int(Definitions.VALUES.detonated_lifetime)
 			result.action="detonated";result.blast=blast
 			_advance_visuals(delta_ms)
@@ -100,6 +105,7 @@ func advance(delta_ms: Variant,targets: Variant) -> Dictionary:
 		if next.remaining_ms<=0:
 			var blast:=_blast(next,targets)
 			if blast.is_empty():return {}
+			blast.hits=struck+blast.hits
 			next.phase="detonated";next.remaining_ms=int(Definitions.VALUES.detonated_lifetime)
 			result.action="detonated";result.blast=blast
 	_advance_visuals(delta_ms)
@@ -153,20 +159,35 @@ func _blast(shot: Dictionary,targets: Array) -> Dictionary:
 	if result.is_empty():return fail(operation.error)
 	return result
 
+## Asteroids an Ion Lambda shot touched this frame: each takes the scenery
+## damage once (no push) and is remembered so it is not struck again.
+func _struck_hits(shot: Dictionary,passed: Array) -> Array:
+	var hits:=[]
+	for target in passed:
+		shot.struck=shot.get("struck",[])+[target.actor_id]
+		hits.append({"actor_id":target.actor_id,"target":target.target.duplicate(),"system_damage":0,"distance":0,
+			"normal_damage":int(Definitions.ION_LAMBDA.scenery_damage),"impact_vector":Vector3.ZERO,"motion_scalar":0.0})
+	return hits
+
 ## Collision candidates are sampled before movement. A first physical contact
 ## produces one radial pulse; the same bomb cannot hit overlapping bodies twice.
-static func contact_target(shot: Dictionary,targets: Array) -> Dictionary:
+## With pass_scenery, touched asteroids are listed in "passed" instead.
+static func contact_target(shot: Dictionary,targets: Array,pass_scenery:=false) -> Dictionary:
 	var geometry:=Geometry.new()
+	var passed:=[]
 	for target in targets:
 		var shape: Dictionary=target.get("collision",{})
 		if not target.active or not shape.get("eligible",false):continue
+		var scenery: bool=target.get("target",{}).get("group")=="scenery"
+		if pass_scenery and scenery and target.actor_id in shot.get("struck",[]):continue
 		var result: Dictionary
 		if shape.get("path")=="point_geometry":result=geometry.box_geometry(shot.position,shape.center,shape.get("boxes"))
 		elif shape.get("path")=="bounds":result=geometry.bounds(shot.position,shot.velocity,shape.center,shape.get("half_extent"))
 		else:return {"error":"The bomb target has an unsupported collision provider"}
 		if result.is_empty():return {"error":geometry.error}
-		if result.hit:return {"hit":true,"actor_id":target.actor_id}
-	return {"hit":false}
+		if result.hit and pass_scenery and scenery:passed.append(target);continue
+		if result.hit:return {"hit":true,"actor_id":target.actor_id,"passed":passed}
+	return {"hit":false,"passed":passed}
 
 ## Own-ship consequences use the effect wrapper's cached position. Its caller
 ## applies damage through the player owner only at the hardest difficulty.

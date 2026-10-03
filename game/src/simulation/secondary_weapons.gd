@@ -302,11 +302,12 @@ func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Va
 				var command: Dictionary=burst.camera.duplicate(true)
 				command.slot_index=gun.slot_index;command.item_id=gun.equipment.item_id
 				next._camera_commands.append(command)
-		if event.action=="none":continue
+		# A flying Ion Lambda can break asteroids without bursting (hits, no action).
+		if event.action=="none" and event.blast.get("hits",[]).is_empty():continue
 		if field!=null and field==bodies and _changes_scenery(event):field=bodies.fork_for_frame()
 		var committed: Dictionary=next._apply_event(gun,event,group,Vector3.ZERO,field)
 		if committed.is_empty():return fail(next.error)
-		events.append(committed)
+		if event.action!="none":events.append(committed)
 	return {"owner":next,"combat":group,"bodies":field,"events":events,"self_hits":self_hits,"loadout":next._loadout.duplicate(true)}
 
 ## Living, active hostile ships a sentry may aim at, in target order.
@@ -406,7 +407,7 @@ func _apply_event(gun: Dictionary,event: Dictionary,combat: RefCounted,origin: V
 			if slot!=null:_loadout.equipment_ids.append(slot.item_id)
 		if gun.has("detonation") and not gun.detonation.begin_projectile(event.shot):return fail(gun.detonation.error)
 		result.audio=Audio.cue(gun.audio,origin)
-	elif event.action=="detonated":
+	elif event.action=="detonated" or not event.get("blast",{}).get("hits",[]).is_empty():
 		result.normal_hits=[]
 		for hit in event.blast.hits:
 			if hit.has("normal_damage"):

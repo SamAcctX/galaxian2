@@ -24,10 +24,11 @@ func configure(library: RefCounted, bindings: RefCounted, kind:=6) -> bool:
 		return reject("EMP detonation requires supported secondary content")
 	if not Library.valid_hash(bindings.base_content_id) or not Library.valid_hash(bindings.binding_id) or library.manifest.get("content_id") != bindings.base_content_id:
 		return reject("EMP detonation resources belong to another content identity")
-	if kind==7:
+	# Antimatter (7) and Ion Lambda (34) share the type-0 burst.
+	if kind==7 or kind==int(Bombs.ION_LAMBDA.kind):
 		var resources:=TypeZero.new()
 		if not resources.configure(library,bindings):return reject(resources.error)
-		_state=resources.snapshot();_state.kind=7;_state.effect_type=0
+		_state=resources.snapshot();_state.kind=kind;_state.effect_type=0
 		return true
 	if kind==int(Bombs.SHOCK.kind):return _configure_shock(library,bindings)
 	if kind==int(Bombs.FIREWORKS.family):return _configure_glow(library,bindings,kind,int(Bombs.FIREWORKS.burst_model_id),float(Bombs.FIREWORKS.burst_scale))

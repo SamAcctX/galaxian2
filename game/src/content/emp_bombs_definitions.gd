@@ -42,9 +42,13 @@ const ROCKET_TRAIL = {"preset_id":12,"material_id":27250,"flags":0x02000021,"cap
 ## Fireworks uses system 47: the same settings with the firework sparks sheet.
 const FIREWORKS_TRAIL = {"preset_id":47,"material_id":27321}
 
-## The Ion Lambda launchers (197 Mk1, 221 Mk2) are bomb launchers in the
-## original too and trail the same fire sprites while their shot flies.
+## The Ion Lambda launchers (197 Mk1, 221 Mk2) are bombs (kind 34): one shot
+## in flight, manual detonation, a body without a glow, the same fire trail,
+## and the antimatter burst (type 0) with sound 2253 for both. Unlike other
+## bombs, touching an asteroid breaks it (9999) and the shot flies on; every
+## gas cloud its pulse reaches explodes.
 const ION_LAMBDA_ITEMS:=[197,221]
+const ION_LAMBDA={"kind":34,"model_id":14247,"launch_sound":2254,"burst_sound":2253,"scenery_damage":9999}
 
 ## The sprite trail an area bomb emits while flying (empty when it has none).
 ## The Liberator missile (179) never enables its trail; the Shock Blast's
@@ -70,6 +74,9 @@ static func declaration(item_id: int) -> Dictionary:
 	if item_id==int(FIREWORKS.item_id):
 		return {"kind":7,"family":int(FIREWORKS.family),"model_id":int(FIREWORKS.model_id),"attachment_id":-1,"effect_type":7,
 			"launch_sound":int(FIREWORKS.launch_sound),"burst_sound":-1}
+	if item_id in ION_LAMBDA_ITEMS:
+		return {"kind":34,"model_id":int(ION_LAMBDA.model_id),"attachment_id":-1,"effect_type":0,
+			"launch_sound":int(ION_LAMBDA.launch_sound),"burst_sound":int(ION_LAMBDA.burst_sound)}
 	if item_id not in [44,45,46]:return {}
 	return {"kind":7,"model_id":14682 if item_id==46 else 14680,
 		"attachment_id":14683 if item_id==46 else 14681,"effect_type":0,

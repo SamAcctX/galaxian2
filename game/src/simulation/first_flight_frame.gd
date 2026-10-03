@@ -27,11 +27,10 @@ const Detail=preload("res://src/presentation/ship_detail_group.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
 const Cargo=preload("res://src/simulation/flight_cargo.gd")
 const Gas=preload("res://src/simulation/gas_clouds.gd")
-const Conventional=preload("res://src/content/conventional_secondary_definitions.gd")
+const Bombs=preload("res://src/content/emp_bombs_definitions.gd")
 const GAS_FILTER_SORT:=33
 const GAS_COLLECTOR_SORT:=35
 ## An Ion Lambda bursts this close to a cloud centre (assumption: its hit body).
-const GAS_HIT_RADIUS:=1500.0
 const Tractor=preload("res://src/simulation/tractor_recovery.gd")
 const Aim=preload("res://src/simulation/opening_aim.gd")
 const Targeting=preload("res://src/simulation/mining_targeting.gd")
@@ -211,7 +210,6 @@ var _gas_ionized:=false
 ## clouds and sparks, the fitted collector and the live Ion Lambda shots.
 var _gas:={}
 var _gas_collector:={}
-var _ion_shots:={}
 ## 105: the player's route toward the sun (N3); its end point is set from
 ## where the flight starts.
 var _story_route:={}
@@ -597,7 +595,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	_gate_animation=gate_animation;_gate_transit=gate_transit;_gate_destinations=gate_destinations
 	_system_navigation=system_navigation;_navigation_destinations=navigation_destinations
 	_drive=drive;_drive_arrival=null
-	_pending_destination=int(entry.get("navigation_destination_id",-1));_navigation_applied=false;_queued_drive=false;_story_jump=-2;_story_locked=false;_cutscene={};_action_marks={};_story_cloaks={};_forced_cloaks={};_countdown_end=-1;_gas_ionized=false;_ion_shots={};_line_marks={"started":{},"finished":{}}
+	_pending_destination=int(entry.get("navigation_destination_id",-1));_navigation_applied=false;_queued_drive=false;_story_jump=-2;_story_locked=false;_cutscene={};_action_marks={};_story_cloaks={};_forced_cloaks={};_countdown_end=-1;_gas_ionized=false;_line_marks={"started":{},"finished":{}}
 	# A story waiting in another orbit (89: Naneroh) takes the ship there at once.
 	var move: Dictionary=load("res://src/content/valkyrie_campaign_definitions.gd").story_move(int(entry.get("campaign_cursor",-1)))
 	# "launch" (126) arrives the same way: in flight at the story's station.
@@ -1393,28 +1391,18 @@ func _gas_clouds(bindings: RefCounted,catalogues: RefCounted,entry: Dictionary,v
 	var state: Dictionary=Gas.spawn(catalogues,int(catalogues.tables.stations[station].system_id),hash([station,int(entry.get("unix_seconds",0))]),int(plan.get("extra",0)),plan.get("first_position"))
 	return state if not state.get("clouds",[]).is_empty() else {}
 
-## One flight step of the gas clouds: Ion Lambda shots that ended (a hit or
-## the end of their flight) ionize the clouds in their blast; sparks move and
-## are taken into the hold in turret view (1 plasma each, lost when it is full).
+## One flight step of the gas clouds: every gas cloud an Ion Lambda burst
+## reaches (its catalogue radius) explodes; sparks move and are taken into the
+## hold in turret view (1 plasma each, lost when it is full).
 func _advance_gas(delta_ms: int,turret_active: bool) -> bool:
-	var live:={}
-	var secondaries: Dictionary=_encounter.snapshot().get("secondaries",{}) if _encounter!=null else {}
-	for gun in secondaries.get("guns",[]):
-		var item:=int(gun.get("equipment",{}).get("item_id",-1))
-		if Conventional.ion_radius(item)<=0.0:continue
-		for slot in gun.get("projectiles",{}).get("slots",[]):
-			# Keyed by launcher and shot so a Mk1 and a Mk2 never share a handle.
-			if slot is Dictionary and int(slot.get("remaining_ms",0))>0:live[Vector2i(item,int(slot.id))]=Vector3(slot.position)
-	# A shot bursts on reaching a cloud (the cloud is its target body) or where
-	# it ends; a burst shot is kept as null so it cannot burst again.
-	for id in live:
-		if _ion_shots.has(id) and _ion_shots[id]==null:live[id]=null;continue
-		if _gas.clouds.any(func(cloud):return not cloud.ionized and Vector3(cloud.position).distance_to(live[id])<=GAS_HIT_RADIUS):
-			_gas=Gas.ionize(_gas,live[id],Conventional.ion_radius(id.x),hash([id,_world_elapsed_ms]));live[id]=null
-	for id in _ion_shots:
-		if not live.has(id) and _ion_shots[id]!=null:_gas=Gas.ionize(_gas,Vector3(_ion_shots[id]),Conventional.ion_radius(id.x),hash([id,_world_elapsed_ms]))
+	var world: Dictionary=_encounter.snapshot() if _encounter!=null else {}
+	var radii:={}
+	for gun in world.get("secondaries",{}).get("guns",[]):
+		if int(gun.get("equipment",{}).get("item_id",-1)) in Bombs.ION_LAMBDA_ITEMS and gun.has("bomb"):radii[int(gun.slot_index)]=float(gun.bomb.weapon.radius)
+	for event in world.get("secondary_events",[]):
+		if event.get("action")!="detonated" or not radii.has(int(event.get("slot_index",-1))):continue
+		_gas=Gas.ionize(_gas,Vector3(event.blast.position),radii[int(event.slot_index)],hash([event.slot_index,event.blast.projectile_id,_world_elapsed_ms]))
 	_gas_ionized=_gas_ionized or _gas.get("ionized",false)
-	_ion_shots=live
 	var free_space:=int(_cargo.snapshot().get("free_space",0)) if _cargo!=null else 0
 	# Assumption (gaps file): the collector is not a turret-view device yet, so
 	# with one fitted sparks are drawn in along the ship's nose and taken near
@@ -3213,7 +3201,7 @@ func fork_for_frame() -> RefCounted:
 	if _gate_transit!=null:copy._gate_transit=_gate_transit.fork_for_frame()
 	copy._gate_destinations=_gate_destinations.duplicate();copy._gate_cruise_speed=_gate_cruise_speed
 	copy._system_navigation=_system_navigation;copy._navigation_destinations=_navigation_destinations
-	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied;copy._queued_drive=_queued_drive;copy._story_jump=_story_jump;copy._story_locked=_story_locked;copy._cutscene=_cutscene.duplicate();copy._story_dock=_story_dock.duplicate(true);copy._action_marks=_action_marks.duplicate();copy._line_marks=_line_marks.duplicate(true);copy._gamma_rate=_gamma_rate;copy._instability=_instability;copy._volatile_steer=_volatile_steer;copy._story_cloaks=_story_cloaks.duplicate(true);copy._forced_cloaks=_forced_cloaks.duplicate();copy._countdown_end=_countdown_end;copy._gas_ionized=_gas_ionized;copy._gas=_gas;copy._gas_collector=_gas_collector;copy._ion_shots=_ion_shots.duplicate();copy._story_hack=_story_hack;copy._story_route=_story_route.duplicate()
+	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied;copy._queued_drive=_queued_drive;copy._story_jump=_story_jump;copy._story_locked=_story_locked;copy._cutscene=_cutscene.duplicate();copy._story_dock=_story_dock.duplicate(true);copy._action_marks=_action_marks.duplicate();copy._line_marks=_line_marks.duplicate(true);copy._gamma_rate=_gamma_rate;copy._instability=_instability;copy._volatile_steer=_volatile_steer;copy._story_cloaks=_story_cloaks.duplicate(true);copy._forced_cloaks=_forced_cloaks.duplicate();copy._countdown_end=_countdown_end;copy._gas_ionized=_gas_ionized;copy._gas=_gas;copy._gas_collector=_gas_collector;copy._story_hack=_story_hack;copy._story_route=_story_route.duplicate()
 	copy._briefing=_briefing.fork();copy._player=_player.fork_for_frame();copy._scenery=_scenery.fork_for_frame()
 	copy._camera=_camera.fork_for_frame();copy._pilot=_pilot.fork_for_frame();copy._detail=_detail.fork_for_frame()
 	copy._collision_enabled=_collision_enabled
