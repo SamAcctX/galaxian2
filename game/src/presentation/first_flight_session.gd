@@ -628,7 +628,7 @@ func present_current() -> bool:
 	return scene!=null and scene.present(_world,false,_presentation_ms)
 
 func set_pause(reason: String, paused: bool, now_microseconds: int) -> bool:
-	if _clock==null or reason not in ["user","focus","hidden","transition","cloak_notice","map","secondary_menu","flight_menu"] or now_microseconds<0:return reject("Invalid mining pause")
+	if _clock==null or reason not in ["user","focus","hidden","transition","cloak_notice","hint","map","secondary_menu","flight_menu"] or now_microseconds<0:return reject("Invalid mining pause")
 	if _pauses.has(reason)==paused:return true
 	if not clear_flight_input():return false
 	if not _clock.rebase(now_microseconds):return reject(_clock.error)

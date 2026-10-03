@@ -15,13 +15,15 @@ const PHASES={2:"ready_to_launch",4:"ready_to_launch",6:"station_equipment_requi
 const EXTRA_KEYS=["rescue_disposition","equipment_conversation","equipment_acknowledged","training_return","training_return_acknowledged","station_reloaded","local_conversation","local_conversation_acknowledged","contract_conversation","contract_conversation_acknowledged","convoy_arrival","alioth_conversation_acknowledged"]
 const INVENTORY_BASE=["loadout","stock","cargo","cargo_cache_stale","credit_delta","transactions"]
 const PROGRESS_KEYS=["campaign_cursor","rank","rank_score","player_kills","pirate_kills","other_score","reputation","debris_destroyed","capital_ship_kills","mining_failure_hint_seen"]
-const OPTIONAL_PROGRESS_KEYS=["asteroids_destroyed","mined_ore_tons","mined_cores","mined_ore_types_mask","mined_core_types_mask","nuclear_bomb_detonations","purchased_booze_quantity","booze_types_mask","story_stations_mask","story_counter","wanted","nag_heard"]
+const OPTIONAL_PROGRESS_KEYS=["asteroids_destroyed","mined_ore_tons","mined_cores","mined_ore_types_mask","mined_core_types_mask","nuclear_bomb_detonations","purchased_booze_quantity","booze_types_mask","story_stations_mask","story_counter","wanted","nag_heard","hints_seen"]
 ## Lifetime counters carried unchanged through every flight and save. The
 ## story pair holds an expansion mission's cleared stations and its counter.
-const LIFETIME_KEYS=["mined_ore_tons","mined_cores","mined_ore_types_mask","mined_core_types_mask","nuclear_bomb_detonations","purchased_booze_quantity","booze_types_mask","story_stations_mask","story_counter","wanted","nag_heard"]
+const LIFETIME_KEYS=["mined_ore_tons","mined_cores","mined_ore_types_mask","mined_core_types_mask","nuclear_bomb_detonations","purchased_booze_quantity","booze_types_mask","story_stations_mask","story_counter","wanted","nag_heard","hints_seen"]
 ## "wanted" is the Most Wanted board state (wanted_board.gd), not a counter;
-## "nag_heard" is the stage (start cursor) of the last Carla nag call heard.
+## "nag_heard" is the stage (start cursor) of the last Carla nag call heard;
+## "hints_seen" lists the one-time hint windows already shown (flight_hints.gd).
 static func valid_lifetime(key: String,value: Variant) -> bool:
+	if key=="hints_seen":return preload("res://src/simulation/flight_hints.gd").valid_seen(value)
 	if key=="wanted":return value is Dictionary and value.get("entries") is Array and value.entries.size()<=64 and value.get("bounties") is Array and value.bounties.size()==4
 	return Numbers.integer(value,0,counter_maximum(key))
 static func counter_maximum(key: String) -> int:

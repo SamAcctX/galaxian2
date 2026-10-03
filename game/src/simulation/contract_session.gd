@@ -196,6 +196,16 @@ func complete_story_wait(bindings: RefCounted,story_mission: Dictionary) -> bool
 func retain_mining_hint(seen: bool) -> void:
 	_state.progress.mining_failure_hint_seen=seen
 
+## Adds hint windows the player has seen to the career (saved progress "hints_seen").
+func record_hints(seen: Array) -> bool:
+	error=""
+	if _state.is_empty() or not _state.get("progress") is Dictionary:return reject("Hints require a station career")
+	var merged: Array=preload("res://src/simulation/flight_hints.gd").merge_seen(_state.progress.get("hints_seen",[]),seen)
+	if merged.is_empty() and seen.is_empty():return true
+	if merged.is_empty():return reject("Hint history is invalid")
+	_state.progress.hints_seen=merged
+	return true
+
 func register_offer(offer_id: int,offer: RefCounted) -> bool:
 	error=""
 	if not _flight.is_empty():return reject("Retain the current flight before changing lounge offers")

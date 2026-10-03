@@ -70,6 +70,14 @@ func present_message(library: RefCounted,bindings: RefCounted,visuals: RefCounte
 	_state={"text":_text.text,"text_ids":[text_id]}
 	visible=true;_relayout();return true
 
+## A one-button message with text already resolved (e.g. key labels filled in).
+func present_text(library: RefCounted,bindings: RefCounted,visuals: RefCounted,text: String,text_id: int) -> bool:
+	if text.is_empty() or library.strings.size()<=130 or not _prepare_art(library,bindings,visuals):return reject("Message text or artwork is unavailable")
+	_accept_result=1;_map_result=1
+	_text.text=text;_yes.text=library.strings[130];_no.hide()
+	_state={"text":text,"text_ids":[text_id]}
+	visible=true;_relayout();return true
+
 func _prepare_art(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> bool:
 	var identity:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language}
 	if _art==null or _art.identity!=identity:

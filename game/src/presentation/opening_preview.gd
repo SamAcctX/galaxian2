@@ -36,6 +36,7 @@ const MissionsPanel = preload("res://src/presentation/missions_panel.gd")
 const MISSIONS_FIRST_CURSOR:=9
 const MedalNoticePanel = preload("res://src/presentation/medal_notice_panel.gd")
 const GateConfirmationPanel = preload("res://src/presentation/gate_confirmation_panel.gd")
+const FlightHints=preload("res://src/simulation/flight_hints.gd")
 const LocationCache = preload("res://src/simulation/lounge_cache.gd")
 const StationGeneration = preload("res://src/content/station_generation_definitions.gd")
 const StationArchive=preload("res://src/simulation/station_archive.gd")
@@ -92,6 +93,8 @@ var _boost_button: Button
 var _cloak_charge: Control
 var _hacking: Control
 var _cloak_dialog: Control
+var _hint_dialog: Control
+var _hints:=FlightHints.new()
 var _cloak_generation:=0
 var _cloak_failure_serial:=0
 var map_panel: Control
@@ -241,6 +244,9 @@ func _ready() -> void:
 	_hacking.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_hacking.turn_requested.connect(hack_press)
 	_cloak_dialog.choice_requested.connect(func(_choice):_close_cloak_notice())
+	_hint_dialog=GateConfirmationPanel.new();host.add_child(_hint_dialog)
+	_hint_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_hint_dialog.choice_requested.connect(func(_choice):_close_flight_hint())
 	_launch_dialog=GateConfirmationPanel.new();host.add_child(_launch_dialog)
 	_launch_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_launch_dialog.choice_requested.connect(choose_departure)
@@ -304,8 +310,30 @@ func _close_cloak_notice() -> void:
 	if not session.set_pause("cloak_notice",false,Time.get_ticks_usec()):status.text=session.error;return
 	_cloak_dialog.clear();clear_input();present_session()
 
+## One-time hint windows (flight_hints.gd): pause the flight until confirmed.
+func _sync_flight_hints(flight: Dictionary) -> void:
+	if _hint_dialog==null:return
+	if not session is FirstFlightSession:
+		if _hint_dialog.visible:_hint_dialog.clear()
+		return
+	_hint_dialog.set_mobile_layout(_mobile_layout)
+	_hint_dialog.set_active(_focused and is_visible_in_tree() and not _user_paused)
+	if _hint_dialog.visible or _cloak_dialog.visible or flight.is_empty() or session.status!="running" or session.is_paused() or not session.flight_hud_visible(flight):return
+	var hint: Dictionary=_hints.next_hint(FlightHints.flight_facts(flight,_hacking!=null and _hacking.visible))
+	if hint.is_empty():return
+	var text:=FlightHints.text(library,bindings,int(hint.text_id),touch_actions_enabled())
+	if text.is_empty() or not _hint_dialog.present_text(library,bindings,visuals,text,int(hint.text_id)):return
+	if not session.set_pause("hint",true,Time.get_ticks_usec()):_hint_dialog.clear();status.text=session.error;return
+	clear_input()
+
+func _close_flight_hint() -> void:
+	if not _hint_dialog.visible:return
+	if session is FirstFlightSession and not session.set_pause("hint",false,Time.get_ticks_usec()):status.text=session.error;return
+	_hint_dialog.clear();clear_input();present_session()
+
 func _sync_booster_indicator(flight: Dictionary={}) -> void:
 	_sync_cloak_ui(flight)
+	_sync_flight_hints(flight)
 	if _boost_button==null:return
 	var state: Dictionary=flight.get("booster",{}) if session is FirstFlightSession else session.booster_state() if session is MissionSession else {}
 	_boost_button.visible=state.get("available",false)
@@ -351,6 +379,9 @@ func bank_career_stats(arrived:=false) -> void:
 	if cargo is Dictionary and cargo.get("capacity") is int and cargo.get("used") is int:observed.max_free_cargo=maxi(0,cargo.capacity-cargo.used)
 	if arrived and _last_flight_hull_percent>=0:observed.min_arrival_hull_percent=_last_flight_hull_percent
 	if session._world.record_stats(observed):_career_play_ms-=int(_career_play_ms);_career_cloak_ms-=int(_career_cloak_ms)
+	if not _hints.pending().is_empty():
+		if session._world.record_hints(_hints.pending()):_hints.banked()
+		else:status.text=session._world.error
 	# Add-on medals: flight streaks latched since the last docking, plus the
 	# docked ship's cargo capacity. Docking resets the streaks.
 	var elite: Array=_elite_tracker.take_reached()
@@ -428,6 +459,8 @@ func load_station(now_microseconds: int=-1) -> bool:
 func reset() -> void:
 	if lounge_panel!=null:lounge_panel.clear()
 	if _cloak_dialog!=null:_cloak_dialog.clear()
+	if _hint_dialog!=null:_hint_dialog.clear()
+	_hints.reset()
 	_cloak_generation=0;_cloak_failure_serial=0
 	cancel_departure()
 	if map_panel!=null:map_panel.clear()
@@ -718,6 +751,10 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _hint_dialog!=null and _hint_dialog.visible:
+		_controls.discard_modal_event(event)
+		if _focused and is_visible_in_tree():_hint_dialog.handle_event(event)
+		get_viewport().set_input_as_handled();return
 	if _cloak_dialog.visible:
 		_controls.discard_modal_event(event)
 		if _focused and is_visible_in_tree():_cloak_dialog.handle_event(event)

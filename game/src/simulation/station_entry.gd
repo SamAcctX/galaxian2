@@ -944,6 +944,12 @@ func acknowledge_medal_notice() -> bool:
 	if not candidate.acknowledge_medal_notice():return fail(candidate.error)
 	_contracts=candidate
 	return true
+func record_hints(seen: Array) -> bool:
+	if _contracts==null:return false
+	var candidate: RefCounted=_contracts.fork()
+	if not candidate.record_hints(seen):return fail(candidate.error)
+	_contracts=candidate;_state.progress=_contracts.snapshot().progress.duplicate(true)
+	return true
 func record_stats(observed: Dictionary) -> bool:
 	if _contracts==null:return false
 	var candidate: RefCounted=_contracts.fork()
