@@ -147,8 +147,12 @@ func _sample_ships(cat: RefCounted) -> Array:
 		for extra in won.ships:
 			if _draw(int(won.draw_bound))==0:result.append(_ship_offer(cat,int(extra[0]),int(extra[1])))
 	if _context.supernova_owned:
-		for extra in rules.owned_supernova_extras:
+		var ending: Dictionary=ValkyrieWorlds.SUPERNOVA_END_SHIPS
+		for index in rules.owned_supernova_extras.size():
+			var extra: Dictionary=rules.owned_supernova_extras[index]
 			if _faction==int(extra.faction) and _draw(int(extra.draw_bound))==0:result.append(_ship_offer(cat,int(extra.ship_id),int(extra.faction_id)))
+			if index==0 and int(_context.station_id)==int(ending.station_id) and int(_context.campaign_cursor)>int(ending.after_cursor):
+				for ship in ending.ships:result.append(_ship_offer(cat,int(ship[0]),int(ship[1])))
 	var special: Dictionary=rules.system_extras
 	if _system==int(special.system_id):
 		for extra in special.ships:

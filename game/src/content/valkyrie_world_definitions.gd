@@ -130,6 +130,12 @@ static func gamma_rate(station_id: int,cursor: int) -> float:
 ## sell the S'Kanarr (39) and ship 41, each on a 1-in-2 draw.
 const WON_SHIPS:={"after_cursor":83,"faction":1,"draw_bound":2,"ships":[[39,1],[41,1]]}
 
+## After the Supernova ending (cursor above 158) station 120 always sells
+## ship 49, listed after the first owned-Supernova extra (verified
+## Generator::getShipBuyList). Ship 44 joins it there only with every medal
+## earned; that medal check is not wired to the shop yet (gap).
+const SUPERNOVA_END_SHIPS:={"station_id":120,"after_cursor":158,"ships":[[49,1]]}
+
 static func stock_station(bindings: RefCounted,station_id: int) -> bool:
 	return load("res://src/content/ordinary_world_definitions.gd").location(bindings,station_id).get("expansion",false)
 
