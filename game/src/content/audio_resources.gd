@@ -152,7 +152,9 @@ func configure_station_equipment(library: RefCounted, bindings: RefCounted) -> b
 
 func prepare_engine(id: int, event: Dictionary) -> Dictionary:
 	var program:=EngineParameters.read_program(event)
-	if program.is_empty() or event.properties.mode!=0x280010 or event.properties.doppler!=0 or event.properties.max_playbacks!=1 or event.properties.flags!=0:return unavailable(id,"This engine needs additional spatial or instance behavior")
+	# Expansion engines carry flag 0x80000 and a slight doppler; both are ignored,
+	# as for the other engine loops (assumption).
+	if program.is_empty() or event.properties.mode!=0x280010 or not Definitions.number(event.properties.doppler,0,0.05) or event.properties.max_playbacks!=1 or int(event.properties.flags) not in [0,0x80000]:return unavailable(id,"This engine needs additional spatial or instance behavior")
 	var definition:=cached_playlist(int(program.sound_definition),true)
 	if definition.is_empty():return {}
 	if definition.has("unsupported"):return unavailable(id,definition.unsupported)

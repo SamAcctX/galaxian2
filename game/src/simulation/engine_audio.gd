@@ -51,8 +51,14 @@ static func read_program(event: Variant) -> Dictionary:
 	if not Numbers.integer(event.get("id"),0,19999):return {}
 	if event.parameters.size()!=3 or event.layers.size()!=1:return {}
 	var names:=["Vertical","Horizontal","load"]
+	# Expansion engines list the same three parameters in another order; the
+	# envelopes are read by name into the base order.
+	var order:=[]
+	for p in event.parameters:order.append(p.get("name","") if p is Dictionary else "")
 	for i in 3:
-		var p: Variant=event.parameters[i]
+		var at:=order.find(names[i])
+		if at<0:return {}
+		var p: Variant=event.parameters[at]
 		if not fields_match(p,{"name":names[i],"flags":3 if i==0 else 2,"velocity":0,"min":0,"max":1,"seek_speed":0,"sustain_points":[],"envelopes":1}):return {}
 	var layer: Variant=event.layers[0]
 	if not fields_match(layer,{"flags":2,"priority":65535,"parameter":0}) or not layer.get("sounds") is Array or layer.sounds.size()!=1 or not layer.get("envelopes") is Array or layer.envelopes.size()!=3:return {}
@@ -63,8 +69,9 @@ static func read_program(event: Variant) -> Dictionary:
 	for envelope in layer.envelopes:
 		if not Envelopes.supported(envelope,3):return {}
 		var target: String=Envelopes.TARGETS[int(envelope.flags)]
-		if targets.has(target) or parameters.has(int(envelope.parameter_index)):return {}
-		targets[target]=envelope.duplicate(true);parameters[int(envelope.parameter_index)]=true
+		var index:=names.find(order[int(envelope.parameter_index)])
+		if targets.has(target) or parameters.has(index):return {}
+		targets[target]=envelope.duplicate(true);targets[target].parameter_index=index;parameters[index]=true
 	return {"source_id":int(event.id),"sound_definition":int(sound.sound_def),"sound_volume":float(sound.volume),"envelopes":targets,"parameter_count":3}
 
 static func fields_match(data: Variant, expected: Dictionary) -> bool:
