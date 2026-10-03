@@ -28,6 +28,7 @@ func verify(args: PackedStringArray) -> void:
 	check(document.version==8 and document.station.campaign_cursor==32 and document.inventory.loadout.station_id==98,"Use the actually earned paid Alioth32 source/blueprint fixture")
 	var career: RefCounted=station.contract_owner()
 	var before: Dictionary=career.snapshot()
+	var saved_before: Dictionary=archive.capture(station,bindings)
 	check(before.void_source.eligible_selection_count==0 and before.void_source.source_station_id==91 and before.blueprints.entries.size()==25,"The paid result changed source or blueprint history")
 	var random: Dictionary=before.lounges.random
 	var unchanged: RefCounted=career.fork()
@@ -40,7 +41,7 @@ func verify(args: PackedStringArray) -> void:
 	check(observed.lounges.current_station_id==95 and observed.lounges.random==random,"A retained location changed the stream without a reroll")
 	check(observed.blueprints==before.blueprints and observed.progress==before.progress and observed.credits==before.credits and observed.mission==before.mission,"Location selection changed blueprints, earned progress, wallet or accepted job")
 	check(selected.select_location(bindings,cat,library,95,SETTINGS,random,1789100846) and selected.snapshot()==observed,"A repeated arrival proposal counted the same location again")
-	check(career.snapshot()==before and archive.capture(station,bindings)==document,"Detached selection changed the parent or saved station")
+	check(career.snapshot()==before and not saved_before.is_empty() and archive.capture(station,bindings)==saved_before,"Detached selection changed the parent or saved station")
 	for target in [-1,999]:
 		check(not selected.select_location(bindings,cat,library,target,SETTINGS,random,1789100846) and selected.snapshot()==observed,"A failed destination committed its source or location")
 	check(not selected.select_location(bindings,cat,library,98,SETTINGS,{"state":-1},1789100846) and selected.snapshot()==observed,"A failed random stream changed the source transaction")
@@ -55,3 +56,4 @@ func verify(args: PackedStringArray) -> void:
 func check(value: bool,message: String) -> void:
 	checks+=1
 	if not value:failures+=1;push_error(message)
+
