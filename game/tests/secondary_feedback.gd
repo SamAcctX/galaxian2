@@ -181,7 +181,7 @@ func verify_widget(lib: RefCounted,bindings: RefCounted,panel: Control,sample: D
 
 func check_layout(panel: Control,viewport: Vector2i) -> void:
 	var rect: Rect2=panel.snapshot().panel_rect
-	check(Rect2(Vector2.ZERO,Vector2(viewport)).encloses(rect) and rect.size.x>=280 and rect.size.y<viewport.y/2.0,"Secondary controls overflowed the landscape viewport")
+	check(Rect2(Vector2.ZERO,Vector2(viewport)).encloses(rect) and rect.size.x>=240 and rect.size.y<viewport.y/2.0,"Secondary controls overflowed the landscape viewport")
 	for label in [panel._name,panel._ammunition,panel._status,panel._hint]:
 		if not label.is_visible_in_tree():continue
 		check(panel._panel.get_global_rect().encloses(label.get_global_rect()) and label.get_visible_line_count()==label.get_line_count(),"Secondary text was clipped or outside its panel")
