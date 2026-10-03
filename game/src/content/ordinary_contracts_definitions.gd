@@ -53,7 +53,8 @@ static func extra_count(bindings: RefCounted,context: Dictionary) -> int:
 	var side: Dictionary=context.get("side_mission",{})
 	if not delivery_mission(bindings,side):return 0
 	var data: Dictionary=bindings.mido_travel.ordinary_contracts.population
-	if not data.side_kinds.has(side.kind):return 0
+	# Imported kinds load as floats; compare them as whole numbers.
+	if not data.side_kinds.any(func(value):return int(value)==int(side.kind)):return 0
 	return pirate_count(data,int(side.difficulty))
 
 static func pirate_count(data: Dictionary,difficulty: int) -> int:

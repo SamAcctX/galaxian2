@@ -129,6 +129,11 @@ func verify_weymire(bindings: RefCounted,cat: RefCounted):
 		var catalogue: Dictionary=Worlds.catalogue_location(bindings,cat,id)
 		# World identity comes from the imported catalogue (one capability owner);
 		# whether the career may travel there is decided by the campaign and gates.
+		# Older bindings without imported world locations keep Weymire behind Post-Sahi.
+		var imported: bool=bindings.get("world_locations") is Dictionary and not bindings.world_locations.is_empty()
+		if not imported and not PostSahi.available(bindings):
+			check(catalogue.is_empty(),"Weymire was enabled without the Post-Sahi capability")
+			continue
 		check(catalogue.get("system_id")==9 and catalogue.station_id==id and catalogue.planet_type==types[ids.find(id)] and catalogue.faction==2 and catalogue.security==2 and catalogue.gate_station_id==45 and catalogue.sky_index==7,"Weymire location lost its source catalogue identity")
 		if PostSahi.available(bindings):
 			check(world.system_id==9 and world.station_id==id and world.planet_type==catalogue.planet_type and world.sky_index==catalogue.sky_index,"Weymire declaration disagrees with the catalogue")

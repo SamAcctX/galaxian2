@@ -72,8 +72,7 @@ func verify_profile(content: String, pack: String):
 		var bad:=cache.duplicate(true);bad[field]="foreign" if field.ends_with("content_id") or field=="binding_id" else -1
 		check(not owner.configure_arrival(bindings,cat,bad) and owner.snapshot().is_empty(),"Foreign rescue cache accepted: "+field)
 	check(not owner.configure_arrival(bindings,cat,fresh.cache_snapshot()),"Opening cache admitted as a rescue cache")
-	cat.tables.items[54].arrays[2][5]=18
-	check(not owner.configure_arrival(bindings,cat,cache) and owner.snapshot().is_empty(),"Special cargo override entered unsupported rescue scope")
+	# A fitted Khador drive (type 18) is supported since 511d804; its special drop is covered by the Khador checks.
 	cat.tables.items=original
 	verify_pack(pack,lib,bindings)
 	print(lib.manifest.profile.edition+": retained cargo, discarded RNG work, authored route/poses and motion handoff verified")

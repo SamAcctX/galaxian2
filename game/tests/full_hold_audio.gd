@@ -103,7 +103,7 @@ func verify_player(audio: Node):
 	var fixture:=Live.new();var lethal: RefCounted=fixture.lethal(world);check(fixture.failures==0,"Lethal contact fixture failed");fixture.free()
 	if lethal==null:return
 	var before: Dictionary=audio.snapshot()
-	var bad: RefCounted=lethal.fork_for_frame();bad._audio_frame.player_poll.stop_sound_ids=[27]
+	var bad: RefCounted=lethal.fork_for_frame();bad._audio_frame.player_poll=bad._audio_frame.player_poll.duplicate(true);bad._audio_frame.player_poll.stop_sound_ids=[27] # frames share nested state
 	check(audio.prepare_full_hold(bad).is_empty() and audio.snapshot()==before,"Invalid death stops changed sound state")
 	bad=lethal.fork_for_frame();bad._audio_frame.actors=[{"actor_id":1}]
 	check(audio.prepare_full_hold(bad).is_empty() and audio.snapshot()==before,"Late foreign NPC played earlier player stops")

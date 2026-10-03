@@ -52,8 +52,8 @@ func verify_prices(args: PackedStringArray) -> void:
 		all.append({"item_id":int(item.id),"unit_price":low+(high-low)/2,"quantity":1})
 	var supported_stations:=[70,71,72,73,74,95,96,97,98,99]
 	var unsupported_stations:=[-1,58,108,135,95.0]
-	if bindings.mido_travel.has("suttnar_visit"):supported_stations.append_array([55,56,57])
-	else:unsupported_stations.append(56)
+	# Every catalogue station now has imported scenery and prices.
+	supported_stations.append_array([55,56,57])
 	for station in supported_stations:
 		check(second.prepare(bindings,cat,station,{"cargo":null,"installed":[],"stock":all},initial,[null,100,100]),"An original item or supported station lost its price fields: "+second.error)
 		if failures:return

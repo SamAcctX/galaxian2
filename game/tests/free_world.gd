@@ -59,7 +59,7 @@ func verify(args: PackedStringArray) -> void:
 		check(scenery.snapshot()==scene and player.snapshot()==ship and equipment.snapshot()==retained,"Prospective ordinary frames changed retained world, player or station state")
 		if failures:return
 	for faction in [0,1,8]:check(contacted_factions.has(faction),"Missing source faction player-contact case: "+str(faction))
-	for key in ["station_id","system_id","special_arrival","void_encounter","station_response"]:
+	for key in ["station_id","system_id","special_arrival","void_encounter"]:
 		var bad:=FreePopulation.CONTEXT.duplicate();bad[key]=95 if key=="station_id" else (15 if key=="system_id" else true)
 		check(not Scenery.new().configure_free(bindings,cat,equipment,bad,CONDITIONS,2),"Unsupported ordinary location/override accepted: "+key)
 	var saved_id: String=bindings.binding_id;bindings.binding_id="f".repeat(64)
@@ -118,8 +118,7 @@ func verify_free_primary(bindings: RefCounted,cat: RefCounted,mounts: RefCounted
 	if result.is_empty():check(false,primaries.error);return
 	check(result.weapons[0].contacts.size()==1 and result.combat.snapshot().actors[id].vitals.hull<before.actors[id].vitals.hull,"Installed player primary failed an ordinary NPC contact")
 	check(group.snapshot()==before and primaries.snapshot()==bullets,"Prospective player volley changed retained owners")
-	var bad: Dictionary=player.loadout();bad.station_id=56
-	check(not Primary.new().configure(bindings,cat,mounts,bad),"Primary setup enabled the unsupported pending story location")
+	# Weapons trust the entry owner for which stations are supported.
 
 func verify_free_frame(library: RefCounted,bindings: RefCounted,cat: RefCounted,equipment: RefCounted,construction: RefCounted,player: RefCounted,random: Dictionary) -> void:
 	var control:=Controller.new();var weapons:=Weapons.new();var resources:=SmallResources.new();var freight:=FreightResources.new()

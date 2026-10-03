@@ -74,7 +74,7 @@ func verify_profile(content: String, pack: String, texture_pack: String):
 		var a: Dictionary=resolved.entries[index].duplicate(true);var b: Dictionary=low.entries[index].duplicate(true)
 		a.erase("texture_path");b.erase("texture_path");check(a==b,"Quality selection changed rescue content")
 	var saved_sky: int=cat.tables.systems[15].sky_index
-	for sky in [-1,15,17]:
+	for sky in [-1,19]: # Supernova skies up to 18 are supported since 80d5ea9
 		cat.tables.systems[15].sky_index=sky;check(location.resolve(bindings,cat,cache).is_empty(),"Unsupported background selected")
 	cat.tables.systems[15].sky_index=saved_sky
 	cat.tables.stations[78].planet_type=18;check(location.resolve(bindings,cat,cache).is_empty(),"Unsupported special planet selected")

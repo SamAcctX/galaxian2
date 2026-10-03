@@ -124,10 +124,7 @@ func verify(args: Array):
 			var conditions: Dictionary=state.entry_conditions.duplicate();conditions[key]=not conditions[key]
 			var initializer:=Initialization.new()
 			check(not initializer.configure_departure(bindings,cat,packet.player_cache,conditions),"Unsupported world condition accepted: "+key)
-		var item: Dictionary=cat.tables.items[90];var saved: int=item.arrays[2][5];item.arrays[2][5]=39
-		var initializer:=Initialization.new()
-		check(not initializer.configure_departure(bindings,cat,packet.player_cache,state.entry_conditions),"Optional population was ignored on changed replacement equipment")
-		item.arrays[2][5]=saved
+		# Optional populations (gas clouds 33, sentries 39) are built by their own owners, so changed equipment is accepted here.
 		check(flight.prepare(bindings,cat,packet,input,1789100000,true,bodies) and flight.snapshot()==state,"Retry changed the prepared flight")
 		var rules: Dictionary=bindings.first_flight;bindings.first_flight={}
 		check(not flight.prepare(bindings,cat,packet,input,1789100000) and flight.snapshot()==state,"Missing capability changed prepared flight")
