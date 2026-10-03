@@ -821,9 +821,7 @@ func evaluate_ambient_world_logic(delta_ms: Variant,combat: RefCounted,random_st
 		staged._destruction[id]=death;staged._launch_pending[id]=true
 	return {"controller":staged,"combat":staged._combat,"random_state":staged._random.duplicate(true),"relaunches":ids,"clock":request}
 
-## With commit=false the accepted owner stays untouched and the result
-## carries the advanced private copy as "controller".
-func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, random_state: Variant=null,wingmen: RefCounted=null,commit:=true) -> Dictionary:
+func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, random_state: Variant=null,wingmen: RefCounted=null) -> Dictionary:
 	error=""
 	if _selected41_world!=null:
 		if not Vitals.integer(delta_ms) or delta_ms>_max_ms:return fail("Invalid source41 actor frame duration")
@@ -897,6 +895,7 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 		if body.actors[id].vitals.hull==0 and _destruction.is_empty():return fail("Combat-training destruction is not connected")
 		var life: Dictionary={} if staged._destruction.is_empty() else staged._destruction[id].snapshot()
 		var motion: Dictionary=staged._flight[id].snapshot()
+		var launched:=false
 		if not life.is_empty():
 			var old: Dictionary=body.actors[id]
 			if life.phase=="ready":
@@ -905,7 +904,7 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 				if old.body_pose!=motion.root_pose or (not departing and not ((_alioth or _selected40_world!=null or _selected41_world!=null) and placed) and old.pose!=(motion.root_pose if placed else staged._flight[id].systems_statistics_pose() if old.has("systems") else motion.pose)):return fail("Combat pose disagrees with retained flight (actor %d)"%id)
 				if placed:
 					if not staged._combat.set_pose(id,motion.pose,motion.root_pose):return fail(staged._combat.error)
-					staged._launch_pending[id]=false
+					staged._launch_pending[id]=false;launched=true
 			else:
 				if old.body_pose!=life.pose or old.pose!=life.statistics_pose or old.vitals.hull!=0 or old.actor_mode!=life.mode or old.active!=(life.phase!="retired"):return fail("Training body disagrees with retained destruction")
 			if staged._destruction[id].retires_before_update():
@@ -942,7 +941,9 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 		var applied: bool=staged._combat.apply_selected40_guidance(decision) if _selected40_world!=null else staged._combat.apply_story_guidance(decision) if _story else staged._combat.apply_bakka_guidance(decision) if _bakka else staged._combat.apply_kappa_guidance(decision) if _kappa else staged._combat.apply_alioth_guidance(decision) if _alioth else staged._combat.apply_convoy_guidance(decision) if _convoy else (staged._combat.apply_contract_guidance(decision) if _contract else (staged._combat.apply_ambient_guidance(decision) if _ambient else (staged._combat.apply_local_patrol_guidance(decision) if _local_patrol else staged._combat.apply_combat_training_guidance(_rules,decision))))
 		if not applied:return fail(staged._combat.error)
 		if _local_patrol and not staged._combat.has_local_reactions() and decision.fire_requested:return fail("Local traffic weapon control is not connected")
-		if decision.fire_requested:
+		# A ship placed this frame has no pre-motion muzzle in the incoming
+		# bodies; its guns open on the next frame.
+		if decision.fire_requested and not (launched and (_selected40_world!=null or _selected41_world!=null)):
 			var request:={"actor_id":id,"target_actor_id":int(decision.target_actor_id),"pose":actor.pose}
 			if decision.target_kind=="wingman":request.wingman_index=int(decision.target_wingman_index)
 			firing.append(request)
@@ -960,19 +961,15 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 	if staged._mission_runner!=null and not _scene_clocked:
 		var clock: Dictionary=staged._mission_runner.snapshot()
 		if not staged._mission_runner.sample_clock(int(clock.elapsed_ms)+int(delta_ms),int(clock.clock_ms)+int(delta_ms)):return fail(staged._mission_runner.error)
-	var target: RefCounted=staged
-	if commit:
-		target=self;_mission_runner=staged._mission_runner
-		_combat=staged._combat;_guidance=staged._guidance;_flight=staged._flight;_random=staged._random
-		_destruction=staged._destruction;_accounting=staged._accounting
-		_launch_pending=staged._launch_pending
-	target._started=true
-	if not target._contract_result.is_empty() and not _scene_clocked:
-		target._contract_result.clock_ms+=int(delta_ms);target._contract_result.elapsed_ms+=int(delta_ms)
+	_mission_runner=staged._mission_runner
+	_combat=staged._combat;_guidance=staged._guidance;_flight=staged._flight;_random=staged._random
+	_destruction=staged._destruction;_accounting=staged._accounting;_started=true
+	_launch_pending=staged._launch_pending
+	if not _contract_result.is_empty() and not _scene_clocked:
+		_contract_result.clock_ms+=int(delta_ms);_contract_result.elapsed_ms+=int(delta_ms)
 	var result:=_identity.duplicate()
-	result.merge({"decisions":decisions,"firing_requests":firing,"random_state":target._random.duplicate(true),"combat":target._combat.read_snapshot()})
-	if not target._destruction.is_empty():result.death_events=death_events;result.defeat_status=target.defeat_status()
-	if not commit:result.controller=staged
+	result.merge({"decisions":decisions,"firing_requests":firing,"random_state":_random.duplicate(true),"combat":_combat.read_snapshot()})
+	if not _destruction.is_empty():result.death_events=death_events;result.defeat_status=defeat_status()
 	return result
 
 func _advance_debris(id: int,delta_ms: int) -> Dictionary:
@@ -1163,10 +1160,9 @@ func evaluate(combat: RefCounted, weapons: RefCounted, milliseconds: int, player
 	error=""
 	if _local_patrol and not _combat.has_local_reactions():return fail("Local traffic weapon control is not connected")
 	if not weapons is Weapons:return fail("Training actor updates require their retained weapon pools")
-	var next_weapons: RefCounted=weapons.fork_for_frame()
-	var operation: Dictionary=advance(milliseconds,player,combat,random_state,wingmen,false)
-	if operation.is_empty():return {}
-	var staged: RefCounted=operation.controller
+	var staged:=fork_for_frame(false);var next_weapons: RefCounted=weapons.fork_for_frame()
+	var operation: Dictionary=staged.advance(milliseconds,player,combat,random_state,wingmen)
+	if operation.is_empty():return fail(staged.error)
 	# These ordinary NPC shots consume no random values and cannot contact
 	# anything until the next weapon phase. Preserve each pre-motion pose and
 	# actor order while committing their independent pools with the whole pass.
