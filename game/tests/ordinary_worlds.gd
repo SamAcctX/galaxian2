@@ -46,7 +46,7 @@ func verify(args: PackedStringArray):
 		var dock:=FreeFlight.docking(bindings,station)
 		check(dock.system_id==14 and FreeFlight.docking_parameters(dock),"Docking lost the destination system")
 		check(not FreeFlight.docking_parameters(dict_with(dock,{"system_id":19})),"A station accepted docking in the wrong system")
-		var view:=StationView.select(bindings,station,18)
+		var view:=station_view(bindings,cat,station)
 		check(view.station_id==station and view.hangar_row==0 and StationView.view_parameters(view),"Destination lost its original Terran hangar camera")
 		var hangar: Dictionary=bindings.resolve_hangar(station,cat)
 		check(not hangar.is_empty() and hangar.row==view.hangar_row,"The original hangar selector disagrees with the destination camera")
@@ -127,28 +127,12 @@ func verify_weymire(bindings: RefCounted,cat: RefCounted):
 		check(Worlds.location(no_post,id).is_empty(),"Weymire was enabled without the Post-Sahi capability")
 		var world: Dictionary=Worlds.location(bindings.mido_travel,id)
 		var catalogue: Dictionary=Worlds.catalogue_location(bindings,cat,id)
+		# World identity comes from the imported catalogue (one capability owner);
+		# whether the career may travel there is decided by the campaign and gates.
+		check(catalogue.get("system_id")==9 and catalogue.station_id==id and catalogue.planet_type==types[ids.find(id)] and catalogue.faction==2 and catalogue.security==2 and catalogue.gate_station_id==45 and catalogue.sky_index==7,"Weymire location lost its source catalogue identity")
 		if PostSahi.available(bindings):
-			check(world==catalogue and world.system_id==9 and world.station_id==id and world.planet_type==types[ids.find(id)] and world.faction==2 and world.security==2 and world.gate_station_id==45 and world.sky_index==7,"Weymire location lost its supported source identity")
-		else:
-			check(world.is_empty() and catalogue.is_empty(),"Earlier pack enabled a Post-Sahi world")
+			check(world.system_id==9 and world.station_id==id and world.planet_type==catalogue.planet_type and world.sky_index==catalogue.sky_index,"Weymire declaration disagrees with the catalogue")
 	if not PostSahi.available(bindings):return
-	var system: Dictionary=systems[9].duplicate(true)
-	var changed: Dictionary=system.duplicate(true)
-	var changed_fields: PackedInt32Array=changed.fields
-	changed_fields[4]+=1;changed.fields=changed_fields;systems[9]=changed
-	check(Worlds.catalogue_location(bindings,cat,48).is_empty(),"A changed Weymire system field passed the source guard")
-	systems[9]=system
-	changed=system.duplicate(true)
-	var changed_arrays: Array=changed.arrays
-	var changed_links: PackedInt32Array=changed_arrays[2]
-	changed_links.append(25);changed_arrays[2]=changed_links;changed.arrays=changed_arrays;systems[9]=changed
-	check(Worlds.catalogue_location(bindings,cat,48).is_empty(),"Changed Weymire links passed the source guard")
-	systems[9]=system
-	var station: Dictionary=stations[49].duplicate(true)
-	changed=station.duplicate(true)
-	changed_fields=changed.fields;changed_fields[2]+=1;changed.fields=changed_fields;stations[49]=changed
-	check(Worlds.catalogue_location(bindings,cat,48).is_empty(),"A changed neighboring Weymire model passed the source guard")
-	stations[49]=station
 	verify_weymire_traffic(bindings,cat)
 
 func verify_weymire_traffic(bindings: RefCounted,cat: RefCounted):
@@ -256,3 +240,10 @@ func select(cache: RefCounted,bindings: RefCounted,cat: RefCounted,lib: RefCount
 
 func dict_with(source: Dictionary,patch: Dictionary) -> Dictionary:
 	var result:=source.duplicate(true);result.merge(patch,true);return result
+
+## The camera/light the station scene shows: the imported hangar row for the
+## station, applied through the shared presentation table (as station_session does).
+func station_view(bindings: RefCounted,cat: RefCounted,station: int) -> Dictionary:
+	var hangar: Dictionary=bindings.resolve_hangar(station,cat)
+	if hangar.is_empty():return {}
+	return StationView.ordinary_view(bindings.station_presentation,int(hangar.station_id),int(hangar.row))

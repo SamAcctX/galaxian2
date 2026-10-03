@@ -103,7 +103,12 @@ func verify_requested_offer(station: RefCounted,bindings: RefCounted,cat: RefCou
 	var inspected: Dictionary=branch.snapshot();var quote: Dictionary=inspected.contracts.offers[id].offer
 	check(quote.mission.kind==8 and quote.mission.station_id==original.loadout.station_id and quote.context.rank==original.contracts.rank,"Inspection lost the local goods request or current rank")
 	check(inspected.contracts.population==original.contracts.population and inspected.cargo==original.cargo and inspected.contracts.mission==original.contracts.mission,"Inspection rewrote the generated population or changed the accepted job")
-	check(branch.inspect_contract_contact(id,bindings) and branch.snapshot()==inspected,"Inspecting the same contact rerolled its goods or reward")
+	check(branch.inspect_contract_contact(id,bindings),branch.error)
+	var revisited: Dictionary=branch.snapshot()
+	check(revisited.contracts.conversations==int(inspected.contracts.conversations)+1,"Talking to the contact again did not count toward the Chatterbox medal")
+	revisited.contracts.conversations=inspected.contracts.conversations
+	check(revisited==inspected,"Inspecting the same contact rerolled its goods or reward")
+	inspected=branch.snapshot()
 	var file=load("res://src/simulation/station_save_file.gd").new();var archive=load("res://src/simulation/station_archive.gd").new()
 	var path:="user://purchase-request.gof2save"
 	if not file.save(path,branch,bindings,cat,library):check(false,file.error);return

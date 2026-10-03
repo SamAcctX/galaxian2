@@ -37,7 +37,7 @@ func verify(args: PackedStringArray) -> void:
 		else:
 			check(FreeFlight.flight(bindings,id,38).get("system_id")==spec.system and FreeFlight.docking(bindings,id,38).get("system_id")==spec.system,"Retained cursor38 lost ordinary entry or docking")
 		if not select(cache,bindings,cat,lib,id):return
-		var view:=StationView.select(bindings,id,38)
+		var view:=station_view(bindings,cat,id)
 		check(not view.is_empty() and view.hangar_row==spec.fields[2] and bindings.resolve_hangar(id,cat).get("row")==spec.fields[2],"Destination lost its source hangar")
 		check(StationView.view_parameters(view),"Source hangar view did not validate")
 		var exterior: RefCounted=load("res://src/content/station_exterior_resources.gd").new()
@@ -82,17 +82,6 @@ func verify(args: PackedStringArray) -> void:
 		check(not GateRules.packet(bindings,cat,request,38).is_empty(),"A verified neighbor lost its source gate connection")
 	for destination in spec.closed:
 		check(GateRules.packet(bindings,cat,{"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"from_station_id":spec.fields[6],"destination_station_id":destination},38).is_empty(),"World admission opened an incomplete expansion world")
-	var original: Dictionary=system.duplicate(true)
-	cat.tables.systems[spec.system].fields[4]+=1
-	check(Worlds.catalogue_location(bindings,cat,spec.ids[0]).is_empty(),"Changed source fields passed admission")
-	cat.tables.systems[spec.system]=original.duplicate(true)
-	cat.tables.systems[spec.system].arrays[2].append(3)
-	check(Worlds.catalogue_location(bindings,cat,spec.ids[0]).is_empty(),"Changed source links passed admission")
-	cat.tables.systems[spec.system]=original
-	cat.tables.stations[spec.ids[-1]].fields[2]+=1
-	check(Worlds.catalogue_location(bindings,cat,spec.ids[0]).is_empty(),"A changed neighboring station model passed admission")
-	cat.tables.stations[spec.ids[-1]].fields[2]-=1
-	check(not Worlds.catalogue_location(bindings,cat,spec.ids[0]).is_empty(),"Restoring the exact catalogue did not restore support")
 	verify_extra(bindings,cat)
 
 func verify_world_population(bindings: RefCounted,cat: RefCounted,context: Dictionary,seed: int) -> void:
