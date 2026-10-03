@@ -37,6 +37,7 @@ const FreightDeath=preload("res://src/simulation/freighter_destruction.gd")
 const Story=preload("res://src/content/story_encounter_definitions.gd")
 const Bakka=preload("res://src/content/bakka_contest_definitions.gd")
 const DebrisDeath=preload("res://src/simulation/debris_destruction.gd")
+const StaticDeath=preload("res://src/simulation/static_object_destruction.gd")
 var error:=""
 var _identity:={}
 var _control: RefCounted
@@ -520,11 +521,13 @@ func evaluate_cargo_recovery(tractor: RefCounted,cargo: RefCounted,delta_ms: int
 			life=death.snapshot()
 			if actor.actor_mode not in [3,4] or not life.has("cargo") or life.mode!=actor.actor_mode or actor.vitals.hull!=0:return fail("Tractor recovery requires the current cargo-bearing wreck")
 			var active: bool=life.phase!="retired" if death is NpcDeath else life.active
+			# A static wreck keeps its own model and collision; only the container moves.
+			if death is StaticDeath:life.pose=actor.get("body_pose");life.statistics_pose=actor.pose;active=actor.active
 			if actor.get("body_pose")!=life.pose or actor.pose!=life.statistics_pose or actor.active!=active:return fail("The wreck body diverged from its retained cargo lifecycle")
 			if not life.cargo.eligible:return fail("This wreck no longer offers recoverable cargo")
 			# Freighter contact boxes are body-relative. Their separate wreck
 			# volumes retain the lifecycle's source-set origin during pulling.
-			if actor.has("point_boxes") and not death is FreightDeath:return fail("This wreck needs its retained collision-box adapter")
+			if actor.has("point_boxes") and not death is FreightDeath and not death is StaticDeath:return fail("This wreck needs its retained collision-box adapter")
 			observation={"base_content_id":_identity.base_content_id,"binding_id":_identity.binding_id,
 				"actor_id":id,"actor_kind":actor.actor_kind,"actor_mode":actor.actor_mode,"hull":actor.vitals.hull,
 				"active":actor.active,"cargo_eligible":life.cargo.eligible,"cargo_model_exists":life.cargo.model_exists,
@@ -549,7 +552,8 @@ func evaluate_cargo_recovery(tractor: RefCounted,cargo: RefCounted,delta_ms: int
 			next._control=_control.fork_for_frame();next._combat=_combat.fork_for_frame()
 		if frame.phase=="pickup" and not next._combat.record_cargo_recovery(actor,frame.transfer.events):return fail(next._combat.error)
 		death._retain_recovery_frame(frame)
-		next._combat._writable(id)._retain_recovery_frame(frame)
+		# A static wreck stays put; its owner moves only the container.
+		if not death is StaticDeath:next._combat._writable(id)._retain_recovery_frame(frame)
 		next._control._destruction[id]=death
 		if frame.actor_changes.has("freighter_position"):
 			var motion: RefCounted=_control._flight[id].fork_for_frame()
@@ -587,6 +591,7 @@ func _evaluate_scenery_recovery(tractor: RefCounted,cargo: RefCounted,delta_ms: 
 func _supports_cargo_lifecycle(death: RefCounted,actor: Dictionary) -> bool:
 	if death is NpcDeath:return true
 	if death is DebrisDeath:return _control is TrainingControl and actor.get("population_group")=="debris" and actor.actor_kind==-1
+	if death is StaticDeath:return actor.get("population_group")=="static" and death.snapshot().has("cargo")
 	if not death is FreightDeath or actor.get("population_group")!="freighter" or actor.actor_kind not in [0,1,2,3]:return false
 	return _control is TrainingControl and _control._flight[actor.actor_id] is TrainingControl.FreightMotion
 

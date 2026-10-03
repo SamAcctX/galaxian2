@@ -759,8 +759,9 @@ const KAAMO:={"station_id":108,"model":14243,"name_text_id":430,"speaker_id":4,
 ## Assumptions: the thanks plays as a radio line right after the outpost falls
 ## (the original shows it at the next docking); no loot crate; the station
 ## stays open while the base stands.
-const PIRATE_BASES:={1:{"bit":1,"point":Vector3(-200000,-100000,50000)},33:{"bit":2,"point":Vector3(50000,200000,-100000)},
-	47:{"bit":4,"point":Vector3(140000,-150000,7000)},86:{"bit":8,"point":Vector3(170000,-170000,10000)}}
+# Each base drops its fixed loot ([item, quantity]) when destroyed.
+const PIRATE_BASES:={1:{"bit":1,"point":Vector3(-200000,-100000,50000),"loot":[45,20]},33:{"bit":2,"point":Vector3(50000,200000,-100000),"loot":[48,2]},
+	47:{"bit":4,"point":Vector3(140000,-150000,7000),"loot":[58,2]},86:{"bit":8,"point":Vector3(170000,-170000,10000),"loot":[19,2]}}
 const PIRATE_BASE:={"model":14243,"name_text_id":430,"guards":5,"jitter":10000,"pirate_speaker":9,"nivelian_speaker":65,
 	"wake":[[424,590],[425,591],[426,592]],"destroyed":[[427,593],[428,594],[429,595]],"thanks":[431,589],"reward":20000}
 
@@ -776,6 +777,7 @@ static func _pirate_base_recipe(job: Dictionary) -> Dictionary:
 	var guards:=int(PIRATE_BASE.guards);var pick:=int(job.station_id)%3
 	var groups:=[{"first_actor":0,"end_actor":1,"faction":8,"name_text_id":int(PIRATE_BASE.name_text_id),
 		"static_object":{"model":int(PIRATE_BASE.model),"jitter":int(PIRATE_BASE.jitter)},
+		"cargo_override":{"entries":[{"item_id":int(base.loot[0]),"quantity":int(base.loot[1])}],"special":false},
 		"ship_state":{"mode":5,"active":false,"targeting_blocked":true},"policy":{"initial_hostile":true,"updated_hostile":true}},
 		{"first_actor":1,"end_actor":1+guards,"faction":8,"population_group":"story","origin":"zero",
 		"ship_state":{"mode":5,"active":false,"targeting_blocked":true},"policy":{"initial_hostile":true,"updated_hostile":true,"friendly":false},

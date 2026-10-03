@@ -1652,7 +1652,8 @@ func fly_pirate_base() -> void:
 	if base<0:return
 	var bit:=int(StoryFlights.PIRATE_BASES[base].bit)
 	var wallet:=int(app.session.station_owner().snapshot().contracts.credits) if app.station_shell.visible else 0
-	if not seed_khador_drive() or not await depart_to(base):return
+	# A tractor beam (with its scanner) collects the outpost's loot.
+	if not seed_cargo([[85,1],[122,12],[68,1],[81,1]]) or not fit_item(68) or not fit_scanner_beside(68) or not await depart_to(base):return
 	var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
 	print("PIRATE BASE cast ",actors.map(func(actor):return [actor.get("static_object",false),int(actor.vitals.hull),actor.get("position",Vector3.ZERO)]))
 	check(actors.size()==6 and actors[0].get("static_object",false) and range(1,6).all(func(id):return not actors[id].get("static_object",false)),"The pirate base cast is not an outpost and five guards")
@@ -1675,7 +1676,7 @@ func fly_pirate_base() -> void:
 		if not app.session.step(now_us,Vector2.ZERO,false,false,0.0):check(false,app.session.error);return
 		if tick%10==0:await process_frame
 	await capture_free_application("pirate-base-won")
-	if failures or not await dock_application():return
+	if failures or not await collect_base_loot(base) or not await dock_application():return
 	var docked: Dictionary=app.session.station_owner().snapshot()
 	check(int(docked.contracts.progress.get("pirate_bases",0)) & bit,"The career did not record the destroyed base")
 	print("PIRATE BASE credits ",wallet," -> ",int(docked.contracts.credits))
@@ -1861,6 +1862,42 @@ func seed_loma_toll_cleared() -> bool:
 
 ## The first pirate base in a system the career knows (test shortcut: else
 ## open the first base's system, as a bought map would).
+## Fit scanner 81 unless one is fitted, keeping `keep` and the drive.
+func fit_scanner_beside(keep: int) -> bool:
+	var items: Array=catalogue.tables.items
+	if app.session.station_owner().snapshot().loadout.equipment_ids.any(func(id):return int(items[int(id)].properties.get(2,-1))==17):return true
+	if not app.equipment_action("open"):check(false,app.session.error);return false
+	if not app.equipment_action("mount",81):
+		var slots: Array=app.session.station_owner().snapshot().loadout.slots
+		for index in range(slots.size()-1,-1,-1):
+			if slots[index]!=null and int(slots[index].item_id) not in [keep,85] and int(items[int(slots[index].item_id)].properties.get(1,-1))==int(items[81].properties.get(1,-1)):
+				app.equipment_action("unmount",int(slots[index].item_id),index);break
+		if not app.equipment_action("mount",81):check(false,"Scanner could not be fitted: "+app.session.error);return false
+	return app.equipment_action("close")
+
+## Steer at the destroyed outpost's container until the tractor takes it and check its
+## fixed loot lands in the hold.
+func collect_base_loot(base: int) -> bool:
+	var loot: Array=StoryFlights.PIRATE_BASES[base].loot
+	var held:=func():
+		var rows: Array=app.session.snapshot().cargo.entries.filter(func(row):return int(row.item_id)==int(loot[0]))
+		return 0 if rows.is_empty() else int(rows[0].quantity)
+	var before: int=held.call()
+	var crate: Dictionary=app.session.flight_owner()._encounter._control.destruction_view(0).snapshot().get("cargo",{})
+	check(crate.get("model_exists",false) and crate.get("eligible",false) and crate.entries==[{"item_id":int(loot[0]),"quantity":int(loot[1])}],"The destroyed outpost dropped no loot container")
+	if failures:return false
+	await capture_free_application("pirate-base-loot")
+	for tick in 3000:
+		var life: Dictionary=app.session.flight_owner()._encounter._control.destruction_view(0).snapshot().cargo
+		if not life.eligible:break
+		var state: Dictionary=app.session.snapshot()
+		now_us+=100000
+		if not app.session.step(now_us,CombatPilot.Steering.steering_toward(state.player_pose,life.pose.origin),false,false,0.0):check(false,app.session.error);return false
+		if tick%10==0:await process_frame
+	print("PIRATE BASE loot ",loot," held ",before," -> ",held.call())
+	check(held.call()==before+int(loot[1]),"The outpost's loot did not reach the hold")
+	return failures==0
+
 func pirate_base_station() -> int:
 	var file:=StationSaveFile.new();var path: String=app.station_save_path()
 	var document: Dictionary=file.read_document(path)

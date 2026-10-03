@@ -149,9 +149,18 @@ func _build_static(owner: RefCounted,id: int,actor: Dictionary,library: RefCount
 	if wrecked:paths.append(placed.wreck.path)
 	var turret: Dictionary=placed.get("turret",{})
 	if not turret.is_empty():paths.append(turret.path)
+	var held: Dictionary=death.snapshot().get("cargo",{})
+	if not held.is_empty():paths.append(held.resource)
 	var resources:=Models.new()
 	if not resources.prepare(paths,library,visuals,bindings,"high",false,true):return fail(resources.error)
 	var body:=Node3D.new();body.name="StaticObject%d"%id;add_child(body)
+	# A fixed loot list (pirate bases) drops one container on death.
+	var crate: Node3D=null
+	if not held.is_empty():
+		crate=resources.instantiate(held.resource)
+		if crate==null:
+			var reason: String=resources.error;resources.clear();return fail(reason)
+		add_child(crate);crate.hide();crate.set_meta("source_resource_id",int(held.model_id))
 	# A turret's base and barrel swivel together; the base is turned 180 deg.
 	var swivel: Node3D=body
 	var barrel: Node3D=null
@@ -177,7 +186,7 @@ func _build_static(owner: RefCounted,id: int,actor: Dictionary,library: RefCount
 		for instance in wreck.instances:instance.top_level=true
 		sampler=Sampler.new()
 		if not sampler.configure(wreck.surfaces):return fail(sampler.error)
-	actors.append({"hull":body,"engine":null,"cargo":wreck,"explosion":null,"static":true,"sampler":sampler,"swivel":swivel,"barrel":barrel,
+	actors.append({"hull":body,"engine":null,"cargo":wreck,"crate":crate,"explosion":null,"static":true,"sampler":sampler,"swivel":swivel,"barrel":barrel,
 		"turret_rule":Statics.rules(int(actor.static_model)).get("turret",{}),
 		"ship_id":-1,"resource_id":int(actor.resource_id),"hull_resource":actor.hull_resource})
 	return true
@@ -192,8 +201,9 @@ func _prepare_static(actor: Dictionary,nodes: Dictionary,death: RefCounted) -> D
 		sampler=nodes.sampler.fork_for_frame()
 		animated=sampler.sample(int(state.animation.time_ms),state.pose)
 		if animated.is_empty():return failed(sampler.error)
+	var held: Dictionary=state.get("cargo",{})
 	return {"pose":actor.body_pose,"body_visible":actor.model_draw_enabled,"cargo_visible":wrecked,"cargo_pose":state.pose,"animated":animated,"sampler":sampler,
-		"turret_aim":actor.get("turret_aim",{})}
+		"turret_aim":actor.get("turret_aim",{}),"crate_visible":held.get("model_exists",false),"crate_pose":held.get("pose",state.pose)}
 
 func _prepare_debris(actor: Dictionary,nodes: Dictionary,death: RefCounted) -> Dictionary:
 	var state: Dictionary=death.snapshot()
@@ -312,6 +322,7 @@ func commit_world(frame: Dictionary) -> void:
 			continue
 		if nodes.get("static",false):
 			nodes.cargo.visible=current.cargo_visible
+			if nodes.crate!=null:nodes.crate.transform=current.crate_pose;nodes.crate.visible=current.crate_visible
 			if not current.animated.is_empty():
 				for i in nodes.cargo.instances.size():nodes.cargo.instances[i].transform=current.animated.surfaces[i].pose
 			nodes.sampler=current.sampler

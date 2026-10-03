@@ -868,7 +868,8 @@ func apply_static_destruction(owner: RefCounted) -> bool:
 	for key in ["base_content_id","binding_id","campaign_cursor","actor_id","static_model"]:
 		if death.get(key)!=_state.get(key):return reject("Static destruction belongs to another object")
 	if death.get("mode") not in [Statics.DEAD_MODE,Statics.WRECK_MODE] or death.get("pose")!=_state.body_pose:return reject("Static destruction changed its pose or phase")
-	_state.actor_mode=int(death.mode);_state.active=false;_state.model_draw_enabled=false
+	# Like a ship wreck, the object stays a tractor target while its container waits.
+	_state.actor_mode=int(death.mode);_state.active=bool(death.get("cargo",{}).get("eligible",false));_state.model_draw_enabled=false
 	return true
 
 func apply_contract_guidance(decision: Dictionary) -> bool:

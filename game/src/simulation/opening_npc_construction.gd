@@ -1191,8 +1191,9 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 		"debris_center":center,"unused_enemy_faction":enemy_faction,"actor_count":actors.size()}
 	return snapshot()
 
-## A cast static object: no ship sampling, route or cargo. It sits at its
-## group position (or the origin) plus the optional per-axis jitter.
+## A cast static object: no ship sampling or route; cargo only from a fixed
+## override. It sits at its group position (or the origin) plus the optional
+## per-axis jitter.
 func _static_row(id: int,faction: int,options: Dictionary,path: Array,random: RefCounted) -> Dictionary:
 	var placed: Dictionary=options.static_object
 	var model:=int(placed.model)
@@ -1211,6 +1212,7 @@ func _static_row(id: int,faction: int,options: Dictionary,path: Array,random: Re
 		"hull_override":hull,"name_text_id":int(options.name_text_id),"cargo":[],"fragments":[],"route":{},
 		"body_pose":body,"statistics_pose":body,"model_local_pose":Transform3D.IDENTITY}
 	row.merge(options.ship_state,true)
+	if not options.get("cargo_override",{}).is_empty():row.cargo=options.cargo_override.entries.duplicate(true)
 	return row
 
 func _sample_traffic(random: RefCounted) -> Dictionary:
