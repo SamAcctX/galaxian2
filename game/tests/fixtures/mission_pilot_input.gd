@@ -29,8 +29,12 @@ static func apply(app: Control,viewport: Viewport,input: Dictionary,delta_us: in
 		if held.held.fire!=bool(input.fire):key(viewport,KEY_SPACE,bool(input.fire))
 		if (held.strafe<0)!=(input.strafe<0):key(viewport,KEY_A,input.strafe<0)
 		if (held.strafe>0)!=(input.strafe>0):key(viewport,KEY_D,input.strafe>0)
+		# Captured mouse steering keeps a cursor offset: move it from the
+		# current command to the requested one (screen x turns, y pitches).
+		var have: Vector2=app._controls.snapshot().command
+		var change:=Vector2(input.commands.x-have.x,have.y-input.commands.y)
 		var motion:=InputEventMouseMotion.new()
-		motion.screen_relative=Vector2(-input.commands.y,input.commands.x)*600.0*float(delta_us)/1000000.0/app._controls.mouse_sensitivity
+		motion.screen_relative=Vector2(change.y,change.x)*app._controls.MOUSE_REFERENCE_SIZE*0.35/app._controls.mouse_sensitivity
 		motion.relative=motion.screen_relative;viewport.push_input(motion,true)
 	app._controls.advance_mouse(float(delta_us)/1000000.0)
 	if observation!=null:observation.invalidate()

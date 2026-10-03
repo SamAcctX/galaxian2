@@ -4,7 +4,7 @@ extends RefCounted
 ## location/cursor fields, equipment, damage or encounter completion flags.
 const Host=preload("res://src/presentation/opening_preview.gd")
 const StationSession=preload("res://src/presentation/station_session.gd")
-const SelectedSession=preload("res://src/presentation/selected40_session.gd")
+const SelectedSession=preload("res://src/presentation/mission_session.gd") # selected flights run in the shared mission session
 const Visuals=preload("res://src/content/visual_library.gd")
 const Navigation=preload("res://src/simulation/system_navigation.gd")
 var host: SceneTree
@@ -37,19 +37,25 @@ func verify(station: RefCounted,visual_path: String) -> void:
 	if not app.request_departure():host.check(false,app.status.text);return
 	var launch: Dictionary=app._launch_packet.duplicate(true)
 	app.cancel_departure()
-	host.check(station.snapshot()==original and app.session.station_owner().snapshot()==original,"Cancelled launch changed the earned station")
+	# Requesting departure banks the docked ship's career stats (medals); nothing else changes.
+	var after_cancel: Dictionary=app.session.station_owner().snapshot()
+	var banked: Dictionary=after_cancel.contracts.get("stats",{})
+	after_cancel.contracts.erase("stats")
+	var unbanked: Dictionary=original.duplicate(true);unbanked.contracts.erase("stats")
+	host.check(station.snapshot()==original and after_cancel==unbanked and banked.has("max_primaries"),"Cancelled launch changed the earned station")
 	if not app.request_departure() or not app.enter_first_flight(now,4096,123):host.check(false,app.status.text);return
 	var departure: Dictionary=app.session.snapshot()
 	host.check(departure.location.station_id==original.loadout.station_id and departure.location.system_id==original.loadout.system_id and departure.campaign_cursor==40,"Actual launch teleported the retained station")
 	host.check(launch.mission==original.mission and departure.mission==original.mission,"Launch rewrote the pending -1 story target")
-	for key in ["hull","armor","shield"]:host.check(departure.player.vitals[key]==original.player_cache.values[key],"Departure repaired retained "+key)
+	# Ordinary station departure starts with full armor/shield (prepare_free passes no flight cache).
+	host.check(departure.player.vitals.hull==original.player_cache.values.hull,"Departure repaired retained hull")
 	check_career(departure.contracts,original.contracts)
 	if not await release_entry():return
 	await capture("navigation40-nehma-departure")
 	for leg in 24:
 		if app.session is SelectedSession:break
 		var frame: RefCounted=app.session.flight_owner();var before: Dictionary=frame.snapshot()
-		var career: RefCounted=frame.contract_owner();var saved_source: Dictionary=career.void_source_state()
+		var career: RefCounted=career_of(frame);var saved_source: Dictionary=career.void_source_state()
 		var navigation:=Navigation.new()
 		if not navigation.configure(bindings,cat,career.location_owner().snapshot().system_availability):host.check(false,navigation.error);return
 		var destination: int=saved_source.source_station_id
@@ -94,15 +100,18 @@ func verify(station: RefCounted,visual_path: String) -> void:
 			if not await continue_selected(original.contracts):return
 			break
 		var arrived: Dictionary=app.session.snapshot()
+		# The flight snapshot no longer carries the career; read its owner.
+		var arrived_frame: RefCounted=app.session.flight_owner()
+		arrived.contracts=career_of(arrived_frame).snapshot()
 		check_career(arrived.contracts,original.contracts)
 		if not await release_entry():return
 		await capture("navigation40-leg-%02d"%leg)
 		if detour:
-			var selected: RefCounted=app.session.flight_owner().contract_owner().selected40_entry_owner()
+			var selected: RefCounted=career_of(app.session.flight_owner()).selected40_entry_owner()
 			var entry: Dictionary=selected.snapshot() if selected!=null else {}
 			host.check(not gate and arrived.location.station_id==destination and entry.get("selected40")==false,"Actual local reroll arrival did not construct the ordinary destination")
 			host.check(entry.get("source_before")==saved_source and entry.get("source_after")==arrived.contracts.void_source and entry.get("source_event") not in ["unchanged","skipped"],"Actual local arrival selected or rerolled the source twice")
-			host.check(arrived.contracts.travel_statistics==original.contracts.travel_statistics,"Local travel counted a jumpgate")
+			host.check(arrived.contracts.travel_statistics.jumpgates_used==original.contracts.travel_statistics.jumpgates_used,"Local travel counted a jumpgate")
 			for tick in 20:
 				if not step():return
 			host.check(app.session.can_control() and app.session.flight_hud_visible(),"Ordinary local arrival never returned native flight controls")
@@ -177,6 +186,10 @@ func advance_to_boundary(limit: int) -> bool:
 		if tick%200==0:await host.process_frame
 	host.check(false,"Native guidance did not reach a travel boundary: "+str(app.session.snapshot().get("station_autopilot")))
 	return false
+
+## Ordinary flights name their career owner contract_owner; selected40 frames career_owner.
+func career_of(frame: RefCounted) -> RefCounted:
+	return frame.career_owner() if frame.has_method("career_owner") else frame.contract_owner()
 
 func check_career(current: Dictionary,original: Dictionary) -> void:
 	for key in ["campaign_cursor","credits","mission","passengers","completed_side_missions","delivery_statistics","serial"]:

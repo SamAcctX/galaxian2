@@ -415,7 +415,8 @@ static func check_captured_controls(host: SceneTree,app: Control,bindings: RefCo
 	now+=100000;app._selected40_tick(now)
 	if app._transition_failed:check.call(false,app.status.text);return {}
 	var state: Dictionary=session.flight_owner().frame_context();response=state.encounter.view.camera_response
-	check.call(state.input.commands.is_equal_approx(Vector2(-0.2,-0.4)) and state.input.primary_held,"Captured relative motion/left-click did not reach the native application frame")
+	var offset_scale: Vector2=app._controls.MOUSE_REFERENCE_SIZE*0.35/app._controls.mouse_sensitivity # retained cursor offset steering
+	check.call(state.input.commands.is_equal_approx(Vector2(-12.0/offset_scale.y,-24.0/offset_scale.x)) and state.input.primary_held,"Captured relative motion/left-click did not reach the native application frame")
 	var factor: float=rig.single(handling);var scaled: float=rig.single(factor*float(rules.handling_scale))
 	var look: float=rig.single(rig.single(rig.single(float(rules.look_complement)-scaled)*float(rules.look_scale))+float(rules.look_add))
 	var eye: float=rig.single(rig.single(scaled*float(rules.eye_scale))+float(rules.eye_add))

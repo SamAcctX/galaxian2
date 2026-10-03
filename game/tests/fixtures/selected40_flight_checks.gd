@@ -133,15 +133,15 @@ static func run(host: SceneTree,library: RefCounted,bindings: RefCounted,cat: Re
 	var bad_portal: RefCounted=frame.evaluate(100)
 	if bad_portal!=null:
 		bad_portal._portal._state.animation.time_ms=-1
-		var previous_sky: Transform3D=environment.sky.transform
-		check.call(not environment.present(bad_portal,VIEWPORT) and environment.snapshot()==prepared_environment and environment.sky.transform==previous_sky,"Invalid portal animation partially changed the accepted native background")
+		var previous_sky: Transform3D=environment._ordinary.sky.transform
+		check.call(not environment.present(bad_portal,VIEWPORT) and environment.snapshot()==prepared_environment and environment._ordinary.sky.transform==previous_sky,"Invalid portal animation partially changed the accepted native background")
 	var bad_station: RefCounted=frame.evaluate(100)
 	check.call(bad_station!=null,frame.error)
 	if bad_station!=null:
-		bad_station._station=bad_station.station_owner();bad_station._station._state.pose.origin.x+=1.0
-		var sky_pose: Transform3D=environment.sky.transform
-		var planet_poses: Array=environment.planets.models.map(func(model):return model.transform)
-		check.call(not environment.present(bad_station,VIEWPORT) and environment.snapshot()==prepared_environment and environment.sky.transform==sky_pose and environment.planets.models.map(func(model):return model.transform)==planet_poses,"Rejected station identity partially moved accepted sky or planet geometry")
+		bad_station._station=bad_station.station_owner();bad_station._station._state=bad_station._station._state.duplicate(true);bad_station._station._state.pose.origin.x+=1.0
+		var sky_pose: Transform3D=environment._ordinary.sky.transform
+		var planet_poses: Array=environment._ordinary.planets.models.map(func(model):return model.transform)
+		check.call(not environment.present(bad_station,VIEWPORT) and environment.snapshot()==prepared_environment and environment._ordinary.sky.transform==sky_pose and environment._ordinary.planets.models.map(func(model):return model.transform)==planet_poses,"Rejected station identity partially moved accepted sky or planet geometry")
 	var heard:={"primary":0,"npc":0,"radio":0}
 	for tick in 650:
 		var before: Dictionary=frame.frame_context();var t: int=before.elapsed_ms
@@ -252,7 +252,9 @@ static func run(host: SceneTree,library: RefCounted,bindings: RefCounted,cat: Re
 	check.call(frame.equipment_owner().snapshot()==gear and pilot.snapshot()==parent and scenery.snapshot()==field and equipment.snapshot()==gear,"Moving flight mutated supplied origin equipment, player or generated field")
 	check.call(frame.encounter_owner().snapshot().controller.defeat_status.is_empty(),"Moving/contact composition awarded a mission result")
 	var final_combat: Dictionary=frame.encounter_owner().combat_snapshot()
-	check.call(final_combat.actors[0].vitals.hull<1825 and final_combat.actors[0].actor_kind==1 and final_combat.provocation.actor_kinds[0]==1,"No real post-reveal hit reached the reclassified freighter with coherent faction reactions")
+	# Hits take the freighter's armor before its hull.
+	var start_pools: Dictionary=original.encounter.combat.actors[0].vitals;var end_pools: Dictionary=final_combat.actors[0].vitals
+	check.call(end_pools.hull+end_pools.armor<start_pools.hull+start_pools.armor and final_combat.actors[0].actor_kind==1 and final_combat.provocation.actor_kinds[0]==1,"No real post-reveal hit reached the reclassified freighter with coherent faction reactions")
 	# Explicit permission-boundary stimuli, separate from the uninterrupted run.
 	if revealed!=null and restored!=null:
 		var protected: RefCounted=revealed.player_owner();var immune: Dictionary=protected.snapshot().vitals
