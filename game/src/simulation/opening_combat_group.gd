@@ -61,10 +61,11 @@ var _truce_kinds:=[]
 var _truce_broken:=false
 # Frozen read_snapshot(); every method that changes group state clears it.
 var _read_group:={}
+var _read_standing:={}
 
 func clear() -> void:
 	error = ""
-	_owned={};_actors = [];_read_group={}
+	_owned={};_actors = [];_read_group={};_read_standing={}
 	_activation = {}
 	_hit_policy = {}
 	_training_weapons = {}
@@ -89,7 +90,7 @@ func clear() -> void:
 ## native targeting and firing, but cannot silently apply incomplete encounter
 ## consequences, reserve activation or mission results.
 func configure_selected41(bindings: RefCounted,catalogues: RefCounted,world: RefCounted) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error=""
 	if not _identity.is_empty():return reject("Source41 actors require a fresh group")
 	var data: Dictionary=load("res://src/content/selected41_population_definitions.gd").consequence_profile(bindings,catalogues,world)
@@ -108,14 +109,14 @@ func configure_selected41(bindings: RefCounted,catalogues: RefCounted,world: Ref
 		actors.append(actor)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":41}
 	_owned={};_actors=actors;_training_weapons=data;_selected41_world=world
-	_hit_policy=policy.duplicate(true);_provocation=reaction;_reputation=history;_reputation_rules=data.standing
+	_hit_policy=policy.duplicate(true);_provocation=reaction;_reputation=history;_reputation_rules=data.standing;_read_standing={}
 	_contact_random=world.snapshot().random_state.duplicate(true)
 	return true
 
 func selected41_world_owner() -> RefCounted:return _selected41_world
 
 func configure_selected40(bindings: RefCounted,catalogues: RefCounted,world: RefCounted) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error=""
 	if not _identity.is_empty() or not is_instance_of(world,load("res://src/simulation/opening_world_initialization.gd")):return reject("Selected40 actors require a fresh group and native initialized world")
 	var construction: RefCounted=world.npc_construction_owner()
@@ -134,7 +135,7 @@ func configure_selected40(bindings: RefCounted,catalogues: RefCounted,world: Ref
 func selected40_world_owner() -> RefCounted:return _selected40_world
 
 func apply_selected40_sequence(owner: RefCounted) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error=""
 	if _selected40_world==null or not is_instance_of(owner,load("res://src/simulation/selected40_sequence.gd")) or owner.world_owner()==null or owner.world_owner().npc_construction_owner()!=_selected40_world.npc_construction_owner():return reject("Selected40 sequence changed its generated cast")
 	var reaction: RefCounted=null if _provocation==null else _provocation.fork_for_frame()
@@ -144,13 +145,13 @@ func apply_selected40_sequence(owner: RefCounted) -> bool:
 	for id in owner.snapshot().frame.actor_commands:
 		if id not in [0,9,10,11,12]:return reject("Selected40 sequence changed an unrelated actor")
 		if not _writable(id).apply_selected40_sequence(owner):return reject(_actors[id].error)
-	_provocation=reaction;_reputation=history
+	_provocation=reaction;_reputation=history;_read_standing={}
 	return true
 
 ## Called transactionally by the native controller before any actor update.
 ## Projectile/mixed-contact admission is deliberately a separate capability.
 func _configure_selected40_consequences(bindings: RefCounted,catalogues: RefCounted,scenery: RefCounted,equipment: RefCounted,reputation: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error=""
 	if _selected40_world==null or _provocation!=null or _activated:return reject("Prepare selected40 reactions once before the first actor update")
 	var data: Dictionary=load("res://src/content/selected40_population_definitions.gd").consequence_profile(bindings,catalogues,scenery,equipment)
@@ -159,12 +160,12 @@ func _configure_selected40_consequences(bindings: RefCounted,catalogues: RefCoun
 	if not reaction.configure_selected40(bindings,catalogues,scenery,equipment,reputation) or not history.configure_selected40(bindings,catalogues,scenery,equipment):return reject(reaction.error+history.error)
 	var policy: Variant=bindings.weapon_parameters.get("ordinary_hit_policy",{})
 	if not HitDefinitions.parameters(policy):return reject("Selected40 consequences lack the ordinary hit policy")
-	_hit_policy=policy.duplicate(true);_provocation=reaction;_reputation=history;_training_weapons=data;_reputation_rules=data.standing
+	_hit_policy=policy.duplicate(true);_provocation=reaction;_reputation=history;_training_weapons=data;_reputation_rules=data.standing;_read_standing={}
 	_contact_random=_selected40_world.snapshot().random_state.duplicate()
 	return true
 
 func apply_selected40_guidance(decision: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error=""
 	var id: Variant=decision.get("actor_id")
 	if _selected40_world==null or not id is int or id<1 or id>=_actors.size():return reject("Selected40 guidance requires its retained fighter")
@@ -174,7 +175,7 @@ func apply_selected40_guidance(decision: Dictionary) -> bool:
 	return true
 
 func configure(bindings: RefCounted, catalogues: RefCounted, difficulty: Variant) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	clear()
 	if bindings == null or catalogues == null: return reject("Opening combat group requires source content")
 	var initial: Variant = bindings.opening_actors.get("npc_initialization",{})
@@ -206,7 +207,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, difficulty: Variant
 	return _configure_reputation(bindings,0,difficulty)
 
 func configure_full_hold(bindings: RefCounted, catalogues: RefCounted, construction: RefCounted, difficulty: Variant) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	clear()
 	var actor:=Actor.new()
 	if not actor.configure_full_hold(bindings,catalogues,construction,difficulty):return reject(actor.error)
@@ -218,7 +219,7 @@ func configure_full_hold(bindings: RefCounted, catalogues: RefCounted, construct
 
 
 func configure_combat_training(bindings: RefCounted, catalogues: RefCounted, world: RefCounted, rank: Variant, difficulty: Variant) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	clear()
 	var actors:=[]
 	for id in 4:
@@ -233,7 +234,7 @@ func configure_combat_training(bindings: RefCounted, catalogues: RefCounted, wor
 	return _configure_reputation(bindings,7,difficulty)
 
 func apply_combat_training_guidance(data: Dictionary, decision: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error=""
 	var id: Variant=decision.get("actor_id")
 	if _identity.get("campaign_cursor")!=7 or _actors.size()!=4 or not id is int or id<0 or id>=_actors.size():return reject("Combat-training activity names an unavailable actor")
@@ -242,7 +243,7 @@ func apply_combat_training_guidance(data: Dictionary, decision: Dictionary) -> b
 	return true
 
 func configure_local_patrol(bindings: RefCounted, catalogues: RefCounted, world: RefCounted, rank: Variant, difficulty: Variant) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	clear()
 	if world==null:return reject("Local patrol requires its generated world")
 	var data:=Travel.population(bindings,world.snapshot(),rank,difficulty)
@@ -257,17 +258,17 @@ func configure_local_patrol(bindings: RefCounted, catalogues: RefCounted, world:
 	return _configure_reputation(bindings,int(data.campaign_cursor),difficulty)
 
 func _configure_reputation(bindings: RefCounted, cursor: int, difficulty: Variant, ordinary_void_system_id: Variant=null, ordinary_void_rank: Variant=null, native_cast: Dictionary={}) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	if not Reputation.available(bindings):return true
 	var history:=Reputation.new()
 	var kinds:=_actors.map(func(actor):return int(actor.read_snapshot().actor_kind))
 	if native_cast.is_empty() and _training_weapons.has("mission_recipe"):native_cast=_training_weapons
 	if not history.configure(bindings,cursor,kinds,difficulty,_training_weapons.has("kappa_lifecycle"),ordinary_void_system_id,ordinary_void_rank,not _bakka_encounter.is_empty(),native_cast):return reject(history.error)
-	_reputation=history
+	_reputation=history;_read_standing={}
 	return true
 
 func configure_local_traffic(bindings: RefCounted, catalogues: RefCounted, world: RefCounted, rank: Variant, difficulty: Variant, equipment: RefCounted, reputation: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	if not configure_local_patrol(bindings,catalogues,world,rank,difficulty):return false
 	var reaction:=Provocation.new()
 	if not reaction.configure(bindings,catalogues,world.snapshot(),rank,difficulty,equipment,reputation):clear();return reject(reaction.error)
@@ -276,14 +277,14 @@ func configure_local_traffic(bindings: RefCounted, catalogues: RefCounted, world
 	if weapons.is_empty() or not HitDefinitions.parameters(policy):clear();return reject("Local combat lacks verified weapons and normal-hit rules")
 	for id in _actors.size():
 		if not _writable(id).enable_local_combat():clear();return reject(_actors[id].error)
-	_provocation=reaction;_training_weapons=weapons;_hit_policy=policy.duplicate(true)
+	_provocation=reaction;_training_weapons=weapons;_hit_policy=policy.duplicate(true);_read_standing={}
 	_reputation_rules=bindings.mido_travel.reputation.duplicate(true)
 	return true
 
 func has_local_reactions() -> bool:return _provocation!=null
 
 func configure_convoy(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,equipment: RefCounted,reputation: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	clear()
 	if not construction is NPCConstruction:return reject("Convoy combat requires its generated encounter")
 	var data:=Convoy.lifecycle(bindings,construction.snapshot())
@@ -298,14 +299,14 @@ func configure_convoy(bindings: RefCounted,catalogues: RefCounted,construction: 
 		if not actor.configure_convoy(bindings,catalogues,construction,id) or not actor.enable_convoy_combat():return reject(actor.error)
 		actors.append(actor)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(data.campaign_cursor)}
-	_owned={};_actors=actors;_hit_policy=policy.duplicate(true);_provocation=reaction;_training_weapons=data
+	_owned={};_actors=actors;_hit_policy=policy.duplicate(true);_provocation=reaction;_training_weapons=data;_read_standing={}
 	_reputation_rules=bindings.mido_travel.convoy_lifecycle.terran_hostility.duplicate(true)
 	if not _configure_reputation(bindings,int(data.campaign_cursor),data.difficulty):
 		var reason:=error;clear();return reject(reason)
 	return true
 
 func _configure_story(bindings: RefCounted,catalogues: RefCounted,data: Dictionary,equipment: RefCounted,reputation: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	clear()
 	var reaction:=Provocation.new()
 	if not reaction._configure_story(bindings,catalogues,data,equipment,reputation):return reject(reaction.error)
@@ -317,12 +318,12 @@ func _configure_story(bindings: RefCounted,catalogues: RefCounted,data: Dictiona
 		if not actor._configure_story(bindings,data,row):return reject(actor.error)
 		actors.append(actor)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(data.campaign_cursor)}
-	_owned={};_actors=actors;_hit_policy=policy.duplicate(true);_provocation=reaction;_training_weapons=data
+	_owned={};_actors=actors;_hit_policy=policy.duplicate(true);_provocation=reaction;_training_weapons=data;_read_standing={}
 	_reputation_rules=data.standing
 	return _configure_reputation(bindings,int(data.campaign_cursor),data.difficulty,data.get("source_system_id") if data.get("ordinary_void",false) else null,data.get("rank") if data.get("ordinary_void",false) else null)
 
 func apply_story_guidance(decision: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	var id: Variant=decision.get("actor_id")
 	if not _training_weapons.get("authored_story",false) or not id is int or id<0 or id>=_actors.size():return reject("Story guidance names an unavailable actor")
 	if not _writable(id).apply_story_guidance(decision):return reject(_actors[id].error)
@@ -330,7 +331,7 @@ func apply_story_guidance(decision: Dictionary) -> bool:
 	return true
 
 func configure_alioth_attack(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,equipment: RefCounted,reputation: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	clear()
 	if not construction is NPCConstruction:return reject("Alioth combat requires its generated encounter")
 	var data:=Alioth.lifecycle(bindings,construction.snapshot())
@@ -345,13 +346,13 @@ func configure_alioth_attack(bindings: RefCounted,catalogues: RefCounted,constru
 		if not actor.configure_alioth_attack(bindings,catalogues,construction,id) or not actor.enable_alioth_combat():return reject(actor.error)
 		actors.append(actor)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(data.campaign_cursor)}
-	_owned={};_actors=actors;_hit_policy=policy.duplicate(true);_provocation=reaction;_training_weapons=data
+	_owned={};_actors=actors;_hit_policy=policy.duplicate(true);_provocation=reaction;_training_weapons=data;_read_standing={}
 	if not _configure_reputation(bindings,int(data.campaign_cursor),data.difficulty):
 		var reason:=error;clear();return reject(reason)
 	return true
 
 func apply_alioth_guidance(decision: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	var id: Variant=decision.get("actor_id")
 	if not _training_weapons.has("alioth_lifecycle") or not id is int or id<0 or id>=_actors.size():return reject("Alioth guidance names an unavailable actor")
 	if not _writable(id).apply_alioth_guidance(decision):return reject(_actors[id].error)
@@ -359,7 +360,7 @@ func apply_alioth_guidance(decision: Dictionary) -> bool:
 	return true
 
 func configure_kappa_rescue(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,reputation: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	clear()
 	if not construction is NPCConstruction:return reject("Kappa combat requires its generated encounter")
 	var data:=Kappa.lifecycle(bindings,construction.snapshot())
@@ -374,14 +375,14 @@ func configure_kappa_rescue(bindings: RefCounted,catalogues: RefCounted,construc
 		if not actor.configure_kappa_rescue(bindings,catalogues,construction,id) or not actor.enable_kappa_combat():return reject(actor.error)
 		actors.append(actor)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(data.campaign_cursor)}
-	_owned={};_actors=actors;_hit_policy=policy.duplicate(true);_provocation=reaction;_training_weapons=data
+	_owned={};_actors=actors;_hit_policy=policy.duplicate(true);_provocation=reaction;_training_weapons=data;_read_standing={}
 	_reputation_rules=data.kappa_lifecycle.terran_hostility.duplicate(true)
 	if not _configure_reputation(bindings,int(data.campaign_cursor),data.difficulty):
 		var reason:=error;clear();return reject(reason)
 	return true
 
 func apply_kappa_guidance(decision: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	var id: Variant=decision.get("actor_id")
 	if not _training_weapons.has("kappa_lifecycle") or not id is int or id<0 or id>=_actors.size():return reject("Kappa guidance names an unavailable actor")
 	if not _writable(id).apply_kappa_guidance(decision):return reject(_actors[id].error)
@@ -398,17 +399,17 @@ func systems_for_frame(actor_id: int) -> RefCounted:
 	return _actors[actor_id].systems_for_frame()
 
 func apply_kappa_sequence(owner: RefCounted) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	if not _training_weapons.has("kappa_lifecycle"):return reject("This group has no Kappa sequence")
 	var next: RefCounted=_provocation.fork_for_frame()
 	if not next.apply_kappa_sequence(owner):return reject(next.error)
 	var actors:=_reaction_actors(next,_actors)
 	if actors.is_empty():return false
-	_owned={};_actors=actors;_provocation=next
+	_owned={};_actors=actors;_provocation=next;_read_standing={}
 	return true
 
 func systems_hit(actor_id: Variant,amount: Variant,nonplayer_source: Variant=false) -> Dictionary:
-	_read_group={}
+	_read_group={};_read_standing={}
 	if _selected40_world!=null and _provocation==null:reject("Selected40 group consequences are not prepared");return {}
 	error=""
 	if _provocation==null or _reputation==null or not actor_id is int or actor_id<0 or actor_id>=_actors.size():reject("Systems hit names an unavailable actor");return {}
@@ -422,7 +423,7 @@ func systems_hit(actor_id: Variant,amount: Variant,nonplayer_source: Variant=fal
 	var staged:=_actors.duplicate();staged[actor_id]=actor
 	var actors:=_reaction_actors(reaction.owner,staged)
 	if actors.is_empty():return {}
-	_owned={};_actors=actors;_provocation=reaction.owner;_reputation=history;_contact_random=reaction.random_state
+	_owned={};_actors=actors;_provocation=reaction.owner;_reputation=history;_contact_random=reaction.random_state;_read_standing={}
 	result.reactions=reaction.events.duplicate(true)
 	result.first_disable_by_player=reaction.first_disable_by_player
 	return result
@@ -458,7 +459,7 @@ func kappa_actor_context() -> Dictionary:
 	return result
 
 func apply_alioth_sequence(owner: RefCounted) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error=""
 	if not _training_weapons.has("alioth_lifecycle"):return reject("This group has no Alioth sequence")
 	var actors:=[]
@@ -470,7 +471,7 @@ func apply_alioth_sequence(owner: RefCounted) -> bool:
 	return true
 
 func apply_convoy_guidance(decision: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	var id: Variant=decision.get("actor_id")
 	if not _training_weapons.has("capital_death") or not id is int or id<0 or id>=_actors.size():return reject("Convoy guidance names an unavailable actor")
 	if not _writable(id).apply_convoy_guidance(decision):return reject(_actors[id].error)
@@ -478,7 +479,7 @@ func apply_convoy_guidance(decision: Dictionary) -> bool:
 	return true
 
 func apply_convoy_capture(owner: RefCounted) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error=""
 	if not _training_weapons.has("capital_death"):return reject("This group has no convoy capture owner")
 	var actors:=[]
@@ -490,7 +491,7 @@ func apply_convoy_capture(owner: RefCounted) -> bool:
 	return true
 
 func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,equipment: RefCounted) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	clear()
 	if not construction is NPCConstruction:return reject("Contract combat requires its accepted generated population")
 	var data:=ContractLife.population(bindings,construction.snapshot(),construction.mission_context_owner())
@@ -510,15 +511,15 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 		if not actor.configure_contract(bindings,catalogues,construction,id) or not actor.enable_contract_combat(bindings):return reject(actor.error)
 		actors.append(actor)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(data.campaign_cursor)}
-	_owned={};_actors=actors;_hit_policy=policy.duplicate(true);_provocation=reaction;_training_weapons=data
-	_contract_encounter=construction.snapshot().contract_encounter.duplicate(true)
+	_owned={};_actors=actors;_hit_policy=policy.duplicate(true);_provocation=reaction;_training_weapons=data;_read_standing={}
+	_contract_encounter=construction.snapshot().contract_encounter.duplicate(true);_read_standing={}
 	var native_cast:={"campaign_cursor":data.campaign_cursor,"actor_rows":data.actors,"context":{"system_id":construction.mission_context_owner().recipe().system_id}}
 	if not debris and not _configure_reputation(bindings,int(data.campaign_cursor),data.difficulty,null,null,native_cast):
 		var reason:=error;clear();return reject(reason)
 	return true
 
 func configure_bakka(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,equipment: RefCounted,reputation: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	clear()
 	if not construction is NPCConstruction:return reject("B'akka combat requires its generated story population")
 	var data:=BakkaCombat.population(bindings,construction.snapshot())
@@ -533,14 +534,14 @@ func configure_bakka(bindings: RefCounted,catalogues: RefCounted,construction: R
 		if not actor.configure_bakka(bindings,catalogues,construction,id) or not actor.enable_bakka_combat(bindings):return reject(actor.error)
 		actors.append(actor)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":36}
-	_owned={};_actors=actors;_hit_policy=policy.duplicate(true);_training_weapons=data;_provocation=reaction
+	_owned={};_actors=actors;_hit_policy=policy.duplicate(true);_training_weapons=data;_provocation=reaction;_read_standing={}
 	_bakka_encounter=construction.snapshot().bakka_encounter.duplicate(true)
 	if not _configure_reputation(bindings,36,data.difficulty):
 		var reason:=error;clear();return reject(reason)
 	return true
 
 func apply_contract_guidance(decision: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	var id: Variant=decision.get("actor_id")
 	if _contract_encounter.is_empty() or not id is int or id<0 or id>=_actors.size():return reject("Contract guidance names an unavailable actor")
 	if not _writable(id).apply_contract_guidance(decision):return reject(_actors[id].error)
@@ -548,7 +549,7 @@ func apply_contract_guidance(decision: Dictionary) -> bool:
 	return true
 
 func apply_bakka_guidance(decision: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	var id: Variant=decision.get("actor_id")
 	if _bakka_encounter.is_empty() or not id is int or id<0 or id>=_actors.size():return reject("B'akka guidance names an unavailable actor")
 	if not _writable(id).apply_bakka_guidance(decision):return reject(_actors[id].error)
@@ -556,7 +557,7 @@ func apply_bakka_guidance(decision: Dictionary) -> bool:
 	return true
 
 func relaunch_ambient(actor_id: int,bindings: RefCounted,death_owner: RefCounted=null,origin: Vector3=Vector3.ZERO) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error=""
 	if _provocation==null or actor_id<0 or actor_id>=_actors.size():return reject("Traffic launch requires its configured combat group")
 	var actor: RefCounted=_actors[actor_id].fork_for_frame()
@@ -567,8 +568,8 @@ func relaunch_ambient(actor_id: int,bindings: RefCounted,death_owner: RefCounted
 	if reactions.has("systems_requested_damage") and not actor.retain_ordinary_force(reactions.forced_hostile[actor_id],reactions.permanent_hostile[actor_id]):return reject(actor.error)
 	var history: RefCounted=_reputation.fork_for_frame()
 	if actor.read_snapshot().has("spawn_generation") and not history.register_relaunch(actor.read_snapshot()):return reject(history.error)
-	_actors[actor_id]=actor;_provocation=reaction
-	_reputation=history
+	_actors[actor_id]=actor;_provocation=reaction;_read_standing={}
+	_reputation=history;_read_standing={}
 	return true
 
 func apply_ambient_guidance(decision: Dictionary) -> bool:
@@ -585,7 +586,7 @@ func apply_ambient_departure_pose(actor_id: int,root: Variant) -> bool:
 	return true
 
 func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,rank: Variant,difficulty: Variant,equipment: RefCounted,reputation: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	clear()
 	if not construction is NPCConstruction:return reject("Ambient combat requires its generated construction")
 	var data:=AmbientCombat.population(bindings,construction.snapshot(),rank,difficulty)
@@ -605,7 +606,7 @@ func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction:
 		if retained.has("permanent_hostile") and not actor.retain_ordinary_force(retained.forced_hostile[id],retained.permanent_hostile[id]):return reject(actor.error)
 		actors.append(actor)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":int(data.campaign_cursor)}
-	_owned={};_actors=actors;_hit_policy=policy.duplicate(true);_provocation=reaction
+	_owned={};_actors=actors;_hit_policy=policy.duplicate(true);_provocation=reaction;_read_standing={}
 	_training_weapons=data.duplicate(true) if data.has("free_lifecycle") else {"scope":"mido_ambient_ordinary_weapons","campaign_cursor":int(data.campaign_cursor)}
 	_reputation_rules=data.free_lifecycle.standing.duplicate(true) if data.has("free_lifecycle") else bindings.mido_travel.reputation.duplicate(true)
 	if not _configure_reputation(bindings,int(data.campaign_cursor),difficulty):
@@ -613,7 +614,7 @@ func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction:
 	return true
 
 func begin_contact_pass(random_state: Dictionary, display_available: bool) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	if _selected40_world!=null and _provocation==null:return reject("Selected40 consequences require complete native owners")
 	error=""
 	if _provocation==null and _contract_encounter.is_empty():return reject("This encounter does not use local provocation")
@@ -623,7 +624,7 @@ func begin_contact_pass(random_state: Dictionary, display_available: bool) -> bo
 	if _provocation!=null and _provocation.read_state().get("arrival_response_pending",false):
 		var arrival: Dictionary=_provocation.evaluate_arrival(_contact_random,display_available)
 		if arrival.is_empty():return reject(_provocation.error)
-		_provocation=arrival.owner;_contact_random=arrival.random_state
+		_provocation=arrival.owner;_contact_random=arrival.random_state;_read_standing={}
 	return true
 
 func contact_random_state() -> Dictionary:return _contact_random.duplicate(true)
@@ -636,26 +637,31 @@ func hostility_reputation() -> Dictionary:
 	return standing
 
 func current_reputation() -> Dictionary:
+	# Every NPC asks each frame; compute once per group change. Callers edit copies.
+	if _read_standing.is_empty():_read_standing=Readonly.freeze(_fresh_reputation())
+	return ReadCache.checked(_read_standing,_fresh_reputation,"Combat standing").duplicate(true)
+
+func _fresh_reputation() -> Dictionary:
 	var standing:=_current_reputation()
 	if not _story_standing.is_empty() and not standing.is_empty() and int(_story_standing.axis)>=0:standing.axes[int(_story_standing.axis)]=int(_story_standing.value)
 	return standing
 
 ## The story turns every contract ship hostile and fixes one faction standing.
 func apply_story_hostility(axis: int,value: int) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error=""
 	# Axis -1 turns the cast hostile without changing any faction standing.
 	if _contract_encounter.is_empty() or axis not in [-1,0,1] or value<-100 or value>100:return reject("Story hostility requires a contract cast and a valid standing")
 	for id in _actors.size():
 		if _actors[id].read_snapshot().get("contract_ship",false) and not _writable(id).apply_story_hostility():return reject(_actors[id].error)
-	_story_standing={"axis":axis,"value":value}
+	_story_standing={"axis":axis,"value":value};_read_standing={}
 	return true
 
 func story_hostility_applied() -> bool:return not _story_standing.is_empty()
 
 ## Ordinary-traffic truce: these actor kinds are not hostile unless forced.
 func set_truce(kinds: Array) -> void:
-	_read_group={}
+	_read_group={};_read_standing={}
 	_truce_kinds=kinds.duplicate();_truce_broken=false
 
 func truce_kinds() -> Array:return _truce_kinds.duplicate()
@@ -730,7 +736,7 @@ func _current_reputation() -> Dictionary:
 	return reputation_after(_provocation.read_state().initial_reputation)
 
 func open_contract_result(bindings: RefCounted,mode: int) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error=""
 	if _contract_encounter.is_empty() or not _contract_settlement.is_empty() or not ContractResults.available(bindings):return reject("This combat group has no unsettled contract result")
 	if bindings.base_content_id!=_identity.base_content_id or bindings.binding_id!=_identity.binding_id:return reject("Contract result belongs to another content identity")
@@ -743,15 +749,15 @@ func open_contract_result(bindings: RefCounted,mode: int) -> bool:
 	if standing.is_empty():return reject("The contract lost its faction standing")
 	# Retain lethal history, but apply future hits after the result bonus. This
 	# matters at the reputation caps: replaying the old hits would change it twice.
-	_contract_settlement={"mode":mode,"retired":false,"reputation":standing,"event_count":0 if _reputation==null else _reputation.snapshot().events.size()}
+	_contract_settlement={"mode":mode,"retired":false,"reputation":standing,"event_count":0 if _reputation==null else _reputation.snapshot().events.size()};_read_standing={}
 	return true
 
 func retire_contract_result() -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error=""
 	if _contract_settlement.is_empty() or _contract_settlement.retired:return reject("No contract result awaits retirement")
 	if _provocation!=null and not _provocation.retire_contract():return reject(_provocation.error)
-	_contract_settlement.retired=true
+	_contract_settlement.retired=true;_read_standing={}
 	return true
 
 func reputation_after(prior: Dictionary) -> Dictionary:
@@ -766,7 +772,7 @@ func reputation_after(prior: Dictionary) -> Dictionary:
 ## stack deltas. A failed enclosing frame discards this branch, including faction
 ## changes that precede capacity acceptance in the original transaction.
 func record_cargo_recovery(actor: Dictionary,events: Array) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	var totals:=recovery_totals()
 	for event in events:
 		match event.kind:
@@ -789,7 +795,7 @@ func recovery_totals() -> Dictionary:
 	return (EMPTY_RECOVERY if _recovery_totals.is_empty() else _recovery_totals).duplicate(true)
 
 func apply_local_patrol_guidance(decision: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error=""
 	var id: Variant=decision.get("actor_id")
 	if _identity.get("campaign_cursor")!=10 or not id is int or id<0 or id>=_actors.size():return reject("Local patrol activity names an unavailable actor")
@@ -798,7 +804,7 @@ func apply_local_patrol_guidance(decision: Dictionary) -> bool:
 	return true
 
 func apply_full_hold_guidance(data: Dictionary, decision: Dictionary) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error=""
 	if _identity.get("campaign_cursor")!=4 or _actors.size()!=1:return reject("This group has no second-trip activity context")
 	if not _writable(0).apply_full_hold_guidance(data,decision):return reject(_actors[0].error)
@@ -806,7 +812,7 @@ func apply_full_hold_guidance(data: Dictionary, decision: Dictionary) -> bool:
 	return true
 
 func apply_full_hold_appearance(data: Dictionary, root: Variant, statistics: Variant) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error=""
 	if _identity.get("campaign_cursor")!=4 or _actors.size()!=1:return reject("This group has no second-trip appearance context")
 	if not _writable(0).apply_full_hold_appearance(data,root,statistics):return reject(_actors[0].error)
@@ -814,7 +820,7 @@ func apply_full_hold_appearance(data: Dictionary, root: Variant, statistics: Var
 	return true
 
 func configure_escape(bindings: RefCounted) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error=""
 	if _activation.is_empty() or _escape_enabled or _phase>0 or bindings==null or bindings.binding_id!=_identity.get("binding_id") or not EscapeCamera.parameters(bindings.opening_staging.get("escape_camera",{})):
 		return reject("Escape actor lifecycle requires matching fresh declarations")
@@ -822,7 +828,7 @@ func configure_escape(bindings: RefCounted) -> bool:
 	return true
 
 func update(scene: Variant, phase: Variant, preceding_radio: Variant) -> bool:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error = ""
 	if _actors.is_empty() or _activation.is_empty(): return reject("This combat group has no Opening radio activation owner")
 	if not Numbers.integer(phase,0,16 if _escape_enabled else 4) or phase<_phase: return reject("Opening combat phase is invalid or regressed")
@@ -905,7 +911,7 @@ func read_actors() -> Array:
 	return result
 
 func normal_hit(actor_id: Variant, amount: Variant, nonplayer_source: Variant=false, item_id:=-1) -> Dictionary:
-	_read_group={}
+	_read_group={};_read_standing={}
 	error = ""
 	if _selected40_world!=null and _provocation==null:reject("Selected40 group consequences are not prepared");return {}
 	if not actor_id is int or actor_id<0 or actor_id>=_actors.size():
@@ -926,13 +932,13 @@ func normal_hit(actor_id: Variant, amount: Variant, nonplayer_source: Variant=fa
 	if not reaction.is_empty():
 		staged=_reaction_actors(reaction.owner,staged)
 		if staged.is_empty():return {}
-		_provocation=reaction.owner;_contact_random=reaction.random_state
+		_provocation=reaction.owner;_contact_random=reaction.random_state;_read_standing={}
 		result.reactions=reaction.events.duplicate(true)
 	if not nonplayer_source and not _truce_kinds.is_empty() and int(actor.read_snapshot().get("actor_kind",-1)) in _truce_kinds:
 		_truce_kinds=[];_truce_broken=true
 	if result.destroyed_now and item_id>=0 and not nonplayer_source:
 		_lethal_items=_lethal_items+[{"actor_id":actor_id,"item_id":item_id,"population_group":actor.read_snapshot().get("population_group","")}]
-	_owned={};_actors=staged;_reputation=history
+	_owned={};_actors=staged;_reputation=history;_read_standing={}
 	return result
 
 ## Repair beam healing (see repair_beams.gd).
@@ -1080,7 +1086,7 @@ func supports_weapon_hit(weapon: Variant) -> bool:
 	return error.is_empty()
 
 func weapon_hit(actor_id: Variant, weapon: Variant) -> Dictionary:
-	_read_group={}
+	_read_group={};_read_standing={}
 	if not supports_weapon_hit(weapon): return {}
 	if not weapon.ordinary_hit_policy.additional_damage_required:return normal_hit(actor_id,weapon.ordinary_hit_policy.nonplayer_damage,weapon.get("nonplayer_source",false))
 	if not actor_id is int or actor_id<0 or actor_id>=_actors.size():return _failed_weapon_hit("Systems projectile names an unavailable actor")
@@ -1095,7 +1101,7 @@ func weapon_hit(actor_id: Variant, weapon: Variant) -> Dictionary:
 	if not systems.is_empty():
 		result.systems=systems
 		result.reactions=systems.get("reactions",[])+result.get("reactions",[])
-	_owned={};_actors=next._actors;_provocation=next._provocation;_reputation=next._reputation;_contact_random=next._contact_random
+	_owned={};_actors=next._actors;_provocation=next._provocation;_reputation=next._reputation;_contact_random=next._contact_random;_read_standing={}
 	_truce_kinds=next._truce_kinds;_truce_broken=next._truce_broken
 	return result
 
@@ -1136,6 +1142,7 @@ func fork_for_frame() -> RefCounted:
 	copy._truce_kinds=_truce_kinds;copy._truce_broken=_truce_broken
 	copy._activated = _activated
 	copy._read_group = _read_group
+	copy._read_standing = _read_standing
 	copy._phase = _phase
 	copy._event_count = _event_count
 	copy._escape_enabled=_escape_enabled
@@ -1155,6 +1162,7 @@ func fork_for_frame() -> RefCounted:
 
 ## Detach one shared actor before an in-place change.
 func _writable(id: int) -> RefCounted:
+	# Actor changes leave the group standing unchanged.
 	_read_group={}
 	if not _owned.get(id,false):
 		_actors[id]=_actors[id].fork_for_frame();_owned[id]=true

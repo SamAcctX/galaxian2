@@ -21,9 +21,11 @@ static func advance(preset: Dictionary,state: Dictionary,delta_ms: Variant) -> D
 
 ## An admitted preset stays immutable; changing slots and time are checked here.
 static func advance_prepared(preset: Dictionary,state: Dictionary,delta_ms: Variant) -> Dictionary:
-	if not valid_slot(preset,state):return {"error":"Invalid damage particle appearance state"}
+	# The emitter owns these slots; debug builds still validate every update.
+	if OS.is_debug_build() and not valid_slot(preset,state):return {"error":"Invalid damage particle appearance state"}
 	if not (delta_ms is float or delta_ms is int) or not is_finite(delta_ms) or delta_ms<0 or delta_ms>60000:return {"error":"Invalid damage particle appearance interval"}
-	var result:=state.duplicate(true)
+	# Three scalar fields; a shallow copy is complete.
+	var result:=state.duplicate()
 	if int(state.age_ms)==-1:return result
 	var delta:=single(delta_ms)
 	result.age_ms=int(single(single(state.age_ms)+delta))

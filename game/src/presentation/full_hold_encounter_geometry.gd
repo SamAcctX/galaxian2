@@ -250,7 +250,8 @@ func prepare_world(owner: RefCounted, camera: Transform3D, detail: Dictionary, o
 	for id in actors.size():
 		var nodes: Dictionary=actors[id];var actor: Dictionary=state.combat.actors[id]
 		if actor.actor_id!=id or actor.hull_catalogue_id!=nodes.ship_id or actor.hull_resource!=nodes.hull_resource or not Pose.valid_pose(actor.pose):return failed("NPC hull or statistics pose changed")
-		var death: RefCounted=owner.npc_destruction_owner(id)
+		# Drawing only reads the accepted owner; no per-frame fork is needed.
+		var death: RefCounted=owner.npc_destruction_view(id)
 		if death==null:return failed("NPC lost its destruction owner")
 		if nodes.get("debris",false):
 			var current:=_prepare_debris(actor,nodes,death)
@@ -271,7 +272,7 @@ func prepare_world(owner: RefCounted, camera: Transform3D, detail: Dictionary, o
 			var current:=_prepare_freighter(owner,actor,nodes,death,camera,selection)
 			if current.is_empty():return {}
 			prepared.append(current);continue
-		var held: Dictionary=death.snapshot().cargo
+		var held: Dictionary=death.read_state().cargo
 		if held.get("resource")!=nodes.cargo_resource or not held.get("model_exists") is bool or not Pose.valid_pose(held.get("pose")):return failed("NPC cargo presentation lost its retained model")
 		var effect_node: Node3D=nodes.explosion
 		if not effect_node.follows(death):

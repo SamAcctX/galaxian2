@@ -1206,6 +1206,8 @@ func player_kill_count() -> int:return 0 if _control==null or not _control.has_m
 func combat_owner() -> RefCounted:return null if _combat==null else _combat.fork_for_frame()
 func impact_visual_owner() -> RefCounted:return null if _impacts==null else _impacts.fork_for_frame()
 func npc_destruction_owner(actor_id: int) -> RefCounted:return null if _control==null else _control.destruction_owner(actor_id)
+## The accepted owner itself, for read-only presentation; never change it.
+func npc_destruction_view(actor_id: int) -> RefCounted:return null if _control==null else _control.destruction_view(actor_id)
 func recovery_totals() -> Dictionary:
 	return Combat.EMPTY_RECOVERY.duplicate(true) if _combat==null else _combat.recovery_totals()
 func freighter_assembly(actor_id: int) -> Dictionary:return _freighter_assemblies.get(actor_id,{}).duplicate(true)

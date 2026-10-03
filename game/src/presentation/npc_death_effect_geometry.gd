@@ -72,7 +72,8 @@ func follows(death: RefCounted) -> bool:
 func prepare_effect(death: RefCounted, camera: Transform3D, parent_rgba: PackedByteArray, global_tint: Vector4, darken: Variant) -> Dictionary:
 	error=""
 	if _descriptor.is_empty() or not supported_owner(death) or death.presentation_identity()!=_identity: return failed_frame("Explosion geometry follows one configured owner")
-	var state: Dictionary=death.snapshot()
+	# Read-only use; NPC owners lend their live state instead of a deep copy.
+	var state: Dictionary=death.read_state() if death is Death else death.snapshot()
 	var identity_keys:=["base_content_id","binding_id","item_id","kind","effect_type"] if death is Bomb else ["base_content_id","binding_id","actor_id","fragments"]
 	for key in identity_keys:
 		if state.get(key)!=_descriptor[key]: return failed_frame("Explosion effect identity or retained fragments changed")

@@ -1180,6 +1180,10 @@ func evaluate(combat: RefCounted, weapons: RefCounted, milliseconds: int, player
 func destruction_owner(actor_id: int) -> RefCounted:
 	return null if actor_id<0 or actor_id>=_destruction.size() else _destruction[actor_id].fork_for_frame()
 
+## The accepted owner itself, for read-only presentation; never change it.
+func destruction_view(actor_id: int) -> RefCounted:
+	return null if actor_id<0 or actor_id>=_destruction.size() else _destruction[actor_id]
+
 func destruction_resources() -> RefCounted:return _death_resources
 
 func combat_owner() -> RefCounted:
