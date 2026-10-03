@@ -63,6 +63,7 @@ func verify_free_application() -> void:
 	if staged=="kaamo":await fly_kaamo_siege()
 	if staged=="pirate-base":await fly_pirate_base()
 	if staged=="loma":await fly_loma_toll()
+	if staged=="weapons":await fly_dlc_weapons()
 	if staged=="supernova141":await fly_supernova_finale()
 	if staged=="supernova154":await fly_supernova_ambush()
 	if staged=="supernova160":await fly_supernova_end()
@@ -1670,6 +1671,61 @@ func fly_pirate_base() -> void:
 	if failures or not await depart_to(base):return
 	check(not app.session.flight_owner()._encounter.combat_snapshot().actors.any(func(actor):return actor.get("static_object",false)),"The destroyed base came back")
 
+## Expansion weapons in one flight: fitted in the hangar from the hold, then
+## the cluster salvo, the Shock Blast and the new guns fire, with captures.
+func fly_dlc_weapons() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	if not seed_cargo([[214,6],[226,3],[228,1],[176,1]]):return
+	# Make room: take off the guns and secondaries already fitted.
+	if not app.equipment_action("open"):check(false,app.session.error);return
+	var slots: Array=app.session.station_owner().snapshot().loadout.slots
+	for index in range(slots.size()-1,-1,-1):
+		if slots[index]!=null and int(catalogue.tables.items[int(slots[index].item_id)].properties.get(1,-1)) in [0,1]:
+			if not app.equipment_action("unmount",int(slots[index].item_id),index):check(false,app.session.error);return
+	if not app.equipment_action("close"):check(false,app.session.error);return
+	for id in [214,226,228,176]:
+		if not await fit_item(id):return
+	var fitted: Array=app.session.station_owner().snapshot().loadout.equipment_ids
+	check([214,226,228,176].all(func(id):return id in fitted),"Not every expansion weapon was fitted: "+str(fitted))
+	if failures:return
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	for item in [214,226]:
+		check(app.session.select_secondary(item),"Selecting %d failed: %s"%[item,app.session.error])
+		var before:=weapon_rounds(item)
+		check(app.session.action("missiles"),"Launching %d failed: %s"%[item,app.session.error])
+		var most:=0
+		for tick in 12:
+			if not application_step():return
+			most=maxi(most,live_shots(item))
+			if tick==6:await capture_free_application("weapons-%d"%item)
+			await process_frame
+		print("WEAPONS ",item," rounds ",before," -> ",weapon_rounds(item)," live shots ",most)
+		check(weapon_rounds(item)<before,"Launching %d used no round"%item)
+		if item==214:check(most>=3,"The cluster launch fired no salvo")
+		for tick in 80:
+			if not application_step():return
+	# Primary guns: hold fire for a moment.
+	for tick in 20:
+		now_us+=50000
+		if not app.session.step(now_us,Vector2.ZERO,true):check(false,app.session.error);return
+		app.present_session()
+		if tick==10:await capture_free_application("weapons-primaries")
+		await process_frame
+	check(app.session.error.is_empty(),"Firing the expansion guns failed: "+app.session.error)
+
+func weapon_rounds(item: int) -> int:
+	for gun in app.session.flight_owner()._encounter.snapshot().get("secondaries",{}).get("guns",[]):
+		if int(gun.get("equipment",{}).get("item_id",-1))==item:return int(gun.get("ammunition",gun.get("equipment",{}).get("quantity",-1)))
+	return -1
+
+func live_shots(item: int) -> int:
+	for gun in app.session.flight_owner()._encounter.snapshot().get("secondaries",{}).get("guns",[]):
+		if int(gun.get("equipment",{}).get("item_id",-1))==item:
+			return gun.get("projectiles",{}).get("slots",[]).filter(func(slot):return slot is Dictionary and int(slot.get("remaining_ms",0))>0).size()
+	return 0
+
 ## Shared release, with the blocking state printed when control never comes.
 func release_application_flight() -> bool:
 	var released: bool=await super.release_application_flight()
@@ -3016,7 +3072,7 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"supernova109":return state.campaign_cursor==109
 		"supernova117":return state.campaign_cursor==117
 		"supernova128":return state.campaign_cursor==128
-		"supernova135","kaamo","pirate-base","loma":return state.campaign_cursor==135
+		"supernova135","kaamo","pirate-base","loma","weapons":return state.campaign_cursor==135
 		"supernova141":return state.campaign_cursor==141
 		"supernova154":return state.campaign_cursor==154
 		"supernova160":return state.campaign_cursor==160
