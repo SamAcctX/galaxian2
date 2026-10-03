@@ -11,7 +11,12 @@ func run() -> void:
 	app.boot(PackedStringArray(),directory)
 	var selection:=Preferences.defaults();selection.content=args[0];selection.bindings=args[1];selection.visuals=args[2]
 	if not app.select_content(selection):check(false,app.error);finish();return
+	var update:=OS.get_environment("GOF2_IMPORT_UPDATE")
+	if not update.is_empty() and app.bindings.import_update_receipt().is_empty() and not app.bindings.attach_import_update(update,app.library.manifest,app.library):check(false,"Import update: "+app.bindings.error);finish();return
 	app.change_preference("frame_rate",0);root.size=Vector2i(1920,1080);root.grab_focus()
+	var upscaler:=OS.get_environment("GOF2_BENCH_UPSCALER")
+	if not upscaler.is_empty():
+		check(app.change_preference("upscaler",upscaler) and app.change_preference("render_scale",0.67),"Upscaler %s refused: %s"%[upscaler,app.error])
 	if not app._enter_game("new_game"):check(false,app.error);finish();return
 	await measure("opening")
 	var source_save:=OS.get_environment("GOF2_SOURCE_SAVE")
