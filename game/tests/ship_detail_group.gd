@@ -42,14 +42,14 @@ func verify_source(content: String, pack: String, texture_pack: String) -> void:
 	check(geometry.apply_selection(group.snapshot().selections.player) and geometry.levels[0].visible,"Held detail did not reach geometry")
 	check(group.update(1,far,Vector3.ZERO,1,false),group.error)
 	var selected: Dictionary = group.snapshot().selections
-	check(group.snapshot().counter_ms==0 and selected.player.level==1 and not selected[0].visible and selected[1].level==1,"Periodic distance selection mismatch")
-	check(geometry.apply_selection(selected.player) and geometry.levels[1].visible and not geometry.levels[0].visible,"Scheduled detail did not switch geometry")
-	selected.player.level=0
-	check(group.snapshot().selections.player.level==1 and geometry.selection.level==1,"Snapshot mutation escaped into state")
+	check(group.snapshot().counter_ms==0 and selected.player.level==0 and not selected[0].visible and selected[1].level==0,"Periodic distance selection mismatch (ships keep their most detailed model)")
+	check(geometry.apply_selection(selected.player) and geometry.levels[0].visible,"A distant ship left its most detailed model")
+	selected[0].visible=true
+	check(not group.snapshot().selections[0].visible and geometry.selection.level==0,"Snapshot mutation escaped into state")
 	for i in 7: check(group.update(150,near,Vector3.ZERO,1,false),group.error)
-	check(group.snapshot().counter_ms==0 and group.snapshot().selections.player.level==0,"Refresh retained overshoot instead of resetting to zero")
+	check(group.snapshot().counter_ms==0 and group.snapshot().selections[0].visible,"Refresh retained overshoot instead of resetting to zero")
 	check(group.update(150,far,Vector3.ZERO,1,false),group.error)
-	check(group.refresh(far,Vector3.ZERO,1) and group.snapshot().counter_ms==150 and group.snapshot().selections.player.level==1,"Forced refresh reset the periodic timer")
+	check(group.refresh(far,Vector3.ZERO,1) and group.snapshot().counter_ms==150 and not group.snapshot().selections[0].visible,"Forced refresh reset the periodic timer")
 	original=group.snapshot()
 	for invalid in [{}, {"player":Vector3.ZERO,0:Vector3.INF,1:Vector3.ZERO}]:
 		check(not group.refresh(invalid,Vector3.ZERO,1) and group.snapshot()==original,"Invalid batch partially changed selections")
@@ -61,7 +61,7 @@ func verify_source(content: String, pack: String, texture_pack: String) -> void:
 	check(group.refresh(far,Vector3(0,0,20000),1) and group.snapshot().selections.player.level==0,"Supplied reference was ignored")
 	var before := geometry.selection.duplicate(true)
 	for invalid in [{},{"visible":true,"level":99},{"visible":false,"level":0},{"visible":true,"level":true}]:
-		check(not geometry.apply_selection(invalid) and geometry.selection==before and geometry.levels[1].visible,"Invalid selection changed geometry")
+		check(not geometry.apply_selection(invalid) and geometry.selection==before and geometry.levels[0].visible,"Invalid selection changed geometry")
 	check(geometry.apply_selection({"visible":false,"level":-1}),geometry.error)
 	for level in geometry.levels: check(not level.visible,"Batch culling left a visible level")
 	check(not group.configure(bindings,{0:37}) and group.snapshot().is_empty(),"Unregistered non-LOD ship acquired a culling policy")
@@ -88,7 +88,7 @@ func check_forks(bindings: RefCounted) -> void:
 	var left := group.fork_for_frame();var right: RefCounted=left.fork_for_frame()
 	check(left.update(150,{},null,null,false) and left.snapshot().counter_ms==150,"Fork did not retain its periodic clock")
 	check(group.snapshot()==selected and right.snapshot()==selected,"Fork clock advanced another owner")
-	check(left.refresh(far,Vector3.ZERO,1) and left.snapshot().selections.player.level==1,left.error)
+	check(left.refresh(far,Vector3.ZERO,1) and not left.snapshot().selections[0].visible,left.error)
 	var distant: Dictionary=left.snapshot()
 	check(group.snapshot()==selected and right.snapshot()==selected,"Fork refresh changed a retained selection")
 	check(group.refresh(far,Vector3(0,0,20000),1),group.error)
@@ -103,7 +103,7 @@ func check_forks(bindings: RefCounted) -> void:
 	check(right.snapshot()==selected and group.snapshot()==changed,"Public fork snapshot aliases a retained selection")
 	group.clear()
 	check(right.snapshot()==selected and initial.snapshot()==unselected,"Clearing the original erased a retained fork")
-	check(initial.update(0,far,Vector3.ZERO,1,false) and initial.snapshot().selections.player.level==1,"Unselected fork lost its configured selectors")
+	check(initial.update(0,far,Vector3.ZERO,1,false) and not initial.snapshot().selections[0].visible,"Unselected fork lost its configured selectors")
 	check(left.configure(bindings,{0:2}) and left.refresh({0:Vector3.ZERO},Vector3.ZERO,1),left.error)
 	check(right.snapshot()==selected,"Reconfiguring a fork changed another owner's selector population")
 
