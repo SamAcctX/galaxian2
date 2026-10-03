@@ -64,6 +64,9 @@ func prepare_world(owner: RefCounted, world: Dictionary, camera: Transform3D, pa
 		for j in weapon.slots.size():
 			var slot: Dictionary=weapon.slots[j];var initial: Dictionary=_descriptor.weapons[i].slots[j]
 			if slot.get("start_ms")!=initial.start_ms or slot.get("end_ms")!=initial.end_ms or not Numbers.integer(slot.get("sample_time_ms"),initial.start_ms,initial.end_ms) or not slot.get("playing") is bool or not slot.get("position") is Vector3 or not slot.position.is_finite():return failed("Invalid impact animation slot")
+			# An idle slot at its retained sample time keeps the accepted sampler.
+			if not slot.playing and _samplers[i][j].sampled_at(int(slot.sample_time_ms)):
+				slots.append({"visible":false,"surfaces":[]});slot_samplers.append(_samplers[i][j]);continue
 			var sampler: RefCounted=_samplers[i][j].fork_for_frame()
 			# Sampling at the retained time also preserves the final key of a
 			# stopped effect, needed when this projectile slot is reused later.

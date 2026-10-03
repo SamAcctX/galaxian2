@@ -86,7 +86,7 @@ func prepare_world(owner: RefCounted,world: Dictionary,camera_pose: Variant) -> 
 		var vertices:=PackedVector3Array();var uvs:=PackedVector2Array();var colors:=PackedFloat32Array();var indices:=PackedInt32Array()
 		var fade_in_rgb: bool=emitter.get("fade_in_rgb",false)
 		var drawn: bool=emitter.visible and draw_enabled
-		if not drawn and not checked:
+		if (not drawn or emitter.get("idle",false)) and not checked:
 			prepared.append(null);counts.append(0);continue
 		var slots: Array=emitter.slots
 		for index in slots.size():

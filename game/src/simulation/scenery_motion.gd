@@ -34,17 +34,32 @@ func update(presentation_delta_ms: Variant, skip_motion: Array = []) -> bool:
 	if not skip_motion.is_empty() and (skip_motion.size()!=_field.objects.size() or not skip_motion.all(func(value):return value is bool)):
 		return reject("Scenery motion mask must match the ordered field")
 	if presentation_delta_ms==0:return true
-	var seconds := Field.f32(Field.f32(float(presentation_delta_ms))*Field.f32(0.001))
-	for index in _field.objects.size():
-		if not skip_motion.is_empty() and skip_motion[index]:continue
-		var current: Dictionary=_field.objects[index]
-		# Vector3 arithmetic rounds the product and the sum to binary32, as before.
-		var angles: Vector3 = current.angles+current.spin*seconds
-		var basis:=Basis.from_euler(angles,EULER_ORDER_XYZ)
-		if angles==current.angles and basis==current.basis:continue
-		var row: Dictionary=_own_row(index)
-		row.angles=angles;row.basis=basis
+	# Spin follows one field clock. A masked body holds its orientation; when
+	# it spins again it restarts from the clock before this frame's interval.
+	var clock: int=_field.get("spin_ms",0)
+	for index in skip_motion.size():
+		var row: Dictionary=_field.objects[index]
+		if skip_motion[index]==row.get("spin_held",false):continue
+		var angles:=current_angles(_field,row)
+		var owned:=_own_row(index)
+		owned.angles=angles;owned.basis=Basis.from_euler(angles,EULER_ORDER_XYZ)
+		owned.spin_base_ms=clock;owned.spin_held=skip_motion[index]
+	if _field.is_read_only():_field=_field.duplicate()
+	_field.spin_ms=clock+int(presentation_delta_ms)
 	return true
+
+## Orientation of a field row at the field's spin clock. Rows store the angles
+## at their own base time; spin is applied over the time since then.
+static func current_angles(field: Dictionary,row: Dictionary) -> Vector3:
+	var elapsed: int=int(field.get("spin_ms",0))-int(row.get("spin_base_ms",0))
+	if elapsed==0 or row.get("spin_held",false):return row.angles
+	# Vector3 arithmetic rounds the product and the sum to binary32.
+	return row.angles+row.spin*Field.f32(Field.f32(float(elapsed))*Field.f32(0.001))
+
+static func current_basis(field: Dictionary,row: Dictionary) -> Basis:
+	var elapsed: int=int(field.get("spin_ms",0))-int(row.get("spin_base_ms",0))
+	if elapsed==0 or row.get("spin_held",false):return row.basis
+	return Basis.from_euler(current_angles(field,row),EULER_ORDER_XYZ)
 
 ## Published frames share their field and rows read-only. A frame copies the
 ## row list and only the rows it changes, never the unchanged field.
@@ -67,14 +82,22 @@ func translate(index: int,offset: Vector3) -> bool:
 	return true
 
 func snapshot() -> Dictionary:
-	return _field.duplicate(true)
+	if _field.is_empty():return {}
+	# Detached copies carry each row's orientation at the current clock and
+	# none of the internal spin clock.
+	var copy: Dictionary=_field.duplicate(true);copy.erase("spin_ms")
+	for index in copy.objects.size():
+		var source: Dictionary=_field.objects[index];var row: Dictionary=copy.objects[index]
+		row.angles=current_angles(_field,source);row.basis=current_basis(_field,source)
+		row.erase("spin_base_ms");row.erase("spin_held")
+	return copy
 
 func object_count() -> int:return 0 if _field.is_empty() else _field.objects.size()
 
 ## A physical pose is a value; lifecycle callers need no detached field copy.
 func object_pose(index: int) -> Transform3D:
 	var row: Dictionary=_field.objects[index]
-	return Transform3D(row.basis.scaled(Vector3.ONE*row.scale),row.position)
+	return Transform3D(current_basis(_field,row).scaled(Vector3.ONE*row.scale),row.position)
 
 ## The current field, read-only and shared with later frames until they change it.
 func frame_snapshot() -> Dictionary:

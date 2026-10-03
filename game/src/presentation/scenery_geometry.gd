@@ -3,6 +3,7 @@ extends Node3D
 ## inexpensive. LOD selection and motion arrive from native scene owners.
 const Resources = preload("res://src/presentation/model_resources.gd")
 const Definitions = preload("res://src/content/scenery_resource_definitions.gd")
+const Motion = preload("res://src/simulation/scenery_motion.gd")
 const DestructionGeometry = preload("res://src/presentation/scenery_destruction_geometry.gd")
 const Response = preload("res://src/presentation/surface_response.gd")
 var error := ""
@@ -10,6 +11,9 @@ var objects: Array[Node3D] = []
 var _identity := {}
 var _levels: Array = []
 var _selected := PackedInt32Array()
+# Read-only observations applied last frame; the same shared value needs no pass.
+var _applied_selections: Variant
+var _applied_activity: Variant
 var destruction: Node3D
 
 func prepare_destruction(field: Dictionary, library: RefCounted, visuals: RefCounted, bindings: RefCounted, resources: RefCounted, lighting: Dictionary, reflection: RefCounted, response: Dictionary, quality := "high") -> bool:
@@ -56,7 +60,7 @@ func build(field: Dictionary, library: RefCounted, visuals: RefCounted, bindings
 			var path: String = bindings.resolve(row.model_id+level,"mesh")
 			if path.is_empty():return reject(bindings.error)
 			paths.append(path);levels.append(path)
-		model_paths.append(levels);poses.append(Transform3D(row.basis.scaled(Vector3.ONE*row.scale),row.position))
+		model_paths.append(levels);poses.append(Transform3D(Motion.current_basis(field,row).scaled(Vector3.ONE*row.scale),row.position))
 	var resources := Resources.new()
 	if not resources.prepare(paths,library,visuals,bindings,quality,true):return reject(resources.error)
 	var staged: Array[Node3D] = []
@@ -94,7 +98,7 @@ func apply_state(field: Dictionary) -> bool:
 	# this per-frame pass only moves the bodies whose pose changed.
 	for index in rows.size():
 		var row: Dictionary = rows[index]
-		var pose := Transform3D(row.basis.scaled(Vector3.ONE*row.scale),row.position)
+		var pose := Transform3D(Motion.current_basis(field,row).scaled(Vector3.ONE*row.scale),row.position)
 		if objects[index].transform!=pose:objects[index].transform=pose
 	return true
 
@@ -103,6 +107,7 @@ func apply_detail(state: Dictionary) -> bool:
 	if _identity.is_empty() or state.get("base_content_id")!=_identity.base_content_id or state.get("binding_id")!=_identity.binding_id:return reject("Scenery detail belongs to another content identity")
 	var selections: Variant = state.get("selections")
 	if not selections is Dictionary or selections.size()!=objects.size():return reject("Scenery detail count changed")
+	if is_same(selections,_applied_selections):return true
 	if _selected.size()!=objects.size():_selected.resize(objects.size());_selected.fill(-1)
 	for index in objects.size():
 		var selection: Variant = selections.get(index)
@@ -115,6 +120,7 @@ func apply_detail(state: Dictionary) -> bool:
 		# Hide its surfaces, not their common ancestor, when an alternate is active.
 		for instance in objects[index].instances:instance.visible=selected==0
 		for level in range(1,_levels[index].size()):_levels[index][level].visible=selected==level
+	_applied_selections=selections if selections.is_read_only() else null
 	return true
 
 func apply_activity(bodies: Dictionary) -> bool:
@@ -122,16 +128,19 @@ func apply_activity(bodies: Dictionary) -> bool:
 	if _identity.is_empty() or bodies.get("base_content_id")!=_identity.base_content_id or bodies.get("binding_id")!=_identity.binding_id:return reject("Scenery activity belongs to another content identity")
 	var rows: Variant=bodies.get("objects")
 	if not rows is Array or rows.size()!=objects.size():return reject("Scenery activity count changed")
+	if is_same(rows,_applied_activity):return true
 	for index in rows.size():
 		var row: Variant=rows[index]
 		if not row is Dictionary or row.get("index")!=index or row.get("model_id")!=objects[index].get_meta("source_resource_id") or not row.get("active") is bool:return reject("Invalid scenery body activity")
 	# Hide the common ancestor so a later LOD refresh cannot reveal a mined body.
 	for index in objects.size():objects[index].visible=rows[index].active
+	_applied_activity=rows if rows.is_read_only() else null
 	return true
 
 func clear() -> void:
 	for child in get_children():child.free()
 	objects.clear();_levels.clear();_selected.clear();_identity={};destruction=null;error=""
+	_applied_selections=null;_applied_activity=null
 
 func reject(message: String) -> bool:
 	error=message;return false

@@ -72,6 +72,9 @@ func finish_frame(present_radio: Variant) -> bool:
 func combat_owner() -> RefCounted:
 	return null if _sequence==null else _sequence.combat_owner()
 
+func read_combat() -> Dictionary:
+	return {} if _sequence==null else _sequence.read_combat()
+
 func adopt_contact_pass(combat: RefCounted) -> bool:
 	error=""
 	if _sequence==null: return reject("Configure opening time before weapon contacts")

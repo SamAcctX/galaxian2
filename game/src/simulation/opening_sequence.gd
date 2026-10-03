@@ -97,6 +97,10 @@ func finish_frame(present_radio: Variant) -> bool:
 func combat_owner() -> RefCounted:
 	return null if _combat==null else _combat.fork_for_frame()
 
+## The accepted combat observation, read-only.
+func read_combat() -> Dictionary:
+	return {} if _combat==null else _combat.read_snapshot()
+
 func adopt_combat_pass(combat: RefCounted) -> bool:
 	error=""
 	if _pending_elapsed<0 or not combat is CombatGroup: return reject("Actor motion must belong to the pending opening frame")

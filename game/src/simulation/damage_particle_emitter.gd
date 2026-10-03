@@ -23,6 +23,9 @@ var base_content_id:=""
 var _preset:={}
 var _birth_size:=-1.0
 var _slots: Array=[]
+## True only when every slot is known idle; births clear it. Idle emitters then
+## skip the per-slot movement pass.
+var _idle:=false
 var _random:=Random.new()
 var _cursor:=0
 var _remainder_ms:=0.0
@@ -105,7 +108,7 @@ func emit_once(position: Variant) -> Dictionary:
 	var appearance: Dictionary=next._new_appearance()
 	if appearance.has("error"):return fail(appearance.error)
 	next._slots[_cursor]={"appearance":appearance,"position":position,"velocity":Vector3.ZERO}
-	_slots=next._slots;_random=next._random;_cursor=(_cursor+1)%_slots.size()
+	_slots=next._slots;_random=next._random;_cursor=(_cursor+1)%_slots.size();_idle=false
 	# A direct birth does not consult or change emission/visibility, the manager
 	# clock or the movement baseline. Visibility changes still reset live slots.
 	return {"births":1}
@@ -147,7 +150,7 @@ func reset() -> bool:
 	for index in _slots.size():
 		var slot: Dictionary=_slots[index]
 		_slots[index]={"appearance":{"slot":slot.appearance.slot,"age_ms":-1,"size":0},"position":RESET_POSITION,"velocity":slot.velocity}
-	_remainder_ms=0;_dirty=true
+	_remainder_ms=0;_dirty=true;_idle=true
 	return true
 
 ## Changes only subsequent births. Live particle sizes and RNG stay retained.
@@ -173,6 +176,7 @@ func snapshot(shared:=false) -> Dictionary:
 		"update_existing":_update_existing,"dirty":_dirty,"force_velocity":_force_velocity,
 		"baseline":_baseline,"velocity":_velocity}
 	if _fade_rgb:result.fade_in_rgb=true
+	if _idle:result.idle=true
 	return result
 
 func fork_for_frame() -> RefCounted:
@@ -183,7 +187,7 @@ func fork_for_frame() -> RefCounted:
 	copy._cursor=_cursor;copy._remainder_ms=_remainder_ms
 	copy._enabled=_enabled;copy._visible=_visible;copy._update_existing=_update_existing
 	copy._dirty=_dirty;copy._force_velocity=_force_velocity;copy._baseline=_baseline;copy._velocity=_velocity
-	copy._fade_rgb=_fade_rgb
+	copy._fade_rgb=_fade_rgb;copy._idle=_idle
 	return copy
 
 func advance(pose: Variant,delta_ms: Variant,manager_elapsed_ms: Variant) -> Dictionary:
@@ -193,7 +197,7 @@ func advance(pose: Variant,delta_ms: Variant,manager_elapsed_ms: Variant) -> Dic
 	if result.has("error"):return fail(result.error)
 	_slots=staged._slots;_random=staged._random;_cursor=staged._cursor
 	_remainder_ms=staged._remainder_ms;_dirty=staged._dirty;_force_velocity=staged._force_velocity
-	_baseline=staged._baseline;_velocity=staged._velocity
+	_baseline=staged._baseline;_velocity=staged._velocity;_idle=staged._idle
 	return result
 
 ## Managers advance emitters inside their own frame copy and discard that copy
@@ -213,11 +217,14 @@ func advance_in_frame(pose: Variant,delta_ms: Variant,manager_elapsed_ms: Varian
 	return result
 
 func _advance(pose: Transform3D,delta_ms: float,manager_elapsed_ms: float) -> Dictionary:
-	if _update_existing:
+	if _update_existing and not _idle:
+		var live:=false
 		for index in _slots.size():
 			# Idle slots stay idle; skip the call for them.
 			if _slots[index].appearance.age_ms<0:continue
 			if not move_particle(index,delta_ms):return fail(error)
+			live=live or _slots[index].appearance.age_ms>=0
+		_idle=not live
 	if _dirty:
 		_velocity=Vector3.ZERO;_baseline=pose.origin;_force_velocity=true;_dirty=false
 		return {"births":0}
@@ -290,6 +297,7 @@ func _advance(pose: Transform3D,delta_ms: float,manager_elapsed_ms: float) -> Di
 		velocity=Vectors.added(velocity,Vectors.scaled(inherited,2.0))
 		if not position.is_finite() or not velocity.is_finite():return fail("Damage particle birth exceeds finite source bounds")
 		_slots[_cursor]={"appearance":appearance,"position":position,"velocity":velocity}
+		_idle=false
 		var residual:=0.0 if short_movement else minf(delta_ms,single(single(single(float(count-progress)*spacing)*1000.0)*inverse_speed))
 		if not move_particle(_cursor,residual):return fail(error)
 		_cursor=(_cursor+1)%_slots.size()

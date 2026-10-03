@@ -82,6 +82,8 @@ func apply_world(world: RefCounted, camera: Transform3D, parent_rgba: PackedByte
 		if row.object_index!=index or field.objects[index].model_id!=_model_ids[index]:return abort_frame(created,"Destruction presentation actor changed")
 		var state: Dictionary=row.lifecycle
 		next_intact.append(state.actor_state==0)
+		# Intact bodies with no effect or cargo node have nothing to present.
+		if state.actor_state==0 and not state.cargo_model_exists and not _effects.has(index) and not _cargo.has(index):continue
 		var effect: Node3D=_effects.get(index)
 		var prepared := {}
 		if state.actor_state==3:
@@ -100,11 +102,11 @@ func apply_world(world: RefCounted, camera: Transform3D, parent_rgba: PackedByte
 				for surface in cargo.materials.size():
 					cargo.materials[surface]=_cargo_materials[state.cargo.resource][surface]
 					cargo.instances[surface].material_override=cargo.materials[surface]
-		staged.append({"effect":effect,"prepared":prepared,"cargo":cargo,"cargo_state":cargo_state})
+		staged.append({"index":index,"effect":effect,"prepared":prepared,"cargo":cargo,"cargo_state":cargo_state})
 	# All samplers and resources succeeded. No earlier actor is changed if a
 	# later actor fails; discarded candidates never become visible scene nodes.
-	for index in staged.size():
-		var row: Dictionary=staged[index]
+	for row in staged:
+		var index: int=row.index
 		if row.prepared.is_empty():
 			if _effects.has(index):_effects[index].free();_effects.erase(index)
 		else:

@@ -74,6 +74,9 @@ func finish_frame(present_radio: Variant) -> bool:
 func combat_owner() -> RefCounted:
 	return null if _timeline==null else _timeline.combat_owner()
 
+func read_combat() -> Dictionary:
+	return {} if _timeline==null else _timeline.read_combat()
+
 func adopt_contact_pass(combat: RefCounted) -> bool:
 	error=""
 	if _timeline==null: return reject("Configure opening detail before weapon contacts")

@@ -109,6 +109,10 @@ func update_row(row: Dictionary, table: Dictionary, index: int, weight: float) -
 
 func time_range() -> Dictionary:return _range
 
+## True when the last sample was taken at this time with an identity parent.
+func sampled_at(time_ms: int) -> bool:
+	return time_ms==_sample_time and _sample_parent==Transform3D.IDENTITY and not _sample_result.is_empty()
+
 func snapshot() -> Dictionary:
 	return {} if _tables.is_empty() else {"range":_range.duplicate(),"surfaces":_state.duplicate(true)}
 
