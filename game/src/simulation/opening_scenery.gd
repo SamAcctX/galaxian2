@@ -443,6 +443,9 @@ func _build_snapshot(shared:=false) -> Dictionary:
 		field.mined_count=_mined_count
 	return field
 
+## The destroyed count a snapshot reports, without building one.
+func destroyed_count() -> int:return 0 if _motion==null or _destruction.is_empty() else _destroyed_count
+
 func random_state() -> Dictionary:return _random_state.duplicate(true)
 
 func clock_snapshot() -> Dictionary:

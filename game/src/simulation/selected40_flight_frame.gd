@@ -516,7 +516,7 @@ func snapshot() -> Dictionary:
 	result.game_over_packet=prepare_game_over()
 	result.player_engine_audio=_engine_audio.snapshot();result.flight_music=_flight_music.duplicate(true)
 	result.music_context=_music_context.duplicate(true);result.radar=_radar.snapshot()
-	result.station_exterior=_station.snapshot()
+	result.station_exterior=_station.read_snapshot()
 	result.portal=_portal.portal_snapshot();result.portal_contact=_portal.snapshot()
 	return result
 

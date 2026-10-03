@@ -203,8 +203,7 @@ func observe_combat(encounter: RefCounted,state: Dictionary={}) -> bool:
 func observe_scenery(scenery: RefCounted) -> bool:
 	error=""
 	if _state.is_empty() or scenery==null or scenery.get_script()!=Scenery or scenery.presentation_identity()!=_field_identity:return reject("Asteroid progress requires this objective's retained scenery field")
-	var field: Dictionary=scenery.read_snapshot()
-	var observed: Variant=field.get("destroyed_count",0)
+	var observed: Variant=scenery.destroyed_count()
 	if not observed is int or observed<_asteroids_destroyed or observed>2147483647:return reject("Asteroid destruction history regressed or exceeded the supported career range")
 	_asteroids_destroyed=observed
 	if _asteroids_destroyed>0 or _initial_progress.has("asteroids_destroyed"):

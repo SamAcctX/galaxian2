@@ -107,7 +107,7 @@ func verify(args: PackedStringArray):
 	var straight:=fresh();check(straight.observe_manual(Transform3D(Basis.IDENTITY,Vector3(0,0,-20000)),Vector2.ZERO) and straight.start() and straight.advance(0,0.0),straight.error)
 	check(not straight.snapshot().near_target and straight.snapshot().history_cursor==1 and straight.snapshot().bank==0,"Zero-time guidance lost its source history step or included the strict near boundary")
 	check(straight.advance(1,0.0) and not straight.snapshot().near_target and straight.advance(0,0.0) and straight.snapshot().near_target,"Near flag did not sample distance before movement")
-	var invalid:=resources.fork_for_frame();invalid._state.station_id=79
+	var invalid:=resources.fork_for_frame();invalid._state=invalid._state.duplicate(true);invalid._state.station_id=79
 	check(not owner.configure(bindings,cat,construction,invalid) and owner.snapshot()==moving,"Wrong station replaced a good guidance owner")
 	var bad_pose:=Transform3D(Basis(Vector3.ZERO,Vector3.ZERO,Vector3.ZERO),Vector3.ZERO)
 	check(not held.observe_manual(bad_pose,Vector2.ZERO),"Active guidance accepted a manual pose")

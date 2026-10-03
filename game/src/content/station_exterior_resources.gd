@@ -10,6 +10,7 @@ const Tracks=preload("res://src/content/animation_tracks.gd")
 const Volumes=preload("res://src/content/station_collision_volumes.gd")
 const Vectors=preload("res://src/simulation/source_vectors.gd")
 const Travel=preload("res://src/content/mido_travel_definitions.gd")
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 # V4 vertex/normal buffers already use engine axes. Only stored sphere centers
 # need the authoring-to-engine conversion performed by the source sphere reader.
 const MESH_AXES:=Basis.IDENTITY
@@ -99,6 +100,8 @@ func _prepare_location(library: RefCounted,bindings: RefCounted,catalogues: RefC
 		"pose":pose,"mesh_axes":MESH_AXES,"layers":layers,"sphere":sphere,"bounds_half_extent":int(extent),"collision":collision,
 		"collision_resource":data.collision_resource,"collision_sha256":library.manifest.files[data.collision_resource].sha256,
 		"light_animation_supported":false,"docking_transition_supported":false}
+	# Nothing changes after configuration, so frames share one read-only state.
+	Readonly.freeze(_state)
 	return true
 
 static func initial_transform_supported(surface: Dictionary, allow_light_scalar: bool) -> bool:
@@ -145,8 +148,10 @@ func point_volume(point: Vector3) -> int:
 	return -1
 
 func snapshot() -> Dictionary:return _state.duplicate(true)
+## Read-only; for frame observations that are not edited.
+func read_snapshot() -> Dictionary:return _state
 func fork_for_frame() -> RefCounted:
-	var copy: RefCounted=get_script().new();copy._state=_state.duplicate(true);return copy
+	var copy: RefCounted=get_script().new();copy._state=_state;return copy
 func clear() -> void:_state={};error=""
 static func f32(value: float) -> float:return PackedFloat32Array([value])[0]
 func reject(message: String) -> bool:error=message;return false

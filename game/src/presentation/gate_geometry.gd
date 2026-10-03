@@ -83,6 +83,10 @@ func prepare_animation(owner: RefCounted) -> Dictionary:
 			var clock: Dictionary=gate.models[index]
 			if not instance.animated.has(clock.model_id):reject("Original animated gate layer is absent");return {}
 			var row: Dictionary=instance.animated[clock.model_id]
+			var visible: bool=gate.active if index==3 else (not gate.active if index==2 else true)
+			# A hidden active/inactive layer is not drawn; it is sampled again when shown.
+			if not visible:
+				prepared.append({"row":row,"sampler":row.sampler,"surfaces":null,"visible":false});continue
 			var sampler: RefCounted=row.sampler.fork_for_frame()
 			var range: Dictionary=sampler.time_range()
 			if range.start_ms!=clock.start_ms or range.end_ms!=clock.end_ms:reject("Gate playback differs from its original keys");return {}
@@ -92,13 +96,14 @@ func prepare_animation(owner: RefCounted) -> Dictionary:
 			if row.adapter!=null:
 				surfaces=row.adapter.prepare_surfaces(sample,instance.assembly.global_transform,PackedByteArray([255,255,255,255]),Vector4.ONE)
 				if surfaces.is_empty():reject(row.adapter.error);return {}
-			prepared.append({"row":row,"sampler":sampler,"surfaces":surfaces,"visible":gate.active if index==3 else (not gate.active if index==2 else true)})
+			prepared.append({"row":row,"sampler":sampler,"surfaces":surfaces,"visible":visible})
 	return {"identity":owner.presentation_identity(),"layers":prepared}
 
 func commit_animation(frame: Dictionary) -> void:
 	for next in frame.layers:
 		var row: Dictionary=next.row
-		if row.adapter!=null:row.adapter.apply_surfaces(row.model,next.surfaces,1.0)
+		if next.surfaces==null:pass
+		elif row.adapter!=null:row.adapter.apply_surfaces(row.model,next.surfaces,1.0)
 		else:
 			for index in next.surfaces.size():row.model.instances[index].transform=next.surfaces[index].pose
 		row.sampler=next.sampler;row.model.visible=next.visible

@@ -105,7 +105,7 @@ func poll_contract(cargo: RefCounted,scenery: RefCounted,encounter: RefCounted,a
 func observe_scenery(scenery: RefCounted) -> bool:
 	error=""
 	if _contracts==null or scenery==null or scenery.presentation_identity()!=_field_identity:return reject("Asteroid progress requires this contract flight's retained scenery field")
-	var observed: Variant=scenery.read_snapshot().get("destroyed_count",0)
+	var observed: Variant=scenery.destroyed_count()
 	if not observed is int or observed<_asteroids_destroyed or observed>2147483647:return reject("Asteroid destruction history regressed or exceeded the supported career range")
 	_asteroids_destroyed=observed
 	if _asteroids_destroyed>0 or _contracts.has_progress("asteroids_destroyed"):

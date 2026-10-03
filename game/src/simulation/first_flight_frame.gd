@@ -1251,7 +1251,7 @@ func _advance_station_targeting(delta_ms: int,enabled: bool,held_primary: bool,c
 		or recovery.get("request_actor_id",-1)>=0 or _targeting.selected_object_index()>=0
 	var observation:={"base_content_id":_entry.base_content_id,"binding_id":_entry.binding_id,"campaign_cursor":int(_entry.campaign_cursor),
 		"delta_ms":delta_ms,"viewport_size":aim.viewport_size,"camera_pose":camera,"aim_point":aim.point,
-		"station":{"environment_slot":0,"pose":_station.snapshot().pose,"active":true},
+		"station":{"environment_slot":0,"pose":_station.read_snapshot().pose,"active":true},
 		"controller_enabled":enabled and not local_departing(),"held_primary":held_primary,
 		"other_selected_target":other,"mining_approach_active":_approach!=null and _approach.snapshot().phase!="idle",
 		"alternate_operation_active":false,"selected_target_active":_autopilot!=null and _autopilot.snapshot().active}
@@ -3130,7 +3130,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 		state.station_return_supported=not _return_rules.is_empty()
 	if _entry.campaign_cursor in [10,11,12,26,36] or _entry.has("dekato_context") or _objective is ContractObjective:state.station_response_flags=station_response_flags()
 	if _station!=null:
-		state.station_exterior=_station.snapshot()
+		state.station_exterior=_station.read_snapshot()
 		state.station_hidden=_station_hidden
 		state.station_volume_index=_station.point_volume(_pose.origin)
 	if _autopilot!=null:state.station_autopilot=_autopilot.snapshot()
