@@ -27,6 +27,7 @@ var _trails: Array=[]
 var _trail_id:=-1
 var _guided:=false
 var _expiry_limit:=0
+var _salvo_fill:=false
 # Do not reuse a live object's handles after clear, failure or content replacement.
 var _next_id := 1
 
@@ -258,7 +259,31 @@ func fire_from_mount(mount: Dictionary, ship_transform: Variant, world_direction
 		# through the generic equipped-flight set.
 		_slots[result.projectile.slot].up=up
 		result.projectile.up=up
+	# A cluster launcher fills every free slot from the same muzzle in one
+	# launch; the caller still spends one round for the whole salvo.
+	if result.get("fired",false) and _weapon.get("secondary_projectile",{}).has("salvo") and not _salvo_fill:
+		var extra:=[]
+		_salvo_fill=true
+		for i in _slots.size()-1:
+			_elapsed_ms=int(_weapon.interval_ms)+1
+			var more:=fire_from_mount(mount,ship_transform,world_direction,true,null)
+			if not more.get("fired",false):break
+			extra.append(more.projectile)
+		_salvo_fill=false;_elapsed_ms=0
+		if not error.is_empty():return fail(error)
+		result.salvo=extra
 	return result
+
+## Cluster corkscrew: a sideways velocity across the flight direction and the
+## launch up axis, turning with the missile's age; each slot is a fixed phase
+## (slot x lifetime / salvo size) ahead, so a salvo spreads into a spiral.
+func _swirl(slot: Dictionary,index: int) -> Vector3:
+	var lifetime: int=int(_weapon.lifetime_ms)
+	var age: float=float(lifetime-int(slot.remaining_ms))+float(index*lifetime)/float(_slots.size())
+	var phase: float=age*Secondary.CLUSTER_SWIRL_RATE
+	var side: Vector3=Vector3(slot.velocity).cross(slot.up).normalized()
+	var up: Vector3=Vector3(slot.up).normalized()
+	return (side*sin(phase)+up*cos(phase))*Secondary.CLUSTER_SWIRL_SPEED
 
 static func mount_dot(row: Vector3, offset: Vector3) -> float:
 	var x := Vitals.single(Vitals.single(row.x) * offset.x)
@@ -284,6 +309,8 @@ func advance(delta_ms: Variant, guidance_target: Variant=null) -> Dictionary:
 			staged[i]=null
 			continue
 		var displacement := scaled(slot.velocity,Vitals.single(float(delta_ms)))
+		if _weapon.get("secondary_projectile",{}).has("salvo") and slot.get("up") is Vector3:
+			displacement+=_swirl(slot,i)*float(delta_ms)
 		var next := added(slot.position,displacement)
 		if not displacement.is_finite() or not next.is_finite(): return fail("Projectile motion exceeds finite world coordinates")
 		slot.previous_position=slot.position

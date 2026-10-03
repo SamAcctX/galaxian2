@@ -25,7 +25,7 @@ func build(burst: RefCounted, library: RefCounted, visuals: RefCounted, bindings
 	if library == null or visuals == null or bindings == null or library.manifest.get("content_id") != state.base_content_id or visuals.base_content_id != state.base_content_id or bindings.base_content_id != state.base_content_id or bindings.binding_id != state.binding_id:
 		return reject("EMP burst geometry belongs to another content identity")
 	var resources := Resources.new()
-	if not resources.configure(library, bindings): return reject(resources.error)
+	if not resources.configure(library, bindings, int(state.kind)): return reject(resources.error)
 	var data := resources.snapshot()
 	var timing: Dictionary = state.effect.models[0]
 	for key in ["model_id", "resource", "start_ms", "end_ms"]:
@@ -34,11 +34,12 @@ func build(burst: RefCounted, library: RefCounted, visuals: RefCounted, bindings
 	var edition: Variant = library.manifest.get("profile", {}).get("edition")
 	if edition not in ["mac-full-hd", "ios-hd"]: return reject("Unsupported EMP burst content edition")
 	var models := Models.new()
-	if not models.prepare([Resources.MODEL_PATH], library, visuals, bindings, "high", false, true): return reject(models.error)
-	model = models.instantiate(Resources.MODEL_PATH)
+	var path: String=data.models[0].resource
+	if not models.prepare([path], library, visuals, bindings, "high", false, true): return reject(models.error)
+	model = models.instantiate(path)
 	models.clear()
 	if model == null: return reject("Original EMP burst could not be instantiated")
-	add_child(model); model.set_meta("source_resource_id", Resources.MODEL_ID)
+	add_child(model); model.set_meta("source_resource_id", data.models[0].model_id)
 	_sampler = Sampler.new()
 	if not _sampler.configure(model.surfaces): return reject(_sampler.error)
 	if _sampler.snapshot().range != {"start_ms": timing.start_ms, "end_ms": timing.end_ms}: return reject("EMP sampler changed its playback range")
@@ -75,7 +76,7 @@ func prepare_effect(burst: RefCounted, camera: Transform3D, parent_rgba: PackedB
 		return failed("Invalid EMP burst camera or color")
 	if not effect.active: return {"generation": _generation, "revision": _revision + 1, "visible": false}
 	if not effect.get("position") is Vector3: return failed("EMP burst has no finite position")
-	var root := Billboard.alpha_root(camera, effect.position, 1.0)
+	var root := Billboard.alpha_root(camera, effect.position, float(effect.get("scale",1.0)))
 	if root.has("error"): return failed(root.error)
 	var sampler: RefCounted = _sampler.fork_for_frame()
 	var sampled: Dictionary = sampler.sample(clock.time_ms, root.pose)

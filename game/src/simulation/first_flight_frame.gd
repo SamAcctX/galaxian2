@@ -1375,17 +1375,19 @@ func _advance_gas(delta_ms: int,turret_active: bool) -> bool:
 	var live:={}
 	var secondaries: Dictionary=_encounter.snapshot().get("secondaries",{}) if _encounter!=null else {}
 	for gun in secondaries.get("guns",[]):
-		if int(gun.get("equipment",{}).get("item_id",-1))!=Conventional.ION_LAMBDA:continue
+		var item:=int(gun.get("equipment",{}).get("item_id",-1))
+		if Conventional.ion_radius(item)<=0.0:continue
 		for slot in gun.get("projectiles",{}).get("slots",[]):
-			if slot is Dictionary and int(slot.get("remaining_ms",0))>0:live[int(slot.id)]=Vector3(slot.position)
+			# Keyed by launcher and shot so a Mk1 and a Mk2 never share a handle.
+			if slot is Dictionary and int(slot.get("remaining_ms",0))>0:live[Vector2i(item,int(slot.id))]=Vector3(slot.position)
 	# A shot bursts on reaching a cloud (the cloud is its target body) or where
 	# it ends; a burst shot is kept as null so it cannot burst again.
 	for id in live:
 		if _ion_shots.has(id) and _ion_shots[id]==null:live[id]=null;continue
 		if _gas.clouds.any(func(cloud):return not cloud.ionized and Vector3(cloud.position).distance_to(live[id])<=GAS_HIT_RADIUS):
-			_gas=Gas.ionize(_gas,live[id],Conventional.ION_BLAST_RADIUS,hash([id,_world_elapsed_ms]));live[id]=null
+			_gas=Gas.ionize(_gas,live[id],Conventional.ion_radius(id.x),hash([id,_world_elapsed_ms]));live[id]=null
 	for id in _ion_shots:
-		if not live.has(id) and _ion_shots[id]!=null:_gas=Gas.ionize(_gas,Vector3(_ion_shots[id]),Conventional.ION_BLAST_RADIUS,hash([id,_world_elapsed_ms]))
+		if not live.has(id) and _ion_shots[id]!=null:_gas=Gas.ionize(_gas,Vector3(_ion_shots[id]),Conventional.ion_radius(id.x),hash([id,_world_elapsed_ms]))
 	_gas_ionized=_gas_ionized or _gas.get("ionized",false)
 	_ion_shots=live
 	var free_space:=int(_cargo.snapshot().get("free_space",0)) if _cargo!=null else 0

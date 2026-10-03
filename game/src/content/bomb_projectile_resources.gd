@@ -10,6 +10,7 @@ static func prepare(library: RefCounted,bindings: RefCounted,weapon: Dictionary)
 	var declaration:=Bombs.declaration(int(weapon.get("item_id",-1)))
 	if declaration.is_empty():declaration=Mines.declaration(int(weapon.get("item_id",-1)))
 	if declaration.is_empty() or weapon.get("kind")!=declaration.kind:return {}
+	if declaration.model_id<0:return {"models":[]}
 	if library==null or bindings==null or library.manifest.get("content_id")!=weapon.get("base_content_id") or bindings.base_content_id!=weapon.base_content_id or bindings.binding_id!=weapon.get("binding_id"):return {}
 	var models:=[]
 	for id in [declaration.model_id,declaration.attachment_id]:

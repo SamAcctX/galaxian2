@@ -33,6 +33,9 @@ func configure(bindings: RefCounted,cat: RefCounted,item_id: Variant,equipment_i
 	if not Vitals.integer(damage) or not Vitals.integer(radius) or radius<1:return reject("The bomb lacks its damage or blast radius")
 	weapon.system_damage=damage;weapon.radius=radius;weapon.launch_mode="emp_bomb" if weapon.kind==6 else "antimatter_bomb"
 	weapon.model_id=declaration.model_id;weapon.muzzle_offset=muzzle_offset
+	# Shock Blast: one pulse centred on the ship on the next update (its
+	# original flight lasts 1 ms and never moves).
+	if weapon.kind==int(Definitions.SHOCK.kind):weapon.launch_mode="shock_blast";weapon.lifetime_ms=1;weapon.muzzle_offset=Vector3.ZERO
 	if properties.get(int(Definitions.GUIDED.guided_property))==1:weapon.guided=true
 	_weapon=weapon;_shot={};_elapsed_ms=weapon.interval_ms;_visuals={};_steer=Vector2.ZERO
 	return true
@@ -58,7 +61,7 @@ func trigger(pose: Transform3D,ammunition: Variant,targets: Variant,permitted: V
 	if _next_id>=Vitals.MAX_INTEGER:return fail("The EMP projectile handle limit was reached")
 	var position:=pose*Vector3(_weapon.muzzle_offset)
 	var direction:=Vectors.normalized(pose.basis.z)
-	var velocity:=Vectors.scaled(direction,_weapon.speed_units_per_millisecond)
+	var velocity:=Vectors.scaled(direction,float(_weapon.speed_units_per_millisecond))
 	if not position.is_finite() or not velocity.is_finite() or direction==Vector3.ZERO:return fail("EMP launch exceeds finite world coordinates")
 	_shot={"id":_next_id,"phase":"flying","position":position,"previous_position":position,"velocity":velocity,"remaining_ms":_weapon.lifetime_ms}
 	if _weapon.get("guided",false):_shot.basis=pose.basis.orthonormalized();_shot.bank=0.0;_steer=Vector2.ZERO
@@ -80,7 +83,7 @@ func advance(delta_ms: Variant,targets: Variant) -> Dictionary:
 	var result:=_event();var next: Dictionary=_shot.duplicate(true)
 	if next.get("phase")=="detonated":next={}
 	elif not next.is_empty():
-		var contact:=contact_target(next,targets)
+		var contact:={"hit":false} if _weapon.launch_mode=="shock_blast" else contact_target(next,targets)
 		if contact.has("error"):return fail(contact.error)
 		if contact.get("hit",false):
 			var blast:=_blast(next,targets)
@@ -174,6 +177,7 @@ static func self_hit(weapon: Dictionary,position: Vector3,observer: Vector3) -> 
 	if not is_finite(distance):return {}
 	var reach:=Vitals.single(float(weapon.radius)*0.5)
 	var fraction:=clampf(Vitals.single(Vitals.single(Vitals.single(reach-distance)/reach)*0.5),0.0,1.0)
+	if weapon.get("kind")==int(Definitions.SHOCK.kind):fraction=Vitals.single(fraction*float(Definitions.SHOCK.self_damage_factor))
 	return {"damage":int(Vitals.single(float(weapon.damage)*fraction)),"feedback":Vitals.single(fraction*3.0)}
 
 static func _valid_targets(targets: Variant) -> bool:
