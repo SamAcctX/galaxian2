@@ -698,7 +698,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 	# after the entry controller; release may enable it on this very frame.
 	# Modal UI owns input as soon as its panel opens. Player/camera logic may
 	# already have elapsed, while the later world phase then receives zero.
-	var alive: bool=_player.snapshot().vitals.hull>0
+	var alive: bool=_player.read_state().vitals.hull>0
 	var player_updates: bool=(not death_active() or _death.player_updates_enabled()) and not (_alioth!=null and _alioth.snapshot().player_update_suspended and not death_active())
 	var player_tail:=player_updates
 	if not next._booster.advance(delta_ms if player_updates else 0):reject(next._booster.error);return null
@@ -728,7 +728,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 	var visual_response: Vector2=next._pilot.angular_units
 	# Proximity uses the cached position; physical hull contact can also set this
 	# flag after movement, before the arrival query checks the current boxes.
-	if not _return_rules.is_empty() and _collision_enabled and _player.snapshot().active:
+	if not _return_rules.is_empty() and _collision_enabled and _player.read_state().active:
 		var length:=Autopilot.single(sqrt(Vectors.dot(_pose.origin,_pose.origin)))
 		if not is_finite(length):reject("Station contact exceeds source coordinates");return null
 		next._station_contact=length<float(_return_rules.contact_radius)
@@ -872,8 +872,8 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 		var devices: Dictionary=Devices.advance(next._player,next._cargo,next._equipment,next._notices,delta_ms)
 		if devices.has("error"):reject(devices.error);return null
 		next._cargo=devices.cargo;next._equipment=devices.equipment
-	if not next._engine_audio.follow_player(next._statistics_pose,int(next._player.snapshot().vitals.hull),delta_ms):reject(next._engine_audio.error);return null
-	if next._player.snapshot().vitals.hull<=0 and next._death==null:
+	if not next._engine_audio.follow_player(next._statistics_pose,int(next._player.read_state().vitals.hull),delta_ms):reject(next._engine_audio.error);return null
+	if next._player.read_state().vitals.hull<=0 and next._death==null:
 		if not next._booster.cancel():reject(next._booster.error);return null
 		# Any lethal damage belongs to the same death boundary, including scenery
 		# contacts in content that has no supported destruction presentation.
@@ -892,12 +892,12 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 			positions[actor.actor_id]=actor.get("body_pose",actor.pose).origin
 	if not next._detail.update(delta_ms,positions,_reference,1.0,false):reject(next._detail.error);return null
 	if next._wingmen!=null and not next._wingmen.advance_detail(delta_ms,_reference):reject(next._wingmen.error);return null
-	if next._death!=null and next._player.snapshot().vitals.hull<=0 and not next.death_active():
+	if next._death!=null and next._player.read_state().vitals.hull<=0 and not next.death_active():
 		var secondaries: RefCounted=next._encounter.secondary_owner() if next._encounter!=null else null
 		if not next._death.start(next._player,next._pose,Vector3.ZERO,next._camera.snapshot().pose,int(next._objective.campaign_cursor()),next._model_basis,next._statistics_pose,secondaries):reject(next._death.error);return null
 		if next._engine_particles!=null and not next._engine_particles.set_engine_enabled(false):reject(next._engine_particles.error);return null
 		next._camera_follow_enabled=false
-		if not next._player.set_permissions(false,next._player.snapshot().damage_allowed):reject(next._player.error);return null
+		if not next._player.set_permissions(false,next._player.read_state().damage_allowed):reject(next._player.error);return null
 		# Current commands were prepared before contact in the ordinary native
 		# pilot owner. The source's later input gate now omits that preparation.
 		if ordinary_motion:
@@ -918,7 +918,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 	if next._local_travel!=null and next._local_travel.read_state().phase=="arrival_required" and not next.death_active():
 		if not next._objective.observe_combat(next._encounter):reject(next._objective.error);return null
 		return next
-	if not next._return_rules.is_empty() and next._player.snapshot().vitals.hull>0:
+	if not next._return_rules.is_empty() and next._player.read_state().vitals.hull>0:
 		if not next._evaluate_station_return():reject(next.error);return null
 		if not next._station_packet.is_empty():
 			# Station transition exits before mission/camera logic and the later
@@ -929,7 +929,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 	# The failure hint precedes the source's mission poll and camera/input pass.
 	# The timed failure notice remains queued independently behind this modal.
 	var instruction_opened:=false
-	if next._mining!=null and next._mining.failure_instruction_pending() and next._player.snapshot().vitals.hull>0 and not next.death_active():
+	if next._mining!=null and next._mining.failure_instruction_pending() and next._player.read_state().vitals.hull>0 and not next.death_active():
 		var cursor: int=next._objective.campaign_cursor() if next._objective!=null else next._briefing.read_state().campaign_cursor
 		if next._mining.failure_instruction_due(cursor):
 			if not next._briefing.show_mining_failure_instruction() or not next._mining.mark_failure_instruction_shown(cursor):reject(next._briefing.error+next._mining.error);return null
@@ -937,17 +937,17 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 	var completion_opened:=false
 	if not instruction_opened and _mission_context!=null and _mission_context.advances_campaign():
 		var radio_active: bool=next._radio!=null and next._radio.snapshot().get("visible",false)
-		if not next._objective.poll_mission(next._encounter,radio_active,next._briefing.mission_poll_due(),not next.death_active() and next._player.snapshot().vitals.hull>0):reject(next._objective.error);return null
+		if not next._objective.poll_mission(next._encounter,radio_active,next._briefing.mission_poll_due(),not next.death_active() and next._player.read_state().vitals.hull>0):reject(next._objective.error);return null
 		completion_opened=next._objective.dialogue_visible()
 	elif not instruction_opened and _entry.has("bakka_context"):
 		var radio_active: bool=next._radio!=null and next._radio.snapshot().get("visible",false)
-		if not next._objective.poll_bakka(next._encounter,radio_active,next._briefing.mission_poll_due(),not next.death_active() and next._player.snapshot().vitals.hull>0):reject(next._objective.error);return null
+		if not next._objective.poll_bakka(next._encounter,radio_active,next._briefing.mission_poll_due(),not next.death_active() and next._player.read_state().vitals.hull>0):reject(next._objective.error);return null
 		completion_opened=next._objective.dialogue_visible()
 	elif not instruction_opened and next._objective is ContractObjective:
 		var radio_active: bool=next._radio!=null and next._radio.snapshot().get("visible",false)
 		var before_cursor: int=next._objective.campaign_cursor()
 		var radio_finished: Array=next._radio.snapshot().get("finished",[]) if next._radio!=null else []
-		if not next._objective.poll_contract(next._cargo,next._scenery,next._encounter,next._player.snapshot().vitals.hull>0,radio_active,next._briefing.mission_poll_due(),radio_finished,next._story_result_facts()):reject(next._objective.error);return null
+		if not next._objective.poll_contract(next._cargo,next._scenery,next._encounter,next._player.read_state().vitals.hull>0,radio_active,next._briefing.mission_poll_due(),radio_finished,next._story_result_facts()):reject(next._objective.error);return null
 		var story_state: Dictionary=next._objective.snapshot()
 		if story_state.campaign_cursor!=before_cursor and next._void_environment!=null and next._ordinary_void_source is Context:
 			# A story flight in the alien world has moved on (154 -> 155): the
@@ -971,7 +971,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 		elif not next._objective.poll_visit(int(visit_clock.world_elapsed_ms),int(visit_clock.hud_elapsed_ms),not next._briefing.mission_poll_due() or next.death_active() or next.contract_result_pending()):reject(next._objective.error);return null
 		completion_opened=next.contract_result_pending() or next._objective.dialogue_visible()
 	elif not instruction_opened and next._objective!=null and next._briefing.mission_poll_due():
-		var accepted: bool=next._objective.poll_probe(next._probe,next._encounter,int(next._player.snapshot().vitals.hull)) if next._probe!=null else next._objective.poll(next._cargo,next._scenery,next._player.snapshot().vitals.hull>0,next._encounter,next._radio,int(next._briefing.read_state().world_elapsed_ms))
+		var accepted: bool=next._objective.poll_probe(next._probe,next._encounter,int(next._player.read_state().vitals.hull)) if next._probe!=null else next._objective.poll(next._cargo,next._scenery,next._player.read_state().vitals.hull>0,next._encounter,next._radio,int(next._briefing.read_state().world_elapsed_ms))
 		if not accepted:reject(next._objective.error);return null
 		completion_opened=next._objective.dialogue_visible()
 	next._briefing.finish_mission_poll(completion_opened or instruction_opened)
@@ -1039,7 +1039,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 	if next._encounter!=null and next._encounter.guided_missile_active():
 		if not next._encounter.present_guided_camera(next._camera):reject(next._camera.error);return null
 	if next.death_active() and not next._death.sample_camera(next._camera.snapshot().pose,next._camera_follow_enabled):reject(next._death.error);return null
-	if next._mining!=null and next._mining.has_active_drill() and next._player.snapshot().vitals.hull>0 and not cues.dialogue.visible and not next.cinematic_input_blocked():
+	if next._mining!=null and next._mining.has_active_drill() and next._player.read_state().vitals.hull>0 and not cues.dialogue.visible and not next.cinematic_input_blocked():
 		if not next._mining.set_command(drill_command):reject(next._mining.error);return null
 	if next._equipment!=null:
 		var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,primary_fire or (secondary_fire and turret_active),cues.entry_released and not cues.dialogue.visible and not next.death_active() and not next.local_departing() and not next.cinematic_input_blocked(),next._random,[] if next._scanner==null else next._scanner.weapon_target_ids(),delta_ms)
@@ -1641,7 +1641,7 @@ func ordinary_void_source_owner() -> RefCounted:return null if _ordinary_void_so
 func void_portal_owner() -> RefCounted:return null if _void_portal==null else _void_portal.fork_for_frame()
 
 func void_return_required() -> bool:
-	return _void_portal!=null and not death_active() and _void_portal.transition_ready(int(_player.snapshot().vitals.hull))
+	return _void_portal!=null and not death_active() and _void_portal.transition_ready(int(_player.read_state().vitals.hull))
 
 func _apply_portal_contact(portal: RefCounted) -> bool:
 	var observation:={"player_pose":_pose,"environment_contact_enabled":_collision_enabled,"mining_active":_mining!=null and _mining.has_active_drill()}
@@ -1660,7 +1660,7 @@ func _apply_portal_contact(portal: RefCounted) -> bool:
 	return true
 
 func sahi_arrival_required() -> bool:
-	return _sahi!=null and not death_active() and _sahi.transition_ready(int(_player.snapshot().vitals.hull))
+	return _sahi!=null and not death_active() and _sahi.transition_ready(int(_player.read_state().vitals.hull))
 
 ## Construct a prospective world from this frame's actual living-player contact.
 ## No accepted owner is changed until the enclosing application adopts the result.
@@ -1772,7 +1772,7 @@ func _advance_probe_sequence(delta_ms: int) -> bool:
 	for cue in stage.frame.cues:
 		match cue.kind:
 			"player_damage":
-				if not _player.set_permissions(_player.snapshot().active,bool(cue.enabled)):return reject(_player.error)
+				if not _player.set_permissions(_player.read_state().active,bool(cue.enabled)):return reject(_player.error)
 			"camera_eye":
 				_shot={"base_content_id":_entry.base_content_id,"binding_id":_entry.binding_id,"mode":"fixed_eye","target":"probe","eye":cue.position,"inherit_target_up":true}
 				refresh=true
@@ -1796,7 +1796,7 @@ func _advance_sahi(delta_ms: int) -> bool:
 			"clear_npc_weapon_targets":
 				if not _encounter.apply_sahi_view(_sahi):return reject(_encounter.error)
 			"player_damage":
-				if not _player.set_permissions(_player.snapshot().active,bool(cue.enabled)):return reject(_player.error)
+				if not _player.set_permissions(_player.read_state().active,bool(cue.enabled)):return reject(_player.error)
 			"player_physical_pose":
 				_pose=cue.pose
 				_statistics_pose=_pose*Transform3D(_model_basis,Vector3.ZERO)
@@ -1861,7 +1861,7 @@ func _advance_convoy(delta_ms: int) -> bool:
 	var state: Dictionary=_convoy.snapshot();var frame: Dictionary=state.frame
 	if not state.input_blocked:return true
 	if frame.disable_player:
-		if not _player.set_permissions(false,_player.snapshot().damage_allowed):return reject(_player.error)
+		if not _player.set_permissions(false,_player.read_state().damage_allowed):return reject(_player.error)
 		_throttle=0.0;_preceding_commands=Vector2.ZERO
 		_pilot.angular_units=Vector2.ZERO
 		_model_basis=(_model_basis*Basis(Vector3.UP,frame.model_rotation_delta.y)).orthonormalized()
@@ -2158,7 +2158,7 @@ func _observe_radio() -> bool:
 		elif cutscene.is_empty() and _cutscene.has("eye"):_cutscene={"ended":true}
 		if radio_actions.any(func(action):return action.action in ["lock_player","cutscene"]) and radio_lock!=_story_locked:
 			_story_locked=radio_lock
-			if (radio_invulnerable or not radio_lock) and not _player.set_permissions(bool(_player.snapshot().active),not radio_lock):return reject(_player.error)
+			if (radio_invulnerable or not radio_lock) and not _player.set_permissions(bool(_player.read_state().active),not radio_lock):return reject(_player.error)
 		# Recipe actions at a flight time (78: the station leaves, the pirates wake).
 		for action in _mission_context.recipe().get("timed_actions",[]):
 			if elapsed<int(action.after_ms):continue
@@ -2170,7 +2170,7 @@ func _observe_radio() -> bool:
 				var held: bool=int(_objective.campaign_cursor())==int(_entry.get("campaign_cursor",-1))
 				if held!=_story_locked:
 					_story_locked=held
-					if not _player.set_permissions(bool(_player.snapshot().active),not held):return reject(_player.error)
+					if not _player.set_permissions(bool(_player.read_state().active),not held):return reject(_player.error)
 			elif action.action=="hide_station" and not _station_hidden:
 				_station_hidden=true;_return_rules={}
 			elif action.action=="lock_player":
@@ -2178,7 +2178,7 @@ func _observe_radio() -> bool:
 				var locked: bool=not _story_line_passed(action.until,elapsed) if action.has("until") else int(action.duration_ms)<0 or elapsed<int(action.after_ms)+int(action.duration_ms)
 				if locked!=_story_locked:
 					_story_locked=locked
-					if action.get("invulnerable",false) and not _player.set_permissions(bool(_player.snapshot().active),not locked):return reject(_player.error)
+					if action.get("invulnerable",false) and not _player.set_permissions(bool(_player.read_state().active),not locked):return reject(_player.error)
 			elif action.action in ["show","destroy"]:
 				var actors: Array=_encounter.read_combat().actors
 				var pending: bool=range(int(action.first_actor),int(action.end_actor)).any(func(id):return int(actors[id].vitals.hull)>0 and (action.action=="destroy" or not actors[id].get("model_draw_enabled",true)))
@@ -2233,7 +2233,7 @@ func _story_radio_facts() -> Dictionary:
 		if int(actor.get("max_hull",0))>0:maximum[id]=int(actor.max_hull)
 		if actor.get("pose") is Transform3D:distances[id]=_pose.origin.distance_to(actor.pose.origin)
 		emp[id]=[int(actor.get("systems_hit_serial",0))>0,actor.get("systems_disabled",false)==true]
-	var facts:={"hostile_active":hostile_active,"defeated_targets":defeated,"player_armor_depleted":int(_player.snapshot().vitals.armor)<1,"hulls":hulls,"player_distances":distances,"emp":emp}
+	var facts:={"hostile_active":hostile_active,"defeated_targets":defeated,"player_armor_depleted":int(_player.read_state().vitals.armor)<1,"hulls":hulls,"player_distances":distances,"emp":emp}
 	facts.radio_marks=_line_marks.duplicate(true)
 	facts.maximum_hulls=maximum
 	if _scanner!=null:facts.player_target=int(_scanner.snapshot().get("selected_actor_id",-1))
@@ -2975,10 +2975,10 @@ func player_equipment_ids() -> Array:return [] if _player==null else _player.sna
 func player_devices() -> Dictionary:return {} if _player==null else _player.devices_snapshot()
 func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
 func cloak_input_permitted() -> bool:
-	return _equipment!=null and entry_released() and not death_active() and _player.snapshot().vitals.hull>0 and not dialogue_visible() and not cinematic_input_blocked() and not local_departing() and not gate_departing()
+	return _equipment!=null and entry_released() and not death_active() and _player.read_state().vitals.hull>0 and not dialogue_visible() and not cinematic_input_blocked() and not local_departing() and not gate_departing()
 
 func booster_input_permitted() -> bool:
-	return _booster!=null and entry_released() and not death_active() and _player.snapshot().vitals.hull>0 and not dialogue_visible() and not cinematic_input_blocked() and not local_departing() and not gate_departing() and drill_owner()==null and (_approach==null or _approach.snapshot().phase in ["idle","approach"])
+	return _booster!=null and entry_released() and not death_active() and _player.read_state().vitals.hull>0 and not dialogue_visible() and not cinematic_input_blocked() and not local_departing() and not gate_departing() and drill_owner()==null and (_approach==null or _approach.snapshot().phase in ["idle","approach"])
 
 func engine_particle_owner() -> RefCounted:return null if _engine_particles==null else _engine_particles.fork_for_frame()
 func death_active() -> bool:return _death!=null and _death.phase()!="ready"
@@ -3122,7 +3122,8 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	if _objective is ContractObjective:state.world_path=_world_path.duplicate(true)
 	if not _audio_frame.is_empty():state.flight_audio=_audio_frame.duplicate(true)
 	if _encounter!=null:
-		state.encounter=_encounter.snapshot();state.actors=state.encounter.combat.actors.duplicate(true)
+		state.encounter=_encounter.snapshot(shared_scenery)
+		state.actors=state.encounter.combat.actors if shared_scenery else state.encounter.combat.actors.duplicate(true)
 		state.mission_readout=state.encounter.controller.get("mission_readout",{})
 		if not _gas.is_empty():state.gas_clouds=Gas.snapshot_for_view(_gas)
 		var left:=_countdown_end-int(_briefing.read_state().world_elapsed_ms)

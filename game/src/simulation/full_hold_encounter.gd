@@ -1119,16 +1119,18 @@ func target(player: RefCounted, pose: Transform3D) -> Dictionary:
 		"ship_id":state.ship_id,"pose":pose,"active":state.active,"hull":state.vitals.hull,
 		"targeting_blocked":player.targeting_blocked(),"special_flight":false,"alternate_position":null}
 
-func snapshot() -> Dictionary:
+## shared: the combat view is the group's cached read-only observation, for
+## presentation frames that never edit it.
+func snapshot(shared:=false) -> Dictionary:
 	if _control==null:return {}
 	var result:=_identity.duplicate()
-	var combat: Dictionary=_combat.snapshot()
+	var combat: Dictionary=_combat.read_snapshot() if shared else _combat.snapshot()
 	if _selected40_world!=null:result.scope="selected40_mixed_contact_component"
 	if _selected40_sequence!=null:result.selected40_sequence=_selected40_sequence.snapshot()
 	if _selected40_view!=null:result.selected40_view=_selected40_view.snapshot()
-	var shared: bool=_control.has_method("shares_combat") and _control.shares_combat(_combat)
+	var shares: bool=_control.has_method("shares_combat") and _control.shares_combat(_combat)
 	result.merge({"elapsed_ms":_elapsed_ms,"world_elapsed_ms":_world_elapsed_ms,
-		"combat":combat,"controller":_control.snapshot(combat.duplicate(true)) if shared else _control.snapshot(),"weapons":_weapons.snapshot(),
+		"combat":combat,"controller":_control.snapshot(combat if shared else combat.duplicate(true)) if shares else _control.snapshot(),"weapons":_weapons.snapshot(),
 		"weapon_events":_weapon_events.duplicate(true),"actor_events":_actor_events.duplicate(true),
 		"projectile_visuals":_projectiles.snapshot(),"impact_visuals":_impacts.snapshot()})
 	if _primaries!=null:

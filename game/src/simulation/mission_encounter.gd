@@ -121,8 +121,8 @@ func mission_context_owner() -> RefCounted:return _context
 func world_owner() -> RefCounted:return null if _hook==null else _hook.world_owner()
 func sequence_hook_owner() -> RefCounted:return null if _hook==null else _hook.fork_for_frame()
 
-func snapshot() -> Dictionary:
-	var state:=super.snapshot()
+func snapshot(shared:=false) -> Dictionary:
+	var state:=super.snapshot(shared)
 	if _hook!=null:state.merge(frame_context(),true);state.scope="mission_encounter"
 	return state
 func fork_for_frame() -> RefCounted:

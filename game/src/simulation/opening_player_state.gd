@@ -586,6 +586,9 @@ func record_contact(velocity: Variant) -> bool:
 static func resolve_capacities(items: Array, equipment_ids: Array, parameters: Dictionary) -> Dictionary:
 	return Stats.resolve_capacities(items,equipment_ids,parameters)
 
+## Live state for an immediate field read; never keep or edit it.
+func read_state() -> Dictionary:return _state
+
 func snapshot() -> Dictionary:
 	var result := _state.duplicate(true)
 	if _recharge!=null: result.recharge=_recharge.snapshot()
