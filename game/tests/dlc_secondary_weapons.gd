@@ -9,7 +9,7 @@ const Conventional=preload("res://src/content/conventional_secondary_definitions
 const BurstResources=preload("res://src/content/emp_detonation_resources.gd")
 const Burst=preload("res://src/simulation/emp_detonation.gd")
 const ADMITTED:=[214,215,216,221,226]
-const REFUSED:=[211,212,213,232]
+const REFUSED:=[232]
 
 func _initialize() -> void:
 	var args:=OS.get_cmdline_user_args()

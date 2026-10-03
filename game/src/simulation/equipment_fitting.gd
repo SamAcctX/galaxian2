@@ -94,6 +94,11 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 				for sound_id in [declaration.launch_sound,declaration.burst_sound]:
 					var clip: Dictionary=sounds.prepare(sound_id)
 					if clip.is_empty() or clip.has("unsupported"):items[id]="This mine's original sound is unavailable"
+		# Sentry guns: the turret mesh, its glow and its shot must all be present.
+		for id in [211,212,213]:
+			var sentry: Dictionary=Secondaries.Sentries.Definitions.declaration(id)
+			var paths:=[sentry.base,sentry.head,sentry.shot_model].map(func(model):return bindings.resolve(int(model),"mesh"))
+			items[id]="" if paths.all(func(path):return not path.is_empty() and library.manifest.files.has(path)) else "This sentry gun's original model is unavailable"
 		var resolver:=Weapons.new()
 		if not resolver.configure(bindings,cat,bindings.base_content_id):return fail(resolver.error)
 		for item in cat.tables.items:
@@ -172,6 +177,9 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 		return ""
 	if category==1:
 		if not Secondaries.Definitions.available(bindings):return "This secondary weapon's flight behavior is not yet supported"
+		if not Secondaries.Sentries.Definitions.declaration(id).is_empty():
+			var sentry:=Secondaries.Sentries.new()
+			return "" if sentry.configure(bindings,cat,id) else "This sentry gun's firing behavior is not yet supported"
 		if not Secondaries.Mines.Definitions.declaration(id).is_empty():
 			var mine:=Secondaries.Mines.new()
 			return "" if mine.configure(bindings,cat,id,ids) and NPCSystems.available(bindings) else "This mine's firing or systems behavior is not yet supported"
