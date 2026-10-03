@@ -30,6 +30,7 @@ const VoidPortal=preload("res://src/simulation/void_portal.gd")
 const Escape=preload("res://src/simulation/mission_escape_sequence.gd")
 const Random=preload("res://src/simulation/seeded_random.gd")
 const Beams=preload("res://src/simulation/repair_beams.gd")
+const Devices=preload("res://src/simulation/flight_devices.gd")
 ## The Time Extender runs the player at a different rate from the world.
 var player_time_scale:=1.0
 var error:=""
@@ -205,6 +206,10 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if contacts.is_empty():return failed(next._encounter.error)
 	next._encounter=contacts.encounter;next._player=contacts.player;next._scenery=contacts.scenery;next._random=contacts.random_state
 	Beams.advance_flight(next._player,next._pose,next._encounter,null,milliseconds)
+	if not dying:
+		var devices: Dictionary=Devices.advance(next._player,next._cargo,next._equipment,next._notices,milliseconds)
+		if devices.has("error"):return failed(devices.error)
+		next._cargo=devices.cargo;next._equipment=devices.equipment
 	if not next._particles.apply_weapon_impacts(next._encounter.secondary_impacts()):return failed(next._particles.error)
 	if not dying and next._player.snapshot().vitals.hull<=0:
 		if not next._death.start(next._player,next._pose,Vector3.ZERO,next._camera.snapshot().pose,_state.campaign_cursor,Basis.IDENTITY,next._pose,next._encounter.secondary_owner()):return failed(next._death.error)
@@ -610,5 +615,7 @@ func toggle_turret() -> RefCounted:
 
 func cloak_state() -> Dictionary:return {} if _player==null else _player.cloak_state()
 func player_equipment_ids() -> Array:return [] if _player==null else _player.snapshot().get("equipment_ids",[])
+## Emergency System / Shield Injector state for sound and medals.
+func player_devices() -> Dictionary:return {} if _player==null else _player.devices_snapshot()
 func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
 func control_throttle() -> float:return _throttle

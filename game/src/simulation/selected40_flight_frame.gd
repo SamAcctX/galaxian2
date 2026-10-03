@@ -30,6 +30,7 @@ const VoidPortal=preload("res://src/simulation/void_portal.gd")
 const CampaignFailure=preload("res://src/content/kappa_outcome_definitions.gd")
 const Sequence=preload("res://src/simulation/selected40_sequence.gd")
 const Beams=preload("res://src/simulation/repair_beams.gd")
+const Devices=preload("res://src/simulation/flight_devices.gd")
 ## The Time Extender runs the player at a different rate from the world.
 var player_time_scale:=1.0
 var error:=""
@@ -239,6 +240,10 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if weapons.is_empty():reject(next._encounter.error);return null
 	next._encounter=weapons.encounter;next._player=weapons.player;next._scenery=weapons.scenery;next._random=weapons.random_state
 	Beams.advance_flight(next._player,next._pose,next._encounter,null,milliseconds)
+	if not dying:
+		var devices: Dictionary=Devices.advance(next._player,next._cargo,next._equipment,next._notices,milliseconds)
+		if devices.has("error"):reject(devices.error);return null
+		next._cargo=devices.cargo;next._equipment=devices.equipment
 	# Transport time remains aligned after the player-update gate closes; the
 	# stopped engine cannot restart, and the frozen pose does not move its sound.
 	if not next._engine_audio.follow_player(next._pose,int(next._player.snapshot().vitals.hull),milliseconds):reject(next._engine_audio.error);return null
@@ -629,5 +634,7 @@ func toggle_turret() -> RefCounted:
 
 func cloak_state() -> Dictionary:return {} if _player==null else _player.cloak_state()
 func player_equipment_ids() -> Array:return [] if _player==null else _player.snapshot().get("equipment_ids",[])
+## Emergency System / Shield Injector state for sound and medals.
+func player_devices() -> Dictionary:return {} if _player==null else _player.devices_snapshot()
 func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
 func control_throttle() -> float:return _throttle

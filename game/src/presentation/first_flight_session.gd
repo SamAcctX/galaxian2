@@ -50,6 +50,7 @@ const GATE_JUMP_SOUND:=32
 var _gate_jump_clip:={}
 var _extender: RefCounted
 var _extender_feedback: Node
+var _devices_feedback: Node
 var gate_jump_plays:=0
 var _world: RefCounted
 var _clock: RefCounted
@@ -237,6 +238,8 @@ func _configure_construction(library: RefCounted, bindings: RefCounted, visuals:
 	if _extender.configure(cat.tables.items,_world.player_equipment_ids()):
 		_extender_feedback=TimeExtenderFeedback.new();add_child(_extender_feedback);_extender_feedback.configure(library,bindings)
 	else:_extender=null
+	if _world.has_method("player_devices") and not _world.player_devices().is_empty():
+		_devices_feedback=preload("res://src/presentation/flight_devices_feedback.gd").new();add_child(_devices_feedback);_devices_feedback.configure(library,bindings)
 	if cursor>1:
 		engine_audio=NpcEngines.new();add_child(engine_audio)
 		if not engine_audio.configure(library,bindings,int(field_seed)):engine_audio.free();engine_audio=null
@@ -577,6 +580,7 @@ func _commit(world: RefCounted, advance_sun: bool, absolute_milliseconds: int=-1
 	if not _gate_jump_clip.is_empty() and state.get("gate_transit",{}).get("phase")=="departing" and _presentation_state.get("gate_transit",{}).get("phase")!="departing":
 		OneShot.play(self,_gate_jump_clip);gate_jump_plays+=1
 	if engine_audio!=null and camera!=null:engine_audio.update(NpcEngines.sources(state),camera.global_position,maxi(0,presentation_time-_presentation_ms))
+	if _devices_feedback!=null and world.has_method("player_devices"):_devices_feedback.present(world.player_devices())
 	_world=world;_presentation_state=state;_generation+=1
 	_presentation_ms=presentation_time
 	briefing_audio.present(briefing_line)
@@ -673,7 +677,7 @@ func presentation_snapshot() -> Dictionary:
 	return preload("res://src/simulation/readonly_state.gd").freeze(state) if OS.is_debug_build() else state
 func clear() -> void:
 	for child in get_children():child.free()
-	error="";status="idle";camera=null;scene=null;briefing_audio=null;objective_audio=null;objective_failure_audio=null;flight_audio=null;engine_audio=null;_gate_jump_clip={};_extender=null;_extender_feedback=null
+	error="";status="idle";camera=null;scene=null;briefing_audio=null;objective_audio=null;objective_failure_audio=null;flight_audio=null;engine_audio=null;_gate_jump_clip={};_extender=null;_extender_feedback=null;_devices_feedback=null
 	_world=null;_clock=null;_pauses={};_active=false;_throttle=1.0;_generation=0
 	_presentation_state={}
 	_presentation_ms=0;_secondary_requested=false;_boost_requested=false;_cloak_requested=false

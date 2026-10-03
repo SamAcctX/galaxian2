@@ -22,6 +22,7 @@ var _boost_pending:=false
 var _cloak_pending:=false
 var _extender: RefCounted
 var _extender_feedback: Node
+var _devices_feedback: Node
 var _throttle:=1.0
 var _observed_world: RefCounted
 var _flight_read:={}
@@ -48,6 +49,8 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cata
 	if world.has_method("player_equipment_ids") and _extender.configure(catalogues.tables.items,world.player_equipment_ids()):
 		_extender_feedback=preload("res://src/presentation/time_extender_feedback.gd").new();add_child(_extender_feedback);_extender_feedback.configure(library,bindings)
 	else:_extender=null
+	if world.has_method("player_devices") and not world.player_devices().is_empty():
+		_devices_feedback=preload("res://src/presentation/flight_devices_feedback.gd").new();add_child(_devices_feedback);_devices_feedback.configure(library,bindings)
 	_world=world;_clock=clock;scene=next_scene;camera=scene.camera;status="prepared"
 	return true
 
@@ -87,6 +90,7 @@ func step(now_microseconds: int,commands:=Vector2.ZERO,primary_fire:=false,mouse
 		return true
 	if not scene.present(next,viewport):return reject(scene.error)
 	if next.booster_state().activation!=_world.booster_state().activation:_throttle=1.0
+	if _devices_feedback!=null and next.has_method("player_devices"):_devices_feedback.present(next.player_devices())
 	_world=next;_clock=clock;_secondary_pending=false;_boost_pending=false;_cloak_pending=false
 	if not can_control():clear_flight_input()
 	return true

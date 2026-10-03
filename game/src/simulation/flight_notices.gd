@@ -79,6 +79,10 @@ func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,lo
 		var display_id:=Desktop.select_id(bindings.desktop_text,text_id)
 		if display_id<0 or display_id>=library.strings.size() or library.strings[display_id].is_empty():return reject("A cloak notice is missing in this language")
 		messages[key]={"kind":key,"text_ids":[text_id],"display_text_ids":[display_id],"text":library.strings[display_id],"rgb":[255,255,255]}
+	# Shield Injector: "-30t <text 1465>" (Hud event 0x2f). Optional text.
+	var injected_id:=Desktop.select_id(bindings.desktop_text,1465)
+	if injected_id>=0 and injected_id<library.strings.size() and not library.strings[injected_id].is_empty():
+		messages["plasma_injected"]={"kind":"plasma_injected","text_ids":[1465],"display_text_ids":[injected_id],"text":library.strings[injected_id],"rgb":[255,255,255]}
 	# Auto turret switched on/off: "<turret> <activated/deactivated>" (Hud event 0x20/0x21).
 	for key in {"auto_turret_on":38,"auto_turret_off":39}:
 		var ids:=[Desktop.select_id(bindings.desktop_text,207),Desktop.select_id(bindings.desktop_text,{"auto_turret_on":38,"auto_turret_off":39}[key])]
@@ -131,6 +135,12 @@ func enqueue_auto_turret(enabled: bool) -> bool:return _enqueue(_messages.auto_t
 func enqueue_energy_spent(units: int) -> bool:
 	if units<=0:return reject("Fuel notice requires spent energy")
 	var message: Dictionary=_messages.energy_spent.duplicate(true)
+	message.text="-%dt " % units+message.text
+	return _enqueue(message)
+
+func enqueue_plasma_injected(units: int) -> bool:
+	if units<=0 or not _messages.has("plasma_injected"):return true
+	var message: Dictionary=_messages.plasma_injected.duplicate(true)
 	message.text="-%dt " % units+message.text
 	return _enqueue(message)
 
