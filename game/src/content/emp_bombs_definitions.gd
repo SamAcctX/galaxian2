@@ -42,12 +42,16 @@ const ROCKET_TRAIL = {"preset_id":12,"material_id":27250,"flags":0x02000021,"cap
 ## Fireworks uses system 47: the same settings with the firework sparks sheet.
 const FIREWORKS_TRAIL = {"preset_id":47,"material_id":27321}
 
+## The Ion Lambda launchers (197 Mk1, 221 Mk2) are bomb launchers in the
+## original too and trail the same fire sprites while their shot flies.
+const ION_LAMBDA_ITEMS:=[197,221]
+
 ## The sprite trail an area bomb emits while flying (empty when it has none).
 ## The Liberator missile (179) never enables its trail; the Shock Blast's
 ## 1-ms flight is assumed to emit nothing visible.
 static func flight_trail(item_id: int) -> Dictionary:
 	if item_id==int(FIREWORKS.item_id):return ROCKET_TRAIL.duplicate(true).merged(FIREWORKS_TRAIL,true)
-	if item_id in VALUES.item_ids or item_id in [44,45,46]:return ROCKET_TRAIL.duplicate(true)
+	if item_id in VALUES.item_ids or item_id in [44,45,46] or item_id in ION_LAMBDA_ITEMS:return ROCKET_TRAIL.duplicate(true)
 	return {}
 
 static func available(bindings: RefCounted) -> bool:

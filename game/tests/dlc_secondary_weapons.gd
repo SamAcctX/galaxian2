@@ -10,6 +10,7 @@ const BurstResources=preload("res://src/content/emp_detonation_resources.gd")
 const Burst=preload("res://src/simulation/emp_detonation.gd")
 const BombBody=preload("res://src/presentation/bomb_projectile_geometry.gd")
 const VisualLibrary=preload("res://src/content/visual_library.gd")
+const RocketBody=preload("res://src/presentation/conventional_secondary_geometry.gd")
 const ADMITTED:=[214,215,216,221,226,232]
 const REFUSED:=[]
 
@@ -32,6 +33,7 @@ func verify_dlc(content: String,pack: String,visual_pack: String) -> void:
 	var visuals:=VisualLibrary.new()
 	check(visuals.open(visual_pack,lib.manifest),visuals.error)
 	verify_fireworks(lib,bindings,cat,mounts,built,visuals)
+	verify_ion_trail(lib,bindings,cat,mounts,built,visuals)
 
 func verify_fitting(lib: RefCounted,bindings: RefCounted,cat: RefCounted) -> void:
 	var fitting:=Fitting.new();var assets:=fitting.prepare_assets(bindings,cat,lib)
@@ -155,3 +157,35 @@ func verify_fireworks(lib: RefCounted,bindings: RefCounted,cat: RefCounted,mount
 	body.free()
 	var burst: RefCounted=current.detonation_owner(current.snapshot().guns[0].slot_index)
 	check(burst!=null and burst.snapshot().effect.active and burst.snapshot().effect.get("scale")==0.25,"Fireworks glow did not start at quarter size")
+
+## Ion Lambda streams the bomb fire sprites (not a ribbon) while it flies; they
+## stop with the shot and have faded out shortly after it ends.
+func verify_ion_trail(lib: RefCounted,bindings: RefCounted,cat: RefCounted,mounts: RefCounted,built: RefCounted,visuals: RefCounted) -> void:
+	var owner:=Ownership.new();var group:=active_group(bindings,cat,built,0)
+	if group==null or not owner.configure(bindings,cat,equipped(bindings,cat,[{"item_id":221,"slot":0,"quantity":2}]),mounts) or not owner.configure_projectile_visuals(lib,bindings):check(false,owner.error);return
+	var targets:=[0,1,2,3]
+	var pose:=Transform3D(Basis.IDENTITY,group.snapshot().actors[0].position+Vector3(0,0,300000))
+	var step:=owner.evaluate_advance(100000,group,targets)
+	if step.is_empty():check(false,owner.error);return
+	var fired: Dictionary=step.owner.evaluate_trigger(pose,221,group,targets)
+	if fired.is_empty():check(false,step.owner.error);return
+	var current: RefCounted=fired.owner;var combat: RefCounted=fired.combat
+	var body:=RocketBody.new()
+	if not body.build(current.snapshot().guns[0],lib,visuals,bindings) or body.fire_trails.is_empty():check(false,"Ion Lambda fire trail unavailable: "+body.error);body.free();return
+	check(body.trail==null and body.fire_trails[0].get_child(0).get_meta("source_material_id")==27250,"Ion Lambda still draws a ribbon or not the fire sheet")
+	var flying:=0;var ended:=-1
+	for tick in 1000:
+		step=current.evaluate_advance(16,combat,targets)
+		if step.is_empty():check(false,current.error);body.free();return
+		current=step.owner;combat=step.get("combat",combat)
+		var frame:=body.prepare(current.snapshot().guns[0],Transform3D.IDENTITY)
+		if frame.is_empty():check(false,body.error);body.free();return
+		body.commit(frame)
+		if tick==60:flying=body.fire_trails[0].sprites
+		var slot: Variant=current.snapshot().guns[0].projectiles.slots[0]
+		if ended<0 and (slot==null or int(slot.remaining_ms)<=0):ended=tick
+		if ended>=0 and tick==ended+1:check(body.fire_trails[0].sprites>0,"Ion Lambda fire sprites vanished when the shot ended")
+		if ended>=0 and tick>=ended+90:break
+	check(flying>=40,"Ion Lambda drew %d fire sprites in flight"%flying)
+	check(ended>0 and body.fire_trails[0].sprites==0,"Ion Lambda still drew %d fire sprites 1.4 s after its shot ended"%body.fire_trails[0].sprites)
+	body.free()
