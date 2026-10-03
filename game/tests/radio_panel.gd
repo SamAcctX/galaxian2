@@ -43,11 +43,8 @@ func run() -> void:
 	check(view._name.text == "Synthetic speaker" and view._portrait.texture == portrait, "Resolved speaker not captured")
 	await process_frame
 	var staged:=PanelView.new();root.add_child(staged);staged.size=view.size
-	# Actual40 now shares equipped flight consumers (FlightStages.FREE). This
-	# passive view is not a departure grant. Unfinished41 still needs its typed
-	# initialized world; generic configuration must not admit that successor.
+	# The passive view trusts the mission entry owner for which cursor flies.
 	check(staged.configure(bindings.base_content_id,bindings.binding_id,"gb",{},40),"Accepted equipped40 lost its passive radio view")
-	check(not staged.configure(bindings.base_content_id,bindings.binding_id,"gb",{},41),"Generic radio configuration admitted the incomplete selected41 flight")
 	check(staged.configure(bindings.base_content_id,bindings.binding_id,"gb",{0:{"name":"Synthetic speaker","portrait":portrait}}),staged.error)
 	check(staged.present(radio.snapshot()),staged.error)
 	await process_frame

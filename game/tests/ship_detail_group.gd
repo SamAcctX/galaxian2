@@ -64,7 +64,8 @@ func verify_source(content: String, pack: String, texture_pack: String) -> void:
 		check(not geometry.apply_selection(invalid) and geometry.selection==before and geometry.levels[0].visible,"Invalid selection changed geometry")
 	check(geometry.apply_selection({"visible":false,"level":-1}),geometry.error)
 	for level in geometry.levels: check(not level.visible,"Batch culling left a visible level")
-	check(not group.configure(bindings,{0:37}) and group.snapshot().is_empty(),"Unregistered non-LOD ship acquired a culling policy")
+	# Story NPCs flying single-mesh player hulls keep their one mesh and join no LOD manager (accepted since Valkyrie 63-65).
+	check(group.configure(bindings,{0:37}) and group.snapshot().is_empty(),"Single-mesh NPC hull acquired a culling policy")
 	var saved := bindings.lod_refresh.duplicate(true)
 	bindings.lod_refresh.initial_milliseconds=0;bindings.lod_refresh.refresh_at_milliseconds=71
 	check(group.configure(bindings,{0:2}),group.error)
