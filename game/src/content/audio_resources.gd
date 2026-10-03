@@ -185,7 +185,9 @@ func prepare_static(id: int, event: Dictionary) -> Dictionary:
 	# Designer mode 2 loops while the firing event is held, then plays the
 	# current sample to its end. The supplied cannon events use this mode.
 	if int(sound.flags) not in [0,1,2] or sound.flags2!=0 or sound.loop_count!=-1 or sound.auto_pitch!=0 or sound.fine_tune!=0 or sound.volume<0 or sound.volume>4 or float(sound.fade_in) not in [-1.0,0.0] or float(sound.fade_out) not in [-1.0,0.0] or sound.x!=0 or (sound.width!=1 and not terran_music_box):return unavailable(id,"This sound requires native scheduling or parameter automation")
-	if sound.flags==0 and event.properties.max_playbacks!=1:return unavailable(id,"This loop needs additional native instance behavior")
+	# One cached handle per event: a second allowed instance (Matador TS 2252)
+	# never sounds separately, so it plays like a single-instance loop.
+	if sound.flags==0 and event.properties.max_playbacks not in [1.0,2.0]:return unavailable(id,"This loop needs additional native instance behavior")
 	var looping: bool=sound.flags!=1
 	var definition:=cached_playlist(int(sound.sound_def),looping)
 	if definition.is_empty():return {}

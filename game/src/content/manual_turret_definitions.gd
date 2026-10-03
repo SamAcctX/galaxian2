@@ -6,7 +6,10 @@ const ROWS={47:{"base_model":6770,"gun_model":6771,"height":60.0,"barrel_spacing
 	# Expansion automatic turrets aim and fire by themselves outside turret view.
 	180:{"base_model":6805,"gun_model":6806,"height":84.0,"barrel_spacing":0.0,"auto":true},
 	181:{"base_model":6807,"gun_model":6808,"height":88.0,"barrel_spacing":0.0,"auto":true},
-	182:{"base_model":6809,"gun_model":6810,"height":88.0,"barrel_spacing":0.0,"auto":true}}
+	182:{"base_model":6809,"gun_model":6810,"height":88.0,"barrel_spacing":0.0,"auto":true},
+	# Supernova Matador TS: base and barrel each carry a child mesh; its shots
+	# alternate 45 left and right of the barrel axis.
+	224:{"base_model":18842,"gun_model":18843,"base_child":18844,"gun_child":18845,"height":82.0,"barrel_spacing":45.0}}
 ## Automatic aim: pick the nearest awake hostile within range every 3 s, lead
 ## it along its heading, and fire once both turret axes are within tolerance.
 const AUTO_RETARGET_MS=3000

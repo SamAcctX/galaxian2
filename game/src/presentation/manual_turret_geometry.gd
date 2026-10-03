@@ -11,9 +11,15 @@ func build(state: Dictionary,library: RefCounted,visuals: RefCounted,bindings: R
 	var row:=Definitions.declaration(int(state.get("item_id",-1)))
 	if row.is_empty():error="No manual turret model is declared";return false
 	var paths: Array=[bindings.resolve(row.base_model,"mesh"),bindings.resolve(row.gun_model,"mesh")]
+	# Child meshes (Matador TS) ride on the base and barrel at their own origin.
+	for key in ["base_child","gun_child"]:
+		if row.has(key):paths.append(bindings.resolve(int(row[key]),"mesh"))
 	var resources:=Resources.new()
 	if not resources.prepare(paths,library,visuals,bindings,"high",true):error=resources.error;return false
 	base=resources.instantiate(paths[0]);gun=resources.instantiate(paths[1])
+	var index:=2
+	for key in ["base_child","gun_child"]:
+		if row.has(key):(base if key=="base_child" else gun).add_child(resources.instantiate(paths[index]));index+=1
 	add_child(base);add_child(gun);resources.clear();_item_id=int(state.item_id)
 	return present(state)
 

@@ -67,7 +67,8 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 				resources[model]="" if supported else "This weapon's animated model is not yet supported"
 			if not resources[model].is_empty():items[id]=resources[model]
 		if item.arrays[2][3]==2:
-			for key in ["base_model","gun_model"]:
+			for key in ["base_model","gun_model","base_child","gun_child"]:
+				if not Turrets.declaration(id).has(key):continue
 				var path: String=bindings.resolve(int(Turrets.declaration(id)[key]),"mesh")
 				if not library.manifest.files.has(path) or not Materials.supports(bindings.material_for_mesh(path,"high")):items[id]="This turret model is unavailable"
 			var clip: Dictionary=sounds.prepare(int(bindings.weapon_parameters.audio.player_event_ids[id]))
