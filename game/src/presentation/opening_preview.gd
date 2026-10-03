@@ -649,10 +649,14 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		status.visible=not _player_mode or _transition_failed
 		return
 	if state.is_empty() and session!=null:state=session.snapshot()
+	# Each query below is asked several times per refresh; ask once.
+	var controllable: bool=session!=null and session.can_control()
+	var hud_visible: bool=session!=null and session.flight_hud_visible(state)
+	var skippable: bool=session!=null and session.has_method("can_skip_cinematic") and session.can_skip_cinematic()
 	_sync_booster_indicator(state)
 	_sync_mouse_capture()
 	var touch_actions:=touch_actions_enabled()
-	if _pause_button!=null:_pause_button.visible=touch_actions and session!=null and (session.flight_hud_visible(state) or session.can_control())
+	if _pause_button!=null:_pause_button.visible=touch_actions and session!=null and (hud_visible or controllable)
 	if _station_map_button!=null:
 		_station_map_button.visible=_station_map_available(state) and not _station_map_open
 		_station_map_button.disabled=session==null or session.is_paused() or not _focused
@@ -673,12 +677,12 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		_launch_button.visible=session is StationSession and state.phase in STATION_DEPARTURE_PHASES and not state.get("lounge_open",false) and not state.get("hangar_open",false) and state.get("contracts",{}).get("pending_result",{}).is_empty() and _departure_available(int(state.campaign_cursor))
 		_launch_button.disabled=session==null or session.is_paused() or not _focused or not _launch_packet.is_empty()
 	if secondary_panel!=null:
-		secondary_panel.set_interaction(session is FirstFlightSession and session.can_control() and _focused and is_visible_in_tree() and not _transition_failed,touch_actions)
-		secondary_panel.set_hud_visible(session is FirstFlightSession and session.flight_hud_visible(state) and not session.map_open() and not state.get("guided_missile",false))
+		secondary_panel.set_interaction(session is FirstFlightSession and controllable and _focused and is_visible_in_tree() and not _transition_failed,touch_actions)
+		secondary_panel.set_hud_visible(session is FirstFlightSession and hud_visible and not session.map_open() and not state.get("guided_missile",false))
 		secondary_panel.set_selection_active(session is FirstFlightSession and session.secondary_menu_active() and _focused and is_visible_in_tree() and not _transition_failed)
 	if _flight_actions!=null:
-		_flight_actions.visible=touch_actions and ((session is FirstFlightSession and session.flight_hud_visible(state) and not session.map_open()) or (session is MissionSession and session.flight_hud_visible()))
-		_mine_button.disabled=session==null or not session.can_control() or not _focused
+		_flight_actions.visible=touch_actions and ((session is FirstFlightSession and hud_visible and not session.map_open()) or (session is MissionSession and session.flight_hud_visible()))
+		_mine_button.disabled=session==null or not controllable or not _focused
 		_station_button.disabled=_mine_button.disabled
 		var local: bool=session is FirstFlightSession and not state.get("local_travel",{}).is_empty()
 		_actions_button.visible=true;_actions_button.disabled=_mine_button.disabled
@@ -708,20 +712,20 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 	if touch_overlay!=null:
 		var drilling: bool=session is FirstFlightSession and not state.mining_session.drill.is_empty()
 		touch_overlay.set_fire_label(("Stop" if drilling else "Fire" if not state.get("encounter",{}).get("primaries",{}).is_empty() else "Mine") if session is FirstFlightSession else "Fire")
-		touch_overlay.visible=touch_actions and session!=null and session.flight_hud_visible(state)
-		touch_overlay.set_active(touch_overlay.visible and session.can_control() and is_visible_in_tree() and _focused)
+		touch_overlay.visible=touch_actions and session!=null and hud_visible
+		touch_overlay.set_active(touch_overlay.visible and controllable and is_visible_in_tree() and _focused)
 	if flight_vitals!=null:
-		var gauges_visible: bool=session!=null and session.flight_hud_visible(state)
+		var gauges_visible: bool=session!=null and hud_visible
 		if session is FirstFlightSession:gauges_visible=gauges_visible and not session.map_open() and not session.secondary_menu_open()
 		flight_vitals.set_active(gauges_visible)
 		flight_vitals.set_touch_inset(touch_actions and flight_vitals.visible)
 	if _flight_hint!=null:
-		var cinematic: bool=session!=null and session.has_method("can_skip_cinematic") and session.can_skip_cinematic()
+		var cinematic: bool=session!=null and skippable
 		_flight_hint.visible=_player_mode and not touch_actions and cinematic and _focused and is_visible_in_tree()
 		if _flight_hint.visible:
 			_flight_hint.text="Skipping cinematic…" if session.cinematic_skipping() else "Enter / A  Skip cinematic"
 	if _skip_button!=null:
-		_skip_button.visible=touch_actions and session!=null and session.has_method("can_skip_cinematic") and session.can_skip_cinematic() and _focused and is_visible_in_tree()
+		_skip_button.visible=touch_actions and session!=null and skippable and _focused and is_visible_in_tree()
 		_skip_button.disabled=session!=null and session.has_method("cinematic_skipping") and session.cinematic_skipping()
 	_layout_flight_overlays()
 	_refresh_station_shell(state)

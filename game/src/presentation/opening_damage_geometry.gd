@@ -49,7 +49,7 @@ func build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: R
 			instance.set_meta("source_material_id",int(preset.material_id))
 			instance.set_meta("source_texture_id",int(descriptor.texture_ids[0]))
 			add_child(instance)
-			items.append({"key":key,"kind":kind,"node":instance,"preset":preset.duplicate(true),"spare":[ArrayMesh.new(),ArrayMesh.new()]})
+			items.append({"key":key,"kind":kind,"node":instance,"preset":preset.duplicate(true),"spare":[ArrayMesh.new(),ArrayMesh.new()],"samples":{}})
 	_owner_identity=owner.presentation_identity();_descriptor=state
 	return true
 
@@ -93,19 +93,31 @@ func prepare_world(owner: RefCounted,world: Dictionary,camera_pose: Variant) -> 
 		var capacity:=slots.size()
 		vertices.resize(capacity*4);uvs.resize(capacity*4);colors.resize(capacity*16)
 		var quads:=0
+		var samples: Dictionary=item.samples
+		var mirrored:=(int(item.preset.flags)&0x02000000)!=0
 		for index in capacity:
 			var slot: Dictionary=slots[index]
 			# Idle slots draw nothing; release skips checking and sampling them.
 			if not checked and int(slot.appearance.age_ms)==-1:continue
 			if slot.appearance.slot!=index or not slot.position is Vector3 or not slot.position.is_finite():return failed("Invalid damage sprite slot")
 			if not drawn:continue
-			var appearance:=Appearance.sample_prepared(item.preset,slot.appearance,fade_in_rgb)
+			# Colour and atlas frame follow age (and slot mirror) alone, so release
+			# reuses one sample per age; debug builds sample and validate each slot.
+			var appearance: Dictionary
+			if checked:appearance=Appearance.sample_prepared(item.preset,slot.appearance,fade_in_rgb)
+			else:
+				var key: int=int(slot.appearance.age_ms)|(index<<20 if mirrored else 0)|(1<<40 if fade_in_rgb else 0)
+				appearance=samples.get(key,{})
+				if appearance.is_empty():
+					appearance=Appearance.sample_prepared(item.preset,slot.appearance,fade_in_rgb)
+					if samples.size()>8192:samples.clear()
+					samples[key]=appearance
 			if appearance.has("error"):return failed(appearance.error)
 			if not appearance.active:continue
 			var c: Color=appearance.color
 			if cloaked:c.a*=exhaust_opacity
 			var center: Vector3=view*slot.position
-			var half:=float(int(appearance["size"])>>1)
+			var half:=float(int(slot.appearance.size)>>1)
 			# Corners round each sum to binary32 like the source float casts.
 			var left:=Vector3(center.x-half,center.y-half,center.z);var right:=Vector3(center.x+half,center.y+half,center.z)
 			if not left.is_finite() or not right.is_finite():return failed("Damage sprite exceeded finite view bounds")

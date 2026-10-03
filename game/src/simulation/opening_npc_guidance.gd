@@ -568,7 +568,9 @@ func training_targets(player: Dictionary, actors: Array,wingmen: RefCounted=null
 		if not is_instance_of(wingmen,load("res://src/simulation/wingman_actors.gd")):fail("Ordinary guidance requires a native paid-cast owner");return []
 		if not wingmen.matches_target_context(_identity):fail(wingmen.error);return []
 	if actors.size()!=int(_training.actor_count):fail("Ordinary NPC targeting requires the complete configured population");return []
-	for id in actors.size():
+	# Every NPC scans the same accepted population each frame; debug builds
+	# recheck its membership on each scan, release trusts the frame owner.
+	for id in (actors.size() if OS.is_debug_build() else 0):
 		var row: Variant=actors[id]
 		if not row is Dictionary:fail("Invalid combat-training actor");return []
 		var kind_matches: bool=row.get("actor_kind")==_training.actor_kinds[id]
