@@ -1676,7 +1676,7 @@ func fly_pirate_base() -> void:
 func fly_dlc_weapons() -> void:
 	app.set_player_mode(true);app.show();app.present_session()
 	await process_frame;resume_application_focus()
-	if not seed_cargo([[214,6],[226,3],[228,1],[176,1]]):return
+	if not seed_cargo([[214,6],[226,3],[211,3],[228,1],[176,1]]):return
 	# Make room: take off the guns and secondaries already fitted.
 	if not app.equipment_action("open"):check(false,app.session.error);return
 	var slots: Array=app.session.station_owner().snapshot().loadout.slots
@@ -1684,14 +1684,14 @@ func fly_dlc_weapons() -> void:
 		if slots[index]!=null and int(catalogue.tables.items[int(slots[index].item_id)].properties.get(1,-1)) in [0,1]:
 			if not app.equipment_action("unmount",int(slots[index].item_id),index):check(false,app.session.error);return
 	if not app.equipment_action("close"):check(false,app.session.error);return
-	for id in [214,226,228,176]:
+	for id in [214,226,211,228,176]:
 		if not await fit_item(id):return
 	var fitted: Array=app.session.station_owner().snapshot().loadout.equipment_ids
-	check([214,226,228,176].all(func(id):return id in fitted),"Not every expansion weapon was fitted: "+str(fitted))
+	check([214,226,211,228,176].all(func(id):return id in fitted),"Not every expansion weapon was fitted: "+str(fitted))
 	if failures:return
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
 	if not await release_application_flight():return
-	for item in [214,226]:
+	for item in [214,226,211]:
 		check(app.session.select_secondary(item),"Selecting %d failed: %s"%[item,app.session.error])
 		var before:=weapon_rounds(item)
 		check(app.session.action("missiles"),"Launching %d failed: %s"%[item,app.session.error])

@@ -25,7 +25,9 @@ func build(burst: RefCounted, library: RefCounted, visuals: RefCounted, bindings
 	if library == null or visuals == null or bindings == null or library.manifest.get("content_id") != state.base_content_id or visuals.base_content_id != state.base_content_id or bindings.base_content_id != state.base_content_id or bindings.binding_id != state.binding_id:
 		return reject("EMP burst geometry belongs to another content identity")
 	var resources := Resources.new()
-	if not resources.configure(library, bindings, int(state.kind)): return reject(resources.error)
+	# Mines (kind 11) draw the burst of their effect family.
+	var family: int=Burst.Mines.effect_family(int(state.item_id)) if int(state.kind)==11 else int(state.kind)
+	if not resources.configure(library, bindings, family): return reject(resources.error)
 	var data := resources.snapshot()
 	var timing: Dictionary = state.effect.models[0]
 	for key in ["model_id", "resource", "start_ms", "end_ms"]:
