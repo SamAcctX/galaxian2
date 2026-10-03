@@ -8,9 +8,8 @@ const TOTAL := 45
 const GOLD := 1
 ## Description threshold per row ("#" in the original text).
 const THRESHOLDS := {36:3000,37:50,38:10,39:20,40:100,41:3,42:15,43:5,44:8}
-## The emergency system (43) does not exist in the remake: shown on Status,
-## never awarded.
-const UNAVAILABLE := [43]
+## Medals that can never be awarded (none since the Emergency System, 43).
+const UNAVAILABLE := []
 ## Earned-medal frame, unearned frame and the first row icon.
 const FRAME_EARNED := 8035
 const FRAME_NONE := 8045

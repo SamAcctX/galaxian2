@@ -284,6 +284,9 @@ func _configure_contract_return(bindings: RefCounted,catalogues: RefCounted,libr
 		state.dekato_source_receipt=bindings.dekato_source_receipt().duplicate(true)
 		state.nehma_source_receipt=bindings.nehma_source_receipt().duplicate(true)
 	_state=state;_lines=[];_rules=bindings.station_entry.duplicate(true);_return_rules=rules;_progress_rules=bindings.opening_handoff.duplicate(true)
+	# A used Emergency System (item 185) is gone once the ship docks.
+	var emergency: Dictionary=packet.get("player",{}).get("devices",{}).get("emergency",{})
+	if emergency.get("used",false) and not equipment.remove_story_item(bindings,catalogues,int(emergency.item_id)):return fail(equipment.error)
 	_equipment=equipment;_contracts=contracts;_equipment_rules={};_equipment_lines=[];_local_rules={};_local_exchange=null;_contract_followup=null
 	var continuation: RefCounted=contracts.station_context_owner()
 	if continuation!=null and continuation.completed_career(bindings):
