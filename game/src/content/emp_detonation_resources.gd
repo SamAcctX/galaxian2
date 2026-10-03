@@ -30,6 +30,7 @@ func configure(library: RefCounted, bindings: RefCounted, kind:=6) -> bool:
 		_state=resources.snapshot();_state.kind=7;_state.effect_type=0
 		return true
 	if kind==int(Bombs.SHOCK.kind):return _configure_shock(library,bindings)
+	if kind==int(Bombs.FIREWORKS.family):return _configure_glow(library,bindings,kind,int(Bombs.FIREWORKS.burst_model_id),float(Bombs.FIREWORKS.burst_scale))
 	if kind!=6:return reject("Unsupported area-bomb effect family")
 	if bindings.resolve(MODEL_ID, "mesh") != MODEL_PATH or bindings.material_for_mesh(MODEL_PATH, "high").get("render_type") != 2:
 		return reject("EMP detonation lost its original additive model mapping")
@@ -48,15 +49,18 @@ func configure(library: RefCounted, bindings: RefCounted, kind:=6) -> bool:
 
 ## Shock Blast burst: its look-at glow, played once at 50000x around the ship.
 func _configure_shock(library: RefCounted, bindings: RefCounted) -> bool:
-	var id: int=int(Bombs.SHOCK.glow_model_id)
+	return _configure_glow(library,bindings,int(Bombs.SHOCK.kind),int(Bombs.SHOCK.glow_model_id),float(Bombs.SHOCK.glow_scale))
+
+## A burst that plays one look-at model once at a scale (Shock Blast, Fireworks).
+func _configure_glow(library: RefCounted, bindings: RefCounted, family: int, id: int, scale: float) -> bool:
 	var path: String=bindings.resolve(id,"mesh")
-	if path.is_empty():return reject("The Shock Blast glow model is unavailable")
+	if path.is_empty():return reject("The bomb's burst model is unavailable")
 	var mesh: Dictionary=AEM.new().decode(library.read_resource(path,AEM.MAX_BYTES))
-	if mesh.is_empty():return reject("The Shock Blast glow model could not be read")
+	if mesh.is_empty():return reject("The bomb's burst model could not be read")
 	var timing := Timing.playback_range(mesh.surfaces)
-	if timing.is_empty(): return reject("Unsupported Shock Blast animation timing")
+	if timing.is_empty(): return reject("Unsupported bomb burst animation timing")
 	_state = {"base_content_id": bindings.base_content_id, "binding_id": bindings.binding_id,
-		"kind":int(Bombs.SHOCK.kind),"effect_type":7,"scale":float(Bombs.SHOCK.glow_scale),"models":[{"model_id":id,"resource":path,
+		"kind":family,"effect_type":7,"scale":scale,"models":[{"model_id":id,"resource":path,
 		"start_ms": timing.start_ms, "end_ms": timing.end_ms}], "duration_ms": timing.end_ms}
 	return true
 

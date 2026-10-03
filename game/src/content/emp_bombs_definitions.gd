@@ -21,6 +21,12 @@ static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALU
 ## itself (glow model scaled 50000) and its launch sound is the blast.
 const SHOCK = {"item_id":226,"kind":42,"glow_model_id":18996,"glow_scale":50000.0,"launch_sound":2269,"self_damage_factor":0.2}
 
+## Supernova Fireworks: an unguided bomb with no glow attachment that bursts
+## as the firework look-at model (explosion type 13) at a quarter of its size.
+## It has its own burst family (43). Assumptions: sound 2280 is its launch
+## sound; the burst is silent; the flying particle trail is not drawn.
+const FIREWORKS = {"item_id":232,"model_id":27338,"family":43,"burst_model_id":16809,"burst_scale":0.25,"launch_sound":2280}
+
 static func available(bindings: RefCounted) -> bool:
 	return bindings!=null and parameters(bindings.mido_travel.get("emp_bombs"))
 
@@ -34,7 +40,15 @@ static func declaration(item_id: int) -> Dictionary:
 			"launch_sound":int(GUIDED.launch_sound),"burst_sound":int(GUIDED.burst_sound)}
 	if item_id==int(SHOCK.item_id):
 		return {"kind":int(SHOCK.kind),"model_id":-1,"attachment_id":-1,"effect_type":7,"launch_sound":int(SHOCK.launch_sound),"burst_sound":-1}
+	if item_id==int(FIREWORKS.item_id):
+		return {"kind":7,"family":int(FIREWORKS.family),"model_id":int(FIREWORKS.model_id),"attachment_id":-1,"effect_type":7,
+			"launch_sound":int(FIREWORKS.launch_sound),"burst_sound":-1}
 	if item_id not in [44,45,46]:return {}
 	return {"kind":7,"model_id":14682 if item_id==46 else 14680,
 		"attachment_id":14683 if item_id==46 else 14681,"effect_type":0,
 		"launch_sound":item_id-35,"burst_sound":58-item_id}
+
+## The burst family an item's detonation draws (its kind unless it has its own).
+static func effect_family(item_id: int) -> int:
+	var row:=declaration(item_id)
+	return int(row.get("family",row.get("kind",-1)))

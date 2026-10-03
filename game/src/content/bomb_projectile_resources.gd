@@ -14,6 +14,7 @@ static func prepare(library: RefCounted,bindings: RefCounted,weapon: Dictionary)
 	if library==null or bindings==null or library.manifest.get("content_id")!=weapon.get("base_content_id") or bindings.base_content_id!=weapon.base_content_id or bindings.binding_id!=weapon.get("binding_id"):return {}
 	var models:=[]
 	for id in [declaration.model_id,declaration.attachment_id]:
+		if id<0:continue
 		var path: String=bindings.resolve(id,"mesh")
 		if path.is_empty() or bindings.material_for_mesh(path,"high").get("render_type")!=(28 if models.is_empty() else 2):return {}
 		var reader:=AEM.new()

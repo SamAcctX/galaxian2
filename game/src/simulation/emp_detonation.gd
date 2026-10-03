@@ -20,7 +20,7 @@ func configure(resources: RefCounted, item_id: int) -> bool:
 	if not resources is Resources or declaration.is_empty():
 		return reject("EMP burst requires its prepared original resources and item")
 	var data: Dictionary = resources.snapshot()
-	var family: int=Mines.effect_family(item_id) if declaration.kind==11 else declaration.kind
+	var family: int=Mines.effect_family(item_id) if declaration.kind==11 else int(declaration.get("family",declaration.kind))
 	if data.is_empty() or data.kind!=family: return reject("Bomb burst resources are not prepared for this family")
 	var effect: Dictionary
 	if data.effect_type==0:effect=TypeZero.create(data,[],-1)

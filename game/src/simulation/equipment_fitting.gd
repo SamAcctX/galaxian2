@@ -82,7 +82,7 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 			var mine: bool=not Secondaries.Mines.Definitions.declaration(id).is_empty()
 			if mine:declaration=Secondaries.Mines.Definitions.declaration(id)
 			if declaration.is_empty():continue
-			var family: int=Secondaries.Mines.Definitions.effect_family(id) if mine else declaration.kind
+			var family: int=Secondaries.Mines.Definitions.effect_family(id) if mine else Secondaries.Bomb.Definitions.effect_family(id)
 			if not families.has(family):
 				var bursts:=BurstResources.new()
 				if not bursts.configure(library,bindings,family):return fail(bursts.error)

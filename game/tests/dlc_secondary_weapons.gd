@@ -8,8 +8,8 @@ const ShockBombs=preload("res://src/simulation/emp_bombs.gd")
 const Conventional=preload("res://src/content/conventional_secondary_definitions.gd")
 const BurstResources=preload("res://src/content/emp_detonation_resources.gd")
 const Burst=preload("res://src/simulation/emp_detonation.gd")
-const ADMITTED:=[214,215,216,221,226]
-const REFUSED:=[232]
+const ADMITTED:=[214,215,216,221,226,232]
+const REFUSED:=[]
 
 func _initialize() -> void:
 	var args:=OS.get_cmdline_user_args()
@@ -27,6 +27,7 @@ func verify_dlc(content: String,pack: String) -> void:
 	for item in [214,215,216]:verify_cluster(lib,bindings,cat,mounts,built,item)
 	verify_ion(bindings,cat)
 	verify_shock(lib,bindings,cat,mounts,built)
+	verify_fireworks(lib,bindings,cat,mounts,built)
 
 func verify_fitting(lib: RefCounted,bindings: RefCounted,cat: RefCounted) -> void:
 	var fitting:=Fitting.new();var assets:=fitting.prepare_assets(bindings,cat,lib)
@@ -108,3 +109,26 @@ func verify_shock(lib: RefCounted,bindings: RefCounted,cat: RefCounted,mounts: R
 	check(events.size()==1 and not events[0].normal_hits.is_empty() and fired.owner.snapshot().guns[0].ammunition==0,"Shock Blast owner did not damage nearby ships")
 	var burst: RefCounted=step.owner.detonation_owner(step.owner.snapshot().guns[0].slot_index)
 	check(burst!=null and burst.snapshot().effect.active and burst.snapshot().effect.get("scale")==50000.0,"Shock Blast glow did not start at 50000x")
+
+## Fireworks: one round flies off the ship and bursts as the quarter-size
+## firework glow when its fuse runs out.
+func verify_fireworks(lib: RefCounted,bindings: RefCounted,cat: RefCounted,mounts: RefCounted,built: RefCounted) -> void:
+	var owner:=Ownership.new();var group:=active_group(bindings,cat,built,0)
+	if group==null or not owner.configure(bindings,cat,equipped(bindings,cat,[{"item_id":232,"slot":0,"quantity":2}]),mounts):check(false,owner.error);return
+	var bursts:=BurstResources.new()
+	check(bursts.configure(lib,bindings,43) and owner.configure_detonations(bursts) and owner.configure_projectile_visuals(lib,bindings),"Fireworks burst unavailable: "+bursts.error+owner.error)
+	var targets:=[0,1,2,3]
+	var pose:=Transform3D(Basis.IDENTITY,group.snapshot().actors[0].position+Vector3(0,0,300000))
+	var step:=owner.evaluate_advance(20000,group,targets,pose.origin)
+	if step.is_empty():check(false,owner.error);return
+	var fired: Dictionary=step.owner.evaluate_trigger(pose,232,group,targets)
+	if fired.is_empty():check(false,step.owner.error);return
+	var current: RefCounted=fired.owner;var combat: RefCounted=fired.combat;var burst_at:=-1
+	for tick in 700:
+		step=current.evaluate_advance(16,combat,targets,pose.origin)
+		if step.is_empty():check(false,current.error);return
+		current=step.owner;combat=step.get("combat",combat)
+		if step.events.any(func(event):return event.action=="detonated"):burst_at=tick*16;break
+	check(burst_at>=6000 and burst_at<=9000,"Fireworks did not burst on its fuse: %d ms"%burst_at)
+	var burst: RefCounted=current.detonation_owner(current.snapshot().guns[0].slot_index)
+	check(burst!=null and burst.snapshot().effect.active and burst.snapshot().effect.get("scale")==0.25,"Fireworks glow did not start at quarter size")

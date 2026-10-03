@@ -103,7 +103,7 @@ func configure_detonations(resources: RefCounted) -> bool:
 			if not bursts.configure(resources,gun.mine.snapshot().weapon):return reject(bursts.error)
 			prepared[gun.slot_index]=bursts
 			continue
-		if not gun.has("bomb") or gun.bomb.snapshot().weapon.kind!=data.get("kind"):continue
+		if not gun.has("bomb") or Bomb.Definitions.effect_family(int(gun.equipment.item_id))!=data.get("kind"):continue
 		if gun.has("detonation"):return reject("This bomb family already has its prepared bursts")
 		var burst:=Detonation.new()
 		if not burst.configure(resources,int(gun.equipment.item_id)):return reject(burst.error)
@@ -122,7 +122,7 @@ func bomb_kinds() -> Array[int]:
 			var kind:=Mines.Definitions.effect_family(gun.equipment.item_id)
 			if kind not in kinds:kinds.append(kind)
 		if gun.has("bomb"):
-			var kind: int=gun.bomb.snapshot().weapon.kind
+			var kind: int=Bomb.Definitions.effect_family(int(gun.equipment.item_id))
 			if kind not in kinds:kinds.append(kind)
 	return kinds
 
