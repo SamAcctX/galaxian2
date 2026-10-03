@@ -73,5 +73,11 @@ func player_pose(initial_basis: Basis) -> Variant:
 	var basis: Basis=Basis.looking_at(-_state.position,Vector3.UP,true) if _state.face_origin else initial_basis
 	return Transform3D(basis,_state.position)
 
+## A run that starts at a fixed point (Supernova Challenge) keeps its heading.
+func relocate(position: Vector3) -> bool:
+	if _state.is_empty() or not position.is_finite():return reject("Relocate a configured arrival to a finite point")
+	_state.position=position;_state.face_origin=false;_state.source="fixed"
+	return true
+
 func snapshot() -> Dictionary:return _state.duplicate(true)
 func reject(message: String) -> bool:error=message;return false

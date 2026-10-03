@@ -226,6 +226,9 @@ func _record(actor: Dictionary, scripted_restart: bool) -> Dictionary:
 	for key in delta: _totals[key]+=delta[key]
 	return event.duplicate(true)
 
+## Deaths the player is credited with (Supernova Challenge score).
+func player_kill_count() -> int:return _events.filter(func(event):return not event.nonplayer_kill).size()
+
 func snapshot() -> Dictionary:
 	if _identity.is_empty(): return {}
 	var result := _identity.duplicate()

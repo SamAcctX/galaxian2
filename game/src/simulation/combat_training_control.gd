@@ -1212,6 +1212,8 @@ func runs_ambient_traffic() -> bool:return not _identity.is_empty() and _ambient
 ## The encounter passes its own combat observation when it holds this owner.
 func shares_combat(owner: RefCounted) -> bool:return owner!=null and is_same(owner,_combat)
 
+func player_kill_count() -> int:return 0 if _accounting==null else _accounting.player_kill_count()
+
 func snapshot(combat_view: Dictionary={}) -> Dictionary:
 	if _identity.is_empty():return {}
 	var result:=_identity.duplicate()
@@ -1273,20 +1275,24 @@ func place_story_actors(first: int,end: int,center: Vector3,radius: float,flat:=
 
 ## Destroyed story ships whose death is over come back on a ring round
 ## `center` with a fresh death lifecycle (respawn). Returns how many came back.
-func respawn_story_actors(first: int,end: int,center: Vector3,radius: float) -> int:
+## `burnt_out`: a ship may also return once its explosion has finished,
+## leaving any dropped cargo behind (Supernova Challenge).
+func respawn_story_actors(first: int,end: int,center: Vector3,radius: float,burnt_out:=false) -> int:
 	error=""
 	if _combat==null or first<0 or end>_flight.size() or end<=first or radius<=0.0 or _destruction.size()!=_flight.size():reject("Story respawn requires contract ships");return -1
 	var owners: Array=_destruction.duplicate();var count:=0
 	for id in range(first,end):
 		var actor: Dictionary=_combat.actor_snapshot(id)
-		if int(actor.vitals.hull)>0 or actor.get("active",false) or owners[id].snapshot().get("phase")!="retired" or _flight[id]==null:continue
+		var death: Dictionary=owners[id].snapshot()
+		var gone: bool=death.get("phase")=="retired" or (burnt_out and death.get("phase")=="explosion" and not death.get("effect",{}).get("active",true))
+		if int(actor.vitals.hull)>0 or (actor.get("active",false) and not burnt_out) or not gone or _flight[id]==null:continue
 		var seed: Dictionary=_initial_actors[id].duplicate(true);seed.merge(_identity,true)
 		var owner:=Death.new()
 		if not owner.configure_contract(_bindings,_death_resources,_construction,seed):reject(owner.error);return -1
 		owners[id]=owner
 		var angle:=TAU*float(count)/float(end-first)
 		var pose:=Transform3D(Basis.IDENTITY,center+Vector3(cos(angle)*radius,0,sin(angle)*radius))
-		if not _combat.revive_story_actor(id) or not _flight[id].apply_scripted_pose(pose) or not _combat.set_pose(id,_flight[id].snapshot().get("pose",pose),pose):reject(_flight[id].error+_combat.error);return -1
+		if not _combat.revive_story_actor(id,burnt_out) or not _flight[id].apply_scripted_pose(pose) or not _combat.set_pose(id,_flight[id].snapshot().get("pose",pose),pose):reject(_flight[id].error+_combat.error);return -1
 		count+=1
 	_destruction=owners
 	return count

@@ -742,10 +742,11 @@ func sleep_story() -> bool:
 	return true
 
 ## A destroyed story ship returns (respawn): full hull, awake, visible.
-func revive_story() -> bool:
+## `burnt_out`: the caller has seen the explosion finish (see the control).
+func revive_story(burnt_out:=false) -> bool:
 	error=""
 	if not _state.get("contract_ship",false) or _state.get("static_object",false):return reject("Only a contract ship returns for the story")
-	if _vitals.snapshot().hull>0 or _state.active:return reject("Only a retired story ship returns")
+	if _vitals.snapshot().hull>0 or (_state.active and not burnt_out):return reject("Only a retired story ship returns")
 	var pools:=Vitals.new()
 	if not pools.configure(int(_state.max_hull),0,0.0):return reject(pools.error)
 	_vitals=pools

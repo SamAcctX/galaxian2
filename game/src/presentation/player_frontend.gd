@@ -15,6 +15,8 @@ const MenuAudio=preload("res://src/presentation/main_menu_audio.gd")
 const Host=preload("res://src/presentation/opening_preview.gd")
 const Streams=preload("res://src/presentation/audio_stream_control.gd")
 const Difficulty=preload("res://src/content/difficulty_definitions.gd")
+const Challenge=preload("res://src/simulation/supernova_challenge_entry.gd")
+const ChallengeRules=preload("res://src/content/supernova_challenge_definitions.gd")
 const LANGUAGE_NAMES={"de":1,"gb":2,"es":3,"fr":4,"it":5,"ptl":14,"pl":7,"ru":8,"zt":10,"zs":11,"ko":12,"ja":13}
 var error:=""
 var phase:="setup"
@@ -49,6 +51,8 @@ var _refresh_receipt:=""
 var _updated_import:=""
 var _settings_controls:={}
 var _settings_art:={}
+## Supernova Challenge highscore file (beside the preferences).
+var _challenge_path:=""
 
 func _ready() -> void:
 	menu=Menu.new();add_child(menu);menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -82,6 +86,7 @@ func _ready() -> void:
 func boot(args: PackedStringArray=PackedStringArray(),directory: String="user://") -> bool:
 	_data_directory=ProjectSettings.globalize_path(directory)
 	_preferences_path=directory.path_join("player.json");_save_directory=directory.path_join("saves")
+	_challenge_path=directory.path_join("supernova_challenge.json")
 	preferences.read_file(_preferences_path);var message:=preferences.error
 	_selection=preferences.values.duplicate(true)
 	apply_preferences()
@@ -165,7 +170,7 @@ func show_menu() -> void:
 	if game!=null:game.hide();game.process_mode=Node.PROCESS_MODE_INHERIT
 	phase="menu";error="";_details.hide()
 	music.set_active(true)
-	menu.present(has_session() or has_save(),has_save());menu.set_mobile_layout(_mobile);menu.focus_first()
+	menu.present(has_session() or has_save(),has_save());menu.set_challenge_available(Challenge.available(bindings));menu.set_mobile_layout(_mobile);menu.focus_first()
 	if has_session():_show_pause_controls()
 	else:_pause_controls.hide()
 
@@ -225,6 +230,7 @@ func request_action(action: String) -> void:
 		"resume":
 			if has_session():_resume()
 			elif has_save():_enter_game("load")
+		"supernova":_confirm_challenge()
 		"options":show_options()
 		"language":show_languages()
 		"info":show_info()
@@ -283,6 +289,7 @@ func confirm_pending() -> void:
 	if phase!="confirm" or _pending_action.is_empty():return
 	var action:=_pending_action;_pending_action=""
 	if action=="exit":exit_requested.emit()
+	elif action=="supernova":_enter_challenge()
 	else:_enter_game(action)
 
 func _enter_game(action: String) -> bool:
@@ -611,3 +618,46 @@ func reject(message: String) -> bool:
 	if phase=="menu":menu.show_error(message)
 	else:_notice.text=message
 	return false
+
+## Supernova Challenge: a separate run that never touches the career or its
+## saves. The paused career game (if any) is given up like a Load; the last
+## station save stays for Resume / Load.
+func challenge_highscore() -> int:
+	var data: Variant=JSON.parse_string(FileAccess.get_file_as_string(_challenge_path)) if FileAccess.file_exists(_challenge_path) else null
+	return maxi(0,int(data.get("highscore",0))) if data is Dictionary else 0
+
+func _confirm_challenge() -> void:
+	if not Challenge.available(bindings):return
+	_pending_action="supernova";_show_details("confirm",library.strings[ChallengeRules.TEXT.title])
+	if has_session():_label(library.strings[50])
+	_label("%s: %d"%[library.strings[ChallengeRules.TEXT.highscore],challenge_highscore()])
+	_label(library.strings[ChallengeRules.TEXT.confirm])
+	_button(library.strings[513],confirm_pending)
+	_back.text=library.strings[414]
+
+func _enter_challenge() -> bool:
+	music.set_active(false)
+	var candidate:=Host.new();add_child(candidate);candidate.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	candidate.set_context(library,bindings,visuals);candidate.set_player_mode(true)
+	candidate.set_mobile_layout(_mobile);candidate.apply_preferences(preferences.values)
+	if not candidate.start_challenge():
+		var message: String=candidate.status.text;candidate.free();show_menu();return reject(message)
+	if game!=null:game.free()
+	game=candidate;game.menu_requested.connect(show_menu);game.game_over_requested.connect(show_menu)
+	game.challenge_finished.connect(func(score):_finish_challenge.call_deferred(score))
+	_resume();return true
+
+## The run is over: store a new highscore and offer another run.
+func _finish_challenge(score: int) -> void:
+	var best:=challenge_highscore()
+	if score>best:
+		var file:=FileAccess.open(_challenge_path,FileAccess.WRITE)
+		if file!=null:file.store_string(JSON.stringify({"highscore":score}));file.close()
+	if game!=null:game.free();game=null
+	_show_details("challenge_result",library.strings[ChallengeRules.TEXT.title])
+	_label("%s: %d"%[library.strings[ChallengeRules.TEXT.your_score],score])
+	if score>best:_label(library.strings[ChallengeRules.TEXT.new_highscore])
+	elif best>0:_label("%s: %d"%[library.strings[ChallengeRules.TEXT.highscore],best])
+	_label(library.strings[ChallengeRules.TEXT.play_again])
+	_button(library.strings[513],_enter_challenge)
+	_back.text=library.strings[414]
