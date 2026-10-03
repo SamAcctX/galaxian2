@@ -6,8 +6,10 @@ const AEM = preload("res://src/content/aem.gd")
 const Model = preload("res://src/presentation/imported_model.gd")
 const Materials = preload("res://src/presentation/material_library.gd")
 const SourceAnimation = preload("res://src/presentation/scenery_animation.gd")
+const SelfAnimation = preload("res://src/presentation/model_self_animation.gd")
 var error := ""
 var _prototypes := {}
+var _looping := {}
 var _base := ""
 var _binding := ""
 var _quality := ""
@@ -43,9 +45,9 @@ func prepare(paths: Array, library: RefCounted, visuals: RefCounted, bindings: R
 		if require_static and not Tracks.has_identity_tracks(decoded.surfaces):
 			fixed_poses=fixed_surface_poses(decoded.surfaces)
 			# Additive overlays (e.g. a sweeping ship light) and animated hulls
-			# (the Cronus) are drawn at the clip's first pose in static scenes;
-			# they do not animate yet.
-			if fixed_poses.is_empty() and (path.get_file().ends_with("_anim_add.aem") or path.get_file().begins_with("v_ship_")):fixed_poses=first_surface_poses(decoded.surfaces)
+			# (the Cronus) start at the clip's first pose and loop their clip.
+			if fixed_poses.is_empty() and (path.get_file().ends_with("_anim_add.aem") or path.get_file().begins_with("v_ship_")):
+				fixed_poses=first_surface_poses(decoded.surfaces);_looping[path]=true
 			if fixed_poses.is_empty():return reject(path.get_file() + ": source animation semantics are not yet supported in this scene")
 		var prototype := Model.new()
 		prototype.build(decoded, images.get(texture_paths[0]), images.get(texture_paths[1]), mode, texture_cache, source_uv)
@@ -94,11 +96,15 @@ func instantiate(path: String) -> Node3D:
 		return null
 	var model := Model.new()
 	model.copy_from(_prototypes[path])
+	if _looping.has(path):
+		var player:=SelfAnimation.new()
+		if player.configure(model):model.add_child(player)
+		else:player.free()
 	return model
 
 func clear() -> void:
 	for prototype in _prototypes.values(): prototype.free()
-	_prototypes.clear()
+	_prototypes.clear();_looping.clear()
 	_base="";_binding="";_quality="";_static=false;_source_uv=false
 
 func reject(message: String) -> bool:
