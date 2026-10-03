@@ -66,6 +66,10 @@ var mining_panel: Control
 var notice_panel: Control
 var _projection: RefCounted
 var _last:={}
+var _supernova_reversed:=false
+var _supernova_grow:=0.0
+const SUPERNOVA_GROW_MS:=4000.0
+const World=preload("res://src/content/valkyrie_world_definitions.gd")
 var _last_drill: RefCounted
 var encounter: Node3D
 var tractor: Node3D
@@ -408,6 +412,14 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 		camera.fov=70.0
 		for control in [target_frame,reticle,scan_animation,mining_panel,notice_panel,npc_markers,waypoint_marker,station_target_overlay]:
 			if control!=null:control.visible=false
+	if state.get("supernova_reversed",false) and not _supernova_reversed:
+		_supernova_reversed=true;sky.reverse_supernova()
+		if planets!=null:planets.set_sun_swell(1.0)
+	# The Naneroh bomb (105): the sun swells to its supernova size over 4 s.
+	if state.get("supernova_grown_ms",-1)>=0 and planets!=null and _supernova_grow<1.0:
+		_supernova_grow=clampf(float(int(state.world_elapsed_ms)-int(state.supernova_grown_ms))/SUPERNOVA_GROW_MS,0.0,1.0)
+		var sizes: Array=World.SUPERNOVA.sun_scales
+		planets.set_sun_swell(lerpf(float(sizes[0][1]),float(sizes[-1][1]),_supernova_grow))
 	sky.commit_view(sky_frame)
 	return true
 

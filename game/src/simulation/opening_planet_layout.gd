@@ -99,6 +99,7 @@ func _for_location(bindings: RefCounted, catalogues: RefCounted, opening: Dictio
 	var swell: float=load("res://src/content/valkyrie_world_definitions.gd").supernova_sun_scale(int(opening.system_id),int(opening.get("campaign_cursor",-1)))
 	for entry in layout.entries:
 		if entry.kind=="sun" and swell!=1.0:entry.scale=f32(float(entry.scale)*swell)
+	if swell!=1.0:layout.sun_swell=swell
 	return layout
 
 func arrange(station_id: Variant, planet_type: Variant, ordered_station_ids: Variant, opening_scale := true,arrival_rules: Dictionary={}) -> Dictionary:

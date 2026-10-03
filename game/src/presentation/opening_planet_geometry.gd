@@ -125,6 +125,16 @@ func apply_view(view: Dictionary, escape: Dictionary = {}) -> bool:
 	selection.planets=staged
 	return true
 
+## Ginoya's sun size factor changes live: it swells after the Naneroh bomb
+## (105) and returns to normal at the reversal (157).
+func set_sun_swell(target: float) -> void:
+	if _layout.is_empty():return
+	var swell: float=float(_layout.get("sun_swell",1.0))
+	if is_equal_approx(swell,target):return
+	for entry in _layout.entries:
+		if entry.get("kind")=="sun":entry.scale=f32(float(entry.scale)/swell*target)
+	_layout.sun_swell=target
+
 func f32(value: float) -> float:
 	return PackedFloat32Array([value])[0]
 

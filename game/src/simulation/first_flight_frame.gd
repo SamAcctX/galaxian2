@@ -42,6 +42,8 @@ const Notices=preload("res://src/simulation/flight_notices.gd")
 const Objective=preload("res://src/simulation/mining_objective.gd")
 const ContractObjective=preload("res://src/simulation/contract_flight_objective.gd")
 const Wingmen=preload("res://src/simulation/wingman_actors.gd")
+## The Time Extender runs the player at a different rate from the world.
+var player_time_scale:=1.0
 var _wingmen: RefCounted
 const ContractWorld=preload("res://src/content/contract_world_definitions.gd")
 const FreeFlight=preload("res://src/content/free_flight_definitions.gd")
@@ -133,6 +135,10 @@ const STORY_TRANSFER_MS:=1500
 const RETIRE_POINT:=Vector3(800000,800000,800000)
 ## The station has left this flight (a story action): not drawn, no docking.
 var _station_hidden:=false
+## The supernova has been reversed in this flight (157): the sky loses its flares.
+var _supernova_reversed:=false
+## World time the supernova started to swell in this flight (105), or -1.
+var _supernova_grown_ms:=-1
 var _station_packet:={}
 var _model_basis:=Basis.IDENTITY
 var _throttle:=1.0
@@ -767,7 +773,7 @@ func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paus
 	if ordinary_motion:
 		if not next._engine_audio.before_ordinary_motion():reject(next._engine_audio.error);return null
 		if next._engine_particles!=null and next._engine_particles.engine_enabled()!=(active_throttle>0.0) and not next._engine_particles.set_engine_enabled(active_throttle>0.0):reject(next._engine_particles.error);return null
-		next._pose=next._pilot.advance(_pose,commands if manual else Vector2.ZERO,active_throttle,float(delta_ms)/1000.0,strafe if manual else 0.0,next._booster.speed_multiplier(),relative_mouse_capture)
+		next._pose=next._pilot.advance(_pose,commands if manual else Vector2.ZERO,active_throttle,float(delta_ms)/1000.0*player_time_scale,strafe if manual else 0.0,next._booster.speed_multiplier(),relative_mouse_capture)
 		if not next._pilot.error.is_empty():reject(next._pilot.error);return null
 		next._statistics_pose=next._pose*Transform3D(_model_basis,Vector3.ZERO)
 		next._model_basis=Basis.IDENTITY;next._throttle=active_throttle
@@ -1905,6 +1911,9 @@ func _observe_radio() -> bool:
 				# along its side/up axes, + world "offset".
 				if _story_line_passed(action.until,elapsed):continue
 				radio_lock=true;radio_invulnerable=true;cutscene=action.merged({"key":index})
+			elif action.action=="supernova_reversal":_supernova_reversed=true
+			elif action.action=="supernova":
+				if _supernova_grown_ms<0:_supernova_grown_ms=_world_elapsed_ms
 			elif action.action in ["dockable","transfer"]:
 				# Once per action, so a won hack point stays closed.
 				# target "last_hacked": the point of the latest won hack (139).
@@ -2020,10 +2029,9 @@ func _observe_radio() -> bool:
 				# "stop" ends it for good (154: aboard Valkyrie in time).
 				if action.get("stop",false):_countdown_end=-2
 				elif _countdown_end==-1:_countdown_end=elapsed+int(action.duration_ms)
-			elif action.action in ["attack","supernova_reversal"]:
-				# Assumptions (gaps file): the ships do not fire on the object (no
-				# forced NPC target yet), and Ginoya's supernova look is not drawn
-				# in flight yet, so the reversal changes nothing on screen.
+			elif action.action=="attack":
+				# Assumption (gaps file): the ships do not fire on the object (no
+				# forced NPC target yet).
 				pass
 			elif action.action=="retire":
 				# The ship or object leaves the scene (80: the Valkyrie jumps away).
@@ -2853,6 +2861,7 @@ func construct_drive_arrival(bindings: RefCounted,cat: RefCounted,environment_se
 	return _construct_arrival(bindings,cat,_drive_arrival.arrival_packet(),environment_seconds,unix_seconds,large_display,bodies,effects,settings,library,false,_drive_arrival)
 
 func cloak_state() -> Dictionary:return {} if _player==null else _player.cloak_state()
+func player_equipment_ids() -> Array:return [] if _player==null else _player.snapshot().get("equipment_ids",[])
 func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
 func cloak_input_permitted() -> bool:
 	return _equipment!=null and entry_released() and not death_active() and _player.snapshot().vitals.hull>0 and not dialogue_visible() and not cinematic_input_blocked() and not local_departing() and not gate_departing()
@@ -2940,7 +2949,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	if _wingmen!=null:state.wingman_actors=_wingmen.snapshot()
 	state.merge({"world_type":_entry.world_type,"location":_entry.location.duplicate(true),"activated":true,
 		"player_pose":_pose,"control_throttle":_throttle,"player":_player.snapshot(),"gamma_rate":_gamma_rate,"volatile":_volatile_carried(),"instability":_instability,"player_cache":_player.cache_snapshot(),"angular_units":_pilot.angular_units,
-		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"guided_missile":_encounter!=null and _encounter.guided_missile_active(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),
+		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"supernova_reversed":_supernova_reversed,"supernova_grown_ms":_supernova_grown_ms,"guided_missile":_encounter!=null and _encounter.guided_missile_active(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),
 		"ship_detail":_detail.snapshot(),"detail_reference":_reference,"actors":[],"random_state":_random.duplicate(true),
 		"cargo":held,"arrival_from_station_id":int(_entry.departure.get("from_station_id",-1)),
 		"navigation_destination_id":_pending_destination,
@@ -3055,6 +3064,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
+	copy.player_time_scale=player_time_scale
 	copy._mission_context=_mission_context
 	copy._mission_station_return=_mission_station_return.duplicate(true)
 	copy._mission_station_identity=_mission_station_identity
@@ -3102,7 +3112,7 @@ func fork_for_frame() -> RefCounted:
 	if _autopilot!=null:copy._autopilot=_autopilot.fork_for_frame()
 	copy._preceding_commands=_preceding_commands
 	copy._departure_station=_departure_station
-	copy._return_rules=_return_rules;copy._station_contact=_station_contact;copy._station_hidden=_station_hidden;copy._station_packet=_station_packet.duplicate(true)
+	copy._return_rules=_return_rules;copy._station_contact=_station_contact;copy._station_hidden=_station_hidden;copy._supernova_reversed=_supernova_reversed;copy._supernova_grown_ms=_supernova_grown_ms;copy._station_packet=_station_packet.duplicate(true)
 	copy._model_basis=_model_basis;copy._throttle=_throttle
 	if _encounter!=null:copy._encounter=_encounter.fork_for_frame()
 	copy._world_elapsed_ms=_world_elapsed_ms

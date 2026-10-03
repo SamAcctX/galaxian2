@@ -639,7 +639,8 @@ const SCRIPTED:={
 	# Harval blocks the way (#12), Keith pleads (#13-#15, 12 s after #10), Alice
 	# fires the array (#16). Then the supernova reverses (N5) and 6.5 s later
 	# the story moves on: through the gate to Luur, vitals kept (MOVE 158).
-	# Assumptions: no camera work; Harval cannot drop below 20% here (the lead's
+	# Assumptions: one fixed shot of Valkyrie for the finale (the original's
+	# beam, explosions and moving camera are not built); Harval cannot drop below 20% here (the lead's
 	# "kept topped up"); Valkyrie does not move away; Harval's 25 s flag toggle
 	# (likely cloak) is left out; line #4 ignores the "#3 finished" guard.
 	157:{"points":[Vector3(70000,0,20000),Vector3(30000,10000,60000),Vector3(-110000,10000,170000),Vector3(-110000,0,20000),
@@ -663,6 +664,9 @@ const SCRIPTED:={
 			{"radio_index":8,"action":"lock_player","until_radio":10,"invulnerable":true},
 			{"radio_index":8,"action":"place","first_actor":22,"end_actor":23,"center":Vector3(-120000,0,20000),"radius":8000.0},
 			{"radio_index":10,"on":"finished","action":"retire","first_actor":22,"end_actor":23},
+			# When Keith's plea (#14) ends the camera looks at Valkyrie from
+			# (50000, 0, 70000) while Alice fires the array, through the reversal.
+			{"radio_index":14,"on":"finished","action":"cutscene","actor":23,"offset":Vector3(50000,0,70000),"until":[35,[16,6500,1]]},
 			{"radio_index":16,"on":"finished","action":"supernova_reversal"}],
 		"success":{"kind":"radio_finished","index":16,"hold_ms":6500}},
 	# 158: Luur, after the reversal. #0 Trunt Harval (race 10 in the original

@@ -1365,6 +1365,9 @@ func fly_supernova_bomb() -> void:
 	print("SUPERNOVA Naneroh radio ",radio_ids)
 	check(2654 in radio_ids,"Bombs away did not play")
 	if failures or not await wait_story_cursor(106,"supernova-bombs-away"):return
+	# The bomb set off the supernova: Ginoya's sun has swollen.
+	check(app.session.scene.planets!=null and float(app.session.scene.planets._layout.get("sun_swell",1.0))>1.3,"The sun did not swell after the Naneroh bomb")
+	await capture_free_application("supernova-naneroh-sun")
 	var moved:=[]
 	if not await ride_story_jump(moved,120) or not await enter_story_arrival("Naneroh",false):return
 	check(int(app.session.snapshot().location.station_id)==111,"The story did not take the ship to Luur for 106")
@@ -1978,6 +1981,10 @@ func fly_supernova_ambush() -> void:
 		return range(11,22).filter(func(id):return live.call(id) and actors[id].pose.origin.distance_to(at)<40000)
 	if not await story_flight(157,"armada",func(_frame):return null,enemies,radio_ids,1200):return
 	print("SUPERNOVA 157 radio ",radio_ids)
+	# Alice fired the array: the flares go and the sun shrinks before the jump.
+	if app.session.status=="running":
+		check(app.session.snapshot().get("supernova_reversed",false) and app.session.scene.sky._flares.is_empty(),"The supernova did not reverse in the sky at 157")
+		await capture_free_application("supernova-reversal")
 	scene=[]
 	if app.session.status=="running" and not await ride_story_jump(scene,60):return
 	if not await enter_story_arrival("supernova-158"):return

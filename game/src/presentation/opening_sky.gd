@@ -278,6 +278,11 @@ func commit_view(prepared: Dictionary) -> void:
 		flare.model.set_source_time(fmod(float(World.SUPERNOVA.overlay_start_ms)+float(prepared.get("elapsed_ms",0))*float(flare.speed),float(flare.length)))
 	if foreground_particles!=null:foreground_particles.commit_view(prepared.particles)
 
+## The supernova reversal (157): the flare layers go at once.
+func reverse_supernova() -> void:
+	for flare in _flares:flare.model.visible=false
+	_flares=[]
+
 func clear() -> void:
 	for child in get_children(): child.free()
 	layers.clear();_flares=[];selection.clear();_initial_descriptors=[];_escape_descriptor={};_orientation=Basis.IDENTITY;transform=Transform3D.IDENTITY;error=""
