@@ -168,7 +168,7 @@ func target_body(scenery: RefCounted, index: Variant) -> Dictionary:
 	return row
 static func intact(body: Dictionary) -> bool:return body.active and not body.get("mined",false) and body.vitals.hull>0 and body.lifecycle_state==0
 static func proper_pose(pose: Transform3D) -> bool:return pose.is_finite() and pose.basis.determinant()>0 and pose.basis.is_equal_approx(pose.basis.orthonormalized())
-static func f32(value: float) -> float:return PackedFloat32Array([value])[0]
+static func f32(value: float) -> float:return Vector2(value,0.0).x
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}
 	var result:=_identity.duplicate();result.merge(_state.duplicate(true))

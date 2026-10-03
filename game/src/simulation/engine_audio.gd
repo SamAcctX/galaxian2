@@ -85,7 +85,7 @@ func controls(source_commands: Vector2, previous: Array) -> Array:
 	return values
 
 static func float32(value: float) -> float:
-	return PackedFloat32Array([value])[0]
+	return Vector2(value,0.0).x
 
 static func valid_parameters(values: Variant) -> bool:
 	if not values is Array or values.size()!=3:return false

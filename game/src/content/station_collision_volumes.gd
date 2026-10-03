@@ -60,6 +60,6 @@ static func contains_sphere(point: Vector3, center: Vector3, radius: float) -> b
 	var relative:=Vectors.added(point,-center)
 	return Vectors.dot(relative,relative)<f32(radius*radius)
 
-static func f32(value: float) -> float:return PackedFloat32Array([value])[0]
+static func f32(value: float) -> float:return Vector2(value,0.0).x
 
 func reject(message: String) -> Dictionary:error=message;return {}

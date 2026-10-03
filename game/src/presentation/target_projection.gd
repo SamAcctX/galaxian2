@@ -15,6 +15,7 @@ var _tangents := Vector2.ZERO
 var _inverse_squared_radii := Vector2.ZERO
 var _near := 0.0
 
+var _valid_camera := Transform3D(Basis(),Vector3(NAN,NAN,NAN))
 func configure(data: Dictionary, viewport_size: Vector2i, frame_radii := Vector2.ONE) -> bool:
 	clear()
 	if not Definitions.parameters(data): return reject("Target projection requires imported flight perspective")
@@ -37,8 +38,12 @@ func configure(data: Dictionary, viewport_size: Vector2i, frame_radii := Vector2
 func project_point(camera: Transform3D, position: Vector3) -> Dictionary:
 	error = ""
 	if _size == Vector2i.ZERO: return failure("Configure target projection before projecting")
-	if not camera.is_finite() or not position.is_finite() or not camera.basis.is_equal_approx(camera.basis.orthonormalized()) or camera.basis.determinant() <= 0:
-		return failure("Target projection requires a finite proper camera and world position")
+	if not position.is_finite():return failure("Target projection requires a finite proper camera and world position")
+	# One camera projects many targets per frame; validate it once.
+	if camera != _valid_camera:
+		if not camera.is_finite() or not camera.basis.is_equal_approx(camera.basis.orthonormalized()) or camera.basis.determinant() <= 0:
+			return failure("Target projection requires a finite proper camera and world position")
+		_valid_camera = camera
 	# Evaluate the rigid inverse as rotated point plus rotated translation. This
 	# preserves source precision for large translated worlds; subtracting the eye
 	# first produces different cancellation at pixel and acquisition boundaries.

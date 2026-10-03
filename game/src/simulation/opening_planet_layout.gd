@@ -169,7 +169,7 @@ func placement(kind: String, station_id: int, current: bool, slot: int, angles: 
 		"origin":-placement_basis.z.normalized()*Sun.DISTANCE,"scale":f32(scale_value),"random_state":random_state.duplicate()}
 
 func f32(value: float) -> float:
-	return PackedFloat32Array([value])[0]
+	return Vector2(value,0.0).x
 
 func reject(message: String) -> Dictionary:
 	error=message

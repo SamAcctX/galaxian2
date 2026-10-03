@@ -38,8 +38,8 @@ func update(presentation_delta_ms: Variant, skip_motion: Array = []) -> bool:
 	for index in _field.objects.size():
 		if not skip_motion.is_empty() and skip_motion[index]:continue
 		var current: Dictionary=_field.objects[index]
-		var angles: Vector3 = current.angles
-		for axis in 3:angles[axis]=Field.f32(angles[axis]+Field.f32(current.spin[axis]*seconds))
+		# Vector3 arithmetic rounds the product and the sum to binary32, as before.
+		var angles: Vector3 = current.angles+current.spin*seconds
 		var basis:=Basis.from_euler(angles,EULER_ORDER_XYZ)
 		if angles==current.angles and basis==current.basis:continue
 		var row: Dictionary=_own_row(index)

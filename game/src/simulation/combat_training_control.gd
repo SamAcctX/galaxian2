@@ -844,7 +844,8 @@ func advance(delta_ms: Variant, player: Dictionary, combat: RefCounted=null, ran
 		if not random.restore(random_state):return fail(random.error)
 		staged._random=random.snapshot()
 	var decisions:=[];var firing:=[];var death_events:=[]
-	var body: Dictionary=staged._combat.read_snapshot()
+	var body: Dictionary=staged._combat.read_snapshot().duplicate()
+	if body.get("actors") is Array:body.actors=body.actors.duplicate()
 	for key in ["base_content_id","binding_id","campaign_cursor"]:
 		if body.get(key)!=_identity[key]:return fail("Incoming combat bodies belong to another encounter")
 	if not body.get("actors") is Array or body.actors.size()!=int(_rules.actor_count):return fail("Incoming combat population changed")

@@ -118,7 +118,7 @@ static func map_position(system: Variant, data: Dictionary) -> Variant:
 	return result
 
 static func f32(value: float) -> float:
-	return PackedFloat32Array([value])[0]
+	return Vector2(value,0.0).x
 
 func reject(message: String) -> bool:
 	error=message;return false

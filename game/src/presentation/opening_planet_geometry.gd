@@ -136,7 +136,7 @@ func set_sun_swell(target: float) -> void:
 	_layout.sun_swell=target
 
 func f32(value: float) -> float:
-	return PackedFloat32Array([value])[0]
+	return Vector2(value,0.0).x
 
 func clear() -> void:
 	for child in get_children():child.free()

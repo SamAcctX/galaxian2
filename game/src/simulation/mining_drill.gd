@@ -153,5 +153,5 @@ func fork() -> RefCounted:
 	copy._max_ms=_max_ms;return copy
 func field_identity() -> RefCounted:return _field_identity
 func clear() -> void:_max_ms=0;error="";_state={};_rules={};_field_identity=null
-static func f32(value: float) -> float:return PackedFloat32Array([value])[0]
+static func f32(value: float) -> float:return Vector2(value,0.0).x
 func reject(message: String) -> bool:error=message;return false

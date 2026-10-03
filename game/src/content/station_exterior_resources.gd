@@ -153,5 +153,5 @@ func read_snapshot() -> Dictionary:return _state
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new();copy._state=_state;return copy
 func clear() -> void:_state={};error=""
-static func f32(value: float) -> float:return PackedFloat32Array([value])[0]
+static func f32(value: float) -> float:return Vector2(value,0.0).x
 func reject(message: String) -> bool:error=message;return false

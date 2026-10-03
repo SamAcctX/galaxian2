@@ -918,5 +918,5 @@ func selected_locations_owner() -> RefCounted:return null if _selected_locations
 func void_environment_owner() -> RefCounted:return null if _void_environment==null else _void_environment.fork()
 func ordinary_void_source_owner() -> RefCounted:return null if _ordinary_void_source==null else _ordinary_void_source.fork()
 func clear() -> void:error="";_state={};_scenery=null;_camera=null;_player=null;_equipment=null;_contracts=null;_selected_locations=null;_void_environment=null;_ordinary_void_source=null
-static func f32(value: float) -> float:return PackedFloat32Array([value])[0]
+static func f32(value: float) -> float:return Vector2(value,0.0).x
 func reject(message: String) -> bool:error=message;return false
