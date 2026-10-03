@@ -27,7 +27,8 @@ static func active(system_id: int) -> bool:return system_id==SYSTEM_ID
 
 static func status(progress: Dictionary) -> int:
 	var value: Variant=progress.get(PROGRESS_KEY,0)
-	return int(value) if value is int and value in [PAID,REFUSED] else 0
+	# A loaded save may carry the number as a float.
+	return int(value) if (value is int or value is float) and int(value) in [PAID,REFUSED] else 0
 
 static func valid(value: Variant) -> bool:return value is int and value in [PAID,REFUSED]
 

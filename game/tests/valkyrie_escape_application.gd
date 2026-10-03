@@ -62,6 +62,7 @@ func verify_free_application() -> void:
 	if staged=="supernova135":await fly_supernova_coromesk()
 	if staged=="kaamo":await fly_kaamo_siege()
 	if staged=="pirate-base":await fly_pirate_base()
+	if staged=="loma":await fly_loma_toll()
 	if staged=="supernova141":await fly_supernova_finale()
 	if staged=="supernova154":await fly_supernova_ambush()
 	if staged=="supernova160":await fly_supernova_end()
@@ -1669,6 +1670,98 @@ func fly_pirate_base() -> void:
 	if failures or not await depart_to(base):return
 	check(not app.session.flight_owner()._encounter.combat_snapshot().actors.any(func(actor):return actor.get("static_object",false)),"The destroyed base came back")
 
+## Shared release, with the blocking state printed when control never comes.
+func release_application_flight() -> bool:
+	var released: bool=await super.release_application_flight()
+	if not released:
+		var world: RefCounted=app.session.flight_owner()
+		print("RELEASE blocked pauses ",app.session._pauses," toll ",world.toll_state()," released ",world.entry_released()," dialogue ",world.dialogue_visible()," departing ",world.local_departing()," cinematic ",world.cinematic_input_blocked()," audio ",app.session.flight_audio!=null," station ",app.session.snapshot().location.station_id)
+	return released
+
+## Loma toll: refuse on the first visit (pirates turn on the player), the
+## refusal survives docking and Resume and greets the next flight; with the
+## answer cleared, paying takes the toll and is kept after Resume.
+const LOMA:=105
+func fly_loma_toll() -> void:
+	app.set_player_mode(true);app.show();app.present_session()
+	await process_frame;resume_application_focus()
+	# The drive's arrival in Loma is the first Loma flight: the toll is asked there.
+	# No control release on arrival: the toll question pauses the flight first.
+	if not seed_khador_drive() or not await depart_to(int(app.session.station_owner().snapshot().loadout.station_id)) or not await khador_jump(LOMA,false):return
+	if not await loma_flight([438,439],"loma-question",false):return
+	app._answer_toll(0)
+	var radio:=await loma_radio([442,443])
+	var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
+	var pirates:=actors.filter(func(actor):return int(actor.get("actor_kind",-1))==8)
+	print("LOMA refused radio ",radio," pirates ",pirates.map(func(actor):return actor.get("hostile")))
+	check(radio.any(func(id):return id in [442,443]),"Refusing the toll played no pirate line")
+	check(pirates.all(func(actor):return actor.get("hostile",false)),"Pirates held fire after the refusal")
+	await capture_free_application("loma-refused")
+	if failures or not await dock_application():return
+	check(docked_station()==LOMA,"The ship did not dock in Loma")
+	check(int(app.session.station_owner().snapshot().contracts.progress.get("loma_toll",0))==2,"The career did not keep the refusal")
+	check(app.load_station() and int(app.session.station_owner().snapshot().contracts.progress.get("loma_toll",0))==2,"Fresh Resume lost the refusal")
+	if failures:return
+	app.set_player_mode(true);app.show();app.present_session();await process_frame;resume_application_focus()
+	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
+	if not await release_application_flight():return
+	var back:=await loma_radio([444,445])
+	check(back.any(func(id):return id in [444,445]) and not app.session.is_paused(),"A refused pilot was asked again or not greeted")
+	if failures or not await dock_application():return
+	# Test shortcut: forget the answer, as leaving Loma would, then pay.
+	if not seed_loma_toll_cleared():return
+	var wallet:=int(app.session.station_owner().snapshot().contracts.credits)
+	if not await loma_flight([438,439],"loma-question-2"):return
+	var toll: Dictionary=app.session.flight_owner().toll_state()
+	app._answer_toll(1)
+	var paid:=await loma_radio([440,441])
+	check(paid.any(func(id):return id in [440,441]),"Paying the toll played no pirate line")
+	if failures or not await dock_application():return
+	var docked: Dictionary=app.session.station_owner().snapshot()
+	print("LOMA toll ",toll," credits ",wallet," -> ",int(docked.contracts.credits))
+	check(int(docked.contracts.progress.get("loma_toll",0))==1,"The career did not keep the paid toll")
+	check(wallet-int(docked.contracts.credits)==int(toll.get("amount",-1)) and int(toll.get("amount",0))>0,"The toll was not taken from the credits")
+	check(app.load_station() and int(app.session.station_owner().snapshot().contracts.progress.get("loma_toll",0))==1,"Fresh Resume lost the paid toll")
+
+## Depart, hear the welcome and reach the paused question.
+func loma_flight(welcome: Array,capture: String,depart:=true) -> bool:
+	if depart:
+		app.set_player_mode(true);app.show();app.present_session();await process_frame;resume_application_focus()
+		if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return false
+		if not await release_application_flight():return false
+	var heard:=[]
+	for tick in 3000:
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in heard:heard.append(int(radio.text_id))
+		if app.session.is_paused() and app.session.flight_owner().toll_state().get("question",false):break
+		if not application_step():return false
+		if tick%10==0:await process_frame
+	print("LOMA welcome ",heard," toll ",app.session.flight_owner().toll_state())
+	check(heard.any(func(id):return id in welcome),"The Loma welcome did not play")
+	check(app.session.is_paused() and app.session.flight_owner().toll_state().get("question",false),"The toll question did not pause the flight")
+	await capture_free_application(capture)
+	return failures==0
+
+func loma_radio(wanted: Array) -> Array:
+	var heard:=[]
+	for tick in 1500:
+		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
+		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in heard:heard.append(int(radio.text_id))
+		if heard.any(func(id):return id in wanted):break
+		if not application_step():break
+		if tick%10==0:await process_frame
+	return heard
+
+func seed_loma_toll_cleared() -> bool:
+	var file:=StationSaveFile.new();var path: String=app.station_save_path()
+	var document: Dictionary=file.read_document(path)
+	if document.is_empty():check(false,file.error);return false
+	document.career.progress.erase("loma_toll");document.station.progress.erase("loma_toll")
+	var bytes:=file.encode(document)
+	if bytes.is_empty() or not file._write(path,bytes):check(false,file.error);return false
+	check(app.load_station(),"The seeded save did not load: "+app._save_notice.text)
+	return failures==0
+
 ## The first pirate base in a system the career knows (test shortcut: else
 ## open the first base's system, as a bought map would).
 func pirate_base_station() -> int:
@@ -2637,7 +2730,7 @@ func emp_transport(id: int,radio_ids: Array) -> bool:
 ## the pilot is kept unharmed there until that is researched
 ## (GOF2_SUPERNOVA_HARM=valkyrie,armada turns it off per fight).
 func keep_unharmed(label: String) -> bool:
-	if label not in ["valkyrie","armada","kaamo","pirate_base"] or label in OS.get_environment("GOF2_SUPERNOVA_HARM").split(","):return true
+	if label not in ["valkyrie","armada","kaamo","pirate_base","loma"] or label in OS.get_environment("GOF2_SUPERNOVA_HARM").split(","):return true
 	var live: RefCounted=app.session._world._player
 	if bool(live.snapshot().get("damage_allowed",true)) and not live.set_permissions(bool(live.snapshot().active),false):check(false,live.error);return false
 	return true
@@ -2923,7 +3016,7 @@ func resumed_contract_valid(state: Dictionary) -> bool:
 		"supernova109":return state.campaign_cursor==109
 		"supernova117":return state.campaign_cursor==117
 		"supernova128":return state.campaign_cursor==128
-		"supernova135","kaamo","pirate-base":return state.campaign_cursor==135
+		"supernova135","kaamo","pirate-base","loma":return state.campaign_cursor==135
 		"supernova141":return state.campaign_cursor==141
 		"supernova154":return state.campaign_cursor==154
 		"supernova160":return state.campaign_cursor==160
