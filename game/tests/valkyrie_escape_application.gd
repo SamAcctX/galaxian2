@@ -1657,6 +1657,8 @@ func fly_pirate_base() -> void:
 	var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
 	print("PIRATE BASE cast ",actors.map(func(actor):return [actor.get("static_object",false),int(actor.vitals.hull),actor.get("position",Vector3.ZERO)]))
 	check(actors.size()==6 and actors[0].get("static_object",false) and range(1,6).all(func(id):return not actors[id].get("static_object",false)),"The pirate base cast is not an outpost and five guards")
+	var fogs: Array=app.session.scene.sky.static_fogs
+	check(fogs.size()==1 and fogs[0].visible and fogs[0].multimesh.instance_count==30 and fogs[0].multimesh.custom_aabb.get_center().distance_to(actors[0].body_pose.origin)<1.0,"The outpost lost its red fog")
 	if failures:return
 	await capture_free_application("pirate-base")
 	var radio_ids:=[]
@@ -1886,11 +1888,13 @@ func collect_base_loot(base: int) -> bool:
 	var crate: Dictionary=app.session.flight_owner()._encounter._control.destruction_view(0).snapshot().get("cargo",{})
 	check(crate.get("model_exists",false) and crate.get("eligible",false) and crate.entries==[{"item_id":int(loot[0]),"quantity":int(loot[1])}],"The destroyed outpost dropped no loot container")
 	if failures:return false
-	await capture_free_application("pirate-base-loot")
+	var inside:=false
 	for tick in 3000:
 		var life: Dictionary=app.session.flight_owner()._encounter._control.destruction_view(0).snapshot().cargo
 		if not life.eligible:break
 		var state: Dictionary=app.session.snapshot()
+		if not inside and state.player_pose.origin.distance_to(life.pose.origin)<15000.0:
+			inside=true;await capture_free_application("pirate-base-loot")
 		now_us+=100000
 		if not app.session.step(now_us,CombatPilot.Steering.steering_toward(state.player_pose,life.pose.origin),false,false,0.0):check(false,app.session.error);return false
 		if tick%10==0:await process_frame

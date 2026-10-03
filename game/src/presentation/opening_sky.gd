@@ -11,6 +11,7 @@ const Model = preload("res://src/presentation/imported_model.gd")
 const Geometry = preload("res://src/presentation/opening_geometry.gd")
 const Quality = preload("res://src/presentation/graphics_quality.gd")
 const SpaceFog = preload("res://src/presentation/space_fog_geometry.gd")
+const StaticFog = preload("res://src/presentation/static_fog_geometry.gd")
 const ForegroundParticles = preload("res://src/presentation/foreground_particle_geometry.gd")
 const STAR_SHADER = preload("res://src/presentation/sky_stars.gdshader")
 const NEBULA_SHADER = preload("res://src/presentation/sky_nebula.gdshader")
@@ -20,6 +21,7 @@ var error := ""
 var selection := {}
 var layers: Array[Node3D] = []
 var space_fog: MultiMeshInstance3D
+var static_fogs:=[]
 var foreground_particles: MultiMeshInstance3D
 var _orientation := Basis.IDENTITY
 var _initial_descriptors:=[]
@@ -47,6 +49,17 @@ func enable_space_fog(library: RefCounted,visuals: RefCounted,bindings: RefCount
 		error="Space clouds belong to another background identity";return false
 	var sky_index:=int(catalogues.tables.systems[int(selection.system_id)].sky_index)
 	return _build_space_fog(library,visuals,bindings,sky_index,int(selection.station_id))
+
+## A fixed fog cloud around one world object, in this exterior's cloud material.
+func add_static_fog(library: RefCounted,visuals: RefCounted,bindings: RefCounted,catalogues: RefCounted,center: Vector3,rule: Dictionary,seed_value: int) -> bool:
+	if selection.is_empty() or catalogues==null or catalogues.content_id!=selection.base_content_id:
+		error="Prepare one matching exterior before its object fog";return false
+	var fog:=StaticFog.new()
+	if not fog.build(library,visuals,bindings,int(catalogues.tables.systems[int(selection.system_id)].sky_index),center,rule,seed_value):
+		error=fog.error;fog.free();return false
+	fog.name="ObjectFog%d"%static_fogs.size();add_child(fog);static_fogs.append(fog)
+	fog.visible=Quality.effects_enabled()
+	error="";return true
 
 func _build_space_fog(library: RefCounted,visuals: RefCounted,bindings: RefCounted,sky_index: int,seed_value: int,velocity:=Vector3.ZERO,color_scale:=0.6) -> bool:
 	var clouds:=SpaceFog.new()
@@ -274,6 +287,7 @@ func commit_view(prepared: Dictionary) -> void:
 		selection.layers=[_initial_descriptors[0].duplicate(),(_escape_descriptor if relocated else _initial_descriptors[1]).duplicate()]
 	if space_fog!=null:
 		space_fog.commit_view(prepared.clouds);space_fog.visible=Quality.effects_enabled()
+	for fog in static_fogs:fog.visible=Quality.effects_enabled()
 	var World=load("res://src/content/valkyrie_world_definitions.gd")
 	for flare in _flares:
 		# Looping animation (assumed to loop, as the sun's).
@@ -290,7 +304,7 @@ func clear() -> void:
 	for child in get_children(): child.free()
 	layers.clear();_flares=[];selection.clear();_initial_descriptors=[];_escape_descriptor={};_orientation=Basis.IDENTITY;transform=Transform3D.IDENTITY;error=""
 	_stored_channels=false
-	space_fog=null
+	space_fog=null;static_fogs=[]
 	foreground_particles=null
 
 func reject(message: String) -> bool:

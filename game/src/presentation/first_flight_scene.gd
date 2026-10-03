@@ -10,6 +10,7 @@ const VoidEnvironment=preload("res://src/presentation/void_environment_geometry.
 const Frame=preload("res://src/simulation/first_flight_frame.gd")
 const Geometry=preload("res://src/presentation/opening_geometry.gd")
 const Background=preload("res://src/presentation/opening_sky.gd")
+const Statics=preload("res://src/content/static_object_definitions.gd")
 const Planets=preload("res://src/presentation/opening_planet_geometry.gd")
 const Sun=preload("res://src/presentation/opening_sun_geometry.gd")
 const Lighting=preload("res://src/presentation/opening_lighting.gd")
@@ -153,6 +154,10 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 		sky=Background.new();add_child(sky)
 		if not sky.build_departure(library,visuals,bindings,catalogues,state.player_cache,"high",flight.equipment_owner(),flight.mission_context_owner()):return fail(sky.error)
 		if not sky.enable_space_fog(library,visuals,bindings,catalogues):return fail(sky.error)
+		if pirates!=null and pirates.has_method("combat_snapshot"):
+			for actor in pirates.combat_snapshot().get("actors",[]):
+				var fog: Dictionary=Statics.rules(int(actor.static_model)).get("fog",{}) if actor.get("static_object",false) else {}
+				if not fog.is_empty() and not sky.add_static_fog(library,visuals,bindings,catalogues,actor.body_pose.origin,fog,int(actor.actor_id)):return fail(sky.error)
 		planets=Planets.new();add_child(planets)
 		if not planets.build_departure(library,visuals,bindings,catalogues,state.player_cache,"high",flight.equipment_owner(),flight.mission_context_owner()):return fail(planets.error)
 		sun=Sun.new();add_child(sun)

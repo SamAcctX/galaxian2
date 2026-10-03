@@ -18,10 +18,13 @@ const Valkyrie=preload("res://src/content/valkyrie_campaign_definitions.gd")
 ## enemy_count_excluded: left out of the starting enemies-left count.
 ## turret: a barrel that turns toward the nearest opposing body in range and
 ## fires its own gun (rules in simulation/static_turret.gd).
+## fog: a fixed cloud of the sky's fog sprites around the object (count, size,
+## scatter half extent, rgb); shown only with the High graphics effects.
 const MODELS:={
 	14243:{"layers":[14243,14244,14245],"collision_resource":"resources/data/bin/collision.bin","collision_record":1002,
 		"collision_record_limit":128,"sphere_scale":0.6,"box_scale":1.2,"wreck_model":14246,"death_sound":20,
-		"wake_half_extent":50000,"hull":"outpost","enemy_count_excluded":true},
+		"wake_half_extent":50000,"hull":"outpost","enemy_count_excluded":true,
+		"fog":{"count":30,"size":32768,"scatter":40000,"rgb":0xe22828}},
 	# 80: the Valkyrie battlestation over Kothar. Station collision (record 101,
 	# station frame and scales), cannot die in practice, no wreck.
 	16928:{"layers":[16928,16929,16930],"collision_resource":"resources/data/bin/collision.bin","collision_record":101,
