@@ -204,7 +204,7 @@ func verify_pickups(bindings: RefCounted,cat: RefCounted,library: RefCounted,sta
 			check(archive.restore(bindings,cat,library,invalid)==null,"A saved return job changed its generated reward")
 			var arrival: Dictionary=equipment.snapshot().duplicate(true)
 			arrival.loadout.station_id=after.mission.station_id
-			if not retained._poll_station_results(arrival):check(false,retained.error);return
+			if not retained._poll_station_results(arrival,equipment):check(false,retained.error);return
 			var delivered: RefCounted=retained._acknowledge_delivery_inventory(equipment,arrival)
 			if delivered==null:check(false,retained.error);return
 			var paid: Dictionary=retained.snapshot()

@@ -129,8 +129,11 @@ func verify_flight():
 	check(flight.snapshot()==before and modal.cargo==before.cargo and modal.progress==before.progress and modal.random_state==before.random_state,"Opening return dialogue changed cargo, progress, RNG or its parent")
 	for i in 80:
 		var visited: Dictionary=opened.evaluate(150,Vector2.ONE,0.0).snapshot()
-		check(int(visited.flight_audio.serial)==int(modal.flight_audio.serial)+1,"Modal zero-time pass did not advance its audio serial once")
-		visited.flight_audio.serial=modal.flight_audio.serial
+		# Packs without first-mining death data run no flight audio frame.
+		check(visited.has("flight_audio")==modal.has("flight_audio"),"Modal pass changed whether flight audio is reported")
+		if modal.has("flight_audio") and visited.has("flight_audio"):
+			check(int(visited.flight_audio.serial)==int(modal.flight_audio.serial)+1,"Modal zero-time pass did not advance its audio serial once")
+			visited.flight_audio.serial=modal.flight_audio.serial
 		check(visited==modal,"Return dialogue advanced the world or auto-dismissed")
 	check(opened.navigate("next",true)==null and opened.start_mining()==null and opened.stop_mining()==null and opened.cancel_mining()==null,"Paused or modal flight accepted gameplay input")
 	var line2: RefCounted=opened.navigate("next")

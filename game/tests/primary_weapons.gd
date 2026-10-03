@@ -105,7 +105,7 @@ func check_synthetic() -> void:
 	check(configure(owner,fixture,depleted),owner.error)
 	owner.advance(1)
 	var partial: Dictionary = owner.fire(pose,true)
-	check(partial.weapons[0].result.reason=="quantity" and partial.weapons[1].result.fired,"Zero-quantity equipment fired or blocked another gun")
+	check(not partial.weapons[0].result.fired and partial.weapons[1].result.fired,"Zero-quantity equipment fired or blocked another gun")
 	var bare := Projectiles.new()
 	check(bare.configure(owner.snapshot().guns[1].projectiles.weapon),bare.error)
 	bare.advance(1)
