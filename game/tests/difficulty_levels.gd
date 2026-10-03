@@ -30,6 +30,7 @@ func run() -> void:
 		verify_opening_station()
 		verify_owners(bindings,cat)
 		verify_career(bindings,cat,lib)
+		verify_spawns(bindings,cat)
 	print("Difficulty levels: %d checks; %d failures"%[checks,failures])
 	quit(1 if failures else 0)
 
@@ -80,6 +81,25 @@ func verify_career(bindings: RefCounted,cat: RefCounted,lib: RefCounted) -> void
 		var again: RefCounted=null if loaded.is_empty() else Archive.new().restore(bindings,cat,lib,loaded)
 		check(again!=null and again.career_difficulty()==level and loaded.career.difficulty is float,"Save round trip lost difficulty %s"%str(level))
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(target))
+
+## Spawned enemies: ordinary space traffic draws more hostile ships at each
+## harder level (same seeds, a dangerous system, rank 0).
+func verify_spawns(bindings: RefCounted,_cat: RefCounted) -> void:
+	var Traffic:=preload("res://src/simulation/traffic_population.gd")
+	var previous:=-1
+	for level in [0.0,0.5,1.0,1.5]:
+		var ordinary: Dictionary=bindings.mido_travel.free_population.duplicate(true)
+		var thresholds: Array=ordinary.hostile_chance_thresholds
+		var risky:=thresholds.find(thresholds.max())
+		ordinary.merge({"security":risky,"faction":0,"rank":0,"difficulty":level,"station_response":false,"empty_story":false},true)
+		var hostiles:=0
+		for seed in 200:
+			var random:=preload("res://src/simulation/seeded_random.gd").new();random.seed_from(hash(seed*7919+1))
+			var result: Dictionary=Traffic._sample(bindings.mido_travel.departure_traffic,bindings.ambient_population,1789423200+seed*3607,random,ordinary)
+			hostiles+=int(result.get(&"groups",{}).get(&"hostile",0))
+		print("SPAWN difficulty ",level," hostile ships over 200 departures: ",hostiles)
+		check(hostiles>previous,"Difficulty %s did not raise hostile traffic (%d after %d)"%[str(level),hostiles,previous])
+		previous=hostiles
 
 func check(ok: bool,message: String) -> void:
 	checks+=1

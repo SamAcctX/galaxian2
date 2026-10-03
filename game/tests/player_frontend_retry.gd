@@ -71,5 +71,5 @@ func verify_retry() -> void:
 	if not app.has_session():check(false,app.error);return
 	var archive:=Archive.new();var restored:=archive.capture(app.game.session.station_owner(),app.bindings,app.game.session.location_owner())
 	check(app.phase=="game" and restored==document,"Menu retry changed the earned mining station or its contacts")
-	check(not app.music.player.playing,"Menu music continued after retry")
+	check(not app.music._active,"Menu music continued after retry")
 	await capture("menu-retry-restored")

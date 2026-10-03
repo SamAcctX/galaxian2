@@ -42,7 +42,7 @@ func play_opening() -> void:
 	await process_frame;await process_frame
 	click(app.menu._buttons.new_game);await process_frame
 	app.choose_difficulty(0.5)
-	check(app.phase=="game" and app.has_session(),app.error)
+	check(app.phase=="game" and app.has_session(),"New Game stopped at phase "+app.phase+": "+app.error)
 	if failures:return
 	var host: Control=app.game
 	host.set_process(false);focus(host)

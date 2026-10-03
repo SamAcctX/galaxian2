@@ -84,7 +84,7 @@ func verify_prepare() -> void:
 	if not app.has_session():check(false,app.error);return
 	check(app.phase=="game" and app.game.session.status=="running" and app.game._preview_controls.all(func(control):return not control.visible),"New game did not enter the native opening with player controls")
 	check(not app.game._pause_button.visible and not app.game._menu_button.visible,"Desktop flight exposed hidden touch actions")
-	check(not app.music.player.playing,"Menu music overlapped the new game's music")
+	check(not app.music._active,"Menu music overlapped the new game's music")
 	app.game._notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN)
 	await capture("entry-new-game")
 	var key:=InputEventKey.new();key.physical_keycode=KEY_ESCAPE;key.pressed=true
