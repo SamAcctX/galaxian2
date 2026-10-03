@@ -22,6 +22,10 @@ func build(bomb: Dictionary,library: RefCounted,visuals: RefCounted,bindings: Re
 	clear()
 	hide()
 	var descriptor:=Resources.prepare(library,bindings,bomb.get("weapon",{}))
+	# A bodiless blast (Shock Blast) draws nothing in flight.
+	if not descriptor.is_empty() and descriptor.models.is_empty() and bomb.get("visuals",{}).get("models",[]).is_empty():
+		_descriptor=descriptor;_weapon=bomb.weapon.duplicate(true);_generation=RefCounted.new()
+		return true
 	if descriptor.is_empty() or bomb.get("visuals",{}).get("models",[]).size()!=2:return reject("Prepare the bomb's original model clocks before geometry")
 	for index in 2:
 		for key in ["model_id","resource","start_ms","end_ms","loop"]:
@@ -48,6 +52,7 @@ func prepare(bomb: Dictionary) -> Dictionary:
 	error=""
 	if _generation==null or bomb.get("weapon")!=_weapon or not bomb.get("shot") is Dictionary:return failed("Bomb geometry lost its retained weapon")
 	var clocks: Variant=bomb.get("visuals",{}).get("models")
+	if _descriptor.models.is_empty():return {"generation":_generation,"revision":_revision+1,"visible":false}
 	if not clocks is Array or clocks.size()!=2:return failed("Bomb geometry lost its model clocks")
 	for index in 2:
 		for key in ["model_id","resource","start_ms","end_ms","loop"]:
@@ -84,6 +89,7 @@ func commit(frame: Dictionary) -> void:
 	if _generation==null or frame.get("generation")!=_generation or frame.get("revision")!=_revision+1:error="Bomb geometry cannot commit a stale frame";return
 	_revision+=1
 	visible=frame.visible
+	if models.is_empty():return
 	for model in models:model.visible=frame.visible
 	if not frame.visible:return
 	for index in models[0].instances.size():models[0].instances[index].transform=frame.surfaces[0][index].pose

@@ -17,6 +17,10 @@ const GUIDED = {"item_id":179,"model_id":14293,"attachment_id":14294,"launch_sou
 
 static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALUES)
 
+## Supernova Shock Blast: no projectile body; the blast starts at the ship
+## itself (glow model scaled 50000) and its launch sound is the blast.
+const SHOCK = {"item_id":226,"kind":42,"glow_model_id":18996,"glow_scale":50000.0,"launch_sound":2269,"self_damage_factor":0.2}
+
 static func available(bindings: RefCounted) -> bool:
 	return bindings!=null and parameters(bindings.mido_travel.get("emp_bombs"))
 
@@ -28,6 +32,8 @@ static func declaration(item_id: int) -> Dictionary:
 	if item_id==int(GUIDED.item_id):
 		return {"kind":7,"model_id":int(GUIDED.model_id),"attachment_id":int(GUIDED.attachment_id),"effect_type":0,
 			"launch_sound":int(GUIDED.launch_sound),"burst_sound":int(GUIDED.burst_sound)}
+	if item_id==int(SHOCK.item_id):
+		return {"kind":int(SHOCK.kind),"model_id":-1,"attachment_id":-1,"effect_type":7,"launch_sound":int(SHOCK.launch_sound),"burst_sound":-1}
 	if item_id not in [44,45,46]:return {}
 	return {"kind":7,"model_id":14682 if item_id==46 else 14680,
 		"attachment_id":14683 if item_id==46 else 14681,"effect_type":0,

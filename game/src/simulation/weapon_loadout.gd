@@ -97,7 +97,9 @@ func resolve(item_id: Variant, equipment_ids: Array) -> Dictionary:
 		if not convertible(scaled_damage) or not convertible(scaled_interval): return fail("Weapon modifiers produce unsupported damage or interval")
 		damage=int(scaled_damage)
 		interval=int(scaled_interval)
-	if interval<1 or values.lifetime<1 or values.speed<1: return fail("Weapon requires a separate non-projectile or zero-interval implementation")
+	# The Shock Blast (secondary kind 42) is a stationary blast: no speed.
+	var stationary: bool=category==1 and kind==42 and values.speed==0
+	if interval<1 or values.lifetime<1 or (values.speed<1 and not stationary): return fail("Weapon requires a separate non-projectile or zero-interval implementation")
 	var launch_mode := "unsupported"
 	var modes: Dictionary = _data.get("launch_modes",{})
 	if category==0 and kind==0 and not modes.is_empty():
@@ -129,7 +131,7 @@ func resolve(item_id: Variant, equipment_ids: Array) -> Dictionary:
 		if fitted.has("thermal"):result.thermal=fitted.thermal.duplicate(true)
 		if fitted.has("dispersion"):result.dispersion=fitted.dispersion
 	if not secondary.is_empty():
-		result.projectile_capacity=5
+		result.projectile_capacity=Secondary.salvo(secondary)
 		result.secondary_projectile=secondary
 	if not mine.is_empty():result.projectile_capacity=Mines.CAPACITY
 	var hit_policy: Dictionary = _data.get("ordinary_hit_policy",{})
