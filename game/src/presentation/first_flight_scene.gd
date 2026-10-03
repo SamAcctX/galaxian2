@@ -28,6 +28,8 @@ const ScanAnimation=preload("res://src/presentation/flight_scan_animation.gd")
 const TargetProjection=preload("res://src/presentation/target_projection.gd")
 const MiningPanel=preload("res://src/presentation/mining_panel.gd")
 const NoticePanel=preload("res://src/presentation/flight_notice_panel.gd")
+const HitArcs=preload("res://src/presentation/hit_arc_overlay.gd")
+const OrbitBanner=preload("res://src/presentation/orbit_banner.gd")
 const EncounterGeometry=preload("res://src/presentation/full_hold_encounter_geometry.gd")
 const WingmanGeometry=preload("res://src/presentation/wingman_geometry.gd")
 var wingmen: Node3D
@@ -64,6 +66,9 @@ var reticle: Control
 var scan_animation: Control
 var mining_panel: Control
 var notice_panel: Control
+## Hit arcs on the centre-frame ellipse and the arrival orbit information.
+var hit_arcs: Control
+var orbit_banner: Control
 var _projection: RefCounted
 var _last:={}
 var _supernova_reversed:=false
@@ -222,6 +227,11 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 	if state.has("flight_notices"):
 		notice_panel=NoticePanel.new();overlay.add_child(notice_panel);notice_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		if not notice_panel.configure(library,bindings,visuals):return fail(notice_panel.error)
+	# Packs without this art keep flying without the extra HUD feedback.
+	hit_arcs=HitArcs.new();overlay.add_child(hit_arcs);hit_arcs.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	if not hit_arcs.prepare(library,bindings,visuals):hit_arcs.free();hit_arcs=null
+	orbit_banner=OrbitBanner.new();overlay.add_child(orbit_banner);orbit_banner.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	if not orbit_banner.prepare(library,bindings,visuals,catalogues):orbit_banner.free();orbit_banner=null
 	dialogue=Dialogue.new();overlay.add_child(dialogue);dialogue.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dialogue.set_centered(true)
 	if not dialogue.configure_flight(library,bindings,visuals,state,flight.mission_context_owner()):return fail(dialogue.error)
@@ -420,6 +430,7 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 		_supernova_grow=clampf(float(int(state.world_elapsed_ms)-int(state.supernova_grown_ms))/SUPERNOVA_GROW_MS,0.0,1.0)
 		var sizes: Array=World.SUPERNOVA.sun_scales
 		planets.set_sun_swell(lerpf(float(sizes[0][1]),float(sizes[-1][1]),_supernova_grow))
+	if not _present_hit_feedback(state,probe_stage,death):return false
 	sky.commit_view(sky_frame)
 	return true
 
@@ -478,7 +489,7 @@ func set_display_active(value: bool) -> void:
 
 func set_mobile_layout(value: bool) -> void:
 	if dialogue!=null:dialogue.set_mobile_layout(value)
-	for control in [target_frame,reticle,scan_animation,mining_panel,notice_panel,game_over,radio,npc_markers,waypoint_marker,station_target_overlay]:
+	for control in [target_frame,reticle,scan_animation,mining_panel,notice_panel,game_over,radio,npc_markers,waypoint_marker,station_target_overlay,hit_arcs,orbit_banner]:
 		if control!=null:control.set_mobile_layout(value)
 func clear() -> void:
 	if is_instance_valid(drive_effect):drive_effect.free()
@@ -499,5 +510,19 @@ func clear() -> void:
 	damage_particles=null;_last_particles=null;_last_gate_animation=null
 	engine_particles=null;_last_engines=null
 	radio=null;_radio_resources=null;npc_markers=null;waypoint_marker=null;station_target_overlay=null
+	hit_arcs=null;orbit_banner=null
+func _present_hit_feedback(state: Dictionary,probe_stage: Dictionary,death: RefCounted) -> bool:
+	var hidden: bool=state.dialogue.visible or not state.get("alioth_attack",{}).get("hud_visible",true) or not state.get("sahi_stage",{}).get("hud_visible",true) \
+		or not probe_stage.get("hud_visible",true) or (death!=null and not state.player_destruction.hud_visible) or state.get("guided_missile",false) \
+		or state.get("khador",{}).get("phase","") in ["departing","arrival"]
+	if hit_arcs!=null:
+		var view:=Vector2(get_viewport().get_visible_rect().size) if is_inside_tree() else Vector2(16,9)
+		var vertical:=tan(deg_to_rad(camera.fov)*0.5)
+		if not hit_arcs.present(state,Vector2(vertical*view.x/maxf(view.y,1.0),vertical)):return reject(hit_arcs.error)
+		if hidden:hit_arcs.visible=false
+	if orbit_banner!=null:
+		if not orbit_banner.present(state):return reject(orbit_banner.error)
+		if hidden:orbit_banner.visible=false
+	return true
 func fail(message: String) -> bool:clear();error=message;return false
 func reject(message: String) -> bool:error=message;return false

@@ -7,6 +7,9 @@ const Catalogues=preload("res://src/content/catalogues.gd")
 const Equipment=preload("res://src/presentation/station_equipment_panel.gd")
 const Shell=preload("res://src/presentation/station_shell_panel.gd")
 const Vitals=preload("res://src/presentation/flight_vitals_overlay.gd")
+const HitArcs=preload("res://src/presentation/hit_arc_overlay.gd")
+const OrbitBanner=preload("res://src/presentation/orbit_banner.gd")
+const HudRules=preload("res://src/content/flight_hud_definitions.gd")
 var checks:=0
 var failures:=0
 
@@ -108,6 +111,7 @@ func run() -> void:
 				check(root.get_texture().get_image().save_png(args[3].path_join("flight-"+form+".png"))==OK,"Could not capture flight gauges")
 				shell.show();equipment.show()
 		equipment.clear();shell.clear();hud.clear()
+	await verify_hit_feedback(library,bindings,visuals,cat,hud,shell,equipment,args)
 	equipment.free();shell.free();hud.free()
 	await process_frame
 	print("UI fidelity components: %d checks; %d failures"%[checks,failures]);quit(1 if failures else 0)
@@ -150,3 +154,50 @@ func verify_mission_readout(hud: Control,flight: Dictionary) -> void:
 	var invalid:=sample.duplicate(true);invalid.mission_readout.player=-1
 	check(not hud.present(invalid) and hud._cargo_text.text=="2 : 3","An invalid contest score replaced the accepted display")
 	check(hud.present(flight) and hud._cargo_text.text=="1 / 25t","Retiring the readout did not restore cargo")
+
+## Hit arcs, the shield hit badge and the arrival orbit information.
+func verify_hit_feedback(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cat: RefCounted,hud: Control,shell: Control,equipment: Control,args: Array) -> void:
+	check(library.select_language("gb") and hud.configure(library,bindings,visuals),library.error+hud.error)
+	var tangents:=Vector2(0.7,0.4)
+	check(HudRules.hit_sides(Vector3(0,0,-100),tangents)==["top"] and HudRules.hit_sides(Vector3(0,0,100),tangents)==["bottom"],"A shooter ahead/behind did not light the top/bottom arc")
+	check(HudRules.hit_sides(Vector3(-500,0,-100),tangents)==["left","top"] and HudRules.hit_sides(Vector3(500,0,-100),tangents)==["right","top"],"A shooter ahead off screen did not add its side arc")
+	check(HudRules.hit_sides(Vector3(-500,0,100),tangents)==["right","bottom"] and HudRules.hit_sides(Vector3(-5000,0,1),tangents)==["right"],"A shooter behind lost the source's mirrored side or abeam rule")
+	var arcs:=HitArcs.new();root.add_child(arcs);arcs.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var banner:=OrbitBanner.new();root.add_child(banner);banner.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	check(arcs.prepare(library,bindings,visuals),arcs.error)
+	check(banner.prepare(library,bindings,visuals,cat),banner.error)
+	var flight:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":"gb","campaign_cursor":18,
+		"player":{"ship_id":0,"vitals":{"hull":47,"armor":20,"shield":25.0},"capacities":{"armor":40,"shield":50}},"cargo":{"used":1,"capacity":25},
+		"player_pose":Transform3D.IDENTITY,"camera_view":{"pose":Transform3D(Basis.IDENTITY,Vector3(0,0,30))},"world_phase_elapsed_ms":1000,
+		"location":{"station_id":78,"system_id":15},
+		"actors":[{"hostile":true,"active":true,"pose":Transform3D(Basis.IDENTITY,Vector3(0,0,-500))},{"hostile":false,"active":true,"pose":Transform3D(Basis.IDENTITY,Vector3(0,0,40))}]}
+	check(arcs.present(flight,tangents) and not arcs.visible,"Hit arcs lit without a hit")
+	var hit:=flight.duplicate(true);hit.player.vitals.shield=15.0;hit.world_phase_elapsed_ms=1016
+	check(arcs.present(hit,tangents) and arcs.visible and arcs._lit.keys()==["top"] and arcs._blue,"A hit from the hostile ahead did not light the blue top arc")
+	check(arcs.arc_alpha("top",1016)==1.0 and absf(arcs.arc_alpha("top",1166)-0.5)<0.01 and arcs.arc_alpha("top",1016+HudRules.HIT_ARC_MS)==0.0,"The hit arc did not fade out over 300 ms")
+	check(hud.present(flight) and hud.present(hit) and hud._shield_badge.texture.get_meta("source_image_id")==HudRules.SHIELD_HIT_IMAGE,"The shield badge did not turn to its hit art")
+	check(hud.shield_hit_shown(hud._shield_hit_ms+Vitals.SHIELD_HIT_MS-1) and not hud.shield_hit_shown(hud._shield_hit_ms+Vitals.SHIELD_HIT_MS),"The shield hit badge did not last 500 ms")
+	var bare:=hit.duplicate(true);bare.player.vitals.shield=0.0;bare.world_phase_elapsed_ms=1100
+	check(arcs.present(bare,tangents) and not arcs._blue and hud.present(bare) and not hud.shield_hit_shown(Time.get_ticks_msec()),"An empty shield kept blue arcs or the shield hit badge")
+	check(banner.present(flight) and banner.visible and banner._station.text==cat.tables.stations[78].name and banner._system.text.begins_with(cat.tables.systems[15].name) and banner._system.visible and banner._security.visible,"Orbit information lost station, system or security")
+	check(banner._logo.texture==null or int(banner._logo.texture.get_meta("source_image_id")) in [1187,1188,1189,1190],"Orbit information lost the original race logo")
+	var late:=flight.duplicate(true);late.world_phase_elapsed_ms=HudRules.ORBIT_MS
+	check(banner.present(late) and not banner.visible,"Orbit information outlived the 7 s arrival sequence")
+	var early:=flight.duplicate(true);early.campaign_cursor=10
+	check(banner.present(early) and banner.visible and not banner._system.visible,"Before cursor 16 the orbit information showed more than the station")
+	early.campaign_cursor=7
+	check(banner.present(early) and not banner.visible,"The tutorial showed orbit information")
+	if args.size()==4 and DisplayServer.get_name()!="headless":
+		check(banner.present(flight) and hud.present(flight),banner.error+hud.error)
+		shell.hide();equipment.hide();hud.show()
+		hud.set_mobile_layout(false);arcs.set_mobile_layout(false);banner.set_mobile_layout(false);root.size=Vector2i(1280,720)
+		var frame:=ColorRect.new();frame.color=Color(0.05,0.07,0.12);frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT);root.add_child(frame);root.move_child(frame,0)
+		hud._shield_hit_ms=Time.get_ticks_msec();hud._shield_points=25.0;hud._apply_shield_badge(Time.get_ticks_msec())
+		arcs._blue=true;arcs.register_hit(["top","left"],5000);arcs.register_hit(["bottom","right"],5000);arcs.visible=true;arcs.queue_redraw()
+		await process_frame;await RenderingServer.frame_post_draw
+		check(root.get_texture().get_image().save_png(args[3].path_join("flight-hit-arcs-blue-orbit.png"))==OK,"Could not capture hit arcs")
+		early.campaign_cursor=10;arcs._blue=false;arcs.queue_redraw();banner.present(early)
+		await process_frame;await RenderingServer.frame_post_draw
+		check(root.get_texture().get_image().save_png(args[3].path_join("flight-hit-arcs-red.png"))==OK,"Could not capture red hit arcs")
+		frame.free();shell.show();equipment.show()
+	arcs.free();banner.free()
