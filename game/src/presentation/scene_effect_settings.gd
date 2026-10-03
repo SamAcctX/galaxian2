@@ -7,6 +7,7 @@ var upscaler:="off"
 var render_scale:=1.0
 
 func apply(values: Dictionary) -> void:
+	preload("res://src/presentation/graphics_quality.gd").level=float(values.get("graphics_quality",1.0))
 	var mode: String=values.get("upscaler","off")
 	var scale: float=float(values.get("render_scale",1.0))
 	if not mode in supported_upscalers():mode="off"

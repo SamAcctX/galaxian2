@@ -9,6 +9,7 @@ const Orientation = preload("res://src/simulation/scenery_orientation.gd")
 const AEM = preload("res://src/content/aem.gd")
 const Model = preload("res://src/presentation/imported_model.gd")
 const Geometry = preload("res://src/presentation/opening_geometry.gd")
+const Quality = preload("res://src/presentation/graphics_quality.gd")
 const SpaceFog = preload("res://src/presentation/space_fog_geometry.gd")
 const ForegroundParticles = preload("res://src/presentation/foreground_particle_geometry.gd")
 const STAR_SHADER = preload("res://src/presentation/sky_stars.gdshader")
@@ -271,12 +272,14 @@ func commit_view(prepared: Dictionary) -> void:
 	if not _escape_descriptor.is_empty():
 		layers[1].visible=not relocated;layers[2].visible=relocated
 		selection.layers=[_initial_descriptors[0].duplicate(),(_escape_descriptor if relocated else _initial_descriptors[1]).duplicate()]
-	if space_fog!=null:space_fog.commit_view(prepared.clouds)
+	if space_fog!=null:
+		space_fog.commit_view(prepared.clouds);space_fog.visible=Quality.effects_enabled()
 	var World=load("res://src/content/valkyrie_world_definitions.gd")
 	for flare in _flares:
 		# Looping animation (assumed to loop, as the sun's).
 		flare.model.set_source_time(fmod(float(World.SUPERNOVA.overlay_start_ms)+float(prepared.get("elapsed_ms",0))*float(flare.speed),float(flare.length)))
-	if foreground_particles!=null:foreground_particles.commit_view(prepared.particles)
+	if foreground_particles!=null:
+		foreground_particles.commit_view(prepared.particles);foreground_particles.visible=Quality.effects_enabled()
 
 ## The supernova reversal (157): the flare layers go at once.
 func reverse_supernova() -> void:

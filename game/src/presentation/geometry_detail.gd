@@ -2,6 +2,7 @@ extends RefCounted
 ## Shared native geometry selection. Zero maximum disables the source distance
 ## cull; the final distance still selects a mesh level, never visibility.
 const Numbers = preload("res://src/content/opening_definitions.gd")
+const Quality = preload("res://src/presentation/graphics_quality.gd")
 var error := ""
 var _distances := []
 var _count := 0
@@ -38,9 +39,12 @@ func select(distance_squared: Variant, detail: Variant) -> Dictionary:
 	# float32 for threshold comparison, including equality at detail boundaries.
 	var distance_integer := int(single(distance_squared))
 	if _maximum!=0 and distance_integer>=_maximum*_maximum:return {"visible":false,"level":-1}
+	# The player's Graphics quality scales the detail input, like the source
+	# options row does for every level-of-detail selection.
+	var scaled := single(single(detail)*Quality.level)
 	var band := 0
 	for boundary in _boundaries:
-		if single(detail)>boundary:band+=1
+		if scaled>boundary:band+=1
 	var factor := float(_factors[band])
 	for i in range(_count-1,-1,-1):
 		var threshold := int(_distances[i])

@@ -420,6 +420,8 @@ func show_options() -> void:
 		_choice("render_scale","Upscaling quality",Preferences.RENDER_SCALES,["Native (100%)","Ultra quality (77%)","Quality (67%)","Balanced (59%)","Performance (50%)"])
 		_settings_controls.render_scale.disabled=preferences.values.upscaler=="off"
 	_settings_toggle("bloom","Bloom")
+	_choice("graphics_quality",library.strings[493],Preferences.GRAPHICS_QUALITIES,[library.strings[496],library.strings[497],library.strings[498]])
+	_settings_controls.graphics_quality.tooltip_text=library.strings[[499,500,501][Preferences.GRAPHICS_QUALITIES.find(float(preferences.values.graphics_quality))]]
 	_settings_heading(library.strings[490])
 	for pair in [["music",34],["fx",35],["voice",36]]:
 		var slider:=HSlider.new();slider.min_value=0;slider.max_value=1;slider.step=0.05;slider.value=preferences.values[pair[0]];slider.custom_minimum_size.y=44 if _mobile else 30
@@ -512,7 +514,7 @@ func _setting_row(title: String,control: Control) -> void:
 		scroll.ensure_control_visible.call_deferred(row))
 
 func change_preference(key: String,value: Variant) -> bool:
-	if key not in ["music","fx","voice","invert_pitch","touch_controls","mouse_steering","mouse_sensitivity","bloom","upscaler","render_scale"]+Preferences.DISPLAY_KEYS:return false
+	if key not in ["music","fx","voice","invert_pitch","touch_controls","mouse_steering","mouse_sensitivity","bloom","upscaler","render_scale","graphics_quality"]+Preferences.DISPLAY_KEYS:return false
 	var candidate:=preferences.values.duplicate(true);candidate[key]=value
 	if not Preferences.valid(candidate):return reject("Invalid game preference")
 	if not preferences.save_file(_preferences_path,candidate):return reject(preferences.error)
@@ -522,6 +524,7 @@ func change_preference(key: String,value: Variant) -> bool:
 		if is_instance_valid(_settings_controls.get("window_mode")):_settings_controls.window_mode.select(1 if candidate.window_mode=="fullscreen" else 0)
 	else:apply_preferences()
 	if key=="upscaler" and is_instance_valid(_settings_controls.get("render_scale")):_settings_controls.render_scale.disabled=value=="off"
+	if key=="graphics_quality" and is_instance_valid(_settings_controls.get("graphics_quality")):_settings_controls.graphics_quality.tooltip_text=library.strings[[499,500,501][Preferences.GRAPHICS_QUALITIES.find(float(value))]]
 	return true
 
 func show_languages() -> void:

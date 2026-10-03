@@ -17,22 +17,39 @@ func run() -> void:
 	var path:=directory.path_join("player.json")
 	check(not FileAccess.file_exists(path),"Use a fresh display test directory")
 	var original:=Preferences.defaults();original.schema=1
-	for key in Preferences.DISPLAY_KEYS+["mouse_steering","mouse_sensitivity","bloom","upscaler","render_scale"]:original.erase(key)
+	for key in Preferences.DISPLAY_KEYS+["mouse_steering","mouse_sensitivity","bloom","upscaler","render_scale","graphics_quality"]:original.erase(key)
 	original.content="/example/content";original.import_record="/example/installation.json";original.music=0.4;original.invert_pitch=true
 	var file:=FileAccess.open(path,FileAccess.WRITE);file.store_string(JSON.stringify(original));file.close()
 	var prefs:=Preferences.new();check(prefs.read_file(path),prefs.error)
 	for key in original:
 		if key!="schema":check(prefs.values[key]==original[key],"Preferences upgrade lost "+key)
-	check(prefs.values.schema==5 and prefs.values.mouse_steering and prefs.values.ui_scale==0 and prefs.values.bloom,"Preferences upgrade omitted desktop controls, automatic UI scale or Bloom")
+	check(prefs.values.schema==6 and prefs.values.mouse_steering and prefs.values.ui_scale==0 and prefs.values.bloom,"Preferences upgrade omitted desktop controls, automatic UI scale or Bloom")
 	var version2:=prefs.values.duplicate(true);version2.schema=2;version2.erase("ui_scale")
 	file=FileAccess.open(path,FileAccess.WRITE);file.store_string(JSON.stringify(version2));file.close()
-	check(prefs.read_file(path) and prefs.values.schema==5 and prefs.values.content==original.content and prefs.values.music==original.music,"Version 2 upgrade lost the existing installation/preferences")
+	check(prefs.read_file(path) and prefs.values.schema==6 and prefs.values.content==original.content and prefs.values.music==original.music,"Version 2 upgrade lost the existing installation/preferences")
 	var version3:=prefs.values.duplicate(true);version3.schema=3;version3.erase("bloom");version3.ui_scale=150
 	file=FileAccess.open(path,FileAccess.WRITE);file.store_string(JSON.stringify(version3));file.close()
 	check(prefs.read_file(path) and prefs.values.bloom and prefs.values.ui_scale==150 and prefs.values.content==original.content,"Version 3 upgrade lost settings or omitted Bloom")
 	var version4:=prefs.values.duplicate(true);version4.schema=4;version4.erase("upscaler");version4.erase("render_scale")
 	file=FileAccess.open(path,FileAccess.WRITE);file.store_string(JSON.stringify(version4));file.close()
 	check(prefs.read_file(path) and prefs.values.upscaler=="off" and prefs.values.render_scale==0.77 and prefs.values.ui_scale==150,"Version 4 upgrade lost settings or omitted upscaling")
+	var version5:=prefs.values.duplicate(true);version5.schema=5;version5.erase("graphics_quality")
+	file=FileAccess.open(path,FileAccess.WRITE);file.store_string(JSON.stringify(version5));file.close()
+	check(prefs.read_file(path) and prefs.values.graphics_quality==1.0 and prefs.values.upscaler=="off","Version 5 upgrade lost settings or did not default to High quality")
+	# Graphics quality: Low/Medium turn off camera dust and fog and lower the
+	# level-of-detail input; High keeps both.
+	var Quality:=preload("res://src/presentation/graphics_quality.gd")
+	var effects:=quality_effects()
+	for level in [0.0,0.5]:
+		effects.apply({"graphics_quality":level});check(not Quality.effects_enabled(),"Quality %s kept dust and fog"%level)
+	effects.apply({"graphics_quality":1.0});check(Quality.effects_enabled(),"High quality hid dust and fog")
+	var selector:=preload("res://src/presentation/geometry_detail.gd").new()
+	check(selector.configure([1000,2000,3000],3,0,[0.3,0.6],[0.25,0.5,1.0]),selector.error)
+	var levels:=[]
+	for level in [0.0,0.5,1.0]:
+		Quality.level=level;levels.append(selector.select(1500.0*1500.0,1.0).get("level"))
+	Quality.level=1.0
+	check(levels[0]!=levels[2],"Graphics quality did not change the level of detail: %s"%str(levels))
 	# Upscaling reaches the 3D viewport only in a mode the renderer supports.
 	var Effects:=preload("res://src/presentation/scene_effect_settings.gd")
 	check(Effects.supported_upscalers().has("off"),"Native rendering is not offered")
@@ -134,3 +151,5 @@ func wait_for_window(mode: int) -> void:
 func check(value: bool,message: String) -> void:
 	checks+=1
 	if not value:failures+=1;push_error(message)
+
+func quality_effects() -> RefCounted:return preload("res://src/presentation/scene_effect_settings.gd").new()
