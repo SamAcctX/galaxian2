@@ -1420,7 +1420,8 @@ func resolve_ship_detail(ship_id: int) -> Dictionary:
 func resolve_player_engine_glow(ship_id: int, quality := "high") -> Dictionary:
 	error = ""
 	# The admitted base player uses the factory's additive hull attachment
-	# (the Valkyrie ships use a second glow texture, 34814).
+	# (the Valkyrie ships use a second glow texture, 34814; Supernova hulls
+	# such as 44 and 45 draw the glow from their own diffuse texture).
 	if source_architecture!="x86_64" or not load("res://src/simulation/mission_context.gd").base_player_hull(self,ship_id):
 		fail("Player engine-glow assembly is not verified for this content or hull")
 		return {}
@@ -1429,7 +1430,7 @@ func resolve_player_engine_glow(ship_id: int, quality := "high") -> Dictionary:
 	if path.is_empty():return {}
 	var material:=material_for_mesh(path,quality)
 	var slots: Array=material.get("texture_ids",[])
-	if material.get("render_type")!=2 or slots.size()!=8 or int(slots[0]) not in [34812,34814] or not slots.slice(1).all(func(id):return id==65535):
+	if material.get("render_type")!=2 or slots.size()!=8 or int(slots[0])==65535 or not slots.slice(1).all(func(id):return id==65535):
 		fail("Unsupported player engine-glow material mapping")
 		return {}
 	return {"resource_id":identifier,"path":path}
