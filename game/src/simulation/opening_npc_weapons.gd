@@ -36,6 +36,9 @@ var _selected40_world: RefCounted
 var _selected40:={}
 var _selected41_world: RefCounted
 var _selected41:={}
+## Second guns (Most Wanted rockets): actor id -> {gun, active, clock_ms, switch_ms}.
+## Every switch_ms the actor toggles which gun fires; shots of both keep flying.
+var _second:={}
 
 func clear() -> void:
 	error = ""
@@ -46,6 +49,7 @@ func clear() -> void:
 	_definitions=[];_actor_audio=[];_training={}
 	_alioth_revision=-1
 	_selected40_world=null;_selected40={};_selected41_world=null;_selected41={}
+	_second={}
 
 func configure(bindings: RefCounted, catalogues: RefCounted) -> bool:
 	clear()
@@ -304,7 +308,7 @@ func evaluate_wingman_contacts(combat: RefCounted,delta_ms: int,systems: RefCoun
 	return result
 
 func _configure_rows(bindings: RefCounted, catalogues: RefCounted, rows: Array, cursor: int=-1, selected40:=false, selected41:=false) -> bool:
-	var guns:=[];var sounds:=[]
+	var guns:=[];var sounds:=[];var second:={}
 	for data in rows:
 		if data.get("unarmed",false):guns.append(null);sounds.append({});continue
 		var weapon:=_resolve_weapon(bindings,catalogues,data,cursor,selected40,selected41)
@@ -312,6 +316,18 @@ func _configure_rows(bindings: RefCounted, catalogues: RefCounted, rows: Array, 
 		var gun:=Projectiles.new()
 		if not gun.configure(weapon):return reject(gun.error)
 		guns.append(gun)
+		if data.get("second_gun") is Dictionary:
+			var row: Dictionary=data.duplicate(true);row.merge(data.second_gun,true);row.erase("second_gun")
+			var items: Array=catalogues.tables.get("items",[])
+			if int(row.item_id)>=items.size():return reject("NPC second gun names an absent catalogue item")
+			row.category=int(items[int(row.item_id)].arrays[2][3])
+			var rocket_weapon:=_resolve_weapon(bindings,catalogues,row,cursor,selected40,selected41)
+			if rocket_weapon.is_empty():return false
+			# The NPC's rocket flies straight like a gun shot (no homing).
+			rocket_weapon.category=0
+			var rocket:=Projectiles.new()
+			if not rocket.configure(rocket_weapon):return reject(rocket.error)
+			second[guns.size()-1]={"gun":rocket,"active":false,"clock_ms":0,"switch_ms":int(data.second_gun.switch_ms)}
 		# Both companion groups retain the same native NPC sound owner. Its
 		# linked faction, not the player's item table, selects the firing cue.
 		var selected_audio:={}
@@ -321,7 +337,7 @@ func _configure_rows(bindings: RefCounted, catalogues: RefCounted, rows: Array, 
 			if selected_audio.is_empty():return reject("NPC lacks supported weapon sound selection")
 		sounds.append(selected_audio)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
-	_guns=guns;_actor_audio=sounds;_definitions=rows.duplicate(true)
+	_guns=guns;_actor_audio=sounds;_definitions=rows.duplicate(true);_second=second
 	return true
 
 func _resolve_weapon(bindings: RefCounted, catalogues: RefCounted, data: Dictionary, cursor: int, selected40:=false, selected41:=false) -> Dictionary:
@@ -370,6 +386,9 @@ func snapshot() -> Dictionary:
 		if not _training.is_empty():
 			result.actors[-1].definition=_definitions[id].duplicate(true)
 			result.actors[-1].audio=_actor_audio[id].duplicate()
+	if not _second.is_empty():
+		result.second_guns=[]
+		for id in _second:result.second_guns.append({"actor_id":id,"active":_second[id].active,"projectiles":_second[id].gun.snapshot()})
 	return result
 
 func fire(combat: RefCounted, requested_actor_ids: Array) -> Dictionary:
@@ -475,12 +494,14 @@ func _fire_bodies(scene: Dictionary,requested_actor_ids: Array,poses: Dictionary
 		seen[id]=true
 	var staged := []
 	var results := []
+	var second:=_fork_second()
 	# Source NPC array order determines events, independently of request order.
 	for id in _guns.size():
 		if _guns[id]==null:staged.append(null);continue
 		var gun: RefCounted = _guns[id].fork_state()
 		staged.append(gun)
 		if not seen.has(id): continue
+		if second.has(id) and second[id].active:gun=second[id].gun
 		var actor: Dictionary = scene.actors[id]
 		var allowed: bool = actor.active and actor.firing_allowed and actor.vitals.hull>0
 		if _selected40_world!=null or _selected41_world!=null:allowed=allowed and actor.actor_mode==1
@@ -499,8 +520,20 @@ func _fire_bodies(scene: Dictionary,requested_actor_ids: Array,poses: Dictionary
 				var cue := Audio.cue(_actor_audio[id],poses.get(id,actor.pose).origin)
 				if not cue.is_empty():cues.append(cue)
 			results[-1].audio_events=cues
-	_guns=staged
+	_guns=staged;_second=second
 	return {"actors":results}
+
+## The rocket carriers swap their firing gun every switch_ms.
+func advance_second_clocks(delta_ms: int) -> void:
+	for id in _second:
+		var clock: Dictionary=_second[id];clock.clock_ms+=delta_ms
+		while clock.clock_ms>=int(clock.switch_ms):clock.clock_ms-=int(clock.switch_ms);clock.active=not clock.active
+
+func _fork_second() -> Dictionary:
+	var copy:={}
+	for id in _second:
+		copy[id]=_second[id].duplicate();copy[id].gun=_second[id].gun.fork_state()
+	return copy
 
 func advance(delta_ms: Variant) -> Dictionary:
 	error=""
@@ -514,7 +547,10 @@ func advance(delta_ms: Variant) -> Dictionary:
 		if result.is_empty(): return fail(gun.error)
 		staged.append(gun)
 		results.append({"actor_id":id,"update":result})
-	_guns=staged
+	var second:=_fork_second()
+	for id in second:
+		if second[id].gun.advance(delta_ms).is_empty():return fail(second[id].gun.error)
+	_guns=staged;_second=second
 	return {"actors":results}
 
 func fork_for_frame() -> RefCounted:
@@ -527,6 +563,7 @@ func fork_for_frame() -> RefCounted:
 	copy._selected40_world=_selected40_world;copy._selected40=_selected40.duplicate(true)
 	copy._selected41_world=_selected41_world;copy._selected41=_selected41.duplicate(true)
 	for gun in _guns: copy._guns.append(null if gun==null else gun.fork_state())
+	copy._second=_fork_second()
 	return copy
 
 func evaluate_player_update(player: RefCounted, pose: Variant, shooter_states: Variant, special_flight: Variant, delta_ms: Variant) -> Dictionary:
@@ -631,9 +668,14 @@ func _evaluate_mixed_update(player: RefCounted,pose: Variant,combat: RefCounted,
 		staged_wingmen=wingmen.fork_for_frame()
 		if not staged_wingmen.bind_incoming_weapons(self):return fail(staged_wingmen.error)
 	var player_contacts:=PlayerContacts.new();var npc_contacts:=NPCContacts.new();var events:=[]
-	for id in _guns.size():
+	var passes:=[]
+	for id in _guns.size():passes.append([id,0])
+	for id in next._second:passes.append([id,1])
+	next.advance_second_clocks(int(delta_ms))
+	for entry in passes:
+		var id: int=entry[0]
 		if _guns[id]==null:continue
-		var gun: RefCounted=next._guns[id]
+		var gun: RefCounted=next._guns[id] if entry[1]==0 else next._second[id].gun
 		var player_hits:=[];var npc_hits:=[];var wingman_hits:=[];var last: Variant=null
 		var memberships: Array=_training.target_memberships[id] if staged_wingmen==null else companion_target_order(id,staged_wingmen)
 		# A gun with nothing in flight cannot touch any target this frame.
@@ -660,8 +702,9 @@ func _evaluate_mixed_update(player: RefCounted,pose: Variant,combat: RefCounted,
 		# visited in authored order, including the Challenge's player-last lists.
 		var motion: Dictionary=gun.advance(delta_ms)
 		if motion.is_empty():return fail(gun.error)
-		next._guns[id]=gun
-		events.append({"actor_id":id,"contacts":player_hits,"npc_contacts":npc_hits,"wingman_contacts":wingman_hits,"last_contact_actor":last,"motion":motion})
+		if entry[1]==0:next._guns[id]=gun
+		else:next._second[id].gun=gun
+		events.append({"actor_id":id,"gun":entry[1],"contacts":player_hits,"npc_contacts":npc_hits,"wingman_contacts":wingman_hits,"last_contact_actor":last,"motion":motion})
 	var result:={"weapons":next,"player":staged_player,"combat":staged_combat,"actors":events}
 	if staged_wingmen!=null:result.wingmen=staged_wingmen
 	return result

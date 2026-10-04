@@ -108,6 +108,9 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 		var shots: Array=bindings.mido_travel.get("ordinary_fitting",{}).get("primary",{}).get("projectile_model_ids",[])
 		if own>=0 and own<shots.size() and int(shots[own])>=0 and not weapon.has("unarmed"):
 			weapon.merge({"item_id":own,"catalogue_kind":-1,"model_resource_id":int(shots[own]),"own_gun":true},true)
+		# second_gun: a Most Wanted board leader (hulls 45-48) also carries a
+		# rocket and swaps between it and his gun every 20 s.
+		if options.get("second_gun",false) and not weapon.has("unarmed"):weapon.second_gun=WANTED_ROCKET.duplicate()
 		weapon.actor_id=id;weapon.hull_catalogue_id=hull;data.npc_weapons.append(weapon)
 	data.target_memberships=target_memberships(data.actor_kinds,cast.player_last_ids)
 	data.companion_player_last_ids=cast.player_last_ids.duplicate()
@@ -115,6 +118,12 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 	for id in cast.player_only_ids:data.target_memberships[id]=[int(data.player_target_id)]
 	for id in int(cast.debris_count):data.target_memberships[id]=[]
 	return data
+
+## The board leaders' rocket (verified Level::assignGuns, PlayerFighter::update):
+## item 31, the gun's (x4) damage, one shot per 3 s, 10 s life. The original
+## names rocket model 14240, which no pack declaration resolves; item 31's
+## own shot (14247, the player's rocket) is drawn instead (assumption).
+const WANTED_ROCKET:={"item_id":31,"catalogue_kind":-1,"model_resource_id":14247,"speed_units_per_millisecond":8.0,"lifetime_ms":10000,"interval_ms":3000,"projectile_capacity":4,"own_gun":true,"switch_ms":20000}
 
 ## Shared unattached-actor membership, before live target selection. The
 ## caller resolves the original mission's player-last exceptions explicitly.

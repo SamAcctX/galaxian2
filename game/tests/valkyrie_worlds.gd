@@ -99,6 +99,29 @@ func run():
 	check(boost.get("sound_id")==1102 and boost.get("item_id")==195,"The Polytron Boost is not fittable: "+str(boost))
 	var tractor: RefCounted=load("res://src/simulation/tractor_recovery.gd").new()
 	check(tractor.configure(bindings,cat,{"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"ship_id":int(bindings.station_entry.ship_id),"equipment_ids":[194]},lib),"The AB-4 Octopus is not fittable: "+tractor.error)
+	# A Most Wanted board leader (hulls 45-48) also carries item 31's rocket:
+	# it fires instead of his gun every other 20 s, with the gun's damage.
+	var CC=load("res://src/content/contract_ship_combat_definitions.gd")
+	var row: Dictionary=CC.shared_weapon(bindings.early_contracts.ship_combat.weapons,140,10,0.5,8)
+	row.damage*=4;row.second_gun=CC.WANTED_ROCKET.duplicate()
+	var npc: RefCounted=load("res://src/simulation/opening_npc_weapons.gd").new()
+	check(npc._configure_rows(bindings,cat,[row],140),"The wanted rocket did not arm: "+npc.error)
+	if not npc.error:
+		var scene:={"actors":[{"active":true,"firing_allowed":true,"vitals":{"hull":10},"pose":Transform3D.IDENTITY}]}
+		var flying:=func(pool: Dictionary):return pool.get("slots",[]).filter(func(slot):return slot!=null).size()
+		npc.advance(5000)
+		check(not npc._fire_bodies(scene,[0],{}).is_empty(),"The leader could not fire: "+npc.error)
+		var first: Dictionary=npc.snapshot()
+		check(flying.call(first.actors[0].projectiles)==1 and flying.call(first.second_guns[0].projectiles)==0,"The leader opened with his rocket")
+		npc.advance_second_clocks(20000)
+		npc.advance(5000)
+		check(not npc._fire_bodies(scene,[0],{}).is_empty(),"The leader could not fire after the switch: "+npc.error)
+		var second: Dictionary=npc.snapshot();var rocket: Dictionary=second.second_guns[0].projectiles
+		check(second.second_guns[0].active and flying.call(rocket)==1 and flying.call(second.actors[0].projectiles)==1,"The leader did not switch to his rocket after 20 s")
+		check(int(rocket.weapon.damage)==int(row.damage) and int(rocket.weapon.interval_ms)==3000,"The rocket's damage or rate is wrong: "+str(rocket.weapon))
+		var PVS=load("res://src/simulation/projectile_visual_state.gd")
+		check(PVS.model_mapping(bindings,rocket.weapon,"npc:0/1",false).get("id")==14247 and not PVS.model_mapping(bindings,rocket.weapon,"npc:0/1",true).is_empty(),"The rocket has no shot or impact model")
+		check(PVS.weapons({"primaries":{"guns":[]},"weapons":second}).map(func(entry):return entry.key)==["npc:0","npc:0/1"],"The rocket is not drawn as its own weapon")
 	# Supernova's stations are expansion worlds too (Katashán, 120).
 	check(not Worlds.location(bindings,120).is_empty(),"Supernova's Katashán is not an expansion world")
 	finish()

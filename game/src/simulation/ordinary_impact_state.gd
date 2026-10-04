@@ -108,7 +108,7 @@ func apply_contacts(previous_world: Dictionary, primary_events: Array, npc_event
 		var contacts: Array=event.contacts.duplicate()
 		contacts.append_array(event.get("npc_contacts",[]))
 		contacts.append_array(event.get("wingman_contacts",[]))
-		events.append({"key":"npc:%d"%int(event.actor_id),"contacts":contacts})
+		events.append({"key":("npc:%d/1" if int(event.get("gun",0))==1 else "npc:%d")%int(event.actor_id),"contacts":contacts})
 	if events.size()!=inputs.size():return reject("Impact frame omitted a weapon contact pass")
 	var staged: Dictionary=_state.duplicate();staged.hits=[]
 	for event in events:

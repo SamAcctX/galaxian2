@@ -198,6 +198,10 @@ static func weapons(world: Dictionary) -> Array:
 		if not actor is Dictionary or not Numbers.integer(actor.get("actor_id"),0,2147483647) or not actor.get("projectiles") is Dictionary:return []
 		if actor.get("definition",{}).get("unarmed",false) and actor.projectiles.is_empty():continue
 		result.append({"key":"npc:%d"%int(actor.actor_id),"projectiles":actor.projectiles})
+	# A Most Wanted rocket carrier's second gun draws as its own weapon.
+	for second in world.get("weapons",{}).get("second_guns",[]):
+		if not second is Dictionary or not Numbers.integer(second.get("actor_id"),0,2147483647) or not second.get("projectiles") is Dictionary:return []
+		result.append({"key":"npc:%d/1"%int(second.actor_id),"projectiles":second.projectiles})
 	return result
 
 static func empty_ordinary_population(bindings: RefCounted,world: Dictionary) -> bool:
