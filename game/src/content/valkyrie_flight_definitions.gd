@@ -555,14 +555,17 @@ const SCRIPTED:={
 	# first point, facing the second. Four lines from 7 s; then the fighters fly
 	# on (no attack) and cloak 1 s later, Harval follows at 4 s; 7 s after the
 	# last line the story moves on to 145 (a fresh flight at the Var Lupra
-	# launch point). Assumptions: no camera work (player locked, unharmable);
+	# launch point). Assumptions:
 	# the wedge formation is a 13x5 km box behind Harval; all cloak at 1 s
 	# (original: 10% chance per tick each).
 	144:{"points":[Vector3(60000,10000,100000),Vector3(-50000,0,50000)],
 		"groups":[{"count":1,"faction":2,"hull":49,"friendly":false,"sleeping":true,"unharmable":true,"name_text_id":1625,"index":0,"route_start":1,"offsets":[-1,-1,-1],"bounds":[2,2,2]},
 			{"count":12,"faction":10,"hull":44,"friendly":false,"sleeping":true,"unharmable":true,"index":0,"route_start":1,"offsets":[-6500,-400,-5000],"bounds":[13000,700,5200]}],
 		"radio":[[39,2957,2163,5,[7000]],[39,2958,2164,6,[0]],[0,2959,2165,6,[1]],[39,2960,2166,6,[2]]],
-		"timed_actions":[{"after_ms":0,"action":"lock_player","duration_ms":-1,"invulnerable":true}],
+		# The camera: Harval + (-4600, 1000, -4300), looking at (30000, 10000,
+		# 160000), for the whole cutaway (LevelScript constructor).
+		"timed_actions":[{"after_ms":0,"action":"lock_player","duration_ms":-1,"invulnerable":true},
+			{"after_ms":0,"action":"cutscene","actor":0,"offset":Vector3(-4600,1000,-4300),"look_at":Vector3(30000,10000,160000)}],
 		"radio_actions":[{"radio_index":3,"on":"finished","action":"wake","first_actor":1,"end_actor":13,"attack_range":0},
 			{"radio_index":3,"on":"finished","delay_ms":1000,"action":"cloak","first_actor":1,"end_actor":13,"duration_ms":-1},
 			{"radio_index":3,"on":"finished","delay_ms":4000,"action":"wake","first_actor":0,"end_actor":1,"attack_range":0}],
@@ -945,7 +948,7 @@ static func _bounty_job(cursor: int,station_id: int,progress: Dictionary) -> Dic
 		"story":false,"story_job":true,"campaign_cursor":cursor,"target_station_id":station_id,"wanted":wanted.duplicate(true)}
 
 ## Board criminals' lines: Keith on finding one (random), the criminal when
-## hit (entries 2 and 6 only; speaker 10, a pirate: assumption), Keith on the
+## hit (entries 2 and 6 only, with his own name and face), Keith on the
 ## kill (random). [text, voice].
 const BOUNTY_UNCOVER:=[[3130,2232],[3131,2233],[3132,2234],[3133,2235],[3134,2236]]
 const BOUNTY_ATTACK:=[[3135,2222],[3136,2223],[3137,2224],[3138,2225],[3139,2226]]
@@ -991,6 +994,10 @@ static func _wanted_recipe(job: Dictionary) -> Dictionary:
 			var own: bool=radio.size()==first
 			radio.append({"speaker_id":row[0],"text_id":row[1],"voice_event_id":row[2],"condition":(55 if part=="uncover" else 54) if own else 6,
 				"values":([0] if part=="uncover" else [0,1,1]) if own else [radio.size()-1]})
+			# A board criminal speaks with his own name and face (the original's
+			# speaker 10000+entry); saves from before faces keep speaker 10.
+			if row[0]==10 and Array(stats.get("face",[])).size()==5:
+				radio[-1].merge({"speaker_id":10000+int(wanted.index),"speaker_name":String(stats.name),"speaker_face":Array(stats.face)},true)
 		if radio.size()>first:actions.append({"radio_index":first,"action":"hostile"})
 	if not story:
 		# Found or hit, he fights; dead, Keith's line and the bounty.

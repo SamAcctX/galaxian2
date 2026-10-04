@@ -1630,6 +1630,7 @@ func _cutscene_pose(actor: int) -> Transform3D:
 	return pose if pose is Transform3D else Transform3D(Basis.IDENTITY,_pose.origin)
 
 func _cutscene_target() -> Vector3:
+	if _cutscene.has("look_at"):return _cutscene.look_at
 	var bomb: Variant=supernova_bomb_pose()
 	if bomb is Transform3D:return bomb.origin
 	var flight: Variant=finale_flight_point()
@@ -2254,13 +2255,21 @@ func _observe_radio() -> bool:
 				if not gone and not _action_marks.has("retired%d"%index):
 					if not _encounter.retire_story_actors(int(action.first_actor),int(action.end_actor),RETIRE_POINT):return reject(_encounter.error)
 					_action_marks["retired%d"%index]=true
+		# A timed cutscene runs from a flight time (144: the whole cutaway).
+		var timed: Array=_mission_context.recipe().get("timed_actions",[])
+		for t_index in timed.size():
+			var action: Dictionary=timed[t_index]
+			if action.action!="cutscene" or elapsed<int(action.after_ms) or (action.has("until") and _story_line_passed(action.until,elapsed)):continue
+			radio_lock=true;radio_invulnerable=true;cutscene=action.merged({"key":10000+t_index})
 		if not cutscene.is_empty() and int(_cutscene.get("key",-1))!=int(cutscene.key):
 			var pose: Transform3D=_cutscene_pose(int(cutscene.actor))
 			# "right"/"up" step along the ship's own side and up axes (Supernova).
 			var eye: Vector3=pose.origin+pose.basis.z.normalized()*float(cutscene.get("ahead",0.0))+pose.basis.x.normalized()*float(cutscene.get("right",0.0))+pose.basis.y.normalized()*float(cutscene.get("up",0.0))
 			_cutscene={"key":cutscene.key,"actor":int(cutscene.actor),"eye":eye+Vector3(cutscene.get("offset",Vector3.ZERO)),"drift":Vector3(cutscene.get("drift",Vector3.ZERO)),"since":_world_elapsed_ms}
+			# "look_at": a fixed world point instead of the ship (144).
+			if cutscene.has("look_at"):_cutscene.look_at=Vector3(cutscene.look_at)
 		elif cutscene.is_empty() and _cutscene.has("eye"):_cutscene={"ended":true}
-		if radio_actions.any(func(action):return action.action in ["lock_player","cutscene"]) and radio_lock!=_story_locked:
+		if (radio_actions.any(func(action):return action.action in ["lock_player","cutscene"]) or timed.any(func(action):return action.action=="cutscene")) and radio_lock!=_story_locked:
 			_story_locked=radio_lock
 			if (radio_invulnerable or not radio_lock) and not _player.set_permissions(bool(_player.read_state().active),not radio_lock):return reject(_player.error)
 		# Recipe actions at a flight time (78: the station leaves, the pirates wake).
