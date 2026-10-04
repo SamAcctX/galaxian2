@@ -42,7 +42,7 @@ func prepare(weapon: Dictionary, parent_rgba: PackedByteArray, tint: Vector4) ->
 			if animation.is_empty():return failed(sampler.error)
 			surfaces=_surface.prepare_surfaces(animation,Beam.presentation(shot,i==1),parent_rgba,tint)
 			if surfaces.is_empty():return failed(_surface.error)
-		prepared.append({"visible":visible,"surfaces":surfaces,"time_ms":int(_ranges[i].start_ms)+int(shot.age_ms)});samplers.append(sampler)
+		prepared.append({"visible":visible,"surfaces":surfaces,"time_ms":int(_ranges[i].start_ms)+int(shot.get("age_ms",0)) if visible else 0});samplers.append(sampler)
 	return {"models":prepared,"samplers":samplers}
 
 func commit(prepared: Dictionary, darken: float) -> void:

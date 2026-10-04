@@ -133,7 +133,10 @@ static func supernova_scene(name: String) -> Dictionary:return NANEROH_BLAST if 
 ## that lists payload meshes (v205) and are skipped otherwise.
 const VALKYRIE_FINALE:={"beam":[19061,19062,19063],"burn":[19095,19096],"burn_hard":[19097,19098],"burn_after_ms":300,
 	"sounds":[["hit",0,2244],["hit",6000,2244],["hit",9000,2243],["charge",6000,2247],["fly",5700,2248]],
-	"fire_ms":6000,"fly_ms":10000,"fly_speed":35.0,"vanish_ms":5700,"white_end_ms":6600}
+	"fire_ms":6000,"fly_ms":10000,"fly_speed":35.0,"vanish_ms":5700,"white_end_ms":6600,
+	# Explosions (the ordinary look-at explosion 16820): [stage, ms, offset from
+	# the array point, scale]. Scales are not recovered (assumption).
+	"burst_model":16820,"bursts":[["hit",0,[-2000,1000,-8000],1.5],["hit",6000,[-6000,2000,-10000],1.5],["hit",9000,[0,0,0],4.0],["fly",5500,[0,0,0],5.0]]}
 
 ## The supernova flare layers at this location: [{mesh_id, texture_id, speed}],
 ## none outside Ginoya, at the blast (89) or after the reversal.
