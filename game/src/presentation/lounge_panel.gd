@@ -153,6 +153,9 @@ func label_text(id: int) -> String:
 	return text(id)
 func money(value: int) -> String:return str(value)+"$"
 
+## The result the player is looking at (empty when none is open).
+func pending_result() -> Dictionary:return {} if _state.is_empty() else _state.get("pending_result",{}).duplicate(true)
+
 func format_job(template: String,mission: Dictionary) -> String:return format_job_text(_library,_catalogues,_bindings,template,mission)
 
 ## Shared with the Missions log: fills a job text's station, target, goods and pay tokens.

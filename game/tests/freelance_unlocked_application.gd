@@ -121,14 +121,20 @@ func verify_delivery_route(original: Dictionary,before: Dictionary,offer: Dictio
 	var reward:=contract_credit_delta(offer,won)
 	check(paid.contracts.credits==maxi(0,accepted.contracts.credits+reward) and paid.contracts.completed_side_missions==accepted.contracts.completed_side_missions+int(won),"The freelance result paid another reward or count")
 	check(paid.mission==original.mission and paid.campaign_cursor==original.campaign_cursor,"Freelance payment advanced the campaign")
+	var banner: Dictionary=app.reward_banner.snapshot()
+	check(banner.get("visible",false)==(won and reward>0) and (not won or (int(banner.get("credits",0))==reward and not banner.get("bounty",true))),"The Mission accomplished banner is wrong: "+str(banner))
+	if won:
+		await create_timer(2.2).timeout;await capture_free_application("freelance-reward-banner")
 	check(not app.contract_action("result_close",serial) and app.session.snapshot()==paid,"Repeated acknowledgement changed the career")
 	check(app.session.flight_audio.snapshot().history.filter(func(row):return row.get("source_id")==36).size()==int(won),"The result played the wrong number of payment sounds")
 	if not application_step() or not await dock_application():return
 	var docked: Dictionary=app.session.station_owner().snapshot()
-	check(docked.contracts.credits==paid.contracts.credits and docked.contracts.mission.is_empty() and docked.mission==original.mission,"Docking changed the settled freelance career")
+	# A medal crossed at this docking pays its own reward; nothing else changes.
+	var medal_pay: int=docked.contracts.get("medal_notices",[]).reduce(func(sum,row):return sum+preload("res://src/simulation/base_medal_progress.gd").reward_credits(int(row[1])),0)
+	check(docked.contracts.credits==paid.contracts.credits+medal_pay and docked.contracts.mission.is_empty() and docked.mission==original.mission,"Docking changed the settled freelance career: "+str([paid.contracts.credits,docked.contracts.credits,medal_pay]))
 	await capture_free_application("freelance-pirate-paid-station")
 	var saved: Dictionary=app._save_file.load_document(app.station_save_path(),definitions,catalogue,source)
-	check(not saved.is_empty() and saved.career.credits==paid.contracts.credits and saved.career.completed_side_missions==paid.contracts.completed_side_missions and saved.career.mission.is_empty(),"Autosave lost the earned Pirate payment")
+	check(not saved.is_empty() and saved.career.credits==paid.contracts.credits+medal_pay and saved.career.completed_side_missions==paid.contracts.completed_side_missions and saved.career.mission.is_empty(),"Autosave lost the earned Pirate payment")
 	print("Freelance saved: ",{"path":app.station_save_path(),"credits":paid.contracts.credits,"completed":paid.contracts.completed_side_missions,"campaign_cursor":paid.campaign_cursor,"deltas":_pilot_deltas})
 
 func dock_application() -> bool:

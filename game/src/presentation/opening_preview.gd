@@ -263,6 +263,8 @@ func _ready() -> void:
 	_help_button=TextureButton.new();_help_button.visible=false;_help_button.focus_mode=Control.FOCUS_NONE
 	_help_button.ignore_texture_size=true;_help_button.stretch_mode=TextureButton.STRETCH_KEEP_ASPECT_CENTERED
 	_help_button.pressed.connect(open_screen_help);host.add_child(_help_button)
+	reward_banner=preload("res://src/presentation/reward_banner.gd").new();host.add_child(reward_banner)
+	reward_banner.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_hint_dialog=GateConfirmationPanel.new();host.add_child(_hint_dialog)
 	_hint_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_hint_dialog.choice_requested.connect(func(_choice):_close_flight_hint())
@@ -383,6 +385,7 @@ func _sync_screen_help(state: Dictionary) -> void:
 		elif state.get("hangar_open",false):_help_screen="hangar"
 		elif state.get("lounge_open",false):_help_screen="lounge"
 		elif station_shell.visible:_help_screen="station"
+	if visuals==null:_help_screen=""
 	if not _help_screen.is_empty() and _help_context!=[library,bindings,visuals]:
 		var art:=OriginalUI.new()
 		var loaded: Dictionary=art.load_regions(library,bindings,visuals,[StationHelp.BUTTON_IMAGE_ID],bindings.mido_travel.get("map",{}).get("ui",{}).get("atlas_resources",{}))
@@ -392,6 +395,22 @@ func _sync_screen_help(state: Dictionary) -> void:
 	var size: Vector2=_help_button.texture_normal.get_size()+Vector2(8.0,8.0)
 	_help_button.size=size;_help_button.position=Vector2(_help_button.get_parent().size.x-size.x,0.0)
 	equipment_panel.set_help_inset(size.x)
+
+## Reward banner: a bounty when the kill pays in flight, a freelance job's
+## pay when its completed result is closed.
+var reward_banner: Control
+var _reward_context:=[]
+var _bounty_seen:={}
+func _sync_reward_banner(state: Dictionary) -> void:
+	if library==null or bindings==null or visuals==null:return
+	if _reward_context!=[library,bindings,visuals]:
+		_reward_context=[library,bindings,visuals]
+		if not reward_banner.configure(library,bindings,visuals):push_warning(reward_banner.error)
+	reward_banner.set_mobile_layout(_mobile_layout)
+	var transition: Dictionary=state.get("contracts",{}).get("flight",{}).get("story_transition",{})
+	if transition.get("reward_banner","")!="bounty" or transition==_bounty_seen:return
+	_bounty_seen=transition.duplicate(true)
+	reward_banner.show_reward(int(transition.get("previous_mission",{}).get("reward",0)),true)
 
 func open_screen_help() -> bool:
 	if _help_screen.is_empty() or _hint_dialog.visible:return false
@@ -790,6 +809,7 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 	_layout_flight_overlays()
 	_refresh_station_shell(state)
 	_sync_screen_help(state)
+	_sync_reward_banner(state)
 	if session is StationSession and session.presentation_active():
 		for node in [station_shell,station_panel,equipment_panel,lounge_panel,map_panel,_menu_button,_launch_button,_hangar_button,_lounge_button,_station_map_button,_save_button,_load_button,_flight_hint,_skip_button]:
 			if node!=null:node.hide()
@@ -1470,11 +1490,13 @@ func contract_action(action: String,id: int) -> bool:
 	if session==null or not _focused or not is_visible_in_tree() or session.is_paused():return false
 	if not prepare_lounge():return false
 	var accepted: bool=false
+	var paid: Dictionary=lounge_panel.pending_result() if action=="result_close" else {}
 	if session is StationSession:
 		var checkpoint: Callable=_save_station_candidate if action in ["buy_coordinates","buy_blueprint","buy_diplomat","hire_wingmen","buy_kaamo"] else Callable()
 		accepted=session.contract_action(action,id,lounge_panel,checkpoint)
 	elif session is FirstFlightSession and action=="result_close":accepted=session.acknowledge_contract_result(id)
 	if not accepted:lounge_panel.show_error(session.error);return false
+	if paid.get("completed",false) and paid.get("continuation",{}).is_empty():reward_banner.show_reward(int(paid.get("reward_credits",paid.get("credit_delta",0))))
 	if session is StationSession and session.contract_story_ready():
 		if not _begin_contract_story():return false
 	if session is StationSession and session.campaign_story_ready():

@@ -2160,6 +2160,10 @@ func fly_supernova_coromesk() -> void:
 	# He joins the Terran board at the first Terran docking after 131.
 	if not gendol.get("active",false):
 		if not await depart_to(terran_board_station()) or not await dock_application():return
+		# His listing is announced on arrival (3219) before the station is free.
+		var news: Dictionary=preload("res://src/content/valkyrie_world_definitions.gd").wanted_news(app.session.station_owner().snapshot().contracts.progress)
+		await close_medal_windows()
+		if not news.is_empty() and not await kaamo_talk(int(news.text_id),1,"supernova-coromesk-wanted-news"):return
 		gendol=app.session.station_owner().snapshot().contracts.progress.get("wanted",{}).get("entries",[{},{},{}])[2]
 	# A rich career trades up where the yard has a tougher hull.
 	var hull_before: int=int(app.session.station_owner().snapshot().loadout.ship_id)
@@ -2183,6 +2187,15 @@ func fly_supernova_coromesk() -> void:
 		return wing if not wing.is_empty() else alive
 	await capture_free_application("supernova-bounty")
 	if not await fight_until("bounty",func():return him.call([]).is_empty(),pack,bounty_radio):return
+	# The kill pays at once: "Bounty collected + N$" fades in at the top.
+	var banner_from:=now_us
+	while not app.reward_banner.visible and now_us-banner_from<20000000:
+		if not application_step():return
+		if int(now_us/1000000)%2==0:await process_frame
+	var banner: Dictionary=app.reward_banner.snapshot()
+	check(banner.get("bounty",false) and int(banner.get("credits",0))>0,"The bounty banner did not show: "+str(banner))
+	if banner.get("visible",false):
+		await create_timer(2.2).timeout;await capture_free_application("supernova-bounty-banner")
 	if not await wait_story_cursor(135,"") or not await dock_application():return
 	var after: Dictionary=app.session.station_owner().snapshot()
 	print("SUPERNOVA bounty paid ",int(after.contracts.credits)-credits," board ",after.contracts.progress.wanted.bounties," radio ",bounty_radio)

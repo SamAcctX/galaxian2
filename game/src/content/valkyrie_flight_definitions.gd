@@ -985,7 +985,7 @@ static func _wanted_recipe(job: Dictionary) -> Dictionary:
 		var kill: Array=BOUNTY_KILL[(roll/25)%5]
 		radio.append({"speaker_id":0,"text_id":kill[0],"voice_event_id":kill[1],"condition":1,"values":[0]})
 		var bounty:={"from_cursor":cursor,"campaign_cursor":cursor,"mission":Campaign.mission(cursor),
-			"previous_mission":{"reward":int(stats.reward)},"progress":{"wanted":wanted.after.duplicate(true)}}
+			"previous_mission":{"reward":int(stats.reward)},"progress":{"wanted":wanted.after.duplicate(true)},"reward_banner":"bounty"}
 		return {"actor_count":count,"ship_groups":groups,"radio":radio,"radio_actions":actions,
 			"success":{"kind":18,"first_actor":0,"end_actor":1},"story":bounty,"turn_hostile":{}}
 	var result: Array=Campaign.Dialogue.RESULT.get(cursor,[])
