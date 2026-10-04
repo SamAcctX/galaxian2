@@ -155,6 +155,14 @@ static func wanted_ship_notice(progress: Dictionary,table: Array,shown: Dictiona
 			return {"key":key,"text_id":WANTED_SHIP_TEXT,"name":str(table[index].name),"ship_text_id":SHIP_NAME_TEXT_BASE+int(table[index].ship)}
 	return {}
 
+## Criminals added to the Most Wanted boards by this docking: 3219 for one,
+## 3220 ("#N more") for several (verified ModStation::OnInitialize).
+const WANTED_NEWS_TEXTS:=[3219,3220]
+static func wanted_news(progress: Dictionary) -> Dictionary:
+	var count:=int(progress.get("wanted",{}).get("news",0)) if progress.get("wanted") is Dictionary else 0
+	if count<=0:return {}
+	return {"text_id":WANTED_NEWS_TEXTS[0] if count==1 else WANTED_NEWS_TEXTS[1],"count":count}
+
 ## After the Supernova ending (cursor above 158) station 120 always sells
 ## ship 49, listed after the first owned-Supernova extra (verified
 ## Generator::getShipBuyList). Ship 44 comes first there once every base medal

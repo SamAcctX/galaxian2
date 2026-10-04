@@ -264,6 +264,11 @@ func poll_kaamo(panel: Control,checkpoint: Callable=Callable()) -> bool:
 		if not before.contracts.get("medal_notices",[]).is_empty():
 			_kaamo_checked=false
 			return true
+		# New Most Wanted criminals on this arrival; like the original, this
+		# docking then shows no other notice.
+		var news: Dictionary=ValkyrieWorlds.wanted_news(before.contracts.get("progress",{})) if _arrived else {}
+		if not news.is_empty():
+			return _start_kaamo(panel,[[MedalNotices.SPEAKER,int(news.text_id),-1]],false,{"#N":str(news.count)})
 		var cat:=Catalogues.new()
 		var wanted: Dictionary=ValkyrieWorlds.wanted_ship_notice(before.contracts.get("progress",{}),cat.tables.get("wanted",[]),_medal_notices_shown) if cat.open(_library) else {}
 		if not wanted.is_empty():

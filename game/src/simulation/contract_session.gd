@@ -841,13 +841,18 @@ func apply_station_entry(bindings: RefCounted,cat: RefCounted,equipment: RefCoun
 func _dock_wanted(bindings: RefCounted,cat: RefCounted) -> bool:
 	var table: Array=cat.tables.get("wanted",[])
 	var cursor: int=int(_state.campaign_cursor)
+	if _state.progress.get("wanted") is Dictionary and _state.progress.wanted.has("news"):
+		_state.progress.wanted=_state.progress.wanted.duplicate(true);_state.progress.wanted.erase("news")
 	if table.is_empty() or not Valkyrie.saved_story(bindings,cursor) or cursor<int(Valkyrie.WANTED.from_cursor):return true
 	var state: Variant=_state.progress.get("wanted")
 	if not Wanted.valid(state,table):state=Wanted.fresh(table)
 	var known: Array=_lounges.snapshot().get("system_availability",[])
 	var seed_value:=hash([cursor,int(_state.station_id),int(_state.get("travel_statistics",{}).get("jumpgates_used",0)),int(_state.completed_side_missions)])
 	state=Wanted.travel(state,cat,int(_state.station_id),known,seed_value)
-	_state.progress.wanted=Wanted.activate(state,table,cat,cursor,int(_state.station_id),known,seed_value+1).state
+	var activated: Dictionary=Wanted.activate(state,table,cat,cursor,int(_state.station_id),known,seed_value+1)
+	# How many criminals this docking added (the station announces them).
+	activated.state.news=activated.activated.size()
+	_state.progress.wanted=activated.state
 	return true
 
 func acknowledge_station_campaign(bindings: RefCounted,equipment: RefCounted,story_mission: Dictionary,visit: RefCounted) -> Dictionary:

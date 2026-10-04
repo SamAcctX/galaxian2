@@ -1965,15 +1965,19 @@ func wanted_notice() -> bool:
 	# The notice waits behind any "New medal!" window; close those first.
 	for tick in 20:app.session.step(Time.get_ticks_usec());app.present_session();await process_frame
 	check(not app.session.snapshot().dialogue.get("visible",false) or not app.medal_notice.visible,"The wanted notice opened over a medal window")
-	for attempt in 60:
-		if not app.medal_notice.visible:break
-		app.acknowledge_medal_notice();app.present_session();await process_frame
+	await close_medal_windows()
 	if not await kaamo_talk(3221,1,"wanted-ship-notice"):return false
 	check(app.load_station(),"Reload after the wanted notice failed")
 	app.set_player_mode(true);app.show();app.present_session()
 	for tick in 30:app.session.step(Time.get_ticks_usec());app.present_session();await process_frame
 	check(not app.session.snapshot().dialogue.get("visible",false),"The wanted notice repeated in the same game run")
 	return failures==0
+
+## Close every "New medal!" window, as the player would.
+func close_medal_windows() -> void:
+	for attempt in 60:
+		if not app.medal_notice.visible:break
+		app.acknowledge_medal_notice();app.present_session();await process_frame
 
 ## Test shortcut: mark one Most Wanted entry terminated.
 func seed_wanted_dead(index: int) -> bool:
@@ -2052,6 +2056,11 @@ func fly_supernova_wanted() -> void:
 		var cursor: int=[128,130][entry];var name: String=["Pal Tyyrt","Kehnor"][entry]
 		var board_station:=terran_board_station()
 		if not await depart_to(board_station) or not await dock_application():return
+		# New board entries are announced on arrival (3219 one, 3220 several).
+		var news: Dictionary=preload("res://src/content/valkyrie_world_definitions.gd").wanted_news(app.session.station_owner().snapshot().contracts.progress)
+		print("SUPERNOVA wanted news ",news)
+		await close_medal_windows()
+		if not news.is_empty() and not await kaamo_talk(int(news.text_id),1,"supernova-wanted-news-%d"%cursor):return
 		app.open_missions();await process_frame
 		app.missions_panel.toggle_wanted();await process_frame
 		var log: Dictionary=app.missions_panel.snapshot()

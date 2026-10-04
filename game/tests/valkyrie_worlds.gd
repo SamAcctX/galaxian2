@@ -75,6 +75,8 @@ func run():
 		check(VW.wanted_ships({"wanted":wanted},table)==[46],"Only the dead board leader's ship goes on sale")
 		var notice: Dictionary=VW.wanted_ship_notice({"wanted":wanted},table,{})
 		check(notice.get("text_id")==3221 and notice.get("ship_text_id")==948 and VW.wanted_ship_notice({"wanted":wanted},table,{"wanted_12":true}).is_empty(),"The wanted-ship notice is wrong or repeats: "+str(notice))
+	# New Most Wanted criminals at a docking: 3219 for one, 3220 (#N) for more.
+	check(VW.wanted_news({"wanted":{"news":1}}).get("text_id")==3219 and VW.wanted_news({"wanted":{"news":3}}).get("text_id")==3220 and VW.wanted_news({"wanted":{"news":0}}).is_empty() and VW.wanted_news({}).is_empty(),"The new-criminals notice is wrong")
 	# Docking medal notices: 638 all medals, 639 all gold, 640 + fireworks
 	# blueprint with every add-on medal, 3222 after cursor 161; once per run.
 	var Notices=preload("res://src/content/medal_notices_definitions.gd")
