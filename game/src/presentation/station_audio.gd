@@ -144,6 +144,22 @@ func prepare_equipment_effects(rules: Dictionary,library: RefCounted=null,bindin
 	_effect_clips=clips
 	return true
 
+## A dialogue cue's music and sound (dialogue_cue_definitions.gd); both keep
+## looping until the station ends.
+func play_cue(library: RefCounted,bindings: RefCounted,cue: Dictionary) -> bool:
+	var resources:=Resources.new()
+	if not resources.configure(library,bindings):return reject(resources.error)
+	for key in ["music","sound"]:
+		if not cue.has(key):continue
+		var id:=int(cue[key])
+		var clip: Dictionary=resources.prepare(id)
+		if clip.is_empty() or clip.has("unsupported") or not clip.get("stream") is AudioStream or clip.get("spatial",false):return reject("The dialogue cue sound is unavailable: "+str(id))
+		if _effects.has(id):_effects[id].free()
+		var player: Node=Streams.player(clip.stream,false,"Music" if key=="music" else "FX");add_child(player);_effects[id]=player
+		player.volume_db=linear_to_db(clip.gain);player.play();player.stream_paused=_paused
+		_effect_history.append(id)
+	return true
+
 func play_equipment_effect(id: int) -> void:
 	if not _effect_clips.has(id):return
 	if _effects.has(id):_effects[id].free()

@@ -222,6 +222,7 @@ const Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
 const Fee=preload("res://src/content/docking_fee_definitions.gd")
 const MedalNotices=preload("res://src/content/medal_notices_definitions.gd")
 const ValkyrieWorlds=preload("res://src/content/valkyrie_world_definitions.gd")
+const DialogueCues=preload("res://src/content/dialogue_cue_definitions.gd")
 ## Medal announcements already shown in this game run (as in the original).
 static var _medal_notices_shown:={}
 var _kaamo:={}
@@ -389,7 +390,7 @@ func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false) ->
 	var result_open: bool=not world_state.get("contracts",{}).get("pending_result",{}).is_empty()
 	var milliseconds:=roundi(clock.sample(now_microseconds,is_paused() or result_open or not _wingman_notice.is_empty())*1000)
 	if not clock.error.is_empty():return reject(clock.error)
-	if ambience!=null:ambience.advance("hangar" if world_state.get("hangar_open",false) else "lounge" if _lounge_open else "main",milliseconds)
+	if ambience!=null:ambience.advance("" if _cue_text_id>=0 else "hangar" if world_state.get("hangar_open",false) else "lounge" if _lounge_open else "main",milliseconds)
 	if is_paused() or result_open or not _wingman_notice.is_empty():_clock=clock;return true
 	if _released_presentation!=null and not _released_presentation.advance_release(milliseconds):
 		_released_presentation.free();_released_presentation=null
@@ -418,8 +419,19 @@ func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false) ->
 	_motion=motion;_clock=clock;_generation+=1
 	_story_elapsed_ms=mini(2147483647,_story_elapsed_ms+milliseconds)
 	if not _dialogue_started and state.elapsed_ms>=_dialogue_delay_ms:
-		_dialogue_started=true;audio.present(0)
+		_dialogue_started=true;audio.present(0);_dialogue_cue(_world.snapshot())
 	return true
+
+## A page with a sound cue (dialogue_cue_definitions.gd) silences the station
+## and starts the cue's music and sound once.
+var _cue_text_id:=-1
+func _dialogue_cue(state: Dictionary) -> void:
+	var dialogue: Dictionary=state.get("dialogue",{})
+	var text_id:=int(dialogue.get("text_id",-1)) if dialogue.get("visible",false) else -1
+	var cue: Dictionary=DialogueCues.cue(text_id)
+	if cue.is_empty() or _cue_text_id==text_id:return
+	_cue_text_id=text_id
+	if not audio.play_cue(_library,_bindings,cue):push_warning(audio.error)
 
 func navigate(action: String, panel: Control, checkpoint: Callable=Callable()) -> bool:
 	error=""
@@ -458,7 +470,7 @@ func navigate(action: String, panel: Control, checkpoint: Callable=Callable()) -
 		view.skip_requested.connect(skip_presentation);view.activate()
 	if staged.phase=="free_play_required":_story_elapsed_ms=0
 	if staged.get("boundary")=="station_reload_required":status="station_reload_required"
-	audio.present(voice_line)
+	audio.present(voice_line);_dialogue_cue(staged)
 	return true
 
 func presentation_active() -> bool:return _presentation!=null
@@ -735,7 +747,7 @@ func clear() -> void:
 	_visuals=null;lounge_scene=null;station_sky=null;station_planets=null;_environment=null;_hangar_environment=null;_hangar_lights=[]
 	lighting=null;reflection=null
 	_story_elapsed_ms=0
-	_wingman_notice={};_kaamo={};_kaamo_checked=false;_forced_departure=false;_arrived=false
+	_wingman_notice={};_kaamo={};_kaamo_checked=false;_forced_departure=false;_arrived=false;_cue_text_id=-1
 
 func _clear_presentations() -> void:
 	if is_instance_valid(_blueprint_pickup):_blueprint_pickup.free()
