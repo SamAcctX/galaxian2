@@ -70,6 +70,7 @@ var _blueprint_rows:={}
 var _blueprint_materials:={}
 var _selected_blueprint:=-1
 var _blueprint_render_state:={}
+var _help_space: Control
 
 func _init() -> void:
 	mouse_filter=Control.MOUSE_FILTER_STOP;visible=false
@@ -90,6 +91,7 @@ func _init() -> void:
 	for tab in ["ship","shop","cargo","blueprints"]:
 		var button:=Button.new();button.toggle_mode=true;button.custom_minimum_size.x=92
 		button.pressed.connect(func():select_tab(tab));tabs.add_child(button);_tabs[tab]=button
+	_help_space=Control.new();_help_space.mouse_filter=Control.MOUSE_FILTER_IGNORE;header_row.add_child(_help_space)
 	_body_margin=MarginContainer.new();_body_margin.size_flags_vertical=Control.SIZE_EXPAND_FILL;_column.add_child(_body_margin)
 	var body:=VBoxContainer.new();body.add_theme_constant_override("separation",3);_body_margin.add_child(body)
 	_requirement=Label.new();_requirement.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART;body.add_child(_requirement)
@@ -402,6 +404,10 @@ func present(state: Dictionary) -> bool:
 	if not notice.is_empty():_message.text=notice
 	visible=state.get("contracts",{}).get("pending_result",{}).is_empty();_refresh();_relayout()
 	return true
+
+## Room for the screen's "?" help button, and which help it shows.
+func set_help_inset(width: float) -> void:_help_space.custom_minimum_size.x=width
+func help_screen() -> String:return "materials" if _tab=="blueprints" and _selected_blueprint>=0 else _tab
 
 func select_tab(tab: String) -> void:
 	if not _active or not visible or not _tabs.has(tab):return

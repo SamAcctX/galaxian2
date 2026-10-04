@@ -40,6 +40,7 @@ const MedalNoticePanel = preload("res://src/presentation/medal_notice_panel.gd")
 const GateConfirmationPanel = preload("res://src/presentation/gate_confirmation_panel.gd")
 const FlightHints=preload("res://src/simulation/flight_hints.gd")
 const StationHelp=preload("res://src/content/station_help_definitions.gd")
+const UISounds=preload("res://src/presentation/ui_sounds.gd")
 const LocationCache = preload("res://src/simulation/lounge_cache.gd")
 const StationGeneration = preload("res://src/content/station_generation_definitions.gd")
 const StationArchive=preload("res://src/simulation/station_archive.gd")
@@ -259,6 +260,9 @@ func _ready() -> void:
 	_hacking.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_hacking.turn_requested.connect(hack_press)
 	_cloak_dialog.choice_requested.connect(func(_choice):_close_cloak_notice())
+	_help_button=TextureButton.new();_help_button.visible=false;_help_button.focus_mode=Control.FOCUS_NONE
+	_help_button.ignore_texture_size=true;_help_button.stretch_mode=TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	_help_button.pressed.connect(open_screen_help);host.add_child(_help_button)
 	_hint_dialog=GateConfirmationPanel.new();host.add_child(_hint_dialog)
 	_hint_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_hint_dialog.choice_requested.connect(func(_choice):_close_flight_hint())
@@ -358,10 +362,41 @@ func _station_help(screen: String) -> void:
 	if _hint_dialog==null or OS.get_environment("GOF2_FLIGHT_HINTS")=="0" or not session is StationSession or _station_help_shown.has(screen):return
 	var id:=StationHelp.text_id(screen)
 	var text:=FlightHints.text(library,bindings,id,touch_actions_enabled()) if id>=0 else ""
-	if text.is_empty():return
-	if not _hint_dialog.present_text(library,bindings,visuals,text,id):return
+	if _show_station_help(id):_station_help_shown[screen]=true
+
+func _show_station_help(id: int) -> bool:
+	var text:=FlightHints.text(library,bindings,id,touch_actions_enabled()) if id>=0 else ""
+	if text.is_empty() or not _hint_dialog.present_text(library,bindings,visuals,text,id):return false
 	_hint_dialog.set_mobile_layout(_mobile_layout);_hint_dialog.set_active(_focused and is_visible_in_tree())
-	_station_help_shown[screen]=true;_station_help_open=true;clear_input()
+	_station_help_open=true;clear_input();return true
+
+## The "?" button at the top right of station screens reopens their help.
+var _help_button: TextureButton
+var _help_screen:=""
+var _help_context:=[]
+func _sync_screen_help(state: Dictionary) -> void:
+	_help_screen=""
+	if _player_mode and session is StationSession and not session.presentation_active() and not state.get("dialogue",{}).get("visible",false) and state.get("contracts",{}).get("pending_result",{}).is_empty() and not medal_notice.visible:
+		if _station_map_open:_help_screen="map"
+		elif _status_open:_help_screen="status"
+		elif _missions_open:_help_screen="missions"
+		elif state.get("hangar_open",false):_help_screen="hangar"
+		elif state.get("lounge_open",false):_help_screen="lounge"
+		elif station_shell.visible:_help_screen="station"
+	if not _help_screen.is_empty() and _help_context!=[library,bindings,visuals]:
+		var art:=OriginalUI.new()
+		var loaded: Dictionary=art.load_regions(library,bindings,visuals,[StationHelp.BUTTON_IMAGE_ID],bindings.mido_travel.get("map",{}).get("ui",{}).get("atlas_resources",{}))
+		_help_button.texture_normal=loaded.get(StationHelp.BUTTON_IMAGE_ID);_help_context=[library,bindings,visuals]
+	_help_button.visible=not _help_screen.is_empty() and _help_button.texture_normal!=null
+	if not _help_button.visible:return
+	var size: Vector2=_help_button.texture_normal.get_size()+Vector2(8.0,8.0)
+	_help_button.size=size;_help_button.position=Vector2(_help_button.get_parent().size.x-size.x,0.0)
+	equipment_panel.set_help_inset(size.x)
+
+func open_screen_help() -> bool:
+	if _help_screen.is_empty() or _hint_dialog.visible:return false
+	UISounds.event(self,UISounds.HELP_WINDOW)
+	return _show_station_help(StationHelp.button_text_id(equipment_panel.help_screen() if _help_screen=="hangar" else _help_screen))
 
 func _close_flight_hint() -> void:
 	if not _hint_dialog.visible:return
@@ -754,6 +789,7 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		_skip_button.disabled=session!=null and session.has_method("cinematic_skipping") and session.cinematic_skipping()
 	_layout_flight_overlays()
 	_refresh_station_shell(state)
+	_sync_screen_help(state)
 	if session is StationSession and session.presentation_active():
 		for node in [station_shell,station_panel,equipment_panel,lounge_panel,map_panel,_menu_button,_launch_button,_hangar_button,_lounge_button,_station_map_button,_save_button,_load_button,_flight_hint,_skip_button]:
 			if node!=null:node.hide()

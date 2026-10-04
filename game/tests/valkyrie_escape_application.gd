@@ -2000,7 +2000,16 @@ func station_help() -> bool:
 	app._unhandled_input(key);await process_frame
 	check(not app._hint_dialog.visible and app.equipment_panel.visible,"Closing the help window did not return to the hangar")
 	check(app.equipment_action("close") and app.equipment_action("open") and not app._hint_dialog.visible,"The hangar help came back in the same game run")
-	app.equipment_action("close")
+	# The "?" button reopens the current screen's help: the Ship tab, then the station menu.
+	app.equipment_panel.select_tab("ship");await process_frame
+	check(app._help_button.visible and app._help_button.texture_normal!=null and app._help_button.get_global_rect().end.x<=app.get_viewport_rect().size.x+1.0,"The hangar has no help button")
+	check(app.open_screen_help() and int(app._hint_dialog.snapshot().get("text_ids",[-1])[0])==612,"The help button did not explain the Ship tab")
+	await capture_free_application("station-help-button-ship")
+	app._unhandled_input(key);await process_frame
+	app.equipment_action("close");await process_frame
+	check(app._help_button.visible and app.open_screen_help() and int(app._hint_dialog.snapshot().get("text_ids",[-1])[0])==633,"The station menu help button did not show 633")
+	app._unhandled_input(key);await process_frame
+	check(not app._hint_dialog.visible,"The station menu help did not close")
 	OS.set_environment("GOF2_FLIGHT_HINTS","0")
 	return failures==0
 

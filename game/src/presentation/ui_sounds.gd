@@ -21,6 +21,8 @@ const HANGAR_BUY:=101
 const HANGAR_SELL:=100
 const HANGAR_MOUNT:=98
 const HANGAR_UNMOUNT:=96
+## Opening a screen's help window (Layout help).
+const HELP_WINDOW:=126
 static var _identity:={}
 static var _clips:={}
 
@@ -30,7 +32,7 @@ static func configure(library: RefCounted,bindings: RefCounted) -> void:
 	_identity=identity;_clips={}
 	var resources:=Audio.new()
 	if not resources.configure(library,bindings):return
-	for id in [PRESS_EVENT,ACTIVATE_EVENT,MAP_SYSTEM,MAP_STATION,MAP_CONFIRM,MAP_ZOOM_IN,MAP_ZOOM_OUT,MAP_DRAG,HANGAR_BUY,HANGAR_SELL,HANGAR_MOUNT,HANGAR_UNMOUNT]:
+	for id in [PRESS_EVENT,ACTIVATE_EVENT,MAP_SYSTEM,MAP_STATION,MAP_CONFIRM,MAP_ZOOM_IN,MAP_ZOOM_OUT,MAP_DRAG,HANGAR_BUY,HANGAR_SELL,HANGAR_MOUNT,HANGAR_UNMOUNT,HELP_WINDOW]:
 		var clip:=OneShot.prepare(resources,id)
 		if not clip.is_empty():_clips[id]=clip
 
