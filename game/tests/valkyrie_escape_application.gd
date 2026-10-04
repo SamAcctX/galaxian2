@@ -2184,6 +2184,8 @@ func fly_supernova_coromesk() -> void:
 		var now: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
 		var alive: Array=range(now.size()).filter(func(id):return int(now[id].vitals.hull)>0 and now[id].get("active",false) and now[id].get("hostile",false))
 		var wing: Array=alive.filter(func(id):return id!=0)
+		# Until he is found (targeted, 55) he flies peacefully: target him first.
+		if alive.is_empty() and int(now[0].vitals.hull)>0 and now[0].get("active",false):return [0]
 		return wing if not wing.is_empty() else alive
 	await capture_free_application("supernova-bounty")
 	if not await fight_until("bounty",func():return him.call([]).is_empty(),pack,bounty_radio):return
