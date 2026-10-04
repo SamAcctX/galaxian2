@@ -313,6 +313,12 @@ func acknowledge_contract_result(serial: int) -> bool:
 
 func action(name: String) -> bool:
 	error=""
+	# Skip (pause window) works while a scene holds the controls.
+	if name=="skip_dialogue":
+		if _world==null:return reject("No flight to skip")
+		var skipped: RefCounted=_world.skip_story_dialogue()
+		if skipped==null:return reject(_world.error)
+		return _commit(skipped,false)
 	if not can_control() and not (can_stop_mining() and name in ["dock","fire"]):return reject("Mining controls are inactive")
 	var world: RefCounted
 	match name:
@@ -358,6 +364,7 @@ func action(name: String) -> bool:
 	return true
 
 func turret_state() -> Dictionary:return {} if _world==null else _world.turret_state()
+func story_skip_available() -> bool:return _world!=null and _world.has_method("story_skip_available") and _world.story_skip_available()
 func cloak_state() -> Dictionary:return {} if _world==null else _world.cloak_state()
 func time_extender_state() -> Dictionary:return {} if _extender==null else _extender.snapshot()
 func booster_state() -> Dictionary:return {} if _world==null else _world.booster_state()

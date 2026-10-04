@@ -2482,7 +2482,16 @@ func fly_supernova_ambush() -> void:
 	check(cast.size()==22 and cast[1].get("static_object",false) and range(2,22).all(func(id):return int(cast[id].actor_kind)==9),"The Void at 154 has no Valkyrie ambush cast")
 	await capture_free_application("supernova-void-154")
 	# Make for Valkyrie at once (as a player would) and wait beside it to dock.
-	var valkyrie:=func(frame):return frame._encounter.combat_snapshot().actors[1].pose.origin
+	# Once the conversation starts, Skip it from the pause window (text 384).
+	var skipped:=[false]
+	var valkyrie:=func(frame):
+		if not skipped[0] and frame._radio.snapshot().get("started",[false])[0]==true:
+			skipped[0]=true
+			check(app.pause_state().get("skip_available",false) and app.session.action("skip_dialogue"),"The Void conversation offers no Skip: "+app.session.error)
+			var lines: Array=app.session.flight_owner()._radio.snapshot().finished
+			check(lines.slice(0,8).all(func(done):return done==true) and not app.session.flight_owner().story_skip_available(),"Skip did not finish the Void conversation")
+			print("SUPERNOVA 154 skipped the opening conversation")
+		return frame._encounter.combat_snapshot().actors[1].pose.origin
 	# The fighters are left to chase: dock and win the hack before the countdown ends.
 	if failures or not await story_flight(154,"valkyrie",valkyrie,func(_frame):return [],radio_ids,600,1500.0):return
 	print("SUPERNOVA 154 radio ",radio_ids)

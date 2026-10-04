@@ -420,6 +420,13 @@ func snapshot() -> Dictionary:
 		result["text"] = _text[int(row.text_id)]
 	return result
 
+## Skip (pause window): the first `count` lines count as started and finished
+## at once; a line still playing among them stops.
+func finish_through(count: int) -> void:
+	for index in mini(count,_started.size()):
+		_started[index]=true;_finished[index]=true
+	if _active>=0 and _active<count:_active=-1;_visible=false
+
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted = get_script().new()
 	copy._definition = _definition.duplicate(true)

@@ -2869,6 +2869,21 @@ func toggle_turret() -> RefCounted:
 	next._pilot.angular_units=Vector2.ZERO;next._pilot.lateral_units_per_millisecond=0.0
 	return next
 
+## Skip (pause window, text 384): story scenes with a long opening
+## conversation (recipe skip_lines) finish those lines at once.
+func story_skip_available() -> bool:
+	if _mission_context==null or _radio==null or not _radio.has_method("finish_through"):return false
+	var count:=int(_mission_context.recipe().get("skip_lines",0))
+	var finished: Array=_radio.snapshot().get("finished",[])
+	return count>0 and finished.size()>=count and finished.slice(0,count).has(false)
+
+func skip_story_dialogue() -> RefCounted:
+	error=""
+	if not story_skip_available():reject("There is no conversation to skip");return null
+	var next:=fork_for_frame()
+	next._radio=_radio.fork_for_frame();next._radio.finish_through(int(_mission_context.recipe().skip_lines))
+	return next
+
 ## Ships with an automatic turret switch its fire off and on (original HUD button).
 func toggle_auto_turret() -> RefCounted:
 	error=""

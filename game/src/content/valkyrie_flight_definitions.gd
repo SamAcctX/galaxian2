@@ -626,7 +626,7 @@ const SCRIPTED:={
 			{"radio_index":8,"on":"finished","action":"dockable","first_actor":1,"end_actor":2,"enabled":true},
 			{"radio_index":8,"on":"finished","action":"countdown","duration_ms":91000},
 			{"radio_index":11,"action":"countdown","stop":true}],
-		"success":{"kind":"radio_finished","index":27},"failure":{"kind":"countdown"}},
+		"success":{"kind":"radio_finished","index":27},"failure":{"kind":"countdown"},"skip_lines":8},
 	# 157: the final battle at Var Lupra. #0-#9 Terran fighters (random
 	# hulls) on a route, #10 the Terran carrier (18804), #11-#20 stealth fighters
 	# and #21 Trunt Harval (hidden, asleep, in formation far out), #22 Alice
@@ -668,7 +668,7 @@ const SCRIPTED:={
 			# (50000, 0, 70000) while Alice fires the array, through the reversal.
 			{"radio_index":14,"on":"finished","action":"cutscene","actor":23,"offset":Vector3(50000,0,70000),"until":[35,[16,6500,1]]},
 			{"radio_index":16,"on":"finished","action":"supernova_reversal"}],
-		"success":{"kind":"radio_finished","index":16,"hold_ms":6500}},
+		"success":{"kind":"radio_finished","index":16,"hold_ms":6500},"skip_lines":4},
 	# 158: Luur, after the reversal. #0 Trunt Harval (race 10 in the original
 	# cast, Scimitar 49, named, hull x3) and #1-#3 three hostile 100-hull objects
 	# (model 18882, origin +-10 km). 10 s: "The sun is back to normal!"; the
@@ -684,7 +684,7 @@ const SCRIPTED:={
 		"radio":[[0,3083,2201,5,[10000]],[0,3084,2202,6,[0]],[39,3085,2203,6,[1]],[0,3086,2204,6,[2]],[39,3087,2205,6,[3]],
 			[39,3088,2206,54,[0,75,100]],[0,3089,2207,6,[5]],[39,3090,2208,12,[0]],[0,3091,2209,6,[7]],[39,3092,2210,54,[0,25,100]],[0,3093,2211,1,[0]]],
 		"radio_actions":[{"radio_index":4,"on":"finished","action":"wake","first_actor":0,"end_actor":1,"attack_range":50000}],
-		"success":{"kind":"radio_finished","index":15}},
+		"success":{"kind":"radio_finished","index":15},"skip_lines":3},
 	# 160: cutaway at Thynome (kind 170, sketch of s84-94): caption at 2 s, the
 	# result 2 s after it; success on the last line; then MOVE_ON_ENTRY 161.
 	160:{"points":[Vector3.ZERO],"groups":[],
@@ -698,6 +698,9 @@ const SCRIPTED:={
 		"timed_actions":[{"after_ms":0,"action":"cutaway"}],
 		"success":{"kind":"radio_finished","index":6}},
 }
+
+## skip_lines: the pause window's Skip (384) finishes that many opening radio
+## lines at once (original: 154, 157, 158; timers keep counting from the skip).
 
 ## Convoy hunts (kind 163): at each listed station a transport of the system's
 ## race waits with five fighters around a point far from the station. Within
@@ -1120,7 +1123,7 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 		if row.has("dock"):docks[actor]={"mode":row.dock,"dockable":row.get("dockable",true),"transfer":row.get("dockable",true)}
 		actor+=1 if row.has("static") else int(row.count)
 	return {"actor_count":first,"ship_groups":groups,"placement":{"kind":"points","points":plan.points.duplicate()},"radio":radio,"docks":docks,"shuttles":plan.get("shuttles",{}).duplicate(true),"cloakers":cloakers,"proximity_wakes":wakes,"player_route":plan.get("player_route",{}).duplicate(),
-		"success":plan.success.duplicate(),"failure":plan.get("failure",{"kind":"never"}).duplicate(),"story":_advance(cursor),"turn_hostile":plan.get("turn_hostile",{}).duplicate(),"radio_actions":plan.get("radio_actions",[]).duplicate(true),"timed_actions":plan.get("timed_actions",[]).duplicate(true),"asteroid_ore":int(plan.get("asteroid_ore",-1)),"gas_clouds":plan.get("gas_clouds",{}).duplicate(true)}
+		"success":plan.success.duplicate(),"failure":plan.get("failure",{"kind":"never"}).duplicate(),"story":_advance(cursor),"turn_hostile":plan.get("turn_hostile",{}).duplicate(),"radio_actions":plan.get("radio_actions",[]).duplicate(true),"timed_actions":plan.get("timed_actions",[]).duplicate(true),"asteroid_ore":int(plan.get("asteroid_ore",-1)),"gas_clouds":plan.get("gas_clouds",{}).duplicate(true),"skip_lines":int(plan.get("skip_lines",0))}
 
 ## A static row with an offset stands at its point plus that offset (80: the
 ## battlestation and its weak points); without one it keeps the origin.

@@ -65,6 +65,10 @@ func verify() -> void:
 	# Before the training ends only the opening entries remain.
 	pause.present({"campaign_cursor":1,"contracts":{},"cargo":{}})
 	check(pause.snapshot().buttons==[s[41],s[31],s[511],s[58]],"opening entries "+str(pause.snapshot().buttons))
+	# A story scene with a long opening conversation also offers Skip (384).
+	pause.present({"campaign_cursor":154,"contracts":{},"cargo":{},"skip_available":true})
+	check(pause.snapshot().buttons.back()==s[384],"no Skip entry "+str(pause.snapshot().buttons))
+	pause.press(s[384]);check(asked.back()=="skip","Skip did not ask to skip")
 	# Action Freeze: orbit around the ship within 1500..20000, Back restores.
 	var world:=Node3D.new();get_root().add_child(world)
 	var camera:=Camera3D.new();world.add_child(camera);camera.global_position=Vector3(0,200,800)

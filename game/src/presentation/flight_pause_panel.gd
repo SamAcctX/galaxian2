@@ -6,9 +6,9 @@ signal view_changed(view: String)
 const MissionsPanel=preload("res://src/presentation/missions_panel.gd")
 ## Original string ids (Mac table): Pause, Resume, Options, Missions, Cargo
 ## hold, Back to Main Menu, its confirmation, OK, Back, Action Freeze.
-const TEXT:={"title":40,"resume":41,"options":31,"missions":128,"cargo":165,"main_menu":511,"confirm":512,"ok":513,"back":169,"freeze":58}
+const TEXT:={"title":40,"resume":41,"options":31,"missions":128,"cargo":165,"main_menu":511,"confirm":512,"ok":513,"back":169,"freeze":58,"skip":384}
 ## Original order; Resume is the remake's keyboard/controller-friendly first row.
-const ENTRIES:=["resume","options","missions","cargo","main_menu","freeze"]
+const ENTRIES:=["resume","options","missions","cargo","main_menu","freeze","skip"]
 ## Missions appears after the training flights, Cargo hold after the opening.
 const MISSIONS_CURSOR:=16
 const CARGO_CURSOR:=2
@@ -82,6 +82,7 @@ func entries() -> Array:
 	for key in ENTRIES:
 		if key=="missions" and (cursor<MISSIONS_CURSOR or not _missions_ready or not _state.get("contracts") is Dictionary):continue
 		if key=="cargo" and cursor<CARGO_CURSOR:continue
+		if key=="skip" and not _state.get("skip_available",false):continue
 		shown.append(key)
 	return shown
 

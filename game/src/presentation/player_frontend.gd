@@ -205,6 +205,8 @@ func _flight_pause_action(action: String) -> void:
 			game.set_action_freeze(true)
 			if not _flight_pause.begin_freeze(game.freeze_camera(),game.freeze_pivot()):game.set_action_freeze(false)
 		"unfreeze":game.set_action_freeze(false)
+		"skip":
+			if game.session.action("skip_dialogue"):_resume()
 
 func _show_pause_controls() -> void:
 	if not has_session() or game.session.status not in ["running","gate_confirmation_required","gate_map_required"] or menu._ui==null:
