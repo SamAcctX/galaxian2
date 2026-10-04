@@ -7,8 +7,9 @@ extends RefCounted
 ##  - attack (195): rank * 150 + 1000 credits
 ## Both are ten times as much on the hardest difficulty. No fee at the black
 ## market system (25), stations 100/101/108, during mission 48, at a story
-## station's own talk, or where a pirate outpost stands. Assumption: a docking
-## that opens with a story conversation is not charged either.
+## station's own talk, or where a pirate outpost stands, nor when a save is
+## loaded at a station. Assumption: a docking that opens with a story
+## conversation is not charged either.
 ## Assumption: Supernova-struck systems (also exempt in the original) are not
 ## exempted; the remake has no such system state.
 

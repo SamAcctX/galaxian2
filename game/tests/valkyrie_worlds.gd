@@ -61,6 +61,35 @@ func run():
 		var context:={"system_id":world.system_id,"station_id":station,"campaign_cursor":47,"difficulty":0.5,"rank":0,"mission_kind":-1,"mission_completed":true,"mission_story":false,"companions_empty":true,"side_missions_empty":true,"station_response":false,"special_arrival":false,"void_encounter":false}
 		var factory:=Factory.new()
 		check(factory.configure_free_factory(bindings,cat,0,[81,86],context,1),str(station)+": "+factory.error)
+	# Quineros adds each terminated board leader's ship (45-48) as a pirate build.
+	var wanted_stock: RefCounted=load("res://src/simulation/station_stock.gd").new()
+	var seeded: RefCounted=load("res://src/simulation/seeded_random.gd").new();seeded.seed_from(107)
+	check(wanted_stock.prepare(bindings,cat,{"station_id":107,"campaign_cursor":140,"ship_price_percent":0,"valkyrie_owned":true,"supernova_owned":true,"difficulty":0.5,"energy_availability_percent":0,"missile_availability_percent":0,"wanted_ships":[45,48]},seeded.snapshot(),1789103558),"Quineros wanted stock: "+wanted_stock.error)
+	var offered: Array=wanted_stock.snapshot().get("ships",[]).map(func(row):return int(row.ship_id))
+	check(offered.has(45) and offered.has(48) and offered.has(60),"Quineros lacks the terminated pilots' ships: "+str(offered))
+	var VW=load("res://src/content/valkyrie_world_definitions.gd")
+	var table: Array=cat.tables.get("wanted",[])
+	if table.size()==25:
+		var wanted:={"entries":range(25).map(func(_i):return {"dead":false,"surrendered":false}),"bounties":[0,0,0,0]}
+		wanted.entries[12].dead=true
+		check(VW.wanted_ships({"wanted":wanted},table)==[46],"Only the dead board leader's ship goes on sale")
+		var notice: Dictionary=VW.wanted_ship_notice({"wanted":wanted},table,{})
+		check(notice.get("text_id")==3221 and notice.get("ship_text_id")==948 and VW.wanted_ship_notice({"wanted":wanted},table,{"wanted_12":true}).is_empty(),"The wanted-ship notice is wrong or repeats: "+str(notice))
+	# Docking medal notices: 638 all medals, 639 all gold, 640 + fireworks
+	# blueprint with every add-on medal, 3222 after cursor 161; once per run.
+	var Notices=preload("res://src/content/medal_notices_definitions.gd")
+	var levels:=[];levels.resize(36);levels.fill(2)
+	var career:={"campaign_cursor":140,"base_medals":{"version":1,"levels":levels.duplicate()},"blueprints":{"entries":[{"item_id":232,"available":false}]}}
+	check(Notices.next(career,{}).get("text_id")==638 and Notices.next(career,{638:true}).is_empty(),"All base medals did not give 638 once")
+	levels.fill(1);career.base_medals.levels=levels.duplicate()
+	check(Notices.next(career,{638:true}).get("text_id")==639 and Notices.next(career,{638:true,639:true}).is_empty(),"All gold did not give 639 once (or 640 came without add-on medals)")
+	career.elite_medals=range(36,45)
+	var fireworks: Dictionary=Notices.next(career,{638:true,639:true})
+	check(fireworks.get("text_id")==640 and fireworks.get("blueprint")==232,"All gold and add-on medals did not unlock the fireworks: "+str(fireworks))
+	career.blueprints.entries[0].available=true
+	check(Notices.next(career,{638:true,639:true}).is_empty(),"640 repeated after the fireworks were unlocked (or 3222 came before cursor 162)")
+	career.campaign_cursor=162
+	check(Notices.next(career,{638:true,639:true}).get("text_id")==3222 and Notices.next(career,{638:true,639:true,3222:true}).is_empty(),"The Specter notice 3222 did not come once after cursor 161")
 	# Supernova's stations are expansion worlds too (Katashán, 120).
 	check(not Worlds.location(bindings,120).is_empty(),"Supernova's Katashán is not an expansion world")
 	finish()

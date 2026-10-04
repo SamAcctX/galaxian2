@@ -130,6 +130,31 @@ static func gamma_rate(station_id: int,cursor: int) -> float:
 ## sell the S'Kanarr (39) and ship 41, each on a 1-in-2 draw.
 const WON_SHIPS:={"after_cursor":83,"faction":1,"draw_bound":2,"ships":[[39,1],[41,1]]}
 
+## Quineros (107) also sells each Most Wanted board's last criminal's ship
+## (entries 6/12/18/24: ships 45-48) once he is terminated, as a pirate (race
+## 8) build (verified Generator::getShipBuyList). Docking announces it (3221).
+const WANTED_SHIPS:={"station_id":107,"entries":[6,12,18,24],"faction":8}
+static func wanted_ships(progress: Dictionary,table: Array) -> Array:
+	var state: Variant=progress.get("wanted")
+	var ships:=[]
+	if not state is Dictionary or not state.get("entries") is Array or state.entries.size()!=table.size():return ships
+	for index in WANTED_SHIPS.entries:
+		if index<table.size() and (state.entries[index].get("dead",false) or state.entries[index].get("surrendered",false)):ships.append(int(table[index].ship))
+	return ships
+
+## The docking announcement for the first terminated ship not yet announced
+## in this game run: {} or {"key","text_id","name","ship_text_id"}.
+const WANTED_SHIP_TEXT:=3221
+const SHIP_NAME_TEXT_BASE:=902
+static func wanted_ship_notice(progress: Dictionary,table: Array,shown: Dictionary) -> Dictionary:
+	var state: Variant=progress.get("wanted")
+	if not state is Dictionary or not state.get("entries") is Array or state.entries.size()!=table.size():return {}
+	for index in WANTED_SHIPS.entries:
+		var key:="wanted_%d"%index
+		if index<table.size() and not shown.has(key) and (state.entries[index].get("dead",false) or state.entries[index].get("surrendered",false)):
+			return {"key":key,"text_id":WANTED_SHIP_TEXT,"name":str(table[index].name),"ship_text_id":SHIP_NAME_TEXT_BASE+int(table[index].ship)}
+	return {}
+
 ## After the Supernova ending (cursor above 158) station 120 always sells
 ## ship 49, listed after the first owned-Supernova extra (verified
 ## Generator::getShipBuyList). Ship 44 comes first there once every base medal

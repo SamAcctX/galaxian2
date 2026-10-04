@@ -1705,6 +1705,7 @@ func fly_pirate_base() -> void:
 	if failures or not await dock_application():return
 	check(not app.session.snapshot().dialogue.get("visible",false),"The freed station still refused docking")
 	if failures or not await docking_fee():return
+	if failures or not await wanted_notice():return
 	if failures or not seed_pirate_bases(int(app.session.station_owner().snapshot().contracts.progress.get("pirate_bases",0)) & ~bit):return
 	if not await kaamo_talk(423,1,"pirate-base-unmanned"):return
 	for tick in 120:
@@ -1938,11 +1939,14 @@ func docking_fee() -> bool:
 	var axes:=[0,0];axes[0 if race<2 else 1]=-100 if race in [0,2] else 100
 	var credits:=int(app.session.station_owner().snapshot().contracts.credits)
 	if not seed_career(axes,-1):return false
+	await process_frame
+	check(not app.session.snapshot().dialogue.get("visible",false),"Resume at a hostile station asked the docking fee")
+	if failures or not await depart_to(station) or not await dock_application():return false
 	if not await kaamo_talk(194,1,"docking-fee"):return false
 	var paid: Dictionary=app.session.station_owner().snapshot()
 	print("DOCKING FEE race ",race," credits ",credits," -> ",int(paid.contracts.credits))
 	check(int(paid.contracts.credits)<credits and int(paid.contracts.credits)>=credits-2900 and not app.session.has_method("flight_owner") and not app.session.snapshot().dialogue.get("visible",false),"Paying the docking fee did not take 2700..2899 credits and open the station")
-	if failures or not seed_career(axes,100):return false
+	if failures or not seed_career(axes,100) or not await depart_to(station) or not await dock_application():return false
 	if not await kaamo_talk(194,1,"docking-fee-short",false):return false
 	if not await kaamo_talk(192,1,"docking-fee-missing"):return false
 	for tick in 120:
@@ -1950,8 +1954,39 @@ func docking_fee() -> bool:
 		app.present_session();await process_frame
 	check(app.session.has_method("flight_owner"),"Too few credits for the fee did not send the ship out")
 	if failures:return false
-	if not await dock_application() or not seed_career([0,0],credits):return false
-	return true
+	return seed_career([0,0],credits)
+
+## Docking after a wanted pilot is terminated: 3221 names him and his ship
+## (Quineros sells it from then on), once per game run. The medal notices
+## (638/639/640) need earned medal evidence and are checked in valkyrie_worlds.
+func wanted_notice() -> bool:
+	if not app.session.station_owner().snapshot().contracts.progress.has("wanted"):print("WANTED board not started in this career");return true
+	if not seed_wanted_dead(6):return false
+	# The notice waits behind any "New medal!" window; close those first.
+	for tick in 20:app.session.step(Time.get_ticks_usec());app.present_session();await process_frame
+	check(not app.session.snapshot().dialogue.get("visible",false) or not app.medal_notice.visible,"The wanted notice opened over a medal window")
+	for attempt in 60:
+		if not app.medal_notice.visible:break
+		app.acknowledge_medal_notice();app.present_session();await process_frame
+	if not await kaamo_talk(3221,1,"wanted-ship-notice"):return false
+	check(app.load_station(),"Reload after the wanted notice failed")
+	app.set_player_mode(true);app.show();app.present_session()
+	for tick in 30:app.session.step(Time.get_ticks_usec());app.present_session();await process_frame
+	check(not app.session.snapshot().dialogue.get("visible",false),"The wanted notice repeated in the same game run")
+	return failures==0
+
+## Test shortcut: mark one Most Wanted entry terminated.
+func seed_wanted_dead(index: int) -> bool:
+	var file:=StationSaveFile.new();var path: String=app.station_save_path()
+	var document: Dictionary=file.read_document(path)
+	if document.is_empty():check(false,file.error);return false
+	for part in [document.station,document.career]:
+		if part.get("progress") is Dictionary and part.progress.get("wanted") is Dictionary:part.progress.wanted.entries[index].dead=true
+	var bytes:=file.encode(document)
+	if bytes.is_empty() or not file._write(path,bytes):check(false,file.error);return false
+	check(app.load_station() and not app._save_file.recovered_backup,"The wanted-seeded career did not load: "+app._save_notice.text)
+	app.set_player_mode(true);app.show();app.present_session()
+	return failures==0
 
 ## Test shortcut: set the career's standing axes and (when >= 0) credits.
 func seed_career(axes: Array,credits: int) -> bool:
@@ -1965,7 +2000,7 @@ func seed_career(axes: Array,credits: int) -> bool:
 	if credits>=0:document.career.credits=credits
 	var bytes:=file.encode(document)
 	if bytes.is_empty() or not file._write(path,bytes):check(false,file.error);return false
-	check(app.load_station(),"The seeded career did not load: "+app._save_notice.text)
+	check(app.load_station() and not app._save_file.recovered_backup,"The seeded career did not load: "+app._save_notice.text)
 	app.set_player_mode(true);app.show();app.present_session()
 	return failures==0
 

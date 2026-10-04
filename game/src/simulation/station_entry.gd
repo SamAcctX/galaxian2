@@ -624,6 +624,13 @@ func advance_kaamo(purchase: bool) -> bool:
 	_retain_equipment(inventory)
 	return true
 
+func unlock_medal_blueprint(item_id: int) -> bool:
+	if _contracts==null:return fail("Medal rewards require a career")
+	var career: RefCounted=_contracts.fork()
+	if not career.unlock_medal_blueprint(item_id):return fail(career.error)
+	_contracts=career
+	return true
+
 ## Paying the docking fee also forgives an attack on this station's forces.
 func pay_docking_fee(amount: int) -> bool:
 	if _contracts==null or _state.get("hangar_open",false) or snapshot().dialogue.visible:return fail("The docking fee requires an idle station")

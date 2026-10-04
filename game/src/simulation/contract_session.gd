@@ -735,7 +735,8 @@ func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,st
 	var context:={"station_id":station_id,"campaign_cursor":_state.campaign_cursor,"rank":_state.rank,"reputation":_state.reputation.duplicate(true)}
 	var medals:=LoungeCache.Medals.stock_progress(_state,blueprint_state())
 	var all_medals: bool=LoungeCache.Medals.all_base_gold(int(_state.campaign_cursor),medals)==true and EliteMedals.earned(_state).size()==EliteMedals.TOTAL-EliteMedals.FIRST
-	if not candidate.select_location(bindings,cat,library,context,settings,random_state,unix_seconds,station_context,medals,all_medals):return reject(candidate.error)
+	var wanted: Array=preload("res://src/content/valkyrie_world_definitions.gd").wanted_ships(_state.progress,cat.tables.get("wanted",[]))
+	if not candidate.select_location(bindings,cat,library,context,settings,random_state,unix_seconds,station_context,medals,all_medals,wanted):return reject(candidate.error)
 	var source: RefCounted=_void_source
 	var selected_entry: RefCounted
 	# The native arrival path represents the set-location wrapper. An unchanged
@@ -1077,6 +1078,14 @@ func advance_kaamo(purchase: bool) -> bool:
 		# Anything sold to the club before is gone; the storage starts empty.
 		_state.progress.kaamo_storage={"items":[],"ships":[]}
 	_state.progress.kaamo_state=current+1
+	return true
+
+## A medal reward blueprint (fireworks) granted at docking.
+func unlock_medal_blueprint(item_id: int) -> bool:
+	if _blueprints==null or not _flight.is_empty() or not _pending_flight.is_empty():return reject("Medal rewards require an idle docking")
+	var project: RefCounted=_blueprints.fork_for_transaction()
+	if not project.unlock(item_id):return reject(project.error)
+	_blueprints=project
 	return true
 
 ## The fee an unwelcome pilot pays before the hangar opens.

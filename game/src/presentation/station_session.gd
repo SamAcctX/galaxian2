@@ -75,6 +75,7 @@ func configure_return(library: RefCounted, bindings: RefCounted, visuals: RefCou
 	if not cat.open(library):return fail(cat.error)
 	_world=World.new()
 	if not _world.configure_return(bindings,cat,library,flight,location_settings,unix_seconds):return fail(_world.error)
+	_arrived=true
 	if not location_settings.is_empty():_locations=_world.contract_owner().location_owner()
 	if Transit.available(bindings.mido_travel) and _world.contract_story_ready():
 		if not _world.begin_contract_conversation(bindings,cat,library):return fail(_world.error)
@@ -219,8 +220,14 @@ func poll_wingman_farewell(panel: Control,checkpoint: Callable=Callable()) -> bo
 
 const Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
 const Fee=preload("res://src/content/docking_fee_definitions.gd")
+const MedalNotices=preload("res://src/content/medal_notices_definitions.gd")
+const ValkyrieWorlds=preload("res://src/content/valkyrie_world_definitions.gd")
+## Medal announcements already shown in this game run (as in the original).
+static var _medal_notices_shown:={}
 var _kaamo:={}
 var _kaamo_checked:=false
+## A docking straight from flight (not a Resume): the only time a fee is asked.
+var _arrived:=false
 ## Set when a docking talk sends the ship away (an unmanned station).
 var _forced_departure:=false
 
@@ -253,6 +260,27 @@ func poll_kaamo(panel: Control,checkpoint: Callable=Callable()) -> bool:
 			if not _start_kaamo(panel,[[Fee.SPEAKER,int(fee.text_id),-1]],true,{"#C":_money(int(fee.amount))}):return false
 			_kaamo.fee=int(fee.amount)
 			return true
+		# Docking notices wait until every "New medal!" window is closed.
+		if not before.contracts.get("medal_notices",[]).is_empty():
+			_kaamo_checked=false
+			return true
+		var cat:=Catalogues.new()
+		var wanted: Dictionary=ValkyrieWorlds.wanted_ship_notice(before.contracts.get("progress",{}),cat.tables.get("wanted",[]),_medal_notices_shown) if cat.open(_library) else {}
+		if not wanted.is_empty():
+			var tokens:={"#WANTED_NAME":wanted.name,"#SHIP_NAME":String(_library.strings[int(wanted.ship_text_id)])}
+			if not _start_kaamo(panel,[[MedalNotices.SPEAKER,int(wanted.text_id),-1]],false,tokens):return false
+			_medal_notices_shown[wanted.key]=true
+			return true
+		var notice:=MedalNotices.next(before.contracts,_medal_notices_shown)
+		if not notice.is_empty():
+			var rewarded: RefCounted=_world
+			if notice.has("blueprint"):
+				rewarded=_world.fork()
+				if not rewarded.unlock_medal_blueprint(int(notice.blueprint)):return reject(rewarded.error)
+				if checkpoint.is_valid() and not checkpoint.call(rewarded):return reject("Could not save the medal reward")
+			if not _start_kaamo(panel,[[MedalNotices.SPEAKER,int(notice.text_id),-1]],false):return false
+			_medal_notices_shown[int(notice.text_id)]=true;_world=rewarded;_generation+=1
+			return true
 	if event.is_empty():return true
 	var candidate: RefCounted=_world.fork()
 	if event=="talk":
@@ -270,8 +298,8 @@ func take_forced_departure() -> bool:
 
 ## The unwelcome-pilot fee for this docking, or {} (docking_fee_definitions).
 func _docking_fee(state: Dictionary) -> Dictionary:
-	# A docking that opened with a story conversation is not charged.
-	if int(state.get("dialogue",{}).get("count",0))>0:return {}
+	# Resume and dockings that opened with a story conversation are not charged.
+	if not _arrived or int(state.get("dialogue",{}).get("count",0))>0:return {}
 	var station:=int(state.loadout.station_id)
 	var cat:=Catalogues.new()
 	if not cat.open(_library) or station<0 or station>=cat.tables.stations.size():return {}
@@ -702,7 +730,7 @@ func clear() -> void:
 	_visuals=null;lounge_scene=null;station_sky=null;station_planets=null;_environment=null;_hangar_environment=null;_hangar_lights=[]
 	lighting=null;reflection=null
 	_story_elapsed_ms=0
-	_wingman_notice={};_kaamo={};_kaamo_checked=false;_forced_departure=false
+	_wingman_notice={};_kaamo={};_kaamo_checked=false;_forced_departure=false;_arrived=false
 
 func _clear_presentations() -> void:
 	if is_instance_valid(_blueprint_pickup):_blueprint_pickup.free()

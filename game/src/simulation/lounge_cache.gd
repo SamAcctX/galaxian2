@@ -14,6 +14,7 @@ const Shopping=preload("res://src/content/ordinary_shopping_definitions.gd")
 const DeepScience=preload("res://src/content/deep_science_stock_definitions.gd")
 const Medals=preload("res://src/simulation/base_medal_progress.gd")
 const Dialogue=preload("res://src/simulation/lounge_dialogue.gd")
+const ValkyrieWorlds=preload("res://src/content/valkyrie_world_definitions.gd")
 var error:=""
 var _state:={}
 var _deep_science:={}
@@ -36,7 +37,7 @@ func configure(bindings: RefCounted) -> bool:
 		_state.current_station_id=-1;_state.random={}
 	return true
 
-func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: Variant,settings: Variant,random_state: Variant,unix_seconds: Variant,station_context: RefCounted=null,medal_progress: Dictionary={},all_medals:=false) -> bool:
+func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: Variant,settings: Variant,random_state: Variant,unix_seconds: Variant,station_context: RefCounted=null,medal_progress: Dictionary={},all_medals:=false,wanted_ships: Array=[]) -> bool:
 	_read={}
 	error=""
 	if _state.is_empty() or not Stock.available(bindings) or cat==null or library==null:return reject("This cache cannot generate early station stock")
@@ -69,6 +70,7 @@ func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,co
 		if gold==null:return reject("Deep Science requires the career's retained medal progress")
 		stock_context.all_base_medals_gold=gold
 	if Stock.medal_station(context.station_id,context.campaign_cursor):stock_context.all_supernova_medals=all_medals
+	if int(context.station_id)==int(ValkyrieWorlds.WANTED_SHIPS.station_id) and not wanted_ships.is_empty():stock_context.wanted_ships=wanted_ships.duplicate()
 	var stock:=Stock.new()
 	if not stock.prepare(bindings,cat,stock_context,random.snapshot(),unix_seconds):return reject(stock.error)
 	var contacts:=Contacts.new()
