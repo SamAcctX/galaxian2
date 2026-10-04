@@ -27,7 +27,8 @@ func evaluate(projectiles: RefCounted, bodies: RefCounted, ordered_object_indice
 	if not staged_bodies.supports_weapon_hit(shots.weapon): return fail(staged_bodies.error)
 	# World append order is meaningful and may include duplicate target entries.
 	for object_index in ordered_object_indices:
-		if staged_bodies.collision_context(object_index).is_empty(): return fail(staged_bodies.error)
+		if not staged_bodies.valid_index(object_index):
+			staged_bodies.collision_context(object_index);return fail(staged_bodies.error)
 	var staged_shots: RefCounted = projectiles.fork_state()
 	var geometry := Geometry.new()
 	var contacts := []

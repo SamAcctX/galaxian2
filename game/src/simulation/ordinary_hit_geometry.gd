@@ -9,20 +9,18 @@ var error := ""
 
 func bounds(projectile_position: Variant, velocity_per_ms: Variant, target_center: Variant, half_extent: Variant) -> Dictionary:
 	error = ""
-	if not Projectiles.finite_vector(projectile_position) or not Projectiles.finite_vector(velocity_per_ms) or not Projectiles.finite_vector(target_center):
+	# Every projectile slot meets every target each frame: no script calls here.
+	if not projectile_position is Vector3 or not velocity_per_ms is Vector3 or not target_center is Vector3 or not projectile_position.is_finite() or not velocity_per_ms.is_finite() or not target_center.is_finite():
 		return fail("Ordinary bounds contact requires finite source-space vectors")
-	if not Vitals.integer(half_extent): return fail("Ordinary bounds require an explicit nonnegative integer half extent")
-	var position := Projectiles.scaled(projectile_position,1.0)
-	var velocity := Projectiles.scaled(velocity_per_ms,1.0)
-	var center := Projectiles.scaled(target_center,1.0)
+	if not half_extent is int or half_extent < 0 or half_extent > Vitals.MAX_INTEGER: return fail("Ordinary bounds require an explicit nonnegative integer half extent")
 	# Preserve (center - position) + velocity, with binary32 at each operation.
 	# This uses velocity itself, not a frame displacement or a swept segment.
-	var delta := Vector3(Vitals.single(center.x-position.x),Vitals.single(center.y-position.y),Vitals.single(center.z-position.z))
-	delta = Projectiles.added(delta,velocity)
+	# Engine vectors are binary32: constructing one is that rounding step.
+	var delta := Vector3(target_center.x-projectile_position.x,target_center.y-projectile_position.y,target_center.z-projectile_position.z)
+	delta = Vector3(delta.x+velocity_per_ms.x,delta.y+velocity_per_ms.y,delta.z+velocity_per_ms.z)
 	if not delta.is_finite(): return fail("Ordinary bounds arithmetic exceeds finite coordinates")
-	var upper := Vitals.single(float(half_extent))
-	var lower := Vitals.single(float(-half_extent))
-	var hit := delta.x > lower and delta.x < upper and delta.y > lower and delta.y < upper and delta.z > lower and delta.z < upper
+	var limits := Vector2(float(-half_extent),float(half_extent))
+	var hit := delta.x > limits.x and delta.x < limits.y and delta.y > limits.x and delta.y < limits.y and delta.z > limits.x and delta.z < limits.y
 	return {"hit":hit,"path":"bounds","relative_sample":delta}
 
 func point_geometry(projectile_position: Variant, point_test_result: Variant) -> Dictionary:
