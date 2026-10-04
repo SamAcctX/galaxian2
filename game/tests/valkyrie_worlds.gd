@@ -94,6 +94,11 @@ func run():
 	check(Notices.next(career,{638:true,639:true}).get("text_id")==3222 and Notices.next(career,{638:true,639:true,3222:true}).is_empty(),"The Specter notice 3222 did not come once after cursor 161")
 	var hardcore:={"campaign_cursor":162,"difficulty":1.5,"base_medals":{"levels":[]}}
 	check(Notices.next(hardcore,{}).get("text_id")==3222 and Notices.next(hardcore.merged({"difficulty":0.5},true),{}).is_empty(),"An Extreme career without medals did not get the Specter notice")
+	# Valkyrie's Polytron Boost (195) and AB-4 Octopus tractor (194) can be fitted.
+	var boost: Dictionary=load("res://src/content/booster_definitions.gd").resolve(bindings,cat,[195])
+	check(boost.get("sound_id")==1102 and boost.get("item_id")==195,"The Polytron Boost is not fittable: "+str(boost))
+	var tractor: RefCounted=load("res://src/simulation/tractor_recovery.gd").new()
+	check(tractor.configure(bindings,cat,{"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"ship_id":int(bindings.station_entry.ship_id),"equipment_ids":[194]},lib),"The AB-4 Octopus is not fittable: "+tractor.error)
 	# Supernova's stations are expansion worlds too (Katashán, 120).
 	check(not Worlds.location(bindings,120).is_empty(),"Supernova's Katashán is not an expansion world")
 	finish()

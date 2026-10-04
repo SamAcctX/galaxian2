@@ -5,11 +5,16 @@ const Sampler=preload("res://src/presentation/scenery_animation.gd")
 const Colors=preload("res://src/presentation/effect_color.gd")
 var error:=""
 var reflected: Shader
+var two_sided: Shader
 
 func _init() -> void:
 	# Godot automatically reverses culling for mirrored instance transforms.
 	# Counter that adjustment while preserving source screen winding.
 	reflected=Shader.new();reflected.code=ShaderSource.code.replace("cull_back","cull_front")
+
+## Source material type 3 (expansion beams) draws both faces.
+func use_two_sided() -> void:
+	two_sided=Shader.new();two_sided.code=ShaderSource.code.replace("cull_back","cull_disabled")
 
 func prepare_model(model: Node3D) -> bool:
 	error=""
@@ -44,6 +49,6 @@ func apply_surfaces(model: Node3D, surfaces: Array, darken: float) -> void:
 	for i in model.instances.size():
 		var row: Dictionary=surfaces[i]
 		model.instances[i].transform=row.pose
-		model.materials[i].shader=reflected if row.pose.basis.determinant()<0 else ShaderSource
+		model.materials[i].shader=two_sided if two_sided!=null else (reflected if row.pose.basis.determinant()<0 else ShaderSource)
 		model.materials[i].set_shader_parameter("effect_tint",row.tint)
 		model.materials[i].set_shader_parameter("darken_value",darken)

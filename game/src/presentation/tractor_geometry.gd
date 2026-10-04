@@ -24,6 +24,7 @@ func build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: R
 	beam=models.instantiate(resource);models.clear()
 	add_child(beam);beam.hide();beam.set_meta("source_resource_id",state.beam.model_id)
 	_surface=Surface.new();_sampler=Sampler.new()
+	if int(state.beam.playback.get("render_type",2))==3:_surface.use_two_sided()
 	if not _surface.prepare_model(beam) or not _sampler.configure(beam.surfaces,true):return fail(_surface.error+_sampler.error)
 	_identity=owner.transaction_identity()
 	return true
