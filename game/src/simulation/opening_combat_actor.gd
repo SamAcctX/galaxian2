@@ -912,6 +912,7 @@ func stand_down_story() -> bool:
 	_read={}
 	_state.script_hostile=false;_state.hostile=false;_state.forced_hostile=false
 	if not _hostility.is_empty():_hostility.updated_hostile=false;_hostility.initial_hostile=false
+	_state.surrender_damage=0
 	return set_permissions(bool(_state.get("active",false)),bool(_state.get("damage_allowed",true)),false)
 
 func enable_bakka_combat(bindings: RefCounted) -> bool:
@@ -1312,7 +1313,18 @@ func normal_hit(amount: Variant, nonplayer_source: Variant=false) -> Dictionary:
 		_vitals.configure(kept.hull,kept.armor,kept.shield);result.after=_vitals.snapshot();result.destroyed_now=false
 	if result.is_empty(): reject(_vitals.error)
 	elif result.destroyed_now and nonplayer_source: _state.nonplayer_kill=true
+	elif _state.has("surrender_damage") and not nonplayer_source:_take_surrender_damage(result)
 	return result
+
+## A surrendered ship turns on the player again once the player's shots after
+## the surrender add up to more than a twentieth of its hull.
+func _take_surrender_damage(result: Dictionary) -> void:
+	var lost: int=0
+	for pool in ["hull","armor","shield"]:lost+=maxi(0,int(result.before.get(pool,0))-int(result.after.get(pool,0)))
+	_state.surrender_damage=int(_state.surrender_damage)+lost
+	if int(_state.surrender_damage)*20<=int(_state.get("max_hull",0)) or bool(result.get("destroyed_now",false)):return
+	_state.erase("surrender_damage")
+	if apply_story_hostility():set_permissions(bool(_state.get("active",false)),bool(_state.get("damage_allowed",true)),true)
 
 ## Repair beam: whole hull points up to the ship's maximum; wrecks stay wrecks.
 func heal_hull(amount: int) -> bool:
