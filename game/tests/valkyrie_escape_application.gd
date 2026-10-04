@@ -932,7 +932,7 @@ func fly_supernova_blast() -> void:
 	app.set_player_mode(true);app.show();app.present_session()
 	await process_frame;resume_application_focus()
 	check(app.session.station_owner().snapshot().campaign_cursor==89,"The supernova checkpoint is not at cursor 89")
-	if failures or not seed_cargo([[122,20]]):return
+	if failures or not seed_cargo([[122,5]]):return
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
 	if not await release_application_flight():return
 	var radio:=[]
@@ -954,6 +954,7 @@ func fly_supernova_blast() -> void:
 	while app.session.status=="running" and now_us-began<90000000:
 		if not blast and app.session.flight_owner()._encounter.combat_snapshot().actors.slice(3).all(func(actor):return int(actor.vitals.hull)<=0):
 			blast=true;print("SUPERNOVA blast after ",(now_us-began)/1000000," s");await capture_free_application("supernova-blast")
+		await watch_cutscene("naneroh");await watch_naneroh_blast()
 		if not application_step():return
 		if int((now_us-began)/100000)%20==0:await process_frame
 	check(blast,"The supernova did not destroy Naneroh's ships")
@@ -3189,6 +3190,25 @@ func watch_supernova_bomb() -> void:
 func watch_cutscene(label: String) -> void:
 	if app.session.flight_owner()==null:return
 	var scene: Dictionary=app.session.flight_owner()._cutscene
+## 89: the container flies for the sun, the screen whitens, clears on the
+## newborn (small) sun, then fades to black.
+func watch_naneroh_blast() -> void:
+	var state: Dictionary=app.session.snapshot()
+	if int(state.get("supernova_grown_ms",-1))<0:return
+	var t:=int(state.world_elapsed_ms)-int(state.supernova_grown_ms)
+	var view: Node3D=app.session.scene._bomb_view
+	for mark in [[1500,"flying"],[9400,"flash"],[12000,"supernova"],[17300,"black"]]:
+		if t<int(mark[0]) or cutscene_marks.has("blast-"+mark[1]):continue
+		cutscene_marks["blast-"+mark[1]]=true
+		var swell:=float(app.session.scene.planets._layout.sun_swell)
+		print("SUPERNOVA blast ",mark[1]," at ",t," ms: flash ",view.flash.color," sun ",swell)
+		match mark[1]:
+			"flying":check(view!=null and view.bomb.visible and view.trail.node.visible and state.get("supernova_bomb") is Transform3D,"The Naneroh container is not flying with its trail")
+			"flash":check(view.flash.color.a>.7 and view.flash.color.r>.9,"The blast did not whiten the screen")
+			"supernova":check(view.flash.color.a<.9 and swell<.8,"The newborn supernova is not showing as the white clears")
+			"black":check(view.flash.color.a>.2 and view.flash.color.r<.1,"The scene did not fade to black")
+		await capture_free_application("supernova-blast-"+mark[1])
+
 	if not scene.has("eye"):return
 	var key:="%s-cutscene%d"%[label,int(scene.key)];var clock:=int(app.session.snapshot().world_elapsed_ms)
 	if not cutscene_marks.has(key):cutscene_marks[key]=clock

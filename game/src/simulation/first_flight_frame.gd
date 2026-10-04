@@ -150,6 +150,8 @@ var _supernova_grown_ms:=-1
 ## The ship's pose when the bomb left it, and whether the blast turned it.
 var _supernova_launch:=Transform3D.IDENTITY
 var _supernova_turned:=false
+## The supernova scene in Worlds (supernova_scene): "" the 105 bomb.
+var _supernova_scene:=""
 ## The Valkyrie finale's stage times (hit/burn/charge), its anchor and the
 ## sun direction (157).
 var _finale:={}
@@ -812,7 +814,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 		if next._autopilot!=null and not next._autopilot.observe_scripted_pose(next._pose):reject(next._autopilot.error);return null
 	elif _supernova_thrown():
 		# 105: the blast turns the ship away from the sun and throws it off tumbling.
-		var bomb: Dictionary=Worlds.SUPERNOVA_BOMB
+		var bomb: Dictionary=Worlds.supernova_scene(_supernova_scene)
 		if not next._supernova_turned:next._pose.basis=next._pose.basis.rotated(next._pose.basis.y.normalized(),PI);next._supernova_turned=true
 		var tumble: float=float(delta_ms)/float(bomb.tumble_ms_per_radian)
 		next._pose.basis=next._pose.basis.rotated(next._pose.basis.x.normalized(),tumble).rotated(next._pose.basis.y.normalized(),tumble).orthonormalized()
@@ -1056,8 +1058,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 	# view cuts straight back to the chase camera.
 	if next._cutscene.has("eye"):
 		var seen: Vector3=next._cutscene_target()
-		# "drift": the eye slides this many units per ms from the shot's start.
-		var eye: Vector3=Vector3(next._cutscene.eye)+Vector3(next._cutscene.get("drift",Vector3.ZERO))*float(maxi(0,next._world_elapsed_ms-int(next._cutscene.get("since",next._world_elapsed_ms))))
+		var eye: Vector3=next._cutscene_eye()
 		if seen.distance_to(eye)>1.0 and not next._camera.set_mounted_view(Transform3D(Basis.looking_at(seen-eye,Vector3.UP),eye)):reject(next._camera.error);return null
 	elif next._cutscene.get("ended",false):
 		next._cutscene={}
@@ -1564,7 +1565,8 @@ func story_transfer_state() -> Dictionary:
 
 ## The sun direction for a recipe with an array_finale action, else zero.
 func _finale_sun(catalogues: RefCounted,entry: Dictionary) -> Vector3:
-	if _mission_context==null or catalogues==null or not _mission_context.recipe().get("radio_actions",[]).any(func(action):return action.action=="array_finale"):return Vector3.ZERO
+	var actions: Array=_mission_context.recipe().get("radio_actions",[])+_mission_context.recipe().get("timed_actions",[]) if _mission_context!=null else []
+	if catalogues==null or not actions.any(func(action):return action.action=="array_finale" or action.has("look_sun") or action.has("scene")):return Vector3.ZERO
 	var station_id:=int(entry.get("location",{}).get("station_id",-1))
 	var station: Variant=catalogues.tables.stations.get(station_id) if catalogues.tables.stations is Dictionary else (catalogues.tables.stations[station_id] if station_id>=0 and station_id<catalogues.tables.stations.size() else null)
 	if station==null:return Vector3.ZERO
@@ -1629,23 +1631,66 @@ func _cutscene_pose(actor: int) -> Transform3D:
 	var pose: Variant=state.get("pose",state.get("body_pose"))
 	return pose if pose is Transform3D else Transform3D(Basis.IDENTITY,_pose.origin)
 
+## "drift": the eye slides this many units per ms from the shot's start;
+## with "drift_fade_ms" the speed falls linearly to 0 by then, and it stops
+## at "drift_until_ms" (89).
+func _cutscene_eye() -> Vector3:
+	var since:=maxi(0,_world_elapsed_ms-int(_cutscene.get("since",_world_elapsed_ms)))
+	var travel:=_fading_travel(since,int(_cutscene.get("drift_fade_ms",-1)),int(_cutscene.get("drift_until_ms",-1)))
+	return Vector3(_cutscene.eye)+Vector3(_cutscene.get("drift",Vector3.ZERO))*travel
+
+## ms-equivalent distance covered at a speed falling from 1 to 0 over fade_ms
+## (none: constant speed), counting only until until_ms.
+static func _fading_travel(since: int,fade_ms: int,until_ms: int) -> float:
+	var t:=float(since if until_ms<0 else mini(since,until_ms))
+	if fade_ms<=0:return t
+	t=minf(t,float(fade_ms))
+	return t-t*t/(2.0*float(fade_ms))
+
 func _cutscene_target() -> Vector3:
 	if _cutscene.has("look_at"):return _cutscene.look_at
+	# "look_sun" (89): from the shot's anchor, "toward" units toward the sun and
+	# "right" along the side of a frame facing away from it; the side offset
+	# slides "right_drift" per ms, slowing to 0 by "right_fade_ms", until "until_ms".
+	if _cutscene.has("look_sun") and _sun_toward!=Vector3.ZERO:
+		var aim: Dictionary=_cutscene.look_sun
+		var side: Vector3=Vector3.UP.cross(-_sun_toward).normalized()
+		var since:=maxi(0,_world_elapsed_ms-int(_cutscene.since))
+		var right: float=float(aim.right)+float(aim.get("right_drift",0.0))*_fading_travel(since,int(aim.get("right_fade_ms",-1)),int(aim.get("until_ms",-1)))
+		return Vector3(_cutscene.anchor)+_sun_toward*float(aim.toward)+side*right
 	var bomb: Variant=supernova_bomb_pose()
 	if bomb is Transform3D:return bomb.origin
 	var flight: Variant=finale_flight_point()
 	return flight if flight is Vector3 else _cutscene_pose(int(_cutscene.actor)).origin
 
 ## The flying Naneroh bomb (105) until the flash clears, else null.
+## 89's container instead speeds up: "speed" per ms plus "growth_per_frame"
+## of its distance each 60 Hz frame, until "max_distance".
 func supernova_bomb_pose() -> Variant:
 	if _supernova_grown_ms<0:return null
+	var data: Dictionary=Worlds.supernova_scene(_supernova_scene)
 	var t:=_world_elapsed_ms-_supernova_grown_ms
-	if t>=int(Worlds.SUPERNOVA_BOMB.return_ms):return null
+	if t>=int(data.return_ms):return null
 	var forward: Vector3=_supernova_launch.basis.z.normalized()
-	return Transform3D(_supernova_launch.basis,_supernova_launch.origin+forward*float(Worlds.SUPERNOVA_BOMB.speed)*float(t))
+	var distance:=float(data.speed)*float(t)
+	if data.has("growth_per_frame"):
+		distance=0.0
+		for frame in mini(int(float(t)*0.06),600):
+			distance=minf(distance+float(data.speed)*1000.0/60.0+distance*float(data.growth_per_frame),float(data.max_distance))
+	return Transform3D(_supernova_launch.basis,_supernova_launch.origin+forward*distance)
 
 func _supernova_thrown() -> bool:
-	return _supernova_grown_ms>=0 and _story_locked and _world_elapsed_ms-_supernova_grown_ms>=int(Worlds.SUPERNOVA_BOMB.return_ms)
+	var data: Dictionary=Worlds.supernova_scene(_supernova_scene)
+	return _supernova_grown_ms>=0 and data.has("flee_speed") and _story_locked and _world_elapsed_ms-_supernova_grown_ms>=int(data.return_ms)
+
+## Start the supernova scene once: the 105 bomb leaves the ship; a "camera"
+## launch (89) starts "rise" above the cutscene eye, heading for the sun.
+func _start_supernova(action: Dictionary) -> void:
+	if _supernova_grown_ms>=0:return
+	_supernova_grown_ms=_world_elapsed_ms;_supernova_scene=String(action.get("scene",""));_supernova_launch=_pose
+	var data: Dictionary=Worlds.supernova_scene(_supernova_scene)
+	if data.get("launch","")=="camera" and _cutscene.has("eye") and _sun_toward!=Vector3.ZERO:
+		_supernova_launch=Transform3D(Basis.looking_at(-_sun_toward,Vector3.UP),_cutscene_eye()+Vector3.UP*float(data.rise))
 
 func _story_line_passed(condition: Array,elapsed: int) -> bool:
 	if condition.size()!=2 or int(condition[0])!=35:return false
@@ -2118,7 +2163,7 @@ func _observe_radio() -> bool:
 					if _finale.is_empty():_finale.anchor=_cutscene_pose(int(action.actor))
 					_finale[action.stage]=_world_elapsed_ms
 			elif action.action=="supernova":
-				if _supernova_grown_ms<0:_supernova_grown_ms=_world_elapsed_ms;_supernova_launch=_pose
+				_start_supernova(action)
 			elif action.action in ["dockable","transfer"]:
 				# Once per action, so a won hack point stays closed.
 				# target "last_hacked": the point of the latest won hack (139).
@@ -2268,6 +2313,9 @@ func _observe_radio() -> bool:
 			_cutscene={"key":cutscene.key,"actor":int(cutscene.actor),"eye":eye+Vector3(cutscene.get("offset",Vector3.ZERO)),"drift":Vector3(cutscene.get("drift",Vector3.ZERO)),"since":_world_elapsed_ms}
 			# "look_at": a fixed world point instead of the ship (144).
 			if cutscene.has("look_at"):_cutscene.look_at=Vector3(cutscene.look_at)
+			for key in ["look_sun","drift_fade_ms","drift_until_ms"]:
+				if cutscene.has(key):_cutscene[key]=cutscene[key]
+			_cutscene.anchor=pose.origin
 		elif cutscene.is_empty() and _cutscene.has("eye"):_cutscene={"ended":true}
 		if (radio_actions.any(func(action):return action.action in ["lock_player","cutscene"]) or timed.any(func(action):return action.action=="cutscene")) and radio_lock!=_story_locked:
 			_story_locked=radio_lock
@@ -2284,6 +2332,7 @@ func _observe_radio() -> bool:
 				if held!=_story_locked:
 					_story_locked=held
 					if not _player.set_permissions(bool(_player.read_state().active),not held):return reject(_player.error)
+			elif action.action=="supernova":_start_supernova(action)
 			elif action.action=="hide_station" and not _station_hidden:
 				_station_hidden=true;_return_rules={}
 			elif action.action=="lock_player":
@@ -3198,7 +3247,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	if _wingmen!=null:state.wingman_actors=_wingmen.snapshot()
 	state.merge({"world_type":_entry.world_type,"location":Readonly.freeze(_entry.location) if shared_scenery else _entry.location.duplicate(true),"activated":true,
 		"player_pose":_pose,"control_throttle":_throttle,"player":_player.snapshot(),"gamma_rate":_gamma_rate,"volatile":_volatile_carried(),"instability":_instability,"player_cache":_player.cache_snapshot(),"angular_units":_pilot.angular_units,
-		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"supernova_reversed":_supernova_reversed,"supernova_grown_ms":_supernova_grown_ms,"supernova_bomb":supernova_bomb_pose(),"array_finale":_finale.merged({"now":_world_elapsed_ms}) if not _finale.is_empty() else {},"guided_missile":_encounter!=null and _encounter.guided_missile_active(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),
+		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"supernova_reversed":_supernova_reversed,"supernova_grown_ms":_supernova_grown_ms,"supernova_scene":_supernova_scene,"supernova_bomb":supernova_bomb_pose(),"array_finale":_finale.merged({"now":_world_elapsed_ms}) if not _finale.is_empty() else {},"guided_missile":_encounter!=null and _encounter.guided_missile_active(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),
 		"ship_detail":_detail.snapshot(),"detail_reference":_reference,"actors":[],"random_state":_random.duplicate(true),
 		"cargo":held,"arrival_from_station_id":int(_entry.departure.get("from_station_id",-1)),
 		"navigation_destination_id":_pending_destination,
@@ -3370,7 +3419,7 @@ func fork_for_frame() -> RefCounted:
 	if _autopilot!=null:copy._autopilot=_autopilot.fork_for_frame()
 	copy._preceding_commands=_preceding_commands
 	copy._departure_station=_departure_station
-	copy._return_rules=_return_rules;copy._station_contact=_station_contact;copy._station_hidden=_station_hidden;copy._supernova_reversed=_supernova_reversed;copy._supernova_grown_ms=_supernova_grown_ms;copy._supernova_launch=_supernova_launch;copy._supernova_turned=_supernova_turned;copy._finale=_finale.duplicate();copy._sun_toward=_sun_toward;copy._station_packet=_station_packet.duplicate(true)
+	copy._return_rules=_return_rules;copy._station_contact=_station_contact;copy._station_hidden=_station_hidden;copy._supernova_reversed=_supernova_reversed;copy._supernova_grown_ms=_supernova_grown_ms;copy._supernova_launch=_supernova_launch;copy._supernova_turned=_supernova_turned;copy._supernova_scene=_supernova_scene;copy._finale=_finale.duplicate();copy._sun_toward=_sun_toward;copy._station_packet=_station_packet.duplicate(true)
 	copy._model_basis=_model_basis;copy._throttle=_throttle
 	if _encounter!=null:copy._encounter=_encounter.fork_for_frame()
 	copy._world_elapsed_ms=_world_elapsed_ms

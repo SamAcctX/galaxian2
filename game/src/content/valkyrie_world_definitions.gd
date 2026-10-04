@@ -103,6 +103,22 @@ const SUPERNOVA:={"system_id":27,"until_cursor":157,"intro_cursor":89,"intro_sky
 const SUPERNOVA_BOMB:={"model_id":14247,"speed":13.0,"launch_sound":14,"implode_ms":6500,"implode_sound":2248,
 	"shrink_per_frame":0.95,"flash_ms":7500,"flash_in_ms":500,"return_ms":8000,"flash_out_ms":2000,"flee_speed":12.0,"tumble_ms_per_radian":800.0}
 
+## The Naneroh blast (89, LevelScript), times from 30 s into the scene: a
+## Terran container (16992) trailing an animated beam (14229, pointing back,
+## at half speed) starts 500 above the camera and flies for the sun at 10
+## units/ms plus 10% of its distance each 60 Hz frame, until 200 km out. At
+## 8 s sound 2248 and the sun implodes (x0.95 a frame); at 9 s the screen
+## whitens over 0.5 s, then clears over 10 s on the newborn supernova (the
+## sun at 0.6867, growing 0.00004 per ms); 7 s later it fades to black over
+## 1 s. Assumptions: the supernova sun/sky textures (11761/11762) are not
+## recovered, so the old sky stays; no camera rumble.
+const NANEROH_BLAST:={"model_id":16992,"trail_model_id":14229,"launch":"camera","rise":500.0,"speed":10.0,"growth_per_frame":0.1,"max_distance":200000.0,
+	"launch_sound":-1,"implode_ms":8000,"implode_sound":2248,"shrink_per_frame":0.95,"flash_ms":9000,"flash_in_ms":500,"return_ms":9500,"flash_out_ms":10000,
+	"after_scale":0.6867,"after_growth_per_ms":0.00004,"black_ms":16500,"black_in_ms":1000}
+
+## A recipe "supernova" action's scene by name ("" the 105 bomb).
+static func supernova_scene(name: String) -> Dictionary:return NANEROH_BLAST if name=="naneroh_blast" else SUPERNOVA_BOMB
+
 ## The Valkyrie finale (157, LevelScript stages 9-12). Stage times come from
 ## the recipe's array_finale actions: "hit" (Keith's line 13 ends), "burn"
 ## (line 14 ends), "charge" (3 s after line 15 ends). Hit: explosion sound

@@ -395,13 +395,13 @@ const SCRIPTED:={
 		"success":{"kind":"radio_finished","index":5}},
 	# 89: the supernova at Naneroh (empty orbit; the cast brings the station).
 	# #0 a container, #1 the station, #2 its burning twin (hidden), #3-#10
-	# Midorian fighters, #11 a Midorian capital ship. Caption at 2 s; at 39 s
-	# the twin replaces the station and every ship dies; at 54 s the story
-	# moves on and the drive takes the player to Thynome (MOVE_ON_ENTRY 90).
-	# Assumptions: no camera work or flash yet (player held and unharmed
-	# instead), the fighters wait at their loop points, a Midorian transport
-	# beside the station stands in for the capital ship (its hull 15 has no
-	# ordinary mesh), success at 54 s (39 + 7 + 8).
+	# Midorian fighters, #11 a Midorian capital ship. Caption at 2 s; the
+	# container becomes the blast scene's at 30 s; at 39.5 s the twin replaces
+	# the station and every ship dies; at 47.5 s the story moves on and the
+	# drive takes the player to Thynome (MOVE_ON_ENTRY 90). Assumptions: the
+	# player is held and unharmed rather than hidden, the fighters wait at
+	# their loop points, a Midorian transport beside the station stands in
+	# for the capital ship (its hull 15 has no ordinary mesh).
 	89:{"points":[Vector3.ZERO,Vector3(-63000,0,75000),Vector3(-60000,0,110000),Vector3(-63000,-5000,75000),Vector3(-60000,-5000,110000),Vector3(-77000,-3000,90000)],
 		"groups":[{"count":1,"faction":3,"friendly":true,"static":{"model":16992,"jitter":0},"name_text_id":-1},
 			{"count":1,"faction":3,"friendly":true,"static":{"model":21076,"jitter":0,"offset":Vector3.ZERO,"rotation":Vector3(0,PI,0)},"index":5,"name_text_id":-1},
@@ -410,10 +410,21 @@ const SCRIPTED:={
 			{"count":4,"faction":3,"hull":-1,"friendly":true,"index":3,"offsets":[-1000,-1000,-1000],"bounds":[2000,2000,2000]},
 			{"count":1,"faction":3,"hull":-1,"friendly":true,"freighter":true,"index":5,"offsets":[-8000,-2000,-8000],"bounds":[4000,4000,4000]}],
 		"radio":[[17,2483,-1,5,[2000]]],
-		"timed_actions":[{"after_ms":0,"action":"lock_player","duration_ms":54000,"invulnerable":true},
-			{"after_ms":39000,"action":"hide","first_actor":1,"end_actor":2},{"after_ms":39000,"action":"show","first_actor":2,"end_actor":3},
-			{"after_ms":39000,"action":"destroy","first_actor":3,"end_actor":12}],
-		"success":{"kind":"elapsed","after_ms":54000}},
+		# The camera (LevelScript ctor + process): eye = the station + (10000,
+		# 1500, -20000), creeping (1,0,2) per ms slowing to 0 by 35 s; it looks
+		# 100 km toward the sun and 200 km to the side, the side sliding back 7
+		# per ms (slowing by 50 s) until 39 s. At 30 s the blast scene starts
+		# (NANEROH_BLAST); the station burns and the ships die as the white
+		# clears (39.5 s); the story moves on as the black fade ends (47.5 s).
+		# Assumption: the side is the remake's +x of a frame facing away from
+		# the sun (the original's right-vector sign was not checked).
+		"timed_actions":[{"after_ms":0,"action":"lock_player","duration_ms":47500,"invulnerable":true},
+			{"after_ms":0,"action":"cutscene","actor":1,"offset":Vector3(10000,1500,-20000),"drift":Vector3(1,0,2),"drift_fade_ms":35000,"drift_until_ms":39000,
+				"look_sun":{"toward":100000.0,"right":200000.0,"right_drift":-7.0,"right_fade_ms":50000,"until_ms":39000}},
+			{"after_ms":30000,"action":"supernova","scene":"naneroh_blast"},{"after_ms":30000,"action":"hide","first_actor":0,"end_actor":1},
+			{"after_ms":39500,"action":"hide","first_actor":1,"end_actor":2},{"after_ms":39500,"action":"show","first_actor":2,"end_actor":3},
+			{"after_ms":39500,"action":"destroy","first_actor":3,"end_actor":12}],
+		"success":{"kind":"elapsed","after_ms":47500}},
 	# 80: Battle of Kothar. #0 the Valkyrie battlestation (hostile, not
 	# destroyable), #1-#12 its weak points, #13-#18 pirates and #19-#21 Ward
 	# defenders around (0,0,80000). "Retreat!" once #1-#18 are gone; the

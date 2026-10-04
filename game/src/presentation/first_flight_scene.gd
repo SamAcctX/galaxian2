@@ -447,7 +447,7 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if state.get("supernova_grown_ms",-1)>=0 and planets!=null:
 		if _bomb_view==null:
 			_bomb_view=BombView.new();add_child(_bomb_view)
-			if not _bomb_view.build(_bomb_sources[0],_bomb_sources[1],_bomb_sources[2]):return fail(_bomb_view.error)
+			if not _bomb_view.build(_bomb_sources[0],_bomb_sources[1],_bomb_sources[2],String(state.get("supernova_scene",""))):return fail(_bomb_view.error)
 		planets.set_sun_swell(_bomb_view.present(int(state.world_elapsed_ms)-int(state.supernova_grown_ms),state.get("supernova_bomb")))
 	# The Valkyrie finale (157): burning Valkyrie, the array beam, the flash.
 	if not state.get("array_finale",{}).is_empty():
