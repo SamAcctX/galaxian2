@@ -962,7 +962,7 @@ static func _wanted_recipe(job: Dictionary) -> Dictionary:
 	var calm:={"initial_hostile":false,"updated_hostile":false,"friendly":false}
 	var groups:=[{"first_actor":0,"end_actor":1,"faction":faction,"population_group":"story","origin":"zero","hull_catalogue_id":int(stats.ship),
 		"display_name":String(stats.name),"cargo_override":{"entries":[{"item_id":int(stats.loot[0]),"quantity":int(stats.loot[1])}],"special":false},
-		"ship_state":{"mode":0,"active":true,"targeting_blocked":false,"hull_override":int(wanted.hull)},"policy":calm.duplicate(),
+		"ship_state":{"mode":0,"active":true,"targeting_blocked":false,"hull_override":int(wanted.hull)},"policy":calm.duplicate(),"gun_damage_scale":4,
 		"position":{"kind":"player_offset","offset":WANTED_OFFSET,"bound":Vector3.ZERO}}]
 	var count:=1+int(stats.wingmen)
 	if count>1:

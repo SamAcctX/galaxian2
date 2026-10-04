@@ -99,6 +99,8 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 		data.actor_kinds.append(faction);data.hull_catalogue_ids.append(hull);data.player_weapon_targets.append(id)
 		var weapon:={"unarmed":true,"actor_kind":faction} if freighter else void_weapon(bindings,context.campaign_cursor,context.rank,float(context.difficulty)) if faction==VOID_RACE else shared_weapon(rules.weapons,context.campaign_cursor,context.rank,float(context.difficulty),faction,bool(options.ship_state.get("enhanced_weapon",rival)))
 		if weapon.is_empty():return {}
+		# gun_damage_scale: a story ship's stronger gun (Most Wanted: x4).
+		if int(options.get("gun_damage_scale",1))!=1:weapon.damage=weapon.damage*int(options.gun_damage_scale)
 		weapon.actor_id=id;weapon.hull_catalogue_id=hull;data.npc_weapons.append(weapon)
 	data.target_memberships=target_memberships(data.actor_kinds,cast.player_last_ids)
 	data.companion_player_last_ids=cast.player_last_ids.duplicate()
