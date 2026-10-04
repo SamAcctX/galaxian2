@@ -624,6 +624,13 @@ func advance_kaamo(purchase: bool) -> bool:
 	_retain_equipment(inventory)
 	return true
 
+func hear_bar_flavor() -> bool:
+	if _contracts==null:return fail("Bar talks require a career")
+	var career: RefCounted=_contracts.fork()
+	if not career.hear_bar_flavor():return fail(career.error)
+	_contracts=career;_state.progress=career.snapshot().progress
+	return true
+
 func unlock_medal_blueprint(item_id: int) -> bool:
 	if _contracts==null:return fail("Medal rewards require a career")
 	var career: RefCounted=_contracts.fork()

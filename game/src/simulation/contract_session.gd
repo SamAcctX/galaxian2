@@ -1088,6 +1088,14 @@ func advance_kaamo(purchase: bool) -> bool:
 	_state.progress.kaamo_state=current+1
 	return true
 
+## Supernova 148: a broker's bar talk is heard once per career.
+func hear_bar_flavor() -> bool:
+	var Campaign=preload("res://src/content/valkyrie_campaign_definitions.gd")
+	var talk: int=Campaign.bar_flavor(int(_state.campaign_cursor),int(_state.station_id))
+	if talk<0:return reject("No bar talk waits at this docking")
+	_state.progress.bar_heard=int(_state.progress.get("bar_heard",0))|(1<<(talk-148))
+	return true
+
 ## A medal reward blueprint (fireworks) granted at docking.
 func unlock_medal_blueprint(item_id: int) -> bool:
 	if _blueprints==null or not _flight.is_empty() or not _pending_flight.is_empty():return reject("Medal rewards require an idle docking")

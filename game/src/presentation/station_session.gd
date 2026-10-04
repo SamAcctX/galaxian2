@@ -265,6 +265,17 @@ func poll_kaamo(panel: Control,checkpoint: Callable=Callable()) -> bool:
 		if not before.contracts.get("medal_notices",[]).is_empty():
 			_kaamo_checked=false
 			return true
+		# Supernova 148: a broker's bar talk plays once, like the Kalun Amir
+		# talk on docking (no story move).
+		var Campaign=load("res://src/content/valkyrie_campaign_definitions.gd")
+		var bar: Array=Campaign.bar_flavor_pages(before.contracts.get("progress",{}),int(before.contracts.get("campaign_cursor",-1)),int(before.loadout.station_id))
+		if not bar.is_empty():
+			var heard: RefCounted=_world.fork()
+			if not heard.hear_bar_flavor():return reject(heard.error)
+			if checkpoint.is_valid() and not checkpoint.call(heard):return reject("Could not save the bar talk")
+			if not _start_kaamo(panel,bar,false):return false
+			_world=heard;_generation+=1
+			return true
 		# New Most Wanted criminals on this arrival; like the original, this
 		# docking then shows no other notice.
 		var news: Dictionary=ValkyrieWorlds.wanted_news(before.contracts.get("progress",{})) if _arrived else {}

@@ -293,3 +293,9 @@ static func ship_equipment(ship: Dictionary) -> Array:
 
 static func talk_dialogue(cursor: int) -> int:return int(TALK_DIALOGUE.get(cursor,cursor))
 static func bar_flavor(cursor: int,station_id: int) -> int:return int(BAR_FLAVOR.get(cursor,{}).get(station_id,-1))
+## The bar talk to play on entering this station's lounge, or [] once heard
+## (progress "bar_heard" is a mask of heard result cursors, bit = cursor-148).
+static func bar_flavor_pages(progress: Dictionary,cursor: int,station_id: int) -> Array:
+	var talk:=bar_flavor(cursor,station_id)
+	if talk<0 or int(progress.get("bar_heard",0))&(1<<(talk-148)):return []
+	return Dialogue.RESULT.get(talk,[])

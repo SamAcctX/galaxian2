@@ -2502,6 +2502,13 @@ func fly_supernova_finale() -> void:
 	if not await dock_application() or not await take_station_talk(146,147):return
 	# 147: Alice's call in the Void; the story moves on as the pilot leaves.
 	if not await void_visit(147,148,[2977,2986]):return
+	# 148: a broker's bar (55) has no place for Alice: its talk plays once on
+	# docking and the story stays at 148.
+	if not await depart_to(55) or not await dock_application():return
+	await close_medal_windows()
+	if failures or not await kaamo_talk(2987,6,"supernova-148-broker"):return
+	var after_broker: Dictionary=app.session.station_owner().snapshot()
+	check(after_broker.campaign_cursor==148 and int(after_broker.contracts.progress.get("bar_heard",0))==1,"The broker's talk moved the story or was not kept as heard")
 	# 148: the penthouse bar at Kalun Amir plays 151's talk (-> 152).
 	if not await travel_and_talk(96,148,152):return
 	if not await void_visit(152,153,[3009,3016]):return
