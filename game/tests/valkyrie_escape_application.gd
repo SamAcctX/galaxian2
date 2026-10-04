@@ -1710,6 +1710,7 @@ func fly_pirate_base() -> void:
 	check(not app.session.snapshot().dialogue.get("visible",false),"The freed station still refused docking")
 	if failures or not await docking_fee():return
 	if failures or not await wanted_notice():return
+	if failures or not await station_help():return
 	if failures or not seed_pirate_bases(int(app.session.station_owner().snapshot().contracts.progress.get("pirate_bases",0)) & ~bit):return
 	if not await kaamo_talk(423,1,"pirate-base-unmanned"):return
 	for tick in 120:
@@ -1975,6 +1976,24 @@ func wanted_notice() -> bool:
 	app.set_player_mode(true);app.show();app.present_session()
 	for tick in 30:app.session.step(Time.get_ticks_usec());app.present_session();await process_frame
 	check(not app.session.snapshot().dialogue.get("visible",false),"The wanted notice repeated in the same game run")
+	return failures==0
+
+## First visit of a station screen in a game run opens its help window once
+## (Hangar 611, desktop text variant when touch is off).
+func station_help() -> bool:
+	OS.set_environment("GOF2_FLIGHT_HINTS","1")
+	await close_medal_windows()
+	check(app.equipment_action("open"),"The hangar did not open: "+app.session.error)
+	var help: Dictionary=app._hint_dialog.snapshot()
+	check(app._hint_dialog.visible and int(help.get("text_ids",[-1])[0])==611 and not String(help.get("text","")).is_empty(),"The first hangar visit showed no help window: "+str(help))
+	if failures:OS.set_environment("GOF2_FLIGHT_HINTS","0");return false
+	await capture_free_application("station-help-hangar")
+	var key:=InputEventKey.new();key.pressed=true;key.keycode=KEY_ENTER;key.physical_keycode=KEY_ENTER
+	app._unhandled_input(key);await process_frame
+	check(not app._hint_dialog.visible and app.equipment_panel.visible,"Closing the help window did not return to the hangar")
+	check(app.equipment_action("close") and app.equipment_action("open") and not app._hint_dialog.visible,"The hangar help came back in the same game run")
+	app.equipment_action("close")
+	OS.set_environment("GOF2_FLIGHT_HINTS","0")
 	return failures==0
 
 ## Close every "New medal!" window, as the player would.

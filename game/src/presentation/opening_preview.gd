@@ -39,6 +39,7 @@ const MISSIONS_FIRST_CURSOR:=9
 const MedalNoticePanel = preload("res://src/presentation/medal_notice_panel.gd")
 const GateConfirmationPanel = preload("res://src/presentation/gate_confirmation_panel.gd")
 const FlightHints=preload("res://src/simulation/flight_hints.gd")
+const StationHelp=preload("res://src/content/station_help_definitions.gd")
 const LocationCache = preload("res://src/simulation/lounge_cache.gd")
 const StationGeneration = preload("res://src/content/station_generation_definitions.gd")
 const StationArchive=preload("res://src/simulation/station_archive.gd")
@@ -329,7 +330,7 @@ func _sync_flight_hints(flight: Dictionary) -> void:
 	# Automated checks turn hint windows off unless they test them.
 	if _hint_dialog==null or OS.get_environment("GOF2_FLIGHT_HINTS")=="0":return
 	if not session is FirstFlightSession:
-		if _hint_dialog.visible:_hint_dialog.clear()
+		if _hint_dialog.visible and not (_station_help_open and session is StationSession):_hint_dialog.clear();_station_help_open=false
 		return
 	_hint_dialog.set_mobile_layout(_mobile_layout)
 	_hint_dialog.set_active(_focused and is_visible_in_tree() and not _user_paused)
@@ -341,8 +342,22 @@ func _sync_flight_hints(flight: Dictionary) -> void:
 	if not session.set_pause("hint",true,Time.get_ticks_usec()):_hint_dialog.clear();status.text=session.error;return
 	clear_input()
 
+## First-visit station help (station_help_definitions.gd): once per game run
+## per screen, in the same one-button window as the flight hints.
+static var _station_help_shown:={}
+var _station_help_open:=false
+func _station_help(screen: String) -> void:
+	if _hint_dialog==null or OS.get_environment("GOF2_FLIGHT_HINTS")=="0" or not session is StationSession or _station_help_shown.has(screen):return
+	var id:=StationHelp.text_id(screen)
+	var text:=FlightHints.text(library,bindings,id,touch_actions_enabled()) if id>=0 else ""
+	if text.is_empty():return
+	if not _hint_dialog.present_text(library,bindings,visuals,text,id):return
+	_hint_dialog.set_mobile_layout(_mobile_layout);_hint_dialog.set_active(_focused and is_visible_in_tree())
+	_station_help_shown[screen]=true;_station_help_open=true;clear_input()
+
 func _close_flight_hint() -> void:
 	if not _hint_dialog.visible:return
+	_station_help_open=false
 	if session is FirstFlightSession and not session.set_pause("hint",false,Time.get_ticks_usec()):status.text=session.error;return
 	_hint_dialog.clear();clear_input();present_session()
 
@@ -508,6 +523,7 @@ func reset() -> void:
 	if lounge_panel!=null:lounge_panel.clear()
 	if _cloak_dialog!=null:_cloak_dialog.clear()
 	if _hint_dialog!=null:_hint_dialog.clear()
+	_station_help_open=false
 	if _toll_dialog!=null:_toll_dialog.clear()
 	_toll_notice=false
 	_hints.reset()
@@ -1091,6 +1107,7 @@ func equipment_action(action: String, item_id: int=-1, slot_index: int=-1,quanti
 	if action=="close" and session.campaign_story_ready():
 		if not _begin_campaign_story():return false
 	clear_input();present_session()
+	if action=="open":_station_help("hangar")
 	if action=="close":_autosave_station()
 	return true
 
@@ -1210,7 +1227,9 @@ func open_map(now_microseconds: int=-1,drive_mode:=false) -> bool:
 		if not session.set_pause("map",true,now):map_panel.clear();status.text=session.error;return false
 		_station_map_open=true
 	elif not session.open_map(now,drive_mode):map_panel.clear();status.text=session.error;return false
-	clear_input();present_session();return true
+	clear_input();present_session()
+	if docked:_station_help("map")
+	return true
 
 func open_status(now_microseconds: int=-1) -> bool:
 	if not session is StationSession or not session.has_contracts() or not _focused or not is_visible_in_tree() or session.is_paused():return false
@@ -1218,7 +1237,7 @@ func open_status(now_microseconds: int=-1) -> bool:
 	if not status_panel.configure(library,bindings,visuals) or not status_panel.present(session.station_owner().snapshot()):status.text=status_panel.error;return false
 	if not session.set_pause("status",true,Time.get_ticks_usec() if now_microseconds<0 else now_microseconds):status_panel.clear();status.text=session.error;return false
 	status_panel.set_mobile_layout(_mobile_layout)
-	_status_open=true;clear_input();present_session();return true
+	_status_open=true;clear_input();present_session();_station_help("status");return true
 
 ## The idle station shows each newly reached medal tier once, in order.
 func _sync_medal_notice(state: Dictionary) -> void:
@@ -1245,7 +1264,7 @@ func open_missions(now_microseconds: int=-1) -> bool:
 	if not session is StationSession or not session.has_contracts() or not _focused or not is_visible_in_tree() or session.is_paused():return false
 	if not status_panel.configure(library,bindings,visuals) or not missions_panel.configure(status_panel,library,bindings,visuals) or not missions_panel.present(session.station_owner().snapshot()):status.text=status_panel.error+missions_panel.error;return false
 	if not session.set_pause("missions",true,Time.get_ticks_usec() if now_microseconds<0 else now_microseconds):missions_panel.clear();status.text=session.error;return false
-	_missions_open=true;clear_input();present_session();return true
+	_missions_open=true;clear_input();present_session();_station_help("missions");return true
 
 func close_missions(now_microseconds: int=-1) -> bool:
 	if not _missions_open:return false
@@ -1415,6 +1434,7 @@ func contract_action(action: String,id: int) -> bool:
 	if session is StationSession and session.campaign_story_ready():
 		if not _begin_campaign_story():return false
 	clear_input();present_session()
+	if action=="open" and session is StationSession:_station_help("lounge")
 	if action in ["close","result_close","buy_goods"]:_autosave_station()
 	return true
 
