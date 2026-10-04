@@ -12,9 +12,12 @@ func configure(item: Dictionary,mount: Dictionary) -> bool:
 		error="Manual turret requires its original mount and handling";return false
 	_state={"ready":true,"active":false,"item_id":int(item.id),"mount":mount.position,"yaw":0.0,"pitch":0.0,"camera_pitch":0.0,
 		"yaw_speed":deg_to_rad(float(handling)*0.6591796875),"declaration":row}
+	if row.get("collector",false):_state.collector=true
 	if row.get("auto",false):_state.merge({"auto":true,"auto_clock":Definitions.AUTO_RETARGET_MS,"target_id":-1})
 	return true
 
+## A plasma collector: turret view and aim only, never a shot.
+func collector() -> bool:return not _state.is_empty() and _state.get("collector",false)
 func automatic() -> bool:return not _state.is_empty() and _state.get("auto",false) and _state.get("auto_enabled",true)
 func has_auto() -> bool:return not _state.is_empty() and _state.get("auto",false)
 ## The player can switch automatic fire off and on again; it starts on.

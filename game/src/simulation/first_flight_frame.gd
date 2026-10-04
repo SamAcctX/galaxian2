@@ -30,6 +30,10 @@ const Gas=preload("res://src/simulation/gas_clouds.gd")
 const Bombs=preload("res://src/content/emp_bombs_definitions.gd")
 const GAS_FILTER_SORT:=33
 const GAS_COLLECTOR_SORT:=35
+const COLLECTOR_CROSSHAIRS:=[8030,8029]
+const RED_PLASMA:=204
+const RED_PLASMA_CURSOR:=143
+const RED_PLASMA_LINE:=3150
 ## An Ion Lambda bursts this close to a cloud centre (assumption: its hit body).
 const Tractor=preload("res://src/simulation/tractor_recovery.gd")
 const Aim=preload("res://src/simulation/opening_aim.gd")
@@ -206,6 +210,7 @@ var _forced_cloaks:={}
 var _countdown_end:=-1
 ## A gas cloud was ionized this flight (radio condition 57).
 var _gas_ionized:=false
+static var _red_plasma_warned:=false
 ## Supernova gas clouds (a spectral filter fitted, outside the Void): the
 ## clouds and sparks, the fitted collector and the live Ion Lambda shots.
 var _gas:={}
@@ -1400,21 +1405,33 @@ func _advance_gas(delta_ms: int,turret_active: bool) -> bool:
 	for gun in world.get("secondaries",{}).get("guns",[]):
 		if int(gun.get("equipment",{}).get("item_id",-1)) in Bombs.ION_LAMBDA_ITEMS and gun.has("bomb"):radii[int(gun.slot_index)]=float(gun.bomb.weapon.radius)
 	for event in world.get("secondary_events",[]):
-		if event.get("action")!="detonated" or not radii.has(int(event.get("slot_index",-1))):continue
-		_gas=Gas.ionize(_gas,Vector3(event.blast.position),radii[int(event.slot_index)],hash([event.slot_index,event.blast.projectile_id,_world_elapsed_ms]))
+		if event.get("action")!="detonated" or int(event.get("item_id",-1)) not in Bombs.ION_LAMBDA_ITEMS:continue
+		# The last Ion Lambda empties its slot at launch, so its burst takes the
+		# radius from the item (property 14) when the gun is gone.
+		var radius: float=radii.get(int(event.get("slot_index",-1)),-1.0)
+		if radius<=0.0 and _story_catalogues!=null:radius=float(_story_catalogues.tables.items[int(event.item_id)].properties.get(int(Bombs.VALUES.blast_radius_property),0))
+		if radius<=0.0:continue
+		_gas=Gas.ionize(_gas,Vector3(event.blast.position),radius,hash([event.slot_index,event.blast.projectile_id,_world_elapsed_ms]))
 	_gas_ionized=_gas_ionized or _gas.get("ionized",false)
 	var free_space:=int(_cargo.snapshot().get("free_space",0)) if _cargo!=null else 0
-	# Assumption (gaps file): the collector is not a turret-view device yet, so
-	# with one fitted sparks are drawn in along the ship's nose and taken near
-	# the ship without turret view; turret view (a turret fitted) works too.
-	var aim: Vector3=-(_encounter.turret_aim_pose(_pose) if _encounter!=null and turret_active else _pose).basis.z
-	var result: Dictionary=Gas.step(_gas,delta_ms,_pose.origin,turret_active or not _gas_collector.is_empty(),aim,_gas_collector,free_space)
+	# Sparks are taken and pulled only in turret view (a fitted collector gives
+	# one); the capture box is centred on the turret camera's view.
+	var aim: Vector3=-Transform3D(_camera.snapshot().get("pose",_pose)).basis.z if turret_active and _camera!=null else Vector3.ZERO
+	var result: Dictionary=Gas.step(_gas,delta_ms,_pose.origin,turret_active,aim,_gas_collector,free_space)
 	_gas=result.state
 	var taken:=[]
 	for item in result.picked:taken.append({"item_id":int(item),"quantity":int(result.picked[item])})
 	# The HUD shows the caught plasma like any caught cargo ("1t <plasma>").
 	if not taken.is_empty() and _notices!=null:
 		if not _notices.enqueue_scanned_cargo(taken):return reject(_notices.error)
+	# A spark caught with a full hold is lost: "Cargo hold is full." (notice 27).
+	if int(result.get("lost",0))>0 and taken.is_empty() and _notices!=null:
+		if not _notices.enqueue(27):return reject(_notices.error)
+	# The first Red Plasma caught from 143 on, outside a mission: Keith warns it
+	# is explosive (once; assumption: once per game session, not saved).
+	if not _red_plasma_warned and taken.any(func(row):return int(row.item_id)==RED_PLASMA) and _radio is LocalRadio and _mission_context==null and _objective!=null and int(_objective.campaign_cursor())>=RED_PLASMA_CURSOR:
+		if not _radio.queue_scripted(RED_PLASMA_LINE):return reject(_radio.error)
+		_red_plasma_warned=true
 	if not taken.is_empty() and _cargo!=null:
 		_cargo=_cargo.fork_for_frame()
 		if not _cargo.add_entries(taken):return reject(_cargo.error)
@@ -3138,7 +3155,13 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 		if not _station_packet.is_empty():state.boundary="station_transition_required"
 	if not _unsupported_boundary.is_empty():state.boundary=_unsupported_boundary
 	if not _game_over_packet.is_empty():state.boundary="game_over_transition_required"
-	if _aim!=null:state.player_aim=_aim.snapshot()
+	if _aim!=null:
+		state.player_aim=_aim.snapshot()
+		# A fitted gas collector draws its own turret-view crosshair, switched
+		# to "in range" while sparks are pulled (falls back to the normal one).
+		if not state.player_aim.is_empty() and not _gas_collector.is_empty() and turret_state().get("active",false):
+			state.player_aim.base_image_id=state.player_aim.image_id
+			state.player_aim.image_id=COLLECTOR_CROSSHAIRS[1 if int(_gas.get("pulling",0))>0 else 0]
 	if _targeting!=null:state.mining_targeting=_targeting.snapshot()
 	if _station_targeting!=null:state.station_targeting=_station_targeting.snapshot()
 	if _approach!=null:

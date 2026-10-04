@@ -103,11 +103,21 @@ func _step(elapsed_ms: int) -> Array:
 		_active=null;_message={};_portrait={}
 	return events
 
+## Free-flight story lines beside the toll's: text -> [speaker, voice].
+## 3150: Keith's warning at the first Red Plasma caught (no voice).
+const STORY_LINES:={3150:[0,-1]}
+
+static func scripted_line(text_id: Variant) -> Array:
+	if not text_id is int:return []
+	if Toll.LINES.has(text_id):return [Toll.SPEAKER_ID,int(Toll.LINES[text_id])]
+	return STORY_LINES.get(text_id,[]).duplicate()
+
 ## Queue one scripted line; it plays when no faction message is active.
 func queue_scripted(text_id: int) -> bool:
 	error=""
-	if _identity.is_empty() or not Toll.LINES.has(text_id):return reject("Unsupported scripted radio line")
-	_scripted=_scripted+[{"serial":0,"kind":"scripted","speaker_id":Toll.SPEAKER_ID,"text_id":text_id,"voice_event_id":int(Toll.LINES[text_id])}]
+	var line:=scripted_line(text_id)
+	if _identity.is_empty() or line.is_empty():return reject("Unsupported scripted radio line")
+	_scripted=_scripted+[{"serial":0,"kind":"scripted","speaker_id":int(line[0]),"text_id":text_id,"voice_event_id":int(line[1])}]
 	return true
 
 func valid_message(message: Dictionary) -> bool:
@@ -115,7 +125,8 @@ func valid_message(message: Dictionary) -> bool:
 
 static func valid_payload(rules: Dictionary, message: Dictionary) -> bool:
 	if message.get("kind")=="scripted":
-		return message.size()==5 and message.get("serial")==0 and message.get("speaker_id")==Toll.SPEAKER_ID and message.get("text_id") is int and Toll.LINES.has(message.text_id) and message.get("voice_event_id")==Toll.LINES[message.text_id]
+		var line:=scripted_line(message.get("text_id"))
+		return message.size()==5 and message.get("serial")==0 and not line.is_empty() and message.get("speaker_id")==line[0] and message.get("voice_event_id")==line[1]
 	if message.get("kind")=="arrival_response":
 		if message.size()!=5 or not message.get("serial") is int or message.serial<1 or message.serial>2 or not message.get("speaker_id") is int:return false
 		var profile:=arrival_profile(message.speaker_id)

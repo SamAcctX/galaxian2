@@ -50,6 +50,9 @@ func verify(args: Array) -> void:
 	check(not state.ionized and ionized.ionized and ionized.clouds[0].ionized and ionized.sparks.size()==70,"A centre blast should give 70 sparks: %d"%ionized.sparks.size())
 	check(Clouds.ionize(ionized,Vector3(92000,0,36000),10000.0,12).sparks.size()==70,"A cloud ionized twice")
 	check(Clouds.ionize(state,Vector3(92000,0,36000)+Vector3(5000,0,0),10000.0,11).sparks.size()==48,"A half-radius blast should give 48 sparks")
+	# Sparks burst out of the cloud centre, away from the side the shot hit.
+	var side: Array=Clouds.ionize(state,Vector3(92000,0,36000)+Vector3(5000,0,0),10000.0,11).sparks
+	check(side.all(func(s):return s.position==Vector3(92000,0,36000)) and side.filter(func(s):return s.velocity.x<0.0).size()>side.size()/2,"Sparks should leave the cloud centre away from the blast")
 	check(ionized.sparks.all(func(s):return s.velocity.length()>=20.99 and s.velocity.length()<=42.01 and s.life_ms>=8000 and s.life_ms<22000),"Spark speed or lifetime out of range")
 	# Sparks age out.
 	var aged: Dictionary=ionized
@@ -72,7 +75,13 @@ func verify(args: Array) -> void:
 	var collector:={"speed":26,"box":80,"range":40000}
 	var pulled:=Clouds.step(ahead,10,Vector3.ZERO,true,Vector3.FORWARD,collector,10)
 	check(is_equal_approx(pulled.state.sparks[0].position.z,-19740.0),"A collector did not pull the spark in view")
+	check(int(pulled.state.pulling)==1 and int(Clouds.step(ahead,10,Vector3.ZERO,true,Vector3.BACK,collector,10).state.pulling)==0,"The in-range crosshair does not follow sparks being pulled")
 	check(is_equal_approx(Clouds.step(ahead,10,Vector3.ZERO,true,Vector3.BACK,collector,10).state.sparks[0].position.z,-20000.0),"A collector pulled a spark behind the view")
+	# Outside turret view a fitted collector neither pulls nor takes sparks.
+	var outside:=Clouds.step(ahead,10,Vector3.ZERO,false,Vector3.ZERO,collector,10)
+	check(outside.picked.is_empty() and is_equal_approx(outside.state.sparks[0].position.z,-20000.0),"A collector worked outside turret view")
+	var beside:=Clouds.step(waited,1,at,false,Vector3.ZERO,collector,100)
+	check(beside.picked.is_empty(),"A collector took plasma outside turret view")
 	var snap:=Clouds.snapshot_for_view(taken.state)
 	check(snap.clouds.size()==taken.state.clouds.size() and snap.sparks.size()==taken.state.sparks.size(),"View snapshot is incomplete")
 	if args.size()>=3:

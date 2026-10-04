@@ -45,8 +45,9 @@ func prepare(paths: Array, library: RefCounted, visuals: RefCounted, bindings: R
 		if require_static and not Tracks.has_identity_tracks(decoded.surfaces):
 			fixed_poses=fixed_surface_poses(decoded.surfaces)
 			# Additive overlays (e.g. a sweeping ship light) and animated hulls
-			# (the Cronus) start at the clip's first pose and loop their clip.
-			if fixed_poses.is_empty() and (path.get_file().ends_with("_anim_add.aem") or path.get_file().begins_with("v_ship_")):
+			# (the Cronus) and plasma collector turrets start at the clip's
+			# first pose and loop their clip.
+			if fixed_poses.is_empty() and (path.get_file().ends_with("_anim_add.aem") or path.get_file().begins_with("v_ship_") or path.get_file().begins_with("sn_plasma_collector_")):
 				fixed_poses=first_surface_poses(decoded.surfaces);_looping[path]=true
 			if fixed_poses.is_empty():return reject(path.get_file() + ": source animation semantics are not yet supported in this scene")
 		var prototype := Model.new()

@@ -101,8 +101,10 @@ static func ionize(state: Dictionary,center: Vector3,radius: float,seed_value: i
 		var half:=int(SPARK_CUBE*f)
 		for unused in count:
 			var offset:=Vector3(random.next_int(2*half+1)-half,random.next_int(2*half+1)-half,random.next_int(2*half+1)-half) if half>0 else Vector3.ZERO
-			var position:=center+offset
-			var direction: Vector3=(cloud.position-position).normalized()
+			# Sparks start at the cloud centre and burst away from a point
+			# scattered around the detonation.
+			var position: Vector3=cloud.position
+			var direction: Vector3=(cloud.position-(center+offset)).normalized()
 			if direction==Vector3.ZERO:direction=Vector3.FORWARD
 			var base:=float(SPEED_MIN+random.next_int(SPEED_SPREAD))
 			next.sparks.append({"position":position,"velocity":direction*base*SPEED_BOOST,"base_speed":base,"age_ms":0,
@@ -114,7 +116,7 @@ static func ionize(state: Dictionary,center: Vector3,radius: float,seed_value: i
 static func step(state: Dictionary,delta_ms: int,player_position: Vector3,turret_view: bool,aim: Vector3,collector: Dictionary,free_capacity: int) -> Dictionary:
 	var next:=state.duplicate(true)
 	next.elapsed_ms=int(next.elapsed_ms)+delta_ms
-	var picked:={};var lost:=0;var taken:=0
+	var picked:={};var lost:=0;var taken:=0;var pulling:=0
 	var cone_tan:=tan(deg_to_rad(HALF_FOV_DEG))*BOX_FRACTION*float(collector.get("box",0))/100.0
 	var forward:=aim.normalized()
 	var kept:=[]
@@ -129,7 +131,7 @@ static func step(state: Dictionary,delta_ms: int,player_position: Vector3,turret
 			var along:=-to_player.dot(forward)
 			var across:=(-to_player-forward*along).length()
 			pulled=along>0.0 and across<=along*cone_tan
-		if pulled:spark.velocity=to_player/distance*float(collector.speed)
+		if pulled:spark.velocity=to_player/distance*float(collector.speed);pulling+=1
 		else:
 			var speed: float=spark.velocity.length()
 			if speed>0.0:spark.velocity*=maxf(float(spark.base_speed),speed-SPEED_DECAY*delta_ms)/speed
@@ -147,6 +149,8 @@ static func step(state: Dictionary,delta_ms: int,player_position: Vector3,turret
 	next.sparks=kept
 	# Every caught spark plays the extractor sound, also when the hold is full.
 	next.caught=int(next.get("caught",0))+taken+lost
+	# Sparks being pulled this tick switch the collector crosshair to "in range".
+	next.pulling=pulling
 	return {"state":next,"picked":picked,"lost":lost}
 
 static func snapshot_for_view(state: Dictionary) -> Dictionary:

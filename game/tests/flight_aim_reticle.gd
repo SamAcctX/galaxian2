@@ -41,6 +41,12 @@ func verify(content: String, pack: String, pixels: String) -> void:
 				await process_frame;await process_frame;await RenderingServer.frame_post_draw
 				var output:=OS.get_environment("GOF2_CAPTURE_DIR")
 				if not output.is_empty():check(root.get_texture().get_image().save_png(output.path_join("aim-%s-%d-%s.png"%[library.manifest.profile.edition,sample.image_id,"phone" if phone else "desktop"]))==OK,"Reticle capture failed")
+	# Collector crosshairs (Supernova packs): own art, else the normal reticle.
+	var collector:=sample.duplicate();collector.image_id=8029;collector.base_image_id=1216
+	check(reticle.present(collector),reticle.error)
+	if reticle._textures.has(8029):check(reticle._textures.has(8030) and reticle.sprite.texture==reticle._textures[8029] and reticle._textures[8029].region!=reticle._textures[1216].region,"The collector in-range crosshair is not its own art")
+	else:check(reticle.sprite.texture==reticle._textures[1216],"A pack without collector art lost the reticle")
+	print("Aim reticle collector art: ",reticle._textures.has(8029))
 	var rect:=reticle.sprite.get_rect()
 	var bad:=sample.duplicate();bad.binding_id="0".repeat(64)
 	check(not reticle.present(bad) and reticle.sprite.get_rect()==rect,"Foreign aim replaced the displayed sample")

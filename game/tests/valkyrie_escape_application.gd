@@ -2334,7 +2334,7 @@ func fly_supernova_finale() -> void:
 	check(app.session.flight_owner()._gas.get("clouds",[]).any(func(cloud):return Vector3(cloud.position)==KERNSTAL_CLOUD),"Kernstal has no lesson gas cloud with the spectral filter fitted")
 	if failures or not app.open_secondary_menu(now_us) or not app.session.confirm_secondary(197,now_us):check(false,"The Ion Lambda could not be selected: "+app.status.text+app.session.error);return
 	await capture_free_application("supernova-kernstal-cloud")
-	var radio_ids:=[];var shots:=[0,0];var near:=[false]
+	var radio_ids:=[];var shots:=[0];var near:=[false,false]
 	var lesson:=func(frame):
 		var heard: Array=frame._radio.snapshot().get("finished",[])
 		if heard.size()<4 or heard[3]!=true:return KERNSTAL_WAYPOINT
@@ -2345,19 +2345,21 @@ func fly_supernova_finale() -> void:
 			if at.distance_to(standoff)>1200:return standoff
 			near[0]=true
 		if not frame._gas_ionized or sparks.is_empty():return KERNSTAL_CLOUD
-		sparks.sort_custom(func(a,b):return Vector3(a.position).distance_to(at)<Vector3(b.position).distance_to(at))
-		# The collector works in turret view only: point the nose at the
-		# nearest spark, switch to turret view and hold still while it pulls;
-		# leave turret view to re-aim when the sparks drift out of view.
-		var to_spark: Vector3=Vector3(sparks[0].position)-at
-		var turret: bool=app.session.turret_state().get("active",false)
-		var looking: Vector3=-Transform3D(frame._camera.snapshot().pose).basis.z if turret else -app.session.snapshot().player_pose.basis.z
-		shots[1]+=1
-		if shots[1]%300==0:printerr("DBGLESSON sparks ",sparks.size()," turret ",turret," state ",app.session.turret_state().keys()," angle ",looking.angle_to(to_spark)," dist ",to_spark.length())
-		if turret and looking.angle_to(to_spark)>0.15:app.session.action("change_view");return Vector3(sparks[0].position)
-		if not turret and looking.angle_to(to_spark)<0.1 and to_spark.length()<30000 and app.session.action("change_view"):print("SUPERNOVA Kernstal turret view at ",int(to_spark.length())," m")
-		if app.session.turret_state().get("active",false):return null
-		return Vector3(sparks[0].position)
+		# The collector works in turret view only. Sparks burst out of the
+		# cloud away from the shot: look at the cloud from turret view and
+		# let the collector pull them in.
+		if app.session.turret_state().get("active",false):
+			var view: Transform3D=frame._camera.snapshot().pose
+			var reach: Array=sparks.filter(func(spark):return Vector3(spark.position).distance_to(at)<38000.0)
+			if int(frame._gas.get("pulling",0))>0 and not near[1]:near[1]=true;print("SUPERNOVA Kernstal collector pulling, crosshair ",app.session.snapshot().get("player_aim",{}).get("image_id"))
+			if reach.is_empty():return null
+			reach.sort_custom(func(a,b):return (-view.basis.z).angle_to(Vector3(a.position)-view.origin)<(-view.basis.z).angle_to(Vector3(b.position)-view.origin))
+			return {"turret_aim":Vector3(reach[0].position)}
+		# Stop first: the ship keeps its speed in turret view.
+		if app.session.snapshot().input_throttle>0.01:return at
+		if app.session.action("turret"):print("SUPERNOVA Kernstal turret view with ",sparks.size()," sparks")
+		else:print("SUPERNOVA Kernstal turret refused: ",app.session.error)
+		return null
 	var fire:=func(frame):
 		var heard: Array=frame._radio.snapshot().get("finished",[])
 		var pose: Transform3D=app.session.snapshot().player_pose;var to: Vector3=KERNSTAL_CLOUD-pose.origin
@@ -2613,6 +2615,12 @@ func story_flight(cursor: int,label: String,goal: Callable,hostiles: Callable,ra
 			var aim: Vector3=target if (-pose.basis.z).angle_to(target-pose.origin)<2.8 else pose.origin+pose.basis.x*1000.0
 			steer=missile_steering({"basis":pose.basis,"position":pose.origin},aim)
 			want=1.0 if pose.origin.distance_to(target)>slow else 0.0
+		elif target is Dictionary and target.has("turret_aim"):
+			# Turret view: the stick swings the turret camera; the ship holds still.
+			var view: Transform3D=frame._camera.snapshot().pose
+			var local: Vector3=view.basis.inverse()*(Vector3(target.turret_aim)-view.origin)
+			var length:=maxf(local.length(),1.0)
+			steer=Vector2(clampf(-4.0*local.y/length,-1.0,1.0),clampf(-4.0*local.x/length,-1.0,1.0))
 		for adjustment in 10:
 			var current: float=app.session.snapshot().input_throttle
 			if absf(current-want)<.01 or frame.cinematic_input_blocked():break

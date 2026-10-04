@@ -94,9 +94,15 @@ func _configure_loadout(bindings: RefCounted,catalogues: RefCounted,mounts: RefC
 	# Empty slots stay absent; they do not shift the authored category-slot number.
 	primary.reverse()
 	var forward_count:=primary.size()
-	# A plasma collector (sort 35) sits in the turret slot but fires nothing;
-	# the flight's gas clouds own what it does.
-	primary.append_array(checked.categories[2].filter(func(entry):return int(items[entry.item_id].properties.get(2,-1))!=COLLECTOR_SORT))
+	# A plasma collector (sort 35) sits in the turret slot and gives turret
+	# view but fires nothing; the flight's gas clouds own what it collects.
+	for entry in checked.categories[2]:
+		if int(items[entry.item_id].properties.get(2,-1))!=COLLECTOR_SORT:primary.append(entry);continue
+		if _turret!=null:return reject("Only one manual turret mount is supported")
+		var collector_mount: Dictionary=mounts.resolve(ship_id,2,entry.slot)
+		if collector_mount.is_empty():return reject(mounts.error)
+		_turret=Turret.new()
+		if not _turret.configure(items[entry.item_id],collector_mount):return reject(_turret.error)
 	var staged := []
 	var resolved := []
 	if _next_mount_id > 9223372036854775807 - primary.size(): return reject("Weapon handle limit exceeded")
