@@ -1366,14 +1366,15 @@ func fly_supernova_bomb() -> void:
 		var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
 		return range(2,mini(5,actors.size())).filter(func(id):return int(actors[id].vitals.hull)>0 and actors[id].get("active",false) and actors[id].pose.origin.distance_to(app.session.snapshot().player_pose.origin)<30000)
 	var over:=func():return app.session.status!="running" or app.session.snapshot().campaign_cursor!=105
+	var bombing:=func():return int(app.session.snapshot().get("supernova_grown_ms",-1))>=0
 	for tick in 40000:
 		if over.call():break
 		if app.session.flight_owner().death_active():check(false,"The player died at Naneroh: "+str(app.session.snapshot().player.vitals)+" gamma "+str(app.session.snapshot().get("gamma")));return
 		# Gamma keeps draining: fight for at most 25 s, then press on 25 s.
-		if now_us>=press_on_us and not fighters.call().is_empty():
+		if now_us>=press_on_us and not fighters.call().is_empty() and not bombing.call():
 			if not captured:captured=true;await capture_free_application("supernova-naneroh-fighters")
 			var engaged:=now_us
-			if not await fight_until("naneroh",func():return over.call() or fighters.call().is_empty() or now_us-engaged>25000000,func(_actors):return fighters.call(),radio_ids):return
+			if not await fight_until("naneroh",func():return over.call() or bombing.call() or fighters.call().is_empty() or now_us-engaged>25000000,func(_actors):return fighters.call(),radio_ids):return
 			press_on_us=now_us+25000000
 			continue
 		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
@@ -1389,6 +1390,7 @@ func fly_supernova_bomb() -> void:
 		if not app.session.step(now_us,commands,false,false,0.0):check(false,app.session.error);return
 		app.present_session()
 		await watch_cutscene("naneroh105")
+		await watch_supernova_bomb()
 		if tick%10==0:await process_frame
 		if tick%300==0:print("SUPERNOVA Naneroh ",tick/10," s to go ",int(state.player_pose.origin.distance_to(point)) if point is Vector3 else -1," radio ",radio_ids," vitals ",state.player.vitals," gamma ",state.player.get("gamma"))
 	print("SUPERNOVA Naneroh radio ",radio_ids)
@@ -3105,6 +3107,21 @@ func go_to(station: int) -> bool:
 ## Story cutscenes (64-70): ~1 s in, the player is held, the HUD is hidden
 ## and the camera looks at the named ship; one capture per cutscene.
 var cutscene_marks:={}
+## 105's bomb scene: the bomb in flight, the white flash, the ship thrown off.
+func watch_supernova_bomb() -> void:
+	var state: Dictionary=app.session.snapshot()
+	if int(state.get("supernova_grown_ms",-1))<0:return
+	var t:=int(state.world_elapsed_ms)-int(state.supernova_grown_ms)
+	var view: Node3D=app.session.scene._bomb_view
+	for mark in [[3000,"flying"],[8000,"flash"],[12000,"thrown"]]:
+		if t<int(mark[0]) or cutscene_marks.has("bomb-"+mark[1]):continue
+		cutscene_marks["bomb-"+mark[1]]=true
+		match mark[1]:
+			"flying":check(view!=null and view.bomb.visible and state.get("supernova_bomb") is Transform3D and float(app.session.scene.planets._layout.sun_swell)<1.0,"The bomb is not flying toward the unchanged sun")
+			"flash":check(view.flash.color.a>.9,"The implosion did not whiten the screen: "+str(view.flash.color.a))
+			"thrown":check(app.session.flight_owner()._supernova_turned and not view.bomb.visible and view.flash.color.a<.01 and float(app.session.scene.planets._layout.sun_swell)>1.3,"The blast did not throw the ship off under the swollen sun")
+		await capture_free_application("supernova-bomb-"+mark[1])
+
 func watch_cutscene(label: String) -> void:
 	if app.session.flight_owner()==null:return
 	var scene: Dictionary=app.session.flight_owner()._cutscene

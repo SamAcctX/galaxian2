@@ -274,7 +274,8 @@ const SCRIPTED:={
 	# escorts then turn aside and leave. #5 at 24 s after #3: the fighters
 	# appear ahead (10 s scene) and attack; from #7 dead ones return every
 	# 110 s. At the sun point the player becomes unharmable and "Bombs away!"
-	# (#8); 16 s bomb scene: the supernova grows, flash at ~9 s; the story
+	# (#8); 16 s bomb scene (SUPERNOVA_BOMB: the bomb flies to the sun, it
+	# implodes, white flash, the swollen sun, the ship thrown off); the story
 	# moves on to 106 at Luur (gate, vitals and gamma kept). Gamma applies.
 	# Assumptions: the route length (not recovered) lets a cruising player
 	# arrive soon after "my eyes are hurting" (~150 s, gamma about half gone);
@@ -291,8 +292,8 @@ const SCRIPTED:={
 			{"radio_index":5,"action":"cutscene","actor":2,"ahead":6800.0,"right":1200.0,"up":400.0,"until":[35,[5,10000,0]]},
 			{"radio_index":5,"delay_ms":10000,"action":"wake","first_actor":2,"end_actor":5},
 			{"radio_index":7,"action":"respawn","first_actor":2,"end_actor":5,"every_ms":110000,"ahead_of_player":20000,"radius":[0,3000],"until_radio":8},
-			{"radio_index":8,"action":"lock_player","hidden":true,"invulnerable":true,"duration_ms":16000},
-			{"radio_index":8,"action":"cutscene","actor":-1,"ahead":8000.0,"right":1000.0,"up":1000.0,"until":[35,[8,6000,0]]},
+			{"radio_index":8,"action":"lock_player","invulnerable":true,"until":[35,[8,17000,1]]},
+			{"radio_index":8,"action":"cutscene","actor":-1,"ahead":8000.0,"right":1000.0,"up":1000.0,"until":[35,[8,17000,1]]},
 			{"radio_index":8,"on":"finished","delay_ms":2500,"action":"supernova","grow":true}],
 		"success":{"kind":"radio_finished","index":8,"hold_ms":16000}},
 	# 106: Luur aftermath, all one scene (player held). #0 a stealth fighter

@@ -147,6 +147,9 @@ var _station_hidden:=false
 var _supernova_reversed:=false
 ## World time the supernova started to swell in this flight (105), or -1.
 var _supernova_grown_ms:=-1
+## The ship's pose when the bomb left it, and whether the blast turned it.
+var _supernova_launch:=Transform3D.IDENTITY
+var _supernova_turned:=false
 var _station_packet:={}
 var _model_basis:=Basis.IDENTITY
 var _throttle:=1.0
@@ -797,6 +800,15 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 	elif (_alioth!=null and _alioth.snapshot().input_blocked) or (_sahi!=null and _sahi.snapshot().scripted_coast) or (_probe!=null and _probe.snapshot().scripted_coast):
 		next._pose=next._pilot.coast(_pose,_throttle,float(delta_ms)/1000.0)
 		if not next._pilot.error.is_empty():reject(next._pilot.error);return null
+		next._statistics_pose=next._pose*Transform3D(_model_basis,Vector3.ZERO)
+		if next._autopilot!=null and not next._autopilot.observe_scripted_pose(next._pose):reject(next._autopilot.error);return null
+	elif _supernova_thrown():
+		# 105: the blast turns the ship away from the sun and throws it off tumbling.
+		var bomb: Dictionary=Worlds.SUPERNOVA_BOMB
+		if not next._supernova_turned:next._pose.basis=next._pose.basis.rotated(next._pose.basis.y.normalized(),PI);next._supernova_turned=true
+		var tumble: float=float(delta_ms)/float(bomb.tumble_ms_per_radian)
+		next._pose.basis=next._pose.basis.rotated(next._pose.basis.x.normalized(),tumble).rotated(next._pose.basis.y.normalized(),tumble).orthonormalized()
+		next._pose.origin=Vectors.added(next._pose.origin,Vectors.scaled(Vectors.normalized(next._pose.basis.z),float(delta_ms)*float(bomb.flee_speed)))
 		next._statistics_pose=next._pose*Transform3D(_model_basis,Vector3.ZERO)
 		if next._autopilot!=null and not next._autopilot.observe_scripted_pose(next._pose):reject(next._autopilot.error);return null
 	elif gate_coasting():
@@ -1588,7 +1600,20 @@ func _cutscene_pose(actor: int) -> Transform3D:
 	var pose: Variant=state.get("pose",state.get("body_pose"))
 	return pose if pose is Transform3D else Transform3D(Basis.IDENTITY,_pose.origin)
 
-func _cutscene_target() -> Vector3:return _cutscene_pose(int(_cutscene.actor)).origin
+func _cutscene_target() -> Vector3:
+	var bomb: Variant=supernova_bomb_pose()
+	return bomb.origin if bomb is Transform3D else _cutscene_pose(int(_cutscene.actor)).origin
+
+## The flying Naneroh bomb (105) until the flash clears, else null.
+func supernova_bomb_pose() -> Variant:
+	if _supernova_grown_ms<0:return null
+	var t:=_world_elapsed_ms-_supernova_grown_ms
+	if t>=int(Worlds.SUPERNOVA_BOMB.return_ms):return null
+	var forward: Vector3=_supernova_launch.basis.z.normalized()
+	return Transform3D(_supernova_launch.basis,_supernova_launch.origin+forward*float(Worlds.SUPERNOVA_BOMB.speed)*float(t))
+
+func _supernova_thrown() -> bool:
+	return _supernova_grown_ms>=0 and _story_locked and _world_elapsed_ms-_supernova_grown_ms>=int(Worlds.SUPERNOVA_BOMB.return_ms)
 
 func _story_line_passed(condition: Array,elapsed: int) -> bool:
 	if condition.size()!=2 or int(condition[0])!=35:return false
@@ -2056,7 +2081,7 @@ func _observe_radio() -> bool:
 				radio_lock=true;radio_invulnerable=true;cutscene=action.merged({"key":index})
 			elif action.action=="supernova_reversal":_supernova_reversed=true
 			elif action.action=="supernova":
-				if _supernova_grown_ms<0:_supernova_grown_ms=_world_elapsed_ms
+				if _supernova_grown_ms<0:_supernova_grown_ms=_world_elapsed_ms;_supernova_launch=_pose
 			elif action.action in ["dockable","transfer"]:
 				# Once per action, so a won hack point stays closed.
 				# target "last_hacked": the point of the latest won hack (139).
@@ -3127,7 +3152,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 	if _wingmen!=null:state.wingman_actors=_wingmen.snapshot()
 	state.merge({"world_type":_entry.world_type,"location":Readonly.freeze(_entry.location) if shared_scenery else _entry.location.duplicate(true),"activated":true,
 		"player_pose":_pose,"control_throttle":_throttle,"player":_player.snapshot(),"gamma_rate":_gamma_rate,"volatile":_volatile_carried(),"instability":_instability,"player_cache":_player.cache_snapshot(),"angular_units":_pilot.angular_units,
-		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"supernova_reversed":_supernova_reversed,"supernova_grown_ms":_supernova_grown_ms,"guided_missile":_encounter!=null and _encounter.guided_missile_active(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),
+		"camera_shot":_shot.duplicate(true),"camera_view":_camera.snapshot(),"supernova_reversed":_supernova_reversed,"supernova_grown_ms":_supernova_grown_ms,"supernova_bomb":supernova_bomb_pose(),"guided_missile":_encounter!=null and _encounter.guided_missile_active(),"scenery":_scenery.read_snapshot() if shared_scenery else _scenery.snapshot(),
 		"ship_detail":_detail.snapshot(),"detail_reference":_reference,"actors":[],"random_state":_random.duplicate(true),
 		"cargo":held,"arrival_from_station_id":int(_entry.departure.get("from_station_id",-1)),
 		"navigation_destination_id":_pending_destination,
@@ -3299,7 +3324,7 @@ func fork_for_frame() -> RefCounted:
 	if _autopilot!=null:copy._autopilot=_autopilot.fork_for_frame()
 	copy._preceding_commands=_preceding_commands
 	copy._departure_station=_departure_station
-	copy._return_rules=_return_rules;copy._station_contact=_station_contact;copy._station_hidden=_station_hidden;copy._supernova_reversed=_supernova_reversed;copy._supernova_grown_ms=_supernova_grown_ms;copy._station_packet=_station_packet.duplicate(true)
+	copy._return_rules=_return_rules;copy._station_contact=_station_contact;copy._station_hidden=_station_hidden;copy._supernova_reversed=_supernova_reversed;copy._supernova_grown_ms=_supernova_grown_ms;copy._supernova_launch=_supernova_launch;copy._supernova_turned=_supernova_turned;copy._station_packet=_station_packet.duplicate(true)
 	copy._model_basis=_model_basis;copy._throttle=_throttle
 	if _encounter!=null:copy._encounter=_encounter.fork_for_frame()
 	copy._world_elapsed_ms=_world_elapsed_ms

@@ -22,6 +22,7 @@ const Station=preload("res://src/presentation/station_exterior_geometry.gd")
 const Gates=preload("res://src/presentation/gate_geometry.gd")
 const FlightProjection=preload("res://src/presentation/flight_camera.gd")
 const GasView=preload("res://src/presentation/gas_cloud_view.gd")
+const BombView=preload("res://src/presentation/supernova_bomb_view.gd")
 const Dialogue=preload("res://src/presentation/station_dialogue_panel.gd")
 const TargetFrame=preload("res://src/presentation/flight_target_frame.gd")
 const Reticle=preload("res://src/presentation/flight_aim_reticle.gd")
@@ -75,8 +76,8 @@ var orbit_banner: Control
 var _projection: RefCounted
 var _last:={}
 var _supernova_reversed:=false
-var _supernova_grow:=0.0
-const SUPERNOVA_GROW_MS:=4000.0
+var _bomb_view: Node3D
+var _bomb_sources:=[]
 const World=preload("res://src/content/valkyrie_world_definitions.gd")
 var _last_drill: RefCounted
 var encounter: Node3D
@@ -109,6 +110,7 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 	var message: String=_projection.configure(bindings.flight_projection,state.campaign_cursor,state.has("void_environment"))
 	if not message.is_empty():return fail(message)
 	camera=Camera3D.new();camera.current=activate_camera;add_child(camera)
+	_bomb_sources=[library,visuals,bindings];_bomb_view=null
 	geometry=Geometry.new();add_child(geometry)
 	var ordinary_void_environment: RefCounted=flight.void_environment_owner() if state.player.has("void_context") else null
 	if not geometry.build_departure(library,visuals,bindings,catalogues,state.player_cache,_player_geometry_state(state),"high",true,flight.equipment_owner(),ordinary_void_environment,flight.mission_context_owner()):return fail(geometry.error)
@@ -439,11 +441,12 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if state.get("supernova_reversed",false) and not _supernova_reversed:
 		_supernova_reversed=true;sky.reverse_supernova()
 		if planets!=null:planets.set_sun_swell(1.0)
-	# The Naneroh bomb (105): the sun swells to its supernova size over 4 s.
-	if state.get("supernova_grown_ms",-1)>=0 and planets!=null and _supernova_grow<1.0:
-		_supernova_grow=clampf(float(int(state.world_elapsed_ms)-int(state.supernova_grown_ms))/SUPERNOVA_GROW_MS,0.0,1.0)
-		var sizes: Array=World.SUPERNOVA.sun_scales
-		planets.set_sun_swell(lerpf(float(sizes[0][1]),float(sizes[-1][1]),_supernova_grow))
+	# The Naneroh bomb (105): bomb flight, implosion, flash, swollen sun.
+	if state.get("supernova_grown_ms",-1)>=0 and planets!=null:
+		if _bomb_view==null:
+			_bomb_view=BombView.new();add_child(_bomb_view)
+			if not _bomb_view.build(_bomb_sources[0],_bomb_sources[1],_bomb_sources[2]):return fail(_bomb_view.error)
+		planets.set_sun_swell(_bomb_view.present(int(state.world_elapsed_ms)-int(state.supernova_grown_ms),state.get("supernova_bomb")))
 	if not _present_hit_feedback(state,probe_stage,death):return false
 	sky.commit_view(sky_frame)
 	return true
@@ -524,7 +527,7 @@ func clear() -> void:
 	damage_particles=null;_last_particles=null;_last_gate_animation=null
 	engine_particles=null;_last_engines=null
 	radio=null;_radio_resources=null;npc_markers=null;waypoint_marker=null;station_target_overlay=null
-	hit_arcs=null;orbit_banner=null
+	hit_arcs=null;orbit_banner=null;_bomb_view=null
 func _present_hit_feedback(state: Dictionary,probe_stage: Dictionary,death: RefCounted) -> bool:
 	var hidden: bool=state.dialogue.visible or not state.get("alioth_attack",{}).get("hud_visible",true) or not state.get("sahi_stage",{}).get("hud_visible",true) \
 		or not probe_stage.get("hud_visible",true) or (death!=null and not state.player_destruction.hud_visible) or state.get("guided_missile",false) \

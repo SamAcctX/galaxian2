@@ -92,6 +92,17 @@ const SUPERNOVA:={"system_id":27,"until_cursor":157,"intro_cursor":89,"intro_sky
 	# Flares: [up to cursor, animation speed]; they start 1 s into their loop.
 	"overlay_speeds":[[106,1.0],[157,1.5]],"overlay_start_ms":1000}
 
+## The Naneroh implosion bomb (105, LevelScript stages 11-13), times from the
+## launch 2.5 s after "Bombs away!": the bomb (model 14247, sound 14) flies on
+## from the ship at 13 units/ms with the camera on it; at 6.5 s sound 2248 and
+## the sun implodes (x0.95 per 60 Hz frame); at 7.5 s the screen whitens over
+## 0.5 s, then clears over 2 s on the swollen sun (1.3733) while the ship,
+## turned away from the sun, is thrown off at 12 units/ms tumbling 1.25 rad/s
+## on two axes. Assumptions: the camera rumble and the blast's effect on the
+## stealth fighters are not shown.
+const SUPERNOVA_BOMB:={"model_id":14247,"speed":13.0,"launch_sound":14,"implode_ms":6500,"implode_sound":2248,
+	"shrink_per_frame":0.95,"flash_ms":7500,"flash_in_ms":500,"return_ms":8000,"flash_out_ms":2000,"flee_speed":12.0,"tumble_ms_per_radian":800.0}
+
 ## The supernova flare layers at this location: [{mesh_id, texture_id, speed}],
 ## none outside Ginoya, at the blast (89) or after the reversal.
 static func supernova_sun_scale(system_id: int,cursor: int) -> float:
