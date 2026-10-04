@@ -12,6 +12,7 @@ const Numbers=preload("res://src/content/opening_definitions.gd")
 const ProbeStage=preload("res://src/simulation/void_probe_stage.gd")
 const Failure=preload("res://src/content/kappa_outcome_definitions.gd")
 const Extraction=preload("res://src/simulation/mining_extraction.gd")
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 var error:=""
 var _state:={}
 var _rules:={}
@@ -278,8 +279,9 @@ func snapshot() -> Dictionary:
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
-	copy._state=_state.duplicate(true);copy._rules=_rules.duplicate(true);copy._progress_rules=_progress_rules.duplicate(true)
-	copy._lines=_lines.duplicate(true);copy._failure_lines=_failure_lines.duplicate(true);copy._field_identity=_field_identity
+	# Rules and dialogue are immutable after configuration: freeze once, then share them.
+	copy._state=_state.duplicate(true);copy._rules=Readonly.freeze(_rules);copy._progress_rules=Readonly.freeze(_progress_rules)
+	copy._lines=Readonly.freeze(_lines);copy._failure_lines=Readonly.freeze(_failure_lines);copy._field_identity=_field_identity
 	copy._initial_progress=_initial_progress.duplicate(true)
 	copy._asteroids_destroyed=_asteroids_destroyed
 	return copy
