@@ -1,6 +1,6 @@
 extends RefCounted
 ## Fresh ordinary flight after cinematic release. Pose stays in the scene;
-## retained angular response is sampled after its camera pass for the next frame.
+## mouse response moves the current frame; other input is prepared after camera.
 const Definitions = preload("res://src/content/opening_player_flight_definitions.gd")
 const Pilot = preload("res://src/simulation/pilot_motion.gd")
 const Vehicle = preload("res://src/simulation/vehicle_response.gd")
@@ -31,7 +31,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, sensitivity: float)
 	_pilot.angular_units=Vector2(rules.initial_pitch_units,rules.initial_yaw_units)
 	return true
 
-func motion(scene: Dictionary, phase: Variant, delta_ms: Variant, strafe_command:=0.0, brake:=false) -> Dictionary:
+func motion(scene: Dictionary, phase: Variant, delta_ms: Variant, strafe_command:=0.0, brake:=false, commands:=Vector2.ZERO, mouse_capture:=false) -> Dictionary:
 	error=""
 	if _identity.is_empty(): return fail("Configure player flight before advancing")
 	for key in _identity:
@@ -41,11 +41,12 @@ func motion(scene: Dictionary, phase: Variant, delta_ms: Variant, strafe_command
 	var prior: Variant=scene.get("player_pose")
 	if not prior is Transform3D: return fail("Player flight requires a retained pose")
 	var effective_throttle := 0.0 if brake else float(_rules.initial_throttle)
-	var pose: Transform3D=_pilot.advance_prepared(prior,effective_throttle,float(delta_ms)/1000.0,strafe_command)
+	var pose: Transform3D=_pilot.advance(prior,commands,effective_throttle,float(delta_ms)/1000.0,strafe_command,1.0,true) if mouse_capture else _pilot.advance_prepared(prior,effective_throttle,float(delta_ms)/1000.0,strafe_command)
 	if not _pilot.error.is_empty(): return fail(_pilot.error)
 	_effective_throttle=effective_throttle
 	var result := _identity.duplicate()
 	result.prior_pose=prior;result.pose=pose
+	result.strafe_offset=pose.basis.x.normalized()*(pose.origin-prior.origin).dot(pose.basis.x.normalized())
 	return result
 
 func sample_commands(commands: Vector2, delta_ms: Variant,mouse_capture:=false) -> bool:

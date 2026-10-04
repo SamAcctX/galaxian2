@@ -30,6 +30,7 @@ func update(delta_ms: Variant, radio: Dictionary, scene: Dictionary,response: Di
 	error = ""
 	if _director == null: return reject("Configure opening view before updating")
 	if not response.is_empty() and not _rig.refresh_player_response(response.captured,response.handling):return reject(_rig.error)
+	_rig.carry_strafe(response.get("strafe_offset",Vector3.ZERO))
 	var handoff: bool=_director.releases_control(radio)
 	var next: RefCounted = _director.fork_for_frame()
 	if not next.advance(delta_ms, radio): return reject(next.error)

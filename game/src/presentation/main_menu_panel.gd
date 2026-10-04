@@ -49,7 +49,8 @@ func _ready() -> void:
 	get_window().size_changed.connect(_layout)
 
 func _process(delta: float) -> void:
-	if _title_active and _focused and is_visible_in_tree():advance_title(delta*1000.0)
+	# The startup title must become visible without a first focus-making click.
+	if _title_active and is_visible_in_tree():advance_title(delta*1000.0)
 
 func _notification(what: int) -> void:
 	if what in [MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN,MainLoop.NOTIFICATION_APPLICATION_FOCUS_OUT]:_focused=what==MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN

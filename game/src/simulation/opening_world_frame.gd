@@ -209,7 +209,7 @@ func evaluate(timeline: RefCounted, scenery: RefCounted, delta_ms: Variant, pres
 	var contact_pose: Transform3D=previous.scene.player_pose
 	if next._engine_audio!=null and not next._engine_audio.before_motion(int(previous.camera.shot.phase)):return fail(next._engine_audio.error)
 	if previous.camera.shot.phase==4 and next._flight!=null:
-		next._player_motion_event=next._flight.motion(previous.scene,previous.camera.shot.phase,delta_ms,strafe,brake)
+		next._player_motion_event=next._flight.motion(previous.scene,previous.camera.shot.phase,delta_ms,strafe,brake,commands,mouse_capture)
 		if next._player_motion_event.is_empty(): return fail(next._flight.error)
 		contact_pose=next._player_motion_event.pose
 	elif int(previous.camera.shot.phase)>4 and next._player_motion!=null:
@@ -232,9 +232,6 @@ func evaluate(timeline: RefCounted, scenery: RefCounted, delta_ms: Variant, pres
 			contact_pose.origin=contact.center_after
 			next._player_motion_event.pose=contact_pose
 	if next._engine_audio!=null and not next._engine_audio.follow_player(contact_pose,int(next._player_state.snapshot().vitals.hull),int(delta_ms)):return fail(next._engine_audio.error)
-	if next._aim!=null:
-		var preceding_camera: Transform3D=previous.camera.view.get("pose",Transform3D.IDENTITY)
-		if not next._aim.advance(contact_pose,preceding_camera,hud_viewport,commands,mouse_capture and previous.camera.shot.phase==4):return fail(next._aim.error)
 	# The ordinary player pass still precedes world weapons, so its shield pulse
 	# reaches the current frame's projectile accounting and fractional truncation.
 	if next._player_recharge and next._player_state.advance_recharge(delta_ms).is_empty():return fail(next._player_state.error)
@@ -261,7 +258,7 @@ func evaluate(timeline: RefCounted, scenery: RefCounted, delta_ms: Variant, pres
 	if next._engine_particles!=null:
 		if next._engine_particles.engine_enabled()!=(not (previous.camera.shot.phase==4 and brake)) and not next._engine_particles.set_engine_enabled(not (previous.camera.shot.phase==4 and brake)):return fail(next._engine_particles.error)
 		if not next._engine_particles.advance(contact_pose,delta_ms):return fail(next._engine_particles.error)
-	if next._flight!=null:next._player_motion_event.camera_response={"captured":mouse_capture,"handling":next._flight.response_factor()}
+	if next._flight!=null:next._player_motion_event.camera_response={"captured":mouse_capture,"handling":next._flight.response_factor(),"strafe_offset":next._player_motion_event.get("strafe_offset",Vector3.ZERO)}
 	if not clock.begin_frame(delta_ms,false,detail,next._player_motion_event,{"random_state":field.random_state,"fade_active":fade_active}): return fail(clock.error)
 	var scene: Dictionary=clock.snapshot()
 	if next._engine_audio!=null and not next._engine_audio.apply_controller(scene.get("escape",{}),scene.scene.player_pose):return fail(next._engine_audio.error)
@@ -283,7 +280,7 @@ func evaluate(timeline: RefCounted, scenery: RefCounted, delta_ms: Variant, pres
 		if fire_primary:
 			next._primary_fire=next._primaries.fire(scene.scene.player_pose,player.active and player.hull>0)
 			if next._primary_fire.is_empty(): return fail(next._primaries.error)
-		if not next._flight.sample_commands(commands,delta_ms,mouse_capture): return fail(next._flight.error)
+		if not (mouse_capture and previous.camera.shot.phase==4) and not next._flight.sample_commands(commands,delta_ms,mouse_capture): return fail(next._flight.error)
 		if next._engine_audio!=null and not next._engine_audio.sample_commands(commands):return fail(next._engine_audio.error)
 	var camera_random: Dictionary=field.random_state
 	if int(scene.camera.shot.phase)>4:camera_random=scene.escape.random_state
@@ -298,6 +295,7 @@ func evaluate(timeline: RefCounted, scenery: RefCounted, delta_ms: Variant, pres
 	# the next logic pass, never a second activation or camera pass in this one.
 	if not clock.finish_frame(present_radio): return fail(clock.error)
 	if next._aim!=null:
+		if not next._aim.advance(scene.scene.player_pose,scene.camera.view.get("pose",Transform3D.IDENTITY),hud_viewport,commands,mouse_capture and int(scene.camera.shot.phase)==4,true):return fail(next._aim.error)
 		var npc_contact := false
 		for weapon in next._primary_contacts:
 			for contact in weapon.contacts:

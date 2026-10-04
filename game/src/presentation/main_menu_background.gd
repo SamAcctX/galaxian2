@@ -171,6 +171,8 @@ func set_active(value: bool) -> void:
 	_refresh_update_mode()
 
 func _refresh_update_mode() -> void:
-	render_target_update_mode=SubViewport.UPDATE_ALWAYS if _active and _focused else SubViewport.UPDATE_DISABLED
+	# Paint a visible menu once even when it was built before window focus.
+	# Its retained texture then stays visible while background motion is paused.
+	render_target_update_mode=SubViewport.UPDATE_ALWAYS if _active and _focused else SubViewport.UPDATE_ONCE if _active else SubViewport.UPDATE_DISABLED
 
 func reject(message: String) -> bool:error=message;return false
