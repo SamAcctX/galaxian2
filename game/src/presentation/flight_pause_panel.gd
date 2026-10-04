@@ -82,6 +82,11 @@ func entries() -> Array:
 	for key in ENTRIES:
 		if key=="missions" and (cursor<MISSIONS_CURSOR or not _missions_ready or not _state.get("contracts") is Dictionary):continue
 		if key=="cargo" and cursor<CARGO_CURSOR:continue
+		# The Supernova Challenge (mission type 0xb7) hides Missions and Cargo
+		# hold; the alien world hides Missions.
+		var challenge: bool=_state.get("mission") is Dictionary and _state.mission.get("supernova_challenge",false)==true
+		if key in ["missions","cargo"] and challenge:continue
+		if key=="missions" and _state.get("alien_orbit",false):continue
 		if key=="skip" and not _state.get("skip_available",false):continue
 		shown.append(key)
 	return shown

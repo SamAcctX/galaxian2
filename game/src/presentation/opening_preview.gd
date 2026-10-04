@@ -2005,6 +2005,8 @@ func pause_state() -> Dictionary:
 	for key in ["campaign_cursor","mission","contracts","cargo"]:
 		if flight.get(key) is Dictionary or (key=="campaign_cursor" and flight.has(key)):state[key]=flight[key]
 	state.skip_available=session.has_method("story_skip_available") and session.story_skip_available()
+	# The alien world (the Void) has no station: Missions is hidden there.
+	state.alien_orbit=flight.get("location") is Dictionary and int(flight.location.get("station_id",0))<0
 	return state
 
 ## Action Freeze: hide every HUD layer and keep rendering only the 3D view

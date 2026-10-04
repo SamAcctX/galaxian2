@@ -69,6 +69,11 @@ func verify() -> void:
 	pause.present({"campaign_cursor":154,"contracts":{},"cargo":{},"skip_available":true})
 	check(pause.snapshot().buttons.back()==s[384],"no Skip entry "+str(pause.snapshot().buttons))
 	pause.press(s[384]);check(asked.back()=="skip","Skip did not ask to skip")
+	# The Supernova Challenge hides Missions and Cargo hold; the alien world hides Missions.
+	pause.present({"campaign_cursor":152,"contracts":{},"cargo":{},"mission":{"supernova_challenge":true}})
+	check(not pause.snapshot().buttons.has(s[128]) and not pause.snapshot().buttons.has(s[165]),"the challenge shows Missions or Cargo "+str(pause.snapshot().buttons))
+	pause.present({"campaign_cursor":154,"contracts":{},"cargo":{},"alien_orbit":true})
+	check(not pause.snapshot().buttons.has(s[128]) and pause.snapshot().buttons.has(s[165]),"the alien world gating is wrong "+str(pause.snapshot().buttons))
 	# Action Freeze: orbit around the ship within 1500..20000, Back restores.
 	var world:=Node3D.new();get_root().add_child(world)
 	var camera:=Camera3D.new();world.add_child(camera);camera.global_position=Vector3(0,200,800)
