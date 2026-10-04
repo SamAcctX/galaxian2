@@ -1660,6 +1660,10 @@ func fly_kaamo_siege() -> void:
 	check(app.save_station(false) and app.load_station(),"Saving the modded ship failed: "+app._save_notice.text)
 	var resumed: Dictionary=app.session.station_owner().snapshot()
 	check(resumed.loadout.ship_instance.upgrade_tags==tags and resumed.contracts.progress.kaamo_storage.ships.size()==1,"Fresh Resume lost the mods or the parked ship")
+	# The owned club's hangar shows the stored ship on a pad beside the player's.
+	var on_pads: Array=app.session.geometry.models.filter(func(model):return model.has_meta("source_ship_id") and model!=app.session.geometry.ship_model).map(func(model):return int(model.get_meta("source_ship_id")))
+	check(on_pads==[int(resumed.contracts.progress.kaamo_storage.ships[0].ship_id)],"The club hangar does not show the stored ship: "+str(on_pads))
+	await capture_free_application("kaamo-hangar-parked")
 	# A parked ship can be sold from the club hangar for its listed price.
 	var parked: Dictionary=resumed.contracts.progress.kaamo_storage.ships[0]
 	var purse:=int(resumed.contracts.credits)
@@ -3217,13 +3221,13 @@ func watch_naneroh_blast() -> void:
 			"black":check(view.flash.color.a>.2 and view.flash.color.r<.1,"The scene did not fade to black")
 		await capture_free_application("supernova-blast-"+mark[1])
 
+func watch_cutscene(label: String) -> void:
+	if app.session.flight_owner()==null:return
+	var scene: Dictionary=app.session.flight_owner()._cutscene
 	if not scene.has("eye"):return
 	var key:="%s-cutscene%d"%[label,int(scene.key)];var clock:=int(app.session.snapshot().world_elapsed_ms)
 	if not cutscene_marks.has(key):cutscene_marks[key]=clock
 	if int(cutscene_marks[key])<0 or clock-int(cutscene_marks[key])<1000:return
-func watch_cutscene(label: String) -> void:
-	if app.session.flight_owner()==null:return
-	var scene: Dictionary=app.session.flight_owner()._cutscene
 	cutscene_marks[key]=-1
 	var view: Transform3D=app.session.flight_owner()._camera.snapshot().pose
 	var target: Vector3=app.session.flight_owner()._cutscene_target()

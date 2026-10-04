@@ -116,6 +116,18 @@ func configure_saved(library: RefCounted,bindings: RefCounted,visuals: RefCounte
 		if not _world.begin_campaign_conversation(bindings,cat,library):return fail(_world.error)
 	return _build_scene(library,bindings,visuals,cat,now_microseconds,camera_seed)
 
+## Other ships parked on the hangar's pads for this docking (Parking).
+func _parked_ships(bindings: RefCounted,row: int,now_microseconds: int) -> Array:
+	var state: Dictionary=_world.snapshot()
+	var random:=RandomNumberGenerator.new();random.seed=hash([int(state.loadout.station_id),now_microseconds])
+	var parked:=[]
+	for entry in Parking.choose(row,int(state.loadout.station_id),int(state.campaign_cursor),state.contracts.get("progress",{}),func(n: int):return random.randi_range(0,n-1)):
+		var ship: Dictionary=bindings.resolve_hangar_ship(int(entry.ship_id))
+		if ship.is_empty():bindings.error="";continue
+		ship.position=Vector3(entry.position)+Vector3(ship.position);ship.rotation_y=float(entry.rotation_y)
+		parked.append(ship)
+	return parked
+
 func _build_scene(library: RefCounted, bindings: RefCounted, visuals: RefCounted, cat: RefCounted, now_microseconds: int, camera_seed: int) -> bool:
 	var before: Dictionary=_world.snapshot()
 	var products: Array=before.get("contracts",{}).get("blueprints",{}).get("products",[]).filter(func(row):return row.station_id==before.loadout.station_id)
@@ -129,6 +141,7 @@ func _build_scene(library: RefCounted, bindings: RefCounted, visuals: RefCounted
 	if view.is_empty():return fail("This station has no supported presentation")
 	selected.ship=bindings.resolve_hangar_ship(int(seed.ship_id))
 	if selected.ship.is_empty():return fail(bindings.error)
+	selected.parked=_parked_ships(bindings,int(selected.row),now_microseconds)
 	geometry=Geometry.new();add_child(geometry)
 	if not geometry.build(selected,library,visuals,bindings):return fail(geometry.error)
 	station_sky=SourceSky.new();add_child(station_sky)
@@ -219,6 +232,7 @@ func poll_wingman_farewell(panel: Control,checkpoint: Callable=Callable()) -> bo
 	return true
 
 const Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
+const Parking=preload("res://src/content/hangar_parking_definitions.gd")
 const Fee=preload("res://src/content/docking_fee_definitions.gd")
 const MedalNotices=preload("res://src/content/medal_notices_definitions.gd")
 const ValkyrieWorlds=preload("res://src/content/valkyrie_world_definitions.gd")

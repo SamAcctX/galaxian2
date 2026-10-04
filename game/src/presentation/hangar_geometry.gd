@@ -19,9 +19,9 @@ func build(selected: Dictionary, library: RefCounted, visuals: RefCounted, bindi
 		paths[layer.path] = true
 		for child in layer.children:
 			paths[child.path] = true
-	if selected.has("ship"):
-		paths[selected.ship.path] = true
-		for light in selected.ship.get("lights", []):
+	for ship in ([selected.ship] if selected.has("ship") else []) + selected.get("parked", []):
+		paths[ship.path] = true
+		for light in ship.get("lights", []):
 			paths[light.path] = true
 	if paths.is_empty():
 		return fail("No supported hangar geometry was selected")
@@ -49,6 +49,14 @@ func build(selected: Dictionary, library: RefCounted, visuals: RefCounted, bindi
 			light_model.set_meta("source_light_slot", light.slot)
 			ship_instances.append_array(light_model.instances)
 			ship_light_models.append(light_model)
+	# Other ships parked on the hangar pads (asleep, engines off).
+	for ship in selected.get("parked", []):
+		var parked := add_model(resources, ship.path, self)
+		parked.set_meta("source_ship_id", ship.ship_id)
+		parked.position = ship.position
+		parked.rotation.y = ship.rotation_y
+		for light in ship.get("lights", []):
+			add_model(resources, light.path, parked)
 	var first := true
 	for instance in instances:
 		var transform_value := Transform3D.IDENTITY
