@@ -121,7 +121,7 @@ func _parked_ships(bindings: RefCounted,row: int,now_microseconds: int) -> Array
 	var state: Dictionary=_world.snapshot()
 	var random:=RandomNumberGenerator.new();random.seed=hash([int(state.loadout.station_id),now_microseconds])
 	var parked:=[]
-	for entry in Parking.choose(row,int(state.loadout.station_id),int(state.campaign_cursor),state.contracts.get("progress",{}),func(n: int):return random.randi_range(0,n-1)):
+	for entry in Parking.choose(row,int(state.loadout.station_id),int(state.get("campaign_cursor",0)),state.get("contracts",{}).get("progress",{}),func(n: int):return random.randi_range(0,n-1)):
 		var ship: Dictionary=bindings.resolve_hangar_ship(int(entry.ship_id))
 		if ship.is_empty():bindings.error="";continue
 		ship.position=Vector3(entry.position)+Vector3(ship.position);ship.rotation_y=float(entry.rotation_y)
