@@ -11,6 +11,7 @@ var WHITE:=PackedByteArray([255,255,255,255])
 var error:=""
 var beams:=[]
 var burns:={}
+var bursts:=[]
 var flash: ColorRect
 var _clips:={}
 var _last_ms:=-1
@@ -32,6 +33,13 @@ func build(library: RefCounted,visuals: RefCounted,bindings: RefCounted) -> bool
 			if node==null:parts=[];error="";break
 			parts.append(node)
 		burns[key]=parts
+	for row in data.bursts:
+		var node:=_model(int(data.burst_model),library,visuals,bindings)
+		if node==null:error="";break
+		var surface:=Surface.new();surface.use_two_sided();var sampler:=Sampler.new()
+		if not surface.prepare_model(node) or not sampler.configure(node.surfaces,true):node.queue_free();break
+		var span: Dictionary=sampler.snapshot().range
+		bursts.append({"node":node,"surface":surface,"sampler":sampler,"start_ms":int(span.start_ms),"length_ms":int(span.end_ms)-int(span.start_ms),"row":row})
 	var layer:=CanvasLayer.new();layer.layer=20;add_child(layer)
 	flash=ColorRect.new();flash.color=Color(1,1,1,0);flash.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	flash.set_anchors_preset(Control.PRESET_FULL_RECT);layer.add_child(flash)
@@ -72,6 +80,21 @@ func present(finale: Dictionary) -> void:
 		var surfaces: Array=row.surface.prepare_surfaces(animation,pose,WHITE,Vector4.ONE)
 		if not surfaces.is_empty():row.surface.apply_surfaces(row.node,surfaces,1.0)
 		row.sampler=sampler
+	var camera:=get_viewport().get_camera_3d()
+	for burst in bursts:
+		var row: Array=burst.row;var base: int=int(times.get(row[0],-1))
+		var age: int=now-base-int(row[1])
+		burst.node.visible=base>=0 and age>=0 and age<=int(burst.length_ms) and camera!=null
+		if not burst.node.visible:continue
+		# A look-at explosion faces the camera.
+		var at: Vector3=anchor.origin+Vector3(row[2][0],row[2][1],row[2][2])
+		var facing:=Basis.looking_at(camera.global_position-at,Vector3.UP).scaled(Vector3.ONE*float(row[3]))
+		var sampler: RefCounted=burst.sampler.fork_for_frame()
+		var animation: Dictionary=sampler.sample(int(burst.start_ms)+age,Transform3D.IDENTITY)
+		if animation.is_empty():burst.node.visible=false;continue
+		var surfaces: Array=burst.surface.prepare_surfaces(animation,Transform3D(facing,at),WHITE,Vector4.ONE)
+		if not surfaces.is_empty():burst.surface.apply_surfaces(burst.node,surfaces,1.0);burst.surface.apply_uv(burst.node,float(int(burst.start_ms)+age))
+		burst.sampler=sampler
 	for row in data.sounds:
 		var base: int=int(times.get(row[0],-1))
 		if base<0:continue

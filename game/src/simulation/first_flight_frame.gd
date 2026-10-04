@@ -1638,7 +1638,11 @@ func _cutscene_pose(actor: int) -> Transform3D:
 func _cutscene_eye() -> Vector3:
 	var since:=maxi(0,_world_elapsed_ms-int(_cutscene.get("since",_world_elapsed_ms)))
 	var travel:=_fading_travel(since,int(_cutscene.get("drift_fade_ms",-1)),int(_cutscene.get("drift_until_ms",-1)))
-	return Vector3(_cutscene.eye)+Vector3(_cutscene.get("drift",Vector3.ZERO))*travel
+	var eye:=Vector3(_cutscene.eye)+Vector3(_cutscene.get("drift",Vector3.ZERO))*travel
+	# A finale shot speeds its slide up once the array charges.
+	if _cutscene.has("charge_drift") and _finale.has("charge"):
+		eye+=(Vector3(_cutscene.charge_drift)-Vector3(_cutscene.get("drift",Vector3.ZERO)))*float(maxi(0,_world_elapsed_ms-int(_finale.charge)))
+	return eye
 
 ## ms-equivalent distance covered at a speed falling from 1 to 0 over fade_ms
 ## (none: constant speed), counting only until until_ms.
@@ -1649,6 +1653,27 @@ static func _fading_travel(since: int,fade_ms: int,until_ms: int) -> float:
 	return t-t*t/(2.0*float(fade_ms))
 
 func _cutscene_target() -> Vector3:
+	return _cutscene_steady_target()+_finale_rumble()
+
+## The finale's camera shake on the look point (VALKYRIE_FINALE.rumble). The
+## offsets come from the clock, not the shared random stream.
+func _finale_rumble() -> Vector3:
+	if _finale.is_empty():return Vector3.ZERO
+	var times:={"hit":int(_finale.get("hit",-1)),"charge":int(_finale.get("charge",-1))}
+	times.fly=times.charge+int(Worlds.VALKYRIE_FINALE.fly_ms) if times.charge>=0 else -1
+	var strength:=0.0
+	for row in Worlds.VALKYRIE_FINALE.rumble:
+		var from: int=int(times.get(row[0],-1))
+		if from<0 or _world_elapsed_ms<from+int(row[1]):continue
+		var until: int=int(times.get(row[2],-1)) if row[2]!="" else -1
+		if until>=0 and _world_elapsed_ms>=until:continue
+		var ramp: float=1.0 if int(row[4])<=0 else minf(1.0,float(_world_elapsed_ms-from-int(row[1]))/float(row[4]))
+		strength=maxf(strength,float(row[3])*ramp)
+	if strength<=0.0:return Vector3.ZERO
+	var tick:=_world_elapsed_ms/16
+	return Vector3(float(posmod(hash(tick*3),40)-20),float(posmod(hash(tick*3+1),40)-20),float(posmod(hash(tick*3+2),40)-20))*strength
+
+func _cutscene_steady_target() -> Vector3:
 	if _cutscene.has("look_at"):return _cutscene.look_at
 	# "look_sun" (89): from the shot's anchor, "toward" units toward the sun and
 	# "right" along the side of a frame facing away from it; the side offset
@@ -2320,7 +2345,7 @@ func _observe_radio() -> bool:
 			_cutscene={"key":cutscene.key,"actor":int(cutscene.actor),"eye":eye+Vector3(cutscene.get("offset",Vector3.ZERO)),"drift":Vector3(cutscene.get("drift",Vector3.ZERO)),"since":_world_elapsed_ms}
 			# "look_at": a fixed world point instead of the ship (144).
 			if cutscene.has("look_at"):_cutscene.look_at=Vector3(cutscene.look_at)
-			for key in ["look_sun","drift_fade_ms","drift_until_ms"]:
+			for key in ["look_sun","drift_fade_ms","drift_until_ms","charge_drift"]:
 				if cutscene.has(key):_cutscene[key]=cutscene[key]
 			_cutscene.anchor=pose.origin
 		elif cutscene.is_empty() and _cutscene.has("eye"):_cutscene={"ended":true}

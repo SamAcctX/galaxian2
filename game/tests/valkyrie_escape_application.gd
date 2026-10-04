@@ -3201,12 +3201,13 @@ func watch_finale() -> void:
 	var view: Node3D=app.session.scene._finale_view
 	var data: Dictionary=preload("res://src/content/valkyrie_world_definitions.gd").VALKYRIE_FINALE
 	var charge:=int(finale.get("charge",-1));var fly:=charge+int(data.fly_ms) if charge>=0 else -1
-	for mark in [["burning",int(finale.hit)+3000],["beam",charge+int(data.fire_ms)+1500 if charge>=0 else -1],["flight",fly+3000 if fly>=0 else -1],["flash",fly+int(data.vanish_ms)+600 if fly>=0 else -1]]:
+	for mark in [["burning",int(finale.hit)+3000],["blast",int(finale.hit)+9300],["beam",charge+int(data.fire_ms)+1500 if charge>=0 else -1],["flight",fly+3000 if fly>=0 else -1],["flash",fly+int(data.vanish_ms)+600 if fly>=0 else -1]]:
 		if int(mark[1])<0 or int(finale.now)<int(mark[1]) or cutscene_marks.has("finale-"+mark[0]):continue
 		cutscene_marks["finale-"+mark[0]]=true
 		match mark[0]:
 			"burning":check(view!=null and view.burns.get("burn",[]).all(func(node):return node.visible) and not view.burns.get("burn",[]).is_empty(),"Valkyrie is not burning after Keith's plea")
 			"beam":check(view.beams.all(func(row):return row.node.visible),"The array beam did not fire")
+			"blast":check(view.bursts.any(func(row):return row.node.visible),"No explosion shows at the big blast")
 			"flight":
 				var camera: Transform3D=app.session.flight_owner()._camera.snapshot().pose
 				var point: Vector3=app.session.flight_owner().finale_flight_point()

@@ -11,9 +11,9 @@ executable are not included in the download. No original executable is run.
 
 ## Download and play
 
-Get the **[latest prerelease](https://github.com/TheWWWorm/galaxian2/releases)**.
+Get the **[latest release](https://github.com/TheWWWorm/galaxian2/releases/latest)**.
 The whole game is playable: the main campaign and both add-ons, Valkyrie and
-Supernova. It is still a preview, so expect rough edges.
+Supernova, plus the Supernova Challenge.
 
 | Download | Platform | Launch |
 | --- | --- | --- |
@@ -153,13 +153,13 @@ restart or death. A previous-save backup protects against an interrupted write.
 Saving during flight or a conversation is unavailable. Saves belong to their
 imported content and gameplay-data version. Original game saves and migration
 between incompatible versions are not supported yet. Back up your user-data
-folder before updating an early preview.
+folder before updating from a preview.
 
-## Still in development
+## Known differences
 
 A few cosmetic details differ from the original where its data could not be
-fully recovered (some camera drifts, small explosion bursts and animations).
-Further polish is planned for rendering effects, lighting and sound.
+fully recovered, such as the size of some cutscene explosions and the
+supernova sky background.
 
 Screenshots show the native engine using locally imported Mac content. They are
 promotional images, not game resources distributed with the engine.
