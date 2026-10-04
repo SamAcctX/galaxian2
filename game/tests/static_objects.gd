@@ -87,11 +87,12 @@ func pirate_bases(bindings: RefCounted) -> void:
 	check(not Campaign.available(bindings) or not Flights.story_job(bindings,20,33,{}).is_empty(),"Expansion pack lost its pirate base")
 	check(Flights.story_job(bindings,20,33,{"pirate_bases":2}).get("pirate_base")==null,"A destroyed base returned")
 	# A Most Wanted criminal fires his gun at x4 damage; his wingmen do not.
-	var job:={"campaign_cursor":131,"station_id":5,"wanted":{"index":2,"hull":6500,"after":{},"stats":{"ship":21,"name":"Gendol Ethor","loot":[137,2],"wingmen":1,"reward":75000}}}
+	var job:={"campaign_cursor":131,"station_id":5,"wanted":{"index":2,"hull":6500,"after":{},"stats":{"ship":21,"name":"Gendol Ethor","loot":[137,2],"wingmen":1,"reward":75000,"weapon":1}}}
 	var recipe: Dictionary=Flights._wanted_recipe(job)
 	var cast:={"rival_actor_id":-1,"ship_state":{},"ship_groups":recipe.get("ship_groups",[])}
 	var Recipe=load("res://src/content/mission_recipe.gd")
 	check(int(Recipe.contract_ship_options(cast,0,8,0).gun_damage_scale)==4 and int(Recipe.contract_ship_options(cast,1,8,0).gun_damage_scale)==1,"The wanted criminal's gun is not x4 (or his wingman's is)")
+	check(int(Recipe.contract_ship_options(cast,0,8,0).gun_item)==1 and int(Recipe.contract_ship_options(cast,1,8,0).gun_item)==-1,"The wanted criminal does not carry his own gun item (or his wingman does)")
 	var live: bool=Campaign.available(bindings)
 	check(Flights.unmanned_station(bindings,33,{})==live and not Flights.unmanned_station(bindings,33,{"pirate_bases":2}) and Flights.unmanned_station(bindings,1,{"pirate_bases":2})==live and not Flights.unmanned_station(bindings,4,{}),"Unmanned stations do not follow the outposts")
 

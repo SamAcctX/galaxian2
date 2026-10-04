@@ -59,6 +59,7 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 	if gate_selection:stations=destinations.duplicate()
 	var choices:=[]
 	var objective:=Recipe.objective_markers(bindings.early_contracts,career.get("mission",{}),career.get("accepted_contact",{}),flight.get("cargo",{}))
+	if int(flight.get("wanted_marker",-1))>=0:objective={"station_id":int(flight.wanted_marker),"system_station_id":int(flight.wanted_marker)}
 	var target_system:=-1
 	if objective.system_station_id>=0:target_system=int(catalogues.tables.stations[objective.system_station_id].system_id)
 	for id in systems:choices.append({"system_id":id,"name":catalogues.tables.systems[id].name,"mission_target":id==target_system})

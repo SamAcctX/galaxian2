@@ -226,6 +226,7 @@ func _ready() -> void:
 	missions_panel=MissionsPanel.new();host.add_child(missions_panel);missions_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	missions_panel.close_requested.connect(func():close_missions())
 	missions_panel.map_requested.connect(func():if close_missions():open_map())
+	missions_panel.wanted_map_requested.connect(func(seen: int,to: int):if close_missions():open_map(-1,false,{"seen":seen,"to":to}))
 	missions_panel.discard_requested.connect(func():discard_mission())
 	medal_notice=MedalNoticePanel.new();host.add_child(medal_notice);medal_notice.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	medal_notice.acknowledged.connect(func():acknowledge_medal_notice())
@@ -376,6 +377,8 @@ func _show_station_help(id: int) -> bool:
 var _help_button: TextureButton
 var _help_screen:=""
 var _help_context:=[]
+const WANTED_HINT_CURSOR:=128
+const WANTED_HINT_TEXT:=590
 func _sync_screen_help(state: Dictionary) -> void:
 	_help_screen=""
 	if _player_mode and session is StationSession and not session.presentation_active() and not state.get("dialogue",{}).get("visible",false) and state.get("contracts",{}).get("pending_result",{}).is_empty() and not medal_notice.visible:
@@ -385,6 +388,9 @@ func _sync_screen_help(state: Dictionary) -> void:
 		elif state.get("hangar_open",false):_help_screen="hangar"
 		elif state.get("lounge_open",false):_help_screen="lounge"
 		elif station_shell.visible:_help_screen="station"
+		# 590 "Wanted Boards": once when 128 has started (after its station talk).
+		if _help_screen=="station" and int(state.get("campaign_cursor",-1))==WANTED_HINT_CURSOR and _hint_dialog!=null and not _station_help_open and not _station_help_shown.has("wanted") and OS.get_environment("GOF2_FLIGHT_HINTS")!="0":
+			if _show_station_help(WANTED_HINT_TEXT):_station_help_shown["wanted"]=true
 	if visuals==null:_help_screen=""
 	if not _help_screen.is_empty() and _help_context!=[library,bindings,visuals]:
 		var art:=OriginalUI.new()
@@ -1270,7 +1276,10 @@ func _station_map_observation() -> Dictionary:
 					if destination!=id:state.drive_quotes[destination]=drive.quote(destination,energy)
 	return state
 
-func open_map(now_microseconds: int=-1,drive_mode:=false) -> bool:
+## wanted: the Most Wanted board's "Show on map" ({seen,to} stations): the
+## galaxy map with his destination marked (the original also draws the route
+## from his last stop; not drawn here).
+func open_map(now_microseconds: int=-1,drive_mode:=false,wanted:={}) -> bool:
 	if not _focused or not is_visible_in_tree():return false
 	var docked: bool=_station_map_available()
 	if drive_mode and not docked and (not session is FirstFlightSession or not session.request_drive_map()):present_session();return false
@@ -1285,6 +1294,7 @@ func open_map(now_microseconds: int=-1,drive_mode:=false) -> bool:
 	var catalogues:=Catalogues.new()
 	if not catalogues.open(library):status.text=catalogues.error;return false
 	var observation: Dictionary=_station_map_observation() if docked else (session.drive_map_observation() if drive_mode and session.drive_available() else session.snapshot())
+	if docked and not wanted.is_empty():observation=observation.duplicate();observation.wanted_marker=int(wanted.to)
 	if not map_panel.configure(library,bindings,visuals,catalogues,observation):status.text=map_panel.error;return false
 	var now:=Time.get_ticks_usec() if now_microseconds<0 else now_microseconds
 	if docked:

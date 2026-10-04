@@ -362,9 +362,11 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, cursor: int, previ
 			var properties: Variant=catalogues.tables.items[int(candidate.item_id)].get("properties")
 			if not properties is Dictionary: return reject("NPC contact weapon lacks source properties")
 			var extra: Variant=properties.get(int(ordinary.additional_damage_property),int(ordinary.missing_additional_damage))
-			if not extra is int or extra!=int(ordinary.missing_additional_damage): return reject("NPC contact requires an unsupported additional damage path")
+			var own: bool=candidate.get("own_gun",false)
+			if not own and (not extra is int or extra!=int(ordinary.missing_additional_damage)): return reject("NPC contact requires an unsupported additional damage path")
 			var weapon:={"base_content_id":seed.base_content_id,"binding_id":seed.binding_id,"launch_mode":"ordinary"}
 			for key in ["item_id","category","kind","damage"]: weapon[key]=int(candidate[key])
+			if own:weapon.kind=load("res://src/content/contract_ship_combat_definitions.gd").own_gun_kind(catalogues.tables.items[int(candidate.item_id)])
 			weapon.merge(contacts.context)
 			weapons.append(weapon)
 		if not contacts.enabled:weapons=[]

@@ -2120,6 +2120,7 @@ func fly_supernova_wanted() -> void:
 		check(log.get("wanted_available",false) and String(log.wanted).begins_with("Pal Tyyrt"),"The Terran Most Wanted board is not open at cursor %d"%cursor)
 		check(app.missions_panel._wanted_portrait.visible and app.missions_panel._wanted_portrait.texture!=null,"The Most Wanted board shows no criminal portrait")
 		# "Show on map": the galaxy map with his destination's system marked.
+		app.missions_panel.select_wanted(entry);await process_frame
 		var route: Array=app.missions_panel._wanted_route.duplicate()
 		check(app.missions_panel._wanted_map.visible and route.size()==2,"The Most Wanted board has no Show on map for an active criminal")
 		if route.size()==2:

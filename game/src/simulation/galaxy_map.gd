@@ -24,6 +24,8 @@ func configure(library: RefCounted,bindings: RefCounted,cat: RefCounted,observat
 	var availability: Array=navigation.snapshot().system_availability
 	var destinations:=Context.navigation_destinations(bindings,cat,observation)
 	var markers:=Recipe.objective_markers(bindings.early_contracts,career.get("mission",{}),career.get("accepted_contact",{}),observation.get("cargo",{}))
+	# Most Wanted "Show on map": the criminal's destination is the marked station.
+	if int(observation.get("wanted_marker",-1))>=0:markers={"station_id":int(observation.wanted_marker),"system_station_id":int(observation.wanted_marker)}
 	var target_system:=-1
 	if markers.system_station_id>=0:target_system=int(cat.tables.stations[markers.system_station_id].system_id)
 	var warning:={}

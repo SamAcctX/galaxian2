@@ -155,11 +155,11 @@ static func from_contract(bindings: RefCounted,context: Dictionary,loadout: Dict
 static func contract_ship_options(cast: Dictionary,id: int,enemy_faction: int,client_faction: int) -> Dictionary:
 	var rival: bool=id==int(cast.rival_actor_id)
 	var result:={"rival":rival,"faction":client_faction if rival else 8,"population_group":"rival" if rival else "pirate",
-		"origin":"zero" if rival else "path","policy":{},"hull_catalogue_id":-1,"ship_state":cast.ship_state.duplicate(true),"position":{},"route_start":-1,"face_player":false,"gun_damage_scale":1,"route_loop":[],"clear_cargo":false,"group_index":id,"cargo_override":{},"name_text_id":-1,"display_name":"","subtype":0,"static_object":{}}
+		"origin":"zero" if rival else "path","policy":{},"hull_catalogue_id":-1,"ship_state":cast.ship_state.duplicate(true),"position":{},"route_start":-1,"face_player":false,"gun_damage_scale":1,"gun_item":-1,"route_loop":[],"clear_cargo":false,"group_index":id,"cargo_override":{},"name_text_id":-1,"display_name":"","subtype":0,"static_object":{}}
 	for group in cast.get("ship_groups",[]):
 		if id<int(group.first_actor) or id>=int(group.end_actor):continue
 		result.faction=enemy_faction if int(group.faction)==-2 else int(group.faction)
-		for key in ["population_group","origin","policy","position","route_start","face_player","gun_damage_scale","route_loop","clear_cargo","cargo_override","name_text_id","display_name","subtype","hull_catalogue_id","static_object"]:result[key]=group.get(key,result[key])
+		for key in ["population_group","origin","policy","position","route_start","face_player","gun_damage_scale","gun_item","route_loop","clear_cargo","cargo_override","name_text_id","display_name","subtype","hull_catalogue_id","static_object"]:result[key]=group.get(key,result[key])
 		result.group_index=id-int(group.first_actor)
 		result.ship_state.merge(group.get("ship_state",{}),true)
 		break

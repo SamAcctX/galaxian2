@@ -4,6 +4,7 @@ extends Control
 ## the host to open the map or discard the freelance job.
 signal close_requested
 signal map_requested
+signal wanted_map_requested(seen: int,to: int)
 signal discard_requested
 const Lounge=preload("res://src/presentation/lounge_panel.gd")
 const Portraits=preload("res://src/presentation/portrait_compositor.gd")
@@ -50,6 +51,10 @@ var _wanted_list: VBoxContainer
 var _wanted_details: Label
 var _wanted_open:=false
 var _wanted_selected:=-1
+var _wanted_portrait: TextureRect
+var _wanted_face:=-2
+var _wanted_map: Button
+var _wanted_route:=[]
 ## Criminal biographies are texts WANTED_BIOGRAPHY + entry index.
 const WANTED_BIOGRAPHY:=3163
 
@@ -71,7 +76,10 @@ func _init() -> void:
 	_wanted_list=VBoxContainer.new();list_column.add_child(_wanted_list)
 	var details_column:=VBoxContainer.new();details_column.size_flags_horizontal=Control.SIZE_EXPAND_FILL;details_column.size_flags_stretch_ratio=2.0;wanted.add_child(details_column)
 	_bar(details_column).name="DetailsBar"
+	_wanted_portrait=TextureRect.new();_wanted_portrait.expand_mode=TextureRect.EXPAND_IGNORE_SIZE;_wanted_portrait.stretch_mode=TextureRect.STRETCH_KEEP_ASPECT;_wanted_portrait.custom_minimum_size=Vector2(72,84);_wanted_portrait.size_flags_horizontal=Control.SIZE_SHRINK_BEGIN;details_column.add_child(_wanted_portrait)
 	_wanted_details=_body(details_column)
+	_wanted_map=Button.new();_wanted_map.size_flags_horizontal=Control.SIZE_SHRINK_BEGIN;_wanted_map.visible=false;details_column.add_child(_wanted_map)
+	_wanted_map.pressed.connect(func():if _wanted_route.size()==2:wanted_map_requested.emit(_wanted_route[0],_wanted_route[1]))
 	var story:=VBoxContainer.new();story.size_flags_horizontal=Control.SIZE_EXPAND_FILL;body.add_child(story)
 	_story_bar=_bar(story)
 	_story_text=_body(story)
@@ -112,10 +120,10 @@ func configure(status: Control,library: RefCounted,bindings: RefCounted,visuals:
 	_status=status;_library=library;_bindings=bindings;_visuals=visuals;_catalogues=status._catalogues;theme=status.theme
 	_header.text=text("title");_story_bar.text=text("story");_job_bar.text=text("freelance")
 	_story_map.text=text("map");_job_map.text=text("map");_job_discard.text=text("discard")
-	_yes.text=text("yes");_no.text=text("no");_back.text=text("back");_wanted_button.text=text("wanted")
+	_yes.text=text("yes");_no.text=text("no");_back.text=text("back");_wanted_button.text=text("wanted");_wanted_map.text=text("map")
 	_wanted_view.find_child("ListBar",true,false).text=text("wanted_list");_wanted_view.find_child("DetailsBar",true,false).text=text("wanted_details")
 	if status._ui!=null:
-		for button in [_story_map,_job_map,_job_discard,_yes,_no,_back,_wanted_button]:status._ui.apply_button(button,status._mobile)
+		for button in [_story_map,_job_map,_job_discard,_yes,_no,_back,_wanted_button,_wanted_map]:status._ui.apply_button(button,status._mobile)
 	return true
 
 func story_text(state: Dictionary) -> String:
@@ -196,6 +204,18 @@ func _present_wanted(state: Dictionary,career: Dictionary) -> void:
 		button.pressed.connect(select_wanted.bind(index))
 		_wanted_list.add_child(button)
 	_wanted_details.text=wanted_details(table,entries,_wanted_selected)
+	if _wanted_face!=_wanted_selected:
+		_wanted_face=_wanted_selected;_wanted_portrait.texture=null
+		var face: Array=table[_wanted_selected].get("portrait",[]) if _wanted_selected>=0 else []
+		# The criminal's face: family first, then four parts, like an authored contact.
+		if face.size()==5:
+			var composite: Dictionary=Portraits.new().compose_definition(_library,_bindings,_visuals,0,"large",{"status":"fixed","family":int(face[0]),"parts":face.slice(1)})
+			if not composite.is_empty():_wanted_portrait.texture=ImageTexture.create_from_image(composite.image)
+	_wanted_portrait.visible=_wanted_portrait.texture!=null
+	# "Show on map" only for an active criminal: his last stop and destination.
+	var entry: Dictionary=entries[_wanted_selected] if _wanted_selected>=0 and _wanted_selected<entries.size() else {}
+	_wanted_route=[int(entry.from),int(entry.to)] if entry.get("active",false) and not entry.get("dead",false) and int(entry.get("from",-1))>=0 and int(entry.get("to",-1))>=0 else []
+	_wanted_map.visible=not _wanted_route.is_empty() and not read_only
 
 func wanted_details(table: Array,entries: Array,index: int) -> String:
 	if index<0 or index>=table.size():return ""

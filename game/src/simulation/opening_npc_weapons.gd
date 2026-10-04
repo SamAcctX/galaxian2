@@ -333,11 +333,14 @@ func _resolve_weapon(bindings: RefCounted, catalogues: RefCounted, data: Diction
 	if bindings.resolve(int(data.model_resource_id),"mesh").is_empty(): return fail("NPC weapon visual resource is unavailable")
 	var weapon := {"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"launch_mode":"ordinary"}
 	for key in ["item_id", "category", "kind", "damage", "interval_ms", "lifetime_ms", "projectile_capacity"]: weapon[key]=int(data[key])
+	if data.get("own_gun",false):
+		weapon.merge({"own_gun":true,"model_resource_id":int(data.model_resource_id),"kind":load("res://src/content/contract_ship_combat_definitions.gd").own_gun_kind(items[int(data.item_id)])},true)
 	weapon.speed_units_per_millisecond=float(data.speed_units_per_millisecond)
 	if data.has("nonplayer_source"):
 		var policy: Dictionary=bindings.weapon_parameters.get("ordinary_hit_policy",{})
 		var properties: Dictionary=items[int(data.item_id)].get("properties",{})
 		var extra: Variant=properties.get(int(policy.get("additional_damage_property",-1)),int(policy.get("missing_additional_damage",0)))
+		if data.get("own_gun",false):extra=int(policy.get("missing_additional_damage",0))
 		var systems: bool=data.get("wingman_systems",false)
 		if policy.is_empty() or (not systems and extra!=int(policy.get("missing_additional_damage",0))):return fail("NPC weapon requires unsupported additional damage")
 		if systems:

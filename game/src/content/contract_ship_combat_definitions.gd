@@ -101,6 +101,13 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 		if weapon.is_empty():return {}
 		# gun_damage_scale: a story ship's stronger gun (Most Wanted: x4).
 		if int(options.get("gun_damage_scale",1))!=1:weapon.damage=weapon.damage*int(options.gun_damage_scale)
+		# gun_item: a story ship's own gun item (Most Wanted). It fires that
+		# item's shot at the ship's ordinary strength; an item with no shot
+		# model keeps the faction gun (assumption).
+		var own:=int(options.get("gun_item",-1))
+		var shots: Array=bindings.mido_travel.get("ordinary_fitting",{}).get("primary",{}).get("projectile_model_ids",[])
+		if own>=0 and own<shots.size() and int(shots[own])>=0 and not weapon.has("unarmed"):
+			weapon.merge({"item_id":own,"catalogue_kind":-1,"model_resource_id":int(shots[own]),"own_gun":true},true)
 		weapon.actor_id=id;weapon.hull_catalogue_id=hull;data.npc_weapons.append(weapon)
 	data.target_memberships=target_memberships(data.actor_kinds,cast.player_last_ids)
 	data.companion_player_last_ids=cast.player_last_ids.duplicate()
@@ -143,6 +150,12 @@ static func void_weapon(bindings: RefCounted,cursor: int,rank: int,difficulty: f
 ## ordinary damage. catalogue_kind -1: the item's own catalogue kind.
 const EXTRA_FACTIONS:=[{"actor_kind":10,"item_id":229,"kind":0,"catalogue_kind":-1,"model_resource_id":19091,"damage_scale":0.7}]
 static func factions(rules: Dictionary) -> Array:return rules.factions+EXTRA_FACTIONS
+
+## A story ship's own gun item fires with the item's catalogue gun type:
+## type 1 shots face the camera (like the pirates' item 19), others are meshes.
+static func own_gun_kind(item: Dictionary) -> int:
+	var fields: Array=item.get("arrays",[[],[],[]])[2]
+	return 1 if fields.size()>5 and int(fields[5])==1 else 0
 
 ## Every NPC gun's shot model: the faction guns plus static objects' turret guns.
 static func gun_rows(rules: Dictionary) -> Array:
