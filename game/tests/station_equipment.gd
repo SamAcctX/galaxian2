@@ -63,6 +63,8 @@ func after_second_return(args: PackedStringArray):
 	check(state.loadout.equipment_ids.has(22) and not state.loadout.equipment_ids.has(0) and state.equipment.requirements.weapon_installed,"Alternate starter gun was not accepted")
 	check(host.equipment_action("buy",55) and host.equipment_action("close"),host.session.error)
 	check(host.session.snapshot().campaign_cursor==6 and not host.session.snapshot().dialogue.visible,"Owning unmounted armor completed the tutorial")
+	var departure_catalogues:=Catalogues.new();departure_catalogues.open(lib)
+	check(host.session.prepare_departure(bindings,departure_catalogues).is_empty() and host.session.error==lib.strings[519],"Leaving with the armour still in the hold did not give the original 519 refusal: "+host.session.error)
 	check(host.equipment_action("open") and host.equipment_action("mount",55),host.session.error)
 	state=host.session.snapshot()
 	check(state.equipment.requirements.satisfied and state.cargo.used==1 and state.cargo.entries==[{"item_id":0,"quantity":1}],"Equipment predicate counted cargo or consumed the spare gun")

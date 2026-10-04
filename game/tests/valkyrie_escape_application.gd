@@ -732,6 +732,10 @@ func fly_valkyrie_escape() -> void:
 	app.set_player_mode(true);app.show();app.present_session()
 	await process_frame;resume_application_focus()
 	check(app.session.station_owner().snapshot().campaign_cursor==77,"The escape checkpoint is not at cursor 77")
+	# The old ship may not leave: 315 "board the ship that Khador provided".
+	var cat:=preload("res://src/content/catalogues.gd").new();cat.open(app.library)
+	var refused: Dictionary=app.session.prepare_departure(app.bindings,cat)
+	check(refused.is_empty() and app.session.error==app.library.strings[315],"Leaving Kothar without the Cronus was not refused with 315: "+app.session.error)
 	if failures or not seed_cargo([[122,20],[175,2]]):return
 	if not app.equipment_action("open"):check(false,"The hangar did not open: "+app.session.error);return
 	var yard: Array=app.session.station_owner().snapshot().equipment.market_ships

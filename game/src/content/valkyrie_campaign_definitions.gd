@@ -238,6 +238,14 @@ static func saved_mission(cursor: Variant,value: Variant) -> bool:
 		if not value.get(key) is int or value[key]!=expected[key]:return false
 	return value.size()==expected.size()
 
+## Departure needs a given ship at this cursor (verified
+## ModStation::leaveStation): 77 only in Khador's Cronus (37), else 315
+## "Go to the hangar and board the ship that Khador provided for you."
+const DEPARTURE_SHIPS:={77:{"ship_id":37,"text_id":315}}
+static func departure_ship(bindings: RefCounted,cursor: Variant) -> Dictionary:
+	if not saved_story(bindings,cursor):return {}
+	return DEPARTURE_SHIPS.get(cursor,{}).duplicate()
+
 ## Items the career may not sell or demount at this cursor.
 static func protected_items(bindings: RefCounted,cursor: Variant) -> Array:
 	if not saved_story(bindings,cursor):return []

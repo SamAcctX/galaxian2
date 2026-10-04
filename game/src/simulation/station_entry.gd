@@ -883,6 +883,10 @@ func _commit_campaign_visit(visit: RefCounted) -> bool:
 func prepare_departure(bindings: RefCounted, catalogues: RefCounted) -> Dictionary:
 	error="";_departure_refusal=-1
 	if _state.get("hangar_open",false):fail("Close the hangar before departing");return {}
+	var unequipped: Dictionary=TrainingStory.EQUIPMENT_REFUSAL
+	if int(_state.get("campaign_cursor",-1)) in unequipped.cursors and _equipment is Equipment and not _equipment.requirements().satisfied:
+		_departure_refusal=int(unequipped.in_hold_text_id if _equipment.required_items_in_hold() else unequipped.missing_text_id)
+		fail("Fit a weapon and an armour plate before departing.");return {}
 	# Preparation is read-only. The scene owner must obtain the source departure
 	# confirmation and successfully prepare the flight before replacing station.
 	if _state.get("phase")=="combat_departure_required":return _prepare_combat_training(bindings,catalogues)
@@ -956,6 +960,10 @@ func _prepare_free_departure(bindings: RefCounted,catalogues: RefCounted) -> Dic
 	var career: Dictionary=_contracts.snapshot();var owned: Dictionary=_equipment.snapshot()
 	var station_id: int=owned.loadout.station_id
 	if owned.cargo.used>owned.cargo.capacity:fail("Cargo hold is overfilled. Sell cargo before departing.");return {}
+	var ship_rule: Dictionary=preload("res://src/content/valkyrie_campaign_definitions.gd").departure_ship(bindings,_state.campaign_cursor)
+	if not ship_rule.is_empty() and int(owned.loadout.ship_id)!=int(ship_rule.ship_id):
+		_departure_refusal=int(ship_rule.text_id)
+		fail("Board the story ship before departing.");return {}
 	if not rescue and (FreeFlight.flight(bindings,station_id,_state.campaign_cursor).is_empty() or not FreeNavigation.ordinary_departure_at(bindings,_state.campaign_cursor,_state.get("mission",{}),station_id)):fail("This station selects an unsupported story encounter");return {}
 	for key in ["base_content_id","binding_id"]:
 		if _state.get(key)!=bindings.get(key) or career.get(key)!=bindings.get(key):fail("Ordinary departure belongs to another content identity");return {}

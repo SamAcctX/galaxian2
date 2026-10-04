@@ -510,6 +510,14 @@ func requirements() -> Dictionary:
 			elif item.subtype==int(_rules.armor_subtype):armor=true
 	return {"weapon_installed":weapon,"armor_installed":armor,"satisfied":weapon and armor}
 
+## A weapon or armour plate is in the hold (not yet fitted).
+func required_items_in_hold() -> bool:
+	if _data.is_empty():return false
+	for entry in _data.cargo.entries:
+		var item: Dictionary=_items.get(entry.item_id,{})
+		if not item.is_empty() and (item.category==int(_rules.weapon_category) or item.subtype==int(_rules.armor_subtype)):return true
+	return false
+
 func snapshot() -> Dictionary:
 	if _data.is_empty():return {}
 	var result:=_data.duplicate(true);result.requirements=requirements()
