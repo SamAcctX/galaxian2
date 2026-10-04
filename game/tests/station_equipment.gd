@@ -29,6 +29,8 @@ func after_second_return(args: PackedStringArray):
 	key(KEY_ENTER)
 	check(host.equipment_panel.visible and host.session.snapshot().hangar_open and host.session.snapshot().cargo.used==25,"Opening the hangar changed cargo cache or lost its panel")
 	if not host.equipment_panel.visible:return
+	await verify_hangar_input()
+	if failures:return
 	if args.size()==4:await capture(args[3],"equipment-shop-desktop")
 	var stock: Array=host.session.snapshot().equipment.stock
 	check(stock==[{"item_id":0,"quantity":1,"unit_price":0},{"item_id":22,"quantity":1,"unit_price":0},{"item_id":55,"quantity":1,"unit_price":0}],"Tutorial offers differ from source stock")
@@ -108,6 +110,7 @@ func after_second_return(args: PackedStringArray):
 		var problem:=EquipmentScenario.capture(scenario_path,bindings,scenario_before,state,host.session._world.equipment_owner(),scenario_transactions())
 		check(problem.is_empty(),problem)
 
+func verify_hangar_input():pass
 func death_branch(_args: PackedStringArray, _packet: Dictionary):pass
 
 # Players may finish the tutorial with either free starter gun mounted.

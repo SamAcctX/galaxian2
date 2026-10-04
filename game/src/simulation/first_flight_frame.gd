@@ -714,8 +714,8 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 		if world_logic.is_empty():reject(next._encounter.error);return null
 		next._encounter=world_logic.encounter;next._random=world_logic.random_state
 	var cues: Dictionary=next._briefing.snapshot()
-	# The player moves with the preceding angular response. Input is consumed
-	# after the entry controller; release may enable it on this very frame.
+	# Input is consumed after the entry controller; release may enable it on
+	# this very frame. Captured mouse response also moves this frame.
 	# Modal UI owns input as soon as its panel opens. Player/camera logic may
 	# already have elapsed, while the later world phase then receives zero.
 	var alive: bool=_player.read_state().vitals.hull>0
@@ -726,7 +726,8 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 		if not next._booster.cancel():reject(next._booster.error);return null
 	if player_updates and next._fast_forward!=null:
 		next._near_target=false
-		if not next._camera.refresh_player_response(relative_mouse_capture,next._autopilot.snapshot().response_factor):reject(next._camera.error);return null
+	if player_updates:
+		if not next._camera.refresh_player_response(relative_mouse_capture,next._pilot.response_factor()):reject(next._camera.error);return null
 	var manual: bool=alive and cues.entry_released and not cues.dialogue.visible and not local_departing() and not cinematic_input_blocked()
 	var turret_active: bool=_encounter!=null and _encounter.turret_active()
 	if turret_active:

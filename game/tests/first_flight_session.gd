@@ -87,6 +87,8 @@ func verify(args: PackedStringArray):
 	check(not is_instance_valid(station) and not host.station_panel.visible and not host.radio_panel.visible and not host._launch_button.visible,"Launch retained the old station scene/UI")
 	host.session.rebase_time(0);now_us=0
 	check(not host.session.can_control() and not host._flight_actions.visible and host.session.briefing_audio.snapshot().history.is_empty(),"Loading enabled flight input or started speech")
+	await verify_departure_input()
+	if failures:return
 	for i in 130:
 		if not step():return
 	var modal: Dictionary=host.session.snapshot()
@@ -106,8 +108,10 @@ func verify(args: PackedStringArray):
 	key(KEY_ENTER);key(KEY_LEFT)
 	check(host.session.snapshot().dialogue.index==0 and host.session.briefing_audio.snapshot().history.size()==3,"Briefing back navigation lost voice replay")
 	if args.size()==4:await capture(args[3],"app-mining-briefing")
-	for i in 5:button(JOY_BUTTON_A)
-	check(host.session.can_control() and not host.session.snapshot().dialogue.visible and host.session.briefing_audio._player==null,"Controller acknowledgement did not release flight and stop speech")
+	await acknowledge_briefing()
+	check(host.session.can_control() and not host.session.snapshot().dialogue.visible and host.session.briefing_audio._player==null,"Briefing acknowledgement did not release flight and stop speech")
+	await verify_released_input()
+	if failures:return
 	var held: Dictionary=host.session.snapshot()
 	for reason in ["user","focus","hidden"]:
 		host.session.set_pause(reason,true,now_us);step()
@@ -154,6 +158,10 @@ func verify(args: PackedStringArray):
 	host.reset();check(host.session==null and not host._launch_dialog.visible and not host._flight_actions.visible,"Reset retained a flight scene or action overlay")
 
 func after_first_return(_args: PackedStringArray):pass
+func verify_departure_input():pass
+func verify_released_input():pass
+func acknowledge_briefing():
+	for i in 5:button(JOY_BUTTON_A)
 
 func verify_mining_history_save():
 	if not bindings.mining_session.has("failure_instruction"):return

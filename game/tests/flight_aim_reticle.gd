@@ -24,7 +24,7 @@ func verify(content: String, pack: String, pixels: String) -> void:
 	check(source.texture_id==10062 and source.regions[0].region==115 and source.regions[1].region==129,"Reticle changed original alias mapping")
 	var original: Image=visuals.load_image(source.resource)
 	check(original!=null,"Original reticle atlas missing")
-	var sample:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"point":Vector3(400.9,300.9,-2000),"visible":true,"image_id":1216}
+	var sample:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"point":Vector3(400.9,300.9,-2000),"cursor_point":Vector2(180,100),"visible":true,"image_id":1216}
 	check(not reticle.visible,"Reticle visible before its first ordinary frame")
 	for phone in [false,true]:
 		reticle.set_mobile_layout(phone)
@@ -37,6 +37,7 @@ func verify(content: String, pack: String, pixels: String) -> void:
 			check(reticle.sprite.size==Vector2(crop.get_size())*(1.0 if phone else 0.5),"Desktop/phone reticle size mismatch")
 			check(reticle.sprite.position+reticle.sprite.size*0.5==Vector2(400,300),"Reticle ignored integer anchor or centered on the static frame")
 			check(reticle.visible and reticle.mouse_filter==Control.MOUSE_FILTER_IGNORE and reticle.sprite.mouse_filter==Control.MOUSE_FILTER_IGNORE,"Reticle hidden or intercepting controls")
+			check(reticle.get_children().filter(func(child):return child is TextureRect and child.is_visible_in_tree()).size()==1,"Mouse steering drew a second aiming cursor")
 			if DisplayServer.get_name()!="headless":
 				await process_frame;await process_frame;await RenderingServer.frame_post_draw
 				var output:=OS.get_environment("GOF2_CAPTURE_DIR")

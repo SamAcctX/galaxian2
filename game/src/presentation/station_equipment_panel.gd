@@ -132,6 +132,14 @@ func _init() -> void:
 	_keep_choice.canceled.connect(func():_pending_replace={};_refresh())
 	set_mobile_layout(false)
 
+func back() -> bool:
+	if not _active or not is_visible_in_tree():return false
+	for dialog in [_replacement,_keep_choice]:
+		if dialog.visible:
+			dialog.hide();dialog.canceled.emit();return true
+	action_requested.emit("close",-1)
+	return true
+
 func _add_row(id: int) -> void:
 	if _rows.has(id):return
 	var row:=PanelContainer.new();_list.add_child(row)
