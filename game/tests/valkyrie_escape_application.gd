@@ -2093,6 +2093,16 @@ func fly_supernova_wanted() -> void:
 	app.set_player_mode(true);app.show();app.present_session()
 	await process_frame;resume_application_focus()
 	check(app.session.station_owner().snapshot().campaign_cursor==128,"The Alioth checkpoint is not at cursor 128")
+	# 590 "Wanted Boards" once on the station screen at 128.
+	OS.set_environment("GOF2_FLIGHT_HINTS","1")
+	await close_medal_windows();app.present_session();await process_frame
+	var hint: Dictionary=app._hint_dialog.snapshot()
+	check(app._hint_dialog.visible and int(hint.get("text_ids",[-1])[0])==590,"128 showed no Wanted Boards hint: "+str(hint))
+	await capture_free_application("supernova-wanted-hint")
+	var enter:=InputEventKey.new();enter.pressed=true;enter.keycode=KEY_ENTER;enter.physical_keycode=KEY_ENTER
+	app._unhandled_input(enter);await process_frame;app.present_session();await process_frame
+	check(not app._hint_dialog.visible,"The Wanted Boards hint came back")
+	OS.set_environment("GOF2_FLIGHT_HINTS","0")
 	if failures or not seed_cargo([[122,12]]):return
 	for entry in [0,1]:
 		var cursor: int=[128,130][entry];var name: String=["Pal Tyyrt","Kehnor"][entry]
@@ -2108,6 +2118,20 @@ func fly_supernova_wanted() -> void:
 		var log: Dictionary=app.missions_panel.snapshot()
 		print("SUPERNOVA board ",log.get("wanted_available")," ",String(log.get("wanted","")).get_slice("\n\n",0).replace("\n"," | "))
 		check(log.get("wanted_available",false) and String(log.wanted).begins_with("Pal Tyyrt"),"The Terran Most Wanted board is not open at cursor %d"%cursor)
+		check(app.missions_panel._wanted_portrait.visible and app.missions_panel._wanted_portrait.texture!=null,"The Most Wanted board shows no criminal portrait")
+		# "Show on map": the galaxy map with his destination's system marked.
+		var route: Array=app.missions_panel._wanted_route.duplicate()
+		check(app.missions_panel._wanted_map.visible and route.size()==2,"The Most Wanted board has no Show on map for an active criminal")
+		if route.size()==2:
+			app.missions_panel._wanted_map.pressed.emit();await process_frame
+			var shown: Dictionary=app.map_panel.snapshot()
+			var marked: Array=shown.get("rows",[]).filter(func(row):return row.get("contract_target",false)).map(func(row):return int(row.get("system_id",-1)))
+			var cat:=preload("res://src/content/catalogues.gd").new();cat.open(app.library)
+			print("SUPERNOVA wanted map marked ",marked," route ",route)
+			check(app._station_map_open and marked==[int(cat.tables.stations[route[1]].system_id)],"Show on map did not mark the criminal's destination")
+			await capture_free_application("supernova-wanted-map-%d"%cursor)
+			app.close_map();await process_frame
+			app.open_missions();await process_frame;app.missions_panel.toggle_wanted();await process_frame
 		await capture_free_application("supernova-wanted-board-%d"%cursor)
 		app.close_missions();await process_frame
 		var board: Dictionary=app.session.station_owner().snapshot().contracts.progress.get("wanted",{})
@@ -2117,6 +2141,9 @@ func fly_supernova_wanted() -> void:
 		var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
 		print("SUPERNOVA ",name," at ",at," cast ",actors.map(func(actor):return [actor.hull_catalogue_id,int(actor.vitals.hull),actor.get("display_name","")]))
 		check(actors.size()>=1 and String(actors[0].get("display_name",""))==name,name+" was not met at his station")
+		var gun: Dictionary=app.session.flight_owner()._encounter._weapons._definitions[0]
+		print("SUPERNOVA ",name," gun ",gun.get("item_id")," own ",gun.get("own_gun",false)," model ",gun.get("model_resource_id")," kind ",gun.get("kind"))
+		check(int(gun.get("item_id",-1))==[0,19][entry] and gun.get("own_gun",false),name+" does not fire his own gun item")
 		if failures:return
 		await capture_free_application("supernova-wanted-%d"%cursor)
 		var radio_ids:=[]
@@ -2594,6 +2621,8 @@ func fly_supernova_ambush() -> void:
 	var enemies:=func(frame):
 		var actors: Array=frame._encounter.combat_snapshot().actors;var at: Vector3=app.session.snapshot().player_pose.origin
 		var live:=func(id):return int(actors[id].vitals.hull)>0 and actors[id].get("active",false) and int(actors[id].get("actor_mode",0))!=5 and not actors[id].get("targeting_blocked",false)
+		# The finale scene holds the player: no more fighting.
+		if not app.session.snapshot().get("array_finale",{}).is_empty():return []
 		# Line 3072 waits for the flagship (21) at half hull: go for it first.
 		if 3070 in radio_ids and live.call(21) and not 3072 in radio_ids:return [21]
 		return range(11,22).filter(func(id):return live.call(id) and actors[id].pose.origin.distance_to(at)<40000)
@@ -2728,6 +2757,7 @@ func story_flight(cursor: int,label: String,goal: Callable,hostiles: Callable,ra
 			check(false,label+": the player died "+str(dead.player.vitals)+" at "+str(where)+" after "+str((now_us-began)/1000000)+" s, nearest "+str(frame._encounter.combat_snapshot().actors.map(func(actor):return [int(actor.actor_id),int(Vector3(actor.pose.origin).distance_to(where))]).filter(func(row):return row[1]<5000)));return false
 		var radio: Dictionary=frame._radio.snapshot() if frame._radio!=null else {}
 		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		await watch_finale()
 		var puzzle: Dictionary=frame.story_hack_state()
 		if not puzzle.is_empty():
 			if not hacking:hacking=true;print("SUPERNOVA ",label," hacking at ",(now_us-began)/1000000," s");await capture_free_application("supernova-%s-hack"%label)
@@ -3119,6 +3149,27 @@ func go_to(station: int) -> bool:
 ## Story cutscenes (64-70): ~1 s in, the player is held, the HUD is hidden
 ## and the camera looks at the named ship; one capture per cutscene.
 var cutscene_marks:={}
+## 157's finale: Valkyrie burning, the array beam, the flight to the sun, the flash.
+func watch_finale() -> void:
+	var finale: Dictionary=app.session.snapshot().get("array_finale",{})
+	if finale.is_empty():return
+	var view: Node3D=app.session.scene._finale_view
+	var data: Dictionary=preload("res://src/content/valkyrie_world_definitions.gd").VALKYRIE_FINALE
+	var charge:=int(finale.get("charge",-1));var fly:=charge+int(data.fly_ms) if charge>=0 else -1
+	for mark in [["burning",int(finale.hit)+3000],["beam",charge+int(data.fire_ms)+1500 if charge>=0 else -1],["flight",fly+3000 if fly>=0 else -1],["flash",fly+int(data.vanish_ms)+600 if fly>=0 else -1]]:
+		if int(mark[1])<0 or int(finale.now)<int(mark[1]) or cutscene_marks.has("finale-"+mark[0]):continue
+		cutscene_marks["finale-"+mark[0]]=true
+		match mark[0]:
+			"burning":check(view!=null and view.burns.get("burn",[]).all(func(node):return node.visible) and not view.burns.get("burn",[]).is_empty(),"Valkyrie is not burning after Keith's plea")
+			"beam":check(view.beams.all(func(row):return row.node.visible),"The array beam did not fire")
+			"flight":
+				var camera: Transform3D=app.session.flight_owner()._camera.snapshot().pose
+				var point: Vector3=app.session.flight_owner().finale_flight_point()
+				check((-camera.basis.z).normalized().dot((point-camera.origin).normalized())>.99,"The camera does not follow the flight to the sun")
+			"flash":check(view.flash.color.a>.5 and app.session.snapshot().get("supernova_reversed",false),"The finale did not end in the white flash after the reversal")
+		print("SUPERNOVA finale ",mark[0]," at ",int(finale.now)-int(finale.hit)," ms")
+		await capture_free_application("supernova-finale-"+mark[0])
+
 ## 105's bomb scene: the bomb in flight, the white flash, the ship thrown off.
 func watch_supernova_bomb() -> void:
 	var state: Dictionary=app.session.snapshot()

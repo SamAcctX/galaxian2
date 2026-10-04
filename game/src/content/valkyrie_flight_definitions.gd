@@ -640,10 +640,9 @@ const SCRIPTED:={
 	# Once Harval is under 1/4 hull, or 200 s have passed with 9 of the 11
 	# enemies (#11-#21) dead: Alice appears and boards (#8-#11, player locked),
 	# Harval blocks the way (#12), Keith pleads (#13-#15, 12 s after #10), Alice
-	# fires the array (#16). Then the supernova reverses (N5) and 6.5 s later
-	# the story moves on: through the gate to Luur, vitals kept (MOVE 158).
-	# Assumptions: one fixed shot of Valkyrie for the finale (the original's
-	# beam, explosions and moving camera are not built); Harval cannot drop below 20% here (the lead's
+	# fires the array (#16); the finale scene below, then the supernova
+	# reverses (N5) and the story moves on: through the gate to Luur, vitals
+	# kept (MOVE 158). Assumptions: Harval cannot drop below 20% here (the lead's
 	# "kept topped up"); Valkyrie does not move away; Harval's 25 s flag toggle
 	# (likely cloak) is left out; line #4 ignores the "#3 finished" guard.
 	157:{"points":[Vector3(70000,0,20000),Vector3(30000,10000,60000),Vector3(-110000,10000,170000),Vector3(-110000,0,20000),
@@ -667,11 +666,23 @@ const SCRIPTED:={
 			{"radio_index":8,"action":"lock_player","until_radio":10,"invulnerable":true},
 			{"radio_index":8,"action":"place","first_actor":22,"end_actor":23,"center":Vector3(-120000,0,20000),"radius":8000.0},
 			{"radio_index":10,"on":"finished","action":"retire","first_actor":22,"end_actor":23},
-			# When Keith's plea (#14) ends the camera looks at Valkyrie from
-			# (50000, 0, 70000) while Alice fires the array, through the reversal.
-			{"radio_index":14,"on":"finished","action":"cutscene","actor":23,"offset":Vector3(50000,0,70000),"until":[35,[16,6500,1]]},
-			{"radio_index":16,"on":"finished","action":"supernova_reversal"}],
-		"success":{"kind":"radio_finished","index":16,"hold_ms":6500},"skip_lines":4},
+			# The finale (VALKYRIE_FINALE): hit when #13 ends, burn when #14
+			# ends, the array charges 3 s after #15 ends. From #14 the camera
+			# looks at Valkyrie from (50000, 0, 70000), sliding 2 units/ms
+			# along -x, then follows the flight to the sun; the supernova
+			# reverses 5 s into it, Valkyrie is gone at 5.7 s, and at 6.5 s
+			# the story moves on.
+			# Harval's line (#12) over: the camera looks at Valkyrie from
+			# (35000, 0, 70000) while it is hit (original stage 8; its extra
+			# 12 s wait is counted from a stage start not recovered).
+			{"radio_index":12,"on":"finished","action":"cutscene","actor":23,"offset":Vector3(35000,0,70000),"until":[35,[14,0,1]]},
+			{"radio_index":13,"on":"finished","action":"array_finale","stage":"hit","actor":23},
+			{"radio_index":14,"on":"finished","action":"array_finale","stage":"burn","actor":23},
+			{"radio_index":15,"on":"finished","delay_ms":3000,"action":"array_finale","stage":"charge","actor":23},
+			{"radio_index":14,"on":"finished","action":"cutscene","actor":23,"offset":Vector3(50000,0,70000),"drift":Vector3(-2,0,0),"until":[35,[15,19500,1]]},
+			{"radio_index":15,"on":"finished","delay_ms":18000,"action":"supernova_reversal"},
+			{"radio_index":15,"on":"finished","delay_ms":18700,"action":"retire","first_actor":23,"end_actor":24}],
+		"success":{"kind":"radio_finished","index":15,"hold_ms":19500},"skip_lines":4},
 	# 158: Luur, after the reversal. #0 Trunt Harval (race 10 in the original
 	# cast, Scimitar 49, named, hull x3) and #1-#3 three hostile 100-hull objects
 	# (model 18882, origin +-10 km). 10 s: "The sun is back to normal!"; the
@@ -962,7 +973,7 @@ static func _wanted_recipe(job: Dictionary) -> Dictionary:
 	var calm:={"initial_hostile":false,"updated_hostile":false,"friendly":false}
 	var groups:=[{"first_actor":0,"end_actor":1,"faction":faction,"population_group":"story","origin":"zero","hull_catalogue_id":int(stats.ship),
 		"display_name":String(stats.name),"cargo_override":{"entries":[{"item_id":int(stats.loot[0]),"quantity":int(stats.loot[1])}],"special":false},
-		"ship_state":{"mode":0,"active":true,"targeting_blocked":false,"hull_override":int(wanted.hull)},"policy":calm.duplicate(),"gun_damage_scale":4,
+		"ship_state":{"mode":0,"active":true,"targeting_blocked":false,"hull_override":int(wanted.hull)},"policy":calm.duplicate(),"gun_damage_scale":4,"gun_item":int(stats.get("weapon",-1)),
 		"position":{"kind":"player_offset","offset":WANTED_OFFSET,"bound":Vector3.ZERO}}]
 	var count:=1+int(stats.wingmen)
 	if count>1:

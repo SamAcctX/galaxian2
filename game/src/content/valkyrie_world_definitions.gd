@@ -103,6 +103,22 @@ const SUPERNOVA:={"system_id":27,"until_cursor":157,"intro_cursor":89,"intro_sky
 const SUPERNOVA_BOMB:={"model_id":14247,"speed":13.0,"launch_sound":14,"implode_ms":6500,"implode_sound":2248,
 	"shrink_per_frame":0.95,"flash_ms":7500,"flash_in_ms":500,"return_ms":8000,"flash_out_ms":2000,"flee_speed":12.0,"tumble_ms_per_radian":800.0}
 
+## The Valkyrie finale (157, LevelScript stages 9-12). Stage times come from
+## the recipe's array_finale actions: "hit" (Keith's line 13 ends), "burn"
+## (line 14 ends), "charge" (3 s after line 15 ends). Hit: explosion sound
+## 2244 now and 6 s later; Valkyrie burns (19095/19096) from 0.3 s. Burn: it
+## burns harder (19097/19098); a big explosion (2243) 9 s after the hit.
+## Charge: 6 s later the array beam (19061-19063, pointing -z) fires with
+## 2247; at 10 s the camera flies toward the sun at 35 units/ms; 5.7 s into
+## that flight Valkyrie is gone in a white flash (2248, white by 6.6 s).
+## Assumptions: the burning and beam meshes sit at Valkyrie's origin (the
+## array's own point was not recovered); explosion bursts, camera rumble and
+## the second, faster drift are not drawn; the burning meshes need an import
+## that lists payload meshes (v205) and are skipped otherwise.
+const VALKYRIE_FINALE:={"beam":[19061,19062,19063],"burn":[19095,19096],"burn_hard":[19097,19098],"burn_after_ms":300,
+	"sounds":[["hit",0,2244],["hit",6000,2244],["hit",9000,2243],["charge",6000,2247],["fly",5700,2248]],
+	"fire_ms":6000,"fly_ms":10000,"fly_speed":35.0,"vanish_ms":5700,"white_end_ms":6600}
+
 ## The supernova flare layers at this location: [{mesh_id, texture_id, speed}],
 ## none outside Ginoya, at the blast (89) or after the reversal.
 static func supernova_sun_scale(system_id: int,cursor: int) -> float:

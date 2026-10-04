@@ -23,6 +23,7 @@ const Gates=preload("res://src/presentation/gate_geometry.gd")
 const FlightProjection=preload("res://src/presentation/flight_camera.gd")
 const GasView=preload("res://src/presentation/gas_cloud_view.gd")
 const BombView=preload("res://src/presentation/supernova_bomb_view.gd")
+const FinaleView=preload("res://src/presentation/valkyrie_finale_view.gd")
 const Dialogue=preload("res://src/presentation/station_dialogue_panel.gd")
 const TargetFrame=preload("res://src/presentation/flight_target_frame.gd")
 const Reticle=preload("res://src/presentation/flight_aim_reticle.gd")
@@ -77,6 +78,7 @@ var _projection: RefCounted
 var _last:={}
 var _supernova_reversed:=false
 var _bomb_view: Node3D
+var _finale_view: Node3D
 var _bomb_sources:=[]
 const World=preload("res://src/content/valkyrie_world_definitions.gd")
 var _last_drill: RefCounted
@@ -110,7 +112,7 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 	var message: String=_projection.configure(bindings.flight_projection,state.campaign_cursor,state.has("void_environment"))
 	if not message.is_empty():return fail(message)
 	camera=Camera3D.new();camera.current=activate_camera;add_child(camera)
-	_bomb_sources=[library,visuals,bindings];_bomb_view=null
+	_bomb_sources=[library,visuals,bindings];_bomb_view=null;_finale_view=null
 	geometry=Geometry.new();add_child(geometry)
 	var ordinary_void_environment: RefCounted=flight.void_environment_owner() if state.player.has("void_context") else null
 	if not geometry.build_departure(library,visuals,bindings,catalogues,state.player_cache,_player_geometry_state(state),"high",true,flight.equipment_owner(),ordinary_void_environment,flight.mission_context_owner()):return fail(geometry.error)
@@ -447,6 +449,12 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 			_bomb_view=BombView.new();add_child(_bomb_view)
 			if not _bomb_view.build(_bomb_sources[0],_bomb_sources[1],_bomb_sources[2]):return fail(_bomb_view.error)
 		planets.set_sun_swell(_bomb_view.present(int(state.world_elapsed_ms)-int(state.supernova_grown_ms),state.get("supernova_bomb")))
+	# The Valkyrie finale (157): burning Valkyrie, the array beam, the flash.
+	if not state.get("array_finale",{}).is_empty():
+		if _finale_view==null:
+			_finale_view=FinaleView.new();add_child(_finale_view)
+			if not _finale_view.build(_bomb_sources[0],_bomb_sources[1],_bomb_sources[2]):return fail(_finale_view.error)
+		_finale_view.present(state.array_finale)
 	if not _present_hit_feedback(state,probe_stage,death):return false
 	sky.commit_view(sky_frame)
 	return true
@@ -527,7 +535,7 @@ func clear() -> void:
 	damage_particles=null;_last_particles=null;_last_gate_animation=null
 	engine_particles=null;_last_engines=null
 	radio=null;_radio_resources=null;npc_markers=null;waypoint_marker=null;station_target_overlay=null
-	hit_arcs=null;orbit_banner=null;_bomb_view=null
+	hit_arcs=null;orbit_banner=null;_bomb_view=null;_finale_view=null
 func _present_hit_feedback(state: Dictionary,probe_stage: Dictionary,death: RefCounted) -> bool:
 	var hidden: bool=state.dialogue.visible or not state.get("alioth_attack",{}).get("hud_visible",true) or not state.get("sahi_stage",{}).get("hud_visible",true) \
 		or not probe_stage.get("hud_visible",true) or (death!=null and not state.player_destruction.hud_visible) or state.get("guided_missile",false) \
