@@ -708,6 +708,13 @@ func story_actor_action(first: int,end: int,action: String) -> bool:
 		if not done:return reject(_actors[id].error if not _actors[id].error.is_empty() else "Unknown story action "+action)
 	return true
 
+func set_story_target(ids: Array,target: int) -> bool:
+	error=""
+	if _contract_encounter.is_empty() or target<0 or target>=_actors.size():return reject("Story targets require contract ships")
+	for id in ids:
+		if int(id)<0 or int(id)>=_actors.size() or not _writable(int(id)).set_story_target(target):return reject("Story targets require contract ships" if int(id)<0 or int(id)>=_actors.size() else _actors[int(id)].error)
+	return true
+
 func revive_story_actor(id: int,burnt_out:=false) -> bool:
 	error=""
 	if _contract_encounter.is_empty() or id<0 or id>=_actors.size():return reject("Story respawn requires contract ships")

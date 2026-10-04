@@ -5,7 +5,10 @@ const Vectors=preload("res://src/simulation/source_vectors.gd")
 
 static func select(state: Dictionary, actor: Dictionary, targets: Array, random: RefCounted, tuning: Dictionary, rules: Dictionary) -> Dictionary:
 	var next:=state.duplicate(true)
-	var commanded: bool=actor.get("wingman",false) and actor.get("wingman_command")==3
+	# A story order (forced target) refreshes like a wingman's attack order.
+	var forced:=int(actor.get("forced_target_actor_id",-1))
+	var commanded: bool=actor.get("wingman",false) and actor.get("wingman_command")==3 or forced>=0
+	var ordered_id:=forced if forced>=0 else int(actor.get("wingman_target_actor_id",-1))
 	var selected:=int(next.target_index)
 	if selected>=targets.size() or selected<0 or not next.fire_desired:selected=-1
 	if selected>=0 and not targets[selected].active:next.fire_desired=false
@@ -24,7 +27,7 @@ static func select(state: Dictionary, actor: Dictionary, targets: Array, random:
 		# The existing refresh still owns range, fire desire and random cadence.
 		if commanded:
 			for index in range(1,targets.size()):
-				if targets[index].actor_id==actor.get("wingman_target_actor_id",-1) and targets[index].active and not targets[index].get("targeting_blocked",false):
+				if targets[index].actor_id==ordered_id and targets[index].active and not targets[index].get("targeting_blocked",false):
 					selected=index;break
 		if not alive(targets[selected]):
 			selected=-1;next.fire_desired=false

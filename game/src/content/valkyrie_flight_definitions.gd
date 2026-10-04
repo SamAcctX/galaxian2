@@ -602,8 +602,9 @@ const SCRIPTED:={
 	# stops) -> the result
 	# (Alice arrested) -> success; then back at the last docked station's gate
 	# (MOVE_ON_ENTRY 155). Failure: the countdown runs out. Lines 0-6 hold the
-	# player with the original's camera shots (Supernova lead). Assumptions: all fighters target the
-	# player (original: every third the freighter);
+	# player with the original's camera shots (Supernova lead). Fighters whose
+	# cast index divides by 3 attack the freighter, the rest the player.
+	# Assumptions:
 	# the fighters are the alien world's own Void hull (8).
 	# Valkyrie stands at the origin (point 2, the freighter's route end); the
 	# fighters fan out either side of (0,0,40000), 40 km ahead of it (two lines,
@@ -623,6 +624,7 @@ const SCRIPTED:={
 			{"radio_index":6,"on":"finished","delay_ms":1000,"action":"cutscene","actor":0,"offset":Vector3(200,300,1800),"until":[35,[6,8000,1]]},
 			{"radio_index":6,"on":"finished","action":"wake","first_actor":0,"end_actor":1},
 			{"radio_index":7,"action":"wake","first_actor":2,"end_actor":22,"attack_range":50000},
+			{"radio_index":7,"action":"attack","first_actor":2,"end_actor":22,"target_actor":0,"stride":3},
 			{"radio_index":8,"on":"finished","action":"dockable","first_actor":1,"end_actor":2,"enabled":true},
 			{"radio_index":8,"on":"finished","action":"countdown","duration_ms":91000},
 			{"radio_index":11,"action":"countdown","stop":true}],

@@ -216,6 +216,13 @@ func set_wingman_order(command: int,target_actor_id: int=-1) -> bool:
 	_state.wingman_target_actor_id=target_actor_id if command==3 else -1
 	return true
 
+## A story order: this ship attacks that cast member (-1 clears it).
+func set_story_target(target_actor_id: int) -> bool:
+	_read={}
+	if not (_state.get("authored_story",false) or _state.get("contract_combat",false)) or target_actor_id< -1:return reject("Story targets require a story ship")
+	_state.forced_target_actor_id=target_actor_id
+	return true
+
 func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,actor_id: Variant,rank: Variant,difficulty: Variant) -> bool:
 	_read={}
 	clear()

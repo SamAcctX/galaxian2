@@ -2533,8 +2533,24 @@ func fly_supernova_ambush() -> void:
 			print("SUPERNOVA 154 skipped the opening conversation")
 		return frame._encounter.combat_snapshot().actors[1].pose.origin
 	# The fighters are left to chase: dock and win the hack before the countdown ends.
-	if failures or not await story_flight(154,"valkyrie",valkyrie,func(_frame):return [],radio_ids,600,1500.0):return
-	print("SUPERNOVA 154 radio ",radio_ids)
+	var orders:={}
+	var watch_orders:=func(frame):
+		var actors: Array=frame._encounter.combat_snapshot().actors
+		if orders.is_empty() and actors.size()>21 and int(actors[3].get("forced_target_actor_id",-1))==0:
+			for id in range(2,22):orders[id]=int(actors[id].get("forced_target_actor_id",-1))
+		# The ordered fighters really pick the freighter (guidance target = cast 0).
+		var control: Variant=frame._encounter.get("_control")
+		if not orders.is_empty() and not orders.has("chased") and control!=null and control.get("_guidance") is Array:
+			for id in range(3,22,3):
+				var guide: Variant=control._guidance[id] if id<control._guidance.size() else null
+				if guide==null or guide._training.is_empty():continue
+				var pick:=int(guide._state.get("target_index",-1));var members: Array=guide._training.target_memberships[id]
+				if pick>=0 and pick<members.size() and members[pick] is int and int(members[pick])==0:orders.chased=true;print("SUPERNOVA 154 fighter ",id," chases the freighter");break
+		return []
+	if failures or not await story_flight(154,"valkyrie",valkyrie,watch_orders,radio_ids,600,1500.0):return
+	print("SUPERNOVA 154 radio ",radio_ids," orders ",orders)
+	check(not orders.is_empty() and range(2,22).all(func(id):return orders[id]==(0 if id%3==0 else -1)),"Every third Void fighter did not go for the freighter: "+str(orders))
+	check(orders.get("chased",false),"No ordered Void fighter picked the freighter as its target")
 	check(3039 in radio_ids and app.session.flight_owner()._objective.snapshot().campaign_cursor==155,"Boarding Valkyrie did not move the story to 155")
 	scene=[]
 	if failures or not await ride_story_jump(scene,120) or not await enter_story_arrival("supernova-155"):return

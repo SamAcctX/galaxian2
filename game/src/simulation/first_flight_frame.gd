@@ -2177,9 +2177,13 @@ func _observe_radio() -> bool:
 				if action.get("stop",false):_countdown_end=-2
 				elif _countdown_end==-1:_countdown_end=elapsed+int(action.duration_ms)
 			elif action.action=="attack":
-				# Assumption (gaps file): the ships do not fire on the object (no
-				# forced NPC target yet).
-				pass
+				# Once: the ships attack target_actor; "stride" picks every n-th
+				# cast index only (154: every third Void fighter takes the freighter).
+				if not _action_marks.has("attack%d"%index):
+					var stride:=maxi(1,int(action.get("stride",1)))
+					var ids:=range(int(action.first_actor),int(action.end_actor)).filter(func(id):return id%stride==0)
+					if not _encounter.set_story_target(ids,int(action.target_actor)):return reject(_encounter.error)
+					_action_marks["attack%d"%index]=true
 			elif action.action=="retire":
 				# The ship or object leaves the scene (80: the Valkyrie jumps away).
 				var actors: Array=_encounter.read_combat().actors

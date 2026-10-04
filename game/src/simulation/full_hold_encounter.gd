@@ -859,6 +859,14 @@ func disarm_story_actors(first: int,end: int) -> bool:
 	_control=control;_combat=control._combat
 	return true
 
+func set_story_target(ids: Array,target: int) -> bool:
+	error=""
+	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story targets require a contract encounter")
+	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	if not control._combat.set_story_target(ids,target):return reject(control._combat.error)
+	_control=control;_combat=control._combat
+	return true
+
 func stand_down_story_actors(first: int,end: int) -> bool:
 	error=""
 	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story surrender requires a contract encounter")
