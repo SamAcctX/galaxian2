@@ -225,9 +225,16 @@ func evaluate(actor: Dictionary, amount: Variant, nonplayer: Variant, random_sta
 	if faction_eligible and actor.active and actor.damage_allowed and actor.vitals.hull>0 and not nonplayer and (not actor.hostile or actor.forced_hostile):
 		# Accumulation counts requested damage, including absorbed shield/armor
 		# damage. Match signed 32-bit storage before the binary32 comparisons.
-		var total: int=(next._state.requested_damage[id]+amount)&0xffffffff
+		var before: int=next._state.requested_damage[id]
+		var total: int=(before+amount)&0xffffffff
 		if total>=0x80000000:total-=0x100000000
 		next._state.requested_damage[id]=total
+		# A fitted race signature is blown (verified Player::damage): past the
+		# warning share on a ship of its own race, or the retaliation share on
+		# any of the four races. The docking then removes it (offence 100).
+		var signature:=int(next._state.get("signature_race",-1))
+		if signature>=0 and (expected_kind==signature and exceeds(total,actor.max_hull,float(_rules.warning_fraction)) or expected_kind<4 and exceeds(total,actor.max_hull,float(_rules.retaliation_fraction))):
+			next._state.signature_race=-1;next._state.signature_lost=signature
 		if exceeds(total,actor.max_hull,float(_rules.warning_fraction)) and not next._state.warning_issued:
 			next._state.warning_issued=true
 			next._queue_radio("warning",random,display_available,events)

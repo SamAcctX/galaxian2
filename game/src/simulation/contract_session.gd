@@ -1088,6 +1088,17 @@ func advance_kaamo(purchase: bool) -> bool:
 	_state.progress.kaamo_state=current+1
 	return true
 
+## Standing::applyDelict: an offence against a race (0-3), doubled at Extreme;
+## Terrans/Vossk share axis 0, Nivelians/Midorians axis 1 (clamped to +-100).
+func apply_delict(race: int,amount: int) -> bool:
+	if race<0 or race>3 or not _state.get("reputation") is Dictionary:return reject("An offence needs a race and a career standing")
+	var change: int=amount*(2 if float(_state.get("difficulty",Difficulty.NORMAL))==Difficulty.EXTREME else 1)*(1 if race%2 else -1)
+	var axes: Array=_state.reputation.axes.duplicate()
+	axes[race/2]=clampi(int(axes[race/2])+change,-100,100)
+	_state.reputation=_state.reputation.duplicate(true);_state.reputation.axes=axes
+	_state.progress.reputation=_state.reputation.duplicate(true)
+	return true
+
 ## Supernova 148: a broker's bar talk is heard once per career.
 func hear_bar_flavor() -> bool:
 	var Campaign=preload("res://src/content/valkyrie_campaign_definitions.gd")

@@ -629,6 +629,9 @@ func begin_contact_pass(random_state: Dictionary, display_available: bool) -> bo
 
 func contact_random_state() -> Dictionary:return _contact_random.duplicate(true)
 
+## The race whose signature this flight blew, or -1.
+func signature_lost() -> int:return -1 if _provocation==null else int(_provocation.read_state().get("signature_lost",-1))
+
 ## The standing hostility reads: the career's, or a fitted signature's.
 func hostility_reputation() -> Dictionary:
 	var standing:=current_reputation()

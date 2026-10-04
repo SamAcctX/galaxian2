@@ -67,6 +67,14 @@ func verify_free_application() -> void:
 	check(app.medal_notice.visible and not app.medal_notice._reward.visible,"The Extreme medal notice still showed a reward")
 	app._unhandled_input(enter);await process_frame
 	contracts=app.session._world._contracts;contracts._state=contracts._state.duplicate(true);contracts._state.difficulty=0.5
+	# A blown signature's offence (Standing::applyDelict): 100 against the race,
+	# doubled at Extreme, on its axis (Terran -axis 0, Midorian +axis 1).
+	for case in [[0,0.5,0,-100],[3,1.5,1,200]]:
+		var probe: RefCounted=contracts.fork();probe._state.difficulty=float(case[1])
+		var start: Array=probe._state.reputation.axes.duplicate()
+		check(probe.apply_delict(int(case[0]),100),probe.error)
+		var expected: Array=start.duplicate();expected[case[2]]=clampi(int(start[case[2]])+int(case[3]),-100,100)
+		check(probe._state.reputation.axes==expected and probe._state.progress.reputation==probe._state.reputation,"The race %d offence moved standing wrongly: %s"%[case[0],str(probe._state.reputation)])
 	await verify_elite_medals()
 	var before: Dictionary=app.session.station_owner().snapshot()
 	check(app.station_shell._actions.status.visible,"The station menu has no Status entry")

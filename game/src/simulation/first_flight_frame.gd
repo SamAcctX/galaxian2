@@ -238,6 +238,9 @@ var _instability:=0.0
 var _volatile_steer:=Vector2.ZERO
 ## Extreme careers: a fuller hold turns slower (full hold = 60% turn rate).
 var _hold_handling:=false
+## A blown race signature shows its notice once (the docking removes it).
+const SIGNATURE_NOTICE:=46
+var _signature_noticed:=false
 var _navigation_applied:=false
 var _fast_forward: RefCounted
 var _near_target:=false
@@ -1130,6 +1133,9 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 		var hit: Dictionary=next._player.drain_gamma(next._gamma_rate*float(delta_ms)/1000.0,float(Worlds.GAMMA_WARNING))
 		if hit.is_empty():reject(next._player.error);return null
 		if hit.warned and not next._notices.enqueue(Worlds.GAMMA_NOTICE):reject(next._notices.error);return null
+	if next._encounter!=null and not next._signature_noticed and next._encounter.signature_lost()>=0:
+		if not next._notices.enqueue(SIGNATURE_NOTICE):reject(next._notices.error);return null
+		next._signature_noticed=true
 	if next._fast_forward!=null:
 		var radar_visible: bool=not next.death_active() and cues.entry_released and not cues.dialogue.visible and not next.cinematic_input_blocked() and not next.local_departing()
 		if not next._fast_forward.publish_radar([] if next._encounter==null else next._encounter.read_combat().actors,radar_visible,current_music_id):reject(next._fast_forward.error);return null
@@ -2723,6 +2729,7 @@ func _evaluate_station_return() -> bool:
 		"docking":{"station_id":int(_return_rules.station_id),"pre_motion_contact":_station_contact,"post_motion_volume_index":volume,"position":_pose.origin}}
 	if _return_rules.get("departure_return",false):_station_packet.departure_return=true
 	if _equipment!=null:_station_packet.equipment=_equipment.snapshot()
+	if _encounter!=null and _encounter.signature_lost()>=0:_station_packet.signature_lost=_encounter.signature_lost()
 	if local_visit or contract_station or _return_rules.get("bakka_return",false):_station_packet.station_response_flags=station_response_flags()
 	if contracts!=null:_station_packet.contracts=contracts.snapshot()
 	if _return_rules.get("dekato_return",false):
@@ -3301,7 +3308,7 @@ func fork_for_frame() -> RefCounted:
 	if _gate_transit!=null:copy._gate_transit=_gate_transit.fork_for_frame()
 	copy._gate_destinations=_gate_destinations.duplicate();copy._gate_cruise_speed=_gate_cruise_speed
 	copy._system_navigation=_system_navigation;copy._navigation_destinations=_navigation_destinations
-	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied;copy._queued_drive=_queued_drive;copy._story_jump=_story_jump;copy._story_locked=_story_locked;copy._cutscene=_cutscene.duplicate();copy._story_dock=_story_dock.duplicate(true);copy._action_marks=_action_marks.duplicate();copy._line_marks=_line_marks.duplicate(true);copy._gamma_rate=_gamma_rate;copy._instability=_instability;copy._volatile_steer=_volatile_steer;copy._hold_handling=_hold_handling;copy._story_cloaks=_story_cloaks.duplicate(true);copy._forced_cloaks=_forced_cloaks.duplicate();copy._countdown_end=_countdown_end;copy._gas_ionized=_gas_ionized;copy._gas=_gas;copy._gas_collector=_gas_collector;copy._story_hack=_story_hack;copy._story_route=_story_route.duplicate()
+	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied;copy._queued_drive=_queued_drive;copy._story_jump=_story_jump;copy._story_locked=_story_locked;copy._cutscene=_cutscene.duplicate();copy._story_dock=_story_dock.duplicate(true);copy._action_marks=_action_marks.duplicate();copy._line_marks=_line_marks.duplicate(true);copy._gamma_rate=_gamma_rate;copy._instability=_instability;copy._volatile_steer=_volatile_steer;copy._hold_handling=_hold_handling;copy._signature_noticed=_signature_noticed;copy._story_cloaks=_story_cloaks.duplicate(true);copy._forced_cloaks=_forced_cloaks.duplicate();copy._countdown_end=_countdown_end;copy._gas_ionized=_gas_ionized;copy._gas=_gas;copy._gas_collector=_gas_collector;copy._story_hack=_story_hack;copy._story_route=_story_route.duplicate()
 	copy._briefing=_briefing.fork();copy._player=_player.fork_for_frame();copy._scenery=_scenery.fork_for_frame()
 	copy._camera=_camera.fork_for_frame();copy._pilot=_pilot.fork_for_frame();copy._detail=_detail.fork_for_frame()
 	copy._collision_enabled=_collision_enabled

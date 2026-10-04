@@ -27,6 +27,7 @@ func verify(args: PackedStringArray):
 	var lib:=Library.new();var bindings:=Bindings.new();var cat:=Catalogues.new()
 	if not lib.open(args[0]) or not bindings.open(args[1],lib.manifest) or not cat.open(lib) or not lib.select_language("gb"):check(false,lib.error+bindings.error+cat.error);return
 	verify_weymire(bindings,cat)
+	verify_provocation_rules(bindings)
 	if not Worlds.available(bindings):
 		check(FreeFlight.flight(bindings,70).is_empty(),"Earlier pack enabled unverified Magnetar flight")
 		check(PlanetLayout.new().for_lounge(bindings,cat,70,18).is_empty(),"Earlier pack enabled new planet types")
@@ -201,14 +202,34 @@ func verify_weymire_reaction(bindings: RefCounted,lifecycle: Dictionary,actors: 
 	check(after.warning_issued and after.response_issued and after.requested_damage[actor.actor_id]==actor.max_hull and result.events.size()==2,"Weymire local or opposing faction did not react to a player hit")
 	check(after.station_response_flag==(actor.actor_kind==2),"Weymire station response followed a non-primary faction")
 	for id in actors.size():check(after.forced_hostile[id]==(actors[id].actor_kind==actor.actor_kind),"Weymire provocation forced a different faction")
-	# Extreme: 30% of the hull already turns the whole faction (Normal needs 66%).
+
+## Neutral provocation thresholds on one synthetic traffic ship (any pack).
+func verify_provocation_rules(bindings: RefCounted):
+	if not bindings.mido_travel.has("traffic_combat"):return
+	var data:={"actor_count":1,"campaign_cursor":46,"station_id":0}
+	var ship:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":46,"actor_id":0,"actor_kind":1,
+		"active":true,"damage_allowed":true,"hostile":false,"forced_hostile":false,"max_hull":1000,"vitals":{"hull":1000}}
+	var make:=func(difficulty: float,signature: int) -> RefCounted:
+		var owner:=Provocation.new()
+		if not owner._initialize_population(bindings,data,bindings.mido_travel.traffic_combat,{"axes":[0,0],"override":-1}):check(false,owner.error);return null
+		owner._rules.actor_kind=1;owner._apply_difficulty(difficulty);owner._state.signature_race=signature
+		return owner
+	# Extreme: 45% of the hull already turns the whole faction (40%; Normal 66%).
 	for extreme in [false,true]:
-		var hard:=Provocation.new()
-		if not hard._initialize_population(bindings,lifecycle,bindings.mido_travel.traffic_combat,{"axes":[0,0],"override":-1}):check(false,hard.error);return
-		hard._set_factions(lifecycle,-1);hard._apply_difficulty(1.5 if extreme else 0.5)
-		var hit: Dictionary=hard.evaluate(actor,int(actor.max_hull*0.3),false,random_state,true)
+		var hard: RefCounted=make.call(1.5 if extreme else 0.5,-1)
+		if hard==null:return
+		var hit: Dictionary=hard.evaluate(ship,450,false,{"state":1},true)
 		if hit.is_empty():check(false,hard.error);return
-		check(bool(hit.owner.snapshot().response_issued)==extreme,"A 30% hit did not follow the %s faction threshold"%("Extreme" if extreme else "Normal"))
+		check(bool(hit.owner.snapshot().response_issued)==extreme,"A 45%% hit did not follow the %s faction threshold"%("Extreme" if extreme else "Normal"))
+	# A fitted race signature is blown past the warning share (33%) on a ship of
+	# its own race (Vossk here), or the retaliation share (50%) on another race.
+	for case in [[1,200,false],[1,400,true],[2,400,false],[2,550,true]]:
+		var cover: RefCounted=make.call(0.5,int(case[0]))
+		if cover==null:return
+		var blown: Dictionary=cover.evaluate(ship,int(case[1]),false,{"state":1},true)
+		if blown.is_empty():check(false,cover.error);return
+		var covered: Dictionary=blown.owner.snapshot()
+		check((int(covered.get("signature_lost",-1))==int(case[0]))==bool(case[2]) and (int(covered.signature_race)<0)==bool(case[2]),"A %d%% hit on a %s ship did not follow the signature rule"%[int(case[1])/10,"same-race" if case[0]==1 else "other-race"])
 
 func verify_population(bindings: RefCounted,cat: RefCounted,context: Dictionary,seed: int):
 	var owner:=Factory.new()

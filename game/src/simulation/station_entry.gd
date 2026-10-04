@@ -288,6 +288,10 @@ func _configure_contract_return(bindings: RefCounted,catalogues: RefCounted,libr
 	# A used Emergency System (item 185) is gone once the ship docks.
 	var emergency: Dictionary=packet.get("player",{}).get("devices",{}).get("emergency",{})
 	if emergency.get("used",false) and not equipment.remove_story_item(bindings,catalogues,int(emergency.item_id)):return fail(equipment.error)
+	# A race signature blown in flight is gone, with an offence of 100 to its race.
+	if packet.has("signature_lost"):
+		var race:=int(packet.signature_lost)
+		if race<0 or race>3 or contracts==null or not equipment.remove_story_item(bindings,catalogues,189+race) or not contracts.apply_delict(race,100):return fail("The blown signature could not be settled: "+equipment.error+contracts.error)
 	_equipment=equipment;_contracts=contracts;_equipment_rules={};_equipment_lines=[];_local_rules={};_local_exchange=null;_contract_followup=null
 	var continuation: RefCounted=contracts.station_context_owner()
 	if continuation!=null and continuation.completed_career(bindings):

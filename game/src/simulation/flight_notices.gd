@@ -51,6 +51,8 @@ func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,lo
 	definitions["44"]={"text_ids":[3190],"separator":"","rgb":[255,255,255]}
 	# Story dock "Transfer complete" (Hud message 3189); optional like 44.
 	definitions["45"]={"text_ids":[3189],"separator":"","rgb":[255,255,255]}
+	# A blown race signature: "Signature invalid" (Hud event 31, text 313).
+	definitions["46"]={"text_ids":[313],"separator":"","rgb":[255,255,255]}
 	# Refused story courses (Supernova passenger berths); optional like 44.
 	var campaign:=load("res://src/content/valkyrie_campaign_definitions.gd")
 	for need in campaign.ENTRY_REQUIREMENTS.values():

@@ -1199,6 +1199,7 @@ func apply_beam_effects(heal: Dictionary,drain: Dictionary) -> void:
 	_combat=combat
 ## Accounting/provocation only; skips per-actor pose and systems copies.
 func career_snapshot() -> Dictionary:return {} if _combat==null else _combat.career_snapshot()
+func signature_lost() -> int:return -1 if _combat==null or not _combat.has_method("signature_lost") else _combat.signature_lost()
 func primary_contacts() -> Array:return _primary_contacts.duplicate(true)
 ## Every mounted gun emits a record, even without a hit. Only an actual NPC
 ## contact sets the hit reticle; asteroid hits retain ordinary aim feedback.
