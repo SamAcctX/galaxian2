@@ -9,6 +9,8 @@ const Vectors = preload("res://src/simulation/source_vectors.gd")
 # This limit is far outside every supported viewport and preserves direction.
 const SCREEN_DELTA_LIMIT := 1073741824.0
 const STABLE_ELLIPSE_DISTANCE := 1048576.0
+# safe_pixel(value) is absf(value) < PIXEL_LIMIT: NaN and both infinities fail it.
+const PIXEL_LIMIT := 2147483648.0
 var error := ""
 var _size := Vector2i.ZERO
 var _center := Vector2i.ZERO
@@ -48,7 +50,7 @@ var in_view := false
 var ellipse_clamped := false
 
 func project_point(camera: Transform3D, position: Vector3) -> Dictionary:
-	if not _sample_point(camera,position): return {"error":error}
+	if not sample(camera,position,false): return {"error":error}
 	return {"camera_position":camera_position,"projected":projected,"in_view":in_view,"screen_position":screen_position}
 
 func project(camera: Transform3D, position: Vector3) -> Dictionary:
@@ -56,10 +58,8 @@ func project(camera: Transform3D, position: Vector3) -> Dictionary:
 	return {"camera_position":camera_position,"projected":projected,"in_view":in_view,"screen_position":screen_position,"pixels":pixels,"ellipse_clamped":ellipse_clamped}
 
 ## project() without its dictionary: false with `error` set, or the members above.
-func sample(camera: Transform3D, position: Vector3) -> bool:
-	return _sample_point(camera,position) and _sample_marker()
-
-func _sample_point(camera: Transform3D, position: Vector3) -> bool:
+## project_point() stops before the marker (pixels and ellipse_clamped).
+func sample(camera: Transform3D, position: Vector3, marker := true) -> bool:
 	error = ""
 	if _size == Vector2i.ZERO: return reject("Configure target projection before projecting")
 	if not position.is_finite():return reject("Target projection requires a finite proper camera and world position")
@@ -101,20 +101,17 @@ func _sample_point(camera: Transform3D, position: Vector3) -> bool:
 	if not screen.is_finite(): return reject("Target projection exceeds source precision")
 	camera_position = local;screen_position = screen;projected = not behind
 	in_view = projected and screen.x >= 0 and screen.y >= 0 and screen.x < _size.x and screen.y < _size.y
-	return true
-
-func _sample_marker() -> bool:
-	var local := camera_position
-	var screen := screen_position
-	if not safe_pixel(screen.x) or not safe_pixel(screen.y): return reject("Target projection exceeds signed pixel coordinates")
-	var marker := Vector2i(int(screen.x),int(screen.y))
+	if not marker: return true
+	# safe_pixel() spelled out: this runs for every target of every scanner.
+	if not (absf(screen.x) < PIXEL_LIMIT and absf(screen.y) < PIXEL_LIMIT): return reject("Target projection exceeds signed pixel coordinates")
+	var point := Vector2i(int(screen.x),int(screen.y))
 	var clamped := false
 	if not in_view:
 		# A failed early projection retains camera X/Y as the ellipse input and
 		# camera X/-Y as its fallback. Do not turn every failure into an edge arrow.
 		var fallback := Vector2(local.x,-local.y)
-		var delta := Vector2(float(_center.x)-marker.x,float(_center.y)-marker.y)
-		if not safe_pixel(delta.x) or not safe_pixel(delta.y): return reject("Target ellipse displacement exceeds signed pixel coordinates")
+		var delta := Vector2(float(_center.x)-point.x,float(_center.y)-point.y)
+		if not (absf(delta.x) < PIXEL_LIMIT and absf(delta.y) < PIXEL_LIMIT): return reject("Target ellipse displacement exceeds signed pixel coordinates")
 		if maxf(absf(delta.x),absf(delta.y)) > STABLE_ELLIPSE_DISTANCE:
 			# Adding nearly opposite large float32 values loses the small marker
 			# offset. Normalize first, then add the viewport center instead.
@@ -130,11 +127,11 @@ func _sample_marker() -> bool:
 				var weight := Vector2(Vector2(q - Vector2(sqrt(q),0.0).x,0.0).x / q,0.0).x
 				if weight >= 0 and weight <= 1:
 					var offset := Vector2(delta.x * weight,delta.y * weight)
-					fallback = Vector2(float(marker.x) + offset.x,float(marker.y) + offset.y)
+					fallback = Vector2(float(point.x) + offset.x,float(point.y) + offset.y)
 					clamped = true
-		if not safe_pixel(fallback.x) or not safe_pixel(fallback.y): return reject("Target marker exceeds signed pixel coordinates")
-		marker = Vector2i(int(fallback.x),int(fallback.y))
-	pixels = marker;ellipse_clamped = clamped
+		if not (absf(fallback.x) < PIXEL_LIMIT and absf(fallback.y) < PIXEL_LIMIT): return reject("Target marker exceeds signed pixel coordinates")
+		point = Vector2i(int(fallback.x),int(fallback.y))
+	pixels = point;ellipse_clamped = clamped
 	return true
 
 func clear() -> void:
