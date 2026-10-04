@@ -9,7 +9,6 @@ var error := ""
 var prepared := false
 var mobile_layout := false
 var sprite: TextureRect
-var cursor: TextureRect
 var _textures := {}
 var _source := {}
 var _sample := {}
@@ -50,7 +49,6 @@ func prepare(library: RefCounted, bindings: RefCounted, visuals: RefCounted) -> 
 	sprite=TextureRect.new();sprite.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	sprite.texture_filter=CanvasItem.TEXTURE_FILTER_LINEAR;sprite.expand_mode=TextureRect.EXPAND_IGNORE_SIZE
 	sprite.stretch_mode=TextureRect.STRETCH_SCALE;add_child(sprite)
-	cursor=sprite.duplicate();cursor.modulate=Color(1,1,1,0.45);add_child(cursor)
 	prepared=true
 	return true
 
@@ -75,19 +73,12 @@ func reflow() -> void:
 	sprite.texture=_textures[_sample.image_id]
 	sprite.size=sprite.texture.get_size()*(1.0 if mobile_layout else 0.5)
 	sprite.position=Vector2(int(_sample.point.x),int(_sample.point.y))-sprite.size*0.5
-	# Mouse steering: a fainter, smaller marker where the mouse is steering.
-	var steer: Variant=_sample.get("cursor_point",Vector2(-1,-1))
-	cursor.visible=steer is Vector2 and steer.x>=0.0
-	if cursor.visible:
-		cursor.texture=sprite.texture;cursor.size=sprite.size*0.6
-		cursor.position=Vector2(int(steer.x),int(steer.y))-cursor.size*0.5
 	visible=_sample.visible
 
 func source() -> Dictionary:return _source.duplicate(true)
 
 func clear() -> void:
 	if sprite!=null:sprite.free();sprite=null
-	if cursor!=null:cursor.free();cursor=null
 	error="";prepared=false;visible=false;_source={};_sample={};_textures={}
 
 func fail(message: String) -> bool:

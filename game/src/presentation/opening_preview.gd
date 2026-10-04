@@ -882,6 +882,7 @@ func _exit_tree() -> void:
 	if _mouse_captured and Input.mouse_mode==Input.MOUSE_MODE_CAPTURED:Input.mouse_mode=Input.MOUSE_MODE_VISIBLE
 
 func _input(event: InputEvent) -> void:
+	if handle_hangar_back(event):return
 	if session is StationSession and session.presentation_active() and _focused and is_visible_in_tree():
 		var pressed: bool=(event is InputEventKey and event.pressed and not event.echo) or (event is InputEventJoypadButton and event.pressed) or (event is InputEventMouseButton and event.pressed) or (event is InputEventScreenTouch and event.pressed)
 		if pressed:
@@ -891,10 +892,11 @@ func _input(event: InputEvent) -> void:
 		return
 	if not _touch_detected and event is InputEventScreenTouch and event.pressed and event.device!=InputEvent.DEVICE_ID_EMULATION:
 		_touch_detected=true;refresh_render_mode()
+	# Cinematics release the mouse, so take the skip click before the scene
+	# view forwards it into its GUI or the captured-flight check rejects it.
+	if event is InputEventMouseButton and _handle_cinematic_skip_event(event):return
 	# Own captured mouse input before the flight SubViewport can consume it.
 	if not _mouse_captured or not _focused or not is_visible_in_tree():return
-	# A click skips a launch/arrival before mouse steering takes it.
-	if event is InputEventMouseButton and _handle_cinematic_skip_event(event):return
 	if event is InputEventMouseMotion or event is InputEventMouseButton:
 		if _controls.accept(event):
 			handle_action_events(_controls.take_events())
@@ -1171,6 +1173,12 @@ func station_navigation(action: String) -> void:
 	# ready at this same station (e.g. Kothar 74 -> 75 -> 76) opens at once.
 	if action=="next" and not session.snapshot().dialogue.visible and session.campaign_story_ready():
 		if _begin_campaign_story():present_session()
+
+func handle_hangar_back(event: InputEvent) -> bool:
+	if not event is InputEventKey or not event.pressed or event.echo or (event.physical_keycode if event.physical_keycode else event.keycode)!=KEY_ESCAPE:return false
+	if not session is StationSession or not _focused or not is_visible_in_tree() or session.is_paused() or not session.snapshot().get("hangar_open",false):return false
+	if not equipment_panel.back():return false
+	get_viewport().set_input_as_handled();return true
 
 func equipment_action(action: String, item_id: int=-1, slot_index: int=-1,quantity: int=1) -> bool:
 	if not session is StationSession or not _focused or not is_visible_in_tree() or session.is_paused() or not _launch_packet.is_empty():return false

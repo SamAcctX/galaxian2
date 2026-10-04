@@ -22,7 +22,7 @@ func verify_component(world: RefCounted) -> void:
 	if not frame.configure(bindings,catalogues,library,context,world):check(false,frame.error);return
 	var before: Dictionary=frame.snapshot()
 	root.size=Vector2i(1280,720);root.content_scale_size=Vector2i.ZERO
-	for kind in ["keyboard","keypad","controller","pointer"]:
+	for kind in ["keyboard","keypad","controller","pointer","desktop_pointer"]:
 		await verify_arrival(frame,kind)
 		if failures:return
 	check(frame.snapshot()==before and world.snapshot()==original,"Application arrival changed its retained source frame/world")
@@ -95,6 +95,9 @@ func verify_arrival(frame: RefCounted,kind: String) -> void:
 		check(app._flight_hint.is_visible_in_tree() and "Skip cinematic" in app._flight_hint.text,"Arrival omitted its desktop skip hint")
 		if kind=="keyboard":await capture(app,"arrival-keyboard-skip")
 		if kind=="controller":await pad()
+		elif kind=="desktop_pointer":
+			check(not app._mouse_captured and not app._skip_button.visible,"Desktop cinematic retained captured flight input or touch controls")
+			await click_at(Vector2(640,360))
 		else:await key(KEY_KP_ENTER if kind=="keypad" else KEY_ENTER)
 	var after: Dictionary=session.snapshot()
 	check(after.entry_released and after.entry_skipped and after.dialogue.get("text_id")==2038 and after.dialogue.get("voice_event_id")==185,"Actual "+kind+" skip did not open exactly the first arrival briefing page")
@@ -112,7 +115,7 @@ func verify_arrival(frame: RefCounted,kind: String) -> void:
 	# Navigate the actual scene buttons/Host, not the simulation's navigate method.
 	for page in 3:
 		check(session.snapshot().dialogue.get("text_id")==2038+page,"Arrival briefing omitted or duplicated a page")
-		if kind=="pointer":
+		if kind in ["pointer","desktop_pointer"]:
 			var button: Control=scene.feedback.dialogue._next
 			var view: Control=app.viewport.get_parent()
 			await click_at(view.get_global_transform_with_canvas()*button.get_global_rect().get_center())

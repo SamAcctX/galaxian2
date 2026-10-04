@@ -3270,6 +3270,8 @@
     "game/tests/valkyrie_story_talks.gd.uid",
     "game/tests/void_story_cast.gd.uid",
     "game/tests/wanted_board.gd.uid",
-    "game/tests/wingman_incoming_application.gd.uid"
+    "game/tests/wingman_incoming_application.gd.uid",
+    "game/tests/desktop_mining_controls_application.gd",
+    "game/tests/desktop_mining_controls_application.gd.uid"
   ]
 }
