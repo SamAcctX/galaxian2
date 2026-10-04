@@ -56,7 +56,11 @@ func configure(library: RefCounted,bindings: RefCounted,cat: RefCounted,observat
 	if mission_target<0:
 		var story_station:=int(observation.get("mission",{}).get("station_id",-1))
 		if story_station>=0 and story_station<cat.tables.stations.size():mission_target=int(cat.tables.stations[story_station].system_id)
-	if mission_target>=0:route=navigation.route(int(location.system_id),mission_target)
+	# A Most Wanted route runs from the criminal's last stop, not from the player.
+	var route_start:=int(location.system_id)
+	var wanted_from:=int(observation.get("wanted_from",-1))
+	if int(observation.get("wanted_marker",-1))>=0 and wanted_from>=0 and wanted_from<cat.tables.stations.size():route_start=int(cat.tables.stations[wanted_from].system_id)
+	if mission_target>=0:route=navigation.route(route_start,mission_target)
 	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language,
 		"campaign_cursor":int(observation.campaign_cursor),"station_id":int(location.station_id),"system_id":int(location.system_id),
 		"drive_mode":observation.get("drive_mode",false),"rows":rows,"links":links,"mission_route":route,"void_warning":warning,"destinations":destinations,

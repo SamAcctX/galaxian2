@@ -2140,6 +2140,9 @@ func fly_supernova_wanted() -> void:
 			var cat:=preload("res://src/content/catalogues.gd").new();cat.open(app.library)
 			print("SUPERNOVA wanted map marked ",marked," route ",route)
 			check(app._station_map_open and marked==[int(cat.tables.stations[route[1]].system_id)],"Show on map did not mark the criminal's destination")
+			# The drawn route runs from his last stop to his destination.
+			var path: Array=shown.get("mission_route",[]);var ends:=[int(cat.tables.stations[route[0]].system_id),int(cat.tables.stations[route[1]].system_id)]
+			check(ends[0]==ends[1] or (not path.is_empty() and [int(path[0]),int(path[-1])]==ends),"The map route does not run from the criminal's last stop: "+str(path)+" "+str(ends))
 			await capture_free_application("supernova-wanted-map-%d"%cursor)
 			app.close_map();await process_frame
 			app.open_missions();await process_frame;app.missions_panel.toggle_wanted();await process_frame

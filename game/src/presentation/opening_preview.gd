@@ -1294,7 +1294,7 @@ func open_map(now_microseconds: int=-1,drive_mode:=false,wanted:={}) -> bool:
 	var catalogues:=Catalogues.new()
 	if not catalogues.open(library):status.text=catalogues.error;return false
 	var observation: Dictionary=_station_map_observation() if docked else (session.drive_map_observation() if drive_mode and session.drive_available() else session.snapshot())
-	if docked and not wanted.is_empty():observation=observation.duplicate();observation.wanted_marker=int(wanted.to)
+	if docked and not wanted.is_empty():observation=observation.duplicate();observation.wanted_marker=int(wanted.to);observation.wanted_from=int(wanted.seen)
 	if not map_panel.configure(library,bindings,visuals,catalogues,observation):status.text=map_panel.error;return false
 	var now:=Time.get_ticks_usec() if now_microseconds<0 else now_microseconds
 	if docked:
