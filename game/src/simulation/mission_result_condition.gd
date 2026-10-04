@@ -25,6 +25,29 @@ static func evaluate(condition: Dictionary,observation: Dictionary) -> Dictionar
 			"elapsed":
 				if not observation.get("elapsed_ms") is int:return {}
 				return {"satisfied":observation.elapsed_ms>int(condition.after_ms)}
+			"radio_finished":
+				# The recipe's radio line has been shown and is over.
+				var finished: Variant=observation.get("world",{}).get("radio_finished",[])
+				var index:=int(condition.get("index",-1))
+				var over: bool=finished is Array and index>=0 and index<finished.size() and finished[index]==true
+				# hold_ms: that long after the line ended (144's 7 s, 157's 6.5 s).
+				if over and int(condition.get("hold_ms",0))>0:
+					var world: Dictionary=observation.get("world",{})
+					var mark: Variant=world.get("radio_marks",{}).get("finished",{}).get(index)
+					over=mark!=null and world.get("story_elapsed_ms") is int and int(world.story_elapsed_ms)-int(mark)>=int(condition.hold_ms)
+				return {"satisfied":over}
+			"action_elapsed":
+				# That long after a recipe radio action's cue first held (91: the
+				# freighter's end shot lasts 8 s after it blows up).
+				var world: Dictionary=observation.get("world",{})
+				var mark: Variant=world.get("action_marks",{}).get(int(condition.index))
+				return {"satisfied":mark!=null and world.get("story_elapsed_ms") is int and int(world.story_elapsed_ms)-int(mark)>=int(condition.after_ms)}
+			"countdown":
+				# A story countdown ran out (154).
+				return {"satisfied":observation.get("world",{}).get("countdown_expired",false)==true}
+			"drive_started":
+				# The player has set the Khador Drive charging (78 ends here).
+				return {"satisfied":observation.get("world",{}).get("drive_started",false)==true}
 			"world_elapsed":
 				var world: Dictionary=observation.get("world",{})
 				if not world.get("features",{}).get(condition.get("feature",""),false):return {"satisfied":false}
@@ -44,7 +67,10 @@ static func evaluate(condition: Dictionary,observation: Dictionary) -> Dictionar
 			if not actors[id].get(flag) is bool:return {}
 			return {"satisfied":actors[id][flag]}
 		18:
-			return Retirement.range_status(actors,int(condition.get("first_actor",-1)),int(condition.get("end_actor",-1)),4)
+			var status:=Retirement.range_status(actors,int(condition.get("first_actor",-1)),int(condition.get("end_actor",-1)),4)
+			# An optional count accepts that many destroyed (e.g. 3 of 6 pirates).
+			if condition.has("count") and not status.is_empty():status.required=int(condition.count);status.satisfied=int(status.retired)>=int(condition.count)
+			return status
 		20,21:
 			var totals: Dictionary=observation.get("world",{}).get("counters",{})
 			if not totals.get("world_player_kills") is int or not totals.get("world_other_kills") is int:return {}

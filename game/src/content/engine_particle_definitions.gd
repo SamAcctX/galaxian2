@@ -41,7 +41,7 @@ static func resolve(bindings: RefCounted,mounts: RefCounted,ship_id: Variant) ->
 	var data: Dictionary=bindings.engine_particles
 	if not load("res://src/content/engine_particle_owner_definitions.gd").available_for(bindings,ship_id):return {"error":"Player exhaust requires an admitted hull"}
 	var sprite: Array=data.preset.uv_rect
-	if preload("res://src/simulation/mission_context.gd").base_player_hull(bindings,ship_id):
+	if preload("res://src/simulation/mission_context.gd").base_player_hull(bindings,ship_id) and bindings.early_contracts.has("base_station_stock"):
 		var family:=int(bindings.early_contracts.base_station_stock.ships.affiliations[int(ship_id)])
 		sprite=FAMILY_SPRITES.get(family,FAMILY_SPRITES[0])
 	elif int(ship_id)==int(OPENING_SHIP.ship_id):sprite=OPENING_SHIP.uv_rect

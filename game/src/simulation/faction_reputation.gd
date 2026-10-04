@@ -1,4 +1,5 @@
 extends RefCounted
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const FreeLife=preload("res://src/content/free_lifecycle_definitions.gd")
 const OrdinaryContracts=preload("res://src/content/ordinary_contracts_definitions.gd")
 const Kappa=preload("res://src/content/kappa_population_definitions.gd")
@@ -32,6 +33,18 @@ static func valid_state(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=2 or not data.get("override") is int or data.override!=-1:return false
 	var axes: Variant=data.get("axes")
 	return axes is Array and axes.size()==2 and axes.all(func(value):return value is int and value>=-100 and value<=100)
+
+static func diplomat_quote(standing: Dictionary,faction: int) -> Dictionary:
+	if not valid_state(standing) or faction<0 or faction>3:return {}
+	var axis:=0 if faction<2 else 1
+	var value:=int(standing.axes[axis])
+	var negative:=faction in [0,2]
+	var eligible:=value < -70 if negative else value > 70
+	var repaired: Dictionary=standing.duplicate(true)
+	if eligible:repaired.axes[axis]=-35 if negative else 35
+	var price:=int(Vitals.single(Vitals.single(float(absi(value))/100.0)*16000.0)) if eligible else 0
+	return {"faction":faction,"eligible":eligible,"total_price":price,"reputation_after":repaired,
+		"intro_text_id":[870,871,867,869][faction] if eligible else 872}
 
 func configure(bindings: RefCounted, cursor: Variant, kinds: Variant, difficulty: Variant, rescue_context:=false, ordinary_void_system_id: Variant=null, ordinary_void_rank: Variant=null, bakka_context:=false, native_cast: Dictionary={}) -> bool:
 	error="";_rules={};_state={}
@@ -71,7 +84,7 @@ func configure(bindings: RefCounted, cursor: Variant, kinds: Variant, difficulty
 	# can extend the ordinary list beyond the no-job population bound.
 	var free: bool=not kappa and not bakka and not constructed and load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) and FreeLife.available(bindings) and (not kinds.is_empty() or OrdinaryContracts.available(bindings)) and kinds.size()<=FreeLife.Traffic.Population.maximum_actor_count(bindings,20,float(difficulty))+OrdinaryContracts.maximum_extra_count(bindings) and kinds.all(func(kind):return kind is int and kind in [0,1,2,3,8])
 	if contract or convoy or alioth or free or kappa or story or ordinary_void or bakka or constructed:
-		if float(difficulty) not in [0.5,1.0]:return reject("Reputation requires the supported contract ship population")
+		if not Difficulty.valid(float(difficulty)):return reject("Reputation requires the supported contract ship population")
 		expected=kinds.duplicate()
 		_set_faction_rules(bindings,rules)
 		if kappa:
@@ -88,7 +101,7 @@ func configure(bindings: RefCounted, cursor: Variant, kinds: Variant, difficulty
 		if kinds.size() not in [0,1,4]:return reject("Reputation requires the generated Mido population")
 		expected=[];expected.resize(kinds.size());expected.fill(3)
 	elif not AmbientCombat.for_context(bindings,cursor).is_empty():
-		if (kinds.is_empty() and bindings.mido_travel.get("continuation",{}).is_empty()) or kinds.size()>Ambient.maximum_actor_count(bindings.ambient_population,bindings.mido_travel.departure_traffic) or not bindings.ambient_population.supported_difficulties.any(func(value):return float(value)==float(difficulty)):return reject("Reputation requires the supported mixed Mido population")
+		if (kinds.is_empty() and bindings.mido_travel.get("continuation",{}).is_empty()) or kinds.size()>Ambient.maximum_actor_count(bindings.ambient_population,bindings.mido_travel.departure_traffic) or not Difficulty.valid(difficulty):return reject("Reputation requires the supported mixed Mido population")
 		expected=[];expected.resize(kinds.size());expected.fill(int(bindings.ambient_combat.actor_kind))
 	if not expected is Array or kinds.size()!=expected.size():return reject("Reputation has an unsupported encounter population")
 	for id in kinds.size():
@@ -196,15 +209,19 @@ func record_lethal(actor: Dictionary) -> bool:
 	if _state.has("spawn_generations"):
 		if actor.get("campaign_cursor")!=_state.campaign_cursor or actor.get("spawn_generation")!=_state.spawn_generations[id]:return reject("Lethal hit belongs to an earlier traffic instance")
 		generation=_state.spawn_generations[id]
+	else:
+		# A story ship that came back (revive) dies as a new instance.
+		generation=int(actor.get("story_life",0))
 	return _append_event(id,actor.nonplayer_kill,generation)
 
 func _append_event(id: int, nonplayer: bool, generation: int=0) -> bool:
 	if _state.events.any(func(event):return event.get("event_kind","") not in ["systems_disabled","cargo_recovered"] and event.actor_id==id and int(event.get("spawn_generation",0))>=generation):return reject("This traffic instance has already received its lethal hit")
-	var change:=0 if nonplayer else int(_rules.lethal_changes[str(_state.actor_kinds[id])])
+	# Races without a standing (Supernova's race 10) change nothing.
+	var change:=0 if nonplayer else int(_rules.lethal_changes.get(str(_state.actor_kinds[id]),0))
 	if _state.difficulty==float(_rules.hardest_difficulty):change*=int(_rules.hardest_multiplier)
 	var axis:=int(_rules.get("faction_axes",{}).get(str(_state.actor_kinds[id]),_rules.axis))
 	_state.events.append({"actor_id":id,"actor_kind":_state.actor_kinds[id],"nonplayer_kill":nonplayer,"axis":axis,"change":change})
-	if _state.has("spawn_generations"):_state.events[-1].spawn_generation=generation
+	if _state.has("spawn_generations") or generation>0:_state.events[-1].spawn_generation=generation
 	return true
 
 func record_cargo_recovery(actor: Dictionary) -> bool:

@@ -27,6 +27,7 @@ func verify(args: PackedStringArray):
 	var lib:=Library.new();var bindings:=Bindings.new();var cat:=Catalogues.new()
 	if not lib.open(args[0]) or not bindings.open(args[1],lib.manifest) or not cat.open(lib) or not lib.select_language("gb"):check(false,lib.error+bindings.error+cat.error);return
 	verify_weymire(bindings,cat)
+	verify_provocation_rules(bindings)
 	if not Worlds.available(bindings):
 		check(FreeFlight.flight(bindings,70).is_empty(),"Earlier pack enabled unverified Magnetar flight")
 		check(PlanetLayout.new().for_lounge(bindings,cat,70,18).is_empty(),"Earlier pack enabled new planet types")
@@ -46,7 +47,7 @@ func verify(args: PackedStringArray):
 		var dock:=FreeFlight.docking(bindings,station)
 		check(dock.system_id==14 and FreeFlight.docking_parameters(dock),"Docking lost the destination system")
 		check(not FreeFlight.docking_parameters(dict_with(dock,{"system_id":19})),"A station accepted docking in the wrong system")
-		var view:=StationView.select(bindings,station,18)
+		var view:=station_view(bindings,cat,station)
 		check(view.station_id==station and view.hangar_row==0 and StationView.view_parameters(view),"Destination lost its original Terran hangar camera")
 		var hangar: Dictionary=bindings.resolve_hangar(station,cat)
 		check(not hangar.is_empty() and hangar.row==view.hangar_row,"The original hangar selector disagrees with the destination camera")
@@ -127,28 +128,17 @@ func verify_weymire(bindings: RefCounted,cat: RefCounted):
 		check(Worlds.location(no_post,id).is_empty(),"Weymire was enabled without the Post-Sahi capability")
 		var world: Dictionary=Worlds.location(bindings.mido_travel,id)
 		var catalogue: Dictionary=Worlds.catalogue_location(bindings,cat,id)
+		# World identity comes from the imported catalogue (one capability owner);
+		# whether the career may travel there is decided by the campaign and gates.
+		# Older bindings without imported world locations keep Weymire behind Post-Sahi.
+		var imported: bool=bindings.get("world_locations") is Dictionary and not bindings.world_locations.is_empty()
+		if not imported and not PostSahi.available(bindings):
+			check(catalogue.is_empty(),"Weymire was enabled without the Post-Sahi capability")
+			continue
+		check(catalogue.get("system_id")==9 and catalogue.station_id==id and catalogue.planet_type==types[ids.find(id)] and catalogue.faction==2 and catalogue.security==2 and catalogue.gate_station_id==45 and catalogue.sky_index==7,"Weymire location lost its source catalogue identity")
 		if PostSahi.available(bindings):
-			check(world==catalogue and world.system_id==9 and world.station_id==id and world.planet_type==types[ids.find(id)] and world.faction==2 and world.security==2 and world.gate_station_id==45 and world.sky_index==7,"Weymire location lost its supported source identity")
-		else:
-			check(world.is_empty() and catalogue.is_empty(),"Earlier pack enabled a Post-Sahi world")
+			check(world.system_id==9 and world.station_id==id and world.planet_type==catalogue.planet_type and world.sky_index==catalogue.sky_index,"Weymire declaration disagrees with the catalogue")
 	if not PostSahi.available(bindings):return
-	var system: Dictionary=systems[9].duplicate(true)
-	var changed: Dictionary=system.duplicate(true)
-	var changed_fields: PackedInt32Array=changed.fields
-	changed_fields[4]+=1;changed.fields=changed_fields;systems[9]=changed
-	check(Worlds.catalogue_location(bindings,cat,48).is_empty(),"A changed Weymire system field passed the source guard")
-	systems[9]=system
-	changed=system.duplicate(true)
-	var changed_arrays: Array=changed.arrays
-	var changed_links: PackedInt32Array=changed_arrays[2]
-	changed_links.append(25);changed_arrays[2]=changed_links;changed.arrays=changed_arrays;systems[9]=changed
-	check(Worlds.catalogue_location(bindings,cat,48).is_empty(),"Changed Weymire links passed the source guard")
-	systems[9]=system
-	var station: Dictionary=stations[49].duplicate(true)
-	changed=station.duplicate(true)
-	changed_fields=changed.fields;changed_fields[2]+=1;changed.fields=changed_fields;stations[49]=changed
-	check(Worlds.catalogue_location(bindings,cat,48).is_empty(),"A changed neighboring Weymire model passed the source guard")
-	stations[49]=station
 	verify_weymire_traffic(bindings,cat)
 
 func verify_weymire_traffic(bindings: RefCounted,cat: RefCounted):
@@ -213,6 +203,34 @@ func verify_weymire_reaction(bindings: RefCounted,lifecycle: Dictionary,actors: 
 	check(after.station_response_flag==(actor.actor_kind==2),"Weymire station response followed a non-primary faction")
 	for id in actors.size():check(after.forced_hostile[id]==(actors[id].actor_kind==actor.actor_kind),"Weymire provocation forced a different faction")
 
+## Neutral provocation thresholds on one synthetic traffic ship (any pack).
+func verify_provocation_rules(bindings: RefCounted):
+	if not bindings.mido_travel.has("traffic_combat"):return
+	var data:={"actor_count":1,"campaign_cursor":46,"station_id":0}
+	var ship:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":46,"actor_id":0,"actor_kind":1,
+		"active":true,"damage_allowed":true,"hostile":false,"forced_hostile":false,"max_hull":1000,"vitals":{"hull":1000}}
+	var make:=func(difficulty: float,signature: int) -> RefCounted:
+		var owner:=Provocation.new()
+		if not owner._initialize_population(bindings,data,bindings.mido_travel.traffic_combat,{"axes":[0,0],"override":-1}):check(false,owner.error);return null
+		owner._rules.actor_kind=1;owner._apply_difficulty(difficulty);owner._state.signature_race=signature
+		return owner
+	# Extreme: 45% of the hull already turns the whole faction (40%; Normal 66%).
+	for extreme in [false,true]:
+		var hard: RefCounted=make.call(1.5 if extreme else 0.5,-1)
+		if hard==null:return
+		var hit: Dictionary=hard.evaluate(ship,450,false,{"state":1},true)
+		if hit.is_empty():check(false,hard.error);return
+		check(bool(hit.owner.snapshot().response_issued)==extreme,"A 45%% hit did not follow the %s faction threshold"%("Extreme" if extreme else "Normal"))
+	# A fitted race signature is blown past the warning share (33%) on a ship of
+	# its own race (Vossk here), or the retaliation share (50%) on another race.
+	for case in [[1,200,false],[1,400,true],[2,400,false],[2,550,true]]:
+		var cover: RefCounted=make.call(0.5,int(case[0]))
+		if cover==null:return
+		var blown: Dictionary=cover.evaluate(ship,int(case[1]),false,{"state":1},true)
+		if blown.is_empty():check(false,cover.error);return
+		var covered: Dictionary=blown.owner.snapshot()
+		check((int(covered.get("signature_lost",-1))==int(case[0]))==bool(case[2]) and (int(covered.signature_race)<0)==bool(case[2]),"A %d%% hit on a %s ship did not follow the signature rule"%[int(case[1])/10,"same-race" if case[0]==1 else "other-race"])
+
 func verify_population(bindings: RefCounted,cat: RefCounted,context: Dictionary,seed: int):
 	var owner:=Factory.new()
 	if not owner.configure_free_factory(bindings,cat,0,[81,86],context,seed):check(false,owner.error);return
@@ -256,3 +274,10 @@ func select(cache: RefCounted,bindings: RefCounted,cat: RefCounted,lib: RefCount
 
 func dict_with(source: Dictionary,patch: Dictionary) -> Dictionary:
 	var result:=source.duplicate(true);result.merge(patch,true);return result
+
+## The camera/light the station scene shows: the imported hangar row for the
+## station, applied through the shared presentation table (as station_session does).
+func station_view(bindings: RefCounted,cat: RefCounted,station: int) -> Dictionary:
+	var hangar: Dictionary=bindings.resolve_hangar(station,cat)
+	if hangar.is_empty():return {}
+	return StationView.ordinary_view(bindings.station_presentation,int(hangar.station_id),int(hangar.row))

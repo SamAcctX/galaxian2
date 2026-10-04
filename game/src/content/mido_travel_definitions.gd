@@ -1,6 +1,7 @@
 extends RefCounted
 ## Recovered content for the first local journey. Availability of these records
 ## does not establish full campaign or application support.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
 const Fonts=preload("res://src/content/font_definitions.gd")
 const Station=preload("res://src/content/station_entry_definitions.gd")
@@ -279,7 +280,9 @@ static func navigation_stations(source: Variant, cursor: int, station_id: int) -
 
 static func route(source: Variant, cursor: int, from_station_id: int, station_id: int) -> Dictionary:
 	var stations:=navigation_stations(source,cursor,from_station_id)
-	if stations.is_empty() or not stations.has(station_id) or from_station_id==station_id:return {}
+	# A trip to the same station is a story relaunch (local_travel.relaunch);
+	# ordinary planet selection never offers the current station.
+	if stations.is_empty() or not stations.has(station_id):return {}
 	return {"campaign_cursor":cursor,"from_station_id":from_station_id,"station_id":station_id,"system_id":navigation_system(source,cursor,from_station_id)}
 
 static func navigation_mission(source: Variant, cursor: int, mission: Dictionary) -> bool:
@@ -390,7 +393,7 @@ static func patrol(bindings: RefCounted, world: Dictionary, rank: Variant, diffi
 	if bindings==null or not parameters(bindings.mido_travel) or not ControlRules.parameters(bindings.combat_training_control):return {}
 	var data: Dictionary=bindings.mido_travel.traffic_control
 	var traffic: Dictionary=bindings.mido_travel.departure_traffic
-	if not rank is int or not data.supported_ranks.any(func(value):return int(value)==rank) or (not difficulty is float and not difficulty is int) or not traffic.supported_difficulties.any(func(value):return float(value)==float(difficulty)):return {}
+	if not rank is int or not data.supported_ranks.any(func(value):return int(value)==rank) or (not difficulty is float and not difficulty is int) or not Difficulty.valid(difficulty):return {}
 	for key in ["base_content_id","binding_id"]:
 		if world.get(key)!=bindings.get(key):return {}
 	var construction: Dictionary=world.get("npc_construction",{})
@@ -417,7 +420,7 @@ static func population(bindings: RefCounted, world: Dictionary, rank: Variant, d
 	if world.get("station_id")!=int(trip.station_id):return patrol(bindings,world,rank,difficulty)
 	if flight(bindings,int(trip.station_id),cursor).is_empty() or not ControlRules.parameters(bindings.combat_training_control):return {}
 	if not rank is int or rank<0 or rank>=bindings.opening_handoff.rank_thresholds.size():return {}
-	if (not difficulty is int and not difficulty is float) or not bindings.mido_travel.departure_traffic.supported_difficulties.any(func(value):return float(value)==float(difficulty)):return {}
+	if (not difficulty is int and not difficulty is float) or not Difficulty.valid(difficulty):return {}
 	for key in ["base_content_id","binding_id"]:
 		if world.get(key)!=bindings.get(key):return {}
 	if world.get("npc_construction",{}).get("actors")!=[] or world.get("weapon_effects")!=[]:return {}

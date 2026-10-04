@@ -61,6 +61,9 @@ func verify(args: PackedStringArray):
 		context.client_faction=faction
 		check(offer.configure(bindings,cat,context,choices),offer.error)
 		check(offer.snapshot().mission.bonus==[1050,0,0,500,0,0,0,0][faction],"Wrong faction sign or unrounded bonus input")
+		# The lounge names the share: "(includes #P% standing bonus)".
+		var shown:=int(offer.standing_ratio(bindings.early_contracts,context)*100.0)
+		check((shown>0)==(offer.snapshot().mission.bonus>0),"The standing-bonus percent disagrees with the bonus: %d%%"%shown)
 	context.client_faction=0
 	for rank in [1,2,20]:
 		context.rank=rank

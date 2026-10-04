@@ -1,4 +1,5 @@
 extends RefCounted
+const SaveCompare=preload("res://tests/fixtures/save_compare.gd")
 ## Exercise a genuinely produced9 record; never create an earned checkpoint.
 const Archive=preload("res://src/simulation/station_archive.gd")
 const Bindings=preload("res://src/content/resource_bindings.gd")
@@ -15,7 +16,7 @@ func verify(bindings: RefCounted,cat: RefCounted,library: RefCounted,document: D
 	if station==null:check(false,archive.error);return
 	var original: Dictionary=station.snapshot();var untouched:=document.duplicate(true)
 	check(document.version==9 and document.binding_id==bindings.binding_id and original.campaign_cursor==39 and original.loadout.station_id==22 and original.arrival_player.campaign_cursor==38,"The actual checkpoint lost its explicit version, location or world/career distinction")
-	check(archive.capture(station,bindings)==document,"The v9 checkpoint changed during native recapture")
+	check(SaveCompare.matches_older(archive.capture(station,bindings),document),"The v9 checkpoint changed during native recapture")
 	check(station.prepare_departure(bindings,cat).is_empty()==not load("res://src/content/free_campaign_definitions.gd").onward_available(bindings),"Restoration ignored the explicit onward source boundary")
 	var plain:=Bindings.new();var supplemental:=Bindings.new()
 	if not plain.open(base_directory,library.manifest) or not supplemental.open(source_directory,library.manifest):check(false,plain.error+supplemental.error);return
@@ -53,7 +54,7 @@ func verify(bindings: RefCounted,cat: RefCounted,library: RefCounted,document: D
 	var detached: RefCounted=station.fork();detached._state.dekato_source_receipt.source_binding_id="foreign"
 	check(archive.capture(detached,bindings).is_empty(),"Capture silently replaced the retained supplemental source")
 	check(station.snapshot()==original and document==untouched,"Rejected detached restoration mutated its retained native owners")
-	check(archive.restore(bindings,cat,library,document)!=null and archive.capture(station,bindings)==document,"A failed load poisoned the viable checkpoint")
+	check(archive.restore(bindings,cat,library,document)!=null and SaveCompare.matches_older(archive.capture(station,bindings),document),"A failed load poisoned the viable checkpoint")
 	completed=true
 
 func check(value: bool,message: String) -> void:

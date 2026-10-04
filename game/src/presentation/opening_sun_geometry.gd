@@ -40,7 +40,7 @@ func build_departure(library: RefCounted,visuals: RefCounted,bindings: RefCounte
 	return _build_models(library,visuals,bindings)
 
 func _build_models(library: RefCounted,visuals: RefCounted,bindings: RefCounted) -> bool:
-	if _owner._layout.sky_index in [11,12]:return reject("Fogged sun drawing is not yet supported")
+	# Fogged skies keep the sun's separate additive drawing; only planets tint.
 	var chosen: Dictionary=_owner.selection
 	var reader:=AEM.new();var bytes: PackedByteArray=library.read_resource(chosen.mesh_path,AEM.MAX_BYTES)
 	if bytes.is_empty():return reject(library.error)

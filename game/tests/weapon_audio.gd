@@ -53,7 +53,7 @@ func verify(content: String,pack: String):
 	var empty_seed:=loadout.snapshot();empty_seed.slots[1].quantity=0
 	var empty:=Primary.new();check(empty.configure(bindings,catalogues,mounts,empty_seed),empty.error);empty.advance(1)
 	var empty_shot:=empty.fire(pose,true)
-	check(empty_shot.weapons[0].result.reason=="quantity" and empty_shot.weapons[0].audio_events.is_empty() and empty_shot.weapons[1].result.fired and empty_shot.weapons[1].audio_events.is_empty(),"Empty selected gun transferred sound to a duplicate")
+	check(not empty_shot.weapons[0].result.fired and empty_shot.weapons[0].audio_events.is_empty() and empty_shot.weapons[1].result.fired and empty_shot.weapons[1].audio_events.is_empty(),"Empty selected gun transferred sound to a duplicate") # an empty gun is skipped without a reason code since 04d9697
 	# A full projectile pool is a valid denied launch; audio follows the result.
 	var full:=primary.fork_state()
 	for gun in full._guns:

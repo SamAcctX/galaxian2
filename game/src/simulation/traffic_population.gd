@@ -1,6 +1,7 @@
 extends RefCounted
 ## Shared population selection. Actor construction consumes the returned stream.
 ## This owner does not change missions, locations, equipment or career progress.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Campaign=preload("res://src/content/free_campaign_definitions.gd")
 const Free=preload("res://src/content/free_population_definitions.gd")
 const Delivery=preload("res://src/content/ordinary_contracts_definitions.gd")
@@ -35,7 +36,7 @@ func configure(bindings: RefCounted,context: Dictionary,unix_seconds: Variant) -
 	if context.get("mission_kind")!=data.mission_kind or context.get("mission_completed")!=true or context.get("mission_story")!=data.mission_story:return reject("Ambient traffic requires the completed default world mission")
 	if context.get("companions_empty")!=true or context.get("station_response")!=data.station_response:return reject("This population does not support companion or station-response overrides")
 	var difficulty: Variant=context.get("difficulty")
-	if (not difficulty is float and not difficulty is int) or not data.supported_difficulties.any(func(value):return float(value)==float(difficulty)):return reject("Unsupported ambient population difficulty")
+	if (not difficulty is float and not difficulty is int) or not Difficulty.valid(difficulty):return reject("Unsupported ambient population difficulty")
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,
 		"system_id":int(data.system_id),"station_id":int(chosen.station_id),"campaign_cursor":int(chosen.campaign_cursor)}
 	_common=bindings.mido_travel.departure_traffic.duplicate(true)
@@ -61,7 +62,7 @@ func configure_free(bindings: RefCounted,catalogues: RefCounted,context: Diction
 	if not load("res://src/content/free_arrival_definitions.gd").context_supported(bindings,context):return reject("Ordinary arrival placement requires its verified flag and player position")
 	if not Numbers.integer(context.get("rank"),0,bindings.opening_handoff.rank_thresholds.size()-1):return reject("Ordinary traffic requires a supported rank")
 	var difficulty: Variant=context.get("difficulty")
-	if (not difficulty is float and not difficulty is int) or not data.supported_difficulties.any(func(value):return float(value)==float(difficulty)):return reject("Unsupported ordinary population difficulty")
+	if (not difficulty is float and not difficulty is int) or not Difficulty.valid(difficulty):return reject("Unsupported ordinary population difficulty")
 	for key in ["base_content_id","binding_id"]:
 		if not Library.valid_hash(bindings.get(key)):return reject("Ordinary population requires an imported content identity")
 	var system: Dictionary=catalogues.tables.systems[int(context.system_id)]

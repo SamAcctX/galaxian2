@@ -24,6 +24,8 @@ func configure(library: RefCounted,bindings: RefCounted,cat: RefCounted,observat
 	var availability: Array=navigation.snapshot().system_availability
 	var destinations:=Context.navigation_destinations(bindings,cat,observation)
 	var markers:=Recipe.objective_markers(bindings.early_contracts,career.get("mission",{}),career.get("accepted_contact",{}),observation.get("cargo",{}))
+	# Most Wanted "Show on map": the criminal's destination is the marked station.
+	if int(observation.get("wanted_marker",-1))>=0:markers={"station_id":int(observation.wanted_marker),"system_station_id":int(observation.wanted_marker)}
 	var target_system:=-1
 	if markers.system_station_id>=0:target_system=int(cat.tables.stations[markers.system_station_id].system_id)
 	var warning:={}
@@ -40,10 +42,10 @@ func configure(library: RefCounted,bindings: RefCounted,cat: RefCounted,observat
 		if not availability[system.id]:continue
 		var position:=Vector3((100.0-system.fields[3])*140.0-10000.0,(100.0-system.fields[4])*130.0-9000.0,(100.0-system.fields[5])*60.0+1000.0)
 		var faction:=int(system.fields[2])
-		if not position.is_finite() or faction<0 or faction>=rules.ui.faction_image_ids.size():return reject("Galaxy system has invalid coordinates or faction")
+		if not position.is_finite() or faction<0:return reject("Galaxy system has invalid coordinates or faction")
 		var supported: bool=Array(system.station_ids).any(func(id):return destinations.has(id))
 		rows.append({"system_id":int(system.id),"name":system.name,"position":position,"model_id":18070+int(system.sky_index),
-			"faction_image_id":int(rules.ui.faction_image_ids[faction]),"current":system.id==location.system_id,
+			"faction_image_id":int(rules.ui.faction_image_ids[mini(faction,rules.ui.faction_image_ids.size()-1)]),"current":system.id==location.system_id,
 			"story_target":system.station_ids.has(observation.get("mission",{}).get("station_id",-1)),"contract_target":system.id==target_system,
 			"void_source":system.id==warning.get("system_id",-1),"supported":supported,
 			"connected":system.id==location.system_id or origin.linked_system_ids.has(system.id)})
@@ -54,7 +56,11 @@ func configure(library: RefCounted,bindings: RefCounted,cat: RefCounted,observat
 	if mission_target<0:
 		var story_station:=int(observation.get("mission",{}).get("station_id",-1))
 		if story_station>=0 and story_station<cat.tables.stations.size():mission_target=int(cat.tables.stations[story_station].system_id)
-	if mission_target>=0:route=navigation.route(int(location.system_id),mission_target)
+	# A Most Wanted route runs from the criminal's last stop, not from the player.
+	var route_start:=int(location.system_id)
+	var wanted_from:=int(observation.get("wanted_from",-1))
+	if int(observation.get("wanted_marker",-1))>=0 and wanted_from>=0 and wanted_from<cat.tables.stations.size():route_start=int(cat.tables.stations[wanted_from].system_id)
+	if mission_target>=0:route=navigation.route(route_start,mission_target)
 	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language,
 		"campaign_cursor":int(observation.campaign_cursor),"station_id":int(location.station_id),"system_id":int(location.system_id),
 		"drive_mode":observation.get("drive_mode",false),"rows":rows,"links":links,"mission_route":route,"void_warning":warning,"destinations":destinations,

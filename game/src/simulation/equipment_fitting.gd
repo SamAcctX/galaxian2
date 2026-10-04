@@ -42,12 +42,16 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 	for id in [94,95,96]:items[id]="" if cloak_ready else "This cloak's original mask or sound is unavailable"
 	for item in cat.tables.items:
 		if item.arrays[2][3] not in [0,2]:continue
-		var id:=int(item.id);var mapping:=Rules.primary(bindings.mido_travel.ordinary_fitting,id,int(item.arrays[2][5]))
+		# The plasma collector (turret sort 35) fires nothing: no weapon model.
+		if item.arrays[2][3]==2 and item.arrays[2][5]==35:items[int(item.id)]="";continue
+		# Expansion type-25 guns are built like the type-2 spread gun.
+		var kind:=int(item.arrays[2][5]);if item.arrays[2][3]==0 and kind==25:kind=2
+		var id:=int(item.id);var mapping:=Rules.primary(bindings.mido_travel.ordinary_fitting,id,kind)
 		if item.arrays[2][3]==2 and not Turrets.declaration(id).is_empty():
 			mapping={"projectile_model_id":int(bindings.mido_travel.ordinary_fitting.primary.projectile_model_ids[id]),"impact_model_id":int(bindings.mido_travel.ordinary_fitting.primary.impact_model_ids[id])}
 		if mapping.is_empty():continue
 		items[id]=""
-		if mapping.has("thermal") and not preload("res://src/presentation/projectile_trail_geometry.gd").supported_material(bindings):items[id]="This weapon's trail atlas is unavailable"
+		if mapping.has("thermal") and not preload("res://src/presentation/projectile_trail_geometry.gd").supported_material(bindings,int(preload("res://src/content/projectile_trail_definitions.gd").trail(int(mapping.thermal.trail_id)).material_id)):items[id]="This weapon's trail atlas is unavailable"
 		var model_keys:=["projectile_model_id","impact_model_id"]
 		if mapping.has("muzzle_model_id"):model_keys.append("muzzle_model_id")
 		for key in model_keys:
@@ -58,11 +62,13 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 				if decoded.is_empty():return fail("An original weapon model could not be read: "+path)
 				var sampler:=Sampler.new()
 				var supported: bool=decoded.surfaces.all(func(surface):return Surface.supported_surface(surface)) and sampler.configure(decoded.surfaces,key=="projectile_model_id")
-				supported=supported and bindings.material_for_mesh(path,"high").get("render_type")==2
+				# Flight draws expansion shots two-sided additive (3) or alpha (1).
+				supported=supported and int(bindings.material_for_mesh(path,"high").get("render_type",-1)) in ([1,2,3] if key=="projectile_model_id" else [2])
 				resources[model]="" if supported else "This weapon's animated model is not yet supported"
 			if not resources[model].is_empty():items[id]=resources[model]
 		if item.arrays[2][3]==2:
-			for key in ["base_model","gun_model"]:
+			for key in ["base_model","gun_model","base_child","gun_child"]:
+				if not Turrets.declaration(id).has(key):continue
 				var path: String=bindings.resolve(int(Turrets.declaration(id)[key]),"mesh")
 				if not library.manifest.files.has(path) or not Materials.supports(bindings.material_for_mesh(path,"high")):items[id]="This turret model is unavailable"
 			var clip: Dictionary=sounds.prepare(int(bindings.weapon_parameters.audio.player_event_ids[id]))
@@ -77,7 +83,7 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 			var mine: bool=not Secondaries.Mines.Definitions.declaration(id).is_empty()
 			if mine:declaration=Secondaries.Mines.Definitions.declaration(id)
 			if declaration.is_empty():continue
-			var family: int=Secondaries.Mines.Definitions.effect_family(id) if mine else declaration.kind
+			var family: int=Secondaries.Mines.Definitions.effect_family(id) if mine else Secondaries.Bomb.Definitions.effect_family(id)
 			if not families.has(family):
 				var bursts:=BurstResources.new()
 				if not bursts.configure(library,bindings,family):return fail(bursts.error)
@@ -89,6 +95,11 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 				for sound_id in [declaration.launch_sound,declaration.burst_sound]:
 					var clip: Dictionary=sounds.prepare(sound_id)
 					if clip.is_empty() or clip.has("unsupported"):items[id]="This mine's original sound is unavailable"
+		# Sentry guns: the turret mesh, its glow and its shot must all be present.
+		for id in [211,212,213]:
+			var sentry: Dictionary=Secondaries.Sentries.Definitions.declaration(id)
+			var paths:=[sentry.base,sentry.head,sentry.shot_model].map(func(model):return bindings.resolve(int(model),"mesh"))
+			items[id]="" if paths.all(func(path):return not path.is_empty() and library.manifest.files.has(path)) else "This sentry gun's original model is unavailable"
 		var resolver:=Weapons.new()
 		if not resolver.configure(bindings,cat,bindings.base_content_id):return fail(resolver.error)
 		for item in cat.tables.items:
@@ -151,6 +162,9 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 	var item: Dictionary=cat.tables.items[id]
 	var category: int=item.arrays[2][3];var subtype: int=item.arrays[2][5]
 	var properties: Dictionary=item.properties
+	# The plasma collector (turret sort 35) fires nothing: the gas clouds
+	# read it in turret view.
+	if category==2 and subtype==35:return ""
 	if category in [0,2]:
 		var weapon: Dictionary=resolver.resolve(id,ids)
 		if weapon.is_empty():return "This weapon's firing behavior is not yet supported"
@@ -164,6 +178,9 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 		return ""
 	if category==1:
 		if not Secondaries.Definitions.available(bindings):return "This secondary weapon's flight behavior is not yet supported"
+		if not Secondaries.Sentries.Definitions.declaration(id).is_empty():
+			var sentry:=Secondaries.Sentries.new()
+			return "" if sentry.configure(bindings,cat,id) else "This sentry gun's firing behavior is not yet supported"
 		if not Secondaries.Mines.Definitions.declaration(id).is_empty():
 			var mine:=Secondaries.Mines.new()
 			return "" if mine.configure(bindings,cat,id,ids) and NPCSystems.available(bindings) else "This mine's firing or systems behavior is not yet supported"
@@ -214,9 +231,30 @@ func _item_reason(bindings: RefCounted,cat: RefCounted,resolver: RefCounted,id: 
 		21:
 			var cloak:=Cloak.new()
 			if not cloak.configure(bindings,cat,[id],ship,0.5):return cloak.error
+		26:
+			if not Numbers.integer(properties.get(42),1,2147483647) or not Numbers.integer(properties.get(43),0,2147483647):return "The Time Extender has no supported duration"
+		# Supernova Emergency System: invulnerability duration (ms).
+		27:
+			if not Numbers.integer(properties.get(41),1,2147483647):return "The Emergency System has no supported duration"
+		# Supernova Shield Injector: Blue Plasma tons per refill.
+		43:
+			if not Numbers.integer(properties.get(59),1,2147483647):return "The Shield Injector has no supported plasma amount"
 		28:
 			for property in [bindings.weapon_parameters.interval_percent_property,bindings.weapon_parameters.damage_percent_property]:
 				if not Weapons.signed_integer(properties.get(int(property))):return "The weapon modifier is unavailable"
+		# Supernova gamma shields cut the gamma-ray drain by a percentage.
+		38:
+			var worlds:=preload("res://src/content/valkyrie_world_definitions.gd")
+			if not load("res://src/content/valkyrie_campaign_definitions.gd").available(bindings) or not Numbers.integer(properties.get(worlds.GAMMA_SHIELD_ATTRIBUTE),0,100):return "The gamma shield is unavailable"
+		# Supernova repair (37) and transfusion (41) beams: range, rate, beam count.
+		37,41:
+			for property in [53,54,55]:
+				if not Numbers.integer(properties.get(property),1,2147483647):return "The beam device is unavailable"
+		# 29: a race signature (190, Signature: Vossk; read by the 139 gate);
+		# 33: the spectral filter (read by the gas clouds). Assumption: the
+		# signature's in-flight effect, if any, is not built.
+		29,33:
+			pass
 		_:
 			return "This device's flight behavior is not yet supported"
 	return ""

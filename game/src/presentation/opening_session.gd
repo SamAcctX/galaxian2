@@ -363,7 +363,7 @@ func present(advance_sun := false) -> bool:
 	if sky_frame.is_empty():return reject(sky.error)
 	if planets!=null and not planets.apply_view(view,state.escape if escape_sequence else {}):return reject(planets.error)
 	var scenery_state: Dictionary = _scenery.read_snapshot()
-	if not scenery.apply_state(scenery_state) or not scenery.apply_detail(scenery_state.detail):return reject(scenery.error)
+	if not scenery.apply_state(scenery_state,camera) or not scenery.apply_detail(scenery_state.detail):return reject(scenery.error)
 	if scenery.destruction!=null and not scenery.apply_destruction(_scenery,camera.transform,PackedByteArray([255,255,255,255]),Vector4(1,1,1,1),1.0):return reject(scenery.error)
 	if npc_deaths!=null:
 		if not npc_deaths.apply_world(_world_frame,camera.transform,PackedByteArray([255,255,255,255]),Vector4(1,1,1,1),1.0):return reject(npc_deaths.error)
@@ -391,12 +391,17 @@ func prepare_arrival(bindings: RefCounted, catalogues: RefCounted) -> Dictionary
 	if result.is_empty():reject(handoff.error)
 	return result
 
-func snapshot() -> Dictionary:
+func snapshot() -> Dictionary:return _snapshot_with(false)
+
+## Per-frame presentation read: scenery and targets are cached read-only observations.
+func presentation_snapshot() -> Dictionary:return _snapshot_with(true)
+
+func _snapshot_with(cached: bool) -> Dictionary:
 	if _timeline==null:return {}
 	var state: Dictionary = _timeline.snapshot()
 	if _fade!=null:state.fade=_fade.snapshot()
-	state.scenery={} if _scenery==null else _scenery.snapshot()
-	state.target_inventory={} if _targets==null else _targets.snapshot()
+	state.scenery={} if _scenery==null else (_scenery.read_snapshot() if cached else _scenery.snapshot())
+	state.target_inventory={} if _targets==null else (_targets.read_snapshot() if cached else _targets.snapshot())
 	state.world_frame={} if _world_frame==null else _world_frame.snapshot()
 	return state
 

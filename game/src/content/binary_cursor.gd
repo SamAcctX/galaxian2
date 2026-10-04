@@ -89,13 +89,16 @@ func be_string(limit: int) -> String:
 		return ""
 	return value
 
-func floats(count: int) -> PackedFloat32Array:
+func floats(count: int, zero_non_finite := false) -> PackedFloat32Array:
 	var block := bytes(count * 4)
 	if not error.is_empty():
 		return PackedFloat32Array()
 	var result := block.to_float32_array()
-	for value in result:
-		if not is_finite(value):
+	for i in result.size():
+		if not is_finite(result[i]):
+			if zero_non_finite:
+				result[i] = 0.0
+				continue
 			reject("Non-finite floating point value")
 			return PackedFloat32Array()
 	return result

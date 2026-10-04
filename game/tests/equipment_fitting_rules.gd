@@ -50,7 +50,8 @@ func verify_fitting(args: PackedStringArray) -> void:
 	verify_secondary_fitting(bindings,cat,seed,assets,empty.support)
 	if Fitting.Tractor.Definitions.available(bindings):
 		check(empty.support[70].is_empty(),"The original visible automatic tractor cannot be fitted")
-		check(not empty.support[194].is_empty(),"Fitting admitted an expansion tractor with unsupported original UV animation")
+		# Valkyrie's AB-4 Octopus (194) fits: its two-sided type-3 beam is drawn.
+		check(empty.support[194].is_empty(),"The AB-4 Octopus tractor cannot be fitted")
 	for item in cat.tables.items:
 		if item.arrays[2][3]==3 and item.arrays[2][5]==17 and item.properties.get(31)==1:
 			check(empty.support[int(item.id)].is_empty(),"A cargo scanner cannot be fitted despite its connected flight readout")
@@ -127,10 +128,10 @@ func verify_fitting(args: PackedStringArray) -> void:
 
 func verify_secondary_fitting(bindings: RefCounted,cat: RefCounted,seed: Dictionary,assets: Dictionary,support: Dictionary) -> void:
 	var available: bool=Fitting.Secondaries.Definitions.available(bindings)
-	var supported_ids: Array=Array(range(31,47))+[60,61,62]
+	var supported_ids: Array=Array(range(31,47))+[60,61,62,179,197,211,212,213,214,215,216,221,226,232]
 	for item in cat.tables.items:
 		if item.arrays[2][3]==1 and (not available or item.id not in supported_ids):
-			check(not support[item.id].is_empty(),"Unimplemented secondary equipment was offered for fitting")
+			check(not support[item.id].is_empty(),"Unimplemented secondary equipment was offered for fitting: %d"%item.id)
 	if not available:return
 	var fitting:=Fitting.new();var held: Dictionary=seed.duplicate(true)
 	var offset:=int(cat.tables.ships[seed.ship_id].stats.primary_slots)

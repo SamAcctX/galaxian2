@@ -6,18 +6,21 @@ const RESOLUTIONS=["native","1120x720","1280x720","1280x800","1366x768","1600x90
 const ASPECTS=["auto","native","4:3","16:9","16:10","21:9","32:9"]
 const FRAME_RATES=[-1,0,30,60,90,120,144,165,240,360]
 const UI_SCALES=[0,75,100,125,150,175,200,225,250,275,300]
+const UPSCALERS=["off","fsr1","fsr2","metalfx_spatial","metalfx_temporal"]
+const RENDER_SCALES=[1.0,0.77,0.67,0.59,0.5]
+const GRAPHICS_QUALITIES=[0.0,0.5,1.0]
 const DISPLAY_KEYS=["window_mode","resolution","aspect_ratio","frame_rate","ui_scale"]
 var error:=""
 var values:=defaults()
 
 static func defaults() -> Dictionary:
-	return {"schema":4,"content":"","bindings":"","visuals":"","import_record":"","language":"gb",
+	return {"schema":6,"content":"","bindings":"","visuals":"","import_record":"","language":"gb",
 		"music":1.0,"fx":1.0,"voice":1.0,"invert_pitch":false,"touch_controls":OS.has_feature("mobile"),
 		"window_mode":"windowed","resolution":"1120x720","aspect_ratio":"auto","frame_rate":-1,"ui_scale":0,
-		"mouse_steering":not OS.has_feature("mobile"),"mouse_sensitivity":1.0,"bloom":true}
+		"mouse_steering":not OS.has_feature("mobile"),"mouse_sensitivity":1.0,"bloom":true,"upscaler":"off","render_scale":0.77,"graphics_quality":1.0}
 
 static func valid(value: Variant) -> bool:
-	if not value is Dictionary or value.size()!=defaults().size() or value.get("schema")!=4 or value.get("language") not in LANGUAGES:return false
+	if not value is Dictionary or value.size()!=defaults().size() or value.get("schema")!=6 or value.get("language") not in LANGUAGES:return false
 	for key in ["content","bindings","visuals","import_record"]:
 		if not value.get(key) is String or value[key].length()>4096 or (not value[key].is_empty() and not value[key].is_absolute_path()):return false
 	for key in ["music","fx","voice"]:
@@ -28,6 +31,8 @@ static func valid(value: Variant) -> bool:
 	if not (value.get("frame_rate") is int or value.get("frame_rate") is float) or not is_finite(value.frame_rate) or value.frame_rate!=floor(value.frame_rate) or int(value.frame_rate) not in FRAME_RATES:return false
 	if not (value.get("ui_scale") is int or value.get("ui_scale") is float) or not is_finite(value.ui_scale) or value.ui_scale!=floor(value.ui_scale) or int(value.ui_scale) not in UI_SCALES:return false
 	if not (value.get("mouse_sensitivity") is int or value.get("mouse_sensitivity") is float) or not is_finite(value.mouse_sensitivity) or value.mouse_sensitivity<0.1 or value.mouse_sensitivity>3.0:return false
+	if value.get("upscaler") not in UPSCALERS or not (value.get("render_scale") is float or value.get("render_scale") is int) or float(value.render_scale) not in RENDER_SCALES:return false
+	if not (value.get("graphics_quality") is float or value.get("graphics_quality") is int) or float(value.graphics_quality) not in GRAPHICS_QUALITIES:return false
 	return true
 
 func read_file(path: String) -> bool:
@@ -46,8 +51,12 @@ func read_file(path: String) -> bool:
 		candidate.ui_scale=0;candidate.schema=3
 	if candidate is Dictionary and candidate.get("schema")==3:
 		candidate.bloom=defaults().bloom;candidate.schema=4
+	if candidate is Dictionary and candidate.get("schema")==4:
+		candidate.upscaler=defaults().upscaler;candidate.render_scale=defaults().render_scale;candidate.schema=5
+	if candidate is Dictionary and candidate.get("schema")==5:
+		candidate.graphics_quality=defaults().graphics_quality;candidate.schema=6
 	if not valid(candidate):return reject("Saved preferences are invalid; choose the game files again")
-	candidate.schema=int(candidate.schema);candidate.frame_rate=int(candidate.frame_rate);candidate.ui_scale=int(candidate.ui_scale)
+	candidate.schema=int(candidate.schema);candidate.frame_rate=int(candidate.frame_rate);candidate.ui_scale=int(candidate.ui_scale);candidate.render_scale=float(candidate.render_scale);candidate.graphics_quality=float(candidate.graphics_quality)
 	values=candidate;return true
 
 func save_file(path: String,candidate: Dictionary) -> bool:

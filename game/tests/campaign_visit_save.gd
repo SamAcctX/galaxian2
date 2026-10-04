@@ -21,7 +21,7 @@ func verify_save(args: PackedStringArray) -> void:
 	check(suttnar or kappa or sahi or expedition or post_probe or void_career,"Use an application's earned campaign continuation")
 	check(original.mission==campaign.mission(bindings.mido_travel,original.campaign_cursor) and original.contracts.mission.kind==11 and original.contracts.mission.station_id==99 and original.contracts.passengers==3,"The retained pending story or accepted passengers changed")
 	print("Earned campaign save: version ",record.version," cursor ",original.campaign_cursor," station ",original.loadout.station_id," credits ",original.contracts.credits)
-	check(archive.capture(station,bindings)==record and not station.prepare_departure(bindings,cat).is_empty(),"The saved continuation cannot round-trip and depart")
+	check(SaveCompare.matches_older(archive.capture(station,bindings),record) and not station.prepare_departure(bindings,cat).is_empty(),"The saved continuation cannot round-trip and depart")
 	if sahi:
 		check(original.reward_credits==0 and original.mission.kind==11 and original.mission.station_id==10 and original.progress.get("cargo_recovered",0)>=3,"The earned Sahi save lost recovered cargo progress or retained an unearned station reward")
 		for version in [3,4]:
@@ -115,7 +115,7 @@ func verify_void_receipt(bindings: RefCounted,cat: RefCounted,library: RefCounte
 			check(archive.restore(bindings,cat,library,broken)==null,"The Void career accepted a malformed blueprint "+mutation[0])
 	var restored: RefCounted=archive.restore(bindings,cat,library,record)
 	if restored==null:check(false,archive.error);return
-	check(archive.capture(restored,bindings)==record,"Rejected Void records changed the valid earned save")
+	check(SaveCompare.matches_older(archive.capture(restored,bindings),record),"Rejected Void records changed the valid earned save")
 	if record.station.campaign_cursor in [34,35,36,38]:
 		var before: Dictionary=restored.snapshot()
 		var recipe: Dictionary=before.contracts.blueprints.entries[index]
@@ -142,7 +142,7 @@ func verify_post_probe_receipt(bindings: RefCounted,cat: RefCounted,library: Ref
 	if restored==null:check(false,archive.error);return
 	var before: Dictionary=restored.snapshot()
 	check(not restored.acknowledge() and not restored.begin_campaign_conversation(bindings,cat,library) and restored.snapshot()==before,"Loading the paid result repeated its payment or dialogue")
-	check(archive.capture(restored,bindings)==record,"Rejected receipt changes mutated the valid Alioth save")
+	check(SaveCompare.matches_older(archive.capture(restored,bindings),record),"Rejected receipt changes mutated the valid Alioth save")
 
 func verify_return_receipt(bindings: RefCounted,cat: RefCounted,library: RefCounted,archive: RefCounted,record: Dictionary) -> void:
 	# Only the application's actual station acknowledgement supplies this input.
@@ -167,7 +167,7 @@ func verify_return_receipt(bindings: RefCounted,cat: RefCounted,library: RefCoun
 	for index in mutations.size():
 		check(archive.restore(bindings,cat,library,mutations[index])==null and not archive.error.is_empty(),"Malformed acknowledged return receipt accepted: "+str(index))
 	var restored: RefCounted=archive.restore(bindings,cat,library,record)
-	check(restored!=null and archive.capture(restored,bindings)==record,"A rejected return receipt changed the valid earned save: "+archive.error)
+	check(restored!=null and SaveCompare.matches_older(archive.capture(restored,bindings),record),"A rejected return receipt changed the valid earned save: "+archive.error)
 
 func verify_active_fitting(bindings: RefCounted,cat: RefCounted,library: RefCounted,station: RefCounted,archive: RefCounted) -> void:
 	# The input is the application's earned passenger save. Only normal

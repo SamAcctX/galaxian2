@@ -71,7 +71,7 @@ func verify_ordinary_quotes(bindings: RefCounted,cat: RefCounted,context: Dictio
 			check(state.requirements.cargo_tons==(quantity if kind==0 else 0) and state.requirements.passenger_places==(quantity if kind==11 else 0),"A quoted source quantity invented cargo or cabin requirements")
 			check(not Session.acceptance_supported(bindings.early_contracts,18,state),"An unsupported ordinary quote enabled acceptance")
 			if preload("res://src/content/ordinary_contracts_definitions.gd").available(bindings):
-				check(Session.acceptance_supported(bindings.early_contracts,18,state,bindings)==(kind in [0,4,7,11,12]),"Ordinary acceptance crossed its implemented delivery and combat recipes")
+				check(Session.acceptance_supported(bindings.early_contracts,18,state,bindings)==(kind in [0,1,2,4,7,11,12,13,14]),"Ordinary acceptance crossed its implemented delivery and combat recipes: kind %d"%kind)
 			check(Offer.new().restore(bindings,cat,state),"Ordinary quote did not restore exactly")
 	for item in [97,98]:
 		var choice:={"kind":8,"difficulty_index":8,"destination_station_id":96,"parameter_index":item,"quantity_index":14}
@@ -182,7 +182,7 @@ func verify_ordinary_populations(bindings: RefCounted,cat: RefCounted,lib: RefCo
 					if contact.offer.mission.kind==6:
 						var name: String=contact.offer.mission.get("target_name","")
 						check(first_names.any(func(first):return name.begins_with(first+" ") and last_names.has(name.substr(first.length()+1))),"The Wanted target was not named from the original male Terran pools")
-						var location: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings.mido_travel,contact.offer.mission.station_id)
+						var location: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings,contact.offer.mission.station_id)
 						check(Session.acceptance_supported(bindings.early_contracts,18,contact.offer,bindings)==not location.is_empty(),"Bounty acceptance disagreed with destination support")
 						var bad:=state.duplicate(true)
 						bad.contacts[contact.contact_id].offer.mission.target_name+="!"
@@ -221,10 +221,9 @@ func verify_ordinary_cache(bindings: RefCounted,cat: RefCounted,lib: RefCounted,
 		check(random.restore(state.random),random.error)
 	check(cache.snapshot().locations.map(func(row):return row.station_id)==[97,99,98],"Ordinary cache stopped using insertion order")
 	check(cache.location(98)!=original,"An evicted ordinary location retained its old generation")
-	var before:=cache.snapshot();career.station_id=56
-	if Campaign.Visit.available(bindings):
-		check(cache.select_location(bindings,cat,lib,career,settings,random.snapshot(),1000) and cache.snapshot().current_station_id==56,"The supported visit cannot retain its actual station contents")
-	else:check(not cache.select_location(bindings,cat,lib,career,settings,random.snapshot(),1000) and cache.snapshot()==before,"Unsupported story destination changed the cache")
+	career.station_id=56
+	# Station 56 is a supported catalogue world even without the story visit.
+	check(cache.select_location(bindings,cat,lib,career,settings,random.snapshot(),1000) and cache.snapshot().current_station_id==56,"The supported visit cannot retain its actual station contents")
 
 func verify_campaign_locations(bindings: RefCounted,cat: RefCounted,lib: RefCounted,context: Dictionary) -> void:
 	if not Campaign.Visit.available(bindings):return

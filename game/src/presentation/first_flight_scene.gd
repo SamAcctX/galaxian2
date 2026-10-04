@@ -10,6 +10,7 @@ const VoidEnvironment=preload("res://src/presentation/void_environment_geometry.
 const Frame=preload("res://src/simulation/first_flight_frame.gd")
 const Geometry=preload("res://src/presentation/opening_geometry.gd")
 const Background=preload("res://src/presentation/opening_sky.gd")
+const Statics=preload("res://src/content/static_object_definitions.gd")
 const Planets=preload("res://src/presentation/opening_planet_geometry.gd")
 const Sun=preload("res://src/presentation/opening_sun_geometry.gd")
 const Lighting=preload("res://src/presentation/opening_lighting.gd")
@@ -20,6 +21,9 @@ const SurfaceResponse=preload("res://src/presentation/surface_response.gd")
 const Station=preload("res://src/presentation/station_exterior_geometry.gd")
 const Gates=preload("res://src/presentation/gate_geometry.gd")
 const FlightProjection=preload("res://src/presentation/flight_camera.gd")
+const GasView=preload("res://src/presentation/gas_cloud_view.gd")
+const BombView=preload("res://src/presentation/supernova_bomb_view.gd")
+const FinaleView=preload("res://src/presentation/valkyrie_finale_view.gd")
 const Dialogue=preload("res://src/presentation/station_dialogue_panel.gd")
 const TargetFrame=preload("res://src/presentation/flight_target_frame.gd")
 const Reticle=preload("res://src/presentation/flight_aim_reticle.gd")
@@ -27,7 +31,14 @@ const ScanAnimation=preload("res://src/presentation/flight_scan_animation.gd")
 const TargetProjection=preload("res://src/presentation/target_projection.gd")
 const MiningPanel=preload("res://src/presentation/mining_panel.gd")
 const NoticePanel=preload("res://src/presentation/flight_notice_panel.gd")
+const HitArcs=preload("res://src/presentation/hit_arc_overlay.gd")
+const OrbitBanner=preload("res://src/presentation/orbit_banner.gd")
 const EncounterGeometry=preload("res://src/presentation/full_hold_encounter_geometry.gd")
+const WingmanGeometry=preload("res://src/presentation/wingman_geometry.gd")
+var wingmen: Node3D
+## Repair/transfusion beams (repair_beam_view.gd), when fitted.
+var beams: Node3D
+var _last_crew: RefCounted
 const TractorGeometry=preload("res://src/presentation/tractor_geometry.gd")
 const DeathEffect=preload("res://src/presentation/npc_death_effect_geometry.gd")
 const GameOver=preload("res://src/presentation/game_over_panel.gd")
@@ -52,14 +63,24 @@ var lighting: Node3D
 var reflection: RefCounted
 var gates: Node3D
 var camera: Camera3D
+## Supernova gas clouds and plasma sparks, when the flight has any.
+var gas_clouds: Node3D
 var dialogue: Control
 var target_frame: Control
 var reticle: Control
 var scan_animation: Control
 var mining_panel: Control
 var notice_panel: Control
+## Hit arcs on the centre-frame ellipse and the arrival orbit information.
+var hit_arcs: Control
+var orbit_banner: Control
 var _projection: RefCounted
 var _last:={}
+var _supernova_reversed:=false
+var _bomb_view: Node3D
+var _finale_view: Node3D
+var _bomb_sources:=[]
+const World=preload("res://src/content/valkyrie_world_definitions.gd")
 var _last_drill: RefCounted
 var encounter: Node3D
 var tractor: Node3D
@@ -91,15 +112,27 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 	var message: String=_projection.configure(bindings.flight_projection,state.campaign_cursor,state.has("void_environment"))
 	if not message.is_empty():return fail(message)
 	camera=Camera3D.new();camera.current=activate_camera;add_child(camera)
+	_bomb_sources=[library,visuals,bindings];_bomb_view=null;_finale_view=null
 	geometry=Geometry.new();add_child(geometry)
 	var ordinary_void_environment: RefCounted=flight.void_environment_owner() if state.player.has("void_context") else null
 	if not geometry.build_departure(library,visuals,bindings,catalogues,state.player_cache,_player_geometry_state(state),"high",true,flight.equipment_owner(),ordinary_void_environment,flight.mission_context_owner()):return fail(geometry.error)
 	if not geometry.player.build_turret(flight.turret_state(),library,visuals,bindings):return fail(geometry.player.error)
+	if state.has("gas_clouds"):
+		gas_clouds=GasView.new();add_child(gas_clouds)
+		if not gas_clouds.build(library,visuals,bindings):return fail(gas_clouds.error)
 	var pirates: RefCounted=flight.encounter_owner()
 	if pirates!=null:
 		encounter=EncounterGeometry.new();add_child(encounter)
 		if not encounter.build(pirates,library,visuals,bindings):return fail(encounter.error)
 	var recovery: RefCounted=flight.tractor_owner()
+	var crew: RefCounted=flight.wingman_owner()
+	if crew!=null:
+		wingmen=WingmanGeometry.new();add_child(wingmen)
+		if not wingmen.build(crew,library,visuals,bindings):return fail(wingmen.error)
+	# Repair/transfusion beams; packs without the beam art fly without them.
+	if state.player.has("beams"):
+		beams=load("res://src/presentation/repair_beam_view.gd").new();add_child(beams)
+		if not beams.build(state.player.beams,library,visuals,bindings):beams.free();beams=null
 	if recovery!=null:
 		tractor=TractorGeometry.new();add_child(tractor)
 		if not tractor.build(recovery,library,visuals,bindings):return fail(tractor.error)
@@ -125,6 +158,10 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 		sky=Background.new();add_child(sky)
 		if not sky.build_departure(library,visuals,bindings,catalogues,state.player_cache,"high",flight.equipment_owner(),flight.mission_context_owner()):return fail(sky.error)
 		if not sky.enable_space_fog(library,visuals,bindings,catalogues):return fail(sky.error)
+		if pirates!=null and pirates.has_method("combat_snapshot"):
+			for actor in pirates.combat_snapshot().get("actors",[]):
+				var fog: Dictionary=Statics.rules(int(actor.static_model)).get("fog",{}) if actor.get("static_object",false) else {}
+				if not fog.is_empty() and not sky.add_static_fog(library,visuals,bindings,catalogues,actor.body_pose.origin,fog,int(actor.actor_id)):return fail(sky.error)
 		planets=Planets.new();add_child(planets)
 		if not planets.build_departure(library,visuals,bindings,catalogues,state.player_cache,"high",flight.equipment_owner(),flight.mission_context_owner()):return fail(planets.error)
 		sun=Sun.new();add_child(sun)
@@ -176,6 +213,8 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 		_radio_resources=RadioResources.new()
 		if state.radio.has("message"):
 			if not _radio_resources.prepare_local_traffic(library,bindings,visuals,int(state.campaign_cursor)):return fail(_radio_resources.error)
+		elif state.radio.has("scripted_events"):
+			if not _radio_resources.prepare_events(library,bindings,visuals,state.radio.scripted_events):return fail(_radio_resources.error)
 		elif not _radio_resources.prepare(library,bindings,visuals,state.campaign_cursor):return fail(_radio_resources.error)
 		radio=RadioPanel.new();overlay.add_child(radio);radio.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		if not radio.configure(bindings.base_content_id,bindings.binding_id,library.active_language,_radio_resources.speakers,state.campaign_cursor) or not radio.configure_art(library,bindings,visuals):return fail(radio.error)
@@ -203,6 +242,11 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 	if state.has("flight_notices"):
 		notice_panel=NoticePanel.new();overlay.add_child(notice_panel);notice_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		if not notice_panel.configure(library,bindings,visuals):return fail(notice_panel.error)
+	# Packs without this art keep flying without the extra HUD feedback.
+	hit_arcs=HitArcs.new();overlay.add_child(hit_arcs);hit_arcs.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	if not hit_arcs.prepare(library,bindings,visuals):hit_arcs.free();hit_arcs=null
+	orbit_banner=OrbitBanner.new();overlay.add_child(orbit_banner);orbit_banner.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	if not orbit_banner.prepare(library,bindings,visuals,catalogues):orbit_banner.free();orbit_banner=null
 	dialogue=Dialogue.new();overlay.add_child(dialogue);dialogue.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dialogue.set_centered(true)
 	if not dialogue.configure_flight(library,bindings,visuals,state,flight.mission_context_owner()):return fail(dialogue.error)
@@ -215,7 +259,7 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,catalogu
 		for key in ["pose","scale","visible","animation"]:identity.erase(key)
 		if not drive_effect._build_portal(library,visuals,bindings,identity):return fail(drive_effect.error)
 	var surfaces:=SurfaceResponse.new()
-	if not surfaces.apply_branches([geometry,encounter,station,gates,void_environment,scenery,planets],bindings,lighting.state,reflection):return fail(surfaces.error)
+	if not surfaces.apply_branches([geometry,encounter,wingmen,station,gates,void_environment,scenery,planets],bindings,lighting.state,reflection):return fail(surfaces.error)
 	if not present(flight):return fail(error)
 	return true
 
@@ -225,17 +269,18 @@ func present(flight: RefCounted, advance_sun:=false, absolute_milliseconds: Vari
 	if not absolute_milliseconds is int or absolute_milliseconds<0:return reject("Flight presentation requires a nonnegative absolute clock")
 	if state.is_empty():state=flight.snapshot()
 	var drill: RefCounted=flight.drill_owner()
-	var pirates: RefCounted=flight.encounter_owner()
-	var death: RefCounted=flight.destruction_owner()
-	var particles: RefCounted=flight.damage_particle_owner()
+	var pirates: RefCounted=flight.encounter_view()
+	var death: RefCounted=flight.destruction_view()
+	var particles: RefCounted=flight.damage_particle_view()
 	var gate_animation: RefCounted=flight.gate_animation_owner()
-	var engines: RefCounted=flight.engine_particle_owner()
+	var engines: RefCounted=flight.engine_particle_view()
 	var prior: float=0.0 if sun==null else sun.frame.get("next_intensity" if advance_sun else "previous_intensity",0.0)
 	var recovery: RefCounted=flight.tractor_owner()
 	var scenery_world: RefCounted=flight.scenery_presentation_owner()
-	if not _apply(state,prior,drill,pirates,death,absolute_milliseconds,particles,gate_animation,engines,recovery,scenery_world):
+	var crew: RefCounted=flight.wingman_owner()
+	if not _apply(state,prior,drill,pirates,death,absolute_milliseconds,particles,gate_animation,engines,recovery,scenery_world,crew):
 		var reason:=error
-		if not _last.is_empty() and not _apply(_last,0.0 if sun==null else sun.frame.get("previous_intensity",0.0),_last_drill,_last_encounter,_last_death,_last_absolute_ms,_last_particles,_last_gate_animation,_last_engines,_last_tractor,_last_scenery):reason+="; previous scene: "+error
+		if not _last.is_empty() and not _apply(_last,0.0 if sun==null else sun.frame.get("previous_intensity",0.0),_last_drill,_last_encounter,_last_death,_last_absolute_ms,_last_particles,_last_gate_animation,_last_engines,_last_tractor,_last_scenery,_last_crew):reason+="; previous scene: "+error
 		return reject(reason)
 	_last=state
 	_last_drill=drill
@@ -245,10 +290,11 @@ func present(flight: RefCounted, advance_sun:=false, absolute_milliseconds: Vari
 	_last_engines=engines
 	_last_tractor=recovery
 	_last_scenery=scenery_world
+	_last_crew=crew
 	_last_gate_animation=gate_animation
 	return true
 
-func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirates: RefCounted, death: RefCounted, absolute_milliseconds: int, particles: RefCounted,gate_animation: RefCounted=null,engines: RefCounted=null,recovery: RefCounted=null,scenery_world: RefCounted=null) -> bool:
+func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirates: RefCounted, death: RefCounted, absolute_milliseconds: int, particles: RefCounted,gate_animation: RefCounted=null,engines: RefCounted=null,recovery: RefCounted=null,scenery_world: RefCounted=null,crew: RefCounted=null) -> bool:
 	if (encounter!=null)!=(pirates!=null):return reject("Pirate presentation support changed within this flight")
 	if (player_destruction!=null)!=(death!=null):return reject("Player destruction support changed within this flight")
 	if (damage_particles!=null)!=(particles!=null):return reject("Damage particle support changed within this flight")
@@ -278,11 +324,6 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if (void_environment!=null)!=state.has("void_environment"):return reject("Void presentation support changed within this flight")
 	if (gates!=null)!=(state.has("gate_environment") or void_environment!=null):return reject("Gate presentation support changed within this flight")
 	if state.has("gate_environment") and not gates.apply_state(state.gate_environment):return reject(gates.error)
-	var gate_frame:={}
-	if state.has("gate_animation"):
-		if gates==null or gate_animation==null or gate_animation.snapshot()!=state.gate_animation:return reject("Gate geometry lost its current native clock")
-		gate_frame=gates.prepare_animation(gate_animation)
-		if gate_frame.is_empty():return reject(gates.error)
 	var drive_frame:={}
 	if drive_effect!=null:
 		drive_frame=drive_effect.prepare_state(state.khador.effect)
@@ -309,6 +350,11 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 		death_frame=player_destruction.prepare_effect(death,state.camera_view.pose,PackedByteArray([255,255,255,255]),Vector4.ONE,1.0)
 		if death_frame.is_empty():return reject(player_destruction.error)
 	var pirate_frame:={}
+	var wingman_frame:={}
+	if (wingmen!=null)!=state.has("wingman_actors"):return reject("Wingman presentation support changed within its flight")
+	if wingmen!=null:
+		wingman_frame=wingmen.prepare(state.wingman_actors,crew,state.camera_view.pose)
+		if wingman_frame.is_empty():return reject(wingmen.error)
 	if encounter!=null:
 		# Both come from the same flight owner; checking costs a full rebuild.
 		assert(pirates.snapshot()==state.get("encounter"),"Pirate geometry lost its current encounter owner")
@@ -317,14 +363,23 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if not geometry.apply_state(_player_geometry_state(state)):return reject(geometry.error)
 	if not geometry.player.present_turret(state.get("turret",{})):return reject(geometry.player.error)
 	if (station!=null)!=state.has("station_exterior"):return reject("Station exterior support changed within a flight")
-	if station!=null and not station.apply_state(state.station_exterior):return reject(station.error)
+	if station!=null and not station.apply_state(state.station_exterior,absolute_milliseconds):return reject(station.error)
+	if station!=null:station.visible=not state.get("station_hidden",false)
 	var message: String=_projection.apply(camera,state.camera_view)
 	if not message.is_empty():return reject(message)
+	var gate_frame:={}
+	if state.has("gate_animation"):
+		# The animation owner and state come from the same accepted flight frame.
+		# Prepared after the camera so off-screen gates can skip sampling.
+		if gates==null or gate_animation==null:return reject("Gate geometry lost its current native clock")
+		gate_frame=gates.prepare_animation(gate_animation,camera)
+		if gate_frame.is_empty():return reject(gates.error)
 	var sky_frame: Dictionary=sky.prepare_view(state.camera_view,{},int(state.world_elapsed_ms))
 	if sky_frame.is_empty():return reject(sky.error)
 	if planets!=null and not planets.apply_view(state.camera_view):return reject(planets.error)
-	if not scenery.apply_state(state.scenery) or not scenery.apply_detail(state.scenery.detail):return reject(scenery.error)
+	if not scenery.apply_state(state.scenery,camera) or not scenery.apply_detail(state.scenery.detail):return reject(scenery.error)
 	if state.scenery.has("bodies") and not scenery.apply_activity(state.scenery.bodies):return reject(scenery.error)
+	if gas_clouds!=null and state.has("gas_clouds"):gas_clouds.present(state.gas_clouds.merged({"camera":camera.transform}))
 	if scenery.destruction!=null and not scenery.apply_destruction(scenery_world,camera.transform,PackedByteArray([255,255,255,255]),Vector4.ONE,1.0):return reject(scenery.error)
 	var sun_frame: Dictionary={} if sun==null else sun.prepare_frame(state.camera_view,Vector2i(camera.get_viewport().get_visible_rect().size),prior_intensity)
 	if sun_frame.has("error"):return reject(sun.error)
@@ -336,6 +391,7 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 		if not scan_animation.present(scan.sample):return reject(scan_animation.error)
 		target_frame.set_active(state.get("player_aim",{}).get("visible",false))
 	if station_target_overlay!=null and not station_target_overlay.present(state.get("station_targeting",{}),state.camera_view.pose,state.get("player_aim",{}).get("visible",false)):return reject(station_target_overlay.error)
+	if station_target_overlay!=null and state.get("station_hidden",false):station_target_overlay.visible=false
 	if npc_markers!=null and not npc_markers.present(state.get("npc_scanner",{}),state.get("mining_targeting",{}).get("selected_object_index",-1)>=0):return reject(npc_markers.error)
 	if waypoint_marker!=null and not waypoint_marker.present(state.get("player_route",{}),state.camera_view.pose,Vector2i(get_viewport().get_visible_rect().size),state.get("player_aim",{}).get("visible",false)):return reject(waypoint_marker.error)
 	if mining_panel!=null:
@@ -348,12 +404,18 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 	if not probe_stage.get("target_overlay_visible",true):
 		for control in [target_frame,reticle,scan_animation,npc_markers,waypoint_marker,station_target_overlay]:
 			if control!=null:control.visible=false
+	# Guiding a Liberator: only the hull/shield bars and the crosshair stay.
+	if state.get("guided_missile",false):
+		for control in [target_frame,scan_animation,mining_panel,npc_markers,waypoint_marker,station_target_overlay]:
+			if control!=null:control.visible=false
 	if game_over!=null and not game_over.present(death,absolute_milliseconds):return reject(game_over.error)
 	if drive_effect!=null:drive_effect.commit_state(drive_frame)
 	if portal!=null:portal.commit_state(portal_frame)
 	if not gate_frame.is_empty():gates.commit_animation(gate_frame)
 	if sun!=null:sun.commit_frame(sun_frame)
 	if encounter!=null:encounter.commit_world(pirate_frame)
+	if wingmen!=null:wingmen.commit(wingman_frame)
+	if is_instance_valid(beams):beams.present(state.player.get("beams",{}))
 	if tractor!=null:tractor.commit_world(tractor_frame)
 	if radio!=null:
 		var transmission: Dictionary=state.get("radio",{}).duplicate(true)
@@ -378,6 +440,22 @@ func _apply(state: Dictionary, prior_intensity: float, drill: RefCounted, pirate
 		camera.fov=70.0
 		for control in [target_frame,reticle,scan_animation,mining_panel,notice_panel,npc_markers,waypoint_marker,station_target_overlay]:
 			if control!=null:control.visible=false
+	if state.get("supernova_reversed",false) and not _supernova_reversed:
+		_supernova_reversed=true;sky.reverse_supernova()
+		if planets!=null:planets.set_sun_swell(1.0)
+	# The Naneroh bomb (105): bomb flight, implosion, flash, swollen sun.
+	if state.get("supernova_grown_ms",-1)>=0 and planets!=null:
+		if _bomb_view==null:
+			_bomb_view=BombView.new();add_child(_bomb_view)
+			if not _bomb_view.build(_bomb_sources[0],_bomb_sources[1],_bomb_sources[2],String(state.get("supernova_scene",""))):return fail(_bomb_view.error)
+		planets.set_sun_swell(_bomb_view.present(int(state.world_elapsed_ms)-int(state.supernova_grown_ms),state.get("supernova_bomb")))
+	# The Valkyrie finale (157): burning Valkyrie, the array beam, the flash.
+	if not state.get("array_finale",{}).is_empty():
+		if _finale_view==null:
+			_finale_view=FinaleView.new();add_child(_finale_view)
+			if not _finale_view.build(_bomb_sources[0],_bomb_sources[1],_bomb_sources[2]):return fail(_finale_view.error)
+		_finale_view.present(state.array_finale)
+	if not _present_hit_feedback(state,probe_stage,death):return false
 	sky.commit_view(sky_frame)
 	return true
 
@@ -436,7 +514,7 @@ func set_display_active(value: bool) -> void:
 
 func set_mobile_layout(value: bool) -> void:
 	if dialogue!=null:dialogue.set_mobile_layout(value)
-	for control in [target_frame,reticle,scan_animation,mining_panel,notice_panel,game_over,radio,npc_markers,waypoint_marker,station_target_overlay]:
+	for control in [target_frame,reticle,scan_animation,mining_panel,notice_panel,game_over,radio,npc_markers,waypoint_marker,station_target_overlay,hit_arcs,orbit_banner]:
 		if control!=null:control.set_mobile_layout(value)
 func clear() -> void:
 	if is_instance_valid(drive_effect):drive_effect.free()
@@ -444,16 +522,32 @@ func clear() -> void:
 	if is_instance_valid(portal):portal.free()
 	portal=null;probe=null
 	for child in get_children():child.free()
-	error="";geometry=null;sky=null;planets=null;sun=null;scenery=null;camera=null;dialogue=null;_projection=null;_last={}
+	error="";geometry=null;gas_clouds=null;sky=null;planets=null;sun=null;scenery=null;camera=null;dialogue=null;_projection=null;_last={}
 	target_frame=null;reticle=null;scan_animation=null
 	mining_panel=null;_last_drill=null;notice_panel=null
 	station=null;gates=null;void_environment=null;lighting=null;reflection=null
 	encounter=null;_last_encounter=null
+	wingmen=null
+	_last_crew=null
 	tractor=null;_last_tractor=null
 	_last_scenery=null
 	player_destruction=null;game_over=null;_last_death=null;_last_absolute_ms=0
 	damage_particles=null;_last_particles=null;_last_gate_animation=null
 	engine_particles=null;_last_engines=null
 	radio=null;_radio_resources=null;npc_markers=null;waypoint_marker=null;station_target_overlay=null
+	hit_arcs=null;orbit_banner=null;_bomb_view=null;_finale_view=null
+func _present_hit_feedback(state: Dictionary,probe_stage: Dictionary,death: RefCounted) -> bool:
+	var hidden: bool=state.dialogue.visible or not state.get("alioth_attack",{}).get("hud_visible",true) or not state.get("sahi_stage",{}).get("hud_visible",true) \
+		or not probe_stage.get("hud_visible",true) or (death!=null and not state.player_destruction.hud_visible) or state.get("guided_missile",false) \
+		or state.get("khador",{}).get("phase","") in ["departing","arrival"]
+	if hit_arcs!=null:
+		var view:=Vector2(get_viewport().get_visible_rect().size) if is_inside_tree() else Vector2(16,9)
+		var vertical:=tan(deg_to_rad(camera.fov)*0.5)
+		if not hit_arcs.present(state,Vector2(vertical*view.x/maxf(view.y,1.0),vertical)):return reject(hit_arcs.error)
+		if hidden:hit_arcs.visible=false
+	if orbit_banner!=null:
+		if not orbit_banner.present(state):return reject(orbit_banner.error)
+		if hidden:orbit_banner.visible=false
+	return true
 func fail(message: String) -> bool:clear();error=message;return false
 func reject(message: String) -> bool:error=message;return false

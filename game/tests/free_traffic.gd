@@ -134,7 +134,7 @@ func verify_rejection(bindings: RefCounted,packet: Dictionary,rank: int,difficul
 	check(AmbientCombat.population(bindings,changed,rank,difficulty).is_empty(),"Ordinary setup admitted a mismatched faction")
 	changed=packet.duplicate(true);changed.binding_id="bad"
 	check(AmbientCombat.population(bindings,changed,rank,difficulty).is_empty(),"Ordinary setup admitted another binding identity")
-	check(AmbientCombat.population(bindings,packet,21,difficulty).is_empty() and AmbientCombat.population(bindings,packet,rank,1.5).is_empty(),"Ordinary setup inferred unsupported rank/difficulty")
+	check(AmbientCombat.population(bindings,packet,21,difficulty).is_empty() and AmbientCombat.population(bindings,packet,rank,2.0).is_empty(),"Ordinary setup inferred unsupported rank/difficulty")
 
 func verify_opposition(bindings: RefCounted,rules: Dictionary) -> void:
 	for actor in [0,1,2,3,8]:

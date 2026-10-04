@@ -1,6 +1,7 @@
 extends SceneTree
 ## Earned rescue departure with a detached lethal-contact diagnostic. This test
 ## never advances the saved career or creates a successful rescue checkpoint.
+const SaveCompare=preload("res://tests/fixtures/save_compare.gd")
 const Library=preload("res://src/content/library.gd")
 const Bindings=preload("res://src/content/resource_bindings.gd")
 const Catalogues=preload("res://src/content/catalogues.gd")
@@ -45,7 +46,7 @@ func verify(args: PackedStringArray) -> void:
 		check(branch.start(player,entry.player_pose,Vector3.ZERO,entry.camera_view.pose,cursor),branch.error)
 		check(branch.snapshot().campaign_cursor==cursor and branch.snapshot().phase=="tumble" and branch.snapshot().elapsed_ms==0,"Allowed story cursor lost its initial destruction state")
 		check(death.snapshot()==initial,"A detached death branch mutated its retained owner")
-	check(station.snapshot()==retained and archive.capture(station,bindings)==record and construction.snapshot()==entry,"Death validation changed the earned save, career or prepared departure")
+	check(station.snapshot()==retained and SaveCompare.matches_older(archive.capture(station,bindings),record) and construction.snapshot()==entry,"Death validation changed the earned save, career or prepared departure")
 
 func check(condition: bool,message: String) -> void:
 	checks+=1

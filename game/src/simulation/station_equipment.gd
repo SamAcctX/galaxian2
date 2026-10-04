@@ -16,8 +16,20 @@ const Fitting=preload("res://src/simulation/equipment_fitting.gd")
 const RecoveryRules=preload("res://src/content/tractor_recovery_definitions.gd")
 const Ship=preload("res://src/simulation/ship_instance.gd")
 const ShipStock=preload("res://src/simulation/station_stock.gd")
+const Numbers=preload("res://src/content/opening_definitions.gd")
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 var error:=""
-var _state:={}
+## Forks share the inventory state until either side touches it. Every use of
+## _state takes a private copy first; read-only observers use _data directly.
+var _data:={}
+var _owned:=true
+var _read:={}
+var _state: Dictionary:
+	get:
+		if not _owned:_data=_data.duplicate(true);_owned=true
+		_read={}
+		return _data
+	set(value):_data=value;_owned=true;_read={}
 var _rules:={}
 var _items:={}
 var _counts:=[]
@@ -46,8 +58,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, station: Dictionary
 		var item:=_item_metadata(catalogues,id,rules)
 		if item.is_empty():return reject("Tutorial item has no category or subtype")
 		items[id]=item
-	var counts:=[]
-	for name in Loadout.SLOT_PROPERTIES:counts.append(int(catalogues.tables.ships[seed.ship_id].stats[name]))
+	var counts:=Loadout.slot_counts(catalogues.tables.ships[seed.ship_id].stats,seed)
 	var capacity:=int(catalogues.tables.ships[seed.ship_id].stats.cargo_capacity)
 	if station.cargo.get("capacity")!=capacity:return reject("Tutorial cargo capacity differs from the ship catalogue")
 	_rules=rules.duplicate(true);_items=items;_counts=counts;_completion_prices=[];_catalogue_size=catalogues.tables.items.size();_mission_cargo_id=-1;_fitting_assets={}
@@ -154,7 +165,7 @@ func close_ordinary_shopping() -> bool:
 	error=""
 	if not _state.get("ordinary_shopping_open",false):return reject("The ordinary hangar is not open")
 	_state.erase("ordinary_shopping_open");_state.erase("market_rows");_state.erase("market_rules")
-	for key in ["fitting_support","fitting_conflicts","fitting_stats","market_ships","ship_price_percent"]:_state.erase(key)
+	for key in ["fitting_support","fitting_conflicts","fitting_stats","market_ships","ship_price_percent","free_transfers","kaamo_keep","kept_ship"]:_state.erase(key)
 	_fitting_assets={}
 	return true
 
@@ -171,7 +182,49 @@ func open_ship_market(bindings: RefCounted,cat: RefCounted,offers: Array,price_p
 	_state.market_ships=offers.duplicate(true);_state.ship_price_percent=price_percent
 	return true
 
-func purchase_ship(bindings: RefCounted,cat: RefCounted,index: int,credits: int,passengers: int) -> bool:
+## A Kaamo mechanic fits a mod to the flown hull (each mod once per hull).
+func add_ship_mod(bindings: RefCounted,cat: RefCounted,mod: int) -> bool:
+	error=""
+	if not _state.get("loadout",{}).get("ship_instance") is Dictionary or _state.get("ordinary_shopping_open",false):return reject("Close the hangar before modding the ship")
+	var tags: Array=_state.loadout.ship_instance.get("upgrade_tags",[])
+	if mod in tags:return reject("This ship already has that mod")
+	var next:=_state.duplicate(true)
+	next.loadout.ship_instance.upgrade_tags.append(mod)
+	var counts:=_counts.duplicate()
+	if mod==Loadout.SLOT_MOD:
+		next.loadout.slots.append(null);next.prices.installed.append(null);counts[3]+=1
+	if mod==Loadout.CARGO_MOD:
+		next.cargo.capacity=load("res://src/simulation/equipment_stats.gd").cargo_capacity(bindings,cat,next.loadout)
+		next.cargo.free_space=int(next.cargo.capacity)-int(next.cargo.used)
+	_state=next;_counts=counts
+	return true
+
+## The owned Kaamo Club's hangar is the player's storage: goods and parked
+## ships move without payment.
+func open_free_transfers() -> bool:
+	if not _state.get("ordinary_shopping_open",false):return reject("Open the station hangar first")
+	_state.free_transfers=true
+	return true
+
+## A ship parked at the owned club can be sold for its listed price; it then
+## leaves the storage (original hangar "Sell" on parked rows).
+func sell_parked_ship(index: int,credits: int) -> bool:
+	error=""
+	if not _data.get("free_transfers",false) or not _data.get("market_ships") is Array or index<0 or index>=_data.market_ships.size():return reject("Select a parked ship to sell")
+	var price:=int(_data.market_ships[index].unit_price)
+	if price<0 or credits<0 or credits+price>2147483647:return reject("The ship sale exceeds the supported wallet range")
+	var next: Dictionary=_state
+	next.market_ships.remove_at(index);next.credit_delta=price;next.transactions+=1
+	return true
+
+## Elsewhere, a bought ship may send the former one to the club ("Keep").
+## stored: the ship types already parked there (one per type).
+func offer_kaamo_keep(stored: Array) -> void:
+	if _state.get("ordinary_shopping_open",false):_state.kaamo_keep=stored.duplicate()
+
+## keep: the owned Kaamo Club parks the former ship (bare hull) instead of
+## trading it in; the new ship costs its full price.
+func purchase_ship(bindings: RefCounted,cat: RefCounted,index: int,credits: int,passengers: int,keep:=false) -> bool:
 	error=""
 	if not _state.get("ordinary_shopping_open",false) or not _state.get("market_ships") is Array or index<0 or index>=_state.market_ships.size():return reject("Select a ship from the current Hangar quote")
 	var offer: Dictionary=_state.market_ships[index]
@@ -180,8 +233,10 @@ func purchase_ship(bindings: RefCounted,cat: RefCounted,index: int,credits: int,
 	if not load("res://src/simulation/mission_context.gd").base_player_hull(bindings,offer.ship_id):return reject("This ship is outside the supported base game")
 	if offer.ship_id==_state.loadout.ship_id:return reject("You already own this type of ship.")
 	if passengers>0:return reject("You cannot change ships while carrying passengers.")
-	if int(offer.unit_price)>credits+int(current.unit_price):return reject("Insufficient credits. You need %d more."%(int(offer.unit_price)-credits-int(current.unit_price)))
-	var delta:=int(current.unit_price)-int(offer.unit_price)
+	var free: bool=_state.get("free_transfers",false)
+	if keep and int(offer.unit_price)>credits:return reject("Insufficient credits. You need %d more."%(int(offer.unit_price)-credits))
+	if not free and not keep and int(offer.unit_price)>credits+int(current.unit_price):return reject("Insufficient credits. You need %d more."%(int(offer.unit_price)-credits-int(current.unit_price)))
+	var delta:=0 if free else -int(offer.unit_price) if keep else int(current.unit_price)-int(offer.unit_price)
 	if absi(delta)>int(_state.market_rules.transfer.maximum_credit_delta) or credits+delta>2147483647:return reject("The ship exchange exceeds the supported wallet range")
 	var staged:=fork();var next: Dictionary=staged._state
 	var previous: Dictionary=next.loadout.duplicate(true);var prices: Array=next.prices.installed.duplicate(true)
@@ -190,8 +245,9 @@ func purchase_ship(bindings: RefCounted,cat: RefCounted,index: int,credits: int,
 	next.loadout=empty.snapshot();next.loadout.ship_instance=Ship.from_offer(offer)
 	next.loadout.ship_instance.unit_price=ShipStock.local_ship_price(bindings,cat,int(offer.ship_id),int(previous.station_id),int(next.ship_price_percent))
 	if not Ship.valid(next.loadout.ship_instance):return reject("The purchased ship has an invalid local quote")
-	staged._counts=[]
-	for key in Loadout.SLOT_PROPERTIES:staged._counts.append(int(cat.tables.ships[int(offer.ship_id)].stats[key]))
+	# A stored hull keeps its own mods (an added slot among them).
+	if Loadout.SLOT_MOD in next.loadout.ship_instance.upgrade_tags:next.loadout.slots.append(null)
+	staged._counts=Loadout.slot_counts(cat.tables.ships[int(offer.ship_id)].stats,next.loadout)
 	next.prices.installed=[];next.prices.installed.resize(next.loadout.slots.size())
 	for i in previous.slots.size():
 		var slot: Variant=previous.slots[i]
@@ -215,7 +271,9 @@ func purchase_ship(bindings: RefCounted,cat: RefCounted,index: int,credits: int,
 	var resale:=current.duplicate(true);resale.ship_id=int(previous.ship_id)
 	resale.unit_price=ShipStock.local_ship_price(bindings,cat,int(previous.ship_id),int(previous.station_id),int(next.ship_price_percent))
 	if not Ship.valid_offers([resale],cat):return reject("The former ship has an invalid local resale quote")
-	next.market_ships[index]=resale;next.credit_delta=delta;next.transactions+=1
+	if keep:next.market_ships.remove_at(index);next.kept_ship=resale
+	else:next.market_ships[index]=resale
+	next.credit_delta=delta;next.transactions+=1
 	_state=next;_counts=staged._counts
 	return true
 
@@ -309,7 +367,8 @@ func _transact_ordinary(action: String,item_id: int,credits: int) -> bool:
 		if candidate.item_id==item_id:row=candidate;break
 	if row.is_empty():return reject("This item is absent from the current stock and cargo")
 	if row.mission or item_id in next.get("protected_item_ids",[]):return reject("This item cannot be sold or demounted at the moment.")
-	var price: int=row.unit_price
+	# The owned Kaamo Club stores goods for free.
+	var price: int=0 if next.get("free_transfers",false) else row.unit_price
 	if price<0 or price>int(next.market_rules.transfer.maximum_credit_delta):return reject("This item price is outside the supported wallet range")
 	if action=="buy":
 		if row.stock<1:return reject("This offer is out of stock")
@@ -322,6 +381,78 @@ func _transact_ordinary(action: String,item_id: int,credits: int) -> bool:
 		row.owned-=1;row.stock+=1;next.credit_delta=price
 	_retain_market_inventory(next)
 	next.transactions+=1;_state=next
+	return true
+
+## A story mission lends the player a ship. The owned ship keeps its cargo,
+## installed items and prices aside until the story hands it back.
+func lend_story_ship(bindings: RefCounted,cat: RefCounted,ship_id: int,equipment: Array,store: bool) -> bool:
+	error=""
+	if _state.get("ordinary_shopping_open",false):return reject("Close the shop before changing ships")
+	if not Numbers.integer(ship_id,0,cat.tables.ships.size()-1):return reject("The story ship is outside the ship catalogue")
+	var next:=_state.duplicate(true)
+	if store:
+		if next.has("stored_ship"):return reject("A story ship is already on loan")
+		# Older careers keep only the ship's affiliation; give the stored hull its quote.
+		var owned:=Ship.from_inventory(bindings,cat,next)
+		if owned.is_empty():return reject("The owned ship has no valid quote to keep")
+		next.stored_ship={"loadout":next.loadout.duplicate(true),"cargo":next.cargo.duplicate(true),"prices":next.prices.duplicate(true)}
+		next.stored_ship.loadout.ship_instance=owned;next.erase("ship_affiliation")
+	elif not next.has("stored_ship"):return reject("The story ship replaces no stored ship")
+	var assembled:=Loadout.new()
+	if not assembled.assemble({"ship_id":ship_id,"station_id":next.loadout.station_id,"equipment":equipment,"item_category_value_index":int(_rules.item_category_value_index)},cat,bindings.base_content_id,bindings.binding_id):return reject(assembled.error)
+	var affiliations: Array=bindings.early_contracts.get("base_station_stock",{}).get("ships",{}).get("affiliations",[])
+	next.loadout=assembled.snapshot()
+	next.loadout.ship_instance={"unit_price":int(cat.tables.ships[ship_id].stats.base_price),"faction_id":int(affiliations[ship_id]) if ship_id<affiliations.size() else 1,"upgrade_tags":[]}
+	next.prices.installed=[]
+	for slot in next.loadout.slots:next.prices.installed.append(null if slot==null else {"item_id":slot.item_id,"unit_price":int(_completion_prices[slot.item_id]) if slot.item_id<_completion_prices.size() else 0})
+	next.cargo.ship_id=ship_id;next.cargo.entries=[];next.prices.cargo=[]
+	var staged:=fork();staged._state=next
+	staged._counts=Loadout.slot_counts(cat.tables.ships[ship_id].stats,next.loadout)
+	staged._state.cargo.used=0
+	if not staged._story_capacity(bindings,cat):return false
+	_state=staged._state;_counts=staged._counts
+	return true
+
+func return_story_ship(bindings: RefCounted,cat: RefCounted) -> bool:
+	error=""
+	var stored: Variant=_state.get("stored_ship")
+	if not stored is Dictionary:return reject("No owned ship waits for the story to return it")
+	var next:=_state.duplicate(true)
+	next.loadout=stored.loadout.duplicate(true);next.loadout.station_id=_state.loadout.station_id;next.loadout.system_id=_state.loadout.system_id
+	next.cargo=stored.cargo.duplicate(true);next.prices=stored.prices.duplicate(true);next.erase("stored_ship")
+	var staged:=fork();staged._state=next
+	staged._counts=Loadout.slot_counts(cat.tables.ships[int(next.loadout.ship_id)].stats,next.loadout)
+	if not staged._story_capacity(bindings,cat):return false
+	_state=staged._state;_counts=staged._counts
+	return true
+
+func _story_capacity(bindings: RefCounted,cat: RefCounted) -> bool:
+	var capacity: int=load("res://src/simulation/equipment_stats.gd").cargo_capacity(bindings,cat,_state.loadout)
+	if capacity<int(_state.cargo.used):return reject("The story ship cannot hold its cargo")
+	_state.cargo.capacity=capacity;_state.cargo.free_space=capacity-int(_state.cargo.used)
+	return true
+
+## The story takes an item away: the first fitted one, else its hold stack.
+## Nothing is refunded; an item the player no longer has is simply not taken.
+func remove_story_item(bindings: RefCounted,cat: RefCounted,item_id: int) -> bool:
+	error=""
+	if not _state.get("training_inventory_released",false) or _state.get("ordinary_shopping_open",false) or not cargo_cache_valid():return reject("Close the hangar before the story takes an item")
+	var next:=_state.duplicate(true);var index:=-1
+	for i in next.loadout.slots.size():
+		if next.loadout.slots[i]!=null and int(next.loadout.slots[i].item_id)==item_id:index=i;break
+	if index>=0:
+		next.loadout.slots[index]=null;next.prices.installed[index]=null;next.loadout.equipment_ids=[]
+		for slot in next.loadout.slots:
+			if slot!=null:next.loadout.equipment_ids.append(slot.item_id)
+	else:
+		for i in next.cargo.entries.size():
+			if int(next.cargo.entries[i].item_id)==item_id and not next.cargo.entries[i].get("mission",false):index=i;break
+		if index<0:return true
+		next.cargo.entries.remove_at(index);next.prices.cargo.remove_at(index)
+		next.cargo.used=_used(next.cargo.entries);next.cargo.free_space=int(next.cargo.capacity)-int(next.cargo.used);next.cargo_cache_stale=false
+	var staged:=fork();staged._state=next
+	if not staged._story_capacity(bindings,cat):return reject(staged.error)
+	_state=staged._state
 	return true
 
 func supply_blueprint_material(item_id: int,quantity: int) -> int:
@@ -371,18 +502,31 @@ func _retain_market_inventory(state: Dictionary,refresh_used:=true) -> void:
 
 func requirements() -> Dictionary:
 	var weapon:=false;var armor:=false
-	if not _state.is_empty():
-		for slot in _state.loadout.slots:
+	if not _data.is_empty():
+		for slot in _data.loadout.slots:
 			if slot==null:continue
 			var item: Dictionary=_items[slot.item_id]
 			if item.category==int(_rules.weapon_category):weapon=true
 			elif item.subtype==int(_rules.armor_subtype):armor=true
 	return {"weapon_installed":weapon,"armor_installed":armor,"satisfied":weapon and armor}
 
+## A weapon or armour plate is in the hold (not yet fitted).
+func required_items_in_hold() -> bool:
+	if _data.is_empty():return false
+	for entry in _data.cargo.entries:
+		var item: Dictionary=_items.get(entry.item_id,{})
+		if not item.is_empty() and (item.category==int(_rules.weapon_category) or item.subtype==int(_rules.armor_subtype)):return true
+	return false
+
 func snapshot() -> Dictionary:
-	if _state.is_empty():return {}
-	var result:=_state.duplicate(true);result.requirements=requirements()
+	if _data.is_empty():return {}
+	var result:=_data.duplicate(true);result.requirements=requirements()
 	return result
+
+## The snapshot, read-only and cached until the state is next used for a change.
+func read_snapshot() -> Dictionary:
+	if _read.is_empty():_read=Readonly.freeze(snapshot())
+	return _read
 
 func relocate_convoy_arrival(bindings: RefCounted,catalogues: RefCounted,arrival: Dictionary) -> bool:
 	error=""
@@ -660,6 +804,19 @@ func debit_campaign_cargo(item_id: int,quantity: int) -> bool:
 	if _state.get("ordinary_shopping_open",false):return reject("Campaign cargo requires a closed inventory")
 	return debit_delivery_cargo(item_id,quantity)
 
+## The story takes goods from the hold (89: ten Luxury); fewer are all taken.
+func remove_story_goods(item_id: int,quantity: int) -> bool:
+	error=""
+	var left:=quantity
+	while left>0:
+		var held:=0
+		for row in _state.cargo.entries:
+			if int(row.item_id)==item_id:held=maxi(held,int(row.quantity))
+		if held<=0:return true
+		if not debit_delivery_cargo(item_id,mini(held,left)):return false
+		left-=mini(held,left)
+	return true
+
 func debit_delivery_stack(item_id: int) -> bool:
 	error=""
 	if not _campaign_cargo_context(item_id,1):return reject("Delivery cargo requires its retained inventory")
@@ -781,12 +938,15 @@ func _valid_cargo(hold: Dictionary,station_only: bool) -> bool:
 
 func fork() -> RefCounted:
 	var result: RefCounted=get_script().new()
-	result._state=_state.duplicate(true);result._rules=_rules.duplicate(true);result._items=_items.duplicate(true);result._counts=_counts.duplicate()
+	# Rules, item rows and fitting assets are replaced, never edited, after
+	# configuration; share them. Inventory state is the fork's own copy.
+	result._data=_data;result._owned=false;_owned=false;result._read=_read
+	result._rules=_rules;result._items=_items;result._counts=_counts.duplicate()
 	result._completion_prices=_completion_prices.duplicate()
 	result._catalogue_size=_catalogue_size
 	result._mission_cargo_id=_mission_cargo_id
 	result._recovery_cargo_ids=_recovery_cargo_ids.duplicate()
-	result._fitting_assets=_fitting_assets.duplicate(true)
+	result._fitting_assets=_fitting_assets
 	return result
 
 func _used(entries: Array) -> int:

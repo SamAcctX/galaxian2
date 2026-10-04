@@ -22,7 +22,7 @@ const AmbientPopulation=preload("res://src/content/ambient_population_definition
 const AmbientCombat=preload("res://src/content/ambient_combat_definitions.gd")
 const FreighterDestruction=preload("res://src/content/freighter_destruction_definitions.gd")
 const AmbientLifecycle=preload("res://src/content/ambient_lifecycle_definitions.gd")
-const MAX_READER_VERSION:=204
+const MAX_READER_VERSION:=205
 const CombatTrainingDestruction=preload("res://src/content/combat_training_destruction_definitions.gd")
 const CombatTrainingWeapons=preload("res://src/content/combat_training_weapon_definitions.gd")
 const CombatTrainingControl=preload("res://src/content/combat_training_control_definitions.gd")
@@ -383,6 +383,24 @@ func open(directory: String, base: Dictionary,library: RefCounted=null) -> bool:
 		if not staged.has(int(row.id)):
 			staged[int(row.id)] = []
 		staged[int(row.id)].append(row)
+	# Type 6 meshes load like type 4 ones, from a path plus the material in
+	# their registration payload. Newer imports list that payload separately
+	# so earlier rows stay byte-identical; copy it onto a private row here.
+	if body.has("payload_meshes"):
+		if not body.payload_meshes is Array or body.payload_meshes.size() > 256:
+			return fail("Invalid mesh payload declarations")
+		for entry in body.payload_meshes:
+			if not entry is Dictionary or not bounded_integer(entry.get("id"), 0, 65535) \
+					or not bounded_integer(entry.get("material_id"), 0, 65535) \
+					or not bounded_integer(entry.get("mesh_flags"), 0, 255) or not staged.has(int(entry.id)):
+				return fail("Invalid mesh payload declaration")
+			var rows: Array = staged[int(entry.id)]
+			for index in rows.size():
+				if rows[index].kind == "mesh" and rows[index].registration_type == 6 and rows[index].resource == entry.get("resource"):
+					var merged: Dictionary = rows[index].duplicate()
+					merged.material_id = int(entry.material_id)
+					merged.mesh_flags = int(entry.mesh_flags)
+					rows[index] = merged
 	var staged_materials := {}
 	if header.reader != "resource-registration-v1":
 		if not body.get("materials") is Array or body.materials.size() > 20000:
@@ -1279,11 +1297,17 @@ func resolve(identifier: int, kind := "") -> String:
 	var alternatives := {}
 	for row in records[identifier]:
 		alternatives[row.resource + "|" + str(int(row.registration_type))] = row
+	# A DLC asset reuses an id of a base test mesh (19080: the Mining Plant
+	# over test_dock.aem); the DLC declaration is the one the game shows.
+	if alternatives.size() > 1:
+		var dlc := alternatives.keys().filter(func(key): return "/data/assets/" in String(key))
+		if dlc.size() == 1:
+			alternatives = {dlc[0]: alternatives[dlc[0]]}
 	if alternatives.size() != 1:
 		fail("Resource ID %d has multiple source declarations; active selection is unverified" % identifier)
 		return ""
 	var row: Dictionary = alternatives.values()[0]
-	if row.registration_type != (4 if row.kind == "mesh" else 2):
+	if row.registration_type != (4 if row.kind == "mesh" else 2) and not mesh_payload(row):
 		fail("Resource ID %d uses an unverified registration type" % identifier)
 		return ""
 	if not kind.is_empty() and kind != row.kind:
@@ -1351,9 +1375,11 @@ func resolve_ship_layers(ship_id: int) -> Dictionary:
 			var id := int(ship_lights.resource_ids[ship_id][slot])
 			if id == 65535: continue
 			var light_path := resolve(id, "mesh")
+			# An undeclared light layer (ship 42's 18742) is left off; the
+			# body still flies.
 			if light_path.is_empty():
-				error = "Ship %d light layer %d: " % [ship_id, slot] + error
-				return {}
+				error = ""
+				continue
 			lights.append({"resource_id": id, "path": light_path, "slot": slot})
 	return {"ship_id": ship_id, "resource_id": int(ship_model_resources[ship_id]), "path": path,
 		"lights": lights, "light_bindings_available": not ship_lights.is_empty()}
@@ -1393,7 +1419,9 @@ func resolve_ship_detail(ship_id: int) -> Dictionary:
 
 func resolve_player_engine_glow(ship_id: int, quality := "high") -> Dictionary:
 	error = ""
-	# The admitted base player uses the factory's additive hull attachment.
+	# The admitted base player uses the factory's additive hull attachment
+	# (the Valkyrie ships use a second glow texture, 34814; Supernova hulls
+	# such as 44 and 45 draw the glow from their own diffuse texture).
 	if source_architecture!="x86_64" or not load("res://src/simulation/mission_context.gd").base_player_hull(self,ship_id):
 		fail("Player engine-glow assembly is not verified for this content or hull")
 		return {}
@@ -1402,7 +1430,7 @@ func resolve_player_engine_glow(ship_id: int, quality := "high") -> Dictionary:
 	if path.is_empty():return {}
 	var material:=material_for_mesh(path,quality)
 	var slots: Array=material.get("texture_ids",[])
-	if material.get("render_type")!=2 or slots.size()!=8 or slots[0]!=34812 or not slots.slice(1).all(func(id):return id==65535):
+	if material.get("render_type")!=2 or slots.size()!=8 or int(slots[0])==65535 or not slots.slice(1).all(func(id):return id==65535):
 		fail("Unsupported player engine-glow material mapping")
 		return {}
 	return {"resource_id":identifier,"path":path}
@@ -1477,7 +1505,7 @@ func material_for_mesh(path: String, quality := "high") -> Dictionary:
 	var candidates := []
 	for rows in records.values():
 		for row in rows:
-			if row.resource == path and row.kind == "mesh" and row.registration_type == 4:
+			if row.resource == path and row.kind == "mesh" and (row.registration_type == 4 or mesh_payload(row)):
 				candidates.append(row)
 	if candidates.is_empty():
 		fail("This mesh has no recovered material reference")
@@ -1492,6 +1520,11 @@ func material_for_mesh(path: String, quality := "high") -> Dictionary:
 		fail("This mesh uses unverified material flags (%d)" % flags)
 		return {}
 	return resolve_material(material_id, quality)
+
+
+## A type 6 mesh is supported once its registration payload material is known.
+static func mesh_payload(row: Dictionary) -> bool:
+	return row.kind == "mesh" and row.registration_type == 6 and row.has("material_id")
 
 
 static func bounded_integer(value: Variant, minimum: int, maximum: int) -> bool:

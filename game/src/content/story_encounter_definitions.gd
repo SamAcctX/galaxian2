@@ -1,6 +1,7 @@
 extends RefCounted
 ## Compose an authored population once at encounter entry. The flight's existing
 ## combat, motion, hit and cargo owners consume this accepted construction.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Sahi=preload("res://src/content/sahi_encounter_definitions.gd")
 const Dima=preload("res://src/content/dima_encounter_definitions.gd")
 const Post=preload("res://src/content/post_sahi_definitions.gd")
@@ -103,7 +104,7 @@ static func compose(bindings: RefCounted,catalogues: RefCounted,packet: Dictiona
 		if context.get(key)!=bindings.get(key) or packet.get(key)!=bindings.get(key):return {}
 	for key in ["campaign_cursor","station_id"]:
 		if packet.get(key)!=context.get(key):return {}
-	if not Numbers.integer(context.get("rank"),0,20) or context.get("difficulty") not in [0.5,1.0]:return {}
+	if not Numbers.integer(context.get("rank"),0,20) or not Difficulty.valid(context.get("difficulty")):return {}
 	var dima: bool=Dima.selected(bindings.mido_travel,context)
 	var source: Dictionary=bindings.mido_travel.sahi_encounter.duplicate()
 	if dima:source.population=Dima.population(bindings.mido_travel,context)
@@ -129,7 +130,7 @@ static func compose(bindings: RefCounted,catalogues: RefCounted,packet: Dictiona
 static func compose_void(bindings: RefCounted,catalogues: RefCounted,generated_world: RefCounted,equipment: RefCounted,ordinary_void_source: RefCounted,difficulty: Variant) -> Dictionary:
 	if bindings==null or catalogues==null or catalogues.content_id!=bindings.base_content_id or not generated_world is World or not equipment is Equipment:return {}
 	if not Life.available(bindings) or not FreeLife.available(bindings) or not AliothLife.available(bindings) or not ControlRules.parameters(bindings.combat_training_control) or not Sahi.coherent(bindings.mido_travel):return {}
-	if difficulty not in [0.5,1.0,1.5]:return {}
+	if not Difficulty.valid(difficulty):return {}
 	var world: Dictionary=generated_world.snapshot()
 	var packet: Variant=world.get("npc_construction")
 	if not packet is Dictionary or world.get("station_id")!=-1 or world.get("system_id")!=-1:return {}

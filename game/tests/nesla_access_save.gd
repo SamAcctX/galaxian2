@@ -44,5 +44,5 @@ func verify_cursor38(bindings: RefCounted,cat: RefCounted,library: RefCounted,cu
 		check(current.contracts.travel_statistics.jumpgates_used==start.contracts.travel_statistics.jumpgates_used+1,"The retained last leg did not earn exactly one gate transit")
 		for field in ["mission","passengers","accepted_contact","blueprints"]:check(current.contracts[field]==start.contracts[field],"The retained last leg changed "+field)
 		check(FileAccess.get_sha256(predecessor)==predecessor_sha,"Archive verification changed the Genoh predecessor")
-	check(archive.capture(station,bindings)==document and FileAccess.get_sha256(source)==expected and FileAccess.get_sha256(canonical)==CANONICAL_SHA,"Read-only comparison changed either retained checkpoint")
+	check(SaveCompare.matches_older(archive.capture(station,bindings),document) and FileAccess.get_sha256(source)==expected and FileAccess.get_sha256(canonical)==CANONICAL_SHA,"Read-only comparison changed either retained checkpoint")
 	print("Verified original202 access save ",expected," station ",id," completed gates ",PREFIX[id][1]," credits ",current.contracts.credits," remaining original course ",course.system_path)

@@ -1,5 +1,6 @@
 extends RefCounted
 ## Original route and guidance declarations. This capability does not expose a world.
+const StoryFlights=preload("res://src/content/valkyrie_flight_definitions.gd")
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
 const Campaign=preload("res://src/content/free_campaign_definitions.gd")
 const Bakka=preload("res://src/content/bakka_contest_definitions.gd")
@@ -20,7 +21,7 @@ static func available(bindings: RefCounted) -> bool:
 static func ordinary_departure_at(bindings: RefCounted,cursor: int,story: Dictionary,station_id: int) -> bool:
 	if not available(bindings):return false
 	var expected:=Campaign.mission(bindings,cursor)
-	return not expected.is_empty() and story==expected and station_id>=0 and station_id<int(bindings.early_contracts.base_navigation.global_station_bound) and (int(expected.kind)<0 or station_id!=int(expected.station_id) or Campaign.ordinary_story_at(bindings,cursor,station_id) or cursor==33)
+	return not expected.is_empty() and story==expected and station_id>=0 and station_id<int(bindings.early_contracts.base_navigation.global_station_bound) and (int(expected.kind)<0 or station_id!=int(expected.station_id) or Campaign.ordinary_story_at(bindings,cursor,station_id) or cursor==33 or not StoryFlights.story_job(bindings,cursor,station_id).is_empty())
 
 static func destination_supported(bindings: RefCounted,cursor: int,story: Dictionary,station_id: int) -> bool:
 	if ordinary_departure_at(bindings,cursor,story,station_id):return true

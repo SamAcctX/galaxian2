@@ -213,6 +213,8 @@ func sample_camera(pose: Variant, follow_enabled: Variant) -> bool:
 	_state.camera_pose=pose;_state.camera_follow_enabled=follow_enabled
 	return true
 
+func phase() -> String:return "" if _state.is_empty() else String(_state.phase)
+
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}
 	var result:=_state.duplicate(true)
@@ -225,6 +227,9 @@ func snapshot() -> Dictionary:
 	result.continue_enabled=result.phase=="game_over" and not result.exit_requested
 	result.game_over_alpha_byte=mini(255,int(Vitals.single(Vitals.single(float(result.fade_elapsed_ms)/float(_rules.fade_ms))*255.0)))
 	return result
+
+## A story flight's death owner also covers the cursor its silent advance reaches.
+func covers_cursor(cursor: int) -> bool:return not _state.is_empty() and (cursor==int(_state.departure_cursor) or cursor in _rules.get("story_cursors",[]))
 
 func presentation_identity() -> RefCounted:return _presentation_identity
 

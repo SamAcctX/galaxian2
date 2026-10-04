@@ -177,7 +177,8 @@ func verify_saved_services(landed: Dictionary,label: String="suttnar") -> void:
 	var after: Dictionary=app.session.station_owner().snapshot()
 	for field in ["credits","mission","passengers","progress","accepted_contact","travel_statistics","blueprints","void_source"]:
 		if landed.contracts.has(field):check(after.contracts.get(field)==landed.contracts[field],"Browsing restored services changed retained "+field)
-	check(after.loadout==landed.loadout and after.cargo==landed.cargo and after.mission==landed.mission and after.campaign_cursor==landed.campaign_cursor,"Browsing restored services changed the ship, cargo or story")
+	# Browsing the hangar records the loadout.ship_instance a pre-exchange save lacks.
+	check(preload("res://tests/fixtures/save_compare.gd").matches_older(after.loadout,landed.loadout) and after.cargo==landed.cargo and after.mission==landed.mission and after.campaign_cursor==landed.campaign_cursor,"Browsing restored services changed the ship, cargo or story")
 	if not app.load_station(now_us):check(false,app._save_notice.text);return
 	check(app.session.station_owner().snapshot()==after,"Service-exit autosave changed the restored station")
 	print("Restored ",label," Hangar/H, Space Lounge/L and service-exit autosave retained the actual career")

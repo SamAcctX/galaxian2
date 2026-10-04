@@ -30,6 +30,9 @@ func verify_source(library: RefCounted,bindings: RefCounted,cat: RefCounted,base
 	if record.is_empty():check(false,file.error);return
 	var station:=archive.restore(bindings,cat,library,record)
 	if station==null:check(false,archive.error);return
+	# Today's capture adds newer save fields the retained file predates; compare
+	# the station's own capture before and after attaching instead.
+	var captured: Dictionary=archive.capture(station,bindings)
 	var before: Dictionary=station.snapshot();var raw: Dictionary=bindings.mido_travel.duplicate(true)
 	var original_id: String=bindings.binding_id
 	check(before.campaign_cursor==38 and before.loadout.station_id==20 and before.loadout.system_id==4 and before.mission.station_id==22,"Use the actual retained Eanya20 checkpoint, not a substituted predecessor")
@@ -61,7 +64,7 @@ func verify_source(library: RefCounted,bindings: RefCounted,cat: RefCounted,base
 	check(not PlayerEntry.new().configure(bindings,38,22,true,0),"The supplemental source bypassed the selected player adapter")
 	check(not Frame.OrdinaryFlight.FreeFlight.Campaign.supported(bindings.mido_travel,39),"An extension granted unsupported public39")
 	check(station.contract_owner().campaign_flight_context(bindings,before.mission).is_empty(),"The Eanya20 career was silently relocated to Dekato22")
-	check(archive.capture(station,bindings)==record and station.snapshot()==before,"Attaching declarations changed the actual earned station owners")
+	check(archive.capture(station,bindings)==captured and station.snapshot()==before,"Attaching declarations changed the actual earned station owners")
 	var restored:=archive.restore(bindings,cat,library,record)
 	check(restored!=null and restored.snapshot()==before and file.load_document(saved,bindings,cat,library)==record,"Original202 archive restoration changed after source attachment")
 	check(not station.prepare_departure(bindings,cat).is_empty() and station.snapshot()==before,"Actual Eanya departure lost the retained source career")

@@ -37,6 +37,8 @@ static func for_location(bindings: RefCounted, station_id: int, system_id: int, 
 		# meshes. Its authored collision record is shared without relocating it.
 		result.model_ids=[16436,16439,16442]
 		result.collision_record_id=1000
+	var special: Array=load("res://src/content/valkyrie_world_definitions.gd").station_models(bindings,station_id)
+	if not special.is_empty():result.model_ids=special
 	result.collision_sphere_scale=float(bindings.mido_travel.collision_sphere_scale)
 	return result
 

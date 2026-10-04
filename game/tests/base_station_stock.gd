@@ -23,12 +23,13 @@ func verify(args: PackedStringArray):
 	var stations:=[]
 	for station in cat.tables.stations:
 		if station.id<=99 and station.id!=10 and station.system_id<=21:stations.append(station.id)
-	for cursor in [15,16,17,24,25,58,59,83]:
+	var won_ships:=0
+	for cursor in [15,16,17,24,25,58,59,83,84,162]:
 		context.campaign_cursor=cursor
 		for station in stations:
 			context.station_id=station
 			context.supernova_owned=(station%2)==0
-			context.valkyrie_owned=(station%3)==0
+			context.valkyrie_owned=(station%3)==0 or cursor>83
 			context.difficulty=1.5 if cursor==83 else 0.5
 			var stock:=Stock.new()
 			if not stock.prepare(bindings,cat,context,rng.snapshot(),1789423200+station):check(false,stock.error);return
@@ -39,10 +40,14 @@ func verify(args: PackedStringArray):
 			for item in state.items:
 				if item.item_id>=132 and item.item_id<=153:check(item.item_id==132+cat.tables.stations[station].system_id,"A station sold another system's local commodity")
 			if cursor==15 and station==98:alioth=state
+			var extras: int=state.ships.filter(func(row):return int(row.ship_id) in [39,41]).size()
+			check(extras==0 or cursor>83,"Khador's Vossk ships were sold before Valkyrie was won")
+			won_ships+=extras
 	check(ship_offers>0 and not alioth.is_empty(),"The base station generator did not reach Alioth")
+	check(won_ships>0,"No Vossk station sold ships 39/41 after the Valkyrie win")
 	check(cat.tables==catalogues,"Stock changed source catalogue prototypes")
 	var retained:=Stock.new();check(retained.restore(bindings,cat,alioth),retained.error)
-	for change in [{"campaign_cursor":84},{"campaign_cursor":14},{"station_id":10},{"station_id":100},{"station_id":108},{"ship_price_percent":null}]:
+	for change in [{"campaign_cursor":163},{"campaign_cursor":14},{"station_id":10},{"station_id":100},{"station_id":108},{"ship_price_percent":null}]:
 		var bad: Dictionary=alioth.context.duplicate(true);bad.merge(change,true)
 		check(not retained.prepare(bindings,cat,bad,rng.snapshot(),1789423200) and retained.snapshot()==alioth,"Unsupported context replaced retained stock")
 	var changed: Dictionary=alioth.duplicate(true)
@@ -93,6 +98,18 @@ func verify_ships(bindings: RefCounted,cat: RefCounted):
 	stock._system=17;stock._context.supernova_owned=true
 	check(stock._sample_ships(cat).map(func(row):return row.ship_id)==[1,51,42,52],"Independent system17 ship rolls or ownership order changed")
 	finished_stock(stock,"owned and system extras")
+	stock=drawn_base(bindings,[[6,1],[37,1]]+extra+[[8,0]])
+	stock._context.station_id=120;stock._context.campaign_cursor=159;stock._context.supernova_owned=true;stock._context.all_supernova_medals=false
+	check(stock._sample_ships(cat).map(func(row):return row.ship_id)==[1,49,51],"Station 120 does not sell ship 49 after the Supernova ending")
+	finished_stock(stock,"Supernova ending ship")
+	stock=drawn_base(bindings,[[6,1],[37,1]]+extra+[[8,0]])
+	stock._context.station_id=120;stock._context.campaign_cursor=159;stock._context.supernova_owned=true;stock._context.all_supernova_medals=true
+	check(stock._sample_ships(cat).map(func(row):return row.ship_id)==[1,44,49,51],"Every medal earned does not unlock ship 44 at station 120")
+	finished_stock(stock,"all-medals ship")
+	stock=drawn_base(bindings,[[6,1],[37,1]]+extra+[[8,0]])
+	stock._context.station_id=120;stock._context.campaign_cursor=159;stock._context.supernova_owned=true;stock._context.all_supernova_medals=false;stock._context.difficulty=1.5
+	check(stock._sample_ships(cat).map(func(row):return row.ship_id)==[1,44,49,51],"An Extreme career does not unlock ship 44 at station 120")
+	finished_stock(stock,"Extreme ship")
 	stock=drawn_base(bindings,[])
 	check(stock._ship_offer(cat,0,3).unit_price==16200,"An imported ship received the local-faction discount")
 	stock._faction=3

@@ -90,10 +90,10 @@ func verify_training_cargo_motion(world: RefCounted, resources: RefCounted):
 		var before:=owner.snapshot()
 		check(owner.advance(751 if not bindings.fast_forward.is_empty() else 151,paused.random_state).is_empty() and owner.snapshot()==before,"Oversized cargo frame committed motion")
 		var clone: RefCounted=owner.fork_for_frame()
-		clone._state.cleanup_elapsed_ms=60000;clone._state.effect.active=false
+		clone._edit();clone._state.cleanup_elapsed_ms=60000;clone._state.effect.active=false
 		var cleanup: Dictionary=clone.advance(1,paused.random_state)
 		check(cleanup.retired_now and cleanup.state.phase=="retired" and not cleanup.state.cargo.model_exists and cleanup.state.cleanup_elapsed_ms==0,"Positive late cleanup lost its delete/reset boundary")
-		clone=owner.fork_for_frame();clone._state.cleanup_elapsed_ms=60001;clone._state.effect.active=false
+		clone=owner.fork_for_frame();clone._edit();clone._state.cleanup_elapsed_ms=60001;clone._state.effect.active=false
 		var early: Dictionary=clone.advance(0,paused.random_state)
 		check(early.retired_now and early.state.cargo.model_exists and early.state.cleanup_elapsed_ms==60001 and early.random_state==paused.random_state,"Early retirement deleted cargo or consumed draws")
 

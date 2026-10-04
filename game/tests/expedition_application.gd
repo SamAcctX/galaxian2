@@ -89,10 +89,16 @@ func navigate_expedition(_frame: RefCounted,action: String) -> RefCounted:
 	if not app.session.navigate(action):check(false,app.session.error);return null
 	return app.session.flight_owner()
 
+var _paid_medal_notices:=[]
+
 func expedition_gate(system_id: int,station_id: int) -> bool:
 	if not await follow_gate_course(system_id,station_id) or not await release_application_flight():return false
 	var state: Dictionary=app.session.snapshot()
-	check(state.contracts.credits==route_credits and state.contracts.mission==retained_job and state.contracts.passengers==3,"Expedition gate changed the retained wallet or passenger job")
+	# A newly reached base medal (e.g. visited systems) pays its tier reward at the gate's arrival.
+	for notice in state.contracts.get("medal_notices",[]):
+		if notice not in _paid_medal_notices:
+			route_credits+=preload("res://src/simulation/base_medal_progress.gd").reward_credits(int(notice[1]));_paid_medal_notices.append(notice)
+	check(state.contracts.credits==route_credits and state.contracts.mission==retained_job and state.contracts.passengers==3,"Expedition gate changed the retained wallet or passenger job: "+str([state.contracts.credits,route_credits,state.contracts.passengers])+" "+str(state.contracts.mission)+" vs "+str(retained_job))
 	return failures==0
 
 func reach_gate_confirmation() -> bool:

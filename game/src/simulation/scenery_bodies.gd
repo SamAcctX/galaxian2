@@ -72,7 +72,6 @@ func configure(bindings: RefCounted, field: Dictionary, resources: RefCounted) -
 	return true
 
 func snapshot() -> Dictionary:
-	_read_snapshot={}
 	return _build_snapshot()
 
 func read_snapshot() -> Dictionary:

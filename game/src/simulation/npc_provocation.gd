@@ -1,5 +1,6 @@
 extends RefCounted
 const FreeLife=preload("res://src/content/free_lifecycle_definitions.gd")
+const EXTREME_DIFFICULTY:=1.5
 const Kappa=preload("res://src/content/kappa_population_definitions.gd")
 const NPCSystems=preload("res://src/content/npc_systems_definitions.gd")
 const Alioth=preload("res://src/content/alioth_population_definitions.gd")
@@ -50,7 +51,14 @@ func apply_selected40_sequence(owner: RefCounted) -> bool:
 func configure(bindings: RefCounted, catalogues: RefCounted, world: Dictionary, rank: Variant, difficulty: Variant, equipment: RefCounted, reputation: Dictionary) -> bool:
 	error="";_rules={};_state={}
 	var data:=Travel.population(bindings,world,rank,difficulty)
-	return _configure_population(bindings,catalogues,data,equipment,reputation)
+	return _configure_population(bindings,catalogues,data,equipment,reputation) and _apply_difficulty(difficulty)
+
+## Extreme careers: neutrals warn, retaliate and call their faction after 10%,
+## 25% and 40% of their hull in damage (original Player::damage; else 33/50/66%).
+func _apply_difficulty(difficulty: Variant) -> bool:
+	if (difficulty is float or difficulty is int) and float(difficulty)==EXTREME_DIFFICULTY:
+		_rules.warning_fraction=0.1;_rules.retaliation_fraction=0.25;_rules.faction_fraction=0.4
+	return true
 
 func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,rank: Variant,difficulty: Variant,equipment: RefCounted,reputation: Dictionary) -> bool:
 	error="";_rules={};_state={}
@@ -59,6 +67,7 @@ func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction:
 	var data:=FreeLife.population(bindings,packet) if packet.has("free_context") else AmbientCombat.population(bindings,packet,rank,difficulty)
 	if not _configure_population(bindings,catalogues,data,equipment,reputation):return false
 	if data.has("free_lifecycle"):_set_factions(data,int(data.mission_kind))
+	_apply_difficulty(difficulty)
 	if NPCSystems.available(bindings):
 		_rules.systems=bindings.mido_travel.kappa_lifecycle.systems.duplicate(true)
 		_rules.systems_primary=int(catalogues.tables.systems[int(data.system_id)].fields[int(bindings.mido_travel.kappa_lifecycle.system_faction_field)])
@@ -81,10 +90,13 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,construction
 	if data.is_empty():return reject("Unsupported contract reaction population")
 	if not _configure_population(bindings,catalogues,data,equipment,data.reputation_state):return false
 	_set_factions(data,int(data.mission.kind))
-	if not data.ordinary_standing.is_empty() and NPCSystems.available(bindings):
+	# Story ships take EMP hits too (Valkyrie 73 has the player disable a transport).
+	if (not data.ordinary_standing.is_empty() or data.mission.get("story_job",false)) and NPCSystems.available(bindings):
 		_rules.systems=bindings.mido_travel.kappa_lifecycle.systems.duplicate(true)
 		_rules.systems_primary=int(data.lifecycle.reactions.primary_faction)
 		_state.permanent_hostile=[];_state.permanent_hostile.resize(data.actor_count);_state.permanent_hostile.fill(false)
+		# Story ships keep their scripted hostility; only the EMP pools are new.
+		if data.ordinary_standing.is_empty():_state.erase("permanent_hostile")
 		_state.systems_requested_damage=[];_state.systems_requested_damage.resize(data.actor_count);_state.systems_requested_damage.fill(0)
 	return true
 
@@ -139,9 +151,8 @@ func configure_kappa_rescue(bindings: RefCounted,catalogues: RefCounted,construc
 	var source: Dictionary=data.kappa_lifecycle
 	if catalogues.tables.systems[int(data.system_id)].fields[int(source.system_faction_field)]!=int(source.primary_faction):return reject("Kappa system faction disagrees with the original encounter")
 	var rules: Dictionary=bindings.mido_travel.traffic_combat
-	for id in packet.kappa_loadout.equipment_ids:
-		if catalogues.tables.items[id].properties.get(2)==int(rules.credential_subtype):return reject("Faction credentials require an unsupported reaction path")
 	if not _initialize_population(bindings,data,rules,reputation):return false
+	_state.signature_race=signature_race(catalogues,packet.kappa_loadout.equipment_ids,rules)
 	_set_factions(data,int(data.mission_kind))
 	_rules.kappa_lifecycle=source.duplicate(true)
 	_rules.systems=source.systems.duplicate(true);_rules.systems_primary=int(source.primary_faction)
@@ -173,9 +184,23 @@ func _configure_population(bindings: RefCounted,catalogues: RefCounted,data: Dic
 		if owned.get("loadout",{}).get(key)!=bindings.get(key):return reject("Local combat equipment belongs to another content identity")
 	var rules: Dictionary=bindings.mido_travel.traffic_combat
 	if owned.loadout.station_id!=int(data.get("equipment_station_id",data.station_id)):return reject("Local combat belongs to another station")
-	for id in owned.loadout.equipment_ids:
-		if catalogues.tables.items[id].properties.get(2)==int(rules.credential_subtype):return reject("Faction credentials require an unsupported reaction path")
-	return _initialize_population(bindings,data,rules,reputation)
+	if not _initialize_population(bindings,data,rules,reputation):return false
+	_state.signature_race=signature_race(catalogues,owned.loadout.equipment_ids,rules)
+	return true
+
+## A fitted race signature (189-192: Terran, Vossk, Nivelian, Midorian;
+## verified Ship::refreshValue, race = item - 189), or -1.
+const SIGNATURE_FIRST_ITEM:=189
+static func signature_race(catalogues: RefCounted,equipment_ids: Array,rules: Dictionary) -> int:
+	for id in equipment_ids:
+		if catalogues.tables.items[id].properties.get(2)==int(rules.credential_subtype):return clampi(int(id)-SIGNATURE_FIRST_ITEM,0,3)
+	return -1
+
+## While a signature is fitted, standing is ignored (verified Standing::
+## isEnemy/isFriend): its race is a friend, the other race on its axis an
+## enemy, the other axis neutral. Not saved: hostility reads only.
+static func signature_axes(race: int) -> Array:
+	return [[100,0],[-100,0],[0,100],[0,-100]][race] if race>=0 and race<4 else []
 
 func _initialize_population(bindings: RefCounted,data: Dictionary,rules: Dictionary,reputation: Dictionary) -> bool:
 	_selected40_world=null
@@ -200,9 +225,16 @@ func evaluate(actor: Dictionary, amount: Variant, nonplayer: Variant, random_sta
 	if faction_eligible and actor.active and actor.damage_allowed and actor.vitals.hull>0 and not nonplayer and (not actor.hostile or actor.forced_hostile):
 		# Accumulation counts requested damage, including absorbed shield/armor
 		# damage. Match signed 32-bit storage before the binary32 comparisons.
-		var total: int=(next._state.requested_damage[id]+amount)&0xffffffff
+		var before: int=next._state.requested_damage[id]
+		var total: int=(before+amount)&0xffffffff
 		if total>=0x80000000:total-=0x100000000
 		next._state.requested_damage[id]=total
+		# A fitted race signature is blown (verified Player::damage): past the
+		# warning share on a ship of its own race, or the retaliation share on
+		# any of the four races. The docking then removes it (offence 100).
+		var signature:=int(next._state.get("signature_race",-1))
+		if signature>=0 and (expected_kind==signature and exceeds(total,actor.max_hull,float(_rules.warning_fraction)) or expected_kind<4 and exceeds(total,actor.max_hull,float(_rules.retaliation_fraction))):
+			next._state.signature_race=-1;next._state.signature_lost=signature
 		if exceeds(total,actor.max_hull,float(_rules.warning_fraction)) and not next._state.warning_issued:
 			next._state.warning_issued=true
 			next._queue_radio("warning",random,display_available,events)
@@ -281,6 +313,9 @@ func _queue_radio(kind: String, random: RefCounted, display_available: bool, eve
 
 func snapshot() -> Dictionary:return _state.duplicate(true)
 
+## Live state for same-frame reads only; never mutate or retain it.
+func read_state() -> Dictionary:return _state
+
 func evaluate_arrival(random_state: Dictionary,display_available: bool) -> Dictionary:
 	var random:=Random.new()
 	if not random.restore(random_state):return fail(random.error)
@@ -294,7 +329,9 @@ func evaluate_arrival(random_state: Dictionary,display_available: bool) -> Dicti
 
 func retire_contract() -> bool:
 	error=""
-	if not _rules.has("contract") or _state.active_mission_kind==int(_rules.contract.empty_mission_kind):return reject("There is no active contract reaction context")
+	if not _rules.has("contract"):return reject("There is no active contract reaction context")
+	# A story job flown without a contract (kind -1, e.g. a Most Wanted
+	# criminal) has nothing to retire; its traffic already reacts freely.
 	_state.active_mission_kind=int(_rules.contract.empty_mission_kind)
 	return true
 
@@ -310,7 +347,8 @@ func reset_actor_damage(actor_id: int) -> bool:
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
-	copy._rules=_rules.duplicate(true);copy._state=_state.duplicate(true)
+	# Rules are replaced, never edited, after configuration.
+	copy._rules=_rules;copy._state=_state.duplicate(true)
 	copy._selected40_world=_selected40_world
 	return copy
 

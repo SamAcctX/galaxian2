@@ -48,7 +48,8 @@ func verify(args: PackedStringArray):
 		var detail: float=pair[0]
 		var boundary: float=pair[1]
 		check(selector.select(boundary,detail)=={"visible":true,"level":0},"Freighter LOD changed at threshold equality")
-		check(selector.select(boundary+256,detail)=={"visible":true,"level":1},"Freighter LOD ignored the source detail band")
+		# Remake choice (3 Oct 2026): ships always draw their most detailed model past the source band.
+		check(selector.select(boundary+256,detail)=={"visible":true,"level":0},"Freighter dropped its most detailed model past the source detail band")
 	check(selector.select(90000.0*90000.0,1.0).visible,"Freighter borrowed the ordinary fighter distance cull")
 	var module_pixels:=[]
 	for count in 4:

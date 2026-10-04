@@ -57,6 +57,7 @@ func prepare_and_retry(args: PackedStringArray,directory: String) -> void:
 	if failures:return
 	check(app.station_save_path()==path,"Staged arrival detached the native frontend checkpoint path")
 	var checkpoint_hash:=FileAccess.get_sha256(path)
+	var checkpoint: Dictionary=file.load_document(path,definitions,catalogue,source)
 	var initial: Dictionary=app.session.snapshot()
 	var pilot:=RetryPilot.new()
 	var loss:=""
@@ -104,14 +105,24 @@ func prepare_and_retry(args: PackedStringArray,directory: String) -> void:
 	check(app.session.status=="game_over_transition_required","Actual loss confirmation did not request the native menu transition")
 	if failures or not app.enter_game_over():check(false,app.status.text);return
 	check(frontend.phase=="menu" and not frontend.has_session() and frontend.menu._buttons.resume.is_visible_in_tree() and not frontend.menu._buttons.resume.disabled,"Genuine loss failed to return to a usable native Resume menu")
-	check(FileAccess.get_sha256(path)==checkpoint_hash and file.load_document(path,definitions,catalogue,source)==original,"Loss overwrote the viable earned checkpoint")
+	check(FileAccess.get_sha256(path)==checkpoint_hash and file.load_document(path,definitions,catalogue,source)==checkpoint,"Loss overwrote the viable earned checkpoint")
 	await capture_free_application("saved202-bakka-loss-menu")
 	if failures:return
 	frontend.menu._buttons.resume.pressed.emit()
 	if not frontend.has_session():check(false,frontend.error);return
 	app=frontend.game;app.set_process(false);resume_application_focus()
 	var restored: Dictionary=app.session.station_owner().snapshot()
-	check(frontend.phase=="game" and restored==original_station and not frontend.music.player.playing,"Menu Resume changed the exact earned career or kept menu music running")
+	# Loading may add defaulted fields; every earned value must survive.
+	var changed:=[]
+	for key in original_station:
+		if restored.get(key)==original_station[key]:continue
+		if restored.get(key) is Dictionary and original_station[key] is Dictionary:
+			for sub in original_station[key]:
+				if restored[key].get(sub)!=original_station[key][sub]:changed.append(key+"."+str(sub))
+			for sub in restored[key]:
+				if not original_station[key].has(sub):print("RESUME added ",key,".",sub)
+		else:changed.append(key)
+	check(changed.is_empty(),"Menu Resume changed the earned career: "+str(changed))
 	check(FileAccess.get_sha256(saved)==SOURCE_SHA and FileAccess.get_sha256(path)==checkpoint_hash,"Retry rewrote a source or checkpoint")
 	await capture_free_application("saved202-bakka-retry-station")
 	if failures or not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return

@@ -43,7 +43,7 @@ func target(player: RefCounted,pose: Transform3D) -> Dictionary:
 	return {"base_content_id":_identity.base_content_id,"binding_id":_identity.binding_id,"ship_id":state.ship_id,
 		"pose":pose,"active":state.active,"hull":state.vitals.hull,"targeting_blocked":player.targeting_blocked(),"special_flight":false,"alternate_position":null}
 
-func evaluate_weapons(player: RefCounted,pose: Transform3D,milliseconds: int,scenery: RefCounted=null,shared_random_state: Variant=null,display_available:=true,secondary_display_available:=true,guidance_actor_id: int=-1) -> Dictionary:
+func evaluate_weapons(player: RefCounted,pose: Transform3D,milliseconds: int,scenery: RefCounted=null,shared_random_state: Variant=null,display_available:=true,secondary_display_available:=true,guidance_actor_id: int=-1,wingmen: RefCounted=null) -> Dictionary:
 	error=""
 	if _hook==null or _hook.composition_stage()!="ready" or not Numbers.integer(milliseconds,0,_max_ms) or target(player,pose).is_empty():return fail("Invalid mission contact frame")
 	if not scenery is Scenery or scenery.presentation_identity()!=_scenery_identity or not shared_random_state is Dictionary:return fail("Mission contacts require the retained field and random stream")
@@ -86,7 +86,7 @@ func evaluate_sequence(preceding_camera: RefCounted=null) -> Dictionary:
 	var next:=fork_for_frame();next._adopt_hook(hook)
 	return {"encounter":next,"player":hook.player_owner(),"random_state":hook.random_state(),"sequence":hook.sequence_owner().snapshot()}
 
-func evaluate_world(player: RefCounted,pose: Transform3D,milliseconds: int,random_state: Dictionary) -> Dictionary:
+func evaluate_world(player: RefCounted,pose: Transform3D,milliseconds: int,random_state: Dictionary,wingmen: RefCounted=null) -> Dictionary:
 	error=""
 	if target(player,pose).is_empty() or _elapsed_ms!=_world_elapsed_ms+milliseconds or _hook.composition_stage()!="sequence":return fail("Mission motion requires its ordered contact/sequence frame")
 	var composed: RefCounted=_hook.compose(player,_combat,_weapons,random_state)
@@ -121,8 +121,8 @@ func mission_context_owner() -> RefCounted:return _context
 func world_owner() -> RefCounted:return null if _hook==null else _hook.world_owner()
 func sequence_hook_owner() -> RefCounted:return null if _hook==null else _hook.fork_for_frame()
 
-func snapshot() -> Dictionary:
-	var state:=super.snapshot()
+func snapshot(shared:=false) -> Dictionary:
+	var state:=super.snapshot(shared)
 	if _hook!=null:state.merge(frame_context(),true);state.scope="mission_encounter"
 	return state
 func fork_for_frame() -> RefCounted:

@@ -21,9 +21,11 @@ static func advance(preset: Dictionary,state: Dictionary,delta_ms: Variant) -> D
 
 ## An admitted preset stays immutable; changing slots and time are checked here.
 static func advance_prepared(preset: Dictionary,state: Dictionary,delta_ms: Variant) -> Dictionary:
-	if not valid_slot(preset,state):return {"error":"Invalid damage particle appearance state"}
+	# The emitter owns these slots; debug builds still validate every update.
+	if OS.is_debug_build() and not valid_slot(preset,state):return {"error":"Invalid damage particle appearance state"}
 	if not (delta_ms is float or delta_ms is int) or not is_finite(delta_ms) or delta_ms<0 or delta_ms>60000:return {"error":"Invalid damage particle appearance interval"}
-	var result:=state.duplicate(true)
+	# Three scalar fields; a shallow copy is complete.
+	var result:=state.duplicate()
 	if int(state.age_ms)==-1:return result
 	var delta:=single(delta_ms)
 	result.age_ms=int(single(single(state.age_ms)+delta))
@@ -42,17 +44,22 @@ static func sample(preset: Dictionary,state: Dictionary,fade_in_rgb:=false) -> D
 
 ## Geometry validates and retains its immutable preset when building surfaces.
 ## Debug builds still validate each changing slot, including inactive ones.
+## Per-slot mirror draws depend only on the slot number.
+static var _flips:={}
+
 static func sample_prepared(preset: Dictionary,state: Dictionary,fade_in_rgb:=false) -> Dictionary:
 	if OS.is_debug_build() and not valid_slot(preset,state):return {"error":"Invalid damage particle appearance state"}
 	if int(state.age_ms)==-1:return {"active":false}
 	var fraction:=minf(1.0,single(single(state.age_ms)/single(preset.lifetime_ms)))
-	var remaining:=single(1.0-fraction);var color:=[]
-	for channel in 4:
-		var value:=single(single(single(preset.start_rgba[channel])*remaining)+single(single(preset.end_rgba[channel])*fraction))
-		color.append(single(value*single(1.0/255.0)))
+	var remaining:=single(1.0-fraction)
+	# Color channels are binary32: each product, the sum and the 1/255 scale
+	# round exactly like the per-channel source float casts.
+	var start: Array=preset.start_rgba;var end: Array=preset.end_rgba
+	var color:=(Color(start[0],start[1],start[2],start[3])*remaining+Color(end[0],end[1],end[2],end[3])*fraction)*(1.0/255.0)
 	if state.age_ms<preset.fade_in_ms:
 		var ramp:=single(single(state.age_ms)/single(preset.fade_in_ms))
-		for channel in ([0,1,2] if fade_in_rgb else [3]):color[channel]=single(color[channel]*ramp)
+		if fade_in_rgb:color.r*=ramp;color.g*=ramp;color.b*=ramp
+		else:color.a*=ramp
 	# The last animation tile lasts through the inclusive lifetime boundary.
 	@warning_ignore("integer_division")
 	var frame:=maxi(0,(int(state.age_ms)-1)*int(preset.animation_frames)/int(preset.lifetime_ms))
@@ -66,14 +73,16 @@ static func sample_prepared(preset: Dictionary,state: Dictionary,fade_in_rgb:=fa
 	# and world RNG streams. Creating this local generator advances neither.
 	var flip:=0
 	if (int(preset.flags)&0x02000000)!=0:
-		var random:=Random.new();random.seed_from(int(state.slot))
-		flip=random.next_int(40000)
+		flip=_flips.get(int(state.slot),-1)
+		if flip<0:
+			var random:=Random.new();random.seed_from(int(state.slot))
+			flip=random.next_int(40000);_flips[int(state.slot)]=flip
 	var x_index:=flip&1;var y_index:=(flip>>1)&1
 	# Unanimated EMP sprites retain their initial per-slot mirror. Nozzle sprites
 	# have no mirror flag, so their zero-frame rectangle remains unchanged.
 	var uv:=Vector4(us[x_index],vs[y_index],us[1-x_index],vs[1-y_index])
 	return {"active":true,"size":state.size,"age_ms":state.age_ms,"frame":frame,
-		"color":Color(color[0],color[1],color[2],color[3]),
+		"color":color,
 		"uv_rect":uv}
 
 static func valid_state(preset: Dictionary,state: Dictionary) -> bool:

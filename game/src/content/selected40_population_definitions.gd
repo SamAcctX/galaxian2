@@ -3,6 +3,7 @@ extends RefCounted
 ## turn a retained station inventory into an inventory at the selected source.
 ## Native construction rules for the separately selected kind161 cast.
 ## This capability neither constructs its special world nor admits departure.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Nehma=preload("res://src/content/nehma_return_definitions.gd")
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
 const Population=preload("res://src/content/free_population_definitions.gd")
@@ -52,7 +53,7 @@ static func context_valid(bindings: RefCounted,context: Dictionary) -> bool:
 	if not context.get("origin_station_id") is int or not context.get("origin_system_id") is int:return false
 	var origin: Dictionary=load("res://src/content/ordinary_world_definitions.gd").location(bindings,context.origin_station_id)
 	if origin.is_empty() or origin.system_id!=context.origin_system_id:return false
-	return context.get("mission_story")==true and context.get("mission_completed")==false and context.get("mission_failed")==false and Numbers.integer(context.get("rank"),0,20) and context.get("difficulty") in [0.5,1.0]
+	return context.get("mission_story")==true and context.get("mission_completed")==false and context.get("mission_failed")==false and Numbers.integer(context.get("rank"),0,20) and Difficulty.valid(context.get("difficulty"))
 
 static func construction_recipe(bindings: RefCounted,context: Dictionary) -> Dictionary:
 	if not context_valid(bindings,context):return {}

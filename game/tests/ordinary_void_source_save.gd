@@ -34,7 +34,7 @@ func verify(args: PackedStringArray) -> void:
 	check(retained.get("version")==8 and retained.career.void_source==source and retained.career.blueprints==blueprints,"The Void career was not captured in its versioned archive")
 	if retained.is_empty():check(false,archive.error);return
 	var projected: Dictionary=retained.duplicate(true)
-	projected.version=original.version;projected.career.erase("void_source");projected.career.erase("blueprints")
+	projected.version=original.version;projected.career.erase("void_source");projected.career.erase("blueprints");projected.career.erase("base_medals")
 	check(projected==original,"Adding source retention changed earned inventory, progress, locations or identity")
 	var restored: RefCounted=archive.restore(bindings,cat,library,retained)
 	check(restored!=null,archive.error)
@@ -70,9 +70,17 @@ func verify(args: PackedStringArray) -> void:
 	check(legacy.version==7 and legacy.station.campaign_cursor==32 and not legacy.career.has("void_source"),"The paid32 input is not the genuine legacy fixture")
 	check(paid.contract_owner().void_source_state().is_empty(),"The older32 save invented unrecorded source history")
 	check(paid.contract_owner().blueprint_state().is_empty(),"The unchanged legacy32 save acquired a newer chapter owner")
-	check(archive.capture(paid,bindings)==legacy and not paid.prepare_departure(bindings,cat).is_empty(),"Legacy paid32 changed or lost its supported ordinary departure")
+	check(without_medals(archive.capture(paid,bindings))==legacy and not paid.prepare_departure(bindings,cat).is_empty(),"Legacy paid32 changed or lost its supported ordinary departure")
 	check(file.read_document(args[4])==legacy,"The immutable paid32 save was rewritten")
 
 func check(value: bool,message: String) -> void:
 	checks+=1
 	if not value:failures+=1;push_error(message)
+
+
+## Saves made today add the add-on medal stats that older files predate.
+static func without_medals(document: Dictionary) -> Dictionary:
+	var result:=document.duplicate(true)
+	if result.get("career") is Dictionary:result.career.erase("base_medals")
+	return result
+

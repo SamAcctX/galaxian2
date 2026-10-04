@@ -79,13 +79,14 @@ func verify_stock(contracts: RefCounted,equipment: RefCounted,source: Dictionary
 	check(bought.snapshot().cargo.entries.any(func(entry):return entry.item_id==115 and entry.quantity==1) and search.snapshot().credits==credits-row.unit_price,"Buying the file did not exchange its displayed price and cargo")
 	check(not search.location_owner().item_stock(39).any(func(entry):return entry.item_id==115),"The purchased file remained in stock")
 	check(search.poll_station(bought,bindings) and search.snapshot().pending_result.is_empty(),"Buying the file completed before returning to the client")
-	var closed: RefCounted=bought.fork()
-	if not closed.close_ordinary_shopping():check(false,closed.error);return
+	# The career owns the Hangar transaction; close it there before reopening.
+	var closed: RefCounted=search.close_shopping(bought)
+	if closed==null:check(false,search.error);return
 	var reopened: RefCounted=search.open_shopping(bindings,cat,closed,[1789104017,1789104017,1789104017],library)
 	if reopened==null:check(false,search.error);return
 	check(reopened.snapshot().market_rows.filter(func(entry):return entry.item_id==115)[0].stock==0,"Reopening the shop replenished a purchased file")
-	closed=reopened.fork()
-	if not closed.close_ordinary_shopping():check(false,closed.error);return
+	closed=search.close_shopping(reopened)
+	if closed==null:check(false,search.error);return
 	check(search.apply_station_entry(bindings,cat,closed,source.mission) and search.location_owner().item_stock(39).filter(func(entry):return entry.item_id==115)[0].quantity==1,"A later station entry did not replenish an absent file")
 
 func verify_markers(accepted: Dictionary,source: Dictionary,cargo: Dictionary,bindings: RefCounted,cat: RefCounted,library: RefCounted) -> void:

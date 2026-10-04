@@ -5,7 +5,13 @@ const OriginalUI=preload("res://src/presentation/original_ui.gd")
 const SOURCE_IMAGES={"hull_badge":1195,"armor_badge":1194,"shield_badge":1196,
 	"gauge_frame":1193,"hull_back":1191,"shield_back":1198,
 	"hull_fill":1316,"armor_fill":1192,"shield_fill":1199,"throttle_frame":1352,
-	"timer_frame":1221,"cargo_frame":1312}
+	"timer_frame":1221,"cargo_frame":1312,"shield_hit_badge":1197}
+# A drop in the combined pools is a hit: the shield badge shows its red hit
+# art for the original 500 ms while at least 2 shield points remain.
+const SHIELD_HIT_MS:=500
+# Supernova gamma row (badge, track, fill) on the third interface atlas.
+const GAMMA_IMAGES={"gamma_badge":8025,"gamma_back":8026,"gamma_fill":8027}
+const GAMMA_ATLAS:={"10089":"resources/data/textures/gof2_interface3_ipad_large.aei"}
 # Remake presentation timing: the throttle reading appears after a change and
 # then fades. The original display duration has not been recovered.
 const THROTTLE_HOLD_MS:=1500
@@ -25,6 +31,21 @@ var _armor_visible:=false
 var _hull_ratio:=1.0
 var _armor_ratio:=0.0
 var _shield_ratio:=0.0
+var _gamma_visible:=false
+var _gamma_ratio:=1.0
+var _gamma_badge: TextureRect
+var _gamma_frame: TextureRect
+var _gamma_back: TextureRect
+var _gamma_clip: Control
+var _gamma_fill: TextureRect
+## Volatile cargo instability (Supernova Mutagen / Red Plasma). Assumption:
+## the gauge frame with a plain fill that turns from amber to red (the
+## original's indicator art is not identified).
+var _instability_visible:=false
+var _instability_ratio:=0.0
+var _instability_frame: TextureRect
+var _instability_back: ColorRect
+var _instability_fill: ColorRect
 var _throttle_visible:=false
 var _throttle_percent:=0
 var _throttle_seen:=-1
@@ -53,6 +74,9 @@ var _cargo_frame: TextureRect
 var _cargo_text: Label
 var _throttle_frame: TextureRect
 var _throttle_text: Label
+var _vital_total:=-1.0
+var _shield_points:=0.0
+var _shield_hit_ms:=-SHIELD_HIT_MS
 
 func _init() -> void:
 	visible=false;mouse_filter=Control.MOUSE_FILTER_IGNORE
@@ -66,6 +90,12 @@ func _init() -> void:
 	_shield_clip=Control.new();_shield_clip.mouse_filter=Control.MOUSE_FILTER_IGNORE;_shield_clip.clip_contents=true;add_child(_shield_clip)
 	_shield_fill=_texture(_shield_clip)
 	_hull_text=_value_label();_armor_text=_value_label();_shield_text=_value_label()
+	_gamma_badge=_texture(self);_gamma_frame=_texture(self);_gamma_back=_texture(self)
+	_gamma_clip=Control.new();_gamma_clip.mouse_filter=Control.MOUSE_FILTER_IGNORE;_gamma_clip.clip_contents=true;add_child(_gamma_clip)
+	_gamma_fill=_texture(_gamma_clip)
+	_instability_frame=_texture(self)
+	_instability_back=ColorRect.new();_instability_back.mouse_filter=Control.MOUSE_FILTER_IGNORE;_instability_back.color=Color(0.1,0.05,0.02,0.8);add_child(_instability_back)
+	_instability_fill=ColorRect.new();_instability_fill.mouse_filter=Control.MOUSE_FILTER_IGNORE;add_child(_instability_fill)
 	_cargo_frame=_texture(self)
 	_cargo_text=Label.new();_cargo_text.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	_cargo_text.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER;add_child(_cargo_text)
@@ -106,6 +136,13 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> 
 	_hull_back.texture=sprites.hull_back;_armor_back.texture=sprites.hull_back;_shield_back.texture=sprites.shield_back
 	_hull_fill.texture=sprites.hull_fill;_armor_fill.texture=sprites.armor_fill;_shield_fill.texture=sprites.shield_fill
 	_cargo_frame.texture=sprites.cargo_frame
+	# Packs without the third atlas simply have no gamma row.
+	var atlases: Dictionary=bindings.mido_travel.map.ui.atlas_resources.duplicate()
+	atlases.merge(GAMMA_ATLAS)
+	var gamma:=art.load_regions(library,bindings,visuals,GAMMA_IMAGES.values(),atlases)
+	_gamma_badge.texture=gamma.get(8025);_gamma_back.texture=gamma.get(8026);_gamma_fill.texture=gamma.get(8027)
+	_gamma_frame.texture=sprites.gauge_frame if not gamma.is_empty() else null
+	_instability_frame.texture=sprites.gauge_frame
 	_throttle_frame.texture=sprites.get("throttle_frame")
 	var theme:=Theme.new();theme.default_font=art.font;self.theme=theme
 	set_mobile_layout(_mobile)
@@ -136,11 +173,18 @@ func present(state: Dictionary,show_hull_value:=true) -> bool:
 	var used: int=0 if cargo.is_empty() else int(cargo.get("used",-1))
 	var capacity: int=0 if cargo.is_empty() else int(cargo.get("capacity",-1))
 	if hull_max<=0 or hull<0 or armor_max<0 or armor<0 or shield_max<0 or shield<0 or used<0 or capacity<0:return reject("Flight gauges received invalid pool totals")
+	var total:=float(hull)+float(armor)+shield
+	if _vital_total>=0.0 and total<_vital_total-0.001:_shield_hit_ms=Time.get_ticks_msec()
+	_vital_total=total;_shield_points=shield
 	_hull_ratio=clampf(float(hull)/float(hull_max),0,1)
 	_armor_ratio=clampf(float(armor)/float(maxi(1,armor_max)),0,1)
 	_shield_ratio=clampf(shield/float(maxi(1,shield_max)),0,1)
 	_armor_visible=armor_max>0
 	_shield_visible=shield_max>0
+	_gamma_visible=float(state.get("gamma_rate",0.0))>0.0 and _gamma_frame.texture!=null
+	_gamma_ratio=clampf(float(player.get("gamma",100.0))/100.0,0,1)
+	_instability_visible=bool(state.get("volatile",false))
+	_instability_ratio=clampf(float(state.get("instability",0.0)),0,1)
 	_hull_back.tooltip_text="%d / %d"%[hull,hull_max] if show_hull_value else ""
 	_armor_back.tooltip_text="%s %d / %d"%[_armor_label,armor,armor_max]
 	_shield_back.tooltip_text="%s %d / %d"%[_shield_label,roundi(shield),shield_max]
@@ -151,8 +195,10 @@ func present(state: Dictionary,show_hull_value:=true) -> bool:
 	_readout_kind=readout.get("kind","")
 	_cargo_text.text="%d / %dt"%[used,capacity] if readout.is_empty() else readout_text
 	_cargo_frame.texture=_sprites.timer_frame if _readout_kind=="countdown" else _sprites.cargo_frame
-	_cargo_frame.visible=not cargo.is_empty() or not readout.is_empty();_cargo_text.visible=_cargo_frame.visible
-	_throttle_visible=has_throttle and _throttle_frame.texture!=null
+	# Guiding a Liberator: only the bars stay (no cargo/timer box or throttle).
+	var guiding: bool=state.get("guided_missile",false)
+	_cargo_frame.visible=(not cargo.is_empty() or not readout.is_empty()) and not guiding;_cargo_text.visible=_cargo_frame.visible
+	_throttle_visible=has_throttle and _throttle_frame.texture!=null and not guiding
 	_throttle_percent=roundi(float(throttle)*100.0) if has_throttle else 0
 	_throttle_text.text=str(_throttle_percent) if has_throttle else ""
 	_throttle_frame.tooltip_text="Throttle %d%%"%_throttle_percent if has_throttle else ""
@@ -160,6 +206,7 @@ func present(state: Dictionary,show_hull_value:=true) -> bool:
 	if has_throttle and _throttle_percent!=_throttle_seen:
 		if _throttle_seen>=0:_throttle_changed_ms=Time.get_ticks_msec()
 		_throttle_seen=_throttle_percent
+	_apply_shield_badge(Time.get_ticks_msec())
 	_has_state=true;visible=_active;_relayout()
 	return true
 
@@ -180,6 +227,15 @@ static func _mission_text(readout: Variant) -> Variant:
 
 func _process(_delta: float) -> void:
 	if _throttle_visible:_apply_throttle_alpha(Time.get_ticks_msec())
+	if _shield_visible and not _sprites.is_empty():_apply_shield_badge(Time.get_ticks_msec())
+
+func shield_hit_shown(now_ms: int) -> bool:
+	var age:=now_ms-_shield_hit_ms
+	return _shield_points>=2.0 and age>=0 and age<SHIELD_HIT_MS
+
+func _apply_shield_badge(now_ms: int) -> void:
+	var badge: Texture2D=_sprites.shield_hit_badge if shield_hit_shown(now_ms) else _sprites.shield_badge
+	if _shield_badge.texture!=badge:_shield_badge.texture=badge
 
 func throttle_alpha(now_ms: int) -> float:
 	var age:=now_ms-_throttle_changed_ms
@@ -241,6 +297,19 @@ func _relayout() -> void:
 	_shield_back.position=Vector2(track_left,margin+track_top);_shield_back.size=track_size
 	_shield_clip.position=_shield_back.position;_shield_clip.size=Vector2(width*_shield_ratio,track_height)
 	_shield_fill.position=Vector2.ZERO;_shield_fill.size=Vector2(width,track_height)
+	var gamma_y:=hull_y+spacing
+	for node in [_gamma_badge,_gamma_frame,_gamma_back,_gamma_clip]:node.visible=_gamma_visible
+	_gamma_badge.position=Vector2(margin,gamma_y);_gamma_badge.size=Vector2.ONE*badge
+	_gamma_frame.position=Vector2(track_left,gamma_y);_gamma_frame.size=frame_size
+	_gamma_back.position=Vector2(track_left,gamma_y+track_top);_gamma_back.size=track_size
+	_gamma_clip.position=_gamma_back.position;_gamma_clip.size=Vector2(width*_gamma_ratio,track_height)
+	_gamma_fill.position=Vector2.ZERO;_gamma_fill.size=Vector2(width,track_height)
+	var instability_y:=gamma_y+(spacing if _gamma_visible else 0.0)
+	for node in [_instability_frame,_instability_back,_instability_fill]:node.visible=_instability_visible
+	_instability_frame.position=Vector2(track_left,instability_y);_instability_frame.size=frame_size
+	_instability_back.position=Vector2(track_left,instability_y+track_top);_instability_back.size=track_size
+	_instability_fill.position=_instability_back.position;_instability_fill.size=Vector2(width*_instability_ratio,track_height)
+	_instability_fill.color=Color(1.0,0.75,0.1).lerp(Color(1.0,0.12,0.0),_instability_ratio)
 	for row in [[_hull_text,hull_y],[_armor_text,armor_y],[_shield_text,margin]]:
 		row[0].position=Vector2(track_left+width+4,float(row[1])+badge*0.20)
 		row[0].size=Vector2(110,badge*0.8)
@@ -259,10 +328,13 @@ func _relayout() -> void:
 func clear() -> void:
 	_has_state=false;visible=false;_cargo_text.text="";_readout_kind="";_throttle_text.text="";_throttle_visible=false;_throttle_seen=-1
 	_throttle_changed_ms=-THROTTLE_HOLD_MS-THROTTLE_FADE_MS
+	_vital_total=-1.0;_shield_hit_ms=-SHIELD_HIT_MS
+	if not _sprites.is_empty():_shield_badge.texture=_sprites.shield_badge
 	_throttle_frame.hide();_throttle_text.hide()
 	for label in [_hull_text,_armor_text,_shield_text]:label.text=""
 
 func top_inset() -> float:
-	return _hull_badge.position.y+_hull_badge.size.y+8.0 if visible else 0.0
+	var bottom: Control=_instability_frame if _instability_visible else (_gamma_badge if _gamma_visible else _hull_badge)
+	return bottom.position.y+bottom.size.y+8.0 if visible else 0.0
 
 func reject(message: String) -> bool:error=message;return false

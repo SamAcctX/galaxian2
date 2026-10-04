@@ -19,10 +19,10 @@ func evaluate(weapon: Dictionary,shot: Dictionary,targets: Array) -> Dictionary:
 		var reach: float=Mines.FALLOFF_DISTANCE if weapon.kind==11 else float(weapon.radius)
 		var fraction:=clampf(Vitals.single(Vitals.single(reach-float(whole))/Vitals.single(reach)),0.0,1.0)
 		var amount:=fraction
-		if weapon.kind in [7,11] and target.emp_immune:amount=Vitals.single(amount*Vitals.single(0.6))
+		if weapon.kind in [7,11,34,42] and target.emp_immune:amount=Vitals.single(amount*Vitals.single(0.6))
 		var hit:={"actor_id":target.actor_id,"system_damage":int(Vitals.single(float(weapon.system_damage)*amount)),"distance":whole}
 		if target.has("target"):hit.target=target.target.duplicate()
-		if weapon.kind in [7,11]:
+		if weapon.kind in [7,11,34,42]:
 			hit.normal_damage=int(Vitals.single(float(weapon.damage)*amount))
 			hit.impact_vector=Vectors.normalized(difference);hit.motion_scalar=fraction
 		hits.append(hit)

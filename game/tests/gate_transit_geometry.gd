@@ -36,6 +36,15 @@ func render_transit(args: PackedStringArray):
 		if not geometry.build(library,visuals,bindings,cat,state.layout):check(false,geometry.error);continue
 		camera.look_at_from_position(gate.pose.origin+Vector3(17000,13000,-21000),gate.pose.origin)
 		check(geometry.apply_animation(clock),geometry.error)
+		# A gate in view animates; one behind the camera keeps its last pose.
+		var own: Array=geometry.objects[gate.index].animated.values()
+		var facing: Dictionary=geometry.prepare_animation(clock,camera)
+		check(facing.layers.any(func(layer):return layer.row in own and layer.visible and layer.surfaces!=null),"A gate in view skipped its animation")
+		var eye: Vector3=gate.pose.origin+Vector3(17000,13000,-21000)
+		camera.look_at_from_position(eye,eye+(eye-gate.pose.origin))
+		var away: Dictionary=geometry.prepare_animation(clock,camera)
+		check(away.layers.all(func(layer):return layer.row not in own or layer.surfaces==null),"A gate behind the camera was still sampled")
+		camera.look_at_from_position(eye,gate.pose.origin)
 		await capture(viewport,args,"gate-%d-idle"%type)
 		var original_poses:=layer_poses(geometry.objects[1])
 		var other:=GateAnimation.new()

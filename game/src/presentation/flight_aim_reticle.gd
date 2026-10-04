@@ -13,6 +13,8 @@ var _textures := {}
 var _source := {}
 var _sample := {}
 
+const COLLECTOR_IMAGE_IDS:=[8030,8029]
+
 func _init() -> void:
 	mouse_filter=Control.MOUSE_FILTER_IGNORE;clip_contents=true;visible=false
 
@@ -33,6 +35,15 @@ func prepare(library: RefCounted, bindings: RefCounted, visuals: RefCounted) -> 
 		if texture==null:return fail(reader.error)
 		textures[int(data.image_ids[index])]=texture
 		regions.append({"image_id":int(data.image_ids[index]),"region":int(data.image_regions[index]),"source_rect":texture.region})
+	# Turret view with a gas collector: its own crosshair, and a second one
+	# while a spark is being pulled in. Optional when the pack lacks them.
+	for id in COLLECTOR_IMAGE_IDS:
+		var alias: Dictionary=bindings.resolve_image_region(id)
+		if alias.is_empty():continue
+		for record in bindings.records.get(int(alias.texture_id),[]):
+			if record.kind!="texture":continue
+			var texture: AtlasTexture=reader.load(library,visuals,record.resource,int(alias.region))
+			if texture!=null:textures[id]=texture;break
 	_source={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"texture_id":int(data.texture_id),"resource":RESOURCE,"regions":regions}
 	_textures=textures
 	sprite=TextureRect.new();sprite.mouse_filter=Control.MOUSE_FILTER_IGNORE
@@ -47,9 +58,10 @@ func present(sample: Dictionary) -> bool:
 	if not prepared or sample.get("base_content_id")!=_source.base_content_id or sample.get("binding_id")!=_source.binding_id:
 		return fail("Aim sample belongs to another content profile")
 	var point: Variant=sample.get("point")
-	if not point is Vector3 or not point.is_finite() or not TargetProjection.safe_pixel(point.x) or not TargetProjection.safe_pixel(point.y) or not _textures.has(sample.get("image_id")) or not sample.get("visible") is bool:
+	var image_id: Variant=sample.get("image_id") if _textures.has(sample.get("image_id")) else sample.get("base_image_id")
+	if not point is Vector3 or not point.is_finite() or not TargetProjection.safe_pixel(point.x) or not TargetProjection.safe_pixel(point.y) or not _textures.has(image_id) or not sample.get("visible") is bool:
 		return fail("Invalid committed aim sample")
-	_sample=sample.duplicate(true)
+	_sample=sample.duplicate(true);_sample.image_id=image_id
 	reflow()
 	return true
 

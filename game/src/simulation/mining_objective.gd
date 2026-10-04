@@ -8,8 +8,10 @@ const Cargo=preload("res://src/simulation/flight_cargo.gd")
 const Scenery=preload("res://src/simulation/opening_scenery.gd")
 const Encounter=preload("res://src/simulation/full_hold_encounter.gd")
 const Career=preload("res://src/simulation/opening_handoff.gd")
+const Numbers=preload("res://src/content/opening_definitions.gd")
 const ProbeStage=preload("res://src/simulation/void_probe_stage.gd")
 const Failure=preload("res://src/content/kappa_outcome_definitions.gd")
+const Extraction=preload("res://src/simulation/mining_extraction.gd")
 var error:=""
 var _state:={}
 var _rules:={}
@@ -18,6 +20,7 @@ var _lines:=[]
 var _failure_lines:=[]
 var _field_identity: RefCounted
 var _initial_progress:={}
+var _asteroids_destroyed:=0
 
 func configure(bindings: RefCounted, library: RefCounted, construction: RefCounted, autopilot_key: String, dock_key: String) -> bool:
 	error=""
@@ -64,6 +67,7 @@ func configure(bindings: RefCounted, library: RefCounted, construction: RefCount
 		"required_cargo":int(rules.required_cargo),"mission":mission.duplicate(true),"progress":flight.departure.progress.duplicate(true),
 		"reward_credits":0,"mining_completed":false}
 	_initial_progress=flight.departure.progress.duplicate(true)
+	_asteroids_destroyed=0
 	if rules.has("defeat_condition") or rules.get("local_visit",false) or rules.get("capture_controlled",false) or rules.get("alioth_attack",false) or rules.get("portal_controlled",false) or rules.get("bakka_contest",false) or rules.get("runner_controlled",false):
 		_state.combat_objective_satisfied=false;_state.combat_objective_acknowledged=false
 	if rules.get("void_visit",false) or rules.get("pursuit_controlled",false) or rules.get("probe_controlled",false) or rules.get("bakka_contest",false) or rules.get("runner_controlled",false):_state.mission_completed=false
@@ -74,6 +78,7 @@ func poll(cargo: RefCounted, scenery: RefCounted, player_alive:=true, encounter:
 	if _state.is_empty() or cargo==null or cargo.get_script()!=Cargo or scenery==null or scenery.get_script()!=Scenery:return reject("Mining objective needs its owned cargo and field")
 	var held: Dictionary=cargo.snapshot()
 	if held.get("base_content_id")!=_state.base_content_id or held.get("binding_id")!=_state.binding_id or cargo.field_identity()!=_field_identity or scenery.presentation_identity()!=_field_identity or not cargo.matches_mined_field(scenery.mining_snapshot()):return reject("Mining objective cargo and field history do not match")
+	if not observe_scenery(scenery):return false
 	if _rules.get("bakka_contest",false):
 		return poll_bakka(encounter,radio!=null and radio.snapshot().get("visible",false),true,player_alive)
 	if _rules.get("runner_controlled",false):return reject("Dekato results require the enclosing scene's sampled clock and periodic gate")
@@ -170,6 +175,8 @@ func observe_combat(encounter: RefCounted,state: Dictionary={}) -> bool:
 		if state.get(key)!=_state[key]:return reject("Combat progress belongs to another encounter")
 	if state.get("campaign_cursor")!=int(_rules.campaign_cursor):return reject("Combat progress has another mission")
 	var progress:=_initial_progress.duplicate(true)
+	if _asteroids_destroyed>0 or progress.has("asteroids_destroyed"):
+		progress.asteroids_destroyed=int(_initial_progress.get("asteroids_destroyed",0))+_asteroids_destroyed
 	if _rules.has("defeat_condition") or _rules.get("local_visit",false) or _rules.get("capture_controlled",false) or _rules.get("alioth_attack",false) or _rules.get("portal_controlled",false) or _rules.get("bakka_contest",false) or _rules.get("runner_controlled",false):
 		var counters: Dictionary=state.controller.accounting.counter_deltas
 		progress.player_kills+=int(counters.player_kills);progress.pirate_kills+=int(counters.pirate_kills)
@@ -179,6 +186,10 @@ func observe_combat(encounter: RefCounted,state: Dictionary={}) -> bool:
 		var count:=Career.recovered_cargo_total(int(_initial_progress.get("cargo_recovered",0)),recovered)
 		if count<0:return reject("Recovered cargo exceeds the supported career range")
 		progress.cargo_recovered=count
+	var secondaries: RefCounted=encounter.secondary_owner()
+	var nuclear: Variant=0 if secondaries==null else secondaries.snapshot().get("nuclear_bomb_detonations",0)
+	if not Numbers.integer(nuclear,0,2147483647-int(_initial_progress.get("nuclear_bomb_detonations",0))):return reject("Nuclear Armament progress exceeds the supported career range")
+	if nuclear>0 or progress.has("nuclear_bomb_detonations"):progress.nuclear_bomb_detonations=int(_initial_progress.get("nuclear_bomb_detonations",0))+int(nuclear)
 	if progress.has("reputation"):
 		var combat: RefCounted=encounter.combat_owner()
 		progress.reputation=combat.reputation_after(_initial_progress.reputation)
@@ -187,6 +198,18 @@ func observe_combat(encounter: RefCounted,state: Dictionary={}) -> bool:
 	if score.is_empty():return reject("Combat progress exceeds the supported career range")
 	progress.merge(score,true)
 	_state.progress=progress
+	return true
+
+func observe_scenery(scenery: RefCounted) -> bool:
+	error=""
+	if _state.is_empty() or scenery==null or scenery.get_script()!=Scenery or scenery.presentation_identity()!=_field_identity:return reject("Asteroid progress requires this objective's retained scenery field")
+	var observed: Variant=scenery.destroyed_count()
+	if not observed is int or observed<_asteroids_destroyed or observed>2147483647:return reject("Asteroid destruction history regressed or exceeded the supported career range")
+	_asteroids_destroyed=observed
+	if _asteroids_destroyed>0 or _initial_progress.has("asteroids_destroyed"):
+		var total:=int(_initial_progress.get("asteroids_destroyed",0))+_asteroids_destroyed
+		if total>2147483647:return reject("Asteroid destruction progress exceeds the supported career range")
+		_state.progress.asteroids_destroyed=total
 	return true
 
 static func _pursuit_mode_four_count(actors: Variant) -> int:
@@ -234,6 +257,17 @@ func retain_mining_hint(seen: bool) -> void:
 	_state.progress.mining_failure_hint_seen=seen
 	_initial_progress.mining_failure_hint_seen=seen
 
+func retain_mining_extraction(receipt: Dictionary) -> bool:
+	var retained:=Extraction.retained_lifetime(_state.get("progress",{}),receipt)
+	var initial:=Extraction.retained_lifetime(_initial_progress,receipt)
+	if retained.is_empty() or initial.is_empty():return reject("Mining extraction lost its retained lifetime counters")
+	_state.progress=retained;_initial_progress=initial
+	return true
+
+## Cheap per-frame reads of the snapshot's cursor and dialogue flag.
+func campaign_cursor() -> int:return -1 if _state.is_empty() else int(_state.campaign_cursor)
+func dialogue_visible() -> bool:return not _state.is_empty() and _state.phase in ["return_instructions","failure_instructions"]
+
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}
 	var result:=_state.duplicate(true)
@@ -247,6 +281,7 @@ func fork_for_frame() -> RefCounted:
 	copy._state=_state.duplicate(true);copy._rules=_rules.duplicate(true);copy._progress_rules=_progress_rules.duplicate(true)
 	copy._lines=_lines.duplicate(true);copy._failure_lines=_failure_lines.duplicate(true);copy._field_identity=_field_identity
 	copy._initial_progress=_initial_progress.duplicate(true)
+	copy._asteroids_destroyed=_asteroids_destroyed
 	return copy
-func clear() -> void:error="";_state={};_rules={};_progress_rules={};_lines=[];_failure_lines=[];_field_identity=null;_initial_progress={}
+func clear() -> void:error="";_state={};_rules={};_progress_rules={};_lines=[];_failure_lines=[];_field_identity=null;_initial_progress={};_asteroids_destroyed=0
 func reject(message: String) -> bool:error=message;return false

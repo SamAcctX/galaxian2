@@ -57,7 +57,9 @@ func _resolve(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, cu
 	var data: Dictionary=bindings.arrival_environment
 	var system: Dictionary=catalogues.tables.systems[seed.system_id]
 	var station: Dictionary=catalogues.tables.stations[seed.station_id]
-	if seed.system_id==int(data.special_system_id) or not Numbers.integer(system.get("sky_index"),0,int(data.maximum_sky_index)):
+	# The imported special system (Ginoya) and sky limit (14) predate
+	# Supernova's skies; the renderer supports skies up to 18 and Ginoya's light frame.
+	if not Numbers.integer(system.get("sky_index"),0,18):
 		return reject("This flight uses an unsupported system background")
 	# Mission entry already chose the world. Resolve only its content layout;
 	# a camera/background loader must not re-admit the campaign cursor.
@@ -72,6 +74,10 @@ func _resolve(bindings: RefCounted, catalogues: RefCounted, seed: Dictionary, cu
 	result.sky_parameters={"star_variants":int(sky.star_variants),"star_mesh_base":int(sky.star_mesh_base),
 		"star_texture_base":int(sky.star_texture_base),"sky_mesh_id":int(data.sky_mesh_base)+index,"sky_texture_id":int(data.sky_texture_base)+index}
 	result.current_planet_texture_id=int(sky.planet_resources.near_textures[int(station.planet_type)])
+	# Ginoya before the blast (89) still shows its old sky.
+	var supernova: Dictionary=load("res://src/content/valkyrie_world_definitions.gd").SUPERNOVA
+	if int(seed.system_id)==int(supernova.system_id) and cursor==int(supernova.intro_cursor):
+		result.sky_parameters.sky_mesh_id=int(supernova.intro_sky[0]);result.sky_parameters.sky_texture_id=int(supernova.intro_sky[1])
 	return result
 
 func resolve_combat_training(bindings: RefCounted, catalogues: RefCounted, equipment: RefCounted, player_cache: Dictionary) -> Dictionary:

@@ -9,6 +9,8 @@ const EngineDefinitions=preload("res://src/content/engine_particle_definitions.g
 const Appearance=preload("res://src/presentation/damage_particle_appearance.gd")
 const Materials=preload("res://src/presentation/material_library.gd")
 const Flight=preload("res://src/simulation/npc_flight.gd")
+const ReadCache=preload("res://src/simulation/read_cache.gd")
+const CORNERS:=[Vector2(-1,-1),Vector2(1,-1),Vector2(1,1),Vector2(-1,1)]
 var error:=""
 var items: Array=[]
 var frame:={}
@@ -28,7 +30,7 @@ func build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: R
 			var current: Dictionary=state.owners[key][kind].preset
 			if not Appearance.Definitions.sprite_preset(current):return reject("Unsupported damage sprite preset")
 			if kind=="exhaust":
-				if not EngineDefinitions.parameters(bindings.engine_particles) or key!="player_nozzle%d"%(int(current.preset_id)-int(bindings.engine_particles.first_preset)) or int(current.preset_id)<29 or int(current.preset_id)>32 or not state.owners[key].get("draw_enabled") is bool:return reject("Unsupported player nozzle owner")
+				if not EngineDefinitions.parameters(bindings.engine_particles) or key!="player_nozzle%d"%(int(current.preset_id)-int(bindings.engine_particles.first_preset)) or int(current.preset_id)<int(bindings.engine_particles.first_preset) or int(current.preset_id)>=int(bindings.engine_particles.first_preset)+32 or not state.owners[key].get("draw_enabled") is bool:return reject("Unsupported player nozzle owner")
 			# Registered emitters may use authored variants of the same sprite
 			# kind. Each item retains and checks its own complete preset below.
 			preset=current
@@ -47,7 +49,7 @@ func build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: R
 			instance.set_meta("source_material_id",int(preset.material_id))
 			instance.set_meta("source_texture_id",int(descriptor.texture_ids[0]))
 			add_child(instance)
-			items.append({"key":key,"kind":kind,"node":instance,"preset":preset.duplicate(true)})
+			items.append({"key":key,"kind":kind,"node":instance,"preset":preset.duplicate(true),"spare":[ArrayMesh.new(),ArrayMesh.new()],"samples":{}})
 	_owner_identity=owner.presentation_identity();_descriptor=state
 	return true
 
@@ -59,7 +61,7 @@ func prepare_world(owner: RefCounted,world: Dictionary,camera_pose: Variant) -> 
 	var observed: Variant=world.get("engine_particles" if owner is Engines else "damage_particles")
 	if not observed is Dictionary:return failed("Damage sprite presentation requires its current world clock")
 	var state: Dictionary=observed
-	if OS.is_debug_build() and owner.snapshot()!=state:return failed("Damage sprite presentation requires its current world clock")
+	if ReadCache.verify and owner.snapshot()!=state:return failed("Damage sprite presentation requires its current world clock")
 	for key in ["base_content_id","binding_id"]:
 		if state.get(key)!=_descriptor.get(key) or world.get(key)!=_descriptor.get(key):return failed("Damage sprite frame belongs to another identity")
 	var elapsed: Variant=world.get("elapsed_ms")
@@ -71,35 +73,87 @@ func prepare_world(owner: RefCounted,world: Dictionary,camera_pose: Variant) -> 
 	if not Flight.rigid_pose(camera_pose):return failed("Damage sprite camera must be finite and rigid")
 	var cloak: Dictionary=world.get("cloak",{}) if owner is Engines else {}
 	var exhaust_opacity: float=float(cloak.get("exhaust_alpha",221.0/255.0))/(221.0/255.0)
+	var cloaked: bool=owner is Engines and cloak.get("active",false)
+	var checked:=ReadCache.verify
 	var prepared:=[];var counts:=[]
 	var view: Transform3D=camera_pose.affine_inverse()
 	for item in items:
 		if not is_instance_valid(item.node) or item.node.get_meta("source_material_id",-1)!=int(item.preset.material_id):return failed("Damage sprite surface identity changed")
 		var emitter: Dictionary=state.owners[item.key][item.kind]
-		if emitter.preset!=item.preset or emitter.slots.size()!=int(item.preset.capacity):return failed("Damage sprite population changed")
+		# The preset is fixed when the surface is built; release checks only its size.
+		if (checked and emitter.preset!=item.preset) or emitter.slots.size()!=int(item.preset.capacity):return failed("Damage sprite population changed")
 		var draw_enabled: bool=state.owners[item.key].get("draw_enabled",false) if item.kind=="exhaust" else true
 		var vertices:=PackedVector3Array();var uvs:=PackedVector2Array();var colors:=PackedFloat32Array();var indices:=PackedInt32Array()
-		for index in emitter.slots.size():
-			var slot: Dictionary=emitter.slots[index]
+		var fade_in_rgb: bool=emitter.get("fade_in_rgb",false)
+		var drawn: bool=emitter.visible and draw_enabled
+		if (not drawn or emitter.get("idle",false)) and not checked:
+			prepared.append(null);counts.append(0);continue
+		var slots: Array=emitter.slots
+		# Buffers are sized for every slot once, filled in place and trimmed.
+		var capacity:=slots.size()
+		vertices.resize(capacity*4);uvs.resize(capacity*4);colors.resize(capacity*16)
+		var quads:=0
+		var samples: Dictionary=item.samples
+		var mirrored:=(int(item.preset.flags)&0x02000000)!=0
+		for index in capacity:
+			var slot: Dictionary=slots[index]
+			# Idle slots draw nothing; release skips checking and sampling them.
+			if not checked and int(slot.appearance.age_ms)==-1:continue
 			if slot.appearance.slot!=index or not slot.position is Vector3 or not slot.position.is_finite():return failed("Invalid damage sprite slot")
-			var appearance:=Appearance.sample_prepared(item.preset,slot.appearance,emitter.get("fade_in_rgb",false))
+			if not drawn:continue
+			# Colour and atlas frame follow age (and slot mirror) alone, so release
+			# reuses one sample per age; debug builds sample and validate each slot.
+			var appearance: Dictionary
+			if checked:appearance=Appearance.sample_prepared(item.preset,slot.appearance,fade_in_rgb)
+			else:
+				var key: int=int(slot.appearance.age_ms)|(index<<20 if mirrored else 0)|(1<<40 if fade_in_rgb else 0)
+				appearance=samples.get(key,{})
+				if appearance.is_empty():
+					appearance=Appearance.sample_prepared(item.preset,slot.appearance,fade_in_rgb)
+					if samples.size()>8192:samples.clear()
+					samples[key]=appearance
 			if appearance.has("error"):return failed(appearance.error)
-			if not appearance.active or not emitter.visible or not draw_enabled:continue
-			if owner is Engines and cloak.get("active",false):appearance.color.a*=exhaust_opacity
-			var quad:=sprite(view*slot.position,appearance)
-			if quad.is_empty():return failed("Damage sprite exceeded finite view bounds")
-			var offset:=vertices.size()
-			vertices.append_array(quad.vertices);uvs.append_array(quad.uvs);colors.append_array(quad.colors)
-			indices.append_array(PackedInt32Array([offset,offset+2,offset+1,offset,offset+3,offset+2]))
+			if not appearance.active:continue
+			var c: Color=appearance.color
+			if cloaked:c.a*=exhaust_opacity
+			var center: Vector3=view*slot.position
+			var half:=float(int(slot.appearance.size)>>1)
+			# Corners round each sum to binary32 like the source float casts.
+			var left:=Vector3(center.x-half,center.y-half,center.z);var right:=Vector3(center.x+half,center.y+half,center.z)
+			if not left.is_finite() or not right.is_finite():return failed("Damage sprite exceeded finite view bounds")
+			var v:=quads*4
+			vertices[v]=left;vertices[v+1]=Vector3(right.x,left.y,center.z);vertices[v+2]=right;vertices[v+3]=Vector3(left.x,right.y,center.z)
+			var rect: Vector4=appearance.uv_rect
+			uvs[v]=Vector2(rect.x,rect.y);uvs[v+1]=Vector2(rect.z,rect.y);uvs[v+2]=Vector2(rect.z,rect.w);uvs[v+3]=Vector2(rect.x,rect.w)
+			var k:=quads*16
+			for corner in 4:
+				colors[k]=c.r;colors[k+1]=c.g;colors[k+2]=c.b;colors[k+3]=c.a;k+=4
+			quads+=1
+		vertices.resize(quads*4);uvs.resize(quads*4);colors.resize(quads*16)
+		indices=_quad_indices(quads)
 		var mesh: ArrayMesh
 		if not vertices.is_empty():
 			var arrays:=[];arrays.resize(Mesh.ARRAY_MAX)
 			arrays[Mesh.ARRAY_VERTEX]=vertices;arrays[Mesh.ARRAY_TEX_UV]=uvs
 			arrays[Mesh.ARRAY_CUSTOM0]=colors;arrays[Mesh.ARRAY_INDEX]=indices
-			mesh=ArrayMesh.new()
+			# Two meshes per item alternate, so the committed one is never rebuilt
+			# while it is still shown.
+			var spare: Array=item.spare
+			mesh=spare[0] if spare[0]!=item.node.mesh else spare[1]
+			mesh.clear_surfaces()
 			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},Mesh.ARRAY_CUSTOM_RGBA_FLOAT<<Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 		prepared.append(mesh);counts.append(vertices.size()>>2)
 	return {"meshes":prepared,"counts":counts,"pose":camera_pose,"elapsed_ms":state.elapsed_ms}
+
+static var _indices:=PackedInt32Array()
+
+## Two triangles per quad; one shared template is sliced per mesh.
+static func _quad_indices(quads: int) -> PackedInt32Array:
+	if _indices.size()<quads*6:
+		@warning_ignore("integer_division")
+		for offset in range(_indices.size()/6*4,quads*4,4):
+			_indices.append_array(PackedInt32Array([offset,offset+2,offset+1,offset,offset+3,offset+2]))
+	return _indices.slice(0,quads*6)
 
 static func sprite(center: Vector3,appearance: Dictionary) -> Dictionary:
 	if not center.is_finite():return {}

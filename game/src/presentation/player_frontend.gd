@@ -10,9 +10,13 @@ const DmgImport=preload("res://src/content/dmg_import.gd")
 const SaveFile=preload("res://src/simulation/station_save_file.gd")
 const Menu=preload("res://src/presentation/main_menu_panel.gd")
 const PauseControls=preload("res://src/presentation/pause_controls_panel.gd")
+const FlightPause=preload("res://src/presentation/flight_pause_panel.gd")
 const MenuAudio=preload("res://src/presentation/main_menu_audio.gd")
 const Host=preload("res://src/presentation/opening_preview.gd")
 const Streams=preload("res://src/presentation/audio_stream_control.gd")
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
+const Challenge=preload("res://src/simulation/supernova_challenge_entry.gd")
+const ChallengeRules=preload("res://src/content/supernova_challenge_definitions.gd")
 const LANGUAGE_NAMES={"de":1,"gb":2,"es":3,"fr":4,"it":5,"ptl":14,"pl":7,"ru":8,"zt":10,"zs":11,"ko":12,"ja":13}
 var error:=""
 var phase:="setup"
@@ -22,6 +26,7 @@ var visuals: RefCounted
 var game: Control
 var menu: Control
 var _pause_controls: PanelContainer
+var _flight_pause: Control
 var music: Node
 var preferences:=Preferences.new()
 var _display:=DisplaySettings.new()
@@ -40,16 +45,22 @@ var _notice: Label
 var _picker: FileDialog
 var _selection:={}
 var _pending_action:=""
+var _new_game_difficulty:=Difficulty.NORMAL
 var _quit_after_import:=false
 var _refresh_receipt:=""
 var _updated_import:=""
 var _settings_controls:={}
 var _settings_art:={}
+## Supernova Challenge highscore file (beside the preferences).
+var _challenge_path:=""
 
 func _ready() -> void:
 	menu=Menu.new();add_child(menu);menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	menu.action_requested.connect(request_action)
 	_pause_controls=PauseControls.new();add_child(_pause_controls)
+	_flight_pause=FlightPause.new();add_child(_flight_pause);_flight_pause.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_flight_pause.action_requested.connect(_flight_pause_action)
+	_flight_pause.view_changed.connect(func(_view):_sync_flight_controls.call_deferred())
 	_details=PanelContainer.new();add_child(_details)
 	_details.minimum_size_changed.connect(func():_layout.call_deferred())
 	var margins:=MarginContainer.new();_details.add_child(margins)
@@ -75,6 +86,7 @@ func _ready() -> void:
 func boot(args: PackedStringArray=PackedStringArray(),directory: String="user://") -> bool:
 	_data_directory=ProjectSettings.globalize_path(directory)
 	_preferences_path=directory.path_join("player.json");_save_directory=directory.path_join("saves")
+	_challenge_path=directory.path_join("supernova_challenge.json")
 	preferences.read_file(_preferences_path);var message:=preferences.error
 	_selection=preferences.values.duplicate(true)
 	apply_preferences()
@@ -141,6 +153,7 @@ func set_mobile_layout(value: bool) -> void:
 	_mobile=value;menu.set_mobile_layout(value)
 	if game!=null:game.set_mobile_layout(value)
 	if _pause_controls.visible:_show_pause_controls()
+	_flight_pause.set_mobile_layout(value)
 	_layout()
 
 func has_save() -> bool:
@@ -152,12 +165,48 @@ func has_session() -> bool:return game!=null and game.session!=null
 func show_menu() -> void:
 	_pending_action=""
 	if library==null:show_setup();return
-	if game!=null:game.hide()
+	if has_session() and game.flight_pausable() and _show_flight_pause():return
+	_flight_pause.clear()
+	if game!=null:game.hide();game.process_mode=Node.PROCESS_MODE_INHERIT
 	phase="menu";error="";_details.hide()
 	music.set_active(true)
-	menu.present(has_session() or has_save(),has_save());menu.set_mobile_layout(_mobile);menu.focus_first()
+	menu.present(has_session() or has_save(),has_save());menu.set_challenge_available(Challenge.available(bindings));menu.set_mobile_layout(_mobile);menu.focus_first()
 	if has_session():_show_pause_controls()
 	else:_pause_controls.hide()
+
+## Flight pause: the original pause window over the frozen flight.
+func _show_flight_pause() -> bool:
+	if not game.status_panel.configure(library,bindings,visuals) or not _flight_pause.configure(library,bindings,visuals,game.status_panel,_mobile):return false
+	phase="pause";error="";_details.hide();menu.hide();_pause_controls.hide()
+	music.set_active(false)
+	game.hold_paused(true);game.show();game.process_mode=Node.PROCESS_MODE_DISABLED
+	move_child(_flight_pause,-1);move_child(_pause_controls,-1);_flight_pause.present(game.pause_state())
+	return true
+
+## The controls reference stays beside the pause window's main list.
+func _sync_flight_controls() -> void:
+	if phase!="pause" or _flight_pause.view!="menu" or not has_session() or menu._ui==null:
+		if phase=="pause":_pause_controls.hide()
+		return
+	_pause_controls.present(PauseControls.reference_rows(library.strings,preferences.values.mouse_steering),menu._ui,_mobile,library.strings[487])
+	_flight_pause._layout()
+	_pause_controls.layout_in_viewport(size,_flight_pause.window_rect().position.x)
+
+func _flight_pause_action(action: String) -> void:
+	if phase!="pause" or not has_session():return
+	match action:
+		"resume":_resume()
+		"options":_flight_pause.clear();show_options()
+		"main_menu":
+			# The original warns that unsaved progress is lost; the last station
+			# save remains for Resume / Load.
+			_flight_pause.clear();game.free();game=null;show_menu()
+		"freeze":
+			game.set_action_freeze(true)
+			if not _flight_pause.begin_freeze(game.freeze_camera(),game.freeze_pivot()):game.set_action_freeze(false)
+		"unfreeze":game.set_action_freeze(false)
+		"skip":
+			if game.session.action("skip_dialogue"):_resume()
 
 func _show_pause_controls() -> void:
 	if not has_session() or game.session.status not in ["running","gate_confirmation_required","gate_map_required"] or menu._ui==null:
@@ -166,6 +215,7 @@ func _show_pause_controls() -> void:
 	_pause_controls.layout_in_viewport(size,menu.snapshot().menu_rect.position.x)
 
 func request_action(action: String) -> void:
+	if phase=="pause" and action=="resume":_resume();return
 	if phase!="menu":return
 	match action:
 		"new_game":
@@ -182,6 +232,7 @@ func request_action(action: String) -> void:
 		"resume":
 			if has_session():_resume()
 			elif has_save():_enter_game("load")
+		"supernova":_confirm_challenge()
 		"options":show_options()
 		"language":show_languages()
 		"info":show_info()
@@ -193,9 +244,33 @@ func _needs_import_update() -> bool:
 	var record:=DmgImport.read_receipt(preferences.values.import_record)
 	return not record.is_empty() and bindings.import_update_receipt().is_empty() and Bindings.reader_version(record.get("reader"))<Bindings.MAX_READER_VERSION
 
+## New Game asks for the difficulty first (Extreme warns), then the usual
+## replace-the-current-game confirmation when a game or save exists.
 func _start_new_game() -> void:
-	if has_session() or has_save():_confirm("new_game",library.strings[51])
-	else:_enter_game("new_game")
+	_show_details("difficulty",library.strings[Difficulty.TITLE_TEXT])
+	_label(library.strings[Difficulty.PROMPT_TEXT])
+	for level in Difficulty.LEVELS:
+		var value: float=level
+		var button:=_button(library.strings[Difficulty.label_text(value)],func():choose_difficulty(value))
+		if value==_new_game_difficulty:button.grab_focus.call_deferred()
+
+func choose_difficulty(value: float) -> bool:
+	if phase!="difficulty" or not Difficulty.valid(value):return false
+	_new_game_difficulty=value
+	if value==Difficulty.EXTREME:
+		_show_details("extreme_warning",library.strings[Difficulty.LABEL_TEXTS[3]])
+		_label(library.strings[Difficulty.EXTREME_WARNING_TEXT])
+		_button(library.strings[133],accept_extreme)
+		_button(library.strings[134],_start_new_game).grab_focus.call_deferred()
+		return true
+	return _begin_new_game()
+
+func accept_extreme() -> bool:
+	return phase=="extreme_warning" and _begin_new_game()
+
+func _begin_new_game() -> bool:
+	if has_session() or has_save():_confirm("new_game",library.strings[51]);return true
+	return _enter_game("new_game")
 
 func request_close() -> void:
 	if _importer.busy():
@@ -209,13 +284,14 @@ func request_close() -> void:
 func _confirm(action: String,message: String) -> void:
 	_pending_action=action;_show_details("confirm",library.strings[28 if action=="new_game" else 29 if action=="load" else 33])
 	_label(message)
-	if action=="new_game":_label("Difficulty: "+library.strings[508]+". Other difficulty levels are not available yet.")
+	if action=="new_game":_label(library.strings[Difficulty.TITLE_TEXT]+": "+library.strings[Difficulty.label_text(_new_game_difficulty)])
 	_button("Continue",confirm_pending)
 
 func confirm_pending() -> void:
 	if phase!="confirm" or _pending_action.is_empty():return
 	var action:=_pending_action;_pending_action=""
 	if action=="exit":exit_requested.emit()
+	elif action=="supernova":_enter_challenge()
 	else:_enter_game(action)
 
 func _enter_game(action: String) -> bool:
@@ -230,7 +306,7 @@ func _enter_game(action: String) -> bool:
 	candidate.set_mobile_layout(_mobile);candidate.apply_preferences(preferences.values);candidate.enable_saves(_save_directory)
 	var accepted:=false
 	if action=="new_game":
-		candidate.start();accepted=candidate.session!=null and candidate.session.status=="running"
+		candidate.start(_new_game_difficulty);accepted=candidate.session!=null and candidate.session.status=="running"
 	else:accepted=candidate.load_station()
 	if not accepted:
 		var message: String=candidate._save_notice.text if action=="load" else candidate.status.text
@@ -242,6 +318,8 @@ func _enter_game(action: String) -> bool:
 
 func _resume() -> void:
 	if not has_session():return
+	if _flight_pause.view=="freeze":game.set_action_freeze(false)
+	_flight_pause.clear();game.process_mode=Node.PROCESS_MODE_INHERIT
 	phase="game";error="";menu.hide();_pause_controls.hide();_details.hide();game.show()
 	music.set_active(false)
 	game.apply_preferences(preferences.values);game.set_user_paused(false);game.clear_input()
@@ -337,7 +415,15 @@ func show_options() -> void:
 		_settings_controls.resolution.disabled=preferences.values.window_mode=="fullscreen"
 		_choice("aspect_ratio","Aspect ratio",Preferences.ASPECTS,["Automatic (match window)","Native display","4:3","16:9","16:10","21:9","32:9"])
 	_choice("frame_rate","Frame rate",Preferences.FRAME_RATES,["Display refresh (V-Sync)","Unlimited (V-Sync off)","30 FPS","60 FPS","90 FPS","120 FPS","144 FPS","165 FPS","240 FPS","360 FPS"])
+	var upscalers: Array=preload("res://src/presentation/scene_effect_settings.gd").supported_upscalers()
+	if upscalers.size()>1:
+		var names:={"off":"Off (native)","fsr1":"AMD FSR 1.0","fsr2":"AMD FSR 2.2","metalfx_spatial":"MetalFX spatial","metalfx_temporal":"MetalFX temporal"}
+		_choice("upscaler","Upscaling",upscalers,upscalers.map(func(mode):return names[mode]))
+		_choice("render_scale","Upscaling quality",Preferences.RENDER_SCALES,["Native (100%)","Ultra quality (77%)","Quality (67%)","Balanced (59%)","Performance (50%)"])
+		_settings_controls.render_scale.disabled=preferences.values.upscaler=="off"
 	_settings_toggle("bloom","Bloom")
+	_choice("graphics_quality",library.strings[493],Preferences.GRAPHICS_QUALITIES,[library.strings[496],library.strings[497],library.strings[498]])
+	_settings_controls.graphics_quality.tooltip_text=library.strings[[499,500,501][Preferences.GRAPHICS_QUALITIES.find(float(preferences.values.graphics_quality))]]
 	_settings_heading(library.strings[490])
 	for pair in [["music",34],["fx",35],["voice",36]]:
 		var slider:=HSlider.new();slider.min_value=0;slider.max_value=1;slider.step=0.05;slider.value=preferences.values[pair[0]];slider.custom_minimum_size.y=44 if _mobile else 30
@@ -430,7 +516,7 @@ func _setting_row(title: String,control: Control) -> void:
 		scroll.ensure_control_visible.call_deferred(row))
 
 func change_preference(key: String,value: Variant) -> bool:
-	if key not in ["music","fx","voice","invert_pitch","touch_controls","mouse_steering","mouse_sensitivity","bloom"]+Preferences.DISPLAY_KEYS:return false
+	if key not in ["music","fx","voice","invert_pitch","touch_controls","mouse_steering","mouse_sensitivity","bloom","upscaler","render_scale","graphics_quality"]+Preferences.DISPLAY_KEYS:return false
 	var candidate:=preferences.values.duplicate(true);candidate[key]=value
 	if not Preferences.valid(candidate):return reject("Invalid game preference")
 	if not preferences.save_file(_preferences_path,candidate):return reject(preferences.error)
@@ -439,6 +525,8 @@ func change_preference(key: String,value: Variant) -> bool:
 		if is_instance_valid(_settings_controls.get("resolution")):_settings_controls.resolution.disabled=candidate.window_mode=="fullscreen"
 		if is_instance_valid(_settings_controls.get("window_mode")):_settings_controls.window_mode.select(1 if candidate.window_mode=="fullscreen" else 0)
 	else:apply_preferences()
+	if key=="upscaler" and is_instance_valid(_settings_controls.get("render_scale")):_settings_controls.render_scale.disabled=value=="off"
+	if key=="graphics_quality" and is_instance_valid(_settings_controls.get("graphics_quality")):_settings_controls.graphics_quality.tooltip_text=library.strings[[499,500,501][Preferences.GRAPHICS_QUALITIES.find(float(value))]]
 	return true
 
 func show_languages() -> void:
@@ -460,12 +548,15 @@ func show_info() -> void:
 	_show_details("info",library.strings[43])
 	_label("Galaxy on Fire 2 Remake\nAn independent native engine using your locally imported game content.")
 	_label("The opening through free travel, supported jumpgate routes, shopping and courier/passenger contracts are playable. Station saves retain acknowledged opening and free-play progress. The remaining campaign and expansions are unfinished.")
-	_label("Additional difficulty levels remain unfinished. Saving during flight or conversations and original game save files are not supported yet.")
+	_label("Saving during flight or conversations and original game save files are not supported yet.")
 	_label("Engine: Apache-2.0. Original game content remains the property of its respective owners.")
 	var button:=_button("Choose another Mac game…",show_setup);button.disabled=has_session()
 	button.tooltip_text="The source game can be changed before starting or loading a game"
 
 func _show_details(next: String,title: String) -> void:
+	if _flight_pause.view=="freeze" and game!=null:game.set_action_freeze(false)
+	_flight_pause.clear()
+	if game!=null:game.hide()
 	phase=next;menu.show_background_only();_pause_controls.hide();_details.show();_detail_title.text=title;_notice.text="";error=""
 	for child in _body.get_children():_body.remove_child(child);child.queue_free()
 	_back.visible=true;_back.text=library.strings[178] if library!=null else "Back"
@@ -489,7 +580,8 @@ func _layout() -> void:
 	_details.size=Vector2(minf(600,size.x-32),minf(620,size.y-32));_details.position=(size-_details.size)*0.5
 	_detail_title.add_theme_font_size_override("font_size",24 if _mobile else 20)
 	_notice.add_theme_font_size_override("font_size",18 if _mobile else 14)
-	if _pause_controls.visible:_pause_controls.layout_in_viewport(size,menu.snapshot().menu_rect.position.x)
+	if _pause_controls.visible and phase=="pause":_sync_flight_controls.call_deferred()
+	elif _pause_controls.visible:_pause_controls.layout_in_viewport(size,menu.snapshot().menu_rect.position.x)
 
 func _input(event: InputEvent) -> void:
 	if not _mobile and event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode if event.physical_keycode else event.keycode)==KEY_F11:
@@ -510,10 +602,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not is_visible_in_tree() or phase=="game":return
 	var pressed_key: bool=event is InputEventKey and event.pressed and not event.echo
 	var back_key: bool=pressed_key and (event.physical_keycode if event.physical_keycode else event.keycode)==KEY_ESCAPE
-	var resume_key: bool=pressed_key and phase=="menu" and has_session() and (event.physical_keycode if event.physical_keycode else event.keycode)==KEY_P
+	var resume_key: bool=pressed_key and phase in ["menu","pause"] and has_session() and (event.physical_keycode if event.physical_keycode else event.keycode)==KEY_P
 	var back_button: bool=event is InputEventJoypadButton and event.pressed and event.button_index in [JOY_BUTTON_B,JOY_BUTTON_START]
 	if back_key or back_button or resume_key:
-		if phase=="import":_importer.cancel()
+		if phase=="pause":
+			# Escape / B step back inside the window; P / Start resume at once.
+			var stepped: bool=(back_key or (back_button and event.button_index==JOY_BUTTON_B)) and _flight_pause.back()
+			if not stepped:_resume()
+		elif phase=="import":_importer.cancel()
 		elif phase=="menu" and has_session():_resume()
 		elif phase!="setup":show_menu()
 		get_viewport().set_input_as_handled()
@@ -527,3 +623,46 @@ func reject(message: String) -> bool:
 	if phase=="menu":menu.show_error(message)
 	else:_notice.text=message
 	return false
+
+## Supernova Challenge: a separate run that never touches the career or its
+## saves. The paused career game (if any) is given up like a Load; the last
+## station save stays for Resume / Load.
+func challenge_highscore() -> int:
+	var data: Variant=JSON.parse_string(FileAccess.get_file_as_string(_challenge_path)) if FileAccess.file_exists(_challenge_path) else null
+	return maxi(0,int(data.get("highscore",0))) if data is Dictionary else 0
+
+func _confirm_challenge() -> void:
+	if not Challenge.available(bindings):return
+	_pending_action="supernova";_show_details("confirm",library.strings[ChallengeRules.TEXT.title])
+	if has_session():_label(library.strings[50])
+	_label("%s: %d"%[library.strings[ChallengeRules.TEXT.highscore],challenge_highscore()])
+	_label(library.strings[ChallengeRules.TEXT.confirm])
+	_button(library.strings[513],confirm_pending)
+	_back.text=library.strings[414]
+
+func _enter_challenge() -> bool:
+	music.set_active(false)
+	var candidate:=Host.new();add_child(candidate);candidate.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	candidate.set_context(library,bindings,visuals);candidate.set_player_mode(true)
+	candidate.set_mobile_layout(_mobile);candidate.apply_preferences(preferences.values)
+	if not candidate.start_challenge():
+		var message: String=candidate.status.text;candidate.free();show_menu();return reject(message)
+	if game!=null:game.free()
+	game=candidate;game.menu_requested.connect(show_menu);game.game_over_requested.connect(show_menu)
+	game.challenge_finished.connect(func(score):_finish_challenge.call_deferred(score))
+	_resume();return true
+
+## The run is over: store a new highscore and offer another run.
+func _finish_challenge(score: int) -> void:
+	var best:=challenge_highscore()
+	if score>best:
+		var file:=FileAccess.open(_challenge_path,FileAccess.WRITE)
+		if file!=null:file.store_string(JSON.stringify({"highscore":score}));file.close()
+	if game!=null:game.free();game=null
+	_show_details("challenge_result",library.strings[ChallengeRules.TEXT.title])
+	_label("%s: %d"%[library.strings[ChallengeRules.TEXT.your_score],score])
+	if score>best:_label(library.strings[ChallengeRules.TEXT.new_highscore])
+	elif best>0:_label("%s: %d"%[library.strings[ChallengeRules.TEXT.highscore],best])
+	_label(library.strings[ChallengeRules.TEXT.play_again])
+	_button(library.strings[513],_enter_challenge)
+	_back.text=library.strings[414]

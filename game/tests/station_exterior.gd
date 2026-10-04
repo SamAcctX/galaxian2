@@ -115,7 +115,7 @@ func verify(args: Array):
 	bindings.station_exterior={};bindings.station_flight={};bindings.station_return={}
 	check(legacy.configure(bindings,cat,lib,construction,"E",0.5,Vector2i(960,720)),legacy.error)
 	bindings.station_exterior=declaration;bindings.station_flight=live;bindings.station_return=arrival_rules;bindings.fast_forward=fast_forward
-	var without:=initial.duplicate(true);without.erase("station_exterior");without.erase("station_volume_index");without.erase("station_autopilot");without.erase("station_arrival");without.erase("boundary")
+	var without:=initial.duplicate(true);without.erase("station_exterior");without.erase("station_volume_index");without.erase("station_autopilot");without.erase("station_arrival");without.erase("boundary");without.erase("station_hidden") # station-only story flag (c78a193)
 	var legacy_initial:=legacy.snapshot()
 	check(initial.has("station_targeting") and not legacy_initial.has("station_targeting"),"Station targeting did not follow the exterior capability")
 	without.erase("station_targeting")
@@ -124,7 +124,7 @@ func verify(args: Array):
 	for i in 71:
 		flight=flight.evaluate(100);legacy=legacy.evaluate(100)
 		if flight==null or legacy==null:check(false,"Station flight failed to advance");return
-	var moving: Dictionary=flight.snapshot();without=moving.duplicate(true);without.erase("station_exterior");without.erase("station_volume_index");without.erase("station_autopilot");without.erase("station_arrival");without.erase("boundary")
+	var moving: Dictionary=flight.snapshot();without=moving.duplicate(true);without.erase("station_exterior");without.erase("station_volume_index");without.erase("station_autopilot");without.erase("station_arrival");without.erase("boundary");without.erase("station_hidden") # station-only story flag (c78a193)
 	var legacy_moving:=legacy.snapshot()
 	check(moving.has("station_targeting") and not legacy_moving.has("station_targeting"),"Station update changed its targeting capability")
 	without.erase("station_targeting")

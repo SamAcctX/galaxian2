@@ -1,6 +1,7 @@
 extends RefCounted
 ## Native inventory sampling. The scene supplies time and retained settings;
 ## stock generation never chooses expansion ownership or enables shopping itself.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Definitions=preload("res://src/content/station_generation_definitions.gd")
 const BaseStock=preload("res://src/content/base_station_stock_definitions.gd")
 const DeepScience=preload("res://src/content/deep_science_stock_definitions.gd")
@@ -9,6 +10,7 @@ const Random=preload("res://src/simulation/seeded_random.gd")
 const Contacts=preload("res://src/simulation/lounge_contacts.gd")
 const Ores=preload("res://src/simulation/scenery_ores.gd")
 const Vitals=preload("res://src/simulation/combat_vitals.gd")
+const ValkyrieWorlds=preload("res://src/content/valkyrie_world_definitions.gd")
 var error:=""
 var _state:={}
 var _rules:={}
@@ -20,7 +22,16 @@ var _faction:=0
 var _system:=15
 var _base:={}
 var _deep_science:={}
+var _special:={}
 const MAX_SELECTION_DRAWS:=65536
+## The imported stock rules are checked up to the Valkyrie finale (83); they
+## hold unchanged to the end of Supernova (162).
+const LAST_CURSOR:=162
+
+## Station 120 after the Supernova ending keeps the career's all-medals result.
+static func medal_station(station_id: Variant,cursor: Variant) -> bool:
+	var ending: Dictionary=ValkyrieWorlds.SUPERNOVA_END_SHIPS
+	return int(station_id)==int(ending.station_id) and int(cursor)>int(ending.after_cursor)
 
 static func available(bindings: RefCounted) -> bool:return Definitions.available(bindings)
 
@@ -39,10 +50,14 @@ func prepare(bindings: RefCounted,cat: RefCounted,context: Variant,random_state:
 		if base.excluded_station_ids.any(func(id):return int(id)==int(context.station_id)):
 			if not DeepScience.available(bindings):return reject("This special location's stock is not supported yet")
 			deep_science=bindings.get("deep_science_stock")
-			if int(context.station_id)!=int(deep_science.station_id) or not context.get("all_base_medals_gold") is bool or not Numbers.integer(context.get("campaign_cursor"),int(deep_science.first_cursor),int(deep_science.last_cursor)):return reject("Deep Science stock requires its supported cursor and retained base-medal result")
-		if context.size()!=8+int(not deep_science.is_empty()) or not Numbers.integer(context.get("campaign_cursor"),int(base.first_cursor),int(base.last_cursor)) or not Numbers.integer(context.get("ship_price_percent"),-100,1000):return reject("Base station stock requires its supported cursor and retained ship price modifier")
-		if int(context.station_id)>int(base.last_station_id) or int(station.system_id)>int(base.last_system_id):return reject("This special location's stock is not supported yet")
-	if not context.get("valkyrie_owned") is bool or not context.get("supernova_owned") is bool or context.get("difficulty") not in [0.5,1.0,1.5]:return reject("Retain explicit expansion ownership and game difficulty")
+			if int(context.station_id)!=int(deep_science.station_id) or not context.get("all_base_medals_gold") is bool or not Numbers.integer(context.get("campaign_cursor"),int(deep_science.first_cursor),LAST_CURSOR):return reject("Deep Science stock requires its supported cursor and retained base-medal result")
+		if context.size()!=8+int(not deep_science.is_empty())+int(context.has("all_supernova_medals"))+int(context.has("wanted_ships")) or not Numbers.integer(context.get("campaign_cursor"),int(base.first_cursor),LAST_CURSOR) or not Numbers.integer(context.get("ship_price_percent"),-100,1000):return reject("Base station stock requires its supported cursor and retained ship price modifier")
+		var expansion: bool=ValkyrieWorlds.stock_station(bindings,int(context.station_id))
+		# Stock cached before the ending ships were added has no medal key.
+		if context.has("all_supernova_medals") and (not context.all_supernova_medals is bool or not medal_station(context.station_id,context.campaign_cursor)):return reject("Unsupported retained medal result")
+		if context.has("wanted_ships") and (int(context.station_id)!=int(ValkyrieWorlds.WANTED_SHIPS.station_id) or not context.wanted_ships is Array or not context.wanted_ships.all(func(id):return id is int and id>=0 and id<cat.tables.ships.size())):return reject("Unsupported retained wanted ships")
+		if not expansion and (int(context.station_id)>int(base.last_station_id) or int(station.system_id)>int(base.last_system_id)):return reject("This special location's stock is not supported yet")
+	if not context.get("valkyrie_owned") is bool or not context.get("supernova_owned") is bool or not Difficulty.valid(context.get("difficulty")):return reject("Retain explicit expansion ownership and game difficulty")
 	for key in ["energy_availability_percent","missile_availability_percent"]:
 		if not Numbers.integer(context.get(key),-100,1000):return reject("Unsupported retained stock modifier")
 	var candidate: RefCounted=get_script().new()
@@ -50,6 +65,7 @@ func prepare(bindings: RefCounted,cat: RefCounted,context: Variant,random_state:
 	if not candidate._rng.restore(random_state):return reject(candidate._rng.error)
 	candidate._rules=rules.duplicate(true);candidate._context=context.duplicate(true)
 	candidate._base=base.duplicate(true);candidate._deep_science=deep_science.duplicate(true);candidate._system=int(station.system_id)
+	candidate._special=ValkyrieWorlds.stock_rules(int(context.station_id),int(context.campaign_cursor)) if not base.is_empty() else {}
 	candidate._tech=int(station.fields[int(rules.catalogue.station_tech_field)])
 	var system: Dictionary=cat.tables.systems[station.system_id]
 	candidate._faction=int(system.fields[int(rules.catalogue.system_faction_field)])
@@ -58,6 +74,9 @@ func prepare(bindings: RefCounted,cat: RefCounted,context: Variant,random_state:
 	if tutorial:
 		for row in rules.tutorial.stock:stock.append({"item_id":int(row.item_id),"quantity":int(row.quantity),"unit_price":int(row.unit_price)})
 		# This branch does not reseed. Its unchanged stream goes to contacts.
+	elif candidate._special.get("items")=="none":
+		# This market has no item list and draws nothing for it.
+		pass
 	else:
 		if not unix_seconds is int or unix_seconds<0:return reject("New ordinary stock requires its sampled Unix time")
 		stock=candidate._temporary_stock(cat)
@@ -73,8 +92,16 @@ func prepare(bindings: RefCounted,cat: RefCounted,context: Variant,random_state:
 			var dx: int=there[0]-here[0];var dy: int=there[1]-here[1]
 			if absi(dx)>46340 or absi(dy)>46340 or dx*dx+dy*dy>2147483647:return reject("Stock distance exceeds supported source arithmetic")
 			metadata.affinity=int(rules.quantity.affinity_base)-int(Vitals.single(sqrt(Vitals.single(float(dx*dx+dy*dy)))))
+			# Story goods (the Toad Mutagen) never come from the random stock;
+			# their draws still run so the stream is unchanged. Offered below.
 			var row: Dictionary=candidate._sample_item(metadata)
-			if not row.is_empty():stock.append(row)
+			if not row.is_empty() and not ValkyrieWorlds.STORY_OFFER_ITEMS.has(int(metadata.item_id)):stock.append(row)
+		# The story's own offers at this station and cursor (V1).
+		for offer in ValkyrieWorlds.story_offers(int(context.station_id),int(station.system_id),int(context.campaign_cursor)):
+			var metadata:=item_metadata(cat.tables.items[int(offer.item_id)],rules)
+			var span: Array=offer.quantity
+			var amount: int=int(span[0])+(candidate._draw(int(span[1])-int(span[0])+1) if int(span[1])>int(span[0]) else 0)
+			stock.append({"item_id":int(offer.item_id),"quantity":amount,"unit_price":int(metadata.get("unit_price",0))})
 	var ships: Array=candidate._sample_ships(cat)
 	if not candidate.error.is_empty():return reject(candidate.error)
 	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,
@@ -93,6 +120,11 @@ func _temporary_stock(cat: RefCounted) -> Array:
 
 func _sample_ships(cat: RefCounted) -> Array:
 	if _base.is_empty() or (_system==int(_rules.system_id) and _context.campaign_cursor<int(_rules.ships_before_cursor)):return []
+	if _special.has("ships"):
+		var listed:=[]
+		for id in _special.ships:listed.append(_ship_offer(cat,int(id),int(_base.ships.affiliations[int(id)])))
+		for id in _context.get("wanted_ships",[]):listed.append(_ship_offer(cat,int(id),int(ValkyrieWorlds.WANTED_SHIPS.faction)))
+		return listed
 	var rules: Dictionary=_base.ships
 	if cat.tables.ships.size()!=rules.affiliations.size():reject("The ship catalogue does not match the imported affiliations");return []
 	var all_gold: bool=not _deep_science.is_empty() and _context.all_base_medals_gold
@@ -119,9 +151,19 @@ func _sample_ships(cat: RefCounted) -> Array:
 	# Source-specific offers precede expansion and system offers.
 	for extra in rules.get("faction_extras",[]):
 		if _faction==int(extra.faction) and _draw(int(extra.draw_bound))==0:result.append(_ship_offer(cat,int(extra.ship_id),int(extra.faction_id)))
+	var won: Dictionary=ValkyrieWorlds.WON_SHIPS
+	if _context.valkyrie_owned and int(_context.campaign_cursor)>int(won.after_cursor) and _faction==int(won.faction):
+		for extra in won.ships:
+			if _draw(int(won.draw_bound))==0:result.append(_ship_offer(cat,int(extra[0]),int(extra[1])))
 	if _context.supernova_owned:
-		for extra in rules.owned_supernova_extras:
+		var ending: Dictionary=ValkyrieWorlds.SUPERNOVA_END_SHIPS
+		for index in rules.owned_supernova_extras.size():
+			var extra: Dictionary=rules.owned_supernova_extras[index]
 			if _faction==int(extra.faction) and _draw(int(extra.draw_bound))==0:result.append(_ship_offer(cat,int(extra.ship_id),int(extra.faction_id)))
+			if index==0 and _context.has("all_supernova_medals"):
+				# Every medal earned, or an Extreme (hardcore) career.
+				if _context.get("all_supernova_medals",false) or float(_context.difficulty)==Difficulty.EXTREME:result.append(_ship_offer(cat,int(ending.all_medals_ship[0]),int(ending.all_medals_ship[1])))
+				for ship in ending.ships:result.append(_ship_offer(cat,int(ship[0]),int(ship[1])))
 	var special: Dictionary=rules.system_extras
 	if _system==int(special.system_id):
 		for extra in special.ships:
@@ -171,6 +213,9 @@ static func item_metadata(item: Dictionary,rules: Dictionary) -> Dictionary:
 
 func _sample_item(item: Dictionary) -> Dictionary:
 	var rules: Dictionary=_rules.availability
+	var trading: bool=_special.get("items")=="goods_list"
+	var system_good: bool=item.item_id>=int(rules.system_goods_first) and item.item_id<=int(rules.system_goods_last)
+	if trading and not system_good and not _special.list.has(item.item_id):return {}
 	var chance:=int(item.availability)
 	if item.item_id==int(rules.energy_item):chance=_modified(chance,int(_context.energy_availability_percent))
 	if item.category==int(rules.missile_category):chance=_modified(chance,int(_context.missile_availability_percent))
@@ -185,14 +230,24 @@ func _sample_item(item: Dictionary) -> Dictionary:
 	if not forced:
 		if item.blueprint or rules.excluded_ids.any(func(value):return int(value)==item.item_id) or item.tech>_tech or chance==0 or item.unit_price==0:return {}
 		if item.vossk_only==1 and _faction!=int(rules.vossk_faction):return {}
-		if item.item_id>=int(rules.system_goods_first) and item.item_id<=int(rules.system_goods_last) and item.item_id!=int(rules.system_goods_first)+_system:return {}
+		if system_good and not trading and item.item_id!=int(rules.system_goods_first)+_system:return {}
 	if _context.difficulty==float(rules.hard_difficulty) and rules.hard_excluded_subtypes.any(func(value):return int(value)==item.subtype):return {}
+	if not _special_market_allows(item):return {}
 	if not forced:
 		var factor:=minf(float(rules.progress_cap),Vitals.single(float(_context.campaign_cursor+int(rules.progress_add))/float(rules.progress_divisor)))
 		if _draw(int(rules.draw_bound))>=int(Vitals.single(float(chance)*factor)):return {}
 		var low_tech:=int(rules.low_tech_minimum) if _tech<int(rules.low_tech_boundary) else int(_tech/int(rules.low_tech_divisor))
+		if not _special.get("low_tech",true):low_tech=0
 		if item.item_id!=int(rules.energy_item) and item.tech<low_tech and _draw(int(rules.draw_bound))>int(rules.low_tech_max_roll):return {}
 	return {"item_id":item.item_id,"quantity":_quantity(item),"unit_price":item.unit_price}
+
+func _special_market_allows(item: Dictionary) -> bool:
+	var weapon: bool=item.category in ValkyrieWorlds.WEAPON_CATEGORIES
+	match _special.get("items",""):
+		"weapons":return weapon
+		"weapons_or_subtype":return weapon or item.subtype==int(_special.subtype)
+		"category","goods_list":return item.category==int(_special.category)
+	return true
 
 func _modified(chance: int,percent: int) -> int:
 	return int(Vitals.single(float(chance)+Vitals.single(float(chance*percent)*float(_rules.availability.modifier_multiplier))))

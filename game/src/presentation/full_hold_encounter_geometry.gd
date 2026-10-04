@@ -15,6 +15,9 @@ const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const Junk=preload("res://src/content/contract_junk_definitions.gd")
 const Selected=preload("res://src/content/selected40_population_definitions.gd")
 const MissionContext=preload("res://src/simulation/mission_context.gd")
+const Statics=preload("res://src/content/static_object_definitions.gd")
+const StaticTurret=preload("res://src/simulation/static_turret.gd")
+const Sampler=preload("res://src/presentation/scenery_animation.gd")
 const ENGINES={2:{"id":18002,"path":"resources/data/assets/main/3d/meshes/ships/ship_002_pirates_engine_add.aem"},
 	30:{"id":18030,"path":"resources/data/assets/main/3d/meshes/ships/ship_030_midorian_engine_add.aem"}}
 var error:=""
@@ -64,6 +67,9 @@ func _build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: 
 		if actor.get("population_group")=="debris":
 			if not _build_debris(owner,id,actor,library,visuals,bindings):return false
 			continue
+		if actor.get("population_group")=="static":
+			if not _build_static(owner,id,actor,library,visuals,bindings):return false
+			continue
 		var native_cast: bool=local_traffic or selected40 or admitted!=null
 		var ship_id: int=int(actor.hull_catalogue_id) if native_cast else (30 if id==3 else 2)
 		if actor.actor_id!=id or actor.hull_catalogue_id!=ship_id or (not native_cast and actor.actor_kind!=(3 if id==3 else 8)):return fail("Unsupported ordinary NPC model construction")
@@ -78,7 +84,10 @@ func _build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: 
 			var engine_id:=int(bindings.mido_travel.traffic_presentation.engine_model_base)+ship_id
 			exhaust={"id":engine_id,"path":bindings.resolve(engine_id,"mesh")}
 		else:exhaust=ENGINES[ship_id]
-		if bindings.resolve(exhaust.id,"mesh")!=exhaust.path or bindings.material_for_mesh(exhaust.path,"high").get("render_type")!=2:return fail("Unsupported NPC engine model/material mapping")
+		# A cast hull without its own exhaust mesh (W1: Kehnor's ship 42) flies
+		# without the flame; the fixed opening ships must have theirs.
+		var flame: bool=exhaust.path is String and not String(exhaust.path).is_empty() and bindings.resolve(exhaust.id,"mesh")==exhaust.path and bindings.material_for_mesh(exhaust.path,"high").get("render_type")==2
+		if not flame and not native_cast:return fail("Unsupported NPC engine model/material mapping")
 		var death: RefCounted=owner.npc_destruction_owner(id)
 		if death==null:return fail("NPC model lacks its retained destruction owner")
 		var held: Dictionary=death.snapshot().cargo
@@ -86,8 +95,8 @@ func _build(owner: RefCounted,library: RefCounted,visuals: RefCounted,bindings: 
 		var body:=Ship.new();add_child(body)
 		if not body.build(ship_id,library,visuals,bindings):return fail(body.error)
 		var resources:=Models.new()
-		if not resources.prepare([exhaust.path,held.resource],library,visuals,bindings,"high",true,true):return fail(resources.error)
-		var motor: Node3D=resources.instantiate(exhaust.path);var container: Node3D=resources.instantiate(held.resource)
+		if not resources.prepare(([exhaust.path] if flame else [])+[held.resource],library,visuals,bindings,"high",true,true):return fail(resources.error)
+		var motor: Node3D=resources.instantiate(exhaust.path) if flame else Node3D.new();var container: Node3D=resources.instantiate(held.resource)
 		resources.clear();add_child(motor);add_child(container);motor.hide();container.hide()
 		motor.set_meta("source_resource_id",exhaust.id);container.set_meta("source_resource_id",held.model_id)
 		var effect:=DeathEffect.new();add_child(effect)
@@ -127,6 +136,74 @@ func _build_debris(owner: RefCounted,id: int,actor: Dictionary,library: RefCount
 	actors.append({"hull":body,"engine":null,"cargo":container,"explosion":null,"debris":true,
 		"ship_id":-1,"resource_id":actor.resource_id,"hull_resource":actor.hull_resource,"cargo_resource":rules.cargo_model_resource})
 	return true
+
+## Static objects draw their model layers; after death the wreck animation
+## replaces them and holds its last pose.
+func _build_static(owner: RefCounted,id: int,actor: Dictionary,library: RefCounted,visuals: RefCounted,bindings: RefCounted) -> bool:
+	var death: RefCounted=owner.npc_destruction_owner(id)
+	if death==null or not actor.get("static_object",false) or actor.actor_id!=id:return fail("Static geometry requires its object and destruction owner")
+	var reader:=Statics.new();var placed: Dictionary=reader.resolve(library,bindings,int(actor.static_model))
+	if placed.is_empty():return fail(reader.error)
+	var paths: Array=placed.layers.map(func(layer):return layer.path)
+	var wrecked: bool=not placed.wreck.path.is_empty()
+	if wrecked:paths.append(placed.wreck.path)
+	var turret: Dictionary=placed.get("turret",{})
+	if not turret.is_empty():paths.append(turret.path)
+	var held: Dictionary=death.snapshot().get("cargo",{})
+	if not held.is_empty():paths.append(held.resource)
+	var resources:=Models.new()
+	if not resources.prepare(paths,library,visuals,bindings,"high",false,true):return fail(resources.error)
+	var body:=Node3D.new();body.name="StaticObject%d"%id;add_child(body)
+	# A fixed loot list (pirate bases) drops one container on death.
+	var crate: Node3D=null
+	if not held.is_empty():
+		crate=resources.instantiate(held.resource)
+		if crate==null:
+			var reason: String=resources.error;resources.clear();return fail(reason)
+		add_child(crate);crate.hide();crate.set_meta("source_resource_id",int(held.model_id))
+	# A turret's base and barrel swivel together; the base is turned 180 deg.
+	var swivel: Node3D=body
+	var barrel: Node3D=null
+	if not turret.is_empty():
+		swivel=Node3D.new();swivel.name="Swivel";body.add_child(swivel)
+		barrel=resources.instantiate(turret.path)
+		if barrel==null:
+			var reason: String=resources.error;resources.clear();return fail(reason)
+		barrel.set_meta("source_resource_id",turret.resource_id);swivel.add_child(barrel)
+	for layer in placed.layers:
+		var model: Node3D=resources.instantiate(layer.path)
+		if model==null:
+			var reason: String=resources.error;resources.clear();return fail(reason)
+		model.set_meta("source_resource_id",layer.resource_id);model.position=layer.get("offset",Vector3.ZERO);swivel.add_child(model)
+		if barrel!=null:model.basis=Basis(Vector3.UP,PI)
+	# Without a wreck the object just vanishes (80's weak points).
+	var wreck: Node3D=resources.instantiate(placed.wreck.path) if wrecked else Node3D.new()
+	resources.clear()
+	if wreck==null:return fail("Static wreck model preparation failed")
+	add_child(wreck);wreck.hide();wreck.set_meta("source_resource_id",placed.wreck.resource_id)
+	var sampler: RefCounted=null
+	if wrecked:
+		for instance in wreck.instances:instance.top_level=true
+		sampler=Sampler.new()
+		if not sampler.configure(wreck.surfaces):return fail(sampler.error)
+	actors.append({"hull":body,"engine":null,"cargo":wreck,"crate":crate,"explosion":null,"static":true,"sampler":sampler,"swivel":swivel,"barrel":barrel,
+		"turret_rule":Statics.rules(int(actor.static_model)).get("turret",{}),
+		"ship_id":-1,"resource_id":int(actor.resource_id),"hull_resource":actor.hull_resource})
+	return true
+
+func _prepare_static(actor: Dictionary,nodes: Dictionary,death: RefCounted) -> Dictionary:
+	var state: Dictionary=death.snapshot()
+	if state.get("pose")!=actor.body_pose or state.get("static_model")!=actor.static_model:return failed("Static presentation lost its object or pose")
+	var wrecked: bool=state.phase!="ready" and nodes.sampler!=null
+	var sampler: RefCounted=nodes.sampler
+	var animated:={}
+	if wrecked:
+		sampler=nodes.sampler.fork_for_frame()
+		animated=sampler.sample(int(state.animation.time_ms),state.pose)
+		if animated.is_empty():return failed(sampler.error)
+	var held: Dictionary=state.get("cargo",{})
+	return {"pose":actor.body_pose,"body_visible":actor.model_draw_enabled,"cargo_visible":wrecked,"cargo_pose":state.pose,"animated":animated,"sampler":sampler,
+		"turret_aim":actor.get("turret_aim",{}),"crate_visible":held.get("model_exists",false),"crate_pose":held.get("pose",state.pose)}
 
 func _prepare_debris(actor: Dictionary,nodes: Dictionary,death: RefCounted) -> Dictionary:
 	var state: Dictionary=death.snapshot()
@@ -183,10 +260,15 @@ func prepare_world(owner: RefCounted, camera: Transform3D, detail: Dictionary, o
 	for id in actors.size():
 		var nodes: Dictionary=actors[id];var actor: Dictionary=state.combat.actors[id]
 		if actor.actor_id!=id or actor.hull_catalogue_id!=nodes.ship_id or actor.hull_resource!=nodes.hull_resource or not Pose.valid_pose(actor.pose):return failed("NPC hull or statistics pose changed")
-		var death: RefCounted=owner.npc_destruction_owner(id)
+		# Drawing only reads the accepted owner; no per-frame fork is needed.
+		var death: RefCounted=owner.npc_destruction_view(id)
 		if death==null:return failed("NPC lost its destruction owner")
 		if nodes.get("debris",false):
 			var current:=_prepare_debris(actor,nodes,death)
+			if current.is_empty():return {}
+			prepared.append(current);continue
+		if nodes.get("static",false):
+			var current:=_prepare_static(actor,nodes,death)
 			if current.is_empty():return {}
 			prepared.append(current);continue
 		for key in ["active","node_draw_requested","model_draw_enabled","engine_draw_enabled"]:
@@ -194,13 +276,13 @@ func prepare_world(owner: RefCounted, camera: Transform3D, detail: Dictionary, o
 		var selection: Dictionary=detail.get("selections",{}).get(id,{})
 		# The source never registers geometry with no alternate meshes in the
 		# periodic LOD manager. Its sole detailed body still renders normally.
-		if selection.is_empty() and _selected40_generation!=null and nodes.hull.levels.size()==1:selection={"visible":true,"level":0}
+		if selection.is_empty() and nodes.hull.levels.size()==1:selection={"visible":true,"level":0}
 		if not nodes.hull.valid_selection(selection):return failed("NPC detail selection is unavailable")
 		if nodes.get("freighter",false):
 			var current:=_prepare_freighter(owner,actor,nodes,death,camera,selection)
 			if current.is_empty():return {}
 			prepared.append(current);continue
-		var held: Dictionary=death.snapshot().cargo
+		var held: Dictionary=death.read_state().cargo
 		if held.get("resource")!=nodes.cargo_resource or not held.get("model_exists") is bool or not Pose.valid_pose(held.get("pose")):return failed("NPC cargo presentation lost its retained model")
 		var effect_node: Node3D=nodes.explosion
 		if not effect_node.follows(death):
@@ -237,6 +319,16 @@ func commit_world(frame: Dictionary) -> void:
 		nodes.hull.transform=current.pose;nodes.hull.visible=current.body_visible
 		if nodes.get("debris",false):
 			nodes.cargo.transform=current.cargo_pose;nodes.cargo.visible=current.cargo_visible
+			continue
+		if nodes.get("static",false):
+			nodes.cargo.visible=current.cargo_visible
+			if nodes.crate!=null:nodes.crate.transform=current.crate_pose;nodes.crate.visible=current.crate_visible
+			if not current.animated.is_empty():
+				for i in nodes.cargo.instances.size():nodes.cargo.instances[i].transform=current.animated.surfaces[i].pose
+			nodes.sampler=current.sampler
+			if nodes.barrel!=null and not current.turret_aim.is_empty():
+				nodes.swivel.transform=StaticTurret.group_pose(Transform3D.IDENTITY,current.turret_aim)
+				nodes.barrel.transform=StaticTurret.barrel_local(nodes.turret_rule,current.turret_aim)
 			continue
 		nodes.hull.apply_selection(current.selection)
 		if nodes.get("freighter",false):

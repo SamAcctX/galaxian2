@@ -1,12 +1,14 @@
 extends Node3D
-## Original station assembly using the mesh's existing engine axes. Additive lights
-## retain their source initial sample until their playback clock is implemented.
+## Original station assembly using the mesh's existing engine axes. Animated
+## layers (the blinking additive lights) loop their authored keys on the flight clock.
 const Resources=preload("res://src/content/station_exterior_resources.gd")
 const Models=preload("res://src/presentation/model_resources.gd")
+const Sampler=preload("res://src/presentation/scenery_animation.gd")
 var error:=""
 var station: Node3D
 var layers: Array[Node3D]=[]
 var _state:={}
+var _loops:=[]
 
 func build(library: RefCounted, visuals: RefCounted, bindings: RefCounted, resources: RefCounted) -> bool:
 	clear()
@@ -25,16 +27,42 @@ func build(library: RefCounted, visuals: RefCounted, bindings: RefCounted, resou
 		if model==null:
 			var reason: String=models.error;models.clear();return fail(reason)
 		model.set_meta("source_resource_id",layer.resource_id);axes.add_child(model);layers.append(model)
+		var sampler:=_sampler(model)
+		if sampler!=null:_loops.append([model,sampler])
 	models.clear();_state=state
 	return true
 
-func apply_state(state: Dictionary) -> bool:
+func apply_state(state: Dictionary,time_ms:=-1) -> bool:
 	error=""
 	if station==null or state!=_state:return reject("Station geometry changed its prepared identity, pose or resources")
+	if time_ms>=0:
+		for row in _loops:
+			var timing: Dictionary=row[1].snapshot().range
+			var sample: Dictionary=row[1].sample(int(timing.start_ms)+time_ms%(int(timing.end_ms)-int(timing.start_ms)),Transform3D.IDENTITY)
+			if sample.is_empty():return reject(row[1].error)
+			for index in sample.surfaces.size():
+				var surface: Dictionary=sample.surfaces[index]
+				row[0].instances[index].transform=surface.pose
+				var tint:=float(surface.get("color_byte",255))/255.0
+				row[0].instances[index].visible=tint>0
+				row[0].materials[index].set_shader_parameter("surface_tint",Vector4.ONE*tint)
 	return true
+
+## Layers with authored keys (geometry or light level) get a looping sampler.
+func _sampler(model: Node3D) -> RefCounted:
+	if not "surfaces" in model:return null
+	var surfaces:=[]
+	for surface in model.surfaces:
+		var row: Dictionary=surface.duplicate();row.tracks=surface.tracks.duplicate();row.tracks.erase("uv");surfaces.append(row)
+	var sampler:=Sampler.new()
+	if not sampler.configure(surfaces,true):return null
+	var timing: Dictionary=sampler.snapshot().range
+	return sampler if int(timing.end_ms)>int(timing.start_ms) else null
+
+func animated_layers() -> int:return _loops.size()
 
 func clear() -> void:
 	for child in get_children():child.free()
-	station=null;layers=[];_state={};error=""
+	station=null;layers=[];_state={};_loops=[];error=""
 func fail(message: String) -> bool:clear();error=message;return false
 func reject(message: String) -> bool:error=message;return false

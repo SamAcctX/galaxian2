@@ -4,6 +4,10 @@ const Layouts=preload("res://src/content/declaration_layouts.gd")
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
 const Fonts=preload("res://src/content/font_definitions.gd")
 const Training=preload("res://src/content/combat_training_definitions.gd")
+## Before the training fight (missions 6-7) the ship may only leave with a
+## weapon and an armour plate fitted (verified ModStation::leaveStation):
+## 518 when neither is owned, 519 when one waits in the hold.
+const EQUIPMENT_REFUSAL:={"cursors":[6,7],"missing_text_id":518,"in_hold_text_id":519}
 const Destruction=preload("res://src/content/combat_training_destruction_definitions.gd")
 const SharedStory=preload("res://src/content/full_hold_story_definitions.gd")
 const Briefing=preload("res://src/content/mining_briefing_definitions.gd")

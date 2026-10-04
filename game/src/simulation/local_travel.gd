@@ -89,6 +89,19 @@ func rebase_campaign(bindings: RefCounted,cursor: int,mission: Dictionary) -> bo
 	if not _stations.has(_state.acquired_station_id):_state.acquired_station_id=-1
 	return true
 
+## A story flight moves the career on silently in space.
+func rebase_story_flight(bindings: RefCounted,cursor: int,mission: Dictionary) -> bool:
+	error=""
+	var flights=load("res://src/content/valkyrie_flight_definitions.gd")
+	var current: Variant=_state.get("campaign_cursor")
+	# Forward only; a step may skip an empty cursor (W1: 128 -> 130).
+	if _state.get("phase")!="flight" or not current is int or cursor<=int(current) or mission!=flights.Campaign.mission(cursor):return reject("Local navigation lost its story flight")
+	_state.campaign_cursor=cursor
+	_stations=Definitions.navigation_stations(bindings,cursor,_state.station_id).filter(func(id):return id==_state.station_id or load("res://src/content/free_navigation_definitions.gd").destination_supported(bindings,cursor,mission,id))
+	if not _stations.has(_state.candidate_station_id):_state.candidate_station_id=-1;_state.acquisition_ms=0
+	if not _stations.has(_state.acquired_station_id):_state.acquired_station_id=-1
+	return true
+
 func supports_destination(station_id: int) -> bool:
 	return not _state.is_empty() and station_id!=_state.station_id and _stations.has(station_id)
 
@@ -165,6 +178,15 @@ func launch_acquired() -> bool:
 	_launch(next);_state=next
 	return true
 
+## A story launch at the planet the ship is already at: depart and arrive
+## back at its launch point as a fresh flight.
+func relaunch() -> bool:
+	error=""
+	if _state.is_empty() or _state.phase!="flight":return reject("A story relaunch needs ordinary local flight")
+	var next:=_state.duplicate(true);next.events=[]
+	next.acquired_station_id=next.station_id;_launch(next);_state=next
+	return true
+
 func _launch(next: Dictionary) -> void:
 	next.phase="launch";next.launch_ms=0
 	next.destination_station_id=next.acquired_station_id
@@ -197,6 +219,9 @@ func prepare_arrival() -> Dictionary:
 		"station_id":_state.destination_station_id,"system_id":_state.system_id,
 		"source_state":int(_rules.source_state),"world_type":int(_rules.world_type),"audio_selector":int(_rules.audio_selector)})
 	return result
+
+## Live state for an immediate field read; never keep or edit it.
+func read_state() -> Dictionary:return _state
 
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}

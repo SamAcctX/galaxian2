@@ -46,6 +46,15 @@ func prepare_events(library: RefCounted,bindings: RefCounted,visuals: RefCounted
 		counts.append(lines.size())
 		var id := int(event.speaker_id)
 		if resolved.has(id) or bindings.speaker_bindings.is_empty():continue
+		# A line may bring its own speaker (a Most Wanted criminal: his name
+		# and five face parts, family first).
+		if event.get("speaker_name") is String and event.get("speaker_face") is Array and event.speaker_face.size()>1:
+			resolved[id]={"name":String(event.speaker_name)}
+			if visuals!=null and not visuals.base_content_id.is_empty() and not bindings.portrait_layers.is_empty():
+				var own: Dictionary=composer.compose_definition(library,bindings,visuals,0,"baseline",{"status":"fixed","family":int(event.speaker_face[0]),"parts":event.speaker_face.slice(1)})
+				if own.is_empty():diagnostics[id]=composer.error
+				else:resolved[id].portrait=ImageTexture.create_from_image(own.image)
+			continue
 		var speaker_name: String = bindings.resolve_speaker_name(id,library)
 		if not bindings.error.is_empty():return fail(bindings.error)
 		resolved[id]={"name":speaker_name}
@@ -73,6 +82,9 @@ func prepare_local_traffic(library: RefCounted, bindings: RefCounted, visuals: R
 		var name: String=bindings.resolve_speaker_name(profile.speaker_id,library)
 		if not bindings.error.is_empty():return fail(bindings.error)
 		speakers[profile.speaker_id]={"name":name}
+	var scripted: String=bindings.resolve_speaker_name(LocalRadio.Toll.SPEAKER_ID,library)
+	if not bindings.error.is_empty():return fail(bindings.error)
+	speakers[LocalRadio.Toll.SPEAKER_ID]={"name":scripted}
 	_local_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":cursor,"language":library.active_language}
 	_local_rules=bindings.mido_travel.traffic_combat.radio.duplicate(true)
 	_library=library;_bindings=bindings;_visuals=visuals
@@ -86,7 +98,12 @@ func local_speaker(snapshot: Dictionary) -> Dictionary:
 	var message: Variant=snapshot.get("message");var portrait: Variant=snapshot.get("portrait")
 	if not message is Dictionary or not portrait is Dictionary or not LocalRadio.valid_payload(_local_rules,message) or not LocalRadio.valid_portrait(_local_rules,portrait):error="Local radio lost its source message or selected portrait";return {}
 	if snapshot.get("speaker_id")!=message.speaker_id or snapshot.get("text_id")!=message.text_id or snapshot.get("text")!=_library.strings[message.text_id]:error="Local radio text differs from its selected message";return {}
-	var key:=str([portrait.family,portrait.parts])
+	var key:=str(["speaker",message.speaker_id]) if portrait.get("status")=="speaker" else str([portrait.family,portrait.parts])
+	if portrait.get("status")=="speaker" and not _portraits.has(key):
+		var speaker_composer:=Portraits.new()
+		var face:=speaker_composer.compose(_library,_bindings,_visuals,message.speaker_id,"baseline")
+		if face.is_empty():error=speaker_composer.error;return {}
+		_portraits[key]=ImageTexture.create_from_image(face.image)
 	if not _portraits.has(key):
 		var composer:=Portraits.new()
 		var result:=composer.compose_definition(_library,_bindings,_visuals,message.speaker_id,"baseline",portrait)

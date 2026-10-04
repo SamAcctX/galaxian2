@@ -122,8 +122,9 @@ func verify_geometry(library: RefCounted,bindings: RefCounted,visuals: RefCounte
 	if not ship.build_convoy(library,visuals,bindings,"high",shared):check(false,ship.error);viewport.free();return
 	check(ship.levels.size()==3 and ship.get_meta("source_ship_id")==14,"Convoy uses the wrong assembly or detail count")
 	var detail:=Detail.new();check(detail.configure_convoy(bindings.mido_travel.convoy_ship,bindings.ship_lod),detail.error)
-	for sample in [[0.0,0],[1224999936.0,0],[1225000192.0,1],[3600000000.0,1],[3600000256.0,2],[90000000000.0,2]]:
-		check(detail.select(sample[0],1.0)=={"visible":true,"level":sample[1]},"Capital-ship detail thresholds or distance cull changed")
+	# Ships always draw their most detailed model (remake choice, 3 Oct 2026); the distance cull still decides visibility.
+	for sample in [0.0,1224999936.0,1225000192.0,3600000000.0,3600000256.0,90000000000.0]:
+		check(detail.select(sample,1.0)=={"visible":true,"level":0},"Capital ship left its most detailed model or was culled")
 	for i in 3:
 		var body: Node3D=ship.levels[i]
 		check(body.get_meta("source_resource_id")==14311+i and body.scale==Vector3(2,2,2),"Special hull identity or source scale changed")

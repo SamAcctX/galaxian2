@@ -28,6 +28,9 @@ const SYSTEMS={
 	17:{"system_id":17,"station_ids":[85,86,87,88,89],"planet_types":[13,9,8,7,16],"station_models":[10,8,3,2,5],"system_fields":[1,1,2,26,21,79,85,8],"system_arrays":[[14,0,0],[85,86,87,88,89],[2,4,9,26,29],[0,1,2]],"faction":2,"security":1,"gate_station_id":85,"sky_index":8},
 }
 
+const EXPANSION_LAST_SYSTEM:=31
+const EXPANSION_LAST_STATION:=131
+
 const MAC_SPANS = {"ordinary_world_special_planet":[873058,80],"ordinary_world_station_equality":[853920,22],"ordinary_world_station_id":[851984,10],"ordinary_world_special_size":[844005,59]}
 
 static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALUES)
@@ -41,11 +44,13 @@ static func from_catalogues(bindings: RefCounted,cat: RefCounted) -> Dictionary:
 	var population: Dictionary=bindings.mido_travel.free_population
 	var stock: Dictionary=bindings.early_contracts.get("base_station_stock",{})
 	if stock.is_empty():return result
+	# Valkyrie's systems follow the base galaxy in the same catalogues; lookups
+	# admit them only for packs carrying the expansion story.
 	for system in cat.tables.systems:
-		if system.id>int(stock.last_system_id):continue
+		if system.id>EXPANSION_LAST_SYSTEM:continue
 		var faction:=int(system.fields[int(population.faction_field)])
 		var security:=int(system.fields[int(population.security_field)])
-		if faction not in [0,1,2,3] or system.sky_index<0 or system.sky_index>14:continue
+		if faction not in [0,1,2,3] or system.sky_index<0 or system.sky_index>18:continue
 		if faction==1 and not vossk_available(bindings.mido_travel):continue
 		var ids: Array=Array(system.station_ids)
 		if ids.is_empty():continue
@@ -53,14 +58,19 @@ static func from_catalogues(bindings: RefCounted,cat: RefCounted) -> Dictionary:
 		var world:={"system_id":int(system.id),"station_ids":ids,"planet_types":types,"faction":faction,"security":security,
 			"gate_station_id":int(system.fields[int(bindings.mido_travel.free_navigation.gate_station_field)]),"sky_index":int(system.sky_index)}
 		for index in ids.size():
-			if ids[index]>int(stock.last_station_id) or types[index] not in range(20):continue
+			if ids[index]>EXPANSION_LAST_STATION or types[index] not in range(27):continue
 			var location:=world.duplicate(true);location.station_id=int(ids[index]);location.planet_type=types[index]
+			if system.id>int(stock.last_system_id):location.expansion=true
 			result[int(ids[index])]=location
 	return load("res://src/simulation/readonly_state.gd").freeze(result)
 
 static func location(source: Variant,station_id: Variant) -> Dictionary:
 	var data: Dictionary=load("res://src/content/free_campaign_definitions.gd").source_travel(source)
-	if source is RefCounted and not source.world_locations.is_empty():return source.world_locations.get(station_id,{}) if station_id is int else {}
+	var locations: Variant=source.get("world_locations") if source is RefCounted else null
+	if locations is Dictionary and not locations.is_empty():
+		var found: Dictionary=locations.get(station_id,{}) if station_id is int else {}
+		if found.get("expansion",false) and not load("res://src/content/valkyrie_campaign_definitions.gd").available(source):return {}
+		return found
 	if not station_id is int or not data.has("free_population"):return {}
 	for id in SYSTEMS:
 		# Hull declarations alone do not provide the source's complete LOD assembly.

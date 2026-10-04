@@ -63,7 +63,7 @@ func build_layout(library: RefCounted,visuals: RefCounted,bindings: RefCounted,l
 					for surface in model.surfaces:
 						if surface.tracks.get("scalar",[]).any(func(track):return not track.keys.is_empty()):models.clear();return fail("Gate solid layer has unsupported color animation: "+row.models[id])
 				animated[id]={"model":model,"sampler":sampler,"adapter":adapter}
-		objects[row.index]={"assembly":assembly,"layers":layers,"animated":animated}
+		objects[row.index]={"assembly":assembly,"layers":layers,"animated":animated,"bounds":{}}
 	models.clear();_state=state.duplicate(true)
 	return true
 
@@ -71,20 +71,46 @@ func apply_state(state: Dictionary) -> bool:
 	error=""
 	return true if not _state.is_empty() and state==_state else reject("Gate geometry lost its accepted identity or layout")
 
-func prepare_animation(owner: RefCounted) -> Dictionary:
+## Local bounding sphere of an assembly's meshes once their first animated pose
+## is applied, with room for animated layers.
+static func _bounds(assembly: Node3D) -> Dictionary:
+	var box:=AABB();var first:=true
+	var to_local:=assembly.global_transform.affine_inverse()
+	for node in assembly.find_children("*","MeshInstance3D",true,false):
+		var local: AABB=(to_local*node.global_transform)*node.get_aabb()
+		box=local if first else box.merge(local);first=false
+	if first:return {"center":Vector3.ZERO,"radius":INF}
+	return {"center":box.get_center(),"radius":box.size.length()*0.75}
+
+## A camera sees part of the sphere unless one frustum plane excludes it.
+static func _in_view(planes: Array,center: Vector3,radius: float) -> bool:
+	for plane in planes:
+		if plane.distance_to(center)>radius:return false
+	return true
+
+func prepare_animation(owner: RefCounted,camera: Camera3D=null) -> Dictionary:
 	error=""
 	if not owner is GateAnimation or _state.is_empty():reject("Gate rendering requires a prepared native animation");return {}
 	var state: Dictionary=owner.snapshot()
 	if state.get("layout")!=_state or owner.presentation_identity()==null or (_animation_identity!=null and owner.presentation_identity()!=_animation_identity):reject("Gate animation belongs to another environment");return {}
 	var prepared:=[]
+	var planes: Array=[] if camera==null or not camera.is_inside_tree() else camera.get_frustum()
 	for gate in state.objects:
 		var instance: Dictionary=objects[gate.index]
+		# An off-screen gate keeps its last pose; it is sampled at the current
+		# clock again as soon as any part of it can be seen.
+		if instance.bounds.is_empty() and not planes.is_empty():instance.bounds=_bounds(instance.assembly)
+		var hidden: bool=not planes.is_empty() and not _in_view(planes,instance.assembly.global_transform*instance.bounds.center,instance.bounds.radius)
 		for index in gate.models.size():
 			var clock: Dictionary=gate.models[index]
 			if not instance.animated.has(clock.model_id):reject("Original animated gate layer is absent");return {}
 			var row: Dictionary=instance.animated[clock.model_id]
+			var visible: bool=gate.active if index==3 else (not gate.active if index==2 else true)
+			# A hidden active/inactive layer is not drawn; it is sampled again when shown.
+			if not visible or hidden:
+				prepared.append({"row":row,"sampler":row.sampler,"surfaces":null,"visible":visible});continue
 			var sampler: RefCounted=row.sampler.fork_for_frame()
-			var range: Dictionary=sampler.snapshot().range
+			var range: Dictionary=sampler.time_range()
 			if range.start_ms!=clock.start_ms or range.end_ms!=clock.end_ms:reject("Gate playback differs from its original keys");return {}
 			var sample: Dictionary=sampler.sample(clock.time_ms,Transform3D.IDENTITY)
 			if sample.is_empty():reject(sampler.error);return {}
@@ -92,13 +118,14 @@ func prepare_animation(owner: RefCounted) -> Dictionary:
 			if row.adapter!=null:
 				surfaces=row.adapter.prepare_surfaces(sample,instance.assembly.global_transform,PackedByteArray([255,255,255,255]),Vector4.ONE)
 				if surfaces.is_empty():reject(row.adapter.error);return {}
-			prepared.append({"row":row,"sampler":sampler,"surfaces":surfaces,"visible":gate.active if index==3 else (not gate.active if index==2 else true)})
+			prepared.append({"row":row,"sampler":sampler,"surfaces":surfaces,"visible":visible})
 	return {"identity":owner.presentation_identity(),"layers":prepared}
 
 func commit_animation(frame: Dictionary) -> void:
 	for next in frame.layers:
 		var row: Dictionary=next.row
-		if row.adapter!=null:row.adapter.apply_surfaces(row.model,next.surfaces,1.0)
+		if next.surfaces==null:pass
+		elif row.adapter!=null:row.adapter.apply_surfaces(row.model,next.surfaces,1.0)
 		else:
 			for index in next.surfaces.size():row.model.instances[index].transform=next.surfaces[index].pose
 		row.sampler=next.sampler;row.model.visible=next.visible

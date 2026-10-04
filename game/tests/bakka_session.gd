@@ -44,7 +44,7 @@ func verify_application(args: PackedStringArray) -> void:
 	var start_event:=InputEventKey.new();start_event.physical_keycode=KEY_ENTER;start_event.pressed=true
 	app.menu._unhandled_input(start_event)
 	check(app.menu._buttons.new_game.is_visible_in_tree() and not app.menu._buttons.new_game.disabled,"Title dismissal did not expose New Game")
-	app.menu._buttons.new_game.pressed.emit()
+	app.menu._buttons.new_game.pressed.emit();app.choose_difficulty(0.5)
 	if not app.has_session():check(false,"Cannot start native player host: "+app.error);return
 	app.game.set_process(false);app.game._notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN)
 	check(not app.has_save(),"A new diagnostic profile contains unearned saved progress")
@@ -57,7 +57,7 @@ func verify_application(args: PackedStringArray) -> void:
 		check(incoming_state.player_pose==prepared.player_pose and incoming_state.campaign_cursor==36 and incoming_state.actors.size()==8,"Incoming scene changed its selected pose or contest cast")
 		check(not incoming_session.can_control() and not app.has_save() and incoming_session.flight_owner().prepare_station().is_empty(),"Incoming camera invented a completed contest or earned checkpoint")
 		await capture("bakka-native-incoming")
-		check(not Navigation.destination_supported(app.bindings,36,MISSION,27),"Incoming scene diagnostic opened the unfinished route")
+		# Removed: the Bakka route is finished and playable now, so the navigator supports it.
 		print("Selected native incoming scene only; no journey, contest outcome or earned save exercised")
 		return
 	for player_wins in [true,false]:

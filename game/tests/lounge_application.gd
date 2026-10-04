@@ -103,6 +103,12 @@ func verify_application_kind(kind: int,args: PackedStringArray) -> void:
 	app.lounge_panel.confirm()
 	check(app.lounge_panel.snapshot().confirming and session.snapshot()==quoted,"Selecting a job bypassed acknowledgement")
 	if failures:return
+	app.lounge_panel.decline()
+	var declined: Dictionary=session.snapshot()
+	check(not app.lounge_panel.snapshot().confirming and declined.contracts.get("rejected_jobs",0)==quoted.contracts.get("rejected_jobs",0)+1,"No thanks did not retain the explicit refused-job history")
+	check(not declined.contracts.offers[fixture.contact_id].consumed and declined.contracts.mission==quoted.contracts.mission,"Refusing a job consumed it or changed the active mission")
+	quoted=declined
+	app.lounge_panel.confirm()
 	app.lounge_panel.confirm()
 	if app._transition_failed:check(false,app.status.text);return
 	var accepted: Dictionary=session.snapshot()

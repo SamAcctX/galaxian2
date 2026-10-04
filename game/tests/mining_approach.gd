@@ -65,6 +65,7 @@ func verify(args: Array):
 	for i in world._bodies._rows.size():
 		var point:=target if i==0 else Vector3(10000+i,0,100000)
 		world._bodies._rows[i].position=point;world._motion._field.objects[i].position=point
+	world._bodies._read_snapshot={};world._read_snapshot={}
 	stand_off=int(Approach.f32(world.snapshot().objects[0].scale*2500.0))
 	var geometry:=TargetFrame.source_geometry(lib,bindings);var art:=ScanAnimation.source_geometry(lib,bindings,bindings.mining_targeting)
 	selection=Targeting.new();check(selection.configure(bindings,cat,construction,TargetFrame.logical_radii(geometry.quarter_size,false),art.frames),selection.error)
@@ -137,7 +138,7 @@ func verify(args: Array):
 	check(not owner.advance(replaced.scenery_owner(),100) and owner.snapshot()==good,"Approach crossed into a replacement field")
 	var broken: RefCounted=world.fork_for_frame();broken._bodies=broken._bodies.fork_for_frame()
 	# Corrupt only this fixture's row; frame forks share immutable body rows.
-	broken._bodies._rows[0]=broken._bodies._rows[0].duplicate(true)
+	broken._bodies._rows[0]=broken._bodies._rows[0].duplicate(true);broken._bodies._read_snapshot={}
 	broken._bodies._rows[0].position=Vector3(INF,0,0)
 	check(not owner.advance(broken,100) and owner.snapshot()==good,"Invalid target pose changed approach state")
 	var destroyed: RefCounted=world.fork_for_frame();destroyed._destruction[0]=destroyed._destruction[0].fork_for_frame();destroyed._destruction[0]._state.actor_state=3
@@ -213,7 +214,8 @@ func verify_flight(lib: RefCounted,args: Array):
 		var state: Dictionary=next.snapshot()
 		if i==0:
 			check(state.player_pose.origin.distance_to(before.player_pose.origin+before.player_pose.basis.z*200)<0.1 and state.angular_units==before.angular_units,"Approach also ran manual steering or took a throttle change")
-			check(state.mining_targeting.selected_object_index==-1 and state.mining_targeting.elapsed_ms==0,"Approach kept acquiring targets")
+			# Mining owns its selected body while approaching (since 26 Sep): selection is held, the acquisition clock frozen, no new candidates.
+			check(state.mining_targeting.selected_object_index==state.mining_approach.object_index and state.mining_targeting.elapsed_ms==before.mining_targeting.elapsed_ms and state.mining_targeting.candidate_indices.is_empty(),"Approach kept acquiring targets")
 		if not state.mining_approach.camera_update_enabled:
 			check(state.camera_view==before.camera_view,"Close approach moved its frozen camera")
 			if not camera_froze:

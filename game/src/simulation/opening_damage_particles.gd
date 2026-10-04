@@ -1,4 +1,5 @@
 extends RefCounted
+const FrameTransaction=preload("res://src/simulation/frame_transaction.gd")
 const FlightStages=preload("res://src/content/flight_stages.gd")
 ## Native fresh-opening smoke/fire owners. The weapon pass samples retained NPC
 ## roots before controller and NPC work; those later passes only change flags and
@@ -13,6 +14,7 @@ const Training=preload("res://src/content/combat_training_story_definitions.gd")
 const OrdinaryFlight=preload("res://src/content/ordinary_flight_definitions.gd")
 const Travel=preload("res://src/content/mido_travel_definitions.gd")
 var error:=""
+var _txn:=0
 var _identity:={}
 var _rules:={}
 var _emitters:={}
@@ -85,7 +87,7 @@ func configure_mission(bindings: RefCounted,context: RefCounted,combat: RefCount
 	var keys:=[];var modes:=[]
 	for actor in state.actors:
 		modes.append(int(actor.actor_mode))
-		if actor.get("population_group") not in ["freighter","capital"]:keys.append("npc%d"%int(actor.actor_id))
+		if actor.get("population_group") not in ["freighter","capital","static"]:keys.append("npc%d"%int(actor.actor_id))
 	if not candidate._configure_owners(bindings,state,seed_seconds,keys,modes):return reject(candidate.error)
 	_identity=candidate._identity;_rules=candidate._rules;_npc_count=candidate._npc_count;_presentation_identity=candidate._presentation_identity
 	adopt(candidate)
@@ -140,8 +142,10 @@ func configure_local_traffic(bindings: RefCounted,combat: Dictionary,seed_second
 	if not valid_combat(combat):clear();return reject("Local smoke/fire requires its initialized ships")
 	var keys:=[]
 	for actor in actors:
-		if actor.get("population_group") not in ["freighter","capital","debris"]:keys.append("npc%d"%int(actor.actor_id))
-	return _configure_owners(bindings,combat,seed_seconds,keys,actors.map(func(actor):return int(actor.actor_mode) if actor.get("authored_story",false) or combat.has("free_context") or combat.campaign_cursor in FlightStages.FACTIONS else (4 if actor.get("population_group")=="travel" else 0)))
+		if actor.get("population_group") not in ["freighter","capital","debris","static"]:keys.append("npc%d"%int(actor.actor_id))
+	# An admitted contract cast starts in the modes its recipe constructed.
+	var recipe_cast: bool=mission_context!=null and not mission_context.contract_context().is_empty()
+	return _configure_owners(bindings,combat,seed_seconds,keys,actors.map(func(actor):return int(actor.actor_mode) if recipe_cast or actor.get("authored_story",false) or combat.has("free_context") or combat.campaign_cursor in FlightStages.FACTIONS else (4 if actor.get("population_group")=="travel" else 0)))
 
 func presentation_identity() -> RefCounted:return _presentation_identity
 
@@ -149,7 +153,7 @@ func advance(player_root: Variant,delta_ms: Variant) -> bool:
 	error=""
 	if _identity.is_empty() or not Flight.rigid_pose(player_root) or not Numbers.integer(delta_ms,0,1000):return reject("Damage effects require a finite player root and bounded whole milliseconds")
 	if delta_ms==0:return true
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	var interval: int=next._manager_ms+int(delta_ms)
 	next._births={}
 	# Smoke and fire managers traverse registered owners independently. All eight
@@ -158,7 +162,7 @@ func advance(player_root: Variant,delta_ms: Variant) -> bool:
 		for key in _emitters:
 			var pose: Transform3D=player_root if key=="player" else _roots[int(key.trim_prefix("npc"))]
 			var emitter: RefCounted=next._emitters[key][preset_index]
-			var event: Dictionary=emitter.advance(pose,delta_ms,interval)
+			var event: Dictionary=emitter.advance_in_frame(pose,delta_ms,interval)
 			if event.has("error"):return reject(emitter.error)
 			if not next._births.has(key):next._births[key]=[0,0]
 			next._births[key][preset_index]=int(event.births)
@@ -175,7 +179,7 @@ func apply_controller(escape: Dictionary) -> bool:
 		if escape.get(key)!=_identity[key]:return reject("Damage effect cues belong to another opening")
 	var frame: Variant=escape.get("frame")
 	if not frame is Dictionary or not frame.get("world_change",{}) is Dictionary or not frame.get("ship_restore",false) is bool:return reject("Invalid damage effect controller cues")
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	if not frame.get("world_change",{}).is_empty():
 		# Source relocation resets fire then smoke, keeping registrations, RNG,
 		# ring cursors, flags and the shared manager clock.
@@ -190,7 +194,7 @@ func finish_npc_pass(before: Dictionary,after: Dictionary,events: Array,delta_ms
 	if _npc_count==0 and _identity.get("campaign_cursor")==2:return reject("First mining has no NPC smoke/fire pass")
 	if _identity.is_empty() or not valid_combat(before) or not valid_combat(after) or events.size()!=_npc_count or not Numbers.integer(delta_ms,0,1000):return reject("Damage effects require the ordered NPC pass")
 	if not (detail is float or detail is int) or not is_finite(detail) or detail<0 or detail>1:return reject("Damage effects require the world detail value")
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	for id in _npc_count:
 		var event: Variant=events[id]
 		if not event is Dictionary or event.get("actor_id")!=id or not event.get("decision") is Dictionary or not event.get("movement") is Dictionary or not event.get("destruction",{}) is Dictionary:return reject("Invalid NPC effect event")
@@ -253,6 +257,9 @@ func valid_combat(combat: Dictionary) -> bool:
 func npc_root(actor_id: int) -> Transform3D:
 	return _roots[actor_id] if actor_id>=0 and actor_id<_roots.size() else Transform3D.IDENTITY
 
+func elapsed_ms() -> int:return _elapsed_ms
+
+## `shared` observations reuse read-only particle slots instead of copying them.
 func snapshot(shared:=false) -> Dictionary:
 	if _identity.is_empty():return {}
 	var result:=_identity.duplicate()
@@ -269,6 +276,7 @@ func snapshot(shared:=false) -> Dictionary:
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
+	copy._txn=FrameTransaction.current
 	copy._identity=_identity.duplicate();copy._rules=_rules.duplicate(true)
 	for key in _emitters:
 		copy._emitters[key]=[]

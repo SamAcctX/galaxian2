@@ -1,11 +1,15 @@
 extends RefCounted
 ## Original ship setup for accepted early contracts.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
 const Encounters=preload("res://src/content/contract_encounter_definitions.gd")
 const ControlRules=preload("res://src/content/combat_training_control_definitions.gd")
 const Vitals=preload("res://src/simulation/combat_vitals.gd")
 const Transit=preload("res://src/content/convoy_transit_definitions.gd")
 const VALUES = {"scope":"mido_contract_ship_combat","campaign_cursor":13,"mission_kinds":[4,12],"weapons":{"rank_offset":-2,"rank_multiplier":0.8999999761581421,"rank_level_min":0,"rank_level_max":20,"scaled_level_max":22,"zero_level_damage":3,"damage_offset":2,"game_difficulty_offset":-0.5,"category":0,"capacity":4,"lifetime_ms":3000,"interval_base_ms":600,"interval_cursor_multiplier":-2,"speed":16.0,"rival_speed":28.0,"rival_adds_rank_to_damage":true,"factions":[{"actor_kind":0,"item_id":0,"kind":0,"catalogue_kind":0,"model_resource_id":6754},{"actor_kind":1,"item_id":3,"kind":0,"catalogue_kind":0,"model_resource_id":6760},{"actor_kind":2,"item_id":7,"kind":0,"catalogue_kind":0,"model_resource_id":6764},{"actor_kind":3,"item_id":25,"kind":0,"catalogue_kind":2,"model_resource_id":6802},{"actor_kind":8,"item_id":19,"kind":1,"catalogue_kind":1,"model_resource_id":6795}]},"player_target_id":-1,"initial_target_index":0,"challenge_player_last_for_odd_actor_ids":true,"rival":{"initial_mode":0,"initial_active":true,"initial_targeting_blocked":false,"boost_enabled":false,"motion_speed":2.0,"initial_hostile":false,"updated_hostile":false,"friendly":true},"pirate":{"initial_hostile":false,"updated_hostile":true,"friendly":false,"boost_enabled":true}}
+## After the main game is won (cursor above 44) guns use mission 45 for
+## their firing interval.
+const WON_CURSOR:=45
 const SPANS = {"ship_combat_weapon_level":[54868,245],"ship_combat_damage":[55500,423],"ship_combat_weapon_factions":[55923,217],"ship_combat_special_guards":[56140,1125],"ship_combat_weapon_constructor":[57315,197],"ship_combat_weapon_table":[58994,44],"ship_combat_targets":[59632,1421],"ship_combat_boost_gate":[621413,474],"ship_combat_hostility":[610958,487],"ship_combat_speed_initialization":[606944,55],"ship_combat_motion_speed":[627033,118],"ship_combat_level_constants":[1575346,12]}
 
 const MAC_SPANS = {"ship_combat_weapon_level":[54868,245],"ship_combat_damage":[55500,423],"ship_combat_weapon_factions":[55923,217],"ship_combat_special_guards":[56140,1125],"ship_combat_weapon_constructor":[57315,197],"ship_combat_weapon_table":[58994,44],"ship_combat_targets":[59632,1421],"ship_combat_boost_gate":[621961,474],"ship_combat_hostility":[611506,487],"ship_combat_speed_initialization":[607492,55],"ship_combat_motion_speed":[627581,118],"ship_combat_level_constants":[1550410,12]}
@@ -24,9 +28,10 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 	for key in ["base_content_id","binding_id"]:
 		if packet.get(key)!=bindings.get(key) or context.get(key)!=bindings.get(key):return {}
 	if not is_instance_of(capability,load("res://src/simulation/mission_context.gd")) or not capability.matches_contract_population(bindings,packet):return {}
-	if actors.is_empty():return {}
 	var mission: Dictionary=source.mission
 	var cast: Dictionary=capability.recipe().cast
+	# Only a recipe that declares no ships (an incoming call) flies an empty cast.
+	if actors.is_empty() and int(cast.actor_count)!=0:return {}
 	var debris: Dictionary={}
 	if int(cast.debris_count)>0:
 		debris=load("res://src/content/contract_junk_definitions.gd").population(bindings,packet,capability)
@@ -50,6 +55,24 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 			data.actor_policies.append({})
 			continue
 		var options: Dictionary=load("res://src/content/mission_recipe.gd").contract_ship_options(cast,id,int(source.unused_enemy_faction),int(context.client_faction))
+		# A cast static object (e.g. the Valkyrie pirate outpost): no hull
+		# catalogue entry, no weapon; its placement was admitted at entry.
+		if not options.get("static_object",{}).is_empty():
+			if not actor is Dictionary or actor.get("actor_id")!=id or actor.get("population_group")!="static" or actor.get("static_model")!=int(options.static_object.model) or actor.get("actor_kind")!=options.faction or actor.get("hull_catalogue_id")!=-1:return {}
+			for key in options.ship_state:
+				if actor.get(key)!=options.ship_state[key]:return {}
+			var fixed: Dictionary=rules.pirate.duplicate(true)
+			fixed.merge(options.policy,true)
+			data.actor_policies.append(fixed)
+			data.actor_kinds.append(options.faction);data.hull_catalogue_ids.append(-1);data.player_weapon_targets.append(id)
+			var gun:={"unarmed":true}
+			var turret: Dictionary=load("res://src/content/static_object_definitions.gd").rules(int(options.static_object.model)).get("turret",{})
+			if not turret.is_empty():
+				gun=turret_weapon(rules.weapons,context.campaign_cursor,context.rank,float(context.difficulty),options.faction,turret.weapon)
+				if gun.is_empty():return {}
+			gun.merge({"actor_id":id,"actor_kind":options.faction,"hull_catalogue_id":-1},true)
+			data.npc_weapons.append(gun)
+			continue
 		var rival: bool=options.rival
 		if not actor is Dictionary or actor.get("actor_id")!=id or actor.get("subtype")!=options.subtype or actor.get("population_group")!=options.population_group:return {}
 		var faction: Variant=actor.get("actor_kind")
@@ -59,7 +82,9 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 		if freighter:
 			var population=load("res://src/content/free_population_definitions.gd")
 			if hull!=population.freighter_hull(bindings,faction) or not population.freighter_assembly_matches(bindings,faction,actor.get("assembly")) or not actor.get("world_flag",false):return {}
-		elif not hull is int or hull<0 or hull>=hulls.factions.size() or int(hulls.factions[hull])!=faction or (faction!=1 and hull<=int(hulls.mask_limit) and (int(hulls.excluded_mask)>>hull)&1):return {}
+		# A story recipe that names its hull (e.g. Khador's prototype) is trusted;
+		# generated ships must come from their faction's pool.
+		elif not hull is int or hull<0 or (hull!=int(options.hull_catalogue_id) and (hull>=hulls.factions.size() or int(hulls.factions[hull])!=faction or (faction!=1 and hull<=int(hulls.mask_limit) and (int(hulls.excluded_mask)>>hull)&1))):return {}
 		if rival and (actor.get("friendly")!=true or actor.get("name","").is_empty() or actor.name!=context.get("contact_name") or actor.get("current_hull_override")!=9999999):return {}
 		if not rival:
 			for key in options.ship_state:
@@ -72,13 +97,33 @@ static func population(bindings: RefCounted,packet: Dictionary,capability: RefCo
 			policy.initial_hostile=standing.hostile;policy.updated_hostile=standing.hostile;policy.friendly=standing.friendly
 		data.actor_policies.append(policy)
 		data.actor_kinds.append(faction);data.hull_catalogue_ids.append(hull);data.player_weapon_targets.append(id)
-		var weapon:={"unarmed":true,"actor_kind":faction} if freighter else shared_weapon(rules.weapons,context.campaign_cursor,context.rank,float(context.difficulty),faction,bool(options.ship_state.get("enhanced_weapon",rival)))
+		var weapon:={"unarmed":true,"actor_kind":faction} if freighter else void_weapon(bindings,context.campaign_cursor,context.rank,float(context.difficulty)) if faction==VOID_RACE else shared_weapon(rules.weapons,context.campaign_cursor,context.rank,float(context.difficulty),faction,bool(options.ship_state.get("enhanced_weapon",rival)))
 		if weapon.is_empty():return {}
+		# gun_damage_scale: a story ship's stronger gun (Most Wanted: x4).
+		if int(options.get("gun_damage_scale",1))!=1:weapon.damage=weapon.damage*int(options.gun_damage_scale)
+		# gun_item: a story ship's own gun item (Most Wanted). It fires that
+		# item's shot at the ship's ordinary strength; an item with no shot
+		# model keeps the faction gun (assumption).
+		var own:=int(options.get("gun_item",-1))
+		var shots: Array=bindings.mido_travel.get("ordinary_fitting",{}).get("primary",{}).get("projectile_model_ids",[])
+		if own>=0 and own<shots.size() and int(shots[own])>=0 and not weapon.has("unarmed"):
+			weapon.merge({"item_id":own,"catalogue_kind":-1,"model_resource_id":int(shots[own]),"own_gun":true},true)
+		# second_gun: a Most Wanted board leader (hulls 45-48) also carries a
+		# rocket and swaps between it and his gun every 20 s.
+		if options.get("second_gun",false) and not weapon.has("unarmed"):weapon.second_gun=WANTED_ROCKET.duplicate()
 		weapon.actor_id=id;weapon.hull_catalogue_id=hull;data.npc_weapons.append(weapon)
 	data.target_memberships=target_memberships(data.actor_kinds,cast.player_last_ids)
+	data.companion_player_last_ids=cast.player_last_ids.duplicate()
+	data.companion_player_only_ids=cast.player_only_ids.duplicate()
 	for id in cast.player_only_ids:data.target_memberships[id]=[int(data.player_target_id)]
 	for id in int(cast.debris_count):data.target_memberships[id]=[]
 	return data
+
+## The board leaders' rocket (verified Level::assignGuns, PlayerFighter::update):
+## item 31, the gun's (x4) damage, one shot per 3 s, 10 s life. The original
+## names rocket model 14240, which no pack declaration resolves; item 31's
+## own shot (14247, the player's rocket) is drawn instead (assumption).
+const WANTED_ROCKET:={"item_id":31,"catalogue_kind":-1,"model_resource_id":14247,"speed_units_per_millisecond":8.0,"lifetime_ms":10000,"interval_ms":3000,"projectile_capacity":4,"own_gun":true,"switch_ms":20000}
 
 ## Shared unattached-actor membership, before live target selection. The
 ## caller resolves the original mission's player-last exceptions explicitly.
@@ -94,27 +139,69 @@ static func target_memberships(kinds: Array,player_last_ids: Array=[]) -> Array:
 	return result
 
 static func weapon_for(data: Dictionary,rank: int,difficulty: float,faction: int,rival: bool) -> Dictionary:
-	if not parameters(data) or rank<0 or rank>20 or difficulty not in [0.5,1.0] or (rival and faction not in [0,1,2,3]) or (not rival and faction!=8):return {}
+	if not parameters(data) or rank<0 or rank>20 or not Difficulty.valid(difficulty) or (rival and faction not in [0,1,2,3]) or (not rival and faction!=8):return {}
 	return shared_weapon(data.weapons,int(data.campaign_cursor),rank,difficulty,faction,rival)
 
+## The alien world's fighters (race 9) in a story cast (154) fire the Void
+## weapon at its own damage multiplier, the way the ordinary Void flight arms them.
+const VOID_RACE:=9
+static func void_weapon(bindings: RefCounted,cursor: int,rank: int,difficulty: float) -> Dictionary:
+	var weapon:=scaled_parameters(bindings.early_contracts.ship_combat.weapons,cursor,rank,difficulty)
+	var original: Dictionary=bindings.mido_travel.get("sahi_encounter",{}).get("weapons",{}).get("void",{})
+	if weapon.is_empty() or original.is_empty():return {}
+	for key in ["item_id","kind","catalogue_kind","model_resource_id"]:weapon[key]=int(original[key])
+	weapon.actor_kind=VOID_RACE
+	weapon.damage=int(Vitals.single(Vitals.single(float(weapon.damage))*float(original.damage_multiplier)))
+	return weapon
+
+## Races past the imported table (verified Level::assignGuns): Supernova's
+## stealth ships (race 10) fire item 229 with its own projectile at 0.7x the
+## ordinary damage. catalogue_kind -1: the item's own catalogue kind.
+const EXTRA_FACTIONS:=[{"actor_kind":10,"item_id":229,"kind":0,"catalogue_kind":-1,"model_resource_id":19091,"damage_scale":0.7}]
+static func factions(rules: Dictionary) -> Array:return rules.factions+EXTRA_FACTIONS
+
+## A story ship's own gun item fires with the item's catalogue gun type:
+## type 1 shots face the camera (like the pirates' item 19), others are meshes.
+static func own_gun_kind(item: Dictionary) -> int:
+	var fields: Array=item.get("arrays",[[],[],[]])[2]
+	return 1 if fields.size()>5 and int(fields[5])==1 else 0
+
+## Every NPC gun's shot model: the faction guns plus static objects' turret guns.
+static func gun_rows(rules: Dictionary) -> Array:
+	var rows:=factions(rules)
+	var statics: Dictionary=load("res://src/content/static_object_definitions.gd").MODELS
+	for model in statics:
+		if statics[model].has("turret"):rows.append(statics[model].turret.weapon)
+	return rows
+
 static func shared_weapon(rules: Dictionary,cursor: int,rank: int,difficulty: float,faction: int,enhanced:=false) -> Dictionary:
-	if not Equal.equal_value(rules,VALUES.weapons) or cursor<0 or cursor>2147483647 or rank<0 or rank>20 or difficulty not in [0.5,1.0] or faction not in [0,1,2,3,8]:return {}
-	for source in rules.factions:
+	if not Equal.equal_value(rules,VALUES.weapons) or cursor<0 or cursor>2147483647 or rank<0 or rank>20 or not Difficulty.valid(difficulty) or faction not in [0,1,2,3,8,10]:return {}
+	for source in factions(rules):
 		if int(source.actor_kind)!=faction:continue
 		var row:=scaled_parameters(rules,cursor,rank,difficulty,enhanced)
 		for key in ["actor_kind","item_id","kind","catalogue_kind","model_resource_id"]:row[key]=int(source[key])
+		if source.has("damage_scale"):row.damage=int(float(row.damage)*float(source.damage_scale))
 		return row
 	return {}
+
+## A static object's turret gun: the faction's ordinary level arithmetic with
+## the turret's own item, shot and damage scale.
+static func turret_weapon(rules: Dictionary,cursor: int,rank: int,difficulty: float,faction: int,gun: Dictionary) -> Dictionary:
+	var row:=shared_weapon(rules,cursor,rank,difficulty,faction)
+	if row.is_empty():return {}
+	for key in ["item_id","kind","catalogue_kind","model_resource_id"]:row[key]=int(gun[key])
+	row.damage=int(float(row.damage)*float(gun.get("damage_scale",1.0)))
+	return row
 
 static func scaled_parameters(rules: Dictionary,cursor: int,rank: int,difficulty: float,enhanced:=false) -> Dictionary:
 	# Shared factory arithmetic only. The encounter still supplies a verified
 	# faction, ship and any authored damage override before creating a gun.
 	# A cursor scales the authored firing interval; it does not grant flight.
-	if not Equal.equal_value(rules,VALUES.weapons) or cursor<0 or cursor>2147483647 or rank<0 or rank>20 or difficulty not in [0.5,1.0]:return {}
+	if not Equal.equal_value(rules,VALUES.weapons) or cursor<0 or cursor>2147483647 or rank<0 or rank>20 or not Difficulty.valid(difficulty):return {}
 	var level:=int(clampf(Vitals.single(float(rank+int(rules.rank_offset))*float(rules.rank_multiplier)),float(rules.rank_level_min),float(rules.rank_level_max)))
 	level=mini(int(rules.scaled_level_max),int(Vitals.single(float(level)+Vitals.single(float(level)*Vitals.single(difficulty+float(rules.game_difficulty_offset))))))
 	var damage:=int(rules.zero_level_damage) if level==0 else level+int(rules.damage_offset)
 	if enhanced:damage+=rank
 	return {"category":int(rules.category),"damage":damage,"projectile_capacity":int(rules.capacity),"lifetime_ms":int(rules.lifetime_ms),
-		"interval_ms":int(rules.interval_base_ms)+cursor*int(rules.interval_cursor_multiplier),
+		"interval_ms":int(rules.interval_base_ms)+mini(cursor,WON_CURSOR)*int(rules.interval_cursor_multiplier),
 		"speed_units_per_millisecond":float(rules.rival_speed if enhanced else rules.speed),"nonplayer_source":true}

@@ -54,7 +54,7 @@ func verify(args: Array) -> void:
 	else:
 		check(not before.station_response_flags.is_empty() and initialized.entry_owner().snapshot().station_response_flags==before.station_response_flags,"Selected flight or portal entry lost the earned nonempty station history")
 		await verify_component(initialized)
-	check(station.snapshot()==before and archive.capture(station,bindings)==document,"Escape component changed the earned station/save")
+	check(station.snapshot()==before and preload("res://tests/fixtures/save_compare.gd").matches_older(archive.capture(station,bindings),document),"Escape component changed the earned station/save")
 
 func component_station(station: RefCounted) -> RefCounted:
 	return station

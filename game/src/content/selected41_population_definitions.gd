@@ -1,6 +1,7 @@
 extends RefCounted
 ## The first native cinematic transaction only. Later event5 stages remain
 ## closed until their full freighter/effect/player consumers are composed.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const ATTACK_OFFSETS=[[-40000,500,-30000],[-41000,-200,-31000],[-42000,100,-32000]]
 const ATTACK_CAMERA_OFFSET=[-38000,0,-30200]
 ## Source41 has its own eight-actor construction. In particular the new
@@ -104,7 +105,7 @@ static func context_valid(bindings: RefCounted,context: Dictionary) -> bool:
 	if not available(bindings):return false
 	for key in ["base_content_id","binding_id"]:
 		if context.get(key)!=bindings.get(key):return false
-	return context.get("campaign_cursor")==41 and context.get("station_id")==-1 and context.get("system_id")==-1 and context.get("mission_kind")==4 and context.get("mission_story")==true and context.get("mission_completed")==false and context.get("mission_failed")==false and Numbers.integer(context.get("rank"),0,20) and context.get("difficulty") in [0.5,1.0] and Numbers.integer(context.get("retained_freighter_hull"),-2147483648,2147483647)
+	return context.get("campaign_cursor")==41 and context.get("station_id")==-1 and context.get("system_id")==-1 and context.get("mission_kind")==4 and context.get("mission_story")==true and context.get("mission_completed")==false and context.get("mission_failed")==false and Numbers.integer(context.get("rank"),0,20) and Difficulty.valid(context.get("difficulty")) and Numbers.integer(context.get("retained_freighter_hull"),-2147483648,2147483647)
 
 static func construction_recipe(bindings: RefCounted,context: Dictionary) -> Dictionary:
 	if not context_valid(bindings,context):return {}

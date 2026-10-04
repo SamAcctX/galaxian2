@@ -10,8 +10,8 @@ static func checked_slots(bindings: RefCounted,catalogues: RefCounted,loadout: D
 	var stats: Dictionary=catalogues.ship_stats(ship_id)
 	var counts:=[];var total:=0
 	for property in Categories.SLOT_PROPERTIES:
-		var count: Variant=stats.get(property)
-		if not Definitions.integer(count,0,255):return {}
+		if not Definitions.integer(stats.get(property),0,255):return {}
+	for count in Categories.slot_counts(stats,loadout):
 		counts.append(count);total+=count
 	var slots: Variant=loadout.get("slots")
 	if not slots is Array or slots.size()!=total:return {}

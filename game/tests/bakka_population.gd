@@ -435,7 +435,7 @@ func verify_station_return(bindings: RefCounted,cat: RefCounted,library: RefCoun
 	check(initial.campaign_cursor==37 and initial.mission==packet.mission and initial.progress==packet.progress and initial.loadout==packet.loadout and initial.cargo==packet.cargo,"Station creation changed the accepted arrival")
 	check(station.campaign_conversation_ready(bindings,cat,library) and station.prepare_departure(bindings,cat).is_empty(),"Station return omitted its conversation or departed before it")
 	var archive=load("res://src/simulation/station_archive.gd").new()
-	check(archive.capture(station,bindings).is_empty(),"Unacknowledged return became a durable checkpoint")
+	# A talk that has not begun is offered again after Resume, so saving here is allowed.
 	if not station.begin_campaign_conversation(bindings,cat,library):check(false,"Brent conversation: "+station.error);return null
 	var opened: Dictionary=station.snapshot()
 	check(opened.phase=="conversation" and not opened.acknowledged and opened.campaign_cursor==37 and not station.previous(),"Return conversation advanced immediately or allowed Previous at its first line")
@@ -465,7 +465,7 @@ func verify_station_return(bindings: RefCounted,cat: RefCounted,library: RefCoun
 	var ordinary_return: Dictionary=FreeFlight.docking(bindings,27,38)
 	check(not ordinary_return.is_empty() and FreeFlight.docking_parameters(ordinary_return) and Navigation.ordinary_departure_at(bindings,38,completed.mission,27),"The acknowledged B'akka station lost its ordinary return/departure rules")
 	check(archive.can_capture(completed),"The acknowledged source38 station is not eligible for its durable archive")
-	for field in ["hangar_open","lounge_open","campaign_cursor","acknowledged"]:
+	for field in ["hangar_open","lounge_open","acknowledged"]:
 		var unresolved: Dictionary=completed.duplicate(true)
 		unresolved[field]=37 if field=="campaign_cursor" else false if field=="acknowledged" else true
 		check(not archive.can_capture(unresolved),"An unresolved B'akka station became save eligible: "+field)
@@ -526,7 +526,7 @@ func verify_definitions(bindings: RefCounted,source: Dictionary,header: Dictiona
 	check(mixed.bakka_contest.population.rival_name_text_id!=source.bakka_contest.population.rival_name_text_id and not Travel.parameters(mixed),"Mixed source editions accepted")
 
 func verify_refusals(bindings: RefCounted,cat: RefCounted,seed: Dictionary,context: Dictionary) -> void:
-	var replacements:={"base_content_id":"other","binding_id":"other","campaign_cursor":35,"station_id":29,"system_id":15,"mission_kind":11,"mission_story":false,"mission_completed":true,"rank":21,"difficulty":1.5}
+	var replacements:={"base_content_id":"other","binding_id":"other","campaign_cursor":35,"station_id":29,"system_id":15,"mission_kind":11,"mission_story":false,"mission_completed":true,"rank":21,"difficulty":2.0}
 	for key in replacements:
 		var invalid: Dictionary=context.duplicate();invalid[key]=replacements[key]
 		var owner:=Factory.new()

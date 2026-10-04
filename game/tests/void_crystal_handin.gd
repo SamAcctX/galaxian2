@@ -1,6 +1,7 @@
 extends SceneTree
 ## Cargo proposals below exercise a detached inventory owner from a genuine save.
 ## They are not mined cargo, earned mission33 progress, or saved gameplay fixtures.
+const SaveCompare=preload("res://tests/fixtures/save_compare.gd")
 const Library=preload("res://src/content/library.gd")
 const Bindings=preload("res://src/content/resource_bindings.gd")
 const Catalogues=preload("res://src/content/catalogues.gd")
@@ -37,7 +38,7 @@ func verify(args: PackedStringArray) -> void:
 	var before: Dictionary=inventory.snapshot()
 	verify_rows(inventory,before)
 	verify_dialogue(bindings,cat,library,inventory,before.loadout)
-	check(inventory.snapshot()==before and archive.capture(station,bindings)==document,"Component proposals changed the earned parent inventory or career")
+	check(inventory.snapshot()==before and SaveCompare.matches_older(archive.capture(station,bindings),document),"Component proposals changed the earned parent inventory or career")
 	check(file.read_document(args[3])==document,"The immutable earned input file changed")
 	print("Earned input: ship%d, cargo capacity%d; proposals remain detached"%[before.loadout.ship_id,before.cargo.capacity])
 

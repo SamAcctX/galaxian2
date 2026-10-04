@@ -18,6 +18,11 @@ class DetachedBindings extends RefCounted:
 	var engine_particle_owners: Dictionary
 	var engine_particles: Dictionary
 	var damage_particles: Dictionary
+	# Hull ownership is the shared base-player-hull check (stock factory).
+	var early_contracts: Dictionary
+	var opening_loadout: Dictionary
+	var station_entry: Dictionary
+	var deep_science_stock: Dictionary
 
 var library:=Library.new()
 var catalogues:=Catalogues.new()
@@ -64,12 +69,24 @@ func load_fixture(args: PackedStringArray) -> bool:
 	fixture.engine_particle_owners=owner.duplicate(true)
 	fixture.engine_particles=bindings.engine_particles.duplicate(true)
 	fixture.damage_particles=bindings.damage_particles.duplicate(true)
+	for key in ["early_contracts","opening_loadout","station_entry","deep_science_stock"]:
+		var value: Variant=bindings.get(key)
+		fixture.set(key,value.duplicate(true) if value is Dictionary else {})
 	return true
 
 func configured() -> RefCounted:
 	var owner:=Owner.new()
 	check(owner.configure(fixture,mounts,0,73),owner.error)
 	return owner
+
+## An NPC-only prototype hull the player can never fly.
+## Excluded from the stock draw and not a fixed first ship, Vossk or gold hull.
+func npc_only_hull() -> int:
+	var ships: Dictionary=fixture.early_contracts.base_station_stock.ships
+	var allowed: Array=[int(ships.vossk_ship_id),int(fixture.deep_science_stock.get("all_base_gold_ship_id",-1))]+ships.fixed_first_ships.values().map(func(id):return int(id))
+	for id in ships.selection_excluded_ids:
+		if int(id) not in allowed:return int(id)
+	return -1
 
 func pose(z: float) -> Transform3D:return Transform3D(Basis.IDENTITY,Vector3(0,0,z))
 
@@ -86,7 +103,7 @@ func verify_definitions():
 	check(Definitions.validate({},source_bytes,"x86_64",bindings.arrival_staging,bindings.engine_particles).is_empty(),"Retained content lost its optional declaration boundary")
 	var legacy:=fixture.engine_particle_owners
 	fixture.engine_particle_owners={}
-	check(Definitions.available_for(fixture,0) and not Definitions.available_for(fixture,10),"Legacy Mac nozzle declaration did not enable Betty alone")
+	check(Definitions.available_for(fixture,0) and not Definitions.available_for(fixture,npc_only_hull()),"Legacy Mac nozzle declaration did not enable player hulls alone")
 	fixture.engine_particle_owners=legacy
 	check(not Definitions.validate(data,source_bytes,"armv7",bindings.arrival_staging,bindings.engine_particles).is_empty(),"Deferred architecture inherited Mac owner gates")
 
@@ -173,7 +190,7 @@ func verify_transactional_lifetime():
 	check(not owner.advance(Transform3D(Basis.from_scale(Vector3(2,1,1)),Vector3.ZERO),10) and owner.snapshot()==accepted,"Nonrigid statistics pose changed accepted exhaust")
 	check(not owner.advance(pose(2e10),1000) and owner.snapshot()==accepted,"Out-of-range source birth count partially committed emitters or clocks")
 	check(not owner.set_engine_enabled(1) and not owner.set_player_hidden(null) and owner.snapshot()==accepted,"Invalid manager flags changed accepted state")
-	check(not owner.configure(fixture,mounts,1,73) and owner.snapshot()==accepted and owner.presentation_identity()==identity,"Unsupported hull replaced accepted exhaust")
+	check(not owner.configure(fixture,mounts,npc_only_hull(),73) and owner.snapshot()==accepted and owner.presentation_identity()==identity,"Unsupported hull replaced accepted exhaust")
 	check(not owner.configure(fixture,mounts,0,0.5) and owner.snapshot()==accepted,"Invalid seed replaced accepted exhaust")
 	var declarations: Dictionary=fixture.engine_particle_owners
 	fixture.engine_particle_owners={}

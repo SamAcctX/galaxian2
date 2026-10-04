@@ -50,7 +50,7 @@ func build(library: RefCounted, visuals: RefCounted, bindings: RefCounted, descr
 		models.append(model);add_child(model)
 		var sampler := Sampler.new()
 		if not sampler.configure(model.surfaces):release_owned(resources,owns_resources);return reject(sampler.error)
-		var timing: Dictionary=sampler.snapshot().range
+		var timing: Dictionary=sampler.time_range()
 		if timing.start_ms!=descriptor.models[index].start_ms or timing.end_ms!=descriptor.models[index].end_ms:
 			release_owned(resources,owns_resources);return reject("Scenery effect descriptor differs from its animation data")
 		for surface_index in model.surfaces.size():
@@ -116,11 +116,12 @@ func prepare_effect(effect: RefCounted, camera: Transform3D, parent_rgba: Packed
 		var sampler: RefCounted=_samplers[index].fork_for_frame()
 		var sampled: Dictionary=sampler.sample(state.models[index].time_ms,roots.alpha if index==0 else roots.breakup)
 		if sampled.is_empty():return failed_frame(sampler.error)
-		for surface in sampled.surfaces:
+		var tinted: Array=sampled.surfaces.map(func(row):return row.duplicate())
+		for surface in tinted:
 			var color := tint(parent_rgba,global_tint,surface.get("color_byte",-1))
 			if color.is_empty():return failed_frame("Scenery effect color exceeds source precision")
 			surface.tint=color.value
-		staged.append(sampled.surfaces);samplers.append(sampler)
+		staged.append(tinted);samplers.append(sampler)
 	return {"visible":true,"identity":effect.presentation_identity(),"surfaces":staged,
 		"samplers":samplers,"darken":single(darken_value) if _edition=="mac-full-hd" else 1.0}
 

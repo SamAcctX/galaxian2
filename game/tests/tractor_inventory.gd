@@ -83,7 +83,7 @@ func verify_save(args: PackedStringArray) -> void:
 		check(archive.restore(bindings,cat,library,forged)==null,"A forged inventory cache marker was accepted")
 		forged=data.duplicate(true);forged.station.cargo_cache_stale=not stale
 		check(archive.restore(bindings,cat,library,forged)==null,"Station and inventory cache markers could disagree")
-		check(station.snapshot()==original and archive.capture(station,bindings)==record,"Detached retention checks changed the actual earned input")
+		check(station.snapshot()==original and SaveCompare.matches_older(archive.capture(station,bindings),record),"Detached retention checks changed the actual earned input")
 	check(station.snapshot()==original,"Recovery checks mutated the original station")
 	if RecoveryDefs.available(bindings):
 		var fitted:=verify_device_stock(bindings,cat,library,station)
@@ -124,7 +124,8 @@ func verify_device_stock(bindings: RefCounted,cat: RefCounted,library: RefCounte
 	var reversal: RefCounted=restored.fork()
 	if not reversal.open_equipment(bindings,cat,library,[1789100000,1789100000,1789100000]):check(false,reversal.error);return null
 	if not reversal.equipment_action("unmount",81,bindings,cat,armor) or not reversal.equipment_action("mount",armor_id,bindings,cat) or not reversal.close_equipment():check(false,reversal.error);return null
-	check(reversal.snapshot().loadout==original.loadout and reversal.snapshot().cargo==original.cargo,"Removing the scanner failed to restore the actual owned inventory")
+	# Opening the hangar records the ship_instance a pre-exchange save lacks.
+	check(SaveCompare.matches_older(reversal.snapshot().loadout,original.loadout) and reversal.snapshot().cargo==original.cargo,"Removing the scanner failed to restore the actual owned inventory")
 	check(station.snapshot()==original,"The fitted branch changed the retained paid save")
 	print("Earned scanner fitting: original cargo, armor exchange, passenger retention, save/load and departure passed")
 	return restored

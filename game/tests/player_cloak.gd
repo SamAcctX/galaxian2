@@ -15,8 +15,28 @@ func run() -> void:
 		verify_timing()
 		verify_appearance()
 		verify_cargo()
+		verify_time_extender()
 	print("Player cloaking: %d checks; %d failures"%[checks,failures])
 	quit(1 if failures else 0)
+
+func verify_time_extender() -> void:
+	var Extender=preload("res://src/simulation/time_extender.gd")
+	var items: Array=catalogues.tables.items
+	var ids:=range(items.size())
+	var id: int=Extender.find(items,ids)
+	check(id>=0,"No Time Extender in the catalogue")
+	if id<0:return
+	var owner=Extender.new()
+	check(owner.configure(items,[95,id]) and owner.item_id==id and owner.duration_ms>0,"The Time Extender did not read its duration")
+	check(owner.scale(100)==100 and owner.press()==Extender.START_SOUND and owner.snapshot().active,"A ready Time Extender did not start")
+	var world:=0
+	for i in 10:world+=owner.scale(10)
+	check(world==30,"An active Time Extender did not slow the world to 30%%: %d"%world)
+	check(owner.advance(owner.duration_ms)==Extender.STOP_SOUND and owner.phase=="cooldown","The Time Extender did not run out")
+	check(owner.press()==Extender.DENIED_SOUND and owner.scale(100)==100,"A cooling Time Extender restarted or slowed time")
+	owner.advance(owner.cooldown_ms)
+	check(owner.phase=="ready" and owner.press()==Extender.START_SOUND and owner.press()==Extender.STOP_SOUND and owner.phase=="cooldown","A second press did not cancel the Time Extender")
+	print("Time Extender %d: %d ms, cooldown %d ms"%[id,owner.duration_ms,owner.cooldown_ms])
 
 func configured(ids: Array=[95],ship:=0,difficulty:=0.5) -> RefCounted:
 	var owner:=Cloak.new();check(owner.configure(bindings,catalogues,ids,ship,difficulty),owner.error)

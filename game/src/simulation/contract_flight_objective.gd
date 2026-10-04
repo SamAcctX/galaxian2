@@ -7,6 +7,7 @@ const World=preload("res://src/content/contract_world_definitions.gd")
 const FreeFlight=preload("res://src/content/free_flight_definitions.gd")
 const Visit=preload("res://src/simulation/campaign_visit.gd")
 const Kappa=preload("res://src/content/kappa_population_definitions.gd")
+const MiningExtraction=preload("res://src/simulation/mining_extraction.gd")
 var error:=""
 var _state:={}
 var _contracts: RefCounted
@@ -15,6 +16,10 @@ var _visit: RefCounted
 var _bindings: RefCounted
 var _rescue_result:=false
 var _result_observation: RefCounted
+var _wingman_cast:={}
+var _wingman_losses:={}
+var _initial_asteroids_destroyed:=0
+var _asteroids_destroyed:=0
 
 func configure(bindings: RefCounted,construction: RefCounted,encounter: RefCounted,library: RefCounted=null) -> bool:
 	error=""
@@ -22,7 +27,9 @@ func configure(bindings: RefCounted,construction: RefCounted,encounter: RefCount
 	var entry: Dictionary=construction.snapshot()
 	var contracts: RefCounted=construction.contract_owner()
 	var rescue:=Kappa.prepared_entry(bindings,entry)
-	if contracts==null or not (World.ordinary_entry(bindings,entry) or FreeFlight.ordinary_entry(bindings,entry) or rescue):return reject("The objective lost its prepared encounter or retained career")
+	var mission_context: RefCounted=construction.mission_context_owner()
+	var void_story: bool=mission_context!=null and mission_context.void_story()
+	if contracts==null or not (World.ordinary_entry(bindings,entry) or FreeFlight.ordinary_entry(bindings,entry) or rescue or void_story):return reject("The objective lost its prepared encounter or retained career")
 	var visit: RefCounted
 	if rescue:
 		visit=Visit.new()
@@ -38,8 +45,11 @@ func configure(bindings: RefCounted,construction: RefCounted,encounter: RefCount
 		"combat_objective_satisfied":false,"combat_objective_acknowledged":false,"mining_completed":false,
 		"reward_credits":0,"dialogue":{"visible":false,"index":0,"count":0,"previous_available":false}}
 	_contracts=contracts;_field_identity=construction.scenery_owner().presentation_identity()
+	_initial_asteroids_destroyed=int(contracts.snapshot().get("progress",{}).get("asteroids_destroyed",0));_asteroids_destroyed=0
 	_visit=visit;_bindings=bindings
 	_rescue_result=rescue;_result_observation=null
+	_wingman_cast=contracts.snapshot().get("wingmen",{}).get("active",{}).duplicate(true)
+	_wingman_losses={}
 	return true
 
 func poll_visit(world_ms: int,hud_ms: int,blocked: bool) -> bool:
@@ -80,12 +90,27 @@ func navigate(action: String,encounter: RefCounted) -> bool:
 	_visit=visit
 	return true
 
-func poll_contract(cargo: RefCounted,scenery: RefCounted,encounter: RefCounted,alive: bool,radio_active: bool,periodic_due: bool) -> bool:
+func poll_contract(cargo: RefCounted,scenery: RefCounted,encounter: RefCounted,alive: bool,radio_active: bool,periodic_due: bool,radio_finished: Array=[],world_facts: Dictionary={}) -> bool:
 	error=""
 	if _contracts==null or not encounter is Encounter or cargo.field_identity()!=_field_identity or scenery.presentation_identity()!=_field_identity or not cargo.matches_mined_field(scenery.mining_snapshot()):return reject("The contract objective lost its actual flight field and cargo")
-	var result: Dictionary=encounter.evaluate_contract_session(_contracts,radio_active,alive,periodic_due)
+	if not observe_scenery(scenery):return false
+	var result: Dictionary=encounter.evaluate_contract_session(_contracts,radio_active,alive,periodic_due,radio_finished,world_facts)
 	if result.is_empty():return reject(encounter.error)
 	_contracts=result.session
+	var story: Dictionary=_contracts.story_transition()
+	if not story.is_empty() and story.campaign_cursor!=_state.campaign_cursor:
+		_state.campaign_cursor=int(story.campaign_cursor);_state.mission=story.mission.duplicate(true)
+	return true
+
+func observe_scenery(scenery: RefCounted) -> bool:
+	error=""
+	if _contracts==null or scenery==null or scenery.presentation_identity()!=_field_identity:return reject("Asteroid progress requires this contract flight's retained scenery field")
+	var observed: Variant=scenery.destroyed_count()
+	if not observed is int or observed<_asteroids_destroyed or observed>2147483647:return reject("Asteroid destruction history regressed or exceeded the supported career range")
+	_asteroids_destroyed=observed
+	if _asteroids_destroyed>0 or _contracts.has_progress("asteroids_destroyed"):
+		var total:=_initial_asteroids_destroyed+_asteroids_destroyed
+		if total>2147483647 or not _contracts.retain_asteroid_destruction_total(total):return reject(_contracts.error if not _contracts.error.is_empty() else "Asteroid destruction progress exceeds the supported career range")
 	return true
 
 func observe_combat(encounter: RefCounted) -> bool:
@@ -114,11 +139,50 @@ func retained_for_arrival(encounter: RefCounted) -> RefCounted:
 
 func contract_owner() -> RefCounted:return null if _contracts==null else _contracts.fork()
 
+func advance_wingmen(milliseconds: int) -> bool:
+	if _contracts==null:return reject("Wingman flight time requires the retained career")
+	return true if _contracts.advance_wingmen(milliseconds) else reject(_contracts.error)
+
+## Loma toll career change (contract_session.set_loma_toll) on a private copy.
+func set_loma_toll(status: int,debit:=0) -> bool:
+	error=""
+	if _contracts==null:return reject("The Loma toll requires the retained career")
+	var candidate: RefCounted=_contracts.fork()
+	if not candidate.set_loma_toll(status,debit):return reject(candidate.error)
+	_contracts=candidate
+	return true
+
+## Stable departure indices make a death notification idempotent even when two
+## hired pilots have the same display name. New departures own a new ledger.
+func record_wingman_loss(pilot: RefCounted) -> bool:
+	error=""
+	if _contracts==null or not is_instance_of(pilot,load("res://src/simulation/opening_combat_actor.gd")):return reject("The flight requires its native companion casualty")
+	var body: Dictionary=pilot.snapshot()
+	var index: Variant=body.get("wingman_index")
+	var names: Array=_wingman_cast.get("names",[])
+	if not index is int or index<0 or index>=names.size() or body.get("actor_id")!=index or body.get("name")!=names[index] or body.get("actor_kind")!=_wingman_cast.get("faction"):return reject("The casualty is outside this departure's paid cast")
+	for key in ["base_content_id","binding_id","campaign_cursor"]:
+		if body.get(key)!=_state.get(key):return reject("The casualty belongs to another flight")
+	if not body.get("wingman",false) or body.get("vitals",{}).get("hull",1)!=0:return reject("A living pilot cannot leave as a casualty")
+	if _wingman_losses.has(index):return true
+	var candidate: RefCounted=_contracts.fork()
+	if not candidate.record_wingman_loss(pilot):return reject(candidate.error)
+	_contracts=candidate;_wingman_losses[index]=body.name
+	return true
+
 func result_pending() -> bool:return _contracts!=null and _contracts.result_pending()
+func campaign_cursor() -> int:return -1 if _state.is_empty() else int(_state.campaign_cursor)
 func dialogue_visible() -> bool:return _visit!=null and _visit.snapshot().dialogue.visible
 
 func retain_mining_hint(seen: bool) -> void:
 	_contracts.retain_mining_hint(seen)
+
+func retain_mining_extraction(receipt: Dictionary) -> bool:
+	if _contracts==null:return reject("Mining lifetime progress requires the retained contract career")
+	var candidate: RefCounted=_contracts.fork()
+	if not MiningExtraction.retain_contract_owner(candidate,receipt):return reject("Mining lifetime progress belongs to another contract career")
+	_contracts=candidate
+	return true
 
 func snapshot() -> Dictionary:
 	if _contracts==null:return {}
@@ -136,6 +200,8 @@ func fork_for_frame() -> RefCounted:
 	copy._state=_state.duplicate(true);copy._contracts=null if _contracts==null else _contracts.fork();copy._field_identity=_field_identity
 	copy._visit=null if _visit==null else _visit.fork();copy._bindings=_bindings
 	copy._rescue_result=_rescue_result;copy._result_observation=null if _result_observation==null else _result_observation.fork()
+	copy._wingman_cast=_wingman_cast;copy._wingman_losses=_wingman_losses.duplicate()
+	copy._initial_asteroids_destroyed=_initial_asteroids_destroyed;copy._asteroids_destroyed=_asteroids_destroyed
 	return copy
 
 func reject(message: String) -> bool:error=message;return false

@@ -334,19 +334,19 @@ func configure_selected41(bindings: RefCounted,catalogues: RefCounted,entry: Ref
 
 ## Compose the crystal field and its ordinary Void fighters on one stream.
 ## The owning flight transaction supplies the actual portal-selected context.
-func configure_ordinary_void(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,entry_conditions: Dictionary,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null) -> bool:
+func configure_ordinary_void(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,entry_conditions: Dictionary,unix_seconds: Variant,large_display:=true,body_resources: RefCounted=null,effect_resources: RefCounted=null,player_position:=Vector3.ZERO) -> bool:
 	clear()
 	if not is_instance_of(equipment,load("res://src/simulation/station_equipment.gd")):return reject("Void scenery requires its retained native inventory")
 	var owned: Dictionary=equipment.snapshot()
 	if bindings==null or owned.is_empty() or owned.loadout.get("base_content_id")!=bindings.base_content_id or owned.loadout.get("binding_id")!=bindings.binding_id:return reject("Void scenery inventory belongs to another content identity")
-	var world:=WorldInitialization.new()
-	if not world.configure_void_factory(bindings,catalogues,int(owned.loadout.ship_id),owned.loadout.equipment_ids,context,entry_conditions):return reject(world.error)
 	var population:=Population.new()
 	if not population.configure(bindings):return reject(population.error)
 	var selected_context:=context.duplicate()
 	selected_context.merge(entry_conditions,true)
 	var selected:=population.for_void_crystals(selected_context)
 	if selected.is_empty():return reject(population.error)
+	var world:=WorldInitialization.new()
+	if not world.configure_void_factory(bindings,catalogues,int(owned.loadout.ship_id),owned.loadout.equipment_ids,context,entry_conditions,equipment,player_position,selected.center):return reject(world.error)
 	if not _configure_field(bindings,catalogues,unix_seconds,-1,int(context.campaign_cursor),selected.center,large_display,body_resources,effect_resources):return false
 	if not _finish_world_initialization(world,equipment):
 		var message:=error;clear();return reject(message)
@@ -426,8 +426,9 @@ func read_snapshot() -> Dictionary:
 
 func _build_snapshot(shared:=false) -> Dictionary:
 	if _motion==null:return {}
-	var field: Dictionary = _motion.frame_snapshot() if shared else _motion.snapshot()
-	field.detail=_detail.snapshot()
+	# The shared motion rows stay read-only; this observation adds its own keys.
+	var field: Dictionary = _motion.frame_snapshot().duplicate() if shared else _motion.snapshot()
+	field.detail=_detail.read_snapshot() if shared else _detail.snapshot()
 	if _escape_relocated:field.escape_relocated=true
 	if _bodies!=null:field.bodies=_bodies.read_snapshot() if shared else _bodies.snapshot()
 	field.random_state=_random_state.duplicate(true)
@@ -441,6 +442,9 @@ func _build_snapshot(shared:=false) -> Dictionary:
 		field.remaining_count=_remaining_count;field.destroyed_count=_destroyed_count
 		field.mined_count=_mined_count
 	return field
+
+## The destroyed count a snapshot reports, without building one.
+func destroyed_count() -> int:return 0 if _motion==null or _destruction.is_empty() else _destroyed_count
 
 func random_state() -> Dictionary:return _random_state.duplicate(true)
 

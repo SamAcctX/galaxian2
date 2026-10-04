@@ -101,7 +101,7 @@ static func source_distance(a: Vector3,b: Vector3) -> int:
 	return int(f32(sqrt(squared)))
 
 static func f32(value: float) -> float:
-	return PackedFloat32Array([value])[0]
+	return Vector2(value,0.0).x
 
 func reject(message: String) -> bool:
 	error=message;return false

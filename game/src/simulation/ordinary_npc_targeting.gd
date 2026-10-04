@@ -5,6 +5,10 @@ const Vectors=preload("res://src/simulation/source_vectors.gd")
 
 static func select(state: Dictionary, actor: Dictionary, targets: Array, random: RefCounted, tuning: Dictionary, rules: Dictionary) -> Dictionary:
 	var next:=state.duplicate(true)
+	# A story order (forced target) refreshes like a wingman's attack order.
+	var forced:=int(actor.get("forced_target_actor_id",-1))
+	var commanded: bool=actor.get("wingman",false) and actor.get("wingman_command")==3 or forced>=0
+	var ordered_id:=forced if forced>=0 else int(actor.get("wingman_target_actor_id",-1))
 	var selected:=int(next.target_index)
 	if selected>=targets.size() or selected<0 or not next.fire_desired:selected=-1
 	if selected>=0 and not targets[selected].active:next.fire_desired=false
@@ -19,6 +23,12 @@ static func select(state: Dictionary, actor: Dictionary, targets: Array, random:
 				var candidate: int=random.next_int(targets.size())
 				if targets[candidate].active and in_range(actor,targets[candidate]):
 					selected=candidate;next.fire_desired=true;break
+		# Explicit orders use the retained target identity, not hostile-list order.
+		# The existing refresh still owns range, fire desire and random cadence.
+		if commanded:
+			for index in range(1,targets.size()):
+				if targets[index].actor_id==ordered_id and targets[index].active and not targets[index].get("targeting_blocked",false):
+					selected=index;break
 		if not alive(targets[selected]):
 			selected=-1;next.fire_desired=false
 		elif not in_range(actor,targets[selected]):
@@ -30,12 +40,16 @@ static func select(state: Dictionary, actor: Dictionary, targets: Array, random:
 				selected=index;next.fire_desired=true;break
 	if not actor.hostile and selected==0:
 		selected=1;next.fire_desired=false
-	if selected>0:
+	if selected>0 and not commanded:
 		selected=-1
 		# Scan in retained membership order. Range is deliberately not retested.
 		for index in range(1,targets.size()):
-			if alive(targets[index]) and opposed(int(actor.actor_kind),int(targets[index].actor_kind),rules):
+			var enemy: bool=targets[index].get("hostile",false) if actor.get("wingman",false) else opposed(int(actor.actor_kind),int(targets[index].actor_kind),rules)
+			# Story casts fight by side: hostile ships against friendly ones.
+			if actor.get("authored_story",false):enemy=targets[index].get("story_shootable",false) and bool(targets[index].get("hostile",false))!=bool(actor.hostile)
+			if alive(targets[index]) and enemy:
 				selected=index;next.fire_desired=true;break
+	if actor.get("wingman",false) and actor.get("wingman_command")==1 and not next.fire_desired:selected=-1
 	next.target_index=selected
 	next.target_selected=selected>=0
 	return next

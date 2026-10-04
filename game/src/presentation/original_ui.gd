@@ -2,6 +2,7 @@ extends RefCounted
 ## Shared original atlas artwork and bitmap glyphs, with native focus outlines.
 const Atlas=preload("res://src/content/atlas_region.gd")
 const Metrics=preload("res://src/content/image_font.gd")
+const Sounds=preload("res://src/presentation/ui_sounds.gd")
 var error:=""
 var sprites:={}
 var styles:={}
@@ -29,6 +30,7 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> 
 			selected["back_pressed" if pressed else "back_normal"]=button_style(sprites,ids,height)
 		styles[mobile]=selected
 	identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language}
+	Sounds.configure(library,bindings)
 	return true
 
 func apply_button(button: Button,mobile: bool,back:=false) -> void:
@@ -38,6 +40,7 @@ func apply_button(button: Button,mobile: bool,back:=false) -> void:
 	button.add_theme_stylebox_override("focus",styles[mobile].focus)
 	button.add_theme_font_size_override("font_size",20 if mobile else 14)
 	button.custom_minimum_size.y=44 if mobile else 30
+	Sounds.attach(button)
 
 static func focus_style(mobile: bool) -> StyleBoxFlat:
 	# Godot draws focus over the current button state. A transparent center keeps

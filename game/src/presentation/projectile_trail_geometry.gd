@@ -6,14 +6,15 @@ const Materials=preload("res://src/presentation/material_library.gd")
 var error:=""
 var _preset:={}
 
-static func supported_material(bindings: RefCounted) -> bool:
-	var material: Dictionary=bindings.resolve_material(Definitions.MATERIAL_ID)
-	return Materials.supports(material) and material.get("render_type")==3 and material.get("texture_ids",[])[0]==Definitions.TEXTURE_ID and not material.texture_paths[0].is_empty()
+static func supported_material(bindings: RefCounted,material_id:=Definitions.MATERIAL_ID) -> bool:
+	var material: Dictionary=bindings.resolve_material(material_id)
+	var texture:=Definitions.VALKYRIE_TEXTURE_ID if material_id==Definitions.VALKYRIE_MATERIAL_ID else Definitions.TEXTURE_ID
+	return Materials.supports(material) and material.get("render_type")==3 and material.get("texture_ids",[])[0]==texture and not material.texture_paths[0].is_empty()
 
 func build(preset_id: int, library: RefCounted, visuals: RefCounted, bindings: RefCounted) -> bool:
 	_preset=Definitions.trail(preset_id)
-	if _preset.is_empty() or library.manifest.get("content_id")!=bindings.base_content_id or visuals.base_content_id!=bindings.base_content_id or not supported_material(bindings):return reject("Projectile trails require their original additive atlas")
-	var descriptor: Dictionary=bindings.resolve_material(Definitions.MATERIAL_ID)
+	if _preset.is_empty() or library.manifest.get("content_id")!=bindings.base_content_id or visuals.base_content_id!=bindings.base_content_id or not supported_material(bindings,int(_preset.material_id)):return reject("Projectile trails require their original additive atlas")
+	var descriptor: Dictionary=bindings.resolve_material(int(_preset.material_id))
 	var pixels: Image=visuals.load_image(descriptor.texture_paths[0])
 	if pixels==null:return reject(visuals.error)
 	material_override=Materials.create(3,ImageTexture.create_from_image(pixels),null,true)

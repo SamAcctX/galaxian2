@@ -3,6 +3,7 @@ extends RefCounted
 ## Actor permission, world scheduling, target lists and consequences belong to
 ## the encounter owner. No unsupported primary is silently replaced or omitted.
 const Turret=preload("res://src/simulation/manual_turret.gd")
+const COLLECTOR_SORT:=35
 const Projectiles = preload("res://src/simulation/ordinary_projectiles.gd")
 const Weapons = preload("res://src/simulation/weapon_loadout.gd")
 const Slots = preload("res://src/simulation/equipment_slots.gd")
@@ -93,7 +94,15 @@ func _configure_loadout(bindings: RefCounted,catalogues: RefCounted,mounts: RefC
 	# Empty slots stay absent; they do not shift the authored category-slot number.
 	primary.reverse()
 	var forward_count:=primary.size()
-	primary.append_array(checked.categories[2])
+	# A plasma collector (sort 35) sits in the turret slot and gives turret
+	# view but fires nothing; the flight's gas clouds own what it collects.
+	for entry in checked.categories[2]:
+		if int(items[entry.item_id].properties.get(2,-1))!=COLLECTOR_SORT:primary.append(entry);continue
+		if _turret!=null:return reject("Only one manual turret mount is supported")
+		var collector_mount: Dictionary=mounts.resolve(ship_id,2,entry.slot)
+		if collector_mount.is_empty():return reject(mounts.error)
+		_turret=Turret.new()
+		if not _turret.configure(items[entry.item_id],collector_mount):return reject(_turret.error)
 	var staged := []
 	var resolved := []
 	if _next_mount_id > 9223372036854775807 - primary.size(): return reject("Weapon handle limit exceeded")
@@ -286,7 +295,15 @@ func observe_beam_pose(pose: Transform3D) -> bool:
 		if gun.projectiles.has_beam() and not gun.projectiles.observe_beam_pose(pose):return reject(gun.projectiles.error)
 	return true
 
-func fire(firing_transform: Variant, firing_allowed: Variant, random_state: Variant=null, beam_targets: Array=[]) -> Dictionary:
+func turret_automatic() -> bool:return _turret!=null and _turret.automatic()
+func set_auto_turret_enabled(value: bool) -> void:
+	if _turret!=null:_turret.set_auto_enabled(value)
+func advance_auto_turret(ship: Transform3D,actors: Array,milliseconds: int) -> bool:
+	return _turret!=null and _turret.advance_auto(ship,actors,milliseconds)
+
+## The trigger fires the forward guns (or the turret in turret view); an
+## automatic turret on target fires on its own.
+func fire(firing_transform: Variant, firing_allowed: Variant, random_state: Variant=null, beam_targets: Array=[], trigger:=true, auto_turret:=false) -> Dictionary:
 	error = ""
 	if _loadout.is_empty(): return fail("Configure primary ownership before firing")
 	if not firing_transform is Transform3D or not firing_transform.is_finite() or not firing_allowed is bool:
@@ -302,7 +319,8 @@ func fire(firing_transform: Variant, firing_allowed: Variant, random_state: Vari
 		var projectiles: RefCounted = gun.projectiles.fork_state()
 		var result := {"fired":false,"reason":"inactive_group"}
 		var firing_pose: Transform3D=_turret.barrel_pose(firing_transform) if gun.equipment.category==2 else firing_transform
-		if gun.equipment.quantity > 0 and (gun.equipment.category==2)==turret_active():
+		var selected: bool=(trigger and (gun.equipment.category==2)==turret_active()) or (auto_turret and gun.equipment.category==2 and not turret_active())
+		if gun.equipment.quantity > 0 and selected:
 			if projectiles.has_beam():result=projectiles.fire_beam_from_mount(gun.mount,firing_transform,firing_allowed,beam_targets)
 			else:result = projectiles.fire_forward_from_mount(gun.mount,firing_pose,firing_allowed,next_random)
 		if result.is_empty(): return fail(projectiles.error)

@@ -11,6 +11,8 @@ static func cargo_capacity(bindings: RefCounted,cat: RefCounted,loadout: Diction
 	if ship<0 or ship>=cat.tables.ships.size():return -1
 	var capacity: Variant=cat.tables.ships[ship].stats.get("cargo_capacity")
 	if not Numbers.integer(capacity,0,2147483647):return -1
+	# The Kaamo cargo mod adds 30 t to the hull.
+	if 1 in loadout.get("ship_instance",{}).get("upgrade_tags",[]):capacity=int(capacity)+30
 	if not Fitting.available(bindings):return int(capacity)
 	var extra:=capacity_sum(cat,loadout.equipment_ids,int(Fitting.VALUES.cargo_subtype),int(Fitting.VALUES.cargo_property))
 	if extra<0 or extra>2147483647-int(capacity):return -1

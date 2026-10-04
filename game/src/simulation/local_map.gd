@@ -14,7 +14,9 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 	if library==null or bindings==null or catalogues==null or not Definitions.parameters(bindings.mido_travel):return reject("This content has no supported local map")
 	var base: String=bindings.base_content_id
 	if library.manifest.get("content_id")!=base or catalogues.content_id!=base or flight.get("base_content_id")!=base or flight.get("binding_id")!=bindings.binding_id:return reject("Local map belongs to another flight or content identity")
-	var rules: Dictionary=bindings.mido_travel.map
+	var rules: Dictionary=bindings.mido_travel.map.duplicate()
+	var sizes: Array=load("res://src/content/valkyrie_world_definitions.gd").map_planet_sizes(bindings,rules.planet_sizes)
+	rules.planet_sizes=sizes
 	var location: Dictionary=flight.get("location",{})
 	var travel: Dictionary=flight.get("local_travel",{})
 	var docked: bool=flight.get("station_map",false)
@@ -57,6 +59,7 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 	if gate_selection:stations=destinations.duplicate()
 	var choices:=[]
 	var objective:=Recipe.objective_markers(bindings.early_contracts,career.get("mission",{}),career.get("accepted_contact",{}),flight.get("cargo",{}))
+	if int(flight.get("wanted_marker",-1))>=0:objective={"station_id":int(flight.wanted_marker),"system_station_id":int(flight.wanted_marker)}
 	var target_system:=-1
 	if objective.system_station_id>=0:target_system=int(catalogues.tables.stations[objective.system_station_id].system_id)
 	for id in systems:choices.append({"system_id":id,"name":catalogues.tables.systems[id].name,"mission_target":id==target_system})
@@ -86,7 +89,8 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 		var path: String=bindings.resolve(resource_id,"mesh")
 		if path.is_empty():return reject(bindings.error)
 		var material: Dictionary=bindings.material_for_mesh(path,"high")
-		if material.is_empty() or material.get("id")!=int(rules.material_id) or material.get("render_type")!=int(rules.render_type) or int(material.texture_ids[0])!=int(rules.texture_id):return reject("Local map planet material is unsupported")
+		# Expansion planets (Valkyrie types 20-21, Talidor, Ginoya) draw with their own material.
+		if material.is_empty() or material.get("render_type")!=int(rules.render_type):return reject("Local map planet material is unsupported")
 		rows.append({"station_id":int(station.id),"name":station.name,"planet_type":type,
 			"jumpgate":int(station.id)==int(system.fields[6]),
 			"current":int(station.id)==int(location.station_id),
@@ -102,7 +106,10 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 	for row in rows:row.orbit_angle=float(random.next_int(int(art.orbit_angle_bound)))/float(art.orbit_angle_divisor)
 	var ui: Dictionary=rules.ui
 	var faction:=int(system.fields[2]);var security:=int(system.fields[1])
-	if faction<0 or faction>=ui.faction_image_ids.size() or security<0 or security*3+2>=ui.security_colors.size():return reject("Unsupported system map classification")
+	# Races past the first three share the last icon (Supernova's Talidor is 17).
+	if faction<0 or int(ui.faction_text_base)+faction>=library.strings.size() or security<0 or security*3+2>=ui.security_colors.size():return reject("Unsupported system map classification")
+	var sun: int=load("res://src/content/valkyrie_world_definitions.gd").map_sun_texture(bindings,art.sun_texture_ids,display_system_id,int(system.sky_index))
+	if sun<0:return reject("Unsupported system map sun")
 	labels.faction=library.strings[int(ui.faction_text_base)+faction]
 	labels.security=library.strings[int(ui.security_text_base)+security]
 	labels.legend=[]
@@ -117,7 +124,7 @@ func configure(library: RefCounted, bindings: RefCounted, catalogues: RefCounted
 		"selected_station_id":-1,"confirmation_visible":false,"diagnostic":"",
 		"ambient":float(rules.ambient),"diffuse":float(rules.diffuse),"layout_random":layout_random,
 		"orbit_random":random.snapshot(),"visuals":art.duplicate(true),"ui":ui.duplicate(true),
-		"sun_texture_id":int(art.sun_texture_ids[int(system.sky_index)]),"faction_image_id":int(ui.faction_image_ids[faction]),
+		"sun_texture_id":sun,"faction_image_id":int(ui.faction_image_ids[mini(faction,ui.faction_image_ids.size()-1)]),
 		"security_color":Color(float(ui.security_colors[security*3])/255.0,float(ui.security_colors[security*3+1])/255.0,float(ui.security_colors[security*3+2])/255.0)}
 	return true
 

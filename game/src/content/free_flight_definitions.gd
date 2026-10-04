@@ -1,4 +1,5 @@
 extends RefCounted
+const StoryFlights=preload("res://src/content/valkyrie_flight_definitions.gd")
 ## Shared ordinary-entry rules. The station owner authorizes actual departure.
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
 const Campaign=preload("res://src/content/free_campaign_definitions.gd")
@@ -26,7 +27,8 @@ static func player_entry(source: Variant,station_id: int,ship_id: int,cursor: in
 	# Eanya's ordinary world support must not turn its pending convoy target
 	# into a generic player/cache entry, even when that story is only declared
 	# by the preceding pack. The authored arrival has its own retained adapter.
-	if story.get("kind")==4 and station_id==int(story.get("station_id",-1)):return {}
+	# A Valkyrie combat flight is a story job the contract runner builds here.
+	if story.get("kind") in [1,4] and station_id==int(story.get("station_id",-1)) and not (source is RefCounted and not StoryFlights.story_job(source,cursor,station_id).is_empty()):return {}
 	var world:=Worlds.location(source,station_id)
 	if world.is_empty():return {}
 	var result: Dictionary=travel.player_entry.duplicate(true)

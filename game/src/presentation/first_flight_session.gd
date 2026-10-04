@@ -12,6 +12,10 @@ const Effects=preload("res://src/content/scenery_effect_resources.gd")
 const Scene=preload("res://src/presentation/first_flight_scene.gd")
 const Speech=preload("res://src/presentation/station_audio.gd")
 const FlightAudio=preload("res://src/presentation/opening_audio.gd")
+const NpcEngines=preload("res://src/presentation/npc_engine_audio.gd")
+const OneShot=preload("res://src/presentation/one_shot_audio.gd")
+const TimeExtender=preload("res://src/simulation/time_extender.gd")
+const TimeExtenderFeedback=preload("res://src/presentation/time_extender_feedback.gd")
 const SecondReturn=preload("res://src/content/full_hold_return_definitions.gd")
 const PlayerDeath=preload("res://src/content/player_destruction_definitions.gd")
 const GameOver=preload("res://src/content/game_over_definitions.gd")
@@ -22,6 +26,15 @@ const ContractWorld=preload("res://src/content/contract_world_definitions.gd")
 const FreeFlight=preload("res://src/content/free_flight_definitions.gd")
 const StationGeneration=preload("res://src/content/station_generation_definitions.gd")
 const BOUNDARIES=["station_transition_required","game_over_transition_required","local_arrival_transition_required","convoy_arrival_transition_required","gate_confirmation_required","gate_map_required","gate_arrival_transition_required","drive_arrival_transition_required","sahi_arrival_transition_required","void_return_transition_required","mission_station_return_required"]
+## Add-on medal streaks, shared by the application across flights.
+var elite_tracker: RefCounted
+## Add-on medal progress ("<medal>: NN%") shown in the notice bar while it is
+## free, each for MEDAL_LINE_MS.
+const MEDAL_NAME_BASE:=1496
+const MEDAL_LINE_MS:=3000
+var _medal_names:={}
+var _medal_lines:=[]
+var _medal_line_ms:=-1
 var error:=""
 var _presentation_state:={}
 var status:="idle"
@@ -31,6 +44,14 @@ var briefing_audio: Node
 var objective_audio: Node
 var objective_failure_audio: Node
 var flight_audio: Node3D
+var engine_audio: Node3D
+## The jumpgate departure plays the original jump event once as the jump starts.
+const GATE_JUMP_SOUND:=32
+var _gate_jump_clip:={}
+var _extender: RefCounted
+var _extender_feedback: Node
+var _devices_feedback: Node
+var gate_jump_plays:=0
 var _world: RefCounted
 var _clock: RefCounted
 var _pauses:={}
@@ -186,6 +207,9 @@ func _configure_construction(library: RefCounted, bindings: RefCounted, visuals:
 	if not _world.configure(bindings,cat,library,construction,"F",.5,viewport_size,mobile_layout,false,"Q","Space","Tab"):return fail(_world.error)
 	_clock=Clock.new()
 	if not _clock.configure(bindings,bindings.base_content_id) or not _clock.rebase(now_microseconds):return fail(_clock.error)
+	_medal_names={};_medal_lines=[];_medal_line_ms=-1
+	for id in range(36,45):
+		if MEDAL_NAME_BASE+id<library.strings.size():_medal_names[id]=library.strings[MEDAL_NAME_BASE+id]
 	scene=Scene.new();add_child(scene)
 	if not scene.build(library,bindings,visuals,cat,_world,false):return fail(scene.error)
 	scene.set_display_active(false)
@@ -207,6 +231,19 @@ func _configure_construction(library: RefCounted, bindings: RefCounted, visuals:
 	if _world.destruction_owner()!=null or cursor==2:
 		flight_audio=FlightAudio.new();add_child(flight_audio)
 		if not flight_audio.configure_full_hold(library,bindings,_world,int(field_seed)):return fail(flight_audio.error)
+	# Other ships' engine loops (the original has none in the first rescue flight).
+	var sounds:=preload("res://src/content/audio_resources.gd").new()
+	_gate_jump_clip=OneShot.prepare(sounds,GATE_JUMP_SOUND) if sounds.configure(library,bindings) else {}
+	_extender=TimeExtender.new()
+	if _extender.configure(cat.tables.items,_world.player_equipment_ids()):
+		_extender_feedback=TimeExtenderFeedback.new();add_child(_extender_feedback);_extender_feedback.configure(library,bindings)
+	else:_extender=null
+	if _world.has_method("player_devices") and not _world.player_devices().is_empty():
+		_devices_feedback=preload("res://src/presentation/flight_devices_feedback.gd").new();add_child(_devices_feedback);_devices_feedback.configure(library,bindings)
+		if scene!=null and scene.geometry!=null:_devices_feedback.attach_bubble(scene.geometry.player,library,visuals,bindings)
+	if cursor>1:
+		engine_audio=NpcEngines.new();add_child(engine_audio)
+		if not engine_audio.configure(library,bindings,int(field_seed)):engine_audio.free();engine_audio=null
 	if _world.destruction_owner()!=null:
 		if scene.game_over==null:return fail("Flight continuation display is unavailable")
 		scene.game_over.set_active(false)
@@ -243,6 +280,10 @@ func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false, re
 	var milliseconds:=roundi(clock.sample(now_microseconds,blocked)*1000)
 	if not clock.error.is_empty():return reject(clock.error)
 	if is_paused() or status!="running" or _world.contract_result_pending():_clock=clock;return true
+	if _extender!=null:
+		_extender_feedback.present(_extender,_extender.advance(milliseconds))
+		milliseconds=_extender.scale(milliseconds)
+		_world.player_time_scale=_extender.player_scale()
 	var drilling: bool=_world.drill_owner()!=null
 	var music_id: int=-1 if flight_audio==null else flight_audio.current_music_id()
 	var world: RefCounted=_world.evaluate(milliseconds,Vector2.ZERO if drilling else commands,0.0 if brake else _throttle,false,Vector2i(camera.get_viewport().get_visible_rect().size),commands if drilling else Vector2.ZERO,fire_primary,fire_secondary,relative_mouse_capture,music_id,strafe,_boost_requested,_cloak_requested,turret_inverted)
@@ -272,13 +313,27 @@ func acknowledge_contract_result(serial: int) -> bool:
 
 func action(name: String) -> bool:
 	error=""
+	# Skip (pause window) works while a scene holds the controls.
+	if name=="skip_dialogue":
+		if _world==null:return reject("No flight to skip")
+		var skipped: RefCounted=_world.skip_story_dialogue()
+		if skipped==null:return reject(_world.error)
+		return _commit(skipped,false)
 	if not can_control() and not (can_stop_mining() and name in ["dock","fire"]):return reject("Mining controls are inactive")
 	var world: RefCounted
 	match name:
+		"wingman_weapon_switch":world=_world.switch_wingman_weapons()
+		"wingman_fire_at_will":world=_world.command_wingmen(1)
+		"wingman_attack_target":world=_world.command_wingmen(3)
+		"wingman_secure_waypoint":world=_world.command_wingmen(2)
 		"turret","change_view":world=_world.toggle_turret()
+		"auto_turret":world=_world.toggle_auto_turret()
 		"time":world=_world.press_fast_forward()
 		"boost":_boost_requested=true;return true
 		"cloak":_cloak_requested=true;return true
+		"time_extender":
+			if _extender==null:return true
+			_extender_feedback.present(_extender,_extender.press());return true
 		"missiles":
 			if not secondary_available() and not turret_state().get("active",false):return reject("No supported secondary launcher is installed")
 			# A button edge requests one late-input pass, not an immediate pulse.
@@ -309,7 +364,9 @@ func action(name: String) -> bool:
 	return true
 
 func turret_state() -> Dictionary:return {} if _world==null else _world.turret_state()
+func story_skip_available() -> bool:return _world!=null and _world.has_method("story_skip_available") and _world.story_skip_available()
 func cloak_state() -> Dictionary:return {} if _world==null else _world.cloak_state()
+func time_extender_state() -> Dictionary:return {} if _extender==null else _extender.snapshot()
 func booster_state() -> Dictionary:return {} if _world==null else _world.booster_state()
 
 func fast_forward_available() -> bool:return _world!=null and _world.fast_forward_available()
@@ -369,6 +426,7 @@ func confirm_secondary(item_id: int,now_microseconds: int) -> bool:
 	return set_pause("secondary_menu",false,now_microseconds)
 
 func secondary_available() -> bool:return _world!=null and _world.secondary_available()
+func wingmen_available() -> bool:return _world!=null and _world.wingmen_available()
 
 func secondary_feedback() -> Dictionary:
 	return {} if _world==null else _world.secondary_feedback()
@@ -401,6 +459,20 @@ func activate_drive_return(now_microseconds: int) -> bool:
 	if not _commit(world,false):return false
 	return rebase_time(now_microseconds)
 
+## A story flight whose drive has one destination jumps there without the map.
+func story_drive_destination() -> Variant:
+	if _world==null:return null
+	var rule: Dictionary=_world.story_drive_rule()
+	return int(rule.destination) if rule.has("destination") else null
+
+func activate_story_drive(now_microseconds: int) -> bool:
+	var destination: Variant=story_drive_destination()
+	if destination==null or not can_control():return reject("This flight has no story drive destination")
+	var world: RefCounted=_world.start_drive(int(destination))
+	if world==null:return reject(_world.error)
+	if not _commit(world,false):return false
+	return rebase_time(now_microseconds)
+
 func confirm_drive_destination(station_id: int,now_microseconds: int) -> bool:
 	if not map_active():return reject("The drive map does not own input")
 	var world: RefCounted=_world.start_drive(station_id)
@@ -425,6 +497,16 @@ func choose_gate_confirmation(result: int,now_microseconds: int) -> bool:
 	var world: RefCounted=_world.choose_gate_confirmation(result)
 	if world==null:return reject(_world.error)
 	return _commit_gate_choice(world,now_microseconds)
+
+## Loma toll question (first_flight_frame.answer_toll); the flight stays
+## paused for "toll" until the presentation closes its window.
+func toll_state() -> Dictionary:return {} if _world==null else _world.toll_state()
+
+func answer_toll(yes: bool) -> bool:
+	if not _active or not _pauses.has("toll"):return reject("No paused toll question awaits an answer")
+	var world: RefCounted=_world.answer_toll(yes)
+	if world==null:return reject(_world.error)
+	return _commit(world,false)
 
 func gate_modal_active() -> bool:
 	return _active and not is_paused() and status in ["gate_confirmation_required","gate_map_required"]
@@ -508,7 +590,15 @@ func _commit(world: RefCounted, advance_sun: bool, absolute_milliseconds: int=-1
 		sound=flight_audio.prepare_full_hold(world,state)
 		if sound.is_empty():return reject(flight_audio.error)
 	var presentation_time: int=_presentation_ms if absolute_milliseconds<0 else absolute_milliseconds
+	if elite_tracker!=null:
+		elite_tracker.observe(state)
+		_medal_lines.append_array(elite_tracker.take_progress())
+	state=_with_medal_line(state,presentation_time)
 	if not scene.present(world,advance_sun,presentation_time,state):return reject(scene.error)
+	if not _gate_jump_clip.is_empty() and state.get("gate_transit",{}).get("phase")=="departing" and _presentation_state.get("gate_transit",{}).get("phase")!="departing":
+		OneShot.play(self,_gate_jump_clip);gate_jump_plays+=1
+	if engine_audio!=null and camera!=null:engine_audio.update(NpcEngines.sources(state),camera.global_position,maxi(0,presentation_time-_presentation_ms))
+	if _devices_feedback!=null and world.has_method("player_devices"):_devices_feedback.present(world.player_devices())
 	_world=world;_presentation_state=state;_generation+=1
 	_presentation_ms=presentation_time
 	briefing_audio.present(briefing_line)
@@ -540,11 +630,27 @@ func _sync_input() -> void:
 	scene.dialogue.set_active(enabled)
 	if scene.game_over!=null:scene.game_over.set_active(enabled)
 
+## The oldest medal line takes the notice bar when no flight notice is showing.
+func _with_medal_line(state: Dictionary,now_ms: int) -> Dictionary:
+	if _medal_lines.is_empty():return state
+	var notices: Variant=state.get("flight_notices")
+	if not notices is Dictionary or notices.is_empty() or notices.get("visible",false):return state
+	if _medal_line_ms<0 or now_ms<_medal_line_ms:_medal_line_ms=now_ms
+	if now_ms-_medal_line_ms>=MEDAL_LINE_MS:
+		_medal_lines.pop_front();_medal_line_ms=now_ms
+		if _medal_lines.is_empty():_medal_line_ms=-1;return state
+	var row: Array=_medal_lines[0]
+	var shown: Dictionary=notices.duplicate(true)
+	shown.current={"source_id":-1,"text":"%s: %d%%"%[_medal_names.get(int(row[0]),""),int(row[1])],"rgb":[255,255,255]}
+	shown.visible=true;shown.alpha=255
+	var result: Dictionary=state.duplicate();result.flight_notices=shown
+	return result
+
 func present_current() -> bool:
 	return scene!=null and scene.present(_world,false,_presentation_ms)
 
 func set_pause(reason: String, paused: bool, now_microseconds: int) -> bool:
-	if _clock==null or reason not in ["user","focus","hidden","transition","cloak_notice","map","secondary_menu","flight_menu"] or now_microseconds<0:return reject("Invalid mining pause")
+	if _clock==null or reason not in ["user","focus","hidden","transition","cloak_notice","hint","map","secondary_menu","flight_menu","toll"] or now_microseconds<0:return reject("Invalid mining pause")
 	if _pauses.has(reason)==paused:return true
 	if not clear_flight_input():return false
 	if not _clock.rebase(now_microseconds):return reject(_clock.error)
@@ -553,6 +659,7 @@ func set_pause(reason: String, paused: bool, now_microseconds: int) -> bool:
 	briefing_audio.set_paused(is_paused());objective_audio.set_paused(is_paused())
 	if objective_failure_audio!=null:objective_failure_audio.set_paused(is_paused())
 	if flight_audio!=null:flight_audio.set_paused(is_paused())
+	if engine_audio!=null:engine_audio.set_paused(is_paused())
 	_sync_input()
 	return true
 
@@ -573,6 +680,8 @@ func flight_hud_visible(state: Dictionary={}) -> bool:
 	if state.is_empty():state=_world.snapshot()
 	return status=="running" and not _world.cinematic_input_blocked() and state.entry_released and not state.dialogue.visible and state.get("contracts",{}).get("pending_result",{}).is_empty() and state.get("player_destruction",{}).get("hud_visible",true)
 func flight_owner() -> RefCounted:return null if _world==null else _world.fork_for_frame()
+## The accepted flight for per-frame reads only; never mutate it.
+func flight_reader() -> RefCounted:return _world
 func snapshot() -> Dictionary:
 	if _world==null:return {}
 	var state: Dictionary=_world.snapshot() if _presentation_state.is_empty() else _presentation_state.duplicate(true)
@@ -588,7 +697,7 @@ func presentation_snapshot() -> Dictionary:
 	return preload("res://src/simulation/readonly_state.gd").freeze(state) if OS.is_debug_build() else state
 func clear() -> void:
 	for child in get_children():child.free()
-	error="";status="idle";camera=null;scene=null;briefing_audio=null;objective_audio=null;objective_failure_audio=null;flight_audio=null
+	error="";status="idle";camera=null;scene=null;briefing_audio=null;objective_audio=null;objective_failure_audio=null;flight_audio=null;engine_audio=null;_gate_jump_clip={};_extender=null;_extender_feedback=null;_devices_feedback=null
 	_world=null;_clock=null;_pauses={};_active=false;_throttle=1.0;_generation=0
 	_presentation_state={}
 	_presentation_ms=0;_secondary_requested=false;_boost_requested=false;_cloak_requested=false

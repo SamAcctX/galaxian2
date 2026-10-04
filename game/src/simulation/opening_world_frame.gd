@@ -197,8 +197,8 @@ func evaluate(timeline: RefCounted, scenery: RefCounted, delta_ms: Variant, pres
 	if previous.camera.shot.phase>=4 and _flight==null: return fail("The live encounter requires connected player flight and weapons")
 	if _flight!=null and _player_state.snapshot().vitals.hull<=0: return fail("The player death transition is not yet supported")
 	if _flight!=null and previous.radio.finished[_flight.boundary_event()] and not previous.has("escape"): return fail("The postcombat mission transition is not yet supported")
-	if _impacts!=null and _impacts.snapshot().elapsed_ms!=_elapsed_ms:return fail("Impact clock differs from its world")
-	if _damage_particles!=null and _damage_particles.snapshot().elapsed_ms!=_elapsed_ms:return fail("Damage particle clock differs from its world")
+	if _impacts!=null and _impacts.read_snapshot().elapsed_ms!=_elapsed_ms:return fail("Impact clock differs from its world")
+	if _damage_particles!=null and _damage_particles.elapsed_ms()!=_elapsed_ms:return fail("Damage particle clock differs from its world")
 	if previous.get("escape",{}).get("boundary","")!="":return fail("The following arrival scene is not yet connected")
 	var previous_weapons:=snapshot() if _impacts!=null else {}
 	var next: RefCounted=fork_for_frame()
@@ -289,7 +289,7 @@ func evaluate(timeline: RefCounted, scenery: RefCounted, delta_ms: Variant, pres
 	if int(scene.camera.shot.phase)>4:camera_random=scene.escape.random_state
 	var actors: Dictionary=next._controller.evaluate(clock.combat_owner(),next._weapons,delta_ms,player,camera_random)
 	if actors.is_empty(): return fail(next._controller.error)
-	if next._damage_particles!=null and not next._damage_particles.finish_npc_pass(clock.combat_owner().snapshot(),actors.combat.snapshot(),actors.actors,delta_ms,detail):return fail(next._damage_particles.error)
+	if next._damage_particles!=null and not next._damage_particles.finish_npc_pass(clock.read_combat(),actors.combat.snapshot(),actors.actors,delta_ms,detail):return fail(next._damage_particles.error)
 	if not clock.adopt_combat_pass(actors.combat): return fail(clock.error)
 	var immediate: Variant=scene.scene.camera_position_parameter if scene.scene.formation_revealed and not previous.scene.formation_revealed else null
 	# NPCs consume the shared stream before ordinary scenery lifecycle updates.
@@ -303,10 +303,10 @@ func evaluate(timeline: RefCounted, scenery: RefCounted, delta_ms: Variant, pres
 			for contact in weapon.contacts:
 				if contact.target.group=="npc":npc_contact=true
 		if not next._aim.sample_feedback(npc_contact,delta_ms,int(scene.camera.shot.phase)==4 and player.hull>0):return fail(next._aim.error)
-	if next._scanner!=null and not next._scanner.advance(clock.combat_owner().snapshot(),scene.scene.player_pose,scene.camera.view.get("pose",Transform3D.IDENTITY),next._aim.snapshot(),delta_ms,int(scene.camera.shot.phase)==4 and player.hull>0):return fail(next._scanner.error)
+	if next._scanner!=null and not next._scanner.advance(clock.read_combat(),scene.scene.player_pose,scene.camera.view.get("pose",Transform3D.IDENTITY),next._aim.snapshot(),delta_ms,int(scene.camera.shot.phase)==4 and player.hull>0):return fail(next._scanner.error)
 	if next._music!=null:
 		var radar_visible: bool=int(scene.camera.shot.phase)==4 and player.hull>0
-		if not next._radar.publish_radar(clock.combat_owner().snapshot().actors,radar_visible,current_music_id):return fail(next._radar.error)
+		if not next._radar.publish_radar(clock.read_combat().actors,radar_visible,current_music_id):return fail(next._radar.error)
 		var selection: Dictionary=next._music.prepare_for_context(current_music_id,next._radar.battle_count(),next._music_faction,radar_visible,next._music_context.merged(next._radar.radar_music_context()))
 		if selection.is_empty():return fail(next._music.error)
 		next._flight_music={"operations":selection.operations}
@@ -319,12 +319,12 @@ func snapshot() -> Dictionary:
 	var result := _identity.duplicate()
 	result.controller=_controller.snapshot();result.weapons=_weapons.snapshot();result.actor_events=_events.duplicate(true)
 	if _projectile_visuals!=null:result.projectile_visuals=_projectile_visuals.snapshot()
-	if _impacts!=null:result.impact_visuals=_impacts.snapshot()
+	if _impacts!=null:result.impact_visuals=_impacts.read_snapshot()
 	if _aim!=null:result.player_aim=_aim.snapshot()
 	if _scanner!=null:result.npc_scanner=_scanner.snapshot()
-	if _damage_particles!=null:result.damage_particles=_damage_particles.snapshot()
+	if _damage_particles!=null:result.damage_particles=_damage_particles.snapshot(true)
 	if _engine_audio!=null:result.player_engine=_engine_audio.snapshot()
-	if _engine_particles!=null:result.engine_particles=_engine_particles.snapshot()
+	if _engine_particles!=null:result.engine_particles=_engine_particles.snapshot(true)
 	if _music!=null:result.flight_music=_flight_music.duplicate(true)
 	result.scenery_collision_supported=_physical_contacts!=null
 	result.elapsed_ms=_elapsed_ms;result.random_state=_random_state.duplicate(true)

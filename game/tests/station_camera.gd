@@ -25,8 +25,9 @@ func verify(args: PackedStringArray) -> void:
 		for station in world.station_ids:
 			if Worlds.catalogue_location(bindings,cat,station).is_empty():continue
 			visited+=1
-			var view:=Views.select(bindings,station,18)
+			# The station scene picks its camera from the imported hangar row.
 			var selected:=bindings.resolve_hangar(station,cat)
+			var view:=Views.ordinary_view(bindings.station_presentation,station,int(selected.get("row",-1)))
 			if view.is_empty() or selected.is_empty():check(false,"The supported station lacks its original hangar view: "+str(station));continue
 			check(view.station_id==station and view.hangar_row==selected.row,"The camera differs from the imported hangar row: "+str(station))
 			var camera:=Camera.new();var reference:=Camera.new()
@@ -62,10 +63,10 @@ func verify(args: PackedStringArray) -> void:
 		for station in [45,46,47,48,49]:
 			var world:=Worlds.catalogue_location(bindings,cat,station)
 			var selected:=bindings.resolve_hangar(station,cat)
-			var view:=Views.select(bindings,station,27)
+			var view:=Views.ordinary_view(bindings.station_presentation,station,int(selected.get("row",-1)))
 			check(not world.is_empty() and not selected.is_empty() and not view.is_empty(),"Missing source system9 camera at cursor27: "+str(station))
 			if world.is_empty() or selected.is_empty() or view.is_empty():continue
-			check(world.system_id==9 and int(world.system_fields[int(bindings.hangars.system_field)])==2,"The source system9 field no longer selects row2: "+str(station))
+			check(world.system_id==9 and int(cat.tables.systems[9].fields[int(bindings.hangars.system_field)])==2,"The source system9 field no longer selects row2: "+str(station))
 			check(selected.row==2 and view.hangar_row==selected.row and view.station_id==station,"Cursor27 camera differs from the imported hangar: "+str(station))
 			check(view.camera.position==Views.ROW_TWO.position and view.camera.angles==Views.ROW_TWO.angles and view.light.ambient==Views.ROW_TWO.ambient,"Cursor27 camera or light differs from the source row2 table: "+str(station))
 			check(Views.view_parameters(view),"Cursor27 source camera failed declaration admission: "+str(station))

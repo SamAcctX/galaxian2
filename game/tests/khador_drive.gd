@@ -66,7 +66,8 @@ func verify() -> void:
 	var fitting:=Fitting.new();var hulls:=0
 	for ship in cat.tables.ships:
 		if not Context.base_player_hull(bindings,int(ship.id)):continue
-		hulls+=1
+		# Expansion hulls (Valkyrie loans, Loma shipyard) also qualify; count the base set only.
+		if int(ship.id)<int(bindings.early_contracts.base_station_stock.ships.selection_draw_bound):hulls+=1
 		check(fitting._item_reason(bindings,cat,null,85,[85],int(ship.id)).is_empty(),"Base hull refused the Khador device: "+str(ship.id))
 	check(hulls==34,"The base hull capability omitted the earned reward ship")
 	verify_emergency_cargo(bindings,cat,lib)

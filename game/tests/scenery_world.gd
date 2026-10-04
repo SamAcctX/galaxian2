@@ -59,10 +59,10 @@ func check_world(bindings: RefCounted, catalogues: RefCounted, bodies: RefCounte
 	check(world._bodies.normal_hit(b,2147483647).destroyed_now and world._bodies.normal_hit(a,2147483647).destroyed_now,"Could not prepare two destroyed actors")
 	var pending := world.snapshot()
 	check(world.has_pending_destruction() and world.update(0,Vector3.ZERO) and world.snapshot()==pending,"Zero time triggered pending destruction")
-	world._bodies._rows[b].motion_scalar=1.0
+	world._bodies._rows[b].motion_scalar=1.0;world._bodies._read_snapshot={}
 	var invalid := world.snapshot()
 	check(not world.update(100,Vector3.ZERO) and world.snapshot()==invalid and world.take_events().is_empty(),"Later actor failure committed earlier RNG, clock, detail, spin or accounting")
-	world._bodies._rows[b].motion_scalar=0.0
+	world._bodies._rows[b].motion_scalar=0.0;world._bodies._read_snapshot={}
 	check(world.update(100,Vector3.ZERO),world.error)
 	var triggered := world.snapshot();var events := world.take_events()
 	check(events.size()==2 and events[0].object_index==a and events[1].object_index==b,"Destruction order followed damage delivery instead of the source array")
@@ -125,10 +125,10 @@ func check_session(library: RefCounted, bindings: RefCounted, visuals: RefCounte
 		session._world_frame._random_state={"state":80674035714597}
 		for guide in session._world_frame._controller._guidance:guide._state.selection_elapsed_ms=5000
 	session._scenery._bodies.normal_hit(b,2147483647);session._scenery._bodies.normal_hit(a,2147483647)
-	session._scenery._bodies._rows[b].motion_scalar=1.0
+	session._scenery._bodies._rows[b].motion_scalar=1.0;session._scenery._bodies._read_snapshot={}
 	var failed_frame := session.snapshot();var old_clock: int=session._clock._last_ms
 	check(not session.step(100000) and session.snapshot()==failed_frame and session._clock._last_ms==old_clock,"World failure consumed the opening frame clock or timeline")
-	session._scenery._bodies._rows[b].motion_scalar=0.0
+	session._scenery._bodies._rows[b].motion_scalar=0.0;session._scenery._bodies._read_snapshot={}
 	check(session.step(100000),session.error)
 	check(session.snapshot().elapsed_ms==100,"Retry lost the failed frame's elapsed time")
 	check(session.snapshot().scenery.random_state.state==82285143057300,"Actor refresh did not consume RNG before scenery destruction")

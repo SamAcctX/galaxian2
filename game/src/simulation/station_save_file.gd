@@ -27,7 +27,7 @@ func save(path: String,station: RefCounted,bindings: RefCounted,cat: RefCounted,
 		previous=read_document(path)
 		if not previous.is_empty() and (previous.get("base_content_id")!=bindings.base_content_id or previous.get("binding_id")!=bindings.binding_id):return reject("Keep the existing save with its original content and gameplay bindings")
 		if previous.get("version") in [9,10,11] and (not _supplement_matches(bindings,previous.get("station"),int(previous.version)) or previous.station.dekato_source_receipt!=document.station.get("dekato_source_receipt")):return reject("Keep the existing checkpoint with its explicitly attached supplemental source")
-		if previous.get("version") in [10,11] and (document.version not in [10,11] or previous.station.nehma_source_receipt!=document.station.get("nehma_source_receipt")):return reject("Keep the onward checkpoint with both explicitly attached sources")
+		if previous.get("version") in [10,11] and (document.version not in [10,11,12] or previous.station.nehma_source_receipt!=document.station.get("nehma_source_receipt")):return reject("Keep the onward checkpoint with both explicitly attached sources")
 		if not previous.is_empty() and archive.restore(bindings,cat,library,previous)==null:previous={}
 	error=""
 	var staged:=path+".tmp"

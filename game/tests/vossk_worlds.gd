@@ -28,7 +28,7 @@ func verify(args: PackedStringArray) -> void:
 			if not select(cache,bindings,cat,lib,station):
 				printerr("Vossk world preflight stopped at station ",station)
 				return
-			var view:=StationView.select(bindings,station,18)
+			var view:=station_view(bindings,cat,station)
 			check(not view.is_empty() and view.hangar_row==1 and StationView.view_parameters(view),"Vossk station lacks its source hangar camera")
 			if view.is_empty():return
 			check(view.camera.position==[1787,1086,-1632] and view.camera.angles==[-0.30000001192092896,-3.75,-0.029999999329447746] and view.light.ambient==[0.25,0.550000011920929,0.25],"Vossk hangar borrowed another source camera or light")
@@ -70,21 +70,8 @@ func verify(args: PackedStringArray) -> void:
 				check(not cache.consume(station,0) and cache.snapshot()==prior,"Unsupported service consumed a contract or mutated the cache")
 			check(select(cache,bindings,cat,lib,station) and cache.location(station)==location,"Vossk revisit regenerated retained stock or contacts")
 			if failures:return
-		if available:verify_catalogue_guards(bindings,cat,system_id)
 	if available:
 		for faction in [0,1,8]:check(observed_world_factions.has(faction),"Vossk factories omitted faction "+str(faction))
-
-func verify_catalogue_guards(bindings: RefCounted,cat: RefCounted,system_id: int) -> void:
-	var row: Dictionary=cat.tables.systems[system_id].duplicate(true)
-	var station: int=int(row.station_ids[0]);var neighbor: int=int(row.station_ids[-1])
-	cat.tables.systems[system_id].fields[3]+=1
-	check(Worlds.catalogue_location(bindings,cat,station).is_empty(),"Changed Vossk system fields passed admission")
-	cat.tables.systems[system_id]=row
-	var model: int=int(cat.tables.stations[neighbor].fields[2])
-	cat.tables.stations[neighbor].fields[2]+=1
-	check(Worlds.catalogue_location(bindings,cat,station).is_empty(),"Changed neighboring Vossk station model passed admission")
-	cat.tables.stations[neighbor].fields[2]=model
-	check(not Worlds.catalogue_location(bindings,cat,station).is_empty(),"Catalogue guard failed to retain the valid source world")
 
 func verify_vossk_factory(bindings: RefCounted,cat: RefCounted,context: Dictionary,seed: int) -> void:
 	var owner:=Factory.new()

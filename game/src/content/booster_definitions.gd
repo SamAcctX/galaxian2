@@ -2,7 +2,7 @@ extends RefCounted
 ## Fitted booster declarations. Performance values belong to the item catalogue.
 const Numbers=preload("res://src/content/opening_definitions.gd")
 const Library=preload("res://src/content/library.gd")
-const SOUND_IDS={71:38,72:39,73:40,74:41}
+const SOUND_IDS={71:38,72:39,73:40,74:41,195:1102}
 const NORMAL_SPEED:=2.0
 const ICON_NORMAL:=1202
 const ICON_PRESSED:=1203

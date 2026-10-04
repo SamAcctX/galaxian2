@@ -9,7 +9,9 @@ const Orientation = preload("res://src/simulation/scenery_orientation.gd")
 const AEM = preload("res://src/content/aem.gd")
 const Model = preload("res://src/presentation/imported_model.gd")
 const Geometry = preload("res://src/presentation/opening_geometry.gd")
+const Quality = preload("res://src/presentation/graphics_quality.gd")
 const SpaceFog = preload("res://src/presentation/space_fog_geometry.gd")
+const StaticFog = preload("res://src/presentation/static_fog_geometry.gd")
 const ForegroundParticles = preload("res://src/presentation/foreground_particle_geometry.gd")
 const STAR_SHADER = preload("res://src/presentation/sky_stars.gdshader")
 const NEBULA_SHADER = preload("res://src/presentation/sky_nebula.gdshader")
@@ -19,11 +21,14 @@ var error := ""
 var selection := {}
 var layers: Array[Node3D] = []
 var space_fog: MultiMeshInstance3D
+var static_fogs:=[]
 var foreground_particles: MultiMeshInstance3D
 var _orientation := Basis.IDENTITY
 var _initial_descriptors:=[]
 var _escape_descriptor:={}
 var _stored_channels:=false
+## Animated supernova flare layers: [{model, speed}] (Ginoya, 90-157).
+var _flares:=[]
 
 func enable_foreground_particles(library: RefCounted,visuals: RefCounted,bindings: RefCounted,environment: Dictionary,seed_value: Variant=null) -> bool:
 	if selection.is_empty() or foreground_particles!=null or bindings==null:
@@ -44,6 +49,17 @@ func enable_space_fog(library: RefCounted,visuals: RefCounted,bindings: RefCount
 		error="Space clouds belong to another background identity";return false
 	var sky_index:=int(catalogues.tables.systems[int(selection.system_id)].sky_index)
 	return _build_space_fog(library,visuals,bindings,sky_index,int(selection.station_id))
+
+## A fixed fog cloud around one world object, in this exterior's cloud material.
+func add_static_fog(library: RefCounted,visuals: RefCounted,bindings: RefCounted,catalogues: RefCounted,center: Vector3,rule: Dictionary,seed_value: int) -> bool:
+	if selection.is_empty() or catalogues==null or catalogues.content_id!=selection.base_content_id:
+		error="Prepare one matching exterior before its object fog";return false
+	var fog:=StaticFog.new()
+	if not fog.build(library,visuals,bindings,int(catalogues.tables.systems[int(selection.system_id)].sky_index),center,rule,seed_value):
+		error=fog.error;fog.free();return false
+	fog.name="ObjectFog%d"%static_fogs.size();add_child(fog);static_fogs.append(fog)
+	fog.visible=Quality.effects_enabled()
+	error="";return true
 
 func _build_space_fog(library: RefCounted,visuals: RefCounted,bindings: RefCounted,sky_index: int,seed_value: int,velocity:=Vector3.ZERO,color_scale:=0.6) -> bool:
 	var clouds:=SpaceFog.new()
@@ -111,14 +127,14 @@ func build_station(library: RefCounted,visuals: RefCounted,bindings: RefCounted,
 		return reject("Station background belongs to another content identity")
 	if station_id<0 or station_id>=catalogues.tables.stations.size():return reject("Unknown station background location")
 	var system_id:=int(catalogues.tables.stations[station_id].system_id)
-	if system_id<0 or system_id>=catalogues.tables.systems.size() or system_id==27:return reject("This station background uses an unsupported source orientation")
+	if system_id<0 or system_id>=catalogues.tables.systems.size():return reject("This station background uses an unsupported source orientation")
 	var sky_index:=int(catalogues.tables.systems[system_id].sky_index)
 	var sky: Dictionary=bindings.opening_sky
 	var arrival: Dictionary=bindings.arrival_environment
-	if not Definitions.parameters(sky) or sky_index<0 or sky_index>int(arrival.get("maximum_sky_index",-1)):
+	if not Definitions.parameters(sky) or sky_index<0 or sky_index>Orientation.LAST_SKY_INDEX:
 		return reject("Station background has no supported source sky")
 	var orientation:=Orientation.new()
-	var rotation_value: Dictionary=orientation.for_station(station_id,sky_index in [17,18])
+	var rotation_value: Dictionary=orientation.for_location(station_id,system_id,sky_index,int(catalogues.tables.stations[station_id].get("planet_type",0)))
 	if rotation_value.is_empty():return reject(orientation.error)
 	var variant:=system_id%int(sky.star_variants)
 	var descriptors:=[{"mesh_id":int(sky.star_mesh_base)+variant,"texture_id":int(sky.star_texture_base)+variant,"mode":0},
@@ -140,17 +156,16 @@ func _build_location(library: RefCounted, visuals: RefCounted, bindings: RefCoun
 	if visuals.base_content_id!=bindings.base_content_id: return reject("Sky textures belong to another content identity")
 	var system: Dictionary = catalogues.tables.systems[opening.system_id]
 	if not Numbers.integer(system.get("sky_index"),0,65535): return reject("Opening system has no valid sky index")
-	# System 27 uses a light-direction basis in the source, not the seeded Euler
-	# basis. That additional background path is outside this opening renderer.
-	if opening.system_id==27: return reject("Light-oriented background is not implemented")
 	var orientation := Orientation.new()
-	var rotation_value := orientation.for_station(opening.station_id,int(system.sky_index) in [17,18])
+	var rotation_value := orientation.for_location(int(opening.station_id),int(opening.system_id),int(system.sky_index),int(catalogues.tables.stations[int(opening.station_id)].get("planet_type",0)))
 	if rotation_value.is_empty(): return reject(orientation.error)
 	var variant := int(opening.system_id)%int(data.star_variants)
 	var descriptors := [
 		{"mesh_id":int(data.star_mesh_base)+variant,"texture_id":int(data.star_texture_base)+variant,"mode":0},
 		{"mesh_id":int(data.sky_mesh_id),"texture_id":int(data.sky_texture_id),"mode":2}]
 	_initial_descriptors=descriptors.duplicate(true)
+	var World=load("res://src/content/valkyrie_world_definitions.gd")
+	descriptors.append_array(World.supernova_flares(int(opening.system_id),int(opening.get("campaign_cursor",-1))))
 	if with_escape:
 		var escape: Dictionary=bindings.opening_staging.get("escape",{})
 		if bindings.opening_staging.get("escape_camera",{}).is_empty() or escape.is_empty():return reject("Escape sky requires supported escape declarations")
@@ -188,13 +203,14 @@ func _build_layers(library: RefCounted,visuals: RefCounted,bindings: RefCounted,
 		if bytes.is_empty(): return reject(library.error)
 		var decoded := reader.decode(bytes)
 		if decoded.is_empty(): return reject(reader.error)
-		if int(decoded.keyframes)!=0: return reject("Animated opening sky is not supported")
+		var animated: bool=descriptor.has("speed")
+		if int(decoded.keyframes)!=0 and not animated: return reject("Animated opening sky is not supported")
 		var image: Image = visuals.load_image(texture_path)
 		if image==null: return reject(visuals.error)
 		var model := Model.new()
 		model.build(decoded,image,null,descriptor.mode,cache)
 		model.name="Stars" if descriptor.mode==0 else ("Nebula" if layers.size()==1 else "ArrivalNebula")
-		model.visible=layers.size()<2
+		model.visible=layers.size()<2 or animated
 		model.set_meta("source_resource_id",descriptor.mesh_id)
 		model.set_meta("source_texture_id",descriptor.texture_id)
 		model.set_meta("source_texture_path",texture_path)
@@ -211,6 +227,12 @@ func _build_layers(library: RefCounted,visuals: RefCounted,bindings: RefCounted,
 		for instance in model.instances:
 			instance.custom_aabb=AABB(Vector3.ONE*-1e9,Vector3.ONE*2e9)
 			instance.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if animated:
+			# Flares scroll their texture and fade to half strength (scalar
+			# track 100 -> 50; assumed to be brightness), drawn additively.
+			model.name="SupernovaFlares";_flares.append({"model":model,"speed":float(descriptor.speed),"length":maxf(load("res://src/content/animation_tracks.gd").range_of(model.surfaces).y,1.0)})
+			for material in model.materials:material.set_shader_parameter("surface_tint",Color(0.5,0.5,0.5,1.0))
+			add_child(model);continue
 		add_child(model);layers.append(model)
 	_orientation=rotation_value.basis
 	basis=_orientation
@@ -254,7 +276,7 @@ func prepare_view(view: Dictionary, escape: Dictionary = {},elapsed_ms:=0) -> Di
 	if foreground_particles!=null:
 		particles=foreground_particles.prepare_view(view.pose,elapsed_ms)
 		if particles==null:error=foreground_particles.error;return {}
-	return {"pose":view.pose,"relocated":relocated,"clouds":clouds,"particles":particles}
+	return {"pose":view.pose,"relocated":relocated,"clouds":clouds,"particles":particles,"elapsed_ms":elapsed_ms}
 
 func commit_view(prepared: Dictionary) -> void:
 	# Keep bounds near the viewer. Shader projection excludes this translation.
@@ -263,14 +285,26 @@ func commit_view(prepared: Dictionary) -> void:
 	if not _escape_descriptor.is_empty():
 		layers[1].visible=not relocated;layers[2].visible=relocated
 		selection.layers=[_initial_descriptors[0].duplicate(),(_escape_descriptor if relocated else _initial_descriptors[1]).duplicate()]
-	if space_fog!=null:space_fog.commit_view(prepared.clouds)
-	if foreground_particles!=null:foreground_particles.commit_view(prepared.particles)
+	if space_fog!=null:
+		space_fog.commit_view(prepared.clouds);space_fog.visible=Quality.effects_enabled()
+	for fog in static_fogs:fog.visible=Quality.effects_enabled()
+	var World=load("res://src/content/valkyrie_world_definitions.gd")
+	for flare in _flares:
+		# Looping animation (assumed to loop, as the sun's).
+		flare.model.set_source_time(fmod(float(World.SUPERNOVA.overlay_start_ms)+float(prepared.get("elapsed_ms",0))*float(flare.speed),float(flare.length)))
+	if foreground_particles!=null:
+		foreground_particles.commit_view(prepared.particles);foreground_particles.visible=Quality.effects_enabled()
+
+## The supernova reversal (157): the flare layers go at once.
+func reverse_supernova() -> void:
+	for flare in _flares:flare.model.visible=false
+	_flares=[]
 
 func clear() -> void:
 	for child in get_children(): child.free()
-	layers.clear();selection.clear();_initial_descriptors=[];_escape_descriptor={};_orientation=Basis.IDENTITY;transform=Transform3D.IDENTITY;error=""
+	layers.clear();_flares=[];selection.clear();_initial_descriptors=[];_escape_descriptor={};_orientation=Basis.IDENTITY;transform=Transform3D.IDENTITY;error=""
 	_stored_channels=false
-	space_fog=null
+	space_fog=null;static_fogs=[]
 	foreground_particles=null
 
 func reject(message: String) -> bool:

@@ -30,7 +30,7 @@ func release_application_flight() -> bool:
 			check(after.entry_released and after.world_elapsed_ms==before.world_elapsed_ms and after.contracts==before.contracts and after.player.vitals==before.player.vitals,"Enter skipped more than the ordinary introduction")
 			await capture_free_application("freelance-pirate-skipped-entry")
 		if now_us>=next_yield:await process_frame;next_yield=now_us+1000000
-	check(app.session.can_control() and app.session.flight_audio!=null,"The freelance introduction did not release original flight controls and sound")
+	check(app.session.can_control() and app.session.flight_audio!=null,"The freelance introduction did not release original flight controls and sound: control %s audio %s blocked %s"%[app.session.can_control(),app.session.flight_audio!=null,app.session._world.cinematic_input_blocked()])
 	return failures==0
 
 func requested_contract_kind() -> int:return 4
@@ -121,18 +121,32 @@ func verify_delivery_route(original: Dictionary,before: Dictionary,offer: Dictio
 	var reward:=contract_credit_delta(offer,won)
 	check(paid.contracts.credits==maxi(0,accepted.contracts.credits+reward) and paid.contracts.completed_side_missions==accepted.contracts.completed_side_missions+int(won),"The freelance result paid another reward or count")
 	check(paid.mission==original.mission and paid.campaign_cursor==original.campaign_cursor,"Freelance payment advanced the campaign")
+	var banner: Dictionary=app.reward_banner.snapshot()
+	check(banner.get("visible",false)==(won and reward>0) and (not won or (int(banner.get("credits",0))==reward and not banner.get("bounty",true))),"The Mission accomplished banner is wrong: "+str(banner))
+	if won:
+		await create_timer(2.2).timeout;await capture_free_application("freelance-reward-banner")
 	check(not app.contract_action("result_close",serial) and app.session.snapshot()==paid,"Repeated acknowledgement changed the career")
 	check(app.session.flight_audio.snapshot().history.filter(func(row):return row.get("source_id")==36).size()==int(won),"The result played the wrong number of payment sounds")
 	if not application_step() or not await dock_application():return
 	var docked: Dictionary=app.session.station_owner().snapshot()
-	check(docked.contracts.credits==paid.contracts.credits and docked.contracts.mission.is_empty() and docked.mission==original.mission,"Docking changed the settled freelance career")
+	# A medal crossed at this docking pays its own reward; nothing else changes.
+	var medal_pay: int=docked.contracts.get("medal_notices",[]).reduce(func(sum,row):return sum+preload("res://src/simulation/base_medal_progress.gd").reward_credits(int(row[1])),0)
+	check(docked.contracts.credits==paid.contracts.credits+medal_pay and docked.contracts.mission.is_empty() and docked.mission==original.mission,"Docking changed the settled freelance career: "+str([paid.contracts.credits,docked.contracts.credits,medal_pay]))
 	await capture_free_application("freelance-pirate-paid-station")
 	var saved: Dictionary=app._save_file.load_document(app.station_save_path(),definitions,catalogue,source)
-	check(not saved.is_empty() and saved.career.credits==paid.contracts.credits and saved.career.completed_side_missions==paid.contracts.completed_side_missions and saved.career.mission.is_empty(),"Autosave lost the earned Pirate payment")
+	check(not saved.is_empty() and saved.career.credits==paid.contracts.credits+medal_pay and saved.career.completed_side_missions==paid.contracts.completed_side_missions and saved.career.mission.is_empty(),"Autosave lost the earned Pirate payment")
 	print("Freelance saved: ",{"path":app.station_save_path(),"credits":paid.contracts.credits,"completed":paid.contracts.completed_side_missions,"campaign_cursor":paid.campaign_cursor,"deltas":_pilot_deltas})
 
 func dock_application() -> bool:
 	resume_application_focus()
+	# A story hold (a line still playing) ends before the pilot can dock.
+	for wait in 300:
+		if app.session.can_control() or app.session.status!="running":break
+		if not application_step():return false
+		if wait%20==0:await process_frame
+	if not app.session.can_control():
+		var w: RefCounted=app.session.flight_owner()
+		print("Dock blocked: paused ",app.session.is_paused()," death ",w.death_active()," departing ",w.local_departing()," cinematic ",w.cinematic_input_blocked()," released ",w.entry_released()," dialogue ",w.dialogue_visible()," status ",app.session.status)
 	if not app.session.action("autopilot"):check(false,app.session.error);return false
 	var started:=now_us;var next_yield:=now_us+2000000
 	while now_us-started<200000000 and app.session.status!="station_transition_required":
@@ -222,6 +236,22 @@ func fly_contract_job(initial: Dictionary) -> bool:
 			next_log=now_us+20000000
 	check(false,"The input-only Pirate pilot did not reach an outcome");return false
 
+## A finished career gets the Valkyrie call at the first docked station; a
+## player reads it before the free-career errands these tests fly.
+func reads_finished_career_call() -> bool:return true
+
+func read_finished_career_call() -> bool:
+	for tick in 50:
+		if app.session.snapshot().dialogue.visible or not app.session._dialogue_started:break
+		now_us+=100000;app.session.step(now_us);app.present_session();await process_frame
+	for page in 64:
+		for tick in 100:
+			if app.session._dialogue_started:break
+			now_us+=100000;app.session.step(now_us);app.present_session();await process_frame
+		if not app.session.snapshot().dialogue.visible:return true
+		app.station_navigation("next");await process_frame
+	check(false,"The finished-career call never closed");return false
+
 func run_resumed_job() -> void:
 	if not open_application_content(OS.get_cmdline_user_args()):quit(1);return
 	var directory:=OS.get_environment("GOF2_SAVE_TEST_DIRECTORY")
@@ -229,6 +259,12 @@ func run_resumed_job() -> void:
 	if directory.is_empty() or saved.is_empty():check(false,"Resume requires an earned source file and an isolated destination");quit(1);return
 	app=Host.new();root.add_child(app);app.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	app.set_context(source,definitions,visual);app.set_process(false);app.enable_saves(directory)
+	# A save written with a newer extraction needs it attached first, as the
+	# game does on launch.
+	var update:=OS.get_environment("GOF2_IMPORT_UPDATE")
+	if not update.is_empty():
+		for owner in [app.bindings,definitions]:
+			if owner!=null and owner.import_update_receipt().is_empty() and not owner.attach_import_update(update,app.library.manifest,app.library):check(false,"Import update: "+owner.error);app.free();quit(1);return
 	DirAccess.make_dir_recursive_absolute(app.station_save_path().get_base_dir())
 	if DirAccess.copy_absolute(saved,app.station_save_path())!=OK:check(false,"Could not retain the source checkpoint for Resume");app.free();quit(1);return
 	app.show();app.present_session();await process_frame;resume_application_focus()
@@ -251,6 +287,7 @@ func run_resumed_job() -> void:
 		else:check(false,app.status.text)
 	else:
 		check(resumed_contract_valid(restored),"Fresh Resume discarded the accepted freelance job")
+		if failures==0 and restored.campaign_cursor==45 and reads_finished_career_call():await read_finished_career_call()
 		if failures==0:await verify_free_application()
 	app.free();print("Freelance Resume: %d checks; %d failures"%[checks,failures]);quit(1 if failures else 0)
 

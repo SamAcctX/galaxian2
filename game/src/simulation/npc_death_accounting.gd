@@ -191,7 +191,10 @@ func _record(actor: Dictionary, scripted_restart: bool) -> Dictionary:
 		return fail("NPC death requires exhausted hull and retained kill attribution")
 	var prior_count:=0
 	for prior in _events:
-		if prior.actor_id==id and (_generations.is_empty() or prior.get("spawn_generation")==_generations[id]):prior_count+=1
+		# Without traffic generations, a story ship that came back (revive)
+		# counts as a new instance.
+		var instance: int=int(actor.get("story_life",0)) if _generations.is_empty() else int(_generations[id])
+		if prior.actor_id==id and int(prior.get("spawn_generation",0))==instance:prior_count+=1
 	if prior_count!=int(_selected41_restarts.get(id,1 if scripted_restart else 0)):return fail("NPC death was already recorded or lacks its prior scripted death")
 	var player_credit: bool=not actor.nonplayer_kill
 	var delta := {"hostile_remaining":int(_rules.hostile_remaining_delta),"hostile_deaths":int(_rules.hostile_deaths_delta),
@@ -217,10 +220,14 @@ func _record(actor: Dictionary, scripted_restart: bool) -> Dictionary:
 	var event := _identity.duplicate()
 	event.merge({"actor_id":id,"nonplayer_kill":actor.nonplayer_kill,"counter_deltas":delta})
 	if not _generations.is_empty():event.spawn_generation=_generations[id]
+	elif int(actor.get("story_life",0))>0:event.spawn_generation=int(actor.story_life)
 	if scripted_restart:event.scripted_restart=true
 	_events.append(event)
 	for key in delta: _totals[key]+=delta[key]
 	return event.duplicate(true)
+
+## Deaths the player is credited with (Supernova Challenge score).
+func player_kill_count() -> int:return _events.filter(func(event):return not event.nonplayer_kill).size()
 
 func snapshot() -> Dictionary:
 	if _identity.is_empty(): return {}

@@ -22,6 +22,8 @@ var _rules:={}
 var _room:=0
 var _visitors:=[]
 var _animated:=[]
+## Room parts with authored keys loop them on the lounge clock: [model, sampler].
+var _room_animation:=[]
 var _elapsed_ms:=0
 var _entry:=Transform3D.IDENTITY
 var _settled:=Transform3D.IDENTITY
@@ -99,13 +101,24 @@ func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cat: Ref
 
 func _initial_pose(model: Node3D) -> bool:
 	# Use the existing verified geometry sampler, including source axis and pivot
-	# conversion and packed surface color. UV playback remains at its initial pose.
+	# conversion and packed surface color. UV scrolling follows the model's tracks.
 	var surfaces:=[]
 	for surface in model.surfaces:
 		var row: Dictionary=surface.duplicate();row.tracks=surface.tracks.duplicate();row.tracks.erase("uv");surfaces.append(row)
 	var sampler:=PoseSampler.new()
 	if not sampler.configure(surfaces,true):return reject(sampler.error)
-	var sample: Dictionary=sampler.sample(int(sampler.snapshot().range.start_ms),Transform3D.IDENTITY)
+	var timing: Dictionary=sampler.snapshot().range
+	if int(timing.end_ms)>int(timing.start_ms) or _has_uv(model):_room_animation.append([model,sampler])
+	return _apply_room_pose(model,sampler,int(timing.start_ms))
+
+func _has_uv(model: Node3D) -> bool:
+	for surface in model.surfaces:
+		if surface.tracks.get("uv",[]).size()==7:return true
+	return false
+
+func _apply_room_pose(model: Node3D,sampler: RefCounted,time_ms: int) -> bool:
+	model.set_source_time(float(time_ms))
+	var sample: Dictionary=sampler.sample(time_ms,Transform3D.IDENTITY)
 	if sample.is_empty():return reject(sampler.error)
 	for index in sample.surfaces.size():
 		var row: Dictionary=sample.surfaces[index]
@@ -138,8 +151,12 @@ func advance(milliseconds: int) -> bool:
 	_elapsed_ms+=milliseconds
 	var weight:=clampf(float(_elapsed_ms)/float(_rules.camera.entry_duration_ms),0,1)
 	camera.transform=_entry.interpolate_with(_settled,weight)
-	# Retain the authored initial animation pose until lounge playback clocks
-	# and transform conventions are verified. Camera time is not asset time.
+	# Room parts loop their authored keys from the first key to the last.
+	for row in _room_animation:
+		var timing: Dictionary=row[1].snapshot().range
+		var span: int=int(timing.end_ms)-int(timing.start_ms)
+		var at: int=int(timing.start_ms)+(_elapsed_ms%span if span>0 else _elapsed_ms)
+		if not _apply_room_pose(row[0],row[1],at):return false
 	for row in _visitors:
 		# Native upright facing; exact original billboard interpolation remains
 		# separate from the source-authored positions and model selection.
@@ -150,6 +167,8 @@ func advance(milliseconds: int) -> bool:
 	if not sky.apply_view(view):return reject(sky.error)
 	if not planets.apply_view(view):return reject(planets.error)
 	return true
+
+func animated_parts() -> int:return _room_animation.size()
 
 func select_contact(id: int) -> void:
 	for row in _visitors:row.highlight.visible=row.id==id
@@ -177,6 +196,6 @@ func snapshot() -> Dictionary:
 static func vector(value: Array) -> Vector3:return Vector3(value[0],value[1],value[2])
 func clear() -> void:
 	for child in get_children():child.free()
-	error="";camera=null;sky=null;planets=null;selection={};_rules={};_visitors=[];_animated=[];_elapsed_ms=0;environment=null
+	error="";camera=null;sky=null;planets=null;selection={};_rules={};_visitors=[];_animated=[];_room_animation=[];_elapsed_ms=0;environment=null
 	lighting=null;reflection=null
 func reject(message: String) -> bool:error=message;return false

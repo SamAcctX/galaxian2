@@ -5,6 +5,7 @@ const Definitions=preload("res://src/content/secondary_ownership_definitions.gd"
 const Loadout=preload("res://src/simulation/equipment_slots.gd")
 const Bomb=preload("res://src/simulation/emp_bombs.gd")
 const Mines=preload("res://src/simulation/mine_projectiles.gd")
+const Sentries=preload("res://src/simulation/sentry_guns.gd")
 const MineBursts=preload("res://src/simulation/mine_detonations.gd")
 const Detonation=preload("res://src/simulation/emp_detonation.gd")
 const Combat=preload("res://src/simulation/opening_combat_group.gd")
@@ -23,6 +24,10 @@ var _initial_loadout:={}
 var _loadout:={}
 var _guns:=[]
 var _launches:=0
+var _nuclear_bomb_detonations:=0
+## Asteroids broken by each penetrating rocket this flight, and the best one.
+var _projectile_breaks:={}
+var _max_projectile_breaks:=0
 var _detonation_events: Array[Dictionary]=[]
 var _camera_commands: Array[Dictionary]=[]
 var _presentation_identity: RefCounted
@@ -43,7 +48,12 @@ func configure(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,mounts: 
 		var gun:={"slot_index":index,"equipment":entry.duplicate(true),"ammunition":entry.quantity}
 		var declaration:=Bomb.Definitions.declaration(int(entry.item_id))
 		var mine_declaration:=Mines.Definitions.declaration(int(entry.item_id))
-		if not mine_declaration.is_empty():
+		if not Sentries.Definitions.declaration(int(entry.item_id)).is_empty():
+			gun.sentry=Sentries.new()
+			if not gun.sentry.configure(bindings,cat,entry.item_id,loadout.get("campaign_cursor")):return reject(gun.sentry.error)
+			var sound: Variant=bindings.weapon_parameters.audio.player_event_ids[entry.item_id] if entry.item_id<bindings.weapon_parameters.audio.player_event_ids.size() else -1
+			gun.audio={"enabled":sound is int and sound>=0,"source_id":int(sound) if sound is int else -1,"pitch_raw":float(Definitions.VALUES.launch_audio.pitch_raw)}
+		elif not mine_declaration.is_empty():
 			if not is_instance_of(mounts,load("res://src/content/weapon_mounts.gd")):return reject("Mine launchers require the ship's authored mounts")
 			gun.mount=mounts.resolve(int(checked.ship_id),1,int(entry.slot))
 			if gun.mount.is_empty():return reject(mounts.error)
@@ -72,7 +82,7 @@ func configure(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,mounts: 
 			gun.audio={"enabled":true,"source_id":int(bindings.weapon_parameters.audio.player_event_ids[entry.item_id]),"pitch_raw":0.0}
 		guns.append(gun)
 		seen[entry.item_id]=true
-	_initial_loadout=loadout.duplicate(true);_loadout=loadout.duplicate(true);_guns=guns;_launches=0;_detonation_events=[];_camera_commands=[]
+	_initial_loadout=loadout.duplicate(true);_loadout=loadout.duplicate(true);_guns=guns;_launches=0;_nuclear_bomb_detonations=0;_projectile_breaks={};_max_projectile_breaks=0;_detonation_events=[];_camera_commands=[]
 	_presentation_identity=RefCounted.new()
 	return true
 
@@ -93,7 +103,7 @@ func configure_detonations(resources: RefCounted) -> bool:
 			if not bursts.configure(resources,gun.mine.snapshot().weapon):return reject(bursts.error)
 			prepared[gun.slot_index]=bursts
 			continue
-		if not gun.has("bomb") or gun.bomb.snapshot().weapon.kind!=data.get("kind"):continue
+		if not gun.has("bomb") or Bomb.Definitions.effect_family(int(gun.equipment.item_id))!=data.get("kind"):continue
 		if gun.has("detonation"):return reject("This bomb family already has its prepared bursts")
 		var burst:=Detonation.new()
 		if not burst.configure(resources,int(gun.equipment.item_id)):return reject(burst.error)
@@ -112,7 +122,7 @@ func bomb_kinds() -> Array[int]:
 			var kind:=Mines.Definitions.effect_family(gun.equipment.item_id)
 			if kind not in kinds:kinds.append(kind)
 		if gun.has("bomb"):
-			var kind: int=gun.bomb.snapshot().weapon.kind
+			var kind: int=Bomb.Definitions.effect_family(int(gun.equipment.item_id))
 			if kind not in kinds:kinds.append(kind)
 	return kinds
 
@@ -153,6 +163,7 @@ func detonation_owner(slot_index: int,projectile_slot: int=-1) -> RefCounted:
 	return null
 
 static func _projectile_state(gun: Dictionary) -> Dictionary:
+	if gun.has("sentry"):return gun.sentry.snapshot()
 	if gun.has("mine"):return gun.mine.snapshot()
 	return gun.bomb.snapshot() if gun.has("bomb") else gun.projectiles.snapshot()
 
@@ -170,7 +181,10 @@ func evaluate_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted
 			var flying: bool=before.get("shot",{}).get("phase")=="flying"
 			if not flying and gun.equipment.item_id!=selected_item_id:continue
 			var event: Dictionary
-			if gun.has("mine"):
+			if gun.has("sentry"):
+				event=gun.sentry.trigger(pose,gun.ammunition,true)
+				if event.is_empty():return fail(gun.sentry.error)
+			elif gun.has("mine"):
 				event=gun.mine.trigger(pose,gun.ammunition,true)
 				if event.is_empty():return fail(gun.mine.error)
 			elif gun.has("bomb"):
@@ -216,6 +230,18 @@ func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Va
 	# Projectile wrappers update in creation order, independently of firing order.
 	for index in range(next._guns.size()-1,-1,-1):
 		var gun: Dictionary=next._guns[index]
+		if gun.has("sentry"):
+			var placed: Dictionary=gun.sentry.advance(delta_ms,next._sentry_candidates(group,ordered_actor_ids))
+			if placed.is_empty():return fail(gun.sentry.error)
+			var shots: RefCounted=gun.sentry.projectiles()
+			if shots.has_retained_projectiles():
+				var contacts: RefCounted=Contacts.new() if field!=null else NpcContacts.new()
+				var result: Dictionary=contacts.evaluate(shots,group,field,inventory) if field!=null else contacts.evaluate(shots,group,ordered_actor_ids)
+				if result.is_empty():return fail(contacts.error)
+				gun.sentry.set_projectiles(result.projectiles);group=result.combat
+				if field!=null:field=result.bodies
+			if gun.sentry.projectiles().advance(delta_ms).is_empty():return fail(gun.sentry.projectiles().error)
+			continue
 		if gun.has("mine"):
 			targets=next._targets(group,ordered_actor_ids,field,inventory,true)
 			if not next.error.is_empty():return fail(next.error)
@@ -248,7 +274,12 @@ func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Va
 				gun.projectiles=result.projectiles;group=result.combat
 				if field!=null:field=result.bodies
 				for hit in result.contacts:
-					if hit.get("projectile_continues",false):continue
+					if hit.get("projectile_continues",false):
+						if hit.get("target",{}).get("group")=="scenery":
+							var key:=str(gun.slot_index)+":"+str(hit.get("projectile_id",-1))
+							next._projectile_breaks[key]=int(next._projectile_breaks.get(key,0))+1
+							next._max_projectile_breaks=maxi(next._max_projectile_breaks,next._projectile_breaks[key])
+						continue
 					var projectile: Dictionary=shots.slots[hit.slot]
 					var contact: Dictionary=hit.duplicate(true)
 					contact.merge({"action":"impact","slot_index":gun.slot_index,"item_id":gun.equipment.item_id,"position":projectile.position,"audio":{},"ammunition_consumed":0})
@@ -271,12 +302,46 @@ func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Va
 				var command: Dictionary=burst.camera.duplicate(true)
 				command.slot_index=gun.slot_index;command.item_id=gun.equipment.item_id
 				next._camera_commands.append(command)
-		if event.action=="none":continue
+		# A flying Ion Lambda can break asteroids without bursting (hits, no action).
+		if event.action=="none" and event.blast.get("hits",[]).is_empty():continue
 		if field!=null and field==bodies and _changes_scenery(event):field=bodies.fork_for_frame()
 		var committed: Dictionary=next._apply_event(gun,event,group,Vector3.ZERO,field)
 		if committed.is_empty():return fail(next.error)
-		events.append(committed)
+		if event.action!="none":events.append(committed)
 	return {"owner":next,"combat":group,"bodies":field,"events":events,"self_hits":self_hits,"loadout":next._loadout.duplicate(true)}
+
+## Living, active hostile ships a sentry may aim at, in target order.
+func _sentry_candidates(combat: RefCounted,ordered_actor_ids: Variant) -> Array:
+	var result:=[]
+	if not ordered_actor_ids is Array:return result
+	var actors: Array=combat.snapshot().actors
+	for id in ordered_actor_ids:
+		if not id is int or id<0 or id>=actors.size():continue
+		var actor: Dictionary=actors[id]
+		if not actor.get("hostile",false) or actor.get("scenery",false) or not actor.get("active",false) or int(actor.get("vitals",{}).get("hull",0))<=0 or not actor.get("pose") is Transform3D:continue
+		var body: Variant=actor.get("body_pose",actor.pose)
+		result.append({"actor_id":id,"position":actor.pose.origin,"forward":body.basis.z if body is Transform3D else Vector3.ZERO})
+	return result
+
+## Placed sentries enemy fire can hit: [{slot_index, sentry_id, center}].
+func sentry_targets() -> Array:
+	var result:=[]
+	for gun in _guns:
+		if not gun.has("sentry"):continue
+		for sentry in gun.sentry.snapshot().slots:
+			if sentry!=null and sentry.phase=="active":result.append({"slot_index":int(gun.slot_index),"sentry_id":int(sentry.id),"center":sentry.pose.origin})
+	return result
+
+## A hostile hit on a placed sentry, staged on a fork like any other frame.
+func evaluate_sentry_damage(slot_index: int,sentry_id: int,amount: int) -> Dictionary:
+	error=""
+	var next:=fork()
+	for gun in next._guns:
+		if gun.slot_index!=slot_index or not gun.has("sentry"):continue
+		var hit: Dictionary=gun.sentry.damage(sentry_id,amount)
+		if hit.is_empty():return fail(gun.sentry.error)
+		return {"owner":next,"hit":hit}
+	return fail("Sentry damage names an unavailable launcher")
 
 func evaluate_contact(slot_index: Variant,projectile_id: Variant,combat: RefCounted,ordered_actor_ids: Variant) -> Dictionary:
 	error=""
@@ -309,8 +374,9 @@ func _targets(combat: RefCounted,ordered_actor_ids: Variant,bodies: RefCounted=n
 	for id in ordered_actor_ids:
 		if not id is int or id<0 or id>=state.actors.size() or seen.has(id):reject("Secondary target order names an unavailable or repeated actor");return []
 		var actor: Dictionary=state.actors[id]
-		if not actor.get("scenery") is bool or not actor.get("active") is bool or not actor.get("position") is Vector3 or not actor.position.is_finite():reject("Secondary target lacks current classification and position");return []
-		var target:={"actor_id":id,"position":actor.position,"active":actor.active,"emp_immune":actor.scenery,"mine_sensitive":actor.get("hostile",false) and not actor.scenery}
+		# Only systems-pool ships carry the scenery flag; any other ship is not scenery.
+		if not actor.get("scenery",false) is bool or not actor.get("active") is bool or not actor.get("position") is Vector3 or not actor.position.is_finite():reject("Secondary target lacks current classification and position");return []
+		var target:={"actor_id":id,"position":actor.position,"active":actor.active,"emp_immune":actor.get("scenery",false),"mine_sensitive":actor.get("hostile",false) and not actor.get("scenery",false)}
 		if physical_contacts:
 			target.collision=combat.collision_context(id)
 			if target.collision.is_empty():reject(combat.error);return []
@@ -341,7 +407,7 @@ func _apply_event(gun: Dictionary,event: Dictionary,combat: RefCounted,origin: V
 			if slot!=null:_loadout.equipment_ids.append(slot.item_id)
 		if gun.has("detonation") and not gun.detonation.begin_projectile(event.shot):return fail(gun.detonation.error)
 		result.audio=Audio.cue(gun.audio,origin)
-	elif event.action=="detonated":
+	elif event.action=="detonated" or not event.get("blast",{}).get("hits",[]).is_empty():
 		result.normal_hits=[]
 		for hit in event.blast.hits:
 			if hit.has("normal_damage"):
@@ -355,13 +421,20 @@ func _apply_event(gun: Dictionary,event: Dictionary,combat: RefCounted,origin: V
 						normal=bodies.normal_hit(target.index,hit.normal_damage)
 						if normal.is_empty() or not bodies.record_blast(target.index,hit.impact_vector,hit.motion_scalar):return fail(bodies.error)
 					else:
-						normal=combat.normal_hit(target.index,hit.normal_damage,false)
+						normal=combat.normal_hit(target.index,hit.normal_damage,false,int(gun.equipment.item_id))
 						if normal.is_empty():return fail(combat.error)
 					result.normal_hits.append({"target":target,"damage":hit.normal_damage,"result":normal})
-			if (not hit.has("normal_damage") or hit.system_damage>0) and hit.get("target",{}).get("group")!="scenery":
+			# Ships built without a systems pool (e.g. contract casts) still take
+			# the blast's hull damage; there is simply nothing for EMP to disable.
+			if (not hit.has("normal_damage") or hit.system_damage>0) and hit.get("target",{}).get("group")!="scenery" and combat.actor_snapshot(hit.actor_id).has("systems"):
 				var applied: Dictionary=combat.systems_hit(hit.actor_id,hit.system_damage,false)
 				if applied.is_empty():return fail(combat.error)
 				result.systems_hits.append({"actor_id":hit.actor_id,"damage":hit.system_damage,"result":applied})
+		# Nuclear Armament advances only after a committed kind-7 blast. EMP
+		# bombs share this wrapper but do not advance the source statistic.
+		if gun.has("bomb") and int(gun.bomb.snapshot().weapon.kind)==7:
+			if _nuclear_bomb_detonations>=Vitals.MAX_INTEGER:return fail("Nuclear bomb detonation history exceeds the supported career range")
+			_nuclear_bomb_detonations+=1
 	return result
 
 ## Only the actual launcher history may reduce an existing equipped stack. The
@@ -446,7 +519,8 @@ func selection_feedback(selected_item_id: int) -> Dictionary:
 		var flying: bool=state.get("shot",{}).get("phase")=="flying"
 		var wait_ms: int=maxi(0,int(state.weapon.interval_ms)-int(state.elapsed_ms)+1)
 		var action: String
-		if gun.has("mine"):action=gun.mine.trigger_action(gun.ammunition)
+		if gun.has("sentry"):action=gun.sentry.trigger_action(gun.ammunition)
+		elif gun.has("mine"):action=gun.mine.trigger_action(gun.ammunition)
 		elif gun.has("bomb"):action=gun.bomb.trigger_action(gun.ammunition)
 		else:action="launched" if gun.ammunition>0 and wait_ms==0 and state.available_slots>0 else "none"
 		var count: int=int(flying) if gun.has("bomb") else state.slots.filter(func(slot):return slot!=null).size()
@@ -499,9 +573,37 @@ func evaluate_camera(random_state: Dictionary) -> Dictionary:
 
 func discard_flying() -> void:
 	for gun in _guns:
-		if gun.has("mine"):gun.mine.discard_flying()
+		if gun.has("sentry"):gun.sentry.discard_flying()
+		elif gun.has("mine"):gun.mine.discard_flying()
 		elif gun.has("bomb"):gun.bomb.discard_flying()
 		else:gun.projectiles.discard_flying()
+
+## Guided missile (catalogue-guided bombs). At most one launcher is live.
+func _guided_gun() -> Dictionary:
+	for gun in _guns:
+		if gun.has("bomb") and gun.bomb.guided_live():return gun
+	return {}
+
+func guided_active() -> bool:return not _guided_gun().is_empty()
+
+func guided_camera_pose() -> Transform3D:
+	var gun:=_guided_gun()
+	return Transform3D() if gun.is_empty() else gun.bomb.guided_camera_pose()
+
+## Copy-on-write: the returned owner carries the new stick command.
+func steer_guided(command: Vector2) -> RefCounted:
+	error=""
+	var next:=fork()
+	var gun: Dictionary=next._guided_gun()
+	if not gun.is_empty() and not gun.bomb.set_steering(command):reject(gun.bomb.error);return null
+	return next
+
+## Script/phase removal: the live guided missile vanishes without a blast.
+func discard_guided() -> RefCounted:
+	var next:=fork()
+	var gun: Dictionary=next._guided_gun()
+	if not gun.is_empty():gun.bomb.discard_flying()
+	return next
 
 func presentation_identity() -> RefCounted:return _presentation_identity
 
@@ -510,26 +612,30 @@ func snapshot() -> Dictionary:
 	var guns:=[]
 	for gun in _guns:
 		var row:={"slot_index":gun.slot_index,"equipment":gun.equipment.duplicate(true),"ammunition":gun.ammunition,"audio":gun.audio.duplicate()}
-		if gun.has("mine"):row.mine=gun.mine.snapshot();row.mount=gun.mount.duplicate(true)
+		if gun.has("sentry"):row.sentry=gun.sentry.snapshot()
+		elif gun.has("mine"):row.mine=gun.mine.snapshot();row.mount=gun.mount.duplicate(true)
 		elif gun.has("bomb"):row.bomb=gun.bomb.snapshot()
 		else:row.projectiles=gun.projectiles.snapshot();row.mount=gun.mount.duplicate(true)
 		if gun.has("detonation"):row.detonation=gun.detonation.snapshot()
 		if gun.has("mine_bursts"):row.mine_bursts=gun.mine_bursts.snapshot()
 		if gun.has("visuals"):row.visuals=gun.visuals.duplicate(true)
 		guns.append(row)
-	var state:={"initial_loadout":_initial_loadout.duplicate(true),"loadout":_loadout.duplicate(true),"launches":_launches,"guns":guns}
+	var state:={"initial_loadout":_initial_loadout.duplicate(true),"loadout":_loadout.duplicate(true),"launches":_launches,"nuclear_bomb_detonations":_nuclear_bomb_detonations,"guns":guns}
 	if has_detonations():
 		state.detonation_audio=_detonation_events.duplicate(true)
 		state.detonation_camera=_camera_commands.duplicate(true)
+	if _max_projectile_breaks>0:state.max_projectile_scenery_breaks=_max_projectile_breaks
 	return state
 
 func fork() -> RefCounted:
 	var next: RefCounted=get_script().new()
-	next._initial_loadout=_initial_loadout.duplicate(true);next._loadout=_loadout.duplicate(true);next._launches=_launches
+	next._initial_loadout=_initial_loadout.duplicate(true);next._loadout=_loadout.duplicate(true);next._launches=_launches;next._nuclear_bomb_detonations=_nuclear_bomb_detonations
+	next._projectile_breaks=_projectile_breaks.duplicate();next._max_projectile_breaks=_max_projectile_breaks
 	next._presentation_identity=_presentation_identity;next._detonation_events=_detonation_events.duplicate(true);next._camera_commands=_camera_commands.duplicate(true)
 	for gun in _guns:
 		var copy: Dictionary=gun.duplicate();copy.equipment=gun.equipment.duplicate(true);copy.audio=gun.audio.duplicate()
-		if gun.has("mine"):copy.mine=gun.mine.fork();copy.mount=gun.mount.duplicate(true)
+		if gun.has("sentry"):copy.sentry=gun.sentry.fork()
+		elif gun.has("mine"):copy.mine=gun.mine.fork();copy.mount=gun.mount.duplicate(true)
 		elif gun.has("bomb"):copy.bomb=gun.bomb.fork()
 		else:copy.projectiles=gun.projectiles.fork_state();copy.mount=gun.mount.duplicate(true)
 		if gun.has("detonation"):copy.detonation=gun.detonation.fork()

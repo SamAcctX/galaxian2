@@ -125,7 +125,7 @@ func verify_branch(library: RefCounted,bindings: RefCounted,cat: RefCounted,equi
 	var hit: Dictionary=control.advance(100,target,lethal,lethal.contact_random_state())
 	if hit.is_empty():check(false,control.error);return
 	var death: Dictionary=control.snapshot()
-	check(death.accounting.events.size()==1 and death.accounting.counter_deltas.player_kills==1 and death.accounting.counter_deltas.pirate_kills==0 and death.destruction[0].cargo.entries==generated.npc_construction.actors[0].cargo,"Void hit duplicated cargo or miscredited the kind9 kill")
+	check(death.accounting.events.size()==1 and death.accounting.counter_deltas.player_kills==1 and death.accounting.counter_deltas.pirate_kills==0 and void_remains(death.destruction[0].cargo.entries),"Void hit duplicated cargo or miscredited the kind9 kill")
 	check(death.combat.reputation.events.size()==1 and death.combat.reputation.events[0].change==int(bindings.mido_travel.alioth_lifecycle.void_reputation_change),"Void hit lost its original kind9 source-system reputation change")
 	await verify_scanner(library,bindings,cat,equipment,source,initial.combat,after.combat,death.combat,"rank%d-seed%d"%[rank,seed])
 	check(world.snapshot()==original_world and equipment.snapshot()==original_equipment and source.snapshot()==career.void_source,"Detached combat mutated its construction, equipment or source")
@@ -351,3 +351,7 @@ func check(ok: bool,message: String) -> void:
 	if not ok:failures+=1;push_error(message)
 
 func finish() -> void:quit(1 if failures else 0)
+
+# Hostile Void ships drop one stack of 1-3 Alien Remains (item 131) instead of their cargo.
+func void_remains(entries: Array) -> bool:
+	return entries.size()==1 and entries[0].item_id==131 and int(entries[0].quantity)>=1 and int(entries[0].quantity)<=3

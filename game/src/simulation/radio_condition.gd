@@ -12,17 +12,32 @@ static func valid_clock(value: Variant) -> bool:
 	return value is int and value >= 0 and value <= MAX_INTEGER
 
 static func valid_row(row: Dictionary, event_count: int) -> bool:
-	if not Numbers.integer(row.get("condition"), 0, 31) or not row.get("values") is Array: return false
+	if not Numbers.integer(row.get("condition"), 0, 63) or not row.get("values") is Array: return false
 	var kind := int(row.condition)
-	if kind not in [1, 5, 6, 8, 9, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27]: return false
-	if row.values.is_empty() or row.values.size() > 256 or (kind not in [1, 9] and row.values.size() != 1): return false
+	if kind not in [1, 5, 6, 8, 9, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 50, 51, 52, 53, 54, 55, 56, 57]: return false
+	# Remake story conditions: 38 = the player reached the end of their route;
+	# 37 = all of [[condition, values], ...].
+	if kind == 38: return row.values.is_empty()
+	# 36 also takes 37's form: any of [[condition, values], ...] (157).
+	if kind == 37 or (kind == 36 and not row.values.is_empty() and row.values[0] is Array):
+		if row.values.is_empty() or row.values.size() > 8: return false
+		for part in row.values:
+			if not part is Array or part.size() != 2 or not part[1] is Array or int(part[0]) == kind or not valid_row({"condition": part[0], "values": part[1]}, event_count): return false
+		return true
+	# 36: any of [condition, value, ...] pairs of single-value conditions.
+	if kind == 36:
+		if row.values.is_empty() or row.values.size() % 2 != 0: return false
+		for index in range(0, row.values.size(), 2):
+			if not row.values[index] is int or int(row.values[index]) not in [5, 6, 32, 33, 34] or not valid_row({"condition": row.values[index], "values": [row.values[index + 1]]}, event_count): return false
+		return true
+	if row.values.is_empty() or row.values.size() > 256 or (kind not in [1, 9, 29, 30, 31, 34, 35, 54, 56] and row.values.size() != 1) or (kind == 54 and (row.values.size() != 3 or int(row.values[2]) < 1)) or (kind == 34 and row.values.size() > 2) or (kind == 29 and row.values.size() != 2) or (kind in [30, 31, 35] and row.values.size() != 3): return false
 	for value in row.values:
 		if not Numbers.integer(value, -2147483648 if kind == 26 else 0, MAX_INTEGER): return false
 	return kind != 6 or int(row.values[0]) < event_count
 
 static func observation_error(observation: Dictionary, condition_clock: Variant) -> String:
 	if not valid_clock(condition_clock): return "Radio requires an explicit integer condition clock"
-	for key in ["hulls", "maximum_hulls", "activity", "positions_z"]:
+	for key in ["hulls", "maximum_hulls", "activity", "positions_z", "player_distances", "emp"]:
 		if not observation.has(key): continue
 		var values: Variant = observation[key]
 		if not values is Dictionary: return "Invalid radio actor observations: " + key
@@ -36,11 +51,15 @@ static func observation_error(observation: Dictionary, condition_clock: Variant)
 					if not Numbers.integer(value, 1, MAX_INTEGER): return "Invalid radio maximum hull"
 				"activity":
 					if not value is bool: return "Invalid radio actor activity"
+				"emp":
+					if not value is Array or value.size() != 2 or not value[0] is bool or not value[1] is bool: return "Invalid radio EMP observation"
+				"player_distances":
+					if not (value is int or value is float) or not is_finite(value) or value < 0: return "Invalid radio player distance"
 				"positions_z":
 					if not (value is int or value is float) or not is_finite(value) or not is_finite(Vitals.single(float(value))): return "Invalid radio statistics Z position"
 	for key in ["phase", "defeated_targets", "collected_cargo_quantity", "survivors", "route_index"]:
 		if observation.has(key) and not Numbers.integer(observation[key], -1 if key in ["phase", "route_index"] else 0, MAX_INTEGER): return "Invalid radio quantity: " + key
-	for key in ["hostile_active", "mother_ship_locked"]:
+	for key in ["hostile_active", "mother_ship_locked", "player_armor_depleted"]:
 		if observation.has(key) and not observation[key] is bool: return "Invalid radio activity: " + key
 	if observation.has("targets"):
 		var targets: Variant = observation.targets
@@ -54,7 +73,7 @@ static func observation_error(observation: Dictionary, condition_clock: Variant)
 	return ""
 
 static func evaluate(row: Dictionary, condition_clock: int, observations: Dictionary, started: Array, waypoint_indices: Dictionary, event_index: int = -1) -> bool:
-	var value := int(row.values[0])
+	var value := int(row.values[0]) if not row.values.is_empty() and (row.values[0] is int or row.values[0] is float) else 0
 	var hulls: Dictionary = observations.get("hulls", {})
 	match int(row.condition):
 		1:
@@ -94,4 +113,74 @@ static func evaluate(row: Dictionary, condition_clock: int, observations: Dictio
 			var position: Variant = observations.get("positions_z", {}).get(0)
 			return position != null and absf(Vitals.single(float(position) - float(value))) < Z_TOLERANCE
 		27: return int(observations.get("phase", 0)) == value
+		28: return observations.get("player_armor_depleted", false)
+		# Remake story condition: the player is within values[1] of ship values[0].
+		29:
+			var distance: Variant = observations.get("player_distances", {}).get(value)
+			return distance != null and hulls.get(value, 0) > 0 and float(distance) <= float(row.values[1])
+		# Remake story condition: at least values[0] of ships values[1]..values[2]-1 destroyed.
+		30:
+			var destroyed := 0
+			for actor in range(int(row.values[1]), int(row.values[2])):
+				if hulls.has(actor) and hulls[actor] <= 0: destroyed += 1
+			return destroyed >= value
+		# Remake story condition: any of ships values[0]..values[1]-1 was EMP-hit (values[2]=0) or is EMP-disabled (1).
+		31:
+			var emp: Dictionary = observations.get("emp", {})
+			for actor in range(int(row.values[0]), int(row.values[1])):
+				if emp.has(actor) and emp[actor][clampi(int(row.values[2]), 0, 1)]: return true
+			return false
+		# Remake story conditions for people moved: docked at actor values[0];
+		# at least values[0] aboard; the story status at most values[0].
+		32: return int(observations.get("story_docked", -1)) == value
+		33: return int(observations.get("story_aboard", 0)) >= value
+		# With values[1]: the status has been at most values[0] for that many ms.
+		34:
+			if not observations.has("story_status") or int(observations.story_status) > value: return false
+			if row.values.size() < 2: return true
+			var since := condition_clock
+			for status in observations.get("story_status_marks", {}):
+				if int(status) <= value: since = mini(since, int(observations.story_status_marks[status]))
+			return condition_clock - since >= int(row.values[1])
+		# Remake story condition: line values[0] started (values[2]=0) or
+		# finished (1) at least values[1] ms ago.
+		36:
+			if row.values[0] is Array:
+				for part in row.values:
+					if evaluate({"condition": part[0], "values": part[1]}, condition_clock, observations, started, waypoint_indices, event_index): return true
+				return false
+			for index in range(0, row.values.size(), 2):
+				if evaluate({"condition": row.values[index], "values": [row.values[index + 1]]}, condition_clock, observations, started, waypoint_indices, event_index): return true
+			return false
+		38: return observations.get("player_route_reached", false) == true
+		# Remake story conditions: at least values[0] hacks won; the story
+		# status at least values[0].
+		50: return int(observations.get("story_hacks", 0)) >= value
+		51: return observations.has("story_status") and int(observations.story_status) >= value
+		# The player reached the story course point (one point per course).
+		52: return observations.get("player_route_reached", false) == true
+		# Dead story ships came back (respawn) after line values[0] started.
+		53:
+			var begun: Variant = observations.get("radio_marks", {}).get("started", {}).get(value)
+			return begun != null and observations.has("story_respawned_ms") and int(observations.story_respawned_ms) >= int(begun)
+		# Remake story conditions: ship values[0] is at or below
+		# values[1]/values[2] of its full hull (a destroyed ship counts);
+		# the player has ship values[0] targeted.
+		54:
+			var maximum: Variant = observations.get("maximum_hulls", {}).get(value)
+			return maximum != null and hulls.has(value) and int(hulls[value]) * int(row.values[2]) < int(maximum) * int(row.values[1])
+		55: return int(observations.get("player_target", -1)) == value
+		# The player's hold has at least one of items values; a gas cloud was
+		# ionized this flight (142).
+		56:
+			var hold: Array = observations.get("hold_item_ids", [])
+			return row.values.any(func(item): return hold.has(int(item)))
+		57: return observations.get("gas_cloud_ionized", false) == true
+		37:
+			for part in row.values:
+				if not evaluate({"condition": part[0], "values": part[1]}, condition_clock, observations, started, waypoint_indices, event_index): return false
+			return true
+		35:
+			var mark: Variant = observations.get("radio_marks", {}).get("finished" if int(row.values[2]) == 1 else "started", {}).get(value)
+			return mark != null and condition_clock - int(mark) >= int(row.values[1])
 	return false

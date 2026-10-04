@@ -28,9 +28,13 @@ func configure_freighter(data: Dictionary, ordinary_detail: Dictionary) -> bool:
 	if not _selector.configure([int(data.freighter.assembly.lod_distance)],1,0,ordinary_detail.detail_boundaries,ordinary_detail.squared_distance_factors):return reject(_selector.error)
 	return true
 
+## Remake choice (user, 3 Oct 2026): ships always draw their most detailed
+## model, instead of the original's distance switching. The source distance
+## cull still decides visibility.
 func select(distance_squared: Variant, detail: Variant) -> Dictionary:
 	var selected := _selector.select(distance_squared,detail)
 	error=_selector.error
+	if selected.get("visible",false):selected.level=0
 	return selected
 
 func configure_convoy(data: Dictionary,ordinary_detail: Dictionary) -> bool:

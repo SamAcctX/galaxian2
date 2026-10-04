@@ -18,9 +18,10 @@ var failures:=0
 
 class CompleteObservation extends "res://src/simulation/full_hold_encounter.gd":
 	var retained: RefCounted
-	func snapshot() -> Dictionary:return retained.snapshot()
+	func snapshot(shared:=false) -> Dictionary:return retained.snapshot(shared)
 	func presentation_snapshot() -> Dictionary:return retained.snapshot()
 	func npc_destruction_owner(actor_id: int) -> RefCounted:return retained.npc_destruction_owner(actor_id)
+	func npc_destruction_view(actor_id: int) -> RefCounted:return retained.npc_destruction_view(actor_id)
 	func freighter_assembly(actor_id: int) -> Dictionary:return retained.freighter_assembly(actor_id)
 	func freighter_resources() -> RefCounted:return retained.freighter_resources()
 	func projectile_visual_owner() -> RefCounted:return retained.projectile_visual_owner()
@@ -48,7 +49,7 @@ func verify(args: PackedStringArray) -> void:
 	if document.is_empty():check(false,file.error);return
 	var station:=archive.restore(bindings,cat,library,document)
 	if station==null:check(false,archive.error);return
-	var original: Dictionary=station.snapshot()
+	var original: Dictionary=station.snapshot();var captured: Dictionary=archive.capture(station,bindings)
 	check(original.campaign_cursor in [18,19,21],"Supply an earned ordinary or rescue departure")
 	var construction:=Construction.new();var bodies:=Bodies.new();var effects:=Effects.new()
 	if not bodies.configure(library,bindings) or not effects.configure(library,bindings):check(false,bodies.error+effects.error);return
@@ -73,7 +74,7 @@ func verify(args: PackedStringArray) -> void:
 		var state: Dictionary=world.snapshot()
 		verify_rejections(observed,complete,legacy.retained,legacy,state.camera_view.pose,state.ship_detail)
 		if OS.get_environment("GOF2_ENCOUNTER_OBSERVATION_BENCHMARK")=="1":measure_observations(legacy.retained)
-	check(station.snapshot()==original and archive.capture(station,bindings)==document,"Presentation changed the earned station or career")
+	check(station.snapshot()==original and archive.capture(station,bindings)==captured,"Presentation changed the earned station or career")
 	observed.free();complete.free()
 
 func expected_observation(full: Dictionary) -> Dictionary:
@@ -93,8 +94,8 @@ func verify_observation(owner: RefCounted) -> void:
 		view.combat.actors.reverse()
 	for row in view.weapons.actors:row.projectiles["observation_mutation"]=true
 	for row in view.projectile_visuals.models:row.time_ms=-1
-	for row in view.impact_visuals.weapons:
-		if not row.slots.is_empty():row.slots[0].position=Vector3.INF
+	# Impact clocks are shared read-only; presentation cannot write into them.
+	check(view.impact_visuals.is_read_only() and view.impact_visuals.weapons.all(func(row):return row.is_read_only()),"Impact observation is editable")
 	if view.has("primaries"):
 		for gun in view.primaries.guns:gun.projectiles["observation_mutation"]=true
 	view.clear()

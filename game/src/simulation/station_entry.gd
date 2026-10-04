@@ -26,6 +26,7 @@ const FreeFlight=preload("res://src/content/free_flight_definitions.gd")
 const FreeNavigation=preload("res://src/content/free_navigation_definitions.gd")
 const CampaignVisit=preload("res://src/simulation/campaign_visit.gd")
 const CampaignPreparation=preload("res://src/simulation/campaign_preparation.gd")
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 var error := ""
 var _departure_refusal:=-1
 var _state := {}
@@ -284,6 +285,13 @@ func _configure_contract_return(bindings: RefCounted,catalogues: RefCounted,libr
 		state.dekato_source_receipt=bindings.dekato_source_receipt().duplicate(true)
 		state.nehma_source_receipt=bindings.nehma_source_receipt().duplicate(true)
 	_state=state;_lines=[];_rules=bindings.station_entry.duplicate(true);_return_rules=rules;_progress_rules=bindings.opening_handoff.duplicate(true)
+	# A used Emergency System (item 185) is gone once the ship docks.
+	var emergency: Dictionary=packet.get("player",{}).get("devices",{}).get("emergency",{})
+	if emergency.get("used",false) and not equipment.remove_story_item(bindings,catalogues,int(emergency.item_id)):return fail(equipment.error)
+	# A race signature blown in flight is gone, with an offence of 100 to its race.
+	if packet.has("signature_lost"):
+		var race:=int(packet.signature_lost)
+		if race<0 or race>3 or contracts==null or not equipment.remove_story_item(bindings,catalogues,189+race) or not contracts.apply_delict(race,100):return fail("The blown signature could not be settled: "+equipment.error+contracts.error)
 	_equipment=equipment;_contracts=contracts;_equipment_rules={};_equipment_lines=[];_local_rules={};_local_exchange=null;_contract_followup=null
 	var continuation: RefCounted=contracts.station_context_owner()
 	if continuation!=null and continuation.completed_career(bindings):
@@ -491,7 +499,7 @@ func equipment_action(action: String, item_id: int, bindings: RefCounted=null, c
 		var career: RefCounted=_contracts.fork()
 		var inventory: RefCounted=career.transact_shopping(bindings,catalogues,_equipment,action,item_id,slot_index,quantity)
 		if inventory==null:return fail(career.error)
-		_contracts=career;_retain_equipment(inventory)
+		_contracts=career;_retain_equipment(inventory);_sync_booze_progress(career)
 		return true
 	if _state.phase!="station_equipment_required":return fail("The equipment hangar is unavailable")
 	var candidate: RefCounted=_equipment.fork()
@@ -515,8 +523,22 @@ func collect_blueprint_products() -> bool:
 	_contracts=career;_retain_equipment(inventory)
 	return true
 
-func open_contracts(bindings: RefCounted,catalogues: RefCounted,difficulty: float=0.5) -> bool:
+## Before contracts open the station state carries the chosen difficulty
+## (absent means Normal, as in older saves); contracts then own it.
+func retain_difficulty(value: Variant) -> bool:
 	error=""
+	if not Difficulty.valid(value) or _state.is_empty():return fail("The game difficulty is invalid")
+	if _contracts!=null:return true
+	if float(value)==Difficulty.NORMAL:_state.erase("difficulty")
+	else:_state.difficulty=float(value)
+	return true
+
+func career_difficulty() -> float:
+	return float(_contracts.snapshot().difficulty) if _contracts!=null else float(_state.get("difficulty",Difficulty.NORMAL))
+
+func open_contracts(bindings: RefCounted,catalogues: RefCounted,difficulty: Variant=null) -> bool:
+	error=""
+	if difficulty==null:difficulty=float(_state.get("difficulty",Difficulty.NORMAL))
 	if _state.get("phase")!="contracts_required" or _equipment==null:return fail("The station has no available lounge introduction")
 	if _contracts!=null:
 		var retained: Dictionary=_contracts.snapshot()
@@ -526,7 +548,7 @@ func open_contracts(bindings: RefCounted,catalogues: RefCounted,difficulty: floa
 	if not inventory.prepare_contract_cargo(bindings):return fail(inventory.error)
 	var contracts:=Contracts.new()
 	if not contracts.configure(bindings,catalogues,_state,inventory,difficulty):return fail(contracts.error)
-	_equipment=inventory;_contracts=contracts
+	_equipment=inventory;_contracts=contracts;_state.erase("difficulty")
 	return true
 
 func retain_contract_locations(cache: RefCounted) -> bool:
@@ -559,11 +581,141 @@ func contract_preview(offer_id: int,bindings: RefCounted=null) -> Dictionary:
 func _contract_station(bindings: RefCounted) -> bool:
 	return _state.get("phase") in ["contracts_required","convoy_departure_required"] or (_state.get("phase")=="free_play_required" and preload("res://src/content/ordinary_contracts_definitions.gd").available(bindings))
 
-func inspect_contract_contact(contact_id: int,bindings: RefCounted) -> bool:
+func begin_lounge_visit(bindings: RefCounted) -> bool:
 	error=""
 	if _contracts==null or not _contract_station(bindings):return fail("The station lounge is unavailable")
 	var contracts: RefCounted=_contracts.fork()
-	if not contracts.inspect_contact(bindings,contact_id):return fail(contracts.error)
+	if not contracts.begin_lounge_visit():return fail(contracts.error)
+	_contracts=contracts
+	return true
+
+func inspect_contract_contact(contact_id: int,bindings: RefCounted,library: RefCounted=null) -> bool:
+	error=""
+	if _contracts==null or not _contract_station(bindings):return fail("The station lounge is unavailable")
+	var contracts: RefCounted=_contracts.fork()
+	if not contracts.inspect_contact(bindings,contact_id,library):return fail(contracts.error)
+	_contracts=contracts
+	return true
+
+func decline_contract(offer_id: int,bindings: RefCounted) -> bool:
+	error=""
+	if _contracts==null or not _contract_station(bindings):return fail("The station lounge is unavailable")
+	var preview: Dictionary=_contracts.preview(offer_id,_equipment,bindings)
+	if preview.is_empty() or not preview.get("can_accept",false):return fail(_contracts.error if not _contracts.error.is_empty() else "This job cannot be refused from the current offer")
+	var contracts: RefCounted=_contracts.fork()
+	if not contracts.decline(offer_id):return fail(contracts.error)
+	_contracts=contracts
+	return true
+
+func expired_wingmen() -> Dictionary:
+	return {} if _contracts==null else _contracts.expired_wingmen()
+
+func dismiss_expired_wingmen() -> bool:
+	if _contracts==null or _state.get("hangar_open",false) or snapshot().dialogue.visible:return fail("The crew farewell requires an idle station")
+	var candidate: RefCounted=_contracts.fork()
+	if not candidate.dismiss_expired_wingmen():return fail(candidate.error)
+	_contracts=candidate
+	return true
+
+func advance_kaamo(purchase: bool) -> bool:
+	var Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
+	if _contracts==null or _equipment==null or _state.get("hangar_open",false) or snapshot().dialogue.visible:return fail("The Kaamo Club requires an idle station")
+	var inventory: RefCounted=_equipment.fork()
+	if purchase and not inventory.debit_campaign_cargo(Kaamo.BUSKAT,Kaamo.BUSKAT_TONS):return fail(inventory.error)
+	var career: RefCounted=_contracts.fork()
+	if not career.advance_kaamo(purchase):return fail(career.error)
+	_contracts=career;_state.progress=career.snapshot().progress
+	_retain_equipment(inventory)
+	return true
+
+func hear_bar_flavor() -> bool:
+	if _contracts==null:return fail("Bar talks require a career")
+	var career: RefCounted=_contracts.fork()
+	if not career.hear_bar_flavor():return fail(career.error)
+	_contracts=career;_state.progress=career.snapshot().progress
+	return true
+
+func unlock_medal_blueprint(item_id: int) -> bool:
+	if _contracts==null:return fail("Medal rewards require a career")
+	var career: RefCounted=_contracts.fork()
+	if not career.unlock_medal_blueprint(item_id):return fail(career.error)
+	_contracts=career
+	return true
+
+## Paying the docking fee also forgives an attack on this station's forces.
+func pay_docking_fee(amount: int) -> bool:
+	if _contracts==null or _state.get("hangar_open",false) or snapshot().dialogue.visible:return fail("The docking fee requires an idle station")
+	var career: RefCounted=_contracts.fork()
+	if not career.pay_docking_fee(amount):return fail(career.error)
+	_contracts=career
+	var station:=int(_state.loadout.station_id)
+	if _state.get("station_response_flags",{}).has(station):_state.station_response_flags[station]=false
+	return true
+
+func collect_pirate_base_thanks(pending_bit: int,reward: int) -> bool:
+	if _contracts==null or _state.get("hangar_open",false) or snapshot().dialogue.visible:return fail("Pirate-base thanks require an idle station")
+	var career: RefCounted=_contracts.fork()
+	if not career.collect_pirate_base_thanks(pending_bit,reward):return fail(career.error)
+	_contracts=career;_state.progress=career.snapshot().progress
+	return true
+
+func wingman_preview(contact_id: int,bindings: RefCounted) -> Dictionary:
+	error=""
+	if _contracts==null or not _contract_station(bindings):fail("The station lounge is unavailable");return {}
+	var preview: Dictionary=_contracts.wingman_preview(bindings,contact_id,_equipment)
+	if preview.is_empty():fail(_contracts.error)
+	return preview
+
+func hire_lounge_wingmen(contact_id: int,bindings: RefCounted) -> bool:
+	error=""
+	if _contracts==null or not _contract_station(bindings):return fail("The station lounge is unavailable")
+	var contracts: RefCounted=_contracts.fork()
+	if not contracts.hire_lounge_wingmen(bindings,contact_id,_equipment):return fail(contracts.error)
+	_contracts=contracts
+	return true
+
+func diplomat_preview(contact_id: int,bindings: RefCounted) -> Dictionary:
+	error=""
+	if _contracts==null or not _contract_station(bindings):fail("The station lounge is unavailable");return {}
+	var preview: Dictionary=_contracts.diplomat_preview(bindings,contact_id,_equipment)
+	if preview.is_empty():fail(_contracts.error)
+	return preview
+
+func purchase_lounge_diplomat(contact_id: int,bindings: RefCounted) -> bool:
+	error=""
+	if _contracts==null or not _contract_station(bindings):return fail("The station lounge is unavailable")
+	var contracts: RefCounted=_contracts.fork()
+	if not contracts.purchase_lounge_diplomat(bindings,contact_id,_equipment):return fail(contracts.error)
+	_contracts=contracts;_state.progress=contracts.snapshot().progress.duplicate(true)
+	return true
+
+func blueprint_preview(contact_id: int,bindings: RefCounted) -> Dictionary:
+	error=""
+	if _contracts==null or not _contract_station(bindings):fail("The station lounge is unavailable");return {}
+	var preview: Dictionary=_contracts.blueprint_preview(bindings,contact_id,_equipment)
+	if preview.is_empty():fail(_contracts.error)
+	return preview
+
+func purchase_lounge_blueprint(contact_id: int,bindings: RefCounted) -> bool:
+	error=""
+	if _contracts==null or not _contract_station(bindings):return fail("The station lounge is unavailable")
+	var contracts: RefCounted=_contracts.fork()
+	if not contracts.purchase_lounge_blueprint(bindings,contact_id,_equipment):return fail(contracts.error)
+	_contracts=contracts
+	return true
+
+func coordinate_preview(contact_id: int,bindings: RefCounted) -> Dictionary:
+	error=""
+	if _contracts==null or not _contract_station(bindings):fail("The station lounge is unavailable");return {}
+	var preview: Dictionary=_contracts.coordinate_preview(bindings,contact_id,_equipment)
+	if preview.is_empty():fail(_contracts.error)
+	return preview
+
+func purchase_lounge_coordinates(contact_id: int,bindings: RefCounted) -> bool:
+	error=""
+	if _contracts==null or not _contract_station(bindings):return fail("The station lounge is unavailable")
+	var contracts: RefCounted=_contracts.fork()
+	if not contracts.purchase_lounge_coordinates(bindings,contact_id,_equipment):return fail(contracts.error)
 	_contracts=contracts
 	return true
 
@@ -574,6 +726,23 @@ func merchant_preview(contact_id: int,bindings: RefCounted) -> Dictionary:
 	if preview.is_empty():fail(_contracts.error)
 	return preview
 
+func kaamo_preview(contact_id: int,bindings: RefCounted) -> Dictionary:
+	error=""
+	if _contracts==null or not _contract_station(bindings):fail("The station lounge is unavailable");return {}
+	var preview: Dictionary=_contracts.kaamo_preview(bindings,contact_id,_equipment)
+	if preview.is_empty():fail(_contracts.error)
+	return preview
+
+func purchase_kaamo(contact_id: int,bindings: RefCounted) -> bool:
+	error=""
+	if _contracts==null or not _contract_station(bindings):return fail("The station lounge is unavailable")
+	var contracts: RefCounted=_contracts.fork()
+	var inventory: RefCounted=contracts.purchase_kaamo(bindings,contact_id,_equipment)
+	if inventory==null:return fail(contracts.error)
+	_contracts=contracts;_retain_equipment(inventory)
+	_state.progress=contracts.snapshot().progress
+	return true
+
 func purchase_lounge_goods(contact_id: int,bindings: RefCounted) -> bool:
 	error=""
 	if _contracts==null or not _contract_station(bindings):return fail("The station lounge is unavailable")
@@ -582,7 +751,7 @@ func purchase_lounge_goods(contact_id: int,bindings: RefCounted) -> bool:
 	if inventory==null:return fail(contracts.error)
 	var owned: Dictionary=inventory.snapshot()
 	_equipment=inventory;_contracts=contracts
-	_state.loadout=owned.loadout;_state.cargo=owned.cargo;_state.cargo_cache_stale=owned.cargo_cache_stale
+	_state.loadout=owned.loadout;_state.cargo=owned.cargo;_state.cargo_cache_stale=owned.cargo_cache_stale;_sync_booze_progress(contracts)
 	return true
 
 func accept_contract(offer_id: int,replace_current: bool=false,bindings: RefCounted=null) -> bool:
@@ -596,6 +765,15 @@ func accept_contract(offer_id: int,replace_current: bool=false,bindings: RefCoun
 	var owned: Dictionary=inventory.snapshot()
 	_equipment=inventory;_contracts=contracts
 	_state.loadout=owned.loadout;_state.cargo=owned.cargo;_state.cargo_cache_stale=owned.cargo_cache_stale
+	return true
+
+func discard_mission() -> bool:
+	error=""
+	if _contracts==null or _equipment==null:return fail("The lounge is not open")
+	var contracts: RefCounted=_contracts.fork()
+	var inventory: RefCounted=contracts.discard_mission(_equipment)
+	if inventory==null:return fail(contracts.error)
+	_contracts=contracts;_retain_equipment(inventory)
 	return true
 
 func poll_contract_result(bindings: RefCounted=null) -> bool:
@@ -626,15 +804,22 @@ func close_equipment() -> bool:
 	if _contracts!=null and not _contracts.snapshot().get("pending_result",{}).is_empty():return fail("Acknowledge the delivery before changing its inventory")
 	if _equipment==null or not _state.get("hangar_open",false):return fail("The equipment hangar is not open")
 	if _state.phase=="free_play_required":
-		var candidate: RefCounted=_equipment.fork()
-		if not candidate.close_ordinary_shopping():return fail(candidate.error)
-		_retain_equipment(candidate);_state.hangar_open=false
+		if _contracts==null:return fail("The ordinary Hangar lost its retained career")
+		var contracts: RefCounted=_contracts.fork()
+		var candidate: RefCounted=contracts.close_shopping(_equipment)
+		if candidate==null:return fail(contracts.error)
+		_contracts=contracts;_retain_equipment(candidate);_sync_booze_progress(contracts);_state.hangar_open=false
 		return true
 	_state.hangar_open=false
 	if _equipment.requirements().satisfied:
 		_state.phase="conversation";_state.equipment_conversation=true;_state.acknowledged=false;_state.line_index=0
 		_lines=_equipment_lines.duplicate(true)
 	return true
+
+func _sync_booze_progress(contracts: RefCounted) -> void:
+	var progress: Dictionary=contracts.snapshot().progress
+	for key in ["purchased_booze_quantity","booze_types_mask","kaamo_storage"]:
+		if progress.has(key):_state.progress[key]=progress[key]
 
 func previous() -> bool:
 	error=""
@@ -649,8 +834,7 @@ func campaign_conversation_ready(bindings: RefCounted,catalogues: RefCounted,lib
 func _ready_campaign_visit(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,elapsed_ms: int=0) -> RefCounted:
 	if _state.get("phase")!="free_play_required" or not _state.get("acknowledged",false) or _state.get("hangar_open",false) or _contracts==null or _equipment==null or _contracts.result_pending():return null
 	var visit: RefCounted
-	if _mission_station_context!=null:
-		if _mission_station_context.recipe().is_empty():return null
+	if _mission_station_context!=null and not _mission_station_context.recipe().is_empty():
 		visit=load("res://src/simulation/station_mission_visit.gd").new()
 		if not visit.prepare(bindings,library,catalogues,_mission_station_context,elapsed_ms):return null
 	else:
@@ -701,6 +885,7 @@ func _commit_campaign_visit(visit: RefCounted) -> bool:
 	_state.mission=receipt.mission.duplicate(true);_state.reward_credits=receipt.reward_credits
 	_mission_station_context=_contracts.station_context_owner()
 	if _mission_station_context!=null:_state.mission_station_return=_mission_station_context.snapshot()
+	else:_state.erase("mission_station_return")
 	_state.phase="free_play_required";_state.acknowledged=true;_state.campaign_conversation=false
 	if receipt.has("next_course") and not receipt.next_course.is_empty():_state.next_course=receipt.next_course.duplicate(true)
 	_campaign_visit=null;_campaign_bindings=null;_state.line_index=0
@@ -709,6 +894,10 @@ func _commit_campaign_visit(visit: RefCounted) -> bool:
 func prepare_departure(bindings: RefCounted, catalogues: RefCounted) -> Dictionary:
 	error="";_departure_refusal=-1
 	if _state.get("hangar_open",false):fail("Close the hangar before departing");return {}
+	var unequipped: Dictionary=TrainingStory.EQUIPMENT_REFUSAL
+	if int(_state.get("campaign_cursor",-1)) in unequipped.cursors and _equipment is Equipment and not _equipment.requirements().satisfied:
+		_departure_refusal=int(unequipped.in_hold_text_id if _equipment.required_items_in_hold() else unequipped.missing_text_id)
+		fail("Fit a weapon and an armour plate before departing.");return {}
 	# Preparation is read-only. The scene owner must obtain the source departure
 	# confirmation and successfully prepare the flight before replacing station.
 	if _state.get("phase")=="combat_departure_required":return _prepare_combat_training(bindings,catalogues)
@@ -751,7 +940,7 @@ func prepare_departure(bindings: RefCounted, catalogues: RefCounted) -> Dictiona
 		"loadout":seed,"reset_cache":reset,"player_cache":cache,"player":state,
 		"progress":_state.progress.duplicate(true),"mission":_state.mission.duplicate(true),
 		"cargo_used":int(rules.initial_cargo_used),"source_ship_configuration":_state.source_ship_configuration,
-		"confirmation_required":rules.confirmation_required,"confirmation_text_id":int(rules.confirmation_text_id)}
+		"confirmation_required":rules.confirmation_required,"confirmation_text_id":int(rules.confirmation_text_id)}.merged({"difficulty":_state.difficulty} if _state.has("difficulty") else {})
 
 func _prepare_combat_training(bindings: RefCounted, catalogues: RefCounted) -> Dictionary:
 	if bindings==null or catalogues==null or TrainingStory.flight(bindings).is_empty() or not Departure.parameters(bindings.station_departure):fail("This pack has no supported training departure");return {}
@@ -782,6 +971,10 @@ func _prepare_free_departure(bindings: RefCounted,catalogues: RefCounted) -> Dic
 	var career: Dictionary=_contracts.snapshot();var owned: Dictionary=_equipment.snapshot()
 	var station_id: int=owned.loadout.station_id
 	if owned.cargo.used>owned.cargo.capacity:fail("Cargo hold is overfilled. Sell cargo before departing.");return {}
+	var ship_rule: Dictionary=preload("res://src/content/valkyrie_campaign_definitions.gd").departure_ship(bindings,_state.campaign_cursor)
+	if not ship_rule.is_empty() and int(owned.loadout.ship_id)!=int(ship_rule.ship_id):
+		_departure_refusal=int(ship_rule.text_id)
+		fail("Board the story ship before departing.");return {}
 	if not rescue and (FreeFlight.flight(bindings,station_id,_state.campaign_cursor).is_empty() or not FreeNavigation.ordinary_departure_at(bindings,_state.campaign_cursor,_state.get("mission",{}),station_id)):fail("This station selects an unsupported story encounter");return {}
 	for key in ["base_content_id","binding_id"]:
 		if _state.get(key)!=bindings.get(key) or career.get(key)!=bindings.get(key):fail("Ordinary departure belongs to another content identity");return {}
@@ -834,6 +1027,30 @@ func prepare_contract_departure(bindings: RefCounted,catalogues: RefCounted) -> 
 	return packet
 
 func contract_owner() -> RefCounted:return null if _contracts==null else _contracts.fork()
+func acknowledge_medal_notice() -> bool:
+	if _contracts==null:return false
+	var candidate: RefCounted=_contracts.fork()
+	if not candidate.acknowledge_medal_notice():return fail(candidate.error)
+	_contracts=candidate
+	return true
+func record_hints(seen: Array) -> bool:
+	if _contracts==null:return false
+	var candidate: RefCounted=_contracts.fork()
+	if not candidate.record_hints(seen):return fail(candidate.error)
+	_contracts=candidate;_state.progress=_contracts.snapshot().progress.duplicate(true)
+	return true
+func record_stats(observed: Dictionary) -> bool:
+	if _contracts==null:return false
+	var candidate: RefCounted=_contracts.fork()
+	if not candidate.record_stats(observed):return fail(candidate.error)
+	_contracts=candidate
+	return true
+func record_elite_medals(reached: Array) -> bool:
+	if _contracts==null:return false
+	var candidate: RefCounted=_contracts.fork()
+	if not candidate.record_elite_medals(reached):return fail(candidate.error)
+	_contracts=candidate
+	return true
 func has_contracts() -> bool:return _contracts!=null
 func contract_locations_snapshot() -> Dictionary:return {} if _contracts==null else _contracts.locations_snapshot()
 
@@ -869,6 +1086,7 @@ func _equipment_departure_packet(bindings: RefCounted, player: RefCounted, reset
 		"source_ship_configuration":_state.source_ship_configuration,
 		"confirmation_required":rules.confirmation_required,"confirmation_text_id":int(rules.confirmation_text_id)}
 	if _state.campaign_cursor in [11,12]:packet.station_response_flags=_state.station_response_flags.duplicate(true)
+	if _state.has("difficulty"):packet.difficulty=_state.difficulty
 	return packet
 
 func snapshot() -> Dictionary:

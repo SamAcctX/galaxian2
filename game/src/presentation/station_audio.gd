@@ -60,9 +60,6 @@ func configure(library: RefCounted, bindings: RefCounted) -> bool:
 			ids.append(int(spoken[voice_index]));voice_index+=1
 	if voice_index!=spoken.size():return reject("Initial station has unused voice declarations")
 	if not _prepare_voices(ids):return false
-	# This event has authored envelopes that require their own native owner.
-	# Keep its unsupported status explicit rather than substituting another loop.
-	diagnostics.atmosphere="Station atmosphere envelopes are not connected"
 	return true
 
 func configure_mining_briefing(library: RefCounted, bindings: RefCounted, campaign_cursor:=2) -> bool:
@@ -111,6 +108,7 @@ func adopt_conversation(prepared: Node) -> void:
 	# Retain currently playing payment/equipment effects when story speech opens.
 	if _player!=null:_player.free();_player=null
 	_resources=prepared._resources;_clips=prepared._clips.duplicate();_line=-1
+	_mission_voice_lines=prepared._mission_voice_lines.duplicate()
 	diagnostics=prepared.diagnostics.duplicate(true)
 
 func _prepare_voices(ids: Array) -> bool:
@@ -144,6 +142,22 @@ func prepare_equipment_effects(rules: Dictionary,library: RefCounted=null,bindin
 		if clip.has("unsupported") or not clip.get("stream") is AudioStream or clip.get("voice",false) or clip.spatial or clip.looping:return reject("Unsupported equipment sound")
 		clips[id]=clip
 	_effect_clips=clips
+	return true
+
+## A dialogue cue's music and sound (dialogue_cue_definitions.gd); both keep
+## looping until the station ends.
+func play_cue(library: RefCounted,bindings: RefCounted,cue: Dictionary) -> bool:
+	var resources:=Resources.new()
+	if not resources.configure(library,bindings):return reject(resources.error)
+	for key in ["music","sound"]:
+		if not cue.has(key):continue
+		var id:=int(cue[key])
+		var clip: Dictionary=resources.prepare(id)
+		if clip.is_empty() or clip.has("unsupported") or not clip.get("stream") is AudioStream or clip.get("spatial",false):return reject("The dialogue cue sound is unavailable: "+str(id))
+		if _effects.has(id):_effects[id].free()
+		var player: Node=Streams.player(clip.stream,false,"Music" if key=="music" else "FX");add_child(player);_effects[id]=player
+		player.volume_db=linear_to_db(clip.gain);player.play();player.stream_paused=_paused
+		_effect_history.append(id)
 	return true
 
 func play_equipment_effect(id: int) -> void:

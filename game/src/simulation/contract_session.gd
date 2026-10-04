@@ -3,6 +3,8 @@ extends RefCounted
 ## Generated contacts are supplied by the lounge owner. Acceptance stages cargo
 ## and fees together. Delivery results require the destination inventory and
 ## acknowledgement; ordinary contract travel and combat have separate owners.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 const Definitions=preload("res://src/content/early_contract_definitions.gd")
 const Offer=preload("res://src/simulation/contract_offer.gd")
 const Equipment=preload("res://src/simulation/station_equipment.gd")
@@ -27,7 +29,13 @@ const VoidSource=preload("res://src/simulation/ordinary_void_source.gd")
 const VoidAccess=preload("res://src/content/void_access_definitions.gd")
 const Blueprints=preload("res://src/simulation/blueprint_progress.gd")
 const ContractProgress=preload("res://src/simulation/contract_progress.gd")
+const Wingmen=preload("res://src/simulation/wingman_contract.gd")
 const Recipe=preload("res://src/content/mission_recipe.gd")
+const BaseMedals=preload("res://src/simulation/base_medal_progress.gd")
+const EliteMedals=preload("res://src/simulation/elite_medal_progress.gd")
+const StoryFlights=preload("res://src/content/valkyrie_flight_definitions.gd")
+const Valkyrie=preload("res://src/content/valkyrie_campaign_definitions.gd")
+const Wanted=preload("res://src/simulation/wanted_board.gd")
 var error:=""
 var _state:={}
 var _rules:={}
@@ -43,6 +51,7 @@ var _catalogues: RefCounted
 var _void_source: RefCounted
 var _blueprints: RefCounted
 var _selected40_entry: RefCounted
+var _shopping_booze_quantity:=-1
 
 static func available(bindings: RefCounted) -> bool:
 	return bindings!=null and Definitions.acceptance_parameters(bindings.early_contracts)
@@ -52,7 +61,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,station: Dictionary,e
 	if not _state.is_empty():return reject("Retain the current contract session instead of resetting it")
 	if not available(bindings) or catalogues==null or catalogues.content_id!=bindings.base_content_id:return reject("Contract acceptance is unavailable for this content")
 	if not bindings.bind_catalogues(catalogues):return reject(bindings.error)
-	if not is_finite(difficulty) or difficulty<=0.0:return reject("The game difficulty is invalid")
+	if not Difficulty.valid(difficulty):return reject("The game difficulty is invalid")
 	var terms: Dictionary=bindings.early_contracts
 	var visit: Dictionary=bindings.mido_travel.get("return_visit",{})
 	var gate: Dictionary=visit.get("contract_gate",{})
@@ -72,7 +81,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,station: Dictionary,e
 		"campaign_cursor":int(terms.first_cursor),"station_id":owned.loadout.station_id,
 		"rank":progress.rank,"reputation":progress.reputation.duplicate(true),"difficulty":difficulty,
 		"credits":int(terms.acceptance.initial_credits),"passengers":int(terms.acceptance.initial_passengers),
-		"mission":{},"active_offer_id":-1,"offers":{}}
+		"mission":{},"active_offer_id":-1,"offers":{},"conversations":0,"rejected_jobs":0}
 	if Definitions.delivery_parameters(terms):
 		_progress_rules=bindings.opening_handoff.duplicate(true)
 		_stations=catalogues.tables.systems[int(terms.system_id)].station_ids.duplicate()
@@ -83,9 +92,93 @@ func configure(bindings: RefCounted,catalogues: RefCounted,station: Dictionary,e
 		if Junk.available(bindings):_state.progress.debris_destroyed=int(terms.junk_lifecycle.initial_debris_destroyed)
 	if terms.has("world_initialization"):_state.accepted_contact={}
 	if GateArrival.available(bindings):_state.travel_statistics={"jumpgates_used":int(bindings.mido_travel.gate_arrival.career.initial_jumpgates_used)}
+	if _state.has("travel_statistics") and not retain_location_visit(int(owned.loadout.station_id),int(owned.loadout.system_id)):return false
 	if LoungeLifecycle.available(bindings):
 		_lounges=LoungeCache.new()
 		if not _lounges.configure(bindings):return reject(_lounges.error)
+	return settle_base_medals()
+
+func settle_base_medals() -> bool:
+	if _state.is_empty() or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return reject("Medals require an acknowledged station career")
+	if not _bank_medals(_state):return reject("The station lost its earned medal evidence")
+	return true
+
+## Each newly reached tier pays its original reward and queues a notice. The
+## first observation of a career is its baseline, not a new award.
+func _bank_medals(state: Dictionary) -> bool:
+	var previous: Dictionary=state.get("base_medals",{})
+	# Extreme (hardcore) careers earn medals without their credit rewards.
+	var paid: bool=float(state.get("difficulty",Difficulty.NORMAL))!=Difficulty.EXTREME
+	var retained:=LoungeCache.Medals.commit(previous,state,blueprint_state())
+	if retained.is_empty():return false
+	if not previous.is_empty():
+		var notices: Array=state.get("medal_notices",[]).duplicate()
+		for id in retained.levels.size():
+			var level: int=retained.levels[id];var prior: int=previous.levels[id]
+			if level>0 and (prior<=0 or level<prior):
+				notices.append([id,level])
+				if paid and state.has("credits"):state.credits=mini(int(state.credits)+LoungeCache.Medals.reward_credits(level),2147483647)
+		if not notices.is_empty():state.medal_notices=notices
+	state.base_medals=retained
+	return EliteMedals.bank(state,[],LoungeCache.Medals.reward_credits(EliteMedals.GOLD) if paid else 0)
+
+## Add-on medals reached in flight or at docking (see elite_medal_progress.gd).
+func record_elite_medals(reached: Array) -> bool:
+	error=""
+	if _state.is_empty():return reject("Add-on medals require a station career")
+	var reward: int=LoungeCache.Medals.reward_credits(EliteMedals.GOLD) if float(_state.get("difficulty",Difficulty.NORMAL))!=Difficulty.EXTREME else 0
+	if not EliteMedals.bank(_state,reached,reward):return reject("Add-on medal evidence is invalid")
+	return true
+
+func acknowledge_medal_notice() -> bool:
+	var notices: Array=_state.get("medal_notices",[])
+	if notices.is_empty():return reject("No medal notice is waiting")
+	notices=notices.slice(1)
+	if notices.is_empty():_state.erase("medal_notices")
+	else:_state.medal_notices=notices
+	return true
+
+## Station-observed medal stats. Counters add; hull keeps the lowest arrival
+## percentage and the other maxima keep the highest value seen.
+func record_stats(observed: Dictionary) -> bool:
+	error=""
+	if _state.is_empty():return reject("Career stats require a station career")
+	var stats: Dictionary=_state.get("stats",{}).duplicate()
+	for key in observed:
+		var value: int=int(observed[key])
+		if key in ["play_ms","cloak_ms","alien_remains","unarmed_departures","accepted_jobs"]:
+			if value>0:stats[key]=mini(int(stats.get(key,0))+value,2147483647)
+		elif key in ["max_primaries","max_free_cargo"]:
+			if value>int(stats.get(key,0)):stats[key]=value
+		elif key=="min_arrival_hull_percent":
+			var current: int=int(stats.get(key,-1))
+			if value>=0 and value<=100 and (current<0 or value<current):stats[key]=value
+		else:return reject("Unknown career stat")
+	if not LoungeCache.Medals.valid_stats(stats):return reject("Career stats are out of range")
+	_state.stats=stats
+	return settle_base_medals() if _flight.is_empty() and _pending_flight.is_empty() and _state.get("pending_result",{}).is_empty() else true
+
+func retain_asteroid_destruction_total(total: int) -> bool:
+	error=""
+	if _state.is_empty() or _flight.is_empty():return reject("Asteroid destruction progress requires the retained living flight")
+	var current:=int(_state.get("progress",{}).get("asteroids_destroyed",0))
+	if not Numbers.integer(total,current,2147483647):return reject("Asteroid destruction progress regressed or exceeded the supported career range")
+	if total>0 or _state.progress.has("asteroids_destroyed"):_state.progress.asteroids_destroyed=total
+	return true
+
+## The secondary owner reports its cumulative count within this flight. Retain
+## only the new committed kind-7 blasts so repeated polling and docking remain
+## idempotent while the career keeps the lifetime total.
+func retain_nuclear_bomb_detonations(observed: int) -> bool:
+	error=""
+	if _state.is_empty() or _flight.is_empty():return reject("Nuclear Armament progress requires the retained living flight")
+	var retained: Variant=_flight.get("nuclear_bomb_detonations",0)
+	if not Numbers.integer(retained,0,2147483647) or not Numbers.integer(observed,int(retained),2147483647):return reject("Nuclear bomb detonation history regressed or exceeded the supported flight range")
+	var current: Variant=_state.get("progress",{}).get("nuclear_bomb_detonations",0)
+	var delta:=observed-int(retained)
+	if not Numbers.integer(current,0,2147483647) or delta>2147483647-int(current):return reject("Nuclear Armament progress exceeds the supported career range")
+	if delta>0 or _state.progress.has("nuclear_bomb_detonations"):_state.progress.nuclear_bomb_detonations=int(current)+delta
+	_flight.nuclear_bomb_detonations=observed
 	return true
 
 func complete_story_wait(bindings: RefCounted,story_mission: Dictionary) -> bool:
@@ -107,6 +200,16 @@ func complete_story_wait(bindings: RefCounted,story_mission: Dictionary) -> bool
 
 func retain_mining_hint(seen: bool) -> void:
 	_state.progress.mining_failure_hint_seen=seen
+
+## Adds hint windows the player has seen to the career (saved progress "hints_seen").
+func record_hints(seen: Array) -> bool:
+	error=""
+	if _state.is_empty() or not _state.get("progress") is Dictionary:return reject("Hints require a station career")
+	var merged: Array=preload("res://src/simulation/flight_hints.gd").merge_seen(_state.progress.get("hints_seen",[]),seen)
+	if merged.is_empty() and seen.is_empty():return true
+	if merged.is_empty():return reject("Hint history is invalid")
+	_state.progress.hints_seen=merged
+	return true
 
 func register_offer(offer_id: int,offer: RefCounted) -> bool:
 	error=""
@@ -229,6 +332,15 @@ func transfer_ordinary_void(bindings: RefCounted,progress: Dictionary,source: Re
 	if _lounges==null or _lounges.selection_state().current_station_id!=route.source_station_id:return reject("The Void visit lost its retained ordinary location")
 	return _retain_story_progress(bindings,progress,route.campaign_cursor,route.campaign_cursor,int(route.source_station_id) if entering else -1,-1 if entering else int(route.source_station_id),true)
 
+## Leaving the alien world moves the story on and to its next station (79:
+## the way out leads to Kothar at 80).
+func leave_void_for_story(bindings: RefCounted,progress: Dictionary,source: RefCounted,cursor: int,station_id: int) -> bool:
+	error=""
+	var route: Dictionary=load("res://src/simulation/mission_context.gd").ordinary_void_route(bindings,source)
+	if route.is_empty():return reject("Ordinary Void travel requires its admitted return route")
+	if _lounges==null or _lounges.selection_state().current_station_id!=route.source_station_id:return reject("The Void visit lost its retained ordinary location")
+	return _retain_story_progress(bindings,progress,route.campaign_cursor,cursor,-1,station_id,true)
+
 ## Keep the independent job and final combat counters while the world changes.
 var _station_context: RefCounted
 
@@ -241,8 +353,9 @@ func enter_mission_station(bindings: RefCounted,cat: RefCounted,library: RefCoun
 	if not _flight.is_empty() or not _pending_flight.is_empty() or not _result_inventory.is_empty() or not _state.pending_result.is_empty():return reject("Station continuation cannot discard an unresolved independent result")
 	if not select_location(bindings,cat,library,destination.station_id,settings,entry.source_random(),unix_seconds,context):return false
 	if not _adopt_station(destination.station_id):return false
+	if _state.has("travel_statistics") and not retain_location_visit(int(destination.station_id),int(destination.system_id)):return false
 	_state.erase("location_generation_pending");_station_context=context
-	return true
+	return settle_base_medals()
 
 func transfer_mission_return(bindings: RefCounted,entry: RefCounted) -> bool:
 	error=""
@@ -272,8 +385,12 @@ func _retain_story_progress(bindings: RefCounted,progress: Dictionary,previous: 
 	if current.is_empty() or not Reputation.valid_state(progress.get("reputation")):return reject("The capture lost its earned career")
 	for key in current:
 		if progress.get(key)!=current[key]:return reject("The capture career counters disagree")
-	for key in ["player_kills","pirate_kills","other_score","debris_destroyed","capital_ship_kills","cargo_recovered"]:
+	for key in ["player_kills","pirate_kills","other_score","debris_destroyed","capital_ship_kills","cargo_recovered","asteroids_destroyed","mined_ore_tons","mined_cores","nuclear_bomb_detonations","purchased_booze_quantity"]:
 		if not Numbers.integer(progress.get(key,0),int(_state.progress.get(key,0)),2147483647):return reject("The capture lost a retained career counter")
+	for key in ["mined_ore_types_mask","mined_core_types_mask","booze_types_mask"]:
+		var previous_mask:=int(_state.progress.get(key,0));var next_mask: Variant=progress.get(key,0)
+		var maximum:=BaseMedals.BOOZE_TYPE_MASK if key=="booze_types_mask" else 2047
+		if not Numbers.integer(next_mask,0,maximum) or (int(next_mask) & previous_mask)!=previous_mask:return reject("The capture lost retained type history")
 	var earned:=Career.calculate_progress(_progress_rules,next_cursor,current.player_kills,current.pirate_kills,current.other_score)
 	if earned.is_empty():return reject("The Alioth story exceeds the supported career range")
 	var source: RefCounted=_void_source
@@ -311,7 +428,7 @@ func populate(bindings: RefCounted,cat: RefCounted,library: RefCounted,random_st
 	if next._lounges!=null:
 		next._lounges=next._lounges.fork()
 		if not next._lounges.remember(contacts):return reject(next._lounges.error)
-	next._state.population=population
+	next._state.population=Readonly.freeze(population.duplicate(true))
 	_state=next._state;_lounges=next._lounges
 	return true
 
@@ -326,7 +443,7 @@ func retain_locations(cache: RefCounted) -> bool:
 	if retained.get("current_station_id")!=_state.station_id:return reject("The retained locations do not select the current station")
 	var local: Dictionary=cache.location(_state.station_id)
 	if local.is_empty() or not local.has("stock") or local.population.context.campaign_cursor>_state.campaign_cursor:return reject("The current station lacks its earlier generated stock and contacts")
-	_lounges=cache.fork();_state.population=local.population;_state.offers=local.offers
+	_lounges=cache.fork();_state.population=Readonly.freeze(local.population.duplicate(true));_state.offers=local.offers
 	_state.erase("location_generation_pending")
 	return true
 
@@ -338,7 +455,11 @@ func rebase_station(equipment: RefCounted,bindings: RefCounted=null) -> bool:
 	var owned:=_station_inventory(equipment,bindings)
 	if owned.is_empty():return false
 	var station: int=owned.loadout.station_id
-	return _adopt_station(station)
+	if not _adopt_station(station):return false
+	if _state.has("travel_statistics") and not retain_location_visit(station,int(owned.loadout.system_id)):return false
+	# Docking outside Loma ends its toll (assumed: the source clears on leaving).
+	if int(owned.loadout.get("system_id",-1))!=preload("res://src/content/loma_toll_definitions.gd").SYSTEM_ID:_state.progress.erase("loma_toll")
+	return settle_base_medals()
 
 ## Only the real local-arrival transaction uses this authored-world adapter.
 ## Generic station inventory/cache admission remains closed at pending38/22.
@@ -361,7 +482,9 @@ func rebase_dekato_arrival(bindings: RefCounted,equipment: RefCounted,arrival: D
 	for key in expected:
 		if typeof(arrival.get(key))!=typeof(expected[key]):return reject("The convoy transit fields require their exact native types")
 	if arrival!=expected or _lounges.selection_state().current_station_id!=seed.station_id or _lounges.location(seed.station_id).is_empty():return reject("The convoy arrival lost its actual transit or destination location")
-	return _adopt_station(int(seed.station_id))
+	if not _adopt_station(int(seed.station_id)):return false
+	if _state.has("travel_statistics") and not retain_location_visit(int(seed.station_id),int(seed.system_id)):return false
+	return settle_base_medals()
 
 func _adopt_station(station: int) -> bool:
 	if station==_state.station_id:return true
@@ -369,7 +492,39 @@ func _adopt_station(station: int) -> bool:
 	_state.offers={};_state.erase("population")
 	var cached: Dictionary=_lounges.location(station)
 	if not cached.is_empty():
-		_state.offers=cached.offers;_state.population=cached.population
+		# A station already in the cache needs no fresh location generation
+		# (a story move elsewhere may have left that pending: 155 -> jump to 99).
+		_state.offers=cached.offers;_state.population=Readonly.freeze(cached.population.duplicate(true));_state.erase("location_generation_pending")
+	return true
+
+## The story undoes a visit (90: the 89 scene's stop at Naneroh); the
+## visited-stations count drops with it.
+func forget_location_visit(station_id: int) -> bool:
+	error=""
+	var statistics: Variant=_state.get("travel_statistics")
+	if not GateArrival.valid_statistics(statistics):return reject("Location history requires retained travel statistics")
+	if statistics.size()==1 or station_id not in statistics.visited_station_ids:return true
+	var next: Dictionary=statistics.duplicate(true)
+	next.visited_station_ids.erase(station_id)
+	if not GateArrival.valid_statistics(next):return reject("Location history produced an invalid travel ledger")
+	_state.travel_statistics=next
+	return true
+
+func retain_location_visit(station_id: int,system_id: int) -> bool:
+	error=""
+	var statistics: Variant=_state.get("travel_statistics")
+	if not GateArrival.valid_statistics(statistics):return reject("Location history requires retained travel statistics")
+	if station_id<0 or system_id<0:return reject("Location history cannot retain a negative station or system")
+	var next: Dictionary=statistics.duplicate(true)
+	if next.size()==1:
+		next.visited_station_ids=[];next.visited_system_ids=[]
+	for pair in [["visited_station_ids",station_id],["visited_system_ids",system_id]]:
+		var ids: Array=next[pair[0]]
+		if pair[1] not in ids:
+			ids.append(pair[1]);ids.sort()
+			next[pair[0]]=ids
+	if not GateArrival.valid_statistics(next):return reject("Location history produced an invalid travel ledger")
+	_state.travel_statistics=next
 	return true
 
 ## The physically docked post-convoy career already owns this exact location.
@@ -407,11 +562,20 @@ func locations_snapshot() -> Dictionary:return {} if _lounges==null else _lounge
 
 func open_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,unix_seconds: Array,library: RefCounted=null) -> RefCounted:
 	error=""
+	if _shopping_booze_quantity>=0:return _shopping_reject("Close the current Hangar quote before opening another")
 	var owned:=_shopping_inventory(bindings,cat,equipment)
 	if owned.is_empty():return null
 	if unix_seconds.size()!=3:return _shopping_reject("Supply the three station price timestamps")
 	for value in unix_seconds:
 		if not value is int or value<0:return _shopping_reject("Station price timestamps must be nonnegative integers")
+	var Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
+	var storage: bool=_state.station_id==Kaamo.STATION_ID and Kaamo.state(_state.progress)==Kaamo.OWNED
+	if storage:
+		# The owned club's hangar is the player's storage (kept in the career).
+		var kept: Dictionary=_state.progress.get("kaamo_storage",{"items":[],"ships":[]})
+		var restored: RefCounted=_lounges.fork()
+		if not restored.replace_item_stock(bindings,cat,_state.station_id,_lounges.item_stock(_state.station_id),kept.items) or not restored.replace_ship_stock(bindings,cat,_state.station_id,_lounges.ship_stock(_state.station_id),kept.ships):return _shopping_reject(restored.error)
+		_lounges=restored
 	var stock: Array=_lounges.item_stock(_state.station_id)
 	var times:=unix_seconds.duplicate()
 	if owned.cargo.entries.is_empty():times[0]=null
@@ -421,9 +585,13 @@ func open_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,un
 	if receipt.is_empty():return _shopping_reject(inventory.error)
 	var ship_percent:=int(_lounges.location(_state.station_id).stock.context.get("ship_price_percent",0))
 	if not inventory.open_ship_market(bindings,cat,_lounges.ship_stock(_state.station_id),ship_percent):return _shopping_reject(inventory.error)
+	if storage and not inventory.open_free_transfers():return _shopping_reject(inventory.error)
+	if not storage and Kaamo.state(_state.progress)==Kaamo.OWNED:inventory.offer_kaamo_keep(_state.progress.get("kaamo_storage",{}).get("ships",[]).map(func(row):return int(row.ship_id)))
 	var locations: RefCounted=_lounges.fork()
 	if not locations.replace_item_stock(bindings,cat,_state.station_id,stock,inventory.snapshot().stock,receipt.random):return _shopping_reject(locations.error)
-	_lounges=locations
+	var booze_quantity:=_booze_quantity(owned.cargo.entries)
+	if booze_quantity<0:return _shopping_reject("The retained booze quantity exceeds the supported career range")
+	_lounges=locations;_shopping_booze_quantity=booze_quantity
 	return inventory
 
 func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,action: String,item_id: int,slot_index: int=-1,quantity: int=1) -> RefCounted:
@@ -431,6 +599,7 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 	var owned:=_shopping_inventory(bindings,cat,equipment)
 	if owned.is_empty():return null
 	if not owned.get("ordinary_shopping_open",false) or owned.stock!=_lounges.item_stock(_state.station_id):return _shopping_reject("Open the current station's hangar quote before trading")
+	if _story_protects(bindings,owned,action,item_id,slot_index):return _shopping_reject("This item cannot be sold or demounted at the moment.")
 	if action=="supply_blueprint":
 		if _blueprints==null:return _shopping_reject("No blueprint is available")
 		var shipping: int=_blueprints.shipping_cost(item_id,_state.station_id,quantity)
@@ -441,11 +610,16 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 		_blueprints=project;_state.credits-=shipping
 		return supplied
 	var inventory: RefCounted=equipment.fork()
-	if action=="buy_ship":
+	var Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
+	if action in ["buy_ship","keep_ship"]:
 		if owned.get("market_ships")!=_lounges.ship_stock(_state.station_id):return _shopping_reject("The station's ship quote changed")
+		if action=="keep_ship" and (not owned.get("kaamo_keep") is Array or _state.progress.get("kaamo_storage",{}).get("ships",[]).any(func(row):return int(row.ship_id)==int(owned.loadout.ship_id))):return _shopping_reject("There is already a ship of this type at your station. The sale was cancelled.")
 		var passengers: Variant=_state.get("passengers")
 		if not Numbers.integer(passengers,0,2147483647) or passengers!=ContractProgress.occupied_passengers(_state):return _shopping_reject("Ship exchange lost the retained contract's passengers")
-		if not inventory.purchase_ship(bindings,cat,item_id,_state.credits,passengers):return _shopping_reject(inventory.error)
+		if not inventory.purchase_ship(bindings,cat,item_id,_state.credits,passengers,action=="keep_ship"):return _shopping_reject(inventory.error)
+	elif action=="sell_ship":
+		if owned.get("market_ships")!=_lounges.ship_stock(_state.station_id):return _shopping_reject("The station's ship quote changed")
+		if not inventory.sell_parked_ship(item_id,_state.credits):return _shopping_reject(inventory.error)
 	elif action in ["mount","unmount","replace"]:
 		# A retained delivery does not lock unrelated equipment. Its actual
 		# passengers must reach the shared occupied-berth guard; never assume
@@ -459,10 +633,59 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 	var accepted: Dictionary=inventory.snapshot()
 	var locations: RefCounted=_lounges.fork()
 	if not locations.replace_item_stock(bindings,cat,_state.station_id,owned.stock,accepted.stock):return _shopping_reject(locations.error)
-	if action=="buy_ship" and not locations.replace_ship_stock(bindings,cat,_state.station_id,owned.market_ships,accepted.market_ships):return _shopping_reject(locations.error)
+	if action in ["buy_ship","keep_ship","sell_ship"] and not locations.replace_ship_stock(bindings,cat,_state.station_id,owned.market_ships,accepted.market_ships):return _shopping_reject(locations.error)
 	var credits:=credit_balance(_state.credits,accepted.credit_delta,_rules.delivery_results)
 	_lounges=locations;_state.credits=credits
+	if accepted.get("free_transfers",false):_state.progress.kaamo_storage={"items":accepted.stock.duplicate(true),"ships":accepted.market_ships.duplicate(true)}
+	elif action=="keep_ship":
+		var kept: Dictionary=_state.progress.get("kaamo_storage",{"items":[],"ships":[]}).duplicate(true)
+		kept.ships.append(accepted.kept_ship.duplicate(true));_state.progress.kaamo_storage=kept
+	if action=="buy" and not _retain_booze_type(item_id):return _shopping_reject(error)
 	return inventory
+
+## The story keeps an item on board while the career is at its cursor (77:
+## the Khador Drive Alice is about to take): it cannot be sold or demounted.
+func _story_protects(bindings: RefCounted,owned: Dictionary,action: String,item_id: int,slot_index: int) -> bool:
+	var ids: Array=Valkyrie.protected_items(bindings,_state.get("campaign_cursor"))
+	if ids.is_empty() or action not in ["sell","unmount","replace"]:return false
+	if action!="replace":return item_id in ids
+	var slots: Array=owned.loadout.slots
+	return slot_index>=0 and slot_index<slots.size() and slots[slot_index]!=null and int(slots[slot_index].item_id) in ids
+
+func close_shopping(equipment: RefCounted) -> RefCounted:
+	error=""
+	if _shopping_booze_quantity<0 or not equipment is Equipment:return _shopping_reject("No retained Hangar transaction awaits closing")
+	var owned: Dictionary=equipment.snapshot()
+	if not owned.get("ordinary_shopping_open",false) or not owned.get("cargo",{}).get("entries") is Array:return _shopping_reject("The retained Hangar transaction lost its cargo")
+	var observed:=_booze_quantity(owned.cargo.entries)
+	if observed<0:return _shopping_reject("The retained booze quantity exceeds the supported career range")
+	var current: Variant=_state.get("progress",{}).get("purchased_booze_quantity",0)
+	var gained:=maxi(0,observed-_shopping_booze_quantity)
+	if not Numbers.integer(current,0,2147483647) or gained>2147483647-int(current):return _shopping_reject("Personal Need progress exceeds the supported career range")
+	var inventory: RefCounted=equipment.fork()
+	if not inventory.close_ordinary_shopping():return _shopping_reject(inventory.error)
+	if gained>0 or _state.progress.has("purchased_booze_quantity"):_state.progress.purchased_booze_quantity=int(current)+gained
+	_shopping_booze_quantity=-1
+	if not settle_base_medals():return null
+	return inventory
+
+func _retain_booze_type(item_id: int) -> bool:
+	var bit:=BaseMedals.booze_type_bit(item_id)
+	if bit==0:return true
+	var current: Variant=_state.get("progress",{}).get("booze_types_mask",0)
+	if not Numbers.integer(current,0,BaseMedals.BOOZE_TYPE_MASK):return reject("Barkeeper type history exceeds the supported source domain")
+	_state.progress.booze_types_mask=int(current) | bit
+	return true
+
+static func _booze_quantity(entries: Array) -> int:
+	var total:=0
+	for entry in entries:
+		if not entry is Dictionary:continue
+		if BaseMedals.booze_type_bit(int(entry.get("item_id",-1)))==0:continue
+		var quantity: Variant=entry.get("quantity")
+		if not quantity is int or quantity<0 or total>2147483647-int(quantity):return -1
+		total+=int(quantity)
+	return total
 
 func collect_blueprint_products(equipment: RefCounted) -> RefCounted:
 	error=""
@@ -499,8 +722,9 @@ func rebase_gate_arrival(bindings: RefCounted,catalogues: RefCounted,equipment: 
 	var count: int=statistics.jumpgates_used+int(bindings.mido_travel.gate_arrival.career.jump_increment)
 	if not Numbers.integer(count,0,2147483647):return reject("The gate count exceeds its supported range")
 	if not rebase_station(equipment,bindings):return false
-	_state.travel_statistics={"jumpgates_used":count}
-	return true
+	var retained: Dictionary=_state.travel_statistics.duplicate(true)
+	retained.jumpgates_used=count;_state.travel_statistics=retained
+	return settle_base_medals()
 
 func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,station_id: int,settings: Dictionary,random_state: Dictionary,unix_seconds: Variant,station_context: RefCounted=null) -> bool:
 	# Called on the detached arrival career, after retiring its old flight
@@ -512,8 +736,10 @@ func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,st
 	var previous_station: int=_lounges.selection_state().current_station_id
 	var candidate: RefCounted=_lounges.fork()
 	var context:={"station_id":station_id,"campaign_cursor":_state.campaign_cursor,"rank":_state.rank,"reputation":_state.reputation.duplicate(true)}
-	var medals:=LoungeCache.Medals.blueprint_counts(blueprint_state())
-	if not candidate.select_location(bindings,cat,library,context,settings,random_state,unix_seconds,station_context,medals):return reject(candidate.error)
+	var medals:=LoungeCache.Medals.stock_progress(_state,blueprint_state())
+	var all_medals: bool=LoungeCache.Medals.all_base_gold(int(_state.campaign_cursor),medals)==true and EliteMedals.earned(_state).size()==EliteMedals.TOTAL-EliteMedals.FIRST
+	var wanted: Array=preload("res://src/content/valkyrie_world_definitions.gd").wanted_ships(_state.progress,cat.tables.get("wanted",[]))
+	if not candidate.select_location(bindings,cat,library,context,settings,random_state,unix_seconds,station_context,medals,all_medals,wanted):return reject(candidate.error)
 	var source: RefCounted=_void_source
 	var selected_entry: RefCounted
 	# The native arrival path represents the set-location wrapper. An unchanged
@@ -583,6 +809,7 @@ func apply_station_entry(bindings: RefCounted,cat: RefCounted,equipment: RefCoun
 	# Called only on a detached, actually docked station candidate. Location
 	# generation, opening the shop and restoring a save do not call this path.
 	error=""
+	if not _dock_wanted(bindings,cat):return false
 	var delivery:=Recipe.station_delivery(_rules,_state.get("mission",{}))
 	var item: Dictionary=delivery.get("entry_stock",{})
 	if not item.is_empty() and _state.station_id==_state.mission.station_id:
@@ -609,6 +836,28 @@ func apply_station_entry(bindings: RefCounted,cat: RefCounted,equipment: RefCoun
 	_lounges=locations
 	return true
 
+## Most Wanted boards (expansion, from the story's cursor 128): each docking
+## stands for the departure before it (every criminal moves one step), then
+## the boards of this station's race unlock their due entries.
+## Assumption: the original moves them as the player departs; the boards only
+## show while docked, so moving them at the next docking looks the same.
+func _dock_wanted(bindings: RefCounted,cat: RefCounted) -> bool:
+	var table: Array=cat.tables.get("wanted",[])
+	var cursor: int=int(_state.campaign_cursor)
+	if _state.progress.get("wanted") is Dictionary and _state.progress.wanted.has("news"):
+		_state.progress.wanted=_state.progress.wanted.duplicate(true);_state.progress.wanted.erase("news")
+	if table.is_empty() or not Valkyrie.saved_story(bindings,cursor) or cursor<int(Valkyrie.WANTED.from_cursor):return true
+	var state: Variant=_state.progress.get("wanted")
+	if not Wanted.valid(state,table):state=Wanted.fresh(table)
+	var known: Array=_lounges.snapshot().get("system_availability",[])
+	var seed_value:=hash([cursor,int(_state.station_id),int(_state.get("travel_statistics",{}).get("jumpgates_used",0)),int(_state.completed_side_missions)])
+	state=Wanted.travel(state,cat,int(_state.station_id),known,seed_value)
+	var activated: Dictionary=Wanted.activate(state,table,cat,cursor,int(_state.station_id),known,seed_value+1)
+	# How many criminals this docking added (the station announces them).
+	activated.state.news=activated.activated.size()
+	_state.progress.wanted=activated.state
+	return true
+
 func acknowledge_station_campaign(bindings: RefCounted,equipment: RefCounted,story_mission: Dictionary,visit: RefCounted) -> Dictionary:
 	error=""
 	var owned:=_campaign_station_inventory(bindings,equipment,story_mission)
@@ -622,10 +871,13 @@ func acknowledge_station_campaign(bindings: RefCounted,equipment: RefCounted,sto
 		if receipt.get(key)!=_state[key]:return fail("The station acknowledgement belongs to another content identity")
 	var equal=load("res://src/content/opening_escape_definitions.gd")
 	if receipt.from_cursor!=_state.campaign_cursor or receipt.station_id!=_state.station_id or receipt.previous_mission!=story_mission or receipt.campaign_cursor!=int(rules.next_cursor) or not equal.equal_value(receipt.mission,rules.next_mission) or receipt.reward_credits!=int(rules.reward_credits):return fail("The station conversation changed its earned transition")
-	if rules.has("unlock_system_ids") and (not equal.equal_value(receipt.get("unlock_system_ids"),rules.unlock_system_ids) or not equal.equal_value(receipt.get("next_course"),rules.next_course)):return fail("The station conversation changed its next destination")
+	if rules.has("unlock_system_ids") and (not equal.equal_value(receipt.get("unlock_system_ids"),rules.unlock_system_ids) or not equal.equal_value(receipt.get("next_course"),rules.get("next_course"))):return fail("The station conversation changed its next destination")
 	var next: RefCounted=fork()
 	var inventory: RefCounted=equipment.fork()
-	if _station_context!=null:
+	# A completed career keeps its finished chapter only as lounge history once
+	# the expansion story takes over.
+	if _station_context!=null and _station_context.recipe().is_empty():pass
+	elif _station_context!=null:
 		next._station_context=_station_context.successor(bindings,receipt)
 		if next._station_context==null:return fail(_station_context.error)
 	if rules.has("cargo_requirement"):
@@ -636,12 +888,76 @@ func acknowledge_station_campaign(bindings: RefCounted,equipment: RefCounted,sto
 			"from_cursor":receipt.from_cursor,"to_cursor":receipt.campaign_cursor,
 			"item_id":int(required.item_id),"quantity":int(required.quantity),"expected_entry":next._blueprints.entry(85)}
 		if not next._blueprints.precredit_story33(credit):return fail(next._blueprints.error)
+	if rules.get("goods_requirement",{}).get("consume",false):
+		if not inventory.debit_campaign_cargo(int(rules.goods_requirement.item_id),int(rules.goods_requirement.quantity)):return fail(inventory.error)
+	if rules.has("story_blueprint"):
+		if next._blueprints==null:return fail("The story blueprint lost its retained blueprints")
+		var plan: Dictionary=rules.story_blueprint
+		next._blueprints=next._blueprints.fork_for_transaction()
+		var granted: bool
+		if not plan.grant:granted=next._blueprints.story_lock(int(plan.item_id))
+		elif plan.has("material_id"):granted=next._blueprints.story_grant(int(plan.item_id),int(plan.material_id),int(plan.quantity),int(plan.station_id))
+		elif plan.has("materials"):
+			# Several materials already supplied (141: the four plasmas).
+			granted=true
+			for pair in plan.materials:granted=granted and next._blueprints.story_grant(int(plan.item_id),int(pair[0]),int(pair[1]),int(plan.station_id))
+		else:granted=next._blueprints.story_unlock(int(plan.item_id))
+		if not granted:return fail(next._blueprints.error)
+	if rules.has("story_ship"):
+		var ship: Dictionary=rules.story_ship
+		var changed: bool=inventory.return_story_ship(bindings,_catalogues) if ship.has("restore") else inventory.lend_story_ship(bindings,_catalogues,int(ship.ship_id),Valkyrie.ship_equipment(ship),bool(ship.store))
+		if not changed:return fail(inventory.error)
+	if not next._apply_story_station_rules(bindings,inventory,rules):return fail(next.error)
 	if not next._retain_story_progress(bindings,next._state.progress,_state.campaign_cursor,receipt.campaign_cursor,_state.station_id,_state.station_id,false):return fail(next.error)
 	if rules.has("unlock_system_ids"):
 		next._lounges=next._lounges.fork()
 		if not next._lounges.acknowledge_campaign_coordinates(bindings,visit):return fail(next._lounges.error)
-	next._state.credits=credit_balance(_state.credits,receipt.reward_credits,_rules.delivery_results)
+	var reward: int=int(receipt.reward_credits)
+	if rules.has("reward_per_story_counter"):
+		var kills:=int(next._state.progress.get("story_counter",0))
+		if kills>(2147483647-reward)/maxi(1,int(rules.reward_per_story_counter)):return fail("The story reward exceeds the supported credit range")
+		reward+=kills*int(rules.reward_per_story_counter)
+		next._state.progress.erase("story_counter");next._state.progress.erase("story_stations_mask")
+	next._state.credits=credit_balance(_state.credits,reward,_rules.delivery_results)
 	return {"career":next,"equipment":inventory}
+
+## Station-side story changes as a talk enters its next cursor (tables in
+## valkyrie_campaign_definitions): items taken away, a construction site
+## reset, goods put in the hold and this station's shipyard changed.
+## Call on the staged career with the staged inventory.
+func _apply_story_station_rules(bindings: RefCounted,inventory: RefCounted,rules: Dictionary) -> bool:
+	error=""
+	for id in rules.get("story_removed_items",[]):
+		if not inventory.remove_story_item(bindings,_catalogues,int(id)):return reject(inventory.error)
+	if rules.has("story_blueprint_reset"):
+		if _blueprints==null:return reject("The blueprint reset lost its retained blueprints")
+		_blueprints=_blueprints.fork_for_transaction()
+		if not _blueprints.story_reset_station(int(rules.story_blueprint_reset)):return reject(_blueprints.error)
+	for row in rules.get("story_hold_grants",[]):
+		if not inventory.receive_lounge_goods(int(row[0]),int(row[1])):return reject(inventory.error)
+	for row in rules.get("story_removed_goods",[]):
+		if not inventory.remove_story_goods(int(row[0]),int(row[1])):return reject(inventory.error)
+	for station in rules.get("story_unvisit",[]):
+		if not forget_location_visit(int(station)):return false
+	if rules.has("story_station_ships"):
+		var station:=int(_state.station_id);var plan: Dictionary=rules.story_station_ships
+		var before: Array=_lounges.ship_stock(station)
+		var ships: Array=[] if plan.get("clear",false) else before.duplicate(true)
+		var affiliations: Array=bindings.early_contracts.base_station_stock.ships.affiliations
+		var percent:=int(_lounges.location(station).get("stock",{}).get("context",{}).get("ship_price_percent",0))
+		for row in plan.get("ships",[]):
+			var id:=int(row[0]);var price:=int(row[1]);var at:=-1
+			for i in ships.size():
+				if int(ships[i].ship_id)==id:at=i
+			if price<0:
+				if at>=0:continue
+				price=load("res://src/simulation/station_stock.gd").local_ship_price(bindings,_catalogues,id,station,percent)
+			var offer:={"ship_id":id,"faction_id":int(affiliations[id]),"unit_price":price}
+			if at>=0:ships[at]=offer
+			else:ships.append(offer)
+		_lounges=_lounges.fork()
+		if not _lounges.replace_ship_stock(bindings,_catalogues,station,before,ships):return reject(_lounges.error)
+	return true
 
 func _campaign_station_inventory(bindings: RefCounted,equipment: RefCounted,story_mission: Dictionary) -> Dictionary:
 	if bindings==null or not equipment is Equipment or _lounges==null or _state.is_empty():return fail("Campaign station progress requires its retained career and inventory")
@@ -707,6 +1023,219 @@ static func acceptance_supported(rules: Dictionary,cursor: int,quote: Dictionary
 		return rules==bindings.early_contracts and Numbers.integer(quote.get("context",{}).get("campaign_cursor"),Definitions.first_generation_cursor(rules),cursor) and OrdinaryContracts.retained_mission(bindings,quote.get("mission"),cursor)
 	return not rules.is_empty() and Numbers.integer(cursor,Definitions.first_generation_cursor(rules),int(rules.last_cursor)) and Numbers.integer(quote.get("context",{}).get("campaign_cursor"),Definitions.first_generation_cursor(rules),int(rules.last_cursor)) and quote.get("choices",{}).has("kind_index")
 
+## The enclosing accepted flight frame owns this clock. Zero stays active until
+## the station can present the crew's farewell; it is not an airborne death.
+func advance_wingmen(milliseconds: Variant) -> bool:
+	error=""
+	if not milliseconds is int or not Numbers.integer(milliseconds,0,2147483647):return reject("Invalid wingman flight duration")
+	var active: Dictionary=_state.get("wingmen",{}).get("active",{})
+	if not active.is_empty():active.remaining_ms=maxi(0,int(active.remaining_ms)-milliseconds)
+	return true
+
+## Loma pirate toll (loma_toll_definitions.gd): 0 clears, 1 paid, 2 refused.
+## Paying debits the toll from the wallet.
+func set_loma_toll(status: int,debit:=0) -> bool:
+	error=""
+	var Toll=preload("res://src/content/loma_toll_definitions.gd")
+	if status not in [0,Toll.PAID,Toll.REFUSED] or debit<0 or (debit>0 and status!=Toll.PAID) or debit>int(_state.get("credits",0)) or not _state.get("progress") is Dictionary:return reject("Invalid Loma toll change")
+	_state.credits=int(_state.credits)-debit
+	if status==0:_state.progress.erase(Toll.PROGRESS_KEY)
+	else:_state.progress[Toll.PROGRESS_KEY]=status
+	return true
+
+## The flight reports one native casualty when that pilot enters destruction.
+## Loss changes the paid roster, not its terms or the freelance mission.
+func record_wingman_loss(pilot: RefCounted) -> bool:
+	error=""
+	if not is_instance_of(pilot,load("res://src/simulation/opening_combat_actor.gd")):return reject("A companion casualty requires its native body")
+	var body: Dictionary=pilot.snapshot()
+	if not body.get("wingman",false) or body.get("vitals",{}).get("hull",1)!=0:return reject("Only a destroyed companion can leave the paid roster")
+	for key in ["base_content_id","binding_id"]:
+		if body.get(key)!=_state.get(key):return reject("The companion casualty belongs to another career")
+	var active: Dictionary=_state.get("wingmen",{}).get("active",{})
+	if active.is_empty():return true
+	if body.get("actor_kind")!=active.faction:return reject("The companion casualty changed its hired faction")
+	var index: int=active.names.find(body.get("name",""))
+	if index<0:return true
+	var names: Array=active.names.duplicate()
+	names.remove_at(index)
+	if names.is_empty():_state.wingmen.active={}
+	else:active.names=names
+	return true
+
+func expired_wingmen() -> Dictionary:
+	if not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return {}
+	var active: Dictionary=_state.get("wingmen",{}).get("active",{})
+	return active.duplicate(true) if not active.is_empty() and active.remaining_ms==0 else {}
+
+func dismiss_expired_wingmen() -> bool:
+	if expired_wingmen().is_empty():return reject("No expired crew awaits its station farewell")
+	_state.wingmen.active={}
+	return true
+
+## Kaamo Club docking: the first talk opens the offer; the purchase pays here
+## (the station owner debits the Buskat from the hold).
+func advance_kaamo(purchase: bool) -> bool:
+	var Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
+	if not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty() or _state.station_id!=Kaamo.STATION_ID:return reject("The Kaamo Club requires an idle docking")
+	var current:=Kaamo.state(_state.progress)
+	if current!=(Kaamo.OFFERED if purchase else Kaamo.OPEN):return reject("The Kaamo Club is not at this step")
+	if purchase:
+		if _state.credits<=Kaamo.PRICE:return reject("Insufficient credits.")
+		_state.credits-=Kaamo.PRICE
+		# Anything sold to the club before is gone; the storage starts empty.
+		_state.progress.kaamo_storage={"items":[],"ships":[]}
+	_state.progress.kaamo_state=current+1
+	return true
+
+## Standing::applyDelict: an offence against a race (0-3), doubled at Extreme;
+## Terrans/Vossk share axis 0, Nivelians/Midorians axis 1 (clamped to +-100).
+func apply_delict(race: int,amount: int) -> bool:
+	if race<0 or race>3 or not _state.get("reputation") is Dictionary:return reject("An offence needs a race and a career standing")
+	var change: int=amount*(2 if float(_state.get("difficulty",Difficulty.NORMAL))==Difficulty.EXTREME else 1)*(1 if race%2 else -1)
+	var axes: Array=_state.reputation.axes.duplicate()
+	axes[race/2]=clampi(int(axes[race/2])+change,-100,100)
+	_state.reputation=_state.reputation.duplicate(true);_state.reputation.axes=axes
+	_state.progress.reputation=_state.reputation.duplicate(true)
+	return true
+
+## Supernova 148: a broker's bar talk is heard once per career.
+func hear_bar_flavor() -> bool:
+	var Campaign=preload("res://src/content/valkyrie_campaign_definitions.gd")
+	var talk: int=Campaign.bar_flavor(int(_state.campaign_cursor),int(_state.station_id))
+	if talk<0:return reject("No bar talk waits at this docking")
+	_state.progress.bar_heard=int(_state.progress.get("bar_heard",0))|(1<<(talk-148))
+	return true
+
+## A medal reward blueprint (fireworks) granted at docking.
+func unlock_medal_blueprint(item_id: int) -> bool:
+	if _blueprints==null or not _flight.is_empty() or not _pending_flight.is_empty():return reject("Medal rewards require an idle docking")
+	var project: RefCounted=_blueprints.fork_for_transaction()
+	if not project.unlock(item_id):return reject(project.error)
+	_blueprints=project
+	return true
+
+## The fee an unwelcome pilot pays before the hangar opens.
+func pay_docking_fee(amount: int) -> bool:
+	if not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return reject("The docking fee requires an idle docking")
+	if amount<0 or _state.credits<amount:return reject("Insufficient credits.")
+	_state.credits-=amount
+	return true
+
+## Pays a destroyed pirate base's reward once, at the next idle docking.
+func collect_pirate_base_thanks(pending_bit: int,reward: int) -> bool:
+	if not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return reject("Pirate-base thanks require an idle docking")
+	var mask:=int(_state.progress.get("pirate_bases",0))
+	if mask & pending_bit==0:return reject("No pirate-base thanks are pending")
+	_state.progress.pirate_bases=mask & ~pending_bit;_state.credits+=reward
+	return true
+
+func wingman_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> Dictionary:
+	error=""
+	if _lounges==null or not equipment is Equipment or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the current flight or result before hiring wingmen")
+	if not preload("res://src/simulation/lounge_dialogue.gd").available(bindings):return fail("Wingman dialogue is unavailable for this content")
+	var owned: Dictionary=equipment.snapshot()
+	for key in ["base_content_id","binding_id"]:
+		if _state.get(key)!=bindings.get(key) or owned.get("loadout",{}).get(key)!=bindings.get(key):return fail("The wingmen and career belong to different content")
+	if owned.loadout.station_id!=_state.station_id or _lounges.selection_state().current_station_id!=_state.station_id or owned.get("ordinary_shopping_open",false):return fail("Open the current station lounge with the hangar closed")
+	var active:={}
+	for contact in _lounges.location(int(_state.station_id)).get("population",{}).get("contacts",[]):
+		if contact.contact_id==contact_id:active=Wingmen.offer(contact,int(_state.station_id),bindings);break
+	if active.is_empty():return fail("This contact has no valid wingman roster")
+	var retained: Dictionary=_state.get("wingmen",{"hired_total":0,"active":{}})
+	var busy: bool=not retained.active.is_empty()
+	var count: int=active.names.size()
+	var price: int=active.price
+	return {"kind":"wingmen","contract":active,"crew_size":count,"total_price":price,
+		"intro_text_id":767+count,"busy":busy,"missing_credits":maxi(0,price-int(_state.credits)),
+		"can_accept":not busy and price<=int(_state.credits) and int(retained.hired_total)<=2147483647-count}
+
+func hire_lounge_wingmen(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> bool:
+	var quote:=wingman_preview(bindings,contact_id,equipment)
+	if quote.is_empty():return false
+	if not quote.can_accept:return reject("Another wingman roster is active or this hire exceeds the current credits")
+	var hired: int=_state.get("wingmen",{}).get("hired_total",0)
+	_state.wingmen={"hired_total":hired+int(quote.crew_size),"active":quote.contract.duplicate(true)}
+	_state.credits-=int(quote.total_price)
+	return true
+
+func diplomat_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> Dictionary:
+	error=""
+	if _lounges==null or not equipment is Equipment or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the current flight or result before using a diplomat")
+	if not preload("res://src/simulation/lounge_dialogue.gd").available(bindings):return fail("Diplomat dialogue is unavailable for this content")
+	var owned: Dictionary=equipment.snapshot()
+	for key in ["base_content_id","binding_id"]:
+		if _state.get(key)!=bindings.get(key) or owned.get("loadout",{}).get(key)!=bindings.get(key):return fail("The diplomat and career belong to different content")
+	if owned.loadout.station_id!=_state.station_id or _lounges.selection_state().current_station_id!=_state.station_id or owned.get("ordinary_shopping_open",false):return fail("Open the current station lounge with the hangar closed")
+	var contact: Dictionary=_lounges.diplomat_contact(int(_state.station_id),contact_id)
+	if contact.is_empty():return fail("This contact is not a diplomat")
+	var quote:=Reputation.diplomat_quote(_state.reputation,int(contact.faction))
+	if quote.is_empty():return fail("The diplomat requires valid retained faction standing")
+	quote.merge(contact);quote.kind="diplomat"
+	quote.can_accept=quote.eligible and not quote.consumed and int(_state.credits)>=int(quote.total_price)
+	quote.missing_credits=maxi(0,int(quote.total_price)-int(_state.credits))
+	return quote
+
+func purchase_lounge_diplomat(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> bool:
+	var quote:=diplomat_preview(bindings,contact_id,equipment)
+	if quote.is_empty():return false
+	if not quote.can_accept:return reject("This diplomat is not needed, has already been used, or exceeds the current credits")
+	var cache: RefCounted=_lounges.fork()
+	if not cache.consume_diplomat(int(_state.station_id),contact_id):return reject(cache.error)
+	_state.credits-=int(quote.total_price)
+	_state.reputation=quote.reputation_after.duplicate(true)
+	_state.progress.reputation=_state.reputation.duplicate(true)
+	_lounges=cache
+	return true
+
+func blueprint_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> Dictionary:
+	error=""
+	if _lounges==null or _blueprints==null or not equipment is Equipment or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the current flight or result before buying a blueprint")
+	var owned: Dictionary=equipment.snapshot()
+	for key in ["base_content_id","binding_id"]:
+		if bindings==null or _state.get(key)!=bindings.get(key) or owned.get("loadout",{}).get(key)!=bindings.get(key):return fail("Blueprint seller and career belong to different content")
+	if owned.loadout.station_id!=_state.station_id or _lounges.selection_state().current_station_id!=_state.station_id or owned.get("ordinary_shopping_open",false):return fail("Open the current station lounge with the hangar closed")
+	var quote: Dictionary=_lounges.blueprint_quote(int(_state.station_id),contact_id)
+	if quote.is_empty():return fail("This contact has no blueprint for sale")
+	var recipe: Dictionary=_blueprints.entry(int(quote.item_id))
+	if recipe.is_empty():return fail("This contact's blueprint has no retained recipe")
+	quote.kind="blueprint";quote.consumed=bool(recipe.available)
+	quote.can_accept=not quote.consumed and int(_state.credits)>=int(quote.total_price)
+	quote.missing_credits=maxi(0,int(quote.total_price)-int(_state.credits))
+	return quote
+
+func purchase_lounge_blueprint(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> bool:
+	var quote:=blueprint_preview(bindings,contact_id,equipment)
+	if quote.is_empty():return false
+	if not quote.can_accept:return reject("This blueprint is already owned or exceeds the current credits")
+	var project: RefCounted=_blueprints.fork_for_transaction()
+	if not project.unlock(int(quote.item_id)):return reject(project.error)
+	# The saved recipe bit outlives lounge-cache eviction and prevents recharging.
+	_state.credits-=int(quote.total_price);_blueprints=project
+	return true
+
+func coordinate_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> Dictionary:
+	error=""
+	if _lounges==null or not equipment is Equipment or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the current flight or result before buying coordinates")
+	var owned: Dictionary=equipment.snapshot()
+	for key in ["base_content_id","binding_id"]:
+		if bindings==null or _state.get(key)!=bindings.get(key) or owned.get("loadout",{}).get(key)!=bindings.get(key):return fail("Coordinate seller and career belong to different content")
+	if owned.loadout.station_id!=_state.station_id or _lounges.selection_state().current_station_id!=_state.station_id or owned.get("ordinary_shopping_open",false):return fail("Open the current station lounge with the hangar closed")
+	var quote: Dictionary=_lounges.coordinate_quote(int(_state.station_id),contact_id)
+	if quote.is_empty():return fail("This contact has no coordinates for sale")
+	quote.kind="coordinates";quote.can_accept=not quote.consumed and int(_state.credits)>=int(quote.total_price)
+	quote.missing_credits=maxi(0,int(quote.total_price)-int(_state.credits))
+	return quote
+
+func purchase_lounge_coordinates(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> bool:
+	var quote:=coordinate_preview(bindings,contact_id,equipment)
+	if quote.is_empty():return false
+	if not quote.can_accept:return reject("These coordinates are already known or exceed the current credits")
+	var cache: RefCounted=_lounges.fork()
+	if not cache.purchase_coordinates(int(_state.station_id),contact_id):return reject(cache.error)
+	_state.credits-=int(quote.total_price);_lounges=cache
+	return true
+
 func merchant_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> Dictionary:
 	error=""
 	if _lounges==null or not equipment is Equipment or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the current flight or result before buying lounge goods")
@@ -721,6 +1250,56 @@ func merchant_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted
 	quote.missing_credits=maxi(0,int(quote.total_price)-int(_state.credits))
 	return quote
 
+## The Kaamo Club's mechanics (mods for the flown ship) and dealers (one
+## special item; one ship for the club's storage once the club is owned).
+func kaamo_preview(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> Dictionary:
+	error=""
+	var Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
+	var Agents=preload("res://src/content/persistent_contact_definitions.gd")
+	if _lounges==null or not equipment is Equipment or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return fail("Resolve the current flight or result before trading")
+	var owned: Dictionary=equipment.snapshot()
+	if owned.loadout.station_id!=_state.station_id or _lounges.selection_state().current_station_id!=_state.station_id or owned.get("ordinary_shopping_open",false):return fail("Open the current station lounge with the hangar closed")
+	var quote: Dictionary=_lounges.kaamo_contact(int(_state.station_id),contact_id)
+	if quote.is_empty():return fail("This contact sells nothing")
+	quote.kaamo_kind=quote.kind;quote.kind="kaamo";quote.ship_id=int(owned.loadout.ship_id)
+	match quote.kaamo_kind:
+		"mod":
+			var ship: Dictionary=owned.loadout.get("ship_instance",{})
+			quote.total_price=int(ship.get("unit_price",0))*int(Agents.KAAMO_MOD_PERCENT[int(quote.mod)])/100*Agents.KAAMO_PRICE_FACTOR
+			# Mechanics sell again for the next ship; a hull takes each mod once.
+			quote.consumed=int(quote.mod) in ship.get("upgrade_tags",[])
+		"item":quote.total_price=int(quote.price)*Agents.KAAMO_PRICE_FACTOR
+		"ship":
+			var stored: Array=_state.progress.get("kaamo_storage",{}).get("ships",[]).map(func(row):return int(row.ship_id))
+			var left: Array=Agents.KAAMO_SHIPS.filter(func(id):return id!=int(owned.loadout.ship_id) and id not in stored)
+			quote.greeting=Kaamo.state(_state.progress)!=Kaamo.OWNED
+			quote.consumed=quote.consumed or left.is_empty() or quote.greeting
+			quote.offer_ship_id=-1 if left.is_empty() else int(left[0])
+			quote.total_price=0 if left.is_empty() else int(_catalogues.tables.ships[int(left[0])].stats.base_price)*Agents.KAAMO_PRICE_FACTOR
+	quote.can_accept=not quote.consumed and int(_state.credits)>=int(quote.total_price)
+	quote.missing_credits=maxi(0,int(quote.total_price)-int(_state.credits))
+	return quote
+
+func purchase_kaamo(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> RefCounted:
+	var quote:=kaamo_preview(bindings,contact_id,equipment)
+	if quote.is_empty():return null
+	if not quote.can_accept:return _shopping_reject("This purchase is unavailable or exceeds the current credits")
+	var inventory: RefCounted=equipment.fork()
+	var cache: RefCounted=_lounges.fork()
+	match quote.kaamo_kind:
+		"mod":
+			if not inventory.add_ship_mod(bindings,_catalogues,int(quote.mod)):return _shopping_reject(inventory.error)
+		"item":
+			if not inventory.receive_lounge_goods(int(quote.item_id),1) or not cache.consume_kaamo(int(_state.station_id),contact_id):return _shopping_reject(inventory.error+cache.error)
+		"ship":
+			if not cache.consume_kaamo(int(_state.station_id),contact_id):return _shopping_reject(cache.error)
+			# A bare hull, parked in the club's storage (use it from the hangar).
+			var kept: Dictionary=_state.progress.get("kaamo_storage",{"items":[],"ships":[]}).duplicate(true)
+			kept.ships.append({"ship_id":int(quote.offer_ship_id),"unit_price":int(_catalogues.tables.ships[int(quote.offer_ship_id)].stats.base_price),"faction_id":0})
+			_state.progress.kaamo_storage=kept
+	_state.credits-=int(quote.total_price);_lounges=cache
+	return inventory
+
 func purchase_lounge_goods(bindings: RefCounted,contact_id: int,equipment: RefCounted) -> RefCounted:
 	var quote:=merchant_preview(bindings,contact_id,equipment)
 	if quote.is_empty():return null
@@ -730,16 +1309,37 @@ func purchase_lounge_goods(bindings: RefCounted,contact_id: int,equipment: RefCo
 	var cache: RefCounted=_lounges.fork()
 	if not cache.consume_goods(int(_state.station_id),contact_id):return _shopping_reject(cache.error)
 	_state.credits-=int(quote.total_price);_lounges=cache
+	if not _retain_booze_type(int(quote.item_id)):return null
+	if BaseMedals.booze_type_bit(int(quote.item_id))!=0 and not settle_base_medals():return null
 	return inventory
 
-func inspect_contact(bindings: RefCounted,contact_id: int) -> bool:
+func begin_lounge_visit() -> bool:
+	error=""
+	if _lounges==null:return reject("The lounge is unavailable")
+	_lounges=_lounges.fork();_lounges.begin_social_visit()
+	return true
+
+func inspect_contact(bindings: RefCounted,contact_id: int,library: RefCounted=null) -> bool:
 	error=""
 	if _lounges==null or not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return reject("Resolve the current flight or result before inspecting a contact")
+	var conversations: Variant=_state.get("conversations",0)
+	if not Numbers.integer(conversations,0,2147483646):return reject("The retained conversation count is invalid")
 	var cache: RefCounted=_lounges.fork()
 	var context:={"station_id":_state.station_id,"campaign_cursor":_state.campaign_cursor,"rank":_state.rank,"reputation":_state.reputation.duplicate(true)}
-	if not cache.inspect_contact(bindings,_catalogues,context,contact_id,_station_context):return reject(cache.error)
+	if not cache.inspect_contact(bindings,_catalogues,context,contact_id,_station_context,library):return reject(cache.error)
 	_lounges=cache;_state.offers=cache.location(int(_state.station_id)).offers
+	_state.conversations=int(conversations)+1
 	return true
+
+func decline(offer_id: int) -> bool:
+	error=""
+	if not _flight.is_empty() or not _pending_flight.is_empty() or not _state.get("pending_result",{}).is_empty():return reject("Resolve the current flight or result before refusing a job")
+	var row: Variant=_state.get("offers",{}).get(offer_id)
+	if not row is Dictionary or row.get("consumed")!=false or not row.get("offer") is Dictionary:return reject("This contact has no available job to refuse")
+	var rejected: Variant=_state.get("rejected_jobs",0)
+	if not Numbers.integer(rejected,0,2147483646):return reject("The retained refused-job count is invalid")
+	_state.rejected_jobs=int(rejected)+1
+	return settle_base_medals()
 
 func accept(offer_id: int,equipment: RefCounted,replace_current: bool=false,bindings: RefCounted=null) -> RefCounted:
 	var terms:=preview(offer_id,equipment,bindings)
@@ -751,12 +1351,7 @@ func accept(offer_id: int,equipment: RefCounted,replace_current: bool=false,bind
 	var candidate: RefCounted=equipment.fork()
 	var hold: Dictionary=candidate.snapshot().cargo
 	var mission_cargo:=int(_rules.courier.cargo_item_id)
-	if not next.mission.is_empty():
-		if _rules.acceptance.clear_cargo_kinds.any(func(value):return int(value)==int(next.mission.kind)):
-			for index in hold.entries.size():
-				var row: Dictionary=hold.entries[index]
-				if row.item_id==mission_cargo and row.get("mission",false):hold.entries.remove_at(index);break
-		elif int(next.mission.kind)==int(_rules.passenger.kind):next.passengers=0
+	_drop_mission_goods(next,hold)
 	if int(quote.mission.kind)==int(_rules.courier.kind):
 		var merged:=false
 		for row in hold.entries:
@@ -771,6 +1366,7 @@ func accept(offer_id: int,equipment: RefCounted,replace_current: bool=false,bind
 	hold.free_space=int(hold.capacity)-int(hold.used)
 	if not candidate.retain_flight_cargo(hold):reject(candidate.error);return null
 	next.credits-=int(terms.fee);next.active_offer_id=offer_id
+	var stats: Dictionary=next.get("stats",{}).duplicate();stats.accepted_jobs=int(stats.get("accepted_jobs",0))+1;next.stats=stats
 	next.mission=quote.mission.duplicate(true);next.offers[offer_id].consumed=true
 	next.erase("contract_phase");next.erase("station_outcome")
 	if next.has("accepted_contact"):
@@ -785,6 +1381,35 @@ func accept(offer_id: int,equipment: RefCounted,replace_current: bool=false,bind
 	# Procedural contacts have source ID -1. Their consumed flag remains set
 	# when replaced; re-registering the same contact cannot duplicate its cargo.
 	_state=next;_lounges=lounges
+	return candidate
+
+## Removes the current job's protected cargo or passengers from `next`/`hold`.
+func _drop_mission_goods(next: Dictionary,hold: Dictionary) -> void:
+	if next.mission.is_empty():return
+	var mission_cargo:=int(_rules.courier.cargo_item_id)
+	if _rules.acceptance.clear_cargo_kinds.any(func(value):return int(value)==int(next.mission.kind)):
+		for index in hold.entries.size():
+			var row: Dictionary=hold.entries[index]
+			if row.item_id==mission_cargo and row.get("mission",false):hold.entries.remove_at(index);break
+	elif int(next.mission.kind)==int(_rules.passenger.kind):next.passengers=0
+
+## Missions log "Discard": the docked pilot drops the accepted freelance job.
+## Its protected cargo and passengers leave the ship; nothing is paid or charged.
+func discard_mission(equipment: RefCounted) -> RefCounted:
+	error=""
+	if _state.get("mission",{}).is_empty() or not _state.get("pending_result",{}).is_empty() or equipment==null:reject("There is no freelance mission to discard");return null
+	var next: Dictionary=_state.duplicate(true)
+	var candidate: RefCounted=equipment.fork()
+	var hold: Dictionary=candidate.snapshot().cargo
+	_drop_mission_goods(next,hold)
+	hold.used=0
+	for row in hold.entries:hold.used+=int(row.quantity)
+	hold.free_space=int(hold.capacity)-int(hold.used)
+	if not candidate.retain_flight_cargo(hold):reject(candidate.error);return null
+	next.mission={};next.active_offer_id=-1
+	next.erase("contract_phase");next.erase("station_outcome")
+	if next.has("accepted_contact"):next.accepted_contact={}
+	_state=next
 	return candidate
 
 func active_mission_for(station_id: int,bindings: RefCounted=null) -> Dictionary:
@@ -812,7 +1437,11 @@ func _selected_contract_context(station_id: int,bindings: RefCounted) -> Diction
 		"campaign_cursor":_state.campaign_cursor,"station_id":station_id,
 		"rank":_state.rank,"difficulty":_state.difficulty,"reputation":_state.reputation.duplicate(true),
 		"mission":mission,"client_faction":-1,"contact_name":""}
-	if mission.is_empty():return result
+	if mission.is_empty():
+		# A story flight here takes the cast; a kept side job without a flight
+		# at this station stays accepted.
+		result.mission=StoryFlights.story_job(bindings,_state.campaign_cursor,station_id,_state.progress.merged({"difficulty":float(_state.difficulty)}))
+		return result
 	var retained: Dictionary=_state.get("accepted_contact",{})
 	var accepted: Dictionary=_state.offers.get(_state.active_offer_id,{}) if retained.is_empty() else {"consumed":true,"offer":retained.offer}
 	if accepted.is_empty() or not accepted.consumed or not ContractProgress.matches(_state,accepted.offer,_catalogues):
@@ -824,6 +1453,16 @@ func _selected_contract_context(station_id: int,bindings: RefCounted) -> Diction
 		for contact in _state.get("population",{}).get("contacts",[]):
 			if contact.contact_id==_state.active_offer_id:result.contact_name=contact.name;break
 	return result
+
+## A story flight set in the alien world (station -1, 154): the job the Void
+## visit builds. It depends on the career's cursor and progress only.
+func void_story_context(bindings: RefCounted) -> Dictionary:
+	if bindings==null or _state.is_empty():return {}
+	var job:=StoryFlights.story_job(bindings,_state.campaign_cursor,-1,_state.progress.merged({"difficulty":float(_state.difficulty)}))
+	if job.is_empty():return {}
+	return {"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,
+		"campaign_cursor":_state.campaign_cursor,"station_id":-1,"rank":_state.rank,"difficulty":_state.difficulty,
+		"reputation":_state.reputation.duplicate(true),"mission":job,"client_faction":-1,"contact_name":""}
 
 func free_flight_context(bindings: RefCounted,station_id: int) -> Dictionary:
 	var context:=retained_station_context(bindings,station_id)
@@ -852,7 +1491,7 @@ func retained_station_context(bindings: RefCounted,station_id: int) -> Dictionar
 	return {"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,
 		"campaign_cursor":_state.campaign_cursor,"station_id":station_id,"rank":_state.rank,
 		"difficulty":_state.difficulty,"reputation":_state.reputation.duplicate(true),
-		"mission":{},"client_faction":-1,"contact_name":""}
+		"mission":StoryFlights.story_job(bindings,_state.campaign_cursor,station_id,_state.progress.merged({"difficulty":float(_state.difficulty)})),"client_faction":-1,"contact_name":""}
 
 func poll_station(equipment: RefCounted,bindings: RefCounted=null) -> bool:
 	error=""
@@ -860,7 +1499,8 @@ func poll_station(equipment: RefCounted,bindings: RefCounted=null) -> bool:
 	if not _rules.has("delivery_results"):return reject("This content has no supported delivery results")
 	var owned:=_station_inventory(equipment,bindings)
 	if owned.is_empty():return false
-	return _poll_station_results(owned,equipment)
+	if not _poll_station_results(owned,equipment):return false
+	return true if not _state.pending_result.is_empty() else settle_base_medals()
 
 func _poll_station_results(owned: Dictionary,equipment: RefCounted) -> bool:
 	if not _rules.has("delivery_results"):return reject("This content has no supported delivery results")
@@ -947,6 +1587,7 @@ func _acknowledge_delivery_inventory(equipment: RefCounted,owned: Dictionary) ->
 	next.mission={};next.active_offer_id=-1;next.pending_result={}
 	next.erase("contract_phase");next.erase("station_outcome")
 	if next.has("accepted_contact"):next.accepted_contact={}
+	if not _bank_medals(next):reject("The acknowledged delivery lost its medal evidence");return null
 	_state=next;_result_inventory={}
 	return inventory
 
@@ -957,7 +1598,8 @@ func bind_flight(controller: RefCounted,bindings: RefCounted=null) -> bool:
 	var clock: Dictionary=scene.get("contract_result",{})
 	var encounter: Dictionary=scene.get("combat",{}).get("contract_encounter",{})
 	if clock.is_empty() or clock.elapsed_ms!=0 or clock.mode!=0 or clock.retired or not scene.has("accounting"):return reject("Bind the prepared flight before its first actor update")
-	var context:=flight_context(int(encounter.get("context",{}).get("station_id",-1)),bindings)
+	var station:=int(encounter.get("context",{}).get("station_id",-1))
+	var context:=void_story_context(bindings) if station==-1 and _state.get("station_id")==-1 else flight_context(station,bindings)
 	var capability: RefCounted=controller.mission_context_owner()
 	var supported: bool=capability!=null and capability.has_contract_actors() and capability.contract_context()==context
 	if not supported or context!=encounter.get("context"):return reject("This flight does not belong to the accepted contract")
@@ -971,7 +1613,7 @@ func bind_flight(controller: RefCounted,bindings: RefCounted=null) -> bool:
 func bind_world(controller: RefCounted,context: Dictionary,bindings: RefCounted=null) -> bool:
 	error=""
 	if not _rules.has("world_initialization") or not _flight.is_empty() or not is_instance_of(controller,load("res://src/simulation/combat_training_control.gd")):return reject("Bind an ordinary world to its retained contract session")
-	var expected:=free_flight_context(bindings,int(context.get("station_id",-1))) if bindings!=null and Campaign.supported(bindings,context.get("campaign_cursor")) else flight_context(int(context.get("station_id",-1)))
+	var expected:=void_story_context(bindings) if context.get("station_id")==-1 and _state.get("station_id")==-1 else free_flight_context(bindings,int(context.get("station_id",-1))) if bindings!=null and Campaign.supported(bindings,context.get("campaign_cursor")) else flight_context(int(context.get("station_id",-1)))
 	if expected.is_empty() or context!=expected:return reject("The prepared world changed its retained contract context")
 	var scene: Dictionary=controller.snapshot()
 	if not scene.get("contract_result",{}).is_empty():return bind_flight(controller,bindings)
@@ -1062,24 +1704,53 @@ func _bind_accounted_world(controller: RefCounted,context: Dictionary,scene: Dic
 	_flight_identity=controller.flight_identity()
 	return true
 
-func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_results: bool=true,periodic_poll_allowed: bool=true) -> Dictionary:
+func evaluate_flight(controller: RefCounted,radio_active: bool=false,poll_results: bool=true,periodic_poll_allowed: bool=true,radio_finished: Array=[],world_facts: Dictionary={},private_copies: bool=false) -> Dictionary:
 	# The session and controller commit together. A failed result preparation
 	# cannot pay, change career, discard actors or partially freeze a live flight.
 	error=""
 	if not _valid_flight(controller):return {}
-	var next:=fork();var flight: RefCounted=controller.fork_for_frame(false)
+	# A caller that already passes private forks of both skips the second copy.
+	var next: RefCounted=self if private_copies else fork()
+	var flight: RefCounted=controller if private_copies else controller.fork_for_frame(false)
 	if not _pending_flight.is_empty():
 		if controller.snapshot()!=_pending_flight:return fail("The pending result must retain its frozen flight")
 		return {"session":next,"controller":flight,"opened":false}
 	if not next._retain_combat_progress(flight):return fail(next.error)
 	if _flight.has("ordinary_context") or not poll_results or flight.mission_context_owner().recipe().result.get("defer_to_station",false):return {"session":next,"controller":flight,"opened":false}
-	var result: Dictionary=flight.poll_contract_result(radio_active,periodic_poll_allowed)
+	var result: Dictionary=flight.poll_contract_result(radio_active,periodic_poll_allowed,radio_finished,world_facts)
 	if result.is_empty():return fail(flight.error)
+	var advance: Dictionary=flight.mission_context_owner().recipe().get("story_advance",{})
+	# A failed story flight shows the ordinary failure result (no pay, cursor
+	# unchanged); the player retries by flying the mission again.
+	if not advance.is_empty() and result.mode!=0 and result.mode!=int(_rules.flight_results.success_result_mode) and not _flight.has("story_transition"):advance={}
+	if not advance.is_empty():
+		# A story flight moves the career on without a result screen or pay;
+		# its cast and radio keep running in the same world.
+		if result.mode==0 or _flight.has("story_transition"):return {"session":next,"controller":flight,"opened":false}
+		if result.mode!=int(_rules.flight_results.success_result_mode) or not flight.acknowledge_contract_result():return fail("The story flight has no silent advance: "+flight.error)
+		var progress: Dictionary=next._state.progress
+		var earned:=Career.calculate_progress(_progress_rules,int(advance.campaign_cursor),progress.player_kills,progress.pirate_kills,progress.other_score)
+		if earned.is_empty():return fail("The story advance exceeds the supported career range")
+		next._state.progress.merge(earned,true);next._state.rank=earned.rank
+		next._state.progress.merge(advance.get("progress",{}),true)
+		var pay:=int(advance.get("previous_mission",{}).get("reward",0))
+		if pay>0:next._state.credits=credit_balance(next._state.credits,pay,_rules.delivery_results)
+		for station in advance.get("story_unvisit",[]):
+			if not next.forget_location_visit(int(station)):return fail(next.error)
+		if not advance.get("unlock_system_ids",[]).is_empty():
+			next._lounges=next._lounges.fork()
+			if not next._lounges.unlock_story_systems(_rules.base_navigation,advance.unlock_system_ids):return fail(next._lounges.error)
+		next._state.campaign_cursor=int(advance.campaign_cursor);next._state.progress.campaign_cursor=int(advance.campaign_cursor)
+		next._flight.story_transition=advance.merged({"station_id":_state.station_id},true)
+		next._flight.retired=true
+		next._flight.settlement=flight.snapshot().combat.get("contract_settlement",{}).duplicate(true)
+		return {"session":next,"controller":flight,"opened":false}
 	var opened: bool=result.mode!=0
 	if opened:
 		var rules: Dictionary=_rules.delivery_results
 		var succeeded: bool=result.mode==int(_rules.flight_results.success_result_mode)
-		var mission: Dictionary=next._state.mission
+		# A failed story flight has no accepted job; its story job stands in.
+		var mission: Dictionary=next._state.mission if not next._state.mission.is_empty() else flight.mission_context_owner().recipe().mission
 		var continuation: Dictionary=flight.mission_context_owner().recipe().get("continuation",{}) if succeeded else {}
 		# The admitted mission runner owns whether this flight has failed. Only
 		# the wager rule changes the balance when an ordinary job is lost.
@@ -1202,6 +1873,9 @@ func _acknowledge_flight_campaign(controller: RefCounted,transition: Dictionary)
 	next._flight.story_transition=transition.duplicate(true)
 	return next
 
+## The story step a live flight has already taken, if any.
+func story_transition() -> Dictionary:return _flight.get("story_transition",{}).duplicate(true)
+
 func _valid_flight(controller: RefCounted) -> bool:
 	if _flight.is_empty() or not is_instance_of(controller,load("res://src/simulation/combat_training_control.gd")):return reject("The retained contract has no matching flight owner")
 	if _flight_identity==null or controller.flight_identity()!=_flight_identity:return reject("The contract lost its retained native flight")
@@ -1211,7 +1885,7 @@ func _valid_flight(controller: RefCounted) -> bool:
 	var transition: Dictionary=_flight.get("story_transition",{})
 	if transition.is_empty():
 		if scene.get("campaign_cursor")!=_state.campaign_cursor:return reject("The contract flight belongs to another campaign stage")
-	elif not _flight.has("ordinary_context") or scene.get("campaign_cursor")!=transition.from_cursor or _state.campaign_cursor!=transition.campaign_cursor or _state.station_id!=transition.station_id:
+	elif (not _flight.has("ordinary_context") and not _flight.has("encounter")) or scene.get("campaign_cursor")!=transition.from_cursor or _state.campaign_cursor!=transition.campaign_cursor or _state.station_id!=transition.station_id:
 		return reject("The retained world lost its acknowledged story transition")
 	if _flight.has("ordinary_context"):
 		if _flight.has("selected40_entry") and scene.get("selected40_sequence",{}).get("elapsed_ms",-1)<_flight.elapsed_ms:return reject("Selected40 career lost its retained native sequence clock")
@@ -1248,12 +1922,45 @@ func _retain_combat_progress(controller: RefCounted) -> bool:
 		var count:=Career.recovered_cargo_total(int(progress.get("cargo_recovered",0)),recovered,retained)
 		if count<0:return reject("The flight lost its retained recovery quantity or exceeded the supported career range")
 		earned.cargo_recovered=count
+	# Alien Hunter: units picked up from Void (kind 9) crates. Like story kills,
+	# a smaller total than retained means a new combat world after a jump.
+	var remains: Variant=scene.combat.get("recovery",{}).get("kind9_quantity",0)
+	if not Numbers.integer(remains,0,2147483647):return reject("The flight lost its retained Void cargo quantity")
+	var retained_remains: int=_flight.get("alien_remains",0)
+	if remains<retained_remains:retained_remains=0;_flight.alien_remains=0
+	var new_remains: int=int(remains)-retained_remains
+	var booze_flags: Variant=scene.combat.get("recovery",{}).get("item_flags",[])
+	if not booze_flags is Array:return reject("The flight lost its retained Barkeeper item history")
+	var booze_mask: Variant=progress.get("booze_types_mask",0)
+	if not Numbers.integer(booze_mask,0,BaseMedals.BOOZE_TYPE_MASK):return reject("The retained Barkeeper type history exceeds the supported source domain")
+	for index in booze_flags:
+		if not Numbers.integer(index,0,BaseMedals.BOOZE_LAST_ID-BaseMedals.BOOZE_FIRST_ID):return reject("The flight has an invalid Barkeeper item index")
+		booze_mask=int(booze_mask) | (1 << int(index))
+	if not booze_flags.is_empty() or progress.has("booze_types_mask"):earned.booze_types_mask=int(booze_mask)
+	# A story mission may count ships its weapon destroys (Valkyrie 59: Liberators).
+	var story_owner: RefCounted=controller.mission_context_owner() if controller.has_method("mission_context_owner") else null
+	var excluded: Array=[] if story_owner==null else story_owner.recipe().get("story_excluded_actors",[])
+	var counted: Array=scene.combat.get("lethal_items",[]).filter(func(kill):return StoryFlights.counts_kill(_state.campaign_cursor,kill,excluded))
+	# Each jump builds a new combat world whose kill log starts empty; a
+	# shorter log than the retained count means a new world (kills are polled
+	# every frame, so none are lost across the switch).
+	var retained_kills: int=_flight.get("story_kills",0)
+	if counted.size()<retained_kills:retained_kills=0;_flight.story_kills=0
+	if counted.size()>retained_kills:
+		var total:=int(progress.get("story_counter",0))+counted.size()-retained_kills
+		if not Numbers.integer(total,0,2147483647):return reject("The story counter exceeds the supported career range")
+		earned.story_counter=total
 	var standing: Dictionary=scene.combat.get("current_reputation",{})
 	if not Reputation.valid_state(standing):return reject("The flight lost its retained reputation")
 	_state.progress.merge(earned,true);_state.rank=earned.rank
 	_state.reputation=standing;_state.progress.reputation=standing.duplicate(true)
 	_flight.accounting=accounting.duplicate(true);_flight.reputation_events=events.duplicate(true)
 	if recovered>0:_flight.cargo_recovered=recovered
+	if new_remains>0:
+		_state.stats=_state.get("stats",{}).duplicate()
+		_state.stats.alien_remains=mini(int(_state.stats.get("alien_remains",0))+new_remains,2147483647)
+		_flight.alien_remains=int(remains)
+	if counted.size()>retained_kills:_flight.story_kills=counted.size()
 	_flight.elapsed_ms=scene.selected40_sequence.elapsed_ms if _flight.has("selected40_entry") else scene.get("contract_result",{}).get("elapsed_ms",0)
 	var capability: RefCounted=controller.mission_context_owner()
 	if _flight.has("encounter") and capability!=null and capability.recipe().result.get("defer_to_station",false):
@@ -1293,18 +2000,31 @@ func _station_inventory(equipment: RefCounted,bindings: RefCounted=null) -> Dict
 func result_pending() -> bool:return not _state.get("pending_result",{}).is_empty()
 func station_id() -> int:return int(_state.get("station_id",-1))
 
+func has_progress(key: String) -> bool:return _state.get("progress",{}).has(key)
+
 func snapshot() -> Dictionary:
-	var result:=_state.duplicate(true)
+	var result:=_copy_state()
 	if not _flight.is_empty():result.flight=_flight.duplicate(true)
 	if _lounges!=null:result.lounges=_lounges.read_snapshot()
 	if _void_source!=null:result.void_source=_void_source.snapshot()
-	if _blueprints!=null:result.blueprints=_blueprints.snapshot()
+	if _blueprints!=null:result.blueprints=_blueprints.read_snapshot()
 	return result
+
+## A private copy of the live state. The generated contact population is only
+## ever replaced whole, so its read-only copy is shared instead of copied.
+func _copy_state() -> Dictionary:
+	var population: Variant=_state.get("population")
+	if not population is Dictionary:return _state.duplicate(true)
+	# Restored saves arrive editable; the same value is frozen on first copy.
+	if not population.is_read_only():population=Readonly.freeze(population.duplicate(true));_state.population=population
+	var copy: Dictionary=_state.duplicate();copy.erase("population")
+	copy=copy.duplicate(true);copy.population=population
+	return copy
 
 func fork() -> RefCounted:
 	var result: RefCounted=get_script().new()
 	# Configuration is immutable after setup; only live state needs a private copy.
-	result._state=_state.duplicate(true);result._rules=_rules;result._cabins=_cabins
+	result._state=_copy_state();result._rules=_rules;result._cabins=_cabins
 	result._progress_rules=_progress_rules;result._stations=_stations;result._result_inventory=_result_inventory.duplicate(true)
 	result._flight=_flight.duplicate(true);result._pending_flight=_pending_flight.duplicate(true)
 	result._flight_identity=_flight_identity
@@ -1315,6 +2035,7 @@ func fork() -> RefCounted:
 	result._blueprints=_blueprints.fork_for_transaction() if _blueprints!=null else null
 	result._selected40_entry=_selected40_entry.fork() if _selected40_entry!=null else null
 	result._station_context=_station_context
+	result._shopping_booze_quantity=_shopping_booze_quantity
 	return result
 
 func reject(message: String) -> bool:error=message;return false

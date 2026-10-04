@@ -36,6 +36,9 @@ var _selected40_world: RefCounted
 var _selected40:={}
 var _selected41_world: RefCounted
 var _selected41:={}
+## Second guns (Most Wanted rockets): actor id -> {gun, active, clock_ms, switch_ms}.
+## Every switch_ms the actor toggles which gun fires; shots of both keep flying.
+var _second:={}
 
 func clear() -> void:
 	error = ""
@@ -46,6 +49,7 @@ func clear() -> void:
 	_definitions=[];_actor_audio=[];_training={}
 	_alioth_revision=-1
 	_selected40_world=null;_selected40={};_selected41_world=null;_selected41={}
+	_second={}
 
 func configure(bindings: RefCounted, catalogues: RefCounted) -> bool:
 	clear()
@@ -204,8 +208,107 @@ func apply_alioth_sequence(owner: RefCounted) -> bool:
 	_training.target_memberships=memberships;_alioth_revision=sequence.revision
 	return true
 
+## Companions keep their own body population, but use the ordinary primary
+## factory after their saved faction has replaced the temporary factory kind.
+func configure_wingmen(bindings: RefCounted,catalogues: RefCounted,departure: RefCounted,bodies: Array,systems:=false) -> bool:
+	clear()
+	if not is_instance_of(departure,load("res://src/simulation/first_flight_construction.gd")) or bodies.is_empty() or bodies.size()>3:return reject("Companion guns require the retained paid departure")
+	var career: RefCounted=departure.contract_owner()
+	if career==null:return reject("Companion guns lost the paid career")
+	var state: Dictionary=career.snapshot();var entry: Dictionary=departure.snapshot()
+	var roster: Dictionary=state.get("wingmen",{}).get("active",{})
+	if roster.get("names",[]).size()!=bodies.size():return reject("Companion gun population differs from the paid roster")
+	var rows:=[]
+	for id in bodies.size():
+		if not bodies[id] is Actor:return reject("Companion guns require native body owners")
+		var actor: Dictionary=bodies[id].snapshot()
+		if actor.get("wingman")!=true or actor.get("wingman_index")!=id or actor.get("name")!=roster.names[id] or actor.get("actor_kind")!=roster.faction:return reject("Companion gun lost its saved pilot identity")
+		for key in ["base_content_id","binding_id"]:
+			if actor.get(key)!=bindings.get(key):return reject("Companion body and weapon content differ")
+		var faction:=int(actor.actor_kind) if int(actor.actor_kind)<=3 else 8
+		var enhanced: bool=int(state.get("mission",{}).get("kind",-1))==6
+		var row:=ContractCombat.shared_weapon(bindings.early_contracts.ship_combat.weapons,int(entry.campaign_cursor),int(state.rank),float(state.difficulty),faction,enhanced)
+		if row.is_empty():return reject("Companion primary lacks its native faction declaration")
+		if systems:
+			row={"item_id":18,"category":0,"kind":1,"damage":0,"interval_ms":400,"lifetime_ms":3000,
+				"projectile_capacity":4,"speed_units_per_millisecond":16.0,"model_resource_id":6794,
+				"nonplayer_source":true,"wingman_systems":true}
+			if not actor.firing_allowed:row.unarmed=true
+		row.actor_id=id;row.actor_kind=int(actor.actor_kind);row.hull_catalogue_id=int(actor.hull_catalogue_id);row.name=actor.name
+		rows.append(row)
+	if not _configure_rows(bindings,catalogues,rows,int(entry.campaign_cursor)):return false
+	_identity.campaign_cursor=int(entry.campaign_cursor)
+	_training={"wingmen":roster.names.duplicate()}
+	if systems:_training.wingman_systems=true
+	return true
+
+func wingman_primary_declarations() -> Array:
+	if not _training.has("wingmen") or _training.get("wingman_systems",false):return []
+	return _guns.map(func(gun):return gun.snapshot().weapon)
+
+func wingman_systems_declarations() -> Array:
+	if not _training.get("wingman_systems",false):return []
+	return _guns.filter(func(gun):return gun!=null).map(func(gun):return gun.snapshot().weapon)
+
+func is_wingman_systems() -> bool:
+	return _training.get("wingman_systems",false) and _training.has("wingmen") and not _guns.is_empty()
+
+func has_wingman_gun(index: int) -> bool:
+	return _training.has("wingmen") and index>=0 and index<_guns.size() and _guns[index]!=null
+
+func fire_wingmen(bodies: Array,requested_actor_ids: Array,poses: Dictionary) -> Dictionary:
+	if not _training.has("wingmen") or bodies.size()!=_guns.size():return fail("Companion firing needs its own retained body population")
+	var scene:={"actors":[]}
+	for id in bodies.size():
+		if not bodies[id] is Actor:return fail("Companion firing lost a native body owner")
+		var body: Dictionary=bodies[id].snapshot()
+		for key in _identity:
+			if body.get(key)!=_identity[key]:return fail("Companion firing body belongs to another flight")
+		if body.get("wingman")!=true or body.get("wingman_index")!=id or body.get("name")!=_definitions[id].name or body.get("actor_kind")!=_definitions[id].actor_kind:return fail("Companion firing changed its paid pilot")
+		scene.actors.append(body)
+	return _fire_bodies(scene,requested_actor_ids,poses)
+
+## The companion's native target list includes other NPCs, even its own faction.
+## Do not collapse it to the selected hostile; source geometry decides the hit.
+## Reciprocal enemy/companion-body contacts remain a separate membership owner.
+func evaluate_wingman_contacts(combat: RefCounted,delta_ms: int,systems: RefCounted=null) -> Dictionary:
+	if not _training.has("wingmen") or delta_ms<0:return fail("Invalid companion primary contact pass")
+	if combat!=null and not combat is Combat:return fail("Companion contacts need the native combat owner")
+	if systems!=null:
+		if not is_instance_of(systems,get_script()) or not systems._training.get("wingman_systems",false) or systems._identity!=_identity or systems._training.get("wingmen")!=_training.wingmen or systems._guns.size()!=_guns.size() or _training.get("wingman_systems",false):return fail("Companion weapon groups belong to different paid populations")
+	var next:=fork_for_frame();var targets:=[];var events:=[]
+	var second: RefCounted=null if systems==null else systems.fork_for_frame();var systems_events:=[]
+	var updated: RefCounted=null if combat==null else combat.fork_for_frame()
+	if updated!=null:
+		if _training.get("wingman_systems",false):
+			if not updated.bind_wingman_systems(self):return fail(updated.error)
+		elif not updated.bind_wingman_primaries(self):return fail(updated.error)
+		if second!=null and not updated.bind_wingman_systems(systems):return fail(updated.error)
+		for actor in updated.actor_snapshots():
+			if not actor.get("contract_debris",false):targets.append(int(actor.actor_id))
+	for id in next._guns.size():
+		# Preserve construction order: primary then systems for each pilot,
+		# not every primary followed by every systems gun.
+		for owner in [next,second]:
+			if owner==null or owner._guns[id]==null:continue
+			var gun: RefCounted=owner._guns[id];var hits:=[];var last: Variant=null
+			if updated!=null:
+				var contacts:=NPCContacts.new()
+				var result:=contacts.evaluate_staged(gun,updated,targets)
+				if result.is_empty():return fail(contacts.error)
+				gun=result.projectiles;updated=result.combat;hits=result.contacts;last=result.last_contact_actor_id
+			var motion: Dictionary=gun.advance(delta_ms)
+			if motion.is_empty():return fail(gun.error)
+			owner._guns[id]=gun
+			var event:={"actor_id":id,"contacts":[],"npc_contacts":hits,"last_contact_actor":last,"motion":motion}
+			if owner==next:events.append(event)
+			else:systems_events.append(event)
+	var result:={"weapons":next,"combat":updated,"actors":events}
+	if second!=null:result.systems_weapons=second;result.systems_actors=systems_events
+	return result
+
 func _configure_rows(bindings: RefCounted, catalogues: RefCounted, rows: Array, cursor: int=-1, selected40:=false, selected41:=false) -> bool:
-	var guns:=[];var sounds:=[]
+	var guns:=[];var sounds:=[];var second:={}
 	for data in rows:
 		if data.get("unarmed",false):guns.append(null);sounds.append({});continue
 		var weapon:=_resolve_weapon(bindings,catalogues,data,cursor,selected40,selected41)
@@ -213,6 +316,20 @@ func _configure_rows(bindings: RefCounted, catalogues: RefCounted, rows: Array, 
 		var gun:=Projectiles.new()
 		if not gun.configure(weapon):return reject(gun.error)
 		guns.append(gun)
+		if data.get("second_gun") is Dictionary:
+			var row: Dictionary=data.duplicate(true);row.merge(data.second_gun,true);row.erase("second_gun")
+			var items: Array=catalogues.tables.get("items",[])
+			if int(row.item_id)>=items.size():return reject("NPC second gun names an absent catalogue item")
+			row.category=int(items[int(row.item_id)].arrays[2][3])
+			var rocket_weapon:=_resolve_weapon(bindings,catalogues,row,cursor,selected40,selected41)
+			if rocket_weapon.is_empty():return false
+			# The NPC's rocket flies straight like a gun shot (no homing).
+			rocket_weapon.category=0
+			var rocket:=Projectiles.new()
+			if not rocket.configure(rocket_weapon):return reject(rocket.error)
+			second[guns.size()-1]={"gun":rocket,"active":false,"clock_ms":0,"switch_ms":int(data.second_gun.switch_ms)}
+		# Both companion groups retain the same native NPC sound owner. Its
+		# linked faction, not the player's item table, selects the firing cue.
 		var selected_audio:={}
 		var audio: Dictionary=bindings.weapon_parameters.get("audio",{})
 		if not audio.is_empty():
@@ -220,28 +337,35 @@ func _configure_rows(bindings: RefCounted, catalogues: RefCounted, rows: Array, 
 			if selected_audio.is_empty():return reject("NPC lacks supported weapon sound selection")
 		sounds.append(selected_audio)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
-	_guns=guns;_actor_audio=sounds;_definitions=rows.duplicate(true)
+	_guns=guns;_actor_audio=sounds;_definitions=rows.duplicate(true);_second=second
 	return true
 
 func _resolve_weapon(bindings: RefCounted, catalogues: RefCounted, data: Dictionary, cursor: int, selected40:=false, selected41:=false) -> Dictionary:
 	var items: Variant = catalogues.tables.get("items")
 	if not items is Array or data.item_id>=items.size(): return fail("NPC weapon names an absent catalogue item")
 	var arrays: Variant = items[int(data.item_id)].get("arrays")
-	if not arrays is Array or arrays.size()!=3 or arrays[2].size()<6 or arrays[2][3]!=data.category or arrays[2][5]!=data.get("catalogue_kind",data.kind):
+	if not arrays is Array or arrays.size()!=3 or arrays[2].size()<6 or arrays[2][3]!=data.category or (int(data.get("catalogue_kind",data.kind))>=0 and arrays[2][5]!=data.get("catalogue_kind",data.kind)):
 		return fail("NPC weapon catalogue category or kind disagrees with its declaration")
 	if bindings.resolve(int(data.model_resource_id),"mesh").is_empty(): return fail("NPC weapon visual resource is unavailable")
 	var weapon := {"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"launch_mode":"ordinary"}
 	for key in ["item_id", "category", "kind", "damage", "interval_ms", "lifetime_ms", "projectile_capacity"]: weapon[key]=int(data[key])
+	if data.get("own_gun",false):
+		weapon.merge({"own_gun":true,"model_resource_id":int(data.model_resource_id),"kind":load("res://src/content/contract_ship_combat_definitions.gd").own_gun_kind(items[int(data.item_id)])},true)
 	weapon.speed_units_per_millisecond=float(data.speed_units_per_millisecond)
 	if data.has("nonplayer_source"):
 		var policy: Dictionary=bindings.weapon_parameters.get("ordinary_hit_policy",{})
 		var properties: Dictionary=items[int(data.item_id)].get("properties",{})
 		var extra: Variant=properties.get(int(policy.get("additional_damage_property",-1)),int(policy.get("missing_additional_damage",0)))
-		if extra!=int(policy.get("missing_additional_damage",0)) or policy.is_empty():return fail("NPC weapon requires unsupported additional damage")
+		if data.get("own_gun",false):extra=int(policy.get("missing_additional_damage",0))
+		var systems: bool=data.get("wingman_systems",false)
+		if policy.is_empty() or (not systems and extra!=int(policy.get("missing_additional_damage",0))):return fail("NPC weapon requires unsupported additional damage")
+		if systems:
+			if data.item_id!=18 or data.category!=0 or data.kind!=1 or data.damage!=0 or data.interval_ms!=400 or data.lifetime_ms!=3000 or data.projectile_capacity!=4 or data.speed_units_per_millisecond!=16.0 or data.model_resource_id!=6794 or not Vitals.integer(extra) or extra<=0 or int(policy.additional_damage_property)!=10:return fail("Companion systems gun differs from its native declaration")
+			weapon.wingman_systems=true
 		if cursor<0:return fail("NPC weapons require their constructed encounter identity")
 		weapon.campaign_cursor=cursor
 		weapon.nonplayer_source=bool(data.nonplayer_source)
-		weapon.ordinary_hit_policy={"additional_damage":int(extra),"additional_damage_required":false,"nonplayer_damage":weapon.damage}
+		weapon.ordinary_hit_policy={"additional_damage":int(extra),"additional_damage_required":systems,"nonplayer_damage":weapon.damage}
 		weapon.collision_bounds={"mode":bindings.weapon_parameters.collision_bounds.mode}
 	return weapon
 
@@ -262,6 +386,9 @@ func snapshot() -> Dictionary:
 		if not _training.is_empty():
 			result.actors[-1].definition=_definitions[id].duplicate(true)
 			result.actors[-1].audio=_actor_audio[id].duplicate()
+	if not _second.is_empty():
+		result.second_guns=[]
+		for id in _second:result.second_guns.append({"actor_id":id,"active":_second[id].active,"projectiles":_second[id].gun.snapshot()})
 	return result
 
 func fire(combat: RefCounted, requested_actor_ids: Array) -> Dictionary:
@@ -269,10 +396,10 @@ func fire(combat: RefCounted, requested_actor_ids: Array) -> Dictionary:
 	if _selected40_world!=null:return fail("Selected40 firing requires its live target owner")
 	return _fire(combat,requested_actor_ids,{})
 
-func fire_combat_training(combat: RefCounted, requests: Array) -> Dictionary:
+func fire_combat_training(combat: RefCounted, requests: Array,wingmen: RefCounted=null) -> Dictionary:
 	if _selected41_world!=null:return fail("Source41 firing requires its retained native target owner")
 	if _selected40_world!=null:return fail("Selected40 firing requires its live target owner")
-	return _fire_requests(combat,requests)
+	return _fire_requests(combat,requests,wingmen)
 
 func _restart_selected41_attack(sequence: RefCounted) -> bool:
 	error=""
@@ -321,15 +448,24 @@ func fire_selected40(combat: RefCounted,player: RefCounted,requests: Array) -> D
 		elif not actors[target].active or actors[target].vitals.hull<=0 or actors[target].statistics_targeting_blocked:return fail("Selected40 gun cannot target inactive, destroyed or blocked statistics")
 	return _fire_requests(combat,requests)
 
-func _fire_requests(combat: RefCounted, requests: Array) -> Dictionary:
+func _fire_requests(combat: RefCounted, requests: Array,wingmen: RefCounted=null) -> Dictionary:
 	error=""
 	if _training.is_empty():return fail("This weapon owner has no combat-training firing requests")
+	if wingmen!=null:
+		if not is_instance_of(wingmen,load("res://src/simulation/wingman_actors.gd")):return fail("NPC firing requires a native paid-cast owner")
+		if not wingmen.matches_target_context(_identity):return fail(wingmen.error)
 	var ids:=[];var poses:={}
 	for request in requests:
-		if not request is Dictionary or request.size()!=3 or not request.get("actor_id") is int or not request.get("target_actor_id") is int:return fail("Invalid combat-training firing request")
+		if not request is Dictionary or request.size()!=(4 if request.has("wingman_index") else 3) or not request.get("actor_id") is int or not request.get("target_actor_id") is int:return fail("Invalid combat-training firing request")
 		var id: int=request.actor_id
 		if id<0 or id>=_guns.size() or poses.has(id) or not request.get("pose") is Transform3D or not request.pose.is_finite():return fail("Invalid combat-training firing pose")
-		if not request.target_actor_id in _training.target_memberships[id]:return fail("Combat-training request names a target outside its membership")
+		if request.has("wingman_index"):
+			if wingmen==null or request.target_actor_id!=-1 or not request.wingman_index is int:return fail("Invalid separate companion firing target")
+			var member:={"group":"wingman","index":request.wingman_index}
+			if member not in companion_target_order(id,wingmen):return fail("NPC firing names an excluded companion")
+			var target: Dictionary=wingmen.body_owner(request.wingman_index).snapshot()
+			if not target.active or target.vitals.hull<=0 or target.statistics_targeting_blocked:return fail("NPC firing cannot target a dead or blocked companion")
+		elif not request.target_actor_id in _training.target_memberships[id]:return fail("Combat-training request names a target outside its membership")
 		ids.append(id);poses[id]=request.pose
 	return _fire(combat,ids,poses)
 
@@ -338,7 +474,7 @@ func _fire(combat: RefCounted, requested_actor_ids: Array, poses: Dictionary) ->
 	if _identity.is_empty() or not combat is Combat: return fail("NPC firing requires configured weapons and matching combat actors")
 	if _selected41_world!=null and combat.selected41_world_owner()!=_selected41_world:return fail("Source41 firing uses a different native generation")
 	if _selected40_world!=null and combat.selected40_world_owner()!=_selected40_world:return fail("Selected40 firing uses a different generated world")
-	var scene: Dictionary = combat.snapshot()
+	var scene: Dictionary = combat.read_snapshot()
 	for key in _identity:
 		if scene.get(key)!=_identity[key]: return fail("NPC firing actors belong to another source profile")
 	if not scene.get("actors") is Array or scene.actors.size()!=_guns.size():return fail("NPC firing population differs from its weapon pools")
@@ -348,6 +484,9 @@ func _fire(combat: RefCounted, requested_actor_ids: Array, poses: Dictionary) ->
 		if scene.actors[id].get("actor_id")!=id or not kind_matches:return fail("NPC firing membership differs from its weapon declaration")
 	if _training.has("contract_encounter") and scene.get("contract_encounter")!=_training.contract_encounter:return fail("NPC firing belongs to another accepted contract")
 	if _training.has("bakka_encounter") and scene.get("bakka_encounter")!=_training.bakka_encounter:return fail("NPC firing belongs to another B'akka contest")
+	return _fire_bodies(scene,requested_actor_ids,poses)
+
+func _fire_bodies(scene: Dictionary,requested_actor_ids: Array,poses: Dictionary) -> Dictionary:
 	var seen := {}
 	for id in requested_actor_ids:
 		if not id is int or id<0 or id>=_guns.size() or seen.has(id): return fail("Invalid or duplicate NPC firing request")
@@ -355,12 +494,14 @@ func _fire(combat: RefCounted, requested_actor_ids: Array, poses: Dictionary) ->
 		seen[id]=true
 	var staged := []
 	var results := []
+	var second:=_fork_second()
 	# Source NPC array order determines events, independently of request order.
 	for id in _guns.size():
 		if _guns[id]==null:staged.append(null);continue
 		var gun: RefCounted = _guns[id].fork_state()
 		staged.append(gun)
 		if not seen.has(id): continue
+		if second.has(id) and second[id].active:gun=second[id].gun
 		var actor: Dictionary = scene.actors[id]
 		var allowed: bool = actor.active and actor.firing_allowed and actor.vitals.hull>0
 		if _selected40_world!=null or _selected41_world!=null:allowed=allowed and actor.actor_mode==1
@@ -379,8 +520,20 @@ func _fire(combat: RefCounted, requested_actor_ids: Array, poses: Dictionary) ->
 				var cue := Audio.cue(_actor_audio[id],poses.get(id,actor.pose).origin)
 				if not cue.is_empty():cues.append(cue)
 			results[-1].audio_events=cues
-	_guns=staged
+	_guns=staged;_second=second
 	return {"actors":results}
+
+## The rocket carriers swap their firing gun every switch_ms.
+func advance_second_clocks(delta_ms: int) -> void:
+	for id in _second:
+		var clock: Dictionary=_second[id];clock.clock_ms+=delta_ms
+		while clock.clock_ms>=int(clock.switch_ms):clock.clock_ms-=int(clock.switch_ms);clock.active=not clock.active
+
+func _fork_second() -> Dictionary:
+	var copy:={}
+	for id in _second:
+		copy[id]=_second[id].duplicate();copy[id].gun=_second[id].gun.fork_state()
+	return copy
 
 func advance(delta_ms: Variant) -> Dictionary:
 	error=""
@@ -394,7 +547,10 @@ func advance(delta_ms: Variant) -> Dictionary:
 		if result.is_empty(): return fail(gun.error)
 		staged.append(gun)
 		results.append({"actor_id":id,"update":result})
-	_guns=staged
+	var second:=_fork_second()
+	for id in second:
+		if second[id].gun.advance(delta_ms).is_empty():return fail(second[id].gun.error)
+	_guns=staged;_second=second
 	return {"actors":results}
 
 func fork_for_frame() -> RefCounted:
@@ -407,6 +563,7 @@ func fork_for_frame() -> RefCounted:
 	copy._selected40_world=_selected40_world;copy._selected40=_selected40.duplicate(true)
 	copy._selected41_world=_selected41_world;copy._selected41=_selected41.duplicate(true)
 	for gun in _guns: copy._guns.append(null if gun==null else gun.fork_state())
+	copy._second=_fork_second()
 	return copy
 
 func evaluate_player_update(player: RefCounted, pose: Variant, shooter_states: Variant, special_flight: Variant, delta_ms: Variant) -> Dictionary:
@@ -431,11 +588,54 @@ func evaluate_player_update(player: RefCounted, pose: Variant, shooter_states: V
 		events.append({"actor_id":id,"contacts":contact.contacts,"last_contact_actor":contact.last_contact_actor,"motion":motion})
 	return {"weapons":next,"player":staged_player,"actors":events}
 
-func evaluate_combat_training_update(player: RefCounted, pose: Variant, combat: RefCounted, special_flight: Variant, delta_ms: Variant) -> Dictionary:
+## Hostile shots reaching a placed sentry (Supernova): the original keeps
+## sentries among the level's ships, so enemy fire hits them. Each shot marks
+## its impact on the first sentry it reaches and reports its gun's damage.
+const SENTRY_HALF_EXTENT:=800
+func evaluate_sentry_contacts(shooter_states: Array,targets: Array) -> Dictionary:
+	error=""
+	if shooter_states.size()!=_guns.size():return fail("Sentry contacts require every shooter's state")
+	var next: RefCounted=fork_for_frame();var geometry:=PlayerContacts.Geometry.new();var hits:=[]
+	for id in _guns.size():
+		var gun: RefCounted=next._guns[id]
+		var state: Variant=shooter_states[id]
+		if gun==null or not state is Dictionary or not state.get("present",false) or not state.get("hostile",false) or not gun.has_retained_projectiles():continue
+		var shots: Dictionary=gun.snapshot();var staged: RefCounted=null
+		for shot in shots.get("slots",[]):
+			if shot==null or int(shot.get("remaining_ms",0))==int(Projectiles.HIT_LIFETIME_SENTINEL):continue
+			for target in targets:
+				var query:=geometry.bounds(shot.position,shot.velocity,target.center,SENTRY_HALF_EXTENT)
+				if query.is_empty():return fail(geometry.error)
+				if not query.hit:continue
+				if staged==null:staged=gun.fork_state()
+				if not staged.mark_impact(shot.id):return fail(staged.error)
+				hits.append({"slot_index":int(target.slot_index),"sentry_id":int(target.sentry_id),"damage":int(shots.weapon.damage)})
+				break
+		if staged!=null:next._guns[id]=staged
+	return {"weapons":next,"hits":hits}
+
+func evaluate_combat_training_update(player: RefCounted, pose: Variant, combat: RefCounted, special_flight: Variant, delta_ms: Variant,wingmen: RefCounted=null) -> Dictionary:
 	error=""
 	if _selected41_world!=null:return fail("Source41 mixed contacts require their explicit native owners")
 	if _selected40_world!=null:return fail("Selected40 mixed contacts require complete consequence and lifecycle owners")
-	return _evaluate_mixed_update(player,pose,combat,special_flight,delta_ms)
+	return _evaluate_mixed_update(player,pose,combat,special_flight,delta_ms,wingmen)
+
+func companion_contact_packet() -> Dictionary:
+	if _selected40_world!=null or _selected41_world!=null or not (_training.has("contract_encounter") or _training.has("free_traffic")):return {}
+	var result:=_identity.duplicate();var declarations:=[]
+	for gun in _guns:
+		if gun==null:continue
+		var weapon: Dictionary=gun.snapshot().weapon
+		if not weapon.get("nonplayer_source",false):return {}
+		declarations.append(weapon)
+	result.declarations=declarations
+	return result
+
+func companion_target_order(actor_id: int,crew: RefCounted) -> Array:
+	error=""
+	if not is_instance_of(crew,load("res://src/simulation/wingman_actors.gd")) or actor_id<0 or actor_id>=_guns.size() or not _training.has("target_memberships"):
+		reject("Companion target order requires its native cast and shooter");return []
+	return crew.mixed_target_memberships(_training.target_memberships[actor_id],actor_id,int(_definitions[actor_id].actor_kind),_training)
 
 func evaluate_selected41_update(player: RefCounted,pose: Variant,combat: RefCounted,delta_ms: Variant) -> Dictionary:
 	error=""
@@ -449,9 +649,9 @@ func evaluate_selected40_update(player: RefCounted,pose: Variant,combat: RefCoun
 	if player.selected40_construction_owner()!=_selected40_world.npc_construction_owner() or player.snapshot().get("selected40_context")!=_selected40.context:return fail("Selected40 contacts differ from their retained native player")
 	return _evaluate_mixed_update(player,pose,combat,false,delta_ms)
 
-func _evaluate_mixed_update(player: RefCounted,pose: Variant,combat: RefCounted,special_flight: Variant,delta_ms: Variant) -> Dictionary:
+func _evaluate_mixed_update(player: RefCounted,pose: Variant,combat: RefCounted,special_flight: Variant,delta_ms: Variant,wingmen: RefCounted=null) -> Dictionary:
 	if _training.is_empty() or not player is Player or not combat is Combat or not Vitals.integer(delta_ms) or not special_flight is bool:return fail("Mixed contacts require the verified training weapon, player and combat owners")
-	var player_state: Dictionary=player.snapshot();var scene: Dictionary=combat.snapshot()
+	var player_state: Dictionary=player.snapshot();var scene: Dictionary=combat.read_snapshot()
 	for key in _identity:
 		if player_state.get(key)!=_identity[key] or scene.get(key)!=_identity[key]:return fail("Mixed contact owners belong to another encounter")
 	if not scene.get("actors") is Array or scene.actors.size()!=_guns.size():return fail("Mixed contacts require the complete NPC population")
@@ -462,13 +662,31 @@ func _evaluate_mixed_update(player: RefCounted,pose: Variant,combat: RefCounted,
 	if _training.has("contract_encounter") and (scene.get("contract_encounter")!=_training.contract_encounter or player_state.get("contract_encounter")!=_training.contract_encounter):return fail("Mixed contacts belong to another accepted contract")
 	var shooters: Array=combat.shooter_states()
 	var next:=fork_for_frame();var staged_player: RefCounted=player.fork_for_frame();var staged_combat: RefCounted=combat.fork_for_frame()
+	var staged_wingmen: RefCounted
+	if wingmen!=null:
+		if not is_instance_of(wingmen,load("res://src/simulation/wingman_actors.gd")):return fail("Incoming contacts require the native paid cast")
+		staged_wingmen=wingmen.fork_for_frame()
+		if not staged_wingmen.bind_incoming_weapons(self):return fail(staged_wingmen.error)
 	var player_contacts:=PlayerContacts.new();var npc_contacts:=NPCContacts.new();var events:=[]
-	for id in _guns.size():
+	var passes:=[]
+	for id in _guns.size():passes.append([id,0])
+	for id in next._second:passes.append([id,1])
+	next.advance_second_clocks(int(delta_ms))
+	for entry in passes:
+		var id: int=entry[0]
 		if _guns[id]==null:continue
-		var gun: RefCounted=next._guns[id]
-		var player_hits:=[];var npc_hits:=[];var last: Variant=null
-		for target in _training.target_memberships[id]:
-			if int(target)==-1:
+		var gun: RefCounted=next._guns[id] if entry[1]==0 else next._second[id].gun
+		var player_hits:=[];var npc_hits:=[];var wingman_hits:=[];var last: Variant=null
+		var memberships: Array=_training.target_memberships[id] if staged_wingmen==null else companion_target_order(id,staged_wingmen)
+		# A gun with nothing in flight cannot touch any target this frame.
+		if not gun.has_beam() and not gun.has_retained_projectiles():memberships=[]
+		for target in memberships:
+			if target is Dictionary:
+				var contact:=npc_contacts.evaluate_wingmen_staged(gun,staged_wingmen,[int(target.index)])
+				if contact.is_empty():return fail(npc_contacts.error)
+				gun=contact.projectiles;staged_wingmen=contact.combat;wingman_hits.append_array(contact.contacts)
+				if contact.last_contact_actor_id!=null:last={"group":"wingman","index":contact.last_contact_actor_id}
+			elif int(target)==-1:
 				var contact:=player_contacts.evaluate(gun,staged_player,pose,shooters[id].present,shooters[id].hostile,special_flight)
 				if contact.is_empty():return fail(player_contacts.error)
 				gun=contact.projectiles;staged_player=contact.player;player_hits.append_array(contact.contacts)
@@ -484,9 +702,12 @@ func _evaluate_mixed_update(player: RefCounted,pose: Variant,combat: RefCounted,
 		# visited in authored order, including the Challenge's player-last lists.
 		var motion: Dictionary=gun.advance(delta_ms)
 		if motion.is_empty():return fail(gun.error)
-		next._guns[id]=gun
-		events.append({"actor_id":id,"contacts":player_hits,"npc_contacts":npc_hits,"last_contact_actor":last,"motion":motion})
-	return {"weapons":next,"player":staged_player,"combat":staged_combat,"actors":events}
+		if entry[1]==0:next._guns[id]=gun
+		else:next._second[id].gun=gun
+		events.append({"actor_id":id,"gun":entry[1],"contacts":player_hits,"npc_contacts":npc_hits,"wingman_contacts":wingman_hits,"last_contact_actor":last,"motion":motion})
+	var result:={"weapons":next,"player":staged_player,"combat":staged_combat,"actors":events}
+	if staged_wingmen!=null:result.wingmen=staged_wingmen
+	return result
 
 func reject(message: String) -> bool:
 	error=message

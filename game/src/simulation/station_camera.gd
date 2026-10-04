@@ -58,5 +58,5 @@ func fork() -> RefCounted:
 	return result
 
 static func vector(value: Array) -> Vector3:return Vector3(value[0],value[1],value[2])
-static func f32(value: float) -> float:return PackedFloat32Array([value])[0]
+static func f32(value: float) -> float:return Vector2(value,0.0).x
 func reject(message: String) -> bool:error=message;return false

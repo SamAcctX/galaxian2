@@ -9,6 +9,7 @@ const Trail=preload("res://src/presentation/projectile_trail_geometry.gd")
 var error:=""
 var bodies: Array[Node3D]=[]
 var attachments: Array[Node3D]=[]
+## Ribbon exhaust.
 var trail: Node3D
 var _sampler: RefCounted
 var _surface: RefCounted
@@ -39,8 +40,9 @@ func build(gun: Dictionary,library: RefCounted,visuals: RefCounted,bindings: Ref
 	_sampler=Sampler.new()
 	if not _sampler.configure(attachments[0].surfaces,descriptor.attachment.end_ms==0):return reject(_sampler.error)
 	if _sampler.snapshot().range!={"start_ms":descriptor.attachment.start_ms,"end_ms":descriptor.attachment.end_ms}:return reject("Conventional attachment playback range changed")
-	trail=Trail.new();add_child(trail)
-	if not trail.build(int(weapon.secondary_projectile.trail_id),library,visuals,bindings):return reject(trail.error)
+	if int(weapon.secondary_projectile.trail_id)>=0:
+		trail=Trail.new();add_child(trail)
+		if not trail.build(int(weapon.secondary_projectile.trail_id),library,visuals,bindings):return reject(trail.error)
 	_descriptor=descriptor.duplicate(true);_weapon=weapon.duplicate(true)
 	return true
 
@@ -56,8 +58,10 @@ func prepare(gun: Dictionary,camera: Transform3D) -> Dictionary:
 	var sampler: RefCounted=_sampler.fork_for_frame()
 	var sample: Dictionary=sampler.sample(visual.attachment.time_ms,Transform3D.IDENTITY)
 	if sample.is_empty():return failed(sampler.error)
-	var ribbon: Dictionary=trail.prepare(shots.get("trails",[]),Vector4.ONE)
-	if ribbon.is_empty():return failed(trail.error)
+	var ribbon:={}
+	if trail!=null:
+		ribbon=trail.prepare(shots.get("trails",[]),Vector4.ONE)
+		if ribbon.is_empty():return failed(trail.error)
 	var slots:=[]
 	for slot in shots.slots:
 		var root:=Pose.sample(slot,int(_weapon.kind),camera,false,_descriptor.rules,true)
@@ -76,7 +80,8 @@ func commit(prepared: Dictionary) -> void:
 		if not row.visible:continue
 		bodies[index].transform=row.pose
 		_surface.apply_surfaces(attachments[index],row.surfaces,1.0)
-	trail.commit(prepared.trail);_sampler=prepared.sampler
+	if trail!=null:trail.commit(prepared.trail)
+	_sampler=prepared.sampler
 
 func clear() -> void:
 	for child in get_children():child.free()

@@ -48,6 +48,19 @@ func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,lo
 	var definitions: Dictionary=bindings.flight_notices.messages.duplicate(true)
 	definitions["21"]={"text_ids":[514],"separator":"","rgb":[255,255,255]}
 	definitions["22"]={"text_ids":[531],"separator":"","rgb":[255,255,255]}
+	definitions["44"]={"text_ids":[3190],"separator":"","rgb":[255,255,255]}
+	# Story dock "Transfer complete" (Hud message 3189); optional like 44.
+	definitions["45"]={"text_ids":[3189],"separator":"","rgb":[255,255,255]}
+	# A blown race signature: "Signature invalid" (Hud event 31, text 313).
+	definitions["46"]={"text_ids":[313],"separator":"","rgb":[255,255,255]}
+	# Refused story courses (Supernova passenger berths); optional like 44.
+	var campaign:=load("res://src/content/valkyrie_campaign_definitions.gd")
+	for need in campaign.ENTRY_REQUIREMENTS.values():
+		for text in [int(need.text_id),int(need.get("free_cargo_text_id",need.text_id))]:
+			definitions[str(campaign.ENTRY_NOTICE_BASE+text)]={"text_ids":[text],"separator":"","rgb":[255,255,255]}
+	# Volatile cargo refuses the Khador Drive (text 601).
+	var volatile_text:=int(load("res://src/content/valkyrie_world_definitions.gd").VOLATILE_GOODS.drive_text_id)
+	definitions[str(campaign.ENTRY_NOTICE_BASE+volatile_text)]={"text_ids":[volatile_text],"separator":"","rgb":[255,255,255]}
 	if cursor==7:
 		var navigation:=TrainingStory.navigation(bindings)
 		if not navigation.is_empty():
@@ -57,8 +70,10 @@ func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,lo
 		var rule: Dictionary=definitions[key];var pieces:=PackedStringArray();var display_ids:=[]
 		for source_id in rule.text_ids:
 			var id:=Desktop.select_id(bindings.desktop_text,int(source_id))
+			if (id<0 or id>=library.strings.size() or library.strings[id].is_empty()) and (key in ["44","45"] or int(key)>=40000):pieces=PackedStringArray();break
 			if id<0 or id>=library.strings.size() or library.strings[id].is_empty():return reject("A flight notice is missing in this language")
 			pieces.append(library.strings[id]);display_ids.append(id)
+		if pieces.is_empty():continue
 		var rgb:=[];var text_ids:=[]
 		for component in rule.rgb:rgb.append(int(component))
 		for source_id in rule.text_ids:text_ids.append(int(source_id))
@@ -68,6 +83,15 @@ func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,lo
 		var display_id:=Desktop.select_id(bindings.desktop_text,text_id)
 		if display_id<0 or display_id>=library.strings.size() or library.strings[display_id].is_empty():return reject("A cloak notice is missing in this language")
 		messages[key]={"kind":key,"text_ids":[text_id],"display_text_ids":[display_id],"text":library.strings[display_id],"rgb":[255,255,255]}
+	# Shield Injector: "-30t <text 1465>" (Hud event 0x2f). Optional text.
+	var injected_id:=Desktop.select_id(bindings.desktop_text,1465)
+	if injected_id>=0 and injected_id<library.strings.size() and not library.strings[injected_id].is_empty():
+		messages["plasma_injected"]={"kind":"plasma_injected","text_ids":[1465],"display_text_ids":[injected_id],"text":library.strings[injected_id],"rgb":[255,255,255]}
+	# Auto turret switched on/off: "<turret> <activated/deactivated>" (Hud event 0x20/0x21).
+	for key in {"auto_turret_on":38,"auto_turret_off":39}:
+		var ids:=[Desktop.select_id(bindings.desktop_text,207),Desktop.select_id(bindings.desktop_text,{"auto_turret_on":38,"auto_turret_off":39}[key])]
+		if ids.any(func(id):return id<0 or id>=library.strings.size() or library.strings[id].is_empty()):return reject("An auto-turret notice is missing in this language")
+		messages[key]={"kind":key,"text_ids":[207,38 if key=="auto_turret_on" else 39],"display_text_ids":ids,"text":library.strings[ids[0]]+" "+library.strings[ids[1]],"rgb":[255,255,255]}
 	if location.get("station_id",-1)>=0 and not bindings.station_flight.is_empty():
 		var data: Dictionary=bindings.station_flight
 		if not StationFlight.parameters(data):return reject("Station notices require their verified declarations")
@@ -110,10 +134,18 @@ func enqueue(source_id: Variant) -> bool:
 	if _rules.is_empty() or not Numbers.integer(source_id,0,65534) or not _messages.has(int(source_id)):return reject("Unsupported first-flight notice")
 	return _enqueue(_messages[int(source_id)])
 
+func has_message(source_id: int) -> bool:return _messages.has(source_id)
 func enqueue_cloak_ready() -> bool:return _enqueue(_messages.cloak_ready)
+func enqueue_auto_turret(enabled: bool) -> bool:return _enqueue(_messages.auto_turret_on if enabled else _messages.auto_turret_off)
 func enqueue_energy_spent(units: int) -> bool:
 	if units<=0:return reject("Fuel notice requires spent energy")
 	var message: Dictionary=_messages.energy_spent.duplicate(true)
+	message.text="-%dt " % units+message.text
+	return _enqueue(message)
+
+func enqueue_plasma_injected(units: int) -> bool:
+	if units<=0 or not _messages.has("plasma_injected"):return true
+	var message: Dictionary=_messages.plasma_injected.duplicate(true)
 	message.text="-%dt " % units+message.text
 	return _enqueue(message)
 

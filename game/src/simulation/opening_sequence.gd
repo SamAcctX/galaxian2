@@ -86,7 +86,7 @@ func finish_frame(present_radio: Variant) -> bool:
 		var hulls := {}
 		for actor in state.scene.actors: hulls[actor.actor_id] = actor.current_hull
 		if _combat != null:
-			for actor in _combat.snapshot().actors: hulls[actor.actor_id]=actor.vitals.hull
+			for actor in _combat.read_snapshot().actors: hulls[actor.actor_id]=actor.vitals.hull
 		changes = radio.step(_pending_elapsed,hulls,int(state.camera.shot.phase))
 		if not radio.error.is_empty(): return reject(radio.error)
 	_radio = radio
@@ -97,6 +97,10 @@ func finish_frame(present_radio: Variant) -> bool:
 func combat_owner() -> RefCounted:
 	return null if _combat==null else _combat.fork_for_frame()
 
+## The accepted combat observation, read-only.
+func read_combat() -> Dictionary:
+	return {} if _combat==null else _combat.read_snapshot()
+
 func adopt_combat_pass(combat: RefCounted) -> bool:
 	error=""
 	if _pending_elapsed<0 or not combat is CombatGroup: return reject("Actor motion must belong to the pending opening frame")
@@ -105,16 +109,16 @@ func adopt_combat_pass(combat: RefCounted) -> bool:
 func adopt_contact_pass(combat: RefCounted) -> bool:
 	error=""
 	if _pending_elapsed>=0 or not combat is CombatGroup or _combat==null: return reject("Weapon contacts must precede the opening controller")
-	var before: Array=_combat.snapshot().actors
-	var after: Array=combat.snapshot().actors
+	var before: Array=_combat.read_snapshot().actors
+	var after: Array=combat.read_snapshot().actors
 	if before.size()!=after.size(): return reject("Contacts changed the opening population")
 	for i in before.size():
 		if before[i].pose!=after[i].pose: return reject("Contacts moved an opening actor")
 	return _adopt_combat(combat)
 
 func _adopt_combat(combat: RefCounted) -> bool:
-	var state: Dictionary=combat.snapshot()
-	var prior: Dictionary=_combat.snapshot() if _combat!=null else {}
+	var state: Dictionary=combat.read_snapshot()
+	var prior: Dictionary=_combat.read_snapshot() if _combat!=null else {}
 	if prior.is_empty() or state.get("phase")!=prior.phase or state.get("activated")!=prior.activated:
 		return reject("Actor pass changed cinematic activation")
 	var motion: RefCounted=_motion.fork_for_frame()
@@ -129,7 +133,7 @@ func snapshot() -> Dictionary:
 	if _motion == null: return {}
 	var state: Dictionary = _motion.snapshot()
 	if _combat != null:
-		state.combat = _combat.snapshot()
+		state.combat = _combat.read_snapshot()
 		for actor in state.combat.actors: state.scene.actors[actor.actor_id].current_hull=actor.vitals.hull
 	state.radio = _radio.snapshot()
 	state.radio_changes = _changes.duplicate(true)

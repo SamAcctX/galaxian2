@@ -146,16 +146,17 @@ func verify_population(args: PackedStringArray):
 	bindings.persistent_contacts=imported_capability
 
 func verify_role4_population(bindings: RefCounted,cat: RefCounted,library: RefCounted,flags: Array,history: Array,records: Array):
-	var worlds=load("res://src/content/ordinary_world_definitions.gd")
+	var ordinary=load("res://src/content/ordinary_generation_definitions.gd")
 	for source_id in [12,13,15]:
 		var source: Dictionary=records[source_id];var values: Array=source.fields
 		var context:={"campaign_cursor":18,"station_id":values[1],"rank":0,"reputation":{"axes":[0,0],"override":-1},"difficulty":1.0,"system_availability":flags}
-		if worlds.catalogue_location(bindings,cat,int(values[1])).is_empty():
-			var random:=Random.new();random.seed_from(0);var absent:=Contacts.new()
-			check(not absent.prepare(bindings,cat,library,context,random.snapshot(),history) and absent.snapshot().is_empty(),"Authored contact support opened an incomplete destination world")
-			continue
 		for cursor in [18,35]:
 			context.campaign_cursor=cursor
+			# The ordinary-location capability owner decides whether this lounge exists.
+			if not ordinary.location_supported(bindings,cat,cursor,int(values[1])):
+				var random:=Random.new();random.seed_from(0);var absent:=Contacts.new()
+				check(not absent.prepare(bindings,cat,library,context,random.snapshot(),history) and absent.snapshot().is_empty(),"Authored contact support opened an unsupported destination lounge")
+				continue
 			for seed_value in range(8):
 				context.reputation.axes=[100,100] if seed_value%2 else [0,0]
 				var random:=Random.new();random.seed_from(seed_value*4097)

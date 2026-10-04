@@ -45,6 +45,9 @@ func refresh(reference: Variant, detail: Variant) -> bool:
 func snapshot() -> Dictionary:
 	return _group.snapshot()
 
+func read_snapshot() -> Dictionary:
+	return _group.read_snapshot()
+
 func clear() -> void:
 	error="";_positions={};_group.clear()
 

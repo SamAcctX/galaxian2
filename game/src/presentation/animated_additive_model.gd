@@ -5,11 +5,16 @@ const Sampler=preload("res://src/presentation/scenery_animation.gd")
 const Colors=preload("res://src/presentation/effect_color.gd")
 var error:=""
 var reflected: Shader
+var two_sided: Shader
 
 func _init() -> void:
 	# Godot automatically reverses culling for mirrored instance transforms.
 	# Counter that adjustment while preserving source screen winding.
 	reflected=Shader.new();reflected.code=ShaderSource.code.replace("cull_back","cull_front")
+
+## Source material type 3 (expansion beams) draws both faces.
+func use_two_sided() -> void:
+	two_sided=Shader.new();two_sided.code=ShaderSource.code.replace("cull_back","cull_disabled")
 
 func prepare_model(model: Node3D) -> bool:
 	error=""
@@ -19,12 +24,15 @@ func prepare_model(model: Node3D) -> bool:
 			error="Unsupported additive model vertex or UV animation layout";return false
 		var material:=ShaderMaterial.new();material.shader=ShaderSource
 		material.set_shader_parameter("diffuse_texture",model.materials[i].get_shader_parameter("diffuse_texture"))
+		material.set_shader_parameter("vertex_colors",not surface.colors.is_empty())
 		model.materials[i]=material;model.instances[i].material_override=material
 		model.instances[i].top_level=true
 	return true
 
 static func supported_surface(surface: Dictionary) -> bool:
-	return not surface.uvs.is_empty() and not surface.normals.is_empty() and surface.colors.is_empty() and surface.tracks.get("uv",[]).is_empty()
+	# Expansion projectiles also scroll their texture; that scroll is not drawn
+	# yet and the texture stays still.
+	return not surface.uvs.is_empty() and not surface.normals.is_empty()
 
 func prepare_surfaces(animation: Dictionary, root: Transform3D, parent_rgba: PackedByteArray, global_tint: Vector4) -> Array:
 	error=""
@@ -41,6 +49,6 @@ func apply_surfaces(model: Node3D, surfaces: Array, darken: float) -> void:
 	for i in model.instances.size():
 		var row: Dictionary=surfaces[i]
 		model.instances[i].transform=row.pose
-		model.materials[i].shader=reflected if row.pose.basis.determinant()<0 else ShaderSource
+		model.materials[i].shader=two_sided if two_sided!=null else (reflected if row.pose.basis.determinant()<0 else ShaderSource)
 		model.materials[i].set_shader_parameter("effect_tint",row.tint)
 		model.materials[i].set_shader_parameter("darken_value",darken)

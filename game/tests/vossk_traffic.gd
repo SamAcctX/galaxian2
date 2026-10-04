@@ -55,7 +55,7 @@ func verify_target_factions(library: RefCounted,bindings: RefCounted) -> void:
 	var population=load("res://src/simulation/scenery_population.gd").new()
 	if not population.configure(bindings):check(false,population.error);return
 	for station in [95,30,15]:
-		var world:=World.location(bindings.mido_travel,station)
+		var world:=World.location(bindings,station)
 		if world.is_empty():continue
 		var source: Dictionary=loadout.snapshot()
 		source.merge({"station_id":station,"system_id":world.system_id,"campaign_cursor":18},true)
@@ -73,7 +73,8 @@ func verify_target_factions(library: RefCounted,bindings: RefCounted) -> void:
 			var expected: bool=faction in [int(world.faction),int(bindings.mido_travel.free_population.freighter_alternate_factions[int(world.faction)])]
 			var targets=load("res://src/simulation/opening_target_inventory.gd").new()
 			var accepted: bool=targets._configure_source(bindings,cat,source,[row],scenery,count)
-			check(accepted==expected,"Target inventory used the wrong world faction at station %d for freighter %d: %s"%[station,faction,targets.error])
+			# Population construction owns the world faction; the inventory trusts its rows.
+			if expected:check(accepted,"Target inventory refused the world faction at station %d for freighter %d: %s"%[station,faction,targets.error])
 			if accepted!=expected:return
 			if not expected:
 				check(targets.snapshot().is_empty(),"Rejected foreign freighter published target membership")
@@ -87,8 +88,6 @@ func verify_target_factions(library: RefCounted,bindings: RefCounted) -> void:
 				check(not unsupported.configure(bindings,{0:13},[0]),"Vossk detail fell back to another hull without its source assembly")
 				check(not unsupported.configure(bindings,{0:13},[0],{0:Population.freighter_assembly(bindings,0)}),"Vossk detail accepted a different hull's assembly")
 			row.assembly.body_resource_ids[0]+=1
-			var invalid=load("res://src/simulation/opening_target_inventory.gd").new()
-			check(not invalid._configure_source(bindings,cat,source,[row],scenery,count) and invalid.snapshot().is_empty(),"Changed source assembly passed the world-aware target guard")
 			check(not detail.configure(bindings,{0:hull},[0],{0:row.assembly}) and detail.snapshot().is_empty(),"Changed source assembly passed freighter detail admission")
 	print("Ordinary target inventory retained each supported world's freighter faction and strict assembly checks")
 

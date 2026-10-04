@@ -9,6 +9,7 @@ const AEM=preload("res://src/content/aem.gd")
 const Ranges=preload("res://src/content/scenery_effect_resources.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
 const Playback=preload("res://src/simulation/model_playback.gd")
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 var error:=""
 var _state:={}
 var _identity: RefCounted
@@ -46,6 +47,8 @@ func configure(bindings: RefCounted, library: RefCounted, world: Dictionary) -> 
 		for slot in int(weapon.projectile_capacity):slots.append({"start_ms":timing.start_ms,"end_ms":timing.end_ms,"time_ms":timing.start_ms,"sample_time_ms":timing.start_ms,"playing":false,"position":Vector3.ZERO})
 		weapons.append({"key":entry.key,"item_id":int(weapon.item_id),"kind":int(weapon.kind),"capacity":slots.size(),"model_id":id,"resource":path,"slots":slots})
 	_state={"base_content_id":world.base_content_id,"binding_id":world.binding_id,"elapsed_ms":0,"rules":rules.duplicate(true),"weapons":weapons,"hits":[]}
+	# The state is frozen and shared by forks; updates copy only changed slots.
+	Readonly.freeze(_state)
 	_identity=RefCounted.new()
 	_max_ms=Frames.simulation_limit(bindings,150)
 	return true
@@ -54,14 +57,29 @@ func advance(delta_ms: Variant) -> bool:
 	error=""
 	if _state.is_empty() or _pending or not Numbers.integer(delta_ms,0,_max_ms):return reject("Invalid or unfinished impact frame")
 	_previous_elapsed=_state.elapsed_ms
-	for weapon in _state.weapons:
-		for slot in weapon.slots:
-			if slot.playing:
-				Playback.advance([slot],int(delta_ms))
-				# Source samples its final key even when this update stops playback.
-				slot.sample_time_ms=slot.time_ms
-	_state.elapsed_ms+=int(delta_ms);_state.hits=[];_pending=true
+	var next: Dictionary=_state.duplicate()
+	for index in next.weapons.size():
+		var weapon: Dictionary=next.weapons[index]
+		for number in weapon.slots.size():
+			if not weapon.slots[number].playing:continue
+			var slot: Dictionary=_writable_slot(next,index,number)
+			Playback.advance([slot],int(delta_ms))
+			# Source samples its final key even when this update stops playback.
+			slot.sample_time_ms=slot.time_ms
+			weapon=next.weapons[index]
+	next.elapsed_ms+=int(delta_ms);next.hits=[]
+	_state=Readonly.freeze(next);_pending=true
 	return true
+
+## Replaces one slot, and its containers on first write, with editable copies
+## inside a shallow copy of the frozen state.
+static func _writable_slot(next: Dictionary,index: int,number: int) -> Dictionary:
+	if next.weapons.is_read_only():next.weapons=next.weapons.duplicate()
+	var weapon: Dictionary=next.weapons[index]
+	if weapon.is_read_only():weapon=weapon.duplicate();weapon.slots=weapon.slots.duplicate();next.weapons[index]=weapon
+	var slot: Dictionary=weapon.slots[number]
+	if slot.is_read_only():slot=slot.duplicate();weapon.slots[number]=slot
+	return slot
 
 func apply_contacts(previous_world: Dictionary, primary_events: Array, npc_events: Array) -> bool:
 	error=""
@@ -84,14 +102,15 @@ func apply_contacts(previous_world: Dictionary, primary_events: Array, npc_event
 		events.append({"key":by_mount[int(event.mount_id)],"contacts":event.get("contacts")})
 	for event in npc_events:
 		if not event is Dictionary or not Numbers.integer(event.get("actor_id"),0,2147483647):return reject("Unknown impact NPC owner")
-		if not event.get("contacts") is Array or not event.get("npc_contacts",[]) is Array:return reject("Invalid NPC impact contact lists")
+		if not event.get("contacts") is Array or not event.get("npc_contacts",[]) is Array or not event.get("wingman_contacts",[]) is Array:return reject("Invalid NPC impact contact lists")
 		# These weapons visit player then NPCs before cleanup. Keep all
 		# overlapping hits and their order, including non-player damage.
 		var contacts: Array=event.contacts.duplicate()
 		contacts.append_array(event.get("npc_contacts",[]))
-		events.append({"key":"npc:%d"%int(event.actor_id),"contacts":contacts})
+		contacts.append_array(event.get("wingman_contacts",[]))
+		events.append({"key":("npc:%d/1" if int(event.get("gun",0))==1 else "npc:%d")%int(event.actor_id),"contacts":contacts})
 	if events.size()!=inputs.size():return reject("Impact frame omitted a weapon contact pass")
-	var staged: Dictionary=_state.duplicate(true)
+	var staged: Dictionary=_state.duplicate();staged.hits=[]
 	for event in events:
 		if not by_key.has(event.key) or seen.has(event.key) or not event.contacts is Array:return reject("Invalid impact contact group")
 		seen[event.key]=true
@@ -100,15 +119,17 @@ func apply_contacts(previous_world: Dictionary, primary_events: Array, npc_event
 			if not contact is Dictionary or not Numbers.integer(contact.get("slot"),0,row.capacity-1) or not Numbers.integer(contact.get("projectile_id"),1,2147483647) or not contact.get("geometry") is Dictionary or contact.geometry.get("hit")!=true:return reject("Invalid ordinary impact contact")
 			var shot: Variant=inputs[index].projectiles.slots[int(contact.slot)]
 			if not shot is Dictionary or shot.get("id")!=contact.projectile_id or not shot.get("position") is Vector3 or not shot.position.is_finite():return reject("Impact contact lost its original shot position")
-			var slot: Dictionary=row.slots[int(contact.slot)]
+			var slot: Dictionary=_writable_slot(staged,index,int(contact.slot))
 			Playback.restart([slot]);slot.position=shot.position
 			# Restart deliberately leaves sample_time_ms intact.
 			staged.hits.append({"key":event.key,"slot":int(contact.slot),"projectile_id":int(contact.projectile_id),"position":shot.position})
-	_state=staged;_pending=false
+	_state=Readonly.freeze(staged);_pending=false
 	return true
 
 func snapshot() -> Dictionary:return _state.duplicate(true)
+## The accepted read-only state, for presentation and observation frames.
+func read_snapshot() -> Dictionary:return _state
 func presentation_identity() -> RefCounted:return _identity
 func fork_for_frame() -> RefCounted:
-	var next: RefCounted=get_script().new();next._state=_state.duplicate(true);next._identity=_identity;next._pending=_pending;next._previous_elapsed=_previous_elapsed;next._max_ms=_max_ms;return next
+	var next: RefCounted=get_script().new();next._state=_state;next._identity=_identity;next._pending=_pending;next._previous_elapsed=_previous_elapsed;next._max_ms=_max_ms;return next
 func reject(message: String) -> bool:error=message;return false

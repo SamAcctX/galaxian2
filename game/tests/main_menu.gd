@@ -91,7 +91,10 @@ func run() -> void:
 		check(music.player.playing and music.player.bus=="GoF2 Music","Menu did not start its original music in the music category")
 		music._notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_OUT)
 		check(music.player.stream_paused,"Menu music continued after focus loss")
-		music.set_active(false);check(not music.player.playing,"Menu music survived leaving the menu")
+		music._notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN)
+		music.set_active(false);check(music.player.playing,"Menu music cut off instead of fading out")
+		await create_timer(0.9).timeout
+		check(not music.player.playing,"Menu music survived leaving the menu")
 	music.free()
 	check(not panel._buttons.resume.visible and panel._buttons.load.disabled and panel._buttons.supernova.disabled,"A fresh menu offered a nonexistent resume/load or unfinished challenge")
 	panel._buttons.supernova.pressed.emit();panel._buttons.load.pressed.emit();panel._buttons.resume.pressed.emit()

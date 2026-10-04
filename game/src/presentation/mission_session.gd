@@ -8,7 +8,7 @@ const Construction=preload("res://src/simulation/selected40_flight_construction.
 const Scene=preload("res://src/presentation/mission_scene.gd")
 const Clock=preload("res://src/simulation/frame_clock.gd")
 const Controls=preload("res://src/input/flight_controls.gd")
-const ACTIONS=["turret","boost","cloak","action_menu","fire","brake","mouse_mode","throttle_up","throttle_down","missiles","secondary_next","secondary_menu","change_view"]
+const ACTIONS=["turret","boost","cloak","action_menu","fire","brake","mouse_mode","throttle_up","throttle_down","missiles","secondary_next","secondary_menu","change_view","time_extender"]
 var error:=""
 var status:="idle"
 var scene: Node3D
@@ -20,6 +20,9 @@ var _active:=false
 var _secondary_pending:=false
 var _boost_pending:=false
 var _cloak_pending:=false
+var _extender: RefCounted
+var _extender_feedback: Node
+var _devices_feedback: Node
 var _throttle:=1.0
 var _observed_world: RefCounted
 var _flight_read:={}
@@ -42,6 +45,13 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cata
 	next_scene.secondary_panel.selection_cancelled.connect(close_secondary)
 	next_scene.exit_requested.connect(_accepted_exit)
 	next_scene.world_changed.connect(_accepted_world)
+	_extender=preload("res://src/simulation/time_extender.gd").new()
+	if world.has_method("player_equipment_ids") and _extender.configure(catalogues.tables.items,world.player_equipment_ids()):
+		_extender_feedback=preload("res://src/presentation/time_extender_feedback.gd").new();add_child(_extender_feedback);_extender_feedback.configure(library,bindings)
+	else:_extender=null
+	if world.has_method("player_devices") and not world.player_devices().is_empty():
+		_devices_feedback=preload("res://src/presentation/flight_devices_feedback.gd").new();add_child(_devices_feedback);_devices_feedback.configure(library,bindings)
+		_devices_feedback.attach_bubble(next_scene.player,library,visuals,bindings)
 	_world=world;_clock=clock;scene=next_scene;camera=scene.camera;status="prepared"
 	return true
 
@@ -66,7 +76,12 @@ func step(now_microseconds: int,commands:=Vector2.ZERO,primary_fire:=false,mouse
 			_world=view
 		_clock=clock;clear_flight_input();return true
 	var current_music: int=scene.feedback.audio.current_music_id()
-	var next: RefCounted=_world.evaluate(int(round(seconds*1000.0)),commands,0.0 if brake else _throttle,primary_fire,false,viewport,strafe,_secondary_pending,current_music,mouse_captured,_boost_pending,_cloak_pending,turret_inverted)
+	var milliseconds:=int(round(seconds*1000.0))
+	if _extender!=null:
+		_extender_feedback.present(_extender,_extender.advance(milliseconds))
+		milliseconds=_extender.scale(milliseconds)
+		if "player_time_scale" in _world:_world.player_time_scale=_extender.player_scale()
+	var next: RefCounted=_world.evaluate(milliseconds,commands,0.0 if brake else _throttle,primary_fire,false,viewport,strafe,_secondary_pending,current_music,mouse_captured,_boost_pending,_cloak_pending,turret_inverted)
 	if next==null:return reject(_world.error)
 	var state: Dictionary=next.frame_context()
 	if not state.boundary.is_empty():
@@ -76,6 +91,7 @@ func step(now_microseconds: int,commands:=Vector2.ZERO,primary_fire:=false,mouse
 		return true
 	if not scene.present(next,viewport):return reject(scene.error)
 	if next.booster_state().activation!=_world.booster_state().activation:_throttle=1.0
+	if _devices_feedback!=null and next.has_method("player_devices"):_devices_feedback.present(next.player_devices())
 	_world=next;_clock=clock;_secondary_pending=false;_boost_pending=false;_cloak_pending=false
 	if not can_control():clear_flight_input()
 	return true
@@ -91,6 +107,9 @@ func action(name: String) -> bool:
 		"missiles":_secondary_pending=true;return true
 		"boost":_boost_pending=true;return true
 		"cloak":_cloak_pending=true;return true
+		"time_extender":
+			if _extender==null:return true
+			_extender_feedback.present(_extender,_extender.press());return true
 		"throttle_up":_throttle=minf(1.0,_throttle+0.1);return true
 		"throttle_down":_throttle=maxf(0.0,_throttle-0.1);return true
 		"turret":next=_world.toggle_turret()
@@ -177,6 +196,7 @@ func rebase_time(now_microseconds: int) -> bool:return _clock!=null and _clock.r
 func clear_flight_input() -> void:_secondary_pending=false;_boost_pending=false;_cloak_pending=false
 func turret_state() -> Dictionary:return {} if _world==null else _world.turret_state()
 func cloak_state() -> Dictionary:return {} if _world==null else _world.cloak_state()
+func time_extender_state() -> Dictionary:return {} if _extender==null else _extender.snapshot()
 func booster_state() -> Dictionary:return {} if _world==null else _world.booster_state()
 func is_paused() -> bool:return _pauses.values().has(true)
 func can_control() -> bool:
@@ -207,6 +227,8 @@ func _flight_observation() -> Dictionary:
 	_observed_world=_world
 	return _flight_read
 func flight_owner() -> RefCounted:return null if _world==null else _world.fork_for_frame()
+## The accepted flight for per-frame reads only; never mutate it.
+func flight_reader() -> RefCounted:return _world
 func handle_game_over_event(event: InputEvent) -> bool:return scene!=null and scene.handle_event(event)
 func prepare_game_over() -> Dictionary:return {} if _world==null else _world.prepare_game_over()
 

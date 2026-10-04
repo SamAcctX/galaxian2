@@ -1,4 +1,5 @@
 extends RefCounted
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Contracts=preload("res://src/simulation/contract_session.gd")
 const Transit=preload("res://src/content/convoy_transit_definitions.gd")
 const ContractDefinitions=preload("res://src/content/early_contract_definitions.gd")
@@ -32,6 +33,7 @@ const Sahi = preload("res://src/content/sahi_encounter_definitions.gd")
 const Dima = preload("res://src/content/dima_encounter_definitions.gd")
 const Numbers = preload("res://src/content/opening_definitions.gd")
 const Vectors = preload("res://src/simulation/source_vectors.gd")
+const Statics = preload("res://src/content/static_object_definitions.gd")
 var error := ""
 var _identity := {}
 var _definition := {}
@@ -241,7 +243,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 	if capability==null:
 		capability=load("res://src/simulation/mission_context.gd").new()
 		if not capability.admit_contract(bindings,catalogues,contracts,equipment):return reject(capability.error)
-	elif not capability.matches_loadout(equipment.snapshot().loadout) or capability.contract_context()!=contracts.flight_context(int(equipment.snapshot().loadout.station_id),bindings):return reject("Contract construction differs from its admitted career and equipment")
+	elif not capability.matches_loadout(equipment.snapshot().loadout) or (not capability.void_story() and capability.contract_context()!=contracts.flight_context(int(equipment.snapshot().loadout.station_id),bindings)):return reject("Contract construction differs from its admitted career and equipment")
 	if not player_position.is_finite() or not field_center.is_finite():return reject("Contract construction requires finite player and asteroid-field positions")
 	var seed: Dictionary=equipment.snapshot().loadout
 	var context: Dictionary=capability.contract_context()
@@ -262,8 +264,13 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 			var faction:=int(rules.hulls.factions[hull])
 			if faction in factions:possible_hulls.append(hull)
 		if int(rules.hulls.early_vossk_faction) in factions:possible_hulls.append(int(rules.hulls.early_vossk_hull))
+		for group in recipe.cast.ship_groups:
+			if int(group.get("hull_catalogue_id",-1))>=0:possible_hulls.append(int(group.hull_catalogue_id))
 	for hull in possible_hulls:
 		if bindings.resolve_ship_model(hull).is_empty():return reject(bindings.error)
+	for group in recipe.cast.ship_groups:
+		var placed: Variant=group.get("static_object",{})
+		if not placed is Dictionary or (not placed.is_empty() and not Statics.supported(placed.get("model"))):return reject("The cast places an unsupported static object")
 	if int(recipe.cast.debris_count)>0:
 		for resource_id in rules.junk.model_ids:
 			if bindings.resolve(int(resource_id),"mesh").is_empty():return reject(bindings.error)
@@ -310,7 +317,7 @@ func configure_alioth_attack(bindings: RefCounted,catalogues: RefCounted,seed: D
 		if context.get(key)!=bindings.get(key) or seed.get(key)!=bindings.get(key):return reject("Alioth construction belongs to another content identity")
 	for key in ["campaign_cursor","station_id","system_id","mission_kind"]:
 		if not context.get(key) is int or context[key]!=int(source[key]):return reject("Alioth construction requires its selected station attack")
-	if context.get("mission_story")!=true or context.get("mission_completed")!=false or not Numbers.integer(context.get("rank"),0,20) or context.get("difficulty") not in [0.5,1.0]:return reject("Alioth construction has an unsupported mission context")
+	if context.get("mission_story")!=true or context.get("mission_completed")!=false or not Numbers.integer(context.get("rank"),0,20) or not Difficulty.valid(context.get("difficulty")):return reject("Alioth construction has an unsupported mission context")
 	if catalogues.content_id!=bindings.base_content_id or not load("res://src/simulation/mission_context.gd").base_player_hull(bindings,seed.get("ship_id")) or seed.get("station_id")!=context.station_id or seed.get("system_id")!=context.system_id:return reject("Alioth construction requires the retained ship at Alioth")
 	var ids: Variant=seed.get("equipment_ids")
 	if not ids is Array or ids.any(func(id):return not Numbers.integer(id,0,catalogues.tables.items.size()-1)):return reject("Alioth construction requires installed catalogue equipment")
@@ -1022,6 +1029,8 @@ func _contract_hull(random: RefCounted,faction: int) -> int:
 
 static func _select_hull(random: RefCounted,faction: int,rules: Dictionary) -> int:
 	if faction==int(rules.early_vossk_faction):return int(rules.early_vossk_hull)
+	# A faction with no hull in the pool would never be drawn (refuse, don't hang).
+	if not range(mini(int(rules.draw_bound),rules.factions.size())).any(func(hull):return int(rules.factions[hull])==faction and (hull>int(rules.mask_limit) or (int(rules.excluded_mask)&(1<<hull))==0)):return -1
 	while true:
 		var hull: int=random.next_int(int(rules.draw_bound))
 		if hull<=int(rules.mask_limit) and (int(rules.excluded_mask)&(1<<hull))!=0:continue
@@ -1087,8 +1096,11 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 		var faction:=int(_contract.rival_faction if story else _contract.context.client_faction) if rival else int(_contract.pirate_actor_kind)
 		var options: Dictionary={} if story else load("res://src/content/mission_recipe.gd").contract_ship_options(_contract,id,enemy_faction,int(_contract.context.client_faction))
 		if not story:faction=int(options.faction)
+		if not story and not options.get("static_object",{}).is_empty():
+			actors.append(_static_row(id,faction,options,path,random));routes.append(null);continue
 		var freighter: bool=options.get("subtype",0)==1
-		var hull: int=int(_contract.freighter_hulls[faction]) if freighter else int(_contract.rival_hull) if story and rival else _contract_hull(random,faction)
+		var fixed_hull: int=int(options.get("hull_catalogue_id",-1))
+		var hull: int=fixed_hull if fixed_hull>=0 else int(_contract.freighter_hulls[faction]) if freighter else int(_contract.rival_hull) if story and rival else _contract_hull(random,faction)
 		var at_origin: bool=rival or path.is_empty() or options.get("origin")=="zero"
 		var origin: Vector3=Vector3.ZERO if at_origin else path[random.next_int(path.size())]
 		var sampled:=_sample_actor(id,origin,random,freighter)
@@ -1126,27 +1138,86 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 				actor.cargo=options.cargo_override.entries.duplicate(true)
 				actor.special_cargo=bool(options.cargo_override.special)
 			if int(options.name_text_id)>=0:actor.name_text_id=int(options.name_text_id)
+			# A named story criminal (W1) shows his own name when targeted.
+			if not String(options.get("display_name","")).is_empty():actor.display_name=String(options.display_name)
 			match options.position.get("kind",""):
 				"positions":position=options.position.points[int(options.group_index)]
 				"path_start":position=path[0]+Vector3(options.position.step)*int(options.group_index)
 				"path_scatter":
 					position=path[int(options.position.index)]
 					for axis in 3:position[axis]+=int(options.position.offsets[axis])+random.next_int(int(options.position.bounds[axis]))
+				"path_fan":
+					# Ship n steps (first+n) times a random base offset away from the
+					# point, alternating left/right (a fan of ships either side).
+					position=Vector3(options.position.center) if options.position.has("center") else path[int(options.position.index)]
+					var side:=1 if (int(options.group_index)+int(options.position.get("flip",0)))%2==0 else -1
+					var step:=Vector3.ZERO
+					for axis in 3:step[axis]=int(options.position.offsets[axis])+random.next_int(int(options.position.bounds[axis]))
+					step.x*=side
+					position+=step*(int(options.position.first)+int(options.group_index))
+				"player_offset":
+					position=_contract.player_position+Vector3(options.position.offset)
+					for axis in 3:position[axis]+=random.next_int(int(options.position.bound[axis]))
+				"player_side":
+					# Beside the player, alternating left and right.
+					position=_contract.player_position+Vector3(float(options.position.side)*(1 if int(options.group_index)%2==0 else -1),0,0)
+				"player_band":
+					# Each axis: a distance in [min,max] on a random side of the player.
+					position=_contract.player_position
+					for axis in 3:
+						var low:=int(Vector3(options.position.min)[axis]);var gap:=int(Vector3(options.position.max)[axis])-low
+						var distance: int=low+(random.next_int(gap) if gap>0 else 0)
+						position[axis]+=distance if random.next_int(2)==0 else -distance
 				"scenery_midpoint":
 					var anchor:=int(scenery_positions.size()/2)+int(options.group_index)
 					if anchor>=scenery_positions.size() or not scenery_positions[anchor] is Vector3 or not scenery_positions[anchor].is_finite():return fail("The admitted cast requires its world scenery anchors")
 					position=scenery_positions[anchor]+Vector3(options.position.offset)
-			if int(options.route_start)>=0:
+			# route_loop: the ship flies round these path points for ever.
+			var loop: Array=options.get("route_loop",[])
+			if not loop.is_empty():
+				if loop.any(func(index):return not index is int or index<0 or index>=path.size()):return fail("A looping route names a missing path point")
+				actor.discarded_route=route.snapshot()
+				if not route.replace_with_contract_path(loop.map(func(index):return path[index]),0,true):return fail(route.error)
+				actor.route=route.snapshot()
+			elif int(options.route_start)>=0:
 				actor.discarded_route=route.snapshot()
 				if not route.replace_with_contract_path(path,int(options.route_start)):return fail(route.error)
 				actor.route=route.snapshot()
-		var body:=Transform3D(Basis.IDENTITY,position)
+		var facing:=Basis.IDENTITY
+		# face_player: the ship starts with its nose (+z) toward the player.
+		if not story and options.get("face_player",false) and not position.is_equal_approx(_contract.player_position):
+			facing=Basis.looking_at(_contract.player_position-position,Vector3.UP,true)
+		var body:=Transform3D(facing,position)
 		actor.merge({"body_pose":body,"statistics_pose":body,"model_local_pose":Transform3D.IDENTITY})
 		actors.append(actor);routes.append(route)
 	_actors=actors;_routes=routes;_random_state=random.snapshot();_generated=true
 	_contract_layout={"kind":kind,"context":_contract.context.duplicate(true),"mission":_contract.context.mission.duplicate(true),"path":path,
 		"debris_center":center,"unused_enemy_faction":enemy_faction,"actor_count":actors.size()}
 	return snapshot()
+
+## A cast static object: no ship sampling or route; cargo only from a fixed
+## override. It sits at its group position (or the origin) plus the optional
+## per-axis jitter.
+func _static_row(id: int,faction: int,options: Dictionary,path: Array,random: RefCounted) -> Dictionary:
+	var placed: Dictionary=options.static_object
+	var model:=int(placed.model)
+	var position:=Vector3.ZERO
+	if options.position.get("kind","")=="positions":position=Vector3(options.position.points[int(options.group_index)])
+	elif options.get("origin")!="zero" and not path.is_empty():position=path[0]
+	# An offset from the anchor and a fixed rotation (80: the weak points on the Valkyrie).
+	if placed.has("offset"):position+=Vector3(placed.offset)
+	var jitter:=int(placed.get("jitter",0))
+	if jitter>0:
+		for axis in 3:position[axis]=Vitals.single(position[axis]+float(random.next_int(2*jitter)-jitter))
+	var context: Dictionary=_contract.context
+	var hull:=int(placed.hull_override) if placed.has("hull_override") else Statics.hull(model,int(context.rank),int(context.campaign_cursor),float(context.difficulty))
+	var body:=Transform3D(Basis.from_euler(Vector3(placed.get("rotation",Vector3.ZERO))),position)
+	var row:={"actor_id":id,"actor_kind":faction,"hull_catalogue_id":-1,"subtype":0,"population_group":"static","static_model":model,"resource_id":Statics.body_mesh(model),
+		"hull_override":hull,"name_text_id":int(options.name_text_id),"cargo":[],"fragments":[],"route":{},
+		"body_pose":body,"statistics_pose":body,"model_local_pose":Transform3D.IDENTITY}
+	row.merge(options.ship_state,true)
+	if not options.get("cargo_override",{}).is_empty():row.cargo=options.cargo_override.entries.duplicate(true)
+	return row
 
 func _sample_traffic(random: RefCounted) -> Dictionary:
 	if _population_owner!=null:

@@ -39,6 +39,8 @@ func run() -> void:
 			if control is OptionButton or control is CheckButton:
 				check(control.get_theme_stylebox("normal") == app.menu._ui.styles[mobile].normal, key + " does not use the verified original button artwork")
 		await key_event(KEY_TAB, true)
+		# The "Game files…" button follows the last setting.
+		if root.gui_get_focus_owner() is Button and root.gui_get_focus_owner().text.begins_with("Game files"): await key_event(KEY_TAB, true)
 		check(root.gui_get_focus_owner() == app._settings_controls["touch_controls" if mobile else "mouse_sensitivity"], context + " reverse Tab does not reach the last setting")
 		await capture("options-last-" + context)
 		var reverse_order: Array = ["invert_pitch", "voice", "fx", "music"] if mobile else ["mouse_steering", "touch_controls", "invert_pitch", "voice", "fx", "music"]

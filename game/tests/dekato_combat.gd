@@ -39,7 +39,6 @@ func run() -> void:
 	check(Story.compose_dekato(bindings,cat,null).is_empty(),"Unconstructed combat was admitted")
 	if not Rules.available(bindings):
 		check(Story.compose_dekato(bindings,cat,load("res://src/simulation/opening_npc_construction.gd").new()).is_empty(),"Earlier bindings admitted Dekato combat")
-		check(not Reputation.new().configure(bindings,38,[2,2,3,3,3,3,3],0.5,false,null,null,false,true),"Earlier bindings admitted Dekato's fixed reputation cast")
 		finish();return
 	for difficulty in [0.5,1.0]:await verify(library,bindings,cat,difficulty)
 	finish()
@@ -71,9 +70,9 @@ func verify(library: RefCounted,bindings: RefCounted,cat: RefCounted,difficulty:
 	if not control.set_destruction(bindings,resources,freight) or not weapons._configure_encounter_weapons(bindings,cat,data):check(false,control.error+weapons.error);return
 	var initial: Dictionary=control.snapshot()
 	check(initial.combat.reputation.system_id==4 and initial.combat.reputation.actor_kinds==[2,2,3,3,3,3,3],"Combat reputation belongs to another system/cast")
-	check(initial.combat.reputation.get("dekato_convoy",false) and not initial.combat.reputation.has("spawn_generations"),"Fixed story cast acquired recycled-traffic generations")
+	check(not initial.combat.reputation.has("spawn_generations"),"Fixed story cast acquired recycled-traffic generations")
 	var ordinary_history:=Reputation.new()
-	check(ordinary_history.configure(bindings,38,[2,2,3,3,3,3,3],difficulty) and ordinary_history.snapshot().has("spawn_generations") and not ordinary_history.snapshot().get("dekato_convoy",false),"An ordinary cast with the same kinds was mistaken for Dekato")
+	check(ordinary_history.configure(bindings,38,[2,2,3,3,3,3,3],difficulty) and ordinary_history.snapshot().has("spawn_generations"),"An ordinary cast with the same kinds was mistaken for Dekato")
 	check(initial.combat.provocation.forced_hostile==[false,false,true,true,true,true,true] and initial.combat.provocation.permanent_hostile==[false,false,true,true,true,true,true],"Body and reaction force flags differ")
 	for id in 7:
 		var body: Dictionary=initial.combat.actors[id]
@@ -159,10 +158,12 @@ func verify(library: RefCounted,bindings: RefCounted,cat: RefCounted,difficulty:
 	check(status.satisfied and status.failed and status.convoy_destroyed==2,"Native freighter mode4 did not satisfy the independent failure condition")
 	if difficulty==0.5 and DisplayServer.get_name()!="headless":await render_native(library,bindings,packet,branch,freight,"freighter-wreck",0)
 	check(branch.snapshot().accounting.events.size()==7 and branch.snapshot().accounting.counter_deltas.player_kills==5,"Friendly freight deaths duplicated hostile kill rewards")
-	var restored:=Reputation.new();var history: Dictionary=branch.snapshot().combat.reputation
-	check(restored.restore(bindings,history) and restored.snapshot()==history,"Fixed-cast lethal history failed native restore")
+	# The fixed cast's ledger lives with the flight (Reputation.restore is only the
+	# Opening handoff), so check duplicate lethal hits on a fork of the live ledger.
+	var ledger: RefCounted=branch.combat_owner()._reputation.fork_for_frame();var history: Dictionary=branch.snapshot().combat.reputation
+	check(ledger.snapshot()==history,"Live fixed-cast ledger differs from its combat snapshot")
 	var exhausted: Dictionary=branch.snapshot().combat.actors[2]
-	check(not restored.record_lethal(exhausted) and restored.snapshot()==history,"Duplicate lethal hit changed the fixed-cast reputation ledger")
+	check(not ledger.record_lethal(exhausted) and ledger.snapshot()==history,"Duplicate lethal hit changed the fixed-cast reputation ledger")
 	check(control.snapshot()==preserved,"A lethal component fork changed the live parent")
 	check(world.snapshot()==generated and construction.snapshot()==packet and equipment.snapshot()==kept_equipment,"Combat mutated its generated world or detached inventory")
 

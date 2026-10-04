@@ -5,7 +5,9 @@ signal action_requested(action: String,id: int)
 const Art=preload("res://src/presentation/original_ui.gd")
 const Portraits=preload("res://src/presentation/portrait_compositor.gd")
 const Recipe=preload("res://src/content/mission_recipe.gd")
-const MAC_LABEL_IDS={614:616,753:755,841:843,847:849,848:850,850:852,855:857}
+const Dialogue=preload("res://src/simulation/lounge_dialogue.gd")
+const ContractOffer=preload("res://src/simulation/contract_offer.gd")
+const MAC_LABEL_IDS={614:616,753:755,754:756,841:843,847:849,848:850,850:852,855:857,856:858,857:859}
 var error:=""
 var _art: RefCounted
 var _library: RefCounted
@@ -56,7 +58,7 @@ func _init() -> void:
 	_body.size_flags_vertical=Control.SIZE_EXPAND_FILL;text_column.add_child(_body)
 	var actions:=VBoxContainer.new();column.add_child(actions)
 	_yes=Button.new();_yes.pressed.connect(confirm);actions.add_child(_yes)
-	_no=Button.new();_no.pressed.connect(back);actions.add_child(_no)
+	_no=Button.new();_no.pressed.connect(decline);actions.add_child(_no)
 	resized.connect(_layout)
 	_panel.minimum_size_changed.connect(_layout)
 	gui_input.connect(_room_input)
@@ -151,15 +153,22 @@ func label_text(id: int) -> String:
 	return text(id)
 func money(value: int) -> String:return str(value)+"$"
 
-func format_job(template: String,mission: Dictionary) -> String:
+## The result the player is looking at (empty when none is open).
+func pending_result() -> Dictionary:return {} if _state.is_empty() else _state.get("pending_result",{}).duplicate(true)
+
+func format_job(template: String,mission: Dictionary) -> String:return format_job_text(_library,_catalogues,_bindings,template,mission)
+
+## Shared with the Missions log: fills a job text's station, target, goods and pay tokens.
+static func format_job_text(library: RefCounted,catalogues: RefCounted,bindings: RefCounted,template: String,mission: Dictionary) -> String:
 	var station:=int(mission.get("station_id",-1))
-	var name: String=_catalogues.tables.stations[station].name if station>=0 and station<_catalogues.tables.stations.size() else ""
+	var name: String=catalogues.tables.stations[station].name if station>=0 and station<catalogues.tables.stations.size() else ""
 	var cargo_text:=int(mission.get("cargo_text_id",-1))
-	var delivery:=Recipe.station_delivery(_bindings.early_contracts,mission)
-	if delivery.get("briefing_location")=="system":name=_catalogues.tables.systems[int(mission.system_id)].name
+	var delivery:=Recipe.station_delivery(bindings.early_contracts,mission)
+	if delivery.get("briefing_location")=="system":name=catalogues.tables.systems[int(mission.system_id)].name
 	var required: Dictionary=delivery.get("required_cargo",{})
-	if not required.is_empty():cargo_text=int(_bindings.station_equipment.item_text_offset)+int(required.item_id)
-	return template.replace("#S",name).replace("#N",str(mission.get("target_name",""))).replace("#Q",str(int(mission.get("quantity",0)))).replace("#P",text(cargo_text)).replace("#C",money(int(mission.get("reward",0))+int(mission.get("bonus",0))))
+	if not required.is_empty():cargo_text=int(bindings.station_equipment.item_text_offset)+int(required.item_id)
+	var goods: String=library.strings[cargo_text] if cargo_text>=0 and cargo_text<library.strings.size() else ""
+	return template.replace("#S",name).replace("#N",str(mission.get("target_name",""))).replace("#Q",str(int(mission.get("quantity",0)))).replace("#P",goods).replace("#C",str(int(mission.get("reward",0))+int(mission.get("bonus",0)))+"$")
 
 func _refresh() -> void:
 	if _state.is_empty() or _art==null:return
@@ -193,6 +202,59 @@ func _refresh() -> void:
 				show_yes=true
 				if _confirming:_yes.text=text(133);show_no=true;_no.text=text(134)
 			else:_body.text+="\n\n"+text(192).replace("#C",money(int(service.missing_credits)))
+		elif service.get("kind")=="kaamo":
+			# Kaamo Club agents (Mac text ids): mods 896-899, item 900, ship 901.
+			var ship_name:=text(902+int(service.ship_id))
+			match service.kaamo_kind:
+				"mod":
+					_body.text=text(896+int(service.mod)).replace("#SHIP_NAME",ship_name).replace("#N",str([40,30,1,20][int(service.mod)]))+" "+text(868).replace("#C",money(int(service.total_price)))
+				"item":
+					_body.text=text(900)+"\n"+text(int(_bindings.station_equipment.item_text_offset)+int(service.item_id))+"   "+money(int(service.total_price))
+				"ship":
+					_body.text=text(739+_selected%6) if service.get("greeting",false) else text(901)+"\n"+text(902+int(service.offer_ship_id))+"   "+money(int(service.total_price))
+			if service.consumed and not service.get("greeting",false):_body.text=text(847)
+			elif service.can_accept:
+				show_yes=true
+				if _confirming:
+					_body.text=text({"mod":860,"item":861,"ship":862}[service.kaamo_kind]).replace("#C",money(int(service.total_price)))
+					_yes.text=text(133);show_no=true;_no.text=text(134)
+			elif not service.consumed:_body.text+="\n\n"+text(192).replace("#C",money(int(service.missing_credits)))
+		elif service.get("kind")=="coordinates":
+			var system_name: String=_catalogues.tables.systems[int(service.system_id)].name
+			_body.text=label_text(857).replace("#S",system_name).replace("#C",money(int(service.total_price)))
+			if service.consumed:_body.text=label_text(841)
+			elif service.can_accept:
+				show_yes=true
+				if _confirming:_yes.text=text(133);show_no=true;_no.text=text(134)
+			else:_body.text+="\n\n"+text(192).replace("#C",money(int(service.missing_credits)))
+		elif service.get("kind")=="blueprint":
+			var item_name:=text(int(_bindings.station_equipment.item_text_offset)+int(service.item_id))
+			_body.text=label_text(856).replace("#P",item_name).replace("#C",money(int(service.total_price)))
+			if service.consumed:_body.text=label_text(841)
+			elif service.can_accept:
+				show_yes=true
+				if _confirming:_yes.text=text(133);show_no=true;_no.text=text(134)
+			else:_body.text+="\n\n"+text(192).replace("#C",money(int(service.missing_credits)))
+		elif service.get("kind")=="wingmen":
+			_body.text=text(int(service.intro_text_id)).replace("#C",money(int(service.total_price)))
+			if service.busy:_body.text=text(774)
+			elif service.can_accept:
+				show_yes=true
+				if _confirming:
+					_body.text=text(855).replace("#Q",str(service.crew_size)).replace("#C",money(int(service.total_price)))
+					_yes.text=text(133);show_no=true;_no.text=text(134)
+			else:_body.text+="\n\n"+text(192).replace("#C",money(int(service.missing_credits)))
+		elif service.get("kind")=="diplomat":
+			_body.text=text(int(service.intro_text_id)).replace("#C",money(int(service.total_price)))
+			if service.consumed:_body.text=text(int(service.response_text_id))
+			elif service.can_accept:
+				show_yes=true
+				if _confirming:
+					_body.text=text(874).replace("#C",money(int(service.total_price)))
+					_yes.text=text(133);show_no=true;_no.text=text(134)
+			elif service.eligible:_body.text+="\n\n"+text(192).replace("#C",money(int(service.missing_credits)))
+		elif service.get("kind")=="social":
+			_body.text=Dialogue.text(_library,_catalogues,service.dialogue,_name.text)
 		elif row.is_empty():
 			_body.text=label_text(614) if _selected<0 else "This contact's service is not yet available."
 		else:
@@ -201,7 +263,11 @@ func _refresh() -> void:
 			if not _state.mission.is_empty() and client.get("station_id")==_state.station_id and client.get("offer_id")==_selected and client.get("offer")==row.offer:mission=_state.mission
 			_title.text=text(int(mission.title_text_id))
 			var brief: int=_previews.get(_selected,{}).get("briefing_text_id",mission.briefing_text_id)
-			_body.text=format_job(text(brief),mission)+"\n\n"+label_text(753).replace("#C",money(int(mission.reward)+int(mission.bonus)))
+			var credits:=money(int(mission.reward)+int(mission.bonus))
+			# A standing bonus is named after the amount (App Store text 756).
+			if int(mission.bonus)>0 and row.offer.get("context") is Dictionary:
+				credits+=" "+label_text(754).replace("#P",str(int(ContractOffer.standing_ratio(_bindings.early_contracts,row.offer.context)*100.0)))
+			_body.text=format_job(text(brief),mission)+"\n\n"+label_text(753).replace("#C",credits)
 			if row.consumed:_body.text+="\n\n"+label_text(841)
 			else:
 				var preview: Dictionary=_previews.get(_selected,{})
@@ -224,7 +290,20 @@ func confirm() -> void:
 	if not preview.get("can_accept",false):return
 	if not _confirming:_confirming=true;_refresh();return
 	if preview.get("kind")=="merchant":action_requested.emit("buy_goods",_selected)
+	elif preview.get("kind")=="kaamo":action_requested.emit("buy_kaamo",_selected)
+	elif preview.get("kind")=="coordinates":action_requested.emit("buy_coordinates",_selected)
+	elif preview.get("kind")=="blueprint":action_requested.emit("buy_blueprint",_selected)
+	elif preview.get("kind")=="diplomat":action_requested.emit("buy_diplomat",_selected)
+	elif preview.get("kind")=="wingmen":action_requested.emit("hire_wingmen",_selected)
 	else:action_requested.emit("replace" if preview.replacement_required else "accept",_selected)
+
+func decline() -> void:
+	if not _active or not visible or _state.is_empty() or not _state.pending_result.is_empty():return
+	var row: Variant=_state.get("offers",{}).get(_selected)
+	var preview: Dictionary=_previews.get(_selected,{})
+	if _confirming and row is Dictionary and row.get("consumed")==false and preview.get("can_accept",false):
+		_confirming=false;action_requested.emit("decline",_selected);return
+	back()
 
 func back() -> void:
 	if not _active or not visible or not _state.pending_result.is_empty():return

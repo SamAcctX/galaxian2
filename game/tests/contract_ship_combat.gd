@@ -53,7 +53,7 @@ func after_encounter_population(bindings: RefCounted,cat: RefCounted,owner: RefC
 		if junk:
 			check(not data.is_empty() and data.npc_weapons.all(func(row):return row.get("unarmed",false)),"Debris preparation lost its unarmed actor roles")
 			check(weapons.configure_contract(bindings,cat,owner) and weapons.snapshot().actors.all(func(actor):return actor.projectiles.is_empty()),"Junk acquired ordinary ship weapons")
-		else:check(data.is_empty() and not weapons.configure_contract(bindings,cat,owner) and not ShipBody.new().configure_contract(bindings,cat,owner,0),"An earlier or empty world enabled debris combat")
+		else:check((data.is_empty() or int(data.actor_count)==0) and (not weapons.configure_contract(bindings,cat,owner) or weapons.snapshot().actors.is_empty()) and not ShipBody.new().configure_contract(bindings,cat,owner,0),"An earlier or empty world enabled debris combat") # an empty cast may prepare a ship-free population since 6ffe347
 		check(not ShipGuidance.new().configure_contract(bindings,cat,owner,0),"Debris or an empty world borrowed ship controls")
 		return
 	if data.is_empty():check(false,"Unsupported contract ship population");return

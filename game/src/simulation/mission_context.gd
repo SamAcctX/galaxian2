@@ -1,6 +1,7 @@
 extends RefCounted
 ## The entry boundary admits the world and equipment once. Flight subsystems
 ## consume this immutable capability instead of maintaining campaign ID lists.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Slots=preload("res://src/simulation/equipment_slots.gd")
 const Recipe=preload("res://src/content/mission_recipe.gd")
 var error:=""
@@ -54,6 +55,8 @@ static func base_player_hull(bindings: RefCounted,ship_id: Variant) -> bool:
 	if not preload("res://src/content/base_station_stock_definitions.gd").available(bindings):
 		return ship_id==bindings.opening_loadout.get("ship_id",-1) or ship_id==bindings.station_entry.get("ship_id",-1)
 	var ships: Dictionary=bindings.early_contracts.base_station_stock.ships
+	# Expansion hulls (story loans and the Loma shipyard) join the base catalogue.
+	if int(ship_id)>=int(ships.selection_draw_bound) and int(ship_id)<ships.affiliations.size():return load("res://src/content/valkyrie_campaign_definitions.gd").available(bindings)
 	if not preload("res://src/content/opening_definitions.gd").integer(ship_id,0,int(ships.selection_draw_bound)-1):return false
 	if preload("res://src/content/deep_science_stock_definitions.gd").available(bindings) and ship_id==int(bindings.deep_science_stock.all_base_gold_ship_id):return true
 	if int(ship_id)==int(ships.vossk_ship_id) or ships.fixed_first_ships.values().any(func(id):return int(id)==int(ship_id)):return true
@@ -94,7 +97,7 @@ func admit_drive_void(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,c
 	if not _accept_equipment(bindings,cat,loadout):return false
 	var current: Dictionary=career.snapshot()
 	var station: int=int(loadout.get("station_id",-1))
-	if station<0 or station>=cat.tables.stations.size() or current.station_id!=station or loadout.get("system_id")!=cat.tables.stations[station].system_id or not loadout.equipment_ids.has(85):return reject("The Void visit lost its fitted ship or actual departure planet")
+	if station<0 or station>=cat.tables.stations.size() or current.station_id!=station or loadout.get("system_id")!=cat.tables.stations[station].system_id or not load("res://src/content/khador_drive_definitions.gd").fitted(loadout):return reject("The Void visit lost its fitted ship or actual departure planet")
 	if not load("res://src/content/void_crystal_definitions.gd").parameters(bindings.mido_travel.get("void_crystals")):return reject("The ordinary Void world is unavailable")
 	for key in ["base_content_id","binding_id"]:
 		if current.get(key)!=bindings.get(key) or loadout.get(key)!=bindings.get(key):return reject("The Void visit belongs to another content source")
@@ -102,7 +105,23 @@ func admit_drive_void(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,c
 	_void_visit=_identity.duplicate()
 	_void_visit.merge({"source_station_id":station,"source_system_id":int(loadout.system_id)})
 	_arrival_source=loadout.duplicate(true)
+	_admit_void_story(bindings,cat,career.void_story_context(bindings),loadout)
 	return true
+
+## A story flight set in the alien world (its station is -1, e.g. 154) is
+## built by this Void visit: its cast, lines and results come with the entry.
+## Ships are built by the story-cast factory in place of the Void fighters.
+func _admit_void_story(bindings: RefCounted,cat: RefCounted,context: Dictionary,loadout: Dictionary) -> void:
+	if context.is_empty():return
+	# The source system's faction stands in for the Void's (it has none).
+	var faction:=int(cat.tables.systems[int(loadout.system_id)].fields[int(bindings.early_contracts.generation.system_faction_field)])
+	var recipe: Dictionary=Recipe.from_contract(bindings,context,loadout,faction)
+	recipe.system_id=-1;recipe.world={"void_environment":true,"asteroid_field":true}
+	_recipe=recipe;_contract_context=context
+	_loadout=loadout.duplicate(true);_loadout.station_id=-1;_loadout.system_id=-1
+
+## The Void visit carries a story cast (see _admit_void_story).
+func void_story() -> bool:return not _void_visit.is_empty() and not _contract_context.is_empty()
 
 static func ordinary_void_route(bindings: RefCounted,owner: RefCounted) -> Dictionary:
 	if bindings==null or owner==null:return {}
@@ -125,6 +144,18 @@ static func ordinary_void_selection(travel: Dictionary,context: Dictionary) -> b
 	return true
 
 func fork() -> RefCounted:return self # Admitted capabilities have no mutators.
+## A Void trip admitted just before the story moved on in the same flight
+## (78: the drive charges, the story reaches 79) carries the new cursor.
+func rebased_void_story(cursor: int,station_id:=-1,system_id:=-1) -> RefCounted:
+	if _void_visit.is_empty():return self
+	var copy: RefCounted=get_script().new()
+	for name in ["_recipe","_identity","_loadout","_normal_progress","_contract_context","_legacy_flight","_live_cursors","_arrival_source","_arrival_packet","_void_visit"]:
+		copy.set(name,get(name).duplicate(true))
+	copy._normal_return=_normal_return
+	copy._identity.campaign_cursor=cursor;copy._void_visit.campaign_cursor=cursor
+	# The story's way out of the alien world (79 -> Kothar) replaces the return planet.
+	if station_id>=0:copy._void_visit.source_station_id=station_id;copy._void_visit.source_system_id=system_id
+	return copy
 
 func arrival_source_matches(loadout: Dictionary) -> bool:return not _arrival_packet.is_empty() and loadout==_arrival_source
 func arrival_loadout() -> Dictionary:return {} if _arrival_packet.is_empty() else _loadout.duplicate(true)
@@ -174,6 +205,9 @@ func matches_location(bindings: RefCounted,location: Dictionary) -> bool:
 
 static func supports_contract(bindings: RefCounted,mission: Variant,cursor: int) -> bool:
 	if bindings==null or not mission is Dictionary or mission.get("story")!=false:return false
+	var flights=load("res://src/content/valkyrie_flight_definitions.gd")
+	# A convoy job carries the career's cleared stations; rebuild it with them.
+	if flights.is_story_job(mission):return flights.story_job(bindings,cursor,mission.get("station_id"),{"story_stations_mask":mission.get("cleared_mask",0),"wanted_job":mission.get("wanted"),"pirate_bases":mission.get("pirate_base",0),"supernova_challenge":mission.get("supernova_challenge",false)})==mission
 	if mission.get("kind")==6 and (not mission.get("target_name") is String or mission.target_name.is_empty()):return false
 	var rules: Dictionary=bindings.early_contracts.get("encounter_construction",{})
 	if rules.is_empty():return false
@@ -209,7 +243,7 @@ func admit_contract(bindings: RefCounted,catalogues: RefCounted,contracts: RefCo
 	var flight: Dictionary=load("res://src/content/contract_world_definitions.gd").flight(bindings,context.station_id,context.campaign_cursor)
 	if flight.is_empty():flight=load("res://src/content/free_flight_definitions.gd").flight(bindings,context.station_id,context.campaign_cursor)
 	if flight.is_empty() or loadout.system_id!=int(flight.system_id):return reject("This contract location has no complete flight recipe")
-	if not context.get("rank") is int or context.rank<0 or context.rank>=bindings.opening_handoff.rank_thresholds.size() or not rules.supported_game_difficulties.has(context.difficulty):return reject("Unsupported contract career or difficulty")
+	if not context.get("rank") is int or context.rank<0 or context.rank>=bindings.opening_handoff.rank_thresholds.size() or not Difficulty.valid(context.difficulty):return reject("Unsupported contract career or difficulty")
 	var mission: Dictionary=context.mission
 	if not supports_contract(bindings,mission,int(context.campaign_cursor)):return reject("This active contract has no complete cast recipe")
 	if int(mission.kind)==12 and (context.client_faction not in [0,1,2,3] or context.contact_name.is_empty()):return reject("The contest lost its generated rival")
@@ -222,7 +256,8 @@ func admit_contract(bindings: RefCounted,catalogues: RefCounted,contracts: RefCo
 	return true
 
 func contract_context() -> Dictionary:return _contract_context.duplicate(true)
-func has_contract_actors() -> bool:return not _contract_context.is_empty() and int(_recipe.cast.actor_count)>0
+## A story call may be admitted as a contract whose recipe declares no ships.
+func has_contract_actors() -> bool:return not _contract_context.is_empty() and (int(_recipe.cast.actor_count)>0 or load("res://src/content/valkyrie_flight_definitions.gd").is_story_job(_contract_context.get("mission")))
 
 ## Construction resolves a variable cast once before exposing any actors. The
 ## admitted parent remains unchanged; result and actor owners share this copy.
@@ -274,10 +309,15 @@ static func contract_combat_matches(bindings: RefCounted,combat: Dictionary) -> 
 	if kind!=context.mission.get("kind"):return false
 	# Cast admission owns location and population size; presentation observes it.
 	var hulls: Dictionary=bindings.early_contracts.encounter_construction.hulls
+	# Story recipes may name hulls outside a faction's pool (Khador's prototype).
+	var flights=load("res://src/content/valkyrie_flight_definitions.gd")
+	var named: Array=flights.named_hulls(context.mission) if flights.is_story_job(context.mission) else []
 	for id in actors.size():
 		var actor: Variant=actors[id]
 		if not actor is Dictionary or actor.get("actor_id")!=id:return false
-		if actor.get("population_group")=="debris":
+		if actor.get("population_group")=="static":
+			if actor.get("hull_catalogue_id")!=-1 or not actor.get("contract_ship",false) or not actor.get("static_model") is int:return false
+		elif actor.get("population_group")=="debris":
 			if actor.get("actor_kind")!=-1 or actor.get("hull_catalogue_id")!=-1:return false
 		else:
 			var hull: Variant=actor.get("hull_catalogue_id")
@@ -287,7 +327,7 @@ static func contract_combat_matches(bindings: RefCounted,combat: Dictionary) -> 
 				if actor.get("population_group")!="freighter" or hull!=load("res://src/content/free_population_definitions.gd").freighter_hull(bindings,int(faction)):return false
 				continue
 			if actor.get("subtype")!=0:return false
-			if not hull is int or hull<0 or hull>=hulls.factions.size() or int(hulls.factions[hull])!=faction:return false
+			if not hull is int or hull<0 or (hull not in named and (hull>=hulls.factions.size() or int(hulls.factions[hull])!=faction)):return false
 	return true
 
 
@@ -403,6 +443,12 @@ func has_feature(name: String) -> bool:
 		if name=="station":return int(_legacy_flight.station_id)>=0
 		if name=="void_environment":return int(_legacy_flight.station_id)<0
 	return not _recipe.is_empty() and _recipe.world.get(name,false)
+## Whether a station stands at this location. Some expansion orbits have none;
+## flight, guidance and presentation all follow this one answer.
+func station_present() -> bool:
+	if not has_feature("station"):return false
+	var station:=int(_loadout.get("station_id",_recipe.get("station_id",-1)))
+	return not load("res://src/content/valkyrie_world_definitions.gd").empty_orbit(station,int(_identity.get("campaign_cursor",-1)))
 func ship_id() -> int:return int(_loadout.get("ship_id",-1))
 func matches_factory(player_ship_id: int,equipment_ids: Array) -> bool:
 	return not _recipe.is_empty() and player_ship_id==ship_id() and equipment_ids==_loadout.get("equipment_ids",[])

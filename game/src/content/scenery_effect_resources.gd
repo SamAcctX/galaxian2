@@ -117,7 +117,6 @@ static func playback_range(surfaces: Variant, allow_static:=false) -> Dictionary
 			for track in group:
 				if not track is Dictionary or not track.get("dimensions") is int or track.dimensions!=dimensions or not track.get("keys") is PackedFloat32Array: return {}
 				var keys: PackedFloat32Array = track.keys
-				if name=="uv" and not keys.is_empty(): return {}
 				var stride := dimensions+1
 				if keys.size()%stride!=0: return {}
 				total_keys+=int(keys.size()/stride)

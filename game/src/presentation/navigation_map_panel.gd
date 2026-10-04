@@ -4,6 +4,7 @@ extends Control
 signal destination_requested(station_id: int)
 signal close_requested
 signal system_requested(system_id: int)
+const Sounds=preload("res://src/presentation/ui_sounds.gd")
 const Local=preload("res://src/presentation/local_map_panel.gd")
 const Galaxy=preload("res://src/presentation/galaxy_map_panel.gd")
 var error:=""
@@ -65,10 +66,11 @@ func show_system(id: int) -> void:
 	if not _galaxy._navigation.select_system(id):set_error(_galaxy._navigation.error);return
 	if _galaxy._navigation.open_selected()!=id:_galaxy._present();return
 	if not _local.configure(_sources.library,_sources.bindings,_sources.visuals,_sources.cat,_observation,id):set_error(_local.error);return
+	if _overview:Sounds.event(self,Sounds.MAP_ZOOM_IN)
 	error="";_overview=false;_present()
 
 func back_to_overview() -> void:
-	if _galaxy_ready:_overview=true;_present()
+	if _galaxy_ready:_overview=true;_present();Sounds.event(self,Sounds.MAP_ZOOM_OUT)
 	else:close_requested.emit()
 
 func _present() -> void:

@@ -12,6 +12,9 @@ const ARRIVAL_PROFILES=[
 	{"speaker_id":63,"family":1,"voice_ids":[736,737,738]},
 	{"speaker_id":65,"family":2,"voice_ids":[639,641,642]},
 	{"speaker_id":21,"family":-1,"voice_ids":[639,641,642]}]
+## Scripted local lines (kind "scripted", serial 0) play after the faction
+## messages and show the speaker's own portrait; e.g. the Loma toll.
+const Toll=preload("res://src/content/loma_toll_definitions.gd")
 const ARRIVAL_PART_BOUNDS={0:[11,11,11,11],1:[4,5,6,9],2:[5,5,5,5]}
 var error:=""
 var _identity:={}
@@ -22,10 +25,11 @@ var _pending:={}
 var _message:={}
 var _portrait:={}
 var _active: RefCounted
+var _scripted:=[]
 var _last_time:=-1
 
 func configure(bindings: RefCounted, library: RefCounted, layout: RefCounted,cursor: int=10) -> bool:
-	error="";_identity={};_rules={};_templates={};_last_received={};_pending={};_message={};_portrait={};_active=null;_last_time=-1
+	error="";_identity={};_rules={};_templates={};_last_received={};_pending={};_message={};_portrait={};_active=null;_last_time=-1;_scripted=[]
 	if bindings==null or (Travel.journey(bindings.mido_travel,cursor).is_empty() and not ContractWorld.supports(bindings,cursor) and not (load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) and FreeFlight.available(bindings))):return reject("Local radio requires its verified declarations")
 	var templates:={};var rules: Dictionary=bindings.mido_travel.traffic_combat.radio
 	for kind in ["warning","response"]:
@@ -39,6 +43,11 @@ func configure(bindings: RefCounted, library: RefCounted, layout: RefCounted,cur
 			var event:={"speaker_id":profile.speaker_id,"text_id":ARRIVAL_TEXTS[index],"condition":5,"values":[0],"voice_event_id":profile.voice_ids[index]}
 			if not owner.configure_scripted(bindings,library,layout,cursor,[event]):return reject(owner.error)
 			templates[str([profile.speaker_id,ARRIVAL_TEXTS[index]])]=owner
+	for text_id in Toll.LINES:
+		var owner:=Sequence.new()
+		var event:={"speaker_id":Toll.SPEAKER_ID,"text_id":int(text_id),"condition":5,"values":[0],"voice_event_id":int(Toll.LINES[text_id])}
+		if not owner.configure_scripted(bindings,library,layout,cursor,[event]):return reject(owner.error)
+		templates["scripted:%d"%int(text_id)]=owner
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":cursor,"language":library.active_language}
 	_templates=templates;_rules=rules.duplicate(true)
 	return true
@@ -62,7 +71,12 @@ func evaluate(elapsed_ms: int, reaction: Dictionary, random_state: Dictionary) -
 		next._pending=received.duplicate(true);next._last_received=received.duplicate(true)
 	var events:=[]
 	if next._active==null:
-		if not next._pending.is_empty():
+		if next._pending.is_empty() and not next._scripted.is_empty():
+			next._message=next._scripted[0];next._scripted=next._scripted.slice(1)
+			next._active=_templates["scripted:%d"%int(next._message.text_id)].fork_for_frame()
+			next._portrait={"status":"speaker"}
+			events=next._step(elapsed_ms)
+		elif not next._pending.is_empty():
 			next._message=next._pending;next._pending={}
 			var arrival: bool=next._message.kind=="arrival_response"
 			var template: Variant=str([next._message.speaker_id,next._message.text_id]) if arrival else next._message.text_id
@@ -89,10 +103,30 @@ func _step(elapsed_ms: int) -> Array:
 		_active=null;_message={};_portrait={}
 	return events
 
+## Free-flight story lines beside the toll's: text -> [speaker, voice].
+## 3150: Keith's warning at the first Red Plasma caught (no voice).
+const STORY_LINES:={3150:[0,-1]}
+
+static func scripted_line(text_id: Variant) -> Array:
+	if not text_id is int:return []
+	if Toll.LINES.has(text_id):return [Toll.SPEAKER_ID,int(Toll.LINES[text_id])]
+	return STORY_LINES.get(text_id,[]).duplicate()
+
+## Queue one scripted line; it plays when no faction message is active.
+func queue_scripted(text_id: int) -> bool:
+	error=""
+	var line:=scripted_line(text_id)
+	if _identity.is_empty() or line.is_empty():return reject("Unsupported scripted radio line")
+	_scripted=_scripted+[{"serial":0,"kind":"scripted","speaker_id":int(line[0]),"text_id":text_id,"voice_event_id":int(line[1])}]
+	return true
+
 func valid_message(message: Dictionary) -> bool:
 	return valid_payload(_rules,message)
 
 static func valid_payload(rules: Dictionary, message: Dictionary) -> bool:
+	if message.get("kind")=="scripted":
+		var line:=scripted_line(message.get("text_id"))
+		return message.size()==5 and message.get("serial")==0 and not line.is_empty() and message.get("speaker_id")==line[0] and message.get("voice_event_id")==line[1]
 	if message.get("kind")=="arrival_response":
 		if message.size()!=5 or not message.get("serial") is int or message.serial<1 or message.serial>2 or not message.get("speaker_id") is int:return false
 		var profile:=arrival_profile(message.speaker_id)
@@ -106,6 +140,7 @@ static func valid_payload(rules: Dictionary, message: Dictionary) -> bool:
 	return false
 
 static func valid_portrait(rules: Dictionary, portrait: Dictionary) -> bool:
+	if portrait=={"status":"speaker"}:return true
 	if rules.is_empty() or portrait.size()!=3 or portrait.get("status")!="fixed" or not portrait.get("family") is int or not portrait.get("parts") is Array:return false
 	var bounds: Array=rules.portrait_part_bounds.get(str(portrait.family),ARRIVAL_PART_BOUNDS.get(portrait.family,[]))
 	if bounds.size()!=4 or portrait.parts.size()!=4:return false
@@ -136,7 +171,7 @@ func fork_for_frame() -> RefCounted:
 	copy._identity=_identity.duplicate();copy._rules=_rules.duplicate(true);copy._templates=_templates.duplicate()
 	copy._last_received=_last_received.duplicate(true);copy._pending=_pending.duplicate(true)
 	copy._message=_message.duplicate(true);copy._portrait=_portrait.duplicate(true)
-	copy._active=null if _active==null else _active.fork_for_frame();copy._last_time=_last_time
+	copy._active=null if _active==null else _active.fork_for_frame();copy._last_time=_last_time;copy._scripted=_scripted
 	return copy
 
 func reject(message: String) -> bool:

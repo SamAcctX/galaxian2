@@ -2,6 +2,8 @@ extends "res://tests/gate_environment.gd"
 ## Paid transactions replay an earned career. No credit, cargo or campaign
 ## progress is supplied to the successful purchase and overfill paths.
 const Checkpoint=preload("res://tests/fixtures/free_play_station_scenario.gd")
+const Archive=preload("res://src/simulation/station_archive.gd")
+const SaveFile=preload("res://src/simulation/station_save_file.gd")
 const Shopping=preload("res://src/content/ordinary_shopping_definitions.gd")
 const TIMES=[1789100000,1789100001,1789100002]
 
@@ -15,9 +17,18 @@ func _initialize() -> void:
 func verify(args: PackedStringArray) -> void:
 	var library:=Library.new();var bindings:=Bindings.new();var cat:=Catalogues.new()
 	if not library.open(args[0]) or not bindings.open(args[1],library.manifest) or not library.select_language("gb") or not cat.open(library):check(false,library.error+bindings.error+cat.error);return
-	var checkpoint:=Checkpoint.new()
-	var station: RefCounted=checkpoint.open(OS.get_environment("GOF2_FREE_PLAY_STATION_SCENARIO"),bindings)
-	if station==null:check(false,checkpoint.error);return
+	var station: RefCounted
+	var source_save:=OS.get_environment("GOF2_SOURCE_SAVE")
+	if source_save.is_empty():
+		var checkpoint:=Checkpoint.new()
+		station=checkpoint.open(OS.get_environment("GOF2_FREE_PLAY_STATION_SCENARIO"),bindings)
+		if station==null:check(false,checkpoint.error);return
+	else:
+		var file:=SaveFile.new();var archive:=Archive.new()
+		var document:=file.load_document(source_save,bindings,cat,library)
+		if document.is_empty():check(false,file.error);return
+		station=archive.restore(bindings,cat,library,document)
+		if station==null:check(false,archive.error);return
 	var original: Dictionary=station.snapshot()
 	if not Shopping.available(bindings):
 		check(not station.open_equipment(bindings,cat,library,TIMES) and station.snapshot()==original,"Older content enabled ordinary shopping")
@@ -57,8 +68,11 @@ func verify(args: PackedStringArray) -> void:
 	check(bought.contracts.credits==quoted.contracts.credits-price and purchased.owned==affordable.owned+1 and purchased.stock==affordable.stock-1,"Paid purchase lost the one-unit wallet/stock/cargo transaction")
 	check(bought.cargo.used==quoted.cargo.used+1 and bought.cargo.free_space==quoted.cargo.free_space-1 and not bought.cargo_cache_stale,"Paid purchase failed to commit actual cargo quantities")
 	check(branch.contract_owner().location_owner().item_stock(98)==bought.equipment.stock,"Paid purchase did not retain station stock")
+	var expected_progress: Dictionary=quoted.progress.duplicate(true)
+	if id>=132 and id<=153:expected_progress.booze_types_mask=int(expected_progress.get("booze_types_mask",0)) | (1 << (id-132))
 	var career: Dictionary=bought.contracts.duplicate(true);var old_career: Dictionary=quoted.contracts.duplicate(true)
-	for key in ["credits","lounges"]:career.erase(key);old_career.erase(key)
+	for key in ["credits","lounges","progress"]:career.erase(key);old_career.erase(key)
+	check(bought.progress==expected_progress and bought.contracts.progress==expected_progress,"Paid purchase did not retain the exact source Barkeeper item history")
 	check(career==old_career and bought.mission==quoted.mission and bought.loadout==quoted.loadout,"Buying changed unrelated career, equipment or story")
 	var cached: RefCounted=branch.contract_owner().location_owner();var cache_before: Dictionary=cached.snapshot()
 	check(not cached.replace_item_stock(bindings,cat,98,quoted.equipment.stock,bought.equipment.stock) and cached.snapshot()==cache_before,"A stale quote replaced accepted stock")
@@ -66,13 +80,16 @@ func verify(args: PackedStringArray) -> void:
 	if not branch.equipment_action("sell",id,bindings,cat):check(false,branch.error);return
 	var sold: Dictionary=branch.snapshot()
 	check(sold.contracts.credits==quoted.contracts.credits and sold.cargo==quoted.cargo and sold.equipment.stock==quoted.equipment.stock,"One-unit resale failed to restore wallet and quantities")
+	check(sold.progress==expected_progress,"Selling a purchased item erased lifetime Barkeeper history")
 	check(branch.close_equipment(),branch.error)
 	var closed: Dictionary=branch.snapshot()
 	check(not closed.hangar_open and not closed.equipment.has("ordinary_shopping_open") and closed.phase==original.phase and closed.mission==original.mission,"Closing the ordinary shop started tutorial completion")
+	if id>=132 and id<=153:check(closed.contracts.progress.get("purchased_booze_quantity",0)==quoted.contracts.progress.get("purchased_booze_quantity",0),"Buy-then-sell incorrectly advanced Personal Need")
 	check(not branch.prepare_departure(bindings,cat).is_empty(),branch.error)
 	check(branch.open_equipment(bindings,cat,library,TIMES),branch.error)
 	check(branch.snapshot().contracts.credits==closed.contracts.credits and branch.snapshot().cargo==closed.cargo,"Reopening restored stock or charged a new fee")
 	verify_overfill(station,bindings,cat,library)
+	verify_booze_purchase(station,bindings,cat,library)
 	verify_merge_and_boundaries(station,bindings,cat,library)
 	check(station.snapshot()==original,"Detached trading changed its earned source station")
 
@@ -126,6 +143,22 @@ func verify_merge_and_boundaries(station: RefCounted,bindings: RefCounted,cat: R
 	check(not seed.transact("sell",116,0) and seed.snapshot()==restored,"Empty cargo could be sold")
 	for malformed in [[{"item_id":116,"quantity":0,"unit_price":0}],[{"item_id":116,"quantity":1.0,"unit_price":0}],[{"item_id":233,"quantity":1,"unit_price":0}]]:
 		check(not Shopping.valid_stock(malformed,cat.tables.items.size()),"Invalid stock passed the station mutation boundary")
+
+func verify_booze_purchase(station: RefCounted,bindings: RefCounted,cat: RefCounted,library: RefCounted) -> void:
+	var branch: RefCounted=station.fork()
+	if not branch.open_equipment(bindings,cat,library,TIMES):check(false,branch.error);return
+	var opened: Dictionary=branch.snapshot();var offer: Dictionary={}
+	for row in opened.equipment.market_rows:
+		if row.item_id>=132 and row.item_id<=153 and row.stock>0 and row.unit_price>0 and row.unit_price<=opened.contracts.credits and not row.mission:
+			offer=row;break
+	if offer.is_empty():check(false,"The earned station quote has no affordable source booze item for Personal Need/Barkeeper coverage");return
+	var before_quantity:=int(opened.contracts.progress.get("purchased_booze_quantity",0));var before_mask:=int(opened.contracts.progress.get("booze_types_mask",0))
+	check(branch.equipment_action("buy",int(offer.item_id),bindings,cat),branch.error)
+	var bought: Dictionary=branch.snapshot();var bit:=1 << (int(offer.item_id)-132)
+	check(int(bought.contracts.progress.get("booze_types_mask",0))==(before_mask | bit) and bought.progress==bought.contracts.progress,"Accepted station booze purchase did not retain Barkeeper history")
+	check(branch.close_equipment(),branch.error)
+	var closed: Dictionary=branch.snapshot()
+	check(closed.contracts.progress.get("purchased_booze_quantity",-1)==before_quantity+1 and closed.progress==closed.contracts.progress,"Closing Hangar did not commit the net Personal Need quantity")
 
 static func cheapest(state: Dictionary) -> Dictionary:
 	var result: Dictionary={}

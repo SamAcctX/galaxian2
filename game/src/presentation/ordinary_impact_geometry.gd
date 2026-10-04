@@ -36,7 +36,7 @@ func build(owner: RefCounted, library: RefCounted, visuals: RefCounted, bindings
 			if not _surface.prepare_model(model):resources.clear();return reject(_surface.error)
 			var sampler:=Sampler.new()
 			if not sampler.configure(model.surfaces):resources.clear();return reject(sampler.error)
-			if sampler.snapshot().range!={"start_ms":row.start_ms,"end_ms":row.end_ms}:resources.clear();return reject("Impact animation metadata changed")
+			if sampler.time_range()!={"start_ms":row.start_ms,"end_ms":row.end_ms}:resources.clear();return reject("Impact animation metadata changed")
 			samplers.append(sampler)
 		guns.append({"key":weapon.key,"slots":slots});_samplers.append(samplers)
 	resources.clear();_identity=owner.presentation_identity();_descriptor=state;_edition=library.manifest.profile.edition
@@ -64,6 +64,9 @@ func prepare_world(owner: RefCounted, world: Dictionary, camera: Transform3D, pa
 		for j in weapon.slots.size():
 			var slot: Dictionary=weapon.slots[j];var initial: Dictionary=_descriptor.weapons[i].slots[j]
 			if slot.get("start_ms")!=initial.start_ms or slot.get("end_ms")!=initial.end_ms or not Numbers.integer(slot.get("sample_time_ms"),initial.start_ms,initial.end_ms) or not slot.get("playing") is bool or not slot.get("position") is Vector3 or not slot.position.is_finite():return failed("Invalid impact animation slot")
+			# An idle slot at its retained sample time keeps the accepted sampler.
+			if not slot.playing and _samplers[i][j].sampled_at(int(slot.sample_time_ms)):
+				slots.append({"visible":false,"surfaces":[]});slot_samplers.append(_samplers[i][j]);continue
 			var sampler: RefCounted=_samplers[i][j].fork_for_frame()
 			# Sampling at the retained time also preserves the final key of a
 			# stopped effect, needed when this projectile slot is reused later.

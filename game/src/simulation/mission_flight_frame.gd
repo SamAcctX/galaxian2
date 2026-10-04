@@ -29,6 +29,10 @@ const Career=preload("res://src/simulation/opening_handoff.gd")
 const VoidPortal=preload("res://src/simulation/void_portal.gd")
 const Escape=preload("res://src/simulation/mission_escape_sequence.gd")
 const Random=preload("res://src/simulation/seeded_random.gd")
+const Beams=preload("res://src/simulation/repair_beams.gd")
+const Devices=preload("res://src/simulation/flight_devices.gd")
+## The Time Extender runs the player at a different rate from the world.
+var player_time_scale:=1.0
 var error:=""
 var _state:={}
 var _context: RefCounted
@@ -115,7 +119,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,c
 	var detail:=Detail.new();var selectors:={};var positions:={};var player_detail:=ShipDetail.new()
 	if not player_detail.configure(bindings.ship_lod,int(loadout.ship_id)):return reject(player_detail.error)
 	if player_detail.has_alternates():selectors["player"]=player_detail;positions["player"]=pose.origin
-	for actor in encounter.combat_snapshot().actors:
+	for actor in encounter.read_combat().actors:
 		var selector:=ShipDetail.new();var assembly: Dictionary=encounter.freighter_assembly(actor.actor_id)
 		var ready: bool=selector.configure(bindings.ship_lod,int(actor.hull_catalogue_id)) if assembly.is_empty() else selector.configure_assembly(bindings,assembly)
 		if not ready:return reject(selector.error)
@@ -175,7 +179,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	next._state.physical_contacts=[]
 	if moving:
 		if not next._camera.refresh_player_response(relative_mouse_capture,next._pilot.response_factor()) or not next._engine_audio.before_ordinary_motion():return failed(next._camera.error+next._engine_audio.error)
-		next._pose=next._pilot.advance_prepared(_pose,throttle if enabled_before else _throttle,seconds,strafe if enabled_before and not next._encounter.turret_active() else 0.0,next._booster.speed_multiplier())
+		next._pose=next._pilot.advance_prepared(_pose,throttle if enabled_before else _throttle,seconds*player_time_scale,strafe if enabled_before and not next._encounter.turret_active() else 0.0,next._booster.speed_multiplier())
 		if not next._pilot.error.is_empty():return failed(next._pilot.error)
 		var contact: Dictionary=next._physical.plan(next._player.collision_context(next._pose),next._scenery.read_snapshot().bodies,enabled_before)
 		if contact.is_empty() or not next._scenery.apply_physical_contacts(contact.operations):return failed(next._physical.error+next._scenery.error)
@@ -201,6 +205,11 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	var contacts: Dictionary=next._encounter.evaluate_weapons(next._player,next._pose,milliseconds,next._scenery,next._random,true,not prior.radio.visible,-1 if next._scanner==null else next._scanner.guidance_target_id())
 	if contacts.is_empty():return failed(next._encounter.error)
 	next._encounter=contacts.encounter;next._player=contacts.player;next._scenery=contacts.scenery;next._random=contacts.random_state
+	Beams.advance_flight(next._player,next._pose,next._encounter,null,milliseconds)
+	if not dying:
+		var devices: Dictionary=Devices.advance(next._player,next._cargo,next._equipment,next._notices,milliseconds)
+		if devices.has("error"):return failed(devices.error)
+		next._cargo=devices.cargo;next._equipment=devices.equipment
 	if not next._particles.apply_weapon_impacts(next._encounter.secondary_impacts()):return failed(next._particles.error)
 	if not dying and next._player.snapshot().vitals.hull<=0:
 		if not next._death.start(next._player,next._pose,Vector3.ZERO,next._camera.snapshot().pose,_state.campaign_cursor,Basis.IDENTITY,next._pose,next._encounter.secondary_owner()):return failed(next._death.error)
@@ -264,19 +273,19 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if turret_active:
 		next._encounter=next._encounter.advance_turret(commands if enabled else Vector2.ZERO,milliseconds,turret_inverted)
 		if not enabled:next._encounter=next._encounter.set_turret_active(false);turret_active=false
-	var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,(primary_fire and next._primary_released) or (secondary_fire and next._secondary_released and turret_active),enabled,next._random,[] if next._scanner==null else next._scanner.weapon_target_ids())
+	var fired: Dictionary=next._encounter.evaluate_primary_fire(next._player,next._pose,(primary_fire and next._primary_released) or (secondary_fire and next._secondary_released and turret_active),enabled,next._random,[] if next._scanner==null else next._scanner.weapon_target_ids(),milliseconds)
 	if fired.is_empty():return failed(next._encounter.error)
 	next._encounter=fired.encounter;next._random=fired.random_state
 	var secondary: Dictionary=next._encounter.evaluate_secondary_fire(next._player,next._equipment,next._pose,secondary_fire and next._secondary_released and not turret_active,enabled,next._random,not radio.visible,next._scenery)
 	if secondary.is_empty():return failed(next._encounter.error)
 	next._encounter=secondary.encounter;next._player=secondary.player;next._equipment=secondary.equipment;next._random=secondary.random_state
 	next._scenery=secondary.scenery
-	var before_actors: Dictionary=next._encounter.combat_snapshot()
+	var before_actors: Dictionary=next._encounter.read_combat()
 	var motion: Dictionary=next._encounter.evaluate_world(next._player,next._pose,milliseconds,next._random)
 	if motion.is_empty():return failed(next._encounter.error)
-	if not next._particles.finish_npc_pass(before_actors,motion.encounter.combat_snapshot(),motion.encounter.actor_events(),milliseconds,1.0):return failed(next._particles.error)
+	if not next._particles.finish_npc_pass(before_actors,motion.encounter.read_combat(),motion.encounter.actor_events(),milliseconds,1.0):return failed(next._particles.error)
 	next._encounter=motion.encounter;next._random=motion.random_state
-	if not next._particles.apply_sequence(cue.frame.get("effects",[]),next._encounter.combat_snapshot().actors):return failed(next._particles.error)
+	if not next._particles.apply_sequence(cue.frame.get("effects",[]),next._encounter.read_combat().actors):return failed(next._particles.error)
 	var completed: Dictionary=next._encounter.frame_context().sequence
 	if not dying:
 		if completed.phase>0:next._camera=next._encounter.camera_owner()
@@ -298,7 +307,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if not next._particles.advance(next._pose,milliseconds):return failed(next._particles.error)
 	var positions:={};var registered: Dictionary=next._detail.snapshot().selections
 	if registered.has("player"):positions["player"]=next._pose.origin
-	for actor in next._encounter.combat_snapshot().actors:
+	for actor in next._encounter.read_combat().actors:
 		if registered.has(actor.actor_id):positions[actor.actor_id]=actor.body_pose.origin
 	if not next._detail.update(milliseconds,positions,_reference,1.0,false):return failed(next._detail.error)
 	var immediate: Variant=next._camera.snapshot().eye if cue.frame.refresh_geometry_detail else null
@@ -353,8 +362,15 @@ func _observe_progress() -> bool:
 	var progress:=_initial_progress.duplicate(true)
 	for key in ["player_kills","pirate_kills","debris_destroyed","capital_ship_kills"]:
 		if progress.has(key) or totals.has(key):progress[key]=int(_initial_progress.get(key,0))+int(totals.get(key,0))
+	var asteroids: Variant=_scenery.read_snapshot().get("destroyed_count",0)
+	if not asteroids is int or asteroids<0 or asteroids>2147483647-int(_initial_progress.get("asteroids_destroyed",0)):return reject("Mission asteroid progress exceeds the supported career range")
+	if asteroids>0 or progress.has("asteroids_destroyed"):progress.asteroids_destroyed=int(_initial_progress.get("asteroids_destroyed",0))+asteroids
 	var recovered: int=_encounter.recovery_totals().get("accepted_quantity",0)
 	if recovered>0 or progress.has("cargo_recovered"):progress.cargo_recovered=Career.recovered_cargo_total(int(_initial_progress.get("cargo_recovered",0)),recovered)
+	var secondaries: RefCounted=_encounter.secondary_owner()
+	var nuclear: Variant=0 if secondaries==null else secondaries.snapshot().get("nuclear_bomb_detonations",0)
+	if not Numbers.integer(nuclear,0,2147483647-int(_initial_progress.get("nuclear_bomb_detonations",0))):return reject("Mission Nuclear Armament progress exceeds the supported career range")
+	if nuclear>0 or progress.has("nuclear_bomb_detonations"):progress.nuclear_bomb_detonations=int(_initial_progress.get("nuclear_bomb_detonations",0))+int(nuclear)
 	progress.reputation=_encounter.combat_owner().reputation_after(_initial_progress.reputation)
 	var score:=Career.calculate_progress(_bindings.opening_handoff,_state.campaign_cursor,progress.player_kills,progress.pirate_kills,progress.other_score)
 	if score.is_empty() or progress.reputation.is_empty() or progress.get("cargo_recovered",0)<0:return reject("Mission combat lost its retained career counters")
@@ -424,7 +440,7 @@ func advance_result_view(milliseconds: int) -> RefCounted:
 	if not next._camera.update(milliseconds,shot,target):return failed(next._camera.error)
 	var positions:={};var registered: Dictionary=next._detail.snapshot().selections
 	if registered.has("player"):positions["player"]=_pose.origin
-	for actor in _encounter.combat_snapshot().actors:
+	for actor in _encounter.read_combat().actors:
 		if registered.has(actor.actor_id):positions[actor.actor_id]=actor.body_pose.origin
 	next._reference=next._camera.snapshot().eye
 	if not next._detail.refresh(positions,next._reference,1.0):return failed(next._detail.error)
@@ -568,6 +584,7 @@ func engine_particles_owner() -> RefCounted:return null if _engines==null else _
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
+	copy.player_time_scale=player_time_scale
 	copy._state=_state.duplicate(true);copy._context=_context;copy._world=_world;copy._bindings=_bindings;copy._library=_library
 	copy._pose=_pose;copy._reference=_reference;copy._random=_random.duplicate(true)
 	copy._initial_progress=_initial_progress;copy._progress=_progress.duplicate(true);copy._viewport=_viewport
@@ -597,5 +614,8 @@ func toggle_turret() -> RefCounted:
 	return next
 
 func cloak_state() -> Dictionary:return {} if _player==null else _player.cloak_state()
+func player_equipment_ids() -> Array:return [] if _player==null else _player.snapshot().get("equipment_ids",[])
+## Emergency System / Shield Injector state for sound and medals.
+func player_devices() -> Dictionary:return {} if _player==null else _player.devices_snapshot()
 func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
 func control_throttle() -> float:return _throttle

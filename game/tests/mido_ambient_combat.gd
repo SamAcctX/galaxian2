@@ -37,7 +37,7 @@ func verify_population(bindings: RefCounted,catalogues: RefCounted,equipment: Re
 			check(actor.position==row.statistics_pose.origin and actor.pose==row.statistics_pose and actor.body_pose==row.body_pose,"Combat changed the generated actor pose")
 			check(group.collision_context(row.actor_id).path==("point_geometry" if freight else "bounds"),"A freighter borrowed fighter bounds")
 		check(construction.snapshot()==packet,"Combat mutated the construction stream")
-	for invalid in [[-1,0.5],[3,0.5],[true,0.5],[0,1.5],[0,NAN]]:
+	for invalid in [[-1,0.5],[3,0.5],[true,0.5],[0,2.0],[0,NAN]]:
 		check(not Group.new().configure_ambient(bindings,catalogues,construction,invalid[0],invalid[1],equipment,REPUTATION),"Ambient combat accepted an unsupported rank/difficulty")
 	var body:=Actor.new()
 	if not body.configure_ambient(bindings,catalogues,construction,0,0,0.5):check(false,body.error);return

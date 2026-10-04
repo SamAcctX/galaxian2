@@ -11,7 +11,7 @@ const BODY_LAST_MS := 299
 
 static func for_death(death: RefCounted, camera: Transform3D) -> Dictionary:
 	if not (death is Death or death is Player or death is Freighter or death is Bomb) or death.presentation_identity()==null: return {"error":"Explosion presentation requires its native owner"}
-	var state: Dictionary=death.snapshot()
+	var state: Dictionary=death.read_state() if death is Death else death.snapshot()
 	if not camera.is_finite(): return {"error":"NPC explosion camera must be finite"}
 	if death is Bomb:
 		if state.get("effect_type")!=0:return {"error":"This bomb does not use a type-zero explosion"}

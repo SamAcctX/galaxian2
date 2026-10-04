@@ -25,6 +25,9 @@ const Flight = preload("res://src/simulation/npc_flight.gd")
 const Vitals = preload("res://src/simulation/combat_vitals.gd")
 const Vectors = preload("res://src/simulation/source_vectors.gd")
 const Random = preload("res://src/simulation/seeded_random.gd")
+const VOID_KIND:=9
+const VOID_REMAINS_ITEM:=131
+const VOID_REMAINS_MAX:=3
 const Explosion = preload("res://src/simulation/type_zero_explosion.gd")
 var error := ""
 var _parameters := {}
@@ -59,6 +62,20 @@ func _configure_motion(bindings: RefCounted, resources: RefCounted, actor_id: in
 		"drift_speed":0.0,"drift_direction":Vector3.ZERO,"fragments":fragments.duplicate(true),
 		"effect":clock,"retire_on_transfer":true}
 	_presentation_identity=RefCounted.new()
+	return true
+
+## Paid pilots retain the ordinary fighter effect without inventing cargo or
+## entering the encounter's mission population. The cast owns their fragments.
+func configure_wingman(bindings: RefCounted,resources: RefCounted,body: RefCounted,fragments: Array) -> bool:
+	clear()
+	if not is_instance_of(body,load("res://src/simulation/opening_combat_actor.gd")):return reject("Companion destruction requires its native body")
+	var actor: Dictionary=body.snapshot()
+	if not actor.get("wingman",false) or actor.get("population_group")!="wingman" or actor.get("wingman_index")!=actor.get("actor_id"):return reject("This body is not a retained paid pilot")
+	for key in ["base_content_id","binding_id"]:
+		if bindings==null or actor.get(key)!=bindings.get(key):return reject("Companion destruction belongs to another content identity")
+	if not _configure_motion(bindings,resources,int(actor.actor_id),actor.pose,0.0,fragments):return false
+	_state.wingman=true;_state.campaign_cursor=int(actor.campaign_cursor)
+	_state.statistics_pose=actor.pose;_state.bank_basis=Basis.IDENTITY
 	return true
 
 func configure_full_hold(bindings: RefCounted, resources: RefCounted, actor: Dictionary) -> bool:
@@ -218,18 +235,20 @@ static func model_clock(model: Variant) -> Dictionary:
 
 func capture(pose: Variant, speed: Variant, bank: Basis=Basis.IDENTITY) -> bool:
 	error=""
+	_edit()
 	if _state.is_empty() or _state.phase!="ready": return reject("Capture NPC motion before starting its death")
 	if not Flight.rigid_pose(pose) or not (speed is float or speed is int) or not is_finite(speed) or speed<0 or not is_finite(Vitals.single(speed)): return reject("Invalid initial NPC death motion")
 	if not Flight.rigid_pose(Transform3D(bank,Vector3.ZERO)):return reject("Invalid retained NPC bank")
-	if _cargo_rules.is_empty() and bank!=Basis.IDENTITY:return reject("This death context has no separate bank owner")
+	if not _state.has("bank_basis") and bank!=Basis.IDENTITY:return reject("This death context has no separate bank owner")
 	_state.pose=pose;_state.forward=pose.basis.z;_state.speed=Vitals.single(speed)
-	if not _cargo_rules.is_empty():
+	if _state.has("bank_basis"):
 		_state.bank_basis=bank
 		_state.statistics_pose=pose*Transform3D(bank,Vector3.ZERO)
 	return true
 
 func reposition_full_hold(declarations: Dictionary, pose: Variant, statistics_pose: Variant) -> bool:
 	error=""
+	_edit()
 	if _cargo_rules.is_empty() or not Appearance.parameters(declarations) or _state.get("appearance_applied",false) or not Flight.rigid_pose(pose) or not Flight.rigid_pose(statistics_pose):return reject("Scripted placement requires the unplaced pirate death owner and verified declarations")
 	# Source activation changes mode but never heals or resets effect/cargo clocks.
 	# An exhausted actor starts a new tumble on its next ordinary actor pass.
@@ -240,6 +259,7 @@ func reposition_full_hold(declarations: Dictionary, pose: Variant, statistics_po
 
 func apply_alioth_escape(owner: RefCounted) -> bool:
 	error=""
+	_edit()
 	if not owner is AliothSequence or _state.get("campaign_cursor")!=16 or _cargo_rules.is_empty():return reject("Alioth placement requires its retained destruction owner")
 	var sequence: Dictionary=owner.snapshot()
 	for key in ["base_content_id","binding_id","campaign_cursor"]:
@@ -258,7 +278,9 @@ func retires_before_update() -> bool:
 	if _state.is_empty():return false
 	return _state.phase=="retired" or (_state.phase=="explosion" and not _state.effect.active and (_cargo_rules.is_empty() or not _state.cargo.eligible or _state.cleanup_elapsed_ms>int(_cargo_rules.cleanup_after_ms)))
 
-func advance(delta_ms: Variant, random_state: Variant) -> Dictionary:
+## lethal_actor is the combat body at death start. A hostile Void (kind 9)
+## ship drops Alien Remains (item 131, 1..3 units) instead of its cargo.
+func advance(delta_ms: Variant, random_state: Variant, lethal_actor: Dictionary={}) -> Dictionary:
 	error=""
 	if _state.is_empty() or not Vitals.integer(delta_ms) or delta_ms>_max_ms: return fail("Invalid NPC death frame duration")
 	var random := Random.new()
@@ -272,12 +294,14 @@ func advance(delta_ms: Variant, random_state: Variant) -> Dictionary:
 	if next.phase!="retired" and retires_before_update():
 		next.phase="retired";retired=true
 	elif next.phase!="retired":
-		if not _cargo_rules.is_empty():next.statistics_pose=next.pose*Transform3D(next.bank_basis,Vector3.ZERO)
+		if next.has("statistics_pose"):next.statistics_pose=next.pose*Transform3D(next.bank_basis,Vector3.ZERO)
 		if next.phase=="ready":
 			next.phase="tumble";next.mode=int(_parameters.dying_mode);started=true
 			next.countdown_ms=int(_parameters.delay_base_ms)+random.next_int(int(_parameters.delay_bound_ms))
 			next.spin=Vectors.scaled(random_direction(random),float(_parameters.spin_scale))
 			sounds.append(int(_parameters.death_sound))
+			if not _cargo_rules.is_empty() and lethal_actor.get("actor_kind")==VOID_KIND and lethal_actor.get("friendly",false)!=true:
+				next.cargo.entries=[{"item_id":VOID_REMAINS_ITEM,"quantity":1+random.next_int(VOID_REMAINS_MAX)}];next.cargo.eligible=true
 			audio_events.append({"source_id":int(_parameters.death_sound),"position":next.pose.origin})
 		if next.phase=="tumble":
 			next.retire_on_transfer=false
@@ -347,10 +371,21 @@ func random_direction(random: RefCounted) -> Vector3:
 func snapshot() -> Dictionary:
 	return _state.duplicate(true)
 
+## Live state for same-frame reads only; never mutate or retain it.
+func read_state() -> Dictionary:return _state
+
+## Read-only state shared with forks and frame observations.
+func read_snapshot() -> Dictionary:return Readonly.freeze(_state)
+
+## Mutators edit a private copy once the state has been shared.
+func _edit() -> void:
+	if _state.is_read_only():_state=_state.duplicate(true)
+
 ## Breakup chooses its own drift direction. A later radius hit replaces the
 ## cargo's retained strength without restarting death or moving its effect.
 func apply_blast_strength(strength: float) -> bool:
 	error=""
+	_edit()
 	if _state.is_empty() or not is_finite(strength) or strength<0.0 or strength>1.0:return reject("Blast drift requires a configured wreck and finite radius fraction")
 	if _state.phase=="explosion" and not _cargo_rules.is_empty():_state.drift_speed=Vitals.single(strength)
 	return true
@@ -358,6 +393,7 @@ func apply_blast_strength(strength: float) -> bool:
 ## The enclosing encounter computed this frame from this live wreck and the
 ## native tractor. Its prospective branch owns all mutations and rollback.
 func _retain_recovery_frame(frame: Dictionary) -> void:
+	_edit()
 	var changes: Dictionary=frame.actor_changes
 	if changes.has("body_pose"):_state.pose=changes.body_pose
 	if changes.has("statistics_pose"):_state.statistics_pose=changes.statistics_pose
@@ -373,7 +409,7 @@ func presentation_identity() -> RefCounted:
 func fork_for_frame() -> RefCounted:
 	# Configuration is fixed after preparation; detach live state only.
 	var copy: RefCounted=get_script().new()
-	copy._parameters=Readonly.freeze(_parameters);copy._state=_state.duplicate(true);copy._max_ms=_max_ms
+	copy._parameters=Readonly.freeze(_parameters);copy._state=read_snapshot();copy._max_ms=_max_ms
 	copy._presentation_identity=_presentation_identity
 	copy._cargo_rules=Readonly.freeze(_cargo_rules)
 	return copy

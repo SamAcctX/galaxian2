@@ -1,6 +1,7 @@
 extends RefCounted
 ## Completes supported flight initialization from the post-scenery RNG.
 ## Every NPC constructor precedes the shared weapon-effect allocation sequence.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const FirstFlight=preload("res://src/content/first_flight_definitions.gd")
 const MiningFlight=preload("res://src/content/full_hold_flight_definitions.gd")
 const Training=preload("res://src/content/combat_training_definitions.gd")
@@ -106,7 +107,7 @@ func configure_contract(bindings: RefCounted,catalogues: RefCounted,equipment: R
 		if not construction.configure_contract(bindings,catalogues,equipment,contracts,player_position,field_center,capability):return reject(construction.error)
 		data.weapon_groups=["pirate","rival"]
 		for group in construction.mission_context_owner().recipe().cast.ship_groups:
-			if group.population_group not in data.weapon_groups:data.weapon_groups.append(group.population_group)
+			if group.has("population_group") and group.population_group not in data.weapon_groups:data.weapon_groups.append(group.population_group)
 	if not _bind_faction_weapon_effects(bindings,data):return false
 	if not _configure(bindings,catalogues,data,construction,[],equipment.snapshot().loadout.slots.filter(func(slot):return slot!=null)):return false
 	_identity.merge({"campaign_cursor":int(context.campaign_cursor),"station_id":int(context.station_id),"entry_conditions":entry_conditions.duplicate(true),"contract_context":accepted})
@@ -119,12 +120,26 @@ func configure_free_factory(bindings: RefCounted,catalogues: RefCounted,player_s
 	if not construction.configure_free_factory(bindings,catalogues,player_ship_id,equipment_ids,context,unix_seconds):return reject(construction.error)
 	return _configure_free(bindings,catalogues,construction,player_ship_id,equipment_ids,context,entry_conditions)
 
-func configure_void_factory(bindings: RefCounted,catalogues: RefCounted,player_ship_id: int,equipment_ids: Array,context: Dictionary,entry_conditions: Dictionary) -> bool:
+func configure_void_factory(bindings: RefCounted,catalogues: RefCounted,player_ship_id: int,equipment_ids: Array,context: Dictionary,entry_conditions: Dictionary,story_equipment: RefCounted=null,player_position:=Vector3.ZERO,field_center:=Vector3.ZERO) -> bool:
 	clear()
 	if bindings==null or not VoidCrystals.selected_void(bindings.mido_travel,context):return reject("Void initialization requires its selected nonstory crystal world")
 	if entry_conditions!={"companions_empty":true,"location_match":true,"special_placement":false}:return reject("Void initialization requires its matched ordinary placement")
 	if not Sahi.coherent(bindings.mido_travel):return reject("Void fighter weapon effects require their imported source declarations")
 	var construction:=Construction.new()
+	# A story flight admitted with the Void visit (154) builds its own cast.
+	var admission: Variant=context.get("void_admission")
+	if admission is RefCounted and admission.has_method("void_story") and admission.void_story():
+		if not construction.configure_contract(bindings,catalogues,story_equipment,null,player_position,field_center,admission):return reject(construction.error)
+		var story:={"scope":"ordinary_void_story_initialization","weapon_groups":["pirate","rival"]}
+		for group in admission.recipe().cast.ship_groups:
+			if group.has("population_group") and group.population_group not in story.weapon_groups:story.weapon_groups.append(group.population_group)
+		if not _bind_faction_weapon_effects(bindings,story):return false
+		var void_weapon: Dictionary=bindings.mido_travel.sahi_encounter.weapons["void"]
+		story.faction_weapon_effects[int(void_weapon.actor_kind)]={"items":[0,int(void_weapon.item_id)],"resources":[ContractWorld.impact_model(bindings,0),int(void_weapon.impact_model_id)]}
+		if not _configure(bindings,catalogues,story,construction,[],story_equipment.snapshot().loadout.slots.filter(func(slot):return slot!=null)):return false
+		_identity.merge({"campaign_cursor":int(context.campaign_cursor),"station_id":-1,"system_id":-1,
+			"entry_conditions":entry_conditions.duplicate(true),"void_context":context.duplicate(true),"contract_context":admission.contract_context()})
+		return true
 	if not construction.configure_void_factory(bindings,catalogues,player_ship_id,equipment_ids,context):return reject(construction.error)
 	var shared: Dictionary=bindings.opening_actors.get("npc_initialization",{}).get("world_initialization",{})
 	var ordinary: int=ContractWorld.impact_model(bindings,0)
@@ -166,8 +181,13 @@ func _bind_faction_weapon_effects(bindings: RefCounted,data: Dictionary) -> bool
 	data.weapon_item_sequence=[];data.weapon_effect_sequence=[];data.faction_weapon_effects={}
 	var default_model:=ContractWorld.impact_model(bindings,0)
 	if default_model<0 or bindings.resolve(default_model,"mesh").is_empty():return reject("Default weapon impact art is unavailable")
-	for row in bindings.early_contracts.ship_combat.weapons.factions:
+	for row in load("res://src/content/contract_ship_combat_definitions.gd").factions(bindings.early_contracts.ship_combat.weapons):
 		var model:=ContractWorld.impact_model(bindings,int(row.item_id))
+		# Expansion races without an imported impact use the default impact
+		# (assumption); packs without their projectile art leave them out.
+		if row.has("damage_scale"):
+			if bindings.resolve(int(row.model_resource_id),"mesh").is_empty():continue
+			if model<0:model=default_model
 		if model<0 or bindings.resolve(model,"mesh").is_empty():return reject("Faction weapon impact art is unavailable")
 		data.faction_weapon_effects[int(row.actor_kind)]={"items":[0,int(row.item_id)],"resources":[default_model,model]}
 	return true
@@ -318,6 +338,10 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, data: Dictionary, 
 	# The retained initial equipment excludes both optional population groups.
 	for item in (equipment if explicit_equipment or not equipment.is_empty() else bindings.opening_loadout.equipment):
 		var equipment_type: int=catalogues.tables.items[int(item.item_id)].arrays[2][5]
+		# The spectral filter's optional group (gas clouds, sort 33) is built
+		# by the gas clouds owner, not here.
+		# Sentry guns (sort 39) are placed by the secondary weapon owner.
+		if equipment_type==33 or equipment_type==39:continue
 		if shared.absent_equipment_types.any(func(value): return int(value)==equipment_type):
 			return reject("Initial equipment does not exclude the optional population")
 	for hull in hulls:
@@ -351,7 +375,7 @@ func configure_local_traffic(bindings: RefCounted, catalogues: RefCounted, equip
 	if trip.is_empty():return reject("Unsupported local traffic mission context")
 	var data:=Travel.flight(bindings,int(trip.from_station_id),cursor)
 	if data.is_empty():return reject("Local traffic lacks its verified lifecycle")
-	if not data.supported_difficulties.any(func(value):return float(value)==difficulty):return reject("This local traffic profile does not support that difficulty")
+	if not Difficulty.valid(difficulty):return reject("This local traffic profile does not support that difficulty")
 	var construction:=Construction.new()
 	if cursor in [11,12]:
 		var context:={"system_id":int(trip.system_id),"station_id":int(trip.from_station_id),"campaign_cursor":cursor,"difficulty":difficulty,

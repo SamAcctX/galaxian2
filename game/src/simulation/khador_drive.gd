@@ -27,13 +27,27 @@ func configure(bindings: RefCounted,cat: RefCounted,loadout: Dictionary,difficul
 	for key in ["base_content_id","binding_id"]:
 		if routing.get(key)!=device[key]:return reject("Khador Drive navigation belongs to another content source")
 	var choices:={}
+	if not _choices(cat,routing,destinations,choices):return false
+	_device=device;_location={"station_id":loadout.station_id,"system_id":loadout.system_id}
+	_return_location=return_location.duplicate();_destinations=choices;_navigation=navigation.fork()
+	return true
+
+func _choices(cat: RefCounted,routing: Dictionary,destinations: Array,choices: Dictionary) -> bool:
 	for id in destinations:
 		if not Definitions.Numbers.integer(id,0,cat.tables.stations.size()-1):return reject("Khador Drive destination is absent from the catalogue")
 		var station: Dictionary=cat.tables.stations[id]
 		if routing.system_availability[station.system_id]:choices[id]={"station_id":id,"system_id":station.system_id,"no_gate":cat.tables.systems[station.system_id].linked_system_ids.is_empty()}
-	_device=device;_location={"station_id":loadout.station_id,"system_id":loadout.system_id}
-	_return_location=return_location.duplicate();_destinations=choices;_navigation=navigation.fork()
 	return true
+
+## A story that opens systems in flight gives the drive a fresh map; the
+## returned copy keeps this frame's drive untouched.
+func with_navigation(cat: RefCounted,navigation: RefCounted,destinations: Array) -> RefCounted:
+	if not navigation is Navigation or navigation.snapshot().get("base_content_id")!=_device.get("base_content_id"):error="Khador Drive navigation belongs to another content source";return null
+	var choices:={}
+	if not _choices(cat,navigation.snapshot(),destinations,choices):return null
+	var next: RefCounted=fork_for_frame()
+	next._destinations=choices;next._navigation=navigation.fork()
+	return next
 
 static func permits_mission(mission: Dictionary) -> bool:
 	return mission.get("completed",mission.is_empty()) or mission.get("kind",-1) in [-1,0,11,13,171,172,189]
@@ -67,7 +81,8 @@ func quote(station_id: int,energy: int) -> Dictionary:
 		"return_location":_location.duplicate() if mode=="void_entry" else _return_location.duplicate()})
 	return result
 
-func evaluate_request(station_id: int,cargo: RefCounted) -> Dictionary:
+## free: a story jump (80 -> 81 -> 82) that burns no fuel.
+func evaluate_request(station_id: int,cargo: RefCounted,free:=false) -> Dictionary:
 	error=""
 	if not is_instance_of(cargo,load("res://src/simulation/flight_cargo.gd")):return failed("Khador Drive requires the current cargo owner")
 	for key in ["base_content_id","binding_id"]:
@@ -76,6 +91,7 @@ func evaluate_request(station_id: int,cargo: RefCounted) -> Dictionary:
 	if trip.is_empty():return {}
 	var next:=fork_for_frame();var hold: RefCounted=cargo
 	if trip.mode=="local":return failed("Local destinations use ordinary flight")
+	if free:trip.cost=0;trip.affordable=true
 	if trip.affordable:
 		hold=cargo.fork_for_frame()
 		if trip.cost>0 and not hold.consume(Definitions.ENERGY_ITEM,trip.cost):return failed(hold.error)

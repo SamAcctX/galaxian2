@@ -1,6 +1,7 @@
 extends RefCounted
 ## Native generated coordinate patrol. The caller supplies the shared RNG at the
 ## source constructor's route-draw boundary, before any actor updates.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Definitions = preload("res://src/content/npc_route_definitions.gd")
 const OpeningContext = preload("res://src/content/opening_sky_definitions.gd")
 const ArrivalConstruction = preload("res://src/content/arrival_actor_construction_definitions.gd")
@@ -114,7 +115,7 @@ func configure_free_generated(bindings: RefCounted,actor_id: int,context: Dictio
 	var population: Dictionary=bindings.mido_travel.free_population
 	if not load("res://src/content/free_campaign_definitions.gd").supported(bindings,context.get("campaign_cursor")) or not limits.integer(context.get("rank"),0,bindings.opening_handoff.rank_thresholds.size()-1):return reject("Invalid ordinary route context")
 	var difficulty: Variant=context.get("difficulty")
-	if (not difficulty is float and not difficulty is int) or not population.supported_difficulties.any(func(value):return float(value)==float(difficulty)):return reject("Invalid ordinary route difficulty")
+	if (not difficulty is float and not difficulty is int) or not Difficulty.valid(difficulty):return reject("Invalid ordinary route difficulty")
 	if actor_id<0 or actor_id>=rules.maximum_actor_count(bindings,int(context.rank),float(context.difficulty),context):return reject("Unknown ordinary traffic route owner")
 	var data: Dictionary=bindings.opening_actors.get("npc_initialization",{}).get("routes",{})
 	if not Definitions.parameters(data):return reject("Generated NPC routes are unavailable in this pack")
@@ -268,11 +269,23 @@ func configure_kappa_player(bindings: RefCounted) -> bool:
 	_identity.erase("actor_id");_identity.owner="player"
 	return true
 
-func replace_with_contract_path(points: Array,start_index:=0) -> bool:
+func replace_with_contract_path(points: Array,start_index:=0,loop:=false) -> bool:
 	error=""
 	if _identity.is_empty() or _points.is_empty() or _authored or points.is_empty() or start_index<0 or start_index>=points.size():return reject("Generate the ship route before replacing it with a valid mission path")
 	if points.any(func(point):return not point is Vector3 or not point.is_finite()):return reject("The mission path contains an invalid waypoint")
-	_points=points.duplicate();_candidates=[];_index=start_index;_start_index=start_index;_loop=false;_authored=true
+	_points=points.duplicate();_candidates=[];_index=start_index;_start_index=start_index;_loop=loop;_authored=true
+	return true
+
+## A world coordinate path is already authored. Constructing its private copy
+## must not generate a patrol or consume the world's random stream.
+func configure_world_path(bindings: RefCounted,points: Array) -> bool:
+	error=""
+	if bindings==null or points.is_empty() or points.any(func(point):return not point is Vector3 or not point.is_finite()):return reject("A world path requires finite retained coordinates")
+	var data: Dictionary=bindings.opening_actors.get("npc_initialization",{}).get("routes",{})
+	if not Definitions.parameters(data):return reject("World path arrival rules are unavailable")
+	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"owner":"world"}
+	_definition=data.duplicate(true);_points=points.duplicate();_candidates=[]
+	_index=0;_start_index=0;_loop=false;_authored=true
 	return true
 
 func is_at_start() -> bool:return not _points.is_empty() and _index==_start_index

@@ -24,9 +24,13 @@ func verify_arrival(args: PackedStringArray) -> void:
 	for id in [70,71,72,73,74]:
 		var choice:=request.duplicate();choice.destination_station_id=id
 		check(Arrival.packet(bindings,cat,choice).get("station_id")==id,"Supported Magnetar destination was lost")
-	for id in [-1,56,95,96,98,1000]:
+	for id in [-1,56,95,1000]:
 		var choice:=request.duplicate();choice.destination_station_id=id
-		check(Arrival.packet(bindings,cat,choice).is_empty(),"Unavailable or local destination bypassed the gate boundary")
+		check(Arrival.packet(bindings,cat,choice).is_empty(),"Unavailable, unlinked or current destination bypassed the gate boundary")
+	# The gate also flies to another planet of the current system.
+	var local:=request.duplicate();local.destination_station_id=96
+	var local_packet:=Arrival.packet(bindings,cat,local)
+	check(local_packet.get("station_id")==96 and local_packet.get("system_id")==19 and local_packet.get("from_system_id")==19,"Gate travel to another planet in the current system was lost")
 	for change in [{"from_station_id":98},{"destination_station_id":70.5},{"binding_id":"wrong"},{"extra":true}]:
 		var choice:=request.duplicate();choice.merge(change,true)
 		check(Arrival.packet(bindings,cat,choice).is_empty(),"Malformed gate request reached destination construction")

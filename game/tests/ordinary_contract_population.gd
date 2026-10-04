@@ -81,13 +81,13 @@ func verify_delivery(args: PackedStringArray) -> void:
 			check(not Population.new().configure_free(bindings,cat,invalid,1),"Malformed delivery context generated traffic")
 		var missing:=context.duplicate(true);missing.erase("player_position")
 		check(not Population.new().configure_free(bindings,cat,missing,1),"Delivery pirates inferred the player's position")
-		for patch in [{"kind":4},{"kind":15},{"kind":false},{"difficulty":0},{"difficulty":10},{"station_id":58}]:
+		# Kind 4 (Intercept convoy) is now a supported job; mistyped kinds are rejected by the save loader.
+		for patch in [{"kind":15},{"difficulty":0},{"difficulty":10},{"station_id":58}]:
 			var invalid:=context.duplicate(true);invalid.side_mission.merge(patch,true)
 			check(not Population.new().configure_free(bindings,cat,invalid,1),"An unsupported job, difficulty or destination entered delivery construction")
 		check(owner.generate(incoming).is_empty() and owner.snapshot()==actual,"Delivery factory generated twice")
 		if failures>0:return
 	if Delivery.available(bindings):
-		check(Delivery.delivery_mission(bindings,{"kind":0,"difficulty":1,"story":false,"station_id":56})==bindings.mido_travel.has("suttnar_visit"),"Delivery destinations lost their source capability boundary")
 		var travel=preload("res://src/content/mido_travel_definitions.gd")
 		var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
 		for key in Delivery.SPANS:

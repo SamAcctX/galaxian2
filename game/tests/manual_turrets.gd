@@ -87,3 +87,28 @@ func verify(args: PackedStringArray) -> void:
 			tested.append([ship.id,id])
 	check(tested.size()==27,"The base turret/mount matrix is incomplete")
 	print("Manual turret hulls/items: ",tested)
+	verify_collectors(library,bindings,cat,visuals,mounts)
+
+## A plasma collector in the turret slot gives turret view (aim and camera)
+## but fires nothing; its own meshes draw on the mount.
+func verify_collectors(library: RefCounted,bindings: RefCounted,cat: RefCounted,visuals: RefCounted,mounts: RefCounted) -> void:
+	for id in [198,199,200]:
+		var loadout:=Loadout.new()
+		if not loadout.assemble({"ship_id":23,"station_id":10,"equipment":[{"item_id":id,"slot":0,"quantity":1},{"item_id":2,"slot":0,"quantity":1}],"item_category_value_index":3},cat,bindings.base_content_id,bindings.binding_id):check(false,loadout.error);return
+		var owned:=loadout.snapshot();owned.campaign_cursor=142
+		var guns:=Primary.new()
+		if not guns.configure(bindings,cat,mounts,owned):check(false,guns.error);return
+		var turret:=guns.turret_state()
+		check(turret.get("ready",false) and turret.get("collector",false) and turret.item_id==id,"Collector %d gave no turret view"%id)
+		check(guns.snapshot().guns.all(func(gun):return gun.equipment.category!=2),"Collector %d became a gun"%id)
+		var view: RefCounted=guns.fork_state();view.set_turret_active(true);view.advance(400)
+		view.advance_turret(Vector2(0,1),500)
+		check(view.turret_active() and view.turret_state().yaw!=0.0,"Collector %d turret view does not turn"%id)
+		var fired: Dictionary=view.fire(Transform3D.IDENTITY,true)
+		check(not fired.is_empty() and fired.weapons.all(func(row):return not row.result.fired),"Collector %d turret view fired a shot"%id)
+		var geometry:=TurretGeometry.new();root.add_child(geometry)
+		check(geometry.build(view.turret_state(),library,visuals,bindings),"Collector %d model: %s"%[id,geometry.error])
+		if geometry.error.is_empty():
+			check(geometry.view_child!=null and geometry.view_child.visible,"Collector %d nozzle hidden in turret view"%id)
+			check(geometry.present(guns.turret_state()) and not geometry.view_child.visible,"Collector %d nozzle shown outside turret view"%id)
+		geometry.free()

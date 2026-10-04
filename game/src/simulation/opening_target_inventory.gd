@@ -18,6 +18,7 @@ const VoidCrystals=preload("res://src/content/void_crystal_definitions.gd")
 const REQUIRED_EQUIPMENT_TYPE := 33
 var error := ""
 var _state := {}
+var _read := {}
 var _actors := []
 var _scenery := []
 var _selected40_construction: RefCounted
@@ -51,7 +52,7 @@ func configure_selected40(bindings: RefCounted,catalogues: RefCounted,player: Re
 	if not _configure_source(bindings,catalogues,source,construction.snapshot().actors,field,count,data):return false
 	_selected40_construction=construction;_selected40_context=data.context.duplicate(true)
 	_state.selected40_context=_selected40_context.duplicate(true)
-	_state.target_station_id=int(data.station_id);_state.target_system_id=int(data.system_id)
+	_state.target_station_id=int(data.station_id);_state.target_system_id=int(data.system_id);_read={}
 	return true
 
 func matches_selected40(combat: RefCounted,construction: RefCounted,context: Dictionary) -> bool:
@@ -129,9 +130,12 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, player: R
 	if initial.get("campaign_cursor")!=cursor:return reject("Equipped targets require completed world construction")
 	var population:=Population.new()
 	if not population.configure(bindings):return reject(population.error)
-	var count:=population.for_dekato(bindings,story.context,initial.entry_conditions) if story.get("context_key")=="dekato_context" else population.for_departure(source.station_id,initial.entry_conditions,cursor)
+	# A story cast in the alien world (154) flies over the Void's crystal field.
+	var void_world: bool=initial.get("void_context") is Dictionary and source.get("station_id")==-1
+	var selected_void: Dictionary=initial.get("void_context",{}).merged(initial.entry_conditions,true) if void_world else {}
+	var count:=population.for_void_crystals(selected_void) if void_world else population.for_dekato(bindings,story.context,initial.entry_conditions) if story.get("context_key")=="dekato_context" else population.for_departure(source.station_id,initial.entry_conditions,cursor)
 	if count.is_empty():return reject(population.error)
-	return _configure_source(bindings,catalogues,source,initial.npc_construction.actors,field,count,story,initial.entry_conditions.location_match)
+	return _configure_source(bindings,catalogues,source,initial.npc_construction.actors,field,count,story,initial.entry_conditions.location_match,void_world)
 
 func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dictionary, actor_rows: Array, opening_field: Dictionary, count: Dictionary, story: Dictionary={},location_match:=false,ordinary_void:=false) -> bool:
 	if catalogues==null or catalogues.content_id!=bindings.base_content_id or not Vehicle.valid_parameters(bindings.vehicle_response):return reject("Target inventory requires matching equipment type declarations")
@@ -141,8 +145,10 @@ func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dic
 		var values: Variant = catalogues.tables.items[id].arrays[2]
 		if values.size()<=type_index or not Numbers.integer(values[type_index],0,65535):
 			return reject("Opening equipment has no supported source type")
+		# The spectral filter's third group (gas clouds) is built by the gas
+		# clouds owner, so this inventory leaves it out.
 		if int(values[type_index])==REQUIRED_EQUIPMENT_TYPE:
-			return reject("Opening equipment requires an unsupported additional target group")
+			continue
 	for key in ["base_content_id","binding_id"]:
 		if not exact_value(opening_field.get(key),source[key]):return reject("Opening target field has a different identity or location")
 	if ordinary_void:
@@ -199,7 +205,7 @@ func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dic
 		# The native world already validated its cast and assemblies. Target
 		# resources follow those semantic records, not the campaign cursor.
 		var assembled: bool=actor.get("population_group") in ["freighter","capital"]
-		var debris: bool=actor.get("population_group")=="debris"
+		var debris: bool=actor.get("population_group") in ["debris","static"]
 		var root_id:=-1
 		if assembled:
 			var assembly: Variant=actor.get("assembly")
@@ -215,6 +221,7 @@ func _configure_source(bindings: RefCounted, catalogues: RefCounted, source: Dic
 	var canonical := {}
 	for key in ["base_content_id","binding_id","ship_id","slots","equipment_ids"]:canonical[key]=source[key]
 	if source.has("campaign_cursor"):canonical.campaign_cursor=source.campaign_cursor
+	_read={}
 	_state={"base_content_id":source.base_content_id,"binding_id":source.binding_id,
 		"station_id":source.station_id,"system_id":source.system_id,"ship_id":source.ship_id,
 		"equipment_ids":source.equipment_ids.duplicate(),"npc_ids":npc_ids,"scenery_indices":indices,
@@ -231,12 +238,12 @@ func retain_secondary_ammunition(owner: RefCounted) -> bool:
 	if _state.get("equipment_ids")!=_state.loadout.get("equipment_ids"):return reject("Target inventory lost its retained equipment order")
 	var next: Dictionary=owner.reconcile_weapon_loadout(_state.loadout)
 	if next.is_empty():return reject(owner.error)
-	_state.loadout=next;_state.equipment_ids=next.equipment_ids.duplicate()
+	_state.loadout=next;_state.equipment_ids=next.equipment_ids.duplicate();_read={}
 	return true
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
-	copy._state=_state.duplicate(true)
+	copy._state=_state.duplicate(true);copy._read=_read
 	# Construction membership and geometry are immutable after configuration.
 	copy._actors=_actors;copy._scenery=_scenery
 	copy._selected40_construction=_selected40_construction;copy._selected40_context=_selected40_context
@@ -278,11 +285,16 @@ func validate_owners(combat: Dictionary, bodies: Dictionary) -> bool:
 func snapshot() -> Dictionary:
 	return _state.duplicate(true)
 
+## Cached read-only observation for per-frame presentation reads.
+func read_snapshot() -> Dictionary:
+	if _read.is_empty():_read=preload("res://src/simulation/readonly_state.gd").freeze(_state.duplicate(true))
+	return preload("res://src/simulation/read_cache.gd").checked(_read,snapshot,"Target inventory")
+
 func npc_ids() -> Array:
 	return _state.get("npc_ids",[]).duplicate()
 
 func clear() -> void:
-	error="";_state={};_actors=[];_scenery=[];_selected40_construction=null;_selected40_context={}
+	error="";_state={};_read={};_actors=[];_scenery=[];_selected40_construction=null;_selected40_context={}
 
 static func exact_value(left: Variant, right: Variant) -> bool:
 	if typeof(left)!=typeof(right):return false

@@ -9,6 +9,7 @@ const Catalogues=preload("res://src/content/catalogues.gd")
 const Clock=preload("res://src/simulation/frame_clock.gd")
 const Geometry=preload("res://src/presentation/hangar_geometry.gd")
 const Speech=preload("res://src/presentation/station_audio.gd")
+const Ambience=preload("res://src/presentation/station_ambience.gd")
 const Conversations=preload("res://src/content/ordinary_flight_definitions.gd")
 const Locations=preload("res://src/simulation/lounge_cache.gd")
 const LoungeScene=preload("res://src/presentation/lounge_scene.gd")
@@ -25,6 +26,7 @@ var status:="idle"
 var camera: Camera3D
 var geometry: Node3D
 var audio: Node
+var ambience: Node
 var station_name:=""
 var _world: RefCounted
 var _motion: RefCounted
@@ -73,6 +75,7 @@ func configure_return(library: RefCounted, bindings: RefCounted, visuals: RefCou
 	if not cat.open(library):return fail(cat.error)
 	_world=World.new()
 	if not _world.configure_return(bindings,cat,library,flight,location_settings,unix_seconds):return fail(_world.error)
+	_arrived=true
 	if not location_settings.is_empty():_locations=_world.contract_owner().location_owner()
 	if Transit.available(bindings.mido_travel) and _world.contract_story_ready():
 		if not _world.begin_contract_conversation(bindings,cat,library):return fail(_world.error)
@@ -113,6 +116,18 @@ func configure_saved(library: RefCounted,bindings: RefCounted,visuals: RefCounte
 		if not _world.begin_campaign_conversation(bindings,cat,library):return fail(_world.error)
 	return _build_scene(library,bindings,visuals,cat,now_microseconds,camera_seed)
 
+## Other ships parked on the hangar's pads for this docking (Parking).
+func _parked_ships(bindings: RefCounted,row: int,now_microseconds: int) -> Array:
+	var state: Dictionary=_world.snapshot()
+	var random:=RandomNumberGenerator.new();random.seed=hash([int(state.loadout.station_id),now_microseconds])
+	var parked:=[]
+	for entry in Parking.choose(row,int(state.loadout.station_id),int(state.campaign_cursor),state.contracts.get("progress",{}),func(n: int):return random.randi_range(0,n-1)):
+		var ship: Dictionary=bindings.resolve_hangar_ship(int(entry.ship_id))
+		if ship.is_empty():bindings.error="";continue
+		ship.position=Vector3(entry.position)+Vector3(ship.position);ship.rotation_y=float(entry.rotation_y)
+		parked.append(ship)
+	return parked
+
 func _build_scene(library: RefCounted, bindings: RefCounted, visuals: RefCounted, cat: RefCounted, now_microseconds: int, camera_seed: int) -> bool:
 	var before: Dictionary=_world.snapshot()
 	var products: Array=before.get("contracts",{}).get("blueprints",{}).get("products",[]).filter(func(row):return row.station_id==before.loadout.station_id)
@@ -126,6 +141,7 @@ func _build_scene(library: RefCounted, bindings: RefCounted, visuals: RefCounted
 	if view.is_empty():return fail("This station has no supported presentation")
 	selected.ship=bindings.resolve_hangar_ship(int(seed.ship_id))
 	if selected.ship.is_empty():return fail(bindings.error)
+	selected.parked=_parked_ships(bindings,int(selected.row),now_microseconds)
 	geometry=Geometry.new();add_child(geometry)
 	if not geometry.build(selected,library,visuals,bindings):return fail(geometry.error)
 	station_sky=SourceSky.new();add_child(station_sky)
@@ -148,6 +164,8 @@ func _build_scene(library: RefCounted, bindings: RefCounted, visuals: RefCounted
 	if station_planets!=null and not station_planets.apply_view({"pose":camera.global_transform}):return fail(station_planets.error)
 	if not build_lighting(int(seed.station_id)):return false
 	audio=Speech.new();add_child(audio)
+	# Room atmosphere is optional presentation; a missing event leaves the room silent.
+	ambience=Ambience.new();add_child(ambience);ambience.configure(library,bindings)
 	var state: Dictionary=_world.snapshot()
 	var voice_ready: bool=true
 	if not state.dialogue.visible:
@@ -188,6 +206,202 @@ func build_lighting(station_id: int) -> bool:
 	_environment=lighting.environment;_hangar_environment=lighting.environment.environment
 	return true
 
+var _wingman_notice:={}
+
+## Preparing the view and the durable candidate precedes publishing either.
+## An expired roster remains recoverable if the save or portrait cannot load.
+func poll_wingman_farewell(panel: Control,checkpoint: Callable=Callable()) -> bool:
+	if _world==null or not _active or status!="running" or is_paused() or not _dialogue_started or not _wingman_notice.is_empty():return true
+	if _lounge_open or _presentation!=null or _released_presentation!=null or (is_instance_valid(_blueprint_pickup) and _blueprint_pickup.visible):return true
+	var before: Dictionary=_world.snapshot()
+	if before.dialogue.visible or before.get("hangar_open",false) or not before.get("contracts",{}).get("pending_result",{}).is_empty():return true
+	var crew: Dictionary=_world.expired_wingmen()
+	if crew.is_empty():return true
+	if panel==null or _library.strings.size()<=302 or _library.strings[302].is_empty():return reject("The crew farewell is unavailable")
+	if not panel.prepare_contact_notice(_library,_bindings,_visuals,crew.portrait):return reject(panel.error)
+	var candidate: RefCounted=_world.fork()
+	if not candidate.dismiss_expired_wingmen():return reject(candidate.error)
+	var line:={"visible":true,"contact_notice":true,"index":0,"count":1,"previous_available":false,
+		"speaker_id":0,"speaker_name":crew.names[0],"text_id":302,"text":_library.strings[302]}
+	var staged: Dictionary=candidate.snapshot();staged.dialogue=line
+	if not panel.present(staged):return reject(panel.error)
+	if checkpoint.is_valid() and not checkpoint.call(candidate):
+		panel.present(before)
+		return reject("Could not save the crew farewell; the paid roster has been retained")
+	_world=candidate;_wingman_notice=line;_generation+=1
+	return true
+
+const Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
+const Parking=preload("res://src/content/hangar_parking_definitions.gd")
+const Fee=preload("res://src/content/docking_fee_definitions.gd")
+const MedalNotices=preload("res://src/content/medal_notices_definitions.gd")
+const ValkyrieWorlds=preload("res://src/content/valkyrie_world_definitions.gd")
+const DialogueCues=preload("res://src/content/dialogue_cue_definitions.gd")
+## Medal announcements already shown in this game run (as in the original).
+static var _medal_notices_shown:={}
+var _kaamo:={}
+var _kaamo_checked:=false
+## A docking straight from flight (not a Resume): the only time a fee is asked.
+var _arrived:=false
+## Set when a docking talk sends the ship away (an unmanned station).
+var _forced_departure:=false
+
+## The Kaamo Club speaks once per docking, like the crew farewell: its talk,
+## the "not ready" notice or the Yes/No purchase offer.
+func poll_kaamo(panel: Control,checkpoint: Callable=Callable()) -> bool:
+	if _kaamo_checked or _world==null or not _active or status!="running" or is_paused() or not _dialogue_started or not _wingman_notice.is_empty():return true
+	if _lounge_open or _presentation!=null or _released_presentation!=null or (is_instance_valid(_blueprint_pickup) and _blueprint_pickup.visible):return true
+	var before: Dictionary=_world.snapshot()
+	if before.dialogue.visible or before.get("hangar_open",false) or not before.has("contracts") or not before.contracts.get("pending_result",{}).is_empty():return true
+	_kaamo_checked=true
+	var event:=Kaamo.docking_event(int(before.loadout.station_id),before.contracts.get("progress",{}),int(before.contracts.get("credits",0)),before.cargo.get("entries",[]))
+	var StoryFlights=load("res://src/content/valkyrie_flight_definitions.gd")
+	if event.is_empty() and StoryFlights.pirate_base_thanks_pending(before.contracts.get("progress",{})):
+		var base: Dictionary=StoryFlights.PIRATE_BASE
+		var paid: RefCounted=_world.fork()
+		if not paid.collect_pirate_base_thanks(int(base.thanks_pending),int(base.reward)):return reject(paid.error)
+		if checkpoint.is_valid() and not checkpoint.call(paid):return reject("Could not save the pirate-base reward")
+		if not _start_kaamo(panel,[[int(StoryFlights.UNMANNED_STATION.speaker_id),int(base.thanks[0]),int(base.thanks[1])]],false):return false
+		_world=paid;_generation+=1
+		return true
+	if event.is_empty() and StoryFlights.unmanned_station(_bindings,int(before.loadout.station_id),before.contracts.get("progress",{})):
+		var line: Dictionary=StoryFlights.UNMANNED_STATION
+		if not _start_kaamo(panel,[[int(line.speaker_id),int(line.text_id),int(line.voice_event_id)]],false):return false
+		_kaamo.depart=true
+		return true
+	if event.is_empty():
+		var fee:=_docking_fee(before)
+		if not fee.is_empty():
+			if not _start_kaamo(panel,[[Fee.SPEAKER,int(fee.text_id),-1]],true,{"#C":_money(int(fee.amount))}):return false
+			_kaamo.fee=int(fee.amount)
+			return true
+		# Docking notices wait until every "New medal!" window is closed.
+		if not before.contracts.get("medal_notices",[]).is_empty():
+			_kaamo_checked=false
+			return true
+		# Supernova 148: a broker's bar talk plays once, like the Kalun Amir
+		# talk on docking (no story move).
+		var Campaign=load("res://src/content/valkyrie_campaign_definitions.gd")
+		var bar: Array=Campaign.bar_flavor_pages(before.contracts.get("progress",{}),int(before.contracts.get("campaign_cursor",-1)),int(before.loadout.station_id))
+		if not bar.is_empty():
+			var heard: RefCounted=_world.fork()
+			if not heard.hear_bar_flavor():return reject(heard.error)
+			if checkpoint.is_valid() and not checkpoint.call(heard):return reject("Could not save the bar talk")
+			if not _start_kaamo(panel,bar,false):return false
+			_world=heard;_generation+=1
+			return true
+		# New Most Wanted criminals on this arrival; like the original, this
+		# docking then shows no other notice.
+		var news: Dictionary=ValkyrieWorlds.wanted_news(before.contracts.get("progress",{})) if _arrived else {}
+		if not news.is_empty():
+			return _start_kaamo(panel,[[MedalNotices.SPEAKER,int(news.text_id),-1]],false,{"#N":str(news.count)})
+		var cat:=Catalogues.new()
+		var wanted: Dictionary=ValkyrieWorlds.wanted_ship_notice(before.contracts.get("progress",{}),cat.tables.get("wanted",[]),_medal_notices_shown) if cat.open(_library) else {}
+		if not wanted.is_empty():
+			var tokens:={"#WANTED_NAME":wanted.name,"#SHIP_NAME":String(_library.strings[int(wanted.ship_text_id)])}
+			if not _start_kaamo(panel,[[MedalNotices.SPEAKER,int(wanted.text_id),-1]],false,tokens):return false
+			_medal_notices_shown[wanted.key]=true
+			return true
+		var notice:=MedalNotices.next(before.contracts,_medal_notices_shown)
+		if not notice.is_empty():
+			var rewarded: RefCounted=_world
+			if notice.has("blueprint"):
+				rewarded=_world.fork()
+				if not rewarded.unlock_medal_blueprint(int(notice.blueprint)):return reject(rewarded.error)
+				if checkpoint.is_valid() and not checkpoint.call(rewarded):return reject("Could not save the medal reward")
+			if not _start_kaamo(panel,[[MedalNotices.SPEAKER,int(notice.text_id),-1]],false):return false
+			_medal_notices_shown[int(notice.text_id)]=true;_world=rewarded;_generation+=1
+			return true
+	if event.is_empty():return true
+	var candidate: RefCounted=_world.fork()
+	if event=="talk":
+		if not candidate.advance_kaamo(false):return reject(candidate.error)
+		if checkpoint.is_valid() and not checkpoint.call(candidate):return reject("Could not save the Kaamo Club visit")
+	var pages: Array=Kaamo.FIRST_TALK if event=="talk" else [[16,Kaamo.OFFER_TEXT if event=="offer" else Kaamo.NOT_READY_TEXT,-1]]
+	if not _start_kaamo(panel,pages,event=="offer"):return false
+	_world=candidate;_generation+=1
+	return true
+
+## True once, after an unmanned station's notice closes: launch at once.
+func take_forced_departure() -> bool:
+	var pending:=_forced_departure;_forced_departure=false
+	return pending
+
+## The unwelcome-pilot fee for this docking, or {} (docking_fee_definitions).
+func _docking_fee(state: Dictionary) -> Dictionary:
+	# Resume and dockings that opened with a story conversation are not charged.
+	if not _arrived or int(state.get("dialogue",{}).get("count",0))>0:return {}
+	var station:=int(state.loadout.station_id)
+	var cat:=Catalogues.new()
+	if not cat.open(_library) or station<0 or station>=cat.tables.stations.size():return {}
+	var system:=int(cat.tables.stations[station].system_id)
+	var race:=int(cat.tables.systems[system].fields[Fee.SYSTEM_RACE_FIELD])
+	var attacked: bool=state.get("station_response_flags",{}).get(station,false)
+	return Fee.quote(station,system,race,int(state.contracts.get("campaign_cursor",-1)),state.contracts,attacked,randi_range(0,199))
+
+func _money(value: int) -> String:return str(value)+"$"
+
+func _start_kaamo(panel: Control,pages: Array,offer: bool,tokens: Dictionary={}) -> bool:
+	var events:=[];var speakers:=[]
+	for page in pages:
+		events.append({"speaker_id":page[0],"text_id":page[1],"voice_event_id":page[2]})
+		if not speakers.has(page[0]):speakers.append(page[0])
+	var resolver=load("res://src/content/dialogue_lines.gd").new()
+	var lines: Array=resolver.read(_bindings,_library,events)
+	if lines.size()!=events.size():return reject(resolver.error)
+	for line in lines:
+		for token in tokens:
+			for key in ["text","desktop_text"]:line[key]=str(line.get(key,"")).replace(token,tokens[token])
+	if panel==null or not panel.prepare_speakers(_library,_bindings,_visuals,speakers):return reject("The Kaamo Club talk is unavailable: "+("" if panel==null else panel.error))
+	var speech:=Speech.new();add_child(speech)
+	if not speech.configure_events(_library,_bindings,events):
+		var problem: String=speech.error;speech.free();return reject(problem)
+	audio.adopt_conversation(speech);speech.free()
+	_kaamo={"lines":lines,"index":0,"offer":offer}
+	return _show_kaamo(panel)
+
+func _show_kaamo(panel: Control) -> bool:
+	var index:=int(_kaamo.index)
+	var line: Dictionary=_kaamo.lines[index].duplicate(true)
+	line.merge({"visible":true,"index":index,"count":_kaamo.lines.size(),"previous_available":index>0 or _kaamo.offer})
+	if _kaamo.offer:line.yes_text=_library.strings[Kaamo.YES_TEXT];line.no_text=_library.strings[Kaamo.NO_TEXT]
+	_wingman_notice=line;_generation+=1
+	if not panel.present(snapshot()):return reject(panel.error)
+	audio.present_mission(line)
+	return true
+
+func _navigate_kaamo(action: String,panel: Control,checkpoint: Callable) -> bool:
+	if _kaamo.has("fee"):
+		var amount:=int(_kaamo.fee)
+		if action=="next" and int(_world.snapshot().contracts.credits)>=amount:
+			var paid: RefCounted=_world.fork()
+			if not paid.pay_docking_fee(amount):return reject(paid.error)
+			if checkpoint.is_valid() and not checkpoint.call(paid):return reject("Could not save the docking fee")
+			_world=paid;_kaamo={}
+		elif action=="next":
+			var missing:=amount-int(_world.snapshot().contracts.credits)
+			if not _start_kaamo(panel,[[Fee.SPEAKER,Fee.SHORT_TEXT,-1]],false,{"#C":_money(missing)}):return false
+			_kaamo.depart=true;return true
+		else:
+			_kaamo={};_forced_departure=true
+	elif _kaamo.offer:
+		if action=="next":
+			var candidate: RefCounted=_world.fork()
+			if not candidate.advance_kaamo(true):return reject(candidate.error)
+			if checkpoint.is_valid() and not checkpoint.call(candidate):return reject("Could not save the Kaamo Club purchase")
+			_world=candidate
+			return _start_kaamo(panel,Kaamo.FAREWELL_TALK+[[16,Kaamo.OWNED_TEXT,-1]],false)
+		_kaamo={}
+	elif action=="previous":
+		if int(_kaamo.index)==0:return reject("No previous line")
+		_kaamo.index-=1;return _show_kaamo(panel)
+	elif int(_kaamo.index)<_kaamo.lines.size()-1:
+		_kaamo.index+=1;return _show_kaamo(panel)
+	else:
+		_forced_departure=_kaamo.get("depart",false);_kaamo={}
+	_wingman_notice={};_generation+=1;audio.present(-1)
+	return true if panel.present(snapshot()) else reject(panel.error)
+
 func activate() -> bool:
 	if status!="running" or _active:return reject("Station scene cannot be activated")
 	_active=true;camera.make_current()
@@ -199,9 +413,10 @@ func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false) ->
 	var clock: RefCounted=_clock.fork_for_frame()
 	var world_state: Dictionary=_world.snapshot()
 	var result_open: bool=not world_state.get("contracts",{}).get("pending_result",{}).is_empty()
-	var milliseconds:=roundi(clock.sample(now_microseconds,is_paused() or result_open)*1000)
+	var milliseconds:=roundi(clock.sample(now_microseconds,is_paused() or result_open or not _wingman_notice.is_empty())*1000)
 	if not clock.error.is_empty():return reject(clock.error)
-	if is_paused() or result_open:_clock=clock;return true
+	if ambience!=null:ambience.advance("" if _cue_text_id>=0 else "hangar" if world_state.get("hangar_open",false) else "lounge" if _lounge_open else "main",milliseconds)
+	if is_paused() or result_open or not _wingman_notice.is_empty():_clock=clock;return true
 	if _released_presentation!=null and not _released_presentation.advance_release(milliseconds):
 		_released_presentation.free();_released_presentation=null
 	if _presentation!=null:
@@ -229,12 +444,28 @@ func step(now_microseconds: int, commands:=Vector2.ZERO, fire_primary:=false) ->
 	_motion=motion;_clock=clock;_generation+=1
 	_story_elapsed_ms=mini(2147483647,_story_elapsed_ms+milliseconds)
 	if not _dialogue_started and state.elapsed_ms>=_dialogue_delay_ms:
-		_dialogue_started=true;audio.present(0)
+		_dialogue_started=true;audio.present(0);_dialogue_cue(_world.snapshot())
 	return true
+
+## A page with a sound cue (dialogue_cue_definitions.gd) silences the station
+## and starts the cue's music and sound once.
+var _cue_text_id:=-1
+func _dialogue_cue(state: Dictionary) -> void:
+	var dialogue: Dictionary=state.get("dialogue",{})
+	var text_id:=int(dialogue.get("text_id",-1)) if dialogue.get("visible",false) else -1
+	var cue: Dictionary=DialogueCues.cue(text_id)
+	if cue.is_empty() or _cue_text_id==text_id:return
+	_cue_text_id=text_id
+	if not audio.play_cue(_library,_bindings,cue):push_warning(audio.error)
 
 func navigate(action: String, panel: Control, checkpoint: Callable=Callable()) -> bool:
 	error=""
 	if status!="running" or not _active or not _dialogue_started or is_paused() or action not in ["next","previous"] or panel==null:return reject("Station conversation is inactive")
+	if not _kaamo.is_empty():return _navigate_kaamo(action,panel,checkpoint)
+	if not _wingman_notice.is_empty():
+		if action!="next":return reject("The crew farewell has no previous line")
+		_wingman_notice={};_generation+=1
+		return true if panel.present(snapshot()) else reject(panel.error)
 	var candidate: RefCounted=_world.fork()
 	if not (candidate.acknowledge() if action=="next" else candidate.previous()):return reject(candidate.error)
 	if candidate.snapshot().get("phase")=="contracts_required" and _locations!=null:
@@ -264,7 +495,7 @@ func navigate(action: String, panel: Control, checkpoint: Callable=Callable()) -
 		view.skip_requested.connect(skip_presentation);view.activate()
 	if staged.phase=="free_play_required":_story_elapsed_ms=0
 	if staged.get("boundary")=="station_reload_required":status="station_reload_required"
-	audio.present(voice_line)
+	audio.present(voice_line);_dialogue_cue(staged)
 	return true
 
 func presentation_active() -> bool:return _presentation!=null
@@ -292,7 +523,7 @@ func complete_presentation(panel: Control,checkpoint: Callable=Callable()) -> bo
 
 func prepare_departure(bindings: RefCounted, catalogues: RefCounted) -> Dictionary:
 	error=""
-	if status!="running" or not _active or not _dialogue_started or is_paused():
+	if status!="running" or not _active or not _dialogue_started or is_paused() or not _wingman_notice.is_empty():
 		reject("Station departure is inactive");return {}
 	var packet: Dictionary=_world.prepare_contract_departure(bindings,catalogues) if _world.snapshot().campaign_cursor in [13,14] else _world.prepare_departure(bindings,catalogues)
 	if packet.is_empty():reject(_world.error)
@@ -303,13 +534,13 @@ func prepare_departure(bindings: RefCounted, catalogues: RefCounted) -> Dictiona
 	return packet
 
 func contract_story_ready() -> bool:
-	return _world!=null and Transit.available(_bindings.mido_travel) and not _lounge_open and _world.contract_story_ready()
+	return _world!=null and _wingman_notice.is_empty() and Transit.available(_bindings.mido_travel) and not _lounge_open and _world.contract_story_ready()
 
 func begin_contract_story(panel: Control) -> bool:
 	return _begin_station_story(panel,false)
 
 func campaign_story_ready() -> bool:
-	return _world!=null and not _lounge_open and _presentation==null and _world.campaign_conversation_ready(_bindings,_catalogues,_library,_story_elapsed_ms)
+	return _world!=null and _wingman_notice.is_empty() and not _lounge_open and _presentation==null and _world.campaign_conversation_ready(_bindings,_catalogues,_library,_story_elapsed_ms)
 
 func begin_campaign_story(panel: Control) -> bool:
 	return _begin_station_story(panel,true)
@@ -327,19 +558,32 @@ func _begin_station_story(panel: Control,campaign: bool) -> bool:
 	_world=candidate;_dialogue_started=false;_generation+=1
 	return true
 
-func contract_action(action: String,id: int,panel: Control) -> bool:
+func contract_action(action: String,id: int,panel: Control,checkpoint: Callable=Callable()) -> bool:
 	error=""
-	if status!="running" or not _active or is_paused() or _world.contract_owner()==null or (_world.snapshot().get("hangar_open",false) and action!="result_close"):return reject("The space lounge is unavailable")
+	if status!="running" or not _active or is_paused() or not _wingman_notice.is_empty() or _world.contract_owner()==null or (_world.snapshot().get("hangar_open",false) and action!="result_close"):return reject("The space lounge is unavailable")
 	var candidate: RefCounted=_world.fork();var opened:=_lounge_open
 	match action:
 		"open":
 			if candidate.snapshot().dialogue.visible:return reject("Acknowledge the story before opening the lounge")
+			if not opened and not candidate.begin_lounge_visit(_bindings):return reject(candidate.error)
 			opened=true
 		"close":opened=false
 		"select":
-			if not opened or not candidate.inspect_contract_contact(id,_bindings):return reject(candidate.error)
+			if not opened or not candidate.inspect_contract_contact(id,_bindings,_library):return reject(candidate.error)
 		"buy_goods":
 			if not opened or not candidate.purchase_lounge_goods(id,_bindings):return reject(candidate.error)
+		"buy_kaamo":
+			if not opened or not candidate.purchase_kaamo(id,_bindings):return reject(candidate.error)
+		"buy_coordinates":
+			if not opened or not candidate.purchase_lounge_coordinates(id,_bindings):return reject(candidate.error)
+		"buy_blueprint":
+			if not opened or not candidate.purchase_lounge_blueprint(id,_bindings):return reject(candidate.error)
+		"buy_diplomat":
+			if not opened or not candidate.purchase_lounge_diplomat(id,_bindings):return reject(candidate.error)
+		"hire_wingmen":
+			if not opened or not candidate.hire_lounge_wingmen(id,_bindings):return reject(candidate.error)
+		"decline":
+			if not opened or not candidate.decline_contract(id,_bindings):return reject(candidate.error)
 		"accept","replace":
 			if not opened or not candidate.accept_contract(id,action=="replace",_bindings):return reject(candidate.error)
 		"result_close":
@@ -355,6 +599,13 @@ func contract_action(action: String,id: int,panel: Control) -> bool:
 	if panel!=null and not panel.present(staged):
 		if prepared!=null:prepared.free()
 		return reject(panel.error)
+	if action in ["buy_coordinates","buy_blueprint","buy_diplomat","hire_wingmen","buy_kaamo"] and checkpoint.is_valid() and not checkpoint.call(candidate):
+		if prepared!=null:prepared.free()
+		if panel!=null:
+			var previous: Dictionary=_world.snapshot();previous.lounge_open=_lounge_open
+			previous.contract_previews=_contract_previews(_world,_lounge_open)
+			panel.present(previous)
+		return reject("The lounge purchase could not be saved; no credits were spent")
 	if prepared!=null:lounge_scene=prepared
 	_world=candidate;_lounge_open=opened;_generation+=1
 	if lounge_scene!=null:
@@ -379,9 +630,28 @@ func _contract_previews(owner: RefCounted,opened: bool) -> Dictionary:
 		if contact.has("trade"):
 			result[contact.contact_id]=owner.merchant_preview(contact.contact_id,_bindings)
 			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
+		elif contact.has("kaamo"):
+			result[contact.contact_id]=owner.kaamo_preview(contact.contact_id,_bindings)
+			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
+		elif contact.get("role")==4 and contact.has("service"):
+			result[contact.contact_id]=owner.coordinate_preview(contact.contact_id,_bindings)
+			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
+		elif contact.get("role")==3 and contact.has("blueprint"):
+			result[contact.contact_id]=owner.blueprint_preview(contact.contact_id,_bindings)
+			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
+		elif contact.get("role")==6:
+			result[contact.contact_id]=owner.wingman_preview(contact.contact_id,_bindings)
+			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
+		elif contact.get("role")==7:
+			result[contact.contact_id]=owner.diplomat_preview(contact.contact_id,_bindings)
+			if result[contact.contact_id].is_empty():result[contact.contact_id]={"can_accept":false,"unsupported_reason":owner.error}
 	var requests:={}
 	for place in career.get("lounges",{}).get("locations",[]):
-		if place.station_id==career.station_id:requests=place.get("requested_offers",{});break
+		if place.station_id!=career.station_id:continue
+		requests=place.get("requested_offers",{})
+		for id in place.get("dialogues",{}):
+			result[id]={"kind":"social","dialogue":place.dialogues[id],"can_accept":false}
+		break
 	for id in career.get("offers",{}):
 		if not career.offers[id].consumed:
 			result[id]=owner.contract_preview(id,_bindings)
@@ -400,7 +670,7 @@ func location_owner() -> RefCounted:
 
 func equipment_action(action: String, item_id: int, library: RefCounted, bindings: RefCounted, panel: Control, hangar: Control, unix_seconds: Variant=null, slot_index: int=-1,quantity: int=1) -> bool:
 	error=""
-	if status!="running" or not _active or not _dialogue_started or is_paused() or _lounge_open or panel==null or hangar==null:return reject("Equipment controls are inactive")
+	if status!="running" or not _active or not _dialogue_started or is_paused() or _lounge_open or not _wingman_notice.is_empty() or panel==null or hangar==null:return reject("Equipment controls are inactive")
 	var candidate: RefCounted=_world.fork()
 	if action=="open":
 		var cat:=Catalogues.new()
@@ -442,12 +712,14 @@ func equipment_action(action: String, item_id: int, library: RefCounted, binding
 	return true
 
 func set_pause(reason: String, paused: bool, now_microseconds: int) -> bool:
-	if _clock==null or reason not in ["user","focus","hidden","map"] or now_microseconds<0:return reject("Invalid station pause")
+	if _clock==null or reason not in ["user","focus","hidden","map","status","missions"] or now_microseconds<0:return reject("Invalid station pause")
 	if _pauses.has(reason)==paused:return true
 	if not _clock.rebase(now_microseconds):return reject(_clock.error)
 	if paused:_pauses[reason]=true
 	else:_pauses.erase(reason)
 	if audio!=null:audio.set_paused(is_paused())
+	# Station menus (map, status, missions) keep the room atmosphere running.
+	if ambience!=null:ambience.set_paused(_pauses.has("user") or _pauses.has("focus") or _pauses.has("hidden"))
 	if _presentation_view!=null:_presentation_view.set_paused(is_paused())
 	if _released_presentation!=null:_released_presentation.set_paused(is_paused())
 	return true
@@ -456,6 +728,11 @@ func rebase_time(now_microseconds: int) -> bool:
 	if _clock==null:return reject("Station clock is unavailable")
 	return _clock.rebase(now_microseconds)
 func station_owner() -> RefCounted:return null if _world==null else _world.fork()
+## Difficulty is retained by the station until contracts take ownership.
+func retain_difficulty(value: Variant) -> bool:
+	if _world==null:return reject("The station has no world")
+	return true if _world.retain_difficulty(value) else reject(_world.error)
+func career_difficulty() -> float:return 0.5 if _world==null else _world.career_difficulty()
 func retain_locations(locations: RefCounted) -> bool:
 	error=""
 	if _world==null or _active or not locations is Locations:return reject("Attach retained locations before activating the station")
@@ -475,6 +752,8 @@ func snapshot() -> Dictionary:
 	state.camera=_motion.snapshot();state.generation=_generation
 	state.conversation_started=_dialogue_started
 	state.dialogue.visible=state.dialogue.visible and _dialogue_started
+	if not _wingman_notice.is_empty():
+		state.dialogue=_wingman_notice.duplicate(true);state.wingman_notice=true;state.phase="conversation"
 	if _presentation!=null:state.presentation=_presentation.snapshot()
 	var locations: Dictionary=_world.contract_locations_snapshot() if _world.has_contracts() else ({} if _locations==null else _locations.snapshot())
 	if not locations.is_empty():state.locations=locations
@@ -493,6 +772,7 @@ func clear() -> void:
 	_visuals=null;lounge_scene=null;station_sky=null;station_planets=null;_environment=null;_hangar_environment=null;_hangar_lights=[]
 	lighting=null;reflection=null
 	_story_elapsed_ms=0
+	_wingman_notice={};_kaamo={};_kaamo_checked=false;_forced_departure=false;_arrived=false;_cue_text_id=-1
 
 func _clear_presentations() -> void:
 	if is_instance_valid(_blueprint_pickup):_blueprint_pickup.free()

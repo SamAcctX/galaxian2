@@ -3,10 +3,14 @@ extends Node
 const Resources=preload("res://src/content/audio_resources.gd")
 const Streams=preload("res://src/presentation/audio_stream_control.gd")
 const EVENT_ID=145
+## Leaving the menu fades its music out, as the original's music hand-over does.
+const FADE_OUT_MS:=800
 var error:=""
 var player: Node
 var _active:=false
 var _focused:=true
+var _volume_db:=0.0
+var _fade: Tween
 
 func _ready() -> void:_focused=get_window().has_focus()
 
@@ -16,16 +20,21 @@ func configure(library: RefCounted,bindings: RefCounted) -> bool:
 	var clip: Dictionary=resources.prepare(EVENT_ID)
 	if clip.has("unsupported") or not clip.get("stream") is AudioStream or clip.get("voice",false) or clip.get("spatial",true) or not clip.get("looping",false):
 		error="The original menu music is unavailable: "+str(clip.get("unsupported","unsupported event shape"));return false
-	var candidate:=Streams.player(clip.stream,false,"Music");candidate.volume_db=linear_to_db(clip.gain)
+	var candidate:=Streams.player(clip.stream,false,"Music");_volume_db=linear_to_db(clip.gain);candidate.volume_db=_volume_db
 	if player!=null:player.free()
 	player=candidate;add_child(player);error="";return true
 
 func set_active(value: bool) -> void:
 	_active=value
 	if player==null:return
+	if _fade!=null:_fade.kill();_fade=null
 	if value:
+		player.volume_db=_volume_db
 		if not player.playing:player.play()
 		player.stream_paused=not _focused
+	elif player.playing and player.is_inside_tree():
+		_fade=create_tween();_fade.tween_property(player,"volume_db",-80.0,FADE_OUT_MS/1000.0)
+		_fade.tween_callback(player.stop)
 	else:player.stop()
 
 func _notification(what: int) -> void:

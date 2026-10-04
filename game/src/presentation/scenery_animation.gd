@@ -4,6 +4,7 @@ extends RefCounted
 const Keys = preload("res://src/content/scenery_animation_keys.gd")
 const Resources = preload("res://src/content/scenery_effect_resources.gd")
 const Rotation = preload("res://src/presentation/scenery_animation_rotation.gd")
+const Readonly = preload("res://src/simulation/readonly_state.gd")
 var error := ""
 var _tables: Array = []
 var _pivots: Array[Vector3] = []
@@ -24,6 +25,14 @@ func configure(surfaces: Variant, allow_static:=false) -> bool:
 	var prepared := compiler.prepare(surfaces,allow_static)
 	if prepared.is_empty():error=compiler.error;return false
 	_tables=prepared.surfaces;_range=timing
+	# Key rotations are fixed; convert each to its quaternion once.
+	for table in _tables:
+		var rotations:=[]
+		for key in table.times.size():
+			var components:=Rotation.from_angles(vector_at(table.values,key*Keys.WIDTH+3))
+			if components.is_empty():error="Scenery rotation angles must be finite";_tables=[];_range={};return false
+			rotations.append(components)
+		table.rotations=rotations
 	for surface in surfaces:
 		_pivots.append(convert_axis(surface.pivot))
 		_state.append({"basis":Basis.IDENTITY,"translation":Vector3.ZERO,"color_byte":255})
@@ -39,8 +48,9 @@ func sample(time_ms: Variant, parent: Transform3D) -> Dictionary:
 	if not parent.is_finite():return reject("Scenery animation parent must be finite")
 	# Inactive effect slots keep the same retained time for many frames. Reuse
 	# that exact sample, including its first-key/rewind state, until inputs change.
-	if time_ms==_sample_time and parent==_sample_parent:return _sample_result.duplicate(true)
-	var next := _state.duplicate(true)
+	if time_ms==_sample_time and parent==_sample_parent:return _sample_result
+	# Rows are frozen and shared with forks; a sampled row is replaced, not edited.
+	var next := _state.duplicate()
 	var output := []
 	for surface in _tables.size():
 		var table: Dictionary=_tables[surface]
@@ -52,7 +62,8 @@ func sample(time_ms: Variant, parent: Transform3D) -> Dictionary:
 		var index := lower_bound(times,at)
 		# The first-record branch changes only source UV state. It leaves the
 		# geometry matrix and packed color intact, including after a rewind.
-		if index>0 and not update_row(next[surface],table.values,index,Keys.ratio(at-times[index-1],times[index]-times[index-1])):
+		if index>0:next[surface]=next[surface].duplicate()
+		if index>0 and not update_row(next[surface],table,index,Keys.ratio(at-times[index-1],times[index]-times[index-1])):
 			return {}
 		var row: Dictionary=next[surface]
 		# Many authored layers animate only color, or retain their pose between
@@ -60,20 +71,23 @@ func sample(time_ms: Variant, parent: Transform3D) -> Dictionary:
 		if parent==_sample_parent and not _sample_result.is_empty() and row.basis==_state[surface].basis and row.translation==_state[surface].translation:
 			output.append({"animated":true,"pose":_sample_result.surfaces[surface].pose,"color_byte":row.color_byte})
 			continue
-		var world := multiply(parent,Transform3D(Basis.IDENTITY,row.translation))
-		world=multiply(world,Transform3D(Basis.IDENTITY,_pivots[surface]))
-		world=multiply(world,Transform3D(row.basis,Vector3.ZERO))
-		world=multiply(world,Transform3D(Basis.IDENTITY,-_pivots[surface]))
+		# Parent, translation, then the layer basis about its pivot.
+		var pivot: Vector3=_pivots[surface]
+		var world := parent*Transform3D(row.basis,row.translation+pivot-row.basis*pivot)
 		if not world.is_finite():return reject("Scenery animation world transform exceeds source precision")
 		output.append({"animated":true,"pose":world,"color_byte":row.color_byte})
-	_state=next
-	_sample_time=time_ms;_sample_parent=parent;_sample_result={"surfaces":output}
-	return _sample_result.duplicate(true)
+	_state=Readonly.freeze(next)
+	# Samples are read-only; callers copy one before editing it.
+	_sample_time=time_ms;_sample_parent=parent;_sample_result=Readonly.freeze({"surfaces":output})
+	return _sample_result
 
-func update_row(row: Dictionary, values: PackedFloat32Array, index: int, weight: float) -> bool:
+func update_row(row: Dictionary, table: Dictionary, index: int, weight: float) -> bool:
+	var values: PackedFloat32Array=table.values
 	var a := (index-1)*Keys.WIDTH
 	var b := index*Keys.WIDTH
-	var rotation := Rotation.sample(vector_at(values,a+3),vector_at(values,b+3),weight)
+	var mixed:=Rotation.blend(table.rotations[index-1],table.rotations[index],weight)
+	if mixed.is_empty():error="Scenery rotation blend is singular or exceeds source precision";return false
+	var rotation:=Rotation.to_basis(mixed)
 	if rotation.has("error"):error=rotation.error;return false
 	var basis: Basis=rotation.basis
 	basis=Basis(convert_axis(basis.x),convert_axis(basis.z),-convert_axis(basis.y))
@@ -93,6 +107,12 @@ func update_row(row: Dictionary, values: PackedFloat32Array, index: int, weight:
 	row.color_byte=int(color)&255
 	return true
 
+func time_range() -> Dictionary:return _range
+
+## True when the last sample was taken at this time with an identity parent.
+func sampled_at(time_ms: int) -> bool:
+	return time_ms==_sample_time and _sample_parent==Transform3D.IDENTITY and not _sample_result.is_empty()
+
 func snapshot() -> Dictionary:
 	return {} if _tables.is_empty() else {"range":_range.duplicate(),"surfaces":_state.duplicate(true)}
 
@@ -100,7 +120,7 @@ func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	# Compiled tables and pivots are private and immutable after configuration.
 	copy._tables=_tables;copy._pivots=_pivots
-	copy._state=_state.duplicate(true);copy._range=_range.duplicate()
+	copy._state=_state;copy._range=_range.duplicate()
 	copy._sample_time=_sample_time;copy._sample_parent=_sample_parent;copy._sample_result=_sample_result
 	return copy
 
@@ -119,20 +139,8 @@ static func vector_at(values: PackedFloat32Array, start: int) -> Vector3:
 	return Vector3(values[start],values[start+1],values[start+2])
 
 static func multiply(left: Transform3D, right: Transform3D) -> Transform3D:
-	# Explicit float32 products and sums preserve the source affine contract,
-	# including the four successive pivot/parent products used when drawing.
-	# Vector2(x,0).x is the same binary32 rounding as Keys.single(), inline.
-	var result := Transform3D()
-	for row in 3:
-		for column in 4:
-			var value := 0.0
-			for term in 3:
-				var component: float=right.basis[column][term] if column<3 else right.origin[term]
-				var product:=Vector2(left.basis[term][row]*component,0.0).x
-				value=product if term==0 else Vector2(value+product,0.0).x
-			if column<3:result.basis[column][row]=value
-			else:result.origin[row]=Vector2(value+left.origin[row],0.0).x
-	return result
+	# Native products; binary32 rounding of each step is not visible on screen.
+	return left*right
 
 func reject(message: String) -> Dictionary:
 	error=message;return {}

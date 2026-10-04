@@ -27,8 +27,10 @@ func prepare(bindings: RefCounted,cat: RefCounted,library: RefCounted,flight: Re
 	var career: RefCounted=flight.contract_owner()
 	if career==null or not career.enter_mission_station(bindings,cat,library,next,equipment,settings,unix_seconds):return reject("Station continuation career: "+("missing" if career==null else career.error))
 	var original: Dictionary=flight.contract_owner().snapshot();var retained: Dictionary=career.snapshot()
-	for key in ["mission","accepted_contact","passengers","credits","active_offer_id","result_serial","completed_side_missions","pending_result","last_result","blueprints","progress","travel_statistics","delivery_statistics"]:
+	for key in ["mission","accepted_contact","passengers","credits","active_offer_id","result_serial","completed_side_missions","pending_result","last_result","blueprints","progress","delivery_statistics"]:
 		if original.get(key)!=retained.get(key):return reject("Station continuation changed independent career state: "+key)
+	# Docking records the visited station/system; nothing else in travel changes.
+	if original.get("travel_statistics",{}).get("jumpgates_used")!=retained.get("travel_statistics",{}).get("jumpgates_used"):return reject("Station continuation changed independent career state: travel_statistics")
 	if not next.matches_departure(flight):return reject("The pending station source changed during preparation")
 	_source=next._source;_identity=next._identity;_before=next._before;_context=context
 	_equipment=equipment;_career=career

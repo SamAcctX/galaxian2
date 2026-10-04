@@ -152,7 +152,8 @@ func build_departure(library: RefCounted, visuals: RefCounted, bindings: RefCoun
 
 func _assemble(library: RefCounted, visuals: RefCounted, bindings: RefCounted, selected: Dictionary, state: Dictionary, quality: String, with_detail: bool, cursor: int) -> bool:
 	var paths := []
-	var player_glow: bool=with_detail and bindings.source_architecture=="x86_64" and preload("res://src/simulation/mission_context.gd").base_player_hull(bindings,selected.player.ship_id)
+	# Expansion hulls without a declared glow mesh fly without one.
+	var player_glow: bool=with_detail and bindings.source_architecture=="x86_64" and preload("res://src/simulation/mission_context.gd").base_player_hull(bindings,selected.player.ship_id) and bindings.records.has(17900+int(selected.player.ship_id))
 	if player_glow:
 		var glow: Dictionary=bindings.resolve_player_engine_glow(selected.player.ship_id,quality)
 		if glow.is_empty():return reject(bindings.error)
@@ -241,6 +242,16 @@ func _is_departure_return(state: Dictionary) -> bool:
 	var objective: Variant=state.get("mining_objective",{})
 	return _departure_return_available and state.get("campaign_cursor")==_departure_return_cursor and objective is Dictionary and objective.get("phase") in ["return_required","portal_search","free_navigation"] and objective.get("combat_objective_acknowledged",objective.get("cargo_objective_acknowledged",false)) and state.get("mission")==_departure_return_mission
 
+## A story flight moved the career on in this same world.
+func _is_story_flight_advance(state: Dictionary) -> bool:
+	var transition: Dictionary=state.get("contracts",{}).get("flight",{}).get("story_transition",{})
+	return not transition.is_empty() and transition.get("from_cursor")==_campaign_cursor and transition.get("campaign_cursor")==state.get("campaign_cursor")
+
+## A story flight in the alien world moves on in the same flight (154 -> 155,
+## the arrest after boarding Valkyrie); its scene stays until the drive leaves.
+func _is_void_story_advance(state: Dictionary) -> bool:
+	return int(state.get("location",{}).get("station_id",0))<0 and int(state.get("campaign_cursor",0))==_campaign_cursor+1
+
 func _is_acknowledged_visit(state: Dictionary) -> bool:
 	if _visit_transition.is_empty():return false
 	var visit: Dictionary=state.get("mining_objective",{}).get("campaign_visit",{})
@@ -260,7 +271,7 @@ func apply_state(state: Dictionary, escape: Dictionary = {}) -> bool:
 		return reject("Opening geometry received another content identity")
 	# Acknowledged objectives change the mission while retaining this
 	# same world and ship. It does not construct a new station or flight scene.
-	if state.get("campaign_cursor",0)!=_campaign_cursor and not _is_departure_return(state) and not _is_acknowledged_visit(state):return reject("Flight geometry received another campaign scene")
+	if state.get("campaign_cursor",0)!=_campaign_cursor and not _is_departure_return(state) and not _is_acknowledged_visit(state) and not _is_story_flight_advance(state) and not _is_void_story_advance(state):return reject("Flight geometry received another campaign scene")
 	if not valid_pose(state.get("player_pose")): return reject("Opening player pose is unavailable or invalid")
 	var rows: Variant = state.get("actors")
 	if not rows is Array or rows.size() != actors.size(): return reject("Opening actor set changed")

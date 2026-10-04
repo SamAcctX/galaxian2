@@ -2,6 +2,7 @@ extends RefCounted
 ## Second-trip particle ownership. The player tail precedes the early particle
 ## managers, the death poll follows them, and the NPC pass updates next-frame
 ## roots and flags. Each registered emitter has an independent random stream.
+const FrameTransaction=preload("res://src/simulation/frame_transaction.gd")
 const Definitions=preload("res://src/content/full_hold_particle_definitions.gd")
 const Smoke=preload("res://src/simulation/opening_damage_particles.gd")
 const Emitter=preload("res://src/simulation/damage_particle_emitter.gd")
@@ -11,6 +12,7 @@ const Numbers=preload("res://src/content/opening_definitions.gd")
 const ConvoyEffects=preload("res://src/content/convoy_effect_definitions.gd")
 const Capture=preload("res://src/simulation/convoy_capture.gd")
 var error:=""
+var _txn:=0
 var _identity:={}
 var _smoke: RefCounted
 var _emitters:={}
@@ -34,7 +36,7 @@ func configure(bindings: RefCounted,combat: Dictionary,death: RefCounted,seed_se
 		if initial.get(key)!=bindings.get(key) or combat.get(key)!=bindings.get(key):return reject("Second-flight particles belong to another departure")
 	var training: bool=combat.get("campaign_cursor")==7
 	var local_flight: bool=load("res://src/content/ordinary_flight_definitions.gd").combat_population(bindings,combat,mission_context)
-	if initial.get("phase")!="ready" or initial.get("departure_cursor")!=(int(combat.campaign_cursor) if local_flight else (7 if training else 4)):return reject("Register ordinary-flight particles before player death in the same encounter")
+	if initial.get("phase")!="ready" or (initial.get("departure_cursor")!=(int(combat.campaign_cursor) if local_flight else (7 if training else 4)) and not (local_flight and death.covers_cursor(int(combat.campaign_cursor)))):return reject("Register ordinary-flight particles before player death in the same encounter")
 	var smoke:=Smoke.new()
 	var ready:=smoke.configure_local_traffic(bindings,combat,seed_seconds,mission_context) if local_flight else (smoke.configure_combat_training(bindings,combat,seed_seconds) if training else smoke.configure_full_hold(bindings,combat,seed_seconds))
 	if not ready:return reject(smoke.error)
@@ -81,7 +83,7 @@ func _configure_registered(bindings: RefCounted,combat: Dictionary,death: RefCou
 	var emitters:={}
 	var keys:=["player"]
 	for id in combat.actors.size():
-		if combat.actors[id].get("population_group") not in ["freighter","capital","debris"]:keys.append("npc%d"%id)
+		if combat.actors[id].get("population_group") not in ["freighter","capital","debris","static"]:keys.append("npc%d"%id)
 	keys.append("world")
 	for key in keys:
 		var emitter:=Emitter.new()
@@ -125,7 +127,7 @@ func apply_sequence(effects: Array,actors: Array) -> bool:
 	error=""
 	if _identity.is_empty():return reject("Configure attached sprites before their native frame")
 	if _attached.is_empty():return true if effects.is_empty() else reject("Sequence requested an unregistered sprite")
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	for record in next._attached.values():
 		var id:=int(record.actor_id)
 		if id>=actors.size() or not actors[id] is Dictionary or actors[id].get("actor_id")!=id or not Flight.rigid_pose(actors[id].get("body_pose")):return reject("Attached sprite frame lost its registered physical root")
@@ -149,7 +151,7 @@ func apply_convoy_capture(capture: RefCounted) -> bool:
 	var target: Dictionary=state.frame.get("emp_target",{})
 	if not target.is_empty():
 		if _emp_bound or target.get("actor_id")!=0 or state.phase!=Capture.Stage.PULSE:return reject("EMP target does not match its single source activation")
-		var next:=fork_for_frame()
+		var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 		for emitter in next._emp.npc0.values():
 			if not emitter.rebind_transform() or not emitter.set_emitting(true) or not emitter.set_visible(true):return reject(emitter.error)
 		next._emp_bound=true
@@ -165,7 +167,7 @@ func apply_player_tail(death: RefCounted) -> bool:
 	var state: Dictionary=death.snapshot()
 	if not state.events.get("breakup",false) or _burst_count>0:return true
 	if not Flight.rigid_pose(state.statistics_pose):return reject("Player burst requires the retained statistics position")
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	next._emitters.player.set_emitting(false);next._emitters.player.set_visible(false)
 	var result: Dictionary=next._emitters.world.emit_once(state.statistics_pose.origin)
 	if result.has("error"):return reject(next._emitters.world.error)
@@ -189,7 +191,7 @@ func apply_weapon_impacts(contacts: Array) -> bool:
 	error=""
 	if contacts.is_empty():return true
 	if _identity.is_empty() or not _emitters.has("world"):return reject("Weapon impacts require the registered world sprite pool")
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	for contact in contacts:
 		if not contact is Dictionary or contact.get("action")!="impact" or not contact.get("position") is Vector3 or not contact.position.is_finite():return reject("Invalid weapon impact position")
 		var result: Dictionary=next._emitters.world.emit_once(contact.position)
@@ -208,25 +210,25 @@ func advance(player_root: Variant,delta_ms: Variant) -> bool:
 	error=""
 	if _identity.is_empty() or not Flight.rigid_pose(player_root) or not Numbers.integer(delta_ms,0,1000):return reject("Second-flight particles require a rigid player root and bounded milliseconds")
 	if delta_ms==0:return true
-	var next:=fork_for_frame();var interval:=_manager_ms+int(delta_ms)
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame();var interval:=_manager_ms+int(delta_ms)
 	next._births={}
 	# General sprites precede smoke and fire. The root already retained by the
 	# shared NPC smoke/fire owner is also the preset-9 emitter's logical root.
 	for key in _emitters:
 		var pose: Transform3D=player_root if key=="player" else _smoke.npc_root(int(key.trim_prefix("npc"))) if key.begins_with("npc") else Transform3D.IDENTITY
-		var result: Dictionary=next._emitters[key].advance(pose,delta_ms,interval)
+		var result: Dictionary=next._emitters[key].advance_in_frame(pose,delta_ms,interval)
 		if result.has("error"):return reject(next._emitters[key].error)
 		next._births[key]=int(result.births)
 	for key in next._attached:
 		var record: Dictionary=next._attached[key]
-		var result: Dictionary=record.emitter.advance(record.pose,delta_ms,interval)
+		var result: Dictionary=record.emitter.advance_in_frame(record.pose,delta_ms,interval)
 		if result.has("error"):return reject(record.emitter.error)
 		next._births[key]=int(result.births)
 	if not next._smoke.advance(player_root,delta_ms):return reject(next._smoke.error)
 	for key in _emp:
 		var pose: Transform3D=player_root if _emp_bound and key=="npc0" else _smoke.npc_root(int(key.trim_prefix("npc")))
 		for kind in _emp[key]:
-			var result: Dictionary=next._emp[key][kind].advance(pose,delta_ms,interval)
+			var result: Dictionary=next._emp[key][kind].advance_in_frame(pose,delta_ms,interval)
 			if result.has("error"):return reject(next._emp[key][kind].error)
 			next._births[key+"_"+kind]=int(result.births)
 	next._manager_ms=0 if interval>=10 else interval
@@ -236,7 +238,7 @@ func advance(player_root: Variant,delta_ms: Variant) -> bool:
 func finish_npc_pass(before: Dictionary,after: Dictionary,events: Array,delta_ms: Variant,detail: Variant) -> bool:
 	error=""
 	if _smoke==null:return reject("Configure second-flight particles before the NPC pass")
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	if not next._smoke.finish_npc_pass(before,after,events,delta_ms,detail):return reject(next._smoke.error)
 	for event in events:
 		var death: Dictionary=event.get("destruction",{})
@@ -278,6 +280,7 @@ func snapshot(shared:=false) -> Dictionary:
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
+	copy._txn=FrameTransaction.current
 	copy._identity=_identity.duplicate();copy._manager_ms=_manager_ms;copy._elapsed_ms=_elapsed_ms;copy._burst_count=_burst_count;copy._births=_births.duplicate(true)
 	if _smoke!=null:copy._smoke=_smoke.fork_for_frame()
 	for key in _emitters:copy._emitters[key]=_emitters[key].fork_for_frame()

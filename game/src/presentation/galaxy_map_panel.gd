@@ -2,6 +2,7 @@ extends Control
 ## Original galaxy meshes and atlas, with native mouse, touch and pad input.
 signal system_requested(system_id: int)
 signal close_requested
+const Sounds=preload("res://src/presentation/ui_sounds.gd")
 const Navigation=preload("res://src/simulation/galaxy_map.gd")
 const OriginalUI=preload("res://src/presentation/original_ui.gd")
 const Models=preload("res://src/presentation/model_resources.gd")
@@ -154,7 +155,7 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cat:
 		var pose:=Transform3D(Basis.from_scale(Vector3(1,1,0.0001)),Vector3.ZERO)
 		for row in state.rows:
 			if row.void_source:pose.origin=_position(row.position)+Vector3(0,0,1)
-		var animation: Dictionary=warning._sampler.snapshot().range
+		var animation: Dictionary=warning._sampler.time_range()
 		animation.time_ms=animation.start_ms;animation.playing=true
 		warning_state=identity.duplicate();warning_state.merge({"pose":pose,"scale":0.02,"visible":true,"animation":animation})
 	clear();_navigation=navigation;_art=art;_warning=warning;_warning_state=warning_state;_world.add_child(stage)
@@ -198,7 +199,7 @@ func _gui_input(event: InputEvent) -> void:
 		elif event.button_index==MOUSE_BUTTON_LEFT:_pointer(event.position,event.pressed)
 	elif event is InputEventScreenTouch:_pointer(event.position,event.pressed)
 	elif (event is InputEventMouseMotion and _dragging) or event is InputEventScreenDrag:
-		if event.position.distance_to(_pressed)>5:_dragged=true
+		if not _dragged and event.position.distance_to(_pressed)>5:_dragged=true;Sounds.event(self,Sounds.MAP_DRAG)
 		if _dragged:
 			_centering=false;_pan+=Vector2(-event.relative.x,event.relative.y)*(2500*_zoom+5000)/maxf(1,size.y);_project();accept_event()
 	elif event is InputEventMagnifyGesture:_zoom=clampf(_zoom/event.factor,0.4,8.0);_project();accept_event()
@@ -213,7 +214,7 @@ func _pointer(point: Vector2,pressed: bool) -> void:
 				if d<distance:distance=d;closest=row.system_id
 			if closest>=0:
 				if _navigation.snapshot().selected_system_id==closest:open_selected()
-				else:_navigation.select_system(closest);_center_selected();_present()
+				else:_navigation.select_system(closest);_center_selected();_present();Sounds.event(self,Sounds.MAP_SYSTEM)
 		_dragging=false
 	accept_event()
 
@@ -236,7 +237,7 @@ func handle_event(event: InputEvent) -> bool:
 		elif event.button_index==JOY_BUTTON_DPAD_DOWN:direction=Vector2.DOWN
 	if back:close_requested.emit()
 	elif open:open_selected()
-	elif not direction.is_zero_approx():_navigation.move_selection(direction);_center_selected();_present()
+	elif not direction.is_zero_approx():_navigation.move_selection(direction);_center_selected();_present();Sounds.event(self,Sounds.MAP_SYSTEM)
 	return true
 
 func _center_selected() -> void:

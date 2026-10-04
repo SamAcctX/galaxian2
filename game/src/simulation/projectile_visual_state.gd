@@ -73,6 +73,20 @@ func fork_for_frame() -> RefCounted:
 func reject(message: String) -> bool:error=message;return false
 
 static func model_mapping(bindings: RefCounted, weapon: Dictionary, key: String, impact: bool) -> Dictionary:
+	# A Most Wanted criminal's own gun: its item's shot and impact models,
+	# whatever item the faction or story weapons use.
+	if key.begins_with("npc:") and weapon.get("own_gun",false) and weapon.get("nonplayer_source")==true and ContractWorld.available(bindings):
+		var item:=int(weapon.item_id);var impacts: Array=bindings.mido_travel.ordinary_fitting.primary.impact_model_ids
+		var own:=(int(impacts[item]) if item<impacts.size() and int(impacts[item])>=0 else ContractWorld.impact_model(bindings,0)) if impact else int(weapon.get("model_resource_id",-1))
+		var path: String=bindings.resolve(own,"mesh")
+		return {} if path.is_empty() else {"id":own,"resource":path,"captured_up":false}
+	if key.begins_with("npc:") and weapon.get("wingman_systems",false):
+		if not key.substr(4).is_valid_int() or int(key.substr(4))<0 or weapon.get("item_id")!=18 or weapon.get("kind")!=1 or weapon.get("category")!=0 or weapon.get("nonplayer_source")!=true or weapon.get("projectile_capacity")!=4 or not Fitting.available(bindings):return {}
+		var row:=Fitting.primary(bindings.mido_travel.ordinary_fitting,18,1)
+		if row.is_empty():return {}
+		var id: int=row.impact_model_id if impact else row.projectile_model_id
+		var path: String=bindings.resolve(id,"mesh")
+		return {} if path.is_empty() else {"id":id,"resource":path,"captured_up":false}
 	# Fitting already admitted this player's weapon. Its original model does
 	# not change with the campaign cursor or the encounter's NPC population.
 	if key.begins_with("player:") and Fitting.ordinary(weapon):
@@ -156,9 +170,10 @@ static func model_mapping(bindings: RefCounted, weapon: Dictionary, key: String,
 		if not key.begins_with("npc:") or not key.substr(4).is_valid_int() or int(key.substr(4))<0 or weapon.get("projectile_capacity")!=int(bindings.early_contracts.ship_combat.weapons.capacity) or weapon.get("nonplayer_source")!=true:return {}
 		if kappa:
 			if int(key.substr(4))>=int(bindings.mido_travel.kappa_rescue.population.actor_count) or weapon.get("item_id")!=int(bindings.early_contracts.ship_combat.weapons.factions[0].item_id):return {}
-		for row in bindings.early_contracts.ship_combat.weapons.factions:
+		for row in load("res://src/content/contract_ship_combat_definitions.gd").gun_rows(bindings.early_contracts.ship_combat.weapons):
 			if int(row.item_id)!=weapon.get("item_id") or int(row.kind)!=weapon.get("kind"):continue
 			var id:=ContractWorld.impact_model(bindings,int(row.item_id)) if impact else int(row.model_resource_id)
+			if impact and id<0 and row.has("damage_scale"):id=ContractWorld.impact_model(bindings,0)
 			var resource: String=bindings.resolve(id,"mesh")
 			return {} if resource.is_empty() else {"id":id,"resource":resource,"captured_up":false}
 		return {}
@@ -183,6 +198,10 @@ static func weapons(world: Dictionary) -> Array:
 		if not actor is Dictionary or not Numbers.integer(actor.get("actor_id"),0,2147483647) or not actor.get("projectiles") is Dictionary:return []
 		if actor.get("definition",{}).get("unarmed",false) and actor.projectiles.is_empty():continue
 		result.append({"key":"npc:%d"%int(actor.actor_id),"projectiles":actor.projectiles})
+	# A Most Wanted rocket carrier's second gun draws as its own weapon.
+	for second in world.get("weapons",{}).get("second_guns",[]):
+		if not second is Dictionary or not Numbers.integer(second.get("actor_id"),0,2147483647) or not second.get("projectiles") is Dictionary:return []
+		result.append({"key":"npc:%d/1"%int(second.actor_id),"projectiles":second.projectiles})
 	return result
 
 static func empty_ordinary_population(bindings: RefCounted,world: Dictionary) -> bool:

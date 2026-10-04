@@ -24,7 +24,9 @@ func _init() -> void:
 
 func prepare(library: RefCounted, bindings: RefCounted, visuals: RefCounted, cursor:=7) -> bool:
 	error=""
-	if cursor!=7 and (cursor!=21 or not Rescue.available(bindings)):return reject("This flight has no supported authored player route")
+	# Story courses (Supernova) mark one point the flight gives at run time.
+	var story:=cursor>=84
+	if not story and cursor!=7 and (cursor!=21 or not Rescue.available(bindings)):return reject("This flight has no supported authored player route")
 	var rules:=Story.navigation(bindings)
 	if rules.is_empty() or visuals==null or visuals.base_content_id!=bindings.base_content_id:return reject("Waypoint art requires its supported source profile")
 	var frame:=TargetFrame.source_geometry(library,bindings)
@@ -39,7 +41,7 @@ func prepare(library: RefCounted, bindings: RefCounted, visuals: RefCounted, cur
 		textures[name]=texture
 	_rules=rules;_textures=textures;_quarter_size=frame.quarter_size
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
-	var points: Array=bindings.mido_travel.kappa_rescue.population.waypoints if cursor==21 else bindings.combat_training.waypoints
+	var points: Array=[] if story else bindings.mido_travel.kappa_rescue.population.waypoints if cursor==21 else bindings.combat_training.waypoints
 	_points=points.map(func(point):return Vector3(point[0],point[1],point[2]));_cursor=cursor
 	_perspective=bindings.flight_projection.duplicate(true);_sample={};visible=false
 	return true
@@ -50,6 +52,7 @@ func present(route: Dictionary, camera: Transform3D, viewport: Vector2i, hud_ena
 	if route.is_empty():_sample={};visible=false;queue_redraw();return true
 	for key in _identity:
 		if route.get(key)!=_identity[key]:return reject("Waypoint route belongs to another flight")
+	if route.get("story",false) and route.get("point") is Vector3:route={"owner":"player","campaign_cursor":_cursor,"loop":false,"waypoints":[route.point],"index":0,"completed":false};_points=[route.waypoints[0]]
 	if route.get("owner")!="player" or route.get("campaign_cursor")!=_cursor or route.get("loop")!=false or route.get("waypoints")!=_points or not Numbers.integer(route.get("index"),0,_points.size()) or route.get("completed")!=(route.index==_points.size()):return reject("Unsupported player waypoint route")
 	var sample:={"visible":false,"index":route.index}
 	if route.index<_points.size():

@@ -1,17 +1,31 @@
 extends RefCounted
 ## Catalogue rockets and missiles share travel, contacts and original exhaust.
+## (Ion Lambda 197/221 is a bomb: emp_bombs_definitions.)
 const Fitting=preload("res://src/content/ordinary_fitting_definitions.gd")
 const AEM=preload("res://src/content/aem.gd")
 const Tracks=preload("res://src/content/animation_tracks.gd")
 const Ranges=preload("res://src/content/scenery_effect_resources.gd")
 
+const CLUSTER_KIND:=40
+## Cluster missiles fly in a corkscrew around their course: a sideways speed of
+## 2 units/ms turning at 0.003 rad/ms, each missile a fixed phase apart.
+const CLUSTER_SWIRL_SPEED:=2.0
+const CLUSTER_SWIRL_RATE:=0.003
+
 static func declaration(item_id: int, kind: int) -> Dictionary:
-	if not ((kind==4 and item_id>=31 and item_id<=35) or (kind==5 and item_id>=36 and item_id<=40)):return {}
-	return {"guided":kind==5,"trail_id":39,"retention_ms":2000,"attached_model_id":14250,"scenery_damage":9999,"penetrates_scenery":true}
+	var cluster: bool=kind==CLUSTER_KIND and item_id>=214 and item_id<=216
+	if not ((kind==4 and item_id>=31 and item_id<=35) or (kind==5 and item_id>=36 and item_id<=40) or cluster):return {}
+	var row:={"guided":kind==5 or cluster,"trail_id":25 if cluster else 39,"retention_ms":2000,"attached_model_id":14250,"scenery_damage":9999,"penetrates_scenery":true}
+	# Supernova cluster missiles: one round launches a guided salvo of 3, 4 or
+	# 5 missiles (Shesha, Garuda-IV, Patala) from the same launcher.
+	if cluster:row.salvo=item_id-211
+	return row
+
+static func salvo(row: Dictionary) -> int:return int(row.get("salvo",5))
 
 static func resolved(weapon: Dictionary) -> bool:
 	var row:=declaration(int(weapon.get("item_id",-1)),int(weapon.get("kind",-1)))
-	return not row.is_empty() and weapon.get("category")==1 and weapon.get("launch_mode")=="ordinary" and weapon.get("projectile_capacity")==5 and weapon.get("secondary_projectile")==row and not weapon.get("nonplayer_source",false) and not weapon.has("dispersion")
+	return not row.is_empty() and weapon.get("category")==1 and weapon.get("launch_mode")=="ordinary" and weapon.get("projectile_capacity")==salvo(row) and weapon.get("secondary_projectile")==row and not weapon.get("nonplayer_source",false) and not weapon.has("dispersion")
 
 static func model(bindings: RefCounted, weapon: Dictionary) -> Dictionary:
 	if not Fitting.available(bindings) or not resolved(weapon):return {}

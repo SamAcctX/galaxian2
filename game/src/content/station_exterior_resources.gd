@@ -10,6 +10,7 @@ const Tracks=preload("res://src/content/animation_tracks.gd")
 const Volumes=preload("res://src/content/station_collision_volumes.gd")
 const Vectors=preload("res://src/simulation/source_vectors.gd")
 const Travel=preload("res://src/content/mido_travel_definitions.gd")
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 # V4 vertex/normal buffers already use engine axes. Only stored sphere centers
 # need the authoring-to-engine conversion performed by the source sphere reader.
 const MESH_AXES:=Basis.IDENTITY
@@ -64,11 +65,13 @@ func _prepare_location(library: RefCounted,bindings: RefCounted,catalogues: RefC
 	var collision:=volume_reader.decode(bytes,int(data.get("collision_record_id",data.station_id)),int(data.collision_record_limit),float(data.get("collision_sphere_scale",0.0)))
 	if collision.is_empty():return reject(volume_reader.error)
 	var layers:=[];var sphere:=Vector4.ZERO
+	# Valkyrie's special assemblies are animated; their rest pose bounds them.
+	var animated: bool=not load("res://src/content/valkyrie_world_definitions.gd").station_models(bindings,int(data.station_id)).is_empty()
 	for index in data.model_ids.size():
 		var id:=int(data.model_ids[index])
 		# Some original stations register an optional light mesh absent from
 		# the supplied bundle. Their hull and docking geometry remain complete.
-		if index==2 and bindings.records.has(id) and bindings.records[id].all(func(row):return row.kind=="mesh" and not library.manifest.files.has(row.resource)):continue
+		if index==2 and (not bindings.records.has(id) or bindings.records[id].all(func(row):return row.kind=="mesh" and not library.manifest.files.has(row.resource))):continue
 		var path: String=bindings.resolve(id,"mesh")
 		if path.is_empty():return reject(bindings.error)
 		var material: Dictionary=bindings.material_for_mesh(path,"high")
@@ -78,10 +81,10 @@ func _prepare_location(library: RefCounted,bindings: RefCounted,catalogues: RefC
 		if model_bytes.is_empty():return reject(library.error)
 		var reader:=AEM.new();var model:=reader.decode(model_bytes)
 		if model.is_empty():return reject(reader.error)
-		if model.version!=4 or model.surfaces.is_empty() or model.surfaces.size()>256:return reject("Unsupported station exterior mesh layout: "+path)
+		if model.version not in [4,5] or model.surfaces.is_empty() or model.surfaces.size()>256:return reject("Unsupported station exterior mesh layout: "+path)
 		var layer_sphere:=Vector4.ZERO
 		for surface in model.surfaces:
-			if not initial_transform_supported(surface,index==2):return reject("Unsupported station exterior transform or initial light sample: "+path)
+			if not animated and not initial_transform_supported(surface,index==2):return reject("Unsupported station exterior transform or initial light sample: "+path)
 			var raw: Vector4=surface.sphere
 			if not raw.is_finite() or raw.w<=0:return reject("Invalid station exterior sphere: "+path)
 			var center:=SPHERE_AXES*Vector3(raw.x,raw.y,raw.z)
@@ -93,10 +96,13 @@ func _prepare_location(library: RefCounted,bindings: RefCounted,catalogues: RefC
 	var angles:=Vector3(data.rotation[0],data.rotation[1],data.rotation[2])
 	var pose:=Transform3D(Vectors.local_xyz(angles).transposed(),Vector3(data.position[0],data.position[1],data.position[2]))
 	# Commit only after all original records, models and material bindings agree.
+	_volume_point=Vector3.INF
 	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"station_id":int(data.station_id),"system_id":int(data.system_id),"name":station.name,"faction":int(data.faction),
 		"pose":pose,"mesh_axes":MESH_AXES,"layers":layers,"sphere":sphere,"bounds_half_extent":int(extent),"collision":collision,
 		"collision_resource":data.collision_resource,"collision_sha256":library.manifest.files[data.collision_resource].sha256,
 		"light_animation_supported":false,"docking_transition_supported":false}
+	# Nothing changes after configuration, so frames share one read-only state.
+	Readonly.freeze(_state)
 	return true
 
 static func initial_transform_supported(surface: Dictionary, allow_light_scalar: bool) -> bool:
@@ -131,7 +137,17 @@ static func merge_spheres(current: Vector4, incoming: Vector4) -> Vector4:
 	center=Vectors.added(center,Vectors.scaled(delta,shift))
 	return Vector4(center.x,center.y,center.z,f32(f32(f32(current.w+distance)+incoming.w)*0.5))
 
+## A frame asks for the player's volume more than once; the configured state is
+## immutable, so the last answer is reused for the same point.
+var _volume_point:=Vector3.INF
+var _volume_index:=-1
+
 func point_volume(point: Vector3) -> int:
+	if point==_volume_point:return _volume_index
+	_volume_index=_point_volume(point);_volume_point=point
+	return _volume_index
+
+func _point_volume(point: Vector3) -> int:
 	if _state.is_empty() or not Volumes.contains_point(point,_state.pose.origin,Vector3.ONE*float(_state.bounds_half_extent)):return -1
 	var shapes: Array=_state.collision.get("shapes",_state.collision.boxes)
 	for i in shapes.size():
@@ -143,8 +159,10 @@ func point_volume(point: Vector3) -> int:
 	return -1
 
 func snapshot() -> Dictionary:return _state.duplicate(true)
+## Read-only; for frame observations that are not edited.
+func read_snapshot() -> Dictionary:return _state
 func fork_for_frame() -> RefCounted:
-	var copy: RefCounted=get_script().new();copy._state=_state.duplicate(true);return copy
-func clear() -> void:_state={};error=""
-static func f32(value: float) -> float:return PackedFloat32Array([value])[0]
+	var copy: RefCounted=get_script().new();copy._state=_state;return copy
+func clear() -> void:_state={};error="";_volume_point=Vector3.INF
+static func f32(value: float) -> float:return Vector2(value,0.0).x
 func reject(message: String) -> bool:error=message;return false

@@ -10,6 +10,7 @@ const Effects=preload("res://src/content/scenery_effect_resources.gd")
 const Encounter=preload("res://src/simulation/full_hold_encounter.gd")
 const Primaries=preload("res://src/simulation/primary_weapons.gd")
 const Mounts=preload("res://src/content/weapon_mounts.gd")
+const MissionContext=preload("res://src/simulation/mission_context.gd")
 
 func run() -> void:
 	var args:=Array(OS.get_cmdline_user_args())
@@ -39,10 +40,17 @@ func verify_contacts(library: RefCounted,bindings: RefCounted,cat: RefCounted,di
 	loadout.campaign_cursor=38
 	var mount_resources:=Mounts.new()
 	if not mount_resources.open(library,cat):check(false,mount_resources.error);return
-	check(not Primaries.new().configure(bindings,cat,mount_resources,loadout),"Contact work opened generic primary entry at Dekato")
-	for mutation in [["binding_id","foreign"],["campaign_cursor",36],["station_id",27],["system_id",5]]:
+	# Dekato entry is admitted once by the shared mission context; guns trust it
+	# and only reject equipment changed after that entry.
+	var mission:=MissionContext.new()
+	check(mission.admit(bindings,cat,context,loadout),"Mission entry rejected the selected Dekato loadout: "+mission.error)
+	check(Primaries.new().configure(bindings,cat,mount_resources,loadout,mission),"Primaries rejected the admitted Dekato loadout")
+	for mutation in [["campaign_cursor",36],["station_id",27],["system_id",5],["equipment_ids",[]]]:
+		var wrong_loadout:=loadout.duplicate(true);wrong_loadout[mutation[0]]=mutation[1]
+		check(not Primaries.new().configure(bindings,cat,mount_resources,wrong_loadout,mission),"Primaries accepted equipment changed after Dekato entry: "+mutation[0])
+	for mutation in [["binding_id","foreign"],["station_id",27],["system_id",5],["mission_completed",true]]:
 		var wrong_context:=context.duplicate(true);wrong_context[mutation[0]]=mutation[1]
-		check(not Primaries.new().configure(bindings,cat,mount_resources,loadout,wrong_context),"Primaries accepted another selected context: "+mutation[0])
+		check(not MissionContext.new().admit(bindings,cat,wrong_context,loadout),"Mission entry admitted another selected context: "+mutation[0])
 	var entry:=PlayerEntry.new()
 	check(not entry.configure(bindings,38,22,true,int(loadout.ship_id)),"Native contact work opened generic Dekato player entry")
 	if not entry.configure_dekato(bindings,context,int(loadout.ship_id)):check(false,entry.error);return

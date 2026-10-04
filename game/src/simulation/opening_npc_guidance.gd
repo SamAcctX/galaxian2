@@ -305,7 +305,7 @@ func apply_alioth_escape(owner: RefCounted) -> bool:
 	# firing desire, straight-flight state or the preceding desired position.
 	return true
 
-func update(delta_ms: Variant, actor: Dictionary, root_pose: Variant, player: Dictionary, random_state: Variant, target_actors: Array=[]) -> Dictionary:
+func update(delta_ms: Variant, actor: Dictionary, root_pose: Variant, player: Dictionary, random_state: Variant, target_actors: Array=[],wingmen: RefCounted=null) -> Dictionary:
 	error=""
 	if _state.is_empty(): return fail("Configure opening NPC guidance before updating")
 	if not Vitals.integer(delta_ms): return fail("NPC guidance requires integer elapsed milliseconds")
@@ -340,7 +340,7 @@ func update(delta_ms: Variant, actor: Dictionary, root_pose: Variant, player: Di
 	var targets:=[]
 	var without_targets: bool=_state.get("alioth_targets_cleared",false) or _state.get("story_targets_cleared",false)
 	if not _training.is_empty():
-		targets=training_targets(player,target_actors)
+		targets=training_targets(player,target_actors,wingmen)
 		if not error.is_empty() or (targets.is_empty() and not without_targets):return {}
 		if _identity.campaign_cursor==7 and actor.get("hostile")!=(int(actor.actor_kind)==8):return fail("Combat-training guidance requires refreshed source hostility")
 	for key in ["selection_elapsed_ms","boost_elapsed_ms"]:
@@ -398,7 +398,9 @@ func update(delta_ms: Variant, actor: Dictionary, root_pose: Variant, player: Di
 		next.target_selected=true
 		if not _training.is_empty():
 			next.target_index=0;next.desired_position=player.pose.origin;target=targets[0]
-		if actor.get("hostile")!=true and not _training.get("kappa_rescue",false):return fail("Second-trip holding requires its source hostility")
+		# Sleeping friends (story escorts) hold until the player targets them;
+		# a story ship that stood down and then left the scene holds too (145).
+		if actor.get("hostile")!=true and actor.get("friendly")!=true and not _training.get("kappa_rescue",false) and not actor.get("contract_ship",false):return fail("Second-trip holding requires its source hostility")
 		if player.alternate_position!=null:
 			steering_separation=Vectors.added(player.alternate_position,-root_pose.origin)
 			if not steering_separation.is_finite():return fail("Alternate player separation exceeds source precision")
@@ -460,6 +462,7 @@ func update(delta_ms: Variant, actor: Dictionary, root_pose: Variant, player: Di
 			initial_result.merge({"target_kind":target_kind,"target_actor_id":int(target.actor_id) if has_target else -1,
 				"route_event":route_event,"direction":root_pose.basis.z,"speed":next.speed,"steering_enabled":false,"travel_enabled":false,
 				"fire_requested":false,"holding":false,"initializing":true,"activation":"","node_draw_requested":true,"random_state":random.snapshot()})
+			if has_target and target_kind=="wingman":initial_result.target_wingman_index=int(target.wingman_index)
 			_state=next;_route=staged_route;_started=true
 			return initial_result
 	if dying:
@@ -533,6 +536,7 @@ func update(delta_ms: Variant, actor: Dictionary, root_pose: Variant, player: Di
 		result.activation=activation;result.node_draw_requested=true
 	if not _training.is_empty():
 		result.initializing=false;result.target_actor_id=int(target.actor_id) if has_target else -1
+		if has_target and target_kind=="wingman":result.target_wingman_index=int(target.wingman_index)
 	_state=next
 	_route=staged_route
 	_started=true
@@ -559,9 +563,14 @@ func _restart_selected41_attack(actor: Dictionary) -> bool:
 	_state.damage_boost=false;_state.speed=float(_definition.cruise_speed);_state.selected41_attack_reset=true
 	return true
 
-func training_targets(player: Dictionary, actors: Array) -> Array:
+func training_targets(player: Dictionary, actors: Array,wingmen: RefCounted=null) -> Array:
+	if wingmen!=null:
+		if not is_instance_of(wingmen,load("res://src/simulation/wingman_actors.gd")):fail("Ordinary guidance requires a native paid-cast owner");return []
+		if not wingmen.matches_target_context(_identity):fail(wingmen.error);return []
 	if actors.size()!=int(_training.actor_count):fail("Ordinary NPC targeting requires the complete configured population");return []
-	for id in actors.size():
+	# Every NPC scans the same accepted population each frame; debug builds
+	# recheck its membership on each scan, release trusts the frame owner.
+	for id in (actors.size() if OS.is_debug_build() else 0):
 		var row: Variant=actors[id]
 		if not row is Dictionary:fail("Invalid combat-training actor");return []
 		var kind_matches: bool=row.get("actor_kind")==_training.actor_kinds[id]
@@ -573,15 +582,22 @@ func training_targets(player: Dictionary, actors: Array) -> Array:
 		if not Vectors.added(row.pose.origin,-player.pose.origin).is_finite():fail("Combat-training target exceeds source precision");return []
 	var result:=[]
 	if _state.get("alioth_targets_cleared",false) or _state.get("story_targets_cleared",false):return result
-	for id in _training.target_memberships[int(_identity.actor_id)]:
-		if int(id)==int(_training.player_target_id):
+	var members: Array=_training.target_memberships[int(_identity.actor_id)]
+	if wingmen!=null:members=wingmen.mixed_target_memberships(members,int(_identity.actor_id),int(_identity.actor_kind),_training)
+	for id in members:
+		if id is Dictionary:
+			var row: Dictionary=wingmen.body_owner(int(id.index)).snapshot()
+			result.append({"actor_id":-1,"wingman_index":int(id.index),"actor_kind":int(row.actor_kind),"target_kind":"wingman","pose":row.pose,
+				"active":row.active,"hull":int(row.vitals.hull),"targeting_blocked":row.statistics_targeting_blocked,"special_flight":false})
+		elif int(id)==int(_training.player_target_id):
 			# The source's nonplayer scan classifies player statistics as kind0.
 			# Challenge memberships can place that entry after an NPC.
 			var target:=player.duplicate(true);target.actor_id=-1;target.actor_kind=0;target.target_kind="player";result.append(target)
 		else:
 			var row: Dictionary=actors[int(id)]
 			result.append({"actor_id":int(id),"actor_kind":int(row.actor_kind),"target_kind":"npc","pose":row.pose,
-				"active":row.active,"hull":int(row.vitals.hull),"targeting_blocked":row.statistics_targeting_blocked,"special_flight":false})
+				"active":row.active,"hull":int(row.vitals.hull),"targeting_blocked":row.statistics_targeting_blocked,"special_flight":false,
+				"hostile":bool(row.get("hostile",false)),"story_shootable":not row.get("static_object",false) and not row.get("targeting_blocked",false)})
 	return result
 
 func set_initial_route(route: RefCounted) -> bool:

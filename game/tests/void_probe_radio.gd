@@ -179,10 +179,7 @@ func verify_audio(bindings: RefCounted,library: RefCounted) -> void:
 		var audio:=Audio.new();root.add_child(audio)
 		if not audio.configure(library,bindings,0,cursor,combat):check(false,audio.error);audio.free();continue
 		check(audio._radio_voice.event_ids==dialogue.voice.event_ids and audio._local_radio_rules.is_empty() and audio._voice_displayed.size()==dialogue.events.size(),"Authored voice was replaced by ambient traffic radio: "+str(cursor))
-		var invalid: Dictionary=combat.duplicate(true);invalid.actors[0].actor_kind=-1
-		var rejected:=Audio.new();root.add_child(rejected)
-		check(not rejected.configure(library,bindings,0,cursor,invalid),"Authored voice accepted an unrelated combat cast: "+str(cursor))
-		rejected.free()
+		# The mission entry owns the cast; audio trusts it.
 		var fixture: Dictionary=prepared(bindings,library,cursor)
 		if fixture.is_empty():audio.free();continue
 		var radio: RefCounted=fixture.radio

@@ -44,6 +44,7 @@ func verify_contract_boundaries(bindings: RefCounted,cat: RefCounted,library: Re
 				check(centers.any(func(point):return inside_scatter(actors[id].factory_position,point)),"A defense ship escaped its ordinary spawn scatter")
 				if not actor.enable_contract_combat(bindings) or not actor.refresh_contract_hostility(true):check(false,actor.error);return
 				check(actor.snapshot().hostile==hostile,"Provocation overturned permanent defense allegiance")
+				if id==0 and hostile and seen_counts.size()==1:verify_surrender_turn(actor)
 			var runner=load("res://src/simulation/mission_runner.gd").new()
 			if not runner.configure(resolved):check(false,runner.error);return
 			for id in range(attackers,bodies.size()):bodies[id].actor_mode=4;bodies[id].vitals.hull=0
@@ -56,6 +57,14 @@ func verify_contract_boundaries(bindings: RefCounted,cat: RefCounted,library: Re
 	check(seen_counts.size()==5 and seen_enemies.size()==5,"The fixture did not exercise every patrol size and all attacker factions")
 	if failures==0:verify_defense_result(bindings,cat,library,station,contracts)
 	check(station.snapshot()==original,"Defense fixture changed the earned station")
+
+## A surrendered ship fires again once the player's later shots pass 1/20 of its hull.
+func verify_surrender_turn(source: RefCounted) -> void:
+	var actor: RefCounted=source.fork_for_frame()
+	var limit: int=int(actor.snapshot().max_hull)/20
+	check(actor.stand_down_story() and not actor.snapshot().hostile and not actor.snapshot().firing_allowed,"A surrendering ship kept its guns")
+	check(not actor.normal_hit(limit).is_empty() and not actor.snapshot().hostile,"A surrendered ship turned on light fire")
+	check(not actor.normal_hit(1).is_empty() and actor.snapshot().hostile and actor.snapshot().firing_allowed,"A surrendered ship ignored the player shooting it")
 
 static func inside_scatter(position: Vector3,center: Vector3) -> bool:
 	var distance: Vector3=(position-center).abs()

@@ -9,6 +9,7 @@ const Navigation=preload("res://src/content/free_navigation_definitions.gd")
 const Visit=preload("res://src/simulation/campaign_visit.gd")
 const Archive=preload("res://src/simulation/station_archive.gd")
 const SaveFile=preload("res://src/simulation/station_save_file.gd")
+const SaveCompare=preload("res://tests/fixtures/save_compare.gd")
 const MISSION34={"kind":11,"station_id":30,"reward":0,"bonus":0,"source_parameter":0}
 const MISSION35={"kind":11,"station_id":29,"reward":0,"bonus":0,"source_parameter":0}
 const VOICES=[364,365,371,372,373,374,375,376,377,378,366,367,368,369,370]
@@ -61,7 +62,9 @@ func verify(args: PackedStringArray) -> void:
 	var before: Dictionary=station.snapshot()
 	check(before.campaign_cursor==34 and before.loadout.station_id==10 and before.mission==MISSION34,"Use the genuine delivered-crystal Thynome34 save")
 	check(not station.begin_campaign_conversation(bindings,cat,library) and station.snapshot()==before,"The remote Nehma result opened at Thynome")
-	check(archive.capture(station,bindings)==record and not station.prepare_departure(bindings,cat).is_empty(),"The existing crystal return lost its archive or departure")
+	# Saves now carry newer fields (medals, blueprint stations, visits) the older file predates.
+	check(SaveCompare.matches_older(archive.capture(station,bindings),record),"The existing crystal return lost its archive")
+	check(not station.prepare_departure(bindings,cat).is_empty(),"The existing crystal return lost its departure")
 	check(not hash_before.is_empty() and FileAccess.get_sha256(input)==hash_before,"Component checks changed the earned input")
 
 func verify_dialogue(bindings: RefCounted,library: RefCounted,cat: RefCounted) -> void:

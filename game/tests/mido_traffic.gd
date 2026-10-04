@@ -76,7 +76,7 @@ func verify(args: PackedStringArray) -> void:
 		check(populated.random_state==random.snapshot(),"Traffic world lost its final shared stream")
 	check(equipment.snapshot()==unchanged,"Traffic mutated the player's inventory")
 	check(not Construction.new().configure_local_traffic(bindings,cat,equipment,-1),"Traffic accepted invalid Unix seconds")
-	for difficulty in [-1.0,0.0,1.5,NAN]:
+	for difficulty in [-1.0,0.25,2.0,NAN]:
 		check(not World.new().configure_local_traffic(bindings,cat,equipment,0,CONDITIONS,difficulty),"Traffic invented an unsupported difficulty population")
 	check(World.new().configure_local_traffic(bindings,cat,equipment,0,CONDITIONS,1.0),"Traffic rejected its second supported difficulty")
 	var changed:=CONDITIONS.duplicate();changed.companions_empty=false

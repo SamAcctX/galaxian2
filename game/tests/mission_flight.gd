@@ -38,12 +38,15 @@ func verify(args: Array) -> void:
 	var station: RefCounted=archive.restore(bindings,cat,library,document)
 	if station==null:check(false,archive.error);return
 	var original: Dictionary=station.snapshot()
+	var canonical: Dictionary=archive.capture(station,bindings)
+	if canonical.is_empty():check(false,archive.error);return
 	var source:=Source.new();source.host=self;source.library=library;source.bindings=bindings;source.cat=cat
 	await source.verify(station,args[2])
 	if source.initialized!=null:
 		verify_component(bindings,cat,library,source.initialized)
 		check(source.retained_parent.snapshot()==source.parent_snapshot,"Flight component mutated original navigation")
-	check(station.snapshot()==original and archive.capture(station,bindings)==document,"Mission component changed the earned station or save document")
+	check(station.snapshot()==original,"Mission component changed the earned station parent")
+	check(archive.capture(station,bindings)==canonical,"Mission component changed the canonical earned save document")
 	if is_instance_valid(source.app):source.app.free()
 func verify_component(bindings: RefCounted,cat: RefCounted,library: RefCounted,world: RefCounted) -> void:
 	var initial: Dictionary=world.snapshot();var entry: RefCounted=world.entry_owner()
@@ -143,6 +146,7 @@ func verify_blast_composition(origin: RefCounted) -> void:
 	var death: RefCounted=control._destruction[actor_id].fork_for_frame()
 	# Detached cargo and a completed breakup isolate the later blast handoff.
 	# Neither is written to the earned campaign or the original encounter.
+	death._state=death._state.duplicate(true) # forks share a frozen state
 	death._state.cargo.entries=[{"item_id":0,"quantity":1}];death._state.cargo.eligible=true
 	if not death.capture(Transform3D.IDENTITY,2.0):check(false,death.error);return
 	var random: Dictionary=encounter._hook.random_state()

@@ -34,7 +34,7 @@ func build(owner: RefCounted, library: RefCounted, visuals: RefCounted, bindings
 	if not _surface.prepare_model(model):resources.clear();return reject(_surface.error)
 	if not _sampler.configure(model.surfaces):resources.clear();return reject(_sampler.error)
 	resources.clear()
-	if _sampler.snapshot().range!={"start_ms":effect.start_ms,"end_ms":effect.end_ms}:return reject("Hyperdrive animation range changed")
+	if _sampler.time_range()!={"start_ms":effect.start_ms,"end_ms":effect.end_ms}:return reject("Hyperdrive animation range changed")
 	_identity=owner.presentation_identity();_descriptor=state;_edition=library.manifest.profile.edition
 	return true
 

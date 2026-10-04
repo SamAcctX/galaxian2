@@ -6,6 +6,30 @@ var purchase:=PaidLoadout.new()
 var steps:={}
 var phase_times:={}
 
+func verify(args: Array) -> void:
+	# The earned fixture predates per-blueprint station/completed fields and the
+	# retained base medals. Loading it migrates those, so re-save it once with
+	# the current archive; the inherited "unchanged save" check then compares
+	# against what the game itself would write for this career.
+	var source:=OS.get_environment("GOF2_SOURCE_SAVE")
+	var lib=load("res://src/content/library.gd").new();var bind=load("res://src/content/resource_bindings.gd").new();var cat=load("res://src/content/catalogues.gd").new()
+	if not lib.open(args[0]) or not lib.select_language("gb") or not bind.open(args[1],lib.manifest) or not cat.open(lib):check(false,lib.error+bind.error+cat.error);return
+	for key in ["GOF2_DEKATO_SOURCE_ARGS","GOF2_NEHMA_SOURCE_ARGS"]:
+		var supplement: Variant=JSON.parse_string(FileAccess.get_file_as_string(OS.get_environment(key)))
+		if not supplement is Array or supplement.size()!=3:check(false,"Missing explicit "+key);return
+		var accepted: bool=bind.attach_dekato_source(supplement[1],lib.manifest) if key=="GOF2_DEKATO_SOURCE_ARGS" else bind.attach_nehma_source(supplement[1],lib.manifest)
+		if not accepted:check(false,bind.error);return
+	var file=load("res://src/simulation/station_save_file.gd").new()
+	var document: Dictionary=file.load_document(source,bind,cat,lib)
+	if document.is_empty():check(false,file.error);return
+	var restored: RefCounted=load("res://src/simulation/station_archive.gd").new().restore(bind,cat,lib,document)
+	if restored==null:check(false,"The earned fixture save could not be restored");return
+	var current:=OS.get_user_data_dir().path_join("escort-high-rate/current.gof2save")
+	if not file.save(current,restored,bind,cat,lib):check(false,file.error);return
+	OS.set_environment("GOF2_SOURCE_SAVE",current)
+	await super.verify(args)
+	OS.set_environment("GOF2_SOURCE_SAVE",source)
+
 func component_station(station: RefCounted) -> RefCounted:
 	var fitted: RefCounted=purchase.prepare(bindings,catalogues,library,station,check)
 	if fitted==null:check(false,purchase.error)

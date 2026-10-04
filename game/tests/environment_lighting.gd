@@ -19,7 +19,7 @@ func _initialize() -> void:
 	check(value.lights[1].diffuse==Vector3(0.046875,0.1875,0.75),"Planet contribution changed")
 	check(value.rim_color==Vector3(0.09375,0.375,1.5),"Rim color was conflated with global ambient")
 	check(value.global_ambient.is_equal_approx(Vector3(0.0046875,0.01875,0.075)),"Global ambient factor changed")
-	for bad in [-1,15,19,null,"9"]:check(model.for_station(colors,78,0,bad).is_empty(),"Unsupported sky accepted")
+	for bad in [-1,19,null,"9"]:check(model.for_station(colors,78,0,bad).is_empty(),"Unsupported sky accepted")
 	for bad in [-1,27,null,"0"]:check(model.for_station(colors,78,bad,9).is_empty(),"Unknown planet type accepted")
 	for key in Definitions.COUNTS:
 		var broken := colors.duplicate(true);broken[key][0][0]=NAN

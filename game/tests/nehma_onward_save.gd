@@ -6,6 +6,7 @@ const Catalogues=preload("res://src/content/catalogues.gd")
 const Save=preload("res://src/simulation/station_save_file.gd")
 const Archive=preload("res://src/simulation/station_archive.gd")
 const PrivateOutput=preload("res://tests/fixtures/convoy_station_scenario.gd")
+const SaveCompare=preload("res://tests/fixtures/save_compare.gd")
 var checks:=0
 var failures:=0
 
@@ -33,7 +34,7 @@ func verify() -> void:
 	if station==null:check(false,archive.error);return
 	var original: Dictionary=station.snapshot();var untouched:=document.duplicate(true)
 	check(document.version==10 and document.binding_id==bindings.binding_id and original.campaign_cursor in [39,40] and original.arrival_player.campaign_cursor==39,"The actual onward save lost its version or surviving world")
-	check(Archive.Nehma.station_mission(bindings,original.campaign_cursor,original.loadout.station_id,original.mission) and archive.capture(station,bindings)==document,"Native recapture changed the actual sourced station")
+	check(Archive.Nehma.station_mission(bindings,original.campaign_cursor,original.loadout.station_id,original.mission) and SaveCompare.matches_older(archive.capture(station,bindings),document),"Native recapture changed the actual sourced station")
 	check(original.contracts.credits==19370 and original.contracts.passengers==3 and original.cargo.entries.is_empty(),"Onward persistence changed the independent wallet or passenger job")
 	check(not station.prepare_departure(bindings,cat).is_empty(),"The earned station cannot prepare its supported next departure")
 	if original.campaign_cursor==40:
@@ -103,12 +104,12 @@ func verify_file_boundary(file: RefCounted,station: RefCounted,bindings: RefCoun
 	check(file.save(main,station,bindings,cat,library),file.error)
 	if failures:return
 	var main_sha:=FileAccess.get_sha256(main);var backup_sha:=FileAccess.get_sha256(main+".bak")
-	check(file.read_document(main)==document and backup_sha==legacy_sha,"The atomic9→10 upgrade changed its backup or earned record")
+	check(SaveCompare.matches_older(file.read_document(main),document) and backup_sha==legacy_sha,"The atomic9→10 upgrade changed its backup or earned record")
 	check(file.load_document(main,previous,cat,library).is_empty() and not file.recovered_backup and not file.error.is_empty(),"A missing204 source silently rolled an intact v10 back to v9")
 	var archive:=Archive.new();var old_station: RefCounted=archive.restore(bindings,cat,library,legacy)
 	check(old_station!=null and not file.save(main,old_station,bindings,cat,library),"A v9 save silently overwrote an onward v10 checkpoint")
 	check(FileAccess.get_sha256(main)==main_sha and FileAccess.get_sha256(main+".bak")==backup_sha and FileAccess.get_sha256(legacy_path)==legacy_sha,"A rejected downgrade changed checkpoint bytes")
-	check(file.load_document(main,bindings,cat,library)==document and not file.recovered_backup,"Explicit source restoration changed the actual v10 record")
+	check(SaveCompare.matches_older(file.load_document(main,bindings,cat,library),document) and not file.recovered_backup,"Explicit source restoration changed the actual v10 record")
 
 func check(value: bool,message: String) -> void:
 	checks+=1

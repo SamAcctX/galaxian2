@@ -27,11 +27,18 @@ func run() -> void:
 	app.library = library; app.bindings = bindings; app.visuals = visuals
 	if not app.menu.configure(library, bindings, visuals):
 		check(false, app.menu.error); app.free(); quit(1); return
+	# The frontend normally builds its menu music in select_content; Back to the
+	# menu now resumes that music, so give the directly-wired app one too.
+	var music = preload("res://src/presentation/main_menu_audio.gd").new()
+	if not music.configure(library, bindings):
+		check(false, music.error); music.free(); app.free(); quit(1); return
+	app.music = music; app.add_child(music)
 	var preferences: Dictionary = app.preferences.values.duplicate(true)
 	for mobile in [false, true]:
 		root.size = Vector2i(960, 540) if mobile else Vector2i(1280, 720)
 		app.set_mobile_layout(mobile); app.phase = "menu"; app._details.hide()
 		app.menu.present(false, false)
+		app.menu._dismiss_title()
 		for tick in 3: await process_frame
 		app.menu.focus_first(); await process_frame
 		check(root.gui_get_focus_owner() == app.menu._buttons.new_game, "Menu opening did not focus its first usable action")

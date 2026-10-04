@@ -11,10 +11,30 @@ const Reputation=preload("res://src/simulation/faction_reputation.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
 const MiningSession=preload("res://src/content/mining_session_definitions.gd")
 const CareerStations=preload("res://src/simulation/campaign_station_archive.gd")
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const PHASES={2:"ready_to_launch",4:"ready_to_launch",6:"station_equipment_required",7:"combat_departure_required",10:"local_departure_required",11:"local_departure_required",12:"local_departure_required",13:"contracts_required",14:"convoy_departure_required",16:"alioth_departure_required"}
-const EXTRA_KEYS=["rescue_disposition","equipment_conversation","equipment_acknowledged","training_return","training_return_acknowledged","station_reloaded","local_conversation","local_conversation_acknowledged","contract_conversation","contract_conversation_acknowledged","convoy_arrival","alioth_conversation_acknowledged"]
+const EXTRA_KEYS=["difficulty","rescue_disposition","equipment_conversation","equipment_acknowledged","training_return","training_return_acknowledged","station_reloaded","local_conversation","local_conversation_acknowledged","contract_conversation","contract_conversation_acknowledged","convoy_arrival","alioth_conversation_acknowledged"]
 const INVENTORY_BASE=["loadout","stock","cargo","cargo_cache_stale","credit_delta","transactions"]
 const PROGRESS_KEYS=["campaign_cursor","rank","rank_score","player_kills","pirate_kills","other_score","reputation","debris_destroyed","capital_ship_kills","mining_failure_hint_seen"]
+const OPTIONAL_PROGRESS_KEYS=["asteroids_destroyed","mined_ore_tons","mined_cores","mined_ore_types_mask","mined_core_types_mask","nuclear_bomb_detonations","purchased_booze_quantity","booze_types_mask","story_stations_mask","story_counter","wanted","nag_heard","hints_seen","kaamo_state","kaamo_storage","pirate_bases","loma_toll","bar_heard"]
+## Lifetime counters carried unchanged through every flight and save. The
+## story pair holds an expansion mission's cleared stations and its counter.
+const LIFETIME_KEYS=["mined_ore_tons","mined_cores","mined_ore_types_mask","mined_core_types_mask","nuclear_bomb_detonations","purchased_booze_quantity","booze_types_mask","story_stations_mask","story_counter","wanted","nag_heard","hints_seen","kaamo_state","kaamo_storage","pirate_bases","loma_toll","bar_heard"]
+## "wanted" is the Most Wanted board state (wanted_board.gd), not a counter;
+## "nag_heard" is the stage (start cursor) of the last Carla nag call heard;
+## "hints_seen" lists the one-time hint windows already shown (flight_hints.gd);
+## "kaamo_state" is the Kaamo Club's state 0-3 (kaamo_club_definitions.gd);
+## "kaamo_storage" holds the owned club's stored goods and parked ships.
+static func valid_lifetime(key: String,value: Variant) -> bool:
+	if key=="hints_seen":return preload("res://src/simulation/flight_hints.gd").valid_seen(value)
+	if key=="kaamo_state":return Numbers.integer(value,0,3)
+	if key=="pirate_bases":return Numbers.integer(value,0,31)
+	if key=="loma_toll":return Numbers.integer(value,1,2)
+	if key=="kaamo_storage":return value is Dictionary and value.size()==2 and value.get("items") is Array and value.get("ships") is Array and value.items.size()<=4096 and value.ships.size()<=128 and (value.items+value.ships).all(func(row):return row is Dictionary and row.get("item_id",row.get("ship_id")) is int)
+	if key=="wanted":return value is Dictionary and value.get("entries") is Array and value.entries.size()<=64 and value.get("bounties") is Array and value.bounties.size()==4
+	return Numbers.integer(value,0,counter_maximum(key))
+static func counter_maximum(key: String) -> int:
+	return 4194303 if key=="booze_types_mask" else (2047 if key in ["mined_ore_types_mask","mined_core_types_mask"] else 2147483647)
 
 static func accepts(state: Dictionary) -> bool:
 	if state.get("campaign_cursor")==13:
@@ -45,6 +65,8 @@ func restore(a: RefCounted,bindings: RefCounted,cat: RefCounted,library: RefCoun
 	for key in a.STATION_KEYS+EXTRA_KEYS:
 		if saved.has(key) and (key.ends_with("acknowledged") or key in ["return_visit","alioth_return","local_visit","contract_station","hangar_open","cargo_cache_stale","equipment_conversation","training_return","station_reloaded","local_conversation","contract_conversation","convoy_arrival"]):
 			if not saved[key] is bool:return a.reject("Invalid opening acknowledgement flag")
+	# A non-Normal choice rides on the opening station until contracts own it.
+	if saved.has("difficulty") and (not saved.difficulty is float or not Difficulty.valid(saved.difficulty)):return a.reject("The saved difficulty is invalid")
 	if not valid_progress(a,bindings,saved.progress,cursor):return null
 	if cursor>=13:return CareerStations.new().restore(a,self,bindings,cat,library,data)
 	if not data.career.is_empty():return a.reject("The early opening checkpoint has an unexpected contract career")
@@ -116,12 +138,12 @@ func valid_progress(a: RefCounted,bindings: RefCounted,data: Variant,cursor: int
 	# Older checkpoints keep their exact shape. Recovery is optional until an
 	# accepted transfer, and only its source-capable retained career may load it.
 	var recovery: bool=cursor>=13 and preload("res://src/content/tractor_recovery_definitions.gd").available(bindings)
-	var keys: Array=PROGRESS_KEYS+["cargo_recovered"] if recovery else PROGRESS_KEYS
+	var keys: Array=PROGRESS_KEYS+OPTIONAL_PROGRESS_KEYS+(["cargo_recovered"] if recovery else [])
 	if not a._keys(data,keys) or not a._required(data,PROGRESS_KEYS.slice(0,7)) or not Reputation.valid_state(data.reputation):return a._invalid("The opening checkpoint has invalid career data")
 	if not MiningSession.retain_hint_history(data,{},bindings.mining_session):return a._invalid("The checkpoint has invalid mining instruction history")
 	if data.has("cargo_recovered") and not data.cargo_recovered is int:return a._invalid("The checkpoint has an invalid recovery counter type")
-	for key in ["player_kills","pirate_kills","other_score","debris_destroyed","capital_ship_kills","cargo_recovered"]:
-		if data.has(key) and not Numbers.integer(data[key],0,2147483647):return a._invalid("The opening checkpoint has invalid career counters")
+	for key in ["player_kills","pirate_kills","other_score","debris_destroyed","capital_ship_kills","cargo_recovered","asteroids_destroyed"]+LIFETIME_KEYS:
+		if data.has(key) and not valid_lifetime(key,data[key]):return a._invalid("The opening checkpoint has invalid career counters")
 	var earned:=Career.calculate_progress(bindings.opening_handoff,cursor,data.player_kills,data.pirate_kills,data.other_score)
 	if earned.is_empty():return a._invalid("The opening checkpoint has invalid career progress")
 	for key in earned:

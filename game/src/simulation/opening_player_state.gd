@@ -30,6 +30,9 @@ const StationEquipment = preload("res://src/simulation/station_equipment.gd")
 const Construction=preload("res://src/simulation/opening_npc_construction.gd")
 const Convoy=preload("res://src/content/convoy_world_definitions.gd")
 const ContractLife=preload("res://src/content/contract_ship_lifecycle_definitions.gd")
+const Beams=preload("res://src/simulation/repair_beams.gd")
+const Emergency=preload("res://src/simulation/emergency_system.gd")
+const Injector=preload("res://src/simulation/shield_injector.gd")
 var error := ""
 var _state := {}
 var _hit_policy := {}
@@ -38,6 +41,11 @@ var _loadout := {}
 var _recharge: RefCounted
 var _repair: RefCounted
 var _cloak: RefCounted
+## Supernova repair/transfusion beams (sorts 37 and 41), or null.
+var _beams: RefCounted
+## Supernova Emergency System (sort 27) and Shield Injector (sort 43), or null.
+var _emergency: RefCounted
+var _injector: RefCounted
 var _flight_cache := {}
 var _selected40_construction: RefCounted
 var _selected41_construction: RefCounted
@@ -217,6 +225,12 @@ func configure_ordinary_void(bindings: RefCounted,catalogues: RefCounted,equipme
 	_state.void_context=world.snapshot().void_context.duplicate(true)
 	return true
 
+## A story cast in the alien world (154): the cast's player in the Void.
+func configure_void_story(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,world: RefCounted,previous_cache: Variant) -> bool:
+	if world==null or not configure_contract(bindings,catalogues,equipment,world.npc_construction_owner(),previous_cache):return false
+	_state.void_context=world.snapshot().void_context.duplicate(true)
+	return true
+
 func configure_free(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,construction: RefCounted,previous_cache: Variant=null,mission_context: RefCounted=null) -> bool:
 	clear()
 	if not FreeFlight.available(bindings) or not construction is Construction:return reject("Ordinary player requires its source-bound population")
@@ -348,9 +362,11 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, cursor: int, previ
 			var properties: Variant=catalogues.tables.items[int(candidate.item_id)].get("properties")
 			if not properties is Dictionary: return reject("NPC contact weapon lacks source properties")
 			var extra: Variant=properties.get(int(ordinary.additional_damage_property),int(ordinary.missing_additional_damage))
-			if not extra is int or extra!=int(ordinary.missing_additional_damage): return reject("NPC contact requires an unsupported additional damage path")
+			var own: bool=candidate.get("own_gun",false)
+			if not own and (not extra is int or extra!=int(ordinary.missing_additional_damage)): return reject("NPC contact requires an unsupported additional damage path")
 			var weapon:={"base_content_id":seed.base_content_id,"binding_id":seed.binding_id,"launch_mode":"ordinary"}
 			for key in ["item_id","category","kind","damage"]: weapon[key]=int(candidate[key])
+			if own:weapon.kind=load("res://src/content/contract_ship_combat_definitions.gd").own_gun_kind(catalogues.tables.items[int(candidate.item_id)])
 			weapon.merge(contacts.context)
 			weapons.append(weapon)
 		if not contacts.enabled:weapons=[]
@@ -361,6 +377,9 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, cursor: int, previ
 	_hit_policy=policy.duplicate(true);_npc_weapons=weapons;_loadout=seed.duplicate(true)
 	_recharge=recharge
 	_repair=repair
+	_beams=Beams.create(catalogues.tables.items,seed.equipment_ids)
+	_emergency=Emergency.create(catalogues.tables.items,seed.equipment_ids)
+	_injector=Injector.create(catalogues.tables.items,seed.equipment_ids)
 	_flight_cache=next_cache
 	if repair!=null: _state.max_hull=max_hull
 	if arrival or departure or entry.restores_local:_state.gamma=current.gamma;_state.campaign_cursor=cursor
@@ -407,6 +426,40 @@ func advance_recharge(delta_ms: Variant) -> Dictionary:
 	var result: Dictionary=_recharge.advance(_state.vitals.hull,_state.vitals.shield,delta_ms)
 	if result.is_empty(): reject(_recharge.error);return {}
 	_state.vitals.shield=result.after
+	return result
+
+## This frame's beam owner (each frame forks its own), or null without beams.
+func beams_owner() -> RefCounted:return _beams
+
+## Transfusion charge: raises the fitted shield, never above its capacity.
+func add_shield(amount: float) -> void:
+	if _state.is_empty() or int(_state.capacities.get("shield_item_id",-1))<0 or not is_finite(amount) or amount<=0.0:return
+	_state.vitals.shield=minf(float(_state.vitals.shield)+amount,float(_state.capacities.shield))
+
+## Emergency System and Shield Injector, once per flight frame after damage.
+## `plasma`: Blue Plasma tons in the hold. Returns {emergency_started,
+## emergency_ended, plasma_used (tons the caller takes from the hold)}.
+func advance_devices(delta_ms: int,plasma: int) -> Dictionary:
+	var result:={"emergency_started":false,"emergency_ended":false,"plasma_used":0}
+	if _state.is_empty():return result
+	if _emergency!=null:
+		result.emergency_ended=_emergency.advance(delta_ms)
+		if _state.vitals.hull<=0 and _emergency.try_start(int(_state.vitals.hull)):
+			_state.vitals.hull=1;result.emergency_started=true
+	if _injector!=null and _state.vitals.hull>0:
+		var shield_fitted:=int(_state.capacities.get("shield_item_id",-1))>=0
+		var step: Dictionary=_injector.advance(delta_ms,float(_state.vitals.shield),float(_state.capacities.shield) if shield_fitted else 0.0,plasma)
+		if step.shield!=float(_state.vitals.shield):_state.vitals.shield=step.shield
+		result.plasma_used=int(step.consume)
+	return result
+
+## True while the Emergency System holds the ship invulnerable.
+func emergency_active() -> bool:return _emergency!=null and _emergency.active()
+
+func devices_snapshot() -> Dictionary:
+	var result:={}
+	if _emergency!=null:result.emergency=_emergency.snapshot()
+	if _injector!=null:result.injector=_injector.snapshot()
 	return result
 
 func advance_repair(delta_ms: Variant) -> Dictionary:
@@ -466,10 +519,36 @@ func normal_hit(amount: Variant) -> Dictionary:
 	if _state.is_empty():reject("Configure player statistics before applying damage");return {}
 	var pools := Vitals.new()
 	if not pools.configure(_state.vitals.hull,_state.vitals.armor,_state.vitals.shield): reject(pools.error);return {}
-	var result: Dictionary=pools.normal_hit(amount,_state.active and _state.damage_allowed)
+	var result: Dictionary=pools.normal_hit(amount,_state.active and _state.damage_allowed and not emergency_active())
 	if result.is_empty(): reject(pools.error);return {}
 	_state.vitals=pools.snapshot()
+	if int(_state.get("hull_floor",0))>0 and float(_state.vitals.hull)<float(_state.hull_floor):_state.vitals.hull=_state.hull_floor
 	return result
+
+## A ship that cannot be destroyed (the Supernova Challenge): no damage takes
+## the hull below `floor`.
+func set_hull_floor(floor: int) -> void:
+	if not _state.is_empty():_state.hull_floor=floor
+
+## Supernova radiation: gamma falls by `amount` (0-100). Below 1 the ship is
+## destroyed (a ship already dying is left alone). "warned" when gamma has
+## just dropped below `warning`.
+func drain_gamma(amount: float, warning: float) -> Dictionary:
+	error=""
+	if _state.is_empty():reject("Configure player statistics before radiation");return {}
+	var before:=float(_state.get("gamma",100.0))
+	if amount<=0.0 or _state.vitals.hull<=0:return {"warned":false,"gamma":before}
+	var after:=maxf(0.0,before-amount)
+	_state.gamma=Vitals.single(after)
+	if after<1.0 and int(_state.get("hull_floor",0))<=0:_state.vitals.hull=0
+	return {"warned":before>=warning and after<warning,"gamma":after}
+
+## Volatile cargo gives way: the ship is destroyed outright.
+func destroy_hull() -> bool:
+	error=""
+	if _state.is_empty():return reject("Configure player statistics before destruction")
+	_state.vitals.hull=maxi(0,int(_state.get("hull_floor",0)))
+	return true
 
 func collision_context(pose: Variant) -> Dictionary:
 	error=""
@@ -509,11 +588,17 @@ func record_contact(velocity: Variant) -> bool:
 static func resolve_capacities(items: Array, equipment_ids: Array, parameters: Dictionary) -> Dictionary:
 	return Stats.resolve_capacities(items,equipment_ids,parameters)
 
+## Live state for an immediate field read; never keep or edit it.
+func read_state() -> Dictionary:return _state
+
 func snapshot() -> Dictionary:
 	var result := _state.duplicate(true)
 	if _recharge!=null: result.recharge=_recharge.snapshot()
 	if _repair!=null: result.repair=_repair.snapshot()
 	if _cloak!=null and _cloak.available():result.cloak=_cloak.snapshot()
+	if _beams!=null:result.beams=_beams.snapshot()
+	var devices:=devices_snapshot()
+	if not devices.is_empty():result.devices=devices
 	return result
 
 func cache_snapshot() -> Dictionary:
@@ -529,6 +614,9 @@ func fork_for_frame() -> RefCounted:
 	if _recharge!=null: copy._recharge=_recharge.fork_for_frame()
 	if _repair!=null: copy._repair=_repair.fork_for_frame()
 	if _cloak!=null: copy._cloak=_cloak.fork_for_frame()
+	if _beams!=null:copy._beams=_beams.fork()
+	if _emergency!=null:copy._emergency=_emergency.fork()
+	if _injector!=null:copy._injector=_injector.fork()
 	return copy
 
 func clear() -> void:
@@ -536,6 +624,9 @@ func clear() -> void:
 	_recharge=null
 	_repair=null
 	_cloak=null
+	_beams=null
+	_emergency=null
+	_injector=null
 
 func reject(message: String) -> bool:
 	error=message

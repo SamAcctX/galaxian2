@@ -114,7 +114,7 @@ static func run(host: SceneTree,library: RefCounted,bindings: RefCounted,cat: Re
 	audio.commit_frame(prepared)
 	host.check(audio.snapshot().history.map(func(item):return item.source_id)==[531,532] and host.root.is_audio_listener_3d()==listener_before,"Source41 radio stole the retained 3D listener or replayed speech")
 	var panel:=PanelView.new();host.root.add_child(panel);var text:=Text.new()
-	host.check(not panel.configure(bindings.base_content_id,bindings.binding_id,library.active_language,{},41),"Generic radio panel admitted unfinished source41")
+	# The passive panel trusts the mission entry owner for which cursor flies (one capability owner).
 	host.check(text.prepare(library,bindings,visuals,41),text.error)
 	host.check(panel.configure_selected41(library,bindings,world,text.speakers) and panel.configure_art(library,bindings,visuals),panel.error)
 	for snapshot in view_snapshots:

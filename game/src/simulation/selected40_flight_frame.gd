@@ -29,6 +29,10 @@ const StationResources=preload("res://src/content/station_exterior_resources.gd"
 const VoidPortal=preload("res://src/simulation/void_portal.gd")
 const CampaignFailure=preload("res://src/content/kappa_outcome_definitions.gd")
 const Sequence=preload("res://src/simulation/selected40_sequence.gd")
+const Beams=preload("res://src/simulation/repair_beams.gd")
+const Devices=preload("res://src/simulation/flight_devices.gd")
+## The Time Extender runs the player at a different rate from the world.
+var player_time_scale:=1.0
 var error:=""
 var _state:={}
 var _player: RefCounted
@@ -95,7 +99,7 @@ func configure(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,p
 	var positions:={};var selectors:={};var player_detail:=ShipDetail.new()
 	if not player_detail.configure(bindings.ship_lod,int(loadout.ship_id)):return reject(player_detail.error)
 	if player_detail.has_alternates():selectors["player"]=player_detail;positions["player"]=pose.origin
-	for actor in encounter.combat_snapshot().actors:
+	for actor in encounter.read_combat().actors:
 		# This source-selected freighter retains statistics hull13 while its
 		# original Terran assembly normally maps to free-traffic hull15. Build
 		# the shared source-checked selector from that actual assembly; do not
@@ -200,7 +204,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if player_updates:
 		if not next._encounter.refresh_selected40_player_response(relative_mouse_capture,next._pilot.response_factor()):reject(next._encounter.error);return null
 		if not next._engine_audio.before_ordinary_motion():reject(next._engine_audio.error);return null
-		next._pose=next._pilot.advance_prepared(_pose,active_throttle,seconds,0.0 if blocked or next._encounter.turret_active() else strafe,next._booster.speed_multiplier())
+		next._pose=next._pilot.advance_prepared(_pose,active_throttle,seconds*player_time_scale,0.0 if blocked or next._encounter.turret_active() else strafe,next._booster.speed_multiplier())
 		if not next._pilot.error.is_empty():reject(next._pilot.error);return null
 		# The original environment pass shares one incoming entry permission
 		# and active-statistics sample across solid scenery and the live portal.
@@ -235,6 +239,11 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	var weapons: Dictionary=next._encounter.evaluate_weapons(next._player,next._pose,milliseconds,next._scenery,next._random,true,not prior.sequence.radio.visible,-1 if next._scanner==null else next._scanner.guidance_target_id())
 	if weapons.is_empty():reject(next._encounter.error);return null
 	next._encounter=weapons.encounter;next._player=weapons.player;next._scenery=weapons.scenery;next._random=weapons.random_state
+	Beams.advance_flight(next._player,next._pose,next._encounter,null,milliseconds)
+	if not dying:
+		var devices: Dictionary=Devices.advance(next._player,next._cargo,next._equipment,next._notices,milliseconds)
+		if devices.has("error"):reject(devices.error);return null
+		next._cargo=devices.cargo;next._equipment=devices.equipment
 	# Transport time remains aligned after the player-update gate closes; the
 	# stopped engine cannot restart, and the frozen pose does not move its sound.
 	if not next._engine_audio.follow_player(next._pose,int(next._player.snapshot().vitals.hull),milliseconds):reject(next._engine_audio.error);return null
@@ -243,7 +252,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if not next._particles.advance(next._pose,milliseconds):reject(next._particles.error);return null
 	var positions:={};var registered: Dictionary=next._detail.snapshot().selections
 	if registered.has("player"):positions["player"]=next._pose.origin
-	for actor in next._encounter.combat_snapshot().actors:
+	for actor in next._encounter.read_combat().actors:
 		if registered.has(actor.actor_id):positions[actor.actor_id]=actor.body_pose.origin
 	if not next._detail.update(milliseconds,positions,_reference,1.0,false):reject(next._detail.error);return null
 	if not dying and next._player.snapshot().vitals.hull<=0:
@@ -267,7 +276,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 		# The original cinematic refresh visits the same registered geometry
 		# after reveal placement, before NPC motion. Reuse the native selectors;
 		# an immediate visit neither resets their periodic clock nor draws RNG.
-		for actor in next._encounter.combat_snapshot().actors:
+		for actor in next._encounter.read_combat().actors:
 			if registered.has(actor.actor_id):positions[actor.actor_id]=actor.body_pose.origin
 		if not next._detail.refresh(positions,detail_reference,1.0):reject(next._detail.error);return null
 	# Source damage permission is separate from activity/target eligibility.
@@ -295,11 +304,11 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if secondary.is_empty():reject(next._encounter.error);return null
 	next._encounter=secondary.encounter;next._player=secondary.player;next._equipment=secondary.equipment;next._random=secondary.random_state
 	next._scenery=secondary.scenery
-	var before_actors: Dictionary=next._encounter.combat_snapshot()
+	var before_actors: Dictionary=next._encounter.read_combat()
 	if turret_active and not next._encounter.present_selected_turret(next._pose,size):reject(next._encounter.error);return null
 	var world: Dictionary=next._encounter.evaluate_world(next._player,next._pose,milliseconds,next._random)
 	if world.is_empty():reject(next._encounter.error);return null
-	if not next._particles.finish_npc_pass(before_actors,world.encounter.combat_snapshot(),world.encounter.actor_events(),milliseconds,1.0):reject(next._particles.error);return null
+	if not next._particles.finish_npc_pass(before_actors,world.encounter.read_combat(),world.encounter.actor_events(),milliseconds,1.0):reject(next._particles.error);return null
 	next._encounter=world.encounter;next._random=world.random_state
 	# Asteroid centers do not move in this owner. Its shared detail transaction
 	# stages periodic selection before the optional cinematic refresh, exactly
@@ -364,7 +373,7 @@ func _resolve_portal_tail() -> bool:
 			_state.portal_outcome={"kind":"early_entry","script_phase":phase,"hull_after":0}
 			_state.input.enabled=false
 		else:
-			var freighter: Dictionary=_encounter.combat_snapshot().actors[0]
+			var freighter: Dictionary=_encounter.read_combat().actors[0]
 			_state.campaign_phase="portal_ready"
 			_state.portal_outcome={"kind":"prepared_onward","script_phase":phase,
 				"base_content_id":_state.base_content_id,"binding_id":_state.binding_id,
@@ -414,7 +423,7 @@ func successor41_ready(bindings: RefCounted) -> bool:
 	if _state.get("base_content_id")!=bindings.base_content_id or _state.get("binding_id")!=bindings.binding_id or _state.get("campaign_phase")!="portal_ready" or _state.get("boundary","") not in ["","selected40_portal_transition_required"] or not portal_transition_required():return false
 	var outcome:=prepare_portal_transition()
 	var sequence: Dictionary=_encounter.selected40_frame_context().sequence
-	var actors: Array=_encounter.combat_snapshot().actors
+	var actors: Array=_encounter.read_combat().actors
 	if sequence.phase<Sequence.Stage.PORTAL_ESCAPE or actors.size()!=13 or actors[0].actor_id!=0:return false
 	return outcome.get("next_cursor")==41 and outcome.get("from_cursor")==40 and outcome.get("source_state")==2 and outcome.get("mission")=={"kind":4,"station_id":-1} and outcome.get("source_before")==_entry.source_before and outcome.get("freighter_hull")==actors[0].vitals.hull and outcome.get("player")==_player.snapshot() and outcome.get("loadout")==_player.loadout()
 
@@ -507,7 +516,7 @@ func snapshot() -> Dictionary:
 	result.game_over_packet=prepare_game_over()
 	result.player_engine_audio=_engine_audio.snapshot();result.flight_music=_flight_music.duplicate(true)
 	result.music_context=_music_context.duplicate(true);result.radar=_radar.snapshot()
-	result.station_exterior=_station.snapshot()
+	result.station_exterior=_station.read_snapshot()
 	result.portal=_portal.portal_snapshot();result.portal_contact=_portal.snapshot()
 	return result
 
@@ -591,6 +600,7 @@ func career_owner() -> RefCounted:return null if _career==null else _career.fork
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
+	copy.player_time_scale=player_time_scale
 	copy._state=_state.duplicate(true);copy._pose=_pose;copy._reference=_reference;copy._random=_random.duplicate(true)
 	copy._throttle=_throttle;copy._viewport=_viewport;copy._max_ms=_max_ms
 	copy._presentation_identity=_presentation_identity
@@ -623,5 +633,8 @@ func toggle_turret() -> RefCounted:
 	return next
 
 func cloak_state() -> Dictionary:return {} if _player==null else _player.cloak_state()
+func player_equipment_ids() -> Array:return [] if _player==null else _player.snapshot().get("equipment_ids",[])
+## Emergency System / Shield Injector state for sound and medals.
+func player_devices() -> Dictionary:return {} if _player==null else _player.devices_snapshot()
 func booster_state() -> Dictionary:return {} if _booster==null else _booster.snapshot()
 func control_throttle() -> float:return _throttle

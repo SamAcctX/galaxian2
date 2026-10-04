@@ -20,13 +20,14 @@ func configure(resources: RefCounted, item_id: int) -> bool:
 	if not resources is Resources or declaration.is_empty():
 		return reject("EMP burst requires its prepared original resources and item")
 	var data: Dictionary = resources.snapshot()
-	var family: int=Mines.effect_family(item_id) if declaration.kind==11 else declaration.kind
+	var family: int=Mines.effect_family(item_id) if declaration.kind==11 else int(declaration.get("family",declaration.kind))
 	if data.is_empty() or data.kind!=family: return reject("Bomb burst resources are not prepared for this family")
 	var effect: Dictionary
 	if data.effect_type==0:effect=TypeZero.create(data,[],-1)
 	else:effect={"active":false,"elapsed_ms":0,"duration_ms":data.duration_ms,"position":Vector3.ZERO,"models":[TypeZero.model_clock(data.models[0])]}
 	if effect.is_empty():return reject("Bomb burst has unsupported animation clocks")
 	effect.position=Vector3.ZERO
+	if data.has("scale"):effect.scale=float(data.scale)
 	_state = {"base_content_id": data.base_content_id, "binding_id": data.binding_id,
 		"item_id": item_id,"kind":declaration.kind,"effect_type":data.effect_type, "projectile_id": 0, "cached_position": Vector3.ZERO, "triggered": false,
 		"camera": {"initial_strength": 0.0, "elapsed_ms": 0, "strength": 0.0, "spread": 0},
@@ -81,8 +82,9 @@ func advance(before: Dictionary, after: Dictionary, delta_ms: Variant, observer_
 		if next.kind!=11:
 			own_hit=Bomb.self_hit(before.weapon,next.cached_position,observer_position)
 			if own_hit.is_empty():return failed("Bomb self-damage observation exceeds finite world coordinates")
-		audio.append({"action": "start_spatial", "source_id": declaration_for(next.item_id).burst_sound,
-			"position": next.cached_position, "pitch_raw": 0.0})
+		if int(declaration_for(next.item_id).burst_sound)>=0:
+			audio.append({"action": "start_spatial", "source_id": declaration_for(next.item_id).burst_sound,
+				"position": next.cached_position, "pitch_raw": 0.0})
 	var retired := false
 	var camera := {}
 	if next.effect.active:

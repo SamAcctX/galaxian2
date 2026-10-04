@@ -98,6 +98,13 @@ func verify_cargo_scan_queue():
 	var queue:=fresh()
 	var cargo:=[{"item_id":111,"quantity":9},{"item_id":107,"quantity":3}]
 	var original:=cargo.duplicate(true)
+	if not bindings.station_equipment.has("item_text_offset"):
+		# Older binding packs carry no item-name table, so inspection must refuse
+		# cargo stacks instead of inventing names; empty cargo keeps its notice.
+		var untouched: Dictionary=queue.snapshot()
+		check(not queue.enqueue_scanned_cargo(cargo) and queue.snapshot()==untouched and cargo==original,"A pack without item names invented a cargo readout")
+		check(queue.enqueue_scanned_cargo([]) and queue.snapshot().current.text==lib.strings[531],"Empty cargo has no original notice")
+		return
 	check(queue.enqueue_scanned_cargo(cargo),queue.error)
 	var message: Dictionary=queue.snapshot().current
 	check(message.text=="9t "+lib.strings[int(bindings.station_equipment.item_text_offset)+111] and message.rgb==[255,255,255],"Inspection lost cargo quantity/name or used pickup coloring")

@@ -19,8 +19,7 @@ func run_application() -> void:
 	if app.session==null:check(false,app._save_notice.text);done();return
 	app.session.rebase_time(now_us);original=app.session.station_owner().snapshot()
 	check(original.campaign_cursor==45 and original.mission.kind==-1 and original.contracts.passengers==3,"Paid Resume lost the empty campaign slot or carried passengers")
-	for tick in 20:if not step():done();return
-	check(not app.session.snapshot().dialogue.visible and not app.session.presentation_active(),"Paid Resume replayed the ending or Carla's note")
+	# Fault checks use the paid completed-career file before the Valkyrie call.
 	if original.has("docking"):
 		var saved: Dictionary=app._save_file.load_document(slot,bindings,cat,library)
 		var intact:=FileAccess.get_file_as_bytes(slot)
@@ -33,6 +32,14 @@ func run_application() -> void:
 			var archive=load("res://src/simulation/station_archive.gd").new()
 			check(archive.restore(bindings,cat,library,invalid)==null,"Completed career accepted invalid "+fault)
 		check(app.session.station_owner().snapshot()==original and FileAccess.get_file_as_bytes(slot)==intact,"Rejected continuation changed the live or saved career")
+	# A finished career receives the Valkyrie call at the first docked station.
+	# Reading it opens the expansion's talk mission without touching the wallet.
+	if not await read_finished_career_call():done();return
+	var called: Dictionary=app.session.station_owner().snapshot()
+	check(called.campaign_cursor==47 and called.contracts.credits==original.contracts.credits and called.contracts.passengers==3,"The finished-career call changed the wallet or passengers: cursor %d credits %d/%d passengers %d"%[called.campaign_cursor,called.contracts.credits,original.contracts.credits,called.contracts.passengers])
+	original=called
+	for tick in 20:if not step():done();return
+	check(not app.session.snapshot().dialogue.visible and not app.session.presentation_active(),"Paid Resume replayed the ending or Carla's note")
 	if OS.get_environment("GOF2_FREE_CAREER_QUOTE_CHECK")=="1":
 		verify_new_quotation()
 		if failures:done();return
@@ -47,7 +54,7 @@ func run_application() -> void:
 		if frame_number%20==0:await process_frame
 	check(app.session.can_control(),"Completed career did not release ordinary flight")
 	var airborne: Dictionary=app.session.snapshot()
-	check(airborne.campaign_cursor==45 and airborne.mission==original.mission and airborne.contracts.credits==original.contracts.credits and airborne.contracts.mission==original.contracts.mission and airborne.contracts.passengers==3,"Departure repeated payment or changed the carried job")
+	check(airborne.campaign_cursor==original.campaign_cursor and airborne.mission==original.mission and airborne.contracts.credits==original.contracts.credits and airborne.contracts.mission==original.contracts.mission and airborne.contracts.passengers==3,"Departure repeated payment or changed the carried job")
 	for tick in 20:await process_frame
 	await capture("free-career-flight")
 	if OS.get_environment("GOF2_FREE_CAREER_RESUME_ONLY")=="1":done();return
@@ -63,9 +70,9 @@ func run_application() -> void:
 	app.session.rebase_time(now_us)
 	for tick in 20:if not step():done();return
 	var docked: Dictionary=app.session.station_owner().snapshot()
-	check(docked.campaign_cursor==45 and docked.contracts.credits==original.contracts.credits and docked.contracts.mission==original.contracts.mission and docked.contracts.passengers==3,"Docking repeated the reward or discarded the passenger job")
+	check(docked.campaign_cursor==original.campaign_cursor and docked.contracts.credits==original.contracts.credits and docked.contracts.mission==original.contracts.mission and docked.contracts.passengers==3,"Docking repeated the reward or discarded the passenger job")
 	var saved: Dictionary=app._save_file.load_document(slot,bindings,cat,library)
-	check(not saved.is_empty() and saved.station.campaign_cursor==45 and saved.career.credits==original.contracts.credits and saved.station.has("docking"),"Docking did not autosave the completed career: "+app._save_file.error)
+	check(not saved.is_empty() and saved.station.campaign_cursor==original.campaign_cursor and saved.career.credits==original.contracts.credits and saved.station.has("docking"),"Docking did not autosave the completed career: "+app._save_file.error)
 	await capture("free-career-docked")
 	var report:=FileAccess.open(captures.path_join("journey.json"),FileAccess.WRITE)
 	report.store_string(JSON.stringify({"source_save":earned,"saved_file":slot,"cursor":docked.campaign_cursor,"credits":docked.contracts.credits,"passengers":docked.contracts.passengers,"checks":checks,"failures":failures},"  "))
@@ -113,7 +120,7 @@ func visit_neighbour() -> bool:
 		if not step():return false
 		if frame_number%20==0:await process_frame
 	var arrived: Dictionary=app.session.snapshot()
-	check(app.session.can_control() and arrived.location.station_id==destination and arrived.campaign_cursor==45 and arrived.mission==original.mission,"Neighbouring arrival changed the completed career")
+	check(app.session.can_control() and arrived.location.station_id==destination and arrived.campaign_cursor==original.campaign_cursor and arrived.mission==original.mission,"Neighbouring arrival changed the completed career")
 	check(arrived.contracts.credits==original.contracts.credits and arrived.contracts.mission==original.contracts.mission and arrived.contracts.passengers==3,"Travel changed the retained wallet or passenger job")
 	print("Completed career travelled from ",before.location.station_id," to ",destination)
 	await capture("free-career-neighbour-arrival")
@@ -132,7 +139,7 @@ func verify_new_quotation() -> void:
 		var offers: Dictionary=candidate.snapshot().contracts.offers
 		for contact in offers:
 			var row: Dictionary=offers[contact]
-			if row.consumed or row.offer.context.campaign_cursor!=45:continue
+			if row.consumed or not row.offer.context.campaign_cursor in [45,unchanged.campaign_cursor]:continue
 			var branch: RefCounted=candidate.fork()
 			var terms: Dictionary=branch.contract_preview(int(contact),bindings)
 			if terms.is_empty() or not terms.can_accept:
@@ -168,3 +175,17 @@ func quotation_fixture(source: RefCounted,seed_value: int) -> RefCounted:
 	branch._contracts._state.offers={};branch._contracts._state.erase("population")
 	if not branch._contracts.retain_locations(cache):check(false,branch._contracts.error);return null
 	return branch
+
+func read_finished_career_call() -> bool:
+	for tick in 50:
+		if app.session.snapshot().dialogue.visible or not app.session._dialogue_started:break
+		if not step():return false
+	# Wait by game time so the 144 Hz and variable cadences get the same delay.
+	for page in 64:
+		var wait_until:=now_us+10000000
+		while now_us<wait_until:
+			if app.session._dialogue_started:break
+			if not step():return false
+		if not app.session.snapshot().dialogue.visible:return true
+		app.station_navigation("next");await process_frame
+	check(false,"The finished-career call never closed");return false

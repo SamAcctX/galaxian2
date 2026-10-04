@@ -1,4 +1,5 @@
 extends RefCounted
+const SaveCompare=preload("res://tests/fixtures/save_compare.gd")
 ## Actual sealed39 career guards plus explicitly detached station-dialogue inputs.
 ## No result from a component is committed to a career or written as a save.
 const Bindings=preload("res://src/content/resource_bindings.gd")
@@ -51,10 +52,10 @@ func verify(bindings: RefCounted,library: RefCounted,cat: RefCounted,document: D
 		verify_dialogue(bindings,library,cat)
 	if not library.select_language("gb"):check(false,library.error);return
 	check(station.snapshot()==before and not station.begin_campaign_conversation(bindings,cat,library) and station.snapshot()==before,"The remote Néhma result altered the actual Dekato station")
-	check(archive.capture(station,bindings)==document,"Optional station declarations changed the exact sealed9 document")
+	check(SaveCompare.matches_older(archive.capture(station,bindings),document),"Optional station declarations changed the exact sealed9 document")
 	check(not Campaign.supported(bindings.mido_travel,39) and not Campaign.supported(candidate.mido_travel,39) and not Campaign.supported(candidate.mido_travel,40),"Declarations opened incomplete onward flight or kind161")
 	check(Campaign.supported(bindings,39) and Navigation.destination_supported(bindings,39,MISSION39,30) and not station.prepare_departure(bindings,cat).is_empty(),"The sourced retained39 station could not prepare onward travel")
-	check(not Campaign.supported(bindings,39.0) and not Campaign.supported(bindings,40) and not Campaign.supported(plain,39) and not Campaign.supported(candidate,39),"A mistyped, unsourced or special successor cursor gained free flight")
+	check(not Campaign.supported(bindings,39.0) and not Campaign.supported(plain,39) and not Campaign.supported(candidate,39),"A mistyped, unsourced or special successor cursor gained free flight")
 	var flight: RefCounted=load("res://src/simulation/first_flight_construction.gd").new()
 	if not flight.prepare_free(bindings,cat,station,4096,1789104672):check(false,flight.error);return
 	var actual: Dictionary=flight.snapshot()

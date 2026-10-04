@@ -132,7 +132,8 @@ func verify_deep_failures(fixture: RefCounted,cat: RefCounted):
 	var stock:=Stock.new()
 	check(stock.prepare(fixture,cat,deep_context(true),rng.snapshot(),1789423200),stock.error)
 	var retained: Dictionary=stock.snapshot()
-	for alteration in [{"all_base_medals_gold":null},{"all_base_medals_gold":0},{"all_base_medals_gold":"false"},{"campaign_cursor":14},{"campaign_cursor":84},{"station_id":11},{"extra":false}]:
+	# Stock now runs through the Valkyrie cursors (last 162).
+	for alteration in [{"all_base_medals_gold":null},{"all_base_medals_gold":0},{"all_base_medals_gold":"false"},{"campaign_cursor":14},{"campaign_cursor":163},{"station_id":11},{"extra":false}]:
 		var bad:=deep_context(false);bad.merge(alteration,true)
 		check(not stock.prepare(fixture,cat,bad,rng.snapshot(),1789423200) and stock.snapshot()==retained,"Unsupported Deep Science context changed retained stock")
 	var missing:=deep_context(false);missing.erase("all_base_medals_gold")

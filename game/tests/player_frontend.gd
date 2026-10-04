@@ -78,10 +78,13 @@ func verify_prepare() -> void:
 		check(app.phase=="update" and not app.has_session(),"An older import must disclose missing effects before a new game")
 		for control in app._body.get_children():
 			if control is Button and control.text=="Use current game files":control.pressed.emit();break
+	check(app.phase=="difficulty" and app._body.get_children().filter(func(c):return c is Button).size()==4,"New Game did not offer the four difficulty levels")
+	await capture("entry-difficulty")
+	app.choose_difficulty(0.5)
 	if not app.has_session():check(false,app.error);return
 	check(app.phase=="game" and app.game.session.status=="running" and app.game._preview_controls.all(func(control):return not control.visible),"New game did not enter the native opening with player controls")
 	check(not app.game._pause_button.visible and not app.game._menu_button.visible,"Desktop flight exposed hidden touch actions")
-	check(not app.music.player.playing,"Menu music overlapped the new game's music")
+	check(not app.music._active,"Menu music overlapped the new game's music")
 	app.game._notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN)
 	await capture("entry-new-game")
 	var key:=InputEventKey.new();key.physical_keycode=KEY_ESCAPE;key.pressed=true
@@ -95,11 +98,12 @@ func verify_prepare() -> void:
 	var session: Node=app.game.session;var frozen: Dictionary=session.snapshot()
 	for i in 3:await process_frame
 	check(session.snapshot()==frozen,"The paused menu consumed simulation time")
-	app.menu._buttons.new_game.pressed.emit();check(app.phase=="confirm" and app.game.session==session,"New game discarded a live session without its confirmation")
+	app.menu._buttons.new_game.pressed.emit();app.choose_difficulty(1.5);check(app.phase=="extreme_warning","Extreme skipped its warning")
+	app.accept_extreme();check(app.phase=="confirm" and app.game.session==session,"New game discarded a live session without its confirmation")
 	app._back.pressed.emit();check(app.phase=="menu" and app.game.session==session,"Cancelling new game lost the live session")
 	# Trigger an actual failed opening preparation while the prior game is paused.
 	var visuals: RefCounted=app.visuals;app.visuals=Frontend.Visuals.new()
-	app.request_action("new_game");app.confirm_pending()
+	app.request_action("new_game");app.choose_difficulty(0.5);app.confirm_pending()
 	check(app.phase=="menu" and app.game.session==session and not app.error.is_empty(),"Failed new-game preparation destroyed the existing session")
 	app.visuals=visuals
 	app.menu._buttons.options.pressed.emit()

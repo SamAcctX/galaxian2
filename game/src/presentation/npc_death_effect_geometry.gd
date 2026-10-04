@@ -72,7 +72,8 @@ func follows(death: RefCounted) -> bool:
 func prepare_effect(death: RefCounted, camera: Transform3D, parent_rgba: PackedByteArray, global_tint: Vector4, darken: Variant) -> Dictionary:
 	error=""
 	if _descriptor.is_empty() or not supported_owner(death) or death.presentation_identity()!=_identity: return failed_frame("Explosion geometry follows one configured owner")
-	var state: Dictionary=death.snapshot()
+	# Read-only use; NPC owners lend their live state instead of a deep copy.
+	var state: Dictionary=death.read_state() if death is Death else death.snapshot()
 	var identity_keys:=["base_content_id","binding_id","item_id","kind","effect_type"] if death is Bomb else ["base_content_id","binding_id","actor_id","fragments"]
 	for key in identity_keys:
 		if state.get(key)!=_descriptor[key]: return failed_frame("Explosion effect identity or retained fragments changed")
@@ -91,11 +92,12 @@ func prepare_effect(death: RefCounted, camera: Transform3D, parent_rgba: PackedB
 		var sampler: RefCounted=_samplers[index].fork_for_frame()
 		var sampled: Dictionary=sampler.sample(state.effect.models[index].get("time_ms"),roots.roots[index])
 		if sampled.is_empty(): return failed_frame(sampler.error)
+		var tinted := []
 		for surface in sampled.surfaces:
 			var color := Colors.tint(parent_rgba,global_tint,surface.get("color_byte",-1))
 			if color.is_empty(): return failed_frame("Explosion effect color exceeded source precision")
-			surface.tint=color.value
-		samplers.append(sampler);surfaces.append(sampled.surfaces)
+			var row: Dictionary=surface.duplicate();row.tint=color.value;tinted.append(row)
+		samplers.append(sampler);surfaces.append(tinted)
 	return {"visible":true,"body_visible":roots.body_visible,"samplers":samplers,"surfaces":surfaces,"darken":Colors.single(darken) if _edition=="mac-full-hd" else 1.0}
 
 func commit_effect(prepared: Dictionary) -> void:

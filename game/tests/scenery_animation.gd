@@ -41,8 +41,7 @@ func check_synthetic() -> void:
 	check(raw==before,"Sampling changed raw source channels")
 	check(animation.sample(0,parent)==result and animation.sample(10000000,parent)==result,"Start/end clamp changed")
 	var state := animation.snapshot()
-	result.surfaces[0].pose.origin=Vector3.ZERO
-	check(animation.snapshot()==state,"Returned poses alias animation state")
+	check(result.is_read_only() and result.surfaces.is_read_only() and result.surfaces[0].is_read_only(),"Returned samples are editable aliases of animation state")
 	check(animation.sample(0,parent).surfaces[0].pose.is_equal_approx(expected),"Returned poses changed a reused sample")
 	var branch: RefCounted=animation.fork_for_frame()
 	check(not branch.sample(10,Transform3D.IDENTITY).is_empty() and animation.sample(0,parent).surfaces[0].pose.is_equal_approx(expected),"A sampler branch changed its retained parent pose")

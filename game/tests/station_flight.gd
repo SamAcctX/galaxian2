@@ -85,11 +85,14 @@ func verify_controls():
 	var selected: Dictionary=started.snapshot();captures["station-start"]=started
 	for key in ["player_pose","player_model_basis","camera_view","angular_units","cargo","scenery","random_state","world_elapsed_ms"]:check(selected[key]==manual[key],"Station selection changed "+key)
 	check(selected.station_autopilot.active and selected.station_autopilot.throttle==1 and selected.flight_notices.current.text=="Target: Var Hastra Station","Station selection lost its source state or target notice")
-	check(started.start_station_autopilot()==null and started.start_mining()==null,"Concurrent station and mining owners were accepted")
+	# Re-selecting the station retargets the active autopilot (by design); mining must still wait.
+	check(started.start_mining()==null,"Concurrent station and mining owners were accepted")
 	check(started.evaluate(100,Vector2.ONE,0,true).snapshot()==selected and started.cancel_station_autopilot(true)==null,"Pause changed station guidance")
 	var step: RefCounted=started.evaluate(100,Vector2(-1,1))
 	if step==null:check(false,started.error);return
-	check(step.snapshot()==started.evaluate(100,Vector2(1,-1)).snapshot(),"Active autopilot consumed current steering commands")
+	# Engine audio samples the raw stick (0b76028); only the ship's motion must ignore it.
+	var steered: Dictionary=step.snapshot();var opposite: Dictionary=started.evaluate(100,Vector2(1,-1)).snapshot();steered.erase("player_engine");opposite.erase("player_engine")
+	check(steered==opposite,"Active autopilot consumed current steering commands")
 	var first: Dictionary=step.snapshot()
 	check(first.player_pose.origin.distance_to(selected.player_pose.origin)>199.95 and first.player_pose.origin.distance_to(selected.player_pose.origin)<200.05,"Autopilot moved twice or used the previous half throttle")
 	check(first.station_autopilot.angular_units.x==manual.angular_units.x and first.angular_units==first.station_autopilot.angular_units,"First guidance frame discarded preceding command flags")

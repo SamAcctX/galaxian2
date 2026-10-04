@@ -25,7 +25,9 @@ var _decoded_bytes := 0
 var _language_index := 0
 var _voice_ids := {}
 
-func configure(library: RefCounted, bindings: RefCounted, campaign_cursor: int = 0) -> bool:
+## `scripted` is a prepared recipe dialogue (events and voice) used in place
+## of the cursor's scene radio.
+func configure(library: RefCounted, bindings: RefCounted, campaign_cursor: int = 0, scripted: Dictionary = {}) -> bool:
 	error="";unsupported.clear();_banks.clear();_clips.clear();_sound_cache.clear();_channel_cache.clear();_decoded_bytes=0;_definitions={};_library=null
 	_bank_order.clear()
 	_language_index=0;_voice_ids.clear()
@@ -35,8 +37,8 @@ func configure(library: RefCounted, bindings: RefCounted, campaign_cursor: int =
 	if bindings.audio.is_empty():return reject("This binding pack has no audio declarations")
 	_definitions=Definitions.normalized(bindings.audio);_library=library
 	_language_index=int(_definitions.default_language)
-	var dialogue: Dictionary=Dialogue.select(bindings,campaign_cursor)
-	if campaign_cursor!=0 and not Dialogue.valid_parameters(dialogue,campaign_cursor):return reject("Scene radio is unavailable")
+	var dialogue: Dictionary=scripted if not scripted.is_empty() else Dialogue.select(bindings,campaign_cursor)
+	if scripted.is_empty() and campaign_cursor!=0 and not Dialogue.valid_parameters(dialogue,campaign_cursor):return reject("Scene radio is unavailable")
 	var voice: Dictionary=dialogue.get("voice",{})
 	if not voice.is_empty():
 		if not RadioVoice.parameters(voice,dialogue.events.size()):return reject("Invalid radio voice capability")
@@ -51,7 +53,9 @@ func prepare(id: int) -> Dictionary:
 	if id<0 or id>=_definitions.get("events",[]).size():reject("Audio event is absent from this content profile");return {}
 	if _clips.has(id):return _clips[id]
 	if unsupported.has(id):return {"unsupported":unsupported[id],"id":id}
-	var event: Dictionary=_definitions.events[id]
+	return _prepare_event(id,_definitions.events[id])
+
+func _prepare_event(id: int, event: Dictionary) -> Dictionary:
 	var p: Dictionary=event.properties
 	if _voice_ids.has(id) and (event.categories!=["voice"] or p.mode!=0x180008 or p.max_playbacks!=1):return unavailable(id,"This radio mapping requires another voice event layout")
 	if (event.has("sound") and event.get("simple_flags")!=1) or not compatible_category(event.categories,id):return unavailable(id,"This event needs additional native category or instance behavior")
@@ -148,7 +152,9 @@ func configure_station_equipment(library: RefCounted, bindings: RefCounted) -> b
 
 func prepare_engine(id: int, event: Dictionary) -> Dictionary:
 	var program:=EngineParameters.read_program(event)
-	if program.is_empty() or event.properties.mode!=0x280010 or event.properties.doppler!=0 or event.properties.max_playbacks!=1 or event.properties.flags!=0:return unavailable(id,"This engine needs additional spatial or instance behavior")
+	# Expansion engines carry flag 0x80000 and a slight doppler; both are ignored,
+	# as for the other engine loops (assumption).
+	if program.is_empty() or event.properties.mode!=0x280010 or not Definitions.number(event.properties.doppler,0,0.05) or event.properties.max_playbacks!=1 or int(event.properties.flags) not in [0,0x80000]:return unavailable(id,"This engine needs additional spatial or instance behavior")
 	var definition:=cached_playlist(int(program.sound_definition),true)
 	if definition.is_empty():return {}
 	if definition.has("unsupported"):return unavailable(id,definition.unsupported)
@@ -181,7 +187,9 @@ func prepare_static(id: int, event: Dictionary) -> Dictionary:
 	# Designer mode 2 loops while the firing event is held, then plays the
 	# current sample to its end. The supplied cannon events use this mode.
 	if int(sound.flags) not in [0,1,2] or sound.flags2!=0 or sound.loop_count!=-1 or sound.auto_pitch!=0 or sound.fine_tune!=0 or sound.volume<0 or sound.volume>4 or float(sound.fade_in) not in [-1.0,0.0] or float(sound.fade_out) not in [-1.0,0.0] or sound.x!=0 or (sound.width!=1 and not terran_music_box):return unavailable(id,"This sound requires native scheduling or parameter automation")
-	if sound.flags==0 and event.properties.max_playbacks!=1:return unavailable(id,"This loop needs additional native instance behavior")
+	# One cached handle per event: a second allowed instance (Matador TS 2252)
+	# never sounds separately, so it plays like a single-instance loop.
+	if sound.flags==0 and event.properties.max_playbacks not in [1.0,2.0]:return unavailable(id,"This loop needs additional native instance behavior")
 	var looping: bool=sound.flags!=1
 	var definition:=cached_playlist(int(sound.sound_def),looping)
 	if definition.is_empty():return {}
@@ -270,6 +278,77 @@ func prepare_layered(id: int, event: Dictionary) -> Dictionary:
 	var result:=event_header(event)
 	result.merge({"kind":"layered","parameter":{"velocity":float(parameter.velocity)},"layers":layers,"looping":true})
 	_clips[id]=result
+	return result
+
+## Room atmospheres: layered loops whose layer envelopes are single constant
+## points. A gain point scales its layer; the paired 0x804 points are a neutral
+## surround pan for these 2D events (assumption: no audible panning).
+func prepare_constant_layers(id: int) -> Dictionary:
+	var ordinary:=prepare(id)
+	if ordinary.is_empty() or not ordinary.has("unsupported"):return ordinary
+	var event: Dictionary=_definitions.events[id].duplicate(true)
+	if event.get("type")!=8 or event.has("sound") or event.parameters.size()!=1 or int(event.properties.mode) not in [0x180008,0x280008]:return ordinary
+	for layer in event.layers:
+		var gain:=1.0
+		for envelope in layer.envelopes:
+			if envelope.get("points",[]).size()!=1 or int(envelope.flags) not in [12,2052] or envelope.get("dsp")!="":return ordinary
+			if int(envelope.flags)==12:gain*=float(envelope.points[0][1])
+		layer.envelopes=[]
+		for sound in layer.sounds:sound.volume=float(sound.volume)*gain
+	event.parameters[0].envelopes=0
+	unsupported.erase(id)
+	var result:=prepare_layered(id,event)
+	if result.has("unsupported"):unsupported[id]=ordinary.unsupported
+	return result
+
+## Parameter-triggered one-shots (the star-map whoosh): every parameter window
+## fires the same one-shot sound with no layer effects. Played once per trigger,
+## as the event's first window at a fixed parameter value (assumption: the
+## original's speed sweep repeats the same whoosh; one play per drag start).
+func prepare_trigger_once(id: int) -> Dictionary:
+	var ordinary:=prepare(id)
+	if ordinary.is_empty() or not ordinary.has("unsupported"):return ordinary
+	var event: Dictionary=_definitions.events[id]
+	if event.get("type")!=8 or event.has("sound") or event.parameters.is_empty() or event.layers.is_empty():return ordinary
+	var first: Dictionary={}
+	for layer in event.layers:
+		if layer.get("flags")!=2 or not layer.envelopes.is_empty():return ordinary
+		for sound in layer.sounds:
+			if int(sound.flags)!=1:return ordinary
+			if first.is_empty():first=sound
+			elif sound.sound_def!=first.sound_def or sound.volume!=first.volume:return ordinary
+	if first.is_empty():return ordinary
+	var single:=event.duplicate(true)
+	var sound: Dictionary=first.duplicate(true);sound.x=0.0;sound.width=1.0
+	single.parameters=[];single.layers=[{"flags":2,"priority":65535,"parameter":65535,"envelopes":[],"sounds":[sound]}]
+	unsupported.erase(id)
+	var result:=_prepare_event(id,single)
+	if result.has("unsupported"):unsupported[id]=ordinary.unsupported
+	return result
+
+## Parameter-steered loops (the Liberator guidance engine): played as a plain
+## loop of the event's full-width looping layer at the event's base pitch and
+## volume. Assumption: parameter windows, pitch/gain envelopes and narrower
+## layers are dropped; the original bends this loop's pitch with steering.
+func prepare_plain_loop(id: int) -> Dictionary:
+	var ordinary:=prepare(id)
+	if ordinary.is_empty() or not ordinary.has("unsupported"):return ordinary
+	var event: Dictionary=_definitions.events[id]
+	if event.get("type")!=8 or event.has("sound") or event.parameters.is_empty():return ordinary
+	var main: Dictionary={}
+	for layer in event.layers:
+		for sound in layer.sounds:
+			if int(sound.flags)==0 and sound.x==0 and sound.width==1 and main.is_empty():main=sound
+	if main.is_empty():return ordinary
+	var single:=event.duplicate(true)
+	single.properties.pitch=0.0
+	single.parameters=[];single.layers=[{"flags":2,"priority":65535,"parameter":65535,"envelopes":[],"sounds":[main.duplicate(true)]}]
+	unsupported.erase(id)
+	var result:=_prepare_event(id,single)
+	if result.has("unsupported") or result.get("kind")=="playlist":
+		_clips.erase(id);unsupported[id]=ordinary.unsupported;return ordinary
+	# FMOD Designer raw pitch: four octaves per unit.
+	result.pitch=pow(2.0,4.0*float(event.properties.pitch))
 	return result
 
 func prepare_mining_drill(id: int, event: Dictionary) -> Dictionary:

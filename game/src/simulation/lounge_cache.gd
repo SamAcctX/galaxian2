@@ -13,11 +13,17 @@ const Random=preload("res://src/simulation/seeded_random.gd")
 const Shopping=preload("res://src/content/ordinary_shopping_definitions.gd")
 const DeepScience=preload("res://src/content/deep_science_stock_definitions.gd")
 const Medals=preload("res://src/simulation/base_medal_progress.gd")
+const Dialogue=preload("res://src/simulation/lounge_dialogue.gd")
+const ValkyrieWorlds=preload("res://src/content/valkyrie_world_definitions.gd")
 var error:=""
 var _state:={}
 var _deep_science:={}
 # Frozen observation of _state; every mutator clears it before changing state.
 var _read:={}
+var _social_used: Array=[]
+
+func begin_social_visit() -> void:
+	_read={};_social_used=[]
 
 func configure(bindings: RefCounted) -> bool:
 	_read={}
@@ -31,7 +37,7 @@ func configure(bindings: RefCounted) -> bool:
 		_state.current_station_id=-1;_state.random={}
 	return true
 
-func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: Variant,settings: Variant,random_state: Variant,unix_seconds: Variant,station_context: RefCounted=null,medal_progress: Dictionary={}) -> bool:
+func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: Variant,settings: Variant,random_state: Variant,unix_seconds: Variant,station_context: RefCounted=null,medal_progress: Dictionary={},all_medals:=false,wanted_ships: Array=[]) -> bool:
 	_read={}
 	error=""
 	if _state.is_empty() or not Stock.available(bindings) or cat==null or library==null:return reject("This cache cannot generate early station stock")
@@ -63,6 +69,8 @@ func select_location(bindings: RefCounted,cat: RefCounted,library: RefCounted,co
 		var gold: Variant=Medals.all_base_gold(context.campaign_cursor,medal_progress)
 		if gold==null:return reject("Deep Science requires the career's retained medal progress")
 		stock_context.all_base_medals_gold=gold
+	if Stock.medal_station(context.station_id,context.campaign_cursor):stock_context.all_supernova_medals=all_medals
+	if int(context.station_id)==int(ValkyrieWorlds.WANTED_SHIPS.station_id) and not wanted_ships.is_empty():stock_context.wanted_ships=wanted_ships.duplicate()
 	var stock:=Stock.new()
 	if not stock.prepare(bindings,cat,stock_context,random.snapshot(),unix_seconds):return reject(stock.error)
 	var contacts:=Contacts.new()
@@ -111,7 +119,7 @@ func remember(contacts: RefCounted,stock: RefCounted=null,medal_progress: Dictio
 	_state.history=population.history.duplicate()
 	return true
 
-func inspect_contact(bindings: RefCounted,cat: RefCounted,context: Dictionary,contact_id: int,station_context: RefCounted=null) -> bool:
+func inspect_contact(bindings: RefCounted,cat: RefCounted,context: Dictionary,contact_id: int,station_context: RefCounted=null,library: RefCounted=null) -> bool:
 	_read={}
 	error=""
 	if context.get("station_id")!=_state.get("current_station_id"):return reject("Inspect the currently retained lounge")
@@ -121,6 +129,22 @@ func inspect_contact(bindings: RefCounted,cat: RefCounted,context: Dictionary,co
 		if matches.size()!=1:return reject("This lounge has no such contact")
 		if entry.offers.has(contact_id):return true
 		var contact: Dictionary=matches[0]
+		if contact.role==1 and Dialogue.available(bindings):
+			var previous: Dictionary=entry.get("dialogues",{}).get(contact_id,{})
+			var prepared:={};var record:={}
+			if previous.is_empty():
+				prepared=Dialogue.prepare(contact,_state.random,_social_used)
+				if prepared.is_empty():return reject("This lounge has no unused social topic")
+				record=prepared.dialogue
+			else:
+				if not Dialogue.valid(previous,contact,cat,library):return reject("This contact lost its retained dialogue")
+				record=Dialogue.revisit(previous,contact,int(context.station_id),library)
+			if not Dialogue.valid(record,contact,cat,library):return reject("The original social dialogue is unavailable")
+			if not entry.has("dialogues"):entry.dialogues={}
+			entry.dialogues[contact_id]=record
+			if not prepared.is_empty():
+				_social_used.append(prepared.raw_topic);_state.random=prepared.random
+			return true
 		if Contacts.Recipe.contact_request(bindings.early_contracts,int(contact.role)).is_empty():return true
 		var offer_context:=context.duplicate(true)
 		offer_context.client_faction=contact.faction;offer_context.system_availability=_state.system_availability.duplicate()
@@ -133,6 +157,20 @@ func inspect_contact(bindings: RefCounted,cat: RefCounted,context: Dictionary,co
 		_state.random=requested.random.duplicate(true);_state.history=requested.history.duplicate()
 		return true
 	return reject("The inspected contact has no retained lounge")
+
+func restore_dialogues(bindings: RefCounted,cat: RefCounted,library: RefCounted,station_id: int,records: Variant) -> bool:
+	_read={};error=""
+	if not Dialogue.available(bindings) or not records is Dictionary or records.is_empty():return reject("Invalid saved social dialogue")
+	for entry in _state.locations:
+		if entry.station_id!=station_id:continue
+		if records.size()>entry.population.contacts.size():return reject("Invalid social contact count")
+		for id in records:
+			if not id is int:return reject("Invalid saved social contact")
+			var contacts: Array=entry.population.contacts.filter(func(contact):return contact.contact_id==id)
+			if contacts.size()!=1 or not Dialogue.valid(records[id],contacts[0],cat,library):return reject("The saved dialogue lost its contact or original text")
+		entry.dialogues=records.duplicate(true)
+		return true
+	return reject("The social dialogue has no retained lounge")
 
 ## Save entry verifies lazy quotes against their own sampling inputs. Requests
 ## may interleave visits to older cached stations, so population order alone
@@ -168,6 +206,62 @@ func consume(station_id: int,offer_id: int) -> bool:
 		return true
 	return reject("The accepted contact has no retained lounge")
 
+func diplomat_contact(station_id: int,contact_id: int) -> Dictionary:
+	var entry:=location(station_id)
+	for contact in entry.get("population",{}).get("contacts",[]):
+		if contact.contact_id!=contact_id or contact.get("role")!=7:continue
+		if not Numbers.integer(contact.get("faction"),0,3):return {}
+		var response: int=entry.get("used_diplomats",{}).get(contact_id,-1)
+		return {"faction":int(contact.faction),"consumed":response>=0,"response_text_id":response}
+	return {}
+
+func consume_diplomat(station_id: int,contact_id: int,response_text_id: int=-1) -> bool:
+	_read={};error=""
+	var contact:=diplomat_contact(station_id,contact_id)
+	if contact.is_empty() or contact.consumed:return reject("This diplomat is absent or has already been used")
+	if response_text_id!=-1 and (response_text_id<843 or response_text_id>845):return reject("Invalid retained diplomat response")
+	var random:=Random.new()
+	if response_text_id<0:
+		if not random.restore(_state.random):return reject(random.error)
+		response_text_id=843+random.next_int(3)
+	for entry in _state.locations:
+		if entry.station_id!=station_id:continue
+		if not entry.has("used_diplomats"):entry.used_diplomats={}
+		entry.used_diplomats[contact_id]=response_text_id
+		if not random.snapshot().is_empty():_state.random=random.snapshot()
+		return true
+	return reject("The diplomat lost its retained lounge")
+
+func blueprint_quote(station_id: int,contact_id: int) -> Dictionary:
+	for contact in location(station_id).get("population",{}).get("contacts",[]):
+		if contact.contact_id!=contact_id or contact.get("role")!=3 or contact.get("generated",true) or not contact.has("blueprint"):continue
+		var terms: Dictionary=contact.blueprint
+		if not Numbers.integer(terms.get("item_id"),0,2147483647) or not Numbers.integer(terms.get("price"),0,2147483647):return {}
+		return {"item_id":int(terms.item_id),"total_price":int(terms.price)}
+	return {}
+
+func coordinate_quote(station_id: int,contact_id: int) -> Dictionary:
+	var available: Array=_state.get("system_availability",[])
+	for contact in location(station_id).get("population",{}).get("contacts",[]):
+		if contact.contact_id!=contact_id or contact.get("role")!=4 or not contact.has("service"):continue
+		var terms: Dictionary=contact.service
+		if not Numbers.integer(terms.get("parameter"),0,available.size()-1) or not Numbers.integer(terms.get("price"),0,2147483647):return {}
+		var system_id:=int(terms.parameter)
+		return {"system_id":system_id,"total_price":int(terms.price),"consumed":bool(available[system_id])}
+	return {}
+
+func purchase_coordinates(station_id: int,contact_id: int) -> bool:
+	error=""
+	if station_id!=_state.get("current_station_id") :return reject("Buy coordinates from the current station lounge")
+	var quote:=coordinate_quote(station_id,contact_id)
+	if quote.is_empty() or quote.consumed:return reject("This contact has no unknown coordinates for sale")
+	# Known coordinates outlive the FIFO lounge cache and already survive saves.
+	# Never charge again after revisiting or restoring an older earned career.
+	var available: Array=_state.system_availability.duplicate()
+	available[int(quote.system_id)]=true
+	_read={};_state.system_availability=available
+	return true
+
 func merchant_quote(station_id: int,contact_id: int) -> Dictionary:
 	var entry:=location(station_id)
 	for contact in entry.get("population",{}).get("contacts",[]):
@@ -176,6 +270,28 @@ func merchant_quote(station_id: int,contact_id: int) -> Dictionary:
 			result.consumed=contact_id in entry.get("purchased_goods",[])
 			return result
 	return {}
+
+func kaamo_contact(station_id: int,contact_id: int) -> Dictionary:
+	var entry:=location(station_id)
+	for contact in entry.get("population",{}).get("contacts",[]):
+		if contact.contact_id==contact_id and contact.has("kaamo"):
+			var result: Dictionary=contact.kaamo.duplicate(true)
+			result.consumed=contact_id in entry.get("purchased_goods",[])
+			return result
+	return {}
+
+## A Kaamo dealer sells once per bar generation ("nothing left" afterwards).
+func consume_kaamo(station_id: int,contact_id: int) -> bool:
+	_read={};error=""
+	var contact:=kaamo_contact(station_id,contact_id)
+	if contact.is_empty():return reject("This Kaamo agent is not in the lounge")
+	if contact.consumed:return reject("This Kaamo agent has nothing left")
+	for entry in _state.locations:
+		if entry.station_id==station_id:
+			if not entry.has("purchased_goods"):entry.purchased_goods=[]
+			entry.purchased_goods.append(contact_id)
+			return true
+	return reject("The Kaamo agent lost its retained lounge")
 
 func consume_goods(station_id: int,contact_id: int) -> bool:
 	_read={};error=""
@@ -252,6 +368,18 @@ func adopt_selection_random(random_state: Dictionary) -> bool:
 	_state.random=random.snapshot()
 	return true
 
+## A story flight that moves the career on in space opens its systems here.
+func unlock_story_systems(navigation: Dictionary,ids: Array) -> bool:
+	_read={};error=""
+	var available: Variant=_state.get("system_availability")
+	if not Navigation.valid_availability(navigation,available):return reject("Story coordinates lost the career's existing available systems")
+	var next: Array=available.duplicate()
+	for id in ids:
+		if not id is int or id<0 or id>=next.size():return reject("The story names an invalid system")
+		next[id]=true
+	_state.system_availability=next
+	return true
+
 func acknowledge_campaign_coordinates(bindings: RefCounted,visit: RefCounted) -> bool:
 	_read={}
 	# The career transaction supplies the same acknowledged native dialogue.
@@ -260,7 +388,7 @@ func acknowledge_campaign_coordinates(bindings: RefCounted,visit: RefCounted) ->
 	if not is_instance_of(visit,load("res://src/simulation/campaign_visit.gd")):return reject("Coordinates require an acknowledged campaign conversation")
 	var receipt: Dictionary=visit.transition()
 	if receipt.is_empty():return reject("Acknowledge the complete conversation before receiving coordinates")
-	var rules: Dictionary=load("res://src/content/kappa_return_definitions.gd").conversation(bindings,receipt.get("from_cursor"),receipt.get("previous_mission"))
+	var rules: Dictionary=load("res://src/content/free_campaign_definitions.gd").dialogue_rules(bindings,receipt.get("from_cursor"),receipt.get("previous_mission"),true)
 	if rules.is_empty() or not load("res://src/content/opening_escape_definitions.gd").equal_value(receipt.get("unlock_system_ids"),rules.unlock_system_ids):return reject("The conversation changed its declared coordinates")
 	for key in ["base_content_id","binding_id"]:
 		if _state.get(key)!=bindings.get(key) or receipt.get(key)!=_state[key]:return reject("Coordinates belong to another content identity")
@@ -278,5 +406,6 @@ func fork() -> RefCounted:
 	var result: RefCounted=get_script().new()
 	result._state=_state.duplicate(true)
 	result._deep_science=_deep_science.duplicate(true);result._read=_read
+	result._social_used=_social_used.duplicate()
 	return result
 func reject(message: String) -> bool:error=message;return false

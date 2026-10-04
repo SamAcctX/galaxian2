@@ -50,7 +50,7 @@ static func supports_station(bindings: RefCounted,catalogues: RefCounted,station
 	var world: Dictionary=Worlds.catalogue_location(bindings,catalogues,station_id)
 	if world.is_empty():return false
 	var station: Dictionary=catalogues.tables.stations[station_id]
-	return LocalArrival.available(bindings) and int(station.planet_type) in LocalArrival.SUPPORTED_TYPES and int(world.sky_index) not in [11,12] and int(world.sky_index)<=14
+	return LocalArrival.available(bindings) and int(station.planet_type) in LocalArrival.SUPPORTED_TYPES and int(world.sky_index)<=14
 
 func for_station(bindings: RefCounted,catalogues: RefCounted,station_id: int,cursor: int,quality:="high") -> Dictionary:
 	error=""
@@ -70,7 +70,7 @@ func _for_location(bindings: RefCounted, catalogues: RefCounted, opening: Dictio
 	var travel_context:=ordinary and Travel.location_supported(bindings,int(opening.station_id),int(opening.system_id),int(station.planet_type))
 	var local_arrival:=ordinary and LocalArrival.location_supported(bindings,catalogues,int(opening.station_id),int(opening.get("campaign_cursor",-1)),mission_context)
 	travel_context=travel_context or local_arrival or station_preview
-	if (station.planet_type!=0 and not travel_context) or opening.system_id==27 or not Numbers.integer(system.get("sky_index"),0,14):
+	if (station.planet_type!=0 and not travel_context) or not Numbers.integer(system.get("sky_index"),0,18):
 		return reject("This planet layout requires an ordinary supported location")
 	var ordered:=[]
 	# The original station loader scans catalogue records, filtering membership.
@@ -96,6 +96,10 @@ func _for_location(bindings: RefCounted, catalogues: RefCounted, opening: Dictio
 	layout.sky_index=int(system.sky_index)
 	layout.mesh_id=int(data.mesh_id);layout.mesh_path=mesh_path
 	if ordinary:layout.campaign_cursor=int(opening.campaign_cursor)
+	var swell: float=load("res://src/content/valkyrie_world_definitions.gd").supernova_sun_scale(int(opening.system_id),int(opening.get("campaign_cursor",-1)))
+	for entry in layout.entries:
+		if entry.kind=="sun" and swell!=1.0:entry.scale=f32(float(entry.scale)*swell)
+	if swell!=1.0:layout.sun_swell=swell
 	return layout
 
 func arrange(station_id: Variant, planet_type: Variant, ordered_station_ids: Variant, opening_scale := true,arrival_rules: Dictionary={}) -> Dictionary:
@@ -165,7 +169,7 @@ func placement(kind: String, station_id: int, current: bool, slot: int, angles: 
 		"origin":-placement_basis.z.normalized()*Sun.DISTANCE,"scale":f32(scale_value),"random_state":random_state.duplicate()}
 
 func f32(value: float) -> float:
-	return PackedFloat32Array([value])[0]
+	return Vector2(value,0.0).x
 
 func reject(message: String) -> Dictionary:
 	error=message

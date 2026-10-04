@@ -1,6 +1,7 @@
 extends RefCounted
 ## Prepares a detached supported mining world. Activation, entry-camera time,
 ## acknowledged briefing, manual flight and mining have separate native owners.
+const Difficulty=preload("res://src/content/difficulty_definitions.gd")
 const Reputation=preload("res://src/simulation/faction_reputation.gd")
 const MiningFlight=preload("res://src/content/full_hold_flight_definitions.gd")
 const Handoff=preload("res://src/content/opening_handoff_definitions.gd")
@@ -217,7 +218,10 @@ func _prepare_free_owned(bindings: RefCounted,catalogues: RefCounted,equipment: 
 	if rescue:context=accepted.duplicate(true)
 	if incoming!=null:context.player_position=incoming.snapshot().position
 	var conditions:={"companions_empty":true,"location_match":false,"special_placement":false}
-	var selected_job: bool=not context.mission_story and MissionContext.supports_contract(bindings,accepted.mission,cursor)
+	# A story job at a talk station (e.g. a talk arrival) runs as the selected
+	# job; the station visit itself stays the pending story for docking.
+	var story_job: bool=load("res://src/content/valkyrie_flight_definitions.gd").is_story_job(accepted.mission)
+	var selected_job: bool=(not context.mission_story or story_job) and MissionContext.supports_contract(bindings,accepted.mission,cursor)
 	var scenery:=Scenery.new()
 	var ready: bool=scenery.configure_contract(bindings,catalogues,equipment,contracts,previous_cache if previous_cache is Dictionary else {},context.get("player_position",Vector3(data.player_position[0],data.player_position[1],data.player_position[2])),conditions,unix_seconds,large_display,body_resources,effect_resources) if selected_job else scenery.configure_kappa_rescue(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources) if rescue else scenery.configure_free(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources)
 	if not ready:return reject(scenery.error)
@@ -493,9 +497,11 @@ func prepare_ordinary_void_selected(bindings: RefCounted,catalogues: RefCounted,
 	if environment.is_empty():return false
 	var scenery:=Scenery.new()
 	var conditions:={"companions_empty":true,"location_match":true,"special_placement":false}
-	if not scenery.configure_ordinary_void(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources):return reject(scenery.error)
+	if not scenery.configure_ordinary_void(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources,environment.player_pose.origin):return reject(scenery.error)
 	var player:=Player.new()
-	if not player.configure_ordinary_void(bindings,catalogues,equipment,scenery.world_initialization_owner(),source,difficulty,previous_cache):return reject(player.error)
+	var story: bool=source is MissionContext and source.void_story()
+	var ready: bool=player.configure_void_story(bindings,catalogues,equipment,scenery.world_initialization_owner(),previous_cache) if story else player.configure_ordinary_void(bindings,catalogues,equipment,scenery.world_initialization_owner(),source,difficulty,previous_cache)
+	if not ready:return reject(player.error)
 	var location:=Location.new()
 	var place:=location.resolve_ordinary_void(bindings,catalogues,equipment,player.cache_snapshot(),environment.void_environment)
 	if place.is_empty():return reject(location.error)
@@ -511,6 +517,8 @@ func prepare_ordinary_void_selected(bindings: RefCounted,catalogues: RefCounted,
 	_state.void_context=context;_state.system_id=-1;_state.station_id=-1;_state.current_station_id=-1;_state.void_station_id=-1
 	_state.mission_kind=-1;_state.mission_story=false;_state.return_station_id=retained.source_station_id;_state.return_system_id=retained.source_system_id
 	_ordinary_void_source=source.fork()
+	# The story flight's runner, radio and results follow its admitted cast.
+	if story:_state.mission_context=source
 	return true
 
 func _valid_selected_progress(bindings: RefCounted,progress: Dictionary,cursor: int,rank: Variant,difficulty: Variant) -> bool:
@@ -524,7 +532,14 @@ func _valid_selected_progress(bindings: RefCounted,progress: Dictionary,cursor: 
 	if progress.has("cargo_recovered"):
 		if not Numbers.integer(progress.cargo_recovered,0,2147483647):return reject("Selected construction lost its recovered-cargo statistic")
 		expected.cargo_recovered=progress.cargo_recovered
-	if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected or rank!=progress.get("rank") or difficulty not in [0.5,1.0,1.5]:return reject("Selected construction changed earned rank, difficulty or hint history")
+	if progress.has("asteroids_destroyed"):
+		if not Numbers.integer(progress.asteroids_destroyed,0,2147483647):return reject("Selected construction lost its asteroid-destruction statistic")
+		expected.asteroids_destroyed=progress.asteroids_destroyed
+	for key in preload("res://src/simulation/opening_station_archive.gd").LIFETIME_KEYS:
+		if progress.has(key):
+			if not preload("res://src/simulation/opening_station_archive.gd").valid_lifetime(key,progress[key]):return reject("Selected construction lost a lifetime statistic")
+			expected[key]=progress[key]
+	if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected or rank!=progress.get("rank") or not Difficulty.valid(difficulty):return reject("Selected construction changed earned rank, difficulty or hint history")
 	return true
 
 func _prepare_story_selected(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,context: Dictionary,progress: Dictionary,station_response_flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,previous_cache: Variant,contracts: RefCounted,from_station_id: int,incoming: RefCounted=null,locations: RefCounted=null) -> bool:
@@ -624,6 +639,13 @@ func _prepare_arrival(bindings: RefCounted,catalogues: RefCounted,packet: Dictio
 		var expected:=Career.calculate_progress(bindings.opening_handoff,packet.campaign_cursor,progress.get("player_kills"),progress.get("pirate_kills"),progress.get("other_score"))
 		if expected.is_empty():return reject("Local arrival has unsupported career counters")
 		expected.reputation=progress.reputation.duplicate(true)
+		if progress.has("asteroids_destroyed"):
+			if not Numbers.integer(progress.asteroids_destroyed,0,2147483647):return reject("Local arrival lost its asteroid-destruction statistic")
+			expected.asteroids_destroyed=progress.asteroids_destroyed
+		for key in preload("res://src/simulation/opening_station_archive.gd").LIFETIME_KEYS:
+			if progress.has(key):
+				if not preload("res://src/simulation/opening_station_archive.gd").valid_lifetime(key,progress[key]):return reject("Local arrival lost a lifetime statistic")
+				expected[key]=progress[key]
 		if not MiningSession.retain_hint_history(progress,expected,bindings.mining_session) or progress!=expected:return reject("Local arrival career disagrees with its counters")
 	var flags: Variant=objective.get("station_response_flags")
 	var valid_flags: bool=FreeFlight.response_flags(bindings,flags) if free_arrival else (ContractWorld.response_flags(bindings,flags) if contract_arrival else Travel.valid_response_flags(bindings.mido_travel,flags,packet.campaign_cursor))
@@ -763,7 +785,7 @@ func _construct(bindings: RefCounted, catalogues: RefCounted, packet: Dictionary
 		if not scenery.configure_combat_training(bindings,catalogues,equipment,pose.origin,conditions,unix_seconds,large_display,body_resources,effect_resources):return reject(scenery.error)
 	elif local_entry:
 		var trip:=Travel.journey(bindings.mido_travel,int(data.campaign_cursor))
-		var ready: bool=scenery.configure_local_departure(bindings,catalogues,equipment,player.cache_snapshot(),conditions,unix_seconds,large_display,body_resources,effect_resources,0.5,int(data.campaign_cursor)) if int(context.station_id)==int(trip.from_station_id) else scenery.configure_local_arrival(bindings,catalogues,equipment,player.cache_snapshot(),conditions,unix_seconds,large_display,body_resources,effect_resources)
+		var ready: bool=scenery.configure_local_departure(bindings,catalogues,equipment,player.cache_snapshot(),conditions,unix_seconds,large_display,body_resources,effect_resources,float(packet.get("difficulty",Difficulty.NORMAL)),int(data.campaign_cursor)) if int(context.station_id)==int(trip.from_station_id) else scenery.configure_local_arrival(bindings,catalogues,equipment,player.cache_snapshot(),conditions,unix_seconds,large_display,body_resources,effect_resources)
 		if not ready:return reject(scenery.error)
 	else:
 		if not scenery.configure_departure(bindings,catalogues,packet.player_cache,conditions,unix_seconds,large_display,body_resources,effect_resources):return reject(scenery.error)
@@ -822,7 +844,8 @@ func _valid_packet(bindings: RefCounted, packet: Dictionary, context: Dictionary
 	if equipped:
 		if not equipment is Equipment:return reject("Departure requires its native equipment owner")
 		data=data.duplicate(true);data.campaign_cursor=packet.campaign_cursor if local_departure else 7;data.mission_kind=11 if local_departure else 4;data.mission_parameter=0
-	if packet.size()!=(20 if ContractWorld.supports(bindings,packet.campaign_cursor) else ((19 if packet.campaign_cursor in [11,12] else 18) if equipped else 16)):return reject("First flight requires a complete departure packet")
+	if packet.has("difficulty") and not Difficulty.valid(packet.difficulty):return reject("First flight requires a supported difficulty")
+	if packet.size()-int(packet.has("difficulty"))!=(20 if ContractWorld.supports(bindings,packet.campaign_cursor) else ((19 if packet.campaign_cursor in [11,12] else 18) if equipped else 16)):return reject("First flight requires a complete departure packet")
 	for key in ["base_content_id","binding_id"]:
 		if packet.get(key)!=bindings.get(key):return reject("First-flight packet belongs to another content identity")
 	for key in ["campaign_cursor","source_state","world_type","audio_selector","confirmation_required","confirmation_text_id"]:
@@ -857,6 +880,13 @@ func _valid_packet(bindings: RefCounted, packet: Dictionary, context: Dictionary
 	if ContractWorld.supports(bindings,packet.campaign_cursor):
 		if not Numbers.integer(progress.get("debris_destroyed"),0,2147483647):return reject("Contract departure lost its debris statistic")
 		expected_progress.debris_destroyed=progress.debris_destroyed
+	if progress.has("asteroids_destroyed"):
+		if not Numbers.integer(progress.asteroids_destroyed,0,2147483647):return reject("Departure lost its asteroid-destruction statistic")
+		expected_progress.asteroids_destroyed=progress.asteroids_destroyed
+	for key in preload("res://src/simulation/opening_station_archive.gd").LIFETIME_KEYS:
+		if progress.has(key):
+			if not preload("res://src/simulation/opening_station_archive.gd").valid_lifetime(key,progress[key]):return reject("Departure lost a lifetime statistic")
+			expected_progress[key]=progress[key]
 	if not MiningSession.retain_hint_history(progress,expected_progress,bindings.mining_session) or progress!=expected_progress:return reject("First flight changed earned campaign progress")
 	if ContractWorld.supports(bindings,packet.campaign_cursor):
 		if not Travel.navigation_mission(bindings.mido_travel,packet.campaign_cursor,packet.mission) or packet.contracts.progress!=progress or not ContractWorld.response_flags(bindings,packet.station_response_flags):return reject("Contract departure changed the retained career, responses or pending story")
@@ -888,5 +918,5 @@ func selected_locations_owner() -> RefCounted:return null if _selected_locations
 func void_environment_owner() -> RefCounted:return null if _void_environment==null else _void_environment.fork()
 func ordinary_void_source_owner() -> RefCounted:return null if _ordinary_void_source==null else _ordinary_void_source.fork()
 func clear() -> void:error="";_state={};_scenery=null;_camera=null;_player=null;_equipment=null;_contracts=null;_selected_locations=null;_void_environment=null;_ordinary_void_source=null
-static func f32(value: float) -> float:return PackedFloat32Array([value])[0]
+static func f32(value: float) -> float:return Vector2(value,0.0).x
 func reject(message: String) -> bool:error=message;return false

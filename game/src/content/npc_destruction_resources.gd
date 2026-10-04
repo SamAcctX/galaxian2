@@ -16,6 +16,7 @@ const AEM = preload("res://src/content/aem.gd")
 const Timing = preload("res://src/content/scenery_effect_resources.gd")
 const Bindings = preload("res://src/content/resource_bindings.gd")
 const Library = preload("res://src/content/library.gd")
+const Statics = preload("res://src/content/static_object_definitions.gd")
 const PATHS := ["resources/data/assets/main/3d/meshes/fx/explosion_anim_lookat_alpha.aem",
 	"resources/data/assets/main/3d/meshes/fx/explosion_anim_lookat_add.aem",
 	"resources/data/assets/main/3d/meshes/fx/explosion_debris_anim_add.aem"]
@@ -99,8 +100,16 @@ func configure_contract(library: RefCounted,bindings: RefCounted,construction: R
 		var model: Dictionary=model_cache[row.cargo_model_id] if model_cache.has(row.cargo_model_id) else prepared.read_cargo_model(library,bindings,row)
 		if model.is_empty():return reject(prepared.error)
 		model_cache[row.cargo_model_id]=model;models.append(model.duplicate(true))
+	# Cast static objects stage their art, collision and wreck timing here.
+	var statics:={}
+	for row in construction.snapshot().actors:
+		if row.get("population_group")!="static" or statics.has(int(row.static_model)):continue
+		var reader:=Statics.new();var placed: Dictionary=reader.resolve(library,bindings,int(row.static_model))
+		if placed.is_empty():return reject(reader.error)
+		statics[int(row.static_model)]=placed
 	_state=prepared.snapshot();_state.cargo_models=models;_state.campaign_cursor=int(data.campaign_cursor)
 	_state.contract_encounter=construction.snapshot().contract_encounter.duplicate(true)
+	_state.static_objects=statics
 	return true
 
 func configure_local_traffic(library: RefCounted, bindings: RefCounted) -> bool:
