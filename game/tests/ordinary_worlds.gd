@@ -201,6 +201,14 @@ func verify_weymire_reaction(bindings: RefCounted,lifecycle: Dictionary,actors: 
 	check(after.warning_issued and after.response_issued and after.requested_damage[actor.actor_id]==actor.max_hull and result.events.size()==2,"Weymire local or opposing faction did not react to a player hit")
 	check(after.station_response_flag==(actor.actor_kind==2),"Weymire station response followed a non-primary faction")
 	for id in actors.size():check(after.forced_hostile[id]==(actors[id].actor_kind==actor.actor_kind),"Weymire provocation forced a different faction")
+	# Extreme: 30% of the hull already turns the whole faction (Normal needs 66%).
+	for extreme in [false,true]:
+		var hard:=Provocation.new()
+		if not hard._initialize_population(bindings,lifecycle,bindings.mido_travel.traffic_combat,{"axes":[0,0],"override":-1}):check(false,hard.error);return
+		hard._set_factions(lifecycle,-1);hard._apply_difficulty(1.5 if extreme else 0.5)
+		var hit: Dictionary=hard.evaluate(actor,int(actor.max_hull*0.3),false,random_state,true)
+		if hit.is_empty():check(false,hard.error);return
+		check(bool(hit.owner.snapshot().response_issued)==extreme,"A 30% hit did not follow the %s faction threshold"%("Extreme" if extreme else "Normal"))
 
 func verify_population(bindings: RefCounted,cat: RefCounted,context: Dictionary,seed: int):
 	var owner:=Factory.new()

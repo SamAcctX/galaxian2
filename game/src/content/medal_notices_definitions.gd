@@ -7,7 +7,7 @@ extends RefCounted
 ##    is still locked: unlocks it, saved with the station
 ##  - 3222 after cursor 161 with all gold and add-on medals (the Specter at
 ##    Katashán), once per run
-## Assumption: the hardcore-only route to 3222 is not built (no hardcore mode).
+##    - or in an Extreme (hardcore) career, medals or not
 
 const EliteMedals=preload("res://src/simulation/elite_medal_progress.gd")
 const SPEAKER:=16
@@ -31,4 +31,5 @@ static func next(career: Dictionary,shown: Dictionary) -> Dictionary:
 		for row in career.get("blueprints",{}).get("entries",[]):
 			if int(row.item_id)==FIREWORKS_BLUEPRINT and not row.available:return {"text_id":FIREWORKS_TEXT,"blueprint":FIREWORKS_BLUEPRINT}
 		if cursor>SPECTER_AFTER_CURSOR and not shown.has(SPECTER_TEXT):return {"text_id":SPECTER_TEXT}
+	if float(career.get("difficulty",0.5))==1.5 and cursor>SPECTER_AFTER_CURSOR and not shown.has(SPECTER_TEXT):return {"text_id":SPECTER_TEXT}
 	return {}

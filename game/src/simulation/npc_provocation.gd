@@ -1,5 +1,6 @@
 extends RefCounted
 const FreeLife=preload("res://src/content/free_lifecycle_definitions.gd")
+const EXTREME_DIFFICULTY:=1.5
 const Kappa=preload("res://src/content/kappa_population_definitions.gd")
 const NPCSystems=preload("res://src/content/npc_systems_definitions.gd")
 const Alioth=preload("res://src/content/alioth_population_definitions.gd")
@@ -50,7 +51,14 @@ func apply_selected40_sequence(owner: RefCounted) -> bool:
 func configure(bindings: RefCounted, catalogues: RefCounted, world: Dictionary, rank: Variant, difficulty: Variant, equipment: RefCounted, reputation: Dictionary) -> bool:
 	error="";_rules={};_state={}
 	var data:=Travel.population(bindings,world,rank,difficulty)
-	return _configure_population(bindings,catalogues,data,equipment,reputation)
+	return _configure_population(bindings,catalogues,data,equipment,reputation) and _apply_difficulty(difficulty)
+
+## Extreme careers: neutrals warn, retaliate and call their faction after 10%,
+## 25% and 40% of their hull in damage (original Player::damage; else 33/50/66%).
+func _apply_difficulty(difficulty: Variant) -> bool:
+	if (difficulty is float or difficulty is int) and float(difficulty)==EXTREME_DIFFICULTY:
+		_rules.warning_fraction=0.1;_rules.retaliation_fraction=0.25;_rules.faction_fraction=0.4
+	return true
 
 func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction: RefCounted,rank: Variant,difficulty: Variant,equipment: RefCounted,reputation: Dictionary) -> bool:
 	error="";_rules={};_state={}
@@ -59,6 +67,7 @@ func configure_ambient(bindings: RefCounted,catalogues: RefCounted,construction:
 	var data:=FreeLife.population(bindings,packet) if packet.has("free_context") else AmbientCombat.population(bindings,packet,rank,difficulty)
 	if not _configure_population(bindings,catalogues,data,equipment,reputation):return false
 	if data.has("free_lifecycle"):_set_factions(data,int(data.mission_kind))
+	_apply_difficulty(difficulty)
 	if NPCSystems.available(bindings):
 		_rules.systems=bindings.mido_travel.kappa_lifecycle.systems.duplicate(true)
 		_rules.systems_primary=int(catalogues.tables.systems[int(data.system_id)].fields[int(bindings.mido_travel.kappa_lifecycle.system_faction_field)])

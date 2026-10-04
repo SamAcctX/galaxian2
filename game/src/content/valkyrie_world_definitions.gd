@@ -166,7 +166,7 @@ static func wanted_news(progress: Dictionary) -> Dictionary:
 ## After the Supernova ending (cursor above 158) station 120 always sells
 ## ship 49, listed after the first owned-Supernova extra (verified
 ## Generator::getShipBuyList). Ship 44 comes first there once every base medal
-## is gold and all nine add-on medals are earned (hardcore mode not built).
+## is gold and all nine add-on medals are earned, or in an Extreme career.
 const SUPERNOVA_END_SHIPS:={"station_id":120,"after_cursor":158,"ships":[[49,1]],"all_medals_ship":[44,1]}
 
 static func stock_station(bindings: RefCounted,station_id: int) -> bool:

@@ -161,7 +161,8 @@ func _sample_ships(cat: RefCounted) -> Array:
 			var extra: Dictionary=rules.owned_supernova_extras[index]
 			if _faction==int(extra.faction) and _draw(int(extra.draw_bound))==0:result.append(_ship_offer(cat,int(extra.ship_id),int(extra.faction_id)))
 			if index==0 and _context.has("all_supernova_medals"):
-				if _context.get("all_supernova_medals",false):result.append(_ship_offer(cat,int(ending.all_medals_ship[0]),int(ending.all_medals_ship[1])))
+				# Every medal earned, or an Extreme (hardcore) career.
+				if _context.get("all_supernova_medals",false) or float(_context.difficulty)==Difficulty.EXTREME:result.append(_ship_offer(cat,int(ending.all_medals_ship[0]),int(ending.all_medals_ship[1])))
 				for ship in ending.ships:result.append(_ship_offer(cat,int(ship[0]),int(ship[1])))
 	var special: Dictionary=rules.system_extras
 	if _system==int(special.system_id):

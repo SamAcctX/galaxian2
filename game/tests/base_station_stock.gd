@@ -106,6 +106,10 @@ func verify_ships(bindings: RefCounted,cat: RefCounted):
 	stock._context.station_id=120;stock._context.campaign_cursor=159;stock._context.supernova_owned=true;stock._context.all_supernova_medals=true
 	check(stock._sample_ships(cat).map(func(row):return row.ship_id)==[1,44,49,51],"Every medal earned does not unlock ship 44 at station 120")
 	finished_stock(stock,"all-medals ship")
+	stock=drawn_base(bindings,[[6,1],[37,1]]+extra+[[8,0]])
+	stock._context.station_id=120;stock._context.campaign_cursor=159;stock._context.supernova_owned=true;stock._context.all_supernova_medals=false;stock._context.difficulty=1.5
+	check(stock._sample_ships(cat).map(func(row):return row.ship_id)==[1,44,49,51],"An Extreme career does not unlock ship 44 at station 120")
+	finished_stock(stock,"Extreme ship")
 	stock=drawn_base(bindings,[])
 	check(stock._ship_offer(cat,0,3).unit_price==16200,"An imported ship received the local-faction discount")
 	stock._faction=3

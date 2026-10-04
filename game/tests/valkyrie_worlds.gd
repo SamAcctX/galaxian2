@@ -92,6 +92,8 @@ func run():
 	check(Notices.next(career,{638:true,639:true}).is_empty(),"640 repeated after the fireworks were unlocked (or 3222 came before cursor 162)")
 	career.campaign_cursor=162
 	check(Notices.next(career,{638:true,639:true}).get("text_id")==3222 and Notices.next(career,{638:true,639:true,3222:true}).is_empty(),"The Specter notice 3222 did not come once after cursor 161")
+	var hardcore:={"campaign_cursor":162,"difficulty":1.5,"base_medals":{"levels":[]}}
+	check(Notices.next(hardcore,{}).get("text_id")==3222 and Notices.next(hardcore.merged({"difficulty":0.5},true),{}).is_empty(),"An Extreme career without medals did not get the Specter notice")
 	# Supernova's stations are expansion worlds too (Katashán, 120).
 	check(not Worlds.location(bindings,120).is_empty(),"Supernova's Katashán is not an expansion world")
 	finish()
