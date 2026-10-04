@@ -108,11 +108,8 @@ func configure(bindings: RefCounted,catalogues: RefCounted,context: Variant,choi
 	var gross:=Vitals.single(raw+float(rank_reward))
 	var bonus:=0
 	if not (extra.bonus_excluded_kinds if ordinary else rules.bonus.excluded_kinds).any(func(value):return int(value)==kind):
-		var faction: int=context.client_faction
-		if faction<rules.bonus.faction_axes.size():
-			var standing:=int(context.reputation.axes[int(rules.bonus.faction_axes[faction])])*int(rules.bonus.faction_signs[faction])
-			var ratio:=maxf(float(rules.bonus.minimum),Vitals.single(float(standing)/float(rules.bonus.divisor)))
-			bonus=quantize_credits(Vitals.single(gross*ratio),int(pricing.credit_step))
+		if int(context.client_faction)<rules.bonus.faction_axes.size():
+			bonus=quantize_credits(Vitals.single(gross*standing_ratio(rules,context)),int(pricing.credit_step))
 	var mission:={"kind":kind,"story":false,"station_id":int(destination),"system_id":int(stations[destination].system_id),
 		"difficulty":difficulty,"source_parameter":source_parameter,"quantity":quantity,
 		"reward":quantize_credits(gross,int(pricing.credit_step)),"bonus":bonus,
@@ -122,6 +119,14 @@ func configure(bindings: RefCounted,catalogues: RefCounted,context: Variant,choi
 	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,
 		"context":context.duplicate(true),"choices":choices.duplicate(true),"mission":mission,"requirements":requirements}
 	return true
+
+## The client's standing bonus as a share of the reward (the lounge shows it
+## as "includes #P% standing bonus").
+static func standing_ratio(rules: Dictionary,context: Dictionary) -> float:
+	var faction: int=int(context.get("client_faction",-1))
+	if faction<0 or faction>=rules.bonus.faction_axes.size():return 0.0
+	var standing:=int(context.reputation.axes[int(rules.bonus.faction_axes[faction])])*int(rules.bonus.faction_signs[faction])
+	return maxf(float(rules.bonus.minimum),Vitals.single(float(standing)/float(rules.bonus.divisor)))
 
 static func scaled_quantity(difficulty: int,rule: Dictionary,divisor: float) -> int:
 	return int(Vitals.single(Vitals.single(float(difficulty)/divisor)*float(rule.multiplier)))+int(rule.add)

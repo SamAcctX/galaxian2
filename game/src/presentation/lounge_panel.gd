@@ -6,7 +6,8 @@ const Art=preload("res://src/presentation/original_ui.gd")
 const Portraits=preload("res://src/presentation/portrait_compositor.gd")
 const Recipe=preload("res://src/content/mission_recipe.gd")
 const Dialogue=preload("res://src/simulation/lounge_dialogue.gd")
-const MAC_LABEL_IDS={614:616,753:755,841:843,847:849,848:850,850:852,855:857,856:858,857:859}
+const ContractOffer=preload("res://src/simulation/contract_offer.gd")
+const MAC_LABEL_IDS={614:616,753:755,754:756,841:843,847:849,848:850,850:852,855:857,856:858,857:859}
 var error:=""
 var _art: RefCounted
 var _library: RefCounted
@@ -259,7 +260,11 @@ func _refresh() -> void:
 			if not _state.mission.is_empty() and client.get("station_id")==_state.station_id and client.get("offer_id")==_selected and client.get("offer")==row.offer:mission=_state.mission
 			_title.text=text(int(mission.title_text_id))
 			var brief: int=_previews.get(_selected,{}).get("briefing_text_id",mission.briefing_text_id)
-			_body.text=format_job(text(brief),mission)+"\n\n"+label_text(753).replace("#C",money(int(mission.reward)+int(mission.bonus)))
+			var credits:=money(int(mission.reward)+int(mission.bonus))
+			# A standing bonus is named after the amount (App Store text 756).
+			if int(mission.bonus)>0 and row.offer.get("context") is Dictionary:
+				credits+=" "+label_text(754).replace("#P",str(int(ContractOffer.standing_ratio(_bindings.early_contracts,row.offer.context)*100.0)))
+			_body.text=format_job(text(brief),mission)+"\n\n"+label_text(753).replace("#C",credits)
 			if row.consumed:_body.text+="\n\n"+label_text(841)
 			else:
 				var preview: Dictionary=_previews.get(_selected,{})
