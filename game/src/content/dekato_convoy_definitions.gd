@@ -27,8 +27,10 @@ static func available(bindings: RefCounted) -> bool:
 
 ## The retained original202 career explicitly opts into its same-source delta.
 ## A declaration-only component pack does not change the selected save or route.
+## A current import carries the Dekato tables itself (no receipt); an older
+## one needs the explicitly attached source.
 static func source_arrival_available(bindings: RefCounted) -> bool:
-	return available(bindings) and not bindings.dekato_source_receipt().is_empty()
+	return available(bindings) and (bindings.mido_travel.get("dekato_convoy") is Dictionary or not bindings.dekato_source_receipt().is_empty())
 
 ## A saved station is not permission to construct a later flight. The original
 ## kind11 permits returning to Dekato while its distinct station30 visit waits.

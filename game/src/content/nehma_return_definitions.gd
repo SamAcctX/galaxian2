@@ -27,7 +27,7 @@ static func conversation(bindings: RefCounted,cursor: Variant,mission: Variant) 
 	return Visit.station_rules(data.mission,data.next_mission,cursor,mission)
 
 static func source_available(bindings: RefCounted) -> bool:
-	return available(bindings) and Previous.source_arrival_available(bindings) and not bindings.nehma_source_receipt().is_empty()
+	return available(bindings) and Previous.source_arrival_available(bindings) and (bindings.mido_travel.get("nehma_return") is Dictionary or not bindings.nehma_source_receipt().is_empty())
 
 static func source_receipt_matches(bindings: RefCounted,value: Variant) -> bool:
 	if not source_available(bindings) or not value is Dictionary:return false
