@@ -107,6 +107,8 @@ func settle_base_medals() -> bool:
 ## first observation of a career is its baseline, not a new award.
 func _bank_medals(state: Dictionary) -> bool:
 	var previous: Dictionary=state.get("base_medals",{})
+	# Extreme (hardcore) careers earn medals without their credit rewards.
+	var paid: bool=float(state.get("difficulty",Difficulty.NORMAL))!=Difficulty.EXTREME
 	var retained:=LoungeCache.Medals.commit(previous,state,blueprint_state())
 	if retained.is_empty():return false
 	if not previous.is_empty():
@@ -115,16 +117,17 @@ func _bank_medals(state: Dictionary) -> bool:
 			var level: int=retained.levels[id];var prior: int=previous.levels[id]
 			if level>0 and (prior<=0 or level<prior):
 				notices.append([id,level])
-				if state.has("credits"):state.credits=mini(int(state.credits)+LoungeCache.Medals.reward_credits(level),2147483647)
+				if paid and state.has("credits"):state.credits=mini(int(state.credits)+LoungeCache.Medals.reward_credits(level),2147483647)
 		if not notices.is_empty():state.medal_notices=notices
 	state.base_medals=retained
-	return EliteMedals.bank(state,[],LoungeCache.Medals.reward_credits(EliteMedals.GOLD))
+	return EliteMedals.bank(state,[],LoungeCache.Medals.reward_credits(EliteMedals.GOLD) if paid else 0)
 
 ## Add-on medals reached in flight or at docking (see elite_medal_progress.gd).
 func record_elite_medals(reached: Array) -> bool:
 	error=""
 	if _state.is_empty():return reject("Add-on medals require a station career")
-	if not EliteMedals.bank(_state,reached,LoungeCache.Medals.reward_credits(EliteMedals.GOLD)):return reject("Add-on medal evidence is invalid")
+	var reward: int=LoungeCache.Medals.reward_credits(EliteMedals.GOLD) if float(_state.get("difficulty",Difficulty.NORMAL))!=Difficulty.EXTREME else 0
+	if not EliteMedals.bank(_state,reached,reward):return reject("Add-on medal evidence is invalid")
 	return true
 
 func acknowledge_medal_notice() -> bool:

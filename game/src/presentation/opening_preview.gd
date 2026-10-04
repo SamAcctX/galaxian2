@@ -1292,7 +1292,7 @@ func _sync_medal_notice(state: Dictionary) -> void:
 		return
 	if medal_notice.shown()==notices[0]:return
 	if not status_panel.configure(library,bindings,visuals):status.text=status_panel.error;return
-	medal_notice.present(status_panel,notices[0])
+	medal_notice.present(status_panel,notices[0],float(state.get("contracts",{}).get("difficulty",Difficulty.NORMAL))!=Difficulty.EXTREME)
 
 func acknowledge_medal_notice() -> bool:
 	if not session is StationSession or not medal_notice.visible:return false

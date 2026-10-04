@@ -50,11 +50,23 @@ func verify_free_application() -> void:
 	var docked: Dictionary=app.session.station_owner().snapshot()
 	check(docked.contracts.credits==wallet+1000 and docked.contracts.base_medals.levels[31]==3,"Space Saver bronze did not pay its original 1000 credits")
 	check(app.medal_notice.visible and app.medal_notice.shown()==[31,3],"The new medal notice did not appear")
+	check(app.medal_notice._reward.visible and app.medal_notice._reward.text=="+ 1000$","The medal notice did not show its + 1000$ reward")
 	await capture("new-medal")
 	var enter:=InputEventKey.new();enter.keycode=KEY_ENTER;enter.physical_keycode=KEY_ENTER;enter.pressed=true
 	app._unhandled_input(enter);await process_frame
 	check(not app.medal_notice.visible and not app.session.station_owner().snapshot().contracts.has("medal_notices"),"Enter did not acknowledge the medal notice")
 	check(app.session._world.record_stats({"max_free_cargo":101}) and not app.session.station_owner().snapshot().contracts.has("medal_notices"),"The same tier was announced twice")
+	# Extreme careers earn the next tier without its credits.
+	var level: int=app.session.station_owner().snapshot().contracts.base_medals.levels[31]
+	var before_extreme: int=app.session.station_owner().snapshot().contracts.credits
+	var contracts: RefCounted=app.session._world._contracts;contracts._state=contracts._state.duplicate(true);contracts._state.difficulty=1.5
+	check(app.session._world.record_stats({"max_free_cargo":1001}),"Stats could not reach the next Space Saver tier")
+	var extreme: Dictionary=app.session.station_owner().snapshot().contracts
+	check(extreme.base_medals.levels[31]<level and extreme.credits==before_extreme,"An Extreme career was paid for a medal: "+str(extreme.credits-before_extreme))
+	app.present_session();await process_frame
+	check(app.medal_notice.visible and not app.medal_notice._reward.visible,"The Extreme medal notice still showed a reward")
+	app._unhandled_input(enter);await process_frame
+	contracts=app.session._world._contracts;contracts._state=contracts._state.duplicate(true);contracts._state.difficulty=0.5
 	await verify_elite_medals()
 	var before: Dictionary=app.session.station_owner().snapshot()
 	check(app.station_shell._actions.status.visible,"The station menu has no Status entry")
@@ -150,7 +162,7 @@ func verify_elite_medals() -> void:
 	await capture("new-elite-medal")
 	check(app.session._world.record_elite_medals(Elite.dock_reached(3001)),"A 3001 t hold was refused")
 	check(app.session.station_owner().snapshot().contracts.elite_medals==[36,44],"Space Saver Pro was not earned")
-	check(app.session._world.record_elite_medals([37,43,44]) and app.session.station_owner().snapshot().contracts.credits==wallet+10000,"An unavailable or owned add-on medal paid again")
+	check(app.session._world.record_elite_medals([44]) and app.session.station_owner().snapshot().contracts.credits==wallet+10000,"An owned add-on medal paid again")
 	var enter:=InputEventKey.new();enter.keycode=KEY_ENTER;enter.physical_keycode=KEY_ENTER;enter.pressed=true
 	for notice in 2:
 		app._unhandled_input(enter);await process_frame;app.present_session();await process_frame
