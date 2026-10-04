@@ -47,6 +47,12 @@ var _orbit_enabled := false
 var _orbit_angles := Vector3.ZERO
 var _orbit_distance := 0.0
 var _follow_offset := Vector3.ZERO
+## The player's sideways strafe move this frame, carried rigidly by the next
+## follow update (strafing is a remake control; turns keep the original lag).
+var _strafe_carry := Vector3.ZERO
+
+func carry_strafe(offset: Vector3) -> void:
+	if offset.is_finite():_strafe_carry+=offset
 
 func clear() -> void:
 	error = ""
@@ -62,6 +68,7 @@ func clear() -> void:
 	_auxiliary_enabled=false;_auxiliary_anchor=null;_auxiliary_offset=AUXILIARY_OFFSET
 	_auxiliary_progress=0.0;_auxiliary_distance=0.0;_auxiliary_transition=false
 	_orbit_enabled=false;_orbit_angles=Vector3.ZERO;_orbit_distance=0.0;_follow_offset=Vector3.ZERO
+	_strafe_carry=Vector3.ZERO
 
 func configure(bindings: RefCounted) -> bool:
 	clear()
@@ -262,8 +269,11 @@ func update(delta_ms: Variant, shot: Dictionary, scene: Dictionary, fixed_refres
 		var eye_weight := weight(_eye_coefficients, int(delta_ms), _data.reciprocal_numerator)
 		var look_weight := weight(_look_coefficients, int(delta_ms), _data.reciprocal_numerator)
 		if not is_finite(eye_weight) or not is_finite(look_weight): return reject("Camera response is outside supported numbers")
-		eye = prior.eye.lerp(desired_eye, eye_weight)
-		look = prior.look.lerp(desired_look, look_weight)
+		# A strafe slides the view with the ship instead of lagging, so the
+		# ship never looks turned and the crosshair stays on its gun line.
+		var carried := Vector3.ZERO if _orbit_enabled else _strafe_carry
+		eye = (prior.eye + carried).lerp(desired_eye, eye_weight)
+		look = (prior.look + carried).lerp(desired_look, look_weight)
 		if auxiliary.transition_pending:
 			var step:=Vectors.scaled(Vectors.added(desired_eye,-prior.eye),eye_weight)
 			auxiliary.travelled=single(float(auxiliary.travelled)+single(sqrt(Vectors.dot(step,step))))
@@ -279,6 +289,7 @@ func update(delta_ms: Variant, shot: Dictionary, scene: Dictionary, fixed_refres
 		"look": look, "pose": view.pose, "mode": shot.mode}
 	_auxiliary_progress=auxiliary.travelled;_auxiliary_distance=auxiliary.initial_distance;_auxiliary_transition=auxiliary.transition_pending
 	_follow_offset=follow_offset
+	_strafe_carry=Vector3.ZERO
 	return true
 
 ## A director may cut directly from a cinematic to controllable flight.
@@ -294,6 +305,7 @@ func cut_to_follow(shot: Dictionary,scene: Dictionary) -> bool:
 	var view:=CameraView.fixed_eye(eye,Transform3D(target.basis,look),true)
 	if view.has("error"):return reject(view.error)
 	_state={"base_content_id":_base,"binding_id":_binding,"eye":eye,"look":look,"pose":view.pose,"mode":"follow"}
+	_strafe_carry=Vector3.ZERO
 	return true
 
 func fixed_view(shot: Dictionary, scene: Dictionary) -> Dictionary:
@@ -350,6 +362,7 @@ func fork_for_frame() -> RefCounted:
 	copy._auxiliary_enabled=_auxiliary_enabled;copy._auxiliary_anchor=_auxiliary_anchor;copy._auxiliary_offset=_auxiliary_offset
 	copy._auxiliary_progress=_auxiliary_progress;copy._auxiliary_distance=_auxiliary_distance;copy._auxiliary_transition=_auxiliary_transition
 	copy._orbit_enabled=_orbit_enabled;copy._orbit_angles=_orbit_angles;copy._orbit_distance=_orbit_distance;copy._follow_offset=_follow_offset
+	copy._strafe_carry=_strafe_carry
 	return copy
 
 func reject(message: String) -> bool:

@@ -846,6 +846,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 		var handling: float=0.6+0.4*(1.0-next._cargo.load_fraction()) if _hold_handling and next._cargo!=null else 1.0
 		next._pose=next._pilot.advance(_pose,commands if manual else Vector2.ZERO,active_throttle,float(delta_ms)/1000.0*player_time_scale,strafe if manual else 0.0,next._booster.speed_multiplier(),relative_mouse_capture,handling)
 		if not next._pilot.error.is_empty():reject(next._pilot.error);return null
+		if manual and strafe!=0.0:next._camera.carry_strafe(next._pose.basis.x.normalized()*(next._pose.origin-_pose.origin).dot(next._pose.basis.x.normalized()))
 		next._statistics_pose=next._pose*Transform3D(_model_basis,Vector3.ZERO)
 		next._model_basis=Basis.IDENTITY;next._throttle=active_throttle
 		if next._autopilot!=null:
@@ -2468,7 +2469,8 @@ func start_mining(paused:=false) -> RefCounted:
 	var cues: Dictionary=_briefing.snapshot()
 	if not cues.entry_released or dialogue_visible():reject("Mining requires released flight input");return null
 	var next:=fork_for_frame()
-	if not next._approach.start(next._scenery,next._targeting,_pose,_model_basis,_throttle):reject(next._approach.error);return null
+	# A stopped ship still flies to the asteroid (at full speed).
+	if not next._approach.start(next._scenery,next._targeting,_pose,_model_basis,_throttle if _throttle>0.0 else 1.0):reject(next._approach.error);return null
 	if _cargo.snapshot().free_space<=0:
 		if _notices==null:reject("The cargo hold has no space for mining");return null
 		next=fork_for_frame()
