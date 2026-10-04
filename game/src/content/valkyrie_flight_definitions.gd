@@ -710,11 +710,16 @@ const SCRIPTED:={
 ## The transport stands at (+-(80000+r30000), -6000+r3000, 120000+r50000) and
 ## carries two gun turrets (model 14363, 1000 hp) at its race's mounts; they go
 ## with it. Assumptions: the side and point come from a hash of the station (a
-## random draw in the original); the extra traffic ships are not built.
+## random draw in the original). The orbit's ordinary patrol fighters (the
+## system's race, no route) wait at (+-10000, +-10000, 20000+r30000); they
+## share the convoy's ship list, so they turn hostile with it and Liberator
+## kills on them count. Assumption: the minimum patrol of three (the original
+## uses the orbit's random patrol count).
 const CONVOY:={59:{"stations":[56,45,22],"item_id":179,"approach_text":2180,"destroyed_text":2179,"final":[0,2179,1228],
 	"voices":{2174:1130,2175:1131,2176:1132,2177:1133,2178:1134}}}
 const CONVOY_RANGE:=50000
 const CONVOY_ESCORTS:=5
+const CONVOY_TRAFFIC:=3
 ## Turret mounts per transport race: [offset, rotation] (original table).
 const CONVOY_TURRETS:={0:[[Vector3(0,-1097.14,-4178.23),Vector3(0,0,PI)],[Vector3(0,1158.09,1180.59),Vector3.ZERO]],
 	1:[[Vector3(0,-1096.98,-2691.52),Vector3(0,0,PI)],[Vector3(0,1893.48,1068.07),Vector3.ZERO]],
@@ -1156,6 +1161,12 @@ static func _convoy_recipe(job: Dictionary) -> Dictionary:
 			"static_object":{"model":14363,"jitter":0,"offset":point+Vector3(turrets[index][0]),"rotation":Vector3(turrets[index][1]),"hull_override":CONVOY_TURRET_HULL},
 			"ship_state":state.duplicate(),"policy":neutral.duplicate()})
 	var count:=1+CONVOY_ESCORTS+turrets.size()
+	# Ordinary patrol fighters of the system's race wait near the station.
+	var near:=Vector3(-10000+(roll/7)%20000,-10000+(roll/11)%20000,20000+(roll/13)%30000)
+	var traffic:=[]
+	for index in CONVOY_TRAFFIC:traffic.append(near+Vector3(index*1500-1500,0,0))
+	groups.append({"first_actor":count,"end_actor":count+CONVOY_TRAFFIC,"faction":int(job.faction),"population_group":"story","origin":"zero",
+		"ship_state":state.duplicate(),"policy":neutral.duplicate(),"position":{"kind":"positions","points":traffic}})
 	# Text for this station: 2174/2176/2178 on approach, 2175/2177 when the
 	# transport dies; the last station ends with the result line instead.
 	var approach:=int(plan.approach_text)-2*(left+1);var destroyed:=int(plan.destroyed_text)-2*left
@@ -1165,7 +1176,7 @@ static func _convoy_recipe(job: Dictionary) -> Dictionary:
 	var story:=_advance(cursor) if left==0 else {"from_cursor":cursor,"campaign_cursor":cursor,"mission":Campaign.mission(cursor),"previous_mission":Campaign.mission(cursor)}
 	story.progress={"story_stations_mask":mask}
 	var actions:=[] if turrets.is_empty() else [{"radio_index":1,"on":"started","action":"destroy","first_actor":1+CONVOY_ESCORTS,"end_actor":count}]
-	return {"actor_count":count,"ship_groups":groups,"placement":{"kind":"points","points":[point]},
+	return {"actor_count":count+CONVOY_TRAFFIC,"ship_groups":groups,"placement":{"kind":"points","points":[point]},
 		"radio":radio,"success":{"kind":18,"first_actor":0,"end_actor":1},"story":story,"turn_hostile":{"radio_index":0},
 		"story_excluded_actors":[0]+range(1+CONVOY_ESCORTS,count),"radio_actions":actions}
 

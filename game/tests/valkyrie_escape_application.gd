@@ -310,13 +310,14 @@ func fly_convoys() -> void:
 		if not await khador_jump(station):return
 		var actors: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
 		print("VALKYRIE convoy ",station," cast ",actors.map(func(actor):return [actor.hull_catalogue_id,actor.actor_kind,actor.population_group,actor.hostile]))
-		check(actors.size()==8 and actors[0].population_group=="freighter" and actors.slice(6).all(func(actor):return actor.get("static_object",false)) and actors.all(func(actor):return not actor.hostile),"The convoy at "+str(station)+" differs from its recipe")
+		check(actors.size()==11 and actors[0].population_group=="freighter" and actors.slice(6,8).all(func(actor):return actor.get("static_object",false)) and actors.all(func(actor):return not actor.hostile),"The convoy at "+str(station)+" differs from its recipe")
+		check(actors.slice(8).all(func(actor):return not actor.get("static_object",false) and actor.pose.origin.length()<60000.0),"The convoy orbit's patrol fighters are missing at "+str(station))
 		if failures or not await hunt_convoy(station,radio_ids):return
 		# The transport's two turrets go with it (when its radio line starts).
 		var turrets_gone:=false
 		for tick in 900:
 			var left: Array=app.session.flight_owner()._encounter.combat_snapshot().actors
-			turrets_gone=left.size()<8 or left.slice(6).all(func(actor):return int(actor.vitals.hull)<=0 or not actor.get("model_draw_enabled",true))
+			turrets_gone=left.size()<8 or left.slice(6,8).all(func(actor):return int(actor.vitals.hull)<=0 or not actor.get("model_draw_enabled",true))
 			if turrets_gone:break
 			if not application_step():return
 			if tick%10==0:await process_frame
