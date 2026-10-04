@@ -2901,8 +2901,7 @@ func seed_shipyard() -> bool:
 		var stats: Dictionary=ships[id].stats
 		if stats.equipment_slots<current.equipment_slots or stats.primary_slots<2 or stats.secondary_slots<1:continue
 		listed.append([id,stats.armor,int(affiliations[id])])
-		# 44 (the stealth fighter) has no player engine-glow mapping yet (gaps file).
-		if int(affiliations[id])<0 or int(affiliations[id])>4 or id==44:continue
+		if int(affiliations[id])<0 or int(affiliations[id])>4:continue
 		if best<0 or stats.armor>ships[best].stats.armor:best=id
 	listed.sort_custom(func(a,b):return a[1]>b[1])
 	print("SUPERNOVA yard candidates ",listed.slice(0,8))
