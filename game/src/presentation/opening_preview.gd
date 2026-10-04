@@ -98,6 +98,7 @@ var _jump_button: Button
 var _time_button: Button
 var _boost_button: Button
 var _cloak_charge: Control
+var _transfer_bar: Control
 var _hacking: Control
 var _cloak_dialog: Control
 var _hint_dialog: Control
@@ -250,6 +251,8 @@ func _ready() -> void:
 	_skip_button.pressed.connect(skip_cinematic)
 	_cloak_charge=preload("res://src/presentation/cloak_charge_panel.gd").new();host.add_child(_cloak_charge)
 	_cloak_charge.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_transfer_bar=preload("res://src/presentation/story_transfer_bar.gd").new();host.add_child(_transfer_bar)
+	_transfer_bar.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_cloak_dialog=GateConfirmationPanel.new();host.add_child(_cloak_dialog)
 	_cloak_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_hacking=preload("res://src/presentation/hacking_panel.gd").new();host.add_child(_hacking)
@@ -278,6 +281,7 @@ func set_context(content: RefCounted, definitions: RefCounted, prepared_visuals:
 	if library!=null and bindings!=null and visuals!=null and touch_overlay.configure(library,bindings,visuals):
 		_style_touch_buttons()
 		if not _cloak_charge.configure(library,bindings,visuals):status.text=_cloak_charge.error
+		if not _transfer_bar.configure(library,bindings,visuals):status.text=_transfer_bar.error
 		if not _hacking.configure(library,bindings,visuals):status.text=_hacking.error
 	refresh_render_mode()
 
@@ -313,6 +317,10 @@ func _sync_cloak_ui(flight: Dictionary={}) -> void:
 	var hud: bool=session.flight_hud_visible() if session is MissionSession else session.flight_hud_visible(flight) if session is FirstFlightSession else false
 	var drive: Dictionary=flight.get("khador",{})
 	_cloak_charge.present(drive if drive.get("phase")=="charging" else state,hud,_mobile_layout,"khador" if drive.get("phase")=="charging" else "cloak")
+	var transfer: Dictionary=session.flight_reader().story_transfer_state() if session is FirstFlightSession and session.flight_reader()!=null else {}
+	# The dock hold hides the rest of the HUD; the bar still shows over it.
+	var held: bool=not transfer.is_empty() and session.flight_reader().story_dock_held() and session.status=="running" and not flight.get("dialogue",{}).get("visible",false)
+	_transfer_bar.present(transfer,hud or held,_mobile_layout)
 	if int(state.get("failure_serial",0))>_cloak_failure_serial:
 		if not _cloak_dialog.present_message(library,bindings,visuals,572," %d."%int(state.energy_cost)):status.text=_cloak_dialog.error;return
 		if not session.set_pause("cloak_notice",true,Time.get_ticks_usec()):status.text=session.error;return

@@ -1002,7 +1002,7 @@ func fly_supernova_rescue() -> void:
 		if not await fit_cabins(10):return
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
 	if not await release_application_flight() or not await khador_jump(110):return
-	var radio_ids:=[];var docked_at:=-1;var boarded:=false;var gone:=false;var gamma_seen:=false
+	var radio_ids:=[];var docked_at:=-1;var boarded:=false;var gone:=false;var gamma_seen:=false;var loading_seen:=false
 	var began:=now_us
 	app.session.rebase_time(now_us)
 	for tick in 20000:
@@ -1016,7 +1016,13 @@ func fly_supernova_rescue() -> void:
 		if not gamma_seen and float(state.player.get("gamma",100.0))<99.0:
 			gamma_seen=true;print("SUPERNOVA gamma falling ",state.player.gamma," rate ",frame._gamma_rate);await capture_free_application("supernova-valpatro-gamma")
 		if int(dock.docked)==0 and docked_at<0:docked_at=tick;print("SUPERNOVA docked at tick ",tick," radio ",radio_ids);await capture_free_application("supernova-valpatro-docked")
-		if int(dock.aboard)>=10 and not boarded:boarded=true;print("SUPERNOVA ten aboard ",(now_us-began)/1000000," s")
+		if int(dock.aboard)==5 and not loading_seen:
+			loading_seen=true;var bar: Dictionary=frame.story_transfer_state()
+			check(bar.get("loading",false) and absf(float(bar.get("progress",0.0))-0.5)<0.01,"The Loading bar did not show half the passengers: "+str(bar))
+			await capture_free_application("supernova-valpatro-loading")
+		if int(dock.aboard)>=10 and not boarded:
+			boarded=true;print("SUPERNOVA ten aboard ",(now_us-began)/1000000," s")
+			check(frame._notices.snapshot().pending.any(func(row):return int(row.get("source_id",-1))==45),"Transfer complete did not show after boarding")
 		var freighter: Dictionary=frame._encounter.combat_snapshot().actors[0]
 		if int(freighter.vitals.hull)<=0 and not gone:gone=true;print("SUPERNOVA freighter destroyed ",(now_us-began)/1000000," s");await capture_free_application("supernova-valpatro-explosion")
 		var target: Vector3=freighter.get("pose",Transform3D()).origin
@@ -1038,6 +1044,7 @@ func fly_supernova_rescue() -> void:
 		await dismiss_medal()
 		if tick%20==0:await process_frame
 	print("SUPERNOVA Valpatro radio ",radio_ids," status ",app.session.status," cursor ",app.session.snapshot().campaign_cursor)
+	check(loading_seen,"The Loading bar was never sampled")
 	check(docked_at>=0 and boarded and gone and gamma_seen and range(2493,2500).all(func(id):return id in radio_ids),"The Valpatro rescue did not play through")
 	check(app.session.status=="local_arrival_transition_required" and app.session.snapshot().campaign_cursor==92,"The story did not take the ship on to Tadram: "+app.session.status)
 	if failures or not app.enter_local_arrival(now_us,4096,flight_world_seconds()):check(false,app.status.text);return

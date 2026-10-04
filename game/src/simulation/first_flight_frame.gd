@@ -1473,7 +1473,10 @@ func _advance_story_dock(elapsed: int) -> bool:
 		var pose: Variant=actors[id].get("pose",actors[id].get("body_pose"))
 		var reach: float=STORY_DOCK_RANGE+load("res://src/content/static_object_definitions.gd").reach(int(actors[id].get("static_model",-1)))
 		if pose is Transform3D and _pose.origin.distance_to(pose.origin)<=reach:docked=int(id)
-	if docked!=int(_story_dock.docked):_story_dock.docked=docked;_story_dock.elapsed=0;_story_hack=null
+	if docked!=int(_story_dock.docked):
+		_story_dock.docked=docked;_story_dock.elapsed=0;_story_hack=null;_story_dock.dock_ms=0
+		_story_dock.transfer_start=_story_deliver_left() if docked>=0 and _story_dock.actors[docked].mode=="deliver" else int(_story_dock.aboard)
+	if docked>=0:_story_dock.dock_ms=int(_story_dock.get("dock_ms",0))+step
 	_advance_story_shuttles(elapsed,actors)
 	# A hack point opens the puzzle (difficulty 1 at cursor 91, else 4); a
 	# win closes the point and counts for condition 50. Leaving drops it.
@@ -1492,17 +1495,43 @@ func _advance_story_dock(elapsed: int) -> bool:
 	if _story_dock.actors[docked].mode=="deliver":
 		var good:=int(_mission_context.recipe().get("deliver_item",_mission_context.recipe().get("asteroid_ore",-1)))
 		_story_dock.elapsed=int(_story_dock.elapsed)+step
+		var delivering:=_story_deliver_left()>0
 		while int(_story_dock.elapsed)>=STORY_DELIVER_MS and good>=0 and _cargo!=null and _cargo.quantity(good)>0:
 			_story_dock.elapsed=int(_story_dock.elapsed)-STORY_DELIVER_MS
 			if not _cargo.consume(good,1):return reject(_cargo.error)
 			_story_dock.status=int(_story_dock.status)+1
-		return true
+		return _story_transfer_notice(delivering and _story_deliver_left()<=0)
 	_story_dock.elapsed=int(_story_dock.elapsed)+step
+	var transferring:=not _story_transfer_done(docked)
 	while int(_story_dock.elapsed)>=STORY_TRANSFER_MS and not _story_transfer_done(docked):
 		_story_dock.elapsed=int(_story_dock.elapsed)-STORY_TRANSFER_MS
 		if _story_dock.actors[docked].mode=="board":_story_dock.aboard=int(_story_dock.aboard)+1
 		else:_story_dock.aboard=int(_story_dock.aboard)-1;_story_dock.status=maxi(0,int(_story_dock.status)-1)
+	return _story_transfer_notice(transferring and _story_transfer_done(docked))
+
+## "Transfer complete" once, when a dock transfer finishes (Hud text 3189).
+func _story_transfer_notice(finished: bool) -> bool:
+	if finished and _notices!=null and _notices.has_message(45) and not _notices.enqueue(45):return reject(_notices.error)
 	return true
+
+func _story_deliver_left() -> int:
+	var good:=int(_mission_context.recipe().get("deliver_item",_mission_context.recipe().get("asteroid_ore",-1)))
+	return _cargo.quantity(good) if good>=0 and _cargo!=null else 0
+
+## The Loading/Unloading bar while docked at a transfer point, or {}: the
+## board bar fills with passengers aboard; unload and deliver bars empty.
+func story_transfer_state() -> Dictionary:
+	if _story_dock.is_empty() or int(_story_dock.docked)<0:return {}
+	var id:=int(_story_dock.docked);var row: Dictionary=_story_dock.actors[id]
+	if not row.get("transfer",false) or row.mode not in ["board","unload","deliver"]:return {}
+	var start:=maxi(1,int(_story_dock.get("transfer_start",0)))
+	var progress:=0.0;var loading: bool=row.mode=="board"
+	if loading:
+		var target:=int(_story_dock.status) if row.get("ignore_berths",false) else mini(int(_story_dock.berths),int(_story_dock.status))
+		progress=float(_story_dock.aboard)/float(maxi(1,target))
+	elif row.mode=="deliver":progress=float(_story_deliver_left())/float(start)
+	else:progress=float(_story_dock.aboard)/float(start)
+	return {"loading":loading,"progress":clampf(progress,0.0,1.0),"elapsed_ms":int(_story_dock.get("dock_ms",0))}
 
 ## The recipe's route toward the sun: `toward_sun` metres along the station's
 ## sun direction, flattened to x/z (assumption: the flight starts at the

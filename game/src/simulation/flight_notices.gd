@@ -49,6 +49,8 @@ func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,lo
 	definitions["21"]={"text_ids":[514],"separator":"","rgb":[255,255,255]}
 	definitions["22"]={"text_ids":[531],"separator":"","rgb":[255,255,255]}
 	definitions["44"]={"text_ids":[3190],"separator":"","rgb":[255,255,255]}
+	# Story dock "Transfer complete" (Hud message 3189); optional like 44.
+	definitions["45"]={"text_ids":[3189],"separator":"","rgb":[255,255,255]}
 	# Refused story courses (Supernova passenger berths); optional like 44.
 	var campaign:=load("res://src/content/valkyrie_campaign_definitions.gd")
 	for need in campaign.ENTRY_REQUIREMENTS.values():
@@ -66,7 +68,7 @@ func _configure_messages(bindings: RefCounted,library: RefCounted,cursor: int,lo
 		var rule: Dictionary=definitions[key];var pieces:=PackedStringArray();var display_ids:=[]
 		for source_id in rule.text_ids:
 			var id:=Desktop.select_id(bindings.desktop_text,int(source_id))
-			if (id<0 or id>=library.strings.size() or library.strings[id].is_empty()) and (key=="44" or int(key)>=40000):pieces=PackedStringArray();break
+			if (id<0 or id>=library.strings.size() or library.strings[id].is_empty()) and (key in ["44","45"] or int(key)>=40000):pieces=PackedStringArray();break
 			if id<0 or id>=library.strings.size() or library.strings[id].is_empty():return reject("A flight notice is missing in this language")
 			pieces.append(library.strings[id]);display_ids.append(id)
 		if pieces.is_empty():continue
@@ -130,6 +132,7 @@ func enqueue(source_id: Variant) -> bool:
 	if _rules.is_empty() or not Numbers.integer(source_id,0,65534) or not _messages.has(int(source_id)):return reject("Unsupported first-flight notice")
 	return _enqueue(_messages[int(source_id)])
 
+func has_message(source_id: int) -> bool:return _messages.has(source_id)
 func enqueue_cloak_ready() -> bool:return _enqueue(_messages.cloak_ready)
 func enqueue_auto_turret(enabled: bool) -> bool:return _enqueue(_messages.auto_turret_on if enabled else _messages.auto_turret_off)
 func enqueue_energy_spent(units: int) -> bool:
