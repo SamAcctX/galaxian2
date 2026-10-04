@@ -376,9 +376,11 @@ const SCRIPTED:={
 	# 91: Valpatro rescue (empty orbit, gamma rays). #0 the damaged freighter
 	# turns dockable and named as line #3 starts. Docked: line #5; after it the
 	# ten miners board one per 1.5 s; at ten line #6; undocked after #6 -> 3 s
-	# -> the freighter explodes and the story moves on (the drive takes the
-	# player to Tadram, vitals and gamma kept). Assumptions: no cutscene camera;
-	# docking = holding within range of the freighter; the alarm loop and the
+	# -> the ship turns its back on the freighter, the camera looks back at
+	# it from 10 km ahead and 700 to the side, the freighter explodes; 8 s
+	# later the story moves on (the drive takes the player to Tadram, vitals
+	# and gamma kept). Assumptions: docking = holding within range of the
+	# freighter; the alarm loop, the ship's speed-up from 2 s and the
 	# freighter's 1/20 hull (it cannot be harmed) are left out.
 	91:{"points":[Vector3(-20000,0,60000)],
 		"groups":[{"count":1,"faction":3,"friendly":true,"static":{"model":18766,"jitter":0,"offset":Vector3.ZERO},"name_text_id":3200,"dock":"board","dockable":false}],
@@ -386,8 +388,9 @@ const SCRIPTED:={
 			[60,2498,2068,32,[0]],[60,2499,2069,33,[10]]],
 		"radio_actions":[{"radio_index":3,"action":"dockable","first_actor":0,"end_actor":1,"enabled":true},
 			{"radio_index":5,"on":"finished","action":"transfer","first_actor":0,"end_actor":1},
-			{"radio_index":6,"on":"finished","when":"undocked","delay_ms":3000,"action":"destroy","first_actor":0,"end_actor":1}],
-		"success":{"kind":1,"actor_id":0}},
+			{"radio_index":6,"on":"finished","when":"undocked","delay_ms":3000,"action":"destroy","first_actor":0,"end_actor":1},
+			{"radio_index":6,"on":"finished","when":"undocked","delay_ms":3000,"action":"cutscene","actor":-1,"turn_from":0,"ahead":10000.0,"right":700.0,"duration_ms":8000}],
+		"success":{"kind":"action_elapsed","index":2,"after_ms":11000}},
 	# 87: Carla and Keith fly to Thynome. No cast; six lines from 1.5 s; done
 	# when the last is over (then the 88 talk on docking at Thynome).
 	87:{"points":[Vector3.ZERO],"groups":[],

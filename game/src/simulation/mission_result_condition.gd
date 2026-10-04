@@ -36,6 +36,12 @@ static func evaluate(condition: Dictionary,observation: Dictionary) -> Dictionar
 					var mark: Variant=world.get("radio_marks",{}).get("finished",{}).get(index)
 					over=mark!=null and world.get("story_elapsed_ms") is int and int(world.story_elapsed_ms)-int(mark)>=int(condition.hold_ms)
 				return {"satisfied":over}
+			"action_elapsed":
+				# That long after a recipe radio action's cue first held (91: the
+				# freighter's end shot lasts 8 s after it blows up).
+				var world: Dictionary=observation.get("world",{})
+				var mark: Variant=world.get("action_marks",{}).get(int(condition.index))
+				return {"satisfied":mark!=null and world.get("story_elapsed_ms") is int and int(world.story_elapsed_ms)-int(mark)>=int(condition.after_ms)}
 			"countdown":
 				# A story countdown ran out (154).
 				return {"satisfied":observation.get("world",{}).get("countdown_expired",false)==true}

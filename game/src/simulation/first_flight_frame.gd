@@ -2153,8 +2153,10 @@ func _observe_radio() -> bool:
 				# guns stopped and the HUD hidden, while a fixed camera looks at
 				# ship "actor" until the "until" line mark. The eye is set once, at
 				# the ship's position + "ahead" along its heading (+z), "right"/"up"
-				# along its side/up axes, + world "offset".
-				if _story_line_passed(action.until,elapsed):continue
+				# along its side/up axes, + world "offset". Instead of "until",
+				# "duration_ms" from the cue's delay (91).
+				if action.has("until") and _story_line_passed(action.until,elapsed):continue
+				if action.has("duration_ms") and elapsed>=int(_action_marks[index])+int(action.get("delay_ms",0))+int(action.duration_ms):continue
 				radio_lock=true;radio_invulnerable=true;cutscene=action.merged({"key":index})
 			elif action.action=="supernova_reversal":_supernova_reversed=true
 			elif action.action=="array_finale":
@@ -2307,6 +2309,10 @@ func _observe_radio() -> bool:
 			if action.action!="cutscene" or elapsed<int(action.after_ms) or (action.has("until") and _story_line_passed(action.until,elapsed)):continue
 			radio_lock=true;radio_invulnerable=true;cutscene=action.merged({"key":10000+t_index})
 		if not cutscene.is_empty() and int(_cutscene.get("key",-1))!=int(cutscene.key):
+			# "turn_from" (91): the player's ship first turns its back on that ship.
+			if cutscene.has("turn_from"):
+				var away: Vector3=_pose.origin-_cutscene_pose(int(cutscene.turn_from)).origin
+				if away.length()>1.0:_pose.basis=Basis.looking_at(-away.normalized(),Vector3.UP)
 			var pose: Transform3D=_cutscene_pose(int(cutscene.actor))
 			# "right"/"up" step along the ship's own side and up axes (Supernova).
 			var eye: Vector3=pose.origin+pose.basis.z.normalized()*float(cutscene.get("ahead",0.0))+pose.basis.x.normalized()*float(cutscene.get("right",0.0))+pose.basis.y.normalized()*float(cutscene.get("up",0.0))
@@ -2379,8 +2385,11 @@ func _observe_radio() -> bool:
 ## World facts for story results: the drive, line end times (hold_ms) and the countdown.
 func _story_result_facts() -> Dictionary:
 	var elapsed:=int(_briefing.read_state().world_elapsed_ms)
+	var marks:={}
+	for key in _action_marks:
+		if key is int:marks[key]=_action_marks[key]
 	return {"drive_started":_drive!=null and _drive.snapshot().get("phase","ready")!="ready","radio_marks":_line_marks.duplicate(true),
-		"story_elapsed_ms":elapsed,"countdown_expired":_countdown_end>=0 and elapsed>=_countdown_end}
+		"story_elapsed_ms":elapsed,"countdown_expired":_countdown_end>=0 and elapsed>=_countdown_end,"action_marks":marks}
 
 func _story_radio_facts() -> Dictionary:
 	if _mission_context.contract_context().is_empty() or _mission_context.recipe().get("radio",[]).is_empty():return {}

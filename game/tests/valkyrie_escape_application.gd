@@ -1004,7 +1004,7 @@ func fly_supernova_rescue() -> void:
 		if not await fit_cabins(10):return
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
 	if not await release_application_flight() or not await khador_jump(110):return
-	var radio_ids:=[];var docked_at:=-1;var boarded:=false;var gone:=false;var gamma_seen:=false;var loading_seen:=false
+	var radio_ids:=[];var docked_at:=-1;var boarded:=false;var gone:=false;var gamma_seen:=false;var loading_seen:=false;var gone_us:=0;var shot_seen:=false
 	var began:=now_us
 	app.session.rebase_time(now_us)
 	for tick in 20000:
@@ -1026,7 +1026,10 @@ func fly_supernova_rescue() -> void:
 			boarded=true;print("SUPERNOVA ten aboard ",(now_us-began)/1000000," s")
 			check(frame._notices.snapshot().pending.any(func(row):return int(row.get("source_id",-1))==45),"Transfer complete did not show after boarding")
 		var freighter: Dictionary=frame._encounter.combat_snapshot().actors[0]
-		if int(freighter.vitals.hull)<=0 and not gone:gone=true;print("SUPERNOVA freighter destroyed ",(now_us-began)/1000000," s");await capture_free_application("supernova-valpatro-explosion")
+		if int(freighter.vitals.hull)<=0 and not gone:gone=true;gone_us=now_us;print("SUPERNOVA freighter destroyed ",(now_us-began)/1000000," s")
+		if gone and not shot_seen and now_us-gone_us>=1500000:
+			shot_seen=true;await capture_free_application("supernova-valpatro-explosion")
+		await watch_cutscene("valpatro")
 		var target: Vector3=freighter.get("pose",Transform3D()).origin
 		var steer:=Vector2.ZERO;var want:=0.0
 		var heard: Array=radio.get("finished",[])
@@ -1045,7 +1048,9 @@ func fly_supernova_rescue() -> void:
 		app.present_session()
 		await dismiss_medal()
 		if tick%20==0:await process_frame
-	print("SUPERNOVA Valpatro radio ",radio_ids," status ",app.session.status," cursor ",app.session.snapshot().campaign_cursor)
+	print("SUPERNOVA Valpatro radio ",radio_ids," status ",app.session.status," cursor ",app.session.snapshot().campaign_cursor," shot ",(now_us-gone_us)/1000," ms")
+	# The end shot holds 8 s on the burning freighter before the jump.
+	check(cutscene_marks.has("valpatro-cutscene3") and now_us-gone_us>=7500000,"The freighter's end shot did not play")
 	check(loading_seen,"The Loading bar was never sampled")
 	check(docked_at>=0 and boarded and gone and gamma_seen and range(2493,2500).all(func(id):return id in radio_ids),"The Valpatro rescue did not play through")
 	check(app.session.status=="local_arrival_transition_required" and app.session.snapshot().campaign_cursor==92,"The story did not take the ship on to Tadram: "+app.session.status)
@@ -3193,9 +3198,6 @@ func watch_supernova_bomb() -> void:
 			"thrown":check(app.session.flight_owner()._supernova_turned and not view.bomb.visible and view.flash.color.a<.01 and float(app.session.scene.planets._layout.sun_swell)>1.3,"The blast did not throw the ship off under the swollen sun")
 		await capture_free_application("supernova-bomb-"+mark[1])
 
-func watch_cutscene(label: String) -> void:
-	if app.session.flight_owner()==null:return
-	var scene: Dictionary=app.session.flight_owner()._cutscene
 ## 89: the container flies for the sun, the screen whitens, clears on the
 ## newborn (small) sun, then fades to black.
 func watch_naneroh_blast() -> void:
@@ -3219,6 +3221,9 @@ func watch_naneroh_blast() -> void:
 	var key:="%s-cutscene%d"%[label,int(scene.key)];var clock:=int(app.session.snapshot().world_elapsed_ms)
 	if not cutscene_marks.has(key):cutscene_marks[key]=clock
 	if int(cutscene_marks[key])<0 or clock-int(cutscene_marks[key])<1000:return
+func watch_cutscene(label: String) -> void:
+	if app.session.flight_owner()==null:return
+	var scene: Dictionary=app.session.flight_owner()._cutscene
 	cutscene_marks[key]=-1
 	var view: Transform3D=app.session.flight_owner()._camera.snapshot().pose
 	var target: Vector3=app.session.flight_owner()._cutscene_target()
