@@ -166,6 +166,11 @@ func _used(entries: Array) -> int:
 	for row in entries:used+=int(row.quantity)
 	return used
 
+## Used share of the hold, 0..1 (0 without a hold).
+func load_fraction() -> float:
+	if _state.is_empty() or int(_state.capacity)<=0:return 0.0
+	return clampf(float(_state.used)/float(_state.capacity),0.0,1.0)
+
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}
 	var result:=_state.duplicate(true);result.free_space=result.capacity-result.used

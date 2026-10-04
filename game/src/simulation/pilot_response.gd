@@ -50,7 +50,9 @@ func set_response_factor(value: float) -> bool:
 	_factor = value
 	return true
 
-func next_units(current: Vector2, commands: Vector2, seconds: float,mouse_capture:=false) -> Vector2:
+## handling scales the turn target and acceleration (Extreme hold weight),
+## not the return to neutral.
+func next_units(current: Vector2, commands: Vector2, seconds: float,mouse_capture:=false,handling:=1.0) -> Vector2:
 	error = ""
 	if binding_id.is_empty():
 		error = "Configure pilot response before processing commands"
@@ -62,7 +64,7 @@ func next_units(current: Vector2, commands: Vector2, seconds: float,mouse_captur
 	if seconds == 0.0: return current
 	var milliseconds := seconds * 1000.0
 	var neutral := milliseconds * _factor / float(_parameters.neutral_divisor)
-	var drive := milliseconds * _factor / ((float(_parameters.ramp_bias) - _sensitivity) * float(_parameters.ramp_scale))
+	var drive := milliseconds * _factor * handling / ((float(_parameters.ramp_bias) - _sensitivity) * float(_parameters.ramp_scale))
 	if not is_finite(neutral) or not is_finite(drive):
 		error = "Pilot response exceeds supported time range"
 		return current
@@ -72,14 +74,14 @@ func next_units(current: Vector2, commands: Vector2, seconds: float,mouse_captur
 		var value := move_toward(current[axis], 0.0, neutral)
 		var acceleration:=drive
 		if mouse_capture:
-			acceleration=milliseconds*_factor/12.0 if axis==0 else minf(280.0,_factor*25.0/6.0)*60.0*seconds
+			acceleration=milliseconds*_factor*handling/12.0 if axis==0 else minf(280.0,_factor*handling*25.0/6.0)*60.0*seconds
 			# A held cursor drives a target without neutral drag. Recentring or
 			# reducing deflection must also release the previous turn promptly.
 			value=current[axis]
 		# Preserve the source's integer target quantization, including commands
 		# too small to request a nonzero target. Do not accelerate away from a
 		# nearer target after neutral return has already left it behind.
-		var scaled := command * (1.0 if mouse_capture else absf(command)) * float(_parameters.target_gain) * _factor
+		var scaled := command * (1.0 if mouse_capture else absf(command)) * float(_parameters.target_gain) * _factor * handling
 		var target := float(int(float(int(scaled)) / float(_parameters.target_divisor)))
 		if mouse_capture:
 			if absf(target)<absf(value) and signf(target)==signf(value) or target==0.0:

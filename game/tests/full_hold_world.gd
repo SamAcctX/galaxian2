@@ -65,6 +65,7 @@ func verify(args: PackedStringArray):
 	if not navigate():return
 	var accepted: Dictionary=world.snapshot()
 	check(accepted.campaign_cursor==5 and accepted.mission.kind==11 and accepted.cargo.used==25 and not accepted.encounter.controller.appearance.applied,"Acknowledgement moved the pirate before the following logic pass")
+	verify_extreme_hold_steering()
 	if not step(0):return
 	var cued: Dictionary=world.snapshot()
 	check(cued.actors[0].body_pose.origin==accepted.player_pose.origin+Vector3(5000,0,30000) and cued.actors[0].body_pose.basis.z.is_equal_approx(Vector3(0,0,-1)),"World cue lost source position/yaw or ran after motion")
@@ -75,6 +76,19 @@ func verify(args: PackedStringArray):
 	verify_world_order()
 	check(construction.snapshot()==saved,"Live frames modified prepared construction")
 	check(world.prepare_station().is_empty(),"Unconnected second return fabricated a station entry")
+
+func verify_extreme_hold_steering():
+	# Extreme: a full hold turns at 60% of the normal rate for the same input.
+	var turns:=[]
+	for heavy in [false,true]:
+		var branch: RefCounted=world.fork_for_frame();branch._hold_handling=heavy
+		branch._pilot.angular_units=Vector2.ZERO
+		for i in 30:
+			var next: RefCounted=branch.evaluate(100,Vector2(1,0),1.0,false,Vector2i.ZERO,Vector2.ZERO)
+			if next==null:check(false,branch.error);return
+			branch=next
+		turns.append(absf(branch._pilot.angular_units.y)+absf(branch._pilot.angular_units.x))
+	check(turns[0]>0 and absf(turns[1]-turns[0]*0.6)<turns[0]*0.02,"An Extreme full hold did not slow steering to 60%%: %s"%[turns])
 
 func verify_modal_activation():
 	var retained: RefCounted=world

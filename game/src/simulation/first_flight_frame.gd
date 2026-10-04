@@ -233,6 +233,8 @@ var _gamma_rate:=0.0
 var _instability:=0.0
 ## The last frame's steering, for the volatile cargo's steering term.
 var _volatile_steer:=Vector2.ZERO
+## Extreme careers: a fuller hold turns slower (full hold = 60% turn rate).
+var _hold_handling:=false
 var _navigation_applied:=false
 var _fast_forward: RefCounted
 var _near_target:=false
@@ -460,6 +462,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	if not bindings.mining_session.is_empty():
 		mining=Mining.new()
 		if not mining.configure(bindings,catalogues,construction,difficulty==Difficulty.EXTREME):return reject(mining.error)
+	_hold_handling=difficulty==Difficulty.EXTREME
 	var notices: RefCounted
 	# Shared station guidance names this constructed location; it does not
 	# add mission-specific B'akka dialogue or change result ownership.
@@ -818,7 +821,8 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 	if ordinary_motion:
 		if not next._engine_audio.before_ordinary_motion():reject(next._engine_audio.error);return null
 		if next._engine_particles!=null and not death_active() and next._engine_particles.engine_enabled()!=(active_throttle>0.0) and not next._engine_particles.set_engine_enabled(active_throttle>0.0):reject(next._engine_particles.error);return null
-		next._pose=next._pilot.advance(_pose,commands if manual else Vector2.ZERO,active_throttle,float(delta_ms)/1000.0*player_time_scale,strafe if manual else 0.0,next._booster.speed_multiplier(),relative_mouse_capture)
+		var handling: float=0.6+0.4*(1.0-next._cargo.load_fraction()) if _hold_handling and next._cargo!=null else 1.0
+		next._pose=next._pilot.advance(_pose,commands if manual else Vector2.ZERO,active_throttle,float(delta_ms)/1000.0*player_time_scale,strafe if manual else 0.0,next._booster.speed_multiplier(),relative_mouse_capture,handling)
 		if not next._pilot.error.is_empty():reject(next._pilot.error);return null
 		next._statistics_pose=next._pose*Transform3D(_model_basis,Vector3.ZERO)
 		next._model_basis=Basis.IDENTITY;next._throttle=active_throttle
@@ -3268,7 +3272,7 @@ func fork_for_frame() -> RefCounted:
 	if _gate_transit!=null:copy._gate_transit=_gate_transit.fork_for_frame()
 	copy._gate_destinations=_gate_destinations.duplicate();copy._gate_cruise_speed=_gate_cruise_speed
 	copy._system_navigation=_system_navigation;copy._navigation_destinations=_navigation_destinations
-	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied;copy._queued_drive=_queued_drive;copy._story_jump=_story_jump;copy._story_locked=_story_locked;copy._cutscene=_cutscene.duplicate();copy._story_dock=_story_dock.duplicate(true);copy._action_marks=_action_marks.duplicate();copy._line_marks=_line_marks.duplicate(true);copy._gamma_rate=_gamma_rate;copy._instability=_instability;copy._volatile_steer=_volatile_steer;copy._story_cloaks=_story_cloaks.duplicate(true);copy._forced_cloaks=_forced_cloaks.duplicate();copy._countdown_end=_countdown_end;copy._gas_ionized=_gas_ionized;copy._gas=_gas;copy._gas_collector=_gas_collector;copy._story_hack=_story_hack;copy._story_route=_story_route.duplicate()
+	copy._pending_destination=_pending_destination;copy._navigation_applied=_navigation_applied;copy._queued_drive=_queued_drive;copy._story_jump=_story_jump;copy._story_locked=_story_locked;copy._cutscene=_cutscene.duplicate();copy._story_dock=_story_dock.duplicate(true);copy._action_marks=_action_marks.duplicate();copy._line_marks=_line_marks.duplicate(true);copy._gamma_rate=_gamma_rate;copy._instability=_instability;copy._volatile_steer=_volatile_steer;copy._hold_handling=_hold_handling;copy._story_cloaks=_story_cloaks.duplicate(true);copy._forced_cloaks=_forced_cloaks.duplicate();copy._countdown_end=_countdown_end;copy._gas_ionized=_gas_ionized;copy._gas=_gas;copy._gas_collector=_gas_collector;copy._story_hack=_story_hack;copy._story_route=_story_route.duplicate()
 	copy._briefing=_briefing.fork();copy._player=_player.fork_for_frame();copy._scenery=_scenery.fork_for_frame()
 	copy._camera=_camera.fork_for_frame();copy._pilot=_pilot.fork_for_frame();copy._detail=_detail.fork_for_frame()
 	copy._collision_enabled=_collision_enabled
