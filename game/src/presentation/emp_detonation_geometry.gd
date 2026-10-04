@@ -12,6 +12,9 @@ const Numbers = preload("res://src/content/opening_definitions.gd")
 var error := ""
 var model: Node3D
 var _sampler: RefCounted
+## Shock Blast only: the sphere drawn round the ship with the glow.
+var sphere: Node3D
+var _sphere_sampler: RefCounted
 var _identity: RefCounted
 var _descriptor := {}
 var _edition := ""
@@ -45,18 +48,32 @@ func build(burst: RefCounted, library: RefCounted, visuals: RefCounted, bindings
 	_sampler = Sampler.new()
 	if not _sampler.configure(model.surfaces): return reject(_sampler.error)
 	if _sampler.time_range() != {"start_ms": timing.start_ms, "end_ms": timing.end_ms}: return reject("EMP sampler changed its playback range")
-	for index in model.surfaces.size():
-		var surface: Dictionary = model.surfaces[index]
-		if surface.uvs.is_empty() or surface.normals.is_empty() or not surface.colors.is_empty(): return reject("Unsupported EMP burst vertex attributes")
-		var material := ShaderMaterial.new()
-		material.shader = Additive
-		material.set_shader_parameter("diffuse_texture", model.materials[index].get_shader_parameter("diffuse_texture"))
-		model.materials[index] = material; model.instances[index].material_override = material
-		# The sampled root is already in world space, including camera roll.
-		model.instances[index].top_level = true
+	if not _additive(model): return reject("Unsupported EMP burst vertex attributes")
+	if data.has("sphere"):
+		var sphere_models := Models.new()
+		if sphere_models.prepare([data.sphere.resource], library, visuals, bindings, "high", false, true):
+			sphere = sphere_models.instantiate(data.sphere.resource)
+		sphere_models.clear()
+		if sphere != null:
+			add_child(sphere); sphere.set_meta("source_resource_id", data.sphere.model_id)
+			_sphere_sampler = Sampler.new()
+			if not _sphere_sampler.configure(sphere.surfaces) or not _additive(sphere):
+				sphere.free(); sphere = null; _sphere_sampler = null
 	_identity = burst.presentation_identity(); _descriptor = state; _edition = edition
 	_generation = RefCounted.new()
 	visible = false
+	return true
+
+func _additive(node: Node3D) -> bool:
+	for index in node.surfaces.size():
+		var surface: Dictionary = node.surfaces[index]
+		if surface.uvs.is_empty() or surface.normals.is_empty() or not surface.colors.is_empty(): return false
+		var material := ShaderMaterial.new()
+		material.shader = Additive
+		material.set_shader_parameter("diffuse_texture", node.materials[index].get_shader_parameter("diffuse_texture"))
+		node.materials[index] = material; node.instances[index].material_override = material
+		# The sampled root is already in world space, including camera roll.
+		node.instances[index].top_level = true
 	return true
 
 func prepare_effect(burst: RefCounted, camera: Transform3D, parent_rgba: PackedByteArray, global_tint: Vector4, darken: Variant) -> Dictionary:
@@ -89,9 +106,20 @@ func prepare_effect(burst: RefCounted, camera: Transform3D, parent_rgba: PackedB
 		var color := Colors.tint(parent_rgba, global_tint, surface.get("color_byte", -1))
 		if color.is_empty(): return failed("EMP burst exceeded source color precision")
 		surface.tint = color.value
-	return {"generation": _generation, "revision": _revision + 1,
+	var result := {"generation": _generation, "revision": _revision + 1,
 		"visible": true, "sampler": sampler, "surfaces": tinted,
 		"darken": Colors.single(darken) if _edition == "mac-full-hd" else 1.0}
+	# The sphere keeps a fixed orientation at the same scale and clock.
+	if sphere != null:
+		var range: Dictionary = _sphere_sampler.time_range()
+		var sphere_sampler: RefCounted = _sphere_sampler.fork_for_frame()
+		var scale := float(effect.get("scale", 1.0))
+		var rows: Dictionary = sphere_sampler.sample(clampi(int(clock.time_ms), int(range.start_ms), int(range.end_ms)), Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * scale), effect.position))
+		if not rows.is_empty():
+			result.sphere_sampler = sphere_sampler
+			result.sphere_surfaces = rows.surfaces.map(func(row):
+				var copy: Dictionary = row.duplicate(); copy.tint = Colors.tint(parent_rgba, global_tint, row.get("color_byte", -1)).get("value", Vector4.ONE); return copy)
+	return result
 
 func commit_effect(prepared: Dictionary) -> void:
 	error = ""
@@ -108,9 +136,20 @@ func commit_effect(prepared: Dictionary) -> void:
 		model.materials[index].set_shader_parameter("effect_tint", row.tint)
 		model.materials[index].set_shader_parameter("darken_value", prepared.darken)
 	_sampler = prepared.sampler
+	if sphere != null:
+		sphere.visible = prepared.has("sphere_surfaces")
+		if sphere.visible:
+			for index in sphere.instances.size():
+				var row: Dictionary = prepared.sphere_surfaces[index]
+				sphere.instances[index].transform = row.pose
+				sphere.materials[index].set_shader_parameter("effect_tint", row.tint)
+				sphere.materials[index].set_shader_parameter("darken_value", prepared.darken)
+			_sphere_sampler = prepared.sphere_sampler
 
 func clear() -> void:
 	if is_instance_valid(model): model.free()
+	if is_instance_valid(sphere): sphere.free()
+	sphere = null; _sphere_sampler = null
 	model = null; _sampler = null; _identity = null; _descriptor = {}; _edition = ""; error = ""; visible = false
 	_generation = null; _revision = 0
 func reject(message: String) -> bool: clear(); error = message; return false

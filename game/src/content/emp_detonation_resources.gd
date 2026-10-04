@@ -48,9 +48,17 @@ func configure(library: RefCounted, bindings: RefCounted, kind:=6) -> bool:
 		"start_ms": timing.start_ms, "end_ms": timing.end_ms}], "duration_ms": timing.end_ms}
 	return true
 
-## Shock Blast burst: its look-at glow, played once at 50000x around the ship.
+## Shock Blast burst: its look-at glow and the shock sphere (explosion type
+## 11), played once at 50000x around the ship. The sphere is optional.
 func _configure_shock(library: RefCounted, bindings: RefCounted) -> bool:
-	return _configure_glow(library,bindings,int(Bombs.SHOCK.kind),int(Bombs.SHOCK.glow_model_id),float(Bombs.SHOCK.glow_scale))
+	if not _configure_glow(library,bindings,int(Bombs.SHOCK.kind),int(Bombs.SHOCK.glow_model_id),float(Bombs.SHOCK.glow_scale)):return false
+	var id:=int(Bombs.SHOCK.sphere_model_id)
+	var path: String=bindings.resolve(id,"mesh")
+	var mesh: Dictionary={} if path.is_empty() else AEM.new().decode(library.read_resource(path,AEM.MAX_BYTES))
+	var timing: Dictionary={} if mesh.is_empty() else Timing.playback_range(mesh.surfaces)
+	if not timing.is_empty():_state.sphere={"model_id":id,"resource":path,"start_ms":timing.start_ms,"end_ms":timing.end_ms}
+	bindings.error=""
+	return true
 
 ## A burst that plays one look-at model once at a scale (Shock Blast, Fireworks).
 func _configure_glow(library: RefCounted, bindings: RefCounted, family: int, id: int, scale: float) -> bool:

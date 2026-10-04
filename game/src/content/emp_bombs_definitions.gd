@@ -19,7 +19,7 @@ static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALU
 
 ## Supernova Shock Blast: no projectile body; the blast starts at the ship
 ## itself (glow model scaled 50000) and its launch sound is the blast.
-const SHOCK = {"item_id":226,"kind":42,"glow_model_id":18996,"glow_scale":50000.0,"launch_sound":2269,"self_damage_factor":0.2}
+const SHOCK = {"item_id":226,"kind":42,"glow_model_id":18996,"sphere_model_id":18995,"glow_scale":50000.0,"launch_sound":2269,"self_damage_factor":0.2}
 
 ## Supernova Fireworks: an unguided bomb with no glow attachment that bursts
 ## as the firework look-at model (explosion type 13) at a quarter of its size.

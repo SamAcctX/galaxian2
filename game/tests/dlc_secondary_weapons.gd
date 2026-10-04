@@ -102,6 +102,8 @@ func verify_shock(lib: RefCounted,bindings: RefCounted,cat: RefCounted,mounts: R
 	var bomb:=ShockBombs.new()
 	if not bomb.configure(bindings,cat,226,[]):check(false,bomb.error);return
 	check(bomb.prepare_visuals(lib,bindings),"Shock Blast visuals unavailable: "+bomb.error)
+	var shock_burst=load("res://src/content/emp_detonation_resources.gd").new()
+	check(shock_burst.configure(lib,bindings,42) and int(shock_burst.snapshot().get("sphere",{}).get("model_id",-1))==18995,"The Shock Blast burst lost its sphere: "+shock_burst.error)
 	var weapon: Dictionary=bomb.snapshot().weapon
 	check(weapon.radius==80000 and weapon.damage==140 and weapon.system_damage==80 and weapon.interval_ms==7000,"Shock Blast lost its catalogue values: "+str(weapon))
 	var near:={"actor_id":0,"position":Vector3(0,0,20000),"active":true,"emp_immune":false}
