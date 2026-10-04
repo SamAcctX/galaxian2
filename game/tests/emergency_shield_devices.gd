@@ -112,6 +112,13 @@ func verify_medal() -> void:
 	for kills in [6,7,8,9,10]:
 		state.encounter.controller.accounting.counter_deltas.player_kills=kills;tracker.observe(state)
 	check(43 in tracker.reached(),"5 kills during one emergency did not reach Grave Riser")
+	# 39: each battleship kill shows the lifetime share (12 before + 1 = 65%).
+	var capital:=Tracker.new();capital.capital_kills=12;capital.take_progress()
+	var flight:={"encounter":{"controller":{"accounting":{"counter_deltas":{"capital_ship_kills":0}}}}}
+	capital.observe(flight);flight.encounter.controller.accounting.counter_deltas.capital_ship_kills=1;capital.observe(flight)
+	check(capital.take_progress()==[[39,65]],"A battleship kill did not show Destroyer Destroyer 65%")
+	capital.owned=[39];flight.encounter.controller.accounting.counter_deltas.capital_ship_kills=2;capital.observe(flight)
+	check(capital.take_progress().is_empty(),"An owned Destroyer Destroyer still showed progress")
 
 func verify_sounds() -> void:
 	var feedback: Node=load("res://src/presentation/flight_devices_feedback.gd").new()

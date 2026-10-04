@@ -1403,7 +1403,9 @@ func request_departure() -> bool:
 	if not cat.open(library):status.text=cat.error;return false
 	bank_career_stats()
 	var owner: RefCounted=session.station_owner()
-	if owner!=null:_elite_tracker.owned=EliteMedals.earned(owner.snapshot().get("contracts",{}))
+	if owner!=null:
+		var career: Dictionary=owner.snapshot().get("contracts",{})
+		_elite_tracker.owned=EliteMedals.earned(career);_elite_tracker.capital_kills=int(career.get("progress",{}).get("capital_ship_kills",0))
 	if session._world!=null and session._world.has_contracts() and state.get("loadout",{}).get("slots",[]).all(func(slot):return slot==null):session._world.record_stats({"unarmed_departures":1})
 	var packet: Dictionary=session.prepare_departure(bindings,cat)
 	if packet.is_empty():status.text=session.error;return false

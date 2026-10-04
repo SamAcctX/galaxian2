@@ -10,13 +10,16 @@ var _blind_kills:=0
 var _emergency_kills:=0
 var _mining_phase:=""
 var _kills:=-1
+var _capital:=-1
+## Battleships destroyed before this flight (medal 39 is lifetime).
+var capital_kills:=0
 ## Medals the career already holds: their counters show no progress.
 var owned:=[]
 var _progress:=[]
 
 ## Docking (and leaving the station) resets the docking-bound streaks.
 func reset() -> void:
-	_mines=0;_blind_kills=0;_emergency_kills=0;_mining_phase="";_kills=-1
+	_mines=0;_blind_kills=0;_emergency_kills=0;_mining_phase="";_kills=-1;_capital=-1
 
 func take_reached() -> Array:
 	var ids: Array=_reached.keys();ids.sort();_reached={}
@@ -58,6 +61,13 @@ func observe(state: Dictionary) -> void:
 			elif _blind_kills*10/Elite.THRESHOLDS[40]>before*10/Elite.THRESHOLDS[40]:_note(40,_blind_kills*100/Elite.THRESHOLDS[40]/10*10)
 		_kills=kills
 	else:_kills=-1
+	# 39 Destroyer Destroyer: every battleship kill shows the lifetime share
+	# (the station awards it at docking).
+	var capital: Variant=encounter.get("controller",{}).get("accounting",{}).get("counter_deltas",{}).get("capital_ship_kills")
+	if capital is int:
+		if _capital>=0 and capital>_capital:_note(39,mini(100,(capital_kills+capital)*100/Elite.THRESHOLDS[39]))
+		_capital=capital
+	else:_capital=-1
 	# 42 Jammer: ships disabled by EMP at the same moment.
 	var stunned:=0
 	for actor in state.get("actors",[]):
