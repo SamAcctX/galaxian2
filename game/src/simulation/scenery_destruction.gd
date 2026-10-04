@@ -127,6 +127,19 @@ func retire_without_destruction() -> bool:
 	_state.actor_state=4
 	return true
 
+## Mining's end: the asteroid breaks up like a destroyed one, but drops
+## nothing and counts no destruction (the cargo went to the drill).
+func burst_without_drop(pose: Transform3D) -> bool:
+	_read_snapshot={}
+	error=""
+	if _effect==null or _state.get("actor_state")!=0:return reject("Only an intact asteroid can break up after mining")
+	var effect: RefCounted=_effect.fork_for_frame()
+	if not pose.is_finite() or not effect.trigger(pose):return reject("Mined asteroid breakup: "+str(effect.error))
+	var next:=_state.duplicate(true)
+	next.actor_state=3;next.drop_allowed=false;next.cargo={};next.cargo_model_exists=false
+	_state=next;_effect=effect
+	return true
+
 func disable_drop() -> void:
 	_read_snapshot={}
 	# A future mining owner must separately own earned quantity and accounting.

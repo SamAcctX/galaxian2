@@ -181,6 +181,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 		if not next._camera.refresh_player_response(relative_mouse_capture,next._pilot.response_factor()) or not next._engine_audio.before_ordinary_motion():return failed(next._camera.error+next._engine_audio.error)
 		next._pose=next._pilot.advance_prepared(_pose,throttle if enabled_before else _throttle,seconds*player_time_scale,strafe if enabled_before and not next._encounter.turret_active() else 0.0,next._booster.speed_multiplier())
 		if not next._pilot.error.is_empty():return failed(next._pilot.error)
+		if strafe!=0.0:next._camera.carry_strafe(next._pose.basis.x.normalized()*(next._pose.origin-_pose.origin).dot(next._pose.basis.x.normalized()))
 		var contact: Dictionary=next._physical.plan(next._player.collision_context(next._pose),next._scenery.read_snapshot().bodies,enabled_before)
 		if contact.is_empty() or not next._scenery.apply_physical_contacts(contact.operations):return failed(next._physical.error+next._scenery.error)
 		for operation in contact.operations:

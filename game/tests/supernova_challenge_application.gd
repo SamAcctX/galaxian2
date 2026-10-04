@@ -34,11 +34,13 @@ func play(args: PackedStringArray,directory: String) -> void:
 	selection.content=args[0];selection.bindings=args[1];selection.visuals=args[2];selection.language="gb"
 	if not frontend.select_content(selection):check(false,frontend.error);return
 	var bindings: RefCounted=frontend.bindings;var manifest: Dictionary=frontend.library.manifest
+	# A current import carries these itself; only an older import attaches them.
 	for key in ["GOF2_DEKATO_SOURCE_ARGS","GOF2_NEHMA_SOURCE_ARGS"]:
+		if OS.get_environment(key).is_empty():continue
 		var supplement: Variant=JSON.parse_string(FileAccess.get_file_as_string(OS.get_environment(key)))
 		if not supplement is Array or supplement.size()!=3:check(false,"Missing "+key);return
 		if not (bindings.attach_dekato_source(supplement[1],manifest) if key=="GOF2_DEKATO_SOURCE_ARGS" else bindings.attach_nehma_source(supplement[1],manifest)):check(false,bindings.error);return
-	if not bindings.attach_import_update(OS.get_environment("GOF2_IMPORT_UPDATE"),manifest,frontend.library):check(false,bindings.error);return
+	if not OS.get_environment("GOF2_IMPORT_UPDATE").is_empty() and not bindings.attach_import_update(OS.get_environment("GOF2_IMPORT_UPDATE"),manifest,frontend.library):check(false,bindings.error);return
 	# A career save beside the challenge; it must come out byte-identical.
 	var save_path:=SaveFile.path_for(frontend._save_directory,bindings)
 	DirAccess.make_dir_recursive_absolute(save_path.get_base_dir())

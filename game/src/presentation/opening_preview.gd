@@ -893,6 +893,8 @@ func _input(event: InputEvent) -> void:
 		_touch_detected=true;refresh_render_mode()
 	# Own captured mouse input before the flight SubViewport can consume it.
 	if not _mouse_captured or not _focused or not is_visible_in_tree():return
+	# A click skips a launch/arrival before mouse steering takes it.
+	if event is InputEventMouseButton and _handle_cinematic_skip_event(event):return
 	if event is InputEventMouseMotion or event is InputEventMouseButton:
 		if _controls.accept(event):
 			handle_action_events(_controls.take_events())

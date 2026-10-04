@@ -473,12 +473,12 @@ func _consume_mined(drill: Dictionary) -> bool:
 	var bodies: RefCounted=_bodies.fork_for_frame()
 	var actor: RefCounted=_destruction[index].fork_for_frame()
 	if not bodies.retire_mined(index):return reject(bodies.error)
-	if not actor.retire_without_destruction():return reject(actor.error)
-	actor.disable_drop()
+	# The mined asteroid then blows up (player-observed in the original).
+	if not actor.burst_without_drop(_motion.object_pose(index)):return reject(actor.error)
 	var destruction:=_destruction.duplicate();destruction[index]=actor
 	_bodies=bodies;_destruction=destruction;_remaining_count-=1;_mined_count+=1
-	# Mining has no ordinary destruction count, combat pickup, explosion or RNG
-	# draw. Cargo is committed by MiningExtraction together with this candidate.
+	# Mining has no ordinary destruction count, combat pickup or RNG draw.
+	# Cargo is committed by MiningExtraction together with this candidate.
 	return true
 
 func set_spin_enabled(object_index: int, enabled: bool) -> bool:
