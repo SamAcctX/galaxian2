@@ -45,6 +45,8 @@ func verify(content: String, pack: String) -> void:
 	check(aim.advance(player,Transform3D.IDENTITY,Vector2i(800,600),Vector2(0.5,-0.5),true),aim.error)
 	check(aim.snapshot().cursor_point.is_equal_approx(Vector2(540,405)) and aim.snapshot().point.z>0,"Captured cursor lagged behind its input, or the crosshair left the gun line")
 	check(aim.snapshot().raw_point.z>0,"Mouse aim lost the independent forward projection")
+	check(aim.advance(player,Transform3D(Basis.IDENTITY,Vector3(500,0,0)),Vector2i(800,600),Vector2(0.5,-0.5),true,true),aim.error)
+	check(aim.snapshot().point==aim.snapshot().raw_point and aim.snapshot().cursor_point==Vector2(540,405),"Completed-camera gun line was smoothed or moved the steering cursor")
 	var fork:=aim.fork_for_frame()
 	check(aim.advance(player,Transform3D.IDENTITY,Vector2i(1600,1200),Vector2.ZERO,true),aim.error)
 	check(aim.snapshot().cursor_point==Vector2(800,600) and fork.snapshot().cursor_point.is_equal_approx(Vector2(540,405)),"Recentring or resize dragged the steering cursor")

@@ -29,7 +29,7 @@ func configure(bindings: RefCounted) -> bool:
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
 	return true
 
-func advance(player: Transform3D, preceding_camera: Transform3D, viewport_size: Vector2i,commands:=Vector2.ZERO,mouse_capture:=false) -> bool:
+func advance(player: Transform3D, camera_pose: Transform3D, viewport_size: Vector2i,commands:=Vector2.ZERO,mouse_capture:=false,current_view:=false) -> bool:
 	error=""
 	if _definition.is_empty():return reject("Configure opening aim before advancing")
 	if not commands.is_finite() or absf(commands.x)>1 or absf(commands.y)>1:return reject("Aim commands must be normalized finite axes")
@@ -39,10 +39,12 @@ func advance(player: Transform3D, preceding_camera: Transform3D, viewport_size: 
 	# Source bodies use positive Z as forward. Camera poses already use Godot's
 	# right/up/backward basis. Keep their two coordinate roles distinct.
 	var world_point := Vectors.added(player.origin,Vectors.scaled(Vectors.normalized(player.basis.z),_definition.distance))
-	var projected: Dictionary=projection.project_point(preceding_camera,world_point)
+	var projected: Dictionary=projection.project_point(camera_pose,world_point)
 	if projected.has("error"):return reject(projection.error)
 	var raw := Vector3(projected.screen_position.x,projected.screen_position.y,projected.camera_position.z)
-	var point := raw if raw.z>0 else Vectors.added(Vectors.scaled(raw,_definition.new_weight),Vectors.scaled(_point,_definition.previous_weight))
+	# A completed flight camera needs the actual gun line, with no additional
+	# screen-space lag. Earlier cinematic samples may retain their smoothing.
+	var point := raw if current_view or raw.z>0 else Vectors.added(Vectors.scaled(raw,_definition.new_weight),Vectors.scaled(_point,_definition.previous_weight))
 	# The crosshair always marks the gun line (shots fly along the nose). With
 	# mouse steering the steering cursor is a separate marker.
 	_cursor=Vector2(-1,-1)

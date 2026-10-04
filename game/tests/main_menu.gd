@@ -67,9 +67,19 @@ func run() -> void:
 	panel._notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_OUT)
 	panel._background._notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_OUT)
 	var title_before: float=panel.snapshot().title_elapsed_ms;panel._process(0.1)
-	check(panel.snapshot().title_elapsed_ms==title_before and panel._background.render_target_update_mode==SubViewport.UPDATE_DISABLED,"The title or background continued without focus")
+	check(panel.snapshot().title_elapsed_ms>title_before and panel._background.render_target_update_mode==SubViewport.UPDATE_ONCE,"Startup waited for focus instead of painting the title/background")
+	await capture("main-title-unfocused")
+	if DisplayServer.get_name()!="headless":
+		var pixels: Image=panel._background.get_texture().get_image()
+		var lit:=0
+		for y in range(0,pixels.get_height(),16):
+			for x in range(0,pixels.get_width(),16):
+				var color:=pixels.get_pixel(x,y)
+				if maxf(color.r,maxf(color.g,color.b))>0.15:lit+=1
+		check(lit>20,"Unfocused startup menu rendered a black background")
 	panel._notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN)
 	panel._background._notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN)
+	panel.present(false,false)
 	check(panel.snapshot().title_active and panel.snapshot().title_alpha==0.0 and not panel._title_prompt.visible,"The fresh title did not begin at transparent logo")
 	for frame in 13:panel.advance_title(150.0)
 	check(is_equal_approx(panel.snapshot().title_alpha,127.0/255.0) and not panel._title_prompt.visible,"The original title fade midpoint was lost")

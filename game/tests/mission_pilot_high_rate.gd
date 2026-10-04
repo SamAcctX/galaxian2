@@ -32,6 +32,7 @@ func verify_component(world: RefCounted) -> void:
 		check(not app._transition_failed,app.status.text)
 		if failures:app.free();return
 		var after: Dictionary=session.snapshot()
+		if index==0:check(after.player_pose.basis.z.distance_to(before.player_pose.basis.z)>0.00001,"Recipe mouse input waited for another frame")
 		check(after.elapsed_ms-initial.elapsed_ms==(now_us-start_us)/1000,"High-rate Host lost fractional time at sample "+str(index))
 		check(after.input.commands.is_equal_approx(input.commands) and after.input.primary_held==input.fire and not after.input.secondary_requested,"High-rate native controls lost steering/trigger or requested paid ammunition")
 		check(is_equal_approx(float(after.throttle),float(input.throttle)),"High-rate throttle edges did not reach the native frame")

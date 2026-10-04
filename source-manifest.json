@@ -1696,6 +1696,8 @@
     "game/tests/flight_aim_reticle.gd.uid",
     "game/tests/flight_camera.gd",
     "game/tests/flight_camera.gd.uid",
+    "game/tests/desktop_flight_controls_application.gd",
+    "game/tests/desktop_flight_controls_application.gd.uid",
     "game/tests/flight_driver.gd",
     "game/tests/flight_driver.gd.uid",
     "game/tests/flight_motion.gd",

@@ -846,7 +846,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 		var handling: float=0.6+0.4*(1.0-next._cargo.load_fraction()) if _hold_handling and next._cargo!=null else 1.0
 		next._pose=next._pilot.advance(_pose,commands if manual else Vector2.ZERO,active_throttle,float(delta_ms)/1000.0*player_time_scale,strafe if manual else 0.0,next._booster.speed_multiplier(),relative_mouse_capture,handling)
 		if not next._pilot.error.is_empty():reject(next._pilot.error);return null
-		if manual and strafe!=0.0:next._camera.carry_strafe(next._pose.basis.x.normalized()*(next._pose.origin-_pose.origin).dot(next._pose.basis.x.normalized()))
+		if manual:next._camera.carry_strafe(next._pose.basis.x.normalized()*(next._pose.origin-_pose.origin).dot(next._pose.basis.x.normalized()))
 		next._statistics_pose=next._pose*Transform3D(_model_basis,Vector3.ZERO)
 		next._model_basis=Basis.IDENTITY;next._throttle=active_throttle
 		if next._autopilot!=null:
@@ -862,8 +862,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 	# Physical response reads the current root after all movement/approach work.
 	# The earlier station proximity fallback intentionally keeps its old sample.
 	if player_updates and not next._advance_physical_contacts():reject(next.error);return null
-	# Aim is retained during player motion, using the preceding camera. Targets
-	# are projected only after this frame's scenery and camera have advanced.
+	# Targets and the gun line are projected after the final camera update.
 	if player_updates:
 		if player_tail and next._route!=null:
 			# The source caches this root position at the start of its player pass.
@@ -871,7 +870,6 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 			if arrival.is_empty():reject(next._route.error);return null
 			if arrival.arrived and next._notices!=null and _navigation.has("progress_notice"):
 				if not next._notices.enqueue(int(_navigation.progress_notice.source_id)):reject(next._notices.error);return null
-		if next._aim!=null and not next._aim.advance(next._encounter.turret_aim_pose(next._pose) if next._encounter!=null else next._pose,_camera.snapshot().pose,viewport,commands,relative_mouse_capture and manual and not turret_active):reject(next._aim.error);return null
 		if next._player.advance_recharge(delta_ms).is_empty() or next._player.advance_repair(delta_ms).is_empty() or not next._player.advance_cloak(delta_ms,next._notices):reject(next._player.error);return null
 		if not next._advance_tractor(delta_ms):reject(next.error);return null
 		var portal_contact: RefCounted=next._sahi if next._sahi!=null else next._void_portal
@@ -1067,9 +1065,10 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 	if next._camera_follow_enabled and not next.cinematic_input_blocked():
 		if not next._advance_follow_camera(next._camera_ms,scene,next._camera_passes):reject(next.error);return null
 	if turret_active:
-		if not next._encounter.present_turret_camera(next._camera,next._pose) or not next._aim.advance(next._encounter.turret_aim_pose(next._pose),next._camera.snapshot().pose,viewport):reject(next._camera.error+next._aim.error);return null
+		if not next._encounter.present_turret_camera(next._camera,next._pose):reject(next._camera.error);return null
 	if next._encounter!=null and next._encounter.guided_missile_active():
 		if not next._encounter.present_guided_camera(next._camera):reject(next._camera.error);return null
+	if player_updates and next._aim!=null and not next._aim.advance(next._encounter.turret_aim_pose(next._pose) if next._encounter!=null else next._pose,next._camera.snapshot().pose,viewport,commands,relative_mouse_capture and manual and not turret_active,true):reject(next._aim.error);return null
 	if next.death_active() and not next._death.sample_camera(next._camera.snapshot().pose,next._camera_follow_enabled):reject(next._death.error);return null
 	if next._mining!=null and next._mining.has_active_drill() and next._player.read_state().vitals.hull>0 and not cues.dialogue.visible and not next.cinematic_input_blocked():
 		if not next._mining.set_command(drill_command):reject(next._mining.error);return null

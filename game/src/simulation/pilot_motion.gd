@@ -1,19 +1,14 @@
 extends RefCounted
-## Ordinary pilot update: move with the established angular state, then prepare
-## the response to current commands for the next step. Special flight modes are
-## not selected here. Callers own pause/time policy and vehicle state.
+## Captured mouse response moves the current frame. Keyboard/controller flight
+## moves with established angular state, then prepares the next response.
+## Callers own pause/time policy and vehicle state.
 const Flight = preload("res://src/simulation/flight_motion.gd")
 const Vehicle = preload("res://src/simulation/vehicle_response.gd")
 const Response = preload("res://src/simulation/pilot_response.gd")
-# Both supported Mac executables use these lateral-control scalars. The current
-# ship's source response factor supplies the variable rate; no cruise speed is
-# substituted for sideways travel.
+# Continuous desktop strafe uses the installed ship's lateral speed. A/D only
+# translate the ship: no banking, acceleration ramp or release coast.
 const LATERAL_GAIN_PER_FACTOR := 0.06
 const LATERAL_RATE_CAP := 2.0
-const LATERAL_GAIN_START := 0.1
-const LATERAL_GAIN_RAMP := 1.5
-const LATERAL_RELEASE_RETENTION := 0.7
-const LATERAL_SETTLE_RATE := 0.01
 var error := ""
 var binding_id := ""
 var base_content_id := ""
@@ -22,7 +17,6 @@ var lateral_units_per_millisecond := 0.0
 var _flight := Flight.new()
 var _response := Response.new()
 var _response_factor := 0.0
-var _lateral_gain := LATERAL_GAIN_START
 
 func configure(bindings: RefCounted, content_id: String, response_factor: float, sensitivity: float) -> bool:
 	clear()
@@ -70,7 +64,6 @@ func clear() -> void:
 	angular_units = Vector2.ZERO
 	lateral_units_per_millisecond = 0.0
 	_response_factor = 0.0
-	_lateral_gain = LATERAL_GAIN_START
 	_flight.clear()
 	_response.clear()
 
@@ -89,8 +82,14 @@ func advance(pose: Transform3D, commands: Vector2, throttle: float, seconds: flo
 	if not _response.error.is_empty():
 		error = _response.error
 		return pose
+	# Captured mouse input controls this movement, rather than waiting for the
+	# next frame. Keep the established keyboard/controller preparation order.
+	var preceding_units := angular_units
+	if mouse_capture:angular_units=next_response
 	var next_pose := advance_prepared(pose, throttle, seconds, strafe_command, forward_multiplier)
-	if not error.is_empty(): return pose
+	if not error.is_empty():
+		angular_units=preceding_units
+		return pose
 	angular_units = next_response
 	return next_pose
 
@@ -104,22 +103,14 @@ func advance_prepared(pose: Transform3D, throttle: float, seconds: float, strafe
 	if not is_finite(strafe_command) or strafe_command not in [-1.0, 0.0, 1.0]:
 		error = "Manual strafe input must be left, neutral or right"
 		return pose
-	var rate := lateral_units_per_millisecond
-	var gain := _lateral_gain
-	if seconds > 0.0 and strafe_command != 0.0:
-		# Positive local X is screen-left in the following flight camera.
-		rate = -strafe_command * minf(LATERAL_RATE_CAP, _response_factor * LATERAL_GAIN_PER_FACTOR) * gain
-		gain = minf(1.0, gain * LATERAL_GAIN_RAMP)
-	if absf(rate) <= LATERAL_SETTLE_RATE:
-		rate = 0.0
-		gain = LATERAL_GAIN_START
+	# Positive local X is screen-left in the following flight camera.
+	var rate := -strafe_command * minf(LATERAL_RATE_CAP, _response_factor * LATERAL_GAIN_PER_FACTOR)
 	var next_pose := _flight.advance(pose, angular_units, throttle, seconds, rate, forward_multiplier)
 	if not _flight.error.is_empty():
 		error = _flight.error
 		return pose
 	if seconds > 0.0:
-		lateral_units_per_millisecond = rate * LATERAL_RELEASE_RETENTION
-		_lateral_gain = gain
+		lateral_units_per_millisecond = rate
 	return next_pose
 
 func sample_commands(commands: Vector2, seconds: float,mouse_capture:=false) -> bool:
@@ -148,12 +139,10 @@ func accept_visual_response(sample: Vector2, seconds: float, preceding_commands:
 func coast(pose: Transform3D, throttle: float, seconds: float, forward_multiplier:=1.0) -> Transform3D:
 	# Scripted flight retains its root heading and speed without preparing
 	# steering input. Recharge and other player work belong to the caller.
-	var rate:=lateral_units_per_millisecond if absf(lateral_units_per_millisecond)>LATERAL_SETTLE_RATE else 0.0
-	var next:=_flight.advance(pose,Vector2.ZERO,throttle,seconds,rate,forward_multiplier)
+	var next:=_flight.advance(pose,Vector2.ZERO,throttle,seconds,0.0,forward_multiplier)
 	error=_flight.error
 	if error.is_empty() and seconds>0.0:
-		lateral_units_per_millisecond=rate*LATERAL_RELEASE_RETENTION
-		if rate==0.0:_lateral_gain=LATERAL_GAIN_START
+		lateral_units_per_millisecond=0.0
 	return next
 
 ## The camera consumes the same installed-vehicle handling as native motion.
@@ -163,6 +152,6 @@ func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy.base_content_id=base_content_id;copy.binding_id=binding_id;copy.angular_units=angular_units
 	copy.lateral_units_per_millisecond=lateral_units_per_millisecond
-	copy._response_factor=_response_factor;copy._lateral_gain=_lateral_gain
+	copy._response_factor=_response_factor
 	copy._flight=_flight.fork_for_frame();copy._response=_response.fork_for_frame()
 	return copy

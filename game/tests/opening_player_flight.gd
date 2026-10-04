@@ -112,10 +112,16 @@ func check_playable_controls(bindings: RefCounted, catalogues: RefCounted) -> vo
 	var right: Dictionary=sideways.motion(scene,phase,100,1.0,true)
 	check(not right.is_empty() and right.pose.origin.x<0 and right.pose.origin.z==0,"Opening D failed to strafe without forward thrust")
 	var fork: RefCounted=sideways.fork_for_frame()
+	scene.player_pose=right.pose
 	var held: Dictionary=sideways.motion(scene,phase,100,1.0,true)
-	check(held.pose.origin.x<right.pose.origin.x and fork.motion(scene,phase,100,1.0,true).pose.is_equal_approx(held.pose),"Opening held lateral ramp or frame fork lost state")
+	check(held.pose.origin.x<right.pose.origin.x and held.pose.basis==right.pose.basis and fork.motion(scene,phase,100,1.0,true).pose.is_equal_approx(held.pose),"Opening held strafe rotated the ship or frame fork lost state")
+	scene.player_pose=held.pose
 	var stopped: Dictionary=sideways.motion(scene,phase,100,0.0,true)
-	check(stopped.pose.origin.x<0 and sideways.snapshot().lateral_units_per_millisecond<0,"Opening lateral release failed to coast")
+	check(stopped.pose==held.pose and sideways.snapshot().lateral_units_per_millisecond==0,"Opening A/D release continued moving")
+	var mouse:=PlayerFlight.new()
+	check(mouse.configure(bindings,catalogues,1.0),mouse.error)
+	var immediate: Dictionary=mouse.motion(scene,phase,17,0.0,true,Vector2(0.1,-0.3),true)
+	check(not immediate.is_empty() and immediate.pose.basis.z.x<0,"Opening mouse input waited for a second frame")
 
 func check_contact_feedback(state: Dictionary) -> void:
 	for target in ["npc","scenery"]:
@@ -211,10 +217,10 @@ func step(state: Dictionary, delta: int, command: Vector2, fire: bool) -> Dictio
 	check(not result.is_empty(),state.world_frame.error)
 	if not result.is_empty() and state.world_frame._aim!=null:
 		var expected: RefCounted=state.world_frame._aim.fork_for_frame()
-		var before: Dictionary=state.timeline.snapshot()
+		var view: Dictionary=result.timeline.snapshot()
 		var after: Dictionary=result.world_frame.snapshot()
-		check(expected.advance(after.player_motion.pose,before.camera.view.get("pose",Transform3D.IDENTITY),Vector2i(800,600)),expected.error)
-		check(after.player_aim.point==expected.snapshot().point,"World used the controller's later pose/camera for its aim")
+		check(expected.advance(view.scene.player_pose,view.camera.view.get("pose",Transform3D.IDENTITY),Vector2i(800,600),command,false,true),expected.error)
+		check(after.player_aim.point==expected.snapshot().point,"Crosshair used a pose/camera older than the displayed frame")
 		check(after.player_aim.visible==(result.timeline.snapshot().camera.shot.phase==4 and after.player.vitals.hull>0),"World reticle visibility differs from the ordinary alive player")
 	return result
 

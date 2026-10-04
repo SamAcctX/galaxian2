@@ -172,6 +172,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	var automatic: bool=_escape!=null and _escape.snapshot().automatic_forward
 	var moving: bool=(not blocked or automatic) and (not dying or _death.player_updates_enabled())
 	var enabled_before: bool=_state.entry_released and not blocked and not dying
+	var mouse_sampled: bool=moving and enabled_before and relative_mouse_capture and not next._encounter.turret_active()
 	var seconds:=float(milliseconds)/1000.0
 	if not next._booster.advance(milliseconds):return failed(next._booster.error)
 	if dying or blocked:
@@ -179,16 +180,18 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	next._state.physical_contacts=[]
 	if moving:
 		if not next._camera.refresh_player_response(relative_mouse_capture,next._pilot.response_factor()) or not next._engine_audio.before_ordinary_motion():return failed(next._camera.error+next._engine_audio.error)
-		next._pose=next._pilot.advance_prepared(_pose,throttle if enabled_before else _throttle,seconds*player_time_scale,strafe if enabled_before and not next._encounter.turret_active() else 0.0,next._booster.speed_multiplier())
+		if mouse_sampled:
+			next._pose=next._pilot.advance(_pose,commands,throttle,seconds*player_time_scale,strafe,next._booster.speed_multiplier(),true)
+		else:
+			next._pose=next._pilot.advance_prepared(_pose,throttle if enabled_before else _throttle,seconds*player_time_scale,strafe if enabled_before and not next._encounter.turret_active() else 0.0,next._booster.speed_multiplier())
 		if not next._pilot.error.is_empty():return failed(next._pilot.error)
-		if strafe!=0.0:next._camera.carry_strafe(next._pose.basis.x.normalized()*(next._pose.origin-_pose.origin).dot(next._pose.basis.x.normalized()))
+		if enabled_before:next._camera.carry_strafe(next._pose.basis.x.normalized()*(next._pose.origin-_pose.origin).dot(next._pose.basis.x.normalized()))
 		var contact: Dictionary=next._physical.plan(next._player.collision_context(next._pose),next._scenery.read_snapshot().bodies,enabled_before)
 		if contact.is_empty() or not next._scenery.apply_physical_contacts(contact.operations):return failed(next._physical.error+next._scenery.error)
 		for operation in contact.operations:
 			if operation.kind=="asteroid" and next._player.normal_hit(operation.player_damage).is_empty():return failed(next._player.error)
 		next._pose.origin=contact.center_after;next._state.physical_contacts=contact.operations
 		if next._player.advance_recharge(milliseconds).is_empty() or next._player.advance_repair(milliseconds).is_empty() or not next._player.advance_cloak(milliseconds,next._notices):return failed(next._player.error)
-		if not next._aim.advance(next._encounter.turret_aim_pose(next._pose),_camera.snapshot().pose,size,commands,relative_mouse_capture and enabled_before and not next._encounter.turret_active()):return failed(next._aim.error)
 		# Contact samples the preceding portal clock, after solid scenery and
 		# before weapons/radio. Opening later in this frame cannot teleport us.
 		if next._portal!=null:
@@ -269,7 +272,8 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 			next._state.entry_released=true
 			if not next._player.set_permissions(true,cue.player_damage_allowed) or not next._runner.open_briefing():return failed(next._player.error+next._runner.error)
 	var enabled: bool=next._state.entry_released and not cue.input_blocked and (next._escape==null or not next._escape.snapshot().input_blocked) and not dying and not next.campaign_dialogue_visible()
-	if not next._pilot.sample_commands(commands if enabled and not next._encounter.turret_active() else Vector2.ZERO,seconds) or not next._engine_audio.sample_commands(commands if enabled and not next._encounter.turret_active() else Vector2.ZERO):return failed(next._pilot.error+next._engine_audio.error)
+	if not mouse_sampled and not next._pilot.sample_commands(commands if enabled and not next._encounter.turret_active() else Vector2.ZERO,seconds,relative_mouse_capture):return failed(next._pilot.error)
+	if not next._engine_audio.sample_commands(commands if enabled and not next._encounter.turret_active() else Vector2.ZERO):return failed(next._engine_audio.error)
 	var turret_active: bool=next._encounter.turret_active()
 	if turret_active:
 		next._encounter=next._encounter.advance_turret(commands if enabled else Vector2.ZERO,milliseconds,turret_inverted)
@@ -300,7 +304,8 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	# already advanced follow pose. The active sequence owns the final view.
 	if next._escape!=null and not dying:next._camera=next._escape.camera_owner()
 	if turret_active:
-		if not next._encounter.present_turret_camera(next._camera,next._pose) or not next._aim.advance(next._encounter.turret_aim_pose(next._pose),next._camera.snapshot().pose,size):return failed(next._camera.error+next._aim.error)
+		if not next._encounter.present_turret_camera(next._camera,next._pose):return failed(next._camera.error)
+	if not next._aim.advance(next._encounter.turret_aim_pose(next._pose),next._camera.snapshot().pose,size,commands,relative_mouse_capture and enabled and not turret_active,true):return failed(next._aim.error)
 	if not next._aim.sample_feedback(next._encounter.primary_npc_contact(),milliseconds,enabled):return failed(next._aim.error)
 	if not next._engine_audio.follow_player(next._pose,int(next._player.snapshot().vitals.hull),milliseconds):return failed(next._engine_audio.error)
 	if not dying and not next._engines.set_engine_enabled((throttle if enabled else _throttle)>0):return failed(next._engines.error)
