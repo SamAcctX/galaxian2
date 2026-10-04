@@ -1183,7 +1183,11 @@ func _generate_contract(random: RefCounted,scenery_positions: Array) -> Dictiona
 				actor.discarded_route=route.snapshot()
 				if not route.replace_with_contract_path(path,int(options.route_start)):return fail(route.error)
 				actor.route=route.snapshot()
-		var body:=Transform3D(Basis.IDENTITY,position)
+		var facing:=Basis.IDENTITY
+		# face_player: the ship starts with its nose (+z) toward the player.
+		if not story and options.get("face_player",false) and not position.is_equal_approx(_contract.player_position):
+			facing=Basis.looking_at(_contract.player_position-position,Vector3.UP,true)
+		var body:=Transform3D(facing,position)
 		actor.merge({"body_pose":body,"statistics_pose":body,"model_local_pose":Transform3D.IDENTITY})
 		actors.append(actor);routes.append(route)
 	_actors=actors;_routes=routes;_random_state=random.snapshot();_generated=true

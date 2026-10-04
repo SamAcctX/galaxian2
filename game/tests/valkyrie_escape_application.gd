@@ -2560,11 +2560,15 @@ func fly_supernova_ambush() -> void:
 	var orders:={}
 	var watch_orders:=func(frame):
 		var actors: Array=frame._encounter.combat_snapshot().actors
-		if orders.is_empty() and actors.size()>21 and int(actors[3].get("forced_target_actor_id",-1))==0:
+		# The Void fighters start nose-on to the player (+z toward the ship).
+		if not orders.has("facing") and actors.size()>21:
+			var player: Vector3=frame._pose.origin
+			orders.facing=range(2,22).all(func(id):var body: Transform3D=actors[id].body_pose;return body.basis.z.normalized().dot((player-body.origin).normalized())>0.95)
+		if not orders.has(2) and actors.size()>21 and int(actors[3].get("forced_target_actor_id",-1))==0:
 			for id in range(2,22):orders[id]=int(actors[id].get("forced_target_actor_id",-1))
 		# The ordered fighters really pick the freighter (guidance target = cast 0).
 		var control: Variant=frame._encounter.get("_control")
-		if not orders.is_empty() and not orders.has("chased") and control!=null and control.get("_guidance") is Array:
+		if orders.has(2) and not orders.has("chased") and control!=null and control.get("_guidance") is Array:
 			for id in range(3,22,3):
 				var guide: Variant=control._guidance[id] if id<control._guidance.size() else null
 				if guide==null or guide._training.is_empty():continue
@@ -2573,8 +2577,9 @@ func fly_supernova_ambush() -> void:
 		return []
 	if failures or not await story_flight(154,"valkyrie",valkyrie,watch_orders,radio_ids,600,1500.0):return
 	print("SUPERNOVA 154 radio ",radio_ids," orders ",orders)
-	check(not orders.is_empty() and range(2,22).all(func(id):return orders[id]==(0 if id%3==0 else -1)),"Every third Void fighter did not go for the freighter: "+str(orders))
+	check(orders.has(2) and range(2,22).all(func(id):return orders[id]==(0 if id%3==0 else -1)),"Every third Void fighter did not go for the freighter: "+str(orders))
 	check(orders.get("chased",false),"No ordered Void fighter picked the freighter as its target")
+	check(orders.get("facing",false),"The Void fighters did not start facing the player")
 	check(3039 in radio_ids and app.session.flight_owner()._objective.snapshot().campaign_cursor==155,"Boarding Valkyrie did not move the story to 155")
 	scene=[]
 	if failures or not await ride_story_jump(scene,120) or not await enter_story_arrival("supernova-155"):return

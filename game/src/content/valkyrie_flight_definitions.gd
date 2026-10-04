@@ -614,8 +614,8 @@ const SCRIPTED:={
 		"groups":[{"count":1,"faction":0,"hull":51,"friendly":true,"sleeping":true,"hull_override":ESCORT_HULL,"route_start":1,
 			"position":{"kind":"player_offset","offset":Vector3(1500,0,1500),"bound":Vector3(1,1,1)}},
 			{"count":1,"faction":3,"friendly":true,"static":{"model":16928,"layers":[16929,16930],"jitter":0,"offset":Vector3.ZERO},"index":2,"name_text_id":76,"dock":"hack","dockable":false,"unharmable":true},
-			{"count":9,"faction":9,"hull":8,"friendly":false,"sleeping":true,"position":{"kind":"path_fan","center":Vector3(0,0,40000),"offsets":[900,-200,-200],"bounds":[100,200,400],"first":2}},
-			{"count":11,"faction":9,"hull":8,"friendly":false,"sleeping":true,"position":{"kind":"path_fan","center":Vector3(0,0,40000),"offsets":[1600,-200,1000],"bounds":[100,100,500],"first":11,"flip":1}}],
+			{"count":9,"faction":9,"hull":8,"friendly":false,"sleeping":true,"face_player":true,"position":{"kind":"path_fan","center":Vector3(0,0,40000),"offsets":[900,-200,-200],"bounds":[100,200,400],"first":2}},
+			{"count":11,"faction":9,"hull":8,"friendly":false,"sleeping":true,"face_player":true,"position":{"kind":"path_fan","center":Vector3(0,0,40000),"offsets":[1600,-200,1000],"bounds":[100,100,500],"first":11,"flip":1}}],
 		"radio":[[0,3028,2172,5,[9000]],[26,3029,2173,6,[0]],[0,3030,2174,6,[1]],[26,3031,2175,6,[2]],[0,3032,2176,6,[3]],[26,3033,2177,6,[4]],[0,3034,2178,6,[5]],
 			[26,3035,2179,35,[6,8000,1]],[0,3036,2180,6,[7]],[55,3037,2181,6,[8]],[0,3038,2182,6,[9]],[0,3039,2183,50,[1]]],
 		"radio_actions":[{"radio_index":0,"action":"lock_player","invulnerable":true,"until":[35,[6,8000,1]]},
@@ -1098,7 +1098,7 @@ static func _scripted_recipe(cursor: int) -> Dictionary:
 				"policy":{"initial_hostile":not friendly,"updated_hostile":not friendly,"friendly":friendly}})
 			first+=1;continue
 		var group:={"first_actor":first,"end_actor":first+int(row.count),"faction":int(row.faction),"population_group":"story","origin":"zero",
-			"ship_state":{"mode":5,"active":false,"targeting_blocked":true} if row.get("sleeping",false) else {"mode":0,"active":true,"targeting_blocked":false},"route_start":int(row.get("route_start",-1)),"route_loop":row.get("route_loop",[]).duplicate(),
+			"ship_state":{"mode":5,"active":false,"targeting_blocked":true} if row.get("sleeping",false) else {"mode":0,"active":true,"targeting_blocked":false},"route_start":int(row.get("route_start",-1)),"face_player":bool(row.get("face_player",false)),"route_loop":row.get("route_loop",[]).duplicate(),
 			"policy":{"initial_hostile":not friendly,"updated_hostile":not friendly,"friendly":friendly},
 			"position":row.position.duplicate() if row.has("position") else HIDDEN_PARK.duplicate() if row.get("hidden",false) else {"kind":"path_scatter","index":int(row.get("index",0)),"offsets":row.offsets.duplicate(),"bounds":row.bounds.duplicate()}}
 		if row.has("name_text_id"):group.name_text_id=int(row.name_text_id)
