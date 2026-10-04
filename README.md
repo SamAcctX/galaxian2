@@ -12,7 +12,8 @@ executable are not included in the download. No original executable is run.
 ## Download and play
 
 Get the **[latest prerelease](https://github.com/TheWWWorm/galaxian2/releases)**.
-This is an early playable preview, not the complete game.
+The whole game is playable: the main campaign and both add-ons, Valkyrie and
+Supernova. It is still a preview, so expect rough edges.
 
 | Download | Platform | Launch |
 | --- | --- | --- |
@@ -53,6 +54,11 @@ and saves; there is no need to import the same game again.
 
 - The main campaign, from the opening encounter and mining tutorials through
   the final Void escape, ending and continued free travel.
+- **Valkyrie** and **Supernova** through their endings, with their systems,
+  ships, weapons, devices, cinematics, the Kaamo Club, pirate bases, the Loma
+  toll and the Most Wanted boards; the **Supernova Challenge** from the menu.
+- New Game difficulty (Easy, Normal, Hard, Extreme), medals and the Status
+  screen, the in-flight pause window, wingmen, coordinate sellers and diplomats.
 - Freelance combat, recovery, delivery, escort, informer and intercept jobs.
 - The galaxy overview, local travel, jumpgates and Khador Drive travel into
   normal space and the Void, using owned energy cells.
@@ -92,6 +98,7 @@ Follow the tutorial prompts for flying, targeting, firing and mining.
 | Space Lounge at a station | **L** |
 | Save / load at a supported station | **F5 / F9** |
 | Confirm / back | **Enter / Esc** |
+| Skip a station launch, arrival or cinematic | **Click**, **Enter** or controller **A** |
 
 Mouse steering is enabled by default on desktop. Move the mouse to turn your ship;
 the cursor is released in menus, maps and station screens. **Options** lets you
@@ -150,11 +157,9 @@ folder before updating an early preview.
 
 ## Still in development
 
-Valkyrie and Supernova, the status/medals/reputation screen and earned medal
-reward hull stock remain unfinished. Further work is needed on HUD composition,
-menu scenery, station and NPC sound, some UI sound transitions, and rendering
-effects and lighting. Unavailable offers stay locked. The menu currently uses
-the Normal difficulty profile; Supernova Challenge is disabled.
+A few cosmetic details differ from the original where its data could not be
+fully recovered (some camera drifts, small explosion bursts and animations).
+Further polish is planned for rendering effects, lighting and sound.
 
 Screenshots show the native engine using locally imported Mac content. They are
 promotional images, not game resources distributed with the engine.
