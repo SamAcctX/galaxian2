@@ -3374,7 +3374,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 		if not state.player_aim.is_empty() and not _gas_collector.is_empty() and turret_state().get("active",false):
 			state.player_aim.base_image_id=state.player_aim.image_id
 			state.player_aim.image_id=COLLECTOR_CROSSHAIRS[1 if int(_gas.get("pulling",0))>0 else 0]
-	if _targeting!=null:state.mining_targeting=_targeting.snapshot()
+	if _targeting!=null:state.mining_targeting=_targeting.read_snapshot() if shared_scenery else _targeting.snapshot()
 	if _station_targeting!=null:state.station_targeting=_station_targeting.snapshot()
 	if _approach!=null:
 		state.mining_approach=_approach.snapshot()

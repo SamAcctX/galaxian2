@@ -13,6 +13,7 @@ const Numbers=preload("res://src/content/opening_definitions.gd")
 const Vectors=preload("res://src/simulation/source_vectors.gd")
 const Selected40=preload("res://src/content/selected40_population_definitions.gd")
 const Equipment=preload("res://src/simulation/station_equipment.gd")
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 var error:=""
 var _rules:={}
 var _perspective:={}
@@ -181,16 +182,23 @@ func advance(scenery: RefCounted, player: Transform3D, camera: Transform3D, aim:
 					var frame:=int(TargetProjection.single(float(_frames-1)*progress))
 					if frame<_frames-1:animation=frame
 	_selected=selected;_candidate=candidate;_elapsed=elapsed
-	_sample={"visible":enabled,"markers":markers,"candidate_indices":candidates,"nearest_index":nearest,
-		"events":events,"animation_frame":animation,"recovery_object_index":recovery,"aim_pixels":Vector2i(int(point.x),int(point.y)),"viewport_size":viewport}
+	# The sample is replaced whole by the next advance: read-only, it is shared
+	# with forks and with the per-frame presentation observation.
+	_sample=Readonly.freeze({"visible":enabled,"markers":markers,"candidate_indices":candidates,"nearest_index":nearest,
+		"events":events,"animation_frame":animation,"recovery_object_index":recovery,"aim_pixels":Vector2i(int(point.x),int(point.y)),"viewport_size":viewport})
 	return true
 
-func snapshot() -> Dictionary:
+func snapshot() -> Dictionary:return _observation(_sample.duplicate(true))
+
+## The same observation for per-frame presentation reads; its sample is shared.
+func read_snapshot() -> Dictionary:return _observation(_sample)
+
+func _observation(sample: Dictionary) -> Dictionary:
 	if _rules.is_empty():return {}
 	var state:=_identity.duplicate()
 	state.merge({"selected_object_index":_selected,"candidate_object_index":_candidate,"elapsed_ms":_elapsed,
 		"scanner_id":_scanner_id,"drill_id":_drill_id,"tractor_id":_tractor_id,"tractor_mode":_tractor_mode,"duration_ms":_duration,"animation_frames":_frames})
-	state.merge(_sample.duplicate(true))
+	state.merge(sample)
 	return state
 
 func clear_selection() -> void:_selected=-1
