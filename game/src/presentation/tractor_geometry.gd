@@ -43,11 +43,13 @@ func prepare_world(owner: RefCounted,parent_rgba:=PackedByteArray([255,255,255,2
 	if animation.is_empty():return failed(sampler.error)
 	var surfaces: Array=_surface.prepare_surfaces(animation,pose,parent_rgba,global_tint)
 	if surfaces.is_empty():return failed(_surface.error)
-	return {"visible":state.active,"surfaces":surfaces,"sampler":sampler,"darken":Colors.single(darken)}
+	return {"visible":state.active,"surfaces":surfaces,"sampler":sampler,"darken":Colors.single(darken),"time_ms":int(row.playback.time_ms)}
 
 func commit_world(frame: Dictionary) -> void:
 	beam.visible=frame.visible
-	if frame.visible:_surface.apply_surfaces(beam,frame.surfaces,frame.darken)
+	if frame.visible:
+		_surface.apply_surfaces(beam,frame.surfaces,frame.darken)
+		_surface.apply_uv(beam,float(frame.get("time_ms",0)))
 	_sampler=frame.sampler
 
 func clear() -> void:

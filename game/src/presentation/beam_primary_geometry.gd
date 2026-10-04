@@ -42,14 +42,16 @@ func prepare(weapon: Dictionary, parent_rgba: PackedByteArray, tint: Vector4) ->
 			if animation.is_empty():return failed(sampler.error)
 			surfaces=_surface.prepare_surfaces(animation,Beam.presentation(shot,i==1),parent_rgba,tint)
 			if surfaces.is_empty():return failed(_surface.error)
-		prepared.append({"visible":visible,"surfaces":surfaces});samplers.append(sampler)
+		prepared.append({"visible":visible,"surfaces":surfaces,"time_ms":int(_ranges[i].start_ms)+int(shot.age_ms)});samplers.append(sampler)
 	return {"models":prepared,"samplers":samplers}
 
 func commit(prepared: Dictionary, darken: float) -> void:
 	for i in _models.size():
 		var row: Dictionary=prepared.models[i]
 		_models[i].visible=row.visible
-		if row.visible:_surface.apply_surfaces(_models[i],row.surfaces,darken)
+		if row.visible:
+			_surface.apply_surfaces(_models[i],row.surfaces,darken)
+			_surface.apply_uv(_models[i],float(row.get("time_ms",0)))
 	_samplers=prepared.samplers
 
 func reject(message: String) -> bool:error=message;return false

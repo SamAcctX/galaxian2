@@ -100,7 +100,7 @@ func prepare_world(owner: RefCounted, world: Dictionary, camera: Transform3D, pa
 			if root.visible:
 				surfaces=_surface.prepare_surfaces(animation,root.pose,parent_rgba,global_tint)
 				if surfaces.is_empty():return failed(_surface.error)
-			slots.append({"visible":root.visible,"surfaces":surfaces})
+			slots.append({"visible":root.visible,"surfaces":surfaces,"time_ms":row.time_ms})
 		prepared.append(slots);samplers.append(sampler)
 	return {"guns":prepared,"samplers":samplers,"trails":trails,"darken":Colors.single(darken) if _edition=="mac-full-hd" else 1.0}
 
@@ -115,6 +115,7 @@ func commit_world(prepared: Dictionary) -> void:
 			model.visible=row.visible
 			if not row.visible:continue
 			_surface.apply_surfaces(model,row.surfaces,prepared.darken)
+			_surface.apply_uv(model,float(row.get("time_ms",0)))
 	_samplers=prepared.samplers
 
 func clear() -> void:
