@@ -136,6 +136,9 @@ const VALKYRIE_FINALE:={"beam":[19061,19062,19063],"burn":[19095,19096],"burn_ha
 	"fire_ms":6000,"fly_ms":10000,"fly_speed":35.0,"vanish_ms":5700,"white_end_ms":6600,
 	# Explosions (the ordinary look-at explosion 16820): [stage, ms, offset from
 	# the array point, scale]. Scales are not recovered (assumption).
+	# Camera rumble (original shake: strength x a random -20..19 per look axis):
+	# [stage, from ms, until stage (or "" = end), strength, ramp ms].
+	"rumble":[["hit",9000,"charge",30.0,0],["fly",0,"",30.0,6500]],
 	"burst_model":16820,"bursts":[["hit",0,[-2000,1000,-8000],1.5],["hit",6000,[-6000,2000,-10000],1.5],["hit",9000,[0,0,0],4.0],["fly",5500,[0,0,0],5.0]]}
 
 ## The supernova flare layers at this location: [{mesh_id, texture_id, speed}],

@@ -686,7 +686,7 @@ const SCRIPTED:={
 			# The finale (VALKYRIE_FINALE): hit when #13 ends, burn when #14
 			# ends, the array charges 3 s after #15 ends. From #14 the camera
 			# looks at Valkyrie from (50000, 0, 70000), sliding 2 units/ms
-			# along -x, then follows the flight to the sun; the supernova
+			# along -x (from the charge (-3,0,-0.33)/ms), then follows the flight to the sun; the supernova
 			# reverses 5 s into it, Valkyrie is gone at 5.7 s, and at 6.5 s
 			# the story moves on.
 			# Harval's line (#12) over: the camera looks at Valkyrie from
@@ -696,7 +696,7 @@ const SCRIPTED:={
 			{"radio_index":13,"on":"finished","action":"array_finale","stage":"hit","actor":23},
 			{"radio_index":14,"on":"finished","action":"array_finale","stage":"burn","actor":23},
 			{"radio_index":15,"on":"finished","delay_ms":3000,"action":"array_finale","stage":"charge","actor":23},
-			{"radio_index":14,"on":"finished","action":"cutscene","actor":23,"offset":Vector3(50000,0,70000),"drift":Vector3(-2,0,0),"until":[35,[15,19500,1]]},
+			{"radio_index":14,"on":"finished","action":"cutscene","actor":23,"offset":Vector3(50000,0,70000),"drift":Vector3(-2,0,0),"charge_drift":Vector3(-3,0,-0.33),"until":[35,[15,19500,1]]},
 			{"radio_index":15,"on":"finished","delay_ms":18000,"action":"supernova_reversal"},
 			{"radio_index":15,"on":"finished","delay_ms":18700,"action":"retire","first_actor":23,"end_actor":24}],
 		"success":{"kind":"radio_finished","index":15,"hold_ms":19500},"skip_lines":4},
