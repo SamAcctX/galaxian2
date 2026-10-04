@@ -97,6 +97,11 @@ func collision_context(object_index: Variant) -> Dictionary:
 		"object_index":object_index,"eligible":row.active and row.collision_enabled and _vitals[object_index].snapshot().hull>0,
 		"path":"bounds","center":row.position,"half_extent":row.half_extent}
 
+## A valid body's collision centre and half extent alone, for a caller that
+## rejects distant bodies before it asks for the whole context.
+func collision_center(object_index: int) -> Variant:return _rows[object_index].position
+func collision_half_extent(object_index: int) -> Variant:return _rows[object_index].half_extent
+
 func supports_weapon_hit(weapon: Variant) -> bool:
 	var kinds:=[0]
 	if _dispersed_primary and TrainingWeapons.dispersed_primary(weapon):kinds.append(2)
