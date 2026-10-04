@@ -666,6 +666,7 @@ func set_pause(reason: String, paused: bool, now_microseconds: int) -> bool:
 func rebase_time(now_microseconds: int) -> bool:
 	return _clock!=null and _clock.rebase(now_microseconds)
 func is_paused() -> bool:return not _pauses.is_empty()
+func dialogue_visible() -> bool:return _world!=null and _world.dialogue_visible()
 func can_control() -> bool:return _active and status=="running" and not is_paused() and not _world.death_active() and not _world.local_departing() and not _world.cinematic_input_blocked() and _world.entry_released() and not _world.dialogue_visible()
 func can_skip_cinematic() -> bool:return _active and status=="running" and not is_paused() and _world!=null and _world.can_skip_entry()
 func cinematic_skipping() -> bool:return false

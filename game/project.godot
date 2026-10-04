@@ -18,6 +18,17 @@ window/stretch/aspect="expand"
 window/dpi/allow_hidpi=true
 window/handheld/orientation=0
 
+[input]
+
+ui_accept={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"keycode":4194309), Object(InputEventKey,"keycode":4194310), Object(InputEventKey,"keycode":32), Object(InputEventJoypadButton,"device":-1,"button_index":0)]
+}
+ui_cancel={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"keycode":4194305), Object(InputEventJoypadButton,"device":-1,"button_index":1)]
+}
+
 [rendering]
 renderer/rendering_method="mobile"
 renderer/rendering_method.mobile="gl_compatibility"

@@ -29,6 +29,7 @@ var _mouse_delta := Vector2.ZERO
 var _mouse_command := Vector2.ZERO
 var _mouse_pointer_mode:=false
 var _mouse_fire := false
+var _controller_steering := false
 var _keys := {}
 var _axes := {}
 var _buttons := {}
@@ -56,6 +57,7 @@ func clear() -> void:
 	_events.clear()
 	device = -1
 	_mouse_delta=Vector2.ZERO;_mouse_command=Vector2.ZERO;_mouse_fire=false
+	_controller_steering=false
 
 func set_enabled(value: bool) -> void:
 	enabled = value
@@ -96,11 +98,13 @@ func disconnect_controller(identifier: int) -> void:
 	device = -1
 	_axes.clear()
 	_buttons.clear()
+	_controller_steering=false
 
 func accept(event: InputEvent) -> bool:
 	if not enabled: return false
 	if event is InputEventMouseMotion:
 		if not _mouse_active or not event.screen_relative.is_finite():return false
+		if event.screen_relative!=Vector2.ZERO:_controller_steering=false
 		_mouse_delta+=event.screen_relative
 		return true
 	if event is InputEventMouseButton:
@@ -140,6 +144,8 @@ func accept(event: InputEvent) -> bool:
 	if event is InputEventJoypadMotion:
 		var previous: float = _axes.get(event.axis, 0.0)
 		_axes[event.axis] = event.axis_value
+		if event.axis in [JOY_AXIS_LEFT_X,JOY_AXIS_LEFT_Y] and absf(event.axis_value)>deadzone:
+			_controller_steering=true;_mouse_delta=Vector2.ZERO;_mouse_command=Vector2.ZERO
 		if AXIS_ACTIONS.has(event.axis) and previous <= 0.25 and event.axis_value > 0.25: _edge(AXIS_ACTIONS[event.axis])
 		if AXIS_ACTIONS.has(event.axis) and previous > 0.25 and event.axis_value <= 0.25: _release(AXIS_ACTIONS[event.axis])
 	else:
@@ -189,9 +195,11 @@ func snapshot() -> Dictionary:
 	var pitch := float(_keys.get(KEY_DOWN, false)) - float(_keys.get(KEY_UP, false))
 	var yaw := float(_keys.get(KEY_RIGHT, false)) - float(_keys.get(KEY_LEFT, false))
 	var strafe := float(_keys.get(KEY_D, false)) - float(_keys.get(KEY_A, false))
-	var command := Vector2(pitch if pitch != 0 else _axis(JOY_AXIS_LEFT_Y), yaw if yaw != 0 else _axis(JOY_AXIS_LEFT_X))
-	if command.x==0:command.x=_mouse_command.x
-	if command.y==0:command.y=_mouse_command.y
+	var stick := Vector2(_axis(JOY_AXIS_LEFT_Y),_axis(JOY_AXIS_LEFT_X)) if _controller_steering else Vector2.ZERO
+	var command := Vector2(pitch if pitch != 0 else stick.x, yaw if yaw != 0 else stick.y)
+	if not _controller_steering:
+		if command.x==0:command.x=_mouse_command.x
+		if command.y==0:command.y=_mouse_command.y
 	if _touch_active: command = _touch_command
 	# The ship flies along +Z; the following camera's screen-right is local -X.
 	command.y=-command.y
@@ -205,7 +213,7 @@ func snapshot() -> Dictionary:
 	for action in _touch:
 		if _touch[action]: held[action] = true
 	if _mouse_fire:held.fire=true
-	return {"command": command, "strafe": strafe, "held": held, "pressed": pressed_actions(),"mouse_capture":_mouse_active}
+	return {"command": command, "strafe": strafe, "held": held, "pressed": pressed_actions(),"mouse_capture":_mouse_active,"mouse_response":_mouse_active and not _controller_steering}
 
 func take_pressed() -> Array[String]:
 	var result := pressed_actions()
