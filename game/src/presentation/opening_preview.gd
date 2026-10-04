@@ -1529,7 +1529,8 @@ func _begin_station_story(campaign: bool) -> bool:
 	var prepared: bool=panel.configure_campaign_visit(library,bindings,visuals,int(state.campaign_cursor),state.mission,true) if campaign else panel.configure_station_return(library,bindings,visuals,13)
 	if not prepared or not (session.begin_campaign_story(panel) if campaign else session.begin_contract_story(panel)):
 		var problem: String=panel.error+session.error;panel.free();return transition_error(problem)
-	var previous:=station_panel;station_panel=panel;connect_station_panel(panel);previous.free()
+	# The old panel may still be emitting the click that got us here.
+	var previous:=station_panel;station_panel=panel;connect_station_panel(panel);previous.get_parent().remove_child(previous);previous.queue_free()
 	if _save_notice!=null:_save_notice.hide()
 	return true
 

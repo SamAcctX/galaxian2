@@ -2314,6 +2314,7 @@ func fly_supernova_bounty() -> void:
 	if stats.is_empty():return
 	var cursor:=int(app.session.station_owner().snapshot().campaign_cursor)
 	var credits:=int(app.session.station_owner().snapshot().contracts.credits)
+	var old_notices:=Array(app.session.station_owner().snapshot().contracts.get("medal_notices",[])).size()
 	print("SUPERNOVA bounty ",stats.name," at ",station," cursor ",cursor," reward ",stats.reward," credits ",credits)
 	# Failure: out and straight back in without the kill.
 	if not await depart_to(station):return
@@ -2327,6 +2328,9 @@ func fly_supernova_bounty() -> void:
 	# The kill.
 	if not await depart_to(station):return
 	await capture_free_application("supernova-bounty-met")
+	# His own hit line carries his name and face, not a stock pirate's.
+	var own: Dictionary=app.session.scene._radio_resources.speakers.get(10000+BOUNTY_ENTRY,{})
+	check(String(own.get("name",""))==String(stats.name) and own.get("portrait") is Texture2D,"His radio line lacks his own name and face: "+str(own.keys()))
 	var radio_ids:=[]
 	var him:=func(_actors):return [0] if int(app.session.flight_owner()._encounter.combat_snapshot().actors[0].vitals.hull)>0 else []
 	if not await fight_until("bounty",func():return him.call([]).is_empty(),him,radio_ids):return
@@ -2362,7 +2366,9 @@ func fly_supernova_bounty() -> void:
 	var board: Dictionary=after.contracts.progress.wanted
 	print("SUPERNOVA bounty paid ",int(after.contracts.credits)-credits," board ",board.bounties," entry ",board.entries[BOUNTY_ENTRY])
 	check(board.entries[BOUNTY_ENTRY].dead and not board.entries[BOUNTY_ENTRY].active and int(board.bounties[int(stats.board)])==1,"The board did not mark "+String(stats.name)+" killed")
-	check(int(after.contracts.credits)-credits==int(stats.reward),"The bounty paid %d, not %d"%[int(after.contracts.credits)-credits,int(stats.reward)])
+	# Medals reached on the way pay their own original credits at this docking.
+	var medal_pay: int=Array(after.contracts.get("medal_notices",[])).slice(old_notices).reduce(func(sum,row):return sum+preload("res://src/simulation/base_medal_progress.gd").reward_credits(int(row[1])),0)
+	check(int(after.contracts.credits)-credits-medal_pay==int(stats.reward),"The bounty paid %d (medals %d), not %d"%[int(after.contracts.credits)-credits,medal_pay,int(stats.reward)])
 	check(int(after.campaign_cursor)==cursor,"The docked career left cursor %d"%cursor)
 	if failures:return
 	check(app.save_station(false) and app.load_station(),"Saving and resuming after the bounty failed: "+app._save_notice.text)
@@ -2387,7 +2393,7 @@ func seed_board_criminal(index: int,station: int) -> Dictionary:
 	var row: Dictionary=table[index]
 	var state: Dictionary=Wanted.fresh(table)
 	var stats:={"name":row.name,"ship":int(row.ship),"race":int(row.race),"weapon":int(row.weapon),"hull":int(row.hull),
-		"loot":[int(row.loot_item),int(row.loot_amount)],"reward":int(row.reward),"wingmen":int(row.wingmen),"board":int(row.board),"tier":int(row.required_bounties)}
+		"loot":[int(row.loot_item),int(row.loot_amount)],"reward":int(row.reward),"wingmen":int(row.wingmen),"board":int(row.board),"tier":int(row.required_bounties),"face":Array(row.portrait).duplicate()}
 	state.entries[index].merge({"active":true,"at":station,"to":station,"from":station,"stats":stats},true)
 	var seeded:=0
 	for part in [document.station,document.career]:

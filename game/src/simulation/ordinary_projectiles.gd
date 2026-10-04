@@ -82,6 +82,7 @@ func configure(weapon: Dictionary, capacity: Variant = null) -> bool:
 	if weapon.has("campaign_cursor"):_weapon.campaign_cursor=weapon.campaign_cursor
 	if weapon.has("nonplayer_source"):_weapon.nonplayer_source=weapon.nonplayer_source
 	if weapon.get("wingman_systems",false):_weapon.wingman_systems=true
+	if weapon.get("own_gun",false) and weapon.get("nonplayer_source")==true and Vitals.integer(weapon.get("model_resource_id")):_weapon.own_gun=true;_weapon.model_resource_id=int(weapon.model_resource_id)
 	if weapon.has("dispersion"):_weapon.dispersion=weapon.dispersion.duplicate(true)
 	if weapon.has("fitting_primary"):_weapon.fitting_primary=weapon.fitting_primary
 	if weapon.has("ordinary_hit_policy"): _weapon.ordinary_hit_policy=weapon.ordinary_hit_policy.duplicate(true)

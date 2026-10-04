@@ -46,6 +46,15 @@ func prepare_events(library: RefCounted,bindings: RefCounted,visuals: RefCounted
 		counts.append(lines.size())
 		var id := int(event.speaker_id)
 		if resolved.has(id) or bindings.speaker_bindings.is_empty():continue
+		# A line may bring its own speaker (a Most Wanted criminal: his name
+		# and five face parts, family first).
+		if event.get("speaker_name") is String and event.get("speaker_face") is Array and event.speaker_face.size()>1:
+			resolved[id]={"name":String(event.speaker_name)}
+			if visuals!=null and not visuals.base_content_id.is_empty() and not bindings.portrait_layers.is_empty():
+				var own: Dictionary=composer.compose_definition(library,bindings,visuals,0,"baseline",{"status":"fixed","family":int(event.speaker_face[0]),"parts":event.speaker_face.slice(1)})
+				if own.is_empty():diagnostics[id]=composer.error
+				else:resolved[id].portrait=ImageTexture.create_from_image(own.image)
+			continue
 		var speaker_name: String = bindings.resolve_speaker_name(id,library)
 		if not bindings.error.is_empty():return fail(bindings.error)
 		resolved[id]={"name":speaker_name}

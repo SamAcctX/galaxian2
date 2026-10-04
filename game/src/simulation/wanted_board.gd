@@ -74,7 +74,7 @@ static func activate(state: Dictionary,table: Array,cat: RefCounted,cursor: int,
 		if placed.is_empty():continue
 		entry.merge(placed,true);entry.active=true
 		entry.stats={"name":row.name,"ship":int(row.ship),"race":int(row.race),"weapon":int(row.weapon),"hull":int(row.hull),
-			"loot":[int(row.loot_item),int(row.loot_amount)],"reward":int(row.reward),"wingmen":int(row.wingmen),"board":int(row.board),"tier":int(row.required_bounties)}
+			"loot":[int(row.loot_item),int(row.loot_amount)],"reward":int(row.reward),"wingmen":int(row.wingmen),"board":int(row.board),"tier":int(row.required_bounties),"face":Array(row.get("portrait",[])).duplicate()}
 		activated.append(index)
 	return {"state":next,"activated":activated}
 
