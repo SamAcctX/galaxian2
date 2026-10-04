@@ -681,7 +681,7 @@ const SCRIPTED:={
 			{"radio_index":0,"on":"finished","delay_ms":16000,"action":"place","first_actor":21,"end_actor":22,"center":Vector3(20000,0,-4000),"radius":3000.0},
 			{"radio_index":4,"action":"wake","first_actor":11,"end_actor":22},
 			{"radio_index":8,"action":"lock_player","until_radio":10,"invulnerable":true},
-			{"radio_index":8,"action":"place","first_actor":22,"end_actor":23,"center":Vector3(-120000,0,20000),"radius":8000.0},
+			{"radio_index":8,"action":"place","first_actor":22,"end_actor":23,"center":Vector3(-120000,0,20000),"radius":8000.0,"wake":true},
 			{"radio_index":10,"on":"finished","action":"retire","first_actor":22,"end_actor":23},
 			# The finale (VALKYRIE_FINALE): hit when #13 ends, burn when #14
 			# ends, the array charges 3 s after #15 ends. From #14 the camera

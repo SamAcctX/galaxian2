@@ -727,7 +727,7 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		session.scene.hud.set_mobile_layout(_mobile_layout,touch_actions)
 		var skip_available: bool=_focused and is_visible_in_tree() and session.can_skip_cinematic()
 		_flight_hint.visible=_player_mode and not touch_actions_enabled() and skip_available
-		_flight_hint.text="Enter / A  Skip cinematic"
+		_flight_hint.text="Click / Enter / A  Skip cinematic"
 		_skip_button.visible=touch_actions_enabled() and skip_available;_skip_button.disabled=false
 		_layout_flight_overlays()
 		viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS if is_visible_in_tree() and not session.is_paused() and session.status=="running" else SubViewport.UPDATE_ONCE
@@ -808,7 +808,7 @@ func refresh_render_mode(state: Dictionary={}) -> void:
 		var cinematic: bool=session!=null and skippable
 		_flight_hint.visible=_player_mode and not touch_actions and cinematic and _focused and is_visible_in_tree()
 		if _flight_hint.visible:
-			_flight_hint.text="Skipping cinematic…" if session.cinematic_skipping() else "Enter / A  Skip cinematic"
+			_flight_hint.text="Skipping cinematic…" if session.cinematic_skipping() else "Click / Enter / A  Skip cinematic"
 	if _skip_button!=null:
 		_skip_button.visible=touch_actions and session!=null and skippable and _focused and is_visible_in_tree()
 		_skip_button.disabled=session!=null and session.has_method("cinematic_skipping") and session.cinematic_skipping()
@@ -1104,7 +1104,8 @@ func _handle_cinematic_skip_event(event: InputEvent) -> bool:
 	if not _focused or not is_visible_in_tree() or session==null or not session.has_method("can_skip_cinematic") or not session.can_skip_cinematic():return false
 	var skip_key: bool=event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode if event.physical_keycode else event.keycode) in [KEY_ENTER,KEY_KP_ENTER]
 	var skip_pad: bool=event is InputEventJoypadButton and event.pressed and event.button_index==JOY_BUTTON_A
-	if not skip_key and not skip_pad:return false
+	var skip_click: bool=event is InputEventMouseButton and event.pressed and event.button_index==MOUSE_BUTTON_LEFT
+	if not skip_key and not skip_pad and not skip_click:return false
 	skip_cinematic();get_viewport().set_input_as_handled()
 	return true
 

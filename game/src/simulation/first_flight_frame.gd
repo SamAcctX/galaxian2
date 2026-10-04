@@ -2997,14 +2997,18 @@ func acknowledge_contract_result(serial: int,paused:=false) -> RefCounted:
 func drill_owner() -> RefCounted:return null if _mining==null else _mining.drill_owner()
 func entry_released() -> bool:return _briefing!=null and _briefing.read_state().entry_released
 func can_skip_entry() -> bool:
-	return _mission_context!=null and _briefing!=null and not entry_released() and _briefing.read_state().entry_elapsed_ms>0 and not dialogue_visible() and not death_active() and not local_departing() and not cinematic_input_blocked() and _unsupported_boundary.is_empty()
+	# Any flight's launch/arrival introduction can be skipped (original: a tap).
+	return _briefing!=null and not entry_released() and _briefing.read_state().entry_elapsed_ms>0 and not dialogue_visible() and not death_active() and not local_departing() and not cinematic_input_blocked() and _unsupported_boundary.is_empty()
 
 func skip_entry(paused:=false) -> RefCounted:
 	if paused or not can_skip_entry():reject("The arrival introduction is not awaiting skip");return null
 	var next:=fork_for_frame()
 	if not next._briefing.skip_entry():reject(next._briefing.error);return null
 	var frame: RefCounted=next.evaluate(0)
-	if frame==null:reject(next.error)
+	if frame==null:reject(next.error);return null
+	# Skipped straight to flight: the chase view starts behind the ship, as
+	# after a full launch, instead of gliding in from the launch shot's eye.
+	if frame._shot.get("mode")=="follow" and not frame._camera.cut_to_follow(frame._shot,{"base_content_id":_entry.base_content_id,"binding_id":_entry.binding_id,"player_pose":frame._pose}):reject(frame._camera.error);return null
 	return frame
 func has_local_travel() -> bool:return _local_travel!=null
 func station_owner() -> RefCounted:return null if _station==null else _station.fork_for_frame()

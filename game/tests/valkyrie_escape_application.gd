@@ -1003,7 +1003,7 @@ func fly_supernova_rescue() -> void:
 		if failures or not await dock_application():return
 		if not await fit_cabins(10):return
 	if not app.request_departure() or not app.enter_first_flight(now_us,4096,flight_world_seconds()):check(false,app.status.text);return
-	if not await release_application_flight() or not await khador_jump(110):return
+	if not await skip_launch() or not await release_application_flight() or not await khador_jump(110):return
 	var radio_ids:=[];var docked_at:=-1;var boarded:=false;var gone:=false;var gamma_seen:=false;var loading_seen:=false;var gone_us:=0;var shot_seen:=false
 	var began:=now_us
 	app.session.rebase_time(now_us)
@@ -2778,6 +2778,7 @@ func story_flight(cursor: int,label: String,goal: Callable,hostiles: Callable,ra
 		var radio: Dictionary=frame._radio.snapshot() if frame._radio!=null else {}
 		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
 		await watch_finale()
+		await watch_alice(label,radio)
 		var puzzle: Dictionary=frame.story_hack_state()
 		if not puzzle.is_empty():
 			if not hacking:hacking=true;print("SUPERNOVA ",label," hacking at ",(now_us-began)/1000000," s");await capture_free_application("supernova-%s-hack"%label)
@@ -3169,6 +3170,30 @@ func go_to(station: int) -> bool:
 ## Story cutscenes (64-70): ~1 s in, the player is held, the HUD is hidden
 ## and the camera looks at the named ship; one capture per cutscene.
 var cutscene_marks:={}
+## A mouse click skips an ordinary station launch straight to flight.
+func skip_launch() -> bool:
+	for tick in 40:
+		if app.session.can_skip_cinematic():break
+		now_us+=100000;app.session.step(now_us,Vector2.ZERO,false,false,0.0);app.present_session();await process_frame
+	check(app.session.can_skip_cinematic() and app._flight_hint.visible,"The station launch offers no skip")
+	if failures:return false
+	var click:=InputEventMouseButton.new();click.button_index=MOUSE_BUTTON_LEFT;click.pressed=true
+	app._handle_cinematic_skip_event(click)
+	var flight: RefCounted=app.session.flight_owner()
+	var behind: Vector3=flight._pose.basis.inverse()*(flight._camera.snapshot().pose.origin-flight._pose.origin)
+	check(flight.entry_released() and app.session.can_control(),"A click did not skip the launch to flight")
+	check(behind.z<0.0 and behind.length()<5000.0,"The skip left the camera away from the chase view: "+str(behind))
+	await capture_free_application("launch-skipped")
+	return failures==0
+
+## 157: Alice shows by Valkyrie while she boards (line 9).
+func watch_alice(label: String,radio: Dictionary) -> void:
+	if label!="armada" or int(radio.get("text_id",-1))!=3075 or cutscene_marks.has("alice"):return
+	cutscene_marks["alice"]=true;var alice: Dictionary=app.session.flight_owner()._encounter.combat_snapshot().actors[22]
+	print("SUPERNOVA Alice active ",alice.get("active")," mode ",alice.get("actor_mode")," hidden ",alice.get("hidden",false)," at ",alice.pose.origin)
+	check(alice.get("active",false) and not alice.get("hidden",false) and int(alice.get("actor_mode",0)) not in [3,4],"Alice is not shown while she boards Valkyrie")
+	await capture_free_application("supernova-alice")
+
 ## 157's finale: Valkyrie burning, the array beam, the flight to the sun, the flash.
 func watch_finale() -> void:
 	var finale: Dictionary=app.session.snapshot().get("array_finale",{})
@@ -3250,6 +3275,7 @@ func fight_until(label: String,done: Callable,targets: Callable,radio_ids: Array
 		if app.session.flight_owner().death_active():check(false,"The player died in "+label+" at tick "+str(tick)+": "+str(state.player.vitals)+" nearest "+str(actors.map(func(actor):return [int(actor.position.distance_to(state.player_pose.origin)),int(actor.pose.origin.distance_to(state.player_pose.origin)),actor.get("firing_allowed"),actor.get("mode")])));return false
 		var radio: Dictionary=app.session.flight_owner()._radio.snapshot()
 		if radio.get("visible",false) and int(radio.get("text_id",-1)) not in radio_ids:radio_ids.append(int(radio.text_id))
+		await watch_alice(label,radio)
 		await watch_cutscene(label)
 		if not keep_unharmed(label):return false
 		var input:=pilot.controls(state,tick,targets.call(actors),true)
