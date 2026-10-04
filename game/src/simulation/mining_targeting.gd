@@ -119,9 +119,10 @@ func advance(scenery: RefCounted, player: Transform3D, camera: Transform3D, aim:
 	var lifecycles: Array=field.get("destruction",[])
 	if not bodies is Array or bodies.size()!=field.objects.size() or (not lifecycles.is_empty() and lifecycles.size()!=bodies.size()):return reject("Asteroid selection requires complete live bodies")
 	var markers:=[];var candidates:=[];var kinds:={};var automatic_recovery:=-1
+	var objects: Variant=field.objects
 	for index in bodies.size():
-		var body: Variant=bodies[index]
-		if not body is Dictionary or body.get("index")!=index or not body.get("active") is bool or not body.get("position") is Vector3 or not body.position.is_finite() or not Numbers.integer(body.get("source_size_value"),4,7) or not field.objects[index].position is Vector3 or not field.objects[index].position.is_finite() or body.model_id!=field.objects[index].model_id:return reject("Invalid asteroid body sample")
+		var body: Variant=bodies[index];var object: Variant=objects[index]
+		if not body is Dictionary or body.get("index")!=index or not body.get("active") is bool or not body.get("position") is Vector3 or not body.position.is_finite() or not Numbers.integer(body.get("source_size_value"),4,7) or not object.position is Vector3 or not object.position.is_finite() or body.model_id!=object.model_id:return reject("Invalid asteroid body sample")
 		var state:=0 if lifecycles.is_empty() else int(lifecycles[index].lifecycle.actor_state)
 		if state not in [0,3,4]:return reject("Unsupported asteroid selection lifecycle")
 		# Scenery's cargo flag is independent of retired collision statistics.
@@ -129,19 +130,18 @@ func advance(scenery: RefCounted, player: Transform3D, camera: Transform3D, aim:
 		var cargo_eligible: bool=not lifecycles.is_empty() and lifecycles[index].lifecycle.drop_allowed
 		if state in [3,4] and not cargo_eligible:continue
 		if not enabled or approaching:continue
-		var projected:=projection.project(camera,field.objects[index].position)
-		if projected.has("error"):return reject(projection.error)
-		var pixel: Vector2i=projected.pixels
-		var inside: bool=projected.in_view and pixel.x>low.x and pixel.x<high.x and pixel.y>low.y and pixel.y<high.y
+		if not projection.sample(camera,object.position):return reject(projection.error)
+		var pixel: Vector2i=projection.pixels;var in_view: bool=projection.in_view
+		var inside: bool=in_view and pixel.x>low.x and pixel.x<high.x and pixel.y>low.y and pixel.y<high.y
 		var kind:="debris" if cargo_eligible and state in [3,4] else "asteroid"
-		markers.append({"object_index":index,"pixels":pixel,"in_view":projected.in_view,"in_scan_window":inside,"selected":index==_selected,"kind":kind,"item_id":body.item_id})
+		markers.append({"object_index":index,"pixels":pixel,"in_view":in_view,"in_scan_window":inside,"selected":index==_selected,"kind":kind,"item_id":body.item_id})
 		kinds[index]=kind
 		# Automatic recovery keeps the ordered cargo request separate from the
 		# mining clock. All-direction devices bypass ordinary selection gates,
 		# but neither mode can replace an existing pickup or a prior cargo row.
 		var normal_selection: bool=not selection_blocked and not acquisition_suspended
 		if kind=="debris" and automatic_recovery<0 and not recovery_pending:
-			if _tractor_mode==2 or (_tractor_mode==1 and projected.in_view and normal_selection):automatic_recovery=index
+			if _tractor_mode==2 or (_tractor_mode==1 and in_view and normal_selection):automatic_recovery=index
 		if inside and normal_selection and not recovery_pending and automatic_recovery<0 and not body.get("mined",false) and candidates.size()<int(_rules.candidate_limit):candidates.append(index)
 	var selected:=_selected;var candidate:=_candidate;var elapsed:=_elapsed
 	var nearest:=-1;var nearest_distance:=int(_rules.candidate_distance_limit)
