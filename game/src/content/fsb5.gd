@@ -6,6 +6,10 @@ const MAX_PCM_BYTES := 64 * 1024 * 1024
 const RATES := [4000,8000,11000,11025,16000,22050,24000,32000,44100,48000,96000]
 const STEPS := [7,8,9,10,11,12,13,14,16,17,19,21,23,25,28,31,34,37,41,45,50,55,60,66,73,80,88,97,107,118,130,143,157,173,190,209,230,253,279,307,337,371,408,449,494,544,598,658,724,796,876,963,1060,1166,1282,1411,1552,1707,1878,2066,2272,2499,2749,3024,3327,3660,4026,4428,4871,5358,5894,6484,7132,7845,8630,9493,10442,11487,12635,13899,15289,16818,18500,20350,22385,24623,27086,29794,32767]
 const INDEX_CHANGE := [-1,-1,-1,-1,2,4,6,8]
+# A fifth of a second of sound: less is not worth handing to another thread.
+const IMA_BLOCKS_PER_TASK := 128
+static var IMA_DELTAS: PackedInt32Array
+static var IMA_NEXT: PackedByteArray
 const MPEG1_BITRATES := [0,32,40,48,56,64,80,96,112,128,160,192,224,256,320]
 const MPEG2_BITRATES := [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160]
 var error := ""
@@ -115,27 +119,73 @@ func decode_ima(data: PackedByteArray, count: int, channels: int) -> PackedByteA
 	var blocks: int=(count+63)/64
 	var needed:=blocks*36*channels
 	if needed>data.size() or data.size()-needed>=32:reject("Invalid FSB5 IMA extent");return PackedByteArray()
-	var pcm:=PackedByteArray();pcm.resize(count*channels*2)
 	for block in blocks:
-		var start:=block*36*channels
 		for channel in channels:
-			var predictor:=int(data.decode_s16(start+4*channel))
-			var step_index:=int(data[start+4*channel+2])
-			if step_index>88 or data[start+4*channel+3]!=0:reject("Invalid IMA block state");return PackedByteArray()
-			pcm.encode_s16((block*64*channels+channel)*2,predictor)
-			for frame in range(1,mini(64,count-block*64)):
-				var nibble:=frame-1
-				var at:=start+4*channels+(nibble/8)*4*channels+4*channel+(nibble%8)/2
-				var code: int=(data[at]>>(4*(nibble&1)))&15
-				var step: int=STEPS[step_index]
-				var difference:=step>>3
-				if code&1:difference+=step>>2
-				if code&2:difference+=step>>1
-				if code&4:difference+=step
-				predictor=clampi(predictor+(-difference if code&8 else difference),-32768,32767)
-				step_index=clampi(step_index+INDEX_CHANGE[code&7],0,88)
-				pcm.encode_s16(((block*64+frame)*channels+channel)*2,predictor)
+			var header:=block*36*channels+4*channel
+			if data[header+2]>88 or data[header+3]!=0:reject("Invalid IMA block state");return PackedByteArray()
+	# Every 64-sample block carries its own predictor, so runs of blocks decode
+	# independently. A long sample is shared out over the worker threads; its
+	# parts are joined in order and equal the single-threaded result.
+	var parts:=clampi(blocks/IMA_BLOCKS_PER_TASK,1,maxi(1,OS.get_processor_count()))
+	if parts==1:return _decode_ima_blocks(data,count,channels,0,blocks)
+	var run: int=(blocks+parts-1)/parts
+	var decoded:=[];decoded.resize(parts)
+	var lock:=Mutex.new()
+	var decode_part:=func(part: int) -> void:
+		var pcm:=_decode_ima_blocks(data,count,channels,part*run,mini(blocks,(part+1)*run))
+		lock.lock();decoded[part]=pcm;lock.unlock()
+	WorkerThreadPool.wait_for_group_task_completion(WorkerThreadPool.add_group_task(decode_part,parts))
+	var joined:=PackedByteArray()
+	for pcm in decoded:joined.append_array(pcm)
+	return joined
+
+## PCM of blocks [first,last). The step and next-index tables hold what the
+## nibble arithmetic produces for each of the 89 step sizes.
+func _decode_ima_blocks(data: PackedByteArray, count: int, channels: int, first: int, last: int) -> PackedByteArray:
+	var pcm:=PackedByteArray();pcm.resize((mini(count,last*64)-first*64)*channels*2)
+	var stride:=4*channels;var sample_bytes:=2*channels
+	# Local references: threads reading the shared tables directly would
+	# contend for their reference counts on every sample.
+	var deltas:=IMA_DELTAS;var next:=IMA_NEXT
+	for block in range(first,last):
+		var start:=block*36*channels
+		var frames:=mini(64,count-block*64)
+		for channel in channels:
+			var predictor:=data.decode_s16(start+4*channel)
+			var step_index: int=data[start+4*channel+2]
+			var out:=((block-first)*64*channels+channel)*2
+			pcm.encode_s16(out,predictor)
+			# Each byte holds two samples, low nibble first; a channel's bytes
+			# come four at a time between the other channel's.
+			var group:=start+stride+4*channel
+			for byte_index in 32:
+				var frame:=2*byte_index+1
+				if frame>=frames:break
+				var byte: int=data[group+(byte_index>>2)*stride+(byte_index&3)]
+				var entry:=step_index*16+(byte&15)
+				predictor=clampi(predictor+deltas[entry],-32768,32767);step_index=next[entry]
+				pcm.encode_s16(out+frame*sample_bytes,predictor)
+				if frame+1>=frames:break
+				entry=step_index*16+(byte>>4)
+				predictor=clampi(predictor+deltas[entry],-32768,32767);step_index=next[entry]
+				pcm.encode_s16(out+(frame+1)*sample_bytes,predictor)
 	return pcm
+
+static func _static_init() -> void:
+	var tables:=_ima_tables();IMA_DELTAS=tables[0];IMA_NEXT=tables[1]
+
+static func _ima_tables() -> Array:
+	var deltas:=PackedInt32Array();var next:=PackedByteArray()
+	for step_index in 89:
+		var step: int=STEPS[step_index]
+		for code in 16:
+			var difference:=step>>3
+			if code&1:difference+=step>>2
+			if code&2:difference+=step>>1
+			if code&4:difference+=step
+			deltas.append(-difference if code&8 else difference)
+			next.append(clampi(step_index+INDEX_CHANGE[code&7],0,88))
+	return [deltas,next]
 
 func mpeg_frames(data: PackedByteArray, row: Dictionary) -> PackedByteArray:
 	var output:=PackedByteArray()
