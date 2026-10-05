@@ -594,7 +594,7 @@ func evaluate_primary_contacts(primaries: RefCounted, combat: RefCounted, invent
 		if not shared_random_state is Dictionary or not candidate.begin_contact_pass(shared_random_state,display_available):reject("Local contacts require the shared frame stream: "+candidate.error);return {}
 	var selected: bool=combat!=null and combat.selected40_world_owner()!=null
 	if selected and not load("res://src/content/selected40_population_definitions.gd").matches_world(self,combat.selected40_world_owner()):reject("Selected40 contacts require the same native scenery generation");return {}
-	var result: Dictionary=primaries.evaluate_selected40_update(candidate,_bodies,inventory,delta_ms,guidance_actor_id) if selected else primaries.evaluate_opening_update(candidate,_bodies,inventory,delta_ms,null,guidance_actor_id)
+	var result: Dictionary=primaries.evaluate_selected40_update(candidate,_bodies,inventory,delta_ms,guidance_actor_id) if selected else primaries.evaluate_opening_update(candidate,_bodies,inventory,delta_ms,null,guidance_actor_id,not is_same(candidate,combat))
 	if result.is_empty(): reject(primaries.error);return {}
 	var next: RefCounted=fork_for_frame()
 	next._read_snapshot={}

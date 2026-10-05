@@ -224,10 +224,12 @@ func evaluate_npc_update(combat: RefCounted, ordered_actor_ids: Variant, delta_m
 			"contacts":contacts.contacts,"motion":motion})
 	return {"primaries":staged,"combat":staged_combat,"weapons":events}
 
-func evaluate_opening_update(combat: RefCounted, bodies: RefCounted, inventory: RefCounted, delta_ms: Variant, bounds_selection: Variant = null, guidance_actor_id: int=-1) -> Dictionary:
+## combat_staged: the caller passes a detached combat that it discards on any
+## failure; contacts then change it in place instead of forking it again.
+func evaluate_opening_update(combat: RefCounted, bodies: RefCounted, inventory: RefCounted, delta_ms: Variant, bounds_selection: Variant = null, guidance_actor_id: int=-1, combat_staged:=false) -> Dictionary:
 	error=""
 	if not _selected40_context.is_empty():return fail("Selected40 mixed contacts require the unfinished native scenery and targeting owners")
-	return _evaluate_opening_update(combat,bodies,inventory,delta_ms,bounds_selection,guidance_actor_id)
+	return _evaluate_opening_update(combat,bodies,inventory,delta_ms,bounds_selection,guidance_actor_id,combat_staged)
 
 ## Explicit admission to the shared ordered pass, never generic cursor40 travel.
 func evaluate_selected40_update(combat: RefCounted,bodies: RefCounted,inventory: RefCounted,delta_ms: Variant,guidance_actor_id: int=-1) -> Dictionary:
@@ -235,7 +237,7 @@ func evaluate_selected40_update(combat: RefCounted,bodies: RefCounted,inventory:
 	if _selected40_construction==null or not inventory is TargetInventory or not inventory.matches_selected40(combat,_selected40_construction,_selected40_context):return fail("Selected40 primaries require their same-generation native target inventory")
 	return _evaluate_opening_update(combat,bodies,inventory,delta_ms,null,guidance_actor_id)
 
-func _evaluate_opening_update(combat: RefCounted,bodies: RefCounted,inventory: RefCounted,delta_ms: Variant,bounds_selection: Variant,guidance_actor_id: int) -> Dictionary:
+func _evaluate_opening_update(combat: RefCounted,bodies: RefCounted,inventory: RefCounted,delta_ms: Variant,bounds_selection: Variant,guidance_actor_id: int,combat_staged:=false) -> Dictionary:
 	if _loadout.is_empty(): return fail("Configure primary ownership before opening updates")
 	if not Vitals.integer(delta_ms): return fail("Primary time must be nonnegative integer milliseconds")
 	if combat==null or combat.get_script()!=Combat or bodies==null or bodies.get_script()!=SceneryBodies:
@@ -248,7 +250,7 @@ func _evaluate_opening_update(combat: RefCounted,bodies: RefCounted,inventory: R
 	if not inventory.validate_loadout(_loadout) or (OS.is_debug_build() and not inventory.validate_owners(combat.snapshot(),bodies.read_snapshot())):
 		return fail(inventory.error)
 	var staged: RefCounted = fork_state()
-	var staged_combat: RefCounted = combat.fork_for_frame()
+	var staged_combat: RefCounted = combat if combat_staged else combat.fork_for_frame()
 	var staged_bodies: RefCounted = bodies.fork_for_frame()
 	var operation := OpeningContacts.new()
 	var events := []
