@@ -985,7 +985,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if session is StationSession and session.snapshot().get("hangar_open",false) and not supported:return
 	if session is StationSession and not session.is_paused() and event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode if event.physical_keycode else event.keycode)==KEY_H and _hangar_button.visible:
 		equipment_action("open");get_viewport().set_input_as_handled();return
-	if (session is StationSession or (session is FirstFlightSession and session.snapshot().dialogue.visible)) and not session.is_paused() and not supported:
+	if (session is StationSession or (session is FirstFlightSession and session.dialogue_visible())) and not session.is_paused() and not supported:
 		var action:=""
 		if event is InputEventKey and event.pressed and not event.echo:
 			var key: int=event.physical_keycode if event.physical_keycode else event.keycode
@@ -1133,8 +1133,8 @@ func _process(_delta: float) -> void:
 		if session is FirstFlightSession and session.can_stop_mining():input.command=Controls.pointer_command(input.command)
 		var accepted: bool
 		if session is FirstFlightSession:session.elite_tracker=_elite_tracker
-		if session is FirstFlightSession:accepted=session.step(Time.get_ticks_usec(),input.command,input.held.fire,_mouse_captured,input.get("strafe",0.0),input.held.get("brake",false),_controls.invert_pitch)
-		elif session is Session:accepted=session.step(Time.get_ticks_usec(),input.command,input.held.fire,input.get("strafe",0.0),input.held.get("brake",false),_mouse_captured)
+		if session is FirstFlightSession:accepted=session.step(Time.get_ticks_usec(),input.command,input.held.fire,input.get("mouse_response",false),input.get("strafe",0.0),input.held.get("brake",false),_controls.invert_pitch)
+		elif session is Session:accepted=session.step(Time.get_ticks_usec(),input.command,input.held.fire,input.get("strafe",0.0),input.held.get("brake",false),input.get("mouse_response",false))
 		else:accepted=session.step(Time.get_ticks_usec(),input.command,input.held.fire)
 		if not accepted:
 			if session is FirstFlightSession:transition_error(session.error)
@@ -1742,7 +1742,7 @@ func _selected40_tick(now_microseconds: int) -> void:
 	if _transition_failed:return
 	handle_action_events(_controls.take_events())
 	var input: Dictionary=_controls.snapshot() if session.can_control() else {"command":Vector2.ZERO,"held":{"fire":false}}
-	if not session.step(now_microseconds,input.command,input.held.fire,_mouse_captured,input.get("strafe",0.0),input.held.get("brake",false),_controls.invert_pitch):
+	if not session.step(now_microseconds,input.command,input.held.fire,input.get("mouse_response",false),input.get("strafe",0.0),input.held.get("brake",false),_controls.invert_pitch):
 		transition_error(session.error);return
 	if session.status=="game_over_transition_required" and not session.is_paused() and _focused and is_visible_in_tree():enter_game_over();return
 	if session.status=="selected40_portal_transition_required" and not session.is_paused() and _focused and is_visible_in_tree():enter_mission_portal(now_microseconds);return

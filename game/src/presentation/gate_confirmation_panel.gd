@@ -14,6 +14,7 @@ var _active:=false
 var _accept_result:=-1
 var _map_result:=-1
 var _state:={}
+var _stick_direction:=0
 
 func _init() -> void:
 	visible=false;mouse_filter=Control.MOUSE_FILTER_STOP
@@ -24,7 +25,7 @@ func _init() -> void:
 	var buttons:=HBoxContainer.new();buttons.alignment=BoxContainer.ALIGNMENT_CENTER
 	buttons.add_theme_constant_override("separation",12);column.add_child(buttons)
 	_no=Button.new();_yes=Button.new()
-	for button in [_no,_yes]:button.focus_mode=Control.FOCUS_NONE;buttons.add_child(button)
+	for button in [_no,_yes]:buttons.add_child(button)
 	_no.pressed.connect(func():choose(_map_result));_yes.pressed.connect(func():choose(_accept_result))
 	resized.connect(_relayout)
 	_panel.minimum_size_changed.connect(_relayout)
@@ -103,16 +104,33 @@ func handle_event(event: InputEvent) -> bool:
 	if not _active:return true
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key: int=event.physical_keycode if event.physical_keycode else event.keycode
-		if key in [KEY_ENTER,KEY_KP_ENTER]:choose(_accept_result)
+		if key in [KEY_ENTER,KEY_KP_ENTER,KEY_SPACE]:choose(_selected_result())
 		elif key in [KEY_ESCAPE,KEY_M,KEY_BACKSPACE]:choose(_map_result)
+		elif key in [KEY_LEFT,KEY_RIGHT,KEY_UP,KEY_DOWN,KEY_TAB]:_move_focus()
 	elif event is InputEventJoypadButton and event.pressed:
-		if event.button_index==JOY_BUTTON_A:choose(_accept_result)
+		if event.button_index==JOY_BUTTON_A:choose(_selected_result())
 		elif event.button_index==JOY_BUTTON_B:choose(_map_result)
+		elif event.button_index in [JOY_BUTTON_DPAD_LEFT,JOY_BUTTON_DPAD_RIGHT,JOY_BUTTON_DPAD_UP,JOY_BUTTON_DPAD_DOWN]:_move_focus()
+	elif event is InputEventJoypadMotion and event.axis in [JOY_AXIS_LEFT_X,JOY_AXIS_LEFT_Y]:
+		var direction:=int(signf(event.axis_value)) if absf(event.axis_value)>0.5 else 0
+		if direction!=0 and direction!=_stick_direction:_move_focus()
+		_stick_direction=direction
 	return true
 
+func _selected_result() -> int:return _map_result if _no.has_focus() and _no.visible else _accept_result
+
+func _move_focus() -> void:
+	if _no.visible and not _no.has_focus():_no.grab_focus()
+	else:_yes.grab_focus()
+
 func set_active(value: bool) -> void:
+	var was_active:=_active
 	_active=value and visible
 	_yes.disabled=not _active;_no.disabled=not _active
+	if _active and not was_active:_yes.grab_focus();_stick_direction=0
+	elif not _active:
+		for button in [_yes,_no]:
+			if button.has_focus():button.release_focus()
 
 func set_mobile_layout(value: bool) -> void:
 	_mobile=value;_relayout()
@@ -129,6 +147,8 @@ func _relayout() -> void:
 
 func snapshot() -> Dictionary:return _state.duplicate(true)
 func clear() -> void:
+	for button in [_yes,_no]:
+		if button.has_focus():button.release_focus()
 	visible=false;_active=false;_state={};error=""
 	_text.text="";_yes.disabled=true;_no.disabled=true
 func reject(message: String) -> bool:error=message;return false

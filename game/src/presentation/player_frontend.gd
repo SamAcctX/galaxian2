@@ -595,7 +595,7 @@ func _input(event: InputEvent) -> void:
 	var start: bool=event is InputEventJoypadButton and event.pressed and event.button_index==JOY_BUTTON_START
 	if not pause_key and not start:return
 	if escape and game.handle_hangar_back(event):return
-	if escape and (game._station_map_open or game.flight_menu.visible or game.session.status in ["gate_confirmation_required","gate_map_required"] or (game.session.has_method("map_open") and game.session.map_open())):return
+	if escape and (not game._launch_packet.is_empty() or game._station_map_open or game.flight_menu.visible or game.session.status in ["gate_confirmation_required","gate_map_required"] or (game.session.has_method("map_open") and game.session.map_open())):return
 	get_viewport().set_input_as_handled()
 	show_menu()
 
