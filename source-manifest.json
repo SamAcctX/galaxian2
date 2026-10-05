@@ -3282,6 +3282,10 @@
     "game/src/presentation/flight_hud_style.gd",
     "game/tests/desktop_player_feedback.gd",
     "game/tests/desktop_player_feedback_application.gd",
-    "game/tests/desktop_player_feedback_resume.gd"
+    "game/tests/desktop_player_feedback_resume.gd",
+    "game/src/presentation/flight_hud_style.gd.uid",
+    "game/tests/desktop_player_feedback.gd.uid",
+    "game/tests/desktop_player_feedback_application.gd.uid",
+    "game/tests/desktop_player_feedback_resume.gd.uid"
   ]
 }
