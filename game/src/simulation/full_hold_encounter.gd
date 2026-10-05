@@ -1,7 +1,9 @@
 extends RefCounted
 const Readonly=preload("res://src/simulation/readonly_state.gd")
 const Frames=preload("res://src/simulation/frame_clock.gd")
+const FrameTransaction=preload("res://src/simulation/frame_transaction.gd")
 var _max_ms:=0
+var _txn:=0
 ## Retained combat for supported early flights. The enclosing flight stages
 ## weapon contacts, late player input and the later NPC pass, then commits them
 ## together with player, camera and scenery. No mission rewards live here.
@@ -960,7 +962,7 @@ func evaluate_weapons(player: RefCounted, pose: Transform3D, milliseconds: int, 
 	error=""
 	if _control==null or not Numbers.integer(milliseconds,0,_max_ms) or target(player,pose).is_empty():return fail("Invalid encounter weapon frame")
 	if _primaries!=null and (not scenery is Scenery or scenery.presentation_identity()!=_scenery_identity):return fail("Equipped contacts require the retained complete scenery")
-	var prior:=_weapon_observation();var next:=fork_for_frame()
+	var prior:=_weapon_observation();var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	next._projectiles=_projectiles.fork_for_frame();next._impacts=_impacts.fork_for_frame()
 	if not next._projectiles.advance(milliseconds):return fail(next._projectiles.error)
 	if not next._impacts.advance(milliseconds):return fail(next._impacts.error)
@@ -1022,7 +1024,7 @@ func evaluate_world_logic(milliseconds: int, random_state: Dictionary, player_po
 	if _control==null or not Numbers.integer(milliseconds,0,_max_ms):return fail("Invalid encounter world-logic frame")
 	var random:=Random.new()
 	if not random.restore(random_state):return fail(random.error)
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	if _control.has_method("runs_ambient_traffic") and _control.runs_ambient_traffic():
 		var result: Dictionary=_control.evaluate_ambient_world_logic(milliseconds,_combat,random_state,player_pose,energy_cells)
 		if result.is_empty():return fail(_control.error)
@@ -1074,7 +1076,7 @@ func evaluate_primary_fire(player: RefCounted, pose: Transform3D, requested: boo
 	var input:=target(player,pose);var random:=Random.new()
 	if _primaries==null or input.is_empty():return fail("Late primary input requires an equipped encounter")
 	if not random.restore(random_state):return fail(random.error)
-	var next:=fork_for_frame();var result:=random.snapshot()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame();var result:=random.snapshot()
 	next._primary_fire={}
 	var sequence_enabled: bool=_selected40_sequence==null or not _selected40_sequence.snapshot().input_blocked
 	var firing: bool=requested and input_enabled and sequence_enabled and input.active and input.hull>0
@@ -1127,7 +1129,7 @@ func evaluate_world(player: RefCounted, pose: Transform3D, milliseconds: int, ra
 	elif _selected40_world!=null:operation=_control.evaluate(_combat,_weapons,milliseconds,input,random_state,player)
 	else:operation=_control.evaluate(_combat,_weapons,milliseconds,input,random_state)
 	if operation.is_empty():return fail(_control.error)
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	next._control=operation.controller;next._combat=operation.combat;next._weapons=operation.weapons
 	next._actor_events=Readonly.freeze(operation.actors);next._world_elapsed_ms+=milliseconds
 	next._selected40_pending_world=false
@@ -1247,6 +1249,7 @@ func selected40_construction_owner() -> RefCounted:return null if _selected40_wo
 func destruction_resources() -> RefCounted:return null if _resources==null else _resources.fork_for_frame()
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
+	copy._txn=FrameTransaction.current
 	copy._contract_context=_contract_context.duplicate(true)
 	copy._max_ms=_max_ms
 	copy._difficulty=_difficulty
