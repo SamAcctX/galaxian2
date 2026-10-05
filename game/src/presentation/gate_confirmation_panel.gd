@@ -135,8 +135,19 @@ func set_active(value: bool) -> void:
 func set_mobile_layout(value: bool) -> void:
 	_mobile=value;_relayout()
 
+## Godot's focus navigation would walk past the answers to whichever focusable
+## control lies beyond them, such as the disabled station buttons, where
+## Enter / A answers Yes with nothing marked. Every move from one answer leads
+## to the other, and nowhere while a message shows a single button.
+func _pin_focus() -> void:
+	for button in [_no,_yes]:
+		var other: Button=_yes if button==_no else _no
+		var path: NodePath=button.get_path_to(other if other.visible else button)
+		for neighbor in ["focus_neighbor_left","focus_neighbor_top","focus_neighbor_right","focus_neighbor_bottom","focus_next","focus_previous"]:button.set(neighbor,path)
+
 func _relayout() -> void:
 	if not visible or _art==null:return
+	_pin_focus()
 	_panel.add_theme_stylebox_override("panel",_art.styles[_mobile].panel)
 	_text.add_theme_font_size_override("font_size",20 if _mobile else 15)
 	_text.custom_minimum_size.x=minf(540 if _mobile else 400,maxf(1,size.x-72))

@@ -48,6 +48,22 @@ func verify(args: PackedStringArray) -> void:
 	check(not host._launch_dialog.visible and host.session is Station,"Controller B failed to cancel departure")
 	await send_pad(JOY_BUTTON_A);await send_key(KEY_ESCAPE)
 	check(_frontend.phase=="game" and not host._launch_dialog.visible,"Departure Escape opened the menu instead of cancelling")
+	# Beyond the two answers lie the disabled station buttons. Focus that walks
+	# on to them leaves nothing marked, and A / Enter would then answer Yes.
+	await send_pad(JOY_BUTTON_A)
+	for code in [JOY_BUTTON_DPAD_LEFT,JOY_BUTTON_DPAD_LEFT,JOY_BUTTON_DPAD_DOWN,JOY_BUTTON_DPAD_UP,JOY_BUTTON_DPAD_RIGHT]:
+		await send_pad(code)
+		check(host._launch_dialog._yes.has_focus() or host._launch_dialog._no.has_focus(),"Controller focus left the departure question")
+	check(host._launch_dialog._no.has_focus(),"Five moves between two answers did not end on No")
+	await send_pad(JOY_BUTTON_A)
+	check(not host._launch_dialog.visible and host.session is Station,"Controller A on No launched the ship")
+	await send_key(KEY_ENTER)
+	for code in [KEY_LEFT,KEY_LEFT,KEY_TAB,KEY_DOWN,KEY_UP]:
+		await send_key(code)
+		check(host._launch_dialog._yes.has_focus() or host._launch_dialog._no.has_focus(),"Keyboard focus left the departure question")
+	check(host._launch_dialog._no.has_focus(),"Keyboard moves did not end on No")
+	await send_key(KEY_ENTER)
+	check(not host._launch_dialog.visible and host.session is Station,"Keyboard Enter on No launched the ship")
 	var cancelled: Dictionary=host.session.snapshot()
 	for field in ["campaign_cursor","cargo","loadout","mission","reward_credits"]:
 		check(cancelled.get(field)==before.get(field),"Cancelled departure changed "+field)
