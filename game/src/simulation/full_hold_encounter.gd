@@ -540,7 +540,7 @@ func evaluate_cargo_recovery(tractor: RefCounted,cargo: RefCounted,delta_ms: int
 	var next_tractor: RefCounted=tractor.fork_for_frame()
 	if not next_tractor.advance(delta_ms,player,observation,cargo.snapshot()):return fail(next_tractor.error)
 	var frame: Dictionary=next_tractor.snapshot().frame
-	var next: RefCounted=fork_for_frame();var next_cargo: RefCounted=cargo
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame();var next_cargo: RefCounted=cargo
 	if not frame.actor_changes.is_empty():
 		if frame.actor_changes.has("cargo_model_id") and frame.actor_changes.cargo_model_id!=life.cargo.model_id:return fail("Tractor recreation differs from the prepared wreck model")
 		if frame.phase=="pickup":
