@@ -2,6 +2,7 @@ extends RefCounted
 ## Equipped secondary ownership. Prospective operations commit ammunition,
 ## retained projectiles and target damage together.
 const Definitions=preload("res://src/content/secondary_ownership_definitions.gd")
+const FrameTransaction=preload("res://src/simulation/frame_transaction.gd")
 const Loadout=preload("res://src/simulation/equipment_slots.gd")
 const Bomb=preload("res://src/simulation/emp_bombs.gd")
 const Mines=preload("res://src/simulation/mine_projectiles.gd")
@@ -20,6 +21,7 @@ const Contacts=preload("res://src/simulation/ordinary_opening_contacts.gd")
 const NpcContacts=preload("res://src/simulation/ordinary_npc_contacts.gd")
 const Playback=preload("res://src/simulation/model_playback.gd")
 var error:=""
+var _txn:=0
 var _initial_loadout:={}
 var _loadout:={}
 var _guns:=[]
@@ -175,7 +177,7 @@ func evaluate_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted
 	var targets:=_targets(combat,ordered_actor_ids,bodies if pulse_pending else null,inventory)
 	if not error.is_empty():return {}
 	if not Flight.rigid_pose(pose) or not permitted is bool or not selected_item_id is int or (selected_item_id!=-1 and not _guns.any(func(gun):return gun.equipment.item_id==selected_item_id)):return fail("Invalid selected secondary or firing context")
-	var next:=fork();var group: RefCounted=combat if combat_staged else combat.fork_for_frame();var events:=[];var exhausted:=false
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork();var group: RefCounted=combat if combat_staged else combat.fork_for_frame();var events:=[];var exhausted:=false
 	var field: RefCounted=bodies
 	if permitted:
 		for gun in next._guns:
@@ -225,7 +227,7 @@ func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Va
 	var targets:=_targets(combat,ordered_actor_ids)
 	if not error.is_empty():return {}
 	if not Vitals.integer(delta_ms):return fail("Invalid secondary frame duration")
-	var next:=fork();var group: RefCounted=combat if combat_staged else combat.fork_for_frame();var events:=[]
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork();var group: RefCounted=combat if combat_staged else combat.fork_for_frame();var events:=[]
 	var field: RefCounted=bodies
 	var self_hits:=[]
 	next._detonation_events.clear();next._camera_commands.clear()
@@ -631,6 +633,7 @@ func snapshot() -> Dictionary:
 
 func fork() -> RefCounted:
 	var next: RefCounted=get_script().new()
+	next._txn=FrameTransaction.current
 	next._initial_loadout=_initial_loadout.duplicate(true);next._loadout=_loadout.duplicate(true);next._launches=_launches;next._nuclear_bomb_detonations=_nuclear_bomb_detonations
 	next._projectile_breaks=_projectile_breaks.duplicate();next._max_projectile_breaks=_max_projectile_breaks
 	next._presentation_identity=_presentation_identity;next._detonation_events=_detonation_events.duplicate(true);next._camera_commands=_camera_commands.duplicate(true)
