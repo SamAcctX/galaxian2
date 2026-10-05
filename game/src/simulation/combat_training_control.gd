@@ -1,5 +1,6 @@
 extends RefCounted
 const Frames=preload("res://src/simulation/frame_clock.gd")
+const FrameTransaction=preload("res://src/simulation/frame_transaction.gd")
 const Kappa=preload("res://src/content/kappa_population_definitions.gd")
 const BakkaCombat=preload("res://src/content/bakka_combat_definitions.gd")
 const Alioth=preload("res://src/content/alioth_population_definitions.gd")
@@ -33,6 +34,7 @@ const LaunchClock=preload("res://src/simulation/traffic_launch_clock.gd")
 const FreightMotion=preload("res://src/simulation/freighter_motion.gd")
 const FreightDeath=preload("res://src/simulation/freighter_destruction.gd")
 var error:=""
+var _txn:=0
 var _identity:={}
 var _rules:={}
 var _combat: RefCounted
@@ -1160,7 +1162,8 @@ func evaluate(combat: RefCounted, weapons: RefCounted, milliseconds: int, player
 	error=""
 	if _local_patrol and not _combat.has_local_reactions():return fail("Local traffic weapon control is not connected")
 	if not weapons is Weapons:return fail("Training actor updates require their retained weapon pools")
-	var staged:=fork_for_frame(false);var next_weapons: RefCounted=weapons.fork_for_frame()
+	# advance() stages and commits by itself; the frame's own controller needs no second copy.
+	var staged: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame(false);var next_weapons: RefCounted=weapons.fork_for_frame()
 	var operation: Dictionary=staged.advance(milliseconds,player,combat,random_state,wingmen)
 	if operation.is_empty():return fail(staged.error)
 	# These ordinary NPC shots consume no random values and cannot contact
@@ -1331,6 +1334,7 @@ func retire_story_actors(first: int,end: int,point: Vector3) -> bool:
 
 func fork_for_frame(copy_motion:=true, incoming_combat: RefCounted=null) -> RefCounted:
 	var copy: RefCounted=get_script().new()
+	copy._txn=FrameTransaction.current
 	# Configuration is immutable after setup; only live state needs a private copy.
 	copy._identity=_identity.duplicate();copy._rules=_rules;copy._random=_random.duplicate(true)
 	var combat: RefCounted=_combat if incoming_combat==null else incoming_combat
