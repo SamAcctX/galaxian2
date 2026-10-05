@@ -790,7 +790,7 @@ func evaluate_ambient_world_logic(delta_ms: Variant,combat: RefCounted,random_st
 	if not incoming.get("actors") is Array or incoming.actors.size()!=generations.size():return fail("Incoming traffic population changed")
 	for id in generations.size():
 		if not incoming.actors[id] is Dictionary or not incoming.actors[id].get("spawn_generation") is int or incoming.actors[id].spawn_generation!=generations[id]:return fail("World logic received an earlier traffic instance")
-	var staged:=fork_for_frame(false,combat)
+	var staged: RefCounted=frame_copy(combat)
 	var random:=Random.new()
 	if not random.restore(random_state):return fail(random.error)
 	staged._random=random.snapshot()
