@@ -3,6 +3,7 @@ extends RefCounted
 ## The caller commits the acknowledged transition with its owned career. This
 ## component never relocates the player, pays rewards or opens destinations.
 const Campaign=preload("res://src/content/free_campaign_definitions.gd")
+const FrameTransaction=preload("res://src/simulation/frame_transaction.gd")
 const Kappa=preload("res://src/content/kappa_preparation_definitions.gd")
 const Preparation=preload("res://src/simulation/campaign_preparation.gd")
 const Lines=preload("res://src/content/dialogue_lines.gd")
@@ -10,6 +11,7 @@ const Numbers=preload("res://src/content/opening_definitions.gd")
 const Rescue=preload("res://src/simulation/kappa_rescue.gd")
 const Equipment=preload("res://src/simulation/station_equipment.gd")
 var error:=""
+var _txn:=0
 var _state:={}
 var _rules:={}
 var _lines:=[]
@@ -171,8 +173,13 @@ func snapshot() -> Dictionary:
 	if result.dialogue.visible:result.dialogue.merge(_lines[_state.line_index].duplicate(true))
 	return result
 
+## The visit a flight frame forked for itself is updated in place by that
+## frame, which is discarded whole on failure; any other caller gets a fork.
+func frame_copy() -> RefCounted:return self if FrameTransaction.owns(_txn) else fork()
+
 func fork() -> RefCounted:
 	var copy: RefCounted=get_script().new()
+	copy._txn=FrameTransaction.current
 	copy._state=_state.duplicate(true);copy._rules=_rules.duplicate(true);copy._lines=_lines.duplicate(true)
 	copy._station_only=_station_only;copy._station_count=_station_count
 	copy._station_loadout=_station_loadout.duplicate(true)
