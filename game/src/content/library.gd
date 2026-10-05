@@ -4,6 +4,7 @@ const SCHEMA := 1
 const MAX_MANIFEST := 16 * 1024 * 1024
 const MAX_LANGUAGE := 4 * 1024 * 1024
 const MAX_CACHED_AUDIO_PCM := 64 * 1024 * 1024
+const MAX_CACHED_RESOURCES := 64 * 1024 * 1024
 # Catalogue and localization extents identify independently verified layouts.
 # A bundle's version label and CPU architecture do not identify its ship set.
 const LAYOUTS := {"ios-hd": {64: 3402}, "mac-full-hd": {61: 3371, 64: 3385}}
@@ -14,12 +15,19 @@ var strings: Array = []
 var active_language := ""
 var _audio_pcm := {}
 var _audio_pcm_bytes := 0
+## Resources that passed their checksum, most recently used last: name to
+## [modification time, bytes]. One panel cuts sixty sprites from the same atlas
+## and asked for its sixteen megabytes sixty times, hashing them each time.
+var _verified := {}
+var _verified_bytes := 0
 
 
 func open(directory: String) -> bool:
 	error = ""
 	_audio_pcm.clear()
 	_audio_pcm_bytes = 0
+	_verified.clear()
+	_verified_bytes = 0
 	manifest = {}
 	strings = []
 	active_language = ""
@@ -161,7 +169,18 @@ func read_resource(name: String, limit: int) -> PackedByteArray:
 	if row.bytes < 1 or row.bytes > limit:
 		fail("Resource exceeds its reader budget")
 		return PackedByteArray()
-	var file := FileAccess.open(root.path_join(name), FileAccess.READ)
+	# Verified bytes are handed out again while the file still has the
+	# modification time they were read at; a changed file is read and checked.
+	var path := root.path_join(name)
+	var modified := FileAccess.get_modified_time(path)
+	var cached: Variant = _verified.get(name)
+	if cached != null:
+		_verified.erase(name)
+		if modified != 0 and cached[0] == modified and cached[1].size() == int(row.bytes):
+			_verified[name] = cached
+			return cached[1].duplicate()
+		_verified_bytes -= cached[1].size()
+	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null or file.get_length() != int(row.bytes):
 		fail("Resource is missing or changed")
 		return PackedByteArray()
@@ -172,6 +191,14 @@ func read_resource(name: String, limit: int) -> PackedByteArray:
 	if hash.finish().hex_encode() != row.sha256:
 		fail("Resource checksum mismatch")
 		return PackedByteArray()
+	if modified != 0 and bytes.size() <= MAX_CACHED_RESOURCES / 2:
+		_verified[name] = [modified, bytes.duplicate()]
+		_verified_bytes += bytes.size()
+		for oldest in _verified.keys():
+			if _verified_bytes <= MAX_CACHED_RESOURCES:
+				break
+			_verified_bytes -= _verified[oldest][1].size()
+			_verified.erase(oldest)
 	return bytes
 
 
