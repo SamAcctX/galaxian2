@@ -127,7 +127,7 @@ func evaluate_selected40_sequence(milliseconds: Variant,random_state: Dictionary
 	if not owner.advance(milliseconds,_combat,random_state,destruction):return fail(owner.error)
 	var operation: Dictionary=_control.evaluate_selected40_sequence(owner,_combat,random_state)
 	if operation.is_empty():return fail(_control.error)
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	next._selected40_sequence=owner;next._control=operation.controller;next._combat=operation.combat
 	var view_random: Dictionary=operation.random_state
 	if _selected40_view!=null:
@@ -573,7 +573,7 @@ func _evaluate_scenery_recovery(tractor: RefCounted,cargo: RefCounted,delta_ms: 
 	var next_tractor: RefCounted=tractor.fork_for_frame()
 	if not next_tractor.advance(delta_ms,player,actor,cargo.snapshot()):return fail(next_tractor.error)
 	var frame: Dictionary=next_tractor.snapshot().frame
-	var next: RefCounted=fork_for_frame();var next_cargo: RefCounted=cargo;var next_scenery: RefCounted=scenery
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame();var next_cargo: RefCounted=cargo;var next_scenery: RefCounted=scenery
 	if not frame.actor_changes.is_empty():
 		if frame.actor_changes.has("cargo_model_id") and frame.actor_changes.cargo_model_id!=actor.cargo_model_id:return fail("Tractor recreation differs from the prepared scenery model")
 		if frame.phase=="pickup":
@@ -703,7 +703,7 @@ func secondary_owner() -> RefCounted:return null if _secondaries==null else _sec
 func guided_missile_active() -> bool:return _secondaries!=null and _secondaries.guided_active()
 
 func steer_guided_missile(command: Vector2) -> RefCounted:
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	if guided_missile_active():
 		var owner: RefCounted=_secondaries.steer_guided(command)
 		if owner==null:reject(_secondaries.error);return self
@@ -711,7 +711,7 @@ func steer_guided_missile(command: Vector2) -> RefCounted:
 	return next
 
 func discard_guided_missile() -> RefCounted:
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	if guided_missile_active():next._secondaries=_secondaries.discard_guided()
 	return next
 
@@ -1041,19 +1041,19 @@ func turret_aim_pose(pose: Transform3D) -> Transform3D:return pose if _primaries
 
 func set_turret_active(active: bool) -> RefCounted:
 	error=""
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	if _primaries!=null:
 		next._primaries=_primaries.fork_state();next._primaries.set_turret_active(active)
 		if not next._primaries.reset_fire_intervals():reject(next._primaries.error);return null
 	return next
 
 func set_auto_turret_enabled(enabled: bool) -> RefCounted:
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	if _primaries!=null:next._primaries=_primaries.fork_state();next._primaries.set_auto_turret_enabled(enabled)
 	return next
 
 func advance_turret(command: Vector2,milliseconds: int,inverted:=false) -> RefCounted:
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	if turret_active():
 		next._primaries=_primaries.fork_state();next._primaries.advance_turret(command,milliseconds,inverted)
 	return next
@@ -1109,14 +1109,14 @@ func evaluate_cue(player: RefCounted, pose: Transform3D, cursor: int) -> RefCoun
 	if _primaries!=null:reject("Training mission cues belong to its flight controller");return null
 	var operation: Dictionary=_control.apply_full_hold_appearance(_combat,cursor,input)
 	if operation.is_empty():reject(_control.error);return null
-	var next:=fork_for_frame();next._control=operation.controller;next._combat=operation.combat
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame();next._control=operation.controller;next._combat=operation.combat
 	return next
 
 func evaluate_wingman_contacts(weapons: RefCounted,milliseconds: int,systems: RefCounted=null) -> Dictionary:
 	if not is_instance_of(weapons,load("res://src/simulation/opening_npc_weapons.gd")) or not Numbers.integer(milliseconds,0,_max_ms):return fail("Invalid retained companion contact pass")
 	var result: Dictionary=weapons.evaluate_wingman_contacts(_combat,milliseconds,systems)
 	if result.is_empty():return fail(weapons.error)
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	next._combat=result.combat
 	var frame:={"encounter":next,"weapons":result.weapons,"actors":result.actors}
 	if result.has("systems_weapons"):frame.systems_weapons=result.systems_weapons;frame.systems_actors=result.systems_actors
