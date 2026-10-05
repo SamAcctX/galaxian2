@@ -2,12 +2,17 @@ extends RefCounted
 ## Presentation-scoped preferences shared by existing and newly created views.
 signal changed(enabled: bool)
 signal upscaling_changed(mode: String,scale: float)
+signal antialiasing_changed(mode: String)
 var bloom_enabled:=false
 var upscaler:="off"
 var render_scale:=1.0
+var antialiasing:="off"
 
 func apply(values: Dictionary) -> void:
 	preload("res://src/presentation/graphics_quality.gd").level=float(values.get("graphics_quality",1.0))
+	preload("res://src/presentation/flight_hud_style.gd").apply(values)
+	var aa: String=values.get("antialiasing","off")
+	if aa!=antialiasing:antialiasing=aa;antialiasing_changed.emit(aa)
 	var mode: String=values.get("upscaler","off")
 	var scale: float=float(values.get("render_scale",1.0))
 	if not mode in supported_upscalers():mode="off"
@@ -22,6 +27,13 @@ func bind(view: Node) -> void:
 	view.apply_bloom_preference(bloom_enabled)
 	upscaling_changed.connect(view.apply_upscaling)
 	view.apply_upscaling(upscaler,render_scale)
+	antialiasing_changed.connect(view.apply_antialiasing)
+	view.apply_antialiasing(antialiasing)
+
+static func configure_antialiasing(viewport: Viewport,mode: String) -> void:
+	if viewport==null:return
+	viewport.msaa_3d={"msaa2":Viewport.MSAA_2X,"msaa4":Viewport.MSAA_4X,"msaa8":Viewport.MSAA_8X}.get(mode,Viewport.MSAA_DISABLED)
+	viewport.screen_space_aa=Viewport.SCREEN_SPACE_AA_FXAA if mode=="fxaa" else Viewport.SCREEN_SPACE_AA_DISABLED
 
 ## Godot's built-in 3D upscalers available to the running renderer: FSR 1.0
 ## outside Compatibility, FSR 2.2 on Forward+ only, MetalFX on Metal only.

@@ -266,7 +266,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	# timer/radio gate. Finish this accepted frame, then freeze for explicit Next.
 	if not next._death.snapshot().game_over_visible and next._encounter.selected40_frame_context().freighter_mode==int(Rules.VALUES.destroyed_mode):
 		next._state.campaign_phase="failure_instructions"
-	var cue: Dictionary=next._encounter.evaluate_selected40_sequence(milliseconds,next._random,next._player,next._pose,size,next._death if dying else null,player_updates,aim_pose)
+	var cue: Dictionary=next._encounter.evaluate_selected40_sequence(milliseconds,next._random,next._player,next._pose,size,next._death if dying else null,player_updates,aim_pose,commands,player_updates and not blocked and not next._encounter.turret_active() and not OS.has_feature("mobile"))
 	if cue.is_empty():reject(next._encounter.error);return null
 	next._encounter=cue.encounter;next._random=cue.random_state
 	if cue.sequence.frame.get("entry_released",false) and not dying and not next._player.set_permissions(true,true):reject(next._player.error);return null

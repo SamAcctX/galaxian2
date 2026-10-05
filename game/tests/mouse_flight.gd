@@ -30,18 +30,20 @@ func run() -> void:
 	var base: RefCounted=flight._world;var results:=[]
 	for steps in [[17],[7],[100],[5,35,11,49]]:
 		host.clear_input();host._controls.mouse_sensitivity=1.0
-		var event:=InputEventMouseMotion.new();event.screen_relative=Vector2(224,0);host._input(event)
+		var physical:=Vector2(2560,1440) if steps==[7] else Vector2(1280,720)
+		var event:=InputEventMouseMotion.new();event.screen_relative=Vector2(224,0)*(physical/Vector2(1280,720));host._input(event)
 		var frame: RefCounted=base.fork_for_frame();var elapsed:=0;var index:=0
 		while elapsed<2000:
 			var dt:=mini(int(steps[index%steps.size()]),2000-elapsed);index+=1;elapsed+=dt
-			host._controls.advance_mouse(float(dt)/1000.0,Vector2(4897,2674) if steps==[7] else Vector2(1280,720))
+			host._controls.advance_mouse(float(dt)/1000.0,physical)
 			var input: Dictionary=host._controls.snapshot()
 			var next: RefCounted=frame.evaluate(dt,input.command,0.0,false,Vector2i(1280,720),Vector2.ZERO,false,false,input.mouse_capture)
 			if next==null:check(false,frame.error);break
 			frame=next
 			if index==1:
 				check(frame._camera.response_snapshot().relative_capture,"Captured flight retained the keyboard camera policy")
-				check(frame._aim.snapshot().point.is_equal_approx(Vector3(864,360,-1)),"Steering cursor waited for the camera or ship to turn")
+				var point: Vector3=frame._aim.snapshot().point
+				check(Vector2(point.x,point.y).is_equal_approx(Vector2(864,360)),"Steering cursor waited for the camera or ship to turn")
 			if steps==[17]:check(flight._commit(frame,true),flight.error)
 		var angle:=acos(clampf(base.snapshot().player_pose.basis.z.dot(frame.snapshot().player_pose.basis.z),-1,1))
 		check(angle>0.1,"Mouse barely turned the ship in two seconds: "+str(angle))

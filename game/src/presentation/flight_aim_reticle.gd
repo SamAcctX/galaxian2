@@ -2,6 +2,7 @@ extends Control
 ## Original idle/contact reticles, placed at the committed player aim sample.
 const Atlas = preload("res://src/content/atlas_region.gd")
 const Library = preload("res://src/content/library.gd")
+const HudStyle=preload("res://src/presentation/flight_hud_style.gd")
 const Definitions = preload("res://src/content/player_aim_definitions.gd")
 const TargetProjection = preload("res://src/presentation/target_projection.gd")
 const RESOURCE := "resources/data/textures/gof2_interface.aei"
@@ -47,7 +48,7 @@ func prepare(library: RefCounted, bindings: RefCounted, visuals: RefCounted) -> 
 	_source={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"texture_id":int(data.texture_id),"resource":RESOURCE,"regions":regions}
 	_textures=textures
 	sprite=TextureRect.new();sprite.mouse_filter=Control.MOUSE_FILTER_IGNORE
-	sprite.texture_filter=CanvasItem.TEXTURE_FILTER_LINEAR;sprite.expand_mode=TextureRect.EXPAND_IGNORE_SIZE
+	sprite.expand_mode=TextureRect.EXPAND_IGNORE_SIZE
 	sprite.stretch_mode=TextureRect.STRETCH_SCALE;add_child(sprite)
 	prepared=true
 	return true
@@ -71,7 +72,8 @@ func set_mobile_layout(value: bool) -> void:
 func reflow() -> void:
 	if not prepared or _sample.is_empty():return
 	sprite.texture=_textures[_sample.image_id]
-	sprite.size=sprite.texture.get_size()*(1.0 if mobile_layout else 0.5)
+	sprite.texture_filter=HudStyle.filtering()
+	sprite.size=sprite.texture.get_size()*HudStyle.art(mobile_layout)
 	sprite.position=Vector2(int(_sample.point.x),int(_sample.point.y))-sprite.size*0.5
 	visible=_sample.visible
 

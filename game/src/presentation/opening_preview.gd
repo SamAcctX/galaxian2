@@ -1062,6 +1062,7 @@ func apply_preferences(preferences: Dictionary) -> void:
 	_mouse_steering=preferences.get("mouse_steering",false)
 	_controls.mouse_sensitivity=preferences.get("mouse_sensitivity",1.0)
 	set_touch_controls(preferences.touch_controls)
+	set_mobile_layout(_mobile_layout)
 
 func scene_effect_settings() -> RefCounted:return _scene_effects
 
@@ -1119,7 +1120,7 @@ func skip_cinematic() -> void:
 	clear_input();present_session()
 
 func _process(_delta: float) -> void:
-	_controls.advance_mouse(_delta,get_viewport().get_visible_rect().size,session is FirstFlightSession and session.can_stop_mining())
+	_controls.advance_mouse(_delta,Vector2(viewport.size),session is FirstFlightSession and session.can_stop_mining())
 	if session is MissionSession:
 		_selected40_tick(Time.get_ticks_usec())
 		return

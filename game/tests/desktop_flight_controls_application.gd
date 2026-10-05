@@ -96,9 +96,9 @@ func desktop_frame(command: Vector2,strafe: float,fire: bool,delta_us: int) -> b
 	if (held.strafe>0)!=(strafe>0):DesktopInput.key(root,KEY_D,strafe>0)
 	var change:=Vector2(held.command.y-command.y,command.x-held.command.x)
 	var mouse:=InputEventMouseMotion.new()
-	mouse.screen_relative=change*app._controls.MOUSE_REFERENCE_SIZE*0.35/app._controls.mouse_sensitivity
+	mouse.screen_relative=change*Vector2(app.viewport.size)*app._controls.AIM_HALF_AREA/app._controls.mouse_sensitivity
 	mouse.relative=mouse.screen_relative;root.push_input(mouse,true)
-	app._controls.advance_mouse(float(delta_us)/1000000.0)
+	app._controls.advance_mouse(float(delta_us)/1000000.0,Vector2(app.viewport.size))
 	var input: Dictionary=app._controls.snapshot()
 	app.handle_action_events(app._controls.take_events())
 	now_us+=delta_us

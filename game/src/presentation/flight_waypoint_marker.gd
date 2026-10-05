@@ -1,5 +1,6 @@
 extends Control
 const Distance=preload("res://src/presentation/flight_distance.gd")
+const HudStyle=preload("res://src/presentation/flight_hud_style.gd")
 ## Original route marker art with native distance text. Arrival belongs to the
 ## flight owner; projecting or resizing the HUD never advances the route.
 const Story=preload("res://src/content/combat_training_story_definitions.gd")
@@ -76,13 +77,15 @@ func snapshot() -> Dictionary:return _sample.duplicate(true)
 func _draw() -> void:
 	if _sample.is_empty() or not _sample.visible:return
 	# One phone composition uses the original center frame as its scale anchor.
-	var scale_factor:=TargetFrame.logical_radii(_quarter_size,_mobile).x/_quarter_size.x
+	texture_filter=HudStyle.filtering()
+	var scale_factor:=TargetFrame.logical_radii(_quarter_size,_mobile).x/_quarter_size.x*HudStyle.multiplier
 	var texture: Texture2D=_textures.in_view if _sample.in_view else _textures.outside
 	var extent:=texture.get_size()*scale_factor
 	var point:=Vector2(_sample.pixels)
+	if not _sample.in_view:point=(size*0.5+(point-size*0.5)*HudStyle.multiplier).clamp(Vector2.ONE*16,size-Vector2.ONE*16)
 	draw_texture_rect(texture,Rect2(point-extent*0.5,extent),false)
 	if _sample.in_view:
-		var font:=get_theme_font("font");var font_size:=22 if _mobile else 14
+		var font:=get_theme_font("font");var font_size:=HudStyle.font_size(22 if _mobile else 14)
 		var text_width:=font.get_string_size(_sample.distance_text,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size).x
 		var label_position:=point+Vector2(-text_width*0.5,extent.y*0.5+font.get_ascent(font_size)+2)
 		draw_string_outline(font,label_position,_sample.distance_text,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,2,Color(0,0,0,.8))

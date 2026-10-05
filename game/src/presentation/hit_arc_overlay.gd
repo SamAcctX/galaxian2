@@ -5,6 +5,7 @@ extends Control
 const Definitions=preload("res://src/content/flight_hud_definitions.gd")
 const OriginalUI=preload("res://src/presentation/original_ui.gd")
 const TargetFrame=preload("res://src/presentation/flight_target_frame.gd")
+const HudStyle=preload("res://src/presentation/flight_hud_style.gd")
 var error:=""
 var mobile_layout:=false
 var _textures:={}
@@ -76,7 +77,8 @@ func set_mobile_layout(value: bool) -> void:
 
 func _draw() -> void:
 	if _quarter==Vector2.ZERO:return
-	var radii:=TargetFrame.logical_radii(_quarter,mobile_layout)
+	texture_filter=HudStyle.filtering()
+	var radii:=TargetFrame.logical_radii(_quarter,mobile_layout)*HudStyle.multiplier
 	var scale_factor:=radii.x/_quarter.x
 	var center:=Vector2(floorf(size.x*0.5),floorf(size.y*0.5))
 	var colour:="blue" if _blue else "red"

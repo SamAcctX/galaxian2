@@ -2,6 +2,7 @@ extends Control
 ## Shared source acquisition filmstrip for NPCs and mineable asteroids.
 ## Gameplay supplies a frame index; drawing never advances acquisition time.
 const Atlas=preload("res://src/content/atlas_region.gd")
+const HudStyle=preload("res://src/presentation/flight_hud_style.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
 const RESOURCE:="resources/data/textures/gof2_interface.aei"
 var error:=""
@@ -59,10 +60,11 @@ func set_mobile_layout(value: bool) -> void:mobile_layout=value;queue_redraw()
 func frame_rect() -> Rect2:
 	if _sample.is_empty() or not _sample.visible or _sample.animation_frame<0:return Rect2()
 	var extent:=_frames[_sample.animation_frame].get_size()
-	var scale_factor:=1.0 if mobile_layout else 0.5
+	var scale_factor:=HudStyle.art(mobile_layout)
 	var anchor:=Vector2(floorf(extent.x/2.0),floorf(extent.y/2.0))
 	return Rect2(Vector2(_sample.aim_pixels)-anchor*scale_factor,extent*scale_factor)
 func _draw() -> void:
+	texture_filter=HudStyle.filtering()
 	var rect:=frame_rect()
 	if rect.has_area():draw_texture_rect(_frames[_sample.animation_frame],rect,false)
 func source() -> Dictionary:return _source.duplicate(true)

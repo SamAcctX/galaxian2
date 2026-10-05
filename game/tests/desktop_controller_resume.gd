@@ -9,6 +9,7 @@ func run() -> void:
 	if args.size()!=3 or directory.is_empty():check(false,"Supply imported packs and the career profile");quit(1);return
 	app=PreparedFrontend.new();root.add_child(app);app.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	if not app.boot(PackedStringArray(),directory):check(false,app.error);quit(1);return
+	verify_feedback_preferences()
 	check(app.bindings.binding_id==args[1].get_file() and app.bindings.base_content_id==args[0].get_file(),"Fresh entry selected a different content identity")
 	var catalogue:=Catalogue.new();check(catalogue.open(app.library),catalogue.error)
 	var path:=SaveFile.path_for(directory.path_join("saves"),app.bindings)
@@ -28,6 +29,8 @@ func run() -> void:
 		await capture("controller-fresh-resume")
 	app.free();await process_frame
 	print("Fresh controller Resume: %d checks; %d failures"%[checks,failures]);quit(1 if failures else 0)
+
+func verify_feedback_preferences() -> void:pass
 
 func pad() -> void:
 	for pressed in [true,false]:

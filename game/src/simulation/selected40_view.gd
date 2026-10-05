@@ -94,7 +94,7 @@ func orbit_pointer(kind: String,position: Variant=Vector2i.ZERO) -> bool:
 static func _orbit_angles(units: Vector2) -> Vector3:
 	return Vector3(units.y*Rig.single(ORBIT_SCALE),units.x*Rig.single(ORBIT_SCALE),0)
 
-func advance(sequence: RefCounted,combat: RefCounted,player: RefCounted,pose: Transform3D,milliseconds: Variant,viewport: Vector2i,npc_contact: bool,look_jitter:=Vector3.ZERO,destruction: RefCounted=null,player_updated:=true,aim_pose: Variant=null) -> bool:
+func advance(sequence: RefCounted,combat: RefCounted,player: RefCounted,pose: Transform3D,milliseconds: Variant,viewport: Vector2i,npc_contact: bool,look_jitter:=Vector3.ZERO,destruction: RefCounted=null,player_updated:=true,aim_pose: Variant=null,commands:=Vector2.ZERO,control_cursor:=false) -> bool:
 	error=""
 	if _state.is_empty() or not sequence is Sequence or not combat is Combat or not player is Player or not Flight.rigid_pose(pose) or not Rules.Numbers.integer(milliseconds,0,_max_ms):return reject("Invalid selected40 camera/aim frame")
 	if aim_pose!=null and not Flight.rigid_pose(aim_pose):return reject("Selected40 aim requires its pre-contact native pose")
@@ -152,6 +152,7 @@ func advance(sequence: RefCounted,combat: RefCounted,player: RefCounted,pose: Tr
 			input.units.y=clampf(input.units.y,-200,200)
 		if not camera.set_orbit_parameters(_orbit_angles(input.units),camera.orbit_snapshot().distance):return reject(camera.error)
 	if not camera.update(milliseconds,shot,scene,{},null,look_jitter):return reject(camera.error)
+	if control_cursor and cue.hud_visible and not cue.input_blocked and not aim.advance(pose if aim_pose==null else aim_pose,camera.snapshot().pose,viewport,commands,false,true,true):return reject(aim.error)
 	if not aim.sample_feedback(npc_contact,milliseconds,cue.hud_visible):return reject(aim.error)
 	# Source normal0/mode3 clear the explicit hide flag. The camera's live
 	# transition latch is still sampled AFTER each update, never once at entry.

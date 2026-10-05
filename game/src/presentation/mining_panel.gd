@@ -5,6 +5,7 @@ extends Control
 const Drill=preload("res://src/simulation/mining_drill.gd")
 const Definitions=preload("res://src/content/mining_drill_definitions.gd")
 const Atlas=preload("res://src/content/atlas_region.gd")
+const HudStyle=preload("res://src/presentation/flight_hud_style.gd")
 const RESOURCE:="resources/data/textures/gof2_interface.aei"
 var error:=""
 var _identity:={}
@@ -84,7 +85,8 @@ func set_mobile_layout(value: bool) -> void:_mobile=value;_reflow()
 
 func _reflow() -> void:
 	if _state.is_empty() or _textures.is_empty() or size.x<=0 or size.y<=0:return
-	var scale:=1.0 if _mobile else 0.5
+	_reserve.texture_filter=HudStyle.filtering()
+	var scale:=HudStyle.art(_mobile)
 	# Keep the phone composition larger, fitting only when the viewport itself
 	# is smaller. Native labels retain legible pixel sizes on desktop.
 	scale=minf(scale,minf(size.x/340.0,size.y/420.0))
@@ -121,22 +123,23 @@ func _reflow() -> void:
 	readout_center.x=clampf(readout_center.x,36,size.x-36)
 	readout_center.y=clampf(readout_center.y,18,size.y-18)
 	_center_sprite(_readout,_textures[1253],readout_center,scale)
-	_quantity.text="%dt"%int(_state.ore_tons);_quantity.add_theme_font_size_override("font_size",18 if _mobile else 14)
+	_quantity.text="%dt"%int(_state.ore_tons);_quantity.add_theme_font_size_override("font_size",HudStyle.font_size(18 if _mobile else 14))
 	_quantity.add_theme_color_override("font_color",Color(1,0.25,0.12) if _state.ore_tons>_free_space else Color.WHITE)
-	_quantity.size=Vector2(maxf(64,70*scale),28);_quantity.position=readout_center-_quantity.size*0.5
+	_quantity.size=Vector2(maxf(64,70*scale),28*HudStyle.multiplier);_quantity.position=readout_center-_quantity.size*0.5
 	_instruction.visible=_tutorial
-	_instruction.add_theme_font_size_override("font_size",18 if _mobile else 14)
+	_instruction.add_theme_font_size_override("font_size",HudStyle.font_size(18 if _mobile else 14))
 	_instruction.add_theme_color_override("font_color",Color(0.72,0.88,0.94))
-	_instruction.size=Vector2(minf(size.x-24,440*scale),64)
+	_instruction.size=Vector2(minf(size.x-24,440*scale),64*HudStyle.multiplier)
 	_instruction.position=Vector2((size.x-_instruction.size.x)*0.5,bottom.y+22*scale)
 
 func _sprite() -> TextureRect:
 	var sprite:=TextureRect.new();sprite.expand_mode=TextureRect.EXPAND_IGNORE_SIZE
 	sprite.stretch_mode=TextureRect.STRETCH_SCALE;sprite.mouse_filter=Control.MOUSE_FILTER_IGNORE
-	sprite.texture_filter=CanvasItem.TEXTURE_FILTER_LINEAR;add_child(sprite)
+	add_child(sprite)
 	return sprite
 
 func _center_sprite(sprite: TextureRect, texture: Texture2D, point: Vector2, scale: float) -> void:
+	sprite.texture_filter=HudStyle.filtering()
 	sprite.texture=texture;sprite.size=texture.get_size()*scale;sprite.position=point-sprite.size*0.5
 
 func source() -> Dictionary:

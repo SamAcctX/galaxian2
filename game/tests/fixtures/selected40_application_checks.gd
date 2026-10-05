@@ -411,11 +411,11 @@ static func check_captured_controls(host: SceneTree,app: Control,bindings: RefCo
 	check.call(app._mouse_captured,"Actual M action did not capture the player mouse")
 	var move:=InputEventMouseMotion.new();move.screen_relative=Vector2(24,-12)
 	var press:=InputEventMouseButton.new();press.button_index=MOUSE_BUTTON_LEFT;press.pressed=true
-	app._input(move);app._input(press);app._controls.advance_mouse(0.1)
+	app._input(move);app._input(press);app._controls.advance_mouse(0.1,Vector2(app.viewport.size))
 	now+=100000;app._selected40_tick(now)
 	if app._transition_failed:check.call(false,app.status.text);return {}
 	var state: Dictionary=session.flight_owner().frame_context();response=state.encounter.view.camera_response
-	var offset_scale: Vector2=app._controls.MOUSE_REFERENCE_SIZE*0.35/app._controls.mouse_sensitivity # retained cursor offset steering
+	var offset_scale: Vector2=Vector2(app.viewport.size)*app._controls.AIM_HALF_AREA/app._controls.mouse_sensitivity
 	check.call(state.input.commands.is_equal_approx(Vector2(-12.0/offset_scale.y,-24.0/offset_scale.x)) and state.input.primary_held,"Captured relative motion/left-click did not reach the native application frame")
 	var factor: float=rig.single(handling);var scaled: float=rig.single(factor*float(rules.handling_scale))
 	var look: float=rig.single(rig.single(rig.single(float(rules.look_complement)-scaled)*float(rules.look_scale))+float(rules.look_add))

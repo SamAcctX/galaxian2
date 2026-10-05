@@ -17,16 +17,16 @@ func run() -> void:
 	var path:=directory.path_join("player.json")
 	check(not FileAccess.file_exists(path),"Use a fresh display test directory")
 	var original:=Preferences.defaults();original.schema=1
-	for key in Preferences.DISPLAY_KEYS+["mouse_steering","mouse_sensitivity","bloom","upscaler","render_scale","graphics_quality"]:original.erase(key)
+	for key in Preferences.DISPLAY_KEYS+["mouse_steering","mouse_sensitivity","bloom","upscaler","render_scale","graphics_quality","antialiasing","flight_hud_scale","flight_hud_filter"]:original.erase(key)
 	original.content="/example/content";original.import_record="/example/installation.json";original.music=0.4;original.invert_pitch=true
 	var file:=FileAccess.open(path,FileAccess.WRITE);file.store_string(JSON.stringify(original));file.close()
 	var prefs:=Preferences.new();check(prefs.read_file(path),prefs.error)
 	for key in original:
 		if key!="schema":check(prefs.values[key]==original[key],"Preferences upgrade lost "+key)
-	check(prefs.values.schema==6 and prefs.values.mouse_steering and prefs.values.ui_scale==0 and prefs.values.bloom,"Preferences upgrade omitted desktop controls, automatic UI scale or Bloom")
+	check(prefs.values.schema==7 and prefs.values.mouse_steering and prefs.values.ui_scale==0 and prefs.values.bloom,"Preferences upgrade omitted desktop controls, automatic UI scale or Bloom")
 	var version2:=prefs.values.duplicate(true);version2.schema=2;version2.erase("ui_scale")
 	file=FileAccess.open(path,FileAccess.WRITE);file.store_string(JSON.stringify(version2));file.close()
-	check(prefs.read_file(path) and prefs.values.schema==6 and prefs.values.content==original.content and prefs.values.music==original.music,"Version 2 upgrade lost the existing installation/preferences")
+	check(prefs.read_file(path) and prefs.values.schema==7 and prefs.values.content==original.content and prefs.values.music==original.music,"Version 2 upgrade lost the existing installation/preferences")
 	var version3:=prefs.values.duplicate(true);version3.schema=3;version3.erase("bloom");version3.ui_scale=150
 	file=FileAccess.open(path,FileAccess.WRITE);file.store_string(JSON.stringify(version3));file.close()
 	check(prefs.read_file(path) and prefs.values.bloom and prefs.values.ui_scale==150 and prefs.values.content==original.content,"Version 3 upgrade lost settings or omitted Bloom")
@@ -36,6 +36,10 @@ func run() -> void:
 	var version5:=prefs.values.duplicate(true);version5.schema=5;version5.erase("graphics_quality")
 	file=FileAccess.open(path,FileAccess.WRITE);file.store_string(JSON.stringify(version5));file.close()
 	check(prefs.read_file(path) and prefs.values.graphics_quality==1.0 and prefs.values.upscaler=="off","Version 5 upgrade lost settings or did not default to High quality")
+	var version6:=prefs.values.duplicate(true);version6.schema=6
+	for key in ["antialiasing","flight_hud_scale","flight_hud_filter"]:version6.erase(key)
+	file=FileAccess.open(path,FileAccess.WRITE);file.store_string(JSON.stringify(version6));file.close()
+	check(prefs.read_file(path) and prefs.values.flight_hud_scale==1 and prefs.values.flight_hud_filter=="nearest" and prefs.values.ui_scale==150,"Version 6 upgrade lost settings or flight HUD defaults")
 	# Graphics quality: Low/Medium turn off camera dust and fog and lower the
 	# level-of-detail input; High keeps both.
 	var Quality:=preload("res://src/presentation/graphics_quality.gd")
@@ -58,9 +62,12 @@ func run() -> void:
 	check(probe.scaling_3d_mode==Viewport.SCALING_3D_MODE_FSR and is_equal_approx(probe.scaling_3d_scale,0.67),"FSR 1.0 did not reach the 3D viewport")
 	Effects.configure_viewport(probe,"off",0.5)
 	check(probe.scaling_3d_mode==Viewport.SCALING_3D_MODE_BILINEAR and probe.scaling_3d_scale==1.0,"Native rendering kept a reduced scale")
+	for pair in [["msaa4",Viewport.MSAA_4X,Viewport.SCREEN_SPACE_AA_DISABLED],["fxaa",Viewport.MSAA_DISABLED,Viewport.SCREEN_SPACE_AA_FXAA],["off",Viewport.MSAA_DISABLED,Viewport.SCREEN_SPACE_AA_DISABLED]]:
+		Effects.configure_antialiasing(probe,pair[0])
+		check(probe.msaa_3d==pair[1] and probe.screen_space_aa==pair[2],"Antialiasing choice did not reach the scene or clear the previous mode")
 	probe.free()
 	prefs.values.ui_scale=0
-	for pair in [["resolution","0x0"],["aspect_ratio","portrait"],["frame_rate",true],["frame_rate",61],["mouse_sensitivity",NAN],["mouse_sensitivity",0],["window_mode","invalid"],["ui_scale",true],["ui_scale",101],["ui_scale",NAN],["ui_scale",400],["upscaler","dlss"],["render_scale",0.3]]:
+	for pair in [["resolution","0x0"],["aspect_ratio","portrait"],["frame_rate",true],["frame_rate",61],["mouse_sensitivity",NAN],["mouse_sensitivity",0],["window_mode","invalid"],["ui_scale",true],["ui_scale",101],["ui_scale",NAN],["ui_scale",400],["upscaler","dlss"],["render_scale",0.3],["antialiasing","taa"],["flight_hud_scale",true],["flight_hud_scale",1.5],["flight_hud_filter","blur"]]:
 		var invalid:=prefs.values.duplicate();invalid[pair[0]]=pair[1]
 		check(not Preferences.valid(invalid),"Invalid display/input preference accepted: "+pair[0])
 	var settings:=DisplaySettings.new()

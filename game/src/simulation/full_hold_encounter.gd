@@ -118,7 +118,7 @@ func _camera_input_failure(message: String) -> RefCounted:
 	reject(message)
 	return null
 
-func evaluate_selected40_sequence(milliseconds: Variant,random_state: Dictionary,player: RefCounted=null,pose:=Transform3D.IDENTITY,viewport:=Vector2i.ZERO,destruction: RefCounted=null,player_updated:=true,aim_pose: Variant=null) -> Dictionary:
+func evaluate_selected40_sequence(milliseconds: Variant,random_state: Dictionary,player: RefCounted=null,pose:=Transform3D.IDENTITY,viewport:=Vector2i.ZERO,destruction: RefCounted=null,player_updated:=true,aim_pose: Variant=null,commands:=Vector2.ZERO,control_cursor:=false) -> Dictionary:
 	error=""
 	if _selected40_sequence==null or _selected40_pending_world or _selected40_sequence.snapshot().elapsed_ms!=_world_elapsed_ms:return fail("Selected40 sequence must precede exactly one native actor frame")
 	var owner: RefCounted=_selected40_sequence.fork_for_frame()
@@ -136,7 +136,7 @@ func evaluate_selected40_sequence(milliseconds: Variant,random_state: Dictionary
 			var sampled: Dictionary=_secondaries.evaluate_camera(view_random)
 			if sampled.is_empty():return fail(_secondaries.error)
 			look_jitter=sampled.offset;view_random=sampled.random_state
-		if not view.advance(owner,operation.combat,player,pose,milliseconds,viewport,primary_npc_contact(),look_jitter,destruction,player_updated,aim_pose):return fail(view.error)
+		if not view.advance(owner,operation.combat,player,pose,milliseconds,viewport,primary_npc_contact(),look_jitter,destruction,player_updated,aim_pose,commands,control_cursor):return fail(view.error)
 		next._selected40_view=view
 	next._selected40_pending_world=true
 	return {"encounter":next,"random_state":view_random,"sequence":owner.snapshot()}

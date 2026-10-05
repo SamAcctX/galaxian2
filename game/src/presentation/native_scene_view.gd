@@ -8,6 +8,7 @@ var error:=""
 var _bloom: Node
 var _bloom_requested:=false
 var _upscaling:=["off",1.0]
+var _antialiasing:="off"
 var _settings: RefCounted
 var _overlays: Array[CanvasLayer]=[]
 var _overlay_viewport: SubViewport
@@ -40,11 +41,16 @@ func set_external_viewport(source: SubViewport) -> bool:
 	set_bloom_enabled(false)
 	viewport=source;texture=source.get_texture();refresh_size()
 	Effects.configure_viewport(viewport,_upscaling[0],_upscaling[1])
+	Effects.configure_antialiasing(viewport,_antialiasing)
 	return set_bloom_enabled(enabled)
 
 func apply_upscaling(mode: String,scale: float) -> void:
 	_upscaling=[mode,scale]
 	Effects.configure_viewport(viewport,mode,scale)
+
+func apply_antialiasing(mode: String) -> void:
+	_antialiasing=mode
+	Effects.configure_antialiasing(viewport,mode)
 
 func apply_bloom_preference(enabled: bool) -> void:
 	_bloom_requested=enabled

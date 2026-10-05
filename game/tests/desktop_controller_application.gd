@@ -22,6 +22,7 @@ func verify(args: PackedStringArray) -> void:
 	if selection.import_record.is_empty():check(false,"Supply the matching existing import receipt for fresh Resume");return
 	if not _frontend.select_content(selection):check(false,_frontend.error);return
 	lib=_frontend.library;bindings=_frontend.bindings;visuals=_frontend.visuals
+	await configure_feedback_options(args)
 	await send_pad(JOY_BUTTON_A)
 	_frontend.menu._buttons.options.grab_focus();await send_pad(JOY_BUTTON_A)
 	check(_frontend.phase=="options","Controller did not open Options from the menu")
@@ -59,6 +60,8 @@ func verify(args: PackedStringArray) -> void:
 		if host.session.snapshot().dialogue.visible:await send_pad(JOY_BUTTON_A)
 		if not step():return
 	check(host.session.can_control(),"Departure and Gunant briefing never released flight")
+	await verify_reported_feedback(args)
+	if failures:return
 	for cadence in [[16667],[6944,6945],[4000,17000,31000,9000]]:
 		for tick in 8:
 			for sample in 16:
@@ -90,6 +93,9 @@ func verify(args: PackedStringArray) -> void:
 	if args.size()==4:await capture(args[3],"controller-returned-station")
 	# The companion Resume test starts a fresh process with this same profile.
 	_frontend.free();host=null
+
+func configure_feedback_options(_args: PackedStringArray) -> void:pass
+func verify_reported_feedback(_args: PackedStringArray) -> void:pass
 
 func send_pad(code: int) -> void:
 	for pressed in [true,false]:

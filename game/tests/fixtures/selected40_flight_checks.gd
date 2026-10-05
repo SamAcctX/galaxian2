@@ -186,7 +186,8 @@ static func run(host: SceneTree,library: RefCounted,bindings: RefCounted,cat: Re
 		check.call(current.elapsed_ms==t+100 and current.encounter.elapsed_ms==current.elapsed_ms and current.encounter.world_elapsed_ms==current.elapsed_ms and current.encounter.sequence.elapsed_ms==current.elapsed_ms and not current.encounter.pending_world,"Moving player, contacts, sequence and NPC clocks diverged")
 		check.call(current.portal.animation_elapsed_ms==current.elapsed_ms and current.portal.elapsed_ms==mini(current.elapsed_ms,60000) and current.portal.visible and current.portal.extent==4096 and current.portal.position==original.portal.position,"Selected40 portal closed, relocated or stopped its original animation clock")
 		var expected_aim: RefCounted=aim.fork_for_frame()
-		check.call(expected_aim.advance(current.player_pose,before.encounter.view.camera.pose,VIEWPORT) and expected_aim.snapshot().point==current.encounter.view.player_aim.point,"Moving player aim used the new camera instead of the preceding view")
+		var cursor: bool=current.encounter.view.player_aim.mode=="mouse_cursor"
+		check.call(expected_aim.advance(current.player_pose,current.encounter.view.camera.pose if cursor else before.encounter.view.camera.pose,VIEWPORT,current.input.commands,false,cursor,cursor) and expected_aim.snapshot().point==current.encounter.view.player_aim.point,"Player aim lost its current control cursor or cinematic projection")
 		aim=expected_aim
 		if before.encounter.sequence.input_blocked:
 			check.call(current.throttle==before.throttle and current.player_pose.origin!=before.player_pose.origin,"Cinematic request stopped the retained player cruise")

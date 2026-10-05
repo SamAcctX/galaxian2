@@ -1,4 +1,5 @@
 extends Control
+const HudStyle=preload("res://src/presentation/flight_hud_style.gd")
 const Distance=preload("res://src/presentation/flight_distance.gd")
 ## The source neutral target rings and catalogue identity for an ordinary
 ## station. Acquisition and projection are committed by StationTargeting.
@@ -80,12 +81,13 @@ func snapshot() -> Dictionary:return _sample.duplicate(true)
 func _draw() -> void:
 	if _sample.is_empty() or not _sample.visible:return
 	var texture: Texture2D=_textures[SELECTED_IMAGE_ID if _sample.selected else MARKER_IMAGE_ID]
-	var art_scale:=1.0 if _mobile else 0.5
+	texture_filter=HudStyle.filtering()
+	var art_scale:=HudStyle.art(_mobile)
 	var extent:=texture.get_size()*art_scale
 	var point:=Vector2(_sample.pixels)
 	draw_texture_rect(texture,Rect2(point-extent*0.5,extent),false)
 	if not _sample.label_visible:return
-	var font:=get_theme_font("font");var font_size:=22 if _mobile else 14
+	var font:=get_theme_font("font");var font_size:=HudStyle.font_size(22 if _mobile else 14)
 	var x:=point.x+extent.x*0.5+6.0*art_scale
 	var y:=point.y-extent.y*0.5+font.get_ascent(font_size)
 	for line in [_sample.name,_sample.tech,_sample.distance]:

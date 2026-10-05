@@ -109,8 +109,10 @@ func visible_state() -> Dictionary:
 func reject(message: String) -> bool:error=message;return false
 
 func set_mobile_layout(mobile: bool,touch_actions:=false) -> void:
-	if _layout_mode==[mobile,touch_actions]:return
-	_layout_mode=[mobile,touch_actions]
+	var style:=preload("res://src/presentation/flight_hud_style.gd")
+	var mode:=[mobile,touch_actions,style.multiplier,style.nearest]
+	if _layout_mode==mode:return
+	_layout_mode=mode
 	for row in _layers:
 		for key in ["gauges","target","reticle","markers","notice","radio"]:
 			if row[key].has_method("set_mobile_layout"):row[key].set_mobile_layout(mobile)

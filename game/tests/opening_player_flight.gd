@@ -220,7 +220,10 @@ func step(state: Dictionary, delta: int, command: Vector2, fire: bool) -> Dictio
 		var view: Dictionary=result.timeline.snapshot()
 		var after: Dictionary=result.world_frame.snapshot()
 		check(expected.advance(view.scene.player_pose,view.camera.view.get("pose",Transform3D.IDENTITY),Vector2i(800,600),command,false,true),expected.error)
-		check(after.player_aim.point==expected.snapshot().point,"Crosshair used a pose/camera older than the displayed frame")
+		check(after.player_aim.raw_point==expected.snapshot().raw_point,"Weapon projection used a pose/camera older than the displayed frame")
+		if int(view.camera.shot.phase)==4 and not OS.has_feature("mobile"):
+			check(Vector2(after.player_aim.point.x,after.player_aim.point.y)==after.player_aim.cursor_point,"Displayed aim lagged behind the current control cursor")
+		else:check(after.player_aim.point==expected.snapshot().point,"Cinematic aim lost its projected weapon position")
 		check(after.player_aim.visible==(result.timeline.snapshot().camera.shot.phase==4 and after.player.vitals.hull>0),"World reticle visibility differs from the ordinary alive player")
 	return result
 

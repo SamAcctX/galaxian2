@@ -11,6 +11,7 @@ const OriginalUI=preload("res://src/presentation/original_ui.gd")
 const FontMetrics=preload("res://src/content/image_font.gd")
 const Navigation=preload("res://src/content/combat_training_story_definitions.gd")
 const Distance=preload("res://src/presentation/flight_distance.gd")
+const HudStyle=preload("res://src/presentation/flight_hud_style.gd")
 const BADGES={0:1185,1:1180,2:1183,3:1182,8:1184,9:1181}
 var error := ""
 var prepared := false
@@ -103,12 +104,15 @@ func set_mobile_layout(value: bool) -> void:
 
 func _draw() -> void:
 	if not prepared or _sample.is_empty() or not _sample.visible:return
+	texture_filter=HudStyle.filtering()
 	# Resolve physical atlas sizes into the same phone composition, then halve
 	# desktop art. Scan-window pixels are independent of this presentation scale.
-	var scale_factor: float=41.0/_textures[1234].get_width()*(1.0 if mobile_layout else 0.5)
+	var scale_factor: float=41.0/_textures[1234].get_width()*HudStyle.art(mobile_layout)
 	var half := Vector2(floorf(_textures[1234].get_width()/2.0),floorf(_textures[1234].get_height()/2.0))
 	for marker in _sample.markers:
 		var point := Vector2(marker.pixels)
+		if marker.has("in_view") and not marker.in_view:
+			point=(size*0.5+(point-size*0.5)*HudStyle.multiplier).clamp(Vector2.ONE*16,size-Vector2.ONE*16)
 		if marker.near:
 			var bg := 1242 if marker.hostile else 1237
 			var fill := 1241 if marker.hostile else 1238
@@ -124,13 +128,13 @@ func _draw() -> void:
 			if marker.selected and marker.get("in_view",false) and not _distance_rules.is_empty() and marker.get("position") is Vector3 and _sample.get("camera_position") is Vector3:
 				var meters:=Distance.meters(marker.position,_sample.camera_position,_distance_rules)
 				if meters>=0:
-					var font_size:=20 if mobile_layout else 12
+					var font_size:=HudStyle.font_size(20 if mobile_layout else 12)
 					var text:=Distance.label(meters,_distance_rules)
 					var position:=point+Vector2((_textures[id].get_width()*0.5+3.0)*scale_factor,_font.get_ascent(font_size)*0.5)
 					draw_string_outline(_font,position,text,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,2,Color(0,0,0,0.8))
 					draw_string(_font,position,text,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,Color.WHITE)
-	if _sample.animation_frame>=0:_centered(_frames[_sample.animation_frame],Vector2(_sample.aim_pixels),1.0 if mobile_layout else 0.5)
-	_draw_information(1.0 if mobile_layout else 0.5)
+	if _sample.animation_frame>=0:_centered(_frames[_sample.animation_frame],Vector2(_sample.aim_pixels),HudStyle.art(mobile_layout))
+	_draw_information(HudStyle.art(mobile_layout))
 
 func _draw_information(art_scale: float) -> void:
 	if _information.is_empty():return
@@ -138,7 +142,7 @@ func _draw_information(art_scale: float) -> void:
 	var extent:=panel.get_size()*art_scale
 	var top:=Vector2((size.x-extent.x)*0.5,3.0*(1.0 if mobile_layout else 0.5))
 	draw_texture_rect(panel,Rect2(top,extent),false)
-	var font_size:=20 if mobile_layout else 12
+	var font_size:=HudStyle.font_size(20 if mobile_layout else 12)
 	var badge: Texture2D=_information_art.get(_information.badge_image_id)
 	var icon_size:=Vector2.ZERO if badge==null else badge.get_size()*art_scale
 	var gap:=3.0*(1.0 if mobile_layout else 0.5)

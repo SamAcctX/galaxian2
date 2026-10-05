@@ -305,7 +305,7 @@ func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary
 	if next._escape!=null and not dying:next._camera=next._escape.camera_owner()
 	if turret_active:
 		if not next._encounter.present_turret_camera(next._camera,next._pose):return failed(next._camera.error)
-	if not next._aim.advance(next._encounter.turret_aim_pose(next._pose),next._camera.snapshot().pose,size,commands,relative_mouse_capture and enabled and not turret_active,true):return failed(next._aim.error)
+	if not next._aim.advance(next._encounter.turret_aim_pose(next._pose),next._camera.snapshot().pose,size,commands,relative_mouse_capture and enabled and not turret_active,true,enabled and not turret_active and not OS.has_feature("mobile")):return failed(next._aim.error)
 	if not next._aim.sample_feedback(next._encounter.primary_npc_contact(),milliseconds,enabled):return failed(next._aim.error)
 	if not next._engine_audio.follow_player(next._pose,int(next._player.snapshot().vitals.hull),milliseconds):return failed(next._engine_audio.error)
 	if not dying and not next._engines.set_engine_enabled((throttle if enabled else _throttle)>0):return failed(next._engines.error)

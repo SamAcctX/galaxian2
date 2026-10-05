@@ -249,12 +249,12 @@ func verify_flight(lib: RefCounted,args: Array):
 	# refreshes audio batches. It freezes player logic, not every per-pass field.
 	for key in ["player_pose","player_aim","mining_targeting","camera_view","world_elapsed_ms"]:
 		check(modal_state[key]==briefing[key],"Modal input advanced "+key)
-	check(modal._pilot.angular_units==flight._pilot.angular_units and modal._pilot.lateral_units_per_millisecond==flight._pilot.lateral_units_per_millisecond and modal._pilot._lateral_gain==flight._pilot._lateral_gain and flight.snapshot()==briefing,"Modal input changed retained pilot commands or its parent frame")
+	check(modal._pilot.angular_units==flight._pilot.angular_units and modal._pilot.lateral_units_per_millisecond==flight._pilot.lateral_units_per_millisecond and flight.snapshot()==briefing,"Modal input changed retained pilot commands or its parent frame")
 	for i in 5:flight=flight.navigate("next")
 	var prior: Dictionary=flight.snapshot();var next: RefCounted=flight.evaluate(100,Vector2(0.2,0.3),0.0)
 	if next==null:check(false,flight.error);return
 	var reference: RefCounted=flight._aim.fork_for_frame()
-	check(reference.advance(next.snapshot().player_pose,prior.camera_view.pose,Vector2i(960,720)) and next.snapshot().player_aim.point==reference.snapshot().point,"Aim did not sample current movement with the preceding camera")
+	check(reference.advance(next.snapshot().player_pose,next.snapshot().camera_view.pose,Vector2i(960,720),Vector2(0.2,0.3),false,true,not OS.has_feature("mobile")) and next.snapshot().player_aim.point==reference.snapshot().point and next.snapshot().player_aim.raw_point==reference.snapshot().raw_point,"Aim did not sample the completed flight camera and current controls")
 	check(next.snapshot().player_aim.visible and next.snapshot().mining_targeting.visible,"Acknowledged flight did not expose targeting")
 	check(next.evaluate(150,Vector2.ZERO,0.0,true).snapshot()==next.snapshot(),"Pause advanced aiming or selection")
 	check(next.evaluate(100,Vector2.ZERO,0.0,false,Vector2i(-1,600))==null and flight.snapshot()==prior,"Invalid viewport partially committed a flight")

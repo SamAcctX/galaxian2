@@ -295,7 +295,7 @@ func evaluate(timeline: RefCounted, scenery: RefCounted, delta_ms: Variant, pres
 	# the next logic pass, never a second activation or camera pass in this one.
 	if not clock.finish_frame(present_radio): return fail(clock.error)
 	if next._aim!=null:
-		if not next._aim.advance(scene.scene.player_pose,scene.camera.view.get("pose",Transform3D.IDENTITY),hud_viewport,commands,mouse_capture and int(scene.camera.shot.phase)==4,true):return fail(next._aim.error)
+		if not next._aim.advance(scene.scene.player_pose,scene.camera.view.get("pose",Transform3D.IDENTITY),hud_viewport,commands,mouse_capture and int(scene.camera.shot.phase)==4,true,int(scene.camera.shot.phase)==4 and not OS.has_feature("mobile")):return fail(next._aim.error)
 		var npc_contact := false
 		for weapon in next._primary_contacts:
 			for contact in weapon.contacts:

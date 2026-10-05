@@ -4,6 +4,7 @@ const Definitions = preload("res://src/content/player_aim_definitions.gd")
 const TargetProjection = preload("res://src/presentation/target_projection.gd")
 const Vectors = preload("res://src/simulation/source_vectors.gd")
 const Numbers = preload("res://src/content/opening_definitions.gd")
+const Controls=preload("res://src/input/flight_controls.gd")
 var error := ""
 var _identity := {}
 var _definition := {}
@@ -29,7 +30,7 @@ func configure(bindings: RefCounted) -> bool:
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
 	return true
 
-func advance(player: Transform3D, camera_pose: Transform3D, viewport_size: Vector2i,commands:=Vector2.ZERO,mouse_capture:=false,current_view:=false) -> bool:
+func advance(player: Transform3D, camera_pose: Transform3D, viewport_size: Vector2i,commands:=Vector2.ZERO,mouse_capture:=false,current_view:=false,control_cursor:=false) -> bool:
 	error=""
 	if _definition.is_empty():return reject("Configure opening aim before advancing")
 	if not commands.is_finite() or absf(commands.x)>1 or absf(commands.y)>1:return reject("Aim commands must be normalized finite axes")
@@ -45,12 +46,14 @@ func advance(player: Transform3D, camera_pose: Transform3D, viewport_size: Vecto
 	# A completed flight camera needs the actual gun line, with no additional
 	# screen-space lag. Earlier cinematic samples may retain their smoothing.
 	var point := raw if current_view or raw.z>0 else Vectors.added(Vectors.scaled(raw,_definition.new_weight),Vectors.scaled(_point,_definition.previous_weight))
-	# The crosshair always marks the gun line (shots fly along the nose). With
-	# mouse steering the steering cursor is a separate marker.
+	# Desktop input has an immediate control cursor. Keep the gun projection
+	# separately for forward weapons; handling and camera lag do not move input.
 	_cursor=Vector2(-1,-1)
-	if mouse_capture:_cursor=Vector2(viewport_size)*(Vector2(0.5,0.5)+Vector2(-commands.y,commands.x)*0.35)
+	if mouse_capture or control_cursor:
+		_cursor=Vector2(viewport_size)*(Vector2(0.5,0.5)+Vector2(-commands.y,commands.x)*Controls.AIM_HALF_AREA)
+		if control_cursor:point=Vector3(_cursor.x,_cursor.y,raw.z)
 	if not point.is_finite() or not TargetProjection.safe_pixel(point.x) or not TargetProjection.safe_pixel(point.y):return reject("Opening aim exceeds supported pixel coordinates")
-	_point=point;_raw=raw;_viewport=viewport_size;_cursor_mode=mouse_capture
+	_point=point;_raw=raw;_viewport=viewport_size;_cursor_mode=mouse_capture or control_cursor
 	return true
 
 func sample_feedback(npc_contact: bool, delta_ms: Variant, draw_enabled: bool) -> bool:

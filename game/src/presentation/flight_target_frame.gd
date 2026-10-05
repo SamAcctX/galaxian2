@@ -3,6 +3,7 @@ extends Control
 ## Baseline atlas selection is explicit. This does not select or lock a target.
 const Atlas = preload("res://src/content/atlas_region.gd")
 const Library = preload("res://src/content/library.gd")
+const HudStyle=preload("res://src/presentation/flight_hud_style.gd")
 const IMAGE_ID := 1223
 const PHONE_FRAME_WIDTH := 304.0
 const BASELINE_ATLASES := {
@@ -38,7 +39,6 @@ func prepare(library: RefCounted, bindings: RefCounted, visuals: RefCounted) -> 
 		var part := TextureRect.new()
 		part.name = "Quarter%d" % index
 		part.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		part.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 		part.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		part.stretch_mode = TextureRect.STRETCH_SCALE
 		part.texture = texture
@@ -65,12 +65,13 @@ func reflow() -> void:
 	var extent := marker_radii()
 	var center := Vector2(floorf(size.x*0.5),floorf(size.y*0.5))
 	for index in quarters.size():
+		quarters[index].texture_filter=HudStyle.filtering()
 		quarters[index].size = extent
 		quarters[index].position = center + Vector2(0 if index & 1 else -extent.x,0 if index & 2 else -extent.y)
 
 func marker_radii() -> Vector2:
 	if not prepared: return Vector2.ZERO
-	return logical_radii(_quarter_size,mobile_layout)
+	return logical_radii(_quarter_size,mobile_layout)*HudStyle.multiplier
 
 func source() -> Dictionary:
 	return _source.duplicate(true)

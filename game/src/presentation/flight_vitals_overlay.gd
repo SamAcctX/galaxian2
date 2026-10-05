@@ -1,4 +1,5 @@
 extends Control
+const HudStyle=preload("res://src/presentation/flight_hud_style.gd")
 ## Original corner art over accepted flight vitals and cargo. No flight input lives here.
 const Catalogues=preload("res://src/content/catalogues.gd")
 const OriginalUI=preload("res://src/presentation/original_ui.gd")
@@ -252,8 +253,8 @@ func set_active(value: bool) -> void:
 
 func set_mobile_layout(value: bool) -> void:
 	_mobile=value
-	_cargo_text.add_theme_font_size_override("font_size",20 if value else 15)
-	_throttle_text.add_theme_font_size_override("font_size",17 if value else 12)
+	_cargo_text.add_theme_font_size_override("font_size",HudStyle.font_size(20 if value else 15))
+	_throttle_text.add_theme_font_size_override("font_size",HudStyle.font_size(17 if value else 12))
 	for label in [_hull_text,_armor_text,_shield_text]:label.add_theme_font_size_override("font_size",13 if value else 11)
 	_relayout()
 
@@ -313,12 +314,13 @@ func _relayout() -> void:
 	for row in [[_hull_text,hull_y],[_armor_text,armor_y],[_shield_text,margin]]:
 		row[0].position=Vector2(track_left+width+4,float(row[1])+badge*0.20)
 		row[0].size=Vector2(110,badge*0.8)
-	var counter_height:=32.0 if _mobile else 26.0
+	var counter_height:=(32.0 if _mobile else 26.0)*HudStyle.multiplier
 	var counter_width:=counter_height*_cargo_frame.texture.get_width()/_cargo_frame.texture.get_height() if _cargo_frame.texture!=null else 146.0
 	_cargo_frame.position=Vector2(maxf(0,size.x-counter_width-margin-(60.0 if _touch_inset else 0.0)),margin)
 	_cargo_frame.size=Vector2(counter_width,counter_height)
+	_cargo_frame.texture_filter=HudStyle.filtering()
 	_cargo_text.position=_cargo_frame.position;_cargo_text.size=_cargo_frame.size
-	var throttle_size: Vector2=_throttle_frame.texture.get_size()*(1.0 if _mobile else 0.7) if _throttle_frame.texture!=null else Vector2.ZERO
+	var throttle_size: Vector2=_throttle_frame.texture.get_size()*(1.0 if _mobile else 0.7)*HudStyle.multiplier if _throttle_frame.texture!=null else Vector2.ZERO
 	_apply_throttle_alpha(Time.get_ticks_msec())
 	_throttle_frame.size=throttle_size
 	_throttle_frame.position=Vector2((size.x-throttle_size.x)*0.5,size.y*0.5-(19.0 if _mobile else 14.0))

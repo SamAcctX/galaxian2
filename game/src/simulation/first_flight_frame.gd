@@ -1069,7 +1069,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 		if not next._encounter.present_turret_camera(next._camera,next._pose):reject(next._camera.error);return null
 	if next._encounter!=null and next._encounter.guided_missile_active():
 		if not next._encounter.present_guided_camera(next._camera):reject(next._camera.error);return null
-	if player_updates and next._aim!=null and not next._aim.advance(next._encounter.turret_aim_pose(next._pose) if next._encounter!=null else next._pose,next._camera.snapshot().pose,viewport,commands,relative_mouse_capture and manual and not turret_active,true):reject(next._aim.error);return null
+	if player_updates and next._aim!=null and not next._aim.advance(next._encounter.turret_aim_pose(next._pose) if next._encounter!=null else next._pose,next._camera.snapshot().pose,viewport,commands,relative_mouse_capture and manual and not turret_active,true,manual and not turret_active and not OS.has_feature("mobile")):reject(next._aim.error);return null
 	if next.death_active() and not next._death.sample_camera(next._camera.snapshot().pose,next._camera_follow_enabled):reject(next._death.error);return null
 	if next._mining!=null and next._mining.has_active_drill() and next._player.read_state().vitals.hull>0 and not cues.dialogue.visible and not next.cinematic_input_blocked():
 		if not next._mining.set_command(drill_command):reject(next._mining.error);return null

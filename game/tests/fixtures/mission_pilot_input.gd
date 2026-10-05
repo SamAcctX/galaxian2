@@ -34,8 +34,8 @@ static func apply(app: Control,viewport: Viewport,input: Dictionary,delta_us: in
 		var have: Vector2=app._controls.snapshot().command
 		var change:=Vector2(input.commands.x-have.x,have.y-input.commands.y)
 		var motion:=InputEventMouseMotion.new()
-		motion.screen_relative=Vector2(change.y,change.x)*app._controls.MOUSE_REFERENCE_SIZE*0.35/app._controls.mouse_sensitivity
+		motion.screen_relative=Vector2(change.y,change.x)*Vector2(app.viewport.size)*app._controls.AIM_HALF_AREA/app._controls.mouse_sensitivity
 		motion.relative=motion.screen_relative;viewport.push_input(motion,true)
-	app._controls.advance_mouse(float(delta_us)/1000000.0)
+	app._controls.advance_mouse(float(delta_us)/1000000.0,Vector2(app.viewport.size))
 	if observation!=null:observation.invalidate()
 	return app._controls.snapshot()
