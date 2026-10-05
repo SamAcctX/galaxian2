@@ -636,7 +636,7 @@ func evaluate_kappa_sequence(rescue: RefCounted,combat: RefCounted) -> RefCounte
 	if not _kappa or _accounting==null or not combat is Combat:
 		reject("Kappa choreography requires its retained combat and accounting");return null
 	if not _validate_kappa_combat(combat.snapshot()):return null
-	var next:=fork_for_frame(false,combat)
+	var next: RefCounted=frame_copy(combat)
 	if not next._combat.apply_kappa_sequence(rescue):reject(next._combat.error);return null
 	return next
 

@@ -372,7 +372,7 @@ func observe_kappa_rescue(rescue: RefCounted,radio: RefCounted) -> RefCounted:
 func evaluate_kappa_sequence(rescue: RefCounted,radio: RefCounted) -> Dictionary:
 	var observation:=observe_kappa_rescue(rescue,radio)
 	if observation==null:return {}
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	if not observation.snapshot().force_hostile_actor_ids.is_empty():
 		var control: RefCounted=_control.evaluate_kappa_sequence(observation,_combat)
 		if control==null:return fail(_control.error)
