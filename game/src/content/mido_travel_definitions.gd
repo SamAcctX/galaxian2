@@ -91,7 +91,18 @@ const ARRIVAL_BRIEFING_SPANS = {"yrdal_briefing_briefing_start":[385208,516],"yr
 const MAC_ARRIVAL_BRIEFING = {"scope":"mido_yrdal_entry_briefing","campaign_cursor":11,"station_id":76,"mission_kind":11,"story":true,"briefing_pending":true,"mode":0,"events":[{"speaker_id":0,"text_id":1784,"voice_event_id":163}]}
 const MAC_ARRIVAL_BRIEFING_SPANS = {"yrdal_briefing_briefing_start":[385724,516],"yrdal_briefing_has_mode0_count":[-698428,33],"yrdal_briefing_mission_kind":[401102,9],"yrdal_briefing_mission_briefing_pending":[400980,14],"yrdal_briefing_mission_story":[401372,16],"yrdal_briefing_cursor10_creates_yrdal_mission":[861843,54],"yrdal_briefing_story_mission_constructor":[399772,448],"yrdal_briefing_ordinary_entry_release":[151038,253],"yrdal_briefing_controller_ready":[233396,11],"yrdal_briefing_yrdal_entry_count":[1529630,4],"yrdal_briefing_yrdal_entry_event":[1530994,8],"yrdal_briefing_yrdal_entry_voice":[1535218,8]}
 
+## A departure asks ninety times whether the same declarations are valid. The
+## last accepted dictionary is recognised by identity; anything else is checked
+## in full. Debug builds also compare its content hash, so declarations edited
+## in place by a test are checked again.
+static var _accepted:=[]
 static func parameters(data: Variant) -> bool:
+	if _accepted.size()==2 and is_same(_accepted[0],data) and (not OS.is_debug_build() or _accepted[1]==data.hash()):return true
+	if not _parameters(data):return false
+	_accepted=[data,data.hash() if OS.is_debug_build() else 0]
+	return true
+
+static func _parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1+int(data.has("continuation"))+int(data.has("return_visit"))+int(data.has("contract_navigation"))+int(data.has("contract_completion"))+int(data.has("convoy_capture"))+int(data.has("convoy_ship"))+int(data.has("convoy_lifecycle"))+int(data.has("convoy_effects"))+int(data.has("alioth_arrival"))+int(data.has("convoy_transit"))+int(data.has("alioth_attack"))+int(data.has("alioth_lifecycle"))+int(data.has("alioth_flight"))+int(data.has("alioth_return"))+int(data.has("free_navigation"))+int(data.has("free_population"))+int(data.has("free_traffic"))+int(data.has("free_lifecycle"))+int(data.has("free_flight"))+int(data.has("free_arrival"))+int(data.has("gate_environment"))+int(data.has("local_arrival_environment"))+int(data.has("gate_transit"))+int(data.has("ordinary_worlds"))+int(data.has("gate_arrival"))+int(data.has("ordinary_shopping"))+int(data.has("ordinary_fitting"))+int(data.has("ordinary_contracts"))+int(data.has("suttnar_visit"))+int(data.has("kappa_preparation"))+int(data.has("emp_bombs"))+int(data.has("kappa_rescue"))+int(data.has("kappa_fighters"))+int(data.has("kappa_lifecycle"))+int(data.has("secondary_ownership"))+int(data.has("kappa_return"))+int(data.has("kappa_outcome"))+int(data.has("kappa_departure"))+int(data.has("sahi_visit"))+int(data.has("sahi_encounter"))+int(data.has("sahi_stage"))+int(data.has("tractor_recovery"))+int(data.has("void_portal"))+int(data.has("post_sahi"))+int(data.has("thynome_expedition"))+int(data.has("void_probe"))+int(data.has("dima_return"))+int(data.has("post_probe_visits"))+int(data.has("void_access"))+int(data.has("void_crystals"))+int(data.has("nehma_visit"))+int(data.has("gakkrr_visit"))+int(data.has("bakka_contest"))+int(data.has("bakka_return"))+int(data.has("dekato_convoy"))+int(data.has("nehma_return"))+int(data.has("vossk_traffic"))+int(data.has("vossk_lod"))+int(data.has("arrival_briefing")) or not data.get("provenance") is Dictionary:return false
 	var alternate:=_alternate(data)
 	if data.has("vossk_traffic") and (not data.has("free_lifecycle") or not Vossk.parameters(data.vossk_traffic)):return false
