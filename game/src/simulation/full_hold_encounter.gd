@@ -664,7 +664,7 @@ func evaluate_secondary_fire(player: RefCounted,equipment: RefCounted,pose: Tran
 	# The selected40 script can change permission during the same frame. Do
 	# not let a caller's stale pre-radio input override its cinematic gate.
 	if _selected40_sequence!=null:input_enabled=input_enabled and not _selected40_sequence.snapshot().input_blocked
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	next._combat=_combat.fork_for_frame()
 	if not next._combat.begin_contact_pass(random_state,display_available):return fail(next._combat.error)
 	var operation: Dictionary=next._secondaries.evaluate_player_trigger(pose,next._selected_secondary,next._combat,next._inventory.snapshot().npc_ids,player,equipment,next._primaries,next._inventory,requested and input_enabled) if scenery==null else scenery.evaluate_secondary_trigger(next._secondaries,next._combat,next._inventory,player,equipment,next._primaries,pose,next._selected_secondary,requested and input_enabled)
@@ -683,7 +683,7 @@ func evaluate_secondary_fire(player: RefCounted,equipment: RefCounted,pose: Tran
 func evaluate_secondary_motion(milliseconds: int,random_state: Dictionary,display_available:=true,observer_position: Variant=null,scenery: RefCounted=null,guidance_actor_id: int=-1) -> Dictionary:
 	error=""
 	if _secondaries==null or not Numbers.integer(milliseconds,0,_max_ms):return fail("Secondary motion requires a supported encounter frame")
-	var next:=fork_for_frame()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	next._combat=_combat.fork_for_frame()
 	if not next._combat.begin_contact_pass(random_state,display_available):return fail(next._combat.error)
 	var operation: Dictionary=next._secondaries.evaluate_advance(milliseconds,next._combat,next._inventory.snapshot().npc_ids,observer_position,null,null,guidance_actor_id) if scenery==null else scenery.evaluate_secondary_contacts(next._secondaries,next._combat,next._inventory,milliseconds,observer_position,guidance_actor_id)
