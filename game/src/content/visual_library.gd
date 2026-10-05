@@ -6,12 +6,21 @@ var error := ""
 var root := ""
 var base_content_id := ""
 var textures := {}
+## Decoded pixels of recently loaded textures, most recently used last: name to
+## [modification time, width, height, mipmaps, pixels]. Images made from them
+## share the pixels until one is edited, so a sprite sheet asked for once per
+## sprite is read, checked and inflated once.
+var _decoded := {}
+var _decoded_bytes := 0
+var _decoded_limit := 32 * 1024 * 1024 if OS.has_feature("mobile") else 128 * 1024 * 1024
 
 func open(directory: String, base_manifest: Dictionary) -> bool:
 	error = ""
 	root = ""
 	base_content_id = ""
 	textures = {}
+	_decoded.clear()
+	_decoded_bytes = 0
 	var file := FileAccess.open(directory.path_join("visuals.json"), FileAccess.READ)
 	if file == null or file.get_length() > 16 * 1024 * 1024:
 		return fail("Missing or oversized visual manifest")
@@ -46,7 +55,17 @@ func load_image(name: String) -> Image:
 		fail("This texture has not been prepared")
 		return null
 	var row: Dictionary = textures[name]
-	var file := FileAccess.open(root.path_join(row.path), FileAccess.READ)
+	# A changed derivative is read, checked and decoded again.
+	var path := root.path_join(row.path)
+	var modified := FileAccess.get_modified_time(path)
+	var cached: Variant = _decoded.get(name)
+	if cached != null:
+		_decoded.erase(name)
+		if modified != 0 and cached[0] == modified:
+			_decoded[name] = cached
+			return Image.create_from_data(cached[1], cached[2], cached[3], Image.FORMAT_RGBA8, cached[4])
+		_decoded_bytes -= cached[4].size()
+	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null or file.get_length() != int(row.bytes):
 		fail("Texture derivative is missing or changed")
 		return null
@@ -57,7 +76,18 @@ func load_image(name: String) -> Image:
 	if hash.finish().hex_encode() != row.get("sha256"):
 		fail("Texture derivative checksum mismatch")
 		return null
-	return decode_image(data)
+	var image := decode_image(data)
+	if image != null and modified != 0:
+		var pixels := image.get_data()
+		if pixels.size() <= _decoded_limit / 2:
+			_decoded[name] = [modified, image.get_width(), image.get_height(), image.has_mipmaps(), pixels]
+			_decoded_bytes += pixels.size()
+			for oldest in _decoded.keys():
+				if _decoded_bytes <= _decoded_limit:
+					break
+				_decoded_bytes -= _decoded[oldest][4].size()
+				_decoded.erase(oldest)
+	return image
 
 func decode_image(data: PackedByteArray) -> Image:
 	error = ""
