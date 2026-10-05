@@ -3278,6 +3278,10 @@
     "game/tests/desktop_controller_application.gd",
     "game/tests/desktop_controller_application.gd.uid",
     "game/tests/desktop_controller_resume.gd",
-    "game/tests/desktop_controller_resume.gd.uid"
+    "game/tests/desktop_controller_resume.gd.uid",
+    "game/src/presentation/flight_hud_style.gd",
+    "game/tests/desktop_player_feedback.gd",
+    "game/tests/desktop_player_feedback_application.gd",
+    "game/tests/desktop_player_feedback_resume.gd"
   ]
 }
