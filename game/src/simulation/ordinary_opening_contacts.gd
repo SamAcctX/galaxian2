@@ -10,7 +10,9 @@ const NpcContacts = preload("res://src/simulation/ordinary_npc_contacts.gd")
 const SceneryContacts = preload("res://src/simulation/ordinary_scenery_contacts.gd")
 var error := ""
 
-func evaluate(projectiles: RefCounted, combat: RefCounted, bodies: RefCounted, inventory: RefCounted, bounds_selection: Variant = null) -> Dictionary:
+## staged: the caller owns detached projectiles and combat and discards them on
+## any failure (ordinary_npc_contacts.evaluate_staged). Bodies are still forked.
+func evaluate(projectiles: RefCounted, combat: RefCounted, bodies: RefCounted, inventory: RefCounted, bounds_selection: Variant = null, staged:=false) -> Dictionary:
 	error=""
 	if projectiles==null or projectiles.get_script()!=Projectiles or combat==null or combat.get_script()!=Combat or bodies==null or bodies.get_script()!=Bodies:
 		return fail("Opening contacts require ordinary projectiles and both native target owners")
@@ -20,7 +22,7 @@ func evaluate(projectiles: RefCounted, combat: RefCounted, bodies: RefCounted, i
 	if OS.is_debug_build() and not inventory.validate_owners(combat.snapshot(),bodies.read_snapshot()): return fail(inventory.error)
 	var targets: Dictionary = inventory.snapshot()
 	var npc_operation := NpcContacts.new()
-	var npc := npc_operation.evaluate(projectiles,combat,targets.npc_ids,bounds_selection)
+	var npc := npc_operation.evaluate_staged(projectiles,combat,targets.npc_ids,bounds_selection) if staged else npc_operation.evaluate(projectiles,combat,targets.npc_ids,bounds_selection)
 	if npc.is_empty(): return fail(npc_operation.error)
 	# Impact marking retains position/velocity. The same real projectile can
 	# consequently contact a scenery body after contacting an overlapping NPC.

@@ -261,7 +261,7 @@ func _evaluate_opening_update(combat: RefCounted,bodies: RefCounted,inventory: R
 		# Configuration and world entry already validated the ordinary policy.
 		# Empty guns need their clocks and events, but no target geometry queries.
 		if gun.projectiles.has_retained_projectiles() or bounds_selection!=null:
-			result=operation.evaluate(gun.projectiles,staged_combat,staged_bodies,inventory,bounds_selection)
+			result=operation.evaluate(gun.projectiles,staged_combat,staged_bodies,inventory,bounds_selection,true)
 			if result.is_empty(): return fail(operation.error)
 		# Cleanup belongs after this gun's COMPLETE target list, never between
 		# NPCs and scenery or after every gun has completed a global contact pass.
