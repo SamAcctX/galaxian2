@@ -21,7 +21,15 @@ func prepare(paths: Array, library: RefCounted, visuals: RefCounted, bindings: R
 	error = ""
 	if library.manifest.get("content_id", "") != bindings.base_content_id or visuals.base_content_id != bindings.base_content_id:
 		return reject("Model resources belong to different content identities")
-	var images := {}
+	# The textures of every model that can be built, decoded side by side. A
+	# model or texture that fails is left to the loop below, which reports it.
+	var wanted := []
+	for path in paths:
+		var descriptor: Dictionary = bindings.material_for_mesh(path, quality)
+		if descriptor.is_empty() or not Materials.supports(descriptor): continue
+		wanted.append(descriptor.texture_paths[0])
+		if int(descriptor.render_type) == 28: wanted.append(descriptor.texture_paths[1])
+	var images: Dictionary = visuals.load_images(wanted)
 	var texture_cache := {}
 	for path in paths:
 		if _prototypes.has(path): continue
