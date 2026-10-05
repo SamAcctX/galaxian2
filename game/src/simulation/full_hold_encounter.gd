@@ -801,7 +801,7 @@ func prepare_selected40_career(bindings: RefCounted,session: RefCounted,scenery:
 func evaluate_contract_session(session: RefCounted,radio_active: bool=false,poll_results: bool=true,periodic_poll_allowed: bool=true,radio_finished: Array=[],world_facts: Dictionary={}) -> Dictionary:
 	error=""
 	if _contract_context.is_empty() or not is_instance_of(session,load("res://src/simulation/contract_session.gd")):return fail("The encounter has no retained contract career")
-	var career: RefCounted=session.fork()
+	var career: RefCounted=session.frame_copy()
 	var nuclear_count:=0 if _secondaries==null else int(_secondaries.snapshot().get("nuclear_bomb_detonations",0))
 	if not career.retain_nuclear_bomb_detonations(nuclear_count):return fail(career.error)
 	# Contacts have already changed the encounter bodies. Retain that exact

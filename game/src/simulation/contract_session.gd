@@ -36,7 +36,9 @@ const EliteMedals=preload("res://src/simulation/elite_medal_progress.gd")
 const StoryFlights=preload("res://src/content/valkyrie_flight_definitions.gd")
 const Valkyrie=preload("res://src/content/valkyrie_campaign_definitions.gd")
 const Wanted=preload("res://src/simulation/wanted_board.gd")
+const FrameTransaction=preload("res://src/simulation/frame_transaction.gd")
 var error:=""
+var _txn:=0
 var _state:={}
 var _rules:={}
 var _cabins:={}
@@ -2021,8 +2023,13 @@ func _copy_state() -> Dictionary:
 	copy=copy.duplicate(true);copy.population=population
 	return copy
 
+## The career a flight frame forked for itself is updated in place by that
+## frame, which is discarded whole on failure; any other caller gets a fork.
+func frame_copy() -> RefCounted:return self if FrameTransaction.owns(_txn) else fork()
+
 func fork() -> RefCounted:
 	var result: RefCounted=get_script().new()
+	result._txn=FrameTransaction.current
 	# Configuration is immutable after setup; only live state needs a private copy.
 	result._state=_copy_state();result._rules=_rules;result._cabins=_cabins
 	result._progress_rules=_progress_rules;result._stations=_stations;result._result_inventory=_result_inventory.duplicate(true)
