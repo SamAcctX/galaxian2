@@ -14,11 +14,11 @@ func load(library: RefCounted, visuals: RefCounted, resource: String, index: int
 	if bytes.is_empty(): return invalid(library.error)
 	var metadata := region(bytes, index)
 	if metadata.is_empty(): return null
-	var pixels: Image = visuals.load_image(resource)
+	var pixels: ImageTexture = visuals.load_texture(resource)
 	if pixels == null: return invalid(visuals.error)
-	if pixels.get_size() != metadata.size: return invalid("Atlas pixels differ from the source image dimensions")
+	if Vector2i(pixels.get_size()) != metadata.size: return invalid("Atlas pixels differ from the source image dimensions")
 	var result := AtlasTexture.new()
-	result.atlas = ImageTexture.create_from_image(pixels)
+	result.atlas = pixels
 	result.region = Rect2(metadata.rect)
 	result.filter_clip = true
 	return result

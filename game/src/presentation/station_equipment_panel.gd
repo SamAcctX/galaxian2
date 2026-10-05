@@ -307,27 +307,25 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted=nu
 		if visuals.base_content_id!=bindings.base_content_id:return reject("Hangar artwork belongs to another content pack")
 		art=OriginalUI.new()
 		if not art.configure(library,bindings,visuals):return reject(art.error)
-		var item_image: Image=visuals.load_image(ITEM_ATLAS)
-		if item_image==null:return reject(visuals.error)
+		pixels=visuals.load_texture(ITEM_ATLAS)
+		if pixels==null:return reject(visuals.error)
 		metadata=library.read_resource(ITEM_ATLAS,Atlas.MAX_BYTES)
 		if metadata.is_empty():return reject(library.error)
 		var region: Dictionary=Atlas.new().region(metadata,0)
-		if region.is_empty() or region.size!=item_image.get_size():return reject("Hangar item atlas metadata disagrees with imported pixels")
-		pixels=ImageTexture.create_from_image(item_image)
+		if region.is_empty() or region.size!=Vector2i(pixels.get_size()):return reject("Hangar item atlas metadata disagrees with imported pixels")
 		# This additional Hangar mapping is verified on the two Mac layouts.
 		# Other profiles retain the existing native row fallback.
 		if library.manifest.profile.edition=="mac-full-hd":
 			var rules: Dictionary=bindings.mido_travel.map.ui
 			var interface_resource: String=rules.atlas_resources[str(int(rules.texture_id))]
 			var interface_metadata: PackedByteArray=library.read_resource(interface_resource,Atlas.MAX_BYTES)
-			var interface_image: Image=visuals.load_image(interface_resource)
-			if interface_metadata.is_empty() or interface_image==null:return reject(library.error+visuals.error)
-			var interface_pixels:=ImageTexture.create_from_image(interface_image)
+			var interface_pixels: ImageTexture=visuals.load_texture(interface_resource)
+			if interface_metadata.is_empty() or interface_pixels==null:return reject(library.error+visuals.error)
 			for id in ROW_ART_IDS:
 				var alias: Dictionary=bindings.resolve_image_region(id)
 				if alias.is_empty() or int(alias.texture_id)!=int(rules.texture_id):return reject("Hangar row artwork lost its source interface alias")
 				var area: Dictionary=Atlas.new().region(interface_metadata,int(alias.region))
-				if area.is_empty() or area.size!=interface_image.get_size():return reject("Hangar row artwork disagrees with source pixels")
+				if area.is_empty() or area.size!=Vector2i(interface_pixels.get_size()):return reject("Hangar row artwork disagrees with source pixels")
 				var texture:=AtlasTexture.new();texture.atlas=interface_pixels;texture.region=Rect2(area.rect);texture.filter_clip=true
 				texture.set_meta("source_image_id",id);row_art[id]=texture
 			for id in [1145,1154,1161]:

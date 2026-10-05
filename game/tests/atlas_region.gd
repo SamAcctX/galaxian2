@@ -13,6 +13,7 @@ class Pixels extends RefCounted:
 	var base_content_id := "a".repeat(64)
 	var image: Image
 	func load_image(_resource: String) -> Image: return image
+	func load_texture(_resource: String) -> ImageTexture: return ImageTexture.create_from_image(image)
 
 func _initialize() -> void:
 	var source := Source.new()

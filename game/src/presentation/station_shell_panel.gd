@@ -92,15 +92,14 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> 
 		if id>=library.strings.size() or library.strings[id].is_empty():return reject("Station faction text is unavailable")
 		faction_names.append(library.strings[id])
 	var bytes: PackedByteArray=library.read_resource(INTERFACE_ATLAS,Atlas.MAX_BYTES)
-	var image: Image=visuals.load_image(INTERFACE_ATLAS)
-	if bytes.is_empty() or image==null:return reject(library.error+visuals.error)
-	var pixels:=ImageTexture.create_from_image(image)
+	var pixels: ImageTexture=visuals.load_texture(INTERFACE_ATLAS)
+	if bytes.is_empty() or pixels==null:return reject(library.error+visuals.error)
 	var icons:={}
 	for id in map_rules.faction_image_ids:
 		var alias: Dictionary=bindings.resolve_image_region(int(id))
 		if alias.is_empty() or int(alias.texture_id)!=int(map_rules.texture_id):return reject("Station faction icon lost its source atlas alias")
 		var region: Dictionary=Atlas.new().region(bytes,int(alias.region))
-		if region.is_empty() or region.size!=image.get_size():return reject("Station faction icon disagrees with source pixels")
+		if region.is_empty() or region.size!=Vector2i(pixels.get_size()):return reject("Station faction icon disagrees with source pixels")
 		var texture:=AtlasTexture.new();texture.atlas=pixels;texture.region=Rect2(region.rect);texture.filter_clip=true
 		texture.set_meta("source_image_id",int(id));icons[int(id)]=texture
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language}

@@ -13,6 +13,9 @@ var textures := {}
 var _decoded := {}
 var _decoded_bytes := 0
 var _decoded_limit := 32 * 1024 * 1024 if OS.has_feature("mobile") else 128 * 1024 * 1024
+## Textures made by load_texture(), held weakly: name to [modification time,
+## WeakRef]. Sprites cut from one sheet share its texture while any is in use.
+var _shared := {}
 
 func open(directory: String, base_manifest: Dictionary) -> bool:
 	error = ""
@@ -21,6 +24,7 @@ func open(directory: String, base_manifest: Dictionary) -> bool:
 	textures = {}
 	_decoded.clear()
 	_decoded_bytes = 0
+	_shared.clear()
 	var file := FileAccess.open(directory.path_join("visuals.json"), FileAccess.READ)
 	if file == null or file.get_length() > 16 * 1024 * 1024:
 		return fail("Missing or oversized visual manifest")
@@ -88,6 +92,26 @@ func load_image(name: String) -> Image:
 				_decoded_bytes -= _decoded[oldest][4].size()
 				_decoded.erase(oldest)
 	return image
+
+## One texture of the whole image for callers that draw or crop it unchanged.
+## Each panel used to upload its own copy of every interface sheet it cut
+## sprites from. Callers that edit pixels take load_image().
+func load_texture(name: String) -> ImageTexture:
+	error = ""
+	var modified := 0
+	if textures.has(name):
+		modified = FileAccess.get_modified_time(root.path_join(textures[name].path))
+	var held: Variant = _shared.get(name)
+	if held != null and modified != 0 and held[0] == modified:
+		var live: ImageTexture = held[1].get_ref()
+		if live != null:
+			return live
+	var image := load_image(name)
+	if image == null:
+		return null
+	var texture := ImageTexture.create_from_image(image)
+	_shared[name] = [modified, weakref(texture)]
+	return texture
 
 func decode_image(data: PackedByteArray) -> Image:
 	error = ""
