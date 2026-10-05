@@ -1332,6 +1332,15 @@ func retire_story_actors(first: int,end: int,point: Vector3) -> bool:
 		if not _combat.set_pose(id,shown,pose) or not _combat.retire_story_actor(id):return reject(_combat.error)
 	return true
 
+## fork_for_frame(false,incoming_combat) for a caller that replaces both its
+## controller and its combat with the result. A controller forked for the frame
+## being built is updated in place and only adopts the incoming combat; that
+## frame is discarded whole on failure.
+func frame_copy(incoming_combat: RefCounted) -> RefCounted:
+	if not FrameTransaction.owns(_txn):return fork_for_frame(false,incoming_combat)
+	if incoming_combat!=null and not is_same(incoming_combat,_combat):_combat=incoming_combat.fork_for_frame()
+	return self
+
 func fork_for_frame(copy_motion:=true, incoming_combat: RefCounted=null) -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._txn=FrameTransaction.current

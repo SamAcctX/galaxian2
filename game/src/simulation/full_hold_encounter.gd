@@ -806,7 +806,7 @@ func evaluate_contract_session(session: RefCounted,radio_active: bool=false,poll
 	if not career.retain_nuclear_bomb_detonations(nuclear_count):return fail(career.error)
 	# Contacts have already changed the encounter bodies. Retain that exact
 	# body state without inserting an extra actor/guidance update before polling.
-	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	var control: RefCounted=_control.frame_copy(_combat)
 	var result: Dictionary=career.evaluate_flight(control,radio_active,poll_results,periodic_poll_allowed,radio_finished,world_facts,true)
 	if result.is_empty():return fail(career.error)
 	_control=result.controller;_combat=_control._combat
