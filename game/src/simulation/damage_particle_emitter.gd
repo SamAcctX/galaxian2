@@ -233,9 +233,12 @@ func _advance(pose: Transform3D,delta_ms: float,manager_elapsed_ms: float) -> Di
 			var age: int=appearance.age_ms
 			if age<0:continue
 			if debug and not Appearance.valid_slot(_preset,appearance):return fail("Invalid damage particle appearance state")
-			age=int(single(single(age)+delta))
+			# single() and signed_short() spelled out, and each replaced slot made
+			# read-only here: a script call per step and a later freeze per slot
+			# add up over every live sprite.
+			age=int(Vector2(Vector2(age,0.0).x+delta,0.0).x)
 			if age>lifetime:
-				_slots[index]={"appearance":{"slot":appearance.slot,"age_ms":-1,"size":0},"position":RESET_POSITION,"velocity":slot.velocity}
+				_slots[index]=Readonly.freeze({"appearance":{"slot":appearance.slot,"age_ms":-1,"size":0},"position":RESET_POSITION,"velocity":slot.velocity})
 				continue
 			var velocity: Vector3=slot.velocity
 			var moved:=Vector3(velocity.x*delta_ms,velocity.y*delta_ms,velocity.z*delta_ms)
@@ -243,7 +246,9 @@ func _advance(pose: Transform3D,delta_ms: float,manager_elapsed_ms: float) -> Di
 			var position: Vector3=slot.position
 			position=Vector3(position.x+step.x,position.y+step.y,position.z+step.z)
 			if not position.is_finite():return fail("Damage particle movement exceeds finite source bounds")
-			_slots[index]={"appearance":{"slot":appearance.slot,"age_ms":age,"size":Appearance.signed_short(int(appearance.size)+growth)},"position":position,"velocity":velocity}
+			var aged:={"slot":appearance.slot,"age_ms":age,"size":((int(appearance.size)+growth+32768)&65535)-32768};aged.make_read_only()
+			var next:={"appearance":aged,"position":position,"velocity":velocity};next.make_read_only()
+			_slots[index]=next
 			live=true
 		_idle=not live
 	if _dirty:
