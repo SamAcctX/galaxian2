@@ -3409,6 +3409,12 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 		state.station_return_required=state.mining_objective.station_return_required
 	return state
 
+## A detached copy of the shared observation gains what only snapshots report:
+## the scan marker of every body, which no presentation draws.
+func complete_snapshot(state: Dictionary) -> Dictionary:
+	if _targeting!=null and state.has("mining_targeting"):state.mining_targeting=_targeting.snapshot()
+	return state
+
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy.player_time_scale=player_time_scale

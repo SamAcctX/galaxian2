@@ -134,6 +134,19 @@ func sample(camera: Transform3D, position: Vector3, marker := true) -> bool:
 	pixels = point;ellipse_clamped = clamped
 	return true
 
+# Pixels around a window(): one for the integer pixel, one for the binary32
+# steps between a camera position and its screen position.
+const WINDOW_MARGIN := 2.0
+
+## A pixel window as slopes [cx,hx,cy,hy] of camera space. sample() can place a
+## target inside (low,high) only if its camera position has z<=near(),
+## |x-cx*z|<=hx*|z| and |y-cy*z|<=hy*|z|: a scanner rules the others out first.
+func window(low: Vector2i, high: Vector2i) -> PackedFloat64Array:
+	var per_pixel := Vector2(2.0*_tangents.x/_size.x,2.0*_tangents.y/_size.y) if _size.x>0 else Vector2.ZERO
+	return PackedFloat64Array([(_center.x-(low.x+high.x)/2.0)*per_pixel.x,((high.x-low.x)/2.0+WINDOW_MARGIN)*per_pixel.x,
+		((low.y+high.y)/2.0-_center.y)*per_pixel.y,((high.y-low.y)/2.0+WINDOW_MARGIN)*per_pixel.y])
+func near() -> float:return _near
+
 func clear() -> void:
 	error = ""
 	_size = Vector2i.ZERO

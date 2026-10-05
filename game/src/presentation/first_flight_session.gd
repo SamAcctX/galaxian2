@@ -685,7 +685,7 @@ func flight_owner() -> RefCounted:return null if _world==null else _world.fork_f
 func flight_reader() -> RefCounted:return _world
 func snapshot() -> Dictionary:
 	if _world==null:return {}
-	var state: Dictionary=_world.snapshot() if _presentation_state.is_empty() else _presentation_state.duplicate(true)
+	var state: Dictionary=_world.snapshot() if _presentation_state.is_empty() else _world.complete_snapshot(_presentation_state.duplicate(true))
 	state.session_generation=_generation;state.input_throttle=_throttle
 	return state
 
