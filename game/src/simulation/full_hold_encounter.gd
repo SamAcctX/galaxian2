@@ -500,7 +500,7 @@ func acquire_cargo_target(tractor: RefCounted,delta_ms: int,projection: RefCount
 			"actor_id":actor.actor_id,"actor_mode":actor.actor_mode,"active":actor.active,
 			"cargo_eligible":eligible,"excluded":false,"scan_blocked":false,
 			"priority":false,"pixels":projected.pixels,"in_view":projected.in_view})
-	var next: RefCounted=tractor.fork_for_frame()
+	var next: RefCounted=tractor.frame_copy()
 	if not next.acquire(delta_ms,observations,context):return fail(next.error)
 	# The ordinary scanner consumes the same detached population, not another
 	# full combat snapshot with career, weapon and event histories.
@@ -537,7 +537,7 @@ func evaluate_cargo_recovery(tractor: RefCounted,cargo: RefCounted,delta_ms: int
 				"cargo_entries":life.cargo.entries,"collision_centers":[],"friendly":actor.get("friendly",false),
 				"statistics_exempt":false,"body_motion_blocked":false,"body_motion_detached":false,"special_cargo":actor.get("special_cargo",false)}
 			if death is FreightDeath:observation.freighter_position=_control._flight[id].source_position()
-	var next_tractor: RefCounted=tractor.fork_for_frame()
+	var next_tractor: RefCounted=tractor.frame_copy()
 	if not next_tractor.advance(delta_ms,player,observation,cargo.snapshot()):return fail(next_tractor.error)
 	var frame: Dictionary=next_tractor.snapshot().frame
 	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame();var next_cargo: RefCounted=cargo
@@ -570,7 +570,7 @@ func _evaluate_scenery_recovery(tractor: RefCounted,cargo: RefCounted,delta_ms: 
 	var index: int=retained.current_actor_id if retained.current_actor_id>=0 else retained.request_actor_id
 	var actor: Dictionary=scenery.recovery_observation(index)
 	if actor.is_empty():return fail(scenery.error)
-	var next_tractor: RefCounted=tractor.fork_for_frame()
+	var next_tractor: RefCounted=tractor.frame_copy()
 	if not next_tractor.advance(delta_ms,player,actor,cargo.snapshot()):return fail(next_tractor.error)
 	var frame: Dictionary=next_tractor.snapshot().frame
 	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame();var next_cargo: RefCounted=cargo;var next_scenery: RefCounted=scenery

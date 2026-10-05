@@ -2,6 +2,7 @@ extends RefCounted
 ## Retained tractor requests and detached wreck transactions. The frame applies
 ## the returned actor, inventory and counter changes together after validation.
 const Definitions=preload("res://src/content/tractor_recovery_definitions.gd")
+const FrameTransaction=preload("res://src/simulation/frame_transaction.gd")
 const Frames=preload("res://src/simulation/frame_clock.gd")
 const Library=preload("res://src/content/library.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
@@ -12,6 +13,7 @@ const Readonly=preload("res://src/simulation/readonly_state.gd")
 const Resources=preload("res://src/content/tractor_resources.gd")
 const Playback=preload("res://src/simulation/model_playback.gd")
 var error:=""
+var _txn:=0
 var _identity:={}
 var _rules:={}
 var _item_kinds:=[]
@@ -344,8 +346,13 @@ func snapshot() -> Dictionary:
 func equipment_loadout() -> Dictionary:return _loadout.duplicate(true)
 func transaction_identity() -> RefCounted:return _transaction_identity
 
+## The tractor a flight frame forked for itself is updated in place by that
+## frame, which is discarded whole on failure; any other caller gets a fork.
+func frame_copy() -> RefCounted:return self if FrameTransaction.owns(_txn) else fork_for_frame()
+
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
+	copy._txn=FrameTransaction.current
 	copy._identity=_identity;copy._rules=_rules;copy._item_kinds=_item_kinds;copy._max_ms=_max_ms
 	copy._state=_state.duplicate(true);copy._sample=_sample.duplicate(true)
 	copy._loadout=_loadout;copy._transaction_identity=_transaction_identity
