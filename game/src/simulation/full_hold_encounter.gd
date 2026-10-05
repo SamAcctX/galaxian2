@@ -667,7 +667,7 @@ func evaluate_secondary_fire(player: RefCounted,equipment: RefCounted,pose: Tran
 	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
 	next._combat=_combat.fork_for_frame()
 	if not next._combat.begin_contact_pass(random_state,display_available):return fail(next._combat.error)
-	var operation: Dictionary=next._secondaries.evaluate_player_trigger(pose,next._selected_secondary,next._combat,next._inventory.snapshot().npc_ids,player,equipment,next._primaries,next._inventory,requested and input_enabled) if scenery==null else scenery.evaluate_secondary_trigger(next._secondaries,next._combat,next._inventory,player,equipment,next._primaries,pose,next._selected_secondary,requested and input_enabled)
+	var operation: Dictionary=next._secondaries.evaluate_player_trigger(pose,next._selected_secondary,next._combat,next._inventory.snapshot().npc_ids,player,equipment,next._primaries,next._inventory,requested and input_enabled,null,true) if scenery==null else scenery.evaluate_secondary_trigger(next._secondaries,next._combat,next._inventory,player,equipment,next._primaries,pose,next._selected_secondary,requested and input_enabled,true)
 	if operation.is_empty():return fail(next._secondaries.error if scenery==null else scenery.error)
 	next._secondaries=operation.owner;next._combat=operation.combat
 	if not next._retain_blast_motion(operation.events):return fail(next.error)
@@ -680,13 +680,15 @@ func evaluate_secondary_fire(player: RefCounted,equipment: RefCounted,pose: Tran
 
 ## Existing bombs advance even without a new input edge. The shared early
 ## weapon pass calls this before NPC projectiles and the later actor update.
-func evaluate_secondary_motion(milliseconds: int,random_state: Dictionary,display_available:=true,observer_position: Variant=null,scenery: RefCounted=null,guidance_actor_id: int=-1) -> Dictionary:
+## combat_staged: this encounter's combat is already a detached copy that the
+## caller discards on failure (evaluate_weapons after its primary pass).
+func evaluate_secondary_motion(milliseconds: int,random_state: Dictionary,display_available:=true,observer_position: Variant=null,scenery: RefCounted=null,guidance_actor_id: int=-1,combat_staged:=false) -> Dictionary:
 	error=""
 	if _secondaries==null or not Numbers.integer(milliseconds,0,_max_ms):return fail("Secondary motion requires a supported encounter frame")
 	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame()
-	next._combat=_combat.fork_for_frame()
+	if not combat_staged:next._combat=_combat.fork_for_frame()
 	if not next._combat.begin_contact_pass(random_state,display_available):return fail(next._combat.error)
-	var operation: Dictionary=next._secondaries.evaluate_advance(milliseconds,next._combat,next._inventory.snapshot().npc_ids,observer_position,null,null,guidance_actor_id) if scenery==null else scenery.evaluate_secondary_contacts(next._secondaries,next._combat,next._inventory,milliseconds,observer_position,guidance_actor_id)
+	var operation: Dictionary=next._secondaries.evaluate_advance(milliseconds,next._combat,next._inventory.snapshot().npc_ids,observer_position,null,null,guidance_actor_id,true) if scenery==null else scenery.evaluate_secondary_contacts(next._secondaries,next._combat,next._inventory,milliseconds,observer_position,guidance_actor_id,true)
 	if operation.is_empty():return fail(next._secondaries.error if scenery==null else scenery.error)
 	next._secondaries=operation.owner;next._combat=operation.combat;next._secondary_events=operation.events
 	if not next._retain_blast_motion(operation.events):return fail(next.error)
@@ -979,7 +981,7 @@ func evaluate_weapons(player: RefCounted, pose: Transform3D, milliseconds: int, 
 	if next._secondaries!=null:
 		var random_for_secondary: Variant=contact_random if not contact_random.is_empty() else shared_random_state
 		if not random_for_secondary is Dictionary:return fail("Secondary motion requires the shared world random state")
-		var secondary: Dictionary=next.evaluate_secondary_motion(milliseconds,random_for_secondary,secondary_display_available,pose.origin,field,guidance_actor_id)
+		var secondary: Dictionary=next.evaluate_secondary_motion(milliseconds,random_for_secondary,secondary_display_available,pose.origin,field,guidance_actor_id,next._primaries!=null)
 		if secondary.is_empty():return fail(next.error)
 		next=secondary.encounter;contact_random=secondary.random_state
 		if secondary.has("scenery"):field=secondary.scenery

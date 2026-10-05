@@ -167,13 +167,15 @@ static func _projectile_state(gun: Dictionary) -> Dictionary:
 	if gun.has("mine"):return gun.mine.snapshot()
 	return gun.bomb.snapshot() if gun.has("bomb") else gun.projectiles.snapshot()
 
-func evaluate_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted,ordered_actor_ids: Variant,permitted: Variant=true,bodies: RefCounted=null,inventory: RefCounted=null) -> Dictionary:
+## combat_staged (here and below): the caller passes a detached combat that it
+## discards on any failure; hits then change it in place instead of a second fork.
+func evaluate_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted,ordered_actor_ids: Variant,permitted: Variant=true,bodies: RefCounted=null,inventory: RefCounted=null,combat_staged:=false) -> Dictionary:
 	error=""
 	var pulse_pending: bool=permitted==true and _guns.any(func(gun):return gun.has("bomb") and gun.bomb.snapshot().shot.get("phase")=="flying")
 	var targets:=_targets(combat,ordered_actor_ids,bodies if pulse_pending else null,inventory)
 	if not error.is_empty():return {}
 	if not Flight.rigid_pose(pose) or not permitted is bool or not selected_item_id is int or (selected_item_id!=-1 and not _guns.any(func(gun):return gun.equipment.item_id==selected_item_id)):return fail("Invalid selected secondary or firing context")
-	var next:=fork();var group: RefCounted=combat.fork_for_frame();var events:=[];var exhausted:=false
+	var next:=fork();var group: RefCounted=combat if combat_staged else combat.fork_for_frame();var events:=[];var exhausted:=false
 	var field: RefCounted=bodies
 	if permitted:
 		for gun in next._guns:
@@ -206,24 +208,24 @@ func evaluate_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted
 
 ## Live player input stages the pulse and every inventory view as one result.
 ## A rejected retained view discards the prospective launch and its combat hits.
-func evaluate_player_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted,ordered_actor_ids: Variant,player: RefCounted,equipment: RefCounted,primaries: RefCounted,targets: RefCounted,input_enabled: Variant=true,bodies: RefCounted=null) -> Dictionary:
+func evaluate_player_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted,ordered_actor_ids: Variant,player: RefCounted,equipment: RefCounted,primaries: RefCounted,targets: RefCounted,input_enabled: Variant=true,bodies: RefCounted=null,combat_staged:=false) -> Dictionary:
 	error=""
 	if not is_instance_of(player,load("res://src/simulation/opening_player_state.gd")) or not input_enabled is bool:return fail("Secondary firing requires an initialized player and input permission")
 	var state: Dictionary=player.snapshot()
 	if player.loadout()!=_loadout or not state.get("active") is bool or not state.get("vitals") is Dictionary or not Vitals.integer(state.vitals.get("hull")):return fail("Secondary firing lost its current player equipment or vitality")
-	var operation:=evaluate_trigger(pose,selected_item_id,combat,ordered_actor_ids,input_enabled and state.active and state.vitals.hull>0,bodies,targets if bodies!=null else null)
+	var operation:=evaluate_trigger(pose,selected_item_id,combat,ordered_actor_ids,input_enabled and state.active and state.vitals.hull>0,bodies,targets if bodies!=null else null,combat_staged)
 	if operation.is_empty():return {}
 	var retained: Dictionary=operation.owner.evaluate_retention(player,equipment,primaries,targets)
 	if retained.is_empty():return fail(operation.owner.error)
 	operation.merge(retained)
 	return operation
 
-func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Variant,observer_position: Variant=null,bodies: RefCounted=null,inventory: RefCounted=null,guidance_actor_id: int=-1) -> Dictionary:
+func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Variant,observer_position: Variant=null,bodies: RefCounted=null,inventory: RefCounted=null,guidance_actor_id: int=-1,combat_staged:=false) -> Dictionary:
 	error=""
 	var targets:=_targets(combat,ordered_actor_ids)
 	if not error.is_empty():return {}
 	if not Vitals.integer(delta_ms):return fail("Invalid secondary frame duration")
-	var next:=fork();var group: RefCounted=combat.fork_for_frame();var events:=[]
+	var next:=fork();var group: RefCounted=combat if combat_staged else combat.fork_for_frame();var events:=[]
 	var field: RefCounted=bodies
 	var self_hits:=[]
 	next._detonation_events.clear();next._camera_commands.clear()
