@@ -13,12 +13,14 @@ var _positions:=PackedVector3Array()
 var _velocities:=PackedVector3Array()
 var _sizes:=PackedInt32Array()
 var _weights:=PackedFloat32Array()
+## Particles still flying from their startup burst; the rest never move.
+var _drifting:=0
 ## MultiMesh rows kept between updates; sizes and colour never change.
 var _buffer:=PackedFloat32Array()
 
 func configure(placement_seed: int) -> void:
 	_seed=placement_seed;_random_state=0;_elapsed_ms=-1;_camera=Vector3.ZERO
-	_positions.clear();_velocities.clear();_sizes.clear();_weights.clear();_buffer.clear();error=""
+	_positions=PackedVector3Array();_velocities=PackedVector3Array();_sizes=PackedInt32Array();_weights=PackedFloat32Array();_buffer=PackedFloat32Array();_drifting=0;error=""
 
 func sample(camera_pose: Transform3D,elapsed_ms: int) -> RefCounted:
 	error=""
@@ -26,40 +28,53 @@ func sample(camera_pose: Transform3D,elapsed_ms: int) -> RefCounted:
 		error="Nearby particles require a finite camera and forward world time";return null
 	if _elapsed_ms==elapsed_ms and _camera==camera_pose.origin:return self
 	var next: RefCounted=get_script().new()
-	next._seed=_seed;next._elapsed_ms=elapsed_ms;next._camera=camera_pose.origin
-	next._positions=_positions.duplicate();next._velocities=_velocities.duplicate()
-	next._sizes=_sizes;next._weights.resize(COUNT);next._buffer=_buffer.duplicate()
+	next._seed=_seed;next._elapsed_ms=elapsed_ms;next._camera=camera_pose.origin;next._sizes=_sizes
 	var random:=RandomNumberGenerator.new()
 	if _elapsed_ms<0:
 		random.seed=_seed
+		next._weights.resize(COUNT)
 		for index in COUNT:
 			next._positions.append(camera_pose.origin+Vector3(random.randi_range(-10000,9999),random.randi_range(-10000,9999),random.randi_range(-10000,9999)))
 			next._velocities.append(camera_pose.basis.z*-30000.0+Vector3(random.randi_range(-5,4),random.randi_range(-5,4),random.randi_range(-5,4)))
 			next._sizes.append(random.randi_range(20,59))
-	else:
-		random.state=_random_state
-		var seconds:=float(elapsed_ms-_elapsed_ms)/1000.0
-		for index in COUNT:
-			var position: Vector3=next._positions[index]+next._velocities[index]*seconds
-			var distance_squared:=position.distance_squared_to(camera_pose.origin)
+			if next._velocities[index]!=Vector3.ZERO:next._drifting+=1
+		next._random_state=random.state;next._buffer=next._full_buffer()
+		return next
+	random.state=_random_state
+	var seconds:=float(elapsed_ms-_elapsed_ms)/1000.0
+	var origin:=camera_pose.origin;var limit:=RADIUS*RADIUS*1.01
+	# Dust at rest inside the radius keeps its row: the arrays stay shared with
+	# the parent view until the first particle moves, recycles or reappears.
+	var positions:=_positions;var velocities:=_velocities;var weights:=_weights;var buffer:=_buffer
+	var drifting:=_drifting;var owned:=false
+	for index in COUNT:
+		var position: Vector3=positions[index]
+		var velocity:=Vector3.ZERO
+		if drifting>0:
+			velocity=velocities[index]
+			if velocity!=Vector3.ZERO:position+=velocity*seconds
+		var distance_squared:=position.distance_squared_to(origin)
+		# Distance fading is evaluated by the shader; this keeps only the
+		# gate that hides startup and recycled particles for one update.
+		var weight:=1.0
+		if not distance_squared<=limit:
 			if not position.is_finite() or not is_finite(distance_squared):
 				error="Nearby particle motion exceeded finite coordinates";return null
-			# Distance fading is evaluated by the shader; this keeps only the
-			# gate that hides startup and recycled particles for one update.
-			next._weights[index]=1.0
-			if distance_squared>RADIUS*RADIUS*1.01:
-				var height:=random.randf_range(-1.0,1.0)
-				var azimuth:=random.randf_range(0.0,TAU)
-				var ring:=sqrt(maxf(0.0,1.0-height*height))
-				position=camera_pose.origin+Vector3(ring*cos(azimuth),height,ring*sin(azimuth))*RADIUS
-				next._velocities[index]=Vector3.ZERO
-				next._weights[index]=0.0
-			next._positions[index]=position
-			var offset:=index*16
-			next._buffer[offset+3]=position.x;next._buffer[offset+7]=position.y;next._buffer[offset+11]=position.z
-			next._buffer[offset+15]=next._weights[index]
-	next._random_state=random.state
-	if _elapsed_ms<0:next._buffer=next._full_buffer()
+			var height:=random.randf_range(-1.0,1.0)
+			var azimuth:=random.randf_range(0.0,TAU)
+			var ring:=sqrt(maxf(0.0,1.0-height*height))
+			position=origin+Vector3(ring*cos(azimuth),height,ring*sin(azimuth))*RADIUS
+			weight=0.0
+		elif velocity==Vector3.ZERO and weights[index]==1.0:continue
+		if not owned:
+			positions=positions.duplicate();velocities=velocities.duplicate();weights=weights.duplicate();buffer=buffer.duplicate();owned=true
+		if weight==0.0 and velocity!=Vector3.ZERO:velocities[index]=Vector3.ZERO;drifting-=1
+		positions[index]=position;weights[index]=weight
+		var offset:=index*16
+		buffer[offset+3]=position.x;buffer[offset+7]=position.y;buffer[offset+11]=position.z
+		buffer[offset+15]=weight
+	next._positions=positions;next._velocities=velocities;next._weights=weights;next._buffer=buffer
+	next._drifting=drifting;next._random_state=random.state
 	return next
 
 static func opacity(distance_squared: float) -> float:
