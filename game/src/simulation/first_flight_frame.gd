@@ -654,9 +654,16 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 
 func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paused:=false, viewport_size:=Vector2i.ZERO, drill_command:=Vector2.ZERO, primary_fire:=false, secondary_fire:=false, relative_mouse_capture:=false, current_music_id:=-1, strafe:=0.0, boost_requested:=false,cloak_requested:=false,turret_inverted:=false) -> RefCounted:
 	# Owners forked for this candidate frame may update in place inside it.
+	# The self-check also builds it on forks alone and compares the two.
+	var before: Dictionary=snapshot() if FrameTransaction.selfcheck else {}
+	var forked: RefCounted=_evaluate_frame(milliseconds,commands,throttle,paused,viewport_size,drill_command,primary_fire,secondary_fire,relative_mouse_capture,current_music_id,strafe,boost_requested,cloak_requested,turret_inverted) if FrameTransaction.selfcheck else null
+	var forked_error:=error
 	var token:=FrameTransaction.begin()
 	var result: RefCounted=_evaluate_frame(milliseconds,commands,throttle,paused,viewport_size,drill_command,primary_fire,secondary_fire,relative_mouse_capture,current_music_id,strafe,boost_requested,cloak_requested,turret_inverted)
 	FrameTransaction.end(token)
+	if FrameTransaction.selfcheck:
+		var found:=FrameTransaction.check(before,snapshot(),forked,forked_error,result,error)
+		if not found.is_empty():reject(found);return null
 	return result
 
 func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paused:=false, viewport_size:=Vector2i.ZERO, drill_command:=Vector2.ZERO, primary_fire:=false, secondary_fire:=false, relative_mouse_capture:=false, current_music_id:=-1, strafe:=0.0, boost_requested:=false,cloak_requested:=false,turret_inverted:=false) -> RefCounted:
