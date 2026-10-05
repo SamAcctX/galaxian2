@@ -1274,7 +1274,7 @@ func evaluate_blast_motion(events: Array) -> RefCounted:
 			var id: int=hit.actor_id
 			if id<0 or id>=_destruction.size():reject("Blast drift names an unavailable destruction owner");return null
 			if not _destruction[id] is Death or _destruction[id].snapshot().phase!="explosion":continue
-			if next==self:next=fork_for_frame(false)
+			if next==self and not FrameTransaction.owns(_txn):next=fork_for_frame(false)
 			next._destruction[id]=next._destruction[id].fork_for_frame()
 			if not next._destruction[id].apply_blast_strength(float(hit.motion_scalar)):reject(next._destruction[id].error);return null
 	return next
@@ -1336,7 +1336,7 @@ func retire_story_actors(first: int,end: int,point: Vector3) -> bool:
 ## controller and its combat with the result. A controller forked for the frame
 ## being built is updated in place and only adopts the incoming combat; that
 ## frame is discarded whole on failure.
-func frame_copy(incoming_combat: RefCounted) -> RefCounted:
+func frame_copy(incoming_combat: RefCounted=null) -> RefCounted:
 	if not FrameTransaction.owns(_txn):return fork_for_frame(false,incoming_combat)
 	if incoming_combat!=null and not is_same(incoming_combat,_combat):_combat=incoming_combat.fork_for_frame()
 	return self

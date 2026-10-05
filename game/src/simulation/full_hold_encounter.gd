@@ -319,8 +319,8 @@ func apply_sahi_view(stage: RefCounted) -> bool:
 	for key in ["base_content_id","binding_id","campaign_cursor"]:
 		if state.get(key)!=_identity.get(key):return reject("Sahi stage belongs to another encounter")
 	if not state.frame.cues.any(func(cue):return cue.kind=="clear_npc_weapon_targets"):return reject("Sahi has no new target-clear cue")
-	_control=_control.fork_for_frame(false,_combat.fork_for_frame());_control._clear_story_targets()
-	_combat=_control.combat_owner()
+	_control=_control.frame_copy(_combat);_control._clear_story_targets()
+	_combat=_control._combat
 	_weapons=_weapons.fork_for_frame();_weapons._clear_story_targets()
 	if _primaries!=null:_primaries=_primaries.fork_state();_primaries.discard_flying()
 	if _secondaries!=null:_secondaries=_secondaries.fork();_secondaries.discard_flying()
@@ -329,18 +329,18 @@ func apply_sahi_view(stage: RefCounted) -> bool:
 func apply_alioth_sequence(attack: RefCounted,random_state: Dictionary) -> bool:
 	error=""
 	if _identity.get("campaign_cursor")!=16:return reject("This encounter has no Alioth choreography")
-	var control: RefCounted=_control.fork_for_frame();control._combat=_combat.fork_for_frame()
+	var control: RefCounted=_control.frame_copy(_combat)
 	var candidate: Dictionary=control.evaluate_alioth_sequence(attack,_weapons,random_state)
 	if candidate.is_empty():return reject(control.error)
-	_control=candidate.controller;_combat=_control.combat_owner();_weapons=candidate.weapons
+	_control=candidate.controller;_combat=_control._combat;_weapons=candidate.weapons
 	return true
 
 func apply_convoy_capture(capture: RefCounted) -> bool:
 	error=""
 	if _identity.get("campaign_cursor")!=14:return reject("This encounter has no convoy choreography")
-	var control: RefCounted=_control.fork_for_frame()
+	var control: RefCounted=_control.frame_copy()
 	if not control.apply_convoy_capture(capture,_combat):return reject(control.error)
-	_control=control;_combat=control.combat_owner()
+	_control=control;_combat=control._combat
 	return true
 
 func kappa_radio_context(route: RefCounted) -> Dictionary:
@@ -376,7 +376,7 @@ func evaluate_kappa_sequence(rescue: RefCounted,radio: RefCounted) -> Dictionary
 	if not observation.snapshot().force_hostile_actor_ids.is_empty():
 		var control: RefCounted=_control.evaluate_kappa_sequence(observation,_combat)
 		if control==null:return fail(_control.error)
-		next._control=control;next._combat=control.combat_owner()
+		next._control=control;next._combat=control._combat
 	return {"encounter":next,"rescue":observation}
 
 func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, library: RefCounted, player: RefCounted, scenery: RefCounted, rank: Variant, difficulty: Variant, cursor: int, equipment: RefCounted=null, reputation: Dictionary={},story: Dictionary={}) -> bool:
@@ -548,7 +548,7 @@ func evaluate_cargo_recovery(tractor: RefCounted,cargo: RefCounted,delta_ms: int
 			if not next_cargo.retain_recovery(next_tractor):return fail(next_cargo.error)
 		# Retain one consistent combat branch in both encounter and controller.
 		if _control is TrainingControl:
-			next._control=_control.fork_for_frame(false,_combat)
+			next._control=_control.frame_copy(_combat)
 			next._combat=next._control._combat
 		else:
 			next._control=_control.fork_for_frame();next._combat=_combat.fork_for_frame()
@@ -582,7 +582,7 @@ func _evaluate_scenery_recovery(tractor: RefCounted,cargo: RefCounted,delta_ms: 
 			# The encounter and its controller observe one combat history, also
 			# when scenery is the source of the accepted recovery quantity.
 			if _control is TrainingControl:
-				next._control=_control.fork_for_frame(false,_combat);next._combat=next._control._combat
+				next._control=_control.frame_copy(_combat);next._combat=next._control._combat
 			else:
 				next._control=_control.fork_for_frame();next._combat=_combat.fork_for_frame()
 			if not next._combat.record_cargo_recovery(actor,frame.transfer.events):return fail(next._combat.error)
@@ -763,7 +763,7 @@ func _sample_scene_clock(world_ms: int,poll_ms: int) -> bool:
 func poll_bakka_result(radio_active: bool,periodic_poll_allowed: bool) -> Dictionary:
 	error=""
 	if _identity.get("campaign_cursor")!=36 or not _control is TrainingControl:return fail("This encounter has no B'akka result")
-	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	var control: RefCounted=_control.frame_copy(_combat)
 	var result: Dictionary=control.poll_bakka_result(radio_active,periodic_poll_allowed)
 	if result.is_empty():return fail(control.error)
 	_control=control
@@ -772,7 +772,7 @@ func poll_bakka_result(radio_active: bool,periodic_poll_allowed: bool) -> Dictio
 func acknowledge_bakka_result() -> bool:
 	error=""
 	if _identity.get("campaign_cursor")!=36 or not _control is TrainingControl:return reject("This encounter has no B'akka result")
-	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	var control: RefCounted=_control.frame_copy(_combat)
 	if not control.acknowledge_bakka_result():return reject(control.error)
 	_control=control
 	return true
@@ -780,7 +780,7 @@ func acknowledge_bakka_result() -> bool:
 func poll_mission_result(radio_active: bool,periodic_poll_allowed: bool) -> Dictionary:
 	error=""
 	if not _control is TrainingControl or _control._mission_runner==null:return fail("This encounter has no mission result")
-	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	var control: RefCounted=_control.frame_copy(_combat)
 	var result: Dictionary=control.poll_mission_result(radio_active,periodic_poll_allowed)
 	if result.is_empty():return fail(control.error)
 	_control=control
@@ -789,7 +789,7 @@ func poll_mission_result(radio_active: bool,periodic_poll_allowed: bool) -> Dict
 func acknowledge_mission_result() -> bool:
 	error=""
 	if not _control is TrainingControl or _control._mission_runner==null:return reject("This encounter has no mission result")
-	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	var control: RefCounted=_control.frame_copy(_combat)
 	if not control.acknowledge_mission_result():return reject(control.error)
 	_control=control
 	return true
@@ -820,7 +820,7 @@ func evaluate_contract_session(session: RefCounted,radio_active: bool=false,poll
 func apply_story_hostility(axis: int,value: int) -> bool:
 	error=""
 	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story hostility requires a contract encounter")
-	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	var control: RefCounted=_control.frame_copy(_combat)
 	if not control._combat.apply_story_hostility(axis,value):return reject(control._combat.error)
 	_control=control;_combat=control._combat
 	return true
@@ -831,7 +831,7 @@ func story_hostility_applied() -> bool:return _combat!=null and _combat.story_ho
 func set_truce(kinds: Array) -> bool:
 	error=""
 	if _control==null or _combat==null:return reject("A truce requires a combat encounter")
-	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	var control: RefCounted=_control.frame_copy(_combat)
 	control._combat.set_truce(kinds)
 	_control=control;_combat=control._combat
 	return true
@@ -858,7 +858,7 @@ func respawn_story_actors(first: int,end: int,center: Vector3,radius: float,burn
 func disarm_story_actors(first: int,end: int) -> bool:
 	error=""
 	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story disarm requires a contract encounter")
-	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	var control: RefCounted=_control.frame_copy(_combat)
 	if not control._combat.disarm_story_actors(first,end):return reject(control._combat.error)
 	_control=control;_combat=control._combat
 	return true
@@ -866,7 +866,7 @@ func disarm_story_actors(first: int,end: int) -> bool:
 func set_story_target(ids: Array,target: int) -> bool:
 	error=""
 	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story targets require a contract encounter")
-	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	var control: RefCounted=_control.frame_copy(_combat)
 	if not control._combat.set_story_target(ids,target):return reject(control._combat.error)
 	_control=control;_combat=control._combat
 	return true
@@ -874,7 +874,7 @@ func set_story_target(ids: Array,target: int) -> bool:
 func stand_down_story_actors(first: int,end: int) -> bool:
 	error=""
 	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story surrender requires a contract encounter")
-	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	var control: RefCounted=_control.frame_copy(_combat)
 	if not control._combat.stand_down_story_actors(first,end):return reject(control._combat.error)
 	_control=control;_combat=control._combat
 	return true
@@ -890,7 +890,7 @@ func retire_story_actors(first: int,end: int,point: Vector3) -> bool:
 func story_actor_action(first: int,end: int,action: String) -> bool:
 	error=""
 	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story actions require a contract encounter")
-	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	var control: RefCounted=_control.frame_copy(_combat)
 	if not control._combat.story_actor_action(first,end,action):return reject(control._combat.error)
 	_control=control;_combat=control._combat
 	return true
@@ -898,7 +898,7 @@ func story_actor_action(first: int,end: int,action: String) -> bool:
 func wake_story_actors(first: int,end: int) -> bool:
 	error=""
 	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story wake requires a contract encounter")
-	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	var control: RefCounted=_control.frame_copy(_combat)
 	if not control._combat.wake_story_actors(first,end):return reject(control._combat.error)
 	_control=control;_combat=control._combat
 	return true
@@ -907,7 +907,7 @@ func set_story_cloak(id: int,cloaked: bool) -> bool:
 	error=""
 	if _contract_context.is_empty() or _control==null or _combat==null:return reject("Story cloaking requires a contract encounter")
 	if bool(_combat.actor_snapshot(id).get("cloaked",false))==cloaked:return true
-	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	var control: RefCounted=_control.frame_copy(_combat)
 	if not control._combat.set_story_cloak(id,cloaked):return reject(control._combat.error)
 	_control=control;_combat=control._combat
 	return true
@@ -928,7 +928,7 @@ func selected40_controller_matches(controller: RefCounted) -> bool:
 func prepare_successor41_career(bindings: RefCounted,session: RefCounted,departure: RefCounted) -> RefCounted:
 	error=""
 	if _selected40_world==null or _contract_context.is_empty() or not is_instance_of(session,load("res://src/simulation/contract_session.gd")):reject("Successor41 requires its retained selected40 ledger");return null
-	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	var control: RefCounted=_control.frame_copy(_combat)
 	var result: RefCounted=session.transfer_selected40_portal(bindings,control,departure)
 	if result==null:reject(session.error)
 	return result
@@ -955,7 +955,7 @@ func acknowledge_campaign_visit(bindings: RefCounted,session: RefCounted,visit: 
 func acknowledge_campaign_result(bindings: RefCounted,session: RefCounted,visit: RefCounted,rescue: RefCounted) -> RefCounted:
 	error=""
 	if _contract_context.is_empty() or not is_instance_of(session,load("res://src/simulation/contract_session.gd")):reject("The rescue result has no retained campaign career");return null
-	var control: RefCounted=_control.fork_for_frame(false,_combat)
+	var control: RefCounted=_control.frame_copy(_combat)
 	var result: RefCounted=session.acknowledge_campaign_result(bindings,control,visit,rescue)
 	if result==null:reject(session.error)
 	return result
