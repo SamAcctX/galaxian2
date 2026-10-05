@@ -614,11 +614,13 @@ func evaluate_sentry_contacts(shooter_states: Array,targets: Array) -> Dictionar
 		if staged!=null:next._guns[id]=staged
 	return {"weapons":next,"hits":hits}
 
-func evaluate_combat_training_update(player: RefCounted, pose: Variant, combat: RefCounted, special_flight: Variant, delta_ms: Variant,wingmen: RefCounted=null) -> Dictionary:
+## combat_staged: the caller passes a detached combat that it discards on any
+## failure; contacts then change it in place instead of forking it again.
+func evaluate_combat_training_update(player: RefCounted, pose: Variant, combat: RefCounted, special_flight: Variant, delta_ms: Variant,wingmen: RefCounted=null,combat_staged:=false) -> Dictionary:
 	error=""
 	if _selected41_world!=null:return fail("Source41 mixed contacts require their explicit native owners")
 	if _selected40_world!=null:return fail("Selected40 mixed contacts require complete consequence and lifecycle owners")
-	return _evaluate_mixed_update(player,pose,combat,special_flight,delta_ms,wingmen)
+	return _evaluate_mixed_update(player,pose,combat,special_flight,delta_ms,wingmen,combat_staged)
 
 func companion_contact_packet() -> Dictionary:
 	if _selected40_world!=null or _selected41_world!=null or not (_training.has("contract_encounter") or _training.has("free_traffic")):return {}
@@ -649,7 +651,7 @@ func evaluate_selected40_update(player: RefCounted,pose: Variant,combat: RefCoun
 	if player.selected40_construction_owner()!=_selected40_world.npc_construction_owner() or player.snapshot().get("selected40_context")!=_selected40.context:return fail("Selected40 contacts differ from their retained native player")
 	return _evaluate_mixed_update(player,pose,combat,false,delta_ms)
 
-func _evaluate_mixed_update(player: RefCounted,pose: Variant,combat: RefCounted,special_flight: Variant,delta_ms: Variant,wingmen: RefCounted=null) -> Dictionary:
+func _evaluate_mixed_update(player: RefCounted,pose: Variant,combat: RefCounted,special_flight: Variant,delta_ms: Variant,wingmen: RefCounted=null,combat_staged:=false) -> Dictionary:
 	if _training.is_empty() or not player is Player or not combat is Combat or not Vitals.integer(delta_ms) or not special_flight is bool:return fail("Mixed contacts require the verified training weapon, player and combat owners")
 	var player_state: Dictionary=player.snapshot();var scene: Dictionary=combat.read_snapshot()
 	for key in _identity:
@@ -661,7 +663,7 @@ func _evaluate_mixed_update(player: RefCounted,pose: Variant,combat: RefCounted,
 			if scene.actors[id].get(key)!=_definitions[id][key]:return fail("Mixed contact population changed")
 	if _training.has("contract_encounter") and (scene.get("contract_encounter")!=_training.contract_encounter or player_state.get("contract_encounter")!=_training.contract_encounter):return fail("Mixed contacts belong to another accepted contract")
 	var shooters: Array=combat.shooter_states()
-	var next:=fork_for_frame();var staged_player: RefCounted=player.fork_for_frame();var staged_combat: RefCounted=combat.fork_for_frame()
+	var next:=fork_for_frame();var staged_player: RefCounted=player.fork_for_frame();var staged_combat: RefCounted=combat if combat_staged else combat.fork_for_frame()
 	var staged_wingmen: RefCounted
 	if wingmen!=null:
 		if not is_instance_of(wingmen,load("res://src/simulation/wingman_actors.gd")):return fail("Incoming contacts require the native paid cast")

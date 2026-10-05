@@ -989,7 +989,8 @@ func evaluate_weapons(player: RefCounted, pose: Transform3D, milliseconds: int, 
 	if next._primaries==null:
 		pass_result=next._weapons.evaluate_player_update(pilot,pose,next._combat.shooter_states(),false,milliseconds)
 	else:
-		pass_result=next._weapons.evaluate_selected40_update(pilot,pose,next._combat,milliseconds) if _selected40_world!=null else next._weapons.evaluate_combat_training_update(pilot,pose,next._combat,false,milliseconds,wingmen)
+		# The primary pass above returned a detached combat; this pass may keep it.
+		pass_result=next._weapons.evaluate_selected40_update(pilot,pose,next._combat,milliseconds) if _selected40_world!=null else next._weapons.evaluate_combat_training_update(pilot,pose,next._combat,false,milliseconds,wingmen,true)
 	if pass_result.is_empty():return fail(next._weapons.error)
 	if not next._impacts.apply_contacts(prior,next._primary_contacts,pass_result.actors):return fail(next._impacts.error)
 	if next._primaries!=null:next._combat=pass_result.combat
