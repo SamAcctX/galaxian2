@@ -986,14 +986,24 @@ func _unhandled_input(event: InputEvent) -> void:
 	if session is StationSession and not session.is_paused() and event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode if event.physical_keycode else event.keycode)==KEY_H and _hangar_button.visible:
 		equipment_action("open");get_viewport().set_input_as_handled();return
 	if (session is StationSession or (session is FirstFlightSession and session.dialogue_visible())) and not session.is_paused() and not supported:
-		var action:=""
+		var action:="";var accept:=false
 		if event is InputEventKey and event.pressed and not event.echo:
 			var key: int=event.physical_keycode if event.physical_keycode else event.keycode
-			if key in [KEY_ENTER,KEY_KP_ENTER,KEY_RIGHT]:action="next"
+			if key in [KEY_ENTER,KEY_KP_ENTER,KEY_RIGHT]:action="next";accept=key!=KEY_RIGHT
 			elif key==KEY_LEFT:action="previous"
 		elif event is InputEventJoypadButton and event.pressed:
-			if event.button_index==JOY_BUTTON_A:action="next"
+			if event.button_index==JOY_BUTTON_A:action="next";accept=true
 			elif event.button_index==JOY_BUTTON_B:action="previous"
+		if session is StationSession and station_shell.visible:
+			if station_shell.action_focused():
+				# Enter / A press the focused station action instead of departing,
+				# and B lets go of it so that A means "next" again.
+				if accept:return
+				if action=="previous" and event is InputEventJoypadButton:
+					get_viewport().gui_release_focus();get_viewport().set_input_as_handled();return
+			# Up or down gives a keyboard or controller its first focus.
+			elif get_viewport().gui_get_focus_owner()==null and (event.is_action_pressed("ui_down") or event.is_action_pressed("ui_up")):
+				if station_shell.focus_edge(event.is_action_pressed("ui_up")):get_viewport().set_input_as_handled();return
 		if not action.is_empty():
 			if session is FirstFlightSession:session.navigate(action);clear_input();present_session()
 			elif session.snapshot().phase in STATION_DEPARTURE_PHASES and action=="next":request_departure()

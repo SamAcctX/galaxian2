@@ -8,6 +8,8 @@ const NewsTicker=preload("res://src/presentation/news_ticker.gd")
 const INTERFACE_ATLAS="resources/data/textures/gof2_interface_ipad_1440.aei"
 const ACTION_LABELS={"map":176,"hangar":166,"lounge":387,"depart":406,"save":495,"load":494,"menu":170,"status":168,"missions":128}
 const ACTION_ORDER=["map","hangar","lounge","missions","status","depart","save","load","menu"]
+# Top of the side list to the bottom bar: where up or down first puts focus.
+const FOCUS_ORDER=["map","hangar","lounge","missions","status","save","load","menu","depart"]
 var error:=""
 var _identity:={}
 var _catalogues: RefCounted
@@ -162,6 +164,25 @@ func _request_action(action: String) -> void:
 	if not _active or not is_visible_in_tree() or _state.is_empty():return
 	var policy: Dictionary=_state.ui_actions.get(action,{"visible":false,"enabled":false})
 	if policy.visible and policy.enabled:action_requested.emit(action)
+
+## Nothing holds focus until Tab is pressed, and a controller has no Tab. Up or
+## down starts on the first or last enabled action; the engine's own focus
+## navigation moves on from there.
+func focus_edge(last: bool) -> bool:
+	var order:=FOCUS_ORDER.duplicate()
+	if last:order.reverse()
+	for action in order:
+		var button: Button=_actions[action]
+		if button.is_visible_in_tree() and not button.disabled:
+			button.grab_focus();return true
+	return false
+
+## An enabled action holds focus: accept is its press, which a button takes as
+## the key is released, and must not also mean "next".
+func action_focused() -> bool:
+	if not is_inside_tree():return false
+	var focused:=get_viewport().gui_get_focus_owner()
+	return focused is Button and not focused.disabled and focused.is_visible_in_tree() and focused in _actions.values()
 
 func set_active(value: bool) -> void:
 	_active=value
