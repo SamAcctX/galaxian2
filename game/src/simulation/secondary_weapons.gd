@@ -339,7 +339,7 @@ func sentry_targets() -> Array:
 ## A hostile hit on a placed sentry, staged on a fork like any other frame.
 func evaluate_sentry_damage(slot_index: int,sentry_id: int,amount: int) -> Dictionary:
 	error=""
-	var next:=fork()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork()
 	for gun in next._guns:
 		if gun.slot_index!=slot_index or not gun.has("sentry"):continue
 		var hit: Dictionary=gun.sentry.damage(sentry_id,amount)
@@ -597,14 +597,14 @@ func guided_camera_pose() -> Transform3D:
 ## Copy-on-write: the returned owner carries the new stick command.
 func steer_guided(command: Vector2) -> RefCounted:
 	error=""
-	var next:=fork()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork()
 	var gun: Dictionary=next._guided_gun()
 	if not gun.is_empty() and not gun.bomb.set_steering(command):reject(gun.bomb.error);return null
 	return next
 
 ## Script/phase removal: the live guided missile vanishes without a blast.
 func discard_guided() -> RefCounted:
-	var next:=fork()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork()
 	var gun: Dictionary=next._guided_gun()
 	if not gun.is_empty():gun.bomb.discard_flying()
 	return next
