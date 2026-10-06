@@ -640,9 +640,11 @@ func evaluate_kappa_sequence(rescue: RefCounted,combat: RefCounted) -> RefCounte
 	if not next._combat.apply_kappa_sequence(rescue):reject(next._combat.error);return null
 	return next
 
+## The guidance owners are shared with the accepted frame after a shallow fork;
+## clear the flag on copies, as every other story cue writes them.
 func _clear_story_targets() -> void:
-	for guidance in _guidance:
-		if guidance!=null:guidance._clear_story_targets()
+	for id in _guidance.size():
+		if _guidance[id]!=null:_guidance[id]=_guidance[id].fork_for_frame();_guidance[id]._clear_story_targets()
 
 func evaluate_alioth_sequence(owner: RefCounted,weapons: RefCounted,shared_random_state: Variant=null) -> Dictionary:
 	error=""
