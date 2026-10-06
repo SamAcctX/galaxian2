@@ -215,6 +215,14 @@ def main():
     output = args.output / ('Galaxian2-' + args.version + '-' + args.platform + extension)
     archive_package(folder, output, args.platform)
     print(str(output), hashlib.sha256(output.read_bytes()).hexdigest())
+    # The same export rendering on a separate thread: a two-line override next
+    # to the binary, which Godot reads at startup. The engine still marks that
+    # thread model experimental, so it ships as a second package, not the default.
+    if not args.platform.startswith('macos'):
+        (executable.parent / 'override.cfg').write_text('[rendering]\n\ndriver/threads/thread_model=2\n')
+        threaded = args.output / ('Galaxian2-' + args.version + '-' + args.platform + '-threaded-render' + extension)
+        archive_package(folder, threaded, args.platform)
+        print(str(threaded), hashlib.sha256(threaded.read_bytes()).hexdigest())
 
 
 if __name__ == '__main__':
