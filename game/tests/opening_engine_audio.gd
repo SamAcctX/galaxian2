@@ -88,7 +88,17 @@ func verify(content: String,pack: String):
 	check(audio.snapshot().active[Audio.PLAYER_ENGINE].position==moved.origin,"Retained arrival engine stopped following source player motion")
 	previous=audio.snapshot()
 	check(audio.prepare_frame(13,{"elapsed_ms":1200}).is_empty() and audio.snapshot()==previous,"Retained engine silently disappeared from its world")
-	audio.clear();audio.free();print("Verified retained engine: ",library.manifest.profile.edition)
+	audio.clear();audio.free()
+	# Ships 40, 42 and 43 select their own engine event instead of a handling band.
+	for pair in bindings.vehicle_response.audio.ship_overrides:
+		var own:=Audio.new();root.add_child(own)
+		var sound:=first.duplicate(true);sound.initial_source_id=int(pair[1]);sound.source_id=int(pair[1])
+		var world:={"base_content_id":sound.base_content_id,"binding_id":sound.binding_id,"elapsed_ms":0,"actor_events":[],"player_engine":sound}
+		var frame:=own.prepare_frame(0,{"elapsed_ms":0,"escape":{"frame":{"audio":[]}}},world) if own.configure(library,bindings) else {}
+		if not frame.is_empty():own.commit_frame(frame)
+		check(not frame.is_empty() and own.snapshot().engine_id==int(pair[1]),"Ship %d engine event %d was refused: %s"%[pair[0],pair[1],own.error])
+		own.clear();own.free()
+	print("Verified retained engine: ",library.manifest.profile.edition)
 func prepare(audio: Node,engine: RefCounted,revision: int,cues: Array) -> Dictionary:
 	var sound: Dictionary=engine.snapshot()
 	var world:={"base_content_id":sound.base_content_id,"binding_id":sound.binding_id,"elapsed_ms":sound.elapsed_ms,"actor_events":[],"player_engine":sound}
