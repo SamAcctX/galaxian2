@@ -30,7 +30,7 @@ func configure(bindings: RefCounted, library: RefCounted, world: Dictionary) -> 
 	for entry in inputs:
 		var weapon: Dictionary=entry.projectiles.get("weapon",{})
 		if not Numbers.integer(weapon.get("item_id"),0,2147483647) or not Numbers.integer(weapon.get("projectile_capacity"),1,256):return reject("Invalid impact weapon")
-		var mapping:=Visuals.model_mapping(bindings,weapon,entry.key,true)
+		var mapping:=Visuals.model_mapping(bindings,weapon,entry.key,true,world.get("kappa_rescue")==true)
 		if mapping.is_empty() or seen.has(entry.key):return reject("Unsupported or duplicate ordinary impact weapon")
 		seen[entry.key]=true
 		for key in ["base_content_id","binding_id"]:

@@ -450,7 +450,7 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, library: 
 	var targets:=inventory.configure_ordinary_void(bindings,catalogues,player,scenery,story) if story.get("ordinary_void",false) else inventory._configure_story(bindings,catalogues,player,scenery,story) if not story.is_empty() else inventory.configure_kappa_rescue(bindings,catalogues,player,scenery) if rescue else (inventory.configure_local_travel(bindings,catalogues,player,scenery,cursor) if cursor!=7 else inventory.configure_combat_training(bindings,catalogues,player,scenery))
 	if not targets:return reject(inventory.error)
 	var identity:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":cursor}
-	if not _accept_configuration(bindings,library,identity,control,control.combat_owner(),weapons,resources,primaries,inventory,scenery.presentation_identity()):return false
+	if not _accept_configuration(bindings,library,identity,control,control.combat_owner(),weapons,resources,primaries,inventory,scenery.presentation_identity(),rescue):return false
 	_difficulty=float(difficulty)
 	if player.loadout().slots.any(func(slot):return slot!=null and slot.category==1):
 		if not configure_secondaries(bindings,catalogues,player,equipment,library):return false
@@ -460,8 +460,10 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, library: 
 			if actor.population_group in ["freighter","capital"]:_freighter_assemblies[int(actor.actor_id)]=actor.assembly.duplicate(true)
 	return true
 
-func _accept_configuration(bindings: RefCounted, library: RefCounted, identity: Dictionary, control: RefCounted, combat: RefCounted, weapons: RefCounted, resources: RefCounted, primaries: RefCounted=null, inventory: RefCounted=null, scenery_identity: RefCounted=null) -> bool:
+func _accept_configuration(bindings: RefCounted, library: RefCounted, identity: Dictionary, control: RefCounted, combat: RefCounted, weapons: RefCounted, resources: RefCounted, primaries: RefCounted=null, inventory: RefCounted=null, scenery_identity: RefCounted=null, rescue:=false) -> bool:
 	var initial:=identity.duplicate();initial.merge({"elapsed_ms":0,"weapons":weapons.snapshot()})
+	# Cursor 21 also has ordinary departures: only the rescue cast's guns are its own.
+	if rescue:initial.kappa_rescue=true
 	if primaries!=null:initial.primaries=primaries.snapshot()
 	var projectiles:=Projectiles.new();var impacts:=Impacts.new()
 	if not projectiles.configure(bindings,library,initial):return reject(projectiles.error)

@@ -35,7 +35,7 @@ func configure(bindings: RefCounted, library: RefCounted, world: Dictionary) -> 
 	for entry in inputs:
 		var weapon: Dictionary=entry.projectiles.get("weapon",{})
 		if not Numbers.integer(weapon.get("item_id"),0,2147483647) or not Numbers.integer(weapon.get("projectile_capacity"),1,256):return reject("Invalid projectile weapon declaration")
-		var mapping:=model_mapping(bindings,weapon,entry.key,false)
+		var mapping:=model_mapping(bindings,weapon,entry.key,false,world.get("kappa_rescue")==true)
 		if mapping.is_empty() or seen.has(entry.key):return reject("Unsupported or duplicate ordinary projectile weapon")
 		seen[entry.key]=true
 		for key in ["base_content_id","binding_id"]:
@@ -72,7 +72,7 @@ func fork_for_frame() -> RefCounted:
 	var next: RefCounted=get_script().new();next._state=_state.duplicate(true);next._identity=_identity;next._max_ms=_max_ms;return next
 func reject(message: String) -> bool:error=message;return false
 
-static func model_mapping(bindings: RefCounted, weapon: Dictionary, key: String, impact: bool) -> Dictionary:
+static func model_mapping(bindings: RefCounted, weapon: Dictionary, key: String, impact: bool, rescue:=false) -> Dictionary:
 	# A Most Wanted criminal's own gun: its item's shot and impact models,
 	# whatever item the faction or story weapons use.
 	if key.begins_with("npc:") and weapon.get("own_gun",false) and weapon.get("nonplayer_source")==true and ContractWorld.available(bindings):
@@ -140,7 +140,9 @@ static func model_mapping(bindings: RefCounted, weapon: Dictionary, key: String,
 		var model:=int(void_weapon.impact_model_id if impact else void_weapon.model_resource_id) if id<7 else (ContractWorld.impact_model(bindings,0) if impact else int(bindings.early_contracts.ship_combat.weapons.factions[0].model_resource_id))
 		var path: String=bindings.resolve(model,"mesh")
 		return {} if path.is_empty() else {"id":model,"resource":path,"captured_up":false}
-	var kappa: bool=cursor==21
+	# The Kappa rescue cast fires one faction gun. Ordinary cursor-21 departures
+	# keep every faction's own gun, like the other ordinary cursors.
+	var kappa: bool=rescue and cursor==21
 	if kappa and not load("res://src/content/kappa_lifecycle_definitions.gd").available(bindings):return {}
 	var post: bool=cursor in FlightStages.POST_SAHI
 	if post and (not Post.available(bindings) or not Post.portal_available(bindings.mido_travel,int(cursor))):return {}

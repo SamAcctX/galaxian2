@@ -15,6 +15,7 @@ const Radio=preload("res://src/simulation/radio_sequence.gd")
 const RadioResources=preload("res://src/presentation/opening_radio_resources.gd")
 const Rescue=preload("res://src/simulation/kappa_rescue.gd")
 const Bombs=preload("res://src/simulation/emp_bombs.gd")
+const Models=preload("res://src/simulation/projectile_visual_state.gd")
 var checks:=0
 var failures:=0
 
@@ -33,6 +34,7 @@ func verify(content: String,pack: String) -> void:
 		check(not ActorControl.new().configure_kappa_rescue(bindings,cat,null,Reputation.initial(bindings)),"Legacy pack enabled Kappa control")
 		check(not Resources.new().configure_kappa_rescue(library,bindings,null),"Legacy pack enabled Kappa destruction")
 		return
+	verify_projectile_models(bindings)
 	var owner:=construction(bindings,cat,0.5)
 	if owner==null:return
 	var packet: Dictionary=owner.snapshot()
@@ -203,6 +205,20 @@ func verify_control(bindings: RefCounted,cat: RefCounted,owner: RefCounted,resou
 	if control.advance(100,target).is_empty():check(false,control.error);return
 	check(control.snapshot().accounting==counters,"Retired target counted its death twice")
 	print("Kappa disabled firing requests: ",firing,"; target retirement: ",times,"ms")
+
+# Cursor 21 also has ordinary departures, whose traffic carries every faction's
+# gun at any actor id. Only the rescue cast is limited to faction 0's gun.
+func verify_projectile_models(bindings: RefCounted) -> void:
+	var rules: Dictionary=bindings.early_contracts.ship_combat.weapons
+	var count: int=int(bindings.mido_travel.kappa_rescue.population.actor_count)
+	for row in rules.factions:
+		var weapon:={"campaign_cursor":21,"item_id":int(row.item_id),"category":0,"kind":int(row.kind),"nonplayer_source":true,"projectile_capacity":int(rules.capacity)}
+		for key in ["npc:2","npc:%d"%count]:
+			var own: bool=key=="npc:2" and int(row.item_id)==int(rules.factions[0].item_id)
+			for impact in [false,true]:
+				check(not Models.model_mapping(bindings,weapon,key,impact).is_empty(),"An ordinary cursor-21 departure refused faction gun %d on %s"%[int(row.item_id),key])
+				check(Models.model_mapping(bindings,weapon,key,impact,true).is_empty()!=own,"The Kappa rescue cast accepted a foreign gun or lost its own")
+			check(Models.model_mapping(bindings,weapon,key,false).get("id")==int(row.model_resource_id),"An ordinary cursor-21 gun lost its faction model")
 
 func check(ok: bool,message: String) -> void:
 	checks+=1
