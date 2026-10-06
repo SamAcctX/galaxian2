@@ -10,6 +10,10 @@ const Group=preload("res://src/simulation/opening_combat_group.gd")
 const FreeLife=preload("res://src/content/free_lifecycle_definitions.gd")
 const Archive=preload("res://src/simulation/opening_station_archive.gd")
 const LocalRadio=preload("res://src/simulation/local_traffic_radio.gd")
+const SaveFile=preload("res://src/simulation/station_save_file.gd")
+const StationArchive=preload("res://src/simulation/station_archive.gd")
+const Construction=preload("res://src/simulation/first_flight_construction.gd")
+const Frame=preload("res://src/simulation/first_flight_frame.gd")
 var library=preload("res://src/content/library.gd").new()
 var bindings=preload("res://src/content/resource_bindings.gd").new()
 var catalogues=preload("res://src/content/catalogues.gd").new()
@@ -51,6 +55,7 @@ func run() -> void:
 		verify_archive()
 		verify_text()
 		verify_radio()
+		if not OS.get_environment("GOF2_SOURCE_SAVE").is_empty():verify_flight()
 	print("Loma toll: %d checks; %d failures"%[checks,failures])
 	quit(1 if failures else 0)
 
@@ -159,6 +164,25 @@ func verify_radio() -> void:
 	check(seen==["started","display","finished"],"The welcome did not play through: %s"%[seen])
 	check(voices==[1436],"The welcome voice did not start once: %s"%[voices])
 	audio.free()
+
+## Optional earned station save in Loma (GOF2_SOURCE_SAVE): the welcome is
+## chosen by the departure's seeds, whatever the engine's global RNG holds.
+func verify_flight() -> void:
+	var file:=SaveFile.new()
+	var document:=file.load_document(OS.get_environment("GOF2_SOURCE_SAVE"),bindings,catalogues,library)
+	if document.is_empty():check(false,file.error);return
+	var bodies:=preload("res://src/content/scenery_body_resources.gd").new();var effects:=preload("res://src/content/scenery_effect_resources.gd").new()
+	if not bodies.configure(library,bindings) or not effects.configure(library,bindings):check(false,bodies.error+effects.error);return
+	var heard:=[]
+	for global_seed in [1,2,3,4,5,6]:
+		seed(global_seed)
+		var archive:=StationArchive.new();var station: RefCounted=archive.restore(bindings,catalogues,library,document)
+		if station==null:check(false,archive.error);return
+		var construction:=Construction.new();var world:=Frame.new()
+		if not construction.prepare_free(bindings,catalogues,station,4096,1789100000,true,bodies,effects) or not world.configure(bindings,catalogues,library,construction,"E",0.5):check(false,construction.error+world.error);return
+		heard.append(world._radio._scripted.map(func(message):return message.text_id))
+	check(heard[0].size()==1 and heard[0][0] in Toll.WELCOME,"The Loma departure queued no welcome: %s"%[heard[0]])
+	check(heard.all(func(lines):return lines==heard[0]),"The Loma welcome changed with the engine's global RNG: %s"%[heard])
 
 func check(value: bool,message: String) -> void:
 	checks+=1

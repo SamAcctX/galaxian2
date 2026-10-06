@@ -634,7 +634,8 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 		var status:=TollRules.status(career.get("progress",{}))
 		if TollRules.active(int(entry.location.system_id)):
 			var toll:=LomaToll.new()
-			var line:=toll.start(status,randi())
+			# Seeded by the departure like the rest of the flight, not by the engine's global RNG.
+			var line:=toll.start(status,int(entry.get("unix_seconds",0)))
 			if toll.holds_fire() and not encounter.set_truce([TollRules.PIRATE_KIND]):return reject(encounter.error)
 			if line>=0 and not _radio.queue_scripted(line):return reject(_radio.error)
 			_toll=toll
