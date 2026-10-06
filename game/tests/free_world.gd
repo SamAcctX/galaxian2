@@ -66,6 +66,10 @@ func verify(args: PackedStringArray) -> void:
 	check(not Scenery.new().configure_free(bindings,cat,equipment,FreePopulation.CONTEXT,CONDITIONS,2),"Foreign equipment identity entered ordinary scenery")
 	bindings.binding_id=saved_id
 	check(equipment.snapshot()==retained,"Rejected ordinary initialization changed owned equipment")
+	# Source turrets attach to NPC hulls 45/51 only; the player's own hull departs.
+	for hull in [45,51]:
+		var hosted:=World.new()
+		check(hosted.configure_free_factory(bindings,cat,hull,[81,86],FreePopulation.CONTEXT,2,CONDITIONS) and not hosted.generate({"state":12345}).is_empty(),"Ordinary departure refused player hull %d: %s"%[hull,hosted.error])
 
 func verify_free_cache(bindings: RefCounted,cat: RefCounted,equipment: RefCounted,construction: RefCounted,player: RefCounted) -> void:
 	check(not Player.new().configure_free(bindings,cat,load("res://src/simulation/station_equipment.gd").new(),construction),"Uninitialized equipment entered ordinary player state")

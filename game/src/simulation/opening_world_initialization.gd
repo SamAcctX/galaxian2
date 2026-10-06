@@ -151,7 +151,7 @@ func configure_void_factory(bindings: RefCounted,catalogues: RefCounted,player_s
 		"faction_weapon_effects":{kind:{"items":[0,int(weapon.item_id)],"resources":[ordinary,int(weapon.impact_model_id)]}}}
 	for key in ["weapon_effect_capacity","weapon_effect_random_bound","zero_means_flipped"]:data[key]=shared[key]
 	var equipment: Array=equipment_ids.map(func(id):return {"item_id":id})
-	if not _configure(bindings,catalogues,data,construction,[player_ship_id],equipment,true):return false
+	if not _configure(bindings,catalogues,data,construction,[],equipment,true):return false
 	_identity.merge({"campaign_cursor":int(context.campaign_cursor),"station_id":-1,"system_id":-1,
 		"entry_conditions":entry_conditions.duplicate(true),"void_context":context.duplicate(true)})
 	return true
@@ -169,7 +169,7 @@ func _configure_free(bindings: RefCounted,catalogues: RefCounted,construction: R
 	if not context.side_missions_empty:data.weapon_groups.append("delivery_pirate")
 	if not _bind_faction_weapon_effects(bindings,data):return false
 	var equipment: Array=equipment_ids.map(func(id):return {"item_id":id})
-	if not _configure(bindings,catalogues,data,construction,[player_ship_id],equipment):return false
+	if not _configure(bindings,catalogues,data,construction,[],equipment):return false
 	_identity.merge({"campaign_cursor":int(context.campaign_cursor),"station_id":int(context.station_id),"entry_conditions":entry_conditions.duplicate(true)})
 	return true
 
@@ -252,7 +252,7 @@ func configure_dekato(bindings: RefCounted,catalogues: RefCounted,seed: Dictiona
 	if not _bind_faction_weapon_effects(bindings,data):return false
 	var hulls: Dictionary=bindings.early_contracts.encounter_construction.hulls
 	var source: Dictionary=Construction.Dekato.declarations(bindings).population
-	var candidates: Array=[int(seed.ship_id),int(source.freighter_hull_catalogue_id)]
+	var candidates: Array=[int(source.freighter_hull_catalogue_id)]
 	for id in hulls.factions.size():
 		if int(hulls.factions[id])==int(source.escort_actor_kind) and not (id<=int(hulls.mask_limit) and (int(hulls.excluded_mask)&(1<<id))!=0):candidates.append(id)
 	var equipment: Array=seed.equipment_ids.map(func(id):return {"item_id":id})
@@ -273,7 +273,7 @@ func configure_selected40(bindings: RefCounted,catalogues: RefCounted,seed: Dict
 	for armory in data.faction_weapon_effects.values():
 		for id in armory.resources:
 			if bindings.resolve(int(id),"mesh").is_empty():return reject(bindings.error)
-	var hulls: Array=[int(seed.ship_id),13,8]
+	var hulls: Array=[13,8]
 	var selector: Dictionary=bindings.early_contracts.encounter_construction.hulls
 	for id in selector.factions.size():
 		if int(selector.factions[id])==0 and not (id<=int(selector.mask_limit) and (int(selector.excluded_mask)&(1<<id))!=0):hulls.append(id)
@@ -298,7 +298,7 @@ func configure_selected41(bindings: RefCounted,catalogues: RefCounted,entry: Ref
 		"faction_weapon_effects":{9:{"items":[0,int(weapon.item_id)],"resources":[ordinary,int(weapon.impact_model_id)]}}}
 	for key in ["weapon_effect_capacity","weapon_effect_random_bound","zero_means_flipped"]:data[key]=shared[key]
 	var equipment: Array=seed.equipment_ids.map(func(id):return {"item_id":id})
-	if not _configure(bindings,catalogues,data,construction,[int(seed.ship_id),13,8],equipment,true):return false
+	if not _configure(bindings,catalogues,data,construction,[13,8],equipment,true):return false
 	_identity.merge({"campaign_cursor":41,"station_id":-1,"system_id":-1,"selected41_entry":entry.snapshot(),"selected41_context":entry.snapshot().context,
 		"entry_conditions":{"companions_empty":true,"location_match":true,"special_placement":true}})
 	return true
@@ -344,6 +344,8 @@ func _configure(bindings: RefCounted, catalogues: RefCounted, data: Dictionary, 
 		if equipment_type==33 or equipment_type==39:continue
 		if shared.absent_equipment_types.any(func(value): return int(value)==equipment_type):
 			return reject("Initial equipment does not exclude the optional population")
+	# Source turrets are hosted only by NPC hulls 45/51 (the level ship list);
+	# the player's own ship is not in that list, so callers pass NPC hulls only.
 	for hull in hulls:
 		if shared.absent_hull_ids.any(func(value): return int(value)==hull):
 			return reject("Initial hull does not exclude attached actors")
