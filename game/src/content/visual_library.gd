@@ -136,9 +136,15 @@ func load_images(names: Array) -> Dictionary:
 	return images
 
 ## One derivative from disk to pixels, with the checks of load_image().
+## Worker threads run this and decode_pixels() side by side on their first call,
+## so every operator in them has builtin-typed operands: Godot 4.7 compiles an
+## operator on an object, an untyped value or an int / or % to a generic one that
+## caches its evaluator in the bytecode on first use without synchronization,
+## and a second thread can call the evaluator before it is stored
+## (godotengine/godot#124010).
 static func read_pixels(path: String, bytes: int, sha256: String) -> Dictionary:
 	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null or file.get_length() != bytes:
+	if not is_instance_valid(file) or file.get_length() != bytes:
 		return {"error": "Texture derivative is missing or changed"}
 	var data := file.get_buffer(bytes)
 	var hash := HashingContext.new()
@@ -199,8 +205,8 @@ static func decode_pixels(data: PackedByteArray) -> Dictionary:
 		if i + 1 < levels and w == 1 and h == 1:
 			return {"error": "Too many native mip levels"}
 		if i + 1 < levels:
-			w = maxi(1, w / 2)
-			h = maxi(1, h / 2)
+			w = maxi(1, w >> 1)
+			h = maxi(1, h >> 1)
 	if size != expected or size > MAX_BYTES or (levels > 1 and (w != 1 or h != 1)):
 		return {"error": "Invalid native mip payload extent"}
 	var pixels := data.slice(24).decompress(size, FileAccess.COMPRESSION_DEFLATE)
