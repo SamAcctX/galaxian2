@@ -65,8 +65,17 @@ func verify_source(content: String, pack: String, texture_pack: String) -> void:
 			"factors": copy.squared_distance_factors[0]=NAN
 			"provenance": copy.provenance.body.offset=copy.provenance.fill.offset
 		check(not Definitions.validate(copy,10000000,"x86_64" if mac else "armv7").is_empty(),"Invalid LOD definition accepted: "+invalid)
-	for id in [13,14,15,60 if mac else 63]:
-		check(bindings.resolve_ship_detail(id).is_empty(),"Unsupported special/zero-ID LOD was invented")
+	for id in [13,14,15]:
+		check(bindings.resolve_ship_detail(id).is_empty(),"Unsupported special LOD was invented")
+	# An unfilled (zero) source row: the hull keeps only its full model.
+	var unfilled_id := 60 if mac else 63
+	var unfilled := bindings.resolve_ship_detail(unfilled_id)
+	check(unfilled.get("levels",[]).size()==1 and unfilled.levels[0].resource_id==bindings.resolve_ship_layers(unfilled_id).get("resource_id"),"Unfilled LOD row invented a replacement mesh or refused the full model")
+	check(detail.configure(data,unfilled_id) and detail.select(second+1024,1).level==0,"Unfilled LOD row selected a reduced level")
+	var raw := data.duplicate(true);raw.body_resource_ids[5]=[0,0];raw.child_resource_ids[5]=[0,0]
+	var normal := Definitions.filled(raw)
+	check(normal.body_resource_ids[5].all(func(id):return int(id)==65535) and normal.child_resource_ids[5].all(func(id):return int(id)==65535) and normal.body_resource_ids[4]==raw.body_resource_ids[4],"Unfilled LOD row was not read as having no reduced meshes")
+	check(Definitions.parameters(normal),"Filled LOD table no longer passes its own parameters")
 	var viewport := SubViewport.new();viewport.size=Vector2i(640,480);viewport.own_world_3d=true
 	viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS;root.add_child(viewport)
 	var camera := Camera3D.new();camera.position=Vector3(0,200,1800);camera.look_at_from_position(camera.position,Vector3.ZERO);camera.near=1;camera.far=10000;camera.current=true;viewport.add_child(camera)

@@ -641,7 +641,7 @@ func open(directory: String, base: Dictionary,library: RefCounted=null) -> bool:
 	if version>=27:
 		var lod_error := ShipLOD.validate(body.get("ship_lod"), int(header.source_executable_bytes), architecture, int(layout.ships))
 		if not lod_error.is_empty(): return fail(lod_error)
-		staged_lod = body.ship_lod
+		staged_lod = ShipLOD.filled(body.ship_lod)
 	var staged_refresh := {}
 	if version>=28:
 		var refresh_error := LodRefresh.validate(body.get("lod_refresh"), int(header.source_executable_bytes), architecture)
