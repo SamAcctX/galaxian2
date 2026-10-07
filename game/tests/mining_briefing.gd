@@ -114,6 +114,13 @@ func verify(args: Array):
 		for i in 5:
 			var state:=briefing.snapshot()
 			check(panel.present(state),panel.error)
+			if language=="gb" and i==1:
+				for mobile in [false,true]:
+					panel.set_mobile_layout(mobile)
+					for f in 3:await process_frame
+					var back: StyleBox=panel._previous.get_theme_stylebox("normal")
+					check(back is StyleBoxTexture and panel._previous.size.x>=back.texture_margin_left+back.texture_margin_right,"Back button crops its arrow artwork: %s"%str(panel._previous.size))
+				panel.set_mobile_layout(false)
 			check("#KEY_" not in state.dialogue.desktop_text and not state.dialogue.text.is_empty(),"Unresolved localized mining instruction")
 			if language in ["gb","de"]:
 				check(speech.present(i),speech.error)

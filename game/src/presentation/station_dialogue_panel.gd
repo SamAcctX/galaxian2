@@ -250,7 +250,11 @@ func _relayout() -> void:
 	_name.add_theme_font_size_override("font_size",(20 if _mobile else 14) if _art!=null else (24 if narrow else int(32*scale)))
 	_portrait.custom_minimum_size=Vector2(104,130) if narrow else Vector2(160*scale,180*scale)
 	_body.custom_minimum_size.y=32*scale
-	for button in [_next,_previous]:button.custom_minimum_size=Vector2(44,44) if _mobile else Vector2(0,30 if _art!=null else 0)
+	for button in [_next,_previous]:
+		button.custom_minimum_size=Vector2(44,44) if _mobile else Vector2(0,30 if _art!=null else 0)
+		# A short label ("‹", "No") must not crop the artwork's arrow and end cap.
+		var style: StyleBox=button.get_theme_stylebox("normal")
+		if style is StyleBoxTexture:button.custom_minimum_size.x=maxf(button.custom_minimum_size.x,style.texture_margin_left+style.texture_margin_right)
 	# Child font/touch-target changes invalidate the container's minimum size.
 	# Apply the requested compact size after them and again when that minimum
 	# settles. Position from the actual panel size, including translated labels.
