@@ -104,6 +104,13 @@ func commit_frame(prepared: Dictionary) -> void:
 	flares.size=Vector2(prepared.viewport_size);flares.apply_frame(prepared.composition,prepared.color)
 	frame=prepared.duplicate(true)
 
+## Action Freeze: draw the committed sun and its screen flares for a moved
+## camera. The retained intensity stays the flight's.
+func face_camera(pose: Transform3D) -> void:
+	if frame.is_empty():return
+	var kept:=frame;var prepared:=prepare_frame({"pose":pose},frame.viewport_size,frame.previous_intensity)
+	if not prepared.has("error"):commit_frame(prepared);frame=kept
+
 func clear() -> void:
 	for child in get_children():child.free()
 	selection.clear();frame.clear();_image_sizes.clear();_owner=null;primary=null;secondary=null;flares=null;error=""

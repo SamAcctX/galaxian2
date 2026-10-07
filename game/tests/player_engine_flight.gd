@@ -8,6 +8,7 @@ const Construction=preload("res://src/simulation/first_flight_construction.gd")
 const Fixture=preload("res://tests/full_hold_control.gd")
 const DeathFixture=preload("res://tests/player_death_flight.gd")
 const Capture=preload("res://src/simulation/convoy_capture.gd")
+const Pause=preload("res://src/presentation/flight_pause_panel.gd")
 const Library=preload("res://src/content/library.gd")
 const Bindings=preload("res://src/content/resource_bindings.gd")
 const Catalogues=preload("res://src/content/catalogues.gd")
@@ -192,6 +193,7 @@ func render(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cat: Re
 	check(not scene.present(first,false,0,wrong) and scene.engine_particles.frame.counts==accepted.counts and scene.engine_particles.frame.elapsed_ms==accepted.elapsed_ms,"Stale exhaust packet changed the accepted scene")
 	var foreign: RefCounted=first.fork_for_frame();foreign._engine_particles._presentation_identity=RefCounted.new()
 	check(not scene.present(foreign) and scene.engine_particles.frame.counts==accepted.counts,"Another exhaust generation changed the accepted scene")
+	verify_freeze(scene)
 	if DisplayServer.get_name()!="headless":
 		var visible: Image=await rendered(viewport)
 		var hidden: RefCounted=first.fork_for_frame();hidden._engine_particles.set_player_hidden(true)
@@ -209,6 +211,22 @@ func render(library: RefCounted,bindings: RefCounted,visuals: RefCounted,cat: Re
 	var material: WeakRef=weakref(scene.engine_particles.items[0].node.material_override)
 	scene.clear();check(scene.engine_particles==null and material.get_ref()==null,"Scene clear retained exhaust materials")
 	viewport.free()
+
+## Action Freeze orbits the camera over the paused flight: exhaust sprites and
+## sun flares follow it, and leaving restores the flight's frame.
+func verify_freeze(scene: Node) -> void:
+	var pause:=Pause.new();root.add_child(pause)
+	var flight: Transform3D=scene.camera.global_transform;var sun: Dictionary=scene.sun.frame.duplicate(true)
+	var sun_pose: Transform3D=scene.sun.primary.global_transform;var toward: Vector3=(sun_pose.origin-flight.origin).normalized()
+	check(pause.begin_freeze(scene.camera,scene.geometry.player.global_position),"Action Freeze did not start")
+	for away in [false,true]:
+		var direction: Vector3=toward if away else -toward
+		pause.orbit(atan2(direction.x,direction.z)-pause._yaw,asin(direction.y)-pause._pitch)
+		check(scene.engine_particles.global_transform.is_equal_approx(scene.camera.global_transform),"Action Freeze left exhaust facing the flight camera")
+		check(scene.sun.flares.composition.sprites.is_empty()==away,"Action Freeze left sun flares at the flight camera's view (away=%s)"%away)
+	check(scene.sun.frame==sun,"Action Freeze changed the flight's retained sun intensity")
+	pause.clear();pause.free()
+	check(scene.engine_particles.global_transform==flight and scene.sun.primary.global_transform==sun_pose,"Leaving Action Freeze kept the orbit's sprites")
 
 func rendered(viewport: SubViewport) -> Image:
 	await process_frame;await process_frame;await RenderingServer.frame_post_draw
