@@ -15,6 +15,11 @@ Get the **[latest release](https://github.com/TheWWWorm/galaxian2/releases/lates
 The whole game is playable: the main campaign and both add-ons, Valkyrie and
 Supernova, plus the Supernova Challenge.
 
+Version 1.0.5 reduces flight processing and loading costs, restores keyboard
+and controller focus inside Yes/No questions, and fixes departures with several
+expansion ships. Windows and Linux also have optional experimental
+`-threaded-render` downloads; the plain packages remain the default.
+
 | Download | Platform | Launch |
 | --- | --- | --- |
 | Windows x64 | Windows 10/11, Intel or AMD 64-bit | Extract the ZIP, then open `Galaxian2.exe` |
