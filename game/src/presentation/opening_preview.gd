@@ -1566,6 +1566,10 @@ func enter_first_flight(now_microseconds: int, environment_seconds: Variant=null
 	var cat:=Catalogues.new()
 	if not cat.open(library) or session.prepare_departure(bindings,cat)!=_launch_packet:return transition_error("The prepared departure no longer matches this station")
 	if not _autosave_station():cancel_departure();refresh_render_mode();return false
+	# The autosave banks the play time spent on the question into the career,
+	# which a contract departure compares with its packet.
+	_launch_packet=session.prepare_departure(bindings,cat)
+	if _launch_packet.is_empty():return transition_error(session.error)
 	var candidate:=FirstFlightSession.new();viewport.add_child(candidate)
 	var prepared: bool
 	if _launch_packet.campaign_cursor==16 or FirstFlightSession.FreeFlight.Campaign.supported(bindings,_launch_packet.campaign_cursor):
