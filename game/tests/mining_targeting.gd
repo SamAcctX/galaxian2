@@ -124,6 +124,7 @@ func verify(args: Array):
 	refresh_fixture(debris)
 	check(no_tractor.advance(debris,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,100,true) and no_tractor.snapshot().candidate_indices==[0] and no_tractor.snapshot().events==[{"kind":"notification","source_id":9,"object_index":0}],"Retired statistics hid surviving scenery cargo")
 	verify_tractor_targeting(debris)
+	verify_coarse_window()
 	debris._destruction[0].disable_drop();refresh_fixture(debris)
 	check(no_tractor.advance(debris,Transform3D.IDENTITY,Transform3D.IDENTITY,aim,100,true) and no_tractor.snapshot().candidate_indices.is_empty(),"Consumed or absent scenery cargo stayed selectable")
 	# Missing equipment and default duration are isolated native owner fixtures;
@@ -337,6 +338,47 @@ func render(lib: RefCounted, pixels: String, directory: String,captures: Diction
 	check(not scene.present(malformed) and scene.scan_animation._sample==accepted,"Rejected target presentation replaced the last good frame")
 	canvas.free()
 
+## A frame projects only the bodies its coarse test cannot rule out of the scan
+## window; a snapshot projects them all. The candidates must be the first
+## in-window markers, also where binary32 rounding moves a body by many pixels.
+func verify_coarse_window() -> void:
+	var random:=RandomNumberGenerator.new();random.seed=20261005
+	var scanner:=fresh();var limit:=int(bindings.mining_targeting.candidate_limit)
+	var count: int=construction.scenery_owner().snapshot().objects.size()
+	var slope:=tan(float(bindings.flight_projection.vertical_fov_radians)/2.0)/300.0
+	var wrong:=0;var inside:=0;var outside:=0;var behind:=0
+	for sample in 320:
+		# World coordinates from a few ship lengths to where one binary32 step is
+		# two units, and depths from the camera plane to the far field.
+		var span: float=[3000.0,90000.0,4.0e6,3.0e7][sample%4]
+		var camera:=Transform3D(Basis.from_euler(Vector3(random.randf_range(-PI,PI),random.randf_range(-PI,PI),random.randf_range(-PI,PI))).orthonormalized(),Vector3(random.randf_range(-span,span),random.randf_range(-span,span),random.randf_range(-span,span)))
+		var probe:=aim.duplicate(true);probe.point=Vector3(random.randf_range(60,740),random.randf_range(60,540),-1000)
+		var points:=[]
+		for index in count:
+			var depth: float=[0.4,30.0,900.0,40000.0,700000.0][index%5]*random.randf_range(0.5,2.0)
+			var pixel:=Vector2(random.randf_range(-600,1400),random.randf_range(-500,1100))
+			# One body in sixteen lies within a few pixels of the window, half of
+			# them on its edge and half so close to the camera that one rounding
+			# step of their coordinates is as wide as the window; every eighth is
+			# its mirror image behind.
+			if index%16==0:
+				pixel=Vector2(probe.point.x,probe.point.y)+Vector2(random.randf_range(-50,50),random.randf_range(-50,50))
+				if index%32==0:pixel[sample%2]=probe.point[sample%2]+(44+random.randf_range(-3,3))*(1 if index%64==0 else -1)
+				else:depth=span/8388608.0*random.randf_range(0.5,16.0)/(44.0*slope)
+				if index%128==16:depth=-depth
+			points.append(camera*Vector3((400-pixel.x)*slope*-depth,(pixel.y-300)*slope*-depth,-depth))
+		if not scanner.advance(arranged(points),Transform3D.IDENTITY,camera,probe,0,true):check(false,scanner.error);return
+		var state: Dictionary=scanner.snapshot();var expected:=[]
+		for marker in state.markers:
+			if marker.in_scan_window:inside+=1
+			elif marker.object_index%16==0:
+				if marker.in_view:outside+=1
+				else:behind+=1
+			if marker.in_scan_window and expected.size()<limit:expected.append(marker.object_index)
+		if state.markers.size()!=count or state.candidate_indices!=expected:wrong+=1
+	check(wrong==0,"The coarse scan window disagreed with the exact projection in %d fields"%wrong)
+	check(inside>400 and outside>400 and behind>40,"Coarse scan window samples lost their coverage: %d inside, %d beside, %d out of view"%[inside,outside,behind])
+
 func fresh() -> RefCounted:
 	var scanner:=Targeting.new();check(scanner.configure(bindings,cat,construction,radii,frames),scanner.error);return scanner
 func arranged(distances: Array) -> RefCounted:
@@ -348,7 +390,7 @@ func arranged(distances: Array) -> RefCounted:
 	for i in result._destruction.size():result._destruction[i]=result._destruction[i].fork_for_frame()
 	for i in result._bodies._rows.size():
 		var point:=Vector3(10000+i,0,100000)
-		if i<distances.size():point=Vector3(0,0,-float(distances[i]))
+		if i<distances.size():point=distances[i] if distances[i] is Vector3 else Vector3(0,0,-float(distances[i]))
 		result._bodies._rows[i].position=point;result._motion._own_row(i).position=point
 	refresh_fixture(result)
 	return result

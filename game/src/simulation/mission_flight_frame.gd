@@ -2,6 +2,7 @@ extends RefCounted
 ## A complete candidate over admitted entry, pilot, scenery, combat and career.
 ## Host/renderers accept the candidate before consuming its one-shot directives.
 const Context=preload("res://src/simulation/mission_context.gd")
+const FrameTransaction=preload("res://src/simulation/frame_transaction.gd")
 const Runner=preload("res://src/simulation/mission_runner.gd")
 const Encounter=preload("res://src/simulation/mission_encounter.gd")
 const Pilot=preload("res://src/simulation/pilot_motion.gd")
@@ -160,6 +161,20 @@ func prepare(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,con
 	return configure(bindings,catalogues,library,context,initialized_world,sensitivity,viewport)
 
 func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary_fire:=false,paused:=false,viewport:=Vector2i.ZERO,strafe:=0.0,secondary_fire:=false,current_music_id:=-1,relative_mouse_capture:=false,boost_requested:=false,cloak_requested:=false,turret_inverted:=false) -> RefCounted:
+	# Owners forked for this candidate frame may update in place inside it.
+	# The self-check also builds it on forks alone and compares the two.
+	var before: Dictionary=snapshot() if FrameTransaction.selfcheck else {}
+	var forked: RefCounted=_evaluate_frame(milliseconds,commands,throttle,primary_fire,paused,viewport,strafe,secondary_fire,current_music_id,relative_mouse_capture,boost_requested,cloak_requested,turret_inverted) if FrameTransaction.selfcheck else null
+	var forked_error:=error
+	var token:=FrameTransaction.begin()
+	var result: RefCounted=_evaluate_frame(milliseconds,commands,throttle,primary_fire,paused,viewport,strafe,secondary_fire,current_music_id,relative_mouse_capture,boost_requested,cloak_requested,turret_inverted)
+	FrameTransaction.end(token)
+	if FrameTransaction.selfcheck:
+		var found:=FrameTransaction.check(before,snapshot(),forked,forked_error,result,error)
+		if not found.is_empty():reject(found);return null
+	return result
+
+func _evaluate_frame(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary_fire:=false,paused:=false,viewport:=Vector2i.ZERO,strafe:=0.0,secondary_fire:=false,current_music_id:=-1,relative_mouse_capture:=false,boost_requested:=false,cloak_requested:=false,turret_inverted:=false) -> RefCounted:
 	error=""
 	var size:=_viewport if viewport==Vector2i.ZERO else viewport
 	if _state.is_empty() or not Numbers.integer(milliseconds,0,_max_ms) or _state.elapsed_ms>2147483647-milliseconds or not valid_viewport(size) or not commands.is_finite() or absf(commands.x)>1 or absf(commands.y)>1 or not is_finite(throttle) or throttle<0 or throttle>1 or strafe not in [-1.0,0.0,1.0] or not Numbers.integer(current_music_id,-1,2292):return failed("Invalid mission flight time or pilot input")

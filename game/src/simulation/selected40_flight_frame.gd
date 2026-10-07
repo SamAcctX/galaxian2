@@ -5,6 +5,7 @@ extends RefCounted
 ## job. Story failure and portal arbitration use the native mission and cast;
 ## a prepared onward request is not a committed career or successor save.
 const Rules=preload("res://src/content/selected40_population_definitions.gd")
+const FrameTransaction=preload("res://src/simulation/frame_transaction.gd")
 const Encounter=preload("res://src/simulation/full_hold_encounter.gd")
 const Player=preload("res://src/simulation/opening_player_state.gd")
 const Scenery=preload("res://src/simulation/opening_scenery.gd")
@@ -177,6 +178,20 @@ func prepare_career(bindings: RefCounted,career: RefCounted) -> bool:
 	return true
 
 func evaluate(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary_fire:=false,paused:=false,viewport:=Vector2i.ZERO,strafe:=0.0,secondary_fire:=false,current_music_id:=-1,relative_mouse_capture:=false,boost_requested:=false,cloak_requested:=false,turret_inverted:=false) -> RefCounted:
+	# Owners forked for this candidate frame may update in place inside it.
+	# The self-check also builds it on forks alone and compares the two.
+	var before: Dictionary=snapshot() if FrameTransaction.selfcheck else {}
+	var forked: RefCounted=_evaluate_frame(milliseconds,commands,throttle,primary_fire,paused,viewport,strafe,secondary_fire,current_music_id,relative_mouse_capture,boost_requested,cloak_requested,turret_inverted) if FrameTransaction.selfcheck else null
+	var forked_error:=error
+	var token:=FrameTransaction.begin()
+	var result: RefCounted=_evaluate_frame(milliseconds,commands,throttle,primary_fire,paused,viewport,strafe,secondary_fire,current_music_id,relative_mouse_capture,boost_requested,cloak_requested,turret_inverted)
+	FrameTransaction.end(token)
+	if FrameTransaction.selfcheck:
+		var found:=FrameTransaction.check(before,snapshot(),forked,forked_error,result,error)
+		if not found.is_empty():reject(found);return null
+	return result
+
+func _evaluate_frame(milliseconds: Variant,commands:=Vector2.ZERO,throttle:=1.0,primary_fire:=false,paused:=false,viewport:=Vector2i.ZERO,strafe:=0.0,secondary_fire:=false,current_music_id:=-1,relative_mouse_capture:=false,boost_requested:=false,cloak_requested:=false,turret_inverted:=false) -> RefCounted:
 	error=""
 	var size:=_viewport if viewport==Vector2i.ZERO else viewport
 	if not Rules.Numbers.integer(current_music_id,-1,2292):reject("Invalid retained playback music selection");return null

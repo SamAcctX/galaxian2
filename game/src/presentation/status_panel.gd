@@ -144,11 +144,19 @@ func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> 
 	resources[str(ELITE_TEXTURE_ID)]=ELITE_ATLAS
 	var art: Dictionary=ui.load_regions(library,bindings,visuals,ids,resources)
 	if art.is_empty():return reject(ui.error)
+	var ship_ids:=[]
 	for ship in cat.tables.ships.size():
 		# Ship pictures share the item atlas; a ship without one shows no picture.
-		if int(bindings.resolve_image_region(SHIP_IMAGE_BASE+ship).get("texture_id",-1))!=ITEM_TEXTURE_ID:continue
-		var picture: Dictionary=ui.load_regions(library,bindings,visuals,[SHIP_IMAGE_BASE+ship],resources)
-		if not picture.is_empty():art.merge(picture)
+		if int(bindings.resolve_image_region(SHIP_IMAGE_BASE+ship).get("texture_id",-1))==ITEM_TEXTURE_ID:ship_ids.append(SHIP_IMAGE_BASE+ship)
+	# One request cuts every picture from a single atlas texture. Asked for one
+	# by one, each picture loaded and kept its own copy of the whole atlas; that
+	# remains the fallback so one bad picture cannot hide the others.
+	var pictures: Dictionary=ui.load_regions(library,bindings,visuals,ship_ids,resources)
+	if not pictures.is_empty():art.merge(pictures)
+	else:
+		for id in ship_ids:
+			var picture: Dictionary=ui.load_regions(library,bindings,visuals,[id],resources)
+			if not picture.is_empty():art.merge(picture)
 	var icons:=[]
 	var faction_art: Dictionary=ui.load_regions(library,bindings,visuals,map_rules.faction_image_ids,map_rules.atlas_resources)
 	if faction_art.is_empty():return reject(ui.error)

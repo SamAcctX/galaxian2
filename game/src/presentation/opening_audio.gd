@@ -168,7 +168,9 @@ func configure(library: RefCounted, bindings: RefCounted, audio_seed: int=0, cam
 		var clip: Dictionary=_resources.prepare(id)
 		if clip.is_empty() or clip.has("unsupported"):return reject("Local travel sound is unsupported: "+str(id)+" "+str(clip.get("unsupported",_resources.error)))
 	_content_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
-	for id in bindings.vehicle_response.get("audio",{}).get("event_ids",[]):_engine_ids.append(int(id))
+	var engines: Dictionary=bindings.vehicle_response.get("audio",{})
+	# Ships 40, 42 and 43 select their own engine event instead of a handling band.
+	for id in engines.get("event_ids",[])+engines.get("ship_overrides",[]).map(func(pair):return pair[1]):_engine_ids.append(int(id))
 	_arrival_engine_id=int(bindings.opening_staging.get("escape",{}).get("arrival_engine_sound_id",-1))
 	_radio_voice=dialogue.get("voice",{}) if campaign_cursor in [0,1,7] or story_radio else {}
 	if not _radio_voice.is_empty():

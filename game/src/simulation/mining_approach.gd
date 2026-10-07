@@ -175,6 +175,8 @@ func snapshot() -> Dictionary:
 	result.merge({"guidance_gain":_gain,"aligned":_aligned,"alignment_open":_alignment_open,"reference_up":_reference_up})
 	result.presentation_pose=result.player_pose*Transform3D(result.model_basis,Vector3.ZERO)
 	return result
+## The phase alone: the flight asks for it many times a frame.
+func phase() -> String:return "" if _state.is_empty() else String(_state.phase)
 func field_identity() -> RefCounted:return _field_identity
 func last_guidance_sample() -> Dictionary:return _guidance_sample.duplicate(true)
 func fork_for_frame() -> RefCounted:

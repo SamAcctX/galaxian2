@@ -13,6 +13,7 @@ const Numbers=preload("res://src/content/opening_definitions.gd")
 const Vectors=preload("res://src/simulation/source_vectors.gd")
 const Selected40=preload("res://src/content/selected40_population_definitions.gd")
 const Equipment=preload("res://src/simulation/station_equipment.gd")
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 var error:=""
 var _rules:={}
 var _perspective:={}
@@ -30,6 +31,24 @@ var _candidate:=-1
 var _elapsed:=0
 var _sample:={}
 var _selected40_world: RefCounted
+## The scan behind the last sample. No presentation draws a marker per body, so
+## a frame only decides the candidates; snapshot() describes every body from here.
+var _scan_field:={}
+var _scan_camera:=Transform3D.IDENTITY
+var _scan_low:=Vector2i.ZERO
+var _scan_high:=Vector2i.ZERO
+var _scan_selected:=-1
+## The read-only body lists that passed validation, and their positions for the
+## coarse window test. Frames share the lists until a body changes.
+var _checked_bodies:=[]
+var _checked_objects:=[]
+var _positions:=PackedVector3Array()
+var _extent:=0.0
+# Coarse rejection: the slack is four times the largest binary32 rounding
+# difference between the engine's transform and sample() (2^-21 of the summed
+# coordinates), and coordinates beyond the limit take the exact test.
+const COARSE_SLACK:=0.000002
+const COARSE_LIMIT:=1.0e15
 
 func configure(bindings: RefCounted, catalogues: RefCounted, construction: RefCounted, frame_radii: Vector2, animation_frames: int) -> bool:
 	error=""
@@ -92,7 +111,7 @@ func _configure_devices(bindings: RefCounted,catalogues: RefCounted,loadout: Dic
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id}
 	_field_identity=scenery.presentation_identity();_selected40_world=null
 	_radii=frame_radii;_frames=animation_frames;_duration=duration;_scanner_id=scanner;_drill_id=drill;_tractor_id=tractor;_tractor_mode=tractor_mode
-	_selected=-1;_candidate=-1;_elapsed=0;_sample={}
+	_selected=-1;_candidate=-1;_elapsed=0;_sample={};_scan_field={}
 	return true
 
 func advance(scenery: RefCounted, player: Transform3D, camera: Transform3D, aim: Dictionary, delta_ms: Variant, enabled: bool, approaching:=false, selection_blocked:=false, acquisition_suspended:=false, recovery_pending:=false) -> bool:
@@ -118,31 +137,47 @@ func advance(scenery: RefCounted, player: Transform3D, camera: Transform3D, aim:
 	var bodies: Variant=field.get("bodies",{}).get("objects")
 	var lifecycles: Array=field.get("destruction",[])
 	if not bodies is Array or bodies.size()!=field.objects.size() or (not lifecycles.is_empty() and lifecycles.size()!=bodies.size()):return reject("Asteroid selection requires complete live bodies")
-	var markers:=[];var candidates:=[];var kinds:={};var automatic_recovery:=-1
+	var objects: Array=field.objects
+	if not _check_rows(bodies,objects):return false
+	var candidates:=[];var kinds:={};var automatic_recovery:=-1
+	var scanning: bool=enabled and not approaching
+	var normal_selection: bool=not selection_blocked and not acquisition_suspended
+	var limit:=int(_rules.candidate_limit)
+	# One engine call places every body in camera space, a few binary32 roundings
+	# away from sample(): enough to rule a body out of the scan window, never to
+	# place it. Bodies it cannot rule out are projected exactly.
+	var rough:=_positions*camera if scanning else PackedVector3Array()
+	var slack:=COARSE_SLACK*(_extent+absf(camera.origin.x)+absf(camera.origin.y)+absf(camera.origin.z))
+	if not slack<COARSE_SLACK*COARSE_LIMIT:slack=INF
+	var window:=projection.window(low,high);var near:=projection.near()
+	var slack_x:=slack*(1.0+absf(window[0])+window[1]);var slack_y:=slack*(1.0+absf(window[2])+window[3])
 	for index in bodies.size():
-		var body: Variant=bodies[index]
-		if not body is Dictionary or body.get("index")!=index or not body.get("active") is bool or not body.get("position") is Vector3 or not body.position.is_finite() or not Numbers.integer(body.get("source_size_value"),4,7) or not field.objects[index].position is Vector3 or not field.objects[index].position.is_finite() or body.model_id!=field.objects[index].model_id:return reject("Invalid asteroid body sample")
-		var state:=0 if lifecycles.is_empty() else int(lifecycles[index].lifecycle.actor_state)
-		if state not in [0,3,4]:return reject("Unsupported asteroid selection lifecycle")
-		# Scenery's cargo flag is independent of retired collision statistics.
-		# Its position getter follows the physical model, not those statistics.
-		var cargo_eligible: bool=not lifecycles.is_empty() and lifecycles[index].lifecycle.drop_allowed
-		if state in [3,4] and not cargo_eligible:continue
-		if not enabled or approaching:continue
-		var projected:=projection.project(camera,field.objects[index].position)
-		if projected.has("error"):return reject(projection.error)
-		var pixel: Vector2i=projected.pixels
-		var inside: bool=projected.in_view and pixel.x>low.x and pixel.x<high.x and pixel.y>low.y and pixel.y<high.y
-		var kind:="debris" if cargo_eligible and state in [3,4] else "asteroid"
-		markers.append({"object_index":index,"pixels":pixel,"in_view":projected.in_view,"in_scan_window":inside,"selected":index==_selected,"kind":kind,"item_id":body.item_id})
-		kinds[index]=kind
+		var debris:=false
+		if not lifecycles.is_empty():
+			var lifecycle: Dictionary=lifecycles[index].lifecycle
+			var state:=int(lifecycle.actor_state)
+			if state!=0:
+				if state!=3 and state!=4:return reject("Unsupported asteroid selection lifecycle")
+				# Scenery's cargo flag is independent of retired collision statistics.
+				# Its position getter follows the physical model, not those statistics.
+				if not lifecycle.drop_allowed:continue
+				debris=true
+		if not scanning:continue
 		# Automatic recovery keeps the ordered cargo request separate from the
 		# mining clock. All-direction devices bypass ordinary selection gates,
 		# but neither mode can replace an existing pickup or a prior cargo row.
-		var normal_selection: bool=not selection_blocked and not acquisition_suspended
-		if kind=="debris" and automatic_recovery<0 and not recovery_pending:
-			if _tractor_mode==2 or (_tractor_mode==1 and projected.in_view and normal_selection):automatic_recovery=index
-		if inside and normal_selection and not recovery_pending and automatic_recovery<0 and not body.get("mined",false) and candidates.size()<int(_rules.candidate_limit):candidates.append(index)
+		var recovers: bool=debris and automatic_recovery<0 and not recovery_pending
+		if recovers and _tractor_mode==2:automatic_recovery=index;continue
+		var recovers_in_view: bool=recovers and _tractor_mode==1 and normal_selection
+		var selects: bool=normal_selection and not recovery_pending and automatic_recovery<0 and candidates.size()<limit
+		if not recovers_in_view:
+			if not selects:continue
+			var local:=rough[index]
+			if local.z-slack>near or absf(local.x-window[0]*local.z)>window[1]*absf(local.z)+slack_x or absf(local.y-window[2]*local.z)>window[3]*absf(local.z)+slack_y:continue
+		if not projection.sample(camera,objects[index].position):return reject(projection.error)
+		if recovers_in_view and projection.in_view:automatic_recovery=index
+		if selects and automatic_recovery<0 and _in_window(projection,low,high) and not bodies[index].get("mined",false):
+			candidates.append(index);kinds[index]="debris" if debris else "asteroid"
 	var selected:=_selected;var candidate:=_candidate;var elapsed:=_elapsed
 	var nearest:=-1;var nearest_distance:=int(_rules.candidate_distance_limit)
 	var events:=[];var animation:=-1;var recovery:=automatic_recovery
@@ -180,17 +215,64 @@ func advance(scenery: RefCounted, player: Transform3D, camera: Transform3D, aim:
 					var progress:=TargetProjection.single(TargetProjection.single(float(elapsed-int(_rules.animation_delay_ms)))/TargetProjection.single(float(_duration-int(_rules.animation_delay_ms))))
 					var frame:=int(TargetProjection.single(float(_frames-1)*progress))
 					if frame<_frames-1:animation=frame
+	_scan_field=field if scanning else {};_scan_camera=camera;_scan_low=low;_scan_high=high;_scan_selected=_selected
 	_selected=selected;_candidate=candidate;_elapsed=elapsed
-	_sample={"visible":enabled,"markers":markers,"candidate_indices":candidates,"nearest_index":nearest,
-		"events":events,"animation_frame":animation,"recovery_object_index":recovery,"aim_pixels":Vector2i(int(point.x),int(point.y)),"viewport_size":viewport}
+	# The sample is replaced whole by the next advance: read-only, it is shared
+	# with forks and with the per-frame presentation observation.
+	_sample=Readonly.freeze({"visible":enabled,"candidate_indices":candidates,"nearest_index":nearest,
+		"events":events,"animation_frame":animation,"recovery_object_index":recovery,"aim_pixels":Vector2i(int(point.x),int(point.y)),"viewport_size":viewport})
 	return true
 
+## Body rows are read-only and stay the same lists between frames until a body
+## changes, so each pair of lists is checked once instead of once per frame.
+func _check_rows(bodies: Array,objects: Array) -> bool:
+	if is_same(bodies,_checked_bodies) and is_same(objects,_checked_objects):return true
+	var positions:=PackedVector3Array();var extent:=0.0
+	for index in bodies.size():
+		var body: Variant=bodies[index];var object: Variant=objects[index]
+		if not body is Dictionary or body.get("index")!=index or not body.get("active") is bool or not body.get("position") is Vector3 or not body.position.is_finite() or not Numbers.integer(body.get("source_size_value"),4,7) or not object.position is Vector3 or not object.position.is_finite() or body.model_id!=object.model_id:return reject("Invalid asteroid body sample")
+		positions.append(object.position);extent=maxf(extent,absf(object.position.x)+absf(object.position.y)+absf(object.position.z))
+	var shared: bool=bodies.is_read_only() and objects.is_read_only()
+	_checked_bodies=bodies if shared else [];_checked_objects=objects if shared else []
+	_positions=positions;_extent=extent
+	return true
+
+static func _in_window(projection: RefCounted,low: Vector2i,high: Vector2i) -> bool:
+	var pixel: Vector2i=projection.pixels
+	return projection.in_view and pixel.x>low.x and pixel.x<high.x and pixel.y>low.y and pixel.y<high.y
+
+## One marker per body the last scan considered, each projected exactly.
+func _markers() -> Array:
+	var markers:=[]
+	if _scan_field.is_empty():return markers
+	var projection:=TargetProjection.new()
+	if not projection.configure(_perspective,_sample.viewport_size,_radii):return markers
+	var bodies: Array=_scan_field.bodies.objects;var lifecycles: Array=_scan_field.get("destruction",[])
+	for index in bodies.size():
+		var debris:=false
+		if not lifecycles.is_empty() and int(lifecycles[index].lifecycle.actor_state)!=0:
+			if not lifecycles[index].lifecycle.drop_allowed:continue
+			debris=true
+		if not projection.sample(_scan_camera,_scan_field.objects[index].position):return []
+		markers.append({"object_index":index,"pixels":projection.pixels,"in_view":projection.in_view,"in_scan_window":_in_window(projection,_scan_low,_scan_high),"selected":index==_scan_selected,"kind":"debris" if debris else "asteroid","item_id":bodies[index].item_id})
+	return markers
+
 func snapshot() -> Dictionary:
+	if _sample.is_empty():return _observation({})
+	var sample:={"visible":_sample.visible,"markers":_markers()}
+	sample.merge(_sample.duplicate(true))
+	return _observation(sample)
+
+## The same observation without its markers for per-frame presentation reads;
+## its sample is shared.
+func read_snapshot() -> Dictionary:return _observation(_sample)
+
+func _observation(sample: Dictionary) -> Dictionary:
 	if _rules.is_empty():return {}
 	var state:=_identity.duplicate()
 	state.merge({"selected_object_index":_selected,"candidate_object_index":_candidate,"elapsed_ms":_elapsed,
 		"scanner_id":_scanner_id,"drill_id":_drill_id,"tractor_id":_tractor_id,"tractor_mode":_tractor_mode,"duration_ms":_duration,"animation_frames":_frames})
-	state.merge(_sample.duplicate(true))
+	state.merge(sample)
 	return state
 
 func clear_selection() -> void:_selected=-1
@@ -204,11 +286,15 @@ func fork_for_frame() -> RefCounted:
 	copy._radii=_radii;copy._frames=_frames;copy._duration=_duration;copy._scanner_id=_scanner_id;copy._drill_id=_drill_id;copy._tractor_id=_tractor_id;copy._tractor_mode=_tractor_mode
 	# Each advance replaces the complete sample; public observations stay detached.
 	copy._selected=_selected;copy._candidate=_candidate;copy._elapsed=_elapsed;copy._sample=_sample
+	copy._scan_field=_scan_field;copy._scan_camera=_scan_camera;copy._scan_low=_scan_low;copy._scan_high=_scan_high;copy._scan_selected=_scan_selected
+	copy._checked_bodies=_checked_bodies;copy._checked_objects=_checked_objects;copy._positions=_positions;copy._extent=_extent
 	copy._selected40_world=_selected40_world
 	copy._max_ms=_max_ms;return copy
 func clear() -> void:
 	_max_ms=0
 	error="";_rules={};_perspective={};_identity={};_field_identity=null;_sample={}
+	_scan_field={};_scan_camera=Transform3D.IDENTITY;_scan_low=Vector2i.ZERO;_scan_high=Vector2i.ZERO;_scan_selected=-1
+	_checked_bodies=[];_checked_objects=[];_positions=PackedVector3Array();_extent=0.0
 	_selected40_world=null
 	_radii=Vector2.ZERO;_frames=0;_duration=0;_scanner_id=-1;_drill_id=-1;_tractor_id=-1;_tractor_mode=-1;_selected=-1;_candidate=-1;_elapsed=0
 func reject(message: String) -> bool:error=message;return false

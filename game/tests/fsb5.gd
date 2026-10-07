@@ -16,6 +16,33 @@ func run():
 	block[2]=89
 	check(reader.decode_ima(block,64,1).is_empty(),"Invalid IMA step state was accepted")
 	check(reader.decode_ima(PackedByteArray(),64,2).is_empty(),"Truncated stereo IMA was accepted")
+	# A long sample is decoded in parts on worker threads. Every block must land
+	# where decoding the blocks one at a time puts it, in both channel layouts
+	# and with a last block cut short.
+	var random:=RandomNumberGenerator.new();random.seed=7
+	for channels in [1,2]:
+		var count: int=64*(Bank.IMA_BLOCKS_PER_TASK*5+3)+17;var blocks: int=(count+63)/64
+		var long:=PackedByteArray();long.resize(blocks*36*channels)
+		for i in long.size():long[i]=random.randi()&255
+		for header in range(0,long.size(),36*channels):
+			for channel in channels:long[header+4*channel+2]=random.randi_range(0,88);long[header+4*channel+3]=0
+		var whole:=reader.decode_ima(long,count,channels);var pieces:=PackedByteArray()
+		for index in blocks:pieces.append_array(reader.decode_ima(long.slice(index*36*channels,(index+1)*36*channels),mini(64,count-index*64),channels))
+		check(whole.size()==count*channels*2 and whole==pieces,"A sample decoded in parts differs from its blocks decoded one by one")
+		long[(blocks-2)*36*channels+2]=89
+		check(reader.decode_ima(long,count,channels).is_empty(),"An invalid late IMA block was accepted in a long sample")
+	# A stereo block carries both headers, then four bytes of each channel in
+	# turn. Its channels must decode as the same two blocks do alone.
+	var left:=PackedByteArray();left.resize(36);var right:=left.duplicate()
+	for i in range(4,36):left[i]=random.randi()&255;right[i]=random.randi()&255
+	left.encode_s16(0,-1200);left[2]=31;right.encode_s16(0,900);right[2]=60
+	var both:=left.slice(0,4)+right.slice(0,4)
+	for group in 8:both.append_array(left.slice(4+group*4,8+group*4));both.append_array(right.slice(4+group*4,8+group*4))
+	var stereo:=reader.decode_ima(both,64,2);var alone:=[reader.decode_ima(left,64,1),reader.decode_ima(right,64,1)]
+	var interleaved:=stereo.size()==256
+	for frame in 64:
+		for channel in 2:interleaved=interleaved and stereo.decode_s16((frame*2+channel)*2)==alone[channel].decode_s16(frame*2)
+	check(interleaved,"Stereo IMA channels are not the two blocks decoded alone")
 	var bytes:=pcm_fixture()
 	check(reader.open(bytes),reader.error)
 	var stream: AudioStreamWAV=reader.stream(0,true)

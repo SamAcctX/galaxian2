@@ -14,6 +14,7 @@ var failures := 0
 
 func _initialize() -> void:
 	check_synthetic()
+	check_coarse_rejection()
 	var args := OS.get_cmdline_user_args()
 	check(args.size()%3==0,"Expected content/bindings/visual triples")
 	for index in range(0,args.size()-2,3): check_profile(args[index],args[index+1])
@@ -142,6 +143,58 @@ func launch(weapon: Dictionary, position: Vector3) -> RefCounted:
 	check(not shots.advance(1).is_empty(),shots.error)
 	check(shots.fire(position,Vector3.BACK,true).get("fired",false),shots.error)
 	return shots
+
+## The coarse rejection may only skip pairs that the exact bounds test misses.
+func check_coarse_rejection() -> void:
+	var geometry: RefCounted = preload("res://src/simulation/ordinary_hit_geometry.gd").new()
+	var random := RandomNumberGenerator.new();random.seed=20261004
+	var skipped := 0;var hits := 0;var wrong := 0
+	for sample in 60000:
+		var span: float = [40.0,3000.0,900000.0,3.0e7][sample%4]
+		var position := Vector3(random.randf_range(-span,span),random.randf_range(-span,span),random.randf_range(-span,span))
+		var velocity := Vector3(random.randf_range(-30,30),random.randf_range(-30,30),random.randf_range(-30,30))
+		var half_extent: int = [0,1,37,600,25000][sample%5]
+		# Two samples in three sit within a few units of a face of the bounds.
+		var center := position-velocity+Vector3(random.randf_range(-span,span),random.randf_range(-span,span),random.randf_range(-span,span))
+		if sample%3!=0:
+			center=position-velocity+Vector3(random.randf_range(-1,1),random.randf_range(-1,1),random.randf_range(-1,1))*half_extent
+			center[sample%3]=(position-velocity)[sample%3]+(half_extent+random.randf_range(-0.01,0.01)*maxf(1.0,span*0.00001))*(1 if sample%2==0 else -1)
+		var offsets: Array[Vector3] = [];var slacks := PackedFloat64Array()
+		if not Pass.coarse_shots([null,{"position":position,"velocity":velocity}],offsets,slacks):wrong+=1;continue
+		var exact: Dictionary = geometry.bounds(position,velocity,center,half_extent)
+		if exact.is_empty():wrong+=1;continue
+		if exact.hit:hits+=1
+		if Pass.beyond(center,half_extent,offsets,slacks):
+			skipped+=1
+			if exact.hit:wrong+=1
+	# Far from the origin the coarse sum and the exact sample round apart by more
+	# than a unit. Fit the bounds between the two: an exact contact that only the
+	# rounding slack keeps out of the coarse rejection.
+	var fitted := 0
+	for sample in 40000:
+		var axis := sample%3
+		var scale := pow(2.0,24+sample%7)
+		var position := Vector3.ZERO;position[axis]=scale*(1 if sample%2==0 else -1)
+		var velocity := Vector3.ZERO;velocity[axis]=random.randf_range(-1,1)*scale/4194304.0
+		var center := position-velocity;center[axis]=position[axis]+random.randi_range(-6,6)*scale/2097152.0
+		var probe: Dictionary = geometry.bounds(position,velocity,center,0)
+		if probe.is_empty():wrong+=1;continue
+		var exact_gap: float = absf(probe.relative_sample[axis])
+		var coarse_gap: float = absf((center+(velocity-position))[axis])
+		if coarse_gap-exact_gap<1.0:continue
+		var half_extent := int(exact_gap)+1
+		var offsets: Array[Vector3] = [];var slacks := PackedFloat64Array()
+		if not geometry.bounds(position,velocity,center,half_extent).hit or not Pass.coarse_shots([{"position":position,"velocity":velocity}],offsets,slacks):wrong+=1;continue
+		fitted+=1
+		if Pass.beyond(center,half_extent,offsets,slacks):wrong+=1
+	check(fitted>500,"No bounds fitted between the coarse and exact samples: %d"%fitted)
+	check(wrong==0,"Coarse rejection skipped %d exact contacts or refused ordinary shots"%wrong)
+	check(skipped>15000 and hits>5000,"Coarse rejection samples lost their coverage: %d skipped, %d hits"%[skipped,hits])
+	var offsets: Array[Vector3] = [];var slacks := PackedFloat64Array()
+	check(not Pass.coarse_shots([{"position":Vector3(INF,0,0),"velocity":Vector3.ZERO}],offsets,slacks) and not Pass.coarse_shots([{"position":Vector3.ZERO}],offsets,slacks) and not Pass.coarse_shots([{"position":Vector3(1.0e30,0,0),"velocity":Vector3.ZERO}],offsets,slacks),"A non-finite, incomplete or extreme shot took the coarse path")
+	offsets.clear();slacks.clear()
+	check(Pass.coarse_shots([null,null],offsets,slacks) and Pass.beyond(Vector3.ZERO,5,offsets,slacks),"A gun without live shots still reached a body")
+	check(Pass.coarse_shots([{"position":Vector3.ZERO,"velocity":Vector3.ZERO}],offsets,slacks) and not Pass.beyond(Vector3(NAN,0,0),5,offsets,slacks) and not Pass.beyond(Vector3(1.0e30,0,0),5,offsets,slacks),"A non-finite or extreme body was skipped without the exact test")
 
 func make_field(bindings: RefCounted, positions: Array) -> Dictionary:
 	var field := {"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"objects":[]}

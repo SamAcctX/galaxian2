@@ -138,6 +138,12 @@ displays. Choose **75%–300%** for a fixed size, or return to **Automatic**. Sm
 windows limit the scale so controls remain reachable. The 3D view keeps its full
 resolution.
 
+The `-threaded-render` packages for Windows and Linux are the same game with
+Godot rendering on a separate thread, about 15 % more frames per second in our
+measurements. Godot 4.7 still marks that mode experimental: if the game crashes,
+for example when resizing the window, use the plain package. The switch is the
+two-line `override.cfg` next to the executable; delete it to turn it off.
+
 Windows and Linux use Vulkan by default; Apple Silicon uses Metal. Older GPUs
 can fall back to OpenGL. If a graphics driver cannot start the game, try launching
 with `--rendering-method gl_compatibility --rendering-driver opengl3`. On Windows,

@@ -8,7 +8,18 @@ static func integer(value: Variant, low: int, high: int) -> bool:
 static func number(value: Variant, low: float, high: float) -> bool:
 	return (value is int or value is float) and is_finite(value) and value>=low and value<=high
 
+## Every audio owner validates the same declarations against the same manifest
+## when it is configured. The last accepted pair is recognised by identity;
+## anything else is checked in full. Debug builds also compare the content
+## hashes, so declarations edited in place by a test are checked again.
+static var _accepted:=[]
 static func validate(data: Variant, files: Dictionary) -> String:
+	if _accepted.size()==4 and is_same(_accepted[0],data) and is_same(_accepted[1],files) and (not OS.is_debug_build() or (_accepted[2]==data.hash() and _accepted[3]==files.hash())):return ""
+	var message:=_validate(data,files)
+	if message.is_empty() and data is Dictionary and not data.is_empty():_accepted=[data,files,data.hash() if OS.is_debug_build() else 0,files.hash() if OS.is_debug_build() else 0]
+	return message
+
+static func _validate(data: Variant, files: Dictionary) -> String:
 	if not data is Dictionary:return "Missing audio declarations"
 	if data.is_empty():
 		for file in files.values():

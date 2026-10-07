@@ -7,6 +7,7 @@ const Construction=preload("res://src/simulation/first_flight_construction.gd")
 const Lines=preload("res://src/content/dialogue_lines.gd")
 const Numbers=preload("res://src/content/opening_definitions.gd")
 const Extraction=preload("res://src/simulation/mining_extraction.gd")
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 var error:=""
 var _state:={}
 var _rules:={}
@@ -146,9 +147,10 @@ func snapshot() -> Dictionary:
 	return result
 func fork() -> RefCounted:
 	var result: RefCounted=get_script().new()
-	result._state=_state.duplicate(true);result._rules=_rules.duplicate(true);result._lines=_lines.duplicate(true);result._simulation_ms=_simulation_ms
+	# Rules and dialogue are immutable after configuration: freeze once, then share them.
+	result._state=_state.duplicate(true);result._rules=Readonly.freeze(_rules);result._lines=Readonly.freeze(_lines);result._simulation_ms=_simulation_ms
 	result._controller_holds_clock=_controller_holds_clock;result._poll_due=_poll_due
-	result._failure_line=_failure_line.duplicate(true)
+	result._failure_line=Readonly.freeze(_failure_line)
 	return result
 func clear() -> void:error="";_state={};_rules={};_lines=[];_failure_line={};_simulation_ms=0;_controller_holds_clock=false;_poll_due=false
 func reject(message: String) -> bool:error=message;return false

@@ -594,7 +594,7 @@ func evaluate_primary_contacts(primaries: RefCounted, combat: RefCounted, invent
 		if not shared_random_state is Dictionary or not candidate.begin_contact_pass(shared_random_state,display_available):reject("Local contacts require the shared frame stream: "+candidate.error);return {}
 	var selected: bool=combat!=null and combat.selected40_world_owner()!=null
 	if selected and not load("res://src/content/selected40_population_definitions.gd").matches_world(self,combat.selected40_world_owner()):reject("Selected40 contacts require the same native scenery generation");return {}
-	var result: Dictionary=primaries.evaluate_selected40_update(candidate,_bodies,inventory,delta_ms,guidance_actor_id) if selected else primaries.evaluate_opening_update(candidate,_bodies,inventory,delta_ms,null,guidance_actor_id)
+	var result: Dictionary=primaries.evaluate_selected40_update(candidate,_bodies,inventory,delta_ms,guidance_actor_id) if selected else primaries.evaluate_opening_update(candidate,_bodies,inventory,delta_ms,null,guidance_actor_id,not is_same(candidate,combat))
 	if result.is_empty(): reject(primaries.error);return {}
 	var next: RefCounted=fork_for_frame()
 	next._read_snapshot={}
@@ -606,10 +606,10 @@ func evaluate_primary_contacts(primaries: RefCounted, combat: RefCounted, invent
 
 ## The secondary owner shares these same physical bodies and ordered targets.
 ## The encounter already prepared its contact stream before entering this pass.
-func evaluate_secondary_contacts(secondaries: RefCounted,combat: RefCounted,inventory: RefCounted,delta_ms: int,observer_position: Variant=null,guidance_actor_id: int=-1) -> Dictionary:
+func evaluate_secondary_contacts(secondaries: RefCounted,combat: RefCounted,inventory: RefCounted,delta_ms: int,observer_position: Variant=null,guidance_actor_id: int=-1,combat_staged:=false) -> Dictionary:
 	error=""
 	if _bodies==null or not is_instance_of(secondaries,load("res://src/simulation/secondary_weapons.gd")) or not combat is Combat:return _failed_secondary("Secondary contacts require the retained scenery and weapon owners")
-	var result: Dictionary=secondaries.evaluate_advance(delta_ms,combat,inventory.snapshot().npc_ids,observer_position,_bodies,inventory,guidance_actor_id)
+	var result: Dictionary=secondaries.evaluate_advance(delta_ms,combat,inventory.snapshot().npc_ids,observer_position,_bodies,inventory,guidance_actor_id,combat_staged)
 	if result.is_empty():return _failed_secondary(secondaries.error)
 	var next: RefCounted=fork_for_frame()
 	next._read_snapshot={};next._bodies=result.bodies
@@ -621,10 +621,10 @@ func _failed_secondary(message: String) -> Dictionary:reject(message);return {}
 
 ## Manual detonation has the same body owner as the early contact pass. Keep
 ## the equipment transaction and every radius hit in one prospective frame.
-func evaluate_secondary_trigger(secondaries: RefCounted,combat: RefCounted,inventory: RefCounted,player: RefCounted,equipment: RefCounted,primaries: RefCounted,pose: Transform3D,selected_item_id: int,input_enabled: bool) -> Dictionary:
+func evaluate_secondary_trigger(secondaries: RefCounted,combat: RefCounted,inventory: RefCounted,player: RefCounted,equipment: RefCounted,primaries: RefCounted,pose: Transform3D,selected_item_id: int,input_enabled: bool,combat_staged:=false) -> Dictionary:
 	error=""
 	if _bodies==null or not is_instance_of(secondaries,load("res://src/simulation/secondary_weapons.gd")) or not combat is Combat:return _failed_secondary("Secondary input requires the retained scenery and weapon owners")
-	var result: Dictionary=secondaries.evaluate_player_trigger(pose,selected_item_id,combat,inventory.snapshot().npc_ids,player,equipment,primaries,inventory,input_enabled,_bodies)
+	var result: Dictionary=secondaries.evaluate_player_trigger(pose,selected_item_id,combat,inventory.snapshot().npc_ids,player,equipment,primaries,inventory,input_enabled,_bodies,combat_staged)
 	if result.is_empty():return _failed_secondary(secondaries.error)
 	var next: RefCounted=fork_for_frame()
 	next._read_snapshot={};next._bodies=result.bodies

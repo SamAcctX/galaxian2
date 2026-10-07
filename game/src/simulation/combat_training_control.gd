@@ -1,5 +1,6 @@
 extends RefCounted
 const Frames=preload("res://src/simulation/frame_clock.gd")
+const FrameTransaction=preload("res://src/simulation/frame_transaction.gd")
 const Kappa=preload("res://src/content/kappa_population_definitions.gd")
 const BakkaCombat=preload("res://src/content/bakka_combat_definitions.gd")
 const Alioth=preload("res://src/content/alioth_population_definitions.gd")
@@ -33,6 +34,7 @@ const LaunchClock=preload("res://src/simulation/traffic_launch_clock.gd")
 const FreightMotion=preload("res://src/simulation/freighter_motion.gd")
 const FreightDeath=preload("res://src/simulation/freighter_destruction.gd")
 var error:=""
+var _txn:=0
 var _identity:={}
 var _rules:={}
 var _combat: RefCounted
@@ -634,13 +636,15 @@ func evaluate_kappa_sequence(rescue: RefCounted,combat: RefCounted) -> RefCounte
 	if not _kappa or _accounting==null or not combat is Combat:
 		reject("Kappa choreography requires its retained combat and accounting");return null
 	if not _validate_kappa_combat(combat.snapshot()):return null
-	var next:=fork_for_frame(false,combat)
+	var next: RefCounted=frame_copy(combat)
 	if not next._combat.apply_kappa_sequence(rescue):reject(next._combat.error);return null
 	return next
 
+## The guidance owners are shared with the accepted frame after a shallow fork;
+## clear the flag on copies, as every other story cue writes them.
 func _clear_story_targets() -> void:
-	for guidance in _guidance:
-		if guidance!=null:guidance._clear_story_targets()
+	for id in _guidance.size():
+		if _guidance[id]!=null:_guidance[id]=_guidance[id].fork_for_frame();_guidance[id]._clear_story_targets()
 
 func evaluate_alioth_sequence(owner: RefCounted,weapons: RefCounted,shared_random_state: Variant=null) -> Dictionary:
 	error=""
@@ -788,7 +792,7 @@ func evaluate_ambient_world_logic(delta_ms: Variant,combat: RefCounted,random_st
 	if not incoming.get("actors") is Array or incoming.actors.size()!=generations.size():return fail("Incoming traffic population changed")
 	for id in generations.size():
 		if not incoming.actors[id] is Dictionary or not incoming.actors[id].get("spawn_generation") is int or incoming.actors[id].spawn_generation!=generations[id]:return fail("World logic received an earlier traffic instance")
-	var staged:=fork_for_frame(false,combat)
+	var staged: RefCounted=frame_copy(combat)
 	var random:=Random.new()
 	if not random.restore(random_state):return fail(random.error)
 	staged._random=random.snapshot()
@@ -1160,7 +1164,8 @@ func evaluate(combat: RefCounted, weapons: RefCounted, milliseconds: int, player
 	error=""
 	if _local_patrol and not _combat.has_local_reactions():return fail("Local traffic weapon control is not connected")
 	if not weapons is Weapons:return fail("Training actor updates require their retained weapon pools")
-	var staged:=fork_for_frame(false);var next_weapons: RefCounted=weapons.fork_for_frame()
+	# advance() stages and commits by itself; the frame's own controller needs no second copy.
+	var staged: RefCounted=self if FrameTransaction.owns(_txn) else fork_for_frame(false);var next_weapons: RefCounted=weapons.fork_for_frame()
 	var operation: Dictionary=staged.advance(milliseconds,player,combat,random_state,wingmen)
 	if operation.is_empty():return fail(staged.error)
 	# These ordinary NPC shots consume no random values and cannot contact
@@ -1271,7 +1276,7 @@ func evaluate_blast_motion(events: Array) -> RefCounted:
 			var id: int=hit.actor_id
 			if id<0 or id>=_destruction.size():reject("Blast drift names an unavailable destruction owner");return null
 			if not _destruction[id] is Death or _destruction[id].snapshot().phase!="explosion":continue
-			if next==self:next=fork_for_frame(false)
+			if next==self and not FrameTransaction.owns(_txn):next=fork_for_frame(false)
 			next._destruction[id]=next._destruction[id].fork_for_frame()
 			if not next._destruction[id].apply_blast_strength(float(hit.motion_scalar)):reject(next._destruction[id].error);return null
 	return next
@@ -1329,8 +1334,18 @@ func retire_story_actors(first: int,end: int,point: Vector3) -> bool:
 		if not _combat.set_pose(id,shown,pose) or not _combat.retire_story_actor(id):return reject(_combat.error)
 	return true
 
+## fork_for_frame(false,incoming_combat) for a caller that replaces both its
+## controller and its combat with the result. A controller forked for the frame
+## being built is updated in place and only adopts the incoming combat; that
+## frame is discarded whole on failure.
+func frame_copy(incoming_combat: RefCounted=null) -> RefCounted:
+	if not FrameTransaction.owns(_txn):return fork_for_frame(false,incoming_combat)
+	if incoming_combat!=null and not is_same(incoming_combat,_combat):_combat=incoming_combat.fork_for_frame()
+	return self
+
 func fork_for_frame(copy_motion:=true, incoming_combat: RefCounted=null) -> RefCounted:
 	var copy: RefCounted=get_script().new()
+	copy._txn=FrameTransaction.current
 	# Configuration is immutable after setup; only live state needs a private copy.
 	copy._identity=_identity.duplicate();copy._rules=_rules;copy._random=_random.duplicate(true)
 	var combat: RefCounted=_combat if incoming_combat==null else incoming_combat

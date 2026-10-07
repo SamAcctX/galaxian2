@@ -15,6 +15,7 @@ const CameraView = preload("res://src/simulation/camera_view.gd")
 const Poses = preload("res://src/simulation/opening_staging.gd")
 const FastForward = preload("res://src/content/fast_forward_definitions.gd")
 const Vectors = preload("res://src/simulation/source_vectors.gd")
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 # Paired Mac auxiliary geometry/transition constants. These are independent of
 # the imported ordinary follow offsets and of the retained response curves.
 const AUXILIARY_OFFSET = Vector3(0,150,-800)
@@ -352,7 +353,8 @@ func fork_for_frame() -> RefCounted:
 	copy._base = _base
 	copy._binding = _binding
 	copy._max_ms = _max_ms
-	copy._data = _data.duplicate(true)
+	# The follow declaration is immutable after configuration: freeze once, then share it.
+	copy._data = Readonly.freeze(_data)
 	copy._look_coefficients = _look_coefficients.duplicate()
 	copy._eye_coefficients = _eye_coefficients.duplicate()
 	copy._state = _state.duplicate(true)

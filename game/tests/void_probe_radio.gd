@@ -15,6 +15,7 @@ const Dima=preload("res://src/content/dima_encounter_definitions.gd")
 const Story=preload("res://src/content/story_encounter_definitions.gd")
 var checks:=0
 var failures:=0
+var stopped_voices: Array[WeakRef]=[]
 
 func _initialize() -> void:call_deferred("run")
 
@@ -43,6 +44,7 @@ func run() -> void:
 	verify_probe(bindings,library)
 	verify_audio(bindings,library)
 	verify_existing(bindings,library)
+	await voices_released()
 	print("Void probe radio: %d checks; %d failures"%[checks,failures])
 	quit(1 if failures else 0)
 
@@ -197,7 +199,17 @@ func verify_audio(bindings: RefCounted,library: RefCounted) -> void:
 		if not pending.is_empty():
 			audio.commit_frame(pending)
 			check(audio.snapshot().voice_displayed[0] and audio.snapshot().active.has(int(dialogue.voice.event_ids[0])),"Authored voice did not commit with its text: "+str(cursor))
+		for child in audio.get_children():
+			if child.has_method("has_stream_playback") and child.has_stream_playback():stopped_voices.append(weakref(child.get_stream_playback()))
 		audio.clear();audio.free()
+
+## The audio thread drops a stopped playback on its next mix, every 4096
+## frames (93 ms) with the headless driver; one still listed at exit leaks
+## with its stream.
+func voices_released() -> void:
+	var deadline:=Time.get_ticks_msec()+5000
+	while stopped_voices.any(func(voice):return voice.get_ref()!=null) and Time.get_ticks_msec()<deadline:await process_frame
+	check(stopped_voices.size()==2 and stopped_voices.all(func(voice):return voice.get_ref()==null),"Stopped radio voices were not released before exit")
 
 func verify_existing(bindings: RefCounted,library: RefCounted) -> void:
 	for cursor in [24,25]:

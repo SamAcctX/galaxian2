@@ -6,6 +6,10 @@ const Projectiles = preload("res://src/simulation/ordinary_projectiles.gd")
 const Bodies = preload("res://src/simulation/scenery_bodies.gd")
 const Geometry = preload("res://src/simulation/ordinary_hit_geometry.gd")
 const Vitals = preload("res://src/simulation/combat_vitals.gd")
+# Coarse rejection: coordinates beyond the limit take the exact test, and the
+# slack is four times the largest binary32 rounding of that test (2^-22).
+const COARSE_LIMIT := 1.0e24
+const COARSE_SLACK := 0.000001
 var error := ""
 
 func evaluate(projectiles: RefCounted, bodies: RefCounted, ordered_object_indices: Variant, bounds_selection: Variant = null) -> Dictionary:
@@ -27,12 +31,22 @@ func evaluate(projectiles: RefCounted, bodies: RefCounted, ordered_object_indice
 	if not staged_bodies.supports_weapon_hit(shots.weapon): return fail(staged_bodies.error)
 	# World append order is meaningful and may include duplicate target entries.
 	for object_index in ordered_object_indices:
-		if staged_bodies.collision_context(object_index).is_empty(): return fail(staged_bodies.error)
+		if not staged_bodies.valid_index(object_index):
+			staged_bodies.collision_context(object_index);return fail(staged_bodies.error)
 	var staged_shots: RefCounted = projectiles.fork_state()
 	var geometry := Geometry.new()
 	var contacts := []
 	var last_contact_object_index: Variant = null
+	# Nearly every body is far from every shot: skip those before building their
+	# context. Anything the coarse test cannot judge takes the exact test below.
+	var offsets: Array[Vector3] = []
+	var slacks := PackedFloat64Array()
+	var coarse := coarse_shots(shots.slots,offsets,slacks)
 	for object_index in ordered_object_indices:
+		if coarse:
+			var center: Variant = staged_bodies.collision_center(object_index)
+			var extent: Variant = staged_bodies.collision_half_extent(object_index) if target_bounds else bounds_selection.half_extent
+			if center is Vector3 and extent is int and extent>=0 and extent<=Vitals.MAX_INTEGER and beyond(center,extent,offsets,slacks): continue
 		# A target remains in this inner pass after an earlier slot kills it. A
 		# subsequent duplicate target entry samples its updated eligibility again.
 		var target: Dictionary = staged_bodies.collision_context(object_index)
@@ -60,6 +74,32 @@ func evaluate(projectiles: RefCounted, bodies: RefCounted, ordered_object_indice
 			last_contact_object_index=object_index
 			contacts.append({"object_index":object_index,"slot":slot,"projectile_id":projectile.id,"geometry":query,"damage":hit})
 	return {"projectiles":staged_shots,"bodies":staged_bodies,"contacts":contacts,"last_contact_object_index":last_contact_object_index}
+
+## The exact test samples (centre - position) + velocity against the half
+## extent, one binary32 rounding per step. Collect each live shot's offset and
+## the slack that covers those roundings; false when a slot needs the exact test.
+static func coarse_shots(slots: Array, offsets: Array[Vector3], slacks: PackedFloat64Array) -> bool:
+	for projectile in slots:
+		if projectile==null: continue
+		var position: Variant = projectile.get("position") if projectile is Dictionary else null
+		var velocity: Variant = projectile.get("velocity") if projectile is Dictionary else null
+		var size := INF
+		if position is Vector3 and velocity is Vector3: size=absf(position.x)+absf(position.y)+absf(position.z)+absf(velocity.x)+absf(velocity.y)+absf(velocity.z)
+		if not size<COARSE_LIMIT: return false
+		offsets.append(velocity-position);slacks.append(size*COARSE_SLACK)
+	return true
+
+## True when no collected shot can lie inside this body's bounds: on some axis
+## each sample misses the half extent by more than the rounding slack.
+static func beyond(center: Vector3, half_extent: int, offsets: Array[Vector3], slacks: PackedFloat64Array) -> bool:
+	var size := absf(center.x)+absf(center.y)+absf(center.z)
+	if not size<COARSE_LIMIT: return false
+	var reach := half_extent*(1.0+COARSE_SLACK)+0.001+size*COARSE_SLACK
+	for shot in offsets.size():
+		var gap := (center+offsets[shot]).abs()
+		var limit := reach+slacks[shot]
+		if not (gap.x>limit or gap.y>limit or gap.z>limit): return false
+	return true
 
 func fail(message: String) -> Dictionary:
 	error = message

@@ -49,10 +49,19 @@ func run() -> void:
 			question.handle_event(cancel)
 		check(not question.visible,"Question input did not complete its selected choice")
 	check(choices==[0,0,1,1,0],"Question accepted a different choice from the focused button")
+	# A message keeps the focus on its one button: the menu behind it stays out
+	# of reach, so A / Enter close the message instead of pressing that menu.
+	check(question.present_text(app.library,app.bindings,app.visuals,app.library.strings[386],386),question.error)
+	question.set_active(true);await process_frame
+	for code in [JOY_BUTTON_DPAD_DOWN,JOY_BUTTON_DPAD_LEFT,JOY_BUTTON_DPAD_UP,JOY_BUTTON_DPAD_RIGHT]:await pad(code,5)
+	await keypress(KEY_TAB)
+	check(question._yes.has_focus(),"Focus left a one-button message for the menu behind it")
+	await pad(JOY_BUTTON_A,5)
+	check(not question.visible and choices==[0,0,1,1,0,1] and app.phase=="menu","Controller A reached the menu behind a message")
 	check(question.present_question(app.library,app.bindings,app.visuals,app.library.strings[386],386),question.error)
 	question.set_active(false)
 	var blocked:=InputEventJoypadButton.new();blocked.button_index=JOY_BUTTON_A;blocked.pressed=true
-	question.handle_event(blocked);check(question.visible and choices.size()==5,"An inactive question accepted input")
+	question.handle_event(blocked);check(question.visible and choices.size()==6,"An inactive question accepted input")
 	question.free();app.free();await process_frame
 	print("Desktop controller input: %d checks; %d failures"%[checks,failures]);quit(1 if failures else 0)
 

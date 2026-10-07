@@ -634,7 +634,8 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 		var status:=TollRules.status(career.get("progress",{}))
 		if TollRules.active(int(entry.location.system_id)):
 			var toll:=LomaToll.new()
-			var line:=toll.start(status,randi())
+			# Seeded by the departure like the rest of the flight, not by the engine's global RNG.
+			var line:=toll.start(status,int(entry.get("unix_seconds",0)))
 			if toll.holds_fire() and not encounter.set_truce([TollRules.PIRATE_KIND]):return reject(encounter.error)
 			if line>=0 and not _radio.queue_scripted(line):return reject(_radio.error)
 			_toll=toll
@@ -654,9 +655,16 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 
 func evaluate(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paused:=false, viewport_size:=Vector2i.ZERO, drill_command:=Vector2.ZERO, primary_fire:=false, secondary_fire:=false, relative_mouse_capture:=false, current_music_id:=-1, strafe:=0.0, boost_requested:=false,cloak_requested:=false,turret_inverted:=false) -> RefCounted:
 	# Owners forked for this candidate frame may update in place inside it.
+	# The self-check also builds it on forks alone and compares the two.
+	var before: Dictionary=snapshot() if FrameTransaction.selfcheck else {}
+	var forked: RefCounted=_evaluate_frame(milliseconds,commands,throttle,paused,viewport_size,drill_command,primary_fire,secondary_fire,relative_mouse_capture,current_music_id,strafe,boost_requested,cloak_requested,turret_inverted) if FrameTransaction.selfcheck else null
+	var forked_error:=error
 	var token:=FrameTransaction.begin()
 	var result: RefCounted=_evaluate_frame(milliseconds,commands,throttle,paused,viewport_size,drill_command,primary_fire,secondary_fire,relative_mouse_capture,current_music_id,strafe,boost_requested,cloak_requested,turret_inverted)
 	FrameTransaction.end(token)
+	if FrameTransaction.selfcheck:
+		var found:=FrameTransaction.check(before,snapshot(),forked,forked_error,result,error)
+		if not found.is_empty():reject(found);return null
 	return result
 
 func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.0, paused:=false, viewport_size:=Vector2i.ZERO, drill_command:=Vector2.ZERO, primary_fire:=false, secondary_fire:=false, relative_mouse_capture:=false, current_music_id:=-1, strafe:=0.0, boost_requested:=false,cloak_requested:=false,turret_inverted:=false) -> RefCounted:
@@ -689,7 +697,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 		if not next._observe_radio():reject(next.error);return null
 		return next
 	# Earlier packs keep their explicit pre-drill support boundary.
-	if _mining==null and _approach!=null and _approach.snapshot().phase=="drill_required":return next
+	if _mining==null and _approach!=null and _approach.phase()=="drill_required":return next
 	next._viewport=viewport
 	if not next._briefing.advance(milliseconds,false,true):reject(next._briefing.error);return null
 	var delta_ms: int=next._briefing.simulation_delta_ms()
@@ -732,7 +740,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 	var turret_active: bool=_encounter!=null and _encounter.turret_active()
 	if turret_active:
 		next._encounter=next._encounter.advance_turret(commands if manual else Vector2.ZERO,delta_ms,turret_inverted)
-		if not manual or (_autopilot!=null and _autopilot.snapshot().active) or (_approach!=null and _approach.snapshot().phase!="idle"):
+		if not manual or (_autopilot!=null and _autopilot.active()) or (_approach!=null and _approach.phase()!="idle"):
 			next._encounter=next._encounter.set_turret_active(false);turret_active=false
 		else:commands=Vector2.ZERO;strafe=0.0
 	# A live guided missile takes the stick; the ship keeps its motion.
@@ -784,7 +792,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 			# Automatic completion clears the movement gate within the player
 			# update. Its remaining ordinary movement uses retained throttle.
 			active_throttle=next._throttle
-	elif _approach!=null and _approach.snapshot().phase!="idle":
+	elif _approach!=null and _approach.phase()!="idle":
 		var index: int=_approach.snapshot().object_index
 		if not next._approach.advance(next._scenery,delta_ms,false,next._booster.speed_multiplier()):reject(next._approach.error);return null
 		var sample: Dictionary=next._approach.last_guidance_sample()
@@ -827,7 +835,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 		next._pose.origin=Vectors.added(_pose.origin,Vectors.scaled(Vectors.normalized(_pose.basis.z),float(delta_ms)*speed))
 		next._statistics_pose=next._pose*Transform3D(_model_basis,Vector3.ZERO)
 		if not next._autopilot.observe_scripted_pose(next._pose):reject(next._autopilot.error);return null
-	elif _autopilot!=null and _autopilot.snapshot().active:
+	elif _autopilot!=null and _autopilot.active():
 		if _local_travel!=null and _autopilot.snapshot().target_kind=="planet":
 			var destination: Variant=_local_travel.target_position(int(_autopilot.snapshot().station_id))
 			if destination==null or not next._autopilot.refresh_planet_position(destination):reject(_local_travel.error+next._autopilot.error);return null
@@ -881,7 +889,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 		next._random=destruction.random_state;next._model_basis=destruction.state.rendered_model_basis
 		next._audio_frame.player_tail=destruction.events.duplicate(true)
 		if next._particles!=null and not next._particles.apply_player_tail(next._death):reject(next._particles.error);return null
-		if next._approach!=null and next._approach.snapshot().phase!="idle":
+		if next._approach!=null and next._approach.phase()!="idle":
 			if not next._approach.accept_model_basis(next._model_basis):reject(next._approach.error);return null
 	# Existing projectile slots contact the current player before advancing.
 	# The later mission cue must not move their retained shooter/launch poses.
@@ -1095,7 +1103,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 		if not next._booster.request_start():reject(next._booster.error);return null
 		if next._booster.snapshot().activation!=activation:
 			next._throttle=1.0
-			if next._approach!=null and next._approach.snapshot().phase=="approach" and not next._approach.set_throttle(1.0):reject(next._approach.error);return null
+			if next._approach!=null and next._approach.phase()=="approach" and not next._approach.set_throttle(1.0):reject(next._approach.error);return null
 	if delta_ms>0:next._reference=next._camera.snapshot().eye
 	if not next._advance_world(0 if cues.dialogue.visible else delta_ms,_reference):reject(next.error);return null
 	if next._gate_transit!=null and not next.gate_departing() and not next.death_active() and cues.entry_released:
@@ -1106,7 +1114,7 @@ func _evaluate_frame(milliseconds: Variant, commands:=Vector2.ZERO, throttle:=1.
 		if next.gate_modal() and not next._booster.cancel():reject(next._booster.error);return null
 	if next._local_travel!=null:
 		var selected_planet:=-1
-		if next._autopilot.snapshot().active and next._autopilot.snapshot().target_kind=="planet":selected_planet=int(next._autopilot.snapshot().station_id)
+		if next._autopilot.active() and next._autopilot.snapshot().target_kind=="planet":selected_planet=int(next._autopilot.snapshot().station_id)
 		var planet_hud: bool=not next.death_active() and cues.entry_released and not cues.dialogue.visible and not next.local_departing() and not next.cinematic_input_blocked()
 		var mining_selected: bool=next._targeting!=null and next._targeting.selected_object_index()>=0
 		if not next._local_travel.sample_frame(next._camera.snapshot().pose,next._aim.snapshot(),delta_ms,selected_planet,planet_hud,mining_selected):reject(next._local_travel.error);return null
@@ -1221,8 +1229,8 @@ func _advance_npc_hud(delta_ms: int,enabled: bool,camera: Transform3D,aim: Dicti
 		var point: Vector3=aim.point
 		var context:={"base_content_id":_entry.base_content_id,"binding_id":_entry.binding_id,
 			"enabled":enabled,"guidance_active":_route!=null,"alternate_operation_active":false,
-			"mining_approach_active":_approach!=null and _approach.snapshot().phase!="idle",
-			"alternate_approach_active":false,"autopilot":_autopilot!=null and _autopilot.snapshot().active,
+			"mining_approach_active":_approach!=null and _approach.phase()!="idle",
+			"alternate_approach_active":false,"autopilot":_autopilot!=null and _autopilot.active(),
 			"other_target_selected":_targeting!=null and _targeting.selected_object_index()>=0,
 			"ordinary_scan_enabled":true,"ordinary_scan_blocked":false,
 			"aim_pixels":Vector2(point.x,point.y),"viewport_size":aim.viewport_size}
@@ -1239,7 +1247,7 @@ func _advance_npc_hud(delta_ms: int,enabled: bool,camera: Transform3D,aim: Dicti
 func _advance_tractor(delta_ms: int) -> bool:
 	if _tractor==null:return true
 	var player:={"base_content_id":_entry.base_content_id,"binding_id":_entry.binding_id,
-		"pose":_pose,"autopilot":_autopilot!=null and _autopilot.snapshot().active}
+		"pose":_pose,"autopilot":_autopilot!=null and _autopilot.active()}
 	var operation: Dictionary=_encounter.evaluate_cargo_recovery(_tractor,_cargo,delta_ms,player,_scenery)
 	if operation.is_empty():return reject(_encounter.error)
 	_encounter=operation.encounter;_tractor=operation.tractor;_cargo=operation.cargo
@@ -1251,8 +1259,8 @@ func _advance_tractor(delta_ms: int) -> bool:
 	return true
 
 func _advance_scenery_hud(delta_ms: int,enabled: bool,camera: Transform3D,aim: Dictionary) -> bool:
-	var approaching: bool=_approach!=null and _approach.snapshot().phase!="idle"
-	var suspended: bool=_autopilot!=null and _autopilot.snapshot().active
+	var approaching: bool=_approach!=null and _approach.phase()!="idle"
+	var suspended: bool=_autopilot!=null and _autopilot.active()
 	var blocked: bool=_route!=null
 	var recovery_pending:=false
 	if _local_travel!=null:blocked=blocked or _local_travel.read_state().acquired_station_id>=0
@@ -1288,8 +1296,8 @@ func _advance_station_targeting(delta_ms: int,enabled: bool,held_primary: bool,c
 		"delta_ms":delta_ms,"viewport_size":aim.viewport_size,"camera_pose":camera,"aim_point":aim.point,
 		"station":{"environment_slot":0,"pose":_station.read_snapshot().pose,"active":true},
 		"controller_enabled":enabled and not local_departing(),"held_primary":held_primary,
-		"other_selected_target":other,"mining_approach_active":_approach!=null and _approach.snapshot().phase!="idle",
-		"alternate_operation_active":false,"selected_target_active":_autopilot!=null and _autopilot.snapshot().active}
+		"other_selected_target":other,"mining_approach_active":_approach!=null and _approach.phase()!="idle",
+		"alternate_operation_active":false,"selected_target_active":_autopilot!=null and _autopilot.active()}
 	return true if _station_targeting.advance(observation) else reject(_station_targeting.error)
 
 func _advance_void_targeting(delta_ms: int,enabled: bool,held_primary: bool,camera: Transform3D,aim: Dictionary) -> bool:
@@ -1302,8 +1310,8 @@ func _advance_void_targeting(delta_ms: int,enabled: bool,held_primary: bool,came
 		"delta_ms":delta_ms,"viewport_size":aim.viewport_size,"camera_pose":camera,"aim_point":aim.point,
 		"station":{"environment_slot":0,"pose":station.pose,"active":true},
 		"controller_enabled":enabled and _probe.snapshot().environment_targeting_enabled,"held_primary":held_primary,
-		"other_selected_target":other,"mining_approach_active":_approach!=null and _approach.snapshot().phase!="idle",
-		"alternate_operation_active":false,"selected_target_active":_autopilot!=null and _autopilot.snapshot().active}
+		"other_selected_target":other,"mining_approach_active":_approach!=null and _approach.phase()!="idle",
+		"alternate_operation_active":false,"selected_target_active":_autopilot!=null and _autopilot.active()}
 	return true if _void_targeting.advance(observation) else reject(_void_targeting.error)
 
 func fast_forward_available() -> bool:return _fast_forward!=null
@@ -1311,8 +1319,8 @@ func fast_forward_available() -> bool:return _fast_forward!=null
 func fast_forward_state() -> Dictionary:
 	if _fast_forward==null:return {}
 	var state: Dictionary=_fast_forward.snapshot()
-	var approach: bool=_approach!=null and _approach.snapshot().phase=="approach"
-	var navigation: bool=(_autopilot!=null and _autopilot.snapshot().active) or approach
+	var approach: bool=_approach!=null and _approach.phase()=="approach"
+	var navigation: bool=(_autopilot!=null and _autopilot.active()) or approach
 	state.merge({"navigation":navigation,"near_target":_near_target,"enabled":navigation and not _fast_forward.battle() and not _near_target and not (_radio!=null and _radio.snapshot().get("visible",false))})
 	return state
 
@@ -1975,7 +1983,7 @@ func _advance_sahi(delta_ms: int) -> bool:
 			"player_visual_rotation":
 				_model_basis=(_model_basis*Basis.from_euler(cue.delta)).orthonormalized()
 				_statistics_pose=_pose*Transform3D(_model_basis,Vector3.ZERO)
-				if _approach!=null and _approach.snapshot().phase!="idle" and not _approach.accept_model_basis(_model_basis):return reject(_approach.error)
+				if _approach!=null and _approach.phase()!="idle" and not _approach.accept_model_basis(_model_basis):return reject(_approach.error)
 			"rebase_starfield":_reference=_camera.snapshot().eye
 	if not state.input_blocked:return true
 	var random: RefCounted=load("res://src/simulation/seeded_random.gd").new()
@@ -2033,7 +2041,7 @@ func _advance_convoy(delta_ms: int) -> bool:
 		_pilot.angular_units=Vector2.ZERO
 		_model_basis=(_model_basis*Basis(Vector3.UP,frame.model_rotation_delta.y)).orthonormalized()
 		_statistics_pose=_pose*Transform3D(_model_basis,Vector3.ZERO)
-		if _approach!=null and _approach.snapshot().phase!="idle" and not _approach.accept_model_basis(_model_basis):return reject(_approach.error)
+		if _approach!=null and _approach.phase()!="idle" and not _approach.accept_model_basis(_model_basis):return reject(_approach.error)
 	if not _apply_convoy_engine_cue(frame):return false
 	for operation in frame.camera_operations:
 		if operation.action in ["follow_player","follow_actor"]:
@@ -2490,7 +2498,7 @@ func start_mining(paused:=false) -> RefCounted:
 	if not _unsupported_boundary.is_empty():reject("This flight requires its player-death transition");return null
 	if not _station_packet.is_empty():reject("This flight has reached the station");return null
 	if _approach==null or _targeting==null or paused:reject("This active flight has no supported mining approach");return null
-	if _autopilot!=null and _autopilot.snapshot().active:reject("Cancel station autopilot before selecting a mining approach");return null
+	if _autopilot!=null and _autopilot.active():reject("Cancel station autopilot before selecting a mining approach");return null
 	var cues: Dictionary=_briefing.snapshot()
 	if not cues.entry_released or dialogue_visible():reject("Mining requires released flight input");return null
 	var next:=fork_for_frame()
@@ -2511,9 +2519,9 @@ func start_station_autopilot(paused:=false) -> RefCounted:
 	if not _unsupported_boundary.is_empty():reject("This flight requires its player-death transition");return null
 	if not _station_packet.is_empty():reject("This flight has reached the station");return null
 	if _autopilot==null or paused or dialogue_visible() or not _briefing.read_state().entry_released:reject("Station autopilot requires released flight input");return null
-	if _approach!=null and _approach.snapshot().phase!="idle":reject("Finish or cancel mining before selecting the station");return null
+	if _approach!=null and _approach.phase()!="idle":reject("Finish or cancel mining before selecting the station");return null
 	var next:=fork_for_frame()
-	if next._autopilot.snapshot().active and not next._autopilot.clear_target():reject(next._autopilot.error);return null
+	if next._autopilot.active() and not next._autopilot.clear_target():reject(next._autopilot.error);return null
 	if not next._autopilot.start(_pose):reject(next._autopilot.error);return null
 	next._throttle=next._autopilot.snapshot().throttle
 	if not next._queue_notice_events(next._autopilot.snapshot().events):reject(next.error);return null
@@ -2522,7 +2530,7 @@ func start_station_autopilot(paused:=false) -> RefCounted:
 func start_field_autopilot(paused:=false) -> RefCounted:
 	error=""
 	if paused or _autopilot==null or cinematic_input_blocked() or death_active() or local_departing() or dialogue_visible() or not _briefing.read_state().entry_released:reject("Asteroid autopilot requires released flight input");return null
-	if _approach!=null and _approach.snapshot().phase!="idle":reject("Finish or cancel mining before selecting the field");return null
+	if _approach!=null and _approach.phase()!="idle":reject("Finish or cancel mining before selecting the field");return null
 	var next:=fork_for_frame()
 	if not next._autopilot.start_field(_scenery.read_snapshot().center,_pose):reject(next._autopilot.error);return null
 	next._throttle=next._autopilot.snapshot().throttle
@@ -2545,7 +2553,7 @@ func select_planet(station_id: int, paused:=false) -> RefCounted:
 	error=""
 	if cinematic_input_blocked() or local_departing():reject("Finish the current departure before selecting another planet");return null
 	if _local_travel==null or paused or death_active() or dialogue_visible() or not _briefing.read_state().entry_released:reject("Planet selection requires released local flight input");return null
-	if _approach!=null and _approach.snapshot().phase!="idle":reject("Finish or cancel mining before selecting a planet");return null
+	if _approach!=null and _approach.phase()!="idle":reject("Finish or cancel mining before selecting a planet");return null
 	var destination: Variant=_local_travel.target_position(station_id)
 	if destination==null:reject(_local_travel.error);return null
 	var next:=fork_for_frame()
@@ -2558,7 +2566,7 @@ func launch_planet(paused:=false) -> RefCounted:
 	error=""
 	if cinematic_input_blocked():reject("The cinematic owns flight controls");return null
 	if _local_travel==null or paused or death_active() or dialogue_visible() or not _briefing.read_state().entry_released:reject("Planet departure requires released local flight input");return null
-	if _approach!=null and _approach.snapshot().phase!="idle":reject("Finish or cancel mining before departing");return null
+	if _approach!=null and _approach.phase()!="idle":reject("Finish or cancel mining before departing");return null
 	var next:=fork_for_frame()
 	if not next._local_travel.launch_acquired():reject(next._local_travel.error);return null
 	if not next._begin_local_departure():reject(next.error);return null
@@ -2596,7 +2604,7 @@ func gate_animation_owner() -> RefCounted:
 func _gate_input_available(paused: bool) -> bool:
 	if _gate_transit==null or paused or death_active() or dialogue_visible() or not _briefing.read_state().entry_released or local_departing():return reject("Gate selection requires released ordinary flight")
 	if not _station_packet.is_empty() or not _unsupported_boundary.is_empty():return reject("Finish the current flight transition before selecting the gate")
-	if _approach!=null and _approach.snapshot().phase!="idle":return reject("Finish or cancel mining before selecting the gate")
+	if _approach!=null and _approach.phase()!="idle":return reject("Finish or cancel mining before selecting the gate")
 	return true
 
 func start_gate_autopilot(paused:=false) -> RefCounted:
@@ -3060,7 +3068,7 @@ func engine_particle_view() -> RefCounted:return _engine_particles
 func turret_state() -> Dictionary:return {} if _encounter==null else _encounter.turret_state()
 func toggle_turret() -> RefCounted:
 	error=""
-	if not turret_state().get("ready",false) or not entry_released() or dialogue_visible() or death_active() or local_departing() or cinematic_input_blocked() or _approach.snapshot().phase!="idle" or (_autopilot!=null and _autopilot.snapshot().active):reject("The turret is unavailable during this operation");return null
+	if not turret_state().get("ready",false) or not entry_released() or dialogue_visible() or death_active() or local_departing() or cinematic_input_blocked() or _approach.phase()!="idle" or (_autopilot!=null and _autopilot.active()):reject("The turret is unavailable during this operation");return null
 	var next:=fork_for_frame()
 	next._encounter=_encounter.set_turret_active(not _encounter.turret_active())
 	next._pilot.angular_units=Vector2.ZERO;next._pilot.lateral_units_per_millisecond=0.0
@@ -3205,7 +3213,7 @@ func cloak_input_permitted() -> bool:
 	return _equipment!=null and entry_released() and not death_active() and _player.read_state().vitals.hull>0 and not dialogue_visible() and not cinematic_input_blocked() and not local_departing() and not gate_departing()
 
 func booster_input_permitted() -> bool:
-	return _booster!=null and entry_released() and not death_active() and _player.read_state().vitals.hull>0 and not dialogue_visible() and not cinematic_input_blocked() and not local_departing() and not gate_departing() and drill_owner()==null and (_approach==null or _approach.snapshot().phase in ["idle","approach"])
+	return _booster!=null and entry_released() and not death_active() and _player.read_state().vitals.hull>0 and not dialogue_visible() and not cinematic_input_blocked() and not local_departing() and not gate_departing() and drill_owner()==null and (_approach==null or _approach.phase() in ["idle","approach"])
 
 func engine_particle_owner() -> RefCounted:return null if _engine_particles==null else _engine_particles.fork_for_frame()
 func death_active() -> bool:return _death!=null and _death.phase()!="ready"
@@ -3374,7 +3382,7 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 		if not state.player_aim.is_empty() and not _gas_collector.is_empty() and turret_state().get("active",false):
 			state.player_aim.base_image_id=state.player_aim.image_id
 			state.player_aim.image_id=COLLECTOR_CROSSHAIRS[1 if int(_gas.get("pulling",0))>0 else 0]
-	if _targeting!=null:state.mining_targeting=_targeting.snapshot()
+	if _targeting!=null:state.mining_targeting=_targeting.read_snapshot() if shared_scenery else _targeting.snapshot()
 	if _station_targeting!=null:state.station_targeting=_station_targeting.snapshot()
 	if _approach!=null:
 		state.mining_approach=_approach.snapshot()
@@ -3407,6 +3415,12 @@ func snapshot(shared_scenery:=false) -> Dictionary:
 		state.cargo_objective_satisfied=state.mining_objective.cargo_objective_satisfied
 		state.cargo_objective_acknowledged=state.mining_objective.cargo_objective_acknowledged
 		state.station_return_required=state.mining_objective.station_return_required
+	return state
+
+## A detached copy of the shared observation gains what only snapshots report:
+## the scan marker of every body, which no presentation draws.
+func complete_snapshot(state: Dictionary) -> Dictionary:
+	if _targeting!=null and state.has("mining_targeting"):state.mining_targeting=_targeting.snapshot()
 	return state
 
 func fork_for_frame() -> RefCounted:

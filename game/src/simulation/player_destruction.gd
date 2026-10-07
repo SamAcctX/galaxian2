@@ -15,6 +15,7 @@ const Vectors=preload("res://src/simulation/source_vectors.gd")
 const Vitals=preload("res://src/simulation/combat_vitals.gd")
 const Random=preload("res://src/simulation/seeded_random.gd")
 const Explosion=preload("res://src/simulation/type_zero_explosion.gd")
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 var error:=""
 var _rules:={}
 var _state:={}
@@ -235,7 +236,8 @@ func presentation_identity() -> RefCounted:return _presentation_identity
 
 func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
-	copy._rules=_rules.duplicate(true);copy._state=_state.duplicate(true);copy._presentation_identity=_presentation_identity
+	# Rules are immutable after configuration: freeze once, then share them.
+	copy._rules=Readonly.freeze(_rules);copy._state=_state.duplicate(true);copy._presentation_identity=_presentation_identity
 	copy._departure_loadout=_departure_loadout
 	copy._selected40_construction=_selected40_construction
 	copy._max_ms=_max_ms;return copy

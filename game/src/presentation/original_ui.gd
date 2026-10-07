@@ -78,9 +78,9 @@ func load_regions(library: RefCounted,bindings: RefCounted,visuals: RefCounted,i
 		if not pixels.has(resource):
 			var bytes: PackedByteArray=library.read_resource(resource,Atlas.MAX_BYTES)
 			if bytes.is_empty():reject(library.error);return {}
-			var image: Image=visuals.load_image(resource)
-			if image==null:reject(visuals.error);return {}
-			pixels[resource]=ImageTexture.create_from_image(image);metadata[resource]=bytes
+			var sheet: ImageTexture=visuals.load_texture(resource)
+			if sheet==null:reject(visuals.error);return {}
+			pixels[resource]=sheet;metadata[resource]=bytes
 		var region:=atlas.region(metadata[resource],int(alias.region))
 		if region.is_empty() or pixels[resource].get_size()!=Vector2(region.get("size",Vector2i.ZERO)):
 			reject("Map atlas pixels and source region differ: "+atlas.error);return {}

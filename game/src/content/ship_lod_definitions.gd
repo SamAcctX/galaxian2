@@ -27,6 +27,19 @@ static func parameters(data: Dictionary) -> bool:
 			previous=float(value)
 	return true
 
+## The source table leaves its last rows unfilled (zeros instead of 65535;
+## ships 60-63 in the Mac edition). Resource ID 0 has no declaration and the
+## game data holds no reduced meshes for those hulls, so such a row reads as
+## "no reduced meshes", as ships 55-59 declare it, and the hull keeps its full
+## model at every distance.
+static func filled(data: Dictionary) -> Dictionary:
+	if data.is_empty():return data
+	var copy: Dictionary=data.duplicate(true)
+	for i in copy.body_resource_ids.size():
+		if copy.body_resource_ids[i].all(func(id):return int(id)==0):
+			copy.body_resource_ids[i]=[65535,65535];copy.child_resource_ids[i]=[65535,65535]
+	return copy
+
 static func validate(data: Variant, executable_bytes: int, architecture: String, catalogue_count: int = 0) -> String:
 	if not data is Dictionary: return "Missing ship LOD declarations"
 	if data.is_empty(): return ""

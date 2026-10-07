@@ -63,7 +63,7 @@ func poll_campaign_result(encounter: RefCounted,radio: RefCounted,rescue: RefCou
 	if _result_observation!=null:return true
 	var observed: RefCounted=encounter.observe_kappa_rescue(rescue,radio)
 	if observed==null:return reject(encounter.error)
-	var visit: RefCounted=_visit.fork()
+	var visit: RefCounted=_visit.frame_copy()
 	if not visit.poll_result(observed,completion_allowed):return reject(visit.error)
 	if visit.snapshot().dialogue.visible:
 		_result_observation=observed
@@ -147,7 +147,7 @@ func advance_wingmen(milliseconds: int) -> bool:
 func set_loma_toll(status: int,debit:=0) -> bool:
 	error=""
 	if _contracts==null:return reject("The Loma toll requires the retained career")
-	var candidate: RefCounted=_contracts.fork()
+	var candidate: RefCounted=_contracts.frame_copy()
 	if not candidate.set_loma_toll(status,debit):return reject(candidate.error)
 	_contracts=candidate
 	return true
@@ -165,7 +165,7 @@ func record_wingman_loss(pilot: RefCounted) -> bool:
 		if body.get(key)!=_state.get(key):return reject("The casualty belongs to another flight")
 	if not body.get("wingman",false) or body.get("vitals",{}).get("hull",1)!=0:return reject("A living pilot cannot leave as a casualty")
 	if _wingman_losses.has(index):return true
-	var candidate: RefCounted=_contracts.fork()
+	var candidate: RefCounted=_contracts.frame_copy()
 	if not candidate.record_wingman_loss(pilot):return reject(candidate.error)
 	_contracts=candidate;_wingman_losses[index]=body.name
 	return true
@@ -179,7 +179,7 @@ func retain_mining_hint(seen: bool) -> void:
 
 func retain_mining_extraction(receipt: Dictionary) -> bool:
 	if _contracts==null:return reject("Mining lifetime progress requires the retained contract career")
-	var candidate: RefCounted=_contracts.fork()
+	var candidate: RefCounted=_contracts.frame_copy()
 	if not MiningExtraction.retain_contract_owner(candidate,receipt):return reject("Mining lifetime progress belongs to another contract career")
 	_contracts=candidate
 	return true

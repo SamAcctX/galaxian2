@@ -33,6 +33,7 @@ const ContractLife=preload("res://src/content/contract_ship_lifecycle_definition
 const Beams=preload("res://src/simulation/repair_beams.gd")
 const Emergency=preload("res://src/simulation/emergency_system.gd")
 const Injector=preload("res://src/simulation/shield_injector.gd")
+const Readonly=preload("res://src/simulation/readonly_state.gd")
 var error := ""
 var _state := {}
 var _hit_policy := {}
@@ -608,7 +609,8 @@ func fork_for_frame() -> RefCounted:
 	var copy: RefCounted=get_script().new()
 	copy._state=_state.duplicate(true)
 	copy._flight_cache=_flight_cache.duplicate(true)
-	copy._hit_policy=_hit_policy.duplicate(true);copy._npc_weapons=_npc_weapons.duplicate(true);copy._loadout=_loadout.duplicate(true)
+	# Policy and weapons are immutable after configuration: freeze once, then share them.
+	copy._hit_policy=Readonly.freeze(_hit_policy);copy._npc_weapons=Readonly.freeze(_npc_weapons);copy._loadout=_loadout.duplicate(true)
 	copy._selected40_construction=_selected40_construction
 	copy._selected41_construction=_selected41_construction
 	if _recharge!=null: copy._recharge=_recharge.fork_for_frame()

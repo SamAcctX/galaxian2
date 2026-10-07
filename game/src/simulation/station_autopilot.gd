@@ -224,6 +224,10 @@ func visual_basis(angular_units: Vector2) -> Basis:
 	var roll:=single(single(float(angular_units.y)*float(_rules.bank_angle_scale))*float(_rules.angle_tau))
 	return Vectors.local_xyz(Vector3(pitch,0,roll))
 
+## Whether a target is being flown to, without copying the whole observation:
+## the flight asks many times a frame.
+func active() -> bool:return not _state.is_empty() and bool(_state.active)
+
 func snapshot() -> Dictionary:
 	if _state.is_empty():return {}
 	var result:=_identity.duplicate();result.merge(_state.duplicate(true))

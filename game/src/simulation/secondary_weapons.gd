@@ -2,6 +2,7 @@ extends RefCounted
 ## Equipped secondary ownership. Prospective operations commit ammunition,
 ## retained projectiles and target damage together.
 const Definitions=preload("res://src/content/secondary_ownership_definitions.gd")
+const FrameTransaction=preload("res://src/simulation/frame_transaction.gd")
 const Loadout=preload("res://src/simulation/equipment_slots.gd")
 const Bomb=preload("res://src/simulation/emp_bombs.gd")
 const Mines=preload("res://src/simulation/mine_projectiles.gd")
@@ -20,6 +21,7 @@ const Contacts=preload("res://src/simulation/ordinary_opening_contacts.gd")
 const NpcContacts=preload("res://src/simulation/ordinary_npc_contacts.gd")
 const Playback=preload("res://src/simulation/model_playback.gd")
 var error:=""
+var _txn:=0
 var _initial_loadout:={}
 var _loadout:={}
 var _guns:=[]
@@ -167,13 +169,15 @@ static func _projectile_state(gun: Dictionary) -> Dictionary:
 	if gun.has("mine"):return gun.mine.snapshot()
 	return gun.bomb.snapshot() if gun.has("bomb") else gun.projectiles.snapshot()
 
-func evaluate_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted,ordered_actor_ids: Variant,permitted: Variant=true,bodies: RefCounted=null,inventory: RefCounted=null) -> Dictionary:
+## combat_staged (here and below): the caller passes a detached combat that it
+## discards on any failure; hits then change it in place instead of a second fork.
+func evaluate_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted,ordered_actor_ids: Variant,permitted: Variant=true,bodies: RefCounted=null,inventory: RefCounted=null,combat_staged:=false) -> Dictionary:
 	error=""
 	var pulse_pending: bool=permitted==true and _guns.any(func(gun):return gun.has("bomb") and gun.bomb.snapshot().shot.get("phase")=="flying")
 	var targets:=_targets(combat,ordered_actor_ids,bodies if pulse_pending else null,inventory)
 	if not error.is_empty():return {}
 	if not Flight.rigid_pose(pose) or not permitted is bool or not selected_item_id is int or (selected_item_id!=-1 and not _guns.any(func(gun):return gun.equipment.item_id==selected_item_id)):return fail("Invalid selected secondary or firing context")
-	var next:=fork();var group: RefCounted=combat.fork_for_frame();var events:=[];var exhausted:=false
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork();var group: RefCounted=combat if combat_staged else combat.fork_for_frame();var events:=[];var exhausted:=false
 	var field: RefCounted=bodies
 	if permitted:
 		for gun in next._guns:
@@ -206,24 +210,24 @@ func evaluate_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted
 
 ## Live player input stages the pulse and every inventory view as one result.
 ## A rejected retained view discards the prospective launch and its combat hits.
-func evaluate_player_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted,ordered_actor_ids: Variant,player: RefCounted,equipment: RefCounted,primaries: RefCounted,targets: RefCounted,input_enabled: Variant=true,bodies: RefCounted=null) -> Dictionary:
+func evaluate_player_trigger(pose: Variant,selected_item_id: Variant,combat: RefCounted,ordered_actor_ids: Variant,player: RefCounted,equipment: RefCounted,primaries: RefCounted,targets: RefCounted,input_enabled: Variant=true,bodies: RefCounted=null,combat_staged:=false) -> Dictionary:
 	error=""
 	if not is_instance_of(player,load("res://src/simulation/opening_player_state.gd")) or not input_enabled is bool:return fail("Secondary firing requires an initialized player and input permission")
 	var state: Dictionary=player.snapshot()
 	if player.loadout()!=_loadout or not state.get("active") is bool or not state.get("vitals") is Dictionary or not Vitals.integer(state.vitals.get("hull")):return fail("Secondary firing lost its current player equipment or vitality")
-	var operation:=evaluate_trigger(pose,selected_item_id,combat,ordered_actor_ids,input_enabled and state.active and state.vitals.hull>0,bodies,targets if bodies!=null else null)
+	var operation:=evaluate_trigger(pose,selected_item_id,combat,ordered_actor_ids,input_enabled and state.active and state.vitals.hull>0,bodies,targets if bodies!=null else null,combat_staged)
 	if operation.is_empty():return {}
 	var retained: Dictionary=operation.owner.evaluate_retention(player,equipment,primaries,targets)
 	if retained.is_empty():return fail(operation.owner.error)
 	operation.merge(retained)
 	return operation
 
-func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Variant,observer_position: Variant=null,bodies: RefCounted=null,inventory: RefCounted=null,guidance_actor_id: int=-1) -> Dictionary:
+func evaluate_advance(delta_ms: Variant,combat: RefCounted,ordered_actor_ids: Variant,observer_position: Variant=null,bodies: RefCounted=null,inventory: RefCounted=null,guidance_actor_id: int=-1,combat_staged:=false) -> Dictionary:
 	error=""
 	var targets:=_targets(combat,ordered_actor_ids)
 	if not error.is_empty():return {}
 	if not Vitals.integer(delta_ms):return fail("Invalid secondary frame duration")
-	var next:=fork();var group: RefCounted=combat.fork_for_frame();var events:=[]
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork();var group: RefCounted=combat if combat_staged else combat.fork_for_frame();var events:=[]
 	var field: RefCounted=bodies
 	var self_hits:=[]
 	next._detonation_events.clear();next._camera_commands.clear()
@@ -335,7 +339,7 @@ func sentry_targets() -> Array:
 ## A hostile hit on a placed sentry, staged on a fork like any other frame.
 func evaluate_sentry_damage(slot_index: int,sentry_id: int,amount: int) -> Dictionary:
 	error=""
-	var next:=fork()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork()
 	for gun in next._guns:
 		if gun.slot_index!=slot_index or not gun.has("sentry"):continue
 		var hit: Dictionary=gun.sentry.damage(sentry_id,amount)
@@ -593,14 +597,14 @@ func guided_camera_pose() -> Transform3D:
 ## Copy-on-write: the returned owner carries the new stick command.
 func steer_guided(command: Vector2) -> RefCounted:
 	error=""
-	var next:=fork()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork()
 	var gun: Dictionary=next._guided_gun()
 	if not gun.is_empty() and not gun.bomb.set_steering(command):reject(gun.bomb.error);return null
 	return next
 
 ## Script/phase removal: the live guided missile vanishes without a blast.
 func discard_guided() -> RefCounted:
-	var next:=fork()
+	var next: RefCounted=self if FrameTransaction.owns(_txn) else fork()
 	var gun: Dictionary=next._guided_gun()
 	if not gun.is_empty():gun.bomb.discard_flying()
 	return next
@@ -629,6 +633,7 @@ func snapshot() -> Dictionary:
 
 func fork() -> RefCounted:
 	var next: RefCounted=get_script().new()
+	next._txn=FrameTransaction.current
 	next._initial_loadout=_initial_loadout.duplicate(true);next._loadout=_loadout.duplicate(true);next._launches=_launches;next._nuclear_bomb_detonations=_nuclear_bomb_detonations
 	next._projectile_breaks=_projectile_breaks.duplicate();next._max_projectile_breaks=_max_projectile_breaks
 	next._presentation_identity=_presentation_identity;next._detonation_events=_detonation_events.duplicate(true);next._camera_commands=_camera_commands.duplicate(true)

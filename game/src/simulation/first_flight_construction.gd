@@ -220,7 +220,7 @@ func _prepare_free_owned(bindings: RefCounted,catalogues: RefCounted,equipment: 
 	var conditions:={"companions_empty":true,"location_match":false,"special_placement":false}
 	# A story job at a talk station (e.g. a talk arrival) runs as the selected
 	# job; the station visit itself stays the pending story for docking.
-	var story_job: bool=load("res://src/content/valkyrie_flight_definitions.gd").is_story_job(accepted.mission)
+	var story_job: bool=load("res://src/content/valkyrie_flight_definitions.gd").is_story_job(accepted.get("mission"))
 	var selected_job: bool=(not context.mission_story or story_job) and MissionContext.supports_contract(bindings,accepted.mission,cursor)
 	var scenery:=Scenery.new()
 	var ready: bool=scenery.configure_contract(bindings,catalogues,equipment,contracts,previous_cache if previous_cache is Dictionary else {},context.get("player_position",Vector3(data.player_position[0],data.player_position[1],data.player_position[2])),conditions,unix_seconds,large_display,body_resources,effect_resources) if selected_job else scenery.configure_kappa_rescue(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources) if rescue else scenery.configure_free(bindings,catalogues,equipment,context,conditions,unix_seconds,large_display,body_resources,effect_resources)
