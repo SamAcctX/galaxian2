@@ -143,7 +143,7 @@ func prepare_world(owner: RefCounted,world: Dictionary,camera_pose: Variant) -> 
 			mesh.clear_surfaces()
 			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},Mesh.ARRAY_CUSTOM_RGBA_FLOAT<<Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 		prepared.append(mesh);counts.append(vertices.size()>>2)
-	return {"meshes":prepared,"counts":counts,"pose":camera_pose,"elapsed_ms":state.elapsed_ms}
+	return {"meshes":prepared,"counts":counts,"pose":camera_pose,"elapsed_ms":state.elapsed_ms,"source":[owner,world]}
 
 static var _indices:=PackedInt32Array()
 
@@ -180,6 +180,13 @@ func commit_world(prepared: Dictionary) -> void:
 		items[index].node.mesh=prepared.meshes[index]
 		items[index].node.visible=prepared.meshes[index]!=null
 	frame=prepared
+
+## Action Freeze moves the camera over a paused flight: rebuild the committed
+## sprites square to it from the same world.
+func face_camera(pose: Transform3D) -> void:
+	if frame.is_empty():return
+	var prepared:=prepare_world(frame.source[0],frame.source[1],pose)
+	if not prepared.is_empty():commit_world(prepared)
 
 func clear() -> void:
 	for child in get_children():child.free()

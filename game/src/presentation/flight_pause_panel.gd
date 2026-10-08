@@ -204,7 +204,7 @@ func begin_freeze(camera: Camera3D,pivot: Vector3) -> bool:
 
 func end_freeze() -> void:
 	if view!="freeze":return
-	if is_instance_valid(_camera):_camera.global_transform=_saved_camera
+	if is_instance_valid(_camera):_camera.global_transform=_saved_camera;_face()
 	_camera=null;action_requested.emit("unfreeze");show_menu()
 
 func orbit(yaw_delta: float,pitch_delta: float,zoom_factor:=1.0) -> void:
@@ -217,7 +217,11 @@ func _apply_orbit() -> void:
 	if not is_instance_valid(_camera):return
 	var direction:=Vector3(cos(_pitch)*sin(_yaw),sin(_pitch),cos(_pitch)*cos(_yaw))
 	_camera.global_position=_pivot+direction*distance
-	_camera.look_at(_pivot,Vector3.UP)
+	_camera.look_at(_pivot,Vector3.UP);_face()
+
+# The paused flight presents no new frame: sprites and sun flares prepared for
+# the flight camera follow the moved one.
+func _face() -> void:_camera.get_viewport().propagate_call("face_camera",[_camera.global_transform])
 
 func _gui_input(event: InputEvent) -> void:
 	if view!="freeze":return
@@ -267,7 +271,7 @@ func snapshot() -> Dictionary:
 	return {"view":view,"title":_title.text,"buttons":button_texts(),"missions":_missions.snapshot() if view=="missions" else {},"distance":distance}
 
 func clear() -> void:
-	if view=="freeze" and is_instance_valid(_camera):_camera.global_transform=_saved_camera
+	if view=="freeze" and is_instance_valid(_camera):_camera.global_transform=_saved_camera;_face()
 	_camera=null;view="";_missions.clear();visible=false
 
 func reject(message: String) -> bool:error=message;return false
