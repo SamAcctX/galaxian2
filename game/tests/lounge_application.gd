@@ -36,6 +36,9 @@ func run_application() -> void:
 		root.size=Vector2i(1280,720)
 		app=Host.new();root.add_child(app);app.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		app.set_context(source,definitions,visual);app.set_process(false);app._focused=true
+		# Departure autosaves bank the play time into the career (#10).
+		var saves:=OS.get_environment("GOF2_SAVE_TEST_DIRECTORY")
+		if not saves.is_empty():app.enable_saves(saves.path_join("lounge"))
 		await process_frame
 		for kind in [0,4,7,12,11]:
 			await verify_application_kind(kind,args)
@@ -118,7 +121,9 @@ func verify_application_kind(kind: int,args: PackedStringArray) -> void:
 	check(not session.contract_action("accept",fixture.contact_id,app.lounge_panel) and session.snapshot()==accepted,"Repeated acceptance changed the accepted station")
 	app.lounge_panel.back()
 	check(not app.lounge_panel.visible and not session.snapshot().lounge_open,"Back failed to release the lounge")
-	if not app.request_departure() or not app.enter_first_flight(now_us,4096,1789100000):check(false,app.status.text);return
+	if not app.request_departure():check(false,app.status.text);return
+	app._career_play_ms+=1500.0 # _process counts play time while the question is open
+	if not app.enter_first_flight(now_us,4096,1789100000):check(false,app.status.text);return
 	print("Lounge application launch: kind "+str(kind))
 	if not await release_application_flight():return
 	print("Lounge application released: kind "+str(kind))
