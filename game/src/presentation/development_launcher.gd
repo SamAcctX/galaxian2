@@ -6,6 +6,7 @@ const WorldBrowser = preload("res://src/presentation/world_browser.gd")
 const ResourceBindings = preload("res://src/content/resource_bindings.gd")
 const OpeningPreview = preload("res://src/presentation/opening_preview.gd")
 const RadioPreview = preload("res://src/presentation/radio_preview.gd")
+const Preferences = preload("res://src/content/player_preferences.gd")
 var library := Library.new()
 var visuals := VisualLibrary.new()
 var status: Label
@@ -112,6 +113,8 @@ func _ready() -> void:
 	bindings_picker.file_selected.connect(func(path): _open_bindings(path.get_base_dir()))
 	add_child(bindings_picker)
 	var args := OS.get_cmdline_user_args()
+	if "--inspect" in args and not "--content" in args:
+		_open_selected_import()
 	for option in ["--content", "--bindings", "--visuals", "--asset", "--resource-id", "--station-id", "--ship-id"]:
 		var i := args.find(option)
 		if i >= 0 and i + 1 < args.size():
@@ -130,6 +133,16 @@ func _ready() -> void:
 	if "--opening-preview" in args:
 		tabs.current_tab=opening_preview.get_index()
 		opening_preview.start()
+
+## Opens the import the game itself has selected (player.json), as --content,
+## --bindings and --visuals would.
+func _open_selected_import() -> void:
+	var preferences := Preferences.new()
+	if not preferences.read_file("user://player.json") or preferences.values.content.is_empty():
+		return
+	_open_content(preferences.values.content)
+	_open_bindings(preferences.values.bindings)
+	_open_visuals(preferences.values.visuals)
 
 func _open_content(directory: String) -> void:
 	languages.clear()
