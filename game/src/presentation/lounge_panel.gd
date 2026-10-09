@@ -247,7 +247,9 @@ func _refresh() -> void:
 			else:_body.text+="\n\n"+text(192).replace("#C",money(int(service.missing_credits)))
 		elif service.get("kind")=="wingmen":
 			_body.text=text(int(service.intro_text_id)).replace("#C",money(int(service.total_price)))
-			if service.busy:_body.text=text(774)
+			# Hired wingmen share the Challenge client's line (startChat, offer 6).
+			if service.get("consumed",false):_body.text=taken_text(12)
+			elif service.busy:_body.text=text(774)
 			elif service.can_accept:
 				show_yes=true
 				if _confirming:
