@@ -99,4 +99,53 @@ class ImageRegions(unittest.TestCase):
             rows=extract_image_bindings(mach)['records']
             self.assertEqual([(r['id'],r['region']) for r in rows],[(42,7),(42,8)])
 
-if __name__=='__main__':unittest.main()
+
+
+def android_images(range_values=None, with_range=True, extra=()):
+    """BuildResourceList in the Android shape: three type-3 records (two alternatives for
+    id 30), one font record, `extra` records as (id, kind, texture, second, sealed), and
+    the range loop. Returns (library, record allocation addresses, range start)."""
+    from android_fixture import TEXT, Thumb, library, stub
+    from thumb_shapes import assemble
+    from gof2_content.android_library import AndroidLibrary
+    from gof2_content.image_regions import ANDROID_RANGE
+    add = '_ZN11AbyssEngine11PaintCanvas11AddResourceEPNS_8ResourceE'
+    rows = [(30, 3, 600, 4, True), (30, 3, 601, 9, True), (31, 3, 601, 2, True), (40, 1, 602, 0, True), *extra]
+    asm, allocations = Thumb(TEXT + 0x100).push(), []
+    for identifier, kind, texture, second, sealed in rows:
+        asm.movs(0, 16)
+        allocations.append(asm.here())
+        asm.call(stub('_Znwj')).mov(5, 0).movs(0, 4).call(stub('_Znwj')).mov(6, 0)
+        asm.movw(1, texture).strh(1, 6, 0).movs(1, second).strh(1, 6, 2).movw(0, identifier).strh(0, 5, 0).movs(0, kind)
+        (asm.minus_one(1) if sealed else asm.movs(1, 0)).adds(2, 5, 4).stm(2, 0, 1, 6)
+    start = asm.here()
+    if with_range:
+        asm.code += assemble(ANDROID_RANGE, start, {'first_id': 5000, 'first_texture_id': 900, 'count': 12, **(range_values or {})},
+                             calls={'_Znwj': stub('_Znwj'), add: TEXT})[0]
+    code = asm.pop().finish()
+    functions = [(add, b'\x70\x47\x00\xbf', TEXT), ('_Z17BuildResourceListPN11AbyssEngine6EngineE', code, TEXT + 0x100)]
+    return AndroidLibrary(library(functions, {})), allocations, start
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'optional static-reader dependency')
+class AndroidImageRegions(unittest.TestCase):
+    def test_records_alternatives_and_range(self):
+        lib, allocations, start = android_images()
+        result = extract_image_bindings(lib)
+        # Type-3 records only, alternatives kept; provenance is each allocation call.
+        self.assertEqual(result['records'], [
+            {'id': 30, 'texture_id': 600, 'region': 4, 'source_offset': allocations[0], 'source_bytes': 4},
+            {'id': 30, 'texture_id': 601, 'region': 9, 'source_offset': allocations[1], 'source_bytes': 4},
+            {'id': 31, 'texture_id': 601, 'region': 2, 'source_offset': allocations[2], 'source_bytes': 4}])
+        self.assertEqual(result['ranges'], [{'first_id': 5000, 'first_texture_id': 900, 'count': 12, 'region': 0,
+                                             'source_offset': start, 'source_bytes': 82}])
+        # A record without constant fields is left out, not the declarations around it.
+        self.assertEqual(extract_image_bindings(android_images(extra=[(32, 3, 603, 1, False)])[0])['records'], result['records'])
+
+    def test_unsupported_ranges(self):
+        for name, options in {'no loop': dict(with_range=False), 'empty': dict(range_values={'count': 0}),
+                              'id overflow': dict(range_values={'first_id': 65530}),
+                              'texture overflow': dict(range_values={'first_texture_id': 65530})}.items():
+            self.assertEqual(extract_image_bindings(android_images(**options)[0])['ranges'], [], name)
+
+if __name__=='__main__': unittest.main()

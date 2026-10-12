@@ -249,25 +249,28 @@ def extract_font_bindings(mach, registrations):
 BUILD = '_Z17BuildResourceListPN11AbyssEngine6EngineE'
 
 
-def android_font_records(lib):
-    """BuildResourceList's 16-byte type-1 records (u16 id, 1, -1, payload) whose
-    4-byte payload holds the u16 texture id and u16 font group, read along
-    straight-line code; provenance is the record's allocation call."""
+def payload_records(lib, kind):
+    """BuildResourceList's 16-byte records of one kind (u16 id, kind, -1, payload) whose
+    4-byte payload holds two u16 (texture id, then font group or atlas region), read
+    along straight-line code; provenance is the record's allocation call. Records
+    without constant fields come back as None."""
     import capstone
     from .android_library import decode_function, interpret, literal_references
     from .android_blocks import offset
     extent = lib.symbols.get(BUILD)
     if extent is None:
         return []
-    decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
-    decoder.detail = True
-    # Decoded as the registration reader does: aligned at each resource literal.
-    anchors = [at for at in literal_references(lib) if extent[0] <= at < sum(extent)]
-    objects = interpret(lib, decode_function(lib, decoder, *extent, anchors) or [])
+    objects = lib.__dict__.get('_build_objects')
+    if objects is None:
+        decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+        decoder.detail = True
+        # Decoded as the registration reader does: aligned at each resource literal.
+        anchors = [at for at in literal_references(lib) if extent[0] <= at < sum(extent)]
+        objects = lib.__dict__['_build_objects'] = interpret(lib, decode_function(lib, decoder, *extent, anchors) or [])
     rows = []
     for item in objects:
         fields = item['fields']
-        if item['size'] != 16 or fields.get(4) != (('value', 1), 4):
+        if item['size'] != 16 or fields.get(4) != (('value', kind), 4):
             continue
         link = fields.get(12, (None,))[0]
         holder = objects[link[1]] if link and link[0] == 'object' and link[2] == 0 else {'size': 0}
@@ -275,9 +278,19 @@ def android_font_records(lib):
         if (item['poisoned'] or sorted(fields) != [0, 4, 8, 12] or fields[8] != (('value', 0xffffffff), 4)
                 or holder['size'] != 4 or holder['poisoned'] or sorted(payload) != [0, 2]
                 or any(field[1] != 2 or not field[0] or field[0][0] != 'value' for field in [fields[0], *payload.values()])):
-            return []
-        rows.append({'id': fields[0][0][1], 'texture_id': payload[0][0][1], 'font_group': payload[2][0][1],
+            rows.append(None)
+            continue
+        rows.append({'id': fields[0][0][1], 'texture_id': payload[0][0][1], 'second': payload[2][0][1],
                      'source_offset': offset(lib, item['address']), 'source_bytes': 4})
+    return rows
+
+
+def android_font_records(lib):
+    """Every type-1 record is a complete font record."""
+    rows = payload_records(lib, 1)
+    if None in rows:
+        return []
+    rows = [{**{k: v for k, v in row.items() if k != 'second'}, 'font_group': row['second']} for row in rows]
     if any(row['id'] == 65535 or row['texture_id'] == 65535 or row['font_group'] >= 32 for row in rows): return []
     if len({row['id'] for row in rows}) != len(rows): return []
     return sorted(rows, key=lambda row: row['id'])

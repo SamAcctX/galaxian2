@@ -1,4 +1,8 @@
-"""Bounded image-region alias declarations; alternatives remain explicit."""
+"""Bounded image-region alias declarations; alternatives remain explicit.
+
+Android: BuildResourceList declares the type-3 records along straight-line code
+and the portrait range in one loop.
+"""
 import re
 import struct
 from .opening_loadout import template
@@ -61,6 +65,11 @@ def arm_record(mach, start, decoder):
 
 
 def extract_image_regions(mach):
+    if mach.architecture == 'android-armv7':
+        from .font_bindings import payload_records
+        # Records with constant fields; the range loop's record is extract_image_range's.
+        return checked([{'id': r['id'], 'texture_id': r['texture_id'], 'region': r['second'], 'source_offset': r['source_offset'],
+                         'source_bytes': r['source_bytes']} for r in payload_records(mach, 3) if r])
     if mach.architecture not in ['x86_64','armv7']:return []
     text=mach.text;code=mach.data[text['offset']:text['offset']+text['length']];rows=[]
     if mach.architecture=='x86_64':
@@ -79,6 +88,10 @@ def extract_image_regions(mach):
             if m.start()%2:continue
             try:rows.append(arm_record(mach,text['address']+m.start(),decoder))
             except (ValueError,StopIteration,IndexError):continue
+    return checked(rows)
+
+
+def checked(rows):
     if len(rows)>10000 or any(not 0<=r['id']<65535 or not 0<=r['texture_id']<65535 or not 0<=r['region']<65535 for r in rows):return []
     return sorted(rows,key=lambda r:(r['id'],r['source_offset']))
 MAC_RANGE = """
@@ -118,7 +131,47 @@ c8f870050420
 """
 
 
+# BuildResourceList's portrait loop: record i has id first_id + i, texture
+# first_texture_id + i and region 0.
+ANDROID_RANGE = """
+ldr r0, [r4, #0x28]
+mov.w sl, #0
+movw fp, #{first_texture_id}
+movw r6, #{first_id}
+movs r5, #3
+mov.w sb, #0
+ldr.w r8, [r0]
+loop: movs r0, #0x10
+blx <_Znwj>
+mov r4, r0
+movs r0, #4
+blx <_Znwj>
+add.w r1, sb, fp
+strh r1, [r0]
+add.w r1, sb, r6
+strh r1, [r4]
+mov.w r1, #-1
+strh.w sl, [r0, #2]
+str r5, [r4, #4]
+strd r1, r0, [r4, #8]
+mov r0, r8
+mov r1, r4
+blx <_ZN11AbyssEngine11PaintCanvas11AddResourceEPNS_8ResourceE>
+add.w sb, sb, #1
+cmp.w sb, #{count}
+blt @loop
+"""
+
+
 def extract_image_range(mach):
+    if mach.architecture == 'android-armv7':
+        from .android_blocks import find, offset
+        block = find(mach, '_Z17BuildResourceListPN11AbyssEngine6EngineE', ANDROID_RANGE)
+        if block is None: return {}
+        first, texture, count = (block['values'][k] for k in ('first_id', 'first_texture_id', 'count'))
+        if not 1<=count<=1024 or not 0<=first<=65535-count or not 0<=texture<=65535-count: return {}
+        return {'first_id': first, 'first_texture_id': texture, 'count': count, 'region': 0,
+                'source_offset': offset(mach, block['start']), 'source_bytes': block['end'] - block['start']}
     if mach.architecture not in ['x86_64','armv7']: return {}
     mac=mach.architecture=='x86_64';text=mach.text
     code=mach.data[text['offset']:text['offset']+text['length']]
