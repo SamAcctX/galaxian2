@@ -280,6 +280,8 @@ ARM_CALLS = [[('call_34', 52, 'bl'), ('call_78', 120, 'bl'), ('call_9c', 156, 'b
 
 
 def extract_font_selection(mach):
+    if mach.architecture == 'android-armv7':
+        return android_selection(mach)
     import capstone
     mac = mach.architecture == 'x86_64'
     if not mac and mach.architecture != 'armv7': return {}
@@ -357,3 +359,318 @@ def extract_font_selection(mach):
 # before the six-entry table. Each table displacement changes by exactly two.
 MAC_ALTERNATE = MAC.replace('0f1f00f6fdffff58feffffaafeffffd4feffffd4feffffbffeffff',
                             '90f8fdffff5afeffffacfeffffd6feffffd6feffffc1feffff')
+
+
+# Globals::loadFont(int), android_blocks syntax: languages 9-14 through the
+# case table, 15 and the rest below `other`. Spacing starts at `base` and adds
+# one constant per path; iPadHD, n9 and retinaDisplay select the paths.
+ANDROID = """
+push.w {r4, r5, r6, r7, r8, lr}
+add r7, sp, #0xc
+sub.w r0, r1, #9
+movw r5, #{base}
+cmp r0, #5
+bhi @other
+tbb [pc, r0] {cases:6}
+arabic: ldr r0, [pc, #{&canvas}]
+movs r3, #1
+ldr r1, [pc, #{&font}]
+add r0, pc
+add r1, pc
+ldr r6, [r0]
+ldr r4, [r1]
+movw r1, #{arabic}
+ldr r0, [r6]
+mov r2, r4
+blx <_ZN11AbyssEngine11PaintCanvas10FontCreateEtRjb>
+ldr r0, [pc, #{&iPadHD}]
+ldr r1, [r4]
+add r0, pc
+ldr r2, [r0]
+ldr r0, [r6]
+ldrb r2, [r2]
+cmp r2, #0
+beq.w @arabic_retina
+adds r5, #{arabic_medium}
+b @arabic_spacing
+simplified: ldr r0, [pc, #{&canvas}]
+movs r3, #1
+ldr r1, [pc, #{&font}]
+mov.w r8, #1
+add r0, pc
+add r1, pc
+ldr r6, [r0]
+ldr r4, [r1]
+movw r1, #{simplified}
+ldr r0, [r6]
+mov r2, r4
+blx <_ZN11AbyssEngine11PaintCanvas10FontCreateEtRjb>
+ldr r0, [pc, #{&iPadHD}]
+ldr r1, [r4]
+add r0, pc
+ldr r2, [r0]
+ldr r0, [r6]
+ldrb r2, [r2]
+cmp r2, #0
+beq @simplified_retina
+adds r5, #{simplified_medium}
+b @simplified_spacing
+traditional: ldr r0, [pc, #{&canvas}]
+movs r3, #1
+ldr r1, [pc, #{&font}]
+mov.w r8, #1
+add r0, pc
+add r1, pc
+ldr r6, [r0]
+ldr r4, [r1]
+movw r1, #{traditional}
+ldr r0, [r6]
+mov r2, r4
+blx <_ZN11AbyssEngine11PaintCanvas10FontCreateEtRjb>
+ldr r0, [pc, #{&iPadHD}]
+ldr r1, [r4]
+add r0, pc
+ldr r2, [r0]
+ldr r0, [r6]
+ldrb r2, [r2]
+cmp r2, #0
+beq @traditional_retina
+adds r5, #{traditional_medium}
+b @traditional_spacing
+other: ldr r0, [pc, #{&canvas}]
+cmp r1, #0xf
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+bne @standard
+ldr r1, [pc, #{&font}]
+movs r3, #1
+movs r6, #1
+add r1, pc
+ldr r4, [r1]
+movw r1, #{japanese}
+mov r2, r4
+blx <_ZN11AbyssEngine11PaintCanvas10FontCreateEtRjb>
+ldr r0, [pc, #{&canvas}]
+ldr r1, [pc, #{&iPadHD}]
+add r0, pc
+add r1, pc
+ldr r0, [r0]
+ldr r2, [r1]
+ldr r1, [r4]
+ldr r0, [r0]
+ldrb r2, [r2]
+cmp r2, #0
+beq @japanese_retina
+adds r2, r5, #{japanese_medium}
+b @japanese_spacing
+korean: ldr r0, [pc, #{&canvas}]
+movs r3, #1
+ldr r1, [pc, #{&font}]
+mov.w r8, #1
+add r0, pc
+add r1, pc
+ldr r6, [r0]
+ldr r4, [r1]
+movw r1, #{korean}
+ldr r0, [r6]
+mov r2, r4
+blx <_ZN11AbyssEngine11PaintCanvas10FontCreateEtRjb>
+ldr r0, [pc, #{&iPadHD}]
+ldr r1, [r4]
+add r0, pc
+ldr r2, [r0]
+ldr r0, [r6]
+ldrb r2, [r2]
+cmp r2, #0
+beq @korean_retina
+adds r5, #{korean_medium}
+b @korean_spacing
+standard: ldr r1, [pc, #{&font}]
+movs r3, #1
+add r1, pc
+ldr r2, [r1]
+movw r1, #{standard}
+blx <_ZN11AbyssEngine11PaintCanvas10FontCreateEtRjb>
+ldr r0, [pc, #{&retinaDisplay}]
+add r0, pc
+ldr r0, [r0]
+ldrb r0, [r0]
+cmp r0, #0
+beq @standard_wide
+ldr r0, [pc, #{&font}]
+ldr r1, [pc, #{&canvas}]
+add r0, pc
+add r1, pc
+ldr r0, [r0]
+ldr r2, [r1]
+ldr r1, [r0]
+ldr r0, [r2]
+adds r2, r5, #{standard_large}
+b @standard_spacing
+arabic_retina: ldr r2, [pc, #{&retinaDisplay}]
+add r2, pc
+ldr r2, [r2]
+ldrb r2, [r2]
+cmp r2, #0
+it eq
+addeq r5, #{arabic_baseline}
+arabic_spacing: sxth r2, r5
+blx <_ZN11AbyssEngine11PaintCanvas14FontSetSpacingEjs>
+ldr r0, [pc, #{&canvas}]
+movs r1, #0
+add r0, pc
+b @standard_flag
+simplified_retina: ldr r2, [pc, #{&retinaDisplay}]
+add r2, pc
+ldr r2, [r2]
+ldrb r2, [r2]
+cmp r2, #0
+it eq
+addeq r5, #{simplified_baseline}
+simplified_spacing: sxth r2, r5
+blx <_ZN11AbyssEngine11PaintCanvas14FontSetSpacingEjs>
+ldr r0, [pc, #{&canvas}]
+add r0, pc
+b @cjk_flag
+traditional_retina: ldr r2, [pc, #{&retinaDisplay}]
+add r2, pc
+ldr r2, [r2]
+ldrb r2, [r2]
+cmp r2, #0
+it eq
+addeq r5, #{traditional_baseline}
+traditional_spacing: sxth r2, r5
+blx <_ZN11AbyssEngine11PaintCanvas14FontSetSpacingEjs>
+ldr r0, [pc, #{&canvas}]
+add r0, pc
+b @cjk_flag
+korean_retina: ldr r2, [pc, #{&retinaDisplay}]
+add r2, pc
+ldr r2, [r2]
+ldrb r2, [r2]
+cmp r2, #0
+it eq
+addeq r5, #{korean_baseline}
+korean_spacing: sxth r2, r5
+blx <_ZN11AbyssEngine11PaintCanvas14FontSetSpacingEjs>
+ldr r0, [pc, #{&canvas}]
+add r0, pc
+cjk_flag: ldr r0, [r0]
+ldr r0, [r0]
+strb.w r8, [r0, #0x1c]
+b @fixed
+japanese_retina: ldr r2, [pc, #{&retinaDisplay}]
+add r2, pc
+ldr r2, [r2]
+ldrb r3, [r2]
+adds r2, r5, #{japanese_baseline}
+cmp r3, #0
+it ne
+subne r2, r5, #{japanese_large}
+japanese_spacing: sxth r2, r2
+blx <_ZN11AbyssEngine11PaintCanvas14FontSetSpacingEjs>
+ldr r0, [pc, #{&canvas}]
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+strb r6, [r0, #0x1c]
+b @fixed
+standard_wide: ldr r0, [pc, #{&n9}]
+add r0, pc
+ldr r0, [r0]
+ldrb r0, [r0]
+cbz r0, @standard_tablet
+ldr r0, [pc, #{&font}]
+ldr r1, [pc, #{&canvas}]
+add r0, pc
+add r1, pc
+ldr r0, [r0]
+ldr r2, [r1]
+ldr r1, [r0]
+ldr r0, [r2]
+b @standard_shared
+standard_tablet: ldr r0, [pc, #{&font}]
+ldr r1, [pc, #{&canvas}]
+ldr r2, [pc, #{&iPadHD}]
+add r0, pc
+add r1, pc
+add r2, pc
+ldr r0, [r0]
+ldr r3, [r1]
+ldr r2, [r2]
+ldr r1, [r0]
+ldr r0, [r3]
+ldrb r2, [r2]
+cbz r2, @standard_none
+standard_shared: adds r2, r5, #{standard_medium}
+standard_spacing: sxth r2, r2
+blx <_ZN11AbyssEngine11PaintCanvas14FontSetSpacingEjs>
+ldr r0, [pc, #{&canvas}]
+movs r1, #1
+add r0, pc
+standard_flag: ldr r0, [r0]
+ldr r0, [r0]
+strb r1, [r0, #0x1c]
+fixed: ldr r1, [pc, #{&fontAlien}]
+movs r3, #1
+add r1, pc
+ldr r4, [r1]
+movw r1, #{secondary}
+mov r2, r4
+blx <_ZN11AbyssEngine11PaintCanvas10FontCreateEtRjb>
+ldr r0, [pc, #{&canvas}]
+movs r2, #0
+ldr r1, [r4]
+add r0, pc
+ldr r5, [r0]
+ldr r0, [r5]
+blx <_ZN11AbyssEngine11PaintCanvas14FontSetSpacingEjs>
+ldr r0, [pc, #{&fontLangSelect}]
+movw r1, #{language}
+movs r3, #1
+add r0, pc
+ldr r4, [r0]
+ldr r0, [r5]
+mov r2, r4
+blx <_ZN11AbyssEngine11PaintCanvas10FontCreateEtRjb>
+ldr r1, [r4]
+movs r2, #0
+ldr r0, [r5]
+pop.w {r4, r5, r6, r7, r8, lr}
+b.w #{tail}
+standard_none: adds r2, r5, #{standard_baseline}
+b @standard_spacing
+"""
+
+
+def android_selection(lib):
+    """Font ids and spacing tables of Globals::loadFont; its flags name the profile modes."""
+    from .android_blocks import find, offset
+    block = find(lib, '_ZN7Globals8loadFontEi', ANDROID)
+    if block is None:
+        return {}
+    start, cases = block['tables']['cases']
+    labels = block['labels']
+    if [start + 2 * case for case in cases] != [labels[name] for name in ('arabic', 'simplified', 'traditional', 'other', 'other', 'korean')]:
+        return {}
+    # Each global is reached through one GOT slot; distinct roles are distinct slots.
+    refs = block['refs']
+    if any(len(set(rows)) != 1 for rows in refs.values()) or len({rows[0] for rows in refs.values()}) != len(refs):
+        return {}
+    v = block['values']
+    spacing = lambda delta: (v['base'] + delta + 0x8000 & 0xffff) - 0x8000  # sxth
+    cjk = [[spacing(v[name + '_baseline']), spacing(v[name + '_medium']), spacing(v[name + '_baseline']), spacing(0)]
+           for name in ('arabic', 'simplified', 'traditional', 'korean')]
+    if any(row != cjk[0] for row in cjk):
+        return {}
+    standard = [spacing(v['standard_baseline']), spacing(v['standard_medium']), spacing(v['standard_medium']), spacing(v['standard_large'])]
+    japanese = [spacing(v['japanese_baseline']), spacing(v['japanese_medium']), spacing(v['japanese_baseline']), spacing(-v['japanese_large'])]
+    if any(not -32 <= value <= 32 for row in (standard, cjk[0], japanese) for value in row):
+        return {}
+    fonts = [v[name] for name in ('arabic', 'simplified', 'traditional', 'korean', 'japanese')]
+    return {'_profile_globals': {'medium': refs['iPadHD'][0], 'large': refs['retinaDisplay'][0], 'wide': refs['n9'][0]},
+            'default_font_id': v['standard'], 'secondary_font_id': v['secondary'], 'language_font_id': v['language'],
+            'overrides': [{'language_id': language, 'font_id': font} for language, font in zip([9, 10, 11, 14, 15], fonts)],
+            'spacing': {'default': standard, 'cjk': cjk[0], 'japanese': japanese},
+            'source_offset': offset(lib, block['start']), 'source_bytes': block['end'] - block['start']}

@@ -1,4 +1,10 @@
-"""Static font-to-texture/group declarations, independent of texture filenames."""
+"""Static font-to-texture/group declarations, independent of texture filenames.
+
+Android: BuildResourceList declares the font records and, behind its iPadHD
+and retinaDisplay guards, the atlas variants; GameText::setLanguage(short, int)
+names the language files; Globals::loadFont selects fonts (font_selection).
+"""
+import re
 import struct
 from .opening_loadout import template
 from .opening_dialogue import Declaration
@@ -19,6 +25,8 @@ c7430401000000c74308ffffffff48894310'''
 
 def font_records(mach):
     """Recognize complete finite type-1 records, never execute declarations."""
+    if mach.architecture == 'android-armv7':
+        return android_font_records(mach)
     text = mach.text
     code = mach.data[text['offset']:text['offset'] + text['length']]
     rows = []
@@ -37,7 +45,6 @@ def font_records(mach):
         decoder.detail = True
         # The four-byte font payload is returned in r0; every record field and
         # repeated record-pointer reload must agree before it is accepted.
-        import re
         for match in re.finditer(bytes.fromhex('0420'), code):
             if match.start() % 2: continue
             start = text['address'] + match.start()
@@ -96,8 +103,9 @@ def font_records(mach):
 
 def language_files(mach):
     """Read the finite language-index/filename dispatch, without following code."""
+    if mach.architecture == 'android-armv7':
+        return android_language_files(mach)
     import capstone
-    import re
     mac = mach.architecture == 'x86_64'
     if not mac and mach.architecture != 'armv7': return {}
     decoder = capstone.Cs(capstone.CS_ARCH_X86 if mac else capstone.CS_ARCH_ARM,
@@ -158,6 +166,8 @@ def language_files(mach):
 
 def font_texture_choices(mach, records, registrations, flags):
     """Associate font atlases with their source registration branches, not names."""
+    if mach.architecture == 'android-armv7':
+        return android_texture_choices(mach, records, registrations, flags)
     import capstone
     mac = mach.architecture == 'x86_64'
     if not mac and mach.architecture != 'armv7': return {}
@@ -234,3 +244,157 @@ def extract_font_bindings(mach, registrations):
     wanted.update(row['font_id'] for row in selection['overrides'])
     if wanted != {row['id'] for row in records}: return {}
     return {'records': records, 'languages': languages, 'selection': selection, 'textures': textures}
+
+
+BUILD = '_Z17BuildResourceListPN11AbyssEngine6EngineE'
+
+
+def android_font_records(lib):
+    """BuildResourceList's 16-byte type-1 records (u16 id, 1, -1, payload) whose
+    4-byte payload holds the u16 texture id and u16 font group, read along
+    straight-line code; provenance is the record's allocation call."""
+    import capstone
+    from .android_library import decode_function, interpret, literal_references
+    from .android_blocks import offset
+    extent = lib.symbols.get(BUILD)
+    if extent is None:
+        return []
+    decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+    decoder.detail = True
+    # Decoded as the registration reader does: aligned at each resource literal.
+    anchors = [at for at in literal_references(lib) if extent[0] <= at < sum(extent)]
+    objects = interpret(lib, decode_function(lib, decoder, *extent, anchors) or [])
+    rows = []
+    for item in objects:
+        fields = item['fields']
+        if item['size'] != 16 or fields.get(4) != (('value', 1), 4):
+            continue
+        link = fields.get(12, (None,))[0]
+        holder = objects[link[1]] if link and link[0] == 'object' and link[2] == 0 else {'size': 0}
+        payload = holder.get('fields', {})
+        if (item['poisoned'] or sorted(fields) != [0, 4, 8, 12] or fields[8] != (('value', 0xffffffff), 4)
+                or holder['size'] != 4 or holder['poisoned'] or sorted(payload) != [0, 2]
+                or any(field[1] != 2 or not field[0] or field[0][0] != 'value' for field in [fields[0], *payload.values()])):
+            return []
+        rows.append({'id': fields[0][0][1], 'texture_id': payload[0][0][1], 'font_group': payload[2][0][1],
+                     'source_offset': offset(lib, item['address']), 'source_bytes': 4})
+    if any(row['id'] == 65535 or row['texture_id'] == 65535 or row['font_group'] >= 32 for row in rows): return []
+    if len({row['id'] for row in rows}) != len(rows): return []
+    return sorted(rows, key=lambda row: row['id'])
+
+
+LANGUAGE_DISPATCH = """
+cmp r6, #0xf
+bhi.w #{default}
+tbh [pc, r6, lsl #1] {cases:32}
+"""
+LANGUAGE_CASE = """
+ldr r1, [pc, #{&file}]
+add r1, pc
+add r0, sp, #4
+movs r2, #0
+blx <_ZN11AbyssEngine6StringC1EPKcb>
+"""
+
+
+def android_language_files(lib):
+    """setLanguage's 16 cases each build the file name String from one literal.
+    Android loads gb.lang for the languages it dropped (10 and 11)."""
+    from .android_blocks import find, match, offset
+    symbol = '_ZN8GameText11setLanguageEsi'
+    dispatch = find(lib, symbol, LANGUAGE_DISPATCH)
+    if dispatch is None:
+        return {}
+    table, cases = dispatch['tables']['cases']
+    rows = []
+    for index, (case,) in enumerate(struct.iter_unpack('<H', cases)):
+        target = table + 2 * case
+        block = match(lib, symbol, LANGUAGE_CASE, target) or match(lib, symbol, LANGUAGE_CASE.replace('ldr r1', 'ldr.w r1'), target)
+        if block is None:
+            return {}
+        string = section_bytes(lib, block['refs']['file'][0], 9, b'__cstring')
+        name = string and string[0].split(b'\0', 1)[0]
+        if not name or not re.fullmatch(rb'[a-z]{2,3}\.lang', name):
+            return {}
+        rows.append({'language_id': index, 'file': name.decode('ascii'), 'source_offset': offset(lib, target),
+                     'source_bytes': block['end'] - target, 'string_offset': string[1], 'string_bytes': len(name) + 1})
+    files = [row['file'] for row in rows]
+    # A file repeats only as the fallback to language 0's.
+    if any(name != files[0] for index, name in enumerate(files) if name in files[:index]):
+        return {}
+    return {'rows': rows, 'provenance': {
+        'dispatch': {'offset': offset(lib, dispatch['start']), 'bytes': dispatch['end'] - dispatch['start'] - len(cases)},
+        'table': {'offset': offset(lib, table), 'bytes': len(cases)}}}
+
+
+# The register-held flag selects the branch; the large guard allocates the
+# branch's first record before it tests the flag.
+TEXTURE_GUARDS = {'medium': """
+ldr.w r0, [pc, #{&flag}]
+add r0, pc
+ldr r0, [r0]
+ldrb r0, [r0]
+cmp r0, #0
+beq.w #{other}
+""", 'large': """
+ldr.w r0, [pc, #{&flag}]
+add r0, pc
+ldr r0, [r0]
+ldrb r4, [r0]
+movs r0, #0x10
+blx <_Znwj>
+mov r6, r0
+mov sl, r8
+cmp r4, #0
+beq.w #{other}
+"""}
+
+
+def path_references(lib, symbol):
+    """{resource path: addresses of the `add rN, pc` completing its literal} in a function."""
+    from .android_library import instructions
+    text, pending, found = lib.text, {}, {}
+    for ins in instructions(lib, symbol) or []:
+        if ins.mnemonic in ('ldr', 'ldr.w') and ins.op_str.split(', ', 1)[1].startswith('[pc, #'):
+            pool = ((ins.address + 4) & ~3) + ins.operands[1].mem.disp
+            pending[ins.operands[0].reg] = struct.unpack_from('<I', lib.data, text['offset'] + pool - text['address'])[0]
+        elif ins.mnemonic == 'add' and ins.op_str.endswith(', pc') and ins.operands[0].reg in pending:
+            path = lib.resource_string((pending.pop(ins.operands[0].reg) + ins.address + 4) & 0xffffffff)
+            if path:
+                found.setdefault(path, []).append(ins.address)
+    return found
+
+
+def android_texture_choices(lib, records, registrations, flags):
+    """Each atlas's three registrations sit behind the profile flags: the first load
+    of its path literal after its record allocation lies in the iPadHD branch, the
+    retinaDisplay branch or after both."""
+    from .android_blocks import matches, offset
+    guards = {}
+    for kind, shape in TEXTURE_GUARDS.items():
+        found = [block for block in matches(lib, BUILD, shape) if block['refs']['flag'] == [flags[kind]]]
+        if len(found) != 1:
+            return {}
+        guards[kind] = found[0]
+    medium, large = guards['medium'], guards['large']
+    if large['start'] != medium['values']['other']:
+        return {}
+    references = path_references(lib, BUILD)
+
+    def mode(at):
+        if medium['end'] <= at < medium['values']['other']: return 'medium'
+        if large['end'] <= at < large['values']['other']: return 'large'
+        return 'baseline' if at >= large['values']['other'] else None
+    choices = []
+    for identifier in sorted({row['texture_id'] for row in records}):
+        declarations = [r for r in registrations if r['id'] == identifier]
+        if len(declarations) != 3 or any(r['kind'] != 'texture' or r['registration_type'] != 2 for r in declarations): return {}
+        variants, offsets = {}, {}
+        for row in declarations:
+            allocation = row['source_offset'] - offset(lib, 0)
+            found = mode(min((at for at in references.get(row['source_path'], []) if at > allocation), default=-1))
+            if found is None or found in variants: return {}
+            variants[found], offsets[found] = row['resource'], row['source_offset']
+        choices.append({'texture_id': identifier, 'variants': variants, 'source_offsets': offsets})
+    return {'rows': choices, 'provenance': {kind: {'offset': offset(lib, block['start']), 'bytes': block['end'] - block['start']}
+                                            for kind, block in guards.items()}}

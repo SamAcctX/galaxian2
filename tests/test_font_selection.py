@@ -192,4 +192,170 @@ class FontLanguageDispatch(unittest.TestCase):
         data[table:table+4]=struct.pack('<i',2047-table);mach.data=bytes(64)+data
         self.assertEqual(language_files(mach),{})
 
+
+LOAD_FONT, SET_LANGUAGE = '_ZN7Globals8loadFontEi', '_ZN8GameText11setLanguageEsi'
+CREATE, SPACING, STRING = ('_ZN11AbyssEngine11PaintCanvas10FontCreateEtRjb', '_ZN11AbyssEngine11PaintCanvas14FontSetSpacingEjs',
+                           '_ZN11AbyssEngine6StringC1EPKcb')
+ROLES = dict(zip(['canvas', 'font', 'iPadHD', 'retinaDisplay', 'n9', 'fontAlien', 'fontLangSelect'], range(0x9000, 0x901c, 4)))
+# Synthetic fonts 500-507; spacing from -10: default [-3, -5, -5, -8], CJK [-4, -7, -4, -10], Japanese [-6, -9, -6, -13].
+FONTS = {'standard': 500, 'secondary': 501, 'language': 502, 'arabic': 503, 'simplified': 504, 'traditional': 505, 'korean': 506, 'japanese': 507}
+SPACING_HOLES = {'base': 0xfff6, 'standard_baseline': 7, 'standard_medium': 5, 'standard_large': 2, 'japanese_baseline': 4,
+                 'japanese_medium': 1, 'japanese_large': 3, **{f'{n}_{m}': d for n in ('arabic', 'simplified', 'traditional', 'korean')
+                                                                for m, d in (('baseline', 6), ('medium', 3))}}
+# Font id, texture, group; two atlases.
+RECORDS = [(500 + i, 40 if i < 2 else 41, 1 if i == 1 else 0) for i in range(8)]
+FILES = ['a%s.lang' % chr(97 + i) for i in range(16)]
+FILES[10] = FILES[11] = FILES[0]
+
+
+def android_fonts(selection=None, cases=None, roles=None, records=RECORDS, files=FILES, wide=(1, 3, 5), flags=None,
+                  guards=('medium', 'large'), atlases=None, other=0, omit=(), unsealed=()):
+    """loadFont, setLanguage and BuildResourceList in the Android shapes, with synthetic
+    values, between stub callees; the last font record follows the atlases. `unsealed`
+    font ids store 0 for the record's -1, `other` moves the medium guard's target.
+    Returns (library, {region or 'records': address(es)})."""
+    from android_fixture import TEXT, Thumb, library, registration, stub
+    from thumb_shapes import assemble
+    from gof2_content.android_library import AndroidLibrary
+    from gof2_content.font_selection import ANDROID
+    from gof2_content.font_bindings import BUILD, LANGUAGE_CASE, LANGUAGE_DISPATCH, TEXTURE_GUARDS
+    calls = {CREATE: TEXT, SPACING: TEXT + 0x10, STRING: TEXT + 0x20, '_Znwj': stub('_Znwj')}
+    functions = [(name, b'\x70\x47\x00\xbf', address) for name, address in calls.items() if name != '_Znwj']
+    at = {LOAD_FONT: TEXT + 0x100, SET_LANGUAGE: TEXT + 0x600, BUILD: TEXT + 0x900}
+    roles = roles or ROLES
+    shape = ANDROID
+    for role, address in roles.items():
+        if role not in ROLES:  # a second slot for one load of a role
+            shape = shape.replace('{&%s}' % role[:-1], '{&%s}' % role, 1)
+    values = {**FONTS, **SPACING_HOLES, **(selection or {}), 'tail': TEXT + 0x80}
+    tables = {'cases': cases or ['arabic', 'simplified', 'traditional', 'other', 'other', 'korean']}
+    code, _, _ = assemble(shape, at[LOAD_FONT], values, roles, calls, tables)
+    functions.append((LOAD_FONT, code, at[LOAD_FONT]))
+    # setLanguage: dispatch, then one String-building case per language.
+    strings = {0x8000 + 16 * i: name for i, name in enumerate(files)}
+    refs = {'file%d' % i: 0x8000 + 16 * (files.index(name) if name == files[0] else i) for i, name in enumerate(files)}
+    text = LANGUAGE_DISPATCH + ''.join('case%d: ' % i + LANGUAGE_CASE.strip().replace('{&file}', '{&file%d}' % i)
+                                       .replace('ldr r1', 'ldr.w r1' if i in wide else 'ldr r1') + '\n' for i in range(16))
+    code, _, _ = assemble(text, at[SET_LANGUAGE], {'default': at[SET_LANGUAGE]}, refs, calls, {'cases': ['case%d' % i for i in range(16)]})
+    functions.append((SET_LANGUAGE, code, at[SET_LANGUAGE]))
+    # BuildResourceList: font records, then the atlases behind the iPadHD and retinaDisplay guards.
+    flags = flags or {'medium': roles['iPadHD'], 'large': roles['retinaDisplay']}
+    atlases = atlases or {mode: [(texture, 'data/textures/t%d_%s.aei' % (texture, mode)) for texture in (40, 41)]
+                          for mode in ('medium', 'large', 'baseline')}
+    layout = {'pool': 0, 'medium': 0, 'large': 0, 'baseline': 0}
+    regions = ('before', 'medium', 'large', 'baseline')
+    for _ in range(2):
+        asm, pool = Thumb(at[BUILD]).push(), bytearray()
+        layout['records'] = []
+
+        def font(identifier, texture, group):
+            asm.movs(0, 16)
+            layout['records'].append(asm.here())
+            asm.call(stub('_Znwj')).mov(5, 0).movs(0, 4).call(stub('_Znwj')).mov(6, 0)
+            asm.movw(1, texture).strh(1, 6, 0).movs(1, group).strh(1, 6, 2).movw(0, identifier).strh(0, 5, 0).movs(0, 1)
+            (asm.movs(1, 0) if identifier in unsealed else asm.minus_one(1)).adds(2, 5, 4).stm(2, 0, 1, 6)
+        for row in records[:-1]:
+            font(*row)
+        for mode in regions:
+            layout[mode] = asm.here()
+            if mode in guards:
+                target = layout['large' if mode == 'medium' else 'baseline'] + (other if mode == 'medium' else 0)
+                body, _, _ = assemble(TEXTURE_GUARDS[mode], asm.here(), {'other': target}, {'flag': flags[mode]}, calls,
+                                      pool=(layout['pool'], pool))
+                asm.code += body
+            for index, (texture, path) in enumerate(atlases.get(mode, [])):
+                address = 0x8400 + 0x40 * (4 * index + regions.index(mode))
+                strings[address] = path
+                registration(asm, texture, 2, address, ('texture', 0))
+            if mode in ('medium', 'large'):
+                asm.jump('end')
+        font(*records[-1])
+        asm.label('end').pop()
+        code = asm.finish()
+        layout['pool'] = at[BUILD] + len(code)
+    functions.append((BUILD, code + bytes(pool), at[BUILD]))
+    functions = [row for row in functions if row[0] not in omit]
+    return AndroidLibrary(library(functions, strings)), layout
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'optional static-reader dependency')
+class AndroidFonts(unittest.TestCase):
+    def bindings(self, lib):
+        from gof2_content.android_library import android_records
+        from gof2_content.font_bindings import extract_font_bindings
+        return extract_font_bindings(lib, android_records(lib, lambda *_: None))
+
+    def test_named_functions_give_fonts_languages_spacing_and_atlases(self):
+        from android_fixture import TEXT
+        lib, layout = android_fonts()
+        result = self.bindings(lib)
+        self.assertEqual(result['selection'], {
+            'default_font_id': 500, 'secondary_font_id': 501, 'language_font_id': 502,
+            'overrides': [{'language_id': 9, 'font_id': 503}, {'language_id': 10, 'font_id': 504}, {'language_id': 11, 'font_id': 505},
+                          {'language_id': 14, 'font_id': 506}, {'language_id': 15, 'font_id': 507}],
+            'spacing': {'default': [-3, -5, -5, -8], 'cjk': [-4, -7, -4, -10], 'japanese': [-6, -9, -6, -13]},
+            'source_offset': TEXT + 0x100, 'source_bytes': 626})
+        # Each record's provenance is its allocation call.
+        self.assertEqual([(r['id'], r['texture_id'], r['font_group'], r['source_offset'], r['source_bytes']) for r in result['records']],
+                         [row + (at, 4) for row, at in zip(RECORDS, layout['records'])])
+        languages = result['languages']
+        self.assertEqual([row['file'] for row in languages['rows']], FILES)
+        self.assertEqual([row['source_bytes'] for row in languages['rows']], [14 if i in (1, 3, 5) else 12 for i in range(16)])
+        self.assertEqual([row['string_offset'] for row in languages['rows'][9:12]], [0x8000 + 16 * 9, 0x8000, 0x8000])
+        self.assertEqual(languages['provenance'], {'dispatch': {'offset': TEXT + 0x600, 'bytes': 10}, 'table': {'offset': TEXT + 0x60a, 'bytes': 32}})
+        textures = result['textures']
+        self.assertEqual([row['variants'] for row in textures['rows']],
+                         [{mode: 'resources/data/textures/t%d_%s.aei' % (t, mode) for mode in ('medium', 'large', 'baseline')} for t in (40, 41)])
+        self.assertEqual(textures['provenance'], {'medium': {'offset': layout['medium'], 'bytes': 16}, 'large': {'offset': layout['large'], 'bytes': 26}})
+        for row in textures['rows']:
+            self.assertLess(row['source_offsets']['medium'], row['source_offsets']['large'])
+            self.assertLess(row['source_offsets']['large'], row['source_offsets']['baseline'])
+        # The profile modes are the flags loadFont tests.
+        from gof2_content.font_selection import extract_font_selection
+        self.assertEqual(extract_font_selection(lib)['_profile_globals'],
+                         {'medium': ROLES['iPadHD'], 'large': ROLES['retinaDisplay'], 'wide': ROLES['n9']})
+
+    def test_each_atlas_follows_its_own_path_literal(self):
+        # One path registered for two atlases in different branches.
+        atlases = {'medium': [(40, 'data/textures/shared.aei'), (41, 'data/textures/m.aei')],
+                   'large': [(40, 'data/textures/l.aei'), (41, 'data/textures/shared.aei')],
+                   'baseline': [(40, 'data/textures/b0.aei'), (41, 'data/textures/b1.aei')]}
+        rows = self.bindings(android_fonts(atlases=atlases)[0])['textures']['rows']
+        self.assertEqual([{mode: path[len('resources/data/textures/'):] for mode, path in row['variants'].items()} for row in rows],
+                         [{'medium': 'shared.aei', 'large': 'l.aei', 'baseline': 'b0.aei'}, {'medium': 'm.aei', 'large': 'shared.aei', 'baseline': 'b1.aei'}])
+
+    def test_each_broken_declaration_is_unsupported(self):
+        from gof2_content.font_bindings import BUILD
+        cases = {
+            'case table': dict(cases=['arabic', 'simplified', 'traditional', 'other', 'korean', 'korean']),
+            'two slots for a role': dict(roles={**ROLES, 'canvas2': 0x9100}),
+            'shared slot': dict(roles={**ROLES, 'n9': ROLES['iPadHD']}),
+            'cjk copies differ': dict(selection={'korean_medium': 2}),
+            'spacing range': dict(selection={'base': 26, 'standard_baseline': 7}),  # 33
+            'record sentinel': dict(unsealed=(507,)),
+            'unknown malformed record': dict(records=RECORDS[:4] + [(510, 40, 0)] + RECORDS[4:], unsealed=(510,)),
+            'record group': dict(records=RECORDS[:7] + [(507, 41, 32)]),
+            'record id': dict(records=RECORDS[:7] + [(0xffff, 41, 0)], selection={'japanese': 0xffff}),
+            'record texture': dict(records=RECORDS[:7] + [(507, 0xffff, 0)],
+                                   atlases={mode: [(t, 'data/textures/t%d_%s.aei' % (t, mode)) for t in (40, 41, 0xffff)] for mode in ('medium', 'large', 'baseline')}),
+            'duplicate record': dict(records=RECORDS + [RECORDS[0]]),
+            'missing font record': dict(records=RECORDS[:7]),
+            'language name': dict(files=FILES[:4] + ['abcd.lang'] + FILES[5:]),
+            'other repeat': dict(files=FILES[:4] + [FILES[3]] + FILES[5:]),
+            'medium flag': dict(flags={'medium': ROLES['n9'], 'large': ROLES['retinaDisplay']}),
+            'large flag': dict(flags={'medium': ROLES['iPadHD'], 'large': ROLES['n9']}),
+            'no large guard': dict(guards=('medium',)),
+            'guards apart': dict(other=2),
+            'atlas before the guards': dict(atlases={'before': [(40, 'data/textures/a.aei')], 'medium': [(40, 'data/textures/b.aei'), (41, 'data/textures/c.aei')],
+                                                     'large': [(40, 'data/textures/d.aei'), (41, 'data/textures/e.aei')], 'baseline': [(41, 'data/textures/f.aei')]}),
+            'two medium atlases': dict(atlases={'medium': [(40, 'data/textures/a.aei'), (40, 'data/textures/b.aei'), (41, 'data/textures/c.aei')],
+                                                'large': [(41, 'data/textures/d.aei')], 'baseline': [(40, 'data/textures/e.aei'), (41, 'data/textures/f.aei')]}),
+            'missing atlas': dict(atlases={'medium': [(40, 'data/textures/a.aei'), (41, 'data/textures/c.aei')],
+                                           'large': [(40, 'data/textures/d.aei')], 'baseline': [(40, 'data/textures/e.aei'), (41, 'data/textures/f.aei')]}),
+        }
+        for name, options in cases.items():
+            self.assertEqual(self.bindings(android_fonts(**options)[0]), {}, name)
+        for name in (LOAD_FONT, SET_LANGUAGE, BUILD):
+            self.assertEqual(self.bindings(android_fonts(omit=(name,))[0]), {}, name)
+
 if __name__=='__main__': unittest.main()
