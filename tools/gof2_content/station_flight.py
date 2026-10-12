@@ -1,9 +1,25 @@
-"""Recover bounded live station flight parameters; emit no executable payload."""
+"""Recover bounded live station flight parameters; emit no executable payload.
+
+Android: the autopilot menu in MGame::OnTouchEnd sets the station
+(PlayerEgo::setAutoPilot) and raises notice 10, which Hud::hudEvent spells
+535 + ": " + the station's name (Station::getName) + " " + 135; notice 21 is
+514 (Mac 1.0.7 ids). PlayerEgo::left/right/up/down turn by elapsed
+milliseconds and ignore manual input while the autopilot flies;
+PlayerEgo::updateManeuver applies the motion. Android steers with analog
+touch strengths where the Mac reads keys; the input values are kept as the
+Mac's.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .station_exterior import declaration_bytes
 
 def extract_station_flight(mach, arrival, flight):
+    if mach.architecture == 'android-armv7':
+        try:
+            if flight['scope'] != 'first_mining_flight_construction': return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64' or flight.get('scope')!='first_mining_flight_construction':return {}
     try:
         origin=arrival['provenance']['actor']
@@ -135,3 +151,15 @@ MAC_ALTERNATE = {'mining_guidance_history': [587852, 29, '__text', '4c89e7660f6f
  'separators': [1657309, 5, '__cstring', '3a20002000'],
  'notice_10_entry': [-112314, 4, '__text', 'e2f4ffff'],
  'notice_21_entry': [-112270, 4, '__text', '62f9ffff']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# Autopilot menu, station item: PlayerEgo::setAutoPilot(landmark 0), then notice 10.
+           'station_menu': ('_ZN5MGame10OnTouchEndEiiPv', 2338, 48, 'sha256:598a947f4a49cd3c0ba73350c4df52ed7ca6b8710f9790d461e57593f181d050'),
+           'autopilot_setter': ('_ZN9PlayerEgo12setAutoPilotEP8KIPlayer', 0, 100, 'sha256:3ff84104651e1b2f7351671bf743ac1009f060feda99740389545d5b5e9a20fc'),
+           'event_texts': ('_ZN3Hud8hudEventEiP9PlayerEgoi', 0, 3212, 'sha256:40dde1c133b49cbc10579c08f778e3625a187d59d28111bccc745250f444c0ff'),
+           'station_name': ('_ZN7Station7getNameEv', 0, 12, '80b56f460022b4f73eec80bd'),
+           'yaw_left': ('_ZN9PlayerEgo4leftEif', 0, 588, 'sha256:7bfc4bf1f298924c36837b9ef7b6a8e29150a0e4aca1fe309a6eede2c4aa9aa2'),
+           'yaw_right': ('_ZN9PlayerEgo5rightEif', 0, 592, 'sha256:a1dc9c4eac0ac11848dbb4d6a4fee3d5bd5a3c72371d5c0167cbe29eee4d1485'),
+           'pitch_up': ('_ZN9PlayerEgo2upEif', 0, 648, 'sha256:a8a46d4cfe2935228f93beb8443e31e8b4a5324e5b6d4cecf95db79c4d941a29'),
+           'pitch_down': ('_ZN9PlayerEgo4downEif', 0, 644, 'sha256:ba2f362df25f86dd3eb06bc0683d15317ca224f49d9c2914f82213e02fa684f6'),
+           'maneuver': ('_ZN9PlayerEgo14updateManeuverEv', 0, 1264, 'sha256:cb398d9047c29d86723b4f9325f84c0cce9a801e701f445ed211a8ffcff6fd10')}

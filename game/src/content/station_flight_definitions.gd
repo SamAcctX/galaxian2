@@ -9,6 +9,9 @@ const SPANS := {"mining_guidance_history":[587316,29],"mining_visual_gate":[5791
 
 const MAC_ALTERNATE := {"mining_guidance_history":[587852,29],"mining_visual_gate":[579707,40],"manual_response_sample":[565591,32],"manual_command_clear":[566438,48],"visual_neutral_return":[580200,534],"yaw_negative_gate":[596161,45],"yaw_positive_gate":[596857,45],"pitch_negative_gate":[597974,45],"pitch_positive_gate":[598933,45],"neutral_divisors":[1562938,8],"station_menu":[357980,73],"notice_dispatch":[-117416,29],"target_message":[-115196,324],"restricted_message":[-114044,20],"current_station":[858716,14],"station_name":[851958,26],"station_id":[851984,10],"separators":[1657309,5],"notice_10_entry":[-112314,4],"notice_21_entry":[-112270,4]}
 
+# Android: spans inside named functions (Layouts.anchored); the values are VALUES.
+const ANDROID_SPANS := {"station_menu":[2338,48],"autopilot_setter":[0,100],"event_texts":[0,3212],"station_name":[0,12],"yaw_left":[0,588],"yaw_right":[0,592],"pitch_up":[0,648],"pitch_down":[0,644],"maneuver":[0,1264]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -18,7 +21,8 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, flight: Dictionary) -> String:
 	if not data is Dictionary:return "Missing station flight declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data) or not Flight.parameters(flight):return "Unsupported station flight declarations"
+	if not (arch=="x86_64" or arch=="android-armv7") or not parameters(data) or not Flight.parameters(flight):return "Unsupported station flight declarations"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid station flight extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Station flight lacks its source anchor"
 	var layouts: Array=[SPANS,MAC_ALTERNATE]

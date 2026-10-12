@@ -2890,6 +2890,7 @@
     "tests/test_speaker_bindings.py",
     "tests/test_station_departure.py",
     "tests/test_station_entry.py",
+    "tests/test_station_flight.py",
     "tests/test_station_generation.py",
     "tests/test_station_presentation.py",
     "tests/test_station_return.py",
