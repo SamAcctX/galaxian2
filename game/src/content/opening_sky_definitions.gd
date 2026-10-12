@@ -19,7 +19,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	if data.has("sun_flares"):
 		var message: String=Flares.validate(data.sun_flares,executable_bytes,architecture)
 		if not message.is_empty():return message
-	var sizes := {"stars":158,"opening":71,"texture":7,"cursor":12,"system":13,"system_id":9} if architecture=="x86_64" else {"stars":134,"opening":62,"texture":6,"cursor":6,"system":6,"system_id":4} if architecture=="armv7" else {}
+	var sizes := {"stars":158,"opening":71,"texture":7,"cursor":12,"system":13,"system_id":9} if architecture=="x86_64" else {"stars":134,"opening":62,"texture":6,"cursor":6,"system":6,"system_id":4} if architecture=="armv7" else {"stars":114,"opening":50,"texture":6,"cursor":6,"system":6,"system_id":4} if architecture=="android-armv7" else {}
 	var provenance: Variant = data.get("provenance")
 	if sizes.is_empty() or not provenance is Dictionary or provenance.size()!=sizes.size(): return "Invalid opening sky provenance"
 	var spans := []

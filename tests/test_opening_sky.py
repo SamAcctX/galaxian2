@@ -1,4 +1,5 @@
 """Synthetic compiler contexts with independently relocated resource IDs."""
+import importlib.util
 import struct
 import unittest
 from types import SimpleNamespace
@@ -76,3 +77,103 @@ class OpeningSky(unittest.TestCase):
                             data[256+at+off:256+at+off+size]=raw
                     m.data=bytes(data)
                     self.assertEqual(reader.extract_opening_sky(m,p),{})
+
+
+SPACE = '_ZN5Level11createSpaceEv'
+CREATE = '_ZN11AbyssEngine11PaintCanvas'
+GETTERS = {'_ZN6Status25getCurrentCampaignMissionEv': 0x1e8, '_ZN6Status9getSystemEv': 0x1a0, '_ZN11SolarSystem8getIndexEv': 0x14}
+
+
+def smmul(asm, rd, rn, rm): return asm.half(0xfb50 | rn, 0xf000 | rd << 8 | rm)
+
+
+def add_lsr(asm, rd, rn, rm, shift): return asm.half(0xeb00 | rn, (shift >> 2) << 12 | rd << 8 | (shift & 3) << 6 | 0x10 | rm)
+
+
+def subs_reg(asm, rd, rn, rm): return asm.half(0x1a00 | rm << 6 | rn << 3 | rd)
+
+
+class Raw:
+    """A function body laid out by android_thumb.build without the 4-byte padding."""
+    def __init__(self, address, code):
+        self.address, self.code, self.named = address, bytes(code), []
+
+    def finish(self):
+        return self.code
+
+
+def getter(name, field, address=None, rd=0, padded=False):
+    """`ldr.w r0, [r0, #field]; bx lr` (`ldr r0, [r0, #field]` when it fits 16 bits)."""
+    from android_thumb import Asm
+    from android_fixture import TEXT
+    asm = Asm(address or TEXT + 0x800 + 0x10 * list(GETTERS).index(name))
+    (asm.ldr(rd, 0, field) if field < 128 else asm.ldr_w(rd, 0, field)).ret()
+    return asm if padded else Raw(asm.address, asm.code)
+
+
+def android(name=SPACE, magic=0x5556, world=3, copies=1, tail=('movs', CREATE + '13TextureCreateEtRjb'), ids=(17850, 10086, 17803, 10068),
+            getters=GETTERS, split=False, broken=None):
+    """createSpace's star layer and the opening sky in the Android compiler's shape."""
+    from android_fixture import RODATA, TEXT
+    from android_thumb import Asm, build
+    asm = Asm(TEXT + 0x100).push()
+    for n in range(copies):
+        asm.ldr_address(0, RODATA).add_pc(0).ldr(5, 0, 0).ldr(0, 5, 0)
+        asm.call_to('_ZN6Status9getSystemEv').call_to('_ZN11SolarSystem8getIndexEv').movw(8, magic).add_imm(2, 10, 8).movt(8, 0x5555).movs(3, 0)
+        smmul(asm, 1, 0, 8); add_lsr(asm, 1, 1, 1, 31); asm.add_reg(1, 1, 1, 1); subs_reg(asm, 0, 0, 1)
+        asm.movw(1, ids[0]).add_low(0, 1).uxth(1, 0).mov(0, 6).call_to(CREATE + '10MeshCreateEtRjb')
+        asm.ldr_address(0, RODATA + 4).add_pc(0).ldr(0, 0, 0).ldr(6, 0, 0).ldr(0, 5, 0)
+        asm.call_to('_ZN6Status9getSystemEv').call_to('_ZN11SolarSystem8getIndexEv')
+        smmul(asm, 1, 0, 8); asm.add_imm(2, 10, 0x19c).movs(3, 0); add_lsr(asm, 1, 1, 1, 31); asm.add_reg(1, 1, 1, 1); subs_reg(asm, 0, 0, 1)
+        asm.movw(1, ids[1]).add_low(0, 1).uxth(1, 0).mov(0, 6).call_to(CREATE + '13TextureCreateEtRjb')
+        asm.ldr(0, 5, 0).call_to('_ZN6Status25getCurrentCampaignMissionEv').cbz(0, 'other%d' % n, nonzero=True)
+        asm.ldr_w(0, 10, 0xc0).cmp(0, world).branch('ne', 'other%d' % n).ldr_address(0, RODATA + 8).movw(1, ids[2]).mov(2, 9).movs(3, 0)
+        asm.add_pc(0).ldr(5, 0, 0).ldr(0, 5, 0).call_to(CREATE + '10MeshCreateEtRjb').ldr(0, 5, 0).add_imm(2, 10, 0x198)
+        asm.movw(1, ids[3]).branch(None, 'tail%d' % n).label('other%d' % n).nop().nop()
+        if split:  # the jump lands inside a 32-bit instruction
+            asm.half(0xf240).label('tail%d' % n).half(0x0300)
+        else:
+            asm.label('tail%d' % n)
+        asm.movs(3, 0 if tail[0] == 'movs' else 1)
+        asm.call_to(tail[1])
+    functions = {name: asm.pop()}
+    functions.update((key, getter(key, field, **(broken or {}) if key == '_ZN6Status9getSystemEv' else {})) for key, field in getters.items())
+    return build(functions)
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidOpeningSky(unittest.TestCase):
+    PROJECTION = {'provenance': {'cursor': {'offset': 1, 'bytes': 12}}}
+
+    def test_encodings_decode_as_intended(self):
+        import capstone
+        from android_thumb import Asm
+        decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+        for emit, expected in [(lambda a: smmul(a, 1, 0, 8), 'smmul r1, r0, r8'), (lambda a: add_lsr(a, 1, 1, 1, 31), 'add.w r1, r1, r1, lsr #31'),
+                               (lambda a: subs_reg(a, 0, 0, 1), 'subs r0, r0, r1')]:
+            asm = Asm(0x2000)
+            emit(asm)
+            self.assertEqual(['%s %s' % (i.mnemonic, i.op_str) for i in decoder.disasm(bytes(asm.code), 0x2000)], [expected])
+
+    def test_star_bases_and_opening_sky(self):
+        from android_fixture import TEXT
+        lib = android()
+        value = reader.extract_opening_sky(lib, self.PROJECTION)
+        self.assertEqual({k: v for k, v in value.items() if k != 'provenance'},
+                         {'world_type': 3, 'campaign_cursor': 0, 'location_match': False, 'star_variants': 3,
+                          'star_mesh_base': 17850, 'star_texture_base': 10086, 'sky_mesh_id': 17803, 'sky_texture_id': 10068})
+        start = lib.symbols[SPACE][0]
+        self.assertEqual(value['provenance'], {'stars': {'offset': start + 2, 'bytes': 110}, 'opening': {'offset': start + 112, 'bytes': 48},
+                                               'texture': {'offset': start + 164, 'bytes': 6}, 'cursor': {'offset': TEXT + 0x800, 'bytes': 6},
+                                               'system': {'offset': TEXT + 0x810, 'bytes': 6}, 'system_id': {'offset': TEXT + 0x820, 'bytes': 4}})
+        self.assertEqual(reader.extract_opening_sky(lib, {'provenance': {}}), {})
+        self.assertEqual(reader.extract_opening_sky(lib, None), {})
+
+    def test_each_broken_shape_is_unsupported(self):
+        cases = {'name': dict(name='_ZN5Level11createSceneEv'), 'modulo': dict(magic=0x5557), 'world': dict(world=4), 'two': dict(copies=2),
+                 'tail call': dict(tail=('movs', CREATE + '10MeshCreateEtRjb')), 'tail shape': dict(tail=('other', CREATE + '13TextureCreateEtRjb')),
+                 'id': dict(ids=(17850, 10086, 65534, 10068)), 'getter': dict(broken={'rd': 1}), 'getter tail': dict(broken={'padded': True}),
+                 'tail inside an instruction': dict(split=True),
+                 'missing getter': dict(getters={k: v for k, v in GETTERS.items() if k != '_ZN11SolarSystem8getIndexEv'})}
+        for name, options in cases.items():
+            self.assertEqual(reader.extract_opening_sky(android(**options), self.PROJECTION), {}, name)

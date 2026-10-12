@@ -2,12 +2,107 @@
 
 The emitted data is a small resource selector, never executable instructions.
 Other mission/location overrides are deliberately outside this selector's scope.
+
+Android: Level::createSpace creates the star mesh and texture from bases plus
+SolarSystem::getIndex() mod 3, then, when Status::getCurrentCampaignMission()
+is 0 and the world type (Level+0xc0) is 3, the opening sky mesh and texture
+(the texture through a shared TextureCreate tail).
 """
+import re
 from .opening_loadout import template
 from .ship_models import section_bytes
 
+ANDROID_SKY = r"""ldr r0, =\w+
+adr r0, \w+
+ldr r5, \[r0\]
+ldr r0, \[r5\]
+call _ZN6Status9getSystemEv
+call _ZN11SolarSystem8getIndexEv
+movw r8, #0x5556
+add\.w r2, sl, #8
+movt r8, #0x5555
+movs r3, #0
+smmul r1, r0, r8
+add\.w r1, r1, r1, lsr #31
+add\.w r1, r1, r1, lsl #1
+subs r0, r0, r1
+movw r1, #(?P<star_mesh>\w+)
+add r0, r1
+uxth r1, r0
+mov r0, r6
+call _ZN11AbyssEngine11PaintCanvas10MeshCreateEtRjb
+ldr r0, =\w+
+adr r0, \w+
+ldr r0, \[r0\]
+ldr r6, \[r0\]
+ldr r0, \[r5\]
+call _ZN6Status9getSystemEv
+call _ZN11SolarSystem8getIndexEv
+smmul r1, r0, r8
+add\.w r2, sl, #0x19c
+movs r3, #0
+add\.w r1, r1, r1, lsr #31
+add\.w r1, r1, r1, lsl #1
+subs r0, r0, r1
+movw r1, #(?P<star_texture>\w+)
+add r0, r1
+uxth r1, r0
+mov r0, r6
+call _ZN11AbyssEngine11PaintCanvas13TextureCreateEtRjb
+(?P<opening>ldr r0, \[r5\]
+)call _ZN6Status25getCurrentCampaignMissionEv
+cbnz r0, #\w+
+ldr\.w r0, \[sl, #0xc0\]
+cmp r0, #3
+bne #\w+
+ldr r0, =\w+
+movw r1, #(?P<sky_mesh>\w+)
+mov r2, sb
+movs r3, #0
+adr r0, \w+
+ldr r5, \[r0\]
+ldr r0, \[r5\]
+call _ZN11AbyssEngine11PaintCanvas10MeshCreateEtRjb
+ldr r0, \[r5\]
+add\.w r2, sl, #0x198
+movw r1, #(?P<sky_texture>\w+)
+b #(?P<tail>\w+)
+"""
+
+
+def android_getter(lib, symbol):
+    """Span of a whole one-field getter (`ldr r0, [r0, #field]; bx lr`), else None."""
+    from .android_listing import Listing
+    getter = Listing(lib, symbol)
+    return getter.span(0, 1) if re.fullmatch(r'ldr(?:\.w)? r0, \[r0, #\w+\]\nbx lr\n', getter.text) else None
+
+
+def android_opening_sky(lib, projection):
+    """Star bases (index mod 3) and the opening sky ids in Level::createSpace."""
+    from .android_listing import Listing, number
+    space = Listing(lib, '_ZN5Level11createSpaceEv')
+    found = space.find(ANDROID_SKY)
+    if not projection.get('provenance', {}).get('cursor') or len(found) != 1:
+        return {}
+    m = found[0]
+    tail = space.at(number(m['tail']))
+    getters = {key: android_getter(lib, symbol) for key, symbol in
+               [('cursor', '_ZN6Status25getCurrentCampaignMissionEv'), ('system', '_ZN6Status9getSystemEv'),
+                ('system_id', '_ZN11SolarSystem8getIndexEv')]}
+    ids = [number(m[key]) for key in ('star_mesh', 'star_texture', 'sky_mesh', 'sky_texture')]
+    if (tail is None or space.lines[tail:tail + 2] != ['movs r3, #0', 'call _ZN11AbyssEngine11PaintCanvas13TextureCreateEtRjb']
+            or not all(getters.values()) or max(ids) > 65533):
+        return {}
+    opening = space.index(m, 'opening')
+    return {'world_type': 3, 'campaign_cursor': 0, 'location_match': False, 'star_variants': 3,
+            'star_mesh_base': ids[0], 'star_texture_base': ids[1], 'sky_mesh_id': ids[2], 'sky_texture_id': ids[3],
+            'provenance': dict(getters, stars=space.span(space.index(m), opening - 1),
+                               opening=space.span(opening, space.last(m)), texture=space.span(tail, tail + 1))}
+
 
 def extract_opening_sky(mach, projection):
+    if mach.architecture == 'android-armv7':
+        return android_opening_sky(mach, projection or {})
     if not projection or mach.architecture not in ['x86_64', 'armv7']: return {}
     import capstone
     mac=mach.architecture=='x86_64'; prefix='MAC_' if mac else 'ARM_'
