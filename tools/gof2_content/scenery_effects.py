@@ -3,7 +3,14 @@
 Recognizes bounded constructor and setter layouts, not executable behavior. The
 native clock owns time and lifecycle; AEM readers own authored animation ranges.
 Only identifiers, numeric declarations and source extents leave this reader.
+
+Android: Level::createAsteroids builds each PlayerAsteroid with the model and
+kind of the scenery_resources model lookup; the constructor creates
+Explosion(kind + 2) and calls Explosion::setScaling(scale). Explosion's tbh
+switch sends type 2 to the ordinary pair and types 3-5 to the void, ice and
+magma pairs; setScaling sets Transform::SetAnimationSpeed.
 """
+import re
 import struct
 from .opening_loadout import template
 from .ship_models import section_bytes
@@ -11,6 +18,9 @@ from .scenery_population import import_symbol
 
 
 def extract_scenery_effects(mach, resources):
+    if mach.architecture == 'android-armv7':
+        ids = (resources or {}).get('model_ids', [])
+        return android_effects(mach, ids) if len(set(ids)) == 4 else {}
     if not resources or mach.architecture not in ('x86_64', 'armv7'):
         return {}
     import capstone
@@ -135,6 +145,251 @@ def extract_scenery_effects(mach, resources):
         return {'variants': variants, 'speed_threshold': threshold, 'speed_base': speed_base, 'speed_scale': speed_scale, 'provenance': proof}
     except (ValueError, TypeError, KeyError, IndexError, OverflowError, struct.error):
         return {}
+
+
+# Android: the PlayerAsteroid and Explosion constructors have no wrapper (C1 = C2)
+# and setScaling's speed constants are VFP immediates: no wrapper or constant spans.
+# The model lookup (scenery_resources) keeps its kind and model in two stack slots...
+ANDROID_KIND = r"""ands r0, r4
+str (?P=kind), \[sp, #(?P<kind_slot>\w+)\]
+add r4, sp, #0x68
+str r1, \[sp, #(?P<model_slot>\w+)\]
+"""
+# ...that the asteroid constructor receives as its first (model) and third (kind) ints.
+ANDROID_OUTER = r"""mov\.w r0, #0x16c
+call _Znwj
+mov (?P<object>\w+), r0
+add r0, sp, #\w+
+ldr r1, \[sp, #(?P<model_slot>\w+)\]
+ldr r3, \[sp, #(?P<kind_slot>\w+)\]
+mov r2, \w+
+str \w+, \[sp, #0xc\]
+vstr s\d+, \[sp, #8\]
+str r0, \[sp, #4\]
+ldr r0, \[sp, #\w+\]
+str r0, \[sp\]
+mov r0, (?P=object)
+call _ZN14PlayerAsteroidC1EiP10AEGeometryiiRKN11AbyssEngine6AEMath6VectorEfi
+"""
+ACTOR = '_ZN14PlayerAsteroidC1EiP10AEGeometryiiRKN11AbyssEngine6AEMath6VectorEfi'
+# PlayerAsteroid: Explosion(kind + 2), then Explosion::setScaling(scale).
+ANDROID_ACTOR = r"""movs r0, #0x68
+call _Znwj
+mov (?P<effect>\w+), r0
+add\.w r1, (?P<kind>\w+), #2
+mov r0, (?P=effect)
+call _ZN9ExplosionC1Ei
+vmov (?P<scaling>\w+), (?P<scale>s\d+)
+str\.w (?P=effect), \[r4, #0x128\]
+mov r0, (?P=effect)
+mov r1, (?P=scaling)
+call _ZN9Explosion10setScalingEf
+"""
+EXPLOSION = '_ZN9ExplosionC1Ei'
+# Explosion(type): types above 12 to the default block, else a 13-entry tbh table.
+ANDROID_CONSTRUCTOR = r"""push \{r4, r5, r6, r7, lr\}
+add r7, sp, #0xc
+sub sp, #4
+vmov\.i32 q9, #0
+mov r6, r1
+mov r4, r0
+addw r0, pc, #\w+
+add\.w r1, r4, #0x30
+vld1\.64 \{d16, d17\}, \[r0:0x80\]
+mov\.w r0, #0x3f800000
+cmp r6, #0xc
+str r0, \[r4, #0x2c\]
+vst1\.32 \{d18, d19\}, \[r1\]
+add\.w r1, r4, #0x44
+str r0, \[r4, #0x40\]
+vst1\.32 \{d18, d19\}, \[r1\]
+add\.w r1, r4, #0x54
+vst1\.32 \{d16, d17\}, \[r1\]
+str r0, \[r4, #0x64\]
+str r0, \[r4, #0x24\]
+mov\.w r0, #0
+strd r0, r0, \[r4, #8\]
+strd r6, r0, \[r4\]
+bhi #(?P<default>\w+)
+tbh \[pc, r6, lsl #1\]
+"""
+# Each geometry: new AEGeometry(model, canvas); the first goes to this+4, the second to this+8.
+NEW = 'movs r0, #0xc0\ncall _Znwj\nmov r5, r0\n'
+CANVAS = 'ldr r0, =\\w+\nadr r0, \\w+\nldr r0, \\[r0\\]\nldr r2, \\[r0\\]\n'
+GEOMETRY = 'mov r0, r5\nmovw r1, #(?P<model%d>\\w+)\nmovs r3, #0\ncall _ZN10AEGeometryC1EtPN11AbyssEngine11PaintCanvasEb\n'
+SECOND = 'movs r0, #0xc0\nstr r5, \\[r4, #4\\]\ncall _Znwj\nmov r5, r0\n' + CANVAS + GEOMETRY % 1
+# Type 2 and types above 13: the ordinary pair.
+ANDROID_DEFAULT = NEW + r"""ldr r0, =\w+
+cmp r6, #0xd
+adr r0, \w+
+ldr r0, \[r0\]
+ldr r2, \[r0\]
+bne\.w #(?P<ordinary>\w+)
+"""
+ANDROID_ORDINARY = GEOMETRY % 0 + SECOND + 'str r5, \\[r4, #8\\]\n'
+ANDROID_VARIANT = NEW + CANVAS + GEOMETRY % 0 + SECOND + 'b #(?P<join>\\w+)\n'
+# speed = 1.0, or (1.0 - scale) * 3.0 + 1.0 below scale 1.0; type 11 halves it and
+# types 8-10 draw it; the remaining duration is divided by it.
+ANDROID_SCALE = r"""push\.w \{r4, r5, r6, r7, r8, lr\}
+add r7, sp, #0xc
+vpush \{d8, d9\}
+mov r5, r1
+mov r8, r0
+str\.w r5, \[r8, #0x24\]
+mov r2, r5
+ldr\.w r0, \[r8, #4\]
+mov r3, r5
+call _ZN10AEGeometry10setScalingEfff
+ldr\.w r0, \[r8, #8\]
+vmov s18, r5
+cbz r0, #@0x32
+mov r1, r5
+mov r2, r5
+mov r3, r5
+call _ZN10AEGeometry10setScalingEfff
+vmov\.f32 s16, #(?P<threshold>\S+)
+vcmpe\.f32 s18, s16
+vmrs apsr_nzcv, fpscr
+bpl #@0x54
+vmov\.f32 s0, #(?P<speed_base>\S+)
+vmov\.f32 s2, #(?P<speed_scale>\S+)
+vsub\.f32 s4, s0, s18
+vmul\.f32 s2, s4, s2
+vadd\.f32 s16, s2, s0
+vmov\.f32 s0, #5\.000000e\-01
+ldr\.w r0, \[r8\]
+cmp r0, #0xb
+sub\.w r0, r0, #8
+vmul\.f32 s0, s16, s0
+it eq
+vmoveq\.f32 s16, s0
+cmp r0, #2
+bhi #@0x96
+ldr r0, =\w+
+movs r1, #0x3c
+adr r0, \w+
+ldr r0, \[r0\]
+ldr r0, \[r0\]
+call _ZN11AbyssEngine8AERandom7nextIntEi
+vmov s0, r0
+vldr s2, =0x3c23d70a
+vcvt\.f32\.s32 s0, s0
+vmul\.f32 s0, s0, s2
+vldr s2, =0x3f333333
+vadd\.f32 s16, s0, s2
+ldr r0, =\w+
+ldr\.w r1, \[r8, #4\]
+adr r0, \w+
+ldr r0, \[r0\]
+ldr r1, \[r1, #0xc\]
+ldr r0, \[r0\]
+call _ZN11AbyssEngine11PaintCanvas21TransformGetTransformEj
+vmov r5, s16
+mov r1, r5
+call _ZN11AbyssEngine9Transform17SetAnimationSpeedEf
+ldr\.w r0, \[r8, #8\]
+cbz r0, #@0xcc
+ldr r1, =\w+
+adr r1, \w+
+ldr r2, \[r1\]
+ldr r1, \[r0, #0xc\]
+ldr r0, \[r2\]
+call _ZN11AbyssEngine11PaintCanvas21TransformGetTransformEj
+mov r1, r5
+call _ZN11AbyssEngine9Transform17SetAnimationSpeedEf
+ldr\.w r0, \[r8, #0xc\]
+cbz r0, #@0xfe
+ldr r1, \[r0\]
+cbz r1, #@0xfe
+ldr r1, =\w+
+movs r6, #0
+adr r1, \w+
+ldr r4, \[r1\]
+ldr r0, \[r0, #4\]
+ldr\.w r0, \[r0, r6, lsl #2\]
+ldr r1, \[r0, #0xc\]
+ldr r0, \[r4\]
+call _ZN11AbyssEngine11PaintCanvas21TransformGetTransformEj
+mov r1, r5
+call _ZN11AbyssEngine9Transform17SetAnimationSpeedEf
+ldr\.w r0, \[r8, #0xc\]
+adds r6, #1
+ldr r1, \[r0\]
+cmp r6, r1
+blo #@0xde
+ldrd r0, r1, \[r8, #0x10\]
+call __aeabi_l2f
+vmov s0, r0
+vdiv\.f32 s0, s0, s16
+vmov r0, s0
+call __aeabi_f2lz
+strd r0, r1, \[r8, #0x10\]
+vpop \{d8, d9\}
+pop\.w \{r4, r5, r6, r7, r8, pc\}
+"""
+# Transform::SetAnimationSpeed stores the speed.
+ANDROID_SPEED_SETTER = r"""str\.w r1, \[r0, #0xf0\]
+bx lr
+"""
+
+
+def android_effects(lib, ids):
+    from .android_listing import Listing, number
+    from .scenery_population import android_body
+    from .scenery_resources import ANDROID_MODELS
+    scene, actor, explosion = Listing(lib, '_ZN5Level15createAsteroidsEv'), Listing(lib, ACTOR), Listing(lib, EXPLOSION)
+    kinds, outers, effects = scene.find(ANDROID_MODELS + ANDROID_KIND), scene.find(ANDROID_OUTER), actor.find(ANDROID_ACTOR)
+    constructor = re.match(ANDROID_CONSTRUCTOR, explosion.text)
+    if (len(kinds) != 1 or len(outers) != 1 or len(effects) != 1 or not constructor
+            or (kinds[0]['kind_slot'], kinds[0]['model_slot']) != (outers[0]['kind_slot'], outers[0]['model_slot'])
+            or not re.match(r'push\.w \{r4, r5, r6, r7, r8, sb, sl, fp, lr\}\nadd r7, sp, #0xc\n', actor.text)):
+        return {}
+    effect = effects[0]
+    # The kind is the third int argument (r3) and the scale the float on the stack (r7 + 0x20).
+    kind = actor.definition(actor.index(effect, 'kind'), effect['kind'])
+    scale = actor.definition(actor.index(effect, 'scaling'), effect['scale'])
+    if (kind is None or actor.lines[kind] != 'mov %s, r3' % effect['kind']
+            or scale is None or actor.lines[scale] != 'vldr %s, [r7, #0x20]' % effect['scale']):
+        return {}
+    last = explosion.last(constructor)
+    table_at = explosion.code[last].address + 4
+    table = lib.text['offset'] + table_at - lib.text['address']
+    cases = [table_at + 2 * entry for entry in struct.unpack_from('<13H', lib.data, table)]
+
+    def block(address, shape):
+        """The shape matched from the instruction at `address`: (match, span, address of its last line)."""
+        index = explosion.at(address)
+        match = re.match(shape, explosion.text[explosion.starts[index]:]) if index is not None else None
+        if not match:
+            return None, None, None
+        last = index + match[0].count('\n') - 1
+        return match, explosion.span(index, last), explosion.code[last].address
+    default, default_span, _ = block(cases[2], ANDROID_DEFAULT)
+    if number(constructor['default']) != cases[2] or not default:
+        return {}
+    blocks = [block(number(default['ordinary']), ANDROID_ORDINARY)] + [block(at, ANDROID_VARIANT) for at in cases[3:6]]
+    # void, ice and magma store their second geometry through the ordinary pair's last store.
+    if not all(match for match, _, _ in blocks) or any(number(match['join']) != blocks[0][2] for match, _, _ in blocks[1:]):
+        return {}
+    variants = []
+    for index, (match, _, _) in enumerate(blocks):
+        models = [number(match['model0']), number(match['model1'])]
+        if models[0] == models[1]:
+            return {}
+        variants.append({'base_model_id': ids[index], 'effect_type': index + 2, 'model_ids': models})
+    scaled, scaled_listing = android_body(lib, '_ZN9Explosion10setScalingEf', ANDROID_SCALE)
+    setter, setter_listing = android_body(lib, '_ZN11AbyssEngine9Transform17SetAnimationSpeedEf', ANDROID_SPEED_SETTER)
+    if not scaled or not setter:
+        return {}
+    threshold, speed_base, speed_scale = (number(scaled[key]) for key in ('threshold', 'speed_base', 'speed_scale'))
+    if (threshold, speed_base, speed_scale) != (1.0, 1.0, 3.0):
+        return {}
+    proof = {'outer': scene.match_span(outers[0]), 'actor': actor.span(0, actor.last(effect)),
+             'constructor': explosion.span(0, last), 'switch': {'offset': table, 'bytes': 26}, 'default': default_span}
+    proof.update(zip(('ordinary', 'void', 'ice', 'magma'), (span for _, span, _ in blocks)))
+    proof['scale'] = scaled_listing.span(0, scaled_listing.last(scaled))
+    proof['speed_setter'] = setter_listing.span(0, setter_listing.last(setter))
+    return {'variants': variants, 'speed_threshold': threshold, 'speed_base': speed_base, 'speed_scale': speed_scale, 'provenance': proof}
 
 
 # Compiler-layout recognizers. Captures are relocation operands or declarations;
