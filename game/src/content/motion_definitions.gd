@@ -17,9 +17,9 @@ static func validate_cruise(data: Variant, executable_bytes: int, architecture: 
 	if data.is_empty(): return ""
 	if not valid_rate(data.get("speed_units_per_millisecond")) or not valid_forward_axis(data.get("forward_axis")):
 		return "Unsupported cruise rate or forward axis"
-	if not data.get("provenance") is Array or data.provenance.size() != 5:
+	var sizes: Array = {"armv7": [20, 30, 36, 32, 38], "android-armv7": [4, 8, 8, 34, 44, 14]}.get(architecture, [27, 23, 40, 42, 27])
+	if not data.get("provenance") is Array or data.provenance.size() != sizes.size():
 		return "Missing cruise source provenance"
-	var sizes := [20, 30, 36, 32, 38] if architecture == "armv7" else [27, 23, 40, 42, 27]
 	var seen := {}
 	for i in sizes.size():
 		var record: Variant = data.provenance[i]

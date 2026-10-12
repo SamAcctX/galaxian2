@@ -16,6 +16,8 @@ def literal(value):
 
 
 def extract_cruise(mach):
+    if mach.architecture == 'android-armv7':
+        return android_cruise(mach)
     section = mach.text
     code = mach.data[section['offset']:section['offset'] + section['length']]
     base = section['address']
@@ -91,3 +93,71 @@ def extract_cruise(mach):
                            for m in (start, restore, consume)]
                           + [{'offset': target_data[1], 'bytes': len(helper_match[0])},
                              {'offset': getter[1], 'bytes': len(forward_getter)}]}
+
+
+def android_cruise(lib):
+    """The player's constructor declares speed and full throttle side by side,
+    `stopBoost` restores the same speed, `updateManeuver` moves forward by
+    elapsed ms x throttle x speed, and the move helper takes the local +Z column."""
+    from capstone.arm_const import ARM_OP_IMM, ARM_OP_MEM, ARM_OP_REG
+    from .android_library import callee, instructions
+    constructor = instructions(lib, '_ZN9PlayerEgoC2EP6Player')
+    reset = instructions(lib, '_ZN9PlayerEgo9stopBoostEv')
+    consumer = instructions(lib, '_ZN9PlayerEgo14updateManeuverEv')
+    helper = instructions(lib, '_ZN10AEGeometry11moveForwardEf')
+    getter = instructions(lib, '_ZN11AbyssEngine6AEMath12MatrixGetDirERKNS0_6MatrixE')
+    if not all((constructor, reset, consumer, helper, getter)):
+        return {}
+
+    def floats(code):
+        """Each store of mov.w float immediates: (store index, field, [values], [load indexes])."""
+        known, found = {}, []
+        for index, ins in enumerate(code):
+            ops = ins.operands
+            if ins.mnemonic == 'mov.w' and len(ops) == 2 and ops[1].type == ARM_OP_IMM:
+                known[ops[0].reg] = (struct.unpack('<f', struct.pack('<I', ops[1].imm & 0xffffffff))[0], index)
+                continue
+            if ins.mnemonic in ('str.w', 'strd') and ops[-1].type == ARM_OP_MEM and all(op.type == ARM_OP_REG for op in ops[:-1]):
+                if all(op.reg in known for op in ops[:-1]):
+                    found.append((index, ops[-1].mem.base, ops[-1].mem.disp,
+                                  [known[op.reg][0] for op in ops[:-1]], [known[op.reg][1] for op in ops[:-1]]))
+            for register in ins.regs_access()[1]:
+                known.pop(register, None)
+        return found
+
+    def span(code, first, last):
+        start = code[first].address
+        return {'offset': lib.text['offset'] + start - lib.text['address'], 'bytes': code[last].address + code[last].size - start}
+
+    pairs = [row for row in floats(constructor) if len(row[3]) == 2 and row[3][1] == 1.0]
+    if len(pairs) != 1:
+        return {}
+    store, base, field, (value, default_throttle), loads = pairs[0]
+    if not math.isfinite(value) or not 0 < value <= 1000:
+        return {}
+    restores = [row for row in floats(reset) if row[2] == field and len(row[3]) == 1]
+    if len(restores) != 1 or restores[0][3][0] != value:
+        return {}
+    # vldr [elapsed]; vcvt; vldr [throttle]; ldr r0, [geometry]; vmul; vldr [speed]; vmul; vmov r1; call moveForward
+    shape = ['vldr', 'vcvt.f32.s32', 'vldr', 'ldr', 'vmul.f32', 'vldr', 'vmul.f32', 'vmov']
+    steps = [i for i in range(len(consumer) - len(shape))
+             if [ins.mnemonic for ins in consumer[i:i + len(shape)]] == shape
+             and consumer[i + 2].operands[1].mem.disp == field + 4 and consumer[i + 5].operands[1].mem.disp == field
+             and callee(lib, consumer[i + 8]) == '_ZN10AEGeometry11moveForwardEf']
+    if not steps:
+        return {}
+    step = steps[0]
+    calls = [i for i, ins in enumerate(helper) if callee(lib, ins)]
+    getter_calls = [i for i in calls if callee(lib, helper[i]) == '_ZN11AbyssEngine6AEMath12MatrixGetDirERKNS0_6MatrixE']
+    # The getter returns the third matrix column (elements 2, 6, 10): local +Z.
+    end = next((i for i, ins in enumerate(getter) if ins.mnemonic == 'bx'), None)
+    if end is None:
+        return {}
+    getter = getter[:end + 1]
+    columns = sorted(ins.operands[1].mem.disp for ins in getter if ins.mnemonic == 'ldr')
+    if len(getter_calls) != 1 or len(calls) < 2 or getter_calls[0] != calls[1] or columns != [8, 24, 40]:
+        return {}
+    return {'speed_units_per_millisecond': value, 'forward_axis': [0, 0, 1],
+            'provenance': [span(constructor, loads[1], loads[1]), span(constructor, loads[0], store),
+                           span(reset, restores[0][4][0], restores[0][0]), span(consumer, step, step + 8),
+                           span(helper, 0, getter_calls[0]), span(getter, 0, len(getter) - 1)]}
