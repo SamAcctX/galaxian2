@@ -1,9 +1,127 @@
-"""Read the geometry-manager refresh clock and its linked batch-selection path."""
+"""Read the geometry-manager refresh clock and its linked batch-selection path.
+
+Android: LODManager's constructor starts the clock at 1001 ms; LODManager::update
+adds the elapsed time and, once the clock passes 1000, resets it to 0 and
+tail-calls LODManager::forceUpdate(0, false) through a long-branch veneer, which
+calls AEGeometry::updateLod for every registered geometry.
+"""
+import re
+import struct
 from .opening_loadout import template
+from .ship_models import section_bytes
+
+ANDROID_INITIAL = r"""movw r0, #(?P<seed>\w+)
+str r1, \[r5, #8\]
+str r6, \[r5\]
+str r5, \[r4\]
+str r0, \[r4, #0x10\]
+"""
+ANDROID_TICK = r"""ldr r2, \[r0, #0x10\]
+add r1, r2
+str r1, \[r0, #0x10\]
+cmp\.w r1, #(?P<threshold>\w+)
+it le
+bxle lr
+movs r1, #0
+movs r2, #0
+str r1, \[r0, #0x10\]
+b\.w #(?P<jump>\w+)
+"""
+ANDROID_BATCH = r"""mov sb, r0
+ldr r0, =\w+
+mov r8, r2
+ldr r2, =\w+
+adr r0, \w+
+ldr r1, =\w+
+adr r2, \w+
+ldr r0, \[r0\]
+adr r1, \w+
+ldr r2, \[r2\]
+ldr r1, \[r1\]
+ldr r0, \[r0\]
+str r0, \[sp, #0xc\]
+ldr r4, \[r2\]
+vldr s16, \[r1, #0x28\]
+mov r0, r4
+call _ZN11AbyssEngine11PaintCanvas16CameraGetCurrentEv
+mov r1, r0
+mov r0, r4
+call _ZN11AbyssEngine11PaintCanvas14CameraGetLocalEj
+mov r4, sp
+mov r1, r0
+mov r0, r4
+call _ZN11AbyssEngine6AEMath17MatrixGetPositionERKNS0_6MatrixE
+add\.w fp, sb, #4
+mov r1, r4
+mov r0, fp
+call _ZN11AbyssEngine6AEMath6VectoraSERKS1_
+ldr\.w r0, \[sb\]
+ldr r1, \[r0\]
+cbz r1, #(?P<done>\w+)
+vmov r5, s16
+movs r6, #0
+mov sl, sp
+(?P<loop>ldr r0, \[r0, #4\])
+cmp\.w r8, #1
+ldr\.w r4, \[r0, r6, lsl #2\]
+bne #(?P<own>\w+)
+mov r0, sl
+mov r1, r4
+call _ZN10AEGeometry17getParentPositionEv
+b #(?P<update>\w+)
+(?P<camera>vldr d16, \[fp\])
+ldr\.w r0, \[fp, #8\]
+str r0, \[sp, #8\]
+vstr d16, \[sp\]
+(?P<call>mov r0, r4)
+mov r1, sl
+mov r2, r5
+call _ZN10AEGeometry9updateLodERKN11AbyssEngine6AEMath6VectorEf
+ldr\.w r0, \[sb\]
+adds r6, #1
+ldr r1, \[r0\]
+cmp r6, r1
+blo #(?P<next>\w+)
+"""
+# bx pc ; nop ; ldr ip, [pc] ; add pc, ip, pc ; then the offset word (from the add's pc).
+VENEER = bytes.fromhex('7847c04600c09fe50ff08ce0')
+UPDATE_LOD = '_ZN10AEGeometry9updateLodERKN11AbyssEngine6AEMath6VectorEf'
+
+
+def android_refresh(lib, lod):
+    from .android_listing import Listing, names, number
+    initial, tick, batch = (Listing(lib, name) for name in ('_ZN10LODManagerC1Ev', '_ZN10LODManager6updateEi',
+                                                            '_ZN10LODManager11forceUpdateEib'))
+    seeds, loops = initial.find(ANDROID_INITIAL), batch.find(ANDROID_BATCH)
+    clock = re.match(ANDROID_TICK, tick.text)
+    if len(seeds) != 1 or len(loops) != 1 or not clock:
+        return {}
+    seed, loop = seeds[0], loops[0]
+    at = lambda m, name: batch.code[batch.index(m, name)].address
+    last = batch.code[batch.last(loop)]
+    veneer = section_bytes(lib, number(clock['jump']), 16, b'__text')
+    target = number(clock['jump']) + 16 + struct.unpack('<i', veneer[0][12:])[0] if veneer else None
+    # The selector the batch calls holds the ship LOD cull.
+    start, size = lib.symbols.get(UPDATE_LOD, (0, 0))
+    cull = lod['provenance']['cull']['offset'] - lib.text['offset'] + lib.text['address']
+    if (not veneer or veneer[0][:12] != VENEER
+            or (lib.imports.get(target) or names(lib).get(target & ~1)) != '_ZN10LODManager11forceUpdateEib'
+            or number(loop['next']) != at(loop, 'loop') or number(loop['own']) != at(loop, 'camera')
+            or number(loop['update']) != at(loop, 'call') or number(loop['done']) != last.address + last.size
+            or not start <= cull < start + size):
+        return {}
+    threshold = number(clock['threshold'])
+    if threshold >= 1000000:
+        return {}
+    return {'initial_milliseconds': number(seed['seed']), 'refresh_at_milliseconds': threshold + 1, 'reset_milliseconds': 0,
+            'time_unit': 'milliseconds', 'forced_refresh_resets_clock': False,
+            'provenance': {'initial': initial.match_span(seed), 'tick': tick.match_span(clock), 'batch': batch.match_span(loop)}}
 
 
 def extract_lod_refresh(mach, lod):
-    if not lod or mach.architecture not in ['x86_64','armv7']: return {}
+    if not lod: return {}
+    if mach.architecture == 'android-armv7': return android_refresh(mach, lod)
+    if mach.architecture not in ['x86_64','armv7']: return {}
     import capstone
     mac=mach.architecture=='x86_64';prefix='MAC_' if mac else 'ARM_';text=mach.text
     base=text['address'];file_base=text['offset']+mach.slice_offset

@@ -9,7 +9,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	if not data is Dictionary: return "Missing LOD refresh declarations"
 	if data.is_empty(): return ""
 	if not parameters(data): return "Invalid LOD refresh parameters"
-	var sizes := {"initial":11,"tick":35,"batch":222} if architecture=="x86_64" else {"initial":14,"tick":24,"batch":168} if architecture=="armv7" else {}
+	var sizes: Dictionary = {"x86_64":{"initial":11,"tick":35,"batch":222},"armv7":{"initial":14,"tick":24,"batch":168},"android-armv7":{"initial":12,"tick":24,"batch":142}}.get(architecture,{})
 	var provenance: Variant = data.get("provenance")
 	if sizes.is_empty() or not provenance is Dictionary or provenance.size()!=sizes.size(): return "Invalid LOD refresh provenance"
 	var spans := []
