@@ -2,9 +2,20 @@
 
 Original executable code is inspected statically and discarded. Only the fresh
 source context is supported; these are not generic mission-construction rules.
+
+Android: Level::init builds asteroids and gas clouds, sends a world 3
+campaign mission to Level::createCampaignMission, then builds static objects,
+sentry guns, fighter turrets and wingmen, assigns guns, keeps world type 3 and
+connects the players. Level::createGasClouds and Level::createSentryGuns
+need equipment sorts 33 and 39, Level::createFighterTurrets hulls 45 and 51,
+Level::createWingmen the wingmen Status::resetGame clears. The NPC branch of
+Level::assignGuns builds a 4-shot Gun, sets item 0, then item 19 for kind 8;
+Gun::setIndex takes each item's effect model from its table and flips each
+effect when AERandom::nextInt(2) is zero.
 """
 import copy
 import struct
+from .declaration_layouts import recognize_symbols
 from .opening_loadout import template
 from .opening_npc_weapons import LAYOUTS as WEAPON_LAYOUTS
 from .opening_npc_guidance import LAYOUTS as GUIDANCE_LAYOUTS
@@ -17,6 +28,20 @@ VALUES = {'world_type':3,'campaign_cursor':0,'initial_companions_empty':True,
 
 
 def extract_opening_world_initialization(mach,actors,opening,scenery):
+    if mach.architecture == 'android-armv7':
+        try:
+            initial = actors['npc_initialization']
+            weapon = initial['primary_weapon']
+            if not (initial['construction'] and initial['guidance'] and scenery):
+                return {}
+            if (weapon['item_id'], weapon['projectile_capacity']) != (19, 4) or (opening['ship_id'], opening['station_id']) != (10, 78):
+                return {}
+            if [(r['actor_id'], r['actor_kind'], r['hull_catalogue_id']) for r in actors['actors']] != [(0, 8, 2), (1, 8, 23), (2, 8, 2)]:
+                return {}
+        except (KeyError, TypeError):
+            return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     import capstone
     arch=mach.architecture;mac=arch=='x86_64'
     if arch not in LAYOUTS:return {}
@@ -313,3 +338,23 @@ SAME_TARGETS = {'armv7': [['after.call_62', 'cursor_gate.call_8'],
              'weapon_overrides_tail.call_193',
              'weapon_overrides_tail.call_256',
              'weapon_main.call_77']]}
+
+ANDROID = {'before': ('_ZN5Level4initEv', 838, 32, 'sha256:f8575133c71658f74d14367b689857bdab8b9754691ecc0e9b8c7ef60ea3e750'),
+           'campaign': ('_ZN5Level4initEv', 1076, 54, 'sha256:235bdc06e0cf7fd6c90ec93742b3fe0939b98ad7bff1106b92fa92d4832109cb'),
+           'after': ('_ZN5Level4initEv', 1130, 92, 'sha256:845a19c021f753c86ea6a4a4888fc561a86d5166f70d9e34d34a9a87e6d6169a'),
+           'equipment33': ('_ZN5Level15createGasCloudsEv', 56, 18, '2868acf70cef2121adf704eb002800f02d81'),
+           'equipment39': ('_ZN5Level16createSentryGunsEv', 10, 22, '46487844006800689ff75cea27219ff754ee002876d0'),
+           # Android also needs cursor >= 128 at station 112.
+           'station_gate': ('_ZN5Level19createStaticObjectsEv', 28, 50, 'sha256:22a121809d03dd12ab3693f000f4242fd65836834dc200731c76dc493e1263a0'),
+           'cursor_gate': ('_ZN5Level19createStaticObjectsEv', 416, 18, '5b487844006800689ff7c8e95528c0f28180'),
+           'hull_gate': ('_ZN5Level20createFighterTurretsEv', 56, 10, 'b06f2d282bd0332863d1'),
+           # Android also skips Supernova systems and cursor 158.
+           'companion_gate': ('_ZN5Level13createWingmenEv', 32, 58, 'sha256:9a486dcc04199721ab9b4796cafcf9b9220a9547655527f6fb015a8e5d315754'),
+           'companion_getter': ('_ZN6Status10getWingmenEv', 0, 4, '406a7047'),
+           'companion_reset': ('_ZN6Status9resetGameEv', 224, 6, '0020c8f82400'),
+           # From the NPC's new Gun to KIPlayer::addGun, with every later-campaign override.
+           'npc_primary': ('_ZN5Level10assignGunsEv', 1122, 1254, 'sha256:b436aeb75b91f39771917a3095ba5f13a5da55d834b803649a35d35e59fd3f3e'),
+           'effect_setter': ('_ZN3Gun8setIndexEi', 0, 246, 'sha256:72cec26f84cb1d2f73b425fba45172f5448191398c30a54679cdfb1bf871cabf'),
+           # Items 0..19 of the effect model table: 14600 for item 0, 14605 for item 19.
+           'effect_models': ('_ZN3Gun8setIndexEi', 56, 80,
+                             '08390000083900000839000009390000093900000a3900000a3900000b3900000b390000083900000b3900000a390000093900000939000009390000093900000c3900000c3900000c3900000d390000', 'literal', 0)}
