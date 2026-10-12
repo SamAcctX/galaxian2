@@ -68,6 +68,15 @@ def app_files(listing):
     return app, selected
 
 
+def seven_zip(importer):
+    bundled = Path(__file__).resolve().parents[2] / '7zip' / ('7z.exe' if os.name == 'nt' else '7zz')
+    tool = (os.environ.get('GOF2_7ZIP') or (str(bundled) if bundled.is_file() else None)
+            or shutil.which('7zz') or shutil.which('7z'))
+    if not tool:
+        raise ContentError(importer + ' needs 7-Zip (7zz or 7z). Install the importer dependencies before playing.')
+    return tool
+
+
 class DmgApp:
     def __init__(self, source, checkpoint=lambda *_: None, work=None):
         self.source = Path(source).absolute()
@@ -123,11 +132,7 @@ class DmgApp:
             source.seek(-512, 2)
             if source.read(4) != b'koly':
                 raise ContentError('Unsupported Mac disk image; expected a UDIF DMG')
-        bundled = Path(__file__).resolve().parents[2] / '7zip' / ('7z.exe' if os.name == 'nt' else '7zz')
-        tool = (os.environ.get('GOF2_7ZIP') or (str(bundled) if bundled.is_file() else None)
-                or shutil.which('7zz') or shutil.which('7z'))
-        if not tool:
-            raise ContentError('The DMG importer needs 7-Zip (7zz or 7z). Install the importer dependencies before playing.')
+        tool = seven_zip('The DMG importer')
         self.stage = tempfile.TemporaryDirectory(prefix='gof2-dmg-', dir=self.work)
         root = Path(self.stage.name)
         listing = self.run_tool(tool, ['l', '-slt', '-ba', '-sns-', '-sccUTF-8', '-p-', '--', str(self.source)],

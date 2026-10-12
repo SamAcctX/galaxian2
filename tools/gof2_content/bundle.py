@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 import os
 import plistlib
+import re
 import stat
 import zipfile
 
@@ -12,6 +13,7 @@ MAX_ENTRIES = 20000
 MAX_RESOURCE = 256 * 1024 * 1024
 MAX_TOTAL = 8 * 1024 * 1024 * 1024
 CHUNK = 1024 * 1024
+ANDROID_LIBRARY = 'lib/armeabi-v7a/libgof2hdaa.so'
 LANGUAGES = {'de', 'es', 'fr', 'gb', 'it', 'ja', 'ko', 'pl', 'ptl', 'ru', 'zs', 'zt'}
 CATALOGUES = {'agents', 'collision', 'collision_test', 'docks', 'docks_hd', 'items',
               'shipparts', 'ships', 'static_collisions', 'stationparts', 'stations',
@@ -19,6 +21,27 @@ CATALOGUES = {'agents', 'collision', 'collision_test', 'docks', 'docks_hd', 'ite
               'names_bobolan_0', 'names_bobolan_1', 'names_cyborg_0', 'names_grey_0',
               'names_multipod_0', 'names_multipod_1', 'names_nivelian_0', 'names_nivelian_1',
               'names_terran_0_m', 'names_terran_0_w', 'names_terran_1', 'names_vossk_0', 'names_vossk_1'}
+
+
+def archive_files(archive):
+    """(name, info) of every regular member, refusing links, encryption and ambiguity."""
+    infos = archive.infolist()
+    if len(infos) > MAX_ENTRIES:
+        raise ContentError('Too many archive entries')
+    seen, files = set(), []
+    for info in infos:
+        name = safe_name(info.filename[:-1] if info.is_dir() else info.filename)
+        if name.casefold() in seen:
+            raise ContentError(f'Duplicate or ambiguous archive path: {name}')
+        seen.add(name.casefold())
+        mode = info.external_attr >> 16
+        if stat.S_IFMT(mode) not in (0, stat.S_IFREG, stat.S_IFDIR):
+            raise ContentError(f'Unsupported archive link or special file: {name}')
+        if info.flag_bits & 1:
+            raise ContentError(f'Encrypted archive entry: {name}')
+        if not info.is_dir():
+            files.append((name, info))
+    return files
 
 
 def safe_name(name: str) -> str:
@@ -54,6 +77,8 @@ class Bundle:
         self.info_path = ''
         self.executable_name = None
         self.dmg = None
+        self.archives = []
+        self.owners = {}
         self.checkpoint = checkpoint
 
     def __enter__(self):
@@ -65,8 +90,8 @@ class Bundle:
             raise
 
     def __exit__(self, *_):
-        if self.zip:
-            self.zip.close()
+        for archive in self.archives:
+            archive.close()
         if self.dmg:
             self.dmg.__exit__(None, None, None)
 
@@ -81,6 +106,8 @@ class Bundle:
             if self.profile.get('edition') != 'mac-full-hd':
                 raise ContentError('The DMG must contain Galaxy on Fire 2 Full HD for Mac')
             return
+        if self.source.is_dir() and self.source.name == 'android':
+            return self._android()
         if self.source.is_dir():
             if self.source.suffix.lower() != '.app':
                 raise ContentError('Choose the extracted .app directory itself')
@@ -101,26 +128,9 @@ class Bundle:
                         self.entries[rel] = (path.stat().st_size, path)
             candidates = [n for n in ('Info.plist', 'Contents/Info.plist') if n in self.entries]
         else:
-            try:
-                self.zip = zipfile.ZipFile(self.source)
-            except (zipfile.BadZipFile, OSError) as error:
-                raise ContentError('Choose a readable IPA or ZIP containing one .app') from error
-            infos = self.zip.infolist()
-            if len(infos) > MAX_ENTRIES:
-                raise ContentError('Too many archive entries')
-            seen = set()
-            for info in infos:
-                name = safe_name(info.filename[:-1] if info.is_dir() else info.filename)
-                if name.casefold() in seen:
-                    raise ContentError(f'Duplicate or ambiguous archive path: {name}')
-                seen.add(name.casefold())
-                mode = info.external_attr >> 16
-                if stat.S_IFMT(mode) not in (0, stat.S_IFREG, stat.S_IFDIR):
-                    raise ContentError(f'Unsupported archive link or special file: {name}')
-                if info.flag_bits & 1:
-                    raise ContentError(f'Encrypted archive entry: {name}')
-                if not info.is_dir():
-                    self.entries[name] = (info.file_size, info)
+            self.zip = self.archive(self.source, 'Choose a readable IPA or ZIP containing one .app')
+            for name, info in archive_files(self.zip):
+                self.entries[name] = (info.file_size, info)
             candidates = [n for n in self.entries if n.endswith('.app/Info.plist') or n.endswith('.app/Contents/Info.plist')]
         if len(candidates) != 1:
             raise ContentError('Expected exactly one application bundle with Info.plist')
@@ -145,8 +155,57 @@ class Bundle:
         self.info_path = info_path
         self.executable_name = info.get('CFBundleExecutable')
 
+    def archive(self, path, message):
+        try:
+            archive = zipfile.ZipFile(path)
+        except (zipfile.BadZipFile, OSError) as error:
+            raise ContentError(message) from error
+        self.archives.append(archive)
+        return archive
+
+    def _android(self):
+        """An unpacked Android release (android_source): the OBB holds the
+        resources in the Mac layout (sound banks under data/audio), the game APK
+        the library and the original (Default Economy) item and ship tables."""
+        from .android_source import PACKAGE
+        files = sorted(p.name for p in self.source.iterdir())
+        obbs = [n for n in files if n.startswith('main.') and n.endswith('.' + PACKAGE + '.obb')]
+        if len(files) != 2 or 'game.apk' not in files or len(obbs) != 1:
+            raise ContentError('Unexpected Android release stage')
+        obb = self.archive(self.source / obbs[0], 'The Android expansion file (OBB) is not a readable ZIP')
+        apk = self.archive(self.source / 'game.apk', 'The Android game APK is not a readable ZIP')
+        roots = {name.split('/', 1)[0] for name, _ in archive_files(obb)}
+        if len(roots) != 1 or not re.fullmatch(r'[0-9]+_GOF2CONTENT_ETC', next(iter(roots))):
+            raise ContentError('Unsupported Android expansion file layout')
+        prefix = next(iter(roots)) + '/assets/'
+        seen = set()
+        for name, info in archive_files(obb):
+            if not name.startswith(prefix):
+                continue
+            name = name[len(prefix):]
+            if name.startswith('data/audio/FMOD_GOF2'):
+                name = name.removeprefix('data/audio/')
+            if name.casefold() in seen:
+                raise ContentError(f'Duplicate or ambiguous Android resource: {name}')
+            seen.add(name.casefold())
+            self.entries[name] = (info.file_size, info)
+        own = dict(archive_files(apk))
+        tables = [f'data/bin/{table}.bin' for table in ('items', 'ships')]
+        if any('assets/' + table not in own for table in tables):
+            raise ContentError('This release uses the free-to-play Android economy; choose the Default Economy .xapk')
+        for table in tables:
+            self.entries[table] = (own['assets/' + table].file_size, own['assets/' + table])
+        if ANDROID_LIBRARY not in own:
+            raise ContentError('The Android game APK lacks its ARMv7 game library')
+        self.entries[ANDROID_LIBRARY] = (own[ANDROID_LIBRARY].file_size, own[ANDROID_LIBRARY])
+        self.owners = {id(info): archive for archive in (obb, apk) for info in archive.infolist()}
+        self.profile = {'edition': 'android-hd', 'bundle_identifier': PACKAGE, 'bundle_version': obbs[0].split('.')[1]}
+        self.info_path = obbs[0]
+
     def executable(self):
         """Locate optional import-time static input; never open or execute it here."""
+        if self.profile.get('edition') == 'android-hd':
+            return ANDROID_LIBRARY
         name = self.executable_name
         if not isinstance(name, str) or '/' in name:
             raise ContentError('Missing or invalid CFBundleExecutable for declaration extraction')
@@ -177,8 +236,8 @@ class Bundle:
     @contextmanager
     def open(self, name):
         size, entry = self.entries[name]
-        if self.zip:
-            with self.zip.open(entry) as stream:
+        if self.archives:
+            with (self.owners[id(entry)] if self.owners else self.zip).open(entry) as stream:
                 yield stream
         else:
             # Refuse a link substituted since discovery, including parent directories.
