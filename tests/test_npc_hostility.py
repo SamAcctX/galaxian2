@@ -76,3 +76,72 @@ class HostilityTests(unittest.TestCase):
             self.assertFalse(reader.extract_npc_hostility(changed,a))
             changed=copy.deepcopy(m);changed.sections[-1]['segment']=b'__TEXT'
             self.assertFalse(reader.extract_npc_hostility(changed,a))
+
+
+ANDROID_ACTORS = {'actors': [{'actor_id': i, 'actor_kind': 8, 'hull_catalogue_id': h} for i, h in enumerate((2, 23, 2))],
+                  'npc_initialization': {'guidance': {'a': 1}, 'holding': {'a': 1}, 'activation': {'a': 1}}}
+
+
+def android_extract(actors=ANDROID_ACTORS, kind='8', globals_=('&_ZN7Globals6statusE',) * 3, slot=13, **changes):
+    """Synthetic Android constructors, Status::resetGame and PlayerFighter::update."""
+    from android_text_fixture import fill, text_library
+    from gof2_content.npc_initialization import ANDROID_ACTOR_FLAGS, ANDROID_FLAGS
+    kind_block = fill(reader.ANDROID_KIND, blank='BLANK', kind=kind).replace('b BLANK', 'b #out').replace('=BLANK', '=' + globals_[0])
+    overrides = fill(reader.ANDROID_OVERRIDES, blank='BLANK', special_getter='_ZN6Player11turnedEnemyEv', neutral_getter='_ZN6Player14isAlwaysFriendEv')
+    overrides = overrides.replace('=BLANK', '=' + globals_[1], 1).replace('=BLANK', '=' + globals_[2])
+    push = 'push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}'
+    functions = {
+        '_ZN13PlayerFighter6updateEi': changes.pop('update', '\n'.join([push, 'mov r4, r0', kind_block, overrides, 'out:', 'bx lr'])),
+        '_ZN6PlayerC1Eiiiii': changes.pop('stats', '\n'.join([push, 'mov r4, r0', ANDROID_FLAGS, 'bx lr'])),
+        '_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb': changes.pop('base', '\n'.join([push, 'mov r5, r0', fill(ANDROID_ACTOR_FLAGS), 'bx lr'])),
+        '_ZN6Status9resetGameEv': changes.pop('fresh', '\n'.join([push, 'mov r8, r0', reader.ANDROID_FRESH, 'bx lr'])),
+        '_ZN6Player11turnedEnemyEv': reader.ANDROID_GETTERS['special_getter'],
+        '_ZN6Player14isAlwaysFriendEv': reader.ANDROID_GETTERS['neutral_getter']}
+    functions.update(changes)
+    table = [0, 0] + ['f%d' % i for i in range(14)]
+    table[2 + slot] = '_ZN13PlayerFighter6updateEi'
+    lib, addresses = text_library({k: v for k, v in functions.items() if v is not None},
+                                  {'_ZTV13PlayerFighter': table, '_ZN7Globals6statusE': [0], '_ZN7Globals7optionsE': [0]})
+    return reader.extract_npc_hostility(lib, actors), lib, addresses
+
+
+class AndroidNPCHostility(unittest.TestCase):
+    def test_named_blocks_give_values_and_spans(self):
+        result, lib, addresses = android_extract()
+        self.assertEqual({k: v for k, v in result.items() if k != 'provenance'}, reader.VALUES)
+        p = result['provenance']
+        found = {k: (p[k]['offset'] - addresses[name], p[k]['bytes']) for k, name in [
+            ('stats_flags', '_ZN6PlayerC1Eiiiii'), ('base_flags', '_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb'),
+            ('fresh_override', '_ZN6Status9resetGameEv'), ('kind', '_ZN13PlayerFighter6updateEi'), ('overrides', '_ZN13PlayerFighter6updateEi'),
+            ('special_getter', '_ZN6Player11turnedEnemyEv'), ('neutral_getter', '_ZN6Player14isAlwaysFriendEv')]}
+        self.assertEqual(found, {'stats_flags': (6, 84), 'base_flags': (6, 58), 'fresh_override': (6, 54), 'kind': (6, 72),
+                                 'overrides': (78, 98), 'special_getter': (0, 6), 'neutral_getter': (0, 6)})
+        rel = lib.elf_sections['.rel.dyn']
+        self.assertTrue(rel['offset'] <= p['virtual_update']['offset'] < rel['offset'] + rel['length'] and p['virtual_update']['bytes'] == 8)
+
+    def test_each_broken_rule_is_unsupported(self):
+        from android_text_fixture import fill
+        from gof2_content.npc_initialization import ANDROID_ACTOR_FLAGS, ANDROID_FLAGS
+        initial = ANDROID_ACTORS['npc_initialization']
+        push = 'push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}'
+        cases = {
+            **{'no ' + key: dict(actors=dict(ANDROID_ACTORS, npc_initialization=dict(initial, **{key: {}}))) for key in ('guidance', 'holding', 'activation')},
+            'other actor ids': dict(actors=dict(ANDROID_ACTORS, actors=[dict(a, actor_id=a['actor_id'] + 1) for a in ANDROID_ACTORS['actors']])),
+            'other kinds': dict(actors=dict(ANDROID_ACTORS, actors=[dict(a, actor_kind=7) for a in ANDROID_ACTORS['actors']])),
+            'other hulls': dict(actors=dict(ANDROID_ACTORS, actors=[dict(a, hull_catalogue_id=2) for a in ANDROID_ACTORS['actors']])),
+            'other slot': dict(slot=12),
+            'no stats flags': dict(stats=push + '\nbx lr'),
+            'no base flags': dict(base=push + '\nbx lr'),
+            'no fresh override': dict(fresh=push + '\nbx lr'),
+            'no update blocks': dict(update=push + '\nbx lr'),
+            'other kind': dict(kind='6'),
+            'stats this changed': dict(stats='\n'.join([push, 'movs r0, #0', 'mov r4, r0', ANDROID_FLAGS, 'bx lr'])),
+            'base this lost': dict(base='\n'.join([push, 'mov r5, r0', 'movs r5, #0', fill(ANDROID_ACTOR_FLAGS), 'bx lr'])),
+            'status this changed': dict(fresh='\n'.join([push, 'mov r8, r1', reader.ANDROID_FRESH, 'bx lr'])),
+            **{'other global %d' % n: dict(globals_=tuple('&_ZN7Globals7optionsE' if i == n else '&_ZN7Globals6statusE' for i in range(3))) for n in range(3)},
+            'special getter shape': {'_ZN6Player11turnedEnemyEv': 'ldrb.w r0, [r0, #0xe1]\nbx lr'},
+            'neutral getter shape': {'_ZN6Player14isAlwaysFriendEv': 'ldrb.w r0, [r0, #0xec]\nbx lr'},
+        }
+        for name, changes in cases.items():
+            with self.subTest(name):
+                self.assertEqual(android_extract(**changes)[0], {})
