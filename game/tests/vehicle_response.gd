@@ -45,9 +45,10 @@ func _initialize() -> void:
 	motion.advance(pose, Vector2.ZERO, 1, 0.1)
 	near(motion.angular_units.y, 70.0 - 1800.0 / 126.0, "Rejected equipment changed the established factor")
 	check(not motion.configure_vehicle(bindings, catalogues, catalogues.content_id, 1, [], [], 0.5) and motion.binding_id.is_empty() and motion.angular_units == Vector2.ZERO, "Failed vehicle setup retained flight state")
-	for architecture in ["armv7", "x86_64"]:
+	for architecture in ["armv7", "android-armv7", "x86_64"]:
 		var data := parameters()
-		if architecture == "armv7":
+		if architecture != "x86_64":
+			check(not Definitions.validate(data, 2048, architecture).is_empty(), "ARM direct-base handling accepted a conversion")
 			data.base_add = 0.0; data.base_divisor = 1.0; data.base_scale = 1.0; data.base_offset = 0.0
 		data.provenance = {}
 		var sizes := Definitions.provenance_sizes(architecture)
@@ -56,6 +57,8 @@ func _initialize() -> void:
 			data.provenance[key] = {"offset": offset, "bytes": sizes[key]}
 			offset += sizes[key]
 		check(Definitions.validate(data, 2048, architecture).is_empty(), "Valid vehicle provenance rejected")
+		for other in ["armv7", "android-armv7", "x86_64"]:
+			if other != architecture: check(not Definitions.validate(data, 2048, other).is_empty(), "Vehicle spans accepted for another compiler")
 		for key in ["base_add", "base_divisor", "upgrade_bonus", "percent_divisor", "equipment_type"]:
 			var bad := data.duplicate(true)
 			bad[key] = NAN

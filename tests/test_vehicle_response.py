@@ -106,3 +106,151 @@ class VehicleResponseTests(unittest.TestCase):
                     data[256+3200:256+3200+size]=data[256+1024:256+1024+size]
                 m.data=bytes(data)
                 self.assertEqual(extract_vehicle_response(m, {'supported':True}), {}, (mac,case))
+
+
+def floats(*values):
+    return [struct.unpack('<I', struct.pack('<f', v))[0] for v in values]
+
+
+ANDROID_DEFAULTS = dict(upgrade=0.25, zeros=(0.0, 0.0), tag=4, base_field=0x18, loop='loop', agility_field=0x40, sort_field=8,
+                        default=0x7825, item_sort=0x14, percent=50.0, scale=16.0, setups=('handling', 'response'),
+                        setup_call='agility', percent_loads=('pc',), early_jump=False, property_id=0x1d, assignments=1,
+                        assign_call='attribute', cases=(12,), cases_bound=0x1d, prefix=False, outside=None, omit=None)
+
+
+def android(**options):
+    """The Android vehicle declarations: PlayerEgo's constructor, Ship and Item helpers.
+
+    `outside` names a pool float ('zero', 'upgrade', 'percent') loaded from just before its function.
+    Returns (library, labels of the fixture's own landmarks).
+    """
+    o = dict(ANDROID_DEFAULTS, **options)
+    from android_fixture import TEXT, library
+    from gof2_content import vehicle_response as v
+    from test_steering import (adds8, assemble, b_to, cbz, cmp_imm, cmp_reg, cmp_w, ldr_reg, ldr_w, pop_r7, push_r7,
+                               tbb, vadd, vdiv, vldr_pc, vmov_from_core, vmov_imm, vmov_q8_zero, vmov_s, vpush_d8, vstr)
+    at = {name: TEXT + 0x200 * i for i, name in enumerate(
+        [v.ANDROID_CONSTRUCTOR, v.ANDROID_HANDLING, v.ANDROID_AGILITY, v.ANDROID_REFRESH, v.ANDROID_ATTRIBUTE, v.ANDROID_SORT,
+         v.ANDROID_INIT], 1)}
+    marks = {}
+
+    def pool(name, function, word):
+        return at[function] - 4 if o['outside'] == name else at[function] + 0x100 + 4 * word
+
+    def handling(asm, L):
+        table = at[v.ANDROID_HANDLING] + 0x100
+        asm.ldr(2, 0, 0x78)
+        cbz(vldr_pc(asm, 0, pool('zero', v.ANDROID_HANDLING, 0)), 2, L.get('base', asm.here() + 4))
+        b_to(cmp_w(ldr_w(asm, 12, 2, 0), 12, 0), L.get('base', asm.here() + 4), 'eq').ldr(2, 2, 4).movs(3, 0)
+        vldr_pc(vldr_pc(asm, 0, table + 4), 2, pool('upgrade', v.ANDROID_HANDLING, 2)).label('loop')
+        cmp_imm(adds8(ldr_reg(vadd(asm, 4, 0, 2), 1, 2, 3, 2), 3, 1), 1, o['tag']).it_eq()
+        b_to(cmp_reg(vmov_s(asm, 0, 4), 3, 12), L.get(o['loop'], asm.here() + 4), 'lo').label('base')
+        vadd(asm.vldr(2, 0, o['base_field']), 0, 0, 2).vmov_core(0, 0).ret()
+        while asm.here() < table:
+            asm.nop()
+        asm.data(*floats(*o['zeros'], o['upgrade']))
+
+    def constructor(asm, L):
+        table = at[v.ANDROID_CONSTRUCTOR] + 0x100
+        vpush_d8(asm.push())
+        if o['early_jump']:
+            b_to(asm, L.get('after', asm.here() + 4)).label('after')
+        for kind in o['percent_loads']:
+            vldr_pc(asm, 16, pool('percent', v.ANDROID_CONSTRUCTOR, 0)) if kind == 'pc' else asm.vldr(16, 4, 8)
+            asm.nop()
+        for kind in o['setups']:
+            marks[kind] = asm.here()
+            if kind == 'handling':
+                asm.call(at[v.ANDROID_HANDLING]).str_w(0, 4, 0x154)
+            else:
+                asm.call(at[v.ANDROID_AGILITY if o['setup_call'] == 'agility' else v.ANDROID_SORT])
+                vdiv(vmov_imm(vmov_from_core(asm, 0, 0), 4, o['scale']).vcvt(0, 0), 2, 0, 16)
+                vstr(asm, 0, 4, 0x254).vldr(0, 4, 0x154).vmul(2, 0, 2)
+                vstr(vadd(asm, 0, 0, 2).vmul(0, 0, 4), 0, 4, 0x154)
+        asm.pop()
+        while asm.here() < table:
+            asm.nop()
+        asm.data(*floats(o['percent']))
+
+    def refresh(asm, L):
+        asm.push().call(at[v.ANDROID_SORT])
+        tbb(b_to(cmp_imm(asm, 0, o['cases_bound']), L.get('end', asm.here() + 4), 'hi', True), 0)
+        start = asm.here()
+        rows = [(L.get('assign', start) if i in o['cases'] else L.get('end', start)) - start >> 1 for i in range(30)]
+        asm.half(*(rows[i] | rows[i + 1] << 8 for i in range(0, 30, 2)))
+        for _ in range(o['assignments']):
+            asm.label('assign').ldr(0, 4, 0x6c).movs(1, o['property_id']).ldr(0, 0, 4)
+            ldr_reg(asm, 0, 0, 5).call(at[v.ANDROID_ATTRIBUTE if o['assign_call'] == 'attribute' else v.ANDROID_SORT]).str(0, 4, 0x40)
+            b_to(asm, L.get('end', asm.here() + 4))
+        asm.label('end').pop()
+
+    def attribute(asm, L):
+        push_r7(asm).ldr(2, 0, 0x30).movw(0, o['default']).movt(0, 0xc599)
+        pop_r7(cmp_w(ldr_w(asm, 12, 2, 0), 12, 0).it_eq())
+        ldr_w(asm, 14, 2, 4).movs(2, 0).label('loop')
+        b_to(cmp_reg(ldr_reg(asm, 3, 14, 2, 2), 3, 1), L.get('found', asm.here() + 4), 'eq')
+        b_to(cmp_reg(adds8(asm, 2, 2), 2, 12), L['loop'] if 'loop' in L else asm.here() + 4, 'lo')
+        from test_steering import add_lsr
+        b_to(asm, L.get('done', asm.here() + 4)).label('found')
+        add_lsr(asm, 0, 14, 2, 2, 0).ldr(0, 0, 4).label('done')
+        pop_r7(asm)
+
+    def item_init(asm, L):
+        cbz(asm.ldr(1, 0, 0x30), 1, L.get('end', asm.here() + 4)).ldr(1, 1, 4)
+        vmov_q8_zero(asm).ldr(2, 1, 4).str(2, 0, 0).ldr(2, 1, 0xc).str(2, 0, 4).ldr(2, 1, o['item_sort']).str(2, 0, 8)
+        asm.label('end').ret()
+
+    emitters = {v.ANDROID_CONSTRUCTOR: constructor, v.ANDROID_HANDLING: handling, v.ANDROID_REFRESH: refresh,
+                v.ANDROID_ATTRIBUTE: attribute, v.ANDROID_INIT: item_init,
+                v.ANDROID_AGILITY: lambda asm, L: (asm.nop() if o['prefix'] else asm).ldr(0, 0, o['agility_field']).ret(),
+                v.ANDROID_SORT: lambda asm, L: asm.ldr(0, 0, o['sort_field']).ret()}
+    functions = []
+    for name, emit in emitters.items():
+        asm = assemble(at[name], emit)
+        marks.update({name + ':' + k: a for k, a in asm.labels.items()})
+        functions.append((name, asm.finish(), at[name]))
+    from gof2_content.android_library import AndroidLibrary
+    return AndroidLibrary(library([f for f in functions if f[0] != o['omit']], {})), marks, at
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidVehicleResponseTests(unittest.TestCase):
+    def test_named_declarations_give_values_and_spans(self):
+        from gof2_content import vehicle_response as v
+        lib, marks, at = android()
+        result = extract_vehicle_response(lib, {'available': True})
+        self.assertEqual({k: x for k, x in result.items() if k != 'provenance'},
+                         {'base_add': 0.0, 'base_divisor': 1.0, 'base_scale': 1.0, 'base_offset': 0.0, 'upgrade_tag': 4,
+                          'upgrade_bonus': 0.25, 'equipment_type': 12, 'item_type_value_index': 5, 'equipment_percent_property': 0x1d,
+                          'percent_divisor': 50.0, 'response_scale': 16.0, 'equipment_rule': 'last_matching'})
+        spans = {k: (p['offset'], p['bytes']) for k, p in result['provenance'].items()}
+        c = at[v.ANDROID_CONSTRUCTOR]
+        self.assertEqual(spans, {
+            'handling_getter': (at[v.ANDROID_HANDLING], 66), 'upgrade_bonus': (at[v.ANDROID_HANDLING] + 0x108, 4),
+            'equipment_getter': (at[v.ANDROID_AGILITY], 4), 'type_getter': (at[v.ANDROID_SORT], 4),
+            'property_getter': (at[v.ANDROID_ATTRIBUTE], 54), 'item_type_layout': (at[v.ANDROID_INIT], 22),
+            'percent_load': (c + 6, 4), 'percent_divisor': (c + 0x100, 4), 'handling_setup': (marks['handling'], 8),
+            'response_setup': (marks['response'], 44), 'response_scale': (marks['response'] + 8, 4),
+            'equipment_selector': (at[v.ANDROID_REFRESH] + 2, 14), 'equipment_table': (at[v.ANDROID_REFRESH] + 16, 30),
+            'equipment_assignment': (marks[v.ANDROID_REFRESH + ':assign'], 14)})
+        self.assertEqual(extract_vehicle_response(lib, {}), {})
+
+    def test_each_broken_declaration_is_unsupported(self):
+        from gof2_content import vehicle_response as v
+        cases = {'base field': dict(base_field=0x1c), 'loop target': dict(loop='base'), 'agility field': dict(agility_field=0x44),
+                 'sort field': dict(sort_field=4), 'attribute default': dict(default=0x7826), 'item sort': dict(item_sort=0x1c),
+                 'initial sum': dict(zeros=(0.0, 0.5)), 'initial zero': dict(zeros=(0.5, 0.0)), 'zero outside': dict(outside='zero'),
+                 'upgrade outside': dict(outside='upgrade'), 'percent outside': dict(outside='percent'),
+                 'no handling setup': dict(setups=('response',)), 'two handling setups': dict(setups=('handling', 'handling', 'response')),
+                 'no response setup': dict(setups=('handling',)), 'two response setups': dict(setups=('handling', 'response', 'response')),
+                 'setup order': dict(setups=('response', 'handling')), 'setup callee': dict(setup_call='sort'),
+                 'two percent loads': dict(percent_loads=('pc', 'pc')), 'percent from a field': dict(percent_loads=('field',)),
+                 'redefined percent': dict(percent_loads=('pc', 'field')), 'jump before percent': dict(early_jump=True),
+                 'no assignment': dict(assignments=0), 'two assignments': dict(assignments=2), 'assignment callee': dict(assign_call='sort'),
+                 'no case': dict(cases=()), 'selector bound': dict(cases_bound=0x1e), 'getter prefix': dict(prefix=True), 'two cases': dict(cases=(12, 16)), 'upgrade range': dict(upgrade=11.0),
+                 'upgrade sign': dict(upgrade=-0.25), 'percent range': dict(percent=20000.0), 'percent sign': dict(percent=-50.0),
+                 'scale sign': dict(scale=-16.0)}
+        cases.update({name: dict(omit=name) for name in (v.ANDROID_CONSTRUCTOR, v.ANDROID_HANDLING, v.ANDROID_AGILITY,
+                                                         v.ANDROID_REFRESH, v.ANDROID_ATTRIBUTE, v.ANDROID_SORT, v.ANDROID_INIT)})
+        for name, options in cases.items():
+            self.assertEqual(extract_vehicle_response(android(**options)[0], {'available': True}), {}, name)

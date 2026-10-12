@@ -118,12 +118,62 @@ def vmov_imm(asm, sd, value):
 def wide(asm, word): return asm.half(word >> 16, word & 0xffff)
 def smmla(asm, rd, rn, rm, ra): return wide(asm, 0xfb500000 | rn << 16 | ra << 12 | rd << 8 | rm)
 def asrs(asm, rd, rm, shift): return asm.half(0x1000 | shift << 6 | rm << 3 | rd)
-def add_lsr(asm, rd, rn, rm, shift): return wide(asm, 0xeb000010 | rn << 16 | (shift >> 2) << 12 | rd << 8 | (shift & 3) << 6 | rm)
+def add_lsr(asm, rd, rn, rm, shift, kind=1):  # add.w rd, rn, rm, lsr #shift (kind 0: lsl)
+    return wide(asm, 0xeb000000 | rn << 16 | (shift >> 2) << 12 | rd << 8 | (shift & 3) << 6 | kind << 4 | rm)
 def add_imm(asm, rd, rn, imm): return wide(asm, 0xf1000000 | rn << 16 | rd << 8 | imm)  # add.w rd, rn, #imm (< 256)
 def add_pc(asm, rd): return asm.half(0x4478 | rd)
 def ldrb(asm, rt, rn, offset): return asm.half(0x7800 | offset << 6 | rn << 3 | rt)
 def cmp_imm(asm, rn, imm): return asm.half(0x2800 | rn << 8 | imm)
 def it_ne(asm): return asm.half(0xbf18)
+def vstr(asm, sd, rn, offset): return asm.half(0xed80 | (sd & 1) << 6 | rn, (sd >> 1) << 12 | 0xa00 | offset // 4)
+def ldr_w(asm, rt, rn, offset): return wide(asm, 0xf8d00000 | rn << 16 | rt << 12 | offset)  # ldr.w rt, [rn, #offset]
+def ldr_reg(asm, rt, rn, rm, shift=None):  # ldr rt, [rn, rm] or ldr.w rt, [rn, rm, lsl #shift]
+    return asm.half(0x5800 | rm << 6 | rn << 3 | rt) if shift is None else wide(asm, 0xf8500000 | rn << 16 | rt << 12 | shift << 4 | rm)
+def cmp_w(asm, rn, imm): return wide(asm, 0xf1b00f00 | rn << 16 | imm)  # cmp.w rn, #imm (< 256)
+def cmp_reg(asm, rn, rm):
+    return asm.half(0x4280 | rm << 3 | rn) if rn < 8 and rm < 8 else asm.half(0x4500 | (rn >> 3) << 7 | rm << 3 | rn & 7)
+def adds8(asm, rd, imm): return asm.half(0x3000 | rd << 8 | imm)  # adds rd, #imm
+def tbb(asm, rm): return wide(asm, 0xe8dff000 | rm)
+def vmov_q8_zero(asm): return wide(asm, 0xefc00050)  # vmov.i32 q8, #0
+def vpush_d8(asm): return wide(asm, 0xed2d8b02)
+def push_r7(asm): return asm.half(0xb580)  # push {r7, lr}
+def pop_r7(asm): return asm.half(0xbd80)  # pop {r7, pc}
+
+
+CONDITIONS = {'eq': 0, 'ne': 1, 'hs': 2, 'lo': 3, 'mi': 4, 'pl': 5, 'hi': 8, 'ls': 9, 'ge': 10, 'lt': 11, 'gt': 12, 'le': 13}
+
+
+def cbz(asm, rn, target):
+    offset = target - (asm.here() + 4)
+    assert 0 <= offset < 128
+    return asm.half(0xb100 | (offset >> 6 & 1) << 9 | (offset >> 1 & 31) << 3 | rn)
+
+
+def b_to(asm, target, condition=None, wide_form=False):
+    """b/b<cond> (16-bit) or b<cond>.w (32-bit, condition required) to an address."""
+    offset = target - (asm.here() + 4)
+    if wide_form:
+        value = offset >> 1 & 0xfffff
+        return asm.half(0xf000 | (offset < 0) << 10 | CONDITIONS[condition] << 6 | value >> 11 & 63,
+                        0x8000 | (value >> 17 & 1) << 13 | (value >> 18 & 1) << 11 | value & 0x7ff)
+    if condition is None:
+        return asm.half(0xe000 | offset >> 1 & 0x7ff)
+    return asm.half(0xd000 | CONDITIONS[condition] << 8 | offset >> 1 & 0xff)
+
+
+def assemble(address, emit):
+    """Thumb code from `emit(asm, labels)`, run twice so branches reach labels set later.
+
+    The first pass sees no labels (`labels.get(name, asm.here() + 4)` keeps encodings in range);
+    encodings have fixed sizes, so the second pass places every label where the first did.
+    """
+    from android_fixture import Thumb
+    labels = {}
+    for _ in range(2):
+        asm = Thumb(address)
+        emit(asm, labels)
+        labels = dict(asm.labels)
+    return asm
 
 
 def vldr_pc(asm, sd, target):
@@ -170,13 +220,21 @@ class AndroidSteeringTests(unittest.TestCase):
         vmov_from_core(asm, 10, 5); vmov_imm(asm, 12, 20.0); vmov_imm(asm, 6, 1.25); vmov_imm(asm, 6, -0.125)
         smmla(asm, 0, 1, 0, 0); asrs(asm, 1, 0, 5); add_lsr(asm, 0, 1, 0, 31); add_imm(asm, 2, 0, 0x18); add_pc(asm, 0)
         ldrb(asm, 1, 0, 0x11); cmp_imm(asm, 1, 0); it_ne(asm); add_imm(asm, 2, 0, 0x14)
+        vstr(asm, 0, 4, 0x154); ldr_w(asm, 12, 2, 0); ldr_reg(asm, 0, 0, 5); ldr_reg(asm, 1, 2, 3, 2); cmp_w(asm, 12, 0)
+        cmp_reg(asm, 3, 1); cmp_reg(asm, 3, 12); adds8(asm, 3, 1); tbb(asm, 0); add_lsr(asm, 0, 14, 2, 2, 0)
+        cbz(asm, 2, asm.here() + 4 + 0x42); b_to(asm, 0x2000, 'lo'); b_to(asm, 0x2200); b_to(asm, 0x2400, 'hi', True)
+        b_to(asm, 0x1000, 'eq', True); vmov_q8_zero(asm); vpush_d8(asm); push_r7(asm); pop_r7(asm)
         decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
         self.assertEqual([f'{i.mnemonic} {i.op_str}' for i in decoder.disasm(bytes(asm.code), 0x2000)],
                          ['vadd.f32 s0, s0, s2', 'vsub.f32 s6, s8, s6', 'vdiv.f32 s2, s2, s6', 'vneg.f32 s4, s16',
                           'vmov.f32 s6, s8', 'vcvt.s32.f32 s4, s4', 'vmov s10, r5', 'vmov.f32 s12, #2.000000e+01',
                           'vmov.f32 s6, #1.250000e+00', 'vmov.f32 s6, #-1.250000e-01', 'smmla r0, r1, r0, r0',
                           'asrs r1, r0, #5', 'add.w r0, r1, r0, lsr #31', 'add.w r2, r0, #0x18', 'add r0, pc',
-                          'ldrb r1, [r0, #0x11]', 'cmp r1, #0', 'it ne', 'addne.w r2, r0, #0x14'])
+                          'ldrb r1, [r0, #0x11]', 'cmp r1, #0', 'it ne', 'addne.w r2, r0, #0x14', 'vstr s0, [r4, #0x154]',
+                          'ldr.w ip, [r2]', 'ldr r0, [r0, r5]', 'ldr.w r1, [r2, r3, lsl #2]', 'cmp.w ip, #0', 'cmp r3, r1',
+                          'cmp r3, ip', 'adds r3, #1', 'tbb [pc, r0]', 'add.w r0, lr, r2, lsl #2', 'cbz r2, #0x20a8',
+                          'blo #0x2000', 'b #0x2200', 'bhi.w #0x2400', 'beq.w #0x1000', 'vmov.i32 q8, #0', 'vpush {d8}',
+                          'push {r7, lr}', 'pop {r7, pc}'])
 
     def test_pc_literal_operands_in_both_number_styles(self):
         from android_fixture import Thumb
@@ -190,6 +248,20 @@ class AndroidSteeringTests(unittest.TestCase):
         self.assertEqual([i.op_str for i in code], ['s0, [pc, #4]', 's0, [pc]', 's0, [pc, #-0x10]', 's0, [pc, #0x2f0]'])
         self.assertEqual(shape_at(code, [('vldr', 's0, ' + PC)]), [0, 1, 2, 3])
         self.assertEqual(shape_at(code, [('vldr', 's1, ' + PC)]), [])
+
+    def test_shape_branch_targets_are_shape_instructions(self):
+        from android_fixture import Thumb
+        from gof2_content.android_library import AndroidLibrary, instructions
+        from gof2_content.steering import shape_at
+        asm = Thumb(0x2100)
+        cbz(asm, 0, 0x2106).nop().nop().ret()
+        b_to(asm, 0x2100)
+        lib = AndroidLibrary(library([('_Z1fv', asm.finish(), 0x2100)], {}))
+        code = instructions(lib, '_Z1fv')
+        self.assertEqual(shape_at(code, [('cbz', 'r0, @3'), ('nop', ''), ('nop', ''), ('bx', 'lr')]), [0])
+        self.assertEqual(shape_at(code, [('cbz', 'r0, @2'), ('nop', ''), ('nop', '')]), [])
+        # A target past the decoded code never matches.
+        self.assertEqual(shape_at(code[:5], [('b', '@1')]), [])
 
     def test_named_handler_gives_constants_and_spans(self):
         from android_fixture import TEXT

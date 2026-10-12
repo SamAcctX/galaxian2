@@ -21,9 +21,19 @@ def lit(value):
 
 
 def shape_at(code, shape):
-    """Indexes where `code` holds the instructions of `shape`: (mnemonic, operand-text regex) pairs."""
-    return [i for i in range(len(code) - len(shape) + 1)
-            if all(ins.mnemonic == m and re.fullmatch(o, ins.op_str) for ins, (m, o) in zip(code[i:], shape))]
+    """Indexes where `code` holds the instructions of `shape`: (mnemonic, operand-text regex) pairs.
+
+    '@n' in an operand pattern is the address of the shape's own instruction n (a branch target).
+    """
+    def fits(i):
+        for ins, (mnemonic, operands) in zip(code[i:], shape):
+            if ins.mnemonic != mnemonic:
+                return False
+            operands = re.sub(r'@(\d+)', lambda m: '#%#x' % code[i + int(m[1])].address if i + int(m[1]) < len(code) else '(?!)', operands)
+            if not re.fullmatch(operands, ins.op_str):
+                return False
+        return True
+    return [i for i in range(len(code) - len(shape) + 1) if fits(i)]
 
 
 def pool_float(lib, symbol, ins):
