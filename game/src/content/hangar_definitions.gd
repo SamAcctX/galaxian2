@@ -62,8 +62,11 @@ static func validate_ship_placement(data: Variant, executable_bytes: int, archit
 		return "Invalid ship placement definitions"
 	if data.is_empty():
 		return ""
-	var count := catalogue_count if catalogue_count > 0 else (64 if architecture == "armv7" else 61)
-	if count not in ([64] if architecture == "armv7" else [61, 64]):
+	var reader: Array = {"armv7": [112, 4], "android-armv7": [52, 10], "x86_64": [123, 8]}.get(architecture, [])
+	if reader.is_empty():
+		return "Unsupported ship placement architecture"
+	var count := catalogue_count if catalogue_count > 0 else (61 if architecture == "x86_64" else 64)
+	if count not in ([61, 64] if architecture == "x86_64" else [64]):
 		return "Unsupported ship placement catalogue extent"
 	if not data.get("y_positions") is Array or data.y_positions.size() != count:
 		return "Ship placement table does not match this edition's catalogue"
@@ -77,8 +80,7 @@ static func validate_ship_placement(data: Variant, executable_bytes: int, archit
 		if not record is Dictionary or not integer(record.get("bytes"), 1, 4096) \
 				or not integer(record.get("offset"), 0, executable_bytes - int(record.bytes)):
 			return "Invalid ship placement source extent"
-		var expected := [count * 4, 112 if architecture == "armv7" else 123, 4 if architecture == "armv7" else 8]
-		if record.bytes != expected[i]:
+		if record.bytes != ([count * 4] + reader)[i]:
 			return "Unsupported ship placement reader layout"
 	return ""
 

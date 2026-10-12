@@ -3,6 +3,9 @@
 This is declarative positioning data, not the original ship construction logic.
 No executable bytes are emitted or executed. The surrounding hangar reader must
 have independently identified the supported scene-declaration region first.
+
+Android: Level::createScene creates the player's ship, stores it first in the
+scene and moves it to (0, height[Ship::getIndex()], 0) through vtable slot 18.
 """
 import re
 import struct
@@ -14,9 +17,54 @@ def literal(value):
     return re.escape(bytes.fromhex(value))
 
 
+ANDROID = r"""call _ZN5Level10createShipEiiiP8Waypointbb
+ldr (?P<t>\w+), =\w+
+movs r3, #0
+adr (?P=t), (?P<table>\w+)
+add\.w (?P=t), (?P=t), (?P<index>\w+), lsl #2
+vldr (?P<y>s\d+), \[(?P=t)\]
+vcvt\.f32\.s32 (?P=y), (?P=y)
+ldr\.w r1, \[(?P<level>\w+), #(?P<ships>\w+)\]
+ldr r1, \[r1, #4\]
+str r0, \[r1\]
+vmov r2, (?P=y)
+ldr\.w r0, \[(?P=level), #(?P=ships)\]
+ldr r0, \[r0, #4\]
+ldr r0, \[r0\]
+ldr r1, \[r0\]
+ldr (?P<f>\w+), \[r1, #0x48\]
+movs r1, #0
+blx (?P=f)
+"""
+
+
+def android_placement(lib, count):
+    """The height table indexed by the ship index the scene reads before creating the ship."""
+    from .android_listing import Listing, number
+    scene = Listing(lib, '_ZN5Level11createSceneEv')
+    found = scene.find(ANDROID)
+    if len(found) != 1:
+        return {}
+    match = found[0]
+    source = scene.definition(scene.index(match, 'index'), match['index'])
+    if (source is None or scene.lines[source] != 'mov %s, r0' % match['index']
+            or scene.lines[source - 2:source] != ['call _ZN6Status7getShipEv', 'call _ZN4Ship8getIndexEv']):
+        return {}
+    table = section_bytes(lib, number(match['table']), count * 4, b'__const')
+    if table is None:
+        return {}
+    values = list(struct.unpack('<' + str(count) + 'i', table[0]))
+    if any(abs(value) > 1000000 for value in values):
+        return {}
+    return {'y_positions': values, 'provenance': [{'offset': table[1], 'bytes': count * 4}, scene.match_span(match),
+                                                  scene.span(source - 2, source)]}
+
+
 def extract_ship_placement(mach, hangars, count):
     if not hangars or count not in (61, 64):
         return {}
+    if mach.architecture == 'android-armv7':
+        return android_placement(mach, count)
     section = mach.text
     region = hangars['provenance'][-1]
     offset = region['offset'] - mach.slice_offset
