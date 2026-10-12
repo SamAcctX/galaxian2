@@ -9,6 +9,9 @@ const LEGACY_SPANS := {"x86_64":{"factory_arguments":[17,38],"rank_base":[166,46
 
 const MAC_ALTERNATE := {"factory_arguments":[17,38],"rank_base":[166,46],"cursor_and_hull_modifiers":[224,129],"subtype":[399,43],"difficulty":[442,73],"stats_argument":[558,27],"stats_wrapper":[456746,10],"initial_capacity":[456929,12],"hull_setter":[459606,30],"percentage":[457740,42],"rank_getter":[799038,12],"rank_reset":[803428,11],"cursor_getter":[780844,12],"cursor_predicate":[780828,16],"difficulty_constant":[1470898,4],"percentage_constant":[1453982,4],"entry_rank":[256976,48],"rank_calculation":[798716,136],"score_reset_a":[803366,22],"score_reset_b":[803450,11],"score_reset_c":[803863,22],"score_reset_d":[804316,11],"rank_thresholds_constant":[1488762,84]}
 
+# Android: spans inside named functions (Layouts.anchored); the values are VALUES.
+const ANDROID_SPANS := {"factory_arguments":[14,24],"rank_base":[116,40],"cursor_and_hull_modifiers":[156,122],"subtype":[330,34],"difficulty":[364,80],"stats_argument":[470,30],"initial_capacity":[110,6],"hull_setter":[0,18],"percentage":[0,36],"percentage_literal":[132,4],"rank_getter":[0,6],"score_reset_a":[8,40],"rank_reset":[48,14],"score_reset_c":[276,12],"score_reset_d":[488,62],"cursor_getter":[0,6],"cursor_predicate":[0,14],"entry_rank":[618,34],"rank_calculation":[0,104],"rank_thresholds_constant":[0,84]}
+
 static func parameters(data: Variant) -> bool:
 	return _parameters(data,VALUES)
 
@@ -35,6 +38,11 @@ static func _parameters(data: Variant, values: Dictionary) -> bool:
 static func validate(data: Variant, executable_bytes: int, architecture: String, npc: Dictionary) -> String:
 	if not data is Dictionary: return "Invalid NPC hull capability"
 	if data.is_empty(): return ""
+	if architecture=="android-armv7":
+		if not parameters(data): return "Unsupported NPC hull"
+		var android_world: Variant=npc.get("world_initialization",{})
+		if not android_world is Dictionary or android_world.get("campaign_cursor")!=VALUES.campaign_cursor: return "NPC hull requires the fresh campaign context"
+		return "" if Layouts.anchored(data.provenance,executable_bytes,ANDROID_SPANS) else "Disconnected NPC hull declaration"
 	var legacy:=legacy_parameters(data)
 	if (not parameters(data) and not legacy) or not SPANS.has(architecture): return "Unsupported NPC hull"
 	var world: Variant=npc.get("world_initialization",{})

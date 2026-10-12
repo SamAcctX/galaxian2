@@ -62,3 +62,27 @@ class NpcHullTests(unittest.TestCase):
                 elif key in ['hull_setter','cursor_getter']:a['provenance'][key]['offset']+=2
                 else:m.architecture='unsupported'
                 self.assertFalse(reader.extract_npc_hull(m,a),key)
+
+
+ANDROID_ACTORS = {'npc_initialization': {'world_initialization': {'campaign_cursor': 0}}, 'actors': [{'hull_catalogue_id': v} for v in [2, 23, 2]]}
+
+
+class AndroidNpcHullTests(unittest.TestCase):
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        verify_android_proof(self, reader, lambda lib: reader.extract_npc_hull(lib, ANDROID_ACTORS), values='VALUES')
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            self.assertTrue(reader.extract_npc_hull(lib, ANDROID_ACTORS))
+            for name, actors in {'no world': {**ANDROID_ACTORS, 'npc_initialization': {}},
+                                 'later cursor': {**ANDROID_ACTORS, 'npc_initialization': {'world_initialization': {'campaign_cursor': 1}}},
+                                 'other hulls': {**ANDROID_ACTORS, 'actors': [{'hull_catalogue_id': v} for v in [2, 2, 2]]},
+                                 'no actors': {}}.items():
+                self.assertEqual(reader.extract_npc_hull(lib, actors), {}, name)
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'npc_hull_definitions.gd', values='VALUES')
