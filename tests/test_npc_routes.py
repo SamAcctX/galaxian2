@@ -88,4 +88,36 @@ class RouteTests(unittest.TestCase):
             self.assertFalse(reader.extract_npc_routes(changed,a))
 
 
+ANDROID_ACTORS = {'actors': [{'actor_kind': 8, 'hull_catalogue_id': h} for h in (2, 23, 2)],
+                  'npc_initialization': {'holding': {'actor_mode': 5}, 'flight': {'pi': 3.14}, 'guidance': {'actor_kind': 8}}}
+
+
+class AndroidNpcRoutes(unittest.TestCase):
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        verify_android_proof(self, reader, lambda lib: reader.extract_npc_routes(lib, ANDROID_ACTORS), values='VALUES')
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            self.assertTrue(reader.extract_npc_routes(lib, ANDROID_ACTORS))
+            initial = ANDROID_ACTORS['npc_initialization']
+            cases = {**{'no ' + key: {**ANDROID_ACTORS, 'npc_initialization': {k: v for k, v in initial.items() if k != key}}
+                        for key in initial},
+                     'other kinds': {**ANDROID_ACTORS, 'actors': [{'actor_kind': 9, 'hull_catalogue_id': h} for h in (2, 23, 2)]},
+                     'other hulls': {**ANDROID_ACTORS, 'actors': [{'actor_kind': 8, 'hull_catalogue_id': 2} for _ in range(3)]},
+                     'no initialization': {'actors': ANDROID_ACTORS['actors']}}
+            for name, actors in cases.items():
+                self.assertEqual(reader.extract_npc_routes(lib, actors), {}, name)
+
+    def test_android_native_spans(self):
+        # The game pins the route values through its own constants; the spans must match the importer's.
+        import json, re
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] / 'game/src/content/npc_route_definitions.gd').read_text()
+        found = re.findall(r'^const ANDROID_SPANS :?= (.+)$', source, re.M)
+        self.assertEqual([json.loads(row) for row in found], [{k: [v[1], v[2]] for k, v in reader.ANDROID.items()}])
+
+
 if __name__=='__main__':unittest.main()
