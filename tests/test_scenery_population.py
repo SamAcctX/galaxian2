@@ -1,5 +1,6 @@
 """Relocated population declarations, linked sampler and ARM symbol validation."""
 import copy
+import importlib.util
 import struct
 import unittest
 from types import SimpleNamespace
@@ -99,3 +100,85 @@ class SceneryPopulation(unittest.TestCase):
             else:raw=raw[:7205]
             m.data=bytes(raw)
             self.assertFalse(reader.extract_scenery_population(m),change)
+
+
+SCENE, STATION, INDEX = '_ZN5Level15createAsteroidsEv', '_ZN6Status10getStationEv', '_ZN7Station8getIndexEv'
+SEED, DRAW = '_ZN11AbyssEngine8AERandom7setSeedEx', '_ZN11AbyssEngine8AERandom7nextIntEi'
+# Whole bodies in the Android compiler's encoding; `call:NAME` is a bl patched by build().
+BODIES = {STATION: 'd0f898017047', INDEX: '80687047', SEED: '99b24ef26d6381f00501cdf6ec635a40c0e900217047',
+          DRAW: '2de9f04f03af81b08b46cbf100014ef26d6a01ea0b014ff00509cdf6ec6a594517d1d0e90061a6fb0a2306fb093301fb0a33'
+                '12f10b0143f1000296b24a0c42eac632c0e9001682fb0b23d00f40ea43011ee00090abf10108d0e90045a4fb0a0104fb0911'
+                '10f10b0405fb0a1141f10000594685b2600c40eac5363046 call:__aeabi_idivmod a8eb010030440028e8db0098c0e90045'
+                '084601b0bde8f08f'}
+
+
+def raw(asm, text):
+    for part in text.split():
+        if part.startswith('call:'):
+            asm.call_to(part[5:])
+        else:
+            data = bytes.fromhex(part)
+            asm.half(*struct.unpack('<%dH' % (len(data) // 2), data))
+    return asm
+
+
+def asrs(asm, rd, rm, imm): return asm.half(0x1000 | imm << 6 | rm << 3 | rd)  # asrs rd, rm, #imm
+
+
+def count_site(asm, bound=40, base=40, reload=6, seed=5):
+    """createAsteroids' seeding and list sizing (Globals::rnd at r6 via the GOT word, AERandom* in r5)."""
+    from android_fixture import RODATA
+    asm.ldr_address(0, RODATA).add_pc(0).ldr(6, 0, 0).ldr_w(0, 10, 0).ldr(5, 6, 0).call_to(STATION).call_to(INDEX)
+    asrs(asm.mov(1, 0).mov(0, seed), 3, 1, 31).mov(2, 1).call_to(SEED).ldr(0, reload, 0).movs(1, bound).call_to(DRAW)
+    return asm.ldr_w(1, 4, 0xfc).adds8(0, base).call_to('_Z14ArraySetLengthIP8KIPlayerEvjR5ArrayIT_E')
+
+
+def android_library(scene=SCENE, copies=1, bodies=None, omit=(), entry=None, **site):
+    """Synthetic createAsteroids plus the four sampler bodies; `entry(asm)` code runs before the site."""
+    from android_fixture import TEXT
+    from android_thumb import Asm, build
+    asm = Asm(TEXT + 0x100).push()
+    for _ in range(copies):
+        count_site(entry(asm) if entry else asm, **site)
+    functions = {scene: asm.pop()}
+    for index, (name, text) in enumerate({**BODIES, **(bodies or {})}.items()):
+        if name not in omit:
+            functions[name] = raw(Asm(TEXT + 0x400 + 0x100 * index), text)
+    return functions
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidSceneryPopulation(unittest.TestCase):
+    def test_encodings_decode_as_intended(self):
+        import capstone
+        from android_thumb import Asm
+        decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+        ins = next(decoder.disasm(asrs(Asm(0), 3, 1, 31).finish(), 0))
+        self.assertEqual('%s %s' % (ins.mnemonic, ins.op_str), 'asrs r3, r1, #0x1f')
+
+    def test_count_and_sampler_spans(self):
+        from android_fixture import TEXT
+        from android_thumb import build
+        result = reader.extract_scenery_population(build(android_library(bound=37, base=17)))
+        self.assertEqual(result, {'count_base': 17, 'count_bound': 37, 'provenance': {
+            'count': {'offset': TEXT + 0x102, 'bytes': 50}, 'station': {'offset': TEXT + 0x400, 'bytes': 6},
+            'station_id': {'offset': TEXT + 0x500, 'bytes': 4}, 'seed': {'offset': TEXT + 0x600, 'bytes': 22},
+            'draw': {'offset': TEXT + 0x700, 'bytes': 152}}})
+
+    def test_each_broken_shape_is_unsupported(self):
+        from android_thumb import build
+        def patched(name, old, new):
+            return {name: BODIES[name].replace(old, new, 1)}
+        cases = {'scene': dict(scene='_ZN5Level11createSpaceEv'), 'twice': dict(copies=2), 'bound': dict(bound=0),
+                 'reload': dict(reload=5), 'seeded object': dict(seed=4),
+                 'station field': dict(bodies=patched(STATION, 'd0f89801', 'd0f89c01')),
+                 'index field': dict(bodies=patched(INDEX, '8068', 'c068')),
+                 'scramble low': dict(bodies=patched(SEED, '6d63', '6e63')), 'scramble high': dict(bodies=patched(SEED, '0501', '0401')),
+                 'multiplier': dict(bodies=patched(DRAW, '4ef26d6a', '4ef26e6a')), 'addend': dict(bodies=patched(DRAW, '12f10b01', '12f10c01')),
+                 'bits': dict(bodies=patched(DRAW, '4a0c', '8a0c')), 'loop': dict(bodies=patched(DRAW, 'e8db', 'e7db')),
+                 'skip': dict(bodies=patched(DRAW, '17d1', '16d1')), 'join': dict(bodies=patched(DRAW, '1ee0', '1de0')),
+                 'modulo': dict(bodies={DRAW: BODIES[DRAW].replace('call:__aeabi_idivmod', 'call:__aeabi_uidivmod')})}
+        for name in BODIES:
+            cases['no ' + name] = dict(omit=(name,))
+        for name, options in cases.items():
+            self.assertEqual(reader.extract_scenery_population(build(android_library(**options))), {}, name)

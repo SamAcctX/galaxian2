@@ -1,4 +1,11 @@
-"""Recover edition-local scenery counts and their linked station-seeded sampler."""
+"""Recover edition-local scenery counts and their linked station-seeded sampler.
+
+Android: Level::createAsteroids seeds Globals::rnd with
+Status::getStation()->getIndex() through AERandom::setSeed and sizes the
+asteroid list to base + AERandom::nextInt(bound); nextInt(int) holds the
+Java-style power-of-two and rejection draws inline.
+"""
+import re
 import struct
 from .opening_loadout import template
 from .ship_models import section_bytes
@@ -53,7 +60,122 @@ def import_symbol(mach, address):
 # Kept for existing ARM reader callers.
 arm_import = import_symbol
 
+def android_body(lib, symbol, shape):
+    """`shape` matched from the start of the named function, `@0xN` meaning its
+    address + N (branch targets); returns (match, listing)."""
+    from .android_listing import Listing
+    listing = Listing(lib, symbol)
+    start = lib.symbols.get(symbol, (0, 0))[0]
+    return re.match(re.sub(r'@(0x\w+)', lambda m: '%#x' % (start + int(m[1], 16)), shape), listing.text), listing
+
+
+def body_span(lib, symbol, shape):
+    match, listing = android_body(lib, symbol, shape)
+    return listing.span(0, listing.last(match)) if match else None
+
+
+ANDROID_COUNT = r"""ldr r0, =\w+
+adr r0, \w+
+ldr (?P<rnd>\w+), \[r0\]
+ldr\.w r0, \[\w+\]
+ldr (?P<random>\w+), \[(?P=rnd)\]
+call _ZN6Status10getStationEv
+call _ZN7Station8getIndexEv
+mov r1, r0
+mov r0, (?P=random)
+asrs r3, r1, #0x1f
+mov r2, r1
+call _ZN11AbyssEngine8AERandom7setSeedEx
+ldr r0, \[(?P=rnd)\]
+movs r1, #(?P<bound>\w+)
+call _ZN11AbyssEngine8AERandom7nextIntEi
+ldr\.w r1, \[\w+, #0xfc\]
+adds r0, #(?P<base>\w+)
+call _Z14ArraySetLengthIP8KIPlayerEvjR5ArrayIT_E
+"""
+# (seed ^ 0x5deece66d) & (2^48 - 1)
+ANDROID_SEED = r"""uxth r1, r3
+movw r3, #0xe66d
+eor r1, r1, #5
+movt r3, #0xdeec
+eors r2, r3
+strd r2, r1, \[r0\]
+bx lr
+"""
+# Power of two: bound * next(31) >> 31; else next(31) % bound, redrawn while
+# next(31) - value + bound - 1 overflows. next(31) is inline.
+ANDROID_DRAW = r"""push\.w \{r4, r5, r6, r7, r8, sb, sl, fp, lr\}
+add r7, sp, #0xc
+sub sp, #4
+mov fp, r1
+rsb\.w r1, fp, #0
+movw sl, #0xe66d
+and\.w r1, r1, fp
+mov\.w sb, #5
+movt sl, #0xdeec
+cmp r1, fp
+bne #@0x52
+ldrd r6, r1, \[r0\]
+umull r2, r3, r6, sl
+mla r3, r6, sb, r3
+mla r3, r1, sl, r3
+adds\.w r1, r2, #0xb
+adc r2, r3, #0
+uxth r6, r2
+lsrs r2, r1, #0x11
+orr\.w r2, r2, r6, lsl #15
+strd r1, r6, \[r0\]
+smull r2, r3, r2, fp
+lsrs r0, r2, #0x1f
+orr\.w r1, r0, r3, lsl #1
+b #@0x90
+str r0, \[sp\]
+sub\.w r8, fp, #1
+ldrd r4, r5, \[r0\]
+umull r0, r1, r4, sl
+mla r1, r4, sb, r1
+adds\.w r4, r0, #0xb
+mla r1, r5, sl, r1
+adc r0, r1, #0
+mov r1, fp
+uxth r5, r0
+lsrs r0, r4, #0x11
+orr\.w r6, r0, r5, lsl #15
+mov r0, r6
+call __aeabi_idivmod
+sub\.w r0, r8, r1
+add r0, r6
+cmp r0, #0
+blt #@0x5c
+ldr r0, \[sp\]
+strd r4, r5, \[r0\]
+mov r0, r1
+add sp, #4
+pop\.w \{r4, r5, r6, r7, r8, sb, sl, fp, pc\}
+"""
+ANDROID_BODIES = {'station': ('_ZN6Status10getStationEv', r'ldr\.w r0, \[r0, #0x198\]\nbx lr\n'),
+                  'station_id': ('_ZN7Station8getIndexEv', r'ldr r0, \[r0, #8\]\nbx lr\n'),
+                  'seed': ('_ZN11AbyssEngine8AERandom7setSeedEx', ANDROID_SEED),
+                  'draw': ('_ZN11AbyssEngine8AERandom7nextIntEi', ANDROID_DRAW)}
+
+
+def android_population(lib):
+    from .android_listing import Listing, number
+    scene = Listing(lib, '_ZN5Level15createAsteroidsEv')
+    found = scene.find(ANDROID_COUNT)
+    if len(found) != 1 or number(found[0]['bound']) < 1:
+        return {}
+    proof = {'count': scene.match_span(found[0])}
+    for key, (symbol, shape) in ANDROID_BODIES.items():
+        proof[key] = body_span(lib, symbol, shape)
+        if not proof[key]:
+            return {}
+    return {'count_base': number(found[0]['base']), 'count_bound': number(found[0]['bound']), 'provenance': proof}
+
+
 def extract_scenery_population(mach):
+    if mach.architecture == 'android-armv7':
+        return android_population(mach)
     import capstone
     mac=mach.architecture=='x86_64'
     if not mac and mach.architecture!='armv7':return {}
