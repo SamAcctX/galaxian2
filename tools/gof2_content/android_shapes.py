@@ -1,0 +1,133 @@
+"""Exact instruction shapes in named Android functions.
+
+`Listing(lib, symbol)` decodes one named Thumb function and renders each
+instruction as one line of Capstone text, `mnemonic op_str`, except that calls
+read `call SYMBOL` and PC-relative loads read `MNEMONIC REG, =0xWORD` (the pool
+word). Readers match templates line by line: text is literal, `{name}` captures
+one operand token (a register, `#` value or branch address) and a repeated
+`{name}` must repeat the same token. Nothing is executed.
+"""
+import re
+import struct
+
+from .android_library import callee, instructions
+
+TOKEN = r'[^\s,\[\]{}]+'
+
+
+def compile_shape(template):
+    seen, parts = set(), []
+    lines = [line.strip() for line in template.strip().splitlines() if line.strip()]
+    for piece in re.split(r'(\{\w*\})', '\n'.join(lines)):
+        name = piece[1:-1] if piece.startswith('{') and piece.endswith('}') else None
+        if name is None:
+            parts.append(re.escape(piece))
+        elif not name:
+            parts.append('(?:%s)' % TOKEN)
+        elif name in seen:
+            parts.append('(?P=%s)' % name)
+        else:
+            seen.add(name)
+            parts.append('(?P<%s>%s)' % (name, TOKEN))
+    return re.compile('^' + ''.join(parts) + '\n', re.M)
+
+
+def number(token):
+    """`#0x96`, `#-3`, `0xb95ca` or `#1.500000e+00` as int or float."""
+    token = token[1:] if token.startswith('#') else token
+    return float(token) if 'e' in token and not token.startswith(('0x', '-0x')) else int(token, 0)
+
+
+class Shape:
+    def __init__(self, listing, match, first, last):
+        self.listing, self.match, self.first, self.last = listing, match, first, last
+
+    def __getitem__(self, name):
+        return self.match[name]
+
+    def value(self, name):
+        return number(self.match[name])
+
+    def span(self):
+        return self.listing.span(self.first, self.last)
+
+
+class Listing:
+    def __init__(self, lib, symbol):
+        self.lib, self.symbol = lib, symbol
+        self.code = instructions(lib, symbol) or []
+        self.lines = [render(lib, ins) for ins in self.code]
+        self.text = ''.join(line + '\n' for line in self.lines)
+        self.starts, at = {}, 0
+        for i, line in enumerate(self.lines):
+            self.starts[at] = i
+            at += len(line) + 1
+        self.offsets = {i: at for at, i in self.starts.items()}
+        self.index = {ins.address: i for i, ins in enumerate(self.code)}
+
+    def find(self, template, first=0):
+        """Every match starting at instruction `first` or later."""
+        result = []
+        for match in compile_shape(template).finditer(self.text, self.offsets.get(first, len(self.text))):
+            start = self.starts[match.start()]
+            result.append(Shape(self, match, start, start + match[0].count('\n') - 1))
+        return result
+
+    def unique(self, template, first=0):
+        found = self.find(template, first)
+        return found[0] if len(found) == 1 else None
+
+    def at(self, template, first):
+        """The template matched exactly at instruction `first`, or None."""
+        found = self.find(template, first)
+        return found[0] if found and found[0].first == first else None
+
+    def follow(self, shape, name, template):
+        """The template matched exactly at the branch target `shape[name]`, or None."""
+        index = self.target(shape[name]) if shape else None
+        return None if index is None else self.at(template, index)
+
+    def target(self, token):
+        """Instruction index of a branch address token, or None."""
+        return self.index.get(number(token))
+
+    def span(self, first, last):
+        start = self.code[first].address
+        text = self.lib.text
+        return {'offset': self.lib.slice_offset + text['offset'] + start - text['address'],
+                'bytes': self.code[last].address + self.code[last].size - start}
+
+    def case(self, index, value):
+        """Target index of case `value` (>= 0) of the tbh at instruction `index`.
+
+        The caller checks `value` against the dispatch bound; the entry must lie in the function.
+        """
+        ins = self.code[index]
+        start, size = self.lib.symbols[self.symbol]
+        table = ins.address + 4 + 2 * value
+        if table + 2 > start + size:
+            return None
+        entry, = struct.unpack_from('<H', self.lib.data, self.lib.text['offset'] + table - self.lib.text['address'])
+        return self.index.get(ins.address + 4 + 2 * entry)
+
+    def writes(self, first, last, register):
+        """Whether any instruction in [first, last] writes the named register."""
+        return any(ins.reg_name(r) == register for ins in self.code[first:last + 1] for r in ins.regs_access()[1])
+
+
+def render(lib, ins):
+    from capstone.arm_const import ARM_OP_MEM, ARM_REG_PC
+    if not ins.id:
+        return '.byte'
+    name = callee(lib, ins)
+    if name:
+        return 'call ' + name
+    ops = ins.operands
+    if (ins.mnemonic in ('ldr', 'ldr.w', 'vldr') and len(ops) == 2 and ops[1].type == ARM_OP_MEM
+            and ops[1].mem.base == ARM_REG_PC and not ops[1].mem.index):
+        pool = ((ins.address + 4) & ~3) + ops[1].mem.disp
+        text = lib.text
+        at = text['offset'] + pool - text['address']
+        if text['address'] <= pool and pool + 4 <= text['address'] + text['length']:
+            return '%s %s, =%#x' % (ins.mnemonic, ins.reg_name(ops[0].reg), struct.unpack_from('<I', lib.data, at)[0])
+    return ('%s %s' % (ins.mnemonic, ins.op_str)).strip()
