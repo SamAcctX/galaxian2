@@ -1,4 +1,9 @@
-"""Read the Mac's finite desktop text substitutions without running original code."""
+"""Read the Mac's finite desktop text substitutions without running original code.
+
+Android has none: GameText::getText(int) still consults the substitute pairs,
+but no code calls GameText::setSubstituteArray (the pairs stay empty from
+GameText::GameText), so Android shows the touch wording.
+"""
 import copy
 from .declaration_layouts import recognize
 
