@@ -103,3 +103,77 @@ class SurfaceMaterial(unittest.TestCase):
         result=reader.extract_surface_material(mach,colors)
         self.assertEqual(result['ambient_rgb'],result['diffuse_rgb'])
         self.assertEqual(result['value_sources']['ambient'],result['value_sources']['diffuse'])
+
+
+ANDROID_VALUES = {'ambient': [0.25, 0.5, 0.75], 'diffuse': [2.0, 1.5, 1.0], 'specular': [4.0, 2.0, 0.0], 'power': 0x42000000}
+
+
+def android(light='_ZN10StarSystem9initLightEv', rim=True, gap=False, setups=1, app=(9, 9, 9, 9), renderer=0xa8, lead=(), fields=None,
+            values=ANDROID_VALUES, twice=(), rims=1):
+    """StarSystem::initLight's rim call and material setup, GetEngine and the four setters in the Android shape."""
+    from android_fixture import RODATA, TEXT
+    from android_thumb import Asm, build
+    engine = '_ZN11AbyssEngine18ApplicationManager9GetEngineEv'
+    fields = dict({'ambient': 0x298, 'diffuse': 0x288, 'specular': 0x2a8, 'power': 0x2b8}, **(fields or {}))
+    asm = Asm(TEXT + 0x100).push()
+    def rim_call():
+        asm.ldr_address(0, RODATA).vmov_imm(0, 0x08).add_pc(0).add_reg(1, 0, 6, 2).add_reg(2, 0, 4, 2).add_reg(0, 0, 10, 2)
+        asm.vldr(2, 2, 0).vldr(4, 0, 0).ldr_w(0, 9).vmul(22, 2, 0).vldr(6, 1, 0).vmul(17, 4, 0).vmul(19, 6, 0).call_to(engine)
+        asm.vmov_core(1, 22).vmov_core(2, 17).vmov_core(3, 19).call_to('_ZN11AbyssEngine6Engine16LightSetRimColorEfff')
+    if rim:
+        rim_call()
+    if gap:
+        asm.nop()
+    for n in range(setups):
+        for role, setter in reader.ANDROID_SETTERS.items():
+            asm.ldr_w(0, app[reader.ROLES.index(role)]).call_to(engine)
+            if role == 'power':
+                asm.movs(1, values['power'] & 0xffff).movt(1, values['power'] >> 16)
+            else:
+                for i, value in enumerate(values[role]):
+                    asm.mov_imm(i + 1, struct.unpack('<I', struct.pack('<f', value))[0])
+            asm.call_to(setter[0])
+    for _ in range(rims - 1):
+        rim_call()
+    functions = {light: asm.ret(), engine: Asm(TEXT + 0x400).half(*([0xbf00] if 'renderer' in lead else [])).ldr_w(0, 0, renderer).ret()}
+    for at, (role, (setter, _)) in zip(range(TEXT + 0x500, TEXT + 0x900, 0x100), reader.ANDROID_SETTERS.items()):
+        body = Asm(at).half(*([0xbf00] if role in lead else []))
+        for _ in range(2 if role in twice else 1):
+            if role == 'power':
+                body.mov(2, 1).ldr_address(1, 0x9000).str_w(2, 0, fields[role])
+            else:
+                body.ldr_pc(12, 0x9000).strd(1, 2, 0, fields[role]).add_low(12, 15).str_w(3, 0, fields[role] + 8)
+        functions[setter] = body.ret()
+    return build(functions, {RODATA: bytes(228)})
+
+
+class AndroidSurfaceMaterial(unittest.TestCase):
+    colors = {'provenance': {'rim': {'offset': 1610533, 'bytes': 48}}}
+
+    def test_values_and_spans(self):
+        from android_fixture import TEXT
+        result = reader.extract_surface_material(android(), self.colors)
+        self.assertEqual({key: result[key] for key in ['ambient_rgb', 'diffuse_rgb', 'specular_rgb', 'specular_power']},
+                         {'ambient_rgb': [0.25, 0.5, 0.75], 'diffuse_rgb': [2.0, 1.5, 1.0], 'specular_rgb': [4.0, 2.0, 0.0], 'specular_power': 32.0})
+        self.assertEqual(result['provenance'], {'rim': {'offset': TEXT + 0x102, 'bytes': 68}, 'setup': {'offset': TEXT + 0x146, 'bytes': 90},
+                                                'renderer': {'offset': TEXT + 0x400, 'bytes': 6}, 'ambient': {'offset': TEXT + 0x500, 'bytes': 14},
+                                                'diffuse': {'offset': TEXT + 0x600, 'bytes': 14}, 'specular': {'offset': TEXT + 0x700, 'bytes': 14},
+                                                'power': {'offset': TEXT + 0x800, 'bytes': 8}})
+        self.assertEqual(result['value_sources'], {role: {'offset': TEXT + 0x146 + at, 'bytes': 6 if role == 'power' else 12}
+                                                   for role, at in [('ambient', 8), ('diffuse', 32), ('specular', 56), ('power', 80)]})
+
+    def test_each_broken_shape_is_unsupported(self):
+        cases = {'function': dict(light='_ZN10StarSystem4initEv'), 'no rim': dict(rim=False), 'gap': dict(gap=True),
+                 'two setups': dict(setups=2), 'two rims': dict(rims=2), 'mixed holder': dict(app=(9, 9, 8, 9)), 'rim holder': dict(app=(8, 8, 8, 8)), 'renderer field': dict(renderer=0xa4),
+                 'renderer start': dict(lead=('renderer',)), 'setter start': dict(lead=('diffuse',)),
+                 'setter twice': dict(twice=('power',)), 'ambient field': dict(fields={'ambient': 0x290}),
+                 'diffuse field': dict(fields={'diffuse': 0x298}), 'specular field': dict(fields={'specular': 0x2a4}),
+                 'power field': dict(fields={'power': 0x2bc}),
+                 'color range': dict(values=dict(ANDROID_VALUES, diffuse=[2.0, 32.0, 1.0])),
+                 'negative color': dict(values=dict(ANDROID_VALUES, specular=[4.0, -2.0, 0.0])),
+                 'zero power': dict(values=dict(ANDROID_VALUES, power=0)),
+                 'power range': dict(values=dict(ANDROID_VALUES, power=0x45000000))}
+        for name, options in cases.items():
+            self.assertEqual(reader.extract_surface_material(android(**options), self.colors), {}, name)
+        for colors in [{}, {'provenance': {}}, {'provenance': {'sun': {'offset': 1, 'bytes': 1}}}]:
+            self.assertEqual(reader.extract_surface_material(android(), colors), {}, colors)

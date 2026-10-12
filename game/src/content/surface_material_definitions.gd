@@ -18,7 +18,10 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 	if data.is_empty():return ""
 	if data.size()!=6 or not parameters(data):return "Invalid surface material parameters"
 	var mac := architecture=="x86_64"
-	var sizes := {"setup":118,"rim":48,"renderer":21,"ambient":70,"diffuse":70,"specular":70,"power":34} if mac else {"setup":90,"rim":80,"renderer":14,"ambient":92,"diffuse":92,"specular":92,"power":44} if architecture=="armv7" else {}
+	# Android's setters are engine prefixes (literal load, field stores); its rim and setup are in StarSystem::initLight.
+	var sizes: Dictionary = {"x86_64":{"setup":118,"rim":48,"renderer":21,"ambient":70,"diffuse":70,"specular":70,"power":34},
+		"armv7":{"setup":90,"rim":80,"renderer":14,"ambient":92,"diffuse":92,"specular":92,"power":44},
+		"android-armv7":{"setup":90,"rim":70,"renderer":6,"ambient":14,"diffuse":14,"specular":14,"power":8}}.get(architecture,{})
 	var provenance: Variant = data.get("provenance")
 	var sources: Variant = data.get("value_sources")
 	if sizes.is_empty() or not provenance is Dictionary or provenance.size()!=sizes.size() or not sources is Dictionary or sources.size()!=4:return "Invalid surface material provenance"
@@ -32,6 +35,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 		spans.append(span)
 	if provenance.rim!=colors.get("provenance",{}).get("rim") or int(provenance.setup.offset)!=int(provenance.rim.offset)+int(provenance.rim.bytes):return "Surface material is not linked to the active environment setup"
 	var value_spans := []
+	# The iOS and Android setups hold their immediates at the same offsets.
 	var arm_offsets := {"ambient":8,"diffuse":32,"specular":56,"power":80}
 	for role in ROLES:
 		var row: Variant = sources.get(role)
