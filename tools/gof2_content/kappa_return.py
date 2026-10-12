@@ -1,8 +1,18 @@
-"""Original Kappa return, coordinates and Deep Science arrival. Constant declarations only."""
+"""Original Kappa return, coordinates and Deep Science arrival. Constant declarations only.
+
+Android: Status::nextCampaignMission cases 21-23 create the missions, unlock
+system 6 and set the course to Kappa; DialogueWindow's tables hold the
+conversations and the arrival briefing, Globals::getDialogueSoundId their voices.
+The Android cursor-23 conversation ends with the tractor-beam vendor lines.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_kappa_return(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(ANDROID_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -356,3 +366,19 @@ MAC_VALUES = {'scope': 'kappa_campaign_return',
                     'story_actor_count': 0,
                     'ordinary_population': False,
                     'special_entry_override': False}}
+
+ANDROID = {'kappa_return_cases': ('_ZN6Status19nextCampaignMissionEb', 110, 6, '5701130ef002'),
+           'kappa_return_cursor21': ('_ZN6Status19nextCampaignMissionEb', 754, 26, 'sha256:6ba4b8b82f5bca686f8c24eaf048e75492d47fccea4f0e3bcc21dd40c5101e78'),
+           'kappa_return_cursor22': ('_ZN6Status19nextCampaignMissionEb', 7274, 36, 'sha256:19af4b3c69deb8785a30c77f4262714ad708c62ee7b805836f63c61b59081fe8'),
+           'kappa_return_cursor23': ('_ZN6Status19nextCampaignMissionEb', 1572, 36, 'sha256:0eedc3b04c71b0ed888e449814283786f21a112cbbad68815dcde9d112d48546'),
+           'kappa_return_result_counts': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 96, 'sha256:d552c1bcdc9b00ca7663d8975892dc8f99119e4ac455efedd33a0463e84b83e6', 'literal', 0),
+           'kappa_return_result_events': ('_ZN14DialogueWindow11loadContentEv', 208, 192, 'sha256:570f221ca507110a648e87b1aed1f9460f56f7bd5bbc4269772bbd53c35054ce', 'literal', 1136),
+           'kappa_return_briefing_counts': ('_ZN14DialogueWindow6lengthEv', 26, 96, 'sha256:d5b42e8f0e156758a33a9006e1d31002e1d4763dad047154632f7d425e6bf5b6', 'literal', 0),
+           'kappa_return_briefing_event': ('_ZN14DialogueWindow11loadContentEv', 128, 8, '0500000069070000', 'literal', 144),
+           # The whole text-to-voice table: the vendor lines have no voice.
+           'kappa_return_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0)}
+
+# Mac 1.0.7 numbering (text_ids); Android-only lines 3388/3389.
+ANDROID_VALUES = copy.deepcopy(MAC_VALUES)
+ANDROID_VALUES['conversations'][1]['events'][12:] = [{'speaker_id': 16, 'text_id': 3388, 'voice_event_id': -1},
+                                                     {'speaker_id': 16, 'text_id': 3389, 'voice_event_id': -1}]
