@@ -160,3 +160,130 @@ class OpeningCamera(unittest.TestCase):
                     self.assertEqual(reader.extract_opening_camera(m,staging),{})
 
 if __name__=='__main__':unittest.main()
+
+
+
+CAMERA_CALLEES = ['_ZN6Layout13getPulseValueEf', '_ZN10AEGeometry9translateEfff', '_ZN18TargetFollowCamera9setTargetEP10AEGeometry',
+                  '_ZN9FModSound9isPlayingEi', '_ZN9FModSound4stopEi', '_ZN9FModSound4playEiPN11AbyssEngine6AEMath6VectorES3_f',
+                  '_ZN18TargetFollowCamera9translateEfff', '_ZN13PlayerFighter17setExhaustVisibleEb']
+
+
+def android(eye=(-4000.0, 200.0), velocity=((0.25, 2.5), (0.25, 2.5)), events=(0x18, 0x1c, 0x20), cut_phase=2, exits_agree=True,
+            mode_field=0x45, up_default=True, zeros=1, attach_call='_ZN18TargetFollowCamera9setTargetEP10AEGeometry', cut_actor=0,
+            zero_value=0, pool_at=None, omit=None, **staging_options):
+    """LevelScript::process's opening phases after the staging formation, and the camera's helpers. Returns the library."""
+    from android_fixture import TEXT, Thumb
+    from gof2_content import opening_camera as c
+    from test_opening_staging import STAGING_CALLEES, android as staging, halves
+    from test_steering import (adds8, add_pc, assemble, b_to, blx_reg, cbz, cmp_imm, ldr_lit, ldr_reg, ldr_w, strb_w, sub_sp, vadd,
+                               vldr_pc, vmov_from_core, vmov_imm)
+    at = {name: TEXT + 0x1400 + 0x40 * i for i, name in enumerate(CAMERA_CALLEES)}
+    staged = {name: TEXT + 0x40 * i for i, name in enumerate(STAGING_CALLEES)}
+
+    def pan(asm, L, which):
+        pool = pool_at if pool_at and not which else L.get('pool', asm.here() + 8)
+        vldr_pc(vmov_from_core(asm, 0, 9), 2, pool + 8 * which)
+        return ldr_w(vldr_pc(asm, 4, pool + 8 * which + 4).movs(2, 0).vcvt(0, 0), 0, 10, 0x14)
+
+    def tail(asm, L, call):
+        def to(name): return L.get(name, asm.here() + 4)
+        def calls(asm, name): return asm.call(at[name])
+        def pan_tail(asm): return calls(asm.vmul(2, 0, 2).vmul(0, 0, 4).vmov_core(1, 2).vmov_core(3, 0), '_ZN18TargetFollowCamera9translateEfff')
+        b_to(cmp_imm(asm, 1, cut_phase), to('pan'), 'gt', True)
+        ldr_w(asm, 0, 15, 0x40).movw(1, 0x126f).movt(1, 0x3a03)
+        calls(add_pc(asm, 0).ldr(0, 0, 0).ldr(0, 0, 0), '_ZN6Layout13getPulseValueEf')
+        vadd(vmov_from_core(vmov_imm(asm, 0, -0.5).movs(5, 0), 2, 0), 0, 2, 0).vmov_core(4, 0).label('drift')
+        ldr_reg(ldr_w(asm, 0, 11, 4).movs(1, 0).mov(2, 4).movs(3, 0), 0, 0, 5, 2).ldr(0, 0, 8)
+        b_to(cmp_imm(adds8(calls(asm, '_ZN10AEGeometry9translateEfff'), 5, 1), 5, 3), to('drift'), 'ne')
+        b_to(cmp_imm(ldr_w(asm, 0, 10, 0x1c), 0, 1), to('phase2'), 'ne')
+        b_to(cmp_imm(call(asm.ldr(0, 6, 4).ldr(0, 0, events[0]), '_ZN12RadioMessage6isOverEv'), 0, 1), to('reload'), 'ne')
+        ldr_w(asm.movs(0, 2).str_w(0, 10, 0x1c), 0, 11, 4).ldr(1, 0, 4 * cut_actor)
+        calls(ldr_w(asm, 0, 10, 0x14).ldr(1, 1, 8), '_ZN18TargetFollowCamera9setTargetEP10AEGeometry')
+        (xl, xh), (yl, yh) = halves(eye[0]), halves(eye[1])
+        ldr_w(asm.movw(1, xl), 0, 10, 0x14).movs(2, yl).movt(1, xh).movt(2, yh).mov(3, 1)
+        call(asm, '_ZN18TargetFollowCamera11setPositionEfff').label('reload')
+        ldr_w(asm, 0, 10, 0x1c).label('phase2')
+        b_to(cmp_imm(asm, 0, 2), to('exit'), 'ne', True)
+        calls(add_pc(ldr_w(asm, 0, 15, 0x40).movs(1, 0x8e), 0).ldr(0, 0, 0).ldr(0, 0, 0), '_ZN9FModSound9isPlayingEi')
+        add_pc(ldr_w(cbz(asm, 0, to('music'), True), 0, 15, 0x40), 0).ldr(4, 0, 0).ldr(0, 4, 0).ldr(1, 0, 0)
+        calls(calls(asm, '_ZN9FModSound4stopEi').ldr(0, 4, 0).movs(1, 0).str_sp(1, 0).movs(1, 0x8e).movs(2, 0).movs(3, 0),
+              '_ZN9FModSound4playEiPN11AbyssEngine6AEMath6VectorES3_f').label('music')
+        pan_tail(pan(asm, L, 0))
+        b_to(cmp_imm(call(asm.ldr_sp(0, 0x40).ldr(0, 0, 4).ldr(0, 0, events[1]), '_ZN12RadioMessage6isOverEv'), 0, 1), to('exit'), 'ne', True)
+        ldr_w(asm.movs(0, 3).movs(4, 0).str_w(0, 10, 0x1c).movs(5, 1), 0, 11, 4).movw(6, 0xc350).label('engage')
+        calls(ldr_reg(asm, 0, 0, 4, 2).movs(1, 1), '_ZN13PlayerFighter17setExhaustVisibleEb')
+        call(ldr_reg(ldr_w(asm, 0, 11, 4).movs(1, 1), 0, 0, 4, 2).ldr(0, 0, 8), '_ZN10AEGeometry10setVisibleEb')
+        blx_reg(ldr_reg(ldr_w(asm, 0, 11, 4), 0, 0, 4, 2).ldr(1, 0, 0).ldr(1, 1, 0xc), 1)
+        ldr_reg(ldr_w(asm, 0, 11, 4), 1, 0, 4, 2)
+        strb_w(cmp_imm(adds8(asm, 4, 1), 4, 3).str_w(6, 1, 0x124).ldr(1, 1, 4), 5, 1, 0x5c)
+        b_to(b_to(asm, to('engage'), 'ne'), to('exit')).label('pan')
+        b_to(cmp_imm(b_to(cmp_imm(asm, 1, 4), to('exit'), 'eq', True), 1, 3), to('exit'), 'ne', True)
+        pan_tail(pan(asm, L, 1).movs(4, 0))
+        b_to(cmp_imm(call(asm.ldr(0, 6, 4).ldr(0, 0, events[2]), '_ZN12RadioMessage6isOverEv'), 0, 1), to('exit'), 'ne', True)
+        call(asm.movs(0, 4).strd(4, 4, 10, 0x90).str_w(0, 10, 0x1c).movs(1, 0).ldr_sp(6, 0x44).mov(0, 6), '_ZN9PlayerEgo21setComputerControlledEb')
+        strb_w(ldr_w(strb_w(asm.ldr(0, 6, 0).movs(5, 1), 4, 0, 0x5e), 0, 10, 0xd4), 5, 0, 0x48)
+        call(call(ldr_w(asm, 0, 10, 0x18), '_ZN5Level9getPlayerEv').movs(1, 1), '_ZN9PlayerEgo10setCollideEb')
+        call(ldr_w(strb_w(asm, 4, 10, 0x11).movs(1, 0), 0, 10, 0x14), '_ZN18TargetFollowCamera12setLookAtCamEb')
+        calls(ldr_w(asm.ldr(1, 6, 8), 0, 10, 0x14), '_ZN18TargetFollowCamera9setTargetEP10AEGeometry')
+        b_to(strb_w(strb_w(asm, 5, 10, 0x12), 4, 10, 0x20), to('exit' if exits_agree else 'pan'), None, True).label('exit').pop()
+        if asm.here() % 4:
+            asm.nop()
+        asm.label('pool').data(*(struct.unpack('<I', struct.pack('<f', v))[0] for pair in velocity for v in pair))
+
+    def attach(asm, L):
+        sub_sp(asm.push().add_sp(7, 0xc), 0x14).mov(4, 0)
+        ldr_lit(asm, 0, 0x40).mov(5, 1)
+        add_pc(asm, 0).ldr(0, 0, 0).ldr(0, 0, 0).str_sp(0, 0x10).mov(0, 5).call(staged['_ZN5Level9getPlayerEv'])
+        cbz(asm, 0, L.get('end', asm.here() + 4)).mov(0, 5).ldr(6, 4, 0x14).call(staged['_ZN5Level9getPlayerEv'])
+        asm.ldr(1, 0, 8).mov(0, 6).call(at.get(attach_call) or staged[attach_call])
+        for _ in range(18):
+            asm.nop()
+        asm.label('end').pop()
+
+    def camera(asm, L):
+        asm.push()
+        for _ in range(zeros):
+            asm.mov_imm(9, zero_value)
+        asm.nop().movs(0, 1)
+        for field, register in ((0x44, 9), (0x47, 9), (0x45, 9)):
+            strb_w(asm, register, 11, field)
+        strb_w(asm.str_w(9, 11, 0x48), 0, 11, 0x46)
+        for field in (0x4c, 0xf0, 0x100):
+            strb_w(asm, 9, 11, field)
+        strb_w(asm, 0 if up_default else 9, 11, 0x10c).pop()
+    functions = [(name, Thumb(address).ret().finish(), address) for name, address in at.items()]
+    functions += [(c.ANDROID_ATTACH, assemble(TEXT + 0x1700, attach).finish(), TEXT + 0x1700),
+                  (c.ANDROID_MODE, strb_w(Thumb(TEXT + 0x1780), 1, 0, mode_field).ret().finish(), TEXT + 0x1780),
+                  (c.ANDROID_CAMERA, assemble(TEXT + 0x1800, camera).finish(), TEXT + 0x1800)]
+    lib, _ = staging(tail=tail, extra=[f for f in functions if f[0] != omit], omit=omit, **staging_options)
+    return lib
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidOpeningCamera(unittest.TestCase):
+    def test_named_phases_give_cut_and_pan(self):
+        lib = android()
+        result = reader.extract_opening_camera(lib, extract_opening_staging(lib))
+        provenance = result.pop('provenance')
+        self.assertEqual(result, {'initial_target': 'player', 'initial_fixed_eye': True, 'inherit_target_up': True,
+                                  'actor_cut': {'after_event_finished': 6, 'actor_id': 0, 'eye': [-4000.0, 200.0, -4000.0]},
+                                  'pan': {'velocity_per_ms': [0.25, 0.0, 2.5], 'engagement_after_event_finished': 7,
+                                          'follow_player_after_event_finished': 8}})
+        self.assertEqual({k: v['bytes'] for k, v in provenance.items()},
+                         {'cut': 340, 'pan3': 156, 'attach': 44, 'mode_setter': 6, 'defaults': 38, 'defaults_zero': 4,
+                          'velocity_cut_x': 4, 'velocity_cut_z': 4, 'velocity_pan3_x': 4, 'velocity_pan3_z': 4})
+        self.assertEqual(reader.extract_opening_camera(lib, {}), {})
+
+    def test_each_broken_declaration_is_unsupported(self):
+        from android_fixture import TEXT
+        from gof2_content import opening_camera as c
+        cases = {'eye': dict(eye=(float('nan'), 200.0)), 'velocity disagrees': dict(velocity=((0.25, 2.5), (0.25, 2.0))),
+                 'far velocity': dict(velocity=((0.25, 2e7), (0.25, 2e7))), 'event': dict(events=(0x14, 0x1c, 0x20)),
+                 'cut phase': dict(cut_phase=3), 'pan event': dict(events=(0x18, 0x1c, 0x24)), 'zero value': dict(zero_value=1),
+                 'pool outside': dict(pool_at=TEXT + 0xbf8), 'exits': dict(exits_agree=False), 'mode field': dict(mode_field=0x44),
+                 'up default': dict(up_default=False), 'zero twice': dict(zeros=2), 'zero missing': dict(zeros=0),
+                 'attach call': dict(attach_call='_ZN9PlayerEgo10setCollideEb'), 'cut actor': dict(cut_actor=1),
+                 'formation': dict(message=0xc), 'dispatch': dict(dispatches=(1, 2))}
+        cases.update({name: dict(omit=name) for name in (c.ANDROID_ATTACH, c.ANDROID_MODE, c.ANDROID_CAMERA, '_ZN11LevelScript7processEi')})
+        for name, options in cases.items():
+            self.assertEqual(reader.extract_opening_camera(android(**options), {'staged': True}), {}, name)

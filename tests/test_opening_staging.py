@@ -174,13 +174,19 @@ STAGING_CALLEES = ['_ZN5Level9getPlayerEv', '_ZN5Level10getEnemiesEv', '_ZN5Leve
 
 
 def android(cursors=(0, 0), dispatches=(1, 1), hidden=3, shown=3, message=8, loop_back=True, shown_by='_ZN10AEGeometry10setVisibleEb',
-            gap=False, omit=None, **poses):
-    """LevelScript's constructor and process in the Android compiler's shape. Returns (library, function addresses)."""
+            gap=False, tail=None, extra=(), omit=None, **poses):
+    """LevelScript's constructor and process in the Android compiler's shape. Returns (library, function addresses).
+
+    `tail(asm, labels, call)` emits the code the formation gate skips to (default: return); `extra`
+    functions join the library, replacing stubs of the same name.
+    """
     from android_fixture import TEXT, Thumb
     from gof2_content.android_library import AndroidLibrary
     from test_steering import add_imm, add_pc, adds8, assemble, b_to, blx_reg, cmp_imm, ldr_reg, ldr_w, roomy_library, strb_w
     p = dict(ANDROID_POSES, **poses)
     at = {name: TEXT + 0x40 * i for i, name in enumerate(STAGING_CALLEES)}
+    stubs = dict(at)
+    at.update({name: address for name, _, address in extra})
     constructor, process = TEXT + 0x800, TEXT + 0xc00
 
     def call(asm, name): return asm.call(at[name])
@@ -263,9 +269,11 @@ def android(cursors=(0, 0), dispatches=(1, 1), hidden=3, shown=3, message=8, loo
         asm.strd(4, 6, 13, 0x1e8).str_sp(6, 0x1f0).strd(6, 4, 13, 0x190).str_sp(6, 0x198)
         call(asm, '_ZN10AEGeometry12setDirectionERKN11AbyssEngine6AEMath6VectorES4_')
         call(ldr_reg(ldr_w(asm, 0, 11, 4).movs(1, 1), 0, 0, 5, 2).ldr(0, 0, 8), shown_by)
-        b_to(cmp_imm(adds8(asm, 5, 1), 5, shown), L.get('loop', asm.here() + 4), 'ne').label('end').pop()
+        b_to(cmp_imm(adds8(asm, 5, 1), 5, shown), L.get('loop', asm.here() + 4), 'ne').label('end')
+        tail(asm, L, call) if tail else asm.pop()
 
-    functions = [(name, Thumb(address).ret().finish(), address) for name, address in at.items()]
+    replaced = {f[0] for f in extra}
+    functions = [(name, Thumb(address).ret().finish(), address) for name, address in stubs.items() if name not in replaced] + list(extra)
     functions += [('_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera', assemble(constructor, emit_constructor).finish(), constructor),
                   ('_ZN11LevelScript7processEi', assemble(process, emit_process).finish(), process)]
     return AndroidLibrary(roomy_library([f for f in functions if f[0] != omit])), (constructor, process)

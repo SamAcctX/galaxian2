@@ -10,7 +10,7 @@ from the item's third attribute value.
 import math
 import re
 import struct
-from .steering import PC, code_span, lit, pool_float, shape_at
+from .steering import PC, code_span, lit, pool_float, shape_at, sole_definition
 from .ship_models import section_bytes
 
 
@@ -50,7 +50,7 @@ ITEM_INIT = [('ldr', r'r1, \[r0, #0x30\]'), ('cbz', 'r1, #0x[0-9a-f]+'), ('ldr',
 
 
 def android_vehicle(lib):
-    from .android_library import callee, instructions, is_jump
+    from .android_library import callee, instructions
     code = {name: instructions(lib, name) for name in (ANDROID_CONSTRUCTOR, ANDROID_HANDLING, ANDROID_AGILITY, ANDROID_REFRESH,
                                                         ANDROID_ATTRIBUTE, ANDROID_SORT, ANDROID_INIT)}
     if not all(code.values()):
@@ -85,16 +85,14 @@ def android_vehicle(lib):
     provenance['response_setup'] = code_span(lib, constructor, setup, setup + len(RESPONSE_SETUP) - 1)
     provenance['response_scale'] = code_span(lib, constructor, setup + 2, setup + 2)
     scale = constructor[setup + 2].operands[1].fp
-    # The percent divisor is s16's only definition before the setup, with no branch before it.
-    writes = [i for i in range(setup) if constructor[i].mnemonic != 'vpush'
-              and {constructor[i].reg_name(r) for r in constructor[i].regs_access()[1]} & {'s16', 'd8', 'q4'}]
-    if len(writes) != 1 or shape_at(constructor[writes[0]:], [('vldr', 's16, ' + PC)])[:1] != [0] \
-            or any(is_jump(ins) for ins in constructor[:writes[0]]):
+    # The percent divisor is s16's only definition before the setup.
+    load = sole_definition(constructor, setup, ('s16', 'd8', 'q4'))
+    if load is None or shape_at(constructor[load:load + 1], [('vldr', 's16, ' + PC)]) != [0]:
         return {}
-    percent = pool_float(lib, ANDROID_CONSTRUCTOR, constructor[writes[0]])
+    percent = pool_float(lib, ANDROID_CONSTRUCTOR, constructor[load])
     if percent is None:
         return {}
-    provenance['percent_load'] = code_span(lib, constructor, writes[0], writes[0])
+    provenance['percent_load'] = code_span(lib, constructor, load, load)
     provenance['percent_divisor'] = {'offset': percent[0], 'bytes': 4}
     refresh = code[ANDROID_REFRESH]
     selector, assignment = single(ANDROID_REFRESH, SELECTOR, ANDROID_SORT), single(ANDROID_REFRESH, ASSIGNMENT, ANDROID_ATTRIBUTE)

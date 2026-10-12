@@ -114,7 +114,7 @@ def floats(*values):
 
 ANDROID_DEFAULTS = dict(upgrade=0.25, zeros=(0.0, 0.0), tag=4, base_field=0x18, loop='loop', agility_field=0x40, sort_field=8,
                         default=0x7825, item_sort=0x14, percent=50.0, scale=16.0, setups=('handling', 'response'),
-                        setup_call='agility', percent_loads=('pc',), early_jump=False, property_id=0x1d, assignments=1,
+                        setup_call='agility', percent_loads=('pc',), early_jump=False, pool_before=False, property_id=0x1d, assignments=1,
                         assign_call='attribute', cases=(12,), cases_bound=0x1d, prefix=False, outside=None, omit=None)
 
 
@@ -155,6 +155,8 @@ def android(**options):
         vpush_d8(asm.push())
         if o['early_jump']:
             b_to(asm, L.get('after', asm.here() + 4)).label('after')
+        if o['pool_before']:
+            asm.half(0x4781)  # undecodable: a pool word
         for kind in o['percent_loads']:
             vldr_pc(asm, 16, pool('percent', v.ANDROID_CONSTRUCTOR, 0)) if kind == 'pc' else asm.vldr(16, 4, 8)
             asm.nop()
@@ -245,7 +247,7 @@ class AndroidVehicleResponseTests(unittest.TestCase):
                  'no response setup': dict(setups=('handling',)), 'two response setups': dict(setups=('handling', 'response', 'response')),
                  'setup order': dict(setups=('response', 'handling')), 'setup callee': dict(setup_call='sort'),
                  'two percent loads': dict(percent_loads=('pc', 'pc')), 'percent from a field': dict(percent_loads=('field',)),
-                 'redefined percent': dict(percent_loads=('pc', 'field')), 'jump before percent': dict(early_jump=True),
+                 'redefined percent': dict(percent_loads=('pc', 'field')), 'jump before percent': dict(early_jump=True), 'pool before percent': dict(pool_before=True),
                  'no assignment': dict(assignments=0), 'two assignments': dict(assignments=2), 'assignment callee': dict(assign_call='sort'),
                  'no case': dict(cases=()), 'selector bound': dict(cases_bound=0x1e), 'getter prefix': dict(prefix=True), 'two cases': dict(cases=(12, 16)), 'upgrade range': dict(upgrade=11.0),
                  'upgrade sign': dict(upgrade=-0.25), 'percent range': dict(percent=20000.0), 'percent sign': dict(percent=-50.0),

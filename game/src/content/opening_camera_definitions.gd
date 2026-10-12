@@ -17,6 +17,9 @@ static func sizes(architecture: String) -> Dictionary:
 		return {"attach": 135, "cut": 272, "pan2": 189, "pan3": 200, "defaults": 1035, "increment": 88, "mode_setter": 10, "target_setter": 10, "cut_ref_a9": 4, "cut_ref_a1": 4, "pan2_ref_c": 4, "pan2_ref_18": 4, "pan3_ref_1b": 4, "pan3_ref_27": 4}
 	if architecture == "armv7":
 		return {"attach": 90, "cut": 286, "pan2": 190, "pan3": 220, "defaults": 570, "increment": 72, "route3": 8, "mode_setter": 6, "target_setter": 4, "pan2_literal_6": 4, "pan2_literal_c": 4, "pan3_literal_c": 4, "pan3_literal_14": 4}
+	if architecture == "android-armv7":
+		# Helpers are named calls inside these spans; the velocity floats sit in LevelScript::process's pools.
+		return {"cut": 340, "pan3": 156, "attach": 44, "mode_setter": 6, "defaults": 38, "defaults_zero": 4, "velocity_cut_x": 4, "velocity_cut_z": 4, "velocity_pan3_x": 4, "velocity_pan3_z": 4}
 	return {}
 
 static func validate(data: Variant, executable_bytes: int, architecture: String) -> String:

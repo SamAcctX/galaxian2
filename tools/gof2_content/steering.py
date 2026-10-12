@@ -43,6 +43,17 @@ def shape_at(code, shape, lib=None):
     return [i for i in range(len(code) - len(shape) + 1) if fits(i)]
 
 
+def sole_definition(code, end, registers):
+    """Index of the only instruction before code[end] that writes any of `registers` (vpush only saves),
+    when no branch or pool precedes it: every path to code[end] then passes it. None otherwise."""
+    from .android_library import is_jump
+    writes = [i for i in range(end) if code[i].mnemonic != 'vpush'
+              and {code[i].reg_name(r) for r in code[i].regs_access()[1]} & set(registers)]
+    if len(writes) != 1 or any(not ins.id or is_jump(ins) for ins in code[:writes[0]]):
+        return None
+    return writes[0]
+
+
 def pool_float(lib, symbol, ins):
     """(file offset, value) of the float a pc-relative vldr loads from the named function's own pool."""
     start, size = lib.symbols[symbol]

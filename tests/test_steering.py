@@ -160,15 +160,23 @@ def pop_r7(asm): return asm.half(0xbd80)  # pop {r7, pc}
 CONDITIONS = {'eq': 0, 'ne': 1, 'hs': 2, 'lo': 3, 'mi': 4, 'pl': 5, 'hi': 8, 'ls': 9, 'ge': 10, 'lt': 11, 'gt': 12, 'le': 13}
 
 
-def cbz(asm, rn, target):
+def cbz(asm, rn, target, nonzero=False):  # cbz (or cbnz) rn, target
     offset = target - (asm.here() + 4)
     assert 0 <= offset < 128
-    return asm.half(0xb100 | (offset >> 6 & 1) << 9 | (offset >> 1 & 31) << 3 | rn)
+    return asm.half((0xb900 if nonzero else 0xb100) | (offset >> 6 & 1) << 9 | (offset >> 1 & 31) << 3 | rn)
+
+
+def sub_sp(asm, imm): return asm.half(0xb080 | imm // 4)  # sub sp, #imm
+def ldr_lit(asm, rt, offset): return asm.half(0x4800 | rt << 8 | offset // 4)  # ldr rt, [pc, #offset]
 
 
 def b_to(asm, target, condition=None, wide_form=False):
-    """b/b<cond> (16-bit) or b<cond>.w (32-bit, condition required) to an address."""
+    """b/b<cond> (16-bit) or b.w/b<cond>.w (32-bit) to an address."""
     offset = target - (asm.here() + 4)
+    if wide_form and condition is None:  # b.w
+        from android_fixture import branch_fields
+        sign, j1, j2, value = branch_fields(offset, False)
+        return asm.half(0xf000 | sign << 10 | value >> 11 & 0x3ff, 0x9000 | j1 << 13 | j2 << 11 | value & 0x7ff)
     if wide_form:
         value = offset >> 1 & 0xfffff
         return asm.half(0xf000 | (offset < 0) << 10 | CONDITIONS[condition] << 6 | value >> 11 & 63,
@@ -250,7 +258,8 @@ class AndroidSteeringTests(unittest.TestCase):
         vstr(asm, 0, 4, 0x154); ldr_w(asm, 12, 2, 0); ldr_reg(asm, 0, 0, 5); ldr_reg(asm, 1, 2, 3, 2); cmp_w(asm, 12, 0)
         cmp_reg(asm, 3, 1); cmp_reg(asm, 3, 12); adds8(asm, 3, 1); tbb(asm, 0); add_lsr(asm, 0, 14, 2, 2, 0)
         cbz(asm, 2, asm.here() + 4 + 0x42); b_to(asm, 0x2000, 'lo'); b_to(asm, 0x2200); b_to(asm, 0x2400, 'hi', True)
-        b_to(asm, 0x1000, 'eq', True); vmov_q8_zero(asm); vpush_d8(asm); push_r7(asm); pop_r7(asm)
+        b_to(asm, 0x1000, 'eq', True); b_to(asm, 0x3000, None, True); cbz(asm, 1, asm.here() + 8, True); sub_sp(asm, 0x14)
+        ldr_lit(asm, 0, 0x6c); vmov_q8_zero(asm); vpush_d8(asm); push_r7(asm); pop_r7(asm)
         vmov_scalar(asm, 16, 0, 0); vmov_scalar(asm, 17, 1, 1); str_pre(asm, 0, 1, 0x40); ldrd(asm, 12, 2, 0, 0x70)
         subs_w(asm, 0, 12, 3); sbc_w(asm, 1, 2, 1); add_imm(asm, 8, 13, 0x1e8); add_imm(asm, 9, 13, 0x190); strb_w(asm, 6, 9, 0x48)
         blx_reg(asm, 4)
@@ -263,7 +272,8 @@ class AndroidSteeringTests(unittest.TestCase):
                           'ldrb r1, [r0, #0x11]', 'cmp r1, #0', 'it ne', 'addne.w r2, r0, #0x14', 'vstr s0, [r4, #0x154]',
                           'ldr.w ip, [r2]', 'ldr r0, [r0, r5]', 'ldr.w r1, [r2, r3, lsl #2]', 'cmp.w ip, #0', 'cmp r3, r1',
                           'cmp r3, ip', 'adds r3, #1', 'tbb [pc, r0]', 'add.w r0, lr, r2, lsl #2', 'cbz r2, #0x20a8',
-                          'blo #0x2000', 'b #0x2200', 'bhi.w #0x2400', 'beq.w #0x1000', 'vmov.i32 q8, #0', 'vpush {d8}',
+                          'blo #0x2000', 'b #0x2200', 'bhi.w #0x2400', 'beq.w #0x1000', 'b.w #0x3000', 'cbnz r1, #0x207c', 'sub sp, #0x14',
+                          'ldr r0, [pc, #0x6c]', 'vmov.i32 q8, #0', 'vpush {d8}',
                           'push {r7, lr}', 'pop {r7, pc}', 'vmov.32 d16[0], r0', 'vmov.32 d17[1], r1', 'str r0, [r1, #0x40]!',
                           'ldrd ip, r2, [r0, #0x70]', 'subs.w r0, ip, r3', 'sbc.w r1, r2, r1', 'add.w r8, sp, #0x1e8',
                           'add.w sb, sp, #0x190', 'strb.w r6, [sb, #0x48]', 'blx r4'])

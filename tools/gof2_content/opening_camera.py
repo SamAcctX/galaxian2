@@ -2,12 +2,21 @@
 
 Only the recognized opening cuts, fixed-eye pan and follow-mode handoff qualify.
 Ship motion, audio and mission effects stay outside this camera-only scope.
+
+Android: LevelScript::resetCamera targets the player; TargetFollowCamera's
+constructor starts with look-at off and the target's up vector on, and
+setLookAtCam sets that mode. LevelScript::process continues the opening
+formation's phase gate: after message 6 the camera targets enemy 0 from a
+fixed eye, phases 2 and 3 pan it by elapsed x velocity, message 7 engages
+the enemies and message 8 hands the camera back to the player.
 """
 import math
 import struct
 from .opening_loadout import template
-from .opening_staging import MAC_INITIAL, ARM_INITIAL, MAC_FORMATION, ARM_FORMATION
+from .opening_staging import (MAC_INITIAL, ARM_INITIAL, MAC_FORMATION, ARM_FORMATION, ANDROID_PROCESS, FORMATION,
+                              UPDATE_DISPATCH, IMM)
 from .ship_models import section_bytes
+from .steering import PC, code_span, pool_float, shape_at, sole_definition
 
 MAC_ATTACH = """
 554889e541574156534883ec284889f34989fe4889dfe8
@@ -322,7 +331,114 @@ ARM_INCREMENT = """
 
 ARM_FIELDS = {'ARM_ATTACH': {'call_c': {'kind': 'bl'}, 'jump_10': {'kind': 'cbz', 'register': 'r0'}, 'call_16': {'kind': 'bl'}, 'call_1e': {'kind': 'bl'}, 'word_24': {'kind': 'movw', 'register': 'r1'}, 'word_2c': {'kind': 'movt', 'register': 'r6'}, 'word_30': {'kind': 'movt', 'register': 'r1'}, 'call_3c': {'kind': 'bl'}, 'word_40': {'kind': 'movw', 'register': 'r1'}, 'word_46': {'kind': 'movt', 'register': 'r1'}, 'call_52': {'kind': 'bl'}}, 'ARM_CUT': {'jump_6': {'kind': 'bgt.w'}, 'word_c': {'kind': 'movw', 'register': 'r1'}, 'word_12': {'kind': 'movw', 'register': 'r0'}, 'word_16': {'kind': 'movt', 'register': 'r0'}, 'word_24': {'kind': 'movt', 'register': 'r1'}, 'call_30': {'kind': 'bl'}, 'call_5e': {'kind': 'bl'}, 'jump_66': {'kind': 'bne'}, 'jump_6e': {'kind': 'bne'}, 'call_82': {'kind': 'bl'}, 'jump_88': {'kind': 'bne'}, 'call_a2': {'kind': 'bl'}, 'word_a6': {'kind': 'movw', 'register': 'r1'}, 'word_b4': {'kind': 'movt', 'register': 'r1'}, 'word_b8': {'kind': 'movt', 'register': 'r2'}, 'call_c2': {'kind': 'bl'}, 'jump_d0': {'kind': 'bne.w'}, 'word_d4': {'kind': 'movw', 'register': 'r0'}, 'word_dc': {'kind': 'movt', 'register': 'r0'}, 'call_f0': {'kind': 'bl'}, 'jump_f4': {'kind': 'cbnz', 'register': 'r0'}, 'call_102': {'kind': 'bl'}, 'call_11a': {'kind': 'bl'}}, 'ARM_PAN2': {'literal_6': {'kind': 'vldr', 'register': 's0'}, 'literal_c': {'kind': 'vldr', 'register': 's2'}, 'call_30': {'kind': 'bl'}, 'call_42': {'kind': 'bl'}, 'jump_48': {'kind': 'bne.w'}, 'word_5a': {'kind': 'movw', 'register': 'sl'}, 'call_72': {'kind': 'bl'}, 'call_8c': {'kind': 'bl'}, 'jump_b8': {'kind': 'bne'}, 'jump_ba': {'kind': 'b.w'}}, 'ARM_ROUTE3': {'jump_4': {'kind': 'bne.w'}}, 'ARM_PAN3': {'jump_2': {'kind': 'bne.w'}, 'literal_c': {'kind': 'vldr', 'register': 's0'}, 'literal_14': {'kind': 'vldr', 'register': 's2'}, 'call_42': {'kind': 'bl'}, 'call_54': {'kind': 'bl'}, 'jump_5a': {'kind': 'bne.w'}, 'call_7a': {'kind': 'bl'}, 'call_9a': {'kind': 'bl'}, 'call_a8': {'kind': 'bl'}, 'call_bc': {'kind': 'bl'}, 'call_cc': {'kind': 'bl'}, 'jump_d8': {'kind': 'b.w'}}, 'ARM_DEFAULTS': {'call_d6': {'kind': 'bl'}, 'call_e0': {'kind': 'bl'}, 'call_f0': {'kind': 'bl'}, 'call_104': {'kind': 'bl'}, 'call_10a': {'kind': 'bl'}, 'call_152': {'kind': 'bl'}, 'call_15a': {'kind': 'bl'}, 'call_168': {'kind': 'bl'}, 'call_170': {'kind': 'bl'}, 'call_186': {'kind': 'bl'}, 'call_1ba': {'kind': 'bl'}, 'word_1be': {'kind': 'movw', 'register': 'r1'}, 'word_1c8': {'kind': 'movw', 'register': 'r0'}, 'word_1cc': {'kind': 'movt', 'register': 'r1'}, 'word_1d0': {'kind': 'movt', 'register': 'r0'}, 'word_1d4': {'kind': 'movt', 'register': 'r2'}, 'call_206': {'kind': 'bl'}, 'call_228': {'kind': 'bl'}}, 'ARM_INCREMENT': {'jump_44': {'kind': 'b.w'}}}
 
+EXIT = '#0x[0-9a-f]+'
+ISOVER, SET_TARGET = '=_ZN12RadioMessage6isOverEv', '=_ZN18TargetFollowCamera9setTargetEP10AEGeometry'
+TRANSLATE = '=_ZN18TargetFollowCamera9translateEfff'
+# Pan by elapsed (sb) x (pool x, 0, pool z).
+PAN = [('vmov', 's0, sb'), ('vldr', 's2, ' + PC), ('vldr', 's4, ' + PC), ('movs', 'r2, #0'), ('vcvt.f32.s32', 's0, s0'),
+       ('ldr.w', r'r0, \[sl, #0x14\]')]
+PAN_TAIL = [('vmul.f32', 's2, s0, s2'), ('vmul.f32', 's0, s0, s4'), ('vmov', 'r1, s2'), ('vmov', 'r3, s0'), ('blx', TRANSLATE)]
+ENEMIES = [('ldr.w', r'r0, \[fp, #4\]')]
+# Phases 1-2 (r1 = phase): enemies drift; message 6 -> phase 2, target enemy 0 from a fixed eye (x, y, x);
+# phase 2 pans and on message 7 -> phase 3, engaging the enemies.
+CUT = [('cmp', 'r1, #2'), ('bgt.w', EXIT), ('ldr.w', 'r0, ' + PC), ('movw', 'r1, ' + IMM), ('movt', 'r1, ' + IMM),
+       ('add', 'r0, pc'), ('ldr', r'r0, \[r0\]'), ('ldr', r'r0, \[r0\]'), ('blx', '=_ZN6Layout13getPulseValueEf'),
+       ('vmov.f32', 's0, #.+'), ('movs', 'r5, #0'), ('vmov', 's2, r0'), ('vadd.f32', 's0, s2, s0'), ('vmov', 'r4, s0')] + ENEMIES + [
+       ('movs', 'r1, #0'), ('mov', 'r2, r4'), ('movs', 'r3, #0'), ('ldr.w', r'r0, \[r0, r5, lsl #2\]'), ('ldr', r'r0, \[r0, #8\]'),
+       ('blx', '=_ZN10AEGeometry9translateEfff'), ('adds', 'r5, #1'), ('cmp', 'r5, #3'), ('bne', '@14'),
+       ('ldr.w', r'r0, \[sl, #0x1c\]'), ('cmp', 'r0, #1'), ('bne', '@47'), ('ldr', r'r0, \[r6, #4\]'), ('ldr', r'r0, \[r0, #0x18\]'),
+       ('blx', ISOVER), ('cmp', 'r0, #1'), ('bne', '@46'), ('movs', 'r0, #2'), ('str.w', r'r0, \[sl, #0x1c\]')] + ENEMIES + [
+       ('ldr', r'r1, \[r0\]'), ('ldr.w', r'r0, \[sl, #0x14\]'), ('ldr', r'r1, \[r1, #8\]'), ('blx', SET_TARGET),
+       ('movw', 'r1, ' + IMM), ('ldr.w', r'r0, \[sl, #0x14\]'), ('movs', 'r2, ' + IMM), ('movt', 'r1, ' + IMM), ('movt', 'r2, ' + IMM),
+       ('mov', 'r3, r1'), ('blx', '=_ZN18TargetFollowCamera11setPositionEfff'), ('ldr.w', r'r0, \[sl, #0x1c\]'), ('cmp', 'r0, #2'),
+       ('bne.w', EXIT), ('ldr.w', 'r0, ' + PC), ('movs', 'r1, #0x8e'), ('add', 'r0, pc'), ('ldr', r'r0, \[r0\]'), ('ldr', r'r0, \[r0\]'),
+       ('blx', '=_ZN9FModSound9isPlayingEi'), ('cbnz', 'r0, @69'), ('ldr.w', 'r0, ' + PC), ('add', 'r0, pc'), ('ldr', r'r4, \[r0\]'),
+       ('ldr', r'r0, \[r4\]'), ('ldr', r'r1, \[r0\]'), ('blx', '=_ZN9FModSound4stopEi'), ('ldr', r'r0, \[r4\]'), ('movs', 'r1, #0'),
+       ('str', r'r1, \[sp\]'), ('movs', 'r1, #0x8e'), ('movs', 'r2, #0'), ('movs', 'r3, #0'),
+       ('blx', '=_ZN9FModSound4playEiPN11AbyssEngine6AEMath6VectorES3_f')] + PAN + PAN_TAIL + [
+       ('ldr', r'r0, \[sp, #0x40\]'), ('ldr', r'r0, \[r0, #4\]'), ('ldr', r'r0, \[r0, #0x1c\]'), ('blx', ISOVER), ('cmp', 'r0, #1'),
+       ('bne.w', EXIT), ('movs', 'r0, #3'), ('movs', 'r4, #0'), ('str.w', r'r0, \[sl, #0x1c\]'), ('movs', 'r5, #1')] + ENEMIES + [
+       ('movw', 'r6, #0xc350'), ('ldr.w', r'r0, \[r0, r4, lsl #2\]'), ('movs', 'r1, #1'), ('blx', '=_ZN13PlayerFighter17setExhaustVisibleEb')
+       ] + ENEMIES + [('movs', 'r1, #1'), ('ldr.w', r'r0, \[r0, r4, lsl #2\]'), ('ldr', r'r0, \[r0, #8\]'),
+       ('blx', '=_ZN10AEGeometry10setVisibleEb')] + ENEMIES + [('ldr.w', r'r0, \[r0, r4, lsl #2\]'), ('ldr', r'r1, \[r0\]'),
+       ('ldr', r'r1, \[r1, #0xc\]'), ('blx', 'r1')] + ENEMIES + [('ldr.w', r'r1, \[r0, r4, lsl #2\]'), ('adds', 'r4, #1'),
+       ('cmp', 'r4, #3'), ('str.w', r'r6, \[r1, #0x124\]'), ('ldr', r'r1, \[r1, #4\]'), ('strb.w', r'r5, \[r1, #0x5c\]'),
+       ('bne', '@92'), ('b', EXIT)]
+# Phase 3 pans; message 8 -> phase 4: the player flies again and the camera follows it, look-at off.
+PAN3 = [('cmp', 'r1, #4'), ('beq.w', EXIT), ('cmp', 'r1, #3'), ('bne.w', EXIT)] + PAN + [('movs', 'r4, #0')] + PAN_TAIL + [
+        ('ldr', r'r0, \[r6, #4\]'), ('ldr', r'r0, \[r0, #0x20\]'), ('blx', ISOVER), ('cmp', 'r0, #1'), ('bne.w', EXIT),
+        ('movs', 'r0, #4'), ('strd', r'r4, r4, \[sl, #0x90\]'), ('str.w', r'r0, \[sl, #0x1c\]'), ('movs', 'r1, #0'),
+        ('ldr', r'r6, \[sp, #0x44\]'), ('mov', 'r0, r6'), ('blx', '=_ZN9PlayerEgo21setComputerControlledEb'), ('ldr', r'r0, \[r6\]'),
+        ('movs', 'r5, #1'), ('strb.w', r'r4, \[r0, #0x5e\]'), ('ldr.w', r'r0, \[sl, #0xd4\]'), ('strb.w', r'r5, \[r0, #0x48\]'),
+        ('ldr.w', r'r0, \[sl, #0x18\]'), ('blx', '=_ZN5Level9getPlayerEv'), ('movs', 'r1, #1'), ('blx', '=_ZN9PlayerEgo10setCollideEb'),
+        ('strb.w', r'r4, \[sl, #0x11\]'), ('movs', 'r1, #0'), ('ldr.w', r'r0, \[sl, #0x14\]'),
+        ('blx', '=_ZN18TargetFollowCamera12setLookAtCamEb'), ('ldr', r'r1, \[r6, #8\]'), ('ldr.w', r'r0, \[sl, #0x14\]'),
+        ('blx', SET_TARGET), ('strb.w', r'r5, \[sl, #0x12\]'), ('strb.w', r'r4, \[sl, #0x20\]'), ('b.w', EXIT)]
+ANDROID_ATTACH = '_ZN11LevelScript11resetCameraEP5Level'
+# The camera targets the player's geometry (and takes the follow offsets).
+ATTACH = [('push', '{r4, r5, r6, r7, lr}'), ('add', 'r7, sp, #0xc'), ('sub', 'sp, #0x14'), ('mov', 'r4, r0'), ('ldr', 'r0, ' + PC),
+          ('mov', 'r5, r1'), ('add', 'r0, pc'), ('ldr', r'r0, \[r0\]'), ('ldr', r'r0, \[r0\]'), ('str', r'r0, \[sp, #0x10\]'),
+          ('mov', 'r0, r5'), ('blx', '=_ZN5Level9getPlayerEv'), ('cbz', 'r0, @37'), ('mov', 'r0, r5'), ('ldr', r'r6, \[r4, #0x14\]'),
+          ('blx', '=_ZN5Level9getPlayerEv'), ('ldr', r'r1, \[r0, #8\]'), ('mov', 'r0, r6'), ('blx', SET_TARGET)]
+ANDROID_MODE = '_ZN18TargetFollowCamera12setLookAtCamEb'
+MODE = [('strb.w', r'r1, \[r0, #0x45\]'), ('bx', 'lr')]
+ANDROID_CAMERA = '_ZN18TargetFollowCameraC2EjP10AEGeometryN11AbyssEngine6AEMath6VectorES4_'
+# sb = 0: look-at (0x45) off, the target's up vector (0x10c) on.
+DEFAULTS = [('movs', 'r0, #1'), ('strb.w', r'sb, \[fp, #0x44\]'), ('strb.w', r'sb, \[fp, #0x47\]'), ('strb.w', r'sb, \[fp, #0x45\]'),
+            ('str.w', r'sb, \[fp, #0x48\]'), ('strb.w', r'r0, \[fp, #0x46\]'), ('strb.w', r'sb, \[fp, #0x4c\]'),
+            ('strb.w', r'sb, \[fp, #0xf0\]'), ('strb.w', r'sb, \[fp, #0x100\]'), ('strb.w', r'r0, \[fp, #0x10c\]')]
+
+
+def android_camera(lib):
+    from .android_library import instructions
+    process, attach, mode, camera = (instructions(lib, s) for s in (ANDROID_PROCESS, ANDROID_ATTACH, ANDROID_MODE, ANDROID_CAMERA))
+    if not (process and attach and mode and camera):
+        return {}
+    by_address = {ins.address: i for i, ins in enumerate(process)}
+    dispatch = shape_at(process, UPDATE_DISPATCH, lib)
+    gate = by_address.get(process[dispatch[0] + len(UPDATE_DISPATCH) - 1].operands[0].imm) if len(dispatch) == 1 else None
+    if gate is None or shape_at(process[gate:gate + len(FORMATION)], FORMATION, lib) != [0]:
+        return {}
+    # The formation's gate falls through to the cut, whose later phases branch to the third pan.
+    cut = by_address.get(process[gate + 8].operands[0].imm)
+    if cut is None or shape_at(process[cut:cut + len(CUT)], CUT, lib) != [0]:
+        return {}
+    pan = by_address.get(process[cut + 1].operands[0].imm)
+    if pan is None or shape_at(process[pan:pan + len(PAN3)], PAN3, lib) != [0]:
+        return {}
+    exits = {process[cut + i].operands[0].imm for i in (48, 85, 113)} | {process[pan + i].operands[0].imm for i in (20, 46)}
+    defaults = shape_at(camera, DEFAULTS)
+    if len(exits) != 1 or shape_at(attach, ATTACH, lib)[:1] != [0] or shape_at(mode, MODE) != [0] or len(defaults) != 1:
+        return {}
+    zero = sole_definition(camera, defaults[0], ('sb',))
+    if zero is None or shape_at(camera[zero:zero + 1], [('mov.w', 'sb, #0')]) != [0]:
+        return {}
+
+    def number(low, high):
+        return struct.unpack('<f', struct.pack('<I', process[cut + low].operands[1].imm | process[cut + high].operands[1].imm << 16))[0]
+    x = number(39, 42)
+    eye = [x, number(41, 43), x]
+    velocities = [[pool_float(lib, ANDROID_PROCESS, process[start + i]) for i in offsets] for start, offsets in ((cut, (70, 71)), (pan, (5, 6)))]
+    if None in velocities[0] + velocities[1] or [v for _, v in velocities[0]] != [v for _, v in velocities[1]]:
+        return {}
+    velocity = [velocities[0][0][1], 0.0, velocities[0][1][1]]
+    if not all(abs(v) <= 10000000 for v in eye + velocity):  # NaN fails too
+        return {}
+    provenance = {'cut': code_span(lib, process, cut, cut + len(CUT) - 1), 'pan3': code_span(lib, process, pan, pan + len(PAN3) - 1),
+                  'attach': code_span(lib, attach, 0, len(ATTACH) - 1), 'mode_setter': code_span(lib, mode, 0, len(MODE) - 1),
+                  'defaults': code_span(lib, camera, defaults[0], defaults[0] + len(DEFAULTS) - 1),
+                  'defaults_zero': code_span(lib, camera, zero, zero)}
+    for name, (offset, _) in zip(('cut_x', 'cut_z', 'pan3_x', 'pan3_z'), velocities[0] + velocities[1]):
+        provenance['velocity_' + name] = {'offset': offset, 'bytes': 4}
+    return {'initial_target': 'player', 'initial_fixed_eye': True, 'inherit_target_up': True,
+            'actor_cut': {'after_event_finished': 6, 'actor_id': 0, 'eye': eye},
+            'pan': {'velocity_per_ms': velocity, 'engagement_after_event_finished': 7, 'follow_player_after_event_finished': 8},
+            'provenance': provenance}
+
+
 def extract_opening_camera(mach, staging):
+    if staging and mach.architecture == 'android-armv7':
+        return android_camera(mach)
     import capstone
     mac = mach.architecture == 'x86_64'
     if not staging or (not mac and mach.architecture != 'armv7'): return {}
