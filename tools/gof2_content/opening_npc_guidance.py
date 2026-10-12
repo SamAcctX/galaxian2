@@ -11,6 +11,7 @@ lists the player first and other-race ships as targets.
 import copy
 import struct
 from .opening_loadout import template
+from .ship_models import section_bytes
 
 LAYOUTS = {'x86_64': {'tuning': ('constructor',
                        1371,
@@ -552,14 +553,14 @@ def android_guidance(lib):
     fire = shapes['fire']
     literals = [boost.pool('scale'), boost.pool('percent'), fire.pool('range'), fire.pool('negative_range')]
     # The decrease/increase rates: two floats the `addw rN, pc` addresses.
-    rates = update.pc_address(response.index('rates')) - lib.text['address'] + lib.text['offset']
-    found = [struct.unpack('<f', struct.pack('<I', word))[0] for word, _ in literals] + list(struct.unpack_from('<2f', lib.data, rates))
+    rates = section_bytes(lib, update.pc_address(response.index('rates')), 8, b'__text')
+    found = [struct.unpack('<f', struct.pack('<I', word))[0] for word, _ in literals] + list(struct.unpack('<2f', rates[0]) if rates else [])
     if found != [100.0, 40.0, 35000.0, -35000.0, VALUES['speed_decrease'], VALUES['speed_increase']]:
         return {}
     proof = {'virtual_update': method[1], **{key: shape.span() for key, shape in shapes.items()}}
     for index, (_, span) in enumerate(literals):
         proof['literal_%d' % index] = span
-    proof['literal_4'] = {'offset': lib.slice_offset + rates, 'bytes': 8}
+    proof['literal_4'] = {'offset': rates[1], 'bytes': 8}
     result = copy.deepcopy(VALUES)
     result['provenance'] = proof
     return result
