@@ -106,4 +106,38 @@ class ConstructionTests(unittest.TestCase):
             self.assertFalse(reader.extract_npc_construction(changed,a,v))
 
 
+ANDROID_ACTORS = {'actors': [{'actor_kind': 8, 'hull_catalogue_id': h} for h in (2, 23, 2)],
+                  'npc_initialization': {'routes': {'loop': True}, 'holding': {'actor_mode': 5}}}
+ANDROID_VEHICLE = {'equipment_rule': 'last_matching'}
+
+
+class AndroidNpcConstruction(unittest.TestCase):
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        verify_android_proof(self, reader, lambda lib: reader.extract_npc_construction(lib, ANDROID_ACTORS, ANDROID_VEHICLE), values='VALUES')
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            self.assertTrue(reader.extract_npc_construction(lib, ANDROID_ACTORS, ANDROID_VEHICLE))
+            initial = ANDROID_ACTORS['npc_initialization']
+            cases = {**{'no ' + key: ({**ANDROID_ACTORS, 'npc_initialization': {k: v for k, v in initial.items() if k != key}}, ANDROID_VEHICLE)
+                        for key in initial},
+                     'no vehicle': (ANDROID_ACTORS, {}),
+                     'other kinds': ({**ANDROID_ACTORS, 'actors': [{'actor_kind': 9, 'hull_catalogue_id': h} for h in (2, 23, 2)]}, ANDROID_VEHICLE),
+                     'other hulls': ({**ANDROID_ACTORS, 'actors': [{'actor_kind': 8, 'hull_catalogue_id': 2} for _ in range(3)]}, ANDROID_VEHICLE),
+                     'no initialization': ({'actors': ANDROID_ACTORS['actors']}, ANDROID_VEHICLE)}
+            for name, (actors, vehicle) in cases.items():
+                self.assertEqual(reader.extract_npc_construction(lib, actors, vehicle), {}, name)
+
+    def test_android_native_spans(self):
+        # The game pins the construction values in EXPECTED; the spans must match the importer's.
+        import json, re
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] / 'game/src/content/npc_construction_definitions.gd').read_text()
+        found = re.findall(r'^const ANDROID_SPANS :?= (.+)$', source, re.M)
+        self.assertEqual([json.loads(row) for row in found], [{k: [v[5] if len(v) == 6 else v[1], v[2]] for k, v in reader.ANDROID.items()}])
+
+
 if __name__=='__main__':unittest.main()
