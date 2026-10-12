@@ -389,20 +389,29 @@ DEFAULTS = [('movs', 'r0, #1'), ('strb.w', r'sb, \[fp, #0x44\]'), ('strb.w', r's
             ('strb.w', r'sb, \[fp, #0xf0\]'), ('strb.w', r'sb, \[fp, #0x100\]'), ('strb.w', r'r0, \[fp, #0x10c\]')]
 
 
-def android_camera(lib):
+def android_cut(lib):
+    """(LevelScript::process code, index of the cut): the opening formation's phase gate skips to the cut."""
     from .android_library import instructions
-    process, attach, mode, camera = (instructions(lib, s) for s in (ANDROID_PROCESS, ANDROID_ATTACH, ANDROID_MODE, ANDROID_CAMERA))
-    if not (process and attach and mode and camera):
-        return {}
+    process = instructions(lib, ANDROID_PROCESS) or []
     by_address = {ins.address: i for i, ins in enumerate(process)}
     dispatch = shape_at(process, UPDATE_DISPATCH, lib)
     gate = by_address.get(process[dispatch[0] + len(UPDATE_DISPATCH) - 1].operands[0].imm) if len(dispatch) == 1 else None
     if gate is None or shape_at(process[gate:gate + len(FORMATION)], FORMATION, lib) != [0]:
-        return {}
-    # The formation's gate falls through to the cut, whose later phases branch to the third pan.
+        return None
     cut = by_address.get(process[gate + 8].operands[0].imm)
     if cut is None or shape_at(process[cut:cut + len(CUT)], CUT, lib) != [0]:
+        return None
+    return process, cut
+
+
+def android_camera(lib):
+    from .android_library import instructions
+    found, attach, mode, camera = android_cut(lib), *(instructions(lib, s) for s in (ANDROID_ATTACH, ANDROID_MODE, ANDROID_CAMERA))
+    if not found:
         return {}
+    process, cut = found
+    by_address = {ins.address: i for i, ins in enumerate(process)}
+    # The cut's later phases branch to the third pan.
     pan = by_address.get(process[cut + 1].operands[0].imm)
     if pan is None or shape_at(process[pan:pan + len(PAN3)], PAN3, lib) != [0]:
         return {}

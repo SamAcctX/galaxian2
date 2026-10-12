@@ -2,11 +2,17 @@
 
 The native runtime receives parameters and provenance only, never source code.
 Elapsed time must be supplied by the scene; this reader does not seed save clocks.
+
+Android: the opening camera's cut (LevelScript::process, phases up to 2)
+moves the three enemies by AEGeometry::translate(0, pulse + bias, 0), the
+pulse being Layout::getPulseValue(frequency): |AEMath::Sinf(playing time x
+frequency)| with Status::getPlayingTime in milliseconds.
 """
 import math
 import struct
 from .opening_loadout import template
 from .ship_models import section_bytes
+from .steering import PC, code_span, shape_at
 from . import opening_camera as camera
 
 MAC_WAVE = """
@@ -80,7 +86,60 @@ e1682a46e06a
 ARM_FIELDS = {'ARM_WAVE': {'word_8': {'kind': 'movw', 'register': 'r0'}, 'word_10': {'kind': 'movt', 'register': 'r0'}, 'call_1a': {'kind': 'bl'}, 'call_1e': {'kind': 'blx'}, 'call_2e': {'kind': 'bl'}, 'call_36': {'kind': 'bl'}, 'call_3a': {'kind': 'blx'}, 'call_4e': {'kind': 'bl'}}, 'ARM_SINE': {'call_1a': {'kind': 'blx'}}, 'ARM_TRANSLATE': {'call_16': {'kind': 'bl'}, 'call_8a': {'kind': 'bl'}, 'call_94': {'kind': 'bl'}}}
 
 
+ANDROID_WAVE, ANDROID_SINE = '_ZN6Layout13getPulseValueEf', '_ZN11AbyssEngine6AEMath4SinfEf'
+ANDROID_ELAPSED, ANDROID_TRANSLATE = '_ZN6Status14getPlayingTimeEv', '_ZN10AEGeometry9translateEfff'
+SINE_OF_TIME = [('ldr', r'r0, \[r5\]'), ('blx', '=' + ANDROID_ELAPSED), ('blx', '=__aeabi_l2f'), ('vmov', 's0, r0'),
+                ('vmul.f32', 's0, s0, s16'), ('vmov', 'r0, s0'), ('blx', '=' + ANDROID_SINE)]
+# sin(t f) twice: the result is the second when the first is positive, else its negation.
+WAVE = [('push', '{r4, r5, r7, lr}'), ('add', 'r7, sp, #8'), ('vpush', '{d8}'), ('ldr', 'r0, ' + PC), ('vmov', 's16, r1'),
+        ('add', 'r0, pc'), ('ldr', r'r5, \[r0\]')] + SINE_OF_TIME + [('mov', 'r4, r0')] + SINE_OF_TIME + [
+        ('vmov', 's4, r4'), ('vmov', 's0, r0'), ('vcmpe.f32', 's4, #0'), ('vmrs', 'apsr_nzcv, fpscr'), ('vneg.f32', 's2, s0'),
+        ('it', 'gt'), ('vmovgt.f32', 's2, s0'), ('vmov', 'r0, s2'), ('vpop', '{d8}'), ('pop', '{r4, r5, r7, pc}')]
+ELAPSED = [('ldrd', r'r0, r1, \[r0, #0x1b8\]'), ('bx', 'lr')]
+# The geometry's local translation (matrix elements 3, 7, 11) plus (x, y, z).
+TRANSLATE = [('push.w', '{r4, r5, r6, r7, r8, sb, sl, fp, lr}'), ('add', 'r7, sp, #0xc'), ('sub', 'sp, #4'), ('vpush', '{d8}'),
+             ('sub', 'sp, #0x80'), ('mov', 'fp, r0'), ('ldr', 'r0, ' + PC), ('mov', 'sl, r2'), ('vmov', 's16, r1'), ('add', 'r0, pc'),
+             ('mov', 'sb, r3'), ('add.w', 'r8, sp, #0x40'), ('ldr', r'r0, \[r0\]'), ('ldr', r'r0, \[r0\]'), ('str', r'r0, \[sp, #0x7c\]'),
+             ('ldr.w', r'r2, \[fp, #0xc\]'), ('ldr.w', r'r0, \[fp, #0x2c\]'), ('mov', 'r1, r2'),
+             ('blx', '=_ZN11AbyssEngine11PaintCanvas17TransformGetLocalEj'), ('mov', 'r1, r8'), ('ldm', 'r0!, {r2, r3, r4, r5, r6}'),
+             ('vmov', 's6, sl'), ('stm', 'r1!, {r2, r3, r4, r5, r6}'), ('ldm', 'r0!, {r2, r3, r4, r5, r6}'),
+             ('stm', 'r1!, {r2, r3, r4, r5, r6}'), ('ldm.w', 'r0, {r2, r3, r4, r5, r6}'), ('add', 'r0, sp, #4'),
+             ('stm', 'r1!, {r2, r3, r4, r5, r6}'), ('mov', 'r1, r8'), ('vldr', r's0, \[sp, #0x4c\]'), ('vldr', r's2, \[sp, #0x5c\]'),
+             ('vadd.f32', 's0, s0, s16'), ('vldr', r's4, \[sp, #0x6c\]'), ('vadd.f32', 's2, s2, s6'), ('vmov', 'r2, s0'),
+             ('vmov', 'r3, s2'), ('vmov', 's0, sb'), ('vadd.f32', 's0, s4, s0'), ('vstr', r's0, \[sp\]'),
+             ('blx', '=_ZN11AbyssEngine6AEMath20MatrixSetTranslationERNS0_6MatrixEfff'), ('ldr.w', r'r1, \[fp, #0xc\]'),
+             ('mov', 'r2, r8'), ('ldr.w', r'r0, \[fp, #0x2c\]'),
+             ('blx', '=_ZN11AbyssEngine11PaintCanvas17TransformSetLocalEjRKNS_6AEMath6MatrixE')]
+
+
+def android_drift(lib):
+    from .android_library import instructions
+    found = camera.android_cut(lib)
+    functions = {name: instructions(lib, name) for name in (ANDROID_WAVE, ANDROID_SINE, ANDROID_ELAPSED, ANDROID_TRANSLATE)}
+    if not found:
+        return {}
+    for name, shape in ((ANDROID_WAVE, WAVE), (ANDROID_SINE, [('b.w', '#0x[0-9a-f]+')]), (ANDROID_ELAPSED, ELAPSED),
+                        (ANDROID_TRANSLATE, TRANSLATE)):
+        if shape_at(functions[name], shape, lib)[:1] != [0]:
+            return {}
+    process, cut = found
+    # The cut's drift: pulse = getPulseValue(movw/movt frequency), then + the vmov.f32 bias.
+    frequency = struct.unpack('<f', struct.pack('<I', process[cut + 3].operands[1].imm | process[cut + 4].operands[1].imm << 16))[0]
+    bias = process[cut + 9].operands[1].fp
+    if not 0 < frequency <= 1000:  # NaN fails too; the bias is a VFP immediate
+        return {}
+    provenance = {'cut': code_span(lib, process, cut, cut + 23)}
+    for key, name, shape in (('wave', ANDROID_WAVE, WAVE), ('sine', ANDROID_SINE, [1]), ('elapsed_getter', ANDROID_ELAPSED, ELAPSED),
+                             ('translate', ANDROID_TRANSLATE, TRANSLATE)):
+        provenance[key] = code_span(lib, functions[name], 0, len(shape) - 1)
+    return {'frequency_per_millisecond': frequency, 'bias': bias, 'actor_ids': [0, 1, 2], 'through_phase': 2,
+            'skip_formation_update': True, 'time_unit': 'milliseconds', 'waveform': 'absolute_sine',
+            'application': 'per_update_world_y', 'provenance': provenance}
+
+
 def extract_opening_drift(mach, opening):
+    if opening and mach.architecture == 'android-armv7':
+        return android_drift(mach)
     if not opening or mach.architecture not in ['x86_64', 'armv7']: return {}
     import capstone
     mac = mach.architecture == 'x86_64'

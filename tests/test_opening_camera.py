@@ -170,7 +170,7 @@ CAMERA_CALLEES = ['_ZN6Layout13getPulseValueEf', '_ZN10AEGeometry9translateEfff'
 
 def android(eye=(-4000.0, 200.0), velocity=((0.25, 2.5), (0.25, 2.5)), events=(0x18, 0x1c, 0x20), cut_phase=2, exits_agree=True,
             mode_field=0x45, up_default=True, zeros=1, attach_call='_ZN18TargetFollowCamera9setTargetEP10AEGeometry', cut_actor=0,
-            zero_value=0, pool_at=None, omit=None, **staging_options):
+            zero_value=0, pool_at=None, frequency=0x3a03126f, bias=-0.5, extra=(), omit=None, **staging_options):
     """LevelScript::process's opening phases after the staging formation, and the camera's helpers. Returns the library."""
     from android_fixture import TEXT, Thumb
     from gof2_content import opening_camera as c
@@ -178,6 +178,8 @@ def android(eye=(-4000.0, 200.0), velocity=((0.25, 2.5), (0.25, 2.5)), events=(0
     from test_steering import (adds8, add_pc, assemble, b_to, blx_reg, cbz, cmp_imm, ldr_lit, ldr_reg, ldr_w, strb_w, sub_sp, vadd,
                                vldr_pc, vmov_from_core, vmov_imm)
     at = {name: TEXT + 0x1400 + 0x40 * i for i, name in enumerate(CAMERA_CALLEES)}
+    stubs = dict(at)
+    at.update({name: address for name, _, address in extra})
     staged = {name: TEXT + 0x40 * i for i, name in enumerate(STAGING_CALLEES)}
 
     def pan(asm, L, which):
@@ -190,9 +192,9 @@ def android(eye=(-4000.0, 200.0), velocity=((0.25, 2.5), (0.25, 2.5)), events=(0
         def calls(asm, name): return asm.call(at[name])
         def pan_tail(asm): return calls(asm.vmul(2, 0, 2).vmul(0, 0, 4).vmov_core(1, 2).vmov_core(3, 0), '_ZN18TargetFollowCamera9translateEfff')
         b_to(cmp_imm(asm, 1, cut_phase), to('pan'), 'gt', True)
-        ldr_w(asm, 0, 15, 0x40).movw(1, 0x126f).movt(1, 0x3a03)
+        ldr_w(asm, 0, 15, 0x40).movw(1, frequency & 0xffff).movt(1, frequency >> 16)
         calls(add_pc(asm, 0).ldr(0, 0, 0).ldr(0, 0, 0), '_ZN6Layout13getPulseValueEf')
-        vadd(vmov_from_core(vmov_imm(asm, 0, -0.5).movs(5, 0), 2, 0), 0, 2, 0).vmov_core(4, 0).label('drift')
+        vadd(vmov_from_core(vmov_imm(asm, 0, bias).movs(5, 0), 2, 0), 0, 2, 0).vmov_core(4, 0).label('drift')
         ldr_reg(ldr_w(asm, 0, 11, 4).movs(1, 0).mov(2, 4).movs(3, 0), 0, 0, 5, 2).ldr(0, 0, 8)
         b_to(cmp_imm(adds8(calls(asm, '_ZN10AEGeometry9translateEfff'), 5, 1), 5, 3), to('drift'), 'ne')
         b_to(cmp_imm(ldr_w(asm, 0, 10, 0x1c), 0, 1), to('phase2'), 'ne')
@@ -251,8 +253,8 @@ def android(eye=(-4000.0, 200.0), velocity=((0.25, 2.5), (0.25, 2.5)), events=(0
         for field in (0x4c, 0xf0, 0x100):
             strb_w(asm, 9, 11, field)
         strb_w(asm, 0 if up_default else 9, 11, 0x10c).pop()
-    functions = [(name, Thumb(address).ret().finish(), address) for name, address in at.items()]
-    functions += [(c.ANDROID_ATTACH, assemble(TEXT + 0x1700, attach).finish(), TEXT + 0x1700),
+    functions = [(name, Thumb(address).ret().finish(), address) for name, address in stubs.items() if name not in at or at[name] == address]
+    functions += list(extra) + [(c.ANDROID_ATTACH, assemble(TEXT + 0x1700, attach).finish(), TEXT + 0x1700),
                   (c.ANDROID_MODE, strb_w(Thumb(TEXT + 0x1780), 1, 0, mode_field).ret().finish(), TEXT + 0x1780),
                   (c.ANDROID_CAMERA, assemble(TEXT + 0x1800, camera).finish(), TEXT + 0x1800)]
     lib, _ = staging(tail=tail, extra=[f for f in functions if f[0] != omit], omit=omit, **staging_options)
