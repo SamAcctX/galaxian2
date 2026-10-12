@@ -2891,6 +2891,7 @@
     "tests/test_station_entry.py",
     "tests/test_station_generation.py",
     "tests/test_station_presentation.py",
+    "tests/test_station_return.py",
     "tests/test_steering.py",
     "tests/test_sun_flares.py",
     "tests/test_surface_material.py",
