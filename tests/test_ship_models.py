@@ -74,5 +74,39 @@ class ShipModelTests(unittest.TestCase):
             self.assertEqual(extract_ship_models(mach, rows + [dict(rows[0], id=999)], 10), {})
 
 
+def android(getter='_ZN4Ship8getIndexEv', index=0, name='_ZN14ListItemWindow3setEP8ListItemjjjjb', conflict=False, table_at=0, base=1):
+    """ListItemWindow::set's hull lookup: index from the getter, table address, u16 read."""
+    from android_fixture import RODATA, TEXT
+    from android_thumb import Asm, build
+    ids = list(range(100, 108)) + [500, 901]
+    asm = Asm(TEXT + 0x100).push()
+    if base != 1:  # the address completes in another register
+        asm.ldr_address(base, RODATA + table_at)
+    asm.call_to(getter).ldr_address(1, RODATA + table_at).movs(3, 0).add_pc(base).ldrh_index(2, 1, index).pop()
+    data = {RODATA: struct.pack('<10H', *ids), RODATA + 0x40: struct.pack('<10H', *(ids[:-1] + [902 if conflict else 901]))}
+    rows = [{'id': 100 + i, 'kind': 'mesh', 'registration_type': 4,
+             'resource': f'resources/data/assets/main/3d/meshes/ships/ship_{i:03d}_fixture.aem'} for i in range(8)]
+    return build({name: asm}, data), rows, ids
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidShipModelTests(unittest.TestCase):
+    def test_hull_lookup_gives_table_and_reader(self):
+        from android_fixture import RODATA, TEXT
+        from gof2_content.android_listing import Listing
+        lib, rows, ids = android()
+        self.assertEqual(extract_ship_models(lib, rows, 10), {'resource_ids': ids, 'table_offsets': [RODATA, RODATA + 0x40],
+                                                              'index_reader_offsets': [TEXT + 0x102]})
+        self.assertEqual(Listing(android(base=2)[0], '_ZN14ListItemWindow3setEP8ListItemjjjjb').lines[5], 'adr r2, %#x' % RODATA)
+        # Either matching copy may be the one read.
+        self.assertEqual(extract_ship_models(android(table_at=0x40)[0], rows, 10)['resource_ids'], ids)
+
+    def test_other_reads_do_not_prove_the_table(self):
+        for options in (dict(getter='_ZN4Ship7getRaceEv'), dict(index=2), dict(name='_ZN14ListItemWindow4drawEv'),
+                        dict(conflict=True), dict(table_at=0x80), dict(base=2)):
+            lib, rows, _ = android(**options)
+            self.assertEqual(extract_ship_models(lib, rows, 10), {}, options)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -26,6 +26,7 @@ class Asm(Thumb):
         super().__init__(address)
         self.branches = []  # (position, condition or None, label, wide)
         self.named = []  # (position, function name): `bl` patched by build()
+        self.pending = {}  # register: (literal index, address) awaiting add_pc
 
     def wide(self, top, rn, rest, imm12=0):
         return self.half(top | (imm12 >> 11 & 1) << 10 | rn, (imm12 >> 8 & 7) << 12 | rest | imm12 & 255)
@@ -104,6 +105,18 @@ class Asm(Thumb):
         return self.half(0xee80 | (sd & 1) << 6 | sn >> 1, (sd >> 1) << 12 | 0xa00 | (sn & 1) << 7 | (sm & 1) << 5 | sm >> 1)
 
     def vcvt_u(self, sd, sm): return self.half(0xeeb8 | (sd & 1) << 6, (sd >> 1) << 12 | 0xa40 | (sm & 1) << 5 | sm >> 1)
+
+    def ldr_address(self, rd, address):
+        """`ldr rd, [pc, #k]` whose pool word completes `address` at the next add_pc(rd)."""
+        self.literals.append((len(self.code), lambda _: address))  # the plain word until add_pc
+        self.pending[rd] = (len(self.literals) - 1, address)
+        return self.half(0x4800 | rd << 8)
+
+    def add_pc(self, rd):
+        index, address = self.pending.pop(rd)
+        add = self.here()
+        self.literals[index] = (self.literals[index][0], lambda _: (address - (add + 4)) & 0xffffffff)
+        return self.half(0x4478 | rd if rd < 8 else 0x44f8 | rd & 7)
 
     def call_to(self, name):
         self.named.append((len(self.code), name))
