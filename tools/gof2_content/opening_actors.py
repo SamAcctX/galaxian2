@@ -2,8 +2,15 @@
 
 This does not construct AI, execute a mission or derive actors from dialogue IDs.
 Only the supported cursor-zero declaration layout is accepted.
+
+Android: Level::createCampaignMission loads the cursor with
+Status::getCurrentCampaignMission, keeps the player hull in a register through
+its range checks and case table, and case 0 creates the actors through
+Level::createShip, puts them to sleep, places them and sets their hull with
+Player::setHitpoints before setting the player's hull the same way.
 """
 import math
+import re
 import struct
 from .opening_loadout import template
 from .ship_models import section_bytes
@@ -138,7 +145,202 @@ dff83c1f784479440068c5f87c050df64460c5f88015dff8281fc5f8847541f00101c5f88cd57944
 """
 
 
+ANDROID_CASES = """
+ldr.w sl, [sp, #0x40]
+cmp r0, #{bound}
+bhi.w {default}
+tbh [pc, r0, lsl #1]
+"""
+ANDROID_RANGE = """
+cmp r0, #{upper}
+bgt.w {high}
+sub.w r1, r0, #{base}
+cmp r1, #{range}
+bhi.w {low}
+"""
+ANDROID_ACTORS = """
+movs r0, #0xc
+mov fp, ip
+call _Znwj
+mov r5, r0
+movs r0, #4
+call _Znaj
+ldr r6, [sp, #0x40]
+mov.w sl, #0
+str r0, [r5, #4]
+mov.w r8, #1
+str.w sl, [r0]
+movs r0, #{count}
+mov r1, r5
+str.w r8, [r5, #8]
+str.w sl, [r5]
+str.w r5, [r6, #0xf8]
+call _Z14ArraySetLengthIP8KIPlayerEvjR5ArrayIT_E
+ldr.w r0, [r6, #0xf8]
+ldr r0, [r0]
+cmp r0, #0
+beq {after}
+movw sb, #{position_low}
+movs r4, #0
+movt sb, #{position_high}
+"""
+ANDROID_LOOP = """
+movs r3, #{default_hull}
+strd sl, r8, [sp]
+str.w sl, [sp, #8]
+cmp r4, #{alternate_index}
+it eq
+moveq r3, #{alternate_hull}
+mov r0, r6
+movs r1, #{actor_kind}
+movs r2, #0
+call {factory}
+ldr.w r1, [r6, #0xf8]
+ldr r1, [r1, #4]
+str.w r0, [r1, r4, lsl #2]
+ldr.w r0, [r6, #0xf8]
+ldr r0, [r0, #4]
+ldr.w r0, [r0, r4, lsl #2]
+call {deactivation}
+ldr.w r0, [r6, #0xf8]
+movs r1, #1
+ldr r0, [r0, #4]
+ldr.w r0, [r0, r4, lsl #2]
+ldr r0, [r0, #4]
+call _ZN6Player14setAlwaysEnemyEb
+ldr.w r0, [r6, #0xf8]
+mov r2, sb
+mov r3, sb
+ldr r0, [r0, #4]
+ldr.w r0, [r0, r4, lsl #2]
+ldr r1, [r0]
+ldr r5, [r1, #0x48]
+mov r1, sb
+blx r5
+ldr.w r0, [r6, #0xf8]
+ldr r0, [r0, #4]
+ldr.w r1, [r0, r4, lsl #2]
+strb.w sl, [r1, #0x48]
+str.w sl, [r1, #0x4c]
+movs r1, #{actor_hull}
+ldr.w r0, [r0, r4, lsl #2]
+ldr r0, [r0, #4]
+call {setter}
+cmp r4, #{effect_last_actor}
+bgt {next}
+ldr.w r0, [r6, #0xf8]
+movs r1, #0
+ldr r0, [r0, #4]
+ldr.w r0, [r0, r4, lsl #2]
+call _ZN13PlayerFighter17setExhaustVisibleEb
+"""
+ANDROID_NEXT = """
+ldr.w r0, [r6, #0xf8]
+adds r4, #1
+ldr r0, [r0]
+cmp r4, r0
+blo {loop}
+"""
+ANDROID_PLAYER = """
+ldr.w r0, [r6, #0xf0]
+mov r4, fp
+mov r1, r4
+ldr r0, [r0]
+call {player_setter}
+ldr.w r0, ={}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+str r4, [r0, #0x64]
+ldr.w r0, [r6, #0xf0]
+ldr r0, [r0]
+strb.w r8, [r0, #0x5e]
+b {exit}
+"""
+ANDROID_GETTER = """
+ldr.w r0, [r0, #0x1e8]
+bx lr
+"""
+ANDROID_SETTER = """
+str r1, [r0, #0x78]
+ldr.w r2, [r0, #0x84]
+cmp r2, r1
+it lt
+strlt.w r1, [r0, #0x84]
+b.w {changed}
+"""
+
+
+def android_actors(lib):
+    """Cursor 0 of Level::createCampaignMission: a range check and case table
+    reach the actor loop; the player hull register is set before the checks."""
+    from .android_shapes import Listing
+    level = Listing(lib, '_ZN5Level21createCampaignMissionEv')
+    getter_name = '_ZN6Status25getCurrentCampaignMissionEv'
+
+    def dispatch(call):
+        """Register constants, then the range check, right after the cursor call."""
+        constants, at = {}, call.last + 1
+        while at < len(level.lines) and re.fullmatch(r'mov[wt] \w+, #\w+', level.lines[at]):
+            mnemonic, register, value = re.split(r' |, #', level.lines[at])
+            if register == 'r0' or (register, mnemonic) in constants:
+                return None
+            constants[register, mnemonic] = int(value, 0)
+            at += 1
+        head = level.at(ANDROID_RANGE, at)
+        return (call, constants, head) if head else None
+
+    found = [row for row in map(dispatch, level.find('call ' + getter_name)) if row]
+    if len(found) != 1:
+        return {}
+    call, constants, head = found[0]
+    if ('ip', 'movw') not in constants or ('ip', 'movt') not in constants:
+        return {}
+    player_hull = constants['ip', 'movt'] << 16 | constants['ip', 'movw']
+    # Cursor 0 is not above the unsigned 8-bit `upper`; below a positive base
+    # it wraps above the 8-bit range and takes the `low` branch to the case table.
+    if not head.value('base') > 0:
+        return {}
+    cases = level.at(ANDROID_CASES, level.target(head['low']) or 0)
+    if cases is None:
+        return {}
+    start = level.case(cases.last, 0)
+    parts = [ANDROID_ACTORS, ANDROID_LOOP, ANDROID_NEXT, ANDROID_PLAYER]
+    actors = level.at(''.join(parts), start) if start is not None else None
+    if actors is None:
+        return {}
+    loop, following, after = (actors.first + sum(len(p.strip().splitlines()) for p in parts[:n]) for n in (1, 2, 3))
+    if (level.target(actors['after']) != after or level.target(actors['next']) != following
+            or level.target(actors['loop']) != loop or not actors.last < (level.target(actors['exit']) or 0)):
+        return {}
+    if actors['setter'] != actors['player_setter']:
+        return {}
+    getter, setter = Listing(lib, getter_name), Listing(lib, actors['setter'])
+    getter_shape, setter_shape = getter.at(ANDROID_GETTER, 0), setter.at(ANDROID_SETTER, 0)
+    if getter_shape is None or setter_shape is None or setter.target(setter_shape['changed']) is not None:
+        return {}
+    count, alternate_index = actors.value('count'), actors.value('alternate_index')
+    normal, alternate, kind = actors.value('default_hull'), actors.value('alternate_hull'), actors.value('actor_kind')
+    hull, last = actors.value('actor_hull'), actors.value('effect_last_actor')
+    position = struct.unpack('<f', struct.pack('<I', actors.value('position_high') << 16 | actors.value('position_low')))[0]
+    # 8-bit immediates: only these bounds can fail (last >= 0, so count >= 1).
+    if count > 32 or alternate_index >= count or last != count - 1 or hull < 1:
+        return {}
+    if not 1 <= player_hull <= 2147483647 or not math.isfinite(position) or abs(position) > 10000000:
+        return {}
+    entry = level.span(cases.last, cases.last)
+    provenance = {'declaration': actors.span(), 'dispatch': level.span(call.first, head.last),
+                  'case_dispatch': cases.span(), 'case_entry': {'offset': entry['offset'] + 4, 'bytes': 2},
+                  'cursor_getter': getter_shape.span(), 'hull_setter': setter_shape.span()}
+    rows = [{'actor_id': i, 'hull_catalogue_id': alternate if i == alternate_index else normal,
+             'actor_kind': kind, 'position': [position] * 3, 'current_hull_override': hull} for i in range(count)]
+    return {'actors': rows, 'player_current_hull_override': player_hull, 'provenance': provenance,
+            'npc_initialization': extract_npc_initialization(lib, actors['factory'], actors['deactivation'])}
+
+
 def extract_opening_actors(mach):
+    if mach.architecture == 'android-armv7':
+        return android_actors(mach)
     import capstone
     mac=mach.architecture=='x86_64'
     if not mac and mach.architecture!='armv7':return {}

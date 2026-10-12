@@ -108,3 +108,88 @@ class OpeningActors(unittest.TestCase):
                     self.assertEqual(extract_opening_actors(mach),{})
 
 if __name__=='__main__':unittest.main()
+
+
+def android_level(**changes):
+    """Synthetic Level::createCampaignMission in the Android shape: player hull
+    0x12345 kept in ip, cursor 0 through the range check and case table."""
+    from android_text_fixture import fill
+    from gof2_content import opening_actors as reader
+    values = dict(count='4', alternate_index='2', default_hull='5', alternate_hull='9', actor_kind='7',
+                  position_low='0', position_high='0x42c8', actor_hull='0x7b', effect_last_actor='3',
+                  factory='_ZN5Level10createShipEiiiP8Waypointbb', deactivation='_ZN8KIPlayer10setToSleepEv',
+                  setter='_ZN6Player12setHitpointsEi', player_setter='_ZN6Player12setHitpointsEi',
+                  after='#after', next='#next', loop='#loop', exit='#exit')
+    values.update(changes.pop('values', {}))
+    constants = changes.pop('constants', 'movw ip, #0x2345\nmovw r5, #0x10\nmovt ip, #1')
+    head = changes.pop('head', 'cmp r0, #0x60\nbgt.w #high\nsub.w r1, r0, #0x30\ncmp r1, #0x20\nbhi.w #low')
+    cases = changes.pop('cases', '.cases case0, high, high, high')
+    level = '\n'.join(['push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', 'call _ZN6Status25getCurrentCampaignMissionEv',
+                       constants, head, 'low:', 'ldr.w sl, [sp, #0x40]', 'cmp r0, #3', 'bhi.w #high',
+                       'tbh [pc, r0, lsl #1]', cases, 'case0:', fill(reader.ANDROID_ACTORS, **values),
+                       'loop:', fill(reader.ANDROID_LOOP, **values), 'next:', fill(reader.ANDROID_NEXT, **values),
+                       'after:', fill(reader.ANDROID_PLAYER, **values), 'exit:', 'bx lr', 'high:', 'bx lr'])
+    functions = {'_ZN5Level21createCampaignMissionEv': level,
+                 '_ZN6Status25getCurrentCampaignMissionEv': 'ldr.w r0, [r0, #0x1e8]\nbx lr',
+                 '_ZN6Player12setHitpointsEi': fill(reader.ANDROID_SETTER, changed='#_ZN6Player9setActiveEb'),
+                 '_ZN6Player9setActiveEb': 'bx lr'}
+    functions.update(changes)
+    return {k: v for k, v in functions.items() if v is not None}
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'optional static-reader dependency')
+class AndroidOpeningActors(unittest.TestCase):
+    def extract(self, **changes):
+        from android_text_fixture import text_library
+        lib, addresses = text_library(android_level(**changes))
+        return extract_opening_actors(lib), lib, addresses
+
+    def test_named_case_gives_actors_hull_and_spans(self):
+        scope, lib, addresses = self.extract()
+        self.assertEqual([a['hull_catalogue_id'] for a in scope['actors']], [5, 5, 9, 5])
+        self.assertEqual({(a['actor_kind'], a['current_hull_override'], tuple(a['position'])) for a in scope['actors']}, {(7, 123, (100.0,) * 3)})
+        self.assertEqual(scope['player_current_hull_override'], 0x12345)
+        self.assertEqual(scope['npc_initialization'], {})
+        level = addresses['_ZN5Level21createCampaignMissionEv']
+        spans = {k: (v['offset'] - level, v['bytes']) for k, v in scope['provenance'].items() if k not in ('cursor_getter', 'hull_setter')}
+        # call + 3 constants + range check; dispatch at `low`; the table entry follows tbh, case 0 the table.
+        self.assertEqual(spans, {'dispatch': (4, 32), 'case_dispatch': (36, 14), 'case_entry': (50, 2), 'declaration': (58, 262)})
+        self.assertEqual(scope['provenance']['cursor_getter'], {'offset': addresses['_ZN6Status25getCurrentCampaignMissionEv'], 'bytes': 6})
+        self.assertEqual(scope['provenance']['hull_setter'], {'offset': addresses['_ZN6Player12setHitpointsEi'], 'bytes': 18})
+
+    def test_each_broken_rule_is_unsupported(self):
+        from gof2_content import opening_actors as reader
+        cases = {
+            'cursor in r0': dict(constants='movw ip, #0x2345\nmovw r0, #0x10\nmovt ip, #1'),
+            'hull register missing': dict(constants='movw sb, #0x2345\nmovt sb, #1'),
+            'hull low missing': dict(constants='movw r5, #0x2345\nmovt ip, #1'),
+            'hull high missing': dict(constants='movw ip, #0x2345\nmovt r5, #1'),
+            'two dispatches': dict(constants='movw ip, #0x2345\nmovt ip, #1\ncmp r0, #0x60\nbgt.w #high\nsub.w r1, r0, #0x30\ncmp r1, #0x20\nbhi.w #low\ncall _ZN6Status25getCurrentCampaignMissionEv\nmovw ip, #0x2345\nmovt ip, #1'),
+            'hull twice': dict(constants='movw ip, #0x2345\nmovw ip, #0x10\nmovt ip, #1'),
+            'zero hull': dict(constants='movw ip, #0\nmovt ip, #0'),
+            'negative hull': dict(constants='movw ip, #0\nmovt ip, #0x8000'),
+            'zero base': dict(head='cmp r0, #0x60\nbgt.w #high\nsub.w r1, r0, #0\ncmp r1, #0x20\nbhi.w #low'),
+            'range to elsewhere': dict(head='cmp r0, #0x60\nbgt.w #high\nsub.w r1, r0, #0x30\ncmp r1, #0x20\nbhi.w #high'),
+            'case 0 elsewhere': dict(cases='.cases high, case0, high, high'),
+            'skip target': dict(values=dict(after='#next')),
+            'effect target': dict(values=dict(next='#after')),
+            'loop target': dict(values=dict(loop='#next')),
+            'exit inside': dict(values=dict(exit='#case0')),
+            'different setters': dict(values=dict(player_setter='_ZN6Player9setActiveEb')),
+            'getter field': {'_ZN6Status25getCurrentCampaignMissionEv': 'ldr.w r0, [r0, #0x1ec]\nbx lr'},
+            'setter shape': {'_ZN6Player12setHitpointsEi': reader.ANDROID_SETTER.replace('it lt\nstrlt.w', 'it gt\nstrgt.w').replace('{changed}', '#_ZN6Player9setActiveEb')},
+            'setter loops': {'_ZN6Player12setHitpointsEi': 'top:\n' + reader.ANDROID_SETTER.strip().replace('{changed}', '#top')},
+            'no actors': dict(values=dict(count='0', effect_last_actor='0xff')),
+            'too many actors': dict(values=dict(count='0x21', effect_last_actor='0x20')),
+            'alternate outside': dict(values=dict(alternate_index='4')),
+            'effect range': dict(values=dict(effect_last_actor='2')),
+            'zero actor hull': dict(values=dict(actor_hull='0')),
+            'position not finite': dict(values=dict(position_high='0x7fc0')),
+            'position too far': dict(values=dict(position_high='0x4b80')),
+        }
+        for name, changes in cases.items():
+            with self.subTest(name):
+                self.assertEqual(self.extract(**changes)[0], {})
+        for missing in ('_ZN6Status25getCurrentCampaignMissionEv', '_ZN6Player12setHitpointsEi'):
+            with self.subTest(missing):
+                self.assertEqual(self.extract(**{missing: 'bx lr'})[0], {})

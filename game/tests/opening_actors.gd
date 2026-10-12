@@ -8,10 +8,15 @@ const Library = preload("res://src/content/library.gd")
 var failures := 0
 
 func _initialize() -> void:
-	for mac in [true, false]:
-		var scope := Fixture.definition(mac)
-		var arch := "x86_64" if mac else "armv7"
+	for arch in ["x86_64", "armv7", "android-armv7"]:
+		var scope := Fixture.definition(arch == "x86_64")
+		if arch == "android-armv7":
+			scope.provenance = {"declaration": {"offset": 100, "bytes": 262}, "dispatch": {"offset": 600, "bytes": 76},
+				"case_dispatch": {"offset": 680, "bytes": 14}, "case_entry": {"offset": 694, "bytes": 2},
+				"cursor_getter": {"offset": 720, "bytes": 6}, "hull_setter": {"offset": 750, "bytes": 18}}
 		check(Definitions.validate(JSON.parse_string(JSON.stringify(scope)), 4096, arch).is_empty(), "Serialized actor declarations rejected")
+		for other in ["x86_64", "armv7", "android-armv7"]:
+			if other != arch: check(not Definitions.validate(scope, 4096, other).is_empty(), "Actor spans accepted for another compiler")
 		for bad in ["actors", "id", "hull", "kind", "hp", "player_hp", "position", "nonfinite", "provenance", "overlap"]:
 			var data := scope.duplicate(true)
 			match bad:

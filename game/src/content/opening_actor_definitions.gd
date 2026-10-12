@@ -31,6 +31,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	var sizes := {}
 	if architecture == "x86_64": sizes = {"declaration": 413, "dispatch": 43, "cursor_getter": 12, "hull_setter": 30, "position": 4}
 	elif architecture == "armv7": sizes = {"declaration": 356, "dispatch": 96, "cursor_getter": 6, "hull_setter": 18}
+	elif architecture == "android-armv7": sizes = {"declaration": 262, "dispatch": 76, "case_dispatch": 14, "case_entry": 2, "cursor_getter": 6, "hull_setter": 18}
 	var provenance: Variant = data.get("provenance")
 	if sizes.is_empty() or not provenance is Dictionary or provenance.size() != sizes.size(): return "Invalid opening actor provenance"
 	var spans := []
