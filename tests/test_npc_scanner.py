@@ -46,3 +46,30 @@ class NpcScannerTests(unittest.TestCase):
                 elif key=='section':m.sections[0]['segment']=b'__DATA'
                 else:m.architecture='unsupported'
                 self.assertFalse(reader.extract_npc_scanner(m,s,a),key)
+
+
+ANDROID_PARENTS = ({'player_aim': {'aim': 1}}, {'npc_initialization': {'hull': {'rank': 0}, 'hostility': {'actor_kind': 8}, 'construction': {'cargo_count_bound': 3}}})
+
+
+class AndroidNpcScannerTests(unittest.TestCase):
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        verify_android_proof(self, reader, lambda lib: reader.extract_npc_scanner(lib, *ANDROID_PARENTS))
+        self.assertEqual({k: v for k, v in reader.ANDROID_VALUES.items() if reader.VALUES['x86_64'][k] != v},
+                         {'architecture': 'android-armv7', 'window_divisor': 16})
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            self.assertTrue(reader.extract_npc_scanner(lib, *ANDROID_PARENTS))
+            staging, actors = ANDROID_PARENTS
+            npc = actors['npc_initialization']
+            for key in ('hull', 'hostility', 'construction'):
+                self.assertEqual(reader.extract_npc_scanner(lib, staging, {'npc_initialization': {**npc, key: {}}}), {}, key)
+            self.assertEqual(reader.extract_npc_scanner(lib, {'player_aim': {}}, actors), {})
+            self.assertEqual(reader.extract_npc_scanner(lib, staging, {}), {})
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'npc_scanner_definitions.gd')
