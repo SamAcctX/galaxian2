@@ -111,4 +111,71 @@ class SpeakerBindings(unittest.TestCase):
             mach.data=b'\0'*len(data)
             self.assertEqual(extract_speaker_bindings(mach),{})
 
-if __name__=='__main__':unittest.main()
+
+
+UPDATE, DRAW, GETTER = ('_ZN5Radio6updateElP9PlayerEgoP11LevelScript', '_ZN5Radio4drawExP9PlayerEgoP11LevelScript',
+                        '_ZN12RadioMessage10getImageIDEv')
+CALLEES = ['_ZdaPv', '_ZN6Wanted13getImagePartsEv', '_ZN6Wanted7getNameEv', '_ZN6Layout7drawBoxEiiiiiN11AbyssEngine6StringE',
+           '_ZN8GameText7getTextEi', '_ZN11AbyssEngine6StringC1ERKS0_b', '_ZN11AbyssEngine6StringD1Ev']
+# Five speakers: none, three fixed, procedural 3; agents from 500; names from Android text 1000.
+SPEAKER = {'threshold': 500, 'agent_base': 500, 'last': 4, 'excluded': 3, 'selected': 0x22b4, 'procedural': 0x22b0, 'also_procedural': 0x22b0}
+NAME = {'threshold': 500, 'agent_low': -2000 & 0xffff, 'agent_high': -2000 >> 16 & 0xffff, 'first_name': 1000}
+ENTRIES = {1: (2, 0, -1, 3, 4), 2: (7, 1, 1, 1, 1), 4: (255, 5, 6, 7, 255)}
+
+
+def android_speakers(speaker=None, name=None, status=(0x9000, 0x9000), getter='ldr r0, [r0, #0xc]\nbx lr', omit=()):
+    """Radio::update, Radio::draw and RadioMessage::getImageID in the Android shapes, with a
+    synthetic five-speaker portrait table in .rodata. Returns (library, table address)."""
+    from android_fixture import TEXT, library, stub
+    from thumb_shapes import assemble
+    from gof2_content.android_library import AndroidLibrary
+    from gof2_content.speaker_bindings import ANDROID_NAMES, ANDROID_SPEAKERS
+    calls = {name: TEXT + 0x10 * i for i, name in enumerate(CALLEES)}
+    functions = [(name, b'\x70\x47\x00\xbf', address) for name, address in calls.items()]
+    calls.update({'_Znaj': stub('_Znaj'), GETTER: TEXT + 0x100})
+    functions.append((GETTER, assemble(getter, TEXT + 0x100)[0], TEXT + 0x100))
+    table, data = 0x8000, {}
+    for index, entry in ENTRIES.items():
+        data[0x8100 + 0x20 * index] = struct.pack('<5i', *entry)
+    data[table] = struct.pack('<5I', *[0x8100 + 0x20 * i if i in ENTRIES else 0 for i in range(5)])
+    for address, (shape, values, refs) in {TEXT + 0x200: (ANDROID_SPEAKERS, {**SPEAKER, **(speaker or {})}, {'status': status[0], 'portraits': table}),
+                                           TEXT + 0x400: (ANDROID_NAMES, {**NAME, **(name or {})}, {'status': status[1], 'gameText': 0x9004})}.items():
+        code, _, _ = assemble(shape, address + 2, values, refs, calls)
+        functions.append((UPDATE if address == TEXT + 0x200 else DRAW, b'\x00\xbf' + code, address))
+    functions = [row for row in functions if row[0] not in omit]
+    return AndroidLibrary(library(functions, data)), table
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'optional static-reader dependency')
+class AndroidSpeakerBindings(unittest.TestCase):
+    def test_named_functions_give_bounds_names_and_portraits(self):
+        from android_fixture import TEXT
+        lib, table = android_speakers()
+        result = extract_speaker_bindings(lib)
+        # Android text 1000 is Mac 1.0.7 text 989.
+        self.assertEqual({k: result[k] for k in ('first_name_id', 'agent_speaker_start', 'fixed_speaker_count', 'procedural_speaker')},
+                         {'first_name_id': 989, 'agent_speaker_start': 500, 'fixed_speaker_count': 5, 'procedural_speaker': 3})
+        self.assertEqual(result['portraits'], [
+            {'speaker_id': 0, 'status': 'unavailable'},
+            {'speaker_id': 1, 'status': 'fixed', 'family': 2, 'parts': [0, -1, 3, 4], 'source_offset': 0x8120, 'source_bytes': 20},
+            {'speaker_id': 2, 'status': 'fixed', 'family': 7, 'parts': [1, 1, 1, 1], 'source_offset': 0x8140, 'source_bytes': 20},
+            {'speaker_id': 3, 'status': 'procedural'},
+            {'speaker_id': 4, 'status': 'fixed', 'family': 255, 'parts': [5, 6, 7, 255], 'source_offset': 0x8180, 'source_bytes': 20}])
+        provenance = result['provenance']
+        self.assertEqual((provenance['speaker_getter'], provenance['portrait_table']),
+                         ({'offset': TEXT + 0x100, 'bytes': 4}, {'offset': table, 'bytes': 20}))
+        self.assertEqual((provenance['speaker_selection']['offset'], provenance['name_selection']['offset']), (TEXT + 0x202, TEXT + 0x402))
+
+    def test_each_broken_declaration_is_unsupported(self):
+        cases = {'name threshold': dict(name={'threshold': 501}), 'agent base': dict(speaker={'agent_base': 499}),
+                 'agent index': dict(name={'agent_low': -1996 & 0xffff}), 'procedural targets': dict(speaker={'also_procedural': 0x22b2}),
+                 'agent catalogues': dict(status=(0x9000, 0x9008)),
+                 'names across Android-only text': dict(name={'first_name': 185}),
+                 'other field': dict(getter='ldr r0, [r0, #0x10]\nbx lr'), 'getter after code': dict(getter='nop\nldr r0, [r0, #0xc]\nbx lr'),
+                 'procedural outside the table': dict(speaker={'excluded': 5})}
+        for name, options in cases.items():
+            self.assertEqual(extract_speaker_bindings(android_speakers(**options)[0]), {}, name)
+        for name in (UPDATE, DRAW, GETTER):
+            self.assertEqual(extract_speaker_bindings(android_speakers(omit=(name,))[0]), {}, name)
+
+if __name__=='__main__': unittest.main()
