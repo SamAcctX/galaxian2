@@ -73,10 +73,10 @@ func _ready() -> void:
 	_back=Button.new();_back.pressed.connect(show_menu);column.add_child(_back)
 	_picker=FileDialog.new();_picker.access=FileDialog.ACCESS_FILESYSTEM;_picker.file_mode=FileDialog.FILE_MODE_OPEN_ANY
 	_picker.file_selected.connect(_picked);_picker.dir_selected.connect(_picked);add_child(_picker)
-	_picker.filters=PackedStringArray(["*.dmg,*.app ; Galaxy on Fire 2 Full HD Mac game"])
+	_picker.filters=PackedStringArray(["*.dmg,*.app ; Galaxy on Fire 2 Full HD Mac game","*.xapk,*.7z ; Galaxy on Fire 2 HD Android release"])
 	if OS.get_name()=="Android":
 		_picker.use_native_dialog=true;_picker.file_mode=FileDialog.FILE_MODE_OPEN_FILE
-		_picker.filters=PackedStringArray(["*.dmg,*.zip ; Galaxy on Fire 2 Full HD Mac disk image or application ZIP"])
+		_picker.filters=PackedStringArray(["*.dmg,*.zip ; Galaxy on Fire 2 Full HD Mac disk image or application ZIP","*.xapk,*.7z ; Galaxy on Fire 2 HD Android release"])
 	_importer=DmgImport.new();add_child(_importer)
 	_importer.progress.connect(func(message):
 		if phase=="import" and is_instance_valid(_import_status):_import_status.text=message)
@@ -329,11 +329,11 @@ func _resume() -> void:
 func show_setup() -> void:
 	_show_details("setup","Galaxy on Fire 2 Full HD")
 	if OS.get_name()=="Android":
-		_label("Select your Galaxy on Fire 2 Full HD Mac disk image (.dmg) or a ZIP containing its application (.app). The game prepares the original content on this device, then remembers it for future launches.")
+		_label("Select your Galaxy on Fire 2 Full HD Mac disk image (.dmg) or a ZIP containing its application (.app). You can also select the Android release (.xapk, or the .7z that holds it). The game prepares the original content on this device, then remembers it for future launches.")
 	else:
-		_label("Select your Mac disk image (.dmg) or application folder (.app). The game prepares the original content locally the first time, then remembers it for future launches.")
+		_label("Select your Mac disk image (.dmg) or application folder (.app), or the Android release (.xapk, or the .7z that holds it). The game prepares the original content locally the first time, then remembers it for future launches.")
 	_label("Original game content is not included with the remake.")
-	_button("Choose Mac game…",func():_picker.popup_centered_ratio(0.8))
+	_button("Choose game…",func():_picker.popup_centered_ratio(0.8))
 	for installation in _prepared_imports():
 		var receipt: String=installation.path
 		var record: Dictionary=installation.record
@@ -363,7 +363,7 @@ func begin_import(path: String) -> bool:
 	if has_session() or _importer.busy():return false
 	_refresh_receipt=preferences.values.import_record
 	_show_details("import","Preparing Galaxy on Fire 2 Full HD")
-	_import_status=_label("Reading your Mac game…")
+	_import_status=_label("Reading your game…")
 	var progress:=ProgressBar.new();progress.indeterminate=true;progress.show_percentage=false;_body.add_child(progress)
 	_button("Cancel import",func():_importer.cancel());_back.hide()
 	if not _importer.start(path,_data_directory):show_setup();return reject(_importer.error)

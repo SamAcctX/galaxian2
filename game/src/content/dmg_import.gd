@@ -45,7 +45,7 @@ func start(source: String,directory: String,refresh_receipt: String="") -> bool:
 		_status_path=android_jobs.path_join(android_job+".json");_cancel_path=android_jobs.path_join(android_job+".cancel")
 		_android_plugin=Engine.get_singleton("GoF2AndroidImport")
 		if not _android_plugin.startImport(source,directory,_status_path,_cancel_path):return reject(str(_android_plugin.lastError()))
-		_android_busy=true;_cancelled=false;_poll_elapsed=0.2;_last_message="Reading your Mac game"
+		_android_busy=true;_cancelled=false;_poll_elapsed=0.2;_last_message="Reading your game"
 		progress.emit(_last_message);set_process(true);return true
 	var installation:=OS.get_executable_path().get_base_dir()
 	if OS.get_name()=="macOS":installation=installation.get_base_dir().path_join("Resources")
@@ -67,7 +67,7 @@ func start(source: String,directory: String,refresh_receipt: String="") -> bool:
 	if python==bundled_python:arguments=PackedStringArray(["-E","-s","-B"])+arguments
 	_pid=OS.create_process(python,arguments)
 	if _pid<0:return reject("Could not start the Mac importer. Extract the complete download, including its importer folder.")
-	_cancelled=false;_poll_elapsed=0.2;_last_message="Reading your Mac game";progress.emit(_last_message);set_process(true);return true
+	_cancelled=false;_poll_elapsed=0.2;_last_message="Reading your game";progress.emit(_last_message);set_process(true);return true
 
 func cancel() -> void:
 	if not busy() or _cancelled:return

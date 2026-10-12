@@ -186,6 +186,30 @@ class AndroidImportTests(unittest.TestCase):
         self.assertIn("storage", status["message"])
         self.assertEqual(previous.read_text(), "unchanged")
         prepare.assert_not_called()
+    def test_android_release_files_go_straight_to_the_shared_importer(self):
+        receipt = self.data / "imports/receipt.json"
+        for name, extractor in (("release.xapk", None), ("GOF2FHD_XAPK.7z", str(self.extractor))):
+            release = self.work / name
+            release.write_bytes(b"synthetic release")
+            calls = []
+
+            def prepare(source, store, checkpoint):
+                calls.append((source, store, os.environ.get("GOF2_7ZIP")))
+                return receipt, {}
+
+            with patch.object(worker, "verify_native_decoders"), patch.object(worker, "prepare", side_effect=prepare):
+                worker.run(release, self.data, self.status, self.cancel, extractor)
+            self.assertEqual(calls, [(release, self.data / "imports", extractor)], name)
+            self.assertEqual(json.loads(self.status.read_text())["state"], "ready", name)
+            self.assertFalse((self.work / "extracted").exists())
+
+    def test_release_7z_needs_the_installed_extractor(self):
+        release = self.work / "GOF2FHD_XAPK.7z"
+        release.write_bytes(b"synthetic release")
+        with patch.object(worker, "prepare") as prepare:
+            worker.run(release, self.data, self.status, self.cancel, None)
+        self.assertEqual(json.loads(self.status.read_text())["state"], "failed")
+        prepare.assert_not_called()
 
 
 if __name__ == "__main__":

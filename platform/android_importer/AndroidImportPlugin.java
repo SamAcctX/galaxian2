@@ -56,14 +56,14 @@ public final class AndroidImportPlugin extends GodotPlugin {
     @UsedByGodot
     public boolean startImport(String uriText, String dataPath, String statusPath, String cancelPath) {
         if (!running.compareAndSet(false, true)) {
-            lastError = "A Mac import is already running";
+            lastError = "An import is already running";
             return false;
         }
         try {
             Context context = getActivity().getApplicationContext();
             Uri uri = Uri.parse(uriText);
             if (!"content".equals(uri.getScheme())) {
-                throw new IllegalArgumentException("Choose your Mac .dmg or app ZIP using the Android file picker");
+                throw new IllegalArgumentException("Choose your game file using the Android file picker");
             }
             File data = new File(dataPath).getCanonicalFile();
             File status = new File(statusPath).getCanonicalFile();
@@ -83,9 +83,9 @@ public final class AndroidImportPlugin extends GodotPlugin {
                 throw new IllegalStateException("Could not create the import progress folder");
             }
             String displayName = displayName(context.getContentResolver(), uri).toLowerCase(Locale.ROOT);
-            String extension = displayName.endsWith(".dmg") ? ".dmg" : ".zip";
-            if (!displayName.endsWith(".zip") && !displayName.endsWith(".dmg")) {
-                throw new IllegalArgumentException("Choose the original Mac .dmg or a ZIP containing its .app");
+            String extension = displayName.substring(Math.max(0, displayName.lastIndexOf('.')));
+            if (!java.util.Arrays.asList(".zip", ".dmg", ".xapk", ".7z").contains(extension)) {
+                throw new IllegalArgumentException("Choose the original Mac .dmg or a ZIP containing its .app, or the Android release .xapk or .7z");
             }
             File work = new File(jobs, status.getName() + ".work");
             if (!work.mkdir()) {
