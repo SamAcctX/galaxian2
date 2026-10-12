@@ -2,12 +2,184 @@
 
 Bounded compiler contexts only identify constant tables and literal colors.
 No source instructions are emitted or executed by the native game.
+
+Android: LensFlare::LensFlare creates three consecutive flare images;
+StarSystem::StarSystem(int) stores the flare type from a table at
+SolarSystem::getIndex() (StarSystem+0x3c, LensFlare::render2D's int
+argument); render2D picks red, green and blue from three tables for types
+0-4, else 255, and passes them to PaintCanvas::SetColor in that order;
+BuildResourceList declares each image's texture and region.
 """
+import re
 import struct
 from .opening_loadout import template
+from .opening_sky import android_getter
 from .ship_models import section_bytes
 
+ANDROID_RESOURCES = r"""movs r0, #0xc
+mov r8, r1
+call _Znaj
+mov r2, r0
+ldr r0, =\w+
+str\.w r2, \[sb, #0x10\]
+mov(?:\.w|w) r1, #(?P<first>\w+)
+adr r0, \w+
+ldr r0, \[r0\]
+ldr r0, \[r0\]
+call _ZN11AbyssEngine11PaintCanvas13Image2DCreateEtRj
+ldr r0, =\w+
+movs r6, #4
+movw r5, #(?P<second>\w+)
+adr r0, \w+
+ldr r4, \[r0\]
+(?P<loop>ldr\.w r1, \[sb, #0x10\]
+)ldr r0, \[r4\]
+adds r2, r1, r6
+uxth r1, r5
+call _ZN11AbyssEngine11PaintCanvas13Image2DCreateEtRj
+adds r6, #4
+adds r5, #1
+cmp r6, #0xc
+bne #(?P<back>\w+)
+"""
+ANDROID_SYSTEM_TYPE = r"""ldr r0, \[r4\]
+call _ZN6Status9getSystemEv
+call _ZN11SolarSystem8getIndexEv
+ldr r1, =\w+
+adr r1, (?P<table>\w+)
+ldr\.w r0, \[r1, r0, lsl #2\]
+str\.w r0, \[sb, #0x3c\]
+"""
+ANDROID_PALETTE = r"""ldr r5, \[r7, #0x18\]
+vmov s0, r3
+mov r4, r0
+cmp r5, #4
+bhi #(?P<fallback>\w+)
+ldr r0, =\w+
+ldr r3, =\w+
+ldr r6, =\w+
+adr r0, (?P<red>\w+)
+adr r3, (?P<green>\w+)
+adr r6, (?P<blue>\w+)
+ldr\.w sb, \[r0, r5, lsl #2\]
+ldr\.w sl, \[r3, r5, lsl #2\]
+ldr\.w r8, \[r6, r5, lsl #2\]
+b #(?P<join>\w+)
+"""
+ANDROID_FALLBACK = r"""(?P<b>mov\.w r8, #(?P<blue>\w+)
+)(?P<g>mov\.w sl, #(?P<green>\w+)
+)(?P<r>mov\.w sb, #(?P<red>\w+)
+)"""
+ANDROID_CHANNELS = r"""(?P<g>uxtb\.w r2, sl
+)vldr s26, =0x42f00000
+(?P<b>uxtb\.w r3, r8
+)vsub\.f32 s0, s24, s0
+ldr r0, =\w+
+adr r0, \w+
+ldr\.w fp, \[r0\]
+vsub\.f32 s0, s26, s0
+ldr\.w r0, \[fp\]
+vcvt\.u32\.f32 s0, s0
+vmov r1, s0
+str r1, \[sp\]
+(?P<r>uxtb\.w r1, sb
+)str r1, \[sp, #0x24\]
+str r2, \[sp, #0x20\]
+str r3, \[sp, #0x1c\]
+call _ZN11AbyssEngine11PaintCanvas8SetColorEhhhh
+"""
+# An image record (16 bytes: id, kind 3, -1, payload) and its payload (texture, region).
+# Texture, kind and -1 registers may hold values set by the previous record.
+ANDROID_IMAGE = r"""movs r0, #0x10
+call _Znwj
+mov r4, r0
+movs r0, #4
+call _Znwj
+(?:movw r8, #\w+
+)?movs r1, #(?P<region>\w+)
+(?P<texture>strh\.w r8, \[r0\]
+)(?:movs r6, #3
+)?strh r1, \[r0, #2\]
+mov(?:w|\.w) r1, #(?P<id>\w+)
+(?:mov\.w r5, #-1
+)?strh r1, \[r4\]
+(?P<kind>strd r6, r5, \[r4, #4\]
+)str r0, \[r4, #0xc\]
+(?:movw|mov\.w) r0, #\w+
+str\.w r4, \[sl, r0\]
+"""
+
+
+def android_images(lib, ids):
+    """The three image records for ids in BuildResourceList, and one span over them and the values they use."""
+    from .android_listing import Listing, number
+    build = Listing(lib, '_Z17BuildResourceListPN11AbyssEngine6EngineE')
+    images, lines = {}, []
+    for m in build.find(ANDROID_IMAGE):
+        image = number(m['id'])
+        if image not in ids:
+            continue
+        sources = [build.definition(build.index(m, group), register) for group, register in (('texture', 'r8'), ('kind', 'r6'), ('kind', 'r5'))]
+        values = [re.fullmatch(shape, build.lines[i]) if i is not None else None
+                  for shape, i in zip((r'movw r8, #(\w+)', r'movs r6, #3', r'mov\.w r5, #-1'), sources)]
+        if image in images or not all(values):
+            return None
+        images[image] = {'id': image, 'texture_id': number(values[0][1]), 'region': number(m['region'])}
+        lines += sources + [build.index(m), build.last(m)]
+    if len(images) != 3 or any(v['texture_id'] > 65533 for v in images.values()):
+        return None
+    return [images[i] for i in ids], build.span(min(lines), max(lines))
+
+
+def android_flares(lib, sky):
+    from .android_listing import Listing, number
+    flare = Listing(lib, '_ZN9LensFlareC1EPN11AbyssEngine11PaintCanvasE')
+    system = Listing(lib, '_ZN10StarSystemC1Ei')
+    render = Listing(lib, '_ZN9LensFlare8render2DEfffi')
+    resources, types, palette, channels = (listing.find(shape) for listing, shape in
+                                           ((flare, ANDROID_RESOURCES), (system, ANDROID_SYSTEM_TYPE),
+                                            (render, ANDROID_PALETTE), (render, ANDROID_CHANNELS)))
+    if (not all(key in sky.get('provenance', {}) for key in ('system', 'system_id'))
+            or len(resources) != 1 or len(types) != 1 or len(palette) != 1 or len(channels) != 1):
+        return {}
+    resources, types, palette, channels = resources[0], types[0], palette[0], channels[0]
+    first = number(resources['first'])
+    ids = [first, first + 1, first + 2]
+    # The loop creates second and second + 1 (offsets 4 and 8 of a 12-byte array).
+    if number(resources['second']) != first + 1 or flare.at(number(resources['back'])) != flare.index(resources, 'loop') or first > 65531:
+        return {}
+    fallback = [m for m in render.find(ANDROID_FALLBACK) if render.index(m) == render.at(number(palette['fallback']))]
+    images = android_images(lib, ids)
+    if not fallback or not images or render.at(number(palette['join'])) != render.last(fallback[0]) + 1:
+        return {}
+    fallback = fallback[0]
+    # SetColor gets red, green and blue from the registers the palette or its fallback set.
+    if any(render.definition(render.index(channels, group), register) != render.index(fallback, group)
+           for group, register in (('r', 'sb'), ('g', 'sl'), ('b', 'r8'))):
+        return {}
+    provenance = {'system': android_getter(lib, '_ZN6Status9getSystemEv'), 'system_id': android_getter(lib, '_ZN11SolarSystem8getIndexEv'),
+                  'resources': flare.match_span(resources), 'system_type': system.match_span(types), 'palette': render.match_span(palette),
+                  'fallback': render.match_span(fallback), 'channels': render.match_span(channels), 'images': images[1]}
+    tables = {}
+    for key, address, count in (('system_types', number(types['table']), 34), ('red', number(palette['red']), 5),
+                                ('green', number(palette['green']), 5), ('blue', number(palette['blue']), 5)):
+        found = section_bytes(lib, address, count * 4, b'__const')
+        if not found:
+            return {}
+        tables[key] = list(struct.unpack('<%dI' % count, found[0]))
+        provenance[key] = {'offset': found[1], 'bytes': count * 4}
+    colors = [list(row) for row in zip(tables['red'], tables['green'], tables['blue'])]
+    colors.append([number(fallback[key]) for key in ('red', 'green', 'blue')])
+    if (not all(provenance.values()) or max(tables['system_types']) > 5
+            or max(max(row) for row in colors) > 255):
+        return {}
+    return {'scope': 'ordinary_sun_flares', 'image_ids': ids, 'images': images[0], 'system_types': tables['system_types'],
+            'colors': colors, 'provenance': provenance}
+
+
 def extract_sun_flares(mach, sky):
+    if mach.architecture == 'android-armv7':
+        return android_flares(mach, sky or {})
     if not sky or mach.architecture not in ['x86_64','armv7']:return {}
     import capstone
     mac=mach.architecture=='x86_64';prefix='MAC_' if mac else 'ARM_'
