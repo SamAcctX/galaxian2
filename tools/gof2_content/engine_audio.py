@@ -145,7 +145,7 @@ MAC_DATA_REFERENCES = {'threshold_high': ['selection', 136, 140],
 
 def android_audio(lib, vehicle, rotation):
     """Spans by function name; the handling setup and rotation step must be the parents' own extents."""
-    proof = recognize_symbols(lib, ANDROID) if vehicle and rotation else {}
+    proof = recognize_symbols(lib, ANDROID)
     if not proof:
         return {}
 
