@@ -1,8 +1,24 @@
-"""Recover rescue construction records; emit data and extents only."""
+"""Recover rescue construction records; emit data and extents only.
+
+Android: Level::createShip builds the PlayerFighter, asks Globals::getShipGroup
+for its model and attaches it through setShipGroup (KIPlayer::setShipGroup:
+a body AEGeometry from the canvas with the model as child); only hulls 44,
+49 and 51 change the generated cargo. KIPlayer::setRoute replaces the
+generated route, whose authored Route starts at index 0 without looping.
+PlayerFighter::setPosition places the body and copies its matrix to the
+Player; AEGeometry nodes and AbyssEngine::Transform start from identity.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 def extract_arrival_actor_construction(mach, arrival, actors, environment):
+    if mach.architecture == 'android-armv7':
+        try:
+            if arrival['campaign_cursor'] != 1 or arrival['actor_kind'] != 3 or arrival['actor_hull_id'] != 30 or not environment: return {}
+            if not actors['npc_initialization']['construction'] or not actors['npc_initialization']['routes']: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     arch=mach.architecture
     if arch not in LAYOUTS:return {}
     try:
@@ -166,3 +182,15 @@ MAC_ALTERNATE = {'factory_constructor': [78713,
  'animation_initialization': [1068258,
                               112,
                               '554889e548897df88975f4488955e8488b55f88b75f485f6488955e08975dc0f8434000000e9000000008b45dc83f8030f852e000000e900000000488b45e0488b882001000048898830010000c6800d01000001e915000000488b45e0c6800d010000008b45f4488b4de08941785dc3']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'factory_constructor': ('_ZN5Level10createShipEiiiP8Waypointbb', 1576, 108, 'sha256:d0859566b08f48601b948e9a91eb2765cd6159916313ce62eee20734241504b5'),
+           'factory_cargo_guard': ('_ZN5Level10createShipEiiiP8Waypointbb', 1716, 18, '2c2e06d00d98332812d0cb46312840f06282'),
+           'route_replacement': ('_ZN8KIPlayer8setRouteEP5Route', 0, 36, 'sha256:2f00603c48d28f9708289d12f63227139eebaa3ce45e155ddc64e7ddf20197b5'),
+           'authored_route_default': ('_ZN5RouteC2EPii', 10, 16, '00260c20cbf8006091468a468bf80460'),
+           'attachment': ('_ZN8KIPlayer12setShipGroupEP10AEGeometryib', 0, 160, 'sha256:249560a0c9fbb1d950cae0becb50f84c6bfd58ac4c548ad7c56e38a098148570'),
+           'placement': ('_ZN13PlayerFighter11setPositionEfff', 0, 120, 'sha256:84b11cc073cadac276caa21eb0eef09b9016bb682c15fad91054bd0e74a4dbe8'),
+           'body_node': ('_ZN10AEGeometryC2EPN11AbyssEngine11PaintCanvasE', 0, 192, 'sha256:daecf684140b39afba89f441111ebbab81bd4f5f4666b6b07593d218247de757'),
+           'model_node': ('_ZN10AEGeometryC2EtPN11AbyssEngine11PaintCanvasEb', 0, 256, 'sha256:445381dc0cac413fa861ce74ac9422ae16ed2c8660e9ae7a6f9334c0d9a82f99'),
+           'instance_allocation': ('_ZN11AbyssEngine11PaintCanvas15TransformCreateERj', 0, 86, 'sha256:41fd8e1731e3c4187a580e3d3717b6a4a687993026f64a2d5785c61eae36bfe5'),
+           'identity_matrix': ('_ZN11AbyssEngine9TransformC2Ev', 0, 648, 'sha256:0d923454674ecfab0836f1c3a94afff4a9ee651b1046be36b3a517dd51547296')}
