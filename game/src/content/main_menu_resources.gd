@@ -24,7 +24,7 @@ var identity:={}
 
 func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> bool:
 	error=""
-	if library==null or bindings==null or visuals==null or library.manifest.get("profile",{}).get("edition")!="mac-full-hd" or bindings.base_content_id!=library.manifest.get("content_id") or visuals.base_content_id!=bindings.base_content_id:return reject("The main menu requires matching Mac Full HD content")
+	if library==null or bindings==null or visuals==null or library.manifest.get("profile",{}).get("edition") not in ["mac-full-hd","android-hd"] or bindings.base_content_id!=library.manifest.get("content_id") or visuals.base_content_id!=bindings.base_content_id:return reject("The main menu requires matching Mac Full HD content")
 	var alias: Dictionary=bindings.resolve_image_region(LOGO_IMAGE_ID,LOGO_TEXTURE_ID)
 	if alias.is_empty() or int(alias.get("region",-1))!=2:return reject("The imported Full HD logo alias is unavailable")
 	var registered:=false

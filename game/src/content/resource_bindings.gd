@@ -321,7 +321,7 @@ func open(directory: String, base: Dictionary,library: RefCounted=null) -> bool:
 	if not Library.valid_hash(base.get("content_id")) or not base.get("files") is Dictionary \
 			or header.get("base_content_id") != base.content_id:
 		return fail("These resource bindings belong to a different base content identity")
-	var architecture := "armv7" if base.get("profile", {}).get("edition") == "ios-hd" else "x86_64"
+	var architecture: String = {"ios-hd": "armv7", "android-hd": "android-armv7"}.get(base.get("profile", {}).get("edition"), "x86_64")
 	var layout := Library.catalogue_layout(base)
 	if layout.is_empty():
 		return fail("Resource bindings require a supported ship and language catalogue layout")

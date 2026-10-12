@@ -37,7 +37,7 @@ func build(burst: RefCounted, library: RefCounted, visuals: RefCounted, bindings
 		if timing.get(key) != data.models[0][key]: return reject("EMP burst geometry changed its original animation metadata")
 	if state.effect.duration_ms != data.duration_ms: return reject("EMP burst geometry changed its duration")
 	var edition: Variant = library.manifest.get("profile", {}).get("edition")
-	if edition not in ["mac-full-hd", "ios-hd"]: return reject("Unsupported EMP burst content edition")
+	if edition not in ["mac-full-hd", "ios-hd", "android-hd"]: return reject("Unsupported EMP burst content edition")
 	var models := Models.new()
 	var path: String=data.models[0].resource
 	if not models.prepare([path], library, visuals, bindings, "high", false, true): return reject(models.error)
