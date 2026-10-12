@@ -2893,6 +2893,7 @@
     "tests/test_station_autopilot.py",
     "tests/test_station_departure.py",
     "tests/test_station_entry.py",
+    "tests/test_station_equipment.py",
     "tests/test_station_flight.py",
     "tests/test_station_generation.py",
     "tests/test_station_presentation.py",
