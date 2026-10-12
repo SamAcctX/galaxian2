@@ -77,6 +77,14 @@ class AndroidNpcHullTests(unittest.TestCase):
         with patch.object(reader, 'ANDROID', layout):
             lib = AndroidLibrary(image)
             self.assertTrue(reader.extract_npc_hull(lib, ANDROID_ACTORS))
+            # The result is a deep copy: changing its lists leaves the module's values intact.
+            before = copy.deepcopy(reader.VALUES)
+            for value in reader.extract_npc_hull(lib, ANDROID_ACTORS).values():
+                if isinstance(value, list):
+                    value.append(None)
+                    for item in value:
+                        if isinstance(item, list): item.append(None)
+            self.assertEqual(reader.VALUES, before)
             for name, actors in {'no world': {**ANDROID_ACTORS, 'npc_initialization': {}},
                                  'later cursor': {**ANDROID_ACTORS, 'npc_initialization': {'world_initialization': {'campaign_cursor': 1}}},
                                  'other hulls': {**ANDROID_ACTORS, 'actors': [{'hull_catalogue_id': v} for v in [2, 2, 2]]},

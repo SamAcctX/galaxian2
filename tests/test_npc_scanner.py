@@ -63,6 +63,14 @@ class AndroidNpcScannerTests(unittest.TestCase):
         with patch.object(reader, 'ANDROID', layout):
             lib = AndroidLibrary(image)
             self.assertTrue(reader.extract_npc_scanner(lib, *ANDROID_PARENTS))
+            # The result is a deep copy: changing its lists leaves the module's values intact.
+            before = copy.deepcopy(reader.ANDROID_VALUES)
+            for value in reader.extract_npc_scanner(lib, *ANDROID_PARENTS).values():
+                if isinstance(value, list):
+                    value.append(None)
+                    for item in value:
+                        if isinstance(item, list): item.append(None)
+            self.assertEqual(reader.ANDROID_VALUES, before)
             staging, actors = ANDROID_PARENTS
             npc = actors['npc_initialization']
             for key in ('hull', 'hostility', 'construction'):

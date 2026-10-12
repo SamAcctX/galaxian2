@@ -143,6 +143,14 @@ class AndroidWorldInitializationTests(unittest.TestCase):
         with patch.object(reader, 'ANDROID', layout):
             lib = AndroidLibrary(image)
             self.assertTrue(self.extract(lib))
+            # The result is a deep copy: changing its lists leaves the module's values intact.
+            before = copy.deepcopy(reader.VALUES)
+            for value in self.extract(lib).values():
+                if isinstance(value, list):
+                    value.append(None)
+                    for item in value:
+                        if isinstance(item, list): item.append(None)
+            self.assertEqual(reader.VALUES, before)
             npc = ANDROID_ACTORS['npc_initialization']
             cases = {
                 'no construction': dict(actors={**ANDROID_ACTORS, 'npc_initialization': {**npc, 'construction': {}}}),

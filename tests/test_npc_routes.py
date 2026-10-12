@@ -102,6 +102,14 @@ class AndroidNpcRoutes(unittest.TestCase):
         with patch.object(reader, 'ANDROID', layout):
             lib = AndroidLibrary(image)
             self.assertTrue(reader.extract_npc_routes(lib, ANDROID_ACTORS))
+            # The result is a deep copy: changing its lists leaves the module's values intact.
+            before = copy.deepcopy(reader.VALUES)
+            for value in reader.extract_npc_routes(lib, ANDROID_ACTORS).values():
+                if isinstance(value, list):
+                    value.append(None)
+                    for item in value:
+                        if isinstance(item, list): item.append(None)
+            self.assertEqual(reader.VALUES, before)
             initial = ANDROID_ACTORS['npc_initialization']
             cases = {**{'no ' + key: {**ANDROID_ACTORS, 'npc_initialization': {k: v for k, v in initial.items() if k != key}}
                         for key in initial},
