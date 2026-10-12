@@ -8,6 +8,10 @@ const SPANS := {"x86_64":{"player_before_weapons":[244328,40],"controller_call":
 
 const MAC_ALTERNATE := {"player_before_weapons":[244051,40],"controller_call":[256122,5],"player_delta":[449804,7],"initial_scripted":[65,18],"scripted_setter":[440925,13],"initial_update_enabled":[429113,4],"update_gate":[449741,11],"scripted_gate":[454635,68],"scripted_travel":[454703,23],"ordinary_suppression":[457441,13],"release":[17756,46],"speed":[430100,27],"forward_helper":[-850625,42]}
 
+# Android: spans inside named functions (Layouts.anchored); the Mac 1.0.7 values.
+const ANDROID_VALUES = {"initial_scripted_flight":true,"scripted_ignores_throttle":true,"ordinary_motion_suppressed":true,"initial_update_enabled":true,"release_after_event_finished":8,"release_phase":4,"motion_before_controller":true}
+const ANDROID_SPANS = {"player_before_weapons":[1872,34],"controller_call":[10658,16],"update_gate":[56,10],"player_delta":[90,4],"scripted_gate":[3490,300],"scripted_travel":[3790,28],"ordinary_suppression":[5262,14],"ordinary_suppression_route":[5318,14],"initial_scripted":[520,12],"scripted_setter":[0,6],"release":[4336,34],"constructor_defaults":[28,626],"forward_helper":[0,196]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary: return false
 	for key in VALUES:
@@ -27,6 +31,9 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, executable_bytes: int, architecture: String, staging: Dictionary) -> String:
 	if not data is Dictionary: return "Invalid scripted player motion capability"
 	if data.is_empty(): return ""
+	if architecture=="android-armv7":
+		if not parameters(data): return "Unsupported scripted player motion"  # ANDROID_VALUES are VALUES
+		return "" if Layouts.anchored(data.provenance,executable_bytes,ANDROID_SPANS) else "Disconnected scripted player motion declaration"
 	if not parameters(data) or not SPANS.has(architecture): return "Unsupported scripted player motion"
 	var initial: Variant=staging.get("provenance",{}).get("initial")
 	if not Fonts.extent(initial,"offset","bytes",[366 if architecture=="x86_64" else 320],executable_bytes): return "Scripted player motion lacks its staging anchor"
