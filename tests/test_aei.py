@@ -58,8 +58,10 @@ class TextureTests(unittest.TestCase):
         for end in range(len(data)):
             with self.subTest(end=end), self.assertRaises(ContentError):
                 Texture(data[:end])
+        # One byte after the font table is an Android packaging byte; more is not.
+        self.assertEqual(Texture(data + b'\3').regions, Texture(data).regions)
         with self.assertRaisesRegex(ContentError, 'trailer'):
-            Texture(data + b'\0')
+            Texture(data + b'\0\3')
 
     def test_atlas_and_dimension_bounds(self):
         with self.assertRaisesRegex(ContentError, 'bounds'):
@@ -87,6 +89,17 @@ class TextureTests(unittest.TestCase):
             self.assertEqual(texture.pixels(), bytes([255, 0, 0, 255]) * 16)
         texture = Texture(compressed(34, 4, 4, red * 3))
         self.assertEqual(zlib.decompress(convert_texture(texture)[24:]), bytes([255, 0, 0, 255]) * 21)
+
+    @unittest.skipUnless(importlib.util.find_spec('texture2ddecoder'), 'Optional CPU decoder not installed')
+    def test_etc1_is_opaque_with_eight_byte_blocks(self):
+        # Individual mode, red 15/15, table 0, every pixel index 0 (+2): (255, 2, 2), no alpha.
+        block = bytes([0xff, 0x00, 0x00, 0x00, 0, 0, 0, 0])
+        texture = Texture(compressed(66, 8, 4, block * 5))  # 8x4, 4x2, 2x1, 1x1
+        self.assertEqual((texture.codec, len(texture.levels)), ('etc1', 4))
+        self.assertEqual(texture.pixels(), bytes([255, 2, 2, 255]) * 32)
+        self.assertEqual(texture.pixels(3), bytes([255, 2, 2, 255]))
+        with self.assertRaisesRegex(ContentError, 'mip'):
+            Texture(compressed(66, 8, 4, block * 4))
 
     @unittest.skipUnless(importlib.util.find_spec('texture2ddecoder'), 'Optional CPU decoder not installed')
     def test_pvrtc_minimum_surface_mip_dimensions(self):

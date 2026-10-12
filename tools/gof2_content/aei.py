@@ -11,7 +11,7 @@ from .formats import ContentError
 MAX_PIXELS = 32 * 1024 * 1024
 MAX_BYTES = 192 * 1024 * 1024
 FORMATS = {1: 'rgba8', 3: 'rgba8', 13: 'pvrtc2', 16: 'pvrtc4', 18: 'pvrtc4',
-           32: 'bc1', 34: 'bc1', 36: 'bc3', 38: 'bc3', 129: 'rgba8', 166: 'rgba8'}
+           32: 'bc1', 34: 'bc1', 36: 'bc3', 38: 'bc3', 66: 'etc1', 129: 'rgba8', 166: 'rgba8'}
 
 
 @dataclass(frozen=True)
@@ -88,7 +88,8 @@ class Texture:
                     raise ContentError('Duplicate AEI glyph code')
                 glyphs[code] = rect
             self.fonts.append(glyphs)
-        if pos != len(data):
+        # Android files may end with one byte the Android loader never reads.
+        if pos != len(data) and pos + 1 != len(data):
             raise ContentError('Unrecognized AEI trailer')
 
     def require(self, offset, length):
@@ -117,7 +118,7 @@ class Texture:
             import texture2ddecoder as decoder
             from importlib.metadata import version
         except ImportError as error:
-            raise ContentError('Install texture2ddecoder==1.0.6 to decode PVRTC/BC textures') from error
+            raise ContentError('Install texture2ddecoder==1.0.6 to decode PVRTC/BC/ETC1 textures') from error
         if version('texture2ddecoder') != '1.0.6':
             raise ContentError('This visual schema requires texture2ddecoder==1.0.6')
         if self.codec.startswith('pvrtc'):
@@ -126,8 +127,9 @@ class Texture:
             decode_w, decode_h = max(block_w, row.width), max(block_h, row.height)
             pixels = decoder.decode_pvrtc(payload, decode_w, decode_h, self.codec == 'pvrtc2')
         else:
+            # ETC1 has no alpha: these textures are opaque, as on Android.
             decode_w, decode_h = row.width, row.height
-            decode = decoder.decode_bc1 if self.codec == 'bc1' else decoder.decode_bc3
+            decode = {'bc1': decoder.decode_bc1, 'bc3': decoder.decode_bc3, 'etc1': decoder.decode_etc1}[self.codec]
             pixels = decode(payload, decode_w, decode_h)
         if len(pixels) != decode_w * decode_h * 4:
             raise ContentError('Decoder returned an unexpected pixel count')
@@ -160,4 +162,4 @@ def level_size(codec, width, height):
         if codec == 'pvrtc2':
             return max(width, 16) * max(height, 8) // 4
         return max(width, 8) * max(height, 8) // 2
-    return max(1, (width + 3) // 4) * max(1, (height + 3) // 4) * (8 if codec == 'bc1' else 16)
+    return max(1, (width + 3) // 4) * max(1, (height + 3) // 4) * (8 if codec in ('bc1', 'etc1') else 16)
