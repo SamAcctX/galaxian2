@@ -2799,6 +2799,7 @@
     "tests/test_freighter_destruction.py",
     "tests/test_gakkrr_visit.py",
     "tests/test_game_install.py",
+    "tests/test_game_over_presentation.py",
     "tests/test_gate_arrival.py",
     "tests/test_gate_environment.py",
     "tests/test_gate_transit.py",
