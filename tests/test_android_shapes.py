@@ -109,7 +109,32 @@ pop {r4, r5, r6, r7, pc}''',
         from gof2_content.android_shapes import Listing
         lib, _ = text_library({'_ZN1H1aEv': 'mov r4, r0\ncall _ZN1B1gEv\nbx lr', '_ZN1H1bEv': 'movs r0, #1\nmov r4, r0\nbx lr',
                                '_ZN1H1cEv': 'mov r4, r0\nmovs r4, #1\nmov r4, r0\nbx lr', '_ZN1H1dEv': 'movs r1, #0\nmov r4, r0\nbx lr'})
-        held = lambda name, last: Listing(lib, name).holds_this('r4', last)
+        held = lambda name, last: Listing(lib, name).holds('r4', last)
         self.assertEqual([held('_ZN1H1aEv', 2), held('_ZN1H1bEv', 2), held('_ZN1H1cEv', 0), held('_ZN1H1cEv', 2), held('_ZN1H1dEv', 0), held('_ZN1H1dEv', 2)],
                          [True, False, True, False, False, True])
-        self.assertFalse(Listing(lib, '_ZN1H1aEv').holds_this('r5', 2))
+        self.assertFalse(Listing(lib, '_ZN1H1aEv').holds('r5', 2))
+        lib, _ = text_library({'_ZN1H1eEv': 'mov r8, r1\nmovs r0, #0\nbx lr', '_ZN1H1fEv': 'movs r1, #0\nmov r8, r1\nbx lr'})
+        self.assertEqual([Listing(lib, n).holds('r8', 2, 'r1') for n in ('_ZN1H1eEv', '_ZN1H1fEv')], [True, False])
+
+    def test_labels_and_pool_words(self):
+        listing = self.listing
+        from android_text_fixture import text_library
+        from gof2_content.android_shapes import Listing
+        lib, _ = text_library({'_ZN1J1lEv': 'cmp r0, #1\nbne #skip\nmovs r0, #2\nskip:\nmovs r0, #3\nbx lr',
+                               '_ZN1K1mEv': 'nop\nldr r1, =0x55667788\nbx lr'})
+        unaligned = Listing(lib, '_ZN1K1mEv').pool(1)
+        self.assertEqual(lib.data[unaligned['offset']:unaligned['offset'] + 4], bytes.fromhex('88776655'))
+        jump = Listing(lib, '_ZN1J1lEv')
+        self.assertEqual(jump.unique('cmp r0, #1\nbne {@skip}\nmovs r0, #2\nskip: movs r0, #3').last, 3)
+        self.assertIsNone(jump.unique('cmp r0, #1\nbne {@skip}\nskip: movs r0, #2'))
+        # A label without a branch to it constrains nothing.
+        self.assertEqual(jump.unique('bne {}\nhere: movs r0, #2').first, 1)
+        with self.assertRaises(AssertionError):
+            listing.find('bhi.w {@nowhere}')
+        shape = listing.unique('ldr r0, ={word}\nadd r0, pc\nvldr s0, ={float}')
+        self.assertEqual((shape.index('word'), shape.index('float')), (2, 4))
+        word, span = shape.pool('float')
+        self.assertEqual(word, 0x3fc00000)
+        self.assertEqual(self.lib.data[span['offset']:span['offset'] + 4], bytes.fromhex('0000c03f'))
+        self.assertEqual(shape.pool('word')[0], 0x12345678)
+        self.assertEqual(int.from_bytes(self.lib.data[shape.pool('word')[1]['offset']:][:4], 'little'), 0x12345678)

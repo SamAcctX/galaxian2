@@ -475,6 +475,13 @@ def assemble(text, address, resolve):
     return asm.finish(), asm.lines, asm.labels
 
 
+FILLS = iter(range(1 << 30))
+
+
 def fill(template, blank='0x10', **values):
-    """A reader template with its placeholders replaced: `{name}` by values[name], `{}` by `blank`."""
-    return re.sub(r'\{(\w*)\}', lambda m: str(values[m[1]]) if m[1] else blank, template)
+    """A reader template as assembler text: `{name}` by values[name], `{}` by `blank`,
+    template labels (`name: ...`, `{@name}`) by labels unique to this call."""
+    tag = 'L%d_' % next(FILLS)
+    text = re.sub(r'^(\s*)(\w+): ', lambda m: '%s%s%s:\n%s' % (m[1], tag, m[2], m[1]), template, flags=re.M)
+    text = re.sub(r'\{@(\w+)\}', lambda m: '#' + tag + m[1], text)
+    return re.sub(r'\{(\w*)\}', lambda m: str(values[m[1]]) if m[1] else blank, text)

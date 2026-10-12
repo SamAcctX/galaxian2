@@ -191,12 +191,12 @@ def android_player(lib):
         return {}
     stats = Listing(lib, '_ZN6PlayerC1Eiiiii')
     active = stats.unique(ANDROID_ACTIVE)
-    if active is None or not stats.holds_this('r4', active.first):
+    if active is None or not stats.holds('r4', active.first):
         return {}
     ship = Listing(lib, '_ZN4Ship12refreshValueEv')
     reset, entry, head, following = (ship.unique(t) for t in (ANDROID_RESET, ANDROID_LOOP_ENTRY, ANDROID_LOOP_HEAD, ANDROID_LOOP_NEXT))
     # r4 holds `this` from its first copy (the reset opens with one) through the loop.
-    if None in (reset, entry, head, following) or not ship.holds_this('r4', following.last):
+    if None in (reset, entry, head, following) or not ship.holds('r4', following.last):
         return {}
     if not (ship.target(entry['head']) == ship.target(following['head']) == head.first
             and ship.target(head['next']) == following.first and ship.target(head['skip']) == following.first + 8):

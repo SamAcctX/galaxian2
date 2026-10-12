@@ -5,8 +5,10 @@ instruction as one line of Capstone text, `mnemonic op_str`, except that calls
 read `call SYMBOL` and PC-relative loads read `MNEMONIC REG, =0xWORD` (the pool
 word). Readers match templates line by line: text is literal, `{name}` captures
 one operand token (a register, `#` value or branch address) and a repeated
-`{name}` must repeat the same token. Nothing is executed.
+`{name}` must repeat the same token. A line may open with a `label:` that
+`{@label}` branches inside the template must reach. Nothing is executed.
 """
+import functools
 import re
 import struct
 
@@ -15,11 +17,18 @@ from .android_library import callee, instructions
 TOKEN = r'[^\s,\[\]{}]+'
 
 
+@functools.lru_cache(maxsize=None)
 def compile_shape(template):
-    seen, parts = set(), []
+    """(pattern, {label: line}) for a template."""
+    seen, parts, labels = set(), [], {}
     lines = [line.strip() for line in template.strip().splitlines() if line.strip()]
-    for piece in re.split(r'(\{\w*\})', '\n'.join(lines)):
-        name = piece[1:-1] if piece.startswith('{') and piece.endswith('}') else None
+    for index, line in enumerate(lines):
+        label = re.match(r'(\w+): ', line)
+        if label:
+            labels[label[1]] = index
+            lines[index] = line[label.end():]
+    for piece in re.split(r'(\{@?\w*\})', '\n'.join(lines)):
+        name = piece[1:-1].replace('@', 'at_') if piece.startswith('{') and piece.endswith('}') else None
         if name is None:
             parts.append(re.escape(piece))
         elif not name:
@@ -29,7 +38,8 @@ def compile_shape(template):
         else:
             seen.add(name)
             parts.append('(?P<%s>%s)' % (name, TOKEN))
-    return re.compile('^' + ''.join(parts) + '\n', re.M)
+    assert {name[3:] for name in seen if name.startswith('at_')} <= set(labels), 'branch to an undefined template label'
+    return re.compile('^' + ''.join(parts) + '\n', re.M), labels
 
 
 def number(token):
@@ -51,6 +61,14 @@ class Shape:
     def span(self):
         return self.listing.span(self.first, self.last)
 
+    def index(self, name):
+        """Instruction index of the line holding group `name`."""
+        return self.first + self.match.string.count('\n', self.match.start(), self.match.start(name))
+
+    def pool(self, name):
+        """(word, provenance) of the pool word the load holding group `name` reads."""
+        return self.value(name), self.listing.pool(self.index(name))
+
 
 class Listing:
     def __init__(self, lib, symbol):
@@ -66,11 +84,13 @@ class Listing:
         self.index = {ins.address: i for i, ins in enumerate(self.code)}
 
     def find(self, template, first=0):
-        """Every match starting at instruction `first` or later."""
+        """Every match starting at instruction `first` or later whose labels its branches reach."""
+        pattern, labels = compile_shape(template)
         result = []
-        for match in compile_shape(template).finditer(self.text, self.offsets.get(first, len(self.text))):
+        for match in pattern.finditer(self.text, self.offsets.get(first, len(self.text))):
             start = self.starts[match.start()]
-            result.append(Shape(self, match, start, start + match[0].count('\n') - 1))
+            if all(self.target(match['at_' + label]) == start + line for label, line in labels.items() if 'at_' + label in match.groupdict()):
+                result.append(Shape(self, match, start, start + match[0].count('\n') - 1))
         return result
 
     def unique(self, template, first=0):
@@ -97,6 +117,12 @@ class Listing:
         return {'offset': self.lib.slice_offset + text['offset'] + start - text['address'],
                 'bytes': self.code[last].address + self.code[last].size - start}
 
+    def pool(self, index):
+        """Provenance of the pool word the PC-relative load at `index` reads."""
+        ins = self.code[index]
+        word = ((ins.address + 4) & ~3) + ins.operands[1].mem.disp
+        return {'offset': self.lib.slice_offset + self.lib.text['offset'] + word - self.lib.text['address'], 'bytes': 4}
+
     def case(self, index, value):
         """Target index of case `value` (>= 0) of the tbb/tbh at instruction `index`.
 
@@ -119,13 +145,12 @@ class Listing:
         load = re.search(r'=(0x[0-9a-f]+)$', self.lines[back]) if back is not None else None
         return (int(load[1], 16) + self.code[index].address + 4) & 0xffffffff if load else None
 
-    def holds_this(self, register, last):
-        """Whether the first `mov REG, r0` copies the incoming r0 (`this`) and REG keeps it through `last`.
-
-        Callees preserve r4-r11, so calls in between do not matter.
+    def holds(self, register, last, argument='r0'):
+        """Whether the first `mov REG, ARG` copies the incoming argument register (r0: `this`)
+        and REG keeps it through `last`. Callees preserve r4-r11, so calls in between do not matter.
         """
-        copy = (self.find('mov %s, r0' % register) or [None])[0]
-        return (copy is not None and copy.first <= last and not self.writes(0, copy.first - 1, 'r0')
+        copy = (self.find('mov %s, %s' % (register, argument)) or [None])[0]
+        return (copy is not None and copy.first <= last and not self.writes(0, copy.first - 1, argument)
                 and not self.writes(copy.first + 1, last, register))
 
     def writes(self, first, last, register):

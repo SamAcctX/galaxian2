@@ -88,7 +88,7 @@ def android_activation(lib, actors, camera):
         return {}
     fighter = Listing(lib, '_ZN13PlayerFighterC1EiiP6PlayerP10AEGeometryfffb')
     table = fighter.unique(ANDROID_TABLE)
-    if table is None or not fighter.holds_this('r6', table.last):
+    if table is None or not fighter.holds('r6', table.last):
         return {}
     reference = relocation(lib, fighter.address(table.first + 5))
     if reference is None or reference[0] != '_ZTV13PlayerFighter':

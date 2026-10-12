@@ -253,14 +253,14 @@ def android_initialization(lib, factory, opening_deactivation):
     stores = stats.unique(ANDROID_STATS)
     flags = stats.unique(ANDROID_FLAGS) if stores else None
     # r4 holds `this` from its first copy (the stores open with one) to the flags.
-    if selector is None or flags is None or not stats.holds_this('r4', flags.first):
+    if selector is None or flags is None or not stats.holds('r4', flags.first):
         return {}
     actor = Listing(lib, fighter['actor'])
     base_call = actor.unique(ANDROID_BASE_CALL)
     base = Listing(lib, base_call['base']) if base_call else None
     actor_flags = base.unique(ANDROID_ACTOR_FLAGS) if base else None
     point = base.unique(ANDROID_POINT, actor_flags.last + 1) if actor_flags else None
-    if point is None or not base.holds_this('r5', point.last):
+    if point is None or not base.holds('r5', point.last):
         return {}
     deactivation = Listing(lib, opening_deactivation).at(ANDROID_DEACTIVATION, 0)
     activity = Listing(lib, deactivation['setter']).at(ANDROID_ACTIVITY, 0) if deactivation else None
