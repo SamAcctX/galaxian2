@@ -63,10 +63,19 @@ def thumb(text, at):
         (r'pop\.w \{(.*)\}', lambda l: half(0xe8bd, mask(l))),
         (r'movw (\w+), #(\S+)', lambda d, v: Thumb(0).movw(reg(d), number(v)).code),
         (r'movt (\w+), #(\S+)', lambda d, v: Thumb(0).movt(reg(d), number(v)).code),
-        (r'mov\.w (\w+), #-1', lambda d: Thumb(0).minus_one(reg(d)).code),
+        (r'mov(?:eq|ne)?\.w (\w+), #-1', lambda d: Thumb(0).minus_one(reg(d)).code),
+        (r'umull (\w+), (\w+), (\w+), (\w+)', lambda lo, hi, n, m: half(0xfba0 | reg(n), reg(lo) << 12 | reg(hi) << 8 | reg(m))),
+        (r'muls (r[0-7]), (r[0-7]), (r[0-7])', lambda d, n, m: half(0x4340 | reg(n) << 3 | reg(d))),
+        (r'stm\.w (\w+), \{(.*)\}', lambda n, l: half(0xe880 | reg(n), mask(l))),
+        (r'str (\w+), \[(\w+)\], #(\S+)', lambda t, n, v: half(0xf840 | reg(n), reg(t) << 12 | 0xb00 | number(v))),
+        (r'ldr (\w+), \[(\w+), #(\S+)\]!', lambda t, n, v: half(0xf850 | reg(n), reg(t) << 12 | 0xf00 | number(v))),
+        (r'adds\.w (\w+), (\w+), #(\S+)', lambda d, n, v: half(0xf110 | fields(number(v))[0] | reg(n), fields(number(v))[1] | reg(d) << 8)),
+        (r'adc (\w+), (\w+), #(\S+)', lambda d, n, v: half(0xf140 | fields(number(v))[0] | reg(n), fields(number(v))[1] | reg(d) << 8)),
+        (r'subs\.w (\w+), (\w+), (\w+)', lambda d, n, m: half(0xebb0 | reg(n), reg(d) << 8 | reg(m))),
+        (r'sbcs\.w (\w+), (\w+), (\w+)', lambda d, n, m: half(0xeb70 | reg(n), reg(d) << 8 | reg(m))),
         (r'mov\.w (\w+), #(\S+)', lambda d, v: Thumb(0).mov_imm(reg(d), number(v)).code),
         (r'mov(?:eq|ne)? (\w+), (\w+)', lambda d, m: Thumb(0).mov(reg(d), reg(m)).code),
-        (r'(?:movs|mov[a-z]{2}) (r[0-7]), #(\S+)', lambda d, v: half(0x2000 | reg(d) << 8 | number(v))),
+        (r'(?:movs|mov[a-z]{2}) (r[0-7]), #(\S+)', lambda d, v: half(0x2000 | reg(d) << 8 | number(v)) if number(v) < 256 else None),
         (r'ldr (r[0-7]), \[pc, #(\S+)\]', lambda t, v: literal(t, v, False)),
         (r'ldr\.w (\w+), \[pc, #(\S+)\]', lambda t, v: literal(t, v, True)),
         (r'ldr (r[0-7]), \[(r[0-7])(?:, #(\S+))?\]', lambda t, n, v=None: half(0x6800 | number(v or '0') // 4 << 6 | reg(n) << 3 | reg(t))),
@@ -86,7 +95,7 @@ def thumb(text, at):
         (r'bx lr', lambda: half(0x4770)),
         (r'nop', lambda: half(0xbf00)),
         (r'ldr (r[0-7]), \[sp, #(\S+)\]', lambda t, v: half(0x9800 | reg(t) << 8 | number(v) // 4)),
-        (r'str (r[0-7]), \[sp, #(\S+)\]', lambda t, v: half(0x9000 | reg(t) << 8 | number(v) // 4)),
+        (r'str (r[0-7]), \[sp(?:, #(\S+))?\]', lambda t, v='0': half(0x9000 | reg(t) << 8 | number(v) // 4)),
         (r'str (r[0-7]), \[(r[0-7])(?:, #(\S+))?\]', lambda t, n, v='0': half(0x6000 | number(v) // 4 << 6 | reg(n) << 3 | reg(t))),
         (r'ldr (\w+), \[(\w+)\], #(\S+)', lambda t, n, v: half(0xf850 | reg(n), reg(t) << 12 | 0xb00 | number(v))),
         (r'uxth (r[0-7]), (r[0-7])', lambda d, m: half(0xb280 | reg(m) << 3 | reg(d))),
@@ -128,7 +137,10 @@ def thumb(text, at):
     for pattern, encode in forms:
         found = re.fullmatch(pattern, text)
         if found:
-            return encode(*[g for g in found.groups() if g is not None])
+            code = encode(*[g for g in found.groups() if g is not None])
+            if code is None:
+                break
+            return code
     raise ValueError(text)
 
 

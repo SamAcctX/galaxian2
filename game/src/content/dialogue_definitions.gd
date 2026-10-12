@@ -112,13 +112,18 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 		sizes = {"single_constructor": 91, "range_wrapper": 10, "range_constructor": 143, "dispatch": 44, "dispatch_table": 648, "duration": 32, "display_delay": 26}
 	elif architecture == "armv7":
 		sizes = {"single_constructor": 50, "range_wrapper": 30, "range_constructor": 104, "dispatch": 10, "dispatch_table": 324, "duration": 32, "display_delay": 44}
+	elif architecture == "android-armv7":
+		# Android calls the range constructor directly: its 4-byte call stands for the wrapper.
+		sizes = {"single_constructor": 36, "range_wrapper": 4, "range_constructor": 78, "dispatch": 18, "dispatch_table": 324, "duration": 26, "display_delay": 30}
 	if campaign_cursor == 1:
 		sizes.erase("range_wrapper"); sizes.erase("range_constructor")
 		if architecture == "armv7": sizes.shared_store = 14
+		if architecture == "android-armv7": sizes.shared_store = 12
 	var provenance: Variant = data.get("provenance")
 	if sizes.is_empty() or not provenance is Dictionary or provenance.size() != sizes.size() + 1: return "Missing radio provenance"
 	var declaration: Variant = provenance.get("declaration")
-	if not declaration is Dictionary or not Numbers.integer(declaration.get("bytes"), 1000 if campaign_cursor == 0 else 150, 2048 if campaign_cursor == 0 else 384): return "Invalid radio declaration extent"
+	var bounds: Array = ([600, 1200] if campaign_cursor == 0 else [100, 384]) if architecture == "android-armv7" else ([1000, 2048] if campaign_cursor == 0 else [150, 384])
+	if not declaration is Dictionary or not Numbers.integer(declaration.get("bytes"), bounds[0], bounds[1]): return "Invalid radio declaration extent"
 	sizes.declaration = int(declaration.bytes)
 	for key in sizes:
 		var row: Variant = provenance.get(key)
@@ -126,7 +131,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 	if campaign_cursor == 1:
 		for key in ["dispatch", "dispatch_table", "single_constructor", "duration", "display_delay"]:
 			if provenance[key] != opening.get("provenance", {}).get(key): return "Rescue radio belongs to another declaration owner"
-		if architecture == "armv7":
+		if architecture in ["armv7", "android-armv7"]:
 			var shared: Dictionary = provenance.shared_store
 			if shared.offset < declaration.offset + declaration.bytes and declaration.offset < shared.offset + shared.bytes: return "Overlapping rescue radio declarations"
 	return ""

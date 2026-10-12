@@ -3,6 +3,11 @@
 The reader accepts one compiler layout per architecture, verifies dispatch slot
 zero/one and linked record constructors, and emits data only. It does not interpret
 mission code, execute instructions or infer campaign completion from dialogue.
+
+Android: Level::createRadioMessages(int) cases 0 and 1 build the lists with
+RadioMessage::RadioMessage(int, int, int, int) and its five-argument range form;
+Radio::update and Radio::draw hold the timing. Android text ids are mapped to
+the Mac 1.0.7 numbering.
 """
 import struct
 from .opening_loadout import template
@@ -76,6 +81,11 @@ def extract_arrival_dialogue(mach, opening):
 
 def extract_dialogue(mach, cursor):
     if cursor not in (0, 1): return {}
+    if mach.architecture == 'android-armv7':
+        try:
+            return android_dialogue(mach, cursor)
+        except ValueError:
+            return {}
     import capstone
     mac = mach.architecture == 'x86_64'
     if not mac and mach.architecture != 'armv7': return {}
@@ -174,16 +184,10 @@ def read_list(mach, address, decoder, mac, cursor=0):
             t('ldr',f'{owner}, [sp, #0x14]'); t('ldr.w',f'r1, [{owner}, #0x114]'); t('ldr','r1, [r1, #4]')
             suffix = '' if index == 0 else f', #0x{index * 4:x}' if index > 2 else f', #{index * 4}'
             t('str',f'r0, [r1{suffix}]')
-        if not (0 <= string_id < 65536 and 0 <= speaker < 65536 and condition in (5,6,9,27) and 0 <= value <= 2147483647 and 1 <= amount <= 256):
-            raise ValueError('Invalid radio declaration')
-        if condition != 9 and amount != 1: raise ValueError('Unexpected event value range')
-        if value + amount - 1 > 2147483647: raise ValueError('Event value range overflow')
-        if condition == 6 and (value >= count or value == index): raise ValueError('Invalid event dependency')
-        rows.append({'text_id':string_id,'speaker_id':speaker,'condition':condition,'values':list(range(value,value+amount))})
+        rows.append(event(index, count, string_id, speaker, condition, value, amount))
     end_target = (shared_store or d).call('jmp' if mac else 'b.w')
     if len(single_targets) != 1 or len(range_targets) != (1 if cursor == 0 else 0): raise ValueError('Inconsistent record constructors')
-    if cursor == 1 and [(r['condition'], r['values']) for r in rows] != [(5, [rows[0]['values'][0]]), (6, [0]), (6, [1])]:
-        raise ValueError('Unsupported rescue radio dependencies')
+    rescue_dependencies(cursor, rows)
     provenance = {'declaration': {'offset': section_bytes(mach,address,d.end-address,b'__text')[1], 'bytes': d.end-address}}
     if shared_store:
         provenance['shared_store'] = {'offset': section_bytes(mach,shared_address,14,b'__text')[1], 'bytes': 14}
@@ -209,6 +213,20 @@ def read_list(mach, address, decoder, mac, cursor=0):
         # External allocator stubs may live in __symbol_stub4 on ARM.
         if not any(s['address'] <= target < s['address']+s['length'] for s in mach.sections): raise ValueError('Unbacked declaration link')
     return {'campaign_cursor':cursor,'events':rows,'provenance':provenance}
+
+
+def event(index, count, string_id, speaker, condition, value, amount):
+    if not (0 <= string_id < 65536 and 0 <= speaker < 65536 and condition in (5,6,9,27) and 0 <= value <= 2147483647 and 1 <= amount <= 256):
+        raise ValueError('Invalid radio declaration')
+    if condition != 9 and amount != 1: raise ValueError('Unexpected event value range')
+    if value + amount - 1 > 2147483647: raise ValueError('Event value range overflow')
+    if condition == 6 and (value >= count or value == index): raise ValueError('Invalid event dependency')
+    return {'text_id':string_id,'speaker_id':speaker,'condition':condition,'values':list(range(value,value+amount))}
+
+
+def rescue_dependencies(cursor, rows):
+    if cursor == 1 and [(r['condition'], r['values']) for r in rows] != [(5, [rows[0]['values'][0]]), (6, [0]), (6, [1])]:
+        raise ValueError('Unsupported rescue radio dependencies')
 
 
 def read_range_constructor(mach, decoder, mac, wrapper_address, helper):
@@ -247,3 +265,206 @@ def read_timing(mach, code, decoder):
                 if len(ins) != 1 or ins[0].mnemonic != 'bne.w': raise ValueError('Unknown radio delay guard')
         provenance[key] = {'offset': mach.slice_offset + mach.text['offset'] + m.start(), 'bytes': len(m[0])}
     return {'display_delay_ms': 2000, 'base_duration_ms': 1500, 'per_line_ms': 2000}, provenance
+
+
+RADIO_MESSAGES = '_ZN5Level19createRadioMessagesEi'
+SINGLE, RANGE = '_ZN12RadioMessageC1Eiiii', '_ZN12RadioMessageC1Eiiiii'
+ANDROID_DISPATCH = """
+mov r4, r0
+movs r0, #0
+str.w r0, [r4, #0x114]
+cmp r1, #0xa1
+bhi.w #{outside}
+tbh [pc, r1, lsl #1] {cases:324}
+"""
+ANDROID_LIST = """
+movs r0, #0xc
+blx <_Znwj>
+mov r5, r0
+movs r0, #4
+blx <_Znaj>
+movs r6, #0
+movs r1, #1
+str r0, [r5, #4]
+str r1, [r5, #8]
+mov r1, r5
+str r6, [r0]
+movs r0, #{count}
+str r6, [r5]
+str.w r5, [r4, #0x114]
+blx <_Z14ArraySetLengthIP12RadioMessageEvjR5ArrayIT_E>
+"""
+# Fields from +8: text, speaker, condition, first value; one value (or `count` from
+# the first) in the array at +0x1c, its length at +0x18.
+ANDROID_SINGLE = """
+push {r4, r5, r6, r7, lr}
+add r7, sp, #0xc
+sub sp, #4
+mov r4, r0
+movs r6, #0
+add.w r0, r4, #8
+ldr r5, [r7, #8]
+strd r6, r6, [r4]
+stm r0!, {r1, r2, r3, r5}
+movs r0, #4
+blx <_Znaj>
+str r0, [r4, #0x1c]
+str r5, [r0]
+movs r0, #1
+str r0, [r4, #0x18]
+"""
+ANDROID_RANGE = """
+push.w {r4, r5, r6, r7, r8, sb, lr}
+add r7, sp, #0xc
+sub sp, #4
+mov r4, r0
+ldrd r5, r8, [r7, #0x10]
+movs r0, #4
+mov.w sb, #0
+umull r0, r6, r8, r0
+add.w ip, r4, #8
+strd sb, sb, [r4]
+stm.w ip, {r1, r2, r3, r5}
+cmp r6, #0
+it ne
+movne r6, #1
+cmp r6, #0
+it ne
+movne.w r0, #-1
+blx <_Znaj>
+str r0, [r4, #0x1c]
+cmp.w r8, #1
+blt @stored
+mov r1, r8
+copy: str r5, [r0], #4
+adds r5, #1
+subs r1, #1
+bne @copy
+stored: str.w r8, [r4, #0x18]
+"""
+# Radio::update: duration = lines x per_line + base; Radio::draw waits `delay` ms.
+ANDROID_DURATION = """
+mov.w r1, #{per_line}
+ldr.w r0, [sl, #8]
+ldr r0, [r0]
+muls r0, r1, r0
+addw r0, r0, #{base}
+str.w r0, [sl, #0x28]
+movs r0, #1
+strb.w r0, [sl, #0x2d]
+"""
+ANDROID_DELAY = """
+mov r8, r4
+ldr r0, [r8, #0x18]!
+ldr.w r1, [r8, #4]
+adds.w r0, r0, #{delay}
+adc r1, r1, #0
+subs.w r0, r0, fp
+sbcs.w r0, r1, r6
+bge.w #{waiting}
+"""
+
+
+def android_dialogue(lib, cursor):
+    from .android_blocks import find, match, offset
+    from .text_ids import canonical_id
+    dispatch = find(lib, RADIO_MESSAGES, ANDROID_DISPATCH)
+    single = find(lib, SINGLE, ANDROID_SINGLE)
+    duration = find(lib, '_ZN5Radio6updateElP9PlayerEgoP11LevelScript', ANDROID_DURATION)
+    delay = find(lib, '_ZN5Radio4drawExP9PlayerEgoP11LevelScript', ANDROID_DELAY)
+    if not dispatch or not single or not duration or not delay or single['start'] != lib.symbols[SINGLE][0]:
+        return {}
+    table, cases = dispatch['tables']['cases']
+    start = table + 2 * struct.unpack_from('<H', cases, 2 * cursor)[0]
+    block = match(lib, RADIO_MESSAGES, ANDROID_LIST, start)
+    if block is None or block['values']['count'] != (23 if cursor == 0 else 3):
+        return {}
+    count = block['values']['count']
+    # The list block leaves r6 = 0 (callee-saved across ArraySetLength).
+    calls, segments, end = android_events(lib, block['end'], count, {'r6': 0})
+    rows = []
+    for index, (kind, text, speaker, condition, value, amount, _) in enumerate(calls):
+        if canonical_id(text) is None:
+            raise ValueError('Radio text outside the Android table')
+        rows.append(event(index, count, canonical_id(text), speaker, condition, value, amount))
+    rescue_dependencies(cursor, rows)
+    if [kind for kind, *_ in calls].count(RANGE) != (1 if cursor == 0 else 0):
+        raise ValueError('Inconsistent record constructors')
+    extent = lambda a, b: {'offset': offset(lib, a), 'bytes': b - a}
+    (first, last), *shared = segments
+    provenance = {'declaration': extent(start, last), 'dispatch': extent(dispatch['start'], table),
+                  'dispatch_table': extent(table, table + len(cases)), 'single_constructor': extent(single['start'], single['end']),
+                  'duration': extent(duration['start'], duration['end']), 'display_delay': extent(delay['start'], delay['end'])}
+    if shared:
+        provenance['shared_store'] = extent(*shared[0])
+    if cursor == 0:
+        ranged = find(lib, RANGE, ANDROID_RANGE)
+        if ranged is None or ranged['start'] != lib.symbols[RANGE][0]:
+            return {}
+        # Android calls the range constructor directly: the call stands for the Mac's wrapper.
+        call = next(row[-1] for row in calls if row[0] == RANGE)
+        provenance['range_wrapper'] = extent(call, call + 4)
+        provenance['range_constructor'] = extent(ranged['start'], ranged['end'])
+    timing = {'display_delay_ms': delay['values']['delay'], 'base_duration_ms': duration['values']['base'], 'per_line_ms': duration['values']['per_line']}
+    return {'campaign_cursor': cursor, 'events': rows, 'timing': timing, 'provenance': provenance}
+
+
+def android_events(lib, address, count, registers):
+    """The `count` events built and stored in order after the list: each a 40-byte
+    RadioMessage constructed from constant registers and outgoing stack arguments.
+    Follows unconditional branches; any other instruction is unsupported.
+    Returns (calls, [(start, end)] code runs, the final branch's target)."""
+    import re
+    import capstone
+    from .android_library import callee
+    decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+    decoder.detail = True
+    text, (start, size) = lib.text, lib.symbols[RADIO_MESSAGES]
+    slots, calls, stored, segments, run = {}, [], 0, [], address
+    created = constructed = None
+    while start <= address < start + size and len(segments) < 3:
+        at = text['offset'] + address - text['address']
+        ins = next(decoder.disasm(lib.data[at:at + 4], address), None)
+        if ins is None:
+            raise ValueError('Undecodable radio declaration')
+        line = ins.mnemonic + ' ' + ins.op_str
+        address += ins.size
+        if found := re.fullmatch(r'(?:movs|movw|mov\.w) (\w+), #(-?\w+)', line):
+            registers[found[1]] = int(found[2], 0)
+        elif found := re.fullmatch(r'mov (\w+), (\w+)', line):
+            registers[found[1]] = registers.get(found[2])
+        elif found := re.fullmatch(r'str (\w+), \[sp(?:, #(\w+))?\]', line):
+            slots[int(found[2] or '0', 0)] = registers.get(found[1])
+        elif found := re.fullmatch(r'strd (\w+), (\w+), \[sp\]', line):
+            slots[0], slots[4] = registers.get(found[1]), registers.get(found[2])
+        elif line == 'ldr.w r0, [r4, #0x114]':
+            registers['r0'] = 'list'
+        elif line == 'ldr r0, [r0, #4]' and registers.get('r0') == 'list':
+            registers['r0'] = 'items'
+        elif (found := re.fullmatch(r'str (\w+), \[r0(?:, #(\w+))?\]', line)) and registers.get('r0') == 'items':
+            # The constructed message goes to the next list slot.
+            if int(found[2] or '0', 0) != 4 * stored or constructed is None or registers.get(found[1]) != constructed:
+                raise ValueError('Radio message stored out of order')
+            stored, constructed = stored + 1, None
+        elif ins.mnemonic in ('bl', 'blx'):
+            name = callee(lib, ins)
+            arguments = [registers.get(r) for r in ('r0', 'r1', 'r2', 'r3')] + [slots.get(0), slots.get(4)]
+            registers, slots = {k: v for k, v in registers.items() if k in ('r4', 'r5', 'r6', 'r7', 'r8', 'sb', 'sl', 'fp')}, {}
+            if name == '_Znwj' and arguments[0] == 40:
+                created = registers['r0'] = ('message', ins.address)
+            elif name in (SINGLE, RANGE) and created is not None and arguments[0] == created:
+                values = arguments[1:6 if name == RANGE else 5]
+                if any(type(v) is not int for v in values):
+                    raise ValueError('Nonconstant radio declaration field')
+                calls.append((name, *values[:4], values[4] if name == RANGE else 1, ins.address))
+                constructed, created = arguments[0], None
+            else:
+                raise ValueError('Unknown radio declaration call')
+        elif found := re.fullmatch(r'b(?:\.w)? #(0x\w+)', line):
+            segments.append((run, address))
+            if stored == count:
+                return calls, segments, int(found[1], 16)
+            address = run = int(found[1], 16)
+        else:
+            raise ValueError('Unsupported radio declaration instruction: ' + line)
+    raise ValueError('Unterminated radio declaration')
