@@ -112,6 +112,22 @@ class Listing:
         entry = self.lib.data[at] if width == 1 else struct.unpack_from('<H', self.lib.data, at)[0]
         return self.index.get(ins.address + 4 + 2 * entry)
 
+    def address(self, index):
+        """Address the `add rN, pc` at `index` builds from the latest pool load into rN, or None."""
+        add = re.fullmatch(r'add (\w+), pc', self.lines[index])
+        back = next((i for i in range(index - 1, -1, -1) if add and self.writes(i, i, add[1])), None)
+        load = re.search(r'=(0x[0-9a-f]+)$', self.lines[back]) if back is not None else None
+        return (int(load[1], 16) + self.code[index].address + 4) & 0xffffffff if load else None
+
+    def holds_this(self, register, last):
+        """Whether the first `mov REG, r0` copies the incoming r0 (`this`) and REG keeps it through `last`.
+
+        Callees preserve r4-r11, so calls in between do not matter.
+        """
+        copy = (self.find('mov %s, r0' % register) or [None])[0]
+        return (copy is not None and copy.first <= last and not self.writes(0, copy.first - 1, 'r0')
+                and not self.writes(copy.first + 1, last, register))
+
     def writes(self, first, last, register):
         """Whether any instruction in [first, last] writes the named register."""
         return any(ins.reg_name(r) == register for ins in self.code[first:last + 1] for r in ins.regs_access()[1])
@@ -133,3 +149,38 @@ def render(lib, ins):
         if text['address'] <= pool and pool + 4 <= text['address'] + text['length']:
             return '%s %s, =%#x' % (ins.mnemonic, ins.reg_name(ops[0].reg), struct.unpack_from('<I', lib.data, at)[0])
     return ('%s %s' % (ins.mnemonic, ins.op_str)).strip()
+
+
+def relocation(lib, address):
+    """(symbol, provenance of its .rel.dyn entry) for a relocated word, or None ('' for relative words)."""
+    cache = lib.__dict__.get('_relocations')
+    if cache is None:
+        cache = {}
+        section = lib.elf_sections.get('.rel.dyn')
+        if section and not section['length'] % 8:
+            for at in range(section['offset'], section['offset'] + section['length'], 8):
+                where, info = lib.unpack('<II', at)
+                cache[where] = (lib.symbol_name(info >> 8), {'offset': lib.slice_offset + at, 'bytes': 8})
+        lib.__dict__['_relocations'] = cache
+    return cache.get(address)
+
+
+def objects(lib):
+    """Address of each defined data symbol in .dynsym, by name."""
+    cache = lib.__dict__.get('_objects')
+    if cache is None:
+        cache = {}
+        table = lib.elf_sections.get('.dynsym')
+        if table and not table['length'] % 16:
+            for index in range(table['length'] // 16):
+                _, value, _, info, _, shndx = lib.unpack('<IIIBBH', table['offset'] + 16 * index)
+                if info & 15 == 1 and shndx:
+                    cache[lib.symbol_name(index)] = value
+        lib.__dict__['_objects'] = cache
+    return cache
+
+
+def vtable_slot(lib, table, slot):
+    """Address of `slot` in the vtable symbol `table` (after its two header words), or None."""
+    start = objects(lib).get(table)
+    return None if start is None else start + 8 + 4 * slot

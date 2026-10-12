@@ -252,18 +252,15 @@ def android_initialization(lib, factory, opening_deactivation):
     stats = Listing(lib, selection['stats'])
     stores = stats.unique(ANDROID_STATS)
     flags = stats.unique(ANDROID_FLAGS) if stores else None
-    # r4 takes `this` before r0 changes (so before the flags, which set r0)
-    # and keeps it (callee-saved) to the flags.
-    if selector is None or flags is None or stats.writes(0, stores.first - 1, 'r0') or stats.writes(stores.first + 1, flags.first, 'r4'):
+    # r4 holds `this` from its first copy (the stores open with one) to the flags.
+    if selector is None or flags is None or not stats.holds_this('r4', flags.first):
         return {}
     actor = Listing(lib, fighter['actor'])
     base_call = actor.unique(ANDROID_BASE_CALL)
     base = Listing(lib, base_call['base']) if base_call else None
     actor_flags = base.unique(ANDROID_ACTOR_FLAGS) if base else None
     point = base.unique(ANDROID_POINT, actor_flags.last + 1) if actor_flags else None
-    # r5 takes `this` before r0 changes and keeps it to the point geometry.
-    this = base.unique('mov r5, r0') if point else None
-    if this is None or base.writes(0, this.first - 1, 'r0') or base.writes(this.first + 1, point.last, 'r5'):
+    if point is None or not base.holds_this('r5', point.last):
         return {}
     deactivation = Listing(lib, opening_deactivation).at(ANDROID_DEACTIVATION, 0)
     activity = Listing(lib, deactivation['setter']).at(ANDROID_ACTIVITY, 0) if deactivation else None

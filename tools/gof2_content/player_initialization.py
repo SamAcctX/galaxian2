@@ -190,15 +190,14 @@ def android_player(lib):
     if None in helpers.values() or helpers['shield_setter']['changed'] != helpers['armor_setter']['changed']:
         return {}
     stats = Listing(lib, '_ZN6PlayerC1Eiiiii')
-    # The first `mov r4, r0` takes `this` (r0 unchanged before it); r4 keeps it to the flags.
-    this, active = (stats.find('mov r4, r0') or [None])[0], stats.unique(ANDROID_ACTIVE)
-    if active is None or this is None or stats.writes(0, this.first - 1, 'r0') or stats.writes(this.first + 1, active.first, 'r4'):
+    active = stats.unique(ANDROID_ACTIVE)
+    if active is None or not stats.holds_this('r4', active.first):
         return {}
     ship = Listing(lib, '_ZN4Ship12refreshValueEv')
     reset, entry, head, following = (ship.unique(t) for t in (ANDROID_RESET, ANDROID_LOOP_ENTRY, ANDROID_LOOP_HEAD, ANDROID_LOOP_NEXT))
-    if None in (reset, entry, head, following) or ship.writes(0, reset.first - 1, 'r0') or ship.writes(reset.first + 1, following.last, 'r4'):
+    # r4 holds `this` from its first copy (the reset opens with one) through the loop.
+    if None in (reset, entry, head, following) or not ship.holds_this('r4', following.last):
         return {}
-    # The reset takes `this` from r0, so it precedes the loop entry (which loads r0).
     if not (ship.target(entry['head']) == ship.target(following['head']) == head.first
             and ship.target(head['next']) == following.first and ship.target(head['skip']) == following.first + 8):
         return {}

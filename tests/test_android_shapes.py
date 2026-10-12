@@ -82,3 +82,34 @@ pop {r4, r5, r6, r7, pc}''',
         self.assertFalse(listing.writes(9, 10, 'r1'))
         self.assertFalse(listing.writes(7, 8, 'r4'))
         self.assertTrue(listing.writes(0, 1, 'r4'))
+
+    def test_pool_addresses_and_vtables(self):
+        from android_text_fixture import text_library
+        from gof2_content.android_shapes import Listing, objects, relocation, vtable_slot
+        lib, addresses = text_library({'_ZN1E1jEv': 'ldr.w r0, =&_ZTV1E\nmovs r1, #0x11\nadd r0, pc\nldr r2, =0x10\nadd r1, pc\nadd r3, pc\nbx lr'},
+                                      {'_ZTV1E': [0, 0, '_ZN1E1jEv', 7, '_ZN1F1kEv'], '_ZTV1F': ['_ZTV1E']})
+        listing = Listing(lib, '_ZN1E1jEv')
+        table = objects(lib)['_ZTV1E']
+        name, span = relocation(lib, listing.address(2))
+        self.assertEqual(name, '_ZTV1E')
+        rel = lib.elf_sections['.rel.dyn']
+        self.assertEqual(lib.data[span['offset']:span['offset'] + 4], listing.address(2).to_bytes(4, 'little'))
+        self.assertTrue(rel['offset'] <= span['offset'] < rel['offset'] + rel['length'] and span['bytes'] == 8)
+        # r1 was last written by movs, not a pool load; r3 never.
+        self.assertEqual((listing.address(4), listing.address(5), listing.address(1)), (None, None, None))
+        self.assertEqual([vtable_slot(lib, '_ZTV1E', n) - table for n in range(3)], [8, 12, 16])
+        self.assertEqual([(relocation(lib, vtable_slot(lib, '_ZTV1E', n)) or [None])[0] for n in range(3)], ['_ZN1E1jEv', None, '_ZN1F1kEv'])
+        self.assertIsNone(vtable_slot(lib, '_ZTV1G', 0))
+        self.assertEqual(relocation(lib, objects(lib)['_ZTV1F'])[0], '_ZTV1E')
+        self.assertEqual(lib.data[table + 12:table + 16], bytes([7, 0, 0, 0]))
+        self.assertNotIn('_ZN1E1jEv', objects(lib))
+
+    def test_this_register(self):
+        from android_text_fixture import text_library
+        from gof2_content.android_shapes import Listing
+        lib, _ = text_library({'_ZN1H1aEv': 'mov r4, r0\ncall _ZN1B1gEv\nbx lr', '_ZN1H1bEv': 'movs r0, #1\nmov r4, r0\nbx lr',
+                               '_ZN1H1cEv': 'mov r4, r0\nmovs r4, #1\nmov r4, r0\nbx lr', '_ZN1H1dEv': 'movs r1, #0\nmov r4, r0\nbx lr'})
+        held = lambda name, last: Listing(lib, name).holds_this('r4', last)
+        self.assertEqual([held('_ZN1H1aEv', 2), held('_ZN1H1bEv', 2), held('_ZN1H1cEv', 0), held('_ZN1H1cEv', 2), held('_ZN1H1dEv', 0), held('_ZN1H1dEv', 2)],
+                         [True, False, True, False, False, True])
+        self.assertFalse(Listing(lib, '_ZN1H1aEv').holds_this('r5', 2))

@@ -4,8 +4,8 @@
 `android_shapes.Listing` renders (`mnemonic operands`, `call SYMBOL`,
 `ldr rN, =0xWORD`), with `name:` labels and `#name` branch targets, lays them
 out in a synthetic ELF (android_fixture.library) and checks every line against
-Capstone: the rendered listing must read back exactly as written. Called
-symbols that are not given become one-instruction functions.
+Capstone: the rendered listing must read back exactly as written. Called or
+vtable-listed symbols that are not given become one-instruction functions.
 """
 import re
 import struct
@@ -175,7 +175,8 @@ class Assembler:
             inner = mem(ops[0])
             return self.half(0xe8df, 0xf000 | (0x10 if m == 'tbh' else 0) | R[inner[1]])
         if m in ('ldr', 'ldr.w', 'vldr') and ops[-1].startswith('='):
-            self.fixups.append((len(self.code), m, (ops[0], int(ops[-1][1:], 0))))
+            word = ops[-1][1:]  # `&NAME`: the GOT slot of NAME, through the next `add rN, pc`
+            self.fixups.append((len(self.code), m, (ops[0], word if word.startswith('&') else int(word, 0))))
             return self.half(*([0] if m == 'ldr' else [0, 0]))
         if m == 'movs' and len(ops) == 2 and ops[1].startswith('#') and low(0):
             return self.half(0x2000 | reg(0) << 8 | self.imm(ops[1]))
@@ -328,6 +329,10 @@ class Assembler:
                 continue
             if kind in ('ldr', 'ldr.w', 'vldr'):
                 register, word = operand
+                if isinstance(word, str):
+                    add = next(a for a, t in self.lines if a > source and t == 'add %s, pc' % register)
+                    word = (self.resolve(word) - (add + 4)) & 0xffffffff
+                    self.lines = [(a, t.replace('=' + operand[1], '=%#x' % word) if a == source else t) for a, t in self.lines]
                 pool = len(self.code)
                 self.code += struct.pack('<I', word)
                 offset = self.address + pool - ((source + 4) & ~3)
@@ -360,16 +365,22 @@ class Assembler:
         return bytes(self.code)
 
 
-def text_library(functions, *, check=True):
+def text_library(functions, objects=None, *, check=True):
     """(AndroidLibrary, {symbol: address}) for {symbol: instruction text}.
 
-    Each line is checked against the importer's rendering of the assembled code.
+    `objects` adds data symbols ({name: [entry, ...]}, an entry a symbol name
+    relocated by R_ARM_ABS32, or an int word) in .data.rel.ro; `=&NAME` pool
+    loads address a GOT slot relocated to NAME (R_ARM_GLOB_DAT). Each line is
+    checked against the importer's rendering of the assembled code.
     """
     from gof2_content.android_library import AndroidLibrary
     from gof2_content.android_shapes import Listing
-    called = []
+    objects = objects or {}
+    called, slots = [], []
     for text in functions.values():
         called += [line.split()[1] for line in text.strip().splitlines() if line.split()[:1] == ['call']]
+        slots += re.findall(r'=&(\w+)', text)
+    called += [entry for entries in objects.values() for entry in entries if isinstance(entry, str) and entry not in objects]
     names = list(functions) + [n for n in dict.fromkeys(called) if n not in functions and n not in IMPORTS]
     bodies = {name: functions.get(name, 'bx lr') for name in names}
     # Two passes: sizes do not depend on targets.
@@ -378,33 +389,83 @@ def text_library(functions, *, check=True):
         addresses[name] = address
         size = len(assemble(bodies[name], address, lambda n: address)[0])
         address = (address + size + 15) & ~15
-    resolve = lambda n: addresses[n] if n in addresses else stub(n)
+    text_size = max(0x5000, (address - TEXT + 0xfff) & ~0xfff)
+    # Data after library()'s .rodata and PLT slots: objects, then one GOT word per `&NAME`.
+    data_address = TEXT + text_size + 0x3000
+    data, places = bytearray(), {}
+    for name, entries in objects.items():
+        places[name] = data_address + len(data)
+        data += bytes(4 * len(entries))
+    got = {name: data_address + len(data) + 4 * i for i, name in enumerate(dict.fromkeys(slots))}
+    data += bytes(4 * len(got))
+    resolve = lambda n: got[n[1:]] if n.startswith('&') else addresses[n] if n in addresses else stub(n)
     built, listings = [], {}
     for name in names:
         code, lines, labels = assemble(bodies[name], addresses[name], resolve)
         built.append((name, code, addresses[name]))
         listings[name] = (lines, labels)
-    text_size = max(0x5000, (address - TEXT + 0xfff) & ~0xfff)
     image = bytearray(library(built, {}, text_size=text_size, rodata=TEXT + text_size, got=TEXT + text_size + 0x1000))
-    # library() keeps .dynstr in a 512-byte slot: move the names to the end of the file.
-    names = bytearray(b'\0')
-    for index, label in enumerate(list(IMPORTS) + [name for name, _, _ in built]):
-        struct.pack_into('<I', image, 0x200 + 16 * (index + 1), len(names))
-        names += label.encode() + b'\0'
-    struct.pack_into('<2I', image, struct.unpack_from('<I', image, 32)[0] + 40 * 2 + 16, len(image), len(names))
-    image += names
-    lib = AndroidLibrary(bytes(image))
+    lib = AndroidLibrary(bytes(extend(image, built, data_address, data, places, objects, got)))
     if check:
         for name, (lines, labels) in listings.items():
             listing = Listing(lib, name)
             for at, text in lines:
-                places = {**addresses, **labels}
-                expected = re.sub(r'#(\w+)$', lambda m: '#%#x' % places[m[1]] if m[1] in places else m[0], text)
+                spots = {**addresses, **labels}
+                expected = re.sub(r'#(\w+)$', lambda m: '#%#x' % spots[m[1]] if m[1] in spots else m[0], text)
                 index = listing.index.get(at)
                 found = listing.lines[index] if index is not None else None
                 if found != expected:
                     raise AssertionError('%s %#x: wrote %r, Capstone reads %r' % (name, at, expected, found))
     return lib, addresses
+
+
+def extend(image, built, data_address, data, places, objects, got):
+    """Rebuild the symbol, string, data and relocation sections at the end of library()'s image.
+
+    library() keeps .dynstr in a 512-byte slot and has no data symbols or .rel.dyn.
+    """
+    old_table, = struct.unpack_from('<I', image, 32)
+    sections = [list(struct.unpack_from('<10I', image, old_table + 40 * i)) for i in range(8)]
+    labels = list(IMPORTS) + [name for name, _, _ in built]
+    symbols = bytearray(image[0x200:0x200 + 16 * (1 + len(labels))])
+    strings = bytearray(b'\0')
+    for index, label in enumerate(labels):
+        struct.pack_into('<I', symbols, 16 * (index + 1), len(strings))
+        strings += label.encode() + b'\0'
+    index_of = {label: index + 1 for index, label in enumerate(labels)}
+    for name, entries in objects.items():
+        index_of[name] = len(symbols) // 16
+        symbols += struct.pack('<IIIBBH', len(strings), places[name], 4 * len(entries), 0x11, 0, 8)
+        strings += name.encode() + b'\0'
+    relocations = bytearray()
+    for name, entries in objects.items():
+        for i, entry in enumerate(entries):
+            if isinstance(entry, str):
+                relocations += struct.pack('<II', places[name] + 4 * i, index_of[entry] << 8 | 2)
+            elif entry:
+                struct.pack_into('<I', data, places[name] - data_address + 4 * i, entry)
+    for name, slot in got.items():
+        relocations += struct.pack('<II', slot, index_of[name] << 8 | 21)
+    image += bytes(data_address - len(image))
+    blobs = {}
+    for key, blob in (('.data.rel.ro', data), ('.dynsym', symbols), ('.dynstr', strings), ('.rel.dyn', relocations)):
+        blobs[key] = len(image)
+        image += blob + bytes(-len(blob) % 16)
+    shstr = b'\0.dynsym\0.dynstr\0.rel.plt\0.plt\0.text\0.rodata\0.shstrtab\0.data.rel.ro\0.rel.dyn\0'
+    def at(label): return shstr.index(label.encode() + b'\0')
+    sections[1][3:6] = [blobs['.dynsym']] * 2 + [len(symbols)]
+    sections[2][3:6] = [blobs['.dynstr']] * 2 + [len(strings)]
+    sections[7][4] = len(image)
+    sections[7][0], sections[7][5] = at('.shstrtab'), len(shstr)
+    sections.append([at('.data.rel.ro'), 1, 3, blobs['.data.rel.ro'], blobs['.data.rel.ro'], len(data), 0, 0, 4, 0])
+    sections.append([at('.rel.dyn'), 9, 2, blobs['.rel.dyn'], blobs['.rel.dyn'], len(relocations), 1, 0, 4, 8])
+    image += shstr + bytes(-len(shstr) % 4)
+    table = len(image)
+    for row in sections:
+        image += struct.pack('<10I', *row)
+    struct.pack_into('<I', image, 32, table)
+    struct.pack_into('<HHH', image, 46, 40, len(sections), 7)
+    return image
 
 
 def assemble(text, address, resolve):
