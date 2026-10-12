@@ -48,3 +48,38 @@ class PlayerFlightTests(unittest.TestCase):
                 elif key=='rotation':r['provenance'][0]['offset']+=2
                 else:p['provenance'][0]['offset']+=2
                 self.assertFalse(reader.extract_opening_player_flight(m,s,a,r,p),key)
+
+
+ANDROID_PARENTS = ({'player_motion': {'release_phase': 4}}, {'player_initialization': {'ship': 1}, 'npc_initialization': {'initial_firing_allowed': True}},
+                   {'rotation_order': 'local_x_y'}, {'mode': 'elapsed'})
+
+
+class AndroidPlayerFlight(unittest.TestCase):
+    def test_android_proofs(self):
+        from android_fixture import verify_android_proof
+        verify_android_proof(self, reader, lambda lib: reader.extract_opening_player_flight(lib, *ANDROID_PARENTS))
+
+    def test_android_parents(self):
+        import copy
+        from unittest.mock import patch
+        from android_fixture import layout_library
+        from gof2_content.android_library import AndroidLibrary
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            self.assertTrue(reader.extract_opening_player_flight(lib, *ANDROID_PARENTS))
+            for index, path, value in [(0, ('player_motion', 'release_phase'), 5), (0, None, {}), (1, ('player_initialization',), {}),
+                                       (1, ('npc_initialization', 'initial_firing_allowed'), False), (1, None, {}), (2, None, {}), (3, None, {})]:
+                parents = copy.deepcopy(list(ANDROID_PARENTS))
+                if path is None:
+                    parents[index] = value
+                else:
+                    target = parents[index]
+                    for key in path[:-1]:
+                        target = target[key]
+                    target[path[-1]] = value
+                self.assertEqual(reader.extract_opening_player_flight(lib, *parents), {}, (index, path))
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'opening_player_flight_definitions.gd')
