@@ -170,4 +170,87 @@ class PortraitTextures(unittest.TestCase):
             for address in [mach.cstring['address']-1,mach.cstring['address']+1,mach.cstring['address']+mach.cstring['length']]:
                 with self.assertRaises(ValueError):source_string(mach,address)
 
+
+PORTRAITS = '_Z13loadPortraitsPN11AbyssEngine6EngineE'
+STRING, CONCAT, TEXTURE, ADD, FREE = ('_ZN11AbyssEngine6StringC1EPKcb', '_ZN11AbyssEngineplERKNS_6StringES2_',
+                                      '_ZN11AbyssEngine15ResourceTextureC2ERKNS_6StringEf',
+                                      '_ZN11AbyssEngine11PaintCanvas11AddResourceEPNS_8ResourceE', '_ZN11AbyssEngine6StringD1Ev')
+SUFFIXES = {'baseline': '', 'expanded': '_x', 'medium': '_m', 'large': '_l'}
+
+
+def android_portraits(count=3, flags=None, extension='.aei', stem_offset=0, omit=()):
+    """loadFont and loadPortraits in the Android shapes: `count` portraits 700+i named
+    data/t/pN, the second interrupted by a skipped literal pool. Returns (library, extents)."""
+    from android_fixture import TEXT, library, stub
+    from thumb_shapes import assemble
+    from test_font_selection import CREATE, FONTS, ROLES, SPACING, SPACING_HOLES
+    from gof2_content.android_library import AndroidLibrary
+    from gof2_content.font_selection import ANDROID
+    from gof2_content.portrait_textures import ANDROID_RECORD, ANDROID_SELECTION
+    names = [CREATE, SPACING, STRING, CONCAT, TEXTURE, ADD, FREE]
+    calls = {name: TEXT + 0x10 * i for i, name in enumerate(names)}
+    functions = [(name, b'\x70\x47\x00\xbf', address) for name, address in calls.items()]
+    calls['_Znwj'] = stub('_Znwj')
+    font, _, _ = assemble(ANDROID, TEXT + 0x100, {**FONTS, **SPACING_HOLES, 'tail': TEXT + 0x80}, ROLES, calls,
+                          {'cases': ['arabic', 'simplified', 'traditional', 'other', 'other', 'korean']})
+    functions.append(('_ZN7Globals8loadFontEi', font, TEXT + 0x100))
+    strings, refs, at = {}, {**ROLES, 'guard': 0x9100, 'iPadLarge': 0x9104, 'iPad': 0x9108, **(flags or {})}, 0x8000
+    def string(value):
+        nonlocal at
+        strings[at] = value
+        at += len(value) + 1
+        return at - len(value) - 1
+    for key, value in SUFFIXES.items():
+        refs[key] = string(value)
+    refs['extension'] = string(extension)
+    text, values = ANDROID_SELECTION, {}
+    for index in range(count):
+        record = ANDROID_RECORD.replace('{&stem}', '{&stem%d}' % index).replace('{&extension}', '{&extension%d}' % index).replace('{id}', '{id%d}' % index)
+        if index == 1:  # a literal pool skipped mid-record
+            record = record.replace('add r0, sp, #0x14\n', 'b @skip\n...\nskip: add r0, sp, #0x14\n', 1)
+        text += record
+        refs['stem%d' % index], refs['extension%d' % index] = string('data/t/p%d' % index) + stem_offset, refs['extension']
+        values['id%d' % index] = 700 + index
+    code, labels, _ = assemble(text + 'pop.w {r4, r5, r6, r7, r8, pc}', TEXT + 0x600, values, refs, calls)
+    functions.append((PORTRAITS, code, TEXT + 0x600))
+    functions = [row for row in functions if row[0] not in omit]
+    return AndroidLibrary(library(functions, strings)), {'suffix': labels['suffix'], 'skip': labels['skip']}
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'optional static-reader dependency')
+class AndroidPortraitTextures(unittest.TestCase):
+    def read(self, count=3, **options):
+        from unittest.mock import patch
+        from gof2_content import portrait_textures
+        with patch.object(portrait_textures, 'PORTRAITS', count):
+            return extract_portrait_textures(android_portraits(**options)[0])
+
+    def test_named_function_gives_suffixes_ids_and_stems(self):
+        from android_fixture import TEXT
+        lib, extents = android_portraits()
+        from unittest.mock import patch
+        from gof2_content import portrait_textures
+        with patch.object(portrait_textures, 'PORTRAITS', 3):
+            result = extract_portrait_textures(lib)
+        self.assertEqual({key: row['value'] for key, row in result['suffixes'].items()}, SUFFIXES)
+        self.assertEqual([(row['id'], row['stem'], row['variants']['medium']) for row in result['rows']],
+                         [(700 + i, 'data/t/p%d' % i, 'resources/data/t/p%d_m.aei' % i) for i in range(3)])
+        # The selection ends with the suffix String; records (122 bytes with narrow
+        # literal loads) follow each other, the second spanning its skip and 4-byte pool.
+        start = extents['suffix'] + 8
+        self.assertEqual(result['provenance']['selection'], {'offset': TEXT + 0x600, 'bytes': start - TEXT - 0x600})
+        self.assertEqual([(row['source_offset'], row['source_bytes']) for row in result['rows']],
+                         [(start, 122), (start + 122, 128), (start + 250, 122)])
+        self.assertEqual(result['rows'][0]['stem_offset'], 0x8000 + sum(len(v) + 1 for v in SUFFIXES.values()) + 5)
+
+    def test_each_broken_declaration_is_unsupported(self):
+        from test_font_selection import ROLES
+        cases = {'medium flag': dict(flags={'iPadHD': 0x9200}), 'wide flag': dict(flags={'n9': 0x9200}),
+                 'shared flag': dict(flags={'iPad': 0x9104}), 'extension': dict(extension='.aem'),
+                 'stem inside a string': dict(stem_offset=1), 'no portraits function': dict(omit=(PORTRAITS,))}
+        for name, options in cases.items():
+            self.assertEqual(self.read(**options), {}, name)
+        self.assertEqual(self.read(count=4), {}, 'fewer records')
+        self.assertTrue(self.read(count=3))
+
 if __name__ == '__main__': unittest.main()

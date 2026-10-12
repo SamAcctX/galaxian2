@@ -8,7 +8,7 @@ const VARIANTS := ["baseline", "expanded", "medium", "large"]
 static func validate(data: Variant, executable_bytes: int, architecture: String) -> String:
 	if not data is Dictionary: return "Missing portrait texture declarations"
 	if data.is_empty(): return ""
-	if architecture not in ["armv7", "x86_64"] or not data.get("rows") is Array or data.rows.size() != 152:
+	if architecture not in ["armv7", "x86_64", "android-armv7"] or not data.get("rows") is Array or data.rows.size() != 152:
 		return "Invalid portrait texture declarations"
 	if not data.get("suffixes") is Dictionary or data.suffixes.size() != VARIANTS.size(): return "Invalid portrait suffix declarations"
 	var suffix_values := {}
@@ -23,7 +23,8 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	var ids := {}
 	var stems := {}
 	var previous_end := 0
-	var sizes := [163, 181, 187] if architecture == "x86_64" else [322, 330, 336, 338, 354, 364, 370]
+	# Android records that hold a skipped literal pool span it.
+	var sizes: Array = {"x86_64": [163, 181, 187], "armv7": [322, 330, 336, 338, 354, 364, 370], "android-armv7": [126, 390, 392]}[architecture]
 	for row in data.rows:
 		if not row is Dictionary or not Numbers.integer(row.get("id"), 0, 65534) or ids.has(int(row.id)): return "Conflicting portrait texture ID"
 		ids[int(row.id)] = true
@@ -40,6 +41,6 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 		for key in VARIANTS:
 			if row.variants.get(key) != "resources/" + row.stem + data.suffixes[key].value + ".aei": return "Portrait variant differs from its source declaration"
 	var provenance: Variant = data.get("provenance")
-	if not provenance is Dictionary or provenance.size() != 1 or not Fonts.extent(provenance.get("selection"), "offset", "bytes", [128] if architecture == "x86_64" else [282], executable_bytes): return "Invalid portrait selection provenance"
+	if not provenance is Dictionary or provenance.size() != 1 or not Fonts.extent(provenance.get("selection"), "offset", "bytes", {"x86_64": [128], "armv7": [282], "android-armv7": [418]}[architecture], executable_bytes): return "Invalid portrait selection provenance"
 	if int(provenance.selection.offset) + int(provenance.selection.bytes) > int(data.rows[0].source_offset): return "Portrait selection overlaps its records"
 	return ""
