@@ -1,8 +1,29 @@
-"""Read flight-cache declarations for the fresh opening-to-rescue lifecycle."""
+"""Read flight-cache declarations for the fresh opening-to-rescue lifecycle.
+
+Android: Status::resetGame caches the ship's hull, shield and armor
+(Ship::getMaxHP/ShieldHP/ArmorHP) and full gamma; cursor 0 of
+Level::createCampaignMission caches the 9999999 player hull;
+Status::nextCampaignMission case 0 advances to cursor 1 with the kind 11
+mission to station 78; MGame::OnInitialize restores every cached value
+>= 0 through the Player setters, refreshes the cache unless the cursor is
+95 and resets gamma where Status::getGammaRayDamagePerSecond is zero
+(outside stations 109-113). Android has no special-quest gamma: its gamma
+depends on the station and cursor only (gamma_special_quest -1).
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 def extract_flight_player_cache(mach, opening, actors, arrival):
+    if mach.architecture == 'android-armv7':
+        try:
+            if arrival['campaign_cursor'] != 1 or not actors['player_initialization']['repair']:
+                return {}
+            if VALUES['hazard_station_min'] <= opening['station_id'] <= VALUES['hazard_station_max']:
+                return {}
+        except (KeyError, TypeError):
+            return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if proof else {}
     arch=mach.architecture
     if arch not in LAYOUTS:return {}
     try:
@@ -198,3 +219,29 @@ MAC_ALTERNATE = {'new_game_cache': ['__text',
  'constant_acf46': ['__const', 682886, 4, 'cdccac3f'],
  'gamma_return': ['__text', -4275, 11, '4883c4085b415e415f5dc3'],
  'quest_type': ['__text', -482690, 9, '554889e58b47105dc3']}
+
+ANDROID = {'new_game_cache': ('_ZN6Status9resetGameEv', 1696, 42, 'sha256:4018e29b876f192a7abb411b4f9337061aef8111fee8660a21ca5bdf85e42729'),
+           # The 9999999 hull in ip among the prologue constants, copied in case 0, then cached.
+           'opening_hull_constant': ('_ZN5Level21createCampaignMissionEv', 58, 32, 'sha256:5bccd4a6ce09b982ea3f9228df2c384cec63fd46ce45274abbf60304db3fa9bc'),
+           'opening_hull_copy': ('_ZN5Level21createCampaignMissionEv', 24956, 2, 'e346'),
+           'opening_hull_cache': ('_ZN5Level21createCampaignMissionEv', 25178, 36, 'sha256:4b42ef167a1bc93da1955509f7f7a4604438d780808a64ee07f0a823a099a671'),
+           'restore': ('_ZN5MGame12OnInitializeEv', 680, 94, 'sha256:f26e7c61568267e300fca0c2aa22e027b722de79cda9603ac5327a72c2edfad3'),
+           'cache_refresh': ('_ZN5MGame12OnInitializeEv', 782, 72, 'sha256:a073a00bc9412e0e279cfac0029b1c3e90701f1c1a3c2466f47bca42dbc05585'),
+           'gamma_reset': ('_ZN5MGame12OnInitializeEv', 854, 54, 'sha256:83b412d481d119b6c2b210111b8cec41c9da84bd635fd1b72dad656b9e4687ae'),
+           'hull_setter': ('_ZN6Player12setHitpointsEi', 0, 18, '8167d0f884208a42b8bfc0f8841029f115bc'),
+           'shield_setter': ('_ZN6Player11setShieldHPEi', 0, 38, 'sha256:9ab87676f4d2011a8fe13935bae9233e4351c8df1ef5295cf50982184ac7fc84'),
+           'armor_setter': ('_ZN6Player10setArmorHPEi', 0, 18, 'd0f890208a42b8bf1146c0f88c1029f1f9bb'),
+           'gamma_setter': ('_ZN6Player10setGammaHPEi', 0, 48, 'sha256:7eb49e97e914ee937fc6c7f9de2151de86d2a242beafec89b5ac10d1df9e6bee'),
+           'gamma_limit': ('_ZN6Player10setGammaHPEi', 48, 4, '0000c842'),
+           'ship_hull': ('_ZN4Ship8getMaxHPEv', 0, 50, 'sha256:989d04cbf873958847b311cf99b9d3e975496c62ce32708d470329ad33a26b4d'),
+           'ship_shield': ('_ZN4Ship14getMaxShieldHPEv', 0, 4, 'c0697047'),
+           'ship_armor': ('_ZN4Ship13getMaxArmorHPEv', 0, 4, '006a7047'),
+           # The old cursor + 1 is stored; case 0 of the cursor's tbh table builds the rescue mission.
+           'cursor_advance': ('_ZN6Status19nextCampaignMissionEb', 392, 8, '1846431c00214be7'),
+           'rescue_dispatch': ('_ZN6Status19nextCampaignMissionEb', 40, 28, 'sha256:7864ea79e7595ae4922b4f10cddbe5005a5d6134a87a363fa40ff3fe0d7fa174'),
+           'rescue_case': ('_ZN6Status19nextCampaignMissionEb', 68, 2, 'ad02'),
+           'rescue_quest': ('_ZN6Status19nextCampaignMissionEb', 1438, 50, 'sha256:4370fdc5f05138ea26007bd36d5b0934d3f753057103e7798ff3df17180cd52b'),
+           'gamma_context': ('_ZN6Status26getGammaRayDamagePerSecondEii', 0, 68, 'sha256:4cb3abd5212880ec9f10da030f81ec7acb502189cd49a275ac34e9efa6e89d71')}
+
+# No mission kind changes Android's gamma rate.
+ANDROID_VALUES = dict(VALUES, gamma_special_quest=-1)

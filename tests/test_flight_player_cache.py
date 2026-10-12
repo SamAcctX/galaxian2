@@ -60,3 +60,33 @@ class FlightPlayerCacheTests(unittest.TestCase):
                 elif key == 'hazard_low': o['station_id'] = 109
                 else: o['station_id'] = 113
                 self.assertEqual(reader.extract_flight_player_cache(m, o, a, r), {}, (arch, key))
+
+
+ANDROID_PARENTS = ({'station_id': 78}, {'player_initialization': {'repair': {'supported': True}}}, {'campaign_cursor': 1})
+
+
+class AndroidFlightPlayerCacheTests(unittest.TestCase):
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        verify_android_proof(self, reader, lambda lib: reader.extract_flight_player_cache(lib, *ANDROID_PARENTS))
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            self.assertTrue(reader.extract_flight_player_cache(lib, *ANDROID_PARENTS))
+            opening, actors, arrival = ANDROID_PARENTS
+            for name, parents in {'later arrival': (opening, actors, {'campaign_cursor': 2}),
+                                  'no repair': (opening, {'player_initialization': {'repair': {}}}, arrival),
+                                  'hazard station low': ({'station_id': 109}, actors, arrival),
+                                  'hazard station high': ({'station_id': 113}, actors, arrival),
+                                  'no opening': ({}, actors, arrival)}.items():
+                self.assertEqual(reader.extract_flight_player_cache(lib, *parents), {}, name)
+            for station in (108, 114):
+                self.assertTrue(reader.extract_flight_player_cache(lib, {'station_id': station}, actors, arrival), station)
+        # Only the special-quest gamma differs: Android has none.
+        self.assertEqual({k for k in reader.VALUES if reader.VALUES[k] != reader.ANDROID_VALUES[k]}, {'gamma_special_quest'})
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'flight_player_cache_definitions.gd')
