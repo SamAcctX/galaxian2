@@ -20,15 +20,22 @@ def lit(value):
     return re.escape(bytes.fromhex(value))
 
 
-def shape_at(code, shape):
+def shape_at(code, shape, lib=None):
     """Indexes where `code` holds the instructions of `shape`: (mnemonic, operand-text regex) pairs.
 
-    '@n' in an operand pattern is the address of the shape's own instruction n (a branch target).
+    '@n' in an operand pattern is the address of the shape's own instruction n (a branch target);
+    an operand pattern '=symbol' is a call of that named function (`lib` resolves it).
     """
+    from .android_library import callee
+
     def fits(i):
         for ins, (mnemonic, operands) in zip(code[i:], shape):
             if ins.mnemonic != mnemonic:
                 return False
+            if operands.startswith('='):
+                if callee(lib, ins) != operands[1:]:
+                    return False
+                continue
             operands = re.sub(r'@(\d+)', lambda m: '#%#x' % code[i + int(m[1])].address if i + int(m[1]) < len(code) else '(?!)', operands)
             if not re.fullmatch(operands, ins.op_str):
                 return False

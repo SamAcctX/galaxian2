@@ -18,6 +18,16 @@ static func definition(mac := true) -> Dictionary:
 			{"actor_id": 1, "position": [-789, -896, 1234], "forward": [1, 0, 0], "up": [0, 1, 0], "visible": true},
 			{"actor_id": 2, "position": [-789, -2304, 512], "forward": [1, 0, 0], "up": [0, 1, 0], "visible": true}]}, "provenance": provenance}
 
+static func android_definition() -> Dictionary:
+	var data := definition(false)
+	data.provenance = {}
+	var offset := 100
+	var sizes := {"initial_dispatch": 28, "initial": 222, "update_dispatch": 58, "formation": 278}
+	for key in sizes:
+		data.provenance[key] = {"offset": offset, "bytes": sizes[key]}
+		offset += sizes[key] + 16
+	return data
+
 static func dialogue() -> Dictionary:
 	var rows := []
 	for i in 23:

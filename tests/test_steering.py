@@ -120,7 +120,19 @@ def smmla(asm, rd, rn, rm, ra): return wide(asm, 0xfb500000 | rn << 16 | ra << 1
 def asrs(asm, rd, rm, shift): return asm.half(0x1000 | shift << 6 | rm << 3 | rd)
 def add_lsr(asm, rd, rn, rm, shift, kind=1):  # add.w rd, rn, rm, lsr #shift (kind 0: lsl)
     return wide(asm, 0xeb000000 | rn << 16 | (shift >> 2) << 12 | rd << 8 | (shift & 3) << 6 | kind << 4 | rm)
-def add_imm(asm, rd, rn, imm): return wide(asm, 0xf1000000 | rn << 16 | rd << 8 | imm)  # add.w rd, rn, #imm (< 256)
+def modified(value):
+    """Thumb-2 modified immediate (i:imm3:imm8) of a value below 256 or an 8-bit rotated pattern."""
+    if value < 256:
+        return value
+    return next(rotation << 7 | rotated & 0x7f for rotation in range(8, 32)
+                for rotated in [(value << rotation | value >> (32 - rotation)) & 0xffffffff] if rotated < 256 and rotated & 0x80)
+
+
+def add_imm(asm, rd, rn, imm):  # add.w rd, rn, #imm
+    field = modified(imm)
+    return wide(asm, 0xf1000000 | (field >> 11) << 26 | rn << 16 | (field >> 8 & 7) << 12 | rd << 8 | field & 255)
+def strb_w(asm, rt, rn, offset): return wide(asm, 0xf8800000 | rn << 16 | rt << 12 | offset)
+def blx_reg(asm, rm): return asm.half(0x4780 | rm << 3)
 def add_pc(asm, rd): return asm.half(0x4478 | rd)
 def ldrb(asm, rt, rn, offset): return asm.half(0x7800 | offset << 6 | rn << 3 | rt)
 def cmp_imm(asm, rn, imm): return asm.half(0x2800 | rn << 8 | imm)
@@ -164,6 +176,16 @@ def b_to(asm, target, condition=None, wide_form=False):
     if condition is None:
         return asm.half(0xe000 | offset >> 1 & 0x7ff)
     return asm.half(0xd000 | CONDITIONS[condition] << 8 | offset >> 1 & 0xff)
+
+
+def roomy_library(functions, strings=None):
+    """android_fixture.library with .dynstr moved to the image's end: its fixed slot holds about 500 name bytes."""
+    from android_fixture import IMPORTS
+    image = bytearray(library(functions, strings or {}))
+    names = b'\0' + b''.join(name.encode() + b'\0' for name in IMPORTS) + b''.join(f[0].encode() + b'\0' for f in functions)
+    table, = struct.unpack_from('<I', image, 32)
+    struct.pack_into('<III', image, table + 40 * 2 + 12, len(image), len(image), len(names))  # .dynstr address, offset, size
+    return bytes(image + names)
 
 
 def assemble(address, emit):
@@ -230,7 +252,8 @@ class AndroidSteeringTests(unittest.TestCase):
         cbz(asm, 2, asm.here() + 4 + 0x42); b_to(asm, 0x2000, 'lo'); b_to(asm, 0x2200); b_to(asm, 0x2400, 'hi', True)
         b_to(asm, 0x1000, 'eq', True); vmov_q8_zero(asm); vpush_d8(asm); push_r7(asm); pop_r7(asm)
         vmov_scalar(asm, 16, 0, 0); vmov_scalar(asm, 17, 1, 1); str_pre(asm, 0, 1, 0x40); ldrd(asm, 12, 2, 0, 0x70)
-        subs_w(asm, 0, 12, 3); sbc_w(asm, 1, 2, 1)
+        subs_w(asm, 0, 12, 3); sbc_w(asm, 1, 2, 1); add_imm(asm, 8, 13, 0x1e8); add_imm(asm, 9, 13, 0x190); strb_w(asm, 6, 9, 0x48)
+        blx_reg(asm, 4)
         decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
         self.assertEqual([f'{i.mnemonic} {i.op_str}' for i in decoder.disasm(bytes(asm.code), 0x2000)],
                          ['vadd.f32 s0, s0, s2', 'vsub.f32 s6, s8, s6', 'vdiv.f32 s2, s2, s6', 'vneg.f32 s4, s16',
@@ -242,7 +265,8 @@ class AndroidSteeringTests(unittest.TestCase):
                           'cmp r3, ip', 'adds r3, #1', 'tbb [pc, r0]', 'add.w r0, lr, r2, lsl #2', 'cbz r2, #0x20a8',
                           'blo #0x2000', 'b #0x2200', 'bhi.w #0x2400', 'beq.w #0x1000', 'vmov.i32 q8, #0', 'vpush {d8}',
                           'push {r7, lr}', 'pop {r7, pc}', 'vmov.32 d16[0], r0', 'vmov.32 d17[1], r1', 'str r0, [r1, #0x40]!',
-                          'ldrd ip, r2, [r0, #0x70]', 'subs.w r0, ip, r3', 'sbc.w r1, r2, r1'])
+                          'ldrd ip, r2, [r0, #0x70]', 'subs.w r0, ip, r3', 'sbc.w r1, r2, r1', 'add.w r8, sp, #0x1e8',
+                          'add.w sb, sp, #0x190', 'strb.w r6, [sb, #0x48]', 'blx r4'])
 
     def test_pc_literal_operands_in_both_number_styles(self):
         from android_fixture import Thumb
@@ -256,6 +280,24 @@ class AndroidSteeringTests(unittest.TestCase):
         self.assertEqual([i.op_str for i in code], ['s0, [pc, #4]', 's0, [pc]', 's0, [pc, #-0x10]', 's0, [pc, #0x2f0]'])
         self.assertEqual(shape_at(code, [('vldr', 's0, ' + PC)]), [0, 1, 2, 3])
         self.assertEqual(shape_at(code, [('vldr', 's1, ' + PC)]), [])
+
+    def test_shape_calls_name_their_target(self):
+        from android_fixture import Thumb
+        from gof2_content.android_library import AndroidLibrary, instructions
+        from gof2_content.steering import shape_at
+        lib = AndroidLibrary(library([('_Z1fv', Thumb(0x2100).push().call(0x2200).pop().finish(), 0x2100),
+                                      ('_Z1gv', Thumb(0x2200).ret().finish(), 0x2200), ('_Z1hv', Thumb(0x2300).ret().finish(), 0x2300)], {}))
+        code = instructions(lib, '_Z1fv')
+        self.assertEqual(shape_at(code, [('blx', '=_Z1gv')], lib), [1])
+        self.assertEqual(shape_at(code, [('blx', '=_Z1hv')], lib), [])
+
+    def test_roomy_library_keeps_long_names(self):
+        from android_fixture import Thumb
+        from gof2_content.android_library import AndroidLibrary
+        names = ['_Z%dlong%s' % (i, 'x' * 60) for i in range(12)]
+        functions = [(name, Thumb(0x2100 + 0x10 * i).ret().finish(), 0x2100 + 0x10 * i) for i, name in enumerate(names)]
+        self.assertEqual(set(AndroidLibrary(roomy_library(functions)).symbols) & set(names), set(names))
+        self.assertNotEqual(set(AndroidLibrary(library(functions, {})).symbols) & set(names), set(names))
 
     def test_shape_branch_targets_are_shape_instructions(self):
         from android_fixture import Thumb

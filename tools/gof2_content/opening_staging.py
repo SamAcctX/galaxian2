@@ -2,11 +2,17 @@
 
 Camera vectors are source position parameters, not resolved world-view poses.
 Only the recognized cursor-zero initial and first formation declarations qualify.
+
+Android: LevelScript's constructor, on campaign mission 0, places the camera
+and the player, turns the player to +Z and hides the three enemies;
+LevelScript::process, on mission 0 once message 2 is over, places player,
+camera and the three enemies (facing +X) and shows them.
 """
 import math
 import struct
 from .opening_loadout import template
 from .ship_models import section_bytes
+from .steering import PC, code_span, shape_at
 
 MAC_INITIAL = """
 488d05
@@ -281,7 +287,118 @@ cef84074cbf8f4d30df1200b0bf510500df5005b41f001017944cbf84414
 {jump_b6:4}
 """
 
+ANDROID_CONSTRUCTOR = '_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera'
+ANDROID_PROCESS = '_ZN11LevelScript7processEi'
+GET_PLAYER, GET_ENEMIES, CURSOR = '=_ZN5Level9getPlayerEv', '=_ZN5Level10getEnemiesEv', '=_ZN6Status25getCurrentCampaignMissionEv'
+SET_POSITION, SET_DIRECTION = '=_ZN9PlayerEgo11setPositionEfff', '=_ZN10AEGeometry12setDirectionERKN11AbyssEngine6AEMath6VectorES4_'
+SET_VISIBLE = '=_ZN10AEGeometry10setVisibleEb'
+IMM = r'#(0x[0-9a-f]+|\d+)'
+LOAD_STATUS = [('ldr.w', 'r0, ' + PC), ('add', 'r0, pc'), ('ldr', r'r0, \[r0\]'), ('ldr', r'r0, \[r0\]'), ('blx', CURSOR), ('cmp', 'r0, #0')]
+# r6 = 0; the constructor branches to the opening when the campaign mission is 0.
+INITIAL_DISPATCH = [('movs', 'r1, #0'), ('movs', 'r6, #0'), ('blx', '=_ZN9PlayerEgo10setCollideEb')] + LOAD_STATUS + [
+    ('str', r'r4, \[sp, #0x44\]'), ('beq', '#0x[0-9a-f]+')]
+ENEMY = [('mov', 'r0, sl'), ('blx', GET_ENEMIES), ('ldr', r'r0, \[r0, #4\]'), ('ldr.w', r'r0, \[r0, r4, lsl #2\]')]
+INITIAL = [('strd', r'r6, r6, \[r4\]'), ('ldr', r'r0, \[sp, #0x4c\]'), ('strb', r'r6, \[r0, #1\]'), ('mov', 'r0, sl'),
+           ('ldr.w', r'sb, \[sp, #0x48\]'), ('strb.w', r'r6, \[sb, #0x48\]'), ('blx', GET_PLAYER), ('movs', 'r1, #1'), ('movs', 'r4, #1'),
+           ('blx', '=_ZN9PlayerEgo21setComputerControlledEb'), ('mov', 'r0, sl'), ('blx', GET_PLAYER), ('ldr', r'r0, \[r0\]'),
+           ('movs', 'r1, #1'), ('blx', '=_ZN6Player13setVulnerableEb'), ('mov', 'r0, fp'), ('movs', 'r1, #1'),
+           ('strb.w', r'r4, \[r8, #0x21\]'), ('blx', '=_ZN18TargetFollowCamera12setLookAtCamEb'),
+           # camera (19/21, 23/24, 26/27: low/high halves) by vector, player (0, 0, 33/35)
+           ('movs', 'r0, ' + IMM), ('add', 'r1, sp, #0x98'), ('movt', 'r0, ' + IMM), ('str', r'r0, \[sp, #0x98\]'),
+           ('movs', 'r0, ' + IMM), ('movt', 'r0, ' + IMM), ('str', r'r0, \[sp, #0x9c\]'), ('movw', 'r0, ' + IMM),
+           ('movt', 'r0, ' + IMM), ('str', r'r0, \[sp, #0xa0\]'), ('mov', 'r0, fp'),
+           ('blx', '=_ZN18TargetFollowCamera11setPositionERKN11AbyssEngine6AEMath6VectorE'), ('mov', 'r0, sl'), ('blx', GET_PLAYER),
+           ('movw', 'r3, ' + IMM), ('movs', 'r1, #0'), ('movt', 'r3, ' + IMM), ('movs', 'r2, #0'), ('blx', SET_POSITION),
+           # direction (0, 0, 1), up (0, 1, 0)
+           ('mov', 'r0, sl'), ('blx', GET_PLAYER), ('ldr', r'r0, \[r0, #8\]'), ('mov.w', 'r1, #0x3f800000'),
+           ('strd', r'r6, r6, \[sp, #0x98\]'), ('add', 'r2, sp, #0x5c'), ('str', r'r1, \[sp, #0xa0\]'), ('strd', r'r6, r1, \[sp, #0x5c\]'),
+           ('add', 'r1, sp, #0x98'), ('str', r'r6, \[sp, #0x64\]'), ('blx', SET_DIRECTION),
+           # enemies 0-2 sleep, hidden
+           ('movs', 'r4, #0')] + ENEMY + [('blx', '=_ZN8KIPlayer10setToSleepEv')] + ENEMY[:3] + [('movs', 'r1, #0'), ENEMY[3],
+           ('ldr', r'r0, \[r0, #8\]'), ('blx', SET_VISIBLE)] + ENEMY + [('str.w', r'r6, \[r0, #0x124\]')] + ENEMY + [
+           ('adds', 'r4, #1'), ('cmp', 'r4, #3'), ('ldr', r'r0, \[r0, #4\]'), ('strb.w', r'r6, \[r0, #0x5c\]'), ('bne', '@50')]
+# r6 = messages, r8 = player, fp = enemies; process branches to the opening on campaign mission 0.
+UPDATE_DISPATCH = [('ldr.w', r'r0, \[sl, #0x18\]'), ('blx', '=_ZN5Level11getMessagesEv'), ('mov', 'r6, r0'),
+                   ('ldr.w', r'r0, \[sl, #0x18\]'), ('blx', GET_PLAYER), ('mov', 'r8, r0'), ('ldr.w', r'r0, \[sl, #0x18\]'),
+                   ('blx', GET_ENEMIES), ('mov', 'fp, r0')] + LOAD_STATUS + [('mov', 'r0, fp'), ('str', r'r0, \[sp, #0x50\]'),
+                   ('str.w', r'sb, \[sp, #0x48\]'), ('beq.w', '#0x[0-9a-f]+')]
+ACTOR = [('ldr', r'r1, \[r0\]'), ('ldr', r'r4, \[r1, #0x48\]'), ('mov', 'r1, r5'), ('blx', 'r4')]
+FORMATION = [('ldr', r'r0, \[r6, #4\]'), ('ldr', r'r0, \[r0, #8\]'), ('blx', '=_ZN12RadioMessage6isOverEv'),
+             ('ldr.w', r'r1, \[sl, #0x1c\]'), ('cmp', 'r0, #1'), ('strd', r'r6, r8, \[sp, #0x40\]'), ('it', 'eq'),
+             ('cmpeq', 'r1, #0'), ('bne.w', '#0x[0-9a-f]+'),
+             # player (10/15, 9/13, 11/16)
+             ('movw', 'r5, ' + IMM), ('movw', 'r1, ' + IMM), ('movw', 'r3, ' + IMM), ('movs', 'r0, #1'), ('movt', 'r5, ' + IMM),
+             ('str.w', r'r0, \[sl, #0x1c\]'), ('movt', 'r1, ' + IMM), ('movt', 'r3, ' + IMM), ('mov', 'r0, r8'), ('mov', 'r2, r5'),
+             ('blx', SET_POSITION),
+             # camera (player y, 20/23, 21/24), also the camera matrix translation
+             ('movw', 'sb, ' + IMM), ('movs', 'r4, ' + IMM), ('ldr.w', r'r0, \[sl, #0x14\]'), ('movt', 'sb, ' + IMM),
+             ('movt', 'r4, ' + IMM), ('mov', 'r1, r5'), ('mov', 'r2, sb'), ('mov', 'r3, r4'),
+             ('blx', '=_ZN18TargetFollowCamera11setPositionEfff'), ('ldr.w', 'r0, ' + PC), ('add', 'r0, pc'),
+             ('ldr', r'r0, \[r0\]'), ('ldr', r'r6, \[r0\]'), ('mov', 'r0, r6'), ('blx', '=_ZN11AbyssEngine11PaintCanvas16CameraGetCurrentEv'),
+             ('mov', 'r1, r0'), ('mov', 'r0, r6'), ('blx', '=_ZN11AbyssEngine11PaintCanvas14CameraGetLocalEj'),
+             ('add.w', 'r8, sp, #0x1e8'), ('mov', 'r1, r0'), ('mov', 'r2, r5'), ('mov', 'r3, sb'), ('mov', 'r0, r8'),
+             ('str', r'r4, \[sp\]'), ('blx', '=_ZN11AbyssEngine6AEMath20MatrixSetTranslationERNS0_6MatrixEfff'),
+             # enemies' positions through their vtable slot 0x48: x 46/48; y 47/49, 58/60, 68/69; z 0, 59/61, camera y
+             ('ldr.w', r'r0, \[fp, #4\]'), ('movw', 'r5, ' + IMM), ('movs', 'r2, ' + IMM), ('movt', 'r5, ' + IMM),
+             ('movt', 'r2, ' + IMM), ('movs', 'r3, #0'), ('ldr', r'r0, \[r0\]'), ('movs', 'r6, #0')] + ACTOR + [
+             ('ldr.w', r'r0, \[fp, #4\]'), ('movs', 'r2, ' + IMM), ('movw', 'r3, ' + IMM), ('movt', 'r2, ' + IMM),
+             ('movt', 'r3, ' + IMM), ('ldr', r'r0, \[r0, #4\]')] + ACTOR + [
+             ('ldr.w', r'r0, \[fp, #4\]'), ('movs', 'r2, ' + IMM), ('movt', 'r2, ' + IMM), ('mov', 'r3, sb'),
+             ('ldr', r'r0, \[r0, #8\]')] + ACTOR + [
+             # each enemy faces (1, 0, 0) with up (0, 1, 0) and is shown
+             ('add.w', 'sb, sp, #0x190'), ('mov.w', 'r4, #0x3f800000'), ('movs', 'r5, #0'), ('ldr.w', r'r0, \[fp, #4\]'),
+             ('mov', 'r1, r8'), ('mov', 'r2, sb'), ('ldr.w', r'r0, \[r0, r5, lsl #2\]'), ('ldr', r'r0, \[r0, #8\]'),
+             ('strd', r'r4, r6, \[sp, #0x1e8\]'), ('str', r'r6, \[sp, #0x1f0\]'), ('strd', r'r6, r4, \[sp, #0x190\]'),
+             ('str', r'r6, \[sp, #0x198\]'), ('blx', SET_DIRECTION), ('ldr.w', r'r0, \[fp, #4\]'), ('movs', 'r1, #1'),
+             ('ldr.w', r'r0, \[r0, r5, lsl #2\]'), ('ldr', r'r0, \[r0, #8\]'), ('blx', SET_VISIBLE), ('adds', 'r5, #1'),
+             ('cmp', 'r5, #3'), ('bne', '@79')]
+
+
+def android_staging(lib):
+    from .android_library import instructions
+    provenance = {}
+
+    def block(symbol, dispatch, shape, dispatch_key, block_key):
+        """The dispatch's branch target starts the block; returns (code, block index) or None."""
+        code = instructions(lib, symbol)
+        found = shape_at(code, dispatch, lib) if code else []
+        if len(found) != 1:
+            return None
+        target = code[found[0] + len(dispatch) - 1].operands[0].imm
+        start = next((i for i, ins in enumerate(code) if ins.address == target), None)
+        if start is None or shape_at(code[start:start + len(shape)], shape, lib) != [0]:
+            return None
+        provenance[dispatch_key] = code_span(lib, code, found[0], found[0] + len(dispatch) - 1)
+        provenance[block_key] = code_span(lib, code, start, start + len(shape) - 1)
+        return code[start:]
+    initial = block(ANDROID_CONSTRUCTOR, INITIAL_DISPATCH, INITIAL, 'initial_dispatch', 'initial')
+    formation = block(ANDROID_PROCESS, UPDATE_DISPATCH, FORMATION, 'update_dispatch', 'formation')
+    if initial is None or formation is None:
+        return {}
+
+    def number(code, low, high):
+        """The float a movw/movs low half and movt high half build."""
+        return struct.unpack('<f', struct.pack('<I', code[low].operands[1].imm | code[high].operands[1].imm << 16))[0]
+    initial_camera = [number(initial, 19, 21), number(initial, 23, 24), number(initial, 26, 27)]
+    initial_player = [0.0, 0.0, number(initial, 33, 35)]
+    player = [number(formation, 10, 15), number(formation, 9, 13), number(formation, 11, 16)]
+    camera = [player[1], number(formation, 20, 23), number(formation, 21, 24)]
+    x = number(formation, 46, 48)
+    positions = [[x, number(formation, 47, 49), 0.0], [x, number(formation, 58, 60), number(formation, 59, 61)],
+                 [x, number(formation, 68, 69), camera[1]]]
+    if any(not math.isfinite(v) or abs(v) > 10000000 for v in initial_player + initial_camera + player + camera + sum(positions, [])):
+        return {}
+    return {'initial': {'player_position': initial_player, 'player_forward': [0, 0, 1], 'player_up': [0, 1, 0],
+                        'camera_position_parameter': initial_camera, 'hidden_actor_ids': [0, 1, 2]},
+            'formation': {'after_event_finished': 2, 'player_position': player, 'camera_position_parameter': camera,
+                          'actors': [{'actor_id': i, 'position': p, 'forward': [1, 0, 0], 'up': [0, 1, 0], 'visible': True}
+                                     for i, p in enumerate(positions)]},
+            'provenance': provenance}
+
+
 def extract_opening_staging(mach):
+    if mach.architecture == 'android-armv7':
+        return android_staging(mach)
     import capstone
     mac = mach.architecture == 'x86_64'
     if not mac and mach.architecture != 'armv7': return {}

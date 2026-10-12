@@ -10,10 +10,12 @@ const Library = preload("res://src/content/library.gd")
 var failures := 0
 
 func _initialize() -> void:
-	for mac in [true, false]:
-		var scope: Dictionary = JSON.parse_string(JSON.stringify(Fixture.definition(mac)))
-		var arch := "x86_64" if mac else "armv7"
+	for arch in ["x86_64", "armv7", "android-armv7"]:
+		var source: Dictionary = Fixture.android_definition() if arch == "android-armv7" else Fixture.definition(arch == "x86_64")
+		var scope: Dictionary = JSON.parse_string(JSON.stringify(source))
 		check(Definitions.validate(scope, 65536, arch).is_empty(), "Serialized staging rejected: " + Definitions.validate(scope, 65536, arch))
+		for other in ["x86_64", "armv7", "android-armv7"]:
+			if other != arch: check(not Definitions.validate(scope, 65536, other).is_empty(), "Staging spans accepted for another compiler")
 		for bad in ["missing", "count", "id", "nan", "camera", "axes", "nonunit", "hidden", "gate", "visibility", "extent", "overlap"]:
 			var data := scope.duplicate(true)
 			match bad:
