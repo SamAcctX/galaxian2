@@ -309,6 +309,18 @@ class Assembler:
             return self.half(top | d << 6, vd << 12 | 0xa00 | op | mm << 5 | vm)
         if m == 'vmrs':
             return self.half(0xeef1, 0xfa10)
+        if m == 'blx' and ops[0].startswith('#'):  # blx to a named function (e.g. a conditional call in IT)
+            here = self.here()
+            sign, j1, j2, value = branch_fields(self.resolve(ops[0][1:]) - ((here + 4) & ~3), True)
+            return self.half(0xf000 | sign << 10 | value >> 11 & 0x3ff, 0xc000 | j1 << 13 | j2 << 11 | value & 0x7fe)
+        scalar = re.fullmatch(r'd(\d+)\[([01])\]', ops[0] if m == 'vmov.32' and len(ops) == 2 else '')
+        if m == 'vmov.32' and (scalar or re.fullmatch(r'd(\d+)\[([01])\]', ops[1])):
+            to_core = not scalar
+            d, x = map(int, (scalar or re.fullmatch(r'd(\d+)\[([01])\]', ops[1])).groups())
+            return self.half((0xee10 if to_core else 0xee00) | x << 5 | d & 15, reg(0 if to_core else 1) << 12 | 0xb10 | (d >> 4) << 7)
+        if m == 'vadd.i64':
+            dd, dn, dm = (2 * int(o[1:]) for o in ops)
+            return self.half(0xef30 | (dd >> 4) << 6 | dn & 15, (dd & 15) << 12 | 0x800 | (dn >> 4) << 7 | 0x40 | (dm >> 4) << 5 | dm & 15)
         if m == 'adr':
             return self.half(0xa000 | reg(0) << 8 | self.imm(ops[1]) // 4)
         if m == 'vmov.i32' and ops[1] == '#0':

@@ -1,4 +1,12 @@
-"""Static equipment-bound shield recharge and ordinary player-pass declarations."""
+"""Static equipment-bound shield recharge and ordinary player-pass declarations.
+
+Android: PlayerEgo's constructor clears the recharge clock and blocked flag and
+stores the pulse max shield / (Ship::getShieldRegen / 100); PlayerEgo::update
+adds elapsed time while regen and hull are positive and, past 100 ms, clears
+the clock and adds one pulse with Player::regenerateShield; MGame::OnUpdate
+updates the player before Level::update. Ship::refreshValue clears the regen
+and assigns item attribute 19 with the shield's sort.
+"""
 import struct
 from .opening_loadout import template
 from .ship_models import section_bytes
@@ -8,7 +16,156 @@ VALUES={'equipment_property':19,'period_ms':100,'capacity_divisor':100.0,
         'requires_living_hull':True,'before_world_weapons':True}
 
 
+# PlayerEgo::PlayerEgo: `this` in r4, zeros in r6 and q8.
+ANDROID_ENTRY = """
+mov r4, r0
+addw r0, pc, #{}
+vmov.i32 q8, #0
+vld1.64 {d18, d19}, [r0:0x80]
+add.w r0, r4, #0x44
+mov.w sl, #0x3f800000
+str.w sl, [r4, #0x40]
+movs r6, #0
+"""
+ANDROID_CLOCK_ZERO = """
+add.w r2, r4, #0x118
+vst1.64 {d16, d17}, [r2]
+"""
+ANDROID_BLOCKED_ZERO = 'strb.w r6, [r4, #0x24]'
+ANDROID_DIVISOR = 'vldr s16, ={divisor}'
+ANDROID_PULSE = """
+ldr r0, [r6]
+call _ZN6Status7getShipEv
+call {shield_getter}
+mov r5, r0
+ldr r0, [r6]
+call _ZN6Status7getShipEv
+call {getter}
+vmov s0, r0
+mov.w r0, #-1
+vmov s2, r5
+vcvt.f32.s32 s0, s0
+vcvt.f32.s32 s2, s2
+vdiv.f32 s0, s0, s16
+vdiv.f32 s0, s2, s0
+vstr s0, [r4, #0x218]
+"""
+# PlayerEgo::update: `this` in sb, elapsed milliseconds in r8; the clock is 64-bit.
+ANDROID_RECHARGE = """
+ldr.w r0, ={}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+call _ZN6Status7getShipEv
+call {getter}
+cmp r0, #1
+blt {@skip}
+ldr.w r0, [sb]
+call {hull_getter}
+cmp r0, #1
+blt {@skip}
+ldrd r0, r1, [sb, #0x118]
+adds.w r0, r0, r8
+adc.w r1, r1, r8, asr #31
+strd r0, r1, [sb, #0x118]
+subs r0, #0x65
+sbcs r0, r1, #0
+blt {@skip}
+add.w r0, sb, #0x118
+movs r1, #0
+strd r1, r1, [r0]
+ldr.w r1, [sb, #0x218]
+ldr.w r0, [sb]
+call {adder}
+skip: ldr.w r0, ={}
+"""
+ANDROID_HELPERS = {'getter': 'ldr r0, [r0, #0x24]\nbx lr', 'hull_getter': 'ldr r0, [r0, #0x78]\nbx lr',
+                   'adder': """
+vldr s0, [r0, #0x88]
+vmov s4, r1
+vldr s2, [r0, #0x94]
+vadd.f32 s0, s0, s4
+vcvt.f32.s32 s2, s2
+vcmpe.f32 s0, s2
+vmrs apsr_nzcv, fpscr
+it mi
+vmovmi.f32 s2, s0
+vstr s2, [r0, #0x88]
+b.w {changed}
+"""}
+# MGame::OnUpdate: the player update (below 4 s frames) precedes Level::update.
+ANDROID_ORDER = """
+ldr.w r0, [fp, #0x50]
+cmp.w r0, #0xfa0
+bge {@world}
+ldr.w r3, [fp, #0x70]
+ldr.w lr, [fp, #0x80]
+ldrd ip, r2, [fp, #0x78]
+ldr.w r0, [fp, #0x164]
+ldr.w r5, [fp, #0xd4]
+cmp r0, #0
+ldr r0, [sp, #0x18]
+ldrb.w r6, [fp, #0x5f]
+it gt
+addgt.w r0, fp, #0x44
+ldr.w r4, [fp, #0x14]
+ldr r1, [r0]
+ldr.w r0, [fp, #0x58]
+strd lr, ip, [sp]
+strd r5, r6, [sp, #8]
+str r4, [sp, #0x10]
+call {update}
+world: ldr.w r0, [fp, #0x58]
+call _ZN9PlayerEgo17isInRocketControlEv
+ldr.w r2, [fp, #0x40]
+mov r4, r0
+ldr.w r0, [fp, #0x74]
+ldrb.w r1, [fp, #0x5f]
+asrs r3, r2, #0x1f
+str r1, [sp]
+call _ZN5Level6updateExb
+"""
+
+
+def android_recharge(lib):
+    from .android_shapes import Listing
+    from .player_initialization import ANDROID_HELPERS as PLAYER, ANDROID_RESET, ANDROID_SHIELD
+    order = Listing(lib, '_ZN5MGame8OnUpdateEv').unique(ANDROID_ORDER)
+    update = Listing(lib, order['update']) if order else None
+    recharge = update.unique(ANDROID_RECHARGE) if update else None
+    ctor = Listing(lib, '_ZN9PlayerEgoC1EP6Player')
+    entry, clock, blocked, load, pulse = (ctor.unique(t) for t in (ANDROID_ENTRY, ANDROID_CLOCK_ZERO, ANDROID_BLOCKED_ZERO, ANDROID_DIVISOR, ANDROID_PULSE))
+    if None in (recharge, entry, clock, blocked, load, pulse) or pulse['getter'] != recharge['getter']:
+        return {}
+    # r4 holds `this` from the entry; r6 and q8 stay zero to the stores; s16 keeps the divisor.
+    stores = max(clock.last, blocked.last)
+    if (not ctor.holds('r4', pulse.last) or not update.holds('sb', recharge.last)
+            or any(ctor.writes(entry.last + 1, stores, r) for r in ('r6', 'q8', 'd16', 'd17'))
+            or not load.last < pulse.first or ctor.writes(load.last + 1, pulse.last, 's16')):
+        return {}
+    helpers = {key: Listing(lib, recharge[key]).at(template, 0) for key, template in ANDROID_HELPERS.items()}
+    if None in helpers.values() or Listing(lib, pulse['shield_getter']).at(PLAYER['shield_getter'], 0) is None:
+        return {}
+    ship = Listing(lib, '_ZN4Ship12refreshValueEv')
+    reset, shield = ship.unique(ANDROID_RESET), ship.unique(ANDROID_SHIELD)
+    divisor, divisor_word = load.pool('divisor')
+    if reset is None or shield is None or struct.unpack('<f', struct.pack('<I', divisor))[0] != 100.0:
+        return {}
+    # The shield's sort also assigns attribute 19 (after attribute 18), cleared by the reset.
+    # The recharge ends where its skip target (the repair's first line) starts.
+    proof = {'application_order': order.span(), 'recharge': update.span(recharge.first, recharge.last - 1), 'pulse': pulse.span(), 'entry': entry.span(),
+             'clock_zero': clock.span(), 'blocked_zero': blocked.span(), 'divisor_load': load.span(), 'divisor': divisor_word,
+             'assignment': ship.span(shield.first + 6, shield.first + 11), 'equipment_zero': ship.span(reset.last, reset.last),
+             **{key: shape.span() for key, shape in helpers.items()}}
+    return dict(VALUES, provenance=proof)
+
+
 def extract_player_recharge(mach,actors,vehicle,clock):
+    if mach.architecture == 'android-armv7':
+        player = actors.get('player_initialization')
+        if not player or vehicle.get('equipment_rule') != 'last_matching' or not clock:
+            return {}
+        return android_recharge(mach)
     import capstone
     arch=mach.architecture
     if arch not in LAYOUTS:return {}
