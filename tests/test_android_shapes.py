@@ -31,7 +31,8 @@ two:
 movs r0, #2
 out:
 pop {r4, r5, r6, r7, pc}''',
-            '_ZN1C1hEv': 'cmp r0, #1\nbhi #done\ntbh [pc, r0, lsl #1]\n.cases done\nnop\ndone:\nbx lr'})
+            '_ZN1C1hEv': 'cmp r0, #1\nbhi #done\ntbh [pc, r0, lsl #1]\n.cases done\nnop\ndone:\nbx lr',
+            '_ZN1D1iEv': 'cmp r0, #1\nbhi #done\ntbb [pc, r0]\n.cases first, done\nfirst:\nnop\ndone:\nbx lr'})
         self.listing = Listing(self.lib, '_ZN1A1fEv')
 
     def test_rendering_names_calls_and_pool_words(self):
@@ -75,6 +76,8 @@ pop {r4, r5, r6, r7, pc}''',
         self.assertEqual(short.case(2, 0), 5)
         # Entries past the function's end are not read.
         self.assertIsNone(short.case(2, 40))
+        bytes_table = Listing(self.lib, '_ZN1D1iEv')
+        self.assertEqual([bytes_table.lines[bytes_table.case(2, n)] for n in (0, 1)], ['nop', 'bx lr'])
         self.assertTrue(listing.writes(7, 8, 'r1'))
         self.assertFalse(listing.writes(9, 10, 'r1'))
         self.assertFalse(listing.writes(7, 8, 'r4'))

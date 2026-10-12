@@ -141,8 +141,9 @@ class Assembler:
         if m == 'nop':
             return self.half(0xbf00)
         if m == '.cases':
-            self.fixups.append((len(self.code), '.cases', ops))
-            self.code += bytes(2 * len(ops))
+            width = 1 if self.lines and self.lines[-1][1].startswith('tbb ') else 2
+            self.fixups.append((len(self.code), '.cases', (width, ops)))
+            self.code += bytes(width * len(ops) + (width * len(ops)) % 2)
             return
         if m == 'call':
             target = self.resolve(ops[0])
@@ -170,7 +171,7 @@ class Assembler:
         if m in ('cbz', 'cbnz'):
             self.fixups.append((len(self.code), m, (reg(0), ops[1][1:])))
             return self.half(0)
-        if m in ('tbb', 'tbh'):
+        if m in ('tbb', 'tbh'):  # `.cases` entries follow
             inner = mem(ops[0])
             return self.half(0xe8df, 0xf000 | (0x10 if m == 'tbh' else 0) | R[inner[1]])
         if m in ('ldr', 'ldr.w', 'vldr') and ops[-1].startswith('='):
@@ -321,8 +322,9 @@ class Assembler:
         for at, kind, operand in self.fixups:
             source = self.address + at
             if kind == '.cases':
-                for i, name in enumerate(operand):
-                    struct.pack_into('<H', self.code, at + 2 * i, (self.labels[name] - source) // 2)
+                width, names = operand
+                for i, name in enumerate(names):
+                    struct.pack_into('<B' if width == 1 else '<H', self.code, at + width * i, (self.labels[name] - source) // 2)
                 continue
             if kind in ('ldr', 'ldr.w', 'vldr'):
                 register, word = operand
@@ -383,8 +385,15 @@ def text_library(functions, *, check=True):
         built.append((name, code, addresses[name]))
         listings[name] = (lines, labels)
     text_size = max(0x5000, (address - TEXT + 0xfff) & ~0xfff)
-    image = library(built, {}, text_size=text_size, rodata=TEXT + text_size, got=TEXT + text_size + 0x1000)
-    lib = AndroidLibrary(image)
+    image = bytearray(library(built, {}, text_size=text_size, rodata=TEXT + text_size, got=TEXT + text_size + 0x1000))
+    # library() keeps .dynstr in a 512-byte slot: move the names to the end of the file.
+    names = bytearray(b'\0')
+    for index, label in enumerate(list(IMPORTS) + [name for name, _, _ in built]):
+        struct.pack_into('<I', image, 0x200 + 16 * (index + 1), len(names))
+        names += label.encode() + b'\0'
+    struct.pack_into('<2I', image, struct.unpack_from('<I', image, 32)[0] + 40 * 2 + 16, len(image), len(names))
+    image += names
+    lib = AndroidLibrary(bytes(image))
     if check:
         for name, (lines, labels) in listings.items():
             listing = Listing(lib, name)

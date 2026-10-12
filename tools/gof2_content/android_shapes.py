@@ -98,16 +98,18 @@ class Listing:
                 'bytes': self.code[last].address + self.code[last].size - start}
 
     def case(self, index, value):
-        """Target index of case `value` (>= 0) of the tbh at instruction `index`.
+        """Target index of case `value` (>= 0) of the tbb/tbh at instruction `index`.
 
         The caller checks `value` against the dispatch bound; the entry must lie in the function.
         """
         ins = self.code[index]
+        width = 1 if ins.mnemonic == 'tbb' else 2
         start, size = self.lib.symbols[self.symbol]
-        table = ins.address + 4 + 2 * value
-        if table + 2 > start + size:
+        table = ins.address + 4 + width * value
+        if table + width > start + size:
             return None
-        entry, = struct.unpack_from('<H', self.lib.data, self.lib.text['offset'] + table - self.lib.text['address'])
+        at = self.lib.text['offset'] + table - self.lib.text['address']
+        entry = self.lib.data[at] if width == 1 else struct.unpack_from('<H', self.lib.data, at)[0]
         return self.index.get(ins.address + 4 + 2 * entry)
 
     def writes(self, first, last, register):

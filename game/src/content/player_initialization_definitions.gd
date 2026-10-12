@@ -30,6 +30,10 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 		sizes={"factory":94,"shield_getter":4,"armor_getter":4,"shield_setter":24,"armor_setter":12,
 			"shield_assignment":14,"armor_assignment":14,"zero_vector":4,"reset":12,"loop_offset":8,
 			"loop_initial":4,"loop_next":14,"damage_permission":16,"damage_setter":6,"active":36,"equipment_table":30}
+	elif architecture=="android-armv7":
+		sizes={"factory":92,"shield_getter":4,"armor_getter":4,"shield_setter":20,"armor_setter":8,"active":34,
+			"reset":44,"loop_entry":56,"loop_head":24,"type_getter":4,"shield_entry":1,"armor_entry":1,
+			"shield_assignment":30,"armor_assignment":16,"loop_next":30,"damage_dispatch":10,"damage_permission":44,"damage_setter":6}
 	var provenance: Variant=data.get("provenance")
 	if sizes.is_empty() or not provenance is Dictionary or provenance.size()!=sizes.size(): return "Invalid player initialization provenance"
 	var spans := []
