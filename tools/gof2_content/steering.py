@@ -24,9 +24,11 @@ def shape_at(code, shape, lib=None):
     """Indexes where `code` holds the instructions of `shape`: (mnemonic, operand-text regex) pairs.
 
     '@n' in an operand pattern is the address of the shape's own instruction n (a branch target);
-    an operand pattern '=symbol' is a call of that named function (`lib` resolves it).
+    an operand pattern '=symbol' is a call of that named function (`lib` resolves it). An absent
+    function (None) holds nothing.
     """
     from .android_library import callee
+    code = code or []
 
     def fits(i):
         for ins, (mnemonic, operands) in zip(code[i:], shape):
@@ -84,7 +86,7 @@ ANDROID_STEP = [('vldr', 's0, ' + PC), ('vldr', r's2, \[fp, #0x278\]'), ('vldr',
 def android_rotation(lib):
     from .android_library import callee, instructions
     code = instructions(lib, ANDROID_HANDLER)
-    if not code or ANDROID_HELPER not in lib.symbols:
+    if ANDROID_HELPER not in lib.symbols:
         return {}
     steps = shape_at(code, ANDROID_STEP)
     if len(steps) != 1 or callee(lib, code[steps[0] + 17]) != ANDROID_HELPER:

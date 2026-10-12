@@ -26,7 +26,7 @@ ANDROID_CLOCK = [('ldrd', r'ip, r2, \[r0, #0x70\]'), ('ldrd', r'r3, r1, \[r0, #0
 def android_clock(lib):
     from .android_library import callee, instructions
     code, clock = instructions(lib, ANDROID_UPDATE), instructions(lib, ANDROID_ELAPSED)
-    if not code or not clock or shape_at(clock, ANDROID_CLOCK)[:1] != [0]:
+    if shape_at(clock, ANDROID_CLOCK)[:1] != [0]:
         return {}
     caps = shape_at(code, ANDROID_CAP)
     if len(caps) != 1 or any(callee(lib, code[caps[0] + i]) != ANDROID_ELAPSED for i in (1, 5, 9, 15)):

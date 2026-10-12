@@ -53,8 +53,6 @@ def android_vehicle(lib):
     from .android_library import callee, instructions
     code = {name: instructions(lib, name) for name in (ANDROID_CONSTRUCTOR, ANDROID_HANDLING, ANDROID_AGILITY, ANDROID_REFRESH,
                                                         ANDROID_ATTRIBUTE, ANDROID_SORT, ANDROID_INIT)}
-    if not all(code.values()):
-        return {}
     provenance = {}
 
     def whole(key, name, shape):

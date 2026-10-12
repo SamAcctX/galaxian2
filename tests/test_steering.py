@@ -300,6 +300,7 @@ class AndroidSteeringTests(unittest.TestCase):
         code = instructions(lib, '_Z1fv')
         self.assertEqual(shape_at(code, [('blx', '=_Z1gv')], lib), [1])
         self.assertEqual(shape_at(code, [('blx', '=_Z1hv')], lib), [])
+        self.assertEqual(shape_at(None, [('blx', '=_Z1hv')], lib), [])
 
     def test_roomy_library_keeps_long_names(self):
         from android_fixture import Thumb

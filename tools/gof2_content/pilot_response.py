@@ -46,8 +46,6 @@ def android_response(lib):
     spans, gains, biases, scales = [], [], [], []
     for symbol, (sign, target, ramp, bias, scale) in ANDROID_TURNS.items():
         code = instructions(lib, symbol)
-        if not code:
-            return {}
         q, r = shape_at(code, target), shape_at(code, ramp)
         if len(q) != 1 or len(r) != 1:
             return {}
@@ -60,7 +58,7 @@ def android_response(lib):
         # A VFP immediate (|value| 0.125-31): the ramp span holds it.
         scales.append(code[r[0] + scale].operands[1].fp)
     code = instructions(lib, ANDROID_UPDATE)
-    neutrals = shape_at(code, NEUTRAL) if code else []
+    neutrals = shape_at(code, NEUTRAL)
     if len(neutrals) != 4:
         return {}
     returns = [pool_float(lib, ANDROID_UPDATE, code[i + 4]) for i in neutrals]
