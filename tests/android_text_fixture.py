@@ -18,8 +18,8 @@ LOW_STORES = {'str': (0x6000, 4), 'ldr': (0x6800, 4), 'strb': (0x7000, 1), 'ldrb
 WIDE_STORES = {'str': 0xf8c0, 'ldr': 0xf8d0, 'strb': 0xf880, 'ldrb': 0xf890, 'strh': 0xf8a0, 'ldrh': 0xf8b0, 'ldrsb': 0xf990, 'ldrsh': 0xf9b0}
 INDEXED = {'str': 0x5000, 'strh': 0x5200, 'strb': 0x5400, 'ldrsb': 0x5600, 'ldr': 0x5800, 'ldrh': 0x5a00, 'ldrb': 0x5c00, 'ldrsh': 0x5e00}
 NARROW_ALU = {'ands': 0, 'eors': 1, 'lsls': 2, 'lsrs': 3, 'asrs': 4, 'adcs': 5, 'sbcs': 6, 'rors': 7, 'tst': 8, 'rsbs': 9, 'cmn': 11, 'orrs': 12, 'muls': 13, 'bics': 14, 'mvns': 15}
-MODIFIED = {'and': 0xf000, 'bic': 0xf020, 'orr': 0xf040, 'eor': 0xf080, 'add': 0xf100, 'sub': 0xf1a0, 'rsb': 0xf1c0}
-SHIFTED = {'and': 0xea00, 'orr': 0xea40, 'eor': 0xea80, 'add': 0xeb00, 'sub': 0xeba0, 'rsb': 0xebc0}
+MODIFIED = {'and': 0xf000, 'bic': 0xf020, 'orr': 0xf040, 'eor': 0xf080, 'add': 0xf100, 'adc': 0xf140, 'sbc': 0xf160, 'sub': 0xf1a0, 'rsb': 0xf1c0}
+SHIFTED = {'and': 0xea00, 'orr': 0xea40, 'eor': 0xea80, 'add': 0xeb00, 'adc': 0xeb40, 'sbc': 0xeb60, 'sub': 0xeba0, 'rsb': 0xebc0}
 VFP3 = {'vmul.f32': (0xee20, 0), 'vnmul.f32': (0xee20, 0x40), 'vadd.f32': (0xee30, 0), 'vsub.f32': (0xee30, 0x40),
         'vdiv.f32': (0xee80, 0), 'vmla.f32': (0xee00, 0), 'vmls.f32': (0xee00, 0x40)}
 VFP2 = {'vcvt.f32.s32': (0xeeb8, 0xc0), 'vcvt.f32.u32': (0xeeb8, 0x40), 'vcvt.s32.f32': (0xeebd, 0xc0), 'vcvt.u32.f32': (0xeebc, 0xc0),
@@ -121,7 +121,7 @@ class Assembler:
             if mnemonic in ('mov', 'add', 'sub') and len(ops) == 2 and ops[1].startswith('#') and REGISTERS[ops[0]] < 8 and self.imm(ops[1]) < 256:
                 mnemonic += 's'  # the 16-bit flag-setting forms read without `s` inside IT
         self.encode(mnemonic, ops, text)
-        if mnemonic != '.cases':
+        if mnemonic not in ('.cases', '.word'):
             self.lines.append((start, text))
 
     def encode(self, m, ops, text):
@@ -140,6 +140,10 @@ class Assembler:
             return self.half(0xbf00 | cond << 4 | mask)
         if m == 'nop':
             return self.half(0xbf00)
+        if m == '.word':  # data words between instructions
+            for word in ops:
+                self.code += struct.pack('<I', int(word, 0) & 0xffffffff)
+            return
         if m == '.cases':
             width = 1 if self.lines and self.lines[-1][1].startswith('tbb ') else 2
             self.fixups.append((len(self.code), '.cases', (width, ops)))
@@ -223,10 +227,13 @@ class Assembler:
             return self.half({'lsls': 0, 'lsrs': 0x800, 'asrs': 0x1000}[m] | self.imm(ops[2]) << 6 | reg(1) << 3 | reg(0))
         if m in ('uxtb', 'uxth', 'sxtb', 'sxth'):
             return self.half({'uxtb': 0xb2c0, 'uxth': 0xb280, 'sxtb': 0xb240, 'sxth': 0xb200}[m] | reg(1) << 3 | reg(0))
-        alu = re.fullmatch(r'(and|bic|orr|eor|add|sub|rsb)(s?)(\.w)?', m)
-        if alu and len(ops) == 3 and ops[2].startswith('#') and modified(self.imm(ops[2])) is not None and (alu.group(3) or alu.group(1) in ('rsb', 'bic', 'orr', 'eor', 'and')):
+        alu = re.fullmatch(r'(and|bic|orr|eor|add|adc|sbc|sub|rsb)(s?)(\.w)?', m)
+        if alu and len(ops) == 3 and ops[2].startswith('#') and modified(self.imm(ops[2])) is not None and (alu.group(3) or alu.group(1) in ('rsb', 'bic', 'orr', 'eor', 'and', 'adc', 'sbc')):
             v = modified(self.imm(ops[2]))
             return self.half(MODIFIED[alu.group(1)] | (0x10 if alu.group(2) else 0) | (v >> 11) << 10 | reg(1), (v >> 8 & 7) << 12 | reg(0) << 8 | v & 255)
+        if m == 'addw' and ops[1] == 'pc' and not re.fullmatch(r'#(0x[0-9a-f]+|\d+)', ops[2]):
+            self.fixups.append((len(self.code), 'adr', (reg(0), ops[2][1:])))  # `addw rN, pc, #label`
+            return self.half(0, 0)
         if m in ('addw', 'subw'):
             v = self.imm(ops[2])
             return self.half((0xf200 if m == 'addw' else 0xf2a0) | (v >> 11 & 1) << 10 | reg(1), (v >> 8 & 7) << 12 | reg(0) << 8 | v & 255)
@@ -343,6 +350,12 @@ class Assembler:
                 else:
                     vd, d = vfp_fields(sreg(register))
                     struct.pack_into('<2H', self.code, at, 0xed9f | d << 6, vd << 12 | 0xa00 | offset // 4)
+                continue
+            if kind == 'adr':
+                register, name = operand
+                v = self.labels[name] - ((source + 4) & ~3)
+                struct.pack_into('<2H', self.code, at, 0xf20f | (v >> 11 & 1) << 10, (v >> 8 & 7) << 12 | register << 8 | v & 255)
+                self.lines = [(a, t.replace('#' + name, '#%d' % v if v < 10 else '#%#x' % v) if a == source else t) for a, t in self.lines]
                 continue
             if kind in ('cbz', 'cbnz'):
                 register, name = operand
@@ -478,10 +491,10 @@ def assemble(text, address, resolve):
 FILLS = iter(range(1 << 30))
 
 
-def fill(template, blank='0x10', **values):
+def fill(template, blank='0x10', tag=None, **values):
     """A reader template as assembler text: `{name}` by values[name], `{}` by `blank`,
-    template labels (`name: ...`, `{@name}`) by labels unique to this call."""
-    tag = 'L%d_' % next(FILLS)
+    template labels (`name: ...`, `{@name}`) by labels unique to this call (or `tag` + name)."""
+    tag = 'L%d_' % next(FILLS) if tag is None else tag
     text = re.sub(r'^(\s*)(\w+): ', lambda m: '%s%s%s:\n%s' % (m[1], tag, m[2], m[1]), template, flags=re.M)
     text = re.sub(r'\{@(\w+)\}', lambda m: '#' + tag + m[1], text)
     return re.sub(r'\{(\w*)\}', lambda m: str(values[m[1]]) if m[1] else blank, text)

@@ -121,7 +121,14 @@ pop {r4, r5, r6, r7, pc}''',
         from android_text_fixture import text_library
         from gof2_content.android_shapes import Listing
         lib, _ = text_library({'_ZN1J1lEv': 'cmp r0, #1\nbne #skip\nmovs r0, #2\nskip:\nmovs r0, #3\nbx lr',
+                               '_ZN1L1nEv': 'nop\naddw r1, pc, #0x10\nadr r2, #8\nbx lr',
                                '_ZN1K1mEv': 'nop\nldr r1, =0x55667788\nbx lr'})
+        near = Listing(lib, '_ZN1L1nEv')
+        start = near.code[0].address
+        # pc is the instruction address + 4, rounded down to a word.
+        self.assertEqual((near.pc_address(1) - start, near.pc_address(2) - start), (0x14, 0x10))
+        relative = Listing(lib, '_ZN1K1mEv')
+        self.assertEqual((relative.pc_address(0), relative.pc_address(1)), (None, None))
         unaligned = Listing(lib, '_ZN1K1mEv').pool(1)
         self.assertEqual(lib.data[unaligned['offset']:unaligned['offset'] + 4], bytes.fromhex('88776655'))
         jump = Listing(lib, '_ZN1J1lEv')

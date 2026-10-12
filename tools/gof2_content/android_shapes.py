@@ -117,6 +117,11 @@ class Listing:
         return {'offset': self.lib.slice_offset + text['offset'] + start - text['address'],
                 'bytes': self.code[last].address + self.code[last].size - start}
 
+    def pc_address(self, index):
+        """Address an `addw rN, pc, #imm` or `adr rN, #imm` at `index` builds, or None."""
+        found = re.fullmatch(r'(?:addw \w+, pc|adr \w+), #(0x[0-9a-f]+|\d+)', self.lines[index])
+        return ((self.code[index].address + 4) & ~3) + int(found[1], 0) if found else None
+
     def pool(self, index):
         """Provenance of the pool word the PC-relative load at `index` reads."""
         ins = self.code[index]

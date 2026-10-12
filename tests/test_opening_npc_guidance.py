@@ -92,3 +92,83 @@ class GuidanceTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+
+ANDROID_ACTORS = {'actors': [{'actor_id': i, 'actor_kind': 8, 'hull_catalogue_id': h} for i, h in enumerate((2, 23, 2))],
+                  'npc_initialization': {'flight': {'pi': 3.14}, 'primary_weapon': {'damage': 3}}}
+
+
+def android_extract(actors=ANDROID_ACTORS, slot=13, drop=(), other='mov.w r5, #0x1f40', rates='0x3f733333, 0x3f866666',
+                    words=('0x42c80000', '0x42200000', '0x4708b800', '0xc708b800'), **links):
+    """Synthetic PlayerFighter, Level::createShip and Level::connectPlayers in the Android shapes."""
+    from android_text_fixture import fill, text_library
+    t = lambda key, **values: '' if key in drop else fill(getattr(reader, 'ANDROID_' + key.upper()), **values)
+    response = fill(reader.ANDROID_RESPONSE, tag='', rates='rates').strip().splitlines()
+    if 'response' in drop:
+        response = [line if line.endswith(':') else 'nop' for line in response]
+    link = {**dict(response='#response', resume='#resume', done='#done', keep='#keep', later='#keep', miss='#miss', none='#none', count='#count'), **links}
+    update = '\n'.join([
+        'push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', 'pre:', t('selection', keep=link['keep'], later=link['later']), 'keep:', 'nop',
+        t('boost', scale=words[0], percent=words[1], done=link['done'], response=link['response'], resume=link['resume']),
+        t('near', blank='#out', other='#other'), 'back:', 'nop', t('fire', range=words[2], negative_range=words[3], miss=link['miss']), 'miss:', 'nop',
+        'other:', other, 'response:', response[0], 'resume:', *response[1:], 'out:', 'bx lr', 'rates:', '.word ' + rates])
+    membership = fill(reader.ANDROID_MEMBERSHIP, blank='#out', skip='#out').strip().splitlines()
+    if 'membership' in drop:
+        membership = [line if line.endswith(':') else 'nop' for line in membership]
+    functions = {
+        '_ZN13PlayerFighter6updateEi': update,
+        '_ZN13PlayerFighterC1EiiP6PlayerP10AEGeometryfffb': '\n'.join([
+            'push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', t('tuning'), t('speed_seed'), t('hull_seed'), 'bx lr']),
+        '_ZN5Level10createShipEiiiP8Waypointbb': '\n'.join([
+            'push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', t('hull_level'), t('hull_difficulty'), 'bx lr']),
+        '_ZN5Level14connectPlayersEv': '\n'.join([
+            'push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', 'none:', membership[0], 'count:', *membership[1:],
+            t('player_first', none=link['none'], count=link['count']), 'out:', 'bx lr'])}
+    table = [0, 0] + ['f%d' % i for i in range(14)]
+    table[2 + slot] = '_ZN13PlayerFighter6updateEi'
+    lib, addresses = text_library(functions, {'_ZTV13PlayerFighter': table})
+    return reader.extract_opening_npc_guidance(lib, actors), lib, addresses
+
+
+class AndroidOpeningNpcGuidance(unittest.TestCase):
+    def test_named_functions_give_values_and_spans(self):
+        result, lib, addresses = android_extract()
+        self.assertEqual({k: v for k, v in result.items() if k != 'provenance'}, reader.VALUES)
+        p = result['provenance']
+        update, players = addresses['_ZN13PlayerFighter6updateEi'], addresses['_ZN5Level14connectPlayersEv']
+        self.assertEqual([(p[k]['offset'] - update, p[k]['bytes']) for k in ('selection', 'boost', 'near', 'fire', 'boost_response')],
+                         [(4, 92), (98, 244), (342, 44), (388, 164), (558, 106)])
+        self.assertEqual([(p[k]['offset'] - players, p[k]['bytes']) for k in ('membership', 'player_first')], [(4, 70), (74, 22)])
+        words = [int.from_bytes(lib.data[p['literal_%d' % i]['offset']:][:4], 'little') for i in range(4)]
+        self.assertEqual(words, [0x42c80000, 0x42200000, 0x4708b800, 0xc708b800])
+        self.assertEqual(lib.data[p['literal_4']['offset']:][:8], struct.pack('<2f', 0.95, 1.05))
+        self.assertEqual(len(p), 18)
+
+    def test_each_broken_rule_is_unsupported(self):
+        actors = copy.deepcopy(ANDROID_ACTORS)
+        actors['actors'][1]['hull_catalogue_id'] = 2
+        cases = {
+            'no flight': dict(actors={'actors': ANDROID_ACTORS['actors'], 'npc_initialization': {'primary_weapon': {'damage': 3}}}),
+            'no weapon': dict(actors={'actors': ANDROID_ACTORS['actors'], 'npc_initialization': {'flight': {'pi': 3.14}}}),
+            'other actors': dict(actors=actors),
+            'other slot': dict(slot=12),
+            **{'no ' + key: dict(drop=(key,)) for key in ('tuning', 'speed_seed', 'hull_seed', 'selection', 'boost', 'near', 'fire',
+                                                           'hull_level', 'hull_difficulty', 'player_first', 'response', 'membership')},
+            'response elsewhere': dict(response='#resume'),
+            'resume elsewhere': dict(resume='#response'),
+            'done elsewhere': dict(done='#out'),
+            'membership elsewhere': dict(none='#count'),
+            'count elsewhere': dict(count='#none'),
+            'miss backwards': dict(miss='#back'),
+            'keep backwards': dict(keep='#pre'),
+            'later backwards': dict(later='#pre'),
+            'other near range': dict(other='mov.w r5, #0x1f00'),
+            'damage scale': dict(words=('0x42c00000', '0x42200000', '0x4708b800', '0xc708b800')),
+            'damage percent': dict(words=('0x42c80000', '0x42400000', '0x4708b800', '0xc708b800')),
+            'fire range': dict(words=('0x42c80000', '0x42200000', '0x4709b800', '0xc708b800')),
+            'negative fire range': dict(words=('0x42c80000', '0x42200000', '0x4708b800', '0xc709b800')),
+            'speed rates': dict(rates='0x3f733333, 0x3f800000'),
+        }
+        for name, changes in cases.items():
+            with self.subTest(name):
+                self.assertEqual(android_extract(**changes)[0], {})

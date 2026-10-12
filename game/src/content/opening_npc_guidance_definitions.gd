@@ -72,6 +72,26 @@ const SIZES = {
     "literal_2": 8,
     "literal_3": 4,
     "literal_4": 4
+  },
+  "android-armv7": {
+    "virtual_update": 8,
+    "tuning": 68,
+    "speed_seed": 26,
+    "hull_seed": 22,
+    "selection": 92,
+    "boost": 244,
+    "boost_response": 106,
+    "near": 44,
+    "fire": 164,
+    "hull_level": 78,
+    "hull_difficulty": 48,
+    "player_first": 22,
+    "membership": 70,
+    "literal_0": 4,
+    "literal_1": 4,
+    "literal_2": 4,
+    "literal_3": 4,
+    "literal_4": 8
   }
 }
 
