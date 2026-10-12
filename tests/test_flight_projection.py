@@ -113,7 +113,8 @@ if __name__=='__main__': unittest.main()
 
 
 def android(fov=1.0000001, near=16.000002, far=(250000.0, 400000.0), fallback=250000.0, limit=0x50, predicate='_ZN6Status12inAlienOrbitEv',
-            vertical=0x48, table_inside=True, starts=1, setter_height=True, fallback_at=None, omit=None):
+            vertical=0x48, table_inside=True, starts=1, setter_height=True, fallback_at=None, station_field=0x198, cursor_field=0x1e8,
+            omit=None):
     """MGame::reset's projection setup and both CameraSetPerspective functions in the Android shape."""
     from android_fixture import TEXT, Thumb
     from gof2_content import flight_projection as p
@@ -177,7 +178,11 @@ def android(fov=1.0000001, near=16.000002, far=(250000.0, 400000.0), fallback=25
         vdiv(vdiv(vmov_from_core(asm, 0, 0).mov(0, 4), 2, 18, 16), 0, 20, 0).vmul(4, 2, 0)
         vstr(vstr(vstr(asm, 0, 5, vertical), 4, 5, 0x4c if vertical == 0x48 else 0x48), 2, 5, 0x50)
         asm.label('end').pop()
-    functions = [(name, Thumb(address).ret().finish(), address) for name, address in at.items()]
+    functions = [(name, Thumb(address).ret().finish(), address) for name, address in at.items()
+                 if name not in ('_ZN6Status12inAlienOrbitEv', '_ZN6Status25getCurrentCampaignMissionEv')]
+    orbit, cursor = at['_ZN6Status12inAlienOrbitEv'], at['_ZN6Status25getCurrentCampaignMissionEv']
+    functions += [('_ZN6Status12inAlienOrbitEv', b_to(ldr_w(Thumb(orbit).ldr(1, 0, 0x78), 0, 0, station_field), TEXT + 0x10, None, True).finish(), orbit),
+                  ('_ZN6Status25getCurrentCampaignMissionEv', ldr_w(Thumb(cursor), 0, 0, cursor_field).ret().finish(), cursor)]
     # The same table outside MGame::reset, for an adr that leaves the function.
     functions.append(('_Z5tablev', Thumb(start + 0x100).data(*(struct.unpack('<I', struct.pack('<f', v))[0] for v in far)).finish(), start + 0x100))
     functions += [(p.ANDROID_START, assemble(start, emit_start).finish(), start), (p.ANDROID_SETTER, assemble(setter, emit_setter).finish(), setter),
@@ -195,7 +200,8 @@ class AndroidFlightProjection(unittest.TestCase):
                                   'near': struct.unpack('<f', struct.pack('<f', 16.000002))[0], 'far': 250000.0, 'matching_location_early_far': 400000.0,
                                   'early_cursor_limit': 80, 'fov_axis': 'vertical'})
         self.assertEqual({k: (v['offset'] - TEXT, v['bytes']) for k, v in provenance.items()},
-                         {'start': (0x402, 78), 'setter': (0x600, 90), 'metrics': (0x800, 104), 'far': (0x458, 8), 'fallback': (0x454, 4)})
+                         {'start': (0x402, 78), 'setter': (0x600, 90), 'metrics': (0x800, 104), 'far': (0x458, 8), 'fallback': (0x454, 4),
+                          'predicate': (0x40, 10), 'cursor': (0x80, 6)})
 
     def test_each_broken_declaration_is_unsupported(self):
         from android_fixture import TEXT
@@ -204,7 +210,8 @@ class AndroidFlightProjection(unittest.TestCase):
                  'horizontal': dict(vertical=0x4c), 'table outside': dict(table_inside=False), 'two starts': dict(starts=2),
                  'wide fov': dict(fov=4.0), 'zero fov': dict(fov=0.0), 'far near': dict(far=(10.0, 400000.0), fallback=10.0), 'negative near': dict(near=-16.0),
                  'distant': dict(far=(2e9, 400000.0), fallback=2e9), 'nan': dict(far=(250000.0, float('nan'))),
-                 'setter': dict(setter_height=False), 'fallback outside': dict(fallback_at=TEXT + 0x3f0)}
-        cases.update({name: dict(omit=name) for name in (p.ANDROID_START, p.ANDROID_SETTER, p.ANDROID_METRICS)})
+                 'setter': dict(setter_height=False), 'fallback outside': dict(fallback_at=TEXT + 0x3f0),
+                 'orbit station': dict(station_field=0x19c), 'cursor': dict(cursor_field=0x1ec)}
+        cases.update({name: dict(omit=name) for name in (p.ANDROID_START, p.ANDROID_SETTER, p.ANDROID_METRICS, p.ANDROID_PREDICATE, p.ANDROID_CURSOR)})
         for name, options in cases.items():
             self.assertEqual(reader.extract_flight_projection(android(**options)), {}, name)

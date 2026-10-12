@@ -46,11 +46,19 @@ METRICS = [('push', '{r4, r5, r7, lr}'), ('add', 'r7, sp, #8'), ('vpush', '{d8, 
            ('vstr', r's0, \[r5, #0x48\]'), ('vstr', r's4, \[r5, #0x4c\]'), ('vstr', r's2, \[r5, #0x50\]')]
 
 
+ANDROID_PREDICATE, ANDROID_CURSOR = '_ZN6Status12inAlienOrbitEv', '_ZN6Status25getCurrentCampaignMissionEv'
+# The location match compares the alien-orbit station (0x78) with the current one (0x198) in a tail call.
+PREDICATE = [('ldr', r'r1, \[r0, #0x78\]'), ('ldr.w', r'r0, \[r0, #0x198\]'), ('b.w', '#0x[0-9a-f]+')]
+CURSOR = [('ldr.w', r'r0, \[r0, #0x1e8\]'), ('bx', 'lr')]
+
+
 def android_projection(lib):
     from .android_library import instructions
-    start, setter, metrics = (instructions(lib, s) for s in (ANDROID_START, ANDROID_SETTER, ANDROID_METRICS))
+    start, setter, metrics, predicate, cursor = (instructions(lib, s) for s in (ANDROID_START, ANDROID_SETTER, ANDROID_METRICS,
+                                                                                 ANDROID_PREDICATE, ANDROID_CURSOR))
     found = shape_at(start, START, lib)
-    if len(found) != 1 or shape_at(setter, SETTER, lib)[:1] != [0] or shape_at(metrics, METRICS, lib)[:1] != [0]:
+    if len(found) != 1 or any(shape_at(code, shape, lib)[:1] != [0] for code, shape in
+                              ((setter, SETTER), (metrics, METRICS), (predicate, PREDICATE), (cursor, CURSOR))):
         return {}
     code = start[found[0]:]
 
@@ -71,6 +79,7 @@ def android_projection(lib):
             'early_cursor_limit': 80, 'fov_axis': 'vertical',
             'provenance': {'start': code_span(lib, code, 0, len(START) - 1), 'setter': code_span(lib, setter, 0, len(SETTER) - 1),
                            'metrics': code_span(lib, metrics, 0, len(METRICS) - 1), 'far': {'offset': offset, 'bytes': 8},
+                           'predicate': code_span(lib, predicate, 0, len(PREDICATE) - 1), 'cursor': code_span(lib, cursor, 0, len(CURSOR) - 1),
                            'fallback': {'offset': fallback[0], 'bytes': 4}}}
 
 
