@@ -18,7 +18,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	if not data is Dictionary:return "Missing planet resource declarations"
 	if data.is_empty():return ""
 	if not parameters(data):return "Invalid planet resource parameters"
-	var sizes:={"sun":61,"current":64,"near":61,"far":66,"mesh":50,"system":13,"sky_index":9,"cursor":12,"planet_type":9} if architecture=="x86_64" else {"sun":48,"current":56,"near":60,"far":58,"mesh":40,"system":6,"sky_index":4,"cursor":6,"planet_type":4} if architecture=="armv7" else {}
+	var sizes:={"sun":61,"current":64,"near":61,"far":66,"mesh":50,"system":13,"sky_index":9,"cursor":12,"planet_type":9} if architecture=="x86_64" else {"sun":48,"current":56,"near":60,"far":58,"mesh":40,"system":6,"sky_index":4,"cursor":6,"planet_type":4} if architecture=="armv7" else {"sun":52,"current":68,"near":46,"far":46,"mesh":34,"system":6,"sky_index":4,"cursor":6,"planet_type":4} if architecture=="android-armv7" else {}
 	if sizes.is_empty():return "Unsupported planet resource architecture"
 	for key in COUNTS:sizes[key]=COUNTS[key]*4
 	var provenance: Variant=data.get("provenance")
@@ -32,6 +32,10 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 			if begin<span.y and end>span.x:return "Overlapping planet resource declarations"
 		spans.append(Vector2i(begin,end))
 	var p: Dictionary=provenance
-	if int(p.sun.offset)+int(p.sun.bytes)>mini(int(p.current.offset),int(p.near.offset)) or maxi(int(p.current.offset)+int(p.current.bytes),int(p.near.offset)+int(p.near.bytes))>int(p.far.offset) or int(p.far.offset)>=int(p.mesh.offset) or int(p.mesh.offset)+int(p.mesh.bytes)-int(p.sun.offset)>=4096:
+	if architecture=="android-armv7":
+		# The current-station check falls through to the far block; near and mesh follow.
+		if int(p.sun.offset)+int(p.sun.bytes)>int(p.current.offset) or int(p.current.offset)+int(p.current.bytes)!=int(p.far.offset) or int(p.far.offset)+int(p.far.bytes)>int(p.near.offset) or int(p.near.offset)+int(p.near.bytes)>int(p.mesh.offset) or int(p.mesh.offset)+int(p.mesh.bytes)-int(p.sun.offset)>=4096:
+			return "Unlinked planet resource declarations"
+	elif int(p.sun.offset)+int(p.sun.bytes)>mini(int(p.current.offset),int(p.near.offset)) or maxi(int(p.current.offset)+int(p.current.bytes),int(p.near.offset)+int(p.near.bytes))>int(p.far.offset) or int(p.far.offset)>=int(p.mesh.offset) or int(p.mesh.offset)+int(p.mesh.bytes)-int(p.sun.offset)>=4096:
 		return "Unlinked planet resource declarations"
 	return ""

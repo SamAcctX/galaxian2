@@ -2,14 +2,151 @@
 
 Only resource IDs and bounded provenance leave this reader. The native engine
 owns placement and rendering; original instructions are never runtime data.
+
+Android: StarSystem::StarSystem(int) creates the sun texture from the sun
+table at SolarSystem::getTextureIndex(), then per station the planet texture:
+the far table at Station::getTextureIndex() for other stations, for the
+current station the opening texture when Status::getCurrentCampaignMission()
+is 0 and the world type argument is 3, else the near table (sharing the
+TextureCreate tail), and each planet's geometry from one mesh.
 """
 import struct
 from .opening_loadout import template
+from .opening_sky import android_getter
 from .ship_models import section_bytes
 
 COUNTS = {"sun_textures": 19, "near_textures": 27, "far_textures": 27}
 
+ANDROID_SUN = r"""ldr r0, =\w+
+ldr r1, =\w+
+adr r0, \w+
+adr r1, \w+
+ldr r0, \[r0\]
+ldr r4, \[r1\]
+ldr r5, \[r0\]
+ldr r0, \[r4\]
+call _ZN6Status9getSystemEv
+call _ZN11SolarSystem15getTextureIndexEv
+ldr r1, =\w+
+movs r3, #0
+ldr\.w r2, \[sb, #0x14\]
+adr r1, (?P<table>\w+)
+ldrh\.w r1, \[r1, r0, lsl #2\]
+mov r0, r5
+ldr r2, \[r2, #4\]
+call _ZN11AbyssEngine11PaintCanvas13TextureCreateEtRjb
+"""
+ANDROID_CURRENT = r"""ldr\.w r5, \[r0, fp, lsl #2\]
+ldr r0, \[sp, #0x68\]
+ldr r0, \[r0\]
+call _ZN6Status10getStationEv
+add\.w sb, fp, #1
+call _ZN7Station8getIndexEv
+cmp r5, r0
+bne #(?P<far>\w+)
+ldr r0, \[sp, #0x60\]
+ldr r0, \[r0\]
+call _ZN6Status25getCurrentCampaignMissionEv
+ldr r1, \[sp, #0x64\]
+cmp r1, #3
+it eq
+cmpeq r0, #0
+bne #(?P<near>\w+)
+ldr\.w sl, \[sp, #0x70\]
+str\.w sb, \[sl, #0x50\]
+ldr\.w r0, \[sl, #0x14\]
+ldr r1, \[r0, #4\]
+ldr r0, \[sp, #0x50\]
+adds r2, r1, r4
+movw r1, #(?P<opening>\w+)
+ldr r0, \[r0\]
+b #(?P<tail>\w+)
+"""
+ANDROID_FAR = r"""ldr\.w r0, \[r8, #4\]
+ldr r1, \[sp, #0x5c\]
+ldr\.w r0, \[r0, fp, lsl #2\]
+ldr r5, \[r1\]
+call _ZN7Station15getTextureIndexEv
+ldr\.w sl, \[sp, #0x70\]
+movs r3, #0
+ldr\.w r1, \[sl, #0x14\]
+ldr r2, \[r1, #4\]
+ldr r1, =\w+
+add r2, r4
+adr r1, (?P<table>\w+)
+ldrh\.w r1, \[r1, r0, lsl #2\]
+mov r0, r5
+call _ZN11AbyssEngine11PaintCanvas13TextureCreateEtRjb
+"""
+ANDROID_NEAR = r"""ldr\.w r0, \[r8, #4\]
+ldr r1, \[sp, #0x4c\]
+ldr\.w r0, \[r0, fp, lsl #2\]
+ldr r5, \[r1\]
+call _ZN7Station15getTextureIndexEv
+ldr\.w sl, \[sp, #0x70\]
+ldr\.w r1, \[sl, #0x14\]
+ldr r2, \[r1, #4\]
+ldr r1, =\w+
+add r2, r4
+adr r1, (?P<table>\w+)
+ldrh\.w r1, \[r1, r0, lsl #2\]
+mov r0, r5
+(?P<tail>movs r3, #0
+)call _ZN11AbyssEngine11PaintCanvas13TextureCreateEtRjb
+"""
+ANDROID_MESH = r"""movs r0, #0xc0
+call _Znwj
+mov r6, r0
+ldr r0, \[sp, #0x64\]
+ldr r2, \[r0\]
+mov r0, r6
+movw r1, #(?P<mesh>\w+)
+movs r3, #0
+call _ZN10AEGeometryC1EtPN11AbyssEngine11PaintCanvasEb
+ldr\.w r0, \[sb, #0x1c\]
+ldr r0, \[r0, #4\]
+str\.w r6, \[r0, r8, lsl #2\]
+"""
+
+
+def android_resources(lib, sky, colors):
+    """Sun, far, near and opening textures and the planet mesh in StarSystem::StarSystem(int)."""
+    from .android_listing import Listing, number
+    system = Listing(lib, '_ZN10StarSystemC1Ei')
+    sun, current, mesh = (system.find(shape) for shape in (ANDROID_SUN, ANDROID_CURRENT, ANDROID_MESH))
+    if (len(sun) != 1 or len(current) != 1 or len(mesh) != 1
+            or not all(key in sky.get('provenance', {}) for key in ('system', 'cursor'))
+            or not all(key in colors.get('provenance', {}) for key in ('sky_index', 'planet_type'))):
+        return {}
+    sun, current, mesh = sun[0], current[0], mesh[0]
+    # Other stations take the far table; the current one the opening texture or the near table.
+    far = [m for m in system.find(ANDROID_FAR) if system.index(m) == system.at(number(current['far']))]
+    near = [m for m in system.find(ANDROID_NEAR) if system.index(m) == system.at(number(current['near']))
+            and system.index(m, 'tail') == system.at(number(current['tail']))]
+    if not far or not near:
+        return {}
+    far, near = far[0], near[0]
+    provenance = {key: android_getter(lib, symbol) for key, symbol in
+                  [('system', '_ZN6Status9getSystemEv'), ('sky_index', '_ZN11SolarSystem15getTextureIndexEv'),
+                   ('cursor', '_ZN6Status25getCurrentCampaignMissionEv'), ('planet_type', '_ZN7Station15getTextureIndexEv')]}
+    provenance.update((key, system.match_span(m)) for key, m in (('sun', sun), ('current', current), ('far', far), ('near', near), ('mesh', mesh)))
+    result = {'scope': 'fresh_opening_planet_resources'}
+    for (key, count), m in zip(COUNTS.items(), (sun, near, far)):
+        found = section_bytes(lib, number(m['table']), count * 4, b'__const')
+        values = list(struct.unpack('<%dI' % count, found[0])) if found else [65534]
+        if max(values) > 65533:
+            return {}
+        result[key] = values
+        provenance[key] = {'offset': found[1], 'bytes': count * 4}
+    result['mesh_id'], result['opening_texture_id'] = number(mesh['mesh']), number(current['opening'])
+    if not all(provenance.values()) or max(result['mesh_id'], result['opening_texture_id']) > 65533:
+        return {}
+    return dict(result, provenance=provenance)
+
+
 def extract_planet_resources(mach, sky, colors):
+    if mach.architecture == 'android-armv7':
+        return android_resources(mach, sky or {}, colors or {})
     if not sky or not colors or mach.architecture not in ["x86_64", "armv7"]: return {}
     import capstone
     mac=mach.architecture=="x86_64"; prefix="MAC_" if mac else "ARM_"
