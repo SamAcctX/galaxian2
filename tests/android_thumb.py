@@ -85,9 +85,9 @@ class Asm(Thumb):
     def vstr(self, sd, rn, offset):
         return self.half(0xed80 | (sd & 1) << 6 | rn, (sd >> 1) << 12 | 0xa00 | offset // 4)
 
-    def vldr_pc(self, sd, value):  # vldr sd, [pc, #k] with its own pool word
-        self.literals.append((len(self.code), lambda add, word=value: word, 'vldr'))
-        return self.half(0xed9f | (sd & 1) << 6, (sd >> 1) << 12 | 0xa00)
+    def vldr_pc(self, sd, value, double=False):  # vldr sd|dd, [pc, #k] with its own pool word(s)
+        self.literals.append((len(self.code), lambda add, word=value: word, 'vldr.64' if double else 'vldr'))
+        return self.half(0xed9f | (sd >> 4 & 1 if double else sd & 1) << 6, (sd & 15 if double else sd >> 1) << 12 | (0xb00 if double else 0xa00))
 
     def ldr_pc(self, rt, value):  # ldr.w rt, [pc, #k] with its own pool word
         self.literals.append((len(self.code), lambda add, word=value: word, 'ldr.w'))
@@ -163,10 +163,10 @@ class Asm(Thumb):
         for at, value, kind in wide:
             pc = (self.address + at + 4) & ~3
             word = len(self.code)
-            self.code += struct.pack('<I', value(None))
+            self.code += struct.pack('<Q' if kind == 'vldr.64' else '<I', value(None))
             second, = struct.unpack_from('<H', self.code, at + 2)
             offset = self.address + word - pc
-            struct.pack_into('<H', self.code, at + 2, second | (offset // 4 if kind == 'vldr' else offset))
+            struct.pack_into('<H', self.code, at + 2, second | (offset if kind == 'ldr.w' else offset // 4))
         return bytes(self.code)
 
 

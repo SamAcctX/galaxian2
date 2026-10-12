@@ -66,7 +66,7 @@ class Listing:
                 line = 'adr %s, %#x' % (ins.reg_name(ops[0].reg), (words[ops[0].reg] + ins.address + 4) & 0xffffffff)
             for register in (ins.regs_access()[1] if ins.id else ()):
                 words.pop(register, None)
-            if loaded is not None and ins.mnemonic != 'vldr':
+            if loaded is not None:
                 words[ops[0].reg] = loaded
             lines.append(line)
         self.lines = lines

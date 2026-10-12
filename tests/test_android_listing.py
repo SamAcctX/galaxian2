@@ -74,6 +74,15 @@ class AndroidListingTests(unittest.TestCase):
         self.assertEqual((listing.at(TEXT + 0x108), listing.at(TEXT + 0x109)), (4, None))
         self.assertFalse(Listing(lib, '_Z1hv'))
 
+    def test_literals_need_their_pool_and_their_register(self):
+        from gof2_content.android_listing import Listing
+        # A double literal, a load whose pool lies past .text, and a literal overwritten before its add.
+        asm = Asm(TEXT + 0x4f00).vldr_pc(1, 0x4049000000000000, double=True).half(0xf8df, 0x0ff0).ldr_address(0, RODATA)
+        asm.mov(0, 1).add_pc(0).ret()
+        listing = Listing(build({'_Z1fv': asm}), '_Z1fv')
+        self.assertEqual(listing.lines[:2], ['vldr d1, =0x4049000000000000', 'ldr.w r0, [pc, #0xff0]'])
+        self.assertEqual([line.split(' =')[0] for line in listing.lines[2:5]], ['ldr r0,', 'mov r0, r1', 'add r0, pc'])
+
 
 if __name__ == '__main__':
     unittest.main()
