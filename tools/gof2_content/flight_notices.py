@@ -1,8 +1,24 @@
-"""Bounded first-mining notice declarations; no executable runtime payload."""
+"""Bounded first-mining notice declarations; no executable runtime payload.
+
+Android: Hud::hudEvent builds each notice's text (event 6: 560 + " " + 39,
+8: 528, 9: 529, 11: 535 + ": " + 539, 20: 530, 27: 311; Mac 1.0.7 ids),
+skips one equal to a queued text (Hud::sameHudEventAsBefore), styles events
+27, 30, 31 and 47 and fills the first free of the 20 slots Hud::init
+allocates. Hud::draw advances the queue only while not mining;
+Hud::updateQueue retires the head after 4000 ms and lets it fall after
+2000, and Hud::drawEventQueue fades it over 2000 ms (style 1 in 255, 42, 0)
+on image 1219.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 def extract_flight_notices(mach, arrival, flight):
+    if mach.architecture == 'android-armv7':
+        try:
+            if flight['scope'] != 'first_mining_flight_construction': return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64' or flight.get('scope')!='first_mining_flight_construction':return {}
     try:
         origin=arrival['provenance']['actor']
@@ -190,3 +206,15 @@ MAC_ALTERNATE = {'queue_allocation': [-128062,
  'dispatch_11': [-112310, 4, '__text', '5af2ffff'],
  'dispatch_20': [-112274, 4, '__text', '4ef9ffff'],
  'dispatch_27': [-112246, 4, '__text', 'b2f9ffff']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'event_texts': ('_ZN3Hud8hudEventEiP9PlayerEgoi', 0, 3212, 'sha256:40dde1c133b49cbc10579c08f778e3625a187d59d28111bccc745250f444c0ff'),
+           'duplicate_check': ('_ZN3Hud20sameHudEventAsBeforeEN11AbyssEngine6StringE', 0, 66, 'sha256:60ad68b2e8e10ab1adf339a8024219b69ef807c205843a14eca92df14788b593'),
+           # Twenty queue slots: the head and 19 pending notices.
+           'queue_allocation': ('_ZN3Hud4initEv', 2780, 38, 'sha256:55789c56e96a16fb7a1136b4acf11290e8d534eec73348af1146bced89b578ff'),
+           'queue_update': ('_ZN3Hud11updateQueueEi', 0, 132, 'sha256:63b22db9123917588835fc18c78d3001a78d64a909479503ba1281fb48405a41'),
+           'queue_draw': ('_ZN3Hud14drawEventQueueEv', 0, 428, 'sha256:2b40109d923a6cf885cd8d8dc7e1d230e41dbb129083bb4dd3a18aeb37937c70'),
+           'background': ('_ZN3Hud4initEv', 544, 14, '286804f53d7240f2c341ddf676eb'),
+           'drill_gate': ('_ZN3Hud4drawExxP9PlayerEgobjj', 34, 56, 'sha256:778dac21d82f3440f895086ff53fb42662d4670baecb5dcfea667270e7de5338'),
+           'space_separator': ('_ZN3Hud8hudEventEiP9PlayerEgoi', 1078, 2, '2000', 'literal', 0),
+           'colon_separator': ('_ZN3Hud8hudEventEiP9PlayerEgoi', 1230, 3, '3a2000', 'literal', 0)}

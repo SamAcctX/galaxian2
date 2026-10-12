@@ -9,6 +9,9 @@ const SPANS := {"queue_allocation":[-127697,69],"queue_resize":[-173421,86],"que
 
 const MAC_ALTERNATE := {"queue_allocation":[-128062,69],"queue_resize":[-173913,86],"queue_initial":[-127731,67],"queue_update":[-118528,203],"duplicate_check":[-117532,87],"insert_dispatch":[-112789,196],"ordinary_insert":[-112470,83],"ordinary_style":[235642,32],"colored_style":[235943,13],"alpha":[-119062,75],"colors_and_text":[-118865,197],"alpha_constants":[1548934,8],"drill_gate":[-107862,65],"dispatcher":[-117416,29],"cancel_text":[-116582,126],"failure_text":[-115884,20],"tractor_text":[-115864,20],"target_text":[-115844,126],"drill_text":[-114064,20],"full_hold_text":[-113964,20],"text_separators":[1657309,5],"action_notices":[344040,191],"background_lookup":[-131732,20],"background_alias":[-531038,64],"background_draw":[-118987,70],"dispatch_6":[-112330,4],"dispatch_8":[-112322,4],"dispatch_9":[-112318,4],"dispatch_11":[-112310,4],"dispatch_20":[-112274,4],"dispatch_27":[-112246,4]}
 
+# Android: spans inside named functions (Layouts.anchored); the values are VALUES.
+const ANDROID_SPANS := {"event_texts":[0,3212],"duplicate_check":[0,66],"queue_allocation":[2780,38],"queue_update":[0,132],"queue_draw":[0,428],"background":[544,14],"drill_gate":[34,56],"space_separator":[0,2],"colon_separator":[0,3]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -18,7 +21,8 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, flight: Dictionary) -> String:
 	if not data is Dictionary:return "Missing flight notice declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data) or not Flight.parameters(flight):return "Unsupported flight notice declarations"
+	if not (arch=="x86_64" or arch=="android-armv7") or not parameters(data) or not Flight.parameters(flight):return "Unsupported flight notice declarations"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid flight notices extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Flight notice lacks its source anchor"
 	var layouts: Array=[SPANS,MAC_ALTERNATE]
