@@ -8,6 +8,9 @@ const SPANS := {"clock_initial":[121689,8],"clock_advance":[365042,21],"radio_cl
 
 const MAC_ALTERNATE := {"clock_initial":[121689,8],"clock_advance":[364765,21],"radio_clock":[391217,27],"radio_condition_input":[682755,26],"elapsed_condition":[685885,15],"elapsed_condition_slot":[686874,4],"target_initial":[534943,4],"target_list_initial":[535543,8],"population_cursor":[-33,33],"opening_only_exclusion":[3106,9],"target_population":[59632,954],"target_append_gate":[536934,31],"target_append_empty":[537242,25],"target_fallback":[616918,26],"target_getter":[537518,22]}
 
+# Android: spans inside named functions (Layouts.anchored); the values are VALUES.
+const ANDROID_SPANS := {"clock_initial":[44,120],"clock_advance":[1298,24],"radio_clock":[236,20],"radio_update":[244,30],"radio_condition_input":[44,26],"elapsed_dispatch":[36,82],"elapsed_condition":[250,32],"target_initial":[32,112],"target_list_initial":[396,72],"population_cursor":[50,76],"exclusion_flag":[24978,4],"opening_only_exclusion":[25204,12],"target_population":[0,1520],"target_append":[0,162],"target_fallback":[2728,24],"target_getter":[0,10]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -17,8 +20,9 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, bytes: int, arch: String, arrival: Dictionary, motion: Dictionary, world: Dictionary, handoff: Dictionary) -> String:
 	if not data is Dictionary:return "Missing rescue session capability"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data):return "Unsupported rescue session declarations"
+	if not (arch=="x86_64" or arch=="android-armv7") or not parameters(data):return "Unsupported rescue session declarations"
 	if motion.is_empty() or world.is_empty() or handoff.is_empty() or arrival.get("player_update_enabled")!=false:return "Rescue session lacks its world, motion or handoff"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,bytes,ANDROID_SPANS) else "Disconnected rescue session declaration"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],bytes):return "Rescue session lacks its scene anchor"
 	if data.provenance.size()!=SPANS.size():return "Invalid rescue session provenance"

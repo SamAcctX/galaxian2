@@ -46,3 +46,36 @@ class ArrivalSessionTests(unittest.TestCase):
                 elif case=='handoff':handoff.clear()
                 else:m.data=m.data[:128]
                 self.assertEqual(reader.extract_arrival_session(m,a,motion,world,handoff),{},case)
+
+
+ANDROID_ARRIVAL = {'campaign_cursor': 1, 'actor_kind': 3, 'player_update_enabled': False}
+
+
+class AndroidArrivalSessionTests(unittest.TestCase):
+    def extract(self, lib, arrival=ANDROID_ARRIVAL, motion={'present': True}, world={'present': True}, handoff={'present': True}):
+        return reader.extract_arrival_session(lib, arrival, motion, world, handoff)
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        from test_arrival_staging import roomy_layouts
+        with roomy_layouts():
+            verify_android_proof(self, reader, self.extract, values='VALUES')
+            image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            data = self.extract(lib)
+            data['actor_target_ids'].clear()
+            self.assertEqual(reader.VALUES['actor_target_ids'], ['player'])
+            for name, changes in {'no motion': dict(motion={}), 'no world': dict(world={}), 'no handoff': dict(handoff={}),
+                                  'other cursor': dict(arrival={**ANDROID_ARRIVAL, 'campaign_cursor': 0}),
+                                  'other kind': dict(arrival={**ANDROID_ARRIVAL, 'actor_kind': 8}),
+                                  'player updates': dict(arrival={**ANDROID_ARRIVAL, 'player_update_enabled': True}),
+                                  'unknown update': dict(arrival={**ANDROID_ARRIVAL, 'player_update_enabled': 0}),
+                                  'no arrival': dict(arrival={})}.items():
+                self.assertEqual(self.extract(lib, **changes), {}, name)
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'arrival_session_definitions.gd', values='VALUES')
