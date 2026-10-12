@@ -38,7 +38,8 @@ class AndroidLibrary:
         self.source_sha256 = hashlib.sha256(source).hexdigest()
         self.source_bytes = len(source)
         self.slice_offset = 0
-        self.architecture = 'armv7'
+        # Not 'armv7': iOS layouts come from another compiler and never apply here.
+        self.architecture = 'android-armv7'
         self.edition = 'android-hd'
         # 32-bit little-endian ARM shared object.
         if source[:7] != b'\x7fELF\x01\x01\x01' or self.unpack('<HH', 16) != (3, 40):
@@ -75,6 +76,7 @@ class AndroidLibrary:
             setattr(self, key, matches[0])
         self.functions = self.read_functions()
         self.imports = self.read_imports()
+        self.symbols = {name: (start, size) for start, size, name in self.functions}
 
     def unpack(self, fmt, offset):
         size = struct.calcsize(fmt)
@@ -582,3 +584,48 @@ def declaration(objects, item):
         return None
     rest = {at: (value[1], width) for at, (value, width) in rest.items()}
     return identifier[1], kind[1], copy['copied'][0], rest, item['address']
+
+
+def instructions(lib, symbol):
+    """Linear Thumb decode, with operand detail, of a named function (None if absent).
+
+    Literal pools inside the function decode as data-shaped instructions; readers
+    match exact instruction shapes, so pool words cannot pose as the code they seek.
+    """
+    import capstone
+    cache = lib.__dict__.setdefault('_decoded', {})
+    if symbol not in cache:
+        extent = getattr(lib, 'symbols', {}).get(symbol)
+        if extent is None:
+            cache[symbol] = None
+        else:
+            decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+            decoder.detail = True
+            decoder.skipdata = True
+            start, size = extent
+            at = lib.text['offset'] + start - lib.text['address']
+            cache[symbol] = [ins if ins.id else Data(ins.address, ins.size)
+                             for ins in decoder.disasm(lib.data[at:at + size], start)]
+    return cache[symbol]
+
+
+class Data:
+    """Undecodable bytes inside a function (a literal pool): no operands, no effects."""
+    mnemonic, operands, id = '.byte', (), 0
+
+    def __init__(self, address, size):
+        self.address, self.size = address, size
+
+    def regs_access(self):
+        return [], []
+
+
+def callee(lib, ins):
+    """Symbol called by a bl/blx with an immediate target: PLT import or local function."""
+    from capstone.arm_const import ARM_OP_IMM
+    if ins.mnemonic not in ('bl', 'blx') or len(ins.operands) != 1 or ins.operands[0].type != ARM_OP_IMM:
+        return None
+    target = ins.operands[0].imm & 0xffffffff
+    if target in lib.imports:
+        return lib.imports[target]
+    return next((name for name, (start, _) in lib.symbols.items() if start == target & ~1), None)

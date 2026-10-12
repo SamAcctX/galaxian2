@@ -2729,6 +2729,7 @@
     "tests/test_ambient_lifecycle.py",
     "tests/test_ambient_population.py",
     "tests/test_android_importer.py",
+    "tests/test_android_layouts.py",
     "tests/test_android_library.py",
     "tests/test_arrival_actor_construction.py",
     "tests/test_arrival_actor_motion.py",

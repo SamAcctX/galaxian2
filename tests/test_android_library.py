@@ -48,7 +48,15 @@ class AndroidLibraryTests(unittest.TestCase):
                  (lambda: asm.strh(0, 5, 0), 'strh r0, [r5]'), (lambda: asm.str(0, 6, 4), 'str r0, [r6, #4]'),
                  (lambda: asm.strb(1, 6, 6), 'strb r1, [r6, #6]'), (lambda: asm.stm(2, 0, 1, 6), 'stm r2!, {r0, r1, r6}'),
                  (lambda: asm.str_sp(0, 8), 'str r0, [sp, #8]'), (lambda: asm.ldr_sp(0, 8), 'ldr r0, [sp, #8]'),
-                 (lambda: asm.call(stub('_Znwj')), 'blx #0x%x' % stub('_Znwj'))]
+                 (lambda: asm.call(stub('_Znwj')), 'blx #0x%x' % stub('_Znwj')),
+                 (lambda: asm.mov_imm(10, 0x3f800000), 'mov.w sl, #0x3f800000'), (lambda: asm.mov_imm(1, 0x40800000), 'mov.w r1, #0x40800000'),
+                 (lambda: asm.mov_imm(2, 7), 'mov.w r2, #7'), (lambda: asm.strd(1, 10, 4, 0xb8), 'strd r1, sl, [r4, #0xb8]'),
+                 (lambda: asm.str_w(2, 0, 0xb8), 'str.w r2, [r0, #0xb8]'), (lambda: asm.ldr(0, 4, 8), 'ldr r0, [r4, #8]'),
+                 (lambda: asm.vldr(2, 4, 0x134), 'vldr s2, [r4, #0x134]'), (lambda: asm.vldr(3, 4, 8), 'vldr s3, [r4, #8]'),
+                 (lambda: asm.vcvt(0, 0), 'vcvt.f32.s32 s0, s0'), (lambda: asm.vcvt(3, 5), 'vcvt.f32.s32 s3, s5'),
+                 (lambda: asm.vmul(0, 0, 2), 'vmul.f32 s0, s0, s2'), (lambda: asm.vmul(5, 3, 1), 'vmul.f32 s5, s3, s1'),
+                 (lambda: asm.vmov_core(1, 0), 'vmov r1, s0'), (lambda: asm.vmov_core(3, 5), 'vmov r3, s5'),
+                 (lambda: asm.call(TEXT + 0x400, exchange=False), 'bl #0x%x' % (TEXT + 0x400))]
         for emit, expected in cases:
             start = len(asm.code)
             emit()
@@ -65,7 +73,7 @@ class AndroidLibraryTests(unittest.TestCase):
 
     def test_elf_layout_and_verified_imports(self):
         lib = build(lambda asm: registration(asm, 1, 2, A, ('texture', 1)))
-        self.assertEqual((lib.architecture, lib.edition, lib.slice_offset), ('armv7', 'android-hd', 0))
+        self.assertEqual((lib.architecture, lib.edition, lib.slice_offset), ('android-armv7', 'android-hd', 0))
         self.assertEqual(lib.imports, {stub(name): name for name in IMPORTS})
         self.assertEqual([(s['segment'], s['name']) for s in lib.sections],
                          [(b'__TEXT', b'__text'), (b'__TEXT', b'__cstring'), (b'__TEXT', b'__const'), (b'__TEXT', b'__picsymbolstub4')])
@@ -240,7 +248,7 @@ class AndroidLibraryTests(unittest.TestCase):
             registration(asm, 1000, 2, A, ('texture', 7))
         source = build(body).data
         declarations = extract(source, 'android-hd')
-        self.assertEqual(declarations['architecture'], 'armv7')
+        self.assertEqual(declarations['architecture'], 'android-armv7')
         self.assertEqual([(r['id'], r['source_path']) for r in declarations['registrations']],
                          [(1000, 'data/textures/a.aei'), (2000, 'data/meshes/b.aem')])
         with self.assertRaises(ContentError):

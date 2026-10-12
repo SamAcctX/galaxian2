@@ -90,6 +90,31 @@ class Thumb:
 
     def nop(self): return self.half(0xbf00)
 
+    def mov_imm(self, rd, value):  # mov.w rd, #value (Thumb modified immediate)
+        value &= 0xffffffff
+        if value < 256:
+            imm12 = value
+        else:
+            imm12 = next(rotation << 7 | rotated & 0x7f for rotation in range(8, 32)
+                         for rotated in [(value << rotation | value >> (32 - rotation)) & 0xffffffff]
+                         if rotated < 256 and rotated & 0x80)
+        return self.half(0xf04f | (imm12 >> 11) << 10, (imm12 >> 8 & 7) << 12 | rd << 8 | imm12 & 255)
+
+    def strd(self, rt, rt2, rn, offset): return self.half(0xe9c0 | rn, rt << 12 | rt2 << 8 | offset // 4)
+
+    def str_w(self, rt, rn, offset): return self.half(0xf8c0 | rn, rt << 12 | offset)
+
+    def ldr(self, rt, rn, offset): return self.half(0x6800 | (offset // 4) << 6 | rn << 3 | rt)
+
+    def vldr(self, sd, rn, offset): return self.half(0xed90 | (sd & 1) << 6 | rn, (sd >> 1) << 12 | 0xa00 | offset // 4)
+
+    def vcvt(self, sd, sm): return self.half(0xeeb8 | (sd & 1) << 6, (sd >> 1) << 12 | 0xac0 | (sm & 1) << 5 | sm >> 1)
+
+    def vmul(self, sd, sn, sm):
+        return self.half(0xee20 | (sd & 1) << 6 | sn >> 1, (sd >> 1) << 12 | 0xa00 | (sn & 1) << 7 | (sm & 1) << 5 | sm >> 1)
+
+    def vmov_core(self, rt, sn): return self.half(0xee10 | sn >> 1, rt << 12 | 0xa10 | (sn & 1) << 7)
+
     def address_of(self, rd, address):
         """ldr rd, [pc, #k] ; add rd, pc  ->  rd = address."""
         self.literals.append((len(self.code), lambda add, target=address: (target - (add + 4)) & 0xffffffff))
@@ -173,13 +198,17 @@ def section(name, kind, address, offset, size, link=0, info=0, align=4, entry=0)
     return (name, kind, 2, address, offset, size, link, info, align, entry)
 
 
-def library(functions, strings, *, plt_slots=None, machine=40):
-    """functions: [(name, Thumb.finish() bytes, address)]; strings: {address: text} within .rodata."""
-    rodata = bytearray(0x1000)
+def library(functions, strings, *, plt_slots=None, machine=40, text_size=0x5000, rodata=RODATA, got=GOT):
+    """functions: [(name, Thumb.finish() bytes, address)]; strings: {address: text or bytes} within .rodata.
+
+    Larger fixtures pass a bigger `text_size` with `rodata`/`got` moved past it.
+    """
+    rodata_size = 0x1000 if rodata == RODATA else max(0x1000, max((a + len(t) + 1 - rodata for a, t in strings.items()), default=0))
+    image_rodata = bytearray(rodata_size)
     for address, text in strings.items():
-        encoded = text.encode() + b'\0'
-        rodata[address - RODATA:address - RODATA + len(encoded)] = encoded
-    text = bytearray(0x5000)
+        encoded = text if isinstance(text, bytes) else text.encode() + b'\0'
+        image_rodata[address - rodata:address - rodata + len(encoded)] = encoded
+    text = bytearray(text_size)
     for _, code, address in functions:
         text[address - TEXT:address - TEXT + len(code)] = code
     names = bytearray(b'\0')
@@ -191,31 +220,32 @@ def library(functions, strings, *, plt_slots=None, machine=40):
         symbols.append(struct.pack('<IIIBBH', name(value), 0, 0, 0x12, 0, 0))
     for label, code, address in functions:
         symbols.append(struct.pack('<IIIBBH', name(label), address | 1, len(code), 0x12, 0, 5))
-    relocations = b''.join(struct.pack('<II', (plt_slots or {}).get(n, GOT + 4 * i), (i + 1) << 8 | 22)
+    relocations = b''.join(struct.pack('<II', (plt_slots or {}).get(n, got + 4 * i), (i + 1) << 8 | 22)
                            for i, n in enumerate(IMPORTS))
     stubs = bytearray(20)
     for index in range(len(IMPORTS)):
         entry = PLT + 20 + 12 * index
-        total = GOT + 4 * index - (entry + 8)
+        total = got + 4 * index - (entry + 8)
         stubs += struct.pack('<3I', 0xe28fc600 | total >> 20 & 255, 0xe28cca00 | total >> 12 & 255, 0xe5bcf000 | total & 0xfff)
     # File layout: header, then blobs at offsets equal to their addresses.
     blobs = {0x200: b''.join(symbols), 0x600: bytes(names), 0x800: relocations, PLT: bytes(stubs),
-             TEXT: bytes(text), RODATA: bytes(rodata)}
+             TEXT: bytes(text), rodata: bytes(image_rodata)}
     shstr = b'\0.dynsym\0.dynstr\0.rel.plt\0.plt\0.text\0.rodata\0.shstrtab\0'
     def at(label): return shstr.index(label.encode() + b'\0')
+    tail = max(0x9000, rodata + rodata_size, got + 0x1000)
     sections = [(0,) * 10,
                 section(at('.dynsym'), 11, 0x200, 0x200, len(blobs[0x200]), 2, 1, entry=16),
                 section(at('.dynstr'), 3, 0x600, 0x600, len(names)),
                 section(at('.rel.plt'), 9, 0x800, 0x800, len(relocations), 1, 4, entry=8),
                 section(at('.plt'), 1, PLT, PLT, len(stubs)),
                 section(at('.text'), 1, TEXT, TEXT, len(text)),
-                section(at('.rodata'), 1, RODATA, RODATA, len(rodata)),
-                section(at('.shstrtab'), 3, 0, 0x9000, len(shstr))]
-    image = bytearray(0x9000 + len(shstr) + 40 * len(sections))
+                section(at('.rodata'), 1, rodata, rodata, len(image_rodata)),
+                section(at('.shstrtab'), 3, 0, tail, len(shstr))]
+    image = bytearray(tail + len(shstr) + 40 * len(sections))
     for offset, blob in blobs.items():
         image[offset:offset + len(blob)] = blob
-    image[0x9000:0x9000 + len(shstr)] = shstr
-    table = 0x9000 + len(shstr)
+    image[tail:tail + len(shstr)] = shstr
+    table = tail + len(shstr)
     for index, row in enumerate(sections):
         struct.pack_into('<10I', image, table + 40 * index, *row)
     image[:16] = b'\x7fELF\x01\x01\x01' + bytes(9)
@@ -223,3 +253,57 @@ def library(functions, strings, *, plt_slots=None, machine=40):
     struct.pack_into('<I', image, 32, table)
     struct.pack_into('<HHH', image, 46, 40, len(sections), len(sections) - 1)
     return bytes(image)
+
+
+def layout_library(layout, shift=0):
+    """A synthetic library holding every span of a symbol-anchored proof layout.
+
+    Each span gets distinct synthetic bytes (never original code); a 'literal'
+    entry gets an `ldr rN, [pc]; add rN, pc` pair at its delta that addresses
+    a synthetic table in .rodata holding its bytes at its start. Returns (library bytes, the layout rewritten
+    with the synthetic proofs, {symbol: function address}).
+    """
+    import hashlib
+    extent = {}
+    for rule in layout.values():
+        end = rule[1] + (12 if len(rule) == 6 else rule[2])
+        extent[rule[0]] = max(extent.get(rule[0], 0), end)
+    starts, address = {}, TEXT + 0x100 + shift
+    for symbol, end in extent.items():
+        starts[symbol] = address
+        address += (end + 15) & ~15
+    code = {symbol: bytearray(b'\x00\xbf' * ((end + 1) // 2)) for symbol, end in extent.items()}
+    for index, (key, rule) in enumerate(layout.items()):
+        if len(rule) == 4:
+            symbol, delta, size = rule[:3]
+            code[symbol][delta:delta + size] = bytes((17 * index + 3 * i + 1) % 251 + 1 for i in range(size))
+    rodata = (address + 0xfff) & ~0xfff
+    data, at, used = {}, rodata, {}
+    for index, (key, rule) in enumerate(layout.items()):
+        if len(rule) == 6:
+            symbol, delta, size = rule[:3]
+            here = starts[symbol] + delta
+            pool = ((here + 4) & ~3) + 4 - starts[symbol]  # ldr r0, [pc, #4] ; add r0, pc
+            assert all(not (d - 12 < delta < d + 12) for d in used.get(symbol, [])), 'synthetic literal pairs overlap'
+            used.setdefault(symbol, []).append(delta)
+            struct.pack_into('<HH', code[symbol], delta, 0x4801, 0x4478)
+            struct.pack_into('<I', code[symbol], pool, (at - (here + 2 + 4)) & 0xffffffff)
+            data[at] = bytes(rule[5]) + bytes((29 * index + 5 * i + 2) % 251 + 1 for i in range(size))
+            at = (at + rule[5] + size + 15) & ~15
+    patched = {}
+    for key, rule in layout.items():
+        symbol, delta, size, expected = rule[:4]
+        raw = data[word_target(code[symbol], delta, starts[symbol])][rule[5]:] if len(rule) == 6 else bytes(code[symbol][delta:delta + size])
+        patched[key] = (symbol, delta, size, 'sha256:' + hashlib.sha256(raw).hexdigest() if expected.startswith('sha256:') else raw.hex(), *rule[4:])
+    functions = [(symbol, bytes(body), starts[symbol]) for symbol, body in code.items()]
+    image = library(functions, data, text_size=rodata - TEXT, rodata=rodata, got=(at + 0xfff) & ~0xfff)
+    return image, patched, starts
+
+
+def word_target(body, delta, start):
+    """Data address of the synthetic literal pair at body[delta]."""
+    half, = struct.unpack_from('<H', body, delta)
+    here = start + delta
+    pool = ((here + 4) & ~3) + (half & 255) * 4 - start
+    word, = struct.unpack_from('<I', body, pool)
+    return (word + here + 2 + 4) & 0xffffffff
