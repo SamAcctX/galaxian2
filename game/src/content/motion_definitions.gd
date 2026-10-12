@@ -45,7 +45,7 @@ static func validate_manual_rotation(data: Variant, executable_bytes: int, archi
 	if not data is Dictionary: return "Invalid manual rotation definitions"
 	if data.is_empty(): return ""
 	if not valid_rotation_parameters(data): return "Unsupported manual rotation parameters"
-	var sizes := [90, 4, 4, 4, 28] if architecture == "armv7" else [24, 61, 4, 4, 4, 45]
+	var sizes: Array = {"armv7": [90, 4, 4, 4, 28], "android-armv7": [72, 4, 4, 4, 224]}.get(architecture, [24, 61, 4, 4, 4, 45])
 	if not data.get("provenance") is Array or data.provenance.size() != sizes.size():
 		return "Missing manual rotation provenance"
 	if architecture == "x86_64" and reader_version >= 175 and data.provenance[-1] is Dictionary and data.provenance[-1].get("bytes") == 35:

@@ -1,4 +1,9 @@
-"""Read manual angular-unit constants; no input-response logic is exported."""
+"""Read manual angular-unit constants; no input-response logic is exported.
+
+Android: PlayerEgo::handleShip scales both rotation fields by the angle unit,
+2 pi, the elapsed milliseconds and the time scale (three literal-pool floats)
+and passes them to AEMath::MatrixSetRotation(Matrix&, float, float, float).
+"""
 import math
 import re
 import struct
@@ -15,9 +20,65 @@ def lit(value):
     return re.escape(bytes.fromhex(value))
 
 
+def shape_at(code, shape):
+    """Indexes where `code` holds the instructions of `shape`: (mnemonic, operand-text regex) pairs."""
+    return [i for i in range(len(code) - len(shape) + 1)
+            if all(ins.mnemonic == m and re.fullmatch(o, ins.op_str) for ins, (m, o) in zip(code[i:], shape))]
+
+
+def pool_float(lib, symbol, ins):
+    """(file offset, value) of the float a pc-relative vldr loads from the named function's own pool."""
+    start, size = lib.symbols[symbol]
+    address = ((ins.address + 4) & ~3) + ins.operands[1].mem.disp
+    if not start <= address <= start + size - 4:
+        return None
+    offset = lib.text['offset'] + address - lib.text['address']
+    return offset, struct.unpack_from('<f', lib.data, offset)[0]
+
+
+def code_span(lib, code, first, last):
+    """Provenance of code[first..last] inclusive."""
+    start = code[first].address
+    return {'offset': lib.text['offset'] + start - lib.text['address'], 'bytes': code[last].address + code[last].size - start}
+
+
+PC = r'\[pc, #-?0x[0-9a-f]+\]'  # a pc-relative literal
+ANDROID_HANDLER = '_ZN9PlayerEgo10handleShipEi'
+ANDROID_HELPER = '_ZN11AbyssEngine6AEMath17MatrixSetRotationERNS0_6MatrixEfff'
+# Both rotation fields x angle unit x 2 pi x elapsed (s16) x time scale -> MatrixSetRotation x, y.
+ANDROID_STEP = [('vldr', 's0, ' + PC), ('vldr', r's2, \[fp, #0x278\]'), ('vldr', r's4, \[fp, #0x27c\]'),
+                ('vcvt.f32.s32', 's16, s6'), ('vmul.f32', 's2, s2, s0'), ('str.w', r'sb, \[sp\]'), ('vmul.f32', 's0, s4, s0'),
+                ('vldr', 's4, ' + PC), ('vmul.f32', 's2, s2, s4'), ('vmul.f32', 's0, s0, s4'),
+                ('vldr', 's4, ' + PC), ('vmul.f32', 's2, s16, s2'), ('vmul.f32', 's0, s16, s0'),
+                ('vmul.f32', 's2, s2, s4'), ('vmul.f32', 's0, s0, s4'), ('vmov', 'r2, s2'), ('vmov', 'r3, s0'), ('blx', '.*')]
+
+
+def android_rotation(lib):
+    from .android_library import callee, instructions
+    code = instructions(lib, ANDROID_HANDLER)
+    if not code or ANDROID_HELPER not in lib.symbols:
+        return {}
+    steps = shape_at(code, ANDROID_STEP)
+    if len(steps) != 1 or callee(lib, code[steps[0] + 17]) != ANDROID_HELPER:
+        return {}
+    step = steps[0]
+    constants = [pool_float(lib, ANDROID_HANDLER, code[step + i]) for i in (0, 7, 10)]
+    if None in constants:
+        return {}
+    values = [value for _, value in constants]
+    if not all(math.isfinite(v) and v > 0 for v in values) or values[0] > 1 or values[1] > 10 or values[2] > 1:
+        return {}
+    start, size = lib.symbols[ANDROID_HELPER]
+    helper = {'offset': lib.text['offset'] + start - lib.text['address'], 'bytes': size}
+    return dict(zip(('angle_unit_scale', 'radians_per_turn', 'time_scale'), values), rotation_order='local_x_y',
+                provenance=[code_span(lib, code, step, step + 17)] + [{'offset': o, 'bytes': 4} for o, _ in constants] + [helper])
+
+
 def extract_manual_rotation(mach, cruise):
     if not cruise:
         return {}
+    if mach.architecture == 'android-armv7':
+        return android_rotation(mach)
     text = mach.text
     code = mach.data[text['offset']:text['offset'] + text['length']]
     base = text['address']

@@ -89,3 +89,78 @@ class SteeringTests(unittest.TestCase):
                     data[256 + at] ^= 1
                 m.data = bytes(data)
                 self.assertEqual(extract_manual_rotation(m, {'available': True}), {}, (mac, corruption))
+
+
+def vldr_pc(asm, sd, target):
+    """vldr sd, [pc, #+-k]: target - Align(pc, 4) (the fixture's vldr only adds)."""
+    disp = target - ((asm.here() + 4) & ~3)
+    return asm.vldr(sd, 15, disp) if disp >= 0 else asm.half(0xed1f | (sd & 1) << 6, (sd >> 1) << 12 | 0xa00 | -disp // 4)
+
+
+def android(constants=(1 / 1024, 6.0, 0.025), fields=(0x278, 0x27c), steps=1, call=None, pool='inside', omit=None):
+    """PlayerEgo::handleShip's rotation step in the Android compiler's shape.
+
+    pool 'after'/'before' moves the last float just past the handler's end
+    (into the helper) or just before its start (into a preceding function).
+    """
+    from android_fixture import TEXT, Thumb, library, stub
+    from gof2_content.android_library import AndroidLibrary
+    from gof2_content.steering import ANDROID_HANDLER, ANDROID_HELPER
+    words = [struct.unpack('<I', struct.pack('<f', v))[0] for v in constants]
+    before, handler, helper = TEXT + 0x80, TEXT + 0x100, TEXT + 0x400
+    table = handler + 0x100
+    last = {'inside': table + 8, 'after': helper + 4, 'before': before + 4}[pool]
+    asm = Thumb(handler).push()
+    for _ in range(steps):
+        vldr_pc(asm, 0, table).vldr(2, 11, fields[0]).vldr(4, 11, fields[1]).vcvt(16, 6).vmul(2, 2, 0).str_w(9, 13, 0).vmul(0, 4, 0)
+        vldr_pc(asm, 4, table + 4).vmul(2, 2, 4).vmul(0, 0, 4)
+        vldr_pc(asm, 4, last).vmul(2, 16, 2).vmul(0, 16, 0).vmul(2, 2, 4).vmul(0, 0, 4).vmov_core(2, 2).vmov_core(3, 0)
+        asm.call(stub(call) if call else helper)
+    asm.pop()
+    while asm.here() < table:
+        asm.nop()
+    code = asm.data(*words[:2] + (words[2:] if pool == 'inside' else [])).finish()
+    functions = [(ANDROID_HANDLER, code, handler), (ANDROID_HELPER, Thumb(helper).push().pop().data(words[2]).finish(), helper),
+                 ('_Z6beforev', Thumb(before).push().pop().data(words[2]).finish(), before)]
+    return AndroidLibrary(library([f for f in functions if f[0] != omit], {}))
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidSteeringTests(unittest.TestCase):
+    def test_named_handler_gives_constants_and_spans(self):
+        from android_fixture import TEXT
+        from gof2_content.android_library import instructions
+        from gof2_content.steering import ANDROID_HANDLER
+        lib = android()
+        # The synthetic encodings are the instructions the reader expects.
+        self.assertEqual([(i.mnemonic, i.op_str) for i in instructions(lib, ANDROID_HANDLER)[1:4]],
+                         [('vldr', 's0, [pc, #0xfc]'), ('vldr', 's2, [fp, #0x278]'), ('vldr', 's4, [fp, #0x27c]')])
+        self.assertEqual(instructions(android(pool='before'), ANDROID_HANDLER)[11].op_str, 's4, [pc, #-0xa8]')
+        result = extract_manual_rotation(lib, {'available': True})
+        self.assertEqual((result['angle_unit_scale'], result['radians_per_turn'], result['rotation_order']), (1 / 1024, 6.0, 'local_x_y'))
+        self.assertAlmostEqual(result['time_scale'], 0.025)
+        # step (18 instructions), the three pool floats, the whole helper
+        self.assertEqual([(p['offset'] - TEXT, p['bytes']) for p in result['provenance']],
+                         [(0x102, 72), (0x200, 4), (0x204, 4), (0x208, 4), (0x400, 8)])
+        self.assertEqual(extract_manual_rotation(lib, {}), {})
+
+    def test_each_broken_declaration_is_unsupported(self):
+        cases = {'x field': dict(fields=(0x274, 0x27c)), 'y field': dict(fields=(0x278, 0x280)), 'duplicate': dict(steps=2),
+                 'callee': dict(call='puts'), 'pool after': dict(pool='after'), 'pool before': dict(pool='before'),
+                 'zero': dict(constants=(0, 6.0, 0.025)), 'nan': dict(constants=(1 / 1024, float('nan'), 0.025)),
+                 'negative': dict(constants=(1 / 1024, 6.0, -0.025)), 'unit range': dict(constants=(2, 6.0, 0.025)),
+                 'turn range': dict(constants=(1 / 1024, 11, 0.025)), 'time range': dict(constants=(1 / 1024, 6.0, 2))}
+        from gof2_content.steering import ANDROID_HANDLER, ANDROID_HELPER
+        cases.update({name: dict(omit=name) for name in (ANDROID_HANDLER, ANDROID_HELPER)})
+        for name, options in cases.items():
+            self.assertEqual(extract_manual_rotation(android(**options), {'available': True}), {}, name)
+
+    def test_imported_helper_without_a_definition_is_unsupported(self):
+        from unittest.mock import patch
+        import android_fixture
+        from gof2_content.steering import ANDROID_HELPER
+        with patch.object(android_fixture, 'IMPORTS', android_fixture.IMPORTS + (ANDROID_HELPER,)):
+            lib = android(call=ANDROID_HELPER, omit=ANDROID_HELPER)
+            stubbed = android_fixture.stub(ANDROID_HELPER)
+        self.assertEqual(lib.imports[stubbed], ANDROID_HELPER)
+        self.assertEqual(extract_manual_rotation(lib, {'available': True}), {})
