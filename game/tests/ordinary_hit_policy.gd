@@ -70,7 +70,7 @@ func check_profile(content: String,pack: String) -> void:
 		check(not resolver.resolve(2,[]).has("ordinary_hit_policy"),"Legacy source pack inferred ordinary hit policy")
 		print(library.manifest.profile.edition,": legacy weapon behavior retained without inferred hit policy")
 		return
-	var architecture := "armv7" if library.manifest.profile.edition=="ios-hd" else "x86_64"
+	var architecture := str({"ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"x86_64"))
 	check(Definitions.validate(policy,64000000,architecture,bindings.weapon_parameters).is_empty(),"Source policy rejected")
 	for key in policy.provenance:
 		var bad := policy.duplicate(true);bad.provenance[key].bytes+=1

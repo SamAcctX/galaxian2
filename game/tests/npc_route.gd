@@ -29,7 +29,7 @@ func check_profile(content: String, bindings_path: String) -> void:
 	if data.is_empty():
 		check(not route.configure(bindings,0) and route.snapshot().is_empty(),"Legacy pack invented generated NPC routes")
 		return
-	var arch := "armv7" if library.manifest.profile.edition=="ios-hd" else "x86_64"
+	var arch := str({"ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"x86_64"))
 	var extent := 0
 	for span in data.provenance.values(): extent=maxi(extent,int(span.offset)+int(span.bytes))
 	check(Definitions.validate(data,extent,arch).is_empty(),"Route provenance rejected")

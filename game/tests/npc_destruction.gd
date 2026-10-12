@@ -48,7 +48,7 @@ func check_profile(content: String, binding_path: String) -> void:
 		check(metadata.models[i].start_ms==33 and metadata.models[i].end_ms==4500,"Actual positive animation range changed")
 	var detached := resources.snapshot();detached.models.clear()
 	check(resources.snapshot()==metadata,"Explosion metadata aliases resource owner")
-	check_definitions(bindings,"armv7" if library.manifest.profile.edition=="ios-hd" else "x86_64")
+	check_definitions(bindings,str({"ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"x86_64")))
 	var constructor := Construction.new()
 	if not constructor.configure(bindings,catalogues): check(false,constructor.error);return
 	var constructed := constructor.generate({"state":280936762154123})

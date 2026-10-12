@@ -28,7 +28,7 @@ func check_profile(content: String, bindings_path: String) -> void:
 		check(not flight.configure(bindings,Transform3D.IDENTITY) and flight.snapshot().is_empty(),"Legacy pack invented NPC motion")
 		return
 	check(Definitions.parameters(data),"Imported NPC flight parameters rejected")
-	var architecture := "armv7" if library.manifest.profile.edition=="ios-hd" else "x86_64"
+	var architecture := str({"ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"x86_64"))
 	var executable_bytes := 0
 	for span in data.provenance.values(): executable_bytes=maxi(executable_bytes,int(span.offset)+int(span.bytes))
 	check(Definitions.validate(data,executable_bytes,architecture).is_empty(),"Source NPC flight provenance rejected")
@@ -37,7 +37,8 @@ func check_profile(content: String, bindings_path: String) -> void:
 		bad.provenance[key].bytes+=1
 		check(not Definitions.validate(bad,executable_bytes,architecture).is_empty(),"Invalid NPC extent accepted: "+key)
 	var overlapping := data.duplicate(true)
-	overlapping.provenance.virtual_update.offset=overlapping.provenance.actor_wrapper.offset
+	var spans: Array=overlapping.provenance.keys()
+	overlapping.provenance[spans[1]].offset=overlapping.provenance[spans[0]].offset
 	check(not Definitions.validate(overlapping,executable_bytes,architecture).is_empty(),"Overlapping NPC provenance accepted")
 	check(not Definitions.validate(data,executable_bytes-1,architecture).is_empty(),"Truncated NPC source extent accepted")
 	for key in data:

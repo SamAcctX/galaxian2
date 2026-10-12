@@ -54,7 +54,7 @@ func check_profile(content: String, path: String) -> void:
 	var flags := [];flags.resize(bindings.opening_dialogue.events.size());flags.fill(false);flags[2]=true
 	check(candidate.update({"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"finished":flags}),candidate.error)
 	check(candidate.snapshot().player_pose.origin==Vector3(18000,-12000,-40000),"Formation failed to replace the earlier player displacement")
-	var architecture: String="armv7" if library.manifest.profile.edition=="ios-hd" else "x86_64"
+	var architecture: String=str({"ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"x86_64"))
 	var data: Dictionary=bindings.opening_staging.player_motion
 	check(Definitions.validate(data,10000000,architecture,bindings.opening_staging).is_empty(),"Actual declaration rejected")
 	for key in data.provenance:

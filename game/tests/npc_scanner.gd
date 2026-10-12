@@ -26,7 +26,7 @@ func verify(content: String, pack: String, pixels: String) -> void:
 		check(not scanner.configure(bindings,catalogues,Vector2(76,57),25) and scanner.snapshot().is_empty(),"Legacy pack invented scanner support")
 		return
 	var definition: Dictionary=bindings.opening_staging.npc_scanner
-	var architecture: String="armv7" if library.manifest.profile.edition=="ios-hd" else "x86_64"
+	var architecture: String=str({"ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"x86_64"))
 	check(Definitions.validate(definition,10000000,architecture,bindings.opening_staging).is_empty(),"Source scanner rejected")
 	for key in definition.provenance:
 		var bad:=definition.duplicate(true);bad.provenance[key].offset+=2

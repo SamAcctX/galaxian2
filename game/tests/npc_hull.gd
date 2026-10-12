@@ -27,7 +27,7 @@ func verify(content: String, pack: String) -> void:
 		check(not actor.configure(bindings,catalogues,0,10) and actor.snapshot().is_empty(),"Outdated rank assumption entered native combat")
 		return
 	var definition: Dictionary=npc.hull
-	var architecture: String="armv7" if library.manifest.profile.edition=="ios-hd" else "x86_64"
+	var architecture: String=str({"ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"x86_64"))
 	verify_stale_pack(pack,library,architecture)
 	check(Definitions.validate(definition,10000000,architecture,npc).is_empty(),"Source NPC hull declaration rejected")
 	for key in definition.provenance:

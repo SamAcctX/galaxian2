@@ -26,7 +26,7 @@ func check_profile(content: String, path: String) -> void:
 		check(not control.configure(bindings,catalogues,0.5) and control.snapshot().is_empty(),"Legacy pack invented holding control")
 		return
 	check(control.configure(bindings,catalogues,0.5),control.error)
-	var architecture := "armv7" if library.manifest.profile.edition=="ios-hd" else "x86_64"
+	var architecture := str({"ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"x86_64"))
 	var extent := 0
 	for span in definition.provenance.values(): extent=maxi(extent,int(span.offset)+int(span.bytes))
 	check(Holding.validate(definition,extent,architecture).is_empty(),"Holding provenance rejected")

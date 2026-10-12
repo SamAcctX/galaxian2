@@ -62,7 +62,7 @@ func check_profile(content: String, bindings_path: String) -> void:
 	check(not guidance.configure(bindings,catalogues,0,0.5),"Incomplete NPC target membership accepted")
 	bindings.opening_actors.actors=original_population
 	check(guidance.configure(bindings,catalogues,0,0.5),guidance.error)
-	var architecture := "armv7" if library.manifest.profile.edition=="ios-hd" else "x86_64"
+	var architecture := str({"ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"x86_64"))
 	var extent := 0
 	for span in data.provenance.values(): extent=maxi(extent,int(span.offset)+int(span.bytes))
 	check(Definitions.validate(data,extent,architecture).is_empty(),"NPC guidance provenance rejected")

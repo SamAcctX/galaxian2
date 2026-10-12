@@ -74,7 +74,7 @@ func check_profile(content: String, path: String) -> void:
 	done.events.clear();done.counter_deltas.player_kills=99
 	check(candidate.snapshot().events.size()==3 and candidate.snapshot().counter_deltas.player_kills==1,"Counter/event snapshot aliases owner")
 	var npc: Dictionary=bindings.opening_actors.npc_initialization
-	var architecture: String="armv7" if library.manifest.profile.edition=="ios-hd" else "x86_64"
+	var architecture: String=str({"ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"x86_64"))
 	check(Definitions.validate(npc.death_accounting,10000000,architecture,npc).is_empty(),"Valid declaration rejected")
 	for field in Definitions.VALUES:
 		var bad: Dictionary=npc.death_accounting.duplicate(true);bad[field]=null

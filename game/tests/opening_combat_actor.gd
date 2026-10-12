@@ -149,7 +149,7 @@ func check_profile(content: String, binding_path: String) -> void:
 		print(library.manifest.profile.edition,": legacy precombat pack loads and reports NPC combat initialization unavailable")
 		return
 	var data: Dictionary = bindings.opening_actors.npc_initialization
-	var architecture: String = "armv7" if library.manifest.profile.edition=="ios-hd" else "x86_64"
+	var architecture: String = str({"ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"x86_64"))
 	check(Definitions.validate(data,64000000,architecture).is_empty(),"Source initialization provenance rejected")
 	for key in data.provenance:
 		var bad: Dictionary = data.duplicate(true)

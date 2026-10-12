@@ -27,7 +27,7 @@ func verify(content: String, pack: String) -> void:
 	check(owner.configure(bindings,library),owner.error)
 	if owner.snapshot().is_empty():return
 	var definition: Dictionary=bindings.opening_staging.escape
-	var arch: String="armv7" if library.manifest.profile.edition=="ios-hd" else "x86_64"
+	var arch: String=str({"ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"x86_64"))
 	check(Definitions.validate(definition,10000000,arch,bindings.opening_staging).is_empty(),"Source escape declarations rejected")
 	for key in definition.provenance:
 		var bad:=definition.duplicate(true);bad.provenance[key].offset+=2
