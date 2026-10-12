@@ -72,11 +72,11 @@ static func validate(data: Variant,executable_bytes: int,architecture: String) -
 	if data.has("owners"):
 		var owner_error:=Owners.validate(data.owners,executable_bytes,architecture)
 		if not owner_error.is_empty():return owner_error
-	var sizes:={"presets":616,"smoke_material":41,"fire_material":41} if architecture=="x86_64" else {"presets":454,"smoke_material":48,"fire_material":30} if architecture=="armv7" else {}
+	var sizes: Dictionary={"x86_64":{"presets":616,"smoke_material":41,"fire_material":41},"armv7":{"presets":454,"smoke_material":48,"fire_material":30},"android-armv7":{"presets":560,"smoke_material":24,"fire_material":26}}.get(architecture,{})
 	if sizes.is_empty():return "Unsupported damage particle architecture"
 	if data.has("emitter_defaults"):
 		if not emitter_parameters(data):return "Unsupported damage particle emitter defaults"
-		sizes.defaults=278 if architecture=="x86_64" else 230
+		sizes.defaults={"x86_64":278,"armv7":230,"android-armv7":364}[architecture]
 	var provenance: Variant=data.get("provenance")
 	if not provenance is Dictionary or provenance.size()!=sizes.size():return "Invalid damage particle provenance"
 	var spans:=[]
