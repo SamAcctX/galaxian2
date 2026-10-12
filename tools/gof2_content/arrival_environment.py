@@ -1,8 +1,22 @@
-"""Read ordinary rescue sky/planet declarations; emit no executable bytes."""
+"""Read ordinary rescue sky/planet declarations; emit no executable bytes.
+
+Android: Level::createSpace keeps the special sky for cursor 0 in world 3 and
+for Status::inSupernovaSystem (system 27 before cursor 158), else creates sky
+mesh 17800 and texture 10065 plus the system's texture index. StarSystem's
+constructor gives the current station's planet the near texture (10043 only
+for cursor 0 in world 3) and halves the random 20000 + nextInt(20000) size
+only at cursor 0.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 def extract_arrival_environment(mach, sky, actors, arrival):
+    if mach.architecture == 'android-armv7':
+        try:
+            if arrival['campaign_cursor'] != 1 or not actors['player_initialization']['flight_cache'] or not sky['planet_resources']: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     arch=mach.architecture
     if arch not in LAYOUTS:return {}
     try:
@@ -105,3 +119,14 @@ MAC_ALTERNATE = {'sky_gate': ['__text',
                  61,
                  '488b8508feffff488b40084a8b7c60f8498b5d00e8d5260000488b8d18feffff488b09488b51084c01e24863c0488d0dd4090b000fb734814889dfebad'],
  'constant_18e615': ['__const', 1606861, 8, '3a2700003b270000']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# Cursor 0 in world 3 keeps the opening sky; Status::inSupernovaSystem picks the special one.
+           'sky_gate': ('_ZN5Level11createSpaceEv', 260, 68, 'sha256:fd8de4e1e7a2eee009e3ec1d6c0de37cabb86ef92dbb742573be880f3f0d0ecd'),
+           'sky_plain': ('_ZN5Level11createSpaceEv', 380, 76, 'sha256:18139683ca49773d9d27288158f6f3eac954838886ab30be11fcb3c04e54d60a'),
+           'sky_texture': ('_ZN5Level11createSpaceEv', 678, 6, '0023b0f7c0eb'),
+           'sky_special': ('_ZN6Status17inSupernovaSystemEv', 0, 52, 'sha256:e529b26520fb6ad848f24d64f5693a5997a96b80dea1c1a2aca62ab5337f416b'),
+           'planet_half': ('_ZN10StarSystemC2Ei', 1690, 4, 'b6ee00aa'),
+           'planet_scale': ('_ZN10StarSystemC2Ei', 2188, 50, 'sha256:04a71703f3f9871ea622aef82ed6c9fd3e94466727dd8b048e34f4c632ac5b5c'),
+           'planet_current': ('_ZN10StarSystemC2Ei', 1166, 48, 'sha256:04980f68f0c2f589d5010bd1f24bd81dd2a68810278190d4c9da84afe3419a4d'),
+           'planet_near': ('_ZN10StarSystemC2Ei', 1376, 46, 'sha256:f5c70be9025812c7efd9ff14d8550ff2557ad46090bc9543a6fd97c97b2723cc')}

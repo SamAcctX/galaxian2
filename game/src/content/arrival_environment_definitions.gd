@@ -8,6 +8,9 @@ const SPANS := {"x86_64":{"sky_gate":[0,94],"sky_plain":[437,106],"sky_special":
 
 const MAC_ALTERNATE := {"sky_gate":[0,94],"sky_plain":[437,106],"sky_special":[914583,78],"planet_scale":[885238,74],"constant_1832e5":[1560877,4],"planet_current":[883318,64],"planet_near":[883397,61],"constant_18e615":[1606861,8]}
 
+# Android: spans inside named functions (Layouts.anchored); the values are VALUES.
+const ANDROID_SPANS := {"sky_gate":[260,68],"sky_plain":[380,76],"sky_texture":[678,6],"sky_special":[0,52],"planet_half":[1690,4],"planet_scale":[2188,50],"planet_current":[1166,48],"planet_near":[1376,46]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -17,6 +20,10 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, bytes: int, arch: String, sky: Dictionary, actors: Dictionary, arrival: Dictionary) -> String:
 	if not data is Dictionary:return "Missing rescue environment capability"
 	if data.is_empty():return ""
+	if arch=="android-armv7":
+		if not parameters(data):return "Unsupported rescue environment declarations"
+		if actors.get("player_initialization",{}).get("flight_cache",{}).is_empty() or arrival.get("campaign_cursor")!=1 or sky.get("planet_resources",{}).is_empty():return "Rescue environment lacks its source player, sky or staging context"
+		return "" if Layouts.anchored(data.provenance,bytes,ANDROID_SPANS) else "Disconnected rescue environment declaration"
 	if not parameters(data) or not SPANS.has(arch):return "Unsupported rescue environment declarations"
 	if actors.get("player_initialization",{}).get("flight_cache",{}).is_empty() or arrival.get("campaign_cursor")!=1 or sky.get("planet_resources",{}).is_empty():return "Rescue environment lacks its source player, sky or staging context"
 	var origin: Variant=sky.get("provenance",{}).get("opening")

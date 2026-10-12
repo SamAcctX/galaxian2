@@ -58,3 +58,32 @@ class ArrivalEnvironmentTests(unittest.TestCase):
                 elif key == 'section': m.sections[0]['segment'] = b'__DATA'
                 else: m.architecture = 'unsupported'
                 self.assertEqual(reader.extract_arrival_environment(m, s, a, r), {}, (arch, key))
+
+
+ANDROID_SKY = {'planet_resources': {'present': True}}
+ANDROID_ACTORS = {'player_initialization': {'flight_cache': {'present': True}}}
+ANDROID_ARRIVAL = {'campaign_cursor': 1}
+
+
+class AndroidArrivalEnvironmentTests(unittest.TestCase):
+    def extract(self, lib, sky=ANDROID_SKY, actors=ANDROID_ACTORS, arrival=ANDROID_ARRIVAL):
+        return reader.extract_arrival_environment(lib, sky, actors, arrival)
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        verify_android_proof(self, reader, self.extract, values='VALUES')
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            self.assertTrue(self.extract(lib))
+            for name, changes in {'no planets': dict(sky={'planet_resources': {}}),
+                                  'no flight cache': dict(actors={'player_initialization': {'flight_cache': {}}}),
+                                  'other cursor': dict(arrival={'campaign_cursor': 0}),
+                                  'no arrival': dict(arrival={}), 'no sky': dict(sky=None)}.items():
+                self.assertEqual(self.extract(lib, **changes), {}, name)
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'arrival_environment_definitions.gd', values='VALUES')
