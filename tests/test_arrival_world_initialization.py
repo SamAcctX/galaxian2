@@ -56,3 +56,46 @@ class ArrivalWorldInitializationTests(unittest.TestCase):
                 elif name=='truncated':m.data=m.data[:128]
                 else:m.architecture='unsupported'
                 self.assertEqual(reader.extract_arrival_world_initialization(m,a,n,c,e),{},name)
+
+
+ANDROID_ARRIVAL = {'campaign_cursor': 1, 'actor_kind': 3, 'actor_hull_id': 30}
+ANDROID_ACTORS = {'npc_initialization': {'world_initialization': {'weapon_item_sequence': [0, 19], 'weapon_effect_capacity': 4}},
+                  'player_initialization': {'flight_cache': {'quest_kind': 11}}}
+
+
+class AndroidArrivalWorldInitializationTests(unittest.TestCase):
+    def extract(self, lib, arrival=ANDROID_ARRIVAL, actors=ANDROID_ACTORS, construction={'present': True}, environment={'present': True}):
+        return reader.extract_arrival_world_initialization(lib, arrival, actors, construction, environment)
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        from test_arrival_staging import roomy_layouts
+        with roomy_layouts():
+            verify_android_proof(self, reader, self.extract, values='VALUES')
+            image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            data = self.extract(lib)
+            data['weapon_item_sequence'][1] = 0
+            self.assertEqual(reader.VALUES['weapon_item_sequence'], [0, 25])
+            shared = ANDROID_ACTORS['npc_initialization']['world_initialization']
+            def actors(shared=shared, cache={'quest_kind': 11}):
+                return {'npc_initialization': {'world_initialization': shared}, 'player_initialization': {'flight_cache': cache}}
+            for name, changes in {'other cursor': dict(arrival={**ANDROID_ARRIVAL, 'campaign_cursor': 2}),
+                                  'other kind': dict(arrival={**ANDROID_ARRIVAL, 'actor_kind': 2}),
+                                  'other hull': dict(arrival={**ANDROID_ARRIVAL, 'actor_hull_id': 31}),
+                                  'no construction': dict(construction={}), 'no environment': dict(environment={}),
+                                  'no shared world': dict(actors=actors(shared={})),
+                                  'other quest': dict(actors=actors(cache={'quest_kind': 12})),
+                                  'other items': dict(actors=actors(shared={**shared, 'weapon_item_sequence': [0, 25]})),
+                                  'other capacity': dict(actors=actors(shared={**shared, 'weapon_effect_capacity': 3})),
+                                  'no cache': dict(actors={'npc_initialization': {'world_initialization': shared}})}.items():
+                self.assertEqual(self.extract(lib, **changes), {}, name)
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'arrival_world_initialization_definitions.gd', values='VALUES')
+        # Gun::setIndex's table holds 14606 for item 25.
+        self.assertEqual(int.from_bytes(bytes.fromhex(reader.ANDROID['effect_model_25'][3]), 'little'), reader.VALUES['weapon_effect_sequence'][1])

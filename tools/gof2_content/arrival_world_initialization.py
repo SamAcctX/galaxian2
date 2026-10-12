@@ -1,8 +1,29 @@
-"""Recover the bounded rescue world profile; emit declarative data only."""
+"""Recover the bounded rescue world profile; emit declarative data only.
+
+Android: Mission::Mission(int, int, int) marks campaign missions
+(Mission::isCampaignMission), Mission::isEmpty tests the kind. Level::init
+builds a non-empty campaign mission of world 3 with Level::createCampaignMission
+unless the game is won with an option set. Level::createAsteroids seeds by
+station, then centers the field at nextInt(100000) - 50000,
+nextInt(100000) - 50000, nextInt(100000) + 20000 (zero only for cursor 0 in
+world 3). PlayerFighter's constructor enables the NPC weapon; Level::assignGuns
+gives actor kind 3 item 25 with projectile 6802, and Gun::setIndex its effect
+model 14606.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 def extract_arrival_world_initialization(mach, arrival, actors, construction, environment):
+    if mach.architecture == 'android-armv7':
+        try:
+            shared = actors['npc_initialization']['world_initialization']
+            cache = actors['player_initialization']['flight_cache']
+            if arrival['campaign_cursor'] != 1 or arrival['actor_kind'] != 3 or arrival['actor_hull_id'] != 30: return {}
+            if not construction or not environment or cache['quest_kind'] != 11: return {}
+            if shared['weapon_item_sequence'] != [0, 19] or shared['weapon_effect_capacity'] != 4: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     arch=mach.architecture
     if arch not in LAYOUTS:return {}
     try:
@@ -174,3 +195,19 @@ MAC_ALTERNATE = {'quest_wrapper': ['__text', 399772, 10, '554889e55de900000000']
  'rescue_weapon': ['__text', 55980, 24, '4c89e7be19000000e83f42fcff41bf921a0000e988000000'],
  'cursor_getter': ['__text', 858788, 12, '554889e58b87780200005dc3'],
  'effect_model_25': ['__const', 1548006, 4, '0e390000']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'quest_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           'quest_absent': ('_ZN7Mission7isEmptyEv', 0, 14, '81680020b1f1ff3f08bf01207047'),
+           'quest_scripted_getter': ('_ZN7Mission17isCampaignMissionEv', 0, 10, '006d002818bf01207047'),
+           'world_scripted_gate': ('_ZN5Level4initEv', 906, 74, 'sha256:6d16a73c176a7a64beae33a4c3e0c43fa56b2aeb818370da631a22a568c12d19'),
+           'world_scripted_loader': ('_ZN5Level4initEv', 1076, 54, 'sha256:235bdc06e0cf7fd6c90ec93742b3fe0939b98ad7bff1106b92fa92d4832109cb'),
+           # From the station seed and the asteroid count to the stored field center.
+           'center': ('_ZN5Level15createAsteroidsEv', 148, 468, 'sha256:9a428e5a8047a8260f9cf9d71dfbe6917c2c7180b2d91b5b9b1b6d496e437d2c'),
+           'npc_weapon_enabled': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 1294, 18, 'cbf8e04008684ff0ff318bf82140cbf89c11'),
+           # Actor kinds 0..10 with the whole tbb table; kind 3 takes item 25.
+           'weapon_kind_dispatch': ('_ZN5Level10assignGunsEv', 1234, 32, 'sha256:1190a8d9193cb99e1f8f19843a63deeffe1ecb6b5514b5875f6857b39a7cfbca'),
+           'rescue_weapon': ('_ZN5Level10assignGunsEv', 1316, 14, '28461921a0f7ecef41f692241fe0'),
+           'weapon_effect': ('_ZN3Gun8setIndexEi', 0, 280, 'sha256:49874dec0a3b669f6555df7804296846b7a92559002168440a630d4b0ea50c92'),
+           'cursor_getter': ('_ZN6Status25getCurrentCampaignMissionEv', 0, 6, 'd0f8e8017047'),
+           'effect_model_25': ('_ZN3Gun8setIndexEi', 56, 4, '0e390000', 'literal', 100)}

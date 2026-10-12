@@ -8,6 +8,9 @@ const SPANS := {"x86_64":{"quest_wrapper":[399256,10],"quest_arguments":[399283,
 
 const MAC_ALTERNATE := {"quest_wrapper":[399772,10],"quest_arguments":[399799,12],"quest_fields":[399862,28],"quest_scripted":[400039,45],"quest_absent":[400952,14],"quest_scripted_getter":[401372,16],"world_scripted_gate":[-42348,96],"world_scripted_loader":[-42120,91],"center":[-35100,664],"npc_weapon_enabled":[607877,30],"weapon_kind_dispatch":[57456,56],"weapon_kind_table":[58994,44],"rescue_weapon":[55980,24],"cursor_getter":[858788,12],"effect_model_25":[1548006,4]}
 
+# Android: spans inside named functions (Layouts.anchored); the values are VALUES.
+const ANDROID_SPANS := {"quest_constructor":[0,288],"quest_absent":[0,14],"quest_scripted_getter":[0,10],"world_scripted_gate":[906,74],"world_scripted_loader":[1076,54],"center":[148,468],"npc_weapon_enabled":[1294,18],"weapon_kind_dispatch":[1234,32],"rescue_weapon":[1316,14],"weapon_effect":[0,280],"cursor_getter":[0,6],"effect_model_25":[100,4]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -22,10 +25,11 @@ static func entry_conditions(data: Variant) -> bool:
 static func validate(data: Variant, bytes: int, arch: String, arrival: Dictionary, actors: Dictionary, construction: Dictionary, environment: Dictionary) -> String:
 	if not data is Dictionary:return "Missing rescue world initialization capability"
 	if data.is_empty():return ""
-	if not parameters(data) or not SPANS.has(arch):return "Unsupported rescue world initialization declarations"
+	if not parameters(data) or not (SPANS.has(arch) or arch=="android-armv7"):return "Unsupported rescue world initialization declarations"
 	var shared: Dictionary=actors.get("npc_initialization",{}).get("world_initialization",{})
 	var cache: Dictionary=actors.get("player_initialization",{}).get("flight_cache",{})
 	if arrival.get("campaign_cursor")!=1 or arrival.get("actor_kind")!=3 or arrival.get("actor_hull_id")!=30 or construction.is_empty() or environment.is_empty() or shared.is_empty() or cache.get("quest_kind")!=11:return "Rescue world initialization lacks its source context"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,bytes,ANDROID_SPANS) else "Disconnected rescue world initialization declaration"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315 if arch=="x86_64" else 310],bytes):return "Rescue world initialization lacks its actor anchor"
 	if data.provenance.size()!=SPANS[arch].size():return "Invalid rescue world initialization provenance"
