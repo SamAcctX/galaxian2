@@ -89,3 +89,82 @@ class RadioAudioTests(unittest.TestCase):
                 elif change=='truncation':mach.data=mach.data[:origin-mach.slice_offset]
                 else:mach.architecture='unsupported'
                 self.assertFalse(reader.extract_radio_audio(mach,dialogue,fonts),(arch,change))
+
+
+def android_radio(texts=(1657, 1658, 1659), shift=0, fonts_file='de.lang', names=(b'english', b'deutsch'), missing=None):
+    """A synthetic library holding every Android span, its language table pointing at
+    two names and a voice table mapping each text's Android id to 700 + its index.
+    Returns (library, patched layout, dialogue, fonts)."""
+    import hashlib
+    from android_fixture import layout_library
+    from gof2_content.declaration_layouts import recognize_symbols
+    from gof2_content.android_library import AndroidLibrary
+    from gof2_content.text_ids import android_id
+    # An extra synthetic table reserves .rodata room for the names.
+    room = {'names': ('_ZN8GameText11getLanguageEv', 40, 32, 'sha256:' + '0' * 64, 'literal', 0)}
+    image, layout, _ = layout_library({**reader.ANDROID, **room}, shift)
+    proof = recognize_symbols(AndroidLibrary(image), layout)
+    names_at = proof.pop('names')['offset']
+    del layout['names']
+    image = bytearray(image)
+    for index, name in enumerate(names):
+        image[names_at + 16 * index:names_at + 16 * index + len(name) + 1] = name + b'\0'
+    at = proof['language_table']['offset']
+    image[at:at + 8] = struct.pack('<2I', names_at, names_at + 16)  # .rodata addresses equal file offsets here
+    rows = [(android_id(text), 700 + i) for i, text in enumerate(texts) if text != missing] + [(30000 + i, -1) for i in range(1504)]
+    at = proof['lookup_table']['offset']
+    image[at:at + 12032] = b''.join(struct.pack('<ii', *row) for row in rows[:1504])
+    layout = {**layout, 'language_table': (*layout['language_table'][:3], image[proof['language_table']['offset']:][:8].hex(), *layout['language_table'][4:]),
+              'lookup_table': (*layout['lookup_table'][:3], 'sha256:' + hashlib.sha256(bytes(image[at:at + 12032])).hexdigest(), *layout['lookup_table'][4:])}
+    lib = AndroidLibrary(bytes(image))
+    proof = recognize_symbols(lib, layout)
+    timing = {key: {'offset': proof[key]['offset'], 'bytes': proof[key]['bytes']} for key in ('duration', 'display_delay')}
+    dialogue = {'campaign_cursor': 1, 'events': [{'text_id': text} for text in texts], 'provenance': timing}
+    fonts = {'languages': {'rows': [{'file': 'gb.lang', 'language_id': 0}, {'file': fonts_file, 'language_id': 1}]}}
+    return lib, layout, dialogue, fonts
+
+
+class AndroidRadioAudioTests(unittest.TestCase):
+    def read(self, lib, layout, dialogue, fonts):
+        from unittest.mock import patch
+        with patch.object(reader, 'ANDROID', layout):
+            return reader.extract_radio_audio(lib, dialogue, fonts)
+
+    def test_voices_names_and_spans(self):
+        for shift in (0, 0x1000):
+            lib, layout, dialogue, fonts = android_radio(shift=shift)
+            result = self.read(lib, layout, dialogue, fonts)
+            self.assertEqual({k: v for k, v in result.items() if k not in ('event_ids', 'text_ids', 'provenance')}, reader.ANDROID_VALUES)
+            # The table holds Android text ids; the result keeps the Mac 1.0.7 ones.
+            self.assertEqual((result['text_ids'], result['event_ids']), ([1657, 1658, 1659], [700, 701, 702]))
+            self.assertEqual(set(result['provenance']), set(reader.ANDROID) | {'default_name', 'override_name'})
+            for key, rule in layout.items():
+                span = result['provenance'][key]
+                self.assertEqual((span['offset'] - span['anchor'], span['bytes']), (rule[5] if len(rule) == 6 else rule[1], rule[2]), key)
+            names = result['provenance']['default_name'], result['provenance']['override_name']
+            self.assertEqual([(n['bytes'], n['offset'] - n['anchor']) for n in names], [(8, 0), (8, 0)])
+            self.assertEqual(names[1]['offset'] - names[0]['offset'], 16)
+
+    def test_each_broken_proof_or_owner_is_unsupported(self):
+        lib, layout, dialogue, fonts = android_radio()
+        proof = self.read(lib, layout, dialogue, fonts)['provenance']
+        for key in layout:
+            span = proof[key]
+            for index in {0, span['bytes'] - 1}:
+                raw = bytearray(lib.data)
+                raw[span['offset'] + index] ^= 0xff
+                from gof2_content.android_library import AndroidLibrary
+                self.assertFalse(self.read(AndroidLibrary(bytes(raw)), layout, dialogue, fonts), (key, index))
+        cases = {'names': dict(names=(b'english', b'deutsc')), 'language file': dict(fonts_file='fr.lang'), 'unvoiced text': dict(missing=1658)}
+        for name, options in cases.items():
+            self.assertFalse(self.read(*android_radio(**options)), name)
+        owner = copy.deepcopy(dialogue); owner['campaign_cursor'] = 0
+        self.assertFalse(self.read(lib, layout, owner, fonts), 'owner size')
+        owner = copy.deepcopy(dialogue); owner['provenance']['duration']['offset'] += 2
+        self.assertFalse(self.read(lib, layout, owner, fonts), 'timing owner')
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'radio_audio_definitions.gd')
+
+if __name__=='__main__':unittest.main()

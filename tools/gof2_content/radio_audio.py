@@ -2,10 +2,15 @@
 
 Only source-selected event IDs, language names and provenance enter the pack.
 The source table has additional campaign rows; their owners are not implemented.
+
+Android: Radio::update times the message and selects its voice through
+Globals::getDialogueSoundId's text-to-voice table (Android text ids), Radio::draw
+plays it once after the display delay, FModSound::setAudioLanguage and
+FModSound::init pick "deutsch" for language 1 and "english" otherwise.
 """
 import copy
 import struct
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 VALUES = {'trigger': 'radio_display', 'repeat': 'once_per_event', 'spatial': False,
           'stop_on_radio_finish': False, 'default_language': 'english',
@@ -28,6 +33,8 @@ def constant_bytes(mach, address, count, name):
 
 def extract_radio_audio(mach, dialogue, fonts):
     arch = mach.architecture
+    if arch == 'android-armv7':
+        return android_radio_audio(mach, dialogue, fonts)
     if arch not in LAYOUTS:
         return {}
     try:
@@ -163,3 +170,52 @@ MAC_DATA = {'lookup_table': [851481, 12032],
  'language_table': [1691001, 16],
  'default_name': [981897, 8],
  'override_name': [981905, 8]}
+
+
+ANDROID = {'duration': ('_ZN5Radio6updateElP9PlayerEgoP11LevelScript', 564, 26, 'sha256:7c48954457c2443a42d1ee5611c66fb483a82c1ece6efbedc57ccd4ffc98ff23'),
+           'selection': ('_ZN5Radio6updateElP9PlayerEgoP11LevelScript', 648, 36, 'sha256:c16511ca789ffc4be514656796127016aa5ec1696f73060f705d7d829db5f4e5'),
+           'text_getter': ('_ZN12RadioMessage9getTextIDEv', 0, 4, '80687047'),
+           'lookup': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 0, 34, 'sha256:9ba804c27b6b2b9e9d4cc439e029afb2dbdb3a6cd0280a652c0d70affd78edca'),
+           'lookup_found': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 186, 14, 'dff80416794401eb80004068bde8'),
+           'lookup_return': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 1054, 8, '4ff0ff30bde8f081'),
+           'lookup_table': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0),
+           'display_delay': ('_ZN5Radio4drawExP9PlayerEgoP11LevelScript', 34, 30, 'sha256:c8f89ee6968974eb3641ce4af0ebb22e163bc88d8452d71f4cdb14e4022b12b1'),
+           'display': ('_ZN5Radio4drawExP9PlayerEgoP11LevelScript', 66, 36, 'sha256:891779f0d440fd38d3b907d2d3fa74f2fa2629a8d56ae624349c7056cff7dc55'),
+           'finish': ('_ZN5Radio4drawExP9PlayerEgoP11LevelScript', 416, 88, 'sha256:499edfa254143e67994f5b59831a9ed623ea3fd9845bc1c73607fd3222bc8aa6'),
+           'language': ('_ZN9FModSound16setAudioLanguageEi', 0, 28, 'sha256:a0d1efd7bbe7122933abbe802ed56e2eaee909ff9f15fcfb4ed88b2c8ff1efb4'),
+           # The two language-name pointers ("english", "deutsch").
+           'language_table': ('_ZN9FModSound16setAudioLanguageEi', 8, 8, 'cb022100d3022100', 'literal', 0),
+           'language_init': ('_ZN9FModSound4initEv', 70, 32, 'sha256:e3ea8760a14f2155ed8102b5aecc9b64a30c8766d4d49cfa46c109404be6572c'),
+           'language_getter': ('_ZN8GameText11getLanguageEv', 0, 12, '024878440068b0f900007047')}
+ANDROID_VALUES = copy.deepcopy(VALUES)
+
+
+def android_radio_audio(lib, dialogue, fonts):
+    from .text_ids import android_id
+    try:
+        if ((dialogue['campaign_cursor'], len(dialogue['events'])) not in ((0, 23), (1, 3)) or
+                fonts['languages']['rows'][1]['file'] != 'de.lang' or fonts['languages']['rows'][1]['language_id'] != 1):
+            return {}
+    except (KeyError, TypeError, IndexError):
+        return {}
+    proof = recognize_symbols(lib, ANDROID)
+    if not proof:
+        return {}
+    # The timing spans are the text owner's.
+    if any({k: proof[key][k] for k in ('offset', 'bytes')} != dialogue['provenance'].get(key) for key in ('duration', 'display_delay')):
+        return {}
+    pointers = struct.unpack('<2I', lib.data[proof['language_table']['offset']:proof['language_table']['offset'] + 8])
+    for key, pointer, expected in zip(('default_name', 'override_name'), pointers, (ANDROID_VALUES['default_language'], ANDROID_VALUES['override_language'])):
+        found = constant_bytes(lib, pointer, len(expected) + 1, b'__cstring')
+        if found is None or found[0] != expected.encode() + b'\0':
+            return {}
+        # A name is found through its table pointer: it anchors itself.
+        proof[key] = {'offset': found[1], 'bytes': len(found[0]), 'anchor': found[1]}
+    at = proof['lookup_table']['offset']
+    lookup = dict(struct.iter_unpack('<ii', lib.data[at:at + 12032]))
+    texts = [row['text_id'] for row in dialogue['events']]
+    if any(android_id(text) not in lookup for text in texts):
+        return {}
+    result = copy.deepcopy(ANDROID_VALUES)
+    result.update(event_ids=[lookup[android_id(text)] for text in texts], text_ids=texts, provenance=proof)
+    return result
