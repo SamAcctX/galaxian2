@@ -90,6 +90,17 @@ class TextureTests(unittest.TestCase):
         texture = Texture(compressed(34, 4, 4, red * 3))
         self.assertEqual(zlib.decompress(convert_texture(texture)[24:]), bytes([255, 0, 0, 255]) * 21)
 
+    def test_import_envelope_accepts_exactly_the_readable_formats(self):
+        from gof2_content.aei import FORMATS
+        from gof2_content.formats import envelope
+        for fmt in range(256):
+            header = b'AEimage\0' + struct.pack('<BHHH', fmt, 4, 4, 0)
+            if fmt in FORMATS:
+                self.assertEqual(envelope('t.aei', header, 64)['format'], fmt)
+            else:
+                with self.assertRaisesRegex(ContentError, 'format'):
+                    envelope('t.aei', header, 64)
+
     @unittest.skipUnless(importlib.util.find_spec('texture2ddecoder'), 'Optional CPU decoder not installed')
     def test_etc1_is_opaque_with_eight_byte_blocks(self):
         # Individual mode, red 15/15, table 0, every pixel index 0 (+2): (255, 2, 2), no alpha.

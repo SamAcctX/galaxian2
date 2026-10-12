@@ -47,7 +47,8 @@ def envelope(name: str, header: bytes, size: int) -> dict:
         if len(header) < 15 or header[:8] != b'AEimage\0':
             raise ContentError(f'Unsupported AEI envelope: {name}')
         fmt, width, height, regions = struct.unpack_from('<BHHH', header, 8)
-        if fmt not in (1, 3, 13, 16, 18, 32, 34, 36, 38, 129, 166):
+        from .aei import FORMATS  # one list of texture formats (aei imports this module)
+        if fmt not in FORMATS:
             raise ContentError(f'Unsupported AEI format {fmt}: {name}')
         if not (0 < width <= 8192 and 0 < height <= 8192):
             raise ContentError(f'Invalid AEI dimensions: {name}')
