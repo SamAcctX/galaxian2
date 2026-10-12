@@ -1,8 +1,28 @@
-"""Mac declarations for retained state at the supported Opening boundary."""
+"""Mac declarations for retained state at the supported Opening boundary.
+
+Android: Status::gameWon is the cursor > 44 test, Status::checkForLevelUp
+sums the scores against its 21 thresholds. Status::resetGame clears the
+wingmen, makes an empty Station (index -1, compared by Station::equals) and a
+fresh Standing (30, 0, no signature race). Standing::isEnemy(1) is hostile
+above 70 or with signature race 0; Standing::applyKill passes pirate kills to
+Standing::applyDelict as one point for the system race's table entry,
+doubled by Status::hardCoreMode, clamped to +-100. Ship::refreshValue clears
+the signature race and sets it from equipment sort 29 (item index - 189).
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 def extract_opening_handoff(mach, arrival, actors, world):
+    if mach.architecture == 'android-armv7':
+        try:
+            npc = actors['npc_initialization']
+            hull = npc['hull']
+            if not world or not npc['death_accounting'] or not actors['player_initialization']['flight_cache']: return {}
+            if hull['rank'] != 0 or hull['base_hull'] != 20 or 'rank_calculation' not in hull['provenance']: return {}
+            if arrival['campaign_cursor'] != 1 or arrival['actor_kind'] != 3: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64':return {}
     try:
         npc=actors['npc_initialization']
@@ -168,3 +188,24 @@ MAC_ALTERNATE = {'cursor_predicate': ['__text', 858772, 16, '554889e583bf7802000
                         729053,
                         66,
                         '498b4770488b40084a8b3c30e84c95f3ff0543ffffff41894760498b3c244885ff741fe8bd4102004885c07415498b3c24e8af410200418b77604889c7e8dd330100']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'cursor_predicate': ('_ZN6Status7gameWonEv', 0, 14, 'd0f8e81100202c29c8bf01207047'),
+           'rank_calculation': ('_ZN6Status15checkForLevelUpEv', 0, 104, 'sha256:382c341367d31244fa6f3d6c10b0e220fff6ae8b8311556375980d889900974b'),
+           'rank_thresholds': ('_ZN6Status15checkForLevelUpEv', 58, 84, 'sha256:3e64308cda1ff8cd1c97e1ab8e2b9edff4c81ef5f170f92f7c4224bc3a67fe54', 'literal', 0),
+           'fresh_companions': ('_ZN6Status9resetGameEv', 224, 10, '0020c8f82400c8f83000'),
+           'fresh_location_wrapper': ('_ZN6Status9resetGameEv', 162, 16, '3020adf7f0ea0546b1f776ebc8f84c51'),
+           'wrapper_defaults': ('_ZN7StationC2Ev', 50, 8, '4ff0ff30c4e90200'),
+           'location_comparison': ('_ZN7Station6equalsEPS_', 0, 18, '0246002021b1896892688a4208bf01207047'),
+           'reputation_initial': ('_ZN8StandingC2Ev', 0, 32, 'sha256:234ed549d81f96bae6f8f18a42d7e95af0281e25bd19933f40903e1c8fae4876'),
+           'fresh_reputation': ('_ZN6Status9resetGameEv', 1334, 22, '0820adf7a6e80546b1f790eb4ff0ff317748c8f81450'),
+           'hostility': ('_ZN8Standing7isEnemyEi', 0, 118, 'sha256:e48dc557d39a1d28df8cd83c0ffd928da627c0a2e569b8c51369bd5c27b71ce0'),
+           'pirate_reputation': ('_ZN8Standing9applyKillEi', 0, 104, 'sha256:8bd296216f97e43401c7b59304cac316144c2c3836301212bcd504103a57542a'),
+           # Reputation axis per system race 0..3 for a pirate kill.
+           'pirate_races': ('_ZN8Standing9applyKillEi', 60, 16, '01000000000000000300000002000000', 'literal', 0),
+           'reputation_adjustment': ('_ZN8Standing11applyDelictEii', 0, 124, 'sha256:262f35c31d0749a01acbf4ae6061d65741bc024e6bdf6ddd6c94ca65ed6fec89'),
+           'reputation_double_predicate': ('_ZN6Status12hardCoreModeEv', 0, 36, 'sha256:d129eedb895b5a8cc5da84fbd316ee5effaae7d16ec57c3ef53f54ee21bd7b12'),
+           'reputation_mask_reset': ('_ZN4Ship12refreshValueEv', 70, 40, 'sha256:d46059f7211861fa8b7815e4942e208dcf083f8ba50f9f9a393ea6a216b8567a'),
+           # Equipment sorts 0..29 with the whole tbb table; sort 29 sets the signature race.
+           'equipment_dispatch': ('_ZN4Ship12refreshValueEv', 230, 46, 'sha256:26158f6f646baf8b0acac590bd33b36509adeacd2b4e920fb025e031ef74333e'),
+           'equipment_override': ('_ZN4Ship12refreshValueEv', 170, 50, 'sha256:6cafc36fd4bce9d5d3c1864981bc5eec72a7cef0b9ef1dd5efdcdb2116a13e46')}

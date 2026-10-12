@@ -54,3 +54,46 @@ class OpeningHandoffTests(unittest.TestCase):
                 elif scenario=='world':w.clear()
                 else:m.data=m.data[:128]
                 self.assertEqual(reader.extract_opening_handoff(m,a,n,w),{},scenario)
+
+
+ANDROID_ARRIVAL = {'campaign_cursor': 1, 'actor_kind': 3}
+ANDROID_HULL = {'rank': 0, 'base_hull': 20, 'provenance': {'rank_calculation': {}}}
+
+
+def android_actors(hull=ANDROID_HULL, deaths={'present': True}, cache={'present': True}):
+    return {'npc_initialization': {'hull': hull, 'death_accounting': deaths}, 'player_initialization': {'flight_cache': cache}}
+
+
+class AndroidOpeningHandoffTests(unittest.TestCase):
+    def extract(self, lib, arrival=ANDROID_ARRIVAL, actors=None, world={'present': True}):
+        return reader.extract_opening_handoff(lib, arrival, actors or android_actors(), world)
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        from test_arrival_staging import roomy_layouts
+        with roomy_layouts():
+            verify_android_proof(self, reader, self.extract, values='VALUES')
+            image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            data = self.extract(lib)
+            data['rank_thresholds'][1] = 0
+            self.assertEqual(reader.VALUES['rank_thresholds'][1], 7)
+            for name, changes in {'no world': dict(world={}),
+                                  'no deaths': dict(actors=android_actors(deaths={})),
+                                  'no cache': dict(actors=android_actors(cache={})),
+                                  'ranked': dict(actors=android_actors(hull={**ANDROID_HULL, 'rank': 1})),
+                                  'other hull': dict(actors=android_actors(hull={**ANDROID_HULL, 'base_hull': 34})),
+                                  'unproven rank': dict(actors=android_actors(hull={**ANDROID_HULL, 'provenance': {}})),
+                                  'other cursor': dict(arrival={**ANDROID_ARRIVAL, 'campaign_cursor': 0}),
+                                  'other kind': dict(arrival={**ANDROID_ARRIVAL, 'actor_kind': 8}),
+                                  'no hull': dict(actors={'npc_initialization': {}})}.items():
+                self.assertEqual(self.extract(lib, **changes), {}, name)
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'opening_handoff_definitions.gd', values='VALUES')
+        # The threshold table and the pirate-kill race axes.
+        self.assertEqual(reader.ANDROID['pirate_races'][3], '01000000000000000300000002000000')
