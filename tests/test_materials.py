@@ -116,5 +116,89 @@ class MaterialTests(unittest.TestCase):
         self.assertNotIn('material_id', broken)
 
 
+BUILD = '_Z17BuildResourceListPN11AbyssEngine6EngineE'
+LOW = '_Z27loadLowTexturesAndMaterialsPN11AbyssEngine6EngineE'
+
+
+def android_material(asm, identifier=99, kind=6, sentinel=-1, sizes=(16, 40), pointer=0, field=4, source=8, extra=None, calls=None):
+    """One material in BuildResourceList's shape: record and payload allocations,
+    the payload's constant stores (one -1 texture pair goes from `source` to `field`, None: not stored),
+    then the record's id (None: an unknown register), type/sentinel pair and payload pointer.
+    `calls` collects the payload allocation call addresses."""
+    from android_fixture import stub
+    asm.movs(0, sizes[0]).call(stub('_Znwj')).mov(4, 0).movs(0, sizes[1])
+    if calls is not None:
+        calls.append(asm.here())
+    asm.call(stub('_Znwj'))
+    asm.movs(5, 28).mov_imm(6, pointer).movw(11, 0).movt(11, 0xc120).mov_imm(9, 0)
+    asm.strd(5, 6, 0, 0x10).strd(9, 11, 0, 0x18).strd(9, 9, 0, 0x20).minus_one(8)
+    asm.str_w(8, 0, 0xc).str_w(8, 0, 8)
+    if field is not None:
+        asm.str_w(source, 0, field)
+    asm.movw(1, 71).strh(1, 0, 0).movw(1, 72).strh(1, 0, 2)
+    if extra:
+        extra(asm)
+    (asm.mov(1, 7) if identifier is None else asm.movw(1, identifier)).strh(1, 4, 0).mov_imm(9, kind)
+    (asm.minus_one(8) if sentinel == -1 else asm.mov_imm(8, sentinel)).strd(9, 8, 4, 4).str(0, 4, 12)
+    return asm
+
+
+def android_library(bodies, misaligned=False):
+    """Functions {name: [material options]}, each also declaring one texture."""
+    from android_fixture import RODATA, TEXT, Thumb, library, registration
+    from gof2_content.android_library import AndroidLibrary
+    functions = []
+    for index, (name, materials) in enumerate(bodies.items()):
+        asm = Thumb(TEXT + 0x100 + 0x800 * index).push()
+        registration(asm, 70 + index, 2, RODATA + 0x10, ('texture', 1))
+        for options in materials:
+            android_material(asm, **options)
+        if misaligned:
+            # ldr r0, [pc] whose `add r0, pc` is the second half of `movw r4, #0x478`.
+            asm.literals.append((len(asm.code), lambda add: (RODATA + 0x10 - (add + 2 + 4)) & 0xffffffff))
+            asm.half(0x4800).movw(4, 0x478)
+        functions.append((name, asm.pop().finish(), asm.address))
+    return AndroidLibrary(library(functions, {RODATA + 0x10: 'data/textures/a.aei'}))
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidMaterialTests(unittest.TestCase):
+    def test_fixture_encodings(self):
+        import capstone
+        from android_fixture import TEXT, Thumb
+        decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+        code = Thumb(TEXT).strd(9, 11, 0, 0x18).mov_imm(9, 6).movt(11, 0xc120).mov_imm(6, 0).half(0x4800).movw(4, 0x478).half(0xed80, 0x0a00).finish()
+        self.assertEqual(['%s %s' % (i.mnemonic, i.op_str) for i in decoder.disasm(code, TEXT)][:7],
+                         ['strd sb, fp, [r0, #0x18]', 'mov.w sb, #6', 'movt fp, #0xc120', 'mov.w r6, #0', 'ldr r0, [pc, #0]',
+                          'movw r4, #0x478', 'vstr s0, [r0]'])
+
+    def test_named_functions_give_the_mac_material(self):
+        calls = []
+        lib = android_library({BUILD: [dict(calls=calls), dict(identifier=100, calls=calls)], '_Z5otherv': [dict(identifier=101, calls=calls)],
+                               LOW: [dict(identifier=98, calls=calls)]})
+        rows = extract_materials(lib)
+        mac = extract_materials(MachO(with_code(mac_material(), 'mac-full-hd'), 'mac-full-hd'))[0]
+        del mac['source_offset']
+        self.assertEqual([{**row, 'id': 99} for row in rows], [{**mac, 'source_offset': row['source_offset']} for row in rows])
+        self.assertEqual([row['id'] for row in rows], [98, 99, 100])
+        # Offsets of the payload allocation calls (none from the unnamed function).
+        self.assertEqual([row['source_offset'] for row in rows], [calls[3], calls[0], calls[1]])
+        self.assertEqual([row['id'] for row in extract_materials(android_library({LOW: [{}]}))], [99])
+        self.assertEqual(extract_materials(android_library({BUILD: [{}]}, misaligned=True)), [])
+
+    def test_each_broken_declaration_is_rejected(self):
+        cases = {'record size': dict(sizes=(20, 40)), 'payload size': dict(sizes=(16, 44)), 'type': dict(kind=4),
+                 'sentinel': dict(sentinel=0), 'pointer': dict(pointer=1), 'missing store': dict(field=None),
+                 'outside': dict(field=0x28), 'overlap': dict(extra=lambda asm: asm.movs(1, 0).strh(1, 0, 0)),
+                 'vector store': dict(extra=lambda asm: asm.half(0xed80, 0x0a00)), 'unknown value': dict(source=7),
+                 'unknown id': dict(identifier=None),
+                 'record field': dict(extra=lambda asm: asm.movs(1, 0).str(1, 4, 16)),
+                 'record overlap': dict(extra=lambda asm: asm.movs(1, 0).str(1, 4, 0)),
+                 'payload offset': dict(extra=lambda asm: asm.adds(0, 0, 4))}
+        for name, options in cases.items():
+            self.assertEqual(extract_materials(android_library({BUILD: [options]})), [], name)
+        self.assertEqual(extract_materials(android_library({'_Z5otherv': [{}]})), [])
+
+
 if __name__ == '__main__':
     unittest.main()
