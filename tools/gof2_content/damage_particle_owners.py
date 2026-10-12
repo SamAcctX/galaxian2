@@ -2,20 +2,32 @@
 
 Instruction contexts identify supported layouts at import time. The result is
 only parameters and file extents; no instructions enter a content pack.
+
+Android: PlayerFighter::setLevel registers sets 15 and 42 at the reference
+matrix (AEGeometry::getReferenceMatrix, kept by updateReferenceMatrix) with
+emission off and the constructor clears the damaged flag; PlayerFighter::update
+turns both on below 0.33 of the hull when the detail level allows and the ship
+is not docked, off when holding (mode 9), on when released (mode 1) and off at
+breakup. PlayerEgo::setLevel registers the player's pair up to campaign cursor
+1 and startSmokeEmission (cued in LevelScript::process) turns it on; Level::update
+advances both managers and LevelScript::process resets them on relocation.
 """
 import math
 import struct
 from .ship_models import section_bytes
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 
 def extract_damage_particle_owners(mach, actors, staging):
-    if mach.architecture not in LAYOUTS:return {}
+    if mach.architecture not in LAYOUTS and mach.architecture != 'android-armv7':return {}
     try:
         npc=actors['npc_initialization']
         if npc['world_initialization']['campaign_cursor']!=0 or len(actors['actors'])!=3:return {}
         if not npc.get('hull') or not npc.get('flight') or not npc.get('destruction'):return {}
         if not staging.get('escape'):return {}
+        if mach.architecture=='android-armv7':
+            proof=recognize_symbols(mach,ANDROID)
+            return dict(ANDROID_VALUES,provenance=proof) if proof else {}
         anchor=npc['provenance']['factory_entry']
         if anchor['bytes']!=4:return {}
         at=mach.text['address']+anchor['offset']-mach.slice_offset-mach.text['offset']
@@ -139,3 +151,26 @@ MAC_ALTERNATE = {'npc_registration': [531233,
                       '554889e553504889fb8b7314488b7b38e8efd61c004881c3ac0000004889df4889c64883c4085b5de927e31d00'],
  'player_root_getter': [-808044, 17, '554889e58b7714488b7f385de905de1c00'],
  'hull_fraction': [1441630, 4, '']}
+
+
+# The Mac values: hull_fraction proves PlayerFighter::update's literal 0.33 and
+# the threshold the detail gate (as on the Mac, unlike iOS).
+ANDROID_VALUES = {'scope': 'fresh_opening_damage_emitters', 'npc_hull_fraction': 0.33000001311302185, 'npc_suppressed_mode': 9,
+                  'active_mode': 1, 'player_max_campaign_cursor': 1, 'npc_uses_detail_gate': True, 'initially_damaged': False}
+ANDROID = {'npc_registration': ('_ZN13PlayerFighter8setLevelEP5Level', 48, 78, 'sha256:0084d0eb290fd47a0b4391db9cf6b51e923984e75467cabfff5116a26f51cc2c'),
+           'npc_initial_flag': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 914, 64, 'sha256:820d99ec0977d72764f10d65c43a178d41f33a27821913085931aa67e2b245d0'),
+           'npc_threshold': ('_ZN13PlayerFighter6updateEi', 3454, 180, 'sha256:e533c1836e847b38949585a0c15c90338fa41bf78635b94a726ef9cc9b2580cd'),
+           'npc_threshold_set': ('_ZN13PlayerFighter6updateEi', 3748, 28, 'sha256:130fde59ded194b43c976c23a7bcdf1a00552ab9cc1f679451ee97bcf68e3c2e'),
+           'hull_fraction': ('_ZN13PlayerFighter6updateEi', 3680, 4, 'c3f5a83e'),
+           'npc_release': ('_ZN13PlayerFighter6updateEi', 6524, 60, 'sha256:640438f7a6f84f8197da25f8041cebcc9065aad6a9ead9bc9bd92e618db4b08f'),
+           'npc_holding': ('_ZN13PlayerFighter6updateEi', 6242, 48, 'sha256:bef9bbbee13c3735d6c7c93711cc57fa8998b50a3db81850cc7a4404a72d287a'),
+           'npc_breakup': ('_ZN13PlayerFighter6updateEi', 5308, 106, 'sha256:d1e142315abbb14b42f4fc753b7fde220855632555637eb316327940d95d6897'),
+           'player_registration': ('_ZN9PlayerEgo8setLevelEP5Level', 44, 102, 'sha256:4a8fd33ed470ad19b3942360dc2673fb07c2b3844f9e28323c50defbba2b3510'),
+           'player_enable': ('_ZN9PlayerEgo18startSmokeEmissionEv', 0, 46, 'sha256:c13e7eec6f580699299205108b2c8ad3f6417032208d32094ffb813c26b3f64c'),
+           'restore_cue': ('_ZN11LevelScript7processEi', 28588, 4, '07f76aeb'),
+           'relocation_reset': ('_ZN11LevelScript7processEi', 28266, 22, 'daf81800d0f8840007f702ecdaf81800806f07f7fceb'),
+           'world_smoke_update': ('_ZN5Level6updateExb', 572, 12, 'a86f18b15246434696f7d2ed'),
+           'world_fire_update': ('_ZN5Level6updateExb', 636, 14, 'd5f8840018b15246434696f7b2ed'),
+           'npc_root_getter': ('_ZN10AEGeometry18getReferenceMatrixEv', 0, 4, '84307047'),
+           'npc_root_capture': ('_ZN10AEGeometry21updateReferenceMatrixEv', 0, 30, 'sha256:94e10b9aeb709c7dfe12ecc34b7ae989001cafd747e3386d05748a8a51adccdf'),
+           'player_root_getter': ('_ZN10AEGeometry9getMatrixEv', 0, 14, '80b56f46c168c06ab9f7f0ed80bd')}

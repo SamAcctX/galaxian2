@@ -23,7 +23,7 @@ func _initialize() -> void:
 		verify_opening_release(bindings,combat)
 		verify_breakup_detail(bindings,combat)
 		var rules: Dictionary=bindings.damage_particles.owners.duplicate(true)
-		var architecture:="x86_64" if library.manifest.profile.edition=="mac-full-hd" else "armv7"
+		var architecture: String={"mac-full-hd":"x86_64","ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"")
 		check(Definitions.validate(rules,100000000,architecture)=="","Source ownership failed validation")
 		for key in rules.provenance:
 			var changed:=rules.duplicate(true);changed.provenance[key].bytes+=1
