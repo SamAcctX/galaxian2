@@ -5,10 +5,11 @@ const PortraitComposer = preload("res://src/presentation/portrait_compositor.gd"
 var failures := 0
 
 func _initialize() -> void:
-	for mac in [true, false]:
-		var data := Fixture.definition(mac)
-		var arch := "x86_64" if mac else "armv7"
+	for arch in ["x86_64", "armv7", "android-armv7"]:
+		var data := Fixture.definition(arch == "x86_64", arch == "android-armv7")
 		check(Definitions.validate(data, 4096, arch).is_empty(), "Valid portrait placements rejected")
+		for other in ["x86_64", "armv7", "android-armv7"]:
+			if other != arch: check(not Definitions.validate(data, 4096, other).is_empty(), "Portrait placement extents accepted for another compiler")
 		check(Definitions.validate(JSON.parse_string(JSON.stringify(data)), 4096, arch).is_empty(), "Serialized portrait placements rejected")
 		for bad in ["families", "parts", "id", "anchor", "offset", "variant", "order", "provenance", "overlap"]:
 			var invalid := data.duplicate(true)

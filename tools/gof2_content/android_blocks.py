@@ -120,3 +120,18 @@ def match(lib, symbol, lines, address):
 def offset(lib, address):
     """File offset of a .text address."""
     return lib.text['offset'] + address - lib.text['address']
+
+
+def got_symbol(lib, slot):
+    """(name, value, size) of the symbol an R_ARM_GLOB_DAT relocation binds a GOT slot to, or None."""
+    cache = lib.__dict__.get('_got')
+    if cache is None:
+        cache = lib.__dict__['_got'] = {}
+        relocations, table = lib.elf_sections.get('.rel.dyn'), lib.elf_sections.get('.dynsym')
+        if relocations and table:
+            for at in range(relocations['offset'], relocations['offset'] + relocations['length'] - 7, 8):
+                address, info = struct.unpack_from('<II', lib.data, at)
+                if info & 255 == 21 and (info >> 8) * 16 + 16 <= table['length']:
+                    _, value, size = struct.unpack_from('<III', lib.data, table['offset'] + 16 * (info >> 8))
+                    cache[address] = (lib.symbol_name(info >> 8), value, size)
+    return cache.get(slot)

@@ -24,6 +24,8 @@ def half(*values):
 
 def fields(value):
     """i and imm3:imm8 of a Thumb-2 modified immediate."""
+    if value & 0xffffffff == 0xffffffff:
+        return 0, 0x30ff  # 0xFFFFFFFF: the byte replicated in all four places
     first, second = struct.unpack('<2H', Thumb(0).mov_imm(0, value).code)
     return first & 0x400, second & 0x70ff
 
@@ -55,6 +57,8 @@ def thumb(text, at):
         return half(0xb100 | (o >> 6 & 1) << 9 | (o >> 1 & 0x1f) << 3 | reg(n))
 
     forms = [
+        (r'push \{(.*)\}', lambda l: half(0xb400 | mask(l) & 0xff | (mask(l) >> 14 & 1) << 8)),
+        (r'pop \{(.*)\}', lambda l: half(0xbc00 | mask(l) & 0xff | (mask(l) >> 15 & 1) << 8)),
         (r'push\.w \{(.*)\}', lambda l: half(0xe92d, mask(l))),
         (r'pop\.w \{(.*)\}', lambda l: half(0xe8bd, mask(l))),
         (r'movw (\w+), #(\S+)', lambda d, v: Thumb(0).movw(reg(d), number(v)).code),
@@ -81,8 +85,12 @@ def thumb(text, at):
         (r'addw (\w+), (\w+), #(\S+)', lambda d, n, v: Thumb(0).addw(reg(d), reg(n), number(v)).code),
         (r'bx lr', lambda: half(0x4770)),
         (r'nop', lambda: half(0xbf00)),
+        (r'ldr (r[0-7]), \[sp, #(\S+)\]', lambda t, v: half(0x9800 | reg(t) << 8 | number(v) // 4)),
         (r'str (r[0-7]), \[sp, #(\S+)\]', lambda t, v: half(0x9000 | reg(t) << 8 | number(v) // 4)),
-        (r'str (r[0-7]), \[(r[0-7]), #(\S+)\]', lambda t, n, v: half(0x6000 | number(v) // 4 << 6 | reg(n) << 3 | reg(t))),
+        (r'str (r[0-7]), \[(r[0-7])(?:, #(\S+))?\]', lambda t, n, v='0': half(0x6000 | number(v) // 4 << 6 | reg(n) << 3 | reg(t))),
+        (r'ldr (\w+), \[(\w+)\], #(\S+)', lambda t, n, v: half(0xf850 | reg(n), reg(t) << 12 | 0xb00 | number(v))),
+        (r'uxth (r[0-7]), (r[0-7])', lambda d, m: half(0xb280 | reg(m) << 3 | reg(d))),
+        (r'add (r[0-7]), (r[0-7])', lambda d, m: half(0x4400 | reg(m) << 3 | reg(d))),
         (r'strh (r[0-7]), \[(r[0-7])\]', lambda t, n: half(0x8000 | reg(n) << 3 | reg(t))),
         (r'stm (r[0-7])!, \{(.*)\}', lambda n, l: half(0xc000 | reg(n) << 8 | mask(l))),
         (r'sub sp, #(\S+)', lambda v: half(0xb080 | number(v) // 4)),
@@ -181,3 +189,52 @@ def assemble(shape, address, values=None, refs=None, calls=None, tables=None, po
     else:
         code += words
     return bytes(code), labels, at_line
+
+
+def with_symbols(image, objects, slots):
+    """A synthetic library with data symbols and GOT relocations added: objects
+    {name: (address, size)} as OBJECT symbols, slots {GOT address: name} bound by
+    R_ARM_GLOB_DAT (or (name, type)). The section table is rewritten at the end of the file."""
+    table, = struct.unpack_from('<I', image, 32)
+    count, names_index = struct.unpack_from('<HH', image, 48)
+    headers = [list(struct.unpack_from('<10I', image, table + 40 * i)) for i in range(count)]
+    names = image[headers[names_index][4]:headers[names_index][4] + headers[names_index][5]]
+    label = lambda h: names[h[0]:names.index(b'\0', h[0])].decode()
+    sections = {label(h): h for h in headers[1:]}
+    symbols, strings = sections['.dynsym'], sections['.dynstr']
+    dynsym = bytearray(image[symbols[4]:symbols[4] + symbols[5]])
+    dynstr = bytearray(image[strings[4]:strings[4] + strings[5]])
+    index = {}
+    for name, (address, size) in objects.items():
+        index[name] = len(dynsym) // 16
+        dynsym += struct.pack('<IIIBBH', len(dynstr), address, size, 0x11, 0, 6)
+        dynstr += name.encode() + b'\0'
+    # A slot may name (symbol, relocation type); R_ARM_GLOB_DAT (21) otherwise.
+    relocations = b''.join(struct.pack('<II', slot, index[name if isinstance(name, str) else name[0]] << 8 | (21 if isinstance(name, str) else name[1]))
+                           for slot, name in slots.items())
+    out, placed = bytearray(image), {}
+    for name, blob in (('.dynsym', dynsym), ('.dynstr', dynstr), ('.rel.dyn', relocations)):
+        out += bytes(-len(out) % 4)
+        placed[name] = (len(out), len(blob))
+        out += blob
+    shstr = bytes(names) + b'.rel.dyn\0'
+    out += bytes(-len(out) % 4)
+    shstr_at = len(out)
+    out += shstr
+    rows = [headers[0]]
+    for h in headers[1:]:
+        h = list(h)
+        if label(h) in placed:
+            h[3], h[4], h[5] = placed[label(h)][0], *placed[label(h)]
+        if label(h) == '.shstrtab':
+            h[4], h[5] = shstr_at, len(shstr)
+        rows.append(h)
+    dynsym_index = next(i for i, row in enumerate(rows) if i and label(row) == '.dynsym')
+    rows.append([len(names), 9, 2, placed['.rel.dyn'][0], *placed['.rel.dyn'], dynsym_index, 0, 4, 8])  # SHT_REL
+    out += bytes(-len(out) % 4)
+    start = len(out)
+    for row in rows:
+        out += struct.pack('<10I', *row)
+    struct.pack_into('<I', out, 32, start)
+    struct.pack_into('<HH', out, 48, len(rows), names_index)
+    return bytes(out)

@@ -2,6 +2,11 @@
 
 Patterns recognize supported declaration layouts at import time only. Emitted
 records contain numbers and provenance, never executable instructions.
+
+Android: ImageFactory::loadImage reads the part bases and the named placement
+tables IMAGE_OFFSETS_IPAD_HD, _IPAD_LARGE, _IPAD and IMAGE_OFFSETS behind the
+iPadHD, iPadLarge and iPad flags; ImageFactory::loadChar loads four parts and
+swaps the first and third.
 """
 import struct
 from .opening_loadout import template
@@ -117,6 +122,8 @@ ARM_ORDER = """
 
 
 def extract_portrait_layers(mach):
+    if mach.architecture == 'android-armv7':
+        return android_layers(mach)
     import capstone
     mac = mach.architecture == 'x86_64'
     if not mac and mach.architecture != 'armv7': return {}
@@ -179,8 +186,14 @@ def extract_portrait_layers(mach):
                      arm_ref(layers,'value_d2','value_d6',0xde,'r2')]
             if flags[2] != arm_ref(layers,'value_156','value_15a',0x162,'r0'): raise ValueError('Inconsistent portrait variant flags')
         if len(set(flags)) != 3 or len(set(tables.values())) != 4: raise ValueError('Aliased portrait variant declarations')
+        return layer_tables(mach, part_address, tables, {'selection':extent(layers), 'order':extent(order)})
+    except (ValueError,IndexError,KeyError,struct.error):
+        return {}
+
+
+def layer_tables(mach, part_address, tables, provenance):
+    try:
         addresses = {'part_bases':part_address, **tables}
-        provenance = {'selection':extent(layers), 'order':extent(order)}
         values = {}
         for name,address in addresses.items():
             size = 208 if name == 'part_bases' else 416
@@ -197,5 +210,143 @@ def extract_portrait_layers(mach):
             variants[name] = [[{'anchor':table[f*8+p*2], 'y':table[f*8+p*2+1]} for p in range(4)] for f in range(13)]
         return {'part_bases':[bases[f*4:f*4+4] for f in range(13)],
                 'draw_order':[2,1,0,3], 'variants':variants, 'provenance':provenance}
-    except (ValueError,IndexError,KeyError,struct.error):
+    except (ValueError,struct.error):
         return {}
+
+
+# loadImage(family, part, index): base = part_bases[family][part] (16 bytes a
+# family); the anchor and y come from the table the flags select (32 bytes a family).
+ANDROID_LAYERS = """
+push {r4, r5, r6, r7, lr}
+add r7, sp, #0xc
+sub sp, #0xc
+ldr r0, [pc, #{&guard}]
+mov r6, r1
+ldr r1, [pc, #{&part_bases}]
+mov r5, r2
+add r0, pc
+movs r4, #0
+add r1, pc
+ldr r2, [r0]
+add.w r0, r1, r6, lsl #4
+ldr.w r0, [r0, r5, lsl #2]
+ldr r1, [r2]
+str r1, [sp, #8]
+cmp r0, #0
+blt #{absent}
+ldr r1, [pc, #{&canvas}]
+add r0, r3
+str r4, [sp, #4]
+add r1, pc
+ldr r2, [r1]
+uxth r1, r0
+ldr r0, [r2]
+add r2, sp, #4
+blx <_ZN11AbyssEngine11PaintCanvas13Image2DCreateEtRj>
+movs r0, #0x14
+blx <_Znwj>
+mov r4, r0
+ldr r0, [pc, #{&iPadHD}]
+ldr r1, [sp, #4]
+add r0, pc
+ldr r0, [r0]
+ldrb r0, [r0]
+cbz r0, @large_x
+ldr r0, [pc, #{&medium}]
+add r0, pc
+ldr r0, [r0]
+add.w r0, r0, r6, lsl #5
+add.w r0, r0, r5, lsl #3
+ldr r2, [r0], #4
+b @part
+large_x: ldr r0, [pc, #{&iPadLarge}]
+add r0, pc
+ldr r0, [r0]
+ldrb r0, [r0]
+cbz r0, @expanded_x
+ldr r0, [pc, #{&large}]
+add r0, pc
+b @x
+expanded_x: ldr r0, [pc, #{&iPad}]
+add r0, pc
+ldr r0, [r0]
+ldrb r0, [r0]
+cbz r0, @baseline_x
+ldr r0, [pc, #{&expanded}]
+add r0, pc
+b @x
+baseline_x: ldr r0, [pc, #{&baseline}]
+add r0, pc
+x: ldr r2, [pc, #{&iPadLarge}]
+ldr r0, [r0]
+add r2, pc
+add.w r0, r0, r6, lsl #5
+add.w r0, r0, r5, lsl #3
+ldr r3, [r2]
+ldr r2, [r0]
+ldrb r0, [r3]
+cbz r0, @expanded_y
+ldr r0, [pc, #{&large}]
+add r0, pc
+b @y
+expanded_y: ldr r0, [pc, #{&iPad}]
+add r0, pc
+ldr r0, [r0]
+ldrb r0, [r0]
+cbz r0, @baseline_y
+ldr r0, [pc, #{&expanded}]
+add r0, pc
+b @y
+baseline_y: ldr r0, [pc, #{&baseline}]
+add r0, pc
+y: ldr r0, [r0]
+add.w r0, r0, r6, lsl #5
+add.w r0, r0, r5, lsl #3
+adds r0, #4
+part: ldr r3, [r0]
+mov r0, r4
+blx <_ZN9ImagePartC1Ejii>
+"""
+# loadChar: load each part that is not -1, then swap parts 0 and 2 (draw order 2, 1, 0, 3).
+ANDROID_ORDER = """
+ldr r4, [r5], #4
+parts: ldr.w r3, [r5, r6, lsl #2]
+cmp.w r3, #-1
+beq @next
+mov r1, r4
+mov r2, r6
+blx <_ZN12ImageFactory9loadImageEiii>
+ldr.w r1, [r8, #4]
+str.w r0, [r1, r6, lsl #2]
+next: adds r6, #1
+cmp r6, #4
+bne @parts
+ldr.w r0, [r8, #4]
+ldr r2, [r0, #8]
+ldr r1, [r0]
+str r2, [r0]
+ldr.w r0, [r8, #4]
+str r1, [r0, #8]
+"""
+TABLES = {'medium': 'IMAGE_OFFSETS_IPAD_HD', 'large': 'IMAGE_OFFSETS_IPAD_LARGE', 'expanded': 'IMAGE_OFFSETS_IPAD', 'baseline': 'IMAGE_OFFSETS'}
+FLAGS = {'iPadHD': '_ZN7Globals6iPadHDE', 'iPadLarge': '_ZN7Globals9iPadLargeE', 'iPad': '_ZN7Globals4iPadE'}
+
+
+def android_layers(lib):
+    from .android_blocks import find, got_symbol, offset
+    layers = find(lib, '_ZN12ImageFactory9loadImageEiii', ANDROID_LAYERS)
+    order = find(lib, '_ZN12ImageFactory8loadCharEPi', ANDROID_ORDER)
+    if not layers or not order or layers['start'] != lib.symbols['_ZN12ImageFactory9loadImageEiii'][0]:
+        return {}
+    refs = layers['refs']
+    if any(len(set(rows)) != 1 for rows in refs.values()):
+        return {}
+    # Flags and tables by the symbols their GOT slots are bound to.
+    bound = {role: got_symbol(lib, refs[role][0]) for role in [*TABLES, *FLAGS]}
+    if any(not bound[role] or bound[role][0] != name for role, name in [*TABLES.items(), *FLAGS.items()]):
+        return {}
+    if any(bound[role][2] != 416 for role in TABLES) or len({bound[role][1] for role in TABLES}) != 4:
+        return {}
+    extent = lambda block: {'offset': offset(lib, block['start']), 'bytes': block['end'] - block['start']}
+    return layer_tables(lib, refs['part_bases'][0], {role: bound[role][1] for role in TABLES},
+                        {'selection': extent(layers), 'order': extent(order)})
