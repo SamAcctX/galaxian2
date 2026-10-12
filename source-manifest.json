@@ -2888,6 +2888,7 @@
     "tests/test_ship_purchase.py",
     "tests/test_source_checks.py",
     "tests/test_speaker_bindings.py",
+    "tests/test_station_autopilot.py",
     "tests/test_station_departure.py",
     "tests/test_station_entry.py",
     "tests/test_station_flight.py",
