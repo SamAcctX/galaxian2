@@ -17,7 +17,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	if not data is Dictionary: return "Missing NPC flight declaration"
 	if data.is_empty(): return ""
 	if not parameters(data): return "Invalid NPC flight parameters"
-	var sizes := {"actor_wrapper":14,"virtual_update":8,"bank":24,"turn":19,"snap":13,"sign":13,"history":222,"reset":30,"slew":21,"radians":16,"travel":28,"slew_numerator":4,"history_divisor":4,"sign_mask":16} if architecture=="x86_64" else {"actor_wrapper":60,"virtual_update":4,"bank":52,"turn":28,"snap":32,"sign":22,"history":198,"reset":14,"slew":32,"radians":42,"travel":40} if architecture=="armv7" else {}
+	var sizes := {"actor_wrapper":14,"virtual_update":8,"bank":24,"turn":19,"snap":13,"sign":13,"history":222,"reset":30,"slew":21,"radians":16,"travel":28,"slew_numerator":4,"history_divisor":4,"sign_mask":16} if architecture=="x86_64" else {"actor_wrapper":60,"virtual_update":4,"bank":52,"turn":28,"snap":32,"sign":22,"history":198,"reset":14,"slew":32,"radians":42,"travel":40} if architecture=="armv7" else {"virtual_update":8,"bank":38,"turn":32,"snap":122,"sign":30,"history":192,"reset":14,"slew":50,"radians":54,"travel":24} if architecture=="android-armv7" else {}
 	if sizes.is_empty(): return "Unsupported NPC flight architecture"
 	for key in ["turn_scale","heading_snap_l1","bank_sign_angle","bank_slew_divisor","bank_angle_scale","pi"]: sizes[key]=4
 	if data.provenance.size()!=sizes.size(): return "Invalid NPC flight provenance"

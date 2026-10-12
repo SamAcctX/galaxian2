@@ -115,3 +115,70 @@ class NpcFlightTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+
+ANDROID_VALUES = dict(triple='2', scale='3', turn_scale='0x37000000', snap='0x3d000000', sign='0x3fc90fdb', window='0x18',
+                      samples='6.000000e+00', last='5', zero_full='0x0', zero_partial='0x0', slew_numerator='2.500000e+00',
+                      slew_divisor='0x40800000', angle_scale='0x3a000000', pi='0x40490fdb',
+                      limit_low='0', limit_high='0x43fa', gain_low='0', gain_high='0x4120')
+
+
+def android_extract(actors=None, slot=13, drop=(), **changes):
+    """Synthetic PlayerFighter constructor, update and vtable (slot 13 = update)."""
+    from android_text_fixture import fill, text_library
+    values = dict(ANDROID_VALUES, **changes)
+    blocks = [(key, fill(getattr(reader, 'ANDROID_' + key.upper()), blank='0x10' if key == 'radians' else '#out', **values))
+              for key in ('turn', 'snap', 'sign', 'history', 'reset', 'slew', 'radians', 'travel') if key not in drop]
+    update = '\n'.join(['push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', 'mov r4, r0', 'mov r8, r1', *[b for _, b in blocks], 'out:', 'bx lr'])
+    constructor = '\n'.join(['push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', '' if 'bank' in drop else fill(reader.ANDROID_BANK, **values), 'bx lr'])
+    table = [0, 0] + ['f%d' % i for i in range(14)]
+    table[2 + slot] = '_ZN13PlayerFighter6updateEi'
+    lib, addresses = text_library({'_ZN13PlayerFighter6updateEi': update, '_ZN13PlayerFighterC1EiiP6PlayerP10AEGeometryfffb': constructor},
+                                  {'_ZTV13PlayerFighter': table})
+    parents = actors if actors is not None else {'npc_initialization': {'activation': {'active': True}}}
+    return reader.extract_npc_flight(lib, parents), lib, addresses
+
+
+class AndroidNPCFlight(unittest.TestCase):
+    def test_named_update_gives_tuning_and_literals(self):
+        result, lib, addresses = android_extract()
+        f = lambda word: struct.unpack('<f', struct.pack('<I', word))[0]
+        self.assertEqual({k: v for k, v in result.items() if k != 'provenance'},
+                         {'turn_numerator': 40, 'turn_scale': f(0x37000000), 'heading_snap_l1': 0.03125, 'bank_sign_angle': f(0x3fc90fdb),
+                          'bank_samples': 6, 'bank_limit': 500.0, 'bank_gain': 10.0, 'bank_slew_numerator': 2.5, 'bank_slew_divisor': 4.0,
+                          'bank_angle_scale': f(0x3a000000), 'pi': f(0x40490fdb)})
+        p = result['provenance']
+        update = addresses['_ZN13PlayerFighter6updateEi']
+        self.assertEqual([(p[k]['offset'] - update, p[k]['bytes']) for k in ('turn', 'snap', 'sign', 'history', 'reset', 'slew', 'radians', 'travel')],
+                         [(8, 32), (40, 122), (162, 30), (192, 192), (384, 14), (398, 50), (448, 54), (502, 24)])
+        self.assertEqual((p['bank']['offset'] - addresses['_ZN13PlayerFighterC1EiiP6PlayerP10AEGeometryfffb'], p['bank']['bytes']), (4, 38))
+        for key, word in [('turn_scale', 0x37000000), ('heading_snap_l1', 0x3d000000), ('bank_sign_angle', 0x3fc90fdb),
+                          ('bank_slew_divisor', 0x40800000), ('bank_angle_scale', 0x3a000000), ('pi', 0x40490fdb)]:
+            self.assertEqual(int.from_bytes(lib.data[p[key]['offset']:p[key]['offset'] + 4], 'little'), word, key)
+        rel = lib.elf_sections['.rel.dyn']
+        self.assertTrue(rel['offset'] <= p['virtual_update']['offset'] < rel['offset'] + rel['length'])
+
+    def test_each_broken_rule_is_unsupported(self):
+        cases = {
+            'no initialization': dict(actors={'npc_initialization': {}}),
+            'no activation': dict(actors={'npc_initialization': {'activation': {}}}),
+            'other slot': dict(slot=12),
+            **{'no ' + key: dict(drop=(key,)) for key in ('turn', 'snap', 'sign', 'history', 'reset', 'slew', 'radians', 'travel', 'bank')},
+            'samples': dict(samples='5.000000e+00'),
+            'last sample': dict(last='4'),
+            'full sum start': dict(zero_full='0x3f800000'),
+            'partial sum start': dict(zero_partial='0x3f800000'),
+            'turn numerator': dict(triple='6', scale='1'),
+            'zero turn': dict(turn_scale='0x0'),
+            'infinite limit': dict(limit_high='0x7f80'),
+            'unordered gain': dict(gain_high='0x7fc0'),
+            'huge gain': dict(gain_high='0x4974'),
+            'coarse snap': dict(snap='0x40000000'),
+            'coarse turn': dict(turn_scale='0x40000000'),
+            'coarse angle': dict(angle_scale='0x40000000'),
+            'other pi': dict(pi='0x40490fdc'),
+            'other sign angle': dict(sign='0x3fc90fdc'),
+        }
+        for name, changes in cases.items():
+            with self.subTest(name):
+                self.assertEqual(android_extract(**changes)[0], {})

@@ -1,4 +1,11 @@
-"""Bounded ordinary NPC flight tuning; original code is never emitted."""
+"""Bounded ordinary NPC flight tuning; original code is never emitted.
+
+Android: PlayerFighter's constructor stores the bank limit and gain;
+PlayerFighter::update (vtable slot 13 of the class the activation resolves)
+turns by elapsed x 48 / 65536, snaps the heading below an L1 step of 0.0625,
+signs the bank angle at pi/2, averages five bank samples, scales them by gain
+and limit, slews by elapsed x 1.25 / 3.9 and rolls by bank x pi / 4096.
+"""
 import math
 import struct
 from .opening_loadout import template
@@ -47,7 +54,234 @@ LAYOUTS = {'x86_64': {'bank': ('constructor', 2272, 24, '41c78424fc020000 {bank_
                       '9aed780a40ec300bfbff200640ff900d9eed550a0df5806e9eed561a0df5806efbff2007fbff2006')}}
 
 
+ANDROID_BANK = """
+movw r2, #{gain_low}
+movw r3, #{limit_low}
+str.w r0, [fp, #0xf4]
+movs r0, #0
+movt r2, #{gain_high}
+movt r3, #{limit_high}
+vmov.i32 q8, #0
+strd r0, r0, [fp, #0x204]
+str.w r0, [fp, #0x20c]
+strd r3, r2, [fp, #0x28c]
+"""
+# PlayerFighter::update: `this` in r4, elapsed milliseconds in r8 (as the Mac reader,
+# the update's other paths are not followed).
+ANDROID_TURN = """
+add.w r0, r8, r8, lsl #{triple}
+vldr s2, ={turn_scale}
+lsls r0, r0, #{scale}
+vmov s0, r0
+mov r0, r6
+vcvt.f32.s32 s0, s0
+vmul.f32 s0, s0, s2
+vmov r1, s0
+call _ZN11AbyssEngine6AEMath6VectormLEf
+"""
+ANDROID_SNAP = """
+vldr s2, [r4, #0x170]
+vldr s8, [sp, #0xd4]
+vldr s0, [r4, #0x16c]
+vsub.f32 s2, s2, s8
+vldr s6, [sp, #0xd0]
+vldr s4, [r4, #0x174]
+vsub.f32 s0, s0, s6
+vldr s10, [sp, #0xd8]
+vsub.f32 s4, s4, s10
+vcmpe.f32 s2, #0
+vmrs apsr_nzcv, fpscr
+vneg.f32 s6, s2
+vcmpe.f32 s0, #0
+vneg.f32 s8, s0
+vneg.f32 s10, s4
+it gt
+vmovgt.f32 s6, s2
+vmrs apsr_nzcv, fpscr
+vcmpe.f32 s4, #0
+vldr s2, ={snap}
+it gt
+vmovgt.f32 s8, s0
+vmrs apsr_nzcv, fpscr
+vadd.f32 s0, s8, s6
+it gt
+vmovgt.f32 s10, s4
+vadd.f32 s0, s0, s10
+vcmpe.f32 s0, s2
+vmrs apsr_nzcv, fpscr
+bpl {@keep}
+add r1, sp, #0xd0
+mov r0, r6
+call _ZN11AbyssEngine6AEMath6VectoraSERKS1_
+keep: add r5, sp, #0x150
+"""
+ANDROID_SIGN = """
+call _ZN11AbyssEngine6AEMath5ACosfEf
+vldr s0, ={sign}
+vmov s2, r0
+vneg.f32 s4, s16
+vcmpe.f32 s2, s0
+vmrs apsr_nzcv, fpscr
+it mi
+vmovmi.f32 s16, s4
+"""
+# Samples at 0x294, next index at 0x2a8, full flag at 0x2ac; limit 0x28c, gain 0x290.
+ANDROID_HISTORY = """
+ldr.w r0, [r4, #0x2a8]
+add.w r0, r4, r0, lsl #2
+vstr s16, [r0, #0x294]
+ldrb.w r0, [r4, #0x2ac]
+cbz r0, {@partial}
+vldr s0, ={zero_full}
+add.w r1, r4, #0x294
+movs r2, #0
+sum: adds r3, r1, r2
+adds r2, #4
+cmp r2, #{window}
+vldr s2, [r3]
+vadd.f32 s0, s0, s2
+bne {@sum}
+vmov.f32 s2, #{samples}
+ldr.w r1, [r4, #0x2a8]
+b {@average}
+partial: ldr.w r1, [r4, #0x2a8]
+cbz r1, {@first}
+vldr s0, ={zero_partial}
+cmp r1, #1
+blt {@count}
+add.w r2, r4, #0x294
+movs r3, #0
+add: vldr s2, [r2]
+adds r3, #1
+adds r2, #4
+cmp r3, r1
+vadd.f32 s0, s0, s2
+blt {@add}
+count: vmov s2, r1
+vcvt.f32.s32 s2, s2
+average: vdiv.f32 s16, s0, s2
+adds r2, r1, #1
+str.w r2, [r4, #0x2a8]
+cmp r1, #{last}
+blt {@gain}
+movs r1, #0
+cmp r0, #0
+str.w r1, [r4, #0x2a8]
+bne {@gain}
+movs r0, #1
+strb.w r0, [r4, #0x2ac]
+b {@gain}
+first: movs r0, #1
+str.w r0, [r4, #0x2a8]
+gain: vldr s0, [r4, #0x28c]
+vldr s2, [r4, #0x290]
+vmul.f32 s4, s16, s0
+vmul.f32 s2, s4, s2
+vcmpe.f32 s2, s0
+vstr s2, [r4, #0x204]
+vmrs apsr_nzcv, fpscr
+ble {@low}
+vstr s0, [r4, #0x204]
+b {@done}
+low: vneg.f32 s0, s0
+vcmpe.f32 s2, s0
+vmrs apsr_nzcv, fpscr
+it mi
+vstrmi s0, [r4, #0x204]
+done: add r5, sp, #0x150
+"""
+ANDROID_RESET = """
+movs r0, #0
+str.w r0, [r4, #0x204]
+str.w r0, [r4, #0x2a8]
+strb.w r0, [r4, #0x2ac]
+"""
+ANDROID_SLEW = """
+vldr s2, [r4, #0x204]
+vldr s0, [r4, #0x208]
+vcmpe.f32 s0, s2
+vmrs apsr_nzcv, fpscr
+beq {}
+vmov s6, r8
+vmov.f32 s4, #{slew_numerator}
+vcvt.f32.s32 s6, s6
+vcmpe.f32 s0, s2
+vmrs apsr_nzcv, fpscr
+vmul.f32 s4, s6, s4
+vldr s6, ={slew_divisor}
+vdiv.f32 s4, s4, s6
+"""
+ANDROID_RADIANS = """
+vldr s4, ={angle_scale}
+vmov.i32 q8, #0
+vldr s2, ={pi}
+addw r0, pc, #{}
+vmul.f32 s0, s0, s4
+orr r1, fp, #4
+vld1.64 {d18, d19}, [r0:0x80]
+mov.w r0, #0x3f800000
+add r5, sp, #0xd0
+movs r2, #0
+str r0, [sp, #0x150]
+movs r3, #0
+vst1.32 {d16, d17}, [r1]
+add.w r1, fp, #0x18
+str r0, [sp, #0x164]
+vmul.f32 s0, s0, s2
+"""
+ANDROID_TRAVEL = """
+vmov s0, r8
+vcvt.f32.s32 s0, s0
+vldr s2, [r4, #0x1e0]
+vmul.f32 s0, s0, s2
+vcvt.s32.f32 s0, s0
+vcvt.f32.s32 s0, s0
+"""
+
+
+def android_flight(lib):
+    from .android_shapes import Listing, relocation, vtable_slot
+    method = relocation(lib, vtable_slot(lib, '_ZTV13PlayerFighter', 13))
+    if method is None:
+        return {}
+    update = Listing(lib, method[0])
+    shapes = {key: update.unique(template) for key, template in [
+        ('turn', ANDROID_TURN), ('snap', ANDROID_SNAP), ('sign', ANDROID_SIGN), ('history', ANDROID_HISTORY),
+        ('reset', ANDROID_RESET), ('slew', ANDROID_SLEW), ('radians', ANDROID_RADIANS), ('travel', ANDROID_TRAVEL)]}
+    shapes['bank'] = Listing(lib, '_ZN13PlayerFighterC1EiiP6PlayerP10AEGeometryfffb').unique(ANDROID_BANK)
+    if None in shapes.values():
+        return {}
+    history, bank = shapes['history'], shapes['bank']
+    samples = history.value('window') // 4
+    if not (history.value('samples') == samples == history.value('last') + 1 and history.value('zero_full') == history.value('zero_partial') == 0):
+        return {}
+    floats = {}
+    proof = {'virtual_update': method[1], **{key: shape.span() for key, shape in shapes.items()}}
+    for key, block, name in [('turn_scale', 'turn', 'turn_scale'), ('heading_snap_l1', 'snap', 'snap'), ('bank_sign_angle', 'sign', 'sign'),
+                             ('bank_slew_divisor', 'slew', 'slew_divisor'), ('bank_angle_scale', 'radians', 'angle_scale'), ('pi', 'radians', 'pi')]:
+        word, proof[key] = shapes[block].pool(name)
+        floats[key] = struct.unpack('<f', struct.pack('<I', word))[0]
+    word = lambda stem: struct.unpack('<f', struct.pack('<I', bank.value(stem + '_high') << 16 | bank.value(stem + '_low')))[0]
+    numerator = (1 + (1 << shapes['turn'].value('triple'))) << shapes['turn'].value('scale')
+    result = {'turn_numerator': numerator, 'turn_scale': floats['turn_scale'], 'heading_snap_l1': floats['heading_snap_l1'],
+              'bank_sign_angle': floats['bank_sign_angle'], 'bank_samples': samples, 'bank_limit': word('limit'),
+              'bank_gain': word('gain'), 'bank_slew_numerator': shapes['slew'].value('slew_numerator'),
+              'bank_slew_divisor': floats['bank_slew_divisor'], 'bank_angle_scale': floats['bank_angle_scale'], 'pi': floats['pi']}
+    # (1 + 2^a) << b is at least 2; NaN and infinities fail the range.
+    if numerator > 127 or not all(0 < v <= 100000 for v in result.values()):
+        return {}
+    if result['heading_snap_l1'] > 1 or result['turn_scale'] > 1 or result['bank_angle_scale'] > 1:
+        return {}
+    if result['pi'] != struct.unpack('<f', struct.pack('<f', math.pi))[0] or result['bank_sign_angle'] != struct.unpack('<f', struct.pack('<f', math.pi / 2))[0]:
+        return {}
+    result['provenance'] = proof
+    return result
+
+
 def extract_npc_flight(mach, actors):
+    if mach.architecture == 'android-armv7':
+        initial = actors.get('npc_initialization')
+        return android_flight(mach) if initial and initial.get('activation') else {}
     import capstone
     mac = mach.architecture == 'x86_64'
     if mach.architecture not in LAYOUTS: return {}
