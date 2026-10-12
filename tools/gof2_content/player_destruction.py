@@ -1,9 +1,30 @@
-"""Optional Mac starter player-destruction declarations, read only at import."""
+"""Optional Mac starter player-destruction declarations, read only at import.
+
+Android: MGame::gameOverCheck (polled by MGame::OnUpdate until the mission
+fails) tries PlayerEgo::tryToStartEmergencySystem (equipment sort 27, bound
+by PlayerEgo::setShip), resets the camera (LevelScript::resetCamera), calls
+PlayerEgo::explode (emission on, camera off, Explosion(0), stop sounds) and
+fails with text 308 once PlayerEgo::explosionEnded passes 8000 ms; the fail
+plays sound 37. PlayerEgo::update spins the hull by 0.03 (AEGeometry::rotate)
+and breaks it up at 3000 ms (Explosion::start/update/reset, emission and
+particle drawing off); PlayerEgo::render draws the body until then.
+MGame::OnRender2D fades for 4000 ms after 3001 ms; MGame::OnTouchBegin
+continues to state 1 (2 at cursor 158). Differences: MGame never creates the
+game-over image (its handle stays -1), and with a saved record the continue
+loads it (GameRecord::load, state 5) under the Android-only text 3393.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .station_exterior import declaration_bytes
 
 def extract_player_destruction(mach,arrival,flight,actors):
+    if mach.architecture == 'android-armv7':
+        try:
+            death = actors['npc_initialization']['destruction']
+            if flight['scope'] != 'full_hold_mining_flight_construction' or death['effect_type'] != 0 or death['model_ids'] != [16821, 16820]: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64':return {}
     try:
         if flight['scope']!='full_hold_mining_flight_construction':return {}
@@ -229,3 +250,39 @@ MAC_ALTERNATE = {'player_constructor': [550476,
                         354,
                         '__text',
                         'sha256:92cf3a31988318a9b56ea64f1ab10bd8d39fb5ec55e07ed20c63178fdd1a7796']}
+
+# The Mac values except the game-over image, which Android never creates.
+ANDROID_VALUES = dict(VALUES, game_over_image_id=None)
+
+# Android spans inside named functions.
+ANDROID = {'player_fields': ('_ZN9PlayerEgoC2EP6Player', 0, 514, 'sha256:75a31d9d12489f363ea275eac2936e1d9df31f982412ab88b12c5c94f66857f2'),
+           'escape_binding': ('_ZN9PlayerEgo7setShipEii', 384, 168, 'sha256:237c7ffacaa1f1abf64ee081c890eea91ef7fbad66a96fee3baf689787aae084'),
+           'escape_branch': ('_ZN9PlayerEgo25tryToStartEmergencySystemEv', 0, 132, 'sha256:ba140d5c755f83f9b9faaa2e6e7340858770f45c3d2c22894689f15733cc9218'),
+           'wormhole_predicate': ('_ZN9PlayerEgo12isInWormholeEv', 0, 32, 'sha256:76262d8c2927d88cd55d42ac672809f8def4d5e554a8e791a68e05f9a9ed111a'),
+           'death_poll': ('_ZN5MGame13gameOverCheckEv', 0, 700, 'sha256:4a51c0af185ac1d11ab6cabd794d8436b07807a6295e053d5727fea688df48b0'),
+           'death_start': ('_ZN9PlayerEgo7explodeEv', 0, 192, 'sha256:3ba23f0824c1f7be8b67ed7f8d40e9043f0b00ab1f643d45500e514c41df3de2'),
+           'death_ready': ('_ZN9PlayerEgo14explosionEndedEv', 0, 12, 'd0f88c1039b1d0f8f8120020'),
+           'failure_after': ('_ZN9PlayerEgo14explosionEndedEv', 12, 14, 'b1f5fa5fc8bf0120704701207047'),
+           'effect_constructor': ('_ZN9ExplosionC2Ei', 0, 1092, 'sha256:1e8a5a755784191c91dc91ad25cf3a2babe60dd4f6e204999163d603ecdabcd3'),
+           'effect_trigger': ('_ZN9Explosion5startERKN11AbyssEngine6AEMath6VectorES4_', 0, 424, 'sha256:1c46779e818994b2397ab5e986aaef2a0ca7a0d86e012700190e6939b6bf8985'),
+           'effect_sound_choice': ('_ZN9Explosion9playSoundEPN11AbyssEngine6AEMath6VectorE', 0, 272, 'sha256:4c7c6d27dc8036d4256b270583ae8902c51d8965ba07113fa4087d3d0948d6b4'),
+           'effect_update': ('_ZN9Explosion6updateEiRKN11AbyssEngine6AEMath6VectorE', 0, 244, 'sha256:addd4340adf37e41d95e7958e9a6165c3daf525ca1405801f413ba7720fb9f8d'),
+           'effect_reset': ('_ZN9Explosion5resetEv', 0, 340, 'sha256:81be4cc59f4c7cb24e48a7d1d74a22118f7b8e49aa8177a451e222443d6b7404'),
+           'death_update': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 9090, 88, 'sha256:b8a49b0f66596bd67188883f388474954eaba17102b1c59049b0aff55bd2d604'),
+           'spin': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 9178, 12, '4cf28f21d9f80400c3f6f541'),
+           'breakup': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 9190, 216, 'sha256:1bfaa20c22c968e8281c05cd4212de51d6d2a00e8f71c7ed6e1fe6d912b69869'),
+           'euler_rotation': ('_ZN10AEGeometry6rotateEfff', 0, 156, 'sha256:3cb10368bf260dbddd4cb9987882f5ae54c6cc0a85219993b72dcf1b32da66af'),
+           'player_render': ('_ZN9PlayerEgo6renderEb', 0, 228, 'sha256:06f80bbb1fbd05040bb36ff4fa7efbb4282238626b14ffcf32b62ce6a030ec17'),
+           'camera_reset': ('_ZN11LevelScript11resetCameraEP5Level', 0, 128, 'sha256:57855c60b5a1611a79b767f2e7c8b2b8a0e3589140af36be2dbb3a40096e8217'),
+           'camera_enable': ('_ZN18TargetFollowCamera9setActiveEb', 0, 6, '80f846107047'),
+           'camera_update_gate': ('_ZN18TargetFollowCamera6updateEi', 156, 18, 'baf1010fc0f2c7819bf84600002800f0c281'),
+           'failure_clock': ('_ZN5MGame8OnUpdateEv', 1370, 28, 'sha256:2251705a785979a53386dfb063f6ea18c5cdd47effeac8f14e428d728696fd85'),
+           'player_update_gate': ('_ZN5MGame8OnUpdateEv', 1808, 68, 'sha256:2ef13e9a7d60765bc83cf5b44305fff0565ee5ed9952c785aac73e0e4836a619'),
+           'poll_order': ('_ZN5MGame8OnUpdateEv', 10572, 86, 'sha256:d32ffc72ac1874d2159af3abb568f0d683c41ad513b1795ca0c0b91e2124f4e0'),
+           'input_gate': ('_ZN5MGame8OnUpdateEv', 11462, 34, 'sha256:e0a9f0926a2eaf7803f7a41c75b6f88e2523dcd9302fabc92cb7b0da7dc240f5'),
+           'failure_gate': ('_ZN5MGame10OnRender2DEv', 548, 68, 'sha256:aab6dce9566c969d628dd81a478f2718a2833422a20ccdaf4c867f8e94096192'),
+           'failure_display': ('_ZN5MGame10OnRender2DEv', 700, 418, 'sha256:06d66597528809c4c706b71690d544d9e7e52642ed4b7fbe5b1e59bcdf6dcd72'),
+           'fade_constants': ('_ZN5MGame10OnRender2DEv', 1332, 8, '00007a4500007f43'),
+           'blink_constant': ('_ZN5MGame10OnRender2DEv', 1352, 4, 'a69b443b'),
+           'failure_input': ('_ZN5MGame12OnTouchBeginEiiPv', 66, 188, 'sha256:1b3148f7dcea70dc67af1e37a3d45d2e83ba64d9a66fb15159193fd7a9791349'),
+           'world_render': ('_ZN5MGame10OnRender3DEv', 0, 324, 'sha256:2c97b08ac3bc06bdc0a612e8d4f86525a147b9aa7ab98cfc5bed3ce7160b71fa')}

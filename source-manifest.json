@@ -2861,6 +2861,7 @@
     "tests/test_pilot_response.py",
     "tests/test_planet_resources.py",
     "tests/test_player_aim.py",
+    "tests/test_player_destruction.py",
     "tests/test_player_hit_policy.py",
     "tests/test_player_initialization.py",
     "tests/test_player_recharge.py",
