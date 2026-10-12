@@ -2783,6 +2783,7 @@
     "tests/test_environment_colors.py",
     "tests/test_fast_forward.py",
     "tests/test_fev.py",
+    "tests/test_first_flight.py",
     "tests/test_first_flight_layouts.py",
     "tests/test_flight_player_cache.py",
     "tests/test_flight_projection.py",
