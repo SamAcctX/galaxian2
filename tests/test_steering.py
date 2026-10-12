@@ -151,6 +151,27 @@ def str_pre(asm, rt, rn, imm): return wide(asm, 0xf8400f00 | rn << 16 | rt << 12
 def ldrd(asm, rt, rt2, rn, offset): return wide(asm, 0xe9d00000 | rn << 16 | rt << 12 | rt2 << 8 | offset // 4)
 def subs_w(asm, rd, rn, rm): return wide(asm, 0xebb00000 | rn << 16 | rd << 8 | rm)
 def sbc_w(asm, rd, rn, rm): return wide(asm, 0xeb600000 | rn << 16 | rd << 8 | rm)
+def dfp(asm, base, dd, dn=0, dm=0):
+    """A VFP double-precision instruction: base | D:Vd, N:Vn, M:Vm fields."""
+    return wide(asm, base | (dd >> 4) << 22 | (dn & 15) << 16 | (dd & 15) << 12 | (dn >> 4) << 7 | (dm >> 4) << 5 | dm & 15)
+def vmul_d(asm, dd, dn, dm): return dfp(asm, 0xee200b00, dd, dn, dm)
+def vadd_d(asm, dd, dn, dm): return dfp(asm, 0xee300b00, dd, dn, dm)
+def vneg_d(asm, dd, dm): return dfp(asm, 0xeeb10b40, dd, 0, dm)
+def vldr_d(asm, dd, rn, offset): return wide(asm, 0xed900b00 | (dd >> 4) << 22 | rn << 16 | (dd & 15) << 12 | offset // 4)
+def vstr_d(asm, dd, rn, offset=0): return wide(asm, 0xed800b00 | (dd >> 4) << 22 | rn << 16 | (dd & 15) << 12 | offset // 4)
+def vldr_d_pc(asm, dd, target):
+    disp = target - ((asm.here() + 4) & ~3)
+    return vldr_d(asm, dd, 15, disp) if disp >= 0 else wide(asm, 0xed1f0b00 | (dd >> 4) << 22 | (dd & 15) << 12 | -disp // 4)
+def vcvt_d_s(asm, dd, sm): return wide(asm, 0xeeb70ac0 | (dd >> 4) << 22 | (dd & 15) << 12 | (sm & 1) << 5 | sm >> 1)  # vcvt.f64.f32
+def vcvt_s_d(asm, sd, dm): return wide(asm, 0xeeb70bc0 | (sd & 1) << 22 | (sd >> 1) << 12 | (dm >> 4) << 5 | dm & 15)  # vcvt.f32.f64
+def vcvt_d_int(asm, dd, sm): return wide(asm, 0xeeb80bc0 | (dd >> 4) << 22 | (dd & 15) << 12 | (sm & 1) << 5 | sm >> 1)  # vcvt.f64.s32
+def vldmia_d(asm, rn, first, count): return wide(asm, 0xec900b00 | (first >> 4) << 22 | rn << 16 | (first & 15) << 12 | 2 * count)
+def vmov_d_core(asm, dm, rt, rt2): return wide(asm, 0xec400b10 | rt2 << 16 | rt << 12 | (dm >> 4) << 5 | dm & 15)  # vmov dm, rt, rt2
+def mul_w(asm, rd, rn, rm): return wide(asm, 0xfb00f000 | rn << 16 | rd << 8 | rm)
+def mla(asm, rd, rn, rm, ra): return wide(asm, 0xfb000000 | rn << 16 | ra << 12 | rd << 8 | rm)
+def smull(asm, lo, hi, rn, rm): return wide(asm, 0xfb800000 | rn << 16 | lo << 12 | hi << 8 | rm)
+def umull(asm, lo, hi, rn, rm): return wide(asm, 0xfba00000 | rn << 16 | lo << 12 | hi << 8 | rm)
+def asr_w(asm, rd, rm, shift): return wide(asm, 0xea4f0020 | (shift >> 2) << 12 | rd << 8 | (shift & 3) << 6 | rm)
 def vmov_q8_zero(asm): return wide(asm, 0xefc00050)  # vmov.i32 q8, #0
 def vpush_d8(asm): return wide(asm, 0xed2d8b02)
 def push_r7(asm): return asm.half(0xb580)  # push {r7, lr}
@@ -263,6 +284,9 @@ class AndroidSteeringTests(unittest.TestCase):
         vmov_scalar(asm, 16, 0, 0); vmov_scalar(asm, 17, 1, 1); str_pre(asm, 0, 1, 0x40); ldrd(asm, 12, 2, 0, 0x70)
         subs_w(asm, 0, 12, 3); sbc_w(asm, 1, 2, 1); add_imm(asm, 8, 13, 0x1e8); add_imm(asm, 9, 13, 0x190); strb_w(asm, 6, 9, 0x48)
         blx_reg(asm, 4)
+        vmul_d(asm, 17, 21, 17); vadd_d(asm, 16, 17, 16); vneg_d(asm, 19, 22); vldr_d(asm, 17, 11, 0xa8); vstr_d(asm, 16, 2)
+        vcvt_d_s(asm, 16, 0); vcvt_s_d(asm, 0, 16); vcvt_d_int(asm, 21, 0); vldmia_d(asm, 2, 17, 4); vmov_d_core(asm, 13, 0, 4)
+        mul_w(asm, 1, 0, 10); mla(asm, 9, 6, 10, 1); smull(asm, 8, 6, 10, 10); umull(asm, 5, 1, 8, 10); asr_w(asm, 3, 10, 31)
         decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
         self.assertEqual([f'{i.mnemonic} {i.op_str}' for i in decoder.disasm(bytes(asm.code), 0x2000)],
                          ['vadd.f32 s0, s0, s2', 'vsub.f32 s6, s8, s6', 'vdiv.f32 s2, s2, s6', 'vneg.f32 s4, s16',
@@ -276,7 +300,10 @@ class AndroidSteeringTests(unittest.TestCase):
                           'ldr r0, [pc, #0x6c]', 'vmov.i32 q8, #0', 'vpush {d8}',
                           'push {r7, lr}', 'pop {r7, pc}', 'vmov.32 d16[0], r0', 'vmov.32 d17[1], r1', 'str r0, [r1, #0x40]!',
                           'ldrd ip, r2, [r0, #0x70]', 'subs.w r0, ip, r3', 'sbc.w r1, r2, r1', 'add.w r8, sp, #0x1e8',
-                          'add.w sb, sp, #0x190', 'strb.w r6, [sb, #0x48]', 'blx r4'])
+                          'add.w sb, sp, #0x190', 'strb.w r6, [sb, #0x48]', 'blx r4', 'vmul.f64 d17, d21, d17', 'vadd.f64 d16, d17, d16',
+                          'vneg.f64 d19, d22', 'vldr d17, [fp, #0xa8]', 'vstr d16, [r2]', 'vcvt.f64.f32 d16, s0', 'vcvt.f32.f64 s0, d16',
+                          'vcvt.f64.s32 d21, s0', 'vldmia r2, {d17, d18, d19, d20}', 'vmov d13, r0, r4', 'mul r1, r0, sl',
+                          'mla sb, r6, sl, r1', 'smull r8, r6, sl, sl', 'umull r5, r1, r8, sl', 'asr.w r3, sl, #0x1f'])
 
     def test_pc_literal_operands_in_both_number_styles(self):
         from android_fixture import Thumb

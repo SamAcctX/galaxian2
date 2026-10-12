@@ -11,10 +11,11 @@ const Catalogues = preload("res://src/content/catalogues.gd")
 var failures := 0
 
 func _initialize() -> void:
-	for mac in [true, false]:
-		var data: Dictionary = JSON.parse_string(JSON.stringify(Fixture.definition(mac)))
-		var arch := "x86_64" if mac else "armv7"
+	for arch in ["x86_64", "armv7", "android-armv7"]:
+		var data: Dictionary = JSON.parse_string(JSON.stringify(Fixture.definition(arch == "x86_64", arch == "android-armv7")))
 		check(Definitions.validate(data, 65536, arch).is_empty(), "Valid follow declarations rejected")
+		for other in ["x86_64", "armv7", "android-armv7"]:
+			if other != arch: check(not Definitions.validate(data, 65536, other).is_empty(), "Follow spans accepted for another compiler")
 		for bad in ["missing", "nan", "bool", "rate", "matrix", "row", "offset", "extent", "overlap"]:
 			var copy := data.duplicate(true)
 			match bad:
@@ -26,7 +27,7 @@ func _initialize() -> void:
 				"row": copy.response_matrix[0].append(0)
 				"offset": copy.look_offset[0] = INF
 				"extent": copy.provenance.curve.offset = 65536
-				"overlap": copy.provenance.follow.offset = copy.provenance.curve.offset
+				"overlap": copy.provenance.rate_scale.offset = copy.provenance.curve.offset
 			check(not Definitions.validate(copy, 65536, arch).is_empty(), "Invalid follow declaration accepted: " + bad)
 	var bindings := Bindings.new()
 	bindings.base_content_id = "a".repeat(64); bindings.binding_id = "b".repeat(64)

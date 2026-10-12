@@ -24,7 +24,8 @@ def shape_at(code, shape, lib=None):
     """Indexes where `code` holds the instructions of `shape`: (mnemonic, operand-text regex) pairs.
 
     '@n' in an operand pattern is the address of the shape's own instruction n (a branch target);
-    an operand pattern '=symbol' is a call of that named function (`lib` resolves it). An absent
+    an operand pattern '=symbol' is a call of that named function, or a b/b.w through a veneer to that
+    import (`lib` resolves both). An absent
     function (None) holds nothing.
     """
     from .android_library import callee
@@ -35,7 +36,7 @@ def shape_at(code, shape, lib=None):
             if ins.mnemonic != mnemonic:
                 return False
             if operands.startswith('='):
-                if callee(lib, ins) != operands[1:]:
+                if (callee(lib, ins) or veneer(lib, ins)) != operands[1:]:
                     return False
                 continue
             operands = re.sub(r'@(\d+)', lambda m: '#%#x' % code[i + int(m[1])].address if i + int(m[1]) < len(code) else '(?!)', operands)
@@ -43,6 +44,20 @@ def shape_at(code, shape, lib=None):
                 return False
         return True
     return [i for i in range(len(code) - len(shape) + 1) if fits(i)]
+
+
+VENEER = bytes.fromhex('7847c04600c09fe50ff08ce0')  # bx pc; nop; ldr ip, [pc]; add pc, ip, pc (then the word)
+
+
+def veneer(lib, ins):
+    """Import a b/b.w reaches through a Thumb-to-ARM veneer, if it does."""
+    if ins.mnemonic not in ('b', 'b.w') or not ins.operands or ins.operands[0].type != 2:  # ARM_OP_IMM
+        return None
+    address = ins.operands[0].imm
+    at = lib.text['offset'] + address - lib.text['address']
+    if not lib.text['address'] <= address <= lib.text['address'] + lib.text['length'] - 16 or lib.data[at:at + 12] != VENEER:
+        return None
+    return lib.imports.get((address + 16 + struct.unpack_from('<I', lib.data, at + 12)[0]) & 0xffffffff)
 
 
 def sole_definition(code, end, registers):

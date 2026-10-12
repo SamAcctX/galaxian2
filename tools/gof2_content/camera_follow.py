@@ -2,12 +2,21 @@
 
 The table is normalized constant data. No original executable behavior is emitted;
 the native camera uses its own vector transforms and generic curve evaluation.
+
+Android: TargetFollowCamera::aproximateCooefficientsForAproximationOfDampingFunktion
+evaluates five degree-8 polynomials of rate x handling in straight-line code (read
+symbolically); calculateCoefficents fills the look (0x60-0x80) and eye (0x88-0xa8)
+coefficients from the rates resetShipHandling sets; TargetFollowCamera::update
+scales each delta by (c0 t^4 + ... + c4) / t; LevelScript::resetCamera sets the
+target (look) and camera (eye) offsets.
 """
 import math
+import re
 import struct
 from .opening_loadout import template
 from . import opening_camera as opening
 from .ship_models import section_bytes
+from .steering import code_span, shape_at
 
 MAC_CURVE = """
 554889e5f3440f5ae0450f28c4f2450f59c0450f28d0f2450f59d4450f28caf2450f59cc410f28d9f2410f59dc440f28dbf2450f59dc410f28fbf2410f59fcf20f1005
@@ -396,7 +405,159 @@ MAC_TERMS = [[[-1, 'ref_2e8'], [-1, 'ref_289'], [-1, 'ref_2a4'], [-1, 'ref_274']
 
 ARM_TERMS = [[[-1, 'literal_1f8'], [-1, 'literal_1cc'], [-1, 'literal_19c'], [-1, 'literal_148'], [-1, 'literal_60'], [-1, 'literal_50'], [-1, 'literal_40'], [-1, 'literal_4'], [-1, 'literal_8']], [[1, 'literal_204'], [1, 'literal_194'], [1, 'literal_1a8'], [1, 'literal_168'], [1, 'literal_118'], [1, 'literal_c4'], [1, 'literal_b8'], [1, 'literal_ac'], [1, 'literal_64']], [[1, 'literal_208'], [1, 'literal_1d0'], [1, 'literal_158'], [1, 'literal_164'], [1, 'literal_128'], [1, 'literal_e8'], [1, 'literal_dc'], [1, 'literal_d0'], [1, 'literal_84']], [[-1, 'literal_1f4'], [-1, 'literal_1bc'], [-1, 'literal_188'], [-1, 'literal_138'], [-1, 'literal_a0'], [-1, 'literal_90'], [-1, 'literal_80'], [-1, 'literal_70'], [-1, 'literal_44']], [[0, None], [1, 'literal_1e0'], [1, 'literal_1a4'], [1, 'literal_174'], [1, 'literal_120'], [1, 'literal_114'], [1, 'literal_108'], [1, 'literal_f4'], [1, 'literal_fc']]]
 
+ANDROID_CURVE = '_ZN18TargetFollowCamera55aproximateCooefficientsForAproximationOfDampingFunktionEfRdS0_S0_S0_S0_'
+ANDROID_RATES = '_ZN18TargetFollowCamera20calculateCoefficentsEf'
+ANDROID_RESET = '_ZN18TargetFollowCamera17resetShipHandlingEv'
+ANDROID_UPDATE = '_ZN18TargetFollowCamera6updateEi'
+IMM = r'#(0x[0-9a-f]+|\d+)'
+
+
+def rate_set(rate, fields):
+    """curve(rate field x handling s16) into the five coefficient fields (r2, r3, then three on the stack)."""
+    first, second, third, fourth, fifth = fields
+    return [('vldr', rf's0, \[r4, #{rate:#x}\]'), ('add.w', f'r2, r4, #{fourth:#x}'), ('add.w', f'r3, r4, #{third:#x}'),
+            ('add.w', f'r0, r4, #{fifth:#x}'), ('vmul.f32', 's0, s0, s16'), ('strd', r'r3, r2, \[sp\]'),
+            ('add.w', f'r2, r4, #{first:#x}'), ('add.w', f'r3, r4, #{second:#x}'), ('str', r'r0, \[sp, #8\]'), ('vmov', 'r1, s0'),
+            ('blx', '=' + ANDROID_CURVE)]
+
+
+RATES = ([('push', '{r4, r6, r7, lr}'), ('add', 'r7, sp, #8'), ('vpush', '{d8}'), ('sub', 'sp, #0x10'), ('mov', 'r4, r0'),
+          ('vmov', 's16, r1')] + rate_set(0x128, (0x60, 0x68, 0x70, 0x78, 0x80)) + rate_set(0x12c, (0x88, 0x90, 0x98, 0xa0, 0xa8))
+         + [('add', 'sp, #0x10'), ('vpop', '{d8}'), ('pop', '{r4, r6, r7, pc}')])
+# Look rate (0x128) and eye rate (0x12c), then the coefficients for handling 1.0.
+RESET = [('movw', 'r1, ' + IMM), ('movw', 'r2, ' + IMM), ('movt', 'r1, ' + IMM), ('movt', 'r2, ' + IMM),
+         ('strd', r'r1, r2, \[r0, #0x128\]'), ('mov.w', 'r1, ' + IMM), ('b.w', '=' + ANDROID_RATES)]
+# After the target: look offset (r5, r6, 1/5) and eye offset (r5, r6, 11/13); r5 = 0, r6 = high half 4.
+OFFSETS = [('movs', 'r6, #0'), ('movw', 'r1, ' + IMM), ('ldr', r'r0, \[r4, #0x14\]'), ('movs', 'r5, #0'), ('movt', 'r6, ' + IMM),
+           ('movt', 'r1, ' + IMM), ('str', r'r5, \[sp, #4\]'), ('str', r'r6, \[sp, #8\]'), ('str', r'r1, \[sp, #0xc\]'),
+           ('add', 'r1, sp, #4'), ('blx', '=_ZN18TargetFollowCamera15setTargetOffsetERKN11AbyssEngine6AEMath6VectorE'),
+           ('movw', 'r1, ' + IMM), ('ldr', r'r0, \[r4, #0x14\]'), ('movt', 'r1, ' + IMM), ('strd', r'r5, r6, \[sp, #4\]'),
+           ('str', r'r1, \[sp, #0xc\]'), ('add', 'r1, sp, #4'),
+           ('blx', '=_ZN18TargetFollowCamera12setCamOffsetERKN11AbyssEngine6AEMath6VectorE')]
+SCALE = '=_ZN11AbyssEngine6AEMath6VectormLEf'
+# Eye delta x= (c88 t^4 + c90 t^3 + c98 t^2 + ca0 t + ca8) x (1 / t), t = elapsed (sl).
+FOLLOW_EYE = [('mul', 'r0, sl, sl'), ('add.w', 'r2, fp, #0x88'), ('vmov.f32', r's2, #1\.000000e\+00'), ('add.w', 'r8, sp, #0x24'),
+              ('mul', 'r1, r0, sl'), ('vmov', 's0, r1'), ('mul', 'r1, r1, sl'), ('vcvt.f64.s32', 'd16, s0'), ('vmov', 's0, r1'),
+              ('vldmia', 'r2, {d17, d18, d19, d20}'), ('vcvt.f64.s32', 'd21, s0'), ('vmov', 's0, r0'), ('mov', 'r0, r8'),
+              ('vmul.f64', 'd16, d16, d18'), ('vmul.f64', 'd17, d21, d17'), ('vcvt.f64.s32', 'd22, s0'), ('vmov', 's0, sl'),
+              ('vmul.f64', 'd19, d22, d19'), ('vcvt.f64.s32', 'd18, s0'), ('vadd.f64', 'd16, d17, d16'), ('vcvt.f32.s32', 's0, s0'),
+              ('vmul.f64', 'd17, d18, d20'), ('vadd.f64', 'd16, d16, d19'), ('vdiv.f32', 's0, s2, s0'), ('vadd.f64', 'd16, d16, d17'),
+              ('vldr', r'd17, \[fp, #0xa8\]'), ('vadd.f64', 'd16, d17, d16'), ('vcvt.f64.f32', 'd17, s0'), ('vmul.f64', 'd16, d17, d16'),
+              ('vcvt.f32.f64', 's0, d16'), ('vmov', 'r1, s0'), ('blx', SCALE)]
+# Look delta (target minus look point) the same way with 64-bit powers of t and c60-c80.
+FOLLOW_LOOK = [('add', 'r0, sp, #0x70'), ('add', 'r2, sp, #0xb0'), ('mov', 'r1, r4'), ('blx', '=_ZN11AbyssEngine6AEMathmiERKNS0_6VectorES3_'),
+               ('smull', 'r8, r6, sl, sl'), ('asr.w', 'r3, sl, #0x1f'), ('str', r'r4, \[sp, #0x10\]'), ('mov', 'r4, sb'),
+               ('umull', 'r5, r1, r8, sl'), ('mla', 'r1, r8, r3, r1'), ('umull', 'r0, r2, r5, sl'), ('mla', 'sb, r6, sl, r1'),
+               ('mla', 'r2, r5, r3, r2'), ('mla', 'r1, sb, sl, r2'), ('blx', '=__aeabi_l2d'), ('str', r'r0, \[sp, #0xc\]'), ('mov', 'r0, r5'),
+               ('str', r'r4, \[sp, #0x14\]'), ('mov', 'r4, r1'), ('mov', 'r1, sb'), ('blx', '=__aeabi_l2d'), ('vmov', 'd8, r0, r1'),
+               ('add.w', 'r0, fp, #0x60'), ('mov', 'r1, r6'), ('vldmia', 'r0, {d9, d10, d11, d12}'), ('ldr', r'r0, \[sp, #0xc\]'),
+               ('vmov', 'd13, r0, r4'), ('mov', 'r0, r8'), ('ldr', r'r4, \[sp, #0x14\]'), ('blx', '=__aeabi_l2d'),
+               ('vmul.f64', 'd16, d8, d10'), ('add', 'r6, sp, #0x70'), ('vmul.f64', 'd17, d13, d9'), ('vmov', 'd14, r0, r1'),
+               ('mov', 'r0, r6'), ('vmov', 's0, sl'), ('vmul.f64', 'd18, d14, d11'), ('vcvt.f64.s32', 'd9, s0'),
+               ('vadd.f64', 'd16, d17, d16'), ('vmov.f32', r's2, #1\.000000e\+00'), ('vcvt.f32.s32', 's0, s0'),
+               ('vmul.f64', 'd17, d9, d12'), ('vadd.f64', 'd16, d16, d18'), ('vdiv.f32', 's0, s2, s0'), ('vadd.f64', 'd16, d16, d17'),
+               ('vldr', r'd17, \[fp, #0x80\]'), ('vcvt.f64.f32', 'd10, s0'), ('vadd.f64', 'd16, d17, d16'), ('vmul.f64', 'd16, d10, d16'),
+               ('vcvt.f32.f64', 's0, d16'), ('vmov', 'r1, s0'), ('blx', SCALE)]
+
+
+def curve_rows(lib):
+    """The five output polynomials of the damping approximation: rows of coefficients for powers 0-8.
+
+    Straight-line symbolic evaluation: x = the float argument; vldr dN, [pc] loads a pool double;
+    vmul multiplies powers of x or a power by a constant; vadd/vneg combine terms. Outputs are the
+    reference arguments (r2, r3, then three from the stack) the vstr instructions write.
+    """
+    from .android_library import instructions
+    code = instructions(lib, ANDROID_CURVE) or []
+    start, size = lib.symbols.get(ANDROID_CURVE, (0, 0))
+    values = {'r1': ('arg',), 'r2': ('out', 0), 'r3': ('out', 1)}
+    outputs = {}
+
+    def terms(value):
+        return {0: (1, value[1])} if value[0] == 'c' else dict(value[1]) if value[0] == 'p' else None
+    for ins in code:
+        text = ins.op_str
+        if ins.mnemonic == 'bx' and text == 'lr':
+            break
+        if ins.mnemonic == 'vmov' and re.fullmatch(r's0, r1', text):
+            values['s0'] = values.get('r1')
+        elif ins.mnemonic == 'vcvt.f64.f32' and re.fullmatch(r'd\d+, s0', text) and values.get('s0') == ('arg',):
+            values[text.split(',')[0]] = ('x', 1)
+        elif ins.mnemonic in ('ldr', 'ldr.w') and (m := re.fullmatch(r'(r\d|ip), \[sp(?:, #(\d+))?\]', text)):
+            values[m[1]] = ('out', 2 + int(m[2] or 0) // 4)
+        elif ins.mnemonic == 'vldr' and (m := re.fullmatch(r'(d\d+), \[pc(?:, #(-?0x[0-9a-f]+|\d))?\]', text)):
+            address = ((ins.address + 4) & ~3) + ins.operands[1].mem.disp
+            if not start <= address <= start + size - 8:
+                return None
+            values[m[1]] = ('c', lib.text['offset'] + address - lib.text['address'])
+        elif ins.mnemonic == 'vmul.f64' and (m := re.fullmatch(r'(d\d+), (d\d+), (d\d+)', text)):
+            a, b = sorted((values.get(m[2]), values.get(m[3])), key=lambda v: v[0] if v else '')
+            if a and b and a[0] == b[0] == 'x':
+                values[m[1]] = ('x', a[1] + b[1])
+            elif a and b and (a[0], b[0]) == ('c', 'x'):
+                values[m[1]] = ('p', {b[1]: (1, a[1])})
+            else:
+                return None
+        elif ins.mnemonic == 'vadd.f64' and (m := re.fullmatch(r'(d\d+), (d\d+), (d\d+)', text)):
+            a, b = (terms(values.get(m[i], ('?',))) for i in (2, 3))
+            if a is None or b is None or set(a) & set(b):
+                return None
+            values[m[1]] = ('p', {**a, **b})
+        elif ins.mnemonic == 'vneg.f64' and (m := re.fullmatch(r'(d\d+), (d\d+)', text)) and values.get(m[2], ('?',))[0] == 'p':
+            values[m[1]] = ('p', {k: (-sign, at) for k, (sign, at) in values[m[2]][1].items()})
+        elif ins.mnemonic == 'vstr' and (m := re.fullmatch(r'(d\d+), \[(r\d|ip)\]', text)):
+            target, value = values.get(m[2], ('?',)), values.get(m[1], ('?',))
+            if target[0] != 'out' or value[0] != 'p' or target[1] in outputs:
+                return None
+            outputs[target[1]] = value[1]
+        else:
+            return None
+    if sorted(outputs) != [0, 1, 2, 3, 4] or any(k > 8 for row in outputs.values() for k in row):
+        return None
+    return [[outputs[i][k][0] * struct.unpack_from('<d', lib.data, outputs[i][k][1])[0] if k in outputs[i] else 0.0 for k in range(9)]
+            for i in range(5)]
+
+
+def android_follow(lib):
+    from .android_library import instructions
+    rates, reset, attach, update = (instructions(lib, s) for s in (ANDROID_RATES, ANDROID_RESET, opening.ANDROID_ATTACH, ANDROID_UPDATE))
+    eye, look = shape_at(update, FOLLOW_EYE, lib), shape_at(update, FOLLOW_LOOK, lib)
+    if (shape_at(rates, RATES, lib)[:1] != [0] or shape_at(reset, RESET, lib)[:1] != [0]
+            or shape_at(attach, opening.ATTACH + OFFSETS, lib)[:1] != [0] or len(eye) != 1 or len(look) != 1):
+        return {}
+    rows = curve_rows(lib)
+    if rows is None:
+        return {}
+    # update multiplies the first output by t^4 ... the last by t^0: rows by ascending power of t.
+    matrix = rows[::-1]
+
+    def halves(code, low, high):
+        return struct.unpack('<f', struct.pack('<I', code[low].operands[1].imm | code[high].operands[1].imm << 16))[0]
+    look_rate, eye_rate = halves(reset, 0, 2), halves(reset, 1, 3)
+    multiplier = struct.unpack('<f', struct.pack('<I', reset[5].operands[1].imm))[0]
+    offsets = attach[len(opening.ATTACH):]
+    y = halves(offsets, 0, 4)
+    look_offset, eye_offset = [0.0, y, halves(offsets, 1, 5)], [0.0, y, halves(offsets, 11, 13)]
+    if not all(math.isfinite(v) for v in [*matrix[0], *matrix[1], *matrix[2], *matrix[3], *matrix[4]]):
+        return {}
+    if not (multiplier <= 100 and all(abs(v) <= 10000000 for v in look_offset + eye_offset)):
+        return {}
+    rates_out = [struct.unpack('<f', struct.pack('<f', r * multiplier))[0] for r in (look_rate, eye_rate)]
+    if not all(0 < r <= 1 for r in rates_out):
+        return {}
+    start, size = lib.symbols[ANDROID_CURVE]
+    return {'look_offset': look_offset, 'eye_offset': eye_offset, 'look_rate': rates_out[0], 'eye_rate': rates_out[1],
+            'response_matrix': matrix, 'reciprocal_numerator': 1.0,
+            'provenance': {'curve': {'offset': lib.text['offset'] + start - lib.text['address'], 'bytes': size},
+                           'rate_scale': code_span(lib, rates, 0, len(RATES) - 1), 'reset': code_span(lib, reset, 0, len(RESET) - 1),
+                           'attach': code_span(lib, attach, 0, len(opening.ATTACH) + len(OFFSETS) - 1),
+                           'follow_eye': code_span(lib, update, eye[0], eye[0] + len(FOLLOW_EYE) - 1),
+                           'follow_look': code_span(lib, update, look[0], look[0] + len(FOLLOW_LOOK) - 1)}}
+
+
 def extract_camera_follow(mach, camera):
+    if camera and mach.architecture == 'android-armv7':
+        return android_follow(mach)
     import capstone
     mac = mach.architecture == 'x86_64'
     if not camera or (not mac and mach.architecture != 'armv7'): return {}
