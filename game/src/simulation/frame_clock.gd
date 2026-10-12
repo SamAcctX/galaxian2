@@ -38,7 +38,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	if not data is Dictionary: return "Invalid frame clock definition"
 	if data.is_empty(): return ""
 	if not valid_parameters(data): return "Unsupported frame clock parameters"
-	var sizes := [62, 28] if architecture == "armv7" else [72, 28]
+	var sizes: Array = {"armv7": [62, 28], "android-armv7": [76, 18]}.get(architecture, [72, 28])
 	if not data.get("provenance") is Array or data.provenance.size() != 2: return "Missing frame clock provenance"
 	for i in 2:
 		var row: Variant = data.provenance[i]

@@ -134,6 +134,11 @@ def cmp_reg(asm, rn, rm):
     return asm.half(0x4280 | rm << 3 | rn) if rn < 8 and rm < 8 else asm.half(0x4500 | (rn >> 3) << 7 | rm << 3 | rn & 7)
 def adds8(asm, rd, imm): return asm.half(0x3000 | rd << 8 | imm)  # adds rd, #imm
 def tbb(asm, rm): return wide(asm, 0xe8dff000 | rm)
+def vmov_scalar(asm, dd, index, rt): return wide(asm, 0xee000b10 | index << 21 | (dd & 15) << 16 | rt << 12 | (dd >> 4) << 7)
+def str_pre(asm, rt, rn, imm): return wide(asm, 0xf8400f00 | rn << 16 | rt << 12 | imm)  # str rt, [rn, #imm]!
+def ldrd(asm, rt, rt2, rn, offset): return wide(asm, 0xe9d00000 | rn << 16 | rt << 12 | rt2 << 8 | offset // 4)
+def subs_w(asm, rd, rn, rm): return wide(asm, 0xebb00000 | rn << 16 | rd << 8 | rm)
+def sbc_w(asm, rd, rn, rm): return wide(asm, 0xeb600000 | rn << 16 | rd << 8 | rm)
 def vmov_q8_zero(asm): return wide(asm, 0xefc00050)  # vmov.i32 q8, #0
 def vpush_d8(asm): return wide(asm, 0xed2d8b02)
 def push_r7(asm): return asm.half(0xb580)  # push {r7, lr}
@@ -224,6 +229,8 @@ class AndroidSteeringTests(unittest.TestCase):
         cmp_reg(asm, 3, 1); cmp_reg(asm, 3, 12); adds8(asm, 3, 1); tbb(asm, 0); add_lsr(asm, 0, 14, 2, 2, 0)
         cbz(asm, 2, asm.here() + 4 + 0x42); b_to(asm, 0x2000, 'lo'); b_to(asm, 0x2200); b_to(asm, 0x2400, 'hi', True)
         b_to(asm, 0x1000, 'eq', True); vmov_q8_zero(asm); vpush_d8(asm); push_r7(asm); pop_r7(asm)
+        vmov_scalar(asm, 16, 0, 0); vmov_scalar(asm, 17, 1, 1); str_pre(asm, 0, 1, 0x40); ldrd(asm, 12, 2, 0, 0x70)
+        subs_w(asm, 0, 12, 3); sbc_w(asm, 1, 2, 1)
         decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
         self.assertEqual([f'{i.mnemonic} {i.op_str}' for i in decoder.disasm(bytes(asm.code), 0x2000)],
                          ['vadd.f32 s0, s0, s2', 'vsub.f32 s6, s8, s6', 'vdiv.f32 s2, s2, s6', 'vneg.f32 s4, s16',
@@ -234,7 +241,8 @@ class AndroidSteeringTests(unittest.TestCase):
                           'ldr.w ip, [r2]', 'ldr r0, [r0, r5]', 'ldr.w r1, [r2, r3, lsl #2]', 'cmp.w ip, #0', 'cmp r3, r1',
                           'cmp r3, ip', 'adds r3, #1', 'tbb [pc, r0]', 'add.w r0, lr, r2, lsl #2', 'cbz r2, #0x20a8',
                           'blo #0x2000', 'b #0x2200', 'bhi.w #0x2400', 'beq.w #0x1000', 'vmov.i32 q8, #0', 'vpush {d8}',
-                          'push {r7, lr}', 'pop {r7, pc}'])
+                          'push {r7, lr}', 'pop {r7, pc}', 'vmov.32 d16[0], r0', 'vmov.32 d17[1], r1', 'str r0, [r1, #0x40]!',
+                          'ldrd ip, r2, [r0, #0x70]', 'subs.w r0, ip, r3', 'sbc.w r1, r2, r1'])
 
     def test_pc_literal_operands_in_both_number_styles(self):
         from android_fixture import Thumb
