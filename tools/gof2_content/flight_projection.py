@@ -2,14 +2,81 @@
 
 The location-match input is deliberately not bound to a guessed world/save field.
 Its native owner must supply verified state before selecting a far plane.
+
+Android: MGame::reset gives PaintCanvas::CameraSetPerspective the vertical
+field of view, the near plane and a far plane: the fallback, or in the
+matching location (Status::inAlienOrbit) a two-float table entry chosen by
+campaign mission < 80. AbyssEngine::CameraSetPerspective keeps the field of
+view vertical (horizontal = width/height x vertical).
 """
 import math
 import struct
 from .opening_loadout import template
 from .ship_models import section_bytes
+from .steering import PC, code_span, pool_float, shape_at
+
+
+ANDROID_START = '_ZN5MGame5resetEv'
+ANDROID_SETTER = '_ZN11AbyssEngine11PaintCanvas20CameraSetPerspectiveEjfff'
+ANDROID_METRICS = '_ZN11AbyssEngine20CameraSetPerspectiveEfffffPNS_6CameraE'
+IMM = r'#(0x[0-9a-f]+|\d+)'
+# far = alien orbit ? table[mission < 80] : fallback; then fov (21/23) and near (22/24) halves.
+START = [('ldr', 'r0, ' + PC), ('ldr.w', r'r5, \[r4, #0xec\]'), ('add', 'r0, pc'), ('ldr', r'r6, \[r6\]'), ('ldr', r'r0, \[r0\]'),
+         ('ldr', r'r0, \[r0\]'), ('blx', '=_ZN6Status12inAlienOrbitEv'), ('cmp', 'r0, #1'), ('bne', '@20'), ('ldr', 'r0, ' + PC),
+         ('add', 'r0, pc'), ('ldr', r'r0, \[r0\]'), ('ldr', r'r0, \[r0\]'), ('blx', '=_ZN6Status25getCurrentCampaignMissionEv'),
+         ('adr', 'r1, ' + IMM), ('cmp', 'r0, #0x50'), ('it', 'lt'), ('addlt', 'r1, #4'), ('vldr', r's0, \[r1\]'), ('b', '@21'),
+         ('vldr', 's0, ' + PC), ('movw', 'r2, ' + IMM), ('movs', 'r3, ' + IMM), ('movt', 'r2, ' + IMM), ('movt', 'r3, ' + IMM),
+         ('mov', 'r0, r6'), ('mov', 'r1, r5'), ('vstr', r's0, \[sp\]'), ('blx', '=' + ANDROID_SETTER)]
+# (camera, fov, near, far) -> metrics(fov, near, far, display width, display height, camera).
+SETTER = [('push.w', '{r4, r5, r6, r7, r8, lr}'), ('add', 'r7, sp, #0xc'), ('vpush', '{d8, d9}'), ('sub', 'sp, #8'), ('mov', 'r5, r0'),
+          ('mov', 'r8, r3'), ('ldr.w', r'r0, \[r5, #0x164\]'), ('mov', 'r4, r1'), ('mov', 'r6, r2'), ('cmp', 'r0, r4'),
+          ('bls', '#0x[0-9a-f]+'), ('ldr', r'r0, \[r5, #0x34\]'), ('vldr', r's16, \[r7, #0xc\]'),
+          ('blx', '=_ZN11AbyssEngine6Engine15GetDisplayWidthEv'), ('vmov', 's0, r0'), ('vcvt.f32.s32', 's18, s0'),
+          ('ldr', r'r0, \[r5, #0x34\]'), ('blx', '=_ZN11AbyssEngine6Engine16GetDisplayHeightEv'), ('vmov', 'r2, s16'), ('mov', 'r1, r8'),
+          ('vmov', 'r3, s18'), ('vmov', 's0, r0'), ('vcvt.f32.s32', 's0, s0'), ('ldr.w', r'r0, \[r5, #0x168\]'),
+          ('ldr.w', r'r0, \[r0, r4, lsl #2\]'), ('str', r'r0, \[sp, #4\]'), ('mov', 'r0, r6'), ('vstr', r's0, \[sp\]'),
+          ('blx', '=' + ANDROID_METRICS)]
+# tan(fov / 2) is the vertical slope (0x48); width / height (0x50) times it the horizontal one (0x4c).
+METRICS = [('push', '{r4, r5, r7, lr}'), ('add', 'r7, sp, #8'), ('vpush', '{d8, d9, d10}'), ('ldr', r'r5, \[r7, #0xc\]'),
+           ('cmp', 'r5, #0'), ('beq', '#0x[0-9a-f]+'), ('vmov.f32', r's6, #5\.000000e-01'), ('vldr', r's16, \[r7, #8\]'),
+           ('vmov', 's4, r0'), ('vmov', 's0, r2'), ('vmov', 's2, r1'), ('vstr', r's4, \[r5\]'), ('vmov', 's18, r3'),
+           ('vstr', r's2, \[r5, #4\]'), ('vstr', r's0, \[r5, #8\]'), ('vmul.f32', 's6, s4, s6'), ('vmov', 'r4, s6'), ('mov', 'r0, r4'),
+           ('blx', '=_ZN11AbyssEngine6AEMath4SinfEf'), ('vmov', 's20, r0'), ('mov', 'r0, r4'), ('blx', '=_ZN11AbyssEngine6AEMath4CosfEf'),
+           ('vmov', 's0, r0'), ('mov', 'r0, r4'), ('vdiv.f32', 's2, s18, s16'), ('vdiv.f32', 's0, s20, s0'), ('vmul.f32', 's4, s2, s0'),
+           ('vstr', r's0, \[r5, #0x48\]'), ('vstr', r's4, \[r5, #0x4c\]'), ('vstr', r's2, \[r5, #0x50\]')]
+
+
+def android_projection(lib):
+    from .android_library import instructions
+    start, setter, metrics = (instructions(lib, s) for s in (ANDROID_START, ANDROID_SETTER, ANDROID_METRICS))
+    found = shape_at(start, START, lib)
+    if len(found) != 1 or shape_at(setter, SETTER, lib)[:1] != [0] or shape_at(metrics, METRICS, lib)[:1] != [0]:
+        return {}
+    code = start[found[0]:]
+
+    def halves(low, high):
+        return struct.unpack('<f', struct.pack('<I', code[low].operands[1].imm | code[high].operands[1].imm << 16))[0]
+    fov, near = halves(21, 23), halves(22, 24)
+    fallback = pool_float(lib, ANDROID_START, code[20])
+    first, size = lib.symbols[ANDROID_START]
+    table = ((code[14].address + 4) & ~3) + code[14].operands[1].imm
+    if fallback is None or table + 8 > first + size:  # adr only reaches forward
+        return {}
+    offset = lib.text['offset'] + table - lib.text['address']
+    far = list(struct.unpack_from('<2f', lib.data, offset))
+    if not (all(math.isfinite(v) for v in [fov, near, *far]) and 0 < fov < math.pi and 0 < near < min(far)
+            and max(far) <= 1e9 and fallback[1] == far[0]):
+        return {}
+    return {'vertical_fov_radians': fov, 'near': near, 'far': far[0], 'matching_location_early_far': far[1],
+            'early_cursor_limit': 80, 'fov_axis': 'vertical',
+            'provenance': {'start': code_span(lib, code, 0, len(START) - 1), 'setter': code_span(lib, setter, 0, len(SETTER) - 1),
+                           'metrics': code_span(lib, metrics, 0, len(METRICS) - 1), 'far': {'offset': offset, 'bytes': 8},
+                           'fallback': {'offset': fallback[0], 'bytes': 4}}}
 
 
 def extract_flight_projection(mach):
+    if mach.architecture == 'android-armv7':
+        return android_projection(mach)
     if mach.architecture not in ['x86_64', 'armv7']: return {}
     import capstone
     mac = mach.architecture == 'x86_64'
