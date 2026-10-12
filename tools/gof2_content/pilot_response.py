@@ -6,12 +6,85 @@ preferences or special control-state selection. No executable logic is emitted.
 import math
 import re
 import struct
-from .steering import lit
+from .steering import PC, code_span, lit, shape_at, pool_float
+
+
+def quantizer(q, h, negated):
+    """q = int(command s16 x gain (pool float) x handling h) / 63 (r1 = 0x82082083); the
+    interleaved `vneg.f32 s4` comes after the move when q is s4 itself."""
+    body = [('vmul.f32', f'{q}, s16, {q}'), ('vmul.f32', f'{q}, {q}, {h}'), ('vcvt.s32.f32', f'{q}, {q}'), ('vmov', 'r0, ' + q)]
+    vneg = [('vneg.f32', 's4, ' + negated)]
+    return ([('vldr', f'{q}, {PC}'), ('movw', 'r1, #0x2083'), ('movt', 'r1, #0x8208')] + (body + vneg if q == 's4' else vneg + body)
+            + [('smmla', 'r0, r1, r0, r0'), ('asrs', 'r1, r0, #5'), ('add.w', 'r0, r1, r0, lsr #31')])
+
+
+# bias (pool float) - sensitivity (yaw: options +0x14 or +0x18), x scale (vmov.f32 s12); elapsed r5 x handling / that.
+YAW_RAMP = [('vldr', 's6, ' + PC), ('vmov.f32', 's12, #.+'), ('add', 'r0, pc'), ('ldr', r'r0, \[r0\]'), ('add.w', 'r2, r0, #0x18'),
+            ('ldrb', r'r1, \[r0, #0x11\]'), ('cmp', 'r1, #0'), ('it', 'ne'), ('addne.w', 'r2, r0, #0x14'), ('vldr', r's10, \[r2\]'),
+            ('vcvt.f32.s32', 's8, s8'), ('vsub.f32', 's6, s6, s10'), ('vmul.f32', 's2, s8, s2'), ('vmul.f32', 's6, s6, s12'),
+            ('vdiv.f32', 's2, s2, s6')]
+# Pitch: the sensitivity is options +0x14, or +0x18 x a per-direction factor (up an immediate, down a pool float).
+PITCH_RAMP = [('add', 'r0, pc'), ('ldr', r'r0, \[r0\]'), ('vldr', r's10, \[r0, #0x18\]'), ('vldr', r's8, \[r0, #0x14\]'),
+              ('ldrb', r'r0, \[r0, #0x11\]'), ('vmul.f32', 's6, s10, s6'), ('vmov', 's10, r5'), ('cmp', 'r0, #0'), ('it', 'ne'),
+              ('vmovne.f32', 's6, s8'), ('vldr', 's8, ' + PC), ('vcvt.f32.s32', 's10, s10'), ('vsub.f32', 's6, s8, s6'),
+              ('vmul.f32', 's0, s10, s0'), ('vmul.f32', 's6, s6, s12'), ('vdiv.f32', 's0, s0, s6')]
+UP_RAMP = [('vmov.f32', 's6, #.+'), ('vmov.f32', 's12, #.+')] + PITCH_RAMP
+DOWN_RAMP = [('vmov.f32', 's12, #.+'), ('vldr', 's6, ' + PC)] + PITCH_RAMP
+# symbol: (gain sign, quantizer, ramp, index of the bias load and of the scale in the ramp)
+ANDROID_TURNS = {'_ZN9PlayerEgo5rightEif': (-1, quantizer('s4', 's2', 's0'), YAW_RAMP, 0, 1),
+                 '_ZN9PlayerEgo4leftEif': (1, quantizer('s0', 's2', 's16'), YAW_RAMP, 0, 1),
+                 '_ZN9PlayerEgo2upEif': (-1, quantizer('s2', 's0', 's16'), UP_RAMP, 12, 1),
+                 '_ZN9PlayerEgo4downEif': (1, quantizer('s2', 's0', 's0'), DOWN_RAMP, 12, 0)}
+ANDROID_UPDATE = '_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi'
+# elapsed r8 x handling / +-divisor, added to the pitch or yaw rate.
+NEUTRAL = [('vmov', 's2, r8'), ('vcvt.f32.s32', 's2, s2'), ('vldr', r's4, \[sb, #0x154\]'), ('vmul.f32', 's2, s2, s4'),
+           ('vldr', 's4, ' + PC), ('vdiv.f32', 's2, s2, s4'), ('vadd.f32', 's0, s0, s2')]
+
+
+def android_response(lib):
+    from .android_library import instructions
+    spans, gains, biases, scales = [], [], [], []
+    for symbol, (sign, target, ramp, bias, scale) in ANDROID_TURNS.items():
+        code = instructions(lib, symbol)
+        if not code:
+            return {}
+        q, r = shape_at(code, target), shape_at(code, ramp)
+        if len(q) != 1 or len(r) != 1:
+            return {}
+        gain, bias = pool_float(lib, symbol, code[q[0]]), pool_float(lib, symbol, code[r[0] + bias])
+        if gain is None or bias is None or gain[1] * sign <= 0:
+            return {}
+        spans += [code_span(lib, code, q[0], q[0] + len(target) - 1), code_span(lib, code, r[0], r[0] + len(ramp) - 1)]
+        gains.append(gain)
+        biases.append(bias)
+        # A VFP immediate (|value| 0.125-31): the ramp span holds it.
+        scales.append(code[r[0] + scale].operands[1].fp)
+    code = instructions(lib, ANDROID_UPDATE)
+    neutrals = shape_at(code, NEUTRAL) if code else []
+    if len(neutrals) != 4:
+        return {}
+    returns = [pool_float(lib, ANDROID_UPDATE, code[i + 4]) for i in neutrals]
+    if None in returns:
+        return {}
+    gain, bias, scale, divisor = abs(gains[0][1]), biases[0][1], scales[0], abs(returns[0][1])
+    # Every direction agrees; the four neutral returns differ only in sign.
+    if ({abs(v) for _, v in gains} != {gain} or {v for _, v in biases} != {bias} or set(scales) != {scale}
+            or {abs(v) for _, v in returns} != {divisor} or min(v for _, v in returns) >= 0 or max(v for _, v in returns) <= 0):
+        return {}
+    if not 0 < gain <= 1000000 or not 0 < bias <= 10 or not 0 < scale or not 0 < divisor <= 10000:
+        return {}
+    provenance = spans[0::2] + spans[1::2] + [code_span(lib, code, i, i + len(NEUTRAL) - 1) for i in neutrals]
+    provenance += [{'offset': o, 'bytes': 4} for o, _ in gains + biases + returns]
+    return {'target_gain': gain, 'target_divisor': 63, 'ramp_bias': bias, 'ramp_scale': scale,
+            'neutral_divisor': divisor, 'mode': 'elapsed', 'command_curve': 'signed_square',
+            'provenance': provenance}
 
 
 def extract_pilot_response(mach, rotation):
     if not rotation:
         return {}
+    if mach.architecture == 'android-armv7':
+        return android_response(mach)
     text = mach.text
     code = mach.data[text['offset']:text['offset'] + text['length']]
     base = text['address']

@@ -42,7 +42,7 @@ def code_span(lib, code, first, last):
     return {'offset': lib.text['offset'] + start - lib.text['address'], 'bytes': code[last].address + code[last].size - start}
 
 
-PC = r'\[pc, #-?0x[0-9a-f]+\]'  # a pc-relative literal
+PC = r'\[pc(, #-?(0x[0-9a-f]+|\d))?\]'  # a pc-relative literal (Capstone prints offsets below 10 in decimal)
 ANDROID_HANDLER = '_ZN9PlayerEgo10handleShipEi'
 ANDROID_HELPER = '_ZN11AbyssEngine6AEMath17MatrixSetRotationERNS0_6MatrixEfff'
 # Both rotation fields x angle unit x 2 pi x elapsed (s16) x time scale -> MatrixSetRotation x, y.

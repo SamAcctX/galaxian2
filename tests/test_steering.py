@@ -4,6 +4,7 @@ import struct
 from types import SimpleNamespace
 import unittest
 from test_ship_models import branch
+from android_fixture import library
 from gof2_content.steering import extract_manual_rotation
 
 
@@ -91,6 +92,40 @@ class SteeringTests(unittest.TestCase):
                 self.assertEqual(extract_manual_rotation(m, {'available': True}), {}, (mac, corruption))
 
 
+def vfp(asm, base, sd, sn=0, sm=0):
+    """A VFP single-precision instruction: base | D:Vd, N:Vn, M:Vm fields."""
+    word = base | (sd & 1) << 22 | (sn >> 1) << 16 | (sd >> 1) << 12 | (sn & 1) << 7 | (sm & 1) << 5 | sm >> 1
+    return asm.half(word >> 16, word & 0xffff)
+
+
+def vadd(asm, sd, sn, sm): return vfp(asm, 0xee300a00, sd, sn, sm)
+def vsub(asm, sd, sn, sm): return vfp(asm, 0xee300a40, sd, sn, sm)
+def vdiv(asm, sd, sn, sm): return vfp(asm, 0xee800a00, sd, sn, sm)
+def vneg(asm, sd, sm): return vfp(asm, 0xeeb10a40, sd, 0, sm)
+def vmov_s(asm, sd, sm): return vfp(asm, 0xeeb00a40, sd, 0, sm)  # vmov.f32 sd, sm
+def vcvt_s32(asm, sd, sm): return vfp(asm, 0xeebd0ac0, sd, 0, sm)  # vcvt.s32.f32 (toward zero)
+def vmov_from_core(asm, sn, rt): return vfp(asm, 0xee000a10 | rt << 12, 0, sn, 0)  # vmov sn, rt
+
+
+def vmov_imm(asm, sd, value):
+    """vmov.f32 sd, #value: the VFP 8-bit immediate (VFPExpandImm) that equals value."""
+    def expand(imm):
+        return (-1) ** (imm >> 7) * (16 + (imm & 15)) / 16 * 2.0 ** (((imm >> 4 & 7) ^ 4) - 3)
+    imm = next(i for i in range(256) if struct.pack('<f', expand(i)) == struct.pack('<f', value))
+    return vfp(asm, 0xeeb00a00 | (imm >> 4) << 16 | imm & 15, sd)
+
+
+def wide(asm, word): return asm.half(word >> 16, word & 0xffff)
+def smmla(asm, rd, rn, rm, ra): return wide(asm, 0xfb500000 | rn << 16 | ra << 12 | rd << 8 | rm)
+def asrs(asm, rd, rm, shift): return asm.half(0x1000 | shift << 6 | rm << 3 | rd)
+def add_lsr(asm, rd, rn, rm, shift): return wide(asm, 0xeb000010 | rn << 16 | (shift >> 2) << 12 | rd << 8 | (shift & 3) << 6 | rm)
+def add_imm(asm, rd, rn, imm): return wide(asm, 0xf1000000 | rn << 16 | rd << 8 | imm)  # add.w rd, rn, #imm (< 256)
+def add_pc(asm, rd): return asm.half(0x4478 | rd)
+def ldrb(asm, rt, rn, offset): return asm.half(0x7800 | offset << 6 | rn << 3 | rt)
+def cmp_imm(asm, rn, imm): return asm.half(0x2800 | rn << 8 | imm)
+def it_ne(asm): return asm.half(0xbf18)
+
+
 def vldr_pc(asm, sd, target):
     """vldr sd, [pc, #+-k]: target - Align(pc, 4) (the fixture's vldr only adds)."""
     disp = target - ((asm.here() + 4) & ~3)
@@ -127,6 +162,35 @@ def android(constants=(1 / 1024, 6.0, 0.025), fields=(0x278, 0x27c), steps=1, ca
 
 @unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
 class AndroidSteeringTests(unittest.TestCase):
+    def test_test_encodings_are_the_named_instructions(self):
+        import capstone
+        from android_fixture import Thumb
+        asm = Thumb(0x2000)
+        vadd(asm, 0, 0, 2); vsub(asm, 6, 8, 6); vdiv(asm, 2, 2, 6); vneg(asm, 4, 16); vmov_s(asm, 6, 8); vcvt_s32(asm, 4, 4)
+        vmov_from_core(asm, 10, 5); vmov_imm(asm, 12, 20.0); vmov_imm(asm, 6, 1.25); vmov_imm(asm, 6, -0.125)
+        smmla(asm, 0, 1, 0, 0); asrs(asm, 1, 0, 5); add_lsr(asm, 0, 1, 0, 31); add_imm(asm, 2, 0, 0x18); add_pc(asm, 0)
+        ldrb(asm, 1, 0, 0x11); cmp_imm(asm, 1, 0); it_ne(asm); add_imm(asm, 2, 0, 0x14)
+        decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+        self.assertEqual([f'{i.mnemonic} {i.op_str}' for i in decoder.disasm(bytes(asm.code), 0x2000)],
+                         ['vadd.f32 s0, s0, s2', 'vsub.f32 s6, s8, s6', 'vdiv.f32 s2, s2, s6', 'vneg.f32 s4, s16',
+                          'vmov.f32 s6, s8', 'vcvt.s32.f32 s4, s4', 'vmov s10, r5', 'vmov.f32 s12, #2.000000e+01',
+                          'vmov.f32 s6, #1.250000e+00', 'vmov.f32 s6, #-1.250000e-01', 'smmla r0, r1, r0, r0',
+                          'asrs r1, r0, #5', 'add.w r0, r1, r0, lsr #31', 'add.w r2, r0, #0x18', 'add r0, pc',
+                          'ldrb r1, [r0, #0x11]', 'cmp r1, #0', 'it ne', 'addne.w r2, r0, #0x14'])
+
+    def test_pc_literal_operands_in_both_number_styles(self):
+        from android_fixture import Thumb
+        from gof2_content.android_library import AndroidLibrary, instructions
+        from gof2_content.steering import PC, shape_at
+        asm = Thumb(0x2100)
+        for target in (0x2108, 0x2108, 0x20fc, 0x2400):
+            vldr_pc(asm, 0, target)
+        lib = AndroidLibrary(library([('_Z1fv', asm.finish(), 0x2100)], {}))
+        code = instructions(lib, '_Z1fv')
+        self.assertEqual([i.op_str for i in code], ['s0, [pc, #4]', 's0, [pc]', 's0, [pc, #-0x10]', 's0, [pc, #0x2f0]'])
+        self.assertEqual(shape_at(code, [('vldr', 's0, ' + PC)]), [0, 1, 2, 3])
+        self.assertEqual(shape_at(code, [('vldr', 's1, ' + PC)]), [])
+
     def test_named_handler_gives_constants_and_spans(self):
         from android_fixture import TEXT
         from gof2_content.android_library import instructions

@@ -30,13 +30,17 @@ func _initialize() -> void:
 		check(not response.configure(bindings, bindings.base_content_id, 12.6, invalid) and response.binding_id.is_empty(), "Invalid preference retained response configuration")
 	check(not response.configure(bindings, "c".repeat(64), 12.6, 0.5), "Cross-edition response configuration accepted")
 	check_motion(bindings)
-	for architecture in ["armv7", "x86_64"]:
+	var layouts := {"armv7": [54, 58, 28, 28, 28, 28] + [4, 4, 4, 4, 4, 4, 4],
+			"android-armv7": [42, 42, 42, 42, 50, 50, 62, 62, 28, 28, 28, 28] + [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+			"x86_64": [54, 33, 33, 32, 32, 32, 32] + [4, 4, 4, 4, 4, 4, 4, 4, 4]}
+	for architecture in layouts:
 		var data := parameters()
 		data.provenance = []
-		var sizes := [54, 58, 28, 28, 28, 28] if architecture == "armv7" else [54, 33, 33, 32, 32, 32, 32]
-		for i in (7 if architecture == "armv7" else 9): sizes.append(4)
-		for i in sizes.size(): data.provenance.append({"offset": i * 60, "bytes": sizes[i]})
+		var sizes: Array = layouts[architecture]
+		for i in sizes.size(): data.provenance.append({"offset": i * 40, "bytes": sizes[i]})
 		check(Definitions.validate_pilot_response(data, 1024, architecture).is_empty(), "Valid response source extents rejected")
+		for other in layouts:
+			if layouts[other] != sizes: check(not Definitions.validate_pilot_response(data, 1024, other).is_empty(), "Response spans accepted for another compiler")
 		for bad in [0, -1, NAN, INF, "126", true]:
 			data.neutral_divisor = bad
 			check(not Definitions.validate_pilot_response(data, 1024, architecture).is_empty(), "Invalid neutral parameter accepted")

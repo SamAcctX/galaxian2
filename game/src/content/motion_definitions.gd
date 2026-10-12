@@ -74,8 +74,11 @@ static func validate_pilot_response(data: Variant, executable_bytes: int, archit
 	if not data is Dictionary: return "Invalid pilot response definitions"
 	if data.is_empty(): return ""
 	if not valid_response_parameters(data): return "Unsupported pilot response parameters"
-	var sizes := [54, 58, 28, 28, 28, 28] if architecture == "armv7" else [54, 33, 33, 32, 32, 32, 32]
-	for i in (7 if architecture == "armv7" else 9): sizes.append(4)
+	# armv7, android-armv7 (four directions, then the neutral returns), x86_64: code spans, then constants.
+	var layouts := {"armv7": [[54, 58, 28, 28, 28, 28], 7], "android-armv7": [[42, 42, 42, 42, 50, 50, 62, 62, 28, 28, 28, 28], 12]}
+	var layout: Array = layouts.get(architecture, [[54, 33, 33, 32, 32, 32, 32], 9])
+	var sizes: Array = layout[0].duplicate()
+	for i in layout[1]: sizes.append(4)
 	if not data.get("provenance") is Array or data.provenance.size() != sizes.size():
 		return "Missing pilot response provenance"
 	for i in sizes.size():
