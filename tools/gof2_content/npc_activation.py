@@ -75,7 +75,7 @@ call {setter}
 """
 
 
-def android_activation(lib, actors, camera):
+def android_activation(lib, camera):
     from .android_shapes import Listing, relocation, vtable_slot
     from .npc_initialization import ANDROID_ACTIVITY
     cue = Listing(lib, '_ZN11LevelScript7processEi').unique(ANDROID_CUE)
@@ -109,7 +109,7 @@ def extract_npc_activation(mach, actors, camera):
         initial = actors.get('npc_initialization')
         if not initial or not camera or initial['initial_active'] or [a['actor_id'] for a in actors['actors']] != [0, 1, 2]:
             return {}
-        return android_activation(mach, actors, camera)
+        return android_activation(mach, camera)
     import capstone
     mac=mach.architecture=='x86_64'
     if not mac and mach.architecture!='armv7': return {}
