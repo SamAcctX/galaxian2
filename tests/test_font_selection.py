@@ -235,7 +235,7 @@ def android_fonts(selection=None, cases=None, roles=None, records=RECORDS, files
     strings = {0x8000 + 16 * i: name for i, name in enumerate(files)}
     refs = {'file%d' % i: 0x8000 + 16 * (files.index(name) if name == files[0] else i) for i, name in enumerate(files)}
     text = LANGUAGE_DISPATCH + ''.join('case%d: ' % i + LANGUAGE_CASE.strip().replace('{&file}', '{&file%d}' % i)
-                                       .replace('ldr r1', 'ldr.w r1' if i in wide else 'ldr r1') + '\n' for i in range(16))
+                                       .replace('{ldr|ldr.w} r1', 'ldr.w r1' if i in wide else 'ldr r1') + '\n' for i in range(16))
     code, _, _ = assemble(text, at[SET_LANGUAGE], {'default': at[SET_LANGUAGE]}, refs, calls, {'cases': ['case%d' % i for i in range(16)]})
     functions.append((SET_LANGUAGE, code, at[SET_LANGUAGE]))
     # BuildResourceList: font records, then the atlases behind the iPadHD and retinaDisplay guards.

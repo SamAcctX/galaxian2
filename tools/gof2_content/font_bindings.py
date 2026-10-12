@@ -289,7 +289,7 @@ bhi.w #{default}
 tbh [pc, r6, lsl #1] {cases:32}
 """
 LANGUAGE_CASE = """
-ldr r1, [pc, #{&file}]
+{ldr|ldr.w} r1, [pc, #{&file}]
 add r1, pc
 add r0, sp, #4
 movs r2, #0
@@ -309,7 +309,7 @@ def android_language_files(lib):
     rows = []
     for index, (case,) in enumerate(struct.iter_unpack('<H', cases)):
         target = table + 2 * case
-        block = match(lib, symbol, LANGUAGE_CASE, target) or match(lib, symbol, LANGUAGE_CASE.replace('ldr r1', 'ldr.w r1'), target)
+        block = match(lib, symbol, LANGUAGE_CASE, target)
         if block is None:
             return {}
         string = section_bytes(lib, block['refs']['file'][0], 9, b'__cstring')

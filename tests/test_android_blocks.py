@@ -74,6 +74,32 @@ class AndroidShapes(unittest.TestCase):
         self.assertIsNone(find(lib, 'f', loose), 'unfinished literal')
         self.assertIsNone(find(library()[0], 'g', SHAPE), 'other function')
 
+    def test_alternatives_gaps_and_pool_skips(self):
+        from android_fixture import TEXT, library
+        from thumb_shapes import assemble
+        from gof2_content.android_blocks import find
+        from gof2_content.android_library import AndroidLibrary
+        shape = 'cmp r1, #0\nbeq @far\nb @done\n...\nfar: {movw|mov.w} r0, #{value}\ndone: pop.w {r4, r5, r6, r7, r8, lr}'
+        def build(text):
+            return AndroidLibrary(library([('f', assemble(text, TEXT, {'value': 0x2800})[0], TEXT)], {}))
+        for text in (shape, shape.replace('{movw|mov.w}', 'mov.w')):
+            block = find(build(text), 'f', shape)
+            # cmp, beq, b, a 4-byte gap, then the mov at TEXT + 10.
+            self.assertEqual((block['values'], block['labels']['far'], block['end']), ({'value': 0x2800}, TEXT + 10, TEXT + 18))
+        self.assertIsNone(find(build(shape.replace('{movw|mov.w}', 'movt')), 'f', shape), 'neither alternative')
+        # The gap continues only at a label an earlier branch targets.
+        self.assertIsNone(find(build(shape.replace('beq @far', 'beq @done')), 'f', shape), 'untargeted gap')
+        # An unlisted forward branch over a pool is followed; a backward one is not.
+        skipped = 'start: cmp r1, #0\nb @next\n...\nnext: movs r0, #1\nb @start'
+        plain = 'start: cmp r1, #0\nmovs r0, #1\nb @start'
+        self.assertIsNotNone(find(build(skipped), 'f', plain))
+        self.assertIsNone(find(build('back: movs r0, #1\ncmp r1, #0\nb @back'), 'f', 'cmp r1, #0\nmovs r0, #1'), 'backward skip')
+        # A label after a skipped pool names the code the skip reaches.
+        self.assertIsNotNone(find(build('cmp r1, #0\nbeq @next\nb @next\n...\nnext: movs r0, #1'), 'f', 'cmp r1, #0\nbeq @next\nnext: movs r0, #1'))
+        # A gap continues forward only.
+        self.assertIsNone(find(build('back: movs r0, #1\ncmp r1, #0\nbeq @back'), 'f', 'cmp r1, #0\nbeq @back\n...\nback: movs r0, #1'), 'backward gap')
+        self.assertIsNone(find(build('cmp r1, #0\nb @next\n...\nnext: movs r0, #1'), 'f', 'cmp r1, #0\nb @other\n...\nnext: movs r0, #1'), 'gap without branch')
+
     def test_literal_outside_the_code(self):
         from android_fixture import TEXT
         from thumb_shapes import thumb

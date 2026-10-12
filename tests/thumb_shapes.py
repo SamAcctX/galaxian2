@@ -58,12 +58,21 @@ def thumb(text, at):
         (r'push\.w \{(.*)\}', lambda l: half(0xe92d, mask(l))),
         (r'pop\.w \{(.*)\}', lambda l: half(0xe8bd, mask(l))),
         (r'movw (\w+), #(\S+)', lambda d, v: Thumb(0).movw(reg(d), number(v)).code),
+        (r'movt (\w+), #(\S+)', lambda d, v: Thumb(0).movt(reg(d), number(v)).code),
+        (r'mov\.w (\w+), #-1', lambda d: Thumb(0).minus_one(reg(d)).code),
         (r'mov\.w (\w+), #(\S+)', lambda d, v: Thumb(0).mov_imm(reg(d), number(v)).code),
-        (r'mov (\w+), (\w+)', lambda d, m: Thumb(0).mov(reg(d), reg(m)).code),
+        (r'mov(?:eq|ne)? (\w+), (\w+)', lambda d, m: Thumb(0).mov(reg(d), reg(m)).code),
         (r'(?:movs|mov[a-z]{2}) (r\d), #(\S+)', lambda d, v: half(0x2000 | reg(d) << 8 | number(v))),
         (r'ldr (r\d), \[pc, #(\S+)\]', lambda t, v: literal(t, v, False)),
         (r'ldr\.w (\w+), \[pc, #(\S+)\]', lambda t, v: literal(t, v, True)),
         (r'ldr (r\d), \[(r\d)(?:, #(\S+))?\]', lambda t, n, v=None: half(0x6800 | number(v or '0') // 4 << 6 | reg(n) << 3 | reg(t))),
+        (r'ldr\.w (\w+), \[(r\d+)\]', lambda t, n: half(0xf8d0 | reg(n), reg(t) << 12)),
+        (r'str (r\d), \[sp, #(\S+)\]', lambda t, v: half(0x9000 | reg(t) << 8 | number(v) // 4)),
+        (r'strh (r\d), \[(r\d)\]', lambda t, n: half(0x8000 | reg(n) << 3 | reg(t))),
+        (r'stm (r\d)!, \{(.*)\}', lambda n, l: half(0xc000 | reg(n) << 8 | mask(l))),
+        (r'sub sp, #(\S+)', lambda v: half(0xb080 | number(v) // 4)),
+        (r'orrs (r\d), (r\d)', lambda d, m: half(0x4300 | reg(m) << 3 | reg(d))),
+        (r'tst\.w (\w+), #(\S+)', lambda n, v: half(0xf010 | fields(number(v))[0] | reg(n), fields(number(v))[1] | 0xf00)),
         (r'ldrb (r\d), \[(r\d)\]', lambda t, n: half(0x7800 | reg(n) << 3 | reg(t))),
         (r'ldrh (r\d), \[(r\d)\]', lambda t, n: half(0x8800 | reg(n) << 3 | reg(t))),
         (r'strb (r\d), \[(r\d), #(\S+)\]', lambda t, n, v: half(0x7000 | number(v) << 6 | reg(n) << 3 | reg(t))),
@@ -108,7 +117,7 @@ def assemble(shape, address, values=None, refs=None, calls=None, tables=None, po
     case targets. Two passes resolve forward labels.
     """
     values, refs, calls, tables = values or {}, refs or {}, calls or {}, tables or {}
-    lines = shape.strip().splitlines()
+    lines = [line for line in shape.strip().splitlines() if line.strip()]
     labels, at_line, adds, layout = {}, {}, {}, None
     for _ in range(2):
         code = bytearray()
@@ -117,8 +126,12 @@ def assemble(shape, address, values=None, refs=None, calls=None, tables=None, po
         for line in lines:
             label, _, line = line.rpartition(': ')
             here = address + len(code)
+            if line == '...':  # a literal pool gap
+                code += b'\xff\xff\xff\xff'
+                continue
             if label:
                 labels[label] = here
+            line = re.sub(r'\{([\w.]+)(?:\|[\w.]+)+\}', lambda m: m[1], line)  # first alternative
             table = re.fullmatch(r'(.*) \{(\w+):(\d+)\}', line)
             if table:
                 line = table[1]

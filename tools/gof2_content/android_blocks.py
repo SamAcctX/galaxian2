@@ -4,8 +4,12 @@ A shape lists one instruction per line as Capstone prints it. `label:` names
 the line's address, `@label` is a branch target, `<symbol>` a call target
 (checked by name), `{name}` an immediate read from the code, `{&role}` the
 pc-relative literal of an `ldr rN, [pc, #..]` whose address the following
-`add rN, pc` completes, and a tbb/tbh line ends with its inline case table
-`{name:bytes}`. Readers find code by function name, never by distance.
+`add rN, pc` completes, `{a|b}` either text, and a tbb/tbh line ends with its
+inline case table `{name:bytes}`. A `...` line continues at the next line's
+label, which an earlier branch must target (code after a literal pool).
+Matching follows the executed path: an unconditional forward branch that the
+shape does not list skips a literal pool. Readers find code by function name,
+never by distance.
 """
 import re
 import struct
@@ -46,8 +50,16 @@ def match(lib, symbol, lines, address):
     text = lib.text
     block = {'values': {}, 'at': {}, 'labels': {}, 'tables': {}, 'refs': {}, 'start': address}
     branches, pending, stream = [], {}, None
-    for line in lines:
-        label, _, line = line.rpartition(': ')
+    index = 0
+    while index < len(lines):
+        label, _, line = lines[index].rpartition(': ')
+        if line == '...':
+            label = lines[index + 1].rpartition(': ')[0]
+            target = next((at for name, at in branches if name == label), None)
+            if target is None or target < address:
+                return None
+            address, stream, index = target, None, index + 1
+            continue
         if label:
             block['labels'][label] = address
         table = re.fullmatch(r'(.*) \{(\w+):(\d+)\}', line)
@@ -60,12 +72,21 @@ def match(lib, symbol, lines, address):
         ins = next(stream, None)
         if ins is None:
             return None
-        pieces = re.split(r'(\{&?\w+\}|@\w+|<\w+>)', line)
-        pattern = ''.join(HOLE if p.startswith('{') else '#(0x[0-9a-f]+)' if p.startswith(('@', '<')) else re.escape(p) for p in pieces)
-        read = re.fullmatch(pattern, (ins.mnemonic + ' ' + ins.op_str).strip())
+        pieces = re.split(r'(\{&?\w+\}|\{[\w.|]+\}|@\w+|<\w+>)', line)
+        pattern = ''.join('(%s)' % '|'.join(map(re.escape, p[1:-1].split('|'))) if '|' in p else HOLE if p.startswith('{')
+                          else '#(0x[0-9a-f]+)' if p.startswith(('@', '<')) else re.escape(p) for p in pieces)
+        text_of = (ins.mnemonic + ' ' + ins.op_str).strip()
+        read = re.fullmatch(pattern, text_of)
         if not read:
+            jump = re.fullmatch(r'b(?:\.w)? #(0x[0-9a-f]+)', text_of)
+            if jump and address < int(jump[1], 16) < end:
+                # A literal pool skip on the executed path.
+                address, stream = int(jump[1], 16), None
+                continue
             return None
         for name, value in zip(pieces[1::2], read.groups()):
+            if '|' in name:
+                continue
             if name[0] == '@':
                 branches.append((name[1:], int(value, 16)))
             elif name[0] == '<':
@@ -83,6 +104,7 @@ def match(lib, symbol, lines, address):
             role, word = pending.pop(ins.operands[0].reg)
             block['refs'].setdefault(role, []).append((word + ins.address + 4) & 0xffffffff)
         address += ins.size
+        index += 1
         if table:
             # Case tables in these shapes have even sizes: code resumes right after them.
             at = text['offset'] + address - text['address']
