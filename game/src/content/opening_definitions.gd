@@ -23,6 +23,9 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 		sizes = {"declaration": 376, "item_clone": 31, "stack_clone": 30, "install_category": 57, "category_getter": 9, "ship_clone": 27}
 	elif architecture == "armv7":
 		sizes = {"declaration": 284, "item_clone": 18, "stack_clone": 18, "install_category": 14, "category_getter": 4, "slot_offsets": 26, "ship_clone": 18}
+	elif architecture == "android-armv7":
+		# Status::resetGame's declaration and whole helpers; install_category reaches the slot offsets.
+		sizes = {"declaration": 258, "item_clone": 18, "stack_clone": 18, "install_category": 46, "category_getter": 4, "ship_clone": 18}
 	if sizes.is_empty() or not data.get("provenance") is Dictionary or data.provenance.size() != sizes.size():
 		return "Missing opening loadout provenance"
 	for key in sizes:
