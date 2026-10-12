@@ -88,8 +88,11 @@ static func validate_ship_lights(data: Variant, executable_bytes: int, architect
 	if not data is Dictionary:
 		return "Invalid ship light definitions"
 	if data.is_empty(): return ""
-	var count := catalogue_count if catalogue_count > 0 else (64 if architecture == "armv7" else 61)
-	if count not in ([64] if architecture == "armv7" else [61, 64]):
+	var code: Array = {"armv7": [42, 102, 78], "android-armv7": [20, 72, 54], "x86_64": [35, 119, 91]}.get(architecture, [])
+	if code.is_empty():
+		return "Unsupported ship light architecture"
+	var count := catalogue_count if catalogue_count > 0 else (61 if architecture == "x86_64" else 64)
+	if count not in ([61, 64] if architecture == "x86_64" else [64]):
 		return "Unsupported ship light catalogue extent"
 	if not data.get("resource_ids") is Array or data.resource_ids.size() != count:
 		return "Ship light table does not match this edition's catalogue"
@@ -102,7 +105,7 @@ static func validate_ship_lights(data: Variant, executable_bytes: int, architect
 	# Duplicate IDs in separate slots are meaningful source layers.
 	if not data.get("provenance") is Array or data.provenance.size() != 5:
 		return "Missing ship light provenance"
-	var sizes := [42, count * 2, 102, count * 2, 78] if architecture == "armv7" else [35, count * 2, 119, count * 2, 91]
+	var sizes := [code[0], count * 2, code[1], count * 2, code[2]]
 	for i in sizes.size():
 		var record: Variant = data.provenance[i]
 		if not record is Dictionary or record.get("bytes") != sizes[i] \

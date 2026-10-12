@@ -93,3 +93,70 @@ class LightTests(unittest.TestCase):
                     data[at + (2 if mac else 33)] ^= 1
                 mach.data = bytes(data)
                 self.assertEqual(extract_ship_lights(mach, models), {}, (mac, corruption))
+
+
+GROUP = '_ZN7Globals12getShipGroupEiib'
+CANVAS = 'PaintCanvas'
+
+
+def android(name=GROUP, index=(9, 9, 9), geometry=(11, 11, 11), skips=('skip1', 'skip2'), order=('first', 'second'),
+            seconds=1, none=0xffff, refill=False, table2=0x40):
+    """getShipGroup's hull and two light layers in the Android compiler's shape."""
+    from android_fixture import RODATA, TEXT
+    from android_thumb import Asm, build
+    paint = '_ZN11AbyssEngine11PaintCanvas'
+    asm = Asm(TEXT + 0x100).push()
+
+    def root(n=0):
+        asm.ldr_address(1, RODATA).mov(11, 0).ldr_address(0, 0x9000).add_pc(1).add_pc(0)
+        asm.ldrh_index(1, 1, index[0]).ldr(0, 0, 0).ldr(2, 0, 0).mov(0, geometry[0]).movs(3, 1)
+        asm.call_to('_ZN10AEGeometryC1EtPN11AbyssEngine11PaintCanvasEb')
+
+    def first(n):
+        asm.ldr_address(0, RODATA + 0x20).movw(6, none).add_pc(0).ldrh_index(1, 0, index[1]).minus_one(0).str_sp(0, 0x30).str_sp(0, 0x70)
+        asm.cmp_reg(1, 6).branch('eq', '%s_%d' % (skips[0], n)).ldr_address(0, 0x9000).add_sp(2, 0x70).movs(3, 1).add_pc(0).ldr(4, 0, 0)
+        asm.ldr(0, 4, 0).call_to(paint + '10MeshCreateEtRjb').ldr(0, 4, 0).add_sp(1, 0x30).call_to(paint + '15TransformCreateERj')
+        asm.ldr(0, 4, 0).ldr_sp(2, 0x70).ldr_sp(1, 0x30).call_to(paint + '18TransformAddMeshIdEjj').ldr_sp(1, 0x30).mov(0, geometry[1])
+        asm.call_to('_ZN10AEGeometry8addChildEj').ldr_sp(0, 0x70).str_w(0, geometry[1], 0x20).label('skip1_%d' % n)
+        asm.nop().label('other1_%d' % n)
+
+    def second(n):
+        if refill:
+            asm.movw(6, 0xffff)
+        asm.ldr_address(0, RODATA + table2).add_pc(0).ldrh_index(4, 0, index[2]).cmp_reg(4, 6).branch('eq', skips[1])
+        asm.ldr_address(0, 0x9000).add_sp(1, 0x78).add_pc(0).ldr(5, 0, 0).minus_one(0).str_sp(0, 0x78).ldr(0, 5, 0)
+        asm.call_to(paint + '15TransformCreateERj').ldr(0, 5, 0).mov(2, 4).ldr_sp(1, 0x78).movs(3, 0)
+        asm.call_to(paint + '16TransformAddMeshEjtb').ldr_sp(1, 0x78).mov(0, geometry[2]).call_to('_ZN10AEGeometry8addChildEj')
+        asm.ldr_sp(1, 0x28).label('skip2' + '_1' * n).nop()
+    for part in order if 'root' in order else ('root',) + order:
+        for n in range(seconds if part == 'second' else 1):
+            {'root': root, 'first': first, 'second': second}[part](n)
+    hull, lights = [100, 101, 102, 103], ([65535, 300, 65535, 302], [400, 65535, 65535, 403])
+    data = {RODATA: struct.pack('<4H', *hull), RODATA + 0x20: struct.pack('<4H', *lights[0]), RODATA + 0x40: struct.pack('<4H', *lights[1])}
+    return build({name: asm.pop()}, data), {'resource_ids': hull, 'table_offsets': [RODATA]}
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidLightTests(unittest.TestCase):
+    def test_layers_pair_with_the_hull(self):
+        from android_fixture import RODATA
+        lib, models = android()
+        value = extract_ship_lights(lib, models)
+        self.assertEqual(value['resource_ids'], [[65535, 400], [300, 65535], [65535, 65535], [302, 403]])
+        code = lib.symbols[GROUP][0]
+        self.assertEqual([(p['offset'] - (code if p['offset'] < RODATA else 0), p['bytes']) for p in value['provenance']],
+                         [(8, 20), (RODATA + 0x20, 8), (30, 70), (RODATA + 0x40, 8), (104, 52)])
+
+    def test_each_broken_shape_is_unsupported(self):
+        cases = {'name': dict(name='_ZN7Globals8getShipEi'), 'first index': dict(index=(9, 8, 9)), 'second index': dict(index=(9, 9, 8)),
+                 'first geometry': dict(geometry=(11, 10, 11)), 'second geometry': dict(geometry=(11, 11, 10)),
+                 'first skip': dict(skips=('other1', 'skip2')), 'second skip': dict(skips=('skip1', 'skip1_0')),
+                 'order': dict(order=('second', 'first')), 'two seconds': dict(seconds=2), 'none': dict(none=0xfffe),
+                 'root last': dict(order=('first', 'second', 'root')), 'table outside': dict(table2=0x2000),
+                 'refilled none': dict(refill=True)}
+        for name, options in cases.items():
+            lib, models = android(**options)
+            self.assertEqual(extract_ship_lights(lib, models), {}, name)
+        lib, models = android()
+        self.assertEqual(extract_ship_lights(lib, dict(models, table_offsets=[0x8010])), {})
+        self.assertEqual(extract_ship_lights(lib, dict(models, resource_ids=[100, 101, 102, 104])), {})

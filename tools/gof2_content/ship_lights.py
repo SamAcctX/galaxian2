@@ -3,6 +3,11 @@
 The original compiler uses bit masks on x86-64 and sentinel checks on ARM. Both
 must agree with the referenced tables. Only mesh IDs and provenance are exported;
 engine flames, LOD selection and special ship construction are separate features.
+
+Android: Globals::getShipGroup builds the hull from the hull table, then adds
+a mesh from each light table unless its entry is 0xffff (the first through
+MeshCreate/TransformAddMeshId, kept at geometry+0x20; the second through
+TransformAddMesh), both as children of the hull.
 """
 import re
 import struct
@@ -19,10 +24,96 @@ def table(mach, address, count):
     return (list(struct.unpack('<' + str(count) + 'H', value[0])), value[1]) if value else None
 
 
+ANDROID_ROOT = r"""adr (?P<t>\w+), (?P<table>\w+)
+adr r0, \w+
+ldrh\.w r1, \[(?P=t), (?P<index>\w+), lsl #1\]
+ldr r0, \[r0\]
+ldr r2, \[r0\]
+mov r0, (?P<geometry>\w+)
+movs r3, #1
+call _ZN10AEGeometryC1EtPN11AbyssEngine11PaintCanvasEb
+"""
+ANDROID_FIRST = r"""movw (?P<none>\w+), #0xffff
+adr r0, (?P<table>\w+)
+ldrh\.w r1, \[r0, (?P<index>\w+), lsl #1\]
+mov\.w r0, #-1
+str r0, \[sp, #(?P<transform>\w+)\]
+str r0, \[sp, #(?P<mesh>\w+)\]
+cmp r1, (?P=none)
+beq #(?P<skip>\w+)
+ldr r0, =\w+
+add r2, sp, #(?P=mesh)
+movs r3, #1
+adr r0, \w+
+ldr (?P<canvas>\w+), \[r0\]
+ldr r0, \[(?P=canvas)\]
+call _ZN11AbyssEngine11PaintCanvas10MeshCreateEtRjb
+ldr r0, \[(?P=canvas)\]
+add r1, sp, #(?P=transform)
+call _ZN11AbyssEngine11PaintCanvas15TransformCreateERj
+ldr r0, \[(?P=canvas)\]
+ldr r2, \[sp, #(?P=mesh)\]
+ldr r1, \[sp, #(?P=transform)\]
+call _ZN11AbyssEngine11PaintCanvas18TransformAddMeshIdEjj
+ldr r1, \[sp, #(?P=transform)\]
+mov r0, (?P<geometry>\w+)
+call _ZN10AEGeometry8addChildEj
+ldr r0, \[sp, #(?P=mesh)\]
+str\.w r0, \[(?P=geometry), #0x20\]
+"""
+ANDROID_SECOND = r"""adr r0, (?P<table>\w+)
+ldrh\.w (?P<id>\w+), \[r0, (?P<index>\w+), lsl #1\]
+cmp (?P=id), (?P<none>\w+)
+beq #(?P<skip>\w+)
+ldr r0, =\w+
+add r1, sp, #(?P<transform>\w+)
+adr r0, \w+
+ldr (?P<canvas>\w+), \[r0\]
+mov\.w r0, #-1
+str r0, \[sp, #(?P=transform)\]
+ldr r0, \[(?P=canvas)\]
+call _ZN11AbyssEngine11PaintCanvas15TransformCreateERj
+ldr r0, \[(?P=canvas)\]
+mov r2, (?P=id)
+ldr r1, \[sp, #(?P=transform)\]
+movs r3, #0
+call _ZN11AbyssEngine11PaintCanvas16TransformAddMeshEjtb
+ldr r1, \[sp, #(?P=transform)\]
+mov r0, (?P<geometry>\w+)
+call _ZN10AEGeometry8addChildEj
+ldr r1, \[sp, #\w+\]
+"""
+
+
+def android_lights(lib, models, count):
+    from .android_listing import Listing, number
+    group = Listing(lib, '_ZN7Globals12getShipGroupEiib')
+    roots, firsts, seconds = (group.find(shape) for shape in (ANDROID_ROOT, ANDROID_FIRST, ANDROID_SECOND))
+    if len(roots) != 1 or len(firsts) != 1 or len(seconds) != 1:
+        return {}
+    root, first, second = roots[0], firsts[0], seconds[0]
+    hull = table(lib, number(root['table']), count)
+    # One ship index and hull; each layer skips 0xffff entries to just past itself.
+    none = group.definition(group.index(second, 'none'), second['none'])
+    if (not hull or hull[1] not in models.get('table_offsets', []) or hull[0] != models['resource_ids']
+            or len({m['index'] for m in (root, first, second)}) != 1 or len({m['geometry'] for m in (root, first, second)}) != 1
+            or none != group.index(first) or group.index(root) > group.index(first)
+            or any(number(m['skip']) != group.code[group.last(m)].address + group.code[group.last(m)].size for m in (first, second))):
+        return {}
+    layers = [table(lib, number(m['table']), count) for m in (first, second)]
+    if not all(layers):
+        return {}
+    return {'resource_ids': [list(pair) for pair in zip(layers[0][0], layers[1][0])],
+            'provenance': [group.match_span(root), {'offset': layers[0][1], 'bytes': count * 2}, group.match_span(first),
+                           {'offset': layers[1][1], 'bytes': count * 2}, group.match_span(second)]}
+
+
 def extract_ship_lights(mach, models):
     count = len(models.get('resource_ids', []))
     if not 1 <= count <= 64:
         return {}
+    if mach.architecture == 'android-armv7':
+        return android_lights(mach, models, count)
     section = mach.text
     code = mach.data[section['offset']:section['offset'] + section['length']]
     base = section['address']
