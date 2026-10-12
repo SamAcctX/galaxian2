@@ -2,6 +2,11 @@
 
 Only constant initialization and bounded argument/getter layouts are inspected.
 No executable bytes or source control flow become runtime content.
+
+Android: Level::createShip picks the half extent with Status::hardCoreMode,
+builds the Player (Player::Player stores the extent, zero hull pools and the
+flags) and, for subtype 0, a PlayerFighter whose KIPlayer base sets the actor
+flags; KIPlayer::setToSleep deactivates through Player::setActive.
 """
 import math
 import struct
@@ -20,7 +25,269 @@ MAC_BASE_CALL = '450fb6c9baffffffffe8 {base:4}'
 ARM_BASE_CALL = 'ba6904924ff0ff328ded022a8ded030a8ded014a009420ef1001 {base:4}'
 
 
+ANDROID_SELECTION = """
+ldr.w r0, ={}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+call {selector}
+mov r4, r0
+mov.w r0, #0x114
+call _Znwj
+mov r5, r0
+movs r0, #0
+movs r1, #1
+strd r1, r0, [sp]
+mov.w r1, #{ordinary}
+cmp r4, #0
+it ne
+movwne r1, #{special}
+mov r0, r5
+mov r2, sl
+movs r3, #1
+call {stats}
+movw r0, #0xb1e0
+ldr r1, [sp, #0x28]
+ldr r2, [sp, #0x2c]
+movt r0, #0xffff
+ldr r3, [sp, #0x24]
+add r1, r0
+add r2, r0
+add r0, r3
+ldr r3, [sp, #0x20]
+adds r4, r1, r3
+ldr r1, [sp, #0x1c]
+add.w sl, r2, r1
+ldr r1, [sp, #0x18]
+mov r2, fp
+adds r6, r0, r1
+mov r0, r5
+mov r1, sb
+call _ZN6Player10setEmpDataEii
+ldr r0, [sp, #0x30]
+mov.w fp, #0
+cmp r0, #0
+beq.w {fighter}
+"""
+ANDROID_FIGHTER = """
+mov.w r0, #0x2e8
+ldr.w r8, [r7, #0x1c]
+call _Znwj
+vmov s0, r4
+mov sb, r0
+vmov s2, r6
+vmov s4, sl
+vcvt.f32.s32 s0, s0
+vcvt.f32.s32 s2, s2
+vcvt.f32.s32 s4, s4
+ldr r6, [sp, #0x34]
+mov r3, r5
+ldr r4, [sp, #0x38]
+str.w r8, [sp, #0x10]
+mov r1, r6
+str.w fp, [sp]
+mov r2, r4
+vstr s2, [sp, #0xc]
+vstr s4, [sp, #8]
+vstr s0, [sp, #4]
+call {actor}
+"""
+ANDROID_SELECTOR = """
+ldr r0, ={}
+vmov.f32 s0, #{value}
+add r0, pc
+ldr r0, [r0]
+vldr s2, [r0, #0x2c]
+movs r0, #0
+vcmpe.f32 s2, s0
+vmrs apsr_nzcv, fpscr
+it eq
+moveq r0, #1
+bx lr
+"""
+# this in r4, zeros in r8 and q8: extent at 0x40, hull pools and shield cleared.
+ANDROID_STATS = """
+mov r4, r0
+ldr r0, ={}
+mov sl, r3
+adr r3, #{}
+add r0, pc
+ldrd r5, r6, [r7, #0x18]
+vld1.64 {d18, d19}, [r3:0x80]
+mov r3, r4
+vmov.i32 q8, #0
+mov.w r8, #0
+ldr r0, [r0]
+mov fp, r4
+mov.w sb, #1
+ldr r0, [r0]
+str r0, [sp, #0x10]
+mov.w r0, #0x3f800000
+str r0, [r3, #4]!
+str r3, [sp]
+add.w r3, r4, #8
+vst1.32 {d16, d17}, [r3]
+add.w r3, r4, #0x1c
+str r0, [r4, #0x18]
+vst1.32 {d16, d17}, [r3]
+add.w r3, r4, #0x2c
+vst1.32 {d18, d19}, [r3]
+str r0, [r4, #0x3c]
+movs r0, #0
+movt r0, #0x42c8
+strd r8, r8, [r4, #0xc4]
+str.w r8, [r4, #0xcc]
+str r8, [fp, #0xfc]!
+strd r8, r8, [r4, #0x100]
+str r1, [r4, #0x40]
+str r2, [r4, #0x78]
+str.w r2, [r4, #0x84]
+strd sl, r5, [r4, #0x9c]
+str.w r6, [r4, #0xa4]
+str.w r0, [r4, #0xb8]
+add.w r0, r4, #0x88
+strd r8, r8, [r4, #0x7c]
+str.w r8, [r4, #0x6c]
+strb.w r8, [r4, #0x5e]
+vst1.32 {d16, d17}, [r0]
+mov r0, r4
+strb.w sb, [r4, #0xc3]
+str.w r8, [r4, #0x60]
+strd r8, r8, [r4, #0xd4]
+"""
+# Firing (0xc3 above), active 0xc0 and damage 0xc2 allowed; not the player.
+ANDROID_FLAGS = """
+movs r0, #0
+movs r1, #1
+str.w r0, [r4, #0xd0]
+add r5, sp, #4
+strb.w r1, [r4, #0x70]
+str.w r1, [r4, #0x10c]
+strb.w r0, [r4, #0x44]
+strb.w r0, [r4, #0x45]
+strb.w r0, [r4, #0x68]
+strb.w r1, [r4, #0xc0]
+strb.w r0, [r4, #0xc1]
+str.w r0, [r4, #0xb4]
+strb.w r1, [r4, #0xc2]
+str.w r0, [r4, #0xd4]
+strb.w r0, [r4, #0x5d]
+strb.w r0, [r4, #0x5c]
+strb.w r0, [r4, #0xe0]
+strb.w r0, [r4, #0xec]
+strb.w r0, [r4, #0xed]
+str r0, [r4, #0x74]
+strb.w r0, [r4, #0x54]
+strb.w r0, [r4, #0x55]
+strb.w r0, [r4, #0x69]
+"""
+ANDROID_BASE_CALL = """
+mov r0, r6
+str r2, [sp, #0x10]
+mov.w r2, #-1
+ldr r5, [r7, #0x18]
+vstr s18, [sp, #8]
+vstr s16, [sp, #0xc]
+vstr s20, [sp, #4]
+str r5, [sp]
+call {base}
+"""
+# this in r5: collision enabled (0x88), special impact state and point geometry off.
+ANDROID_ACTOR_FLAGS = """
+ldr r1, ={}
+movs r0, #0
+mov.w r2, #-1
+str r4, [r5, #0x24]
+add r1, pc
+str r0, [r5, #0x4c]
+strb.w r0, [r5, #0x6e]
+strb.w r0, [r5, #0x21]
+strb.w r0, [r5, #0x71]
+strb.w r0, [r5, #0x38]
+strb.w r0, [r5, #0x39]
+strb.w r0, [r5, #0x3a]
+strb.w r0, [r5, #0x3e]
+strb.w r0, [r5, #0x3f]
+strb.w r0, [r5, #0x40]
+str r2, [r5, #0x44]
+movs r2, #1
+strb.w r2, [r5, #0x88]
+"""
+ANDROID_POINT = """
+movs r6, #1
+movs r4, #0
+mov.w r0, #-1
+strb.w r6, [r5, #0xf1]
+strb.w r4, [r5, #0x20]
+str.w r4, [r5, #0xe4]
+strb.w r4, [r5, #0x3c]
+"""
+ANDROID_DEACTIVATION = """
+push {r4, r6, r7, lr}
+add r7, sp, #8
+mov r4, r0
+movs r0, #5
+str.w r0, [r4, #0x84]
+movs r1, #0
+ldr r0, [r4, #4]
+call {setter}
+movs r0, #1
+strb.w r0, [r4, #0xad]
+pop {r4, r6, r7, pc}
+"""
+ANDROID_ACTIVITY = """
+strb.w r1, [r0, #0xc0]
+bx lr
+"""
+
+
+def android_initialization(lib, factory, opening_deactivation):
+    from .android_shapes import Listing
+    ship = Listing(lib, factory)
+    selection = ship.unique(ANDROID_SELECTION)
+    fighter = ship.follow(selection, 'fighter', ANDROID_FIGHTER)
+    if fighter is None:
+        return {}
+    selector = Listing(lib, selection['selector']).at(ANDROID_SELECTOR, 0)
+    stats = Listing(lib, selection['stats'])
+    stores = stats.unique(ANDROID_STATS)
+    flags = stats.unique(ANDROID_FLAGS) if stores else None
+    # r4 takes `this` before r0 changes (so before the flags, which set r0)
+    # and keeps it (callee-saved) to the flags.
+    if selector is None or flags is None or stats.writes(0, stores.first - 1, 'r0') or stats.writes(stores.first + 1, flags.first, 'r4'):
+        return {}
+    actor = Listing(lib, fighter['actor'])
+    base_call = actor.unique(ANDROID_BASE_CALL)
+    base = Listing(lib, base_call['base']) if base_call else None
+    actor_flags = base.unique(ANDROID_ACTOR_FLAGS) if base else None
+    point = base.unique(ANDROID_POINT, actor_flags.last + 1) if actor_flags else None
+    # r5 takes `this` before r0 changes and keeps it to the point geometry.
+    this = base.unique('mov r5, r0') if point else None
+    if this is None or base.writes(0, this.first - 1, 'r0') or base.writes(this.first + 1, point.last, 'r5'):
+        return {}
+    deactivation = Listing(lib, opening_deactivation).at(ANDROID_DEACTIVATION, 0)
+    activity = Listing(lib, deactivation['setter']).at(ANDROID_ACTIVITY, 0) if deactivation else None
+    if activity is None:
+        return {}
+    ordinary, special, value = selection.value('ordinary'), selection.value('special'), selector.value('value')
+    # movw and VFP immediates: no other bound can fail.
+    if not (1 <= ordinary <= 10000000 and special >= 1 and 0 <= value <= 10):
+        return {}
+    provenance = {key: shape.span() for key, shape in [
+        ('selection', selection), ('fighter_call', fighter), ('selector', selector), ('stats_stores', stores),
+        ('flags', flags), ('base_call', base_call), ('actor_flags', actor_flags), ('point_geometry', point),
+        ('opening_deactivation', deactivation), ('activity_setter', activity)]}
+    # The authored opening deactivation overrides the constructor's active flag.
+    return {'ordinary_half_extent': ordinary, 'special_half_extent': special, 'special_difficulty': value,
+            'initial_armor': 0, 'initial_shield': 0.0, 'initial_firing_allowed': True,
+            'initial_active': False, 'initial_damage_allowed': True, 'is_player': False,
+            'initial_special_impact_state': False, 'initial_collision_enabled': True,
+            'initial_point_geometry': False, 'provenance': provenance}
+
+
 def extract_npc_initialization(mach, factory, opening_deactivation):
+    if mach.architecture == 'android-armv7':
+        return android_initialization(mach, factory, opening_deactivation)
     import capstone
     mac = mach.architecture == 'x86_64'
     if not mac and mach.architecture != 'armv7': return {}

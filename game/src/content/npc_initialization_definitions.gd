@@ -75,6 +75,8 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 		sizes = {"opening_deactivation":30,"activity_setter":13,"factory_entry":4,"selection":70,"selector":34,"difficulty_value":4,"stats_wrapper":10,"stats_entry":20,"extent_argument":9,"pools":33,"firing":7,"active":7,"damage":7,"player":4,"ship_call":32,"actor_wrapper":14,"base_call":14,"special_state":4,"collision_enabled":7,"point_geometry":4}
 	elif architecture == "armv7":
 		sizes = {"opening_deactivation":28,"activity_setter":6,"factory_entry":4,"selection":60,"selector":36,"stats_wrapper":30,"stats_entry":28,"extent_argument":4,"zero_integer":2,"zero_register":4,"pools":28,"flags":88,"ship_call":32,"actor_wrapper":60,"base_call":30,"actor_flags":62,"point_geometry":26}
+	elif architecture == "android-armv7":
+		sizes = {"selection":112,"fighter_call":72,"selector":30,"stats_stores":154,"flags":84,"base_call":28,"actor_flags":58,"point_geometry":24,"opening_deactivation":28,"activity_setter":6}
 	var provenance: Variant = data.get("provenance")
 	if sizes.is_empty() or not provenance is Dictionary or provenance.size() != sizes.size(): return "Invalid NPC initialization provenance"
 	var spans := []
