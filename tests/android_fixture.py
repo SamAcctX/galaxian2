@@ -307,3 +307,52 @@ def word_target(body, delta, start):
     pool = ((here + 4) & ~3) + (half & 255) * 4 - start
     word, = struct.unpack_from('<I', body, pool)
     return (word + here + 2 + 4) & 0xffffffff
+
+
+def verify_android_proof(test, reader, extract, layout='ANDROID', values='ANDROID_VALUES'):
+    """Acceptance, relocation and every span's corruption boundary for a symbol-anchored module.
+
+    `extract(lib)` runs the module against a library; it must return the module's
+    values (or (values, proof)) for the synthetic library, and nothing once any
+    proven byte changes.
+    """
+    import copy
+    from unittest.mock import patch
+    from gof2_content.android_library import AndroidLibrary
+    expected = getattr(reader, values)
+    for shift in (0, 0x1000):
+        image, patched, _ = layout_library(getattr(reader, layout), shift)
+        with patch.object(reader, layout, patched):
+            lib = AndroidLibrary(image)
+            result = extract(lib)
+            found = result[0] if isinstance(result, tuple) else {k: v for k, v in result.items() if k != 'provenance'}
+            proof = result[1] if isinstance(result, tuple) else result['provenance']
+            test.assertEqual(found, expected)
+            test.assertEqual(set(proof), set(patched))
+            for key, span in proof.items():
+                test.assertEqual(span['offset'] - span['anchor'], patched[key][5] if len(patched[key]) == 6 else patched[key][1], key)
+            # The result is a copy: changing it leaves the module's values intact.
+            json_copy = copy.deepcopy(expected)
+            found.clear()
+            test.assertEqual(getattr(reader, values), json_copy)
+            if shift:
+                continue
+            for key, span in proof.items():
+                for index in {0, span['bytes'] - 1}:
+                    raw = bytearray(image)
+                    raw[span['offset'] + index] ^= 0xff
+                    broken = extract(AndroidLibrary(bytes(raw)))
+                    test.assertFalse(broken[0] if isinstance(broken, tuple) else broken, (key, index))
+
+
+def assert_native_android(test, reader, definitions, values='ANDROID_VALUES', layout='ANDROID'):
+    """The game's copy of a module's Android values and span rules equals the importer's."""
+    import json
+    import re
+    from pathlib import Path
+    source = (Path(__file__).resolve().parents[1] / 'game/src/content' / definitions).read_text()
+    spans = {k: [v[5] if len(v) == 6 else v[1], v[2]] for k, v in getattr(reader, layout).items()}
+    for name, value in [(values, getattr(reader, values)), (layout + '_SPANS', spans)]:
+        found = re.findall(r'^const ' + name + r' :?= (.+)$', source, re.MULTILINE)
+        test.assertEqual(len(found), 1, name)
+        test.assertEqual(json.loads(found[0]), value, name)
