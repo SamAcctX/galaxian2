@@ -250,6 +250,7 @@ class Straight:
         if not target or target[0] != 'object':
             return
         record = self.objects[target[1]]
+        record['touched'] = True
         at = target[2] + offset
         if value and value[0] == 'value':
             value = ('value', value[1] & ((1 << 8 * width) - 1))
@@ -257,9 +258,37 @@ class Straight:
             record['poisoned'] = True
         record['fields'][at] = (value, width)
 
+    def snapshot(self):
+        """Registers, slots and copies of every object they reach, for a branch's other path."""
+        seen, todo = {}, [v for v in list(self.registers.values()) + list(self.slots.values())]
+        while todo:
+            value = todo.pop()
+            if value and value[0] == 'object' and value[1] not in seen:
+                item = self.objects[value[1]]
+                seen[value[1]] = dict(item, fields=dict(item['fields']))
+                todo.extend(field for field, _ in item['fields'].values())
+        return dict(self.registers), dict(self.slots), seen
+
+    def restore(self, snapshot):
+        """Continue on a branch's other path with new copies of the objects it reaches, so
+        the two alternatives never write into one record. A copy keeps its allocation's
+        address; one this path never writes to is dropped at the end (`settle`)."""
+        registers, slots, copies = snapshot
+        moved = {}
+        for index, item in copies.items():
+            self.objects.append(dict(item, clone=True, touched=False))
+            moved[index] = len(self.objects) - 1
+        def remap(value):
+            return ('object', moved[value[1]], value[2]) if value and value[0] == 'object' and value[1] in moved else value
+        for index in moved.values():
+            item = self.objects[index]
+            item['fields'] = {at: (remap(value), width) for at, (value, width) in item['fields'].items()}
+        self.registers = {r: remap(v) for r, v in registers.items()}
+        self.slots = {k: remap(v) for k, v in slots.items()}
+
     def poison(self, target):
         if target and target[0] == 'object':
-            self.objects[target[1]]['poisoned'] = True
+            self.objects[target[1]].update(poisoned=True, touched=True)
 
     def frame(self, base, disp, sp):
         """sp offset addressed by [base, #disp], or None."""
@@ -304,17 +333,24 @@ def interpret(lib, instructions):
         if is_jump(ins) and ins.operands and ins.operands[-1].type == arm.ARM_OP_IMM:
             targets[ins.operands[-1].imm] += 1
     state = Straight(exposure(instructions, targets, sp, fp))
-    flows, carried, guarded = True, None, 0
+    # State at the one forward branch into a block that nothing falls into: a
+    # literal-pool skip continues the same path; a conditional branch starts the
+    # other alternative, on copies of the objects it reaches.
+    entries = {}
+    flows, guarded = True, 0
     for n, ins in enumerate(instructions):
         if ins.address in targets:
-            # A pool skip: the only way here is the unconditional branch just before.
-            if targets[ins.address] == 1 and not flows and carried and carried[0] == n - 1:
-                state.registers, state.slots = carried[1], carried[2]
+            entry = entries.pop(ins.address, None)
+            if targets[ins.address] == 1 and not flows and entry is not None:
+                if entry[0] == 'same':
+                    state.registers, state.slots = entry[1], entry[2]
+                else:
+                    state.restore(entry[1])
             else:
                 state.registers, state.slots = {}, {}
         elif not flows:
             state.registers, state.slots = {}, {}
-        flows, carried = True, None
+        flows = True
         registers = state.registers
         mnemonic = ins.mnemonic.split('.')[0]
         ops = ins.operands
@@ -323,8 +359,12 @@ def interpret(lib, instructions):
         guarded = len(mnemonic) - 1 if mnemonic.startswith('it') and len(mnemonic) <= 5 else max(0, guarded - 1)
         returns = mnemonic == 'pop' and any(o.type == arm.ARM_OP_REG and o.reg == arm.ARM_REG_PC for o in ops)
         if is_jump(ins) or ins.group(capstone.CS_GRP_RET) or returns:
-            if not conditional and mnemonic not in ('cbz', 'cbnz'):
-                flows, carried = False, (n, dict(registers), dict(state.slots))
+            target = ops[-1].imm if is_jump(ins) and ops and ops[-1].type == arm.ARM_OP_IMM else None
+            alternative = conditional or mnemonic in ('cbz', 'cbnz')
+            if target is not None and target > ins.address and targets[target] == 1:
+                entries[target] = ('other', state.snapshot()) if alternative else ('same', dict(registers), dict(state.slots))
+            if not alternative:
+                flows = False
             continue
         written = ins.regs_access()[1]
         if conditional or mnemonic.startswith('it'):
@@ -442,6 +482,10 @@ def interpret(lib, instructions):
             registers = state.registers
         if destination is not None and value is not None and destination in written:
             registers[destination] = value
+    # A copy that its path never wrote to is no record of its own.
+    for item in state.objects:
+        if item.get('clone') and not item['touched']:
+            item.update(kind='unused copy', size=None)
     return state.objects
 
 
@@ -547,9 +591,6 @@ def android_records(lib, checkpoint):
             rows.append(result)
             if len(rows) > MAX_RECORDS:
                 raise ContentError('Too many resource declarations')
-    offsets = [row['source_offset'] for row in rows]
-    if len(offsets) != len(set(offsets)):
-        raise ContentError('Duplicate Android resource declaration match')
     return rows
 
 

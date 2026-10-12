@@ -135,6 +135,38 @@ class AndroidLibraryTests(unittest.TestCase):
             asm.label('end')
         self.assertEqual(read(dead_code_after_branch), [])
 
+    def test_alternative_paths_complete_one_allocation_separately(self):
+        starts = []
+        def both(asm):
+            mark(asm, starts).movs(0, 16).call(stub('_Znwj')).mov(5, 0).beq('other')
+            registration(asm, 10, 2, A, ('texture', 1), allocate_record=False)
+            asm.jump('end').label('other')
+            registration(asm, 11, 2, D, ('texture', 2), allocate_record=False)
+            asm.label('end').nop()
+        rows = read(both)
+        self.assertEqual([(r['id'], r['source_offset']) for r in rows], [(10, starts[0]), (11, starts[0])])
+        self.assertEqual([r['texture_parameter_bits'] for r in rows], [1, 2])
+        def finished_before(asm):
+            registration(mark(asm, starts), 1, 2, A, ('texture', 1))
+            asm.beq('other')
+            registration(asm, 2, 2, D, ('texture', 1))
+            asm.jump('end').label('other')
+            registration(asm, 3, 2, D, ('texture', 1))
+            asm.label('end').nop()
+        # The record finished before the branch is not repeated by the other path.
+        self.assertEqual(sorted(r['id'] for r in read(finished_before)), [1, 2, 3])
+
+    def test_a_branch_target_takes_its_branch_state_not_the_preceding_code(self):
+        starts = []
+        def body(asm):
+            asm.label('top').nop()
+            mark(asm, starts).movs(0, 16).call(stub('_Znwj')).mov(5, 0).beq('alternative')
+            registration(asm, 20, 2, A, ('texture', 1), allocate_record=False)
+            mark(asm, starts).movs(0, 16).call(stub('_Znwj')).mov(5, 0)  # A record finished elsewhere...
+            asm.jump('top').label('alternative')  # ...reached by a backward branch.
+            registration(asm, 21, 2, D, ('texture', 1), allocate_record=False)
+        self.assertEqual([(r['id'], r['source_offset']) for r in read(body)], [(20, starts[0]), (21, starts[0])])
+
     def test_pool_islands_are_skipped_only_by_an_unconditional_branch(self):
         def island(conditional):
             def body(asm):

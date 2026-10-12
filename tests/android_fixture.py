@@ -164,16 +164,18 @@ class Thumb:
 
 
 def registration(asm, identifier, kind, path, payload=None, *, record=5, holder=6, before_fields=None,
-                 sizes=(16, 8), sentinel=True, material_slot=None):
+                 sizes=(16, 8), sentinel=True, material_slot=None, allocate_record=True):
     """One record in the compiler's shape: record/payload allocation, string copy, fields.
 
     `identifier` is an int, or (register, delta) for an id derived from a base register.
     `payload` is ('texture', bits), ('mesh', material, flags) or None. `before_fields`
     may emit code between the string copy and the record's field stores; `sizes`
     and `sentinel` vary the record/payload allocations and the record's -1 field;
-    `material_slot` reloads the mesh material from that sp offset instead.
+    `material_slot` reloads the mesh material from that sp offset instead;
+    `allocate_record=False` fills a record allocated earlier.
     """
-    asm.movs(0, sizes[0]).call(stub('_Znwj')).mov(record, 0)
+    if allocate_record:
+        asm.movs(0, sizes[0]).call(stub('_Znwj')).mov(record, 0)
     asm.movs(0, sizes[1]).call(stub('_Znwj')).mov(holder, 0)
     if payload and payload[0] == 'texture':
         asm.movs(0, payload[1]).str(0, holder, 4)
