@@ -88,7 +88,9 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 	for row in data.textures.rows:
 		for mode in ["baseline", "medium", "large"]:
 			if not Numbers.integer(row.source_offsets.get(mode), 0, executable_bytes - 1): return "Invalid font atlas registration extent"
-		if not row.source_offsets.medium < row.source_offsets.large or not row.source_offsets.large < row.source_offsets.baseline: return "Font atlas branches are out of order"
+		# Android's baseline atlas may complete the allocation of its large alternative (one record, two branches).
+		var after_large: bool = row.source_offsets.large < row.source_offsets.baseline or (architecture == "android-armv7" and row.source_offsets.large == row.source_offsets.baseline)
+		if not row.source_offsets.medium < row.source_offsets.large or not after_large: return "Font atlas branches are out of order"
 		var original: Array = registrations.get(int(row.texture_id), [])
 		if original.size() != 3: return "Missing or ambiguous font atlas registrations"
 		for mode in ["baseline", "medium", "large"]:

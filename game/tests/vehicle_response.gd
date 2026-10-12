@@ -80,7 +80,8 @@ func _initialize() -> void:
 			var base := vehicle.resolve(ship.id, [], [])
 			check(not base.is_empty(), vehicle.error)
 			var h: float = ship.stats.handling_factor
-			var expected := h if library.manifest.profile.edition == "ios-hd" else (h - 0.45) / 1.1 * 0.85 + 0.7
+			# iOS and Android ship handling has no Mac conversion (Ship::getHandling returns the table value).
+			var expected := h if library.manifest.profile.edition in ["ios-hd", "android-hd"] else (h - 0.45) / 1.1 * 0.85 + 0.7
 			near(base.get("response_factor", 0), expected * 20, "Real ship base handling conversion")
 			for device in devices:
 				var resolved := vehicle.resolve(ship.id, [3], [device])

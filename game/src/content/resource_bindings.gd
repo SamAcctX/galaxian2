@@ -322,6 +322,9 @@ func open(directory: String, base: Dictionary,library: RefCounted=null) -> bool:
 			or header.get("base_content_id") != base.content_id:
 		return fail("These resource bindings belong to a different base content identity")
 	var architecture: String = {"ios-hd": "armv7", "android-hd": "android-armv7"}.get(base.get("profile", {}).get("edition"), "x86_64")
+	# Android proofs sit inside named functions, so no two declarations share an
+	# anchor by distance: the cross-declaration offset links below are Mac/iOS only.
+	var by_name: bool = architecture == "android-armv7"
 	var layout := Library.catalogue_layout(base)
 	if layout.is_empty():
 		return fail("Resource bindings require a supported ship and language catalogue layout")
@@ -723,9 +726,13 @@ func open(directory: String, base: Dictionary,library: RefCounted=null) -> bool:
 		if staged_actors.get("player_initialization",{}).is_empty() or staged_camera.get("pan",{}).get("follow_player_after_event_finished")!=player_motion.release_after_event_finished:
 			return fail("Scripted player motion lacks its player or camera handoff")
 		var cruise_proof: Variant=staged_cruise.get("provenance")
-		if staged_cruise.get("speed_units_per_millisecond")!=2.0 or not cruise_proof is Array or cruise_proof.size()!=5:
+		# Android cruise: throttle, speed store, restore, consumer, move helper, getter;
+		# the motion proves the constructor block that holds the first and the whole helper.
+		var android: bool=architecture=="android-armv7"
+		if staged_cruise.get("speed_units_per_millisecond")!=2.0 or not cruise_proof is Array or cruise_proof.size()!=(6 if android else 5):
 			return fail("Scripted player motion lacks its supported cruise speed")
-		if cruise_proof[0].offset!=player_motion.provenance.speed.offset or cruise_proof[3].offset!=player_motion.provenance.forward_helper.offset:
+		var speed: Dictionary=player_motion.provenance.get("constructor_defaults" if android else "speed",{})
+		if cruise_proof[0].offset!=speed.get("offset") or cruise_proof[4 if android else 3].offset!=player_motion.provenance.forward_helper.offset:
 			return fail("Scripted player motion belongs to another cruise owner")
 	if version>=60 and not staged_staging.is_empty() and not staged_staging.has("projectile_visuals"):
 		return fail("Missing ordinary projectile visuals capability")
@@ -759,7 +766,7 @@ func open(directory: String, base: Dictionary,library: RefCounted=null) -> bool:
 			return fail("Ordinary player flight lacks its fresh player and release")
 		if staged_rotation.get("provenance",[]).is_empty() or staged_response.get("provenance",[]).is_empty():
 			return fail("Ordinary player flight lacks native motion declarations")
-		if staged_rotation.provenance[0].offset!=player_flight.provenance.rotation_anchor.offset or staged_response.provenance[0].offset!=player_flight.provenance.response_anchor.offset:
+		if not by_name and (staged_rotation.provenance[0].offset!=player_flight.provenance.rotation_anchor.offset or staged_response.provenance[0].offset!=player_flight.provenance.response_anchor.offset):
 			return fail("Ordinary player flight belongs to another motion owner")
 	var staged_scenery_resources := {}
 	var staged_scenery := {}
