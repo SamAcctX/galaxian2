@@ -6,7 +6,6 @@ Unicode pairs and provenance. No source instruction is executed or translated.
 Android: AbyssEngine::String::getWCharFromUtf8 rewrites each decoded character
 in place; the same aliases sit in two tbb case tables and equality tests.
 """
-import re
 import struct
 from .opening_loadout import template
 from .ship_models import section_bytes
@@ -145,9 +144,7 @@ def extract_text_aliases(mach):
         'switch_table': table_extent}}
 
 
-# One instruction per line as Capstone prints it: `label:` names its address,
-# @label is a branch target, {name} an immediate read from the code, and a tbb
-# line ends with its inline case table {name:bytes}.
+# android_blocks syntax: one instruction per line as Capstone prints it.
 ANDROID = """
 movw r1, #0x435
 mov r2, r0
@@ -217,79 +214,16 @@ bne.w @loop
 """
 
 
-def android_block(lib, symbol, shape):
-    """The one place in the named function whose instructions read exactly as `shape`.
-
-    Returns {'values', 'labels', 'tables', 'leaves' (address of each {value} line),
-    'start', 'end'} or None.
-    """
-    import capstone
-    from .android_library import instructions
-    code = instructions(lib, symbol)
-    if not code:
-        return None
-    start, size = lib.symbols[symbol]
-    lines = shape.strip().splitlines()
-    first = lines[0].rpartition(': ')[2].split()[0]
-    decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
-    found = [block for block in (match_block(lib, decoder, ins.address, start + size, lines)
-                                 for ins in code if ins.mnemonic == first) if block]
-    return found[0] if len(found) == 1 else None
-
-
-def match_block(lib, decoder, address, end, lines):
-    text = lib.text
-    block = {'values': {}, 'labels': {}, 'tables': {}, 'leaves': {}, 'start': address}
-    branches = []
-    stream = None
-    for line in lines:
-        label, _, line = line.rpartition(': ')
-        if label:
-            block['labels'][label] = address
-        table = re.fullmatch(r'(.*) \{(\w+):(\d+)\}', line)
-        if table:
-            line = table[1]
-        if stream is None:
-            # One decoder pass between case tables keeps IT-block conditions.
-            at = text['offset'] + address - text['address']
-            stream = decoder.disasm(lib.data[at:text['offset'] + end - text['address']], address)
-        ins = next(stream, None)
-        if ins is None:
-            return None
-        pieces = re.split(r'(\{\w+\}|@\w+)', line)
-        pattern = ''.join('(0x[0-9a-f]+|[0-9]+)' if p.startswith('{') else '#(0x[0-9a-f]+)' if p.startswith('@')
-                          else re.escape(p) for p in pieces)
-        read = re.fullmatch(pattern, (ins.mnemonic + ' ' + ins.op_str).strip())
-        if not read:
-            return None
-        for name, value in zip(pieces[1::2], read.groups()):
-            if name.startswith('@'):
-                branches.append((name[1:], int(value, 16)))
-            else:
-                block['values'][name[1:-1]] = int(value, 0)
-                block['leaves'][address] = name[1:-1]
-        address += ins.size
-        if table:
-            # Case tables in this shape have even sizes: code resumes right after them.
-            at = text['offset'] + address - text['address']
-            block['tables'][table[2]] = (address, lib.data[at:at + int(table[3])])
-            address += int(table[3])
-            stream = None
-    if any(block['labels'][name] != target for name, target in branches):
-        return None
-    block['end'] = address
-    return block
-
-
 def android_aliases(lib):
-    block = android_block(lib, '_ZN11AbyssEngine6String16getWCharFromUtf8EPci', ANDROID)
+    from .android_blocks import find, offset
+    block = find(lib, '_ZN11AbyssEngine6String16getWCharFromUtf8EPci', ANDROID)
     if block is None:
         return {}
     values = block['values']
     # Each source line maps a character, never a control or whitespace code.
     if min(values.values()) < 33:
         return {}
-    leaves = {address: values[name] for address, name in block['leaves'].items()}
+    leaves = {block['at'][name]: value for name, value in values.items()}
     merge = block['labels']['merge']
     aliases = []
     # tbb branches to the table start plus twice the case byte.
@@ -305,8 +239,7 @@ def android_aliases(lib):
         aliases.append([source, values[name]])
     if len(aliases) != 20:
         return {}
-    offset = lib.text['offset'] - lib.text['address']
     start, cases = block['tables']['table']
     return {'aliases': sorted(aliases), 'provenance': {
-        'declaration': {'offset': offset + block['start'], 'bytes': block['end'] - block['start']},
-        'switch_table': {'offset': offset + start, 'bytes': len(cases)}}}
+        'declaration': {'offset': offset(lib, block['start']), 'bytes': block['end'] - block['start']},
+        'switch_table': {'offset': offset(lib, start), 'bytes': len(cases)}}}

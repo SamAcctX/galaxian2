@@ -1,6 +1,5 @@
 """Relocated compiler-layout fixtures with synthetic glyph values and switch data."""
 import importlib.util
-import re
 import struct
 from types import SimpleNamespace
 import unittest
@@ -77,72 +76,6 @@ class TextAliases(unittest.TestCase):
 
 
 
-CONDITIONS = {'eq': 0, 'ne': 1, 'hs': 2, 'lo': 3, 'hi': 8, 'ls': 9, 'ge': 10, 'lt': 11, 'gt': 12, 'le': 13}
-
-
-def thumb(text, at):
-    """Encoding of one Thumb instruction as Capstone prints it (the forms shapes use)."""
-    from android_fixture import Thumb, branch_fields
-    def fields(value):  # i and imm3:imm8 of a Thumb-2 modified immediate
-        first, second = struct.unpack('<2H', Thumb(0).mov_imm(0, value).code)
-        return first & 0x400, second & 0x70ff
-    def half(*values): return struct.pack('<%dH' % len(values), *values)
-    def wide(c, o):  # conditional b<c>.w
-        return half(0xf000 | (o < 0) << 10 | CONDITIONS[c] << 6 | o >> 12 & 0x3f, 0x8000 | (o >> 18 & 1) << 13 | (o >> 19 & 1) << 11 | o >> 1 & 0x7ff)
-    def far(o):  # b.w
-        s, j1, j2, v = branch_fields(o, False)
-        return half(0xf000 | s << 10 | v >> 11 & 0x3ff, 0x9000 | j1 << 13 | j2 << 11 | v & 0x7ff)
-    reg = lambda name: int(name[1:])
-    forms = [
-        (r'movw (r\d+), #(\w+)', lambda d, v: Thumb(0).movw(reg(d), int(v, 0)).code),
-        (r'mov (r\d+), (r\d+)', lambda d, m: Thumb(0).mov(reg(d), reg(m)).code),
-        (r'(?:movs|mov[a-z]{2}) (r\d), #(\w+)', lambda d, v: half(0x2000 | reg(d) << 8 | int(v, 0))),
-        (r'ldrh (r\d), \[(r\d)\]', lambda t, n: half(0x8800 | reg(n) << 3 | reg(t))),
-        (r'strh (r\d+), \[(r\d+)\], #(\w+)', lambda t, n, v: half(0xf820 | reg(n), reg(t) << 12 | 0xb00 | int(v, 0))),
-        (r'cmp (r\d), #(\w+)', lambda n, v: half(0x2800 | reg(n) << 8 | int(v, 0))),
-        (r'cmp (r\d), (r\d)', lambda n, m: half(0x4280 | reg(m) << 3 | reg(n))),
-        (r'cmp\.w (r\d+), #(\w+)', lambda n, v: half(0xf1b0 | fields(int(v, 0))[0] | reg(n), fields(int(v, 0))[1] | 0xf00)),
-        (r'sub\.w (r\d+), (r\d+), #(\w+)', lambda d, n, v: half(0xf1a0 | fields(int(v, 0))[0] | reg(n), fields(int(v, 0))[1] | reg(d) << 8)),
-        (r'subw (r\d+), (r\d+), #(\w+)', lambda d, n, v: Thumb(0).subw(reg(d), reg(n), int(v, 0)).code),
-        (r'subs (r\d), #(\w+)', lambda d, v: half(0x3800 | reg(d) << 8 | int(v, 0))),
-        (r'tbb \[pc, (r\d+)\]', lambda m: half(0xe8df, 0xf000 | reg(m))),
-        (r'it (\w+)', lambda c: half(0xbf08 | CONDITIONS[c] << 4)),
-        (r'b #(\w+)', lambda t: half(0xe000 | (int(t, 0) - at - 4) >> 1 & 0x7ff)),
-        (r'b(\w\w) #(\w+)', lambda c, t: half(0xd000 | CONDITIONS[c] << 8 | (int(t, 0) - at - 4) >> 1 & 0xff)),
-        (r'b(\w\w)\.w #(\w+)', lambda c, t: wide(c, int(t, 0) - at - 4)),
-        (r'b\.w #(\w+)', lambda t: far(int(t, 0) - at - 4)),
-    ]
-    for pattern, encode in forms:
-        found = re.fullmatch(pattern, text)
-        if found:
-            return encode(*found.groups())
-    raise ValueError(text)
-
-
-def assemble(shape, address, values, tables=lambda labels, rows, starts: {}):
-    """Shape template to Thumb bytes: holes from `values`, case tables from
-    `tables(labels, hole line addresses, table starts)`; two passes resolve labels."""
-    lines = shape.strip().splitlines()
-    labels, rows, starts, filled = {}, {}, {}, {}
-    for _ in range(2):
-        code = bytearray()
-        for line in lines:
-            label, _, line = line.rpartition(': ')
-            at = address + len(code)
-            if label: labels[label] = at
-            table = re.fullmatch(r'(.*) \{(\w+):(\d+)\}', line)
-            if table: line = table[1]
-            for name in re.findall(r'\{(\w+)\}', line): rows[name] = at
-            line = re.sub(r'\{(\w+)\}', lambda m: hex(values[m[1]]), line)
-            line = re.sub(r'@(\w+)', lambda m: '#' + hex(labels.get(m[1], at)), line)
-            code += thumb(line, at)
-            if table:
-                starts[table[2]] = address + len(code)
-                code += filled.get(table[2], bytes(int(table[3])))
-        filled = tables(labels, rows, starts)
-    return bytes(code), labels, rows, starts
-
-
 LOW = {i: 'value%d' % (5 + i // 2) for i in range(0, 22, 2)}  # 11 of the 22 low cases
 HIGH = {0: 'value1', 3: 'value16', 5: 'value17', 7: 'value4'}
 
@@ -151,17 +84,15 @@ def android(values=None, low=LOW, high=HIGH, shape=None, copies=1, symbol='_ZN11
     """getWCharFromUtf8 in the Android shape between unrelated code: glyphs 65+i and
     case tables {case: hole name of the target line, or a label}."""
     from android_fixture import TEXT, library
+    from thumb_shapes import assemble
     from gof2_content.android_library import AndroidLibrary
     from gof2_content.text_aliases import ANDROID
     values = values or {'value%d' % i: 65 + i for i in range(19)}
-    def cases(labels, rows, starts):
-        targets = {**labels, **rows}
-        return {name: bytes((targets[mapping.get(i, 'merge')] - starts[name]) // 2 for i in range(count))
-                for name, mapping, count in (('table', low, 22), ('high_table', high, 8))}
+    tables = {name: [mapping.get(i, 'merge') for i in range(count)] for name, mapping, count in (('table', low, 22), ('high_table', high, 8))}
     code, found = bytearray(b'\xf0\xb5\x00\xbf'), []  # push {r4-r7, lr}; nop
     for _ in range(copies):
-        body, labels, rows, starts = assemble(shape or ANDROID, TEXT + len(code), values, cases)
-        found.append((labels, starts))
+        body, labels, _ = assemble(shape or ANDROID, TEXT + len(code), values, tables=tables)
+        found.append(labels)
         code += body
     code += b'\xf0\xbd'  # pop {r4-r7, pc}
     return AndroidLibrary(library([(symbol, bytes(code), TEXT)], {})), found
@@ -171,7 +102,7 @@ def android(values=None, low=LOW, high=HIGH, shape=None, copies=1, symbol='_ZN11
 class AndroidTextAliases(unittest.TestCase):
     def test_cases_and_equality_leaves_give_twenty_aliases(self):
         from android_fixture import TEXT
-        lib, [(labels, starts)] = android()
+        lib, [labels] = android()
         result = extract_text_aliases(lib)
         glyph = lambda name: 65 + int(name[5:])
         expected = sorted([[0x410 + i, glyph(n)] for i, n in LOW.items()] + [[0x43e + i, glyph(n)] for i, n in HIGH.items()]
@@ -179,7 +110,7 @@ class AndroidTextAliases(unittest.TestCase):
         self.assertEqual(result['aliases'], expected)
         # The block from movw to the loop's bne.w (180 bytes in this shape), and the low case table.
         self.assertEqual(result['provenance'], {'declaration': {'offset': TEXT + 4, 'bytes': labels['merge'] + 10 - TEXT - 4},
-                                                'switch_table': {'offset': starts['table'], 'bytes': 22}})
+                                                'switch_table': {'offset': TEXT + 4 + 32, 'bytes': 22}})  # after the tbb
         self.assertEqual(result['provenance']['declaration']['bytes'], 180)
 
     def test_each_broken_declaration_is_unsupported(self):
