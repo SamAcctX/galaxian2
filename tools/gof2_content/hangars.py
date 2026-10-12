@@ -3,6 +3,11 @@
 Only constants, catalogue selectors and source offsets are emitted. These readers
 recognize supported compiler layouts; they neither execute nor translate routines.
 The returned geometry is not a complete scene (lights/cameras remain separate).
+
+Android: Level::createScene picks the hangar row by station 101, station 100,
+else the system's race, reads four ids per row from a 16-byte-row table, turns
+each layer by a constant Y rotation and adds the row's extra meshes from a
+first-id and a count table.
 """
 import math
 import re
@@ -122,6 +127,111 @@ def arm_access(mach, code, start, address, decoder):
             'reader_start': begin, 'reader_bytes': len(window)}
 
 
+SELECTION = r"""ldr r0, =\w+
+adr r0, (?P<status>\w+)
+ldr r0, \[r0\]
+ldr r0, \[r0\]
+"""
+OVERRIDE = SELECTION + r"""call _ZN6Status10getStationEv
+call _ZN7Station8getIndexEv
+cmp r0, #(?P<station>\w+)
+bne(?:\.w)? #(?P<next>\w+)
+movs r0, #(?P<row>\w+)
+b(?:\.w)? #(?P<join>\w+)
+"""
+FALLBACK = SELECTION + r"""call _ZN6Status9getSystemEv
+call _ZN11SolarSystem7getRaceEv
+str r0, \[sp, #(?P<slot>\w+)\]
+"""
+ROWS = r"""adr (?P<t>r\d+), (?P<table>\w+)
+add\.w (?P=t), (?P=t), (?P<row>r\d+), lsl #4
+str (?P=t), \[sp, #(?P<keep>\w+)\]
+"""
+COLUMN = r"""ldr r0, \[sp, #(?P<keep>\w+)\]
+ldr\.w (?P<id>r\d+), \[r0, (?P<column>r\d+), lsl #2\]
+cmp (?P=id), #0
+blt #(?P<skip>\w+)
+"""
+NEXT_COLUMN = r"""add\.w (?P<column>r\d+), (?P=column), #1
+cmp\.w (?P=column), #4
+blt #(?P<loop>\w+)
+"""
+ROTATION = r"""movw (?P<value>r\d+), #(?P<low>\w+)
+movs (?P<zero>r\d+), #0
+movt (?P=value), #(?P<high>\w+)
+add r1, sp, #(?P<vector>\w+)
+str (?P=zero), \[sp, #(?P=vector)\]
+strd (?P=value), (?P=zero), \[sp, #(?P<y>\w+)\]
+mov r0, \w+
+call _ZN10AEGeometry11setRotationERKN11AbyssEngine6AEMath6VectorE
+"""
+COUNT = r"""ldr r0, \[sp, #(?P<slot>\w+)\]
+adds (?P<index>r\d+), #1
+ldr\.w r0, \[(?P<t>\w+), r0, lsl #2\]
+cmp (?P=index), r0
+blt #\w+
+"""
+EXTRA = r"""adr (?P<t>r\d+), (?P<table>\w+)
+ldr\.w (?P<first>\w+), \[(?P=t), (?P<row>r\d+), lsl #2\]
+movs r0, #0xc0
+call _Znwj
+mov (?P<child>r\d+), r0
+add\.w r0, (?P=first), \w+
+ldr\.w r2, \[\w+\]
+uxth r1, r0
+mov r0, (?P=child)
+movs r3, #0
+call _ZN10AEGeometryC1EtPN11AbyssEngine11PaintCanvasEb
+ldr r1, \[(?P=child), #0xc\]
+mov r0, \w+
+call _ZN10AEGeometry8addChildEj
+"""
+
+
+def android_access(lib):
+    """Selection chain, table addresses and rotation from Level::createScene."""
+    from .android_listing import Listing, number, word_float
+    scene = Listing(lib, '_ZN5Level11createSceneEv')
+    overrides, fallback = scene.find(OVERRIDE), scene.find(FALLBACK)
+    if len(overrides) != 2 or len(fallback) != 1:
+        return None
+    fallback = fallback[0]
+    start = {m: scene.code[scene.index(m)].address for m in overrides + [fallback]}
+    first, second = overrides if number(overrides[0]['next']) == start[overrides[1]] else overrides[::-1]
+    # station A ? row : station B ? row : system race, all stored to one slot.
+    if (number(first['next']) != start[second] or number(second['next']) != start[fallback]
+            or {number(m['join']) for m in overrides} != {scene.code[scene.last(fallback)].address}
+            or len({m['status'] for m in overrides + [fallback]}) != 1):
+        return None
+    slot = fallback['slot']
+
+    def from_slot(match, group):
+        """The match's `group` register holds the selected row, reloaded from its slot."""
+        at = scene.definition(scene.index(match, group), match[group])
+        return at is not None and scene.lines[at] == 'ldr %s, [sp, #%s]' % (match[group], slot)
+
+    rows = [m for m in scene.find(ROWS) if from_slot(m, 'row')]
+    columns = [m for m in scene.find(COLUMN) if rows and m['keep'] == rows[0]['keep']]
+    counts = [m for m in scene.find(COUNT) if m['slot'] == slot]
+    extras = [m for m in scene.find(EXTRA) if from_slot(m, 'row')]
+    rotations = [m for m in scene.find(ROTATION) if number(m['y']) == number(m['vector']) + 4]
+    if len(rows) != 1 or len(columns) != 1 or len(counts) != 1 or len(extras) != 1 or len(rotations) != 1:
+        return None
+    column = columns[0]
+    advance = [m for m in scene.find(NEXT_COLUMN) if scene.code[scene.index(m)].address == number(column['skip'])
+               and m['column'] == column['column'] and number(m['loop']) == scene.code[scene.index(column)].address]
+    count = scene.definition(scene.index(counts[0], 't'), counts[0]['t'])
+    if len(advance) != 1 or count is None or not scene.lines[count].startswith('adr %s, ' % counts[0]['t']):
+        return None
+    matches = overrides + [fallback] + rows + columns + advance + counts + extras + rotations
+    rotation = rotations[0]
+    return {'station_overrides': [{'station_id': number(m['station']), 'row': number(m['row'])} for m in (first, second)],
+            'rotation_y': word_float(number(rotation['low']) | number(rotation['high']) << 16),
+            'table_address': number(rows[0]['table']), 'counts_address': number(scene.lines[count].split(', ')[1]),
+            'extras_address': number(extras[0]['table']),
+            'region': scene.span(min([count] + [scene.index(m) for m in matches]), max(scene.last(m) for m in matches))}
+
+
 def extract_hangars(mach, registrations):
     anchors = []
     for suffix in ('', '_add', '_alpha'):
@@ -133,7 +243,11 @@ def extract_hangars(mach, registrations):
     section = mach.text
     code = mach.data[section['offset']:section['offset'] + section['length']]
     references = []
-    if mach.architecture == 'x86_64':
+    if mach.architecture == 'android-armv7':
+        access = android_access(mach)
+        # (reader start, table address, decoder) elsewhere; the whole access here.
+        references = [(None, access['table_address'], access)] if access else []
+    elif mach.architecture == 'x86_64':
         for match in re.finditer(rb'\x4c\x89\xf0\x48\xc1\xe0\x04\x48\x8d\x0d(.{4})\x48\x01\xc8\x42\x8b\x1c\xa8', code, re.S):
             references.append((match.start(), section['address'] + match.start() + 14 + struct.unpack('<i', match[1])[0], None))
     else:
@@ -154,8 +268,12 @@ def extract_hangars(mach, registrations):
         table = integers(mach, address, 40)
         if not table or table[0][:4] != anchors + [-1] or any(not -1 <= v < 65535 for v in table[0]):
             continue
-        access = (mac_access(mach, code, start, section['address']) if decoder is None
-                  else arm_access(mach, code, start, section['address'], decoder))
+        if mach.architecture == 'android-armv7':
+            access = decoder
+        elif decoder is None:
+            access = mac_access(mach, code, start, section['address'])
+        else:
+            access = arm_access(mach, code, start, section['address'], decoder)
         if not access:
             continue
         counts = integers(mach, access['counts_address'], 4)
@@ -173,7 +291,7 @@ def extract_hangars(mach, registrations):
                   'station_overrides': access['station_overrides'], 'system_field': 2,
                   'provenance': [{'offset': table[1], 'bytes': 160}, {'offset': counts[1], 'bytes': 16},
                                  {'offset': extras[1], 'bytes': 16},
-                                 {'offset': section['offset'] + mach.slice_offset + access['reader_start'], 'bytes': access['reader_bytes']}]}
+                                 access.get('region') or {'offset': section['offset'] + mach.slice_offset + access['reader_start'], 'bytes': access['reader_bytes']}]}
         results.append(result)
     # Never choose a seemingly plausible occurrence from conflicting readers.
     return results[0] if len(results) == 1 else {}
