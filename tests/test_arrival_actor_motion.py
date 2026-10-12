@@ -59,3 +59,36 @@ class ArrivalActorMotionTests(unittest.TestCase):
                 elif key == 'section': m.sections[0]['segment'] = b'__DATA'
                 else: m.architecture = 'unsupported'
                 self.assertEqual(reader.extract_arrival_actor_motion(m, a, n, e), {}, (arch, key))
+
+
+ANDROID_ARRIVAL = {'campaign_cursor': 1, 'actor_kind': 3, 'actor_hull_id': 30}
+ANDROID_ACTORS = {'npc_initialization': {'flight': {'present': True}}}
+ANDROID_ENVIRONMENT = {'present': True}
+
+
+class AndroidArrivalActorMotionTests(unittest.TestCase):
+    def extract(self, lib, arrival=ANDROID_ARRIVAL, actors=ANDROID_ACTORS, environment=ANDROID_ENVIRONMENT):
+        return reader.extract_arrival_actor_motion(lib, arrival, actors, environment)
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        from test_arrival_staging import roomy_layouts
+        with roomy_layouts():
+            verify_android_proof(self, reader, self.extract, values='VALUES')
+            image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            self.assertTrue(self.extract(lib))
+            for name, changes in {'other cursor': dict(arrival={**ANDROID_ARRIVAL, 'campaign_cursor': 2}),
+                                  'other kind': dict(arrival={**ANDROID_ARRIVAL, 'actor_kind': 2}),
+                                  'other hull': dict(arrival={**ANDROID_ARRIVAL, 'actor_hull_id': 31}),
+                                  'no environment': dict(environment={}),
+                                  'no flight': dict(actors={'npc_initialization': {'flight': {}}}),
+                                  'no arrival': dict(arrival={})}.items():
+                self.assertEqual(self.extract(lib, **changes), {}, name)
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'arrival_actor_motion_definitions.gd', values='VALUES')

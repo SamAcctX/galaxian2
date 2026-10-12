@@ -1,8 +1,25 @@
-"""Recover rescue actor motion declarations; emit data and extents only."""
+"""Recover rescue actor motion declarations; emit data and extents only.
+
+Android: the KIPlayer constructor starts in mode 0 with targeting allowed,
+Player's constructor active, and PlayerFighter's constructor sets the
+50000 activation half extent (100000 in alien orbits). KIPlayer::setToSleep
+sets mode 5, deactivates and blocks targeting. PlayerFighter::update syncs
+the Player matrix before the mode dispatch; with a target list, an inactive
+actor's route falls back to target 0 (Player::getEnemy(0)); the mode-5 case
+only waits until the target is within the half extent on every axis, then
+switches to mode 1, shows the model and activates.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 def extract_arrival_actor_motion(mach, arrival, actors, environment):
+    if mach.architecture == 'android-armv7':
+        try:
+            if arrival['campaign_cursor'] != 1 or arrival['actor_kind'] != 3 or arrival['actor_hull_id'] != 30: return {}
+            if not environment or not actors['npc_initialization']['flight']: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     arch=mach.architecture
     if arch not in LAYOUTS:return {}
     try:
@@ -119,3 +136,18 @@ MAC_ALTERNATE = {'initial_mode': [-80932, 25, '48c7432000000000c783bc00000000000
                255,
                '498b4608f64060017428488d05836c1b00488b38e8c5a3030083f8027c14498b7e184885ff7504498b7e1031f6e8dc6bebff498b86a00100004885c00f848b1f0000f64062010f85811f0000f3410f1096d8010000418b8678010000f30f2ac00f2ec20f86641f0000f7d8f30f2ac80f2ed10f86551f0000f3410f1096dc0100000f2ec20f86431f00000f2ed10f863a1f0000f3410f1096e00100000f2ec20f86281f00000f2ed10f861f1f000041c786bc00000001000000498b7e184885ff7504498b7e10be01000000e83e6bebff498b7e08be01000000e862cbfeff41f6867f010000010f84e11e0000498b7e78be01000000e8d457f8ffe9ce1e0000'],
  'dispatch_table': [628454, 40, 'dfe0ffff9be6ffffadffffff15f8ffffa0fbffffe0dfffff86dfffff9be6ffffc2e2ffffefe0ffff']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'initial_mode': ('_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', 294, 72, 'sha256:13536ced26b8a1d87d04fd2ea63a6e7fa968524359034e17f41ff1bb5ade7e99'),
+           'initial_active': ('_ZN6PlayerC2Eiiiii', 398, 32, 'sha256:57cc672c2bd9eb0ffbd28eb354ca32d8a888dae35d47e96f949e7f111e7410e1'),
+           'half_extent': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 1208, 32, 'sha256:54671c6e7fe4b9fd7231f9463e510a32f9f7956033974f99f1cd4f357b5ae70c'),
+           'mode_setter': ('_ZN8KIPlayer10setToSleepEv', 0, 28, 'sha256:cc84c0937afb4bb67537f3edaabf3c0dddc9ff41c2ff7882b2060d2d3248972a'),
+           'sync': ('_ZN13PlayerFighter6updateEi', 600, 34, 'sha256:ea73fd29821b6550d208b6172f19e2ce5421f3891de704edf9c492facd1b5cec'),
+           # Without a target list (Player::getEnemies) the route path runs instead.
+           'target_list': ('_ZN13PlayerFighter6updateEi', 1136, 20, '60687cf75eef064694f8dc02002840f08183aeb1'),
+           'route_gate': ('_ZN13PlayerFighter6updateEi', 2408, 56, 'sha256:2b7039308e73594926e582daf50353b4439df0ef8f91bdd761ae2c18305ffc47'),
+           'target_fallback': ('_ZN13PlayerFighter6updateEi', 2728, 24, '00200021606360687cf75cec01460029c4f8441132d146e0'),
+           'relative_position': ('_ZN13PlayerFighter6updateEi', 3112, 48, 'sha256:bc5aa950cb072127770472276da839d6e9c7623756fed6037517d4f18ccb5e15'),
+           # Modes 0..9 dispatch with the whole tbh table.
+           'dispatch': ('_ZN13PlayerFighter6updateEi', 4810, 32, 'sha256:303b667517e6cc36d796d6ab684df9e0b19c552cb665a590a17791a1d90d2ebf'),
+           'mode_five': ('_ZN13PlayerFighter6updateEi', 5658, 208, 'sha256:7c2f2b0d18714a42a021fdbfc4d0c8804289393b9bb383fd85fae9d037ba8dd1')}
