@@ -145,6 +145,7 @@ var _preview_controls: Array[Control]=[]
 var _menu_button: Button
 ## Career difficulty chosen at New Game or read from the loaded save.
 var _difficulty:=Difficulty.NORMAL
+var _kaamo_unlocked:=false
 const BOUNDARIES = Session.BOUNDARIES + ArrivalSession.BOUNDARIES + FirstFlightSession.BOUNDARIES + StationSession.BOUNDARIES
 
 func _ready() -> void:
@@ -522,6 +523,13 @@ func bank_career_stats(arrived:=false,target: Node=null) -> void:
 	if not docked._world.record_elite_medals(elite):status.text=docked._world.error
 	_last_flight_hull_percent=-1
 
+## The Kaamo Club option's one-way unlock, while docked; saved at once.
+func unlock_kaamo() -> bool:
+	if not session is StationSession or not session.retain_kaamo_unlock(true):return false
+	_kaamo_unlocked=true
+	return save_station(false) if _can_save_station() else true
+func kaamo_unlocked() -> bool:return _kaamo_unlocked
+
 func save_station(announce: bool=true) -> bool:
 	if not _focused or not is_visible_in_tree() or not _can_save_station():return _save_message("Finish the station conversation and close its panels before saving",false)
 	bank_career_stats()
@@ -582,7 +590,7 @@ func load_station(now_microseconds: int=-1) -> bool:
 	reset()
 	var previous_panel:=station_panel
 	session=candidate;station_panel=panel;connect_station_panel(panel);previous_panel.free()
-	_difficulty=session.career_difficulty()
+	_difficulty=session.career_difficulty();_kaamo_unlocked=session.career_kaamo_unlocked()
 	_locations=session.location_owner();session.camera.make_current()
 	session.rebase_time(now);refresh_render_mode();present_session()
 	if _save_file.recovered_backup:_save_message("Recovered the previous saved station",true)
@@ -631,11 +639,11 @@ func reset() -> void:
 	if status!=null:status.text="Reconstructed opening · Mouse / arrows or left stick steer · Space / right trigger fires · Esc / Start pauses"
 	refresh_render_mode()
 
-func start(difficulty: Variant=Difficulty.NORMAL) -> void:
+func start(difficulty: Variant=Difficulty.NORMAL,kaamo_unlocked:=false) -> void:
 	reset()
 	if viewport==null:return
 	if not Difficulty.valid(difficulty):show_error("The game difficulty is invalid");return
-	_difficulty=float(difficulty)
+	_difficulty=float(difficulty);_kaamo_unlocked=kaamo_unlocked
 	session=Session.new();viewport.add_child(session)
 	# Native desktop presentation uses the source large-display scenery setting.
 	# Mobile follows physical display dimensions, not the embedded preview size.
@@ -1854,7 +1862,7 @@ func enter_station(now_microseconds: int, camera_seed: int=0, unix_seconds: Vari
 	elif mission_return:prepared=candidate.configure_mission_return(library,bindings,visuals,transfer,now_microseconds,camera_seed)
 	elif returning:prepared=candidate.configure_return(library,bindings,visuals,session.flight_owner(),now_microseconds,camera_seed,captured_settings,seconds)
 	else:prepared=candidate.configure(library,bindings,visuals,packet,now_microseconds,camera_seed)
-	if prepared:prepared=candidate.retain_difficulty(_difficulty)
+	if prepared:prepared=candidate.retain_difficulty(_difficulty) and candidate.retain_kaamo_unlock(_kaamo_unlocked)
 	if not prepared:
 		var message:=candidate.error;candidate.free();session.camera.make_current()
 		return transition_error(message)

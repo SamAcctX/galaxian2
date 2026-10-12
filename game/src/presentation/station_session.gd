@@ -733,6 +733,10 @@ func retain_difficulty(value: Variant) -> bool:
 	if _world==null:return reject("The station has no world")
 	return true if _world.retain_difficulty(value) else reject(_world.error)
 func career_difficulty() -> float:return 0.5 if _world==null else _world.career_difficulty()
+func retain_kaamo_unlock(value: bool) -> bool:
+	if _world==null:return reject("The station has no world")
+	return true if _world.retain_kaamo_unlock(value) else reject(_world.error)
+func career_kaamo_unlocked() -> bool:return _world!=null and _world.career_kaamo_unlocked()
 func retain_locations(locations: RefCounted) -> bool:
 	error=""
 	if _world==null or _active or not locations is Locations:return reject("Attach retained locations before activating the station")

@@ -78,7 +78,12 @@ func verify_prepare() -> void:
 		check(app.phase=="update" and not app.has_session(),"An older import must disclose missing effects before a new game")
 		for control in app._body.get_children():
 			if control is Button and control.text=="Use current game files":control.pressed.emit();break
-	check(app.phase=="difficulty" and app._body.get_children().filter(func(c):return c is Button).size()==4,"New Game did not offer the four difficulty levels")
+	check(app.phase=="difficulty" and app._body.get_children().filter(func(c):return c is Button and not c is CheckButton).size()==4,"New Game did not offer the four difficulty levels")
+	var kaamo: Array=app._body.get_children().filter(func(c):return c is CheckButton and c.text==app.KAAMO_OPTION)
+	check(kaamo.size()==1 and not kaamo[0].button_pressed and not app._new_game_kaamo,"New Game did not offer the Kaamo Club option, unset")
+	if kaamo.size()==1:
+		kaamo[0].button_pressed=true;check(app._new_game_kaamo,"The Kaamo Club option was not taken")
+		kaamo[0].button_pressed=false;check(not app._new_game_kaamo,"The Kaamo Club option could not be cleared")
 	await capture("entry-difficulty")
 	app.choose_difficulty(0.5)
 	if not app.has_session():check(false,app.error);return

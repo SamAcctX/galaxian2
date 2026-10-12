@@ -204,6 +204,13 @@ func retain_mining_hint(seen: bool) -> void:
 	_state.progress.mining_failure_hint_seen=seen
 
 ## Adds hint windows the player has seen to the career (saved progress "hints_seen").
+## The Kaamo Club option: one-way, the career keeps it for good.
+func unlock_kaamo() -> bool:
+	error=""
+	if _state.is_empty() or not _state.get("progress") is Dictionary:return reject("The Kaamo Club unlock requires a station career")
+	_state.progress.kaamo_unlocked=true
+	return true
+
 func record_hints(seen: Array) -> bool:
 	error=""
 	if _state.is_empty() or not _state.get("progress") is Dictionary:return reject("Hints require a station career")

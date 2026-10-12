@@ -15,6 +15,7 @@ const MenuAudio=preload("res://src/presentation/main_menu_audio.gd")
 const Host=preload("res://src/presentation/opening_preview.gd")
 const Streams=preload("res://src/presentation/audio_stream_control.gd")
 const Difficulty=preload("res://src/content/difficulty_definitions.gd")
+const KAAMO_OPTION:="Start as owner of the Kaamo Club"
 const Challenge=preload("res://src/simulation/supernova_challenge_entry.gd")
 const ChallengeRules=preload("res://src/content/supernova_challenge_definitions.gd")
 const LANGUAGE_NAMES={"de":1,"gb":2,"es":3,"fr":4,"it":5,"ptl":14,"pl":7,"ru":8,"zt":10,"zs":11,"ko":12,"ja":13}
@@ -46,6 +47,7 @@ var _picker: FileDialog
 var _selection:={}
 var _pending_action:=""
 var _new_game_difficulty:=Difficulty.NORMAL
+var _new_game_kaamo:=false
 var _quit_after_import:=false
 var _refresh_receipt:=""
 var _updated_import:=""
@@ -253,6 +255,10 @@ func _start_new_game() -> void:
 		var value: float=level
 		var button:=_button(library.strings[Difficulty.label_text(value)],func():choose_difficulty(value))
 		if value==_new_game_difficulty:button.grab_focus.call_deferred()
+	# Remake option: own the Kaamo Club from the start instead of buying it in the game.
+	var kaamo:=CheckButton.new();kaamo.text=KAAMO_OPTION;kaamo.button_pressed=_new_game_kaamo;kaamo.custom_minimum_size.y=44 if _mobile else 30
+	if menu._ui!=null:menu._ui.apply_button(kaamo,_mobile)
+	_style_settings_toggle(kaamo);kaamo.toggled.connect(func(value):_new_game_kaamo=value);_body.add_child(kaamo)
 
 func choose_difficulty(value: float) -> bool:
 	if phase!="difficulty" or not Difficulty.valid(value):return false
@@ -282,9 +288,10 @@ func request_close() -> void:
 	else:exit_requested.emit()
 
 func _confirm(action: String,message: String) -> void:
-	_pending_action=action;_show_details("confirm",library.strings[28 if action=="new_game" else 29 if action=="load" else 33])
+	_pending_action=action;_show_details("confirm","Kaamo Club" if action=="kaamo" else library.strings[28 if action=="new_game" else 29 if action=="load" else 33])
 	_label(message)
 	if action=="new_game":_label(library.strings[Difficulty.TITLE_TEXT]+": "+library.strings[Difficulty.label_text(_new_game_difficulty)])
+	if action=="new_game" and _new_game_kaamo:_label(KAAMO_OPTION)
 	_button("Continue",confirm_pending)
 
 func confirm_pending() -> void:
@@ -292,6 +299,9 @@ func confirm_pending() -> void:
 	var action:=_pending_action;_pending_action=""
 	if action=="exit":exit_requested.emit()
 	elif action=="supernova":_enter_challenge()
+	elif action=="kaamo":
+		var unlocked: bool=has_session() and game.unlock_kaamo()
+		show_options();_notice.text="The Kaamo Club is yours." if unlocked else "Dock at a station and close its panels to unlock the Kaamo Club."
 	else:_enter_game(action)
 
 func _enter_game(action: String) -> bool:
@@ -306,7 +316,7 @@ func _enter_game(action: String) -> bool:
 	candidate.set_mobile_layout(_mobile);candidate.apply_preferences(preferences.values);candidate.enable_saves(_save_directory)
 	var accepted:=false
 	if action=="new_game":
-		candidate.start(_new_game_difficulty);accepted=candidate.session!=null and candidate.session.status=="running"
+		candidate.start(_new_game_difficulty,_new_game_kaamo);accepted=candidate.session!=null and candidate.session.status=="running"
 	else:accepted=candidate.load_station()
 	if not accepted:
 		var message: String=candidate._save_notice.text if action=="load" else candidate.status.text
@@ -441,6 +451,8 @@ func show_options() -> void:
 		_style_settings_slider(slider)
 		slider.value_changed.connect(func(value):change_preference("mouse_sensitivity",value));_setting_row("Mouse sensitivity",slider);_settings_controls.mouse_sensitivity=slider
 	_label("Arrows / mouse: turn · Left click / Space: fire\nP / Esc / controller Start: pause · Q: autopilot · E: actions\nM: mouse ship/menu · F5: save station · F9: load station")
+	if has_session() and not game.kaamo_unlocked():
+		_button("Unlock the Kaamo Club now…",func():_confirm("kaamo","Own the Kaamo Club in this career from now on? This cannot be undone."))
 	var files:=_button("Game files…",show_setup);files.disabled=has_session()
 	files.tooltip_text="Choose or update imported game files before starting or loading a game"
 	_body.get_parent().set_deferred("scroll_vertical",0)
