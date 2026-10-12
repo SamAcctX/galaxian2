@@ -2,6 +2,11 @@
 
 The importer emits numeric catalogue bindings and provenance, never source code.
 Projectile construction, hit tests and weapon-kind behavior remain native work.
+
+Android: Level::createPlayer reads each primary weapon's damage, interval,
+lifetime and speed attributes (Item::getAttribute) and scales them by the
+ship's Ship::getDamageFactor / Ship::getFireRateFactor; Ship::refreshValue sets
+those factors from the modifier item's percent attributes.
 """
 import math
 import struct
@@ -14,6 +19,8 @@ from .weapon_collision_bounds import extract_weapon_collision_bounds
 
 
 def extract_weapon_parameters(mach, vehicle, opening):
+    if vehicle and opening and mach.architecture == 'android-armv7':
+        return android_weapon_parameters(mach, vehicle, opening)
     if not vehicle or not opening or mach.architecture not in ('x86_64', 'armv7'): return {}
     import capstone
     mac = mach.architecture == 'x86_64'; prefix = 'MAC_' if mac else 'ARM_'
@@ -390,3 +397,246 @@ ARM_SCALE_LOAD = """
 {ref_0:4}
 4ff0000a4ff0ff380024
 """
+
+
+# Level::createPlayer, per equipped weapon: head (attributes and category),
+# scale (primary weapons: damage x damage factor; interval x fire-rate factor,
+# times the low scale for weak weapons without a damage factor), tail (index,
+# sort, lifetime and speed into Level::createGun).
+ANDROID_PLAYER = """
+ldr r0, [r5, #4]
+movs r1, #{damage_property}
+ldr.w r0, [r0, r8]
+blx <_ZN4Item12getAttributeEi>
+mov r6, r0
+ldr r0, [r5, #4]
+movs r1, #{interval_property}
+ldr.w r0, [r0, r8]
+blx <_ZN4Item12getAttributeEi>
+mov sl, r0
+ldr r0, [r5, #4]
+ldr.w r0, [r0, r8]
+blx <_ZN4Item7getTypeEv>
+cmp r0, #{primary_category}
+str.w sb, [sp, #0x30]
+beq @scale
+str r6, [sp, #0x34]
+mov r6, sl
+b @tail
+scale: ldr r0, [sp, #0x1c]
+ldr r0, [r0]
+blx <_ZN6Status7getShipEv>
+blx <_ZN4Ship15getDamageFactorEv>
+vmov s0, r0
+cmp r6, #{low_damage_limit}
+bgt @normal
+vcmpe.f32 s0, #0
+vmrs apsr_nzcv, fpscr
+bpl @normal
+ldr r0, [sp, #0x18]
+str r6, [sp, #0x34]
+ldr r0, [r0]
+blx <_ZN6Status7getShipEv>
+blx <_ZN4Ship17getFireRateFactorEv>
+vmov s0, r0
+vmov s2, sl
+vmul.f32 s0, s0, s16
+vcvt.f32.s32 s2, s2
+vmul.f32 s0, s2, s0
+b @rounded
+normal: vmov s2, r6
+vmov s4, sl
+vcvt.f32.s32 s2, s2
+vcvt.f32.s32 s18, s4
+ldr r0, [sp, #0x14]
+ldr r0, [r0]
+vmul.f32 s20, s2, s0
+blx <_ZN6Status7getShipEv>
+blx <_ZN4Ship17getFireRateFactorEv>
+vcvt.s32.f32 s2, s20
+vmov s0, r0
+vmul.f32 s0, s18, s0
+vmov r0, s2
+str r0, [sp, #0x34]
+rounded: vcvt.s32.f32 s0, s0
+vmov r6, s0
+tail: ldr r0, [r5, #4]
+ldr.w r0, [r0, r8]
+blx <_ZN4Item8getIndexEv>
+mov sl, r0
+ldr r0, [r5, #4]
+ldr.w r0, [r0, r8]
+blx <_ZN4Item7getSortEv>
+mov sb, r0
+ldr r0, [r5, #4]
+movs r1, #{lifetime_property}
+ldr.w r0, [r0, r8]
+blx <_ZN4Item12getAttributeEi>
+mov fp, r0
+ldr r0, [r5, #4]
+movs r1, #{speed_property}
+ldr.w r0, [r0, r8]
+blx <_ZN4Item12getAttributeEi>
+ldr r1, [sp, #0x30]
+add r2, sp, #4
+str r1, [sp]
+mov r3, sb
+ldr r1, [sp, #0x34]
+stm.w r2, {r1, r6, fp}
+mov r1, sl
+mov r2, r4
+ldr.w fp, [sp, #0x28]
+str r0, [sp, #0x10]
+mov r0, fp
+blx <_ZN5Level9createGunEiiiiiiii>
+"""
+# The low-damage interval scale, loaded before the weapon loop.
+ANDROID_SCALE_LOAD = """
+ldr r0, [pc, #{&status}]
+mov.w r8, #0
+vldr s16, [pc, #{low_scale}]
+movs r4, #0
+add r0, pc
+"""
+# Ship::refreshValue: both factors start at 1.0; a modifier item (its sort case)
+# sets interval factor 1 - p/divisor and damage factor 1 + p/divisor, each back to
+# 1.0 when it equals the missing value.
+ANDROID_DEFAULTS = """
+mov.w r2, #0x3f800000
+str r1, [r4, #0x60]
+strd r2, r2, [r4, #0x54]
+"""
+ANDROID_CONSTANTS = """
+ldr r0, [pc, #{&status}]
+vmov.f32 s20, #1.000000e+00
+vldr s16, [pc, #{value_scale}]
+movs r5, #0
+add r0, pc
+vldr s18, [pc, #{divisor}]
+vldr s22, [pc, #{missing}]
+"""
+ANDROID_SORTS = """
+blx <_ZN4Item7getSortEv>
+cmp r0, #0x1d
+bhi.w #{other}
+tbb [pc, r0] {cases:30}
+"""
+ANDROID_MODIFIER = """
+ldr r0, [r4, #0x6c]
+movs r1, #{interval_percent_property}
+ldr r0, [r0, #4]
+ldr r0, [r0, r5]
+blx <_ZN4Item12getAttributeEi>
+vmov s0, r0
+movs r1, #{damage_percent_property}
+vcvt.f32.s32 s0, s0
+vdiv.f32 s0, s0, s18
+vsub.f32 s0, s20, s0
+vcmpe.f32 s0, s22
+vmrs apsr_nzcv, fpscr
+it eq
+vmoveq.f32 s0, s20
+vstr s0, [r4, #0x54]
+ldr r0, [r4, #0x6c]
+ldr r0, [r0, #4]
+ldr r0, [r0, r5]
+blx <_ZN4Item12getAttributeEi>
+vmov s0, r0
+vcvt.f32.s32 s0, s0
+vdiv.f32 s0, s0, s18
+vadd.f32 s0, s0, s20
+vcmpe.f32 s0, s22
+vstr s0, [r4, #0x58]
+vmrs apsr_nzcv, fpscr
+it eq
+streq.w r8, [r4, #0x58]
+"""
+ANDROID_GETTERS = {'category_getter': ('_ZN4Item7getTypeEv', 'ldr r0, [r0, #4]\nbx lr'),
+                   'id_getter': ('_ZN4Item8getIndexEv', 'ldr r0, [r0]\nbx lr'),
+                   'ship_getter': ('_ZN6Status7getShipEv', 'ldr.w r0, [r0, #0x18c]\nbx lr'),
+                   'damage_getter': ('_ZN4Ship15getDamageFactorEv', 'ldr r0, [r0, #0x58]\nbx lr'),
+                   'interval_getter': ('_ZN4Ship17getFireRateFactorEv', 'ldr r0, [r0, #0x54]\nbx lr'),
+                   'type_getter': ('_ZN4Item7getSortEv', 'ldr r0, [r0, #8]\nbx lr'),
+                   # Pairs (attribute, value) from +0x30; a missing attribute reads the sentinel.
+                   'property_getter': ('_ZN4Item12getAttributeEi', """
+push {r7, lr}
+ldr r2, [r0, #0x30]
+movw r0, #0x7825
+movt r0, #0xc599
+ldr.w ip, [r2]
+cmp.w ip, #0
+it eq
+popeq {r7, pc}
+ldr.w lr, [r2, #4]
+movs r2, #0
+search: ldr.w r3, [lr, r2, lsl #2]
+cmp r3, r1
+beq @found
+adds r2, #2
+cmp r2, ip
+blo @search
+b @done
+found: add.w r0, lr, r2, lsl #2
+ldr r0, [r0, #4]
+done: pop {r7, pc}
+""")}
+
+
+def pool_float(lib, block, name):
+    """The single float a `vldr sN, [pc, #k]` hole of `block` loads, with its extent."""
+    at = ((block['at'][name] + 4) & ~3) + block['values'][name]
+    found = section_bytes(lib, at, 4, b'__text')
+    if found is None:
+        raise ValueError('Missing weapon constant')
+    value = struct.unpack('<f', found[0])[0]
+    if not math.isfinite(value):
+        raise ValueError('Unsupported weapon constant')
+    return value, {'offset': found[1], 'bytes': 4}
+
+
+def android_weapon_parameters(lib, vehicle, opening):
+    from .android_blocks import find, offset
+    create, refresh = '_ZN5Level12createPlayerEv', '_ZN4Ship12refreshValueEv'
+    blocks = {key: find(lib, symbol, shape) for key, (symbol, shape) in
+              {'player': (create, ANDROID_PLAYER), 'scale_load': (create, ANDROID_SCALE_LOAD), 'defaults': (refresh, ANDROID_DEFAULTS),
+               'constants': (refresh, ANDROID_CONSTANTS), 'sorts': (refresh, ANDROID_SORTS), 'modifier': (refresh, ANDROID_MODIFIER),
+               **ANDROID_GETTERS}.items()}
+    if None in blocks.values() or any(blocks[key]['start'] != lib.symbols[symbol][0] for key, (symbol, _) in ANDROID_GETTERS.items()):
+        return {}
+    extent = lambda start, end: {'offset': offset(lib, start), 'bytes': end - start}
+    player, sorts, modifier = blocks['player'], blocks['sorts'], blocks['modifier']
+    table, cases = sorts['tables']['cases']
+    ids = [index for index, case in enumerate(cases) if table + 2 * case == modifier['start']]
+    try:
+        low_scale, low_source = pool_float(lib, blocks['scale_load'], 'low_scale')
+        divisor, divisor_source = pool_float(lib, blocks['constants'], 'divisor')
+        sentinel, sentinel_source = pool_float(lib, blocks['constants'], 'missing')
+    except ValueError:
+        return {}
+    v = {**player['values'], **modifier['values']}
+    result = {key: v[key] for key in ('damage_property', 'interval_property', 'lifetime_property', 'speed_property',
+                                      'interval_percent_property', 'damage_percent_property')}
+    # Weak weapons are those up to the compared limit.
+    result['low_damage_threshold'] = v['low_damage_limit'] + 1
+    if (len(ids) != 1 or len({result[k] for k in ('damage_property', 'interval_property', 'lifetime_property', 'speed_property')}) != 4
+            or not 0 < divisor <= 10000 or not 0 < low_scale <= 1 or not sentinel < 0 or v['primary_category'] != 0
+            or vehicle.get('item_type_value_index') != 5 or opening.get('item_category_value_index') != 3
+            or extent(blocks['category_getter']['start'], blocks['category_getter']['end']) != opening.get('provenance', {}).get('category_getter')):
+        return {}
+    labels = player['labels']
+    provenance = {'head': extent(player['start'], labels['scale']), 'scale': extent(labels['scale'], labels['tail']),
+                  'tail': extent(labels['tail'], player['end']), 'equipment_table': extent(table, table + len(cases)),
+                  **{key: extent(blocks[key]['start'], blocks[key]['end']) for key in ('scale_load', 'defaults', 'constants', 'modifier', *ANDROID_GETTERS)}}
+    # The item catalogue is the vehicle response's: the same getters and equipment cases.
+    if any(provenance[key] != vehicle.get('provenance', {}).get(key) for key in ('property_getter', 'type_getter', 'equipment_table')):
+        return {}
+    result.update(item_type_value_index=5, item_category_value_index=3, primary_category=0, modifier_type=ids[0],
+                  percent_divisor=divisor, default_multiplier=1.0, missing_multiplier=sentinel, low_damage_interval_scale=low_scale,
+                  provenance=provenance, value_sources={'percent_divisor': divisor_source, 'missing_multiplier': sentinel_source,
+                                                        'low_damage_interval_scale': low_source})
+    result['launch_modes'] = extract_launch_modes(lib, result)
+    result['projectile_capacity'] = extract_weapon_capacity(lib, result, lib.symbols['_ZN5Level9createGunEiiiiiiii'][0])
+    result['ordinary_hit_policy'] = extract_ordinary_hit_policy(lib, result)
+    result['player_hit_policy'] = extract_player_hit_policy(lib, result)
+    result['collision_bounds'] = extract_weapon_collision_bounds(lib, result)
+    return result

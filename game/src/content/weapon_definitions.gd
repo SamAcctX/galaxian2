@@ -40,7 +40,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 		var player_error := PlayerHits.validate(data.player_hit_policy,executable_bytes,architecture,data)
 		if not player_error.is_empty(): return player_error
 	var mac := architecture=="x86_64"
-	var sizes := {"head":77,"tail":120,"scale":147,"modifier":150,"defaults":16,"category_getter":9,"id_getter":8,"ship_getter":13,"damage_getter":11,"interval_getter":11,"property_getter":42,"type_getter":9,"equipment_table":120} if mac else {"head":60,"tail":100,"scale":98,"modifier":94,"defaults":10,"scale_tail":70,"constants":26,"scale_load":14,"category_getter":4,"id_getter":4,"ship_getter":6,"damage_getter":4,"interval_getter":4,"property_getter":48,"type_getter":4,"equipment_table":30} if architecture=="armv7" else {}
+	var sizes := {"head":77,"tail":120,"scale":147,"modifier":150,"defaults":16,"category_getter":9,"id_getter":8,"ship_getter":13,"damage_getter":11,"interval_getter":11,"property_getter":42,"type_getter":9,"equipment_table":120} if mac else {"head":60,"tail":100,"scale":98,"modifier":94,"defaults":10,"scale_tail":70,"constants":26,"scale_load":14,"category_getter":4,"id_getter":4,"ship_getter":6,"damage_getter":4,"interval_getter":4,"property_getter":48,"type_getter":4,"equipment_table":30} if architecture=="armv7" else {"head":52,"tail":80,"scale":124,"modifier":92,"defaults":10,"constants":22,"scale_load":14,"category_getter":4,"id_getter":4,"ship_getter":6,"damage_getter":4,"interval_getter":4,"property_getter":54,"type_getter":4,"equipment_table":30} if architecture=="android-armv7" else {}
 	var provenance: Variant = data.get("provenance")
 	var sources: Variant = data.get("value_sources")
 	var source_keys := ["percent_divisor", "missing_multiplier", "low_damage_interval_scale"]
@@ -60,6 +60,9 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 	if int(provenance.scale.offset)!=int(provenance.head.offset)+int(provenance.head.bytes): return "Disconnected weapon scaling context"
 	if mac:
 		if int(provenance.tail.offset)!=int(provenance.scale.offset)+147: return "Disconnected weapon factory context"
+	elif architecture=="android-armv7":
+		# Level::createPlayer: the low scale loads 92 bytes before the head; head, scale and tail follow each other.
+		if int(provenance.tail.offset)!=int(provenance.scale.offset)+124 or int(provenance.scale_load.offset)+92!=int(provenance.head.offset): return "Disconnected weapon factory context"
 	else:
 		if int(provenance.scale_tail.offset)!=int(provenance.scale.offset)+110 or int(provenance.tail.offset)!=int(provenance.scale_tail.offset)+70 or int(provenance.scale_load.offset)+76!=int(provenance.head.offset): return "Disconnected weapon factory context"
 	var value_spans := []

@@ -147,3 +147,93 @@ class WeaponParameters(unittest.TestCase):
                     elif bad=='nan':struct.pack_into('<f',data,256+(8100 if mac else 3600),float('nan'))
                     mach.data=bytes(data)
                     self.assertEqual(reader.extract_weapon_parameters(mach,vehicle,opening),{})
+
+
+ATTRIBUTES = {'damage_property': 21, 'interval_property': 22, 'lifetime_property': 23, 'speed_property': 24,
+              'interval_percent_property': 41, 'damage_percent_property': 42, 'primary_category': 0, 'low_damage_limit': 7}
+
+
+def android_weapons(values=None, floats=None, modifier_cases=(26,), getter_prefix=None, omit=()):
+    """Level::createPlayer, Ship::refreshValue and the item/ship getters in the Android
+    shapes. Floats: scale, divisor, missing. Returns (library, vehicle, opening)."""
+    from android_fixture import TEXT, library
+    from thumb_shapes import assemble
+    from gof2_content.android_library import AndroidLibrary
+    from gof2_content.android_blocks import offset
+    floats = {'low_scale': 0.5, 'divisor': 50.0, 'missing': -12345.0, 'value_scale': 1000.0, **(floats or {})}
+    values = {**ATTRIBUTES, **(values or {})}
+    getters = reader.ANDROID_GETTERS
+    calls = {'_ZN5Level9createGunEiiiiiiii': TEXT}
+    functions = [('_ZN5Level9createGunEiiiiiiii', b'\x70\x47\x00\xbf', TEXT)]
+    for index, (key, (symbol, shape)) in enumerate(getters.items()):
+        calls[symbol] = TEXT + 0x40 + 0x40 * index
+    for key, (symbol, shape) in getters.items():
+        text = (getter_prefix or {}).get(key, '') + shape
+        functions.append((symbol, assemble(text, calls[symbol], calls=calls)[0], calls[symbol]))
+
+    def with_pool(text, address, names):
+        """Assemble with each `vldr sN, [pc, #{name}]` loading its float from a pool after the code."""
+        tables = {'cases': [labels_for(i) for i in range(30)]}
+        code, labels, at = assemble(text, address, {**values, **{n: 0 for n in names}, 'other': address}, {'status': 0x9000}, calls, tables)
+        pool = (address + len(code) + 3) & ~3
+        offsets = {n: pool + 4 * i - ((at[n] + 4) & ~3) for i, n in enumerate(names)}
+        code, labels, at = assemble(text, address, {**values, **offsets, 'other': labels.get('other', address)}, {'status': 0x9000}, calls, tables)
+        return code + bytes(pool - address - len(code)) + b''.join(struct.pack('<f', floats[n]) for n in names), labels
+    labels_for = lambda i: 'modifier' if i in modifier_cases else 'other'
+    create = 'push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}\n' + reader.ANDROID_SCALE_LOAD + reader.ANDROID_PLAYER + 'pop.w {r4, r5, r6, r7, r8, sb, sl, fp, pc}\n'
+    code, create_labels = with_pool(create, TEXT + 0x400, ['low_scale'])
+    functions.append(('_ZN5Level12createPlayerEv', code, TEXT + 0x400))
+    refresh = ('push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}\n' + reader.ANDROID_DEFAULTS + reader.ANDROID_CONSTANTS + reader.ANDROID_SORTS
+               + 'modifier: ' + reader.ANDROID_MODIFIER.strip() + '\nother: pop.w {r4, r5, r6, r7, r8, sb, sl, fp, pc}\n')
+    code, refresh_labels = with_pool(refresh, TEXT + 0x800, ['value_scale', 'divisor', 'missing'])
+    functions.append(('_ZN4Ship12refreshValueEv', code, TEXT + 0x800))
+    functions = [row for row in functions if row[0] not in omit]
+    lib = AndroidLibrary(library(functions, {}))
+    span = lambda symbol: {'offset': offset(lib, calls[symbol]), 'bytes': lib.symbols[symbol][1]} if symbol in lib.symbols else None
+    table = refresh_labels['modifier'] - 30  # the case table ends where the modifier starts
+    vehicle = {'item_type_value_index': 5, 'provenance': {'property_getter': {**span('_ZN4Item12getAttributeEi'), 'bytes': 54} if span('_ZN4Item12getAttributeEi') else None,
+                                                          'type_getter': span('_ZN4Item7getSortEv'), 'equipment_table': {'offset': table, 'bytes': 30}}}
+    opening = {'item_category_value_index': 3, 'provenance': {'category_getter': span('_ZN4Item7getTypeEv')}}
+    return lib, vehicle, opening
+
+
+class AndroidWeaponParameters(unittest.TestCase):
+    def test_named_functions_give_properties_factors_and_constants(self):
+        from android_fixture import TEXT
+        lib, vehicle, opening = android_weapons()
+        result = reader.extract_weapon_parameters(lib, vehicle, opening)
+        self.assertEqual({k: result[k] for k in ATTRIBUTES if k in result}, {k: v for k, v in ATTRIBUTES.items() if k != 'low_damage_limit'})
+        self.assertEqual({k: result[k] for k in ('low_damage_threshold', 'modifier_type', 'percent_divisor', 'default_multiplier', 'missing_multiplier',
+                                                 'low_damage_interval_scale', 'item_type_value_index', 'item_category_value_index')},
+                         {'low_damage_threshold': 8, 'modifier_type': 26, 'percent_divisor': 50.0, 'default_multiplier': 1.0,
+                          'missing_multiplier': -12345.0, 'low_damage_interval_scale': 0.5, 'item_type_value_index': 5, 'item_category_value_index': 3})
+        provenance = result['provenance']
+        self.assertEqual({k: v['bytes'] for k, v in provenance.items()},
+                         {'head': 52, 'scale': 124, 'tail': 80, 'equipment_table': 30, 'scale_load': 14, 'defaults': 10, 'constants': 22,
+                          'modifier': 92, 'category_getter': 4, 'id_getter': 4, 'ship_getter': 6, 'damage_getter': 4, 'interval_getter': 4,
+                          'type_getter': 4, 'property_getter': 54})
+        self.assertEqual(provenance['head']['offset'] + 52, provenance['scale']['offset'])
+        self.assertEqual(provenance['scale']['offset'] + 124, provenance['tail']['offset'])
+        self.assertEqual(set(result['value_sources']), {'percent_divisor', 'missing_multiplier', 'low_damage_interval_scale'})
+        for key, value in (('percent_divisor', 50.0), ('missing_multiplier', -12345.0), ('low_damage_interval_scale', 0.5)):
+            at = result['value_sources'][key]['offset']
+            self.assertEqual(struct.unpack_from('<f', lib.data, at)[0], value, key)
+
+    def test_each_broken_declaration_is_unsupported(self):
+        cases = {'duplicate property': dict(values={'interval_property': 21}), 'no modifier case': dict(modifier_cases=()),
+                 'two modifier cases': dict(modifier_cases=(26, 27)), 'divisor': dict(floats={'divisor': 20000.0}),
+                 'zero divisor': dict(floats={'divisor': 0.0}), 'scale': dict(floats={'low_scale': 1.5}), 'sentinel': dict(floats={'missing': 3.0}),
+                 'nan': dict(floats={'divisor': float('nan')}), 'infinite sentinel': dict(floats={'missing': float('-inf')}), 'secondary category': dict(values={'primary_category': 1}),
+                 'getter after code': dict(getter_prefix={'damage_getter': 'nop\n'})}
+        for name, options in cases.items():
+            self.assertEqual(reader.extract_weapon_parameters(*android_weapons(**options)), {}, name)
+        for symbol in ('_ZN5Level12createPlayerEv', '_ZN4Ship12refreshValueEv', '_ZN4Ship17getFireRateFactorEv'):
+            lib, vehicle, opening = android_weapons(omit=(symbol,))
+            self.assertEqual(reader.extract_weapon_parameters(lib, vehicle, opening), {}, symbol)
+        lib, vehicle, opening = android_weapons()
+        for key in ('property_getter', 'type_getter', 'equipment_table'):
+            other = {**vehicle, 'provenance': {**vehicle['provenance'], key: {'offset': 4, 'bytes': 4}}}
+            self.assertEqual(reader.extract_weapon_parameters(lib, other, opening), {}, key)
+        self.assertEqual(reader.extract_weapon_parameters(lib, vehicle, {**opening, 'provenance': {'category_getter': {'offset': 4, 'bytes': 4}}}), {})
+        self.assertEqual(reader.extract_weapon_parameters(lib, {**vehicle, 'item_type_value_index': 4}, opening), {})
+        self.assertEqual(reader.extract_weapon_parameters(lib, vehicle, {**opening, 'item_category_value_index': 2}), {})

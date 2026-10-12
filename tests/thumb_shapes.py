@@ -34,6 +34,11 @@ def mask(names):
     return sum(1 << reg(name.strip()) for name in names.split(','))
 
 
+def vfp(first, second, d, n, m):
+    """A single-precision VFP data-processing encoding: Sd, Sn, Sm split into Vx:x bits."""
+    return half(first | (d & 1) << 6 | n >> 1, (d >> 1) << 12 | second | (n & 1) << 7 | (m & 1) << 5 | m >> 1)
+
+
 def thumb(text, at):
     """Encoding of one Thumb instruction as Capstone prints it."""
     number = lambda v: int(v, 0)
@@ -93,6 +98,24 @@ def thumb(text, at):
         (r'strh\.w (\w+), \[(\w+), #(\S+)\]', lambda t, n, v: half(0xf8a0 | reg(n), reg(t) << 12 | number(v))),
         (r'addw (\w+), (\w+), #(\S+)', lambda d, n, v: Thumb(0).addw(reg(d), reg(n), number(v)).code),
         (r'bx lr', lambda: half(0x4770)),
+        (r'vldr s(\d+), \[(\w+)(?:, #(\S+))?\]', lambda d, n, v='0': Thumb(0).vldr(int(d), reg(n), number(v)).code),
+        (r'vstr s(\d+), \[(\w+)(?:, #(\S+))?\]', lambda d, n, v='0': half(0xed80 | (int(d) & 1) << 6 | reg(n), (int(d) >> 1) << 12 | 0xa00 | number(v) // 4)),
+        (r'vmov s(\d+), (\w+)', lambda n, t: half(0xee00 | int(n) >> 1, reg(t) << 12 | 0xa10 | (int(n) & 1) << 7)),
+        (r'vmov (\w+), s(\d+)', lambda t, n: Thumb(0).vmov_core(reg(t), int(n)).code),
+        (r'vmov(?:eq|ne)?\.f32 s(\d+), s(\d+)', lambda d, m: vfp(0xeeb0, 0xa40, int(d), 0, int(m))),
+        (r'vmov\.f32 s(\d+), #1\.000000e\+00', lambda d: vfp(0xeeb7, 0xa00, int(d), 0, 0)),
+        (r'vcmpe\.f32 s(\d+), #0', lambda d: vfp(0xeeb5, 0xac0, int(d), 0, 0)),
+        (r'vcmpe\.f32 s(\d+), s(\d+)', lambda d, m: vfp(0xeeb4, 0xac0, int(d), 0, int(m))),
+        (r'vmrs apsr_nzcv, fpscr', lambda: half(0xeef1, 0xfa10)),
+        (r'vcvt\.f32\.s32 s(\d+), s(\d+)', lambda d, m: vfp(0xeeb8, 0xac0, int(d), 0, int(m))),
+        (r'vcvt\.s32\.f32 s(\d+), s(\d+)', lambda d, m: vfp(0xeebd, 0xac0, int(d), 0, int(m))),
+        (r'vmul\.f32 s(\d+), s(\d+), s(\d+)', lambda d, n, m: vfp(0xee20, 0xa00, int(d), int(n), int(m))),
+        (r'vdiv\.f32 s(\d+), s(\d+), s(\d+)', lambda d, n, m: vfp(0xee80, 0xa00, int(d), int(n), int(m))),
+        (r'vadd\.f32 s(\d+), s(\d+), s(\d+)', lambda d, n, m: vfp(0xee30, 0xa00, int(d), int(n), int(m))),
+        (r'vsub\.f32 s(\d+), s(\d+), s(\d+)', lambda d, n, m: vfp(0xee30, 0xa40, int(d), int(n), int(m))),
+        (r'ldr\.w (\w+), \[(\w+), (r\d+|sb|sl|fp|ip|lr)\]', lambda t, n, m: half(0xf850 | reg(n), reg(t) << 12 | reg(m))),
+        (r'str(?:eq|ne)\.w (\w+), \[(\w+), #(\S+)\]', lambda t, n, v: half(0xf8c0 | reg(n), reg(t) << 12 | number(v))),
+        (r'pop(?:eq|ne) \{(.*)\}', lambda l: half(0xbc00 | mask(l) & 0xff | (mask(l) >> 15 & 1) << 8)),
         (r'nop', lambda: half(0xbf00)),
         (r'ldr (r[0-7]), \[sp, #(\S+)\]', lambda t, v: half(0x9800 | reg(t) << 8 | number(v) // 4)),
         (r'str (r[0-7]), \[sp(?:, #(\S+))?\]', lambda t, v='0': half(0x9000 | reg(t) << 8 | number(v) // 4)),
@@ -187,11 +210,14 @@ def assemble(shape, address, values=None, refs=None, calls=None, tables=None, po
             code += thumb(line, here)
             if table:
                 starts[table[2]] = address + len(code)
-                targets = {**at_line, **labels}
-                entries = [(targets.get(name, starts[table[2]]) - starts[table[2]]) // 2 for name in tables.get(table[2], [])]
                 count = int(table[3])
-                raw = bytes(entries) if line.startswith('tbb') else struct.pack('<%dH' % len(entries), *entries)
-                code += raw.ljust(count, b'\0') if layout else bytes(count)
+                if layout:  # forward labels are known from the first pass
+                    targets = {**at_line, **labels}
+                    entries = [(targets.get(name, starts[table[2]]) - starts[table[2]]) // 2 for name in tables.get(table[2], [])]
+                    raw = bytes(entries) if line.startswith('tbb') else struct.pack('<%dH' % len(entries), *entries)
+                    code += raw.ljust(count, b'\0')
+                else:
+                    code += bytes(count)
         if pool is None and (address + len(code)) % 4:
             code += half(0xbf00)
         layout = {'pool': pool[0] + len(pool[1]) if pool else address + len(code)}
