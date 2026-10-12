@@ -9,6 +9,7 @@ import struct
 
 from .formats import ContentError
 from .bundle import safe_name
+from .android_library import AndroidLibrary, android_records
 from .materials import extract_materials, ios_mesh_metadata
 from .ship_models import extract_ship_models
 from .hangars import extract_hangars
@@ -429,12 +430,14 @@ def mesh_supplement(source, binding_header, identifiers):
 def extract(source, edition, checkpoint=lambda *_: None, *, ship_count=None):
     # The resource importer establishes the catalogue extent independently of
     # executable version labels. Older direct callers retain their layout.
+    arm = edition in ('ios-hd', 'android-hd')
     if ship_count is None:
-        ship_count = 64 if edition == 'ios-hd' else 61
-    if type(ship_count) is not int or ship_count not in ((64,) if edition == 'ios-hd' else (61, 64)):
+        ship_count = 64 if arm else 61
+    if type(ship_count) is not int or ship_count not in ((64,) if arm else (61, 64)):
         raise ContentError('Unsupported ship catalogue extent for executable declarations')
-    mach = MachO(source, edition)
-    rows = (ios_records if edition == 'ios-hd' else mac_records)(mach, checkpoint)
+    mach = AndroidLibrary(source) if edition == 'android-hd' else MachO(source, edition)
+    readers = {'android-hd': android_records, 'ios-hd': ios_records}
+    rows = readers.get(edition, mac_records)(mach, checkpoint)
     if not rows:
         raise ContentError('No supported resource declaration templates found')
     # Repeated declarations and alternatives remain explicit. No game branches
