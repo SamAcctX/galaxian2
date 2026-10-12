@@ -115,7 +115,8 @@ func verify_source(content: String, pack: String, texture_pack: String) -> void:
 			check(child_count==selected.levels[level].lights.size(),"LOD light assembly mismatch")
 			if id==27 and level==0:
 				check(body.instances[0].transform==Transform3D.IDENTITY,"Detailed source hull acquired the distant LOD pose")
-			if id==27 and level>0:verify_fixed_source_pose(body)
+			# The Mac's distant ship-27 meshes carry one fixed animation key; Android's are static.
+			if id==27 and level>0 and library.manifest.profile.edition!="android-hd":verify_fixed_source_pose(body)
 			if DisplayServer.get_name()!="headless":
 				await process_frame; await process_frame; await RenderingServer.frame_post_draw
 				var image := viewport.get_texture().get_image()
