@@ -245,10 +245,6 @@ class AndroidInstallTests(unittest.TestCase):
         self.assertEqual(missing_campaign(complete), [])
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class AndroidContentTests(unittest.TestCase):
     def test_android_strings_are_stored_in_the_mac_numbering(self):
         from gof2_content.importer import install
@@ -269,3 +265,28 @@ class AndroidContentTests(unittest.TestCase):
                              ['s47', 's49', 's188', 's199', 's3395', 's48', 's189', 's3400'])
             self.assertEqual((base / 'resources/data/bin/ships.bin').read_bytes(), SHIPS)
             self.assertTrue((base / 'resources/FMOD_GOF2.fev').is_file())
+
+
+class AndroidAudioTests(unittest.TestCase):
+    def test_android_languages_without_banks_use_the_default_language(self):
+        from gof2_content.bindings import check_banks
+        def audio():  # German first, English default, as in the original event project
+            return {'default_language': 1, 'banks': [{'name': 'VOICE', 'variants': [
+                {'hash_prefix': '2' * 16, 'suffix': '_deu', 'resource': 'resources/VOICE_deu.fsb'},
+                {'hash_prefix': '1' * 16, 'suffix': '_eng', 'resource': 'resources/VOICE_eng.fsb'}]}]}
+        english = {'resources/VOICE_eng.fsb': {'kind': 'audio_bank'}}
+        data = audio()
+        check_banks(data, {'profile': {'edition': 'android-hd'}, 'files': english})
+        self.assertEqual(data['banks'][0]['variants'], [audio()['banks'][0]['variants'][1]] * 2)
+        for edition, files in (('mac-full-hd', english), ('android-hd', {'resources/VOICE_deu.fsb': {'kind': 'audio_bank'}}),
+                               ('android-hd', {'resources/VOICE_eng.fsb': {'kind': 'other'}})):
+            with self.assertRaisesRegex(ContentError, 'missing sound bank'):
+                check_banks(audio(), {'profile': {'edition': edition}, 'files': files})
+        data = audio()
+        check_banks(data, {'profile': {'edition': 'android-hd'},
+                           'files': dict(english, **{'resources/VOICE_deu.fsb': {'kind': 'audio_bank'}})})
+        self.assertEqual(data, audio())
+
+
+if __name__ == '__main__':
+    unittest.main()
