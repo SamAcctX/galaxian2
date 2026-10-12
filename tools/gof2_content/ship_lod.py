@@ -2,6 +2,15 @@
 
 Only declarative mesh IDs, thresholds and provenance survive import. Special hull
 factories and the owner of the source reference position/detail input are separate.
+
+Android: Globals::getShipGroup's ordinary path counts the used body and child
+ids of the ship's rows (two of three u32 columns, 0xffff = none), gives them
+distances from 5000 in steps of 8000 through AEGeometry::setLodMeshes (or
+setLodMeshesWithMeshIds) and setLodChildMeshes, and limits the last visible
+distance through setLodLastVisibleDistance; both setters square the distances.
+AEGeometry::updateLod culls at or beyond that limit and scales the distances by
+the detail factor before comparing. Its selection loop starts at a constant 0
+instead of the mesh count, so Android never selects a reduced mesh.
 """
 import math
 import struct
@@ -9,9 +18,299 @@ from .opening_loadout import template
 from .ship_models import section_bytes
 
 
+ANDROID_BODY = r"""ldr r0, =\w+
+add\.w (?P<row>\w+), (?P<index>\w+), (?P=index), lsl #1
+movs r1, #0
+movw r2, #0xffff
+adr r0, (?P<table>\w+)
+mov\.w (?P<count>\w+), #0
+add\.w r0, r0, (?P=row), lsl #2
+(?P<head>ldr\.w r4, \[r0, r1, lsl #2\])
+mov r6, (?P=count)
+adds r5, r6, #1
+adds r1, #1
+cmp r4, r2
+it ne
+movne (?P=count), r5
+cmp r1, #2
+bne #(?P<loop>\w+)
+cmp\.w (?P=count), #0
+ble\.w #(?P<none>\w+)
+"""
+ANDROID_FILL = r"""ldr r0, =\w+
+movw r1, #0xffff
+cmp r4, r1
+adr r0, (?P<table>\w+)
+movw r1, #0x7dc8
+(?P<add>add\.w r2, r0, (?P<row>\w+), lsl #2)
+ldr r0, =\w+
+add r1, sb
+it ne
+movne r6, r5
+adr r0, \w+
+str\.w (?P=row), \[sp, #8\]
+str r3, \[sp, #0x24\]
+movw (?P<distance>\w+), #(?P<seed>\w+)
+ldr r0, \[r0\]
+mov\.w (?P<offset>\w+), #0
+str r0, \[sp, #0x1c\]
+uxth r0, r1
+str r0, \[sp, #0x14\]
+str r2, \[sp, #0x18\]
+ldr r4, \[sp, #0x10\]
+ldr r0, \[sp, #0x28\]
+ldrd sb, r5, \[sp, #0x1c\]
+(?P<head>ldr\.w r1, \[r2, (?P=offset)\])
+cmp r0, #0
+strh r1, \[r4\]
+str\.w (?P=distance), \[r3, (?P=offset)\]
+bne #(?P<skip>\w+)
+"""
+ANDROID_STEP = r"""subs r6, #1
+add\.w (?P<offset>\w+), (?P=offset), #4
+add\.w (?P<distance>\w+), (?P=distance), #(?P<increment>\w+)
+add\.w r4, r4, #2
+bne #(?P<loop>\w+)
+cmp r0, #0
+beq\.w #(?P<ids>\w+)
+ldr\.w fp, \[sp, #0xc\]
+mov r2, r3
+ldr\.w sb, \[sp, #0x10\]
+mov r3, sl
+mov r0, fp
+mov r1, sb
+call _ZN10AEGeometry12setLodMeshesEPtPii
+b #(?P<done>\w+)
+"""
+ANDROID_STEP_IDS = r"""ldr\.w fp, \[sp, #0xc\]
+ldr\.w sb, \[sp, #0x10\]
+ldr r2, \[sp, #0x20\]
+mov r0, fp
+str\.w sl, \[sp\]
+mov r1, sb
+call _ZN10AEGeometry23setLodMeshesWithMeshIdsEPtPjPii
+"""
+ANDROID_CHILD = r"""ldr r0, =\w+
+movs r2, #0
+ldr\.w (?P<row>\w+), \[sp, #8\]
+movw r6, #0xffff
+adr r0, (?P<table>\w+)
+movs r1, #0
+add\.w r0, r0, (?P=row), lsl #2
+(?P<head>ldr\.w r4, \[r0, r2, lsl #2\])
+mov r5, r1
+adds r3, r5, #1
+adds r2, #1
+cmp r4, r6
+it ne
+movne r1, r3
+cmp r2, #2
+bne #(?P<loop>\w+)
+cmp r1, #0
+ble #(?P<none>\w+)
+"""
+ANDROID_CHILD_COPY = r"""movw r0, #0xffff
+cmp r4, r0
+add\.w r0, r1, r1
+it ne
+movne r5, r3
+cmp r0, r1
+it lo
+movlo\.w r0, #-1
+call _Znaj
+mov r4, r0
+ldr r0, =\w+
+movs r1, #0
+adr r0, (?P<table>\w+)
+add\.w r0, r0, (?P<row>\w+), lsl #2
+(?P<head>ldr\.w r2, \[r0, r1, lsl #2\])
+strh\.w r2, \[r4, r1, lsl #1\]
+adds r1, #1
+cmp r5, r1
+bne #(?P<loop>\w+)
+mov r0, fp
+mov r1, r4
+call _ZN10AEGeometry17setLodChildMeshesEPt
+mov r0, r4
+call _ZdaPv
+"""
+ANDROID_LIMIT = r"""mov r0, sb
+call _ZdaPv
+ldr r0, \[sp, #0x24\]
+call _ZdaPv
+(?P<set>movw r2, #(?P<low>\w+))
+mov r0, fp
+movt r2, #(?P<high>\w+)
+movs r3, #0
+call _ZN10AEGeometry25setLodLastVisibleDistanceEy
+"""
+ANDROID_SETTER = """umull ip, r1, r2, r2
+mla r1, r2, r3, r1
+mla r1, r2, r3, r1
+strd ip, r1, [r0, #0x70]
+bx lr
+"""
+ANDROID_SQUARE = r"""ldr(?:\.w)? r0, \[\w+, #0x64\]
+add\.w r2, r0, (?P<i>\w+), lsl #3
+ldr\.w r1, \[r0, (?P=i), lsl #3\]
+ldr r3, \[r2, #4\]
+umull r6, r5, r1, r1
+mla r5, r1, r3, r5
+str\.w r6, \[r0, (?P=i), lsl #3\]
+mla r1, r1, r3, r5
+str r1, \[r2, #4\]
+"""
+ANDROID_CULL = r"""vldr s0, \[fp, #0x78\]
+vldr s2, \[fp, #0x7c\]
+vmul\.f32 s0, s0, s0
+vldr s4, \[fp, #0x80\]
+vmul\.f32 s2, s2, s2
+vmul\.f32 s4, s4, s4
+vadd\.f32 s0, s0, s2
+vadd\.f32 s0, s0, s4
+vmov r0, s0
+call __aeabi_f2ulz
+strd r0, r1, \[fp, #0x68\]
+ldrd r3, r2, \[fp, #0x70\]
+orrs\.w r6, r3, r2
+beq #(?P<unlimited>\w+)
+subs r0, r0, r3
+mov\.w r6, #0
+sbcs\.w r0, r1, r2
+it lo
+movlo r6, #1
+strb\.w r6, \[fp, #0x48\]
+cmp r6, #0
+beq\.w #(?P<hidden>\w+)
+"""
+ANDROID_DETAIL = r"""ldr\.w r1, \[fp, #0xc\]
+(?P<input>vmov s18, r8)
+ldr\.w r0, \[fp, #0x2c\]
+add\.w r6, fp, #0x68
+call _ZN11AbyssEngine11PaintCanvas21TransformGetTransformEj
+(?P<high_load>vldr s2, =(?P<high>\w+))
+vmov\.f32 s4, #(?P<middle>\S+)
+vmov\.f32 s0, #(?P<last>\S+)
+mvn r1, #7
+vcmpe\.f32 s18, s2
+(?P<low_load>vldr s2, =(?P<low>\w+))
+vmrs apsr_nzcv, fpscr
+vmov\.f32 s16, #(?P<first>\S+)
+vcmpe\.f32 s18, s2
+it ls
+vmovls\.f32 s0, s4
+vmrs apsr_nzcv, fpscr
+mov\.w r5, #0
+add\.w r4, r1, r5, lsl #3
+it hi
+vmovhi\.f32 s16, s0
+ldrd sl, sb, \[r0, #0x110\]
+"""
+ANDROID_SELECT = r"""cmp r5, #1
+blt #\w+
+ldr\.w r0, \[fp, #0x64\]
+subs r5, #1
+adds r1, r0, r4
+ldr r0, \[r0, r4\]
+ldr r1, \[r1, #4\]
+call __aeabi_ul2f
+vmov s0, r0
+ldrd r0, r1, \[r6\]
+vmul\.f32 s18, s16, s0
+call __aeabi_ul2f
+vmov s0, r0
+subs r4, #8
+vcmpe\.f32 s0, s18
+vmrs apsr_nzcv, fpscr
+ble #(?P<loop>\w+)
+"""
+
+
+def android_lod(lib, count):
+    from .android_listing import Listing, number, word_float
+    group = Listing(lib, '_ZN7Globals12getShipGroupEiib')
+    update = Listing(lib, '_ZN10AEGeometry9updateLodERKN11AbyssEngine6AEMath6VectorEf')
+    setter = Listing(lib, '_ZN10AEGeometry25setLodLastVisibleDistanceEy')
+    plain = Listing(lib, '_ZN10AEGeometry12setLodMeshesEPtPii')
+    ids = Listing(lib, '_ZN10AEGeometry23setLodMeshesWithMeshIdsEPtPjPii')
+    parts = {}
+    for key, listing, shape in [('body', group, ANDROID_BODY), ('fill', group, ANDROID_FILL), ('step', group, ANDROID_STEP),
+                                ('step_ids', group, ANDROID_STEP_IDS), ('child', group, ANDROID_CHILD),
+                                ('child_copy', group, ANDROID_CHILD_COPY), ('limit', group, ANDROID_LIMIT),
+                                ('square', plain, ANDROID_SQUARE), ('square_ids', ids, ANDROID_SQUARE),
+                                ('cull', update, ANDROID_CULL), ('detail', update, ANDROID_DETAIL), ('select', update, ANDROID_SELECT)]:
+        found = listing.find(shape)
+        if len(found) != 1:
+            return {}
+        parts[key] = found[0]
+    if not setter.text.startswith(ANDROID_SETTER):
+        return {}
+    body, fill, step, step_ids, child, copy, limit = (parts[k] for k in ('body', 'fill', 'step', 'step_ids', 'child', 'child_copy', 'limit'))
+    cull, detail, select = parts['cull'], parts['detail'], parts['select']
+
+    def address(listing, m, group_name=0):
+        return listing.code[listing.index(m, group_name)].address
+
+    def end(listing, m):
+        last = listing.code[listing.last(m)]
+        return last.address + last.size
+
+    # The fill reads the body row (index * 3 words) again; the step continues the fill's loop.
+    moved = group.definition(group.index(fill, 'add'), fill['row'])
+    detail_input = update.definition(update.index(detail, 'input'), 'r8')
+    if (moved is None or group.lines[moved] != 'mov %s, %s' % (fill['row'], body['row'])
+            or group.definition(moved, body['row']) != group.index(body, 'row')
+            or number(body['table']) != number(fill['table']) or number(child['table']) != number(copy['table'])
+            or child['row'] != copy['row'] or step['offset'] != fill['offset'] or step['distance'] != fill['distance']
+            or number(body['loop']) != address(group, body, 'head') or number(fill['skip']) != address(group, step)
+            or number(step['loop']) != address(group, fill, 'head') or number(step['ids']) != address(group, step_ids)
+            or number(step['done']) != address(group, child) or end(group, step_ids) != address(group, child)
+            or end(group, child) != address(group, copy) or number(child['loop']) != address(group, child, 'head')
+            or number(copy['loop']) != address(group, copy, 'head') or end(group, copy) != address(group, limit)
+            or number(child['none']) != address(group, limit) or number(body['none']) != address(group, limit, 'set')
+            or number(cull['unlimited']) != address(update, detail) or end(update, cull) != address(update, detail)
+            or end(update, detail) != address(update, select) or number(select['loop']) != address(update, select)
+            or update.lines[update.at(number(cull['hidden'])):][:2] != ['mov.w r0, #-1', 'str.w r0, [fp, #0x28]']
+            or detail_input is None or update.lines[detail_input] != 'mov r8, r2'):
+        return {}
+    spans = {key: listing.match_span(parts[key]) for key, listing in [
+        ('body', group), ('fill', group), ('step', group), ('step_ids', group), ('child', group), ('child_copy', group),
+        ('limit', group), ('square', plain), ('square_ids', ids), ('cull', update), ('detail', update), ('select', update)]}
+    spans['limit_setter'] = setter.span(0, ANDROID_SETTER.count('\n') - 1)
+    for key, name in [('detail_low', 'low_load'), ('detail_high', 'high_load')]:
+        load = update.code[update.index(detail, name)]
+        spans[key] = {'offset': lib.text['offset'] + ((load.address + 4) & ~3) + load.operands[1].mem.disp - lib.text['address'],
+                      'bytes': 4}
+    seed, increment = number(fill['seed']), number(step['increment'])
+    maximum = number(limit['low']) + (number(limit['high']) << 16)
+    boundaries = [word_float(number(detail['low'])), word_float(number(detail['high']))]
+    factors = [number(detail[k]) for k in ('first', 'middle', 'last')]
+    if (not 0 < seed < seed + increment < maximum <= 1000000
+            or not all(0 < v <= 1 for v in boundaries + factors)
+            or boundaries != sorted(set(boundaries)) or factors != sorted(set(factors))):
+        return {}
+    tables = []
+    for key, table in [('body_table', body['table']), ('child_table', child['table'])]:
+        found = section_bytes(lib, number(table), count * 12, b'__const')
+        if found is None:
+            return {}
+        spans[key] = {'offset': found[1], 'bytes': count * 12}
+        rows = [list(struct.unpack_from('<2I', found[0], i * 12)) for i in range(count)]
+        if not all(v <= 65535 for row in rows for v in row) or any(row[0] == 65535 and row[1] != 65535 for row in rows):
+            return {}
+        tables.append(rows)
+    if not all(all(v == 65535 for v in c) or sum(v != 65535 for v in c) == sum(v != 65535 for v in b) for b, c in zip(*tables)):
+        return {}
+    return {'body_resource_ids': tables[0], 'child_resource_ids': tables[1], 'distances': [seed, seed + increment],
+            'maximum_distance': maximum, 'detail_boundaries': boundaries, 'squared_distance_factors': factors,
+            'threshold_comparison': 'greater', 'maximum_comparison': 'greater_or_equal', 'provenance': spans}
+
+
 def extract_ship_lod(mach, models, lights):
     count = len(models.get('resource_ids', []))
-    if not lights or not 1 <= count <= 64 or mach.architecture not in ['x86_64','armv7']: return {}
+    if not lights or not 1 <= count <= 64: return {}
+    if mach.architecture == 'android-armv7': return android_lod(mach, count)
+    if mach.architecture not in ['x86_64','armv7']: return {}
     import capstone
     mac = mach.architecture == 'x86_64'; prefix = 'MAC_' if mac else 'ARM_'
     text = mach.text; base = text['address']; file_base = text['offset'] + mach.slice_offset

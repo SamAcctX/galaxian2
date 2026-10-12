@@ -32,11 +32,14 @@ func verify_source(content: String, pack: String, texture_pack: String) -> void:
 	var detail := Detail.new()
 	check(detail.configure(data,2),detail.error)
 	var mac: bool = library.manifest.profile.edition=="mac-full-hd"
-	check(data.detail_boundaries.size()==(2 if mac else 0),"Edition detail policy was replaced")
+	var architecture: String = {"mac-full-hd":"x86_64","ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"")
+	# Android keeps the Mac's detail bands.
+	var banded: bool = architecture in ["x86_64","android-armv7"]
+	check(data.detail_boundaries.size()==(2 if banded else 0),"Edition detail policy was replaced")
 	var first := float(data.distances[0]*data.distances[0])
 	var second := float(data.distances[1]*data.distances[1])
 	for value in [-1.0,0.0,0.2,0.5,0.9,1.0,2.0]:
-		var factor := 0.5 if mac and value<0.33 else (0.75 if mac and value<0.66 else 1.0)
+		var factor := 0.5 if banded and value<0.33 else (0.75 if banded and value<0.66 else 1.0)
 		var lower := Detail.single(first*factor)
 		var upper := Detail.single(second*factor)
 		check(detail.select(lower,value)=={"visible":true,"level":0},"Equality selected lower-detail mesh too early")
@@ -46,7 +49,7 @@ func verify_source(content: String, pack: String, texture_pack: String) -> void:
 		var maximum := float(data.maximum_distance*data.maximum_distance)
 		check(detail.select(maximum,value)=={"visible":false,"level":-1},"Maximum-distance equality remained visible")
 		check(detail.select(maximum-1024,value).visible,"Model disappeared before maximum distance")
-	if mac:
+	if banded:
 		for i in 2:
 			var boundary: float = data.detail_boundaries[i]
 			var distance: float = first*(data.squared_distance_factors[i]+data.squared_distance_factors[i+1])*0.5
@@ -64,7 +67,7 @@ func verify_source(content: String, pack: String, texture_pack: String) -> void:
 			"child": copy.child_resource_ids[2]=[1,65535]
 			"factors": copy.squared_distance_factors[0]=NAN
 			"provenance": copy.provenance.body.offset=copy.provenance.fill.offset
-		check(not Definitions.validate(copy,10000000,"x86_64" if mac else "armv7").is_empty(),"Invalid LOD definition accepted: "+invalid)
+		check(not Definitions.validate(copy,10000000,architecture).is_empty(),"Invalid LOD definition accepted: "+invalid)
 	for id in [13,14,15]:
 		check(bindings.resolve_ship_detail(id).is_empty(),"Unsupported special LOD was invented")
 	# An unfilled (zero) source row: the hull keeps only its full model.
