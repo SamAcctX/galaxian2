@@ -99,7 +99,7 @@ func configure_first_mining(bindings: RefCounted,seed_seconds: Variant) -> bool:
 	# player smoke/fire registration is limited to campaign cursors zero and one.
 	# This owner preserves the empty smoke/fire managers and their clock without
 	# borrowing the second-trip pirate registration.
-	if bindings==null or bindings.source_architecture!="x86_64" or not FullHold.parameters(bindings.full_hold_particles) or not Definitions.parameters(bindings.damage_particles.get("owners",{})) or not seed_seconds is int:
+	if bindings==null or not bindings.campaign_source() or not FullHold.parameters(bindings.full_hold_particles) or not Definitions.parameters(bindings.damage_particles.get("owners",{})) or not seed_seconds is int:
 		return reject("First mining effects require verified Mac sprite owners and seed")
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":2}
 	_npc_count=0

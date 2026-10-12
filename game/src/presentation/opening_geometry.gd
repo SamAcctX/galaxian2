@@ -153,7 +153,7 @@ func build_departure(library: RefCounted, visuals: RefCounted, bindings: RefCoun
 func _assemble(library: RefCounted, visuals: RefCounted, bindings: RefCounted, selected: Dictionary, state: Dictionary, quality: String, with_detail: bool, cursor: int) -> bool:
 	var paths := []
 	# Expansion hulls without a declared glow mesh fly without one.
-	var player_glow: bool=with_detail and bindings.source_architecture=="x86_64" and preload("res://src/simulation/mission_context.gd").base_player_hull(bindings,selected.player.ship_id) and bindings.records.has(17900+int(selected.player.ship_id))
+	var player_glow: bool=with_detail and bindings.campaign_source() and preload("res://src/simulation/mission_context.gd").base_player_hull(bindings,selected.player.ship_id) and bindings.records.has(17900+int(selected.player.ship_id))
 	if player_glow:
 		var glow: Dictionary=bindings.resolve_player_engine_glow(selected.player.ship_id,quality)
 		if glow.is_empty():return reject(bindings.error)

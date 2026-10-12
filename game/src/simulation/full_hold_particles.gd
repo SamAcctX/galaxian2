@@ -44,7 +44,7 @@ func configure(bindings: RefCounted,combat: Dictionary,death: RefCounted,seed_se
 
 func configure_first_mining(bindings: RefCounted,death: RefCounted,seed_seconds: Variant) -> bool:
 	error=""
-	if bindings==null or bindings.source_architecture!="x86_64" or not Definitions.parameters(bindings.full_hold_particles) or not death is Death or death.presentation_identity()==null or not seed_seconds is int:
+	if bindings==null or not bindings.campaign_source() or not Definitions.parameters(bindings.full_hold_particles) or not death is Death or death.presentation_identity()==null or not seed_seconds is int:
 		return reject("First mining particles require verified Mac sprite presets and player destruction")
 	var state: Dictionary=death.snapshot()
 	for key in ["base_content_id","binding_id"]:

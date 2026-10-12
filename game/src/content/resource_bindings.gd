@@ -97,6 +97,8 @@ var error := ""
 var binding_id := ""
 var base_content_id := ""
 var source_architecture := ""
+## Editions whose whole campaign the importer proves (iOS only declares part of it).
+func campaign_source() -> bool:return source_architecture in ["x86_64","android-armv7"]
 var records := {}
 var materials := {}
 var texture_variants := {}
@@ -1429,7 +1431,7 @@ func resolve_player_engine_glow(ship_id: int, quality := "high") -> Dictionary:
 	# The admitted base player uses the factory's additive hull attachment
 	# (the Valkyrie ships use a second glow texture, 34814; Supernova hulls
 	# such as 44 and 45 draw the glow from their own diffuse texture).
-	if source_architecture!="x86_64" or not load("res://src/simulation/mission_context.gd").base_player_hull(self,ship_id):
+	if not campaign_source() or not load("res://src/simulation/mission_context.gd").base_player_hull(self,ship_id):
 		fail("Player engine-glow assembly is not verified for this content or hull")
 		return {}
 	var identifier:=17900+ship_id

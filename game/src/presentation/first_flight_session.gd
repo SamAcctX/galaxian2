@@ -66,7 +66,7 @@ var _secondary_requested:=false
 static func supported(bindings: RefCounted,campaign_cursor: int=2) -> bool:
 	if bindings==null:return false
 	if campaign_cursor==2 and bindings.physical_scenery_contacts.is_empty():return Definitions.parameters(bindings.station_return)
-	if bindings.source_architecture!="x86_64" or not PlayerDeath.parameters(bindings.player_destruction) or not GameOver.parameters(bindings.game_over_presentation) or not Particles.parameters(bindings.full_hold_particles) or bindings.audio.is_empty():return false
+	if not bindings.campaign_source() or not PlayerDeath.parameters(bindings.player_destruction) or not GameOver.parameters(bindings.game_over_presentation) or not Particles.parameters(bindings.full_hold_particles) or bindings.audio.is_empty():return false
 	if campaign_cursor==2:return Definitions.parameters(bindings.station_return)
 	if campaign_cursor==7:return not Training.flight(bindings).is_empty() and not Training.station_return(bindings).is_empty() and not Training.navigation(bindings).is_empty()
 	if campaign_cursor==16:return load("res://src/content/alioth_return_definitions.gd").available(bindings)
