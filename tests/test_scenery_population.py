@@ -133,17 +133,18 @@ def count_site(asm, bound=40, base=40, reload=6, seed=5):
     return asm.ldr_w(1, 4, 0xfc).adds8(0, base).call_to('_Z14ArraySetLengthIP8KIPlayerEvjR5ArrayIT_E')
 
 
-def android_library(scene=SCENE, copies=1, bodies=None, omit=(), entry=None, **site):
-    """Synthetic createAsteroids plus the four sampler bodies; `entry(asm)` code runs before the site."""
+def android_library(scene=SCENE, copies=1, bodies=None, omit=(), entry=None, tail=None, **site):
+    """Synthetic createAsteroids plus the sampler bodies (`bodies` adds or replaces {name: raw text});
+    `entry(asm)` code runs before the site, `tail(asm)` after it."""
     from android_fixture import TEXT
-    from android_thumb import Asm, build
+    from android_thumb import Asm
     asm = Asm(TEXT + 0x100).push()
     for _ in range(copies):
         count_site(entry(asm) if entry else asm, **site)
-    functions = {scene: asm.pop()}
+    functions = {scene: (tail(asm) if tail else asm).pop()}
     for index, (name, text) in enumerate({**BODIES, **(bodies or {})}.items()):
         if name not in omit:
-            functions[name] = raw(Asm(TEXT + 0x400 + 0x100 * index), text)
+            functions[name] = raw(Asm(TEXT + 0x600 + 0x200 * index), text)
     return functions
 
 
@@ -161,9 +162,9 @@ class AndroidSceneryPopulation(unittest.TestCase):
         from android_thumb import build
         result = reader.extract_scenery_population(build(android_library(bound=37, base=17)))
         self.assertEqual(result, {'count_base': 17, 'count_bound': 37, 'provenance': {
-            'count': {'offset': TEXT + 0x102, 'bytes': 50}, 'station': {'offset': TEXT + 0x400, 'bytes': 6},
-            'station_id': {'offset': TEXT + 0x500, 'bytes': 4}, 'seed': {'offset': TEXT + 0x600, 'bytes': 22},
-            'draw': {'offset': TEXT + 0x700, 'bytes': 152}}})
+            'count': {'offset': TEXT + 0x102, 'bytes': 50}, 'station': {'offset': TEXT + 0x600, 'bytes': 6},
+            'station_id': {'offset': TEXT + 0x800, 'bytes': 4}, 'seed': {'offset': TEXT + 0xa00, 'bytes': 22},
+            'draw': {'offset': TEXT + 0xc00, 'bytes': 152}}})
 
     def test_each_broken_shape_is_unsupported(self):
         from android_thumb import build
