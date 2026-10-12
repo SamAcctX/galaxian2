@@ -10,6 +10,10 @@ const MAC_ALTERNATE := {"early_retirement":[40,61],"death_guard":[7251,28],"init
 
 const MAC_AUDIO_ALTERNATE := {"initial":[8316,121],"breakup_entry":[-1299024,10],"breakup_call":[-1298807,17]}
 
+# Android: spans inside named functions (Layouts.anchored); the values are VALUES.
+const ANDROID_SPANS := {"early_retirement":[30,78],"death_guard":[3776,20],"initial_delay":[4448,66],"initial_spin":[4588,114],"mode_dispatch":[4810,22],"tumble":[5144,208],"breakup_draws":[5414,150],"drift_multiplier":[5912,4],"drift_base":[5916,4],"explosion_mode":[5634,24],"cleanup":[7448,62],"cargo_predicate":[0,36],"sound_type":[60,8],"sound_choice":[120,52],"type_dispatch":[74,6],"type_zero_models":[104,82],"effect_update":[0,488],"retire":[0,6],"active_setter":[0,6]}
+const ANDROID_AUDIO_SPANS := {"initial":[4514,74],"breakup_entry":[0,14],"breakup_call":[226,14]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary: return false
 	for key in VALUES:
@@ -34,8 +38,10 @@ static func audio_parameters(data: Variant) -> bool:
 static func validate_audio(data: Variant, executable_bytes: int, architecture: String, npc: Dictionary) -> String:
 	if not data is Dictionary:return "Invalid NPC destruction audio capability"
 	if data.is_empty():return ""
-	if not audio_parameters(data) or not parameters(npc.get("destruction")) or not SPANS.has(architecture):return "Unsupported NPC destruction audio declarations"
+	if not audio_parameters(data) or not parameters(npc.get("destruction")) or not (SPANS.has(architecture) or architecture=="android-armv7"):return "Unsupported NPC destruction audio declarations"
 	if not validate(npc.destruction,executable_bytes,architecture,npc).is_empty():return "NPC audio lacks verified destruction ownership"
+	if architecture=="android-armv7":
+		return "" if Layouts.anchored(data.provenance,executable_bytes,ANDROID_AUDIO_SPANS) else "Disconnected NPC destruction audio declaration"
 	var selection: Dictionary=npc.guidance.provenance.selection
 	var update: int=int(selection.offset)-(2095 if architecture=="x86_64" else 2026)
 	var spans: Dictionary={"initial":[8316,121],"breakup_entry":[-1292588,10],"breakup_call":[-1292371,17]} if architecture=="x86_64" else {"initial":[6248,98],"breakup_entry":[-1576620,8],"breakup_call":[-1576342,10]}
@@ -46,10 +52,12 @@ static func validate_audio(data: Variant, executable_bytes: int, architecture: S
 static func validate(data: Variant, executable_bytes: int, architecture: String, npc: Dictionary) -> String:
 	if not data is Dictionary: return "Invalid NPC destruction capability"
 	if data.is_empty(): return ""
-	if not parameters(data) or not SPANS.has(architecture): return "Unsupported NPC destruction declarations"
+	if not parameters(data) or not (SPANS.has(architecture) or architecture=="android-armv7"): return "Unsupported NPC destruction declarations"
 	var guidance: Variant=npc.get("guidance")
 	var construction: Variant=npc.get("construction")
 	if not guidance is Dictionary or not guidance.get("provenance") is Dictionary or not construction is Dictionary or construction.is_empty(): return "NPC destruction lacks source guidance or construction"
+	if architecture=="android-armv7":
+		return "" if Layouts.anchored(data.provenance,executable_bytes,ANDROID_SPANS) else "Disconnected NPC destruction declaration"
 	var selection: Variant=guidance.provenance.get("selection")
 	if not selection is Dictionary or not Fonts.extent(selection,"offset","bytes",[119 if architecture=="x86_64" else 132],executable_bytes): return "NPC destruction lacks its guidance anchor"
 	var update: int=int(selection.offset)-(2095 if architecture=="x86_64" else 2026)
