@@ -71,3 +71,49 @@ class EngineAudioTests(unittest.TestCase):
                 elif changed=='truncation':mach.data=mach.data[:origin-mach.slice_offset]
                 else:mach.architecture='unsupported'
                 self.assertFalse(reader.extract_engine_audio(mach,vehicle,rotation),(arch,changed))
+
+
+def android_parents(lib):
+    """Parents whose handling setup and rotation step are this library's own spans (or absent)."""
+    from gof2_content.declaration_layouts import recognize_symbols
+    proof = recognize_symbols(lib, reader.ANDROID)
+    if not proof:
+        return {}, {}
+    def extent(key): return {'offset': proof[key]['offset'], 'bytes': proof[key]['bytes']}
+    return {'provenance': {'handling_setup': extent('handling_setup')}}, {'provenance': [extent('rotation_anchor')]}
+
+
+class AndroidEngineAudioTests(unittest.TestCase):
+    def test_android_proofs(self):
+        from android_fixture import verify_android_proof
+        verify_android_proof(self, reader, lambda lib: reader.extract_engine_audio(lib, *android_parents(lib)))
+
+    def test_android_parents_must_own_the_linked_spans(self):
+        from unittest.mock import patch
+        from android_fixture import layout_library
+        from gof2_content.android_library import AndroidLibrary
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            vehicle, rotation = android_parents(lib)
+            self.assertTrue(reader.extract_engine_audio(lib, vehicle, rotation))
+            for broken in ('vehicle', 'rotation', 'handling', 'step', 'handling size', 'step size', 'no step'):
+                v, r = copy.deepcopy(vehicle), copy.deepcopy(rotation)
+                if broken == 'vehicle': v = {}
+                elif broken == 'rotation': r = {}
+                elif broken == 'handling': v['provenance']['handling_setup']['offset'] += 2
+                elif broken == 'step': r['provenance'][0]['offset'] += 2
+                elif broken == 'handling size': v['provenance']['handling_setup']['bytes'] += 2
+                elif broken == 'step size': r['provenance'][0]['bytes'] -= 2
+                else: r['provenance'] = []
+                self.assertEqual(reader.extract_engine_audio(lib, v, r), {}, broken)
+
+    def test_android_values_are_the_proven_pool_floats(self):
+        def value(key): return struct.unpack('<f', bytes.fromhex(reader.ANDROID[key][3]))[0]
+        self.assertEqual(reader.ANDROID_VALUES['thresholds'], [value('threshold_low'), value('threshold_middle'), value('threshold_high')])
+        self.assertEqual(reader.ANDROID_VALUES['horizontal_scale'], value('horizontal_scale'))
+        self.assertEqual({k: reader.ANDROID_VALUES[k] for k in reader.VALUES}, reader.VALUES)
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'engine_audio_definitions.gd')
