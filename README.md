@@ -15,9 +15,10 @@ Get the **[latest release](https://github.com/TheWWWorm/galaxian2/releases/lates
 The whole game is playable: the main campaign and both add-ons, Valkyrie and
 Supernova, plus the Supernova Challenge.
 
-Version 1.0.5 reduces flight processing and loading costs, restores keyboard
-and controller focus inside Yes/No questions, and fixes departures with several
-expansion ships.
+Version 1.0.6 fixes contract departures, dialogue back buttons, Action Freeze
+sprites, lounge conversations and wingman hires, medal awards and loading.
+Status medals can be browsed with keyboard or controller, and the system map
+can be rotated with mouse dragging or the controller's right stick.
 
 | Download | Platform | Launch |
 | --- | --- | --- |
