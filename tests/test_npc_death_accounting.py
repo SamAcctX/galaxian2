@@ -61,3 +61,30 @@ class DeathAccountingTests(unittest.TestCase):
                 elif path=='kind':bad['actors'][1]['actor_kind']=9
                 else:gun['ordinary_hit_policy']['provenance']['normal_hit']['offset']+=2
                 self.assertFalse(reader.extract_npc_death_accounting(mach,bad,gun))
+
+
+ANDROID_NPC = {'destruction': {'a': 1}, 'hostility': {'a': 1}, 'primary_weapon': {'a': 1}, 'guidance': {'a': 1}}
+ANDROID_ACTORS = {'npc_initialization': ANDROID_NPC, 'actors': [{'actor_kind': 8}] * 3}
+ANDROID_WEAPONS = {'ordinary_hit_policy': {'a': 1}}
+
+
+class AndroidDeathAccounting(unittest.TestCase):
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        verify_android_proof(self, reader, lambda lib: reader.extract_npc_death_accounting(lib, ANDROID_ACTORS, ANDROID_WEAPONS), values='VALUES')
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            self.assertTrue(reader.extract_npc_death_accounting(lib, ANDROID_ACTORS, ANDROID_WEAPONS))
+            cases = {key: ({**ANDROID_ACTORS, 'npc_initialization': {**ANDROID_NPC, key: {}}}, ANDROID_WEAPONS)
+                     for key in ('destruction', 'hostility', 'primary_weapon', 'guidance')}
+            cases.update({'other kind': ({**ANDROID_ACTORS, 'actors': [{'actor_kind': 8}, {'actor_kind': 9}, {'actor_kind': 8}]}, ANDROID_WEAPONS),
+                          'no hit policy': (ANDROID_ACTORS, {'ordinary_hit_policy': {}}), 'no weapons': (ANDROID_ACTORS, {}), 'no actors': ({}, ANDROID_WEAPONS)})
+            for name, (actors, weapons) in cases.items():
+                self.assertEqual(reader.extract_npc_death_accounting(lib, actors, weapons), {}, name)
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'npc_death_accounting_definitions.gd', values='VALUES')
