@@ -9,6 +9,10 @@ const MAC_VALUES = {"scope":"bakka_pirate_contest36","mission":{"campaign_cursor
 const SPANS = {"bakka_population36_dispatch":[1233,64],"bakka_population_gate":[-42341,312],"bakka_defeat_conditions":[481528,1170],"bakka_result36_count":[1530386,4],"bakka_result36_pairs":[1523290,16],"bakka_result36_voices":[1537026,16],"bakka_radio36_entry":[104630,4],"bakka_population36_entry":[51738,4],"bakka_population36_case":[8434,998],"bakka_population36_path":[1554626,48],"bakka_population36_speed":[1531910,4],"bakka_population36_z":[1531930,4]}
 const MAC_SPANS = {"bakka_population36_dispatch":[1233,64],"bakka_population_gate":[-42341,312],"bakka_defeat_conditions":[481000,1170],"bakka_population36_entry":[51738,4],"bakka_population36_case":[8434,998],"bakka_population36_path":[1579562,48],"bakka_population36_speed":[1556910,4],"bakka_population36_z":[1556930,4],"bakka_result36_count":[1555402,4],"bakka_result36_pairs":[1548306,16],"bakka_result36_voices":[1561962,16],"bakka_radio36_entry":[104630,4]}
 
+# Android: the Mac 1.0.7 values (VALUES); spans inside named functions
+# (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"bakka_population36_dispatch":[50,108],"bakka_population36_entry":[158,2],"bakka_population36_case":[9632,660],"bakka_population36_conditions":[21240,8],"bakka_population36_path":[0,48],"bakka_population_gate":[0,1792],"bakka_population_factory":[0,3112],"bakka_population_route":[0,252],"bakka_population_route_copy":[0,348],"bakka_population_route_assignment":[0,36],"bakka_population_route_point":[0,160],"bakka_population_route_length":[0,6],"bakka_population_hull":[0,180],"bakka_population_rotation":[0,24],"bakka_population_hitpoints":[0,18],"bakka_population_friendly":[0,20],"bakka_population_sleep":[0,28],"bakka_condition_constructor":[0,26],"bakka_defeat_conditions":[0,978],"bakka_result36_count":[144,4],"bakka_result36_pairs":[1944,16],"bakka_result36_voices":[0,12032],"bakka_radio36_dispatch":[0,26],"bakka_radio36_entry":[98,2],"bakka_radio_default":[12956,8]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES) or Equal.equal_value(data,MAC_VALUES)
 
