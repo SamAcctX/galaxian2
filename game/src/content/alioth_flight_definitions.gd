@@ -7,6 +7,9 @@ const SPANS = {"alioth_flight_portal_update":[655588,1380],"alioth_flight_portal
 
 const MAC_SPANS = {"alioth_flight_portal_update":[656136,1380],"alioth_flight_portal_vtable":[2379042,192],"alioth_flight_portal_draw":[657516,34],"alioth_flight_portal_facing":[656096,26],"alioth_flight_portal_duration":[1520994,4],"alioth_flight_portal_extent":[1564038,4],"alioth_flight_portal_scale":[1550078,4],"alioth_flight_portal_facing_offset":[1519570,4]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"alioth_flight_portal_update":[0,1176],"alioth_flight_portal_constructor":[0,156],"alioth_flight_portal_reset":[0,18],"alioth_flight_portal_open":[0,16],"alioth_flight_portal_draw":[0,38],"alioth_flight_portal_facing":[0,14],"alioth_flight_portal_model":[0,3668]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES)
 

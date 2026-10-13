@@ -211,6 +211,7 @@ static func validate(data: Variant, source_bytes: int, arch: String, arrival: Di
 		if data.has("convoy_transit"):android_spans.merge(Transit.ANDROID_SPANS)
 		if data.has("alioth_attack"):android_spans.merge(Attack.ANDROID_SPANS)
 		if data.has("alioth_lifecycle"):android_spans.merge(AliothLife.ANDROID_SPANS)
+		if data.has("alioth_flight"):android_spans.merge(AliothFlight.ANDROID_SPANS)
 		if data.has("kappa_return"):android_spans.merge(KappaReturn.ANDROID_SPANS)
 		if data.has("vossk_lod"):android_spans.merge(VosskLOD.ANDROID_SPANS)
 		return "" if Layouts.anchored(data.provenance,source_bytes,android_spans) else "Invalid local travel provenance"
