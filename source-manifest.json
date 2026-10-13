@@ -1341,6 +1341,7 @@
     "game/tests/audio_pcm_cache.gd.uid",
     "game/tests/audio_sequence.gd",
     "game/tests/audio_sequence.gd.uid",
+    "game/tests/autocomplete_mercy.gd",
     "game/tests/automatic_tractor_application.gd",
     "game/tests/automatic_tractor_application.gd.uid",
     "game/tests/bakka_arrival_application.gd",
