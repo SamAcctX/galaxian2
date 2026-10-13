@@ -15,10 +15,10 @@ Get the **[latest release](https://github.com/TheWWWorm/galaxian2/releases/lates
 The whole game is playable: the main campaign and both add-ons, Valkyrie and
 Supernova, plus the Supernova Challenge.
 
-Version 1.0.6 fixes contract departures, dialogue back buttons, Action Freeze
-sprites, lounge conversations and wingman hires, medal awards and loading.
-Status medals can be browsed with keyboard or controller, and the system map
-can be rotated with mouse dragging or the controller's right stick.
+Version 1.1.0 adds the Android HD 2.0.16 release as a content source. Its own
+ships, missions, economy, audio and presentation are used when you import it.
+Mac imports and existing careers remain available. This release also keeps the
+map, controls, lounge, medal and loading fixes from 1.0.6.
 
 | Download | Platform | Launch |
 | --- | --- | --- |
@@ -37,7 +37,7 @@ A playable Web package is not available yet.
 
 1. Start Galaxian2 and choose **Choose game…**.
 2. Select your **Galaxy on Fire 2 Full HD Mac disk image (.dmg)**, the
-   **application folder (.app)** itself, or the **Android HD release (.xapk**, or the
+   **application folder (.app)** itself, or the **Android HD release (.xapk)**, or the
    **.7z** that holds it). Allow several minutes
    and at least **8 GB of free space** for extraction and preparation.
 3. Choose **Start new game**. Follow the opening instructions.
