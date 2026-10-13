@@ -10,6 +10,10 @@ const VALUES := {"scope":"physical_scenery_contacts","player_stage":"after_motio
 const APP_SPANS := {"player_sample":[571779,52],"player_motion":[576697,142],"collision_gate":[576839,90],"world_contact":[585516,1666],"asteroid_active":[547365,22],"asteroid_normal":[550106,158],"asteroid_collider":[550264,202],"asteroid_vtable":[2376994,72],"station_query":[650374,232],"station_projection":[-713946,190],"station_response_vtable":[2378722,24],"box_projection":[-715776,498],"sphere_projection":[-714814,236],"mining_finish":[602607,61],"permission_setter":[560162,14],"opening_constructor_off":[122009,18],"opening_release_on":[139783,128],"opening_escape_off":[150612,306],"opening_escape_guard":[150932,250]}
 const MAC_ALTERNATE := {"player_sample":[571243,52],"player_motion":[576161,142],"collision_gate":[576303,90],"world_contact":[584980,1664],"asteroid_active":[546829,22],"asteroid_normal":[549570,158],"asteroid_collider":[549728,202],"asteroid_vtable":[2399562,72],"station_query":[649826,232],"station_projection":[-708050,190],"station_response_vtable":[2401290,24],"box_projection":[-709880,498],"sphere_projection":[-708918,236],"mining_finish":[602059,61],"permission_setter":[559626,14],"opening_constructor_off":[122009,18],"opening_release_on":[139783,128],"opening_escape_off":[150612,306],"opening_escape_guard":[150932,250]}
 
+# Android: the Mac values; spans inside named functions and vtables (Layouts.anchored).
+const ANDROID_VALUES := {"scope":"physical_scenery_contacts","player_stage":"after_motion_before_aim_recharge","collision_gate":"player_permission_and_active_statistics","station_slot":0,"station_contact":"strict_authored_point_volume","station_projection_passes":2,"station_damage":0,"asteroid_contact":"strict_point_inside_intact_body_axis_box","asteroid_damage":9999,"player_damage":20,"asteroid_impact":"body_center_minus_player_center_normalized","selected_mining_target_excluded":true,"mining_finish":"inactive_negative_hull_without_combat_destruction","opening_collision_initial_enabled":false,"opening_collision_enabled_phase":4,"opening_collision_escape_phase":5,"opening_collision_earned_escape_enabled":false,"opening_collision_sample":"incoming_player_phase_before_controller"}
+const ANDROID_SPANS := {"player_sample":[66,24],"player_motion":[3764,112],"collision_gate":[3876,72],"active_getter":[0,6],"world_contact":[0,1112],"asteroid_active":[726,14],"asteroid_normal":[0,124],"asteroid_collider":[0,224],"asteroid_outer":[0,10],"point_outer":[0,26],"station_query":[0,204],"station_point_outer":[0,26],"station_projection":[0,18],"volume_projection":[0,160],"box_projection":[0,388],"sphere_projection":[0,180],"mining_finish":[406,46],"permission_setter":[0,6],"opening_constructor_off":[248,14],"opening_release_on":[4350,86],"opening_escape_off":[6540,238],"opening_escape_guard":[716,198],"asteroid_vtable":[64,36],"station_response_vtable":[88,12]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -19,6 +23,14 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, source_bytes: int, architecture: String, arrival: Dictionary, scenery: Dictionary, station: Dictionary, opening: Dictionary) -> String:
 	if not data is Dictionary:return "Missing physical scenery contact declarations"
 	if data.is_empty():return ""
+	if architecture=="android-armv7":
+		if not parameters(data) or not Scenery.parameters(scenery) or not Station.parameters(station) or arrival.is_empty():return "Unsupported physical scenery contact declarations"
+		if not Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS):return "Invalid physical scenery contact extents"
+		var android_motion: Variant=opening.get("player_motion")
+		var android_escape: Variant=opening.get("escape")
+		if not android_motion is Dictionary or not android_escape is Dictionary:return "Physical opening contact lacks its source declarations"
+		if android_motion.get("motion_before_controller")!=true or android_motion.get("release_phase")!=data.opening_collision_enabled_phase or android_motion.get("release_after_event_finished")!=8 or android_escape.get("entry_phase")!=data.opening_collision_enabled_phase or android_escape.get("first_phase")!=data.opening_collision_escape_phase or android_escape.get("entry_after_event_finished")!=10:return "Physical opening contact disagrees with its flight phases"
+		return "" if data.provenance.opening_escape_off==android_escape.get("provenance",{}).get("entry") else "Physical opening contact is detached from its source transitions"
 	if architecture!="x86_64" or not parameters(data) or not Scenery.parameters(scenery) or not Station.parameters(station):return "Unsupported physical scenery contact declarations"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Physical scenery contacts lack their source anchor"

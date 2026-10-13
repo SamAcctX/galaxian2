@@ -2,12 +2,21 @@
 
 The two recognized compiler layouts are read as bounded data. This reader does
 not execute the source binary or emit any of its instructions into a pack.
+
+Android: PlayerEgo::update moves the player, then PlayerEgo::calcCollision
+tests landmarks (station first), enemies and asteroids through their vtable
+slots: an asteroid hit (PlayerAsteroid::collide, a strict box around the intact
+body) damages the asteroid 9999 and the player 20 and pushes along
+PlayerAsteroid::getProjectionVector; a station hit (PlayerStation::outerCollide)
+projects the player out of the volumes in two passes without damage.
+PlayerEgo::stopMining finishes a mined asteroid; LevelScript toggles the
+player's collide flag through the opening.
 """
 
 import copy
 
-from .declaration_layouts import recognize
-from .station_exterior import declaration_bytes
+from .declaration_layouts import recognize, recognize_symbols
+from .station_exterior import declaration_bytes, vtable_proof
 
 
 VALUES = {
@@ -82,6 +91,8 @@ LAYOUTS = (
 
 def extract_physical_scenery_contacts(mach, arrival, scenery_resources, station_exterior, opening_staging):
     """Return a new optional capability only when one whole Mac layout matches."""
+    if mach.architecture == 'android-armv7':
+        return android_contacts(mach, arrival, scenery_resources, station_exterior, opening_staging)
     if mach.architecture != 'x86_64' or not scenery_resources or station_exterior.get('scope') != 'first_mining_station_exterior':
         return {}
     try:
@@ -113,3 +124,67 @@ def extract_physical_scenery_contacts(mach, arrival, scenery_resources, station_
         return result
     except (KeyError, TypeError, ValueError, IndexError, OverflowError):
         return {}
+
+
+def android_contacts(lib, arrival, scenery_resources, station_exterior, opening_staging):
+    try:
+        motion, escape = opening_staging['player_motion'], opening_staging['escape']
+        if (not arrival or not scenery_resources or station_exterior.get('scope') != 'first_mining_station_exterior'
+                or motion['motion_before_controller'] is not True or motion['release_phase'] != VALUES['opening_collision_enabled_phase']
+                or motion['release_after_event_finished'] != 8 or escape['entry_phase'] != motion['release_phase']
+                or escape['first_phase'] != VALUES['opening_collision_escape_phase'] or escape['entry_after_event_finished'] != 10):
+            return {}
+        entry = escape['provenance']['entry']
+    except (KeyError, TypeError, AttributeError):
+        return {}
+    proof = recognize_symbols(lib, ANDROID)
+    vtables = vtable_proof(lib, ANDROID_VTABLES) if proof else None
+    # The escape entry that switches contacts off is the escape's own.
+    if vtables is None or proof['opening_escape_off'] != entry:
+        return {}
+    # Every value is a scalar: a shallow copy cannot share state.
+    return dict(ANDROID_VALUES, provenance={**proof, **vtables})
+
+
+# The values equal the Mac's.
+ANDROID_VALUES = copy.deepcopy(VALUES)
+ANDROID = {# PlayerEgo::update samples the incoming position, moves, then (collide flag and an active
+           # player) runs PlayerEgo::calcCollision over the landmarks (station first), enemies and asteroids.
+           'player_sample': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 66, 24, '1eacd9f808102046c1f762ee09f5a47021460390bef782ef'),
+           'player_motion': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 3764, 112, 'sha256:648e3f520e6cdedb010fe24910b2007329f5023e53d5d48f2c3155598a8dbe9a'),
+           'collision_gate': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 3876, 72, 'sha256:26db1712313291e184709486be1b1355fe147b09ce30907cf61b4d6db8b448e4'),
+           'active_getter': ('_ZN6Player8isActiveEv', 0, 6, '90f8c0007047'),
+           'world_contact': ('_ZN9PlayerEgo13calcCollisionEP5ArrayIP8KIPlayerE', 0, 1112, 'sha256:79a5f8fc0b0aa59035d11e5caeebf7281059c6e2d5aa467e102db4dd4e377d52'),
+           # Asteroids start active; their contact is a strict box around the intact body.
+           'asteroid_active': ('_ZN14PlayerAsteroidC2EiP10AEGeometryiiRKN11AbyssEngine6AEMath6VectorEfi', 726, 14, '2e48012184f83810784484f84810'),
+           'asteroid_normal': ('_ZN14PlayerAsteroid19getProjectionVectorERKN11AbyssEngine6AEMath6VectorE', 0, 124, 'sha256:c03acc54321fe38d7b50b67aa3fbeea284732f37c6efbd02f53db7ff667489f2'),
+           'asteroid_collider': ('_ZN14PlayerAsteroid7collideEfff', 0, 224, 'sha256:eb331139811aaba26a1a206c05e5d551c1ad2a7833d91802607da9395917c8b4'),
+           'asteroid_outer': ('_ZN14PlayerAsteroid12outerCollideEfff', 0, 10, 'd0f800c0dcf838c06047'),
+           'point_outer': ('_ZN8KIPlayer12outerCollideERKN11AbyssEngine6AEMath6VectorE', 0, 26, 'sha256:f17e832adf701edfbae43085c2eee53d9a06a6a41bf0fb96dc70f9be22857316'),
+           # The station: bounds, then volumes; projection over the volumes in two passes.
+           'station_query': ('_ZN13PlayerStation12outerCollideEfff', 0, 204, 'sha256:20df89ebdb867e50a995c5c1ea3af55fcd22fc11ac77b8df797b95142917fb84'),
+           'station_point_outer': ('_ZN13PlayerStation12outerCollideERKN11AbyssEngine6AEMath6VectorE', 0, 26, 'sha256:f17e832adf701edfbae43085c2eee53d9a06a6a41bf0fb96dc70f9be22857316'),
+           'station_projection': ('_ZN13PlayerStation25projectCollisionOnSurfaceERKN11AbyssEngine6AEMath6VectorE', 0, 18, '80b56f46d1f82c3111461a4626f7b8eb80bd'),
+           'volume_projection': ('_ZN14BoundingVolume31staticProjectCollisionOnSurfaceERKN11AbyssEngine6AEMath6VectorEP5ArrayIPS_E', 0, 160, 'sha256:9a4239c897e710b2db56fad340df278e018af39d184decb35bfc65ddad0b7435'),
+           'box_projection': ('_ZN11BoundingAAB25projectCollisionOnSurfaceERKN11AbyssEngine6AEMath6VectorE', 0, 388, 'sha256:01de62f9d3b44a2e96b19d2c2d432c9d358264cef0ca37c84152cd05ba6c0af0'),
+           'sphere_projection': ('_ZN14BoundingSphere25projectCollisionOnSurfaceERKN11AbyssEngine6AEMath6VectorE', 0, 180, 'sha256:923db3843dd59a6f60ac476a631fb61df227826859294a6496a809b902a73a69'),
+           # PlayerEgo::stopMining: the target becomes inactive with hull -1.
+           'mining_finish': ('_ZN9PlayerEgo10stopMiningEv', 406, 46, 'sha256:6e097dae2fd71b6347088edf4532b89febcf334bb1343816d3c7c510ff295c83'),
+           'permission_setter': ('_ZN9PlayerEgo10setCollideEb', 0, 6, '80f844117047'),
+           # Opening: off in LevelScript's constructor, on at the phase-4 release, off at the
+           # escape entry; the guard re-enables only after the escape (cursor 2, 7001 ms).
+           'opening_constructor_off': ('_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera', 248, 14, '50460cf708ea0021002610f7f0ec'),
+           'opening_release_on': ('_ZN11LevelScript7processEi', 4350, 86, 'sha256:e6edef929d2d6c2e574532484ee73ab745229e91d922bff9f393eb7679609f5e'),
+           'opening_escape_off': ('_ZN11LevelScript7processEi', 6540, 238, 'sha256:347cc489aaad4f32754a3e7a736da5e84d39a7c9bee5679014c545b728398655'),
+           'opening_escape_guard': ('_ZN11LevelScript7processEi', 716, 198, 'sha256:42b5d6ba70177c0aafb8ff6cdbb8144a9c5eeabf9680fc2ffcff23b2b15af93a')}
+# calcCollision's slots: outer test (16, through 15 and 14), position (10), projection (20, 22).
+ANDROID_VTABLES = {'asteroid_vtable': ('_ZTV14PlayerAsteroid', 14, ['_ZN14PlayerAsteroid7collideEfff', '_ZN14PlayerAsteroid12outerCollideEfff',
+                                                                    '_ZN8KIPlayer12outerCollideERKN11AbyssEngine6AEMath6VectorE',
+                                                                    '_ZN14PlayerAsteroid11setPositionERKN11AbyssEngine6AEMath6VectorE',
+                                                                    '_ZN8KIPlayer11setPositionEfff', '_ZN8KIPlayer8getSpeedEv',
+                                                                    '_ZN14PlayerAsteroid19getProjectionVectorERKN11AbyssEngine6AEMath6VectorE',
+                                                                    '_ZN8KIPlayer18getCollisionNormalERKN11AbyssEngine6AEMath6VectorE',
+                                                                    '_ZN8KIPlayer25projectCollisionOnSurfaceERKN11AbyssEngine6AEMath6VectorE']),
+                   'station_response_vtable': ('_ZTV13PlayerStation', 20, ['_ZN13PlayerStation19getProjectionVectorERKN11AbyssEngine6AEMath6VectorE',
+                                                                           '_ZN8KIPlayer18getCollisionNormalERKN11AbyssEngine6AEMath6VectorE',
+                                                                           '_ZN13PlayerStation25projectCollisionOnSurfaceERKN11AbyssEngine6AEMath6VectorE'])}

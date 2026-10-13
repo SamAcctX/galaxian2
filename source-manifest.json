@@ -2859,6 +2859,7 @@
     "tests/test_ordinary_shopping.py",
     "tests/test_ordinary_worlds.py",
     "tests/test_persistent_contacts.py",
+    "tests/test_physical_contacts.py",
     "tests/test_pilot_response.py",
     "tests/test_planet_resources.py",
     "tests/test_player_aim.py",
