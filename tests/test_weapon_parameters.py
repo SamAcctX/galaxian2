@@ -251,7 +251,7 @@ def android_guns(values=None, edits=(), omit=()):
     Android shapes (alternate items 5, 6 and 0x30, 16 slots). `edits`: (key, old text, new text).
     Returns (library, {key: address}, weapon parameters with the parents' provenance)."""
     from android_text_fixture import fill, text_library
-    from gof2_content import ordinary_hit_policy, weapon_capacity
+    from gof2_content import ordinary_hit_policy, weapon_capacity, weapon_collision_bounds
     v = {**GUN_VALUES, **(values or {})}
     push, pop = 'push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}\nadd r7, sp, #0xc\n', 'pop.w {r4, r5, r6, r7, r8, sb, sl, fp, pc}'
     texts = {
@@ -263,9 +263,11 @@ def android_guns(values=None, edits=(), omit=()):
                               '.cases zero, other, other, other, other', 'zero:',
                               fill(weapon_capacity.ANDROID_RANGE.replace('blt.w {}', 'blt.w #other'), **dict(v, ordinary='#ordinary')),
                               'other:', 'movs r0, #0', 'b #done', 'ordinary:', weapon_capacity.ANDROID_CONSTRUCTOR, 'done:', 'add sp, #0x38', pop]),
+        'constructor': push + 'mov r4, r0\nmov.w sl, #0\nstr.w sl, [r4, #4]\n' + fill(weapon_collision_bounds.ANDROID_DEFAULT, **dict(v, zero='sl', flag=v['bounds'])) + '\n' + pop,
         'collision': '\n'.join([push + 'vpush {d8, d9, d10, d11, d12, d13, d14, d15}', 'mov fp, r0', 'vmov.f32 s16, #3.000000e+00',
                                 'vmov.f32 s18, #2.500000e-01', 'vldr s24, =0x3e4ccccd', 'ldr.w sb, [fp, #0xb4]',
                                 fill(ordinary_hit_policy.ANDROID_GATE + ordinary_hit_policy.ANDROID_ROUTE, **v),
+                                fill(weapon_collision_bounds.ANDROID_SELECTOR, **dict(v, flag=v['bounds'])),
                                 'vpop {d8, d9, d10, d11, d12, d13, d14, d15}', pop]),
         'hit': push + 'mov r4, r0\n' + pop}
     for key, old, new in edits:

@@ -10,7 +10,7 @@ static func resolved(data: Variant) -> bool:
 static func validate(data: Variant, executable_bytes: int, architecture: String, weapon: Dictionary) -> String:
 	if not parameters(data): return "Invalid weapon collision bounds"
 	if data.is_empty(): return ""
-	var sizes := {"constructor_call":70,"wrapper":10,"constructor_entry":4,"default":7,"selector":44} if architecture=="x86_64" else {"constructor_call":72,"wrapper":92,"constructor_entry":4,"default":184,"selector":22} if architecture=="armv7" else {}
+	var sizes := {"constructor_call":70,"wrapper":10,"constructor_entry":4,"default":7,"selector":44} if architecture=="x86_64" else {"constructor_call":72,"wrapper":92,"constructor_entry":4,"default":184,"selector":22} if architecture=="armv7" else {"constructor_call":54,"constructor_entry":4,"default_value":4,"default":4,"selector":20} if architecture=="android-armv7" else {}
 	var p: Dictionary = data.provenance
 	if sizes.is_empty() or p.size()!=sizes.size(): return "Invalid weapon collision bounds provenance"
 	var spans := []
@@ -23,6 +23,8 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 		spans.append(span)
 	if p.constructor_call!=weapon.get("projectile_capacity",{}).get("provenance",{}).get("constructor_call"):
 		return "Weapon bounds belong to another ordinary constructor"
+	# Android: Gun::Gun and Gun::calcCharacterCollision by name.
+	if architecture=="android-armv7": return ""
 	var gate: Variant = weapon.get("ordinary_hit_policy",{}).get("provenance",{}).get("additional_gate")
 	if not gate is Dictionary or int(p.selector.offset)!=int(gate.offset)+(0x4d9 if architecture=="x86_64" else -0x26a):
 		return "Weapon bounds belong to another collision path"
