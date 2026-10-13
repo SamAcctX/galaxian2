@@ -96,7 +96,8 @@ static func capacity(data: Variant, executable_bytes: int, architecture: String,
 	if not capacity_values(data): return "Invalid projectile capacity"
 	if data.is_empty(): return ""
 	var mac := architecture=="x86_64"
-	var sizes := {"factory_entry":4,"range":40,"constructor_call":70,"type_selector":22,"kind_zero":4,"factory_call":120,"item_classification":65} if mac else {"factory_entry":4,"range":22,"constructor_call":72,"single":14,"type_selector":4,"kind_zero":2,"factory_call":100,"item_classification":56} if architecture=="armv7" else {}
+	var android := architecture=="android-armv7"
+	var sizes := {"factory_entry":4,"range":40,"constructor_call":70,"type_selector":22,"kind_zero":4,"factory_call":120,"item_classification":65} if mac else {"factory_entry":4,"range":22,"constructor_call":72,"single":14,"type_selector":4,"kind_zero":2,"factory_call":100,"item_classification":56} if architecture=="armv7" else {"factory_entry":6,"type_selector":14,"kind_zero":2,"range":66,"constructor_call":54,"factory_call":80,"item_classification":48} if android else {}
 	var p: Dictionary = data.provenance
 	if sizes.is_empty() or p.size()!=sizes.size(): return "Invalid projectile capacity provenance"
 	var spans := []
@@ -108,8 +109,11 @@ static func capacity(data: Variant, executable_bytes: int, architecture: String,
 			if span.x<previous.y and span.y>previous.x: return "Overlapping projectile capacity contexts"
 		spans.append(span)
 	if p.factory_call!=weapon.provenance.tail or p.item_classification!=weapon.get("launch_modes",{}).get("provenance",{}).get("classification"): return "Projectile capacity uses another weapon factory"
-	if int(p.type_selector.offset)!=int(p.factory_entry.offset)+(57 if mac else 112): return "Disconnected projectile type selector"
-	if mac:
+	if android:
+		# Level::createGun by name: the case table follows the dispatch.
+		if int(p.kind_zero.offset)!=int(p.type_selector.offset)+14: return "Disconnected projectile type selector"
+	elif int(p.type_selector.offset)!=int(p.factory_entry.offset)+(57 if mac else 112): return "Disconnected projectile type selector"
+	elif mac:
 		if int(p.constructor_call.offset)!=int(p.range.offset)+253: return "Disconnected projectile capacity call"
 	elif int(p.constructor_call.offset)!=int(p.single.offset)+188 or int(p.kind_zero.offset)!=int(p.type_selector.offset)+4: return "Disconnected projectile capacity call"
 	if int(p.range.offset)<=int(p.factory_entry.offset) or int(p.range.offset)>=int(p.factory_entry.offset)+1024 or int(p.constructor_call.offset)<=int(p.factory_entry.offset) or int(p.constructor_call.offset)>=int(p.factory_entry.offset)+2048: return "Projectile capacity lies outside its factory context"

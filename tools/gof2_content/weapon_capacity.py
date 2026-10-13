@@ -1,4 +1,8 @@
-"""Recover the ordinary type-zero projectile pool capacity, without running code."""
+"""Recover the ordinary type-zero projectile pool capacity, without running code.
+
+Android: Level::createGun dispatches the weapon kind; kind zero's Gun::Gun takes
+the slot count as its fourth argument, one slot for the alternate-launch items.
+"""
 import struct
 from .opening_loadout import template
 from .ship_models import section_bytes
@@ -10,9 +14,93 @@ MAC_CALL = '''44897dac8b45108904244c89f74589e74489fe8b55c489d94589e8448b4d180f57
 ARM_CALL = '''03220c9611980021289204915a4605915346069107910891099179698ded038a029401912946cdf8008020ef1001 {ctor:4} 4ff0ff35119c28950d992046 {item:4} 11980c99c165'''
 
 
+# Level::createGun keeps the incoming index (r1) at [sp, #0x34] and the kind (r3) in r6.
+ANDROID_ENTRY = """
+strd r2, r1, [sp, #0x30]
+mov r6, r3
+"""
+ANDROID_KINDS = """
+cmp r6, #{kinds}
+bhi.w {}
+mov.w fp, #0
+tbh [pc, r6, lsl #1]
+"""
+# Kind zero: the slot count in r4, one for the alternate items; kind 3 aside,
+# the ordinary constructor follows.
+ANDROID_RANGE = """
+ldr.w r0, ={}
+mov sl, ip
+ldr r5, [sp, #0x34]
+add r0, pc
+ldr.w r0, [r0, r5, lsl #2]
+cmp r0, #0
+blt.w {}
+vmov s0, r8
+strd r0, r4, [sp, #0x28]
+sub.w r0, r5, #{first}
+movs r4, #{slots}
+cmp r0, #{count}
+vcvt.f32.s32 s16, s0
+it lo
+movlo r4, #1
+mov.w r0, #0x114
+cmp r5, #{single}
+it eq
+moveq r4, #1
+call _Znwj
+mov fp, r0
+cmp r6, #3
+bne.w {ordinary}
+"""
+ANDROID_CONSTRUCTOR = """
+movs r0, #0
+ldr r2, [r7, #0x1c]
+strd r0, r0, [sp, #0x10]
+mov r3, r4
+strd r0, r0, [sp, #0x18]
+strd r0, r0, [sp, #0x20]
+ldr.w r8, [sp, #0x30]
+ldr r0, [r7, #0x24]
+vstr s16, [sp, #0xc]
+str.w sl, [sp, #8]
+mov r1, r8
+str r0, [sp, #4]
+ldr r0, [r7, #0x18]
+str r0, [sp]
+mov r0, fp
+call _ZN3GunC1EiiiiiifN11AbyssEngine6AEMath6VectorES2_
+mov r0, fp
+mov r1, r5
+call _ZN3Gun8setIndexEi
+"""
+
+
+def android_capacity(lib, weapon):
+    from .android_shapes import Listing
+    factory = Listing(lib, '_ZN5Level9createGunEiiiiiiii')
+    entry, kinds = factory.unique(ANDROID_ENTRY), factory.unique(ANDROID_KINDS)
+    if entry is None or kinds is None or factory.writes(0, entry.first - 1, 'r1') or not factory.holds('r6', kinds.last, 'r3'):
+        return {}
+    selection = factory.at(ANDROID_RANGE, factory.case(kinds.last, 0))
+    construction = factory.follow(selection, 'ordinary', ANDROID_CONSTRUCTOR)
+    if construction is None:
+        return {}
+    first, count, single, slots = (selection.value(k) for k in ('first', 'count', 'single', 'slots'))
+    launch = weapon['launch_modes']
+    # The narrow move holds at most 255 slots.
+    if list(range(first, first + count)) + [single] != launch['alternate_item_ids'] or slots < 1:
+        return {}
+    table = factory.span(kinds.last, kinds.last)['offset'] + 4
+    return {'slots': slots, 'provenance': {'factory_entry': entry.span(), 'type_selector': kinds.span(), 'kind_zero': {'offset': table, 'bytes': 2},
+                                           'range': selection.span(), 'constructor_call': construction.span(),
+                                           'factory_call': dict(weapon['provenance']['tail']), 'item_classification': dict(launch['provenance']['classification'])}}
+
+
 def extract_weapon_capacity(mach, weapon, factory):
-    import capstone
     if not weapon.get('launch_modes'): return {}
+    if mach.architecture == 'android-armv7':
+        return android_capacity(mach, weapon)
+    import capstone
     mac=mach.architecture=='x86_64';section=mach.text;base=section['address']
     code=mach.data[section['offset']:section['offset']+section['length']]
     decoder=capstone.Cs(capstone.CS_ARCH_ARM,capstone.CS_MODE_THUMB);decoder.detail=True
