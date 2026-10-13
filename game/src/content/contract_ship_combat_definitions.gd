@@ -14,6 +14,9 @@ const SPANS = {"ship_combat_weapon_level":[54868,245],"ship_combat_damage":[5550
 
 const MAC_SPANS = {"ship_combat_weapon_level":[54868,245],"ship_combat_damage":[55500,423],"ship_combat_weapon_factions":[55923,217],"ship_combat_special_guards":[56140,1125],"ship_combat_weapon_constructor":[57315,197],"ship_combat_weapon_table":[58994,44],"ship_combat_targets":[59632,1421],"ship_combat_boost_gate":[621961,474],"ship_combat_hostility":[611506,487],"ship_combat_speed_initialization":[607492,55],"ship_combat_motion_speed":[627581,118],"ship_combat_level_constants":[1550410,12]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by early_contract_definitions.gd).
+const ANDROID_SPANS = {"ship_combat_guns":[0,3320],"ship_combat_targets":[0,1520],"ship_combat_hostility":[174,360],"ship_combat_boost_gate":[4882,254],"ship_combat_boost_ramp":[6754,102],"ship_combat_motion_speed":[7026,52],"ship_combat_speed_initialization":[1044,26]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES)
 

@@ -1,9 +1,22 @@
-"""Verified Mac contract ship setup, without original code payloads."""
+"""Verified Mac contract ship setup, without original code payloads.
+
+Android: Level::assignGuns arms the contract ships (rank (level - 2) x 0.9
+within 0..20, scaled to 22, damage + 2 by the game difficulty - 0.5, capacity
+4, 3000 ms, 600 - 2 x cursor, speed 16 or 28 for the rival, the faction gun
+table) and Level::connectPlayers sets their targets; PlayerFighter::update
+keeps them hostile or friendly (Standing::isEnemy, isFriend), gates and ramps
+the boost and moves them, and PlayerFighter::PlayerFighter enables the boost.
+Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 
 def extract_contract_ship_combat(mach, arrival):
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -166,3 +179,12 @@ MAC_ALTERNATE = {'ship_combat_weapon_level': [54868,
                                  12,
                                  '__const',
                                  '06244f5e4fbb94d40185233cdcf67b55473e367d2a5d8170cf096999e2211546']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'ship_combat_guns': ('_ZN5Level10assignGunsEv', 0, 3320, 'sha256:2d4c9a0a16410a8459ff79a6c70158b826a10813a8dee82ee37fe387abbcec55'),
+           'ship_combat_targets': ('_ZN5Level14connectPlayersEv', 0, 1520, 'sha256:4e316991fbb2c7b755197137dad56b58a22cc3a495b4c038877551bc16a7e0ef'),
+           'ship_combat_hostility': ('_ZN13PlayerFighter6updateEi', 174, 360, 'sha256:6aebb1f8f9de5a1bbf9d892ab3c9220c4122b0c008a217d8a5ccdee56a447859'),
+           'ship_combat_boost_gate': ('_ZN13PlayerFighter6updateEi', 4882, 254, 'sha256:705092bc3892c506ec5b690982b385c4f850f5590ec440ca06da49300aadcbed'),
+           'ship_combat_boost_ramp': ('_ZN13PlayerFighter6updateEi', 6754, 102, 'sha256:3f1f5aa110057ff5858e7fab879478971a30343da9c03b9ae6f53f047c32baff'),
+           'ship_combat_motion_speed': ('_ZN13PlayerFighter6updateEi', 7026, 52, 'sha256:fcb396d17f492fc006e56c907fe4589ee034c816197332554bda94bf719e9ce5'),
+           'ship_combat_speed_initialization': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 1044, 26, 'sha256:3efd9249ce97acf712bd1ec865ca25aa8c8bb085eda779d427fb644c9b3d1f0e')}
