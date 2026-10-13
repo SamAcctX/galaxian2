@@ -10,6 +10,10 @@ const MAC_VALUES:={"scope":"nehma_station_visit34","mission34":{"campaign_cursor
 const SPANS:={"factory35_entry":[872174,4],"factory35":[863293,38],"brief34_35_counts":[1529722,8],"result34_count":[1530378,4],"result34_pairs":[1523090,120],"result34_voices":[1536826,120],"radio34_entry":[104622,4]}
 const MAC_SPANS:={"factory35_entry":[871542,4],"factory35":[862661,38],"brief34_35_counts":[1554738,8],"result34_count":[1555394,4],"result34_pairs":[1548106,120],"result34_voices":[1561762,120],"radio34_entry":[104622,4]}
 
+# Android: the Mac 1.0.7 values (VALUES); spans inside named functions
+# (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"nehma_visit_factory35_entry":[136,2],"nehma_visit_factory35":[1610,28],"nehma_visit_mission_constructor":[0,288],"nehma_visit_brief34_35_counts":[136,8],"nehma_visit_result34_count":[136,4],"nehma_visit_result34_pairs":[1744,120],"nehma_visit_result34_voices":[0,12032],"nehma_visit_radio34_dispatch":[0,26],"nehma_visit_radio34_entry":[94,2],"nehma_visit_radio_default":[12956,8]}
+
 static func conversation(bindings: RefCounted,cursor: Variant,mission: Variant) -> Dictionary:
 	if bindings==null or not cursor is int or cursor!=34 or not parameters(bindings.mido_travel.get("nehma_visit")):return {}
 	var data: Dictionary=bindings.mido_travel.nehma_visit

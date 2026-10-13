@@ -160,6 +160,7 @@ func extensions() -> Array:
 		["post_probe_visits",Definitions.PostProbe.VALUES,Definitions.PostProbe.ANDROID_SPANS],
 		["void_access",Definitions.VoidAccess.VALUES,Definitions.VoidAccess.ANDROID_SPANS],
 		["void_crystals",Definitions.VoidCrystals.ANDROID_VALUES,Definitions.VoidCrystals.ANDROID_SPANS],
+		["nehma_visit",Definitions.Nehma.VALUES,Definitions.Nehma.ANDROID_SPANS],
 		["vossk_traffic",Definitions.Vossk.VALUES,Definitions.Vossk.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:
