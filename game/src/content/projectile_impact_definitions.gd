@@ -8,6 +8,10 @@ const SPANS := {"x86_64":{"player_setter":[-57023,35],"effect_table":[-310645,27
 
 const MAC_ALTERNATE := {"player_setter":[-57023,35],"effect_table":[-311137,27],"allocation":[-311110,42],"initial_disabled":[-310961,32],"update_before_contacts":[-302791,113],"contact_restart":[-304763,84],"contact_position":[-304679,165],"position_load":[-304112,48],"draw":[-302175,394],"wrapper_draw":[356390,9],"restart_mode":[946231,112],"end_sample":[946987,59],"npc_setter":[-65918,31],"model_2":[1425887,4],"model_19":[1425955,4]}
 
+# Android: the Mac values; spans inside named functions (Layouts.anchored).
+const ANDROID_VALUES := {"item_ids":[2,19],"model_ids":[14600,14605],"kinds":[0,1],"initial_playing":false,"animation_speed":1.0,"animation_loop":false,"camera_basis_copy":true,"position_is_projectile":true,"sample_before_contacts":true,"restart_preserves_sample":true,"render_type":2}
+const ANDROID_SPANS := {"player_setter":[1592,24],"effects":[56,166],"models":[8,72],"npc_setter":[1330,16],"position_load":[234,24],"contact":[1000,132],"update_before_contacts":[70,120],"draw":[0,280],"wrapper_draw":[28,6],"restart_mode":[0,32],"end_sample":[146,32]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary: return false
 	for key in VALUES:
@@ -27,7 +31,9 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, executable_bytes: int, architecture: String, staging: Dictionary) -> String:
 	if not data is Dictionary: return "Invalid ordinary projectile impacts capability"
 	if data.is_empty(): return ""
-	if not parameters(data) or not SPANS.has(architecture): return "Unsupported ordinary projectile impacts"
+	if not parameters(data) or not (SPANS.has(architecture) or architecture=="android-armv7"): return "Unsupported ordinary projectile impacts"
+	if architecture=="android-armv7":
+		return "" if Layouts.anchored(data.provenance,executable_bytes,ANDROID_SPANS) else "Disconnected ordinary projectile impacts declaration"
 	var initial: Variant=staging.get("provenance",{}).get("initial")
 	if not Fonts.extent(initial,"offset","bytes",[366 if architecture=="x86_64" else 320],executable_bytes): return "Ordinary projectile visuals lacks its staging anchor"
 	if data.provenance.size()!=SPANS[architecture].size(): return "Invalid ordinary projectile impacts provenance"

@@ -48,3 +48,30 @@ class ProjectileImpactTests(unittest.TestCase):
                 elif key=='section':m.sections[1]['segment']=b'__DATA'
                 else:m.architecture='unsupported'
                 self.assertFalse(reader.extract_projectile_impacts(m,s,a,o),key)
+
+
+class AndroidProjectileImpacts(unittest.TestCase):
+    PARENTS = ({'projectile_visuals': {'present': True}}, {'npc_initialization': {'primary_weapon': {'item_id': 19}}},
+               {'ordinary_hit_policy': {'present': True}, 'player_hit_policy': {'present': True}})
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from gof2_content.android_library import AndroidLibrary
+        from unittest.mock import patch
+        verify_android_proof(self, reader, lambda lib: reader.extract_projectile_impacts(lib, *self.PARENTS))
+        self.assertEqual(reader.ANDROID_VALUES, reader.VALUES)
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            result = reader.extract_projectile_impacts(lib, *self.PARENTS)
+            result['model_ids'].append(0)
+            self.assertEqual(reader.ANDROID_VALUES['model_ids'], [14600, 14605])
+            staging, actors, weapons = self.PARENTS
+            for parents in (({}, actors, weapons), (staging, {'npc_initialization': {'primary_weapon': {'item_id': 21}}}, weapons),
+                            (staging, {}, weapons), (staging, actors, {**weapons, 'ordinary_hit_policy': {}}),
+                            (staging, actors, {**weapons, 'player_hit_policy': {}}), (staging, actors, {})):
+                self.assertEqual(reader.extract_projectile_impacts(lib, *parents), {}, parents)
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'projectile_impact_definitions.gd')
