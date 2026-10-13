@@ -113,6 +113,7 @@ func extensions() -> Array:
 		["kappa_rescue",Definitions.KappaRescue.MAC_VALUES,Definitions.KappaRescue.ANDROID_SPANS],
 		["kappa_fighters",Definitions.KappaFighters.VALUES,Definitions.KappaFighters.ANDROID_SPANS],
 		["kappa_lifecycle",Definitions.KappaLife.VALUES,Definitions.KappaLife.ANDROID_SPANS],
+		["secondary_ownership",Definitions.Secondary.VALUES,Definitions.Secondary.ANDROID_SPANS],
 		["vossk_traffic",Definitions.Vossk.VALUES,Definitions.Vossk.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:

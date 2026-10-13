@@ -233,6 +233,7 @@ static func validate(data: Variant, source_bytes: int, arch: String, arrival: Di
 		if data.has("kappa_rescue"):android_spans.merge(KappaRescue.ANDROID_SPANS)
 		if data.has("kappa_fighters"):android_spans.merge(KappaFighters.ANDROID_SPANS)
 		if data.has("kappa_lifecycle"):android_spans.merge(KappaLife.ANDROID_SPANS)
+		if data.has("secondary_ownership"):android_spans.merge(Secondary.ANDROID_SPANS)
 		if data.has("kappa_return"):android_spans.merge(KappaReturn.ANDROID_SPANS)
 		if data.has("vossk_traffic"):android_spans.merge(Vossk.ANDROID_SPANS)
 		if data.has("vossk_lod"):android_spans.merge(VosskLOD.ANDROID_SPANS)

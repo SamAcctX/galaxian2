@@ -8,6 +8,9 @@ const SPANS = {"secondary_equipment_factory":[-35917,338],"secondary_category_ow
 const EMP=preload("res://src/content/emp_bombs_definitions.gd")
 const MAC_SPANS = {"secondary_equipment_factory":[-35917,338],"secondary_category_owner":[542266,282],"secondary_trigger":[543928,646],"secondary_player_request":[560552,320],"secondary_launch_quantity":[-188263,81],"secondary_consume":[-186469,281],"secondary_item_quantity":[-84494,10],"secondary_item_consume":[-84484,10],"secondary_remove_item":[733126,90],"secondary_item_identity":[-81946,20],"secondary_launch_sounds":[1562038,12],"secondary_sound_dispatch":[542880,326]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"secondary_ownership_equipment_factory":[0,1488],"secondary_ownership_category_owner":[0,170],"secondary_ownership_trigger":[0,460],"secondary_ownership_player_request":[0,264],"secondary_ownership_launch":[0,1948],"secondary_ownership_item_quantity":[0,4],"secondary_ownership_item_consume":[0,8],"secondary_ownership_remove_item":[0,62],"secondary_ownership_item_identity":[0,18],"secondary_ownership_launch_sounds":[164,12],"secondary_ownership_sound_dispatch":[0,196]}
+
 static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALUES)
 static func available(bindings: RefCounted) -> bool:
 	return EMP.available(bindings) and parameters(bindings.mido_travel.get("secondary_ownership"))
