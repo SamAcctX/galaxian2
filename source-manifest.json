@@ -1520,6 +1520,7 @@
     "game/tests/deep_science_cache.gd.uid",
     "game/tests/deep_science_stock.gd",
     "game/tests/deep_science_stock.gd.uid",
+    "game/tests/deep_science_stock_android.gd",
     "game/tests/defense_cast.gd",
     "game/tests/defense_cast.gd.uid",
     "game/tests/defense_resume_application.gd",

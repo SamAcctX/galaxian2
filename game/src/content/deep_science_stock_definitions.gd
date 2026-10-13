@@ -21,11 +21,16 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dictionary,base_stock: Dictionary) -> String:
 	if not data is Dictionary:return "Missing Deep Science stock declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data) or not BaseStock.parameters(base_stock):return "Unsupported Deep Science stock declarations"
+	var android:=arch=="android-armv7"
+	if (arch!="x86_64" and not android) or not parameters(data) or not BaseStock.parameters(base_stock):return "Unsupported Deep Science stock declarations"
+	if android!=Equal.equal_value(base_stock,BaseStock.ANDROID_VALUES):return "Unsupported Deep Science stock declarations"
+	if android:
+		if arrival.get("scope")!="rescue_choreography" or not arrival.get("provenance",{}).has("actor"):return "Deep Science stock lacks its source anchor"
+		return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid Deep Science stock extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Deep Science stock lacks its source anchor"
 	var spans: Dictionary=MAC_SPANS if Equal.equal_value(base_stock,BaseStock.MAC_VALUES) else SPANS
 	return "" if Layouts.matches(data.provenance,int(origin.offset),source_bytes,[spans]) else "Invalid Deep Science stock extents"
 
 static func available(bindings: RefCounted) -> bool:
-	return bindings!=null and bindings.get("source_architecture")=="x86_64" and parameters(bindings.get("deep_science_stock")) and BaseStock.available(bindings)
+	return bindings!=null and bindings.get("source_architecture") in ["x86_64","android-armv7"] and parameters(bindings.get("deep_science_stock")) and BaseStock.available(bindings)
