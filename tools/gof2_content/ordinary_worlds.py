@@ -1,8 +1,17 @@
-"""Original special-planet selection guard; no executable payload."""
+"""Original special-planet selection guard; no executable payload.
+
+Android: Status::inPlanetRingOrbit (stations 120, 126, 130 and 132, compared
+with Station::equals and Station::getIndex) and StarSystem's constructor
+(26000 size units in those orbits). Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_ordinary_worlds(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -43,3 +52,9 @@ MAC_ALTERNATE = {'ordinary_world_special_planet': [873058,
                                  59,
                                  '__text',
                                  '4cd7326a3141bf7a8127f4b343b8172a2ee6033ec0a645a6bdbb5962ac34e1fe']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'ordinary_world_special_planet': ('_ZN6Status17inPlanetRingOrbitEv', 0, 54, 'sha256:0dec681b5d687ad340455f894940761ffca4a60990eaf22703e9902ffe0a415f'),
+           'ordinary_world_station_equality': ('_ZN7Station6equalsEPS_', 0, 18, '0246002021b1896892688a4208bf01207047'),
+           'ordinary_world_station_id': ('_ZN7Station8getIndexEv', 0, 4, '80687047'),
+           'ordinary_world_special_size': ('_ZN10StarSystemC2Ei', 2238, 32, 'sha256:4f2a242f76defddcb4c5aaa5168b017e972f130523c3776de381e1d0f4762c03')}
