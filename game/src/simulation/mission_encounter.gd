@@ -23,7 +23,7 @@ func prepare(bindings: RefCounted,catalogues: RefCounted,library: RefCounted,con
 	if not inventory.has_method("configure_mission"):return reject("Mission flight needs OpeningTargetInventory.configure_mission(bindings,catalogues,context,player,scenery,combat)")
 	var combat: RefCounted=hook.combat_owner();var control: RefCounted=hook.controller_owner()
 	if not inventory.configure_mission(bindings,catalogues,context,player,scenery,combat):return reject(inventory.error)
-	if not _accept_configuration(bindings,library,context.identity(),control,combat,hook.weapons_owner(),control.destruction_resources(),primaries,inventory,scenery.presentation_identity()):return false
+	if not _accept_configuration(bindings,library,context.identity(),control,combat,hook.weapons_owner(),control.destruction_resources(),primaries,inventory,scenery.presentation_identity(),false,context.advances_campaign()):return false
 	_context=context;_hook=hook
 	if not configure_secondaries(bindings,catalogues,player,world.entry_owner().equipment_owner(),library):return false
 	var data: Dictionary=load("res://src/content/selected41_population_definitions.gd").consequence_profile(bindings,catalogues,world)

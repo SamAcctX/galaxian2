@@ -47,6 +47,7 @@ const StationGeneration = preload("res://src/content/station_generation_definiti
 const StationArchive=preload("res://src/simulation/station_archive.gd")
 const StationSaveFile=preload("res://src/simulation/station_save_file.gd")
 const Difficulty=preload("res://src/content/difficulty_definitions.gd")
+const NpcWeapons=preload("res://src/simulation/opening_npc_weapons.gd")
 # Current base-campaign run profile. Expansion activation is explicit; bundled
 # files are not treated as evidence of ownership. Difficulty is the career's.
 const BASE_STOCK_SETTINGS={"difficulty":0.5,"valkyrie_owned":false,"supernova_owned":false,
@@ -1798,6 +1799,7 @@ func enter_game_over() -> bool:
 			var player_failed: bool=selected_state.player_destruction.phase=="game_over" and selected_state.player_destruction.exit_requested
 			if selected_packet!=selected_expected or selected_state.boundary!="game_over_transition_required" or not (player_failed or story_failed):return transition_error("Selected game-over exit lost its accepted native state")
 		var selected_result:={"transition":selected_packet.duplicate(true),"flight":selected_state.duplicate(true)}
+		_record_campaign_failure(selected_state)
 		reset();_last_game_over=selected_result;status.text="Game over · Return to your saved game from the menu"
 		if _player_mode:game_over_requested.emit()
 		return true
@@ -1822,11 +1824,21 @@ func enter_game_over() -> bool:
 	if packet!=expected or state.get("boundary")!="game_over_transition_required" or not (player_failed or rescue_failed or contest_failed or mission_failed):return transition_error("Game-over exit lost its accepted source state")
 	# Source state1 is the main menu, with no implicit retry or inventory change.
 	var result:={"transition":packet.duplicate(true),"flight":state.duplicate(true)}
+	_record_campaign_failure(state)
 	reset();_last_game_over=result
 	status.text="Game over · Retry saved game or run the opening to start again" if not station_save_path().is_empty() else "Game over · Run opening scene to start a new game"
 	refresh_render_mode()
 	if _player_mode:game_over_requested.emit()
 	return true
+
+## Android mercy rule (MGame::gameOverCheck): the player's death in a campaign
+## mission counts toward weakening its enemy guns (opening_npc_weapons).
+func _record_campaign_failure(state: Dictionary) -> void:
+	var death: Dictionary=state.get("player_destruction",{})
+	if death.get("phase")!="game_over" or not death.get("exit_requested",false):return
+	var owner: RefCounted=session.flight_owner()
+	var encounter: RefCounted=null if owner==null or not owner.has_method("encounter_owner") else owner.encounter_owner()
+	if encounter!=null and encounter.has_method("campaign_mission") and encounter.campaign_mission():NpcWeapons.record_campaign_failure(bindings,int(state.campaign_cursor))
 
 func game_over_result() -> Dictionary:return _last_game_over.duplicate(true)
 

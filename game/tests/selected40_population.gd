@@ -312,6 +312,7 @@ func verify_contacts(library: RefCounted,bindings: RefCounted,cat: RefCounted,sc
 	var pilot: RefCounted=player.fork_for_frame();check(pilot.set_permissions(true,true),pilot.error)
 	var encounter:=Encounter.new()
 	if not encounter.configure_selected40(bindings,cat,library,pilot,scenery,equipment,reputation):check(false,encounter.error);return {}
+	check(encounter.campaign_mission(),"The selected Void is not the campaign's mission (mercy rule)")
 	var initial: Dictionary=encounter.snapshot();var random: Dictionary=scenery.random_state()
 	check(initial.scope=="selected40_mixed_contact_component" and initial.combat.actors.size()==13 and initial.controller.destruction.size()==13,"Mixed contact entry omitted native bodies or consequences")
 	check(initial.controller.random_state==random and initial.weapons.selected40.random_state==random,"Contact entry reset the post-field/cast/weapon stream")

@@ -62,6 +62,7 @@ func configure(weapon: Dictionary, capacity: Variant = null) -> bool:
 	if weapon.has("secondary_projectile") and not secondary:return reject("Invalid resolved secondary declaration")
 	if weapon.has("campaign_cursor") and not Vitals.integer(weapon.campaign_cursor):return reject("Invalid projectile campaign context")
 	if weapon.has("nonplayer_source") and not weapon.nonplayer_source is bool:return reject("Invalid projectile damage attribution")
+	if weapon.has("mercy_damage") and (not Vitals.integer(weapon.mercy_damage) or weapon.mercy_damage<0 or weapon.mercy_damage>weapon.damage):return reject("Invalid mercy damage")
 	if weapon.has("ordinary_hit_policy") and not Hits.resolved(weapon.ordinary_hit_policy,weapon.damage):
 		return reject("Invalid resolved ordinary hit policy")
 	if weapon.has("collision_bounds") and not Bounds.resolved(weapon.collision_bounds):
@@ -81,6 +82,7 @@ func configure(weapon: Dictionary, capacity: Variant = null) -> bool:
 	if secondary:_weapon.secondary_projectile=weapon.secondary_projectile.duplicate(true)
 	if weapon.has("campaign_cursor"):_weapon.campaign_cursor=weapon.campaign_cursor
 	if weapon.has("nonplayer_source"):_weapon.nonplayer_source=weapon.nonplayer_source
+	if weapon.has("mercy_damage"):_weapon.mercy_damage=weapon.mercy_damage
 	if weapon.get("wingman_systems",false):_weapon.wingman_systems=true
 	if weapon.get("own_gun",false) and weapon.get("nonplayer_source")==true and Vitals.integer(weapon.get("model_resource_id")):_weapon.own_gun=true;_weapon.model_resource_id=int(weapon.model_resource_id)
 	if weapon.has("dispersion"):_weapon.dispersion=weapon.dispersion.duplicate(true)

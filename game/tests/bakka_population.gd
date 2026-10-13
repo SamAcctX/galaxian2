@@ -132,6 +132,7 @@ func verify_composition(bindings: RefCounted,cat: RefCounted,library: RefCounted
 	check(prepared.player_owner().cache_snapshot()==cache and prepared.equipment_owner().snapshot()==held,"Selected B'akka construction changed retained player pools or inventory")
 	var encounter:=Encounter.new()
 	if not encounter.configure_bakka(bindings,cat,library,prepared):check(false,encounter.error);return
+	check(encounter.campaign_mission(),"The B'akka contest is not the campaign's mission (mercy rule)")
 	var encounter_state: Dictionary=encounter.snapshot()
 	check(encounter_state.campaign_cursor==36 and encounter_state.controller.support_state=="bakka_combat" and encounter_state.combat.actors.size()==8,"Live B'akka encounter did not retain its fixed contest population")
 	var frame:=FlightFrame.new()

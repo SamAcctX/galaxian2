@@ -203,6 +203,7 @@ func verify_training_encounter(cat: RefCounted, player: RefCounted, scenery: Ref
 		return
 	check(encounter.configure_combat_training(bindings,cat,lib,player,scenery,0,.5),encounter.error)
 	if encounter.snapshot().is_empty():return
+	check(encounter.campaign_mission(),"The training is not the campaign's mission (mercy rule)")
 	var initial:=encounter.snapshot();var field: Dictionary=scenery.snapshot();var original_player: Dictionary=player.snapshot()
 	check(initial.campaign_cursor==7 and initial.primaries.guns.size()==1 and initial.weapons.actors.size()==4,"Encounter omitted a retained weapon owner")
 	check(initial.controller.random_state==field.random_state and initial.projectile_visuals.elapsed_ms==0,"Encounter reset world randomness or advanced its visuals")

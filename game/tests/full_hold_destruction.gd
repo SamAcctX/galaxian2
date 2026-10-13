@@ -238,6 +238,7 @@ func verify_controller(bindings: RefCounted, cat: RefCounted, flight: RefCounted
 func verify_recovery(bindings: RefCounted,cat: RefCounted,library: RefCounted,flight: RefCounted,frame: Dictionary) -> void:
 	var encounter:=Encounter.new()
 	if not encounter.configure(bindings,cat,library,flight,0.5):check(false,encounter.error);return
+	check(encounter.campaign_mission(),"The second mining trip is not the campaign's mission (mercy rule)")
 	# Reuse the real generated actor's actual lethal/tumble/breakup path above.
 	# The detached tractor/hold below are equipment component vectors, not an
 	# earned fitting or a new career fixture. No input owner is rewritten.

@@ -508,7 +508,8 @@ func retain_secondary_ammunition(owner: RefCounted) -> bool:
 func weapon_hit(weapon: Variant, shooter_present: Variant, shooter_hostile: Variant, special_flight: Variant) -> Dictionary:
 	if not supports_weapon_hit(weapon): return {}
 	var resolver := Damage.new()
-	var resolved := resolver.resolve(weapon.damage,_hit_policy,shooter_present,shooter_hostile,special_flight)
+	# Android mercy rule: a weakened enemy gun (opening_npc_weapons.apply_mercy).
+	var resolved := resolver.resolve(weapon.get("mercy_damage",weapon.damage),_hit_policy,shooter_present,shooter_hostile,special_flight)
 	if resolved.is_empty(): reject(resolver.error);return {}
 	var result:=normal_hit(resolved.amount)
 	if result.is_empty():return {}
