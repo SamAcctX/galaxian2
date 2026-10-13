@@ -3,16 +3,35 @@
 This reader emits stable content and provenance, never original executable bytes.
 Portal entry, scenery placement, mining, actor control, and story transactions
 remain the responsibility of their existing native owners.
+
+Android: in the retained Void Level::createAsteroids seeds the field with the
+station index and draws 40 + AERandom::nextInt(40) asteroids (the Mac:
+80 + nextInt(80)) around (-30000, 0, 30000), all ore 164 with model 16921
+(Galaxy::getAsteroidProbabilities otherwise); Level::createMission places the
+rank-based Voids (Status::getLevel, Globals::getRandomEnemyFighter,
+Player::setAlwaysEnemy); Status::missionCompleted (Item::isInList) and
+ModStation (OnUpdate, OnTouchEnd) complete kind 8 with 50 item 164 at
+station 10; Status::nextCampaignMission case 33 removes them
+(Ship::removeCargo), unlocks blueprint 85 with 50 crystals
+(BluePrint::addItem) and creates Mission(11, 0, 30). Values are the Mac 1.0.7
+ones (this module's VALUES) except the field's 40/40 count (ANDROID_VALUES);
+the shared scenery population reads 40/40 from five Android spans.
 """
 
 import copy
 
+from .declaration_layouts import recognize_symbols
 from .post_probe_visits import VALUES as POST_PROBE_APP, MAC_VALUES as POST_PROBE_OLD
 from .station_exterior import hashed_variants
 
 
 def extract_void_crystals(mach, arrival, visits, population, resources):
     """Read cursor 33 only when its own and shared declarations agree."""
+    if mach.architecture == 'android-armv7':
+        # The Android field draws 40 + nextInt(40) from five population spans.
+        shared = _shared_field(population, resources, count=40, spans=5)
+        proof = recognize_symbols(mach, ANDROID) if arrival and visits == POST_PROBE_APP and shared else {}
+        return (copy.deepcopy(ANDROID_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     if not proof:
         return {}, {}
@@ -22,13 +41,13 @@ def extract_void_crystals(mach, arrival, visits, population, resources):
     return copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof
 
 
-def _shared_field(population, resources):
+def _shared_field(population, resources, count=80, spans=6):
     """The common scenery readers own these values and their source proof."""
     try:
-        return (population["count_base"] == 80
-                and population["count_bound"] == 80
+        return (population["count_base"] == count
+                and population["count_bound"] == count
                 and isinstance(population["provenance"], dict)
-                and len(population["provenance"]) == 6
+                and len(population["provenance"]) == spans
                 and resources["ore_item_ids"] == list(range(154, 164))
                 and resources["fallback_item_id"] == 164
                 and resources["location_weight"] == 100
@@ -309,3 +328,35 @@ MAC_ALTERNATE = {'world_scenery_gate': [-42445,
                      72,
                      '__const',
                      'f0aa76cec524b557605b11e58067b59e84233b584c7e4427a5454e399df7bb1d']}
+
+# Level::createAsteroids: 40 + AERandom::nextInt(40) asteroids (the Mac: 80 + nextInt(80)).
+ANDROID_VALUES = copy.deepcopy(VALUES)
+ANDROID_VALUES['field']['count_base'] = 40
+ANDROID_VALUES['field']['count_bound'] = 40
+
+ANDROID = {# The Void world, its crystal field (40 + nextInt(40)) and the Voids.
+           'void_crystals_world_selection': ('_ZN5Level4initEv', 0, 1792, 'sha256:fceec130c720743b341b16f0e8ce63d43a1382808e075533d391370c9949a244'),
+           'void_crystals_field': ('_ZN5Level15createAsteroidsEv', 0, 1916, 'sha256:771e19e21b995da12b2734b922799df703b698a17e0d87c6b093d3067cacda15'),
+           'void_crystals_ore_weights': ('_ZN6Galaxy24getAsteroidProbabilitiesEP7Station', 0, 476, 'sha256:6467b79d32e305cd27ea337d625007cd75896dc344303c480cb84f5444b5b8f1'),
+           'void_crystals_location_match': ('_ZN6Status12inAlienOrbitEv', 0, 10, '816fd0f8980122f1afbb'),
+           'void_crystals_void_population': ('_ZN5Level13createMissionEv', 36, 496, 'sha256:2d9ed1c28d1dc9f8fbdf8e14c1c16dc36b515f25f69421c30ceb221e271d4b66'),
+           'void_crystals_rank_getter': ('_ZN6Status8getLevelEv', 0, 6, 'd0f8c8017047'),
+           'void_crystals_hull_choice': ('_ZN7Globals21getRandomEnemyFighterEi', 0, 180, 'sha256:1d49b61c9159e9f48d52329d75df5467b226c40b845983a4b5820b1955e88682'),
+           'void_crystals_actor_flags': ('_ZN6Player14setAlwaysEnemyEb', 0, 16, '80f8ec100121a0f85c1080f8e0107047'),
+           # Kind-8 completion, case 33's debit, blueprint 85 and Mission(11, 0, 30).
+           'void_crystals_kind8_completion': ('_ZN6Status16missionCompletedEbbx', 0, 1508, 'sha256:0162f8ffdfa5a9e47021d6551470479343189754dde03c334ec2ffc6cbb2634e'),
+           'void_crystals_cargo_at_least': ('_ZN4Item8isInListEiiP5ArrayIPS_E', 0, 50, 'sha256:e13eb72eee23a32cb9a22f7e40f79270cddc19233cc538a377eccf7fa3da3b45'),
+           'void_crystals_station_result_predicate': ('_ZN10ModStation8OnUpdateEv', 0, 4016, 'sha256:5ea1f2b464ebfc3d848a87a9d50f3ddd2dde514688e13b51a4aab467e8fbc8a4'),
+           'void_crystals_final_kind8_branch': ('_ZN10ModStation10OnTouchEndEiiPv', 0, 6536, 'sha256:5b29b2bf44b1e0a442eb14b5646a1aad12932fedee58112b028e31589316b50e'),
+           'void_crystals_factory34_table_entry': ('_ZN6Status19nextCampaignMissionEb', 134, 2, '8002'),
+           'void_crystals_factory34': ('_ZN6Status19nextCampaignMissionEb', 1348, 62, 'sha256:a33b4911d980dc6e035c180c16920c4bf3e67247bb6638125b7c25707b16be86'),
+           'void_crystals_factory34_blueprint': ('_ZN6Status19nextCampaignMissionEb', 7722, 74, 'sha256:2bbf60dfc6d05b44d334897d0d25cd6ba5813cc64ab9f65720d945e0e256c15e'),
+           'void_crystals_cargo_remove': ('_ZN4Ship11removeCargoEii', 0, 116, 'sha256:762349b626255de4e8893167879a7c2df24b33df1ff66acc465d8e78a961474b'),
+           'void_crystals_blueprint_id': ('_ZN9BluePrint8getIndexEv', 0, 4, 'c0697047'),
+           'void_crystals_blueprint_unlock': ('_ZN9BluePrint6unlockEv', 0, 6, '012101727047'),
+           'void_crystals_blueprint_material': ('_ZN9BluePrint7addItemEP4Itemii', 0, 336, 'sha256:bf661f94b5b71d53a67fd40b8d53bbfe09e282e92cbc790d035d957291fe5df8'),
+           'void_crystals_mission_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           # Cursor 33: the result count, its nine lines and all voices.
+           'void_crystals_result33_count': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 4, '12000000', 'literal', 132),
+           'void_crystals_result33_pairs': ('_ZN14DialogueWindow11loadContentEv', 208, 72, 'sha256:818eca7a0602236bd7ef25bf41b4da5ec32e62657a612edec7d8c49c85373fad', 'literal', 1672),
+           'void_crystals_result33_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0)}

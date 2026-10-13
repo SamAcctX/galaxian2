@@ -19,12 +19,16 @@ func verify() -> void:
 	var arrival:={"scope":"rescue_choreography","provenance":{"actor":{"offset":5,"bytes":24,"anchor":1}}}
 	var station: Dictionary=Station.ANDROID_VALUES.duplicate(true);station.provenance={}
 	var training: Dictionary=Training.MAC_VALUES.duplicate(true);training.provenance={}
+	# The shared scenery field Void crystals require: Android's 40 + nextInt(40) from five spans.
+	var population:={"count_base":40,"count_bound":40,"provenance":{"count":{},"station":{},"station_id":{},"seed":{},"draw":{}}}
+	var resources:={"ore_item_ids":[154,155,156,157,158,159,160,161,162,163],"fallback_item_id":164,"location_weight":100,"model_ids":[16900,16921,16904,18836],"override_cursor":90,"provenance":{}}
+	for key in ["entry","probability","selector","models","model_table","sqrt_wrapper","station_system","system_x","system_y","item_origin","item","sqrt"]:resources.provenance[key]={}
 	var android: Dictionary=Definitions.ANDROID_VALUES.duplicate(true)
 	android.continuation=Definitions.MAC_CONTINUATION.duplicate(true)
 	android.return_visit=Definitions.ANDROID_RETURN_VISIT.duplicate(true)
 	android.provenance=anchored(Definitions.ANDROID_SPANS,origin)
-	check(Definitions.validate(android,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android local travel was rejected")
-	check(not Definitions.validate(android,source_bytes,"x86_64",arrival,station,training).is_empty(),"Android proofs passed as Mac layouts")
+	check(Definitions.validate(android,source_bytes,"android-armv7",arrival,station,training,population,resources).is_empty(),"Android local travel was rejected")
+	check(not Definitions.validate(android,source_bytes,"x86_64",arrival,station,training,population,resources).is_empty(),"Android proofs passed as Mac layouts")
 	check(not Definitions.validate(android,source_bytes,"android-armv7",{"provenance":arrival.provenance},station,training).is_empty(),"Android travel accepted a foreign arrival")
 	check(not Definitions.validate(android,source_bytes,"android-armv7",{"scope":"rescue_choreography","provenance":{}},station,training).is_empty(),"Android travel accepted an unproven arrival")
 	var full: Dictionary=android.duplicate(true)
@@ -32,19 +36,19 @@ func verify() -> void:
 	full.contract_navigation=Definitions.CONTRACT_NAVIGATION.duplicate(true)
 	full.provenance.merge(anchored(Definitions.ANDROID_ARRIVAL_BRIEFING_SPANS,origin))
 	full.provenance.merge(anchored(Definitions.ANDROID_NAVIGATION_SPANS,origin))
-	check(Definitions.validate(full,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android briefing and contract navigation were rejected")
+	check(Definitions.validate(full,source_bytes,"android-armv7",arrival,station,training,population,resources).is_empty(),"Android briefing and contract navigation were rejected")
 	for key in ["arrival_briefing","contract_navigation"]:
 		var partial: Dictionary=full.duplicate(true);partial.erase(key)
-		check(not Definitions.validate(partial,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel kept proofs of a missing capability: "+key)
+		check(not Definitions.validate(partial,source_bytes,"android-armv7",arrival,station,training,population,resources).is_empty(),"Android travel kept proofs of a missing capability: "+key)
 	# Ported extensions follow the chain, each only with its own proofs.
 	var chain: Dictionary=full.duplicate(true)
 	for row in extensions():
 		chain[row[0]]=row[1].duplicate(true)
 		chain.provenance.merge(anchored(row[2],origin))
-		check(Definitions.validate(chain,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android extension was rejected: "+row[0])
+		check(Definitions.validate(chain,source_bytes,"android-armv7",arrival,station,training,population,resources).is_empty(),"Android extension was rejected: "+row[0])
 		var unproven: Dictionary=chain.duplicate(true)
 		for key in row[2]:unproven.provenance.erase(key)
-		check(not Definitions.validate(unproven,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android extension passed without its proofs: "+row[0])
+		check(not Definitions.validate(unproven,source_bytes,"android-armv7",arrival,station,training,population,resources).is_empty(),"Android extension passed without its proofs: "+row[0])
 	# Android shopping keeps system 25's maximum price; the Mac marks it up.
 	if chain.has("ordinary_shopping"):
 		var mac_shop: Dictionary=chain.duplicate(true)
@@ -53,44 +57,53 @@ func verify() -> void:
 		if mac_shop.has("kappa_return"):mac_shop.kappa_return=Definitions.KappaReturn.MAC_VALUES.duplicate(true)
 		if mac_shop.has("tractor_recovery"):mac_shop.tractor_recovery=Definitions.TractorRecovery.VALUES.duplicate(true)
 		if mac_shop.has("void_probe"):mac_shop.void_probe=Definitions.VoidProbe.VALUES.duplicate(true)
+		if mac_shop.has("void_crystals"):mac_shop.void_crystals=Definitions.VoidCrystals.VALUES.duplicate(true)
 		check(Definitions.parameters(mac_shop),"Mac shopping values were refused")
 		mac_shop.ordinary_shopping=Definitions.Shopping.ANDROID_VALUES.duplicate(true)
 		check(not Definitions.parameters(mac_shop),"Mac travel accepted the Android shopping values")
 		var android_shop: Dictionary=chain.duplicate(true)
 		android_shop.ordinary_shopping=Definitions.Shopping.VALUES.duplicate(true)
-		check(not Definitions.validate(android_shop,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted the Mac shopping markup")
+		check(not Definitions.validate(android_shop,source_bytes,"android-armv7",arrival,station,training,population,resources).is_empty(),"Android travel accepted the Mac shopping markup")
 	# Android ends the second Kappa conversation with the tractor-beam vendor lines.
 	if chain.has("kappa_return"):
 		var mac_return: Dictionary=chain.duplicate(true)
 		mac_return.kappa_return=Definitions.KappaReturn.MAC_VALUES.duplicate(true)
-		check(not Definitions.validate(mac_return,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted the Mac Kappa return")
+		check(not Definitions.validate(mac_return,source_bytes,"android-armv7",arrival,station,training,population,resources).is_empty(),"Android travel accepted the Mac Kappa return")
 	# Android's tractor acquisition window is Globals::w / 16 (the Mac: / 18).
 	if chain.has("tractor_recovery"):
 		var mac_tractor: Dictionary=chain.duplicate(true)
 		mac_tractor.tractor_recovery=Definitions.TractorRecovery.VALUES.duplicate(true)
-		check(not Definitions.validate(mac_tractor,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted the Mac tractor window")
+		check(not Definitions.validate(mac_tractor,source_bytes,"android-armv7",arrival,station,training,population,resources).is_empty(),"Android travel accepted the Mac tractor window")
+	# Android's crystal field is 40 + nextInt(40) (the Mac: 80 + nextInt(80)).
+	if chain.has("void_crystals"):
+		var mac_crystals: Dictionary=chain.duplicate(true)
+		mac_crystals.void_crystals=Definitions.VoidCrystals.VALUES.duplicate(true)
+		check(not Definitions.validate(mac_crystals,source_bytes,"android-armv7",arrival,station,training,population,resources).is_empty(),"Android travel accepted the Mac crystal field")
+		var mac_field:={"count_base":80,"count_bound":80,"provenance":population.provenance.duplicate(true)}
+		mac_field.provenance.bits={}
+		check(not Definitions.validate(chain,source_bytes,"android-armv7",arrival,station,training,mac_field,resources).is_empty(),"Android crystals accepted the Mac shared field")
 	# Android's station-lock windows are Globals::w / 6 and / 16 (the Mac: / 8 and / 18).
 	if chain.has("void_probe"):
 		var mac_probe: Dictionary=chain.duplicate(true)
 		mac_probe.void_probe=Definitions.VoidProbe.VALUES.duplicate(true)
-		check(not Definitions.validate(mac_probe,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted the Mac station-lock windows")
+		check(not Definitions.validate(mac_probe,source_bytes,"android-armv7",arrival,station,training,population,resources).is_empty(),"Android travel accepted the Mac station-lock windows")
 	var shifted: Dictionary=full.duplicate(true)
 	shifted.provenance.story_dispatch.offset+=1
-	check(not Definitions.validate(shifted,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted a shifted proof extent")
+	check(not Definitions.validate(shifted,source_bytes,"android-armv7",arrival,station,training,population,resources).is_empty(),"Android travel accepted a shifted proof extent")
 	var incomplete: Dictionary=full.duplicate(true)
 	incomplete.provenance.erase("yrdal_briefing_briefing_start")
-	check(not Definitions.validate(incomplete,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted an incomplete proof")
+	check(not Definitions.validate(incomplete,source_bytes,"android-armv7",arrival,station,training,population,resources).is_empty(),"Android travel accepted an incomplete proof")
 	# The library's own values: the planet window and the contract gate.
 	var mac_window: Dictionary=android.duplicate(true)
 	mac_window.travel.target_window_divisor=18
-	check(not Definitions.validate(mac_window,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted the Mac planet window")
+	check(not Definitions.validate(mac_window,source_bytes,"android-armv7",arrival,station,training,population,resources).is_empty(),"Android travel accepted the Mac planet window")
 	var mac_gate: Dictionary=android.duplicate(true)
 	mac_gate.return_visit=Definitions.MAC_RETURN_VISIT.duplicate(true)
 	check(not Definitions.parameters(mac_gate),"Android travel accepted the Mac contract gate")
 	var mac: Dictionary=Definitions.MAC_VALUES.duplicate(true)
 	mac.continuation=Definitions.MAC_CONTINUATION.duplicate(true);mac.return_visit=Definitions.MAC_RETURN_VISIT.duplicate(true)
 	mac.provenance=android.provenance
-	check(Definitions.parameters(mac) and not Definitions.validate(mac,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Mac values passed as Android proofs")
+	check(Definitions.parameters(mac) and not Definitions.validate(mac,source_bytes,"android-armv7",arrival,station,training,population,resources).is_empty(),"Mac values passed as Android proofs")
 	check(int(Definitions.station_return_overrides(12,true,true).contract_gate.additional_completions)==1 and int(Definitions.station_return_overrides(12,true).contract_gate.additional_completions)==4,"Station return lost the library's contract gate")
 	var returned: Dictionary=FirstReturn.MAC_VALUES.duplicate(true);returned.provenance={}
 	returned.merge(Definitions.station_return_overrides(12,true,true),true)
@@ -146,6 +159,7 @@ func extensions() -> Array:
 		["dima_return",Definitions.DimaReturn.VALUES,Definitions.DimaReturn.ANDROID_SPANS],
 		["post_probe_visits",Definitions.PostProbe.VALUES,Definitions.PostProbe.ANDROID_SPANS],
 		["void_access",Definitions.VoidAccess.VALUES,Definitions.VoidAccess.ANDROID_SPANS],
+		["void_crystals",Definitions.VoidCrystals.ANDROID_VALUES,Definitions.VoidCrystals.ANDROID_SPANS],
 		["vossk_traffic",Definitions.Vossk.VALUES,Definitions.Vossk.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:

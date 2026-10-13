@@ -139,5 +139,55 @@ class VoidCrystalTests(unittest.TestCase):
                               "system_id": 2, "story": True, "reward": 0, "bonus": 0})
 
 
+
+def android_shared_declarations():
+    population, resources = shared_declarations()
+    population.update(count_base=40, count_bound=40,
+                      provenance={str(i): {} for i in range(5)})
+    return population, resources
+
+
+class VoidCrystalAndroidTests(unittest.TestCase):
+    def test_android_proofs(self):
+        import android_fixture
+        from gof2_content.android_library import AndroidLibrary
+        from test_mido_travel import roomy
+        population, resources = android_shared_declarations()
+        arrival = {"scope": "rescue_choreography"}
+        with patch.object(android_fixture, "library", roomy(android_fixture.library)):
+            android_fixture.verify_android_proof(self, reader, lambda lib: reader.extract_void_crystals(
+                lib, arrival, reader.POST_PROBE_APP, population, resources), values="ANDROID_VALUES")
+            image, layout, _ = android_fixture.layout_library(reader.ANDROID)
+        with patch.object(reader, "ANDROID", layout):
+            lib = AndroidLibrary(image)
+            self.assertTrue(reader.extract_void_crystals(lib, arrival, reader.POST_PROBE_APP, population, resources)[1])
+            self.assertEqual(reader.extract_void_crystals(lib, {}, reader.POST_PROBE_APP, population, resources), ({}, {}))
+            self.assertEqual(reader.extract_void_crystals(lib, arrival, reader.POST_PROBE_OLD, population, resources), ({}, {}))
+            # The Mac shared field (80 + nextInt(80), six spans) does not describe this library.
+            mac_population, _ = shared_declarations()
+            self.assertEqual(reader.extract_void_crystals(lib, arrival, reader.POST_PROBE_APP, mac_population, resources), ({}, {}))
+            for field, value in (("count_base", 41), ("count_bound", 39), ("provenance", {str(i): {} for i in range(6)})):
+                changed = copy.deepcopy(population)
+                changed[field] = value
+                self.assertEqual(reader.extract_void_crystals(lib, arrival, reader.POST_PROBE_APP, changed, resources), ({}, {}), field)
+            changed = copy.deepcopy(resources)
+            changed["fallback_item_id"] = 163
+            self.assertEqual(reader.extract_void_crystals(lib, arrival, reader.POST_PROBE_APP, population, changed), ({}, {}))
+
+    def test_android_values_differ_only_in_the_field_count(self):
+        expected = copy.deepcopy(reader.VALUES)
+        expected["field"].update(count_base=40, count_bound=40)
+        self.assertEqual(reader.ANDROID_VALUES, expected)
+
+    def test_android_native_declarations(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "game/src/content/void_crystal_definitions.gd").read_text()
+        spans = {k: [v[5] if len(v) == 6 else v[1], v[2]] for k, v in reader.ANDROID.items()}
+        for name, expected in (("ANDROID_VALUES", reader.ANDROID_VALUES), ("ANDROID_SPANS", spans)):
+            matches = re.findall(r"^const " + name + r":=(.+)$", source, re.MULTILINE)
+            self.assertEqual(len(matches), 1, name)
+            self.assertEqual(json.loads(matches[0]), expected, name)
+
+
 if __name__ == "__main__":
     unittest.main()

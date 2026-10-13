@@ -162,8 +162,8 @@ static func _parameters(data: Variant) -> bool:
 	if data.has("dima_return") and (not data.has("void_probe") or not DimaReturn.parameters(data.dima_return)):return false
 	if data.has("post_probe_visits") and (not data.has("dima_return") or not Equal.equal_value(data.post_probe_visits,PostProbe.VALUES if Equal.equal_value(data.dima_return,DimaReturn.VALUES) else PostProbe.MAC_VALUES)):return false
 	if data.has("void_access") and (not data.has("post_probe_visits") or not VoidAccess.parameters(data.void_access)):return false
-	if data.has("void_crystals") and (not data.has("void_access") or not Equal.equal_value(data.void_crystals,VoidCrystals.VALUES if Equal.equal_value(data.post_probe_visits,PostProbe.VALUES) else VoidCrystals.MAC_VALUES)):return false
-	if data.has("nehma_visit") and (not data.has("void_crystals") or not Equal.equal_value(data.nehma_visit,Nehma.VALUES if Equal.equal_value(data.void_crystals,VoidCrystals.VALUES) else Nehma.MAC_VALUES)):return false
+	if data.has("void_crystals") and (not data.has("void_access") or not Equal.equal_value(data.void_crystals,VoidCrystals.ANDROID_VALUES if android else VoidCrystals.VALUES if Equal.equal_value(data.post_probe_visits,PostProbe.VALUES) else VoidCrystals.MAC_VALUES)):return false
+	if data.has("nehma_visit") and (not data.has("void_crystals") or not Equal.equal_value(data.nehma_visit,Nehma.VALUES if android or Equal.equal_value(data.void_crystals,VoidCrystals.VALUES) else Nehma.MAC_VALUES)):return false
 	if data.has("gakkrr_visit") and (not data.has("nehma_visit") or not Equal.equal_value(data.gakkrr_visit,Gakkrr.VALUES if Equal.equal_value(data.nehma_visit,Nehma.VALUES) else Gakkrr.MAC_VALUES)):return false
 	if data.has("bakka_contest") and (not data.has("gakkrr_visit") or not Equal.equal_value(data.bakka_contest,Bakka.VALUES if Equal.equal_value(data.gakkrr_visit,Gakkrr.VALUES) else Bakka.MAC_VALUES)):return false
 	if data.has("bakka_return") and (not data.has("bakka_contest") or not Equal.equal_value(data.bakka_return,BakkaReturn.VALUES if Equal.equal_value(data.bakka_contest,Bakka.VALUES) else BakkaReturn.MAC_VALUES)):return false
@@ -195,7 +195,7 @@ static func validate(data: Variant, source_bytes: int, arch: String, arrival: Di
 	if data.is_empty():return ""
 	var android:=arch=="android-armv7"
 	if (arch!="x86_64" and not android) or not parameters(data) or android!=_android(data) or not Station.parameters(station) or not Training.parameters(training):return "Unsupported local travel declarations"
-	if data.has("void_crystals") and not VoidCrystals.shared_field(population,resources):return "Disconnected Void crystal scenery declarations"
+	if data.has("void_crystals") and not VoidCrystals.shared_field(population,resources,android):return "Disconnected Void crystal scenery declarations"
 	if android:
 		if arrival.get("scope")!="rescue_choreography" or not arrival.get("provenance",{}).has("actor"):return "Local travel lacks its source anchor"
 		var android_spans: Dictionary=ANDROID_SPANS.duplicate(true)
@@ -248,6 +248,7 @@ static func validate(data: Variant, source_bytes: int, arch: String, arrival: Di
 		if data.has("dima_return"):android_spans.merge(DimaReturn.ANDROID_SPANS)
 		if data.has("post_probe_visits"):android_spans.merge(PostProbe.ANDROID_SPANS)
 		if data.has("void_access"):android_spans.merge(VoidAccess.ANDROID_SPANS)
+		if data.has("void_crystals"):android_spans.merge(VoidCrystals.ANDROID_SPANS)
 		if data.has("vossk_traffic"):android_spans.merge(Vossk.ANDROID_SPANS)
 		if data.has("vossk_lod"):android_spans.merge(VosskLOD.ANDROID_SPANS)
 		return "" if Layouts.anchored(data.provenance,source_bytes,android_spans) else "Invalid local travel provenance"
