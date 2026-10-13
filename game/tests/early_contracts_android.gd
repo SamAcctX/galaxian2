@@ -63,6 +63,18 @@ func verify() -> void:
 		var missing: Dictionary=chain.duplicate(true)
 		for key in row[2]:missing.provenance.erase(key)
 		check(not Definitions.validate(missing,source_bytes,"android-armv7",arrival,travel).is_empty(),"Android extension passed without its proofs: "+row[0])
+	# Android stock progress is the library's (cursor + 25); the Mac adds 10.
+	if chain.has("station_generation"):
+		var mac_stock: Dictionary=chain.duplicate(true);mac_stock.station_generation=Definitions.Stock.VALUES.duplicate(true)
+		check(Definitions.parameters(mac_stock) and not Definitions.validate(mac_stock,source_bytes,"android-armv7",arrival,travel).is_empty(),"Android contracts accepted the Mac stock progress")
+		var mac_chain: Dictionary=mac.duplicate(true)
+		mac_chain.acceptance=Definitions.MAC_ACCEPTANCE.duplicate(true);anchor_mac(mac_chain,Definitions.MAC_ACCEPTANCE_SPANS)
+		for row in mac_extensions():
+			mac_chain[row[0]]=row[1].duplicate(true);anchor_mac(mac_chain,row[2])
+			if row[0]=="station_generation":break
+		check(Definitions.validate(mac_chain,source_bytes,"x86_64",mac_arrival,travel).is_empty(),"Mac contracts through station generation were rejected")
+		mac_chain.station_generation=Definitions.Stock.ANDROID_VALUES.duplicate(true)
+		check(not Definitions.validate(mac_chain,source_bytes,"x86_64",mac_arrival,travel).is_empty(),"Mac contracts accepted the Android stock progress")
 	# Each capability keeps its travel context: travel cut before it is refused.
 	var keys:=["contract_navigation","contract_completion","convoy_capture","convoy_ship","convoy_lifecycle","convoy_effects","alioth_arrival","convoy_transit","alioth_attack","alioth_lifecycle","alioth_flight","alioth_return","free_navigation","free_population","free_traffic","free_lifecycle","free_flight"]
 	for row in [["encounter_construction","contract_navigation"],["base_navigation","alioth_arrival"],["ordinary_generation","free_flight"]]:
@@ -87,7 +99,24 @@ func extensions() -> Array:
 		["flight_results",Definitions.FlightResults.VALUES,Definitions.FlightResults.ANDROID_SPANS],
 		["junk_lifecycle",Definitions.Junk.VALUES,Definitions.Junk.ANDROID_SPANS],
 		["world_initialization",Definitions.World.VALUES,Definitions.World.ANDROID_SPANS],
-		["station_lounges",Definitions.Lounges.VALUES,Definitions.Lounges.ANDROID_SPANS]]
+		["station_lounges",Definitions.Lounges.VALUES,Definitions.Lounges.ANDROID_SPANS],
+		["station_generation",Definitions.Stock.ANDROID_VALUES,Definitions.Stock.ANDROID_SPANS]]
+
+## [key, values, spans] of the Mac 1.0.7 chain.
+func mac_extensions() -> Array:
+	return [["generation",Definitions.Contacts.VALUES,Definitions.Contacts.MAC_SPANS],
+		["delivery_results",Definitions.Delivery.VALUES,Definitions.Delivery.MAC_SPANS],
+		["encounter_construction",Definitions.Encounters.VALUES,Definitions.Encounters.MAC_SPANS],
+		["ship_combat",Definitions.ShipCombat.VALUES,Definitions.ShipCombat.MAC_SPANS],
+		["ship_lifecycle",Definitions.ShipLifecycle.VALUES,Definitions.ShipLifecycle.MAC_SPANS],
+		["flight_results",Definitions.FlightResults.VALUES,Definitions.FlightResults.MAC_SPANS],
+		["junk_lifecycle",Definitions.Junk.VALUES,Definitions.Junk.MAC_SPANS],
+		["world_initialization",Definitions.World.VALUES,Definitions.World.MAC_SPANS],
+		["station_lounges",Definitions.Lounges.VALUES,Definitions.Lounges.MAC_SPANS],
+		["station_generation",Definitions.Stock.VALUES,Definitions.Stock.MAC_SPANS]]
+
+func anchor_mac(data: Dictionary,spans: Dictionary) -> void:
+	for key in spans:data.provenance[key]={"offset":1000000+int(spans[key][0]),"bytes":int(spans[key][1])}
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:
 	var result:={}
