@@ -83,7 +83,8 @@ func extensions() -> Array:
 		["alioth_flight",Definitions.AliothFlight.VALUES,Definitions.AliothFlight.ANDROID_SPANS],
 		["alioth_return",Definitions.AliothReturn.MAC_VALUES,Definitions.AliothReturn.ANDROID_SPANS],
 		["free_navigation",Definitions.FreeNavigation.VALUES,Definitions.FreeNavigation.ANDROID_SPANS],
-		["free_population",Definitions.FreePopulation.VALUES,Definitions.FreePopulation.ANDROID_SPANS]]
+		["free_population",Definitions.FreePopulation.VALUES,Definitions.FreePopulation.ANDROID_SPANS],
+		["free_traffic",Definitions.FreeTraffic.VALUES,Definitions.FreeTraffic.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:
 	var result:={}
