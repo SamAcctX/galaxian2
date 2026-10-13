@@ -82,11 +82,14 @@ func verify_stale_pack(pack: String, library: RefCounted, architecture: String) 
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(pack.path_join("bindings.json")))
 	var directory:=OS.get_user_data_dir().path_join("npc-hull-entry-test-"+str(Time.get_ticks_usec()))
 	DirAccess.make_dir_recursive_absolute(directory)
-	for scenario in ["outdated_rank","missing_entry_proof"]:
+	for scenario in ["outdated_rank","missing_entry_proof","detached_setter"]:
 		var changed:=body.duplicate(true);var metadata:=header.duplicate(true)
 		var hull: Dictionary=changed.opening_actors.npc_initialization.hull
-		for key in hull.provenance.keys():
-			if not Definitions.LEGACY_SPANS[architecture].has(key):hull.provenance.erase(key)
+		if scenario=="detached_setter":changed.opening_actors.provenance.hull_setter.offset+=2
+		else:
+			for key in hull.provenance.keys():
+				# Android has no legacy layout: drop at least the iOS entry proofs.
+				if not Definitions.LEGACY_SPANS.get(architecture,Definitions.LEGACY_SPANS.armv7).has(key):hull.provenance.erase(key)
 		if scenario=="outdated_rank":hull.rank=1;hull.base_hull=34
 		var serialized:=JSON.stringify(changed,"",true,true)
 		metadata.records_sha256=serialized.sha256_text();metadata.records_bytes=serialized.to_utf8_buffer().size()
@@ -95,6 +98,7 @@ func verify_stale_pack(pack: String, library: RefCounted, architecture: String) 
 		file=FileAccess.open(directory.path_join("bindings.json"),FileAccess.WRITE);file.store_string(JSON.stringify(metadata));file.close()
 		var reader:=Bindings.new();check(reader.open(pack,library.manifest),reader.error)
 		check(not reader.open(directory,library.manifest) and reader.opening_actors.is_empty(),"Current pack retained stale or unverified rank: "+scenario)
+		if scenario=="detached_setter":check(reader.error=="NPC hull is disconnected from its opening declarations","Hull formula detached from its opening was not refused by the link: "+reader.error)
 	DirAccess.remove_absolute(directory.path_join("registrations.json"));DirAccess.remove_absolute(directory.path_join("bindings.json"));DirAccess.remove_absolute(directory)
 
 func check(ok: bool,message: String) -> void:

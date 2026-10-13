@@ -712,7 +712,9 @@ func open(directory: String, base: Dictionary,library: RefCounted=null) -> bool:
 	if version>=83 and not npc_hull.is_empty() and not NpcHull.parameters(npc_hull):return fail("Missing corrected flight-entry NPC hull declaration")
 	if not npc_hull.is_empty():
 		for key in ["hull_setter","cursor_getter"]:
-			if staged_actors.provenance.get(key)!=npc_hull.provenance.get(key): return fail("NPC hull is disconnected from its opening declarations")
+			# The same proven bytes; Android proofs also name their function (anchor).
+			var opening: Variant=staged_actors.provenance.get(key);var hull: Variant=npc_hull.provenance.get(key)
+			if not opening is Dictionary or not hull is Dictionary or [opening.get("offset"),opening.get("bytes")]!=[hull.get("offset"),hull.get("bytes")]: return fail("NPC hull is disconnected from its opening declarations")
 		if staged_actors.actors.size()!=npc_hull.hull_catalogue_ids.size(): return fail("NPC hull population differs from its opening")
 		for i in staged_actors.actors.size():
 			if staged_actors.actors[i].hull_catalogue_id!=npc_hull.hull_catalogue_ids[i]: return fail("NPC hull formula belongs to another opening population")
@@ -924,7 +926,8 @@ func open(directory: String, base: Dictionary,library: RefCounted=null) -> bool:
 		var objective_error:=MiningObjective.validate(body.get("mining_objective"),int(header.source_executable_bytes),architecture,staged_arrival_staging,staged_first_flight)
 		if not objective_error.is_empty():return fail(objective_error)
 		staged_mining_objective=body.mining_objective
-		if not staged_mining_objective.is_empty() and (staged_mining_briefing.is_empty() or staged_station_presentation.is_empty() or staged_desktop_text.is_empty()):return fail("Mining objective requires its briefing, portraits, voices and desktop text")
+		# Android has no desktop text (GameText::setSubstituteArray is never called).
+		if not staged_mining_objective.is_empty() and (staged_mining_briefing.is_empty() or staged_station_presentation.is_empty() or staged_desktop_text.is_empty() and architecture!="android-armv7"):return fail("Mining objective requires its briefing, portraits, voices and desktop text")
 	var staged_flight_notices := {}
 	if version>=99:
 		var notice_error:=FlightNotices.validate(body.get("flight_notices"),int(header.source_executable_bytes),architecture,staged_arrival_staging,staged_first_flight)

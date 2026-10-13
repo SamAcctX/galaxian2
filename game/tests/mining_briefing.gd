@@ -95,7 +95,7 @@ func verify(args: Array):
 		var line: Dictionary=briefing.snapshot().dialogue
 		check(line.index==i and line.count==5 and line.text_id==first_text+i and line.speaker_id==[0,2,0,2,16][i],"Briefing sequence differs from authored pairs")
 		check(line.voice_event_id==([177,178,179,180,-1][i]),"Wrong briefing recording selected")
-		if i==4 and android:check(line.desktop_text_id==line.text_id and line.desktop_text==line.text and "#KEY_" not in line.text and "tap Fire" in line.text,"Android mining instruction gained a desktop variant")
+		if i==4 and android:check(line.desktop_text_id==line.text_id and line.desktop_text==line.text and "#KEY_" not in line.text and "fire button" in line.text,"Android mining instruction gained a desktop variant")
 		elif i==4:check(line.desktop_text_id==first_text+5 and "press F" in line.desktop_text and "#KEY_" not in line.desktop_text and "tap Fire" in line.text,"Desktop mining instruction lost its active key or touch variant")
 		check(briefing.navigate("next"),briefing.error)
 	var done:=briefing.snapshot()
