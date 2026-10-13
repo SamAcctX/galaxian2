@@ -565,7 +565,7 @@ func show_info() -> void:
 	_label("The opening through free travel, supported jumpgate routes, shopping and courier/passenger contracts are playable. Station saves retain acknowledged opening and free-play progress. The remaining campaign and expansions are unfinished.")
 	_label("Saving during flight or conversations and original game save files are not supported yet.")
 	_label("Engine: Apache-2.0. Original game content remains the property of its respective owners.")
-	var button:=_button("Choose another Mac game…",show_setup);button.disabled=has_session()
+	var button:=_button("Choose another game…",show_setup);button.disabled=has_session()
 	button.tooltip_text="The source game can be changed before starting or loading a game"
 
 func _show_details(next: String,title: String) -> void:
