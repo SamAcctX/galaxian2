@@ -72,3 +72,30 @@ class DeepScienceStockTests(unittest.TestCase):
             self.assertFalse(reader.extract_deep_science_stock(mach, arrival, reader.BASE_VALUES))
         with patch.multiple(reader, LAYOUTS=proofs, MAC_ALTERNATE=proofs):
             self.assertFalse(reader.extract_deep_science_stock(mach, arrival, reader.BASE_VALUES))
+
+
+class DeepScienceStockAndroidTests(unittest.TestCase):
+    ARRIVAL = {'scope': 'rescue_choreography', 'provenance': {'actor': {'offset': 5, 'bytes': 24, 'anchor': 1}}}
+
+    def test_android_proofs(self):
+        import android_fixture
+        from unittest.mock import patch
+        from gof2_content import deep_science_stock as reader
+        from gof2_content.android_library import AndroidLibrary
+        from test_mido_travel import roomy
+        base = reader.ANDROID_BASE_VALUES
+        with patch.object(android_fixture, 'library', roomy(android_fixture.library)):
+            android_fixture.verify_android_proof(self, reader, lambda lib: reader.extract_deep_science_stock(lib, self.ARRIVAL, base), values='VALUES')
+            image, layout, _ = android_fixture.layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            self.assertTrue(reader.extract_deep_science_stock(lib, self.ARRIVAL, base))
+            # The arrival staging and the Android base stock are required.
+            self.assertEqual(reader.extract_deep_science_stock(lib, {}, base), {})
+            self.assertEqual(reader.extract_deep_science_stock(lib, self.ARRIVAL, reader.MAC_BASE_VALUES), {})
+            self.assertEqual(reader.extract_deep_science_stock(lib, self.ARRIVAL, {}), {})
+
+    def test_android_native_declarations(self):
+        from gof2_content import deep_science_stock as reader
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'deep_science_stock_definitions.gd', values='VALUES')

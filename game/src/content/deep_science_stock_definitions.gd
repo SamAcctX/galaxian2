@@ -9,6 +9,9 @@ const VALUES := {"scope":"deep_science_base_station_stock","station_id":10,"firs
 const SPANS := {"station10_count":[-240253,114],"station10_fixed_ship":[-240063,216],"all_base_gold":[-726102,106],"all_base_gold_getter":[-725984,12],"retained_medals":[-725630,110],"medal_dispatch":[-727879,128],"required_medal_dispatch":[-726378,4],"required_medal_predicate":[-726907,20],"required_medal_levels":[1544402,12],"required_campaign_progress":[858140,28]}
 const MAC_SPANS := {"station10_count":[-241720,110],"station10_fixed_ship":[-241531,213],"all_base_gold":[-731998,106],"all_base_gold_getter":[-731880,12],"retained_medals":[-731526,110],"medal_dispatch":[-733775,128],"required_medal_dispatch":[-732274,4],"required_medal_predicate":[-732803,20],"required_medal_levels":[1519386,12],"required_campaign_progress":[858772,28]}
 
+# Android: spans inside named functions (Layouts.anchored in validate).
+const ANDROID_SPANS = {"station10_count":[938,108],"station10_fixed_ship":[1096,136],"all_base_gold":[0,130],"all_base_gold_getter":[0,6],"retained_medals":[0,86],"medal_dispatch":[16,86],"required_medal_dispatch":[160,2],"required_medal_predicate":[760,14],"required_medal_levels":[360,12],"required_campaign_progress":[0,14]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
