@@ -1,9 +1,23 @@
-"""Second Mac mining departure data. No original code is executed or emitted."""
+"""Second Mac mining departure data. No original code is executed or emitted.
+
+Android: Status::nextCampaignMission's cursor-4 case clears the cargo
+(Ship::setCargo) and creates mission 154 at station 78 with status value 25;
+ModStation::leaveStation and ModStation::OnTouchEnd launch after the
+confirmation (text 386) with the cache reset; Status::departStation keeps
+the mission; MGame::OnInitialize restores or refreshes the player pools.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .station_exterior import declaration_bytes
 
 def extract_full_hold_departure(mach, arrival, departure, station_return):
+    if mach.architecture == 'android-armv7':
+        try:
+            if departure['scope'] != 'first_station_departure' or station_return['scope'] != 'first_mining_station_return': return {}
+            if station_return['cursor_after_acknowledgement'] != 4 or station_return['next_mission_kind'] != 154 or station_return['next_mission_parameter'] != 25: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(VALUES, provenance=proof) if proof else {}
     if mach.architecture != 'x86_64': return {}
     try:
         if departure['scope'] != 'first_station_departure' or station_return['scope'] != 'first_mining_station_return': return {}
@@ -105,3 +119,29 @@ MAC_ALTERNATE = {'launch_gates': [437438,
                        300,
                        '__text',
                        '554889e54157415653504189d789f34989fe488d059b781700488b00488bb8080200004885ff7419e8fbb3f8ff3db7000000750df30f1005f47c0a00e9b60000008d43930f57c083f8040f87a70000004183ff697f3583f8040f8795000000f30f100501f50900488d0daa000000486304814801c8ffe0f30f1005ad3e0a00eb76f30f100587c80900eb6c4181be780200009d0000007f4583f8047757f30f1005bbf40900488d0d58000000486304814801c8ffe0f30f10054ff50900eb38f30f10057dc40900eb2ef30f10055bc40900eb24f30f1005053c0a00eb1a83fb6d0f94c00fb6c0488d0d477c0a00f30f100481eb030f57c04883c4085b415e415f5dc36690f3ffffffb1ffffffbbffffffc5ffffffcfffffffdfffffff5fffffff5fffffffbbffffff69ffffff']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# ModStation::leaveStation, the accepted confirmation (text 386), the destination and the -1 cache
+           # reset with source state 2 (ModStation::OnTouchEnd); Status::departStation keeps the mission.
+           'launch_gates': ('_ZN10ModStation12leaveStationEv', 0, 684, 'sha256:312550b1ddc5c8aaf2d57ee470e9d8eb501690835f2699e068ebed55c62b4120'),
+           'accept': ('_ZN10ModStation10OnTouchEndEiiPv', 1808, 20, '94f8ae00002800f0f580dff89c08002184f8ae10'),
+           'destination': ('_ZN10ModStation10OnTouchEndEiiPv', 1982, 60, 'sha256:541dddffa5fcde9b38a23b46e21b70bae0b7abc96e406344c4a61f8ccfd0c6f0'),
+           'cache_reset_and_state': ('_ZN10ModStation10OnTouchEndEiiPv', 2532, 84, 'sha256:0617b3f4542623e94b12edfb7d5c49d9a0a8d22dd1e10929cef4c416c59bdd41'),
+           'mission_selection': ('_ZN6Status13departStationEP7Station', 0, 1072, 'sha256:b7432b338855a0a259aa2b3d0d678bb305ea5293e9903e68114efafe3b6170d6'),
+           # Status::nextCampaignMission: cursor 4 (tbh entry 3) clears the cargo (Ship::setCargo(0)) and
+           # creates mission 154 at station 78 with status value 25.
+           'mission_dispatch': ('_ZN6Status19nextCampaignMissionEb', 74, 2, 'ac0c'),
+           'mission_factory': ('_ZN6Status19nextCampaignMissionEb', 6556, 52, 
+                               'c4f8e8310021c9e900ced4f88c01b3f7cced6420aff7e4eb05469a2100224e23b3f77aed20462946b3f782edd4f89401192129e3'),
+           'mission_parameter': ('_ZN6Status19nextCampaignMissionEb', 8228, 14, '4068006801b0bde8f04320f17fb9'),
+           # The kept ship: empty cargo counts 0 (Ship::setCargo, Ship::getCurrentLoad) and Ship::clone.
+           'cargo_clear': ('_ZN4Ship8setCargoEP5ArrayIP4ItemE', 0, 92, 'sha256:71a00bf8d9656ccfc6fe7984f4d7e5663bef8a101d0b3aa4cd3f566af6554bcf'),
+           'cargo_used': ('_ZN4Ship14getCurrentLoadEv', 0, 4, '00697047'),
+           'station_keeps_ship': ('_ZN4Ship5cloneEv', 0, 136, 'sha256:021703f0f9e1b9c2368f4fc1d6c7083fd5be4f7bf12daa095d2b717f6ad0f091'),
+           # MGame::OnInitialize: world 3, cache values >= 0 restore the pools, else the ship maxima and
+           # gamma 100 when the station has no gamma damage (Status::getGammaRayDamagePerSecond); audio selector 1.
+           'world_entry': ('_ZN5MGame12OnInitializeEv', 618, 40, 'sha256:5de34cff731716588906fd2eae404c607a5931b9bf1459e0e252272691040ba5'),
+           'negative_pool_restore': ('_ZN5MGame12OnInitializeEv', 670, 112, 'sha256:7963d0f30c3fd2ff266acceeb577fd6a477da47ac30ad754becb9fa9af2ca86a'),
+           'ordinary_pool_refresh': ('_ZN5MGame12OnInitializeEv', 782, 126, 'sha256:6925d90120932aaebde49080a4670f6553faa9995f9d8cf92f018c223d54a60c'),
+           'gamma_environment': ('_ZN6Status26getGammaRayDamagePerSecondEii', 0, 80, 'sha256:d2344fecf64f4c5be2745d07ee0f160583c95f1fccb92bb2b543497c95488677'),
+           'audio_selector_consumer': ('_ZN5MGame12OnInitializeEv', 2072, 48, 'sha256:9fdb99239d5f6ba5cc6cb23bdc94dc948495413f184d6f7b605e45063a485e38')}
