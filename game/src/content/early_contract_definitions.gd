@@ -102,6 +102,7 @@ static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dicti
 		if data.has("station_generation"):android_spans.merge(Stock.ANDROID_SPANS)
 		if data.has("base_station_stock"):android_spans.merge(BaseStock.ANDROID_SPANS)
 		if data.has("base_navigation"):android_spans.merge(Navigation.ANDROID_SPANS)
+		if data.has("lounge_presentation"):android_spans.merge(LoungePresentation.ANDROID_SPANS)
 		return "" if Layouts.anchored(data.provenance,source_bytes,android_spans) else "Invalid early contract provenance"
 	if data.has("station_generation") and not Equal.equal_value(data.station_generation,Stock.VALUES):return "Unsupported early contract terms"
 	if data.has("base_station_stock") and Equal.equal_value(data.base_station_stock,BaseStock.ANDROID_VALUES):return "Unsupported early contract terms"

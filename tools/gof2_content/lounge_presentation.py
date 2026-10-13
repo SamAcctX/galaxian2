@@ -1,8 +1,21 @@
-"""Original lounge presentation declarations; no executable payloads."""
+"""Original lounge presentation declarations; no executable payloads.
+
+Android: Level::createScene builds the lounge (world type 4) from the room,
+visitor, slot and selection tables by the system faction
+(SolarSystem::getRace); CutScene::initialize sets its projection and faction
+extras; SpaceLounge::SpaceLounge aligns the visitors and flies the camera in
+from the entry table over 3000 ms and SpaceLounge::init settles it and lights
+the room; Level::init and Level::createSpace keep the current station's space
+as the background. Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_lounge_presentation(mach, arrival):
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -241,3 +254,23 @@ MAC_ALTERNATE = {'lounge_presentation_room_factory': [-1586,
                                         30,
                                         '__text',
                                         '55838c5a43a817019dc7b8fd47da522ab1b03ad4c5793aa2f1f0bd0fa0010e97']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'lounge_presentation_world_type': ('_ZN5Level11createSceneEv', 64, 22, 'd5f8c000022814d00428109500f08480172840f07584'),
+           'lounge_presentation_room_factory': ('_ZN5Level11createSceneEv', 344, 776, 'sha256:6f767fb4b75bae464902901dc729e9ae41b0374352dec27cb441f36071b54c93'),
+           'lounge_presentation_slots': ('_ZN5Level11createSceneEv', 508, 336, 'sha256:42caebdaa957520ac87d2d4daaa7b7ba369cdf78ac9929cd996057215af54a31', 'literal', 0),
+           'lounge_presentation_visitor_table': ('_ZN5Level11createSceneEv', 602, 32, 'sha256:02ada73f986e69abaa2c7ee65a9a6a13a6bd4f089700e88ef15f4b521dc4ea5e', 'literal', 0),
+           'lounge_presentation_selection_table': ('_ZN5Level11createSceneEv', 770, 16, 'c9370000ca370000cb370000cc370000', 'literal', 0),
+           'lounge_presentation_room_table': ('_ZN5Level11createSceneEv', 1002, 48, 'sha256:06f3854c1be6c10c7e30399ec096e22ecca58fffef5df6fe0975330d0427f7a6', 'literal', 0),
+           'lounge_presentation_scene_projection': ('_ZN8CutScene10initializeEv', 104, 58, 'sha256:0e579b3c0da3bdaf5a99fb193a60691da06e53b9605864ff81e098ec1eff143d'),
+           'lounge_presentation_extra_midorian': ('_ZN8CutScene10initializeEv', 206, 84, 'sha256:17d112613a76e6e63e7331f2b5c911d44364375fe8eb664885a527b21891ccde'),
+           'lounge_presentation_extra_terran': ('_ZN8CutScene10initializeEv', 976, 130, 'sha256:e9cfcf3dfa5822aeebb4f8132206abf974d23b6bce03f4653da0a2dcd065a8c8'),
+           'lounge_presentation_camera_entry': ('_ZN11SpaceLoungeC2Ev', 0, 1288, 'sha256:f790018c1417736a4f4d67c34298e2b0a9b537c5ccb5d320d5386538466eab07'),
+           'lounge_presentation_entry_positions': ('_ZN11SpaceLoungeC2Ev', 648, 48, 'sha256:27777e85752e27a7eb3b2c3154a6958d76a0951589a099e357038b306d3ea664', 'literal', 0),
+           'lounge_presentation_entry_yaws': ('_ZN11SpaceLoungeC2Ev', 722, 16, '8fc2f53c8fc2f53c3d0a573e295cef3f', 'literal', 0),
+           'lounge_presentation_camera_positions': ('_ZN11SpaceLoungeC2Ev', 744, 48, 'sha256:eb2732f39710cef0765931a54e32c1f668fc4ba9a1eb581739ba6a5d6e2fcf66', 'literal', 0),
+           'lounge_presentation_camera_yaws': ('_ZN11SpaceLoungeC2Ev', 842, 16, '0ad7233df628dc3e9a99193f1f85eb3e', 'literal', 0),
+           'lounge_presentation_camera_settled': ('_ZN11SpaceLounge4initEv', 1182, 342, 'sha256:a401cc2e844acb92f9c3bda11f20c7f71df61a8538df3145ec73fe3c92051ce4'),
+           'lounge_presentation_system_faction': ('_ZN11SolarSystem7getRaceEv', 0, 4, 'c0697047'),
+           'lounge_presentation_shared_background': ('_ZN5Level4initEv', 638, 18, '2046c4f89450b0f7d6eed4f8c00003285ad1'),
+           'lounge_presentation_shared_planets': ('_ZN5Level11createSpaceEv', 2964, 20, 'daf8c0506020abf76ceb06462946aff792ef9948')}
