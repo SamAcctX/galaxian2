@@ -147,8 +147,11 @@ func verify_training_field(equipment: RefCounted):
 	check(scenery.configure_combat_training(bindings,cat,equipment,Vector3(10,10,10000),conditions,1789100000,true,bodies,effects),scenery.error)
 	var field:=scenery.snapshot()
 	if field.is_empty():return
-	check(field.objects.size()==130 and field.center==Vector3(12298,36830,77237),"Training changed ordinary station scenery count or center")
-	check(field.world_initialization.input_random_state=={"state":153548941033574},"NPC construction did not follow the complete field RNG")
+	# Android fields hold 40 + random(40) asteroids (Mac 80 + random(80)), so the field RNG ends elsewhere.
+	var android: bool=bindings.source_architecture=="android-armv7"
+	var count:=50 if android else 130
+	check(field.objects.size()==count and field.center==Vector3(12298,36830,77237),"Training changed ordinary station scenery count or center")
+	check(field.world_initialization.input_random_state=={"state":280936762154123 if android else 153548941033574},"NPC construction did not follow the complete field RNG")
 	var world: RefCounted=scenery.world_initialization_owner()
 	check(world!=null and world.snapshot().npc_construction.actors.size()==4,"Training scenery omitted its NPC construction")
 	if world==null:return
@@ -161,7 +164,7 @@ func verify_training_field(equipment: RefCounted):
 	var player:=TrainingPlayer.new();check(player.configure_combat_training(bindings,cat,equipment),player.error)
 	var targets:=TrainingTargets.new();check(targets.configure_combat_training(bindings,cat,player,scenery),targets.error)
 	if targets.snapshot().is_empty():return
-	check(targets.snapshot().npc_ids==[0,1,2,3] and targets.snapshot().scenery_indices.size()==130,"Training primary target list omitted source bodies")
+	check(targets.snapshot().npc_ids==[0,1,2,3] and targets.snapshot().scenery_indices.size()==count,"Training primary target list omitted source bodies")
 	var mounts:=TrainingMounts.new();check(mounts.open(lib,cat),mounts.error)
 	var primary:=TrainingPrimary.new();check(primary.configure(bindings,cat,mounts,player.loadout()),primary.error)
 	check(not primary.advance(1).is_empty(),primary.error)

@@ -48,8 +48,10 @@ func verify_training_destruction(args: PackedStringArray, equipment: RefCounted)
 	check(briefing.campaign_cursor==7 and briefing.mission_kind==4 and briefing.entry_release_ms==7001 and briefing.briefing_minimum_ms==5001,"Training lost the shared entry/HUD clocks")
 	var newer:=int(bindings.combat_training.companion_name_text_id)==1588
 	var expected_briefing: Array=[1737,1738,1739,1742] if newer else [1726,1727,1728]
-	check(briefing.events.map(func(row):return int(row.text_id))==expected_briefing and bindings.desktop_text_id(expected_briefing[2])==int(expected_briefing[2])+1,"Training briefing or desktop fire instruction changed")
-	if newer:check(bindings.desktop_text_id(1742)==1743 and int(briefing.events[3].voice_event_id)==-1,"Newer source lost its silent Fast Forward instruction")
+	# Android has no desktop text: its instructions keep their touch wording (no +1 mapping).
+	var desktop:=0 if bindings.desktop_text.is_empty() else 1
+	check(briefing.events.map(func(row):return int(row.text_id))==expected_briefing and bindings.desktop_text_id(expected_briefing[2])==int(expected_briefing[2])+desktop,"Training briefing or desktop fire instruction changed")
+	if newer:check(bindings.desktop_text_id(1742)==1742+desktop and int(briefing.events[3].voice_event_id)==-1,"Newer source lost its silent Fast Forward instruction")
 	check(rules.completion_events.map(func(row):return int(row.text_id))==([1747,1748,1749,1750,1751] if newer else [1733,1734,1735,1736,1737]),"Training completion dialogue changed")
 	var cat:=Catalogues.new();check(cat.open(lib),cat.error)
 	var source:=TrainingWorld.new()
