@@ -76,8 +76,17 @@ def missing_campaign(declarations):
 
 def pipeline_id():
     """Invalidate derived data when the importer changes, even without a version bump."""
+    try:
+        # Android ships these modules compiled; its build records the digest of their sources.
+        from ._pipeline import ID
+        return ID
+    except ImportError:
+        return source_digest(Path(__file__).parent)
+
+
+def source_digest(folder):
     digest = hashlib.sha256()
-    for path in sorted(Path(__file__).parent.glob('*.py')):
+    for path in sorted(Path(folder).glob('*.py')):
         digest.update(path.name.encode('utf-8'))
         digest.update(path.read_bytes())
     return digest.hexdigest()

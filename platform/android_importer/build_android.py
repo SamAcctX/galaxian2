@@ -299,6 +299,13 @@ def stage_project(work, template, wheels, abi, ndk, extractor, *, release=False,
     for name in allowed:
         if name.startswith("tools/gof2_content/") and name.endswith(".py"):
             shutil.copyfile(ROOT / name, package / Path(name).name)
+    # Chaquopy ships .pyc files only, so game_install.pipeline_id() reads this
+    # digest of the staged sources (game_install.source_digest) on the device.
+    digest = hashlib.sha256()
+    for path in sorted(package.glob("*.py")):
+        digest.update(path.name.encode("utf-8"))
+        digest.update(path.read_bytes())
+    (package / "_pipeline.py").write_text(f"ID = '{digest.hexdigest()}'\n")
     # Godot regenerates src/main/assets for each export. A separate Gradle
     # assets source set keeps notices in the final APK through that cleanup.
     notices = build / "src/licenses/assets/licenses"
@@ -441,7 +448,8 @@ def verify_apk(output, abi, sdk):
         try:
             with zipfile.ZipFile(io.BytesIO(archive.read("assets/chaquopy/app.imy"))) as python:
                 if not {"android_import_worker.pyc", "import_game.pyc",
-                        "gof2_content/game_install.pyc", "gof2_content/dmg.pyc"}.issubset(python.namelist()):
+                        "gof2_content/game_install.pyc", "gof2_content/dmg.pyc",
+                        "gof2_content/_pipeline.pyc"}.issubset(python.namelist()):
                     raise ValueError("Shared Mac app ZIP/DMG importer missing from APK")
             with zipfile.ZipFile(io.BytesIO(archive.read("assets/chaquopy/requirements-common.imy"))) as packages:
                 licenses = {"capstone-5.0.6.dist-info/licenses/LICENSE.TXT",
