@@ -1,9 +1,24 @@
-"""Source first-mining session declarations; original code is never a runtime."""
+"""Source first-mining session declarations; original code is never a runtime.
+
+Android: PlayerEgo::approachAsteroid runs MiningGame::update and stops the
+drill (PlayerEgo::stopMining: sounds 1 and 3) on a dying target or a lost
+game with Hud::hudEvent 8 (text 528). MGame::OnUpdate clamps frames to
+150 ms, updates the player before the commands, feeds the analog stick's
+signed squares and, at cursor 2, opens the failure instruction (text 606,
+title 379, ChoiceWindow::set) after each lost drill; MGame::OnTouchEnd's
+acknowledgement only resumes the game. The values are MAC_VALUES.
+"""
 import copy
 from .ship_models import section_bytes
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 def extract_mining_session(mach, arrival, approach, drill):
+    if mach.architecture == 'android-armv7':
+        try:
+            if approach['scope'] != 'first_mining_approach' or drill['scope'] != 'ordinary_mining_drill': return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(MAC_VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64' or approach.get('scope')!='first_mining_approach' or drill.get('scope')!='ordinary_mining_drill':return {}
     try:
         origin=arrival['provenance']['actor']
@@ -160,3 +175,35 @@ MAC_VALUES = {'automatic_finish_resumes_motion': True,
  'max_frame_ms': 150,
  'scope': 'first_mining_session',
  'stop_audio_events': [1, 3]}
+
+# Android spans inside named functions; the values are MAC_VALUES.
+ANDROID = {# PlayerEgo::approachAsteroid: a dying / dead asteroid or a lost game stops the drill with notice 8;
+           # a lost game sets +0x39b (PlayerEgo::lostMiningGame); a new drill clears hint 0x37.
+           'ongoing_drill': ('_ZN9PlayerEgo16approachAsteroidEP3HudiP5Radar', 424, 80, 'sha256:dde81ad639ab9d935077f1c040ebff25e020fc2115bc9ee95205fd774c5f92e0'),
+           'outcome_dispatch': ('_ZN9PlayerEgo16approachAsteroidEP3HudiP5Radar', 1038, 90, 'sha256:3f3b6f75d442f7a05e61ac3eb57c647f32b36d47add4dff453bc97cf1fa90d73'),
+           'instruction_reset_owner': ('_ZN9PlayerEgo16approachAsteroidEP3HudiP5Radar', 932, 20, '3e4800218bf89b1378448bf8f512006880f83710'),
+           # PlayerEgo::stopMining's end: exhaust on, the approach released (dockToAsteroid(0)), sounds 1 and 3 stopped.
+           'finish_release': ('_ZN9PlayerEgo10stopMiningEv', 406, 110, 'sha256:67b38a85227ff955bf7b110e5a56bdb05e23892e91c929dd56aaf89bad236798'),
+           'active_drill': ('_ZN9PlayerEgo8isMiningEv', 0, 12, 'd0f8e401002818bf01207047'),
+           'failed_getter': ('_ZN9PlayerEgo14lostMiningGameEv', 0, 6, '90f89b037047'),
+           # MGame::OnUpdate: frames up to 150 ms, PlayerEgo::update before the commands, the failure
+           # instruction (cursor 2, hint 0x37 unseen: ChoiceWindow text 606 under title 379, paused) and
+           # the analog stick's signed squares (PlayerEgo::left / right / up / down).
+           'frame_delta': ('_ZN5MGame8OnUpdateEv', 28, 74, 'sha256:eaaf569132bc5a048adb1edcaaf68a26023ea10c6932ff5a8f3bf0a9eea24a24'),
+           'player_frame_dispatch': ('_ZN5MGame8OnUpdateEv', 1834, 42, 'sha256:0a1080578ce8d004ef09608eb8e2453ad750b3049a0329e27119d030691e9a99'),
+           'failure_instruction_gate': ('_ZN5MGame8OnUpdateEv', 6940, 130, 'sha256:bcc5c10b990cdb63977d2917e3a3a8cdecc8834bc654bf90c9878a2f21cd958b'),
+           'hud_drill_input': ('_ZN5MGame8OnUpdateEv', 11650, 424, 'sha256:35b4e500ee2d912c4fe37ad96ae547155e38796f1acf8e35cb063ed57e0e2fa6'),
+           # Hud::hudEvent: events 1..47 through tbh; event 8 shows text 528.
+           'notification_dispatch': ('_ZN3Hud8hudEventEiP9PlayerEgoi', 26, 14, 'a8f101002e2800f25c84dfe810f0'),
+           'failure_jump_entry': ('_ZN3Hud8hudEventEiP9PlayerEgoi', 54, 2, '3e02'),
+           'failure_text': ('_ZN3Hud8hudEventEiP9PlayerEgoi', 1188, 12, 'dff8680740f21b21784476e1'),
+           'instruction_title': ('_ZN12ChoiceWindow3setERKN11AbyssEngine6StringE', 0, 44, 'sha256:629cf0ac96a27793c2635112ef6e86c50c4edd03105a559393efa0a0e0192586'),
+           'instruction_pause': ('_ZN5MGame11pauseSoundsEv', 0, 72, 'sha256:54387a9c5c59998b6ed287fbd90f243469a37414afb4e93dcd036365400a231d'),
+           'instruction_resume': ('_ZN5MGame12resumeSoundsEv', 0, 64, 'sha256:81d6aaab2845dd94f01b7f19e53a8156e100f63d5759451ffe35b445006a991e'),
+           # MGame::OnTouchEnd: a paused hint window's acknowledgement only resumes (MGame::resumeSounds).
+           'instruction_ack_gate': ('_ZN5MGame10OnTouchEndEiiPv', 80, 40, 'sha256:4ca0fd0dc3c62c972006ee55c42d86a7f24c5300d2263d9187b1c9572b1fc858'),
+           'instruction_ack_dispatch': ('_ZN5MGame10OnTouchEndEiiPv', 1120, 22, 'daf89000594632469af8dc41c3f694e9002c00f0d180'),
+           'instruction_acknowledgement': ('_ZN5MGame10OnTouchEndEiiPv', 1560, 18, 'e0b900208af8ca008af85d005046c6f69cec'),
+           'instruction_cursor': ('_ZN5MGame8OnUpdateEv', 6954, 4, '022837d1'),
+           'instruction_text': ('_ZN5MGame8OnUpdateEv', 7024, 4, '40f26921'),
+           'instruction_title_id': ('_ZN12ChoiceWindow3setERKN11AbyssEngine6StringE', 10, 4, '4ff4c371')}

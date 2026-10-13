@@ -2824,6 +2824,7 @@
     "tests/test_mido_continuation.py",
     "tests/test_mining_approach.py",
     "tests/test_mining_drill.py",
+    "tests/test_mining_session.py",
     "tests/test_mining_targeting.py",
     "tests/test_nehma_return.py",
     "tests/test_nehma_visit.py",
