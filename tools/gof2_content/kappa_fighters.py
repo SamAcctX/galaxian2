@@ -1,8 +1,18 @@
-"""Original common fighter systems and target rules for Kappa. Constant declarations only."""
+"""Original common fighter systems and target rules for Kappa. Constant declarations only.
+
+Android: Level::createShip gives subtype 0 systems of 40 + 5 x rank (rank at
+most 20) recovering in 15000 ms (Player::setEmpData); PlayerFighter::update
+recovers, drifts disabled and activates holding fighters; Level::connectPlayers
+links the targets and Player::shoot gates the fire. Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_kappa_fighters(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -90,3 +100,10 @@ MAC_ALTERNATE = {'kappa_fighters_shared_factory': [77944,
                                       255,
                                       '__text',
                                       '2dce430c8b42b662432859e7029e1917d8c14e46735532aa09a6e66c025c8b70']}
+
+# Android spans: whole named functions; the values are VALUES.
+ANDROID = {'kappa_fighters_shared_factory': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           'kappa_fighters_systems_initializer': ('_ZN6Player10setEmpDataEii', 0, 34, 'sha256:db8305984270729626b73238bd0ca054c7920955857da98fde26a4ee9caecef0'),
+           'kappa_fighters_update': ('_ZN13PlayerFighter6updateEi', 0, 10528, 'sha256:fb79b3bde0fb27a45861c89450940e96ec313695cb5d4b4c290220c25ef78d9e'),
+           'kappa_fighters_target_membership': ('_ZN5Level14connectPlayersEv', 0, 1520, 'sha256:4e316991fbb2c7b755197137dad56b58a22cc3a495b4c038877551bc16a7e0ef'),
+           'kappa_fighters_fire_gate': ('_ZN6Player5shootEixbN11AbyssEngine6AEMath6MatrixE', 0, 416, 'sha256:e7c7d0715f47e6bdd3f5f154272d726a9106ce645d4d0524479406d298dc0fe3')}

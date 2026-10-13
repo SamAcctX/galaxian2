@@ -7,6 +7,9 @@ const SPANS = {"kappa_fighters_shared_factory":[77944,3478],"kappa_fighters_syst
 # Native composition.
 const MAC_SPANS = {"kappa_fighters_shared_factory":[77944,3478],"kappa_fighters_systems_initializer":[536244,56],"kappa_fighters_systems_update":[613229,60],"kappa_fighters_disabled_motion":[624991,343],"kappa_fighters_target_membership":[59038,2050],"kappa_fighters_fire_gate":[543206,494],"kappa_fighters_holding_activation":[617742,408],"kappa_fighters_target_activation":[620230,255]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"kappa_fighters_shared_factory":[0,3112],"kappa_fighters_systems_initializer":[0,34],"kappa_fighters_update":[0,10528],"kappa_fighters_target_membership":[0,1520],"kappa_fighters_fire_gate":[0,416]}
+
 static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALUES)
 
 static func available(bindings: RefCounted) -> bool:
