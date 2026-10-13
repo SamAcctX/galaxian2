@@ -1,8 +1,26 @@
-"""Original gate contact, confirmation and cinematic declarations only."""
+"""Original gate contact, confirmation and cinematic declarations only.
+
+Android: PlayerStaticFar::collide (strict axis-aligned faces around an integer
+centre) through Level::collideStream (landmark 1); MGame::dockEvent asks
+"<text 563>: <station>\n<text 410>" (its separators in .rodata);
+MGame::OnTouchEnd and ChoiceWindow::OnTouchEnd accept (0: jump), open the
+jump map (1: StarMap::setJumpMapMode(true, false)) or, after the map, jump,
+route or coast back (PlayerEgo::dockToStream: speed 2, gate position +
+8000 z in the source frame, as on the Mac); PlayerEgo::update coasts;
+MGame::startJumpScene and updateJumpScene, TargetFollowCamera::translate,
+PlayerJumpgate::activate, timeToJump (1000 ms) and animationEnded,
+AEGeometry::addChild, PaintCanvas::TransformRemoveChild, Level::createSpace's
+jump animation, PlayerEgo::setSpeed and Player::setRadius complete it.
+Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_gate_transit(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -227,3 +245,34 @@ MAC_ALTERNATE = {'gate_transit_contact': [642620, 96, '__text', '42c8d305eaa8dfb
                                   2,
                                   '__cstring',
                                   '102b51b9765a56a3e899f7cf0ee38e5251f9c503b357b330a49183eb7b155604']}
+
+# Android spans inside named functions and their strings; the values are VALUES.
+ANDROID = {# Contact with gate 1.
+           'gate_transit_contact': ('_ZN15PlayerStaticFar7collideEfff', 0, 142, 'sha256:67c8e6729045c1e0aaf1e1b251ab5a7043372fcc411a1d9f72534a036eb63759'),
+           'gate_transit_outgoing_lookup': ('_ZN5Level13collideStreamEN11AbyssEngine6AEMath6VectorE', 0, 30, 'sha256:48993b306beb2080988299c2f90b42492ba0d871ee3e006a4d728becfd5cd12f'),
+           # MGame::dockEvent: the confirmation text and its separators.
+           'gate_transit_hud': ('_ZN5MGame9dockEventEii', 0, 1500, 'sha256:c509b37791ee035ac28c716b3765e52ba5705d02fa07f400333fcb885a2b9ee0'),
+           'gate_transit_hud_name_separator': ('_ZN5MGame9dockEventEii', 414, 3, '3a2000', 'literal', 0),
+           'gate_transit_hud_line_separator': ('_ZN5MGame9dockEventEii', 468, 2, '0a00', 'literal', 0),
+           # MGame::OnTouchEnd: accept, jump map, map closed (jump, route or coast back).
+           'gate_transit_dispatch': ('_ZN5MGame10OnTouchEndEiiPv', 582, 106, 'sha256:9f43fed4591356a51bcbd67199604da731b1323eacb403002d276cf7270a84af'),
+           'gate_transit_dispatch_map': ('_ZN5MGame10OnTouchEndEiiPv', 1316, 122, 'sha256:4a6714be3d3745218768c47ee2834783a7fa0801c2483d94687c10fa1e042039'),
+           'gate_transit_dispatch_close': ('_ZN5MGame10OnTouchEndEiiPv', 2878, 82, 'sha256:112df4783914c839a2cc5fe63335ba9fe16324bd37cc7b7702f0899c23ff41b9'),
+           'gate_transit_dispatch_cancel': ('_ZN5MGame10OnTouchEndEiiPv', 3380, 136, 'sha256:814316ab5010294f4798dff0d5889fdd641374cdea7ef6dc443b2a5dd9f2d1ca'),
+           'gate_transit_dispatch_route': ('_ZN5MGame10OnTouchEndEiiPv', 3650, 42, 'sha256:ae61ac8dd962a414e2bd6aabdd92e3a870fd3dbc7ea789e7869b5e73cbccb9cf'),
+           'gate_transit_dialog_result': ('_ZN12ChoiceWindow10OnTouchEndEii', 0, 92, 'sha256:f765509e4f61814c27ee84380108a64de88c88ccfd6cf2ebd6c8ccd57b04a828'),
+           # The coast, the jump scene and its camera, the gate animation.
+           'gate_transit_coast': ('_ZN9PlayerEgo12dockToStreamEb', 0, 140, 'sha256:5d38906967cfec11f609359bc04939418f837e7439cc511c3b55a02dd26533d3'),
+           'gate_transit_coast_motion': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 0, 9856, 'sha256:456b421fff96043243d79b6f3c451d88fef761c8b03240403d2ca0e47625be17'),
+           'gate_transit_departure_pose': ('_ZN5MGame14startJumpSceneEv', 0, 928, 'sha256:284d589582e7a44619dbdf07508484cbc3ded1f1cd5eee1120b111baf476c8e3'),
+           'gate_transit_camera_step': ('_ZN5MGame15updateJumpSceneEv', 0, 1000, 'sha256:0b7570bae50d6aac7ed62fb837d802accb89550f4e882c249f3105daac85352d'),
+           'gate_transit_camera_translate': ('_ZN18TargetFollowCamera9translateEfff', 0, 64, 'sha256:b6142bfbe0be4a8120f2c41cfe71a2eaa8237f1567db29d0c7704a4c9e4b5d85'),
+           'gate_transit_activation': ('_ZN14PlayerJumpgate8activateEv', 0, 76, 'sha256:f2af29d7ca9aff61454896b35a452c4137cdb979ac952e20d9238329b03a8ce6'),
+           'gate_transit_acceleration': ('_ZN14PlayerJumpgate10timeToJumpEv', 0, 44, 'sha256:7bbda50aa259f1b69052591a4102a49122126a455ae479f45583bd29993ac9a0'),
+           'gate_transit_completion': ('_ZN14PlayerJumpgate14animationEndedEv', 0, 48, 'sha256:16b787e8ed515139208743b03062665c0e1171eda6f7fb13c54b571128921cff'),
+           'gate_transit_child_select': ('_ZN10AEGeometry8addChildEj', 0, 32, 'sha256:357672994cd98231877c8d12108d1056a84b737efbc6dbc749dcabe1b5a91c24'),
+           'gate_transit_child_remove': ('_ZN11AbyssEngine11PaintCanvas20TransformRemoveChildEjj', 0, 62, 'sha256:5b6c16ccd290c22d957b2d114dd5be53f9adb2c679cd429f4c004cc8c3b32aa2'),
+           'gate_transit_child_setup': ('_ZN5Level11createSpaceEv', 2352, 58, 'sha256:d85f2a193c116e8ac56f4b8e94e7ad7b9cfbc93b29c4ed4107aba83351c68a8a'),
+           # Speed and radius setters.
+           'gate_transit_speed_setter': ('_ZN9PlayerEgo8setSpeedEf', 0, 6, 'c0f8b8107047'),
+           'gate_transit_bound_setter': ('_ZN6Player9setRadiusEi', 0, 4, '01647047')}
