@@ -19,6 +19,17 @@ func verify() -> void:
 	travel.continuation=Travel.MAC_CONTINUATION.duplicate(true)
 	travel.return_visit=Travel.ANDROID_RETURN_VISIT.duplicate(true)
 	travel.provenance={}
+	# The supported travel context: contract navigation through free flight.
+	travel.arrival_briefing=Travel.MAC_ARRIVAL_BRIEFING.duplicate(true)
+	travel.contract_navigation=Travel.CONTRACT_NAVIGATION.duplicate(true)
+	for row in [["contract_completion",Travel.ContractStory.MAC_VALUES],["convoy_capture",Travel.ConvoyCapture.MAC_VALUES],
+		["convoy_ship",Travel.ConvoyShip.VALUES],["convoy_lifecycle",Travel.ConvoyLifecycle.VALUES],["convoy_effects",Travel.ConvoyEffects.VALUES],
+		["alioth_arrival",Travel.Alioth.MAC_VALUES],["convoy_transit",Travel.Transit.VALUES],["alioth_attack",Travel.Attack.MAC_VALUES],
+		["alioth_lifecycle",Travel.AliothLife.VALUES],["alioth_flight",Travel.AliothFlight.VALUES],["alioth_return",Travel.AliothReturn.MAC_VALUES],
+		["free_navigation",Travel.FreeNavigation.VALUES],["free_population",Travel.FreePopulation.VALUES],["free_traffic",Travel.FreeTraffic.VALUES],
+		["free_lifecycle",Travel.FreeLifecycle.VALUES],["free_flight",Travel.FreeFlight.VALUES]]:
+		travel[row[0]]=row[1].duplicate(true)
+	check(Travel.parameters(travel) and Travel.navigation_available(travel,13),"The Android travel context was refused")
 	var android: Dictionary=Definitions.MAC_VALUES.duplicate(true)
 	android.provenance=anchored(Definitions.ANDROID_SPANS,origin)
 	check(Definitions.validate(android,source_bytes,"android-armv7",arrival,travel).is_empty(),"Android early contracts were rejected")
@@ -52,6 +63,13 @@ func verify() -> void:
 		var missing: Dictionary=chain.duplicate(true)
 		for key in row[2]:missing.provenance.erase(key)
 		check(not Definitions.validate(missing,source_bytes,"android-armv7",arrival,travel).is_empty(),"Android extension passed without its proofs: "+row[0])
+	# Each capability keeps its travel context: travel cut before it is refused.
+	var keys:=["contract_navigation","contract_completion","convoy_capture","convoy_ship","convoy_lifecycle","convoy_effects","alioth_arrival","convoy_transit","alioth_attack","alioth_lifecycle","alioth_flight","alioth_return","free_navigation","free_population","free_traffic","free_lifecycle","free_flight"]
+	for row in [["encounter_construction","contract_navigation"],["base_navigation","alioth_arrival"],["ordinary_generation","free_flight"]]:
+		if not chain.has(row[0]):continue
+		var cut: Dictionary=travel.duplicate(true)
+		for key in keys.slice(keys.find(row[1])):cut.erase(key)
+		check(Travel.parameters(cut) and not Definitions.validate(chain,source_bytes,"android-armv7",arrival,cut).is_empty(),"Android contracts kept "+row[0]+" without "+row[1])
 	var shifted: Dictionary=accepted.duplicate(true)
 	shifted.provenance.early_selector.offset+=1
 	check(not Definitions.validate(shifted,source_bytes,"android-armv7",arrival,travel).is_empty(),"Android contracts accepted a shifted proof extent")
@@ -62,7 +80,8 @@ func verify() -> void:
 ## [key, values, spans] of each ported extension in chain order.
 func extensions() -> Array:
 	return [["generation",Definitions.Contacts.VALUES,Definitions.Contacts.ANDROID_SPANS],
-		["delivery_results",Definitions.Delivery.VALUES,Definitions.Delivery.ANDROID_SPANS]]
+		["delivery_results",Definitions.Delivery.VALUES,Definitions.Delivery.ANDROID_SPANS],
+		["encounter_construction",Definitions.Encounters.VALUES,Definitions.Encounters.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:
 	var result:={}
