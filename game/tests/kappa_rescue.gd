@@ -32,10 +32,11 @@ func verify(args: PackedStringArray) -> void:
 		check(Rules.radio(bindings).is_empty(),"Older content inferred rescue radio")
 		return
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	for key in Rules.SPANS:
+	var android: bool=bindings.source_architecture=="android-armv7"
+	for key in (Rules.ANDROID_SPANS if android else Rules.SPANS):
 		var changed: Dictionary=bindings.mido_travel.duplicate(true)
 		changed.provenance[key].offset+=1
-		check(not Travel.validate(changed,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Moved rescue proof accepted: "+key)
+		check(not Travel.validate(changed,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Moved rescue proof accepted: "+key)
 	for key in Rules.VALUES:
 		var changed: Dictionary=bindings.mido_travel.duplicate(true)
 		changed.kappa_rescue[key]=null

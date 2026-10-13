@@ -178,7 +178,9 @@ func verify_yrdal_application(args: PackedStringArray,cursor: int=11):
 		check(host.request_departure()==contracts_supported and host._launch_button.visible==contracts_supported,"The next departure disagrees with its supported contract session")
 		host.cancel_departure()
 		if cursor==12:
-			check(finished.mission.completed_contract_target==4 and finished.completed_side_missions==0 and finished.phase=="contracts_required","The application bypassed the side-mission requirement")
+			# Android asks for one contract, the Mac for four.
+			var required:=1 if bindings.source_architecture=="android-armv7" else 4
+			check(finished.mission.completed_contract_target==required and finished.completed_side_missions==0 and finished.phase=="contracts_required","The application bypassed the side-mission requirement")
 			if bindings.early_contracts.has("station_generation"):
 				var locations: Dictionary=host.locations_snapshot()
 				check(locations.locations.map(func(row):return row.station_id)==[78,79,76],"The actual local journey changed the source FIFO order")
