@@ -23,11 +23,14 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 		spans.append(span)
 	if p.constructor_call!=weapon.get("projectile_capacity",{}).get("provenance",{}).get("constructor_call"):
 		return "Weapon bounds belong to another ordinary constructor"
-	# Android: Gun::Gun and Gun::calcCharacterCollision by name.
-	if architecture=="android-armv7": return ""
+	# Android: the selector and the hit gate sit in Gun::calcCharacterCollision,
+	# the zero and its flag store in Gun::Gun.
+	var android := architecture=="android-armv7"
 	var gate: Variant = weapon.get("ordinary_hit_policy",{}).get("provenance",{}).get("additional_gate")
-	if not gate is Dictionary or int(p.selector.offset)!=int(gate.offset)+(0x4d9 if architecture=="x86_64" else -0x26a):
+	if not gate is Dictionary or int(p.selector.offset)!=int(gate.offset)+(0x4d9 if architecture=="x86_64" else -0x1c8 if android else -0x26a):
 		return "Weapon bounds belong to another collision path"
-	if int(p.default.offset)!=int(p.constructor_entry.offset)+(0x349 if architecture=="x86_64" else 0x1e8):
+	if int(p.default.offset)!=int(p.constructor_entry.offset)+(0x349 if architecture=="x86_64" else 0x210 if android else 0x1e8):
+		return "Disconnected weapon bounds constructor default"
+	if android and int(p.default_value.offset)!=int(p.constructor_entry.offset)+0x166:
 		return "Disconnected weapon bounds constructor default"
 	return ""
