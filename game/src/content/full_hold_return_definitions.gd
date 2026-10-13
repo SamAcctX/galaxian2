@@ -11,6 +11,9 @@ const SPANS := {"mode1_counts":[1555258,24],"mode1_return_events":[1546594,48],"
 const MAC_ALTERNATE := {"mode1_counts":[1530242,24],"mode1_return_events":[1521578,48],"voice_table":[1535218,12032],"cursor6_dispatch":[872058,4],"cursor6_factory":[861333,50],"factory_install":[861177,16],"cargo_list_dispose":[731488,54],"mission_constructor":[399782,448],"station_acknowledgement":[430231,1908],"station_dialogue_selection":[447844,69],"dialogue_mission_binding":[-699540,28],"mission_voice_actor":[401826,10],"silent_voice_lookup":[-216172,68],"silent_voice_return":[-213857,14],"next_mission_equipment":[875164,126]}
 const MAC_VALUES := {"scope":"full_hold_station_return","station_id":78,"system_id":15,"departing_cursor":4,"campaign_cursor":5,"source_state":5,"contact_radius":16000.0,"contact_before_motion":true,"volume_after_motion":true,"requires_station_target":true,"mission_kind":11,"restricted_mission_kind":154,"restricted_notice":21,"minimum_delivered_cargo":25,"cache_pools":["hull","armor","shield","gamma"],"cache_truncates":["shield","gamma"],"cargo_preserved_on_arrival":true,"clear_cargo_after_acknowledgement":true,"mode":1,"next_text_id":179,"final_text_id":180,"cursor_after_acknowledgement":6,"next_mission_kind":158,"next_mission_parameter":0,"reward_credits":0,"bonus_credits":0,"events":[{"speaker_id":2,"text_id":1730,"voice_event_id":433},{"speaker_id":0,"text_id":1731,"voice_event_id":434},{"speaker_id":2,"text_id":1732,"voice_event_id":435},{"speaker_id":0,"text_id":1733,"voice_event_id":436},{"speaker_id":2,"text_id":1734,"voice_event_id":437},{"speaker_id":16,"text_id":1735,"voice_event_id":-1}],"refresh_cargo_after_acknowledgement":false}
 
+# Android: the MAC_VALUES; spans inside named functions and tables (Layouts.anchored).
+const ANDROID_SPANS := {"contact_constant_load":[82,4],"contact_radius_constant":[836,4],"station_contact_radius":[174,48],"dock_event":[0,1500],"mode1_counts":[0,24],"mode1_return_events":[232,48],"voices":[2160,40],"voice_table":[0,12032],"voice_lookup":[0,40],"silent_voice_return":[1054,6],"story_increment":[392,6],"cursor6_dispatch":[78,2],"cursor6_factory":[7206,38],"campaign_mission_tail":[426,14],"full_hold_factory":[6556,52],"full_hold_parameter":[8228,14],"cargo_check":[630,30],"next_mission_equipment":[766,96],"cargo_list_dispose":[0,30],"mission_constructor":[0,288],"station_acknowledgement":[0,6536],"station_check":[2044,38],"station_dialogue_selection":[2684,36]}
+
 static func parameters(data: Variant) -> bool:
 	return _parameters(data,VALUES) or _parameters(data,MAC_VALUES)
 
@@ -29,8 +32,9 @@ static func select(bindings: RefCounted, campaign_cursor: Variant) -> Dictionary
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, first: Dictionary, story: Dictionary) -> String:
 	if not data is Dictionary:return "Missing second station return declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data):return "Unsupported second station return declarations"
+	if not (arch=="x86_64" and parameters(data) or arch=="android-armv7" and _parameters(data,MAC_VALUES)):return "Unsupported second station return declarations"
 	if not First.parameters(first) or not Story.parameters(story):return "Second station return lacks verified docking or cargo context"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid full hold return extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Second station return lacks its source anchor"
 	var layouts: Array=[]
