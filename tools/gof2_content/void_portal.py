@@ -1,9 +1,24 @@
-"""Original recurring Void portal declarations; constant data only."""
+"""Original recurring Void portal declarations; constant data only.
+
+Android: PlayerWormHole (constructor, update, render, getPosition,
+isShrinking) opens over 3000 ms, closes after 60000 ms, hides at 63001 ms and
+then reopens elsewhere (in alien orbits (Status::inAlienOrbit) at
++-(30000 + random 60000), 20000 + random 40000, -60000 - random 40000; cursors
+29 and 41 relative to the player x 1.7), cancelling a wormhole autopilot;
+PlayerEgo::calcCollision and PlayerStaticFar::collide pull and enter as at
+Sahi; Status::Status keeps an empty Station (-1, -1) as the pending station;
+Status::nextCampaignMission case 24 creates Mission(156, 0, -1). Values are
+the Mac 1.0.7 ones (VALUES).
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 
 def extract_void_portal(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -241,3 +256,26 @@ MAC_ALTERNATE = {'void_portal_update': [656136,
                                        68,
                                        '__text',
                                        '1a9aad22c8771a84ef4126ac3fc6a4067ade6c71cb39ebd8ba700d66abca3d81']}
+
+ANDROID = {# PlayerWormHole: timing, scale, facing and relocation.
+           'void_portal_update': ('_ZN14PlayerWormHole6updateEi', 0, 1176, 'sha256:b5acf6c94d686058f788074d04453f1206c112e0f5cc437b026ae78c58850d44'),
+           'void_portal_draw': ('_ZN14PlayerWormHole11getPositionEv', 0, 38, 'sha256:fbe4aea3ef08ef5db9075367e2174fb941d4a247afbc32013ae5c910101a90c8'),
+           'void_portal_facing': ('_ZN14PlayerWormHole6renderEv', 0, 14, '90f8f11011b1806827f10db87047'),
+           'void_portal_portal_constructor': ('_ZN14PlayerWormHoleC2EiP10AEGeometryfffb', 0, 156, 'sha256:3927c922ca5de71c81cd38545f9b628e207c6d288b51542aeb45894154fe41df'),
+           'void_portal_portal_closing': ('_ZN14PlayerWormHole11isShrinkingEv', 0, 18, 'd0f8501100204ef660229142c8bf01207047'),
+           # Pull and entry.
+           'void_portal_portal_contact': ('_ZN9PlayerEgo13calcCollisionEP5ArrayIP8KIPlayerE', 0, 1112, 'sha256:79a5f8fc0b0aa59035d11e5caeebf7281059c6e2d5aa467e102db4dd4e377d52'),
+           'void_portal_portal_point_wrapper': ('_ZN8KIPlayer12outerCollideERKN11AbyssEngine6AEMath6VectorE', 0, 26, 'sha256:f17e832adf701edfbae43085c2eee53d9a06a6a41bf0fb96dc70f9be22857316'),
+           'void_portal_portal_point_xyz_wrapper': ('_ZN15PlayerStaticFar12outerCollideEfff', 0, 10, 'd0f800c0dcf838c06047'),
+           'void_portal_portal_point_xyz': ('_ZN15PlayerStaticFar7collideEfff', 0, 142, 'sha256:67c8e6729045c1e0aaf1e1b251ab5a7043372fcc411a1d9f72534a036eb63759'),
+           'void_portal_entry_ready': ('_ZN9PlayerEgo12isInWormholeEv', 0, 32, 'sha256:76262d8c2927d88cd55d42ac672809f8def4d5e554a8e791a68e05f9a9ed111a'),
+           # Status::nextCampaignMission case 24 and the pending empty station.
+           'void_portal_next_factory_dispatch': ('_ZN6Status19nextCampaignMissionEb', 116, 2, '8101'),
+           'void_portal_next_factory': ('_ZN6Status19nextCampaignMissionEb', 838, 62, 'sha256:0202f524266c5751a218f030f434034bff9ec5f0654d985da5518d2d6ed17395'),
+           'void_portal_next_protection': ('_ZN6Status19nextCampaignMissionEb', 8148, 36, 'sha256:5dfd40fbe28635054b8f73ce26b75a24dfa8851a2ef23a1beaba604d9d80f920'),
+           'void_portal_protected_cargo_getter': ('_ZN4Item12isUnsaleableEv', 0, 6, '90f844007047'),
+           'void_portal_protect_cargo_item': ('_ZN4Item13setUnsaleableEb', 0, 6, '80f844107047'),
+           'void_portal_same_station': ('_ZN6Status12inAlienOrbitEv', 0, 10, '816fd0f8980122f1afbb'),
+           'void_portal_station_equal': ('_ZN7Station6equalsEPS_', 0, 18, '0246002021b1896892688a4208bf01207047'),
+           'void_portal_void_station_allocation': ('_ZN6StatusC2Ev', 516, 24, '3020b1f7f2ef04462046b6f776e8c0ef50000020ac67c5f8'),
+           'void_portal_void_station_defaults': ('_ZN7StationC2Ev', 0, 136, 'sha256:6ceac104cd6a2f90e6e853e4a41e67c71c098198bae836371952620f2a300792')}

@@ -133,6 +133,7 @@ func extensions() -> Array:
 		["sahi_encounter",Definitions.SahiEncounter.MAC_VALUES,Definitions.SahiEncounter.ANDROID_SPANS],
 		["sahi_stage",Definitions.SahiStage.VALUES,Definitions.SahiStage.ANDROID_SPANS],
 		["tractor_recovery",Definitions.TractorRecovery.ANDROID_VALUES,Definitions.TractorRecovery.ANDROID_SPANS],
+		["void_portal",Definitions.VoidPortal.VALUES,Definitions.VoidPortal.ANDROID_SPANS],
 		["vossk_traffic",Definitions.Vossk.VALUES,Definitions.Vossk.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:
