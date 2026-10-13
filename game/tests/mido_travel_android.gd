@@ -105,6 +105,7 @@ func extensions() -> Array:
 		["ordinary_worlds",Definitions.Worlds.VALUES,Definitions.Worlds.ANDROID_SPANS],
 		["gate_arrival",Definitions.GateArrival.VALUES,Definitions.GateArrival.ANDROID_SPANS],
 		["ordinary_shopping",Definitions.Shopping.ANDROID_VALUES,Definitions.Shopping.ANDROID_SPANS],
+		["ordinary_fitting",Definitions.Fitting.MAC_VALUES,Definitions.Fitting.ANDROID_SPANS],
 		["vossk_traffic",Definitions.Vossk.VALUES,Definitions.Vossk.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:

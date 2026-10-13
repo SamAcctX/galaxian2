@@ -1,8 +1,26 @@
-"""Ordinary installed slots, additive capacities and primary model assignments. Constant declarations only."""
+"""Ordinary installed slots, additive capacities and primary model assignments. Constant declarations only.
+
+Android: HangarWindow::mountItem and demountItem (stacks of type 1 move
+whole, others one unit, no capacity guard), Ship::addEquipment, freeSlot
+(both forms), removeEquipment, addCargo and Item::combineItems;
+HangarWindow::selectItem protects unsaleable items and needed passenger
+cabins (sort 20, property 34; text 312, Android 323) and asks before a
+second copy (text 276, Android 287; Item::canBeInstalledMultipleTimes);
+HangarWindow::OnTouchEnd confirms the replacement; ModStation::leaveStation
+(tutorial cursors 6 and 7); Ship::refreshValue (cargo sort 12 property 22,
+passengers sort 20 property 34), getMaxLoad and getMaxPassengers;
+Level::createGun (capacity 20, dispersed kind 2 with 25) and its projectile
+model table, Gun::setIndex and its impact model table. Values equal the Mac
+1.0.7 ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_ordinary_fitting(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(MAC_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -1076,3 +1094,31 @@ MAC_VALUES = {'scope': 'ordinary_station_fitting',
                                   14602,
                                   -1]},
  'replacement_prompt_exemptions': {'subtype': 21, 'ship_ids': [44, 49]}}
+
+# Android spans inside named functions and their tables; the values are MAC_VALUES.
+ANDROID = {# Mounting and demounting, slots and cargo.
+           'fitting_mount': ('_ZN12HangarWindow9mountItemEP4Item', 0, 388, 'sha256:a94ffc2b6b1f4ec3429177b51f7802f450d201a617992d3b93fb91f0a88c6bf6'),
+           'fitting_demount': ('_ZN12HangarWindow11demountItemEP4Itemi', 0, 432, 'sha256:8615e523e6846e18087f6136bda8ef7d502fce31bf547cbc8335b82e2c9d1278'),
+           'fitting_first_free': ('_ZN4Ship12addEquipmentEP4Item', 0, 78, 'sha256:53eb2ffb5d951b871444af97e1a80ef85c6d45cc5bbd0d776ea632d17fba162a'),
+           'fitting_explicit_slot': ('_ZN4Ship8freeSlotEP4Itemi', 0, 72, 'sha256:487d5a326ca9eb3e4adc7e1117dee279c190637ac265021526056da83890f513'),
+           'fitting_first_item': ('_ZN4Ship8freeSlotEP4Item', 0, 68, 'sha256:00907a90ae0b168c699cf7e334cee4e192b1b65fe80b868281062aa4658867a3'),
+           'fitting_story_first_item': ('_ZN4Ship15removeEquipmentEP4Item', 0, 62, 'sha256:94423c304fdd5a89128de57b365d2cc2ccc267d1a209a75f1e9952c5c8f54f47'),
+           'fitting_cargo_merge': ('_ZN4Item12combineItemsEP5ArrayIPS_ES3_', 0, 402, 'sha256:4db059a18b43a74a22402ec2ee1616ad74b1436e949a96265310df00ec09272e'),
+           'fitting_cargo_add': ('_ZN4Ship8addCargoEP4Item', 0, 90, 'sha256:c8ce2e005184b07cbaf87b4b3003477bce2dad2138b33520549b1f82e2cc39ef'),
+           # HangarWindow::selectItem: protected items and passengers, the duplicate prompt; the replacement.
+           'fitting_protected_passengers': ('_ZN12HangarWindow10selectItemEP8ListItem', 550, 78, 'sha256:2345a8f62638473ff77bc1d4bc5f93a6f9c8571444362aa1974f254b430578ad'),
+           'fitting_protected_message': ('_ZN12HangarWindow10selectItemEP8ListItem', 184, 34, 'sha256:343e9baa2c28646ab8dfbe5c18179594cc573f2c40a94448c7de820403fca2a6'),
+           'fitting_duplicate_prompt': ('_ZN12HangarWindow10selectItemEP8ListItem', 1470, 250, 'sha256:478c9f79c3db8f3bc2ed5a4571f5626ba08656637265791f08559fb99cda8761'),
+           'fitting_duplicate_check': ('_ZN12HangarWindow10selectItemEP8ListItem', 1396, 24, 'b9f1000f03d02869f6f6ace9e8b129692046f6f638ea95e0'),
+           'fitting_multiple_installs': ('_ZN4Item27canBeInstalledMultipleTimesEv', 0, 16, '024980687944085c704700bfa0091600'),
+           'fitting_confirm_replace': ('_ZN12HangarWindow10OnTouchEndEii', 424, 90, 'sha256:322f53a0ad4bd00df6c726a049c233d9ab6cb9eaa72ad523c20dc6156219d8fd'),
+           # Departure gates, ship statistics and capacities.
+           'fitting_departure_gates': ('_ZN10ModStation12leaveStationEv', 0, 684, 'sha256:312550b1ddc5c8aaf2d57ee470e9d8eb501690835f2699e068ebed55c62b4120'),
+           'fitting_ship_stats': ('_ZN4Ship12refreshValueEv', 0, 940, 'sha256:a62d4f5d050b7b3c2b6cc52c84a174260ba2ff0a69068eafd0bc441489743890'),
+           'fitting_cargo_capacity': ('_ZN4Ship10getMaxLoadEv', 0, 8, 'c168806a08447047'),
+           'fitting_passenger_capacity': ('_ZN4Ship16getMaxPassengersEv', 0, 4, '406c7047'),
+           # Primary guns and their projectile and impact model tables.
+           'fitting_primary_factory': ('_ZN5Level9createGunEiiiiiiii', 0, 2100, 'sha256:691b3d3ecddf9ec499430d2b11da8537cab23a29b68e956ba56b89932ba009ad'),
+           'fitting_primary_models': ('_ZN5Level9createGunEiiiiiiii', 118, 932, 'sha256:9ae3fd702a1e1197083543871959b7b7faa60a1d148e605c1d1a3617264a024a', 'literal', 0),
+           'fitting_impact_selector': ('_ZN3Gun8setIndexEi', 0, 280, 'sha256:49874dec0a3b669f6555df7804296846b7a92559002168440a630d4b0ea50c92'),
+           'fitting_impact_models': ('_ZN3Gun8setIndexEi', 56, 932, 'sha256:2ca896c1e4a4322ff0e7eb78625f519c4aab6488c7166e1fd9294b3108afa3fc', 'literal', 0)}
