@@ -2309,6 +2309,7 @@
     "game/tests/original_ui.gd.uid",
     "game/tests/persistent_contacts.gd",
     "game/tests/persistent_contacts.gd.uid",
+    "game/tests/persistent_contacts_android.gd",
     "game/tests/physical_scenery_contacts.gd",
     "game/tests/physical_scenery_contacts.gd.uid",
     "game/tests/pilot_motion.gd",

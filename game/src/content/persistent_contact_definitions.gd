@@ -20,7 +20,11 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant,source_bytes: int,architecture: String,arrival: Dictionary,ordinary_generation: Dictionary) -> String:
 	if not data is Dictionary:return "Missing persistent contact declarations"
 	if data.is_empty():return ""
-	if architecture!="x86_64" or not parameters(data) or not Ordinary.parameters(ordinary_generation):return "Unsupported persistent contact declarations"
+	var android:=architecture=="android-armv7"
+	if (architecture!="x86_64" and not android) or not parameters(data) or not Ordinary.parameters(ordinary_generation):return "Unsupported persistent contact declarations"
+	if android:
+		if arrival.get("scope")!="rescue_choreography" or not arrival.get("provenance",{}).has("actor"):return "Persistent contacts lack their source anchor"
+		return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid persistent contact extents"
 	var source: Variant=arrival.get("provenance")
 	if not source is Dictionary:return "Persistent contacts lack their source anchor"
 	var anchor: Variant=source.get("actor")
@@ -57,4 +61,4 @@ static func contact_ids(data: Dictionary,station_id: int,system_id: int) -> Arra
 	return location.contact_ids if location.get("system_id",-1)==system_id else []
 
 static func available(bindings: RefCounted) -> bool:
-	return bindings!=null and bindings.get("source_architecture")=="x86_64" and parameters(bindings.get("persistent_contacts")) and Ordinary.available(bindings)
+	return bindings!=null and bindings.get("source_architecture") in ["x86_64","android-armv7"] and parameters(bindings.get("persistent_contacts")) and Ordinary.available(bindings)
