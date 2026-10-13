@@ -25,8 +25,9 @@ func verify(args: Array):
 	var station:=Station.new()
 	if bindings.station_entry.is_empty():
 		check(not station.configure(bindings,cat,lib,{}),"Legacy pack fabricated a first station");return
-	check(Definitions.validate(bindings.station_entry,source_bytes,"x86_64",bindings.arrival_staging,bindings.arrival_session).is_empty(),"Real station declaration schema failed")
-	var first_text:=1689 if lib.strings.size()==3385 else 1678
+	check(Definitions.validate(bindings.station_entry,source_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.arrival_session).is_empty(),"Real station declaration schema failed")
+	# Android strings are stored in the Mac 1.0.7 numbering (with its own lines after 3384).
+	var first_text:=1689 if lib.strings.size()==3385 or lib.manifest.profile.edition=="android-hd" else 1678
 	var player:=Player.new();var handoff:=Handoff.new()
 	check(player.configure(bindings,cat),player.error)
 	var entry:=handoff.prepare(bindings,cat,Fixture.completed(bindings,player,3))

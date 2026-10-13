@@ -73,7 +73,8 @@ func _initialize() -> void:
 		# Both supplied Mac layouts use the same profile name but have different
 		# source text tables. The guarded declaration offset identifies the one
 		# imported with this binding; the voice table independently names its row.
-		var first_text_id:=1668 if library.manifest.profile.edition=="ios-hd" else -1
+		# Android strings are stored in the Mac 1.0.7 numbering.
+		var first_text_id:=1668 if library.manifest.profile.edition=="ios-hd" else 1657 if library.manifest.profile.edition=="android-hd" else -1
 		if first_text_id<0:
 			match int(binding.opening_dialogue.get("provenance",{}).get("declaration",{}).get("offset",-1)):
 				839618:first_text_id=1649

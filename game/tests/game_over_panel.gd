@@ -51,7 +51,8 @@ func verify(args: PackedStringArray):
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
 	check(Definitions.validate(bindings.game_over_presentation,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.player_destruction).is_empty(),"Game-over declaration refused")
 	for key in Definitions.VALUES:
-		var bad: Dictionary=bindings.game_over_presentation.duplicate(true);bad[key]=null
+		# Android has no image: its null image keys are changed to -1 instead.
+		var bad: Dictionary=bindings.game_over_presentation.duplicate(true);bad[key]=null if bad[key]!=null else -1
 		check(not Definitions.parameters(bad),"Changed game-over parameter accepted: "+key)
 	for key in (Definitions.ANDROID_SPANS if bindings.source_architecture=="android-armv7" else Definitions.SPANS):
 		var bad: Dictionary=bindings.game_over_presentation.duplicate(true);bad.provenance[key].offset+=1
@@ -94,18 +95,22 @@ func verify(args: PackedStringArray):
 	check(panel.present(death.fork_for_frame(),524),"A detached frame with the same presentation identity was refused")
 	await capture("desktop-complete")
 	verify_atomic()
+	# Android has no game-over image (MGame never creates it) and no desktop text
+	# substitution: its touch prompt stands alone on both layouts.
+	var android: bool=bindings.source_architecture=="android-armv7"
+	var desktop_text:=188 if android else 189
 	for language in lib.manifest.languages:
 		check(lib.select_language(language),lib.error)
 		check(panel.configure(lib,bindings,visuals,death),panel.error)
 		panel.set_mobile_layout(false);panel.size=Vector2(960,720)
-		check(panel.present(death,524) and panel.snapshot().text_id==189 and panel.snapshot().text==lib.strings[189],"Desktop continuation alias lost: "+language)
-		check(panel.snapshot().image_rect.size==Vector2(147,68),"Desktop game-over composition is not compact")
+		check(panel.present(death,524) and panel.snapshot().text_id==desktop_text and panel.snapshot().text==lib.strings[desktop_text],"Desktop continuation alias lost: "+language)
+		check(panel.snapshot().image_rect.size==(Vector2.ZERO if android else Vector2(147,68)),"Desktop game-over composition is not compact")
 		panel.set_mobile_layout(true);panel.size=Vector2(800,450)
 		check(panel.present(death,524) and panel.snapshot().text_id==188 and panel.snapshot().text==lib.strings[188],"Mobile continuation text lost: "+language)
 		await process_frame
 		var state: Dictionary=panel.snapshot()
 		var viewport:=Rect2(Vector2.ZERO,panel.size)
-		check(state.image_rect.size==Vector2(294,136) and viewport.encloses(state.image_rect) and viewport.encloses(state.prompt_rect),"Phone art/prompt exceeds its landscape viewport: "+language)
+		check(state.image_rect.size==(Vector2.ZERO if android else Vector2(294,136)) and viewport.encloses(state.image_rect) and viewport.encloses(state.prompt_rect),"Phone art/prompt exceeds its landscape viewport: "+language)
 	check(lib.select_language("ja") and panel.configure(lib,bindings,visuals,death),"Japanese capture resources unavailable")
 	canvas.size=Vector2i(800,450);panel.size=canvas.size
 	check(panel.present(death,524),panel.error);await capture("phone-japanese")
@@ -168,7 +173,10 @@ func verify_atomic():
 	check(not panel.configure(lib,bindings,visuals,death) and panel.snapshot()==before,"Changed atlas mapping replaced game-over screen")
 	bindings.game_over_presentation=rules
 	var directory: String=visuals.root;visuals.root=directory.path_join("missing-game-over-fixture")
-	check(not panel.configure(lib,bindings,visuals,death) and panel.snapshot()==before,"Missing atlas discarded the accepted screen")
+	if bindings.source_architecture=="android-armv7":
+		# Android draws no game-over image, so a panel needs no atlas.
+		var bare:=GameOver.new();check(bare.configure(lib,bindings,visuals,death),"Android game-over prompt required an atlas: "+bare.error);bare.free()
+	else:check(not panel.configure(lib,bindings,visuals,death) and panel.snapshot()==before,"Missing atlas discarded the accepted screen")
 	visuals.root=directory
 	var copy: Dictionary=panel.snapshot();copy.text="changed"
 	check(panel.snapshot()==before,"Snapshot exposed mutable display state")

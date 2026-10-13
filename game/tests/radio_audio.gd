@@ -47,7 +47,8 @@ func verify_source(content: String, pack: String):
 		for event in OPENING_IDS:
 			var clip:=resource.prepare(event)
 			if clip.is_empty() or clip.has("unsupported"):check(false,resource.error+str(clip));continue
-			var suffix:="_deu.fsb" if code=="de" else "_eng.fsb"
+			# Android's OBB has no German banks: German speaks from the English ones.
+			var suffix:="_deu.fsb" if code=="de" and library.manifest.profile.edition!="android-hd" else "_eng.fsb"
 			check(clip.voice and not clip.looping and not clip.spatial and clip.source_bank.ends_with(suffix),"Radio voice used wrong language, spatial mode or loop")
 			check(clip.source_index==310+event-469 and clip.stream.get_length()>0 and clip.fade_out_ms==100,"Source voice sample or fade was lost")
 		check(resource.prepare(163).has("unsupported"),"Unconnected later mission voice silently gained a native owner")

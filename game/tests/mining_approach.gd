@@ -76,11 +76,16 @@ func verify(args: Array):
 	var field: Dictionary=world.snapshot();var prepared: Dictionary=construction.snapshot();var selected: Dictionary=selection.snapshot()
 	var owner:=fresh()
 	check(not owner.advance(world,100) and owner.snapshot().phase=="idle","Idle approach advanced")
-	check(owner.snapshot().guidance_gain==Approach.f32(3.9795455932617188),"Mining guidance used scaled pilot response instead of the source handling getter")
+	# The starter's handling 1.2 plus 2.7: the Mac converts handling first ((h - 0.45) / 1.1 * 0.85 + 0.7),
+	# Android does not (Ship::getHandling), so its gain is 3.9.
+	var android: bool=bindings.source_architecture=="android-armv7"
+	check(owner.snapshot().guidance_gain==Approach.f32(3.9000000953674316 if android else 3.9795455932617188),"Mining guidance used scaled pilot response instead of the source handling getter")
 	var turn: Transform3D=owner.guided_pose(Transform3D.IDENTITY,Vector3(10000,0,10000),100,1.0)
 	# Independent analytical 45-degree target vector, rounded to binary32.
 	# NPC guidance normalizes the difference too and fails this small-turn case.
-	check(turn.basis.z.distance_to(Vector3(0.0703631117939949,0.0,0.9975214600563049))<0.000001 and turn.origin.distance_to(Vector3(14.072622299194336,0.0,199.50428771972656))<0.00001,"Off-axis approach used an unsupported turn or travel formula")
+	var heading:=Vector3(0.0690930113196373,0.0,0.9976102113723755) if android else Vector3(0.0703631117939949,0.0,0.9975214600563049)
+	var travel:=Vector3(13.818602561950684,0.0,199.5220489501953) if android else Vector3(14.072622299194336,0.0,199.50428771972656)
+	check(turn.basis.z.distance_to(heading)<0.000001 and turn.origin.distance_to(travel)<0.00001,"Off-axis approach used an unsupported turn or travel formula")
 	var held_turn: Transform3D=owner.guided_pose(Transform3D.IDENTITY,Vector3(10000,0,10000),100,0.0)
 	check(held_turn.origin==Vector3.ZERO and held_turn.basis==turn.basis,"Zero throttle disabled source heading guidance or moved the ship")
 	var start:=facing(float(stand_off+2000))

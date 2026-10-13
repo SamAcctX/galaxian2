@@ -52,10 +52,11 @@ func verify_source(content: String, pack: String, images: String):
 	for language in ["gb","de","fr"]:
 		check(library.select_language(language),library.error)
 		var clips:=Resources.new();check(clips.configure(library,bindings,1),clips.error)
+		# Android's OBB has no German banks: German speaks from the English ones.
 		for index in 3:
 			var clip:=clips.prepare(501+index)
 			if clip.is_empty() or clip.has("unsupported"):check(false,clips.error+str(clip));continue
-			check(clip.voice and not clip.spatial and not clip.looping and clip.source_bank.ends_with("_deu.fsb" if language=="de" else "_eng.fsb"),"Rescue clip used another language or playback type")
+			check(clip.voice and not clip.spatial and not clip.looping and clip.source_bank.ends_with("_deu.fsb" if language=="de" and edition!="android-hd" else "_eng.fsb"),"Rescue clip used another language or playback type")
 			check(clip.source_index==342+index and clip.stream.get_length()>0,"Rescue recording selected another sample")
 		check(clips.prepare(469).has("unsupported"),"Rescue clip owner accepted an opening-only voice")
 		if language!="fr":await verify_sequence(library,bindings,visuals)

@@ -79,7 +79,9 @@ func verify_source(root_path: String):
 				var stream: AudioStreamWAV=reader.stream(index)
 				check(stream!=null,reader.error)
 				if stream!=null:check(stream.data.size()==reader.samples[index].samples*reader.samples[index].channels*2,"IMA decode sample count changed")
-	check(banks==22 and total==4416,"Source audio inventory incomplete")
+	# Android's OBB has no German banks: 17 banks with 2373 samples, the Mac app 22 with 4416.
+	var android: bool=manifest.profile.edition=="android-hd"
+	check(banks==(17 if android else 22) and total==(2373 if android else 4416),"Source audio inventory incomplete")
 func check(value: bool,message: String):
 	checks+=1
 	if not value:failures+=1;push_error(message)

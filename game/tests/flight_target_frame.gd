@@ -21,7 +21,8 @@ func verify_profile(content: String,pack: String,pixels: String) -> void:
 	var frame:=Frame.new();root.add_child(frame);frame.size=Vector2(801,601)
 	if not frame.prepare(library,bindings,visuals):check(false,frame.error);frame.free();return
 	var source: Dictionary=frame.source()
-	var mac: bool=library.manifest.profile.edition=="mac-full-hd"
+	# Android's BuildResourceList takes the iPad image branch, as the Mac does.
+	var mac: bool=library.manifest.profile.edition in ["mac-full-hd","android-hd"]
 	check(source.image_id==1223 and source.texture_id==(10063 if mac else 10062) and source.region==(6 if mac else 122),"Frame borrowed another edition's image mapping")
 	var original: Image=visuals.load_image(source.resource)
 	check(original!=null,"Frame original pixels are missing")

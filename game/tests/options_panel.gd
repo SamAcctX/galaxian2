@@ -96,7 +96,11 @@ func run() -> void:
 	check(not resolution.get_popup().visible and app.preferences.values.resolution == preferences.resolution, "Disabled resolution accepted a keyboard edit")
 	await capture("options-disabled-desktop")
 	app.preferences.values.window_mode = preferences.window_mode
+	# Android ships no Chinese strings (zs, zt); the language picker offers the content's languages only.
+	var absent := ["zs", "zt"] if library.manifest.profile.edition == "android-hd" else []
+	check(Frontend.Preferences.LANGUAGES.filter(func(code): return not library.manifest.languages.has(code)) == absent, "Content languages differ from the edition's")
 	for language in Frontend.Preferences.LANGUAGES:
+		if language in absent: continue
 		check(library.select_language(language) and app.menu.configure(library, bindings, visuals), "Cannot prepare original options font for " + language)
 		for mobile in [false, true]:
 			app.set_mobile_layout(mobile); app.show_options(); await settle()
