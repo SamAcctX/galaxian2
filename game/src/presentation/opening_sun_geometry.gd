@@ -111,6 +111,10 @@ func face_camera(pose: Transform3D) -> void:
 	var kept:=frame;var prepared:=prepare_frame({"pose":pose},frame.viewport_size,frame.previous_intensity)
 	if not prepared.has("error"):commit_frame(prepared);frame=kept
 
+## Leaving Action Freeze: the committed flight frame again.
+func restore_camera() -> void:
+	if not frame.is_empty():commit_frame(frame)
+
 func clear() -> void:
 	for child in get_children():child.free()
 	selection.clear();frame.clear();_image_sizes.clear();_owner=null;primary=null;secondary=null;flares=null;error=""

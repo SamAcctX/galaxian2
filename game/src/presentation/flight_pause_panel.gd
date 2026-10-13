@@ -204,7 +204,7 @@ func begin_freeze(camera: Camera3D,pivot: Vector3) -> bool:
 
 func end_freeze() -> void:
 	if view!="freeze":return
-	if is_instance_valid(_camera):_camera.global_transform=_saved_camera;_face()
+	if is_instance_valid(_camera):_restore()
 	_camera=null;action_requested.emit("unfreeze");show_menu()
 
 func orbit(yaw_delta: float,pitch_delta: float,zoom_factor:=1.0) -> void:
@@ -217,11 +217,17 @@ func _apply_orbit() -> void:
 	if not is_instance_valid(_camera):return
 	var direction:=Vector3(cos(_pitch)*sin(_yaw),sin(_pitch),cos(_pitch)*cos(_yaw))
 	_camera.global_position=_pivot+direction*distance
-	_camera.look_at(_pivot,Vector3.UP);_face()
+	_camera.look_at(_pivot,Vector3.UP);_face(_camera.global_transform)
 
 # The paused flight presents no new frame: sprites and sun flares prepared for
 # the flight camera follow the moved one.
-func _face() -> void:_camera.get_viewport().propagate_call("face_camera",[_camera.global_transform])
+func _face(view_pose: Transform3D) -> void:_camera.get_viewport().propagate_call("face_camera",[view_pose])
+
+# Godot recomposes a node's transform on assignment, so the restored camera can
+# differ in the last bit: sprites face the saved pose and the sun recommits its frame.
+func _restore() -> void:
+	_camera.global_transform=_saved_camera;_face(_saved_camera)
+	_camera.get_viewport().propagate_call("restore_camera")
 
 func _gui_input(event: InputEvent) -> void:
 	if view!="freeze":return
@@ -271,7 +277,7 @@ func snapshot() -> Dictionary:
 	return {"view":view,"title":_title.text,"buttons":button_texts(),"missions":_missions.snapshot() if view=="missions" else {},"distance":distance}
 
 func clear() -> void:
-	if view=="freeze" and is_instance_valid(_camera):_camera.global_transform=_saved_camera;_face()
+	if view=="freeze" and is_instance_valid(_camera):_restore()
 	_camera=null;view="";_missions.clear();visible=false
 
 func reject(message: String) -> bool:error=message;return false
