@@ -30,7 +30,7 @@ func run():
 func verify(args: PackedStringArray):
 	var lib:=Library.new();var bindings:=Bindings.new();var cat:=Catalogues.new()
 	if not lib.open(args[0]) or not bindings.open(args[1],lib.manifest) or not cat.open(lib):check(false,lib.error+bindings.error+cat.error);return
-	check(bindings.source_architecture=="x86_64","This check requires Mac content")
+	check(bindings.source_architecture in ["x86_64","android-armv7"],"This verification needs Mac or Android content")
 	var fixture:=Fixtures.new();var flight:=Construction.new();var resources:=Resources.new()
 	if not flight.prepare(bindings,cat,fixture.packet_fixture(bindings,cat,3),4096,1789100000):check(false,flight.error);fixture.free();return
 	if bindings.full_hold_destruction.is_empty():
@@ -58,13 +58,13 @@ func verify(args: PackedStringArray):
 func verify_contract(args: PackedStringArray, lib: RefCounted, bindings: RefCounted):
 	var data: Dictionary=bindings.full_hold_destruction
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	check(Definitions.validate(data,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_control,bindings.opening_actors).is_empty(),"Valid cargo/death declaration rejected")
+	check(Definitions.validate(data,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_control,bindings.opening_actors).is_empty(),"Valid cargo/death declaration rejected")
 	for key in Definitions.VALUES:
 		var bad:=data.duplicate(true);bad[key]=null
 		check(not Definitions.parameters(bad),"Changed cargo/death parameter accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if bindings.source_architecture=="android-armv7" else Definitions.SPANS):
 		var bad:=data.duplicate(true);bad.provenance[key].offset+=1
-		check(not Definitions.validate(bad,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_control,bindings.opening_actors).is_empty(),"Shifted cargo/death proof accepted: "+key)
+		check(not Definitions.validate(bad,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_control,bindings.opening_actors).is_empty(),"Shifted cargo/death proof accepted: "+key)
 	var body: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("registrations.json")))
 	var directory:=OS.get_cache_dir().path_join("gof2-full-hold-death-%d"%Time.get_ticks_usec());DirAccess.make_dir_recursive_absolute(directory)
 	for scenario in ["missing","wrong_type","changed","extent","control_absent","accounting_absent","empty"]:

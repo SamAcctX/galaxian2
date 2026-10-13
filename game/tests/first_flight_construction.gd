@@ -33,7 +33,8 @@ func verify(args: Array):
 		check(not flight.prepare(bindings,cat,{}, 1,1789100000) and flight.snapshot().is_empty(),"Legacy pack invented first-flight construction");return
 	var source_bytes:=int(JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json"))).source_executable_bytes)
 	check(validate(bindings.first_flight,bindings,source_bytes).is_empty(),"Imported construction extents failed")
-	for key in Definitions.SPANS:
+	var android: bool=bindings.source_architecture=="android-armv7"
+	for key in (Definitions.ANDROID_SPANS if android else Definitions.SPANS):
 		var bad: Dictionary=bindings.first_flight.duplicate(true);bad.provenance[key].offset+=1
 		check(not validate(bad,bindings,source_bytes).is_empty(),"Disconnected construction extent accepted: "+key)
 	for key in Definitions.VALUES:
@@ -133,7 +134,7 @@ func verify(args: Array):
 	flight.clear();check(flight.snapshot().is_empty() and flight.scenery_owner()==null,"Clear retained a prepared world")
 
 func validate(data: Dictionary, bindings: RefCounted, bytes: int) -> String:
-	return Definitions.validate(data,bytes,"x86_64",bindings.arrival_staging,bindings.station_departure,bindings.arrival_environment,bindings.arrival_world_initialization)
+	return Definitions.validate(data,bytes,bindings.source_architecture,bindings.arrival_staging,bindings.station_departure,bindings.arrival_environment,bindings.arrival_world_initialization)
 func check(value: bool,message: String):
 	checks+=1
 	if not value:failures+=1;push_error(message)

@@ -38,10 +38,11 @@ func verify(content: String,pack: String,visual_path: String,captures: String) -
 		legacy_capture=Capture.new();check(legacy_capture.configure(bindings),legacy_capture.error)
 		return
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(pack.path_join("bindings.json")))
-	for key in Rules.SPANS:
+	var arch: String=header.architecture
+	for key in (Rules.ANDROID_SPANS if arch=="android-armv7" else Rules.SPANS):
 		var changed: Dictionary=bindings.mido_travel.duplicate(true)
 		changed.provenance[key].offset+=1
-		check(not Travel.validate(changed,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Moved capital-ship declaration accepted: "+key)
+		check(not Travel.validate(changed,header.source_executable_bytes,arch,bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Moved capital-ship declaration accepted: "+key)
 	var invalid: Dictionary=bindings.mido_travel.duplicate(true)
 	invalid.convoy_ship.assembly.body_resource_ids[0]=17014
 	check(not Travel.parameters(invalid),"Ordinary catalogue mesh replaced the source special factory")

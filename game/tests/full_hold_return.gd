@@ -37,7 +37,7 @@ func verify(args: PackedStringArray):
 	if fixture.failures:return
 	returning=fixture.world
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	check(header.architecture=="x86_64","This verification is Mac only")
+	check(header.architecture in ["x86_64","android-armv7"],"This verification needs Mac or Android content")
 	if bindings.full_hold_return.is_empty():
 		check(not returning.snapshot().station_return_supported and returning.prepare_station().is_empty(),"Older pack fabricated the second return")
 		check(Definitions.select(bindings,5).is_empty(),"Absent second return selected first-trip rules")
@@ -47,7 +47,7 @@ func verify(args: PackedStringArray):
 	for key in Definitions.VALUES:
 		var bad:=rules.duplicate(true);bad[key]=null
 		check(not Definitions.parameters(bad),"Changed return parameter accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if header.architecture=="android-armv7" else Definitions.SPANS):
 		var bad:=rules.duplicate(true);bad.provenance[key].offset+=1
 		check(not Definitions.validate(bad,header.source_executable_bytes,header.architecture,bindings.arrival_staging,bindings.station_return,bindings.full_hold_story).is_empty(),"Changed return extent accepted: "+key)
 	check(Definitions.select(bindings,3)==bindings.station_return and Definitions.select(bindings,5)==rules and Definitions.select(bindings,4).is_empty() and Definitions.select(bindings,6).is_empty(),"Return selector confused flight and station cursors")

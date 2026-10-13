@@ -43,7 +43,7 @@ func verify(args: Array):
 	for key in Definitions.VALUES:
 		var bad: Dictionary=bindings.mining_approach.duplicate(true);bad[key]=null
 		check(not Definitions.parameters(bad),"Changed approach declaration accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if header.architecture=="android-armv7" else Definitions.SPANS):
 		var bad: Dictionary=bindings.mining_approach.duplicate(true);bad.provenance[key].offset+=1
 		check(not Definitions.validate(bad,header.source_executable_bytes,header.architecture,bindings.arrival_staging,bindings.mining_targeting).is_empty(),"Detached approach provenance accepted: "+key)
 	var player:=Player.new();var handoff:=Handoff.new();check(player.configure(bindings,cat),player.error)

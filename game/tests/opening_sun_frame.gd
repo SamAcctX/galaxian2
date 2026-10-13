@@ -61,14 +61,17 @@ func verify(content: String,pack: String,textures: String) -> void:
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(pack+"/bindings.json"))
 	var data: Dictionary=bindings.opening_sky.sun_flares
 	check(Definitions.validate(data,int(header.source_executable_bytes),header.architecture).is_empty(),"Valid sun declaration provenance rejected")
+	# Android proves the three flare images as one table span.
+	var image: String="images" if header.architecture=="android-armv7" else "image_0"
+	var neighbour: String="resources" if header.architecture=="android-armv7" else "image_1"
 	for bad in ["images","color","types","overlap","extent"]:
 		var copy:=data.duplicate(true)
 		match bad:
 			"images":copy.images[0].id=0
 			"color":copy.colors[0][0]=256
 			"types":copy.system_types[0]=6
-			"overlap":copy.provenance.image_0.offset=copy.provenance.image_1.offset
-			"extent":copy.provenance.image_0.bytes=63
+			"overlap":copy.provenance[image].offset=copy.provenance[neighbour].offset
+			"extent":copy.provenance[image].bytes=63
 		check(not Definitions.validate(copy,int(header.source_executable_bytes),header.architecture).is_empty(),"Malformed sun declaration accepted: "+bad)
 	var camera:=Transform3D.IDENTITY
 	var center: Vector3=sun._layout.sun.direction_to_sun

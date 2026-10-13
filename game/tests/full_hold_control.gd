@@ -41,7 +41,7 @@ func run():
 func verify(args: PackedStringArray):
 	var lib:=Library.new();var bindings:=Bindings.new();var cat:=Catalogues.new()
 	if not lib.open(args[0]) or not bindings.open(args[1],lib.manifest) or not cat.open(lib):check(false,lib.error+bindings.error+cat.error);return
-	check(bindings.source_architecture=="x86_64","This check requires Mac content")
+	check(bindings.source_architecture in ["x86_64","android-armv7"],"This verification needs Mac or Android content")
 	var flight:=Construction.new();var control:=NpcControl.new()
 	if bindings.full_hold_control.is_empty():
 		check(not control.configure_full_hold(bindings,cat,flight,.5) and control.snapshot().is_empty(),"Legacy pack invented second-trip control")
@@ -50,13 +50,13 @@ func verify(args: PackedStringArray):
 	var saved:=flight.snapshot();var random: Dictionary=saved.random_state
 	var data: Dictionary=bindings.full_hold_control
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	check(Definitions.validate(data,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_pirate,bindings.opening_actors).is_empty(),"Second-trip control proof rejected")
+	check(Definitions.validate(data,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_pirate,bindings.opening_actors).is_empty(),"Second-trip control proof rejected")
 	for key in Definitions.VALUES:
 		var bad:=data.duplicate(true);bad[key]=null
 		check(not Definitions.parameters(bad),"Changed control declaration accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if bindings.source_architecture=="android-armv7" else Definitions.SPANS):
 		var bad:=data.duplicate(true);bad.provenance[key].offset+=1
-		check(not Definitions.validate(bad,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_pirate,bindings.opening_actors).is_empty(),"Changed control extent accepted: "+key)
+		check(not Definitions.validate(bad,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_pirate,bindings.opening_actors).is_empty(),"Changed control extent accepted: "+key)
 	for axis in 3:
 		for sign_value in [-1,1]:
 			for distance in [24999,25000,49999,50000]:

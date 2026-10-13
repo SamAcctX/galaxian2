@@ -25,7 +25,7 @@ func run():
 func verify(args: PackedStringArray):
 	var lib:=Library.new();var bindings:=Bindings.new();var cat:=Catalogues.new()
 	if not lib.open(args[0]) or not bindings.open(args[1],lib.manifest) or not cat.open(lib):check(false,lib.error+bindings.error+cat.error);return
-	check(bindings.source_architecture=="x86_64","This check requires Mac content")
+	check(bindings.source_architecture in ["x86_64","android-armv7"],"This verification needs Mac or Android content")
 	fixture=Fixtures.new()
 	var world:=Construction.new();var resources:=Resources.new()
 	if not world.prepare(bindings,cat,fixture.packet_fixture(bindings,cat,3),4096,1789100000) or not resources.configure_full_hold(lib,bindings):check(false,world.error+resources.error);fixture.free();return
@@ -197,13 +197,13 @@ func verify_restart(bindings: RefCounted, cat: RefCounted, world: RefCounted, re
 func verify_contract(args: PackedStringArray, lib: RefCounted, bindings: RefCounted):
 	var data: Dictionary=bindings.full_hold_appearance
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	check(Definitions.validate(data,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_story,bindings.full_hold_destruction).is_empty(),"Valid appearance declaration rejected")
+	check(Definitions.validate(data,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_story,bindings.full_hold_destruction).is_empty(),"Valid appearance declaration rejected")
 	for key in Definitions.VALUES:
 		var bad:=data.duplicate(true);bad[key]=null
 		check(not Definitions.parameters(bad),"Changed appearance value accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if bindings.source_architecture=="android-armv7" else Definitions.SPANS):
 		var bad:=data.duplicate(true);bad.provenance[key].offset+=1
-		check(not Definitions.validate(bad,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_story,bindings.full_hold_destruction).is_empty(),"Changed appearance provenance accepted: "+key)
+		check(not Definitions.validate(bad,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_story,bindings.full_hold_destruction).is_empty(),"Changed appearance provenance accepted: "+key)
 	var body: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("registrations.json")))
 	var directory:=OS.get_cache_dir().path_join("gof2-full-hold-appearance-%d"%Time.get_ticks_usec());DirAccess.make_dir_recursive_absolute(directory)
 	for scenario in ["missing","wrong_type","changed","extent","story_absent","death_absent","empty"]:

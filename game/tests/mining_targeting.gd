@@ -44,7 +44,7 @@ func verify(args: Array):
 	for key in Definitions.VALUES:
 		var bad: Dictionary=bindings.mining_targeting.duplicate(true);bad[key]=null
 		check(not Definitions.parameters(bad),"Changed targeting declaration accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if header.architecture=="android-armv7" else Definitions.SPANS):
 		var bad: Dictionary=bindings.mining_targeting.duplicate(true);bad.provenance[key].offset+=1
 		check(not Definitions.validate(bad,header.source_executable_bytes,header.architecture,bindings.arrival_staging,bindings.first_flight).is_empty(),"Detached targeting provenance accepted: "+key)
 	var player:=Player.new();var handoff:=Handoff.new();check(player.configure(bindings,cat),player.error)

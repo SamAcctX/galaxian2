@@ -30,20 +30,20 @@ func verify(args: PackedStringArray):
 	var lib:=Library.new();var bindings:=Bindings.new();var cat:=Catalogues.new()
 	if not lib.open(args[0]) or not bindings.open(args[1],lib.manifest) or not cat.open(lib) or not lib.select_language("gb"):check(false,lib.error+bindings.error+cat.error);return
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	check(header.architecture=="x86_64","This test requires Mac content")
+	check(header.architecture in ["x86_64","android-armv7"],"This verification needs Mac or Android content")
 	if bindings.full_hold_flight.is_empty():
 		check(not NPC.new().configure_full_hold(bindings,cat,{}) and not Route.new().configure_full_hold_generated(bindings),"Legacy pack invented the second pirate")
 		if not bindings.full_hold_departure.is_empty():
 			check(not Flight.new().prepare(bindings,cat,packet_fixture(bindings,cat,0),4096,1789100000),"Legacy pack reused the empty first world for cursor4")
 		return
 	var data: Dictionary=bindings.full_hold_flight
-	check(Definitions.validate(data,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_departure,bindings.first_flight,bindings.opening_actors).is_empty(),"Second-flight declaration refused")
+	check(Definitions.validate(data,header.source_executable_bytes,header.architecture,bindings.arrival_staging,bindings.full_hold_departure,bindings.first_flight,bindings.opening_actors).is_empty(),"Second-flight declaration refused")
 	for key in Definitions.VALUES:
 		var bad:=data.duplicate(true);bad[key]=null
 		check(not Definitions.parameters(bad),"Changed second-flight parameter accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if header.architecture=="android-armv7" else Definitions.SPANS):
 		var bad:=data.duplicate(true);bad.provenance[key].offset+=1
-		check(not Definitions.validate(bad,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_departure,bindings.first_flight,bindings.opening_actors).is_empty(),"Detached source extent accepted: "+key)
+		check(not Definitions.validate(bad,header.source_executable_bytes,header.architecture,bindings.arrival_staging,bindings.full_hold_departure,bindings.first_flight,bindings.opening_actors).is_empty(),"Detached source extent accepted: "+key)
 	var packet:=packet_fixture(bindings,cat,0)
 	if packet.is_empty():return
 	verify_stream(bindings,cat,packet.player_cache)
