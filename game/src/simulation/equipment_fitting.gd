@@ -38,7 +38,7 @@ func prepare_assets(bindings: RefCounted,cat: RefCounted,library: RefCounted) ->
 		var clip: Dictionary=sounds.prepare(Booster.Definitions.SOUND_IDS[id])
 		items[id]="" if not clip.is_empty() and not clip.has("unsupported") else "This booster's original sound is unavailable"
 	var cloak_clip: Dictionary=sounds.prepare(Cloak.Definitions.SOUND_ID)
-	var cloak_ready: bool=not cloak_clip.is_empty() and not cloak_clip.has("unsupported") and library.manifest.files.has(Cloak.Definitions.CLOAK_MAP)
+	var cloak_ready: bool=not cloak_clip.is_empty() and not cloak_clip.has("unsupported") and library.manifest.files.has(Cloak.Definitions.cloak_map(library.manifest.files))
 	for id in [94,95,96]:items[id]="" if cloak_ready else "This cloak's original mask or sound is unavailable"
 	for item in cat.tables.items:
 		if item.arrays[2][3] not in [0,2]:continue
