@@ -124,6 +124,7 @@ func extensions() -> Array:
 		["kappa_outcome",Definitions.KappaOutcome.MAC_VALUES,Definitions.KappaOutcome.ANDROID_SPANS],
 		["kappa_departure",Definitions.KappaDeparture.MAC_VALUES,Definitions.KappaDeparture.ANDROID_SPANS],
 		["sahi_visit",Definitions.SahiVisit.MAC_VALUES,Definitions.SahiVisit.ANDROID_SPANS],
+		["sahi_encounter",Definitions.SahiEncounter.MAC_VALUES,Definitions.SahiEncounter.ANDROID_SPANS],
 		["vossk_traffic",Definitions.Vossk.VALUES,Definitions.Vossk.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:
