@@ -33,10 +33,9 @@ class AndroidStationExterior(unittest.TestCase):
         image, layout, _ = layout_library(reader.ANDROID)
         with patch.object(reader, 'ANDROID', layout):
             self.assertEqual(reader.extract_station_exterior(AndroidLibrary(image), ARRIVAL, FLIGHT), {})
-        # Android derives mesh spheres from vertex bounds: only the sphere axes differ.
-        self.assertEqual({k: v for k, v in reader.ANDROID_VALUES.items() if k != 'sphere_axis_map'},
-                         {k: v for k, v in reader.VALUES.items() if k != 'sphere_axis_map'})
-        self.assertEqual((reader.VALUES['sphere_axis_map'], reader.ANDROID_VALUES['sphere_axis_map']), ([1, 3, -2], [1, 2, 3]))
+        # Android loads the stored mesh spheres with the Mac's axes: the values are the Mac's.
+        self.assertEqual(reader.ANDROID_VALUES, reader.VALUES)
+        self.assertEqual(reader.ANDROID_VALUES['sphere_axis_map'], [1, 3, -2])
 
     def vtables(self, station=None, box=None, omit=()):
         from android_text_fixture import text_library

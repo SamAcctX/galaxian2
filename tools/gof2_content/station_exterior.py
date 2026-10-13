@@ -7,7 +7,8 @@ index (SolarSystem::getRace, the system record's third integer), collision.bin
 boxes as BoundingAAB volumes, rotation (0, pi, 0) and bounds of the transform
 radius + 5000; PlayerStation::outerCollide tests those bounds, then each
 volume. The engine merges layer spheres (PaintCanvas::TransformAddChild,
-BSphere::Merge) and derives each mesh sphere from its vertex bounds.
+BSphere::Merge); MeshReadData lets the v3+ formats load each mesh's stored sphere
+(Mesh::ReadEnhancedDataFromFile: x, z, -y), as the Mac does.
 """
 import copy
 import hashlib
@@ -345,11 +346,7 @@ def vtable_proof(lib, tables):
     return proof
 
 
-# Android derives each mesh's bounding sphere from its vertex bounds
-# (MeshReadData: centre between the extremes, radius to a corner) in mesh axes;
-# no stored sphere is read, so no axis map applies to one.
 ANDROID_VALUES = copy.deepcopy(VALUES)
-ANDROID_VALUES['sphere_axis_map'] = [1, 2, 3]
 ANDROID = {# Level::createSpace builds the station outside empty orbits (Status::inEmptyOrbit: 78 before cursor 2).
            'world_station': ('_ZN5Level11createSpaceEv', 1364, 134, 'sha256:f7ca01ff7eab8c64e13cbb4d4be35ad77f46fa0f1f5423306e5013f02172908c'),
            'station_exclusion': ('_ZN6Status12inEmptyOrbitEv', 0, 142, 'sha256:f8627d4e8b7efa841990cf4c2eff8686f8f99092b657ea9c3fef6eb82cb1532c'),
@@ -375,14 +372,17 @@ ANDROID = {# Level::createSpace builds the station outside empty orbits (Status:
            'box_constructor': ('_ZN11BoundingAABC2Efffffffff', 0, 152, 'sha256:88e2b82e14a97cf1bcc053f19e3bbd4ecbb97bc093ad8e92e36157a5098663bc'),
            'box_point': ('_ZN11BoundingAAB12outerCollideEfff', 0, 158, 'sha256:b8089f86f85235aaa8e5a2aca0acb9d26a41e44b224ff50c8ec55c4712f274a5'),
            'station_point': ('_ZN13PlayerStation12outerCollideEfff', 0, 204, 'sha256:20df89ebdb867e50a995c5c1ea3af55fcd22fc11ac77b8df797b95142917fb84'),
-           # Engine: child layers merge their spheres; each mesh sphere comes from its vertex bounds.
+           # Engine: child layers merge their spheres; v3+ meshes (format bits 0x1a) replace the
+           # vertex-bounds sphere with the stored one, read as x, z, -y.
            'layer_parent': ('_ZN10AEGeometry8addChildEj', 0, 32, 'sha256:357672994cd98231877c8d12108d1056a84b737efbc6dbc749dcabe1b5a91c24'),
            'layer_bounds_merge': ('_ZN11AbyssEngine11PaintCanvas17TransformAddChildEjj', 68, 20, 'd8f85c0150f8242050f8261002f1d400e3f752eb'),
            'layer_sphere': ('_ZN11AbyssEngine6AEMath7BSphere5MergeERKNS_9TransformE', 0, 216, 'sha256:ebeba0a9ba7f04fa81d12eecf6039621f5ea33612e763b442a99ef5dacbfd5b6'),
            'sphere_merge': ('_ZN11AbyssEngine6AEMath7BSphere5MergeERKS1_', 0, 344, 'sha256:b4de3306bb5be9932a7a3f17a3489b9513a05b6be5b41996af28267327de168a'),
            'mesh_sphere_attach': ('_ZN11AbyssEngine11PaintCanvas16TransformAddMeshEjtb', 98, 26, 'sha256:9e2c82be554802b3930631fa264db311ea6f6addb6fc05b8a7bf289cbd1ffca4'),
            'mesh_vertex_copy': ('_ZN11AbyssEngine12MeshReadDataEPNS_6EngineERKjjPPNS_4MeshEPNS_8MaterialE', 156, 224, 'sha256:6a4ef38b32537f01e23c6d94a9a91c1e0580788520da611ed343737872a7257b'),
-           'mesh_sphere_bounds': ('_ZN11AbyssEngine12MeshReadDataEPNS_6EngineERKjjPPNS_4MeshEPNS_8MaterialE', 610, 124, 'sha256:65bdf25fe3522401e91dff8e11e4ba6b8a82b61ec2f3c8a052ba7d744b9d5216'),
+           'mesh_enhanced_gate': ('_ZN11AbyssEngine12MeshReadDataEPNS_6EngineERKjjPPNS_4MeshEPNS_8MaterialE', 22, 4, '19f01a06'),
+           'mesh_enhanced_data': ('_ZN11AbyssEngine12MeshReadDataEPNS_6EngineERKjjPPNS_4MeshEPNS_8MaterialE', 2342, 24, '0398002800f0868031684a46d8f80000f2f71eea0028c6d0'),
+           'mesh_sphere_load': ('_ZN11AbyssEngine4Mesh24ReadEnhancedDataFromFileEjj', 46, 100, 'sha256:72bb0a76372b14ddd42959bc9a0e2e5a7a4b427cd205a995e2587903072c3ca3'),
            'model_rotation': ('_ZN10AEGeometry11setRotationEfff', 0, 120, 'sha256:b7fb10869aa94130a20e278aa5d90f44abd8ddcdb1df8a3fdd63faa4ff8ab8f0'),
            # The 5000 the finish adds to the transform radius.
            'bounds_padding': ('_ZN13PlayerStationC2EP7Station', 3648, 4, '00409c45')}
