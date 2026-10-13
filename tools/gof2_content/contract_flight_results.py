@@ -1,9 +1,21 @@
-"""Verified contract flight-result declarations without original code."""
+"""Verified contract flight-result declarations without original code.
+
+Android: MGame::OnUpdate keeps the clock and, while the player lives and the
+mission has not failed, polls MGame::successCheck (every 5001 ms,
+Level::checkObjective) before MGame::gameOverCheck (Level::checkGameOver);
+DialogueWindow::set and loadContent show and settle the result,
+MGame::OnTouchEnd acknowledges it (Status::setFreelanceMission,
+Status::setMission, Level::removeObjectives). Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 
 def extract_contract_flight_results(mach, arrival):
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -114,3 +126,17 @@ MAC_ALTERNATE = {'flight_result_success_poll': [386260,
                               71,
                               '__text',
                               '22a09d7a4f00193e82409719854e5004193c54e0b7309bcc9e07658777c932fb']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'flight_result_success_poll': ('_ZN5MGame12successCheckEv', 0, 1764, 'sha256:ea65079e511029adc0634a0ca72b39105a299c510ec2315692fb93d2d4ec9434'),
+           'flight_result_failure_poll': ('_ZN5MGame13gameOverCheckEv', 0, 700, 'sha256:4a51c0af185ac1d11ab6cabd794d8436b07807a6295e053d5727fea688df48b0'),
+           'flight_result_failure_controller': ('_ZN5Level13checkGameOverEi', 0, 18, 'c06a20b180b56f4696f750ed80bd00207047'),
+           'flight_result_success_controller': ('_ZN5Level14checkObjectiveEi', 0, 18, '806a20b180b56f4696f76aed80bd00207047'),
+           'flight_result_result_flags': ('_ZN14DialogueWindow3setEP7Missionii', 0, 120, 'sha256:9d7513e11d3d0954171e396f284ecca11aa43033d3d69c6f1e8da8a4c5cbecbb'),
+           'flight_result_result_content': ('_ZN14DialogueWindow11loadContentEv', 0, 3868, 'sha256:4848845d1a3eaed3723c28a67221b83f09cd90f3222aabea7c724a00cc5da7b7'),
+           'flight_result_acknowledgement': ('_ZN5MGame10OnTouchEndEiiPv', 0, 9784, 'sha256:fdba63f59493b8c11bd31fd1cad8857708de40b6cfb3e0221e5f2eba567c65e0'),
+           'flight_result_side_slot': ('_ZN6Status19setFreelanceMissionEP7Mission', 0, 10, 'd0f89401406841607047'),
+           'flight_result_active_slot': ('_ZN6Status10setMissionEP7Mission', 0, 6, 'c0f890117047'),
+           'flight_result_objective_slots': ('_ZN5Level16removeObjectivesEv', 0, 8, '0021c0e90a117047'),
+           'flight_result_poll_clock': ('_ZN5MGame8OnUpdateEv', 1380, 18, 'dbf84000dbe91212091842ebe070cbe91210'),
+           'flight_result_poll_order': ('_ZN5MGame8OnUpdateEv', 10572, 86, 'sha256:d32ffc72ac1874d2159af3abb568f0d683c41ad513b1795ca0c0b91e2124f4e0')}
