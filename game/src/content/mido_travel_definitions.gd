@@ -158,7 +158,7 @@ static func _parameters(data: Variant) -> bool:
 	if data.has("void_portal") and (not data.has("tractor_recovery") or not VoidPortal.coherent(data)):return false
 	if data.has("post_sahi") and (not data.has("void_portal") or not alternate or not PostSahi.parameters(data.post_sahi)):return false
 	if data.has("thynome_expedition") and (not data.has("post_sahi") or not Thynome.parameters(data.thynome_expedition)):return false
-	if data.has("void_probe") and (not data.has("thynome_expedition") or not VoidProbe.parameters(data.void_probe)):return false
+	if data.has("void_probe") and (not data.has("thynome_expedition") or not VoidProbe.parameters(data.void_probe) or android!=Equal.equal_value(data.void_probe,VoidProbe.ANDROID_VALUES)):return false
 	if data.has("dima_return") and (not data.has("void_probe") or not DimaReturn.parameters(data.dima_return)):return false
 	if data.has("post_probe_visits") and (not data.has("dima_return") or not Equal.equal_value(data.post_probe_visits,PostProbe.VALUES if Equal.equal_value(data.dima_return,DimaReturn.VALUES) else PostProbe.MAC_VALUES)):return false
 	if data.has("void_access") and (not data.has("post_probe_visits") or not VoidAccess.parameters(data.void_access)):return false
@@ -244,6 +244,7 @@ static func validate(data: Variant, source_bytes: int, arch: String, arrival: Di
 		if data.has("void_portal"):android_spans.merge(VoidPortal.ANDROID_SPANS)
 		if data.has("post_sahi"):android_spans.merge(PostSahi.ANDROID_SPANS)
 		if data.has("thynome_expedition"):android_spans.merge(Thynome.ANDROID_SPANS)
+		if data.has("void_probe"):android_spans.merge(VoidProbe.ANDROID_SPANS)
 		if data.has("vossk_traffic"):android_spans.merge(Vossk.ANDROID_SPANS)
 		if data.has("vossk_lod"):android_spans.merge(VosskLOD.ANDROID_SPANS)
 		return "" if Layouts.anchored(data.provenance,source_bytes,android_spans) else "Invalid local travel provenance"

@@ -52,6 +52,7 @@ func verify() -> void:
 		mac_shop.ordinary_shopping=Definitions.Shopping.VALUES.duplicate(true)
 		if mac_shop.has("kappa_return"):mac_shop.kappa_return=Definitions.KappaReturn.MAC_VALUES.duplicate(true)
 		if mac_shop.has("tractor_recovery"):mac_shop.tractor_recovery=Definitions.TractorRecovery.VALUES.duplicate(true)
+		if mac_shop.has("void_probe"):mac_shop.void_probe=Definitions.VoidProbe.VALUES.duplicate(true)
 		check(Definitions.parameters(mac_shop),"Mac shopping values were refused")
 		mac_shop.ordinary_shopping=Definitions.Shopping.ANDROID_VALUES.duplicate(true)
 		check(not Definitions.parameters(mac_shop),"Mac travel accepted the Android shopping values")
@@ -68,6 +69,11 @@ func verify() -> void:
 		var mac_tractor: Dictionary=chain.duplicate(true)
 		mac_tractor.tractor_recovery=Definitions.TractorRecovery.VALUES.duplicate(true)
 		check(not Definitions.validate(mac_tractor,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted the Mac tractor window")
+	# Android's station-lock windows are Globals::w / 6 and / 16 (the Mac: / 8 and / 18).
+	if chain.has("void_probe"):
+		var mac_probe: Dictionary=chain.duplicate(true)
+		mac_probe.void_probe=Definitions.VoidProbe.VALUES.duplicate(true)
+		check(not Definitions.validate(mac_probe,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted the Mac station-lock windows")
 	var shifted: Dictionary=full.duplicate(true)
 	shifted.provenance.story_dispatch.offset+=1
 	check(not Definitions.validate(shifted,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted a shifted proof extent")
@@ -136,6 +142,7 @@ func extensions() -> Array:
 		["void_portal",Definitions.VoidPortal.VALUES,Definitions.VoidPortal.ANDROID_SPANS],
 		["post_sahi",Definitions.PostSahi.VALUES,Definitions.PostSahi.ANDROID_SPANS],
 		["thynome_expedition",Definitions.Thynome.VALUES,Definitions.Thynome.ANDROID_SPANS],
+		["void_probe",Definitions.VoidProbe.ANDROID_VALUES,Definitions.VoidProbe.ANDROID_SPANS],
 		["vossk_traffic",Definitions.Vossk.VALUES,Definitions.Vossk.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:
