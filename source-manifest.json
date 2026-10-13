@@ -2755,6 +2755,7 @@
     "tests/test_arrival_staging.py",
     "tests/test_arrival_world_initialization.py",
     "tests/test_bakka_contest.py",
+    "tests/test_bakka_return.py",
     "tests/test_base_contract_navigation.py",
     "tests/test_base_station_stock.py",
     "tests/test_bindings.py",

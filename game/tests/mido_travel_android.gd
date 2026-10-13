@@ -163,6 +163,7 @@ func extensions() -> Array:
 		["nehma_visit",Definitions.Nehma.VALUES,Definitions.Nehma.ANDROID_SPANS],
 		["gakkrr_visit",Definitions.Gakkrr.VALUES,Definitions.Gakkrr.ANDROID_SPANS],
 		["bakka_contest",Definitions.Bakka.VALUES,Definitions.Bakka.ANDROID_SPANS],
+		["bakka_return",Definitions.BakkaReturn.VALUES,Definitions.BakkaReturn.ANDROID_SPANS],
 		["vossk_traffic",Definitions.Vossk.VALUES,Definitions.Vossk.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:

@@ -1,10 +1,23 @@
-"""Verified post-contest dialogue identities and next mission; not route admission."""
+"""Verified post-contest dialogue identities and next mission; not route admission.
+
+Android: Status::nextCampaignMission case 36 creates the hidden
+Mission(160, 0, 27) (Status::setCampaignMission, Mission::setVisible) and
+case 37 Mission(4, 0, 22); Status::missionCompleted completes kind 160 when
+landed, or in flight away from station 27 after more than 10000 ms;
+DialogueWindow and Globals::getDialogueSoundId hold its eight result lines
+(Android text ids 2020-2027). Values are the Mac 1.0.7 ones (VALUES); the
+reader requires the Mac 1.0.7 B'akka contest.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 from .bakka_contest import VALUES as CONTEST, MAC_VALUES as MAC_CONTEST
 
 
 def extract_bakka_return(mach, arrival, contest):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival and contest == CONTEST else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     if not proof or contest != (CONTEST, MAC_CONTEST)[variant]:
         return {}, {}
@@ -163,3 +176,20 @@ MAC_ALTERNATE = {'bakka_return_factory37': [862747,
                                 64,
                                 '__const',
                                 '5686241a96565093654e165fa982c6dc2f11526fd884743201cd797f9795bd64']}
+
+ANDROID = {# Status::nextCampaignMission cases 36 (hidden Mission(160, 0, 27)) and 37 (Mission(4, 0, 22)).
+           'bakka_return_factory_entries': ('_ZN6Status19nextCampaignMissionEb', 140, 4, '550d690e'),
+           'bakka_return_factory37': ('_ZN6Status19nextCampaignMissionEb', 6894, 54, 'sha256:82e6f65d620da7a65bd3a551097519b2befc3fbe38e6760f18243cd04dfdb0df'),
+           'bakka_return_factory38': ('_ZN6Status19nextCampaignMissionEb', 7446, 30, 'sha256:faf25ad9909b504b2da2575c95fe7924dc313e239e74e8bcd0f6fb339afceeb8'),
+           'bakka_return_mission_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           'bakka_return_story_setter': ('_ZN6Status18setCampaignMissionEP7Mission', 0, 72, 'sha256:1d0b38f030f7e22ca6bc067f23404c8a6c8e5ff95990b29a89f875b44a0209c1'),
+           'bakka_return_hidden_mission': ('_ZN7Mission10setVisibleEb', 0, 6, '80f860107047'),
+           # Status::missionCompleted kind 160: landed, or away from station 27 after 10000 ms.
+           'bakka_return_kind_dispatch': ('_ZN6Status16missionCompletedEbbx', 190, 98, 'sha256:4cdb644e5ef6bab550f21ebbaa4404813b4afa7e5371da1a419aabba83ce8e9f'),
+           'bakka_return_kind160_condition': ('_ZN6Status16missionCompletedEbbx', 862, 50, 'sha256:0aec2ed0528845653892d002ea5c298af7c1e4532d45f099dcf61a34bf0879d3'),
+           'bakka_return_completed': ('_ZN6Status16missionCompletedEbbx', 1440, 8, '204609b0bde8f08f'),
+           # Cursor 37: counts, the eight result lines and all voices.
+           'bakka_return_brief_count': ('_ZN14DialogueWindow19hasBriefingDialogueEi', 10, 4, '00000000', 'literal', 148),
+           'bakka_return_result_count': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 4, '10000000', 'literal', 148),
+           'bakka_return_result_pairs': ('_ZN14DialogueWindow11loadContentEv', 208, 64, 'sha256:a088698edc6f49650783ac20f84aae76f49543bc012b28b6eae414f9d07e5b64', 'literal', 1960),
+           'bakka_return_result_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0)}
