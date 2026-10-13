@@ -97,6 +97,31 @@ func verify_declarations() -> void:
 		var invented: Dictionary=rules.duplicate(true)
 		invented.radar.distance_filter=true
 		check(not Definitions.validate(invented,source_bytes,"x86_64",arrival).is_empty(),"Radar accepted an unverified distance rule")
+	# Android: spans anchored in their own functions, the arrival only by presence.
+	var android_arrival:={"scope":"rescue_choreography","provenance":{"actor":{"offset":5,"bytes":24,"anchor":1}}}
+	var android: Dictionary=Definitions.ANDROID_VALUES.duplicate(true)
+	android.provenance=anchored_extents(Definitions.ANDROID_SPANS,origin)
+	check(Definitions.validate(android,source_bytes,"android-armv7",android_arrival).is_empty(),"Android Fast Forward declarations were rejected")
+	android.radar=Definitions.RADAR_ANDROID_VALUES.duplicate(true)
+	android.radar.provenance=anchored_extents(Definitions.RADAR_ANDROID_SPANS,origin)
+	check(Definitions.validate(android,source_bytes,"android-armv7",android_arrival).is_empty() and Definitions.radar_available(android),"Android radar declarations were rejected")
+	check(not Definitions.validate(android,source_bytes,"x86_64",arrival).is_empty(),"Android proofs passed as Mac layouts")
+	check(not Definitions.validate(android,source_bytes,"android-armv7",{"provenance":android_arrival.provenance}).is_empty(),"Android Fast Forward accepted a foreign arrival")
+	check(not Definitions.validate(android,source_bytes,"android-armv7",{"scope":"rescue_choreography","provenance":{}}).is_empty(),"Android Fast Forward accepted an unproven arrival")
+	var android_shifted: Dictionary=android.duplicate(true)
+	android_shifted.radar.provenance.base_constructor.offset+=1
+	check(not Definitions.validate(android_shifted,source_bytes,"android-armv7",android_arrival).is_empty(),"Android radar accepted a shifted proof extent")
+	android_shifted=android.duplicate(true)
+	android_shifted.provenance.erase("press_fast_forward")
+	check(not Definitions.validate(android_shifted,source_bytes,"android-armv7",android_arrival).is_empty(),"Android Fast Forward accepted an incomplete proof")
+	var mac: Dictionary=Definitions.VALUES.duplicate(true)
+	mac.provenance=proof_extents(Definitions.SPANS,origin)
+	check(not Definitions.validate(mac,source_bytes,"android-armv7",android_arrival).is_empty(),"Mac layouts passed as Android proofs")
+
+func anchored_extents(spans: Dictionary,origin: int) -> Dictionary:
+	var result:={}
+	for key in spans:result[key]={"offset":origin+int(spans[key][0]),"bytes":int(spans[key][1]),"anchor":origin}
+	return result
 
 func proof_extents(layout: Dictionary,origin: int) -> Dictionary:
 	var result:={}

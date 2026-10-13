@@ -1032,18 +1032,30 @@ const RADAR_MAC_ALTERNATE := {
 	]
 }
 
+# Android: the same values; spans inside named functions and MGame's vtable (Layouts.anchored).
+const ANDROID_VALUES := {"scope":"mac_flight_fast_forward","input":{"delivery":"hold_until_release","press_requires_new_down_edge":true,"repeat_down_ignored":true,"release_reset_scope":"any_flight_control","automatic_reset_rearms_held_key":false},"timing":{"normal_multiplier":1.0,"fast_multiplier":5.0,"real_frame_min_ms":0,"real_frame_max_ms":150,"simulation_frame_max_ms":750,"simulation_passes":1,"normal_camera_passes":1,"fast_camera_passes":5,"simulation_step":"f32_multiply_then_truncate","fast_camera_step":"f32_divide_scaled_step_then_truncate","wall_time_unscaled":true,"campaign_time_unscaled":true,"cancel_before_scaling":true,"pause_skips_active_updates":true},"activation":{"navigation_any":["existing_autopilot","mining_approach","later_approach"],"excluded_approach_mode":1,"refuse_battle":true,"refuse_near_target":true,"radio_disables_hud":true,"direct_press_checks_radio":false,"training_waypoint_grants_eligibility":false,"selects_target":false,"assigns_waypoint":false,"sets_throttle":false},"cancellation":{"checks":["radar_battle","player_near_target","active_radio"],"near_target_sample":"previous_player_update","reevaluates_navigation":false,"clears_navigation":false},"navigation":{"near_distance_limit":20000,"near_distance_measure":"truncated_length_less_than_limit","autopilot_gain_add":2.700000047683716,"autopilot_gain_max":4.0},"camera":{"input_policy":"relative_mouse_capture","captured_refresh":"current_handling","uncaptured_refresh":"fixed_normal_rates","initial_cached_handling":100.0,"fixed_normal_look_rate":0.004999999888241291,"fixed_normal_eye_rate":0.006000000052154064,"handling_scale":0.009999999776482582,"look_complement":1.0,"look_scale":0.014999998733401299,"look_add":0.003000000026077032,"eye_scale":0.010999999940395355,"eye_add":0.0010000000474974513,"rate_precision":"f32_each_operation","fast_transition_recalculates_rates":true,"rate_update_rebuilds_coefficients":true,"fast_suppresses_normal_refresh":true,"normal_refresh_requires_dirty":true,"handling_refresh_updates_cache":true,"fixed_refresh_preserves_cache":true,"release_and_cancel_mark_dirty":true,"reset_refresh_phase":"next_player_update","changes_fov":false},"supported_scope":{"existing_autopilot":true,"mining_approach":true,"later_approach":false,"slow_motion_combination":false}}
+const ANDROID_SPANS := {"press_mask":[254,54],"press_eligibility":[308,54],"press_fast_forward":[1014,26],"release_reset":[52,28],"default_multiplier":[494,16],"clock_clamp_and_unscaled_totals":[28,92],"pause_gate":[982,10],"slow_motion_gate":[992,8],"frame_cancel":[1216,86],"frame_scale":[3252,36],"player_world_schedule":[1798,108],"camera_schedule":[11216,100],"autopilot_active":[0,6],"mining_approach_active":[0,22],"later_approach_active":[0,22],"near_target_active":[0,6],"radio_active":[0,10],"autopilot_setter":[0,100],"autopilot_target_steering_near":[5384,228],"autopilot_gain":[5752,4],"near_target_reset":[3490,10],"camera_fast_flag":[0,336],"keyboard_press":[0,2],"keyboard_release":[0,2],"hud_touch_dispatch":[0,182],"hud_hit_rect":[904,40],"hud_eligibility":[6638,76],"battle_counter_loop":[3358,300],"battle_flag_set":[10114,18],"battle_flag_clear":[10242,10],"battle_counter_reset":[10312,6],"active_actor_getter":[0,6],"destroyed_getter":[0,14],"inactive_getter":[0,14],"campaign_elapsed_increment":[0,16],"camera_owner_link":[242,76],"battle_owner_link":[318,20],"radio_owner_link":[96,18],"player_camera_refresh":[9008,50],"mining_near_target":[232,160],"mining_gain":[1196,4],"camera_rate_scale":[0,108],"camera_cached_defaults":[0,568],"camera_fast_getter":[0,6],"camera_handling_rates":[0,92],"camera_normal_rates":[0,28],"shared_guidance":[0,960],"shared_effective_handling":[0,76],"flight_vtable":[24,44]}
+const RADAR_ANDROID_VALUES := {"scope":"ordinary_radar_battle","scanner_equipment_type":17,"inactive_modes":[3,4],"initial_battle":false,"publication_phase":"hud_after_world","hidden_radar_retains_battle":true,"absent_scanner_skips_npc_loop":true,"distance_filter":false,"cargo_grants_battle":false,"hull_substitutes_for_mode":false,"debris_is_junk":true,"ordinary_asteroid":false,"ordinary_radar_hidden":false,"supported_actor_kinds":[0,1,2,3,8],"guarded_actor_kinds":[9,10],"guarded_music_id":143}
+const RADAR_ANDROID_SPANS := {"asteroid_identity":[726,22],"junk_constructor":[0,72],"junk_factory_link":[260,24],"type10_cloak":[0,640],"cargo_presence":[0,36],"cargo_collected_flags":[12,30],"small_ship_drop_flag":[4764,10],"freighter_drop_flag":[556,32],"hidden_attachment_factory":[0,312],"radar_update_draw_order":[526,130],"flight_radar_draw_call":[616,64],"radar_entry_gate":[28,10],"radar_world_list_binding":[168,10],"world_npc_list_getter":[0,6],"radar_scanner_lookup":[2350,18],"radar_scanner_presence":[2368,104],"installed_equipment_lookup":[0,96],"radar_scanner_loop_gate":[2540,20],"radar_music_publication_gate":[10096,18],"radar_initial_counter_battle":[188,16],"radar_initial_enabled":[2550,16],"base_constructor":[0,604],"ordinary_constructor":[0,1668],"flight_update_draw_vtable":[56,12]}
+
 static func parameters(data: Variant) -> bool:
-	if not data is Dictionary or data.size() != VALUES.size() + (2 if data.has("radar") else 1) or not data.get("provenance") is Dictionary:
+	return _parameters(data, VALUES, RADAR_VALUES) or _parameters(data, ANDROID_VALUES, RADAR_ANDROID_VALUES)
+
+static func _parameters(data: Variant, values: Dictionary, radar: Dictionary) -> bool:
+	if not data is Dictionary or data.size() != values.size() + (2 if data.has("radar") else 1) or not data.get("provenance") is Dictionary:
 		return false
-	for key in VALUES:
-		if not Equal.equal_value(data.get(key), VALUES[key]):
+	for key in values:
+		if not Equal.equal_value(data.get(key), values[key]):
 			return false
-	return not data.has("radar") or radar_parameters(data.radar)
+	return not data.has("radar") or _radar_parameters(data.radar, radar)
 
 static func radar_parameters(data: Variant) -> bool:
-	if not data is Dictionary or data.size()!=RADAR_VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
-	for key in RADAR_VALUES:
-		if not Equal.equal_value(data.get(key),RADAR_VALUES[key]):return false
+	return _radar_parameters(data, RADAR_VALUES) or _radar_parameters(data, RADAR_ANDROID_VALUES)
+
+static func _radar_parameters(data: Variant, values: Dictionary) -> bool:
+	if not data is Dictionary or data.size()!=values.size()+1 or not data.get("provenance") is Dictionary:return false
+	for key in values:
+		if not Equal.equal_value(data.get(key),values[key]):return false
 	return true
 
 static func radar_available(data: Variant) -> bool:
@@ -1054,11 +1066,17 @@ static func validate(data: Variant, source_bytes: int, arch: String, arrival: Di
 		return "Missing Fast Forward declarations"
 	if data.is_empty():
 		return ""
-	if arch != "x86_64" or not parameters(data):
+	if not arch in ["x86_64", "android-armv7"] or not parameters(data):
 		return "Invalid Fast Forward parameters"
 	var arrival_proof: Variant = arrival.get("provenance")
 	if not arrival_proof is Dictionary:
 		return "Fast Forward needs verified arrival declarations"
+	if arch == "android-armv7":
+		if arrival.get("scope") != "rescue_choreography" or not arrival_proof.has("actor"):
+			return "Fast Forward needs verified arrival declarations"
+		if Layouts.anchored(data.provenance, source_bytes, ANDROID_SPANS) and (not data.has("radar") or Layouts.anchored(data.radar.provenance, source_bytes, RADAR_ANDROID_SPANS)):
+			return ""
+		return "Invalid or mixed Fast Forward provenance"
 	var origin: Variant = arrival_proof.get("actor")
 	if not Fonts.extent(origin, "offset", "bytes", [315], source_bytes):
 		return "Fast Forward needs verified arrival declarations"
