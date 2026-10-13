@@ -2,13 +2,27 @@
 
 The importer emits dialogue identities and constant mission requirements only.
 The fifty Void Crystals are a future mission requirement, never awarded cargo.
+
+Android: ModStation (OnTouchEnd, OnUpdate) and DialogueWindow present the
+landed cursor-31 and cursor-32 results (Android text ids 1960-1969 and
+1971-1981, briefing 1970); Status::missionCompleted completes kind 11 at its
+landed station; Status::nextCampaignMission cases 30-32 create
+Mission(11, 30000, 98), Mission(11, 0, 10) and Mission(8, 0, 10) with
+Mission::setProductionGoods(164, 50); cursors 31-33 have no authored cast or
+radio lines; MGame::OnUpdate and MGame::dialogueEvent open the cursor-32
+flight briefing after 5001 ms. Values are the Mac 1.0.7 ones (this module's
+VALUES).
 """
 import copy
 
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 
 def extract_post_probe_visits(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -228,3 +242,36 @@ LAYOUTS.update({'flight_briefing_tick': [376268, 79, '__text', '5102fb7160f21855
 
 # Shared mode0 flight HUD activation; the station result remains mode1.
 MAC_ALTERNATE.update({'flight_briefing_tick': [375756, 79, '__text', '15f82e70c6486c87facfe9b0fc5bac8d72a2f6b4b75494498a75c4427671ca8b'], 'flight_briefing_start': [385208, 536, '__text', '88eeb2eb670dadbb36a6e4b4dbc2a4834ffa23ecf5cedf998efc077f517b7be1']})
+
+ANDROID = {# Landed results and their acknowledgement; cases 30-32 and the 50 Void crystals required.
+           'post_probe_ack_station_flow': ('_ZN10ModStation10OnTouchEndEiiPv', 0, 6536, 'sha256:5b29b2bf44b1e0a442eb14b5646a1aad12932fedee58112b028e31589316b50e'),
+           'post_probe_station_poll': ('_ZN10ModStation8OnUpdateEv', 0, 4016, 'sha256:5ea1f2b464ebfc3d848a87a9d50f3ddd2dde514688e13b51a4aab467e8fbc8a4'),
+           'post_probe_ack_mode1_station_wrapper': ('_ZN14DialogueWindowC2EP7MissionP5Leveli', 0, 86, 'sha256:af40e073975dc60ef72e866a79f8418a86327ba034ddf5328361b636e21e7b2b'),
+           'post_probe_ack_progress_unlock_gate': ('_ZN6Status19nextCampaignMissionEb', 0, 68, 'sha256:975e8c93c4e9798c19a5d1c7cf157f8890dbab65acfe96bfa2a15adecb5a2995'),
+           'post_probe_ack_story_increment': ('_ZN6Status19nextCampaignMissionEb', 392, 8, '1846431c00214be7'),
+           'post_probe_ack_story_install': ('_ZN6Status19nextCampaignMissionEb', 426, 14, '2046294601b0bde8f04322f19cb8'),
+           'post_probe_factory_dispatch': ('_ZN6Status19nextCampaignMissionEb', 128, 6, '630272023b02'),
+           'post_probe_factory31': ('_ZN6Status19nextCampaignMissionEb', 1290, 30, 'sha256:cc7dd1b8b5ab9ae101ad27289149f24d68de0d3a8fbbe8ba6b24ca05aa00fcda'),
+           'post_probe_factory32': ('_ZN6Status19nextCampaignMissionEb', 1320, 28, 'sha256:45aad0b8af313b9a6c6cb3b978137cdb89fe342eb3e3dab6c49c80d2030beb6d'),
+           'post_probe_factory33': ('_ZN6Status19nextCampaignMissionEb', 1210, 50, 'sha256:c517d65cd9d9a4e9d24458a4e26db634b978bde2f1764b54833cd272469c556e'),
+           'post_probe_factory33_tail': ('_ZN6Status19nextCampaignMissionEb', 7886, 10, '01b0bde8f04320f124ba'),
+           'post_probe_mission_item_setter': ('_ZN7Mission18setProductionGoodsEii', 0, 6, 'c0e915127047'),
+           'post_probe_mission_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           'post_probe_ack_reward_getter': ('_ZN7Mission9getRewardEv', 0, 4, '406a7047'),
+           'post_probe_ack_bonus_getter': ('_ZN7Mission8getBonusEv', 0, 4, 'c06a7047'),
+           # No authored cast or radio lines at cursors 31-33; kind-11 completion and the flight briefing.
+           'post_probe_cast31_33_default': ('_ZN5Level21createCampaignMissionEv', 50, 72, 'sha256:199f7a8b39991522d2490e0f91eb46db22c738701ada8159377dbb7df6f2d3be'),
+           'post_probe_cast31_33_range': ('_ZN5Level21createCampaignMissionEv', 552, 10, 'ddf840a01d2807f2eb80'),
+           'post_probe_cast_default': ('_ZN5Level21createCampaignMissionEv', 29704, 26, 'sha256:51a12ccd37a83d3cc0390e228195c8a57dbd163b8258503299f415cf0179dcea'),
+           'post_probe_radio31_33_dispatch': ('_ZN5Level19createRadioMessagesEi', 0, 26, 'sha256:2fb27116c5cd427d3d8d01c2af84739cd96a13de8ea5fc929fb78c2963332596'),
+           'post_probe_radio31_33_default': ('_ZN5Level19createRadioMessagesEi', 88, 6, '411941194119'),
+           'post_probe_radio_default': ('_ZN5Level19createRadioMessagesEi', 12956, 8, 'd4f8140102b0bde8'),
+           'post_probe_kind11_completion': ('_ZN6Status16missionCompletedEbbx', 0, 1508, 'sha256:0162f8ffdfa5a9e47021d6551470479343189754dde03c334ec2ffc6cbb2634e'),
+           'post_probe_flight_briefing_tick': ('_ZN5MGame8OnUpdateEv', 10072, 68, 'sha256:f59ab7bdc1b81ef90c370633ae334fdb13f3a9aa680a7dfc565f89a546b9ecb9'),
+           'post_probe_flight_briefing_start': ('_ZN5MGame13dialogueEventEv', 0, 392, 'sha256:805e9bed6df0875e75c5f64613547a6da41fe7c7d904341c2e32f359ae6baee3'),
+           # Cursors 31-33: counts, the cursor-32 briefing, the results and all voices.
+           'post_probe_brief31_33_counts': ('_ZN14DialogueWindow19hasBriefingDialogueEi', 10, 12, '000000000200000000000000', 'literal', 124),
+           'post_probe_result31_33_counts': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 12, '140000001600000012000000', 'literal', 124),
+           'post_probe_brief32_first': ('_ZN14DialogueWindow11loadContentEv', 128, 8, '00000000b2070000', 'literal', 216),
+           'post_probe_results': ('_ZN14DialogueWindow11loadContentEv', 208, 168, 'sha256:378d3f6f6a5b97556d09be15b9426c999b861b06edf5b526ed0e5f81774bcb6c', 'literal', 1504),
+           'post_probe_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0)}
