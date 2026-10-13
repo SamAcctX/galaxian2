@@ -9,6 +9,9 @@ const SPANS = {"ship_lifecycle_normal_hit":[538936,1846],"ship_lifecycle_lethal_
 
 const MAC_SPANS = {"ship_lifecycle_normal_hit":[539472,1846],"ship_lifecycle_lethal_reputation":[808494,184],"ship_lifecycle_reputation_axis":[808678,184],"ship_lifecycle_secondary_faction":[735306,76],"ship_lifecycle_faction_response":[113780,214],"ship_lifecycle_empty_mission":[400952,14],"ship_lifecycle_reaction_exclusion":[-77806,14],"ship_lifecycle_base_actor":[-81548,948],"ship_lifecycle_npc_update":[611314,17180],"ship_lifecycle_world_death":[106510,1044],"ship_lifecycle_nonhostile_death":[107650,12],"ship_lifecycle_objectives":[481528,1170],"ship_lifecycle_cargo_model":[-77266,246],"ship_lifecycle_radio_gate":[114020,59]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by early_contract_definitions.gd).
+const ANDROID_SPANS = {"ship_lifecycle_normal_hit":[0,1376],"ship_lifecycle_lethal_reputation":[0,104],"ship_lifecycle_reputation_axis":[0,124],"ship_lifecycle_secondary_faction":[0,24],"ship_lifecycle_secondary_factions":[0,16],"ship_lifecycle_faction_response":[0,156],"ship_lifecycle_empty_mission":[0,14],"ship_lifecycle_reaction_exclusion":[0,6],"ship_lifecycle_base_actor":[0,604],"ship_lifecycle_npc_update":[0,10528],"ship_lifecycle_world_death":[0,636],"ship_lifecycle_nonhostile_death":[0,12],"ship_lifecycle_objectives":[0,978],"ship_lifecycle_cargo_model":[0,212],"ship_lifecycle_radio_gate":[12,34]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES)
 

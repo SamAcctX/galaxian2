@@ -82,7 +82,8 @@ func extensions() -> Array:
 	return [["generation",Definitions.Contacts.VALUES,Definitions.Contacts.ANDROID_SPANS],
 		["delivery_results",Definitions.Delivery.VALUES,Definitions.Delivery.ANDROID_SPANS],
 		["encounter_construction",Definitions.Encounters.VALUES,Definitions.Encounters.ANDROID_SPANS],
-		["ship_combat",Definitions.ShipCombat.VALUES,Definitions.ShipCombat.ANDROID_SPANS]]
+		["ship_combat",Definitions.ShipCombat.VALUES,Definitions.ShipCombat.ANDROID_SPANS],
+		["ship_lifecycle",Definitions.ShipLifecycle.VALUES,Definitions.ShipLifecycle.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:
 	var result:={}

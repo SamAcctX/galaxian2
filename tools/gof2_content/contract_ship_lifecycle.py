@@ -1,9 +1,23 @@
-"""Verified Mac contract combat lifecycle, without executable payloads."""
+"""Verified Mac contract combat lifecycle, without executable payloads.
+
+Android: Player::damage applies hits, Standing::applyKill and applyDelict the
+lethal reputation (SolarSystem::getAttackRace and its table for pirates),
+Level::alarmAllFriends the faction response and Level::createRadioMessage's
+empty-mission gate the radio; PlayerFighter::update and KIPlayer::KIPlayer run
+the ships (KIPlayer::isWingMan excludes wingmen), Level::enemyDied and
+friendDied count deaths, Objective::achieved checks the controllers and
+KIPlayer::createCrate picks the faction's cargo model. Values equal the Mac
+ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 
 def extract_contract_ship_lifecycle(mach, arrival):
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -158,3 +172,20 @@ MAC_ALTERNATE = {'ship_lifecycle_normal_hit': [539472,
                                59,
                                '__text',
                                '9606d9f2b4198e55a2dc11d9f787920073bdb7570f39ef2503c6cab9f701077c']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'ship_lifecycle_normal_hit': ('_ZN6Player6damageEibi', 0, 1376, 'sha256:577391dd7b7a6d8ee3273ce37004ea80f21a4f1a173666529c7b926f4449f3d5'),
+           'ship_lifecycle_lethal_reputation': ('_ZN8Standing9applyKillEi', 0, 104, 'sha256:8bd296216f97e43401c7b59304cac316144c2c3836301212bcd504103a57542a'),
+           'ship_lifecycle_reputation_axis': ('_ZN8Standing11applyDelictEii', 0, 124, 'sha256:262f35c31d0749a01acbf4ae6061d65741bc024e6bdf6ddd6c94ca65ed6fec89'),
+           'ship_lifecycle_secondary_faction': ('_ZN11SolarSystem13getAttackRaceEv', 0, 24, 'c069032884bf082070470249794451f82000704784150d00'),
+           'ship_lifecycle_secondary_factions': ('_ZN11SolarSystem13getAttackRaceEv', 10, 16, '01000000000000000300000002000000', 'literal', 0),
+           'ship_lifecycle_faction_response': ('_ZN5Level15alarmAllFriendsEib', 0, 156, 'sha256:890f99a20e8e1b944abe5c8b6361ddd8791e24689c0cbfbb5b1367b315b245a3'),
+           'ship_lifecycle_empty_mission': ('_ZN7Mission7isEmptyEv', 0, 14, '81680020b1f1ff3f08bf01207047'),
+           'ship_lifecycle_reaction_exclusion': ('_ZN8KIPlayer9isWingManEv', 0, 6, '90f8d8007047'),
+           'ship_lifecycle_base_actor': ('_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', 0, 604, 'sha256:3a02b0c7ce6b25d113ff6b119a914a61a149997d03f3853b159537f02d2efee8'),
+           'ship_lifecycle_npc_update': ('_ZN13PlayerFighter6updateEi', 0, 10528, 'sha256:fb79b3bde0fb27a45861c89450940e96ec313695cb5d4b4c290220c25ef78d9e'),
+           'ship_lifecycle_world_death': ('_ZN5Level9enemyDiedEib', 0, 636, 'sha256:1d244b76f7d5e2deedc549f316d5bd128ac0dc74646f082c294b69202f2e3b19'),
+           'ship_lifecycle_nonhostile_death': ('_ZN5Level10friendDiedEv', 0, 12, 'd0f81c110139c0f81c117047'),
+           'ship_lifecycle_objectives': ('_ZN9Objective8achievedEi', 0, 978, 'sha256:da3086f410423068084e2547c16738945cb696b15a3685f82075a90dd6538eab'),
+           'ship_lifecycle_cargo_model': ('_ZN8KIPlayer11createCrateEi', 0, 212, 'sha256:91deeb454ba06465975eb469efc565a2639580023fba721f6c059569ad9060a2'),
+           'ship_lifecycle_radio_gate': ('_ZN5Level18createRadioMessageEii', 12, 34, 'sha256:9bae1735cd16a4ac892b76219c65b816933ef42fff19fda182b7521f2e43dab0')}
