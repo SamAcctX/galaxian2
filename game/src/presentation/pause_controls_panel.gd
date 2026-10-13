@@ -59,7 +59,10 @@ static func reference_rows(strings: Array,mouse_steering: bool) -> Array[Diction
 	var rows: Array[Dictionary]=[]
 	# The App Store bundle adds fourteen strings before this source control block.
 	# Both known Mac layouts keep it 57 entries from the end of each language.
-	var base:=strings.size()-57 if strings.size() in [3371,3385] else -1
+	# Android strings are stored in the Mac 1.0.7 numbering (3385 rows) followed
+	# by its 16 own lines, so its block sits where the Mac 1.0.7 one does.
+	var layout:=3385 if strings.size()==3401 else strings.size()
+	var base:=layout-57 if layout in [3371,3385] else -1
 	for direction in [[KEY_UP,0,"Up","UP"],[KEY_DOWN,1,"Down","DOWN"],
 		[KEY_LEFT,2,"Left","LEFT"],[KEY_RIGHT,3,"Right","RIGHT"]]:
 		if int(direction[0]) in Controls.TURN_KEYS:rows.append({"label":_source_text(strings,base+int(direction[1]),direction[2]),"key":direction[3]})
