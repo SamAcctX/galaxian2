@@ -5,6 +5,7 @@ const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const Population=preload("res://src/content/ambient_population_definitions.gd")
 const Combat=preload("res://src/content/ambient_combat_definitions.gd")
 const Destruction=preload("res://src/content/freighter_destruction_definitions.gd")
+const Lifecycle=preload("res://src/content/ambient_lifecycle_definitions.gd")
 var checks:=0
 var failures:=0
 var source_bytes:=8000000
@@ -31,6 +32,11 @@ func verify() -> void:
 	var destruction:=android(Destruction.VALUES,Destruction.ANDROID_SPANS)
 	common("freighter destruction",func(data,arch,staging,parent):return Destruction.validate(data,source_bytes,arch,staging,parent),destruction,combat,{},"freighter_destruction_death_model")
 	mac("freighter destruction",func(data,arch,staging,parent):return Destruction.validate(data,source_bytes,arch,staging,parent),Destruction.VALUES,Destruction.MAC_SPANS,combat)
+	var lifecycle:=android(Lifecycle.VALUES,Lifecycle.ANDROID_SPANS);lifecycle.recycling=Lifecycle.RECYCLING.duplicate(true)
+	check(Lifecycle.recycling_parameters(lifecycle),"Android lifecycle lost its recycling")
+	common("lifecycle",func(data,arch,staging,parent):return Lifecycle.validate(data,source_bytes,arch,staging,parent),lifecycle,combat,{},"ambient_lifecycle_freighter_reset_dispatch")
+	var mac_spans: Dictionary=Lifecycle.MAC_SPANS.duplicate();mac_spans.merge(Lifecycle.MAC_RECYCLING_SPANS)
+	mac("lifecycle",func(data,arch,staging,parent):return Lifecycle.validate(data,source_bytes,arch,staging,parent),lifecycle,mac_spans,combat)
 
 ## Acceptance, other editions, the staging and the proofs of one validator.
 func common(name: String,validate: Callable,data: Dictionary,parent: Dictionary,foreign_parent: Dictionary,span: String) -> void:

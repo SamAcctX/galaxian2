@@ -12,6 +12,9 @@ const RECYCLING_SPANS = {"patrol_check":[112882,327],"patrol_iteration":[113730,
 
 const MAC_SPANS = {"park":[-77334,26],"parked_predicate":[-77838,16],"travel_predicate":[-79050,14],"relaunch":[631168,488],"restore_statistics":[536354,164],"reset_route":[722774,60],"periodic_check":[112696,186],"ordinary_timer_entry":[112550,21],"world_schedule":[117678,71],"actor_timers":[611354,75],"route_clock":[617276,87],"outbound":[620100,130],"mode_table":[628454,40],"multiplier":[1532770,4],"speed_limit":[1531926,4]}
 const MAC_RECYCLING_SPANS = {"patrol_check":[112882,327],"patrol_iteration":[113730,22],"initial_clocks":[-45856,11],"initial_travel_flag":[-81071,7],"freighter_reset_dispatch":[2377410,8],"freighter_no_reset":[-76880,6],"launch_position":[609776,176]}
+# Android: the Mac values and recycling; spans inside named functions and
+# PlayerFixedObject's vtable slot 6 (Layouts.anchored).
+const ANDROID_SPANS = {"ambient_lifecycle_park":[0,14],"ambient_lifecycle_parked_predicate":[0,14],"ambient_lifecycle_travel_predicate":[0,6],"ambient_lifecycle_relaunch":[0,316],"ambient_lifecycle_restore_statistics":[0,104],"ambient_lifecycle_reset_route":[0,40],"ambient_lifecycle_orbit_checks":[0,1052],"ambient_lifecycle_world_schedule":[150,44],"ambient_lifecycle_actor_update":[0,10528],"ambient_lifecycle_initial_clocks":[0,368],"ambient_lifecycle_initial_travel_flag":[0,604],"ambient_lifecycle_freighter_no_reset":[0,2],"ambient_lifecycle_launch_position":[0,120],"ambient_lifecycle_freighter_reset_dispatch":[32,4]}
 
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+(2 if data.has("recycling") else 1) or not data.get("provenance") is Dictionary:return false
@@ -25,7 +28,11 @@ static func recycling_parameters(data: Variant) -> bool:
 static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dictionary,combat: Dictionary) -> String:
 	if not data is Dictionary:return "Missing ambient lifecycle declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data) or not Combat.parameters(combat):return "Unsupported ambient lifecycle declarations"
+	var android:=arch=="android-armv7"
+	if (arch!="x86_64" and not android) or not parameters(data) or not Combat.parameters(combat):return "Unsupported ambient lifecycle declarations"
+	if android:
+		if arrival.get("scope")!="rescue_choreography" or not arrival.get("provenance",{}).has("actor"):return "Ambient lifecycle lacks its source anchor"
+		return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid ambient lifecycle source layout"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Ambient lifecycle lacks its source anchor"
 	var spans:=SPANS.duplicate();var alternate:=MAC_SPANS.duplicate()
