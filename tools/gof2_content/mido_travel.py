@@ -1,5 +1,19 @@
-"""Source declarations for the initial Mido journey, without executable payloads."""
+"""Source declarations for the initial Mido journey, without executable payloads.
+
+Android: Status::nextCampaignMission cases 8-12 create the local missions (the
+cursor-9 drill exchange through Ship::getFirstEquipmentOfSort, removeEquipment,
+addEquipment and Item::makeItem; the cursor-12 contract gate, won in
+Status::missionCompleted); DialogueWindow's tables and Globals::getDialogueSoundId
+hold the conversations. MGame (OnTouchBegin, OnTouchEnd, OnUpdate, OnInitialize,
+dialogueEvent), PlayerEgo::dockToPlanet, Radar and LevelScript run the travel;
+StarMap, Layout and BuildResourceList the local map; PlayerStation, BoundingSphere
+and StarSystem the exterior; Standing, Level::createMission, createShip,
+assignGuns, createRadioMessage, Radio and PlayerFighter the ordinary traffic.
+Android's planet window is Globals::w / 16 (Mac / 18) and the cursor-13 contract
+gate waits for one completed contract (Mac four).
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_declarations, hashed_variants
 from .lounge_story import extract_lounge_story
 from .convoy_capture import extract_convoy_capture
@@ -58,20 +72,27 @@ from .nehma_return import extract_nehma_return
 def extract_mido_travel(mach, arrival, station, training, population=None, resources=None):
     if station.get('scope') != 'first_station_entry' or training.get('scope') != 'combat_training_encounter_construction':
         return {}
-    variant, proof = hashed_variants(mach, arrival, [
-        {**LAYOUTS, **CONTINUATION_LAYOUTS, **RETURN_LAYOUTS},
-        {**MAC_ALTERNATE, **MAC_CONTINUATION_LAYOUTS, **MAC_RETURN_LAYOUTS}])
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        # Requires the arrival staging, as the Mac anchors on its actor.
+        staged = isinstance(arrival, dict) and arrival.get('scope') == 'rescue_choreography' and 'actor' in arrival.get('provenance', {})
+        variant, proof = 2, recognize_symbols(mach, ANDROID) if staged else {}
+        prove = lambda layout: recognize_symbols(mach, layout)
+    else:
+        variant, proof = hashed_variants(mach, arrival, [
+            {**LAYOUTS, **CONTINUATION_LAYOUTS, **RETURN_LAYOUTS},
+            {**MAC_ALTERNATE, **MAC_CONTINUATION_LAYOUTS, **MAC_RETURN_LAYOUTS}])
+        prove = lambda layout: hashed_declarations(mach, arrival, layout)
     if not proof:
         return {}
-    result = copy.deepcopy((VALUES, MAC_VALUES)[variant])
+    result = copy.deepcopy((VALUES, MAC_VALUES, ANDROID_VALUES)[variant])
     result['provenance'] = proof
-    result['continuation'] = copy.deepcopy((CONTINUATION, MAC_CONTINUATION)[variant])
-    result['return_visit'] = copy.deepcopy((RETURN_VISIT, MAC_RETURN_VISIT)[variant])
-    entry_proof = hashed_declarations(mach, arrival, (ARRIVAL_BRIEFING_LAYOUTS, MAC_ARRIVAL_BRIEFING_LAYOUTS)[variant])
+    result['continuation'] = copy.deepcopy((CONTINUATION, MAC_CONTINUATION, MAC_CONTINUATION)[variant])
+    result['return_visit'] = copy.deepcopy((RETURN_VISIT, MAC_RETURN_VISIT, ANDROID_RETURN_VISIT)[variant])
+    entry_proof = prove((ARRIVAL_BRIEFING_LAYOUTS, MAC_ARRIVAL_BRIEFING_LAYOUTS, ANDROID_ARRIVAL_BRIEFING)[variant])
     if entry_proof:
-        result['arrival_briefing'] = copy.deepcopy((ARRIVAL_BRIEFING, MAC_ARRIVAL_BRIEFING)[variant])
+        result['arrival_briefing'] = copy.deepcopy((ARRIVAL_BRIEFING, MAC_ARRIVAL_BRIEFING, MAC_ARRIVAL_BRIEFING)[variant])
         proof.update(entry_proof)
-    navigation_proof = hashed_declarations(mach, arrival, (NAVIGATION_LAYOUTS, MAC_NAVIGATION_LAYOUTS)[variant])
+    navigation_proof = prove((NAVIGATION_LAYOUTS, MAC_NAVIGATION_LAYOUTS, ANDROID_NAVIGATION)[variant])
     if navigation_proof:
         result['contract_navigation'] = copy.deepcopy(CONTRACT_NAVIGATION)
         result['provenance'].update(navigation_proof)
@@ -2566,3 +2587,220 @@ MAC_ARRIVAL_BRIEFING_LAYOUTS = {'yrdal_briefing_briefing_start': [385724,
                                       8,
                                       '__const',
                                       '705bd854286b90a6887cab001ebebeb516a1b4d3837551313b6055ba5b3c90fe']}
+
+
+# Android: Mac 1.0.7 text ids. Radar::Radar stores Globals::w / 16 (Mac / 18)
+# as the planet window that Radar::draw halves around the crosshair, and the
+# cursor-13 contract gate waits for one more completed contract (Mac four).
+ANDROID_VALUES = copy.deepcopy(MAC_VALUES)
+ANDROID_VALUES['travel']['target_window_divisor'] = 16
+ANDROID_RETURN_VISIT = copy.deepcopy(MAC_RETURN_VISIT)
+ANDROID_RETURN_VISIT['contract_gate']['additional_completions'] = 1
+
+# Android spans inside named functions and their tables.
+ANDROID = {# Status::nextCampaignMission: the cursor (+0x1e8) selects a tbh case.
+           'story_dispatch': ('_ZN6Status19nextCampaignMissionEb', 0, 68, 'sha256:975e8c93c4e9798c19a5d1c7cf157f8890dbab65acfe96bfa2a15adecb5a2995'),
+           # tbh entries 8-12.
+           'story_cases': ('_ZN6Status19nextCampaignMissionEb', 84, 10, '2d02c60c4b0e6501c602'),
+           'story_advance': ('_ZN6Status19nextCampaignMissionEb', 392, 8, '1846431c00214be7'),
+           # Every case hands its Mission to Status::setCampaignMission.
+           'story_tail': ('_ZN6Status19nextCampaignMissionEb', 426, 14, '2046294601b0bde8f04322f19cb8'),
+           # Cursor 8 -> 9: Mission(11, reward 0, station 78).
+           'departure_factory': ('_ZN6Status19nextCampaignMissionEb', 1182, 28, 'sha256:5a1bc6340bdd7cbedc612b2f22866e6d43416440d79d28ee1b4a730455c0e7ce'),
+           # Cursor 9 -> 10: the first equipment of sort 19 leaves, Item::makeItem(items[86], 1) is added; Mission(11, 0, 79).
+           'exchange_factory': ('_ZN6Status19nextCampaignMissionEb', 6608, 84, 'sha256:84104d862653f6748e1ecb665a41dd5e6842db0be50d69e9570331ebb00bc349'),
+           # Cursor 10 -> 11: Mission(11, 0, 76).
+           'arrival_factory': ('_ZN6Status19nextCampaignMissionEb', 7386, 30, 'sha256:1a06228d749c0a0cb55e5fdb9af2545b2864e016ba9065f64653eb5446e84ab8'),
+           # Cursor 11 -> 12: Mission(11, 0, 79).
+           'yrdal_completion': ('_ZN6Status19nextCampaignMissionEb', 782, 28, 'sha256:3390cbe6a1d5c3b03fac9a64af6a5979f36ec27e034f12f8a43a6799f33d06fc'),
+           # Cursor 12 -> 13: Mission(150, 0, 0) needing Status+0x1c4 (completed contracts) + 1 (the Mac: + 4), hidden.
+           'return_completion': ('_ZN6Status19nextCampaignMissionEb', 1488, 56, 'sha256:9ff273ac73996d19ab9624d46747e1f28fc337ff3bf66a147c13d361d21462e1'),
+           'return_hidden': ('_ZN6Status19nextCampaignMissionEb', 6928, 20, 'd4f8940100214068006801b0bde8f04320f1f6bb'),
+           # Cursor 58 replaces the radio exclusion list (Status+0x90) with 56, 45, 22.
+           'traffic_radio_exclusion_later_slot': ('_ZN6Status19nextCampaignMissionEb', 184, 2, 'b105'),
+           'traffic_radio_exclusion_later': ('_ZN6Status19nextCampaignMissionEb', 2982, 114, 'sha256:552b0b8125e8148f821d93d064859864ffbac122b9ba0428c3eb6601367403e0'),
+           # Mission(kind, reward, station): bonus and status value 0, visible.
+           'mission_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           'campaign_mission_setter': ('_ZN6Status18setCampaignMissionEP7Mission', 0, 72, 'sha256:1d0b38f030f7e22ca6bc067f23404c8a6c8e5ff95990b29a89f875b44a0209c1'),
+           'mission_status_setter': ('_ZN7Mission14setStatusValueEi', 0, 4, 'c1657047'),
+           'mission_status_getter': ('_ZN7Mission14getStatusValueEv', 0, 4, 'c06d7047'),
+           'mission_visibility': ('_ZN7Mission10setVisibleEb', 0, 6, '80f860107047'),
+           # The exchange: find by sort, remove by item id, install into the first empty slot of the category, copy the price.
+           'inventory_find': ('_ZN4Ship23getFirstEquipmentOfSortEi', 0, 96, 'sha256:0f97dfc1498b5f762706c1c35c393bec23e4db1750c18830de480677287ee406'),
+           'inventory_remove': ('_ZN4Ship15removeEquipmentEP4Item', 0, 62, 'sha256:94423c304fdd5a89128de57b365d2cc2ccc267d1a209a75f1e9952c5c8f54f47'),
+           'inventory_install': ('_ZN4Ship12addEquipmentEP4Item', 0, 78, 'sha256:53eb2ffb5d951b871444af97e1a80ef85c6d45cc5bbd0d776ea632d17fba162a'),
+           'inventory_equal': ('_ZN4Item6equalsEPS_', 0, 18, '0246002021b1096812688a4208bf01207047'),
+           'inventory_clone': ('_ZN4Item8makeItemEi', 0, 18, 'b0b502af0c46856977f70cee85614463b0bd'),
+           # DialogueWindow: per-cursor offsets from the count tables, speakers and texts.
+           'mode1_offsets': ('_ZN14DialogueWindow4initEv', 0, 680, 'sha256:8cdee10d3e57803ef3137f3ccdf79c28dd3043ef1654f6bc214dec5f9753c49e'),
+           'mode1_reader': ('_ZN14DialogueWindow11loadContentEv', 0, 3868, 'sha256:4848845d1a3eaed3723c28a67221b83f09cd90f3222aabea7c724a00cc5da7b7'),
+           # Success (mode 1) counts for cursors 0-12 and briefing (mode 0) counts for cursors 0-10.
+           'mode1_counts': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 52, 'sha256:19b7bce51a54143c890e8f5b52ad133f5d849387f39c9eef50ab57213c350f3f', 'literal', 0),
+           'mode0_counts': ('_ZN14DialogueWindow6lengthEv', 26, 44, 'sha256:286bb336983121b12962796cd68b1bd63364176964e2efbd57e774c53140938d', 'literal', 0),
+           # Mode-1 events (speaker, Android text id) of cursors 9-12.
+           'local_dialogues': ('_ZN14DialogueWindow11loadContentEv', 208, 352, 'sha256:9aa773b86a140e6de375560679269e8d08f2da689322aa27dbb0275db0b79005', 'literal', 400),
+           # Globals::getDialogueSoundId: the whole text-to-voice table (unvoiced lines are absent).
+           'voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0),
+           # A finished station dialogue advances the campaign (ModStation::OnTouchBegin).
+           'station_acknowledgement': ('_ZN10ModStation12OnTouchBeginEiiPv', 0, 492, 'sha256:904ab4e539217d7a7b4aa3280ca64a58edf634b4d38fe7542aaeaffb77879940'),
+           'dock_event': ('_ZN5MGame9dockEventEii', 0, 1500, 'sha256:c509b37791ee035ac28c716b3765e52ba5705d02fa07f400333fcb885a2b9ee0'),
+           # Level::createRadioMessages: cursors 11 and 12 have no radio messages.
+           'continuation_radio_dispatch': ('_ZN5Level19createRadioMessagesEi', 0, 26, 'sha256:2fb27116c5cd427d3d8d01c2af84739cd96a13de8ea5fc929fb78c2963332596'),
+           'continuation_radio_slot': ('_ZN5Level19createRadioMessagesEi', 48, 2, '4119'),
+           'return_radio_slot': ('_ZN5Level19createRadioMessagesEi', 50, 2, '4119'),
+           'continuation_radio_empty': ('_ZN5Level19createRadioMessagesEi', 12956, 10, 'd4f8140102b0bde8f081'),
+           # Kind 150 is won once Status+0x1c4 >= the status value; ordinary missions count up.
+           'contract_gate': ('_ZN6Status16missionCompletedEbbx', 0, 1508, 'sha256:0162f8ffdfa5a9e47021d6551470479343189754dde03c334ec2ffc6cbb2634e'),
+           'contract_gate_complete': ('_ZN7Mission6setWonEb', 0, 4, '41707047'),
+           'contract_counter_increment': ('_ZN6Status15incMissionCountEv', 0, 12, 'd0f8c4110131c0f8c4117047'),
+           'contract_story_exclusion': ('_ZN5MGame12successCheckEv', 0, 1764, 'sha256:ea65079e511029adc0634a0ca72b39105a299c510ec2315692fb93d2d4ec9434'),
+           'contract_story_predicate': ('_ZN7Mission17isCampaignMissionEv', 0, 10, '006d002818bf01207047'),
+           # MGame::OnTouchBegin: travel needs cursor >= 10 and != 48 (else notice 21); taps reach the map.
+           'travel_unlock': ('_ZN5MGame12OnTouchBeginEiiPv', 0, 3324, 'sha256:14c8e3bcb80fa6bf7de3c5e8e760f899b3b93e228c9e5f41da869f234657649a'),
+           # PlayerEgo::dockToPlanet: speed 8.0, 10000, sound 5; isDockedToPlanet after more than 3000 ms.
+           'launch': ('_ZN9PlayerEgo12dockToPlanetEv', 0, 108, 'sha256:656190663ab81ec22734f104e41018efc7ccecf108c10581eff860c889aa2be6'),
+           'launch_finished': ('_ZN9PlayerEgo16isDockedToPlanetEv', 0, 18, 'd0f8f011002040f6b8329142c8bf01207047'),
+           'launch_clock': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 0, 9856, 'sha256:456b421fff96043243d79b6f3c451d88fef761c8b03240403d2ca0e47625be17'),
+           # MGame::OnUpdate: arrival departs to the docked planet, keeps the cache and enters module 2.
+           'arrival_transition': ('_ZN5MGame8OnUpdateEv', 0, 13148, 'sha256:132913553f336d427a90991f78c7fb91b5ad7c9187f69fa8d64fece59a2ce8fe'),
+           # Radar::Radar: scanner (sort 17) duration attribute 29 else 8000 ms; window Globals::w / 16 (+0x124).
+           'scanner_duration': ('_ZN5RadarC2EP5Level', 0, 3304, 'sha256:24410902c42a798834b190938f024287a3b51f6648d2b209da08b4b57827ff64'),
+           # Radar::draw: a planet inside crosshair +- w/16 charges; the lock plays sound 26.
+           'target_window': ('_ZN5Radar4drawEP6PlayerP3Hudi', 0, 11648, 'sha256:d6017e6e1f0945302c657ba4f0ef7e4169d6f3ca95968037e4f040fcc449dc48'),
+           'destination_autopilot': ('_ZN11LevelScript31setAutoPilotToProgrammedStationEv', 0, 292, 'sha256:87182c0a7e038fa7096dcc6cdb15580573a7901f0e85b38d12b17e0a63bec4e9'),
+           'target_selection': ('_ZN9PlayerEgo12setAutoPilotEP8KIPlayer', 0, 100, 'sha256:3ff84104651e1b2f7351671bf743ac1009f060feda99740389545d5b5e9a20fc'),
+           'autopilot_planet_predicate': ('_ZN9PlayerEgo13goingToPlanetEv', 0, 58, 'sha256:5a2527ae7b9c09f0ee024ed1d883abaf69a3b5776e46772d46cdc94ca822f519'),
+           'target_station_id': ('_ZN5Radar18getPlanetDockIndexEv', 0, 36, 'sha256:daeebdb097727d61b79182e4cb9c740e3b01c38ddf43b7212796e0f68629aeac'),
+           # MGame::OnInitialize: world entry, cache restore and gamma reset.
+           'ordinary_world_entry': ('_ZN5MGame12OnInitializeEv', 0, 2688, 'sha256:aef3fbe2dca80fd5daed276aba67a4d35f1ad0268acb0947b6bca5d85e7b3ef9'),
+           'departure_cache_reset': ('_ZN10ModStation10OnTouchEndEiiPv', 0, 6536, 'sha256:5b29b2bf44b1e0a442eb14b5646a1aad12932fedee58112b028e31589316b50e'),
+           'ordinary_gamma_context': ('_ZN6Status26getGammaRayDamagePerSecondEii', 0, 80, 'sha256:d2344fecf64f4c5be2745d07ee0f160583c95f1fccb92bb2b543497c95488677'),
+           'arrival_mission_selection': ('_ZN6Status13departStationEP7Station', 0, 1072, 'sha256:b7432b338855a0a259aa2b3d0d678bb305ea5293e9903e68114efafe3b6170d6'),
+           'early_wormhole_cursor': ('_ZN6Status7gameWonEv', 0, 14, 'd0f8e81100202c29c8bf01207047'),
+           'ambient_cursor_getter': ('_ZN6Status25getCurrentCampaignMissionEv', 0, 6, 'd0f8e8017047'),
+           # LevelScript::process: from cursor 2 the HUD returns after 7001 ms; a programmed station shows notice 5 and starts the autopilot.
+           'ordinary_entry_release': ('_ZN11LevelScript7processEi', 804, 198, 'sha256:4ad77b0875954cdf8c22d26fa7da10ab0ec4267f4c13e0d35a47220ff59fee7a'),
+           # StarMap: images, background models 16850-16852, camera, planets (18180 + texture), orbits (6779), sun (6768).
+           'map_constructor': ('_ZN7StarMapC2EbP7Missionbi', 0, 1132, 'sha256:b01f1d866a21d9f412325900b545b5ccff4ea8feed1c69ddda258e2a8c1984bc'),
+           'map_presentation_setup': ('_ZN7StarMap4initEbP7Missionbi', 0, 2560, 'sha256:5cb82374d8d1092eaaf82b503db24ff4b9b780815c43e3d6687fd4781adab443'),
+           'map_layout': ('_ZN7StarMap14initStarSystemEv', 0, 2336, 'sha256:2094f979db70f635399bb81d6d0e65112b8593503e544a67f1e74b4a291ec975'),
+           'map_lighting': ('_ZN7StarMap10initLightsEv', 0, 60, 'sha256:c859a5e1f7d2f0cec52bf08e106614cbf889483c6ee15fc734d4e65e17f89d09'),
+           'map_planet_sizes': ('_ZN7StarMap14initStarSystemEv', 822, 88, 'sha256:6b9ae97bfb6647c4ce34cacf201855491a91c0a3f5eddedd162e2534b82580ca', 'literal', 0),
+           'map_sun_textures': ('_ZN7StarMap14initStarSystemEv', 1728, 64, 'sha256:873e342e4714fc42eaa8e5586d5eee1dfaf645edd1ca4eb9db707d8478413c6a', 'literal', 0),
+           'map_faction_icons': ('_ZN7StarMap14initStarSystemEv', 1510, 16, 'a6040000a3040000a5040000a4040000', 'literal', 0),
+           'map_header': ('_ZN7StarMap16drawOnScreenInfoEib', 0, 4092, 'sha256:6cc9ceb5943c56ad1f055ead042f9236d2a98e83f56721ced7ec6b1f3b9dc50a'),
+           'map_security_colors': ('_ZN7StarMap16drawOnScreenInfoEib', 3348, 48, 'sha256:abf8124070f120eec2ae52c39032c611ddb47586e94a481b2222b148d527c1a1', 'literal', 0),
+           'map_legend': ('_ZN7StarMap7drawKeyEv', 0, 608, 'sha256:2d077bb02ebdac6e025422fa3a76fa392839a1a32c9ad68c0873e114486e8c99'),
+           'map_render': ('_ZN7StarMap4drawEv', 0, 2964, 'sha256:e6f1aa5e2c2e22f70217364e624fce5b197db10413feabd8da4e687ce13f9389'),
+           'map_update': ('_ZN7StarMap6updateEi', 0, 3228, 'sha256:448c13edc1f8c3785b08e16b69c909db633dc378416470a047f0b952e86509b4'),
+           'map_confirm_destination': ('_ZN7StarMap10OnTouchEndEii', 0, 3356, 'sha256:203b988c7f42e00b39f8d0ca24c12f9b0ec5c82a217ef50375e4e611a31bc148'),
+           # StarMap::depart: leave the current station and program the selected one.
+           'pending_destination': ('_ZN7StarMap6departEb', 0, 608, 'sha256:b34731ccb0911d58dd95a4f2bf80ee9713d545963f5f97b738b6b57730b0c340'),
+           'map_mode': ('_ZN7StarMap14setJumpMapModeEbb', 0, 10, '80f8aa1080f8ab207047'),
+           # MGame::OnTouchEnd opens the map in flight and pauses; closing it resumes.
+           'map_flight_entry': ('_ZN5MGame10OnTouchEndEiiPv', 0, 9784, 'sha256:fdba63f59493b8c11bd31fd1cad8857708de40b6cfb3e0221e5f2eba567c65e0'),
+           'ordinary_radio_draw_order': ('_ZN5MGame10OnRender2DEv', 0, 1424, 'sha256:d707bce126cf4d3dc00596b6915d1ac05f70f64cd7ca4617bfaf3dadc45f2462'),
+           # BuildResourceList: material 20027 = render type 6 with texture 10145.
+           'map_material': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 70214, 82, 'sha256:a3cb2471994d3e4650627c0a64372f19c741d3e65bf183d89c2bf7c83b778024'),
+           # Layout::reload: panel images 1150, 1155, 1156; Layout::drawBox draws the type-7 panel.
+           'map_panel_background': ('_ZN6Layout6reloadEv', 0, 1132, 'sha256:4ac488591f57974ddcc4e19df5052f026009934f7b611163de320d150163c737'),
+           'map_panel_type_seven': ('_ZN6Layout7drawBoxEiiiiiN11AbyssEngine6StringEh', 0, 1572, 'sha256:8f0c266d5442a3be966690e7f8fd2f0cf55f31e68d0f0cb6908343aafbb71f25'),
+           # PlayerStation: models 21000 + i, layers 21800 + i and 22000 + i, spheres of half the stored radius.
+           'station_model_choice': ('_ZN13PlayerStationC2EP7Station', 0, 4180, 'sha256:1f4480fb17a55ae913595af33bb289ada1a75e9532f2e24d464f8877a349b581'),
+           'collision_sphere_constructor': ('_ZN14BoundingSphereC2Efffffff', 0, 60, 'sha256:32ad657c6e7fc22b4965c2e7e38a5d1ad1c8c57821be00bb2f6e44fcc3c25500'),
+           'collision_sphere_point': ('_ZN14BoundingSphere12outerCollideEfff', 0, 116, 'sha256:7087ce1cb9887930a0de1b620e9eb54cc5ef911bc79c697cbdce2b1734117330'),
+           'collision_sphere_inside': ('_ZN14BoundingSphere7collideEfff', 0, 48, 'sha256:045350854f5d4212f0ed507194c76c398c8b89278a5aa107e6d3eb53e0bab560'),
+           # StarSystem: planet type 11 is 35000 + rand(15000) units.
+           'planet_sizes': ('_ZN10StarSystemC2Ei', 0, 3600, 'sha256:9fef651c32b359baf56721339c288ecef24d7428cc753e81b3b51f1a4328ee17'),
+           # Standing: axes 30 and 0, no override; hostile above 70, friendly below -70; kills move them.
+           'traffic_reputation_constructor': ('_ZN8StandingC2Ev', 0, 32, 'sha256:234ed549d81f96bae6f8f18a42d7e95af0281e25bd19933f40903e1c8fae4876'),
+           'traffic_reputation_hostile': ('_ZN8Standing7isEnemyEi', 0, 118, 'sha256:e48dc557d39a1d28df8cd83c0ffd928da627c0a2e569b8c51369bd5c27b71ce0'),
+           'traffic_reputation_friendly': ('_ZN8Standing8isFriendEi', 0, 120, 'sha256:3e77281a49c10603f4c6dc5ce9fa3a5eda0e86c1610935ddc7c30ffcc65d92c4'),
+           'reputation_lethal': ('_ZN8Standing9applyKillEi', 0, 104, 'sha256:8bd296216f97e43401c7b59304cac316144c2c3836301212bcd504103a57542a'),
+           'reputation_adjust': ('_ZN8Standing11applyDelictEii', 0, 124, 'sha256:262f35c31d0749a01acbf4ae6061d65741bc024e6bdf6ddd6c94ca65ed6fec89'),
+           'traffic_hardest_predicate': ('_ZN6Status12hardCoreModeEv', 0, 36, 'sha256:d129eedb895b5a8cc5da84fbd316ee5effaae7d16ec57c3ef53f54ee21bd7b12'),
+           'traffic_reputation_getter': ('_ZN6Status11getStandingEv', 0, 4, '40697047'),
+           'reputation_location_wrapper': ('_ZN6Status12inAlienOrbitEv', 0, 10, '816fd0f8980122f1afbb'),
+           'reputation_location_match': ('_ZN7Station6equalsEPS_', 0, 18, '0246002021b1896892688a4208bf01207047'),
+           'reputation_current_system': ('_ZN6Status9getSystemEv', 0, 6, 'd0f8a0017047'),
+           'traffic_system_faction': ('_ZN11SolarSystem7getRaceEv', 0, 4, 'c0697047'),
+           'traffic_normal_hit': ('_ZN6Player6damageEibi', 0, 1376, 'sha256:577391dd7b7a6d8ee3273ce37004ea80f21a4f1a173666529c7b926f4449f3d5'),
+           # Level::createCampaignMission: cursors 0-29 dispatch through one table; cursors 0, 4 and 7 build the story actors.
+           'story_dispatch_initial': ('_ZN5Level21createCampaignMissionEv', 110, 16, '772800f3a880a0f124014e2900f2d580'),
+           'story_dispatch_local': ('_ZN5Level21createCampaignMissionEv', 552, 14, 'ddf840a01d2807f2eb80dfe810f0'),
+           'story_dispatch_entries': ('_ZN5Level21createCampaignMissionEv', 566, 26, 'sha256:2033ab6336c124665e2fcc044a79a936aa3571b03c41fa34a8e14c7fc278496c'),
+           'reputation_opening_actors': ('_ZN5Level21createCampaignMissionEv', 24954, 262, 'sha256:12c9c503976d594c7d6461b9d8f4e36bb42ff48d16dde220c258c6f93cb086a3'),
+           'reputation_full_hold_actor': ('_ZN5Level21createCampaignMissionEv', 25216, 140, 'sha256:22fd95e398bb16cecd6a2bf7f49a0288c8d9b672b4dc85f470fded5caf2cf173'),
+           'reputation_training_actors': ('_ZN5Level21createCampaignMissionEv', 25356, 378, 'sha256:957c593ccb135e54d016d4ef808bd44f3ac41b9f0fb0bc50e5ece4a9894a5e15'),
+           'story_default': ('_ZN5Level21createCampaignMissionEv', 29704, 26, 'sha256:51a12ccd37a83d3cc0390e228195c8a57dbd163b8258503299f415cf0179dcea'),
+           # Level::createMission: the ordinary population of an orbit without a campaign mission.
+           'ordinary_population': ('_ZN5Level13createMissionEv', 0, 20120, 'sha256:5ea13073833c330b838eb223b4d0a2c82f488c5317f83e9308eb7830029ddf65'),
+           'story_population_gate': ('_ZN5Level4initEv', 0, 1792, 'sha256:fceec130c720743b341b16f0e8ce63d43a1382808e075533d391370c9949a244'),
+           'traffic_hull_selection': ('_ZN7Globals21getRandomEnemyFighterEi', 0, 180, 'sha256:1d49b61c9159e9f48d52329d75df5467b226c40b845983a4b5820b1955e88682'),
+           'traffic_hull_affiliations': ('_ZN7Globals21getRandomEnemyFighterEi', 100, 148, 'sha256:dcc61cb2c29f08bd326818ed88c637c070c7b8f851270cb28e5c95aaa4217d6f', 'literal', 0),
+           'traffic_actor_factory': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           # Level::assignGuns: item 25 (model 6802) and the 600 - 2 x cursor ms interval.
+           'traffic_weapon_context': ('_ZN5Level10assignGunsEv', 0, 3320, 'sha256:2d4c9a0a16410a8459ff79a6c70158b826a10813a8dee82ee37fe387abbcec55'),
+           'traffic_model_selector': ('_ZN7Globals12getShipGroupEiib', 0, 2116, 'sha256:82d79c62239613267037732bb0cfc994cbdfe697c1466fe5e5ece399a14b7109'),
+           'traffic_radio_exclusion_initial': ('_ZN6StatusC2Ev', 0, 654, 'sha256:8d6ba6d6285a5569eb80466e4be5e8d1b1973f0f6fdfa4110ef51fba916c6f98'),
+           'traffic_fresh_reputation': ('_ZN6Status9resetGameEv', 0, 1852, 'sha256:21fc963539f3a045f737e2426ce9320aee9938dd88867060554b352140a2f952'),
+           'traffic_cargo_flags': ('_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', 0, 604, 'sha256:3a02b0c7ce6b25d113ff6b119a914a61a149997d03f3853b159537f02d2efee8'),
+           'traffic_statistics_constructor': ('_ZN6PlayerC2Eiiiii', 0, 600, 'sha256:f15c0c4c5617f8ed5b0e4e522e5dfda30338d712d628ecf861a9d79e6a041988'),
+           'traffic_boost_chance': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 0, 1668, 'sha256:9722fa1dff717e74e4f5d93a1ee0e2af195659b26021723e8d5632f5ba9eaf91'),
+           'traffic_hostility_update': ('_ZN13PlayerFighter6updateEi', 0, 10528, 'sha256:fb79b3bde0fb27a45861c89450940e96ec313695cb5d4b4c290220c25ef78d9e'),
+           'traffic_warning_initial': ('_ZN5LevelC2Ei', 0, 368, 'sha256:674e05b63506a4f8a5d8427bbdd966a37e21eb72c8dc620d1fd5ba4b6b154eb4'),
+           'traffic_warning': ('_ZN5Level17friendTurnedEnemyEi', 0, 22, '0a4690f8881101b17047012180f88811002102f132bd'),
+           'traffic_faction_response': ('_ZN5Level15alarmAllFriendsEib', 0, 156, 'sha256:890f99a20e8e1b944abe5c8b6361ddd8791e24689c0cbfbb5b1367b315b245a3'),
+           # Level::createRadioMessage: warnings 426 + rand(3), responses 429 + rand(3) (Mac 415, 418).
+           'traffic_radio_factory': ('_ZN5Level18createRadioMessageEii', 0, 1912, 'sha256:e81708bb5b5c38a3449efcf4358a2b630c7bbf9d2daea6b44c2fcefbd8fa01c9'),
+           'traffic_radio_delivery': ('_ZN5Radio11setMessagesEP5ArrayIP12RadioMessageE', 0, 44, 'sha256:c4f106ed3bfc7cc083f8c5106cb31fe23eaa2697a729fd46f4568e3e29e3a38f'),
+           'traffic_radio_activate': ('_ZN5Radio6updateElP9PlayerEgoP11LevelScript', 0, 824, 'sha256:faf466c6312c80154a177e81aca3c76a4714ed1e56d86c13793d669292cdea21'),
+           'traffic_radio_update': ('_ZN5Radio4drawExP9PlayerEgoP11LevelScript', 0, 592, 'sha256:531b05fbaf299d793c1d71c936f08d696c2d80a82452724274ed54ed6f04e5c3'),
+           'traffic_radio_entry_owner': ('_ZN12RadioMessage8setRadioEP5Radio', 0, 4, '01607047'),
+           'traffic_radio_constructor': ('_ZN5RadioC2Ev', 0, 76, 'sha256:817f1e93dc3fe93b7abb687d99196f358a6a0f54c5ff4f35f1d85ad645f0ea82'),
+           'traffic_portrait_factory': ('_ZN12ImageFactory10createCharEbi', 0, 128, 'sha256:fe120cbcfe9f1b39bdcda74da62d770c71d5c3856526257a55285a892c52acda'),
+           'traffic_portrait_bounds': ('_ZN12ImageFactory10createCharEbi', 38, 48, 'sha256:4749300e5d291aeb04844eeacc685dec68b0d9f5e7b0263340b8031c22e0b5b2', 'literal', 0),
+           'traffic_voice_character': ('_ZN5AgentC2EiN11AbyssEngine6StringEiiibiiii', 0, 246, 'sha256:4143308a9738b6d87b5c13cebfe2b266a5b6e16d8c65b976860ef58747e1a1fb'),
+           'traffic_radio_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 0, 1732, 'sha256:1aedecf00fdac1f1af79dc255886f1493dc9907133ae8346cd9ea163a54c0b27'),
+           'traffic_hostile_death': ('_ZN5Level9enemyDiedEib', 0, 636, 'sha256:1d244b76f7d5e2deedc549f316d5bd128ac0dc74646f082c294b69202f2e3b19'),
+           'traffic_nonhostile_death': ('_ZN5Level10friendDiedEv', 0, 12, 'd0f81c110139c0f81c117047'),
+           'traffic_reseed': ('_ZN11AbyssEngine8AERandom5resetEv', 0, 36, 'sha256:48ebaf1bd886ac03af6b109e67b1a8da31eb13841bfed2bd2131cae029d88244'),
+           'traffic_default_mission': ('_ZN7MissionC2Ev', 0, 216, 'sha256:ba8c3b3f004903389631e2fee8c55f063b0cb75f316a12b619d63c4d258de8f6'),
+           'traffic_completed_predicate': ('_ZN7Mission7isEmptyEv', 0, 14, '81680020b1f1ff3f08bf01207047'),
+           'traffic_side_mission': ('_ZN6Status10getMissionEv', 0, 6, 'd0f890017047'),
+           'traffic_station_base': ('_ZN7StationC2EN11AbyssEngine6StringEiiii', 0, 70, 'sha256:0ab89d3f33edf2a3a65e66626f3ca0adba0524ef808cd7ab0c70be99f51cbfc2'),
+           'traffic_station_id': ('_ZN7Station8getIndexEv', 0, 4, '80687047'),
+           'traffic_station_response_flag': ('_ZN7Station18setAttackedFriendsEb', 0, 6, '80f820107047'),
+           'traffic_station_flag': ('_ZN7Station18hasAttackedFriendsEv', 0, 6, '90f820007047'),
+           'traffic_station_table1': ('_ZN7Station20stationHasPirateBaseEv', 0, 64, 'sha256:0f046f52dd111a054baa7b30c4a9f459a1fc6c8e265c87e409b54a2ff841c78b'),
+           'traffic_station_table2': ('_ZN7Station25stationHasHiddenBlueprintEb', 0, 64, 'sha256:6c3fbf17aca59062df5d3d441ce5375a2e38ffcca206fcbec8381fef40a145c1'),
+           'traffic_system_table': ('_ZN11SolarSystem13hasPirateBaseEv', 0, 84, 'sha256:839ff934875138fc7b127e18705a0c0bc70a02991325aa4036988f57772cbd94'),
+           'traffic_optional_pilot': ('_ZN6Status23getWantedInCurrentOrbitEv', 0, 136, 'sha256:f3a6e8c23643713981b520a1fe3ea5d82f6d171d47a64e10e908d508a57cbd42'),
+           'traffic_special_system1': ('_ZN6Status19inBlackMarketSystemEv', 0, 38, 'sha256:b2b5ce5581edc01b32901c62d9c73deb8998faba124123aec1814ab8e48319c1'),
+           'traffic_special_system2': ('_ZN6Status17inPirateLootOrbitEv', 0, 58, 'sha256:989574c3e2542fc7a66fe791589c68bc24eef4922a33520edfbed7f4252c7ee1'),
+           'traffic_special_system3': ('_ZN6Status17inSupernovaSystemEv', 0, 52, 'sha256:e529b26520fb6ad848f24d64f5693a5997a96b80dea1c1a2aca62ab5337f416b')}
+
+
+ANDROID_ARRIVAL_BRIEFING = {# MGame::dialogueEvent: a visible campaign mission with a briefing (mode 0) opens it in orbit.
+                            'yrdal_briefing_briefing_start': ('_ZN5MGame13dialogueEventEv', 0, 392, 'sha256:805e9bed6df0875e75c5f64613547a6da41fe7c7d904341c2e32f359ae6baee3'),
+                            'yrdal_briefing_has_mode0_count': ('_ZN14DialogueWindow19hasBriefingDialogueEi', 0, 32, 'sha256:c6a83b54925d2f81e50470392e0b5454589fee8b54394c2dcf3d02728b816bb3'),
+                            'yrdal_briefing_mission_kind': ('_ZN7Mission7getTypeEv', 0, 4, '80687047'),
+                            'yrdal_briefing_mission_briefing_pending': ('_ZN7Mission9isVisibleEv', 0, 6, '90f860007047'),
+                            'yrdal_briefing_mission_story': ('_ZN7Mission17isCampaignMissionEv', 0, 10, '006d002818bf01207047'),
+                            'yrdal_briefing_cursor10_creates_yrdal_mission': ('_ZN6Status19nextCampaignMissionEb', 7386, 30, 'sha256:1a06228d749c0a0cb55e5fdb9af2545b2864e016ba9065f64653eb5446e84ab8'),
+                            'yrdal_briefing_story_mission_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+                            'yrdal_briefing_ordinary_entry_release': ('_ZN11LevelScript7processEi', 804, 198, 'sha256:4ad77b0875954cdf8c22d26fa7da10ab0ec4267f4c13e0d35a47220ff59fee7a'),
+                            'yrdal_briefing_controller_ready': ('_ZN11LevelScript17startSequenceOverEv', 0, 6, '90f821007047'),
+                            # The cursor-11 briefing: one event; its voice is in the core voice table.
+                            'yrdal_briefing_yrdal_entry_count': ('_ZN14DialogueWindow4initEv', 42, 4, '02000000', 'literal', 44),
+                            'yrdal_briefing_yrdal_entry_event': ('_ZN14DialogueWindow11loadContentEv', 128, 8, '0000000003070000', 'literal', 96)}
+
+
+ANDROID_NAVIGATION = {# Cursor 13: the map, the planet jump, departure and the 574 ms NPC interval.
+                      'contract_navigation_map_flight_entry': ('_ZN5MGame10OnTouchEndEiiPv', 0, 9784, 'sha256:fdba63f59493b8c11bd31fd1cad8857708de40b6cfb3e0221e5f2eba567c65e0'),
+                      'contract_navigation_map_confirm_destination': ('_ZN7StarMap10OnTouchEndEii', 0, 3356, 'sha256:203b988c7f42e00b39f8d0ca24c12f9b0ec5c82a217ef50375e4e611a31bc148'),
+                      'contract_navigation_autopilot_planet_predicate': ('_ZN9PlayerEgo13goingToPlanetEv', 0, 58, 'sha256:5a2527ae7b9c09f0ee024ed1d883abaf69a3b5776e46772d46cdc94ca822f519'),
+                      'contract_navigation_arrival_mission_selection': ('_ZN6Status13departStationEP7Station', 0, 1072, 'sha256:b7432b338855a0a259aa2b3d0d678bb305ea5293e9903e68114efafe3b6170d6'),
+                      'contract_navigation_planet_sizes': ('_ZN10StarSystemC2Ei', 0, 3600, 'sha256:9fef651c32b359baf56721339c288ecef24d7428cc753e81b3b51f1a4328ee17'),
+                      'contract_navigation_departure_cache_reset': ('_ZN10ModStation10OnTouchEndEiiPv', 0, 6536, 'sha256:5b29b2bf44b1e0a442eb14b5646a1aad12932fedee58112b028e31589316b50e'),
+                      'contract_navigation_weapon_interval': ('_ZN5Level10assignGunsEv', 0, 3320, 'sha256:2d4c9a0a16410a8459ff79a6c70158b826a10813a8dee82ee37fe387abbcec55')}

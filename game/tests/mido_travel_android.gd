@@ -1,0 +1,72 @@
+extends SceneTree
+## The local journey's Android declarations: values, spans anchored in their
+## own functions and the arrival staging by presence (no imported content).
+const Definitions=preload("res://src/content/mido_travel_definitions.gd")
+const Station=preload("res://src/content/station_entry_definitions.gd")
+const Training=preload("res://src/content/combat_training_definitions.gd")
+const FirstReturn=preload("res://src/content/station_return_definitions.gd")
+var checks:=0
+var failures:=0
+
+func _initialize() -> void:
+	verify()
+	print("Mido travel Android declarations: %d checks; %d failures"%[checks,failures])
+	quit(1 if failures else 0)
+
+func verify() -> void:
+	var source_bytes:=8000000
+	var origin:=4000
+	var arrival:={"scope":"rescue_choreography","provenance":{"actor":{"offset":5,"bytes":24,"anchor":1}}}
+	var station: Dictionary=Station.ANDROID_VALUES.duplicate(true);station.provenance={}
+	var training: Dictionary=Training.MAC_VALUES.duplicate(true);training.provenance={}
+	var android: Dictionary=Definitions.ANDROID_VALUES.duplicate(true)
+	android.continuation=Definitions.MAC_CONTINUATION.duplicate(true)
+	android.return_visit=Definitions.ANDROID_RETURN_VISIT.duplicate(true)
+	android.provenance=anchored(Definitions.ANDROID_SPANS,origin)
+	check(Definitions.validate(android,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android local travel was rejected")
+	check(not Definitions.validate(android,source_bytes,"x86_64",arrival,station,training).is_empty(),"Android proofs passed as Mac layouts")
+	check(not Definitions.validate(android,source_bytes,"android-armv7",{"provenance":arrival.provenance},station,training).is_empty(),"Android travel accepted a foreign arrival")
+	check(not Definitions.validate(android,source_bytes,"android-armv7",{"scope":"rescue_choreography","provenance":{}},station,training).is_empty(),"Android travel accepted an unproven arrival")
+	var full: Dictionary=android.duplicate(true)
+	full.arrival_briefing=Definitions.MAC_ARRIVAL_BRIEFING.duplicate(true)
+	full.contract_navigation=Definitions.CONTRACT_NAVIGATION.duplicate(true)
+	full.provenance.merge(anchored(Definitions.ANDROID_ARRIVAL_BRIEFING_SPANS,origin))
+	full.provenance.merge(anchored(Definitions.ANDROID_NAVIGATION_SPANS,origin))
+	check(Definitions.validate(full,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android briefing and contract navigation were rejected")
+	for key in ["arrival_briefing","contract_navigation"]:
+		var partial: Dictionary=full.duplicate(true);partial.erase(key)
+		check(not Definitions.validate(partial,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel kept proofs of a missing capability: "+key)
+	var shifted: Dictionary=full.duplicate(true)
+	shifted.provenance.story_dispatch.offset+=1
+	check(not Definitions.validate(shifted,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted a shifted proof extent")
+	var incomplete: Dictionary=full.duplicate(true)
+	incomplete.provenance.erase("yrdal_briefing_briefing_start")
+	check(not Definitions.validate(incomplete,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted an incomplete proof")
+	# The library's own values: the planet window and the contract gate.
+	var mac_window: Dictionary=android.duplicate(true)
+	mac_window.travel.target_window_divisor=18
+	check(not Definitions.validate(mac_window,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted the Mac planet window")
+	var mac_gate: Dictionary=android.duplicate(true)
+	mac_gate.return_visit=Definitions.MAC_RETURN_VISIT.duplicate(true)
+	check(not Definitions.parameters(mac_gate),"Android travel accepted the Mac contract gate")
+	var mac: Dictionary=Definitions.MAC_VALUES.duplicate(true)
+	mac.continuation=Definitions.MAC_CONTINUATION.duplicate(true);mac.return_visit=Definitions.MAC_RETURN_VISIT.duplicate(true)
+	mac.provenance=android.provenance
+	check(Definitions.parameters(mac) and not Definitions.validate(mac,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Mac values passed as Android proofs")
+	check(int(Definitions.station_return_overrides(12,true,true).contract_gate.additional_completions)==1 and int(Definitions.station_return_overrides(12,true).contract_gate.additional_completions)==4,"Station return lost the library's contract gate")
+	var returned: Dictionary=FirstReturn.MAC_VALUES.duplicate(true);returned.provenance={}
+	returned.merge(Definitions.station_return_overrides(12,true,true),true)
+	check(Definitions.station_return_parameters(returned),"The Android Kernstal return was refused")
+	returned.contract_gate.additional_completions=2
+	check(not Definitions.station_return_parameters(returned),"A foreign contract gate passed the Kernstal return")
+
+func anchored(spans: Dictionary,origin: int) -> Dictionary:
+	var result:={}
+	for key in spans:result[key]={"offset":origin+int(spans[key][0]),"bytes":int(spans[key][1]),"anchor":origin}
+	return result
+
+func check(condition: bool,message: String) -> void:
+	checks+=1
+	if not condition:
+		failures+=1
+		push_error(message)
