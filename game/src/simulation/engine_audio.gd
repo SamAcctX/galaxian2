@@ -49,7 +49,10 @@ func program(id: int) -> Dictionary:
 static func read_program(event: Variant) -> Dictionary:
 	if not event is Dictionary or not Numbers.integer(event.get("type"),8,8) or not event.get("parameters") is Array or not event.get("layers") is Array:return {}
 	if not Numbers.integer(event.get("id"),0,19999):return {}
-	if event.parameters.size()!=3 or event.layers.size()!=1:return {}
+	# Android's expansion engines (1106, 1107) add a layer whose sound has zero
+	# volume and no envelope: it is inaudible and skipped.
+	var layers: Array=event.layers.filter(func(layer):return not silent_layer(layer))
+	if event.parameters.size()!=3 or layers.size()!=1:return {}
 	var names:=["Vertical","Horizontal","load"]
 	# Expansion engines list the same three parameters in another order; the
 	# envelopes are read by name into the base order.
@@ -60,7 +63,7 @@ static func read_program(event: Variant) -> Dictionary:
 		if at<0:return {}
 		var p: Variant=event.parameters[at]
 		if not fields_match(p,{"name":names[i],"flags":3 if i==0 else 2,"velocity":0,"min":0,"max":1,"seek_speed":0,"sustain_points":[],"envelopes":1}):return {}
-	var layer: Variant=event.layers[0]
+	var layer: Variant=layers[0]
 	if not fields_match(layer,{"flags":2,"priority":65535,"parameter":0}) or not layer.get("sounds") is Array or layer.sounds.size()!=1 or not layer.get("envelopes") is Array or layer.envelopes.size()!=3:return {}
 	var sound: Variant=layer.sounds[0]
 	if not fields_match(sound,{"flags":0,"flags2":0,"loop_count":-1,"auto_pitch":0,"fine_tune":0,"x":0,"width":1,"fade_in":-1,"fade_out":-1,"auto_pitch_reference":0,"auto_pitch_zero":0,"fade_in_type":4,"fade_out_type":4}):return {}
@@ -73,6 +76,10 @@ static func read_program(event: Variant) -> Dictionary:
 		if targets.has(target) or parameters.has(index):return {}
 		targets[target]=envelope.duplicate(true);targets[target].parameter_index=index;parameters[index]=true
 	return {"source_id":int(event.id),"sound_definition":int(sound.sound_def),"sound_volume":float(sound.volume),"envelopes":targets,"parameter_count":3}
+
+static func silent_layer(layer: Variant) -> bool:
+	if not layer is Dictionary or not layer.get("envelopes") is Array or not layer.envelopes.is_empty() or not layer.get("sounds") is Array:return false
+	return layer.sounds.all(func(sound):return sound is Dictionary and (sound.get("volume") is int or sound.get("volume") is float) and sound.volume==0)
 
 static func fields_match(data: Variant, expected: Dictionary) -> bool:
 	if not data is Dictionary:return false

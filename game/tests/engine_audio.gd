@@ -116,6 +116,14 @@ func verify_program_rejections(event: Dictionary):
 	check(Selection.read_program(broken).is_empty(),"Duplicate envelope target accepted")
 	broken=event.duplicate(true);broken.layers[0].envelopes[1].parameter_index=0
 	check(Selection.read_program(broken).is_empty(),"Duplicate envelope parameter owner accepted")
+	# Android's 1106/1107 lead with a zero-volume layer without envelopes; only that one is inaudible.
+	var layered:=event.duplicate(true);var quiet: Dictionary={"flags":2,"priority":65535,"parameter":1,"envelopes":[],"sounds":[event.layers[0].sounds[0].duplicate(true)]}
+	quiet.sounds[0].volume=0.0;layered.layers.push_front(quiet)
+	check(not Selection.read_program(event).is_empty() and Selection.read_program(layered)==Selection.read_program(event),"A silent engine layer changed the program")
+	layered.layers[0].sounds[0].volume=0.5
+	check(Selection.read_program(layered).is_empty(),"An audible second engine layer was accepted")
+	layered.layers[0].sounds[0].volume=0.0;layered.layers[0].envelopes=[event.layers[0].envelopes[0].duplicate(true)]
+	check(Selection.read_program(layered).is_empty(),"An enveloped second engine layer was accepted")
 
 func verify_curves():
 	var curve:={"flags":12,"dsp":"","dsp_parameter":0,"flags2":0,"name_index":65535,"parent_index":65535,"parameter_index":0,"trailing":0,"points":[[0.0,0.2,1],[0.8,1.0,2]]}
