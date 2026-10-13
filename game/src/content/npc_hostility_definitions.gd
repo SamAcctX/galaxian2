@@ -29,13 +29,15 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 		spans.append(span)
 	for key in ["guidance","flight"]:
 		if data.provenance.virtual_update!=initial.get(key,{}).get("provenance",{}).get("virtual_update"): return "NPC hostility belongs to another update owner"
+	var fresh: Variant=initial.get("primary_weapon",{}).get("provenance",{}).get("fresh_level",{}).get("offset")
 	if architecture=="android-armv7":
 		# The constructor blocks are the NPC initialization's own flag spans; both update blocks lie in one function.
 		if data.provenance.stats_flags!=initial.get("provenance",{}).get("flags") or data.provenance.base_flags!=initial.get("provenance",{}).get("actor_flags"): return "NPC hostility constructor anchors disagree"
 		if int(data.provenance.overrides.offset)!=int(data.provenance.kind.offset)+272: return "NPC hostility update blocks are disconnected"
+		# Status::resetGame clears the override 24 bytes before it sets the fresh level.
+		if fresh==null or int(data.provenance.fresh_override.offset)!=int(fresh)-24: return "NPC hostility fresh-game anchor disagrees"
 		return ""
 	var stats: Variant=initial.get("provenance",{}).get("stats_entry",{}).get("offset")
-	var fresh: Variant=initial.get("primary_weapon",{}).get("provenance",{}).get("fresh_level",{}).get("offset")
 	var point: Variant=initial.get("provenance",{}).get("point_geometry",{}).get("offset")
 	if stats==null or fresh==null or point==null: return "NPC hostility requires fresh constructor anchors"
 	if int(data.provenance.stats_flags.offset)!=int(stats)+(814 if architecture=="x86_64" else 524): return "NPC hostility statistics anchor disagrees"

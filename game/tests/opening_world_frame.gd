@@ -48,6 +48,8 @@ func verify_source(content: String, pack: String) -> void:
 		for key in ["virtual_update","stats_flags","base_flags","fresh_override","kind","overrides"]:
 			var wrong := policy.duplicate(true);wrong.provenance[key].offset+=1
 			check(not Hostility.validate(wrong,header.source_executable_bytes,header.architecture,bindings.opening_actors.npc_initialization).is_empty(),"Disconnected hostility provenance accepted: "+key)
+		var unanchored: Dictionary=bindings.opening_actors.npc_initialization.duplicate(true);unanchored.erase("primary_weapon")
+		check(not Hostility.validate(policy,header.source_executable_bytes,header.architecture,unanchored).is_empty(),"Hostility accepted without its fresh-game anchor")
 		check_player_contacts({"world_frame":owner,"timeline":timeline,"scenery":scene})
 	var state := owner.evaluate(timeline,scene,0,false)
 	if state.is_empty():check(false,owner.error);return
