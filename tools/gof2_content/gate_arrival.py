@@ -1,8 +1,23 @@
-"""Original gate entry permissions, retained values and career increment. Constant declarations only."""
+"""Original gate entry permissions, retained values and career increment. Constant declarations only.
+
+Android: Status::resetGame zeroes the jumpgate counter; Status::setJumpgateUsed,
+jumpgateUsed and getJumpgateUsed; StatusWindow::draw labels it with text 553
+(Android 564); GameRecord::load restores it; MGame::startJumpScene makes the
+player invulnerable, collision-free and unboosted (Player::setVulnerable,
+damageHull, damageShield, PlayerEgo::setCollide, stopBoost: speed 2);
+MGame::OnTouchEnd's confirmation resets primary category 0
+(PlayerEgo::resetGunDelay, Player::resetGunDelay), the map does not;
+MGame::updateJumpScene counts the jump, marks the special arrival, clears the
+course and selects audio 1. Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_gate_arrival(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -156,3 +171,28 @@ MAC_ALTERNATE = {'gate_arrival_initial_counter': [881274,
                                      '33bfe18122023f44d975a932e2dfd9c76f5ab17f79a925425f343ee355bccb99'],
  'gate_arrival_map_accept': [350819, 31, '__text', '0a90d808df7aff5b0ff3dde413e074dc37f501722095285f817550df54412e70'],
  'gate_arrival_map_cleanup': [351157, 46, '__text', '55979cd4f69397d1d19c5cd2a0b3641c8c033be2c8c74f41a4f2e5e1d10f75ba']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# The jumpgate counter: reset, setter, increment, getter, label (Android text 564) and save.
+           'gate_arrival_initial_counter': ('_ZN6Status9resetGameEv', 10, 56, 'sha256:b49fffc95faead11feabbc453182fbf2ee40e36daf4392b5be4e6f31b737c29a'),
+           'gate_arrival_counter_set': ('_ZN6Status15setJumpgateUsedEi', 0, 6, 'c0f8dc117047'),
+           'gate_arrival_counter_increment': ('_ZN6Status12jumpgateUsedEv', 0, 12, 'd0f8dc110131c0f8dc117047'),
+           'gate_arrival_counter_get': ('_ZN6Status15getJumpgateUsedEv', 0, 6, 'd0f8dc017047'),
+           'gate_arrival_counter_label': ('_ZN12StatusWindow4drawEv', 5922, 108, 'sha256:69ec9b6fd8ac2cc73c5036dbfbebea12e1b1d8ac7dfb35c14dbffc5f3ca6e145'),
+           'gate_arrival_load_counter': ('_ZN10GameRecord4loadEv', 154, 10, 'd9f830102068eef6c4ee'),
+           # MGame::updateJumpScene: count, special arrival, course cleared, audio selector 1.
+           'gate_arrival_commit': ('_ZN5MGame15updateJumpSceneEv', 692, 198, 'sha256:c52c9cc3b6d8be06effe848972a39ba1e3f64f501870bd41614ddcb2bbfed17e'),
+           # MGame::startJumpScene: no damage, no collision, no boost (speed 2).
+           'gate_arrival_player_permission': ('_ZN5MGame14startJumpSceneEv', 26, 16, 'a06d0068bff672ea606f0021c4f658ed'),
+           'gate_arrival_damage_setter': ('_ZN6Player13setVulnerableEb', 0, 6, '80f8c2107047'),
+           'gate_arrival_damage_guard': ('_ZN6Player10damageHullEi', 0, 64, 'sha256:f489b2c5827ed5e18a3ae3ba461541ead9afd35263a1238cd062363ae7c4d746'),
+           'gate_arrival_shield_guard': ('_ZN6Player12damageShieldEi', 0, 84, 'sha256:e08e9e40c048afbcfeb5cc8b113f9ce1130b67e3d9a052a29843c20a8a5aefeb'),
+           'gate_arrival_player_reset': ('_ZN5MGame14startJumpSceneEv', 268, 42, 'sha256:6be94e08fdd82482102ad3360a27d2e72feafff7cd18b13106532381e944ca3b'),
+           'gate_arrival_collision_setter': ('_ZN9PlayerEgo10setCollideEb', 0, 6, '80f844117047'),
+           'gate_arrival_speed_reset': ('_ZN9PlayerEgo9stopBoostEv', 0, 76, 'sha256:13326e69f61f96bff5148bae1cfe1f28130c260b47cb48b04804b511f1d9eeae'),
+           # Primary weapons (category 0) reset on confirmation, not from the map.
+           'gate_arrival_primary_reset': ('_ZN9PlayerEgo13resetGunDelayEv', 0, 8, '006800212bf132b8'),
+           'gate_arrival_primary_category': ('_ZN6Player13resetGunDelayEi', 0, 50, 'sha256:e9c939a8745be7980d443f45871240f2ce5fd5ca29756c2facd7bec6a6ec5e3f'),
+           'gate_arrival_confirmation_reset': ('_ZN5MGame10OnTouchEndEiiPv', 644, 40, 'sha256:4d4c27677f4580d8c92b81b90e079bccb4e9902bbeb49f89685aa1443f71c2d8'),
+           'gate_arrival_map_accept': ('_ZN5MGame10OnTouchEndEiiPv', 2924, 34, 'sha256:1483a218619e4a6e714e53f19a824757a72c46d526ad06d1aec1a308530bfb2e'),
+           'gate_arrival_map_cleanup': ('_ZN5MGame10OnTouchEndEiiPv', 3668, 24, 'daf88c0018b1c3f65ceabdf680eb0020caf88c0001f06bba')}

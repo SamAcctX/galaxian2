@@ -92,6 +92,7 @@ func extensions() -> Array:
 		["local_arrival_environment",Definitions.LocalArrivalEnvironment.VALUES,Definitions.LocalArrivalEnvironment.ANDROID_SPANS],
 		["gate_transit",Definitions.GateTransit.VALUES,Definitions.GateTransit.ANDROID_SPANS],
 		["ordinary_worlds",Definitions.Worlds.VALUES,Definitions.Worlds.ANDROID_SPANS],
+		["gate_arrival",Definitions.GateArrival.VALUES,Definitions.GateArrival.ANDROID_SPANS],
 		["vossk_traffic",Definitions.Vossk.VALUES,Definitions.Vossk.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:
