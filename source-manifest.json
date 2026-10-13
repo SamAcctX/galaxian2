@@ -1849,6 +1849,7 @@
     "game/tests/kaamo_unlock.gd.uid",
     "game/tests/kaamo_unlock_career.gd",
     "game/tests/kaamo_unlock_career.gd.uid",
+    "game/tests/kappa_android.gd",
     "game/tests/kappa_combat.gd",
     "game/tests/kappa_combat.gd.uid",
     "game/tests/kappa_encounter.gd",
