@@ -15,6 +15,10 @@ const GUIDED = {"item_id":179,"model_id":14293,"attachment_id":14294,"launch_sou
 	"guidance_sound":1116,"guided_property":15,"camera_offset":[0.0,450.0,-1400.0],"camera_target":[0.0,0.0,1700.0],
 	"turn_factor":0.003,"turn_frame_ms":1000.0/60.0}
 
+# Android: the values; spans inside named functions and their tables (Layouts.anchored,
+# checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"emp_bombs_factory_cases":[78,4],"emp_bombs_factory":[330,174],"emp_bombs_models":[164,12],"emp_bombs_gun":[0,688],"emp_bombs_radius_assignment":[1054,20],"emp_bombs_radius_setter":[0,6],"emp_bombs_owner_trigger":[0,460],"emp_bombs_launch":[0,1948],"emp_bombs_frame":[0,604],"emp_bombs_collision":[0,2024],"emp_bombs_pulse":[0,1100],"emp_bombs_bomb":[0,684],"emp_bombs_bomb_update":[0,1172],"emp_bombs_active_getter":[0,6],"emp_bombs_immune_getter":[0,22],"emp_bombs_system_configuration":[0,34],"emp_bombs_system_damage":[0,572],"emp_bombs_system_recovery":[0,492]}
+
 static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALUES)
 
 ## Supernova Shock Blast: no projectile body; the blast starts at the ship
