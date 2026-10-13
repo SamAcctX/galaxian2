@@ -1,7 +1,16 @@
-"""Bounded Mac mining declarations. Only semantic data leaves this static reader."""
+"""Bounded Mac mining declarations. Only semantic data leaves this static reader.
+
+Android: the MiningGame constructor, update, isInCurrentLayer, the input
+setters, outcome getters and render2D hold the drill rules; the exported
+LAYER_DIAMETERS and LAYER_SPEEDS tables (read through the GOT) the ring sizes
+and spin rates. PlayerEgo::approachAsteroid dispatches the outcome and
+PlayerEgo::stopMining extracts the core and ore (Status::hardCoreMode halves a
+partial yield; Player::setHitpoints(-1) consumes the asteroid). Layout::Layout
+holds the reference display values and BuildResourceList the image aliases.
+"""
 import copy
 from .ship_models import section_bytes
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 def declaration_bytes(mach, address, size, name):
     if name!=b'__data':return section_bytes(mach,address,size,name)
@@ -11,7 +20,40 @@ def declaration_bytes(mach, address, size, name):
             return mach.data[offset:offset+size],offset+mach.slice_offset
     return None
 
+def table_proof(lib, tables):
+    """Provenance of exported tables whose GOT word the literal pair at (function, delta) loads, or None."""
+    from .android_shapes import objects, relocation
+    from .declaration_layouts import data_bytes, literal_address
+    proof = {}
+    for key, (name, size, expected, (function, delta)) in tables.items():
+        extent, start = lib.symbols.get(function), objects(lib).get(name)
+        got = literal_address(lib, extent[0] + delta) if extent else None
+        found = data_bytes(lib, start, size) if start is not None else None
+        if found is None or (relocation(lib, got) or [None])[0] != name or found[0].hex() != expected:
+            return None
+        proof[key] = {'offset': found[1], 'bytes': size, 'anchor': found[1]}
+    return proof
+
+
+def alias_records(lib, proof):
+    """Each image alias is the BuildResourceList record (font_bindings.payload_records) its span starts."""
+    from .font_bindings import payload_records
+    rows = {row['source_offset']: row for row in payload_records(lib, 3) if row}
+    for image, alias in VALUES['image_aliases'].items():
+        row = rows.get(proof['image_alias_' + image]['offset'])
+        if not row or (row['id'], row['texture_id'], row['second']) != (int(image), alias['texture_id'], alias['region']):
+            return False
+    return True
+
+
 def extract_mining_drill(mach, arrival, flight):
+    if mach.architecture == 'android-armv7':
+        try:
+            if flight['scope'] != 'first_mining_flight_construction': return {}
+        except (KeyError, TypeError): return {}
+        proof, tables = recognize_symbols(mach, ANDROID), table_proof(mach, ANDROID_TABLES)
+        if not proof or tables is None or not alias_records(mach, proof): return {}
+        return dict(copy.deepcopy(VALUES), provenance={**proof, **tables})
     if mach.architecture!='x86_64':return {}
     try:
         if flight.get('scope')!='first_mining_flight_construction':return {}
@@ -454,3 +496,62 @@ MAC_ALTERNATE = {'constructor_initial': [393582,
                      '488b3b8b75d4e8805f0b0089c3bf48000000e88a1d11004989c48b75d44c89e789da89d9e8904b06004d89a7a0000000d1fb4c89e789de89dae8ff4c060041c7476800000000'],
  'spinner_threshold': [1519594, 4, '__const', '0000803f'],
  'pulse_duration': [1557498, 4, '__const', '0000fa43']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# MiningGame: drill (sort 19) stability attribute 32 / 100 x 1.5 + 0.3 and rate 33 / 100,
+           # the images, the drill sprite and the core flag (size 7; image 1314 for kind 164, else 1315).
+           'constructor': ('_ZN10MiningGameC2EiiP3Hud', 0, 1032, 'sha256:570a13c8baa4709dfa6ab8e4fea951b948b7b17bcfb2312135e300198a6c3350'),
+           # Drift every 2500 ms (500 + nextInt(2000); (5 + nextInt(7)) x sign / 10 / stability),
+           # 2500 ms outside the layer fail, layers of 6001 ms add ((layer + 1) / 7 x 2.35 + 0.15) x rate.
+           'update': ('_ZN10MiningGame6updateEi', 0, 1340, 'sha256:38b2a693c23f02484f93066badd775769d0609d7714eba3668ca403d9b18fc29'),
+           # Inside: distance < LAYER_DIAMETERS[7 - size][layer] / 2 x the layout ring scale (Globals::sqrt).
+           'inside_test': ('_ZN10MiningGame16isInCurrentLayerEv', 0, 168, 'sha256:4883493c5b61530f091d1eeca39928fb0be8f2b32f567fac11d35bbfaaebe28a'),
+           # Input x 3.0: up / down set y, left / right set x.
+           'input_up': ('_ZN10MiningGame2upEf', 0, 18, 'b0ee080a01ee101a21ee000a80ed010a7047'),
+           'input_down': ('_ZN10MiningGame4downEf', 0, 18, 'b0ee080a01ee101a21ee000a80ed010a7047'),
+           'input_left': ('_ZN10MiningGame4leftEf', 0, 18, 'b0ee080a01ee101a21ee000a80ed000a7047'),
+           'input_right': ('_ZN10MiningGame5rightEf', 0, 18, 'b0ee080a01ee101a21ee000a80ed000a7047'),
+           # Outcome flags +0x81 (won), +0x82 (failed), +0x83 (core) and the ore.
+           'won_getter': ('_ZN10MiningGame7gameWonEv', 0, 6, '90f881007047'),
+           'failed_getter': ('_ZN10MiningGame8gameLostEv', 0, 6, '90f882007047'),
+           'ore_getter': ('_ZN10MiningGame12getOreAmountEv', 0, 14, '90ed090abdeec00a10ee100a7047'),
+           'core_getter': ('_ZN10MiningGame7gotCoreEv', 0, 6, '90f883007047'),
+           # Ring images by diameter (<= 40, < 200), the remaining-time bar (2500 ms) and text 605.
+           'render': ('_ZN10MiningGame8render2DEv', 0, 1604, 'sha256:65372eb9c192c4fe51b3fbff2bfa8f46ae33508c43ff68c67750a3590f987a1b'),
+           # PlayerEgo::approachAsteroid: a dying or dead asteroid stops (notice 8); won or ore > 0 stops.
+           'complete_dispatch': ('_ZN9PlayerEgo16approachAsteroidEP3HudiP5Radar', 424, 80, 'sha256:dde81ad639ab9d935077f1c040ebff25e020fc2115bc9ee95205fd774c5f92e0'),
+           'outcome_dispatch': ('_ZN9PlayerEgo16approachAsteroidEP3HudiP5Radar', 1038, 90, 'sha256:3f3b6f75d442f7a05e61ac3eb57c647f32b36d47add4dff453bc97cf1fa90d73'),
+           # PlayerEgo::stopMining: core item (id + 11; 217 -> 218) before the ore, halved in hardcore
+           # mode unless won, capped by free space; the asteroid's hitpoints go to -1.
+           'extraction': ('_ZN9PlayerEgo10stopMiningEv', 0, 548, 'sha256:ba52b90a3cc5cf01c63c0d4dbc4e991eb2757012d20d55d66041e0d686d857b9'),
+           'hard_mode': ('_ZN6Status12hardCoreModeEv', 0, 36, 'sha256:d129eedb895b5a8cc5da84fbd316ee5effaae7d16ec57c3ef53f54ee21bd7b12'),
+           'exhausted_hull_setter': ('_ZN6Player12setHitpointsEi', 0, 18, '8167d0f884208a42b8bfc0f8841029f115bc'),
+           'sqrt_wrapper': ('_ZN7Globals4sqrtEf', 0, 6, '0846dbf0ddbe'),
+           # Layout::Layout's reference branch: motion divisor 20 and ring scale 1 (retina 10 / 2),
+           # ring thresholds 40 / 80 / 200.
+           'reference_layout': ('_ZN6LayoutC2Ev', 4720, 254, 'sha256:aa5cb58620aebcbbba962c1368b821c440274154fa6eedcbaea80464951bb011'),
+           # BuildResourceList records of the drill images (font_bindings.payload_records checks them).
+           'image_alias_1245': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 83324, 40, 'sha256:2ad3cb933f405786a0286f993cabc540936d6fdc7aff6136b28c9c777ff37e75'),
+           'image_alias_1246': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 83366, 50, 'sha256:72c067f9a7127e25947cc01e3fae5cebfedd587d712206906ef6c49994a92e6c'),
+           'image_alias_1247': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 83418, 40, 'sha256:13c479d027e565e438a2813636e7b4034b217a0e25636c7004c7272de860d099'),
+           'image_alias_1248': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 83460, 50, 'sha256:c1a759b337dfc53129d1c2d2156ee5b9d8ce2376261eb796feddddfc561b7821'),
+           'image_alias_1249': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 83512, 40, 'sha256:28c56e1c63c38271ca2e0c75398ce27995407776529c95480ef088f3cc30ebde'),
+           'image_alias_1250': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 83554, 50, 'sha256:3f669919b96d58af66672ee31d9192b450cc47c32360f9d91e68520c5bf2a1ed'),
+           'image_alias_1251': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 83606, 40, 'sha256:0057282d917833d09c4dde85943d975d50694bbb650fb59e8e46ca060984d048'),
+           'image_alias_1252': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 83648, 50, 'sha256:e1af81d91f629c6579e8b177eb2cd2e5b15bdb4a1f59826cc9d4856fbc91b2b9'),
+           'image_alias_1253': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 83700, 40, 'sha256:4df695f3ad0ac0ee41d0b3cb23f6e03a4c112085e0df81ec769fee56d6e9aec3'),
+           'image_alias_1254': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 83742, 50, 'sha256:310472fb35c222d611ac78fc77b4d32b07350554e3409b91e53b9bc1ca3279d3'),
+           'image_alias_1255': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 83794, 40, 'sha256:8eb4a1e2d04b1a0f5bf83ca3676be126c5fd912c8d1317950d98cbaedcf8d035'),
+           'image_alias_1256': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 83836, 50, 'sha256:be385ec7632c65999f2f008ea45fd9630d4a5fe4c92c6ab5d3de59acf914e5f4'),
+           'image_alias_1259': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 83888, 40, 'sha256:6a85e49c45b3d93b8b703a1d393b7fe5e5ec611d87d523b558320b94bc10dfbd'),
+           'image_alias_1260': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 83930, 50, 'sha256:2cc325452d03d0fb584959cdfeb82334f45a2217f41de77d92858bf3ed6de1da'),
+           'image_alias_1261': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 83982, 40, 'sha256:b40e81dc2a2bade32e804d64a552833f4c3f1c48003a1cb6d987ca5d9443273c'),
+           'image_alias_1314': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 85854, 40, 'sha256:dea4c3baed0252750bf52504d2778afc5e13bbb2c714a72da38f5dc750212378'),
+           'image_alias_1315': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 85896, 46, 'sha256:b6e5dba874e0acee42bcce7d426c6e2ac128ae50680fccab1ff785e691512282')}
+
+# Android: the exported layer tables, each with the literal pair that loads its GOT word.
+ANDROID_TABLES = {'diameters': ('LAYER_DIAMETERS', 112, 'fa000000d2000000aa0000008c0000006e000000500000003200000'
+                                '0fa000000d2000000aa0000008c0000006e0000005000000000000000fa000000c800000096000000'
+                                '64000000460000000000000000000000fa000000aa000000780000005000000000000000000000000'
+                                '0000000', ('_ZN10MiningGame16isInCurrentLayerEv', 32)),
+                  'spin_rates': ('LAYER_SPEEDS', 28, '0000a0400000004100004041000088410000b8410000f04100001842', ('_ZN10MiningGame6updateEi', 410))}
