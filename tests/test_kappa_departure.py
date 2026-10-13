@@ -32,3 +32,18 @@ class KappaDepartureTests(unittest.TestCase):
                             self.assertEqual(reader.extract_kappa_departure(changed, arrival), ({}, {}), (name, edge))
                     mach.architecture = 'armv7'
                     self.assertEqual(reader.extract_kappa_departure(mach, arrival), ({}, {}))
+
+    def test_android_proofs(self):
+        import android_fixture
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        from test_mido_travel import roomy
+        with patch.object(android_fixture, 'library', roomy(android_fixture.library)):
+            android_fixture.verify_android_proof(self, reader, lambda lib: reader.extract_kappa_departure(lib, {'scope': 'rescue_choreography'}), values='MAC_VALUES')
+            image, layout, _ = android_fixture.layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            self.assertEqual(reader.extract_kappa_departure(AndroidLibrary(image), {}), ({}, {}))
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'kappa_departure_definitions.gd', values='MAC_VALUES')
