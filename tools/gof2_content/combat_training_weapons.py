@@ -1,9 +1,32 @@
-"""Optional Mac training weapon/player constants. Static import, no code output."""
+"""Optional Mac training weapon/player constants. Static import, no code output.
+
+Android: Level::assignGuns builds each NPC's 4-shot Gun (3000 ms, interval
+600 - 2 x cursor, speed 16) with item 0, then item 19 (kind 1, projectile
+6795) for kind 8 and item 25 (kind 0, projectile 6802) for kind 3; for
+cursor 7 it then halves the damage of every kind-8 actor (vmul by 0.5,
+truncated: 3 -> 1), which the Mac 1.0.7 Level::assignGuns does not do.
+Gun::Gun, setIndex, setFriendGun, setLevel, setErrorMagnitudePercentage,
+setOffset, shootAt (0.01 and 0.005 dispersion), update and
+calcCharacterCollision, Player::damage, Level::createPlayer and createGun
+(item 22: kind 2, 25 shots, dispersion 2), ModStation::OnTouchEnd (the four
+-1 resets before the launch), MGame::OnInitialize (Level(3) then
+Level::init), Status::departStation and ModStation::leaveStation hold the
+rest; those values equal the Mac ones.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .station_exterior import declaration_bytes
 
 def extract_combat_training_weapons(mach,arrival,training,control,equipment,actors,weapons):
+    if mach.architecture == 'android-armv7':
+        try:
+            if training['scope'] != 'combat_training_encounter_construction' or control['scope'] != 'combat_training_live_control' or equipment['scope'] != 'var_hastra_equipment_tutorial': return {}
+            player = actors['player_initialization']
+            if not player['flight_cache'] or not player['repair']: return {}
+            if not all(weapons.get(k) for k in ['ordinary_hit_policy', 'player_hit_policy', 'collision_bounds', 'audio']): return {}
+        except (KeyError, TypeError, AttributeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64':return {}
     try:
         if training.get('scope')!='combat_training_encounter_construction' or control.get('scope')!='combat_training_live_control' or equipment.get('scope')!='var_hastra_equipment_tutorial':return {}
@@ -227,3 +250,34 @@ MAC_ALTERNATE = {'npc_setup': [54772, 4266, '__text', 'sha256:3f2a1241cc0c6a3b72
  'spread_scale': [1531914, 4, '__const', 'sha256:0d66bd808e9247acb560fe33efaa62ad6f11ee6f85cc4f61bd17673263de04ee'],
  'spread_center': [1547254, 4, '__const', 'sha256:1229f28c7e699bf60a4b44363dcb39610e8b7206037302d7f69ba6f80d4009e7'],
  'npc_speed': [1550414, 4, '__const', 'sha256:140efb356462f70dd1c7f1dfb10bcc07d0f14d439043fb9e9d50f4d7be71ea96']}
+
+# Android: Level::assignGuns halves the kind-8 damage for cursor 7 (3 -> 1); the rest equals VALUES.
+ANDROID_VALUES = copy.deepcopy(VALUES)
+for _row in ANDROID_VALUES['npc_weapons']:
+    if _row['actor_kind'] == 8: _row['damage'] = 1
+del _row
+# Android spans inside named functions.
+ANDROID = {# Level::assignGuns: the NPC guns; s24 = 0.5 and, for cursor 7 and kind 8, damage = trunc(damage x s24).
+           'npc_setup': ('_ZN5Level10assignGunsEv', 0, 3320, 'sha256:2d4c9a0a16410a8459ff79a6c70158b826a10813a8dee82ee37fe387abbcec55'),
+           'training_damage_scale': ('_ZN5Level10assignGunsEv', 480, 4, 'b6ee00ca'),
+           'training_damage_cursor': ('_ZN5Level10assignGunsEv', 1898, 8, 'b8f1070f11d0b8f1'),
+           'training_damage': ('_ZN5Level10assignGunsEv', 1940, 36, 'daf8f800406850f82900406a082809d195ed180ab8eec00a20ee0c0abdeec00a85ed180a'),
+           # The Gun: construction, items and effects, NPC flag, world, dispersion, mount, launch, update, contacts.
+           'weapon_constructor': ('_ZN3GunC2EiiiiiifN11AbyssEngine6AEMath6VectorES2_', 0, 688, 'sha256:f137885ac07db5356a568ef2dcae645ad787e5602551a8faa0c3dd568a1a5a91'),
+           'item_setter': ('_ZN3Gun8setIndexEi', 0, 280, 'sha256:49874dec0a3b669f6555df7804296846b7a92559002168440a630d4b0ea50c92'),
+           'nonplayer_setter': ('_ZN3Gun12setFriendGunEb', 0, 6, '80f8f9107047'),
+           'world_setter': ('_ZN3Gun8setLevelEP5Level', 0, 4, '81637047'),
+           'spread_setter': ('_ZN3Gun27setErrorMagnitudePercentageEi', 0, 14, '00ee101ab8eec00a80ed3f0a7047'),
+           'mount_setter': ('_ZN3Gun9setOffsetEPN11AbyssEngine6AEMath6VectorE', 0, 84, 'sha256:4d88afe3773e0d53e623f4d1a1e61c2541282f57da9f9d062aeb89914f9a617b'),
+           'ordinary_launch': ('_ZN3Gun7shootAtEN11AbyssEngine6AEMath6MatrixEiP6Playerb', 0, 1948, 'sha256:dd968f45f46de04659309714d596219f1a8c6c80feef2681d3edbd6b4cd876a8'),
+           'ordinary_update': ('_ZN3Gun6updateEi', 0, 604, 'sha256:d6a8465662a76ab2f115107bb4e59dde8ea426f6b7a7a089e290bd18a80bb89a'),
+           'contacts': ('_ZN3Gun22calcCharacterCollisionEv', 0, 2024, 'sha256:ee0110d3a7495e15d266903440f69f9b21dd2a6b23b30b4a5aafb5e4720eab9b'),
+           'normal_damage': ('_ZN6Player6damageEibi', 0, 1376, 'sha256:577391dd7b7a6d8ee3273ce37004ea80f21a4f1a173666529c7b926f4449f3d5'),
+           # The player's ship and its item-22 primary (Level::createGun case 2: 25 shots, magnitude 2).
+           'player_factory': ('_ZN5Level12createPlayerEv', 0, 1488, 'sha256:fcebfffd4a09af510bb44e49a29a70dc4a92646389ce309a513a0ea03c36206b'),
+           'weapon_factory': ('_ZN5Level9createGunEiiiiiiii', 0, 2100, 'sha256:691b3d3ecddf9ec499430d2b11da8537cab23a29b68e956ba56b89932ba009ad'),
+           # The equipped launch from station 78: the -1 resets, Level(3) and Level::init, the departure.
+           'cache_reset_and_state': ('_ZN10ModStation10OnTouchEndEiiPv', 0, 6536, 'sha256:5b29b2bf44b1e0a442eb14b5646a1aad12932fedee58112b028e31589316b50e'),
+           'world_entry': ('_ZN5MGame12OnInitializeEv', 618, 52, 'sha256:29a43ac587e4269dfd9e685bfc6e36378806eb8285f8c54190ce64ba5b634ab4'),
+           'refresh_equipment': ('_ZN6Status13departStationEP7Station', 0, 1072, 'sha256:b7432b338855a0a259aa2b3d0d678bb305ea5293e9903e68114efafe3b6170d6'),
+           'equipment_departure_gate': ('_ZN10ModStation12leaveStationEv', 0, 684, 'sha256:312550b1ddc5c8aaf2d57ee470e9d8eb501690835f2699e068ebed55c62b4120')}
