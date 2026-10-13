@@ -108,6 +108,7 @@ func extensions() -> Array:
 		["ordinary_fitting",Definitions.Fitting.MAC_VALUES,Definitions.Fitting.ANDROID_SPANS],
 		["ordinary_contracts",Definitions.OrdinaryContracts.VALUES,Definitions.OrdinaryContracts.ANDROID_SPANS],
 		["suttnar_visit",Definitions.SuttnarVisit.MAC_VALUES,Definitions.SuttnarVisit.ANDROID_SPANS],
+		["kappa_preparation",Definitions.KappaPreparation.MAC_VALUES,Definitions.KappaPreparation.ANDROID_SPANS],
 		["vossk_traffic",Definitions.Vossk.VALUES,Definitions.Vossk.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:
