@@ -8,6 +8,9 @@ const VALUES = {"scope":"persistent_blueprint_lounge_contacts","supported_contac
 const SPANS = {"persistent_count":[-236767,267],"persistent_loader":[-675370,696],"persistent_constructor":[-720294,434],"persistent_station":[-719568,10],"persistent_system":[-719578,10],"persistent_roster":[-235772,178],"persistent_hostile_replacement":[-235591,387],"persistent_insertion":[-236439,667],"persistent_role_getter":[-719598,10],"persistent_generated_getter":[-719502,14],"persistent_portrait_setter":[-719488,14],"persistent_constructor_wrapper":[-720362,68],"persistent_blueprint_getter":[-718898,10],"persistent_price_getter":[-718660,10]}
 const MAC_SPANS = {"persistent_count":[-237787,267],"persistent_loader":[-681258,696],"persistent_constructor":[-726190,434],"persistent_station":[-725464,10],"persistent_system":[-725474,10],"persistent_roster":[-236792,178],"persistent_hostile_replacement":[-236611,387],"persistent_insertion":[-237459,667],"persistent_role_getter":[-725494,10],"persistent_generated_getter":[-725398,14],"persistent_portrait_setter":[-725384,14],"persistent_constructor_wrapper":[-726258,68],"persistent_blueprint_getter":[-724794,10],"persistent_price_getter":[-724556,10]}
 
+# Android: spans inside named functions (Layouts.anchored in validate).
+const ANDROID_SPANS = {"persistent_count":[30,202],"persistent_insertion":[232,534],"persistent_roster":[968,116],"persistent_hostile_replacement":[1084,300],"persistent_loader":[0,488],"persistent_constructor":[0,246],"persistent_station":[0,4],"persistent_system":[0,4],"persistent_role_getter":[0,4],"persistent_generated_getter":[0,10],"persistent_portrait_setter":[0,4],"persistent_blueprint_getter":[0,4],"persistent_price_getter":[0,4]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:

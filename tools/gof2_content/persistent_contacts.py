@@ -1,5 +1,13 @@
-"""Optional authored blueprint-contact population declarations."""
+"""Optional authored blueprint-contact population declarations.
+
+Android: FileRead::loadAgents and Agent::Agent load the authored contacts
+(Agent::getStation, getSystem, getOffer, isGenericAgent, setImageParts,
+getSellBlueprintIndex, getCosts); Generator::createAgents places a station's
+authored contacts first, then fills the lounge, the roster and the hostile
+replacement. Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .ordinary_generation import VALUES as ORDINARY_VALUES
 from .station_exterior import hashed_variants
 
@@ -7,7 +15,10 @@ from .station_exterior import hashed_variants
 def extract_persistent_contacts(mach, arrival, ordinary_generation):
     if ordinary_generation != ORDINARY_VALUES:
         return {}
-    _, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+    else:
+        _, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     if not proof:
         return {}
     result = copy.deepcopy(VALUES)
@@ -150,3 +161,18 @@ MAC_ALTERNATE = {'persistent_count': [-237787,
                              10,
                              '__text',
                              'db16203d59cb6d9c92d5a1f8bd7fe7fe0ac50cf45a3e14baa275c4bb0175592a']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'persistent_count': ('_ZN9Generator12createAgentsEP7Station', 30, 202, 'sha256:85df72e4563c2c230d3d4381eb62e603ad7acb69748a4b0c7b3db842ff405d13'),
+           'persistent_insertion': ('_ZN9Generator12createAgentsEP7Station', 232, 534, 'sha256:21b744e2e6ccc1924b451c4a55d7c77c8247da5edc1cf34c9db0ef57ddd9629d'),
+           'persistent_roster': ('_ZN9Generator12createAgentsEP7Station', 968, 116, 'sha256:269529bb04d0499e5d6f300082fa59186dea736dd969a221915e6ff2227dbb5a'),
+           'persistent_hostile_replacement': ('_ZN9Generator12createAgentsEP7Station', 1084, 300, 'sha256:1b780825d98e0e06f1863ef5b672f27dc80df77e18cf7845e1c7802e1438fbf8'),
+           'persistent_loader': ('_ZN8FileRead10loadAgentsEv', 0, 488, 'sha256:79d942dcdeef6cf675d601051e813885965df5345b54bee50cd8fd805350c022'),
+           'persistent_constructor': ('_ZN5AgentC2EiN11AbyssEngine6StringEiiibiiii', 0, 246, 'sha256:4143308a9738b6d87b5c13cebfe2b266a5b6e16d8c65b976860ef58747e1a1fb'),
+           'persistent_station': ('_ZN5Agent10getStationEv', 0, 4, 'c06b7047'),
+           'persistent_system': ('_ZN5Agent9getSystemEv', 0, 4, '006c7047'),
+           'persistent_role_getter': ('_ZN5Agent8getOfferEv', 0, 4, '406d7047'),
+           'persistent_generated_getter': ('_ZN5Agent14isGenericAgentEv', 0, 10, '006d012818bf00207047'),
+           'persistent_portrait_setter': ('_ZN5Agent13setImagePartsEPi', 0, 4, '81677047'),
+           'persistent_blueprint_getter': ('_ZN5Agent21getSellBlueprintIndexEv', 0, 4, '006e7047'),
+           'persistent_price_getter': ('_ZN5Agent8getCostsEv', 0, 4, '806d7047')}
