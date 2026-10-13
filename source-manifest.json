@@ -2754,6 +2754,7 @@
     "tests/test_bindings.py",
     "tests/test_camera_follow.py",
     "tests/test_combat_training.py",
+    "tests/test_combat_training_control.py",
     "tests/test_content.py",
     "tests/test_contract_encounters.py",
     "tests/test_contract_flight_results.py",

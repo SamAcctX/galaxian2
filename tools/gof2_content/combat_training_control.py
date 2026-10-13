@@ -1,9 +1,28 @@
-"""Optional Mac combat-training control constants; static import only."""
+"""Optional Mac combat-training control constants; static import only.
+
+Android: PlayerFighter::update steers, selects (every 5000 ms, nextInt(100)
+below 30 with at least two targets, five attempts) and wakes the four actors;
+the PlayerFighter, KIPlayer and Player constructors set their initial target,
+mode, activity and hostility; Level::connectPlayers with Player::setEnemies /
+addEnemies gives the player all four actors and each actor the player and
+every actor of another kind; the cursor-7 case of
+Level::createCampaignMission sets the companion's boost chance to 0
+(PlayerFighter::setBoostProb); PlayerFighter::setShipGroup (vtable slot 2)
+tail-calls KIPlayer::setShipGroup. Values equal the Mac ones.
+"""
 import copy
-from .declaration_layouts import recognize
-from .station_exterior import declaration_bytes
+from .declaration_layouts import recognize, recognize_symbols
+from .station_exterior import declaration_bytes, vtable_proof
 
 def extract_combat_training_control(mach,arrival,training,actors):
+    if mach.architecture == 'android-armv7':
+        try:
+            if training['scope'] != 'combat_training_encounter_construction': return {}
+            npc = actors['npc_initialization']
+            if not all(npc.get(k) for k in ['guidance', 'flight', 'routes', 'hull']): return {}
+        except (KeyError, TypeError, AttributeError): return {}
+        proof, slots = recognize_symbols(mach, ANDROID), vtable_proof(mach, ANDROID_VTABLES)
+        return dict(copy.deepcopy(VALUES), provenance={**proof, **slots}) if proof and slots is not None else {}
     if mach.architecture!='x86_64' or training.get('scope')!='combat_training_encounter_construction':return {}
     try:
         npc=actors['npc_initialization']
@@ -209,3 +228,36 @@ MAC_ALTERNATE = {'npc_update': [611314, 17180, '__text', 'sha256:e6a3db4e2bdaf51
  'mode_dispatch': [628454, 40, '__text', 'sha256:03414b94bcae54c25b57a0fe3067f93f0284bda1ded55bdd145b21f6b1f37c76'],
  'npc_model_vtable': [2377138, 8, '__const', 'sha256:d8695ad8d410eeedeb3288aa0aefa1ef1111d0ec058f0fb0b6b91f7026f69435'],
  'companion_boost': [1127, 7, '__text', 'sha256:5da01a5dcc0ce51514a8dab379701045f37e631bb676cc9d905f869fa0b4ab49']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# The NPC update and constructors; Level::connectPlayers with Player::setEnemies / addEnemies.
+           'npc_update': ('_ZN13PlayerFighter6updateEi', 0, 10528, 'sha256:fb79b3bde0fb27a45861c89450940e96ec313695cb5d4b4c290220c25ef78d9e'),
+           'npc_constructor': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 0, 1668, 'sha256:9722fa1dff717e74e4f5d93a1ee0e2af195659b26021723e8d5632f5ba9eaf91'),
+           'membership': ('_ZN5Level14connectPlayersEv', 0, 1520, 'sha256:4e316991fbb2c7b755197137dad56b58a22cc3a495b4c038877551bc16a7e0ef'),
+           'merge_targets': ('_ZN6Player10addEnemiesEP5ArrayIPS_E', 0, 208, 'sha256:fa30dc0eba400e6524939de373cba3e539ef454ec48aa8eccad4d8abeb4400b4'),
+           'assign_targets': ('_ZN6Player10setEnemiesEP5ArrayIPS_E', 0, 174, 'sha256:d18a42da79a8fc28097c1369f9ddca9c072d2821e985b1b539e4e02c0495c43f'),
+           # The player and its rocket-control alternate body, model drawing and the target predicates.
+           'player_constructor': ('_ZN9PlayerEgoC2EP6Player', 0, 2256, 'sha256:32e47e8e7a4022ce6a08268493b8fcf1ad21866a22aa6cc97fd1cb530435f7bc'),
+           'alternate_body_test': ('_ZN9PlayerEgo17isInRocketControlEv', 0, 12, 'd0f89401002818bf01207047'),
+           'alternate_body': ('_ZN9PlayerEgo21getTargetFollowCameraEv', 0, 6, 'd0f888007047'),
+           'alternate_model': ('_ZN18TargetFollowCamera9getTargetEv', 0, 4, '40687047'),
+           'model_position': ('_ZN10AEGeometry11getPositionEv', 0, 26, 'sha256:b9c206761276e9c203fbee1b2dbbde7151babe54fc1343e0edc216c8b9c0e609'),
+           'model_constructor': ('_ZN10AEGeometryC2EtPN11AbyssEngine11PaintCanvasEb', 0, 256, 'sha256:445381dc0cac413fa861ce74ac9422ae16ed2c8660e9ae7a6f9334c0d9a82f99'),
+           'model_request': ('_ZN10AEGeometry10setVisibleEb', 0, 10, '80f8481080f849107047'),
+           'model_submission': ('_ZN10AEGeometry6renderEv', 0, 18, '90f8481021b1c1680022c06a27f192bc7047'),
+           'target_alive': ('_ZN6Player6isDeadEv', 0, 12, '816f00200129b8bf01207047'),
+           'target_activity': ('_ZN6Player8isActiveEv', 0, 6, '90f8c0007047'),
+           'force_route': ('_ZN6Player15doesNeverAttackEv', 0, 6, '90f8ee007047'),
+           # Friendliness, the boost chance, the KIPlayer and Player constructors, wingman test and models.
+           'friendly': ('_ZN6Player15setAlwaysFriendEb', 0, 20, '80f8ed104ff48071a0f85c10002180f8e0107047'),
+           'friendly_test': ('_ZN6Player14isAlwaysFriendEv', 0, 6, '90f8ed007047'),
+           'boost_chance': ('_ZN13PlayerFighter12setBoostProbEi', 0, 6, 'c0f8b0117047'),
+           'base_constructor': ('_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', 0, 604, 'sha256:3a02b0c7ce6b25d113ff6b119a914a61a149997d03f3853b159537f02d2efee8'),
+           'statistics_constructor': ('_ZN6PlayerC2Eiiiii', 0, 600, 'sha256:f15c0c4c5617f8ed5b0e4e522e5dfda30338d712d628ecf861a9d79e6a041988'),
+           'attached_test': ('_ZN8KIPlayer9isWingManEv', 0, 6, '90f8d8007047'),
+           'model_initializer': ('_ZN8KIPlayer12setShipGroupEP10AEGeometryib', 0, 160, 'sha256:249560a0c9fbb1d950cae0becb50f84c6bfd58ac4c548ad7c56e38a098148570'),
+           'model_initializer_wrapper': ('_ZN13PlayerFighter12setShipGroupEP10AEGeometryib', 0, 4, 'e8f00abd'),
+           # Level::createCampaignMission, cursor 7: setBoostProb(0) on actor 3.
+           'companion_boost': ('_ZN5Level21createCampaignMissionEv', 25696, 14, 'daf8f80000214068c068a3f72ce9')}
+# Slot 2 of PlayerFighter's vtable is PlayerFighter::setShipGroup.
+ANDROID_VTABLES = {'npc_model_vtable': ('_ZTV13PlayerFighter', 2, ['_ZN13PlayerFighter12setShipGroupEP10AEGeometryib'])}
