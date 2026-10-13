@@ -2899,6 +2899,7 @@
     "tests/test_portrait_layers.py",
     "tests/test_portrait_textures.py",
     "tests/test_post_probe_visits.py",
+    "tests/test_post_sahi.py",
     "tests/test_projectile_impacts.py",
     "tests/test_projectile_visuals.py",
     "tests/test_radio_audio.py",

@@ -1,8 +1,29 @@
-"""Bound original Void visit, pursuers and return dialogue; declarations only."""
+"""Bound original Void visit, pursuers and return dialogue; declarations only.
+
+Android: Status::nextCampaignMission cases 24-26 create Mission(156, 0, -1),
+Mission(4, 0, 48) (course cleared) and Mission(11, 0, 10);
+Status::missionCompleted ends kind 156 in flight at its station after more
+than 10000 ms; Level::createCampaignMission case 25 places three Voids at
++-(20000 + random 80000) per axis and case 26 two Voids 8000 behind the
+player (+-700) with Objective(7, 2); Level::createRadioMessages case 25 the
+three radio lines (Android text ids 1925-1927). Level::createSpace builds the
+alien-orbit world (sky 17852/10088/17810/10075, gate parts 15000-15003 from
+.rodata at (0, -10000 + random 20000, 170000 + random 50000) facing the
+origin), Level::init enters at the gate, Level::createAsteroids centres the
+field at (-30000, 0, 30000), Level::createGasClouds adds no clouds there,
+PlayerStation and Station::Station hold the Void station and
+MGame::OnInitialize its cubemap 12040; DialogueWindow and
+Globals::getDialogueSoundId hold the lines. Values are the Mac 1.0.7 ones
+(VALUES).
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_post_sahi(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     _, proof = hashed_variants(mach, arrival, [LAYOUTS])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -264,3 +285,38 @@ LAYOUTS = {'post_sahi_cast25': [6906, 376, '__text', 'f6a0534e5589aac1d5d03799d5
                          '__const',
                          '90cb7b160a1e7252d1ee980c97a920c4f51ee5a1d7aa8a0699937968d354f598'],
  'post_sahi_radio25': [85231, 213, '__text', 'e3fbab7b4ed68b854ebf344586ccca7cbaf0045353e93abcc48e506f2bf77cfe']}
+
+ANDROID = {# Status::nextCampaignMission cases 24-26 and the Void's completion (Status::missionCompleted, kind 156).
+           'post_sahi_mission_dispatch': ('_ZN6Status19nextCampaignMissionEb', 116, 8, '8101aa0e3c0e2d0d'),
+           'post_sahi_mission25': ('_ZN6Status19nextCampaignMissionEb', 838, 62, 'sha256:0202f524266c5751a218f030f434034bff9ec5f0654d985da5518d2d6ed17395'),
+           'post_sahi_mission25_protection': ('_ZN6Status19nextCampaignMissionEb', 8148, 36, 'sha256:5dfd40fbe28635054b8f73ce26b75a24dfa8851a2ef23a1beaba604d9d80f920'),
+           'post_sahi_mission26': ('_ZN6Status19nextCampaignMissionEb', 7576, 38, 'sha256:0c0281d5b5b32ec51b9fa3559e2316d9cc1747f20e622dc7a92242f22a9eeb7d'),
+           'post_sahi_mission27': ('_ZN6Status19nextCampaignMissionEb', 7356, 30, 'sha256:a222ba12dc6caa7e02571a235fff7c77605020d65bc45d9e4abba861eac4da01'),
+           'post_sahi_mission_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           'post_sahi_completion_dispatch': ('_ZN6Status16missionCompletedEbbx', 190, 98, 'sha256:4cdb644e5ef6bab550f21ebbaa4404813b4afa7e5371da1a419aabba83ce8e9f'),
+           'post_sahi_completion': ('_ZN6Status16missionCompletedEbbx', 660, 44, 'sha256:d4ee670cec7985bb876a5362de71548676df56eacbc3dc40a131263ec13c12e2'),
+           'post_sahi_completion_target': ('_ZN6Status16missionCompletedEbbx', 1218, 6, '854220d16be0'),
+           # Level::createCampaignMission cases 25 and 26; Level::createRadioMessages case 25.
+           'post_sahi_cast_dispatch': ('_ZN5Level21createCampaignMissionEv', 616, 4, '1e00f033'),
+           'post_sahi_cast25': ('_ZN5Level21createCampaignMissionEv', 626, 256, 'sha256:c0b7580f0cada487c6bdfeaba01950b392421e1146d056da089eae1511375242'),
+           'post_sahi_cast26': ('_ZN5Level21createCampaignMissionEv', 27158, 304, 'sha256:6efe5da8712a90a7c2cc1353f44df9a0620c9de6b0c20233751eb5d9af7b5c62'),
+           'post_sahi_cast26_condition': ('_ZN5Level21createCampaignMissionEv', 29698, 4, 'cbf82850'),
+           'post_sahi_radio_dispatch': ('_ZN5Level19createRadioMessagesEi', 76, 2, '9903'),
+           'post_sahi_radio25': ('_ZN5Level19createRadioMessagesEi', 1868, 134, 'sha256:444b73fd23f259be94d4f8ff60216017e374af2bc4dff113c5ef5abad5a96d06'),
+           'post_sahi_radio25_tail': ('_ZN5Level19createRadioMessagesEi', 10286, 12, 'd4f814014068856000f031bd'),
+           'post_sahi_radio_message': ('_ZN12RadioMessageC2Eiiii', 0, 52, 'sha256:3846fd4e1bb2e22b2ac9c0a510aa87489cf6562344739be3881098d133598fac'),
+           # The alien-orbit world: space, gate parts, entry, field, clouds, station and cubemap.
+           'post_sahi_world': ('_ZN5Level11createSpaceEv', 0, 3668, 'sha256:407ff360bb0ce9685a07653897850772aad545364475333f63f21dabb48175d7'),
+           'post_sahi_gate_parts': ('_ZN5Level11createSpaceEv', 2160, 8, '983a9a3a993a9b3a', 'literal', 0),
+           'post_sahi_world_fallback_entry': ('_ZN5Level4initEv', 0, 1792, 'sha256:fceec130c720743b341b16f0e8ce63d43a1382808e075533d391370c9949a244'),
+           'post_sahi_field_selection': ('_ZN5Level15createAsteroidsEv', 0, 1916, 'sha256:771e19e21b995da12b2734b922799df703b698a17e0d87c6b093d3067cacda15'),
+           'post_sahi_no_floating_debris': ('_ZN5Level15createGasCloudsEv', 0, 796, 'sha256:667e78d527a31553a5c3aed8a6008e6836ea26defb09011d547c3ea8d2baf54f'),
+           'post_sahi_void_station_models': ('_ZN13PlayerStationC2EP7Station', 0, 4180, 'sha256:1f4480fb17a55ae913595af33bb289ada1a75e9532f2e24d464f8877a349b581'),
+           'post_sahi_void_station_defaults': ('_ZN7StationC2Ev', 0, 136, 'sha256:6ceac104cd6a2f90e6e853e4a41e67c71c098198bae836371952620f2a300792'),
+           'post_sahi_cubemap': ('_ZN5MGame12OnInitializeEv', 44, 78, 'sha256:938ac43d872efc6139a7dc8bf5cb33478fb1d5aad1e73fc0a16c56494c085ae0'),
+           # Cursors 25-27: counts, the cursor-26 briefing, the results and all voices.
+           'post_sahi_briefing_counts': ('_ZN14DialogueWindow19hasBriefingDialogueEi', 10, 12, '000000000600000000000000', 'literal', 100),
+           'post_sahi_result_counts': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 12, '060000000400000016000000', 'literal', 100),
+           'post_sahi_briefing26': ('_ZN14DialogueWindow11loadContentEv', 128, 24, '06000000880700000000000089070000060000008a070000', 'literal', 184),
+           'post_sahi_results': ('_ZN14DialogueWindow11loadContentEv', 208, 128, 'sha256:c162781ba8d6b9c6cf1f6b87335d5f2dac90202af19d11fde1fcd3785b4a4b12', 'literal', 1328),
+           'post_sahi_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0)}
