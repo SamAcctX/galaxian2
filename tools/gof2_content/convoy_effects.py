@@ -1,8 +1,23 @@
-"""Original Mac convoy EMP sprite declarations, verified at import only."""
+"""Original Mac convoy EMP sprite declarations, verified at import only.
+
+Android: ParticleSettings::init defines presets 17 and 18 (material 27260, 13
+particles, 400 and 200 ms, their UV rectangles); PlayerFighter::setLevel
+registers them in the general manager that Level::init creates (27260; the
+nozzle manager is 20090); LevelScript::process starts actor 0's sprites at the
+first pulse and the capture view stops the nozzle manager's handles
+(ParticleSystemManager::enableSystemEmit, enableSystemRender, systemSetMatrix;
+IParticleSystem::setMatrix, emit, interpolateColor;
+ParticleSystemSprite::updateSingle; ParticleSystemManager::addSystem and its
+constructor). Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_convoy_effects(mach,arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -185,3 +200,23 @@ MAC_ALTERNATE = {'convoy_effects_inherited_presets': [492221,
                                   16,
                                   '__text',
                                   '78b91d6dfdfcae52a3b0bfd28e1b1d46c84edb46546e167a1fc10fcb110e7325']}
+
+# Android spans inside named functions and their tables; the values are VALUES.
+ANDROID = {# ParticleSettings::init: presets 17 and 18 (material 27260, 13 particles, 400 and 200 ms).
+           'convoy_effects_inherited_presets': ('_ZN16ParticleSettings4initEv', 0, 5828, 'sha256:c1f14b60756290f7c689ddb614fabcd1ff5b653699be7fae10840b1d8d83ef29'),
+           'convoy_effects_handle_defaults': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 0, 1668, 'sha256:9722fa1dff717e74e4f5d93a1ee0e2af195659b26021723e8d5632f5ba9eaf91'),
+           # PlayerFighter::setLevel registers presets 17 and 18 in the general manager.
+           'convoy_effects_registrations': ('_ZN13PlayerFighter8setLevelEP5Level', 0, 214, 'sha256:9b84b0fd27be53fe3b82a5fcaa59b23cbed3d97e703c6bd7d420ef84a1dfc155'),
+           # Level::init: the general manager (27260) and the nozzle manager (20090).
+           'convoy_effects_manager': ('_ZN5Level4initEv', 0, 1792, 'sha256:fceec130c720743b341b16f0e8ce63d43a1382808e075533d391370c9949a244'),
+           # LevelScript::process: the first pulse starts actor 0's sprites; the capture view stops the nozzle manager's.
+           'convoy_effects_activation': ('_ZN11LevelScript7processEi', 0, 59076, 'sha256:fc48a0891a46a9391ae3fe50b9ad196d3c917dbd5cd6c3b58c4d2c9cdc2aa5ca'),
+           'convoy_effects_emission': ('_ZN21ParticleSystemManager16enableSystemEmitEib', 0, 42, 'sha256:ee288145a3c05e19abc1a59cc18f7feaa7491b9f94a222d1775febdd3a602222'),
+           'convoy_effects_visibility': ('_ZN21ParticleSystemManager18enableSystemRenderEib', 0, 42, 'sha256:a29adcc048409c5dbfb78ff916b5a7e4e181ba9039537362162640b82cd8ee4f'),
+           'convoy_effects_retarget_dispatch': ('_ZN21ParticleSystemManager15systemSetMatrixEiPKN11AbyssEngine6AEMath6MatrixE', 0, 42, 'sha256:0fc03d075bdd47d41721212ecb0628849613c4950392c4ae8fab6eeebf96349b'),
+           'convoy_effects_retarget_state': ('_ZN15IParticleSystem9setMatrixEPKN11AbyssEngine6AEMath6MatrixE', 0, 10, '81614ff4807181807047'),
+           'convoy_effects_manager_flags': ('_ZN21ParticleSystemManagerC2EPN11AbyssEngine11PaintCanvasEN16ParticleSettings9CameraSetEtbtb', 0, 142, 'sha256:95e02fc1e27d5e9ea6e5f0809950d6179a9bed9c16d4c1f897a2f108e7df2cd7'),
+           'convoy_effects_sprite_registration': ('_ZN21ParticleSystemManager9addSystemEPKN11AbyssEngine6AEMath6MatrixEN16ParticleSettings11ParticleSetEb', 0, 200, 'sha256:b55dfdc8117d8182393be1a4cc8fb816e52ab3e102e604f409af0fd96ef7f4c1'),
+           'convoy_effects_brightness_fade': ('_ZN15IParticleSystem16interpolateColorEiRfS0_S0_S0_', 0, 340, 'sha256:95c4e07a4c457b6117406036201aa3b5c425f67170b093590885d2ba08ea78f1'),
+           'convoy_effects_initial_mirroring': ('_ZN15IParticleSystem4emitEi', 0, 2532, 'sha256:400bc63368dfeaa16ebc5d66919d05306386beab3d41ef6eb537c1bc669491a2'),
+           'convoy_effects_unanimated_uv': ('_ZN20ParticleSystemSprite12updateSingleEif', 0, 792, 'sha256:b1f205fba79b7aed5a4fb931c98394dc946f7a81a2d822053148d1d65c898430')}
