@@ -1,8 +1,24 @@
-"""Original Suttnar flight conversation and acknowledged next objective. Constant declarations only."""
+"""Original Suttnar flight conversation and acknowledged next objective. Constant declarations only.
+
+Android: Status::nextCampaignMission cases 17 (Mission(156, 0, 56)) and 18
+(Mission(156, 0, 55)); Status::missionCompleted completes kind 156 in flight
+at its station after more than 10000 ms (Mission::getTargetStation,
+Station::getIndex); MGame::successCheck polls after 5001 ms and opens the
+success dialogue (DialogueWindow::hasSuccessDialogue and its count table);
+DialogueWindow::loadContent's table holds the eight lines (Android text ids
+1863-1870, Mac 1.0.7 1852-1859), Globals::getDialogueSoundId's table their
+voices 254-261; DialogueWindow::nextPage, length and OnTouchEnd page them;
+MGame::OnTouchEnd acknowledges and advances the campaign. Values equal the
+Mac 1.0.7 ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_suttnar_visit(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(MAC_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -184,3 +200,30 @@ MAC_VALUES = {'scope': 'suttnar_flight_visit',
  'next_cursor': 19,
  'next_mission': {'kind': 156, 'station_id': 55, 'reward': 0, 'bonus': 0, 'source_parameter': 0},
  'reward_credits': 0}
+
+# Android spans inside named functions and their tables; the values are MAC_VALUES.
+ANDROID = {# Status::nextCampaignMission: cursor 17 -> Mission(156, 0, 56), 18 -> Mission(156, 0, 55).
+           'suttnar_factory_dispatch': ('_ZN6Status19nextCampaignMissionEb', 58, 10, 'a12800f21b82dfe810f0'),
+           'suttnar_cases': ('_ZN6Status19nextCampaignMissionEb', 102, 4, '410dfd01'),
+           'suttnar_initial_factory': ('_ZN6Status19nextCampaignMissionEb', 6854, 40, 'sha256:15ed59db11c0b0a88e2e9c2c65522f7a9757e2a361612ed3be76991ee7e6b358'),
+           'suttnar_next_factory': ('_ZN6Status19nextCampaignMissionEb', 1086, 28, 'sha256:d0d9ff631d9b7dafc9f6985fe907b885ce7beb06d0a3aa812bde452ecb40e366'),
+           # Status::missionCompleted: kind 156 in flight at its station after more than 10000 ms.
+           'suttnar_predicate_dispatch': ('_ZN6Status16missionCompletedEbbx', 190, 98, 'sha256:4cdb644e5ef6bab550f21ebbaa4404813b4afa7e5371da1a419aabba83ce8e9f'),
+           'suttnar_predicate': ('_ZN6Status16missionCompletedEbbx', 660, 44, 'sha256:d4ee670cec7985bb876a5362de71548676df56eacbc3dc40a131263ec13c12e2'),
+           'suttnar_predicate_target': ('_ZN6Status16missionCompletedEbbx', 1218, 6, '854220d16be0'),
+           'suttnar_destination_getter': ('_ZN7Mission16getTargetStationEv', 0, 4, '006b7047'),
+           'suttnar_station_getter': ('_ZN7Station8getIndexEv', 0, 4, '80687047'),
+           # MGame::successCheck (5001 ms) and the success dialogue: counts up to cursor 18, eight lines, voices.
+           'suttnar_flight_poll': ('_ZN5MGame12successCheckEv', 0, 1764, 'sha256:ea65079e511029adc0634a0ca72b39105a299c510ec2315692fb93d2d4ec9434'),
+           'suttnar_count_predicate': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 0, 32, 'sha256:af4589b968bd4c86413063b8dfe90aed2ba1ef0771e89a3c40aff8861dc2155c'),
+           'suttnar_result_counts': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 76, 'sha256:b662011e2e4f74401d912cb865d6d1a2d2bf249f3a9caefb96c355efd2b53bdc', 'literal', 0),
+           'suttnar_dialogue_text': ('_ZN14DialogueWindow11loadContentEv', 0, 3868, 'sha256:4848845d1a3eaed3723c28a67221b83f09cd90f3222aabea7c724a00cc5da7b7'),
+           'suttnar_dialogue_pairs': ('_ZN14DialogueWindow11loadContentEv', 208, 64, 'sha256:5d32c5d71cbebf3282c87846fb8986fe8ea491d0f741f3ea261bf5d777ffa940', 'literal', 1016),
+           'suttnar_voice_lookup': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 0, 34, 'sha256:9ba804c27b6b2b9e9d4cc439e029afb2dbdb3a6cd0280a652c0d70affd78edca'),
+           'suttnar_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0),
+           # Paging and the acknowledgement.
+           'suttnar_dialogue_next': ('_ZN14DialogueWindow8nextPageEv', 0, 38, 'sha256:23019740e320c9a7d6d8c44ab237261381ca3e0be331160cf4685fdac2533dfe'),
+           'suttnar_dialogue_count': ('_ZN14DialogueWindow6lengthEv', 0, 104, 'sha256:0d158e749b8801e6a7a4c8a92bf77c6c50e0322be4eec0c21f8f7534721ed996'),
+           'suttnar_dialogue_click': ('_ZN14DialogueWindow10OnTouchEndEii', 0, 308, 'sha256:8945fd6bdc22deeb71a07aa34ae47e39f3e2976fdf8765d3499ded1a8e5c9711'),
+           'suttnar_flight_ack': ('_ZN5MGame10OnTouchEndEiiPv', 972, 76, 'sha256:3cf5791f50b694969248783ea1269bc9c5ca6b669f688fe8fbfea0549b01383c'),
+           'suttnar_completed_result': ('_ZN5MGame10OnTouchEndEiiPv', 3606, 30, 'sha256:70a3bd9d5f40accb1e4ad9f66f5e14fd899ae7b494ecaa55cac6ee1b7d03ccbc')}
