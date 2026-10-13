@@ -14,6 +14,9 @@ const SPANS := {"actor_dispatch":[571,611],"waypoints":[1579386,24],"companion_x
 const MAC_ALTERNATE := {"actor_dispatch":[571,611],"waypoints":[1554450,24],"companion_x":[1520990,4],"companion_y":[1532078,4],"companion_z":[1550398,4],"route_constructor":[721834,378],"route_wrapper":[721824,10],"route_copy":[723848,472],"route_point":[723058,150],"route_replace":[-77698,104],"route_advance":[723448,302],"friendly":[536188,28],"hull_override":[537550,30],"weapon_effect_0":[1547906,4],"weapon_effect_19":[1547982,4],"weapon_effect_25":[1548006,4],"factory":[77944,3478],"route_and_cargo":[605720,2070],"inactive_mode":[-78898,44],"activity":[-78836,36],"activity_field":[541446,14],"hostile":[536160,28],"position_setter":[609776,176],"world_order":[-44096,2458],"weapons":[54772,4266],"extra_story":[51826,1046]}
 const MAC_VALUES := {"scope":"combat_training_encounter_construction","campaign_cursor":7,"mission_kind":4,"station_id":78,"system_id":15,"actor_count":4,"waypoints":[[-4000,-3000,80000],[10000,7000,160000]],"authored_route_initial_index":0,"authored_route_loop":false,"pirate_count":3,"pirate_actor_kind":8,"pirate_hull_catalogue_id":2,"pirate_waypoint_index":1,"pirate_mode":5,"pirate_active":false,"pirate_targeting_blocked":true,"companion_actor_id":3,"companion_actor_kind":3,"companion_hull_catalogue_id":30,"companion_position_offset":[700.0,50.0,6000.0],"companion_friendly":true,"companion_current_hull_override":9999999,"companion_name_text_id":1588,"subtype":0,"retains_generated_cargo":true,"companion_replaces_generated_route":true,"weapon_item_sequence":[0,19],"weapon_effect_sequence":[14600,14605],"companion_weapon_item_sequence":[0,25],"companion_weapon_effect_sequence":[14600,14606],"weapon_effect_capacity":4,"weapon_effect_random_bound":2,"zero_means_flipped":true}
 
+# Android: the MAC_VALUES; spans inside named functions and tables and PlayerFighter's vtable slot 18 (Layouts.anchored).
+const ANDROID_SPANS := {"campaign_head":[0,126],"actor_dispatch":[552,14],"actor_entry":[580,2],"actor_case":[25356,378],"companion_offset":[24600,12],"defeat_store":[26158,8],"story_tail":[29704,26],"waypoints":[0,24],"route_constructor":[0,252],"waypoint_constructor":[0,212],"route_point":[0,160],"route_copy":[0,348],"route_replace":[0,36],"route_advance":[0,260],"friendly":[0,20],"hull_override":[0,18],"factory":[0,3112],"route_and_cargo":[0,1668],"inactive_mode":[0,28],"activity":[0,20],"activity_field":[0,6],"hostile":[0,16],"position_setter":[0,120],"world_order":[0,1792],"weapons":[0,3320],"weapon_effect":[0,280],"weapon_effects":[0,104],"placement_virtual":[80,4]}
+
 static func parameters(data: Variant) -> bool:
 	return _parameters(data,VALUES) or _parameters(data,MAC_VALUES)
 
@@ -26,9 +29,10 @@ static func _parameters(data: Variant,expected: Dictionary) -> bool:
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, equipment: Dictionary, actors: Dictionary) -> String:
 	if not data is Dictionary:return "Missing combat-training construction declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data):return "Unsupported combat-training construction declarations"
+	if not (arch=="x86_64" and parameters(data) or arch=="android-armv7" and _parameters(data,MAC_VALUES)):return "Unsupported combat-training construction declarations"
 	var npc: Dictionary=actors.get("npc_initialization",{})
 	if not Equipment.parameters(equipment) or not Construction.parameters(npc.get("construction")) or not Routes.parameters(npc.get("routes")) or not World.parameters(npc.get("world_initialization")):return "Combat training lacks its equipment or NPC construction context"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid combat training extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Combat training lacks its source anchor"
 	var layouts: Array=[]
