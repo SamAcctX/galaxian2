@@ -36,6 +36,15 @@ func verify() -> void:
 	for key in ["arrival_briefing","contract_navigation"]:
 		var partial: Dictionary=full.duplicate(true);partial.erase(key)
 		check(not Definitions.validate(partial,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel kept proofs of a missing capability: "+key)
+	# Ported extensions follow the chain, each only with its own proofs.
+	var chain: Dictionary=full.duplicate(true)
+	for row in extensions():
+		chain[row[0]]=row[1].duplicate(true)
+		chain.provenance.merge(anchored(row[2],origin))
+		check(Definitions.validate(chain,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android extension was rejected: "+row[0])
+		var unproven: Dictionary=chain.duplicate(true)
+		for key in row[2]:unproven.provenance.erase(key)
+		check(not Definitions.validate(unproven,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android extension passed without its proofs: "+row[0])
 	var shifted: Dictionary=full.duplicate(true)
 	shifted.provenance.story_dispatch.offset+=1
 	check(not Definitions.validate(shifted,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted a shifted proof extent")
@@ -59,6 +68,10 @@ func verify() -> void:
 	check(Definitions.station_return_parameters(returned),"The Android Kernstal return was refused")
 	returned.contract_gate.additional_completions=2
 	check(not Definitions.station_return_parameters(returned),"A foreign contract gate passed the Kernstal return")
+
+## [key, values, spans] of each ported extension in chain order.
+func extensions() -> Array:
+	return [["contract_completion",Definitions.ContractStory.MAC_VALUES,Definitions.ContractStory.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:
 	var result:={}
