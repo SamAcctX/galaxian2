@@ -102,7 +102,9 @@ func verify(args: PackedStringArray) -> void:
 	check(state.campaign_cursor==10 and state.world_type==3 and state.location.station_id==79 and state.location.system_id==15,"Arrival changed the objective or destination")
 	check(state.location.sky_index==9 and state.player_pose.origin.length()>50000,"Arrival reused the station exit instead of incoming space")
 	check(state.player_pose.basis.z.dot(-state.player_pose.origin.normalized())>0.99999,"Arrival points away from the destination station")
-	check(state.scenery.objects.size()==156 and state.scenery.center==Vector3(-29062,30649,31103),"Kernstal scenery differs from independent source RNG vectors")
+	# Android fields hold 40 + random(40) asteroids, the Mac 80 + random(80); the center is the same.
+	var asteroids:=76 if bindings.source_architecture=="android-armv7" else 156
+	check(state.scenery.objects.size()==asteroids and state.scenery.center==Vector3(-29062,30649,31103),"Kernstal scenery differs from independent source RNG vectors")
 	check(state.scenery.world_initialization.npc_construction.actors.is_empty(),"Arrival invented a training or ordinary traffic cast")
 	check(state.scenery.world_initialization.input_random_state==state.scenery.world_initialization.random_state,"The empty story population consumed constructor draws")
 	check(not state.activated and not state.entry_released and state.entry_elapsed_ms==0,"Preparation activated or skipped the entry camera")
