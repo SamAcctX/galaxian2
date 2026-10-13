@@ -111,11 +111,13 @@ func verify_ships(bindings: RefCounted,cat: RefCounted):
 	check(stock._sample_ships(cat).map(func(row):return row.ship_id)==[1,44,49,51],"An Extreme career does not unlock ship 44 at station 120")
 	finished_stock(stock,"Extreme ship")
 	stock=drawn_base(bindings,[])
-	check(stock._ship_offer(cat,0,3).unit_price==16200,"An imported ship received the local-faction discount")
+	# Betty's catalogue price: 16200 on the Mac, 16038 in the Android ships.bin.
+	var price:=float(cat.tables.ships[0].stats.base_price)
+	check(stock._ship_offer(cat,0,3).unit_price==int(price),"An imported ship received the local-faction discount")
 	stock._faction=3
-	check(stock._ship_offer(cat,0,3).unit_price==16038,"Betty's original local price is not16038")
+	check(stock._ship_offer(cat,0,3).unit_price==int(price-price*0.01),"Betty's original local price lost its 1 % discount")
 	stock._context.ship_price_percent=10
-	check(stock._ship_offer(cat,0,3).unit_price==17658,"The ship modifier was applied to the discounted price")
+	check(stock._ship_offer(cat,0,3).unit_price==int(price-price*0.01+price*0.1),"The ship modifier was applied to the discounted price")
 	stock._context.ship_price_percent=-100
 	stock._ship_offer(cat,0,3)
 	check(not stock.error.is_empty(),"A negative shop price was silently accepted")
@@ -160,7 +162,14 @@ func verify_source_ships(bindings: RefCounted,cat: RefCounted):
 	finished_stock(stock,"unmatched faction")
 
 func verify_temporary_items(bindings: RefCounted,cat: RefCounted):
+	# Android's getItemBuyList has no temporary item: no row and no draw.
+	var temporary: bool=not bindings.early_contracts.base_station_stock.temporary_item.is_empty()
 	for cursor in [16,17,24,25]:
+		if temporary:continue
+		var stock: RefCounted=drawn_base(bindings,[]);stock._context.campaign_cursor=cursor
+		check(stock._temporary_stock(cat).is_empty(),"A temporary item appeared without its source roll")
+		finished_stock(stock,"no temporary offer")
+	for cursor in [16,17,24,25] if temporary else []:
 		for roll in [39,40]:
 			var active: bool=cursor in [17,24]
 			var stock: RefCounted=drawn_base(bindings,[[100,roll]] if active else [])
@@ -190,16 +199,18 @@ func verify_reseed_order(bindings: RefCounted,cat: RefCounted):
 	check(yes.prepare(bindings,cat,context,initial[true],1789423200),yes.error)
 	check(no.prepare(bindings,cat,context,initial[false],1789423200),no.error)
 	var a: Dictionary=yes.snapshot();var b: Dictionary=no.snapshot()
-	check(a.items[0].item_id==68 and a.items.slice(1)==b.items,"Reseeding lost or rerolled the preceding temporary offer")
+	if bindings.early_contracts.base_station_stock.temporary_item.is_empty():check(a.items==b.items,"The incoming random stream changed a stock without a temporary item")
+	else:check(a.items[0].item_id==68 and a.items.slice(1)==b.items,"Reseeding lost or rerolled the preceding temporary offer")
 	check(a.ships==b.ships and a.random==b.random and a.draw_calls==b.draw_calls,"The incoming random stream leaked past the ordinary stock reseed")
 	check(Stock.new().restore(bindings,cat,a) and Stock.new().restore(bindings,cat,b),"Temporary stock could not be restored with its incoming random state")
 
 func verify_stock_proof(bindings: RefCounted,pack: String):
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(pack.path_join("bindings.json")))
-	for key in BaseStock.SPANS:
+	var arch: String=bindings.source_architecture
+	for key in BaseStock.ANDROID_SPANS if arch=="android-armv7" else BaseStock.SPANS:
 		var bad: Dictionary=bindings.early_contracts.duplicate(true)
 		bad.provenance.erase(key)
-		check(not Definitions.validate(bad,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.mido_travel).is_empty(),"A missing ship stock source span was accepted")
+		check(not Definitions.validate(bad,int(header.source_executable_bytes),arch,bindings.arrival_staging,bindings.mido_travel).is_empty(),"A missing ship stock source span was accepted")
 	var bad: Dictionary=bindings.early_contracts.duplicate(true)
 	bad.base_station_stock.ships.affiliations[0]=0
 	check(not Definitions.parameters(bad),"An altered ship faction table was accepted")

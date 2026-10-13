@@ -88,11 +88,14 @@ func verify() -> void:
 		check(Definitions.parameters(mac_chain) and not Definitions.validate(mac_chain,source_bytes,"x86_64",mac_arrival,travel).is_empty(),"Mac contracts accepted the Android base stock")
 	# Each capability keeps its travel context: travel cut before it is refused.
 	var keys:=["contract_navigation","contract_completion","convoy_capture","convoy_ship","convoy_lifecycle","convoy_effects","alioth_arrival","convoy_transit","alioth_attack","alioth_lifecycle","alioth_flight","alioth_return","free_navigation","free_population","free_traffic","free_lifecycle","free_flight"]
-	for row in [["encounter_construction","contract_navigation"],["base_navigation","alioth_arrival"],["ordinary_generation","free_flight"]]:
+	for row in [["encounter_construction","contract_navigation",["base_navigation","ordinary_generation"]],["base_navigation","alioth_arrival",["ordinary_generation"]],["ordinary_generation","free_flight",[]]]:
 		if not chain.has(row[0]):continue
 		var cut: Dictionary=travel.duplicate(true)
 		for key in keys.slice(keys.find(row[1])):cut.erase(key)
-		check(Travel.parameters(cut) and not Definitions.validate(chain,source_bytes,"android-armv7",arrival,cut).is_empty(),"Android contracts kept "+row[0]+" without "+row[1])
+		# Without the later capabilities that need more of the travel context.
+		var partial: Dictionary=without(chain,row[2])
+		check(Definitions.validate(partial,source_bytes,"android-armv7",arrival,travel).is_empty(),"Android contracts before "+row[0]+"'s successors were rejected")
+		check(Travel.parameters(cut) and not Definitions.validate(partial,source_bytes,"android-armv7",arrival,cut).is_empty(),"Android contracts kept "+row[0]+" without "+row[1])
 	var shifted: Dictionary=accepted.duplicate(true)
 	shifted.provenance.early_selector.offset+=1
 	check(not Definitions.validate(shifted,source_bytes,"android-armv7",arrival,travel).is_empty(),"Android contracts accepted a shifted proof extent")
@@ -130,6 +133,15 @@ func mac_extensions() -> Array:
 		["station_lounges",Definitions.Lounges.VALUES,Definitions.Lounges.MAC_SPANS],
 		["station_generation",Definitions.Stock.VALUES,Definitions.Stock.MAC_SPANS],
 		["base_station_stock",Definitions.BaseStock.MAC_VALUES,Definitions.BaseStock.MAC_SPANS]]
+
+## The chain without some capabilities and their proofs.
+func without(data: Dictionary,names: Array) -> Dictionary:
+	var result: Dictionary=data.duplicate(true)
+	for row in extensions():
+		if names.has(row[0]):
+			result.erase(row[0])
+			for key in row[2]:result.provenance.erase(key)
+	return result
 
 func anchor_mac(data: Dictionary,spans: Dictionary) -> void:
 	for key in spans:data.provenance[key]={"offset":1000000+int(spans[key][0]),"bytes":int(spans[key][1])}

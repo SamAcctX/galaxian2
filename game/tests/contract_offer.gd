@@ -124,14 +124,18 @@ func verify_retention(bindings: RefCounted,cat: RefCounted,offer: RefCounted):
 func verify_provenance(bindings: RefCounted,pack: String):
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(pack.path_join("bindings.json")))
 	var terms: Dictionary=bindings.early_contracts
+	var source: String=bindings.source_architecture
+	var android:=source=="android-armv7"
+	var span:="early_side_mission_getter" if android else "side_mission_owner"
+	check(Definitions.validate(terms,int(header.source_executable_bytes),source,bindings.arrival_staging,bindings.mido_travel).is_empty(),"The imported contract declaration was rejected")
 	for corruption in ["quantity","reward","missing_span","span_offset","span_length","architecture","travel"]:
-		var bad:=terms.duplicate(true);var arch:="x86_64";var travel: Dictionary=bindings.mido_travel.duplicate(true)
+		var bad:=terms.duplicate(true);var arch:=source;var travel: Dictionary=bindings.mido_travel.duplicate(true)
 		match corruption:
 			"quantity":bad.passenger.quantity_by_difficulty[0]=1
 			"reward":bad.reward.junk_multiplier=1.0
-			"missing_span":bad.provenance.erase("side_mission_owner")
-			"span_offset":bad.provenance.side_mission_owner.offset+=1
-			"span_length":bad.provenance.side_mission_owner.bytes-=1
+			"missing_span":bad.provenance.erase(span)
+			"span_offset":bad.provenance[span].offset+=1
+			"span_length":bad.provenance[span].bytes-=1
 			"architecture":arch="unsupported"
 			"travel":travel.erase("return_visit")
 		check(not Definitions.validate(bad,int(header.source_executable_bytes),arch,bindings.arrival_staging,travel).is_empty(),"Changed contract declaration accepted: "+corruption)
@@ -139,7 +143,9 @@ func verify_provenance(bindings: RefCounted,pack: String):
 		var alternate: bool=terms.briefing_text_base==775
 		var bad:=terms.duplicate(true)
 		bad.acceptance.replacement_text_id=851 if alternate else 853
-		check(not Definitions.validate(bad,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.mido_travel).is_empty(),"Mixed source acceptance text was accepted")
+		check(not Definitions.validate(bad,int(header.source_executable_bytes),source,bindings.arrival_staging,bindings.mido_travel).is_empty(),"Mixed source acceptance text was accepted")
+		# One Android edition: no other source's proof to mix in.
+		if android:return
 		bad=terms.duplicate(true)
 		var other: Dictionary=Definitions.ACCEPTANCE_SPANS if alternate else Definitions.MAC_ACCEPTANCE_SPANS
 		bad.provenance.contract_replacement_notice.offset=int(bindings.arrival_staging.provenance.actor.offset)+int(other.contract_replacement_notice[0])

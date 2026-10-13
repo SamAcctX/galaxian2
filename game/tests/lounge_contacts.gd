@@ -182,6 +182,10 @@ func verify_retention(bindings: RefCounted,cat: RefCounted,lib: RefCounted,gener
 
 func verify_provenance(bindings: RefCounted,pack: String):
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(pack.path_join("bindings.json")))
+	# Android proof keys carry the lounge_ prefix.
+	var arch: String=bindings.source_architecture
+	var prefix:="lounge_" if arch=="android-armv7" else ""
+	check(Definitions.validate(bindings.early_contracts,int(header.source_executable_bytes),arch,bindings.arrival_staging,bindings.mido_travel).is_empty(),"The imported contact declarations were rejected")
 	for corruption in ["count","names","portraits","reserved","missing_span","span_offset"]:
 		var bad: Dictionary=bindings.early_contracts.duplicate(true)
 		match corruption:
@@ -189,9 +193,9 @@ func verify_provenance(bindings: RefCounted,pack: String):
 			"names":bad.generation.names.pool_choices_by_faction[3][0]=[0]
 			"portraits":bad.generation.portraits.counts[6][3]=1
 			"reserved":bad.generation.destinations.helper_excluded_station_ids=[]
-			"missing_span":bad.provenance.erase("contact_source_random")
-			"span_offset":bad.provenance.contact_hostile_order.offset+=1
-		check(not Definitions.validate(bad,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.mido_travel).is_empty(),"Changed contact declaration accepted: "+corruption)
+			"missing_span":bad.provenance.erase(prefix+"contact_source_random")
+			"span_offset":bad.provenance[prefix+"contact_hostile_order"].offset+=1
+		check(not Definitions.validate(bad,int(header.source_executable_bytes),arch,bindings.arrival_staging,bindings.mido_travel).is_empty(),"Changed contact declaration accepted: "+corruption)
 
 func verify_portraits(bindings: RefCounted,lib: RefCounted,pack: String):
 	var visuals:=Visuals.new();var compositor:=Portrait.new()
