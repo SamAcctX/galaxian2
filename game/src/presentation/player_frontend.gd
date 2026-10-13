@@ -223,7 +223,7 @@ func request_action(action: String) -> void:
 		"new_game":
 			if not has_session() and _updated_import.is_empty() and _needs_import_update():
 				_show_details("update","Update game files")
-				_label("These game files were prepared by an earlier version. Choose your Mac game once to update them. Future changes to the importer will refresh them automatically while that source remains available.")
+				_label("These game files were prepared by an earlier version. Choose your game once to update them. Future changes to the importer will refresh them automatically while that source remains available.")
 				_label("Existing saves remain available with their earlier import. You can select either import from the game files screen.")
 				_button("Choose or update game files…",show_setup)
 			else:_start_new_game()

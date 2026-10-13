@@ -168,7 +168,7 @@ public final class AndroidImportPlugin extends GodotPlugin {
         long count = 0;
         long last = 0;
         try (InputStream input = resolver.openInputStream(uri)) {
-            if (input == null) throw new IllegalArgumentException("Cannot read the selected Mac game file");
+            if (input == null) throw new IllegalArgumentException("Cannot read the selected game file");
             try (FileOutputStream output = new FileOutputStream(source)) {
                 int size;
                 while ((size = input.read(buffer)) != -1) {
@@ -177,7 +177,7 @@ public final class AndroidImportPlugin extends GodotPlugin {
                     }
                     count += size;
                     if (count > MAX_SOURCE) {
-                        throw new IllegalArgumentException("The Mac game file exceeds the 8 GiB import limit");
+                        throw new IllegalArgumentException("The selected game file exceeds the 8 GiB import limit");
                     }
                     if (source.getUsableSpace() < HEADROOM) {
                         throw new IllegalStateException("Import needs more free device storage");
@@ -186,13 +186,13 @@ public final class AndroidImportPlugin extends GodotPlugin {
                     long now = System.nanoTime();
                     if (now - last > 200_000_000L) {
                         last = now;
-                        writeStatus(status, "working", "Copying the selected Mac game file");
+                        writeStatus(status, "working", "Copying the selected game file");
                     }
                 }
                 output.getFD().sync();
             }
         }
-        if (count == 0) throw new IllegalArgumentException("The selected Mac game file is empty");
+        if (count == 0) throw new IllegalArgumentException("The selected game file is empty");
     }
 
     private static void writeStatus(File path, String state, String message) {
