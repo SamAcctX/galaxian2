@@ -70,6 +70,9 @@ and saves; there is no need to import the same game again.
   toll and the Most Wanted boards; the **Supernova Challenge** from the menu.
 - New Game difficulty (Easy, Normal, Hard, Extreme), medals and the Status
   screen, the in-flight pause window, wingmen, coordinate sellers and diplomats.
+- An optional **Kaamo Club** shortcut: turn on **Start as owner of the Kaamo Club**
+  at New Game, or choose **Options → Unlock the Kaamo Club now…** while docked
+  (permanent). Without it, the club is earned as in the original.
 - Freelance combat, recovery, delivery, escort, informer and intercept jobs.
 - The galaxy overview, local travel, jumpgates and Khador Drive travel into
   normal space and the Void, using owned energy cells.
@@ -162,7 +165,9 @@ also occur at supported service exits, acknowledged results and departures.
 restart or death. A previous-save backup protects against an interrupted write.
 
 Saving during flight or a conversation is unavailable. Saves belong to their
-imported content and gameplay-data version. Original game saves and migration
+imported content and gameplay-data version: an Android import keeps its own saves,
+separate from a Mac import's, and each Android release imports as new content with
+its own saves. Original game saves and migration
 between incompatible versions are not supported yet. Back up your user-data
 folder before updating from a preview.
 
@@ -171,6 +176,12 @@ folder before updating from a preview.
 A few cosmetic details differ from the original where its data could not be
 fully recovered, such as the size of some cutscene explosions and the
 supernova sky background.
+
+An Android import plays with that release's own data. Asteroid fields hold about
+half as many asteroids, the cheap tractor beam is sold by a Space Lounge vendor
+rather than as station stock, hints use the touch wording, German speech uses the
+English voice files, Chinese is unavailable, and ship handling and a few prices
+differ slightly from the Mac game.
 
 Screenshots show the native engine using locally imported Mac content. They are
 promotional images, not game resources distributed with the engine.
