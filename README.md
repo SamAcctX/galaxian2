@@ -30,8 +30,9 @@ can be rotated with mouse dragging or the controller's right stick.
 Desktop packages include the engine and offline import helpers. Keep each package
 intact. Windows and macOS builds are unsigned. Linux is the tested platform;
 Windows and macOS exports have not yet been tested on their native systems.
-The Android importer has passed a document-picker and dependency smoke check,
-but a complete import and gameplay have not been tested on an ARM64 device.
+On an x86_64 Android emulator, the Android build imports the Android HD `.xapk`
+through the document picker in about four minutes and plays the opening and first
+flight. A Mac import on Android and ARM64 devices have not been tested yet.
 A playable Web package is not available yet.
 
 1. Start Galaxian2 and choose **Choose game…**.
