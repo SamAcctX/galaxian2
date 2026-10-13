@@ -76,5 +76,61 @@ class OrdinaryMusicReaderTests(unittest.TestCase):
             self.assertEqual(ordinary_music.extract_ordinary_music(mach, fast_forward, audio_fixture()), {})
 
 
+FAST_FORWARD = {'radar': {'provenance': {'radar_music_publication_gate': {'offset': 5, 'bytes': 18, 'anchor': 1}}}}
+
+
+def thumb(hex_code):
+    import capstone
+    decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+    return [(i.mnemonic, i.op_str) for i in decoder.disasm(bytes.fromhex(hex_code), 0)]
+
+
+class AndroidOrdinaryMusicTests(unittest.TestCase):
+    def extract(self, lib, fast_forward=FAST_FORWARD, audio=None):
+        return ordinary_music.extract_ordinary_music(lib, fast_forward, audio)
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from gof2_content.android_library import AndroidLibrary
+        from test_arrival_staging import roomy_layouts
+        with roomy_layouts():
+            verify_android_proof(self, ordinary_music, self.extract)
+            image, layout, _ = layout_library(ordinary_music.ANDROID)
+        with patch.object(ordinary_music, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            data = self.extract(lib, audio=audio_fixture())
+            self.assertEqual(data, self.extract(lib))
+            data['battle_event_ids'].append(1)
+            self.assertEqual(ordinary_music.ANDROID_VALUES['battle_event_ids'], [140, 141, 142])
+            short = {'events': audio_fixture()['events'][:2292]}
+            long = {'events': audio_fixture()['events'] + [{}]}
+            changed = audio_fixture()
+            changed['events'][151]['properties']['fade_out_ms'] = 0
+            cases = {'no gate': dict(fast_forward={'radar': {'provenance': {}}}), 'no radar': dict(fast_forward={}),
+                     'none': dict(fast_forward=None), 'short audio': dict(audio=short), 'long audio': dict(audio=long), 'other fade': dict(audio=changed),
+                     'audio list': dict(audio=[]), 'empty audio': dict(audio={})}
+            for name, changes in cases.items():
+                self.assertEqual(self.extract(lib, **changes), {}, name)
+
+    def test_android_constants(self):
+        rows, values = ordinary_music.ANDROID, ordinary_music.ANDROID_VALUES
+        self.assertEqual(struct.unpack('<4i', bytes.fromhex(rows['faction_table'][3])), tuple(values['faction_event_ids']))
+        # Above four ships: kind 10 already chose 151; marked 150, else 142.
+        self.assertEqual(thumb(rows['large_battle'][3])[5:7], [('movne', 'r1, #0x%x' % values['battle_event_ids'][2]),
+                                                               ('moveq', 'r1, #0x%x' % values['marked_battle_event_ids'][1])])
+        self.assertIn(('movs', 'r1, #0x%x' % values['battle_event_ids'][1]), thumb(rows['medium_battle'][3]))
+        size = thumb(rows['marked_group_size'][3])
+        self.assertEqual([op for m, op in size if m in ('movs', 'movne') and op.startswith('r4')], ['r4, #%d' % n for n in values['marked_world_roll']['extra_group_sizes']])
+        self.assertEqual(thumb(rows['marked_actor_flag'][3])[-1], ('strb.w', 'sb, [r0, #0x3e]'))
+        self.assertEqual(thumb(rows['stats_marker_getter'][3])[0], ('ldrb.w', 'r0, [r0, #0xec]'))
+        self.assertEqual(thumb(rows['stats_marker_setter'][3])[0], ('strb.w', 'r1, [r0, #0xec]'))
+        self.assertEqual(thumb(rows['station_getter'][3])[0], ('ldr', 'r0, [r0, #8]'))
+        self.assertEqual(thumb(rows['faction_getter'][3])[0], ('ldr', 'r0, [r0, #0x1c]'))
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, ordinary_music, 'ordinary_music_definitions.gd')
+
+
 if __name__ == '__main__':
     unittest.main()

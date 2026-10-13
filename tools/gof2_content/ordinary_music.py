@@ -3,10 +3,20 @@
 This optional declaration is tied to the already verified radar HUD phase. The
 matched executable bytes are discarded; only constant choices and proof extents
 enter a future binding pack. Unsupported location music remains guarded.
+
+Android: the selector is the end of Radar::draw (music 143 holds, battle
+2/4 ladder with the kind-10 and marked choices, retained-id masks,
+FModSound::stop then play), with Status::inAlienOrbit,
+Station::isAttackedByAliens, Status::inSupernovaSystem / inDeepScienceOrbit,
+Station::getIndex, SolarSystem::getRace and the faction table it indexes. The
+marked actor is Level::createMission's wanted ship (system race 0, a group,
+nextInt(100) < 30, 7 or 8 extra ships) flagged [0x3e] and confirmed by
+Player::isAlwaysEnemy; the KIPlayer and Player constructors clear both. Values
+equal the Mac ones.
 """
 import copy
 
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .station_exterior import declaration_bytes
 
 
@@ -100,6 +110,14 @@ def extract_ordinary_music(mach, fast_forward, audio=None):
     is supplied by a source check, also verify the selected event metadata.
     Native binding validation always checks that metadata after FEV parsing.
     """
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        try:
+            if 'radar_music_publication_gate' not in fast_forward['radar']['provenance'] or not _selected_events(audio):
+                return {}
+        except (KeyError, IndexError, TypeError):
+            return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if proof else {}
     if getattr(mach, 'architecture', None) != 'x86_64':
         return {}
     try:
@@ -107,19 +125,8 @@ def extract_ordinary_music(mach, fast_forward, audio=None):
         origin = radar['offset']
         if type(origin) is not int or radar['bytes'] != 22:
             return {}
-        if audio is not None:
-            if not isinstance(audio, dict):
-                return {}
-            events = audio['events']
-            if len(events) != 2293:
-                return {}
-            for event_id in selected_event_ids():
-                event = events[event_id]
-                if (event['id'] != event_id or event['categories'] != ['music'] or
-                        event['properties']['fade_out_ms'] != VALUES['stop_fade_ms'] or
-                        event['properties']['max_playbacks'] != 1 or
-                        event['sound']['flags'] != 0 or event['simple_flags'] != 1):
-                    return {}
+        if not _selected_events(audio):
+            return {}
         proof = recognize(mach, origin, [LEGACY, APPSTORE], reader=declaration_bytes)
         if not proof:
             return {}
@@ -128,3 +135,54 @@ def extract_ordinary_music(mach, fast_forward, audio=None):
         return result
     except (KeyError, IndexError, TypeError, ValueError, OverflowError):
         return {}
+
+
+def _selected_events(audio):
+    """FEV metadata of the selected loops; None defers the check to native validation."""
+    if audio is None:
+        return True
+    if not isinstance(audio, dict):
+        return False
+    events = audio['events']
+    if len(events) != 2293:
+        return False
+    for event_id in selected_event_ids():
+        event = events[event_id]
+        if (event['id'] != event_id or event['categories'] != ['music'] or
+                event['properties']['fade_out_ms'] != VALUES['stop_fade_ms'] or
+                event['properties']['max_playbacks'] != 1 or
+                event['sound']['flags'] != 0 or event['simple_flags'] != 1):
+            return False
+    return True
+
+
+ANDROID_VALUES = copy.deepcopy(VALUES)
+ANDROID = {# Radar::draw's selector after the publication gate, and the faction table it indexes.
+           'battle_selector': ('_ZN5Radar4drawEP6PlayerP3Hudi', 10096, 222, 'sha256:69d3a353d463600ddbbe06f92476f121e20af10a4f30468a783d1d39b4ea1d57'),
+           'battle_ladder': ('_ZN5Radar4drawEP6PlayerP3Hudi', 10350, 146, 'sha256:b6812ed735abdf4e4cf2e71c3b060346bc097e27fc5756cbe5e163ef1f057766'),
+           'large_battle': ('_ZN5Radar4drawEP6PlayerP3Hudi', 10666, 18, '209901294ff00001009114bf8e2196211de7'),
+           'medium_battle': ('_ZN5Radar4drawEP6PlayerP3Hudi', 11038, 8, '002100918d2168e6'),
+           'peace_selector': ('_ZN5Radar4drawEP6PlayerP3Hudi', 11046, 340, 'sha256:40c103987b26ef58773d204f3179b57852ea41d44ec9b85c42da1c2dd3e71909'),
+           'faction_table': ('_ZN5Radar4drawEP6PlayerP3Hudi', 11372, 16, '860000008b0000008a00000089000000', 'literal', 0),
+           'faction_getter': ('_ZN11SolarSystem7getRaceEv', 0, 4, 'c0697047'),
+           'selected_retained': ('_ZN6Status12inAlienOrbitEv', 0, 10, '816fd0f8980122f1afbb'),
+           'station_source': ('_ZN7Station18isAttackedByAliensEv', 0, 28, 'sha256:7c23c22f26ebfbc16edf16e2f0f94ec4c44038e907ed64cd53629b29906e6b6e'),
+           'system_special': ('_ZN6Status17inSupernovaSystemEv', 0, 52, 'sha256:e529b26520fb6ad848f24d64f5693a5997a96b80dea1c1a2aca62ab5337f416b'),
+           'station_special': ('_ZN6Status18inDeepScienceOrbitEv', 0, 58, 'sha256:d1ab92c1e3d5ba67959044079c3c75fb5ea5b8ff16e4bf87db4e456c4228352d'),
+           'location_equal': ('_ZN7Station6equalsEPS_', 0, 18, '0246002021b1896892688a4208bf01207047'),
+           'station_getter': ('_ZN7Station8getIndexEv', 0, 4, '80687047'),
+           'cursor_getter': ('_ZN6Status25getCurrentCampaignMissionEv', 0, 6, 'd0f8e8017047'),
+           # Marker clears (KIPlayer, Player), Level::createMission's marked wanted ship, Radar::draw's use.
+           'actor_marker_clear': ('_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', 180, 40, 'sha256:109bfb035ee3e8572cd5f3b32dcdee931b388fd20479487aff20479f71e7e3ac'),
+           'marked_faction_origin': ('_ZN5Level13createMissionEv', 1442, 72, 'sha256:ac8b045ba8466db6b5666ad8f0c7c46132f2d212645f4df505274bc7495ceab8'),
+           'marked_faction_load': ('_ZN5Level13createMissionEv', 1870, 4, 'ddf87cb0'),
+           'marked_roll_gate': ('_ZN5Level13createMissionEv', 5868, 54, 'sha256:aa1c79a3e5fce60f732545761d8c0150e3230af33409e74f840a74bf7faf3db5'),
+           'marked_size_roll': ('_ZN5Level13createMissionEv', 5998, 58, 'sha256:3bdad922296c55bbdb10d2a03930aed784fb0bc349df14d3ed6dd27111e3bdce'),
+           'marked_group_size': ('_ZN5Level13createMissionEv', 6118, 18, '1b980724002818bf08241a98002808bf0446'),
+           'marked_actor_branch': ('_ZN5Level13createMissionEv', 7352, 30, 'sha256:4862f84b0b34eb6b62973e556dd874d6b97594147c04e78d7bac4f0cfa885b0a'),
+           'marked_wanted_ship': ('_ZN5Level13createMissionEv', 6450, 50, 'sha256:445b118818708115399b404ec76e2c72cef1e1ceaf16b115aa19187fb086e735'),
+           'marked_actor_flag': ('_ZN5Level13createMissionEv', 6840, 12, 'dbf8f8004068006880f83e90'),
+           'marked_radar_use': ('_ZN5Radar4drawEP6PlayerP3Hudi', 3628, 30, 'sha256:bc2e7b4897f160549e0761d3dff12e65c50d7449f231d1f8a195084bc88a8600'),
+           'stats_marker_zero': ('_ZN6PlayerC2Eiiiii', 396, 70, 'sha256:95eec9e9a7625640f6fba39f6d5ce3778d183712d463a9becfe02ee763891dfe'),
+           'stats_marker_setter': ('_ZN6Player14setAlwaysEnemyEb', 0, 16, '80f8ec100121a0f85c1080f8e0107047'),
+           'stats_marker_getter': ('_ZN6Player13isAlwaysEnemyEv', 0, 6, '90f8ec007047')}
