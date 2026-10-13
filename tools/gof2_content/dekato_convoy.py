@@ -2,8 +2,20 @@
 
 Population construction, freighter behaviour, live damage, result ordering and
 career acknowledgement remain separate owners. No executable bytes are emitted.
+
+Android: Status::nextCampaignMission cases 37 and 38 create Mission(4, 0, 22)
+and Mission(11, 0, 30); Level::createCampaignMission case 38 builds the
+one-point route (.rodata), two still friendly hull-15 freighters at
+-10000 + random 20000 around it and five hostile escorts
+(Globals::getRandomEnemyFighter(3)), with Objective(18, 2, 7) and
+Objective(7, 2) scored by Objective::achieved; Level::createRadioMessages
+case 38 creates the radio line (Android text 2029, speaker 21, after
+15000 ms); DialogueWindow and Globals::getDialogueSoundId hold the briefing
+and result lines. Values are the Mac 1.0.7 ones (VALUES); the reader
+requires the Mac 1.0.7 B'akka return.
 """
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 from .bakka_return import VALUES as RETURN, MAC_VALUES as MAC_RETURN
 
@@ -40,6 +52,9 @@ for _event in (MAC_VALUES['mission']['briefing_events'] +
 
 
 def extract_dekato_convoy(mach, arrival, preceding):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival and preceding == RETURN else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     if not proof or preceding != (RETURN, MAC_RETURN)[variant]:
         return {}, {}
@@ -248,3 +263,32 @@ MAC_ALTERNATE = {'dekato_factory38_entry': [871554,
                      '__const',
                      '7f1eebd79194352abe512272931dcc1f63a546dec488bbe153396da16efd2ad8']}
 # END VERIFIED SOURCE SPANS
+
+ANDROID = {# Status::nextCampaignMission cases 37 and 38.
+           'dekato_factory_entries': ('_ZN6Status19nextCampaignMissionEb', 142, 4, '690edf00'),
+           'dekato_factory38': ('_ZN6Status19nextCampaignMissionEb', 7446, 30, 'sha256:faf25ad9909b504b2da2575c95fe7924dc313e239e74e8bcd0f6fb339afceeb8'),
+           'dekato_factory39': ('_ZN6Status19nextCampaignMissionEb', 514, 28, 'sha256:40efe5d7ecccc8caa0d5150f764a9111121d9675a6b1e41405feb1a5f90ae573'),
+           'dekato_mission_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           # Level::createCampaignMission case 38: route, two freighters, five escorts and the objectives.
+           'dekato_cast_dispatch': ('_ZN5Level21createCampaignMissionEv', 50, 108, 'sha256:12f545c9f45b98e1555ed2abcfb8fa33287cdd7d63c914d9c34e0aa888891c2a'),
+           'dekato_cast38_entry': ('_ZN5Level21createCampaignMissionEv', 162, 2, 'cb13'),
+           'dekato_cast38': ('_ZN5Level21createCampaignMissionEv', 10292, 482, 'sha256:feac770f76ee1b05b56964ca792403b6128c23f66022a1abc321049b76715982'),
+           'dekato_cast38_conditions': ('_ZN5Level21createCampaignMissionEv', 23304, 6, 'ec6200f0bdbe'),
+           'dekato_cast38_exit': ('_ZN5Level21createCampaignMissionEv', 26760, 6, 'aa4600f0bdbd'),
+           'dekato_path': ('_ZN5Level21createCampaignMissionEv', 10292, 12, '905f01001027000080380100', 'literal', 0),
+           'dekato_conditions': ('_ZN9Objective8achievedEi', 0, 978, 'sha256:da3086f410423068084e2547c16738945cb696b15a3685f82075a90dd6538eab'),
+           'dekato_retired_mode': ('_ZN8KIPlayer6isDeadEv', 0, 14, 'd0f884100020042908bf01207047'),
+           'dekato_range_constructor': ('_ZN9ObjectiveC2EiiiP5Level', 0, 26, 'sha256:30dd11b72e7d11ccea2af7a074ffa56174271f930893296da195a02e4f32586d'),
+           'dekato_prefix_constructor': ('_ZN9ObjectiveC2EiiP5Level', 0, 18, '4ff0000c80e80610c0e9033cc0e905cc7047'),
+           # Level::createRadioMessages case 38: one line after 15000 ms.
+           'dekato_radio38_dispatch': ('_ZN5Level19createRadioMessagesEi', 0, 26, 'sha256:2fb27116c5cd427d3d8d01c2af84739cd96a13de8ea5fc929fb78c2963332596'),
+           'dekato_radio38_entry': ('_ZN5Level19createRadioMessagesEi', 102, 2, '1f04'),
+           'dekato_radio38': ('_ZN5Level19createRadioMessagesEi', 2136, 70, 'sha256:5d3c83a807d3b1e3ccbf7e59cf31f66f88ff77c4a0ec95a0777bd6b8539e437d'),
+           'dekato_radio38_tail': ('_ZN5Level19createRadioMessagesEi', 12948, 16, 'd4f8140140680560d4f8140102b0bde8'),
+           'dekato_radio_message': ('_ZN12RadioMessageC2Eiiii', 0, 52, 'sha256:3846fd4e1bb2e22b2ac9c0a510aa87489cf6562344739be3881098d133598fac'),
+           # Cursor 38: briefing and result lines and all voices.
+           'dekato_brief_count': ('_ZN14DialogueWindow19hasBriefingDialogueEi', 10, 4, '02000000', 'literal', 152),
+           'dekato_brief_pairs': ('_ZN14DialogueWindow11loadContentEv', 128, 8, '00000000ec070000', 'literal', 240),
+           'dekato_result_count': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 4, '04000000', 'literal', 152),
+           'dekato_result_pairs': ('_ZN14DialogueWindow11loadContentEv', 208, 16, '00000000ee07000001000000ef070000', 'literal', 2024),
+           'dekato_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0)}
