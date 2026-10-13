@@ -117,9 +117,10 @@ func verify(args: PackedStringArray) -> void:
 	check(not Factory.new().configure_free_factory(bindings,cat,-1,[],CONTEXT,0),"Unknown player hull was accepted")
 	check(not Factory.new().configure_free_factory(bindings,cat,0,[-1],CONTEXT,0),"Unknown installed equipment was accepted")
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	for key in Definitions.SPANS:
+	var android: bool=str(header.get("architecture",""))=="android-armv7"
+	for key in (Definitions.ANDROID_SPANS if android else Definitions.SPANS):
 		var broken: Dictionary=bindings.mido_travel.duplicate(true);broken.provenance.erase(key)
-		check(not Travel.validate(broken,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing population source proof was accepted")
+		check(not Travel.validate(broken,int(header.source_executable_bytes),str(header.architecture),bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing population source proof was accepted")
 	verify_response_radio(lib,bindings,args[2])
 
 func verify_response_radio(library: RefCounted,bindings: RefCounted,visual_path: String) -> void:

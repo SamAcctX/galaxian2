@@ -72,11 +72,13 @@ func verify_prices(args: PackedStringArray) -> void:
 	var copied:=owner.snapshot();copied.lists.stock.clear()
 	check(owner.snapshot()==accepted,"A caller changed the accepted quotes")
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	for key in Shopping.SPANS:
+	var android: bool=str(header.get("architecture",""))=="android-armv7"
+	for key in (Shopping.ANDROID_SPANS if android else Shopping.SPANS):
 		var bad:=bindings.mido_travel.duplicate(true);bad.provenance.erase(key)
-		check(not Travel.validate(bad,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing shopping proof was accepted: "+key)
-	var mixed:=bindings.mido_travel.duplicate(true)
-	var alternate: bool=Travel._alternate(mixed)
-	var other: Dictionary=Shopping.SPANS if alternate else Shopping.MAC_SPANS
-	mixed.provenance.shopping_overfilled_departure.offset=int(bindings.arrival_staging.provenance.actor.offset)+int(other.shopping_overfilled_departure[0])
-	check(not Travel.validate(mixed,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Another source supplied the paid departure proof")
+		check(not Travel.validate(bad,int(header.source_executable_bytes),str(header.architecture),bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing shopping proof was accepted: "+key)
+	if not android:
+		var mixed:=bindings.mido_travel.duplicate(true)
+		var alternate: bool=Travel._alternate(mixed)
+		var other: Dictionary=Shopping.SPANS if alternate else Shopping.MAC_SPANS
+		mixed.provenance.shopping_overfilled_departure.offset=int(bindings.arrival_staging.provenance.actor.offset)+int(other.shopping_overfilled_departure[0])
+		check(not Travel.validate(mixed,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Another source supplied the paid departure proof")

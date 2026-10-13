@@ -58,11 +58,13 @@ func verify_arrival(args: PackedStringArray) -> void:
 		check(not Arrival.valid_statistics(value),"Malformed retained travel statistics were accepted")
 	for count in [0,1,2147483647]:check(Arrival.valid_statistics({"jumpgates_used":count}),"Valid earned gate count was rejected")
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	for key in Arrival.SPANS:
+	var android: bool=str(header.get("architecture",""))=="android-armv7"
+	for key in (Arrival.ANDROID_SPANS if android else Arrival.SPANS):
 		var bad:=bindings.mido_travel.duplicate(true);bad.provenance.erase(key)
-		check(not Travel.validate(bad,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing arrival proof was accepted: "+key)
-	var bad:=bindings.mido_travel.duplicate(true)
-	var alternate_source: bool=int(bad.conversations[0].events[0].text_id)==int(Travel.MAC_VALUES.conversations[0].events[0].text_id)
-	var other: Dictionary=Arrival.SPANS if alternate_source else Arrival.MAC_SPANS
-	bad.provenance.gate_arrival_commit.offset=int(bindings.arrival_staging.provenance.actor.offset)+int(other.gate_arrival_commit[0])
-	check(not Travel.validate(bad,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Mixed-source gate arrival proof was accepted")
+		check(not Travel.validate(bad,int(header.source_executable_bytes),str(header.architecture),bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing arrival proof was accepted: "+key)
+	if not android:
+		var bad:=bindings.mido_travel.duplicate(true)
+		var alternate_source: bool=int(bad.conversations[0].events[0].text_id)==int(Travel.MAC_VALUES.conversations[0].events[0].text_id)
+		var other: Dictionary=Arrival.SPANS if alternate_source else Arrival.MAC_SPANS
+		bad.provenance.gate_arrival_commit.offset=int(bindings.arrival_staging.provenance.actor.offset)+int(other.gate_arrival_commit[0])
+		check(not Travel.validate(bad,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Mixed-source gate arrival proof was accepted")

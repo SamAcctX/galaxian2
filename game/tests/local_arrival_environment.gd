@@ -56,9 +56,10 @@ func verify(args: PackedStringArray):
 	check(environment.player_pose(Basis(Vector3.ZERO,Vector3.ZERO,Vector3.ZERO))==null and environment.snapshot()==before,"Invalid initial heading changed prepared arrival")
 	if load("res://src/content/post_sahi_definitions.gd").available(bindings):verify_sahi_history(bindings,cat,lib)
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	for key in ArrivalRules.SPANS:
+	var android: bool=str(header.get("architecture",""))=="android-armv7"
+	for key in (ArrivalRules.ANDROID_SPANS if android else ArrivalRules.SPANS):
 		var invalid: Dictionary=bindings.mido_travel.duplicate(true);invalid.provenance.erase(key)
-		check(not Travel.validate(invalid,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing arrival proof was accepted: "+key)
+		check(not Travel.validate(invalid,int(header.source_executable_bytes),str(header.architecture),bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing arrival proof was accepted: "+key)
 
 func verify_sahi_history(bindings: RefCounted,cat: RefCounted,lib: RefCounted) -> void:
 	var fixture:=SahiHistory.new();var history: RefCounted=fixture.create(bindings,cat,lib)

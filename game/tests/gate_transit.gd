@@ -107,14 +107,16 @@ func verify_transit(args: PackedStringArray) -> void:
 	if bindings.mido_travel.has("gate_arrival"):check(not unselected.snapshot().reset_primary_fire_intervals and unselected.snapshot().speed==2.0,"Accepted map used confirmation-only weapon reset or retained approach speed")
 	verify_original_clocks(bindings,cat,library)
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	for key in TransitDefinitions.SPANS:
+	var android: bool=str(header.get("architecture",""))=="android-armv7"
+	for key in (TransitDefinitions.ANDROID_SPANS if android else TransitDefinitions.SPANS):
 		var changed: Dictionary=bindings.mido_travel.duplicate(true);changed.provenance.erase(key)
-		check(not Travel.validate(changed,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing transit proof was accepted: "+key)
-	var changed: Dictionary=bindings.mido_travel.duplicate(true)
-	var alternate_source: bool=int(changed.conversations[0].events[0].text_id)==int(Travel.MAC_VALUES.conversations[0].events[0].text_id)
-	var other: Dictionary=TransitDefinitions.SPANS if alternate_source else TransitDefinitions.MAC_SPANS
-	changed.provenance.gate_transit_contact.offset=int(bindings.arrival_staging.provenance.actor.offset)+int(other.gate_transit_contact[0])
-	check(not Travel.validate(changed,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Mixed-source gate contact proof was accepted")
+		check(not Travel.validate(changed,int(header.source_executable_bytes),str(header.architecture),bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing transit proof was accepted: "+key)
+	if not android:
+		var changed: Dictionary=bindings.mido_travel.duplicate(true)
+		var alternate_source: bool=int(changed.conversations[0].events[0].text_id)==int(Travel.MAC_VALUES.conversations[0].events[0].text_id)
+		var other: Dictionary=TransitDefinitions.SPANS if alternate_source else TransitDefinitions.MAC_SPANS
+		changed.provenance.gate_transit_contact.offset=int(bindings.arrival_staging.provenance.actor.offset)+int(other.gate_transit_contact[0])
+		check(not Travel.validate(changed,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Mixed-source gate contact proof was accepted")
 
 func advance_time(transit: RefCounted,milliseconds: int) -> void:
 	while milliseconds>0:
