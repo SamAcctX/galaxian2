@@ -618,6 +618,17 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 		if supplied==null:return _shopping_reject(project.error)
 		_blueprints=project;_state.credits-=shipping
 		return supplied
+	if action=="autocomplete_blueprint":
+		# Android HangarWindow::OnTouchEnd: Yes pays the quoted price or is refused.
+		if _blueprints==null or not Shopping.available(bindings):return _shopping_reject("No blueprint is available")
+		var price: int=Blueprints.autocomplete_price(bindings.mido_travel.ordinary_shopping,cat.tables.items,_blueprints.entry(item_id))
+		if price<0:return _shopping_reject("This blueprint cannot be autocompleted")
+		if price>_state.credits:return _shopping_reject("Insufficient credits to autocomplete this blueprint")
+		var project: RefCounted=_blueprints.fork_for_transaction()
+		var completed: RefCounted=project.autocomplete(item_id,equipment)
+		if completed==null:return _shopping_reject(project.error)
+		_blueprints=project;_state.credits-=price
+		return completed
 	var inventory: RefCounted=equipment.fork()
 	var Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
 	if action in ["buy_ship","keep_ship"]:

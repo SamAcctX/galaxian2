@@ -71,6 +71,7 @@ var _blueprint_rows:={}
 var _blueprint_materials:={}
 var _selected_blueprint:=-1
 var _blueprint_render_state:={}
+var _shopping:={}
 var _shipping_unit:=Progress.SHIPPING_UNIT_COST
 var _help_space: Control
 
@@ -222,7 +223,12 @@ func _request_ship(index: int) -> void:
 func _confirm_replacement() -> void:
 	var pending:=_pending_replace;_pending_replace={}
 	if not _active or not visible or pending.is_empty() or _state.get("loadout")!=pending.loadout:return
-	if pending.has("blueprint"):
+	if pending.has("autocomplete"):
+		var entries: Array=_blueprints.get("entries",[]).filter(func(row):return row.item_id==pending.autocomplete)
+		if entries.is_empty() or entries[0]!=pending.entry:return
+		if pending.price>_credits:_message.text=_labels.autocomplete_shortfall.replace("#C","%d$"%(pending.price-_credits))
+		else:blueprint_action_requested.emit("autocomplete_blueprint",pending.autocomplete,-1,1)
+	elif pending.has("blueprint"):
 		var entries: Array=_blueprints.get("entries",[]).filter(func(row):return row.item_id==pending.blueprint)
 		if entries.is_empty() or entries[0]!=pending.entry:return
 		blueprint_action_requested.emit("supply_blueprint",pending.blueprint,pending.material_id,pending.quantity)
@@ -297,6 +303,8 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted=nu
 	label_ids.merge({"buy_ship":293,"same_ship":318,"ship_passengers":325,"insufficient":192})
 	label_ids.merge({"keep_question":316,"keep_exists":317,"keep_sell":319,"keep_keep":320,"use":321,"switch":322,"sell_question":323})
 	label_ids.merge({"blueprints":261,"available_blueprints":262,"finished":263,"at":264,"missing":265,"owned":273,"store":185,"start_production":201,"shipping":277,"constructed_here":200,"constructed_there":199})
+	var autocomplete: Dictionary=Shopping.blueprints(bindings).get("autocomplete",{})
+	if not autocomplete.is_empty():label_ids.merge({"autocomplete":int(autocomplete.text_id),"autocomplete_shortfall":int(autocomplete.shortfall_text_id)})
 	for key in label_ids:
 		var text_id: int=label_ids[key]
 		if text_id>=library.strings.size() or library.strings[text_id].is_empty():return reject("Equipment action text is unavailable")
@@ -334,7 +342,7 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted=nu
 				var mirrored: Image=row_art[id].get_image();mirrored.flip_x();row_art[-id]=ImageTexture.create_from_image(mirrored)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language}
 	_names=names;_labels=labels;_item_categories=categories;_ship_names=ship_names;_catalogues=cat
-	_shipping_unit=Progress.shipping_unit(bindings)
+	_shopping=bindings.mido_travel.get("ordinary_shopping",{}) if Shopping.available(bindings) else {};_shipping_unit=Progress.shipping_unit(bindings)
 	_art=art;_item_pixels=pixels;_item_metadata=metadata;_icon_cache={};_row_art=row_art
 	_background_art=null if art==null else art.sprites[int(bindings.mido_travel.map.ui.panel_background_image_id)]
 	_tab="shop";_state={};_blueprints={};_blueprint_render_state={};_message.text="";_selected_id=-1;_selected_slot=-1;_selected_blueprint=-1
@@ -544,6 +552,10 @@ func _refresh_blueprints(controls: bool) -> void:
 			var send:=Button.new();send.text=_labels.store;send.disabled=not controls or limit==0;line.add_child(send);_style_button(send)
 			send.pressed.connect(func():_supply_blueprint(id,material,int(amount.value)))
 			_blueprint_materials[material]={"button":send,"quantity":amount,"node":panel}
+		# Android: every unlocked blueprint ends with Autocomplete (HangarList::fillIngredientsList, button 23).
+		if Progress.autocomplete_price(_shopping,_catalogues.tables.items,entry)>=0:
+			var complete:=Button.new();complete.text=String(_shopping.blueprints.autocomplete.label);complete.disabled=not controls
+			_blueprint_list.add_child(complete);_style_button(complete);complete.pressed.connect(func():_autocomplete_blueprint(id))
 	for child in _blueprint_list.find_children("*","Label",true,false):child.add_theme_font_size_override("font_size",20 if _mobile else 15)
 
 func _supply_blueprint(id: int,material: int,quantity: int) -> void:
@@ -559,6 +571,18 @@ func _supply_blueprint(id: int,material: int,quantity: int) -> void:
 		_replacement.dialog_text=_labels.start_production if site<0 else _labels.shipping.replace("#S",_catalogues.tables.stations[site].name).replace("#C","%d$"%shipping)
 		_replacement.popup_centered(Vector2i(600 if _mobile else 460,170));_refresh()
 	else:blueprint_action_requested.emit("supply_blueprint",id,material,quantity)
+
+## Android HangarWindow::OnTouchEnd: text 3392 quotes the price; Yes with too
+## few credits shows text 192 with the shortfall instead.
+func _autocomplete_blueprint(id: int) -> void:
+	if not _active or not visible or not _pending_replace.is_empty():return
+	var entries: Array=_blueprints.get("entries",[]).filter(func(row):return row.item_id==id)
+	var price:=-1 if entries.is_empty() else Progress.autocomplete_price(_shopping,_catalogues.tables.items,entries[0])
+	if price<0:return
+	_pending_replace={"autocomplete":id,"price":price,"entry":entries[0].duplicate(true),"loadout":_state.loadout.duplicate(true)}
+	_replacement.title=_labels.blueprints
+	_replacement.dialog_text=_labels.autocomplete.replace("#C","%d$"%price)
+	_replacement.popup_centered(Vector2i(600 if _mobile else 460,170));_refresh()
 
 func _mount_has_position(item_id: int) -> bool:
 	if _state.get("fitting_conflicts",{}).has(item_id):return true
