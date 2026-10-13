@@ -101,11 +101,22 @@ func stream(index: int, looping := false) -> AudioStream:
 		return result
 	var pcm:=decode_ima(bytes,row.samples,row.channels) if codec==7 else pcm16(bytes,row.samples,row.channels)
 	if pcm.is_empty():return null
+	return pcm_stream(pcm,row.channels,row.rate,looping,row.loop_start,row.loop_end)
+
+## Godot 4.7 mixes a forward loop through the frame AT loop_end before it wraps
+## to loop_begin + 1 (AudioStreamPlaybackWAV::_mix_internal). Our loop_end is
+## exclusive, so a loop ending on the last frame read one frame past the PCM:
+## silent garbage on desktop allocators, SIGSEGV in the Android audio thread
+## (scudo puts a guard page after large buffers). That frame is appended as a
+## copy of the loop start, which keeps the loop sample-exact.
+static func pcm_stream(pcm: PackedByteArray,channels: int,rate: int,looping: bool,loop_start: int,loop_end: int) -> AudioStreamWAV:
+	var frame:=channels*2
+	if looping and loop_end*frame>=pcm.size():pcm=pcm+pcm.slice(loop_start*frame,(loop_start+1)*frame)
 	var result:=AudioStreamWAV.new()
 	result.format=AudioStreamWAV.FORMAT_16_BITS
-	result.stereo=row.channels==2;result.mix_rate=row.rate;result.data=pcm
+	result.stereo=channels==2;result.mix_rate=rate;result.data=pcm
 	result.loop_mode=AudioStreamWAV.LOOP_FORWARD if looping else AudioStreamWAV.LOOP_DISABLED
-	result.loop_begin=row.loop_start;result.loop_end=row.loop_end
+	result.loop_begin=loop_start;result.loop_end=loop_end
 	return result
 
 func pcm16(data: PackedByteArray, count: int, channels: int) -> PackedByteArray:
