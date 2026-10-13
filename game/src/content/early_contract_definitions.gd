@@ -45,7 +45,7 @@ static func parameters(data: Variant) -> bool:
 	if data.has("world_initialization") and (not data.has("junk_lifecycle") or not World.parameters(data.world_initialization)):return false
 	if data.has("station_lounges") and (not data.has("world_initialization") or not data.has("generation") or not Lounges.parameters(data.station_lounges)):return false
 	if data.has("station_generation") and (not data.has("station_lounges") or not Stock.parameters(data.station_generation)):return false
-	if data.has("base_station_stock") and (not data.has("station_generation") or not Equal.equal_value(data.base_station_stock,BaseStock.MAC_VALUES if alternate else BaseStock.VALUES)):return false
+	if data.has("base_station_stock") and (not data.has("station_generation") or not (Equal.equal_value(data.base_station_stock,BaseStock.MAC_VALUES if alternate else BaseStock.VALUES) or alternate and Equal.equal_value(data.base_station_stock,BaseStock.ANDROID_VALUES))):return false
 	if data.has("base_navigation") and (not data.has("base_station_stock") or not Navigation.parameters(data.base_navigation)):return false
 	if data.has("lounge_presentation") and (not data.has("station_lounges") or not LoungePresentation.parameters(data.lounge_presentation)):return false
 	if data.has("ordinary_generation") and (not data.has("base_navigation") or not Ordinary.parameters(data.ordinary_generation)):return false
@@ -84,6 +84,7 @@ static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dicti
 		if data.has("encounter_construction") and not Travel.navigation_available(travel,13):return "Contract construction lacks ordinary navigation"
 		# The library's own stock progress (Stock.ANDROID_VALUES).
 		if data.has("station_generation") and not Equal.equal_value(data.station_generation,Stock.ANDROID_VALUES):return "Unsupported early contract terms"
+		if data.has("base_station_stock") and not Equal.equal_value(data.base_station_stock,BaseStock.ANDROID_VALUES):return "Unsupported early contract terms"
 		if data.has("base_navigation") and not travel.has("alioth_arrival"):return "Base contracts lack their supported Alioth arrival"
 		if data.has("ordinary_generation") and not travel.has("free_flight"):return "Ordinary contacts lack their supported free-flight context"
 		var android_spans: Dictionary=ANDROID_SPANS.duplicate(true)
@@ -99,8 +100,10 @@ static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dicti
 		if data.has("world_initialization"):android_spans.merge(World.ANDROID_SPANS)
 		if data.has("station_lounges"):android_spans.merge(Lounges.ANDROID_SPANS)
 		if data.has("station_generation"):android_spans.merge(Stock.ANDROID_SPANS)
+		if data.has("base_station_stock"):android_spans.merge(BaseStock.ANDROID_SPANS)
 		return "" if Layouts.anchored(data.provenance,source_bytes,android_spans) else "Invalid early contract provenance"
 	if data.has("station_generation") and not Equal.equal_value(data.station_generation,Stock.VALUES):return "Unsupported early contract terms"
+	if data.has("base_station_stock") and Equal.equal_value(data.base_station_stock,BaseStock.ANDROID_VALUES):return "Unsupported early contract terms"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Early contract terms lack their source anchor"
 	var alternate: bool=data.briefing_text_base==MAC_VALUES.briefing_text_base

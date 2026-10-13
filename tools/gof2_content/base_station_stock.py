@@ -1,8 +1,22 @@
-"""Verified ordinary base-game inventory declarations; no executable payloads."""
+"""Verified ordinary base-game inventory declarations; no executable payloads.
+
+Android: Generator::getShipBuyList builds the base ship stock (counts,
+fixed first ships, foreign hulls through Globals::getRandomEnemyFighter,
+faction, Supernova and system extras; Ship::makeShip, clone, setRace and
+adjustPrice with the three 64-ship affiliation tables), gated by
+Status::dlc1Won and inSupernovaSystem; Item::makeItem() copies stock items.
+Values are the Mac 1.0.7 ones except the temporary item:
+Generator::getItemBuyList holds no cursor-17-24 roll for item 68 (the Mac
+does), so ANDROID_VALUES keeps temporary_item empty.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_base_station_stock(mach,arrival):
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(ANDROID_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -303,3 +317,22 @@ MAC_VALUES = {'scope': 'ordinary_base_station_stock',
            'faction_extras': [{'faction': 2, 'draw_bound': 8, 'ship_id': 61, 'faction_id': 1},
                               {'faction': 0, 'draw_bound': 7, 'ship_id': 62, 'faction_id': 3},
                               {'faction': 1, 'draw_bound': 5, 'ship_id': 63, 'faction_id': 1}]}}
+
+# Android spans inside named functions; the values are ANDROID_VALUES.
+ANDROID = {'base_stock_ship_factory': ('_ZN9Generator14getShipBuyListEP7Station', 0, 3212, 'sha256:56fbb274c6871cf68b74a337028dd7e2b1e1b473f02ad23a9ad31e66b4a9aba4'),
+           'base_stock_ship_selection': ('_ZN7Globals21getRandomEnemyFighterEi', 0, 180, 'sha256:1d49b61c9159e9f48d52329d75df5467b226c40b845983a4b5820b1955e88682'),
+           'base_stock_ship_make': ('_ZN4Ship8makeShipEi', 0, 18, 'd0b502af0c46c7f6eaed002c00db4461d0bd'),
+           'base_stock_ship_clone': ('_ZN4Ship5cloneEv', 0, 136, 'sha256:021703f0f9e1b9c2368f4fc1d6c7083fd5be4f7bf12daa095d2b717f6ad0f091'),
+           'base_stock_ship_price': ('_ZN4Ship11adjustPriceEv', 0, 196, 'sha256:fdfc80a3d9d7492cf033bbc7227b873b14a4041bae5f148cc9d967cf659dc0aa'),
+           'base_stock_faction_setter': ('_ZN4Ship7setRaceEi', 0, 4, '41667047'),
+           'base_stock_ship_affiliations': ('_ZN9Generator14getShipBuyListEP7Station', 1348, 256, 'sha256:7bc17c6f50817208f00ed87b4fdf7f6dfe6a8c5cca4841ae71032683d640c952', 'literal', 0),
+           'base_stock_selection_affiliations': ('_ZN7Globals21getRandomEnemyFighterEi', 100, 256, 'sha256:7bc17c6f50817208f00ed87b4fdf7f6dfe6a8c5cca4841ae71032683d640c952', 'literal', 0),
+           'base_stock_price_affiliations': ('_ZN4Ship11adjustPriceEv', 90, 256, 'sha256:7bc17c6f50817208f00ed87b4fdf7f6dfe6a8c5cca4841ae71032683d640c952', 'literal', 0),
+           'base_stock_late_story_predicate': ('_ZN6Status7dlc1WonEv', 0, 14, 'd0f8e81100205329c8bf01207047'),
+           'base_stock_special_system_gate': ('_ZN6Status17inSupernovaSystemEv', 0, 52, 'sha256:e529b26520fb6ad848f24d64f5693a5997a96b80dea1c1a2aca62ab5337f416b'),
+           'base_stock_default_item_clone': ('_ZN4Item8makeItemEv', 0, 18, 'd0b502af846977f716eb012184614163d0bd')}
+
+# Generator::getItemBuyList has no temporary item-68 roll (the Mac's
+# cursor 17-24, random(100) <= 39 block); every other value is MAC_VALUES.
+ANDROID_VALUES = copy.deepcopy(MAC_VALUES)
+ANDROID_VALUES['temporary_item'] = {}
