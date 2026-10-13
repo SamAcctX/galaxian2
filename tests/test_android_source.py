@@ -28,7 +28,8 @@ def zip_bytes(members, method=zipfile.ZIP_DEFLATED):
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w', method) as archive:
         for name, data in members.items():
-            archive.writestr(name, data)
+            # A fixed timestamp: the bytes must not depend on the clock (DOS time has 2-second steps).
+            archive.writestr(zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0)), data, compress_type=method)
     return buffer.getvalue()
 
 

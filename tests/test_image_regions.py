@@ -157,14 +157,17 @@ IPAD = 'ldr r0, =&_ZN7Globals4iPadE\nadd r0, pc\nldr r0, [r0]\nldrb r0, [r0]\n'
 
 
 def profile_images(guard=IPAD + 'cmp r0, #0\nbeq #phone', ipad_first=True, hd='cbz r4, #small'):
-    """BuildResourceList with an unguarded record (31), the iPad guard choosing id 30's
+    """BuildResourceList with an unguarded record (31), a font record, a record without
+    constant fields, the iPad guard choosing id 30's
     texture 601 over the phone's 600, an iPadHD flag kept in r4 across a call (cbz), an
     ordinary branch both ways take (33 and 36) and an unreachable record (35)."""
     from android_text_fixture import text_library
     from gof2_content.font_bindings import build_instructions
     first, second = (record(30, 601, 9), record(30, 600, 4)) if ipad_first else (record(30, 600, 4), record(30, 601, 9))
     # The branch target lies after the return (as compiled), so the linear decode reaches it.
-    body = '\n'.join(['push {r4, r5, r6, lr}', record(31, 601, 2), guard, first, 'join:',
+    # A font record (kind 1) and a record whose id is not constant are no image records.
+    loose = record(37, 607, 8).replace('movw r0, #0x25', 'ldrh r0, [r4]')
+    body = '\n'.join(['push {r4, r5, r6, lr}', record(31, 601, 2), record(40, 602, 0, kind=1), loose, guard, first, 'join:',
                       'ldr r0, =&_ZN7Globals6iPadHDE', 'add r0, pc', 'ldr r0, [r0]', 'ldrb r4, [r0]', record(32, 602, 1),
                       hd, record(34, 603, 3), 'small:', 'ldrh r1, [r5]', 'cmp r1, #0', 'beq #extra',
                       record(33, 604, 5), 'done:', 'movs r0, #0x10', 'call _Znwj', 'pop {r4, r5, r6, pc}',
@@ -186,12 +189,12 @@ class AndroidImageProfile(unittest.TestCase):
         # The iPad record of id 30, the unguarded and iPadHD ones, and both ways of the ordinary branch;
         # provenance is each record's allocation call.
         self.assertEqual(extract_image_regions(lib), [
-            {'id': 30, 'texture_id': 601, 'region': 9, 'source_offset': allocations[1], 'source_bytes': 4},
+            {'id': 30, 'texture_id': 601, 'region': 9, 'source_offset': allocations[3], 'source_bytes': 4},
             {'id': 31, 'texture_id': 601, 'region': 2, 'source_offset': allocations[0], 'source_bytes': 4},
-            {'id': 32, 'texture_id': 602, 'region': 1, 'source_offset': allocations[2], 'source_bytes': 4},
-            {'id': 33, 'texture_id': 604, 'region': 5, 'source_offset': allocations[4], 'source_bytes': 4},
-            {'id': 34, 'texture_id': 603, 'region': 3, 'source_offset': allocations[3], 'source_bytes': 4},
-            {'id': 36, 'texture_id': 606, 'region': 7, 'source_offset': allocations[7], 'source_bytes': 4}])
+            {'id': 32, 'texture_id': 602, 'region': 1, 'source_offset': allocations[4], 'source_bytes': 4},
+            {'id': 33, 'texture_id': 604, 'region': 5, 'source_offset': allocations[6], 'source_bytes': 4},
+            {'id': 34, 'texture_id': 603, 'region': 3, 'source_offset': allocations[5], 'source_bytes': 4},
+            {'id': 36, 'texture_id': 606, 'region': 7, 'source_offset': allocations[9], 'source_bytes': 4}])
         # Each flag's way follows the profile; bne and cbnz test the flag the other way round.
         with patch.dict(image_regions.PROFILE, {'_ZN7Globals4iPadE': False, '_ZN7Globals6iPadHDE': False}):
             self.assertEqual(self.rows(lib), [(30, 600, 4), (31, 601, 2), (32, 602, 1), (33, 604, 5), (36, 606, 7)])
