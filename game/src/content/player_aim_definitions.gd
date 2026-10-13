@@ -8,6 +8,10 @@ const SPANS := {"x86_64":{"initial_aim":[428166,22],"initial_timer":[428859,10],
 
 const MAC_ALTERNATE := {"initial_aim":[428702,22],"initial_timer":[429395,10],"initial_world_contact":[-168052,4],"body_vectors":[461265,96],"projected_mode":[461515,263],"smoothing":[462544,165],"retain_aim":[462801,19],"image_loads":[431485,57],"idle_alias":[-653193,64],"contact_alias":[-652873,64],"player_contact_enable":[-57001,13],"contact_setter":[-310345,14],"npc_contact":[-305056,24],"draw_gate":[481872,203],"draw_feedback":[482318,143],"player_before_world":[244051,40],"controller_later":[256122,5],"distance_constant":[1440919,4],"new_weight_constant":[1398539,4],"previous_weight_constant":[1398935,4]}
 
+# Android: the Mac values; spans inside named functions (Layouts.anchored).
+const ANDROID_VALUES := {"mode":"projected_forward","distance":22000.0,"new_weight":0.20000000298023224,"previous_weight":0.800000011920929,"initial_aim":[0,0,0],"initial_contact":false,"initial_contact_ms":0,"contact_limit_ms":201,"reticle_phase":4,"image_ids":[1216,1230],"texture_id":10062,"image_regions":[115,129],"motion_before_aim":true,"aim_before_camera":true,"draw_before_contact_expiry":true}
+const ANDROID_SPANS := {"initial_aim":[16,356],"image_loads":[1542,36],"aliases":[82894,282],"contact_setter":[0,6],"player_contact_enable":[1604,12],"npc_contact":[888,18],"initial_world_contact":[14,196],"player_before_world":[1872,34],"camera_after_aim":[9580,4],"controller_later":[10670,4],"body_vectors":[8078,100],"projected_mode":[8178,910],"draw":[0,676],"reticle_handoff":[4350,20]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary: return false
 	for key in VALUES:
@@ -27,7 +31,9 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, executable_bytes: int, architecture: String, staging: Dictionary) -> String:
 	if not data is Dictionary: return "Invalid player aim capability"
 	if data.is_empty(): return ""
-	if not parameters(data) or not SPANS.has(architecture): return "Unsupported player aim"
+	if not parameters(data) or not (SPANS.has(architecture) or architecture=="android-armv7"): return "Unsupported player aim"
+	if architecture=="android-armv7":
+		return "" if Layouts.anchored(data.provenance,executable_bytes,ANDROID_SPANS) else "Disconnected player aim declaration"
 	var initial: Variant=staging.get("provenance",{}).get("initial")
 	if not Fonts.extent(initial,"offset","bytes",[366 if architecture=="x86_64" else 320],executable_bytes): return "Player aim lacks its staging anchor"
 	if data.provenance.size()!=SPANS[architecture].size(): return "Invalid player aim provenance"

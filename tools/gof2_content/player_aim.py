@@ -1,11 +1,28 @@
-"""Recognize ordinary projected-forward aim declarations without executing code."""
+"""Recognize ordinary projected-forward aim declarations without executing code.
+
+Android: PlayerEgo::PlayerEgo starts both crosshairs at 0 and the contact timer
+at 0 and loads images 1216 and 1230 (BuildResourceList: texture 10062,
+regions 115 and 129); MGame::OnUpdate runs PlayerEgo::update (ship position and
+direction, then the screen point 22000 ahead, smoothed 0.2 new / 0.8 previous)
+before Level::update, the camera and LevelScript::process. A player gun
+(Gun::setPlayerGun) that hits sets the level's contact flag in
+Gun::calcCharacterCollision; PlayerEgo::draw shows the contact image while it
+is set and clears it after 201 ms, the idle image otherwise, once phase 4 has
+ended computer control.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 VALUES = {'mode': 'projected_forward', 'distance': 22000.0, 'new_weight': 0.20000000298023224, 'previous_weight': 0.800000011920929, 'initial_aim': [0, 0, 0], 'initial_contact': False, 'initial_contact_ms': 0, 'contact_limit_ms': 201, 'reticle_phase': 4, 'image_ids': [1216, 1230], 'texture_id': 10062, 'image_regions': [115, 129], 'motion_before_aim': True, 'aim_before_camera': True, 'draw_before_contact_expiry': True}
 
 def extract_player_aim(mach, staging, projection):
     arch=mach.architecture
+    if arch=='android-armv7':
+        try:
+            if not staging['player_flight'] or not staging['player_motion'] or not staging['projectile_impacts'] or not projection:return {}
+        except (KeyError,TypeError):return {}
+        proof=recognize_symbols(mach,ANDROID)
+        return dict(copy.deepcopy(ANDROID_VALUES),provenance=proof) if proof else {}
     if arch not in LAYOUTS:return {}
     try:
         if not staging['player_flight'] or not staging['player_motion'] or not staging['projectile_impacts'] or not projection:return {}
@@ -130,3 +147,22 @@ MAC_ALTERNATE = {'initial_aim': [428702, 22, '48c783d80000000000000048c783d00000
  'distance_constant': [1440919, 4, '00e0ab46'],
  'new_weight_constant': [1398539, 4, 'cdcc4c3e'],
  'previous_weight_constant': [1398935, 4, 'cdcc4c3f']}
+
+# The values equal the Mac's. Android also aims a second (shoot) crosshair the
+# same way and draws a plasma reticle (images 8029/8030) with the plasma
+# equipment (sort 35) in range; the declaration has no keys for them.
+ANDROID_VALUES = copy.deepcopy(VALUES)
+ANDROID = {'initial_aim': ('_ZN9PlayerEgoC2EP6Player', 16, 356, 'sha256:f4e516f8078a1be700d0137acedeff0d0580963671c4f2f40918eb9d1ef976ec'),
+           'image_loads': ('_ZN9PlayerEgoC2EP6Player', 1542, 36, 'sha256:165468900bd70bac17321c0690a65dcab9e189873aa91aed04d211b3b7395043'),
+           'aliases': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 82894, 282, 'sha256:da6b2e51465d28be8bd0c8a9ebefa4633e044a687b4a1695c813f4f6874c9aac'),
+           'contact_setter': ('_ZN3Gun12setPlayerGunEb', 0, 6, '80f8f0107047'),
+           'player_contact_enable': ('_ZN5Level9createGunEiiiiiiii', 1604, 12, '58460121cbf85c609ff7a8e9'),
+           'npc_contact': ('_ZN3Gun22calcCharacterCollisionEv', 888, 18, '89f854409bf8f00018b1dbf8380080f83040'),
+           'initial_world_contact': ('_ZN5LevelC2Ei', 14, 196, 'sha256:575ec094d1a44f2b31deed19b9ed9763f2b25916f6a1970c3278d1a9242666cd'),
+           'player_before_world': ('_ZN5MGame8OnUpdateEv', 1872, 34, 'sha256:980c50d4eb27fd380d8e040ec7104a6457eb14c8e0411b30bd3a1e5f7ff69e64'),
+           'camera_after_aim': ('_ZN5MGame8OnUpdateEv', 9580, 4, 'bbf6e8ef'),
+           'controller_later': ('_ZN5MGame8OnUpdateEv', 10670, 4, 'c1f608ed'),
+           'body_vectors': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 8078, 100, 'sha256:95040a43eb8c3f2e017eeaf6993e4906e37b2133695257085b7a004bca73ba2f'),
+           'projected_mode': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 8178, 910, 'sha256:abe48e6ca5f6feb65e72f844bf98480fdb19f2b48d03c59695533157200a37bb'),
+           'draw': ('_ZN9PlayerEgo4drawEb', 0, 676, 'sha256:b09d4649952c417d3c8a8ec32a4b4d2d557c7e98a07d11d0df0936939904a77a'),
+           'reticle_handoff': ('_ZN11LevelScript7processEi', 4350, 20, '0420cae92444caf81c000021119e30460df77ce9')}
