@@ -1304,6 +1304,7 @@
     "game/tests/alioth_portal.gd.uid",
     "game/tests/alioth_return.gd",
     "game/tests/alioth_return.gd.uid",
+    "game/tests/ambient_android.gd",
     "game/tests/area_bomb_application.gd",
     "game/tests/area_bomb_application.gd.uid",
     "game/tests/area_bomb_audio.gd",

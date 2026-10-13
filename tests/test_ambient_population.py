@@ -43,3 +43,25 @@ class AmbientPopulationTests(unittest.TestCase):
                 else:m.architecture='armv7'
                 self.assertFalse(reader.extract_ambient_population(m,a,travel),key)
             self.assertFalse(reader.extract_ambient_population(mach,arrival,None))
+
+
+class AmbientPopulationAndroidTests(unittest.TestCase):
+    def test_android_proofs(self):
+        import android_fixture
+        from gof2_content.android_library import AndroidLibrary
+        from test_mido_travel import roomy
+        staged={'scope':'rescue_choreography'}
+        with patch.object(android_fixture,'library',roomy(android_fixture.library)):
+            android_fixture.verify_android_proof(self,reader,lambda lib:reader.extract_ambient_population(lib,staged,reader.TRAVEL_ANDROID_VALUES),values='VALUES')
+            image,layout,_=android_fixture.layout_library(reader.ANDROID)
+        with patch.object(reader,'ANDROID',layout):
+            lib=AndroidLibrary(image)
+            self.assertTrue(reader.extract_ambient_population(lib,staged,reader.TRAVEL_ANDROID_VALUES))
+            # Requires the arrival staging and the Android local travel (its own planet window).
+            self.assertEqual(reader.extract_ambient_population(lib,{},reader.TRAVEL_ANDROID_VALUES),{})
+            self.assertEqual(reader.extract_ambient_population(lib,staged,reader.TRAVEL_MAC_VALUES),{})
+            self.assertEqual(reader.extract_ambient_population(lib,staged,None),{})
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self,reader,'ambient_population_definitions.gd',values='VALUES')
