@@ -32,6 +32,37 @@ class OrdinaryShoppingAndroidTests(unittest.TestCase):
         # Status::calcCargoPrices keeps system 25's maximum price; the Mac adds 5 %.
         android = copy.deepcopy(reader.ANDROID_VALUES)
         self.assertEqual(android['pricing'].pop('special_multiplier'), 1.0)
+        self.assertEqual(set(android.pop('blueprints')), {'shipping_unit_cost', 'autocomplete'})
         mac = copy.deepcopy(reader.VALUES)
         self.assertEqual(mac['pricing'].pop('special_multiplier'), 1.0499999523162842)
         self.assertEqual(android, mac)
+
+    def test_android_blueprint_constants(self):
+        # The blueprint values are the immediates and literal of their proof spans.
+        from gof2_content.text_ids import canonical_id
+        rows, rules = reader.ANDROID, reader.ANDROID_VALUES['blueprints']
+        auto = rules['autocomplete']
+        for key in ['blueprint_shipping_quote', 'blueprint_shipping_commit']:
+            code = thumb(rows[key][3])
+            self.assertEqual(code[0][0], 'blx', key)
+            self.assertIn(('movs', 'r1, #%#x' % rules['shipping_unit_cost']), code, key)
+            self.assertTrue(any(op == 'mul' for op, _ in code), key)
+        self.assertEqual(thumb(rows['blueprint_autocomplete_item'][3]), [('ldr', 'r0, [r4, #0x1c]'), ('cmp', 'r0, #%#x' % auto['special_item_id'])])
+        add = thumb(rows['blueprint_autocomplete_add'][3])
+        self.assertEqual([op for op, _ in add], ['add.w', 'add.w'])
+        self.assertEqual(sum(int(arg.split('#')[1], 16) for _, arg in add), auto['special_add'])
+        price = thumb(rows['blueprint_autocomplete_multiplier'][3])
+        self.assertEqual(price[0], ('vmov.f32', 's0, #%e' % auto['multiplier']))
+        self.assertEqual([op for op, _ in price[1:]], ['muls', 'vmov', 'vcvt.f32.s32', 'vmul.f32', 'vcvt.s32.f32'])
+        base = thumb(rows['blueprint_base_quantity'][3])
+        self.assertEqual(base[2:6], [('movs', 'r1, #1'), ('cmp', 'r0, #1'), ('it', 'eq'), ('moveq', 'r1, #0xa')])
+        self.assertEqual(base[-2], ('str', 'r1, [r4, #0x20]'))
+        self.assertEqual(canonical_id(int(thumb(rows['blueprint_autocomplete_text'][3])[0][1].split('#')[1], 16)), auto['text_id'])
+        self.assertEqual(canonical_id(int(thumb(rows['blueprint_autocomplete_shortfall_text'][3])[0][1].split('#')[1], 16)), auto['shortfall_text_id'])
+        self.assertEqual(bytes.fromhex(rows['blueprint_autocomplete_label'][3]), auto['label'].encode() + b'\0')
+
+
+def thumb(hex_code):
+    import capstone
+    decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+    return [(i.mnemonic, i.op_str) for i in decoder.disasm(bytes.fromhex(hex_code), 0)]
