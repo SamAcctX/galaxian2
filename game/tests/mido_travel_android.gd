@@ -87,6 +87,7 @@ func extensions() -> Array:
 		["free_traffic",Definitions.FreeTraffic.VALUES,Definitions.FreeTraffic.ANDROID_SPANS],
 		["free_lifecycle",Definitions.FreeLifecycle.VALUES,Definitions.FreeLifecycle.ANDROID_SPANS],
 		["free_flight",Definitions.FreeFlight.VALUES,Definitions.FreeFlight.ANDROID_SPANS],
+		["free_arrival",Definitions.FreeArrival.VALUES,Definitions.FreeArrival.ANDROID_SPANS],
 		["vossk_traffic",Definitions.Vossk.VALUES,Definitions.Vossk.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:
