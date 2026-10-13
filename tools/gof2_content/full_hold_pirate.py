@@ -1,9 +1,25 @@
-"""Mac second-trip pirate combat data; executable bytes never enter the runtime."""
+"""Mac second-trip pirate combat data; executable bytes never enter the runtime.
+
+Android: Level::createShip sizes the cursor-4 pirate (min(level, 20) x 14 +
+20 + cursor x 4, scaled by the difficulty); PlayerFighter's constructor keeps
+a 50000 activation range; LevelScript::process wakes it at cursor 5 at the
+player + (5000, 0, 30000) turned by pi (PlayerFighter::awake: mode 1);
+PlayerFighter::update wakes it near its target or within 25000 of the player;
+Level::assignGuns arms it.
+"""
 import copy
-from .declaration_layouts import recognize
-from .station_exterior import declaration_bytes
+from .declaration_layouts import recognize, recognize_symbols
+from .station_exterior import declaration_bytes, vtable_proof
 
 def extract_full_hold_pirate(mach, arrival, flight, actors, handoff):
+    if mach.architecture == 'android-armv7':
+        try:
+            if flight['scope'] != 'full_hold_mining_flight_construction' or not handoff: return {}
+            npc = actors['npc_initialization']
+            if not all(npc.get(key) for key in ['hull', 'guidance', 'holding', 'hostility', 'primary_weapon']) or npc['hull']['rank'] != 0: return {}
+        except (KeyError, TypeError, AttributeError): return {}
+        proof, slots = recognize_symbols(mach, ANDROID), vtable_proof(mach, ANDROID_VTABLES)
+        return dict(copy.deepcopy(VALUES), provenance={**proof, **slots}) if proof and slots is not None else {}
     if mach.architecture!='x86_64':return {}
     try:
         if flight['scope']!='full_hold_mining_flight_construction' or not handoff:return {}
@@ -195,3 +211,30 @@ MAC_ALTERNATE = {'factory_hull': [78110,
               '__text',
               '554889e553504889fbc783bc00000001000000488b7b08be01000000e8b7a1feff4889dfbe01000000e8eaaeffffc6834101000001488b7b184885ff7504488b7b10be010000004883c4085b5de95441ebff'],
  'world_player': [105946, 14, '__text', '554889e5488b87680100005dc390']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# The cursor-4 pirate: Level::createShip(8, 0, 2, ...): hull min(level, 20) x 14 + 20 + cursor x 4,
+           # scaled by 1 + (difficulty - 0.5); PlayerFighter keeps a 50000 activation range.
+           'actor_case': ('_ZN5Level21createCampaignMissionEv', 25216, 140, 'sha256:22fd95e398bb16cecd6a2bf7f49a0288c8d9b672b4dc85f470fded5caf2cf173'),
+           'factory_hull': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           'fighter_constructor': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 0, 1668, 'sha256:9722fa1dff717e74e4f5d93a1ee0e2af195659b26021723e8d5632f5ba9eaf91'),
+           # LevelScript::process at cursor 5, phase 0: the player position + (5000, 0, 30000), yaw pi, then
+           # PlayerFighter::awake (mode 1) through vtable slots 18 and 3; phase 1.
+           'scripted_activation': ('_ZN11LevelScript7processEi', 1066, 146, 
+                                'dff8b40a78440068006809f7b2e8052840f0e080ddf84080daf81c00002840f050837aac119920460af734ed0af12800214606f73eee1fedb30a9aed0a1a9aed0c2a1fedb53a31ee000adbf8040032ee031adaf82c20006810ee101a066811ee103ab66cb047dbf8040040f6db72c4f24902002100230068806809f748eddbf8040000680168c96888470120caf81c0017e3'),
+           'activation_offsets': ('_ZN11LevelScript7processEi', 408, 8, '00409c450060ea46'),
+           # PlayerFighter::update: the target within the activation range, and the player within 25000 of
+           # a sleeping (mode 5) fighter, wake it (mode 1, visible, active).
+           'holding_activation': ('_ZN13PlayerFighter6updateEi', 1996, 124, 'sha256:61c9bfdefcce60591b8e2d90e1479b16f51d43b8a2c6935e0d272a62c1e4e9ed'),
+           'proximity_activation': ('_ZN13PlayerFighter6updateEi', 3160, 252, 'sha256:3cc4fddd6a674e6a33384a0fb7883875f4f039a81839d625f301d8e5524a1d3a'),
+           'proximity_constants': ('_ZN13PlayerFighter6updateEi', 3672, 8, '0050c3460050c3c6'),
+           # Shared accessors and the NPC weapons (Level::assignGuns).
+           'activate': ('_ZN13PlayerFighter5awakeEv', 0, 48, 'sha256:616faca6c49e0b1debbcee2f7669636c9d29c359be12269b86f53e65061712de'),
+           'position_setter': ('_ZN13PlayerFighter11setPositionEfff', 0, 120, 'sha256:84b11cc073cadac276caa21eb0eef09b9016bb682c15fad91054bd0e74a4dbe8'),
+           'activity_field': ('_ZN6Player9setActiveEb', 0, 6, '80f8c0107047'),
+           'hull_getter': ('_ZN6Player12getHitpointsEv', 0, 4, '806f7047'),
+           'world_player': ('_ZN5Level9getPlayerEv', 0, 6, 'd0f8f0007047'),
+           'weapons': ('_ZN5Level10assignGunsEv', 0, 3320, 'sha256:2d4c9a0a16410a8459ff79a6c70158b826a10813a8dee82ee37fe387abbcec55')}
+# The activation calls slots 18 (setPosition(float, float, float)) and 3 (awake) of PlayerFighter's vtable.
+ANDROID_VTABLES = {'placement_virtual': ('_ZTV13PlayerFighter', 18, ['_ZN13PlayerFighter11setPositionEfff']),
+                   'activation_virtual': ('_ZTV13PlayerFighter', 3, ['_ZN13PlayerFighter5awakeEv'])}
