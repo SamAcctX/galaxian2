@@ -1,8 +1,26 @@
-"""Alioth attack content and choreography declarations; no executable payloads."""
+"""Alioth attack content and choreography declarations; no executable payloads.
+
+Android: Status::nextCampaignMission cases 15 and 16 create the defence
+(Mission(4, 0, 98)) and the return (Mission(11, 0, 98));
+Level::createCampaignMission case 16 places three hull-15 freighters
+(Globals::getShipGroup, PlayerFixedObject, Level::createShip: 5 x hull, three
+boxes), four Voids (10 x hull) and three escorts; Level::assignGuns arms the
+Voids with item 5 at double damage and leaves the freighters unarmed
+(Level::connectPlayers orders the targets); Level::createRadioMessages case 16
+creates the five radio lines; LevelScript::process runs the attack, the portal
+(PlayerWormHole::reset, open) and the escape (Route::clone, KIPlayer::setRoute,
+setDead, Player::setEnemies, setMaxHitpoints, setHitpoints) until
+Objective::achieved; DialogueWindow's tables and Globals::getDialogueSoundId
+hold the briefing and the result. Values equal the Mac 1.0.7 ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_alioth_attack(mach,arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(MAC_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -710,3 +728,46 @@ MAC_VALUES = {'scope': 'alioth_void_attack',
                 'next_station_id': 98,
                 'reward': 0,
                 'bonus': 0}}
+
+# Android spans inside named functions and their tables; the values are MAC_VALUES.
+ANDROID = {# Level::createShip: hull 15 freighters (5 x hull, 3 x shield, range 45000, three boxes), Voids x 10 hull.
+           'alioth_attack_spawn_arguments': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           'alioth_attack_freighter_cargo': ('_ZN17PlayerFixedObjectC2EiiP6PlayerP10AEGeometryfff', 0, 804, 'sha256:8e92f8e152d9f1a0c3d99ecc26346df1f048501ee0014047ed2c3a1d67aaec75'),
+           'alioth_attack_freighter_assembly': ('_ZN7Globals12getShipGroupEiib', 0, 2116, 'sha256:82d79c62239613267037732bb0cfc994cbdfe697c1466fe5e5ece399a14b7109'),
+           # Level::assignGuns: Void item 5 (model 6762) with double damage; the freighters stay unarmed.
+           'alioth_attack_weapon_damage': ('_ZN5Level10assignGunsEv', 0, 3320, 'sha256:2d4c9a0a16410a8459ff79a6c70158b826a10813a8dee82ee37fe387abbcec55'),
+           'alioth_attack_target_order': ('_ZN5Level14connectPlayersEv', 0, 1520, 'sha256:4e316991fbb2c7b755197137dad56b58a22cc3a495b4c038877551bc16a7e0ef'),
+           'alioth_attack_friendly_getter': ('_ZN6Player14isAlwaysFriendEv', 0, 6, '90f8ed007047'),
+           # Status::nextCampaignMission: cursor 15 -> 16 Mission(4, 0, 98), 16 -> 17 Mission(11, 0, 98).
+           'alioth_attack_dispatch': ('_ZN6Status19nextCampaignMissionEb', 58, 10, 'a12800f21b82dfe810f0'),
+           'alioth_attack_cases': ('_ZN6Status19nextCampaignMissionEb', 98, 4, '040e7301'),
+           'alioth_attack_factory': ('_ZN6Status19nextCampaignMissionEb', 7244, 30, 'sha256:4315caba939d7a43da060c19e9ea191a7842fd25098d151436de7f299e5043d5'),
+           'alioth_attack_next_factory': ('_ZN6Status19nextCampaignMissionEb', 810, 28, 'sha256:916459d7cf9f0ba23684e0ff520f3cd128f4690cedcc30a4ecb4c08c2974a4e8'),
+           # Level::createCampaignMission case 16: three freighters, four Voids and three escorts.
+           'alioth_attack_population': ('_ZN5Level21createCampaignMissionEv', 0, 31288, 'sha256:761ea4db1d2906b167f56eeaf032a3a7dafe9c273e58e5fc4cf0e5bd98e66608'),
+           # Level::createRadioMessages case 16: five lines (1838-1842).
+           'alioth_attack_radio_dispatch': ('_ZN5Level19createRadioMessagesEi', 0, 26, 'sha256:2fb27116c5cd427d3d8d01c2af84739cd96a13de8ea5fc929fb78c2963332596'),
+           'alioth_attack_radio_slot': ('_ZN5Level19createRadioMessagesEi', 58, 2, '2f0e'),
+           'alioth_attack_radio': ('_ZN5Level19createRadioMessagesEi', 7288, 206, 'sha256:5cdd6e19da8cbf68a03fb29258769b75b8a53c426e1f9c83f8998c6c0b5aa510'),
+           'alioth_attack_radio_tail': ('_ZN5Level19createRadioMessagesEi', 11130, 10, 'd4f81401406805618be3'),
+           'alioth_attack_radio_message': ('_ZN12RadioMessageC2Eiiiii', 0, 98, 'sha256:d3b2887d42b15156a0f138bdc7ee0105535dde189fcea6dc7a7e951b60ef448c'),
+           # LevelScript::process: the Void attack choreography, portal timing and escape.
+           'alioth_attack_sequence': ('_ZN11LevelScript7processEi', 0, 59076, 'sha256:fc48a0891a46a9391ae3fe50b9ad196d3c917dbd5cd6c3b58c4d2c9cdc2aa5ca'),
+           'alioth_attack_completion': ('_ZN9Objective8achievedEi', 0, 978, 'sha256:da3086f410423068084e2547c16738945cb696b15a3685f82075a90dd6538eab'),
+           'alioth_attack_radio_finished': ('_ZN12RadioMessage6isOverEv', 0, 6, '90f821007047'),
+           # PlayerWormHole::reset(true): closed at 59000 ms, extent 4096; open(): -3000 ms, extent 0.
+           'alioth_attack_portal_close': ('_ZN14PlayerWormHole5resetEb', 0, 18, '002918bf4ef278614ff48052c0e954127047'),
+           'alioth_attack_portal_open': ('_ZN14PlayerWormHole4openEv', 0, 16, '4ff248410022cff6ff71c0e954127047'),
+           'alioth_attack_player_update_gate': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 0, 9856, 'sha256:456b421fff96043243d79b6f3c451d88fef761c8b03240403d2ca0e47625be17'),
+           'alioth_attack_route_clone': ('_ZN5Route5cloneEv', 0, 348, 'sha256:c628d2ae59c27b4ad6e88c47bbcb48db0ee9fc8e6cc917af36c4ade43200da78'),
+           'alioth_attack_route_assignment': ('_ZN8KIPlayer8setRouteEP5Route', 0, 36, 'sha256:2f00603c48d28f9708289d12f63227139eebaa3ce45e155ddc64e7ddf20197b5'),
+           'alioth_attack_targets_clear': ('_ZN6Player10setEnemiesEP5ArrayIPS_E', 0, 174, 'sha256:d18a42da79a8fc28097c1369f9ddca9c072d2821e985b1b539e4e02c0495c43f'),
+           'alioth_attack_retirement': ('_ZN8KIPlayer7setDeadEv', 0, 14, '0421c0f884100021406825f1e1be'),
+           'alioth_attack_hull_capacity': ('_ZN6Player15setMaxHitpointsEi', 0, 10, 'c0f88410816729f1d5bb'),
+           'alioth_attack_hull_current': ('_ZN6Player12setHitpointsEi', 0, 18, '8167d0f884208a42b8bfc0f8841029f115bc'),
+           # Cursor 16: the orbit briefing (two lines), the station result (three lines) and the voices.
+           'alioth_attack_briefing_count': ('_ZN14DialogueWindow6lengthEv', 26, 4, '04000000', 'literal', 64),
+           'alioth_attack_briefing': ('_ZN14DialogueWindow11loadContentEv', 128, 16, '010000002c070000000000002d070000', 'literal', 112),
+           'alioth_attack_result_count': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 4, '06000000', 'literal', 64),
+           'alioth_attack_result': ('_ZN14DialogueWindow11loadContentEv', 208, 24, '010000003307000000000000340700000100000035070000', 'literal', 856),
+           'alioth_attack_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0)}
