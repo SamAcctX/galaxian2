@@ -13,6 +13,9 @@ const SPANS := {"defaults":[483042,211],"trail_preset":[491375,293],"burst_prese
 
 const MAC_ALTERNATE := {"defaults":[483570,211],"trail_preset":[491903,293],"burst_preset":[495475,245],"general_material":[-43613,44],"player_registration":[560176,232],"npc_registration":[609098,340],"world_burst_registration":[63207,30],"emitter_registration":[511242,264],"initial_flags":[513583,12],"continuous_gate":[514905,85],"manual_wrapper":[512990,66],"manual_emission":[519452,1982],"burst_position_sample":[583292,250],"burst_position_retained":[583542,1194],"statistics_position_getter":[1234194,96],"position_addition_value":[1059954,128],"player_breakup":[585119,93],"npc_death_enable":[619947,28],"npc_breakup_disable":[626863,25]}
 
+# Android: the VALUES; spans inside named functions (Layouts.anchored).
+const ANDROID_SPANS := {"defaults":[14,364],"presets":[378,2754],"general_material":[0,1792],"world_burst_registration":[0,2120],"player_registration":[0,152],"npc_registration":[0,214],"manager_add":[0,200],"enable_emit":[0,42],"emitter_registration":[0,336],"continuous_gate":[0,68],"manual_wrapper":[0,74],"manual_emission":[0,1172],"npc_burst":[0,10528],"player_breakup":[9224,92]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -24,8 +27,9 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, flight: Dictionary, death: Dictionary, damage: Dictionary) -> String:
 	if not data is Dictionary:return "Missing second-flight particle declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data):return "Unsupported second-flight particle declarations"
+	if not (arch=="x86_64" or arch=="android-armv7") or not parameters(data):return "Unsupported second-flight particle declarations"
 	if not Flight.parameters(flight) or not Death.parameters(death) or not Damage.emitter_parameters(damage) or not Owners.parameters(damage.get("owners")) or not damage.owners.npc_uses_detail_gate:return "Second-flight particles lack their verified owners or shared emitter defaults"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid full hold particles extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Second-flight particles lack their source anchor"
 	var layouts: Array=[SPANS,MAC_ALTERNATE]

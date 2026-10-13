@@ -2,12 +2,28 @@
 
 Every supported value is guarded by bounded source context. No executable bytes
 or original logic enter the content pack; simulation is independently native.
+
+Android: ParticleSettings::init defines sets 9 (trails) and 11 (bursts);
+Level::init builds the general manager (material 20099), Level::
+initParticleSystems registers the world burst, PlayerEgo::setLevel and
+PlayerFighter::setLevel the trails; PlayerFighter::update and PlayerEgo::update
+emit the burst through ParticleSystemManager::emitManual.
 """
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .station_exterior import declaration_bytes
 
 def extract_full_hold_particles(mach,arrival,flight,death,damage):
+    if mach.architecture == 'android-armv7':
+        try:
+            if flight['scope'] != 'full_hold_mining_flight_construction' or flight['actor_count'] != 1: return {}
+            if death['scope'] != 'mac_starter_player_destruction' or death['ship_id'] != 0: return {}
+            if damage['scope'] != 'damage_particle_sprite_presets' or [p['preset_id'] for p in damage['presets']] != [15, 42]: return {}
+            if damage['owners']['scope'] != 'fresh_opening_damage_emitters' or not damage['owners']['npc_uses_detail_gate']: return {}
+            if 'emitter_defaults' not in damage: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64':return {}
     try:
         if flight['scope']!='full_hold_mining_flight_construction' or flight['actor_count']!=1:return {}
@@ -214,3 +230,25 @@ MAC_ALTERNATE = {'defaults': [483570, 211, '__text', 'sha256:a45d4e3d94355bfb5e5
                          25,
                          '__text',
                          'sha256:9cdfce1389f2aa75ce278c9b052aa130f9432d2f4f341e89e0579c891fd8880d']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# ParticleSettings::init: the set defaults loop, then sets 9 (trail: material from Level::init's general
+           # manager, flags 0x2000021, 16 particles, 700 ms) and 11 (burst: 10 particles, 1500 ms, size 2000).
+           'defaults': ('_ZN16ParticleSettings4initEv', 14, 364, 'sha256:661d8fe72f7ca6a86453db628677cb72149ab02274429248c59479e19b0f3742'),
+           'presets': ('_ZN16ParticleSettings4initEv', 378, 2754, 'sha256:a3c3c892f18bae87b5fc8f167bd231527a547942d1cc7d355f7455262b48b7af'),
+           'general_material': ('_ZN5Level4initEv', 0, 1792, 'sha256:fceec130c720743b341b16f0e8ce63d43a1382808e075533d391370c9949a244'),
+           # Level::initParticleSystems registers the world burst (set 11); PlayerEgo::setLevel and
+           # PlayerFighter::setLevel the set-9 trails (smoke and fire only up to cursor 1 for the player).
+           'world_burst_registration': ('_ZN5Level19initParticleSystemsEv', 0, 2120, 'sha256:06c77b32c546ea95b3c614a97871d57008a50b7ef9248a52041ccd2d7bf4142e'),
+           'player_registration': ('_ZN9PlayerEgo8setLevelEP5Level', 0, 152, 'sha256:32e9a9fe4c78661baf5b4737a3fc9cb19858f6d639d807469ae764c6e9edf178'),
+           'npc_registration': ('_ZN13PlayerFighter8setLevelEP5Level', 0, 214, 'sha256:9b84b0fd27be53fe3b82a5fcaa59b23cbed3d97e703c6bd7d420ef84a1dfc155'),
+           # ParticleSystemManager / IParticleSystem: registration, emission gates and manual emission.
+           'manager_add': ('_ZN21ParticleSystemManager9addSystemEPKN11AbyssEngine6AEMath6MatrixEN16ParticleSettings11ParticleSetEb', 0, 200, 'sha256:b55dfdc8117d8182393be1a4cc8fb816e52ab3e102e604f409af0fd96ef7f4c1'),
+           'enable_emit': ('_ZN21ParticleSystemManager16enableSystemEmitEib', 0, 42, 'sha256:ee288145a3c05e19abc1a59cc18f7feaa7491b9f94a222d1775febdd3a602222'),
+           'emitter_registration': ('_ZN15IParticleSystemC2EPN11AbyssEngine11PaintCanvasEPKNS0_6AEMath6MatrixERK5ArrayIN16ParticleSettings11ParticleSetEEbb', 0, 336, 'sha256:56150fd98fa4b5b08eda2311aa33699e11047f03676cd7566bbad7190b54a69c'),
+           'continuous_gate': ('_ZN15IParticleSystem6updateEi', 0, 68, 'sha256:eeb78348e1cdf46f4101ca2de0c1154be728078804880094377b18fa6301d3f2'),
+           'manual_wrapper': ('_ZN21ParticleSystemManager10emitManualEiRKN11AbyssEngine6AEMath6VectorEiS4_f', 0, 74, 'sha256:9ca90767f0386d4a0c8d48a4eb190121c5d3e4ff0d4c1fa29b7ae61ddeb13e0b'),
+           'manual_emission': ('_ZN15IParticleSystem10emitManualEN11AbyssEngine6AEMath6VectorEiPKS2_f', 0, 1172, 'sha256:10e1a48844bfba41bc1c21c594a8c8d2ea265d992b22ab71c50c61456fd0534e'),
+           # PlayerFighter::update and PlayerEgo::update emit the burst (size -1) where the ship dies.
+           'npc_burst': ('_ZN13PlayerFighter6updateEi', 0, 10528, 'sha256:fb79b3bde0fb27a45861c89450940e96ec313695cb5d4b4c290220c25ef78d9e'),
+           'player_breakup': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 9224, 92, 'sha256:3a565b7bee37018ff8060442171596fe8747f2fe8839ad1930926fd1e8af19ba')}
