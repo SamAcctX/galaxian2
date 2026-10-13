@@ -63,6 +63,8 @@ func check_profile(content: String, bindings_path: String) -> void:
 	bindings.opening_actors.actors=original_population
 	check(guidance.configure(bindings,catalogues,0,0.5),guidance.error)
 	var architecture := str({"ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"x86_64"))
+	# Android declares the Mac 1.0.7 factory hull and difficulty rules; iOS has its own.
+	var mac_rules:=architecture!="armv7"
 	var extent := 0
 	for span in data.provenance.values(): extent=maxi(extent,int(span.offset)+int(span.bytes))
 	check(Definitions.validate(data,extent,architecture).is_empty(),"NPC guidance provenance rejected")
@@ -77,7 +79,7 @@ func check_profile(content: String, bindings_path: String) -> void:
 	var player := player_for(bindings,Vector3(0,0,10000))
 	var random := Random.new();random.seed_from(4)
 	var seed := random.snapshot()
-	check(guidance.snapshot().maximum_hull==150 and guidance.snapshot().previous_hull==(20 if architecture=="x86_64" else 34),"Opening hull override replaced the constructor damage sample")
+	check(guidance.snapshot().maximum_hull==150 and guidance.snapshot().previous_hull==(20 if mac_rules else 34),"Opening hull override replaced the constructor damage sample")
 	var result := guidance.update(0,actor,Transform3D.IDENTITY,player,seed)
 	if result.is_empty():
 		check(false,guidance.error)
@@ -152,12 +154,12 @@ func check_profile(content: String, bindings_path: String) -> void:
 	var damaged := actor.duplicate(true);damaged.vitals.hull=1
 	guidance.configure(bindings,catalogues,0,0.5)
 	result=guidance.update(0,damaged,Transform3D.IDENTITY,player,seed)
-	check(result.random_state==seed and not guidance.snapshot().boost_active and guidance.snapshot().damage_accumulated==(19 if architecture=="x86_64" else 33),"Damage boost used current opening hull as its constructor sample")
-	var medium_difficulty:=4.5 if architecture=="x86_64" else 2.5
+	check(result.random_state==seed and not guidance.snapshot().boost_active and guidance.snapshot().damage_accumulated==(19 if mac_rules else 33),"Damage boost used current opening hull as its constructor sample")
+	var medium_difficulty:=4.5 if mac_rules else 2.5
 	var medium := active_group(bindings,catalogues,medium_difficulty)
 	var threshold: Dictionary = medium.snapshot().actors[0]
 	guidance.configure(bindings,catalogues,0,medium_difficulty)
-	threshold.vitals.hull=40 if architecture=="x86_64" else 42 # Factory sample minus 60: exactly 40% of maximum 150.
+	threshold.vitals.hull=40 if mac_rules else 42 # Factory sample minus 60: exactly 40% of maximum 150.
 	result=guidance.update(0,threshold,Transform3D.IDENTITY,player,seed)
 	check(not guidance.snapshot().boost_active and result.random_state==seed,"Damage boost triggered at exact percentage equality")
 	threshold.vitals.hull-=1
@@ -165,10 +167,10 @@ func check_profile(content: String, bindings_path: String) -> void:
 	check(guidance.snapshot().boost_active and guidance.snapshot().damage_boost,"Damage above the strict percentage did not trigger boost")
 	var hard := active_group(bindings,catalogues,10.0)
 	guidance.configure(bindings,catalogues,0,10.0)
-	check(guidance.snapshot().maximum_hull==(210 if architecture=="x86_64" else 357) and guidance.snapshot().previous_hull==(210 if architecture=="x86_64" else 357),"Source difficulty hull scale changed")
+	check(guidance.snapshot().maximum_hull==(210 if mac_rules else 357) and guidance.snapshot().previous_hull==(210 if mac_rules else 357),"Source difficulty hull scale changed")
 	random.seed_from(4);random.next_int(3000)
 	var hard_actor: Dictionary=hard.snapshot().actors[0]
-	if architecture=="x86_64":
+	if mac_rules:
 		result=guidance.update(0,hard_actor,Transform3D.IDENTITY,player,seed)
 		check(not result.is_empty() and not guidance.snapshot().boost_active and result.random_state==seed,"Opening override falsely triggered damage boost at difficulty10")
 		hard_actor.vitals.hull=125 # 85 accumulated damage exceeds 40% of factory/max210.
