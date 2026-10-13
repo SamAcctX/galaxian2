@@ -1,10 +1,28 @@
-"""Bounded first-mining briefing declarations; original instructions never run."""
+"""Bounded first-mining briefing declarations; original instructions never run.
+
+Android: DialogueWindow's mode-0 tables hold cursor 2's five lines (texts
+1710-1714) and Globals::getDialogueSoundId their voices; DialogueWindow::init,
+loadContent, the paging functions and OnTouchEnd present them.
+MGame::dialogueEvent opens the briefing after LevelScript::startSequenceOver,
+MGame::OnUpdate polls it after 5001 ms before LevelScript::process and only
+updates the open window; MGame::OnTouchEnd's last page resumes and, for an
+unwon mission, clears the pending start (LevelScript::resetStartSequenceOver).
+Android never substitutes desktop text (see desktop_text): the last line stays
+the touch wording 1714, so the briefing needs no desktop pairs and has no key
+token.
+"""
 import copy
 from .radio_audio import constant_bytes
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 
 def extract_mining_briefing(mach, arrival, flight, presentation, desktop):
+    if mach.architecture == 'android-armv7':
+        try:
+            if flight['scope'] != 'first_mining_flight_construction' or presentation['scope'] != 'first_station_presentation': return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if proof else {}
     if mach.architecture != 'x86_64':
         return {}
     try:
@@ -223,3 +241,37 @@ MAC_VALUES = {'scope': 'first_mining_briefing',
             {'speaker_id': 0, 'text_id': 1712, 'voice_event_id': 179},
             {'speaker_id': 2, 'text_id': 1713, 'voice_event_id': 180},
             {'speaker_id': 16, 'text_id': 1714, 'voice_event_id': -1}]}
+
+# Android: the Mac 1.0.7 values without the desktop key token (Android shows text 1714 as written).
+ANDROID_VALUES = dict(copy.deepcopy(MAC_VALUES), key_token=None)
+
+# Android spans inside named functions and tables.
+ANDROID = {# Mode 0 (briefing) tables: entries per cursor (4, 0, 10), cursor 2's five lines (Android text ids)
+           # and their voices (Globals::getDialogueSoundId).
+           'count_prefix': ('_ZN14DialogueWindow19hasBriefingDialogueEi', 10, 12, '04000000000000000a000000', 'literal', 0),
+           'events': ('_ZN14DialogueWindow11loadContentEv', 128, 40, 
+                      '00000000b906000002000000ba06000000000000bb06000002000000bc06000010000000bd060000', 'literal', 16),
+           'voice_events': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 32, 
+                            'b9060000b1000000ba060000b2000000bb060000b3000000bc060000b4000000', 'literal', 112),
+           # DialogueWindow: prefix sums (init), mode-0 lines (loadContent), paging and the final touch.
+           'briefing_check': ('_ZN14DialogueWindow19hasBriefingDialogueEi', 0, 32, 'sha256:c6a83b54925d2f81e50470392e0b5454589fee8b54394c2dcf3d02728b816bb3'),
+           'index_table': ('_ZN14DialogueWindow4initEv', 20, 70, 'sha256:f9bb7bbbf2e3608b1d4b526ec83a37ce3fab35d89ade9d00eb900322a4776193'),
+           'dialogue_mode': ('_ZN14DialogueWindow11loadContentEv', 112, 120, 'sha256:44637e351fc8ea38250e77202efd5afc767c7bfb83378394e28f9d254cb95ce9'),
+           'text_selection': ('_ZN14DialogueWindow11loadContentEv', 288, 72, 'sha256:fcc08749e1041ac5cb83898cb74e3380c0bf148723c22f5e373fe8aa1ae46498'),
+           'line_count': ('_ZN14DialogueWindow6lengthEv', 0, 104, 'sha256:0d158e749b8801e6a7a4c8a92bf77c6c50e0322be4eec0c21f8f7534721ed996'),
+           'next_line': ('_ZN14DialogueWindow8nextPageEv', 0, 38, 'sha256:23019740e320c9a7d6d8c44ab237261381ca3e0be331160cf4685fdac2533dfe'),
+           'previous_line': ('_ZN14DialogueWindow12previousPageEv', 0, 26, 'sha256:28047ba2fc5c41b939d18424dbc5a67aace19c1d4cfe2db0f30d4548ecc232e8'),
+           'last_line': ('_ZN14DialogueWindow10isLastPageEv', 0, 22, 'd0b502af046cdaf6eaea411e00208c4208bf0120d0bd'),
+           'acknowledgement': ('_ZN14DialogueWindow10OnTouchEndEii', 0, 308, 'sha256:8945fd6bdc22deeb71a07aa34ae47e39f3e2976fdf8765d3499ded1a8e5c9711'),
+           # MGame::dialogueEvent opens the briefing once LevelScript releases the start sequence; MGame::OnUpdate
+           # polls it after 5001 ms before LevelScript::process and only updates the window while it is open.
+           'briefing_start': ('_ZN5MGame13dialogueEventEv', 0, 392, 'sha256:805e9bed6df0875e75c5f64613547a6da41fe7c7d904341c2e32f359ae6baee3'),
+           'briefing_time_gate': ('_ZN5MGame8OnUpdateEv', 10072, 68, 'sha256:f59ab7bdc1b81ef90c370633ae334fdb13f3a9aa680a7dfc565f89a546b9ecb9'),
+           'controller_order': ('_ZN5MGame8OnUpdateEv', 10658, 20, 'dbf84010dbf878009bf85f40c1f608ed8bf85f00'),
+           'modal_update': ('_ZN5MGame8OnUpdateEv', 4740, 52, 'sha256:a6d333e16d3b1d061dd50542f3d59954436ce44c1263182a9b89d69200be6124'),
+           # MGame::OnTouchEnd: the last page resumes; an unwon mission only clears the pending start sequence.
+           'final_acknowledgement': ('_ZN5MGame10OnTouchEndEiiPv', 972, 76, 'sha256:3cf5791f50b694969248783ea1269bc9c5ca6b669f688fe8fbfea0549b01383c'),
+           'unfinished_mission': ('_ZN5MGame10OnTouchEndEiiPv', 3178, 28, 'sha256:1ab460c222a02ed9fc15c296bff6b180c3652719cfaf8ad883ad325c3e46be5b'),
+           'post_briefing': ('_ZN5MGame10OnTouchEndEiiPv', 3740, 12, 'daf87800c6f6dce800f0fdbd'),
+           'clear_pending': ('_ZN11LevelScript22resetStartSequenceOverEv', 0, 10, '002180f8211041627047'),
+           'pending_getter': ('_ZN11LevelScript17startSequenceOverEv', 0, 6, '90f821007047')}

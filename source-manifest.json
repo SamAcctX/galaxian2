@@ -2823,6 +2823,7 @@
     "tests/test_materials.py",
     "tests/test_mido_continuation.py",
     "tests/test_mining_approach.py",
+    "tests/test_mining_briefing.py",
     "tests/test_mining_drill.py",
     "tests/test_mining_session.py",
     "tests/test_mining_targeting.py",
