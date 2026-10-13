@@ -47,6 +47,8 @@ class AndroidCombatTrainingWeaponTests(unittest.TestCase):
     def test_android_values(self):
         # Only the cursor-7 pirates' damage differs from the Mac: trunc(3 x 0.5).
         expected = copy.deepcopy(reader.VALUES)
+        expected['mercy'] = {'minimum_failures': 3, 'damage_factor': 0.699999988079071}
+        self.assertNotIn('mercy', reader.VALUES)
         for row in expected['npc_weapons']:
             if row['actor_kind'] == 8:
                 self.assertEqual(row['damage'], 3)
@@ -64,6 +66,14 @@ class AndroidCombatTrainingWeaponTests(unittest.TestCase):
         self.assertIn(('vmul.f32', 's0, s0, s24'), code)
         self.assertEqual(code[-1], ('vstr', 's0, [r5, #0x60]'))
         self.assertEqual(thumb(rows['spread_setter'][3])[:2], [('vmov', 's0, r1'), ('vcvt.f32.s32', 's0, s0')])
+        # The mercy rule: s26 loads the 0.7f literal; three failures; the enemy flag at Player+0x5c.
+        import struct
+        mercy = reader.ANDROID_VALUES['mercy']
+        self.assertEqual(thumb(rows['mercy_factor_load'][3]), [('vldr', 's26, [pc, #0x1c4]')])
+        self.assertEqual(rows['mercy_factor'][1], (518 + 4 & ~3) + 0x1c4)
+        self.assertEqual(struct.unpack('<f', bytes.fromhex(rows['mercy_factor'][3]))[0], mercy['damage_factor'])
+        self.assertEqual(thumb(rows['mercy_failures'][3])[1:3], [('ldr', 'r0, [r0]'), ('cmp', 'r0, #%d' % mercy['minimum_failures'])])
+        self.assertEqual(thumb(rows['mercy_enemy'][3])[:2], [('ldr', 'r0, [r0, #4]'), ('ldrb.w', 'r0, [r0, #0x5c]')])
 
     def test_android_native_declarations(self):
         from android_fixture import assert_native_android

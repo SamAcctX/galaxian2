@@ -12,6 +12,16 @@ calcCharacterCollision, Player::damage, Level::createPlayer and createGun
 -1 resets before the launch), MGame::OnInitialize (Level(3) then
 Level::init), Status::departStation and ModStation::leaveStation hold the
 rest; those values equal the Mac ones.
+
+Android-only mercy rule (ANDROID_VALUES 'mercy'): when the player dies in a
+campaign mission (MGame::gameOverCheck: Status::getMission,
+Mission::isCampaignMission, Status::getCurrentCampaignMission), the
+Globals::lastCampaignMissionFailCount grows for the same cursor
+(Globals::lastCampaignMissionFailed) and restarts at 1 for another; MGame::OnUpdate
+stops calling gameOverCheck once failed, so each death counts once. The
+Globals are never saved. Level::assignGuns then multiplies every enemy
+(KIPlayer::isEnemy) gun's damage by 0.7f, truncated, in that campaign mission
+once its count reaches 3. The Mac assignGuns has no such rule.
 """
 import copy
 from .declaration_layouts import recognize, recognize_symbols
@@ -256,12 +266,25 @@ ANDROID_VALUES = copy.deepcopy(VALUES)
 for _row in ANDROID_VALUES['npc_weapons']:
     if _row['actor_kind'] == 8: _row['damage'] = 1
 del _row
+# Android: three deaths in a row in the same campaign mission weaken its enemy guns (0.7f).
+ANDROID_VALUES['mercy'] = {'minimum_failures': 3, 'damage_factor': 0.699999988079071}
 # Android spans inside named functions.
 ANDROID = {# Level::assignGuns: the NPC guns; s24 = 0.5 and, for cursor 7 and kind 8, damage = trunc(damage x s24).
            'npc_setup': ('_ZN5Level10assignGunsEv', 0, 3320, 'sha256:2d4c9a0a16410a8459ff79a6c70158b826a10813a8dee82ee37fe387abbcec55'),
            'training_damage_scale': ('_ZN5Level10assignGunsEv', 480, 4, 'b6ee00ca'),
            'training_damage_cursor': ('_ZN5Level10assignGunsEv', 1898, 8, 'b8f1070f11d0b8f1'),
            'training_damage': ('_ZN5Level10assignGunsEv', 1940, 36, 'daf8f800406850f82900406a082809d195ed180ab8eec00a20ee0c0abdeec00a85ed180a'),
+           # The mercy rule: s26 = 0.7f; a campaign mission at the last failed cursor with 3+ failures
+           # scales every enemy gun (KIPlayer::isEnemy, Mission::isCampaignMission).
+           'mercy_factor_load': ('_ZN5Level10assignGunsEv', 518, 4, '9fed71da'),
+           'mercy_factor': ('_ZN5Level10assignGunsEv', 972, 4, '3333333f'),
+           'mercy_damage': ('_ZN5Level10assignGunsEv', 1976, 94, 'sha256:35ad18a89b642433ddd2d19c5051ac45b689d440ec4687405d7fbff50a819672'),
+           'mercy_failures': ('_ZN5Level10assignGunsEv', 2024, 8, '0c980068032859db'),
+           'mercy_enemy': ('_ZN8KIPlayer7isEnemyEv', 0, 8, '406890f85c007047'),
+           'mercy_campaign': ('_ZN7Mission17isCampaignMissionEv', 0, 10, '006d002818bf01207047'),
+           # MGame::gameOverCheck counts a campaign death; MGame::OnUpdate calls it only until failure.
+           'mercy_count': ('_ZN5MGame13gameOverCheckEv', 178, 102, 'sha256:b120529f36969de109f70079a0da86b701cd760b3b6fa9713880e11647583c8b'),
+           'mercy_once': ('_ZN5MGame8OnUpdateEv', 10572, 86, 'sha256:d32ffc72ac1874d2159af3abb568f0d683c41ad513b1795ca0c0b91e2124f4e0'),
            # The Gun: construction, items and effects, NPC flag, world, dispersion, mount, launch, update, contacts.
            'weapon_constructor': ('_ZN3GunC2EiiiiiifN11AbyssEngine6AEMath6VectorES2_', 0, 688, 'sha256:f137885ac07db5356a568ef2dcae645ad787e5602551a8faa0c3dd568a1a5a91'),
            'item_setter': ('_ZN3Gun8setIndexEi', 0, 280, 'sha256:49874dec0a3b669f6555df7804296846b7a92559002168440a630d4b0ea50c92'),
