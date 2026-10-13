@@ -56,3 +56,57 @@ class FrameClockTests(unittest.TestCase):
                     data[256 + 1600:256 + 1600 + count] = data[256 + 300:256 + 300 + count]
                 m.data = bytes(data)
                 self.assertEqual(extract_frame_clock(m, {'supported': True}), {}, (mac, case))
+
+
+def android(caps=(120, 120, 120), calls=('clock',) * 4, clock_field=0x70, copies=1, omit=None):
+    """MGame::OnUpdate's frame cap and ApplicationManager::GetElapsedTimeMillis in the Android shape."""
+    from android_fixture import TEXT, Thumb, library, stub
+    from gof2_content.android_library import AndroidLibrary
+    from gof2_content.frame_clock import ANDROID_ELAPSED, ANDROID_UPDATE
+    from test_steering import asrs, assemble, b_to, cmp_imm, ldr_w, ldrd, sbc_w, str_pre, subs_w, vmov_scalar
+    update, clock = TEXT + 0x100, TEXT + 0x400
+
+    def emit(asm, L):
+        asm.push()
+        for copy in range(copies):
+            targets = iter([clock if c == 'clock' or copy else stub('puts') for c in calls])
+            def label(name): return f'{name}{copy}'
+            def to(name): return L.get(label(name), asm.here() + 4)
+            ldr_w(asm, 0, 11, 8).call(next(targets))
+            b_to(cmp_imm(asm, 0, caps[0]), to('clamp'), 'gt')
+            ldr_w(asm, 0, 11, 8).call(next(targets))
+            b_to(cmp_imm(asm, 0, 0), to('zero'), 'lt').label(label('clamp'))
+            ldr_w(asm, 0, 11, 8).call(next(targets))
+            b_to(cmp_imm(asm, 0, caps[1]), to('fresh'), 'le').movs(0, caps[2])
+            b_to(asm, to('store')).label(label('fresh'))
+            ldr_w(asm, 0, 11, 8).call(next(targets))
+            b_to(asm, to('store')).label(label('zero')).movs(0, 0).label(label('store'))
+            vmov_scalar(asrs(vmov_scalar(asm, 16, 0, 0), 1, 0, 31), 16, 1, 1)
+            vmov_scalar(vmov_scalar(asm, 17, 0, 0), 17, 1, 1).mov(1, 11)
+            str_pre(asm, 0, 1, 0x40)
+        asm.pop()
+    functions = [(ANDROID_UPDATE, assemble(update, emit).finish(), update)]
+    asm = Thumb(clock)
+    ldrd(ldrd(asm, 12, 2, 0, clock_field), 3, 1, 0, 0x78)
+    functions.append((ANDROID_ELAPSED, sbc_w(subs_w(asm, 0, 12, 3), 1, 2, 1).ret().finish(), clock))
+    return AndroidLibrary(library([f for f in functions if f[0] != omit], {}))
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidFrameClockTests(unittest.TestCase):
+    def test_named_cap_and_clock(self):
+        from android_fixture import TEXT
+        result = extract_frame_clock(android(), {'supported': True})
+        self.assertEqual(result, {'max_frame_milliseconds': 120, 'time_unit': 'milliseconds',
+                                  'provenance': [{'offset': TEXT + 0x102, 'bytes': 76}, {'offset': TEXT + 0x400, 'bytes': 18}]})
+        self.assertEqual(extract_frame_clock(android(), {}), {})
+
+    def test_each_broken_declaration_is_unsupported(self):
+        from gof2_content.frame_clock import ANDROID_ELAPSED, ANDROID_UPDATE
+        cases = {'disagree': dict(caps=(120, 119, 120)), 'clamp value': dict(caps=(120, 120, 119)), 'zero': dict(caps=(0, 0, 0)),
+                 'first call': dict(calls=('puts', 'clock', 'clock', 'clock')), 'second call': dict(calls=('clock', 'puts', 'clock', 'clock')),
+                 'third call': dict(calls=('clock', 'clock', 'puts', 'clock')), 'fourth call': dict(calls=('clock', 'clock', 'clock', 'puts')),
+                 'clock field': dict(clock_field=0x68), 'duplicate': dict(copies=2), 'no update': dict(omit=ANDROID_UPDATE),
+                 'no clock': dict(omit=ANDROID_ELAPSED)}
+        for name, options in cases.items():
+            self.assertEqual(extract_frame_clock(android(**options), {'supported': True}), {}, name)

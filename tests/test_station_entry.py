@@ -52,3 +52,45 @@ class StationEntryTests(unittest.TestCase):
                 elif case=='section':m.sections=m.sections[:1]
                 else:m.data=m.data[:128]
                 self.assertEqual(reader.extract_station_entry(m,a,s),{},case)
+
+
+ANDROID_SESSION = {'scope': 'opening_rescue_session'}
+
+
+class AndroidStationEntryTests(unittest.TestCase):
+    def extract(self, lib, arrival={'campaign_cursor': 1}, session=ANDROID_SESSION):
+        return reader.extract_station_entry(lib, arrival, session)
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        from test_arrival_staging import roomy_layouts
+        with roomy_layouts():
+            verify_android_proof(self, reader, self.extract)
+            image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            data = self.extract(lib)
+            data['dialogue']['events'].clear()
+            self.assertEqual(len(reader.ANDROID_VALUES['dialogue']['events']), 19)
+            for name, changes in {'no session': dict(session={}), 'other session': dict(session={'scope': 'kappa_campaign_return'}),
+                                  'other cursor': dict(arrival={'campaign_cursor': 0}), 'no arrival': dict(arrival={})}.items():
+                self.assertEqual(self.extract(lib, **changes), {}, name)
+
+    def test_android_values(self):
+        import struct
+        # Mac 1.0.7 conversation; Android's instruction (touch wording) has no key tokens.
+        self.assertEqual({k: v for k, v in reader.ANDROID_VALUES.items() if k != 'dialogue'}, {k: v for k, v in reader.MAC_VALUES.items() if k != 'dialogue'})
+        self.assertEqual({k: v for k, v in reader.ANDROID_VALUES['dialogue'].items() if k != 'instruction_key_substitution'},
+                         {k: v for k, v in reader.MAC_VALUES['dialogue'].items() if k != 'instruction_key_substitution'})
+        self.assertIs(reader.ANDROID_VALUES['dialogue']['instruction_key_substitution'], False)
+        from gof2_content.text_ids import canonical_id
+        pairs = struct.unpack('<38i', bytes.fromhex(reader.ANDROID['dialogue_records'][3]))
+        self.assertEqual([{'speaker_id': pairs[i], 'text_id': canonical_id(pairs[i + 1])} for i in range(0, 38, 2)], reader.ANDROID_VALUES['dialogue']['events'])
+        # Cursor 1 has 2 x 19 success entries.
+        self.assertEqual(struct.unpack('<2i', bytes.fromhex(reader.ANDROID['dialogue_sizes'][3])), (0, 38))
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'station_entry_definitions.gd')

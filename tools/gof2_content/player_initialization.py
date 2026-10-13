@@ -2,6 +2,13 @@
 
 Depends on validated vehicle, NPC statistics and cursor-zero staging anchors.
 No executable bytes or gameplay instructions are returned to the engine.
+
+Android: Level::createPlayer builds the Player with half extent 1200 and
+copies the ship's shield and armor capacity (Ship::getMaxShieldHP/ArmorHP)
+through Player::setMaxShieldHP/ArmorHP before marking it the player;
+Ship::refreshValue clears both capacities and assigns item attributes 18
+and 20 for item sorts 9 and 10 while walking the equipment in order; the
+cursor-0 branch of LevelScript::LevelScript makes the player vulnerable.
 """
 import struct
 from .opening_loadout import template
@@ -13,7 +20,219 @@ VALUES = {"half_extent":1200,"initial_active":True,"initial_damage_allowed":True
           "shield_property":18,"armor_property":20}
 
 
+ANDROID_FACTORY = """
+mov.w r0, #0x114
+str.w r8, [sl, #8]
+call _Znwj
+mov r5, r0
+ldr r0, [r6]
+call _ZN6Status7getShipEv
+call _ZN4Ship8getMaxHPEv
+mov r2, r0
+mov r0, r5
+mov.w r1, #0x4b0
+mov r3, r4
+strd sb, r8, [sp]
+call _ZN6PlayerC1Eiiiii
+ldr.w r0, ={}
+add r0, pc
+ldr r6, [r0]
+ldr r0, [r6]
+call _ZN6Status7getShipEv
+call {shield_getter}
+mov r1, r0
+mov r0, r5
+call {shield_setter}
+ldr r0, [r6]
+call _ZN6Status7getShipEv
+call {armor_getter}
+mov r1, r0
+mov r0, r5
+call {armor_setter}
+movs r0, #1
+strb.w r0, [r5, #0x69]
+"""
+ANDROID_HELPERS = {'shield_getter': 'ldr r0, [r0, #0x1c]\nbx lr', 'armor_getter': 'ldr r0, [r0, #0x20]\nbx lr',
+                   'shield_setter': 'vmov s0, r1\nvcvt.f32.s32 s0, s0\nstr.w r1, [r0, #0x94]\nvstr s0, [r0, #0x88]\nb.w {changed}',
+                   'armor_setter': 'strd r1, r1, [r0, #0x8c]\nb.w {changed}'}
+# Player::Player: `this` in r4; active (0xc0) set with the constructor flags.
+ANDROID_ACTIVE = """
+movs r0, #0
+movs r1, #1
+str.w r0, [r4, #0xd0]
+add r5, sp, #4
+strb.w r1, [r4, #0x70]
+str.w r1, [r4, #0x10c]
+strb.w r0, [r4, #0x44]
+strb.w r0, [r4, #0x45]
+strb.w r0, [r4, #0x68]
+strb.w r1, [r4, #0xc0]
+"""
+# Ship::refreshValue: `this` in r4; shield, armor and the next two words cleared.
+ANDROID_RESET = """
+mov r4, r0
+ldr.w r0, ={}
+mov.w r1, #-1
+vmov.i32 q8, #0
+movs r2, #0
+str r1, [r4, #0x4c]
+strb.w r2, [r4, #0x50]
+add.w r3, r4, #0x1c
+strb.w r2, [r4, #0x51]
+add r0, pc
+strb.w r2, [r4, #0x5c]
+add.w r2, r4, #0x3c
+vst1.32 {d16, d17}, [r3]
+"""
+# Equipment array at 0x6c: r5 walks its words, r6 counts.
+ANDROID_LOOP_ENTRY = """
+ldr r1, [r4, #0x6c]
+ldr r0, [r1]
+cmp r0, #0
+beq.w {empty}
+ldr r0, ={}
+vmov.f32 s20, #1.000000e+00
+vldr s16, ={}
+movs r5, #0
+add r0, pc
+vldr s18, ={}
+vldr s22, ={}
+mov.w sb, #1
+ldr.w fp, [r0]
+mov.w r8, #0x3f800000
+ldr r0, ={}
+movs r6, #0
+add r0, pc
+ldr.w sl, [r0]
+b {head}
+"""
+ANDROID_LOOP_HEAD = """
+ldr r0, [r1, #4]
+ldr r0, [r0, r5]
+cmp r0, #0
+beq.w {skip}
+call {type_getter}
+cmp r0, #0x1d
+bhi.w {next}
+tbb [pc, r0]
+"""
+ANDROID_SHIELD = """
+ldr r0, [r4, #0x6c]
+movs r1, #0x12
+ldr r0, [r0, #4]
+ldr r0, [r0, r5]
+call _ZN4Item12getAttributeEi
+str r0, [r4, #0x1c]
+movs r1, #0x13
+ldr r0, [r4, #0x6c]
+ldr r0, [r0, #4]
+ldr r0, [r0, r5]
+call _ZN4Item12getAttributeEi
+str r0, [r4, #0x24]
+b {next}
+"""
+ANDROID_ARMOR = """
+ldr r0, [r4, #0x6c]
+movs r1, #0x14
+ldr r0, [r0, #4]
+ldr r0, [r0, r5]
+call _ZN4Item12getAttributeEi
+str r0, [r4, #0x20]
+b {next}
+"""
+ANDROID_LOOP_NEXT = """
+ldr r0, [r4, #0x6c]
+ldr r0, [r0, #4]
+ldr r0, [r0, r5]
+call _ZN4Item13getTotalPriceEv
+ldr r1, [r4, #8]
+add r0, r1
+str r0, [r4, #8]
+ldr r1, [r4, #0x6c]
+ldr r0, [r1]
+adds r6, #1
+adds r5, #4
+cmp r6, r0
+blo.w {head}
+"""
+ANDROID_DAMAGE_DISPATCH = """
+call _ZN6Status25getCurrentCampaignMissionEv
+cmp r0, #0
+str r4, [sp, #0x44]
+beq {initial}
+"""
+ANDROID_DAMAGE = """
+strd r6, r6, [r4]
+ldr r0, [sp, #0x4c]
+strb r6, [r0, #1]
+mov r0, sl
+ldr.w sb, [sp, #0x48]
+strb.w r6, [sb, #0x48]
+call _ZN5Level9getPlayerEv
+movs r1, #1
+movs r4, #1
+call _ZN9PlayerEgo21setComputerControlledEb
+mov r0, sl
+call _ZN5Level9getPlayerEv
+ldr r0, [r0]
+movs r1, #1
+call {damage_setter}
+"""
+
+
+def android_player(lib):
+    from .android_shapes import Listing
+    level = Listing(lib, '_ZN5Level12createPlayerEv')
+    factory = level.unique(ANDROID_FACTORY)
+    if factory is None:
+        return {}
+    helpers = {key: Listing(lib, factory[key]).at(template, 0) for key, template in ANDROID_HELPERS.items()}
+    if None in helpers.values() or helpers['shield_setter']['changed'] != helpers['armor_setter']['changed']:
+        return {}
+    stats = Listing(lib, '_ZN6PlayerC1Eiiiii')
+    active = stats.unique(ANDROID_ACTIVE)
+    if active is None or not stats.holds('r4', active.first):
+        return {}
+    ship = Listing(lib, '_ZN4Ship12refreshValueEv')
+    reset, entry, head, following = (ship.unique(t) for t in (ANDROID_RESET, ANDROID_LOOP_ENTRY, ANDROID_LOOP_HEAD, ANDROID_LOOP_NEXT))
+    # r4 holds `this` from its first copy (the reset opens with one) through the loop.
+    if None in (reset, entry, head, following) or not ship.holds('r4', following.last):
+        return {}
+    if not (ship.target(entry['head']) == ship.target(following['head']) == head.first
+            and ship.target(head['next']) == following.first and ship.target(head['skip']) == following.first + 8):
+        return {}
+    type_getter = Listing(lib, head['type_getter']).at('ldr r0, [r0, #8]\nbx lr', 0)
+    # cmp #0x1d: 30 item sorts; exactly one dispatches to each assignment.
+    targets = [ship.case(head.last, sort) for sort in range(30)]
+    assignments = {}
+    for key, sort, template in (('shield', 9, ANDROID_SHIELD), ('armor', 10, ANDROID_ARMOR)):
+        found = ship.at(template, targets[sort]) if targets[sort] is not None else None
+        if found is None or targets.count(targets[sort]) != 1 or ship.target(found['next']) != following.first:
+            return {}
+        assignments[key] = found
+    script = Listing(lib, '_ZN11LevelScriptC1EP5LevelP3HudP5RadarP18TargetFollowCamera')
+    dispatch = script.unique(ANDROID_DAMAGE_DISPATCH)
+    permission = script.follow(dispatch, 'initial', ANDROID_DAMAGE)
+    setter = Listing(lib, permission['damage_setter']).at('strb.w r1, [r0, #0xc2]\nbx lr', 0) if permission else None
+    if type_getter is None or setter is None:
+        return {}
+    provenance = {'factory': factory.span(), 'active': active.span(), 'reset': reset.span(), 'loop_entry': entry.span(),
+                  'loop_head': head.span(), 'type_getter': type_getter.span(), 'loop_next': following.span(),
+                  'shield_assignment': assignments['shield'].span(), 'armor_assignment': assignments['armor'].span(),
+                  'damage_dispatch': dispatch.span(), 'damage_permission': permission.span(), 'damage_setter': setter.span(),
+                  **{key: shape.span() for key, shape in helpers.items()}}
+    table = ship.span(head.last, head.last)['offset'] + 4
+    provenance.update(shield_entry={'offset': table + 9, 'bytes': 1}, armor_entry={'offset': table + 10, 'bytes': 1})
+    return dict(VALUES, provenance=provenance)
+
+
 def extract_player_initialization(mach, actors, vehicle, staging):
+    if mach.architecture == 'android-armv7':
+        if not actors.get('npc_initialization') or not staging:
+            return {}
+        if vehicle.get('equipment_rule') != 'last_matching' or vehicle.get('item_type_value_index') != 5:
+            return {}
+        return android_player(mach)
     import capstone
     arch = mach.architecture
     if arch not in LAYOUTS or not actors.get('npc_initialization') or not vehicle or not staging:

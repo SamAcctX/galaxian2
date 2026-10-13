@@ -3,6 +3,8 @@
 Resource-name anchors identify candidate data tables. A bounded compiler access
 template must independently prove an ID getter followed by a u16 indexed read.
 Names alone never produce the full mapping, and conflicting tables are rejected.
+
+Android: ListItemWindow::set reads the hull table at Ship::getIndex().
 """
 import re
 import struct
@@ -16,7 +18,19 @@ def section_bytes(mach, address, size, name):
     return None
 
 
+ANDROID_INDEX = r"""call _ZN4Ship8getIndexEv
+ldr (?P<t>\w+), =\w+
+movs r3, #0
+adr (?P=t), (?P<table>\w+)
+ldrh\.w \w+, \[(?P=t), r0, lsl #1\]
+"""
+
+
 def index_references(mach):
+    if mach.architecture == 'android-armv7':
+        from .android_listing import Listing, number
+        listing = Listing(mach, '_ZN14ListItemWindow3setEP8ListItemjjjjb')
+        return [(number(m['table']), listing.match_span(m)['offset']) for m in listing.find(ANDROID_INDEX)]
     section = mach.text
     code = mach.data[section['offset']:section['offset'] + section['length']]
     result = []

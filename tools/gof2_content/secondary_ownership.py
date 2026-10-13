@@ -1,8 +1,20 @@
-"""Original equipped EMP ammunition, firing order and launch audio. Constant declarations only."""
+"""Original equipped EMP ammunition, firing order and launch audio. Constant declarations only.
+
+Android: Level::createPlayer builds a gun per equipped secondary and
+Player::addGun(Array, int) files them by category; PlayerEgo::shoot requests,
+Player::shoot triggers (detonating first), Gun::shootAt launches and consumes
+(Item::getAmount, changeAmount, equals, Ship::removeEquipment);
+Player::playShootSound plays events 6-8 for items 41-43. Values equal the
+Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_secondary_ownership(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -104,3 +116,17 @@ MAC_ALTERNATE = {'secondary_equipment_factory': [-35917,
                               326,
                               '__text',
                               'b1faad98bcf61f6ee543e55959c60bb7b77532f72b82ccc3ee8990ffe106b2a8']}
+
+# Android spans: whole named functions and the launch sound table; the values are VALUES.
+ANDROID = {'secondary_ownership_equipment_factory': ('_ZN5Level12createPlayerEv', 0, 1488, 'sha256:fcebfffd4a09af510bb44e49a29a70dc4a92646389ce309a513a0ea03c36206b'),
+           'secondary_ownership_category_owner': ('_ZN6Player6addGunEP5ArrayIP3GunEi', 0, 170, 'sha256:b288c2634d0c948591e3d088fa51cd1ec8a6ed7a0ab056636428035a488cab62'),
+           'secondary_ownership_trigger': ('_ZN6Player5shootEiixbN11AbyssEngine6AEMath6MatrixE', 0, 460, 'sha256:8e3e5621d5db20890605bc3067640bab6af33578f9682b95bb7f4be3b25b0872'),
+           'secondary_ownership_player_request': ('_ZN9PlayerEgo5shootEii', 0, 264, 'sha256:40bbc10283f42825d08ad1aa034bd9c787d06f17e17dfd84948687ed33f3527c'),
+           'secondary_ownership_launch': ('_ZN3Gun7shootAtEN11AbyssEngine6AEMath6MatrixEiP6Playerb', 0, 1948, 'sha256:dd968f45f46de04659309714d596219f1a8c6c80feef2681d3edbd6b4cd876a8'),
+           'secondary_ownership_item_quantity': ('_ZN4Item9getAmountEv', 0, 4, '406b7047'),
+           'secondary_ownership_item_consume': ('_ZN4Item12changeAmountEi', 0, 8, '426b114441637047'),
+           'secondary_ownership_remove_item': ('_ZN4Ship15removeEquipmentEP4Item', 0, 62, 'sha256:94423c304fdd5a89128de57b365d2cc2ccc267d1a209a75f1e9952c5c8f54f47'),
+           'secondary_ownership_item_identity': ('_ZN4Item6equalsEPS_', 0, 18, '0246002021b1096812688a4208bf01207047'),
+           # The player's launch sounds by item: 41-43 play events 6, 7 and 8.
+           'secondary_ownership_launch_sounds': ('_ZN6Player14playShootSoundEiiPN11AbyssEngine6AEMath6VectorEf', 30, 12, '060000000700000008000000', 'literal', 164),
+           'secondary_ownership_sound_dispatch': ('_ZN6Player14playShootSoundEiiPN11AbyssEngine6AEMath6VectorEf', 0, 196, 'sha256:077daedcad7a03aa0c7fdfbfdb1c4e1714d53d922427d9d40cc1bb5ee5c69051')}

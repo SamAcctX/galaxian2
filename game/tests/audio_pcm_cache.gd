@@ -20,7 +20,8 @@ func run() -> void:
 	check(not clip.is_empty() and not clip.has("unsupported"),first.error)
 	if failures:finish();return
 	var sample: Dictionary=clip.layers[0][0].definition.samples[0]
-	var original: PackedByteArray=sample.stream.data
+	# The cache holds the decoded source; a loop's stream adds Godot's mixing guard frame.
+	var original: PackedByteArray=sample.stream.data.slice(0,int(sample.sample.samples)*int(sample.sample.channels)*2)
 	var cached:=library.cached_audio_pcm(sample.source_bank,int(sample.source_index),original.size())
 	check(library.cached_audio_pcm_bytes()>0 and cached==original,"Decoded IMA sample was not cached by its open content library")
 	if failures:finish();return
@@ -29,7 +30,7 @@ func run() -> void:
 	var second:=Resources.new()
 	check(second.configure(library,bindings),second.error)
 	var again: Dictionary=second.prepare(1) if not failures else {}
-	check(not again.is_empty() and again.layers[0][0].definition.samples[0].stream.data==original,"A second audio owner changed the original decoded sample")
+	check(not again.is_empty() and again.layers[0][0].definition.samples[0].stream.data==sample.stream.data,"A second audio owner changed the original decoded sample")
 	var changed_stream: AudioStreamWAV=again.layers[0][0].definition.samples[0].stream
 	var changed_data: PackedByteArray=changed_stream.data.duplicate()
 	changed_data[0]=changed_data[0]^1;changed_stream.data=changed_data

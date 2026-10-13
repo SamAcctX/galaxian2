@@ -1,13 +1,26 @@
 """Original early Mido normal-hit and freighter collision declarations.
 
 These declarations do not unlock a mission or supply destruction behavior.
+
+Android: Level::createShip builds the freighter (hull x5, the race-3 boxes),
+KIPlayer's and Player's constructors the actor (mode 0, active) and its
+statistics, Player::damage the normal hit; PlayerFixedObject's constructor,
+setPosition, outerCollide and update (hostility), KIPlayer::outerCollide,
+BoundingAAB's constructor (half extents) and outerCollide and
+Gun::calcCharacterCollision the point collisions. Values equal the Mac ones.
 """
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 from .ambient_population import VALUES as POPULATION_VALUES
 
 def extract_ambient_combat(mach,arrival,population):
     if not isinstance(population,dict) or any(population.get(key)!=value for key,value in POPULATION_VALUES.items()):return {}
+    if mach.architecture=='android-armv7':
+        proof=recognize_symbols(mach,ANDROID) if arrival else {}
+        if not proof:return {}
+        result=copy.deepcopy(VALUES);result['provenance']=proof
+        return result
     _variant,proof=hashed_variants(mach,arrival,[LAYOUTS,MAC_ALTERNATE])
     if not proof:return {}
     result=copy.deepcopy(VALUES);result['provenance']=proof
@@ -121,3 +134,21 @@ MAC_ALTERNATE = {'factory': [77944, 3478, '__text', '1edb599619eeabcc4601e757d01
                        4,
                        '__const',
                        'd99e58435243d9fef9c88273b8d553b4fba4d0baf8009d29eae74fa99e0d9f57']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# Subtype 1: a PlayerFixedObject with hull x5; race 3: two boxes (offsets and full extents), death model 18300.
+           'ambient_combat_factory': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           # Mode 0, active.
+           'ambient_combat_base_actor': ('_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', 0, 604, 'sha256:3a02b0c7ce6b25d113ff6b119a914a61a149997d03f3853b159537f02d2efee8'),
+           'ambient_combat_statistics': ('_ZN6PlayerC2Eiiiii', 0, 600, 'sha256:f15c0c4c5617f8ed5b0e4e522e5dfda30338d712d628ecf861a9d79e6a041988'),
+           'ambient_combat_freighter_constructor': ('_ZN17PlayerFixedObjectC2EiiP6PlayerP10AEGeometryfff', 0, 804, 'sha256:8e92f8e152d9f1a0c3d99ecc26346df1f048501ee0014047ed2c3a1d67aaec75'),
+           'ambient_combat_normal_hit': ('_ZN6Player6damageEibi', 0, 1376, 'sha256:577391dd7b7a6d8ee3273ce37004ea80f21a4f1a173666529c7b926f4449f3d5'),
+           # Points test the freighter's boxes (half the full extents).
+           'ambient_combat_point_wrapper': ('_ZN8KIPlayer12outerCollideERKN11AbyssEngine6AEMath6VectorE', 0, 26, 'sha256:f17e832adf701edfbae43085c2eee53d9a06a6a41bf0fb96dc70f9be22857316'),
+           'ambient_combat_freighter_point': ('_ZN17PlayerFixedObject12outerCollideEfff', 0, 148, 'sha256:2b8d1feff21a6ac17690be9e8d7e03dea48be571433282b0d7323310809b8992'),
+           'ambient_combat_box_constructor': ('_ZN11BoundingAABC2Efffffffff', 0, 152, 'sha256:88e2b82e14a97cf1bcc053f19e3bbd4ecbb97bc093ad8e92e36157a5098663bc'),
+           'ambient_combat_box_point': ('_ZN11BoundingAAB12outerCollideEfff', 0, 158, 'sha256:b8089f86f85235aaa8e5a2aca0acb9d26a41e44b224ff50c8ec55c4712f274a5'),
+           'ambient_combat_freighter_position': ('_ZN17PlayerFixedObject11setPositionEfff', 0, 204, 'sha256:108d1b61120403f2e1f74f8e23ff699fe4f0ad3aecad25a82f1d0307cfaa5ad2'),
+           'ambient_combat_projectile_points': ('_ZN3Gun22calcCharacterCollisionEv', 0, 2024, 'sha256:ee0110d3a7495e15d266903440f69f9b21dd2a6b23b30b4a5aafb5e4720eab9b'),
+           # Races 8 and 9 are enemies; others by standing.
+           'ambient_combat_freighter_hostility': ('_ZN17PlayerFixedObject6updateEi', 0, 2888, 'sha256:f84fa1d1be257b92fd04b8e98c2c500190c596804150929bb95ecb8d0da7a252')}

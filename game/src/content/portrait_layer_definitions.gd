@@ -7,7 +7,7 @@ const Textures = preload("res://src/content/portrait_texture_definitions.gd")
 static func validate(data: Variant, executable_bytes: int, architecture: String) -> String:
 	if not data is Dictionary: return "Missing portrait layer declarations"
 	if data.is_empty(): return ""
-	if architecture not in ["x86_64", "armv7"]: return "Unsupported portrait layer architecture"
+	if architecture not in ["x86_64", "armv7", "android-armv7"]: return "Unsupported portrait layer architecture"
 	if not data.get("part_bases") is Array or data.part_bases.size() != 13: return "Invalid portrait families"
 	for family in data.part_bases:
 		if not family is Array or family.size() != 4: return "Invalid portrait family parts"
@@ -26,7 +26,8 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 				if not layer is Dictionary or not Numbers.integer(layer.get("anchor"), 0, 32) or int(layer.anchor) not in [0, 16, 32] or not Numbers.integer(layer.get("y"), -8192, 8192): return "Unsupported portrait layer placement"
 	var provenance: Variant = data.get("provenance")
 	if not provenance is Dictionary or provenance.size() != 7: return "Invalid portrait layer provenance"
-	var sizes := {"selection": 316 if architecture == "x86_64" else 382, "order": 61 if architecture == "x86_64" else 56, "part_bases": 208}
+	var code: Array = {"x86_64": [316, 61], "armv7": [382, 56], "android-armv7": [202, 52]}[architecture]
+	var sizes := {"selection": code[0], "order": code[1], "part_bases": 208}
 	for variant in Textures.VARIANTS: sizes[variant] = 416
 	var spans := []
 	for key in sizes:

@@ -6,6 +6,9 @@ const SPANS = {"convoy_lifecycle_factory_death_model":[79935,13],"convoy_lifecyc
 
 const MAC_SPANS = {"convoy_lifecycle_factory_death_model":[79935,13],"convoy_lifecycle_death_model_context":[634134,336],"convoy_lifecycle_capital_death_effects":[634682,4064],"convoy_lifecycle_default_attachment":[-81548,948],"convoy_lifecycle_small_ship_constructor":[605720,2562],"convoy_lifecycle_large_ship_constructor":[631792,1108],"convoy_lifecycle_hostility":[808072,128],"convoy_lifecycle_friendliness":[808200,128]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"convoy_lifecycle_factory_death_model":[0,3112],"convoy_lifecycle_death_model_context":[0,192],"convoy_lifecycle_capital_death_effects":[0,2888],"convoy_lifecycle_default_attachment":[0,604],"convoy_lifecycle_small_ship_constructor":[0,1668],"convoy_lifecycle_large_ship_constructor":[0,804],"convoy_lifecycle_hostility":[0,118],"convoy_lifecycle_friendliness":[0,120]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES)
 

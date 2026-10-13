@@ -8,6 +8,9 @@ extends RefCounted
 ## both, state 3, his farewell talk (468-473) and message 474.
 ## Assumption: the farewell talk is reachable in the original only through a
 ## dead path; it is played after the purchase as the texts intend.
+## "kaamo_unlocked" (remake option, every edition): the club counts as owned
+## from New Game or from a one-way unlock, as the mobile add-on did; the
+## siege story still reads the stored state. Once set it is never cleared.
 
 const STATION_ID:=108
 const SIEGE:=0
@@ -28,7 +31,10 @@ const FIRST_TALK:=[[4,448,1444],[0,449,1445],[4,450,1453],[0,451,1454],[4,452,14
 	[0,461,1449],[4,462,1450],[0,463,1451],[4,464,1452],[16,465,-1]]
 const FAREWELL_TALK:=[[4,468,1461],[0,469,1462],[4,470,1463],[0,471,1464],[4,472,1465],[0,473,1466]]
 
-static func state(progress: Dictionary) -> int:return int(progress.get("kaamo_state",SIEGE))
+static func state(progress: Dictionary) -> int:return OWNED if unlocked(progress) else int(progress.get("kaamo_state",SIEGE))
+static func unlocked(progress: Dictionary) -> bool:
+	var value: Variant=progress.get("kaamo_unlocked")
+	return value is bool and value
 
 static func buskat_tons(cargo: Array) -> int:
 	var tons:=0

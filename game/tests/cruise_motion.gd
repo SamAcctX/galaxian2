@@ -39,11 +39,14 @@ func _initialize() -> void:
 	check(motion.advance(pose, 1.0, 1.0) == pose, "Failed configure retained old cruise rate")
 	bindings.cruise = {}
 	check(not motion.configure(bindings, bindings.base_content_id), "Missing source rate replaced by a default")
-	for architecture in ["armv7", "x86_64"]:
+	var layouts := {"armv7": [20, 30, 36, 32, 38], "android-armv7": [4, 8, 8, 34, 44, 14], "x86_64": [27, 23, 40, 42, 27]}
+	for architecture in layouts:
 		var data := {"speed_units_per_millisecond": 2.0, "forward_axis": [0, 0, 1], "provenance": []}
-		var sizes := [20, 30, 36, 32, 38] if architecture == "armv7" else [27, 23, 40, 42, 27]
-		for i in 5: data.provenance.append({"offset": 100 * i, "bytes": sizes[i]})
+		var sizes: Array = layouts[architecture]
+		for i in sizes.size(): data.provenance.append({"offset": 100 * i, "bytes": sizes[i]})
 		check(Definitions.validate_cruise(data, 1024, architecture).is_empty(), "Valid source provenance rejected")
+		for other in layouts:
+			if layouts[other] != sizes: check(not Definitions.validate_cruise(data, 1024, other).is_empty(), "Cruise spans accepted for another compiler")
 		for invalid in [NAN, INF, 0, -2, "2", true]:
 			data.speed_units_per_millisecond = invalid
 			check(not Definitions.validate_cruise(data, 1024, architecture).is_empty(), "Invalid rate accepted")

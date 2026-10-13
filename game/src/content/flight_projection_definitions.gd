@@ -15,6 +15,7 @@ static func parameters(data: Dictionary) -> bool:
 static func sizes(architecture: String) -> Dictionary:
 	if architecture == "x86_64": return {"start": 102, "setter": 213, "predicate": 26, "compare": 22, "metrics": 250, "cursor": 12, "fov": 4, "near": 4, "fallback": 4, "far": 8}
 	if architecture == "armv7": return {"start": 100, "setter": 216, "predicate": 10, "compare": 22, "metrics": 252, "cursor": 6, "fallback": 4, "far": 8}
+	if architecture == "android-armv7": return {"start": 78, "setter": 90, "metrics": 104, "predicate": 10, "cursor": 6, "fallback": 4, "far": 8}
 	return {}
 
 static func validate(data: Variant, executable_bytes: int, architecture: String) -> String:

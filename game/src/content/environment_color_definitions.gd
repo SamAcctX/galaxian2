@@ -38,7 +38,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	if data.is_empty(): return ""
 	if data.size()!=COUNTS.size()+1: return "Unexpected environment color declarations"
 	if not parameters(data): return "Invalid environment color tables"
-	var sizes := {"sun":88,"planet":81,"rim":48,"system":13,"sky_index":9,"station":13,"planet_type":9} if architecture=="x86_64" else {"sun":92,"planet":20,"planet_table":28,"rim":80,"system":6,"sky_index":4,"station":6,"planet_type":4} if architecture=="armv7" else {}
+	var sizes := {"sun":88,"planet":81,"rim":48,"system":13,"sky_index":9,"station":13,"planet_type":9} if architecture=="x86_64" else {"sun":92,"planet":20,"planet_table":28,"rim":80,"system":6,"sky_index":4,"station":6,"planet_type":4} if architecture=="armv7" else {"sun":66,"planet":26,"planet_table":28,"rim":70,"system":6,"sky_index":4,"station":6,"planet_type":4} if architecture=="android-armv7" else {}
 	if sizes.is_empty(): return "Unsupported environment color architecture"
 	for key in COUNTS: sizes[key]=COUNTS[key]*12
 	var provenance: Variant = data.get("provenance")
@@ -53,5 +53,5 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 		spans.append(Vector2i(begin,end))
 	var sun_end := int(provenance.sun.offset)+int(provenance.sun.bytes)
 	if int(provenance.rim.offset)<=sun_end or int(provenance.rim.offset)>=sun_end+2048 or abs(int(provenance.planet.offset)-int(provenance.sun.offset))>=2048: return "Unlinked environment color declarations"
-	if architecture=="armv7" and (int(provenance.planet_table.offset)<sun_end or int(provenance.planet_table.offset)>=int(provenance.rim.offset)): return "Unlinked planet color table"
+	if architecture in ["armv7","android-armv7"] and (int(provenance.planet_table.offset)<sun_end or int(provenance.planet_table.offset)>=int(provenance.rim.offset)): return "Unlinked planet color table"
 	return ""

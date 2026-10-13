@@ -36,19 +36,24 @@ func _init() -> void:
 
 func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted, death: RefCounted) -> bool:
 	error=""
-	if library==null or bindings==null or visuals==null or not death is Death or not Definitions.parameters(bindings.game_over_presentation) or not Desktop.parameters(bindings.desktop_text):return reject("Game-over resources require supported Mac content")
+	if library==null or bindings==null or visuals==null or not death is Death or not Definitions.parameters(bindings.game_over_presentation):return reject("Game-over resources require supported Mac content")
+	# Android declares no game-over image (MGame never creates one) and no desktop text: the prompt stands alone.
+	var art: bool=bindings.game_over_presentation.image_id!=null
+	if art and not Desktop.parameters(bindings.desktop_text):return reject("Game-over resources require supported Mac content")
 	var state: Dictionary=death.snapshot()
 	if library.manifest.get("content_id")!=bindings.base_content_id or visuals.base_content_id!=bindings.base_content_id or library.active_language.is_empty():return reject("Game-over resources belong to another content base")
 	for key in ["base_content_id","binding_id"]:
 		if state.get(key)!=bindings.get(key):return reject("Game-over resources belong to another flight")
 	var rules: Dictionary=bindings.game_over_presentation
-	var registered:=false
-	for row in bindings.records.get(int(rules.texture_id),[]):
-		if row.resource==rules.resource and row.kind=="texture" and int(row.registration_type)==2:registered=true
-	if not registered:return reject("The original game-over atlas is not registered")
-	var reader:=Atlas.new()
-	var texture:=reader.load(library,visuals,rules.resource,int(rules.region))
-	if texture==null:return reject(reader.error)
+	var texture: Texture2D=null
+	if art:
+		var registered:=false
+		for row in bindings.records.get(int(rules.texture_id),[]):
+			if row.resource==rules.resource and row.kind=="texture" and int(row.registration_type)==2:registered=true
+		if not registered:return reject("The original game-over atlas is not registered")
+		var reader:=Atlas.new()
+		texture=reader.load(library,visuals,rules.resource,int(rules.region))
+		if texture==null:return reject(reader.error)
 	var texts:={}
 	for id in [int(rules.continue_text_id),bindings.desktop_text_id(int(rules.continue_text_id))]:
 		if id<0 or id>=library.strings.size() or not library.strings[id] is String or library.strings[id].is_empty():return reject("The localized game-over prompt is unavailable")
@@ -70,8 +75,8 @@ func present(death: RefCounted, absolute_milliseconds: Variant) -> bool:
 		"phase":state.phase,"visible":state.game_over_visible,"alpha_byte":state.game_over_alpha_byte,
 		"continue_enabled":state.continue_enabled,"prompt_visible":state.game_over_visible and state.phase=="game_over",
 		"prompt_alpha_byte":blink_alpha(absolute_milliseconds,float(_rules.blink_radians_per_millisecond)),
-		"absolute_ms":absolute_milliseconds,"image_id":int(_rules.image_id),"resource":_rules.resource,
-		"source_rect":_art.texture.region}
+		"absolute_ms":absolute_milliseconds,"image_id":-1 if _rules.image_id==null else int(_rules.image_id),"resource":_rules.resource,
+		"source_rect":_art.texture.region if _art.texture else Rect2()}
 	_sample=next;visible=next.visible;_art.modulate.a=float(next.alpha_byte)/255.0
 	_prompt.visible=next.prompt_visible;_prompt.modulate.a=float(next.prompt_alpha_byte)/255.0
 	_reflow()
@@ -128,8 +133,8 @@ func _reflow() -> void:
 	if _sample.is_empty() or size.x<=0 or size.y<=0:return
 	var scale:=1.0 if _mobile else 0.5
 	var available:=Vector2(maxf(1,size.x-24),maxf(1,size.y-80))
-	var art_size:=_art.texture.get_size()*scale
-	art_size*=minf(1.0,minf(available.x/art_size.x,available.y/art_size.y))
+	var art_size:=_art.texture.get_size()*scale if _art.texture else Vector2.ZERO
+	if _art.texture:art_size*=minf(1.0,minf(available.x/art_size.x,available.y/art_size.y))
 	_art.size=art_size;_art.position=(size-art_size)*0.5
 	var text_id:=int(_rules.continue_text_id) if _mobile else int(_identity.desktop_text_id)
 	_prompt.text=_texts[text_id]

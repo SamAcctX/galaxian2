@@ -10,6 +10,9 @@ const SPANS := {"mission_controller":[138688,93478],"activation":[630538,82],"pl
 
 const MAC_ALTERNATE := {"mission_controller":[138688,93490],"activation":[631086,82],"placement":[609776,176],"visibility":[610374,78],"model_install":[-79336,272],"actor_factory":[77944,3478],"matrix_setter":[-730082,24],"position_setter":[-729962,68],"euler_addition":[-728986,140],"effect_trigger":[-687254,484],"activation_virtual":[2377146,8],"model_install_virtual":[2377138,8],"offset_x":[1520974,4],"offset_z":[1520570,4],"yaw":[1521054,4]}
 
+# Android: the VALUES; spans inside named functions and PlayerFighter's vtable slots 2, 3 and 18 (Layouts.anchored).
+const ANDROID_SPANS := {"mission_controller":[0,59076],"offsets":[408,8],"yaw":[1172,8],"activation":[0,48],"placement":[0,120],"visibility":[0,68],"model_install_entry":[0,4],"model_install":[0,160],"actor_factory":[0,3112],"matrix_setter":[0,10],"position_setter":[0,76],"euler_addition":[0,156],"effect_trigger":[0,424],"model_install_virtual":[16,8],"placement_virtual":[80,4]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -19,8 +22,9 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, story: Dictionary, death: Dictionary) -> String:
 	if not data is Dictionary:return "Missing second-trip appearance declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data):return "Unsupported second-trip appearance declarations"
+	if not (arch=="x86_64" or arch=="android-armv7") or not parameters(data):return "Unsupported second-trip appearance declarations"
 	if not Story.parameters(story) or not Death.parameters(death):return "Second-trip appearance lacks verified story or destruction context"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid full hold appearance extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Second-trip appearance lacks its source anchor"
 	var layouts: Array=[SPANS,MAC_ALTERNATE]

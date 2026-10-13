@@ -29,7 +29,7 @@ func build(library: RefCounted, visuals: RefCounted, bindings: RefCounted, descr
 	if reflection==null or reflection.selection.get("base_content_id")!=descriptor.base_content_id or reflection.selection.get("binding_id")!=descriptor.binding_id or reflection.selection.get("system_id")!=lighting.get("system_id"):
 		return reject("Scenery effect reflection belongs to another location")
 	_edition=library.manifest.get("profile",{}).get("edition","")
-	if _edition not in ["ios-hd","mac-full-hd"]:return reject("Unsupported scenery effect edition")
+	if _edition not in ["android-hd","ios-hd","mac-full-hd"]:return reject("Unsupported scenery effect edition")
 	var paths := []
 	for index in 2:
 		var source: Dictionary=descriptor.models[index]

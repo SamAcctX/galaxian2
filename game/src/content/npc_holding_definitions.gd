@@ -5,7 +5,8 @@ const EXPECTED = {"actor_mode":5,"spatial_half_extent":50000,"initial_targeting_
 	"selection_elapsed_ms":0,"boost_elapsed_ms":0}
 const SIZES = {
 	"x86_64":{"virtual_update":8,"timers":24,"range":38,"clock_step":14,"activation":82,"world_order":71,"deactivation":30,"player_suppression":14},
-	"armv7":{"virtual_update":4,"timers":200,"range":36,"clock_step":32,"activation":50,"world_order":58,"deactivation":28,"player_suppression":18}}
+	"armv7":{"virtual_update":4,"timers":200,"range":36,"clock_step":32,"activation":50,"world_order":58,"deactivation":28,"player_suppression":18},
+	"android-armv7":{"virtual_update":8,"timers":100,"range":32,"clock_step":26,"activation":48,"world_order":58,"deactivation":28,"player_suppression":10}}
 
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=EXPECTED.size()+1 or not data.get("provenance") is Dictionary: return false

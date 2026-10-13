@@ -13,6 +13,9 @@ const LEGACY_SPANS := {"x86_64":{"initial":[446,307],"constant_16490b":[1460491,
 
 const MAC_ALTERNATE := {"initial":[446,307],"constant_16490b":[1435555,4],"constant_16490f":[1435559,4],"constant_1648f7":[1435535,4],"constant_164913":[1435563,4],"constant_162c8b":[1428259,4],"update":[21236,383],"constant_162bbb":[1428051,4],"constant_162be7":[1428095,4],"constant_15b8c3":[1398539,4],"constant_16492f":[1435591,4],"constant_15b4f7":[1397567,4],"constant_164a47":[1435871,8],"actor":[-122027,315],"constant_15ba67":[1398959,4],"constant_15e5ab":[1410051,4],"constant_162c1b":[1428147,4],"constant_163cbf":[1432407,8],"constant_163caf":[1432391,16],"npc_position":[-199395,18],"npc_mode":[-200925,44],"player_update_gate":[449741,11],"player_flags":[440925,24],"player_engine_tail":[434609,16],"npc_engine_stop":[-199485,34],"engine_stop":[423131,62],"fade_start":[-171867,48],"fade_fraction":[-171761,74],"constant_162747":[1426911,4],"fade_active":[-171523,14],"route_points":[1432391,24],"actor_engine_visibility":[488347,78],"engine_draw_flag":[990631,34],"model_default_draw":[-853090,8],"instance_default_draw":[943749,7],"child_attachment":[-852423,49],"instance_lookup":[1041239,89],"instance_draw_gate":[1021740,45],"whole_model_visibility":[-850391,14],"whole_model_draw_gate":[-850365,27],"factory_model_request":[-43314,112],"ordinary_model":[-340584,1136],"body_detail_children":[-849877,312],"glow_detail_children":[-849565,310],"light_detail_children":[-850253,282]}
 
+# Android: spans inside named functions (Layouts.anchored); the values are VALUES.
+const ANDROID_SPANS := {"initial":[282,220],"update":[90,318],"exit":[3712,42],"actor_dispatch":[556,14],"actor":[27814,198],"route_points":[0,24],"npc_mode":[0,28],"player_freeze":[0,6],"player_update_gate":[56,10],"scripted_player":[0,6],"fade_start":[0,32],"fade_fraction":[0,268],"fade_active":[0,6],"fade_fill":[0,6],"player_engine_stop":[0,168],"npc_engine_stop":[0,22],"engine_stop":[0,40],"actor_engine_visibility":[0,68],"engine_draw_flag":[0,6],"factory_model_request":[1648,34],"model_flag":[786,4],"engine_model":[1008,96],"model_default_draw":[130,22],"whole_model_visibility":[0,10]}
+
 static func parameters(data: Variant) -> bool:
 	return _parameters(data,VALUES)
 
@@ -25,6 +28,10 @@ static func _parameters(data: Variant, expected: Dictionary) -> bool:
 static func validate(data: Variant, executable_bytes: int, architecture: String, staging: Dictionary, dialogue: Dictionary, actors: Dictionary, require_current := true) -> String:
 	if not data is Dictionary:return "Missing rescue staging capability"
 	if data.is_empty():return ""
+	if architecture=="android-armv7":
+		if not parameters(data):return "Unsupported rescue staging declarations"
+		if not Dialogue.valid_parameters(dialogue,1) or staging.get("player_motion",{}).is_empty() or actors.get("npc_initialization",{}).is_empty():return "Rescue staging lacks its shared actors, motion or radio"
+		return "" if Layouts.anchored(data.provenance,executable_bytes,ANDROID_SPANS) else "Disconnected rescue staging declaration"
 	# Historical packs remain readable for supported content. Native rescue
 	# owners require parameters(), which excludes the old whole-ship hide error.
 	var spans:=SPANS

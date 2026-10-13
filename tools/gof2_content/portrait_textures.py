@@ -2,6 +2,9 @@
 
 Portrait filenames are authored stems plus source-selected suffixes. Their numeric
 IDs are read from record declarations, never inferred from filename order.
+
+Android: loadPortraits(AbyssEngine::Engine*) selects the suffix from iPadLarge,
+iPadHD and retinaDisplay|iPad|n9, then declares each portrait as stem + suffix + ".aei".
 """
 import struct
 from .opening_loadout import template
@@ -181,6 +184,8 @@ def read_mac(mach, match, decoder):
 
 def extract_portrait_textures(mach):
     import capstone
+    if mach.architecture == 'android-armv7':
+        return portrait_textures(mach, *read_android(mach))
     if mach.architecture not in ['x86_64', 'armv7']: return {}
     mac = mach.architecture == 'x86_64'
     decoder = capstone.Cs(capstone.CS_ARCH_X86 if mac else capstone.CS_ARCH_ARM, capstone.CS_MODE_64 if mac else capstone.CS_MODE_THUMB)
@@ -191,6 +196,15 @@ def extract_portrait_textures(mach):
     if len(matches) != 1: return {}
     try:
         rows, suffixes = (read_mac if mac else read_arm)(mach, matches[0], decoder)
+    except (ValueError, StopIteration, IndexError, UnicodeError, struct.error, ContentError):
+        return {}
+    return portrait_textures(mach, rows, suffixes, {'offset': mach.slice_offset + section['offset'] + matches[0].start(), 'bytes': len(matches[0][0])})
+
+
+def portrait_textures(mach, rows, suffixes, selection):
+    if not rows:
+        return {}
+    try:
         if any(not 0 <= row['id'] <= 65534 for row in rows):
             raise ValueError('Invalid portrait texture ID')
         if len({row['id'] for row in rows}) != len(rows) or len({row['stem'] for row in rows}) != len(rows):
@@ -205,9 +219,8 @@ def extract_portrait_textures(mach):
             if not 0 <= row['id'] < 65535 or not row['stem'].startswith('data/') or '.' in row['stem']:
                 raise ValueError('Unknown portrait texture stem')
             row['variants'] = {key: 'resources/' + safe_name(row['stem'] + suffixes[key]['value'] + '.aei') for key in suffixes}
-        return {'rows': rows, 'suffixes': suffixes,
-                'provenance': {'selection': {'offset': mach.slice_offset + section['offset'] + matches[0].start(), 'bytes': len(matches[0][0])}}}
-    except (ValueError, StopIteration, IndexError, UnicodeError, struct.error, ContentError):
+        return {'rows': rows, 'suffixes': suffixes, 'provenance': {'selection': selection}}
+    except (ValueError, UnicodeError, ContentError):
         return {}
 
 
@@ -409,3 +422,144 @@ def read_arm(mach, match, decoder):
         row, at = arm_record(mach, at, decoder, index, calls)
         rows.append(row)
     return rows, suffixes
+
+
+# The suffix: iPadLarge, else iPadHD, else retinaDisplay|iPad|n9 select the large,
+# medium and expanded literals; the baseline is the empty string.
+ANDROID_SELECTION = """
+push.w {r4, r5, r6, r7, r8, lr}
+add r7, sp, #0xc
+sub sp, #0x30
+ldr r1, [pc, #{&guard}]
+ldr r2, [pc, #{&iPadLarge}]
+add r1, pc
+add r2, pc
+ldr r1, [r1]
+ldr r1, [r1]
+str r1, [sp, #0x2c]
+ldr r0, [r0, #0x28]
+ldr r1, [r2]
+ldr.w r8, [r0]
+ldrb r0, [r1]
+cbz r0, @tablet
+ldr r1, [pc, #{&large}]
+add r1, pc
+b @suffix
+tablet: ldr r0, [pc, #{&iPadHD}]
+add r0, pc
+ldr r0, [r0]
+ldrb r0, [r0]
+cmp r0, #0
+beq.w @other
+ldr r1, [pc, #{&medium}]
+add r1, pc
+b @suffix
+...
+other: ldr.w r0, [pc, #{&retinaDisplay}]
+ldr.w r1, [pc, #{&iPad}]
+ldr.w r2, [pc, #{&n9}]
+add r0, pc
+add r1, pc
+add r2, pc
+ldr r0, [r0]
+ldr r1, [r1]
+ldr r2, [r2]
+ldrb r0, [r0]
+ldrb r1, [r1]
+ldrb r2, [r2]
+orrs r0, r1
+ldr.w r1, [pc, #{&expanded}]
+orrs r0, r2
+ldr.w r2, [pc, #{&baseline}]
+add r1, pc
+tst.w r0, #0xff
+add r2, pc
+it eq
+moveq r1, r2
+suffix: add r0, sp, #0x24
+movs r2, #0
+blx <_ZN11AbyssEngine6StringC1EPKcb>
+"""
+# One portrait: stem + suffix (sp+0x24) + ".aei" into a texture resource with its id.
+ANDROID_RECORD = """
+movs r0, #0x10
+blx <_Znwj>
+mov r5, r0
+movs r0, #8
+blx <_Znwj>
+mov r6, r0
+{ldr|ldr.w} r1, [pc, #{&stem}]
+add r1, pc
+add r0, sp, #0xc
+movs r2, #0
+blx <_ZN11AbyssEngine6StringC1EPKcb>
+add r0, sp, #0x14
+add r1, sp, #0xc
+add r2, sp, #0x24
+blx <_ZN11AbyssEngineplERKNS_6StringES2_>
+{ldr|ldr.w} r1, [pc, #{&extension}]
+add r1, pc
+add r0, sp, #4
+movs r2, #0
+blx <_ZN11AbyssEngine6StringC1EPKcb>
+add r0, sp, #0x1c
+add r1, sp, #0x14
+add r2, sp, #4
+blx <_ZN11AbyssEngineplERKNS_6StringES2_>
+movs r4, #1
+add r1, sp, #0x1c
+mov r0, r6
+movs r2, #0
+blx <_ZN11AbyssEngine15ResourceTextureC2ERKNS_6StringEf>
+{movw|mov.w} r0, #{id}
+mov.w r1, #-1
+strh r0, [r5]
+movs r0, #2
+adds r2, r5, #4
+movs r4, #0
+stm r2!, {r0, r1, r6}
+mov r0, r8
+mov r1, r5
+blx <_ZN11AbyssEngine11PaintCanvas11AddResourceEPNS_8ResourceE>
+add r0, sp, #0x1c
+blx <_ZN11AbyssEngine6StringD1Ev>
+add r0, sp, #4
+blx <_ZN11AbyssEngine6StringD1Ev>
+add r0, sp, #0x14
+blx <_ZN11AbyssEngine6StringD1Ev>
+add r0, sp, #0xc
+blx <_ZN11AbyssEngine6StringD1Ev>
+"""
+
+
+PORTRAITS = 152
+
+
+def read_android(lib):
+    """(rows, suffixes, selection extent) of loadPortraits, or ([], {}, {})."""
+    from .android_blocks import find, match, offset
+    symbol = '_Z13loadPortraitsPN11AbyssEngine6EngineE'
+    block = find(lib, symbol, ANDROID_SELECTION)
+    if block is None:
+        return [], {}, {}
+    refs = block['refs']
+    flags = {'medium': refs['iPadHD'][0], 'large': refs['retinaDisplay'][0], 'wide': refs['n9'][0]}
+    if extract_font_selection(lib).get('_profile_globals') != flags or len({refs[k][0] for k in ('iPadLarge', 'iPadHD', 'retinaDisplay', 'iPad', 'n9')}) != 5:
+        return [], {}, {}
+    try:
+        suffixes = {key: source_string(lib, refs[key][0]) for key in ('baseline', 'expanded', 'medium', 'large')}
+        rows, at = [], block['end']
+        for _ in range(PORTRAITS):
+            record = match(lib, symbol, ANDROID_RECORD, at)
+            if record is None:
+                return [], {}, {}
+            stem, extension = source_string(lib, record['refs']['stem'][0]), source_string(lib, record['refs']['extension'][0])
+            if extension['value'] != '.aei':
+                return [], {}, {}
+            rows.append({'id': record['values']['id'], 'stem': stem['value'], 'stem_offset': stem['offset'], 'stem_bytes': stem['bytes'],
+                         'extension_offset': extension['offset'], 'extension_bytes': extension['bytes'],
+                         'source_offset': offset(lib, at), 'source_bytes': record['end'] - at})
+            at = record['end']
+    except (ValueError, UnicodeError):
+        return [], {}, {}
+    return rows, suffixes, {'offset': offset(lib, block['start']), 'bytes': block['end'] - block['start']}

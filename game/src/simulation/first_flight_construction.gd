@@ -171,6 +171,7 @@ func prepare_free(bindings: RefCounted,catalogues: RefCounted,station: RefCounte
 	var departure: Dictionary=station.prepare_departure(bindings,catalogues)
 	if departure.is_empty() or not Campaign.supported(bindings,departure.get("campaign_cursor")):return reject(station.error if departure.is_empty() else "Ordinary departure requires its acknowledged native station")
 	var contracts: RefCounted=station.contract_owner();var equipment: RefCounted=station.equipment_owner()
+	contracts.retire_departure_vendors(bindings)
 	return _prepare_free_owned(bindings,catalogues,equipment,contracts,departure.mission,departure.station_response_flags,environment_seconds,unix_seconds,large_display,body_resources,effect_resources)
 
 func _prepare_free_owned(bindings: RefCounted,catalogues: RefCounted,equipment: RefCounted,contracts: RefCounted,mission: Dictionary,flags: Dictionary,environment_seconds: Variant,unix_seconds: Variant,large_display: bool,body_resources: RefCounted,effect_resources: RefCounted,previous_cache: Variant=null,incoming: RefCounted=null,from_station_id: int=-1,library: RefCounted=null) -> bool:

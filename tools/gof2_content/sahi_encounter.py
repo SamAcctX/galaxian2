@@ -1,9 +1,24 @@
-"""Original Sahi cast, resources and radio. No encounter completion is declared. Constant declarations only."""
+"""Original Sahi cast, resources and radio. No encounter completion is declared. Constant declarations only.
+
+Android: Level::createCampaignMission case 24 builds the route (6 ints in
+.rodata), three Voids (createShip(9, 0, 8)) and two hull-15 freighters
+(createShip(2, 1, 15), still, a third of their hull, no cargo), hides
+environment object 3 (KIPlayer::setVisible) and arms nothing for the
+freighters (Level::assignGuns gives the Voids item 5 at 0.8 x damage);
+Level::createRadioMessages case 24 creates the five radio lines (Android text
+ids 1917-1921, conditions 5, 6 and 22) with RadioMessage, Radio and
+Globals::getDialogueSoundId; KIPlayer::captureCrate counts collected cargo.
+Values are the Mac 1.0.7 ones (MAC_VALUES).
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 
 def extract_sahi_encounter(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(MAC_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -601,3 +616,38 @@ MAC_ALTERNATE = {'sahi_encounter_actor_factory': [77944,
                                    10,
                                    '__text',
                                    '216bad578370a3c3c02a7b78c2d9d94bcba53e7b15b162aa38d21483f6bb2ede']}
+
+ANDROID = {# Level::createCampaignMission case 24: route, three Voids, two still freighters (1/3 hull, no cargo), portal hidden.
+           'sahi_encounter_cast_dispatch': ('_ZN5Level21createCampaignMissionEv', 614, 2, '3f33'),
+           'sahi_encounter_cast': ('_ZN5Level21createCampaignMissionEv', 26804, 354, 'sha256:4c5bb2faeab44b8c92edd73591aab58952cd4976b5eb3cc4ec03c3bdfb81cbb6'),
+           'sahi_encounter_waypoints': ('_ZN5Level21createCampaignMissionEv', 26804, 24, 'a08601000000000000000000a086010000000000d08affff', 'literal', 0),
+           # Ship factory, freighter cargo, boxes (death model 18301) and assembly.
+           'sahi_encounter_actor_factory': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           'sahi_encounter_freighter_cargo': ('_ZN17PlayerFixedObjectC2EiiP6PlayerP10AEGeometryfff', 0, 804, 'sha256:8e92f8e152d9f1a0c3d99ecc26346df1f048501ee0014047ed2c3a1d67aaec75'),
+           'sahi_encounter_freighter_assembly': ('_ZN7Globals12getShipGroupEiib', 0, 2116, 'sha256:82d79c62239613267037732bb0cfc994cbdfe697c1466fe5e5ece399a14b7109'),
+           'sahi_encounter_freighter_cruise': ('_ZN17PlayerFixedObject9setMovingEb', 0, 6, '80f830117047'),
+           'sahi_encounter_hull_maximum': ('_ZN6Player15getMaxHitpointsEv', 0, 6, 'd0f884007047'),
+           'sahi_encounter_hull_assignment': ('_ZN6Player15setMaxHitpointsEi', 0, 10, 'c0f88410816729f1d5bb'),
+           'sahi_encounter_portal_visible': ('_ZN8KIPlayer10setVisibleEb', 0, 16, '80f8f1108068002818bf26f1edbb7047'),
+           # Routes, weapons and targets.
+           'sahi_encounter_route_constructor': ('_ZN5RouteC2EPii', 0, 252, 'sha256:ca7150cd62482cc53dbfdf0a65bbe663c975f533f5e0fa5d80515fc638df1c70'),
+           'sahi_encounter_route_current': ('_ZN5Route11getWaypointEv', 0, 6, '016898f095ba'),
+           'sahi_encounter_route_copy': ('_ZN5Route5cloneEv', 0, 348, 'sha256:c628d2ae59c27b4ad6e88c47bbcb48db0ee9fc8e6cc917af36c4ade43200da78'),
+           'sahi_encounter_route_assignment': ('_ZN8KIPlayer8setRouteEP5Route', 0, 36, 'sha256:2f00603c48d28f9708289d12f63227139eebaa3ce45e155ddc64e7ddf20197b5'),
+           'sahi_encounter_weapons': ('_ZN5Level10assignGunsEv', 0, 3320, 'sha256:2d4c9a0a16410a8459ff79a6c70158b826a10813a8dee82ee37fe387abbcec55'),
+           'sahi_encounter_target_membership': ('_ZN5Level14connectPlayersEv', 0, 1520, 'sha256:4e316991fbb2c7b755197137dad56b58a22cc3a495b4c038877551bc16a7e0ef'),
+           # Level::createRadioMessages case 24: five lines (1917-1921) and their conditions; the radio and voices.
+           'sahi_encounter_radio_dispatch': ('_ZN5Level19createRadioMessagesEi', 74, 2, '3703'),
+           'sahi_encounter_radio': ('_ZN5Level19createRadioMessagesEi', 1672, 196, 'sha256:0ae728c600beb8add5e78529872ede474c3eda7f2b9a7c2baca5db7956c6313d'),
+           'sahi_encounter_radio_final_store': ('_ZN5Level19createRadioMessagesEi', 11130, 10, 'd4f81401406805618be3'),
+           'sahi_encounter_radio_message': ('_ZN12RadioMessageC2Eiiii', 0, 52, 'sha256:3846fd4e1bb2e22b2ac9c0a510aa87489cf6562344739be3881098d133598fac'),
+           'sahi_encounter_radio_predicates': ('_ZN12RadioMessage9triggeredExP9PlayerEgoP11LevelScript', 0, 1860, 'sha256:eba93dba536ccdaa67ad0e44c7b5ff4ae1ee5284e9fd8831719b304e90173244'),
+           'sahi_encounter_radio_constructor': ('_ZN5RadioC2Ev', 0, 76, 'sha256:817f1e93dc3fe93b7abb687d99196f358a6a0f54c5ff4f35f1d85ad645f0ea82'),
+           'sahi_encounter_radio_activate': ('_ZN5Radio6updateElP9PlayerEgoP11LevelScript', 0, 824, 'sha256:faf466c6312c80154a177e81aca3c76a4714ed1e56d86c13793d669292cdea21'),
+           'sahi_encounter_radio_update': ('_ZN5Radio4drawExP9PlayerEgoP11LevelScript', 0, 592, 'sha256:531b05fbaf299d793c1d71c936f08d696c2d80a82452724274ed54ed6f04e5c3'),
+           'sahi_encounter_voice_lookup': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 0, 34, 'sha256:9ba804c27b6b2b9e9d4cc439e029afb2dbdb3a6cd0280a652c0d70affd78edca'),
+           'sahi_encounter_radio_void_voice': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 8, '7d07000023020000', 'literal', 3072),
+           'sahi_encounter_radio_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 186, 32, 'sha256:7cc22043407d26ea66e50d3ef2ae42ec8d60df19c4ed03c0921abf939a2155a0', 'literal', 2768),
+           # KIPlayer::captureCrate adds collected cargo to the counter condition 22 reads.
+           'sahi_encounter_cargo_counter_transfer': ('_ZN8KIPlayer12captureCrateEP3Hud', 0, 772, 'sha256:09e3994ad6b6bdd12efbad9bf8b047cdf4052576936143cf0778e04ecb7fe22c'),
+           'sahi_encounter_cargo_quantity': ('_ZN4Item9getAmountEv', 0, 4, '406b7047')}

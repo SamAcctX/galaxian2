@@ -236,8 +236,8 @@ func mine_trip(args: PackedStringArray) -> bool:
 	check(host.session.snapshot().mining_session.drill.is_empty() and host.session.snapshot().cargo.used==0,"Touch stop failed to commit a zero-ore cancellation")
 	check(host.session.snapshot().scenery.mined_count==1,"Manual stop did not retire its actual asteroid")
 	host.set_touch_controls(false)
-	if not begin_next_core_drill():return false
 	var failures_to_mine:=2 if bindings.mining_session.has("failure_instruction") else 0
+	if not begin_next_core_drill(failures_to_mine>0):return false
 	for attempt in failures_to_mine:
 		for i in 200:
 			if not step(Vector2.ONE):return false
@@ -251,7 +251,7 @@ func mine_trip(args: PackedStringArray) -> bool:
 			if args.size()==4:await capture(args[3],"app-mining-failure-"+str(attempt))
 			key(KEY_ENTER)
 		check(not host.session.snapshot().dialogue.visible and host.session.snapshot().progress.get("mining_failure_hint_seen",false),"Acknowledgement lost the shown flag or retained the modal")
-		if not begin_next_core_drill():return false
+		if not begin_next_core_drill(attempt+1<failures_to_mine):return false
 		check(host.session.snapshot().progress.get("mining_failure_hint_seen",false)==not repeats,"Starting another drill applied the wrong source hint reset")
 	for i in 500:
 		var state: Dictionary=host.session.snapshot().mining_session.drill
@@ -276,10 +276,14 @@ func mine_trip(args: PackedStringArray) -> bool:
 		if host.session.status=="station_transition_required":break
 	return true
 
-func begin_next_core_drill() -> bool:
+func begin_next_core_drill(failing:=false) -> bool:
 	var continuing: RefCounted=host.session.flight_owner();var next_asteroid:={}
-	for body in continuing.snapshot().scenery.bodies.objects:
-		if body.source_size_value==7 and not body.get("mined",false):next_asteroid=body;break
+	var bodies: Array=continuing.snapshot().scenery.bodies.objects.filter(func(body):return not body.get("mined",false))
+	# A failing drill takes the largest other rock when the field keeps only the core
+	# the successful drill needs (Android fields hold 40 + random(40) asteroids).
+	var size:=6 if failing and bodies.filter(func(body):return body.source_size_value==7).size()<=1 else 7
+	for body in bodies:
+		if body.source_size_value==size:next_asteroid=body;break
 	if next_asteroid.is_empty():check(false,"The earned field has no further core asteroid");return false
 	place_for_mining(continuing,next_asteroid)
 	if not host.session._commit(continuing,false):check(false,host.session.error);return false

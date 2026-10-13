@@ -149,3 +149,158 @@ class OpeningStaging(unittest.TestCase):
                     self.assertEqual(reader.extract_opening_staging(m),{})
 
 if __name__=='__main__':unittest.main()
+
+
+def halves(value):
+    word, = struct.unpack('<I', struct.pack('<f', value))
+    return word & 0xffff, word >> 16
+
+
+def word_float(word):
+    return struct.unpack('<f', struct.pack('<I', word))[0]
+
+
+# Low halves differ wherever the code builds a float from two halves (movs takes 8 bits).
+ANDROID_POSES = dict(camera=(word_float(0xc4960001), word_float(0xc3c80002), -30000.0), player_z=-50000.0, player=(16000.0, -11000.0, -35000.0),
+                     camera_y=1500.0, camera_z=-400.0, actor_x=-9000.0, actor_y=(600.0, -250.0, -100.0), actor1_z=-1600.0)
+STAGING_CALLEES = ['_ZN5Level9getPlayerEv', '_ZN5Level10getEnemiesEv', '_ZN5Level11getMessagesEv',
+                   '_ZN6Status25getCurrentCampaignMissionEv', '_ZN9PlayerEgo10setCollideEb', '_ZN9PlayerEgo21setComputerControlledEb',
+                   '_ZN6Player13setVulnerableEb', '_ZN18TargetFollowCamera12setLookAtCamEb',
+                   '_ZN18TargetFollowCamera11setPositionERKN11AbyssEngine6AEMath6VectorE', '_ZN9PlayerEgo11setPositionEfff',
+                   '_ZN10AEGeometry12setDirectionERKN11AbyssEngine6AEMath6VectorES4_', '_ZN8KIPlayer10setToSleepEv',
+                   '_ZN10AEGeometry10setVisibleEb', '_ZN12RadioMessage6isOverEv', '_ZN18TargetFollowCamera11setPositionEfff',
+                   '_ZN11AbyssEngine11PaintCanvas16CameraGetCurrentEv', '_ZN11AbyssEngine11PaintCanvas14CameraGetLocalEj',
+                   '_ZN11AbyssEngine6AEMath20MatrixSetTranslationERNS0_6MatrixEfff']
+
+
+def android(cursors=(0, 0), dispatches=(1, 1), hidden=3, shown=3, message=8, loop_back=True, shown_by='_ZN10AEGeometry10setVisibleEb',
+            gap=False, tail=None, extra=(), omit=None, **poses):
+    """LevelScript's constructor and process in the Android compiler's shape. Returns (library, function addresses).
+
+    `tail(asm, labels, call)` emits the code the formation gate skips to (default: return); `extra`
+    functions join the library, replacing stubs of the same name.
+    """
+    from android_fixture import TEXT, Thumb
+    from gof2_content.android_library import AndroidLibrary
+    from test_steering import add_imm, add_pc, adds8, assemble, b_to, blx_reg, cmp_imm, ldr_reg, ldr_w, roomy_library, strb_w
+    p = dict(ANDROID_POSES, **poses)
+    at = {name: TEXT + 0x40 * i for i, name in enumerate(STAGING_CALLEES)}
+    stubs = dict(at)
+    at.update({name: address for name, _, address in extra})
+    constructor, process = TEXT + 0x800, TEXT + 0xc00
+
+    def call(asm, name): return asm.call(at[name])
+
+    def pair(asm, register, value, low='movw'):
+        lo, hi = halves(value)
+        return (asm.movs(register, lo) if low == 'movs' else asm.movw(register, lo)), hi
+
+    def status(asm, cursor):
+        add_pc(ldr_w(asm, 0, 15, 0x40), 0).ldr(0, 0, 0).ldr(0, 0, 0)
+        return cmp_imm(call(asm, '_ZN6Status25getCurrentCampaignMissionEv'), 0, cursor)
+
+    def enemy(asm, register=4):
+        return ldr_reg(call(asm.mov(0, 10), '_ZN5Level10getEnemiesEv').ldr(0, 0, 4), 0, 0, register, 2)
+
+    def emit_constructor(asm, L):
+        asm.push()
+        for _ in range(dispatches[0]):
+            call(asm.movs(1, 0).movs(6, 0), '_ZN9PlayerEgo10setCollideEb')
+            b_to(status(asm, cursors[0]).str_sp(4, 0x44), L.get('initial', asm.here() + 4), 'eq')
+        asm.pop().label('initial')
+        if gap:
+            asm.nop()
+        strb_w(ldr_w(asm.strd(6, 6, 4, 0).ldr_sp(0, 0x4c).strb(6, 0, 1).mov(0, 10), 9, 13, 0x48), 6, 9, 0x48)
+        call(call(asm, '_ZN5Level9getPlayerEv').movs(1, 1).movs(4, 1), '_ZN9PlayerEgo21setComputerControlledEb')
+        call(call(asm.mov(0, 10), '_ZN5Level9getPlayerEv').ldr(0, 0, 0).movs(1, 1), '_ZN6Player13setVulnerableEb')
+        call(strb_w(asm.mov(0, 11).movs(1, 1), 4, 8, 0x21), '_ZN18TargetFollowCamera12setLookAtCamEb')
+        x, y, z = p['camera']
+        asm, high = pair(asm, 0, x, 'movs')
+        asm.add_sp(1, 0x98).movt(0, high).str_sp(0, 0x98)
+        asm, high = pair(asm, 0, y, 'movs')
+        asm, high2 = pair(asm.movt(0, high).str_sp(0, 0x9c), 0, z)
+        asm.movt(0, high2).str_sp(0, 0xa0).mov(0, 11)
+        call(asm, '_ZN18TargetFollowCamera11setPositionERKN11AbyssEngine6AEMath6VectorE')
+        call(asm.mov(0, 10), '_ZN5Level9getPlayerEv')
+        asm, high = pair(asm, 3, p['player_z'])
+        call(asm.movs(1, 0).movt(3, high).movs(2, 0), '_ZN9PlayerEgo11setPositionEfff')
+        call(asm.mov(0, 10), '_ZN5Level9getPlayerEv').ldr(0, 0, 8).mov_imm(1, 0x3f800000).strd(6, 6, 13, 0x98).add_sp(2, 0x5c)
+        asm.str_sp(1, 0xa0).strd(6, 1, 13, 0x5c).add_sp(1, 0x98).str_sp(6, 0x64)
+        call(asm, '_ZN10AEGeometry12setDirectionERKN11AbyssEngine6AEMath6VectorES4_').movs(4, 0).label('loop')
+        call(enemy(asm), '_ZN8KIPlayer10setToSleepEv')
+        call(ldr_reg(call(asm.mov(0, 10), '_ZN5Level10getEnemiesEv').ldr(0, 0, 4).movs(1, 0), 0, 0, 4, 2).ldr(0, 0, 8),
+             '_ZN10AEGeometry10setVisibleEb')
+        enemy(asm).str_w(6, 0, 0x124)
+        adds8(enemy(asm), 4, 1)
+        strb_w(cmp_imm(asm, 4, hidden).ldr(0, 0, 4), 6, 0, 0x5c)
+        b_to(asm, L.get('loop' if loop_back else 'initial', asm.here() + 4), 'ne').pop()
+
+    def actor(asm):
+        return blx_reg(asm.ldr(1, 0, 0).ldr(4, 1, 0x48).mov(1, 5), 4)
+
+    def emit_process(asm, L):
+        asm.push()
+        for _ in range(dispatches[1]):
+            call(ldr_w(asm, 0, 10, 0x18), '_ZN5Level11getMessagesEv').mov(6, 0)
+            call(ldr_w(asm, 0, 10, 0x18), '_ZN5Level9getPlayerEv').mov(8, 0)
+            call(ldr_w(asm, 0, 10, 0x18), '_ZN5Level10getEnemiesEv').mov(11, 0)
+            b_to(status(asm, cursors[1]).mov(0, 11).str_sp(0, 0x50).str_w(9, 13, 0x48), L.get('formation', asm.here() + 4), 'eq', True)
+        asm.pop().label('formation')
+        call(asm.ldr(0, 6, 4).ldr(0, 0, message), '_ZN12RadioMessage6isOverEv')
+        ldr_w(asm, 1, 10, 0x1c)
+        cmp_imm(cmp_imm(asm, 0, 1).strd(6, 8, 13, 0x40).it_eq(), 1, 0)
+        b_to(asm, L.get('end', asm.here() + 4), 'ne', True)
+        (px, ph), (py, pyh), (pz, pzh) = (halves(v) for v in p['player'])
+        asm.movw(5, py).movw(1, px).movw(3, pz).movs(0, 1).movt(5, pyh).str_w(0, 10, 0x1c).movt(1, ph).movt(3, pzh)
+        call(asm.mov(0, 8).mov(2, 5), '_ZN9PlayerEgo11setPositionEfff')
+        (cy, cyh), (cz, czh) = halves(p['camera_y']), halves(p['camera_z'])
+        ldr_w(asm.movw(9, cy).movs(4, cz), 0, 10, 0x14).movt(9, cyh).movt(4, czh).mov(1, 5).mov(2, 9).mov(3, 4)
+        call(asm, '_ZN18TargetFollowCamera11setPositionEfff')
+        add_pc(ldr_w(asm, 0, 15, 0x80), 0).ldr(0, 0, 0).ldr(6, 0, 0).mov(0, 6)
+        call(call(asm, '_ZN11AbyssEngine11PaintCanvas16CameraGetCurrentEv').mov(1, 0).mov(0, 6), '_ZN11AbyssEngine11PaintCanvas14CameraGetLocalEj')
+        add_imm(asm, 8, 13, 0x1e8).mov(1, 0).mov(2, 5).mov(3, 9).mov(0, 8).str_sp(4, 0)
+        call(asm, '_ZN11AbyssEngine6AEMath20MatrixSetTranslationERNS0_6MatrixEfff')
+        (ax, axh), (a0, a0h), (a1, a1h), (a2, a2h), (z1, z1h) = (halves(v) for v in (p['actor_x'], *p['actor_y'], p['actor1_z']))
+        actor(ldr_w(asm, 0, 11, 4).movw(5, ax).movs(2, a0).movt(5, axh).movt(2, a0h).movs(3, 0).ldr(0, 0, 0).movs(6, 0))
+        actor(ldr_w(asm, 0, 11, 4).movs(2, a1).movw(3, z1).movt(2, a1h).movt(3, z1h).ldr(0, 0, 4))
+        actor(ldr_w(asm, 0, 11, 4).movs(2, a2).movt(2, a2h).mov(3, 9).ldr(0, 0, 8))
+        add_imm(asm, 9, 13, 0x190).mov_imm(4, 0x3f800000).movs(5, 0).label('loop')
+        ldr_reg(ldr_w(asm, 0, 11, 4).mov(1, 8).mov(2, 9), 0, 0, 5, 2).ldr(0, 0, 8)
+        asm.strd(4, 6, 13, 0x1e8).str_sp(6, 0x1f0).strd(6, 4, 13, 0x190).str_sp(6, 0x198)
+        call(asm, '_ZN10AEGeometry12setDirectionERKN11AbyssEngine6AEMath6VectorES4_')
+        call(ldr_reg(ldr_w(asm, 0, 11, 4).movs(1, 1), 0, 0, 5, 2).ldr(0, 0, 8), shown_by)
+        b_to(cmp_imm(adds8(asm, 5, 1), 5, shown), L.get('loop', asm.here() + 4), 'ne').label('end')
+        tail(asm, L, call) if tail else asm.pop()
+
+    replaced = {f[0] for f in extra}
+    functions = [(name, Thumb(address).ret().finish(), address) for name, address in stubs.items() if name not in replaced] + list(extra)
+    functions += [('_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera', assemble(constructor, emit_constructor).finish(), constructor),
+                  ('_ZN11LevelScript7processEi', assemble(process, emit_process).finish(), process)]
+    return AndroidLibrary(roomy_library([f for f in functions if f[0] != omit])), (constructor, process)
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidOpeningStaging(unittest.TestCase):
+    def test_named_declarations_give_poses_and_spans(self):
+        lib, (constructor, process) = android()
+        result = reader.extract_opening_staging(lib)
+        self.assertEqual(result['initial'], {'player_position': [0.0, 0.0, -50000.0], 'player_forward': [0, 0, 1], 'player_up': [0, 1, 0],
+                                             'camera_position_parameter': list(ANDROID_POSES['camera']), 'hidden_actor_ids': [0, 1, 2]})
+        self.assertEqual(result['formation'], {
+            'after_event_finished': 2, 'player_position': [16000.0, -11000.0, -35000.0], 'camera_position_parameter': [-11000.0, 1500.0, -400.0],
+            'actors': [{'actor_id': i, 'position': position, 'forward': [1, 0, 0], 'up': [0, 1, 0], 'visible': True}
+                       for i, position in enumerate([[-9000.0, 600.0, 0.0], [-9000.0, -250.0, -1600.0], [-9000.0, -100.0, 1500.0]])]})
+        self.assertEqual({k: (v['offset'] - (constructor if k.startswith('initial') else process), v['bytes'])
+                          for k, v in result['provenance'].items()},
+                         {'initial_dispatch': (2, 28), 'initial': (32, 222), 'update_dispatch': (2, 58), 'formation': (62, 278)})
+
+    def test_each_broken_declaration_is_unsupported(self):
+        cases = {'initial cursor': dict(cursors=(1, 0)), 'formation cursor': dict(cursors=(0, 1)), 'two initial dispatches': dict(dispatches=(2, 1)),
+                 'two formation dispatches': dict(dispatches=(1, 2)), 'hidden count': dict(hidden=2), 'shown count': dict(shown=4),
+                 'message': dict(message=0xc), 'loop target': dict(loop_back=False), 'shown by': dict(shown_by='_ZN8KIPlayer10setToSleepEv'),
+                 'nan': dict(player=(float('nan'), -11000.0, -35000.0)), 'far': dict(camera=(-1200.0, -400.0, -3e7)), 'gap': dict(gap=True),
+                 'infinite': dict(actor_x=float('-inf'))}
+        cases.update({name: dict(omit=name) for name in ('_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera',
+                                                         '_ZN11LevelScript7processEi', '_ZN12RadioMessage6isOverEv')})
+        for name, options in cases.items():
+            self.assertEqual(reader.extract_opening_staging(android(**options)[0]), {}, name)

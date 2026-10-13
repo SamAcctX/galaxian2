@@ -1,9 +1,26 @@
-"""Verified Mac delivery-result declarations, without executable payloads."""
+"""Verified Mac delivery-result declarations, without executable payloads.
+
+Android: Status::missionCompleted finds a won courier (0) or passenger (11)
+contract at its target station; ModStation::OnTouchEnd acknowledges it
+(DialogueWindow), unloads its marked items 116 and 117 and passengers, counts
+it (Status::incMissionCount), pays at most 1000000 (Status::changeCredits,
+Layout::showMissionRewardMessage) and retires it (Status::removeMission);
+DialogueWindow::DialogueWindow and set mark it won,
+DialogueWindow::loadContent applies the client's standing
+(Standing::applyMissionCompleted, applyDelict, doubled by
+Status::hardCoreMode); Generator::createMission and Mission keep the client
+faction, Status::checkForLevelUp weighs completions and Status::departStation
+picks the active contract. Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 
 def extract_delivery_results(mach, arrival):
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -217,3 +234,28 @@ MAC_ALTERNATE = {'delivery_objective': [874076,
                                661,
                                '__text',
                                'c3727ce85e04d68c724295933ac5cc3716f4cdcf350e18558bfd59ee11ea006c']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'delivery_objective': ('_ZN6Status16missionCompletedEbbx', 0, 330, 'sha256:b0422d8252c8e71af9d62df26b4797dcf4bd61c4b6577c286a1f5037cbdf2816'),
+           'delivery_courier_target': ('_ZN6Status16missionCompletedEbbx', 474, 10, '002840f09481089864e1'),
+           'delivery_target': ('_ZN6Status16missionCompletedEbbx', 1196, 28, 'sha256:460f0987991b966a16216f6a498753dff344ad6ae19295c378a2902e0d727c0a'),
+           'delivery_acknowledgement': ('_ZN10ModStation10OnTouchEndEiiPv', 104, 30, 'sha256:021a3a69182dc7efcaf7971b4443bbe6c8a1b357b470ee0c05776cb9b281e124'),
+           'delivery_unloading': ('_ZN10ModStation10OnTouchEndEiiPv', 134, 788, 'sha256:49d11e5d6f946d99a0fa4d2dbb090462f94afa984dcf587e72c388bbcc80429e'),
+           'delivery_settlement': ('_ZN10ModStation10OnTouchEndEiiPv', 1470, 112, 'sha256:3a07f58264cd01ae2d6ac2c5e0c0d9f64eef1dafe06c64fc1f816e03a0c161f6'),
+           'delivery_settlement_credit': ('_ZN10ModStation10OnTouchEndEiiPv', 1700, 52, 'sha256:02bce82e7a7c4f91de479ed5801f8210598af9ff2d07235701d275b6b69a1f71'),
+           'delivery_result_construction': ('_ZN14DialogueWindowC2EP7MissionP5Leveli', 0, 86, 'sha256:af40e073975dc60ef72e866a79f8418a86327ba034ddf5328361b636e21e7b2b'),
+           'delivery_result_flags': ('_ZN14DialogueWindow3setEP7Missionii', 0, 120, 'sha256:9d7513e11d3d0954171e396f284ecca11aa43033d3d69c6f1e8da8a4c5cbecbb'),
+           'delivery_success_counter': ('_ZN6Status15incMissionCountEv', 0, 12, 'd0f8c4110131c0f8c4117047'),
+           'delivery_retirement': ('_ZN6Status13removeMissionEP7Mission', 0, 160, 'sha256:0cf644b7d9f7e5a9b07d96bd2764a645f7e87d0c410caf0c5e80f29ebd1b8806'),
+           'delivery_credit_delta': ('_ZN6Status13changeCreditsEi', 0, 40, 'sha256:3db9059bda43f3b08a4900d461d0fc0dd7e2b4e6bd61f4988873498d8d4cdd47'),
+           'delivery_credit_notification': ('_ZN6Layout24showMissionRewardMessageEib', 0, 60, 'sha256:b8cceb2bf0a010bef40266b521ee41b48f5e39bcbab1956d319bec2d919c06e4'),
+           'delivery_reputation_result': ('_ZN14DialogueWindow11loadContentEv', 1450, 30, 'sha256:f84fe95703ce1e2435136bbc044f3ffa1b494f4e994a2b84f01328a95879dcd7'),
+           'delivery_reputation_delta': ('_ZN8Standing21applyMissionCompletedEi', 0, 8, '6ff0040296f0b5bc'),
+           'delivery_reputation_apply': ('_ZN8Standing11applyDelictEii', 0, 124, 'sha256:262f35c31d0749a01acbf4ae6061d65741bc024e6bdf6ddd6c94ca65ed6fec89'),
+           'delivery_reputation_difficulty': ('_ZN6Status12hardCoreModeEv', 0, 36, 'sha256:d129eedb895b5a8cc5da84fbd316ee5effaae7d16ec57c3ef53f54ee21bd7b12'),
+           'delivery_client_faction': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 114, 10, '28460795c7f712ee0890'),
+           'delivery_faction_argument': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 1708, 38, 'sha256:14a517a490fd2e9e60c43bdbfe60af3a6d55491ba3c27b6705298b03e4e80725'),
+           'delivery_faction_constructor': ('_ZN7MissionC2EiN11AbyssEngine6StringEPiiiii', 78, 20, '2f4bd7e906207b44396ac5e90762686218682963'),
+           'delivery_faction_getter': ('_ZN7Mission13getClientRaceEv', 0, 4, '006a7047'),
+           'delivery_rank_score': ('_ZN6Status15checkForLevelUpEv', 0, 104, 'sha256:382c341367d31244fa6f3d6c10b0e220fff6ae8b8311556375980d889900974b'),
+           'delivery_active_selection': ('_ZN6Status13departStationEP7Station', 406, 336, 'sha256:ec4640fd415800766a8e5681e10592eab467619037289009342d728aaeaf5293')}

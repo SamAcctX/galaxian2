@@ -3,10 +3,20 @@
 Recognizers cover the two supported compiler layouts. They are import-time
 validation only; packs contain constants and extents, never executable bytes.
 Unknown layouts remain unsupported instead of receiving guessed death behavior.
+
+Android: PlayerFighter::update retires a finished wreck after 60001 ms
+(KIPlayer::setActive), and on death sets mode 3 with a 1500 + 0..1499 ms
+delay, plays sound 20 at the pre-motion position, draws a spin of three
+-100..99 axes scaled by 0.05, and records KIPlayer::cargoAvailable; mode 3
+tumbles (XYZ rotation, drift) until the delay ends, starts the explosion,
+draws the bomb force 50 + 0..49 x 0.01 and a breakup direction and enters
+mode 4, which ends with the cleanup. Explosion::Explosion builds type 0
+from models 16821 and 16820, Explosion::playSound picks sound 18 or 19 for
+type 0 and Explosion::update(int, TargetFollowCamera*) runs the effect.
 """
 import copy
 from .opening_npc_guidance import LAYOUTS as GUIDANCE_LAYOUTS
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 VALUES = {
     'actor_kind':8, 'dying_mode':3, 'explosion_mode':4,
@@ -24,6 +34,15 @@ VALUES = {
 def extract_npc_destruction_audio(mach, actors):
     """Bind audible death triggers separately from the older motion capability."""
     arch=mach.architecture
+    if arch=='android-armv7':
+        try:
+            death=actors['npc_initialization']['destruction']
+            proof=recognize_symbols(mach,ANDROID_AUDIO)
+            if not proof:return {}
+            return {'initial_source_id':death['death_sound'],
+                    'breakup_source_ids':list(range(death['breakup_sound_base'],death['breakup_sound_base']+death['breakup_sound_bound'])),
+                    'position':'pre_motion','instance':'cached_event','provenance':proof}
+        except (KeyError,TypeError):return {}
     if arch not in AUDIO_LAYOUTS:return {}
     try:
         npc=actors['npc_initialization']
@@ -57,6 +76,13 @@ AUDIO_LAYOUTS = {
 
 def extract_npc_destruction(mach, actors):
     arch=mach.architecture
+    if arch=='android-armv7':
+        try:
+            npc=actors['npc_initialization']
+            if npc['guidance']['actor_kind']!=VALUES['actor_kind'] or not npc['construction']:return {}
+        except (KeyError,TypeError):return {}
+        proof=recognize_symbols(mach,ANDROID)
+        return dict(copy.deepcopy(VALUES),provenance=proof) if proof else {}
     if arch not in LAYOUTS:return {}
     try:
         npc=actors['npc_initialization']
@@ -195,3 +221,31 @@ MAC_AUDIO_ALTERNATE = {'initial': [8316,
              '4c8d8518fcfffff30f1005cdeb0d00498b46788b704c488bb888000000c78518fcffff00000000c7851cfcffff00000000c78520fcffff00000000488b9d90f5ffff4889da31c9e8245ffeff488d05d1741b0031c9488d15f46e1b00f6420f014889da480f44d1488b38be1400000031c90f57c0e86958ecff'],
  'breakup_entry': [-1299024, 10, '554889e54156534889f3'],
  'breakup_call': [-1298807, 17, '4889da31c90f57c05b415e5de9c44a0000']}
+
+
+# Android: spans inside named functions; the values are VALUES.
+ANDROID = {'early_retirement': ('_ZN13PlayerFighter6updateEi', 30, 78, 'sha256:97498c11e2f1c87e1fe52b678632c79729055a2b0206e9befba7116ce5fb6fd0'),
+           'death_guard': ('_ZN13PlayerFighter6updateEi', 3776, 20, 'bbf1000f00f3f581d4f8840003380228c0f0ef81'),
+           'initial_delay': ('_ZN13PlayerFighter6updateEi', 4448, 66, 'sha256:bb5e49cc8a88be8929314ad95bb14269050bb42548d15d7e263c76c7a89c225b'),
+           # The spin scale 0.05 is a movw/movt immediate here.
+           'initial_spin': ('_ZN13PlayerFighter6updateEi', 4588, 114, 'sha256:2845c57fe60d449e19fccae5db6aad25aa1189ff8e2351ad624ce78f5f4fb185'),
+           # Mode switch: 3 tumbles, 4 explodes.
+           'mode_dispatch': ('_ZN13PlayerFighter6updateEi', 4810, 22, 'd4f8840009280bd8dfe810f09d0019000a00a1009601'),
+           'tumble': ('_ZN13PlayerFighter6updateEi', 5144, 208, 'sha256:477f3b1d36f961cebf724867b2487b5de49a50dc76a6e0cea6c96594a5c40108'),
+           'breakup_draws': ('_ZN13PlayerFighter6updateEi', 5414, 150, 'sha256:f81967a8e750e3181541ee7a73f845669a8a0680832bea8254f2f79f9c9d665c'),
+           'drift_multiplier': ('_ZN13PlayerFighter6updateEi', 5912, 4, '0ad7233c'),
+           'drift_base': ('_ZN13PlayerFighter6updateEi', 5916, 4, '00004842'),
+           'explosion_mode': ('_ZN13PlayerFighter6updateEi', 5634, 24, 'd4f8f0014044c4f8f0010128c0f27c82002084f86f00c5e2'),
+           'cleanup': ('_ZN13PlayerFighter6updateEi', 7448, 62, 'sha256:02101ce6627893ae8b45555b6cf46182fcb02963a390983258921a850e88606c'),
+           'cargo_predicate': ('_ZN8KIPlayer14cargoAvailableEv', 0, 36, 'sha256:d957cbac863a90042a6bb4bd1d5ea6115d6287c0af45fb312f0e030b7d71e440'),
+           'sound_type': ('_ZN9Explosion9playSoundEPN11AbyssEngine6AEMath6VectorE', 60, 8, '0068811e042919d2'),
+           'sound_choice': ('_ZN9Explosion9playSoundEPN11AbyssEngine6AEMath6VectorE', 120, 52, 'sha256:23ced08eec10041a00e43a80914ce1c7f13be1d10f00262ec4bd75f41461884c'),
+           'type_dispatch': ('_ZN9ExplosionC2Ei', 74, 6, 'dfe816f00d00'),
+           'type_zero_models': ('_ZN9ExplosionC2Ei', 104, 82, 'sha256:5b15cce12e12f2789e508e9fa1a4c85799f1d8a334d1439d990404352bfb0a59'),
+           'effect_update': ('_ZN9Explosion6updateEiP18TargetFollowCamera', 0, 488, 'sha256:43c8d8017b10820e15290fb8af336f31c0a8f558998519d3d0b36925e25cf606'),
+           'retire': ('_ZN8KIPlayer9setActiveEb', 0, 6, '406826f1f7b8'),
+           'active_setter': ('_ZN6Player9setActiveEb', 0, 6, '80f8c0107047')}
+
+ANDROID_AUDIO = {'initial': ('_ZN13PlayerFighter6updateEi', 4514, 74, 'sha256:c7aa10a44a3c2ca1d64c27b53dec0993adeebb27d8f6a2cd05502a33cf607d43'),
+                 'breakup_entry': ('_ZN9Explosion9playSoundEPN11AbyssEngine6AEMath6VectorE', 0, 14, 'b0b502af82b00c46816a002916db'),
+                 'breakup_call': ('_ZN9Explosion9playSoundEPN11AbyssEngine6AEMath6VectorE', 226, 14, '002a08bf144622460023b4f73cee')}

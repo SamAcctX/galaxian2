@@ -56,14 +56,14 @@ public final class AndroidImportPlugin extends GodotPlugin {
     @UsedByGodot
     public boolean startImport(String uriText, String dataPath, String statusPath, String cancelPath) {
         if (!running.compareAndSet(false, true)) {
-            lastError = "A Mac import is already running";
+            lastError = "An import is already running";
             return false;
         }
         try {
             Context context = getActivity().getApplicationContext();
             Uri uri = Uri.parse(uriText);
             if (!"content".equals(uri.getScheme())) {
-                throw new IllegalArgumentException("Choose your Mac .dmg or app ZIP using the Android file picker");
+                throw new IllegalArgumentException("Choose your game file using the Android file picker");
             }
             File data = new File(dataPath).getCanonicalFile();
             File status = new File(statusPath).getCanonicalFile();
@@ -83,9 +83,9 @@ public final class AndroidImportPlugin extends GodotPlugin {
                 throw new IllegalStateException("Could not create the import progress folder");
             }
             String displayName = displayName(context.getContentResolver(), uri).toLowerCase(Locale.ROOT);
-            String extension = displayName.endsWith(".dmg") ? ".dmg" : ".zip";
-            if (!displayName.endsWith(".zip") && !displayName.endsWith(".dmg")) {
-                throw new IllegalArgumentException("Choose the original Mac .dmg or a ZIP containing its .app");
+            String extension = displayName.substring(Math.max(0, displayName.lastIndexOf('.')));
+            if (!java.util.Arrays.asList(".zip", ".dmg", ".xapk", ".7z").contains(extension)) {
+                throw new IllegalArgumentException("Choose the original Mac .dmg or a ZIP containing its .app, or the Android release .xapk or .7z");
             }
             File work = new File(jobs, status.getName() + ".work");
             if (!work.mkdir()) {
@@ -168,7 +168,7 @@ public final class AndroidImportPlugin extends GodotPlugin {
         long count = 0;
         long last = 0;
         try (InputStream input = resolver.openInputStream(uri)) {
-            if (input == null) throw new IllegalArgumentException("Cannot read the selected Mac game file");
+            if (input == null) throw new IllegalArgumentException("Cannot read the selected game file");
             try (FileOutputStream output = new FileOutputStream(source)) {
                 int size;
                 while ((size = input.read(buffer)) != -1) {
@@ -177,7 +177,7 @@ public final class AndroidImportPlugin extends GodotPlugin {
                     }
                     count += size;
                     if (count > MAX_SOURCE) {
-                        throw new IllegalArgumentException("The Mac game file exceeds the 8 GiB import limit");
+                        throw new IllegalArgumentException("The selected game file exceeds the 8 GiB import limit");
                     }
                     if (source.getUsableSpace() < HEADROOM) {
                         throw new IllegalStateException("Import needs more free device storage");
@@ -186,13 +186,13 @@ public final class AndroidImportPlugin extends GodotPlugin {
                     long now = System.nanoTime();
                     if (now - last > 200_000_000L) {
                         last = now;
-                        writeStatus(status, "working", "Copying the selected Mac game file");
+                        writeStatus(status, "working", "Copying the selected game file");
                     }
                 }
                 output.getFD().sync();
             }
         }
-        if (count == 0) throw new IllegalArgumentException("The selected Mac game file is empty");
+        if (count == 0) throw new IllegalArgumentException("The selected game file is empty");
     }
 
     private static void writeStatus(File path, String state, String message) {

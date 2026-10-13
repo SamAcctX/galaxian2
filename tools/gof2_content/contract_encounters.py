@@ -1,9 +1,27 @@
-"""Verified Mac contract encounter declarations, without code payloads."""
+"""Verified Mac contract encounter declarations, without code payloads.
+
+Android: Level::createMission draws the enemy faction (random(100) < 75
+pirates, else Standing::getEnemyRace of the system faction) and builds the
+selected contract: pirates on a Level::createRoute or field-centre Route
+(Level::createAsteroids resets the generator and keeps the centre), Junk
+(Level::createStaticObject's PlayerJunk debris of models 16917-16919 and
+pirates around a random centre, 121000 ms) and the challenge rival
+(Level::createShip, PlayerFighter::setRotate, KIPlayer::setSpeed,
+Player::setHitpoints, Route::clone, KIPlayer::setRoute,
+Player::setAlwaysFriend) with pirates put to sleep (KIPlayer::setToSleep);
+Globals::getRandomEnemyFighter and its 37-entry faction table pick hulls
+(Status::dlc1Won for Vossk), Objective::achieved checks the controllers and
+Status::departStation picks the active contract. Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 
 def extract_contract_encounters(mach, arrival):
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -388,3 +406,34 @@ MAC_ALTERNATE = {'encounter_active_selection': [857597,
                              24,
                              '__const',
                              '9dce470703e09e31289afa0eb94aec3cab1ea50172e526d80c6c116cf0964817']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'encounter_active_selection': ('_ZN6Status13departStationEP7Station', 406, 336, 'sha256:ec4640fd415800766a8e5681e10592eab467619037289009342d728aaeaf5293'),
+           'encounter_player_position': ('_ZN5Level13createMissionEv', 52, 12, 'daf8f00081683da8adf798e8'),
+           'encounter_field_center': ('_ZN5Level15createAsteroidsEv', 554, 62, 'sha256:f420bc9052f5255e2f611c70a4b7850308a4404eaeeff1ab4548880bdae91ba2'),
+           'encounter_enemy_selection': ('_ZN5Level13createMissionEv', 756, 114, 'sha256:917ae068d382471ad8a1df0fe964d65dccf5b09ca4f21c43f29b22975b781066'),
+           'encounter_enemy_faction': ('_ZN8Standing12getEnemyRaceEi', 0, 24, '032984bf082070470248784450f82100704700bf16f61000'),
+           'encounter_dispatch': ('_ZN5Level13createMissionEv', 870, 34, 'sha256:a881035550b5409eb86fa2f6c4109fc9dd8313bcd6b49ef79a2619ff475ae826'),
+           'encounter_pirate_route': ('_ZN5Level13createMissionEv', 14060, 50, 'sha256:077897a4bce67f1d8be67230a0879d9e7554f512465ce8d706d72dd9a33d5dbb'),
+           'encounter_pirates': ('_ZN5Level13createMissionEv', 19392, 354, 'sha256:002ae39398037cb74e0436030a4d381d47f53aef85bd176dfcfd8008ca202649'),
+           'encounter_junk': ('_ZN5Level13createMissionEv', 14516, 438, 'sha256:590750b60217a5ec9ac26b85e068472a1bdbd7129269329f946c204b5561d3fc'),
+           'encounter_challenge': ('_ZN5Level13createMissionEv', 16844, 650, 'sha256:f8aff0b48683fa7bf4ba9663f0f1d5d9851767a4dc1614630594d68de765c1cf'),
+           'encounter_path': ('_ZN5Level11createRouteEi', 0, 244, 'sha256:e8b44cd6775c7fd2fa9a61e57ec5e99808556a3e9f4497b742559ea90200b7c2'),
+           'encounter_hull_selector': ('_ZN7Globals21getRandomEnemyFighterEi', 0, 180, 'sha256:1d49b61c9159e9f48d52329d75df5467b226c40b845983a4b5820b1955e88682'),
+           'encounter_hull_factions': ('_ZN7Globals21getRandomEnemyFighterEi', 100, 148, 'sha256:dcc61cb2c29f08bd326818ed88c637c070c7b8f851270cb28e5c95aaa4217d6f', 'literal', 0),
+           'encounter_early_hulls': ('_ZN6Status7dlc1WonEv', 0, 14, 'd0f8e81100205329c8bf01207047'),
+           'encounter_small_actor': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           'encounter_deferred_actor': ('_ZN8KIPlayer10setToSleepEv', 0, 28, 'sha256:cc84c0937afb4bb67537f3edaabf3c0dddc9ff41c2ff7882b2060d2d3248972a'),
+           'encounter_junk_object': ('_ZN5Level18createStaticObjectEP8Waypointib', 56, 252, 'sha256:50af36629608d65d682a79cac2b6dc51011461f882399d9372119e794467ca56'),
+           'encounter_junk_actor': ('_ZN10PlayerJunkC2EiP6PlayerP10AEGeometryfff', 0, 72, 'sha256:7e30616968d50d6da582e908887f434f155de0d3cdb356bc22d3191290b7450f'),
+           'encounter_junk_base': ('_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', 0, 604, 'sha256:3a02b0c7ce6b25d113ff6b119a914a61a149997d03f3853b159537f02d2efee8'),
+           'encounter_junk_hostility': ('_ZN6Player14setAlwaysEnemyEb', 0, 16, '80f8ec100121a0f85c1080f8e0107047'),
+           'encounter_rival_friend': ('_ZN6Player15setAlwaysFriendEb', 0, 20, '80f8ed104ff48071a0f85c10002180f8e0107047'),
+           'encounter_rival_speed': ('_ZN13PlayerFighter9setRotateEi', 0, 24, '00ee101a0021b8eec00a80f8391180ed680a80ed7a0a7047'),
+           'encounter_base_speed': ('_ZN8KIPlayer8setSpeedEf', 0, 4, '01667047'),
+           'encounter_fighter_speed': ('_ZN13PlayerFighter8setSpeedEf', 0, 16, '002280f83921c0f8a811c0f8e0117047'),
+           'encounter_route_copy': ('_ZN5Route5cloneEv', 0, 348, 'sha256:c628d2ae59c27b4ad6e88c47bbcb48db0ee9fc8e6cc917af36c4ade43200da78'),
+           'encounter_route_replace': ('_ZN8KIPlayer8setRouteEP5Route', 0, 36, 'sha256:2f00603c48d28f9708289d12f63227139eebaa3ce45e155ddc64e7ddf20197b5'),
+           'encounter_route_constructor': ('_ZN5RouteC2EPii', 0, 252, 'sha256:ca7150cd62482cc53dbfdf0a65bbe663c975f533f5e0fa5d80515fc638df1c70'),
+           'encounter_controllers': ('_ZN9Objective8achievedEi', 0, 978, 'sha256:da3086f410423068084e2547c16738945cb696b15a3685f82075a90dd6538eab'),
+           'encounter_dead_predicate': ('_ZN8KIPlayer6isDeadEv', 0, 14, 'd0f884100020042908bf01207047')}

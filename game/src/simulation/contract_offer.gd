@@ -34,11 +34,15 @@ func configure(bindings: RefCounted,catalogues: RefCounted,context: Variant,choi
 		return reject("The offer location is outside its supported system")
 	var extra: Dictionary=rules.ordinary_generation.offers if ordinary else {}
 	if not choices is Dictionary:return reject("Unsupported contract selection")
+	# Android lounges raise one small reward (lounge_contacts.gd _jackpot).
+	var jackpot: Dictionary=rules.get("generation",{}).get("jackpot",{}) if choices.has("jackpot") else {}
+	if choices.has("jackpot") and (jackpot.is_empty() or not choices.jackpot is bool or not choices.jackpot):return reject("Unsupported contract reward jackpot")
+	var extras:=int(choices.has("jackpot"))
 	if ordinary:
 		var named: bool=choices.get("kind")==6 and choices.has("target_name")
-		if choices.size()!=(6 if named else 5) or not Numbers.integer(choices.get("kind"),0,int(extra.kind_count)-1) or not Numbers.integer(choices.get("difficulty_index"),0,int(extra.difficulty_draw_bound)-1):return reject("Unsupported ordinary contract selection")
+		if choices.size()!=(6 if named else 5)+extras or not Numbers.integer(choices.get("kind"),0,int(extra.kind_count)-1) or not Numbers.integer(choices.get("difficulty_index"),0,int(extra.difficulty_draw_bound)-1):return reject("Unsupported ordinary contract selection")
 		if named and (not choices.target_name is String or choices.target_name.is_empty() or choices.target_name.length()>1024 or choices.target_name.contains("#") or choices.target_name.contains("\n")):return reject("Invalid retained target name")
-	elif choices.size()!=4 or not Numbers.integer(choices.get("kind_index"),0,rules.kind_choices.size()-1) or not Numbers.integer(choices.get("difficulty_index"),0,int(rules.difficulty_draw_bound)-1):return reject("Unsupported early contract selection")
+	elif choices.size()!=4+extras or not Numbers.integer(choices.get("kind_index"),0,rules.kind_choices.size()-1) or not Numbers.integer(choices.get("difficulty_index"),0,int(rules.difficulty_draw_bound)-1):return reject("Unsupported early contract selection")
 	var kind:=int(choices.kind) if ordinary else int(rules.kind_choices[choices.kind_index])
 	var difficulty:=int(choices.difficulty_index)+int(rules.difficulty_add)
 	var destination: Variant=choices.get("destination_station_id")
@@ -110,9 +114,13 @@ func configure(bindings: RefCounted,catalogues: RefCounted,context: Variant,choi
 	if not (extra.bonus_excluded_kinds if ordinary else rules.bonus.excluded_kinds).any(func(value):return int(value)==kind):
 		if int(context.client_faction)<rules.bonus.faction_axes.size():
 			bonus=quantize_credits(Vitals.single(gross*standing_ratio(rules,context)),int(pricing.credit_step))
+	var reward:=quantize_credits(gross,int(pricing.credit_step))
+	if not jackpot.is_empty():
+		if reward>int(jackpot.maximum_reward):return reject("The jackpot raises only a small reward")
+		reward=mini(reward*int(jackpot.multiplier),int(jackpot.cap))
 	var mission:={"kind":kind,"story":false,"station_id":int(destination),"system_id":int(stations[destination].system_id),
 		"difficulty":difficulty,"source_parameter":source_parameter,"quantity":quantity,
-		"reward":quantize_credits(gross,int(pricing.credit_step)),"bonus":bonus,
+		"reward":reward,"bonus":bonus,
 		"title_text_id":int(rules.title_text_base)+kind,"briefing_text_id":int(rules.briefing_text_base)+kind,
 		"cargo_text_id":cargo_text_id}
 	if choices.has("target_name"):mission.target_name=choices.target_name

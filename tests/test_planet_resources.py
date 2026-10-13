@@ -1,4 +1,5 @@
 """Synthetic planet lookup contexts and tables, with relocated pointers."""
+import importlib.util
 import struct
 import unittest
 from types import SimpleNamespace
@@ -83,3 +84,109 @@ class PlanetResources(unittest.TestCase):
                         data[256+at+off:256+at+off+size]=struct.pack('<i',mach.text['address']+8192-site-size) if mac else arm_wide((8192-at-0x2e)&65535,1,False)
                     mach.data=bytes(data)
                     self.assertEqual(reader.extract_planet_resources(mach,sky,colors),{})
+
+
+SYSTEM = '_ZN10StarSystemC1Ei'
+TEXTURE = '_ZN11AbyssEngine11PaintCanvas13TextureCreateEtRjb'
+PLANET_GETTERS = {'_ZN6Status9getSystemEv': 0x1a0, '_ZN11SolarSystem15getTextureIndexEv': 0x30,
+                  '_ZN6Status25getCurrentCampaignMissionEv': 0x1e8, '_ZN7Station15getTextureIndexEv': 0x14}
+
+
+def adds_reg(asm, rd, rn, rm): return asm.half(0x1800 | rm << 6 | rn << 3 | rd)
+
+
+def str_index(asm, rt, rn, rm, shift=2): return asm.half(0xf840 | rn, rt << 12 | shift << 4 | rm)  # str.w rt, [rn, rm, lsl #s]
+
+
+def android(name=SYSTEM, copies=('sun', 'current', 'far', 'near', 'mesh'), targets=('far', 'near', 'tail'), world=3, ids=(6768, 10043),
+            big=None, getters=PLANET_GETTERS, near_at=0x100):
+    """The constructor's sun texture, per-station planet textures and planet mesh in the Android compiler's shape."""
+    from android_fixture import RODATA, TEXT
+    from android_thumb import Asm, build
+    from test_opening_sky import getter
+    asm = Asm(TEXT + 0x100).push()
+
+    def planet(table, slot, early):
+        asm.ldr_w(0, 8, 4).ldr_sp(1, slot).ldr_index(0, 0, 11).ldr(5, 1, 0).call_to('_ZN7Station15getTextureIndexEv').ldr_sp_w(10, 0x70)
+        if early:
+            asm.movs(3, 0)
+        asm.ldr_w(1, 10, 0x14).ldr(2, 1, 4).ldr_address(1, table).add_low(2, 4).add_pc(1).ldrh_index(1, 1, 0, 2).mov(0, 5)
+        if not early:
+            asm.label('tail').movs(3, 0)
+        asm.call_to(TEXTURE)
+
+    for part in copies:
+        if part == 'sun':
+            asm.ldr_address(0, RODATA + 0xf00).ldr_address(1, RODATA + 0xf04).add_pc(0).add_pc(1).ldr(0, 0, 0).ldr(4, 1, 0).ldr(5, 0, 0)
+            asm.ldr(0, 4, 0).call_to('_ZN6Status9getSystemEv').call_to('_ZN11SolarSystem15getTextureIndexEv').ldr_address(1, RODATA)
+            asm.movs(3, 0).ldr_w(2, 9, 0x14).add_pc(1).ldrh_index(1, 1, 0, 2).mov(0, 5).ldr(2, 2, 4).call_to(TEXTURE)
+        elif part == 'current':
+            asm.ldr_index(5, 0, 11).ldr_sp(0, 0x68).ldr(0, 0, 0).call_to('_ZN6Status10getStationEv').add_imm(9, 11, 1)
+            asm.call_to('_ZN7Station8getIndexEv').cmp_reg(5, 0).branch('ne', targets[0]).ldr_sp(0, 0x60).ldr(0, 0, 0)
+            asm.call_to('_ZN6Status25getCurrentCampaignMissionEv').ldr_sp(1, 0x64).cmp(1, world).it('eq').cmp(0, 0).branch('ne', targets[1])
+            asm.ldr_sp_w(10, 0x70).str_w(9, 10, 0x50).ldr_w(0, 10, 0x14).ldr(1, 0, 4).ldr_sp(0, 0x50)
+            adds_reg(asm, 2, 1, 4)
+            asm.movw(1, ids[1]).ldr(0, 0, 0).branch(None, targets[2])
+        elif part == 'far':
+            asm.label('far')
+            planet(RODATA + 0x200, 0x5c, True)
+            asm.label('other').nop().nop()
+        elif part == 'near':
+            asm.label('near')
+            planet(RODATA + near_at, 0x4c, False)
+        else:
+            asm.movs(0, 0xc0).call_to('_Znwj').mov(6, 0).ldr_sp(0, 0x64).ldr(2, 0, 0).mov(0, 6).movw(1, ids[0]).movs(3, 0)
+            asm.call_to('_ZN10AEGeometryC1EtPN11AbyssEngine11PaintCanvasEb').ldr_w(0, 9, 0x1c).ldr(0, 0, 4)
+            str_index(asm, 6, 0, 8)
+    functions = {name: asm.pop()}
+    functions.update((key, getter(key, field, TEXT + 0xc00 + 0x10 * n)) for n, (key, field) in enumerate(getters.items()))
+    tables = {'sun_textures': list(range(10031, 10050)), 'near_textures': list(range(10042, 10069)), 'far_textures': list(range(10011, 10038))}
+    if big:
+        tables[big][5] = 65534
+    data = {RODATA + at: struct.pack('<%dI' % len(tables[key]), *tables[key]) for at, key in ((0, 'sun_textures'), (0x100, 'near_textures'), (0x200, 'far_textures'))}
+    return build(functions, data), tables
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidPlanetResources(unittest.TestCase):
+    SKY = {'provenance': {'system': {}, 'cursor': {}}}
+    COLORS = {'provenance': {'sky_index': {}, 'planet_type': {}}}
+
+    def test_encodings_decode_as_intended(self):
+        import capstone
+        from android_thumb import Asm
+        decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+        for emit, expected in [(lambda a: adds_reg(a, 2, 1, 4), 'adds r2, r1, r4'), (lambda a: str_index(a, 6, 0, 8), 'str.w r6, [r0, r8, lsl #2]')]:
+            asm = Asm(0x2000)
+            emit(asm)
+            self.assertEqual(['%s %s' % (i.mnemonic, i.op_str) for i in decoder.disasm(bytes(asm.code), 0x2000)], [expected])
+
+    def test_tables_ids_and_spans(self):
+        from android_fixture import RODATA, TEXT
+        lib, tables = android()
+        value = reader.extract_planet_resources(lib, self.SKY, self.COLORS)
+        self.assertEqual({k: v for k, v in value.items() if k != 'provenance'},
+                         dict(tables, scope='fresh_opening_planet_resources', mesh_id=6768, opening_texture_id=10043))
+        start = lib.symbols[SYSTEM][0]
+        self.assertEqual(value['provenance'], {
+            'sun': {'offset': start + 2, 'bytes': 46}, 'current': {'offset': start + 48, 'bytes': 68},
+            'far': {'offset': start + 116, 'bytes': 44}, 'near': {'offset': start + 164, 'bytes': 44}, 'mesh': {'offset': start + 208, 'bytes': 34},
+            'system': {'offset': TEXT + 0xc00, 'bytes': 6}, 'sky_index': {'offset': TEXT + 0xc10, 'bytes': 4},
+            'cursor': {'offset': TEXT + 0xc20, 'bytes': 6}, 'planet_type': {'offset': TEXT + 0xc30, 'bytes': 4},
+            'sun_textures': {'offset': RODATA, 'bytes': 76}, 'near_textures': {'offset': RODATA + 0x100, 'bytes': 108},
+            'far_textures': {'offset': RODATA + 0x200, 'bytes': 108}})
+        for sky, colors in ((None, self.COLORS), (self.SKY, None), ({'provenance': {'system': {}}}, self.COLORS),
+                            (self.SKY, {'provenance': {'planet_type': {}}}), ({'provenance': {'cursor': {}}}, self.COLORS),
+                            (self.SKY, {'provenance': {'sky_index': {}}})):
+            self.assertEqual(reader.extract_planet_resources(lib, sky, colors), {})
+
+    def test_each_broken_shape_is_unsupported(self):
+        cases = {'name': dict(name='_ZN10StarSystem9initLightEv'), 'world': dict(world=4),
+                 'far target': dict(targets=('other', 'near', 'tail')), 'near target': dict(targets=('far', 'other', 'tail')),
+                 'tail target': dict(targets=('far', 'near', 'near')), 'big table': dict(big='far_textures'),
+                 'big sun': dict(big='sun_textures'), 'big mesh': dict(ids=(65534, 10043)), 'big opening': dict(ids=(6768, 65534)),
+                 'table outside': dict(near_at=0x2000), 'getter': dict(getters={k: v for k, v in PLANET_GETTERS.items() if k != '_ZN6Status9getSystemEv'})}
+        for part in ('sun', 'current', 'mesh'):
+            cases['two ' + part] = dict(copies=('sun', 'current', 'far', 'near', 'mesh', part))
+        for name, options in cases.items():
+            self.assertEqual(reader.extract_planet_resources(android(**options)[0], self.SKY, self.COLORS), {}, name)

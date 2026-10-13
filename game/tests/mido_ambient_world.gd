@@ -49,6 +49,7 @@ func verify_population(bindings: RefCounted,catalogues: RefCounted,equipment: Re
 	check(world.random_state==random.snapshot() and field.snapshot().random_state==world.random_state,"Mixed world consumed unexpected post-construction draws")
 	var encounter:=Encounter.new()
 	if not encounter.configure_ambient_traffic(bindings,catalogues,content,player,field,0,0.5,equipment,REPUTATION):check(false,encounter.error);return
+	check(not encounter.campaign_mission(),"Mido traffic counts as the campaign's mission (mercy rule)")
 	var input: Dictionary=encounter.snapshot()
 	check(input.projectile_visuals.models.size()==armed.size()+1 and input.impact_visuals.weapons.size()==armed.size()+1,"Unarmed traffic acquired projectile or impact visuals")
 	for id in armed:check(input.weapons.actors[id].projectiles.weapon.interval_ms==578,"Cursor11 borrowed the preceding traffic fire interval")

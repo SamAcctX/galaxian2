@@ -1,4 +1,8 @@
-"""Recover ordinary weapon constructor bounds selection through its factory link."""
+"""Recover ordinary weapon constructor bounds selection through its factory link.
+
+Android: Gun::Gun clears the gun's own-bounds flag and Gun::calcCharacterCollision
+takes the target's bounds while it is clear.
+"""
 from .opening_loadout import template
 from .ship_models import section_bytes
 from .weapon_capacity import MAC_CALL,ARM_CALL
@@ -11,7 +15,43 @@ MAC_DEFAULT='c683ac00000000'
 ARM_DEFAULT='00245060129ac2f80880046012980460119e0a9dc6f8ac1006992846 {call_1c:4} 05992846 {call_24:4} 04992846 {call_2c:4} 03992846 {call_34:4} d6f8ac102846 {call_3e:4} 012d1ddb45f200004bf6c051c4f24370cff6f07100220023119ef668b0500c32119ef66b46f82310119e366cf454119ed6f8ac60766846f8234001339d42ebd111984ff0ff3180f84c401198c0f8b840119880f85440119880f84d401198c0f8b440119881651198c165119880f8f880119880f86840'
 
 
+ANDROID_CONSTRUCTOR = '_ZN3GunC1EiiiiiifN11AbyssEngine6AEMath6VectorES2_'
+# Gun::Gun (`this` in r4): the flag store, its zero loaded before.
+ANDROID_DEFAULT = 'strb.w {zero}, [r4, #{flag}]'
+# Gun::calcCharacterCollision (`this` in fp, the target in sb): the gun's bounds
+# only with the flag set.
+ANDROID_SELECTOR = """
+ldrb.w r0, [fp, #{flag}]
+add.w sl, sb, #{target}
+cmp r0, #0
+mov r0, sl
+it ne
+addne.w r0, fp, #{own}
+ldr r5, [r0]
+"""
+
+
+def android_bounds(lib, weapon):
+    from .android_shapes import Listing
+    from .ordinary_hit_policy import ANDROID_COLLISION
+    call = weapon['projectile_capacity']['provenance']['constructor_call']
+    collision, constructor = Listing(lib, ANDROID_COLLISION), Listing(lib, ANDROID_CONSTRUCTOR)
+    selector = collision.unique(ANDROID_SELECTOR)
+    stores = [s for s in constructor.find(ANDROID_DEFAULT) if selector and s['flag'] == selector['flag']]
+    if selector is None or len(stores) != 1 or not collision.holds('fp', selector.last) or not constructor.holds('r4', stores[0].first):
+        return {}
+    store = stores[0]
+    writes = [i for i in range(store.first) if constructor.writes(i, i, store['zero'])]
+    zero = constructor.at('mov.w %s, #0' % store['zero'], writes[-1]) if writes else None
+    if zero is None:
+        return {}
+    return {'mode': 'target', 'provenance': {'constructor_call': dict(call), 'constructor_entry': constructor.span(0, 0), 'default_value': zero.span(),
+                                             'default': store.span(), 'selector': selector.span()}}
+
+
 def extract_weapon_collision_bounds(mach,weapon):
+    if mach.architecture == 'android-armv7':
+        return android_bounds(mach, weapon) if weapon.get('projectile_capacity') and weapon.get('ordinary_hit_policy') else {}
     import capstone
     if mach.architecture not in ('x86_64','armv7'):return {}
     mac=mach.architecture=='x86_64';proof={}

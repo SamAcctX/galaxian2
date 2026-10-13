@@ -11,6 +11,9 @@ const SPANS := {"cargo_gate":[437015,74],"cursor_gates_early":[437089,44],"curso
 
 const MAC_ALTERNATE := {"cargo_gate":[437451,72],"cursor_gates_early":[437523,44],"cursor_gates_middle":[437785,277],"cursor_gate_late":[438174,83],"confirmation":[438062,101],"accept_and_destination":[432174,142],"cache_reset_and_state":[432316,113],"current_station":[858716,12],"mission_selection":[858108,150],"selected_mission":[857871,27],"mission_getter":[858820,12],"mission_completed":[400952,12],"refresh_equipment":[858597,93],"ship_clone_entry":[733464,28],"ship_clone":[733492,162],"fresh_ship":[727944,240],"cargo_used":[730596,10],"world_entry":[334920,77],"audio_selector_consumer":[336912,42]}
 
+# Android: spans inside named functions (Layouts.anchored); the values are VALUES.
+const ANDROID_SPANS := {"leave_station":[0,684],"accept":[1808,20],"destination":[1982,60],"cache_reset_and_state":[2532,84],"mission_selection":[0,1072],"current_station":[0,6],"mission_getter":[0,6],"mission_completed":[0,14],"ship_clone_entry":[0,18],"ship_clone":[0,136],"fresh_ship":[0,152],"cargo_used":[0,4],"world_entry":[618,40],"audio_selector_consumer":[2072,48]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -20,8 +23,9 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, station: Dictionary, player: Dictionary) -> String:
 	if not data is Dictionary:return "Missing first-departure declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data):return "Unsupported first-departure declarations"
+	if not (arch=="x86_64" or arch=="android-armv7") or not parameters(data):return "Unsupported first-departure declarations"
 	if not Station.parameters(station) or not Cache.parameters(player.get("flight_cache",{})) or not Repair.parameters(player.get("repair",{})):return "First departure requires the station and ordinary player restoration"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid station departure extent"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "First departure lacks its source anchor"
 	if data.provenance.size()!=SPANS.size():return "Invalid first-departure provenance"

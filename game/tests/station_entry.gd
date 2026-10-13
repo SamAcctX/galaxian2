@@ -25,8 +25,9 @@ func verify(args: Array):
 	var station:=Station.new()
 	if bindings.station_entry.is_empty():
 		check(not station.configure(bindings,cat,lib,{}),"Legacy pack fabricated a first station");return
-	check(Definitions.validate(bindings.station_entry,source_bytes,"x86_64",bindings.arrival_staging,bindings.arrival_session).is_empty(),"Real station declaration schema failed")
-	var first_text:=1689 if lib.strings.size()==3385 else 1678
+	check(Definitions.validate(bindings.station_entry,source_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.arrival_session).is_empty(),"Real station declaration schema failed")
+	# Android strings are stored in the Mac 1.0.7 numbering (with its own lines after 3384).
+	var first_text:=1689 if lib.strings.size()==3385 or lib.manifest.profile.edition=="android-hd" else 1678
 	var player:=Player.new();var handoff:=Handoff.new()
 	check(player.configure(bindings,cat),player.error)
 	var entry:=handoff.prepare(bindings,cat,Fixture.completed(bindings,player,3))
@@ -86,12 +87,12 @@ func verify(args: Array):
 			"missing":bad.erase("rescue_entry")
 			"extra":bad.earned_reward=100
 		check(not station.configure(bindings,cat,lib,bad) and station.snapshot().is_empty(),"Invalid station packet accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if bindings.source_architecture=="android-armv7" else Definitions.SPANS):
 		var data: Dictionary=bindings.station_entry.duplicate(true);data.provenance[key].offset+=1
-		check(not Definitions.validate(data,source_bytes,"x86_64",bindings.arrival_staging,bindings.arrival_session).is_empty(),"Invalid source span accepted: "+key)
+		check(not Definitions.validate(data,source_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.arrival_session).is_empty(),"Invalid source span accepted: "+key)
 	var foreign: Dictionary=(Definitions.VALUES if first_text==1689 else Definitions.MAC_VALUES).duplicate(true)
 	foreign.provenance=bindings.station_entry.provenance.duplicate(true)
-	check(not Definitions.validate(foreign,source_bytes,"x86_64",bindings.arrival_staging,bindings.arrival_session).is_empty(),"Station accepted another layout's conversation IDs")
+	check(not Definitions.validate(foreign,source_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.arrival_session).is_empty(),"Station accepted another layout's conversation IDs")
 	for kind in ["text","speaker","reward","cursor","boolean","extra"]:
 		var altered: Dictionary=bindings.station_entry.duplicate(true)
 		match kind:

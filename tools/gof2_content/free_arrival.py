@@ -1,8 +1,21 @@
-"""Static ordinary local-arrival declarations, without executable payloads."""
+"""Static ordinary local-arrival declarations, without executable payloads.
+
+Android: MGame::updateJumpScene marks the arrival at the programmed station
+(stream-out and alien-world flags); Level::createMission places a pirate
+ambush (chance 20, 40 in hard mode (Status::hardCoreMode: difficulty 1.5),
+plus the rank (Status::getLevel), at a third of the player's position via
+PlayerEgo::getPosition, AEGeometry::getPosition and MatrixGetPosition);
+Status::inPirateLootOrbit excludes systems 32 and 33. Values equal the Mac
+ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_free_arrival(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -92,3 +105,16 @@ MAC_ALTERNATE = {'free_arrival_marker': [383150, 133, '__text', '496b468c5b0b689
                                 4,
                                 '__const',
                                 'c0e336a5f371ef22cd534e094269f2c1a9635cd080b71ffa671086832d3b60b7']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# MGame::updateJumpScene: arrival at the programmed station sets both flags.
+           'free_arrival_marker': ('_ZN5MGame15updateJumpSceneEv', 692, 100, 'sha256:aed0e3c77e1e07358a8549b4a0d67d5f1b96d102153239a38e2e80bfcee64c94'),
+           # Level::createMission: pirates closer by a third with chance 20 (hard 40) plus the rank.
+           'free_arrival_ambush': ('_ZN5Level13createMissionEv', 9312, 122, 'sha256:931ee15600e589bda4648fbb4eed667300a3b4239cf64c9d58d86a06b35d8892'),
+           # The rank, the positions, hard mode and the excluded systems 32 and 33.
+           'free_arrival_rank': ('_ZN6Status8getLevelEv', 0, 6, 'd0f8c8017047'),
+           'free_arrival_player_position': ('_ZN9PlayerEgo11getPositionEv', 0, 12, '80b56f468968c3f752ea80bd'),
+           'free_arrival_entity_position': ('_ZN10AEGeometry11getPositionEv', 0, 26, 'sha256:b9c206761276e9c203fbee1b2dbbde7151babe54fc1343e0edc216c8b9c0e609'),
+           'free_arrival_matrix_position': ('_ZN11AbyssEngine6AEMath17MatrixGetPositionERKNS0_6MatrixE', 0, 14, 'cb69ca68c96ac0e9002381607047'),
+           'free_arrival_hard_mode': ('_ZN6Status12hardCoreModeEv', 0, 36, 'sha256:d129eedb895b5a8cc5da84fbd316ee5effaae7d16ec57c3ef53f54ee21bd7b12'),
+           'free_arrival_other_systems': ('_ZN6Status17inPirateLootOrbitEv', 0, 58, 'sha256:989574c3e2542fc7a66fe791589c68bc24eef4922a33520edfbed7f4252c7ee1')}

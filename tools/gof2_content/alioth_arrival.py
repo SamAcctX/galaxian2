@@ -1,8 +1,24 @@
-"""Original Alioth station dialogue and presentation declarations."""
+"""Original Alioth station dialogue and presentation declarations.
+
+Android: LevelScript::process transfers the captured player to Alioth (station
+98), keeping the entry cache (MGame::OnInitialize; Status::setStation,
+departStation); Status::nextCampaignMission cases 14 and 15 create the arrival
+(Mission(11, 0, 98)) and the defence (Mission(4, 0, 98)); DialogueWindow's
+tables and Globals::getDialogueSoundId hold the station dialogue that
+ModStation::OnTouchEnd acknowledges; ModStation::OnInitialize places the Terran
+hangar camera (row 0 of its position, pitch and yaw tables) and
+ModStation::resetLight the 0.25 ambient; Radio::update's portrait table points
+speakers 1, 12 and 17 at their fixed records (proven by speaker_bindings).
+Values equal the Mac 1.0.7 ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_alioth_arrival(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(MAC_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -239,3 +255,30 @@ MAC_VALUES = {'scope': 'alioth_capture_arrival',
                   'portraits': {'1': {'status': 'fixed', 'family': 0, 'parts': [8, 8, 1, 8]},
                                 '12': {'status': 'fixed', 'family': 0, 'parts': [5, 4, 2, 7]},
                                 '17': {'status': 'fixed', 'family': 11, 'parts': [1, 0, 0, 3]}}}}
+
+# Android spans inside named functions and their tables; the values are MAC_VALUES.
+ANDROID = {# LevelScript::process: the capture transfer departs to Alioth (station 98) keeping the entry cache.
+           'alioth_transfer': ('_ZN11LevelScript7processEi', 0, 59076, 'sha256:fc48a0891a46a9391ae3fe50b9ad196d3c917dbd5cd6c3b58c4d2c9cdc2aa5ca'),
+           # Status::nextCampaignMission: cursor 14 -> 15 Mission(11, 0, 98), 15 -> 16 Mission(4, 0, 98).
+           'alioth_dispatch': ('_ZN6Status19nextCampaignMissionEb', 58, 10, 'a12800f21b82dfe810f0'),
+           'alioth_cases': ('_ZN6Status19nextCampaignMissionEb', 96, 4, 'ef01040e'),
+           'alioth_arrival_mission': ('_ZN6Status19nextCampaignMissionEb', 1058, 28, 'sha256:8d1f9ebcf1faae4c09cceaf2b6a1e70ea8c0b9d686e3cb0dd1969e67d44ac3ff'),
+           'alioth_next_mission': ('_ZN6Status19nextCampaignMissionEb', 7244, 30, 'sha256:4315caba939d7a43da060c19e9ea191a7842fd25098d151436de7f299e5043d5'),
+           # The cursor-15 station dialogue: eleven events and their voices.
+           'alioth_dialogue_count': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 4, '16000000', 'literal', 60),
+           'alioth_dialogue': ('_ZN14DialogueWindow11loadContentEv', 208, 88, 'sha256:9b18a54cefac9db7709e3794f9dce4f3f37bcc195a7f6cdf535bc34e10ed457b', 'literal', 768),
+           'alioth_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 88, 'sha256:7b4aad555e335f3413a2c0c4a574a2a5d42714361f452620e5b2c053b293accf', 'literal', 488),
+           'alioth_acknowledged': ('_ZN10ModStation10OnTouchEndEiiPv', 0, 6536, 'sha256:5b29b2bf44b1e0a442eb14b5646a1aad12932fedee58112b028e31589316b50e'),
+           'alioth_station_and_system': ('_ZN6Status10setStationEP7Station', 0, 492, 'sha256:aa20caf715aad5c5c759b66e25c06af49bda0bfe6518a0ff659a39e0110a503a'),
+           'alioth_location_selection': ('_ZN6Status13departStationEP7Station', 0, 1072, 'sha256:b7432b338855a0a259aa2b3d0d678bb305ea5293e9903e68114efafe3b6170d6'),
+           # ModStation::OnInitialize: the Terran hangar row 0 camera (1076, 900, -2273), pitch -0.27, yaw -3.36, roll -0.03.
+           'alioth_hangar_selector': ('_ZN10ModStation12OnInitializeEv', 0, 7680, 'sha256:5c9a3d141a164abb8762ca63bd3d885b743945a572ac4d50d6a82f82fe6bc818'),
+           'alioth_camera_position': ('_ZN10ModStation12OnInitializeEv', 3308, 12, '34040000840300001ff7ffff', 'literal', 0),
+           # Pitch and the two yaw tables (iPad, other) by hangar row.
+           'alioth_camera_angles': ('_ZN10ModStation12OnInitializeEv', 3964, 120, 'sha256:d123d8193182011742a0a336ec7d08d3ff21541211c26d7c0a392ebf60d40990', 'literal', 0),
+           # ModStation::resetLight: ambient 0.25 for the Terran station.
+           'alioth_ambient': ('_ZN10ModStation10resetLightEv', 0, 388, 'sha256:d88dd0188dcad541830a696ffdbefdaa64090d1794746e2a0237480086a11255'),
+           'alioth_entry_cache_refresh': ('_ZN5MGame12OnInitializeEv', 0, 2688, 'sha256:aef3fbe2dca80fd5daed276aba67a4d35f1ad0268acb0947b6bca5d85e7b3ef9'),
+           # Radio::update's portrait table: speakers 1-17 point at their fixed records (family, four parts),
+           # which speaker_bindings proves (portrait_table and each record).
+           'alioth_portrait_pointers': ('_ZN5Radio6updateElP9PlayerEgoP11LevelScript', 234, 68, 'sha256:dd161f4a08b46d85c4dd199fa44b35638396b072426e68f060a15afe3f2c3df3', 'literal', 4)}

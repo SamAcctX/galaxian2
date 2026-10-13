@@ -19,6 +19,25 @@ def binding_id(base_id, executable_hash, architecture, records_hash):
                            + architecture + '\n' + records_hash + '\n').encode('ascii')).hexdigest()
 
 
+def check_banks(audio, manifest):
+    """Every bank variant names an imported sound bank.
+
+    The Android release ships only the default (English) language's voice
+    banks; its other language uses them, as every language but German does.
+    """
+    files = manifest['files']
+    present = lambda variant: files.get(variant['resource'], {}).get('kind') == 'audio_bank'
+    default = audio['default_language']
+    for bank in audio['banks']:
+        for index, variant in enumerate(bank['variants']):
+            if present(variant):
+                continue
+            if manifest['profile']['edition'] == 'android-hd' and index != default:  # the default is checked in its turn
+                bank['variants'][index] = dict(bank['variants'][default])
+                continue
+            raise ContentError('FMOD event project refers to a missing sound bank: ' + variant['resource'])
+
+
 def prepare(source: Path, base: Path, output: Path, checkpoint=lambda *_: None):
     original_source, original_base = source.absolute(), base.absolute()
     source, base, output = source.resolve(), base.resolve(), output.resolve()
@@ -69,10 +88,7 @@ def prepare(source: Path, base: Path, output: Path, checkpoint=lambda *_: None):
         if hashlib.sha256(event_data).hexdigest() != manifest['files'][event_resource]['sha256']:
             raise ContentError('FMOD event project checksum differs from the base')
         audio = read_audio_events(event_data)
-        for bank in audio['banks']:
-            for variant in bank['variants']:
-                if manifest['files'].get(variant['resource'], {}).get('kind') != 'audio_bank':
-                    raise ContentError('FMOD event project refers to a missing sound bank: ' + variant['resource'])
+        check_banks(audio, manifest)
         audio['source_resource'] = event_resource
         audio['source_sha256'] = manifest['files'][event_resource]['sha256']
     rows = declarations.pop('registrations')

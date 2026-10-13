@@ -1,9 +1,27 @@
-"""Original Sahi portal-stage declarations and transition boundary. No executable payloads."""
+"""Original Sahi portal-stage declarations and transition boundary. No executable payloads.
+
+Android: Status::nextCampaignMission case 23 creates Mission(4, 0, 48) and
+case 24 Mission(156, 0, -1), marking the first cargo row of item 131
+unsaleable; Level::createCampaignMission case 24 adds Objective(31, 0);
+LevelScript::process cursor 24 runs the view (radio message 3: no input,
+scripted coast, camera 10500/700/1000 off the ship, the portal 45000 ahead,
+LODManager::forceUpdate) and the opening (message 4: PlayerWormHole reset,
+open, sound 34, rumble 50/3, PlayerEgo::rotate by elapsed / 5000);
+PlayerEgo::calcCollision pulls the ship into the visible, not shrinking
+portal (PlayerStaticFar::collide, radius 40000, pull >> 8) and marks it
+entered within 999; MGame::OnUpdate then advances the story, clears the
+mission and keeps hull, shield, armour and gamma. Values are the Mac 1.0.7
+ones (VALUES).
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 
 def extract_sahi_stage(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -626,3 +644,73 @@ MAC_ALTERNATE = {'sahi_stage_selected_factory_dispatch': [872130,
                           14,
                           '__text',
                           '116543b632dd7b5ce953b5b091de2aa48c8da93b26ef6514e881c253ab191e75']}
+
+ANDROID = {# Status::nextCampaignMission cases 23 (Mission(4, 0, 48)) and 24 (Mission(156, 0, -1), item 131 protected).
+           'sahi_stage_factory_dispatch': ('_ZN6Status19nextCampaignMissionEb', 114, 4, 'f0028101'),
+           'sahi_stage_selected_factory': ('_ZN6Status19nextCampaignMissionEb', 1572, 38, 'sha256:c5d4ede29e9b3791a739ddf6c523eece7e2fc66aa37ca1f9e4af0c502b278977'),
+           'sahi_stage_mission_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           'sahi_stage_story_flag': ('_ZN7Mission17isCampaignMissionEv', 0, 10, '006d002818bf01207047'),
+           # Level::createCampaignMission case 24 and its Objective(31, 0).
+           'sahi_stage_cast_dispatch': ('_ZN5Level21createCampaignMissionEv', 614, 2, '3f33'),
+           'sahi_stage_cast': ('_ZN5Level21createCampaignMissionEv', 26804, 354, 'sha256:4c5bb2faeab44b8c92edd73591aab58952cd4976b5eb3cc4ec03c3bdfb81cbb6'),
+           'sahi_stage_condition_constructor': ('_ZN9ObjectiveC2EiiP5Level', 0, 18, '4ff0000c80e80610c0e9033cc0e905cc7047'),
+           'sahi_stage_condition_outcome': ('_ZN9Objective8achievedEi', 0, 978, 'sha256:da3086f410423068084e2547c16738945cb696b15a3685f82075a90dd6538eab'),
+           # LevelScript: phase 0, the cursor-24 gate, view (message 3) and opening (message 4) phases.
+           'sahi_stage_initial_phase': ('_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera', 44, 90, 'sha256:9c5ee16ad849dedfa3d3ae70c60d536347b09a9e9e8ec0767482983b69b12d3a'),
+           'sahi_stage_story_gate': ('_ZN11LevelScript7processEi', 2810, 62, 'sha256:55f8a8e4cc7ea7533ca43db9bc2c767c2b544187c979bd808c18ae87b0c4dcd7'),
+           'sahi_stage_story_dispatch': ('_ZN11LevelScript7processEi', 2902, 22, '5b2876dc372800f368811c2800f35383142800f33a86'),
+           'sahi_stage_sequence_dispatch': ('_ZN11LevelScript7processEi', 6118, 6, '18284af08386'),
+           'sahi_stage_sequence': ('_ZN11LevelScript7processEi', 6124, 238, 'sha256:56e5bb54679f03dad0b59e629279f46ff2ac92cab62e3f2cffd5038661802408'),
+           'sahi_stage_view': ('_ZN11LevelScript7processEi', 21014, 300, 'sha256:271b2248ba0a0f9b75f13dda59df1455f113ab223b2f53a4b77feb8640acac9d'),
+           'sahi_stage_spin_continue': ('_ZN11LevelScript7processEi', 24232, 10, '02293bf4ddac06f020bb'),
+           # View, portal and spin helpers.
+           'sahi_stage_radio_started': ('_ZN12RadioMessage11isTriggeredEv', 0, 6, '90f820007047'),
+           'sahi_stage_starfield_rebase': ('_ZN10LODManager11forceUpdateEib', 0, 204, 'sha256:be30f8b9d3fce97efbb5ebbb2ddd20f7c4957c1dac5abb1dff86468e3766db74'),
+           'sahi_stage_weapon_targets_clear': ('_ZN6Player10setEnemiesEP5ArrayIPS_E', 0, 174, 'sha256:d18a42da79a8fc28097c1369f9ddca9c072d2821e985b1b539e4e02c0495c43f'),
+           'sahi_stage_primary_trigger': ('_ZN9PlayerEgo12stopShootingEi', 0, 66, 'sha256:c7d651af1edbf99fe0ecd4e199d7e4fc94fafaaac97f0ae95dd854d4b48abbf9'),
+           'sahi_stage_camera_scripted': ('_ZN18TargetFollowCamera12setLookAtCamEb', 0, 6, '80f845107047'),
+           'sahi_stage_damage_enabled': ('_ZN6Player13setVulnerableEb', 0, 6, '80f8c2107047'),
+           'sahi_stage_scripted_coast': ('_ZN9PlayerEgo21setComputerControlledEb', 0, 6, '80f8f4117047'),
+           'sahi_stage_clear_flight_weapons': ('_ZN6Player13removeAllGunsEv', 0, 38, 'sha256:fb379691ebc88ed2c6c672fad4fe5284783ba95655c11db56c842bf8de46579f'),
+           'sahi_stage_camera_target': ('_ZN18TargetFollowCamera9setTargetEP10AEGeometry', 0, 4, '41607047'),
+           'sahi_stage_camera_eye': ('_ZN18TargetFollowCamera11setPositionERKN11AbyssEngine6AEMath6VectorE', 0, 14, 'd1e900238968c0e9022301617047'),
+           'sahi_stage_camera_eye_offset': ('_ZN18TargetFollowCamera9translateEfff', 0, 64, 'sha256:b6142bfbe0be4a8120f2c41cfe71a2eaa8237f1567db29d0c7704a4c9e4b5d85'),
+           'sahi_stage_camera_eye_getter': ('_ZN18TargetFollowCamera11getPositionEv', 0, 4, '08307047'),
+           'sahi_stage_camera_shake': ('_ZN18TargetFollowCamera19setRumblePercentageEfi', 0, 6, 'c0e944127047'),
+           'sahi_stage_visual_rotation': ('_ZN9PlayerEgo6rotateEfff', 0, 136, 'sha256:01992fd2c3e3dd09743e98f6fe149b0873f09f9eddff61df522d077896b4caf1'),
+           'sahi_stage_direct_damage': ('_ZN6Player10damageHullEi', 0, 64, 'sha256:f489b2c5827ed5e18a3ae3ba461541ead9afd35263a1238cd062363ae7c4d746'),
+           'sahi_stage_portal_visible': ('_ZN8KIPlayer10setVisibleEb', 0, 16, '80f8f1108068002818bf26f1edbb7047'),
+           'sahi_stage_portal_constructor': ('_ZN14PlayerWormHoleC2EiP10AEGeometryfffb', 0, 156, 'sha256:3927c922ca5de71c81cd38545f9b628e207c6d288b51542aeb45894154fe41df'),
+           'sahi_stage_portal_reset': ('_ZN14PlayerWormHole5resetEb', 0, 18, '002918bf4ef278614ff48052c0e954127047'),
+           'sahi_stage_portal_open': ('_ZN14PlayerWormHole4openEv', 0, 16, '4ff248410022cff6ff71c0e954127047'),
+           'sahi_stage_portal_closing': ('_ZN14PlayerWormHole11isShrinkingEv', 0, 18, 'd0f8501100204ef660229142c8bf01207047'),
+           'sahi_stage_portal_update': ('_ZN14PlayerWormHole6updateEi', 0, 1176, 'sha256:b5acf6c94d686058f788074d04453f1206c112e0f5cc437b026ae78c58850d44'),
+           # PlayerEgo::calcCollision: portal pull and entry; PlayerStaticFar::collide's cube.
+           'sahi_stage_portal_contact': ('_ZN9PlayerEgo13calcCollisionEP5ArrayIP8KIPlayerE', 0, 1112, 'sha256:79a5f8fc0b0aa59035d11e5caeebf7281059c6e2d5aa467e102db4dd4e377d52'),
+           'sahi_stage_portal_point_wrapper': ('_ZN8KIPlayer12outerCollideERKN11AbyssEngine6AEMath6VectorE', 0, 26, 'sha256:f17e832adf701edfbae43085c2eee53d9a06a6a41bf0fb96dc70f9be22857316'),
+           'sahi_stage_portal_point_xyz_wrapper': ('_ZN15PlayerStaticFar12outerCollideEfff', 0, 10, 'd0f800c0dcf838c06047'),
+           'sahi_stage_portal_point_xyz': ('_ZN15PlayerStaticFar7collideEfff', 0, 142, 'sha256:67c8e6729045c1e0aaf1e1b251ab5a7043372fcc411a1d9f72534a036eb63759'),
+           'sahi_stage_contact_extent_setter': ('_ZN6Player9setRadiusEi', 0, 4, '01647047'),
+           'sahi_stage_mining_operation': ('_ZN9PlayerEgo16approachAsteroidEP3HudiP5Radar', 0, 1232, 'sha256:dad4b9ecec62f2af4fbb0f0aa37b2d9435fa269a8a7dd32b7cb3d7e38b593f32'),
+           'sahi_stage_mining_constructor': ('_ZN10MiningGameC2EiiP3Hud', 0, 1032, 'sha256:570a13c8baa4709dfa6ab8e4fea951b948b7b17bcfb2312135e300198a6c3350'),
+           # MGame::OnUpdate: the wormhole transition keeps the ship's state and reloads the flight.
+           'sahi_stage_entry_ready': ('_ZN9PlayerEgo12isInWormholeEv', 0, 32, 'sha256:76262d8c2927d88cd55d42ac672809f8def4d5e554a8e791a68e05f9a9ed111a'),
+           'sahi_stage_application_transition': ('_ZN5MGame8OnUpdateEv', 12080, 496, 'sha256:421dededd3cc1f9cd43234ad6868375cb2db5802c4591984b9f8d37797cae352'),
+           'sahi_stage_story_advance': ('_ZN6Status19nextCampaignMissionEb', 0, 68, 'sha256:975e8c93c4e9798c19a5d1c7cf157f8890dbab65acfe96bfa2a15adecb5a2995'),
+           'sahi_stage_story_increment': ('_ZN6Status19nextCampaignMissionEb', 392, 8, '1846431c00214be7'),
+           'sahi_stage_clear_world_conditions': ('_ZN5Level16removeObjectivesEv', 0, 8, '0021c0e90a117047'),
+           'sahi_stage_clear_active_mission': ('_ZN6Status10setMissionEP7Mission', 0, 6, 'c0f890117047'),
+           'sahi_stage_same_station': ('_ZN6Status12inAlienOrbitEv', 0, 10, '816fd0f8980122f1afbb'),
+           'sahi_stage_station_equal': ('_ZN7Station6equalsEPS_', 0, 18, '0246002021b1896892688a4208bf01207047'),
+           'sahi_stage_adopt_pending_station': ('_ZN6Status10setStationEP7Station', 0, 44, 'sha256:4cefefa981c8fb19d0fe6d5b706cbbdd03f1280c2b6da532ea7cac8e21c1a1a9'),
+           'sahi_stage_pending_station_selection': ('_ZN6Status13departStationEP7Station', 0, 1072, 'sha256:b7432b338855a0a259aa2b3d0d678bb305ea5293e9903e68114efafe3b6170d6'),
+           # Case 24: the protected cargo row and the next mission.
+           'sahi_stage_next_factory': ('_ZN6Status19nextCampaignMissionEb', 838, 62, 'sha256:0202f524266c5751a218f030f434034bff9ec5f0654d985da5518d2d6ed17395'),
+           'sahi_stage_next_protection': ('_ZN6Status19nextCampaignMissionEb', 8148, 36, 'sha256:5dfd40fbe28635054b8f73ce26b75a24dfa8851a2ef23a1beaba604d9d80f920'),
+           'sahi_stage_cargo_index': ('_ZN4Item8getIndexEv', 0, 4, '00687047'),
+           'sahi_stage_protected_cargo_getter': ('_ZN4Item12isUnsaleableEv', 0, 6, '90f844007047'),
+           'sahi_stage_protect_cargo_item': ('_ZN4Item13setUnsaleableEb', 0, 6, '80f844107047'),
+           'sahi_stage_current_hull': ('_ZN6Player12getHitpointsEv', 0, 4, '806f7047'),
+           'sahi_stage_current_shield': ('_ZN6Player11getShieldHPEv', 0, 14, '90ed220abdeec00a10ee100a7047'),
+           'sahi_stage_current_armor': ('_ZN6Player10getArmorHPEv', 0, 6, 'd0f88c007047'),
+           'sahi_stage_emp_state': ('_ZN6Player10getGammaHPEv', 0, 14, '90ed2e0abdeec00a10ee100a7047')}

@@ -1,11 +1,26 @@
-"""Recover fresh ordinary impact model and playback declarations statically."""
+"""Recover fresh ordinary impact model and playback declarations statically.
+
+Android: Gun::setIndex gives guns whose item has an impact model (14600 for
+item 2, 14605 for 19) one stopped transform per shot; Gun::update ticks them
+before Gun::calcCharacterCollision restarts one at the projectile's position
+with the camera's basis (Transform::SetAnimationState 3, then 1: once), and
+Gun::render draws the playing ones. Transform::Update stops a finished
+non-looping animation at its end.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 VALUES = {'item_ids': [2, 19], 'model_ids': [14600, 14605], 'kinds': [0, 1], 'initial_playing': False, 'animation_speed': 1.0, 'animation_loop': False, 'camera_basis_copy': True, 'position_is_projectile': True, 'sample_before_contacts': True, 'restart_preserves_sample': True, 'render_type': 2}
 
 def extract_projectile_impacts(mach,staging,actors,weapons):
     arch=mach.architecture
+    if arch=='android-armv7':
+        try:
+            if not weapons['ordinary_hit_policy'] or not weapons['player_hit_policy']:return {}
+            if not staging['projectile_visuals'] or actors['npc_initialization']['primary_weapon']['item_id']!=19:return {}
+        except (KeyError,TypeError):return {}
+        proof=recognize_symbols(mach,ANDROID)
+        return dict(copy.deepcopy(ANDROID_VALUES),provenance=proof) if proof else {}
     if arch not in LAYOUTS:return {}
     try:
         if not weapons['ordinary_hit_policy'] or not weapons['player_hit_policy']:return {}
@@ -115,3 +130,19 @@ MAC_ALTERNATE = {'player_setter': [-57023, 35, '4c89f7488b75d0e8001ffcff8b45ac41
  'npc_setter': [-65918, 31, '41c78424a0000000010000004c89e7be13000000e8b241fcff41bf8b1a0000'],
  'model_2': [1425887, 4, '08390000'],
  'model_19': [1425955, 4, '0d390000']}
+
+# The values equal the Mac's.
+ANDROID_VALUES = copy.deepcopy(VALUES)
+ANDROID = {'player_setter': ('_ZN5Level9createGunEiiiiiiii', 1592, 24, '9ff75ee9584629469ff76ce958460121cbf85c609ff7a8e9'),
+           # From the item's impact model to the stopped transform of each shot.
+           'effects': ('_ZN3Gun8setIndexEi', 56, 166, 'sha256:6dad6aed04b0a02c88074a540af2db8920751de5ee18681e2272f301de2832a5'),
+           # Impact models of items 2..19.
+           'models': ('_ZN3Gun8setIndexEi', 56, 72, 'sha256:a256bc5a115ee7a7c8457cac8ec5624d79c2e8e2eb6d64130a02950321539b83', 'literal', 8),
+           'npc_setter': ('_ZN5Level10assignGunsEv', 1330, 16, '01201321e8652846a0f7e4ef41f68b24'),
+           'position_load': ('_ZN3Gun22calcCharacterCollisionEv', 234, 24, 'dbf80c0008eb480609f1040100eb8600d0ed000b80683290'),
+           'contact': ('_ZN3Gun22calcCharacterCollisionEv', 1000, 132, 'sha256:628433c4e8ad210dbfc71792d66d6ca5e97c6e107565571e9b35804cb71c474b'),
+           'update_before_contacts': ('_ZN3Gun6updateEi', 70, 120, 'sha256:924bdda88f0f041eda77195eb5d0b8d01ec0503fb94aebd339a8f4575dbd067c'),
+           'draw': ('_ZN3Gun6renderEv', 0, 280, 'sha256:f5d22ebbf05e2d3842ad9b1b74146d8c296bcb4efdc239f2bb4f4f3fe2aabcc8'),
+           'wrapper_draw': ('_ZN9ObjectGun6renderEv', 28, 6, 'a068e3f628ec'),
+           'restart_mode': ('_ZN11AbyssEngine9Transform17SetAnimationStateENS_13AnimationModeEPv', 0, 32, 'sha256:b87fb44c47eea29c4b514e012b39ed9a6c75ea2c5b1adec9fc832911647ade85'),
+           'end_sample': ('_ZN11AbyssEngine9Transform6UpdateExb', 146, 32, 'sha256:a63f9005850a317c2df68d21c07e2d84da445b5608b04a13caef794df76ad342')}

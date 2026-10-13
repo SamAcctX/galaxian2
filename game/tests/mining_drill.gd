@@ -29,11 +29,11 @@ func verify(args: Array):
 	if bindings.mining_drill.is_empty():
 		check(not drill.configure(bindings,cat,[90,81],{},0,Vector2.ZERO),"Legacy pack invented mining support");return
 	var metadata: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	check(Definitions.validate(bindings.mining_drill,metadata.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.first_flight).is_empty(),"Valid mining declarations rejected")
-	check(not Definitions.validate(bindings.mining_drill,metadata.source_executable_bytes,"x86_64",bindings.arrival_staging,{}).is_empty(),"Mining accepted a missing field capability")
-	for key in Definitions.SPANS:
+	check(Definitions.validate(bindings.mining_drill,metadata.source_executable_bytes,metadata.architecture,bindings.arrival_staging,bindings.first_flight).is_empty(),"Valid mining declarations rejected")
+	check(not Definitions.validate(bindings.mining_drill,metadata.source_executable_bytes,metadata.architecture,bindings.arrival_staging,{}).is_empty(),"Mining accepted a missing field capability")
+	for key in (Definitions.ANDROID_SPANS if metadata.architecture=="android-armv7" else Definitions.SPANS):
 		var bad: Dictionary=bindings.mining_drill.duplicate(true);bad.provenance[key].offset+=1
-		check(not Definitions.validate(bad,metadata.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.first_flight).is_empty(),"Detached mining source span accepted: "+key)
+		check(not Definitions.validate(bad,metadata.source_executable_bytes,metadata.architecture,bindings.arrival_staging,bindings.first_flight).is_empty(),"Detached mining source span accepted: "+key)
 	var generator:=Random.new();generator.seed_from(12345);random=generator.snapshot()
 	var population:=Field.new();check(population.configure(bindings,cat,78,false,false,2),population.error)
 	field=population.generate(Vector3(12298,36830,77237),random)

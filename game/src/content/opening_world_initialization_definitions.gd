@@ -2,6 +2,9 @@ extends RefCounted
 ## Fresh opening initialization declarations; no general mission construction.
 const Values = preload("res://src/content/npc_construction_definitions.gd")
 const Fonts = preload("res://src/content/font_definitions.gd")
+const Layouts = preload("res://src/content/declaration_layouts.gd")
+# Android: spans inside named functions and Gun::setIndex's effect table (Layouts.anchored).
+const ANDROID_SPANS := {"before":[838,32],"campaign":[1076,54],"after":[1130,92],"equipment33":[56,18],"equipment39":[10,22],"station_gate":[28,50],"cursor_gate":[416,18],"hull_gate":[56,10],"companion_gate":[32,58],"companion_getter":[0,4],"companion_reset":[224,6],"npc_primary":[1122,1254],"effect_setter":[0,246],"effect_models":[0,80]}
 const EXPECTED = {
   "world_type": 3,
   "campaign_cursor": 0,
@@ -101,6 +104,8 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	if not data is Dictionary: return "Missing opening world initialization declaration"
 	if data.is_empty(): return ""
 	if not parameters(data): return "Unsupported opening world initialization parameters"
+	if architecture=="android-armv7":
+		return "" if Layouts.anchored(data.provenance,executable_bytes,ANDROID_SPANS) else "Invalid world initialization provenance"
 	var sizes: Dictionary=SIZES.get(architecture,{})
 	if sizes.is_empty() or data.provenance.size()!=sizes.size(): return "Invalid world initialization provenance"
 	var spans := []

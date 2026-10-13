@@ -61,3 +61,50 @@ class OpeningClock(unittest.TestCase):
                     self.assertEqual(reader.extract_opening_clock(m,drift,{'ship_id':1}),{})
 
 if __name__=='__main__':unittest.main()
+
+
+def android(seed=0, seeds=1, seed_kind='movs', stores=1, frame_field=0x40, frames=1, increment_field=0x1b8, getter_field=0x1b8, omit=None):
+    """Status::resetGame, MGame::OnUpdate's clock step, Status::incPlayingTime and getPlayingTime in the Android shape."""
+    from android_fixture import TEXT, Thumb
+    from gof2_content import opening_clock as c
+    from gof2_content.android_library import AndroidLibrary
+    from test_steering import add_pc, cbz, ldr_w, ldrd, roomy_library, wide
+    reset, update, increment, getter = (TEXT + 0x200 * i for i in range(1, 5))
+    asm = Thumb(reset).push().mov(8, 0)
+    for _ in range(seeds):
+        asm.movs(4, seed) if seed_kind == 'movs' else asm.mov_imm(4, seed)  # mov.w
+    for _ in range(stores):
+        asm.nop().strd(4, 4, 8, 0x1b8)
+    functions = [(c.ANDROID_RESET, asm.pop().finish(), reset)]
+    asm = Thumb(update).push()
+    for _ in range(frames):
+        add_pc(ldr_w(ldr_w(asm, 0, 15, 0x40), 2, 11, frame_field), 0).ldr(0, 0, 0).half(0x17d3).ldr(0, 0, 0).call(increment)  # asrs r3, r2, #31
+        wide(ldr_w(asm, 0, 11, 0x7c), 0xf8900054)  # ldrb.w r0, [r0, #0x54]
+        cbz(asm, 0, asm.here() + 4, True).nop()
+    functions.append((c.ANDROID_UPDATE, asm.pop().finish(), update))
+    asm = ldrd(Thumb(increment), 1, 12, 0, increment_field).half(0x1889)  # adds r1, r1, r2
+    functions.append((c.ANDROID_INCREMENT, wide(asm, 0xeb4c0203).strd(1, 2, 0, 0x1b8).ret().finish(), increment))  # adc.w r2, ip, r3
+    functions.append((c.ANDROID_GETTER, ldrd(Thumb(getter), 0, 1, 0, getter_field).ret().finish(), getter))
+    return AndroidLibrary(roomy_library([f for f in functions if f[0] != omit]))
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidOpeningClock(unittest.TestCase):
+    def test_named_seed_and_increment(self):
+        from android_fixture import TEXT
+        result = reader.extract_opening_clock(android(), {'drift': True}, {'loadout': True})
+        self.assertEqual(result, {'initial_elapsed_ms': 0, 'time_unit': 'milliseconds', 'advance_before_controller': True,
+                                  'provenance': {'reset': {'offset': TEXT + 0x208, 'bytes': 4}, 'seed': {'offset': TEXT + 0x204, 'bytes': 2},
+                                                 'frame': {'offset': TEXT + 0x402, 'bytes': 30}, 'increment': {'offset': TEXT + 0x600, 'bytes': 16},
+                                                 'getter': {'offset': TEXT + 0x800, 'bytes': 6}}})
+        for drift, opening in (({}, {'loadout': True}), ({'drift': True}, {})):
+            self.assertEqual(reader.extract_opening_clock(android(), drift, opening), {})
+
+    def test_each_broken_declaration_is_unsupported(self):
+        from gof2_content import opening_clock as c
+        cases = {'seed': dict(seed=1), 'two seeds': dict(seeds=2), 'seed by mov.w': dict(seed_kind='mov.w'), 'two stores': dict(stores=2),
+                 'frame field': dict(frame_field=0x44), 'two frames': dict(frames=2), 'increment field': dict(increment_field=0x1c0),
+                 'getter field': dict(getter_field=0x1c0)}
+        cases.update({name: dict(omit=name) for name in (c.ANDROID_RESET, c.ANDROID_UPDATE, c.ANDROID_INCREMENT, c.ANDROID_GETTER)})
+        for name, options in cases.items():
+            self.assertEqual(reader.extract_opening_clock(android(**options), {'drift': True}, {'loadout': True}), {}, name)

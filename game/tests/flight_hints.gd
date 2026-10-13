@@ -80,7 +80,11 @@ func verify_text() -> void:
 		var desktop:=Hints.text(library,bindings,int(row.text_id),false)
 		check(not touch.is_empty() and not desktop.is_empty() and not "#KEY_" in desktop,"Hint %s has no readable text"%row.id)
 	var cloak:=Hints.text(library,bindings,582,false)
-	check(cloak.contains("(C)") and cloak.contains("(E)"),"Desktop cloak hint lacks its key labels: %s"%cloak.left(80))
+	if bindings.source_architecture=="android-armv7":
+		# Android has no desktop text substitution (GameText::setSubstituteArray is never
+		# called): desktop players read the touch line, which has no key tokens.
+		check(cloak==Hints.text(library,bindings,582,true) and not cloak.is_empty(),"Android cloak hint used a substitute line: %s"%cloak.left(80))
+	else:check(cloak.contains("(C)") and cloak.contains("(E)"),"Desktop cloak hint lacks its key labels: %s"%cloak.left(80))
 	print("Desktop cloak hint: "+cloak.left(70).replace("\n"," "))
 
 func check(value: bool,message: String) -> void:

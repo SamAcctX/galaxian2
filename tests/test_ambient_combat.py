@@ -44,3 +44,26 @@ class AmbientCombatTests(unittest.TestCase):
             shifted=copy.deepcopy(arrival);shifted['provenance']['actor']['offset']+=1
             self.assertFalse(reader.extract_ambient_combat(mach,shifted,reader.POPULATION_VALUES))
             self.assertFalse(reader.extract_ambient_combat(mach,arrival,None))
+
+
+class AmbientCombatAndroidTests(unittest.TestCase):
+    def test_android_proofs(self):
+        import android_fixture
+        from gof2_content.android_library import AndroidLibrary
+        from test_mido_travel import roomy
+        staged={'scope':'rescue_choreography'}
+        with patch.object(android_fixture,'library',roomy(android_fixture.library)):
+            android_fixture.verify_android_proof(self,reader,lambda lib:reader.extract_ambient_combat(lib,staged,reader.POPULATION_VALUES),values='VALUES')
+            image,layout,_=android_fixture.layout_library(reader.ANDROID)
+        with patch.object(reader,'ANDROID',layout):
+            lib=AndroidLibrary(image)
+            self.assertTrue(reader.extract_ambient_combat(lib,staged,reader.POPULATION_VALUES))
+            # Requires the arrival staging and the population.
+            self.assertEqual(reader.extract_ambient_combat(lib,{},reader.POPULATION_VALUES),{})
+            population=copy.deepcopy(reader.POPULATION_VALUES);population['freighter']['hull_catalogue_id']=14
+            self.assertEqual(reader.extract_ambient_combat(lib,staged,population),{})
+            self.assertEqual(reader.extract_ambient_combat(lib,staged,None),{})
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self,reader,'ambient_combat_definitions.gd',values='VALUES')

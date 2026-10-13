@@ -1,0 +1,278 @@
+"""Assemble android_blocks templates into synthetic Thumb code. Never executed.
+
+`thumb` encodes one instruction from its Capstone text (only the forms the
+shapes use); `assemble` fills a shape's holes, lays a literal pool after the
+code for its `{&role}` loads and its case tables from labels. Readers decode
+the result with Capstone, so every acceptance test also checks these encodings.
+"""
+import re
+import struct
+
+from android_fixture import Thumb, branch_fields
+
+CONDITIONS = {'eq': 0, 'ne': 1, 'hs': 2, 'lo': 3, 'mi': 4, 'pl': 5, 'hi': 8, 'ls': 9, 'ge': 10, 'lt': 11, 'gt': 12, 'le': 13}
+NAMES = {'sb': 9, 'sl': 10, 'fp': 11, 'ip': 12, 'sp': 13, 'lr': 14, 'pc': 15}
+
+
+def reg(name):
+    return NAMES[name] if name in NAMES else int(name[1:])
+
+
+def half(*values):
+    return struct.pack('<%dH' % len(values), *values)
+
+
+def fields(value):
+    """i and imm3:imm8 of a Thumb-2 modified immediate."""
+    if value & 0xffffffff == 0xffffffff:
+        return 0, 0x30ff  # 0xFFFFFFFF: the byte replicated in all four places
+    first, second = struct.unpack('<2H', Thumb(0).mov_imm(0, value).code)
+    return first & 0x400, second & 0x70ff
+
+
+def mask(names):
+    return sum(1 << reg(name.strip()) for name in names.split(','))
+
+
+def vfp(first, second, d, n, m):
+    """A single-precision VFP data-processing encoding: Sd, Sn, Sm split into Vx:x bits."""
+    return half(first | (d & 1) << 6 | n >> 1, (d >> 1) << 12 | second | (n & 1) << 7 | (m & 1) << 5 | m >> 1)
+
+
+def thumb(text, at):
+    """Encoding of one Thumb instruction as Capstone prints it."""
+    number = lambda v: int(v, 0)
+    offset = lambda t: number(t) - at - 4
+
+    def wide_branch(c, o):  # b<c>.w
+        return half(0xf000 | (o < 0) << 10 | CONDITIONS[c] << 6 | o >> 12 & 0x3f,
+                    0x8000 | (o >> 18 & 1) << 13 | (o >> 19 & 1) << 11 | o >> 1 & 0x7ff)
+
+    def far(o):  # b.w
+        s, j1, j2, v = branch_fields(o, False)
+        return half(0xf000 | s << 10 | v >> 11 & 0x3ff, 0x9000 | j1 << 13 | j2 << 11 | v & 0x7ff)
+
+    def literal(t, v, wide):
+        if wide:
+            return half(0xf8df if number(v) >= 0 else 0xf85f, reg(t) << 12 | abs(number(v)))
+        return half(0x4800 | reg(t) << 8 | number(v) // 4)
+
+    def cbz(n, t):
+        o = offset(t)
+        return half(0xb100 | (o >> 6 & 1) << 9 | (o >> 1 & 0x1f) << 3 | reg(n))
+
+    forms = [
+        (r'push \{(.*)\}', lambda l: half(0xb400 | mask(l) & 0xff | (mask(l) >> 14 & 1) << 8)),
+        (r'pop \{(.*)\}', lambda l: half(0xbc00 | mask(l) & 0xff | (mask(l) >> 15 & 1) << 8)),
+        (r'push\.w \{(.*)\}', lambda l: half(0xe92d, mask(l))),
+        (r'pop\.w \{(.*)\}', lambda l: half(0xe8bd, mask(l))),
+        (r'movw (\w+), #(\S+)', lambda d, v: Thumb(0).movw(reg(d), number(v)).code),
+        (r'movt (\w+), #(\S+)', lambda d, v: Thumb(0).movt(reg(d), number(v)).code),
+        (r'mov(?:eq|ne)?\.w (\w+), #-1', lambda d: Thumb(0).minus_one(reg(d)).code),
+        (r'umull (\w+), (\w+), (\w+), (\w+)', lambda lo, hi, n, m: half(0xfba0 | reg(n), reg(lo) << 12 | reg(hi) << 8 | reg(m))),
+        (r'muls (r[0-7]), (r[0-7]), (r[0-7])', lambda d, n, m: half(0x4340 | reg(n) << 3 | reg(d))),
+        (r'stm\.w (\w+), \{(.*)\}', lambda n, l: half(0xe880 | reg(n), mask(l))),
+        (r'str (\w+), \[(\w+)\], #(\S+)', lambda t, n, v: half(0xf840 | reg(n), reg(t) << 12 | 0xb00 | number(v))),
+        (r'ldr (\w+), \[(\w+), #(\S+)\]!', lambda t, n, v: half(0xf850 | reg(n), reg(t) << 12 | 0xf00 | number(v))),
+        (r'adds\.w (\w+), (\w+), #(\S+)', lambda d, n, v: half(0xf110 | fields(number(v))[0] | reg(n), fields(number(v))[1] | reg(d) << 8)),
+        (r'adc (\w+), (\w+), #(\S+)', lambda d, n, v: half(0xf140 | fields(number(v))[0] | reg(n), fields(number(v))[1] | reg(d) << 8)),
+        (r'subs\.w (\w+), (\w+), (\w+)', lambda d, n, m: half(0xebb0 | reg(n), reg(d) << 8 | reg(m))),
+        (r'sbcs\.w (\w+), (\w+), (\w+)', lambda d, n, m: half(0xeb70 | reg(n), reg(d) << 8 | reg(m))),
+        (r'mov\.w (\w+), #(\S+)', lambda d, v: Thumb(0).mov_imm(reg(d), number(v)).code),
+        (r'mov(?:eq|ne)? (\w+), (\w+)', lambda d, m: Thumb(0).mov(reg(d), reg(m)).code),
+        (r'(?:movs|mov[a-z]{2}) (r[0-7]), #(\S+)', lambda d, v: half(0x2000 | reg(d) << 8 | number(v)) if number(v) < 256 else None),
+        (r'ldr (r[0-7]), \[pc, #(\S+)\]', lambda t, v: literal(t, v, False)),
+        (r'ldr\.w (\w+), \[pc, #(\S+)\]', lambda t, v: literal(t, v, True)),
+        (r'ldr (r[0-7]), \[(r[0-7])(?:, #(\S+))?\]', lambda t, n, v=None: half(0x6800 | number(v or '0') // 4 << 6 | reg(n) << 3 | reg(t))),
+        (r'ldr\.w (\w+), \[(\w+)(?:, #(\S+))?\]', lambda t, n, v='0': half(0xf8d0 | reg(n), reg(t) << 12 | number(v))),
+        (r'str\.w (\w+), \[(\w+), #(\S+)\]', lambda t, n, v: half(0xf8c0 | reg(n), reg(t) << 12 | number(v))),
+        (r'(ldr|str)\.w (\w+), \[(\w+), (\w+), lsl #(\d)\]',
+         lambda op, t, n, m, k: half((0xf850 if op == 'ldr' else 0xf840) | reg(n), reg(t) << 12 | int(k) << 4 | reg(m))),
+        (r'ldr (r[0-7]), \[(r[0-7]), (r[0-7])\]', lambda t, n, m: half(0x5800 | reg(m) << 6 | reg(n) << 3 | reg(t))),
+        (r'ldrd (\w+), (\w+), \[(\w+), #(\S+)\]', lambda t, t2, n, v: half(0xe9d0 | reg(n), reg(t) << 12 | reg(t2) << 8 | number(v) // 4)),
+        (r'strd (\w+), (\w+), \[(\w+)(?:, #(\S+))?\]', lambda t, t2, n, v='0': half(0xe9c0 | reg(n), reg(t) << 12 | reg(t2) << 8 | number(v) // 4)),
+        (r'add\.w (\w+), (\w+), (\w+), lsl #(\d)', lambda d, n, m, k: half(0xeb00 | reg(n), (int(k) >> 2) << 12 | reg(d) << 8 | (int(k) & 3) << 6 | reg(m))),
+        (r'sub\.w (\w+), (\w+), (r\d+|sb|sl|fp|ip)', lambda d, n, m: half(0xeba0 | reg(n), reg(d) << 8 | reg(m))),
+        (r'add\.w (\w+), (\w+), (r\d+|sb|sl|fp|ip)', lambda d, n, m: half(0xeb00 | reg(n), reg(d) << 8 | reg(m))),
+        (r'add\.w (\w+), (\w+), #(\S+)', lambda d, n, v: half(0xf100 | fields(number(v))[0] | reg(n), fields(number(v))[1] | reg(d) << 8)),
+        (r'strh\.w (\w+), \[(\w+), #(\S+)\]', lambda t, n, v: half(0xf8a0 | reg(n), reg(t) << 12 | number(v))),
+        (r'addw (\w+), (\w+), #(\S+)', lambda d, n, v: Thumb(0).addw(reg(d), reg(n), number(v)).code),
+        (r'bx lr', lambda: half(0x4770)),
+        (r'vldr s(\d+), \[(\w+)(?:, #(\S+))?\]', lambda d, n, v='0': Thumb(0).vldr(int(d), reg(n), number(v)).code),
+        (r'vstr s(\d+), \[(\w+)(?:, #(\S+))?\]', lambda d, n, v='0': half(0xed80 | (int(d) & 1) << 6 | reg(n), (int(d) >> 1) << 12 | 0xa00 | number(v) // 4)),
+        (r'vmov s(\d+), (\w+)', lambda n, t: half(0xee00 | int(n) >> 1, reg(t) << 12 | 0xa10 | (int(n) & 1) << 7)),
+        (r'vmov (\w+), s(\d+)', lambda t, n: Thumb(0).vmov_core(reg(t), int(n)).code),
+        (r'vmov(?:eq|ne)?\.f32 s(\d+), s(\d+)', lambda d, m: vfp(0xeeb0, 0xa40, int(d), 0, int(m))),
+        (r'vmov\.f32 s(\d+), #1\.000000e\+00', lambda d: vfp(0xeeb7, 0xa00, int(d), 0, 0)),
+        (r'vcmpe\.f32 s(\d+), #0', lambda d: vfp(0xeeb5, 0xac0, int(d), 0, 0)),
+        (r'vcmpe\.f32 s(\d+), s(\d+)', lambda d, m: vfp(0xeeb4, 0xac0, int(d), 0, int(m))),
+        (r'vmrs apsr_nzcv, fpscr', lambda: half(0xeef1, 0xfa10)),
+        (r'vcvt\.f32\.s32 s(\d+), s(\d+)', lambda d, m: vfp(0xeeb8, 0xac0, int(d), 0, int(m))),
+        (r'vcvt\.s32\.f32 s(\d+), s(\d+)', lambda d, m: vfp(0xeebd, 0xac0, int(d), 0, int(m))),
+        (r'vmul\.f32 s(\d+), s(\d+), s(\d+)', lambda d, n, m: vfp(0xee20, 0xa00, int(d), int(n), int(m))),
+        (r'vdiv\.f32 s(\d+), s(\d+), s(\d+)', lambda d, n, m: vfp(0xee80, 0xa00, int(d), int(n), int(m))),
+        (r'vadd\.f32 s(\d+), s(\d+), s(\d+)', lambda d, n, m: vfp(0xee30, 0xa00, int(d), int(n), int(m))),
+        (r'vsub\.f32 s(\d+), s(\d+), s(\d+)', lambda d, n, m: vfp(0xee30, 0xa40, int(d), int(n), int(m))),
+        (r'ldr\.w (\w+), \[(\w+), (r\d+|sb|sl|fp|ip|lr)\]', lambda t, n, m: half(0xf850 | reg(n), reg(t) << 12 | reg(m))),
+        (r'str(?:eq|ne)\.w (\w+), \[(\w+), #(\S+)\]', lambda t, n, v: half(0xf8c0 | reg(n), reg(t) << 12 | number(v))),
+        (r'pop(?:eq|ne) \{(.*)\}', lambda l: half(0xbc00 | mask(l) & 0xff | (mask(l) >> 15 & 1) << 8)),
+        (r'nop', lambda: half(0xbf00)),
+        (r'ldr (r[0-7]), \[sp, #(\S+)\]', lambda t, v: half(0x9800 | reg(t) << 8 | number(v) // 4)),
+        (r'str (r[0-7]), \[sp(?:, #(\S+))?\]', lambda t, v='0': half(0x9000 | reg(t) << 8 | number(v) // 4)),
+        (r'str (r[0-7]), \[(r[0-7])(?:, #(\S+))?\]', lambda t, n, v='0': half(0x6000 | number(v) // 4 << 6 | reg(n) << 3 | reg(t))),
+        (r'ldr (\w+), \[(\w+)\], #(\S+)', lambda t, n, v: half(0xf850 | reg(n), reg(t) << 12 | 0xb00 | number(v))),
+        (r'uxth (r[0-7]), (r[0-7])', lambda d, m: half(0xb280 | reg(m) << 3 | reg(d))),
+        (r'add (r[0-7]), (r[0-7])', lambda d, m: half(0x4400 | reg(m) << 3 | reg(d))),
+        (r'strh (r[0-7]), \[(r[0-7])\]', lambda t, n: half(0x8000 | reg(n) << 3 | reg(t))),
+        (r'stm (r[0-7])!, \{(.*)\}', lambda n, l: half(0xc000 | reg(n) << 8 | mask(l))),
+        (r'sub sp, #(\S+)', lambda v: half(0xb080 | number(v) // 4)),
+        (r'orrs (r[0-7]), (r[0-7])', lambda d, m: half(0x4300 | reg(m) << 3 | reg(d))),
+        (r'tst\.w (\w+), #(\S+)', lambda n, v: half(0xf010 | fields(number(v))[0] | reg(n), fields(number(v))[1] | 0xf00)),
+        (r'ldrb (r[0-7]), \[(r[0-7])\]', lambda t, n: half(0x7800 | reg(n) << 3 | reg(t))),
+        (r'ldrh (r[0-7]), \[(r[0-7])\]', lambda t, n: half(0x8800 | reg(n) << 3 | reg(t))),
+        (r'strb (r[0-7]), \[(r[0-7]), #(\S+)\]', lambda t, n, v: half(0x7000 | number(v) << 6 | reg(n) << 3 | reg(t))),
+        (r'strb\.w (\w+), \[(\w+), #(\S+)\]', lambda t, n, v: half(0xf880 | reg(n), reg(t) << 12 | number(v))),
+        (r'strh (\w+), \[(\w+)\], #(\S+)', lambda t, n, v: half(0xf820 | reg(n), reg(t) << 12 | 0xb00 | number(v))),
+        (r'add (r[0-7]), pc', lambda d: half(0x4478 | reg(d))),
+        (r'add (r[0-7]), sp, #(\S+)', lambda d, v: half(0xa800 | reg(d) << 8 | number(v) // 4)),
+        (r'(?:adds|add[a-z]{2}) (r[0-7]), #(\S+)', lambda d, v: half(0x3000 | reg(d) << 8 | number(v))),
+        (r'(?:adds|add[a-z]{2}) (r[0-7]), (r[0-7]), #(\S+)', lambda d, n, v: half(0x1c00 | number(v) << 6 | reg(n) << 3 | reg(d))),
+        (r'(?:subs|sub[a-z]{2}) (r[0-7]), (r[0-7]), #(\S+)', lambda d, n, v: half(0x1e00 | number(v) << 6 | reg(n) << 3 | reg(d))),
+        (r'subs (r[0-7]), #(\S+)', lambda d, v: half(0x3800 | reg(d) << 8 | number(v))),
+        (r'sub\.w (\w+), (\w+), #(\S+)', lambda d, n, v: half(0xf1a0 | fields(number(v))[0] | reg(n), fields(number(v))[1] | reg(d) << 8)),
+        (r'subw (\w+), (\w+), #(\S+)', lambda d, n, v: Thumb(0).subw(reg(d), reg(n), number(v)).code),
+        (r'sxth (r[0-7]), (r[0-7])', lambda d, m: half(0xb200 | reg(m) << 3 | reg(d))),
+        (r'cmp (r[0-7]), #(\S+)', lambda n, v: half(0x2800 | reg(n) << 8 | number(v))),
+        (r'cmp (r[0-7]), (r[0-7])', lambda n, m: half(0x4280 | reg(m) << 3 | reg(n))),
+        (r'cmp (\w+), (\w+)', lambda n, m: half(0x4500 | (reg(n) >> 3) << 7 | reg(m) << 3 | reg(n) & 7)),
+        (r'cmp\.w (\w+), #(\S+)', lambda n, v: half(0xf1b0 | fields(number(v))[0] | reg(n), fields(number(v))[1] | 0xf00)),
+        (r'tbb \[pc, (\w+)\]', lambda m: half(0xe8df, 0xf000 | reg(m))),
+        (r'tbh \[pc, (\w+), lsl #1\]', lambda m: half(0xe8df, 0xf010 | reg(m))),
+        (r'it (\w+)', lambda c: half(0xbf08 | CONDITIONS[c] << 4)),  # one conditional instruction
+        (r'cbz (r[0-7]), #(\S+)', cbz),
+        (r'bl #(\S+)', lambda t: Thumb(at).call(number(t), exchange=False).code),
+        (r'blx #(\S+)', lambda t: Thumb(at).call(number(t)).code),
+        (r'b #(\S+)', lambda t: half(0xe000 | offset(t) >> 1 & 0x7ff)),
+        (r'b\.w #(\S+)', lambda t: far(offset(t))),
+        (r'b(\w\w) #(\S+)', lambda c, t: half(0xd000 | CONDITIONS[c] << 8 | offset(t) >> 1 & 0xff)),
+        (r'b(\w\w)\.w #(\S+)', lambda c, t: wide_branch(c, offset(t))),
+    ]
+    for pattern, encode in forms:
+        found = re.fullmatch(pattern, text)
+        if found:
+            code = encode(*[g for g in found.groups() if g is not None])
+            if code is None:
+                break
+            return code
+    raise ValueError(text)
+
+
+def assemble(shape, address, values=None, refs=None, calls=None, tables=None, pool=None):
+    """(bytes, labels, hole line addresses) of a shape at `address`.
+
+    values: {hole: int}; refs: {role: address} for `{&role}` loads, whose literal
+    pool follows the code or, with pool=(address, bytearray), is appended to that
+    shared pool; calls: {symbol: address}; tables: {name: [label or hole name]}
+    case targets. Two passes resolve forward labels.
+    """
+    values, refs, calls, tables = values or {}, refs or {}, calls or {}, tables or {}
+    lines = [line for line in shape.strip().splitlines() if line.strip()]
+    labels, at_line, adds, layout = {}, {}, {}, None
+    for _ in range(2):
+        code = bytearray()
+        loads = []  # (ldr position, register, role)
+        starts = {}
+        for line in lines:
+            label, _, line = line.rpartition(': ')
+            here = address + len(code)
+            if line == '...':  # a literal pool gap
+                code += b'\xff\xff\xff\xff'
+                continue
+            if label:
+                labels[label] = here
+            line = re.sub(r'\{([\w.]+)(?:\|[\w.]+)+\}', lambda m: m[1], line)  # first alternative
+            table = re.fullmatch(r'(.*) \{(\w+):(\d+)\}', line)
+            if table:
+                line = table[1]
+            for name in re.findall(r'\{(\w+)\}', line):
+                at_line[name] = here
+            role = re.search(r'(\w+), \[pc, #\{&(\w+)\}\]', line)
+            if role:
+                loads.append((len(code), role[1], role[2]))
+                word = layout['pool'] + 4 * (len(loads) - 1) if layout else here + 4
+                line = line.replace('{&%s}' % role[2], hex(word - ((here + 4) & ~3)))
+            added = re.fullmatch(r'add (\w+), pc', line)
+            if added:
+                adds[next(len(loads) - 1 - i for i, row in enumerate(reversed(loads)) if row[1] == added[1])] = here
+            line = re.sub(r'\{(\w+)\}', lambda m: hex(values[m[1]]), line)
+            line = re.sub(r'@(\w+)', lambda m: '#' + hex(labels.get(m[1], here)), line)
+            line = re.sub(r'<(\w+)>', lambda m: '#' + hex(calls[m[1]]), line)
+            code += thumb(line, here)
+            if table:
+                starts[table[2]] = address + len(code)
+                count = int(table[3])
+                if layout:  # forward labels are known from the first pass
+                    targets = {**at_line, **labels}
+                    entries = [(targets.get(name, starts[table[2]]) - starts[table[2]]) // 2 for name in tables.get(table[2], [])]
+                    raw = bytes(entries) if line.startswith('tbb') else struct.pack('<%dH' % len(entries), *entries)
+                    code += raw.ljust(count, b'\0')
+                else:
+                    code += bytes(count)
+        if pool is None and (address + len(code)) % 4:
+            code += half(0xbf00)
+        layout = {'pool': pool[0] + len(pool[1]) if pool else address + len(code)}
+    words = b''.join(struct.pack('<I', (refs[role] - (adds.get(index, 0) + 4)) & 0xffffffff) for index, (_, _, role) in enumerate(loads))
+    if pool:
+        pool[1].extend(words)
+    else:
+        code += words
+    return bytes(code), labels, at_line
+
+
+def with_symbols(image, objects, slots):
+    """A synthetic library with data symbols and GOT relocations added: objects
+    {name: (address, size)} as OBJECT symbols, slots {GOT address: name} bound by
+    R_ARM_GLOB_DAT (or (name, type)). The section table is rewritten at the end of the file."""
+    table, = struct.unpack_from('<I', image, 32)
+    count, names_index = struct.unpack_from('<HH', image, 48)
+    headers = [list(struct.unpack_from('<10I', image, table + 40 * i)) for i in range(count)]
+    names = image[headers[names_index][4]:headers[names_index][4] + headers[names_index][5]]
+    label = lambda h: names[h[0]:names.index(b'\0', h[0])].decode()
+    sections = {label(h): h for h in headers[1:]}
+    symbols, strings = sections['.dynsym'], sections['.dynstr']
+    dynsym = bytearray(image[symbols[4]:symbols[4] + symbols[5]])
+    dynstr = bytearray(image[strings[4]:strings[4] + strings[5]])
+    index = {}
+    for name, (address, size) in objects.items():
+        index[name] = len(dynsym) // 16
+        dynsym += struct.pack('<IIIBBH', len(dynstr), address, size, 0x11, 0, 6)
+        dynstr += name.encode() + b'\0'
+    # A slot may name (symbol, relocation type); R_ARM_GLOB_DAT (21) otherwise.
+    relocations = b''.join(struct.pack('<II', slot, index[name if isinstance(name, str) else name[0]] << 8 | (21 if isinstance(name, str) else name[1]))
+                           for slot, name in slots.items())
+    out, placed = bytearray(image), {}
+    for name, blob in (('.dynsym', dynsym), ('.dynstr', dynstr), ('.rel.dyn', relocations)):
+        out += bytes(-len(out) % 4)
+        placed[name] = (len(out), len(blob))
+        out += blob
+    shstr = bytes(names) + b'.rel.dyn\0'
+    out += bytes(-len(out) % 4)
+    shstr_at = len(out)
+    out += shstr
+    rows = [headers[0]]
+    for h in headers[1:]:
+        h = list(h)
+        if label(h) in placed:
+            h[3], h[4], h[5] = placed[label(h)][0], *placed[label(h)]
+        if label(h) == '.shstrtab':
+            h[4], h[5] = shstr_at, len(shstr)
+        rows.append(h)
+    dynsym_index = next(i for i, row in enumerate(rows) if i and label(row) == '.dynsym')
+    rows.append([len(names), 9, 2, placed['.rel.dyn'][0], *placed['.rel.dyn'], dynsym_index, 0, 4, 8])  # SHT_REL
+    out += bytes(-len(out) % 4)
+    start = len(out)
+    for row in rows:
+        out += struct.pack('<10I', *row)
+    struct.pack_into('<I', out, 32, start)
+    struct.pack_into('<HH', out, 48, len(rows), names_index)
+    return bytes(out)

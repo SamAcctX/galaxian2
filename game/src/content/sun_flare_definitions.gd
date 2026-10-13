@@ -29,9 +29,10 @@ static func validate(data: Variant,executable_bytes: int,architecture: String) -
 	if not data is Dictionary:return "Missing sun flare declarations"
 	if data.is_empty():return ""
 	if not parameters(data):return "Invalid sun flare parameters"
-	var sizes:={"resources":73,"system_type":36,"palette":129,"system":13,"system_id":9,"system_types":136,"palette_selectors":20} if architecture=="x86_64" else {"resources":56,"system_type":30,"palette":46,"fallback":12,"system":6,"system_id":4,"system_types":136,"red":20,"green":20,"blue":20} if architecture=="armv7" else {}
+	var sizes:={"resources":73,"system_type":36,"palette":129,"system":13,"system_id":9,"system_types":136,"palette_selectors":20} if architecture=="x86_64" else {"resources":56,"system_type":30,"palette":46,"fallback":12,"system":6,"system_id":4,"system_types":136,"red":20,"green":20,"blue":20} if architecture=="armv7" else {"resources":64,"system_type":24,"palette":44,"fallback":12,"channels":58,"system":6,"system_id":4,"system_types":136,"red":20,"green":20,"blue":20,"images":174} if architecture=="android-armv7" else {}
 	if sizes.is_empty():return "Unsupported sun flare architecture"
-	for index in 3:sizes["image_"+str(index)]=64
+	if architecture!="android-armv7":
+		for index in 3:sizes["image_"+str(index)]=64
 	var provenance: Variant=data.get("provenance")
 	if not provenance is Dictionary or provenance.size()!=sizes.size():return "Invalid sun flare provenance"
 	var spans:=[]
@@ -43,4 +44,5 @@ static func validate(data: Variant,executable_bytes: int,architecture: String) -
 			if begin<span.y and end>span.x:return "Overlapping sun flare declarations"
 		spans.append(Vector2i(begin,end))
 	if architecture=="armv7" and int(provenance.fallback.offset)!=int(provenance.palette.offset)+0x48:return "Unlinked sun flare palette"
+	if architecture=="android-armv7" and int(provenance.fallback.offset)!=int(provenance.palette.offset)+0x3e:return "Unlinked sun flare palette"
 	return ""

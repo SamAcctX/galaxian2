@@ -38,7 +38,7 @@ func run():
 
 func verify(args: PackedStringArray):
 	if not lib.open(args[0]) or not bindings.open(args[1],lib.manifest) or not lib.select_language("gb") or not cat.open(lib) or not visuals.open(args[2],lib.manifest):check(false,lib.error+bindings.error+cat.error+visuals.error);return
-	check(bindings.source_architecture=="x86_64","This verification is Mac only")
+	check(bindings.source_architecture in ["x86_64","android-armv7"],"This verification needs Mac or Android content")
 	panel=GameOver.new();canvas=SubViewport.new();canvas.size=Vector2i(960,720)
 	canvas.render_target_update_mode=SubViewport.UPDATE_ALWAYS;root.add_child(canvas)
 	var background:=ColorRect.new();background.color=Color(.015,.026,.042);background.size=Vector2(1280,1280);canvas.add_child(background)
@@ -49,13 +49,14 @@ func verify(args: PackedStringArray):
 		return
 	if args.size()==4 and DisplayServer.get_name()!="headless":captures=args[3]
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	check(Definitions.validate(bindings.game_over_presentation,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.player_destruction).is_empty(),"Game-over declaration refused")
+	check(Definitions.validate(bindings.game_over_presentation,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.player_destruction).is_empty(),"Game-over declaration refused")
 	for key in Definitions.VALUES:
-		var bad: Dictionary=bindings.game_over_presentation.duplicate(true);bad[key]=null
+		# Android has no image: its null image keys are changed to -1 instead.
+		var bad: Dictionary=bindings.game_over_presentation.duplicate(true);bad[key]=null if bad[key]!=null else -1
 		check(not Definitions.parameters(bad),"Changed game-over parameter accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if bindings.source_architecture=="android-armv7" else Definitions.SPANS):
 		var bad: Dictionary=bindings.game_over_presentation.duplicate(true);bad.provenance[key].offset+=1
-		check(not Definitions.validate(bad,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.player_destruction).is_empty(),"Detached game-over extent accepted: "+key)
+		check(not Definitions.validate(bad,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.player_destruction).is_empty(),"Detached game-over extent accepted: "+key)
 	verify_reader(args[1],header)
 	var fixture:=Fixture.new();var packet: Dictionary=fixture.packet_fixture(bindings,cat,3);fixture.free()
 	if not construction.prepare(bindings,cat,packet,4096,1789100000) or not resources.configure(lib,bindings) or not death.configure(bindings,resources,construction):check(false,construction.error+resources.error+death.error);return
@@ -94,18 +95,22 @@ func verify(args: PackedStringArray):
 	check(panel.present(death.fork_for_frame(),524),"A detached frame with the same presentation identity was refused")
 	await capture("desktop-complete")
 	verify_atomic()
+	# Android has no game-over image (MGame never creates it) and no desktop text
+	# substitution: its touch prompt stands alone on both layouts.
+	var android: bool=bindings.source_architecture=="android-armv7"
+	var desktop_text:=188 if android else 189
 	for language in lib.manifest.languages:
 		check(lib.select_language(language),lib.error)
 		check(panel.configure(lib,bindings,visuals,death),panel.error)
 		panel.set_mobile_layout(false);panel.size=Vector2(960,720)
-		check(panel.present(death,524) and panel.snapshot().text_id==189 and panel.snapshot().text==lib.strings[189],"Desktop continuation alias lost: "+language)
-		check(panel.snapshot().image_rect.size==Vector2(147,68),"Desktop game-over composition is not compact")
+		check(panel.present(death,524) and panel.snapshot().text_id==desktop_text and panel.snapshot().text==lib.strings[desktop_text],"Desktop continuation alias lost: "+language)
+		check(panel.snapshot().image_rect.size==(Vector2.ZERO if android else Vector2(147,68)),"Desktop game-over composition is not compact")
 		panel.set_mobile_layout(true);panel.size=Vector2(800,450)
 		check(panel.present(death,524) and panel.snapshot().text_id==188 and panel.snapshot().text==lib.strings[188],"Mobile continuation text lost: "+language)
 		await process_frame
 		var state: Dictionary=panel.snapshot()
 		var viewport:=Rect2(Vector2.ZERO,panel.size)
-		check(state.image_rect.size==Vector2(294,136) and viewport.encloses(state.image_rect) and viewport.encloses(state.prompt_rect),"Phone art/prompt exceeds its landscape viewport: "+language)
+		check(state.image_rect.size==(Vector2.ZERO if android else Vector2(294,136)) and viewport.encloses(state.image_rect) and viewport.encloses(state.prompt_rect),"Phone art/prompt exceeds its landscape viewport: "+language)
 	check(lib.select_language("ja") and panel.configure(lib,bindings,visuals,death),"Japanese capture resources unavailable")
 	canvas.size=Vector2i(800,450);panel.size=canvas.size
 	check(panel.present(death,524),panel.error);await capture("phone-japanese")
@@ -168,7 +173,10 @@ func verify_atomic():
 	check(not panel.configure(lib,bindings,visuals,death) and panel.snapshot()==before,"Changed atlas mapping replaced game-over screen")
 	bindings.game_over_presentation=rules
 	var directory: String=visuals.root;visuals.root=directory.path_join("missing-game-over-fixture")
-	check(not panel.configure(lib,bindings,visuals,death) and panel.snapshot()==before,"Missing atlas discarded the accepted screen")
+	if bindings.source_architecture=="android-armv7":
+		# Android draws no game-over image, so a panel needs no atlas.
+		var bare:=GameOver.new();check(bare.configure(lib,bindings,visuals,death),"Android game-over prompt required an atlas: "+bare.error);bare.free()
+	else:check(not panel.configure(lib,bindings,visuals,death) and panel.snapshot()==before,"Missing atlas discarded the accepted screen")
 	visuals.root=directory
 	var copy: Dictionary=panel.snapshot();copy.text="changed"
 	check(panel.snapshot()==before,"Snapshot exposed mutable display state")
@@ -182,7 +190,7 @@ func verify_reader(pack: String, header: Dictionary):
 			"missing":changed.erase("game_over_presentation")
 			"type":changed.game_over_presentation=false
 			"value":changed.game_over_presentation.region=210
-			"extent":changed.game_over_presentation.provenance.image_alias.offset+=1
+			"extent":changed.game_over_presentation.provenance["failure_display" if header.architecture=="android-armv7" else "image_alias"].offset+=1
 			"death_absent":changed.player_destruction={}
 			"empty":changed.game_over_presentation={}
 		var serialized:=JSON.stringify(changed,"",true,true)

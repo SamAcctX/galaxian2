@@ -46,7 +46,8 @@ func verify(args: Array):
 	check(session.prepare_station().is_empty(),"Running rescue prepared a station before its fade")
 	var initial:=session.snapshot()
 	check(initial.elapsed_ms==0 and initial.radio.started==[false,false,false] and initial.fade.alpha_byte==255,"Rescue inherited the Opening clock, radio flags or fade")
-	check(initial.scenery.objects.size()==130 and initial.world_frame.progress.rank==1 and initial.world_frame.player.vitals.hull==200,"Rescue lost its field, earned rank or cached player")
+	# The rescue field holds 80 + random(80) = 130 asteroids on the Mac, 40 + random(40) = 50 on Android (scenery_population_vectors.json, station 78).
+	check(initial.scenery.objects.size()==(50 if bindings.source_architecture=="android-armv7" else 130) and initial.world_frame.progress.rank==1 and initial.world_frame.player.vitals.hull==200,"Rescue lost its field, earned rank or cached player")
 	check(initial.world_frame.target_ids==["player"] and not initial.world_frame.player_update_enabled,"Rescue target list or player freeze is incorrect")
 	check(not session.can_control() and not session.flight_hud_visible(),"Rescue exposed ordinary flight controls")
 	var now:=0

@@ -2,12 +2,29 @@
 
 These bounded source spans establish constant content. Executable bytes are
 never retained, and particle behavior is implemented independently in Godot.
+
+Android: ParticleSettings::init fills SET_BASIC (flags 17, 20 particles, size
+250, velocity scatter 100, z velocity -4000, ...) and copies it into sets
+29..38; Level::init builds the material-20090 manager; Level::createPlayer
+reads the nozzle positions (FileRead::loadWeaponPositions, group 3);
+Level::initParticleSystems adds set 29 + i per nozzle on the player's matrix
+and sets its lifetime 80 x min(scale x 1.5, 1), size 250 x scale, spacing 8,
+20 particles, growth -1000, z velocity -4000 x min(scale x 1.5, 1), colors
+0xddddddff -> 0, relative velocity 0.8 and the sprite of the ship's family
+(Status::getShip, Ship::getIndex, family table: Betty 3, ship 10 0). Values
+equal the Mac ones.
 """
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .station_exterior import declaration_bytes
 
 def extract_engine_particles(mach,arrival,damage):
+    if mach.architecture == 'android-armv7':
+        try:
+            if damage['scope'] != 'damage_particle_sprite_presets' or 'emitter_defaults' not in damage: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64':return {}
     try:
         if damage['scope']!='damage_particle_sprite_presets' or 'emitter_defaults' not in damage:return {}
@@ -146,3 +163,21 @@ MAC_ALTERNATE = {'defaults': [483570, 211, '__text', 'sha256:a45d4e3d94355bfb5e5
                           280,
                           '__text',
                           'sha256:34354cad39ffb2d9e161b5d6d2a891366c110ad5db9c91a8db12913ac3cf7e82']}
+
+# Android: the VALUES with the opening ship (family table entry 10 is 0); spans inside named functions and tables.
+ANDROID_VALUES = copy.deepcopy({**VALUES, 'opening_ship': OPENING_SHIP})
+ANDROID = {# ParticleSettings::init: the set defaults, SET_BASIC (its three vectors) and its copies into sets 29..38.
+           'defaults': ('_ZN16ParticleSettings4initEv', 14, 364, 'sha256:661d8fe72f7ca6a86453db628677cb72149ab02274429248c59479e19b0f3742'),
+           'basic_vectors': ('_ZN16ParticleSettings4initEv', 112, 48, '01000000ffffffffff000000000000000cfeffff0000000000000000640000000000303f6f12833a7b143e3f0000803d'),
+           'basic_and_copies': ('_ZN16ParticleSettings4initEv', 378, 426, 'sha256:b85041724c183a3af3d9576655bd578d56077208e528d3d6af03ca2864004507'),
+           # Level::initParticleSystems: one set-29 + i system per nozzle and its overrides (80.0, 250, -4000.0),
+           # the family sprites and the ship-family table.
+           'nozzle_setup': ('_ZN5Level19initParticleSystemsEv', 0, 2120, 'sha256:06c77b32c546ea95b3c614a97871d57008a50b7ef9248a52041ccd2d7bf4142e'),
+           'nozzle_scales': ('_ZN5Level19initParticleSystemsEv', 960, 24, '000000000000544000007a43aff30080000000000040afc0'),
+           'nozzle_sprites': ('_ZN5Level19initParticleSystemsEv', 1920, 96, '0080203f0000003b00803f3f0000fc3d0080003f0000003b00801f3f0000fc3d0000c13e0000003b0000ff3e0000fc3d0000043e0000c03b00007c3e0000f83d0000c03b0000c03b0000f43d0000f43d0000813e0000003b0000bf3e0000fc3d'),
+           'family_table': ('_ZN5Level19initParticleSystemsEv', 124, 44, '0300000000000000080000000300000002000000000000000300000000000000090000000100000000000000', 'literal', 0),
+           # Level::init: the material-20090 manager; Level::createPlayer: the nozzle attachments.
+           'manager': ('_ZN5Level4initEv', 326, 50, 'sha256:6386b9098501e48fd38b014cd266c246ab9cb0043151169fea31f2c6b15244b2'),
+           'attachment_positions': ('_ZN5Level12createPlayerEv', 440, 230, 'sha256:1dbcee2be8d1849b87249f239a6cba664be730b4a30170dd5f47996901e7f72f'),
+           'player_ship_getter': ('_ZN6Status7getShipEv', 0, 6, 'd0f88c017047'),
+           'ship_id_getter': ('_ZN4Ship8getIndexEv', 0, 4, '00687047')}

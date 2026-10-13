@@ -440,6 +440,7 @@ func verify_local_encounter(cat: RefCounted, construction: RefCounted) -> void:
 	var encounter:=PreparedEncounter.new()
 	check(encounter.configure_local_traffic(bindings,cat,lib,construction,0.5),encounter.error)
 	if encounter.snapshot().is_empty():return
+	check(not encounter.campaign_mission(),"Local traffic counts as the campaign's mission (mercy rule)")
 	var player: RefCounted=construction.player_owner();var scenery: RefCounted=construction.scenery_owner()
 	var entry: Dictionary=construction.snapshot();var random: Dictionary=entry.random_state
 	var initial: Dictionary=encounter.snapshot()

@@ -45,3 +45,26 @@ class OpeningEscapeTests(unittest.TestCase):
                 elif key=='section':m.sections[0]['segment']=b'__DATA'
                 else:m.architecture='unsupported'
                 self.assertFalse(reader.extract_opening_escape(m,s),key)
+
+
+class AndroidOpeningEscape(unittest.TestCase):
+    STAGING = {'player_flight': {'present': True}, 'player_motion': {'present': True}}
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from gof2_content.android_library import AndroidLibrary
+        from unittest.mock import patch
+        verify_android_proof(self, reader, lambda lib: reader.extract_opening_escape(lib, self.STAGING))
+        self.assertEqual(reader.ANDROID_VALUES, reader.VALUES)
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            result = reader.extract_opening_escape(lib, self.STAGING)
+            result['drive_sound_ids'].append(0)
+            self.assertEqual(reader.ANDROID_VALUES['drive_sound_ids'], [157, 158, 161])
+            for staging in ({**self.STAGING, 'player_flight': {}}, {**self.STAGING, 'player_motion': {}}, {}):
+                self.assertEqual(reader.extract_opening_escape(lib, staging), {}, staging)
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'opening_escape_definitions.gd')

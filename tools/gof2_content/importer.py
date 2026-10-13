@@ -10,10 +10,11 @@ import tempfile
 
 from .bundle import Bundle, CHUNK, MAX_RESOURCE, MAX_TOTAL, safe_name
 from .formats import ContentError, MAX_LANGUAGE, envelope, language
+from .text_ids import canonical_strings
 
 SCHEMA = 1
 # Counts describe supported structural layouts, not decoded ship semantics.
-LAYOUTS = {'ios-hd': {64: 3402}, 'mac-full-hd': {61: 3371, 64: 3385}}
+LAYOUTS = {'android-hd': {64: 3401}, 'ios-hd': {64: 3402}, 'mac-full-hd': {61: 3371, 64: 3385}}
 
 
 def encoded(value):
@@ -144,6 +145,8 @@ def install(source: Path, cache: Path, checkpoint=lambda *_: None):
                     values = language(target.read_bytes())
                     if len(values) != strings:
                         raise ContentError(f'Unsupported language record count for {profile["edition"]}: {name}')
+                    if profile['edition'] == 'android-hd':
+                        values = canonical_strings(values)
                     language_id = name.removesuffix('.lang')
                     normalized = f'definitions/languages/{language_id}.json'
                     data = encoded({'schema': SCHEMA, 'language': language_id,

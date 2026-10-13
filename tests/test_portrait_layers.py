@@ -92,4 +92,62 @@ class PortraitLayers(unittest.TestCase):
             self.assertEqual(extract_portrait_layers(mach),{})
             mach.architecture='unknown';self.assertEqual(extract_portrait_layers(mach),{})
 
+
+LOAD_IMAGE, LOAD_CHAR = '_ZN12ImageFactory9loadImageEiii', '_ZN12ImageFactory8loadCharEPi'
+SLOTS = {'iPadHD': 0xa000, 'iPadLarge': 0xa004, 'iPad': 0xa008, 'medium': 0xa00c, 'large': 0xa010, 'expanded': 0xa014, 'baseline': 0xa018}
+BOUND = {'iPadHD': '_ZN7Globals6iPadHDE', 'iPadLarge': '_ZN7Globals9iPadLargeE', 'iPad': '_ZN7Globals4iPadE', 'medium': 'IMAGE_OFFSETS_IPAD_HD',
+         'large': 'IMAGE_OFFSETS_IPAD_LARGE', 'expanded': 'IMAGE_OFFSETS_IPAD', 'baseline': 'IMAGE_OFFSETS'}
+
+
+def android_layers(bound=None, sizes=None, alias=False, prefix='', split=False, anchor=16, omit=()):
+    """loadImage and loadChar in the Android shapes with synthetic tables in .rodata:
+    part bases 700+i, table t holding (anchor, 10t + i) pairs."""
+    from android_fixture import TEXT, library, stub
+    from thumb_shapes import assemble, with_symbols
+    from gof2_content.android_library import AndroidLibrary
+    from gof2_content.portrait_layers import ANDROID_LAYERS, ANDROID_ORDER
+    calls = {'_ZN11AbyssEngine11PaintCanvas13Image2DCreateEtRj': TEXT, '_ZN9ImagePartC1Ejii': TEXT + 0x10,
+             '_Znwj': stub('_Znwj'), LOAD_IMAGE: TEXT + 0x100}
+    functions = [(name, b'\x70\x47\x00\xbf', calls[name]) for name in list(calls)[:2]]
+    shape = ANDROID_LAYERS.replace('cbz r0, @baseline_y\nldr r0, [pc, #{&expanded}]', 'cbz r0, @baseline_y\nldr r0, [pc, #{&expanded2}]') if split else ANDROID_LAYERS
+    refs = {**SLOTS, 'guard': 0x9000, 'canvas': 0x9004, 'part_bases': 0x8000, 'expanded2': 0xa01c}
+    code, labels, _ = assemble(prefix + shape + 'pop {r4, r5, r6, r7, pc}', TEXT + 0x100, {'absent': TEXT + 0x100 + 0x200}, refs, calls)
+    functions.append((LOAD_IMAGE, code, TEXT + 0x100))
+    functions.append((LOAD_CHAR, assemble(ANDROID_ORDER + 'pop.w {r4, r5, r6, r7, r8, pc}', TEXT + 0x400, calls=calls)[0], TEXT + 0x400))
+    data = {0x8000: struct.pack('<52i', *[-1 if i % 5 == 4 else 700 + i for i in range(52)])}
+    tables = {}
+    for t, role in enumerate(('medium', 'large', 'expanded', 'baseline')):
+        tables[BOUND[role]] = (0x8100 + (0 if alias and t == 1 else t) * 0x200, (sizes or {}).get(role, 416))
+        if not (alias and t == 1):
+            data[0x8100 + t * 0x200] = struct.pack('<104i', *[v for i in range(52) for v in (anchor if i == 51 else 16 * (i % 3), 10 * t + i)])
+    flags = {BOUND[role]: (0x8f00 + i, 1) for i, role in enumerate(('iPadHD', 'iPadLarge', 'iPad'))}
+    names = {**BOUND, **(bound or {})}
+    functions = [row for row in functions if row[0] not in omit]
+    image = with_symbols(library(functions, data), {**tables, **flags, '_ZN7Globals2n9E': (0x8f10, 1)},
+                         {SLOTS[role]: names[role] for role in SLOTS} | ({0xa01c: names['expanded']} if split else {}))
+    return AndroidLibrary(image)
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'optional static-reader dependency')
+class AndroidPortraitLayers(unittest.TestCase):
+    def test_named_functions_and_tables(self):
+        from android_fixture import TEXT
+        result = extract_portrait_layers(android_layers())
+        self.assertEqual(result['part_bases'][:2], [[700, 701, 702, 703], [-1, 705, 706, 707]])
+        self.assertEqual(result['draw_order'], [2, 1, 0, 3])
+        for t, role in enumerate(('medium', 'large', 'expanded', 'baseline')):
+            self.assertEqual(result['variants'][role][1], [{'anchor': 16 * ((4 + p) % 3), 'y': 10 * t + 4 + p} for p in range(4)], role)
+            self.assertEqual(result['provenance'][role], {'offset': 0x8100 + t * 0x200, 'bytes': 416})
+        self.assertEqual(result['provenance']['part_bases'], {'offset': 0x8000, 'bytes': 208})
+        self.assertEqual((result['provenance']['selection']['offset'], result['provenance']['order']['offset']), (TEXT + 0x100, TEXT + 0x400))
+
+    def test_each_broken_declaration_is_unsupported(self):
+        cases = {'other flag': dict(bound={'iPad': '_ZN7Globals2n9E'}), 'other table': dict(bound={'medium': 'IMAGE_OFFSETS'}),
+                 'table size': dict(sizes={'large': 400}), 'aliased tables': dict(alias=True),
+                 'not at the start': dict(prefix='nop\n'), 'two slots for one table': dict(split=True),
+                 'placement anchor': dict(anchor=8), 'no loadChar': dict(omit=(LOAD_CHAR,)),
+                 'relative relocation': dict(bound={'medium': ('IMAGE_OFFSETS_IPAD_HD', 23)})}
+        for name, options in cases.items():
+            self.assertEqual(extract_portrait_layers(android_layers(**options)), {}, name)
+
 if __name__=='__main__':unittest.main()

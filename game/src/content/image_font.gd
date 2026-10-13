@@ -124,7 +124,8 @@ func parse(bytes: PackedByteArray) -> Array:
 			font[code] = Rect2i(bytes.decode_u16(rect_at), bytes.decode_u16(rect_at + 2), bytes.decode_u16(rect_at + 4), bytes.decode_u16(rect_at + 6))
 		fonts.append(font)
 		offset += glyph_count * 10
-	if offset != bytes.size(): return invalid("Unrecognized bitmap font trailer")
+	# Android files may end with one byte the Android loader never reads (as aei.py).
+	if offset != bytes.size() and offset + 1 != bytes.size(): return invalid("Unrecognized bitmap font trailer")
 	return fonts
 
 static func valid_rect(bytes: PackedByteArray, at: int, width: int, height: int, empty: bool) -> bool:

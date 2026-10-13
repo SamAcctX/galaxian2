@@ -86,7 +86,7 @@ func check_profile(content: String, pack: String) -> void:
 			"overlap":wrong.provenance.getter.offset=wrong.provenance.pulse.offset
 			"extent":wrong.provenance.pulse.offset=header.source_executable_bytes
 			"anchor":wrong.provenance.assignment.offset+=1
-			"missing":wrong.provenance.erase("world_pass")
+			"missing":wrong.provenance.erase("entry" if header.architecture=="android-armv7" else "world_pass") # Android proves no world pass span
 		check(not Definitions.validate(wrong,header.source_executable_bytes,header.architecture,bindings.opening_actors.player_initialization).is_empty(),"Malformed recharge accepted: "+corruption)
 	var fork: RefCounted=player.fork_for_frame()
 	check(fork.advance_recharge(101).pulsed and player.snapshot()==original,"Player recharge fork mutated its source")

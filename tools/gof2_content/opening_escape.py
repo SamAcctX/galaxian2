@@ -1,6 +1,14 @@
-"""Recognize fresh opening escape declarations without retaining executable bytes."""
+"""Recognize fresh opening escape declarations without retaining executable bytes.
+
+Android: LevelScript::process runs the escape as the opening's phases 4 and 5
+and the phase 6-15 case table, phase 16 after the fade; LevelScript's
+constructor builds the effect geometry. The helpers are PlayerEgo::getSpeed,
+setSpeed and rotate, TargetFollowCamera::setRumblePercentage (the Mac's camera
+shake setter: percentage and radius) and translate, AEGeometry::setRotation,
+Level::switchSkyboxForIntro and StarSystem::switchPlanetForIntro.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 VALUES = {'scope': 'fresh_opening_escape',
  'entry_phase': 4,
@@ -64,6 +72,12 @@ VALUES = {'scope': 'fresh_opening_escape',
 
 def extract_opening_escape(mach, staging):
     arch = mach.architecture
+    if arch == 'android-armv7':
+        try:
+            if not staging['player_flight'] or not staging['player_motion']: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if proof else {}
     if arch not in LAYOUTS: return {}
     try:
         if not staging['player_flight'] or not staging['player_motion']: return {}
@@ -309,3 +323,49 @@ MAC_ALTERNATE = {'camera_backward_getter': [1112071,
  'unit_constant': [1397567, 4, '0000803f'],
  'initial_speed_constant': [1410055, 4, '00000040'],
  'drift_roll_constant': [1398967, 4, '00803b45']}
+
+# The values equal the Mac's: phase 6 ramps TargetFollowCamera::setRumblePercentage
+# to 1 over 4000 ms with radius 20, as the Mac's shake.
+ANDROID_VALUES = copy.deepcopy(VALUES)
+ANDROID = {'effect_constructor': ('_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera', 736, 34, 'sha256:dfc06dc05c7b008163e1690e833b81a18b0cb192f0d3101d721bf985ca719687'),
+           # LevelScript::process: phase 4 (message 10 over) and phase 5, then the 6-15 case table.
+           'entry': ('_ZN11LevelScript7processEi', 6540, 238, 'sha256:347cc489aaad4f32754a3e7a736da5e84d39a7c9bee5679014c545b728398655'),
+           'slowdown_and_pan': ('_ZN11LevelScript7processEi', 13206, 334, 'sha256:487037f80ccf95061753d740a38d9b90f38ff8f775fb6766c10cfb135d8c172b'),
+           'dispatch': ('_ZN11LevelScript7processEi', 17582, 36, 'sha256:98dc631e7a3c924835ec77e026fa4d4c54ea3618a496c57a7d9f8909d0b04bb4'),
+           # Phases 6, 7, 8, 9, 10, 11, 12, 13, 14 and 15 (the fade), then 16 (fade over).
+           'departure': ('_ZN11LevelScript7processEi', 17618, 304, 'sha256:85be1428cbdc2534f364721cf404db68408af81fba97ba4113b915cf51cc00d2'),
+           'exit_effect': ('_ZN11LevelScript7processEi', 27934, 288, 'sha256:b7cf60cd4fb2d0ff2c54458889b7e96b4dfd071a8c26981ce6fb65a2246cc638'),
+           'jump_wait': ('_ZN11LevelScript7processEi', 27458, 162, 'sha256:1dae8b9b726c7154ff7a7927987cf590f5acb85eedc18211990aca266c35d601'),
+           'jump': ('_ZN11LevelScript7processEi', 28222, 172, 'sha256:27c278b6d2e130fd04049c39241c0a1133b39fa292c653d5322851d86c4e481d'),
+           'arrival_effect': ('_ZN11LevelScript7processEi', 27716, 176, 'sha256:1cdbd5e3901f13c86bdcc308b838b76112ecb756e5381110dea65e7f101d9432'),
+           'arrival': ('_ZN11LevelScript7processEi', 28394, 228, 'sha256:547e888677982bcf3d614f1fedaec9536d34eaf2552649ba1f3c8bb9d768f0e6'),
+           'drift': ('_ZN11LevelScript7processEi', 28622, 162, 'sha256:065f100330c4f457ee1b7b53046d642ee43845d0ede2f2dfea61a2ed3315c112'),
+           'second_cut': ('_ZN11LevelScript7processEi', 28784, 144, 'sha256:1890dbc9c6729cc98f9e196d79dfdb5e1968dce89b0d2fd9f5aaedef922e3f17'),
+           'last_cut': ('_ZN11LevelScript7processEi', 28928, 190, 'sha256:43c7ad4b987ad1488516921e66686091946fce8997ce20f3e65deb7edf820b1a'),
+           'fade': ('_ZN11LevelScript7processEi', 27892, 42, 'sha256:6e8007a2e9c116a6935a52d47cf52420d1a2ba5d7ed7b6f35f9ee082a25ad02a'),
+           'arrival_gate': ('_ZN11LevelScript7processEi', 43424, 30, 'sha256:f50f3e8a9c55203a49e8e4085b7935ed26ba4817c2f80ba93d584fed47c6ed58'),
+           # The helpers the phases call.
+           'cruise_getter': ('_ZN9PlayerEgo8getSpeedEv', 0, 6, 'd0f8b8007047'),
+           'cruise_setter': ('_ZN9PlayerEgo8setSpeedEf', 0, 6, 'c0f8b8107047'),
+           'camera_shake_setter': ('_ZN18TargetFollowCamera19setRumblePercentageEfi', 0, 6, 'c0e944127047'),
+           'camera_pan': ('_ZN18TargetFollowCamera9translateEfff', 0, 64, 'sha256:b6142bfbe0be4a8120f2c41cfe71a2eaa8237f1567db29d0c7704a4c9e4b5d85'),
+           'model_rotation_setter': ('_ZN9PlayerEgo6rotateEfff', 0, 136, 'sha256:01992fd2c3e3dd09743e98f6fe149b0873f09f9eddff61df522d077896b4caf1'),
+           'heading_setter': ('_ZN10AEGeometry11setRotationEfff', 0, 120, 'sha256:b7fb10869aa94130a20e278aa5d90f44abd8ddcdb1df8a3fdd63faa4ff8ab8f0'),
+           'jump_sky': ('_ZN5Level20switchSkyboxForIntroEv', 0, 84, 'sha256:8574db95bc75ec94a7e2e4390d49df044a5ea2614b11f9bb885b75d92e0cd335'),
+           'jump_planet': ('_ZN10StarSystem20switchPlanetForIntroEv', 0, 128, 'sha256:2ba0a907d88f0e6bd8bc98d6c51f1261f51059deaeb2e85b3544016de15bf1ea'),
+           # Pool words the phases load: decay, pans, rumble ramps, roll divisors.
+           'cruise_decay_constant': ('_ZN11LevelScript7processEi', 14220, 4, '48e17a3f'),
+           'pan_x_constant': ('_ZN11LevelScript7processEi', 14224, 8, '333333333333d33f'),
+           'pan_z_constant': ('_ZN11LevelScript7processEi', 14232, 4, 'cdcc4c3e'),
+           'departure_pan_x_constant': ('_ZN11LevelScript7processEi', 16808, 8, '333333333333d33f'),
+           'departure_pan_z_constant': ('_ZN11LevelScript7processEi', 16816, 4, 'cdcc4c3e'),
+           'shake_rise_constant': ('_ZN11LevelScript7processEi', 16836, 4, '00007a45'),
+           'jump_falloff_constant': ('_ZN11LevelScript7processEi', 27640, 4, '00803bc5'),
+           'falloff_floor_constant': ('_ZN11LevelScript7processEi', 27644, 4, '00000000'),
+           'arrival_rise_constant': ('_ZN11LevelScript7processEi', 27652, 4, '0000fa44'),
+           'exit_pan_x_constant': ('_ZN11LevelScript7processEi', 27672, 8, '333333333333d33f'),
+           'exit_pan_z_constant': ('_ZN11LevelScript7processEi', 27680, 4, 'cdcc4c3e'),
+           'arrival_falloff_constant': ('_ZN11LevelScript7processEi', 27700, 4, '00401cc5'),
+           'drift_roll_constant': ('_ZN11LevelScript7processEi', 27712, 4, '00803b45'),
+           'second_roll_constant': ('_ZN11LevelScript7processEi', 29696, 4, '00007a45'),
+           'last_roll_constant': ('_ZN11LevelScript7processEi', 29700, 4, '00409c45')}

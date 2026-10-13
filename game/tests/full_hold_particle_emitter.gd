@@ -22,7 +22,7 @@ func _initialize() -> void:
 
 func verify(args: PackedStringArray) -> void:
 	if not library.open(args[0]) or not bindings.open(args[1],library.manifest):check(false,library.error+bindings.error);return
-	check(bindings.source_architecture=="x86_64","This verification is Mac only")
+	check(bindings.source_architecture in ["x86_64","android-armv7"],"This verification needs Mac or Android content")
 	var unrelated:=Emitter.new()
 	check(unrelated.configure(bindings,bindings.base_content_id,15,33),unrelated.error)
 	var before:=unrelated.snapshot()
@@ -39,20 +39,20 @@ func verify(args: PackedStringArray) -> void:
 	verify_invalid()
 	check(unrelated.snapshot()==before,"Second-flight sprites consumed the opening emitter's random stream")
 
-func validate(data: Variant,header: Dictionary,arch:="x86_64",flight: Variant=null) -> String:
-	return Definitions.validate(data,int(header.source_executable_bytes),arch,bindings.arrival_staging,bindings.full_hold_flight if flight==null else flight,bindings.player_destruction,bindings.damage_particles)
+func validate(data: Variant,header: Dictionary,arch:="",flight: Variant=null) -> String:
+	return Definitions.validate(data,int(header.source_executable_bytes),arch if not arch.is_empty() else str(header.architecture),bindings.arrival_staging,bindings.full_hold_flight if flight==null else flight,bindings.player_destruction,bindings.damage_particles)
 
 func verify_declarations(header: Dictionary) -> void:
 	var rules: Dictionary=bindings.full_hold_particles
 	check(validate(rules,header).is_empty(),"Valid second-flight sprite declarations rejected")
-	check(not validate(rules,header,"armv7").is_empty() and not validate(rules,header,"x86_64",{}).is_empty(),"Sprites accepted a different source or absent flight context")
+	check(not validate(rules,header,"armv7").is_empty() and not validate(rules,header,"",{}).is_empty(),"Sprites accepted a different source or absent flight context")
 	check(validate({},header).is_empty() and not validate(null,header).is_empty(),"Optional declarations confused empty with malformed")
 	check(rules.player_preset==9 and rules.npc_preset==9 and rules.npc_count==1 and rules.player_smoke_fire_max_cursor==1,"Second trip inherited the opening population")
 	check(rules.burst_count==1 and rules.burst_position=="statistics_before_death_spin","Player burst lost its count or statistics position")
 	for key in Definitions.VALUES:
 		var bad:=rules.duplicate(true);bad[key]=null
 		check(not Definitions.parameters(bad),"Changed sprite declaration accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if header.architecture=="android-armv7" else Definitions.SPANS):
 		var bad:=rules.duplicate(true);bad.provenance[key].offset+=1
 		check(not validate(bad,header).is_empty(),"Detached sprite provenance accepted: "+key)
 	var material: Dictionary=bindings.resolve_material(20099)

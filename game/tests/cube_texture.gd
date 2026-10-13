@@ -31,8 +31,11 @@ func run() -> void:
 			"region_count": broken.encode_u16(13,65535)
 			"cross": broken.encode_u16(15,33)
 			"fonts": broken.encode_u16(broken.size()-2,1)
-			"extra": broken.append(0)
+			"extra": broken.append_array(PackedByteArray([3,3]))
 		check(reader.decode_faces(broken).is_empty() and not reader.error.is_empty(),"Malformed cube accepted: "+bad)
+	# Android cubes end with one byte (0x03) the Android loader never reads.
+	var trailed := raw.duplicate();trailed.append(3)
+	check(reader.decode_faces(trailed).size()==6,"One trailing Android byte refused: "+reader.error)
 	for length in raw.size():check(reader.decode_faces(raw.slice(0,length)).is_empty(),"Truncated cube accepted")
 	check(reader.decode_faces(raw).size()==6 and reader.error.is_empty(),"Failed load poisoned later decoding")
 	check(reader.load(null,"anything")==null,"Missing content base accepted")

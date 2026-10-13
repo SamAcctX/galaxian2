@@ -1,12 +1,48 @@
-"""Recover the ordinary scene frame cap and validate its millisecond supplier."""
+"""Recover the ordinary scene frame cap and validate its millisecond supplier.
+
+Android: MGame::OnUpdate clamps ApplicationManager::GetElapsedTimeMillis()
+(now minus the previous update, both 64-bit) to 0..cap before storing it.
+"""
 import re
 import struct
-from .steering import lit
+from .steering import code_span, lit, shape_at
 from .ship_models import section_bytes
+
+
+ANDROID_UPDATE = '_ZN5MGame8OnUpdateEv'
+ANDROID_ELAPSED = '_ZN11AbyssEngine18ApplicationManager20GetElapsedTimeMillisEv'
+IMMEDIATE = r'#(0x[0-9a-f]+|\d+)'
+# elapsed > cap ? cap : elapsed < 0 ? 0 : elapsed (asking the clock each time), then stored.
+ANDROID_CAP = [('ldr.w', r'r0, \[fp, #8\]'), ('blx', '.*'), ('cmp', 'r0, ' + IMMEDIATE), ('bgt', '@8'),
+               ('ldr.w', r'r0, \[fp, #8\]'), ('blx', '.*'), ('cmp', 'r0, #0'), ('blt', '@17'),
+               ('ldr.w', r'r0, \[fp, #8\]'), ('blx', '.*'), ('cmp', 'r0, ' + IMMEDIATE), ('ble', '@14'),
+               ('movs', 'r0, ' + IMMEDIATE), ('b', '@18'), ('ldr.w', r'r0, \[fp, #8\]'), ('blx', '.*'), ('b', '@18'),
+               ('movs', 'r0, #0'), ('vmov.32', r'd16\[0\], r0'), ('asrs', 'r1, r0, #0x1f'), ('vmov.32', r'd16\[1\], r1'),
+               ('vmov.32', r'd17\[0\], r0'), ('vmov.32', r'd17\[1\], r1'), ('mov', 'r1, fp'), ('str', r'r0, \[r1, #0x40\]!')]
+ANDROID_CLOCK = [('ldrd', r'ip, r2, \[r0, #0x70\]'), ('ldrd', r'r3, r1, \[r0, #0x78\]'), ('subs.w', 'r0, ip, r3'),
+                 ('sbc.w', 'r1, r2, r1'), ('bx', 'lr')]
+
+
+def android_clock(lib):
+    from .android_library import callee, instructions
+    code, clock = instructions(lib, ANDROID_UPDATE), instructions(lib, ANDROID_ELAPSED)
+    if shape_at(clock, ANDROID_CLOCK)[:1] != [0]:
+        return {}
+    caps = shape_at(code, ANDROID_CAP)
+    if len(caps) != 1 or any(callee(lib, code[caps[0] + i]) != ANDROID_ELAPSED for i in (1, 5, 9, 15)):
+        return {}
+    limits = {code[caps[0] + i].operands[1].imm for i in (2, 10, 12)}
+    if len(limits) != 1 or 0 in limits:
+        return {}
+    return {'max_frame_milliseconds': limits.pop(), 'time_unit': 'milliseconds',
+            'provenance': [code_span(lib, code, caps[0], caps[0] + len(ANDROID_CAP) - 1),
+                           code_span(lib, clock, 0, len(ANDROID_CLOCK) - 1)]}
 
 
 def extract_frame_clock(mach, pilot):
     if not pilot: return {}
+    if mach.architecture == 'android-armv7':
+        return android_clock(mach)
     text = mach.text
     code = mach.data[text['offset']:text['offset'] + text['length']]
     base = text['address']

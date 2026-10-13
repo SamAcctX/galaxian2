@@ -43,7 +43,7 @@ func verify(args: Array):
 	for key in Definitions.VALUES:
 		var bad: Dictionary=bindings.mining_objective.duplicate(true);bad[key]=null
 		check(not Definitions.parameters(bad),"Changed objective parameter accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if header.architecture=="android-armv7" else Definitions.SPANS):
 		var bad: Dictionary=bindings.mining_objective.duplicate(true);bad.provenance[key].offset+=1
 		check(not Definitions.validate(bad,header.source_executable_bytes,header.architecture,bindings.arrival_staging,bindings.first_flight).is_empty(),"Detached objective provenance accepted: "+key)
 	var player:=Player.new();var handoff:=Handoff.new();check(player.configure(bindings,cat),player.error)
@@ -88,7 +88,9 @@ func verify_objective():
 	for i in 3:
 		var line: Dictionary=branch.snapshot().dialogue
 		check(line.index==i and line.text_id==int(bindings.mining_objective.events[i].text_id) and line.speaker_id==[2,0,16][i] and line.voice_event_id==[327,328,-1][i],"Return dialogue or voice differs from source")
-		if i==2:check(line.desktop_text_id==int(bindings.mining_objective.desktop_instruction[1]) and "#KEY_" not in line.desktop_text and "Q" in line.desktop_text and "F" in line.desktop_text,"Return instruction lost its mapped desktop bindings")
+		# Android has no desktop text: the instruction keeps its touch wording.
+		if i==2 and bindings.mining_objective.desktop_instruction.is_empty():check(bindings.desktop_text.is_empty() and line.desktop_text_id==line.text_id and line.desktop_text==line.text and "#KEY_" not in line.text,"Android return instruction gained a desktop variant")
+		elif i==2:check(line.desktop_text_id==int(bindings.mining_objective.desktop_instruction[1]) and "#KEY_" not in line.desktop_text and "Q" in line.desktop_text and "F" in line.desktop_text,"Return instruction lost its mapped desktop bindings")
 		check(branch.navigate("next"),branch.error)
 	var finished: Dictionary=branch.snapshot()
 	check(finished.campaign_cursor==3 and finished.phase=="return_required" and finished.station_return_required and finished.cargo_objective_acknowledged,"Final acknowledgement did not select the return mission")

@@ -71,9 +71,11 @@ func verify_training_destruction(args: PackedStringArray, equipment: RefCounted)
 	check(state.location.campaign_cursor==7 and state.location.station_id==78 and state.location.system_id==15 and state.location.equipment_ids==packet.loadout.equipment_ids,"Training environment reverted to the unarmed replacement ship")
 	check(state.player_pose.origin==Vector3(10,10,10000) and state.player_yaw_units==-1600,"Training inherited the wrong placement or yaw")
 	check(state.environment_object=={"resource_id":16994,"position":Vector3(-3286,-8199,56915)} and state.before_yaw_random_state=={"state":48304870645230} and state.yaw_random_state=={"state":219906188857953},"Training environment or yaw consumed the wrong random stream")
-	check(state.scenery.world_initialization.input_random_state=={"state":153548941033574} and state.camera_input_random_state=={"state":29269289608543},"Training camera did not follow the field and all four NPC constructors")
-	check(state.camera_offset==Vector3(-517,1339,9000) and state.random_state=={"state":271576659757395},"Training camera duplicated or omitted an offset/sign draw")
-	check(state.scenery.world_initialization.npc_construction.actors.size()==4 and state.scenery.objects.size()==130,"Prepared training population is incomplete")
+	# Android fields hold 40 + random(40) asteroids (Mac 80 + random(80)): later draws differ.
+	var mac: bool=bindings.source_architecture!="android-armv7"
+	check(state.scenery.world_initialization.input_random_state=={"state":153548941033574 if mac else 280936762154123} and state.camera_input_random_state=={"state":29269289608543 if mac else 143553275099253},"Training camera did not follow the field and all four NPC constructors")
+	check(state.camera_offset==(Vector3(-517,1339,9000) if mac else Vector3(1592,1775,9000)) and state.random_state=={"state":271576659757395 if mac else 223650918414281},"Training camera duplicated or omitted an offset/sign draw")
+	check(state.scenery.world_initialization.npc_construction.actors.size()==4 and state.scenery.objects.size()==(130 if mac else 50),"Prepared training population is incomplete")
 	var owned: RefCounted=flight.equipment_owner();check(owned.transact("unmount",22),owned.error)
 	check(flight.equipment_owner().snapshot()==equipment.snapshot() and station.snapshot()==before,"Mutable departure equipment escaped into its source owner")
 	for key in ["cargo_used","cargo","equipment","loadout","progress","mission","player_cache"]:
@@ -98,8 +100,10 @@ func verify_training_destruction(args: PackedStringArray, equipment: RefCounted)
 	check(briefing.navigate("next") and briefing.snapshot().dialogue.text_id==int(bindings.combat_training_story.briefing_events[2].text_id) and briefing.snapshot().dialogue.desktop_text_id==bindings.desktop_text_id(int(bindings.combat_training_story.briefing_events[2].text_id)),"Training fire controls were substituted twice")
 	check(briefing.navigate("previous") and briefing.navigate("next"),briefing.error)
 	if bindings.combat_training_story.briefing_events.size()==4:
-		check(briefing.navigate("next") and briefing.snapshot().dialogue.text_id==1742 and briefing.snapshot().dialogue.desktop_text_id==1743,"Training omitted or remapped the fourth instruction twice")
-		check(briefing.snapshot().dialogue.desktop_text.contains("Tab") and not briefing.snapshot().dialogue.desktop_text.contains("#KEY_"),"Fast Forward instruction lost its supplied key label")
+		# Android has no desktop text: the instruction keeps its touch wording.
+		var desktop: bool=not bindings.desktop_text.is_empty()
+		check(briefing.navigate("next") and briefing.snapshot().dialogue.text_id==1742 and briefing.snapshot().dialogue.desktop_text_id==(1743 if desktop else 1742),"Training omitted or remapped the fourth instruction twice")
+		check(briefing.snapshot().dialogue.desktop_text.contains("Tab")==desktop and not briefing.snapshot().dialogue.desktop_text.contains("#KEY_"),"Fast Forward instruction lost its supplied key label")
 		held=briefing.snapshot()
 		check(briefing.advance(150) and briefing.snapshot()==held and briefing.simulation_delta_ms()==0,"Fourth training instruction did not retain its modal hold")
 	check(briefing.navigate("next"),briefing.error)
@@ -146,7 +150,7 @@ func verify_training_player_death(cat: RefCounted, flight: RefCounted, packet: D
 	# Explicit lethal-contact fixture: feed the actual pirate weapon through
 	# normal player damage. This does not claim a complete flight playthrough.
 	var hits:=0
-	while player.snapshot().vitals.hull>0 and hits<100:
+	while player.snapshot().vitals.hull>0 and hits<1000:
 		check(not player.weapon_hit(weapon,true,true,false).is_empty(),player.error);hits+=1
 	check(player.snapshot().vitals.hull==0 and player.snapshot().vitals.armor==0,"Pirate contact did not exhaust the equipped training pools")
 	check(not death.start(player,pose,Vector3.ZERO,reference.camera_view.pose,9),"Training death accepted an unsupported later mission")

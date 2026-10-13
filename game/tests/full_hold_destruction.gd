@@ -30,7 +30,7 @@ func run():
 func verify(args: PackedStringArray):
 	var lib:=Library.new();var bindings:=Bindings.new();var cat:=Catalogues.new()
 	if not lib.open(args[0]) or not bindings.open(args[1],lib.manifest) or not cat.open(lib):check(false,lib.error+bindings.error+cat.error);return
-	check(bindings.source_architecture=="x86_64","This check requires Mac content")
+	check(bindings.source_architecture in ["x86_64","android-armv7"],"This verification needs Mac or Android content")
 	var fixture:=Fixtures.new();var flight:=Construction.new();var resources:=Resources.new()
 	if not flight.prepare(bindings,cat,fixture.packet_fixture(bindings,cat,3),4096,1789100000):check(false,flight.error);fixture.free();return
 	if bindings.full_hold_destruction.is_empty():
@@ -40,16 +40,23 @@ func verify(args: PackedStringArray):
 		fixture.free();return
 	if not resources.configure_full_hold(lib,bindings):check(false,resources.error);fixture.free();return
 	var row: Dictionary=flight.snapshot().scenery.world_initialization.npc_construction.actors[0]
-	check(row.cargo==[{"item_id":112,"quantity":1},{"item_id":118,"quantity":8}],"Retained reference cargo changed")
+	var android: bool=bindings.source_architecture=="android-armv7"
+	if android:
+		# Android's 50-asteroid field (40 + random(40)) ends in another state: the input of the
+		# 40 + random(40) opening world golden (opening_world_initialization.gd FIXTURES[1]).
+		# The pirate draws its cargo from it; the generator itself is checked from fixed inputs.
+		check(flight.snapshot().scenery.world_initialization.input_random_state.state==280936762154123 and not row.cargo.is_empty(),"Retained reference cargo changed")
+	else:check(row.cargo==[{"item_id":112,"quantity":1},{"item_id":118,"quantity":8}],"Retained reference cargo changed")
 	check(resources.snapshot().cargo_model=={"model_id":16993,"resource":Definitions.VALUES.cargo_model_resource},"Cargo model has the wrong source mapping")
 	verify_contract(args,lib,bindings)
 	verify_lifecycle(bindings,resources,row)
 	verify_failure(bindings,resources,row)
 	for npc_credit in [false,true]:verify_controller(bindings,cat,flight,resources,fixture,npc_credit,lib)
 	# This Unix-second fixture produces an empty cargo list through the real
-	# field/route/actor generator, without editing the constructor's output.
+	# field/route/actor generator, without editing the constructor's output
+	# (Android's smaller field shifts the draws: another second does it there).
 	var empty_world:=Construction.new()
-	if not empty_world.prepare(bindings,cat,fixture.packet_fixture(bindings,cat,3),4096,1789100043):check(false,empty_world.error)
+	if not empty_world.prepare(bindings,cat,fixture.packet_fixture(bindings,cat,3),4096,1789100002 if android else 1789100043):check(false,empty_world.error)
 	else:
 		check(empty_world.snapshot().scenery.world_initialization.npc_construction.actors[0].cargo.is_empty(),"Natural empty-cargo fixture changed")
 		verify_controller(bindings,cat,empty_world,resources,fixture,false,lib)
@@ -58,13 +65,13 @@ func verify(args: PackedStringArray):
 func verify_contract(args: PackedStringArray, lib: RefCounted, bindings: RefCounted):
 	var data: Dictionary=bindings.full_hold_destruction
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	check(Definitions.validate(data,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_control,bindings.opening_actors).is_empty(),"Valid cargo/death declaration rejected")
+	check(Definitions.validate(data,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_control,bindings.opening_actors).is_empty(),"Valid cargo/death declaration rejected")
 	for key in Definitions.VALUES:
 		var bad:=data.duplicate(true);bad[key]=null
 		check(not Definitions.parameters(bad),"Changed cargo/death parameter accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if bindings.source_architecture=="android-armv7" else Definitions.SPANS):
 		var bad:=data.duplicate(true);bad.provenance[key].offset+=1
-		check(not Definitions.validate(bad,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_control,bindings.opening_actors).is_empty(),"Shifted cargo/death proof accepted: "+key)
+		check(not Definitions.validate(bad,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_control,bindings.opening_actors).is_empty(),"Shifted cargo/death proof accepted: "+key)
 	var body: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("registrations.json")))
 	var directory:=OS.get_cache_dir().path_join("gof2-full-hold-death-%d"%Time.get_ticks_usec());DirAccess.make_dir_recursive_absolute(directory)
 	for scenario in ["missing","wrong_type","changed","extent","control_absent","accounting_absent","empty"]:
@@ -238,6 +245,7 @@ func verify_controller(bindings: RefCounted, cat: RefCounted, flight: RefCounted
 func verify_recovery(bindings: RefCounted,cat: RefCounted,library: RefCounted,flight: RefCounted,frame: Dictionary) -> void:
 	var encounter:=Encounter.new()
 	if not encounter.configure(bindings,cat,library,flight,0.5):check(false,encounter.error);return
+	check(encounter.campaign_mission(),"The second mining trip is not the campaign's mission (mercy rule)")
 	# Reuse the real generated actor's actual lethal/tumble/breakup path above.
 	# The detached tractor/hold below are equipment component vectors, not an
 	# earned fitting or a new career fixture. No input owner is rewritten.

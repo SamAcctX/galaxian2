@@ -44,7 +44,7 @@ func verify(args: Array):
 	for key in Definitions.VALUES:
 		var bad: Dictionary=bindings.mining_targeting.duplicate(true);bad[key]=null
 		check(not Definitions.parameters(bad),"Changed targeting declaration accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if header.architecture=="android-armv7" else Definitions.SPANS):
 		var bad: Dictionary=bindings.mining_targeting.duplicate(true);bad.provenance[key].offset+=1
 		check(not Definitions.validate(bad,header.source_executable_bytes,header.architecture,bindings.arrival_staging,bindings.first_flight).is_empty(),"Detached targeting provenance accepted: "+key)
 	var player:=Player.new();var handoff:=Handoff.new();check(player.configure(bindings,cat),player.error)
@@ -105,7 +105,8 @@ func verify(args: Array):
 	check(scanner.snapshot().elapsed_ms==100 and scanner.snapshot().candidate_object_index==3 and scanner.snapshot().selected_object_index==-1 and scanner.snapshot().candidate_indices.is_empty(),"An active approach advanced or discarded the suspended scenery acquisition")
 	# Use a center-projected asteroid so exact integer window edges have an
 	# independent expected pixel. No copy of projection arithmetic is needed.
-	for offset in [Vector2(-44,0),Vector2(44,0),Vector2(0,-44),Vector2(0,44)]:
+	var half:=window_edge()
+	for offset in [Vector2(-half,0),Vector2(half,0),Vector2(0,-half),Vector2(0,half)]:
 		var edge:=aim.duplicate(true);edge.point+=Vector3(offset.x,offset.y,0)
 		check(scanner.advance(world,Transform3D.IDENTITY,Transform3D.IDENTITY,edge,1,true) and scanner.snapshot().candidate_indices.is_empty(),"Strict scan-window edge admitted an asteroid")
 		var inside:=aim.duplicate(true);inside.point+=Vector3(offset.x,offset.y,0)*0.95
@@ -338,6 +339,10 @@ func render(lib: RefCounted, pixels: String, directory: String,captures: Diction
 	check(not scene.present(malformed) and scene.scan_animation._sample==accepted,"Rejected target presentation replaced the last good frame")
 	canvas.free()
 
+## Half the scan window on the 800-pixel fixture: w/18 on the Mac, w/16 on
+## Android (Radar::Radar).
+func window_edge() -> int:return 50 if bindings.source_architecture=="android-armv7" else 44
+
 ## A frame projects only the bodies its coarse test cannot rule out of the scan
 ## window; a snapshot projects them all. The candidates must be the first
 ## in-window markers, also where binary32 rounding moves a body by many pixels.
@@ -346,8 +351,9 @@ func verify_coarse_window() -> void:
 	var scanner:=fresh();var limit:=int(bindings.mining_targeting.candidate_limit)
 	var count: int=construction.scenery_owner().snapshot().objects.size()
 	var slope:=tan(float(bindings.flight_projection.vertical_fov_radians)/2.0)/300.0
-	var wrong:=0;var inside:=0;var outside:=0;var behind:=0
-	for sample in 320:
+	var wrong:=0;var inside:=0;var outside:=0;var behind:=0;var edge:=float(window_edge())
+	# 320 fields of the Mac's 130 bodies; Android's 50-body field takes more fields for the same coverage.
+	for sample in ceili(320.0*130.0/count):
 		# World coordinates from a few ship lengths to where one binary32 step is
 		# two units, and depths from the camera plane to the far field.
 		var span: float=[3000.0,90000.0,4.0e6,3.0e7][sample%4]
@@ -363,8 +369,8 @@ func verify_coarse_window() -> void:
 			# its mirror image behind.
 			if index%16==0:
 				pixel=Vector2(probe.point.x,probe.point.y)+Vector2(random.randf_range(-50,50),random.randf_range(-50,50))
-				if index%32==0:pixel[sample%2]=probe.point[sample%2]+(44+random.randf_range(-3,3))*(1 if index%64==0 else -1)
-				else:depth=span/8388608.0*random.randf_range(0.5,16.0)/(44.0*slope)
+				if index%32==0:pixel[sample%2]=probe.point[sample%2]+(edge+random.randf_range(-3,3))*(1 if index%64==0 else -1)
+				else:depth=span/8388608.0*random.randf_range(0.5,16.0)/(edge*slope)
 				if index%128==16:depth=-depth
 			points.append(camera*Vector3((400-pixel.x)*slope*-depth,(pixel.y-300)*slope*-depth,-depth))
 		if not scanner.advance(arranged(points),Transform3D.IDENTITY,camera,probe,0,true):check(false,scanner.error);return

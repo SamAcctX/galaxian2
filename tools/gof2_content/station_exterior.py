@@ -1,7 +1,18 @@
-"""Recover station construction parameters; runtime data contains no executable bytes."""
+"""Recover station construction parameters; runtime data contains no executable bytes.
+
+Android: Level::createSpace builds the first mining station (Status::inEmptyOrbit
+keeps station 78 empty during the opening) through PlayerStation::PlayerStation:
+radius 15000, model 21000 + index, the race's layers 21800 + index and 22000 +
+index (SolarSystem::getRace, the system record's third integer), collision.bin
+boxes as BoundingAAB volumes, rotation (0, pi, 0) and bounds of the transform
+radius + 5000; PlayerStation::outerCollide tests those bounds, then each
+volume. The engine merges layer spheres (PaintCanvas::TransformAddChild,
+BSphere::Merge); MeshReadData lets the v3+ formats load each mesh's stored sphere
+(Mesh::ReadEnhancedDataFromFile: x, z, -y), as the Mac does.
+"""
 import copy
 import hashlib
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .ship_models import section_bytes
 
 def declaration_bytes(mach,address,size,name):
@@ -44,6 +55,12 @@ def hashed_variants(mach, arrival, layouts):
 
 
 def extract_station_exterior(mach, arrival, flight):
+    if mach.architecture == 'android-armv7':
+        if not arrival or flight.get('scope') != 'first_mining_flight_construction':
+            return {}
+        proof = recognize_symbols(mach, ANDROID)
+        vtables = vtable_proof(mach, ANDROID_VTABLES) if proof else None
+        return dict(copy.deepcopy(ANDROID_VALUES), provenance={**proof, **vtables}) if vtables is not None else {}
     if mach.architecture!='x86_64' or flight.get('scope')!='first_mining_flight_construction':return {}
     try:
         origin=arrival['provenance']['actor']
@@ -310,3 +327,66 @@ MAC_ALTERNATE = {'world_station': [-39936,
  'bounds_padding': [1520974, 4, '__const', '00409c45'],
  'box_scale': [1519594, 4, '__const', '0000803f'],
  'box_half': [1519570, 4, '__const', '0000003f']}
+
+
+def vtable_proof(lib, tables):
+    """Provenance of vtable slots whose relocations name the expected methods, or None.
+
+    {key: (vtable symbol, first slot, [method symbols])}; each span covers the slot
+    words, anchored at the vtable's own offset.
+    """
+    from .android_shapes import objects, relocation, vtable_slot
+    from .declaration_layouts import data_bytes
+    proof = {}
+    for key, (table, first, names) in tables.items():
+        if [(relocation(lib, vtable_slot(lib, table, first + i)) or [None])[0] for i in range(len(names))] != names:
+            return None
+        anchor = data_bytes(lib, objects(lib)[table], 4)[1]
+        proof[key] = {'offset': anchor + 8 + 4 * first, 'bytes': 4 * len(names), 'anchor': anchor}
+    return proof
+
+
+ANDROID_VALUES = copy.deepcopy(VALUES)
+ANDROID = {# Level::createSpace builds the station outside empty orbits (Status::inEmptyOrbit: 78 before cursor 2).
+           'world_station': ('_ZN5Level11createSpaceEv', 1364, 134, 'sha256:f7ca01ff7eab8c64e13cbb4d4be35ad77f46fa0f1f5423306e5013f02172908c'),
+           'station_exclusion': ('_ZN6Status12inEmptyOrbitEv', 0, 142, 'sha256:f8627d4e8b7efa841990cf4c2eff8686f8f99092b657ea9c3fef6eb82cb1532c'),
+           # PlayerStation::PlayerStation: radius 15000, position 0, collision records; models 21000+i,
+           # race layers 21800+i and 22000+i (races 0, 2 and 3), the record volumes and the finish.
+           'station_constructor': ('_ZN13PlayerStationC2EP7Station', 0, 210, 'sha256:fed186c7916b8a70f7988508c59b4df3e5704c1389f608a57c6e32b1e7e38042'),
+           'model_choice': ('_ZN13PlayerStationC2EP7Station', 918, 132, 'sha256:9a260123faeec1143976dd9ae2657817d3ab83d9bd517c5f0a59f25a6f0474ba'),
+           'layer_gates': ('_ZN13PlayerStationC2EP7Station', 1050, 18, 'daf84441cb466f2c00f0cf80652c40f07881'),
+           'ordinary_layers_gate': ('_ZN13PlayerStationC2EP7Station', 1820, 14, 'a4f16d0002280dd36f2c40f0ba81'),
+           'layer_index_gate': ('_ZN13PlayerStationC2EP7Station', 2718, 6, '642c40f0e180'),
+           'mido_layers': ('_ZN13PlayerStationC2EP7Station', 3174, 418, 'sha256:ad06503eff3e9360ab446b75eead82bc5d32a281af8432281c60d18e16bbe481'),
+           'layer_exit': ('_ZN13PlayerStationC2EP7Station', 1724, 12, '23f7a0eb20f742edd946b6e0'),
+           'volumes': ('_ZN13PlayerStationC2EP7Station', 2102, 510, 'sha256:01e73d01240b550c050d2307906d859348ddc2ff2c513f1fcdd6924efba2a000'),
+           'constructor_finish': ('_ZN13PlayerStationC2EP7Station', 2612, 74, 'sha256:12aa7af502f28f15c552147ec35cd6f84b69a5ca7fa14df6e3ba5c9cc3150b03'),
+           # FileRead::loadSystemsBinary passes the record's third integer as the SolarSystem race.
+           'faction_read': ('_ZN8FileRead17loadSystemsBinaryEv', 118, 474, 'sha256:a7c7b3d6eca2d7918cd82ad8f3c11064107dc5f569707ca4e3917e5987c2e49b'),
+           'faction_constructor': ('_ZN11SolarSystemC2EiN11AbyssEngine6StringEibiiiiiiPiP5ArrayIiES5_S5_', 58, 28, 'sha256:0019523282fc478a137c9283f169e264197d502df9585250a4d0148ccc0ff4e6'),
+           'faction_getter': ('_ZN11SolarSystem7getRaceEv', 0, 4, 'c0697047'),
+           # collision.bin: up to 136 records; boxes and their point tests.
+           'collision_loader': ('_ZN8FileRead20loadStationCollisionEi', 0, 300, 'sha256:b206c3e6bf2827ba6c0a80f69b63b5afd64738f27ad862c64bb8f72e55d2a3ed'),
+           'little_endian_int': ('_ZN6AEFile4ReadERij', 0, 10, '0a46014604205ef18bba'),
+           'box_origin': ('_ZN14BoundingVolumeC2Effffff', 0, 60, 'sha256:0cc1d7c76edfe38da4d41efca5f0cee19be8311956597147c1cd0b243ab0fd58'),
+           'box_constructor': ('_ZN11BoundingAABC2Efffffffff', 0, 152, 'sha256:88e2b82e14a97cf1bcc053f19e3bbd4ecbb97bc093ad8e92e36157a5098663bc'),
+           'box_point': ('_ZN11BoundingAAB12outerCollideEfff', 0, 158, 'sha256:b8089f86f85235aaa8e5a2aca0acb9d26a41e44b224ff50c8ec55c4712f274a5'),
+           'station_point': ('_ZN13PlayerStation12outerCollideEfff', 0, 204, 'sha256:20df89ebdb867e50a995c5c1ea3af55fcd22fc11ac77b8df797b95142917fb84'),
+           # Engine: child layers merge their spheres; v3+ meshes (format bits 0x1a) replace the
+           # vertex-bounds sphere with the stored one, read as x, z, -y.
+           'layer_parent': ('_ZN10AEGeometry8addChildEj', 0, 32, 'sha256:357672994cd98231877c8d12108d1056a84b737efbc6dbc749dcabe1b5a91c24'),
+           'layer_bounds_merge': ('_ZN11AbyssEngine11PaintCanvas17TransformAddChildEjj', 68, 20, 'd8f85c0150f8242050f8261002f1d400e3f752eb'),
+           'layer_sphere': ('_ZN11AbyssEngine6AEMath7BSphere5MergeERKNS_9TransformE', 0, 216, 'sha256:ebeba0a9ba7f04fa81d12eecf6039621f5ea33612e763b442a99ef5dacbfd5b6'),
+           'sphere_merge': ('_ZN11AbyssEngine6AEMath7BSphere5MergeERKS1_', 0, 344, 'sha256:b4de3306bb5be9932a7a3f17a3489b9513a05b6be5b41996af28267327de168a'),
+           'mesh_sphere_attach': ('_ZN11AbyssEngine11PaintCanvas16TransformAddMeshEjtb', 98, 26, 'sha256:9e2c82be554802b3930631fa264db311ea6f6addb6fc05b8a7bf289cbd1ffca4'),
+           'mesh_vertex_copy': ('_ZN11AbyssEngine12MeshReadDataEPNS_6EngineERKjjPPNS_4MeshEPNS_8MaterialE', 156, 224, 'sha256:6a4ef38b32537f01e23c6d94a9a91c1e0580788520da611ed343737872a7257b'),
+           'mesh_enhanced_gate': ('_ZN11AbyssEngine12MeshReadDataEPNS_6EngineERKjjPPNS_4MeshEPNS_8MaterialE', 22, 4, '19f01a06'),
+           'mesh_enhanced_data': ('_ZN11AbyssEngine12MeshReadDataEPNS_6EngineERKjjPPNS_4MeshEPNS_8MaterialE', 2342, 24, '0398002800f0868031684a46d8f80000f2f71eea0028c6d0'),
+           'mesh_sphere_load': ('_ZN11AbyssEngine4Mesh24ReadEnhancedDataFromFileEjj', 46, 100, 'sha256:72bb0a76372b14ddd42959bc9a0e2e5a7a4b427cd205a995e2587903072c3ca3'),
+           'model_rotation': ('_ZN10AEGeometry11setRotationEfff', 0, 120, 'sha256:b7fb10869aa94130a20e278aa5d90f44abd8ddcdb1df8a3fdd63faa4ff8ab8f0'),
+           # The 5000 the finish adds to the transform radius.
+           'bounds_padding': ('_ZN13PlayerStationC2EP7Station', 3648, 4, '00409c45')}
+# The station's point tests and the box volume's.
+ANDROID_VTABLES = {'station_vtable': ('_ZTV13PlayerStation', 14, ['_ZN13PlayerStation7collideEfff', '_ZN13PlayerStation12outerCollideEfff',
+                                                                 '_ZN13PlayerStation12outerCollideERKN11AbyssEngine6AEMath6VectorE']),
+                   'box_vtable': ('_ZTV11BoundingAAB', 3, ['_ZN11BoundingAAB12outerCollideEfff'])}

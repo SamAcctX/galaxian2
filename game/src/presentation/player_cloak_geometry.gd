@@ -15,7 +15,7 @@ var _background: SubViewport
 
 func prepare(ship: Node3D,visuals: RefCounted) -> bool:
 	if not _surfaces.is_empty() or visuals==null:return reject("Prepare a fresh cloak on original ship materials")
-	var mask: Image=visuals.load_image(Definitions.CLOAK_MAP)
+	var mask: Image=visuals.load_image(Definitions.cloak_map(visuals.textures))
 	if mask==null:return reject(visuals.error)
 	var texture:=ImageTexture.create_from_image(mask)
 	for node in ship.find_children("*","MeshInstance3D",true,false):

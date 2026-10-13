@@ -1,10 +1,10 @@
 extends RefCounted
 const Definitions = preload("res://src/content/camera_follow_definitions.gd")
 
-static func definition(mac := true) -> Dictionary:
+static func definition(mac := true, android := false) -> Dictionary:
 	var provenance := {}
 	var offset := 100
-	var sizes := Definitions.sizes("x86_64" if mac else "armv7")
+	var sizes := Definitions.sizes("android-armv7" if android else ("x86_64" if mac else "armv7"))
 	for key in sizes:
 		provenance[key] = {"offset": offset, "bytes": sizes[key]}
 		offset += sizes[key] + 16

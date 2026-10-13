@@ -1,8 +1,21 @@
-"""Original rescue result and acknowledged failure exit. Constant declarations only."""
+"""Original rescue result and acknowledged failure exit. Constant declarations only.
+
+Android: MGame::OnUpdate polls MGame::successCheck (after 5001 ms) before
+MGame::gameOverCheck, which opens the failure dialogue (DialogueWindow::set,
+loadContent: speaker 16, texts 381 and 308, one page; length, update,
+OnTouchEnd, nextPage); closing it returns to the menu and resets the game
+(MGame::OnTouchEnd, Status::resetGame). Status::nextCampaignMission case 21
+and DialogueWindow's result table hold the success. Values are the Mac 1.0.7
+ones (MAC_VALUES).
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_kappa_outcome(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(MAC_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -188,3 +201,34 @@ MAC_VALUES = {'scope': 'kappa_rescue_result',
              'line_count': 1,
              'continue_source_state': 1,
              'reward_credits': 0}}
+
+ANDROID = {# MGame::OnUpdate polls completion before failure (unless failed), MGame::successCheck after 5001 ms.
+           'kappa_outcome_poll_order': ('_ZN5MGame8OnUpdateEv', 10630, 28, 'sha256:b56d77a4c11d0b68620ab3676728f79d479b9905a2701e0f45be78284b275beb'),
+           'kappa_outcome_completion_clock': ('_ZN5MGame12successCheckEv', 14, 86, 'sha256:7e3e487a72cf1484133ca53c7aff75b7a6648512946af48e0560274b0292956e'),
+           # MGame::gameOverCheck: a failed objective opens the failure dialogue (mode 2, the current cursor).
+           'kappa_outcome_failure_modal': ('_ZN5MGame13gameOverCheckEv', 304, 108, 'sha256:8117ea3dad9ca9141aedc8b9ac9d8bf2d75c135d749bee17287d92c4ef52cb4a'),
+           'kappa_outcome_modal_setup': ('_ZN14DialogueWindow3setEP7Missionii', 0, 120, 'sha256:9d7513e11d3d0954171e396f284ecca11aa43033d3d69c6f1e8da8a4c5cbecbb'),
+           'kappa_outcome_failure_flag': ('_ZN7Mission9setFailedEb', 0, 4, '01707047'),
+           'kappa_outcome_failure_getter': ('_ZN7Mission9hasFailedEv', 0, 4, '00787047'),
+           # DialogueWindow::loadContent: failure speaker 16; texts 381 and 308 (Android ids 392, 319) joined by "\n" + "" + "\n\n".
+           'kappa_outcome_speaker': ('_ZN14DialogueWindow11loadContentEv', 112, 184, 'sha256:0d09a393445c6be5b3c7b03d1cccf63ac8ea1320f8e57b7a9b64ead8902872e0'),
+           'kappa_outcome_text_branch': ('_ZN14DialogueWindow11loadContentEv', 552, 46, 'sha256:38ce1d0f521a31a8ed2947fe516eb5ffd9c8cf09d62ee913f71d8be75aa19705'),
+           'kappa_outcome_failure_text': ('_ZN14DialogueWindow11loadContentEv', 1056, 178, 'sha256:5b822236c07c18470c268a32b09b61dd370eca16a5418b6210713ce1190849a4'),
+           'kappa_outcome_empty_text': ('_ZN14DialogueWindow11loadContentEv', 1056, 1, '00', 'literal', 0),
+           'kappa_outcome_newline': ('_ZN14DialogueWindow11loadContentEv', 1090, 2, '0a00', 'literal', 0),
+           'kappa_outcome_newlines': ('_ZN14DialogueWindow11loadContentEv', 1124, 3, '0a0a00', 'literal', 0),
+           # One failure page, no automatic acknowledgement, touch input, the last page.
+           'kappa_outcome_count': ('_ZN14DialogueWindow6lengthEv', 0, 104, 'sha256:0d158e749b8801e6a7a4c8a92bf77c6c50e0322be4eec0c21f8f7534721ed996'),
+           'kappa_outcome_no_auto_ack': ('_ZN14DialogueWindow6updateEi', 0, 120, 'sha256:9fce4be7a1594ccecffd992540b30e9d52ae68410485b289482bc5a2765e93c9'),
+           'kappa_outcome_input': ('_ZN14DialogueWindow10OnTouchEndEii', 0, 308, 'sha256:8945fd6bdc22deeb71a07aa34ae47e39f3e2976fdf8765d3499ded1a8e5c9711'),
+           'kappa_outcome_final_line': ('_ZN14DialogueWindow8nextPageEv', 0, 38, 'sha256:23019740e320c9a7d6d8c44ab237261381ca3e0be331160cf4685fdac2533dfe'),
+           # MGame::OnTouchEnd: closing a failure returns to the main menu (module 1) and Status::resetGame.
+           'kappa_outcome_exit': ('_ZN5MGame10OnTouchEndEiiPv', 972, 148, 'sha256:bbb7322db45073c143128e0cbc2bfbb5e314c9e9f7ef8519abf956a4c10ebe56'),
+           'kappa_outcome_exit_tail': ('_ZN5MGame10OnTouchEndEiiPv', 2760, 24, '006800680968269a0968891a02bf27b0bde8f04f2ff058ba'),
+           'kappa_outcome_runtime_reset': ('_ZN6Status9resetGameEv', 0, 144, 'sha256:d0e555abf89ded019fde8c27376caa1a4916a9e2ac834c67876f794f6313ce77'),
+           # Status::nextCampaignMission case 21: mission 11 at station 55 (cursor 22).
+           'kappa_outcome_return_case': ('_ZN6Status19nextCampaignMissionEb', 110, 2, '5701'),
+           'kappa_outcome_return_factory': ('_ZN6Status19nextCampaignMissionEb', 754, 28, 'sha256:39f3c08dd668b636971d5f937fb9169d33f4dedc22a7b69cfb57eb4aac3357ae'),
+           # The success line (Android text id 1886) and all voices.
+           'kappa_outcome_success_event': ('_ZN14DialogueWindow11loadContentEv', 208, 8, '010000005e070000', 'literal', 1128),
+           'kappa_outcome_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0)}

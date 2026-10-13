@@ -8,6 +8,10 @@ const SPANS := {"x86_64":{"duration":[-352,32],"selection":[-212,44],"text_gette
 
 const MAC_ALTERNATE := {"duration":[-352,32],"selection":[-212,44],"text_getter":[1153,10],"lookup":[-899909,59],"lookup_return":[-897594,14],"display_delay":[0,26],"display":[22,39],"finish":[443,90],"language":[-1353935,52],"language_init":[-1355805,16],"language_getter":[435753,13],"lookup_table":[851481,12032],"language_table":[1691001,16],"default_name":[981897,8],"override_name":[981905,8]}
 
+# Android: spans inside named functions (Layouts.anchored); each language name anchors itself.
+const ANDROID_VALUES = {"trigger":"radio_display","repeat":"once_per_event","spatial":false,"stop_on_radio_finish":false,"default_language":"english","override_language":"deutsch","override_language_id":1,"override_text_language":"de","category":"voice","category_max_playbacks":2,"category_overflow":"stop_oldest_immediately"}
+const ANDROID_SPANS = {"duration":[564,26],"selection":[648,36],"text_getter":[0,4],"lookup":[0,34],"lookup_found":[186,14],"lookup_return":[1054,8],"lookup_table":[0,12032],"display_delay":[34,30],"display":[66,36],"finish":[416,88],"language":[0,28],"language_table":[0,8],"language_init":[70,32],"language_getter":[0,12]}
+
 static func parameters(data: Variant, count: int = 23) -> bool:
 	# Missions supply their own timed lines (story scripts reach a dozen). The
 	# caller still validates their scene-specific text/event mapping first.
@@ -31,16 +35,28 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 	if data.is_empty():return ""
 	var count: int=dialogue.get("events",[]).size()
 	if (dialogue.get("campaign_cursor")!=0 or count!=23) and (dialogue.get("campaign_cursor")!=1 or count!=3):return "Unsupported radio voice owner"
-	if not parameters(data,count) or not SPANS.has(architecture):return "Unsupported radio voice declarations"
-	var origin: Variant=dialogue.get("provenance",{}).get("display_delay",{}).get("offset")
-	if not Numbers.integer(origin,0,executable_bytes):return "Radio voice lacks its display timing anchor"
-	var spans: Dictionary=SPANS[architecture]
-	if data.provenance.size()!=spans.size():return "Invalid radio voice provenance"
-	var layouts: Array=[spans]
-	if architecture=="x86_64":layouts.append(MAC_ALTERNATE)
-	if not Layouts.matches(data.provenance,int(origin),executable_bytes,layouts):return "Disconnected radio voice declaration"
-	for key in ["duration","display_delay"]:
-		if data.provenance[key]!=dialogue.get("provenance",{}).get(key):return "Radio voice timing differs from its text owner"
+	if architecture=="android-armv7":
+		if not parameters(data,count):return "Unsupported radio voice declarations"
+		var own: Dictionary=data.provenance.duplicate()
+		for key in ["default_name","override_name"]:
+			var name: Variant=own.get(key)
+			if not name is Dictionary or name.get("bytes")!=8 or name.get("anchor")!=name.get("offset") or not Numbers.integer(name.get("offset"),0,executable_bytes-8):return "Invalid radio voice language name"
+			own.erase(key)
+		if not Layouts.anchored(own,executable_bytes,ANDROID_SPANS):return "Disconnected radio voice declaration"
+		for key in ["duration","display_delay"]:
+			var span: Dictionary=data.provenance[key]
+			if {"offset":span.offset,"bytes":span.bytes}!=dialogue.get("provenance",{}).get(key):return "Radio voice timing differs from its text owner"
+	else:
+		if not parameters(data,count) or not SPANS.has(architecture):return "Unsupported radio voice declarations"
+		var origin: Variant=dialogue.get("provenance",{}).get("display_delay",{}).get("offset")
+		if not Numbers.integer(origin,0,executable_bytes):return "Radio voice lacks its display timing anchor"
+		var spans: Dictionary=SPANS[architecture]
+		if data.provenance.size()!=spans.size():return "Invalid radio voice provenance"
+		var layouts: Array=[spans]
+		if architecture=="x86_64":layouts.append(MAC_ALTERNATE)
+		if not Layouts.matches(data.provenance,int(origin),executable_bytes,layouts):return "Disconnected radio voice declaration"
+		for key in ["duration","display_delay"]:
+			if data.provenance[key]!=dialogue.get("provenance",{}).get(key):return "Radio voice timing differs from its text owner"
 	var languages: Variant=fonts.get("languages",{}).get("rows",[])
 	if not languages is Array or languages.size()!=16 or not languages[1] is Dictionary or languages[1].get("file")!="de.lang" or languages[1].get("language_id")!=1:return "Radio voice language differs from its text language mapping"
 	if audio.is_empty():return "Radio voice lacks its dialogue or event catalogue"

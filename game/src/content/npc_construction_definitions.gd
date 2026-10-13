@@ -2,6 +2,9 @@ extends RefCounted
 ## Source declarations for fresh opening NPC construction only.
 const Fonts = preload("res://src/content/font_definitions.gd")
 const Numbers = preload("res://src/content/opening_definitions.gd")
+const Layouts = preload("res://src/content/declaration_layouts.gd")
+# Android: spans inside named functions (Layouts.anchored); the values are EXPECTED.
+const ANDROID_SPANS := {"spawn":[38,78],"spawn_offset":[500,36],"tail":[1154,112],"cargo":[90,480],"category":[0,4],"rank":[0,4],"price":[0,4],"chance":[0,4],"requirements":[0,4],"item_layout":[0,78],"item_arrays":[0,22],"predicate":[0,38],"fragment_gate":[12,10],"fragments":[22,350],"rotation_divisor":[416,4],"rotation_multiplier":[420,4],"scale_divisor":[424,4],"effect_zero":[60,12],"equipment_table":[244,30],"special_equipment_case":[402,4],"category_weights":[0,20],"cargo_zero":[24972,4],"cargo_discard":[25130,4],"special_flag":[146,4]}
 const EXPECTED = {
   "spawn_origin": [
     -20000,
@@ -78,6 +81,8 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	if not data is Dictionary: return "Missing opening NPC construction declaration"
 	if data.is_empty(): return ""
 	if not parameters(data): return "Unsupported opening NPC construction parameters"
+	if architecture=="android-armv7":
+		return "" if Layouts.anchored(data.provenance,executable_bytes,ANDROID_SPANS) else "Invalid NPC construction provenance"
 	var sizes: Dictionary=SIZES.get(architecture,{})
 	if sizes.is_empty() or data.provenance.size()!=sizes.size(): return "Invalid NPC construction provenance"
 	var spans := []

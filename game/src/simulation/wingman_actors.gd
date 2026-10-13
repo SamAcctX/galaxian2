@@ -451,7 +451,7 @@ func weapon_hit(index: Variant,weapon: Variant) -> Dictionary:
 	if policy.additional_damage_required:
 		systems=actor.systems_hit(policy.additional_damage)
 		if systems.is_empty():reject(actor.error);return {}
-	var result: Dictionary=actor.normal_hit(policy.nonplayer_damage,true)
+	var result: Dictionary=actor.normal_hit(weapon.get("mercy_damage",policy.nonplayer_damage),true)
 	if result.is_empty():reject(actor.error);return {}
 	if not systems.is_empty():result.systems=systems
 	var actors:=_actors.duplicate();actors[index]=actor;_actors=actors

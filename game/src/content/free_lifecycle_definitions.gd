@@ -8,6 +8,9 @@ const SPANS = {"free_lifecycle_hostile":[807440,128],"free_lifecycle_friendly":[
 # Native composition.
 const MAC_SPANS = {"free_lifecycle_hostile":[808072,128],"free_lifecycle_friendly":[808200,128],"free_lifecycle_secondary":[735306,76],"free_lifecycle_hostile_relaunch":[113209,238],"free_lifecycle_nivelian_death":[80766,17],"free_lifecycle_wreck_kind":[634334,41],"free_lifecycle_wreck_material":[638272,129],"free_lifecycle_wreck_table":[638726,20]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"free_lifecycle_hostile":[0,118],"free_lifecycle_friendly":[0,120],"free_lifecycle_secondary":[0,24],"free_lifecycle_secondary_table":[0,16],"free_lifecycle_hostile_relaunch":[0,1052],"free_lifecycle_nivelian_death":[2440,10],"free_lifecycle_nivelian_wreck":[2882,8],"free_lifecycle_wreck_kind":[0,192],"free_lifecycle_wreck_material":[1988,28],"free_lifecycle_wreck_table":[2532,40]}
+
 # Ordinary reinforcements share the small-ship reset, not mission completion.
 # The launch clock owns availability, wave limits and position sampling.
 static func recyclable_actor(actor: Dictionary) -> bool:

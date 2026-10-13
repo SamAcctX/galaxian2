@@ -66,3 +66,74 @@ class EarlyContractTests(unittest.TestCase):
             self.assertFalse(self.extract(mach, arrival, {'scope': 'mido_local_travel'}))
             mach.architecture = 'armv7'
             self.assertFalse(self.extract(mach, arrival))
+
+
+ARRIVAL = {'scope': 'rescue_choreography', 'provenance': {'actor': {'offset': 5, 'bytes': 24, 'anchor': 1}}}
+TRAVEL = {'scope': 'mido_local_travel', 'return_visit': {'next_cursor': 13, 'next_kind': 150}}
+GROUPS = ('ANDROID', 'ANDROID_ACCEPTANCE')
+
+
+class EarlyContractAndroidTests(unittest.TestCase):
+    def synthetic(self, shift=0):
+        import android_fixture
+        from test_mido_travel import roomy
+        merged = {k: v for group in GROUPS for k, v in getattr(reader, group).items()}
+        with patch.object(android_fixture, 'library', roomy(android_fixture.library)):
+            image, patched, _ = android_fixture.layout_library(merged, shift)
+        return image, {group: {k: patched[k] for k in getattr(reader, group)} for group in GROUPS}
+
+    def test_android_proofs_and_relocation(self):
+        from gof2_content.android_library import AndroidLibrary
+        for shift in (0, 0x1000):
+            image, layouts = self.synthetic(shift)
+            with patch.multiple(reader, **layouts):
+                result = reader.extract_early_contracts(AndroidLibrary(image), ARRIVAL, TRAVEL)
+                proof = result.pop('provenance')
+                self.assertEqual(result, {**reader.MAC_VALUES, 'acceptance': reader.MAC_ACCEPTANCE})
+                merged = {k: v for layout in layouts.values() for k, v in layout.items()}
+                self.assertEqual(set(proof), set(merged))
+                for key, span in proof.items():
+                    self.assertEqual(span['offset'] - span['anchor'], merged[key][5] if len(merged[key]) == 6 else merged[key][1], key)
+                result['kind_choices'][0] = 150
+                result['acceptance']['initial_credits'] = 10000
+                self.assertEqual(reader.MAC_VALUES['kind_choices'][0], 11)
+                self.assertEqual(reader.MAC_ACCEPTANCE['initial_credits'], 0)
+
+    def test_every_proven_byte_gates_its_capability(self):
+        from gof2_content.android_library import AndroidLibrary
+        image, layouts = self.synthetic()
+        with patch.multiple(reader, **layouts):
+            proof = reader.extract_early_contracts(AndroidLibrary(image), ARRIVAL, TRAVEL)['provenance']
+            for group in GROUPS:
+                for key in layouts[group]:
+                    span = proof[key]
+                    for at in {span['offset'], span['offset'] + span['bytes'] - 1}:
+                        raw = bytearray(image)
+                        raw[at] ^= 0xff
+                        broken = reader.extract_early_contracts(AndroidLibrary(bytes(raw)), ARRIVAL, TRAVEL)
+                        if group == 'ANDROID':
+                            self.assertEqual(broken, {}, (key, at))
+                        else:
+                            self.assertNotIn('acceptance', broken, key)
+                            self.assertEqual(set(broken['provenance']), set(layouts['ANDROID']), key)
+
+    def test_android_requires_its_parents(self):
+        from gof2_content.android_library import AndroidLibrary
+        image, layouts = self.synthetic()
+        with patch.multiple(reader, **layouts):
+            lib = AndroidLibrary(image)
+            self.assertTrue(reader.extract_early_contracts(lib, ARRIVAL, TRAVEL))
+            self.assertEqual(reader.extract_early_contracts(lib, {}, TRAVEL), {})
+            self.assertEqual(reader.extract_early_contracts(lib, {'provenance': ARRIVAL['provenance']}, TRAVEL), {})
+            self.assertEqual(reader.extract_early_contracts(lib, {'scope': 'rescue_choreography', 'provenance': {}}, TRAVEL), {})
+            self.assertEqual(reader.extract_early_contracts(lib, ARRIVAL, {}), {})
+            self.assertEqual(reader.extract_early_contracts(lib, ARRIVAL, {**TRAVEL, 'return_visit': {'next_cursor': 13, 'next_kind': 11}}), {})
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'early_contract_definitions.gd', values='MAC_VALUES')
+        assert_native_android(self, reader, 'early_contract_definitions.gd', values='MAC_ACCEPTANCE', layout='ANDROID_ACCEPTANCE')
+
+
+if __name__ == '__main__':
+    unittest.main()

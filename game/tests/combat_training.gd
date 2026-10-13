@@ -38,13 +38,13 @@ func verify_training_construction(args: PackedStringArray, equipment: RefCounted
 		return
 	check(equipment!=null and equipment.requirements().satisfied,"Completed tutorial lost its equipment owner")
 	if equipment==null:return
-	check(TrainingRules.validate(bindings.combat_training,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.station_equipment,bindings.opening_actors).is_empty(),"Training declarations refused their source context")
+	check(TrainingRules.validate(bindings.combat_training,header.source_executable_bytes,str(header.architecture),bindings.arrival_staging,bindings.station_equipment,bindings.opening_actors).is_empty(),"Training declarations refused their source context")
 	for key in TrainingRules.VALUES:
 		var bad: Dictionary=bindings.combat_training.duplicate(true);bad[key]=null
 		check(not TrainingRules.parameters(bad),"Changed training declaration was accepted: "+key)
-	for key in TrainingRules.SPANS:
+	for key in (TrainingRules.ANDROID_SPANS if header.architecture=="android-armv7" else TrainingRules.SPANS):
 		var bad: Dictionary=bindings.combat_training.duplicate(true);bad.provenance[key].offset+=1
-		check(not TrainingRules.validate(bad,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.station_equipment,bindings.opening_actors).is_empty(),"Disconnected training source span accepted: "+key)
+		check(not TrainingRules.validate(bad,header.source_executable_bytes,str(header.architecture),bindings.arrival_staging,bindings.station_equipment,bindings.opening_actors).is_empty(),"Disconnected training source span accepted: "+key)
 	check(not TrainingNPC.new().configure_combat_training(bindings,catalogues,EmptyEquipment.new(),Vector3.ZERO),"Empty equipment could construct combat training")
 	var detached: RefCounted=equipment.fork()
 	check(detached.transact("unmount",55) and not TrainingNPC.new().configure_combat_training(bindings,catalogues,detached,Vector3.ZERO),"Cargo armor satisfied the installed-equipment prerequisite")

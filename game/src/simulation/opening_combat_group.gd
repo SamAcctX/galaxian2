@@ -1098,7 +1098,9 @@ func supports_weapon_hit(weapon: Variant) -> bool:
 func weapon_hit(actor_id: Variant, weapon: Variant) -> Dictionary:
 	_read_group={};_read_standing={}
 	if not supports_weapon_hit(weapon): return {}
-	if not weapon.ordinary_hit_policy.additional_damage_required:return normal_hit(actor_id,weapon.ordinary_hit_policy.nonplayer_damage,weapon.get("nonplayer_source",false))
+	# Android mercy rule: a weakened enemy gun (opening_npc_weapons.apply_mercy).
+	var damage: int=weapon.get("mercy_damage",weapon.ordinary_hit_policy.nonplayer_damage)
+	if not weapon.ordinary_hit_policy.additional_damage_required:return normal_hit(actor_id,damage,weapon.get("nonplayer_source",false))
 	if not actor_id is int or actor_id<0 or actor_id>=_actors.size():return _failed_weapon_hit("Systems projectile names an unavailable actor")
 	# A projectile applies both pools as one transaction. Later normal-contact
 	# failure must not leave a disabled ship or a reputation change behind.
@@ -1106,7 +1108,7 @@ func weapon_hit(actor_id: Variant, weapon: Variant) -> Dictionary:
 	if not _actors[actor_id].read_snapshot().get("contract_debris",false) and not _actors[actor_id].read_snapshot().get("static_object",false):
 		systems=next.systems_hit(actor_id,weapon.ordinary_hit_policy.additional_damage,weapon.get("nonplayer_source",false))
 		if systems.is_empty():return _failed_weapon_hit(next.error)
-	var result: Dictionary=next.normal_hit(actor_id,weapon.ordinary_hit_policy.nonplayer_damage,weapon.get("nonplayer_source",false))
+	var result: Dictionary=next.normal_hit(actor_id,damage,weapon.get("nonplayer_source",false))
 	if result.is_empty():return _failed_weapon_hit(next.error)
 	if not systems.is_empty():
 		result.systems=systems

@@ -69,3 +69,42 @@ class PlacementTests(unittest.TestCase):
                 elif corruption == 'context': hangars = {}
                 mach.data = bytes(data)
                 self.assertEqual(extract_ship_placement(mach, hangars, len(values)), {}, (mac, corruption))
+
+
+def android(name='_ZN5Level11createSceneEv', getter='_ZN4Ship8getIndexEv', slot=0x48, x=0, copies=1, big=False, index=4, move=True):
+    """createScene's ship placement: index from Status::getShip()->getIndex(), ship creation,
+    the height read and the virtual move with (0, height, 0)."""
+    from android_fixture import RODATA, TEXT
+    from android_thumb import Asm, build
+    asm = Asm(TEXT + 0x100).push()
+    for _ in range(copies):
+        (asm.call_to('_ZN6Status7getShipEv').call_to(getter).mov(4, 0) if move else asm.call_to('_ZN6Status7getShipEv').call_to(getter).movs(4, 3))
+        asm.call_to('_ZN5Level10createShipEiiiP8Waypointbb')
+        asm.ldr_address(1, RODATA).movs(3, 0).add_pc(1).add_reg(1, 1, index, 2).vldr(0, 1, 0).vcvt(0, 0)
+        asm.ldr_w(1, 5, 0xf8).ldr(1, 1, 4).str(0, 1, 0).vmov_core(2, 0).ldr_w(0, 5, 0xf8).ldr(0, 0, 4).ldr(0, 0, 0)
+        asm.ldr(1, 0, 0).ldr(6, 1, slot).movs(1, x).half(0x47b0)  # blx r6
+    values = [-35, 712] + list(range(62))
+    if big:
+        values[5] = 1000001
+    return build({name: asm.pop()}, {RODATA: struct.pack('<64i', *values)}), values
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidPlacementTests(unittest.TestCase):
+    def test_scene_gives_heights_and_spans(self):
+        from android_fixture import RODATA, TEXT
+        lib, values = android()
+        self.assertEqual(extract_ship_placement(lib, {'rows': []}, 64),
+                         {'y_positions': values, 'provenance': [{'offset': RODATA, 'bytes': 256}, {'offset': TEXT + 0x10c, 'bytes': 50},
+                                                                {'offset': TEXT + 0x102, 'bytes': 10}]})
+        self.assertEqual(extract_ship_placement(lib, {}, 64), {})
+        self.assertEqual(extract_ship_placement(lib, {'rows': []}, 63), {})
+
+    def test_each_broken_shape_is_unsupported(self):
+        for options in (dict(name='_ZN5Level9createBoxEv'), dict(getter='_ZN4Ship7getRaceEv'), dict(slot=0x4c), dict(x=1),
+                        dict(copies=2), dict(big=True), dict(index=3), dict(index=9), dict(move=False)):
+            self.assertEqual(extract_ship_placement(android(**options)[0], {'rows': []}, 64), {}, options)
+
+
+if __name__ == '__main__':
+    unittest.main()

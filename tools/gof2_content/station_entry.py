@@ -2,12 +2,28 @@
 
 Only validated constants and source extents leave this static reader. Unknown
 layouts are unsupported. The original executable is never a runtime dependency.
+
+Android: after the rescue fade LevelScript::process switches to application
+module 5; ModStation::OnInitialize at cursor 1 gives the player ship 0 with
+race 8 (Ship::setRace), unsaleable items 90 and 81 in slots 0 and 1, and shows
+it with configuration 3. Status::nextCampaignMission case 1 creates mission 11
+at station 78, case 2 mission 154 with status value 10; ModStation::OnTouchEnd
+advances the cursor after the acknowledgement. DialogueWindow's success
+tables hold the 19-line conversation (Mac 1.0.7 lines); its last, touch-worded
+instruction goes through Globals::replaceKeyBindingTokens, which on Android
+returns the text unchanged.
 """
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 
 def extract_station_entry(mach, arrival, session):
+    if mach.architecture == 'android-armv7':
+        try:
+            if arrival['campaign_cursor'] != 1 or session['scope'] != 'opening_rescue_session': return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if proof else {}
     if mach.architecture != 'x86_64' or not session:return {}
     try:
         if arrival['campaign_cursor'] != 1 or session['scope'] != 'opening_rescue_session':return {}
@@ -382,3 +398,32 @@ MAC_VALUES = {'scope': 'first_station_entry',
              'cursor_after_acknowledgement': 2,
              'next_kind': 154,
              'next_parameter': 10}}
+
+# Android spans inside named functions and DialogueWindow's success tables.
+ANDROID = {'state_request': ('_ZN11LevelScript7processEi', 3712, 42, 'sha256:597eb8fc082cfe295ea3f4804672c6283dae9bab0ebc6ff8be05a506c4f2011c'),
+           'loadout': ('_ZN10ModStation12OnInitializeEv', 2172, 172, 'sha256:af9af11b50308e92a706b5d788b0982344cdda9871f7c5e53b8c494ff58ab8bd'),
+           'replace_ship': ('_ZN6Status7setShipEP4Ship', 0, 34, 'sha256:b8e883b97d9f291cf011fec0da644978ce689e6845ec5f00254d360c8ba01b27'),
+           'ship_configuration': ('_ZN4Ship7setRaceEi', 0, 4, '41667047'),
+           'item_mark': ('_ZN4Item13setUnsaleableEb', 0, 6, '80f844107047'),
+           'item_clone': ('_ZN4Item8makeItemEv', 0, 18, 'd0b502af846977f716eb012184614163d0bd'),
+           'item_slot': ('_ZN4Ship12setEquipmentEP4Itemi', 0, 100, 'sha256:e6151850caa6705eb682bbad9c25ef34d4c39507c6cd2007e5bc249bdf301b44'),
+           'story_increment': ('_ZN6Status19nextCampaignMissionEb', 392, 8, '1846431c00214be7'),
+           # Cursors 1..162 dispatch on cursor - 1; the first two table entries.
+           'story_dispatch': ('_ZN6Status19nextCampaignMissionEb', 58, 14, 'a12800f21b82dfe810f0ad029804'),
+           'entry_mission': ('_ZN6Status19nextCampaignMissionEb', 1438, 50, 'sha256:4370fdc5f05138ea26007bd36d5b0934d3f753057103e7798ff3df17180cd52b'),
+           'mining_mission': ('_ZN6Status19nextCampaignMissionEb', 2420, 44, 'sha256:a9281ef2a5dbbf5e9577a3fcbcd1eb93b191b9a8fe022fb26c2100bc69fbc9ab'),
+           'mission_parameter': ('_ZN6Status19nextCampaignMissionEb', 8228, 14, '4068006801b0bde8f04320f17fb9'),
+           'mission_parameter_setter': ('_ZN7Mission14setStatusValueEi', 0, 4, 'c1657047'),
+           'mission_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           'story_completion': ('_ZN10ModStation10OnTouchEndEiiPv', 1582, 24, '7ff7e8eb942807d0dff87009012178440068006882f702ef'),
+           # Cursor 1's 19 (speaker, text) pairs and the per-cursor success sizes (2 x lines).
+           'dialogue_records': ('_ZN14DialogueWindow11loadContentEv', 208, 152, 
+                                 '00000000a406000002000000a506000000000000a606000002000000a706000000000000a806000002000000a906000000000000aa06000002000000ab06000002000000ac06000000000000ad06000002000000ae06000002000000af06000000000000b006000002000000b106000000000000b206000002000000b306000002000000b406000000000000b506000010000000b6060000', 'literal', 0),
+           'dialogue_sizes': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 8, '0000000026000000', 'literal', 0),
+           'text_read': ('_ZN14DialogueWindow11loadContentEv', 416, 74, 'sha256:ef0c2cd66147e7c90f4b55edbbe920719c5ee6b65d2bcde230117433085e0c9f'),
+           'instruction_substitution': ('_ZN14DialogueWindow11loadContentEv', 904, 36, 'sha256:ec1fb91eb257d0facb16a13ddc79932ec670938b7ca14a022d939c76a6eebe0d'),
+           'substitution_identity': ('_ZN7Globals23replaceKeyBindingTokensERKN11AbyssEngine6StringE', 0, 14, '80b56f46114600226af738ee80bd')}
+
+# Mac 1.0.7 values; Android's instruction has no key tokens to substitute.
+ANDROID_VALUES = copy.deepcopy(MAC_VALUES)
+ANDROID_VALUES['dialogue']['instruction_key_substitution'] = False

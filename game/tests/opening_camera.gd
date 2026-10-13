@@ -11,10 +11,11 @@ const Catalogues = preload("res://src/content/catalogues.gd")
 var failures := 0
 
 func _initialize() -> void:
-	for mac in [true, false]:
-		var data: Dictionary = JSON.parse_string(JSON.stringify(Fixture.definition(mac)))
-		var arch := "x86_64" if mac else "armv7"
+	for arch in ["x86_64", "armv7", "android-armv7"]:
+		var data: Dictionary = JSON.parse_string(JSON.stringify(Fixture.definition(arch == "x86_64", arch == "android-armv7")))
 		check(Definitions.validate(data, 65536, arch).is_empty(), "Camera definitions rejected")
+		for other in ["x86_64", "armv7", "android-armv7"]:
+			if other != arch: check(not Definitions.validate(data, 65536, other).is_empty(), "Camera spans accepted for another compiler")
 		for bad in ["missing", "nan", "eye", "actor", "mode", "up", "order", "fraction", "extent", "overlap"]:
 			var broken := data.duplicate(true)
 			match bad:
@@ -27,7 +28,7 @@ func _initialize() -> void:
 				"order": broken.pan.follow_player_after_event_finished = 5
 				"fraction": broken.actor_cut.after_event_finished = 5.5
 				"extent": broken.provenance.defaults.offset = 65535
-				"overlap": broken.provenance.pan2.offset = broken.provenance.cut.offset
+				"overlap": broken.provenance.pan3.offset = broken.provenance.cut.offset
 			check(not Definitions.validate(broken, 65536, arch).is_empty(), "Invalid camera declarations accepted: " + bad)
 	var bindings := Bindings.new()
 	bindings.base_content_id = "a".repeat(64)

@@ -8,6 +8,9 @@ const SPANS = {"flight_result_success_poll":[385744,2546],"flight_result_failure
 
 const MAC_SPANS = {"flight_result_success_poll":[386260,2546],"flight_result_failure_poll":[388806,794],"flight_result_failure_controller":[118652,24],"flight_result_result_flags":[-699540,164],"flight_result_result_content":[-698360,5788],"flight_result_acknowledgement":[347974,11612],"flight_result_side_slot":[860154,22],"flight_result_active_slot":[858744,14],"flight_result_objective_slots":[118602,22],"flight_result_poll_clock":[364858,8],"flight_result_poll_order":[378043,71]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by early_contract_definitions.gd).
+const ANDROID_SPANS = {"flight_result_success_poll":[0,1764],"flight_result_failure_poll":[0,700],"flight_result_failure_controller":[0,18],"flight_result_success_controller":[0,18],"flight_result_result_flags":[0,120],"flight_result_result_content":[0,3868],"flight_result_acknowledgement":[0,9784],"flight_result_side_slot":[0,10],"flight_result_active_slot":[0,6],"flight_result_objective_slots":[0,8],"flight_result_poll_clock":[1380,18],"flight_result_poll_order":[10572,86]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES)
 

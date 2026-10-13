@@ -21,11 +21,15 @@ func verify_prices(args: PackedStringArray) -> void:
 		return
 	var rules: Dictionary=bindings.mido_travel.ordinary_shopping
 	var vectors: Array=JSON.parse_string(FileAccess.get_file_as_string("res://tests/station_price_vectors.json"))
+	var android: bool=bindings.source_architecture=="android-armv7"
+	# Android's Status::calcCargoPrices sells special cargo at the maximum price (2300 here), the Mac at 1.05 times it.
+	var android_special:={0:2300,-100:0,-15:1955,25:2875}
 	for vector in vectors:
 		var item:={"minimum":int(vector.low),"maximum":int(vector.high),"origin":0,"maximum_origin":1,"current_system":2,"positions":vector.positions.map(func(p):return Vector2i(int(p[0]),int(p[1])))}
 		rng.seed_from(int(vector.seed))
 		var result:=owner.quote(item,rules.pricing,rng,int(vector.modifier),vector.special)
-		check(result==int(vector.price) and rng.snapshot().state==int(vector.random_state),"Synthetic distance/variation/modifier vector changed: "+str(vector))
+		var price: int=android_special[int(vector.modifier)] if android and vector.special else int(vector.price)
+		check(result==price and rng.snapshot().state==int(vector.random_state),"Synthetic distance/variation/modifier vector changed: "+str(vector))
 	var metadata:=owner.metadata(cat,0,rules.catalogue)
 	if metadata.is_empty():check(false,owner.error);return
 	check(metadata.minimum==2000 and metadata.maximum==2381 and metadata.origin==8 and metadata.maximum_origin==7,"Item price inputs selected different catalogue properties")
@@ -72,11 +76,13 @@ func verify_prices(args: PackedStringArray) -> void:
 	var copied:=owner.snapshot();copied.lists.stock.clear()
 	check(owner.snapshot()==accepted,"A caller changed the accepted quotes")
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	for key in Shopping.SPANS:
+	check(android==(str(header.get("architecture",""))=="android-armv7"),"Binding architecture changed")
+	for key in (Shopping.ANDROID_SPANS if android else Shopping.SPANS):
 		var bad:=bindings.mido_travel.duplicate(true);bad.provenance.erase(key)
-		check(not Travel.validate(bad,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing shopping proof was accepted: "+key)
-	var mixed:=bindings.mido_travel.duplicate(true)
-	var alternate: bool=Travel._alternate(mixed)
-	var other: Dictionary=Shopping.SPANS if alternate else Shopping.MAC_SPANS
-	mixed.provenance.shopping_overfilled_departure.offset=int(bindings.arrival_staging.provenance.actor.offset)+int(other.shopping_overfilled_departure[0])
-	check(not Travel.validate(mixed,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Another source supplied the paid departure proof")
+		check(not Travel.validate(bad,int(header.source_executable_bytes),str(header.architecture),bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing shopping proof was accepted: "+key)
+	if not android:
+		var mixed:=bindings.mido_travel.duplicate(true)
+		var alternate: bool=Travel._alternate(mixed)
+		var other: Dictionary=Shopping.SPANS if alternate else Shopping.MAC_SPANS
+		mixed.provenance.shopping_overfilled_departure.offset=int(bindings.arrival_staging.provenance.actor.offset)+int(other.shopping_overfilled_departure[0])
+		check(not Travel.validate(mixed,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Another source supplied the paid departure proof")

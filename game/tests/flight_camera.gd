@@ -13,10 +13,11 @@ func _initialize() -> void:
 	call_deferred("run")
 
 func run() -> void:
-	for mac in [true, false]:
-		var data: Dictionary = JSON.parse_string(JSON.stringify(Fixture.definition(mac)))
-		var arch := "x86_64" if mac else "armv7"
+	for arch in ["x86_64", "armv7", "android-armv7"]:
+		var data: Dictionary = JSON.parse_string(JSON.stringify(Fixture.definition(arch == "x86_64", arch == "android-armv7")))
 		check(Definitions.validate(data, 65536, arch).is_empty(), "Valid projection rejected")
+		for other in ["x86_64", "armv7", "android-armv7"]:
+			if other != arch: check(not Definitions.validate(data, 65536, other).is_empty(), "Projection spans accepted for another compiler")
 		for bad in ["missing", "fov", "near", "far", "extended", "axis", "cursor", "extent", "overlap"]:
 			var copy := data.duplicate(true)
 			match bad:

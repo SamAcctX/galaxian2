@@ -3,8 +3,8 @@
 **A native, open-source Galaxy on Fire 2 remake.** Play the main campaign through
 its ending, trade ships, take freelance jobs and explore the base-game galaxy.
 
-**You need your own Galaxy on Fire 2 Full HD Mac game files to play, on every platform.**
-The game imports it locally on first launch. Game assets and the original
+**You need your own Galaxy on Fire 2 game files to play, on every platform:** the Full HD
+Mac game or the Android HD release. The game imports them locally on first launch. Game assets and the original
 executable are not included in the download. No original executable is run.
 
 ![Alioth orbit](screenshots/01-alioth-orbit.png)
@@ -25,30 +25,36 @@ can be rotated with mouse dragging or the controller's right stick.
 | Windows x64 | Windows 10/11, Intel or AMD 64-bit | Extract the ZIP, then open `Galaxian2.exe` |
 | Linux x64 | Modern Linux with glibc, Intel or AMD 64-bit | Extract the archive, then run `./Galaxian2` |
 | macOS Apple Silicon | M-series Macs | Extract the ZIP and open `Galaxian2.app` |
-| Android ARM64 (experimental) | Android 10 or later, 64-bit ARM | Install the APK, then select your Mac `.dmg` or a ZIP containing its `.app` |
+| Android ARM64 (experimental) | Android 10 or later, 64-bit ARM | Install the APK, then select your Mac `.dmg`, a ZIP containing its `.app`, or the Android `.xapk` |
 
 Desktop packages include the engine and offline import helpers. Keep each package
 intact. Windows and macOS builds are unsigned. Linux is the tested platform;
 Windows and macOS exports have not yet been tested on their native systems.
-The Android importer has passed a document-picker and dependency smoke check,
-but a complete import and gameplay have not been tested on an ARM64 device.
+On an x86_64 Android emulator, the Android build imports the Android HD `.xapk`
+through the document picker in about four minutes and plays the opening and first
+flight. A Mac import on Android and ARM64 devices have not been tested yet.
 A playable Web package is not available yet.
 
-1. Start Galaxian2 and choose **Choose Mac game…**.
-2. Select your **Galaxy on Fire 2 Full HD Mac disk image (.dmg)** or the
-   **application folder (.app)** itself. Allow several minutes
+1. Start Galaxian2 and choose **Choose game…**.
+2. Select your **Galaxy on Fire 2 Full HD Mac disk image (.dmg)**, the
+   **application folder (.app)** itself, or the **Android HD release (.xapk**, or the
+   **.7z** that holds it). Allow several minutes
    and at least **8 GB of free space** for extraction and preparation.
 3. Choose **Start new game**. Follow the opening instructions.
 
 Later launches reuse your local import. Cancelling an import preserves an existing
 installation and its saves. This release is tested with the Mac App Store
 Full HD bundle. The older Mac Full HD 1.0.6 reader remains available but has not
-been retested for this release. Application
+been retested for this release. Android imports are tested with the 2.0.16 HD
+`.xapk` that carries the original (default) economy; the free-to-play economy is
+refused. An Android import plays with that release's own values and adds its
+Android-only features: the tractor-beam lounge vendor, the lounge jackpot,
+blueprint autocomplete and the mercy rule after repeated mission failures. Application
 folders and disk images use the same content preparation. Existing completed
 imports and their saves remain usable.
 
-On Android, transfer your original Mac `.dmg` to the device and select it through
-**Choose Mac game…**. You can also select a ZIP containing the original Mac `.app`
+On Android, transfer your original Mac `.dmg` or the Android `.xapk` to the device and
+select it through **Choose game…**. You can also select a ZIP containing the original Mac `.app`
 folder. Keep ample free space for the selected file, extracted files and prepared
 content; the importer reports storage requirements. Importing can take several
 minutes. The APK includes its import tools and requires no separate Python or
@@ -64,6 +70,9 @@ and saves; there is no need to import the same game again.
   toll and the Most Wanted boards; the **Supernova Challenge** from the menu.
 - New Game difficulty (Easy, Normal, Hard, Extreme), medals and the Status
   screen, the in-flight pause window, wingmen, coordinate sellers and diplomats.
+- An optional **Kaamo Club** shortcut: turn on **Start as owner of the Kaamo Club**
+  at New Game, or choose **Options → Unlock the Kaamo Club now…** while docked
+  (permanent). Without it, the club is earned as in the original.
 - Freelance combat, recovery, delivery, escort, informer and intercept jobs.
 - The galaxy overview, local travel, jumpgates and Khador Drive travel into
   normal space and the Void, using owned energy cells.
@@ -156,7 +165,9 @@ also occur at supported service exits, acknowledged results and departures.
 restart or death. A previous-save backup protects against an interrupted write.
 
 Saving during flight or a conversation is unavailable. Saves belong to their
-imported content and gameplay-data version. Original game saves and migration
+imported content and gameplay-data version: an Android import keeps its own saves,
+separate from a Mac import's, and each Android release imports as new content with
+its own saves. Original game saves and migration
 between incompatible versions are not supported yet. Back up your user-data
 folder before updating from a preview.
 
@@ -165,6 +176,12 @@ folder before updating from a preview.
 A few cosmetic details differ from the original where its data could not be
 fully recovered, such as the size of some cutscene explosions and the
 supernova sky background.
+
+An Android import plays with that release's own data. Asteroid fields hold about
+half as many asteroids, the cheap tractor beam is sold by a Space Lounge vendor
+rather than as station stock, hints use the touch wording, German speech uses the
+English voice files, Chinese is unavailable, and ship handling and a few prices
+differ slightly from the Mac game.
 
 Screenshots show the native engine using locally imported Mac content. They are
 promotional images, not game resources distributed with the engine.

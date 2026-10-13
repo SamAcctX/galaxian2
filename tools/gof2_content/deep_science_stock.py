@@ -3,10 +3,18 @@
 The caller supplies the retained all-base-gold result. The medal prerequisite
 also proves why a fresh native profile within the supported early campaign has
 not earned that result; it is not a migration rule for original profiles.
+
+Android: Generator::getShipBuyList sells station 10 one ship, the 8, once
+Achievements::gotAllGoldMedals (Achievements::countMedals over the 36 base
+medals, applyNewMedals keeping retained ones); Achievements::checkForNewMedal
+awards medal 30 by its level table only after Status::gameWon (cursor 45).
+Values equal the Mac ones; the base stock is base_station_stock's
+ANDROID_VALUES.
 """
 import copy
 
-from .base_station_stock import VALUES as BASE_VALUES, MAC_VALUES as MAC_BASE_VALUES
+from .base_station_stock import VALUES as BASE_VALUES, MAC_VALUES as MAC_BASE_VALUES, ANDROID_VALUES as ANDROID_BASE_VALUES
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 VALUES = {'scope': 'deep_science_base_station_stock',
@@ -103,9 +111,26 @@ MAC_ALTERNATE = {'station10_count': [-241720,
                                 'a20af8706e81d893632a210abaacb20912dc5863ca5c295fed5da00b9844e607']}
 
 def extract_deep_science_stock(mach, arrival, base_stock):
-    variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
-    if not proof or base_stock != (BASE_VALUES, MAC_BASE_VALUES)[variant]:
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival and base_stock == ANDROID_BASE_VALUES else {}
+    else:
+        variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
+        if proof and base_stock != (BASE_VALUES, MAC_BASE_VALUES)[variant]:
+            return {}
+    if not proof:
         return {}
     result = copy.deepcopy(VALUES)
     result['provenance'] = proof
     return result
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'station10_count': ('_ZN9Generator14getShipBuyListEP7Station', 938, 108, 'sha256:8b720bc05f6e4c8ebb64189e47a390aad203485ce117880a7f91299ab43735f9'),
+           'station10_fixed_ship': ('_ZN9Generator14getShipBuyListEP7Station', 1096, 136, 'sha256:11562e899b79fae482e07f8eeec68c28df7cb258a5e6f5d3aa09f699a454440d'),
+           'all_base_gold': ('_ZN12Achievements11countMedalsEv', 0, 130, 'sha256:5d50f43fd1f8c1addff38eb0b887b67ad1117a45c9646966131115e745720109'),
+           'all_base_gold_getter': ('_ZN12Achievements16gotAllGoldMedalsEv', 0, 6, '90f821007047'),
+           'retained_medals': ('_ZN12Achievements14applyNewMedalsEv', 0, 86, 'sha256:521f972bd19b935903fc4c329d4b5e17c5495070f43a684229c6ffca395c8360'),
+           'medal_dispatch': ('_ZN12Achievements16checkForNewMedalEP9PlayerEgo', 16, 86, 'sha256:b64c40f194baad7acd46a7e0154e9fa280596cb22d6a7622241d5e0e799abf1c'),
+           'required_medal_dispatch': ('_ZN12Achievements16checkForNewMedalEP9PlayerEgo', 160, 2, '4901'),
+           'required_medal_predicate': ('_ZN12Achievements16checkForNewMedalEP9PlayerEgo', 760, 14, '5748784400680068eaf6b6e972e0'),
+           'required_medal_levels': ('_ZN12Achievements16checkForNewMedalEP9PlayerEgo', 16, 12, '00000000ffffffffffffffff', 'literal', 360),
+           'required_campaign_progress': ('_ZN6Status7gameWonEv', 0, 14, 'd0f8e81100202c29c8bf01207047')}

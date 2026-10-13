@@ -11,17 +11,25 @@ const SPANS := {"player_constructor":[549940,3862],"escape_equipment_binding":[5
 
 const MAC_ALTERNATE := {"player_constructor":[550476,3862],"escape_equipment_binding":[555140,988],"escape_branch":[599328,178],"living_station_predicate":[563488,38],"death_poll":[388806,794],"death_start":[600502,278],"effect_constructor":[-690616,1466],"effect_wrapper":[-690626,10],"effect_trigger":[-687254,484],"effect_sound_choice":[-687710,456],"effect_update":[-685808,280],"effect_reset":[-688792,424],"player_delta":[571700,138],"death_update":[584847,533],"death_ready":[601248,32],"player_draw":[603450,98],"euler_accumulation":[-728986,140],"spin_constant":[1557686,4],"camera_attach":[232178,136],"camera_enable":[905706,10],"camera_update_gate":[906519,23],"failure_clock":[364839,27],"player_update_gate":[365987,126],"poll_order":[378043,91],"input_gate":[379158,39],"failure_display":[390566,435],"failure_input":[341303,102],"world_after_player":[391398,354]}
 
+# Android: the Mac values without the game-over image (MGame never creates it); spans inside named functions (Layouts.anchored).
+const ANDROID_VALUES := {"scope":"mac_starter_player_destruction","departure_cursor":4,"story_cursors":[4,5],"ship_id":0,"escape_equipment_category":27,"escape_equipment_absent":true,"effect_type":0,"model_ids":[16821,16820],"fragment_count":0,"construction_random_draws":0,"initial_elapsed_ms":0,"spin_per_update":0.029999999329447746,"rotation_order":"XYZ","rotation_accumulates_euler":true,"spin_on_zero_delta":true,"breakup_ms":3000,"effect_update_after_ms":3000,"failure_after_ms":8000,"failure_delay_ms":3000,"fade_ms":4000,"failure_text_id":308,"continue_text_id":188,"game_over_image_id":null,"continue_source_state":1,"breakup_sound_base":18,"breakup_sound_bound":2,"failure_sound":37,"stop_sound_ids":[27,35,2261,2260,2252,1095,1096,1097],"camera_follow_enabled":false,"statistics_active":false,"hide_hud_on_start":true,"body_visible_before_breakup":true,"model_rotation_after_statistics":true,"effect_uses_current_physical_position":true,"effect_overshoot_discarded":true,"poll_reenables_emission":true,"breakup_disables_particle_drawing":true,"player_stops_at_fade_end":true,"world_continues":true,"grants_rewards":false}
+const ANDROID_SPANS := {"player_fields":[0,514],"escape_binding":[384,168],"escape_branch":[0,132],"wormhole_predicate":[0,32],"death_poll":[0,700],"death_start":[0,192],"death_ready":[0,12],"failure_after":[12,14],"effect_constructor":[0,1092],"effect_trigger":[0,424],"effect_sound_choice":[0,272],"effect_update":[0,244],"effect_reset":[0,340],"death_update":[9090,88],"spin":[9178,12],"breakup":[9190,216],"euler_rotation":[0,156],"player_render":[0,228],"camera_reset":[0,128],"camera_enable":[0,6],"camera_update_gate":[156,18],"failure_clock":[1370,28],"player_update_gate":[1808,68],"poll_order":[10572,86],"input_gate":[11462,34],"failure_gate":[548,68],"failure_display":[700,418],"fade_constants":[1332,8],"blink_constant":[1352,4],"failure_input":[66,188],"world_render":[0,324]}
+
 static func parameters(data: Variant) -> bool:
-	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
-	for key in VALUES:
-		if not Equal.equal_value(data.get(key),VALUES[key]):return false
+	return _parameters(data,VALUES) or _parameters(data,ANDROID_VALUES)
+
+static func _parameters(data: Variant, expected: Dictionary) -> bool:
+	if not data is Dictionary or data.size()!=expected.size()+1 or not data.get("provenance") is Dictionary:return false
+	for key in expected:
+		if not data.has(key) or not Equal.equal_value(data.get(key),expected[key]):return false
 	return true
 
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, flight: Dictionary, actors: Dictionary) -> String:
 	if not data is Dictionary:return "Missing player destruction declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data):return "Unsupported player destruction declarations"
+	if not (arch=="x86_64" and _parameters(data,VALUES) or arch=="android-armv7" and _parameters(data,ANDROID_VALUES)):return "Unsupported player destruction declarations"
 	if not Flight.parameters(flight) or not NPC.parameters(actors.get("npc_initialization",{}).get("destruction")):return "Player destruction lacks its verified departure or shared effect context"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid player destruction extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Player destruction lacks its source anchor"
 	var layouts: Array=[SPANS,MAC_ALTERNATE]

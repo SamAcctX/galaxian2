@@ -11,6 +11,9 @@ const SPANS = {"free_flight_convoy_clear":[155626,87],"free_flight_scene_clear":
 # Native composition.
 const MAC_SPANS = {"free_flight_convoy_clear":[155626,87],"free_flight_scene_clear":[134971,325],"free_flight_confirmation":[432231,192],"free_flight_launch_clear":[151066,205],"free_flight_ordinary_dispatch":[152236,50]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"free_flight_convoy_clear":[50882,82],"free_flight_scene_clear":[7888,206],"free_flight_confirmation":[1982,60],"free_flight_confirmation_tail":[2532,84],"free_flight_launch_clear":[826,166],"free_flight_ordinary_dispatch":[2902,34]}
+
 static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALUES)
 
 static func available(bindings: RefCounted) -> bool:

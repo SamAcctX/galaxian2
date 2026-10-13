@@ -19,7 +19,7 @@ func verify(content: String, pack: String) -> void:
 	if bindings.opening_staging.get("player_aim",{}).is_empty():
 		check(not aim.configure(bindings) and aim.snapshot().is_empty(),"Legacy bindings invented a retained aim capability");return
 	var definition: Dictionary=bindings.opening_staging.player_aim
-	var architecture: String="armv7" if library.manifest.profile.edition=="ios-hd" else "x86_64"
+	var architecture: String=str({"ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"x86_64"))
 	check(Definitions.validate(definition,10000000,architecture,bindings.opening_staging).is_empty(),"Source aim declaration rejected")
 	for key in definition.provenance:
 		var bad: Dictionary=definition.duplicate(true);bad.provenance[key].offset+=2

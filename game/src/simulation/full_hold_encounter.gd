@@ -64,6 +64,9 @@ var _secondaries: RefCounted
 var _selected_secondary:=-1
 var _secondary_events:=[]
 var _difficulty:=0.5
+# The selected mission is the campaign's (Mission::isCampaignMission): the
+# Android mercy rule weakens its enemy guns and counts the player's deaths.
+var _campaign_mission:=false
 var _selected40_world: RefCounted
 var _selected40_context:={}
 var _selected40_sequence: RefCounted
@@ -163,7 +166,7 @@ func configure_selected40(bindings: RefCounted,catalogues: RefCounted,library: R
 	var freight:=FreightResources.new()
 	if not freight._configure_story(library,bindings,data):return reject(freight.error)
 	var identity:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":40}
-	if not _accept_configuration(bindings,library,identity,control,combat,weapons,control.destruction_resources(),primaries,inventory,scenery.presentation_identity()):return false
+	if not _accept_configuration(bindings,library,identity,control,combat,weapons,control.destruction_resources(),primaries,inventory,scenery.presentation_identity(),false,true):return false
 	_selected40_world=world;_selected40_context=data.context.duplicate(true)
 	_difficulty=float(data.difficulty)
 	_freighter_resources=freight;_freighter_assemblies={0:initial.npc_construction.actors[0].assembly.duplicate(true)}
@@ -178,7 +181,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, library: RefCounted
 	if not combat.configure_full_hold(bindings,catalogues,construction,difficulty):return reject(combat.error)
 	if not weapons.configure_full_hold(bindings,catalogues,construction):return reject(weapons.error)
 	var identity:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":4}
-	return _accept_configuration(bindings,library,identity,control,combat,weapons,resources)
+	return _accept_configuration(bindings,library,identity,control,combat,weapons,resources,null,null,null,false,true)
 
 func configure_combat_training(bindings: RefCounted, catalogues: RefCounted, library: RefCounted, player: RefCounted, scenery: RefCounted, rank: Variant, difficulty: Variant) -> bool:
 	return _configure_equipped(bindings,catalogues,library,player,scenery,rank,difficulty,7)
@@ -394,7 +397,11 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, library: 
 	var ambient: bool=(load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) and not contract_world) or (contract_world and contract_mission.is_empty()) or (cursor in [11,12] and initial.station_id==int(Travel.journey(bindings.mido_travel,cursor).from_station_id))
 	var rescue: bool=cursor==21 and initial.get("npc_construction",{}).has("kappa_context")
 	var bakka: bool=cursor==36 and initial.get("bakka_context") is Dictionary and Bakka.context_valid(bindings,initial.bakka_context)
+	# Training, story and contest casts fly the campaign mission; side jobs and
+	# local traffic do not (campaign_cast for story casts and ordinary traffic).
+	var campaign:=true
 	if not story.is_empty():
+		campaign=campaign_cast(story,{})
 		var population: RefCounted=world.npc_construction_owner()
 		if not story.get("ordinary_void",false) and not story.get("actors",[]).is_empty():freight_resources=FreightResources.new()
 		if not resources._configure_story(library,bindings,population,story):return reject(resources.error)
@@ -422,12 +429,14 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, library: 
 	elif ambient:
 		var population: RefCounted=world.npc_construction_owner()
 		if population==null:return reject("The mixed encounter requires its retained generated actors")
+		campaign=campaign_cast({},population.snapshot())
 		freight_resources=FreightResources.new()
 		var ready: bool=resources.configure_free(library,bindings,population) and freight_resources.configure_free(library,bindings,population) if load("res://src/content/free_campaign_definitions.gd").supported(bindings,cursor) else resources.configure_ambient(library,bindings,cursor) and freight_resources.configure(library,bindings,cursor)
 		if not ready:return reject(resources.error+freight_resources.error)
 		if not control.configure_ambient(bindings,catalogues,population,rank,difficulty,equipment,reputation):return reject(control.error)
 		if not weapons.configure_ambient(bindings,catalogues,population,rank,difficulty):return reject(weapons.error)
 	elif contract_world and capability!=null and capability.has_contract_actors():
+		campaign=false
 		var population: RefCounted=world.npc_construction_owner()
 		if not resources.configure_contract(library,bindings,population):return reject(resources.error)
 		if population.snapshot().actors.any(func(row):return row.get("subtype",0)==1):
@@ -436,6 +445,7 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, library: 
 		if not control.configure_contract(bindings,catalogues,population,equipment):return reject(control.error)
 		if not weapons.configure_contract(bindings,catalogues,population):return reject(weapons.error)
 	elif cursor in [10,11,12] or (contract_world and contract_mission.get("kind")==0):
+		campaign=false
 		if not resources.configure_local_traffic(library,bindings):return reject(resources.error)
 		if not control.configure_local_traffic(bindings,catalogues,world,rank,difficulty,equipment,reputation):return reject(control.error)
 		if not weapons.configure_local_traffic(bindings,catalogues,world,rank,difficulty):return reject(weapons.error)
@@ -450,7 +460,7 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, library: 
 	var targets:=inventory.configure_ordinary_void(bindings,catalogues,player,scenery,story) if story.get("ordinary_void",false) else inventory._configure_story(bindings,catalogues,player,scenery,story) if not story.is_empty() else inventory.configure_kappa_rescue(bindings,catalogues,player,scenery) if rescue else (inventory.configure_local_travel(bindings,catalogues,player,scenery,cursor) if cursor!=7 else inventory.configure_combat_training(bindings,catalogues,player,scenery))
 	if not targets:return reject(inventory.error)
 	var identity:={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":cursor}
-	if not _accept_configuration(bindings,library,identity,control,control.combat_owner(),weapons,resources,primaries,inventory,scenery.presentation_identity(),rescue):return false
+	if not _accept_configuration(bindings,library,identity,control,control.combat_owner(),weapons,resources,primaries,inventory,scenery.presentation_identity(),rescue,campaign):return false
 	_difficulty=float(difficulty)
 	if player.loadout().slots.any(func(slot):return slot!=null and slot.category==1):
 		if not configure_secondaries(bindings,catalogues,player,equipment,library):return false
@@ -460,7 +470,9 @@ func _configure_equipped(bindings: RefCounted, catalogues: RefCounted, library: 
 			if actor.population_group in ["freighter","capital"]:_freighter_assemblies[int(actor.actor_id)]=actor.assembly.duplicate(true)
 	return true
 
-func _accept_configuration(bindings: RefCounted, library: RefCounted, identity: Dictionary, control: RefCounted, combat: RefCounted, weapons: RefCounted, resources: RefCounted, primaries: RefCounted=null, inventory: RefCounted=null, scenery_identity: RefCounted=null, rescue:=false) -> bool:
+func _accept_configuration(bindings: RefCounted, library: RefCounted, identity: Dictionary, control: RefCounted, combat: RefCounted, weapons: RefCounted, resources: RefCounted, primaries: RefCounted=null, inventory: RefCounted=null, scenery_identity: RefCounted=null, rescue:=false, campaign:=false) -> bool:
+	# Android mercy rule (Level::assignGuns): the enemies' guns of a campaign mission.
+	if campaign and not weapons.apply_mercy(bindings,int(identity.campaign_cursor),combat.actor_snapshots().filter(func(actor):return actor.get("hostile",false)).map(func(actor):return int(actor.actor_id))):return reject(weapons.error)
 	var initial:=identity.duplicate();initial.merge({"elapsed_ms":0,"weapons":weapons.snapshot()})
 	# Cursor 21 also has ordinary departures: only the rescue cast's guns are its own.
 	if rescue:initial.kappa_rescue=true
@@ -474,8 +486,17 @@ func _accept_configuration(bindings: RefCounted, library: RefCounted, identity: 
 	_elapsed_ms=0;_world_elapsed_ms=0;_weapon_events=[];_actor_events=[]
 	_primaries=primaries;_inventory=inventory;_scenery_identity=scenery_identity;_primary_contacts=[];_primary_fire={}
 	_contract_context={};_secondaries=null;_selected_secondary=-1;_secondary_events=[]
-	_selected40_world=null;_selected40_context={}
+	_selected40_world=null;_selected40_context={};_campaign_mission=campaign
 	return true
+
+func campaign_mission() -> bool:return _campaign_mission
+
+## Whether a story cast or ordinary traffic flies the campaign's own mission
+## (Status::departStation selects it at its station): an authored cast unless
+## it is a side job's or the ordinary Void's; traffic at the story's station.
+static func campaign_cast(story: Dictionary,traffic: Dictionary) -> bool:
+	if not story.is_empty():return story.mission_context.advances_campaign() if story.get("mission_context")!=null else not story.get("ordinary_void",false)
+	return traffic.get("free_context",{}).get("mission_story",false)
 
 ## Observe the ordered native population at HUD time. Acquisition only replaces
 ## the device candidate; the next player phase owns motion and cargo changes.
@@ -1257,7 +1278,7 @@ func fork_for_frame() -> RefCounted:
 	copy._txn=FrameTransaction.current
 	copy._contract_context=_contract_context.duplicate(true)
 	copy._max_ms=_max_ms
-	copy._difficulty=_difficulty
+	copy._difficulty=_difficulty;copy._campaign_mission=_campaign_mission
 	copy._selected40_world=_selected40_world
 	copy._selected40_context=_selected40_context
 	copy._selected40_sequence=_selected40_sequence

@@ -1,11 +1,32 @@
-"""Recognize fresh NPC hull declarations; emit data, never executable content."""
+"""Recognize fresh NPC hull declarations; emit data, never executable content.
+
+Android: Level::createShip reads the cursor, bases the hull on Status::getLevel
+(14 x level + 20, level capped at 20), adds 4 x cursor or 180 after
+Status::gameWon, keeps it for subtype 0, scales it by the difficulty - 0.5 and
+passes it to Player::Player, which stores current and maximum hull;
+Player::setHitpoints raises the maximum and Player::updateDamageRate keeps the
+integer percentage (x 100). Status::resetGame sets level 1 and clears the
+scores Status::checkForLevelUp sums against its 21 thresholds, and
+MGame::OnInitialize runs that check before building the level.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 VALUES = {'scope': 'fresh_opening', 'rank': 0, 'campaign_cursor': 0, 'factory_subtype': 0, 'hull_catalogue_ids': [2, 23, 2], 'base_hull': 20, 'difficulty_offset': -0.5, 'percentage_scale': 100.0, 'override_raises_maximum': True}
 
 
 def extract_npc_hull(mach, actors):
+    if mach.architecture == 'android-armv7':
+        try:
+            npc = actors['npc_initialization']
+            if npc['world_initialization']['campaign_cursor'] != VALUES['campaign_cursor']:
+                return {}
+            if [a['hull_catalogue_id'] for a in actors['actors']] != VALUES['hull_catalogue_ids']:
+                return {}
+        except (KeyError, TypeError):
+            return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     arch=mach.architecture
     if arch not in LAYOUTS:return {}
     try:
@@ -164,3 +185,25 @@ MAC_ALTERNATE = {'factory_arguments': [17,
  'rank_thresholds_constant': [1488762,
                               84,
                               '0000000007000000150000002a000000460000006900000093000000c4000000fc0000003b01000081010000ce010000220200007d020000df02000048030000b80300002f040000ad0400003205000072060000']}
+
+ANDROID = {'factory_arguments': ('_ZN5Level10createShipEiiiP8Waypointbb', 14, 24, '0f901e46dff8e40b93468a467844006800689af746ed8046'),
+           'rank_base': ('_ZN5Level10createShipEiiiP8Waypointbb', 116, 40, 'sha256:ff8193ce2278b29fcb84471340191f9d360692ad35012826e12c4a873b380d36'),
+           'cursor_and_hull_modifiers': ('_ZN5Level10createShipEiiiP8Waypointbb', 156, 122, 'sha256:57db865d351919f96790f159b154125a899461ce1818271da34638ac914bb357'),
+           'subtype': ('_ZN5Level10createShipEiiiP8Waypointbb', 330, 34, 'sha256:ab80c1d27103a6abea8614692b1f7ce379a9561193abf6ee91e1a494182f2fc7'),
+           'difficulty': ('_ZN5Level10createShipEiiiP8Waypointbb', 364, 80, 'sha256:76c5e0e0f6deaae4b2a825c8083c994d383f7ab3b76e90283eb6560d75ea5415'),
+           'stats_argument': ('_ZN5Level10createShipEiiiP8Waypointbb', 470, 30, 'sha256:fedd068c5cf99a5b829dedd24cb498547a65fa117a0656935c5b922c130dab49'),
+           'initial_capacity': ('_ZN6PlayerC2Eiiiii', 110, 6, 'a267c4f88420'),
+           'hull_setter': ('_ZN6Player12setHitpointsEi', 0, 18, '8167d0f884208a42b8bfc0f8841029f115bc'),
+           'percentage': ('_ZN6Player16updateDamageRateEv', 0, 36, 'sha256:9d2c1d373aacc9512009cae5e26a008bca91248b8aae28c2216bc04bf96efe50'),
+           'percentage_literal': ('_ZN6Player16updateDamageRateEv', 132, 4, '0000c842'),
+           'rank_getter': ('_ZN6Status8getLevelEv', 0, 6, 'd0f8c8017047'),
+           'score_reset_a': ('_ZN6Status9resetGameEv', 8, 40, 'sha256:a1a9ff8a528027ef9d159984ee3b79a60980191be7b49d8b406e7ba78b9aa381'),
+           # Level 1 and the score at 0x1d0.
+           'rank_reset': ('_ZN6Status9resetGameEv', 48, 14, '0121c8f8e441c8e97214c8f8d041'),
+           'score_reset_c': ('_ZN6Status9resetGameEv', 276, 12, 'c0ef500008f19c0040f98f0a'),
+           'score_reset_d': ('_ZN6Status9resetGameEv', 488, 62, 'sha256:badb362353f37f9b926d40ef8817f3c9574a9f0ef8ac697e073439321a240e07'),
+           'cursor_getter': ('_ZN6Status25getCurrentCampaignMissionEv', 0, 6, 'd0f8e8017047'),
+           'cursor_predicate': ('_ZN6Status7gameWonEv', 0, 14, 'd0f8e81100202c29c8bf01207047'),
+           'entry_rank': ('_ZN5MGame12OnInitializeEv', 618, 34, 'sha256:85bf3e5830d77c3d88309e36e0f0b3affb3a5050e8a794dd94bf3c74f2e8c761'),
+           'rank_calculation': ('_ZN6Status15checkForLevelUpEv', 0, 104, 'sha256:382c341367d31244fa6f3d6c10b0e220fff6ae8b8311556375980d889900974b'),
+           'rank_thresholds_constant': ('_ZN6Status15checkForLevelUpEv', 58, 84, 'sha256:3e64308cda1ff8cd1c97e1ab8e2b9edff4c81ef5f170f92f7c4224bc3a67fe54', 'literal', 0)}

@@ -47,3 +47,10 @@ class DesktopTextTests(unittest.TestCase):
                 elif case=='section':mach.sections=[]
                 else:mach.data=mach.data[:128]
                 self.assertEqual(reader.extract_desktop_text(mach,arrival),{},case)
+
+    def test_android_has_no_desktop_text(self):
+        # Even the Mac's own declaration bytes yield nothing under the Android reader.
+        mach, arrival, _, _ = fixture(reader.LAYOUTS)
+        self.assertTrue(reader.extract_desktop_text(mach, arrival))
+        mach.architecture = 'android-armv7'
+        self.assertEqual(reader.extract_desktop_text(mach, arrival), {})

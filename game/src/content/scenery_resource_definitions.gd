@@ -23,7 +23,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 	if not data is Dictionary:return "Missing scenery resource declarations"
 	if data.is_empty():return ""
 	if population.is_empty() or not parameters(data):return "Invalid scenery resource declarations"
-	var sizes := {"entry":12,"probability":710,"station_system":9,"system_x":9,"system_y":9,"item_origin":9,"item":140,"sqrt_wrapper":10,"sqrt":33,"selector":157,"models":91,"model_table":16} if architecture=="x86_64" else {"entry":6,"probability":538,"station_system":4,"system_x":4,"system_y":4,"item_origin":4,"item":82,"sqrt_wrapper":6,"sqrt":34,"selector":88,"models":36,"model_table":16} if architecture=="armv7" else {}
+	var sizes := {"entry":12,"probability":710,"station_system":9,"system_x":9,"system_y":9,"item_origin":9,"item":140,"sqrt_wrapper":10,"sqrt":33,"selector":157,"models":91,"model_table":16} if architecture=="x86_64" else {"entry":6,"probability":538,"station_system":4,"system_x":4,"system_y":4,"item_origin":4,"item":82,"sqrt_wrapper":6,"sqrt":34,"selector":88,"models":36,"model_table":16} if architecture=="armv7" else {"entry":6,"probability":458,"station_system":4,"system_x":4,"system_y":4,"item_origin":4,"item":78,"sqrt_wrapper":6,"sqrt":28,"selector":72,"models":40,"model_table":16} if architecture=="android-armv7" else {}
 	if sizes.is_empty() or data.provenance.size()!=sizes.size():return "Invalid scenery resource provenance"
 	var spans := []
 	for key in sizes:
@@ -34,5 +34,6 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 			if span.x<previous.y and span.y>previous.x:return "Overlapping scenery resource extents"
 		spans.append(span)
 	if data.provenance.entry.offset+data.provenance.entry.bytes!=population.provenance.count.offset:return "Disconnected scenery resource entry"
-	if data.provenance.item.offset+(280 if architecture=="x86_64" else 176)!=data.provenance.item_origin.offset:return "Disconnected scenery item schema"
+	# Android reads Item::init and Item::getMinPriceSystem by name; the Mach-O layouts keep them a fixed distance apart.
+	if architecture!="android-armv7" and data.provenance.item.offset+(280 if architecture=="x86_64" else 176)!=data.provenance.item_origin.offset:return "Disconnected scenery item schema"
 	return ""

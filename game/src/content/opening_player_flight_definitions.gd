@@ -8,6 +8,10 @@ const SPANS := {"x86_64":{"initial_angular":[429398,20],"ordinary_path":[456905,
 
 const MAC_ALTERNATE := {"initial_angular":[429934,20],"ordinary_path":[457441,90],"controller_result":[256107,24],"input_block":[257131,39],"primary_input":[257225,54],"primary_route":[438759,72],"primary_call":[257271,23],"primary_permission":[421206,45],"steering_input":[257506,51],"input_release":[17845,5],"postcombat_gate":[17889,21],"player_equipment_before_field":[-165110,5],"initial_normal_modes":[429277,14],"weapon_groups":[-4221,100],"primary_group":[-55066,7],"npc_group":[-64431,7],"rotation_anchor":[443322,24],"response_anchor":[474341,16]}
 
+# Android: spans inside named functions (Layouts.anchored); the Mac 1.0.7 values.
+const ANDROID_VALUES = {"ordinary_phase":4,"postcombat_after_event_finished":10,"initial_pitch_units":0,"initial_yaw_units":0,"initial_throttle":1.0,"primary_category":0,"primary_requires_living_hull":true,"primary_contacts_before_npc":true,"fire_after_camera":true,"response_after_camera":true}
+const ANDROID_SPANS = {"controller_result":[10658,20],"camera_update":[11292,24],"input_block":[11462,34],"primary_input":[11552,34],"primary_call":[11610,20],"steering_left":[11684,62],"steering_right":[11798,62],"ordinary_handoff":[4314,90],"postcombat_gate":[6540,14],"initial_angular":[36,538],"ordinary_path":[5262,26],"primary_route":[0,264],"weapon_groups":[236,76],"primary_group":[0,6],"npc_group":[0,6]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary: return false
 	for key in VALUES:
@@ -27,6 +31,9 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, executable_bytes: int, architecture: String, staging: Dictionary) -> String:
 	if not data is Dictionary: return "Invalid ordinary player flight capability"
 	if data.is_empty(): return ""
+	if architecture=="android-armv7":
+		if not parameters(data): return "Unsupported ordinary player flight"  # ANDROID_VALUES are VALUES
+		return "" if Layouts.anchored(data.provenance,executable_bytes,ANDROID_SPANS) else "Disconnected ordinary player flight declaration"
 	if not parameters(data) or not SPANS.has(architecture): return "Unsupported ordinary player flight"
 	var initial: Variant=staging.get("provenance",{}).get("initial")
 	if not Fonts.extent(initial,"offset","bytes",[366 if architecture=="x86_64" else 320],executable_bytes): return "Ordinary player flight lacks its staging anchor"

@@ -2,13 +2,25 @@
 
 This capability supplies construction rules. It does not unlock travel or claim
 that all associated actor behavior has been implemented.
+
+Android: Level::createMission holds the Mido counts, the empty fallback, the
+group order, the travel ships and the freighter choice; KIPlayer::setRoute,
+setDead and setJumper the travel ships' route, mode and flag; Level::createShip
+and PlayerFixedObject's constructor the freighter and its cargo;
+Globals::getShipGroup its assembly. Values equal the Mac ones.
 """
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
-from .mido_travel import VALUES as TRAVEL_VALUES, MAC_VALUES as TRAVEL_MAC_VALUES
+from .mido_travel import VALUES as TRAVEL_VALUES, MAC_VALUES as TRAVEL_MAC_VALUES, ANDROID_VALUES as TRAVEL_ANDROID_VALUES
 
 def extract_ambient_population(mach, arrival, travel):
     if not isinstance(travel,dict):return {}
+    if mach.architecture=='android-armv7':
+        proof=recognize_symbols(mach,ANDROID) if arrival else {}
+        if not proof or any(travel.get(key)!=value for key,value in TRAVEL_ANDROID_VALUES.items()):return {}
+        result=copy.deepcopy(VALUES);result['provenance']=proof
+        return result
     variant,proof=hashed_variants(mach,arrival,[LAYOUTS,MAC_ALTERNATE])
     if not proof:return {}
     if any(travel.get(key)!=value for key,value in (TRAVEL_VALUES,TRAVEL_MAC_VALUES)[variant].items()):return {}
@@ -155,3 +167,24 @@ MAC_ALTERNATE = {'population_counts': [-30330,
                                    8,
                                    '__const',
                                    '0bba1a14920c7c3b8accd3c7de6b1c9b5f0ceaa1a8d909f9805d1f1151295081']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# Level::createMission: an empty mission, Mido before cursor 16 (mixed traffic), the station.
+           'ambient_population_entry': ('_ZN5Level13createMissionEv', 532, 144, 'sha256:dbda03d0d2e7fb93b6a96fec4969e169412a43f79d46b086cf59deecdb84a0a8'),
+           # None at station 78, else travel random(2), freighters random(5), patrols random(2) (+ random(2) mixed) + freighters / 4.
+           'ambient_population_counts': ('_ZN5Level13createMissionEv', 1754, 116, 'sha256:27e70adbd48af7df4050087b63b740552c0a76e52452c1082bc5c603945e4071'),
+           # Attacked friends: at least 7 patrols; an empty population: 4 patrols.
+           'ambient_population_empty_fallback': ('_ZN5Level13createMissionEv', 2590, 60, 'sha256:07a2162952e23ae0bd48fd9fadef12d4a067479e5d5a7b3b9f9360d4200da94b'),
+           # Patrols first, then travel ships (subtype 0, no waypoint, setDead, a random route, setJumper), then freighters.
+           'ambient_population_patrol_first': ('_ZN5Level13createMissionEv', 6244, 10, 'daf860010128c0f28481'),
+           'ambient_population_travel_ships': ('_ZN5Level13createMissionEv', 7008, 280, 'sha256:8d05a1f551d701c20b4462ec9dd50e13fc8461e7938da2c4e6312cda7d287a94'),
+           # Freighter race (alternate below 30), hull 15 (13 for race 1), moving, random position.
+           'ambient_population_freighter': ('_ZN5Level13createMissionEv', 8208, 258, 'sha256:9b1d5647f78e140f9de543f0a6564cb39d0a6fbf3e91b783c61251940f5aff30'),
+           'ambient_population_travel_route': ('_ZN8KIPlayer8setRouteEP5Route', 0, 36, 'sha256:2f00603c48d28f9708289d12f63227139eebaa3ce45e155ddc64e7ddf20197b5'),
+           'ambient_population_travel_mode': ('_ZN8KIPlayer7setDeadEv', 0, 14, '0421c0f884100021406825f1e1be'),
+           'ambient_population_travel_flag': ('_ZN8KIPlayer9setJumperEb', 0, 6, '80f8e8107047'),
+           # Subtype 1 builds a PlayerFixedObject; its constructor multiplies the cargo (random(4) + 2, at least random(5) + 8).
+           'ambient_population_factory': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           'ambient_population_cargo': ('_ZN17PlayerFixedObjectC2EiiP6PlayerP10AEGeometryfff', 0, 804, 'sha256:8e92f8e152d9f1a0c3d99ecc26346df1f048501ee0014047ed2c3a1d67aaec75'),
+           # Race 3 freighter: root, light, random(4) containers at -2150, 2150, 4300, engine, LOD 17050 at 35000.
+           'ambient_population_assembly': ('_ZN7Globals12getShipGroupEiib', 0, 2116, 'sha256:82d79c62239613267037732bb0cfc994cbdfe697c1466fe5e5ece399a14b7109')}

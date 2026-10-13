@@ -8,9 +8,13 @@ const SPANS := {"x86_64":{"initial_selection":[535235,88],"initial_timer":[53556
 
 const MAC_ALTERNATE := {"initial_selection":[535783,88],"initial_timer":[536111,34],"images":[536195,3060],"equipment":[539255,200],"ordinary_permission":[539565,16],"window":[539650,39],"population":[546111,135],"order":[546619,111],"eligibility":[546738,177],"markers_candidates":[547022,2245],"clock_permissions":[549267,290],"acquisition":[549658,477],"animation_reset":[550135,349],"animation_alias":[-658569,64],"animation_constructor":[684527,118],"animation_frame":[684645,90],"near_constant":[1428131,4],"negative_near_constant":[1442107,4]}
 
+# Android: Mac values except the window (width / 16); spans inside named functions (Layouts.anchored).
+const ANDROID_VALUES = {"scope":"fresh_opening_npcs","equipment_type":17,"duration_property":29,"cargo_property":31,"default_duration_ms":8000,"near_half_extent":24000.0,"initial_selected":-1,"initial_candidate":-1,"initial_elapsed_ms":0,"acquisition_sound_id":26,"empty_cargo_message_id":22,"animation_image_id":1110,"animation_texture_id":10062,"animation_region":10,"image_ids":[1224,1225,1226,1227,1228,1229,1234,1243,1244,1235,1236,1237,1238,1241,1242],"marker_before_acquisition":true,"completion_strict":true,"architecture":"android-armv7","window_divisor":16,"marker_texture_id":10063}
+const ANDROID_SPANS := {"initial_state":[12,230],"images":[1086,462],"animation_sprite":[2186,84],"equipment":[2324,148],"ordinary_permission":[2550,16],"window":[2584,48],"population":[2498,84],"animation_reset":[5186,24],"acquisition_clock":[5308,48],"acquisition":[9592,252],"empty_cargo":[11118,52],"animation_alias":[78942,42],"marker_registration":[204380,78],"animation_constructor":[0,104],"animation_frame":[0,54],"near_constant":[10496,4],"negative_near_constant":[10500,4]}
+
 static func parameters(data: Variant) -> bool:
-	if not data is Dictionary or not VALUES.has(data.get("architecture")) or not data.get("provenance") is Dictionary: return false
-	var expected_values: Dictionary=VALUES[data.architecture]
+	if not data is Dictionary or not (VALUES.has(data.get("architecture")) or data.get("architecture")=="android-armv7") or not data.get("provenance") is Dictionary: return false
+	var expected_values: Dictionary=ANDROID_VALUES if data.architecture=="android-armv7" else VALUES[data.architecture]
 	if data.size()!=expected_values.size()+1: return false
 	for key in expected_values:
 		var value: Variant=data.get(key)
@@ -29,7 +33,9 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, executable_bytes: int, architecture: String, staging: Dictionary) -> String:
 	if not data is Dictionary: return "Invalid NPC scanner capability"
 	if data.is_empty(): return ""
-	if not parameters(data) or not SPANS.has(architecture) or data.architecture!=architecture: return "Unsupported NPC scanner"
+	if not parameters(data) or not (SPANS.has(architecture) or architecture=="android-armv7") or data.architecture!=architecture: return "Unsupported NPC scanner"
+	if architecture=="android-armv7":
+		return "" if Layouts.anchored(data.provenance,executable_bytes,ANDROID_SPANS) else "Disconnected NPC scanner declaration"
 	var initial: Variant=staging.get("provenance",{}).get("initial")
 	if not Fonts.extent(initial,"offset","bytes",[366 if architecture=="x86_64" else 320],executable_bytes): return "NPC scanner lacks its staging anchor"
 	if data.provenance.size()!=SPANS[architecture].size(): return "Invalid NPC scanner provenance"

@@ -30,7 +30,7 @@ func run():
 func verify(args: PackedStringArray):
 	lib=Library.new();bindings=Bindings.new();cat=Catalogues.new()
 	if not lib.open(args[0]) or not bindings.open(args[1],lib.manifest) or not cat.open(lib) or not lib.select_language("gb"):check(false,lib.error+bindings.error+cat.error);return
-	check(bindings.source_architecture=="x86_64","This proof requires the Mac profile")
+	check(bindings.source_architecture in ["x86_64","android-armv7"],"This verification needs Mac or Android content")
 	var fixture:=Fixtures.new();construction=Construction.new()
 	var prepared: bool=construction.prepare(bindings,cat,fixture.packet_fixture(bindings,cat,3),4096,1789100000)
 	fixture.free()
@@ -135,7 +135,7 @@ func verify_reader(pack: String):
 	for key in Definitions.VALUES:
 		var bad:=data.duplicate(true);bad[key]=null
 		check(not Definitions.parameters(bad),"Changed story value accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if bindings.source_architecture=="android-armv7" else Definitions.SPANS):
 		var bad:=data.duplicate(true);bad.provenance[key].offset+=1
 		check(not validate(bad,header).is_empty(),"Detached source span accepted: "+key)
 	for cursor in [0,1,3,5,6,4.0,"4"]:
@@ -166,7 +166,7 @@ func verify_reader(pack: String):
 	DirAccess.remove_absolute(directory.path_join("registrations.json"));DirAccess.remove_absolute(directory.path_join("bindings.json"));DirAccess.remove_absolute(directory)
 
 func validate(data: Dictionary, header: Dictionary) -> String:
-	return Definitions.validate(data,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_flight,bindings.mining_briefing,bindings.mining_objective)
+	return Definitions.validate(data,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_flight,bindings.mining_briefing,bindings.mining_objective)
 
 func verify_presentation(args: PackedStringArray):
 	var visuals:=Visuals.new();check(visuals.open(args[2],lib.manifest),visuals.error)

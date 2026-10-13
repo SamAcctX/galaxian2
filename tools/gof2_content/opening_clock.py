@@ -1,10 +1,51 @@
-"""Read a fresh-opening clock seed and its ordinary millisecond increment."""
+"""Read a fresh-opening clock seed and its ordinary millisecond increment.
+
+Android: Status::resetGame seeds the 64-bit playing time from one register;
+MGame::OnUpdate adds the frame's milliseconds through Status::incPlayingTime
+before it looks at the player's controller; Status::getPlayingTime reads it.
+"""
 import struct
 from .opening_loadout import template
+from .opening_drift import ELAPSED
 from .ship_models import section_bytes
+from .steering import PC, code_span, shape_at, sole_definition
+
+
+ANDROID_RESET, ANDROID_UPDATE = '_ZN6Status9resetGameEv', '_ZN5MGame8OnUpdateEv'
+ANDROID_INCREMENT, ANDROID_GETTER = '_ZN6Status14incPlayingTimeEx', '_ZN6Status14getPlayingTimeEv'
+SEED = [('strd', r'(r\d+), \1, \[r8, #0x1b8\]')]
+# The frame's milliseconds (the frame clock's store at fp + 0x40), sign-extended, then the controller check.
+FRAME = [('ldr.w', 'r0, ' + PC), ('ldr.w', r'r2, \[fp, #0x40\]'), ('add', 'r0, pc'), ('ldr', r'r0, \[r0\]'),
+         ('asrs', 'r3, r2, #0x1f'), ('ldr', r'r0, \[r0\]'), ('blx', '=' + ANDROID_INCREMENT), ('ldr.w', r'r0, \[fp, #0x7c\]'),
+         ('ldrb.w', r'r0, \[r0, #0x54\]'), ('cbnz', 'r0, #0x[0-9a-f]+')]
+INCREMENT = [('ldrd', r'r1, ip, \[r0, #0x1b8\]'), ('adds', 'r1, r1, r2'), ('adc.w', 'r2, ip, r3'), ('strd', r'r1, r2, \[r0, #0x1b8\]'),
+             ('bx', 'lr')]
+
+
+def android_clock(lib):
+    from .android_library import instructions
+    reset, update, increment, getter = (instructions(lib, s) for s in (ANDROID_RESET, ANDROID_UPDATE, ANDROID_INCREMENT, ANDROID_GETTER))
+    stores, frames = shape_at(reset, SEED), shape_at(update, FRAME, lib)
+    if len(stores) != 1 or len(frames) != 1 or shape_at(increment, INCREMENT)[:1] != [0] or shape_at(getter, ELAPSED)[:1] != [0]:
+        return {}
+    # Both words of the seed come from one register: its only definition, a movs.
+    register = reset[stores[0]].op_str.split(',')[0]
+    seed = sole_definition(reset, stores[0], (register,))
+    if seed is None or shape_at(reset[seed:seed + 1], [('movs', register + r', #(0x[0-9a-f]+|\d+)')]) != [0]:
+        return {}
+    value = reset[seed].operands[1].imm
+    value |= value << 32
+    if not 0 <= value <= 2147483647:
+        return {}
+    return {'initial_elapsed_ms': value, 'time_unit': 'milliseconds', 'advance_before_controller': True,
+            'provenance': {'reset': code_span(lib, reset, stores[0], stores[0]), 'seed': code_span(lib, reset, seed, seed),
+                           'frame': code_span(lib, update, frames[0], frames[0] + len(FRAME) - 1),
+                           'increment': code_span(lib, increment, 0, len(INCREMENT) - 1), 'getter': code_span(lib, getter, 0, len(ELAPSED) - 1)}}
 
 
 def extract_opening_clock(mach, drift, opening):
+    if drift and opening and mach.architecture == 'android-armv7':
+        return android_clock(mach)
     if not drift or not opening or mach.architecture not in ['x86_64','armv7']: return {}
     import capstone
     mac = mach.architecture == 'x86_64'; prefix = 'MAC_' if mac else 'ARM_'

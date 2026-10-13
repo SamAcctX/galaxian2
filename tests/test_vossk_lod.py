@@ -37,3 +37,16 @@ class VosskLodTests(unittest.TestCase):
             self.assertEqual(len(source), 7)
             self.assertGreater(source['vossk_traffic_lod_registry_main'][1], 300000)
             self.assertTrue(all(row[2] == '__text' for row in source.values()))
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from gof2_content.android_library import AndroidLibrary
+        verify_android_proof(self, reader, lambda lib: reader.extract_vossk_lod(lib, {'scope': 'arrival_staging'}))
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            self.assertEqual(reader.extract_vossk_lod(AndroidLibrary(image), {}), ({}, {}))
+        self.assertEqual(reader.ANDROID_VALUES, reader.VALUES)
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'vossk_lod_definitions.gd')

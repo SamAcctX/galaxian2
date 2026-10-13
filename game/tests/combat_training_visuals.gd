@@ -49,13 +49,13 @@ func verify_training_visuals(args: PackedStringArray, equipment: RefCounted):
 	if rules.is_empty():
 		check(not shots.configure(bindings,lib,world) and not impacts.configure(bindings,lib,world),"Older pack invented training models")
 		return
-	check(TrainingVisualRules.validate(rules,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.combat_training_weapons,bindings.opening_staging).is_empty(),"Training visuals rejected their source context")
+	check(TrainingVisualRules.validate(rules,header.source_executable_bytes,str(header.architecture),bindings.arrival_staging,bindings.combat_training_weapons,bindings.opening_staging).is_empty(),"Training visuals rejected their source context")
 	for key in TrainingVisualRules.VALUES:
 		var bad:=rules.duplicate(true);bad[key]=null
 		check(not TrainingVisualRules.parameters(bad),"Changed training visual accepted: "+key)
-	for key in TrainingVisualRules.SPANS:
+	for key in (TrainingVisualRules.ANDROID_SPANS if header.architecture=="android-armv7" else TrainingVisualRules.SPANS):
 		var bad:=rules.duplicate(true);bad.provenance[key].offset+=1
-		check(not TrainingVisualRules.validate(bad,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.combat_training_weapons,bindings.opening_staging).is_empty(),"Disconnected visual proof accepted: "+key)
+		check(not TrainingVisualRules.validate(bad,header.source_executable_bytes,str(header.architecture),bindings.arrival_staging,bindings.combat_training_weapons,bindings.opening_staging).is_empty(),"Disconnected visual proof accepted: "+key)
 	var construction:=source.snapshot()
 	check(shots.configure(bindings,lib,world) and impacts.configure(bindings,lib,world),shots.error+impacts.error)
 	if shots.snapshot().is_empty() or impacts.snapshot().is_empty():return
@@ -147,8 +147,11 @@ func verify_training_field(equipment: RefCounted):
 	check(scenery.configure_combat_training(bindings,cat,equipment,Vector3(10,10,10000),conditions,1789100000,true,bodies,effects),scenery.error)
 	var field:=scenery.snapshot()
 	if field.is_empty():return
-	check(field.objects.size()==130 and field.center==Vector3(12298,36830,77237),"Training changed ordinary station scenery count or center")
-	check(field.world_initialization.input_random_state=={"state":153548941033574},"NPC construction did not follow the complete field RNG")
+	# Android fields hold 40 + random(40) asteroids (Mac 80 + random(80)), so the field RNG ends elsewhere.
+	var android: bool=bindings.source_architecture=="android-armv7"
+	var count:=50 if android else 130
+	check(field.objects.size()==count and field.center==Vector3(12298,36830,77237),"Training changed ordinary station scenery count or center")
+	check(field.world_initialization.input_random_state=={"state":280936762154123 if android else 153548941033574},"NPC construction did not follow the complete field RNG")
 	var world: RefCounted=scenery.world_initialization_owner()
 	check(world!=null and world.snapshot().npc_construction.actors.size()==4,"Training scenery omitted its NPC construction")
 	if world==null:return
@@ -161,7 +164,7 @@ func verify_training_field(equipment: RefCounted):
 	var player:=TrainingPlayer.new();check(player.configure_combat_training(bindings,cat,equipment),player.error)
 	var targets:=TrainingTargets.new();check(targets.configure_combat_training(bindings,cat,player,scenery),targets.error)
 	if targets.snapshot().is_empty():return
-	check(targets.snapshot().npc_ids==[0,1,2,3] and targets.snapshot().scenery_indices.size()==130,"Training primary target list omitted source bodies")
+	check(targets.snapshot().npc_ids==[0,1,2,3] and targets.snapshot().scenery_indices.size()==count,"Training primary target list omitted source bodies")
 	var mounts:=TrainingMounts.new();check(mounts.open(lib,cat),mounts.error)
 	var primary:=TrainingPrimary.new();check(primary.configure(bindings,cat,mounts,player.loadout()),primary.error)
 	check(not primary.advance(1).is_empty(),primary.error)
@@ -200,6 +203,7 @@ func verify_training_encounter(cat: RefCounted, player: RefCounted, scenery: Ref
 		return
 	check(encounter.configure_combat_training(bindings,cat,lib,player,scenery,0,.5),encounter.error)
 	if encounter.snapshot().is_empty():return
+	check(encounter.campaign_mission(),"The training is not the campaign's mission (mercy rule)")
 	var initial:=encounter.snapshot();var field: Dictionary=scenery.snapshot();var original_player: Dictionary=player.snapshot()
 	check(initial.campaign_cursor==7 and initial.primaries.guns.size()==1 and initial.weapons.actors.size()==4,"Encounter omitted a retained weapon owner")
 	check(initial.controller.random_state==field.random_state and initial.projectile_visuals.elapsed_ms==0,"Encounter reset world randomness or advanced its visuals")

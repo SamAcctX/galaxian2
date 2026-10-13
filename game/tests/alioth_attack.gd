@@ -37,10 +37,11 @@ func verify(content: String,pack: String) -> void:
 		check(not owner.configure(bindings) and owner.snapshot().is_empty() and Rules.radio(bindings).is_empty(),"Legacy content enabled an unverified attack")
 		return
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(pack.path_join("bindings.json")))
-	for key in Rules.SPANS:
+	var arch: String=header.architecture
+	for key in (Rules.ANDROID_SPANS if arch=="android-armv7" else Rules.SPANS):
 		var changed: Dictionary=bindings.mido_travel.duplicate(true)
 		changed.provenance[key].offset+=1
-		check(not Travel.validate(changed,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Moved attack proof accepted: "+key)
+		check(not Travel.validate(changed,header.source_executable_bytes,arch,bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Moved attack proof accepted: "+key)
 	for key in Rules.VALUES:
 		var changed: Dictionary=bindings.mido_travel.duplicate(true)
 		changed.alioth_attack[key]=null

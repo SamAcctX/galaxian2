@@ -23,7 +23,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	if not data is Dictionary: return "Missing opening NPC weapon declaration"
 	if data.is_empty(): return ""
 	if not parameters(data): return "Invalid opening NPC weapon parameters"
-	var sizes := {"main":180,"kind":31,"base_damage":43,"speed":10,"level_zero":77,"actor_kind":4,"player_constructor":70,"npc_owner":13,"cursor":12,"post_campaign":16,"fresh_level":11,"level_getter":12,"level_scale":4,"speed_value":4} if architecture=="x86_64" else {"main":154,"kind":22,"base_damage":24,"speed":4,"level_zero":82,"actor_kind":1,"player_constructor":72,"npc_owner":6,"cursor":6,"post_campaign":14,"fresh_level":42,"level_getter":6,"level_scale":4} if architecture=="armv7" else {}
+	var sizes := {"main":180,"kind":31,"base_damage":43,"speed":10,"level_zero":77,"actor_kind":4,"player_constructor":70,"npc_owner":13,"cursor":12,"post_campaign":16,"fresh_level":11,"level_getter":12,"level_scale":4,"speed_value":4} if architecture=="x86_64" else {"main":154,"kind":22,"base_damage":24,"speed":4,"level_zero":82,"actor_kind":1,"player_constructor":72,"npc_owner":6,"cursor":6,"post_campaign":14,"fresh_level":42,"level_getter":6,"level_scale":4} if architecture=="armv7" else {"main":118,"kind":16,"base_damage":64,"level_zero":224,"actor_kind":1,"npc_owner":6,"cursor":6,"post_campaign":14,"fresh_level":10,"level_getter":6,"level_scale":4} if architecture=="android-armv7" else {}
 	if sizes.is_empty() or data.provenance.size()!=sizes.size(): return "Invalid opening NPC weapon provenance"
 	var spans := []
 	for key in sizes:

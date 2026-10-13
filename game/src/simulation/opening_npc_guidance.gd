@@ -65,7 +65,7 @@ func configure(bindings: RefCounted, catalogues: RefCounted, actor_id: Variant, 
 	var factory_hull := int(Vitals.single(Vitals.single(adjustment*base)+base))
 	# Current Mac hull declarations supersede the historical rank-one fallback.
 	# The source constructor samples factory health before the Opening override.
-	if bindings.source_architecture=="x86_64" and body.has("factory_hull"):
+	if bindings.campaign_source() and body.has("factory_hull"):
 		factory_hull=int(body.factory_hull)
 	if factory_hull<1: return reject("Unsupported fresh NPC hull scale")
 	return _configure_state(bindings,data,body,factory_hull)

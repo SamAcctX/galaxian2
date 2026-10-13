@@ -1,8 +1,21 @@
-"""Convoy-specific ordinary ship lifecycle declarations, import only."""
+"""Convoy-specific ordinary ship lifecycle declarations, import only.
+
+Android: Level::createShip gives hull 14 the battleship explosion model 18304
+(PlayerFixedObject::setWreckedMeshId: wreck layout 0);
+PlayerFixedObject::update plays the capital death (materials 34716 and 33356,
+one capital kill, medal 39, 9999999 damage to attached actors); the KIPlayer,
+PlayerFighter and PlayerFixedObject constructors attach nothing by default;
+Standing::isEnemy and isFriend turn Terrans hostile below -70 and friendly
+above 70. Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_convoy_lifecycle(mach,arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -88,3 +101,16 @@ MAC_ALTERNATE = {'convoy_lifecycle_factory_death_model': [79935,
                                    128,
                                    '__text',
                                    'a32c7ef7f73abed32663bdf810d8affba26b4f3c3dccb168afc7abfaa939f8ed']}
+
+# Android spans inside named functions and their tables; the values are VALUES.
+ANDROID = {# Level::createShip gives hull 14 the battleship explosion model 18304.
+           'convoy_lifecycle_factory_death_model': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           'convoy_lifecycle_death_model_context': ('_ZN17PlayerFixedObject16setWreckedMeshIdEi', 0, 192, 'sha256:0eddfaaefee7aa0a7ffe17609b092f742042a0adf689940f1cea6f89c4a5f57c'),
+           # PlayerFixedObject::update: the capital death (materials 34716 and 33356, one capital kill, medal 39).
+           'convoy_lifecycle_capital_death_effects': ('_ZN17PlayerFixedObject6updateEi', 0, 2888, 'sha256:f84fa1d1be257b92fd04b8e98c2c500190c596804150929bb95ecb8d0da7a252'),
+           'convoy_lifecycle_default_attachment': ('_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', 0, 604, 'sha256:3a02b0c7ce6b25d113ff6b119a914a61a149997d03f3853b159537f02d2efee8'),
+           'convoy_lifecycle_small_ship_constructor': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 0, 1668, 'sha256:9722fa1dff717e74e4f5d93a1ee0e2af195659b26021723e8d5632f5ba9eaf91'),
+           'convoy_lifecycle_large_ship_constructor': ('_ZN17PlayerFixedObjectC2EiiP6PlayerP10AEGeometryfff', 0, 804, 'sha256:8e92f8e152d9f1a0c3d99ecc26346df1f048501ee0014047ed2c3a1d67aaec75'),
+           # Standing: Terrans (axis 0) turn hostile below -70 and friendly above 70.
+           'convoy_lifecycle_hostility': ('_ZN8Standing7isEnemyEi', 0, 118, 'sha256:e48dc557d39a1d28df8cd83c0ffd928da627c0a2e569b8c51369bd5c27b71ce0'),
+           'convoy_lifecycle_friendliness': ('_ZN8Standing8isFriendEi', 0, 120, 'sha256:3e77281a49c10603f4c6dc5ce9fa3a5eda0e86c1610935ddc7c30ffcc65d92c4')}

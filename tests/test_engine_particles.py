@@ -1,5 +1,5 @@
 """Synthetic source extents only; no original executable or artwork fixtures."""
-import copy,unittest
+import copy,struct,unittest
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"tools"))
@@ -77,3 +77,57 @@ class EngineParticleTests(unittest.TestCase):
                 elif key=='defaults':d.pop('emitter_defaults')
                 else:m.architecture='unknown'
                 self.assertFalse(reader.extract_engine_particles(m,a,d),key)
+
+DAMAGE = {'scope': 'damage_particle_sprite_presets', 'emitter_defaults': {}}
+
+
+def thumb(hex_code):
+    import capstone
+    decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+    return [(i.mnemonic, i.op_str) for i in decoder.disasm(bytes.fromhex(hex_code), 0)]
+
+
+class AndroidEngineParticleTests(unittest.TestCase):
+    def extract(self, lib, damage=DAMAGE):
+        return reader.extract_engine_particles(lib, {}, damage)
+
+    def test_android_proofs(self):
+        from unittest.mock import patch
+        from android_fixture import layout_library, verify_android_proof
+        from gof2_content.android_library import AndroidLibrary
+        from test_arrival_staging import roomy_layouts
+        with roomy_layouts():
+            verify_android_proof(self, reader, self.extract)
+            image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            data = self.extract(lib)
+            data['opening_ship']['ship_id'] = 1
+            data['preset']['size'] = 1.0
+            self.assertEqual((reader.OPENING_SHIP['ship_id'], reader.ANDROID_VALUES['opening_ship']['ship_id']), (10, 10))
+            self.assertEqual((reader.VALUES['preset']['size'], reader.ANDROID_VALUES['preset']['size']), (250.0, 250.0))
+            cases = {'other damage': dict(damage={'scope': 'x', 'emitter_defaults': {}}), 'no defaults': dict(damage={'scope': DAMAGE['scope']}),
+                     'no damage': dict(damage={}), 'none': dict(damage=None)}
+            for name, changes in cases.items():
+                self.assertEqual(self.extract(lib, **changes), {}, name)
+
+    def test_android_constants(self):
+        rows, values = reader.ANDROID, reader.ANDROID_VALUES
+        preset = values['preset']
+        lifetime, size, _, velocity = struct.unpack('<dfId', bytes.fromhex(rows['nozzle_scales'][3]))
+        self.assertEqual((lifetime, size, velocity), (preset['lifetime_ms'], preset['size'], preset['local_velocity_z']))
+        sprites = struct.unpack('<24f', bytes.fromhex(rows['nozzle_sprites'][3]))
+        families = struct.unpack('<11i', bytes.fromhex(rows['family_table'][3]))
+        # The pool holds families 9, 8, 1, 2, 3 and the default (0, 4..7); initParticleSystems picks by family.
+        by_family = {3: list(sprites[16:20]), 0: list(sprites[20:24])}
+        self.assertEqual(by_family[families[values['ship_id']]], preset['uv_rect'])
+        self.assertEqual(by_family[families[values['opening_ship']['ship_id']]], values['opening_ship']['uv_rect'])
+        vectors = struct.unpack('<4i4i4f', bytes.fromhex(rows['basic_vectors'][3]))
+        self.assertEqual(vectors[:3], (1, -1, 255))
+        self.assertEqual(vectors[4], preset['size_growth_per_second'] // 2)
+        self.assertEqual(vectors[7], preset['velocity_scatter'])
+        self.assertEqual(thumb(rows['ship_id_getter'][3])[0], ('ldr', 'r0, [r0]'))
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'engine_particle_definitions.gd', values='VALUES')

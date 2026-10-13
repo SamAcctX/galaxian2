@@ -7,6 +7,14 @@ const ENERGY_ITEM:=122
 const SOUND_ID:=30
 const FADE_MS:=2000
 const CLOAK_MAP:="resources/data/assets/main/3d/textures/high/dx5/fx/cloak_map.aei"
+# The Android library loads its own copy (BuildResourceList: data/assets/main/3d/textures/low/etc/fx/cloak_map.aei).
+const ANDROID_CLOAK_MAP:="resources/data/assets/main/3d/textures/low/etc/fx/cloak_map.aei"
+
+## The cloak mask of this content: each edition holds only its own copy.
+static func cloak_map(files: Dictionary) -> String:
+	for path in [CLOAK_MAP,ANDROID_CLOAK_MAP]:
+		if files.has(path):return path
+	return CLOAK_MAP
 
 ## Easy reuses the Normal cooldown (its own value is not recovered).
 static func resolve(bindings: RefCounted,catalogues: RefCounted,equipment_ids: Array,ship_id: int,difficulty: Variant) -> Dictionary:

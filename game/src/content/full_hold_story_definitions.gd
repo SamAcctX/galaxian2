@@ -12,6 +12,9 @@ const SPANS := {"mode0_counts":[1554602,20],"mode0_events":[1555962,8],"mode1_co
 const MAC_ALTERNATE := {"mode0_counts":[1529586,20],"mode0_events":[1530954,8],"mode1_counts":[1530242,20],"mode1_events":[1521562,16],"briefing_voice":[1535418,8],"completion_voices":[1537362,16],"next_dispatch":[872054,4],"next_mission":[861290,43],"acknowledgement_cleanup":[351794,4033],"entry_controller":[150932,435]}
 const MAC_VALUES := {"scope":"full_hold_mining_story","campaign_cursor":4,"mission_kind":154,"station_id":78,"required_cargo":25,"cursor_after_acknowledgement":5,"next_kind":11,"briefing_events":[{"speaker_id":2,"text_id":1727,"voice_event_id":188}],"completion_events":[{"speaker_id":0,"text_id":1728,"voice_event_id":431},{"speaker_id":2,"text_id":1729,"voice_event_id":432}]}
 
+# Android: the MAC_VALUES; spans inside named functions and tables (Layouts.anchored).
+const ANDROID_SPANS := {"mode0_counts":[0,20],"mode0_events":[56,8],"mode1_counts":[0,20],"mode1_events":[216,16],"briefing_voice":[200,8],"completion_voices":[2144,16],"mission_dispatch":[74,4],"mission_factory":[6556,52],"mission_parameter":[8228,14],"next_mission":[6784,30],"campaign_mission_tail":[426,14],"cargo_entry":[216,2],"cargo_check":[630,30],"acknowledgement":[972,76],"acknowledgement_advance":[3520,116],"acknowledgement_reward":[4176,40],"entry_controller":[804,110]}
+
 static func parameters(data: Variant) -> bool:
 	return _parameters(data,VALUES) or _parameters(data,MAC_VALUES)
 
@@ -43,8 +46,9 @@ static func _select(bindings: RefCounted, cursor: Variant, completion: bool) -> 
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, flight: Dictionary, first_briefing: Dictionary, first_objective: Dictionary) -> String:
 	if not data is Dictionary:return "Missing second-trip story declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data):return "Unsupported second-trip story declarations"
+	if not (arch=="x86_64" and parameters(data) or arch=="android-armv7" and _parameters(data,MAC_VALUES)):return "Unsupported second-trip story declarations"
 	if not Flight.parameters(flight) or not Briefing.parameters(first_briefing) or not Objective.parameters(first_objective):return "Second-trip story lacks its verified flight, dialogue or cargo context"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid full hold story extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Second-trip story lacks its source anchor"
 	var layouts: Array=[]

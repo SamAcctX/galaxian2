@@ -2,12 +2,29 @@
 
 The capability describes cinematic cues and the one authored actor declaration.
 It does not establish support for that actor's world or the following station.
+
+Android: the LevelScript constructor's cursor-1 block turns, freezes and
+scripts the player at the origin, hides its exhaust, stops both engines,
+fixes the camera on the player and fades in; LevelScript::process rotates the
+player, puts the escort to sleep (KIPlayer::setToSleep, mode 5), moves it
+forward until the third radio line ends, then fades out, fills the screen
+and switches to application module 5. Level::createCampaignMission case 1
+builds the hull-30 escort with its route and hidden exhaust
+(PlayerFighter::setExhaustVisible); Globals::getShipGroup gives it the
+18000 + hull exhaust mesh, AEGeometry draws the model by default.
 """
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 
 def extract_arrival_staging(mach, staging, dialogue, actors):
+    if mach.architecture == 'android-armv7':
+        try:
+            if not staging['player_motion'] or not actors['npc_initialization']: return {}
+            if dialogue['campaign_cursor'] != 1 or len(dialogue['events']) != 3: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     arch = mach.architecture
     if arch not in LAYOUTS: return {}
     try:
@@ -416,3 +433,33 @@ MAC_ALTERNATE = {'initial': ['__text',
                            -850253,
                            282,
                            '554889e5415741564155415453504989f64889fb4c636b604d85ed0f8ecd00000049c7c4ffffffff4c89ef4801ff490f42fce8dd3c22004989c74c89bb80000000b9040000004c89e848f7e14c0f41e04c89e7e8bc3c22004531e4488943704d89e566438b046e664389046f488b73704c01e6488b7b38e8d8cd1c00430fb7146e488b7b38488b4370428b342031c9e860ce1c00488b4370428b1420488b7b38488b4368428b3420e857d41c00488b4368428b34208b531c488b7b38e843d51c00488b4368428b34208b531c488b7b38e82fd41c0049ffc5443b6b607d2c4983c4044c8bbb80000000e974ffffff488d3d4f65240030c04883c4085b415c415d415e415f5de92a3c21004883c4085b415c415d415e415f5dc390']}
+
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'initial': ('_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera', 282, 220, 'sha256:f374fdc9366dfbb8dea3edfbe0832d2cabf1f5faa11244ee056673603a169ecd'),
+           # The cursor-1 update with its literal pool, and the exit after the fade out.
+           'update': ('_ZN11LevelScript7processEi', 90, 318, 'sha256:fedd423d8f69d0f9b5f6811055c0851829627c5467f85ecd10ce08e0f222b315'),
+           'exit': ('_ZN11LevelScript7processEi', 3712, 42, 'sha256:597eb8fc082cfe295ea3f4804672c6283dae9bab0ebc6ff8be05a506c4f2011c'),
+           # Cursors 0..29 dispatch: case 1 reaches the escort.
+           'actor_dispatch': ('_ZN5Level21createCampaignMissionEv', 556, 14, '1d2807f2eb80dfe810f0a22f3835'),
+           'actor': ('_ZN5Level21createCampaignMissionEv', 27814, 198, 'sha256:e356ac815a3034e1d03106cc1193f4bc2f6611d573b1c5dd8173a48669474bcd'),
+           'route_points': ('_ZN5Level21createCampaignMissionEv', 27920, 24, '000000000000000078ecffff000000000000000000000000', 'literal', 0),
+           'npc_mode': ('_ZN8KIPlayer10setToSleepEv', 0, 28, 'sha256:cc84c0937afb4bb67537f3edaabf3c0dddc9ff41c2ff7882b2060d2d3248972a'),
+           'player_freeze': ('_ZN9PlayerEgo9setFreezeEb', 0, 6, '80f824107047'),
+           'player_update_gate': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 56, 10, '99f82400002842f05d82'),
+           'scripted_player': ('_ZN9PlayerEgo21setComputerControlledEb', 0, 6, '80f8f4117047'),
+           'fade_start': ('_ZN6Layout9startFadeEbii', 0, 32, 'sha256:0a899699ef638b66fb258d183a72429a454467541f4d868518df553ae4303e0e'),
+           'fade_fraction': ('_ZN6Layout8drawFadeEv', 0, 268, 'sha256:bf125813b967e19c67fb7012e4b3ffbee1d2cfb0b5d9bbda960ebb86f038fc67'),
+           'fade_active': ('_ZN6Layout8isFadingEv', 0, 6, '90f800047047'),
+           'fade_fill': ('_ZN6Layout16enableFillScreenEb', 0, 6, '80f810147047'),
+           'player_engine_stop': ('_ZN9PlayerEgo15StopEngineSoundEv', 0, 168, 'sha256:8ae23d718102f316927fee1cb0e42ecb93fbac35ec197ee427a6ca9c06fbb5f5'),
+           'npc_engine_stop': ('_ZN8KIPlayer15StopEngineSoundEv', 0, 22, '0146486830b1d1f8f410b1f1ff3f18bf25f1b4be7047'),
+           'engine_stop': ('_ZN6Player15StopEngineSoundEv', 0, 40, 'sha256:ff8c0770a2126ae672dd8039443b1a0476f4a9b77b90950a8e0dde3ed7437a77'),
+           'actor_engine_visibility': ('_ZN13PlayerFighter17setExhaustVisibleEb', 0, 68, 'sha256:2426d18894020f756342842c77b504144571bf20e2ba79ad3b3f09f8c17270dd'),
+           'engine_draw_flag': ('_ZN11AbyssEngine9Transform10SetVisibleEb', 0, 6, '80f8ec107047'),
+           # Level::createShip passes its last flag to getShipGroup; clear, the exhaust mesh is 18000 + hull.
+           'factory_model_request': ('_ZN5Level10createShipEiiiP8Waypointbb', 1648, 34, 'sha256:9cc3a7cc8b6815475f46e97f71960ccb14f2b2112640cd11fad7fdbeae8e5824'),
+           'model_flag': ('_ZN7Globals12getShipGroupEiib', 786, 4, 'c0200a93'),
+           'engine_model': ('_ZN7Globals12getShipGroupEiib', 1008, 96, 'sha256:3c3833b31f36775299eff89f18ceb7b4213cd71cb3ae0b659c238aa48ad422b4'),
+           'model_default_draw': ('_ZN10AEGeometryC2EtPN11AbyssEngine11PaintCanvasEb', 130, 22, '0120c4e90c55c4e910bbc4e90e5b84f8480084f84900'),
+           'whole_model_visibility': ('_ZN10AEGeometry10setVisibleEb', 0, 10, '80f8481080f849107047')}

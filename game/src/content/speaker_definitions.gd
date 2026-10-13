@@ -7,7 +7,7 @@ const Fonts = preload("res://src/content/font_definitions.gd")
 static func validate(data: Variant, executable_bytes: int, architecture: String) -> String:
 	if not data is Dictionary: return "Missing speaker declarations"
 	if data.is_empty(): return ""
-	if architecture not in ["armv7", "x86_64"]: return "Unsupported speaker declaration architecture"
+	if architecture not in ["armv7", "x86_64", "android-armv7"]: return "Unsupported speaker declaration architecture"
 	if not Numbers.integer(data.get("fixed_speaker_count"), 1, 128): return "Invalid fixed speaker count"
 	var count := int(data.fixed_speaker_count)
 	if not Numbers.integer(data.get("first_name_id"), 0, 65535 - count) or not Numbers.integer(data.get("agent_speaker_start"), count + 1, 65535) or not Numbers.integer(data.get("procedural_speaker"), 0, count - 1): return "Invalid speaker declaration bounds"
@@ -26,6 +26,8 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	var provenance: Variant = data.get("provenance")
 	if not provenance is Dictionary or provenance.size() != 4: return "Missing speaker declaration provenance"
 	var mac := architecture == "x86_64"
-	for spec in [["speaker_selection", 285 if mac else 182], ["name_selection", 248 if mac else 264], ["speaker_getter", 9 if mac else 4], ["portrait_table", count * (8 if mac else 4)]]:
+	# Selection, name, getter bytes per compiler; Android's name block spans Radio::draw's return path.
+	var sizes: Array = {"x86_64": [285, 248, 9], "armv7": [182, 264, 4], "android-armv7": [162, 146, 4]}[architecture]
+	for spec in [["speaker_selection", sizes[0]], ["name_selection", sizes[1]], ["speaker_getter", sizes[2]], ["portrait_table", count * (8 if mac else 4)]]:
 		if not Fonts.extent(provenance.get(spec[0]), "offset", "bytes", [spec[1]], executable_bytes): return "Invalid speaker declaration provenance"
 	return ""

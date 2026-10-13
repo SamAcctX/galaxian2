@@ -40,7 +40,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 		var player_error := PlayerHits.validate(data.player_hit_policy,executable_bytes,architecture,data)
 		if not player_error.is_empty(): return player_error
 	var mac := architecture=="x86_64"
-	var sizes := {"head":77,"tail":120,"scale":147,"modifier":150,"defaults":16,"category_getter":9,"id_getter":8,"ship_getter":13,"damage_getter":11,"interval_getter":11,"property_getter":42,"type_getter":9,"equipment_table":120} if mac else {"head":60,"tail":100,"scale":98,"modifier":94,"defaults":10,"scale_tail":70,"constants":26,"scale_load":14,"category_getter":4,"id_getter":4,"ship_getter":6,"damage_getter":4,"interval_getter":4,"property_getter":48,"type_getter":4,"equipment_table":30} if architecture=="armv7" else {}
+	var sizes := {"head":77,"tail":120,"scale":147,"modifier":150,"defaults":16,"category_getter":9,"id_getter":8,"ship_getter":13,"damage_getter":11,"interval_getter":11,"property_getter":42,"type_getter":9,"equipment_table":120} if mac else {"head":60,"tail":100,"scale":98,"modifier":94,"defaults":10,"scale_tail":70,"constants":26,"scale_load":14,"category_getter":4,"id_getter":4,"ship_getter":6,"damage_getter":4,"interval_getter":4,"property_getter":48,"type_getter":4,"equipment_table":30} if architecture=="armv7" else {"head":52,"tail":80,"scale":124,"modifier":92,"defaults":10,"constants":22,"scale_load":14,"category_getter":4,"id_getter":4,"ship_getter":6,"damage_getter":4,"interval_getter":4,"property_getter":54,"type_getter":4,"equipment_table":30} if architecture=="android-armv7" else {}
 	var provenance: Variant = data.get("provenance")
 	var sources: Variant = data.get("value_sources")
 	var source_keys := ["percent_divisor", "missing_multiplier", "low_damage_interval_scale"]
@@ -60,6 +60,9 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 	if int(provenance.scale.offset)!=int(provenance.head.offset)+int(provenance.head.bytes): return "Disconnected weapon scaling context"
 	if mac:
 		if int(provenance.tail.offset)!=int(provenance.scale.offset)+147: return "Disconnected weapon factory context"
+	elif architecture=="android-armv7":
+		# Level::createPlayer: the low scale loads 92 bytes before the head; head, scale and tail follow each other.
+		if int(provenance.tail.offset)!=int(provenance.scale.offset)+124 or int(provenance.scale_load.offset)+92!=int(provenance.head.offset): return "Disconnected weapon factory context"
 	else:
 		if int(provenance.scale_tail.offset)!=int(provenance.scale.offset)+110 or int(provenance.tail.offset)!=int(provenance.scale_tail.offset)+70 or int(provenance.scale_load.offset)+76!=int(provenance.head.offset): return "Disconnected weapon factory context"
 	var value_spans := []
@@ -93,7 +96,8 @@ static func capacity(data: Variant, executable_bytes: int, architecture: String,
 	if not capacity_values(data): return "Invalid projectile capacity"
 	if data.is_empty(): return ""
 	var mac := architecture=="x86_64"
-	var sizes := {"factory_entry":4,"range":40,"constructor_call":70,"type_selector":22,"kind_zero":4,"factory_call":120,"item_classification":65} if mac else {"factory_entry":4,"range":22,"constructor_call":72,"single":14,"type_selector":4,"kind_zero":2,"factory_call":100,"item_classification":56} if architecture=="armv7" else {}
+	var android := architecture=="android-armv7"
+	var sizes := {"factory_entry":4,"range":40,"constructor_call":70,"type_selector":22,"kind_zero":4,"factory_call":120,"item_classification":65} if mac else {"factory_entry":4,"range":22,"constructor_call":72,"single":14,"type_selector":4,"kind_zero":2,"factory_call":100,"item_classification":56} if architecture=="armv7" else {"factory_entry":6,"type_selector":14,"kind_zero":2,"range":66,"constructor_call":54,"factory_call":80,"item_classification":48} if android else {}
 	var p: Dictionary = data.provenance
 	if sizes.is_empty() or p.size()!=sizes.size(): return "Invalid projectile capacity provenance"
 	var spans := []
@@ -105,8 +109,11 @@ static func capacity(data: Variant, executable_bytes: int, architecture: String,
 			if span.x<previous.y and span.y>previous.x: return "Overlapping projectile capacity contexts"
 		spans.append(span)
 	if p.factory_call!=weapon.provenance.tail or p.item_classification!=weapon.get("launch_modes",{}).get("provenance",{}).get("classification"): return "Projectile capacity uses another weapon factory"
-	if int(p.type_selector.offset)!=int(p.factory_entry.offset)+(57 if mac else 112): return "Disconnected projectile type selector"
-	if mac:
+	if android:
+		# Level::createGun by name: the case table follows the dispatch.
+		if int(p.kind_zero.offset)!=int(p.type_selector.offset)+14: return "Disconnected projectile type selector"
+	elif int(p.type_selector.offset)!=int(p.factory_entry.offset)+(57 if mac else 112): return "Disconnected projectile type selector"
+	elif mac:
 		if int(p.constructor_call.offset)!=int(p.range.offset)+253: return "Disconnected projectile capacity call"
 	elif int(p.constructor_call.offset)!=int(p.single.offset)+188 or int(p.kind_zero.offset)!=int(p.type_selector.offset)+4: return "Disconnected projectile capacity call"
 	if int(p.range.offset)<=int(p.factory_entry.offset) or int(p.range.offset)>=int(p.factory_entry.offset)+1024 or int(p.constructor_call.offset)<=int(p.factory_entry.offset) or int(p.constructor_call.offset)>=int(p.factory_entry.offset)+2048: return "Projectile capacity lies outside its factory context"
@@ -115,7 +122,7 @@ static func capacity(data: Variant, executable_bytes: int, architecture: String,
 static func launch_modes(data: Variant, executable_bytes: int, architecture: String, weapon_provenance: Dictionary) -> String:
 	if not launch_values(data): return "Invalid weapon launch modes"
 	if data.is_empty(): return ""
-	var sizes := {"classification":65,"selector":14,"selected_path":9,"property_getter":42} if architecture=="x86_64" else {"classification":56,"selector":14,"selected_path":4,"property_getter":48} if architecture=="armv7" else {}
+	var sizes := {"classification":65,"selector":14,"selected_path":9,"property_getter":42} if architecture=="x86_64" else {"classification":56,"selector":14,"selected_path":4,"property_getter":48} if architecture=="armv7" else {"classification":48,"selector":10,"selected_path":8,"property_getter":54} if architecture=="android-armv7" else {}
 	var provenance: Variant = data.get("provenance")
 	if sizes.is_empty() or not provenance is Dictionary or provenance.size()!=sizes.size(): return "Invalid weapon launch provenance"
 	var spans := []
@@ -127,6 +134,8 @@ static func launch_modes(data: Variant, executable_bytes: int, architecture: Str
 			if span.x<previous.y and span.y>previous.x: return "Overlapping weapon launch contexts"
 		spans.append(span)
 	if provenance.property_getter!=weapon_provenance.get("property_getter"): return "Weapon launch modes use another item catalogue"
+	# Android Gun::shootAt: the alternate path falls through the flag test.
+	if architecture=="android-armv7" and int(provenance.selected_path.offset)!=int(provenance.selector.offset)+10: return "Disconnected weapon launch path"
 	return ""
 
 static func launch_values(data: Variant) -> bool:

@@ -1,9 +1,28 @@
-"""Bounded Mac first-mining-flight declarations; never execute original code."""
+"""Bounded Mac first-mining-flight declarations; never execute original code.
+
+Android: Level::init builds the world-3 player and, without a stream-out
+position, places it at (10, 10, 10000). Level::createSpace reseeds
+(AERandom::reset), adds the 16994 wormhole (PlayerWormHole) at nextInt(80000)
+- 40000, nextInt(40000) - 20000, nextInt(40000) + 40000 before the game is
+won, and picks a yaw of +-1600 that Level::createPlayer turns into radians
+(x 2pi / 65536, AEGeometry::setRotation, AEMath::MatrixSetRotation). The
+LevelScript constructor holds the scene, puts the camera at random offsets
+500 + nextInt(2000) with z 9000 and random signs around the player, and
+LevelScript::process releases control after 7001 ms from cursor 2 on.
+MGame::OnUpdate calls MGame::dialogueEvent after 5001 ms, which needs that
+release. Level::createCampaignMission adds no actors at cursor 2.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .scenery_population import import_symbol
 
 def extract_first_flight(mach, arrival, departure, environment, world):
+    if mach.architecture == 'android-armv7':
+        try:
+            if departure['scope'] != 'first_station_departure' or not environment or not world: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64':return {}
     try:
         if departure['scope']!='first_station_departure' or not environment or not world:return {}
@@ -367,3 +386,34 @@ MAC_ALTERNATE = {'world_player_stage': ['__text',
                   -41762,
                   40,
                   '418986b801000041c786c801000000000000498b86800100004885c07403448b384589bec8010000']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'world_player_stage': ('_ZN5Level4initEv', 644, 36, 'sha256:867fdd1bfb6a39ef66cd19df5814c0cc9001b9fe1a054f5717cdb79bdb6bb5f0'),
+           'ordinary_position': ('_ZN5Level4initEv', 780, 58, 'sha256:9908bd3a9ff3beeb3ad570edebf42e738a3dd27c343e2058af8096eaf195579a'),
+           'environment_reseed_gate': ('_ZN5Level11createSpaceEv', 2536, 32, 'sha256:0a4660730923d4e528b10516bfdb6fe662ff63a8800a2f51ac14b9a0a1bc396e'),
+           # Before Status::gameWon: the 16994 wormhole at its random position.
+           'early_wormhole': ('_ZN5Level11createSpaceEv', 2704, 204, 'sha256:ee15f09a077041bb0cd7b483d4ab2431f5fac1436a9309da42dc7ef8a15f27d2'),
+           'yaw_selection': ('_ZN5Level11createSpaceEv', 2908, 56, 'sha256:fcbdfc5ea14ef861b48b2b646caa80b079f21d6a62d569ff28bf59ff9b39a8c8'),
+           'time_reseed': ('_ZN11AbyssEngine8AERandom5resetEv', 0, 36, 'sha256:48ebaf1bd886ac03af6b109e67b1a8da31eb13841bfed2bd2131cae029d88244'),
+           'wormhole_constructor': ('_ZN14PlayerWormHoleC2EiP10AEGeometryfffb', 0, 156, 'sha256:3927c922ca5de71c81cd38545f9b628e207c6d288b51542aeb45894154fe41df'),
+           'yaw_application': ('_ZN5Level12createPlayerEv', 266, 56, 'sha256:85f6d36de9a4d42bc24919aad80e80fc312e48a75e939b0650aa36d7fea5be6b'),
+           'yaw_constants': ('_ZN5Level12createPlayerEv', 1184, 8, '00008037db0fc940'),
+           'yaw_model_mode': ('_ZN10AEGeometryC2EtPN11AbyssEngine11PaintCanvasEb', 152, 10, '04f15400e564c4e91c55'),
+           'yaw_model_wrapper': ('_ZN10AEGeometry11setRotationERKN11AbyssEngine6AEMath6VectorE', 0, 12, 'd1e900c28b68614627f128be'),
+           'yaw_model_setter': ('_ZN10AEGeometry11setRotationEfff', 0, 120, 'sha256:b7fb10869aa94130a20e278aa5d90f44abd8ddcdb1df8a3fdd63faa4ff8ab8f0'),
+           'yaw_matrix': ('_ZN11AbyssEngine6AEMath17MatrixSetRotationERNS0_6MatrixEfffNS0_13RotationOrderE', 0, 758, 'sha256:414d089a6cf7b4ea1a64123d57d5502ab40923005fbda45f104ecaec0b744a06'),
+           # Ordinary cursors: camera offsets 500 + nextInt(2000) (stream-out: 500 + nextInt(500)) with random signs.
+           'camera_random': ('_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera', 6302, 202, 'sha256:e5c58a43c733aa8de7a04d87d6a921361370bf5e74a95c467a15e63f0e6dd7e7'),
+           'camera_constants': ('_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera', 6892, 8, '00c0da4500a00c46'),
+           'camera_pose': ('_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera', 7796, 92, 'sha256:e37c8c6069fedc994457e0ecb5829b4bc003a19b3c0af2fca06e81620463609a'),
+           'controller_flags': ('_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera', 128, 44, 'sha256:65e1d278d57faf22eff7e9458bbbe4959551bbbb8c6827f728a555569ae4ef31'),
+           # From cursor 2 on, control returns after 7001 ms (startSequenceOver).
+           'controller_release': ('_ZN11LevelScript7processEi', 804, 110, 'sha256:439279abfdf0fb69e4738726f3a2be4c418a0ac18dd52d0b83432e35525b395a'),
+           'briefing_time_gate': ('_ZN5MGame8OnUpdateEv', 10072, 68, 'sha256:f59ab7bdc1b81ef90c370633ae334fdb13f3a9aa680a7dfc565f89a546b9ecb9'),
+           'briefing_controller_gate': ('_ZN5MGame13dialogueEventEv', 8, 12, 'a06fc0f6fcea012840f09b80'),
+           'briefing_release_flag': ('_ZN11LevelScript17startSequenceOverEv', 0, 6, '90f821007047'),
+           # Cursors 0..29 dispatch; cursor 2 shares the actor-free exit.
+           'story_actor_dispatch': ('_ZN5Level21createCampaignMissionEv', 556, 16, '1d2807f2eb80dfe810f0a22f3835e938'),
+           'empty_story': ('_ZN5Level21createCampaignMissionEv', 29704, 26, 'sha256:51a12ccd37a83d3cc0390e228195c8a57dbd163b8258503299f415cf0179dcea'),
+           'camera_constructor_arguments': ('_ZN5MGame5resetEv', 242, 38, 'sha256:76603e96c1e7eb1852899ffd7c2861222455ceaee470ed96bcd0fad08e7bfc52'),
+           'camera_initial_view': ('_ZN18TargetFollowCameraC2EjP10AEGeometryN11AbyssEngine6AEMath6VectorES4_', 0, 568, 'sha256:7f29be32619635b0c1e41a6d12d377383f7565b1d77fb0aff5722f7285159c11')}

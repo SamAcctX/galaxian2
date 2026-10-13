@@ -2,6 +2,9 @@
 
 Recognizes a finite compiler layout and its constant switch table. Emits only
 Unicode pairs and provenance. No source instruction is executed or translated.
+
+Android: AbyssEngine::String::getWCharFromUtf8 rewrites each decoded character
+in place; the same aliases sit in two tbb case tables and equality tests.
 """
 import struct
 from .opening_loadout import template
@@ -103,6 +106,8 @@ MAC_ALTERNATE = '''
 MAC_ALTERNATE_CASES = [case - 59 for case in MAC_CASES]
 
 def extract_text_aliases(mach):
+    if mach.architecture == 'android-armv7':
+        return android_aliases(mach)
     mac = mach.architecture == 'x86_64'
     if not mac and mach.architecture != 'armv7': return {}
     section = mach.text
@@ -137,3 +142,104 @@ def extract_text_aliases(mach):
     return {'aliases': sorted(aliases), 'provenance': {
         'declaration': {'offset': mach.slice_offset + section['offset'] + match.start(), 'bytes': len(match[0])},
         'switch_table': table_extent}}
+
+
+# android_blocks syntax: one instruction per line as Capstone prints it.
+ANDROID = """
+movw r1, #0x435
+mov r2, r0
+loop: ldrh r3, [r2]
+cmp.w r3, #0x430
+bge @high
+cmp.w r3, #0x410
+blt @low
+sub.w r5, r3, #0x410
+cmp r5, #0x15
+bhi @merge
+tbb [pc, r5] {table:22}
+movs r3, #{value0}
+b @merge
+high: subw r5, r3, #0x43e
+cmp r5, #7
+bhi @above
+tbb [pc, r5] {high_table:8}
+movs r3, #{value1}
+b @merge
+low: cmp r3, #0x60
+beq @grave
+cmp r3, #0xaa
+beq @lower_a
+cmp r3, #0xba
+it eq
+moveq r3, #{value2}
+b @merge
+above: cmp.w r3, #0x430
+beq @lower_a
+cmp r3, r1
+it eq
+moveq r3, #{value3}
+b @merge
+lower_a: movs r3, #{value4}
+b @merge
+movs r3, #{value5}
+b @merge
+movs r3, #{value6}
+b @merge
+movs r3, #{value7}
+b @merge
+movs r3, #{value8}
+b @merge
+movs r3, #{value9}
+b @merge
+movs r3, #{value10}
+b @merge
+movs r3, #{value11}
+b @merge
+movs r3, #{value12}
+b @merge
+movs r3, #{value13}
+b @merge
+movs r3, #{value14}
+b @merge
+movs r3, #{value15}
+b @merge
+movs r3, #{value16}
+b @merge
+movs r3, #{value17}
+b @merge
+grave: movs r3, #{value18}
+merge: strh r3, [r2], #2
+subs r6, #1
+bne.w @loop
+"""
+
+
+def android_aliases(lib):
+    from .android_blocks import find, offset
+    block = find(lib, '_ZN11AbyssEngine6String16getWCharFromUtf8EPci', ANDROID)
+    if block is None:
+        return {}
+    values = block['values']
+    # Each source line maps a character, never a control or whitespace code.
+    if min(values.values()) < 33:
+        return {}
+    leaves = {block['at'][name]: value for name, value in values.items()}
+    merge = block['labels']['merge']
+    aliases = []
+    # tbb branches to the table start plus twice the case byte.
+    for first, name in ((0x410, 'table'), (0x43e, 'high_table')):
+        start, cases = block['tables'][name]
+        for index, case in enumerate(cases):
+            target = start + 2 * case
+            if target != merge and target not in leaves:
+                return {}
+            if target != merge:
+                aliases.append([first + index, leaves[target]])
+    for source, name in [(0x60, 'value18'), (0xaa, 'value4'), (0xba, 'value2'), (0x430, 'value4'), (0x435, 'value3')]:
+        aliases.append([source, values[name]])
+    if len(aliases) != 20:
+        return {}
+    start, cases = block['tables']['table']
+    return {'aliases': sorted(aliases), 'provenance': {
+        'declaration': {'offset': offset(lib, block['start']), 'bytes': block['end'] - block['start']},
+        'switch_table': {'offset': offset(lib, start), 'bytes': len(cases)}}}

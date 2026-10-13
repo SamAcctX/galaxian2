@@ -36,7 +36,9 @@ func run() -> void:
 	if not field.configure(bindings,cat,-1,true,false,25):check(false,field.error);quit(1);return
 	var generated:=field.generate(Vector3(-30000,0,30000),world.random_state)
 	if generated.is_empty():check(false,field.error);quit(1);return
-	check(generated.system_id==-1 and generated.objects.size()>=80 and generated.objects.size()<160,"Void asteroid field used an ordinary system or population")
+	# Level::createAsteroids: 80+random(80) on the Mac, 40+random(40) on Android.
+	var base:=int(bindings.scenery_population.count_base);var bound:=int(bindings.scenery_population.count_bound)
+	check(generated.system_id==-1 and base==(40 if bindings.source_architecture=="android-armv7" else 80) and generated.objects.size()>=base and generated.objects.size()<base+bound,"Void asteroid field used an ordinary system or population")
 	check(not Field.new().configure(bindings,cat,-1,false,false,25) and not Field.new().configure(bindings,cat,-1,true,false,24),"Special-location permission escaped its source-selected Void world")
 	verify_population(bindings,cat,world,generated.random_state,25)
 	verify_population(bindings,cat,world,generated.random_state,26)

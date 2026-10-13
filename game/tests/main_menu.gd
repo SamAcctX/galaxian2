@@ -41,7 +41,9 @@ func run() -> void:
 	var expected_nebula:=17810 if scene.station_id==int(bindings.first_flight.station_id) else 17800+int(catalogues.tables.systems[scene.system_id].sky_index)
 	# Compare the scene against its independently decoded system catalogue row.
 	check(sky_rows[0].mesh_id==expected_star and sky_rows[0].texture_id==(10088 if scene.station_id==int(bindings.first_flight.station_id) else 10086+int(scene.system_id)%3) and sky_rows[1].mesh_id==expected_nebula and sky_rows[1].texture_id==expected_nebula-7735,"The menu sky selected another source mesh or texture")
-	check(scene.scenery_count>=80 and scene.scenery_count<=159 and panel._background.scenery.objects.size()==scene.scenery_count,"The menu did not render its source-count scenery field")
+	# Station fields hold 80 + random(80) asteroids on the Mac, 40 + random(40) on Android.
+	var fewest:=40 if library.manifest.profile.edition=="android-hd" else 80
+	check(scene.scenery_count>=fewest and scene.scenery_count<fewest*2 and panel._background.scenery.objects.size()==scene.scenery_count,"The menu did not render its source-count scenery field")
 	var center: Vector3=scene.scenery_center
 	check(center==Vector3(-30000,0,30000) if scene.station_id==int(bindings.first_flight.station_id) else (center.x>=-50000 and center.x<=49999 and center.y>=-50000 and center.y<=49999 and center.z>=20000 and center.z<=119999),"The menu scenery center left its source placement bounds")
 	var model_ids: Array=scene.station_models

@@ -13,6 +13,9 @@ const SPANS := {"wrapper_default":[475185,6],"captured_up_draw":[479454,55],"cap
 
 const MAC_ALTERNATE := {"wrapper_default":[475711,6],"captured_up_draw":[479980,55],"captured_up_launch":[-186903,59],"matrix_up":[1234014,15],"player_flag":[-188304,14],"impact_0":[1547906,4],"impact_19":[1547982,4],"impact_22":[1547994,4],"impact_25":[1548006,4],"projectile_0":[1551522,4],"projectile_22":[1551610,4]}
 
+# Android: the VALUES; spans inside named functions and tables (Layouts.anchored).
+const ANDROID_SPANS := {"wrapper_default":[0,604],"captured_up_draw":[390,52],"captured_up_launch":[1362,36],"matrix_up":[0,14],"player_flag":[0,6],"player_flag_setter":[0,6],"impact_setter":[0,280],"impact_models":[0,104],"player_weapons":[0,2100],"projectile_models":[0,92],"npc_weapons":[0,3320]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -22,8 +25,9 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, weapons: Dictionary, staging: Dictionary) -> String:
 	if not data is Dictionary:return "Missing training weapon visuals"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data):return "Unsupported training weapon visuals"
+	if not (arch=="x86_64" or arch=="android-armv7") or not parameters(data):return "Unsupported training weapon visuals"
 	if not Weapons.parameters(weapons) or not Projectiles.parameters(staging.get("projectile_visuals")) or not Impacts.parameters(staging.get("projectile_impacts")):return "Training visuals lack shared weapon and animation declarations"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid combat training visual extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Training visuals lack their source anchor"
 	var layouts: Array=[SPANS,MAC_ALTERNATE]

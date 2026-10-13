@@ -1,8 +1,20 @@
-"""Source-bound system routes and pending destination guidance."""
+"""Source-bound system routes and pending destination guidance.
+
+Android: SolarSystem's warp-gate and station helpers (getWarpGateIndex,
+getWarpGateEnumIndex, getStationEnumIndex, currentOrbitHasWarpGate,
+stationIsInSystem), SystemPathFinder (getSystemPath over visible routes,
+search, constructPath, ArrayRemove<Node*>),
+LevelScript::setAutoPilotToProgrammedStation and Status::departStation.
+Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_free_navigation(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -69,3 +81,19 @@ MAC_ALTERNATE = {'free_navigation_gate_helpers': [735640,
                                      661,
                                      '__text',
                                      'c3727ce85e04d68c724295933ac5cc3716f4cdcf350e18558bfd59ee11ea006c']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# The gate station (field 6) and the system's station list.
+           'free_navigation_gate_index': ('_ZN11SolarSystem16getWarpGateIndexEv', 0, 4, 'c06a7047'),
+           'free_navigation_gate_enum_index': ('_ZN11SolarSystem20getWarpGateEnumIndexEv', 0, 40, 'sha256:aaeda8b331975bf59d1997230ad7275e3315585a5965c3f043d27cb215aa1a20'),
+           'free_navigation_station_enum_index': ('_ZN11SolarSystem19getStationEnumIndexEi', 0, 38, 'sha256:16db2a5e4f8a3356b84b45ee148cedc1b3f3210f896ca577e7e7a39b354c4002'),
+           'free_navigation_orbit_gate': ('_ZN11SolarSystem23currentOrbitHasWarpGateEv', 0, 40, 'sha256:115b6eccb884e0f76a1f66c5995210327432cdac60a9b93462060736c1ea095f'),
+           'free_navigation_station_in_system': ('_ZN11SolarSystem17stationIsInSystemEP7Station', 0, 48, 'sha256:fe79ebf7ec1f045662b7026298ee5bc5df15a6d62e2e26ad06f0088bc9a39e11'),
+           # Breadth-first search over visible neighbouring systems in catalogue order.
+           'free_navigation_route_graph': ('_ZN16SystemPathFinder13getSystemPathEP5ArrayIP11SolarSystemEii', 0, 400, 'sha256:5b1c3dc3e2892155ddd0a6bbe042f2fc30cd57588ca5330528840d97db8a1239'),
+           'free_navigation_route_search': ('_ZN16SystemPathFinder6searchEP4NodeS1_', 0, 340, 'sha256:04b5a7165e944dcb82303b204b3708d881532f63b18cca83b3f6fa9f4bf9ff6e'),
+           'free_navigation_route_predecessors': ('_ZN16SystemPathFinder13constructPathEP4Node', 0, 202, 'sha256:4778e3f5b91e9c5827317c5fe6abbd9a5635a044bf6b3c94640415116ce692eb'),
+           'free_navigation_queue_removal': ('_Z11ArrayRemoveIP4NodeEvT_R5ArrayIS2_E', 0, 66, 'sha256:108de8e2aef7bd3b3133eb5ce5019703c9a5d6bfba44c05cc193c70ea772ed2c'),
+           # The course clears at the programmed station, else targets its planet or the gate (landmark 1).
+           'free_navigation_course': ('_ZN11LevelScript31setAutoPilotToProgrammedStationEv', 0, 292, 'sha256:87182c0a7e038fa7096dcc6cdb15580573a7901f0e85b38d12b17e0a63bec4e9'),
+           'free_navigation_story_selection': ('_ZN6Status13departStationEP7Station', 0, 1072, 'sha256:b7432b338855a0a259aa2b3d0d678bb305ea5293e9903e68114efafe3b6170d6')}

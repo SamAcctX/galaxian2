@@ -2,10 +2,17 @@
 
 The declaration describes changes only. It does not invent initial world/save
 counter values, achievement status, mission completion, cargo or rewards.
+
+Android: Player::Player clears the non-player kill flag and Player::damage,
+past its vulnerable/active/alive checks, sets it on a lethal non-player hit.
+When a dead PlayerFighter (PlayerFighter::update, mode not 3 or 4) is hostile
+and of kind 8, a player kill credits Status::incPirateKills, and
+Level::enemyDied counts the hostile down and the death up, then either the
+other kills or Status::incKills and the player kills.
 """
 import copy
 from .opening_npc_guidance import LAYOUTS as GUIDANCE
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 VALUES = {
     'actor_kind':8, 'initial_nonplayer_kill':False,
@@ -18,6 +25,17 @@ VALUES = {
 
 
 def extract_npc_death_accounting(mach, actors, weapons):
+    if mach.architecture == 'android-armv7':
+        try:
+            npc = actors['npc_initialization']
+            if not all(npc[key] for key in ('destruction', 'hostility', 'primary_weapon', 'guidance')) or not weapons['ordinary_hit_policy']:
+                return {}
+            if [row['actor_kind'] for row in actors['actors']] != [8, 8, 8]:
+                return {}
+        except (KeyError, TypeError):
+            return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     arch=mach.architecture
     if arch not in LAYOUTS:return {}
     try:
@@ -89,3 +107,15 @@ MAC_ALTERNATE = {'initial_attribution': [-75853, 4, 'c6434800'],
  'other_counter': [-503777, 4, '41ff4624'],
  'player_counter': [265568, 26, '554889e5ff8750020000488d052f831700488b385de9d873e7ff'],
  'pirate_counter': [265618, 26, '554889e5ff8768020000488d05fd821700488b385de9ba73e7ff']}
+
+ANDROID = {'initial_attribution': ('_ZN6PlayerC2Eiiiii', 396, 22, '00200121c4f8d00001ad84f87010c4f80c1184f84400'),
+           'hit_argument': ('_ZN6Player6damageEibi', 0, 54, 'sha256:100b9b5dd2f0abe537e667cd289e89534e77ea272a122027806257bb252be8b2'),
+           'lethal_attribution': ('_ZN6Player6damageEibi', 1038, 20, 'a16f00295cdc0020012ea0670bd1012084f84400'),
+           'death_guard': ('_ZN13PlayerFighter6updateEi', 3776, 20, 'bbf1000f00f3f581d4f8840003380228c0f0ef81'),
+           'hostile_kind': ('_ZN13PlayerFighter6updateEi', 4082, 22, '606890f85c10cdf8c88089b1616a09291fd008294ed1'),
+           'pirate_credit': ('_ZN13PlayerFighter6updateEi', 4104, 26, 'sha256:cd370d82cb5a20467de7cac7eaa8b3414aa7bfe5fa3fa045152730ebd3a79c9f'),
+           'world_call': ('_ZN13PlayerFighter6updateEi', 4426, 22, '2546564655f8500f55f84c2ca96d92f844207cf742e9'),
+           # Hostiles down, deaths up; other kills or Status::incKills and player kills.
+           'world_counters': ('_ZN5Level9enemyDiedEib', 10, 56, 'sha256:759f0bc8eb8a762a05ee8d9a55f7affcc582b7d661d2b48945c1c5c553758d36'),
+           'player_counter': ('_ZN6Status8incKillsEv', 0, 28, 'sha256:ecd8e4544f471280dd820cd99208de36143c42a5a4042f01eb4a2904af54a1c8'),
+           'pirate_counter': ('_ZN6Status14incPirateKillsEv', 0, 28, 'sha256:a47c034d963dcb979f707a0321df4a7e2ad628a4a0a64e422c921587fe294da3')}

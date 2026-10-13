@@ -72,3 +72,38 @@ class WeaponCollisionBounds(unittest.TestCase):
                 p,n=fields['call_24'];raw[256+at+p:256+at+p+n]=branch(m.text['address']+at+p,m.text['address']+8200)
             m.data=bytes(raw)
             self.assertFalse(reader.extract_weapon_collision_bounds(m,w),bad)
+
+
+@unittest.skipUnless(__import__('importlib').util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidCollisionBounds(unittest.TestCase):
+    def test_cleared_flag_gives_target_bounds(self):
+        from test_weapon_parameters import android_guns, android_weapon_chain
+        lib, at, weapon = android_guns()
+        weapon = android_weapon_chain(lib, weapon)
+        result = weapon['collision_bounds']
+        self.assertEqual(result['mode'], 'target')
+        p = result['provenance']
+        self.assertEqual(p['constructor_call'], weapon['projectile_capacity']['provenance']['constructor_call'])
+        self.assertEqual({k: (p[k]['offset'] - at[f], p[k]['bytes']) for k, f in (('constructor_entry', 'constructor'), ('default_value', 'constructor'),
+                                                                               ('default', 'constructor'), ('selector', 'collision'))},
+                         {'constructor_entry': (0, 4), 'default_value': (8, 4), 'default': (16, 4), 'selector': (172, 20)})
+
+    def test_each_broken_rule_is_unsupported(self):
+        from test_weapon_parameters import android_guns, android_weapon_chain
+        cases = {'other flag': dict(edits=[('constructor', 'strb.w sl, [r4, #0x6c]', 'strb.w sl, [r4, #0x68]')]),
+                 'set flag': dict(edits=[('constructor', 'mov.w sl, #0', 'mov.w sl, #1')]),
+                 'zero lost': dict(edits=[('constructor', 'str.w sl, [r4, #4]', 'mov sl, r1')]),
+                 'never zeroed': dict(edits=[('constructor', 'mov.w sl, #0', 'nop')]),
+                 'two stores': dict(edits=[('constructor', 'str.w sl, [r4, #4]', 'strb.w sl, [r4, #0x6c]')]),
+                 'constructor this lost': dict(edits=[('constructor', 'mov r4, r0', 'mov r4, r1')]),
+                 'collision this lost': dict(edits=[('collision', 'mov fp, r0', 'mov fp, r1')]),
+                 'own bounds': dict(edits=[('collision', 'it ne\naddne.w r0, fp, #0x104', 'it eq\naddeq.w r0, fp, #0x104')])}
+        lib, _, weapon = android_guns()
+        weapon = android_weapon_chain(lib, weapon)
+        # The parents stay valid: only the bounds rules break.
+        for name, options in cases.items():
+            with self.subTest(name):
+                broken, _, _ = android_guns(**options)
+                self.assertEqual(reader.extract_weapon_collision_bounds(broken, weapon), {})
+        for key in ('projectile_capacity', 'ordinary_hit_policy'):
+            self.assertEqual(reader.extract_weapon_collision_bounds(lib, {**weapon, key: {}}), {}, key)

@@ -36,3 +36,23 @@ class ContractFlightResultsTests(unittest.TestCase):
         mach, arrival, _ = declaration_fixture(reader.LAYOUTS)
         mach.architecture = 'armv7'
         self.assertEqual(reader.extract_contract_flight_results(mach, arrival), ({}, {}))
+
+
+class ContractFlightResultsAndroidTests(unittest.TestCase):
+    def test_android_proofs(self):
+        from gof2_content import contract_flight_results as reader
+        import android_fixture
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        from test_mido_travel import roomy
+        arrival = {'scope': 'rescue_choreography', 'provenance': {'actor': {'offset': 5, 'bytes': 24, 'anchor': 1}}}
+        with patch.object(android_fixture, 'library', roomy(android_fixture.library)):
+            android_fixture.verify_android_proof(self, reader, lambda lib: reader.extract_contract_flight_results(lib, arrival), layout='ANDROID', values='VALUES')
+            image, layout, _ = android_fixture.layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            self.assertFalse(reader.extract_contract_flight_results(AndroidLibrary(image), {})[0])
+
+    def test_android_native_declarations(self):
+        from gof2_content import contract_flight_results as reader
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'contract_flight_result_definitions.gd', values='VALUES', layout='ANDROID')

@@ -1,8 +1,24 @@
-"""Source-bound Alioth return and acknowledged travel instruction."""
+"""Source-bound Alioth return and acknowledged travel instruction.
+
+Android: Status::nextCampaignMission case 16 creates the return mission
+(Mission(11, 0, 98)) and case 17 makes the ship Terran (Ship::setRace(0))
+before the Suttnar mission (Mission(156, 0, 56)); Status::missionCompleted
+completes kind 11 at the station, ModStation::OnTouchEnd acknowledges it;
+DialogueWindow's tables and Globals::getDialogueSoundId hold the seventeen
+lines. MGame::dockEvent allows travel only without a mission or with kinds 11,
+0, 189, 171 and 172 (Mission::isEmpty); PlayerEgo::update,
+setComputerControlled, LevelScript::resetCamera and TargetFollowCamera
+(setLookAtCam, its constructor, update) keep the flight and camera policy.
+Values equal the Mac 1.0.7 ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_alioth_return(mach,arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(MAC_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -231,3 +247,28 @@ MAC_VALUES = {'scope': 'alioth_attack_return',
                    'retain_mining': True,
                    'inherit_camera_target_up': True,
                    'travel_mission_kinds': [-1, 11, 0, 189, 171, 172]}}
+
+# Android spans inside named functions and their tables; the values are MAC_VALUES.
+ANDROID = {# Status::nextCampaignMission: cursor 16 -> 17 Mission(11, 0, 98); 17 -> 18 makes the ship Terran (Ship::setRace(0)) and Mission(156, 0, 56).
+           'alioth_return_dispatch': ('_ZN6Status19nextCampaignMissionEb', 58, 10, 'a12800f21b82dfe810f0'),
+           'alioth_return_cases': ('_ZN6Status19nextCampaignMissionEb', 100, 4, '7301410d'),
+           'alioth_return_mission': ('_ZN6Status19nextCampaignMissionEb', 810, 28, 'sha256:916459d7cf9f0ba23684e0ff520f3cd128f4690cedcc30a4ecb4c08c2974a4e8'),
+           'alioth_return_next_mission': ('_ZN6Status19nextCampaignMissionEb', 6854, 40, 'sha256:15ed59db11c0b0a88e2e9c2c65522f7a9757e2a361612ed3be76991ee7e6b358'),
+           'alioth_return_affiliation_setter': ('_ZN4Ship7setRaceEi', 0, 4, '41667047'),
+           # Cursor 17: seventeen station lines (the last unvoiced) and their voices.
+           'alioth_return_dialogue_count': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 4, '22000000', 'literal', 68),
+           'alioth_return_dialogue': ('_ZN14DialogueWindow11loadContentEv', 208, 136, 'sha256:c7e9c3713a9f59e569479707f54ce0b2b51a824c29602b1662313c75c678fc77', 'literal', 880),
+           'alioth_return_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0),
+           # ModStation::OnTouchEnd acknowledges and retires the previous mission without reward, keeping the cargo.
+           'alioth_return_station_ack': ('_ZN10ModStation10OnTouchEndEiiPv', 0, 6536, 'sha256:5b29b2bf44b1e0a442eb14b5646a1aad12932fedee58112b028e31589316b50e'),
+           # MGame::dockEvent: travel needs no mission or kinds 11, 0, 189, 171, 172 (else notice 21).
+           'alioth_return_travel_permission': ('_ZN5MGame9dockEventEii', 0, 1500, 'sha256:c509b37791ee035ac28c716b3765e52ba5705d02fa07f400333fcb885a2b9ee0'),
+           'alioth_return_empty_mission_predicate': ('_ZN7Mission7isEmptyEv', 0, 14, '81680020b1f1ff3f08bf01207047'),
+           'alioth_return_kind11_completion': ('_ZN6Status16missionCompletedEbbx', 0, 1508, 'sha256:0162f8ffdfa5a9e47021d6551470479343189754dde03c334ec2ffc6cbb2634e'),
+           # PlayerEgo::update and setComputerControlled: the escape coasts without steering.
+           'alioth_return_coast_gate': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 0, 9856, 'sha256:456b421fff96043243d79b6f3c451d88fef761c8b03240403d2ca0e47625be17'),
+           'alioth_return_coast_setter': ('_ZN9PlayerEgo21setComputerControlledEb', 0, 6, '80f8f4117047'),
+           'alioth_return_camera_offsets': ('_ZN11LevelScript11resetCameraEP5Level', 0, 128, 'sha256:57855c60b5a1611a79b767f2e7c8b2b8a0e3589140af36be2dbb3a40096e8217'),
+           'alioth_return_camera_modes': ('_ZN18TargetFollowCamera12setLookAtCamEb', 0, 6, '80f845107047'),
+           'alioth_return_camera_up_initial': ('_ZN18TargetFollowCameraC2EjP10AEGeometryN11AbyssEngine6AEMath6VectorES4_', 0, 568, 'sha256:7f29be32619635b0c1e41a6d12d377383f7565b1d77fb0aff5722f7285159c11'),
+           'alioth_return_camera_up_consumer': ('_ZN18TargetFollowCamera6updateEi', 0, 2188, 'sha256:2bca30ae5acc486cb8f482c714bc205dbbb05f25a2d99089fd1d91c3f111914f')}

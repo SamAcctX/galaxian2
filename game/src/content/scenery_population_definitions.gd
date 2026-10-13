@@ -9,7 +9,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	if not data is Dictionary: return "Missing scenery population declarations"
 	if data.is_empty(): return ""
 	if not parameters(data): return "Invalid scenery population parameters"
-	var sizes := {"count":66,"station":13,"station_id":9,"seed":69,"draw":171,"bits":93} if architecture=="x86_64" else {"count":70,"station":6,"station_id":4,"seed":72,"draw":114,"bits":126} if architecture=="armv7" else {}
+	var sizes := {"count":66,"station":13,"station_id":9,"seed":69,"draw":171,"bits":93} if architecture=="x86_64" else {"count":70,"station":6,"station_id":4,"seed":72,"draw":114,"bits":126} if architecture=="armv7" else {"count":52,"station":6,"station_id":4,"seed":22,"draw":152} if architecture=="android-armv7" else {}
 	if sizes.is_empty() or data.provenance.size()!=sizes.size(): return "Invalid scenery population provenance"
 	if architecture == "x86_64" and data.provenance.get("draw") is Dictionary and data.provenance.draw.get("bytes") == 170:
 		sizes.draw = 170

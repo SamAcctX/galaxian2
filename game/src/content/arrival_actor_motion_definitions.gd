@@ -8,6 +8,9 @@ const SPANS := {"x86_64":{"initial_mode":[-80932,25],"initial_active":[534937,7]
 
 const MAC_ALTERNATE := {"initial_mode":[-80932,25],"initial_active":[535473,7],"half_extent":[607752,38],"mode_setter":[-78898,44],"sync":[612108,61],"copy":[1230450,240],"route_gate":[614974,17],"target_fallback":[616918,26],"relative_position":[617656,86],"dispatch":[620100,40],"mode_five":[620230,255],"dispatch_table":[628454,40]}
 
+# Android: spans inside named functions (Layouts.anchored); the values are VALUES.
+const ANDROID_SPANS := {"initial_mode":[294,72],"initial_active":[398,32],"half_extent":[1208,32],"mode_setter":[0,28],"sync":[600,34],"target_list":[1136,20],"route_gate":[2408,56],"target_fallback":[2728,24],"relative_position":[3112,48],"dispatch":[4810,32],"mode_five":[5658,208]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -17,6 +20,10 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, bytes: int, arch: String, arrival: Dictionary, actors: Dictionary, environment: Dictionary) -> String:
 	if not data is Dictionary:return "Missing rescue actor motion capability"
 	if data.is_empty():return ""
+	if arch=="android-armv7":
+		if not parameters(data):return "Unsupported rescue actor motion declarations"
+		if arrival.get("campaign_cursor")!=1 or arrival.get("actor_kind")!=3 or arrival.get("actor_hull_id")!=30 or environment.is_empty() or actors.get("npc_initialization",{}).get("flight",{}).is_empty():return "Rescue actor motion lacks its source context"
+		return "" if Layouts.anchored(data.provenance,bytes,ANDROID_SPANS) else "Disconnected rescue actor motion declaration"
 	if not parameters(data) or not SPANS.has(arch):return "Unsupported rescue actor motion declarations"
 	if arrival.get("campaign_cursor")!=1 or arrival.get("actor_kind")!=3 or arrival.get("actor_hull_id")!=30 or environment.is_empty() or actors.get("npc_initialization",{}).get("flight",{}).is_empty():return "Rescue actor motion lacks its source context"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")

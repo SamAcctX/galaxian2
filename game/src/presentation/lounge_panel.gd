@@ -7,6 +7,7 @@ const Portraits=preload("res://src/presentation/portrait_compositor.gd")
 const Recipe=preload("res://src/content/mission_recipe.gd")
 const Dialogue=preload("res://src/simulation/lounge_dialogue.gd")
 const ContractOffer=preload("res://src/simulation/contract_offer.gd")
+const Persistent=preload("res://src/content/persistent_contact_definitions.gd")
 const MAC_LABEL_IDS={614:616,753:755,754:756,837:839,838:840,839:841,841:843,843:845,844:846,845:847,846:848,847:849,848:850,850:852,855:857,856:858,857:859}
 var error:=""
 var _art: RefCounted
@@ -106,7 +107,7 @@ func present(state: Dictionary) -> bool:
 	for key in ["base_content_id","binding_id"]:
 		if state.get(key)!=_art.identity[key] or career.get(key)!=_art.identity[key]:return reject("The lounge belongs to another session")
 	var next:={}
-	for key in ["station_id","offers","mission","pending_result","credits","accepted_contact","completed_side_missions"]:next[key]=career.get(key,{}).duplicate(true) if career.get(key) is Dictionary else career.get(key)
+	for key in ["station_id","campaign_cursor","offers","mission","pending_result","credits","accepted_contact","completed_side_missions"]:next[key]=career.get(key,{}).duplicate(true) if career.get(key) is Dictionary else career.get(key)
 	next.cargo=state.get("cargo",{}).duplicate(true)
 	var population: Dictionary=career.get("population",{})
 	var client: Dictionary=career.get("accepted_contact",{}).get("portrait",{})
@@ -138,10 +139,11 @@ func present(state: Dictionary) -> bool:
 	if refresh:_refresh();_layout()
 	return true
 
-func select_contact(id: int) -> void:
+## notify=false shows a contact the session has already inspected (a greeting).
+func select_contact(id: int,notify:=true) -> void:
 	if not _active or not visible or not _state.pending_result.is_empty():return
 	if not _portraits.has(id):return
-	action_requested.emit("select",id)
+	if notify:action_requested.emit("select",id)
 	_selected=id;_confirming=false;_taken=-1;_body.scroll_to_line(0)
 	if is_instance_valid(_scene):_scene.select_contact(id)
 	_refresh();_layout()
@@ -205,9 +207,13 @@ func _refresh() -> void:
 		var service: Dictionary=_previews.get(_selected,{})
 		if service.get("kind")=="merchant":
 			var item_name:=text(int(_bindings.station_equipment.item_text_offset)+int(service.item_id))
-			var offer_text:=label_text(855).replace("#Q",str(service.quantity)).replace("#P",item_name).replace("#C",money(int(service.total_price)))
+			# Android: at cursor 24 in Thynome a seller of the tractor beam speaks
+			# 3390 + "\n" + 3391 (SpaceLounge::startChat); afterwards only "nothing left".
+			var vendor:=Persistent.vendor(_bindings)
+			var speech: bool=not vendor.is_empty() and _state.campaign_cursor==int(vendor.dialogue_cursor) and _state.station_id==int(vendor.station_id) and int(service.item_id)==int(vendor.item_id)
+			var offer_text:=(text(int(vendor.text_ids[0]))+String(vendor.separator)+text(int(vendor.text_ids[1])) if speech else label_text(855)).replace("#Q",str(service.quantity)).replace("#P",item_name).replace("#C",money(int(service.total_price)))
 			_body.text=offer_text
-			if service.consumed:_body.text+="\n\n"+taken_text()
+			if service.consumed:_body.text=taken_text() if speech else _body.text+"\n\n"+taken_text()
 			elif service.can_accept:
 				show_yes=true
 				if _confirming:_yes.text=text(133);show_no=true;_no.text=text(134)

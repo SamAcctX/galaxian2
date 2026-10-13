@@ -40,7 +40,8 @@ func decode_faces(bytes: PackedByteArray) -> Array[Image]:
 	var start := 15+count*8
 	var face_bytes := width*width*4
 	var end := start+face_bytes*6
-	if end+2!=bytes.size(): return invalid_faces("Incomplete or unsupported cubemap payload/trailer")
+	# Android files may end with one byte the Android loader never reads (as aei.py).
+	if end+2!=bytes.size() and end+3!=bytes.size(): return invalid_faces("Incomplete or unsupported cubemap payload/trailer")
 	if bytes.decode_u16(end)!=0: return invalid_faces("Cubemap font metadata is unsupported")
 	for index in count:
 		var at := 15+index*8

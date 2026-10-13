@@ -8,6 +8,7 @@ static func parameters(data: Dictionary) -> bool:
 static func sizes(architecture: String) -> Dictionary:
 	if architecture == "x86_64": return {"reset": 51, "frame": 33, "increment": 13, "getter": 13}
 	if architecture == "armv7": return {"reset": 74, "frame": 34, "increment": 18, "getter": 6}
+	if architecture == "android-armv7": return {"reset": 4, "seed": 2, "frame": 30, "increment": 16, "getter": 6}
 	return {}
 
 static func validate(data: Variant, executable_bytes: int, architecture: String) -> String:

@@ -1,9 +1,25 @@
-"""Optional Mac game-over atlas and display declarations, read only at import."""
+"""Optional Mac game-over atlas and display declarations, read only at import.
+
+Android: MGame::OnRender2D draws the game-over image after 3001 ms with an
+alpha that reaches 255 at 4000 ms, then the white continue prompt (text 188)
+centred 10 below the image, its alpha |sin(0.003 x
+ApplicationManager::GetSystemTimeMillis)|. MGame never creates the image: the
+constructor's handle stays -1, PaintCanvas::DrawImage2D skips it and
+PaintCanvas::GetImage2DHeight reads 0, so the image fields are null. With a
+saved record the prompt is the Android-only text 3393 in lines
+(Globals::drawLines) instead.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .station_exterior import declaration_bytes
 
 def extract_game_over_presentation(mach,arrival,death):
+    if mach.architecture == 'android-armv7':
+        try:
+            if death['scope'] != 'mac_starter_player_destruction' or death['game_over_image_id'] is not None or death['continue_text_id'] != 188: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64':return {}
     try:
         if death['scope']!='mac_starter_player_destruction' or death['game_over_image_id']!=1313 or death['continue_text_id']!=188:return {}
@@ -87,3 +103,17 @@ MAC_ALTERNATE = {'image_alias': [-527198,
                   '554889e54883ec10f30f1145fcf30f5a45fce849310400f20f5ac04883c4105dc36666666666662e0f1f840000000000'],
  'blink_constant': [1559210, 4, '__const', 'a69b443b'],
  'alpha_constant': [1548938, 4, '__const', '00007f43']}
+
+# The Mac values without the image, which MGame never creates on Android.
+ANDROID_VALUES = dict(VALUES, image_id=None, texture_id=None, region=None, resource=None)
+
+# Android spans inside named functions.
+ANDROID = {'image_handle': ('_ZN5MGameC2Ev', 86, 8, '4ff0ff31c4e90410'),
+           'failure_gate': ('_ZN5MGame10OnRender2DEv', 548, 68, 'sha256:aab6dce9566c969d628dd81a478f2718a2833422a20ccdaf4c867f8e94096192'),
+           'failure_display': ('_ZN5MGame10OnRender2DEv', 700, 418, 'sha256:06d66597528809c4c706b71690d544d9e7e52642ed4b7fbe5b1e59bcdf6dcd72'),
+           'fade_constants': ('_ZN5MGame10OnRender2DEv', 1332, 8, '00007a4500007f43'),
+           'blink_constant': ('_ZN5MGame10OnRender2DEv', 1352, 4, 'a69b443b'),
+           'image_bounds': ('_ZN11AbyssEngine11PaintCanvas11DrawImage2DEjiihh', 8, 28, 'sha256:d05a0863072280de9e63c3c3f1ac0c4e12a3096c19f13ff5b7a7f0b265c95765'),
+           'image_height': ('_ZN11AbyssEngine11PaintCanvas16GetImage2DHeightEj', 0, 22, 'd0f84c218a4291bf0020d0f8500150f82100408a7047'),
+           'sine': ('_ZN11AbyssEngine6AEMath4SinfEf', 0, 4, '46f14ebf'),
+           'clock': ('_ZN11AbyssEngine18ApplicationManager19GetSystemTimeMillisEv', 0, 6, 'd0e91a017047')}

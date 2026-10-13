@@ -68,3 +68,32 @@ class DamageParticleOwnerTests(unittest.TestCase):
                 elif key=='escape':s['escape']={}
                 else:m.architecture='unsupported'
                 self.assertFalse(reader.extract_damage_particle_owners(m,a,s),key)
+
+    def test_android_proofs(self):
+        from unittest.mock import patch
+        from android_fixture import layout_library, verify_android_proof
+        from gof2_content.android_library import AndroidLibrary
+        _, a, s, *_ = fixture('armv7', reader.LAYOUTS['armv7'])  # parents with every value the module requires
+        verify_android_proof(self, reader, lambda lib: reader.extract_damage_particle_owners(lib, a, s))
+        # Android holds the Mac values; the constant is the proven literal.
+        mac = reader.extract_damage_particle_owners(*fixture('x86_64', reader.LAYOUTS['x86_64'])[:3])
+        self.assertEqual({k: v for k, v in mac.items() if k != 'provenance'}, reader.ANDROID_VALUES)
+        self.assertEqual(struct.unpack('<f', bytes.fromhex(reader.ANDROID['hull_fraction'][3]))[0], reader.ANDROID_VALUES['npc_hull_fraction'])
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            self.assertTrue(reader.extract_damage_particle_owners(lib, a, s))
+            for key in ['world', 'hull', 'flight', 'destruction', 'cursor', 'population', 'escape', 'actors']:
+                actors, staging = copy.deepcopy(a), copy.deepcopy(s)
+                npc = actors['npc_initialization']
+                if key == 'world':npc['world_initialization'] = {}
+                elif key in ['hull', 'flight', 'destruction']:npc[key] = {}
+                elif key == 'cursor':npc['world_initialization']['campaign_cursor'] = 1
+                elif key == 'population':actors['actors'].pop()
+                elif key == 'escape':staging['escape'] = {}
+                else:actors = {}
+                self.assertFalse(reader.extract_damage_particle_owners(lib, actors, staging), key)
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'damage_particle_owner_definitions.gd')

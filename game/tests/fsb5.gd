@@ -46,7 +46,10 @@ func run():
 	var bytes:=pcm_fixture()
 	check(reader.open(bytes),reader.error)
 	var stream: AudioStreamWAV=reader.stream(0,true)
-	check(stream!=null and stream.data==PackedByteArray([0,0,0xff,0x7f,0,0x80]) and stream.mix_rate==44100 and stream.loop_end==3,"PCM source samples or full loop changed")
+	check(stream!=null and stream.data.slice(0,6)==PackedByteArray([0,0,0xff,0x7f,0,0x80]) and stream.mix_rate==44100 and stream.loop_end==3,"PCM source samples or full loop changed")
+	# Godot mixes the frame at loop_end before wrapping: it must exist and repeat the loop start.
+	check(stream!=null and stream.data.size()/2>stream.loop_end and stream.data.decode_s16(stream.loop_end*2)==stream.data.decode_s16(stream.loop_begin*2),"A full-length loop reads past its PCM")
+	check(reader.stream(0).data==PackedByteArray([0,0,0xff,0x7f,0,0x80]),"A one-shot sample gained a loop guard frame")
 	var broken:=bytes.duplicate();broken.encode_u32(20,1)
 	check(not reader.open(broken) and reader.samples.is_empty(),"FSB5 size mismatch retained the previous bank")
 	broken=bytes.duplicate();broken.encode_u32(60+8,0xffffffff)
@@ -79,7 +82,9 @@ func verify_source(root_path: String):
 				var stream: AudioStreamWAV=reader.stream(index)
 				check(stream!=null,reader.error)
 				if stream!=null:check(stream.data.size()==reader.samples[index].samples*reader.samples[index].channels*2,"IMA decode sample count changed")
-	check(banks==22 and total==4416,"Source audio inventory incomplete")
+	# Android's OBB has no German banks: 17 banks with 2373 samples, the Mac app 22 with 4416.
+	var android: bool=manifest.profile.edition=="android-hd"
+	check(banks==(17 if android else 22) and total==(2373 if android else 4416),"Source audio inventory incomplete")
 func check(value: bool,message: String):
 	checks+=1
 	if not value:failures+=1;push_error(message)

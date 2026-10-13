@@ -42,3 +42,26 @@ class FreighterDestructionTests(unittest.TestCase):
             changed=copy.copy(mach);changed.architecture='armv7'
             self.assertFalse(reader.extract_freighter_destruction(changed,arrival,reader.COMBAT_VALUES))
             self.assertFalse(reader.extract_freighter_destruction(mach,arrival,None))
+
+
+class FreighterDestructionAndroidTests(unittest.TestCase):
+    def test_android_proofs(self):
+        import android_fixture
+        from gof2_content.android_library import AndroidLibrary
+        from test_mido_travel import roomy
+        staged={'scope':'rescue_choreography'}
+        with patch.object(android_fixture,'library',roomy(android_fixture.library)):
+            android_fixture.verify_android_proof(self,reader,lambda lib:reader.extract_freighter_destruction(lib,staged,reader.COMBAT_VALUES),values='VALUES')
+            image,layout,_=android_fixture.layout_library(reader.ANDROID)
+        with patch.object(reader,'ANDROID',layout):
+            lib=AndroidLibrary(image)
+            self.assertTrue(reader.extract_freighter_destruction(lib,staged,reader.COMBAT_VALUES))
+            # Requires the arrival staging and the combat.
+            self.assertEqual(reader.extract_freighter_destruction(lib,{},reader.COMBAT_VALUES),{})
+            combat=copy.deepcopy(reader.COMBAT_VALUES);combat['freighter']['hull_multiplier']=25
+            self.assertEqual(reader.extract_freighter_destruction(lib,staged,combat),{})
+            self.assertEqual(reader.extract_freighter_destruction(lib,staged,None),{})
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self,reader,'freighter_destruction_definitions.gd',values='VALUES')

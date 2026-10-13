@@ -1,9 +1,24 @@
-"""Optional Mac full-hold station return and cargo-lifetime declarations."""
+"""Optional Mac full-hold station return and cargo-lifetime declarations.
+
+Android: PlayerEgo::calcCollision and MGame::dockEvent dock the cursor-5
+return (kind 11; kind 154 refused with notice 21); DialogueWindow's mode-1
+tables hold its six lines and Globals::getDialogueSoundId five voices;
+ModStation::OnUpdate opens and ModStation::OnTouchEnd acknowledges them;
+Status::nextCampaignMission's cursor-6 case empties the cargo
+(Ship::removeAllCargo) and creates mission 158 at station 78. The values are
+MAC_VALUES.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .station_exterior import declaration_bytes
 
 def extract_full_hold_return(mach,arrival,first,story):
+    if mach.architecture == 'android-armv7':
+        try:
+            if first['scope'] != 'first_mining_station_return' or story['scope'] != 'full_hold_mining_story': return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(MAC_VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64':return {}
     try:
         if first['scope']!='first_mining_station_return' or story['scope']!='full_hold_mining_story':return {}
@@ -170,3 +185,39 @@ MAC_VALUES = {'scope': 'full_hold_station_return',
             {'speaker_id': 2, 'text_id': 1734, 'voice_event_id': 437},
             {'speaker_id': 16, 'text_id': 1735, 'voice_event_id': -1}],
  'refresh_cargo_after_acknowledgement': False}
+
+# Android spans inside named functions and tables; the values are MAC_VALUES.
+ANDROID = {# PlayerEgo::calcCollision: station contact within 16000; MGame::dockEvent docks the return (kind 11)
+           # and refuses kind 154 with notice 21.
+           'contact_constant_load': ('_ZN9PlayerEgo13calcCollisionEP5ArrayIP8KIPlayerE', 82, 4, '9fedbc8a'),
+           'contact_radius_constant': ('_ZN9PlayerEgo13calcCollisionEP5ArrayIP8KIPlayerE', 836, 4, '00007a46'),
+           'station_contact_radius': ('_ZN9PlayerEgo13calcCollisionEP5ArrayIP8KIPlayerE', 174, 48, 'sha256:e8eb3fe75a1368b659ea64f6e1df18dec0f4685ff3eef9dc339e55629b5a2f9b'),
+           'dock_event': ('_ZN5MGame9dockEventEii', 0, 1500, 'sha256:c509b37791ee035ac28c716b3765e52ba5705d02fa07f400333fcb885a2b9ee0'),
+           # Mode 1, cursor 5: six lines (entries 58..69 after counts 0, 38, 6, 10, 4) and five voices (433-437);
+           # the sixth line has none (Globals::getDialogueSoundId returns -1).
+           'mode1_counts': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 24, '0000000026000000060000000a000000040000000c000000', 'literal', 0),
+           'mode1_return_events': ('_ZN14DialogueWindow11loadContentEv', 208, 48, 
+                                   '02000000cd06000000000000ce06000002000000cf06000000000000d006000002000000d106000010000000d2060000', 'literal', 232),
+           'voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 186, 40,
+                      'cd060000b1010000ce060000b2010000cf060000b3010000d0060000b4010000d1060000b5010000', 'literal', 2160),
+           'voice_table': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0),
+           'voice_lookup': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 0, 40, 'sha256:5500de04daa6b2f72d8bacb0b201d9474f16a450072a26e598a3bb0cee15ad3a'),
+           'silent_voice_return': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 1054, 6, '4ff0ff30bde8'),
+           # Status::nextCampaignMission: cursor 6 (tbh entry 5) empties the cargo (Ship::removeAllCargo) and
+           # creates mission 158 at 78; cursor 4 asked for 25 tons, which Status::missionCompleted checks.
+           'story_increment': ('_ZN6Status19nextCampaignMissionEb', 392, 6, '1846431c0021'),
+           'cursor6_dispatch': ('_ZN6Status19nextCampaignMissionEb', 78, 2, 'f10d'),
+           'cursor6_factory': ('_ZN6Status19nextCampaignMissionEb', 7206, 38,
+                               'c4f8e831c9e900ced4f88c01b3f794ec6420aff7a0ea05469e2100224e23b3f736ecfef7afba'),
+           'campaign_mission_tail': ('_ZN6Status19nextCampaignMissionEb', 426, 14, '2046294601b0bde8f04322f19cb8'),
+           'full_hold_factory': ('_ZN6Status19nextCampaignMissionEb', 6556, 52, 'sha256:527dfb0a6e2e57cb2aa14bf0186078d818662c76e64c0c3153ec56ec8434b767'),
+           'full_hold_parameter': ('_ZN6Status19nextCampaignMissionEb', 8228, 14, '4068006801b0bde8f04320f17fb9'),
+           'cargo_check': ('_ZN6Status16missionCompletedEbbx', 630, 30, 'sha256:59a7dc13441541ab0332c6069ea4a72973d0a856f29960550948e0ed6a3446ef'),
+           'next_mission_equipment': ('_ZN6Status16missionCompletedEbbx', 766, 96, 'sha256:6e42914da575652e18bf19441745b961c594964e6c9e7ed404bd358776fce41b'),
+           # Ship::removeAllCargo, Mission::Mission, ModStation::OnTouchEnd (acknowledgement) and ModStation::OnUpdate
+           # (the completed mission at its station opens its dialogue).
+           'cargo_list_dispose': ('_ZN4Ship14removeAllCargoEv', 0, 30, 'sha256:dbedce2fd4730279c220a4f280902db03f6c62e606b862614ba6ad01a4dad258'),
+           'mission_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           'station_acknowledgement': ('_ZN10ModStation10OnTouchEndEiiPv', 0, 6536, 'sha256:5b29b2bf44b1e0a442eb14b5646a1aad12932fedee58112b028e31589316b50e'),
+           'station_check': ('_ZN10ModStation8OnUpdateEv', 2044, 38, 'sha256:1351c42350b2f95362acddf47f855b8f32db676fe7f736cca3c62f937b14ac2c'),
+           'station_dialogue_selection': ('_ZN10ModStation8OnUpdateEv', 2684, 36, 'sha256:7cd5e714affb30a40ebc9497668f1c32ec97fdf9da32b5ff6f03b1b5d4eeb30c')}

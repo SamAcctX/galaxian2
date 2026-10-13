@@ -75,6 +75,9 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 			sizes["formation_ref_" + key] = 4
 	elif architecture == "armv7":
 		sizes = {"initial": 320, "formation": 424, "initial_dispatch": 58, "update_dispatch": 186, "player_getter": 6, "actor_getter": 6, "event_getter": 6, "cursor_getter": 6, "visibility": 10, "event_finished": 6, "camera_vector": 18, "camera_components": 10}
+	elif architecture == "android-armv7":
+		# Helpers are named calls inside these spans.
+		sizes = {"initial_dispatch": 28, "initial": 222, "update_dispatch": 58, "formation": 278}
 	var provenance: Variant = data.get("provenance")
 	if sizes.is_empty() or not provenance is Dictionary or provenance.size() != sizes.size(): return "Invalid opening staging provenance"
 	var spans := []

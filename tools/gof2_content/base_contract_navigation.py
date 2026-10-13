@@ -1,8 +1,23 @@
-"""Verified base contract destinations and distance declarations."""
+"""Verified base contract destinations and distance declarations.
+
+Android: Status::nextCampaignMission's cursor-14 case sends the player to the
+Alioth station 98; FileRead::loadSystemsBinary, SolarSystem::SolarSystem and
+isVisible keep each system's initial availability, which Status::resetGame
+copies (opening system 25 with the Valkyrie option) and
+Status::getSystemVisibilities and setSystemVisibility hold;
+Generator::generateStationIndex picks visible, linked (SolarSystem::getRoutes)
+destinations outside the excluded stations and 109-113, and Galaxy::distance
+(SolarSystem::getX, getY, getZ, Vector::operator-=, depth / 10, x 18.85)
+prices Generator::createMission's reward. Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_base_contract_navigation(mach,arrival):
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -219,3 +234,25 @@ MAC_ALTERNATE = {'base_navigation_system_fields': [-679145,
                                     38,
                                     '__text',
                                     '413397f0e3ec5453d17aaf0a9c953d0824b0ac65b7f28c282d6b65d98cc2daf1']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'base_navigation_system_fields': ('_ZN8FileRead17loadSystemsBinaryEv', 130, 74, 'sha256:0ec9c7da225f138f4b61b294b58f0528cfb56eeb8b245db160a83fa31d611749'),
+           'base_navigation_system_arguments': ('_ZN8FileRead17loadSystemsBinaryEv', 536, 56, 'sha256:2f75c29217f6cdc21de19dacd87c7ae8545a57758fb11510255fe272f99f225e'),
+           'base_navigation_system_constructor': ('_ZN11SolarSystemC2EiN11AbyssEngine6StringEibiiiiiiPiP5ArrayIiES5_S5_', 0, 184, 'sha256:639c7c82d968338fcc85b4f1ebdd98184f3dd075af953f6438614dd93078f7f7'),
+           'base_navigation_availability_getter': ('_ZN11SolarSystem9isVisibleEv', 0, 6, '90f840007047'),
+           'base_navigation_availability_initial': ('_ZN6Status9resetGameEv', 1050, 38, 'sha256:b84d4f7cc2c3974ad351701b72b30bf0133b32b939f439fe0129682d3507e336'),
+           'base_navigation_availability_expansion': ('_ZN6Status9resetGameEv', 1540, 156, 'sha256:94ab919a95046001ba3a8e673bd9e45554c0bda80a0e76b5299de68846e284af'),
+           'base_navigation_availability_getter_slot': ('_ZN6Status21getSystemVisibilitiesEv', 0, 4, '806b7047'),
+           'base_navigation_availability_setter': ('_ZN6Status19setSystemVisibilityEib', 0, 8, '806b406842547047'),
+           'base_navigation_destination': ('_ZN9Generator20generateStationIndexEP5ArrayIP11SolarSystemEi', 0, 420, 'sha256:fb3dbd45737b90e020121d3e2a1443824abfdc47bf34eef2762228180e1d9837'),
+           'base_navigation_excluded_stations': ('_ZN9Generator20generateStationIndexEP5ArrayIP11SolarSystemEi', 12, 208, 'sha256:7b025c6051eb6ba4bb48b71edf50703d699cec98fa6673dc87d198053665e81e', 'literal', 0),
+           'base_navigation_links_getter': ('_ZN11SolarSystem9getRoutesEv', 0, 4, 'c06b7047'),
+           'base_navigation_distance': ('_ZN6Galaxy8distanceEP11SolarSystemS1_', 0, 308, 'sha256:3be782fe73fbf541820d319a8f35e7da94cb06a5accb9e19226889f1236c42ef'),
+           'base_navigation_distance_x': ('_ZN11SolarSystem4getXEv', 0, 4, '006a7047'),
+           'base_navigation_distance_y': ('_ZN11SolarSystem4getYEv', 0, 4, '406a7047'),
+           'base_navigation_distance_z': ('_ZN11SolarSystem4getZEv', 0, 4, '806a7047'),
+           'base_navigation_distance_subtract': ('_ZN11AbyssEngine6AEMath6VectormIERKS1_', 0, 50, 'sha256:eede00f3d9a9f9952c71d46dce2ab366b93463a1c862cedc9dc959393a9ca511'),
+           'base_navigation_quote_destination': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 0, 114, 'sha256:ad7a9cef511f0a3c1fdd4b54a70cdad1f96e96edec1633879582176bb7b5fb6d'),
+           'base_navigation_quote_early_gate': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 284, 72, 'sha256:b0cd1e3704e80b1497a835209df6579f96147333b25b660bb9a3c4aac4d3f9ec'),
+           'base_navigation_quote_distance_reward': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 1186, 154, 'sha256:0e4b3f750f55d885733a02b934592e1246642c7e6a518cada0c5f4b06607d4af'),
+           'base_navigation_alioth_factory': ('_ZN6Status19nextCampaignMissionEb', 1058, 26, 'sha256:c6f5322f7101876b9ca890376c184ec1fb9be07d81e5393289b3a8688d989df4')}

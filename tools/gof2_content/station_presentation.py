@@ -1,12 +1,35 @@
 """Static declarations for the first Mac station view and spoken conversation.
 Only semantic values and provenance leave this reader. Other stations and the
 instruction's actor-dependent voice fallback are outside this capability.
+
+Android: ModStation::OnInitialize makes the type-23 CutScene, whose
+CutScene::initialize sets the projection (0.8, 200, 100000) and turns the
+camera by pi/8; the light direction is the camera direction plus (-0.2, -0.3)
+and ModStation::resetLight sets the material ambient 0.7, diffuse 1, the race
+ambient (race 3: 0.45, 0.25, 0.25), specular 0.5 and power 96. Station 101
+uses row 8, station 100 row 7, others the system race; the ModStation tables
+hold position, pitch and yaw (both yaw tables agree on row 3) and
+AEMath::MatrixSetRotation applies order 2 (YXZ, roll -0.03). Three
+AbyssEngine::EaseInOut drift the camera by random 150 then towards random
+ends (18 + 131, 30 + 120, 50 + 100) within 5 units, phase 3pi/2 to 5pi/2 at
+2pi/65536 per ms; ModStation::OnUpdate caps frames at 150 ms and waits
+1000 ms. DialogueWindow::loadContent stops the voice and labels 179/180;
+Globals::getDialogueSoundId holds the 18 voices and none for the
+instruction (no agent: Mission::Mission). Sound 122 starts the atmosphere;
+the portrait table gives speakers 0 (zero storage), 2 and 16 their parts
+(ImageFactory::loadChar). Values equal the Mac 1.0.7 ones.
 """
 import copy
 from .radio_audio import constant_bytes
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 def extract_station_presentation(mach, arrival, station):
+    if mach.architecture == 'android-armv7':
+        try:
+            if station['scope'] != 'first_station_entry': return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(MAC_VALUES), provenance=proof) if proof else {}
     if mach.architecture != 'x86_64' or station.get('scope') != 'first_station_entry':return {}
     try:
         origin=arrival['provenance']['actor']
@@ -391,3 +414,46 @@ MAC_VALUES = {'scope': 'first_station_presentation',
                                   276],
               'stop_previous_voice': True,
               'atmosphere_event_id': 122}}
+
+# Android spans inside named functions and tables; the values are the Mac 1.0.7 ones.
+ANDROID = {'scene_kind': ('_ZN10ModStation12OnInitializeEv', 34, 30, 'daf8140058b9a0207ff7b4ee0546172185f78ceb2846caf8145085f78ceb'),
+           'scene_type': ('_ZN8CutSceneC2Ei', 0, 62, 'sha256:74ab30dbe2e17bf634a4ae4ec9b4819f1c332d25a051e87bd1854a86cfc46ec3'),
+           'scene_dispatch': ('_ZN8CutScene10initializeEv', 90, 14, 'd9f8880002285fd0172800f02e81'),
+           'projection': ('_ZN8CutScene10initializeEv', 708, 76, '86484ff00008c9f8648009f170017844d0f800b0dbf80000c6f716ec45f20002d9f87010c4f2c372dbf80000002300924cf6cd42c4f24833c3f64c72c6f7daebd9f87010dbf80000c4f774ec'),
+           'initial_camera': ('_ZN8CutScene10initializeEv', 784, 98, 'd9f87010dbf80000c5f7f0ef0df1500a7cc851467cc17cc87cc190e87c0005a87cc140f6db73c3f6c96351460022cdf80080c6f702ec48f200000022c4f23b500023009005a8c4f29632c4f22f435146c4f752ead9f870105246dbf80000c6f7f2eb'),
+           'light_direction': ('_ZN10ModStation12OnInitializeEv', 2714, 82, 'sha256:0245adfcb42d0283a66a1ffe3a706dedd29b20c5ca08dddd47d63a451610af45'),
+           'light_bias': ('_ZN10ModStation12OnInitializeEv', 3452, 8, '9a9999becdcc4cbe'),
+           'station_lights': ('_ZN10ModStation10resetLightEv', 0, 388, 'b0b502af82b00446564878440568286881f792e843f23331c3f633710a460b4682f7c0ef286881f788e804f58c734ff480440ecb81f0004182f0004283f00043009482f79eef286881f776e84ff07e514ff07e524ff07e53009482f79eef424878440068006880f7ecea80f796ea0138072836d8dfe800f004142735353535433d4878440068006881f756e84cf6cd424ff480410091c3f60c724ff07a512be0334878440068006881f746e84ff4804143f23333009149f69a11c3f61961c3f6b3630a4630e02b4878440068006881f734e84ff48041009146f26661c3f6e66108e0264878440068006881f726e84ff07a5100944ff07a524ff07a5314e01b4878440068006881f718e84ff4804145f629424cf28f23009147f6e121c3f68f62c3f65471c3f6f5537ff72eeb144878440468206881f700e84ff480414ff07c5200914ff07c514ff07c5383f74eec206880f7f2ef0021c4f2c02102b0bde8b040eff04cb872b5170090b817007cb41700dab41700b4b41700fab4170098b417004eb41700'),
+           'environment_row': ('_ZN10ModStation12OnInitializeEv', 2806, 156, 'sha256:a8f578854f10ea96c448cca7f79deea77d4d41aa26fa811ee9a3f943130d7be3'),
+           'environment_race': ('_ZN10ModStation12OnInitializeEv', 3278, 18, '964878440068006881f702ec81f7aceb8346'),
+           'camera_seed': ('_ZN10ModStation12OnInitializeEv', 3296, 208, 'sha256:c8a8b0cc759af517c9f6677783fe9d313920a68388e4edc12806b40d060179b9'),
+           'camera_identity': ('_ZN10ModStation12OnInitializeEv', 3888, 16, '0000803f000000000000803f0000803f'),
+           'camera_third_axis': ('_ZN10ModStation12OnInitializeEv', 3908, 22, '10207ef726efdaf8341106460a4684f7eaebcaf84061'),
+           'camera_rotation': ('_ZN10ModStation12OnInitializeEv', 3930, 210, 'daf81400002800f0538118ee102a0df1d80919ee103a27a849468ded00aa7ff740ecdff8240d4cf28f28dff8244dcbf6f5487844dff8201d00eb8b007c44794490ed00badff8080d1bee102a7844056828780028204608bf0846494650f82b300220cde9008027a882f7faecdff8ec0c784400680668304681f788e9014630464a4681f7b4eddaf8140027a98ded278a08308ded289a8ded29aa7ef7daee2978daf814000029dff8f81d00f11400794408bf0c468ded27ba54f82b10cde9281827a97ef7c6eedaf814004946006a81f724ee'),
+           'camera_jitter': ('_ZN10ModStation12OnInitializeEv', 4140, 214, 'dff8880c142178440568286881f784e90a284ff00000b8bf012014218af829010024286881f778e90a284ff00000c8bf012014218af82a01286881f76ee90a28b8bf01248af82b41962128689af82a4181f762e9002c18bf404200ee100a9621b8eec00adaf8140090ed021a31ee000a80ed020a28689af8294181f74ee9002c18bf404200ee100a9621b8eec00adaf8140090ed031a31ee000a80ed030a28689af82b4181f738e9002c18bf404200ee100a4946b8eec00adaf8140090ed041a31ee000a80ed040ad0e9022327a88ded000a7ff77eeb'),
+           'position_table': ('_ZN10ModStationC2Ev', 456, 120, '34040000840300001ff7fffffb0600003e040000a0f9ffff39f7fffff2030000cbf8ffff08070000200300000ef9ffff000000000000000000000000000000000000000000000000000000000000000000000000b0040000200300008af5ffff980800002003000072f9ffff000000000000000000000000', 'literal', 0),
+           'pitch_table': ('_ZN10ModStationC2Ev', 372, 40, '713d8abe9a9999beec5138becdcc4cbe000000000000000000000000cdcc4cbecdcc4cbe00000000', 'literal', 0),
+           'yaw_table': ('_ZN10ModStationC2Ev', 546, 40, '3d0a57c0000070c0333303c0e17a2440000000000000000000000000000040406666164000000000', 'literal', 0),
+           'alternate_yaw_table': ('_ZN10ModStation21resetIdleCamForHangarEv', 276, 40, '3d0a57c0000070c0333303c0e17a2440000000000000000000000000000040400000204000000000', 'literal', 0),
+           'frame_clock': ('_ZN10ModStation8OnUpdateEv', 28, 56, 'd9f808007cf732ec962805dcd9f808007cf72cec00280cdbd9f808007cf726ec962801dd962005e0d9f808007cf71eec00e00020c9f82800'),
+           'camera_update': ('_ZN10ModStation8OnUpdateEv', 576, 606, 'd9f8285099f82a016e420028284618bf304600ee100ab8eec00ad9f8380110ee101a7ff782edd9f838017ff73ced8046d9f838017ff742ed0446d9f8380108ee108a7ff73ced01ee104a00ee100a38ee411a38ee400ab1ee048ab5eec01af1ee10fab1ee402ac8bfb0ee402ab4eec82af1ee10fa24d8dff8480c99f82a41784484f0010189f82a1100688321d9f838b199ed4b9a00687cf722ef00f112026ff01101002c08bf0a1a00ee102a58464146b8eec00a39ee000a10ee102a7ff770ed99f829010028304618bf284600ee100ab8eec00ad9f83c0110ee101a7ff724edd9f83c017ff7deec8346d9f83c017ff7e6ec0446d9f83c0109ee10ba7ff7deec01ee104a00ee100a39ee411a39ee400ab5eec01af1ee10fab1ee402ac8bfb0ee402ab4eec82af1ee10fa2ad8dff8940b5c46c34699f82981784488f0010189f829110068d9f83c1103917821006899ed4c9a7cf7c4ee00f11e02b8f1000f6ff01d0108bf0a1a00ee102ad846a346b8eec00a0398594639ee000a10ee102a7ff710ed99f82b01002818bf2e4600ee106ab8eec00ad9f8400110ee101a7ff7c4ecd9f840017ff77eec0546d9f840017ff786ec0446d9f8400109ee105a7ff77eec01ee104a00ee100a39ee411a39ee400ab5eec01af1ee10fab1ee402ac8bfb0ee402ab4eec82af1ee10fa24d8dff8d80a99f82b61784486f0010189f82b1100686421d9f8404199ed4d8a00687cf766ee00f132026ff03101002e08bf0a1a00ee102a20462946b8eec00a38ee000a10ee102a7ff7b6ecdff8940a78440068046820467cf71cee014620467cf71eee014604a842465b468ded009a7bf79ce8'),
+           'dialogue_delay': ('_ZN10ModStation8OnUpdateEv', 1182, 12, 'dae90001b0f57a7071f10000'),
+           'rotation': ('_ZN11AbyssEngine6AEMath17MatrixSetRotationERNS0_6MatrixEfffNS0_13RotationOrderE', 0, 758, 'sha256:414d089a6cf7b4ea1a64123d57d5502ab40923005fbda45f104ecaec0b744a06'),
+           'tween_construct': ('_ZN11AbyssEngine9EaseInOutC2Eff', 0, 44, 'd0b502af00ee101a044601ee102a4cf6e430c4f29600216031ee400a84ed010aa0602046edf7d2ed2046d0bd'),
+           'tween_sample': ('_ZN11AbyssEngine9EaseInOut18UpdateCurrentValueEv', 0, 112, 'd0b502af0446dfed180b94ed020af7eec01af4eee01bf1ee10fa06d194ed000a94ed011a30ee010a1be010ee100aedf7b6ec00ee100a94ed011af6ee001bf7eec00a60eea10b70eea10bf7eec11a61eea00b94ed000af7eec01a71eea00bb7eee00b84ed030ad0bd000000387a6a1f40'),
+           'tween_reset': ('_ZN11AbyssEngine9EaseInOut8SetRangeEff', 0, 32, 'sha256:c21718f70e44a5cb8444ddffd15e241dab47ca2e41b74a8b3d7f1a9fbab2f773'),
+           'tween_clock': ('_ZN11AbyssEngine9EaseInOut8IncreaseEf', 0, 108, '00ee101adfed121b9fed171af7eec00a60eea10bdfed101b90ed020a60eea10bf7eec01a70eea10bb7eee00bdfed0c0bf7eec01af4eee01bf1ee10fac8bfb0ee410a80ed020a5df1d7bb00bfaff30080000000000000f03e00000060fb211940000000387a6a1f40d253fb40'),
+           'next_label_and_voice_stop': ('_ZN14DialogueWindow11loadContentEv', 30, 50, '0868b4216568d6f63aee01462846daf626eddff8a80d0026c4e918667844e16d00680068d6f63ae94ff0ff300021e0656068'),
+           'final_label_and_voice_start': ('_ZN14DialogueWindow11loadContentEv', 2324, 112, '2046256cdaf62cee013885420cd1dff8e805b5216568784400680068d6f6b4e901462846daf6a0e8dff8d00578440168606c0d6818b1d6f6e2eb024600e0002228464946d8f6eee801460029e1650fdbdff8ac050022009200227844002305682868d4f644ede16d2868daf600ee6066'),
+           'voice_lookup': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 0, 40, 'sha256:5500de04daa6b2f72d8bacb0b201d9474f16a450072a26e598a3bb0cee15ad3a'),
+           'voice_not_found': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 1054, 6, '4ff0ff30bde8'),
+           'voice_lookup_table': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0),
+           'voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 186, 144, 'a40600000b010000a50600000c010000ae0600000d010000af0600000e010000b00600000f010000b106000010010000b206000011010000b306000012010000b406000013010000b506000014010000a606000015010000a706000016010000a806000017010000a906000018010000aa06000019010000ab0600001a010000ac0600001b010000ad0600001c010000', 'literal', 832),
+           'atmosphere_start': ('_ZN10ModStation12OnInitializeEv', 2384, 40, 'dff87005002100917a217844002200230468206881f774eb2068002184f736ef2068002184f738ef'),
+           'portrait_selection': ('_ZN14DialogueWindow11loadContentEv', 232, 22, 'dff8c80ddff8c81d78447944006851f82a1061620068'),
+           'portrait_composition': ('_ZN12ImageFactory8loadCharEPi', 0, 128, 'sha256:7869ef2b9d831fc6d5afce52033aa8252a0a144edb82d0dc929eaa65b10044d7'),
+           'portrait_pointers': ('_ZN14DialogueWindow11loadContentEv', 236, 68, 'bcd32500e0b32500f4b3250008b425001cb4250030b4250044b4250058b425006cb4250080b4250094b42500a8b42500bcb42500d0b42500e4b42500f8b425000cb52500', 'literal', 0),
+           'portrait_gunant': ('_ZN14DialogueWindow11loadContentEv', 1730, 20, '0200000001000000010000000100000001000000', 'literal', 27656),
+           'portrait_instruction': ('_ZN14DialogueWindow11loadContentEv', 2956, 20, '0b00000001000000000000000000000002000000', 'literal', 27936),
+           'mission_no_actor': ('_ZN7MissionC2Eiii', 66, 16, '0020c4f808806562002e2663e0616060'),
+           'mission_actor_getter': ('_ZN7Mission8getAgentEv', 0, 4, '40687047')}

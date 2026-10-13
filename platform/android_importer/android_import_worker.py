@@ -1,4 +1,5 @@
-"""Prepare a player-selected Mac app ZIP or DMG with the shared Mac importer.
+"""Prepare a player-selected Mac app ZIP or DMG, or an Android release .xapk/.7z,
+with the shared importer.
 
 The Android bridge copies the SAF document to a private, bounded file before
 calling this module. The original executable is only read as static input.
@@ -124,16 +125,19 @@ def run(source, data_directory, status_path, cancel_path, extractor_path=None):
     extracted_created = False
     try:
         checkpoint("Checking Android native importer", 0.0)
-        if source.suffix.lower() == ".dmg":
+        if source.suffix.lower() in (".dmg", ".7z", ".xapk"):
             if source.is_symlink() or not source.is_file() or not 0 < source.stat().st_size <= MAX_SOURCE:
-                raise ContentError("Choose a readable Mac DMG within the 8 GiB import limit")
-            extractor = _native_extractor(extractor_path)
+                raise ContentError("Choose a readable game file within the 8 GiB import limit")
+            # The Android release .xapk streams without 7-Zip.
+            extractor = None if source.suffix.lower() == ".xapk" else _native_extractor(extractor_path)
         elif source.suffix.lower() == ".zip":
             extractor = None
         else:
-            raise ContentError("Choose a Mac app ZIP or DMG")
+            raise ContentError("Choose a Mac app ZIP or DMG, or the Android release .xapk or .7z")
         verify_native_decoders()
-        if extractor is None:
+        if source.suffix.lower() == ".xapk":
+            receipt, _ = prepare(source, data_directory / "imports", checkpoint)
+        elif extractor is None:
             extracted.mkdir()
             extracted_created = True
             app = extract_app(source, extracted, checkpoint)
@@ -150,8 +154,8 @@ def run(source, data_directory, status_path, cancel_path, extractor_path=None):
                     os.environ.pop("GOF2_7ZIP", None)
                 else:
                     os.environ["GOF2_7ZIP"] = previous
-        checkpoint("Mac game is ready", 1.0)
-        write_status(status_path, {"state": "ready", "message": "Mac game is ready",
+        checkpoint("Game is ready", 1.0)
+        write_status(status_path, {"state": "ready", "message": "Game is ready",
                                    "receipt": str(receipt)})
     except Exception as error:
         stopped = isinstance(error, InterruptedError)

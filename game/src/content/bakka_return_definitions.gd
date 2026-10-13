@@ -7,6 +7,10 @@ const MAC_VALUES:={"scope":"post_bakka_return","mission":{"campaign_cursor":37,"
 const SPANS:={"bakka_return_factory37":[863379,75],"bakka_return_factory37_entry":[872182,4],"bakka_return_factory38":[863454,38],"bakka_return_factory38_entry":[872186,4],"bakka_return_kind160_entry":[875906,4],"bakka_return_kind160_condition":[874637,46],"bakka_return_away_clock":[875735,18],"bakka_return_brief_count":[1529734,4],"bakka_return_result_count":[1530390,4],"bakka_return_result_pairs":[1523306,64],"bakka_return_result_voices":[1537042,64]}
 const MAC_SPANS:={"bakka_return_factory37":[862747,75],"bakka_return_factory37_entry":[871550,4],"bakka_return_factory38":[862822,38],"bakka_return_factory38_entry":[871554,4],"bakka_return_kind160_entry":[875274,4],"bakka_return_kind160_condition":[874005,46],"bakka_return_away_clock":[875103,18],"bakka_return_brief_count":[1554750,4],"bakka_return_result_count":[1555406,4],"bakka_return_result_pairs":[1548322,64],"bakka_return_result_voices":[1561978,64]}
 
+# Android: the Mac 1.0.7 values (VALUES); spans inside named functions
+# (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"bakka_return_factory_entries":[140,4],"bakka_return_factory37":[6894,54],"bakka_return_factory38":[7446,30],"bakka_return_mission_constructor":[0,288],"bakka_return_story_setter":[0,72],"bakka_return_hidden_mission":[0,6],"bakka_return_kind_dispatch":[190,98],"bakka_return_kind160_condition":[862,50],"bakka_return_completed":[1440,8],"bakka_return_brief_count":[148,4],"bakka_return_result_count":[148,4],"bakka_return_result_pairs":[1960,64],"bakka_return_result_voices":[0,12032]}
+
 static func parameters(data: Variant) -> bool:
 	return data is Dictionary and (Equal.equal_value(data,VALUES) or Equal.equal_value(data,MAC_VALUES))
 

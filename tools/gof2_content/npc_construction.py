@@ -2,9 +2,21 @@
 
 Spawn, route, generated cargo and preallocated breakup geometry share one stream.
 The authored opening discards generated cargo after constructing each actor.
+
+Android: Level::createShip spawns at the waypoint (or origin) - 20000 +
+0..40000 per axis; PlayerFighter's constructor takes Generator::getLootList
+(-1, -1) (1..3 drawn items: 100 tries over the item list weighted by sort,
+by Item occurrence, priced, not 164/175/217/218, commodities x 1..9 or tec
+level below 8 x 1..3, else item 154 + 0..9; item 122 at 0..9 of 100 for a
+ship with Ship::hasJumpDrive (ships 37, 38, 40 or the sort-18 flag Ship::
+refreshValue sets)), and an Explosion whose Explosion::addFireStreaks
+prepares 3 + 0..6 fragments of model 14292 (rotation 0..359 / 180 x pi,
+scale (50 + 0..49) / 100). Item::init copies the item fields. Cursor 0 of
+Level::createCampaignMission clears each actor's cargo.
 """
 import copy
 import struct
+from .declaration_layouts import recognize_symbols
 from .opening_loadout import template
 from .opening_npc_guidance import LAYOUTS as GUIDANCE_LAYOUTS
 
@@ -26,6 +38,14 @@ VALUES = {
 
 
 def extract_npc_construction(mach,actors,vehicle):
+    if mach.architecture == 'android-armv7':
+        initial = actors.get('npc_initialization') or {}
+        if not vehicle or not initial.get('routes') or not initial.get('holding'):
+            return {}
+        if [(a['actor_kind'], a['hull_catalogue_id']) for a in actors['actors']] != [(8, 2), (8, 23), (8, 2)]:
+            return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     import capstone
     arch=mach.architecture;mac=arch=='x86_64'
     if arch not in LAYOUTS:return {}
@@ -309,3 +329,30 @@ SAME_TARGETS = {'armv7': [['spawn.call_86',
             ['cargo.ref_3', 'cargo.ref_162'],
             ['cargo.call_634', 'cargo.call_661'],
             ['fragments.call_118', 'fragments.call_156']]}
+
+ANDROID = {'spawn': ('_ZN5Level10createShipEiiiP8Waypointbb', 38, 78, 'sha256:6a7390350be28e6386cb671afbfda82ea349341652ee7e784c38f25fd8a8bd32'),
+           'spawn_offset': ('_ZN5Level10createShipEiiiP8Waypointbb', 500, 36, 'sha256:e775e07435f77a0e0d8f4e405f819ffcefc7ab53a8432710526f6636aa54cff4'),
+           'tail': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 1154, 112, 'sha256:08901aa746a832b919b376c49c545bc543672c51780daefa4c668090b288742b'),
+           'cargo': ('_ZN9Generator11getLootListEii', 90, 480, 'sha256:e8ce35cc06ac73ff4f26589346105c2f73f69c9ed8c89272d4b0b9ebf1555a57'),
+           'category': ('_ZN4Item7getTypeEv', 0, 4, '40687047'),
+           'rank': ('_ZN4Item11getTecLevelEv', 0, 4, 'c0687047'),
+           'price': ('_ZN4Item14getSinglePriceEv', 0, 4, '80697047'),
+           'chance': ('_ZN4Item12getOccurenceEv', 0, 4, 'c0697047'),
+           'requirements': ('_ZN4Item14getIngredientsEv', 0, 4, '806a7047'),
+           'item_layout': ('_ZN4Item4initEv', 0, 78, 'sha256:2958dfb1982a848d6f960cdb302d8f062ef241c5d66ccd336fcb72ca1fc2176e'),
+           'item_arrays': ('_ZN4ItemC2EP5ArrayIiES2_S2_', 0, 22, 'd0b502af044604f1280c8ce80e007af7bae92046d0bd'),
+           'predicate': ('_ZN4Ship12hasJumpDriveEv', 0, 38, 'sha256:8a16065b72a9926613e25acc371f9457953078e10036c2a36ce7ba57783583e7'),
+           'fragment_gate': ('_ZN9Explosion14addFireStreaksEv', 12, 10, '0446e068002840f0af80'),
+           'fragments': ('_ZN9Explosion14addFireStreaksEv', 22, 350, 'sha256:15563b11582df9c58e75dd9113b53e15127cd522d5480ea459e29d5bf2558b71'),
+           'rotation_divisor': ('_ZN9Explosion14addFireStreaksEv', 416, 4, '00003443'),
+           'rotation_multiplier': ('_ZN9Explosion14addFireStreaksEv', 420, 4, 'db0f4940'),
+           'scale_divisor': ('_ZN9Explosion14addFireStreaksEv', 424, 4, '0000c842'),
+           'effect_zero': ('_ZN9ExplosionC2Ei', 60, 12, '4ff00000c4e90200c4e90060'),
+           'equipment_table': ('_ZN4Ship12refreshValueEv', 244, 30, 'sha256:6c7624903a1a0032ec2ecadf102953a2e1ca71aca08b8054256d880279a78b58'),
+           # Sort 18 sets the jump drive flag (0x50) from sb = 1.
+           'special_equipment_case': ('_ZN4Ship12refreshValueEv', 402, 4, '84f85090'),
+           'special_flag': ('_ZN4Ship12refreshValueEv', 146, 4, '4ff00109'),
+           # The first five weights; Android's table continues with 10 where the Mac's has 0.
+           'category_weights': ('_ZN9Generator11getLootListEii', 342, 20, '0a00000028000000020000000a00000064000000', 'literal', 0),
+           'cargo_zero': ('_ZN5Level21createCampaignMissionEv', 24972, 4, '4ff0000a'),
+           'cargo_discard': ('_ZN5Level21createCampaignMissionEv', 25130, 4, 'c1f84ca0')}

@@ -45,3 +45,35 @@ class PlayerAimTests(unittest.TestCase):
                 elif key=='section':m.sections[-1]['segment']=b'__DATA'
                 else:m.architecture='unsupported'
                 self.assertFalse(reader.extract_player_aim(m,s,p),key)
+
+
+class AndroidPlayerAim(unittest.TestCase):
+    STAGING = {'player_flight': {'present': True}, 'player_motion': {'present': True}, 'projectile_impacts': {'present': True}}
+
+    def setUp(self):
+        import android_fixture
+        from unittest.mock import patch
+        from test_weapon_audio import roomy
+        self.enterContext(patch.object(android_fixture, 'library', roomy(android_fixture.library)))
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from gof2_content.android_library import AndroidLibrary
+        from unittest.mock import patch
+        projection = {'present': True}
+        verify_android_proof(self, reader, lambda lib: reader.extract_player_aim(lib, self.STAGING, projection))
+        self.assertEqual(reader.ANDROID_VALUES, reader.VALUES)
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            result = reader.extract_player_aim(lib, self.STAGING, projection)
+            result['image_ids'].append(0)
+            self.assertEqual(reader.ANDROID_VALUES['image_ids'], [1216, 1230])
+            for key in self.STAGING:
+                self.assertEqual(reader.extract_player_aim(lib, {**self.STAGING, key: {}}, projection), {}, key)
+            self.assertEqual(reader.extract_player_aim(lib, self.STAGING, {}), {})
+            self.assertEqual(reader.extract_player_aim(lib, {}, projection), {})
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'player_aim_definitions.gd')

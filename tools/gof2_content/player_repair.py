@@ -1,4 +1,13 @@
-"""Static ordinary repair-device and fresh player hull declarations."""
+"""Static ordinary repair-device and fresh player hull declarations.
+
+Android: right after the shield recharge, PlayerEgo::update reads the ship's
+repair type (Ship::getRepairType, -1 without a device), adds elapsed time to
+the hull and armor repair clocks and, past the period its type selects from
+two float pairs, clears the clock and calls Player::regenerateHull or, with a
+full hull, Player::regenerateArmor. Ship::refreshValue sets the type from item
+sort 15 (index 75: slow); Ship::getMaxHP adds 40 per untagged upgrade to the
+base hull, and Ship::Ship / Ship::clone start a ship without upgrades.
+"""
 import struct
 from .opening_loadout import template
 from .player_initialization import LAYOUTS as PLAYER_LAYOUTS
@@ -12,7 +21,270 @@ VALUES={'equipment_type':15,'item_type_value_index':5,'item_id_value_index':1,'s
         'discard_excess_time':True}
 
 
+# PlayerEgo::update, `this` in sb: repair after the shield recharge (whose skip target opens it).
+ANDROID_UPDATE = """
+ldr.w r0, ={}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+call _ZN6Status7getShipEv
+call {device_getter}
+mov r5, r0
+cmp r5, #0
+blt {@skip}
+ldr.w r0, [sb]
+call {hull_getter}
+cmp r0, #1
+blt {@skip}
+vmov.32 d16[0], r8
+add.w r6, sb, #0x120
+addw r2, pc, #{hull_periods}
+cmp r5, #0
+vld1.64 {d18, d19}, [r6]
+it eq
+addeq r2, #4
+vmov.32 d16[1], fp
+vmov.32 d17[0], r8
+vldr s16, [r2]
+vmov.32 d17[1], fp
+vadd.i64 q8, q9, q8
+vmov.32 r0, d16[0]
+vmov.32 r1, d16[1]
+vst1.64 {d16, d17}, [r6]
+call __aeabi_l2f
+vmov s0, r0
+add.w r4, sb, #0x128
+vcmpe.f32 s0, s16
+vmrs apsr_nzcv, fpscr
+ble {@armor}
+movs r0, #0
+strd r0, r0, [r6]
+ldr.w r0, [sb]
+call {hull_getter}
+mov r6, r0
+ldr.w r0, [sb]
+call {hull_max}
+cmp r6, r0
+itt lt
+ldrlt.w r0, [sb]
+blxlt {hull_add}
+armor: ldrd r0, r1, [r4]
+addw r6, pc, #{armor_periods}
+cmp r5, #0
+it eq
+addeq r6, #4
+call __aeabi_l2f
+vmov s0, r0
+vldr s2, [r6]
+vcmpe.f32 s0, s2
+vmrs apsr_nzcv, fpscr
+ble {@skip}
+movs r0, #0
+strd r0, r0, [r4]
+ldr.w r0, [sb]
+call {hull_getter}
+mov r5, r0
+ldr.w r0, [sb]
+call {hull_max}
+cmp r5, r0
+blt {@skip}
+ldr.w r0, [sb]
+call {armor_current}
+mov r5, r0
+ldr.w r0, [sb]
+call {armor_max}
+cmp r5, r0
+itt lt
+ldrlt.w r0, [sb]
+blxlt {armor_add}
+skip: ldr.w r0, [sb, #0xac]
+"""
+ANDROID_HELPERS = {'device_getter': 'ldr r0, [r0, #0x4c]\nbx lr', 'hull_max': 'ldr.w r0, [r0, #0x84]\nbx lr',
+                   'armor_current': 'ldr.w r0, [r0, #0x8c]\nbx lr', 'armor_max': 'ldr.w r0, [r0, #0x90]\nbx lr',
+                   'hull_add': """
+ldr r1, [r0, #0x78]
+ldr.w r2, [r0, #0x84]
+adds r1, #1
+cmp r1, r2
+it lt
+movlt r2, r1
+str r2, [r0, #0x78]
+b.w {changed}
+""", 'armor_add': """
+ldrd r1, r2, [r0, #0x8c]
+adds r1, #2
+cmp r1, r2
+it gt
+movgt r1, r2
+str.w r1, [r0, #0x8c]
+b.w {changed}
+"""}
+# PlayerEgo::PlayerEgo (r4 `this`, r6 and q8 zero): the armor clock at 0x128 here, the
+# hull clock at 0x120 with the recharge clock just after.
+ANDROID_TIMERS = """
+add.w r2, r4, #0x128
+strd r6, r0, [r4, #0x108]
+str.w r6, [r4, #0x110]
+strb.w r6, [r4, #0x24]
+str.w r6, [r4, #0x154]
+str.w r6, [r4, #0x254]
+strb.w r6, [r4, #0x158]
+str.w r6, [r4, #0x15c]
+strb.w r6, [r4, #0x160]
+strb.w r6, [r4, #0x170]
+vst1.64 {d16, d17}, [r2]
+"""
+# Ship::refreshValue, item sort 15: repair type 1, or 0 for item 75.
+ANDROID_DEVICE = """
+ldr r0, [r4, #0x6c]
+ldr r0, [r0, #4]
+ldr r0, [r0, r5]
+call {item_id}
+cmp r0, #0x4b
+mov.w r0, #0
+it ne
+movne r0, #1
+str r0, [r4, #0x4c]
+b {next}
+"""
+ANDROID_HULL_SOURCE = """
+push {r7, lr}
+ldr r1, [r0, #0x78]
+cbz r1, {@none}
+ldr.w ip, [r1]
+cmp.w ip, #0
+beq {@none}
+ldr.w lr, [r1, #4]
+movs r2, #0
+movs r1, #0
+loop: ldr.w r3, [lr, r2, lsl #2]
+adds r2, #1
+cmp r3, #0
+it eq
+addeq r1, #0x28
+cmp r2, ip
+blo {@loop}
+b {@base}
+none: movs r1, #0
+base: ldr r0, [r0, #4]
+add r0, r1
+pop {r7, pc}
+"""
+# Player::Player (`this` in r4): hull and maximum from the capacity argument.
+ANDROID_CAPACITY = 'str r2, [r4, #0x78]\nstr.w r2, [r4, #0x84]'
+ANDROID_CLONE = """
+mov r4, r0
+movs r0, #0x80
+call _Znwj
+mov r5, r0
+ldr r0, [r4, #0x68]
+ldr.w sb, [r4, #0x7c]
+vldr s0, [r4, #0x18]
+ldrd r1, r2, [r4]
+ldr r3, [r4, #0xc]
+ldr.w ip, [r4, #0x14]
+ldrd lr, r8, [r0]
+ldrd r6, r0, [r0, #8]
+vldr s2, ={}
+sub.w r0, r0, sb
+vmul.f32 s0, s0, s2
+str r0, [sp, #0x10]
+mov r0, r5
+strd r8, r6, [sp, #8]
+strd ip, lr, [sp]
+vstr s0, [sp, #0x14]
+call {ctor}
+ldr r0, [r4, #0x78]
+cbz r0, {@done}
+ldr r1, [r0]
+cbz r1, {@done}
+movs r6, #0
+copy: ldr r0, [r0, #4]
+ldr.w r1, [r0, r6, lsl #2]
+mov r0, r5
+call _ZN4Ship6addModEi
+ldr r0, [r4, #0x78]
+adds r6, #1
+ldr r1, [r0]
+cmp r6, r1
+blo {@copy}
+done: mov r0, r5
+"""
+# Ship::Ship (`this` in r4, r6 zero): no upgrades (0x78) before the first refresh.
+ANDROID_UPGRADES = """
+mov r0, r4
+str r6, [r4, #0x70]
+str r6, [r4, #0x64]
+strd r6, r6, [r4, #0x78]
+call _ZN4Ship12refreshValueEv
+"""
+
+
+def android_repair(lib):
+    from .android_shapes import Listing, number
+    from .declaration_layouts import data_bytes
+    from .player_initialization import ANDROID_LOOP_HEAD, ANDROID_LOOP_NEXT, ANDROID_RESET
+    from .player_recharge import ANDROID_CLOCK_ZERO, ANDROID_ENTRY, ANDROID_HELPERS as RECHARGE, ANDROID_RECHARGE
+
+    def function(token):
+        address = number(token) & ~1
+        return lib.imports.get(address) or next((name for name, (start, _) in lib.symbols.items() if start == address), '')
+
+    update = Listing(lib, '_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi')
+    recharge = update.unique(ANDROID_RECHARGE)
+    repair = update.at(ANDROID_UPDATE, recharge.last) if recharge else None
+    if repair is None or not update.holds('sb', repair.last):
+        return {}
+    names = {key: repair[key] for key in ('device_getter', 'hull_max', 'armor_current', 'armor_max')}
+    names.update(hull_add=function(repair['hull_add']), armor_add=function(repair['armor_add']))
+    helpers = {key: Listing(lib, names[key]).at(template, 0) for key, template in ANDROID_HELPERS.items()}
+    if (None in helpers.values() or helpers['hull_add']['changed'] != helpers['armor_add']['changed']
+            or Listing(lib, repair['hull_getter']).at(RECHARGE['hull_getter'], 0) is None):
+        return {}
+    # Each period pair is (repair type 1, type 0); the armor pair follows the hull pair.
+    first = repair.listing.code[repair.index('hull_periods')].address
+    second = repair.listing.code[repair.index('armor_periods')].address
+    first, second = ((first + 4) & ~3) + repair.value('hull_periods'), ((second + 4) & ~3) + repair.value('armor_periods')
+    periods = data_bytes(lib, first, 16)
+    if second != first + 8 or (struct.unpack('<4f', periods[0]) if periods else None) != (420.0, 600.0, 700.0, 1000.0):
+        return {}
+    ctor = Listing(lib, '_ZN9PlayerEgoC1EP6Player')
+    entry, timers = ctor.unique(ANDROID_ENTRY), ctor.unique(ANDROID_TIMERS + ANDROID_CLOCK_ZERO)
+    if (entry is None or timers is None or not ctor.holds('r4', timers.last)
+            or any(ctor.writes(entry.last + 1, timers.last, r) for r in ('r6', 'q8', 'd16', 'd17'))):
+        return {}
+    ship = Listing(lib, '_ZN4Ship12refreshValueEv')
+    head, following, reset = ship.unique(ANDROID_LOOP_HEAD), ship.unique(ANDROID_LOOP_NEXT), ship.unique(ANDROID_RESET)
+    targets = [ship.case(head.last, sort) for sort in range(30)] if head else []
+    device = ship.at(ANDROID_DEVICE, targets[15]) if targets and targets[15] is not None else None
+    if (device is None or following is None or reset is None or targets.count(targets[15]) != 1
+            or ship.target(device['next']) != following.first):
+        return {}
+    item_id = Listing(lib, device['item_id']).at('ldr r0, [r0]\nbx lr', 0)
+    hull_source = Listing(lib, '_ZN4Ship8getMaxHPEv').at(ANDROID_HULL_SOURCE, 0)
+    stats = Listing(lib, '_ZN6PlayerC1Eiiiii')
+    capacity = stats.unique(ANDROID_CAPACITY)
+    clone = Listing(lib, '_ZN4Ship5cloneEv').unique(ANDROID_CLONE)
+    ship_ctor = Listing(lib, clone['ctor']) if clone else None
+    zero, upgrades = (ship_ctor.unique('movs r6, #0'), ship_ctor.unique(ANDROID_UPGRADES)) if ship_ctor else (None, None)
+    if (None in (item_id, hull_source, capacity, clone, zero, upgrades) or not stats.holds('r4', capacity.last)
+            or not ship_ctor.holds('r4', upgrades.last) or not zero.last < upgrades.first or ship_ctor.writes(zero.last + 1, upgrades.last, 'r6')):
+        return {}
+    table = ship.span(head.last, head.last)['offset'] + 4
+    proof = {'update': update.span(repair.first, repair.last - 1), 'timers_zero': ctor.span(timers.first, timers.first + 10),
+             'device_assignment': device.span(), 'device_entry': {'offset': table + 15, 'bytes': 1},
+             'device_zero': ship.span(reset.first + 2, reset.first + 5), 'item_id': item_id.span(), 'hull_source': hull_source.span(),
+             'stats_capacity': capacity.span(), 'ship_clone': clone.span(), 'ship_ctor': upgrades.span(), 'upgrade_zero': zero.span(),
+             'periods': {'offset': periods[1], 'bytes': 16}, **{key: shape.span() for key, shape in helpers.items()}}
+    return dict(VALUES, provenance=proof)
+
+
 def extract_player_repair(mach,actors,vehicle,loadout):
+    if mach.architecture == 'android-armv7':
+        player = actors.get('player_initialization', {})
+        if not player.get('recharge') or not actors.get('npc_initialization') or vehicle.get('equipment_rule') != 'last_matching' or not loadout:
+            return {}
+        return android_repair(mach)
     import capstone
     arch=mach.architecture
     if arch not in LAYOUTS:return {}

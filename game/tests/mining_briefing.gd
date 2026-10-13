@@ -14,6 +14,7 @@ const Visuals=preload("res://src/content/visual_library.gd")
 const DialoguePanel=preload("res://src/presentation/station_dialogue_panel.gd")
 const Speech=preload("res://src/presentation/station_audio.gd")
 var checks:=0
+var arch:="x86_64"
 var failures:=0
 func _initialize():call_deferred("run")
 func run():
@@ -31,16 +32,20 @@ func verify(args: Array):
 	check(briefing.snapshot().is_empty() and not briefing.advance(0),"Unprepared briefing advanced")
 	if bindings.mining_briefing.is_empty():
 		check(not briefing.configure(bindings,lib,Construction.new(),"F"),"Legacy pack invented a briefing");return
-	var first_text:=1710 if lib.strings.size()==3385 else 1699
-	var source_bytes:=int(JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json"))).source_executable_bytes)
+	# Android strings use the Mac 1.0.7 numbering plus 16 Android-only lines.
+	var first_text:=1710 if lib.strings.size()>=3385 else 1699
+	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
+	var source_bytes:=int(header.source_executable_bytes);arch=str(header.architecture)
+	var android:=arch=="android-armv7"
 	check(validate(bindings.mining_briefing,bindings,source_bytes).is_empty(),"Imported briefing provenance failed")
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if android else Definitions.SPANS):
 		var bad: Dictionary=bindings.mining_briefing.duplicate(true);bad.provenance[key].offset+=1
 		check(not validate(bad,bindings,source_bytes).is_empty(),"Disconnected briefing extent accepted: "+key)
 	for key in Definitions.VALUES:
 		var bad: Dictionary=bindings.mining_briefing.duplicate(true);bad[key]="unverified"
 		check(not Definitions.parameters(bad),"Changed briefing declaration accepted: "+key)
-	check(not Definitions.validate(bindings.mining_briefing,source_bytes,"x86_64",bindings.arrival_staging,bindings.first_flight,bindings.station_presentation,{}).is_empty(),"Briefing accepted a missing desktop instruction mapping")
+	# Android has no desktop text; the Mac requires its instruction mapping.
+	check(Definitions.validate(bindings.mining_briefing,source_bytes,arch,bindings.arrival_staging,bindings.first_flight,bindings.station_presentation,{}).is_empty()==android,"Briefing desktop instruction mapping differs from its edition")
 	var foreign: Dictionary=(Definitions.VALUES if first_text==1710 else Definitions.MAC_VALUES).duplicate(true)
 	foreign.provenance=bindings.mining_briefing.provenance.duplicate(true)
 	check(not validate(foreign,bindings,source_bytes).is_empty(),"Briefing accepted text IDs from another source layout")
@@ -90,7 +95,8 @@ func verify(args: Array):
 		var line: Dictionary=briefing.snapshot().dialogue
 		check(line.index==i and line.count==5 and line.text_id==first_text+i and line.speaker_id==[0,2,0,2,16][i],"Briefing sequence differs from authored pairs")
 		check(line.voice_event_id==([177,178,179,180,-1][i]),"Wrong briefing recording selected")
-		if i==4:check(line.desktop_text_id==first_text+5 and "press F" in line.desktop_text and "#KEY_" not in line.desktop_text and "tap Fire" in line.text,"Desktop mining instruction lost its active key or touch variant")
+		if i==4 and android:check(line.desktop_text_id==line.text_id and line.desktop_text==line.text and "#KEY_" not in line.text and "fire button" in line.text,"Android mining instruction gained a desktop variant")
+		elif i==4:check(line.desktop_text_id==first_text+5 and "press F" in line.desktop_text and "#KEY_" not in line.desktop_text and "tap Fire" in line.text,"Desktop mining instruction lost its active key or touch variant")
 		check(briefing.navigate("next"),briefing.error)
 	var done:=briefing.snapshot()
 	check(done.phase=="flight" and done.acknowledged and not done.briefing_pending and not done.dialogue.visible,"Final acknowledgement did not close the pending briefing")
@@ -144,7 +150,7 @@ func verify(args: Array):
 	canvas.free();speech.free();briefing.clear();check(briefing.snapshot().is_empty(),"Clear retained briefing state")
 
 func validate(data: Dictionary, bindings: RefCounted, bytes: int) -> String:
-	return Definitions.validate(data,bytes,"x86_64",bindings.arrival_staging,bindings.first_flight,bindings.station_presentation,bindings.desktop_text)
+	return Definitions.validate(data,bytes,arch,bindings.arrival_staging,bindings.first_flight,bindings.station_presentation,bindings.desktop_text)
 func check(value: bool,message: String):
 	checks+=1
 	if not value:failures+=1;push_error(message)

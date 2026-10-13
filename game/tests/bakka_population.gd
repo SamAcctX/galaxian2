@@ -132,6 +132,7 @@ func verify_composition(bindings: RefCounted,cat: RefCounted,library: RefCounted
 	check(prepared.player_owner().cache_snapshot()==cache and prepared.equipment_owner().snapshot()==held,"Selected B'akka construction changed retained player pools or inventory")
 	var encounter:=Encounter.new()
 	if not encounter.configure_bakka(bindings,cat,library,prepared):check(false,encounter.error);return
+	check(encounter.campaign_mission(),"The B'akka contest is not the campaign's mission (mercy rule)")
 	var encounter_state: Dictionary=encounter.snapshot()
 	check(encounter_state.campaign_cursor==36 and encounter_state.controller.support_state=="bakka_combat" and encounter_state.combat.actors.size()==8,"Live B'akka encounter did not retain its fixed contest population")
 	var frame:=FlightFrame.new()
@@ -511,7 +512,7 @@ func equipped_seed(bindings: RefCounted,cat: RefCounted,source: Dictionary) -> D
 
 func verify_definitions(bindings: RefCounted,source: Dictionary,header: Dictionary) -> void:
 	check(validate(source,header,bindings).is_empty(),"The imported source capability failed validation")
-	for key in Bakka.SPANS:
+	for key in (Bakka.ANDROID_SPANS if header.architecture=="android-armv7" else Bakka.SPANS):
 		var changed: Dictionary=source.duplicate(true)
 		changed.provenance[key].offset+=1
 		check(not validate(changed,header,bindings).is_empty(),"A changed proof was trusted: "+key)

@@ -21,6 +21,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	var sizes := {}
 	if architecture=="x86_64": sizes={"cue":189,"actor_wrapper":14,"table_initializer":11,"virtual_activation":8,"activation":33,"activity_setter":13}
 	elif architecture=="armv7": sizes={"cue":190,"actor_wrapper":60,"table_initializer":18,"virtual_activation":4,"activation":20,"activity_setter":6}
+	elif architecture=="android-armv7": sizes={"cue":98,"table_initializer":24,"table_reference":8,"virtual_activation":8,"activation":20,"activity_setter":6}
 	var provenance: Variant = data.get("provenance")
 	if sizes.is_empty() or not provenance is Dictionary or provenance.size()!=sizes.size(): return "Invalid NPC activation provenance"
 	var spans := []

@@ -1,5 +1,18 @@
-"""Import verified early contract terms, without original executable payloads."""
+"""Import verified early contract terms, without original executable payloads.
+
+Android: Generator::createMission draws the early kinds, difficulty, Mido
+destination, quantities and reward (Generator::generateStationIndex,
+Galaxy::distance, Standing::getMissionBonus); Mission::getName,
+Globals::getAgentMissionText and the Mission accessors hold the texts and
+terms; ModStation::OnKeyPress opens the lounge from cursor 13 and
+SpaceLounge::onKeyPress accepts a contract (Status::hardCoreMode fee, cargo and
+cabin checks through Ship::spaceAvailable, Ship::refreshValue and
+Ship::getMaxPassengers, the replaced contract's cargo and passengers);
+Generator::createAgent, Agent::Agent and Status::resetGame start the generated
+contacts and the wallet. Values are the Mac 1.0.7 ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_declarations, hashed_variants
 from .lounge_contacts import extract_lounge_contacts
 from .delivery_results import extract_delivery_results
@@ -21,11 +34,18 @@ def extract_early_contracts(mach, arrival, travel):
     visit = travel.get('return_visit', {})
     if travel.get('scope') != 'mido_local_travel' or visit.get('next_cursor') != 13 or visit.get('next_kind') != 150:
         return {}
-    variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        # Requires the arrival staging, as the Mac anchors on its actor.
+        staged = isinstance(arrival, dict) and arrival.get('scope') == 'rescue_choreography' and 'actor' in arrival.get('provenance', {})
+        variant, proof = 1, recognize_symbols(mach, ANDROID) if staged else {}
+        accept = lambda: recognize_symbols(mach, ANDROID_ACCEPTANCE)
+    else:
+        variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
+        accept = lambda: hashed_declarations(mach, arrival, (ACCEPTANCE_LAYOUTS, MAC_ACCEPTANCE_LAYOUTS)[variant])
     if not proof:
         return {}
     result = copy.deepcopy((VALUES, MAC_VALUES)[variant])
-    acceptance = hashed_declarations(mach, arrival, (ACCEPTANCE_LAYOUTS, MAC_ACCEPTANCE_LAYOUTS)[variant])
+    acceptance = accept()
     if acceptance:
         result['acceptance'] = copy.deepcopy((ACCEPTANCE, MAC_ACCEPTANCE)[variant])
         proof.update(acceptance)
@@ -650,3 +670,72 @@ MAC_ACCEPTANCE = {'scope': 'mido_generated_contract_acceptance',
  'clear_cargo_kinds': [0, 3, 5],
  'generated_contact_source_id': -1,
  'generated_contact_stays_consumed': True}
+
+# Android spans inside named functions; the values are MAC_VALUES.
+# Generator::createMission: the early kinds, destinations, quantities and reward;
+# SpaceLounge::onKeyPress: cargo and cabin checks and the accepted load.
+ANDROID = {'early_lounge_gate': ('_ZN10ModStation10OnKeyPressExx', 770, 36, 'sha256:812848038300d7532197e7b93001b9a06d7ded15df211a24b115224c32888f23'),
+           'early_mido_destination': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 46, 68, 'sha256:72de6fd5bfe0960b48b0705d9a25dc623e552f13255cbe0c6959d678d1662a32'),
+           'early_selector': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 284, 72, 'sha256:b0cd1e3704e80b1497a835209df6579f96147333b25b660bb9a3c4aac4d3f9ec'),
+           'early_choices': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 346, 20, '0b0000000000000007000000040000000c000000', 'literal', 0),
+           'early_delivery_destination': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 394, 222, 'sha256:0414347e83a4a294da3787980b6ee0e656662d0d9734dab356d2c8f5493414ca'),
+           'early_difficulty': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 624, 44, 'sha256:8b1737c44f3a738657bdac5bcc50c754ae80d93a6d2e516072ffec5dd58d4207'),
+           'early_parameter_dispatch': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 820, 30, 'sha256:bebc79b26662ecabe843748fc203b54991483b797f74288e1e9d235d3106f168'),
+           'early_courier_quantity': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 982, 58, 'sha256:fa42ccdffd19f61876e424cb40b5842bf81a997e1e7c1df9799381004477d855'),
+           'early_passenger_quantity': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 1084, 34, 'sha256:92745078c20f6c5667a9ff39ddd26266acea6927fc6aabb76e17a071538eab2f'),
+           'early_reward_base': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 1186, 226, 'sha256:fe3c06fc3310dfd97c8213dd20355ed2449822b5c75be152d6dacf685bfcf517'),
+           'early_passenger_reward': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 1412, 56, 'sha256:36617d7a0ef961ffbe8428a8982b219ac53117b240ef1a75a2395fe9b6b230c7'),
+           'early_rank_reward': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 1468, 44, 'sha256:df45221fd2ddcd2db98061ffd6e0d31952f2539b61c9f1b1e7351a6d6f4cc642'),
+           'early_bonus_reward': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 1512, 100, 'sha256:bc1032b4903349659d143e2c8a556b7588fd1ebac1c130b6729b8f6a61c97248'),
+           'early_credit_quantization': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 1612, 78, 'sha256:6394b37a3ee566fce16ab0c7f8671a2db5308ed347a6ec915f319445027a794d'),
+           'early_reward_constructor': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 1690, 56, 'sha256:ece98fed05502604e6b0132b26493ec45ee68b1cf88532b54010d5402b125448'),
+           'early_parameter_setters': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 1940, 24, '3046c7f7e8ea059a30464146c7f7e8ea30462946c7f7eaea'),
+           'early_quantity_constants': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 1840, 12, '0000be420000964400e0ab45'),
+           'early_reward_multipliers': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 2260, 12, '9a99993f3333333f9a99193f'),
+           'early_destination_retry': ('_ZN9Generator20generateStationIndexEP5ArrayIP11SolarSystemEi', 182, 60, 'sha256:9a6515a31c3f0f757f329586b263f0ed1e066f9ee102c1a25854a2b1c25c9be7'),
+           'early_same_system_distance': ('_ZN6Galaxy8distanceEP11SolarSystemS1_', 22, 22, '2846c5f698eb06462046c5f694eb864202d19fed3e0a'),
+           'early_reputation_bonus': ('_ZN8Standing15getMissionBonusEi', 0, 84, 'sha256:10b8ea9aec9f8d15a60fad662fcd01be9d4d3434adfdfba5280aa33dc236ddaf'),
+           'early_mission_title': ('_ZN7Mission7getNameEv', 0, 64, 'sha256:86b706ad2641c36b00c7fa009892aeb58a349f748531cac166e4933c302a4f45'),
+           'early_mission_briefing': ('_ZN7Globals19getAgentMissionTextEP5Agent', 104, 26, 'sha256:98969edc100bee8d6a438ce690cc93bed37bf6a98d770ddf024dd2d3fefadaef'),
+           'early_cargo_description': ('_ZN7Globals19getAgentMissionTextEP5Agent', 4792, 26, 'sha256:d7987b40744744268c567d54ea8b205a78e19f3b81591e38487ffd59e2bbe5ac'),
+           'early_mission_constructor': ('_ZN7MissionC2EiN11AbyssEngine6StringEPiiiii', 0, 280, 'sha256:cf4ee0fa29aa46e6d39bc19434e953a7ea4dd44e80f73b90ab0131bf6cbc5885'),
+           'early_mission_goods_setter': ('_ZN7Mission18setProductionGoodsEii', 0, 6, 'c0e915127047'),
+           'early_mission_goods_index': ('_ZN7Mission22getProductionGoodIndexEv', 0, 4, '406d7047'),
+           'early_mission_goods_amount': ('_ZN7Mission23getProductionGoodAmountEv', 0, 4, '806d7047'),
+           'early_mission_reward_getter': ('_ZN7Mission9getRewardEv', 0, 4, '406a7047'),
+           'early_mission_bonus_getter': ('_ZN7Mission8getBonusEv', 0, 4, 'c06a7047'),
+           'early_mission_bonus_setter': ('_ZN7Mission8setBonusEi', 0, 4, 'c1627047'),
+           'early_courier_capacity_kind': ('_ZN11SpaceLounge10onKeyPressEi', 4520, 16, '5046ccf626efcdf63ced002800f0c681'),
+           'early_courier_capacity': ('_ZN11SpaceLounge10onKeyPressEi', 5444, 38, 'sha256:de5d09c55fafd1d57521326a1b45ae59822b6f133c51f4632d5abc958c3c8db1'),
+           'early_courier_capacity_text': ('_ZN11SpaceLounge10onKeyPressEi', 6978, 18, 'dff8bc0978440068006840f25111cdf68eeb'),
+           'early_passenger_capacity': ('_ZN11SpaceLounge10onKeyPressEi', 4536, 66, 'sha256:75ffd5388120733ef70983b8afd0be3c365ba54a6c5e0254201d3897dcf01de3'),
+           'early_contract_load': ('_ZN11SpaceLounge10onKeyPressEi', 7234, 120, 'sha256:ba69942c13f12429bb11b64aa245720ea8a8af280215945d3f134740c78392c7'),
+           'early_side_mission_getter': ('_ZN6Status19getFreelanceMissionEv', 0, 10, 'd0f89401406840687047'),
+           'early_side_mission_setter': ('_ZN6Status19setFreelanceMissionEP7Mission', 0, 10, 'd0f89401406841607047')}
+
+# SpaceLounge::onKeyPress accepts (fee, replaced contract, consumed contact);
+# the values are MAC_ACCEPTANCE.
+ANDROID_ACCEPTANCE = {'accept_fee_predicate': ('_ZN6Status12hardCoreModeEv', 0, 36, 'sha256:d129eedb895b5a8cc5da84fbd316ee5effaae7d16ec57c3ef53f54ee21bd7b12'),
+                      'accept_fee_calculation': ('_ZN11SpaceLounge10onKeyPressEi', 1114, 86, 'sha256:cfbd92a02c7713eea85568da3d6a359142420cda43f9374764c54e4e37aad812'),
+                      'accept_fee_shortfall': ('_ZN11SpaceLounge10onKeyPressEi', 1200, 16, 'dff8140a784400680068cb21cef6d8ee'),
+                      'accept_fee_debit': ('_ZN11SpaceLounge10onKeyPressEi', 2920, 16, 'dff804047844006800686942cdf612e8'),
+                      'accept_replacement': ('_ZN11SpaceLounge10onKeyPressEi', 2936, 184, 'sha256:8549894869e37f96851c3742f389382e657a82461e83864ae6a1037150520dc8'),
+                      'accept_replacement_passengers': ('_ZN11SpaceLounge10onKeyPressEi', 6042, 42, 'sha256:1885abe26ac87d651d54c00a4daedf099b01e6924d4a63fecc7ca7ae3b04fe06'),
+                      'accept_replacement_release': ('_ZN11SpaceLounge10onKeyPressEi', 7132, 102, 'sha256:d7faace3d821e30d8dbc76128e042ef3e2d9ea1534dca1370fc5db03a6779c93'),
+                      'accept_replacement_notice': ('_ZN11SpaceLounge10onKeyPressEi', 5804, 62, 'sha256:2ca24b7125cd336db9e1d5eab2890d6eaa94f3f28a0734b99e81cb3b4952c102'),
+                      'accept_cargo_capacity_sum': ('_ZN4Ship14spaceAvailableEi', 0, 20, 'd0e903321144806ac21800209142d8bf01207047'),
+                      'accept_installed_capacity': ('_ZN4Ship12refreshValueEv', 0, 940, 'sha256:a62d4f5d050b7b3c2b6cc52c84a174260ba2ff0a69068eafd0bc441489743890'),
+                      'accept_cabin_capacity_getter': ('_ZN4Ship16getMaxPassengersEv', 0, 4, '406c7047'),
+                      'accept_cargo_flag_setter': ('_ZN4Item13setUnsaleableEb', 0, 6, '80f844107047'),
+                      'accept_cargo_flag_getter': ('_ZN4Item12isUnsaleableEv', 0, 6, '90f844007047'),
+                      'accept_cargo_merge': ('_ZN4Item12combineItemsEP5ArrayIPS_ES3_', 0, 402, 'sha256:4db059a18b43a74a22402ec2ee1616ad74b1436e949a96265310df00ec09272e'),
+                      'accept_passenger_setter': ('_ZN6Status13setPassengersEi', 0, 4, '41637047'),
+                      'accept_generated_identity': ('_ZN9Generator11createAgentEP7Station', 300, 8, '4ff0ff31c7f73eef'),
+                      'accept_identity_argument': ('_ZN5AgentC2EiN11AbyssEngine6StringEiiibiiii', 12, 2, '0d46'),
+                      'accept_generated_flag': ('_ZN5AgentC2EiN11AbyssEngine6StringEiiibiiii', 118, 24, 'e90f6263216500212161002884f8741084f8751021776177'),
+                      'accept_generated_predicate': ('_ZN5Agent14isGenericAgentEv', 0, 10, '006d012818bf00207047'),
+                      'accept_consumed_setter': ('_ZN5Agent16setOfferAcceptedEb', 0, 6, '80f874107047'),
+                      'accept_contact_consumed': ('_ZN11SpaceLounge10onKeyPressEi', 7600, 18, '4846ccf6bce8082803d048460121ccf6cee8'),
+                      'accept_side_mission': ('_ZN11SpaceLounge10onKeyPressEi', 7544, 44, 'sha256:f87604fb80bbbcd2d66b6fcdc872b79865121ef8c15db469d08bbb2f49c5e468'),
+                      'accept_initial_wallet': ('_ZN6Status9resetGameEv', 24, 12, '0024c8f88c400068c8e96b44'),
+                      'accept_initial_passengers': ('_ZN6Status9resetGameEv', 482, 54, 'sha256:c74f40cfe7d5db39680dd9bc7943a7bef0603ccc99927bb5f50752dda6dc36ac')}

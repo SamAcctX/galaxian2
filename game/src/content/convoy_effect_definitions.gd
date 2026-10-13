@@ -7,6 +7,9 @@ const SPANS = {"convoy_effects_inherited_presets":[491693,2241],"convoy_effects_
 
 const MAC_SPANS = {"convoy_effects_inherited_presets":[492221,2241],"convoy_effects_handle_defaults":[607055,36],"convoy_effects_registrations":[609305,132],"convoy_effects_manager":[-43286,44],"convoy_effects_nozzle_manager":[-43546,44],"convoy_effects_activation":[154023,405],"convoy_effects_capture_view_stop":[155213,117],"convoy_effects_emission_visibility":[512170,104],"convoy_effects_retarget_dispatch":[513122,56],"convoy_effects_retarget_state":[521434,18],"convoy_effects_manager_flags":[509582,242],"convoy_effects_sprite_registration":[511506,250],"convoy_effects_brightness_fade":[514280,392],"convoy_effects_initial_mirroring":[516356,168],"convoy_effects_unanimated_uv":[524097,16]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"convoy_effects_inherited_presets":[0,5828],"convoy_effects_handle_defaults":[0,1668],"convoy_effects_registrations":[0,214],"convoy_effects_manager":[0,1792],"convoy_effects_activation":[0,59076],"convoy_effects_emission":[0,42],"convoy_effects_visibility":[0,42],"convoy_effects_retarget_dispatch":[0,42],"convoy_effects_retarget_state":[0,10],"convoy_effects_manager_flags":[0,142],"convoy_effects_sprite_registration":[0,200],"convoy_effects_brightness_fade":[0,340],"convoy_effects_initial_mirroring":[0,2532],"convoy_effects_unanimated_uv":[0,792]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES) and data.presets.all(Damage.sprite_preset)
 

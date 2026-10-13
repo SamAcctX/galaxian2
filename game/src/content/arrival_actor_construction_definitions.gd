@@ -8,6 +8,9 @@ const SPANS := {"x86_64":{"factory_constructor":[78713,112],"factory_cargo_guard
 
 const MAC_ALTERNATE := {"factory_constructor":[78713,112],"factory_cargo_guard":[78873,25],"factory_finish":[81328,32],"generated_route_and_cargo":[607547,205],"authored_route_default":[721857,12],"attachment":[-79336,271],"placement":[609776,176],"body_node":[-730900,355],"model_node":[-731340,430],"instance_allocation":[1159618,40],"instance_matrix_init":[1064786,27],"identity_matrix":[1206898,128],"model_factory_gate":[-220250,66],"model_factory_normal":[-218557,1136],"model_binding":[1160546,664],"animation_initialization":[1068258,112]}
 
+# Android: spans inside named functions (Layouts.anchored); the values are VALUES.
+const ANDROID_SPANS := {"factory_constructor":[1576,108],"factory_cargo_guard":[1716,18],"route_replacement":[0,36],"authored_route_default":[10,16],"attachment":[0,160],"placement":[0,120],"body_node":[0,192],"model_node":[0,256],"instance_allocation":[0,86],"identity_matrix":[0,648]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -17,6 +20,10 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, bytes: int, arch: String, arrival: Dictionary, actors: Dictionary, environment: Dictionary) -> String:
 	if not data is Dictionary:return "Missing rescue actor construction capability"
 	if data.is_empty():return ""
+	if arch=="android-armv7":
+		if not parameters(data):return "Unsupported rescue actor construction declarations"
+		if arrival.get("campaign_cursor")!=1 or arrival.get("actor_kind")!=3 or arrival.get("actor_hull_id")!=30 or environment.is_empty() or actors.get("npc_initialization",{}).get("construction",{}).is_empty() or actors.get("npc_initialization",{}).get("routes",{}).is_empty():return "Rescue actor construction lacks its source context"
+		return "" if Layouts.anchored(data.provenance,bytes,ANDROID_SPANS) else "Disconnected rescue actor construction declaration"
 	if not parameters(data) or not SPANS.has(arch):return "Unsupported rescue actor construction declarations"
 	if arrival.get("campaign_cursor")!=1 or arrival.get("actor_kind")!=3 or arrival.get("actor_hull_id")!=30 or environment.is_empty() or actors.get("npc_initialization",{}).get("construction",{}).is_empty() or actors.get("npc_initialization",{}).get("routes",{}).is_empty():return "Rescue actor construction lacks its source context"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")

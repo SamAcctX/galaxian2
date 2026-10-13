@@ -1,9 +1,25 @@
-"""Mac second-trip NPC control declarations; no original runtime code is emitted."""
+"""Mac second-trip NPC control declarations; no original runtime code is emitted.
+
+Android: PlayerFighter::update and the PlayerFighter constructor control the
+pirate; Level::init with Player::setEnemies / addEnemies give it the player
+as target; the PlayerEgo constructor, PlayerEgo::isInRocketControl /
+getTargetFollowCamera, TargetFollowCamera::getTarget, AEGeometry's
+constructor, getPosition, setVisible and render, and Player::isDead /
+isActive / doesNeverAttack are the helpers the control reads.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .station_exterior import declaration_bytes
 
 def extract_full_hold_control(mach,arrival,pirate,actors):
+    if mach.architecture == 'android-armv7':
+        try:
+            if pirate['scope'] != 'full_hold_pirate_combat': return {}
+            npc = actors['npc_initialization']
+            if not all(npc.get(k) for k in ['guidance', 'flight', 'holding', 'routes', 'construction', 'hostility']): return {}
+        except (KeyError, TypeError, AttributeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(VALUES, provenance=proof) if proof else {}
     if mach.architecture!='x86_64':return {}
     try:
         if pirate['scope']!='full_hold_pirate_combat':return {}
@@ -106,3 +122,25 @@ MAC_ALTERNATE = {'npc_update': [611314, 17180, '__text', 'sha256:e6a3db4e2bdaf51
  'target_alive': [541416, 16, '__text', '554889e583bf80000000000f9ec05dc3'],
  'target_activity': [541460, 14, '__text', '554889e58a87c800000024015dc3'],
  'force_route': [536146, 14, '__text', '554889e58a87fa00000024015dc3']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# PlayerFighter::update and its constructor steer, hold, fire and wake the pirate; Level::init and
+           # Player::setEnemies / addEnemies give it the player as its one target.
+           'npc_update': ('_ZN13PlayerFighter6updateEi', 0, 10528, 'sha256:fb79b3bde0fb27a45861c89450940e96ec313695cb5d4b4c290220c25ef78d9e'),
+           'npc_constructor': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 0, 1668, 'sha256:9722fa1dff717e74e4f5d93a1ee0e2af195659b26021723e8d5632f5ba9eaf91'),
+           'membership': ('_ZN5Level4initEv', 0, 1792, 'sha256:fceec130c720743b341b16f0e8ce63d43a1382808e075533d391370c9949a244'),
+           'merge_targets': ('_ZN6Player10addEnemiesEP5ArrayIPS_E', 0, 208, 'sha256:fa30dc0eba400e6524939de373cba3e539ef454ec48aa8eccad4d8abeb4400b4'),
+           'assign_targets': ('_ZN6Player10setEnemiesEP5ArrayIPS_E', 0, 174, 'sha256:d18a42da79a8fc28097c1369f9ddca9c072d2821e985b1b539e4e02c0495c43f'),
+           # The player and its alternate body (rocket control: the camera target), model drawing and the
+           # target predicates.
+           'player_constructor': ('_ZN9PlayerEgoC2EP6Player', 0, 2256, 'sha256:32e47e8e7a4022ce6a08268493b8fcf1ad21866a22aa6cc97fd1cb530435f7bc'),
+           'alternate_body_test': ('_ZN9PlayerEgo17isInRocketControlEv', 0, 12, 'd0f89401002818bf01207047'),
+           'alternate_body': ('_ZN9PlayerEgo21getTargetFollowCameraEv', 0, 6, 'd0f888007047'),
+           'alternate_model': ('_ZN18TargetFollowCamera9getTargetEv', 0, 4, '40687047'),
+           'model_position': ('_ZN10AEGeometry11getPositionEv', 0, 26, 'sha256:b9c206761276e9c203fbee1b2dbbde7151babe54fc1343e0edc216c8b9c0e609'),
+           'model_constructor': ('_ZN10AEGeometryC2EtPN11AbyssEngine11PaintCanvasEb', 0, 256, 'sha256:445381dc0cac413fa861ce74ac9422ae16ed2c8660e9ae7a6f9334c0d9a82f99'),
+           'model_request': ('_ZN10AEGeometry10setVisibleEb', 0, 10, '80f8481080f849107047'),
+           'model_submission': ('_ZN10AEGeometry6renderEv', 0, 18, '90f8481021b1c1680022c06a27f192bc7047'),
+           'target_alive': ('_ZN6Player6isDeadEv', 0, 12, '816f00200129b8bf01207047'),
+           'target_activity': ('_ZN6Player8isActiveEv', 0, 6, '90f8c0007047'),
+           'force_route': ('_ZN6Player15doesNeverAttackEv', 0, 6, '90f8ee007047')}

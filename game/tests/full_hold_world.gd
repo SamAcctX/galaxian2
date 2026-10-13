@@ -23,7 +23,7 @@ func run():
 func verify(args: PackedStringArray):
 	var lib:=Library.new();var bindings:=Bindings.new();var cat:=Catalogues.new()
 	if not lib.open(args[0]) or not bindings.open(args[1],lib.manifest) or not lib.select_language("gb") or not cat.open(lib):check(false,lib.error+bindings.error+cat.error);return
-	check(bindings.source_architecture=="x86_64","Mac content is required")
+	check(bindings.source_architecture in ["x86_64","android-armv7"],"Mac or Android content is required")
 	var fixture:=Fixtures.new();var construction:=Construction.new();var bodies:=Bodies.new();var effects:=Effects.new()
 	if not bodies.configure(lib,bindings) or not effects.configure(lib,bindings):check(false,bodies.error+effects.error);fixture.free();return
 	var prepared:=construction.prepare(bindings,cat,fixture.packet_fixture(bindings,cat,3),4096,1789100000,true,bodies,effects)

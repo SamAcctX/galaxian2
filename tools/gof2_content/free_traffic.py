@@ -1,8 +1,18 @@
-"""Verified ordinary ship setup declarations, independent of travel permission."""
+"""Verified ordinary ship setup declarations, independent of travel permission.
+
+Android: Level::createShip builds the Nivelian's three collision boxes
+(BoundingAAB with immediate extents; the Mac reads them from a constant
+table) and PlayerFighter::update picks opponents (factions 8, 9 and 10
+against all others, 0 against 1, 2 against 3). Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_free_traffic(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -36,3 +46,9 @@ MAC_ALTERNATE = {'free_traffic_nivelian_boxes': [80500,
                              '__const',
                              '61005225e16dba67c95d8c35984042cdcb6dcd0f7aa44a275b19ceefc6439e92'],
  'free_traffic_opposition': [614600, 268, '__text', 'f3d5620be640cc069471477c50f961e0fada34885c4e70e1c75485df434c06da']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# Level::createShip: three boxes (offset, full extents) and wreck 18301 for the Nivelian.
+           'free_traffic_nivelian_boxes': ('_ZN5Level10createShipEiiiP8Waypointbb', 2200, 250, 'sha256:de31f7d86f93911e2c4d65a2ca0d45acd806bd82d33cc24e40acd966f0bfef2a'),
+           # PlayerFighter::update: the exclusive factions and the two pairs.
+           'free_traffic_opposition': ('_ZN13PlayerFighter6updateEi', 2174, 206, 'sha256:8e46a41fd82257d1ded1262b7fd1d1e3a1a1282c1ba8967e3201e4aa00e86a89')}

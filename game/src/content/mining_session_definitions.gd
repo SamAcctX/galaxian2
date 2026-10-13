@@ -13,6 +13,9 @@ const CURRENT_SPANS := {"ongoing_drill":[588551,179],"finish_release":[602148,84
 const CURRENT_VALUES := {"scope":"first_mining_session","campaign_cursor":2,"max_frame_ms":150,"failure_notification":8,"failure_text_id":528,"stop_audio_events":[1,3],"automatic_finish_resumes_motion":true,"commands_after_update":true,"creation_frame_advances_drill":false,"cancelled_target_grants_ore":false,"failure_instruction":{"campaign_cursor":-1,"text_id":606,"title_text_id":379,"repeat_each_drill":false,"opens_before_mission_poll":true,"acknowledgement_advances_story":false}}
 const MAC_VALUES := {"scope":"first_mining_session","campaign_cursor":2,"max_frame_ms":150,"failure_notification":8,"failure_text_id":528,"stop_audio_events":[1,3],"automatic_finish_resumes_motion":true,"commands_after_update":true,"creation_frame_advances_drill":false,"cancelled_target_grants_ore":false,"failure_instruction":{"campaign_cursor":2,"text_id":606,"title_text_id":379,"repeat_each_drill":true,"opens_before_mission_poll":true,"acknowledgement_advances_story":false}}
 
+# Android: the MAC_VALUES; spans inside named functions (Layouts.anchored).
+const ANDROID_SPANS := {"ongoing_drill":[424,80],"outcome_dispatch":[1038,90],"instruction_reset_owner":[932,20],"finish_release":[406,110],"active_drill":[0,12],"failed_getter":[0,6],"frame_delta":[28,74],"player_frame_dispatch":[1834,42],"failure_instruction_gate":[6940,130],"hud_drill_input":[11650,424],"notification_dispatch":[26,14],"failure_jump_entry":[54,2],"failure_text":[1188,12],"instruction_title":[0,44],"instruction_pause":[0,72],"instruction_resume":[0,64],"instruction_ack_gate":[80,40],"instruction_ack_dispatch":[1120,22],"instruction_acknowledgement":[1560,18],"instruction_cursor":[6954,4],"instruction_text":[7024,4],"instruction_title_id":[10,4]}
+
 static func parameters(data: Variant) -> bool:
 	return _parameters(data,VALUES) or _parameters(data,CURRENT_VALUES) or _parameters(data,MAC_VALUES)
 
@@ -31,6 +34,9 @@ static func _parameters(data: Variant,expected: Dictionary) -> bool:
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, approach: Dictionary, drill: Dictionary) -> String:
 	if not data is Dictionary:return "Missing mining session declarations"
 	if data.is_empty():return ""
+	if arch=="android-armv7":
+		if not _parameters(data,MAC_VALUES) or not Approach.parameters(approach) or not Drill.parameters(drill):return "Unsupported mining session declarations"
+		return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid mining session extents"
 	if arch!="x86_64" or not parameters(data) or not Approach.parameters(approach) or not Drill.parameters(drill):return "Unsupported mining session declarations"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Mining session lacks its source anchor"

@@ -49,11 +49,14 @@ func _initialize() -> void:
 	bindings.manual_rotation = {}
 	check(not motion.configure(bindings, bindings.base_content_id), "Missing rotation definition replaced by a default")
 	check(motion.advance(pose, Vector2.ZERO, 1, 1) == pose, "Failed rotation setup retained usable cruise state")
-	for architecture in ["armv7", "x86_64"]:
+	var layouts := {"armv7": [90, 4, 4, 4, 28], "android-armv7": [72, 4, 4, 4, 224], "x86_64": [24, 61, 4, 4, 4, 45]}
+	for architecture in layouts:
 		var data := {"angle_unit_scale": 0.1, "radians_per_turn": 6.0, "time_scale": 0.02, "rotation_order": "local_x_y", "provenance": []}
-		var sizes := [90, 4, 4, 4, 28] if architecture == "armv7" else [24, 61, 4, 4, 4, 45]
+		var sizes: Array = layouts[architecture]
 		for i in sizes.size(): data.provenance.append({"offset": 100 * i, "bytes": sizes[i]})
 		check(Definitions.validate_manual_rotation(data, 1024, architecture).is_empty(), "Valid rotation provenance rejected")
+		for other in layouts:
+			if layouts[other] != sizes: check(not Definitions.validate_manual_rotation(data, 1024, other).is_empty(), "Rotation spans accepted for another compiler")
 		for bad in [NAN, INF, -1.0, 0.0, "0.1", true]:
 			data.time_scale = bad
 			check(not Definitions.validate_manual_rotation(data, 1024, architecture).is_empty(), "Invalid rotation scalar accepted")

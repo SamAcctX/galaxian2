@@ -8,18 +8,28 @@ const SPANS := {"x86_64":{"new_game_cache":[401,68],"opening_hull_cache":[-88010
 
 const MAC_ALTERNATE := {"new_game_cache":[401,68],"opening_hull_cache":[-880736,54],"restore":[-548795,128],"cache_refresh":[-548658,126],"gamma_reset":[-548532,72],"hull_setter":[-346242,30],"shield_setter":[-346212,44],"armor_setter":[-346168,32],"gamma_setter":[-346136,52],"constant_a47e6":[648134,4],"ship_hull":[-153680,60],"ship_shield":[-153620,10],"ship_armor":[-153690,10],"rescue_quest":[-22796,70],"gamma_context":[-4522,80],"constant_acf46":[682886,4],"gamma_return":[-4275,11],"quest_type":[-482690,9]}
 
+# Android: spans inside named functions (Layouts.anchored); no special-quest gamma.
+const ANDROID_VALUES := {"scope":"fresh_opening_to_rescue","arrival_cursor":1,"cache_minimum":0,"gamma_full":100,"gamma_sentinel":9999999,"skip_cache_refresh_cursor":95,"quest_kind":11,"quest_target_station":78,"gamma_special_quest":-1,"hazard_station_min":109,"hazard_station_max":113,"hull_cache_raises_max":true,"armor_clamped":true,"shield_clamped":true,"refresh_cache_after_enter":true}
+const ANDROID_SPANS := {"new_game_cache":[1696,42],"opening_hull_constant":[58,32],"opening_hull_copy":[24956,2],"opening_hull_cache":[25178,36],"restore":[680,94],"cache_refresh":[782,72],"gamma_reset":[854,54],"hull_setter":[0,18],"shield_setter":[0,38],"armor_setter":[0,18],"gamma_setter":[0,48],"gamma_limit":[48,4],"ship_hull":[0,50],"ship_shield":[0,4],"ship_armor":[0,4],"cursor_advance":[392,8],"rescue_dispatch":[40,28],"rescue_case":[68,2],"rescue_quest":[1438,50],"gamma_context":[0,68]}
+
 static func parameters(data: Variant) -> bool:
-	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
-	for key in VALUES:
-		if not Declarations.equal_value(data.get(key),VALUES[key]):return false
+	return _parameters(data,VALUES) or _parameters(data,ANDROID_VALUES)
+
+static func _parameters(data: Variant, values: Dictionary) -> bool:
+	if not data is Dictionary or data.size()!=values.size()+1 or not data.get("provenance") is Dictionary:return false
+	for key in values:
+		if not Declarations.equal_value(data.get(key),values[key]):return false
 	return true
 
 static func validate(data: Variant, bytes: int, arch: String, opening: Dictionary, actors: Dictionary, arrival: Dictionary) -> String:
 	if not data is Dictionary:return "Missing flight player cache capability"
 	if data.is_empty():return ""
-	if not parameters(data) or not SPANS.has(arch):return "Unsupported flight player cache declarations"
+	var android: bool=arch=="android-armv7"
+	if not (_parameters(data,ANDROID_VALUES) if android else (_parameters(data,VALUES) and SPANS.has(arch))):return "Unsupported flight player cache declarations"
 	if actors.get("player_initialization",{}).get("repair",{}).is_empty() or arrival.get("campaign_cursor")!=1:return "Flight cache lacks its source player/rescue context"
 	if opening.get("station_id",-1)>=data.hazard_station_min and opening.get("station_id",-1)<=data.hazard_station_max:return "Rescue gamma environment is unsupported"
+	if android:
+		return "" if Layouts.anchored(data.provenance,bytes,ANDROID_SPANS) else "Disconnected flight cache declaration"
 	var origin: Variant=opening.get("provenance",{}).get("declaration")
 	if not Fonts.extent(origin,"offset","bytes",[376 if arch=="x86_64" else 284],bytes):return "Flight cache lacks its loadout anchor"
 	if data.provenance.size()!=SPANS[arch].size():return "Invalid flight cache provenance"

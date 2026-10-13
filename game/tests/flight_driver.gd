@@ -25,9 +25,12 @@ func _initialize() -> void:
 	catalogues.tables = {"ships": [{"stats": {"handling_factor": 1.0}}], "items": []}
 	check_clock(bindings)
 	check_driver(bindings, catalogues)
-	for architecture in ["armv7", "x86_64"]:
-		var data := {"max_frame_milliseconds": 150, "time_unit": "milliseconds", "provenance": [{"offset": 0, "bytes": 62 if architecture == "armv7" else 72}, {"offset": 100, "bytes": 28}]}
+	var layouts := {"armv7": [62, 28], "android-armv7": [76, 18], "x86_64": [72, 28]}
+	for architecture in layouts:
+		var data := {"max_frame_milliseconds": 150, "time_unit": "milliseconds", "provenance": [{"offset": 0, "bytes": layouts[architecture][0]}, {"offset": 100, "bytes": layouts[architecture][1]}]}
 		check(Clock.validate(data, 1024, architecture).is_empty(), "Valid clock provenance rejected")
+		for other in layouts:
+			if other != architecture: check(not Clock.validate(data, 1024, other).is_empty(), "Clock spans accepted for another compiler")
 		for invalid in [0, -1, 0.5, INF, NAN, true, "150"]:
 			data.max_frame_milliseconds = invalid
 			check(not Clock.validate(data, 1024, architecture).is_empty(), "Invalid frame cap accepted")

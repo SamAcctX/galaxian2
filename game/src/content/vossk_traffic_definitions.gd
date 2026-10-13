@@ -5,5 +5,8 @@ const VALUES = {"scope":"ordinary_vossk_freighter","actor_kind":1,"hull_catalogu
 const SPANS = {"vossk_traffic_assembly_entry":[-219294,66],"vossk_traffic_spawn_hull":[-22069,138],"vossk_traffic_assembly":[-219228,203],"vossk_traffic_collision_dispatch":[78680,33],"vossk_traffic_collision_table":[81406,16],"vossk_traffic_collision_boxes":[80798,450],"vossk_traffic_collision_values":[1575402,80],"vossk_traffic_death_layout":[633685,160],"vossk_traffic_wreck_table":[638178,20],"vossk_traffic_wreck_material":[637821,17]}
 const MAC_SPANS = {"vossk_traffic_assembly_entry":[-220250,66],"vossk_traffic_spawn_hull":[-22069,138],"vossk_traffic_assembly":[-220184,203],"vossk_traffic_collision_dispatch":[78680,33],"vossk_traffic_collision_table":[81406,16],"vossk_traffic_collision_boxes":[80798,450],"vossk_traffic_collision_values":[1550466,80],"vossk_traffic_death_layout":[634233,160],"vossk_traffic_wreck_table":[638726,20],"vossk_traffic_wreck_material":[638369,17]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"vossk_traffic_assembly_entry":[0,66],"vossk_traffic_assembly":[66,146],"vossk_traffic_assembly_children":[1544,8],"vossk_traffic_spawn_hull":[8208,92],"vossk_traffic_collision_dispatch":[652,32],"vossk_traffic_collision_boxes":[1774,426],"vossk_traffic_death_layout":[0,192],"vossk_traffic_wreck_table":[1988,28],"vossk_traffic_wreck_material":[2562,10]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES)

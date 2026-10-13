@@ -26,7 +26,7 @@ func run():
 func verify(args: PackedStringArray):
 	var lib:=Library.new();var bindings:=Bindings.new();var cat:=Catalogues.new()
 	if not lib.open(args[0]) or not bindings.open(args[1],lib.manifest) or not cat.open(lib):check(false,lib.error+bindings.error+cat.error);return
-	check(bindings.source_architecture=="x86_64","This verification requires Mac content")
+	check(bindings.source_architecture in ["x86_64","android-armv7"],"This verification needs Mac or Android content")
 	var flight:=Construction.new();var actor:=Actor.new();var combat:=Combat.new();var guns:=Guns.new()
 	if bindings.full_hold_pirate.is_empty():
 		check(not actor.configure_full_hold(bindings,cat,flight,.5) and not combat.configure_full_hold(bindings,cat,flight,.5) and not guns.configure_full_hold(bindings,cat,flight),"Legacy pack invented pirate combat")
@@ -35,16 +35,16 @@ func verify(args: PackedStringArray):
 		return
 	var data: Dictionary=bindings.full_hold_pirate
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	check(Definitions.validate(data,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_flight,bindings.opening_actors,bindings.opening_handoff).is_empty(),"Pirate declaration rejected")
+	check(Definitions.validate(data,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_flight,bindings.opening_actors,bindings.opening_handoff).is_empty(),"Pirate declaration rejected")
 	for key in Definitions.VALUES:
 		var bad:=data.duplicate(true);bad[key]=null
 		check(not Definitions.parameters(bad),"Changed pirate field accepted: "+key)
 	for key in data.primary_weapon:
 		var bad:=data.duplicate(true);bad.primary_weapon[key]=null
 		check(not Definitions.parameters(bad),"Changed pirate gun field accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if bindings.source_architecture=="android-armv7" else Definitions.SPANS):
 		var bad:=data.duplicate(true);bad.provenance[key].offset+=1
-		check(not Definitions.validate(bad,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_flight,bindings.opening_actors,bindings.opening_handoff).is_empty(),"Changed pirate source extent accepted: "+key)
+		check(not Definitions.validate(bad,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_flight,bindings.opening_actors,bindings.opening_handoff).is_empty(),"Changed pirate source extent accepted: "+key)
 	for kills in 4:
 		var packet:=packet_fixture(bindings,cat,kills)
 		if not flight.prepare(bindings,cat,packet,4096,1789100000):check(false,flight.error);return

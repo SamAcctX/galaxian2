@@ -1,8 +1,24 @@
-"""Original Kappa rescue cast, routes, radio and outcome conditions. Constant declarations only."""
+"""Original Kappa rescue cast, routes, radio and outcome conditions. Constant declarations only.
+
+Android: Level::createCampaignMission case 21 builds the cast (three escorts,
+hull 5, then target hull 17 named by text 1600, routes from its waypoint
+tables, asleep, turned by pi, objectives 22 and 7); Route's constructor,
+setLoop and clone, KIPlayer::setRoute and setToSleep, Player::setActive and
+setAlwaysEnemy, Objective's constructor and achieved complete it.
+Level::createRadioMessages case 21 holds the radio, RadioMessage::triggered
+its conditions, LevelScript::process the escorts turning hostile;
+DialogueWindow's tables and Globals::getDialogueSoundId the briefing, result
+and voices. Values are the Mac 1.0.7 ones (MAC_VALUES); the Android
+instruction keeps its touch wording (no desktop text).
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_kappa_rescue(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(MAC_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -399,3 +415,40 @@ MAC_VALUES = {'scope': 'kappa_boyle_rescue',
  'choreography': {'escort_actor_ids': [1, 2, 3], 'escort_activation_event_started': 2, 'initial_phase': 0},
  'completion': {'condition': 22, 'last_radio_event': 4},
  'failure': {'condition': 7, 'first_actor_count': 1, 'actor_mode': 4}}
+
+ANDROID = {# Level::createCampaignMission cursor 21: routes, escorts 1-3 (hull 5), target 0 (hull 17, text 1600, hostile),
+           # all asleep, cloned routes, yaw pi, the target 1000/0/2000 off its waypoint, objectives 22 and 7.
+           'kappa_rescue_cast_dispatch': ('_ZN5Level21createCampaignMissionEv', 608, 2, '0032'),
+           'kappa_rescue_cast': ('_ZN5Level21createCampaignMissionEv', 26166, 600, 'sha256:e904ecd4fbb1da407a3aa46d3507104aa26d5c1b53afe8747da290bada359c6b'),
+           'kappa_rescue_waypoints': ('_ZN5Level21createCampaignMissionEv', 26166, 24, '409c0000c063ffffc0d40100f0d8ffff204e000030e60200', 'literal', 0),
+           'kappa_rescue_escort_waypoint': ('_ZN5Level21createCampaignMissionEv', 26206, 12, '409c0000c063ffffc0d40100', 'literal', 0),
+           'kappa_rescue_target_waypoint': ('_ZN5Level21createCampaignMissionEv', 26260, 12, 'f0d8ffff204e000030e60200', 'literal', 0),
+           'kappa_rescue_route_constructor': ('_ZN5RouteC2EPii', 0, 252, 'sha256:ca7150cd62482cc53dbfdf0a65bbe663c975f533f5e0fa5d80515fc638df1c70'),
+           'kappa_rescue_route_loop': ('_ZN5Route7setLoopEb', 0, 4, '01717047'),
+           'kappa_rescue_route_copy': ('_ZN5Route5cloneEv', 0, 348, 'sha256:c628d2ae59c27b4ad6e88c47bbcb48db0ee9fc8e6cc917af36c4ade43200da78'),
+           'kappa_rescue_route_assignment': ('_ZN8KIPlayer8setRouteEP5Route', 0, 36, 'sha256:2f00603c48d28f9708289d12f63227139eebaa3ce45e155ddc64e7ddf20197b5'),
+           'kappa_rescue_dormant_actor': ('_ZN8KIPlayer10setToSleepEv', 0, 28, 'sha256:cc84c0937afb4bb67537f3edaabf3c0dddc9ff41c2ff7882b2060d2d3248972a'),
+           'kappa_rescue_active_setter': ('_ZN6Player9setActiveEb', 0, 6, '80f8c0107047'),
+           'kappa_rescue_hostile_setter': ('_ZN6Player14setAlwaysEnemyEb', 0, 16, '80f8ec100121a0f85c1080f8e0107047'),
+           'kappa_rescue_condition_constructor': ('_ZN9ObjectiveC2EiiP5Level', 0, 18, '4ff0000c80e80610c0e9033cc0e905cc7047'),
+           # Level::createRadioMessages cursor 21: five messages (Android text ids 1881-1885) and their conditions.
+           'kappa_rescue_radio_dispatch': ('_ZN5Level19createRadioMessagesEi', 68, 2, '960e'),
+           'kappa_rescue_radio_events': ('_ZN5Level19createRadioMessagesEi', 7494, 190, 'sha256:7629ed272c61b8251c6fc76e3b1e6e8a9d012fc725c518bbbe9839e3bb02c087'),
+           'kappa_rescue_radio_message': ('_ZN12RadioMessageC2Eiiii', 0, 52, 'sha256:3846fd4e1bb2e22b2ac9c0a510aa87489cf6562344739be3881098d133598fac'),
+           'kappa_rescue_radio_predicates': ('_ZN12RadioMessage9triggeredExP9PlayerEgoP11LevelScript', 0, 1860, 'sha256:eba93dba536ccdaa67ad0e44c7b5ff4ae1ee5284e9fd8831719b304e90173244'),
+           'kappa_rescue_radio_npc_link': ('_ZN6Player11getKIPlayerEv', 0, 6, 'd0f8d0007047'),
+           'kappa_rescue_scenery_flag': ('_ZN6Player10isAsteroidEv', 0, 22, 'd0f8d00028b190f83800002818bf0120704700207047'),
+           'kappa_rescue_actor_system_flag': ('_ZN13PlayerFighter6updateEi', 0, 10528, 'sha256:fb79b3bde0fb27a45861c89450940e96ec313695cb5d4b4c290220c25ef78d9e'),
+           # LevelScript::process cursor 21: a hit escort, or radio message 2, turns escorts 1-3 hostile (phase 1).
+           'kappa_rescue_sequence_dispatch': ('_ZN11LevelScript7processEi', 6112, 6, '152801f06783'),
+           'kappa_rescue_sequence_provocation': ('_ZN11LevelScript7processEi', 11956, 46, 'sha256:6e332827e5e19b9929858bc7bda2dc1824c18485c2ff304eb314667c48bc6705'),
+           'kappa_rescue_sequence_activation': ('_ZN11LevelScript7processEi', 26316, 92, 'sha256:680f9f981b7fcbf063b16f71cd5c1c20212265f0e2f13ec9b6a14b65b379c6ba'),
+           'kappa_rescue_radio_triggered': ('_ZN12RadioMessage11isTriggeredEv', 0, 6, '90f820007047'),
+           'kappa_rescue_outcome': ('_ZN9Objective8achievedEi', 0, 978, 'sha256:da3086f410423068084e2547c16738945cb696b15a3685f82075a90dd6538eab'),
+           'kappa_rescue_retired_flag': ('_ZN8KIPlayer6isDeadEv', 0, 14, 'd0f884100020042908bf01207047'),
+           'kappa_rescue_radio_finished': ('_ZN12RadioMessage6isOverEv', 0, 6, '90f821007047'),
+           # Briefing (Android text ids 1877, 1878), its count, the result line (1886) and all voices.
+           'kappa_rescue_briefing': ('_ZN14DialogueWindow11loadContentEv', 128, 16, '01000000550700001000000056070000', 'literal', 128),
+           'kappa_rescue_briefing_count': ('_ZN14DialogueWindow6lengthEv', 26, 4, '04000000', 'literal', 84),
+           'kappa_rescue_result': ('_ZN14DialogueWindow11loadContentEv', 208, 8, '010000005e070000', 'literal', 1128),
+           'kappa_rescue_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0)}

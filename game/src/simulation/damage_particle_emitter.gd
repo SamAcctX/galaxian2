@@ -45,7 +45,7 @@ func configure(bindings: RefCounted,content_id: String,preset_id: Variant,seed: 
 
 func configure_full_hold(bindings: RefCounted,content_id: String,preset_id: Variant,seed: Variant) -> bool:
 	clear()
-	if bindings==null or bindings.source_architecture!="x86_64" or not FullHold.parameters(bindings.full_hold_particles):return reject("This content has no supported second-flight particle declarations")
+	if bindings==null or not bindings.campaign_source() or not FullHold.parameters(bindings.full_hold_particles):return reject("This content has no supported second-flight particle declarations")
 	if not _configure_rows(bindings,content_id,preset_id,seed,bindings.full_hold_particles.presets):return false
 	_enabled=bindings.full_hold_particles.burst_initial_emitting if _preset.preset_id==bindings.full_hold_particles.burst_preset else bindings.full_hold_particles.player_initial_emitting
 	return true

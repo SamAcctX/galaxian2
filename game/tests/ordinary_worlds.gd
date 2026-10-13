@@ -99,14 +99,16 @@ func verify(args: PackedStringArray):
 	for from_station in [70,71,72,73,74]:
 		check(Travel.route(bindings.mido_travel,18,from_station,95).is_empty(),"Local travel crossed a jumpgate boundary")
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	for key in Worlds.SPANS:
+	var android: bool=str(header.get("architecture",""))=="android-armv7"
+	for key in (Worlds.ANDROID_SPANS if android else Worlds.SPANS):
 		var invalid: Dictionary=bindings.mido_travel.duplicate(true);invalid.provenance.erase(key)
-		check(not Travel.validate(invalid,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing ordinary world proof was accepted: "+key)
-	var invalid: Dictionary=bindings.mido_travel.duplicate(true)
-	var alternate_source: bool=int(invalid.conversations[0].events[0].text_id)==int(Travel.MAC_VALUES.conversations[0].events[0].text_id)
-	var other: Dictionary=Worlds.SPANS if alternate_source else Worlds.MAC_SPANS
-	invalid.provenance.ordinary_world_special_planet.offset=int(bindings.arrival_staging.provenance.actor.offset)+int(other.ordinary_world_special_planet[0])
-	check(not Travel.validate(invalid,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Mixed-source ordinary world proof was accepted")
+		check(not Travel.validate(invalid,int(header.source_executable_bytes),str(header.architecture),bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing ordinary world proof was accepted: "+key)
+	if not android:
+		var invalid: Dictionary=bindings.mido_travel.duplicate(true)
+		var alternate_source: bool=int(invalid.conversations[0].events[0].text_id)==int(Travel.MAC_VALUES.conversations[0].events[0].text_id)
+		var other: Dictionary=Worlds.SPANS if alternate_source else Worlds.MAC_SPANS
+		invalid.provenance.ordinary_world_special_planet.offset=int(bindings.arrival_staging.provenance.actor.offset)+int(other.ordinary_world_special_planet[0])
+		check(not Travel.validate(invalid,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Mixed-source ordinary world proof was accepted")
 
 func verify_weymire(bindings: RefCounted,cat: RefCounted):
 	var stations: Array=cat.tables.stations

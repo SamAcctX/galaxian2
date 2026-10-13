@@ -70,3 +70,37 @@ class WeaponCapacity(unittest.TestCase):
                     at,body,fields=contexts['constructor_call'];data[256+at+fields['item'][0]]^=4
                 m.data=bytes(data)
                 self.assertFalse(reader.extract_weapon_capacity(m,w,f),(mac,corruption))
+
+
+@unittest.skipUnless(__import__('importlib').util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidWeaponCapacity(unittest.TestCase):
+    def test_kind_zero_constructor_gives_slots(self):
+        from test_weapon_parameters import android_guns, android_weapon_chain
+        lib, at, weapon = android_guns()
+        weapon = android_weapon_chain(lib, weapon)
+        result = weapon['projectile_capacity']
+        self.assertEqual(result['slots'], 16)
+        p = result['provenance']
+        # push, add r7, sub sp; the dispatch; its five cases; the range; other (4 bytes) after it.
+        self.assertEqual({k: (p[k]['offset'] - at['factory'], p[k]['bytes']) for k in ('factory_entry', 'type_selector', 'kind_zero', 'range', 'constructor_call')},
+                         {'factory_entry': (8, 6), 'type_selector': (14, 14), 'kind_zero': (28, 2), 'range': (38, 66), 'constructor_call': (108, 54)})
+        self.assertEqual(p['factory_call'], weapon['provenance']['tail'])
+        self.assertEqual(p['item_classification'], weapon['launch_modes']['provenance']['classification'])
+
+    def test_each_broken_rule_is_unsupported(self):
+        from test_weapon_parameters import android_guns, android_weapon_chain
+        cases = {'index rewritten': dict(edits=[('factory', 'sub sp, #0x38', 'sub sp, #0x38\nmovs r1, #0')]),
+                 'kind rewritten': dict(edits=[('factory', 'cmp r6, #4', 'movs r6, #0\ncmp r6, #4')]),
+                 'kind from elsewhere': dict(edits=[('factory', 'mov r6, r3', 'mov r6, r2')]),
+                 'kind zero elsewhere': dict(edits=[('factory', '.cases zero, other', '.cases other, zero')]),
+                 'other alternate count': dict(edits=[('factory', 'cmp r0, #2', 'cmp r0, #3')]),
+                 'constructor elsewhere': dict(edits=[('factory', 'bne.w #ordinary', 'bne.w #other')]),
+                 'no slots': dict(edits=[('factory', 'movs r4, #0x10', 'movs r4, #0')]),
+                 'no entry': dict(edits=[('factory', 'strd r2, r1, [sp, #0x30]', 'strd r2, r1, [sp, #0x28]')]),
+                 'no dispatch': dict(edits=[('factory', 'mov.w fp, #0\ntbh', 'mov.w fp, #1\ntbh')])}
+        for name, options in cases.items():
+            with self.subTest(name):
+                lib, _, weapon = android_guns(**options)
+                self.assertEqual(android_weapon_chain(lib, weapon)['projectile_capacity'], {})
+        lib, _, weapon = android_guns()
+        self.assertEqual(reader.extract_weapon_capacity(lib, {**weapon, 'launch_modes': {}}, 0), {})

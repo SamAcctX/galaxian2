@@ -204,6 +204,13 @@ func retain_mining_hint(seen: bool) -> void:
 	_state.progress.mining_failure_hint_seen=seen
 
 ## Adds hint windows the player has seen to the career (saved progress "hints_seen").
+## The Kaamo Club option: one-way, the career keeps it for good.
+func unlock_kaamo() -> bool:
+	error=""
+	if _state.is_empty() or not _state.get("progress") is Dictionary:return reject("The Kaamo Club unlock requires a station career")
+	_state.progress.kaamo_unlocked=true
+	return true
+
 func record_hints(seen: Array) -> bool:
 	error=""
 	if _state.is_empty() or not _state.get("progress") is Dictionary:return reject("Hints require a station career")
@@ -604,13 +611,24 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 	if _story_protects(bindings,owned,action,item_id,slot_index):return _shopping_reject("This item cannot be sold or demounted at the moment.")
 	if action=="supply_blueprint":
 		if _blueprints==null:return _shopping_reject("No blueprint is available")
-		var shipping: int=_blueprints.shipping_cost(item_id,_state.station_id,quantity)
+		var shipping: int=_blueprints.shipping_cost(item_id,_state.station_id,quantity,Blueprints.shipping_unit(bindings))
 		if shipping<0 or shipping>_state.credits:return _shopping_reject("Insufficient credits for shipping these materials")
 		var project: RefCounted=_blueprints.fork_for_transaction()
 		var supplied: RefCounted=project.contribute(item_id,slot_index,quantity,equipment)
 		if supplied==null:return _shopping_reject(project.error)
 		_blueprints=project;_state.credits-=shipping
 		return supplied
+	if action=="autocomplete_blueprint":
+		# Android HangarWindow::OnTouchEnd: Yes pays the quoted price or is refused.
+		if _blueprints==null or not Shopping.available(bindings):return _shopping_reject("No blueprint is available")
+		var price: int=Blueprints.autocomplete_price(bindings.mido_travel.ordinary_shopping,cat.tables.items,_blueprints.entry(item_id))
+		if price<0:return _shopping_reject("This blueprint cannot be autocompleted")
+		if price>_state.credits:return _shopping_reject("Insufficient credits to autocomplete this blueprint")
+		var project: RefCounted=_blueprints.fork_for_transaction()
+		var completed: RefCounted=project.autocomplete(item_id,equipment)
+		if completed==null:return _shopping_reject(project.error)
+		_blueprints=project;_state.credits-=price
+		return completed
 	var inventory: RefCounted=equipment.fork()
 	var Kaamo=preload("res://src/content/kaamo_club_definitions.gd")
 	if action in ["buy_ship","keep_ship"]:
@@ -1318,6 +1336,13 @@ func purchase_lounge_goods(bindings: RefCounted,contact_id: int,equipment: RefCo
 	if not _retain_booze_type(int(quote.item_id)):return null
 	if BaseMedals.booze_type_bit(int(quote.item_id))!=0 and not settle_base_medals():return null
 	return inventory
+
+## Android: launching from Thynome at cursor 24 retires its tractor-beam
+## vendors (lounge_cache.retire_vendors); the Mac has none.
+func retire_departure_vendors(bindings: RefCounted) -> void:
+	var rules: Dictionary=preload("res://src/content/persistent_contact_definitions.gd").vendor(bindings)
+	if rules.is_empty() or _lounges==null or _state.get("campaign_cursor")!=int(rules.departure_cursor) or _state.get("station_id")!=int(rules.station_id):return
+	_lounges=_lounges.fork();_lounges.retire_vendors(rules,int(_state.station_id))
 
 func begin_lounge_visit() -> bool:
 	error=""

@@ -1,9 +1,24 @@
-"""Second Mac mining flight construction; original code is never executed or emitted."""
+"""Second Mac mining flight construction; original code is never executed or emitted.
+
+Android: Level::createCampaignMission's cursor-4 case builds the pirate
+(Level::createShip(8, 0, 2, ...)) inactive, always hostile, asleep (mode 5)
+at (0, 0, -200000) through PlayerFighter's vtable slot 18; Level::init,
+Level::createSpace and Level::assignGuns build the world, environment and
+NPC weapons as for the first flight.
+"""
 import copy
-from .declaration_layouts import recognize
-from .station_exterior import declaration_bytes
+from .declaration_layouts import recognize, recognize_symbols
+from .station_exterior import declaration_bytes, vtable_proof
 
 def extract_full_hold_flight(mach, arrival, departure, first_flight, actors):
+    if mach.architecture == 'android-armv7':
+        try:
+            if departure['scope'] != 'full_hold_station_departure' or first_flight['scope'] != 'first_mining_flight_construction': return {}
+            initial = actors['npc_initialization']
+            if not all(initial.get(k) for k in ['construction', 'routes', 'world_initialization']): return {}
+        except (KeyError, TypeError, AttributeError): return {}
+        proof, slots = recognize_symbols(mach, ANDROID), vtable_proof(mach, ANDROID_VTABLES)
+        return dict(copy.deepcopy(VALUES), provenance={**proof, **slots}) if proof and slots is not None else {}
     if mach.architecture != 'x86_64': return {}
     try:
         if departure['scope'] != 'full_hold_station_departure' or first_flight['scope'] != 'first_mining_flight_construction': return {}
@@ -132,3 +147,26 @@ MAC_ALTERNATE = {'actor_dispatch': [315,
                      '554889e54156534883ec20f30f1155d4f30f114dd8f30f1145dc4889fbf30f118380000000f30f118b84000000f30f119388000000488b7b10e8688eebff4c8db3c0010000488d75e0f30f1045dcf30f1145e0f30f1045d8f30f1145e4f30f1045d4f30f1145e84c89f7e823db0600488bbbb80100004885ff7410f3410f104e08f3410f7e06e87dc804004c8b7308488b7b10e8848debff4983c6084c89f74889c6e8db7709004883c4205b415e5dc3'],
  'weapons': [54772, 4266, '__text', 'sha256:3f2a1241cc0c6a3b727f4b1e1e83eb9328004ecc7ee2d56d85d10163057bf0d3'],
  'extra_story': [51826, 1046, '__text', 'sha256:1335a39e49f4f68f662e67e9c0a9ff1687c9138f7de54ec091cee8875401c351']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# Level::createCampaignMission: cursor 4 (tbh entry 4) builds one actor, Level::createShip(8, 0, 2,
+           # no waypoint, true, false), inactive (KIPlayer::setInitActive(false), Player::setActive), always
+           # hostile (Player::setAlwaysEnemy), at (0, 0, -200000) through vtable slot 18 and asleep (mode 5).
+           'actor_dispatch': ('_ZN5Level21createCampaignMissionEv', 552, 14, 'ddf840a01d2807f2eb80dfe810f0'),
+           'actor_entry': ('_ZN5Level21createCampaignMissionEv', 574, 2, '2530'),
+           'actor_case': ('_ZN5Level21createCampaignMissionEv', 25216, 140, 
+                         '0c209ef710ec054604209ef77eecddf840a0002668600124066001202946ac602e60caf8f850a2f7f2ef5046082100220223cde900640296a3f7aee8daf8f810496808600021daf8f80040680068a3f742eadaf8f8000121406800684068a3f7a2e8daf8f80045f20003ccf6430300224068006801688e6c0021b047daf8f80040680068a3f7ace801f07eb8'),
+           'story_tail': ('_ZN5Level21createCampaignMissionEv', 29704, 26, 'sha256:51a12ccd37a83d3cc0390e228195c8a57dbd163b8258503299f415cf0179dcea'),
+           'position_setter': ('_ZN13PlayerFighter11setPositionEfff', 0, 120, 'sha256:84b11cc073cadac276caa21eb0eef09b9016bb682c15fad91054bd0e74a4dbe8'),
+           # Ship construction, the world order (Level::init), the environment and yaw (Level::createSpace)
+           # and the NPC weapons (Level::assignGuns).
+           'factory': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           'world_order': ('_ZN5Level4initEv', 0, 1792, 'sha256:fceec130c720743b341b16f0e8ce63d43a1382808e075533d391370c9949a244'),
+           'environment': ('_ZN5Level11createSpaceEv', 2536, 428, 'sha256:b5838b04c049f963e49014cf34bdec1794dc3a71ca797b5c01bfc3ab02a4cf71'),
+           'inactive_mode': ('_ZN8KIPlayer10setToSleepEv', 0, 28, 'd0b502af04460520c4f8840000216068b8f736eb012084f8ad00d0bd'),
+           'activity': ('_ZN8KIPlayer13setInitActiveEb', 0, 20, 'd0b502af04466068b8f72aeb002084f8ae00d0bd'),
+           'activity_field': ('_ZN6Player9setActiveEb', 0, 6, '80f8c0107047'),
+           'hostile': ('_ZN6Player14setAlwaysEnemyEb', 0, 16, '80f8ec100121a0f85c1080f8e0107047'),
+           'weapons': ('_ZN5Level10assignGunsEv', 0, 3320, 'sha256:2d4c9a0a16410a8459ff79a6c70158b826a10813a8dee82ee37fe387abbcec55')}
+# The actor's setPosition(float, float, float) call reads slot 18 of PlayerFighter's vtable.
+ANDROID_VTABLES = {'placement_virtual': ('_ZTV13PlayerFighter', 18, ['_ZN13PlayerFighter11setPositionEfff'])}

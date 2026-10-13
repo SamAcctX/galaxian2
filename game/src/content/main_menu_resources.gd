@@ -5,6 +5,8 @@ const Atlas=preload("res://src/content/atlas_region.gd")
 const LOGO_IMAGE_ID=7002
 const LOGO_TEXTURE_ID=10002
 const LOGO_RESOURCE="resources/data/textures/gof2_logos.aei"
+# Android registers its iPad-profile copy (BuildResourceList with Globals::iPad set, as the image regions).
+const ANDROID_LOGO_RESOURCE="resources/data/textures/gof2_logos_1440.aei"
 const ACTIONS=[
 	{"action":"new_game","source_action":0,"text_id":28},
 	{"action":"supernova","source_action":83,"text_id":282},
@@ -24,14 +26,15 @@ var identity:={}
 
 func configure(library: RefCounted,bindings: RefCounted,visuals: RefCounted) -> bool:
 	error=""
-	if library==null or bindings==null or visuals==null or library.manifest.get("profile",{}).get("edition")!="mac-full-hd" or bindings.base_content_id!=library.manifest.get("content_id") or visuals.base_content_id!=bindings.base_content_id:return reject("The main menu requires matching Mac Full HD content")
+	if library==null or bindings==null or visuals==null or library.manifest.get("profile",{}).get("edition") not in ["mac-full-hd","android-hd"] or bindings.base_content_id!=library.manifest.get("content_id") or visuals.base_content_id!=bindings.base_content_id:return reject("The main menu requires matching Mac Full HD content")
 	var alias: Dictionary=bindings.resolve_image_region(LOGO_IMAGE_ID,LOGO_TEXTURE_ID)
 	if alias.is_empty() or int(alias.get("region",-1))!=2:return reject("The imported Full HD logo alias is unavailable")
+	var resource:=LOGO_RESOURCE if library.manifest.profile.edition=="mac-full-hd" else ANDROID_LOGO_RESOURCE
 	var registered:=false
 	for row in bindings.records.get(LOGO_TEXTURE_ID,[]):
-		if row.kind=="texture" and row.resource==LOGO_RESOURCE and row.registration_type==2:registered=true
-	if not registered:return reject("The original Mac Full HD logo atlas is unavailable")
-	var atlas:=Atlas.new();var prepared:=atlas.load(library,visuals,LOGO_RESOURCE,int(alias.region))
+		if row.kind=="texture" and row.resource==resource and row.registration_type==2:registered=true
+	if not registered:return reject("The original Full HD logo atlas is unavailable")
+	var atlas:=Atlas.new();var prepared:=atlas.load(library,visuals,resource,int(alias.region))
 	if prepared==null:return reject(atlas.error)
 	var rows:=[]
 	for item in ACTIONS:

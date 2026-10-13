@@ -231,16 +231,11 @@ func load_sample(entry: Dictionary, looping: bool) -> Dictionary:
 	var stream: AudioStream
 	if bank.codec==7:
 		var pcm: PackedByteArray=_library.cached_audio_pcm(variant.resource,int(entry.index),decoded_size)
-		if not pcm.is_empty():
-			var wav:=AudioStreamWAV.new()
-			wav.format=AudioStreamWAV.FORMAT_16_BITS
-			wav.stereo=sample.channels==2;wav.mix_rate=sample.rate;wav.data=pcm
-			wav.loop_mode=AudioStreamWAV.LOOP_FORWARD if looping else AudioStreamWAV.LOOP_DISABLED
-			wav.loop_begin=sample.loop_start;wav.loop_end=sample.loop_end
-			stream=wav
+		if not pcm.is_empty():stream=Bank.pcm_stream(pcm,int(sample.channels),int(sample.rate),looping,int(sample.loop_start),int(sample.loop_end))
 	if stream==null:
 		stream=bank.stream(int(entry.index),looping)
-		if stream!=null and bank.codec==7:_library.remember_audio_pcm(variant.resource,int(entry.index),(stream as AudioStreamWAV).data)
+		# Cache the decoded source only, without a loop's mixing guard frame.
+		if stream!=null and bank.codec==7:_library.remember_audio_pcm(variant.resource,int(entry.index),(stream as AudioStreamWAV).data.slice(0,decoded_size))
 	if stream==null:reject(bank.error);return {}
 	_decoded_bytes+=decoded_size
 	return {"stream":stream,"source_bank":variant.resource,"source_index":int(entry.index),"sample":sample.duplicate(true)}

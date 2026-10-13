@@ -220,3 +220,14 @@ class InstallationTests(unittest.TestCase):
         with patch('gof2_content.game_install.requirements'), self.assertRaisesRegex(ContentError, 'separate'):
             prepare(app, store)
         self.assertFalse(store.exists())
+
+
+class PipelineIdTest(unittest.TestCase):
+    def test_android_build_digest_stands_in_for_compiled_sources(self):
+        from gof2_content import game_install
+        sources = game_install.source_digest(Path(game_install.__file__).parent)
+        self.assertEqual(game_install.pipeline_id(), sources)
+        self.assertNotEqual(sources, hashlib.sha256().hexdigest())
+        # On Android only .pyc files ship; the build's _pipeline module holds the digest.
+        with patch.dict(sys.modules, {'gof2_content._pipeline': SimpleNamespace(ID='e' * 64)}):
+            self.assertEqual(game_install.pipeline_id(), 'e' * 64)

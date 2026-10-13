@@ -14,10 +14,11 @@ const Radio = preload("res://src/simulation/radio_sequence.gd")
 var failures := 0
 
 func _initialize() -> void:
-	for mac in [true, false]:
-		var data: Dictionary = JSON.parse_string(JSON.stringify(Fixture.definition(mac)))
-		var arch := "x86_64" if mac else "armv7"
+	for arch in ["x86_64", "armv7", "android-armv7"]:
+		var data: Dictionary = JSON.parse_string(JSON.stringify(Fixture.definition(arch == "x86_64", arch == "android-armv7")))
 		check(Definitions.validate(data, 65536, arch).is_empty(), "Valid drift definitions rejected")
+		for other in ["x86_64", "armv7", "android-armv7"]:
+			if other != arch: check(not Definitions.validate(data, 65536, other).is_empty(), "Drift spans accepted for another compiler")
 		for bad in ["missing", "frequency", "bias", "count", "id", "duplicate", "phase", "skip", "application", "extent", "overlap"]:
 			var copy := data.duplicate(true)
 			match bad:

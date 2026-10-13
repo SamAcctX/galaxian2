@@ -8,6 +8,9 @@ const SPANS = {"kappa_lifecycle_systems_hit":[538094,842],"kappa_lifecycle_norma
 const Fighters=preload("res://src/content/kappa_fighters_definitions.gd")
 const MAC_SPANS = {"kappa_lifecycle_systems_hit":[538630,842],"kappa_lifecycle_normal_hit":[539472,1846],"kappa_lifecycle_systems_reputation":[808894,16],"kappa_lifecycle_reputation_adjust":[808678,184],"kappa_lifecycle_current_system":[873354,14],"kappa_lifecycle_system_faction":[735296,10],"kappa_lifecycle_actor_constructor":[-81548,948],"kappa_lifecycle_attached_actor":[-77806,14],"kappa_lifecycle_warning":[119652,34],"kappa_lifecycle_response":[113780,214],"kappa_lifecycle_mission_radio_filter":[113994,2616],"kappa_lifecycle_persistent_hostility":[536160,28]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"kappa_lifecycle_systems_hit":[0,572],"kappa_lifecycle_normal_hit":[0,1376],"kappa_lifecycle_systems_reputation":[0,6],"kappa_lifecycle_reputation_adjust":[0,124],"kappa_lifecycle_current_system":[0,6],"kappa_lifecycle_system_faction":[0,4],"kappa_lifecycle_actor_constructor":[0,604],"kappa_lifecycle_attached_actor":[0,6],"kappa_lifecycle_warning":[0,22],"kappa_lifecycle_response":[0,156],"kappa_lifecycle_mission_radio_filter":[0,1912],"kappa_lifecycle_persistent_hostility":[0,16]}
+
 static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALUES)
 static func available(bindings: RefCounted) -> bool:
 	return Fighters.available(bindings) and parameters(bindings.mido_travel.get("kappa_lifecycle"))

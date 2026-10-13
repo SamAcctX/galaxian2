@@ -103,3 +103,72 @@ class OpeningDrift(unittest.TestCase):
                     self.assertEqual(reader.extract_opening_drift(m,camera),{})
 
 if __name__=='__main__':unittest.main()
+
+
+def android(wave_condition='gt', clock_field=0x1b8, sine_jump=True, translate_y=0x5c, omit=None, **camera_options):
+    """The camera fixture plus Layout::getPulseValue, Sinf, Status::getPlayingTime and AEGeometry::translate."""
+    from android_fixture import TEXT, Thumb
+    from test_opening_camera import android as camera
+    from test_opening_staging import STAGING_CALLEES
+    from test_steering import (add_imm, add_pc, b_to, ldr_lit, ldr_reg, ldr_w, ldrd, sub_sp, vadd, vfp, vldr_pc, vmov_from_core,
+                               vneg, vpush_d8, vstr, wide, CONDITIONS)
+    wave, sine, clock, translate, l2f = (TEXT + 0x1a00 + 0x100 * i for i in range(5))
+    staged = {name: TEXT + 0x40 * i for i, name in enumerate(STAGING_CALLEES)}
+    asm = Thumb(wave)
+    asm.half(0xb5b0, 0xaf02)  # push {r4, r5, r7, lr}; add r7, sp, #8
+    vpush_d8(asm)
+    vmov_from_core(ldr_lit(asm, 0, 0x60), 16, 1)
+    add_pc(asm, 0).ldr(5, 0, 0)
+    for second in (False, True):
+        asm.ldr(0, 5, 0).call(clock).call(l2f)
+        vmov_from_core(asm, 0, 0).vmul(0, 0, 16).vmov_core(0, 0).call(sine)
+        if not second:
+            asm.mov(4, 0)
+    vmov_from_core(vmov_from_core(asm, 4, 4), 0, 0)
+    wide(asm, 0xeeb52ac0)  # vcmpe.f32 s4, #0
+    asm.half(0xeef1, 0xfa10)  # vmrs apsr_nzcv, fpscr
+    vneg(asm, 2, 0).half(0xbf00 | CONDITIONS[wave_condition] << 4 | 8)  # it <condition>
+    vfp(asm, 0xeeb00a40, 2, 0, 0).vmov_core(0, 2)  # vmov<condition>.f32 s2, s0
+    asm.half(0xecbd, 0x8b02, 0xbdb0)  # vpop {d8}; pop {r4, r5, r7, pc}
+    functions = [('_ZN6Layout13getPulseValueEf', asm.finish(), wave)]
+    asm = Thumb(sine)
+    functions.append(('_ZN11AbyssEngine6AEMath4SinfEf', (b_to(asm, l2f, None, True) if sine_jump else asm.ret()).finish(), sine))
+    functions.append(('_ZN6Status14getPlayingTimeEv', ldrd(Thumb(clock), 0, 1, 0, clock_field).ret().finish(), clock))
+    functions.append(('__aeabi_l2f', Thumb(l2f).ret().finish(), l2f))
+    asm = wide(Thumb(translate), 0xe92d4ff0).add_sp(7, 0xc)  # push.w {r4-fp, lr}
+    vpush_d8(sub_sp(asm, 4))
+    ldr_lit(sub_sp(asm, 0x80).mov(11, 0), 0, 0x90).mov(10, 2)
+    add_imm(add_pc(vmov_from_core(asm, 16, 1), 0).mov(9, 3), 8, 13, 0x40).ldr(0, 0, 0).ldr(0, 0, 0).str_sp(0, 0x7c)
+    ldr_w(ldr_w(asm, 2, 11, 0xc), 0, 11, 0x2c).mov(1, 2).call(TEXT + 0x1f00)
+    vmov_from_core(asm.mov(1, 8).half(0xc87c), 6, 10).stm(1, 2, 3, 4, 5, 6).half(0xc87c).stm(1, 2, 3, 4, 5, 6)
+    wide(asm, 0xe890007c).add_sp(0, 4).stm(1, 2, 3, 4, 5, 6).mov(1, 8)
+    vadd(asm.vldr(0, 13, 0x4c).vldr(2, 13, translate_y), 0, 0, 16).vldr(4, 13, 0x6c)
+    vmov_from_core(vadd(asm, 2, 2, 6).vmov_core(2, 0).vmov_core(3, 2), 0, 9)
+    vstr(vadd(asm, 0, 4, 0), 0, 13, 0).call(staged['_ZN11AbyssEngine6AEMath20MatrixSetTranslationERNS0_6MatrixEfff'])
+    ldr_w(ldr_w(asm, 1, 11, 0xc).mov(2, 8), 0, 11, 0x2c).call(TEXT + 0x1f40).pop()
+    functions.append(('_ZN10AEGeometry9translateEfff', asm.finish(), translate))
+    functions += [('_ZN11AbyssEngine11PaintCanvas17TransformGetLocalEj', Thumb(TEXT + 0x1f00).ret().finish(), TEXT + 0x1f00),
+                  ('_ZN11AbyssEngine11PaintCanvas17TransformSetLocalEjRKNS_6AEMath6MatrixE', Thumb(TEXT + 0x1f40).ret().finish(), TEXT + 0x1f40)]
+    return camera(extra=[f for f in functions if f[0] != omit], omit=omit, **camera_options)
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidOpeningDrift(unittest.TestCase):
+    def test_named_wave_and_cut(self):
+        result = reader.extract_opening_drift(android(frequency=0x3a83126f, bias=-0.25), {'camera': True})
+        provenance = result.pop('provenance')
+        self.assertEqual(result, {'frequency_per_millisecond': struct.unpack('<f', struct.pack('<I', 0x3a83126f))[0], 'bias': -0.25,
+                                  'actor_ids': [0, 1, 2], 'through_phase': 2, 'skip_formation_update': True, 'time_unit': 'milliseconds',
+                                  'waveform': 'absolute_sine', 'application': 'per_update_world_y'})
+        self.assertEqual({k: v['bytes'] for k, v in provenance.items()},
+                         {'cut': 72, 'wave': 108, 'sine': 4, 'elapsed_getter': 6, 'translate': 134})
+        self.assertEqual(reader.extract_opening_drift(android(), {}), {})
+
+    def test_each_broken_declaration_is_unsupported(self):
+        cases = {'zero frequency': dict(frequency=0), 'nan frequency': dict(frequency=0x7fc00000), 'far frequency': dict(frequency=0x7f000000),
+                 'wave': dict(wave_condition='lt'), 'clock': dict(clock_field=0x1c0), 'sine': dict(sine_jump=False),
+                 'translate': dict(translate_y=0x58), 'cut': dict(cut_phase=3)}
+        cases.update({name: dict(omit=name) for name in ('_ZN6Layout13getPulseValueEf', '_ZN11AbyssEngine6AEMath4SinfEf',
+                                                         '_ZN6Status14getPlayingTimeEv', '_ZN10AEGeometry9translateEfff')})
+        for name, options in cases.items():
+            self.assertEqual(reader.extract_opening_drift(android(**options), {'camera': True}), {}, name)

@@ -2,6 +2,13 @@
 
 Bounded static recognition only. Native availability and sampling live in Godot;
 no original instructions or executable bytes enter the resulting content pack.
+
+Android: Level::createAsteroids stores Galaxy::getAsteroidProbabilities(station)
+right before seeding the asteroid count, selects ores from it with
+AERandom::nextInt(100) and picks the asteroid model from a four-entry table;
+the probabilities use Station::getSystem, SolarSystem::getX/getY,
+Item::getMinPriceSystem (attribute 9, Item::init) and Globals::sqrt, which
+branches through a veneer to the imported AEMath::Sqrtf.
 """
 import struct
 from .opening_loadout import template
@@ -10,6 +17,8 @@ from .scenery_population import import_symbol
 
 
 def extract_scenery_resources(mach, population):
+    if mach.architecture == 'android-armv7':
+        return android_resources(mach) if population else {}
     if not population or mach.architecture not in ('x86_64','armv7'):return {}
     import capstone
     mac=mach.architecture=='x86_64';prefix='MAC_' if mac else 'ARM_'
@@ -96,3 +105,326 @@ MAC_ITEM = '554889e5488b47384885c0747d488b48088b4904890f488b48088b490c894f04488b
 ARM_ITEM = '016b002908bf70474968c0ef50004a680260ca6842604a698260ca69c2604a6bc261ca6b02624b6c4362d1f82490c0f81090c96a4161991a01ebd17102eb6101816100f1340141f98f0a002180f844107047'
 MAC_SQRT = '554889e54883ec10f30f1145fcf30f5a45fce8 {sqrt:4} f20f5ac04883c4105dc3'
 ARM_SQRT = '81b040ec100bb0ee402a8ded002ab7eec20ab1eec00bb7eec02b12ee100a01b07047'
+
+
+# Android: the probability table, its callees and the selection site in
+# Level::createAsteroids, all found by name.
+ANDROID_ENTRY = r"""call _ZN6Galaxy24getAsteroidProbabilitiesEP7Station
+str r0, \[sp, #\w+\]
+"""
+# 11 (item, weight) pairs: ores 154-163 weighted 100 - distance to the ore's
+# cheapest system (0 below 50, all 0 in alien orbit), fallback 164 weighted 100
+# only in alien orbit, sorted by weight, each positive weight lowered by 2 per
+# rank; in supernova orbit from campaign cursor 90 every item becomes 217.
+ANDROID_PROBABILITY = r"""push\.w \{r4, r5, r6, r7, r8, sb, sl, fp, lr\}
+add r7, sp, #0xc
+sub sp, #0x24
+mov r4, r0
+ldr r0, =\w+
+str r1, \[sp, #0x14\]
+adr r0, \w+
+ldr r5, \[r0\]
+ldr r0, \[r5\]
+call _ZN6Status12inAlienOrbitEv
+mov r6, r0
+ldr r0, \[r5\]
+call _ZN6Status16inSupernovaOrbitEv
+str r0, \[sp, #0x20\]
+cmp r6, #0
+ite eq
+ldreq r0, \[r4, #4\]
+movne r0, #0
+str r0, \[sp, #0xc\]
+ldr r0, =\w+
+adr r0, \w+
+ldr r0, \[r0\]
+ldr r0, \[r0\]
+str r0, \[sp, #8\]
+movs r0, #0x2c
+call _Znaj
+mov r5, r0
+movs r0, #0x2c
+call _Znaj
+mov fp, r0
+ldr r0, =\w+
+mov\.w sb, #0
+mov\.w sl, #(?P<ore_first>\w+)
+adr r0, \w+
+str r6, \[sp, #0x10\]
+ldr r0, \[r0\]
+str r0, \[sp, #4\]
+str\.w sl, \[fp, sb, lsl #2\]
+cbz r6, #@0x64
+movs r0, #0
+mov r1, sb
+b #@0xfa
+ldr r6, \[sp, #0x14\]
+mov r0, r6
+call _ZN7Station9getSystemEv
+ldr r4, \[sp, #0xc\]
+ldr r1, \[r4, #4\]
+ldr\.w r0, \[r1, r0, lsl #2\]
+call _ZN11SolarSystem4getXEv
+str r0, \[sp, #0x1c\]
+mov r0, r6
+call _ZN7Station9getSystemEv
+ldr r1, \[r4, #4\]
+ldr\.w r0, \[r1, r0, lsl #2\]
+call _ZN11SolarSystem4getYEv
+ldr r6, \[sp, #8\]
+str r0, \[sp, #0x18\]
+ldr r0, \[r6, #4\]
+ldr\.w r0, \[r0, sl, lsl #2\]
+call _ZN4Item17getMinPriceSystemEv
+ldr r1, \[r4, #4\]
+ldr\.w r0, \[r1, r0, lsl #2\]
+call _ZN11SolarSystem4getXEv
+mov r8, r0
+ldr r0, \[r6, #4\]
+ldr\.w r0, \[r0, sl, lsl #2\]
+call _ZN4Item17getMinPriceSystemEv
+ldr r1, \[r4, #4\]
+ldr r2, \[sp, #0x1c\]
+ldr\.w r0, \[r1, r0, lsl #2\]
+sub\.w r2, r8, r2
+mul r4, r2, r2
+call _ZN11SolarSystem4getYEv
+ldr r1, \[sp, #0x18\]
+ldr r6, \[sp, #0x10\]
+subs r0, r0, r1
+mla r0, r0, r0, r4
+vmov s0, r0
+vcvt\.f32\.s32 s0, s0
+ldr r0, \[sp, #4\]
+ldr r0, \[r0\]
+vmov r1, s0
+call _ZN7Globals4sqrtEf
+vmov s0, r0
+add\.w r1, sb, #1
+vcvt\.s32\.f32 s0, s0
+vmov r0, s0
+rsb\.w r0, r0, #(?P<weight_base>\w+)
+cmp r0, #(?P<weight_min>\w+)
+it lt
+movlt r0, #0
+add\.w sl, sl, #1
+str\.w r0, \[r5, sb, lsl #2\]
+mov sb, r1
+cmp\.w sl, #(?P<fallback>\w+)
+bne #@0x58
+movs r0, #(?P=fallback)
+cmp r6, #0
+str\.w r0, \[fp, #0x28\]
+it ne
+movne r6, #0x64
+str r6, \[r5, #0x28\]
+ldr r4, \[r5\]
+movs r2, #1
+movs r1, #0
+add\.w r3, r5, r1, lsl #2
+ldr r0, \[r3, #4\]
+cmp r4, r0
+bge #@0x142
+str\.w r0, \[r5, r1, lsl #2\]
+add\.w r0, fp, r1, lsl #2
+ldr\.w r2, \[fp, r1, lsl #2\]
+ldr r6, \[r0, #4\]
+str\.w r6, \[fp, r1, lsl #2\]
+str r2, \[r0, #4\]
+movs r2, #0
+str r4, \[r3, #4\]
+b #@0x144
+mov r4, r0
+adds r1, #1
+cmp r1, #0xa
+bne #@0x11e
+tst\.w r2, #1
+beq #@0x118
+movs r0, #0
+movs r1, #0
+ldr\.w r2, \[r5, r1, lsl #2\]
+cmp r2, #1
+itt ge
+addge r2, r2, r0
+strge\.w r2, \[r5, r1, lsl #2\]
+adds r1, #1
+subs r0, #2
+cmp r1, #0xb
+bne #@0x154
+movs r0, #0x58
+call _Znaj
+mov r8, r0
+ldr r0, =\w+
+movs r4, #0
+mvn sb, #3
+adr r0, \w+
+movs r6, #(?P<override_item>\w+)
+ldr\.w sl, \[r0\]
+add\.w r0, r4, r4, lsr #31
+and\.w r0, sb, r0, lsl #1
+ldr\.w r1, \[fp, r0\]
+str\.w r1, \[r8, r4, lsl #2\]
+add\.w r1, r8, r4, lsl #2
+ldr r0, \[r5, r0\]
+str r0, \[r1, #4\]
+ldr r0, \[sp, #0x20\]
+cmp r0, #1
+bne #@0x1b0
+ldr\.w r0, \[sl\]
+call _ZN6Status25getCurrentCampaignMissionEv
+cmp r0, #0x5a
+it ge
+strge\.w r6, \[r8, r4, lsl #2\]
+adds r4, #2
+cmp r4, #0x16
+blt #@0x182
+mov r0, r5
+call _ZdaPv
+mov r0, fp
+call _ZdaPv
+mov r0, r8
+add sp, #0x24
+pop\.w \{r4, r5, r6, r7, r8, sb, sl, fp, pc\}
+"""
+# Rows 0-10 step 2 (6 rows) until an ore or 217: nextInt(100) below the
+# row's weight takes it, else back to row 0.
+ANDROID_SELECTOR = r"""ldr\.w r2, \[(?P<table>\w+), (?P<row>\w+), lsl #2\]
+movs r0, #0
+cmp r2, #0xd9
+it eq
+moveq r0, #1
+mov r1, r2
+cmp r2, #0xa4
+str r1, \[sp, #\w+\]
+mov\.w r1, #0
+it lt
+movlt r1, #1
+orrs r1, r0
+adds r0, (?P=row), #2
+cmp r0, #0xa
+it gt
+movgt r0, #0
+mov (?P=row), r0
+tst\.w r1, #1
+bne #(?P<done>\w+)
+ldr r0, \[sp, #\w+\]
+movs r1, #0x64
+ldr r0, \[r0\]
+call _ZN11AbyssEngine8AERandom7nextIntEi
+add\.w r1, (?P=table), (?P=row), lsl #2
+ldr r2, \[r1, #4\]
+movs r1, #0
+cmp r0, r2
+mov\.w r0, #0
+bge #(?P<retry>\w+)
+b #(?P<loop>\w+)
+"""
+# Model kind: alien orbit 1, item 217 3, else the system kind; four model ids.
+ANDROID_MODELS = r"""ldr r1, =\w+
+cmp r0, #0
+ldr (?P<kind>\w+), \[sp, #\w+\]
+mov\.w r0, #0
+it ne
+movne (?P=kind), #1
+adr r1, (?P<table>\w+)
+str\.w (?P<item>\w+), \[sp, #\w+\]
+cmp\.w (?P=item), #0xd9
+it eq
+moveq (?P=kind), #3
+cmp\.w \w+, #0
+it gt
+movgt r0, #1
+ldr\.w r1, \[r1, (?P=kind), lsl #2\]
+"""
+ANDROID_ITEM = r"""ldr r1, \[r0, #0x30\]
+cbz r1, #@0x4c
+ldr r1, \[r1, #4\]
+vmov\.i32 q8, #0
+ldr r2, \[r1, #4\]
+str r2, \[r0\]
+ldr r2, \[r1, #0xc\]
+str r2, \[r0, #4\]
+ldr r2, \[r1, #0x14\]
+str r2, \[r0, #8\]
+ldr r2, \[r1, #0x1c\]
+str r2, \[r0, #0xc\]
+ldr r2, \[r1, #0x34\]
+str r2, \[r0, #0x1c\]
+ldr r2, \[r1, #0x3c\]
+str r2, \[r0, #0x20\]
+ldr r3, \[r1, #0x44\]
+str r3, \[r0, #0x24\]
+ldr\.w ip, \[r1, #0x24\]
+str\.w ip, \[r0, #0x10\]
+ldr r1, \[r1, #0x2c\]
+str r1, \[r0, #0x14\]
+subs r1, r3, r2
+add\.w r1, r1, r1, lsr #31
+add\.w r1, r2, r1, asr #1
+str r1, \[r0, #0x18\]
+add\.w r1, r0, #0x34
+vst1\.32 \{d16, d17\}, \[r1\]
+movs r1, #0
+strb\.w r1, \[r0, #0x44\]
+bx lr
+"""
+ANDROID_SQRT = r"""vmov s0, r0
+vsqrt\.f32 s0, s0
+vcmpe\.f32 s0, s0
+vmrs apsr_nzcv, fpscr
+it vs
+bvs\.w #\w+
+vmov r0, s0
+bx lr
+"""
+ANDROID_GETTERS = {'station_system': ('_ZN7Station9getSystemEv', r'ldr r0, \[r0, #0xc\]\nbx lr\n'),
+                   'system_x': ('_ZN11SolarSystem4getXEv', r'ldr r0, \[r0, #0x20\]\nbx lr\n'),
+                   'system_y': ('_ZN11SolarSystem4getYEv', r'ldr r0, \[r0, #0x24\]\nbx lr\n'),
+                   'item_origin': ('_ZN4Item17getMinPriceSystemEv', r'ldr r0, \[r0, #0x10\]\nbx lr\n'),
+                   'item': ('_ZN4Item4initEv', ANDROID_ITEM),
+                   'sqrt': ('_ZN11AbyssEngine6AEMath5SqrtfEf', ANDROID_SQRT)}
+# Thumb-to-ARM long branch: bx pc; nop; ldr ip, [pc]; add pc, ip, pc; .word target - (here + 16)
+VENEER = bytes.fromhex('7847c04600c09fe50ff08ce0')
+
+
+def veneer_import(lib, address):
+    """The PLT import a long-branch veneer jumps to."""
+    row = section_bytes(lib, address, 16, b'__text')
+    if row is None or row[0][:12] != VENEER:
+        return None
+    return lib.imports.get((address + 16 + struct.unpack('<I', row[0][12:])[0]) & 0xffffffff)
+
+
+def android_resources(lib):
+    from .android_listing import Listing, number
+    from .scenery_population import ANDROID_COUNT, android_body, body_span
+    scene = Listing(lib, '_ZN5Level15createAsteroidsEv')
+    entries, selectors, models = (scene.find(shape) for shape in (ANDROID_ENTRY + ANDROID_COUNT, ANDROID_SELECTOR, ANDROID_MODELS))
+    probability, listing = android_body(lib, '_ZN6Galaxy24getAsteroidProbabilitiesEP7Station', ANDROID_PROBABILITY)
+    wrapper, wrapper_listing = android_body(lib, '_ZN7Globals4sqrtEf', r'mov r0, r1\nb\.w #(?P<veneer>\w+)\n')
+    if len(entries) != 1 or len(selectors) != 1 or len(models) != 1 or not probability or not wrapper:
+        return {}
+    selector, model = selectors[0], models[0]
+    loop, last = scene.index(selector), scene.last(selector)
+    table = section_bytes(lib, number(model['table']), 16, b'__const')
+    if (number(selector['loop']) != scene.code[loop].address or number(selector['retry']) != scene.code[loop + 16].address
+            or number(selector['done']) != scene.code[last].address + scene.code[last].size or table is None
+            or veneer_import(lib, number(wrapper['veneer'])) != '_ZN11AbyssEngine6AEMath5SqrtfEf'):
+        return {}
+    first, fallback, override = (number(probability[key]) for key in ('ore_first', 'fallback', 'override_item'))
+    weight_base, minimum = number(probability['weight_base']), number(probability['weight_min'])
+    ids = list(struct.unpack('<4i', table[0]))
+    if (first, fallback, override) != (154, 164, 217) or not 1 <= minimum <= weight_base <= 100 or not all(0 <= v <= 65532 for v in ids):
+        return {}
+    start = scene.index(entries[0])
+    proof = {'entry': scene.span(start, start + 1), 'probability': listing.span(0, listing.last(probability)),
+             'selector': scene.match_span(selector), 'models': scene.match_span(model), 'model_table': {'offset': table[1], 'bytes': 16},
+             'sqrt_wrapper': wrapper_listing.span(0, wrapper_listing.last(wrapper))}
+    for key, (symbol, shape) in ANDROID_GETTERS.items():
+        proof[key] = body_span(lib, symbol, shape)
+        if not proof[key]:
+            return {}
+    return {'ore_item_ids': list(range(first, fallback)), 'fallback_item_id': fallback, 'override_item_id': override,
+            'weight_base': weight_base, 'weight_minimum': minimum, 'location_weight': 100, 'rank_discount': 2,
+            'sample_rows': 6, 'draw_bound': 100, 'override_cursor': 90, 'item_origin_index': 9, 'system_position_indices': [3, 4],
+            'model_ids': ids, 'provenance': proof}

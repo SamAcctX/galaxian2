@@ -13,6 +13,9 @@ const SPANS := {"npc_update":[610766,17180],"npc_constructor":[605172,2562],"mem
 
 const MAC_ALTERNATE := {"npc_update":[611314,17180],"npc_constructor":[605720,2562],"membership":[59038,2050],"merge_targets":[536934,334],"assign_targets":[536518,246],"player_constructor":[550476,3862],"alternate_body_test":[559278,18],"alternate_body":[605426,14],"alternate_model":[905726,10],"model_position":[-730252,26],"model_constructor":[-731340,430],"model_request":[-728364,14],"model_submission":[-728338,28],"target_alive":[541416,16],"target_activity":[541460,14],"force_route":[536146,14],"friendly":[536188,28],"friendly_test":[536216,14],"boost_chance":[610288,12],"base_constructor":[-81548,948],"statistics_constructor":[534700,980],"attached_test":[-77806,14],"model_initializer":[-79336,272],"model_initializer_wrapper":[609702,14],"mode_dispatch":[628454,40],"npc_model_vtable":[2377138,8],"companion_boost":[1127,7]}
 
+# Android: the VALUES; spans inside named functions and PlayerFighter's vtable slot 2 (Layouts.anchored).
+const ANDROID_SPANS := {"npc_update":[0,10528],"npc_constructor":[0,1668],"membership":[0,1520],"merge_targets":[0,208],"assign_targets":[0,174],"player_constructor":[0,2256],"alternate_body_test":[0,12],"alternate_body":[0,6],"alternate_model":[0,4],"model_position":[0,26],"model_constructor":[0,256],"model_request":[0,10],"model_submission":[0,18],"target_alive":[0,12],"target_activity":[0,6],"force_route":[0,6],"friendly":[0,20],"friendly_test":[0,6],"boost_chance":[0,6],"base_constructor":[0,604],"statistics_constructor":[0,600],"attached_test":[0,6],"model_initializer":[0,160],"model_initializer_wrapper":[0,4],"companion_boost":[25696,14],"npc_model_vtable":[16,4]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -22,9 +25,10 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, training: Dictionary, actors: Dictionary) -> String:
 	if not data is Dictionary:return "Missing combat-training control declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data):return "Unsupported combat-training control declarations"
+	if not (arch=="x86_64" or arch=="android-armv7") or not parameters(data):return "Unsupported combat-training control declarations"
 	var npc: Dictionary=actors.get("npc_initialization",{})
 	if not Training.parameters(training) or not Guidance.parameters(npc.get("guidance")) or not Flight.parameters(npc.get("flight")) or not Routes.parameters(npc.get("routes")) or not Hull.parameters(npc.get("hull")):return "Combat-training control lacks verified construction, guidance, flight, routes or hull context"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid combat training control extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Combat-training control lacks its source anchor"
 	var layouts: Array=[SPANS,MAC_ALTERNATE]

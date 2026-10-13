@@ -31,3 +31,19 @@ class TractorRecoveryTests(unittest.TestCase):
         mach, arrival, layouts = declaration_fixture(reader.LAYOUTS)
         with patch.object(reader, 'LAYOUTS', layouts), patch.object(reader, 'MAC_ALTERNATE', layouts):
             self.assertEqual(reader.extract_tractor_recovery(mach, arrival), ({}, {}))
+
+
+class TractorRecoveryAndroidTests(unittest.TestCase):
+    def test_android_proofs(self):
+        import android_fixture
+        from gof2_content.android_library import AndroidLibrary
+        from test_mido_travel import roomy
+        with patch.object(android_fixture, 'library', roomy(android_fixture.library)):
+            android_fixture.verify_android_proof(self, reader, lambda lib: reader.extract_tractor_recovery(lib, {'scope': 'rescue_choreography'}), values='ANDROID_VALUES')
+            image, layout, _ = android_fixture.layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            self.assertEqual(reader.extract_tractor_recovery(AndroidLibrary(image), {}), ({}, {}))
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'tractor_recovery_definitions.gd', values='ANDROID_VALUES')

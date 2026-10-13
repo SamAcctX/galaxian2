@@ -1,12 +1,33 @@
 """Optional Mac starter stock, equipment and acknowledged tutorial content.
 
 Only semantic declarations and file extents leave this static reader.
+
+Android: Status::nextCampaignMission case 5 creates mission 158 at station 78
+(cursor 6), and up to cursor 6 Generator::getItemBuyList stocks station 78
+with items 0, 22 and 55 (Item::makeItem: one each, price 0). Item::init reads
+the category (attribute 3) and sort (attribute 5); Item::isUnsaleable keeps
+items 90 and 81 from HangarWindow::selectItem (text 312);
+Item::canBeInstalledMultipleTimes reads a per-sort table equal to the Mac
+mask; Globals::getItemName adds 1263. Item::transaction, Ship::addEquipment,
+Ship::setCargo and HangarWindow::mountItem / demountItem (sounds 98 / 96)
+move the items. Status::missionCompleted completes kind 158 once a weapon
+(category 0) and sort 10 are mounted; ModStation::OnUpdate shows the
+completed mission and ModStation::OnTouchEnd pays its 0 credits and advances
+to cursor 7, whose case creates mission 4 at station 78. DialogueWindow's
+success tables hold the line (2, 1736) and Globals::getDialogueSoundId its
+voice 438; the labels are 179 and 180. Values equal the Mac 1.0.7 ones.
 """
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .station_exterior import declaration_bytes
 
 def extract_station_equipment(mach,arrival,station_return):
+    if mach.architecture == 'android-armv7':
+        try:
+            if station_return['scope'] != 'full_hold_station_return': return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(MAC_VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64' or station_return.get('scope')!='full_hold_station_return':return {}
     try:
         origin=arrival['provenance']['actor']
@@ -225,3 +246,44 @@ MAC_VALUES = {'scope': 'var_hastra_equipment_tutorial',
  'events': [{'speaker_id': 2, 'text_id': 1736, 'voice_event_id': 438}],
  'mount_audio_id': 98,
  'unmount_audio_id': 96}
+
+# Android spans inside named functions and tables; the values are the Mac 1.0.7 ones.
+ANDROID = {'tutorial_gate': ('_ZN9Generator14getItemBuyListEP7Station', 16, 28, '3046c9f7e4ee4e283cd1dff82c08784400680068c9f780ee062833dc'),
+           'tutorial_items': ('_ZN9Generator14getItemBuyListEP7Station', 44, 102, '0c20c7f710ec05460420c7f77eec01216860a96000210160032029602946c9f7e6eedff864080121002278440468206840680068c9f7e0ee696800220860012120684068806dc9f7d8ee696800224860012120684068d0f8dc00c9f7ceee2946149169688860'),
+           'stock_clone': ('_ZN4Item8makeItemEii', 0, 18, 'b0b502af14460d4677f73aeb84614563b0bd'),
+           'item_fields': ('_ZN4Item4initEv', 0, 78, '016b19b34968c0ef50004a680260ca6842604a698260ca69c2604a6bc261ca6b02624b6c4362d1f824c0c0f810c0c96a4161991a01ebd17102eb6101816100f1340141f98f0a002180f844107047'),
+           'category': ('_ZN4Item7getTypeEv', 0, 4, '40687047'),
+           'subtype': ('_ZN4Item7getSortEv', 0, 4, '80687047'),
+           'protected': ('_ZN4Item12isUnsaleableEv', 0, 6, '90f844007047'),
+           'protected_action': ('_ZN12HangarWindow10selectItemEP8ListItem', 190, 28, 'sha256:8dc3a896396fb4e28e27055a0cb1dfd69258da8ed705db320cf8cfa949686510'),
+           'protected_message': ('_ZN12HangarWindow10selectItemEP8ListItem', 394, 20, '0068f2f6deec01462846f4f674e8012084f83c00'),
+           'multiple_subtypes': ('_ZN4Item27canBeInstalledMultipleTimesEv', 0, 16, '024980687944085c704700bfa0091600'),
+           'multiple_subtype_table': ('_ZN4Item27canBeInstalledMultipleTimesEv', 0, 43, '01010101010101010000000101000000000000000100010101010000000000000100010001000001010001', 'literal', 0),
+           'item_text': ('_ZN7Globals11getItemNameEi', 0, 40, 'd0b502af0446074802f2fa4178440068006872f7cceb0146204600226ff75ae8d0bd00bf2cc71600'),
+           'item_transfer': ('_ZN4Item11transactionEbib', 0, 88, 'sha256:e9c3c18c0f35a70469c27e04ccafeb6cd41f5333569fd06b32d739af1d9ee546'),
+           'first_free_slot': ('_ZN4Ship12addEquipmentEP4Item', 0, 78, 'sha256:53eb2ffb5d951b871444af97e1a80ef85c6d45cc5bbd0d776ea632d17fba162a'),
+           'cargo_refresh': ('_ZN4Ship8setCargoEP5ArrayIP4ItemE', 0, 92, 'sha256:71a00bf8d9656ccfc6fe7984f4d7e5663bef8a101d0b3aa4cd3f566af6554bcf'),
+           'mount': ('_ZN12HangarWindow9mountItemEP4Item', 0, 358, 'sha256:756964ddf67dd21b6b90cb71ef0935e7a592944eedad4487656d83d08c363c6c'),
+           'mount_sound': ('_ZN12HangarWindow9mountItemEP4Item', 358, 2, '6221'),
+           'mount_tail': ('_ZN12HangarWindow9mountItemEP4Item', 360, 28, 'sha256:5df14b4ebce64197a9533613ef57a38eef3ee618006f1674a0e01cc91e9fbf0c'),
+           'unmount': ('_ZN12HangarWindow11demountItemEP4Itemi', 0, 396, 'sha256:e0a65cad1646875cde96328f7c675acb21f0baa105e0b03ab8c733be546eceb3'),
+           'unmount_sound': ('_ZN12HangarWindow11demountItemEP4Itemi', 396, 2, '6021'),
+           'unmount_tail': ('_ZN12HangarWindow11demountItemEP4Itemi', 398, 34, 'sha256:841ce88d042a8c2215937119960de3dd0aa4ec63cde4037b243157690447d587'),
+           'equipment_dispatch': ('_ZN6Status16missionCompletedEbbx', 190, 98, '2046b2f70ae8a0f19601272931d8dfe811f0ab00ae00b100d000d300d900e200f80017011c0247011c0260019701a801aa01ae012800dc01e601e801ee01fc011c0228001c021c021c021c021c021c021c021c021c0224021c021c021c021c023e02'),
+           'equipment_check': ('_ZN6Status16missionCompletedEbbx', 766, 96, 'daf88c01b2f7dceb05462868002800f0fc8000264ff000094ff00008686850f8260090b1b0f77eef68b1686850f8260058b1b0f77cef0a284ff0000008bf012049ea000901e04ff00108013628688642e4d308ea090010f0010f00f0d68020e1'),
+           'station_check': ('_ZN10ModStation8OnUpdateEv', 2044, 38, 'sha256:1351c42350b2f95362acddf47f855b8f32db676fe7f736cca3c62f937b14ac2c'),
+           'completion_dialogue': ('_ZN10ModStation8OnUpdateEv', 2684, 36, 'sha256:7cd5e714affb30a40ebc9497668f1c32ec97fdf9da32b5ff6f03b1b5d4eeb30c'),
+           'acknowledgement': ('_ZN10ModStation10OnTouchEndEiiPv', 0, 6536, 'sha256:5b29b2bf44b1e0a442eb14b5646a1aad12932fedee58112b028e31589316b50e'),
+           'story_increment': ('_ZN6Status19nextCampaignMissionEb', 392, 4, '1846431c'),
+           'story_dispatch': ('_ZN6Status19nextCampaignMissionEb', 58, 24, 'a12800f21b82dfe810f0ad029804ae04ac0c1e0df10d870e'),
+           'equipment_mission': ('_ZN6Status19nextCampaignMissionEb', 7206, 24, 'c4f8e831c9e900ced4f88c01b3f794ec6420aff7a0ea0546'),
+           'equipment_mission_arguments': ('_ZN6Status19nextCampaignMissionEb', 7230, 10, '9e2100224e23b3f736ec'),
+           'next_mission': ('_ZN6Status19nextCampaignMissionEb', 7506, 16, '6420c4f8e831c9e900ceaff70eea0546'),
+           'next_mission_arguments': ('_ZN6Status19nextCampaignMissionEb', 7522, 14, '042100224e23b3f7a4ebfef71dba'),
+           'campaign_mission_tail': ('_ZN6Status19nextCampaignMissionEb', 426, 14, '2046294601b0bde8f04322f19cb8'),
+           'mission_factory': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           'next_label': ('_ZN14DialogueWindow11loadContentEv', 32, 2, 'b421'),
+           'final_label': ('_ZN14DialogueWindow11loadContentEv', 2342, 2, 'b521'),
+           'mode1_counts': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 28, '0000000026000000060000000a000000040000000c00000002000000', 'literal', 0),
+           'mode1_event': ('_ZN14DialogueWindow11loadContentEv', 208, 8, '02000000d3060000', 'literal', 280),
+           'voice': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 8, 'd3060000b6010000', 'literal', 2200)}

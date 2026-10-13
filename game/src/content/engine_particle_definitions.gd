@@ -16,6 +16,9 @@ const MAC_ALTERNATE := {"defaults":[483570,211],"basic_and_four_copies":[483847,
 const OPENING_SPANS := {"player_ship_getter":[858758,14],"ship_id_getter":[729808,8],"ship_family_table":[1551074,44]}
 const MAC_OPENING_SPANS := {"player_ship_getter":[858126,14],"ship_id_getter":[729184,8],"ship_family_table":[1576010,44]}
 
+# Android: the VALUES with OPENING_SHIP; spans inside named functions and tables (Layouts.anchored).
+const ANDROID_SPANS := {"defaults":[14,364],"basic_vectors":[112,48],"basic_and_copies":[378,426],"nozzle_setup":[0,2120],"nozzle_scales":[960,24],"nozzle_sprites":[1920,96],"family_table":[0,44],"manager":[326,50],"attachment_positions":[440,230],"player_ship_getter":[0,6],"ship_id_getter":[0,4]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or not data.get("provenance") is Dictionary:return false
 	var opening: bool=data.has("opening_ship")
@@ -28,7 +31,8 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dictionary,damage: Dictionary) -> String:
 	if not data is Dictionary:return "Missing player exhaust declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data) or not Damage.emitter_parameters(damage):return "Unsupported player exhaust declarations"
+	if not (arch=="x86_64" or arch=="android-armv7" and data.has("opening_ship")) or not parameters(data) or not Damage.emitter_parameters(damage):return "Unsupported player exhaust declarations"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid engine particles extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Player exhaust lacks its source anchor"
 	# The newer App Store executable uses the alternate base nozzle layout.
@@ -37,7 +41,7 @@ static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dicti
 
 static func resolve(bindings: RefCounted,mounts: RefCounted,ship_id: Variant) -> Dictionary:
 	if bindings==null or not mounts is Mounts:return {"error":"Player exhaust requires imported bindings and attachments"}
-	if bindings.source_architecture!="x86_64" or not parameters(bindings.engine_particles):return {"error":"This content has no verified player exhaust"}
+	if not bindings.source_architecture in ["x86_64","android-armv7"] or not parameters(bindings.engine_particles):return {"error":"This content has no verified player exhaust"}
 	var data: Dictionary=bindings.engine_particles
 	if not load("res://src/content/engine_particle_owner_definitions.gd").available_for(bindings,ship_id):return {"error":"Player exhaust requires an admitted hull"}
 	var sprite: Array=data.preset.uv_rect

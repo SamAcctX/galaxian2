@@ -1,4 +1,5 @@
 """Relocated manager clocks with changed constants and verified selector links."""
+import importlib.util
 import struct
 import unittest
 from types import SimpleNamespace
@@ -65,3 +66,79 @@ class LODRefresh(unittest.TestCase):
                         at,_,fields=blocks['initial'];off,size=fields['word_6'];data[256+at+off:256+at+off+size]=arm_wide(73,1,False)
                     m.data=bytes(data)
                     self.assertEqual(reader.extract_lod_refresh(m,lod),{})
+
+
+CONSTRUCTOR, UPDATE, FORCE = '_ZN10LODManagerC1Ev', '_ZN10LODManager6updateEi', '_ZN10LODManager11forceUpdateEib'
+SELECTOR = '_ZN10AEGeometry9updateLodERKN11AbyssEngine6AEMath6VectorEf'
+
+
+def vldr_d(asm, dd, rn): return asm.half(0xed90 | (dd >> 4) << 6 | rn, (dd & 15) << 12 | 0xb00)  # vldr dd, [rn]
+def vstr_d(asm, dd, rn): return asm.half(0xed80 | (dd >> 4) << 6 | rn, (dd & 15) << 12 | 0xb00)  # vstr dd, [rn]
+
+
+def android(breaks=(), seed=73, threshold=500):
+    """LODManager's constructor, update, forceUpdate and the veneer between them in the Android compiler's shape."""
+    from android_fixture import TEXT
+    from android_thumb import Asm, build
+    to = lambda name, label: 'elsewhere' if name in breaks else label
+    c = Asm(TEXT + 0x100).push().mov(4, 0).movs(6, 0).movs(1, 1)
+    for _ in range(2 if 'twice' in breaks else 1):
+        c.movw(0, seed).str(1, 5, 8).str(6, 5, 0).str(5, 4, 0).str(0, 4, 0x14 if 'field' in breaks else 0x10)
+    c.pop()
+    veneer = TEXT + 0x600
+    t = Asm(TEXT + 0x200)
+    if 'tick start' in breaks:
+        t.nop()
+    t.ldr(2, 0, 0x10).add_low(1, 2).str(1, 0, 0x10).cmp_w(1, threshold).it('lt' if 'compare' in breaks else 'le').ret()
+    t.movs(1, 5 if 'reset' in breaks else 0).movs(2, 0).str(1, 0, 0x10)
+    t.labels['veneer'] = TEXT + 0x4ff8 if 'outside' in breaks else veneer
+    t.branch(None, 'veneer', wide=True)
+    f = Asm(TEXT + 0x300).push().mov(9, 0).ldr_address(0, 0x9000).mov(8, 2).ldr_address(2, 0x9004).add_pc(0)
+    f.ldr_address(1, 0x9008).add_pc(2).ldr(0, 0, 0).add_pc(1).ldr(2, 2, 0).ldr(1, 1, 0).ldr(0, 0, 0).str_sp(0, 0xc).ldr(4, 2, 0)
+    f.vldr(16, 1, 0x28).mov(0, 4).call_to('_ZN11AbyssEngine11PaintCanvas16CameraGetCurrentEv').mov(1, 0).mov(0, 4)
+    f.call_to('_ZN11AbyssEngine11PaintCanvas14CameraGetLocalEj').mov(4, 13).mov(1, 0).mov(0, 4)
+    f.call_to('_ZN11AbyssEngine6AEMath17MatrixGetPositionERKNS0_6MatrixE').add_imm(11, 9, 4).mov(1, 4).mov(0, 11)
+    f.call_to('_ZN11AbyssEngine6AEMath6VectoraSERKS1_').ldr_w(0, 9).ldr(1, 0, 0).cbz(1, to('done', 'done'))
+    f.vmov_core(5, 16).movs(6, 0).mov(10, 13).label('loop').ldr(0, 0, 4).cmp_w(8, 1).ldr_index(4, 0, 6)
+    f.branch('ne', to('own', 'own')).mov(0, 10).mov(1, 4).call_to('_ZN10AEGeometry17getParentPositionEv')
+    vldr_d(f.branch(None, to('update', 'update')).label('own'), 16, 11).ldr_w(0, 11, 8).str_sp(0, 8)
+    vstr_d(f, 16, 13).label('update').mov(0, 4).mov(1, 10).mov(2, 5).call_to(SELECTOR).ldr_w(0, 9).adds8(6, 1).ldr(1, 0, 0)
+    f.cmp_reg(6, 1).branch('lo', to('loop', 'loop')).label('done').nop().label('elsewhere').nop().pop()
+    target = TEXT + (0x100 if 'veneer target' in breaks else 0x300)
+    v = Asm(veneer).half(0x4778, 0x46c0 if 'veneer' not in breaks else 0xbf00).data(0xe59fc000, 0xe08cf00f, target - (veneer + 16) & 0xffffffff)
+    lib = build({CONSTRUCTOR: c, UPDATE: t, ('_ZN10LODManager6updateEv' if 'name' in breaks else FORCE): f, 'veneer': v})
+    return lib, {'provenance': {'cull': {'offset': lib.symbols[SELECTOR][0], 'bytes': 1}}}
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidLODRefresh(unittest.TestCase):
+    def test_encodings_decode_as_intended(self):
+        import capstone
+        from android_fixture import TEXT
+        from android_thumb import Asm
+        decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+        for emit, expected in [(lambda asm: vldr_d(asm, 16, 11), 'vldr d16, [fp]'), (lambda asm: vstr_d(asm, 16, 13), 'vstr d16, [sp]')]:
+            code = bytes(emit(Asm(TEXT)).code)
+            self.assertEqual(['%s %s' % (i.mnemonic, i.op_str) for i in decoder.disasm(code, TEXT)], [expected])
+
+    def test_reads_the_clock_and_the_batch(self):
+        lib, lod = android()
+        value = reader.extract_lod_refresh(lib, lod)
+        self.assertEqual({k: v for k, v in value.items() if k != 'provenance'},
+                         {'initial_milliseconds': 73, 'refresh_at_milliseconds': 501, 'reset_milliseconds': 0,
+                          'time_unit': 'milliseconds', 'forced_refresh_resets_clock': False})
+        self.assertEqual({k: (v['offset'] - lib.symbols[name][0], v['bytes']) for (k, v), name in
+                          zip(sorted(value['provenance'].items()), (FORCE, CONSTRUCTOR, UPDATE))},
+                         {'batch': (2, 142), 'initial': (8, 12), 'tick': (0, 24)})
+
+    def test_each_broken_rule_is_unsupported(self):
+        for name in ['name', 'twice', 'tick start', 'veneer', 'veneer target', 'outside', 'loop', 'own', 'update', 'done', 'field',
+                     'compare', 'reset']:
+            lib, lod = android([name])
+            self.assertEqual(reader.extract_lod_refresh(lib, lod), {}, name)
+        lib, lod = android(threshold=0xff0000)
+        self.assertEqual(reader.extract_lod_refresh(lib, lod), {})
+        lib, lod = android()
+        lod['provenance']['cull']['offset'] += 2
+        self.assertEqual(reader.extract_lod_refresh(lib, lod), {})
+        self.assertEqual(reader.extract_lod_refresh(lib, {}), {})

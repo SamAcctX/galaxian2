@@ -31,11 +31,14 @@ func verify(args: PackedStringArray):
 	verify_ordinary_cache(bindings,cat,lib,context)
 	verify_campaign_locations(bindings,cat,lib,context)
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	for span in Ordinary.SPANS:
+	var arch: String=bindings.source_architecture
+	for span in Ordinary.ANDROID_SPANS if arch=="android-armv7" else Ordinary.SPANS:
 		var bad: Dictionary=bindings.early_contracts.duplicate(true);bad.provenance.erase(span)
-		check(not Definitions.validate(bad,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.mido_travel).is_empty(),"Missing ordinary source extent accepted: "+span)
+		check(not Definitions.validate(bad,int(header.source_executable_bytes),arch,bindings.arrival_staging,bindings.mido_travel).is_empty(),"Missing ordinary source extent accepted: "+span)
 	var bad: Dictionary=bindings.early_contracts.duplicate(true);bad.ordinary_generation.offers.difficulty_draw_bound=2
 	check(not Definitions.parameters(bad),"Ordinary difficulty was silently replaced by the opening rule")
+	# One Android edition: no other source's proof to mix in.
+	if arch=="android-armv7":return
 	bad=bindings.early_contracts.duplicate(true)
 	var key:="ordinary_offer_selection"
 	var other: Dictionary=Ordinary.SPANS if bad.briefing_text_base==Definitions.MAC_VALUES.briefing_text_base else Ordinary.MAC_SPANS

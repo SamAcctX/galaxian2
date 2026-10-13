@@ -1,9 +1,17 @@
 """Fresh ordinary player-frame declarations following the first cinematic cut.
 
 Bounded static recognition only: native code owns movement, commands and firing.
+
+Android: PlayerEgo's constructor zeroes the pitch and yaw rates; MGame::
+OnUpdate updates the camera, then (unless the controller result or a dead
+player blocks input) fires the primary weapon on Hud::firePressed through
+PlayerEgo::shoot(frame, 0) and steers by the squared analog stick through
+PlayerEgo::left/right; Level::update runs the player's guns before the
+enemies'; LevelScript::process hands control back in phase 4 and leaves
+it on message 10. The values are the Mac 1.0.7 ones.
 """
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 VALUES = {'ordinary_phase':4,'postcombat_after_event_finished':10,
           'initial_pitch_units':0,'initial_yaw_units':0,'initial_throttle':1.0,
@@ -13,6 +21,8 @@ VALUES = {'ordinary_phase':4,'postcombat_after_event_finished':10,
 
 def extract_opening_player_flight(mach, staging, actors, rotation, response):
     arch=mach.architecture
+    if arch == 'android-armv7':
+        return android_flight(mach, staging, actors, rotation, response)
     if arch not in LAYOUTS:return {}
     try:
         if not staging['player_motion'] or staging['player_motion']['release_phase']!=4:return {}
@@ -148,3 +158,34 @@ MAC_ALTERNATE = {'initial_angular': [429934, 20, 'c7831803000000000000c783140300
  'npc_group': [-64431, 7, '498b8e58010000'],
  'rotation_anchor': [443322, 24, 'f30f10159d380f00f30f101db5060f00f30f100d81060f00'],
  'response_anchor': [474341, 16, 'f30f100dc2bf0e00f30f59c8f30f59cd']}
+
+
+def android_flight(lib, staging, actors, rotation, response):
+    """Spans by function name; the parents are checked by value (release in phase 4, firing allowed, both responses read)."""
+    try:
+        linked = (staging['player_motion']['release_phase'] == ANDROID_VALUES['ordinary_phase'] and actors['player_initialization']
+                  and actors['npc_initialization']['initial_firing_allowed'] and rotation and response)
+    except (KeyError, TypeError):
+        return {}
+    proof = recognize_symbols(lib, ANDROID) if linked else {}
+    return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if proof else {}
+
+
+# The constructor span runs from r6 = 0 to the zero pitch and yaw rates (strd r6, r6, [r4, #0x278]).
+ANDROID = {'controller_result': ('_ZN5MGame8OnUpdateEv', 10658, 20, 'dbf84010dbf878009bf85f40c1f608ed8bf85f00'),
+           'camera_update': ('_ZN5MGame8OnUpdateEv', 11292, 24, 'dbf86411dbf8f00000290699c8bf0bf144010968bbf686ec'),
+           'input_block': ('_ZN5MGame8OnUpdateEv', 11462, 34, 'sha256:e0a9f0926a2eaf7803f7a41c75b6f88e2523dcd9302fabc92cb7b0da7dc240f5'),
+           'primary_input': ('_ZN5MGame8OnUpdateEv', 11552, 34, 'sha256:468e22c22e1e00cf5ef1f984aa7f6fb8d338fd3c74f204709623c7696c425694'),
+           'primary_call': ('_ZN5MGame8OnUpdateEv', 11610, 20, 'dbf840100022dbf85800c1f600ea01208bf85501'),
+           'steering_left': ('_ZN5MGame8OnUpdateEv', 11684, 62, 'sha256:59decbacc6db05756c42b75a7cd7f647ac853fe8695b4c1738234af62b61342e'),
+           'steering_right': ('_ZN5MGame8OnUpdateEv', 11798, 62, 'sha256:eae69e71765daf97b74ead95cb59df8fb565d508487298daf0340330bd94417c'),
+           'ordinary_handoff': ('_ZN11LevelScript7processEi', 4314, 90, 'sha256:4d320f4ecc73e57eb341f76dda3ad218194f9af93ff8d6cdd2dc8f272adab24c'),
+           'postcombat_gate': ('_ZN11LevelScript7processEi', 6540, 14, '7068806a08f7b2e9002801f0fe84'),
+           'initial_angular': ('_ZN9PlayerEgoC2EP6Player', 36, 538, 'sha256:662fc9322ab8f251c1e47206dff4c791f9ca45e0a03fea8df1fa4a14c450087e'),
+           'ordinary_path': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 5262, 26, 'sha256:86e61aa8c825ff9d6c7429b076ec2975a3fd6ee11b8a87462c9dc1aaf39de255'),
+           'primary_route': ('_ZN9PlayerEgo5shootEii', 0, 264, 'sha256:40bbc10283f42825d08ad1aa034bd9c787d06f17e17dfd84948687ed33f3527c'),
+           'weapon_groups': ('_ZN5Level6updateExb', 236, 76, 'sha256:a03da6ec23ad6eb518a1eb45571fbdbbfff9f7538a69039f07724e32ebe579fe'),
+           'primary_group': ('_ZN5Level13getPlayerGunsEv', 0, 6, 'd0f8e4007047'),
+           'npc_group': ('_ZN5Level12getEnemyGunsEv', 0, 6, 'd0f8e8007047')}
+
+ANDROID_VALUES = copy.deepcopy(VALUES)

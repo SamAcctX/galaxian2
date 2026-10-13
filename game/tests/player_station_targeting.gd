@@ -62,6 +62,12 @@ func verify_departure(app: Control) -> void:
 		check(target.advance(observation(state,station,camera,100)) and target.snapshot().elapsed_ms==100,"Station did not reacquire after preemption: "+gate)
 	var moved:=observation(state,station,camera,100);moved.aim_point=Vector3(840,360,0)
 	check(target.advance(moved) and target.snapshot().found_index==0 and target.snapshot().aimed_index==-1 and target.snapshot().elapsed_ms==0,"Station kept an aim lock after moving onto scenery")
+	# The aim window's half-width is the viewport width over the source divisor (Mac 18, Android 16).
+	var radius: int=1280/int(host.bindings.mido_travel.void_probe.world29.target_lock.inner_aim_width_divisor)
+	var edge:=observation(state,station,camera,100);edge.aim_point=Vector3(640+radius-1,360,0)
+	check(target.advance(edge) and target.snapshot().aimed_index==0,"Station aim window is narrower than its source divisor")
+	edge.aim_point=Vector3(640+radius,360,0)
+	check(target.advance(edge) and target.snapshot().aimed_index==-1,"Station aim window is wider than its source divisor")
 	check(target.advance(observation(state,station,camera,100)) and target.snapshot().elapsed_ms==100,"Station did not reacquire after aim left its window")
 	var foreign:=observation(state,station,camera,100);foreign.binding_id="0".repeat(64)
 	var retained: Dictionary=target.snapshot()

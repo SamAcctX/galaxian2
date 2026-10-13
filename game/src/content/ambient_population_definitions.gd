@@ -9,6 +9,8 @@ const VALUES = {"scope":"early_mido_ordinary_population","system_id":15,"actor_k
 const SPANS = {"population_counts":[-30330,215],"empty_fallback":[-29088,121],"group_order":[-24575,244],"travel_ship":[-23123,248],"travel_route":[-77698,104],"travel_mode":[-77334,26],"travel_flag":[-79064,14],"freighter_choice_and_spawn":[-22069,300],"freighter_constructor":[78543,170],"freighter_cargo":[631998,210],"freighter_assembly":[-218774,635],"first_container_position":[1557778,4],"remaining_container_positions":[1557866,8]}
 
 const MAC_SPANS = {"population_counts":[-30330,215],"empty_fallback":[-29088,121],"group_order":[-24575,244],"travel_ship":[-23123,248],"travel_route":[-77698,104],"travel_mode":[-77334,26],"travel_flag":[-79064,14],"freighter_choice_and_spawn":[-22069,300],"freighter_constructor":[78543,170],"freighter_cargo":[632546,210],"freighter_assembly":[-219730,635],"first_container_position":[1532778,4],"remaining_container_positions":[1532866,8]}
+# Android: the Mac values; spans inside named functions (Layouts.anchored).
+const ANDROID_SPANS = {"ambient_population_entry":[532,144],"ambient_population_counts":[1754,116],"ambient_population_empty_fallback":[2590,60],"ambient_population_patrol_first":[6244,10],"ambient_population_travel_ships":[7008,280],"ambient_population_freighter":[8208,258],"ambient_population_travel_route":[0,36],"ambient_population_travel_mode":[0,14],"ambient_population_travel_flag":[0,6],"ambient_population_factory":[0,3112],"ambient_population_cargo":[0,804],"ambient_population_assembly":[0,2116]}
 
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
@@ -19,7 +21,11 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dictionary,travel: Dictionary) -> String:
 	if not data is Dictionary:return "Missing ambient population declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data) or not Travel.parameters(travel):return "Unsupported ambient population declarations"
+	var android:=arch=="android-armv7"
+	if (arch!="x86_64" and not android) or not parameters(data) or not Travel.parameters(travel) or android!=Travel._android(travel):return "Unsupported ambient population declarations"
+	if android:
+		if arrival.get("scope")!="rescue_choreography" or not arrival.get("provenance",{}).has("actor"):return "Ambient population lacks its source anchor"
+		return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid ambient population source layout"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Ambient population lacks its source anchor"
 	if not Layouts.matches(data.provenance,int(origin.offset),source_bytes,[SPANS,MAC_SPANS]):return "Invalid ambient population source layout"

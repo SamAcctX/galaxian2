@@ -8,16 +8,27 @@ const VALUES = {"scope":"persistent_blueprint_lounge_contacts","supported_contac
 const SPANS = {"persistent_count":[-236767,267],"persistent_loader":[-675370,696],"persistent_constructor":[-720294,434],"persistent_station":[-719568,10],"persistent_system":[-719578,10],"persistent_roster":[-235772,178],"persistent_hostile_replacement":[-235591,387],"persistent_insertion":[-236439,667],"persistent_role_getter":[-719598,10],"persistent_generated_getter":[-719502,14],"persistent_portrait_setter":[-719488,14],"persistent_constructor_wrapper":[-720362,68],"persistent_blueprint_getter":[-718898,10],"persistent_price_getter":[-718660,10]}
 const MAC_SPANS = {"persistent_count":[-237787,267],"persistent_loader":[-681258,696],"persistent_constructor":[-726190,434],"persistent_station":[-725464,10],"persistent_system":[-725474,10],"persistent_roster":[-236792,178],"persistent_hostile_replacement":[-236611,387],"persistent_insertion":[-237459,667],"persistent_role_getter":[-725494,10],"persistent_generated_getter":[-725398,14],"persistent_portrait_setter":[-725384,14],"persistent_constructor_wrapper":[-726258,68],"persistent_blueprint_getter":[-724794,10],"persistent_price_getter":[-724556,10]}
 
+# Android: VALUES plus the Thynome tractor-beam vendor; spans inside named
+# functions (Layouts.anchored in validate).
+const ANDROID_VALUES = {"scope":"persistent_blueprint_lounge_contacts","supported_contact_ids":[5],"station_id":10,"system_id":6,"first_cursor":17,"fields":{"id":0,"station":1,"system":2,"faction":3,"male":4,"role4_parameter":5,"blueprint":6,"role8_parameter":7,"price":8},"male_value":1,"blueprint_role":3,"count":{"minimum":3,"draw_bound":2,"probe_maximum":4,"maximum":5},"portrait":{"family_index":0,"parts_start":1,"part_count":4},"authored_first":true,"authored_order":"table","hostile_replacement_requires_generated":true,"tractor_vendor":{"creation_cursor":23,"station_id":10,"faction":0,"male":true,"role":2,"item_id":68,"quantity":1,"total_price":100000,"dialogue_cursor":24,"text_ids":[3390,3391],"separator":"\n","departure_cursor":24}}
+const ANDROID_SPANS = {"persistent_count":[30,202],"persistent_insertion":[232,534],"persistent_roster":[968,116],"persistent_hostile_replacement":[1084,300],"persistent_loader":[0,488],"persistent_constructor":[0,246],"persistent_station":[0,4],"persistent_system":[0,4],"persistent_role_getter":[0,4],"persistent_generated_getter":[0,10],"persistent_portrait_setter":[0,4],"persistent_blueprint_getter":[0,4],"persistent_price_getter":[0,4],"persistent_vendor_agent":[780,178],"persistent_vendor_texts":[2722,46],"persistent_vendor_text_join":[2768,90],"persistent_vendor_text_separator":[0,2],"persistent_vendor_greeting":[2156,96],"persistent_vendor_departure":[1834,148],"persistent_vendor_trade_setter":[0,6],"persistent_vendor_item_getter":[0,4],"persistent_vendor_known":[0,12],"persistent_vendor_event_setter":[0,4],"persistent_vendor_accepted_setter":[0,6]}
+
 static func parameters(data: Variant) -> bool:
-	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
-	for key in VALUES:
-		if not Equal.equal_value(data.get(key),VALUES[key]):return false
+	if not data is Dictionary:return false
+	var expected: Dictionary=ANDROID_VALUES if data.has("tractor_vendor") else VALUES
+	if data.size()!=expected.size()+1 or not data.get("provenance") is Dictionary:return false
+	for key in expected:
+		if not Equal.equal_value(data.get(key),expected[key]):return false
 	return true
 
 static func validate(data: Variant,source_bytes: int,architecture: String,arrival: Dictionary,ordinary_generation: Dictionary) -> String:
 	if not data is Dictionary:return "Missing persistent contact declarations"
 	if data.is_empty():return ""
-	if architecture!="x86_64" or not parameters(data) or not Ordinary.parameters(ordinary_generation):return "Unsupported persistent contact declarations"
+	var android:=architecture=="android-armv7"
+	if (architecture!="x86_64" and not android) or not parameters(data) or data.has("tractor_vendor")!=android or not Ordinary.parameters(ordinary_generation):return "Unsupported persistent contact declarations"
+	if android:
+		if arrival.get("scope")!="rescue_choreography" or not arrival.get("provenance",{}).has("actor"):return "Persistent contacts lack their source anchor"
+		return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid persistent contact extents"
 	var source: Variant=arrival.get("provenance")
 	if not source is Dictionary:return "Persistent contacts lack their source anchor"
 	var anchor: Variant=source.get("actor")
@@ -53,5 +64,9 @@ static func contact_ids(data: Dictionary,station_id: int,system_id: int) -> Arra
 	var location: Dictionary=BLUEPRINT_LOCATIONS.get(station_id,ROLE4_LOCATIONS.get(station_id,{}))
 	return location.contact_ids if location.get("system_id",-1)==system_id else []
 
+## The Android tractor-beam vendor's terms (empty on the Mac).
+static func vendor(bindings: RefCounted) -> Dictionary:
+	return bindings.persistent_contacts.get("tractor_vendor",{}) if available(bindings) else {}
+
 static func available(bindings: RefCounted) -> bool:
-	return bindings!=null and bindings.get("source_architecture")=="x86_64" and parameters(bindings.get("persistent_contacts")) and Ordinary.available(bindings)
+	return bindings!=null and bindings.get("source_architecture") in ["x86_64","android-armv7"] and parameters(bindings.get("persistent_contacts")) and Ordinary.available(bindings)

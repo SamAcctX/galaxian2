@@ -1,10 +1,26 @@
-"""Recover bounded station guidance parameters; emit no executable payload."""
+"""Recover bounded station guidance parameters; emit no executable payload.
+
+Android: the autopilot menu in MGame::OnTouchEnd starts the station course
+(notice 10) and cancels it (notice 6). PlayerEgo::update marks the target
+near within 20000, steers with gain handling + 2.7 capped at 4.0
+(Ship::getHandling, PlayerEgo::moveToPosition: 1/4096 turns, pi/2 bank sign)
+and slews the visual bank at 1/81 of elapsed x handling toward its target,
+rotating the model by -1/4096 x 2pi bank and 0.25/4096 x 2pi pitch
+(AEMath::MatrixSetRotation). The PlayerEgo constructor sets the bank limit
+handling x 750 / 63 x 1.2 and the gain 15.139; PlayerEgo::roll banks.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .station_exterior import declaration_bytes
 from .scenery_population import import_symbol
 
 def extract_station_autopilot(mach, arrival, flight):
+    if mach.architecture == 'android-armv7':
+        try:
+            if flight['scope'] != 'first_mining_flight_construction': return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64' or flight.get('scope')!='first_mining_flight_construction':return {}
     try:
         origin=arrival['provenance']['actor']
@@ -177,3 +193,18 @@ MAC_ALTERNATE = {'station_menu': [357980,
  'bank_sign_angle': [1549994, 4, '__const', 'db0fc93f']}
 IMPORTS = {'_sin': 0x178346, '_cos': 0x1782b6, '_acos': 0x178298}
 MAC_IMPORTS = {'_sin': 1515922, '_cos': 1515778, '_acos': 1515748}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'station_menu': ('_ZN5MGame10OnTouchEndEiiPv', 2338, 48, 'sha256:598a947f4a49cd3c0ba73350c4df52ed7ca6b8710f9790d461e57593f181d050'),
+           'cancel_notice': ('_ZN5MGame10OnTouchEndEiiPv', 7194, 44, 'sha256:399063b7a0714dbc7029c339b94c18b1ca9acb8c7c407a4dd35ef4b39b355cc0'),
+           'guidance_gain': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 5434, 196, 'sha256:639a9d5ac085dcfdbab89dd0bd833fd98b38a1fd925138c78e240f2aa9d4f5d7'),
+           'bank_visual': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 5820, 276, 'sha256:c74e10ba151d61eb9f85b1a3cc0cead834ea2135c8003c383a9a2582f28746c0'),
+           # Their pool: 2.7, 1/81, the double pitch factors 1/4096 and 2pi, -1/4096 and 2pi.
+           'guidance_constants': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 5752, 40,
+                                  'cdcc2c407ab31b0088454a3caff30080000000000000303f00000060fb211940000080b9db0fc940'),
+           'move_to_position': ('_ZN9PlayerEgo14moveToPositionEN11AbyssEngine6AEMath6VectorEbf', 0, 960, 'sha256:ce1f9df399a3182fcabc63c823b5ee1a0ccf3388bda851969e137ccddab36199'),
+           'roll': ('_ZN9PlayerEgo4rollEi', 0, 488, 'sha256:37c6c4c9121ad561386ad9d858ee79b17a439c777f4d515f2539de4802bcca3a'),
+           'bank_constructor': ('_ZN9PlayerEgoC2EP6Player', 1636, 62, 'sha256:f3a4ffe517984b98c3973f5475fdb2fe4d2c972452bdd5a2de6259fa8f1c9b79'),
+           'bank_constructor_floats': ('_ZN9PlayerEgoC2EP6Player', 2200, 12, '00803b4400007c429a99993f'),
+           'effective_handling': ('_ZN4Ship11getHandlingEv', 0, 76, 'sha256:2a37f9c90cb9f578dbce2c219bcdf95ba74da4103ee13efa9ac2eb02b6d3fcd2'),
+           'matrix_xyz': ('_ZN11AbyssEngine6AEMath17MatrixSetRotationERNS0_6MatrixEfff', 0, 224, 'sha256:403ee53aeaf02f337fa4112344e2aab24e3b5ffe56788bb3c88537b918b3465a')}

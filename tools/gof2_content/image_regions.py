@@ -1,4 +1,8 @@
-"""Bounded image-region alias declarations; alternatives remain explicit."""
+"""Bounded image-region alias declarations; alternatives remain explicit.
+
+Android: BuildResourceList declares the type-3 records along straight-line code
+and the portrait range in one loop.
+"""
 import re
 import struct
 from .opening_loadout import template
@@ -60,7 +64,88 @@ def arm_record(mach, start, decoder):
     return {'id':identifier,'texture_id':texture,'region':region,'source_offset':mach.slice_offset+mach.text['offset']+starts[0]-mach.text['address'],'source_bytes':end-starts[0]}
 
 
+# BuildResourceList registers interface images per device profile (Globals flags). The
+# Mac's records are its iPad branches; the other flags choose no image records.
+PROFILE = {'_ZN7Globals4iPadE': True, '_ZN7Globals6iPadHDE': True, '_ZN7Globals9iPadLargeE': False,
+           '_ZN7Globals13retinaDisplayE': True}
+
+
+def profile_reach(lib, instructions, profile):
+    """(addresses reachable in one decoded function with the `profile` flags fixed, flags decided).
+
+    A flag is the byte behind its GOT slot (`ldr rN, =slot; add rN, pc; ldr rN, [rN];
+    ldrb rM, [rN]`); `cmp rM, #0` with beq/bne, or cbz/cbnz rM, then takes one way.
+    Every other conditional branch takes both; returns and indirect jumps end a path.
+    """
+    from capstone import arm_const as arm
+    from .android_library import is_jump
+    from .android_shapes import relocation
+    at = {ins.address: ins for ins in instructions}
+    calls = {arm.ARM_REG_R0, arm.ARM_REG_R1, arm.ARM_REG_R2, arm.ARM_REG_R3, arm.ARM_REG_R12, arm.ARM_REG_LR, 'cmp'}
+    seen, decided = set(), set()
+    stack = [(instructions[0].address, ())] if instructions else []
+    while stack:
+        address, state = stack.pop()
+        while address in at and (address, state) not in seen:
+            seen.add((address, state))
+            ins, known = at[address], dict(state)
+            mnemonic, ops = ins.mnemonic.split('.')[0], ins.operands
+            written = set(ins.regs_access()[1])
+            fact = None
+            if mnemonic == 'ldr' and ops[1].type == arm.ARM_OP_MEM and ops[1].mem.base == arm.ARM_REG_PC:
+                pool = ((address + 4) & ~3) + ops[1].mem.disp
+                fact = ('literal', int.from_bytes(lib.data[lib.text['offset'] + pool - lib.text['address']:][:4], 'little'))
+            elif mnemonic == 'add' and len(ops) == 2 and ops[1].type == arm.ARM_OP_REG and ops[1].reg == arm.ARM_REG_PC:
+                literal = known.get(ops[0].reg, (None,))
+                name = relocation(lib, (literal[1] + address + 4) & 0xffffffff) if literal[0] == 'literal' else None
+                fact = ('slot', name[0]) if name and name[0] in profile else None
+            elif mnemonic in ('ldr', 'ldrb') and ops[1].type == arm.ARM_OP_MEM and ops[1].mem.disp == 0 and ops[1].mem.index == 0:
+                held = known.get(ops[1].mem.base, (None,))
+                if (held[0], mnemonic) in (('slot', 'ldr'), ('pointer', 'ldrb')):
+                    fact = ('pointer' if mnemonic == 'ldr' else 'flag', held[1])
+            if mnemonic in ('bl', 'blx'):
+                known = {k: v for k, v in known.items() if k not in calls}
+            else:
+                known = {k: v for k, v in known.items() if k not in written and (k != 'cmp' or arm.ARM_REG_CPSR not in written)}
+            if fact:
+                known[ops[0].reg] = fact
+            if mnemonic == 'cmp' and ops[1].type == arm.ARM_OP_IMM and ops[1].imm == 0 and known.get(ops[0].reg, (None,))[0] == 'flag':
+                known['cmp'] = known[ops[0].reg][1]
+            state = tuple(sorted(known.items(), key=str))
+            following = address + ins.size
+            if mnemonic in ('cbz', 'cbnz'):
+                flag = known.get(ops[0].reg, (None,))
+                if flag[0] == 'flag':
+                    decided.add(flag[1])
+                    address = ops[1].imm if profile[flag[1]] == (mnemonic == 'cbnz') else following
+                    continue
+                stack.append((ops[1].imm, state))
+            elif is_jump(ins) and ops and ops[-1].type == arm.ARM_OP_IMM:
+                if ins.cc in (arm.ARM_CC_AL, arm.ARM_CC_INVALID):
+                    address = ops[-1].imm
+                    continue
+                if ins.cc in (arm.ARM_CC_EQ, arm.ARM_CC_NE) and 'cmp' in known:
+                    decided.add(known['cmp'])
+                    address = ops[-1].imm if profile[known['cmp']] == (ins.cc == arm.ARM_CC_NE) else following
+                    continue
+                stack.append((ops[-1].imm, state))
+            elif mnemonic not in ('bl', 'blx') and (is_jump(ins) or arm.ARM_REG_PC in written):
+                break
+            address = following
+    return {address for address, _ in seen}, decided
+
+
 def extract_image_regions(mach):
+    if mach.architecture == 'android-armv7':
+        from .android_blocks import offset
+        from .font_bindings import build_instructions, payload_records
+        reach, decided = profile_reach(mach, build_instructions(mach), PROFILE)
+        if '_ZN7Globals4iPadE' not in decided:
+            return []
+        reach = {offset(mach, address) for address in reach}
+        # Records with constant fields on the profile's path; the range loop's record is extract_image_range's.
+        return checked([{'id': r['id'], 'texture_id': r['texture_id'], 'region': r['second'], 'source_offset': r['source_offset'],
+                         'source_bytes': r['source_bytes']} for r in payload_records(mach, 3) if r and r['source_offset'] in reach])
     if mach.architecture not in ['x86_64','armv7']:return []
     text=mach.text;code=mach.data[text['offset']:text['offset']+text['length']];rows=[]
     if mach.architecture=='x86_64':
@@ -79,6 +164,10 @@ def extract_image_regions(mach):
             if m.start()%2:continue
             try:rows.append(arm_record(mach,text['address']+m.start(),decoder))
             except (ValueError,StopIteration,IndexError):continue
+    return checked(rows)
+
+
+def checked(rows):
     if len(rows)>10000 or any(not 0<=r['id']<65535 or not 0<=r['texture_id']<65535 or not 0<=r['region']<65535 for r in rows):return []
     return sorted(rows,key=lambda r:(r['id'],r['source_offset']))
 MAC_RANGE = """
@@ -118,7 +207,47 @@ c8f870050420
 """
 
 
+# BuildResourceList's portrait loop: record i has id first_id + i, texture
+# first_texture_id + i and region 0.
+ANDROID_RANGE = """
+ldr r0, [r4, #0x28]
+mov.w sl, #0
+movw fp, #{first_texture_id}
+movw r6, #{first_id}
+movs r5, #3
+mov.w sb, #0
+ldr.w r8, [r0]
+loop: movs r0, #0x10
+blx <_Znwj>
+mov r4, r0
+movs r0, #4
+blx <_Znwj>
+add.w r1, sb, fp
+strh r1, [r0]
+add.w r1, sb, r6
+strh r1, [r4]
+mov.w r1, #-1
+strh.w sl, [r0, #2]
+str r5, [r4, #4]
+strd r1, r0, [r4, #8]
+mov r0, r8
+mov r1, r4
+blx <_ZN11AbyssEngine11PaintCanvas11AddResourceEPNS_8ResourceE>
+add.w sb, sb, #1
+cmp.w sb, #{count}
+blt @loop
+"""
+
+
 def extract_image_range(mach):
+    if mach.architecture == 'android-armv7':
+        from .android_blocks import find, offset
+        block = find(mach, '_Z17BuildResourceListPN11AbyssEngine6EngineE', ANDROID_RANGE)
+        if block is None: return {}
+        first, texture, count = (block['values'][k] for k in ('first_id', 'first_texture_id', 'count'))
+        if not 1<=count<=1024 or not 0<=first<=65535-count or not 0<=texture<=65535-count: return {}
+        return {'first_id': first, 'first_texture_id': texture, 'count': count, 'region': 0,
+                'source_offset': offset(mach, block['start']), 'source_bytes': block['end'] - block['start']}
     if mach.architecture not in ['x86_64','armv7']: return {}
     mac=mach.architecture=='x86_64';text=mach.text
     code=mach.data[text['offset']:text['offset']+text['length']]

@@ -62,3 +62,36 @@ class PersistentContactTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PersistentContactsAndroidTests(unittest.TestCase):
+    ARRIVAL = {'scope': 'rescue_choreography', 'provenance': {'actor': {'offset': 5, 'bytes': 24, 'anchor': 1}}}
+
+    def test_android_proofs(self):
+        import android_fixture
+        from unittest.mock import patch
+        from gof2_content import persistent_contacts as reader
+        from gof2_content.android_library import AndroidLibrary
+        from test_mido_travel import roomy
+        ordinary = reader.ORDINARY_VALUES
+        with patch.object(android_fixture, 'library', roomy(android_fixture.library)):
+            android_fixture.verify_android_proof(self, reader, lambda lib: reader.extract_persistent_contacts(lib, self.ARRIVAL, ordinary), values='ANDROID_VALUES')
+            image, layout, _ = android_fixture.layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            self.assertTrue(reader.extract_persistent_contacts(lib, self.ARRIVAL, ordinary))
+            self.assertEqual(reader.extract_persistent_contacts(lib, {}, ordinary), {})
+            self.assertEqual(reader.extract_persistent_contacts(lib, self.ARRIVAL, {}), {})
+
+    def test_android_native_declarations(self):
+        from gof2_content import persistent_contacts as reader
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'persistent_contact_definitions.gd', values='ANDROID_VALUES')
+
+    def test_android_vendor_is_the_only_difference(self):
+        from gof2_content import persistent_contacts as reader
+        android = dict(reader.ANDROID_VALUES)
+        self.assertEqual(android.pop('tractor_vendor'), {'creation_cursor': 23, 'station_id': 10, 'faction': 0, 'male': True, 'role': 2,
+                                                         'item_id': 68, 'quantity': 1, 'total_price': 100000, 'dialogue_cursor': 24,
+                                                         'text_ids': [3390, 3391], 'separator': '\n', 'departure_cursor': 24})
+        self.assertEqual(android, reader.VALUES)

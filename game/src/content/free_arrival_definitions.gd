@@ -7,6 +7,9 @@ const SPANS = {"free_arrival_marker":[382634,133],"free_arrival_ambush":[-19839,
 # Native composition.
 const MAC_SPANS = {"free_arrival_marker":[383150,133],"free_arrival_ambush":[-19839,241],"free_arrival_rank":[876982,12],"free_arrival_player_position":[562920,14],"free_arrival_entity_position":[-730252,26],"free_arrival_matrix_position":[1234194,96],"free_arrival_position_scale":[1531910,4],"free_arrival_hard_mode":[873738,34],"free_arrival_other_systems":[873656,82],"free_arrival_hard_constant":[1520682,4]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"free_arrival_marker":[692,100],"free_arrival_ambush":[9312,122],"free_arrival_rank":[0,6],"free_arrival_player_position":[0,12],"free_arrival_entity_position":[0,26],"free_arrival_matrix_position":[0,14],"free_arrival_hard_mode":[0,36],"free_arrival_other_systems":[0,58]}
+
 static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALUES)
 
 static func available(bindings: RefCounted) -> bool:

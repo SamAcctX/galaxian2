@@ -1,8 +1,23 @@
-"""Original convoy dialogue and capture choreography; constants only."""
+"""Original convoy dialogue and capture choreography; constants only.
+
+Android: LevelScript::process runs the cursor-14 capture (the first radio line
+disables actor 0 through Player::setHitpoints and KIPlayer::setDead with sound
+15, Level::flashScreen(3) blacks out for 10000 ms, the disabled, drift and
+capture views follow, then the 4000 ms transfer wait);
+Level::createRadioMessages case 14 creates the five radio lines
+(RadioMessage::RadioMessage, triggered); Level::createCampaignMission case 14
+the convoy population; Status::nextCampaignMission case 14 the Alioth mission
+(Mission(11, 0, 98)). DialogueWindow's tables and Globals::getDialogueSoundId
+hold the briefing and the voices. Values equal the Mac 1.0.7 ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_convoy_capture(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(MAC_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -372,3 +387,38 @@ MAC_VALUES = {'scope': 'mido_convoy_capture',
                 'freighter_offsets': [[7000.0, 0, 0], [-9000.0, 2000.0, 7000.0]],
                 'player_position': [40000.0, 0, 120000.0],
                 'generic_condition_kind': 31}}
+
+# Android spans inside named functions and their tables; the values are MAC_VALUES.
+ANDROID = {# LevelScript::process, cursor 14: the first radio line disables actor 0 (hull 0, KIPlayer::setDead, particles,
+           # sound 15), then the disabled view, drift, capture view of actor 6 and the 4000 ms transfer wait.
+           'convoy_story': ('_ZN11LevelScript7processEi', 0, 59076, 'sha256:fc48a0891a46a9391ae3fe50b9ad196d3c917dbd5cd6c3b58c4d2c9cdc2aa5ca'),
+           # Level::createRadioMessages case 14: five lines (texts 1820-1824, conditions 5/20/6).
+           'convoy_radio_dispatch': ('_ZN5Level19createRadioMessagesEi', 0, 26, 'sha256:2fb27116c5cd427d3d8d01c2af84739cd96a13de8ea5fc929fb78c2963332596'),
+           'convoy_radio_slot': ('_ZN5Level19createRadioMessagesEi', 54, 2, 'd202'),
+           'convoy_radio': ('_ZN5Level19createRadioMessagesEi', 1470, 202, 'sha256:ce06ab5aa77ef237dc1a258f001edbf3441a6599cf4379e9b84b2a0af6490cb0'),
+           'convoy_radio_tail': ('_ZN5Level19createRadioMessagesEi', 11130, 10, 'd4f81401406805618be3'),
+           'convoy_radio_message': ('_ZN12RadioMessageC2Eiiii', 0, 52, 'sha256:3846fd4e1bb2e22b2ac9c0a510aa87489cf6562344739be3881098d133598fac'),
+           # RadioMessage::triggered: condition 20 counts defeated targets.
+           'convoy_defeated_targets': ('_ZN12RadioMessage9triggeredExP9PlayerEgoP11LevelScript', 0, 1860, 'sha256:eba93dba536ccdaa67ad0e44c7b5ff4ae1ee5284e9fd8831719b304e90173244'),
+           'convoy_radio_started': ('_ZN12RadioMessage11isTriggeredEv', 0, 6, '90f820007047'),
+           'convoy_radio_finished': ('_ZN12RadioMessage6isOverEv', 0, 6, '90f821007047'),
+           'convoy_target_list': ('_ZN6Player10getEnemiesEv', 0, 4, '406f7047'),
+           'convoy_hull_test': ('_ZN6Player6isDeadEv', 0, 12, '816f00200129b8bf01207047'),
+           'convoy_retire_actor': ('_ZN8KIPlayer7setDeadEv', 0, 14, '0421c0f884100021406825f1e1be'),
+           'convoy_hull_setter': ('_ZN6Player12setHitpointsEi', 0, 18, '8167d0f884208a42b8bfc0f8841029f115bc'),
+           # Level::flashScreen(3): 10000 ms of black.
+           'convoy_blackout': ('_ZN5Level11flashScreenEi', 0, 360, 'sha256:13bd21f16a2a48bb7b7d939155f7f8f949a5acb30cab6fab76d4bda6812511fd'),
+           # Status::nextCampaignMission: cursor 14 -> 15, Mission(11, 0, 98).
+           'convoy_story_dispatch': ('_ZN6Status19nextCampaignMissionEb', 58, 10, 'a12800f21b82dfe810f0'),
+           'convoy_story_case': ('_ZN6Status19nextCampaignMissionEb', 96, 2, 'ef01'),
+           'convoy_next_mission': ('_ZN6Status19nextCampaignMissionEb', 1058, 28, 'sha256:8d1f9ebcf1faae4c09cceaf2b6a1e70ea8c0b9d686e3cb0dd1969e67d44ac3ff'),
+           # Level::createCampaignMission case 14: three pirates and four freighters on one waypoint, the player at (40000, 0, 120000).
+           'convoy_population': ('_ZN5Level21createCampaignMissionEv', 0, 31288, 'sha256:761ea4db1d2906b167f56eeaf032a3a7dafe9c273e58e5fc4cf0e5bd98e66608'),
+           'convoy_route_constructor': ('_ZN5RouteC2EPii', 0, 252, 'sha256:ca7150cd62482cc53dbfdf0a65bbe663c975f533f5e0fa5d80515fc638df1c70'),
+           'convoy_route_current': ('_ZN5Route11getWaypointEv', 0, 6, '016898f095ba'),
+           # The orbit briefing (mode 0, text 1819, voice 164); no station dialogue (mode 1 count 0).
+           'convoy_briefing_count': ('_ZN14DialogueWindow6lengthEv', 26, 4, '02000000', 'literal', 56),
+           'convoy_result_count': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 4, '00000000', 'literal', 56),
+           'convoy_briefing': ('_ZN14DialogueWindow11loadContentEv', 128, 8, '000000001b070000', 'literal', 104),
+           # The voice table: briefing 164 and radio 492-496.
+           'convoy_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0)}

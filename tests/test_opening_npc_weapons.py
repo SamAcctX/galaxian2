@@ -120,3 +120,84 @@ class OpeningNpcWeaponTests(unittest.TestCase):
             self.assertEqual(reader.extract_opening_npc_weapon(m,a,o,w),{})
 
 if __name__=='__main__': unittest.main()
+
+
+ANDROID_ACTORS = {'actors': [{'actor_id': i, 'actor_kind': 8, 'hull_catalogue_id': h} for i, h in enumerate((2, 23, 2))],
+                  'npc_initialization': {'ordinary_half_extent': 1000}}
+ANDROID_WEAPON = {'launch_modes': {'alternate_item_ids': [7]}, 'projectile_capacity': {'player': 9}}
+ANDROID_HELPERS = {'post_campaign': '_ZN6Status7gameWonEv', 'cursor': '_ZN6Status25getCurrentCampaignMissionEv',
+                   'level_getter': '_ZN6Status8getLevelEv', 'npc_owner': '_ZN3Gun12setFriendGunEb'}
+
+
+def android_extract(actors=ANDROID_ACTORS, opening=None, weapon=ANDROID_WEAPON, order=('level', 'damage', 'gun'), between='nop',
+                    cases=None, kind_setter='_ZN3Gun8setIndexEi', fresh='mov r8, r0', kind_last=False, **changes):
+    """Synthetic Level::assignGuns, Status helpers and Status::resetGame in the Android shapes."""
+    from android_text_fixture import fill, text_library
+    values = dict(scale='0x3f800000', zero='0x0', speed='1.200000e+01', damage='5', capacity='6', interval='0x190',
+                  lifetime='0x7d0', kinds='0xa', kind='1', item='0x15', model='0x1234', item_setter='_ZN3Gun8setIndexEi',
+                  **{key: name for key, name in ANDROID_HELPERS.items()})
+    values.update(changes.pop('values', {}))
+    blocks = {'level': fill(reader.ANDROID_LEVEL, **values), 'damage': fill(reader.ANDROID_DAMAGE, **values),
+              'gun': fill(reader.ANDROID_GUN, blank='#out', **values)}
+    # The kind table follows the gun block, the kind 8 block the table (or all blocks).
+    kind = '\n'.join(['kind:', fill(reader.ANDROID_KIND, **dict(values, item_setter=kind_setter))])
+    blocks['gun'] += '\n'.join(['', '.cases ' + ', '.join(cases or ['out'] * 8 + ['kind', 'out', 'out']), '' if kind_last else kind])
+    guns = '\n'.join(['push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', blocks[order[0]], between, blocks[order[1]], 'nop', blocks[order[2]],
+                      kind if kind_last else '', 'out:', 'bx lr'])
+    functions = {'_ZN5Level10assignGunsEv': guns,
+                 '_ZN6Status9resetGameEv': '\n'.join(['push.w {r4, r5, r6, r7, r8, sb, lr}', fresh, reader.ANDROID_FRESH, 'bx lr']),
+                 **{name: reader.ANDROID_HELPERS[key] for key, name in ANDROID_HELPERS.items()}}
+    functions.update(changes)
+    from android_text_fixture import text_library
+    lib, addresses = text_library({k: v for k, v in functions.items() if v is not None})
+    return reader.extract_opening_npc_weapon(lib, actors, {'declaration': 1} if opening is None else opening, weapon), lib, addresses
+
+
+class AndroidOpeningNpcWeapon(unittest.TestCase):
+    def test_named_functions_give_weapon_and_spans(self):
+        result, lib, addresses = android_extract()
+        self.assertEqual({k: v for k, v in result.items() if k != 'provenance'},
+                         {'actor_ids': [0, 1, 2], 'actor_kind': 8, 'item_id': 21, 'kind': 1, 'category': 0, 'model_resource_id': 0x1234,
+                          'damage': 5, 'interval_ms': 400, 'lifetime_ms': 2000, 'speed_units_per_millisecond': 12.0,
+                          'projectile_capacity': 6, 'local_muzzle': [0.0, 0.0, 0.0], 'launch_mode': 'ordinary'})
+        p = result['provenance']
+        guns = addresses['_ZN5Level10assignGunsEv']
+        self.assertEqual({k: (p[k]['offset'] - guns, p[k]['bytes']) for k in ('level_zero', 'base_damage', 'main', 'actor_kind', 'kind')},
+                         {'level_zero': (4, 224), 'base_damage': (230, 64), 'main': (296, 118), 'actor_kind': (422, 1), 'kind': (426, 16)})
+        self.assertEqual(int.from_bytes(lib.data[p['level_scale']['offset']:][:4], 'little'), 0x3f800000)
+        self.assertEqual((p['fresh_level']['offset'] - addresses['_ZN6Status9resetGameEv'], p['fresh_level']['bytes']), (6, 10))
+        for key, name in ANDROID_HELPERS.items():
+            self.assertEqual(p[key]['offset'], addresses[name], key)
+
+    def test_each_broken_rule_is_unsupported(self):
+        actors = copy.deepcopy(ANDROID_ACTORS)
+        actors['actors'][2]['actor_kind'] = 9
+        cases = {
+            'no initialization': dict(actors={'actors': ANDROID_ACTORS['actors'], 'npc_initialization': {}}),
+            'other actors': dict(actors=actors),
+            'no loadout': dict(opening={}),
+            'no launch modes': dict(weapon={'launch_modes': {}, 'projectile_capacity': {'player': 9}}),
+            'no capacity': dict(weapon={'launch_modes': {'alternate_item_ids': [7]}, 'projectile_capacity': {}}),
+            'alternate item': dict(weapon={'launch_modes': {'alternate_item_ids': [21]}, 'projectile_capacity': {'player': 9}}),
+            'damage first': dict(order=('damage', 'level', 'gun')),
+            'gun before damage': dict(order=('level', 'gun', 'damage'), kind_last=True),
+            'bonus lost': dict(between='movs r4, #0'),
+            'small table': dict(values=dict(kinds='7'), cases=['out'] * 8 + ['kind']),
+            'kind elsewhere': dict(cases=['out'] * 7 + ['kind', 'out', 'out', 'out']),
+            'other kind setter': dict(kind_setter='_ZN3Gun12setFriendGunEb'),
+            'fresh this lost': dict(fresh='mov r8, r1'),
+            'no fresh level': {'_ZN6Status9resetGameEv': 'bx lr'},
+            **{'helper ' + key: {name: 'movs r0, #0\nbx lr'} for key, name in ANDROID_HELPERS.items()},
+            'kind': dict(values=dict(kind='2')),
+            'negative scale': dict(values=dict(scale='0xbf800000')),
+            'level sum start': dict(values=dict(zero='0x3f800000')),
+            'zero damage': dict(values=dict(damage='0')),
+            'zero interval': dict(values=dict(interval='0')),
+            'long interval': dict(values=dict(interval='0x20000')),
+            'zero lifetime': dict(values=dict(lifetime='0')),
+            'zero capacity': dict(values=dict(capacity='0')),
+            'negative speed': dict(values=dict(speed='-1.200000e+01')),
+        }
+        for name, changes in cases.items():
+            with self.subTest(name):
+                self.assertEqual(android_extract(**changes)[0], {})

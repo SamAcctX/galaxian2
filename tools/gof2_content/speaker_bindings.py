@@ -1,4 +1,9 @@
-"""Bounded radio name and fixed portrait declarations; emits data only."""
+"""Bounded radio name and fixed portrait declarations; emits data only.
+
+Android: Radio::update selects a speaker's portrait (agents from 10000, the
+fixed table below 63, procedural speaker 21), Radio::draw its name text, and
+RadioMessage::getImageID reads the speaker.
+"""
 import struct
 from .opening_loadout import template
 from .ship_models import section_bytes
@@ -143,6 +148,8 @@ def data_region(mach, address, size):
 
 
 def extract_speaker_bindings(mach):
+    if mach.architecture == 'android-armv7':
+        return android_speakers(mach)
     import capstone
     mac = mach.architecture == 'x86_64'
     if not mac and mach.architecture != 'armv7': return {}
@@ -215,13 +222,22 @@ def extract_speaker_bindings(mach):
             # global address is irrelevant to the emitted constant declarations.
             arm_ref(names,'value_6','value_a',0x16)
             arm_ref(names,'value_b8','value_c0',0xc8)
+        return speaker_rows(mach, threshold, count, excluded, first_name, table, 8 if mac else 4, {
+            'speaker_selection':{'offset':mach.slice_offset+section['offset']+speakers.start(),'bytes':len(speakers[0])},
+            'name_selection':{'offset':mach.slice_offset+section['offset']+names.start(),'bytes':len(names[0])},
+            'speaker_getter':{'offset':found[1],'bytes':len(found[0])}})
+    except (ValueError,IndexError,KeyError,struct.error):
+        return {}
+
+
+def speaker_rows(mach, threshold, count, excluded, first_name, table, width, provenance):
+    try:
         if not 1 <= count <= 128 or not 0 <= excluded < count or not count < threshold <= 65535 or not 0 <= first_name <= 65535-count:
             raise ValueError('Unsupported speaker declaration bounds')
-        width = 8 if mac else 4
         source = data_region(mach,table,count*width)
         if source is None or table%width: raise ValueError('Portrait pointer table is unavailable')
         rows = []
-        for index,pointer in enumerate(struct.unpack('<'+str(count)+('Q' if mac else 'I'),source[0])):
+        for index,pointer in enumerate(struct.unpack('<'+str(count)+('Q' if width == 8 else 'I'),source[0])):
             if pointer % 4: raise ValueError('Unaligned portrait definition')
             row = {'speaker_id':index}
             if index == excluded:
@@ -238,10 +254,139 @@ def extract_speaker_bindings(mach):
             rows.append(row)
         return {'first_name_id':first_name,'agent_speaker_start':threshold,'fixed_speaker_count':count,
                 'procedural_speaker':excluded,'portraits':rows,
-                'provenance':{
-                    'speaker_selection':{'offset':mach.slice_offset+section['offset']+speakers.start(),'bytes':len(speakers[0])},
-                    'name_selection':{'offset':mach.slice_offset+section['offset']+names.start(),'bytes':len(names[0])},
-                    'speaker_getter':{'offset':found[1],'bytes':len(found[0])},
-                    'portrait_table':{'offset':source[1],'bytes':len(source[0])}}}
-    except (ValueError,IndexError,KeyError,struct.error):
+                'provenance':{**provenance, 'portrait_table':{'offset':source[1],'bytes':len(source[0])}}}
+    except (ValueError,struct.error):
         return {}
+
+
+# Radio::update: agents (>= threshold) copy their Wanted image parts; speakers up
+# to `last` except `excluded` copy five ints from the fixed portrait table.
+ANDROID_SPEAKERS = """
+blx <_ZN12RadioMessage10getImageIDEv>
+mov r8, r0
+movw r0, #{threshold}
+cmp r8, r0
+blt @fixed
+ldr.w r0, [sl, #0x10]
+cbz r0, @agent
+blx <_ZdaPv>
+agent: movs r0, #0x14
+blx <_Znaj>
+str.w r0, [sl, #0x10]
+movw r0, #{agent_base}
+sub.w r4, r8, r0
+ldr r0, [pc, #{&status}]
+str.w r8, [sp, #0x1c]
+movs r5, #0
+add r0, pc
+ldr.w r8, [r0]
+parts: ldr.w r0, [r8]
+ldr r0, [r0]
+ldr r0, [r0, #4]
+ldr.w r0, [r0, r4, lsl #2]
+blx <_ZN6Wanted13getImagePartsEv>
+ldr.w r1, [sl, #0x10]
+ldr.w r0, [r0, r5, lsl #2]
+str.w r0, [r1, r5, lsl #2]
+adds r5, #1
+cmp r5, #5
+bne @parts
+movs r0, #1
+ldr.w r8, [sp, #0x1c]
+str r0, [sp, #0x20]
+movs r0, #0
+str r0, [sp, #0x24]
+b #{selected}
+fixed: cmp.w r8, #{last}
+bgt #{procedural}
+cmp.w r8, #{excluded}
+beq #{also_procedural}
+ldr.w r0, [sl, #0x10]
+cbz r0, @table
+blx <_ZdaPv>
+table: movs r0, #0x14
+blx <_Znaj>
+mov r1, r0
+ldr r0, [pc, #{&portraits}]
+movs r2, #0
+str.w r1, [sl, #0x10]
+add r0, pc
+ldr.w r0, [r0, r8, lsl #2]
+copy: ldr.w r3, [r0, r2, lsl #2]
+str.w r3, [r1, r2, lsl #2]
+adds r2, #1
+cmp r2, #5
+bne @copy
+"""
+# Radio::draw: an agent's name from its Wanted entry, else text first_name + speaker.
+ANDROID_NAMES = """
+movw r0, #{threshold}
+cmp r5, r0
+blt @text
+ldr r0, [pc, #{&status}]
+movw r1, #{agent_low}
+movt r1, #{agent_high}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+ldr r0, [r0]
+ldr r0, [r0, #4]
+add.w r0, r0, r5, lsl #2
+add r5, sp, #0x20
+ldr r1, [r0, r1]
+mov r0, r5
+blx <_ZN6Wanted7getNameEv>
+strd sb, sl, [sp]
+mov r0, r6
+str r5, [sp, #8]
+movs r1, #7
+ldrd r2, r3, [sp, #0x10]
+blx <_ZN6Layout7drawBoxEiiiiiN11AbyssEngine6StringE>
+add r0, sp, #0x20
+b @drawn
+...
+text: ldr r0, [pc, #{&gameText}]
+addw r1, r5, #{first_name}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+blx <_ZN8GameText7getTextEi>
+mov r1, r0
+add r0, sp, #0x18
+movs r2, #0
+blx <_ZN11AbyssEngine6StringC1ERKS0_b>
+strd sb, sl, [sp]
+movs r1, #7
+str r0, [sp, #8]
+mov r0, r6
+ldrd r2, r3, [sp, #0x10]
+blx <_ZN6Layout7drawBoxEiiiiiN11AbyssEngine6StringE>
+add r0, sp, #0x18
+drawn: blx <_ZN11AbyssEngine6StringD1Ev>
+"""
+GETTER = '_ZN12RadioMessage10getImageIDEv'
+
+
+def android_speakers(lib):
+    from .android_blocks import find, offset
+    from .text_ids import canonical_id
+    speakers = find(lib, '_ZN5Radio6updateElP9PlayerEgoP11LevelScript', ANDROID_SPEAKERS)
+    names = find(lib, '_ZN5Radio4drawExP9PlayerEgoP11LevelScript', ANDROID_NAMES)
+    getter = find(lib, GETTER, 'ldr r0, [r0, #0xc]\nbx lr')
+    if not speakers or not names or not getter or getter['start'] != lib.symbols[GETTER][0]:
+        return {}
+    v, n = speakers['values'], names['values']
+    threshold = v['threshold']
+    # Agents are indexed from the threshold: Wanted entry (speaker - threshold) * 4.
+    if (v['agent_base'], n['threshold'], n['agent_low'] | n['agent_high'] << 16) != (threshold, threshold, -4 * threshold & 0xffffffff):
+        return {}
+    if v['procedural'] != v['also_procedural'] or speakers['refs']['status'] != names['refs']['status']:
+        return {}
+    count, excluded = v['last'] + 1, v['excluded']
+    # Android text ids: the name range must be one Mac 1.0.7 range.
+    first_name = canonical_id(n['first_name'])
+    if first_name is None or any(canonical_id(n['first_name'] + i) != first_name + i for i in range(count)):
+        return {}
+    extent = lambda block: {'offset': offset(lib, block['start']), 'bytes': block['end'] - block['start']}
+    return speaker_rows(lib, threshold, count, excluded, first_name, speakers['refs']['portraits'][0], 4,
+                        {'speaker_selection': extent(speakers), 'name_selection': extent(names), 'speaker_getter': extent(getter)})

@@ -7,7 +7,7 @@ const MAX_CACHED_AUDIO_PCM := 64 * 1024 * 1024
 const MAX_CACHED_RESOURCES := 64 * 1024 * 1024
 # Catalogue and localization extents identify independently verified layouts.
 # A bundle's version label and CPU architecture do not identify its ship set.
-const LAYOUTS := {"ios-hd": {64: 3402}, "mac-full-hd": {61: 3371, 64: 3385}}
+const LAYOUTS := {"android-hd": {64: 3401}, "ios-hd": {64: 3402}, "mac-full-hd": {61: 3371, 64: 3385}}
 var error := ""
 var root := ""
 var manifest: Dictionary = {}
@@ -45,7 +45,7 @@ func open(directory: String) -> bool:
 	for key in ["profile", "languages", "files", "counts", "support", "ship_table"]:
 		if not value.get(key) is Dictionary:
 			return fail("Incomplete content manifest: " + key)
-	if value.profile.get("edition") not in ["ios-hd", "mac-full-hd"]:
+	if value.profile.get("edition") not in ["android-hd", "ios-hd", "mac-full-hd"]:
 		return fail("Unsupported content profile.")
 	if value.profile.get("layout") != "gof2-bundle-v1":
 		return fail("Unsupported content layout.")

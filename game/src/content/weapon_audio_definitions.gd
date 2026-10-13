@@ -3,12 +3,17 @@ extends RefCounted
 const Numbers=preload("res://src/content/opening_definitions.gd")
 const Fonts=preload("res://src/content/font_definitions.gd")
 const Layouts=preload("res://src/content/declaration_layouts.gd")
+const Equal=preload("res://src/content/opening_escape_definitions.gd")
 
 const VALUES := {"player_sound_limit":2,"npc_sound_limit":1,"initial_enabled":true,"disabled_world_type":2,"price_low_index":15,"price_high_index":17,"sort":"descending_midpoint_price","enabled_index":"sorted_copy_index","duplicates":"first_item_id","position":"firing_owner","instance":"cached_event","requires_successful_launch":true,"player_pitch":"nonnegative_one_minus_interval_multiplier","npc_pitch":0.0,"continuous_kinds":[2,3,8],"npc_default_event_id":61}
 const NPC_EVENTS := [52, 55, 54, 53, 61, 61, 61, 61, 61, 62, 2276]
 const SPANS := {"x86_64":{"owner_defaults":[412873,25],"owner_setter":[413737,26],"player_limit":[429491,21],"npc_backlink_call":[-202971,12],"npc_backlink_setter":[413763,14],"npc_world_gate":[-66553,26],"weapon_defaults":[-311196,25],"primary_select":[419113,457],"single_install_gate":[419053,17],"single_install_select":[419089,24],"bulk_install_gate":[419915,22],"bulk_install_select":[419956,29],"player_install":[440229,17],"player_install_call":[-157396,5],"npc_install":[-199451,14],"npc_install_call":[-64368,29],"dispatch":[420317,280],"fire_success":[420917,176],"pitch_update":[215010,55],"pitch_wrapper":[482865,13],"pitch_setter":[423427,66],"price_layout":[-206893,140],"price_getter":[-206667,10],"interval_getter":[607601,11],"npc_dispatch_table":[420599,44],"player_table":[1464783,932]},"armv7":{"owner_defaults":[371646,22],"owner_setter":[372386,16],"player_limit":[384836,18],"npc_backlink_call":[-193898,8],"npc_backlink_setter":[372402,6],"npc_world_gate":[-67352,20],"weapon_zero_register":[-294266,2],"weapon_defaults":[-294070,18],"primary_select":[376678,348],"single_install_select":[376586,22],"bulk_install_select":[377338,22],"player_install":[394066,12],"player_install_call":[-153370,16],"npc_install":[-190846,6],"npc_install_call":[-65544,24],"dispatch":[377614,192],"fire_success":[378068,110],"pitch_update":[226382,52],"pitch_wrapper":[426346,6],"pitch_setter":[379986,50],"price_layout":[-196950,84],"price_getter":[-196798,4],"interval_getter":[537622,4],"player_table":[2351530,932],"npc_table":[2352474,44]}}
 
 const MAC_ALTERNATE := {"owner_defaults":[413409,25],"owner_setter":[414273,26],"player_limit":[430027,21],"npc_backlink_call":[-202971,12],"npc_backlink_setter":[414299,14],"npc_world_gate":[-66553,26],"weapon_defaults":[-311688,25],"primary_select":[419649,457],"single_install_gate":[419589,17],"single_install_select":[419625,24],"bulk_install_gate":[420451,22],"bulk_install_select":[420492,29],"player_install":[440765,17],"player_install_call":[-157396,5],"npc_install":[-199451,14],"npc_install_call":[-64368,29],"dispatch":[420853,280],"fire_success":[421453,176],"pitch_update":[214710,55],"pitch_wrapper":[483413,13],"pitch_setter":[423963,66],"price_layout":[-206893,140],"price_getter":[-206667,10],"interval_getter":[608225,11],"npc_dispatch_table":[421135,44],"player_table":[1439847,932]}
+
+# Android: spans inside named functions (Layouts.anchored); the tables equal the Mac 1.0.7 ones.
+const ANDROID_VALUES := {"player_sound_limit":2,"npc_sound_limit":1,"initial_enabled":true,"disabled_world_type":2,"price_low_index":15,"price_high_index":17,"sort":"descending_midpoint_price","enabled_index":"sorted_copy_index","duplicates":"first_item_id","position":"firing_owner","instance":"cached_event","requires_successful_launch":true,"player_pitch":"nonnegative_one_minus_interval_multiplier","npc_pitch":0.0,"continuous_kinds":[2,3,8],"npc_default_event_id":61,"player_event_ids":[52,53,54,56,55,57,58,59,60,50,49,50,78,75,79,77,72,73,74,76,80,81,66,67,63,64,68,65,69,70,71,82,83,84,85,86,87,88,89,90,91,6,7,8,9,10,11,92,93,94,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,1098,1100,1099,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,1111,1113,1112,1117,1095,1096,1097,1101,-1,-1,-1,-1,-1,-1,-1,-1,-1,1118,-1,-1,-1,2254,-1,-1,-1,-1,-1,-1,-1,-1,-1,2271,2272,-1,-1,2263,2263,2263,2265,2265,2265,-1,-1,-1,-1,2254,2267,2268,2252,-1,2269,-1,2275,2276,2278,2277,2280],"npc_event_ids":[52,55,54,53,61,61,61,61,61,62,2276]}
+const ANDROID_SPANS := {"owner_defaults":[396,18],"owner_setter":[0,10],"player_limit":[440,168],"npc_backlink_call":[342,8],"npc_backlink_setter":[0,6],"npc_world_gate":[762,18],"weapon_defaults":[358,198],"primary_select":[0,436],"single_install_select":[94,22],"bulk_install_select":[128,22],"player_install":[0,12],"player_install_call":[1358,10],"npc_install":[0,6],"npc_install_call":[2358,18],"dispatch":[0,196],"fire_success":[256,94],"pitch_update":[1926,50],"pitch_wrapper":[0,6],"pitch_setter":[0,38],"price_layout":[0,78],"price_getter":[0,4],"interval_getter":[0,4],"player_table":[0,932],"npc_table":[0,44]}
 
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+3 or not data.get("provenance") is Dictionary:return false
@@ -36,11 +41,21 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, executable_bytes: int, architecture: String, weapons: Dictionary, actors: Dictionary, staging: Dictionary) -> String:
 	if not data is Dictionary:return "Invalid weapon audio capability"
 	if data.is_empty():return ""
-	if not parameters(data) or not SPANS.has(architecture):return "Unsupported weapon audio declarations"
+	var android: bool=architecture=="android-armv7"
+	if not parameters(data) or not (SPANS.has(architecture) or android):return "Unsupported weapon audio declarations"
 	var origin: Variant=staging.get("provenance",{}).get("initial",{}).get("offset")
 	if not Numbers.integer(origin,0,executable_bytes):return "Weapon audio lacks its opening anchor"
 	var npc: Dictionary=actors.get("npc_initialization",{})
 	if staging.get("player_flight",{}).is_empty() or npc.get("world_initialization",{}).is_empty() or npc.world_initialization.world_type==data.disabled_world_type:return "Weapon audio lacks its supported world context"
+	if android:
+		var values: Dictionary=data.duplicate()
+		values.erase("provenance")
+		if not Equal.equal_value(values,ANDROID_VALUES) or not Layouts.anchored(data.provenance,executable_bytes,ANDROID_SPANS):return "Disconnected weapon audio declaration"
+		for pair in [["price_layout","item_layout"],["price_getter","price"]]:
+			if data.provenance[pair[0]]!=npc.get("construction",{}).get("provenance",{}).get(pair[1]):return "Weapon audio price is disconnected from the catalogue"
+		var interval: Variant=weapons.get("provenance",{}).get("interval_getter",{})
+		if not interval is Dictionary or data.provenance.interval_getter.offset!=interval.get("offset") or data.provenance.interval_getter.bytes!=interval.get("bytes"):return "Weapon audio pitch is disconnected from its equipment modifier"
+		return ""
 	var spans: Dictionary=SPANS[architecture]
 	if data.provenance.size()!=spans.size():return "Invalid weapon audio provenance"
 	var layouts: Array=[spans]

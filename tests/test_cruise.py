@@ -81,3 +81,56 @@ class CruiseTests(unittest.TestCase):
             else: data[256 + 64:256 + 64 + 4] = bytes.fromhex('4ff07c50')
             mach.data = bytes(data)
             self.assertEqual(extract_cruise(mach), {})
+
+
+def android(speed=0x40800000, throttle=0x3f800000, restored=None, field=0xb8, consumer_field=None,
+            columns=(0x18, 8, 0x28), getter_second=True, pairs=1, omit=None, reset_field=None,
+            throttle_field=None, speed_field=None, moves=True):
+    """Synthetic player functions in the Android compiler's shape (4.0 units/ms)."""
+    from android_fixture import TEXT, Thumb, library, stub
+    getter, helper, update, reset, constructor = (TEXT + 0x100 * i for i in range(1, 6))
+    names = {'getter': '_ZN11AbyssEngine6AEMath12MatrixGetDirERKNS0_6MatrixE', 'helper': '_ZN10AEGeometry11moveForwardEf',
+             'update': '_ZN9PlayerEgo14updateManeuverEv', 'reset': '_ZN9PlayerEgo9stopBoostEv',
+             'constructor': '_ZN9PlayerEgoC2EP6Player'}
+    code = {}
+    asm = Thumb(getter).ldr(3, 1, columns[0]).ldr(2, 1, columns[1]).ldr(1, 1, columns[2]).strd(2, 3, 0, 0).str(1, 0, 8).ret()
+    code['getter'] = (asm.finish(), getter)
+    asm = Thumb(helper).push()
+    first, second = (stub('puts'), getter) if getter_second else (getter, stub('puts'))
+    asm.call(first, exchange=first == stub('puts')).call(second, exchange=second == stub('puts')).pop()
+    code['helper'] = (asm.finish(), helper)
+    step = consumer_field if consumer_field is not None else field
+    asm = Thumb(update).push().vldr(0, 4, 0x134).vcvt(0, 0).vldr(2, 4, throttle_field or step + 4).ldr(0, 4, 8).vmul(0, 0, 2)
+    asm.vldr(2, 4, speed_field or step).vmul(0, 0, 2).vmov_core(1, 0)
+    code['update'] = ((asm.call(helper, exchange=False) if moves else asm.call(stub('puts'))).pop().finish(), update)
+    asm = Thumb(reset).push().mov_imm(2, speed if restored is None else restored).str_w(2, 0, reset_field or field).pop()
+    code['reset'] = (asm.finish(), reset)
+    asm = Thumb(constructor).push().mov_imm(10, throttle).nop().nop()
+    for _ in range(pairs):
+        asm.mov_imm(1, speed).strd(1, 10, 4, field)
+    code['constructor'] = (asm.pop().finish(), constructor)
+    from gof2_content.android_library import AndroidLibrary
+    return AndroidLibrary(library([(names[k], c, a) for k, (c, a) in code.items() if k != omit], {}))
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidCruiseTests(unittest.TestCase):
+    def test_named_declarations_give_speed_axis_and_spans(self):
+        from android_fixture import TEXT
+        result = extract_cruise(android())
+        self.assertEqual((result['speed_units_per_millisecond'], result['forward_axis']), (4.0, [0, 0, 1]))
+        # throttle, speed store, restore, consumer, helper up to the getter call, getter
+        self.assertEqual([(p['offset'] - TEXT, p['bytes']) for p in result['provenance']],
+                         [(0x502, 4), (0x50a, 8), (0x402, 8), (0x302, 34), (0x200, 10), (0x100, 14)])
+
+    def test_each_broken_declaration_is_unsupported(self):
+        cases = {'throttle': dict(throttle=0x3f000000), 'restored': dict(restored=0x40000000),
+                 'consumer': dict(consumer_field=0xc0), 'columns': dict(columns=(0x1c, 0xc, 0x2c)),
+                 'order': dict(getter_second=False), 'duplicate': dict(pairs=2), 'zero': dict(speed=0),
+                 'reset field': dict(reset_field=0xc0), 'throttle field': dict(throttle_field=0xc0),
+                 'speed field': dict(speed_field=0xc0), 'callee': dict(moves=False),
+                 'fast': dict(speed=0x45000000)}
+        for name, options in cases.items():
+            self.assertEqual(extract_cruise(android(**options)), {}, name)
+        for part in ('getter', 'helper', 'update', 'reset', 'constructor'):
+            self.assertEqual(extract_cruise(android(omit=part)), {}, part)

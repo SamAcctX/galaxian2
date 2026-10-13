@@ -2,12 +2,139 @@
 
 Static contexts link to the existing location predicate and sky getter. Only
 numeric resource IDs and provenance leave this reader, never executable bytes.
+
+Android: MGame::OnInitialize picks the special cube when Status::inAlienOrbit,
+else the base plus SolarSystem::getTextureIndex of Status::getSystem, loads it
+through PaintCanvas::TextureCreate (as the opening sky in Level::createSpace)
+and binds it with PaintCanvas::ChangeCubeTexture.
 """
 from .opening_loadout import template
 from .ship_models import section_bytes
 
 
+ANDROID_SELECT = r"""ldr r0, =\w+
+adr r0, (?P<status>\w+)
+ldr r0, \[r0\]
+ldr r0, \[r0\]
+call _ZN6Status12inAlienOrbitEv
+ldr\.w (?P<canvas>\w+), \[(?P<game>\w+), #4\]
+cmp r0, #1
+bne #(?P<sky>\w+)
+add r2, sp, #(?P<slot>\w+)
+mov r0, (?P=canvas)
+movw r1, #(?P<special_id>\w+)
+b #(?P<load>\w+)
+ldr r0, =\w+
+adr r0, (?P=status)
+ldr r0, \[r0\]
+ldr r0, \[r0\]
+call _ZN6Status9getSystemEv
+call _ZN11SolarSystem15getTextureIndexEv
+movw r1, #(?P<texture_base>\w+)
+add r0, r1
+add r2, sp, #(?P=slot)
+uxth r1, r0
+mov r0, (?P=canvas)
+(?P<loader>movs r3, #0)
+call _ZN11AbyssEngine11PaintCanvas13TextureCreateEtRjb
+ldr r1, \[sp, #(?P=slot)\]
+ldr\.w r0, \[(?P=game), #4\]
+call _ZN11AbyssEngine11PaintCanvas17ChangeCubeTextureEj
+"""
+# Unit 7 (0x84c7) takes the cube (0x8513); unit 0 is restored.
+ANDROID_BIND = r"""push {r4, r5, r7, lr}
+add r7, sp, #8
+mov r5, r0
+ldr r0, =\w+
+mov r4, r1
+adr r0, \w+
+ldr r0, \[r0\]
+ldrb r0, \[r0\]
+cbz r0, #\w+
+ldr r0, \[r5, #0x10\]
+cmp r0, r4
+bls #\w+
+ldr r0, \[r5, #0x14\]
+ldr\.w r0, \[r0, r4, lsl #2\]
+ldrb r1, \[r0, #0x10\]
+cbz r1, #\w+
+ldr r0, =\w+
+adr r0, \w+
+ldr r0, \[r0\]
+str r4, \[r0\]
+movw r0, #0x84c7
+call glActiveTexture
+ldr r0, \[r5, #0x14\]
+ldr\.w r0, \[r0, r4, lsl #2\]
+ldr r1, \[r0\]
+movw r0, #0x8513
+call glBindTexture
+movw r0, #0x84c0
+pop\.w {r4, r5, r7, lr}
+b\.w #\w+
+adds r0, #4
+call _ZNK11AbyssEngine6String9GetAECharEv
+cbz r0, #\w+
+pop\.w {r4, r5, r7, lr}
+b\.w #\w+
+pop {r4, r5, r7, pc}
+"""
+# The fresh opening (campaign mission 0, world type 3) jumps to its sky texture load.
+ANDROID_OPENING = r"""call _ZN6Status25getCurrentCampaignMissionEv
+cbnz r0, #(?P<other>\w+)
+ldr\.w r0, \[(?P<level>\w+), #0xc0\]
+cmp r0, #3
+bne #(?P=other)
+ldr r0, =\w+
+movw r1, #\w+
+mov r2, \w+
+movs r3, #0
+adr r0, \w+
+ldr (?P<canvas>\w+), \[r0\]
+ldr r0, \[(?P=canvas)\]
+call _ZN11AbyssEngine11PaintCanvas10MeshCreateEtRjb
+ldr r0, \[(?P=canvas)\]
+add\.w r2, (?P=level), #0x198
+movw r1, #\w+
+b #(?P<texture>\w+)
+"""
+ANDROID_LOAD = ['movs r3, #0', 'call _ZN11AbyssEngine11PaintCanvas13TextureCreateEtRjb']
+
+
+def android_selection(lib, projection, sky):
+    from .android_listing import Listing, number
+    # The parents must have proven these contexts; on Android they are found here by name.
+    contexts = sky.get('provenance', {})
+    if not ('predicate' in projection.get('provenance', {}) and 'system' in contexts and 'texture' in contexts):
+        return {}
+    game, space = Listing(lib, '_ZN5MGame12OnInitializeEv'), Listing(lib, '_ZN5Level11createSpaceEv')
+    selects, openings = game.find(ANDROID_SELECT), space.find(ANDROID_OPENING)
+    if len(selects) != 1 or len(openings) != 1:
+        return {}
+    select = selects[0]
+    if (number(select['sky']) != game.code[game.index(select, 'load') + 1].address
+            or number(select['load']) != game.code[game.index(select, 'loader')].address):
+        return {}
+    load = space.at(number(openings[0]['texture']))
+    bind = Listing(lib, '_ZN11AbyssEngine11PaintCanvas17ChangeCubeTextureEj')
+    binds = bind.find(ANDROID_BIND)
+    index = Listing(lib, '_ZN11SolarSystem15getTextureIndexEv')
+    predicate, system = Listing(lib, '_ZN6Status12inAlienOrbitEv'), Listing(lib, '_ZN6Status9getSystemEv')
+    if (load is None or space.lines[load:load + 2] != ANDROID_LOAD or len(binds) != 1 or bind.index(binds[0]) != 0
+            or index.lines != ['ldr r0, [r0, #0x30]', 'bx lr'] or not predicate or not system):
+        return {}
+    values = {key: number(select[key]) for key in ['texture_base', 'special_id']}
+    if not all(0 <= v <= 65533 for v in values.values()):
+        return {}
+    return dict(values, provenance={'select': game.match_span(select), 'bind': bind.match_span(binds[0]),
+                                    'predicate': predicate.span(0, len(predicate.code) - 1),
+                                    'system': system.span(0, len(system.code) - 1),
+                                    'sky_index': index.span(0, 1), 'load_context': space.span(load, load + 1)})
+
+
 def extract_reflection_selection(mach, projection, sky):
+    if mach.architecture == 'android-armv7':
+        return android_selection(mach, projection, sky) if projection and sky else {}
     if not projection or not sky or mach.architecture not in ['x86_64','armv7']: return {}
     import capstone
     mac=mach.architecture=='x86_64';prefix='MAC_' if mac else 'ARM_'

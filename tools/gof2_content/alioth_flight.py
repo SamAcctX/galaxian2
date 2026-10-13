@@ -1,8 +1,19 @@
-"""Source-bound Alioth portal and ordinary flight declarations."""
+"""Source-bound Alioth portal and ordinary flight declarations.
+
+Android: Level::createSpace builds the portal (model 16994) and
+PlayerWormHole::update opens it over 3000 ms, closes it from 60000 ms and hides
+it after 63001 ms (extent / 4096, scale shift 4 x 1/65536, facing + 0.5);
+PlayerWormHole's constructor, reset, open, getPosition and render complete it.
+Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_alioth_flight(mach,arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -90,3 +101,14 @@ MAC_ALTERNATE = {'alioth_flight_portal_update': [656136,
                                         4,
                                         '__const',
                                         'd99e58435243d9fef9c88273b8d553b4fba4d0baf8009d29eae74fa99e0d9f57']}
+
+# Android spans inside named functions and their tables; the values are VALUES.
+ANDROID = {# PlayerWormHole::update: opens over 3000 ms, closes from 60000 ms, hides after 63001 ms; extent / 4096 scaled by 1/65536 << 4, facing + 0.5.
+           'alioth_flight_portal_update': ('_ZN14PlayerWormHole6updateEi', 0, 1176, 'sha256:b5acf6c94d686058f788074d04453f1206c112e0f5cc437b026ae78c58850d44'),
+           'alioth_flight_portal_constructor': ('_ZN14PlayerWormHoleC2EiP10AEGeometryfffb', 0, 156, 'sha256:3927c922ca5de71c81cd38545f9b628e207c6d288b51542aeb45894154fe41df'),
+           'alioth_flight_portal_reset': ('_ZN14PlayerWormHole5resetEb', 0, 18, '002918bf4ef278614ff48052c0e954127047'),
+           'alioth_flight_portal_open': ('_ZN14PlayerWormHole4openEv', 0, 16, '4ff248410022cff6ff71c0e954127047'),
+           'alioth_flight_portal_draw': ('_ZN14PlayerWormHole11getPositionEv', 0, 38, 'sha256:fbe4aea3ef08ef5db9075367e2174fb941d4a247afbc32013ae5c910101a90c8'),
+           'alioth_flight_portal_facing': ('_ZN14PlayerWormHole6renderEv', 0, 14, '90f8f11011b1806827f10db87047'),
+           # Level::createSpace: the portal is model 16994 in environment slot 3.
+           'alioth_flight_portal_model': ('_ZN5Level11createSpaceEv', 0, 3668, 'sha256:407ff360bb0ce9685a07653897850772aad545364475333f63f21dabb48175d7')}

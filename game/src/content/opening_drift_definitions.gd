@@ -20,6 +20,7 @@ static func parameters(data: Dictionary) -> bool:
 static func sizes(architecture: String) -> Dictionary:
 	if architecture == "x86_64": return {"cut": 272, "wave": 102, "sine": 33, "elapsed_getter": 13, "translate": 200, "frequency": 4, "bias": 4, "sign": 4}
 	if architecture == "armv7": return {"cut": 286, "wave": 110, "sine": 46, "elapsed_getter": 6, "translate": 160}
+	if architecture == "android-armv7": return {"cut": 72, "wave": 108, "sine": 4, "elapsed_getter": 6, "translate": 134}
 	return {}
 
 static func validate(data: Variant, executable_bytes: int, architecture: String) -> String:

@@ -32,9 +32,10 @@ func verify(args: PackedStringArray):
 	verify_alioth_populations(bindings,cat,lib,context)
 	verify_alioth_cache(bindings,cat,lib)
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	for key in NavigationRules.SPANS:
+	var arch: String=bindings.source_architecture
+	for key in NavigationRules.ANDROID_SPANS if arch=="android-armv7" else NavigationRules.SPANS:
 		var bad: Dictionary=bindings.early_contracts.duplicate(true);bad.provenance.erase(key)
-		check(not Definitions.validate(bad,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.mido_travel).is_empty(),"Missing navigation proof was accepted: "+key)
+		check(not Definitions.validate(bad,int(header.source_executable_bytes),arch,bindings.arrival_staging,bindings.mido_travel).is_empty(),"Missing navigation proof was accepted: "+key)
 
 func verify_alioth_quotes(bindings: RefCounted,cat: RefCounted,context: Dictionary):
 	var offer:=Offer.new();var origin:=context.duplicate(true);origin.client_faction=0

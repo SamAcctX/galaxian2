@@ -1,8 +1,23 @@
-"""Early stock and hidden contact declarations; no original executable payloads."""
+"""Early stock and hidden contact declarations; no original executable payloads.
+
+Android: Generator::getItemBuyList builds the early stock (the Mido tutorial
+items; availability (cursor + 25) / 45 up to 1.5 of an item's occurrence,
+Item::init's catalogue fields, Galaxy::invDistancePercent, SolarSystem::getX
+and getY for quantities, Status::hardCoreMode and inBlackMarketSystem),
+Generator::getShipBuyList sells no ships in Mido before cursor 16,
+AbyssEngine::AERandom::reset seeds from the clock, Item::makeItem, makeItem()
+and clone copy stock items, Station::getSystem and getTecLevel read the
+station and Generator::createAgents gates early contacts. Values are the Mac
+ones except the stock progress: Android adds 25 to the cursor (Mac 10).
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_station_generation(mach, arrival):
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(ANDROID_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -226,3 +241,25 @@ MAC_ALTERNATE = {'station_generation_item_factory': [-245786,
                                          4,
                                          '__const',
                                          '0d66bd808e9247acb560fe33efaa62ad6f11ee6f85cc4f61bd17673263de04ee']}
+
+# Android spans inside named functions; the values are ANDROID_VALUES.
+ANDROID = {'station_generation_item_factory': ('_ZN9Generator14getItemBuyListEP7Station', 0, 2240, 'sha256:ebe956bc38f153a4089145ad0968d71b16a29ff374c68b1eb7e9060481df93a1'),
+           'station_generation_ship_gate': ('_ZN9Generator14getShipBuyListEP7Station', 0, 40, 'sha256:ec88ed850b61b7ba796f8c025a113542005aecead191e989212298235c102a6b'),
+           'station_generation_time_seed': ('_ZN11AbyssEngine8AERandom5resetEv', 0, 36, 'sha256:48ebaf1bd886ac03af6b109e67b1a8da31eb13841bfed2bd2131cae029d88244'),
+           'station_generation_item_make': ('_ZN4Item8makeItemEii', 0, 18, 'b0b502af14460d4677f73aeb84614563b0bd'),
+           'station_generation_item_copy': ('_ZN4Item8makeItemEv', 0, 18, 'd0b502af846977f716eb012184614163d0bd'),
+           'station_generation_item_clone': ('_ZN4Item5cloneEv', 0, 56, 'sha256:5a7595cd6ad7b12936561ba697e29b4121579bd20415b3bd2edcc623239f47a5'),
+           'station_generation_item_fields': ('_ZN4Item4initEv', 0, 78, 'sha256:2958dfb1982a848d6f960cdb302d8f062ef241c5d66ccd336fcb72ca1fc2176e'),
+           'station_generation_station_system': ('_ZN7Station9getSystemEv', 0, 4, 'c0687047'),
+           'station_generation_station_tech': ('_ZN7Station11getTecLevelEv', 0, 4, 'c0697047'),
+           'station_generation_map_affinity': ('_ZN6Galaxy18invDistancePercentEiiii', 0, 64, 'sha256:8126d99345502a1d24de97bea46a0f8b1670738e709f35c329976645da1c20d6'),
+           'station_generation_system_x': ('_ZN11SolarSystem4getXEv', 0, 4, '006a7047'),
+           'station_generation_system_y': ('_ZN11SolarSystem4getYEv', 0, 4, '406a7047'),
+           'station_generation_hard_predicate': ('_ZN6Status12hardCoreModeEv', 0, 36, 'sha256:d129eedb895b5a8cc5da84fbd316ee5effaae7d16ec57c3ef53f54ee21bd7b12'),
+           'station_generation_gas_predicate': ('_ZN6Status19inBlackMarketSystemEv', 0, 38, 'sha256:b2b5ce5581edc01b32901c62d9c73deb8998faba124123aec1814ab8e48319c1'),
+           'station_generation_contact_early_gate': ('_ZN9Generator12createAgentsEP7Station', 46, 74, 'sha256:82a1bec4188c319eb96a1704ed79e6c05e1bffadcac5b70f1fd5166871e78615')}
+
+# Generator::getItemBuyList's progress is (cursor + 25) / 45 (`adds r0, #0x19`;
+# the Mac adds 10); every other value is the Mac one.
+ANDROID_VALUES = copy.deepcopy(VALUES)
+ANDROID_VALUES['availability']['progress_add'] = 25

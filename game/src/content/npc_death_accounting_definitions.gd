@@ -8,6 +8,9 @@ const SPANS := {"x86_64":{"initial_attribution":[-75841,4],"hit_argument":[-7183
 
 const MAC_ALTERNATE := {"initial_attribution":[-75853,4],"hit_argument":[-71842,82],"lethal_attribution":[-70402,38],"death_guard":[7251,28],"hostile_kind":[7681,32],"pirate_credit":[7713,30],"world_call":[8146,29],"world_counters":[-504789,44],"other_counter":[-503777,4],"player_counter":[265568,26],"pirate_counter":[265618,26]}
 
+# Android: spans inside named functions (Layouts.anchored); the values are VALUES.
+const ANDROID_SPANS := {"initial_attribution":[396,22],"hit_argument":[0,54],"lethal_attribution":[1038,20],"death_guard":[3776,20],"hostile_kind":[4082,22],"pirate_credit":[4104,26],"world_call":[4426,22],"world_counters":[10,56],"player_counter":[0,28],"pirate_counter":[0,28]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary: return false
 	for key in VALUES:
@@ -27,9 +30,11 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, executable_bytes: int, architecture: String, npc: Dictionary) -> String:
 	if not data is Dictionary: return "Invalid NPC death accounting capability"
 	if data.is_empty(): return ""
-	if not parameters(data) or not SPANS.has(architecture): return "Unsupported NPC death accounting declarations"
+	if not parameters(data) or not (SPANS.has(architecture) or architecture=="android-armv7"): return "Unsupported NPC death accounting declarations"
 	for key in ["guidance","destruction","hostility","primary_weapon"]:
 		if not npc.get(key) is Dictionary or npc[key].is_empty(): return "NPC death accounting lacks source dependencies"
+	if architecture=="android-armv7":
+		return "" if Layouts.anchored(data.provenance,executable_bytes,ANDROID_SPANS) else "Disconnected NPC death accounting declaration"
 	var selection: Variant=npc.guidance.get("provenance",{}).get("selection")
 	if not Fonts.extent(selection,"offset","bytes",[119 if architecture=="x86_64" else 132],executable_bytes): return "NPC death accounting lacks its guidance anchor"
 	var update: int=int(selection.offset)-(2095 if architecture=="x86_64" else 2026)

@@ -1,8 +1,18 @@
-"""Source-specific Kappa departure requirements. Import-only constants."""
+"""Source-specific Kappa departure requirements. Import-only constants.
+
+Android: ModStation::leaveStation refuses (text 520, Android id 531) to leave
+the target station at cursor 20, and at cursor 21 unless the ship carries at
+least one of items 41-43 (Ship::hasEquipment); Status, Station, Mission, Item
+and Ship getters complete it. Values are the Mac 1.0.7 ones (MAC_VALUES).
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_kappa_departure(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(MAC_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -111,3 +121,17 @@ MAC_ALTERNATE = {'kappa_departure_launch': [437438,
                                      10,
                                      '__text',
                                      '9624067a219b5715fb6aabc614cd28310a74739206a88a5fa7b6f65e0a76a0d0']}
+
+ANDROID = {# ModStation::leaveStation: cursors 20 and 21 at the target station; items 41, 42 or 43, at least one.
+           'kappa_departure_launch': ('_ZN10ModStation12leaveStationEv', 198, 234, 'sha256:2e3995d34cc8a95762e4c3f23a3c6ffe2ee2d63d1318e1fdfde96fe1639e1def'),
+           'kappa_departure_refusal': ('_ZN10ModStation12leaveStationEv', 554, 32, 'sha256:4e0833c1de6a12c1d40f07ba2be2bbf6ac7cf074c330052c6768dac8fd92f158'),
+           'kappa_departure_installed_quantity': ('_ZN4Ship12hasEquipmentEii', 0, 76, 'sha256:a454bb4a59caed4a36c48fe2f0d109c8a9d8df513923486509133edbca2a05ef'),
+           'kappa_departure_item_id': ('_ZN4Item8getIndexEv', 0, 4, '00687047'),
+           'kappa_departure_item_quantity': ('_ZN4Item9getAmountEv', 0, 4, '406b7047'),
+           'kappa_departure_station_id': ('_ZN7Station8getIndexEv', 0, 4, '80687047'),
+           'kappa_departure_mission_station': ('_ZN7Mission16getTargetStationEv', 0, 4, '006b7047'),
+           'kappa_departure_inventory': ('_ZN6Status7getShipEv', 0, 6, 'd0f88c017047'),
+           'kappa_departure_station': ('_ZN6Status10getStationEv', 0, 6, 'd0f898017047'),
+           'kappa_departure_mission': ('_ZN6Status18getCampaignMissionEv', 0, 10, 'd0f89401406800687047'),
+           'kappa_departure_cursor': ('_ZN6Status25getCurrentCampaignMissionEv', 0, 6, 'd0f8e8017047'),
+           'kappa_departure_installed_slots': ('_ZN4Ship12getEquipmentEv', 0, 4, 'c06e7047')}

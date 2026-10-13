@@ -45,3 +45,26 @@ class OpeningEscapeCameraTests(unittest.TestCase):
                 elif key=='section':m.sections[0]['segment']=b'__DATA'
                 else:m.architecture='unsupported'
                 self.assertFalse(reader.extract_opening_escape_camera(m,s),key)
+
+
+class AndroidOpeningEscapeCamera(unittest.TestCase):
+    STAGING = {'escape': {'present': True}}
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from gof2_content.android_library import AndroidLibrary
+        from unittest.mock import patch
+        verify_android_proof(self, reader, lambda lib: reader.extract_opening_escape_camera(lib, self.STAGING))
+        self.assertEqual(reader.ANDROID_VALUES, reader.VALUES)
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            result = reader.extract_opening_escape_camera(lib, self.STAGING)
+            result['look_shake_axes'].append(3)
+            self.assertEqual(reader.ANDROID_VALUES['look_shake_axes'], [0, 1, 2])
+            for staging in ({'escape': {}}, {}):
+                self.assertEqual(reader.extract_opening_escape_camera(lib, staging), {}, staging)
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'opening_escape_camera_definitions.gd')

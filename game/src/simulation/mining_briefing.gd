@@ -33,11 +33,13 @@ func configure(bindings: RefCounted, library: RefCounted, construction: RefCount
 	var instruction_rules: Dictionary=rules if training else Ordinary.briefing(bindings,2)
 	if instruction_rules.is_empty() or instruction_rules.events.is_empty():return reject("Flight briefing requires its source instruction")
 	var instruction_id:=int(instruction_rules.events[-1].text_id)
-	if bindings.desktop_text_id(instruction_id)!=instruction_id+1:return reject("Flight briefing requires its desktop instruction mapping")
+	# Android imports have no desktop text: the instruction keeps its touch wording.
+	if bindings.desktop_text_id(instruction_id)!=instruction_id+int(not bindings.desktop_text.is_empty()):return reject("Flight briefing requires its desktop instruction mapping")
 	if dock_key.strip_edges().is_empty() or dock_key.length()>32 or dock_key.contains("#") or dock_key.contains("\n"):return reject("Mining instruction requires its active mining/dock key label")
 	if fast_forward_key.strip_edges().is_empty() or fast_forward_key.length()>32 or fast_forward_key.contains("#") or fast_forward_key.contains("\n"):return reject("Flight instruction requires its active Fast Forward key label")
 	var substitutions:=input_labels.duplicate()
-	substitutions[rules.key_token]=dock_key;substitutions["#KEY_FAST_FORWARD"]=fast_forward_key
+	if rules.key_token is String:substitutions[rules.key_token]=dock_key
+	substitutions["#KEY_FAST_FORWARD"]=fast_forward_key
 	var reader:=Lines.new()
 	var lines:=reader.read(bindings,library,rules.events,substitutions)
 	if not reader.error.is_empty():return reject(reader.error)

@@ -1,9 +1,27 @@
-"""Mac first-mining approach constants; original code is never a runtime."""
+"""Mac first-mining approach constants; original code is never a runtime.
+
+Android: PlayerEgo::dockToAsteroid starts an approach at the asteroid's
+scaling x 2500 (PlayerAsteroid::getScaling) or cancels it (camera back on,
+Radar::unlockAsteroid). PlayerEgo::approachAsteroid flies there through
+PlayerEgo::moveToPosition (gain Ship::getHandling + 2.7, at most 4, turns of
+(frame x gain) / 4096), marks 20000, closes at the stand-off + 2000 (camera
+off, sound 2), aligns the ship model (a child of the flight geometry, see
+PlayerEgo::setShip) to the up vector within 0.2 rad, tilts by -0.35 per ms to
+-1024 (AEMath::MatrixSetRotation, Matrix::operator*=), waits by half frames
+and starts the MiningGame (sound 1). PlayerEgo::update dispatches it and
+skips ordinary steering and banking meanwhile.
+"""
 import copy
 from .ship_models import section_bytes
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 def extract_mining_approach(mach, arrival, targeting):
+    if mach.architecture == 'android-armv7':
+        try:
+            if targeting['scope'] != 'first_mining_asteroid_selection': return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(VALUES, provenance=proof) if proof else {}
     if mach.architecture!='x86_64' or targeting.get('scope')!='first_mining_asteroid_selection':return {}
     try:
         origin=arrival['provenance']['actor']
@@ -159,3 +177,45 @@ MAC_ALTERNATE = {'start_and_cancel': [587210,
  'matrix_product': [1230690,
                     832,
                     '554889e54883ec3048897df8488975f0488b75f8f30f1006f30f1145ecf30f104604f30f1145e8f30f104608f30f1145e4f30f1006488b7df0f30f5907f30f104e04488b7df0f30f594f10f30f58c1f30f104e08488b7df0f30f594f20f30f58c1f30f1106f30f1045ec488b7df0f30f594704f30f104e04488b7df0f30f594f14f30f58c1f30f104e08488b7df0f30f594f24f30f58c1f30f114604f30f1045ec488b7df0f30f594708f30f104de8488b7df0f30f594f18f30f58c1f30f104e08488b7df0f30f594f28f30f58c1f30f114608f30f1045ec488b7df0f30f59470cf30f104de8488b7df0f30f594f1cf30f58c1f30f104de4488b7df0f30f594f2cf30f58c1f30f58460cf30f11460cf30f104610f30f1145ecf30f104614f30f1145e8f30f104618f30f1145e4f30f104610488b7df0f30f5907f30f104e14488b7df0f30f594f10f30f58c1f30f104e18488b7df0f30f594f20f30f58c1f30f114610f30f1045ec488b7df0f30f594704f30f104e14488b7df0f30f594f14f30f58c1f30f104e18488b7df0f30f594f24f30f58c1f30f114614f30f1045ec488b7df0f30f594708f30f104de8488b7df0f30f594f18f30f58c1f30f104e18488b7df0f30f594f28f30f58c1f30f114618f30f1045ec488b7df0f30f59470cf30f104de8488b7df0f30f594f1cf30f58c1f30f104de4488b7df0f30f594f2cf30f58c1f30f58461cf30f11461cf30f104620f30f1145ecf30f104624f30f1145e8f30f104628f30f1145e4f30f104620488b7df0f30f5907f30f104e24488b7df0f30f594f10f30f58c1f30f104e28488b7df0f30f594f20f30f58c1f30f114620f30f1045ec488b7df0f30f594704f30f104e24488b7df0f30f594f14f30f58c1f30f104e28488b7df0f30f594f24f30f58c1f30f114624f30f1045ec488b7df0f30f594708f30f104de8488b7df0f30f594f18f30f58c1f30f104e28488b7df0f30f594f28f30f58c1f30f114628f30f1045ec488b7df0f30f59470cf30f104de8488b7df0f30f594f1cf30f58c1f30f104de4488b7df0f30f594f2cf30f58c1f30f58462cf30f11462c4889f74881c730000000488b45f0480530000000488975d84889c6e84560fdff488b75d8488945d04889f04883c4305dc30f1f4000']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'start_and_cancel': ('_ZN9PlayerEgo14dockToAsteroidEP8KIPlayerP5Radar', 0, 196, 'sha256:1f70073664d4b1cff88989ee4f21c0bd2a7e2e15855fa4b1901edf52d13bb55f'),
+           # PlayerAsteroid::getScaling x 2500 is the stand-off distance.
+           'stand_off_scale': ('_ZN9PlayerEgo14dockToAsteroidEP8KIPlayerP5Radar', 200, 4, '00401c45'),
+           # Approach (Ship::getHandling + 2.7, at most 4), the 20000 near mark, the stand-off + 2000
+           # close (camera off, sound 2), the up-vector alignment (0.2 rad, -0.35 per ms to -1024),
+           # the halved-frame wait and the MiningGame start (sound 1) without a drill frame.
+           'approach': ('_ZN9PlayerEgo16approachAsteroidEP3HudiP5Radar', 0, 1146, 'sha256:4b312b82fd0d190a702676230ca2900664610f81bec28263b43baed8ecbdf4cd'),
+           'pitch_row': ('_ZN9PlayerEgo16approachAsteroidEP3HudiP5Radar', 1152, 16, '0000803f000000000000803f0000803f'),
+           # The pool: -1024, 2.7, then 0.2, -0.35, 1 / 65536 and 2pi.
+           'tilt_limit': ('_ZN9PlayerEgo16approachAsteroidEP3HudiP5Radar', 1172, 4, '000080c4'),
+           'response_add': ('_ZN9PlayerEgo16approachAsteroidEP3HudiP5Radar', 1196, 4, 'cdcc2c40'),
+           'alignment_constants': ('_ZN9PlayerEgo16approachAsteroidEP3HudiP5Radar', 1208, 16, 'cdcc4c3e3333b3be00008037db0fc940'),
+           # PlayerEgo::update: approach, or cancel a dying / dead target (dockToAsteroid(0)).
+           'player_dispatch': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 4340, 76, 'sha256:3a849eda290a290d6a6d02a3c3c89431c8ce63a7d22f8852f4f9618a8e1d7d11'),
+           # Ordinary steering (roll, updateManeuver, handleShip) and the bank wait while approaching.
+           'ordinary_movement_gate': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 5248, 136, 'sha256:f92f60a7300e0f23f90f8caa3245fa0a2d8e576bcbae8502932b0393460e3b97'),
+           'ordinary_banking_gate': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 5820, 22, '99f8c001002840f05a81d9f8c40101380228c0f05481'),
+           # Turn by (frame x gain) / 4096 towards the target; the bank only returns.
+           'guidance': ('_ZN9PlayerEgo14moveToPositionEN11AbyssEngine6AEMath6VectorEbf', 0, 932, 'sha256:85b3378293ded76ffbff064440e2799a100730ba03fa11fcf57a4b9f00b1ab67'),
+           'turn_fraction': ('_ZN9PlayerEgo14moveToPositionEN11AbyssEngine6AEMath6VectorEbf', 936, 4, '00008039'),
+           # The ship group is a child of the flight geometry (AEGeometry::addChild).
+           'model_parent': ('_ZN9PlayerEgo7setShipEii', 0, 80, 'sha256:3fc977bd9d8b39dd594ebee096890e977cd698df00946f5e815b49d7cbcc2235'),
+           'camera_update_gate': ('_ZN18TargetFollowCamera6updateEi', 156, 18, 'baf1010fc0f2c7819bf84600002800f0c281'),
+           'camera_enable_setter': ('_ZN18TargetFollowCamera9setActiveEb', 0, 6, '80f846107047'),
+           'asteroid_scale': ('_ZN14PlayerAsteroidC2EiP10AEGeometryiiRKN11AbyssEngine6AEMath6VectorEfi', 154, 16, '97ed088a08687e6a84f8202184ed4d8a'),
+           'asteroid_scale_getter': ('_ZN14PlayerAsteroid10getScalingEv', 0, 6, 'd0f834017047'),
+           'asteroid_spin_initial': ('_ZN14PlayerAsteroidC2EiP10AEGeometryiiRKN11AbyssEngine6AEMath6VectorEfi', 576, 6, '012184f84811'),
+           'asteroid_base_flag': ('_ZN14PlayerAsteroidC2EiP10AEGeometryiiRKN11AbyssEngine6AEMath6VectorEfi', 728, 6, '012184f83810'),
+           'spin_setter': ('_ZN14PlayerAsteroid18setRotationEnabledEb', 0, 6, '80f848117047'),
+           # r6 = 0: the alignment flags start cleared.
+           'cleared_register': ('_ZN9PlayerEgoC2EP6Player', 36, 2, '0026'),
+           'initial_alignment': ('_ZN9PlayerEgoC2EP6Player', 342, 4, '84f8d461'),
+           'initial_capture': ('_ZN9PlayerEgoC2EP6Player', 582, 4, '84f8f562'),
+           # Alignment: matrix columns 2 (direction) and 1 (up), a local X rotation multiplied in.
+           'local_forward': ('_ZN10AEGeometry12getDirectionEv', 0, 26, 'sha256:d194788c6c17365b7197aa49a7287a295e1cedbd03b024c093ddc7ab7bceee83'),
+           'local_up': ('_ZN10AEGeometry11getUpVectorEv', 0, 26, 'sha256:7d3897b182d9d7f81caa8cf3180c5c65cb676036c1e7106cedb92780b1249d5e'),
+           'matrix_forward': ('_ZN11AbyssEngine6AEMath12MatrixGetDirERKNS0_6MatrixE', 0, 14, '8b698a68896ac0e9002381607047'),
+           'matrix_up': ('_ZN11AbyssEngine6AEMath11MatrixGetUpERKNS0_6MatrixE', 0, 14, '4b694a68496ac0e9002381607047'),
+           'local_pitch_matrix': ('_ZN11AbyssEngine6AEMath17MatrixSetRotationERNS0_6MatrixEfff', 0, 224, 'sha256:403ee53aeaf02f337fa4112344e2aab24e3b5ffe56788bb3c88537b918b3465a'),
+           'matrix_product': ('_ZN11AbyssEngine6AEMath6MatrixmLERKS1_', 0, 448, 'sha256:fdb2256102a1bf4afdcd2c5bccadc4e22648700bf7766df53eca4ce420ebdc2a')}

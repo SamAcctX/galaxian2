@@ -33,6 +33,9 @@ const EXPANSION_LAST_STATION:=131
 
 const MAC_SPANS = {"ordinary_world_special_planet":[873058,80],"ordinary_world_station_equality":[853920,22],"ordinary_world_station_id":[851984,10],"ordinary_world_special_size":[844005,59]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"ordinary_world_special_planet":[0,54],"ordinary_world_station_equality":[0,18],"ordinary_world_station_id":[0,4],"ordinary_world_special_size":[2238,32]}
+
 static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALUES)
 
 static func available(bindings: RefCounted) -> bool:

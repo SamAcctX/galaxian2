@@ -1,8 +1,20 @@
-"""Source-bound ordinary combat lifecycle parameters."""
+"""Source-bound ordinary combat lifecycle parameters.
+
+Android: Standing::isEnemy and isFriend (axes 0, 0, 1, 1, threshold 70),
+SolarSystem::getAttackRace and its table, Level::updateOrbit (patrol and
+travel recycling, hostile relaunch in security 0 or 1 or for faction 9),
+Level::createShip's Nivelian wreck 18301, PlayerFixedObject::setWreckedMeshId
+(race-2 freighters use wreck layout 2) and PlayerFixedObject::update (layout 2
+uses material 33353). Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_free_lifecycle(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -85,3 +97,19 @@ MAC_ALTERNATE = {'free_lifecycle_hostile': [808072, 128, '__text', '209daf40d4ec
                                 20,
                                 '__text',
                                 'de6e6debcec626d191654edde387c465fcd9775a9e266ee12caebb9ab3827d1c']}
+
+# Android spans inside named functions and their tables; the values are VALUES.
+ANDROID = {# Standing: races 0 and 1 share axis 0, races 2 and 3 axis 1; threshold 70.
+           'free_lifecycle_hostile': ('_ZN8Standing7isEnemyEi', 0, 118, 'sha256:e48dc557d39a1d28df8cd83c0ffd928da627c0a2e569b8c51369bd5c27b71ce0'),
+           'free_lifecycle_friendly': ('_ZN8Standing8isFriendEi', 0, 120, 'sha256:3e77281a49c10603f4c6dc5ce9fa3a5eda0e86c1610935ddc7c30ffcc65d92c4'),
+           # The system's attack race: 1, 0, 3, 2.
+           'free_lifecycle_secondary': ('_ZN11SolarSystem13getAttackRaceEv', 0, 24, 'c069032884bf082070470249794451f82000704784150d00'),
+           'free_lifecycle_secondary_table': ('_ZN11SolarSystem13getAttackRaceEv', 10, 16, '01000000000000000300000002000000', 'literal', 0),
+           # Level::updateOrbit: recycling and the hostile relaunch.
+           'free_lifecycle_hostile_relaunch': ('_ZN5Level11updateOrbitEi', 0, 1052, 'sha256:edabc61e73ad8ff473372d6f66f756b66c759249da14d06dac4ac6496a41be38'),
+           # The Nivelian's wreck model, layout and material.
+           'free_lifecycle_nivelian_death': ('_ZN5Level10createShipEiiiP8Waypointbb', 2440, 10, 'd8f8040044f27d71d7e0'),
+           'free_lifecycle_nivelian_wreck': ('_ZN5Level10createShipEiiiP8Waypointbb', 2882, 8, '856058469cf748ec'),
+           'free_lifecycle_wreck_kind': ('_ZN17PlayerFixedObject16setWreckedMeshIdEi', 0, 192, 'sha256:0eddfaaefee7aa0a7ffe17609b092f742042a0adf689940f1cea6f89c4a5f57c'),
+           'free_lifecycle_wreck_material': ('_ZN17PlayerFixedObject6updateEi', 1988, 28, 'sha256:392270e4c7abca63b24efc6bbe501ce2aba95cc302b1b884c71b30a1b111f839'),
+           'free_lifecycle_wreck_table': ('_ZN17PlayerFixedObject6updateEi', 2532, 40, 'sha256:b0f0d6f06adef6922fa9d70d59b5292a973b1cb49a182e6135820628d2265ce4')}

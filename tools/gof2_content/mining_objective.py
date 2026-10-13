@@ -1,8 +1,26 @@
-"""Bounded cargo/return declarations; executable bytes are never runtime data."""
+"""Bounded cargo/return declarations; executable bytes are never runtime data.
+
+Android: Status::nextCampaignMission creates mission 154 at station 78 with
+status value 10 for cursor 2 and mission 11 for cursor 3;
+Status::missionCompleted completes it once Ship::getCurrentLoad reaches that
+value. MGame::successCheck polls after 5001 ms and opens DialogueWindow's
+mode-1 lines (texts 1717-1719, voices from Globals::getDialogueSoundId);
+MGame::OnUpdate and gameOverCheck run the poll clock; MGame::OnTouchEnd's last
+page advances the campaign and pays the mission. Android never substitutes
+desktop text: the return instruction stays text 1719, without desktop pair or
+key tokens.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 def extract_mining_objective(mach, arrival, flight, presentation, desktop, briefing):
+    if mach.architecture == 'android-armv7':
+        try:
+            if (flight['scope'] != 'first_mining_flight_construction' or presentation['scope'] != 'first_station_presentation'
+                    or briefing['scope'] != 'first_mining_briefing'): return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64' or flight.get('scope')!='first_mining_flight_construction':return {}
     if presentation.get('scope')!='first_station_presentation' or briefing.get('scope')!='first_mining_briefing':return {}
     try:
@@ -211,3 +229,41 @@ MAC_VALUES = {'scope': 'first_mining_cargo_objective',
             {'speaker_id': 16, 'text_id': 1719, 'voice_event_id': -1}],
  'desktop_instruction': [1719, 1720],
  'key_tokens': ['#KEY_AUTOPILOT', '#KEY_DOCK']}
+
+# Android: the Mac 1.0.7 values without the desktop pair and key tokens (Android shows text 1719 as written).
+ANDROID_VALUES = dict(copy.deepcopy(MAC_VALUES), desktop_instruction=[], key_tokens=[])
+
+# Android spans inside named functions and tables.
+ANDROID = {# Mode 1 (success) tables: entries per cursor (0, 38, 6), cursor 2's three lines and their voices.
+           'mode1_counts': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 12, '000000002600000006000000', 'literal', 0),
+           'mode1_events': ('_ZN14DialogueWindow11loadContentEv', 208, 24, '02000000c006000000000000c106000010000000c2060000', 'literal', 152),
+           'voice_events': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 16, 'c006000047010000c106000048010000', 'literal', 1312),
+           # Status::nextCampaignMission: cursor 2 creates mission 154 at station 78 with status value 10
+           # (Mission::setStatusValue through the veneer); cursor 3 creates mission 11 at station 78.
+           'story_dispatch': ('_ZN6Status19nextCampaignMissionEb', 58, 10, 'a12800f21b82dfe810f0'),
+           'dispatch_entries': ('_ZN6Status19nextCampaignMissionEb', 68, 6, 'ad029804ae04'),
+           'story_increment': ('_ZN6Status19nextCampaignMissionEb', 392, 6, '1846431c0021'),
+           'mission_creation': ('_ZN6Status19nextCampaignMissionEb', 2420, 44, 
+                          '6420c4f8e831c9e900ceb0f7feeb05469a2100224e23b4f794ed20462946b4f79cedd4f894010a2101f042bb'),
+           'mission_parameter': ('_ZN6Status19nextCampaignMissionEb', 8228, 14, '4068006801b0bde8f04320f17fb9'),
+           'return_mission': ('_ZN6Status19nextCampaignMissionEb', 2464, 30, 'sha256:1c7d17e109303b1b338dfc8f13c8fe529e6dc319fddac3bbeb17ba31b9aad86e'),
+           'campaign_mission_tail': ('_ZN6Status19nextCampaignMissionEb', 426, 14, '2046294601b0bde8f04322f19cb8'),
+           # Status::missionCompleted: kind 154 completes once Ship::getCurrentLoad reaches the status value.
+           'cargo_dispatch': ('_ZN6Status16missionCompletedEbbx', 190, 18, '2046b2f70ae8a0f19601272931d8dfe811f0'),
+           'cargo_entry': ('_ZN6Status16missionCompletedEbbx', 216, 2, 'd300'),
+           'cargo_check': ('_ZN6Status16missionCompletedEbbx', 630, 30, 'daf88c01b2f7dee8054601e0daf8d4512046b1f732ef8542c0f23b8189e1'),
+           'cargo_getter': ('_ZN4Ship14getCurrentLoadEv', 0, 4, '00697047'),
+           'parameter_getter': ('_ZN7Mission14getStatusValueEv', 0, 4, 'c06d7047'),
+           # MGame: the poll clock grows while LevelScript does not hold it, polls after 5001 ms, opens the
+           # mode-1 dialogue (paused), restarts after 5001 ms (gameOverCheck) and is set to 5001 on override.
+           'poll_gate': ('_ZN5MGame12successCheckEv', 26, 94, 'sha256:5dd71d2ec1bfa64dc6073b47c25d48197de55b1fc2b13288120c5eba452a8534'),
+           'completion_dialogue': ('_ZN5MGame12successCheckEv', 758, 254, 'sha256:cc9e1612d8b35e14983c76cffa992b0ae0a77b0700029d53f7eafa309283ce14'),
+           'poll_clock': ('_ZN5MGame8OnUpdateEv', 1370, 28, 'sha256:2251705a785979a53386dfb063f6ea18c5cdd47effeac8f14e428d728696fd85'),
+           'poll_order': ('_ZN5MGame8OnUpdateEv', 10610, 68, 'sha256:5cead00995c8f5d9fa7f35a7764170927f18222589b0d8d0a03946ba561d441c'),
+           'poll_override': ('_ZN5MGame8OnUpdateEv', 10962, 26, 'sha256:a3093c771c243e790e1e79e688e5dce670bef11c68c62cd0df491c80d7fd272e'),
+           'poll_reset': ('_ZN5MGame13gameOverCheckEv', 412, 26, 'sha256:49d3b863751918f023b1566c6e9ff0c0d571c271033948e5971438ffc1072452'),
+           'dialogue_mode': ('_ZN14DialogueWindow11loadContentEv', 112, 120, 'sha256:44637e351fc8ea38250e77202efd5afc767c7bfb83378394e28f9d254cb95ce9'),
+           # MGame::OnTouchEnd: the last page advances the won campaign mission (nextCampaignMission) and pays it.
+           'final_acknowledgement': ('_ZN5MGame10OnTouchEndEiiPv', 972, 76, 'sha256:3cf5791f50b694969248783ea1269bc9c5ca6b669f688fe8fbfea0549b01383c'),
+           'final_advance': ('_ZN5MGame10OnTouchEndEiiPv', 3520, 116, 'sha256:c89a74908121919a930ab10c977e6f8ca75a311b8d315f798c9be33af9e953aa'),
+           'final_reward': ('_ZN5MGame10OnTouchEndEiiPv', 4176, 40, 'sha256:d90ffc2cb1e45cd28f6cad603147f0063db6c3442a7cdca526d335983b64b04f')}

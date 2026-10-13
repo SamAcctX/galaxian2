@@ -11,6 +11,8 @@ const VALUES = {"scope":"early_mido_ambient_combat","campaign_cursor":11,"statio
 const SPANS = {"factory":[77944,3478],"base_actor":[-81548,948],"statistics":[534164,980],"freighter_constructor":[631244,1108],"normal_hit":[538936,1846],"point_wrapper":[-76580,26],"freighter_point":[638832,218],"box_constructor":[-710254,138],"box_point":[-710024,122],"freighter_position":[633042,280],"projectile_point_selection":[-181241,192],"freighter_hostility":[634203,154],"box_values":[1575362,32],"half_extent_scale":[1544586,4]}
 
 const MAC_SPANS = {"factory":[77944,3478],"base_actor":[-81548,948],"statistics":[534700,980],"freighter_constructor":[631792,1108],"normal_hit":[539472,1846],"point_wrapper":[-76580,26],"freighter_point":[639380,218],"box_constructor":[-716150,138],"box_point":[-715920,122],"freighter_position":[633590,280],"projectile_point_selection":[-181733,192],"freighter_hostility":[634751,154],"box_values":[1550426,32],"half_extent_scale":[1519570,4]}
+# Android: the Mac values; spans inside named functions (Layouts.anchored).
+const ANDROID_SPANS = {"ambient_combat_factory":[0,3112],"ambient_combat_base_actor":[0,604],"ambient_combat_statistics":[0,600],"ambient_combat_freighter_constructor":[0,804],"ambient_combat_normal_hit":[0,1376],"ambient_combat_point_wrapper":[0,26],"ambient_combat_freighter_point":[0,148],"ambient_combat_box_constructor":[0,152],"ambient_combat_box_point":[0,158],"ambient_combat_freighter_position":[0,204],"ambient_combat_projectile_points":[0,2024],"ambient_combat_freighter_hostility":[0,2888]}
 
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
@@ -21,7 +23,11 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dictionary,population: Dictionary) -> String:
 	if not data is Dictionary:return "Missing ambient combat declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data) or not Ambient.parameters(population):return "Unsupported ambient combat declarations"
+	var android:=arch=="android-armv7"
+	if (arch!="x86_64" and not android) or not parameters(data) or not Ambient.parameters(population):return "Unsupported ambient combat declarations"
+	if android:
+		if arrival.get("scope")!="rescue_choreography" or not arrival.get("provenance",{}).has("actor"):return "Ambient combat lacks its source anchor"
+		return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid ambient combat source layout"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Ambient combat lacks its source anchor"
 	if not Layouts.matches(data.provenance,int(origin.offset),source_bytes,[SPANS,MAC_SPANS]):return "Invalid ambient combat source layout"

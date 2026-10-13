@@ -25,7 +25,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 	if not data is Dictionary: return "Missing scenery effect declarations"
 	if data.is_empty(): return ""
 	if resources.is_empty() or not parameters(data,resources): return "Invalid scenery effect declarations"
-	var sizes := {"outer":62,"actor_wrapper":10,"actor":437,"effect_wrapper":10,"constructor":173,"switch":52,"default":29,"ordinary":62,"void":89,"ice":82,"magma":85,"scale":357,"speed_setter":32,"threshold":4,"speed_scale":4} if architecture=="x86_64" else {"outer":42,"actor_wrapper":48,"actor":468,"effect_wrapper":14,"constructor":136,"switch":26,"default":36,"ordinary":64,"void":92,"ice":92,"magma":92,"scale":314,"speed_setter":30} if architecture=="armv7" else {}
+	var sizes := {"outer":62,"actor_wrapper":10,"actor":437,"effect_wrapper":10,"constructor":173,"switch":52,"default":29,"ordinary":62,"void":89,"ice":82,"magma":85,"scale":357,"speed_setter":32,"threshold":4,"speed_scale":4} if architecture=="x86_64" else {"outer":42,"actor_wrapper":48,"actor":468,"effect_wrapper":14,"constructor":136,"switch":26,"default":36,"ordinary":64,"void":92,"ice":92,"magma":92,"scale":314,"speed_setter":30} if architecture=="armv7" else {"outer":36,"actor":302,"constructor":78,"switch":26,"default":22,"ordinary":44,"void":60,"ice":60,"magma":60,"scale":290,"speed_setter":6} if architecture=="android-armv7" else {}
 	if sizes.is_empty() or data.provenance.size()!=sizes.size(): return "Invalid scenery effect provenance"
 	var spans := []
 	for key in sizes:
@@ -38,5 +38,5 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 	var models: Variant = resources.get("provenance",{}).get("models")
 	if not models is Dictionary or not Numbers.integer(models.get("offset"),0,executable_bytes) or not Numbers.integer(models.get("bytes"),1,executable_bytes): return "Missing scenery effect variant provenance"
 	if data.provenance.outer.offset<models.offset+models.bytes or data.provenance.outer.offset>models.offset+4096: return "Disconnected scenery effect variants"
-	if architecture=="armv7" and data.provenance.switch.offset!=data.provenance.constructor.offset+data.provenance.constructor.bytes: return "Disconnected scenery effect switch"
+	if architecture in ["armv7","android-armv7"] and data.provenance.switch.offset!=data.provenance.constructor.offset+data.provenance.constructor.bytes: return "Disconnected scenery effect switch"
 	return ""

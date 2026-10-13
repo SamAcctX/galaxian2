@@ -2,8 +2,16 @@
 
 The source kind161 successor is a pending mission declaration, not a playable
 ordinary destination. No original executable code or translated text is emitted.
+
+Android: Status::nextCampaignMission cases 38 and 39 create Mission(11, 0, 30)
+and the pending Mission(161, 0, -1); cursor 39 has no radio lines;
+DialogueWindow and Globals::getDialogueSoundId hold the ten landed result
+lines (Android text ids 2032-2041) and ModStation::OnTouchEnd advances after
+the final one. Values are the Mac 1.0.7 ones (VALUES); the reader requires
+the Mac 1.0.7 Dekato convoy.
 """
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 from .dekato_convoy import VALUES as PREVIOUS, MAC_VALUES as MAC_PREVIOUS
 
@@ -27,6 +35,9 @@ for _event in MAC_VALUES['mission']['result_events']:
 
 
 def extract_nehma_return(mach, arrival, preceding):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival and preceding == PREVIOUS else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     if not proof or preceding != (PREVIOUS, MAC_PREVIOUS)[variant]:
         return {}, {}
@@ -211,3 +222,18 @@ MAC_ALTERNATE = {'nehma39_factory39_entry': [871558,
                                '__text',
                                '18c46273f6f259980be65b0ae6487b3892495fdcfbc2e2271f3be1bfc50cc36c']}
 # END VERIFIED SOURCE SPANS
+
+ANDROID = {# Status::nextCampaignMission cases 38 and 39 (the pending kind 161).
+           'nehma39_factory_entries': ('_ZN6Status19nextCampaignMissionEb', 144, 4, 'df005402'),
+           'nehma39_factory39': ('_ZN6Status19nextCampaignMissionEb', 514, 28, 'sha256:40efe5d7ecccc8caa0d5150f764a9111121d9675a6b1e41405feb1a5f90ae573'),
+           'nehma39_factory40': ('_ZN6Status19nextCampaignMissionEb', 1260, 30, 'sha256:508a92c5d539d2c4a08ebde65f1be1b9d966fb7fa55d84683b6068e8082bd2de'),
+           'nehma39_mission_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           # Cursors 39 and 40: counts, the ten result lines, all voices, no radio lines and the acknowledgement.
+           'nehma39_brief_counts': ('_ZN14DialogueWindow19hasBriefingDialogueEi', 10, 8, '0000000000000000', 'literal', 156),
+           'nehma39_result_counts': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 8, '1400000000000000', 'literal', 156),
+           'nehma39_result39_pairs': ('_ZN14DialogueWindow11loadContentEv', 208, 80, 'sha256:9bf8bc668fbd2ca97d5aadce0a26cdcf96627e964af8e11d774edd6932fb83a5', 'literal', 2040),
+           'nehma39_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0),
+           'nehma39_radio39_dispatch': ('_ZN5Level19createRadioMessagesEi', 0, 26, 'sha256:2fb27116c5cd427d3d8d01c2af84739cd96a13de8ea5fc929fb78c2963332596'),
+           'nehma39_radio39_entry': ('_ZN5Level19createRadioMessagesEi', 104, 2, '4119'),
+           'nehma39_radio_default': ('_ZN5Level19createRadioMessagesEi', 12956, 8, 'd4f8140102b0bde8'),
+           'nehma39_final_next': ('_ZN10ModStation10OnTouchEndEiiPv', 0, 6536, 'sha256:5b29b2bf44b1e0a442eb14b5646a1aad12932fedee58112b028e31589316b50e')}

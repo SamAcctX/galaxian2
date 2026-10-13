@@ -27,7 +27,7 @@ func build(library: RefCounted, visuals: RefCounted, bindings: RefCounted, death
 	if library==null or visuals==null or bindings==null or library.manifest.get("content_id")!=state.base_content_id or visuals.base_content_id!=state.base_content_id or bindings.base_content_id!=state.base_content_id or bindings.binding_id!=state.binding_id:
 		return reject("Explosion effect resources belong to another content identity")
 	var edition: Variant=library.manifest.get("profile",{}).get("edition")
-	if edition not in ["ios-hd","mac-full-hd"]: return reject("Unsupported Explosion effect edition")
+	if edition not in ["android-hd","ios-hd","mac-full-hd"]: return reject("Unsupported Explosion effect edition")
 	var paths := []
 	for index in state.effect.models.size():
 		var model: Dictionary=state.effect.models[index]

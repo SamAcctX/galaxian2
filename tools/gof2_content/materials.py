@@ -2,6 +2,10 @@
 
 The two compiler layouts describe the same eight texture slots and render enum.
 Unknown initializer shapes are omitted, not interpreted or executed.
+
+Android: BuildResourceList and loadLowTexturesAndMaterials allocate each
+material as a 16-byte record (u16 id, u32 type 6, u32 -1, payload pointer)
+and a 40-byte payload filled with constants, the iOS payload layout.
 """
 import re
 import struct
@@ -153,8 +157,59 @@ def ios_materials(mach, checkpoint):
     return rows
 
 
+ANDROID_FUNCTIONS = ('_Z17BuildResourceListPN11AbyssEngine6EngineE',
+                     '_Z27loadLowTexturesAndMaterialsPN11AbyssEngine6EngineE')
+
+
+def android_materials(lib, checkpoint):
+    """Records whose straight-line field stores (android_library.interpret) give
+    the type-6 record and every byte of its 40-byte payload as constants."""
+    try:
+        import capstone
+    except ImportError as error:
+        raise ContentError('Install tools/requirements-bindings.txt for ARM material reading') from error
+    from .android_library import decode_function, interpret, literal_references
+    decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+    decoder.detail = True
+    references = literal_references(lib)
+    text = lib.text
+    rows = []
+    for done, symbol in enumerate(ANDROID_FUNCTIONS):
+        checkpoint('Reading Android material declarations', done / len(ANDROID_FUNCTIONS))
+        if symbol not in lib.symbols:
+            continue
+        start, size = lib.symbols[symbol]
+        code = decode_function(lib, decoder, start, size, [a for a in references if start <= a < start + size])
+        if code is None:
+            continue
+        objects = interpret(lib, code)
+        for item in objects:
+            fields = item['fields']
+            if (item['size'] != 16 or item['poisoned']
+                    or sorted((at, width) for at, (_, width) in fields.items()) != [(0, 2), (4, 4), (8, 4), (12, 4)]):
+                continue
+            (identifier, _), (kind, _), (sentinel, _), (link, _) = (fields[k] for k in (0, 4, 8, 12))
+            if (kind != ('value', 6) or sentinel != ('value', 0xffffffff) or (identifier or ())[:1] != ('value',)
+                    or (link or ())[0::2] != ('object', 0)):
+                continue
+            payload = objects[link[1]]
+            stores = payload['fields'].items()
+            if (payload['size'] != 40 or payload['poisoned']
+                    or sorted(i for at, (_, width) in stores for i in range(at, at + width)) != list(range(40))
+                    or any((value or ())[:1] != ('value',) for value, _ in payload['fields'].values())):
+                continue
+            raw = bytearray(40)
+            for at, (value, width) in stores:
+                raw[at:at + width] = value[1].to_bytes(width, 'little')
+            row = declaration(lib, text['offset'] + payload['address'] - text['address'], identifier[1], raw)
+            if row is not None:
+                rows.append(row)
+    return rows
+
+
 def extract_materials(mach, checkpoint=lambda *_: None):
-    rows = (ios_materials if mach.architecture == 'armv7' else mac_materials)(mach, checkpoint)
+    readers = {'android-armv7': android_materials, 'armv7': ios_materials}
+    rows = readers.get(mach.architecture, mac_materials)(mach, checkpoint)
     if len(rows) > 20000:
         raise ContentError('Too many material declarations')
     return sorted(rows, key=lambda row: (row['id'], row['source_offset']))

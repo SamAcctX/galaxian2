@@ -1,8 +1,25 @@
-"""Mac declarations connecting the rescue's scene clock and constructed targets."""
+"""Mac declarations connecting the rescue's scene clock and constructed targets.
+
+Android: the LevelScript constructor zeroes the scene clock, MGame::OnUpdate
+adds each frame's milliseconds to it, and MGame::OnRender2D hands it to
+Radio::draw, which passes it on to Radio::update and each
+RadioMessage::triggered (condition 5: elapsed >= value). Player's
+constructor leaves the player targetable without a target list;
+Level::createCampaignMission excludes the player only at cursor 0;
+Level::connectPlayers fills the target lists (Player::addEnemy), and
+PlayerFighter::update falls back to target 0 (Player::getEnemy).
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 def extract_arrival_session(mach, arrival, motion, world, handoff):
+    if mach.architecture == 'android-armv7':
+        try:
+            if not motion or not world or not handoff: return {}
+            if arrival['campaign_cursor'] != 1 or arrival['actor_kind'] != 3 or arrival['player_update_enabled'] is not False: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64':return {}
     try:
         if not motion or not world or not handoff:return {}
@@ -75,3 +92,23 @@ MAC_ALTERNATE = {'clock_initial': [121689, 8, '49c7470800000000'],
  'target_append_empty': [537242, 25, '4c89f74c89fe4883c4085b415c415d415e415f5de913fdffff'],
  'target_fallback': [616918, 26, '41c7465400000000498b7e0831f6e8c5c9feff498986a0010000'],
  'target_getter': [537518, 22, '554889e54863c6488b4f78488b4908488b04c15dc390']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'clock_initial': ('_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera', 44, 120, 'sha256:e37c5f60a0b740d41a30fcf5d659181c95b708ec35ea8accfd8da8f0df18a4b7'),
+           'clock_advance': ('_ZN5MGame8OnUpdateEv', 1298, 24, 'dbf84000dbf87820d2e90236c1184feae0707041c2e90210'),
+           'radio_clock': ('_ZN5MGame10OnRender2DEv', 236, 20, 'a66fd4f88000d6e90223a16dcde90016bcf67aee'),
+           # Without a message on screen, Radio::draw tail-calls Radio::update with the clock.
+           'radio_update': ('_ZN5Radio4drawExP9PlayerEgoP11LevelScript', 244, 30, 'sha256:b16dd435c292b5cb8604ade360b4ab36c05b9a7bc9a1d8d6d0157dc0b4c4d2a7'),
+           'radio_condition_input': ('_ZN5Radio6updateElP9PlayerEgoP11LevelScript', 44, 26, 'sha256:c9d588d76c09ab273357950d27a6eb50eb99c6feac21c9aca93542c17eeb8709'),
+           # Conditions 0..31 with the whole tbh table.
+           'elapsed_dispatch': ('_ZN12RadioMessage9triggeredExP9PlayerEgoP11LevelScript', 36, 82, 'sha256:da759d9775a9c5f709e1f0b9a7e4f0f8764a8e8b2f0a523db8453f7d5e916d18'),
+           'elapsed_condition': ('_ZN12RadioMessage9triggeredExP9PlayerEgoP11LevelScript', 250, 32, 'sha256:7a30d93df318559ced0b155d8128895ebc97f56007e22b7296df57a6dd796d9f'),
+           'target_initial': ('_ZN6PlayerC2Eiiiii', 32, 112, 'sha256:15feda8e4274fb67e9e1ebea9a5b71428bb8addaf346e0fbde28ee3dddb86bea'),
+           'target_list_initial': ('_ZN6PlayerC2Eiiiii', 396, 72, 'sha256:2ac888e5b2412d3c956ce76e52b6b829cefdb30a6f73cca87b51f3488105fa13'),
+           'population_cursor': ('_ZN5Level21createCampaignMissionEv', 50, 76, 'sha256:729e5ebbc06567d4c413d6d28c18e4d68d5c16736559138e77206bb93f09ce25'),
+           'exclusion_flag': ('_ZN5Level21createCampaignMissionEv', 24978, 4, '4ff00108'),
+           'opening_only_exclusion': ('_ZN5Level21createCampaignMissionEv', 25204, 12, 'd6f8f000006880f85e80c7e3'),
+           'target_population': ('_ZN5Level14connectPlayersEv', 0, 1520, 'sha256:4e316991fbb2c7b755197137dad56b58a22cc3a495b4c038877551bc16a7e0ef'),
+           'target_append': ('_ZN6Player8addEnemyEPS_', 0, 162, 'sha256:bd070251dbf6a45fa8ce800cff5f0b4b4ba8f99b6e9a1ec2526a8fa143171fb5'),
+           'target_fallback': ('_ZN13PlayerFighter6updateEi', 2728, 24, '00200021606360687cf75cec01460029c4f8441132d146e0'),
+           'target_getter': ('_ZN6Player8getEnemyEi', 0, 10, '406f406850f821007047')}

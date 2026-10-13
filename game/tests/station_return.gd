@@ -43,7 +43,7 @@ func verify(args: PackedStringArray):
 	var bodies:=Bodies.new();var effects:=Effects.new()
 	if not lib.open(args[0]) or not bindings.open(args[1],lib.manifest) or not cat.open(lib) or not lib.select_language("gb") or not bodies.configure(lib,bindings) or not effects.configure(lib,bindings):check(false,lib.error+bindings.error+cat.error+bodies.error+effects.error);return
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	check(header.architecture=="x86_64","This verification is Mac only")
+	check(header.architecture in ["x86_64","android-armv7"],"This verification needs Mac or Android content")
 	if not bindings.station_return.is_empty():
 		check(Definitions.validate(bindings.station_return,header.source_executable_bytes,header.architecture,bindings.arrival_staging,bindings.first_flight).is_empty(),"Station return declarations were refused")
 		var other: Dictionary=(Definitions.VALUES if int(bindings.station_return.events[0].text_id)==int(Definitions.MAC_VALUES.events[0].text_id) else Definitions.MAC_VALUES).duplicate(true)
@@ -52,7 +52,7 @@ func verify(args: PackedStringArray):
 		for key in Definitions.VALUES:
 			var bad: Dictionary=bindings.station_return.duplicate(true);bad[key]=null
 			check(not Definitions.parameters(bad),"Changed station return parameter accepted: "+key)
-		for key in Definitions.SPANS:
+		for key in (Definitions.ANDROID_SPANS if header.architecture=="android-armv7" else Definitions.SPANS):
 			var bad: Dictionary=bindings.station_return.duplicate(true);bad.provenance[key].offset+=1
 			check(not Definitions.validate(bad,header.source_executable_bytes,header.architecture,bindings.arrival_staging,bindings.first_flight).is_empty(),"Detached station return provenance accepted: "+key)
 	var player:=Player.new();var handoff:=Handoff.new();check(player.configure(bindings,cat),player.error)

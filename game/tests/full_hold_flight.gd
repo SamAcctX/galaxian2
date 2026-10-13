@@ -15,6 +15,7 @@ const World=preload("res://src/simulation/opening_world_initialization.gd")
 const NPC=preload("res://src/simulation/opening_npc_construction.gd")
 const Route=preload("res://src/simulation/npc_route.gd")
 const Numbers=preload("res://src/simulation/combat_vitals.gd")
+const Random=preload("res://src/simulation/seeded_random.gd")
 const CONDITIONS={"companions_empty":true,"location_match":false,"special_placement":false}
 var failures:=0
 var checks:=0
@@ -30,20 +31,20 @@ func verify(args: PackedStringArray):
 	var lib:=Library.new();var bindings:=Bindings.new();var cat:=Catalogues.new()
 	if not lib.open(args[0]) or not bindings.open(args[1],lib.manifest) or not cat.open(lib) or not lib.select_language("gb"):check(false,lib.error+bindings.error+cat.error);return
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	check(header.architecture=="x86_64","This test requires Mac content")
+	check(header.architecture in ["x86_64","android-armv7"],"This verification needs Mac or Android content")
 	if bindings.full_hold_flight.is_empty():
 		check(not NPC.new().configure_full_hold(bindings,cat,{}) and not Route.new().configure_full_hold_generated(bindings),"Legacy pack invented the second pirate")
 		if not bindings.full_hold_departure.is_empty():
 			check(not Flight.new().prepare(bindings,cat,packet_fixture(bindings,cat,0),4096,1789100000),"Legacy pack reused the empty first world for cursor4")
 		return
 	var data: Dictionary=bindings.full_hold_flight
-	check(Definitions.validate(data,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_departure,bindings.first_flight,bindings.opening_actors).is_empty(),"Second-flight declaration refused")
+	check(Definitions.validate(data,header.source_executable_bytes,header.architecture,bindings.arrival_staging,bindings.full_hold_departure,bindings.first_flight,bindings.opening_actors).is_empty(),"Second-flight declaration refused")
 	for key in Definitions.VALUES:
 		var bad:=data.duplicate(true);bad[key]=null
 		check(not Definitions.parameters(bad),"Changed second-flight parameter accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if header.architecture=="android-armv7" else Definitions.SPANS):
 		var bad:=data.duplicate(true);bad.provenance[key].offset+=1
-		check(not Definitions.validate(bad,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_departure,bindings.first_flight,bindings.opening_actors).is_empty(),"Detached source extent accepted: "+key)
+		check(not Definitions.validate(bad,header.source_executable_bytes,header.architecture,bindings.arrival_staging,bindings.full_hold_departure,bindings.first_flight,bindings.opening_actors).is_empty(),"Detached source extent accepted: "+key)
 	var packet:=packet_fixture(bindings,cat,0)
 	if packet.is_empty():return
 	verify_stream(bindings,cat,packet.player_cache)
@@ -56,9 +57,23 @@ func verify(args: PackedStringArray):
 		check(packet==untouched and state.departure==packet and not state.activated and not state.entry_released,"Detached preparation changed the packet or activated gameplay")
 		check(state.campaign_cursor==4 and state.location.campaign_cursor==4 and state.location.ship_id==0 and state.player.campaign_cursor==4,"Second flight lost its explicit cursor or starter ship")
 		check(state.departure.progress.rank==int(kills>0) and state.departure.progress.rank_score==4+3*kills and state.departure.mission.source_parameter==25,"Second flight lost earned progress or its full-hold objective")
-		check(state.scenery.departure_population.count==130 and state.scenery.departure_population.center==Vector3(12298,36830,77237) and state.scenery.departure_population.campaign_cursor==4,"Second trip changed source scenery or retained the first cursor")
-		check(world.input_random_state.state==int(GOLDEN[0].input_state) and world.random_state.state==int(GOLDEN[0].world_state),"Full world differs from the verified field-to-NPC boundary")
-		check(state.camera_input_random_state==world.random_state and state.random_state.state==int(GOLDEN[0].camera_state) and state.camera_offset==vec(GOLDEN[0].camera_offset),"Camera omitted the pirate or weapon draws")
+		# Android seeds 40 + random(40) = 50 asteroids at station 78 (scenery_population_vectors.json)
+		# and its field ends in the input of the 40 + random(40) opening world golden
+		# (opening_world_initialization.gd FIXTURES[1]); GOLDEN covers the Mac's 130.
+		var android: bool=header.architecture=="android-armv7"
+		check(state.scenery.departure_population.count==(50 if android else 130) and state.scenery.departure_population.center==Vector3(12298,36830,77237) and state.scenery.departure_population.campaign_cursor==4,"Second trip changed source scenery or retained the first cursor")
+		if android:
+			var direct:=World.new();var expected:={}
+			if direct.configure_departure(bindings,cat,packet.player_cache,CONDITIONS):expected=direct.generate({"state":280936762154123})
+			check(world.input_random_state.state==280936762154123 and not expected.is_empty() and world.random_state==expected.random_state,"Full world differs from the verified field-to-NPC boundary")
+			var random:=Random.new();random.restore(world.random_state)
+			var offset:=Vector3(500+random.next_int(2000),500+random.next_int(2000),9000)
+			if random.next_int(2)==0:offset.x=-offset.x
+			if random.next_int(2)==0:offset.y=-offset.y
+			check(state.camera_input_random_state==world.random_state and state.random_state==random.snapshot() and state.camera_offset==offset,"Camera omitted the pirate or weapon draws")
+		else:
+			check(world.input_random_state.state==int(GOLDEN[0].input_state) and world.random_state.state==int(GOLDEN[0].world_state),"Full world differs from the verified field-to-NPC boundary")
+			check(state.camera_input_random_state==world.random_state and state.random_state.state==int(GOLDEN[0].camera_state) and state.camera_offset==vec(GOLDEN[0].camera_offset),"Camera omitted the pirate or weapon draws")
 		check(state.camera_view.eye.is_equal_approx(state.player_pose*state.camera_offset) and state.camera_view.look==state.player_pose.origin,"Second camera was not transformed by its player pose")
 		var scenery: RefCounted=flight.scenery_owner();var route: RefCounted=scenery.initial_npc_route(0)
 		check(route!=null and route.snapshot()==world.npc_construction.actors[0].route,"Second pirate lost its generated native route")

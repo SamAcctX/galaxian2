@@ -41,7 +41,9 @@ func configure(bindings: RefCounted, library: RefCounted, construction: RefCount
 	for key in [autopilot_key,dock_key]:
 		if key.strip_edges().is_empty() or key.length()>32 or key.contains("#") or key.contains("\n"):return reject("Return instructions require the active autopilot and docking key labels")
 	var instruction: Array=bindings.mining_objective.get("desktop_instruction",[])
-	if instruction.size()!=2 or bindings.desktop_text_id(int(instruction[0]))!=int(instruction[1]):return reject("Return instruction desktop mapping is unavailable")
+	# Android imports have no desktop text: no instruction pair and no key tokens.
+	var desktop: bool=not bindings.desktop_text.is_empty()
+	if instruction.size()!=2*int(desktop) or desktop and bindings.desktop_text_id(int(instruction[0]))!=int(instruction[1]):return reject("Return instruction desktop mapping is unavailable")
 	var lines:=[]
 	for event in rules.events:
 		var text_id:=int(event.text_id)
@@ -49,7 +51,8 @@ func configure(bindings: RefCounted, library: RefCounted, construction: RefCount
 		var texts:=[]
 		for id in [text_id,desktop_id]:
 			if id<0 or id>=library.strings.size() or not library.strings[id] is String or library.strings[id].is_empty():return reject("Return instruction text is unavailable in this language")
-			var text: String=library.strings[id].replace(rules.key_tokens[0],autopilot_key).replace(rules.key_tokens[1],dock_key)
+			var text: String=library.strings[id]
+			for i in rules.key_tokens.size():text=text.replace(rules.key_tokens[i],[autopilot_key,dock_key][i])
 			if "#KEY_" in text:return reject("Return instruction requires an unsupported key substitution")
 			texts.append(text)
 		var speaker: String=bindings.resolve_speaker_name(int(event.speaker_id),library)

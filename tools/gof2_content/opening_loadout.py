@@ -3,6 +3,9 @@
 This is an initial loadout seed, not campaign state or a playable opening mission.
 Compiler layouts are recognized as a whole; unsupported/ambiguous layouts yield
 no seed. Only catalogue indices, quantities, slots and source extents are emitted.
+
+Android: Status::resetGame clones ship 10 (Ship::makeShip), docks at station 78
+and installs seven Item::makeItem clones with Ship::setEquipment.
 """
 import re
 import struct
@@ -84,6 +87,8 @@ def extract_opening_loadout(mach, vehicle):
     # Its recognized item constructor establishes category at property-array[3].
     if not vehicle or vehicle.get('item_type_value_index') != 5:
         return {}
+    if mach.architecture == 'android-armv7':
+        return android_loadout(mach)
     mac = mach.architecture == 'x86_64'
     if not mac and mach.architecture != 'armv7': return {}
     import capstone
@@ -176,3 +181,178 @@ def extract_opening_loadout(mach, vehicle):
                 'item_category_value_index': 3, 'provenance': provenance}
     except (ValueError, IndexError, struct.error):
         return {}
+
+
+# Status::resetGame: ship and item catalogues are pointer arrays (index = offset / 4).
+ANDROID = """
+ldr r1, [pc, #{&ships}]
+add r1, pc
+ldr r0, [r0, #4]
+ldr r1, [r1]
+ldr r0, [r0]
+str.w r0, [r8, #0x190]
+ldr r0, [r1]
+mov.w r1, #-1
+ldr r0, [r0, #4]
+{ldr|ldr.w} r0, [r0, #{ship}]
+blx <_ZN4Ship8makeShipEi>
+mov r1, r0
+mov r0, r8
+blx <_ZN6Status7setShipEP4Ship>
+ldr.w r0, [r8, #0x18c]
+blx <_ZN4Ship12priceDeclineEv>
+ldr r0, [pc, #{&galaxy}]
+movs r1, #{station}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+blx <_ZN6Galaxy10getStationEi>
+mov r1, r0
+mov r0, r8
+blx <_ZN6Status10setStationEP7Station>
+ldr.w r0, [r8, #0x18c]
+movs r1, #0
+blx <_ZN4Ship8setCargoEP5ArrayIP4ItemE>
+ldr r0, [pc, #{&items}]
+add r0, pc
+ldr r6, [r0]
+ldr r0, [r6]
+ldr r0, [r0, #4]
+{ldr|ldr.w} r0, [r0, #{item0}]
+blx <_ZN4Item8makeItemEv>
+mov r1, r0
+ldr.w r0, [r8, #0x18c]
+movs r2, #{slot0}
+blx <_ZN4Ship12setEquipmentEP4Itemi>
+ldr r0, [r6]
+ldr r0, [r0, #4]
+{ldr|ldr.w} r0, [r0, #{item1}]
+blx <_ZN4Item8makeItemEv>
+mov r1, r0
+ldr.w r0, [r8, #0x18c]
+movs r2, #{slot1}
+movs r4, #1
+blx <_ZN4Ship12setEquipmentEP4Itemi>
+ldr r0, [r6]
+ldr r0, [r0, #4]
+{ldr|ldr.w} r0, [r0, #{item2}]
+blx <_ZN4Item8makeItemEv>
+mov r1, r0
+ldr.w r0, [r8, #0x18c]
+movs r2, #{slot2}
+blx <_ZN4Ship12setEquipmentEP4Itemi>
+ldr r0, [r6]
+ldr r0, [r0, #4]
+{ldr|ldr.w} r0, [r0, #{item3}]
+blx <_ZN4Item8makeItemEv>
+mov r1, r0
+ldr.w r0, [r8, #0x18c]
+movs r2, #{slot3}
+blx <_ZN4Ship12setEquipmentEP4Itemi>
+ldr r0, [r6]
+ldr r0, [r0, #4]
+{ldr|ldr.w} r0, [r0, #{item4}]
+blx <_ZN4Item8makeItemEv>
+mov r1, r0
+ldr.w r0, [r8, #0x18c]
+movs r2, #{slot4}
+blx <_ZN4Ship12setEquipmentEP4Itemi>
+ldr r0, [r6]
+ldr r0, [r0, #4]
+{ldr|ldr.w} r0, [r0, #{item5}]
+blx <_ZN4Item8makeItemEv>
+mov r1, r0
+ldr.w r0, [r8, #0x18c]
+movs r2, #{slot5}
+blx <_ZN4Ship12setEquipmentEP4Itemi>
+ldr r0, [r6]
+movs r1, #{quantity}
+ldr r0, [r0, #4]
+{ldr|ldr.w} r0, [r0, #{item6}]
+blx <_ZN4Item8makeItemEi>
+mov r1, r0
+ldr r0, [pc, #{&status}]
+movs r2, #{slot6}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+ldr.w r0, [r0, #0x18c]
+blx <_ZN4Ship12setEquipmentEP4Itemi>
+"""
+# Helpers: a clone keeps field 0x18 and takes its quantity at 0x34; a ship keeps
+# its owner unless one is given; equipment slots follow those of lower types.
+ANDROID_HELPERS = {'item_clone': ('_ZN4Item8makeItemEv', """
+push {r4, r6, r7, lr}
+add r7, sp, #8
+ldr r4, [r0, #0x18]
+blx <_ZN4Item5cloneEv>
+movs r1, #{quantity}
+str r4, [r0, #0x18]
+str r1, [r0, #0x34]
+pop {r4, r6, r7, pc}
+"""), 'stack_clone': ('_ZN4Item8makeItemEi', """
+push {r4, r5, r7, lr}
+add r7, sp, #8
+mov r4, r1
+ldr r5, [r0, #0x18]
+blx <_ZN4Item5cloneEv>
+str r5, [r0, #0x18]
+str r4, [r0, #0x34]
+pop {r4, r5, r7, pc}
+"""), 'ship_clone': ('_ZN4Ship8makeShipEi', """
+push {r4, r6, r7, lr}
+add r7, sp, #8
+mov r4, r1
+blx <_ZN4Ship5cloneEv>
+cmp r4, #0
+blt @kept
+str r4, [r0, #0x14]
+kept: pop {r4, r6, r7, pc}
+"""), 'install_category': ('_ZN4Ship12setEquipmentEP4Itemi', """
+push.w {r4, r5, r6, r7, r8, lr}
+add r7, sp, #0xc
+mov r8, r1
+mov r5, r0
+mov r0, r8
+mov r4, r2
+blx <_ZN4Item7getTypeEv>
+cmp r0, #1
+blt @placed
+movs r6, #0
+offsets: ldr r0, [r5, #0x68]
+ldr.w r0, [r0, r6, lsl #2]
+adds r6, #1
+add r4, r0
+mov r0, r8
+blx <_ZN4Item7getTypeEv>
+cmp r6, r0
+blt @offsets
+placed: ldr r0, [r5, #0x6c]
+"""), 'category_getter': ('_ZN4Item7getTypeEv', """
+ldr r0, [r0, #4]
+bx lr
+""")}
+
+
+def android_loadout(lib):
+    from .android_blocks import find, offset
+    seed = find(lib, '_ZN6Status9resetGameEv', ANDROID)
+    if seed is None:
+        return {}
+    provenance = {'declaration': {'offset': offset(lib, seed['start']), 'bytes': seed['end'] - seed['start']}}
+    helpers = {}
+    for key, (symbol, shape) in ANDROID_HELPERS.items():
+        block = find(lib, symbol, shape)
+        if block is None or block['start'] != lib.symbols[symbol][0]:
+            return {}
+        helpers[key] = block
+        provenance[key] = {'offset': offset(lib, block['start']), 'bytes': block['end'] - block['start']}
+    v = seed['values']
+    if any(v[key] % 4 for key in ['ship'] + ['item%d' % i for i in range(7)]):
+        return {}
+    entries = [{'item_id': v['item%d' % i] // 4, 'slot': v['slot%d' % i],
+                'quantity': v['quantity'] if i == 6 else helpers['item_clone']['values']['quantity']} for i in range(7)]
+    if any(entry['quantity'] < 1 for entry in entries):
+        return {}
+    return {'ship_id': v['ship'] // 4, 'station_id': v['station'], 'equipment': entries,
+            'item_category_value_index': 3, 'provenance': provenance}

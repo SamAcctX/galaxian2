@@ -45,7 +45,7 @@ func _process(delta: float) -> void:
 	if _active and _focused:advance(delta*1000.0)
 
 func build(library: RefCounted,bindings: RefCounted,visuals: RefCounted,chosen_station: int=-1,camera_seed: int=-1) -> bool:
-	if library==null or bindings==null or visuals==null or library.manifest.get("profile",{}).get("edition")!="mac-full-hd" or library.manifest.get("content_id")!=bindings.base_content_id or visuals.base_content_id!=bindings.base_content_id:return reject("Menu background requires matching Mac Full HD resources")
+	if library==null or bindings==null or visuals==null or library.manifest.get("profile",{}).get("edition") not in ["mac-full-hd","android-hd"] or library.manifest.get("content_id")!=bindings.base_content_id or visuals.base_content_id!=bindings.base_content_id:return reject("Menu background requires matching Mac Full HD resources")
 	var catalogues:=Catalogues.new()
 	if not catalogues.open(library):return reject(catalogues.error)
 	var random:=RandomNumberGenerator.new();random.randomize()

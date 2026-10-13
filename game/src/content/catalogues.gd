@@ -12,6 +12,8 @@ const SHIP_PROPERTIES := ["armor", "cargo_capacity", "base_price", "primary_slot
 const SHIP_LABEL_IDS := {
 	"ios-hd": [165, 166, 132, 265, 266, 267, 269, 164],
 	"mac-full-hd": [164, 165, 131, 254, 255, 256, 258, 163],
+	# Android imports store their strings in the Mac 1.0.7 numbering.
+	"android-hd": [164, 165, 131, 254, 255, 256, 258, 163],
 }
 var error := ""
 var content_id := ""

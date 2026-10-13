@@ -122,6 +122,7 @@ func verify_world(bindings: RefCounted,cat: RefCounted,library: RefCounted,const
 	check(random.snapshot()==entry.random_state,"Ordinary camera did not follow weapon allocation")
 	var encounter:=ContractEncounter.new()
 	if not encounter.configure_contract_world(bindings,cat,library,construction):check(false,encounter.error);return
+	check(not encounter.campaign_mission(),"A side job counts as the campaign's mission (mercy rule)")
 	var player: RefCounted=construction.player_owner()
 	var field: RefCounted=construction.scenery_owner()
 	var state: Dictionary=entry.random_state.duplicate(true)

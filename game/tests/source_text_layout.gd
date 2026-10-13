@@ -22,9 +22,13 @@ func _initialize() -> void:
 			"bounds": bad.encode_u16(2077, 33)
 			"empty": bad.encode_u16(2081, 0)
 			"compressed": bad[8] = 18
-			"trailer": bad.append(0)
+			"trailer": bad.append_array([0, 0])
 			"font_count": bad.encode_u16(2063, 33)
 		check(font.parse(bad).is_empty() and not font.error.is_empty(), "Invalid font accepted: " + mutation)
+	# Android files end with one byte its loader never reads; exactly one is allowed.
+	var padded := bytes.duplicate()
+	padded.append(0)
+	check(font.parse(padded) == groups and font.error.is_empty(), "One trailing byte changed the font")
 	font.glyphs = groups[0]
 	font.spacing = -1
 	check(font.advance(32) == 8 and font.advance(65) == 5 and font.advance(10) == 0, "Source spacing/space exception changed")

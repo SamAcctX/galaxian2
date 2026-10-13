@@ -112,3 +112,105 @@ class PlayerInitializationTests(unittest.TestCase):
                 self.assertEqual(reader.extract_player_initialization(changed,a,v,s),{})
             self.assertEqual(reader.extract_player_initialization(m,{},v,s),{})
             self.assertEqual(reader.extract_player_initialization(m,a,{},s),{})
+
+
+ANDROID_PARENTS = ({'npc_initialization': {'ordinary_half_extent': 1}}, {'equipment_rule': 'last_matching', 'item_type_value_index': 5}, {'initial': {}})
+
+
+def android_functions(**changes):
+    """Synthetic Android player chain in the shapes the reader matches."""
+    from android_text_fixture import fill
+    names = dict(shield_getter='_ZN4Ship14getMaxShieldHPEv', armor_getter='_ZN4Ship13getMaxArmorHPEv',
+                 shield_setter='_ZN6Player14setMaxShieldHPEi', armor_setter='_ZN6Player13setMaxArmorHPEi',
+                 type_getter='_ZN4Item7getSortEv', damage_setter='_ZN6Player13setVulnerableEb')
+    names.update(changes.pop('names', {}))
+    sorts = changes.pop('sorts', ['next'] * 9 + ['shield', 'armor'] + ['next'] * 19)
+    following = fill(reader.ANDROID_LOOP_NEXT, head=changes.pop('loop_back', '#head')).strip().splitlines()
+    ship = '\n'.join(['push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', changes.pop('reset', fill(reader.ANDROID_RESET)),
+                      changes.pop('entry', fill(reader.ANDROID_LOOP_ENTRY, empty='#done', head='#head')),
+                      'head:', fill(reader.ANDROID_LOOP_HEAD, **{'skip': '#skip', 'next': '#next', **changes.pop('head', {})}, **names),
+                      '.cases ' + ', '.join(sorts), 'other:', 'b #next',
+                      'shield:', fill(reader.ANDROID_SHIELD, next=changes.pop('shield_next', '#next')),
+                      'armor:', fill(reader.ANDROID_ARMOR, next='#next'),
+                      'next:', *following[:8], 'skip:', *following[8:], 'done:', 'pop.w {r4, r5, r6, r7, r8, sb, sl, fp, pc}'])
+    functions = {
+        '_ZN5Level12createPlayerEv': '\n'.join(['push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', fill(reader.ANDROID_FACTORY, **names), 'bx lr']),
+        '_ZN4Ship14getMaxShieldHPEv': reader.ANDROID_HELPERS['shield_getter'],
+        '_ZN4Ship13getMaxArmorHPEv': reader.ANDROID_HELPERS['armor_getter'],
+        '_ZN6Player14setMaxShieldHPEi': fill(reader.ANDROID_HELPERS['shield_setter'], changed='#_ZN6Player16updateDamageRateEv'),
+        '_ZN6Player13setMaxArmorHPEi': fill(reader.ANDROID_HELPERS['armor_setter'], changed=changes.pop('armor_changed', '#_ZN6Player16updateDamageRateEv')),
+        '_ZN6Player16updateDamageRateEv': 'bx lr',
+        '_ZN6PlayerC1Eiiiii': changes.pop('stats', '\n'.join(['push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', 'mov r4, r0',
+                                                               'call _ZN6Player16updateDamageRateEv', reader.ANDROID_ACTIVE, 'mov r4, r0', 'bx lr'])),
+        '_ZN4Ship12refreshValueEv': ship,
+        '_ZN4Item7getSortEv': 'ldr r0, [r0, #8]\nbx lr',
+        '_ZN11LevelScriptC1EP5LevelP3HudP5RadarP18TargetFollowCamera': '\n'.join([
+            'push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', fill(reader.ANDROID_DAMAGE_DISPATCH, initial=changes.pop('initial', '#initial')),
+            'other:', 'bx lr', 'initial:', fill(reader.ANDROID_DAMAGE, **names), 'bx lr']),
+        '_ZN6Player13setVulnerableEb': 'strb.w r1, [r0, #0xc2]\nbx lr'}
+    functions.update(changes)
+    return {k: v for k, v in functions.items() if v is not None}
+
+
+def android_extract(parents=ANDROID_PARENTS, **changes):
+    from android_text_fixture import text_library
+    lib, addresses = text_library(android_functions(**changes))
+    return reader.extract_player_initialization(lib, *parents), addresses
+
+
+class AndroidPlayerInitialization(unittest.TestCase):
+    def test_named_chain_gives_values_and_spans(self):
+        result, addresses = android_extract()
+        self.assertEqual({k: v for k, v in result.items() if k != 'provenance'}, reader.VALUES)
+        ship, script = addresses['_ZN4Ship12refreshValueEv'], addresses['_ZN11LevelScriptC1EP5LevelP3HudP5RadarP18TargetFollowCamera']
+        p = result['provenance']
+        self.assertEqual({k: (p[k]['offset'] - ship, p[k]['bytes']) for k in ('reset', 'loop_entry', 'loop_head', 'shield_entry', 'armor_entry', 'shield_assignment', 'armor_assignment', 'loop_next')},
+                         {'reset': (4, 44), 'loop_entry': (48, 56), 'loop_head': (104, 24), 'shield_entry': (137, 1), 'armor_entry': (138, 1),
+                          'shield_assignment': (160, 30), 'armor_assignment': (190, 16), 'loop_next': (206, 30)})
+        self.assertEqual((p['damage_dispatch']['offset'] - script, p['damage_permission']['offset'] - script), (4, 16))
+        self.assertEqual((p['factory']['offset'] - addresses['_ZN5Level12createPlayerEv'], p['active']['offset'] - addresses['_ZN6PlayerC1Eiiiii']), (4, 10))
+        for key, name in [('shield_getter', '_ZN4Ship14getMaxShieldHPEv'), ('armor_getter', '_ZN4Ship13getMaxArmorHPEv'), ('shield_setter', '_ZN6Player14setMaxShieldHPEi'),
+                          ('armor_setter', '_ZN6Player13setMaxArmorHPEi'), ('type_getter', '_ZN4Item7getSortEv'), ('damage_setter', '_ZN6Player13setVulnerableEb')]:
+            self.assertEqual(p[key]['offset'], addresses[name], key)
+
+    def test_each_broken_rule_is_unsupported(self):
+        from android_text_fixture import fill
+        entry, reset = fill(reader.ANDROID_LOOP_ENTRY, empty='#done', head='#head'), fill(reader.ANDROID_RESET)
+        flagged = lambda *parts: '\n'.join(['push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', *parts, 'bx lr'])
+        cases = {
+            'no npc': dict(parents=({}, *ANDROID_PARENTS[1:])),
+            'no vehicle': dict(parents=(ANDROID_PARENTS[0], {}, ANDROID_PARENTS[2])),
+            'no staging': dict(parents=(*ANDROID_PARENTS[:2], {})),
+            'other equipment rule': dict(parents=(ANDROID_PARENTS[0], {'equipment_rule': 'first_matching', 'item_type_value_index': 5}, ANDROID_PARENTS[2])),
+            'other type index': dict(parents=(ANDROID_PARENTS[0], {'equipment_rule': 'last_matching', 'item_type_value_index': 4}, ANDROID_PARENTS[2])),
+            'no factory': {'_ZN5Level12createPlayerEv': 'bx lr'},
+            'shield getter field': {'_ZN4Ship14getMaxShieldHPEv': 'ldr r0, [r0, #0x20]\nbx lr'},
+            'armor getter field': {'_ZN4Ship13getMaxArmorHPEv': 'ldr r0, [r0, #0x1c]\nbx lr'},
+            'shield setter shape': {'_ZN6Player14setMaxShieldHPEi': 'strd r1, r1, [r0, #0x8c]\nb.w #_ZN6Player16updateDamageRateEv'},
+            'armor setter shape': {'_ZN6Player13setMaxArmorHPEi': 'strd r1, r1, [r0, #0x90]\nb.w #_ZN6Player16updateDamageRateEv'},
+            'setters differ': dict(armor_changed='#_ZN6Player13setVulnerableEb'),
+            'not active': dict(stats=flagged('mov r4, r0', reader.ANDROID_ACTIVE.replace('strb.w r1, [r4, #0xc0]', 'strb.w r0, [r4, #0xc0]'))),
+            'stats this changed': dict(stats=flagged('movs r0, #0', 'mov r4, r0', reader.ANDROID_ACTIVE)),
+            'stats this lost': dict(stats=flagged('mov r4, r0', 'movs r4, #0', reader.ANDROID_ACTIVE)),
+            'stats no this': dict(stats=flagged(reader.ANDROID_ACTIVE)),
+            'no reset': dict(reset='mov r4, r0'),
+            'ship this changed': dict(reset='movs r0, #0\n' + reset),
+            'ship this lost': dict(entry='movs r4, #0\n' + entry),
+            'reset after entry': dict(reset='mov r4, r0', entry=entry.replace('b #head', 'b #head\n' + reset)),
+            'entry elsewhere': dict(entry=entry.replace('b #head', 'b #next')),
+            'shield continues elsewhere': dict(shield_next='#skip'),
+            'loop back elsewhere': dict(loop_back='#next'),
+            'default elsewhere': dict(head=dict(next='#skip')),
+            'skip elsewhere': dict(head=dict(skip='#next')),
+            'shield not dispatched': dict(sorts=['next'] * 8 + ['shield', 'other', 'armor'] + ['next'] * 19),
+            'type getter field': {'_ZN4Item7getSortEv': 'ldr r0, [r0, #0xc]\nbx lr'},
+            'shield sort': dict(sorts=['next'] * 8 + ['shield', 'next', 'armor'] + ['next'] * 19),
+            'armor sort': dict(sorts=['next'] * 9 + ['shield', 'next', 'armor'] + ['next'] * 18),
+            'shield twice': dict(sorts=['shield'] + ['next'] * 8 + ['shield', 'armor'] + ['next'] * 19),
+            'armor twice': dict(sorts=['next'] * 9 + ['shield', 'armor'] + ['next'] * 18 + ['armor']),
+            'no dispatch': dict(initial='#other'),
+            'damage setter field': {'_ZN6Player13setVulnerableEb': 'strb.w r1, [r0, #0xc3]\nbx lr'},
+        }
+        for name, changes in cases.items():
+            with self.subTest(name):
+                self.assertEqual(android_extract(**changes)[0], {})

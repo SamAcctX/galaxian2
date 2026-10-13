@@ -64,10 +64,13 @@ func finished_stock(stock: RefCounted,label: String):
 func verify_stock_boundaries(bindings: RefCounted):
 	var item:={"item_id":1,"category":0,"subtype":0,"tech":1,"origin":0,"availability":100,
 		"unit_price":100,"blueprint":false,"designated_station":-1,"vossk_only":-1,"affinity":100}
-	var stock:=drawn_stock(bindings,[[100,50],[15,0]])
+	# Cursor 13's progress: (13 + 10) / 45 on the Mac, (13 + 25) / 45 on Android.
+	var progress: Dictionary=bindings.early_contracts.station_generation.availability
+	var bound:=int(100.0*minf(float(progress.progress_cap),float(13+int(progress.progress_add))/float(progress.progress_divisor)))
+	var stock:=drawn_stock(bindings,[[100,bound-1],[15,0]])
 	check(stock._sample_item(item)=={"item_id":1,"quantity":1,"unit_price":100},"The last accepted availability roll was rejected")
 	finished_stock(stock,"availability accepted")
-	stock=drawn_stock(bindings,[[100,51]])
+	stock=drawn_stock(bindings,[[100,bound]])
 	check(stock._sample_item(item).is_empty(),"The first excluded availability roll was accepted");finished_stock(stock,"availability excluded")
 	for id in [164,175,217,218]:
 		item.item_id=id

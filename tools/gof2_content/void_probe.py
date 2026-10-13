@@ -3,14 +3,31 @@
 Only bounded authored constants and verified rule parameters are returned.
 The existing post_sahi Void environment/cast and void_portal declarations
 remain their respective owners; no original executable bytes enter a pack.
+
+Android: Status::nextCampaignMission cases 28 and 29 create Mission(4, 0, -1)
+and Mission(156, 0, 91); Level::createCampaignMission case 29 reuses the
+case-25 Voids; Level::createRadioMessages case 29 creates the six radio lines
+(Android text ids 1948-1953; condition 23 is Radar::stationLocked);
+LevelScript::process cursor 29 spawns probe 14290 with the scripted camera
+(25000/1000/1000 ahead, sound 14) on message 0 and, when message 2 is over,
+restores control and starts Objective(3, 180000); Radar::Radar and
+Radar::draw lock the station through an outer window of Globals::w / 6 and an
+aim window of Globals::w / 16 (the Mac: / 8 and / 18); MGame (OnUpdate,
+OnRender2D, successCheck, OnTouchEnd), Radio, Objective and the camera and
+player setters complete the stage. Values are the Mac 1.0.7 ones (this
+module's VALUES) except the two windows (ANDROID_VALUES).
 """
 
 import copy
 
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 
 def extract_void_probe(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(ANDROID_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -514,3 +531,62 @@ MAC_ALTERNATE.update({
     'target_direct_damage_gate': [537770, 90, '__text', '403fa5e8bda57a3390d742949e0e081c032deb25425f54bfb15e8f2e5d951738'],
     'target_scripted_coast_setter': [562416, 14, '__text', 'ee2c2a5332c15bfcadfcff79c933e4b65a935989c1d6a73d1d737c369ea9f706'],
 })
+
+# Radar::Radar: the outer window is Globals::w / 6 and the aim window w / 16 (the Mac: / 8 and / 18).
+ANDROID_VALUES = copy.deepcopy(VALUES)
+ANDROID_VALUES['world29']['target_lock']['outer_window_width_divisor'] = 6
+ANDROID_VALUES['world29']['target_lock']['inner_aim_width_divisor'] = 16
+
+ANDROID = {# Status::nextCampaignMission cases 28 and 29; Level::createCampaignMission and createRadioMessages case 29.
+           'void_probe_dispatch_factory': ('_ZN6Status19nextCampaignMissionEb', 124, 4, 'bd049f02'),
+           'void_probe_entry_factory29': ('_ZN6Status19nextCampaignMissionEb', 2494, 32, 'sha256:686c2a47f9c04dc1d9cc124cf7293463e6233d0675b79bdb39557eeaac395884'),
+           'void_probe_factory30': ('_ZN6Status19nextCampaignMissionEb', 1410, 28, 'sha256:98db907322f1b07a8bb5153ad516dc720e990eec8addc7722a59b8bc34c2a0ff'),
+           'void_probe_mission_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           'void_probe_dispatch_cast29': ('_ZN5Level21createCampaignMissionEv', 624, 2, '1e00'),
+           'void_probe_cast29': ('_ZN5Level21createCampaignMissionEv', 626, 256, 'sha256:c0b7580f0cada487c6bdfeaba01950b392421e1146d056da089eae1511375242'),
+           'void_probe_dispatch_radio29': ('_ZN5Level19createRadioMessagesEi', 84, 2, 'f50e'),
+           'void_probe_radio29': ('_ZN5Level19createRadioMessagesEi', 7684, 234, 'sha256:807abec4c7dd878fd729c38fe7ceb5fe2eca48d802b6b0f620a5f5f03b4eb7df'),
+           'void_probe_radio29_tail': ('_ZN5Level19createRadioMessagesEi', 9636, 12, 'd4f814014068456100f076be'),
+           'void_probe_radio_message': ('_ZN12RadioMessageC2Eiiii', 0, 52, 'sha256:3846fd4e1bb2e22b2ac9c0a510aa87489cf6562344739be3881098d133598fac'),
+           # Radio conditions (23: Radar::stationLocked), row states, scheduling and the flight loop.
+           'void_probe_radio_conditions': ('_ZN12RadioMessage9triggeredExP9PlayerEgoP11LevelScript', 0, 1860, 'sha256:eba93dba536ccdaa67ad0e44c7b5ff4ae1ee5284e9fd8831719b304e90173244'),
+           'void_probe_lock_flag_getter': ('_ZN5Radar13stationLockedEv', 0, 20, '406a28b190f86d00002818bf0120704700207047'),
+           'void_probe_radio_triggered': ('_ZN12RadioMessage11isTriggeredEv', 0, 6, '90f820007047'),
+           'void_probe_radio_over': ('_ZN12RadioMessage6isOverEv', 0, 6, '90f821007047'),
+           'void_probe_radio_finish': ('_ZN12RadioMessage6finishEv', 0, 8, '012180f821107047'),
+           'void_probe_radio_trigger': ('_ZN12RadioMessage7triggerEv', 0, 8, '012180f820107047'),
+           'void_probe_radio_scheduler': ('_ZN5Radio4drawExP9PlayerEgoP11LevelScript', 0, 592, 'sha256:531b05fbaf299d793c1d71c936f08d696c2d80a82452724274ed54ed6f04e5c3'),
+           'void_probe_radio_stamp': ('_ZN5Radio6updateElP9PlayerEgoP11LevelScript', 0, 824, 'sha256:faf466c6312c80154a177e81aca3c76a4714ed1e56d86c13793d669292cdea21'),
+           'void_probe_radio_context': ('_ZN5MGame10OnRender2DEv', 0, 1424, 'sha256:d707bce126cf4d3dc00596b6915d1ac05f70f64cd7ca4617bfaf3dadc45f2462'),
+           'void_probe_flight_update': ('_ZN5MGame8OnUpdateEv', 0, 13148, 'sha256:132913553f336d427a90991f78c7fb91b5ad7c9187f69fa8d64fece59a2ce8fe'),
+           'void_probe_completion_poll': ('_ZN5MGame12successCheckEv', 0, 1764, 'sha256:ea65079e511029adc0634a0ca72b39105a299c510ec2315692fb93d2d4ec9434'),
+           'void_probe_condition3': ('_ZN9Objective8achievedEi', 0, 978, 'sha256:da3086f410423068084e2547c16738945cb696b15a3685f82075a90dd6538eab'),
+           'void_probe_condition_constructor': ('_ZN9ObjectiveC2EiiP5Level', 0, 18, '4ff0000c80e80610c0e9033cc0e905cc7047'),
+           'void_probe_final_flight_success': ('_ZN5MGame10OnTouchEndEiiPv', 0, 9784, 'sha256:fdba63f59493b8c11bd31fd1cad8857708de40b6cfb3e0221e5f2eba567c65e0'),
+           # Radar: scanner 17 (duration 29, else 8000) and the w / 6 and w / 16 station-lock windows.
+           'void_probe_target_equipment': ('_ZN5RadarC2EP5Level', 0, 3304, 'sha256:24410902c42a798834b190938f024287a3b51f6648d2b209da08b4b57827ff64'),
+           'void_probe_target_category': ('_ZN4Ship23getFirstEquipmentOfSortEi', 0, 96, 'sha256:0f97dfc1498b5f762706c1c35c393bec23e4db1750c18830de480677287ee406'),
+           'void_probe_target_candidates': ('_ZN5Radar4drawEP6PlayerP3Hudi', 0, 11648, 'sha256:d6017e6e1f0945302c657ba4f0ef7e4169d6f3ca95968037e4f040fcc449dc48'),
+           'void_probe_station_flag': ('_ZN13PlayerStationC2EP7Station', 0, 4180, 'sha256:1f4480fb17a55ae913595af33bb289ada1a75e9532f2e24d464f8877a349b581'),
+           'void_probe_base_flag': ('_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', 0, 604, 'sha256:3a02b0c7ce6b25d113ff6b119a914a61a149997d03f3853b159537f02d2efee8'),
+           # LevelScript::process cursor 29: the probe stage and its camera and player helpers.
+           'void_probe_stage_dispatch': ('_ZN11LevelScript7processEi', 2902, 16, '5b2876dc372800f368811c2800f35383'),
+           'void_probe_stage_slot': ('_ZN11LevelScript7processEi', 4620, 12, '282800f364831d2801f07185'),
+           'void_probe_stage_phase2': ('_ZN11LevelScript7processEi', 11514, 172, 'sha256:35203397d115a0a5203472bec9f5b4dccda405e3c5802c770fb315fe74462b2d'),
+           'void_probe_stage_phase1': ('_ZN11LevelScript7processEi', 21692, 506, 'sha256:92e5014b8c96d35977fdbfaab964f7d7ab624d9511b1f4bbf4aa309e6bda152a'),
+           'void_probe_camera_helper': ('_ZN11LevelScript11resetCameraEP5Level', 0, 128, 'sha256:57855c60b5a1611a79b767f2e7c8b2b8a0e3589140af36be2dbb3a40096e8217'),
+           'void_probe_camera_target_setter': ('_ZN18TargetFollowCamera9setTargetEP10AEGeometry', 0, 4, '41607047'),
+           'void_probe_camera_eye_setter': ('_ZN18TargetFollowCamera11setPositionEfff', 0, 6, '08300ec07047'),
+           'void_probe_camera_reset': ('_ZN18TargetFollowCamera20enableFirstPersonCamEb', 0, 88, 'sha256:fb4ced13b02087e1395b8af7d7dc9c40a4b0b7a81fcf5ae0f8fbc3823e529c82'),
+           'void_probe_camera_scripted': ('_ZN18TargetFollowCamera12setLookAtCamEb', 0, 6, '80f845107047'),
+           'void_probe_starfield_rebase': ('_ZN10LODManager11forceUpdateEib', 0, 204, 'sha256:be30f8b9d3fce97efbb5ebbb2ddd20f7c4957c1dac5abb1dff86468e3766db74'),
+           'void_probe_player_input_setter': ('_ZN9PlayerEgo21setComputerControlledEb', 0, 6, '80f8f4117047'),
+           'void_probe_primary_trigger': ('_ZN9PlayerEgo12stopShootingEi', 0, 66, 'sha256:c7d651af1edbf99fe0ecd4e199d7e4fc94fafaaac97f0ae95dd854d4b48abbf9'),
+           'void_probe_damage_setter': ('_ZN6Player13setVulnerableEb', 0, 6, '80f8c2107047'),
+           'void_probe_direct_damage_gate': ('_ZN6Player10damageHullEi', 0, 64, 'sha256:f489b2c5827ed5e18a3ae3ba461541ead9afd35263a1238cd062363ae7c4d746'),
+           # Cursor 29: counts, briefing and result lines and all voices.
+           'void_probe_brief_count': ('_ZN14DialogueWindow19hasBriefingDialogueEi', 10, 4, '02000000', 'literal', 116),
+           'void_probe_result_count': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 4, '02000000', 'literal', 116),
+           'void_probe_brief_pair': ('_ZN14DialogueWindow11loadContentEv', 128, 8, '000000009b070000', 'literal', 208),
+           'void_probe_result_pair': ('_ZN14DialogueWindow11loadContentEv', 208, 8, '00000000a2070000', 'literal', 1456),
+           'void_probe_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0)}

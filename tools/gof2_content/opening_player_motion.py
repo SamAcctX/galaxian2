@@ -2,9 +2,16 @@
 
 Static bounded readers emit constants/extents only. This motion precedes weapon
 contacts and scripted placement; the first ordinary handoff is its scope limit.
+
+Android: PlayerEgo's constructor leaves updates enabled and declares the
+cruise speed; LevelScript's opening makes the player computer controlled
+(PlayerEgo::setComputerControlled) until message 8 sets phase 4 and hands
+control back; PlayerEgo::update then moves it forward by elapsed x speed
+through AEGeometry::moveForward and skips ordinary maneuvering; MGame::
+OnUpdate updates the player and the level before LevelScript::process.
 """
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 VALUES = {'initial_scripted_flight':True,'scripted_ignores_throttle':True,
           'ordinary_motion_suppressed':True,'initial_update_enabled':True,
@@ -14,6 +21,8 @@ VALUES = {'initial_scripted_flight':True,'scripted_ignores_throttle':True,
 
 def extract_opening_player_motion(mach, staging, camera, cruise, actors):
     arch=mach.architecture
+    if arch == 'android-armv7':
+        return android_motion(mach, staging, camera, cruise, actors)
     if arch not in LAYOUTS:return {}
     try:
         if not actors['player_initialization'] or not camera or cruise['speed_units_per_millisecond']!=2.0 or cruise['forward_axis']!=[0,0,1]:return {}
@@ -97,3 +106,33 @@ MAC_ALTERNATE = {'player_before_weapons': [244051,
  'forward_helper': [-850625,
                     42,
                     '554889e54156534881ec80000000f30f1145804889fb8b7314488b7b38e816d81c004889c7e89ef21d00']}
+
+
+def android_motion(lib, staging, camera, cruise, actors):
+    """Spans by function name; the parents are checked by value (release at message 8, cruise 2 units/ms along +Z)."""
+    try:
+        linked = (staging and actors['player_initialization']
+                  and camera['pan']['follow_player_after_event_finished'] == ANDROID_VALUES['release_after_event_finished']
+                  and cruise['speed_units_per_millisecond'] == 2.0 and cruise['forward_axis'] == [0, 0, 1])
+    except (KeyError, TypeError):
+        return {}
+    proof = recognize_symbols(lib, ANDROID) if linked else {}
+    return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if proof else {}
+
+
+# The constructor span runs from sl = 1.0 and r6 = 0 to the cruise speed store, past updates-enabled ([0x24] = r6).
+ANDROID = {'player_before_weapons': ('_ZN5MGame8OnUpdateEv', 1872, 34, 'sha256:980c50d4eb27fd380d8e040ec7104a6457eb14c8e0411b30bd3a1e5f7ff69e64'),
+           'controller_call': ('_ZN5MGame8OnUpdateEv', 10658, 16, 'dbf84010dbf878009bf85f40c1f608ed'),
+           'update_gate': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 56, 10, '99f82400002842f05d82'),
+           'player_delta': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 90, 4, 'c9f83481'),
+           'scripted_gate': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 3490, 300, 'sha256:6ccd26c22d4c89cde0ad0be4fe568bf399ade3b742e0f75110ad9344372301cd'),
+           'scripted_travel': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 3790, 28, 'sha256:1a8bc81ad4f3fababa7c47500932fb8cb30062125ae9488ddee58b7133c459f5'),
+           'ordinary_suppression': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 5262, 14, '9fed788a99f84501002840f0b280'),
+           'ordinary_suppression_route': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 5318, 14, '9fed6a8a99f84501002840f09680'),
+           'initial_scripted': ('_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera', 520, 12, '0cf780e90121012410f77aec'),
+           'scripted_setter': ('_ZN9PlayerEgo21setComputerControlledEb', 0, 6, '80f8f4117047'),
+           'release': ('_ZN11LevelScript7processEi', 4336, 34, 'sha256:18508369ecea84381c33159218f1ac8638af7c83b18d6c6ba251ce45cf4ff0bf'),
+           'constructor_defaults': ('_ZN9PlayerEgoC2EP6Player', 28, 626, 'sha256:3ad7cb263eac8b1acf7a2cb27b54cd717a64b15f03f8ee6d98a258bd34146529'),
+           'forward_helper': ('_ZN10AEGeometry11moveForwardEf', 0, 196, 'sha256:2840a4e39050a43afb94813788a216a675bc125429812155e43fc069c1a319e5')}
+
+ANDROID_VALUES = copy.deepcopy(VALUES)

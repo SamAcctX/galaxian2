@@ -20,6 +20,11 @@ static func provenance_sizes(architecture: String) -> Dictionary:
 			"percent_divisor": 4, "response_scale": 4, "handling_setup": 8, "percent_load": 4,
 			"equipment_assignment": 14, "property_getter": 48, "equipment_selector": 14,
 			"type_getter": 4, "equipment_table": 30, "item_type_layout": 26}
+	if architecture == "android-armv7":
+		return {"handling_getter": 66, "upgrade_bonus": 4, "response_setup": 44, "equipment_getter": 4,
+			"percent_divisor": 4, "response_scale": 4, "handling_setup": 8, "percent_load": 4,
+			"equipment_assignment": 14, "property_getter": 54, "equipment_selector": 14,
+			"type_getter": 4, "equipment_table": 30, "item_type_layout": 22}
 	if architecture == "x86_64":
 		return {"handling_getter": 105, "upgrade_bonus": 4, "base_add": 4, "base_divisor": 4, "base_scale": 4,
 			"base_offset": 4, "response_setup": 60, "equipment_getter": 9, "percent_divisor": 4, "response_scale": 4,
@@ -31,7 +36,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	if not data is Dictionary: return "Invalid vehicle response definitions"
 	if data.is_empty(): return ""
 	if not valid_parameters(data): return "Unsupported vehicle response parameters"
-	if architecture == "armv7" and [data.base_add, data.base_divisor, data.base_scale, data.base_offset] != [0.0, 1.0, 1.0, 0.0]:
+	if architecture in ["armv7", "android-armv7"] and [data.base_add, data.base_divisor, data.base_scale, data.base_offset] != [0.0, 1.0, 1.0, 0.0]:
 		return "ARM direct-base handling has an unsupported conversion"
 	var sizes := provenance_sizes(architecture)
 	if sizes.is_empty() or not data.get("provenance") is Dictionary or data.provenance.size() != sizes.size():

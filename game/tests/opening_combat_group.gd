@@ -46,7 +46,7 @@ func check_profile(content: String, binding_path: String) -> void:
 		print(library.manifest.profile.edition,": legacy timeline preserved without activation")
 		return
 	var activation: Dictionary = bindings.opening_actors.npc_initialization.activation
-	var architecture := "armv7" if library.manifest.profile.edition=="ios-hd" else "x86_64"
+	var architecture := str({"ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"x86_64"))
 	check(Definitions.validate(activation,64000000,architecture).is_empty(),"Source activation provenance rejected")
 	for key in activation.provenance:
 		var bad: Dictionary = activation.duplicate(true)

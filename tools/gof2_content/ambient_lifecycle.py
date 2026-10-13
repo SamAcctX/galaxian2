@@ -1,10 +1,26 @@
-"""Original small traffic lifecycle declarations; imported executable bytes are discarded."""
+"""Original small traffic lifecycle declarations; imported executable bytes are discarded.
+
+Android: Level::update runs Level::updateOrbit without a mission, whose
+10-second check relaunches one parked travel ship and 45-second check the
+parked patrols; PlayerFighter::revive (Player::reset, Route::reset) relaunches,
+PlayerFighter::update parks, times and sends ships out (x1.1 up to 100);
+KIPlayer::setDead, isDead and isJumper, PlayerFighter::setPosition, Level's
+and KIPlayer's constructors (clocks, travel flag) complete it. Freighters keep
+KIPlayer::revive (PlayerFixedObject's vtable slot 6), which does nothing.
+Values equal the Mac ones.
+"""
 import copy
-from .station_exterior import hashed_variants
+from .declaration_layouts import recognize_symbols
+from .station_exterior import hashed_variants, vtable_proof
 from .ambient_combat import VALUES as COMBAT_VALUES
 
 def extract_ambient_lifecycle(mach,arrival,combat):
     if not isinstance(combat,dict) or any(combat.get(key)!=value for key,value in COMBAT_VALUES.items()):return {}
+    if mach.architecture=='android-armv7':
+        proof,slots=(recognize_symbols(mach,ANDROID),vtable_proof(mach,ANDROID_VTABLES)) if arrival else ({},None)
+        if not proof or slots is None:return {}
+        result=copy.deepcopy(VALUES);result['recycling']=copy.deepcopy(RECYCLING);result['provenance']={**proof,**slots}
+        return result
     _variant,proof=hashed_variants(mach,arrival,[{**LAYOUTS,**RECYCLING_LAYOUTS},{**MAC_ALTERNATE,**MAC_RECYCLING_LAYOUTS}])
     if not proof:return {}
     result=copy.deepcopy(VALUES);result['recycling']=copy.deepcopy(RECYCLING);result['provenance']=proof
@@ -183,3 +199,24 @@ MAC_RECYCLING_LAYOUTS = {'patrol_check': [112882, 327, '__text', 'b5c4ee2efc7fe4
                      176,
                      '__text',
                      'd7f595d98dfbf167120727344ec27bdcb00027b44c1345292f575de7c9197330']}
+
+# Android spans inside named functions; the values are VALUES and RECYCLING.
+ANDROID = {'ambient_lifecycle_park': ('_ZN8KIPlayer7setDeadEv', 0, 14, '0421c0f884100021406825f1e1be'),
+           'ambient_lifecycle_parked_predicate': ('_ZN8KIPlayer6isDeadEv', 0, 14, 'd0f884100020042908bf01207047'),
+           'ambient_lifecycle_travel_predicate': ('_ZN8KIPlayer8isJumperEv', 0, 6, '90f8e8007047'),
+           # Mode 1, statistics, route, active, cargo regenerated.
+           'ambient_lifecycle_relaunch': ('_ZN13PlayerFighter6reviveEv', 0, 316, 'sha256:ef14794e6764f20f4a8bb0000de97841d269f81c619b0045e157329dcb2e4ed7'),
+           'ambient_lifecycle_restore_statistics': ('_ZN6Player5resetEv', 0, 104, 'sha256:2edd38904be2e74cd6c9ff220eca3babafbad4f0e5359dfa412ff0ec9acc5b51'),
+           'ambient_lifecycle_reset_route': ('_ZN5Route5resetEv', 0, 40, 'sha256:22640bfc27f23394c2da5021b9de3b6e3746748530f127725eaecfedca0330f5'),
+           # After 10000 ms one parked inactive travel ship; after 45000 ms every parked inactive patrol.
+           'ambient_lifecycle_orbit_checks': ('_ZN5Level11updateOrbitEi', 0, 1052, 'sha256:edabc61e73ad8ff473372d6f66f756b66c759249da14d06dac4ac6496a41be38'),
+           'ambient_lifecycle_world_schedule': ('_ZN5Level6updateExb', 150, 44, 'sha256:40c2e81e8712d3cccc5dd7e237ccbf6d0fee777b18644e4602bf14175c4d3238'),
+           # Parked inactive after 60000 ms, out after 20000 ms on the route (mode 6), speed x1.1 until 100, parked.
+           'ambient_lifecycle_actor_update': ('_ZN13PlayerFighter6updateEi', 0, 10528, 'sha256:fb79b3bde0fb27a45861c89450940e96ec313695cb5d4b4c290220c25ef78d9e'),
+           'ambient_lifecycle_initial_clocks': ('_ZN5LevelC2Ei', 0, 368, 'sha256:674e05b63506a4f8a5d8427bbdd966a37e21eb72c8dc620d1fd5ba4b6b154eb4'),
+           'ambient_lifecycle_initial_travel_flag': ('_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', 0, 604, 'sha256:3a02b0c7ce6b25d113ff6b119a914a61a149997d03f3853b159537f02d2efee8'),
+           'ambient_lifecycle_freighter_no_reset': ('_ZN8KIPlayer6reviveEv', 0, 2, '7047'),
+           'ambient_lifecycle_launch_position': ('_ZN13PlayerFighter11setPositionEfff', 0, 120, 'sha256:84b11cc073cadac276caa21eb0eef09b9016bb682c15fad91054bd0e74a4dbe8')}
+
+# The relaunch calls slot 6 (revive); freighters inherit KIPlayer's.
+ANDROID_VTABLES = {'ambient_lifecycle_freighter_reset_dispatch': ('_ZTV17PlayerFixedObject', 6, ['_ZN8KIPlayer6reviveEv'])}

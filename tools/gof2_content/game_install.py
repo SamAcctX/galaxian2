@@ -1,4 +1,5 @@
-"""Prepare one player installation from a Mac DMG or app, then activate its receipt."""
+"""Prepare one player installation from a Mac DMG or app, or KiritoJPK's Android
+release (.xapk or the .7z holding it), then activate its receipt."""
 from contextlib import nullcontext
 import hashlib
 from importlib.metadata import PackageNotFoundError, version
@@ -9,16 +10,83 @@ import re
 import shutil
 import tempfile
 
+from .android_source import AndroidRelease
 from .bundle import Bundle, CHUNK
 from .dmg import DmgApp
 from .formats import ContentError
 from .importer import checked_path, encoded, install, verify_cache
 
+# Every declaration group and campaign stage of the Mac 1.0.7 import. An
+# Android import must prove all of them (no partial campaigns); a Mac-only
+# capability without an Android counterpart is listed in ANDROID_WITHOUT.
+CAMPAIGN_GROUPS = (
+    'ambient_combat', 'ambient_lifecycle', 'ambient_population', 'arrival_actor_construction',
+    'arrival_actor_motion', 'arrival_dialogue', 'arrival_environment', 'arrival_session', 'arrival_staging',
+    'arrival_world_initialization', 'camera_follow', 'combat_training', 'combat_training_control',
+    'combat_training_destruction', 'combat_training_story', 'combat_training_visuals',
+    'combat_training_weapons', 'cruise', 'damage_particles', 'deep_science_stock', 'desktop_text',
+    'early_contracts', 'engine_particle_owners', 'engine_particles', 'environment_colors', 'fast_forward',
+    'first_flight', 'flight_notices', 'flight_projection', 'font_bindings', 'frame_clock',
+    'freighter_destruction', 'full_hold_appearance', 'full_hold_control', 'full_hold_departure',
+    'full_hold_destruction', 'full_hold_flight', 'full_hold_particles', 'full_hold_pirate',
+    'full_hold_return', 'full_hold_story', 'game_over_presentation', 'hangars', 'image_regions',
+    'lod_refresh', 'manual_rotation', 'materials', 'mido_travel', 'mining_approach', 'mining_briefing',
+    'mining_drill', 'mining_objective', 'mining_session', 'mining_targeting', 'opening_actors',
+    'opening_camera', 'opening_clock', 'opening_dialogue', 'opening_drift', 'opening_handoff',
+    'opening_loadout', 'opening_sky', 'opening_staging', 'ordinary_music', 'persistent_contacts',
+    'physical_scenery_contacts', 'pilot_response', 'player_destruction', 'portrait_layers',
+    'portrait_textures', 'reflection_selection', 'scenery_effects', 'scenery_population',
+    'scenery_resources', 'ship_lights', 'ship_lod', 'ship_models', 'ship_placement', 'speaker_bindings',
+    'station_autopilot', 'station_departure', 'station_entry', 'station_equipment', 'station_exterior',
+    'station_flight', 'station_presentation', 'station_return', 'surface_material', 'text_aliases',
+    'vehicle_response', 'weapon_parameters')
+CAMPAIGN_STAGES = {'mido_travel': (
+    'alioth_arrival', 'alioth_attack', 'alioth_flight', 'alioth_lifecycle', 'alioth_return',
+    'arrival_briefing', 'arrival_flight', 'bakka_contest', 'bakka_return', 'collision_sphere_scale',
+    'continuation', 'contract_completion', 'contract_navigation', 'conversations', 'convoy_capture',
+    'convoy_effects', 'convoy_lifecycle', 'convoy_ship', 'convoy_transit', 'dekato_convoy',
+    'departure_traffic', 'dima_return', 'emp_bombs', 'entry', 'exchange', 'exterior_model_bases',
+    'free_arrival', 'free_flight', 'free_lifecycle', 'free_navigation', 'free_population', 'free_traffic',
+    'gakkrr_visit', 'gate_arrival', 'gate_environment', 'gate_transit', 'kappa_departure', 'kappa_fighters',
+    'kappa_lifecycle', 'kappa_outcome', 'kappa_preparation', 'kappa_rescue', 'kappa_return',
+    'local_arrival_environment', 'map', 'nehma_return', 'nehma_visit', 'ordinary_contracts',
+    'ordinary_fitting', 'ordinary_shopping', 'ordinary_worlds', 'planet_size_overrides', 'planet_types',
+    'player_entry', 'post_probe_visits', 'post_sahi', 'reputation', 'return_visit', 'sahi_encounter',
+    'sahi_stage', 'sahi_visit', 'scope', 'secondary_ownership', 'station_ids', 'suttnar_visit', 'system_id',
+    'thynome_expedition', 'tractor_recovery', 'traffic_combat', 'traffic_control', 'traffic_presentation',
+    'travel', 'void_access', 'void_crystals', 'void_portal', 'void_probe', 'vossk_lod', 'vossk_traffic'),
+                   'early_contracts': (
+    'acceptance', 'base_navigation', 'base_station_stock', 'bonus', 'briefing_text_base', 'contact_role',
+    'courier', 'delivery_kinds', 'delivery_results', 'difficulty_add', 'difficulty_draw_bound',
+    'encounter_construction', 'first_cursor', 'flight_results', 'generation', 'initial_destination_count',
+    'junk_lifecycle', 'kind_choices', 'last_cursor', 'local_challenge_kind', 'lounge_presentation',
+    'ordinary_generation', 'passenger', 'reward', 'scope', 'ship_combat', 'ship_lifecycle',
+    'station_generation', 'station_lounges', 'system_id', 'title_text_base', 'world_initialization')}
+ANDROID_WITHOUT = {'desktop_text'}
+ANDROID_FORMATS = ('android-xapk', 'android-7z')
+
+
+def missing_campaign(declarations):
+    """Declarations an Android import lacks, as sorted names (empty when complete)."""
+    missing = [g for g in CAMPAIGN_GROUPS if g not in ANDROID_WITHOUT and not declarations.get(g)]
+    for group, stages in CAMPAIGN_STAGES.items():
+        missing += [group + '.' + s for s in stages if declarations.get(group) and s not in declarations[group]]
+    return sorted(missing)
+
 
 def pipeline_id():
     """Invalidate derived data when the importer changes, even without a version bump."""
+    try:
+        # Android ships these modules compiled; its build records the digest of their sources.
+        from ._pipeline import ID
+        return ID
+    except ImportError:
+        return source_digest(Path(__file__).parent)
+
+
+def source_digest(folder):
     digest = hashlib.sha256()
-    for path in sorted(Path(__file__).parent.glob('*.py')):
+    for path in sorted(Path(folder).glob('*.py')):
         digest.update(path.name.encode('utf-8'))
         digest.update(path.read_bytes())
     return digest.hexdigest()
@@ -43,11 +111,12 @@ def refresh(receipt, store, checkpoint=lambda *_: None):
                 and all((candidate.parent / record[key]).is_dir() for key in ('content', 'bindings', 'visuals'))):
             return candidate, record
     source = original.get('source_path')
+    label = 'Android release' if original['format'] in ANDROID_FORMATS else 'Mac game'
     if not isinstance(source, str) or not Path(source).is_absolute() or not Path(source).exists():
-        raise ContentError('Choose your Mac game once to update these older game files. Your existing imports and saves are preserved.')
+        raise ContentError(f'Choose your {label} once to update these older game files. Your existing imports and saves are preserved.')
     source_format, source_hash, _ = source_fingerprint(Path(source), checkpoint)
     if source_hash != original['source_sha256'] or source_format != original['format']:
-        raise ContentError('The remembered Mac game has changed. Choose the original source again; your existing imports and saves are preserved.')
+        raise ContentError(f'The remembered {label} has changed. Choose the original source again; your existing imports and saves are preserved.')
     return prepare(source, store, checkpoint)
 
 
@@ -66,9 +135,9 @@ def read_receipt(path):
         raise ContentError('Invalid Mac import receipt')
     record = json.loads(path.read_text('utf-8'))
     if (not isinstance(record, dict) or record.get('schema') != 1
-            or record.get('format') not in ('mac-dmg', 'mac-app')
+            or record.get('format') not in ('mac-dmg', 'mac-app') + ANDROID_FORMATS
             or not re.fullmatch('[0-9a-f]{64}', str(record.get('source_sha256')))):
-        raise ContentError('Choose a completed import from a Mac .dmg or .app')
+        raise ContentError('Choose a completed import from a Mac .dmg or .app or an Android release')
     for name, key in [('content', 'base_content_id'), ('bindings', 'binding_id'), ('visuals', 'visual_id')]:
         if not re.fullmatch('[0-9a-f]{64}', str(record.get(key))) or record.get(name) != name + '/' + record[key]:
             raise ContentError('Invalid content path in the Mac import receipt')
@@ -135,17 +204,18 @@ def source_fingerprint(source, checkpoint=lambda *_: None):
                     raise ContentError('The source app changed during preparation')
                 rows[name] = {'bytes': count, 'sha256': digest.hexdigest()}
         return 'mac-app', hashlib.sha256(encoded(rows)).hexdigest(), sum(r['bytes'] for r in rows.values())
-    if source.suffix.lower() != '.dmg' or not source.is_file():
-        raise ContentError('Select the Mac .dmg file or the extracted .app directory itself')
+    formats = {'.dmg': 'mac-dmg', '.xapk': 'android-xapk', '.7z': 'android-7z'}
+    if source.suffix.lower() not in formats or not source.is_file():
+        raise ContentError('Select the Mac .dmg file, the extracted .app directory itself, or the Android release .xapk or .7z')
     before = source.stat(); digest = hashlib.sha256(); count = 0
     with source.open('rb') as stream:
         while block := stream.read(CHUNK):
-            checkpoint('Checking your Mac disk image', count / max(1, before.st_size))
+            checkpoint('Checking your game file', count / max(1, before.st_size))
             digest.update(block); count += len(block)
     after = source.stat()
     if (count, before.st_mtime_ns, before.st_ino) != (after.st_size, after.st_mtime_ns, after.st_ino):
-        raise ContentError('The source DMG changed during preparation')
-    return 'mac-dmg', digest.hexdigest(), count
+        raise ContentError('The source file changed during preparation')
+    return formats[source.suffix.lower()], digest.hexdigest(), count
 
 
 def prepare(source, store, checkpoint=lambda *_: None):
@@ -161,7 +231,10 @@ def prepare(source, store, checkpoint=lambda *_: None):
     source_format, source_hash, count = source_fingerprint(source, checkpoint)
     # Keep the original DMG identity recipe so existing installations stay reusable.
     recipe = pipeline_id()
-    identity = hashlib.sha256(encoded({('dmg_sha256' if source_format == 'mac-dmg' else 'app_sha256'): source_hash, 'reader': READER,
+    key = {'mac-dmg': 'dmg_sha256', 'mac-app': 'app_sha256'}.get(source_format, 'android_sha256')
+    android = source_format in ANDROID_FORMATS
+    label = 'Android' if android else 'Mac'
+    identity = hashlib.sha256(encoded({key: source_hash, 'reader': READER,
                                       'visual_schema': SCHEMA, 'install_schema': 1, 'pipeline_id': recipe})).hexdigest()
     store.mkdir(parents=True, exist_ok=True)
     destination = store / identity
@@ -173,14 +246,16 @@ def prepare(source, store, checkpoint=lambda *_: None):
             raise ContentError('An existing import has different provenance; keep it unchanged')
         manifest = verify_cache(destination / record['content'], lambda *_: checkpoint('Checking the existing import', 0.0))
         verify_derivatives(destination, record, manifest, checkpoint)
-        checkpoint('Mac game is ready', 1.0)
+        checkpoint(label + ' game is ready', 1.0)
         return receipt, record
     stage = Path(tempfile.mkdtemp(prefix='.prepare-', dir=store))
     try:
-        with (DmgApp(source, checkpoint, work=stage) if source_format == 'mac-dmg' else nullcontext(source)) as app:
+        unpacked = (DmgApp(source, checkpoint, work=stage) if source_format == 'mac-dmg'
+                    else AndroidRelease(source, checkpoint, work=stage) if android else nullcontext(source))
+        with unpacked as app:
             with Bundle(app) as bundle:
-                if bundle.profile['edition'] != 'mac-full-hd':
-                    raise ContentError('Choose Galaxy on Fire 2 Full HD for Mac')
+                if bundle.profile['edition'] != ('android-hd' if android else 'mac-full-hd'):
+                    raise ContentError('Choose Galaxy on Fire 2 HD for Android' if android else 'Choose Galaxy on Fire 2 Full HD for Mac')
             base, manifest = install(app, stage / 'content', lambda _, ratio: checkpoint('Importing the original game content', ratio))
             definitions, header, _diagnostics = prepare_bindings(app, base, stage / 'bindings', lambda _, ratio: checkpoint('Preparing the game data', ratio))
             # A readable resource bundle is not proof that its campaign is supported.
@@ -195,9 +270,15 @@ def prepare(source, store, checkpoint=lambda *_: None):
                         or any(not travel.get(key) for key in ('arrival_briefing', 'ordinary_contracts', 'suttnar_visit'))
                         or not contracts.get('ordinary_generation')):
                     raise ContentError('This newer Mac edition contains the extra ships, but its gameplay data is not supported yet. Your previous import and saves are unchanged.')
+            if android:
+                missing = missing_campaign(json.loads((definitions / 'registrations.json').read_text('utf-8')))
+                if missing:
+                    raise ContentError('This Android release is not fully supported yet (' + str(len(missing))
+                                       + ' campaign parts unproven, e.g. ' + ', '.join(missing[:3])
+                                       + '). Your previous import and saves are unchanged.')
             visuals, visual = prepare_visuals(base, stage / 'visuals', checkpoint=lambda _, ratio: checkpoint('Preparing the original textures', ratio))
         if source_fingerprint(source, checkpoint) != (source_format, source_hash, count):
-            raise ContentError('The source Mac game changed during preparation')
+            raise ContentError('The source game changed during preparation')
         record = {'schema': 1, 'format': source_format, 'source_name': source.name,
                   'source_path': str(source), 'pipeline_id': recipe,
                   'source_sha256': source_hash, 'source_bytes': count,
@@ -206,7 +287,7 @@ def prepare(source, store, checkpoint=lambda *_: None):
                   'visual_id': visual['pack_id'], 'content': base.relative_to(stage).as_posix(),
                   'bindings': definitions.relative_to(stage).as_posix(), 'visuals': visuals.relative_to(stage).as_posix()}
         (stage / 'installation.json').write_bytes(encoded(record))
-        checkpoint('Finishing the Mac game import', 1.0)
+        checkpoint('Finishing the ' + label + ' game import', 1.0)
         os.rename(stage, destination)
         stage = None
         return destination / 'installation.json', record

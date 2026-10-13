@@ -10,6 +10,9 @@ const SPANS = {"local_arrival_planet_initial":[843293,157],"local_arrival_planet
 const SUPPORTED_TYPES=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,24,25,26]
 const MAC_SPANS = {"local_arrival_planet_initial":[843925,157],"local_arrival_planet_sizes":[843105,103],"local_arrival_special_planet":[873058,80],"local_arrival_planet_type":[852056,10],"local_arrival_pose_selection":[-43078,586],"local_arrival_cache_getter":[856000,14],"local_arrival_station_list":[735926,10],"local_arrival_list_constructor":[734764,236],"local_arrival_list_loader":[-679366,1100],"local_arrival_face_origin":[-729894,480],"local_arrival_planet_scale":[1550078,4],"local_arrival_distance_scale":[1550114,4]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"local_arrival_planet_initial":[2186,84],"local_arrival_planet_sizes":[2484,60],"local_arrival_planet_group":[1952,32],"local_arrival_planet_scale_setup":[1690,22],"local_arrival_planet_scale":[1344,4],"local_arrival_special_planet":[0,54],"local_arrival_planet_type":[0,4],"local_arrival_pose_selection":[662,138],"local_arrival_pose_planet":[1416,222],"local_arrival_cache_getter":[0,6],"local_arrival_station_list":[0,4],"local_arrival_list_constructor":[0,184],"local_arrival_list_loader":[0,772],"local_arrival_face_origin":[0,264]}
+
 static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALUES)
 
 static func available(bindings: RefCounted) -> bool:

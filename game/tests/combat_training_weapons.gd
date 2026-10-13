@@ -35,13 +35,13 @@ func verify_training_weapons(args: PackedStringArray, equipment: RefCounted):
 		var resolver:=TrainingResolver.new();check(resolver.configure(bindings,cat,bindings.base_content_id),resolver.error)
 		check(resolver.resolve(22,[22,90,81,55]).launch_mode=="unsupported","Older pack invented upgraded primary firing")
 		return
-	check(TrainingWeaponRules.validate(rules,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.combat_training,bindings.combat_training_control,bindings.station_equipment,bindings.opening_actors,bindings.weapon_parameters).is_empty(),"Training weapon source context rejected")
+	check(TrainingWeaponRules.validate(rules,header.source_executable_bytes,str(header.architecture),bindings.arrival_staging,bindings.combat_training,bindings.combat_training_control,bindings.station_equipment,bindings.opening_actors,bindings.weapon_parameters).is_empty(),"Training weapon source context rejected")
 	for key in TrainingWeaponRules.VALUES:
 		var bad:=rules.duplicate(true);bad[key]=null
 		check(not TrainingWeaponRules.parameters(bad),"Changed weapon declaration accepted: "+key)
-	for key in TrainingWeaponRules.SPANS:
+	for key in (TrainingWeaponRules.ANDROID_SPANS if header.architecture=="android-armv7" else TrainingWeaponRules.SPANS):
 		var bad:=rules.duplicate(true);bad.provenance[key].offset+=1
-		check(not TrainingWeaponRules.validate(bad,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.combat_training,bindings.combat_training_control,bindings.station_equipment,bindings.opening_actors,bindings.weapon_parameters).is_empty(),"Disconnected weapon source span accepted: "+key)
+		check(not TrainingWeaponRules.validate(bad,header.source_executable_bytes,str(header.architecture),bindings.arrival_staging,bindings.combat_training,bindings.combat_training_control,bindings.station_equipment,bindings.opening_actors,bindings.weapon_parameters).is_empty(),"Disconnected weapon source span accepted: "+key)
 	var gear_before: Dictionary=equipment.snapshot()
 	var world:=TrainingWorld.new()
 	check(world.configure_combat_training(bindings,cat,equipment,Vector3(10,10,10000),{"companions_empty":true,"location_match":false,"special_placement":false}),world.error)
@@ -66,12 +66,15 @@ func verify_training_weapons(args: PackedStringArray, equipment: RefCounted):
 	var ordinary:=TrainingPrimary.new();check(ordinary.configure(bindings,cat,mounts,other_player.loadout()),ordinary.error)
 	check(ordinary.snapshot().guns[0].projectiles.weapon.item_id==0 and not ordinary.snapshot().guns[0].projectiles.weapon.has("dispersion"),"Starter primary inherited upgraded spread")
 	var guns:=TrainingGuns.new()
+	# Android's Level::assignGuns halves the cursor-7 pirates' damage (3 x 0.5, truncated); Gunant (3) keeps 3.
+	var damage:=pirate_damage()
 	for rank in [0,1]:
 		for difficulty in [0.0,.5,10.0]:
 			check(guns.configure_combat_training(bindings,cat,world,rank,difficulty),guns.error)
-			for row in guns.snapshot().actors:
-				var weapon: Dictionary=row.projectiles.weapon
-				check(weapon.damage==3 and weapon.interval_ms==586 and weapon.lifetime_ms==3000 and weapon.speed_units_per_millisecond==16.0 and row.projectiles.slots.size()==4,"Training NPC inherited catalogue damage or cursor4 override")
+			var rows: Array=guns.snapshot().actors
+			for i in rows.size():
+				var row: Dictionary=rows[i];var weapon: Dictionary=row.projectiles.weapon
+				check(weapon.damage==(3 if i==3 else damage) and weapon.interval_ms==586 and weapon.lifetime_ms==3000 and weapon.speed_units_per_millisecond==16.0 and row.projectiles.slots.size()==4,"Training NPC inherited catalogue damage or cursor4 override")
 				check(weapon.campaign_cursor==7 and weapon.nonplayer_source and weapon.collision_bounds.mode=="target","NPC gun lost context, attribution or bounds")
 	for rank in [-1,2,0.0,true]:check(not guns.configure_combat_training(bindings,cat,world,rank,.5),"Unsupported rank configured training weapons")
 	check(guns.configure_combat_training(bindings,cat,world,0,.5),guns.error)
@@ -142,9 +145,9 @@ func verify_mixed_training_contacts(cat: RefCounted, world: RefCounted, equipmen
 		var expected: Array=[0,1,2] if id==3 else [3]
 		check(event.npc_contacts.map(func(row):return row.actor_id)==expected,"Mixed NPC target membership changed")
 		check(event.last_contact_actor=={"group":"npc","index":expected[-1]},"Later NPC contact did not replace the null player actor")
-		for contact in event.npc_contacts:check(contact.damage.before.hull-contact.damage.after.hull==3,"NPC damage acquired player-only scaling")
-	check(before_player.vitals.armor==40 and before_player.vitals.shield==0.0 and passed.player.snapshot().vitals.armor==31 and passed.player.snapshot().vitals.hull==before_player.vitals.hull,"Player did not receive three hostile shots and zero friendly damage through its installed armor")
-	check(passed.combat.snapshot().actors[3].vitals.hull==9999990,"Gunant was invulnerable or skipped pirate contacts")
+		for contact in event.npc_contacts:check(contact.damage.before.hull-contact.damage.after.hull==(3 if id==3 else pirate_damage()),"NPC damage acquired player-only scaling")
+	check(before_player.vitals.armor==40 and before_player.vitals.shield==0.0 and passed.player.snapshot().vitals.armor==40-3*pirate_damage() and passed.player.snapshot().vitals.hull==before_player.vitals.hull,"Player did not receive three hostile shots and zero friendly damage through its installed armor")
+	check(passed.combat.snapshot().actors[3].vitals.hull==9999999-3*pirate_damage(),"Gunant was invulnerable or skipped pirate contacts")
 	for id in 3:check(passed.combat.snapshot().actors[id].vitals.hull==45 and not passed.combat.snapshot().actors[id].nonplayer_kill,"Nonlethal Gunant hit was marked as a kill")
 	var invalid: RefCounted=combat.fork_for_frame();invalid._writable(2)._state.position=Vector3(NAN,0,0)
 	var invalid_hulls: Array=invalid.snapshot().actors.map(func(actor):return actor.vitals.hull)
@@ -190,3 +193,5 @@ func verify_training_fire_poses(cat: RefCounted, world: RefCounted, guns: RefCou
 	check(guns.fire_combat_training(combat,requests).is_empty() and guns.snapshot()==saved,"Gunant fired at himself through a forged request")
 	requests[0].target_actor_id=0;requests.append(requests[0].duplicate())
 	check(guns.fire_combat_training(combat,requests).is_empty() and guns.snapshot()==saved,"Duplicate retained firing request partially committed")
+
+func pirate_damage() -> int:return 1 if bindings.source_architecture=="android-armv7" else 3

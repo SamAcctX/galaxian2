@@ -1,8 +1,20 @@
-"""Original station contact retention declarations; no executable payloads."""
+"""Original station contact retention declarations; no executable payloads.
+
+Android: Status::departStation keeps the visited stations on Status's three-
+entry stack (Status::isOnStack, Station::equals, Status::addStationToStack: a
+known station only becomes current through Status::setStation, a new one
+pushes out the oldest) and creates stock and contacts
+(Generator::getItemBuyList, getShipBuyList, createAgents) only for a station
+not on the stack. Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_lounge_lifecycle(mach, arrival):
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -70,3 +82,12 @@ MAC_ALTERNATE = {'lounge_lifecycle_lookup': [856252,
                                      83,
                                      '__text',
                                      '62a30a490ae85b9b327ecb4b6dc76b36f4410f874d64e62009ff5051d839ffe4']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'lounge_lifecycle_lookup': ('_ZN6Status9isOnStackEP7Station', 0, 58, 'sha256:166c3a8ccd80b4b4eded95ebc4cbfb562398f9876119ccb71d32a564b366fc27'),
+           'lounge_lifecycle_insert': ('_ZN6Status17addStationToStackEP7Station', 0, 120, 'sha256:8f66db4e97360caebda47d73402a3c5c2913f32e264b23568802d9a99e435b4b'),
+           'lounge_lifecycle_identity': ('_ZN7Station6equalsEPS_', 0, 18, '0246002021b1896892688a4208bf01207047'),
+           'lounge_lifecycle_current': ('_ZN6Status10setStationEP7Station', 10, 14, 'd9f8980188425cd07548c9f89811'),
+           'lounge_lifecycle_arrival': ('_ZN6Status13departStationEP7Station', 140, 26, 'sha256:2b9a5027ea76c3d37bb13eacfde025ba5f2fdb291b7514cbf846c9ed2dfe7f0d'),
+           'lounge_lifecycle_ordinary_stock': ('_ZN6Status13departStationEP7Station', 184, 54, 'sha256:5bef57a863c1f691ceb93bd6e5c59c7fbf18f489872d816e03c12d7d294aa569'),
+           'lounge_lifecycle_generation': ('_ZN6Status13departStationEP7Station', 316, 30, 'sha256:008c52ae274218af1a48d452aaf098d54bd379fe99b78e50647bd725dff2b6b3')}

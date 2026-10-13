@@ -37,19 +37,22 @@ func run():
 
 func verify(args: PackedStringArray):
 	if not lib.open(args[0]) or not bindings.open(args[1],lib.manifest) or not lib.select_language("gb") or not cat.open(lib):check(false,lib.error+bindings.error+cat.error);return
-	check(bindings.source_architecture=="x86_64","This verification is Mac only")
+	check(bindings.source_architecture in ["x86_64","android-armv7"],"This verification needs Mac or Android content")
 	if bindings.player_destruction.is_empty():
 		check(not Death.new().configure(bindings,resources,construction),"Older pack fabricated player destruction")
 		return
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
 	var rules: Dictionary=bindings.player_destruction
-	check(Definitions.validate(rules,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_flight,bindings.opening_actors).is_empty(),"Player destruction declaration refused")
+	check(Definitions.validate(rules,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_flight,bindings.opening_actors).is_empty(),"Player destruction declaration refused")
 	for key in Definitions.VALUES:
-		var bad:=rules.duplicate(true);bad[key]=null
-		check(not Definitions.parameters(bad),"Changed destruction parameter accepted: "+key)
-	for key in Definitions.SPANS:
+		# Android has no game-over image: its null image id is changed to -1 instead. Both
+		# editions' values are valid parameters (a Mac declaration without its image id is
+		# Android's), so the edition's validator decides.
+		var bad:=rules.duplicate(true);bad[key]=null if bad[key]!=null else -1
+		check(not Definitions.validate(bad,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_flight,bindings.opening_actors).is_empty(),"Changed destruction parameter accepted: "+key)
+	for key in (Definitions.ANDROID_SPANS if bindings.source_architecture=="android-armv7" else Definitions.SPANS):
 		var bad:=rules.duplicate(true);bad.provenance[key].offset+=1
-		check(not Definitions.validate(bad,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.full_hold_flight,bindings.opening_actors).is_empty(),"Detached destruction extent accepted: "+key)
+		check(not Definitions.validate(bad,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_flight,bindings.opening_actors).is_empty(),"Detached destruction extent accepted: "+key)
 	verify_reader(args[1],header)
 	var fixture:=Fixture.new()
 	var packet: Dictionary=fixture.packet_fixture(bindings,cat,3);fixture.free()

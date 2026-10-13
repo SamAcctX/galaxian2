@@ -1,12 +1,31 @@
 """Optional Mac combat-training actor and authored-route declarations.
 
 Static reader only: emits constants and file extents, never executable bytes.
+
+Android: Level::createCampaignMission's cursor-7 case (tbh entry 7) builds a
+6-word Route (Route::Route, Waypoint::Waypoint) and four actors: three
+Level::createShip(8, 0, 2, waypoint 1, true, false) pirates put to sleep
+(KIPlayer::setToSleep: mode 5, inactive, targeting blocked) and the companion
+Level::createShip(3, 0, 30, none, true, false), always friendly
+(Player::setAlwaysFriend), at the player + (700, 50, 6000) through
+PlayerFighter's vtable slot 18, on a Route::clone of the route
+(KIPlayer::setRoute), with 9999999 hull points (Player::setHitpoints) and
+name 1599 (Mac 1588). Level::assignGuns and Gun::setIndex arm them as on the
+Mac. Values equal the Mac 1.0.7 ones.
 """
 import copy
-from .declaration_layouts import recognize
-from .station_exterior import declaration_bytes
+from .declaration_layouts import recognize, recognize_symbols
+from .station_exterior import declaration_bytes, vtable_proof
 
 def extract_combat_training(mach,arrival,equipment,actors):
+    if mach.architecture == 'android-armv7':
+        try:
+            if equipment['scope'] != 'var_hastra_equipment_tutorial': return {}
+            npc = actors['npc_initialization']
+            if not all(npc.get(k) for k in ['construction', 'routes', 'world_initialization']): return {}
+        except (KeyError, TypeError, AttributeError): return {}
+        proof, slots = recognize_symbols(mach, ANDROID), vtable_proof(mach, ANDROID_VTABLES)
+        return dict(copy.deepcopy(MAC_VALUES), provenance={**proof, **slots}) if proof and slots is not None else {}
     if mach.architecture!='x86_64' or equipment.get('scope')!='var_hastra_equipment_tutorial':return {}
     try:
         npc=actors['npc_initialization']
@@ -223,3 +242,40 @@ MAC_VALUES = {'scope': 'combat_training_encounter_construction',
  'weapon_effect_capacity': 4,
  'weapon_effect_random_bound': 2,
  'zero_means_flipped': True}
+
+# Android spans inside named functions and tables; the values are MAC_VALUES.
+ANDROID = {# Level::createCampaignMission: the player position sample, the 9999999 hull constant and the
+           # dispatch to tbh entry 7; the case builds the route, three sleeping pirates on waypoint 1 and
+           # the friendly companion (name 1599), stores the cursor-7 objective and makes the radio.
+           'campaign_head': ('_ZN5Level21createCampaignMissionEv', 0, 126, 'sha256:ee2b93b7db435fca79ab22490406898990e60c20ea997a0e0695e842f8c7ce28'),
+           'actor_dispatch': ('_ZN5Level21createCampaignMissionEv', 552, 14, 'ddf840a01d2807f2eb80dfe810f0'),
+           'actor_entry': ('_ZN5Level21createCampaignMissionEv', 580, 2, '6b30'),
+           'actor_case': ('_ZN5Level21createCampaignMissionEv', 25356, 378, 'sha256:957c593ccb135e54d016d4ef808bd44f3ac41b9f0fb0bc50e5ece4a9894a5e15'),
+           'companion_offset': ('_ZN5Level21createCampaignMissionEv', 24600, 12, '00002f44000048420080bb45'),
+           'defeat_store': ('_ZN5Level21createCampaignMissionEv', 26158, 8, 'caf8285000f0e9be'),
+           'story_tail': ('_ZN5Level21createCampaignMissionEv', 29704, 26, 'sha256:51a12ccd37a83d3cc0390e228195c8a57dbd163b8258503299f415cf0179dcea'),
+           'waypoints': ('_ZN5Level21createCampaignMissionEv', 25356, 24, '60f0ffff48f4ffff8038010010270000581b000000710200', 'literal', 0),
+           # The authored route: index 0, no loop; waypoint 1 for the pirates, a clone for the companion.
+           'route_constructor': ('_ZN5RouteC2EPii', 0, 252, 'sha256:ca7150cd62482cc53dbfdf0a65bbe663c975f533f5e0fa5d80515fc638df1c70'),
+           'waypoint_constructor': ('_ZN8WaypointC2EiiiP5Route', 0, 212, 'sha256:1c80c1a2eb9571b110121bd0f07d15105a611a1ae48cddc05ac914a6cf7327a2'),
+           'route_point': ('_ZN5Route11getWaypointEi', 0, 160, 'sha256:2e1859f50ce2c5863ea686738eaee454bb9897fffa2138de083e0c1f540a03c6'),
+           'route_copy': ('_ZN5Route5cloneEv', 0, 348, 'sha256:c628d2ae59c27b4ad6e88c47bbcb48db0ee9fc8e6cc917af36c4ade43200da78'),
+           'route_replace': ('_ZN8KIPlayer8setRouteEP5Route', 0, 36, 'sha256:2f00603c48d28f9708289d12f63227139eebaa3ce45e155ddc64e7ddf20197b5'),
+           'route_advance': ('_ZN5Route6updateEfff', 0, 260, 'sha256:654bab3aaaa45cebd6ff7ea04b2513f5c041b54e90c912d27f86d5e189b7a19c'),
+           # Actor state setters, ship construction, the world order and the NPC weapons and effects.
+           'friendly': ('_ZN6Player15setAlwaysFriendEb', 0, 20, '80f8ed104ff48071a0f85c10002180f8e0107047'),
+           'hull_override': ('_ZN6Player12setHitpointsEi', 0, 18, '8167d0f884208a42b8bfc0f8841029f115bc'),
+           'factory': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           'route_and_cargo': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 0, 1668, 'sha256:9722fa1dff717e74e4f5d93a1ee0e2af195659b26021723e8d5632f5ba9eaf91'),
+           'inactive_mode': ('_ZN8KIPlayer10setToSleepEv', 0, 28, 'd0b502af04460520c4f8840000216068b8f736eb012084f8ad00d0bd'),
+           'activity': ('_ZN8KIPlayer13setInitActiveEb', 0, 20, 'd0b502af04466068b8f72aeb002084f8ae00d0bd'),
+           'activity_field': ('_ZN6Player9setActiveEb', 0, 6, '80f8c0107047'),
+           'hostile': ('_ZN6Player14setAlwaysEnemyEb', 0, 16, '80f8ec100121a0f85c1080f8e0107047'),
+           'position_setter': ('_ZN13PlayerFighter11setPositionEfff', 0, 120, 'sha256:84b11cc073cadac276caa21eb0eef09b9016bb682c15fad91054bd0e74a4dbe8'),
+           'world_order': ('_ZN5Level4initEv', 0, 1792, 'sha256:fceec130c720743b341b16f0e8ce63d43a1382808e075533d391370c9949a244'),
+           'weapons': ('_ZN5Level10assignGunsEv', 0, 3320, 'sha256:2d4c9a0a16410a8459ff79a6c70158b826a10813a8dee82ee37fe387abbcec55'),
+           'weapon_effect': ('_ZN3Gun8setIndexEi', 0, 280, 'sha256:49874dec0a3b669f6555df7804296846b7a92559002168440a630d4b0ea50c92'),
+           # Items 0..25 of the effect model table: 14600 for item 0, 14605 for 19, 14606 for 25.
+           'weapon_effects': ('_ZN3Gun8setIndexEi', 56, 104, '08390000083900000839000009390000093900000a3900000a3900000b3900000b390000083900000b3900000a390000093900000939000009390000093900000c3900000c3900000c3900000d3900000d3900000d3900000e3900000e3900000e3900000e390000', 'literal', 0)}
+# The companion's setPosition(float, float, float) call reads slot 18 of PlayerFighter's vtable.
+ANDROID_VTABLES = {'placement_virtual': ('_ZTV13PlayerFighter', 18, ['_ZN13PlayerFighter11setPositionEfff'])}

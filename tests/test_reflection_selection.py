@@ -86,3 +86,89 @@ class ReflectionSelection(unittest.TestCase):
                             if kind=='blx':raw[3]&=~0x10
                         data[256+at+off:256+at+off+size]=raw
                     m.data=bytes(data);self.assertEqual(reader.extract_reflection_selection(m,p,s),{})
+
+
+GAME = '_ZN5MGame12OnInitializeEv'
+SPACE = '_ZN5Level11createSpaceEv'
+CUBE = '_ZN11AbyssEngine11PaintCanvas17ChangeCubeTextureEj'
+LOAD = '_ZN11AbyssEngine11PaintCanvas13TextureCreateEtRjb'
+
+
+def android(**bad):
+    """MGame::OnInitialize's selection, Level::createSpace's opening sky load, ChangeCubeTexture and the
+    getters in the Android shape; each `bad` key breaks one relation."""
+    from android_fixture import TEXT
+    from android_thumb import Asm, build
+    status = 0x9000
+    game = Asm(TEXT + 0x100).push()
+    for n in range(2 if 'two selects' in bad else 1):
+        game.ldr_address(0, status).add_pc(0).ldr(0, 0, 0).ldr(0, 0, 0).call_to('_ZN6Status12inAlienOrbitEv')
+        game.ldr_w(5, 9, 4).cmp(0, 1).branch('ne', 'elsewhere%d' % n if 'sky target' in bad else 'sky%d' % n).add_sp(2, 4).mov(0, 5)
+        game.movw(1, 12040).branch(None, 'call%d' % n if 'load target' in bad else 'load%d' % n).label('sky%d' % n)
+        game.ldr_address(0, status + (4 if 'status' in bad else 0)).add_pc(0).ldr(0, 0, 0).ldr(0, 0, 0)
+        game.call_to('_ZN6Status9getSystemEv').call_to('_ZN11SolarSystem15getTextureIndexEv')
+        game.movw(1, 65534 if 'base range' in bad else 12030).add_low(0, 1).add_sp(2, 8 if 'slot' in bad else 4).label('elsewhere%d' % n)
+        game.uxth(1, 0).mov(0, 4 if 'canvas' in bad else 5).label('load%d' % n).movs(3, 0).label('call%d' % n).call_to(LOAD)
+        game.ldr_sp(1, 4).ldr_w(0, 8 if 'game' in bad else 9, 4).call_to(CUBE)
+    space = Asm(TEXT + 0x400).push()
+    for n in range(2 if 'two openings' in bad else 1):
+        space.call_to('_ZN6Status25getCurrentCampaignMissionEv').cbz(0, 'other%d' % n, nonzero='campaign' not in bad)
+        space.ldr_w(0, 10, 0xc4 if 'world field' in bad else 0xc0).cmp(0, 2 if 'world' in bad else 3).branch('ne', 'other%d' % n)
+        space.ldr_address(0, 0x9100).movw(1, 17803).mov(2, 9).movs(3, 0).add_pc(0).ldr(5, 0, 0).ldr(0, 5, 0)
+        space.call_to('_ZN11AbyssEngine11PaintCanvas10MeshCreateEtRjb').ldr(0, 4 if 'mesh canvas' in bad else 5, 0)
+        space.add_imm(2, 11 if 'level' in bad else 10, 0x198).movw(1, 10068)
+        space.branch(None, 'mid' if 'mid target' in bad else 'tail').label('other%d' % n).nop()
+    space.label('tail').movs(3, 1 if 'tail' in bad else 0)
+    space.labels['mid'] = space.here() + 2
+    space.call_to(LOAD).ret()
+    # ChangeCubeTexture: bind the selected cube to unit 7 when the shader path is on.
+    cube = Asm(TEXT + 0x600).half(*([0xbf00] if 'bind start' in bad else []))
+    for n in range(2 if 'bind twice' in bad else 1):
+        cube.half(0xb5b0, 0xaf02).mov(5, 0).ldr_address(0, 0x9200).mov(4, 1).add_pc(0).ldr(0, 0, 0).ldrb(0, 0, 0).cbz(0, 'done%d' % n)
+        cube.ldr(0, 5, 0x10).cmp_reg(0, 4).branch('ls', 'done%d' % n).ldr(0, 5, 0x14).ldr_index(0, 0, 4).ldrb(1, 0, 0x10).cbz(1, 'name%d' % n)
+        cube.ldr_address(0, 0x9204).add_pc(0).ldr(0, 0, 0).str(4, 0, 0).movw(0, 0x84c6 if 'unit' in bad else 0x84c7).call_to('glActiveTexture')
+        cube.ldr(0, 5, 0x14).ldr_index(0, 0, 4).ldr(1, 0, 0).movw(0, 0x84e1 if 'target' in bad else 0x8513).call_to('glBindTexture')
+        cube.movw(0, 0x84c0).half(0xe8bd, 0x40b0).jump('done%d' % n).label('name%d' % n).adds8(0, 4)
+        cube.call_to('_ZNK11AbyssEngine6String9GetAECharEv').cbz(0, 'done%d' % n).half(0xe8bd, 0x40b0).jump('done%d' % n)
+        cube.label('done%d' % n).half(0xbdb0)
+    index = Asm(TEXT + 0x700).ldr(0, 0, 0x34 if 'sky index' in bad else 0x30).ret()
+    lib = build({GAME: game.pop(), SPACE: space, CUBE: cube, '_ZN11SolarSystem15getTextureIndexEv': index,
+                 '_ZN6Status12inAlienOrbitEv': Asm(TEXT + 0x720).half(0x6f81).half(0xf8d0, 0x0198).jump('end').label('end')})
+    for name in ['_ZN6Status12inAlienOrbitEv', '_ZN6Status9getSystemEv']:
+        if name in bad:  # called through the PLT only, as exported functions are
+            lib.imports[lib.symbols.pop(name)[0]] = name
+    return lib
+
+
+class AndroidReflection(unittest.TestCase):
+    parents = ({'provenance': {'predicate': {'offset': 1622656, 'bytes': 26}}},
+               {'provenance': {'system': {'offset': 1637320, 'bytes': 13}, 'texture': {'offset': 723533, 'bytes': 7}}})
+
+    def test_encodings_decode_as_intended(self):
+        import capstone
+        from android_thumb import Asm
+        decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+        code = Asm(0x2000).half(0xb5b0, 0xaf02, 0xe8bd, 0x40b0, 0xbdb0, 0x6f81).finish()
+        self.assertEqual(['%s %s' % (i.mnemonic, i.op_str) for i in decoder.disasm(code, 0x2000)][:5],
+                         ['push {r4, r5, r7, lr}', 'add r7, sp, #8', 'pop.w {r4, r5, r7, lr}', 'pop {r4, r5, r7, pc}', 'ldr r1, [r0, #0x78]'])
+
+    def test_identifiers_and_spans(self):
+        from android_fixture import TEXT
+        lib = android()
+        result = reader.extract_reflection_selection(lib, *self.parents)
+        self.assertEqual({key: result[key] for key in ['texture_base', 'special_id']}, {'texture_base': 12030, 'special_id': 12040})
+        self.assertEqual(result['provenance'], {'select': {'offset': TEXT + 0x102, 'bytes': 74}, 'bind': {'offset': TEXT + 0x600, 'bytes': 96},
+                                                'predicate': {'offset': TEXT + 0x720, 'bytes': lib.symbols['_ZN6Status12inAlienOrbitEv'][1]},
+                                                'system': {'offset': lib.symbols['_ZN6Status9getSystemEv'][0], 'bytes': 2},
+                                                'sky_index': {'offset': TEXT + 0x700, 'bytes': 4},
+                                                'load_context': {'offset': TEXT + 0x432, 'bytes': 6}})
+
+    def test_each_broken_shape_is_unsupported(self):
+        for bad in ['two selects', 'sky target', 'load target', 'status', 'base range', 'slot', 'canvas', 'game', 'two openings', 'campaign',
+                    'world field', 'world', 'mesh canvas', 'level', 'mid target', 'tail', 'bind start', 'bind twice', 'unit', 'target', 'sky index',
+                    '_ZN6Status12inAlienOrbitEv', '_ZN6Status9getSystemEv']:
+            self.assertEqual(reader.extract_reflection_selection(android(**{bad: True}), *self.parents), {}, bad)
+        projection, sky = self.parents
+        for parents in [({}, sky), (projection, {}), ({'provenance': {}}, sky), ({'predicate': {}}, sky), (projection, {'system': {}}), (projection, {'provenance': {'texture': {}}}),
+                        (projection, {'provenance': {'system': {}}})]:
+            self.assertEqual(reader.extract_reflection_selection(android(), *parents), {}, parents)

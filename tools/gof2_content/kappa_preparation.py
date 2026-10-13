@@ -1,8 +1,22 @@
-"""Original Kappa visit, EMP reserve and fitting condition. Constant declarations only."""
+"""Original Kappa visit, EMP reserve and fitting condition. Constant declarations only.
+
+Android: Status::nextCampaignMission cases 18-20 create the visit, fitting
+(status value 6) and rescue missions; Status::missionCompleted completes the
+visit in flight after 10000 ms at the target and the fitting docked with
+equipment of sort 6; MGame::successCheck polls in flight after 5001 ms,
+ModStation::OnUpdate docked; ModStation::OnInitialize reserves ten EMP bombs
+at no price (Item::setPrice, makeItem, Station::addItem). DialogueWindow's
+tables and Globals::getDialogueSoundId hold the conversations and voices.
+Values are the Mac 1.0.7 ones (MAC_VALUES).
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_kappa_preparation(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(MAC_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -246,3 +260,30 @@ MAC_VALUES = {'scope': 'kappa_campaign_preparation',
            'reprice_all_matching': True,
            'merge_first_matching': True,
            'consumes_random': False}}
+
+ANDROID = {# Cases 18-20: visit 156, fitting 189 (status value 6) and rescue 4, all at station 55.
+           'kappa_preparation_cases': ('_ZN6Status19nextCampaignMissionEb', 104, 6, 'fd01270ee202'),
+           'kappa_preparation_visit_factory': ('_ZN6Status19nextCampaignMissionEb', 1086, 28, 'sha256:d0d9ff631d9b7dafc9f6985fe907b885ce7beb06d0a3aa812bde452ecb40e366'),
+           'kappa_preparation_fitting_factory': ('_ZN6Status19nextCampaignMissionEb', 7314, 42, 'sha256:9dd61f37637c84bb0765f8ffe6af04775d71ec8ee4bc03b83f2a5882aba1e0c8'),
+           'kappa_preparation_fitting_parameter': ('_ZN6Status19nextCampaignMissionEb', 8228, 14, '4068006801b0bde8f04320f17fb9'),
+           'kappa_preparation_rescue_factory': ('_ZN6Status19nextCampaignMissionEb', 1544, 28, 'sha256:1fe1a38adaa3b0054ae734eee4b267bd76ab5101d4a5d579cf42c238a22d94f1'),
+           # Kind 156: in flight, after 10000 ms, at the target station; kind 189: docked, equipment of the status value's sort.
+           'kappa_preparation_completion': ('_ZN6Status16missionCompletedEbbx', 0, 1508, 'sha256:0162f8ffdfa5a9e47021d6551470479343189754dde03c334ec2ffc6cbb2634e'),
+           'kappa_preparation_flight_poll': ('_ZN5MGame12successCheckEv', 14, 86, 'sha256:7e3e487a72cf1484133ca53c7aff75b7a6648512946af48e0560274b0292956e'),
+           'kappa_preparation_station_poll': ('_ZN10ModStation8OnUpdateEv', 2038, 172, 'sha256:4ac40f331dec59067f459db69728386d655c9e632b7f3ac13f8441a934a2a981'),
+           'kappa_preparation_status_value': ('_ZN7Mission14getStatusValueEv', 0, 4, 'c06d7047'),
+           'kappa_preparation_status_setter': ('_ZN7Mission14setStatusValueEi', 0, 4, 'c1657047'),
+           'kappa_preparation_equipment': ('_ZN4Ship12getEquipmentEv', 0, 4, 'c06e7047'),
+           'kappa_preparation_item_sort': ('_ZN4Item7getSortEv', 0, 4, '80687047'),
+           # Cursor 20 at the target: every item 41 costs nothing, ten more are merged in.
+           'kappa_preparation_stock_reserve': ('_ZN10ModStation12OnInitializeEv', 5180, 158, 'sha256:2704988d3a45307f38576bd0c574dffebe03c3cfa18e0b6c6ee2ced9e1beee45'),
+           'kappa_preparation_stock_price': ('_ZN4Item8setPriceEi', 0, 4, '81617047'),
+           'kappa_preparation_stock_item': ('_ZN4Item8makeItemEii', 0, 18, 'b0b502af14460d4677f73aeb84614563b0bd'),
+           'kappa_preparation_stock_merge': ('_ZN7Station7addItemEP4Item', 0, 158, 'sha256:0d7ccdefcb80844884a20c5f7e9d52508fdc4287f3a69ce7b6e6d5e893f8f04e'),
+           'kappa_preparation_stock_equal': ('_ZN4Item6equalsEPS_', 0, 18, '0246002021b1096812688a4208bf01207047'),
+           'kappa_preparation_stock_quantity': ('_ZN4Item9getAmountEv', 0, 4, '406b7047'),
+           'kappa_preparation_stock_add_quantity': ('_ZN4Item12changeAmountEi', 0, 8, '426b114441637047'),
+           # Dialogue counts to cursor 20, the six lines (Android text ids 1871-1876), their voices.
+           'kappa_preparation_result_counts': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 84, 'sha256:6fbfccafd39b307f64342012bb6d4de31c515f47a1dad366d9d9ab26e328b196', 'literal', 0),
+           'kappa_preparation_result_pairs': ('_ZN14DialogueWindow11loadContentEv', 208, 48, 'sha256:ed019aaf165604f72847fb946cb5d2f1cc8998bdeb04726e36a830c9180f310e', 'literal', 1080),
+           'kappa_preparation_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0)}

@@ -1,12 +1,121 @@
-"""Declarative handling and maneuverability-equipment constants, read statically."""
+"""Declarative handling and maneuverability-equipment constants, read statically.
+
+Android: Ship::getHandling adds a bonus per tagged upgrade to the ship's base
+handling (no conversion, as on iOS); PlayerEgo's constructor stores it and
+scales it by (1 + Ship::getAgility() / percent) x response scale;
+Ship::refreshValue assigns the agility from Item::getAttribute when its
+Item::getSort switch reaches the equipment type; Item::init takes the sort
+from the item's third attribute value.
+"""
 import math
 import re
 import struct
-from .steering import lit
+from .steering import PC, code_span, lit, pool_float, shape_at, sole_definition
 from .ship_models import section_bytes
 
 
+ANDROID_CONSTRUCTOR = '_ZN9PlayerEgoC2EP6Player'
+ANDROID_HANDLING = '_ZN4Ship11getHandlingEv'
+ANDROID_AGILITY = '_ZN4Ship10getAgilityEv'
+ANDROID_REFRESH = '_ZN4Ship12refreshValueEv'
+ANDROID_ATTRIBUTE = '_ZN4Item12getAttributeEi'
+ANDROID_SORT = '_ZN4Item7getSortEv'
+ANDROID_INIT = '_ZN4Item4initEv'
+# Sum the bonus over upgrades with the tag, then add the ship's base handling unconverted.
+HANDLING = [('ldr', r'r2, \[r0, #0x78\]'), ('vldr', 's0, ' + PC), ('cbz', 'r2, @18'), ('ldr.w', r'ip, \[r2\]'),
+            ('cmp.w', 'ip, #0'), ('beq', '@18'), ('ldr', r'r2, \[r2, #4\]'), ('movs', 'r3, #0'), ('vldr', 's0, ' + PC),
+            ('vldr', 's2, ' + PC), ('vadd.f32', 's4, s0, s2'), ('ldr.w', r'r1, \[r2, r3, lsl #2\]'), ('adds', 'r3, #1'),
+            ('cmp', r'r1, #(\d+|0x[0-9a-f]+)'), ('it', 'eq'), ('vmoveq.f32', 's0, s4'), ('cmp', 'r3, ip'), ('blo', '@10'),
+            ('vldr', r's2, \[r0, #0x18\]'), ('vadd.f32', 's0, s0, s2'), ('vmov', 'r0, s0'), ('bx', 'lr')]
+# Search the attribute (key, value) pairs; a missing key gives 0xc5997825.
+GET_ATTRIBUTE = [('push', '{r7, lr}'), ('ldr', r'r2, \[r0, #0x30\]'), ('movw', 'r0, #0x7825'), ('movt', 'r0, #0xc599'),
+                 ('ldr.w', r'ip, \[r2\]'), ('cmp.w', 'ip, #0'), ('it', 'eq'), ('popeq', '{r7, pc}'), ('ldr.w', r'lr, \[r2, #4\]'),
+                 ('movs', 'r2, #0'), ('ldr.w', r'r3, \[lr, r2, lsl #2\]'), ('cmp', 'r3, r1'), ('beq', '@17'), ('adds', 'r2, #2'),
+                 ('cmp', 'r2, ip'), ('blo', '@10'), ('b', '@19'), ('add.w', 'r0, lr, r2, lsl #2'), ('ldr', r'r0, \[r0, #4\]'),
+                 ('pop', '{r7, pc}')]
+HANDLING_SETUP = [('blx', '.*'), ('str.w', r'r0, \[r4, #0x154\]')]
+# handling += handling x agility / percent (s16); handling x= scale.
+RESPONSE_SETUP = [('blx', '.*'), ('vmov', 's0, r0'), ('vmov.f32', 's4, #.+'), ('vcvt.f32.s32', 's0, s0'), ('vdiv.f32', 's2, s0, s16'),
+                  ('vstr', r's0, \[r4, #0x254\]'), ('vldr', r's0, \[r4, #0x154\]'), ('vmul.f32', 's2, s0, s2'),
+                  ('vadd.f32', 's0, s0, s2'), ('vmul.f32', 's0, s0, s4'), ('vstr', r's0, \[r4, #0x154\]')]
+SELECTOR = [('blx', '.*'), ('cmp', 'r0, #0x1d'), ('bhi.w', '#0x[0-9a-f]+'), ('tbb', r'\[pc, r0\]')]
+ASSIGNMENT = [('ldr', r'r0, \[r4, #0x6c\]'), ('movs', r'r1, #(\d+|0x[0-9a-f]+)'), ('ldr', r'r0, \[r0, #4\]'),
+              ('ldr', r'r0, \[r0, r5\]'), ('blx', '.*'), ('str', r'r0, \[r4, #0x40\]')]
+AGILITY = [('ldr', r'r0, \[r0, #0x40\]'), ('bx', 'lr')]
+SORT = [('ldr', r'r0, \[r0, #8\]'), ('bx', 'lr')]
+# The item's index, type and sort are the values (odd words) of its first three attribute pairs.
+ITEM_INIT = [('ldr', r'r1, \[r0, #0x30\]'), ('cbz', 'r1, #0x[0-9a-f]+'), ('ldr', r'r1, \[r1, #4\]'), ('vmov.i32', 'q8, #0'),
+             ('ldr', r'r2, \[r1, #4\]'), ('str', r'r2, \[r0\]'), ('ldr', r'r2, \[r1, #0xc\]'), ('str', r'r2, \[r0, #4\]'),
+             ('ldr', r'r2, \[r1, #0x14\]'), ('str', r'r2, \[r0, #8\]')]
+
+
+def android_vehicle(lib):
+    from .android_library import callee, instructions
+    code = {name: instructions(lib, name) for name in (ANDROID_CONSTRUCTOR, ANDROID_HANDLING, ANDROID_AGILITY, ANDROID_REFRESH,
+                                                        ANDROID_ATTRIBUTE, ANDROID_SORT, ANDROID_INIT)}
+    provenance = {}
+
+    def whole(key, name, shape):
+        """The named function starts with `shape` (all of it but a trailing pool, except Item::init)."""
+        if shape_at(code[name], shape)[:1] != [0]:
+            return False
+        provenance[key] = code_span(lib, code[name], 0, len(shape) - 1)
+        return True
+
+    def single(name, shape, target):
+        rows = [i for i in shape_at(code[name], shape) if callee(lib, code[name][i + [m for m, _ in shape].index('blx')]) == target]
+        return rows[0] if len(rows) == 1 else None
+    if not (whole('handling_getter', ANDROID_HANDLING, HANDLING) and whole('equipment_getter', ANDROID_AGILITY, AGILITY)
+            and whole('type_getter', ANDROID_SORT, SORT) and whole('property_getter', ANDROID_ATTRIBUTE, GET_ATTRIBUTE)
+            and whole('item_type_layout', ANDROID_INIT, ITEM_INIT)):
+        return {}
+    getter = code[ANDROID_HANDLING]
+    zeros, upgrade = [pool_float(lib, ANDROID_HANDLING, getter[i]) for i in (1, 8)], pool_float(lib, ANDROID_HANDLING, getter[9])
+    if None in zeros or upgrade is None or any(v != 0 for _, v in zeros):
+        return {}
+    provenance['upgrade_bonus'] = {'offset': upgrade[0], 'bytes': 4}
+    tag = getter[13].operands[1].imm
+    constructor = code[ANDROID_CONSTRUCTOR]
+    handling, setup = single(ANDROID_CONSTRUCTOR, HANDLING_SETUP, ANDROID_HANDLING), single(ANDROID_CONSTRUCTOR, RESPONSE_SETUP, ANDROID_AGILITY)
+    if handling is None or setup is None or handling > setup:
+        return {}
+    provenance['handling_setup'] = code_span(lib, constructor, handling, handling + 1)
+    provenance['response_setup'] = code_span(lib, constructor, setup, setup + len(RESPONSE_SETUP) - 1)
+    provenance['response_scale'] = code_span(lib, constructor, setup + 2, setup + 2)
+    scale = constructor[setup + 2].operands[1].fp
+    # The percent divisor is s16's only definition before the setup.
+    load = sole_definition(constructor, setup, ('s16', 'd8', 'q4'))
+    if load is None or shape_at(constructor[load:load + 1], [('vldr', 's16, ' + PC)]) != [0]:
+        return {}
+    percent = pool_float(lib, ANDROID_CONSTRUCTOR, constructor[load])
+    if percent is None:
+        return {}
+    provenance['percent_load'] = code_span(lib, constructor, load, load)
+    provenance['percent_divisor'] = {'offset': percent[0], 'bytes': 4}
+    refresh = code[ANDROID_REFRESH]
+    selector, assignment = single(ANDROID_REFRESH, SELECTOR, ANDROID_SORT), single(ANDROID_REFRESH, ASSIGNMENT, ANDROID_ATTRIBUTE)
+    if selector is None or assignment is None:
+        return {}
+    provenance['equipment_selector'] = code_span(lib, refresh, selector, selector + 3)
+    provenance['equipment_assignment'] = code_span(lib, refresh, assignment, assignment + 5)
+    property_id = refresh[assignment + 1].operands[1].imm
+    # tbb: case n branches to the tbb address + 4 + 2 x table[n]; cases 0-29.
+    table = refresh[selector + 3].address + 4
+    offset = lib.text['offset'] + table - lib.text['address']
+    rows = lib.data[offset:offset + 30]
+    provenance['equipment_table'] = {'offset': offset, 'bytes': 30}
+    type_ids = [i for i, row in enumerate(rows) if table + 2 * row == refresh[assignment].address]
+    if len(type_ids) != 1 or not (0 < upgrade[1] <= 10 and 0 < percent[1] <= 10000 and 0 < scale):
+        return {}
+    return {'base_add': 0.0, 'base_divisor': 1.0, 'base_scale': 1.0, 'base_offset': 0.0,
+            'upgrade_tag': tag, 'upgrade_bonus': upgrade[1], 'equipment_type': type_ids[0], 'item_type_value_index': 5,
+            'equipment_percent_property': property_id, 'percent_divisor': percent[1], 'response_scale': scale,
+            'equipment_rule': 'last_matching', 'provenance': provenance}
+
+
 def extract_vehicle_response(mach, pilot):
+    if pilot and mach.architecture == 'android-armv7':
+        return android_vehicle(mach)
     if not pilot or mach.architecture not in ('x86_64', 'armv7'):
         return {}
     mac = mach.architecture == 'x86_64'

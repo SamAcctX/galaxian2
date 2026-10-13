@@ -17,6 +17,7 @@ func run():
 	assert_selection(imported,137,0,3,true,137,"Imported exploration cue remains active")
 	check(Definitions.validate({},0,"armv7",{},{}).is_empty(),"Unsupported profile must omit the optional declaration")
 	check(not Definitions.validate([],0,"x86_64",{},{}).is_empty(),"Nondictionary optional music was accepted")
+	verify_android()
 	assert_selection(owner,-1,0,0,true,134,"Initial ordinary Terran flight")
 	assert_selection(owner,134,0,0,true,134,"Same exploration cue stays active")
 	assert_selection(owner,134,0,1,true,134,"Faction change alone does not interrupt a retained exploration cue")
@@ -131,6 +132,29 @@ func assert_context_selection(owner: RefCounted,current: int,count: int,faction:
 	check(not frame.is_empty() and frame.get("selected_id")==wanted and frame.get("operations",[]).size()==(0 if current==wanted else 1),label+": "+str(frame))
 	if not frame.is_empty() and frame.get("operations",[]).size()==1:
 		check(frame.operations[0]=={"action":"replace_music","source_id":wanted},label+" did not use the shared playback command")
+
+func verify_android() -> void:
+	var fast: Dictionary=Definitions.FastForward.ANDROID_VALUES.duplicate(true)
+	fast.provenance={}
+	fast.radar=Definitions.FastForward.RADAR_ANDROID_VALUES.duplicate(true)
+	fast.radar.provenance={"radar_music_publication_gate":{"offset":1018,"bytes":18,"anchor":1000}}
+	var android: Dictionary=Definitions.ANDROID_VALUES.duplicate(true)
+	android.provenance={}
+	for key in Definitions.ANDROID_SPANS:android.provenance[key]={"offset":5000+int(Definitions.ANDROID_SPANS[key][0]),"bytes":int(Definitions.ANDROID_SPANS[key][1]),"anchor":5000}
+	var events:=[]
+	for index in 2293:events.append({})
+	var selected: Array=Definitions.VALUES.battle_event_ids+Definitions.VALUES.faction_event_ids+Definitions.VALUES.marked_battle_event_ids+[143,136,145,152,151]
+	for id in selected:events[id]={"id":id,"categories":["music"],"simple_flags":1,"properties":{"fade_out_ms":800,"max_playbacks":1},"sound":{"flags":0}}
+	var audio:={"events":events}
+	check(Definitions.validate(android,100000,"android-armv7",fast,audio).is_empty(),"Android ordinary music was rejected")
+	check(not Definitions.validate(android,100000,"x86_64",fast,audio).is_empty(),"Android music proofs passed as Mac layouts")
+	var shifted: Dictionary=android.duplicate(true)
+	shifted.provenance.battle_selector.offset+=1
+	check(not Definitions.validate(shifted,100000,"android-armv7",fast,audio).is_empty(),"Android music accepted a shifted selector")
+	var ungated: Dictionary=fast.duplicate(true)
+	ungated.radar.provenance={}
+	check(not Definitions.validate(android,100000,"android-armv7",ungated,audio).is_empty(),"Android music accepted a radar without its publication gate")
+	check(not Definitions.validate(android,100000,"android-armv7",fast,{"events":[]}).is_empty(),"Android music accepted foreign events")
 
 func check(value: bool,message: String) -> void:
 	checks+=1

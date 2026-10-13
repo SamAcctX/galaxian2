@@ -12,6 +12,9 @@ const SPANS = {"free_traffic_nivelian_boxes":[80500,278],"free_traffic_box_value
 # Native composition.
 const MAC_SPANS = {"free_traffic_nivelian_boxes":[80500,278],"free_traffic_box_values":[1550546,48],"free_traffic_opposition":[614600,268]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"free_traffic_nivelian_boxes":[2200,250],"free_traffic_opposition":[2174,206]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES)
 

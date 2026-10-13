@@ -36,9 +36,41 @@ var _selected40_world: RefCounted
 var _selected40:={}
 var _selected41_world: RefCounted
 var _selected41:={}
+## Android mercy rule (combat_training_weapons 'mercy'): like
+## Globals::lastCampaignMissionFailed and lastCampaignMissionFailCount, the last
+## failed campaign cursor and its deaths in a row last for the app session;
+## saves never hold them.
+static var campaign_failures:={"cursor":-1,"count":0}
 ## Second guns (Most Wanted rockets): actor id -> {gun, active, clock_ms, switch_ms}.
 ## Every switch_ms the actor toggles which gun fires; shots of both keep flying.
 var _second:={}
+
+static func mercy(bindings: RefCounted) -> Dictionary:
+	return bindings.combat_training_weapons.get("mercy",{}) if bindings!=null and Training.parameters(bindings.combat_training_weapons) else {}
+
+## MGame::gameOverCheck: a death in a campaign mission counts on at the same
+## cursor and restarts at 1 at another.
+static func record_campaign_failure(bindings: RefCounted,cursor: int) -> void:
+	if mercy(bindings).is_empty():return
+	campaign_failures={"cursor":cursor,"count":int(campaign_failures.count)+1 if int(campaign_failures.cursor)==cursor else 1}
+
+## Level::assignGuns: in a campaign mission at the last failed cursor with
+## enough failures, every enemy gun (KIPlayer::isEnemy) hits for
+## trunc(damage x 0.7f). The declared damage stays for hit validation; hit
+## owners apply mercy_damage. Second (Most Wanted) guns come later and keep theirs.
+func apply_mercy(bindings: RefCounted,cursor: int,hostile_ids: Array) -> bool:
+	var rules:=mercy(bindings)
+	if rules.is_empty() or int(campaign_failures.cursor)!=cursor or int(campaign_failures.count)<int(rules.minimum_failures):return true
+	var guns:=_guns.duplicate()
+	for index in guns.size():
+		if guns[index]==null or not int(_definitions[index].get("actor_id",index)) in hostile_ids:continue
+		var weapon: Dictionary=guns[index].snapshot().weapon
+		weapon.mercy_damage=int(Vitals.single(Vitals.single(float(weapon.damage))*Vitals.single(float(rules.damage_factor))))
+		var gun:=Projectiles.new()
+		if not gun.configure(weapon):return reject(gun.error)
+		guns[index]=gun
+	_guns=guns
+	return true
 
 func clear() -> void:
 	error = ""

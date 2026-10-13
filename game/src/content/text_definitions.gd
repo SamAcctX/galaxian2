@@ -21,6 +21,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	var sizes := {}
 	if architecture == "x86_64": sizes = {"declaration": 602, "switch_table": 88}
 	elif architecture == "armv7": sizes = {"declaration": 438, "switch_table": 22}
+	elif architecture == "android-armv7": sizes = {"declaration": 180, "switch_table": 22}
 	var provenance: Variant = data.get("provenance")
 	if sizes.is_empty() or not provenance is Dictionary or provenance.size() != sizes.size(): return "Missing text alias provenance"
 	if architecture == "x86_64" and provenance.get("declaration") is Dictionary and provenance.declaration.get("bytes") == 543:

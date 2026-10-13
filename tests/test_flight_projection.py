@@ -110,3 +110,108 @@ class FlightProjection(unittest.TestCase):
                     self.assertEqual(reader.extract_flight_projection(m),{})
 
 if __name__=='__main__': unittest.main()
+
+
+def android(fov=1.0000001, near=16.000002, far=(250000.0, 400000.0), fallback=250000.0, limit=0x50, predicate='_ZN6Status12inAlienOrbitEv',
+            vertical=0x48, table_inside=True, starts=1, setter_height=True, fallback_at=None, station_field=0x198, cursor_field=0x1e8,
+            omit=None):
+    """MGame::reset's projection setup and both CameraSetPerspective functions in the Android shape."""
+    from android_fixture import TEXT, Thumb
+    from gof2_content import flight_projection as p
+    from gof2_content.android_library import AndroidLibrary
+    from test_steering import (add_pc, adds8, assemble, b_to, cmp_imm, cmp_reg, ldr_lit, ldr_reg, ldr_w, roomy_library, sub_sp, vdiv,
+                               vldr_pc, vmov_from_core, vmov_imm, vstr, wide)
+    names = ['_ZN6Status12inAlienOrbitEv', '_ZN6Status25getCurrentCampaignMissionEv', '_ZN11AbyssEngine6Engine15GetDisplayWidthEv',
+             '_ZN11AbyssEngine6Engine16GetDisplayHeightEv', '_ZN11AbyssEngine6AEMath4SinfEf', '_ZN11AbyssEngine6AEMath4CosfEf',
+             '_ZN6Status10getWingmenEv']
+    at = {name: TEXT + 0x40 * i for i, name in enumerate(names, 1)}
+    start, setter, metrics = TEXT + 0x400, TEXT + 0x600, TEXT + 0x800
+
+    def halves(value):
+        word, = struct.unpack('<I', struct.pack('<f', value))
+        return word & 0xffff, word >> 16
+
+    def emit_start(asm, L):
+        asm.push()
+        for copy in range(starts):
+            ldr_lit(asm, 0, 0x40)
+            ldr_w(asm, 5, 4, 0xec)
+            add_pc(asm, 0).ldr(6, 6, 0).ldr(0, 0, 0).ldr(0, 0, 0).call(at[predicate])
+            b_to(cmp_imm(asm, 0, 1), L.get(f'fallback{copy}', asm.here() + 4), 'ne')
+            ldr_lit(asm, 0, 0x40)
+            add_pc(asm, 0).ldr(0, 0, 0).ldr(0, 0, 0).call(at['_ZN6Status25getCurrentCampaignMissionEv'])
+            table = L.get('table', asm.here() + 4) if table_inside else start + 0x100
+            asm.half(0xa100 | (table - ((asm.here() + 4) & ~3)) // 4)  # adr r1, table
+            cmp_imm(asm, 0, limit).half(0xbfb8)  # it lt
+            adds8(asm, 1, 4).vldr(0, 1, 0)
+            b_to(asm, L.get(f'fov{copy}', asm.here() + 4)).label(f'fallback{copy}')
+            vldr_pc(asm, 0, fallback_at or L.get('pool', asm.here() + 8)).label(f'fov{copy}')
+            (fl, fh), (nl, nh) = halves(fov), halves(near)
+            asm.movw(2, fl).movs(3, nl).movt(2, fh).movt(3, nh).mov(0, 6).mov(1, 5)
+            vstr(asm, 0, 13, 0).call(setter)
+        asm.pop()
+        if asm.here() % 4:
+            asm.nop()
+        asm.label('pool').data(*(struct.unpack('<I', struct.pack('<f', v))[0] for v in (fallback,)))
+        asm.label('table').data(*(struct.unpack('<I', struct.pack('<f', v))[0] for v in far))
+
+    def emit_setter(asm, L):
+        wide(asm, 0xe92d41f0).add_sp(7, 0xc)  # push.w {r4-r8, lr}
+        sub_sp(wide(asm, 0xed2d8b04), 8).mov(5, 0).mov(8, 3)  # vpush {d8, d9}
+        cmp_reg(ldr_w(asm, 0, 5, 0x164).mov(4, 1).mov(6, 2), 0, 4)
+        b_to(asm, L.get('end', asm.here() + 4), 'ls')
+        asm.ldr(0, 5, 0x34).vldr(16, 7, 0xc).call(at['_ZN11AbyssEngine6Engine15GetDisplayWidthEv'])
+        vmov_from_core(asm, 0, 0).vcvt(18, 0).ldr(0, 5, 0x34).call(at['_ZN11AbyssEngine6Engine16GetDisplayHeightEv' if setter_height else '_ZN11AbyssEngine6Engine15GetDisplayWidthEv'])
+        vmov_from_core(asm.vmov_core(2, 16).mov(1, 8).vmov_core(3, 18), 0, 0).vcvt(0, 0)
+        ldr_reg(ldr_w(asm, 0, 5, 0x168), 0, 0, 4, 2).str_sp(0, 4).mov(0, 6)
+        vstr(asm, 0, 13, 0).call(metrics).label('end').pop()
+
+    def emit_metrics(asm, L):
+        asm.half(0xb5b0).add_sp(7, 8)  # push {r4, r5, r7, lr}
+        wide(asm, 0xed2d8b06).ldr(5, 7, 0xc)  # vpush {d8, d9, d10}
+        b_to(cmp_imm(asm, 5, 0), L.get('end', asm.here() + 4), 'eq')
+        vmov_imm(asm, 6, 0.5).vldr(16, 7, 8)
+        vmov_from_core(vmov_from_core(vmov_from_core(asm, 4, 0), 0, 2), 2, 1)
+        vmov_from_core(vstr(asm, 4, 5, 0), 18, 3)
+        vstr(vstr(asm, 2, 5, 4), 0, 5, 8).vmul(6, 4, 6).vmov_core(4, 6).mov(0, 4).call(at['_ZN11AbyssEngine6AEMath4SinfEf'])
+        vmov_from_core(asm, 20, 0).mov(0, 4).call(at['_ZN11AbyssEngine6AEMath4CosfEf'])
+        vdiv(vdiv(vmov_from_core(asm, 0, 0).mov(0, 4), 2, 18, 16), 0, 20, 0).vmul(4, 2, 0)
+        vstr(vstr(vstr(asm, 0, 5, vertical), 4, 5, 0x4c if vertical == 0x48 else 0x48), 2, 5, 0x50)
+        asm.label('end').pop()
+    functions = [(name, Thumb(address).ret().finish(), address) for name, address in at.items()
+                 if name not in ('_ZN6Status12inAlienOrbitEv', '_ZN6Status25getCurrentCampaignMissionEv')]
+    orbit, cursor = at['_ZN6Status12inAlienOrbitEv'], at['_ZN6Status25getCurrentCampaignMissionEv']
+    functions += [('_ZN6Status12inAlienOrbitEv', b_to(ldr_w(Thumb(orbit).ldr(1, 0, 0x78), 0, 0, station_field), TEXT + 0x10, None, True).finish(), orbit),
+                  ('_ZN6Status25getCurrentCampaignMissionEv', ldr_w(Thumb(cursor), 0, 0, cursor_field).ret().finish(), cursor)]
+    # The same table outside MGame::reset, for an adr that leaves the function.
+    functions.append(('_Z5tablev', Thumb(start + 0x100).data(*(struct.unpack('<I', struct.pack('<f', v))[0] for v in far)).finish(), start + 0x100))
+    functions += [(p.ANDROID_START, assemble(start, emit_start).finish(), start), (p.ANDROID_SETTER, assemble(setter, emit_setter).finish(), setter),
+                  (p.ANDROID_METRICS, assemble(metrics, emit_metrics).finish(), metrics)]
+    return AndroidLibrary(roomy_library([f for f in functions if f[0] != omit]))
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidFlightProjection(unittest.TestCase):
+    def test_named_projection(self):
+        from android_fixture import TEXT
+        result = reader.extract_flight_projection(android())
+        provenance = result.pop('provenance')
+        self.assertEqual(result, {'vertical_fov_radians': struct.unpack('<f', struct.pack('<f', 1.0000001))[0],
+                                  'near': struct.unpack('<f', struct.pack('<f', 16.000002))[0], 'far': 250000.0, 'matching_location_early_far': 400000.0,
+                                  'early_cursor_limit': 80, 'fov_axis': 'vertical'})
+        self.assertEqual({k: (v['offset'] - TEXT, v['bytes']) for k, v in provenance.items()},
+                         {'start': (0x402, 78), 'setter': (0x600, 90), 'metrics': (0x800, 104), 'far': (0x458, 8), 'fallback': (0x454, 4),
+                          'predicate': (0x40, 10), 'cursor': (0x80, 6)})
+
+    def test_each_broken_declaration_is_unsupported(self):
+        from android_fixture import TEXT
+        from gof2_content import flight_projection as p
+        cases = {'fallback': dict(fallback=260000.0), 'limit': dict(limit=0x40), 'predicate': dict(predicate='_ZN6Status10getWingmenEv'),
+                 'horizontal': dict(vertical=0x4c), 'table outside': dict(table_inside=False), 'two starts': dict(starts=2),
+                 'wide fov': dict(fov=4.0), 'zero fov': dict(fov=0.0), 'far near': dict(far=(10.0, 400000.0), fallback=10.0), 'negative near': dict(near=-16.0),
+                 'distant': dict(far=(2e9, 400000.0), fallback=2e9), 'nan': dict(far=(250000.0, float('nan'))),
+                 'setter': dict(setter_height=False), 'fallback outside': dict(fallback_at=TEXT + 0x3f0),
+                 'orbit station': dict(station_field=0x19c), 'cursor': dict(cursor_field=0x1ec)}
+        cases.update({name: dict(omit=name) for name in (p.ANDROID_START, p.ANDROID_SETTER, p.ANDROID_METRICS, p.ANDROID_PREDICATE, p.ANDROID_CURSOR)})
+        for name, options in cases.items():
+            self.assertEqual(reader.extract_flight_projection(android(**options)), {}, name)

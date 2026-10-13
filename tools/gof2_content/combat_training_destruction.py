@@ -1,9 +1,29 @@
-"""Optional Mac training destruction constants. Static import only."""
+"""Optional Mac training destruction constants. Static import only.
+
+Android: the cursor-7 case of Level::createCampaignMission builds three
+kind-8 pirates and the kind-3 companion (Level::createShip) and the
+Objective(18, 0, 3) that Objective::achieved completes once actors 0..2 are
+dead (KIPlayer::isDead: mode 4). PlayerFighter::update counts a hostile
+pirate's death (Status::incPirateKills) or a non-hostile death
+(Level::friendDied: -1), drops the crate (KIPlayer::cargoAvailable /
+createCrate: 16993 for kind 8, 16990 for kind 3), drifts it by the bomb force
+x 0.98 down to 0.05, turns it by (delta >> 1) / 65536 x 2pi and removes it
+after 60000 ms (KIPlayer::setDead); Level::enemyDied accounts the death.
+Values equal the Mac ones.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .station_exterior import declaration_bytes
 
 def extract_combat_training_destruction(mach,arrival,training,control,weapons,actors):
+    if mach.architecture == 'android-armv7':
+        try:
+            if training['scope'] != 'combat_training_encounter_construction' or control['scope'] != 'combat_training_live_control' or weapons['scope'] != 'combat_training_ordinary_weapons': return {}
+            npc = actors['npc_initialization']
+            if not all(npc.get(k) for k in ['destruction', 'death_accounting', 'construction']): return {}
+        except (KeyError, TypeError, AttributeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64':return {}
     try:
         if training.get('scope')!='combat_training_encounter_construction' or control.get('scope')!='combat_training_live_control' or weapons.get('scope')!='combat_training_ordinary_weapons':return {}
@@ -221,3 +241,37 @@ MAC_ALTERNATE = {'npc_update': [611314, 17180, '__text', 'sha256:e6a3db4e2bdaf51
                            42,
                            '__text',
                            'sha256:8577656fa16d43de9bddeb7924c4e7264d8f0d1498dd0da264118832eeca3aa8']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# PlayerFighter::update: deaths, crates, drift (x 0.98 down to 0.05), turn ((delta >> 1) / 65536 x 2pi).
+           'npc_update': ('_ZN13PlayerFighter6updateEi', 0, 10528, 'sha256:fb79b3bde0fb27a45861c89450940e96ec313695cb5d4b4c290220c25ef78d9e'),
+           'drift_constants': ('_ZN13PlayerFighter6updateEi', 8108, 8, '48e17a3fcdcc4c3d'),
+           'angle_constants': ('_ZN13PlayerFighter6updateEi', 8120, 8, '00008037db0fc940'),
+           # Constructors, the crate model and owner, the model transforms, the explosion, Level::enemyDied,
+           # KIPlayer::setDead and the pirate counter.
+           'actor_constructor': ('_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', 0, 604, 'sha256:3a02b0c7ce6b25d113ff6b119a914a61a149997d03f3853b159537f02d2efee8'),
+           'npc_constructor': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 0, 1668, 'sha256:9722fa1dff717e74e4f5d93a1ee0e2af195659b26021723e8d5632f5ba9eaf91'),
+           'cargo_model': ('_ZN8KIPlayer11createCrateEi', 0, 212, 'sha256:91deeb454ba06465975eb469efc565a2639580023fba721f6c059569ad9060a2'),
+           'cargo_predicate': ('_ZN8KIPlayer14cargoAvailableEv', 0, 36, 'sha256:d957cbac863a90042a6bb4bd1d5ea6115d6287c0af45fb312f0e030b7d71e440'),
+           'drift_setter': ('_ZN6Player12setBombForceEf', 0, 6, 'c0f8d4107047'),
+           'drift_getter': ('_ZN6Player12getBombForceEv', 0, 6, 'd0f8d4007047'),
+           'cargo_owner': ('_ZN6Player11setKIPlayerEP8KIPlayer', 0, 6, 'c0f8d0107047'),
+           'model_constructor': ('_ZN10AEGeometryC2EtPN11AbyssEngine11PaintCanvasEb', 0, 256, 'sha256:445381dc0cac413fa861ce74ac9422ae16ed2c8660e9ae7a6f9334c0d9a82f99'),
+           'model_position_setter': ('_ZN10AEGeometry11setPositionEfff', 0, 76, 'sha256:fdaa786a2e39b20ca9b4f87c24ca1ab881add82b775e8bca70c695fa82b9a154'),
+           'model_rotation': ('_ZN10AEGeometry6rotateEfff', 0, 156, 'sha256:3cb10368bf260dbddd4cb9987882f5ae54c6cc0a85219993b72dcf1b32da66af'),
+           'model_translation': ('_ZN10AEGeometry9translateEfff', 0, 172, 'sha256:d886e190873bf0df9ec0b8292a5db9add12be7d9fafb39d6d4edb67ce6ae19fd'),
+           'effect_update': ('_ZN9Explosion6updateEiP18TargetFollowCamera', 0, 488, 'sha256:43c8d8017b10820e15290fb8af336f31c0a8f558998519d3d0b36925e25cf606'),
+           'world_death': ('_ZN5Level9enemyDiedEib', 0, 636, 'sha256:1d244b76f7d5e2deedc549f316d5bd128ac0dc74646f082c294b69202f2e3b19'),
+           'retire': ('_ZN8KIPlayer7setDeadEv', 0, 14, '0421c0f884100021406825f1e1be'),
+           'pirate_counter': ('_ZN6Status14incPirateKillsEv', 0, 28, 'sha256:a47c034d963dcb979f707a0321df4a7e2ad628a4a0a64e422c921587fe294da3'),
+           # Level::createCampaignMission, cursor 7: the four actors and the stored Objective(18, 0, 3).
+           'training_dispatch': ('_ZN5Level21createCampaignMissionEv', 552, 14, 'ddf840a01d2807f2eb80dfe810f0'),
+           'training_entry': ('_ZN5Level21createCampaignMissionEv', 580, 2, '6b30'),
+           'training_actors': ('_ZN5Level21createCampaignMissionEv', 25356, 378, 'sha256:957c593ccb135e54d016d4ef808bd44f3ac41b9f0fb0bc50e5ece4a9894a5e15'),
+           'defeat_store': ('_ZN5Level21createCampaignMissionEv', 26158, 8, 'caf8285000f0e9be'),
+           'factory': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           # Level::friendDied (-1), KIPlayer::isDead (mode 4), Objective::achieved (kind 18) and its constructor.
+           'nonhostile_counter': ('_ZN5Level10friendDiedEv', 0, 12, 'd0f81c110139c0f81c117047'),
+           'death_predicate': ('_ZN8KIPlayer6isDeadEv', 0, 14, 'd0f884100020042908bf01207047'),
+           'condition': ('_ZN9Objective8achievedEi', 0, 978, 'sha256:da3086f410423068084e2547c16738945cb696b15a3685f82075a90dd6538eab'),
+           'condition_constructor': ('_ZN9ObjectiveC2EiiiP5Level', 0, 26, '80b54ff0000eddf808c080e80e500d29c0f814e008bf836180bd')}

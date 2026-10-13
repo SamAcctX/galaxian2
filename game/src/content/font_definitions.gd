@@ -19,7 +19,8 @@ static func parameters(data: Dictionary) -> bool:
 		var row: Variant = languages.rows[i]
 		if not row is Dictionary or row.get("language_id") != i or not row.get("file") is String: return false
 		var name: String = row.file
-		if not name.ends_with(".lang") or name.length() not in [7, 8] or names.has(name): return false
+		# Android loads language 0's file for the languages it dropped.
+		if not name.ends_with(".lang") or name.length() not in [7, 8] or (names.has(name) and name != languages.rows[0].file): return false
 		for code in name.trim_suffix(".lang").to_utf8_buffer():
 			if code < 97 or code > 122: return false
 		names[name] = true
@@ -58,24 +59,38 @@ static func parameters(data: Dictionary) -> bool:
 static func extent(row: Variant, offset_key: String, size_key: String, sizes: Array, executable_bytes: int) -> bool:
 	return row is Dictionary and Numbers.integer(row.get(size_key), 1, executable_bytes) and int(row[size_key]) in sizes and Numbers.integer(row.get(offset_key), 0, executable_bytes - int(row[size_key]))
 
+# Source extents: record, language case, dispatch, table, selection, medium and large guards.
+const SIZES := {
+	"x86_64": [[57], [18, 21], [45, 46], [64], [576, 578], [16], [31]],
+	"armv7": [[84, 86], [22], [20], [32], [544], [20], [38]],
+	# Android: record allocation call, String-building case, cmp/bhi/tbh, Globals::loadFont.
+	"android-armv7": [[4], [12, 14], [10], [32], [626], [16], [26]],
+}
+
 static func validate(data: Variant, executable_bytes: int, architecture: String, registrations: Dictionary) -> String:
 	if not data is Dictionary: return "Missing font declarations"
 	if data.is_empty(): return ""
-	if architecture not in ["armv7", "x86_64"] or not parameters(data): return "Invalid font declarations"
-	var mac := architecture == "x86_64"
+	if not SIZES.has(architecture) or not parameters(data): return "Invalid font declarations"
+	var sizes: Array = SIZES[architecture]
+	if architecture != "android-armv7":
+		var files := {}
+		for row in data.languages.rows: files[row.file] = true
+		if files.size() != 16: return "Invalid font declarations"
 	for row in data.records:
-		if not extent(row, "source_offset", "source_bytes", [57] if mac else [84, 86], executable_bytes): return "Invalid font record extent"
+		if not extent(row, "source_offset", "source_bytes", sizes[0], executable_bytes): return "Invalid font record extent"
 	for row in data.languages.rows:
-		if not extent(row, "source_offset", "source_bytes", [18, 21] if mac else [22], executable_bytes) or not extent(row, "string_offset", "string_bytes", [row.file.length() + 1], executable_bytes): return "Invalid font language extent"
+		if not extent(row, "source_offset", "source_bytes", sizes[1], executable_bytes) or not extent(row, "string_offset", "string_bytes", [row.file.length() + 1], executable_bytes): return "Invalid font language extent"
 	var provenance: Variant = data.languages.get("provenance")
-	if not provenance is Dictionary or provenance.size() != 2 or not extent(provenance.get("dispatch"), "offset", "bytes", [45, 46] if mac else [20], executable_bytes) or not extent(provenance.get("table"), "offset", "bytes", [64] if mac else [32], executable_bytes): return "Invalid font language dispatch"
-	if not extent(data.selection, "source_offset", "source_bytes", [576, 578] if mac else [544], executable_bytes): return "Invalid font selection extent"
+	if not provenance is Dictionary or provenance.size() != 2 or not extent(provenance.get("dispatch"), "offset", "bytes", sizes[2], executable_bytes) or not extent(provenance.get("table"), "offset", "bytes", sizes[3], executable_bytes): return "Invalid font language dispatch"
+	if not extent(data.selection, "source_offset", "source_bytes", sizes[4], executable_bytes): return "Invalid font selection extent"
 	provenance = data.textures.get("provenance")
-	if not provenance is Dictionary or provenance.size() != 2 or not extent(provenance.get("medium"), "offset", "bytes", [16] if mac else [20], executable_bytes) or not extent(provenance.get("large"), "offset", "bytes", [31] if mac else [38], executable_bytes): return "Invalid font atlas branch extent"
+	if not provenance is Dictionary or provenance.size() != 2 or not extent(provenance.get("medium"), "offset", "bytes", sizes[5], executable_bytes) or not extent(provenance.get("large"), "offset", "bytes", sizes[6], executable_bytes): return "Invalid font atlas branch extent"
 	for row in data.textures.rows:
 		for mode in ["baseline", "medium", "large"]:
 			if not Numbers.integer(row.source_offsets.get(mode), 0, executable_bytes - 1): return "Invalid font atlas registration extent"
-		if not row.source_offsets.medium < row.source_offsets.large or not row.source_offsets.large < row.source_offsets.baseline: return "Font atlas branches are out of order"
+		# Android's baseline atlas may complete the allocation of its large alternative (one record, two branches).
+		var after_large: bool = row.source_offsets.large < row.source_offsets.baseline or (architecture == "android-armv7" and row.source_offsets.large == row.source_offsets.baseline)
+		if not row.source_offsets.medium < row.source_offsets.large or not after_large: return "Font atlas branches are out of order"
 		var original: Array = registrations.get(int(row.texture_id), [])
 		if original.size() != 3: return "Missing or ambiguous font atlas registrations"
 		for mode in ["baseline", "medium", "large"]:
@@ -89,7 +104,7 @@ static func choice(data: Dictionary, language: String, source_mode: int, role :=
 	if source_mode < 0 or source_mode >= MODES.size() or role not in ["main", "secondary", "language_list"] or not parameters(data): return {}
 	var language_id := -1
 	for row in data.languages.rows:
-		if row.file == language + ".lang": language_id = int(row.language_id)
+		if row.file == language + ".lang" and language_id < 0: language_id = int(row.language_id)
 	if language_id < 0: return {}
 	var selection: Dictionary = data.selection
 	var font_id := int(selection.default_font_id)

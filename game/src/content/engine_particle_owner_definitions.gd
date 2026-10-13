@@ -10,6 +10,9 @@ const OPENING_SHIP := {"ship_id":10,"nozzle_count":3,"first_preset":29}
 const SPANS := {"manager_initial_flags":[509330,46],"player_initial_flags":[551167,14],"world_update":[118201,82],"world_draw":[110499,17],"manager_update":[510392,314],"manager_draw":[512192,56],"engine_enable":[555592,112],"manager_emitting":[511634,52],"emitting_flag":[514238,32],"player_hidden":[603252,54],"entry_disable":[122627,15],"arrival_disable":[380838,16],"mining_cancel_enable":[586859,23],"mining_capture_disable":[587571,15],"mining_release_enable0":[589591,21],"mining_release_enable1":[589894,25],"death_disable":[600188,19],"revive_enable":[600403,18],"drill_stop_enable":[602054,18]}
 const MAC_ALTERNATE := {"manager_initial_flags":[509866,46],"player_initial_flags":[551703,14],"world_update":[118201,82],"world_draw":[110499,17],"manager_update":[510928,314],"manager_draw":[512728,56],"engine_enable":[556128,112],"manager_emitting":[512170,52],"emitting_flag":[514774,32],"player_hidden":[603800,54],"entry_disable":[122627,15],"arrival_disable":[381354,16],"mining_cancel_enable":[587395,23],"mining_capture_disable":[588107,15],"mining_release_enable0":[590139,21],"mining_release_enable1":[590442,25],"death_disable":[600736,19],"revive_enable":[600951,18],"drill_stop_enable":[602602,18]}
 
+# Android: the VALUES with OPENING_SHIP; spans inside named functions (Layouts.anchored).
+const ANDROID_SPANS := {"manager_initial_flags":[0,142],"player_constructor":[0,2256],"player_initial_flags":[454,16],"world_update":[512,48],"world_draw":[300,10],"manager_update":[0,248],"manager_draw":[0,36],"engine_enable":[0,84],"manager_emitting":[0,42],"emitting_flag":[0,18],"player_hidden":[0,42],"player_visible":[0,12],"entry_disable":[386,12],"arrival_disable":[466,16],"mining_cancel_enable":[108,12],"mining_capture_disable":[542,10],"mining_release_enable0":[488,12],"mining_release_enable1":[638,12],"death_disable":[162,12],"revive_enable":[118,8],"drill_stop_enable":[406,8]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or not data.get("provenance") is Dictionary:return false
 	var opening: bool=data.has("opening_ship")
@@ -22,14 +25,15 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dictionary,engines: Dictionary) -> String:
 	if not data is Dictionary:return "Missing player engine ownership declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data) or not Engines.parameters(engines):return "Unsupported player engine ownership declarations"
+	if not (arch=="x86_64" or arch=="android-armv7" and data.has("opening_ship")) or not parameters(data) or not Engines.parameters(engines):return "Unsupported player engine ownership declarations"
 	if data.has("opening_ship")!=engines.has("opening_ship"):return "Player engine hull support differs from its nozzle declarations"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid player engine ownership extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Player engine ownership lacks its source anchor"
 	return "" if Layouts.matches(data.provenance,int(origin.offset),source_bytes,[SPANS,MAC_ALTERNATE]) else "Invalid player engine ownership extents"
 
 static func available(bindings: RefCounted) -> bool:
-	if bindings==null or bindings.get("source_architecture")!="x86_64" or not Engines.parameters(bindings.get("engine_particles")):return false
+	if bindings==null or not bindings.get("source_architecture") in ["x86_64","android-armv7"] or not Engines.parameters(bindings.get("engine_particles")):return false
 	var owner: Variant=bindings.get("engine_particle_owners")
 	# Earlier Mac readers already imported and validated Betty's source nozzle
 	# declaration, but did not export the separate manager ownership field. The

@@ -24,6 +24,8 @@ func run() -> void:
 	for row in bindings.text_aliases.aliases: aliases[int(row[0])] = int(row[1])
 	check(aliases.size() == 20, "The source character-alias declaration is unavailable")
 	for language in Frontend.Preferences.LANGUAGES:
+		# Android ships no Chinese text; the frontend lists only the languages present.
+		if library.manifest.profile.edition == "android-hd" and language in ["zs", "zt"] and not library.manifest.languages.has(language): continue
 		if not library.select_language(language): check(false, library.error); continue
 		var metrics := Metrics.new()
 		if not metrics.open_selected(library, bindings): check(false, metrics.error); continue
@@ -71,6 +73,12 @@ func run() -> void:
 	for code in aliases:
 		if not reopened.glyphs.has(code) and raw_font.has_char(code): raw_only = false
 	check(raw_only, "Raw font reopening retained another binding's aliases")
+	# One trailing byte (some Android atlases) is never read; more is refused.
+	var atlas: PackedByteArray = library.read_resource(resource, Metrics.MAX_BYTES)
+	var trimmed := atlas.slice(0, atlas.size() - 1) if Metrics.new().parse(atlas.slice(0, atlas.size() - 1)).size() > 0 else atlas
+	var parser := Metrics.new()
+	check(parser.parse(trimmed + PackedByteArray([3])).size() > 0, "One trailing atlas byte refused: " + parser.error)
+	check(parser.parse(trimmed + PackedByteArray([3, 3])).is_empty() and parser.error == "Unrecognized bitmap font trailer", "Two trailing atlas bytes accepted")
 	print("Original font rendering: %d checks; %d failures" % [checks, failures])
 	quit(1 if failures else 0)
 

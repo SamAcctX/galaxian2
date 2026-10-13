@@ -99,3 +99,55 @@ class OpeningLoadoutTests(unittest.TestCase):
                     at=p['seed.item0']; data[256+at] ^= 1  # Mac unaligned pointer; ARM wrong destination register.
                 m.data=bytes(data)
                 self.assertEqual(extract_opening_loadout(m,{'item_type_value_index':5}),{},(mac,case))
+
+
+ITEMS = [12, 16, 0x100, 0x104, 0x120, 0x200, 0x48]  # catalogue offsets: items 3, 4, 64, 65, 72, 128, 18
+
+
+def android_loadout(ship=0x2c, station=77, items=ITEMS, quantity=5, clone_quantity=2, prefix=None, omit=()):
+    """Status::resetGame and its helpers in the Android shapes, between stub callees."""
+    from android_fixture import TEXT, library
+    from thumb_shapes import assemble
+    from gof2_content.android_library import AndroidLibrary
+    from gof2_content.opening_loadout import ANDROID, ANDROID_HELPERS
+    stubs = ['_ZN6Status7setShipEP4Ship', '_ZN4Ship12priceDeclineEv', '_ZN6Galaxy10getStationEi', '_ZN6Status10setStationEP7Station',
+             '_ZN4Ship8setCargoEP5ArrayIP4ItemE', '_ZN4Item5cloneEv', '_ZN4Ship5cloneEv', '_ZN4Item7getTypeEv']
+    calls = {name: TEXT + 0x10 * i for i, name in enumerate(stubs)}
+    functions = [(name, b'\x70\x47\x00\xbf', address) for name, address in calls.items() if name != '_ZN4Item7getTypeEv']
+    for index, (key, (symbol, shape)) in enumerate(ANDROID_HELPERS.items()):
+        calls[symbol] = TEXT + 0x100 + 0x40 * index
+    for key, (symbol, shape) in ANDROID_HELPERS.items():
+        text = (prefix or {}).get(key, '') + shape + ('' if key == 'category_getter' else 'pop.w {r4, r5, r6, r7, r8, pc}' if key == 'install_category' else '')
+        functions.append((symbol, assemble(text, calls[symbol], {'quantity': clone_quantity}, calls=calls)[0], calls[symbol]))
+    values = {'ship': ship, 'station': station, 'quantity': quantity, **{'item%d' % i: v for i, v in enumerate(items)},
+              **{'slot%d' % i: v for i, v in enumerate([0, 1, 0, 1, 2, 3, 0])}}
+    text = ANDROID
+    for key, value in [('ship', ship)] + [('item%d' % i, v) for i, v in enumerate(items)]:
+        text = text.replace('{ldr|ldr.w} r0, [r0, #{%s}]' % key, ('ldr' if value < 128 and value % 4 == 0 else 'ldr.w') + ' r0, [r0, #{%s}]' % key)
+    refs = {'ships': 0x9000, 'galaxy': 0x9004, 'items': 0x9008, 'status': 0x900c}
+    functions.append(('_ZN6Status9resetGameEv', assemble('nop\n' + text + 'pop.w {r4, r5, r6, r7, r8, sb, pc}', TEXT + 0x400, values, refs, calls)[0], TEXT + 0x400))
+    functions = [row for row in functions if row[0] not in omit]
+    return AndroidLibrary(library(functions, {}))
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'optional static-reader dependency')
+class AndroidOpeningLoadout(unittest.TestCase):
+    def test_named_functions_give_ship_station_and_equipment(self):
+        from android_fixture import TEXT
+        result = extract_opening_loadout(android_loadout(), {'item_type_value_index': 5})
+        self.assertEqual((result['ship_id'], result['station_id'], result['item_category_value_index']), (11, 77, 3))
+        self.assertEqual(result['equipment'], [{'item_id': v // 4, 'slot': s, 'quantity': 5 if i == 6 else 2}
+                                               for i, (v, s) in enumerate(zip(ITEMS, [0, 1, 0, 1, 2, 3, 0]))])
+        self.assertEqual({k: v['bytes'] for k, v in result['provenance'].items()},
+                         {'declaration': 256, 'item_clone': 18, 'stack_clone': 18, 'ship_clone': 18, 'install_category': 46, 'category_getter': 4})  # item 18 loads narrow here
+        self.assertEqual(result['provenance']['declaration']['offset'], TEXT + 0x402)
+
+    def test_each_broken_declaration_is_unsupported(self):
+        from gof2_content.opening_loadout import ANDROID_HELPERS
+        cases = {'unaligned item': dict(items=ITEMS[:2] + [0x102] + ITEMS[3:]), 'unaligned ship': dict(ship=0x2a),
+                 'no quantity': dict(clone_quantity=0), 'helper after code': dict(prefix={'ship_clone': 'nop\n'})}
+        for name, options in cases.items():
+            self.assertEqual(extract_opening_loadout(android_loadout(**options), {'item_type_value_index': 5}), {}, name)
+        for symbol, _ in ANDROID_HELPERS.values():
+            self.assertEqual(extract_opening_loadout(android_loadout(omit=(symbol,)), {'item_type_value_index': 5}), {}, symbol)
+        self.assertEqual(extract_opening_loadout(android_loadout(), {'item_type_value_index': 4}), {})

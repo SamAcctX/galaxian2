@@ -62,3 +62,39 @@ class PlayerMotionTests(unittest.TestCase):
                 elif key=='helper':v['provenance'][3]['offset']+=2
                 else:a['player_initialization']={}
                 self.assertFalse(reader.extract_opening_player_motion(m,s,c,v,a),key)
+
+
+ANDROID_PARENTS = ({'initial': True}, {'pan': {'follow_player_after_event_finished': 8}},
+                   {'speed_units_per_millisecond': 2.0, 'forward_axis': [0, 0, 1]}, {'player_initialization': {'ship': 1}})
+
+
+class AndroidPlayerMotion(unittest.TestCase):
+    def test_android_proofs(self):
+        from android_fixture import verify_android_proof
+        verify_android_proof(self, reader, lambda lib: reader.extract_opening_player_motion(lib, *ANDROID_PARENTS))
+
+    def test_android_parents(self):
+        import copy
+        from unittest.mock import patch
+        from android_fixture import layout_library
+        from gof2_content.android_library import AndroidLibrary
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            self.assertTrue(reader.extract_opening_player_motion(lib, *ANDROID_PARENTS))
+            for index, path, value in [(0, None, {}), (1, ('pan', 'follow_player_after_event_finished'), 7), (1, None, {}),
+                                       (2, ('speed_units_per_millisecond',), 2.5), (2, ('forward_axis',), [0, 0, -1]), (2, None, {}),
+                                       (3, ('player_initialization',), {}), (3, None, {})]:
+                parents = copy.deepcopy(list(ANDROID_PARENTS))
+                if path is None:
+                    parents[index] = value
+                else:
+                    target = parents[index]
+                    for key in path[:-1]:
+                        target = target[key]
+                    target[path[-1]] = value
+                self.assertEqual(reader.extract_opening_player_motion(lib, *parents), {}, (index, path))
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'opening_player_motion_definitions.gd')

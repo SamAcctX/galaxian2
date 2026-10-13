@@ -2,6 +2,13 @@
 
 This scope is limited to fresh opening actors, before any generated mission,
 companion or later-campaign weapon replacement. It emits content values only.
+
+Android: Level::assignGuns scales the level bonus ((level - 2) x 0.9, zero
+below zero) into the base damage (3 without a bonus), keeps 16.0 as the
+ordinary projectile speed and builds each NPC's Gun with capacity 4, a
+3000 ms lifetime and 600 - 2 x cursor ms between shots (45 after
+Status::gameWon) before its kind table gives ship kind 8 item 19 and model
+6795. Status::resetGame starts the level at 1.
 """
 import math
 import struct
@@ -47,7 +54,212 @@ LAYOUTS = {'x86_64': {'main': (0,
 FRESH = {'x86_64': (11, '41c7865802000001000000'),
  'armv7': (42, '00230124c0f888300a6800f5e071c0f89c31c0f8a031c0f8ac31c0f8b03101f98f8ac0f8d031c0f8b441')}
 
+# Level::assignGuns, in order: the level bonus ((level - 2) x scale, at most 20, zero below
+# zero, scaled by difficulty - 0.5, capped at 22), then the speeds and the base damage (r4: bonus).
+ANDROID_LEVEL = """
+call {level_getter}
+subs r0, #2
+vldr s18, ={scale}
+vmov.f32 s16, #2.000000e+01
+vmov s0, r0
+vcvt.f32.s32 s0, s0
+vmul.f32 s0, s0, s18
+vcmpe.f32 s0, s16
+vmrs apsr_nzcv, fpscr
+bgt {@high}
+ldr.w r0, ={}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+call {level_getter}
+subs r0, #2
+vmov s0, r0
+vcvt.f32.s32 s0, s0
+vmul.f32 s0, s0, s18
+vcmpe.f32 s0, #0
+vmrs apsr_nzcv, fpscr
+bpl {@high}
+vldr s16, ={zero}
+b {@scaled}
+high: ldr.w r0, ={}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+call {level_getter}
+subs r0, #2
+vmov s0, r0
+vcvt.f32.s32 s0, s0
+vmul.f32 s0, s0, s18
+vcmpe.f32 s0, s16
+vmrs apsr_nzcv, fpscr
+bgt {@scaled}
+ldr.w r0, ={}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+call {level_getter}
+subs r0, #2
+vmov s0, r0
+vcvt.f32.s32 s0, s0
+vmul.f32 s0, s0, s18
+vcvt.s32.f32 s0, s0
+vcvt.f32.s32 s16, s0
+scaled: ldr.w r0, ={}
+vmov.f32 s0, #-5.000000e-01
+add r0, pc
+ldr r0, [r0]
+vldr s2, [r0, #0x2c]
+ldr.w r0, ={}
+vadd.f32 s0, s2, s0
+add r0, pc
+ldr r5, [r0]
+ldr r0, [r5]
+vmul.f32 s0, s0, s16
+vadd.f32 s16, s16, s0
+call _ZN6Status25getCurrentCampaignMissionEv
+str r0, [sp, #0x98]
+ldr r0, [r5]
+vcvt.s32.f32 s16, s16
+call _ZN6Status23getWantedInCurrentOrbitEv
+vmov r4, s16
+str r0, [sp, #0x9c]
+ldr.w r1, [sl, #0xf8]
+cmp r4, #0x16
+it ge
+movge r4, #0x16
+"""
+ANDROID_DAMAGE = """
+ldr r6, [sp, #0x98]
+movs r2, #0
+movs r3, #0x8f
+vmov.f32 s16, #{speed}
+sub.w r1, r6, #0x31
+vmov.f32 s18, #2.800000e+01
+cmp r1, #8
+it lo
+movlo r2, #1
+uxtb r1, r1
+cmp r4, #0
+lsr.w r1, r3, r1
+vmov.f32 s22, #2.500000e+00
+and.w r1, r1, r2
+str r1, [sp, #0x74]
+add.w r1, r4, #2
+ldr.w r2, ={}
+it eq
+moveq r1, #{damage}
+cmp r6, #4
+str r1, [sp, #0x58]
+it eq
+moveq r1, #1
+str r1, [sp, #0x94]
+"""
+ANDROID_GUN = """
+call {post_campaign}
+cbz r0, {@cursor}
+movs r0, #0x2d
+b {@interval}
+cursor: ldr r0, [sp, #0x64]
+ldr r0, [r0]
+call {cursor}
+interval: movs r1, #0
+mov r2, r6
+strd r1, r1, [sp, #0x10]
+movs r3, #{capacity}
+strd r1, r1, [sp, #0x18]
+strd r1, r1, [sp, #0x20]
+mov.w r1, #{interval}
+sub.w r0, r1, r0, lsl #1
+vstr s23, [sp, #0xc]
+str r0, [sp, #8]
+movw r0, #{lifetime}
+str r0, [sp, #4]
+mov.w r0, #-1
+str r0, [sp]
+mov r0, r5
+movs r1, #0
+call _ZN3GunC1EiiiiiifN11AbyssEngine6AEMath6VectorES2_
+mov r0, r5
+movs r1, #1
+call {npc_owner}
+mov r0, r5
+mov r1, sl
+call _ZN3Gun8setLevelEP5Level
+mov r0, r5
+movs r1, #0
+call {item_setter}
+movs r0, #0
+str r0, [r5, #0x5c]
+ldr.w r0, [sl, #0xf8]
+ldr r0, [r0, #4]
+ldr.w r0, [r0, sb, lsl #2]
+ldr r0, [r0, #0x24]
+cmp r0, #{kinds}
+bhi {}
+tbb [pc, r0]
+"""
+ANDROID_KIND = """
+movs r0, #{kind}
+movs r1, #{item}
+str r0, [r5, #0x5c]
+mov r0, r5
+call {item_setter}
+movw r4, #{model}
+"""
+ANDROID_HELPERS = {'post_campaign': 'ldr.w r1, [r0, #0x1e8]\nmovs r0, #0\ncmp r1, #0x2c\nit gt\nmovgt r0, #1\nbx lr',
+                   'cursor': 'ldr.w r0, [r0, #0x1e8]\nbx lr', 'level_getter': 'ldr.w r0, [r0, #0x1c8]\nbx lr',
+                   'npc_owner': 'strb.w r1, [r0, #0xf9]\nbx lr'}
+# Status::resetGame, `this` in r8: level (0x1c8) 1.
+ANDROID_FRESH = """
+movs r1, #1
+str.w r4, [r8, #0x1e4]
+strd r1, r4, [r8, #0x1c8]
+"""
+
+
+def android_weapon(lib, weapon):
+    from .android_shapes import Listing
+    guns = Listing(lib, '_ZN5Level10assignGunsEv')
+    level, damage, gun = (guns.unique(t) for t in (ANDROID_LEVEL, ANDROID_DAMAGE, ANDROID_GUN))
+    # The bonus reaches the damage in r4.
+    if None in (level, damage, gun) or not level.last < damage.first < gun.first or guns.writes(level.last + 1, damage.first, 'r4'):
+        return {}
+    # Ship kind 8 through the gun's kind table (cmp bound first).
+    kind = guns.at(ANDROID_KIND, guns.case(gun.last, 8)) if gun.value('kinds') >= 8 else None
+    reset = Listing(lib, '_ZN6Status9resetGameEv')
+    fresh = reset.unique(ANDROID_FRESH)
+    if kind is None or fresh is None or not reset.holds('r8', fresh.last) or kind['item_setter'] != gun['item_setter']:
+        return {}
+    helpers = {key: Listing(lib, shape[key]).at(template, 0) for key, template in ANDROID_HELPERS.items()
+               for shape in [level if key == 'level_getter' else gun]}
+    if None in helpers.values():
+        return {}
+    item, model, scale = kind.value('item'), kind.value('model'), struct.unpack('<f', struct.pack('<I', level.value('scale')))[0]
+    # The fresh level 1 gives (1 - 2) x scale < 0: the bonus is zero, the damage the base.
+    if not (kind.value('kind') == 1 and scale > 0 and level.value('zero') == 0) or item in weapon['launch_modes']['alternate_item_ids']:
+        return {}
+    values = {'damage': damage.value('damage'), 'interval': gun.value('interval'), 'lifetime': gun.value('lifetime'),
+              'capacity': gun.value('capacity'), 'speed': damage.value('speed')}
+    if not (1 <= values['damage'] and 1 <= values['interval'] <= 100000 and 1 <= values['lifetime'] and 1 <= values['capacity'] and 0 < values['speed']):
+        return {}
+    proof = {'level_zero': level.span(), 'level_scale': level.pool('scale')[1], 'base_damage': damage.span(),
+             'main': gun.span(), 'kind': kind.span(), 'fresh_level': fresh.span(), **{key: shape.span() for key, shape in helpers.items()}}
+    table = guns.span(gun.last, gun.last)['offset'] + 4
+    proof['actor_kind'] = {'offset': table + 8, 'bytes': 1}
+    return {'actor_ids': [0, 1, 2], 'actor_kind': 8, 'item_id': item, 'kind': 1, 'category': 0,
+            'model_resource_id': model, 'damage': values['damage'], 'interval_ms': values['interval'],
+            'lifetime_ms': values['lifetime'], 'speed_units_per_millisecond': values['speed'],
+            'projectile_capacity': values['capacity'], 'local_muzzle': [0.0, 0.0, 0.0], 'launch_mode': 'ordinary',
+            'provenance': proof}
+
+
 def extract_opening_npc_weapon(mach, actors, opening, weapon):
+    if mach.architecture == 'android-armv7':
+        if not actors.get('npc_initialization') or not opening or not weapon.get('launch_modes') or not weapon.get('projectile_capacity'):
+            return {}
+        if [(a['actor_id'], a['actor_kind'], a['hull_catalogue_id']) for a in actors['actors']] != [(0, 8, 2), (1, 8, 23), (2, 8, 2)]:
+            return {}
+        return android_weapon(mach, weapon)
     import capstone
     mac = mach.architecture == 'x86_64'
     if mach.architecture not in LAYOUTS: return {}

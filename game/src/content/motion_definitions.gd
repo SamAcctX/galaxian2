@@ -17,9 +17,9 @@ static func validate_cruise(data: Variant, executable_bytes: int, architecture: 
 	if data.is_empty(): return ""
 	if not valid_rate(data.get("speed_units_per_millisecond")) or not valid_forward_axis(data.get("forward_axis")):
 		return "Unsupported cruise rate or forward axis"
-	if not data.get("provenance") is Array or data.provenance.size() != 5:
+	var sizes: Array = {"armv7": [20, 30, 36, 32, 38], "android-armv7": [4, 8, 8, 34, 44, 14]}.get(architecture, [27, 23, 40, 42, 27])
+	if not data.get("provenance") is Array or data.provenance.size() != sizes.size():
 		return "Missing cruise source provenance"
-	var sizes := [20, 30, 36, 32, 38] if architecture == "armv7" else [27, 23, 40, 42, 27]
 	var seen := {}
 	for i in sizes.size():
 		var record: Variant = data.provenance[i]
@@ -45,7 +45,7 @@ static func validate_manual_rotation(data: Variant, executable_bytes: int, archi
 	if not data is Dictionary: return "Invalid manual rotation definitions"
 	if data.is_empty(): return ""
 	if not valid_rotation_parameters(data): return "Unsupported manual rotation parameters"
-	var sizes := [90, 4, 4, 4, 28] if architecture == "armv7" else [24, 61, 4, 4, 4, 45]
+	var sizes: Array = {"armv7": [90, 4, 4, 4, 28], "android-armv7": [72, 4, 4, 4, 224]}.get(architecture, [24, 61, 4, 4, 4, 45])
 	if not data.get("provenance") is Array or data.provenance.size() != sizes.size():
 		return "Missing manual rotation provenance"
 	if architecture == "x86_64" and reader_version >= 175 and data.provenance[-1] is Dictionary and data.provenance[-1].get("bytes") == 35:
@@ -74,8 +74,11 @@ static func validate_pilot_response(data: Variant, executable_bytes: int, archit
 	if not data is Dictionary: return "Invalid pilot response definitions"
 	if data.is_empty(): return ""
 	if not valid_response_parameters(data): return "Unsupported pilot response parameters"
-	var sizes := [54, 58, 28, 28, 28, 28] if architecture == "armv7" else [54, 33, 33, 32, 32, 32, 32]
-	for i in (7 if architecture == "armv7" else 9): sizes.append(4)
+	# armv7, android-armv7 (four directions, then the neutral returns), x86_64: code spans, then constants.
+	var layouts := {"armv7": [[54, 58, 28, 28, 28, 28], 7], "android-armv7": [[42, 42, 42, 42, 50, 50, 62, 62, 28, 28, 28, 28], 12]}
+	var layout: Array = layouts.get(architecture, [[54, 33, 33, 32, 32, 32, 32], 9])
+	var sizes: Array = layout[0].duplicate()
+	for i in layout[1]: sizes.append(4)
 	if not data.get("provenance") is Array or data.provenance.size() != sizes.size():
 		return "Missing pilot response provenance"
 	for i in sizes.size():

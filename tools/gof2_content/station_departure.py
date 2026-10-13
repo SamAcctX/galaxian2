@@ -1,8 +1,23 @@
-"""First Mac station departure declarations. No original code is executed or emitted."""
+"""First Mac station departure declarations. No original code is executed or emitted.
+
+Android: ModStation::leaveStation refuses an overloaded ship, checks the
+campaign cursors and otherwise asks for confirmation (text 386) once; when it
+is accepted, ModStation::OnTouchEnd departs (Status::departStation, which
+also selects the next mission), resets four cached values to -1, sets music
+selector 1 and switches to application module 2. MGame::OnInitialize builds
+the world-3 Level and hands the selector to Globals::playMusicAndFadeOutCurrent.
+Ship::makeShip clones a fresh ship (Ship::Ship: no cargo used).
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 def extract_station_departure(mach, arrival, station, player):
+    if mach.architecture == 'android-armv7':
+        try:
+            if station['scope'] != 'first_station_entry' or not player['flight_cache'] or not player['repair']: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64':return {}
     try:
         if station['scope']!='first_station_entry' or not player['flight_cache'] or not player['repair']:return {}
@@ -123,3 +138,19 @@ MAC_ALTERNATE = {'cargo_gate': [437451,
  'audio_selector_consumer': [336912,
                              42,
                              '488d058fc61f008b3083feff740f488d056dbf1f00488b38e8ef8bf7ff488d0572c61f00c700ffffffff']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'leave_station': ('_ZN10ModStation12leaveStationEv', 0, 684, 'sha256:312550b1ddc5c8aaf2d57ee470e9d8eb501690835f2699e068ebed55c62b4120'),
+           'accept': ('_ZN10ModStation10OnTouchEndEiiPv', 1808, 20, '94f8ae00002800f0f580dff89c08002184f8ae10'),
+           'destination': ('_ZN10ModStation10OnTouchEndEiiPv', 1982, 60, 'sha256:541dddffa5fcde9b38a23b46e21b70bae0b7abc96e406344c4a61f8ccfd0c6f0'),
+           'cache_reset_and_state': ('_ZN10ModStation10OnTouchEndEiiPv', 2532, 84, 'sha256:0617b3f4542623e94b12edfb7d5c49d9a0a8d22dd1e10929cef4c416c59bdd41'),
+           'mission_selection': ('_ZN6Status13departStationEP7Station', 0, 1072, 'sha256:b7432b338855a0a259aa2b3d0d678bb305ea5293e9903e68114efafe3b6170d6'),
+           'current_station': ('_ZN6Status10getStationEv', 0, 6, 'd0f898017047'),
+           'mission_getter': ('_ZN6Status10getMissionEv', 0, 6, 'd0f890017047'),
+           'mission_completed': ('_ZN7Mission7isEmptyEv', 0, 14, '81680020b1f1ff3f08bf01207047'),
+           'ship_clone_entry': ('_ZN4Ship8makeShipEi', 0, 18, 'd0b502af0c46c7f6eaed002c00db4461d0bd'),
+           'ship_clone': ('_ZN4Ship5cloneEv', 0, 136, 'sha256:021703f0f9e1b9c2368f4fc1d6c7083fd5be4f7bf12daa095d2b717f6ad0f091'),
+           'fresh_ship': ('_ZN4ShipC2Eiiiiiiiif', 0, 152, 'sha256:27188a9319a45c657ecd227af6f71a531153a1799b774596bce2ef91c7208398'),
+           'cargo_used': ('_ZN4Ship14getCurrentLoadEv', 0, 4, '00697047'),
+           'world_entry': ('_ZN5MGame12OnInitializeEv', 618, 40, 'sha256:5de34cff731716588906fd2eae404c607a5931b9bf1459e0e252272691040ba5'),
+           'audio_selector_consumer': ('_ZN5MGame12OnInitializeEv', 2072, 48, 'sha256:9fdb99239d5f6ba5cc6cb23bdc94dc948495413f184d6f7b605e45063a485e38')}

@@ -87,3 +87,100 @@ class PilotResponseTests(unittest.TestCase):
                     for index, value in changes: struct.pack_into('<f', data, constant + index * 4, value)
                 m.data = bytes(data)
                 self.assertEqual(extract_pilot_response(m, {'available': True}), {}, (mac, corruption))
+
+
+def android(gains=(-500.0, 500.0, -500.0, 500.0), biases=(3.0,) * 4, scales=(16.0,) * 4, returns=(100.0, -100.0, 100.0, -100.0),
+            ramps=('yaw', 'yaw', 'up', 'down'), magic=0x2083, copies=(1, 1, 1, 1), ramp_copies=(1, 1, 1, 1),
+            outside=None, handling=0x154, omit=None):
+    """PlayerEgo::right/left/up/down and update in the Android compiler's shape.
+
+    `outside` = (direction index or 'update', pool word) points that load just before its function.
+    """
+    from android_fixture import TEXT, Thumb, library
+    from gof2_content.android_library import AndroidLibrary
+    from gof2_content.pilot_response import ANDROID_TURNS, ANDROID_UPDATE
+    from test_steering import (add_imm, add_lsr, add_pc, asrs, cmp_imm, it_ne, ldrb, smmla, vcvt_s32, vdiv, vadd,
+                               vldr_pc, vmov_from_core, vmov_imm, vmov_s, vneg, vsub)
+    registers = [(4, 2, 0), (0, 2, 16), (2, 0, 16), (2, 0, 0)]  # quantizer q, handling, vneg source
+    functions = []
+
+    def target(owner, word, pool, address):
+        return address - 4 if outside == (owner, word) else pool + 4 * word
+    for index, symbol in enumerate(ANDROID_TURNS):
+        address = TEXT + 0x200 * (index + 1)
+        pool = address + 0x180
+        q, h, negated = registers[index]
+        asm = Thumb(address).push()
+        for _ in range(copies[index]):
+            vldr_pc(asm, q, target(index, 0, pool, address)).movw(1, magic).movt(1, 0x8208)
+            if q != 4:
+                vneg(asm, 4, negated)
+            vcvt_s32(asm.vmul(q, 16, q).vmul(q, q, h), q, q).vmov_core(0, q)
+            if q == 4:
+                vneg(asm, 4, negated)
+            add_lsr(asrs(smmla(asm, 0, 1, 0, 0), 1, 0, 5), 0, 1, 0, 31)
+        for _ in range(ramp_copies[index]):
+            asm.nop()
+            if ramps[index] == 'yaw':
+                vmov_imm(vldr_pc(asm, 6, target(index, 1, pool, address)), 12, scales[index])
+                add_imm(add_pc(asm, 0).ldr(0, 0, 0), 2, 0, 0x18)
+                add_imm(it_ne(cmp_imm(ldrb(asm, 1, 0, 0x11), 1, 0)), 2, 0, 0x14).vldr(10, 2, 0).vcvt(8, 8)
+                vdiv(vsub(asm, 6, 6, 10).vmul(2, 8, 2).vmul(6, 6, 12), 2, 2, 6)
+            else:
+                if ramps[index] == 'up':
+                    vmov_imm(vmov_imm(asm, 6, 1.25), 12, scales[index])
+                else:
+                    vldr_pc(vmov_imm(asm, 12, scales[index]), 6, pool + 8)
+                ldrb(add_pc(asm, 0).ldr(0, 0, 0).vldr(10, 0, 0x18).vldr(8, 0, 0x14), 0, 0, 0x11).vmul(6, 10, 6)
+                vmov_s(it_ne(cmp_imm(vmov_from_core(asm, 10, 5), 0, 0)), 6, 8)
+                vldr_pc(asm, 8, target(index, 1, pool, address)).vcvt(10, 10)
+                vdiv(vsub(asm, 6, 8, 6).vmul(0, 10, 0).vmul(6, 6, 12), 0, 0, 6)
+        asm.pop()
+        while asm.here() < pool:
+            asm.nop()
+        words = [gains[index], biases[index], 1.45]
+        functions.append((symbol, asm.data(*(struct.unpack('<I', struct.pack('<f', v))[0] for v in words)).finish(), address))
+    address = TEXT + 0xa00
+    pool = address + 0x100
+    asm = Thumb(address).push()
+    for index in range(len(returns)):
+        vmov_from_core(asm, 2, 8).vcvt(2, 2).vldr(4, 9, handling).vmul(2, 2, 4)
+        vadd(vdiv(vldr_pc(asm, 4, target('update', index, pool, address)), 2, 2, 4), 0, 0, 2).nop()
+    asm.pop()
+    while asm.here() < pool:
+        asm.nop()
+    functions.append((ANDROID_UPDATE, asm.data(*(struct.unpack('<I', struct.pack('<f', v))[0] for v in returns)).finish(), address))
+    return AndroidLibrary(library([f for f in functions if f[0] != omit], {}))
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidPilotResponseTests(unittest.TestCase):
+    def test_named_directions_and_update_give_constants_and_spans(self):
+        from android_fixture import TEXT
+        result = extract_pilot_response(android(), {'available': True})
+        self.assertEqual({k: v for k, v in result.items() if k != 'provenance'},
+                         {'target_gain': 500.0, 'target_divisor': 63, 'ramp_bias': 3.0, 'ramp_scale': 16.0,
+                          'neutral_divisor': 100.0, 'mode': 'elapsed', 'command_curve': 'signed_square'})
+        # quantizers, ramps (right, left, up, down), the four neutral returns, then gains, biases and return divisors
+        self.assertEqual([(p['offset'] - TEXT, p['bytes']) for p in result['provenance']],
+                         [(0x202, 42), (0x402, 42), (0x602, 42), (0x802, 42), (0x22e, 50), (0x42e, 50), (0x62e, 62), (0x82e, 62),
+                          (0xa02, 28), (0xa20, 28), (0xa3e, 28), (0xa5c, 28),
+                          (0x380, 4), (0x580, 4), (0x780, 4), (0x980, 4), (0x384, 4), (0x584, 4), (0x784, 4), (0x984, 4),
+                          (0xb00, 4), (0xb04, 4), (0xb08, 4), (0xb0c, 4)])
+        self.assertEqual(extract_pilot_response(android(), {}), {})
+
+    def test_each_broken_declaration_is_unsupported(self):
+        from gof2_content.pilot_response import ANDROID_TURNS, ANDROID_UPDATE
+        cases = {'magic': dict(magic=0x2084), 'two quantizers': dict(copies=(1, 2, 1, 1)), 'two ramps': dict(ramp_copies=(1, 1, 2, 1)),
+                 'ramp shape': dict(ramps=('up', 'yaw', 'up', 'down')), 'gain outside': dict(outside=(1, 0)),
+                 'bias outside': dict(outside=(2, 1)), 'return outside': dict(outside=('update', 3)),
+                 'gain sign': dict(gains=(500.0, 500.0, -500.0, 500.0)), 'gain magnitude': dict(gains=(-500.0, 400.0, -500.0, 500.0)),
+                 'bias differs': dict(biases=(3.0, 3.0, 2.5, 3.0)), 'scale differs': dict(scales=(16.0, 16.0, 16.0, 20.0)),
+                 'three returns': dict(returns=(100.0, -100.0, 100.0)), 'five returns': dict(returns=(100.0, -100.0) * 2 + (100.0,)),
+                 'return magnitude': dict(returns=(100.0, -100.0, 100.0, -90.0)), 'positive returns': dict(returns=(100.0,) * 4),
+                 'negative returns': dict(returns=(-100.0,) * 4), 'gain range': dict(gains=(-2e6, 2e6, -2e6, 2e6)),
+                 'bias range': dict(biases=(11.0,) * 4), 'bias sign': dict(biases=(-3.0,) * 4), 'scale sign': dict(scales=(-16.0,) * 4),
+                 'return range': dict(returns=(2e4, -2e4, 2e4, -2e4)), 'handling field': dict(handling=0x150)}
+        cases.update({name: dict(omit=name) for name in [*ANDROID_TURNS, ANDROID_UPDATE]})
+        for name, options in cases.items():
+            self.assertEqual(extract_pilot_response(android(**options), {'available': True}), {}, name)

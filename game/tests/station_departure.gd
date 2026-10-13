@@ -28,10 +28,10 @@ func verify(args: Array):
 		check(not player.configure_departure(bindings,cat) and player.snapshot().is_empty(),"Legacy pack invented a mining player");return
 	var source_bytes:=int(JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json"))).source_executable_bytes)
 	var init: Dictionary=bindings.opening_actors.player_initialization
-	check(Definitions.validate(bindings.station_departure,source_bytes,"x86_64",bindings.arrival_staging,bindings.station_entry,init).is_empty(),"Real departure source extents failed")
-	for key in Definitions.SPANS:
+	check(Definitions.validate(bindings.station_departure,source_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.station_entry,init).is_empty(),"Real departure source extents failed")
+	for key in (Definitions.ANDROID_SPANS if bindings.source_architecture=="android-armv7" else Definitions.SPANS):
 		var bad: Dictionary=bindings.station_departure.duplicate(true);bad.provenance[key].offset+=1
-		check(not Definitions.validate(bad,source_bytes,"x86_64",bindings.arrival_staging,bindings.station_entry,init).is_empty(),"Disconnected source extent accepted: "+key)
+		check(not Definitions.validate(bad,source_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.station_entry,init).is_empty(),"Disconnected source extent accepted: "+key)
 	for key in Definitions.VALUES:
 		var bad: Dictionary=bindings.station_departure.duplicate(true)
 		bad[key]=false if key=="scope" else "unverified"

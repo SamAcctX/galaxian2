@@ -1,4 +1,12 @@
-"""Recognize fresh NPC holding-mode declarations without emitting original code."""
+"""Recognize fresh NPC holding-mode declarations without emitting original code.
+
+Android: PlayerFighter's constructor clears the selection and boost timers
+and takes the 50000 spatial half extent unless Status::inAlienOrbit;
+PlayerFighter::update (vtable slot 13) advances both timers; Level::render
+updates then draws every enemy; KIPlayer::setToSleep holds them in mode 5 and
+PlayerFighter::awake (slot 3) releases them; the opening declaration in
+Level::createCampaignMission sets the player's suppression flag.
+"""
 import copy
 from .opening_loadout import template
 
@@ -6,7 +14,144 @@ VALUES = {'actor_mode':5,'spatial_half_extent':50000,'initial_targeting_blocked'
           'selection_elapsed_ms':0,'boost_elapsed_ms':0}
 
 
+# PlayerFighter::PlayerFighter, `this` in fp: zero q8 cleared over the timers at 0x1b4..0x1c3.
+ANDROID_TIMERS = """
+vmov.i32 q8, #0
+mov.w r5, #0x40000000
+strd r4, r4, [fp, #0x12c]
+str.w r4, [fp, #0x134]
+movs r0, #0
+strd r5, r3, [fp, #0x1a0]
+movs r6, #5
+strd r5, r2, [fp, #0x1a8]
+str.w r1, [fp, #0x124]
+add.w r1, fp, #0x144
+str.w r6, [fp, #0x1b0]
+str.w r0, [fp, #0x34]
+strb.w r0, [fp, #0x139]
+str.w r0, [fp, #0x13c]
+strb.w r0, [fp, #0x129]
+strb.w r0, [fp, #0x12a]
+strb.w r0, [fp, #0x13a]
+str.w r0, [fp, #0x1f0]
+str.w r0, [fp, #0xd4]
+strb.w r0, [fp, #0x12b]
+strb.w r0, [fp, #0x1f4]
+vst1.32 {d16, d17}, [r1]
+add.w r1, fp, #0x1c4
+vst1.32 {d16, d17}, [r1]
+add.w r1, fp, #0x1b4
+vst1.32 {d16, d17}, [r1]
+"""
+ANDROID_RANGE = """
+ldr r0, ={}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+call _ZN6Status12inAlienOrbitEv
+movw r1, #{near}
+cmp r0, #0
+itt ne
+movwne r1, #0x86a0
+movtne r1, #1
+str.w r1, [fp, #0x124]
+"""
+# PlayerFighter::update: `this` in r4, elapsed milliseconds in r8.
+ANDROID_CLOCK = """
+ldr.w r0, [r4, #0x1bc]
+asr.w r5, r8, #0x1f
+add r6, sp, #0x1a8
+add r0, r8
+str.w r0, [r4, #0x1bc]
+ldr.w r0, [r4, #0x1b4]
+add r0, r8
+str.w r0, [r4, #0x1b4]
+"""
+ANDROID_ACTIVATION = """
+push {r4, r5, r7, lr}
+add r7, sp, #8
+mov r4, r0
+movs r5, #1
+str.w r5, [r4, #0x84]
+movs r1, #1
+ldr r0, [r4, #4]
+call _ZN6Player9setActiveEb
+mov r0, r4
+movs r1, #1
+call _ZN13PlayerFighter17setExhaustVisibleEb
+strb.w r5, [r4, #0xf1]
+ldr r0, [r4, #0xc]
+cbnz r0, {@geometry}
+ldr r0, [r4, #8]
+geometry: movs r1, #1
+pop.w {r4, r5, r7, lr}
+b.w {}
+"""
+# Level::render, `this` in r4, elapsed in r5: every enemy updates (slot 13) before it draws (slot 9).
+ANDROID_WORLD = """
+ldr.w r0, [r4, #0xf8]
+cbz r0, {@done}
+ldr r1, [r0]
+cbz r1, {@done}
+movs r6, #0
+loop: ldr r0, [r0, #4]
+ldr.w r0, [r0, r6, lsl #2]
+ldr r1, [r0]
+ldr r2, [r1, #0x34]
+mov r1, r5
+blx r2
+ldr.w r0, [r4, #0xf8]
+ldr r0, [r0, #4]
+ldr.w r0, [r0, r6, lsl #2]
+ldr r1, [r0]
+ldr r1, [r1, #0x24]
+blx r1
+ldr.w r0, [r4, #0xf8]
+adds r6, #1
+ldr r1, [r0]
+cmp r6, r1
+blo {@loop}
+done: ldr.w r0, [r4, #0xfc]
+"""
+
+
+def android_holding(lib):
+    from .android_shapes import Listing, relocation, vtable_slot
+    from .npc_initialization import ANDROID_ACTIVITY, ANDROID_DEACTIVATION
+    from .opening_actors import ANDROID_ACTORS, ANDROID_LOOP, ANDROID_NEXT, ANDROID_PLAYER
+    update, awake = (relocation(lib, vtable_slot(lib, '_ZTV13PlayerFighter', slot)) for slot in (13, 3))
+    if update is None or awake is None:
+        return {}
+    fighter = Listing(lib, '_ZN13PlayerFighterC1EiiP6PlayerP10AEGeometryfffb')
+    render = Listing(lib, '_ZN5Level6renderEi')
+    shapes = {'timers': fighter.unique(ANDROID_TIMERS), 'range': fighter.unique(ANDROID_RANGE),
+              'clock_step': Listing(lib, update[0]).unique(ANDROID_CLOCK), 'activation': Listing(lib, awake[0]).at(ANDROID_ACTIVATION, 0),
+              'world_order': render.unique(ANDROID_WORLD), 'deactivation': Listing(lib, '_ZN8KIPlayer10setToSleepEv').at(ANDROID_DEACTIVATION, 0)}
+    opening = Listing(lib, '_ZN5Level21createCampaignMissionEv').unique(ANDROID_ACTORS + ANDROID_LOOP + ANDROID_NEXT + ANDROID_PLAYER)
+    if None in shapes.values() or opening is None or shapes['range'].value('near') != 50000:
+        return {}
+    setter = Listing(lib, shapes['deactivation']['setter']).at(ANDROID_ACTIVITY, 0)
+    status = relocation(lib, fighter.address(shapes['range'].first + 1))
+    if setter is None or status is None or status[0] != '_ZN7Globals6statusE':
+        return {}
+    if not (render.holds('r4', shapes['world_order'].last) and render.holds('r5', shapes['world_order'].last, 'r1')):
+        return {}
+    proof = {'virtual_update': update[1], **{key: shape.span() for key, shape in shapes.items()},
+             # The player's flag 0x5e set to 1 (r8) after the actors, before the exit branch.
+             'player_suppression': opening.listing.span(opening.last - 3, opening.last - 1)}
+    result = copy.deepcopy(VALUES)
+    result['provenance'] = proof
+    return result
+
+
 def extract_npc_holding(mach, actors, projection):
+    if mach.architecture == 'android-armv7':
+        initial = actors.get('npc_initialization') or {}
+        if not (initial.get('guidance') and initial.get('activation') and initial.get('flight')) or initial.get('initial_active') is not False:
+            return {}
+        if [r['actor_kind'] for r in actors['actors']] != [8, 8, 8] or [r['hull_catalogue_id'] for r in actors['actors']] != [2, 23, 2]:
+            return {}
+        return android_holding(mach) if projection else {}
     import capstone
     mac=mach.architecture=='x86_64'
     if mach.architecture not in LAYOUTS:return {}

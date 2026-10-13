@@ -16,7 +16,9 @@ static func validate(data: Variant,executable_bytes: int,architecture: String,pr
 	if not data is Dictionary:return "Missing reflection selection declarations"
 	if data.is_empty():return ""
 	if data.size()!=3 or not parameters(data):return "Invalid reflection selection parameters"
-	var sizes := {"select":94,"bind":330,"predicate":26,"system":13,"sky_index":9,"load_context":7} if architecture=="x86_64" else {"select":94,"bind":240,"predicate":10,"system":6,"sky_index":4,"load_context":6} if architecture=="armv7" else {}
+	var sizes: Dictionary = {"x86_64":{"select":94,"bind":330,"predicate":26,"system":13,"sky_index":9,"load_context":7},
+		"armv7":{"select":94,"bind":240,"predicate":10,"system":6,"sky_index":4,"load_context":6},
+		"android-armv7":{"select":78,"bind":96,"predicate":10,"system":6,"sky_index":4,"load_context":6}}.get(architecture,{})
 	var provenance: Variant = data.get("provenance")
 	if sizes.is_empty() or not provenance is Dictionary or provenance.size()!=sizes.size():return "Invalid reflection selection provenance"
 	var spans := []

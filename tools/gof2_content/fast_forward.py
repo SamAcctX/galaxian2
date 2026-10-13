@@ -1,8 +1,26 @@
-"""Recover held Fast Forward declarations; discard all matched executable bytes."""
+"""Recover held Fast Forward declarations; discard all matched executable bytes.
+
+Android: Hud::touchBegin / Hud::touchedElement report the button (mask 0x100);
+MGame::OnTouchBegin starts it (multiplier 5.0, TargetFollowCamera::
+setFastForwardMode) under PlayerEgo::isAutoPilot / isDockingToAsteroid /
+isDockingToDockingPoint without a radar battle or aboutToReachAutoTarget, and
+every MGame::OnTouchEnd resets it. MGame::OnUpdate clamps the frame to 150 ms,
+adds the raw frame to the totals and Status::incPlayingTime, cancels on battle,
+near target or Radio::isShowingMessage, scales the frame and runs five camera
+passes; Hud::draw holds the button eligibility, PlayerEgo::update /
+approachAsteroid the near limit (19999) and gain (min(handling + 2.7, 4)), and
+the TargetFollowCamera constructor, setShipHandling, resetShipHandling and
+calculateCoefficents the camera rates. The radar battle is Radar::draw's count
+(Radar::Radar scanner sort 17, KIPlayer::isDead / isDying, the asteroid and
+PlayerJunk flags, PlayerFighter::handleCloaking for kind 10, music 143 keeps the
+sample). MGame::OnKeyPress / OnKeyRelease are empty and nothing calls
+ActualizeMouseVisibilty, so Android input is the HUD touch and the camera always
+takes the uncaptured refresh. Values equal the Mac ones.
+"""
 import copy
 
-from .declaration_layouts import recognize
-from .station_exterior import declaration_bytes
+from .declaration_layouts import recognize, recognize_symbols
+from .station_exterior import declaration_bytes, vtable_proof
 
 
 def extract_fast_forward(mach, arrival):
@@ -11,6 +29,17 @@ def extract_fast_forward(mach, arrival):
     The actual arrival actor is part of each variant. Layouts may not be mixed;
     runtime data contains constant policy values and source extents only.
     """
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        try:
+            if arrival['scope'] != 'rescue_choreography' or 'actor' not in arrival['provenance']: return {}
+        except (KeyError, TypeError): return {}
+        proof, slots = recognize_symbols(mach, ANDROID), vtable_proof(mach, ANDROID_VTABLES)
+        if not proof or slots is None: return {}
+        result = dict(copy.deepcopy(ANDROID_VALUES), provenance={**proof, **slots})
+        radar, radar_slots = recognize_symbols(mach, RADAR_ANDROID), vtable_proof(mach, RADAR_ANDROID_VTABLES)
+        if radar and radar_slots is not None:
+            result['radar'] = dict(copy.deepcopy(RADAR_ANDROID_VALUES), provenance={**radar, **radar_slots})
+        return result
     if getattr(mach, 'architecture', None) != 'x86_64':
         return {}
     try:
@@ -545,3 +574,91 @@ RADAR_MAC_ALTERNATE = {'asteroid_identity': [547360,
                      17180,
                      '__text',
                      'sha256:e6a3db4e2bdaf51990eddaec2e03514db9eb5bb8a89976338b28605117681d20']}
+
+ANDROID_VALUES = copy.deepcopy(VALUES)
+ANDROID = {# MGame::OnTouchBegin: Hud::touchBegin's mask, the 0x100 eligibility and the 5.0 press; every OnTouchEnd resets.
+           'press_mask': ('_ZN5MGame12OnTouchBeginEiiPv', 254, 54, 'sha256:f60b63273044b57ba6852e1407ef9a17e830a424d736bc60af79d48ab9618a3b'),
+           'press_eligibility': ('_ZN5MGame12OnTouchBeginEiiPv', 308, 54, 'sha256:345dc032dc975660a53af785fe1b407cf5c3c1748781114c478c3f6f1e43495c'),
+           'press_fast_forward': ('_ZN5MGame12OnTouchBeginEiiPv', 1014, 26, 'sha256:3a24c2615263c722617d71c0d9cd838f391f021e29801aa159e404eee868ebb2'),
+           'release_reset': ('_ZN5MGame10OnTouchEndEiiPv', 52, 28, 'sha256:fae62e3b5e4df19d5378e9e0fba29d54c86e59d3ea39355611c0fee1b0a06987'),
+           # MGame::reset 1.0; MGame::OnUpdate: clamp and raw totals, pause and slow-motion gates,
+           # cancel after Status::incPlayingTime, scaling, the player/world update and the camera passes.
+           'default_multiplier': ('_ZN5MGame5resetEv', 494, 16, '4ff07e52c0ef100084f80851c4f86021'),
+           'clock_clamp_and_unscaled_totals': ('_ZN5MGame8OnUpdateEv', 28, 92, 'sha256:48895b8aeccb471a630535bb44ee751442d1098fe59e2c3aa704aec5e39d1408'),
+           'pause_gate': ('_ZN5MGame8OnUpdateEv', 982, 10, '9bf85d00002840f0ef82'),
+           'slow_motion_gate': ('_ZN5MGame8OnUpdateEv', 992, 8, 'dbf8641100296bd0'),
+           'frame_cancel': ('_ZN5MGame8OnUpdateEv', 1216, 86, 'sha256:661d4e69323a6bbc1d21983ccb89eee8b66317c4deb47dc0da350164453bfb88'),
+           'frame_scale': ('_ZN5MGame8OnUpdateEv', 3252, 36, 'sha256:34c373d227dd8174505e072e3327ec9fe53089d87f676995d7e14be2881129f2'),
+           'player_world_schedule': ('_ZN5MGame8OnUpdateEv', 1798, 108, 'sha256:db67dbebbf957a53cce51934c1d0d09ef88cfe22997e1e5372a3e19af60f804e'),
+           'camera_schedule': ('_ZN5MGame8OnUpdateEv', 11216, 100, 'sha256:71003f101525052924b1a9f9c3edec837b25fa9e42ce3a84fd9ef55e94a807e9'),
+           # Navigation predicates, the autopilot setter, near limit 19999 and gain 2.7 (max 4.0 is an immediate).
+           'autopilot_active': ('_ZN9PlayerEgo11isAutoPilotEv', 0, 6, '90f858017047'),
+           'mining_approach_active': ('_ZN9PlayerEgo19isDockingToAsteroidEv', 0, 22, '0146002091f8c02122b1d1f8c411012918bf01207047'),
+           'later_approach_active': ('_ZN9PlayerEgo23isDockingToDockingPointEv', 0, 22, '0146002091f8562322b1d1f8c411012918bf01207047'),
+           'near_target_active': ('_ZN9PlayerEgo22aboutToReachAutoTargetEv', 0, 6, '90f830037047'),
+           'radio_active': ('_ZN5Radio16isShowingMessageEv', 0, 10, '4068002818bf01207047'),
+           'autopilot_setter': ('_ZN9PlayerEgo12setAutoPilotEP8KIPlayer', 0, 100, 'sha256:3ff84104651e1b2f7351671bf743ac1009f060feda99740389545d5b5e9a20fc'),
+           'autopilot_target_steering_near': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 5384, 228, 'sha256:dd1ef298f27ba4237ebe6dea2ab3ec7a7470547587b9cae66ae27f7708f8e9a5'),
+           'autopilot_gain': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 5752, 4, 'cdcc2c40'),
+           'near_target_reset': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 3490, 10, '002089f8450189f83003'),
+           'camera_fast_flag': ('_ZN18TargetFollowCamera18setFastForwardModeEb', 0, 336, 'sha256:ef7d38bd79d176e0883f11f2e405ba8ad7d58a3f8dd399559547d2be9a2166d2'),
+           # Empty MGame key handlers; the HUD button hit rect and its Hud::draw eligibility.
+           'keyboard_press': ('_ZN5MGame10OnKeyPressExx', 0, 2, '7047'),
+           'keyboard_release': ('_ZN5MGame12OnKeyReleaseExx', 0, 2, '7047'),
+           'hud_touch_dispatch': ('_ZN3Hud10touchBeginEjjPv', 0, 182, 'sha256:1cee1f82d4760f08875a3a80e1d912faa335ac8f18d0163f890dfd5826f325da'),
+           'hud_hit_rect': ('_ZN3Hud14touchedElementEjj', 904, 40, 'sha256:b058cb11d097c4b84020fb5e89a1d9736290c0ba6b9178a6fa923f1a67a6e8a4'),
+           'hud_eligibility': ('_ZN3Hud4drawExxP9PlayerEgobjj', 6638, 76, 'sha256:f151168d25f1edab7192031c0d4939b16d9bd12df02531317b2419e64ba7e3de'),
+           # Radar::draw counts living scanned hostiles into [0x1b8] and publishes the battle flag [0x54].
+           'battle_counter_loop': ('_ZN5Radar4drawEP6PlayerP3Hudi', 3358, 300, 'sha256:c05eb33bbbf83c3e2fdd1407b76dadb18977638d69d683223473d54aed995c61'),
+           'battle_flag_set': ('_ZN5Radar4drawEP6PlayerP3Hudi', 10114, 18, 'd4f8b821012a3bdba1f18803012284f85420'),
+           'battle_flag_clear': ('_ZN5Radar4drawEP6PlayerP3Hudi', 10242, 10, 'dff81405002184f85410'),
+           'battle_counter_reset': ('_ZN5Radar4drawEP6PlayerP3Hudi', 10312, 6, '0020c4f8b801'),
+           'active_actor_getter': ('_ZN6Player8isActiveEv', 0, 6, '90f8c0007047'),
+           'destroyed_getter': ('_ZN8KIPlayer6isDeadEv', 0, 14, 'd0f884100020042908bf01207047'),
+           'inactive_getter': ('_ZN8KIPlayer7isDyingEv', 0, 14, 'd0f884100020032908bf01207047'),
+           'campaign_elapsed_increment': ('_ZN6Status14incPlayingTimeEx', 0, 16, 'd0e96e1c89184ceb0302c0e96e127047'),
+           # MGame::reset owners; PlayerEgo::update's dirty camera refresh; the TargetFollowCamera rates.
+           'camera_owner_link': ('_ZN5MGame5resetEv', 242, 76, 'sha256:9519584e0d31dd4404d6d51df45a98af6238fee7c3dc4bd518deae1c6770e15e'),
+           'battle_owner_link': ('_ZN5MGame5resetEv', 318, 20, '4ff41170c0f6cae9616f0546c8f636ee5e48e567'),
+           'radio_owner_link': ('_ZN5MGame5resetEv', 96, 18, '48202567c0f638ea0546c6f63ee8c4f88050'),
+           'player_camera_refresh': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 9008, 50, 'sha256:ba05c30333f6faa8705c7701257ac3fb5c968c527b8bed494d59d2cb5dfd2dd9'),
+           'mining_near_target': ('_ZN9PlayerEgo16approachAsteroidEP3HudiP5Radar', 232, 160, 'sha256:6e5d1840114102d99ad0d5728b270ebdcf447b54cef394e3af352916664bfccb'),
+           'mining_gain': ('_ZN9PlayerEgo16approachAsteroidEP3HudiP5Radar', 1196, 4, 'cdcc2c40'),
+           'camera_rate_scale': ('_ZN18TargetFollowCamera20calculateCoefficentsEf', 0, 108, 'sha256:8413caf2141a2ae710a1294002291e1164d412954a87314a083f4df99a623517'),
+           'camera_cached_defaults': ('_ZN18TargetFollowCameraC2EjP10AEGeometryN11AbyssEngine6AEMath6VectorES4_', 0, 568, 'sha256:7f29be32619635b0c1e41a6d12d377383f7565b1d77fb0aff5722f7285159c11'),
+           'camera_fast_getter': ('_ZN18TargetFollowCamera19isInFastForwardModeEv', 0, 6, '90f84d007047'),
+           'camera_handling_rates': ('_ZN18TargetFollowCamera15setShipHandlingEf', 0, 92, 'sha256:5bd1d195b2433a169e6c553e8737fc2348db8e6b683e64bd3a53c24e485f4681'),
+           'camera_normal_rates': ('_ZN18TargetFollowCamera17resetShipHandlingEv', 0, 28, 'sha256:32dbefca7ee4ec4fd767749eef3d23f6be4af936e9be7f424ac11c82986a35b1'),
+           'shared_guidance': ('_ZN9PlayerEgo14moveToPositionEN11AbyssEngine6AEMath6VectorEbf', 0, 960, 'sha256:ce1f9df399a3182fcabc63c823b5ee1a0ccf3388bda851969e137ccddab36199'),
+           'shared_effective_handling': ('_ZN4Ship11getHandlingEv', 0, 76, 'sha256:2a37f9c90cb9f578dbce2c219bcdf95ba74da4103ee13efa9ac2eb02b6d3fcd2')}
+# MGame's vtable from OnKeyPress (slot 4) to OnRender2D (slot 14).
+ANDROID_VTABLES = {'flight_vtable': ('_ZTV5MGame', 4, ['_ZN5MGame10OnKeyPressExx', '_ZN5MGame12OnKeyReleaseExx', '_ZN5MGame12OnTouchBeginEii', '_ZN5MGame11OnTouchMoveEii', '_ZN5MGame10OnTouchEndEii', '_ZN5MGame12OnTouchBeginEiiPv', '_ZN5MGame11OnTouchMoveEiiPv', '_ZN5MGame10OnTouchEndEiiPv', '_ZN5MGame8OnUpdateEv', '_ZN5MGame10OnRender3DEv', '_ZN5MGame10OnRender2DEv'])}
+
+RADAR_ANDROID_VALUES = copy.deepcopy(RADAR_VALUES)
+RADAR_ANDROID = {# Actor identity flags (asteroid [0x38], junk [0x39], cargo [0x48]) and the kind-10 cloak.
+                 'asteroid_identity': ('_ZN14PlayerAsteroidC2EiP10AEGeometryiiRKN11AbyssEngine6AEMath6VectorEfi', 726, 22, '2e48012184f83810784484f8481000210068c4f88410'),
+                 'junk_constructor': ('_ZN10PlayerJunkC2EiP6PlayerP10AEGeometryfff', 0, 72, 'sha256:7e30616968d50d6da582e908887f434f155de0d3cdb356bc22d3191290b7450f'),
+                 'junk_factory_link': ('_ZN5Level18createStaticObjectEP8Waypointib', 260, 24, '44f21521324623468ded008a8ded019a8ded02aa9ff74ce8'),
+                 'type10_cloak': ('_ZN13PlayerFighter14handleCloakingEv', 0, 640, 'sha256:6c75d26956a47bc1fbd16f99a3650ab0675c624ec90ead122b8613b2864d78b2'),
+                 'cargo_presence': ('_ZN8KIPlayer14cargoAvailableEv', 0, 36, 'sha256:d957cbac863a90042a6bb4bd1d5ea6115d6287c0af45fb312f0e030b7d71e440'),
+                 'cargo_collected_flags': ('_ZN8KIPlayer12captureCrateEP3Hud', 12, 30, 'sha256:eb6b345675a5c27c7fa62e6b6d34376f60c2818d28493d7f09421dd87bcc0ceb'),
+                 'small_ship_drop_flag': ('_ZN13PlayerFighter6updateEi', 4764, 10, '20467cf7a8e884f84800'),
+                 'freighter_drop_flag': ('_ZN17PlayerFixedObject6updateEi', 556, 32, 'sha256:fc3607bbe62d8bbc21835bab112311b3fa83b897e5f9c6181978ca21ecef37b9'),
+                 # Turret attachments, the update/draw order, the radar draw call and Radar's scanner and flags.
+                 'hidden_attachment_factory': ('_ZN5Level20createFighterTurretsEv', 0, 312, 'sha256:052c04c402423858425969c5caa1bf60e8ef23cfc8051330eb376a9f0639d386'),
+                 'radar_update_draw_order': ('_ZN11AbyssEngine18ApplicationManager8OnUpdateEx', 526, 130, 'sha256:a07ae895310d622e3022eae34b4236c3c0c02621712e4eb72b60aa8cce0ece2a'),
+                 'flight_radar_draw_call': ('_ZN5MGame10OnRender2DEv', 616, 64, 'sha256:905dca1460b0745358e07e19bbebdbc4ee2ba234ef7aea27e8c888ec63f4627c'),
+                 'radar_entry_gate': ('_ZN5Radar4drawEP6PlayerP3Hudi', 28, 10, '90f84810002902f01484'),
+                 'radar_world_list_binding': ('_ZN5Radar4drawEP6PlayerP3Hudi', 168, 10, '286815f714eac5f83401'),
+                 'world_npc_list_getter': ('_ZN5Level10getEnemiesEv', 0, 6, 'd0f8f8007047'),
+                 'radar_scanner_lookup': ('_ZN5RadarC2EP5Level', 2350, 18, 'e64878440068006815f746eb112115f73eef'),
+                 'radar_scanner_presence': ('_ZN5RadarC2EP5Level', 2368, 104, 'sha256:16a1df799a087e0c5b5c99d06dff7685683bf9cc0e3e3b1f34d0c80604f13647'),
+                 'installed_equipment_lookup': ('_ZN4Ship23getFirstEquipmentOfSortEi', 0, 96, 'sha256:0f97dfc1498b5f762706c1c35c393bec23e4db1750c18830de480677287ee406'),
+                 'radar_scanner_loop_gate': ('_ZN5Radar4drawEP6PlayerP3Hudi', 2540, 20, '98f8a701002800f08e80d8f83401002800f08980'),
+                 'radar_music_publication_gate': ('_ZN5Radar4drawEP6PlayerP3Hudi', 10096, 18, 'dff8a0052f9c78440068006801688f2965d0'),
+                 'radar_initial_counter_battle': ('_ZN5RadarC2EP5Level', 188, 16, 'cae96c11caf8b8118af830118af85410'),
+                 'radar_initial_enabled': ('_ZN5RadarC2EP5Level', 2550, 16, '012000218af8ac01caf8b8118af84800'),
+                 'base_constructor': ('_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', 0, 604, 'sha256:3a02b0c7ce6b25d113ff6b119a914a61a149997d03f3853b159537f02d2efee8'),
+                 'ordinary_constructor': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 0, 1668, 'sha256:9722fa1dff717e74e4f5d93a1ee0e2af195659b26021723e8d5632f5ba9eaf91')}
+# ApplicationManager::OnUpdate calls slots 12, 13 and 14 in that order.
+RADAR_ANDROID_VTABLES = {'flight_update_draw_vtable': ('_ZTV5MGame', 12, ['_ZN5MGame8OnUpdateEv', '_ZN5MGame10OnRender3DEv', '_ZN5MGame10OnRender2DEv'])}

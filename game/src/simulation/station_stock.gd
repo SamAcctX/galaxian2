@@ -111,7 +111,8 @@ func prepare(bindings: RefCounted,cat: RefCounted,context: Variant,random_state:
 	return true
 
 func _temporary_stock(cat: RefCounted) -> Array:
-	if _base.is_empty():return []
+	# Android's stock has no temporary item (an empty rule).
+	if _base.is_empty() or _base.temporary_item.is_empty():return []
 	var rule: Dictionary=_base.temporary_item
 	if _context.campaign_cursor<int(rule.first_cursor) or _context.campaign_cursor>int(rule.last_cursor):return []
 	if _draw(int(rule.draw_bound))>int(rule.maximum_roll):return []

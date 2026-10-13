@@ -6,10 +6,11 @@ const Library = preload("res://src/content/library.gd")
 var failures := 0
 
 func _initialize() -> void:
-	for mac in [true, false]:
-		var data := Fixture.definition(mac)
-		var arch := "x86_64" if mac else "armv7"
+	for arch in ["x86_64", "armv7", "android-armv7"]:
+		var data := Fixture.definition(arch == "x86_64", arch == "android-armv7")
 		check(Definitions.validate(data, 65536, arch).is_empty(), "Synthetic speaker scope rejected")
+		for other in ["x86_64", "armv7", "android-armv7"]:
+			if other != arch: check(not Definitions.validate(data, 65536, other).is_empty(), "Speaker extents accepted for another compiler")
 		for bad in ["count", "offset", "boundary", "duplicate", "status", "invented", "parts", "extent", "table"]:
 			var invalid := data.duplicate(true)
 			match bad:

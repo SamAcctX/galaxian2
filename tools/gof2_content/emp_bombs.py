@@ -1,8 +1,21 @@
-"""Original player EMP bomb flight, blast and systems recovery. Constant declarations only."""
+"""Original player EMP bomb flight, blast and systems recovery. Constant declarations only.
+
+Android: Level::createGun builds kinds 6 and 7 (a Gun with muzzle (0, 0, 400),
+model 14684 for items 41-43, a BombGun), Level::createPlayer sets the blast
+radius from property 14 (Gun::setMagnitude); Player::shoot triggers,
+Gun::shootAt launches, Gun::update and BombGun::update fly,
+Gun::calcCharacterCollision and Gun::ignite detonate (property 10);
+Player::isActive, isAsteroid, setEmpData, damageEmp and update(int, bool)
+disable and recover the systems. Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_emp_bombs(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -173,3 +186,27 @@ MAC_ALTERNATE = {'emp_factory_case': [67190, 4, '__text', '569204e474c168d394295
  'emp_system_subtract': [539001, 23, '__text', '9476aa09a7791d871923580d9434632db14691d52d41d24bf77deb785bed1e52'],
  'emp_system_disabled': [539406, 40, '__text', '5d77e5762f4a874258b3db2f5e0581794adcd734114c69ff9e2cb8633e1c1e47'],
  'emp_system_recovery': [545299, 112, '__text', '5e8bf3a228c000140171eb060ebd4426f021f074676edd287a26a9b2c390d2a8']}
+
+# Android spans inside named functions and their tables; the values are VALUES.
+ANDROID = {# Level::createGun cases 6 and 7: Gun (muzzle 400, one at a time), index, player gun, BombGun with model 14684.
+           'emp_bombs_factory_cases': ('_ZN5Level9createGunEiiiiiiii', 78, 4, '84008400'),
+           'emp_bombs_factory': ('_ZN5Level9createGunEiiiiiiii', 330, 174, 'sha256:3dd6e9ae3820ebb7317c4589f51aede0795e4a67b31570ab54515c6778615670'),
+           'emp_bombs_models': ('_ZN5Level9createGunEiiiiiiii', 456, 12, '5c3900005c3900005c390000', 'literal', 164),
+           'emp_bombs_gun': ('_ZN3GunC2EiiiiiifN11AbyssEngine6AEMath6VectorES2_', 0, 688, 'sha256:f137885ac07db5356a568ef2dcae645ad787e5602551a8faa0c3dd568a1a5a91'),
+           # Level::createPlayer: blast radius = property 14.
+           'emp_bombs_radius_assignment': ('_ZN5Level12createPlayerEv', 1054, 20, '0e21686850f80800adf716eb01463046aff770ec'),
+           'emp_bombs_radius_setter': ('_ZN3Gun12setMagnitudeEi', 0, 6, 'c0f800117047'),
+           'emp_bombs_owner_trigger': ('_ZN6Player5shootEiixbN11AbyssEngine6AEMath6MatrixE', 0, 460, 'sha256:8e3e5621d5db20890605bc3067640bab6af33578f9682b95bb7f4be3b25b0872'),
+           'emp_bombs_launch': ('_ZN3Gun7shootAtEN11AbyssEngine6AEMath6MatrixEiP6Playerb', 0, 1948, 'sha256:dd968f45f46de04659309714d596219f1a8c6c80feef2681d3edbd6b4cd876a8'),
+           'emp_bombs_frame': ('_ZN3Gun6updateEi', 0, 604, 'sha256:d6a8465662a76ab2f115107bb4e59dde8ea426f6b7a7a089e290bd18a80bb89a'),
+           'emp_bombs_collision': ('_ZN3Gun22calcCharacterCollisionEv', 0, 2024, 'sha256:ee0110d3a7495e15d266903440f69f9b21dd2a6b23b30b4a5aafb5e4720eab9b'),
+           # The pulse: system damage from property 10 within the blast radius.
+           'emp_bombs_pulse': ('_ZN3Gun6igniteEv', 0, 1100, 'sha256:4794db2a71ebdd54bc3b51bcfe87c7b3911a166d3408d9f7ba3d70649d4e07de'),
+           'emp_bombs_bomb': ('_ZN7BombGunC2EP3GunjiibP5Level', 0, 684, 'sha256:765585585d68990b05189cfa73fc54f2f572017cb0e770c3eccf9ab246c6b832'),
+           'emp_bombs_bomb_update': ('_ZN7BombGun6updateEi', 0, 1172, 'sha256:03d9556d933ae715087ad7fbf0e3c8a75252ef5b910c4561855b8f40d6bb9bcb'),
+           'emp_bombs_active_getter': ('_ZN6Player8isActiveEv', 0, 6, '90f8c0007047'),
+           'emp_bombs_immune_getter': ('_ZN6Player10isAsteroidEv', 0, 22, 'd0f8d00028b190f83800002818bf0120704700207047'),
+           # Systems: configuration, damage gates and subtraction, disabling, recovery.
+           'emp_bombs_system_configuration': ('_ZN6Player10setEmpDataEii', 0, 34, 'sha256:db8305984270729626b73238bd0ca054c7920955857da98fde26a4ee9caecef0'),
+           'emp_bombs_system_damage': ('_ZN6Player9damageEmpEib', 0, 572, 'sha256:059c68f8a4dc89addca0a325ba3da074d797272dc30fa040c276d4447f0f73bc'),
+           'emp_bombs_system_recovery': ('_ZN6Player6updateEib', 0, 492, 'sha256:68886f68b7172e84b8b14615cc0dea87e1d2481d268ffdebe332b3fe24e8b6eb')}

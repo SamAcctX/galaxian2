@@ -1,8 +1,19 @@
-"""Source-bound ordinary population declarations; no executable payloads."""
+"""Source-bound ordinary population declarations; no executable payloads.
+
+Android: Level::createMission holds the ordinary counts, chances and
+overrides, the patrol, freighter and hostile choices; SolarSystem's security
+and race getters, Standing::getEnemyRace and its table, Globals::getShipGroup's
+freighter assemblies, Status::resetGame and Status::departStation (the Void
+target system) complete them. Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_free_population(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -144,3 +155,33 @@ MAC_ALTERNATE = {'free_population_counts': [-31195, 1136, '__text', '32e80874507
                                     325,
                                     '__text',
                                     'a7b48487a3e3b5004d34cec7267e8128ec86e35a361145d650c30ec93cf8e907']}
+
+# Android spans inside named functions and their tables; the values are VALUES.
+ANDROID = {# Level::createMission: Mido before cursor 16, the station, the hostile roll and a freelance mission's difficulty.
+           'free_population_counts_entry': ('_ZN5Level13createMissionEv', 598, 158, 'sha256:b71570ef6f37d04e58920240ef1c85e1da01d31d2ab2da71bb35e883d765b2b4'),
+           # Hostile chance by security (90, 65, 35, 10), enemy faction (pirates 8 below 75), hostile count random(4) scaled by
+           # difficulty - 0.5 and rank / 4, easy systems, patrol and travel counts, station response 7.
+           'free_population_counts': ('_ZN5Level13createMissionEv', 1206, 722, 'sha256:d43d82ea2a7d724415282f7fd334cf7f12e2dfdaf977e279c5d0d6fabebe915a'),
+           # Pirate stations, pirate bases, alien attacks, wanted pilots, campaign windows, kind-13 missions, attacked friends.
+           'free_population_overrides': ('_ZN5Level13createMissionEv', 1928, 722, 'sha256:58b84796f06b27801de1ba391b78a9878aaf99e5a91fd72b97e05c23f720bbae'),
+           'free_population_override_mission': ('_ZN5Level13createMissionEv', 19746, 20, '07200126caf86001002019904ff00008fbf792be'),
+           # Systems' security and faction fields; enemy factions 1, 0, 3, 2 (else pirates).
+           'free_population_security': ('_ZN11SolarSystem16getSecurityLevelEv', 0, 4, '80697047'),
+           'free_population_faction': ('_ZN11SolarSystem7getRaceEv', 0, 4, 'c0697047'),
+           'free_population_enemy_factions': ('_ZN8Standing12getEnemyRaceEi', 0, 24, '032984bf082070470248784450f82100704700bf16f61000'),
+           'free_population_enemy_table': ('_ZN8Standing12getEnemyRaceEi', 8, 16, '01000000000000000300000002000000', 'literal', 0),
+           # Patrols, freighters (races 0 and 2 swap below 30) and hostiles chosen once per group.
+           'free_population_patrol_choice': ('_ZN5Level13createMissionEv', 6400, 50, 'sha256:eb8ff615433d7c245441d789986d5ccd951a72460c4f82191107168b8bd7c459'),
+           'free_population_freighter_alternate': ('_ZN5Level13createMissionEv', 7288, 14, '1f984ff00009022808bf00201e90'),
+           'free_population_freighter_choice': ('_ZN5Level13createMissionEv', 8208, 92, 'sha256:f8a5eb3f4144a97df55a3d582ab7c35cc622e0e77a61e2fbdde431958548a2a4'),
+           'free_population_hostile_choice': ('_ZN5Level13createMissionEv', 9270, 42, 'sha256:69f698c9b7d3c6f916398bf7da74f71fb2fb4bc127af58f861f087d79e40dd5c'),
+           'free_population_hostile_factory': ('_ZN5Level13createMissionEv', 9434, 128, 'sha256:461daee49ce51fb8bfeb27664953d70648e01acbf5a989cbac15899431c3f8f2'),
+           'free_population_hostile_tail': ('_ZN5Level13createMissionEv', 9854, 58, 'sha256:0fa35cff0bbd56c7d87accf2a2ad94724177e7026e95c40177e4a6a45b8e0418'),
+           # Globals::getShipGroup: freighter (group 15) assemblies of races 0 and 2.
+           'free_population_freighter_dispatch': ('_ZN7Globals12getShipGroupEiib', 0, 66, 'sha256:1989d04285bc3ef66dcfc301025b512a55dcb0ce5fbbe2c261eef439720f68d6'),
+           'free_population_freighter_races': ('_ZN7Globals12getShipGroupEiib', 212, 14, 'c020002a00f03f82032a40f09782'),
+           'free_population_freighter_model': ('_ZN7Globals12getShipGroupEiib', 1370, 306, 'sha256:e8d45b4c4641112f5d7e2ac1b938bc2c9a74b9112ec679f8b5d5d2e6114c0dd2'),
+           # The Void attack target: none at a new game, a random visible system after eleven departures.
+           'free_population_void_initial': ('_ZN6Status9resetGameEv', 1346, 20, '4ff0ff317748c8f81450c8e91f110021c8f88410'),
+           'free_population_void_selection': ('_ZN6Status13departStationEP7Station', 742, 72, 'sha256:74c1f242f4f74545e7350a4e7f2403f47c5c3299e7954fa68519af7472ba9f9e'),
+           'free_population_void_draw': ('_ZN6Status13departStationEP7Station', 884, 142, 'sha256:5a17d57b040f882fadce00ff0033bfd912acc7e600f9e822bae4a12b8b39abe6')}

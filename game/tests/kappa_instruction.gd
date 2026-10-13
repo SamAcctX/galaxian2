@@ -30,7 +30,9 @@ func verify(args: PackedStringArray) -> void:
 		return
 	var source: Dictionary=bindings.mido_travel.kappa_rescue
 	var instruction:=int(source.instruction.source_text_id)
-	var desktop_instruction:=1854 if instruction==1853 else 1868
+	# Android has no desktop text: the instruction keeps its touch wording.
+	var touch:=bindings.source_architecture=="android-armv7"
+	var desktop_instruction:=instruction if touch else 1854 if instruction==1853 else 1868
 	check(bindings.desktop_text_id(instruction)==desktop_instruction,"The source-specific desktop alias changed")
 	check(rules.get("events",[]).size()==2 and rules.events[0].text_id==source.briefing_events[0].text_id and rules.events[1].text_id==instruction and rules.events[1].speaker_id==16 and rules.events[1].voice_event_id==-1,"Rescue briefing lost its silent instruction page")
 	check(Ordinary.select(bindings,21).is_empty() and load("res://src/presentation/first_flight_session.gd").supported(bindings,21)==Ordinary.FreeFlight.Campaign.chapter_available(bindings.mido_travel),"Rescue presentation bypassed its connected chapter capability")
@@ -46,8 +48,9 @@ func verify(args: PackedStringArray) -> void:
 		check(lines==reader.read(bindings,library,rules.events,reversed),"Input token substitution depended on dictionary order: "+language)
 		var expected: String=library.strings[desktop_instruction].replace("#KEY_SECONDARY_WEAPONS",labels["#KEY_SECONDARY_WEAPONS"]).replace("#KEY_SECONDARY",labels["#KEY_SECONDARY"])
 		check(lines[1].text==library.strings[instruction] and lines[1].desktop_text_id==desktop_instruction and lines[1].desktop_text==expected,"Rescue instruction selected the wrong original text: "+language)
-		check(reader.read(bindings,library,rules.events,{"#KEY_SECONDARY":"R"}).is_empty(),"Short token swallowed a missing longer binding: "+language)
-		check(reader.read(bindings,library,rules.events,{"#KEY_SECONDARY_WEAPONS":"G"}).is_empty(),"Missing firing label was silently accepted: "+language)
+		# Only the desktop wording names input tokens.
+		check(reader.read(bindings,library,rules.events,{"#KEY_SECONDARY":"R"}).is_empty()!=touch,"Short token swallowed a missing longer binding: "+language)
+		check(reader.read(bindings,library,rules.events,{"#KEY_SECONDARY_WEAPONS":"G"}).is_empty()!=touch,"Missing firing label was silently accepted: "+language)
 		for invalid in ["","#KEY_SECONDARY_WEAPONS","R\nB","R\rB",12]:
 			var bad:=labels.duplicate();bad["#KEY_SECONDARY"]=invalid
 			check(reader.read(bindings,library,rules.events,bad).is_empty(),"Invalid input label reached the lesson")

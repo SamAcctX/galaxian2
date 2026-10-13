@@ -1,7 +1,17 @@
-"""Recognize bounded fresh-opening NPC control declarations, never runtime code."""
+"""Recognize bounded fresh-opening NPC control declarations, never runtime code.
+
+Android: PlayerFighter's constructor seeds speeds, fire alignment, boost
+chance and hull; PlayerFighter::update (vtable slot 13) times target
+selection, the damage boost and random boosts, moves the speed towards the
+boost target through its rate table, picks the near range (8000, 12000
+while the player is docked) and fires inside +-35000; Level::createShip
+derives the hull from the level and difficulty, and Level::connectPlayers
+lists the player first and other-race ships as targets.
+"""
 import copy
 import struct
 from .opening_loadout import template
+from .ship_models import section_bytes
 
 LAYOUTS = {'x86_64': {'tuning': ('constructor',
                        1371,
@@ -166,7 +176,405 @@ VALUES = {'actor_kind':8,'target_kind':'player','selection_period_ms':5000,
           'fresh_hull_base':34,'difficulty_offset':-0.5}
 
 
+# PlayerFighter::PlayerFighter, `this` in fp.
+ANDROID_TUNING = """
+movw r3, #0xfff6
+mov.w r4, #-1
+movw r1, #0xc350
+movw r2, #0x5dc
+movt r3, #0x3bf9
+vmov.i32 q8, #0
+mov.w r5, #0x40000000
+strd r4, r4, [fp, #0x12c]
+str.w r4, [fp, #0x134]
+movs r0, #0
+strd r5, r3, [fp, #0x1a0]
+movs r6, #5
+strd r5, r2, [fp, #0x1a8]
+str.w r1, [fp, #0x124]
+add.w r1, fp, #0x144
+str.w r6, [fp, #0x1b0]
+str.w r0, [fp, #0x34]
+strb.w r0, [fp, #0x139]
+"""
+ANDROID_SPEED_SEED = """
+movs r0, #1
+strb.w r0, [fp, #0x48]
+strb.w r0, [fp, #0x139]
+ldr.w r0, [fp, #0x1a8]
+str.w r0, [fp, #0x1e0]
+ldr.w r0, [fp, #0x1a0]
+str.w r0, [fp, #0x1e8]
+"""
+ANDROID_HULL_SEED = """
+ldr.w r0, [fp, #4]
+call _ZN6Player12getHitpointsEv
+ldr r1, ={}
+movs r2, #0
+strd r0, r2, [fp, #0x1d0]
+add r1, pc
+strb.w r2, [fp, #0x1d8]
+"""
+# PlayerFighter::update, `this` in r4.
+ANDROID_SELECTION = """
+movw r1, #0x1389
+str.w r0, [r4, #0x144]
+ldr.w r0, [r4, #0x1b4]
+cmp r0, r1
+blt.w {later}
+ldrb.w r0, [r4, #0x129]
+movs r5, #0
+cmp r0, #0
+mov.w r0, #0
+bne {@straight}
+ldr.w r0, ={}
+movs r1, #0x64
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+call _ZN11AbyssEngine8AERandom7nextIntEi
+cmp r0, #0x14
+mov.w r0, #0
+it lt
+movlt r0, #1
+straight: ldr.w r1, ={}
+strb.w r0, [r4, #0x129]
+add r1, pc
+str.w r5, [r4, #0x1b4]
+ldr r1, [r1]
+ldr r0, [r1]
+movs r1, #0x64
+call _ZN11AbyssEngine8AERandom7nextIntEi
+cmp r0, #0x1d
+bgt {keep}
+ldr r0, [r6]
+cmp r0, #2
+blo {keep}
+"""
+# Damage boost, random boost and boost end; the response follows elsewhere.
+ANDROID_BOOST = """
+ldr.w r0, [r4, #0x1d0]
+cmp r0, fp
+ble {@start}
+ldr.w r1, [r4, #0x1d4]
+sub.w r0, r0, fp
+add r0, r1
+strd fp, r0, [r4, #0x1d0]
+vmov s0, r0
+ldr r0, [r4, #4]
+vcvt.f32.s32 s16, s0
+call _ZN6Player15getMaxHitpointsEv
+vmov s0, r0
+vldr s2, ={scale}
+vcvt.f32.s32 s0, s0
+vdiv.f32 s0, s16, s0
+vmul.f32 s0, s0, s2
+vldr s2, ={percent}
+vcmpe.f32 s0, s2
+vmrs apsr_nzcv, fpscr
+ble {@start}
+movs r0, #0
+str.w r0, [r4, #0x1d4]
+movw r0, #0x2710
+str.w r0, [r4, #0x1bc]
+movs r0, #1
+strb.w r0, [r4, #0x1d8]
+start: ldr.w r0, [r4, #0x1bc]
+movw r1, #0x1389
+cmp r0, r1
+blt {@boosting}
+ldrb.w r0, [r4, #0x1ec]
+cbnz r0, {@boosting}
+movs r0, #0
+str.w r0, [r4, #0x1bc]
+ldrb.w r0, [r4, #0x1d8]
+cbnz r0, {@forced}
+ldr r0, ={}
+movs r1, #0x64
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+call _ZN11AbyssEngine8AERandom7nextIntEi
+ldr.w r1, [r4, #0x1b0]
+cmp r0, r1
+bge {@boosting}
+forced: ldr r0, ={}
+movw r1, #0xbb8
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+call _ZN11AbyssEngine8AERandom7nextIntEi
+movw r1, #0x1388
+add r0, r1
+str.w r0, [r4, #0x1c0]
+movs r0, #1
+movw r1, #0x6666
+strb.w r0, [r4, #0x1ec]
+movs r0, #0
+movt r1, #0x3fa6
+movt r0, #0x40b0
+strd r0, r1, [r4, #0x1e4]
+boosting: ldrb.w r0, [r4, #0x1ec]
+cmp r0, #0
+beq.w {done}
+ldrd r0, r1, [r4, #0x1bc]
+cmp r0, r1
+ble.w {response}
+movs r0, #0
+str.w r0, [r4, #0x1bc]
+strb.w r0, [r4, #0x1d8]
+ldr.w r0, [r4, #0x1a8]
+str.w r0, [r4, #0x1e4]
+ldr.w r1, [r4, #0x1a0]
+vmov s0, r0
+str.w r1, [r4, #0x1e8]
+b {resume}
+"""
+ANDROID_RESPONSE = """
+vldr s0, [r4, #0x1e4]
+add.w r0, r4, #0x1e4
+vcmpe.f32 s0, #0
+vmrs apsr_nzcv, fpscr
+ble {@done}
+vldr s2, [r4, #0x1e0]
+addw r1, pc, #{rates}
+vmov.f32 s6, #5.500000e+00
+vcmpe.f32 s0, s2
+vmrs apsr_nzcv, fpscr
+it gt
+addgt r1, #4
+vldr s4, [r1]
+vmul.f32 s4, s2, s4
+vstr s4, [r4, #0x1e0]
+vcmpe.f32 s4, s6
+vldr s2, [r4, #0x1a8]
+vmrs apsr_nzcv, fpscr
+bge {@reached}
+vcmpe.f32 s4, s2
+vmrs apsr_nzcv, fpscr
+bpl {@done}
+reached: vcmpe.f32 s0, s2
+vstr s0, [r4, #0x1e0]
+vmrs apsr_nzcv, fpscr
+itt eq
+moveq r1, #0
+strbeq.w r1, [r4, #0x1ec]
+movs r1, #0
+str r1, [r0]
+done: ldr.w r0, [r4, #0x144]
+"""
+ANDROID_NEAR = """
+ldrb.w r0, [r0, #0x69]
+cmp r0, #0
+beq.w {other}
+ldr r0, [r4, #0x50]
+call _ZN5Level9getPlayerEv
+mov.w r5, #0x1f40
+cmp r0, #0
+beq.w {}
+ldr r0, [r4, #0x50]
+call _ZN5Level9getPlayerEv
+call _ZN9PlayerEgo22isDockedToDockingPointEv
+cmp r0, #0
+it ne
+movwne r5, #0x2ee0
+"""
+ANDROID_FIRE = """
+vldr s4, [r4, #0x16c]
+vldr s0, [r4, #0x1a4]
+vcmpe.f32 s4, s0
+vmrs apsr_nzcv, fpscr
+bpl {miss}
+vneg.f32 s2, s0
+vcmpe.f32 s4, s2
+vmrs apsr_nzcv, fpscr
+ble {miss}
+vldr s4, [r4, #0x170]
+vcmpe.f32 s4, s0
+vmrs apsr_nzcv, fpscr
+bpl {miss}
+vcmpe.f32 s4, s2
+vmrs apsr_nzcv, fpscr
+ble {miss}
+vldr s0, [r4, #0x28]
+vldr s2, [r4, #0x160]
+vsub.f32 s4, s2, s0
+vldr s0, ={range}
+vcmpe.f32 s4, s0
+vmrs apsr_nzcv, fpscr
+bpl {miss}
+vldr s2, ={negative_range}
+vcmpe.f32 s4, s2
+vmrs apsr_nzcv, fpscr
+ble {miss}
+vldr s4, [r4, #0x2c]
+vldr s6, [r4, #0x164]
+vsub.f32 s4, s6, s4
+vcmpe.f32 s4, s0
+vmrs apsr_nzcv, fpscr
+bpl {miss}
+vcmpe.f32 s4, s2
+vmrs apsr_nzcv, fpscr
+ble {miss}
+vldr s4, [r4, #0x30]
+vldr s6, [r4, #0x168]
+vsub.f32 s4, s6, s4
+vcmpe.f32 s4, s0
+vmrs apsr_nzcv, fpscr
+bpl {miss}
+vcmpe.f32 s4, s2
+vmrs apsr_nzcv, fpscr
+ble {miss}
+ldrb.w r1, [r4, #0x21]
+"""
+# Level::createShip: level (at most 20) x 14 + 20, plus 4 x cursor or 180 once the game is won.
+ANDROID_HULL_LEVEL = """
+ldr.w r0, ={}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+call _ZN6Status8getLevelEv
+cmp r0, #0x14
+str r4, [sp, #0x18]
+ble {@level}
+movs r5, #0x14
+b {@clamped}
+level: ldr.w r0, ={}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+call _ZN6Status8getLevelEv
+mov r5, r0
+clamped: ldr.w r0, ={}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+call _ZN6Status7gameWonEv
+cmp r0, #0
+lsl.w r1, r8, #2
+rsb r0, r5, r5, lsl #3
+it ne
+movne r1, #0xb4
+cmp r6, #0x33
+add.w r0, r1, r0, lsl #1
+add.w r4, r0, #0x14
+"""
+ANDROID_HULL_DIFFICULTY = """
+ldr.w r0, ={}
+vmov.f32 s0, #-5.000000e-01
+vmov s4, r4
+cmp.w r8, #0x9a
+add r0, pc
+ldr r0, [r0]
+vldr s2, [r0, #0x2c]
+vcvt.f32.s32 s4, s4
+vadd.f32 s0, s2, s0
+vmul.f32 s0, s4, s0
+vadd.f32 s0, s4, s0
+vcvt.s32.f32 s0, s0
+vmov sl, s0
+"""
+# Level::connectPlayers: the player first, then ships other than this one of another race.
+ANDROID_PLAYER_FIRST = """
+ldr.w r0, [fp, #0xf0]
+cmp r0, #0
+beq.w {none}
+ldr.w r1, [sl, #4]
+ldr r0, [r0]
+str r0, [r1]
+movs r0, #1
+b {count}
+"""
+ANDROID_MEMBERSHIP = """
+movs r0, #0
+str r0, [sp, #0x30]
+ldr.w r0, [fp, #0xf8]
+ldr r1, [r0]
+cmp r1, #0
+beq.w {}
+movs r1, #0
+cmp r4, #0
+it eq
+moveq r1, #1
+ldr r2, [sp, #0x38]
+movs r5, #0
+cmp r2, #0x24
+mov.w r2, #0
+it eq
+moveq r2, #1
+ands r1, r2
+str r1, [sp, #0x1c]
+ldr r0, [r0, #4]
+ldr.w r0, [r0, r5, lsl #2]
+cmp r0, r6
+beq {skip}
+ldr r1, [r0, #0x24]
+cmp r1, r8
+mov.w r1, #0
+it ne
+movne r1, #1
+orrs.w r1, r1, sb
+beq {skip}
+"""
+
+
+def android_guidance(lib):
+    from .android_shapes import Listing, relocation, vtable_slot
+    method = relocation(lib, vtable_slot(lib, '_ZTV13PlayerFighter', 13))
+    if method is None:
+        return {}
+    update = Listing(lib, method[0])
+    constructor = Listing(lib, '_ZN13PlayerFighterC1EiiP6PlayerP10AEGeometryfffb')
+    ship = Listing(lib, '_ZN5Level10createShipEiiiP8Waypointbb')
+    players = Listing(lib, '_ZN5Level14connectPlayersEv')
+    shapes = {key: listing.unique(template) for key, listing, template in [
+        ('tuning', constructor, ANDROID_TUNING), ('speed_seed', constructor, ANDROID_SPEED_SEED),
+        ('hull_seed', constructor, ANDROID_HULL_SEED), ('selection', update, ANDROID_SELECTION),
+        ('boost', update, ANDROID_BOOST), ('near', update, ANDROID_NEAR), ('fire', update, ANDROID_FIRE),
+        ('hull_level', ship, ANDROID_HULL_LEVEL), ('hull_difficulty', ship, ANDROID_HULL_DIFFICULTY),
+        ('player_first', players, ANDROID_PLAYER_FIRST)]}
+    if None in shapes.values():
+        return {}
+    boost, first = shapes['boost'], shapes['player_first']
+    shapes['boost_response'] = update.follow(boost, 'response', ANDROID_RESPONSE)
+    shapes['membership'] = players.follow(first, 'none', ANDROID_MEMBERSHIP)
+    response, membership = shapes['boost_response'], shapes['membership']
+    # The boost end resumes after the response's first load and skips to where the response
+    # ends; the target count is stored with the player first; misses and kept targets go on.
+    if (response is None or membership is None or update.target(boost['resume']) != response.first + 1
+            or update.target(boost['done']) != response.last or players.target(first['count']) != membership.first + 1
+            or not update.target(shapes['fire']['miss']) > shapes['fire'].last
+            or not update.target(shapes['selection']['keep']) > shapes['selection'].last
+            or not update.target(shapes['selection']['later']) > shapes['selection'].last):
+        return {}
+    # The other near branch also takes 8000.
+    if update.follow(shapes['near'], 'other', 'mov.w r5, #0x1f40') is None:
+        return {}
+    fire = shapes['fire']
+    literals = [boost.pool('scale'), boost.pool('percent'), fire.pool('range'), fire.pool('negative_range')]
+    # The decrease/increase rates: two floats the `addw rN, pc` addresses.
+    rates = section_bytes(lib, update.pc_address(response.index('rates')), 8, b'__text')
+    found = [struct.unpack('<f', struct.pack('<I', word))[0] for word, _ in literals] + list(struct.unpack('<2f', rates[0]) if rates else [])
+    if found != [100.0, 40.0, 35000.0, -35000.0, VALUES['speed_decrease'], VALUES['speed_increase']]:
+        return {}
+    proof = {'virtual_update': method[1], **{key: shape.span() for key, shape in shapes.items()}}
+    for index, (_, span) in enumerate(literals):
+        proof['literal_%d' % index] = span
+    proof['literal_4'] = {'offset': rates[1], 'bytes': 8}
+    result = copy.deepcopy(VALUES)
+    result['provenance'] = proof
+    return result
+
+
 def extract_opening_npc_guidance(mach, actors):
+    if mach.architecture == 'android-armv7':
+        initial = actors.get('npc_initialization') or {}
+        if not initial.get('flight') or not initial.get('primary_weapon'):
+            return {}
+        rows = actors['actors']
+        if [(r['actor_id'], r['actor_kind'], r['hull_catalogue_id']) for r in rows] != [(0, 8, 2), (1, 8, 23), (2, 8, 2)]:
+            return {}
+        return android_guidance(mach)
     import capstone
     mac=mach.architecture=='x86_64'
     if mach.architecture not in LAYOUTS:return {}

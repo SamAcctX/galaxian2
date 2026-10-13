@@ -15,6 +15,9 @@ const SPANS := {"factory_hull":[78110,433],"factory_no_override":[78713,244],"or
 
 const MAC_ALTERNATE := {"factory_hull":[78110,433],"factory_no_override":[78713,244],"ordinary_vtable":[2377138,32],"initial_pools":[534870,138],"previous_hull_sample":[607838,39],"weapon_damage":[55284,51],"weapon_postpass":[54772,4266],"weapon_constructor":[-190526,1052],"scripted_activation":[151367,208],"proximity_activation":[617742,408],"holding_activation":[620230,255],"mode_dispatch":[628454,40],"proximity_positive":[1550130,4],"proximity_negative":[1563506,4],"activation_x":[1520974,4],"activation_z":[1520570,4],"activation_yaw":[1521054,4],"projectile_speed":[1550414,4],"hull_getter":[538090,12],"hull_percent":[535680,150],"model_assignment":[-79336,272],"world_assignment":[609098,340],"activate":[631086,82],"world_player":[105946,14]}
 
+# Android: the VALUES; spans inside named functions and PlayerFighter's vtable slots 18 and 3 (Layouts.anchored).
+const ANDROID_SPANS := {"actor_case":[25216,140],"factory_hull":[0,3112],"fighter_constructor":[0,1668],"scripted_activation":[1066,146],"activation_offsets":[408,8],"holding_activation":[1996,124],"proximity_activation":[3160,252],"proximity_constants":[3672,8],"activate":[0,48],"position_setter":[0,120],"activity_field":[0,6],"hull_getter":[0,4],"world_player":[0,6],"weapons":[0,3320],"placement_virtual":[80,4],"activation_virtual":[20,4]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -24,10 +27,11 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, flight: Dictionary, actors: Dictionary, handoff: Dictionary) -> String:
 	if not data is Dictionary:return "Missing second-trip pirate declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data):return "Unsupported second-trip pirate declarations"
+	if not (arch=="x86_64" or arch=="android-armv7") or not parameters(data):return "Unsupported second-trip pirate declarations"
 	if not Flight.parameters(flight) or not Handoff.parameters(handoff):return "Second pirate lacks its flight and earned progress context"
 	var npc: Dictionary=actors.get("npc_initialization",{})
 	if not Hull.parameters(npc.get("hull")) or not Guidance.parameters(npc.get("guidance")) or not Holding.parameters(npc.get("holding")) or not Hostility.parameters(npc.get("hostility")) or not Weapon.parameters(npc.get("primary_weapon")):return "Second pirate lacks shared combat declarations"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid full hold pirate extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Second pirate lacks its source anchor"
 	var layouts: Array=[SPANS,MAC_ALTERNATE]

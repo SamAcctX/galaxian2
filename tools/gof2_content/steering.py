@@ -1,4 +1,9 @@
-"""Read manual angular-unit constants; no input-response logic is exported."""
+"""Read manual angular-unit constants; no input-response logic is exported.
+
+Android: PlayerEgo::handleShip scales both rotation fields by the angle unit,
+2 pi, the elapsed milliseconds and the time scale (three literal-pool floats)
+and passes them to AEMath::MatrixSetRotation(Matrix&, float, float, float).
+"""
 import math
 import re
 import struct
@@ -15,9 +20,110 @@ def lit(value):
     return re.escape(bytes.fromhex(value))
 
 
+def shape_at(code, shape, lib=None):
+    """Indexes where `code` holds the instructions of `shape`: (mnemonic, operand-text regex) pairs.
+
+    '@n' in an operand pattern is the address of the shape's own instruction n (a branch target);
+    an operand pattern '=symbol' is a call of that named function, or a b/b.w through a veneer to that
+    import (`lib` resolves both). An absent
+    function (None) holds nothing.
+    """
+    from .android_library import callee
+    code = code or []
+
+    def fits(i):
+        for ins, (mnemonic, operands) in zip(code[i:], shape):
+            if ins.mnemonic != mnemonic:
+                return False
+            if operands.startswith('='):
+                if (callee(lib, ins) or veneer(lib, ins)) != operands[1:]:
+                    return False
+                continue
+            operands = re.sub(r'@(\d+)', lambda m: '#%#x' % code[i + int(m[1])].address if i + int(m[1]) < len(code) else '(?!)', operands)
+            if not re.fullmatch(operands, ins.op_str):
+                return False
+        return True
+    return [i for i in range(len(code) - len(shape) + 1) if fits(i)]
+
+
+VENEER = bytes.fromhex('7847c04600c09fe50ff08ce0')  # bx pc; nop; ldr ip, [pc]; add pc, ip, pc (then the word)
+
+
+def veneer(lib, ins):
+    """Import a b/b.w reaches through a Thumb-to-ARM veneer, if it does."""
+    if ins.mnemonic not in ('b', 'b.w') or not ins.operands or ins.operands[0].type != 2:  # ARM_OP_IMM
+        return None
+    address = ins.operands[0].imm
+    at = lib.text['offset'] + address - lib.text['address']
+    if not lib.text['address'] <= address <= lib.text['address'] + lib.text['length'] - 16 or lib.data[at:at + 12] != VENEER:
+        return None
+    return lib.imports.get((address + 16 + struct.unpack_from('<I', lib.data, at + 12)[0]) & 0xffffffff)
+
+
+def sole_definition(code, end, registers):
+    """Index of the only instruction before code[end] that writes any of `registers` (vpush only saves),
+    when no branch or pool precedes it: every path to code[end] then passes it. None otherwise."""
+    from .android_library import is_jump
+    writes = [i for i in range(end) if code[i].mnemonic != 'vpush'
+              and {code[i].reg_name(r) for r in code[i].regs_access()[1]} & set(registers)]
+    if len(writes) != 1 or any(not ins.id or is_jump(ins) for ins in code[:writes[0]]):
+        return None
+    return writes[0]
+
+
+def pool_float(lib, symbol, ins):
+    """(file offset, value) of the float a pc-relative vldr loads from the named function's own pool."""
+    start, size = lib.symbols[symbol]
+    address = ((ins.address + 4) & ~3) + ins.operands[1].mem.disp
+    if not start <= address <= start + size - 4:
+        return None
+    offset = lib.text['offset'] + address - lib.text['address']
+    return offset, struct.unpack_from('<f', lib.data, offset)[0]
+
+
+def code_span(lib, code, first, last):
+    """Provenance of code[first..last] inclusive."""
+    start = code[first].address
+    return {'offset': lib.text['offset'] + start - lib.text['address'], 'bytes': code[last].address + code[last].size - start}
+
+
+PC = r'\[pc(, #-?(0x[0-9a-f]+|\d))?\]'  # a pc-relative literal (Capstone prints offsets below 10 in decimal)
+ANDROID_HANDLER = '_ZN9PlayerEgo10handleShipEi'
+ANDROID_HELPER = '_ZN11AbyssEngine6AEMath17MatrixSetRotationERNS0_6MatrixEfff'
+# Both rotation fields x angle unit x 2 pi x elapsed (s16) x time scale -> MatrixSetRotation x, y.
+ANDROID_STEP = [('vldr', 's0, ' + PC), ('vldr', r's2, \[fp, #0x278\]'), ('vldr', r's4, \[fp, #0x27c\]'),
+                ('vcvt.f32.s32', 's16, s6'), ('vmul.f32', 's2, s2, s0'), ('str.w', r'sb, \[sp\]'), ('vmul.f32', 's0, s4, s0'),
+                ('vldr', 's4, ' + PC), ('vmul.f32', 's2, s2, s4'), ('vmul.f32', 's0, s0, s4'),
+                ('vldr', 's4, ' + PC), ('vmul.f32', 's2, s16, s2'), ('vmul.f32', 's0, s16, s0'),
+                ('vmul.f32', 's2, s2, s4'), ('vmul.f32', 's0, s0, s4'), ('vmov', 'r2, s2'), ('vmov', 'r3, s0'), ('blx', '.*')]
+
+
+def android_rotation(lib):
+    from .android_library import callee, instructions
+    code = instructions(lib, ANDROID_HANDLER)
+    if ANDROID_HELPER not in lib.symbols:
+        return {}
+    steps = shape_at(code, ANDROID_STEP)
+    if len(steps) != 1 or callee(lib, code[steps[0] + 17]) != ANDROID_HELPER:
+        return {}
+    step = steps[0]
+    constants = [pool_float(lib, ANDROID_HANDLER, code[step + i]) for i in (0, 7, 10)]
+    if None in constants:
+        return {}
+    values = [value for _, value in constants]
+    if not all(math.isfinite(v) and v > 0 for v in values) or values[0] > 1 or values[1] > 10 or values[2] > 1:
+        return {}
+    start, size = lib.symbols[ANDROID_HELPER]
+    helper = {'offset': lib.text['offset'] + start - lib.text['address'], 'bytes': size}
+    return dict(zip(('angle_unit_scale', 'radians_per_turn', 'time_scale'), values), rotation_order='local_x_y',
+                provenance=[code_span(lib, code, step, step + 17)] + [{'offset': o, 'bytes': 4} for o, _ in constants] + [helper])
+
+
 def extract_manual_rotation(mach, cruise):
     if not cruise:
         return {}
+    if mach.architecture == 'android-armv7':
+        return android_rotation(mach)
     text = mach.text
     code = mach.data[text['offset']:text['offset'] + text['length']]
     base = text['address']

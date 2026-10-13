@@ -38,7 +38,7 @@ func verify(args: PackedStringArray) -> void:
 	var library:=Library.new();var bindings:=Bindings.new();var catalogues:=Catalogues.new();var bodies:=Bodies.new()
 	if not library.open(args[0]) or not library.select_language("gb") or not bindings.open(args[1],library.manifest) or not catalogues.open(library) or not bodies.configure(library,bindings):
 		check(false,library.error+bindings.error+catalogues.error+bodies.error);return
-	check(bindings.source_architecture=="x86_64" and not bindings.full_hold_particles.is_empty(),"First mining sprite test requires verified Mac presets")
+	check(bindings.source_architecture in ["x86_64","android-armv7"] and not bindings.full_hold_particles.is_empty(),"First mining sprite test requires verified Mac or Android presets")
 	# The source-accepted Mido destination has no actors. Its ordinary pass still
 	# commits an empty update; only the cursor-two mining world has no NPC pass.
 	var trip: Dictionary=Travel.journey(bindings.mido_travel,10)

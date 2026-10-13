@@ -16,6 +16,7 @@ class LoungeContactTests(unittest.TestCase):
             mach, arrival, layouts = declaration_fixture(reader.LAYOUTS, shift)
             with patch.object(reader, 'LAYOUTS', layouts):
                 values, proof = reader.extract_lounge_contacts(mach, arrival)
+                self.assertEqual(values, reader.VALUES)  # no Android jackpot on the Mac
                 self.assertEqual(values['destinations']['helper_excluded_station_ids'], [76, 79])
                 self.assertEqual(values['names']['pool_choices_by_faction'][3], [[0, 5], [2, 6]])
                 self.assertEqual(values['portraits']['counts'][6], [2, 3, 5, 0])
@@ -48,3 +49,30 @@ class LoungeContactTests(unittest.TestCase):
             self.assertEqual(reader.extract_lounge_contacts(mach, {}), ({}, {}))
             mach.architecture = 'armv7'
             self.assertEqual(reader.extract_lounge_contacts(mach, arrival), ({}, {}))
+
+
+class LoungeContactsAndroidTests(unittest.TestCase):
+    def test_android_proofs(self):
+        import android_fixture
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        from test_mido_travel import roomy
+        arrival = {'scope': 'rescue_choreography', 'provenance': {'actor': {'offset': 5, 'bytes': 24, 'anchor': 1}}}
+        with patch.object(android_fixture, 'library', roomy(android_fixture.library)):
+            android_fixture.verify_android_proof(self, reader, lambda lib: reader.extract_lounge_contacts(lib, arrival), layout='ANDROID', values='ANDROID_VALUES')
+            image, layout, _ = android_fixture.layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            self.assertFalse(reader.extract_lounge_contacts(AndroidLibrary(image), {})[0])
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'lounge_contact_definitions.gd', values='ANDROID_VALUES', layout='ANDROID')
+
+    def test_android_jackpot_is_the_only_difference(self):
+        android = dict(reader.ANDROID_VALUES)
+        self.assertEqual(android.pop('jackpot'), {'forced_cursor': 23, 'forced_station_id': 10, 'draw_bound': 100, 'winning_roll': 1,
+                                                  'role': 0, 'maximum_reward': 49999, 'multiplier': 10, 'cap': 50000})
+        self.assertEqual(android, reader.VALUES)
+        spans = {k: v[1:3] for k, v in reader.ANDROID.items() if 'jackpot' in k}
+        self.assertEqual(spans, {'lounge_contact_jackpot_start': (958, 10), 'lounge_contact_jackpot_gate': (1384, 112),
+                                 'lounge_contact_jackpot_raise': (1522, 40)})

@@ -1033,6 +1033,20 @@ func acknowledge_medal_notice() -> bool:
 	if not candidate.acknowledge_medal_notice():return fail(candidate.error)
 	_contracts=candidate
 	return true
+## The Kaamo Club option travels with the career's progress (a lifetime key).
+func retain_kaamo_unlock(value: bool) -> bool:
+	error=""
+	if not value:return true
+	if _contracts!=null:
+		var candidate: RefCounted=_contracts.fork()
+		if not candidate.unlock_kaamo():return fail(candidate.error)
+		_contracts=candidate;_state.progress=_contracts.snapshot().progress.duplicate(true)
+		return true
+	# A station without a career yet keeps nothing; the host applies it again at the next one.
+	if _state.get("progress") is Dictionary:_state.progress.kaamo_unlocked=true
+	return true
+func career_kaamo_unlocked() -> bool:
+	return preload("res://src/content/kaamo_club_definitions.gd").unlocked(_contracts.snapshot().progress if _contracts!=null else _state.get("progress",{}))
 func record_hints(seen: Array) -> bool:
 	if _contracts==null:return false
 	var candidate: RefCounted=_contracts.fork()

@@ -55,3 +55,50 @@ class ArrivalStagingTests(unittest.TestCase):
                 elif key=='section':m.sections[0]['segment']=b'__DATA'
                 else:m.architecture='unsupported'
                 self.assertEqual(reader.extract_arrival_staging(m,s,d,a),{},(arch,key))
+
+
+def roomy_layouts():
+    """Patch android_fixture.library to move .dynstr past the image: its fixed slot holds about 500 name bytes."""
+    import struct
+    from unittest.mock import patch
+    import android_fixture
+    original = android_fixture.library
+
+    def build(functions, strings, **options):
+        image = bytearray(original(functions, strings, **options))
+        names = b'\0' + b''.join(n.encode() + b'\0' for n in android_fixture.IMPORTS) + b''.join(f[0].encode() + b'\0' for f in functions)
+        table, = struct.unpack_from('<I', image, 32)
+        struct.pack_into('<III', image, table + 40 * 2 + 12, len(image), len(image), len(names))  # .dynstr address, offset, size
+        return bytes(image + names)
+    return patch.object(android_fixture, 'library', build)
+
+
+ANDROID_PARENTS = ({'player_motion': {'present': True}}, {'campaign_cursor': 1, 'events': [{}, {}, {}]}, {'npc_initialization': {'present': True}})
+
+
+class AndroidArrivalStagingTests(unittest.TestCase):
+    def extract(self, lib, staging=ANDROID_PARENTS[0], dialogue=ANDROID_PARENTS[1], actors=ANDROID_PARENTS[2]):
+        return reader.extract_arrival_staging(lib, staging, dialogue, actors)
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        with roomy_layouts():
+            verify_android_proof(self, reader, self.extract, values='VALUES')
+            image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            data = self.extract(lib)
+            data['actor_route_points'][0][2] = 0
+            self.assertEqual(reader.VALUES['actor_route_points'][0][2], -5000)
+            for name, changes in {'no motion': dict(staging={'player_motion': {}}),
+                                  'no npc': dict(actors={'npc_initialization': {}}),
+                                  'other cursor': dict(dialogue={'campaign_cursor': 0, 'events': [{}, {}, {}]}),
+                                  'other events': dict(dialogue={'campaign_cursor': 1, 'events': [{}, {}]}),
+                                  'no dialogue': dict(dialogue={}), 'no staging': dict(staging=None)}.items():
+                self.assertEqual(self.extract(lib, **changes), {}, name)
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'arrival_staging_definitions.gd', values='VALUES')

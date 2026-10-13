@@ -1,14 +1,19 @@
 # Android Mac app importer
 
-The Android build accepts either a player-selected Mac `.dmg` or a ZIP
-containing one original Galaxy on Fire 2 Full HD Mac `.app`. The Android
+The Android build accepts a player-selected Mac `.dmg`, a ZIP containing one
+original Galaxy on Fire 2 Full HD Mac `.app`, or the Android HD release's `.xapk`
+(or the `.7z` that holds it). The Android
 document picker supplies a `content://` URI. The Godot `DmgImport` adapter
 calls the `GoF2AndroidImport` plugin, which copies the document into app-private
 storage and runs the same Python `gof2_content.game_install.prepare` pipeline
 used on desktop. For a DMG, that pipeline uses the bundled 7-Zip helper to
-unpack the original Mac app. The original executable is read only for static
+unpack the original Mac app. The Android HD release is read from its `.xapk`
+directly, or from the `.7z` that holds it through the same 7-Zip helper; its
+staged APK and OBB are removed when preparation ends, fails or is cancelled.
+The original executable is read only for static
 declarations; it is never run. The resulting `installation.json` preserves
-`mac-dmg` identity for a disk image and `mac-app` identity for an app ZIP.
+`mac-dmg` identity for a disk image, `mac-app` identity for an app ZIP and
+`android-xapk` or `android-7z` identity for the Android release.
 
 Android executes the helper from its package-manager-owned `nativeLibraryDir`.
 The build names the Android PIE executable `libgof2_7zz.so`, stages it under

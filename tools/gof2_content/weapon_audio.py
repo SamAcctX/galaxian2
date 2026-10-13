@@ -2,11 +2,19 @@
 
 Static compiler-layout recognition only. The runtime receives tables, parameters
 and provenance; original instructions never enter a content pack.
+
+Android: Player::Player enables one sound and Player::setPlayShootSound sets
+both; PlayerEgo::PlayerEgo gives the player two, Level::assignGuns silences
+world type 2. Player::calcWeaponSounds sorts the guns by Item::getSinglePrice
+(Item::init's midpoint), Player::addGun (both forms) reruns it, and
+Player::shoot calls Player::playShootSound after a successful Gun::shootAt;
+that dispatch reads the player and NPC event tables. MGame::OnInitialize
+pitches the primary guns by 1 - Ship::getFireRateFactor.
 """
 import copy
 import struct
 from .ship_models import section_bytes
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 VALUES = {
     'player_sound_limit': 2, 'npc_sound_limit': 1, 'initial_enabled': True,
@@ -22,6 +30,8 @@ NPC_EVENTS = [52, 55, 54, 53, 61, 61, 61, 61, 61, 62, 2276]
 
 def extract_weapon_audio(mach, weapons, actors, staging):
     arch = mach.architecture
+    if arch == 'android-armv7':
+        return android_weapon_audio(mach, weapons, actors, staging)
     if arch not in LAYOUTS:
         return {}
     try:
@@ -197,3 +207,60 @@ MAC_ALTERNATE = {'owner_defaults': [413409, 25, '48c783d800000000000000c6437401c
  'npc_dispatch_table': [421135,
                         44,
                         '39ffffff47ffffff32ffffff40ffffff55ffffff55ffffff55ffffff55ffffff55ffffff5affffff4effffff']}
+
+
+def android_weapon_audio(lib, weapons, actors, staging):
+    try:
+        npc = actors['npc_initialization']
+        construction = npc['construction']
+        if (not staging['player_flight'] or
+                npc['world_initialization']['world_type'] == VALUES['disabled_world_type'] or
+                construction['price_low_index'] != VALUES['price_low_index'] or
+                construction['price_high_index'] != VALUES['price_high_index']):
+            return {}
+        # Empty weapon parameters have no provenance.
+        links = {'price_layout': construction['provenance']['item_layout'], 'price_getter': construction['provenance']['price'],
+                 'interval_getter': weapons['provenance']['interval_getter']}
+    except (KeyError, TypeError):
+        return {}
+    proof = recognize_symbols(lib, ANDROID)
+    # The price getters are the catalogue's, the pitch getter the equipment modifier's.
+    if not proof or any((proof[key]['offset'], proof[key]['bytes']) != (link.get('offset'), link.get('bytes')) for key, link in links.items()):
+        return {}
+    return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof)
+
+
+# Both tables equal the Mac 1.0.7 ones.
+ANDROID_VALUES = dict(VALUES, player_event_ids=[
+    52, 53, 54, 56, 55, 57, 58, 59, 60, 50, 49, 50, 78, 75, 79, 77, 72, 73, 74, 76, 80, 81, 66, 67, 63, 64, 68, 65, 69,
+    70, 71, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 6, 7, 8, 9, 10, 11, 92, 93, 94, *[-1] * 10, 1098, 1100, 1099, *[-1] * 113,
+    1111, 1113, 1112, 1117, 1095, 1096, 1097, 1101, *[-1] * 9, 1118, -1, -1, -1, 2254, *[-1] * 9, 2271, 2272, -1, -1,
+    2263, 2263, 2263, 2265, 2265, 2265, -1, -1, -1, -1, 2254, 2267, 2268, 2252, -1, 2269, -1, 2275, 2276, 2278, 2277, 2280],
+    npc_event_ids=list(NPC_EVENTS))
+ANDROID = {'owner_defaults': ('_ZN6PlayerC2Eiiiii', 396, 18, '00200121c4f8d00001ad84f87010c4f80c11'),
+           'owner_setter': ('_ZN6Player17setPlayShootSoundEbi', 0, 10, '80f87010c0f80c217047'),
+           # From the limit 2 in r2 to setPlayShootSound(player, true, r2).
+           'player_limit': ('_ZN9PlayerEgoC2EP6Player', 440, 168, 'sha256:17660672777bd50a3fe5ff38f52b70ebd6d2d91bdd56773cf2fcc69ff66986f7'),
+           'npc_backlink_call': ('_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', 342, 8, '68682946b9f7faeb'),
+           'npc_backlink_setter': ('_ZN6Player11setKIPlayerEP8KIPlayer', 0, 6, 'c0f8d0107047'),
+           'npc_world_gate': ('_ZN5Level10assignGunsEv', 762, 18, 'daf8c010022904d14068002102229ff708ea'),
+           # From the zero register to the sound flag, owner and pitch stores.
+           'weapon_defaults': ('_ZN3GunC2EiiiiiifN11AbyssEngine6AEMath6VectorES2_', 358, 198, 'sha256:09ae881950e556d0172351ca086e86073e79dac19a01dabc93a912bf2f919578'),
+           'primary_select': ('_ZN6Player16calcWeaponSoundsEi', 0, 436, 'sha256:2854a75f673c2ea834fd3920c0dae216a3020b7cccbe6c8de8b72ef1103d4bf4'),
+           'single_install_select': ('_ZN6Player6addGunEP3Guni', 94, 22, '94f8700038b1d4f80c11204601b0bde8f04328f196be'),
+           'bulk_install_select': ('_ZN6Player6addGunEP5ArrayIP3GunEi', 128, 22, '9af8700038b1daf80c11504601b0bde8f04f28f167bd'),
+           'player_install': ('_ZN9PlayerEgo6addGunEP5ArrayIP3GunEi', 0, 12, 'd0b502af04462068c3f794ec'),
+           'player_install_call': ('_ZN5Level12createPlayerEv', 1358, 10, 'dbf8f0002246aff7f4eb'),
+           'npc_install': ('_ZN8KIPlayer6addGunEP3Guni', 0, 6, '406826f168b8'),
+           'npc_install_call': ('_ZN5Level10assignGunsEv', 2358, 18, 'daf8f80029460022406850f82900a0f702ee'),
+           'dispatch': ('_ZN6Player14playShootSoundEiiPN11AbyssEngine6AEMath6VectorEf', 0, 196, 'sha256:077daedcad7a03aa0c7fdfbfdb1c4e1714d53d922427d9d40cc1bb5ee5c69051'),
+           'fire_success': ('_ZN6Player5shootEixbN11AbyssEngine6AEMath6MatrixE', 256, 94, 'sha256:d143da8d40b9e5f72f1f5f94d8e6c30e38615108dcfbd7e5885bbc3290f48a77'),
+           'pitch_update': ('_ZN5MGame12OnInitializeEv', 1926, 50, 'sha256:901b9ad72dd02642514b9f85c81b732de67473429e82d84df441f1e94dcbb1a1'),
+           'pitch_wrapper': ('_ZN9PlayerEgo19pitchAllPrimaryGunsEf', 0, 6, '00682af1f7b9'),
+           'pitch_setter': ('_ZN6Player19pitchAllPrimaryGunsEf', 0, 38, 'sha256:7aa55c9da6bda8bc26eebe41c0d734924beab54ea75e1ae013560dcf6b857ddf'),
+           'price_layout': ('_ZN4Item4initEv', 0, 78, 'sha256:2958dfb1982a848d6f960cdb302d8f062ef241c5d66ccd336fcb72ca1fc2176e'),
+           'price_getter': ('_ZN4Item14getSinglePriceEv', 0, 4, '80697047'),
+           'interval_getter': ('_ZN4Ship17getFireRateFactorEv', 0, 4, '406d7047'),
+           # The sound resources' table read; playShootSound reads it too (dispatch).
+           'player_table': ('_ZN6Player16calcWeaponSoundsEi', 294, 932, 'sha256:d3f258d20d32e5e4a83a5ae4500d7322d4ab20cad19c8183cb7bf88248ddc35e', 'literal', 0),
+           'npc_table': ('_ZN6Player14playShootSoundEiiPN11AbyssEngine6AEMath6VectorEf', 20, 44, 'sha256:774bd5127919fccfc782433328846d194e2e2c5d7c63eecb1765d6a3366e92f1', 'literal', 0)}

@@ -6,10 +6,11 @@ const Library = preload("res://src/content/library.gd")
 var failures := 0
 
 func _initialize() -> void:
-	for mac in [true, false]:
-		var data := Fixture.definition(mac)
-		var arch := "x86_64" if mac else "armv7"
+	for arch in ["x86_64", "armv7", "android-armv7"]:
+		var data := Fixture.definition(arch == "x86_64", arch == "android-armv7")
 		check(Definitions.validate(data, 4096, arch).is_empty(), "Valid image aliases rejected")
+		for other in ["x86_64", "armv7", "android-armv7"]:
+			if other != arch: check(not Definitions.validate(data, 4096, other).is_empty(), "Image alias extents accepted for another compiler")
 		for bad in ["id", "region", "extent", "duplicate_extent", "range_count", "range_overflow", "range_region"]:
 			var invalid := data.duplicate(true)
 			match bad:
@@ -44,7 +45,9 @@ func _initialize() -> void:
 		var binding := Bindings.new()
 		check(library.open(args[i]) and binding.open(args[i + 1], library.manifest), "Actual image alias bindings failed: " + binding.error)
 		var ios: bool = library.manifest.profile.edition == "ios-hd"
-		check(binding.image_regions.get("records", []).size() == (281 if ios else 203), "Actual record count changed")
+		# Android declares its iPad-profile records (BuildResourceList with Globals::iPad set).
+		var expected: int = 771 if library.manifest.profile.edition == "android-hd" else 281 if ios else 203
+		check(binding.image_regions.get("records", []).size() == expected, "Actual record count changed")
 		for row in binding.image_regions.get("records", []):
 			var candidates := Definitions.candidates(binding.image_regions, int(row.id))
 			check(candidates.has({"texture_id": int(row.texture_id), "region": int(row.region)}), "Imported alias lost from native alternatives")

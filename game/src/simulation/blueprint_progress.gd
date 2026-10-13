@@ -6,10 +6,13 @@ const MIN_I32 := -2147483648
 const STORY_BLUEPRINT_ID := 85
 const STORY_MATERIAL_ID := 164
 const STORY_MATERIAL_QUANTITY := 50
+## Mac (imul $0x14 at 0x1000960e0); Android imports declare their own (200).
 const SHIPPING_UNIT_COST := 20
 const Catalogues = preload("res://src/content/catalogues.gd")
 const Library = preload("res://src/content/library.gd")
 const Readonly=preload("res://src/simulation/readonly_state.gd")
+const Shopping=preload("res://src/content/ordinary_shopping_definitions.gd")
+const Vitals=preload("res://src/simulation/combat_vitals.gd")
 var error := ""
 var _recipes: Dictionary = {}
 var _material_unit_value := 0
@@ -155,13 +158,39 @@ func story_lock(item_id: int) -> bool:
 
 func recipe(item_id: int) -> Dictionary:return _recipes.get(item_id,{}).duplicate(true)
 
-func shipping_cost(item_id: int,station_id: int,quantity: int) -> int:
-	return quote_shipping(entry(item_id),station_id,quantity)
+func shipping_cost(item_id: int,station_id: int,quantity: int,unit:=SHIPPING_UNIT_COST) -> int:
+	return quote_shipping(entry(item_id),station_id,quantity,unit)
 
-static func quote_shipping(row: Dictionary,station_id: int,quantity: int) -> int:
-	if row.is_empty() or quantity<1 or quantity>MAX_I32/SHIPPING_UNIT_COST:return -1
+## HangarWindow::OnTouchBegin/OnTouchEnd: pending units x the unit cost.
+static func quote_shipping(row: Dictionary,station_id: int,quantity: int,unit:=SHIPPING_UNIT_COST) -> int:
+	if row.is_empty() or quantity<1 or unit<1 or quantity>MAX_I32/unit:return -1
 	var site: int=row.get("station_id",-1)
-	return quantity*SHIPPING_UNIT_COST if site>=0 and site!=station_id else 0
+	return quantity*unit if site>=0 and site!=station_id else 0
+
+## The import's unit cost: Android ordinary_shopping blueprints, else the Mac's.
+static func shipping_unit(bindings: RefCounted) -> int:
+	return int(Shopping.blueprints(bindings).get("shipping_unit_cost",SHIPPING_UNIT_COST))
+
+## BluePrint::BluePrint: secondaries (type 1) are built ten at a time.
+static func output_quantity(item: Dictionary) -> int:return 10 if item.properties.get(1)==1 else 1
+
+## Android BluePrint::getAutoCompletionPrice (-1 without the rule): the special
+## item costs its remaining ingredients at their prototype single price
+## (Item::init: low + (high - low) / 2) plus a constant; any other blueprint
+## (int)((float)(max price x base quantity) x multiplier), whatever its progress.
+@warning_ignore("integer_division")
+static func autocomplete_price(shopping: Dictionary,items: Array,row: Dictionary) -> int:
+	var rules: Dictionary=shopping.get("blueprints",{}).get("autocomplete",{})
+	if rules.is_empty() or row.is_empty() or row.item_id<0 or row.item_id>=items.size():return -1
+	var item: Dictionary=items[row.item_id]
+	var low:=int(shopping.catalogue.minimum_price_property);var high:=int(shopping.catalogue.maximum_price_property)
+	if row.item_id==int(rules.special_item_id):
+		var total:=int(rules.special_add)
+		for index in row.remaining.size():
+			var material: Dictionary=items[item.arrays[0][index]].properties
+			total+=int(row.remaining[index])*(int(material.get(low,0))+(int(material.get(high,0))-int(material.get(low,0)))/2)
+		return total
+	return int(Vitals.single(Vitals.single(float(int(item.properties.get(high,0))*output_quantity(item)))*float(rules.multiplier)))
 
 ## Inventory owns the debit and product insertion. Commit this owner and the
 ## returned inventory together, after the career has accepted the shipping fee.
@@ -184,19 +213,46 @@ func contribute(item_id: int,material_id: int,quantity: int,inventory: RefCounte
 	var row: Dictionary=next.entries.filter(func(candidate):return candidate.item_id==item_id)[0]
 	row.remaining[index]-=quantity;row.material_value+=value
 	if row.station_id<0:row.station_id=station
-	if row.remaining.all(func(amount):return amount<=0):
-		if row.completed==MAX_I32:reject("Blueprint completion count exceeds its supported range");return null
-		var amount: int=_recipes[item_id].output_quantity
-		if row.station_id==station:
-			if not staged.receive_blueprint_product(item_id,amount):reject(staged.error);return null
-		else:
-			var pending: Array=next.products.filter(func(product):return product.item_id==item_id and product.station_id==row.station_id)
-			if pending.is_empty():next.products.append({"item_id":item_id,"station_id":row.station_id,"quantity":amount})
-			elif pending[0].quantity>MAX_I32-amount:reject("Blueprint output exceeds its supported range");return null
-			else:pending[0].quantity+=amount
-		row.completed+=1;row.station_id=-1;row.material_value=0;row.remaining=_recipes[item_id].quantities.duplicate()
+	if row.remaining.all(func(amount):return amount<=0) and not _complete(next,row,station,staged):return null
 	_state=next
 	return staged
+
+## Android HangarWindow::OnTouchEnd autocomplete; the caller charges
+## autocomplete_price. A blueprint without a site (BluePrint::isEmpty: nothing
+## invested; story grants set a site) takes this station; BluePrint::complete
+## then leaves the ordinary completion nothing to wait for. No material, cargo
+## space or shipping is involved.
+func autocomplete(item_id: int,inventory: RefCounted) -> RefCounted:
+	error=""
+	if not is_instance_of(inventory,load("res://src/simulation/station_equipment.gd")):reject("Complete blueprints from the current Hangar inventory");return null
+	var before:=entry(item_id);var owned: Dictionary=inventory.snapshot()
+	if before.is_empty() or not before.available or not owned.get("ordinary_shopping_open",false):reject("This blueprint is unavailable");return null
+	for key in ["base_content_id","binding_id"]:
+		if owned.loadout.get(key)!=_state.get(key):reject("Blueprint completion belongs to another content source");return null
+	var station: int=owned.loadout.station_id
+	if station<0 or station>=_station_count:reject("Blueprint construction lost its station");return null
+	var next:=_state.duplicate(true);var staged: RefCounted=inventory.fork()
+	var row: Dictionary=next.entries.filter(func(candidate):return candidate.item_id==item_id)[0]
+	if row.station_id<0:row.station_id=station
+	if not _complete(next,row,station,staged):return null
+	_state=next
+	return staged
+
+## HangarWindow::setSellMode: the product goes to the hold at its site, else it
+## waits there unshipped; BluePrint::reset restores the recipe and clears the site.
+func _complete(next: Dictionary,row: Dictionary,station: int,staged: RefCounted) -> bool:
+	var item_id: int=row.item_id
+	if row.completed==MAX_I32:return reject("Blueprint completion count exceeds its supported range")
+	var amount: int=_recipes[item_id].output_quantity
+	if row.station_id==station:
+		if not staged.receive_blueprint_product(item_id,amount):return reject(staged.error)
+	else:
+		var pending: Array=next.products.filter(func(product):return product.item_id==item_id and product.station_id==row.station_id)
+		if pending.is_empty():next.products.append({"item_id":item_id,"station_id":row.station_id,"quantity":amount})
+		elif pending[0].quantity>MAX_I32-amount:return reject("Blueprint output exceeds its supported range")
+		else:pending[0].quantity+=amount
+	row.completed+=1;row.station_id=-1;row.material_value=0;row.remaining=_recipes[item_id].quantities.duplicate()
+	return true
 
 func collect(inventory: RefCounted) -> RefCounted:
 	error=""
@@ -274,7 +330,7 @@ func _read_catalogue(catalogues: RefCounted, binding_id: String) -> Dictionary:
 				return {}
 			seen[material] = true
 		ids.append(item_id)
-		recipes[item_id] = {"material_ids": material_ids.duplicate(), "quantities": quantities.duplicate(),"output_quantity":10 if item.properties.get(1)==1 else 1}
+		recipes[item_id] = {"material_ids": material_ids.duplicate(), "quantities": quantities.duplicate(),"output_quantity":output_quantity(item)}
 	if not recipes.has(STORY_BLUEPRINT_ID):
 		reject("The Khador Drive source recipe is missing")
 		return {}

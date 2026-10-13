@@ -8,6 +8,10 @@ const SPANS := {"x86_64":{"player_model_table":[-57355,28],"player_wrapper":[-56
 
 const MAC_ALTERNATE := {"player_model_table":[-57355,28],"player_wrapper":[-56975,27],"npc_model":[-65918,31],"npc_wrapper":[-63455,29],"wrapper_load":[353749,26],"orientation_kind":[353825,31],"reduced_scale":[353856,61],"model_tick":[354627,55],"live_position":[356854,44],"velocity":[356950,78],"camera_basis":[357090,269],"last_second":[357359,44],"new_shot_scale":[357408,33],"world_up":[358008,266],"flight_basis":[358274,193],"scale_preset":[358536,45],"draw":[358819,36],"loop_setup":[1038175,44],"loop_update":[946828,187],"animation_defaults":[943166,39],"model_2":[1429503,4],"model_19":[1429571,4],"shrink_constant":[1409903,4],"hidden_constant":[1398531,4],"unit_constant":[1397567,4]}
 
+# Android: the Mac values; spans inside named functions (Layouts.anchored).
+const ANDROID_VALUES := {"item_ids":[2,19],"model_ids":[6756,6795],"kinds":[0,1],"camera_facing_kind":1,"shrink_below_ms":1000,"shrink_divisor":1000.0,"hidden_position_x":50000.0,"reduced_billboard_scale":0.6000000238418579,"animation_speed":1.0,"animation_loop":true,"animation_shared_per_weapon":true,"render_type":2}
+const ANDROID_SPANS := {"player_model_table":[118,20],"player_wrapper":[1616,30],"npc_model":[1330,16],"npc_wrapper":[2314,28],"model_2":[8,4],"model_19":[76,4],"constructor":[120,148],"model_tick":[32,40],"render":[0,1580],"loop_setup":[170,8],"loop_update":[28,132],"animation_defaults":[256,52]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary: return false
 	for key in VALUES:
@@ -27,7 +31,9 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, executable_bytes: int, architecture: String, staging: Dictionary) -> String:
 	if not data is Dictionary: return "Invalid ordinary projectile visuals capability"
 	if data.is_empty(): return ""
-	if not parameters(data) or not SPANS.has(architecture): return "Unsupported ordinary projectile visuals"
+	if not parameters(data) or not (SPANS.has(architecture) or architecture=="android-armv7"): return "Unsupported ordinary projectile visuals"
+	if architecture=="android-armv7":
+		return "" if Layouts.anchored(data.provenance,executable_bytes,ANDROID_SPANS) else "Disconnected ordinary projectile visuals declaration"
 	var initial: Variant=staging.get("provenance",{}).get("initial")
 	if not Fonts.extent(initial,"offset","bytes",[366 if architecture=="x86_64" else 320],executable_bytes): return "Ordinary projectile visuals lacks its staging anchor"
 	if data.provenance.size()!=SPANS[architecture].size(): return "Invalid ordinary projectile visuals provenance"

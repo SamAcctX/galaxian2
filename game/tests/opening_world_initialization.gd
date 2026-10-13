@@ -31,8 +31,11 @@ func verify_source(content: String, pack: String) -> void:
 	check(not Definitions.parameters(bad),"Unsupported weapon capacity accepted")
 	bad=definition.duplicate(true);bad.initial_companions_empty=1
 	check(not Definitions.parameters(bad),"Numeric companion flag accepted")
-	bad=definition.duplicate(true);bad.provenance.effect_model_0=bad.provenance.effect_model_19.duplicate()
-	check(not Definitions.validate(bad,2147483647,"armv7" if library.manifest.profile.edition=="ios-hd" else "x86_64").is_empty(),"Overlapping world provenance accepted")
+	bad=definition.duplicate(true)
+	# Android proves the effect models as one span: overlap it with the setter instead.
+	if bad.provenance.has("effect_model_19"):bad.provenance.effect_model_0=bad.provenance.effect_model_19.duplicate()
+	else:bad.provenance.effect_setter=bad.provenance.effect_models.duplicate()
+	check(not Definitions.validate(bad,2147483647,str({"ios-hd":"armv7","android-hd":"android-armv7"}.get(library.manifest.profile.edition,"x86_64"))).is_empty(),"Overlapping world provenance accepted")
 	check(world.configure(bindings,catalogues),world.error)
 	check(world.generate({"state":-1}).is_empty() and world.snapshot().is_empty(),"Invalid RNG partially initialized the world")
 	var result := world.generate({"state":25214903917})
@@ -59,7 +62,8 @@ func verify_source(content: String, pack: String) -> void:
 	check(scene.snapshot()==field,"Staged initialization mutated the prior world")
 	check(scene.complete_world_initialization(bindings,catalogues),scene.error)
 	var initialized := scene.snapshot()
-	var expected: Dictionary=FIXTURES[1 if library.manifest.profile.edition=="ios-hd" else 2]
+	# iOS and Android populate 40 + random(40) asteroids, the Mac 80 + random(80).
+	var expected: Dictionary=FIXTURES[1 if library.manifest.profile.edition in ["ios-hd","android-hd"] else 2]
 	verify_effects(initialized.world_initialization,expected)
 	check(initialized.world_initialization.input_random_state==field.random_state,"World did not continue the scenery RNG")
 	check(initialized.random_state==initialized.world_initialization.random_state,"Scenery retained the isolated field RNG")

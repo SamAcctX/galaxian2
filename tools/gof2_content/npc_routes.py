@@ -1,6 +1,16 @@
-"""Static declarations for the fresh opening's generated coordinate patrol routes."""
+"""Static declarations for the fresh opening's generated coordinate patrol routes.
+
+Android: PlayerFighter's constructor draws four candidates (x + 0..25000,
+y - 10000 + 0..10000, z + 0..25000 from -30000/5000, 20000/55000), picks
+2 + 0..2 distinct ones into Route::Route (index 0, no loop), loops it with
+Route::setLoop and follows a Route::clone (point copy, loop flag kept).
+PlayerFighter::update advances the route through Route::update, which
+reaches a waypoint within +-2000 on each axis, aims at the waypoint and
+gates near-range and firing on the waypoint flag.
+"""
 import copy
 import struct
+from .declaration_layouts import recognize_symbols
 from .opening_loadout import template
 from .opening_npc_guidance import LAYOUTS as GUIDANCE_LAYOUTS
 
@@ -11,6 +21,14 @@ VALUES = {'candidate_origins':[[-30000,-10000,20000],[5000,-10000,20000],
 
 
 def extract_npc_routes(mach, actors):
+    if mach.architecture == 'android-armv7':
+        initial = actors.get('npc_initialization') or {}
+        if not all(initial.get(key) for key in ('holding', 'flight', 'guidance')):
+            return {}
+        if [(r['actor_kind'], r['hull_catalogue_id']) for r in actors['actors']] != [(8, 2), (8, 23), (8, 2)]:
+            return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(VALUES), provenance=proof) if proof else {}
     import capstone
     if mach.architecture not in LAYOUTS:return {}
     mac=mach.architecture=='x86_64';arch=mach.architecture
@@ -325,3 +343,19 @@ LITERALS = {'armv7': {'advance.ref_46': 2000.0, 'advance.ref_64': -2000.0},
             'advance.ref_161': -2000.0,
             'advance.ref_64': 2000.0,
             'advance.ref_81': -2000.0}}
+
+ANDROID = {'generation': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 202, 616, 'sha256:30347afa31d33831fa1d3bbbabf9652b56c8feb0d44e5e0bb7b3f65725355aae'),
+           'route': ('_ZN5RouteC2EPii', 0, 228, 'sha256:206c9e9f68dd7dfdfe33085c791bf4602ba91c3e96484ca17261c1508621f29f'),
+           'loop': ('_ZN5Route7setLoopEb', 0, 4, '01717047'),
+           'policy': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 1070, 78, 'sha256:9105c76518e32058b6d751681a5b8702b07d90ebd43f02e8433d78166fc7bf19'),
+           'copy_points': ('_ZN5Route5cloneEv', 8, 122, 'sha256:e3ed475e517a626c0bf08bbefa53db0c1f0b5661827d98e9353e5476118a24f1'),
+           'copy_plain': ('_ZN5Route5cloneEv', 130, 28, 'sha256:8e3b3888a5278fab0be6abb6e92c954733464f9c8f3293deef166b17600b41ac'),
+           'dispatch': ('_ZN13PlayerFighter6updateEi', 2402, 96, 'sha256:bdea56ce86ebb7020cb98cd1a73569e92d0ffb41521e52e3e28cb2a4f67b914b'),
+           'waypoint': ('_ZN13PlayerFighter6updateEi', 2774, 62, 'sha256:b6710268020c7a18caa11c630a7d0fcbd2f098a6fee009e83528ea50d5285619'),
+           'near_gate': ('_ZN13PlayerFighter6updateEi', 6856, 20, 'd4f84401002800f07a8194f82811002940f07581'),
+           'fire_gate': ('_ZN13PlayerFighter6updateEi', 7690, 32, 'sha256:73794daf1a125a1de807850fd78b276da53ff3fd507fafa81ab570cd194d2958'),
+           'advance_wrapper': ('_ZN5Route6updateERKN11AbyssEngine6AEMath6VectorE', 0, 12, 'd1e900c28b68614698f05cba'),
+           'advance': ('_ZN5Route6updateEfff', 0, 252, 'sha256:e47630debc3a28b146b490a69d06c1b6af59f58ef5d3efc6e7d89edf6403c906'),
+           # The +-2000 arrival extent pool words.
+           'positive_extent': ('_ZN5Route6updateEfff', 252, 4, '0000fa44'),
+           'negative_extent': ('_ZN5Route6updateEfff', 256, 4, '0000fac4')}

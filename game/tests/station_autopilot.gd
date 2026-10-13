@@ -37,12 +37,12 @@ func verify(args: PackedStringArray):
 	if not lib.open(args[0]) or not bindings.open(args[1],lib.manifest) or not cat.open(lib) or not lib.select_language("gb") or not bodies.configure(lib,bindings):check(false,lib.error+bindings.error+cat.error+bodies.error);return
 	if bindings.station_autopilot.is_empty():check(not Autopilot.new().configure(bindings,cat,construction,resources),"Legacy pack invented station guidance");return
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	check(header.architecture=="x86_64","This verification is scoped to the Mac profile")
+	check(header.architecture in ["x86_64","android-armv7"],"This verification needs Mac or Android content")
 	check(Definitions.validate(bindings.station_autopilot,header.source_executable_bytes,header.architecture,bindings.arrival_staging,bindings.first_flight).is_empty(),"Valid autopilot declarations were refused")
 	for key in Definitions.VALUES:
 		var bad: Dictionary=bindings.station_autopilot.duplicate(true);bad[key]=null
 		check(not Definitions.parameters(bad),"Changed autopilot parameter accepted: "+key)
-	for key in Definitions.SPANS:
+	for key in (Definitions.ANDROID_SPANS if header.architecture=="android-armv7" else Definitions.SPANS):
 		var bad: Dictionary=bindings.station_autopilot.duplicate(true);bad.provenance[key].offset+=1
 		check(not Definitions.validate(bad,header.source_executable_bytes,header.architecture,bindings.arrival_staging,bindings.first_flight).is_empty(),"Detached autopilot provenance accepted: "+key)
 	var player:=Player.new();var handoff:=Handoff.new();check(player.configure(bindings,cat),player.error)
@@ -62,7 +62,10 @@ func verify(args: PackedStringArray):
 	check(owner.observe_manual(start_pose,Vector2.ZERO) and owner.start(),owner.error)
 	var started: Dictionary=owner.snapshot()
 	check(started.player_pose==start_pose and started.active and started.throttle==1 and started.events==[{"kind":"notification","source_id":10}],"Selecting a station moved the ship or omitted the source start event")
-	check(started.guidance_gain==f32(3.9795455932617188) and started.response_factor==f32(25.590911865234375) and started.bank_limit==f32(365.58447265625),"Handling, pilot response and bank scale were conflated")
+	# The starter's handling is 1.2: the Mac converts it ((h - 0.45) / 1.1 * 0.85 + 0.7), Android does not (Ship::getHandling).
+	var android: bool=header.architecture=="android-armv7"
+	if android:check(started.guidance_gain==f32(3.9000000953674316) and started.response_factor==f32(24.0) and started.bank_limit==f32(342.857177734375),"Handling, pilot response and bank scale were conflated")
+	else:check(started.guidance_gain==f32(3.9795455932617188) and started.response_factor==f32(25.590911865234375) and started.bank_limit==f32(365.58447265625),"Handling, pilot response and bank scale were conflated")
 	check(owner.advance(100,0.0,0,true) and owner.snapshot()==started,"Paused guidance changed pose or history")
 	check(not owner.advance(751 if not bindings.fast_forward.is_empty() else 151,0.0) and not owner.advance(-1,0.0) and not owner.advance(0.5,0.0) and not owner.advance(100,0.0,INF) and not owner.advance(100,0.0,-1) and owner.snapshot()==started,"Invalid guidance frame mutated its owner")
 	var clone: RefCounted=owner.fork_for_frame();clone.clear();check(owner.snapshot()==started,"Clearing guidance clone changed the original")
@@ -78,6 +81,15 @@ func verify(args: PackedStringArray):
 		10:[Vector3(0.48206809163093567,0.0,0.8761337399482727),Vector3(-19393.779296875,0.0,-18114.068359375),220.9320831298828,220.9320831298828],
 		20:[Vector3(0.6521215438842773,0.0,0.7581144571304321),Vector3(-18213.087890625,0.0,-16503.716796875),88.70319366455078,88.70319366455078],
 		40:[Vector3(0.7342114448547363,0.0,0.6789208650588989),Vector3(-15381.427734375,0.0,-13681.166015625),13.776895523071289,13.776895523071289]}
+	# The same reference with Android's unconverted handling.
+	if android:golden={
+		1:[Vector3(0.0690930113196373,0.0,0.9976102113723755),Vector3(-19986.181640625,0.0,-19800.478515625),29.629629135131836,342.857177734375],
+		2:[Vector3(0.13303764164447784,0.0,0.9911110401153564),Vector3(-19959.57421875,0.0,-19602.255859375),59.25925827026367,342.857177734375],
+		5:[Vector3(0.2944411337375641,0.0,0.9556695818901062),Vector3(-19813.212890625,0.0,-19020.95703125),148.1481475830078,321.92486572265625],
+		6:[Vector3(0.33878275752067566,0.0,0.9408645629882812),Vector3(-19745.45703125,0.0,-18832.783203125),177.77777099609375,287.0177307128906],
+		10:[Vector3(0.47706061601638794,0.0,0.87887042760849),Vector3(-19401.712890625,0.0,-18111.126953125),205.9999542236328,205.9999542236328],
+		20:[Vector3(0.6490168571472168,0.0,0.7607739567756653),Vector3(-18229.1484375,0.0,-16494.919921875),84.35120391845703,84.35120391845703],
+		40:[Vector3(0.7339944243431091,0.0,0.6791554689407349),Vector3(-15402.8818359375,0.0,-13667.1611328125),13.603257179260254,13.603257179260254]}
 	for frame in range(1,41):
 		check(owner.advance(100,0.0),owner.error)
 		var state: Dictionary=owner.snapshot()

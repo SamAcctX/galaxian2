@@ -27,8 +27,9 @@ func verify(args: PackedStringArray):
 	var library:=Library.new();var bindings:=Bindings.new();var visuals:=Visuals.new()
 	if not library.open(args[0]) or not bindings.open(args[1],library.manifest) or not visuals.open(args[2],library.manifest):
 		check(false,library.error+bindings.error+visuals.error);return
-	check(bindings.source_architecture=="x86_64","This fixture only verifies the Mac player")
-	if bindings.source_architecture!="x86_64":return
+	var supported: bool=bindings.source_architecture in ["x86_64","android-armv7"]
+	check(supported,"This fixture only verifies the Mac and Android player")
+	if not supported:return
 	viewport=SubViewport.new();viewport.size=Vector2i(960,540);viewport.own_world_3d=true
 	viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS;root.add_child(viewport)
 	var camera:=Camera3D.new();viewport.add_child(camera)

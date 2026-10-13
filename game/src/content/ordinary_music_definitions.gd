@@ -17,19 +17,30 @@ const APPSTORE := {"selector":[10,1001],"faction_getter":[57844,10],"faction_tab
 	"actor_marker_clear":[-758592,4],"marked_faction_origin":[-708146,97],"marked_roll_gate":[-703001,71],"marked_group_size":[-702651,31],"marked_actor_branch":[-701816,940],
 	"stats_marker_zero":[-141923,7],"stats_marker_setter":[-141292,28],"stats_marker_getter":[-141222,14]}
 
+# Android: the same values; spans inside named functions (Layouts.anchored).
+const ANDROID_VALUES := {"scope":"ordinary_flight_music","sample_phase":"radar_hud_after_world","requires_visible_radar":true,"intro_hold_id":143,"battle_maximums":[2,4],"battle_event_ids":[140,141,142],"faction_event_ids":[134,139,138,137],"portal_battle_id":136,"portal_peace_id":145,"deep_science_peace_id":152,"kind10_battle_id":151,"marked_battle_event_ids":[149,150],"marked_battle_maximum":4,"marked_actor_base_flag":false,"marked_root_bit_initial":false,"marked_actor_effective":"actor_flag_and_root_bit","marked_world_roll":{"faction":0,"group_count_positive":true,"bound":100,"below":30,"extra_group_sizes":[7,8]},"battle_retained_ids":[136,140,141,142,149,150,151],"peace_retained_ids":[127,128,129,130,134,137,138,139,145,146,147,148,152],"switch_action":"stop_then_start","stop_fade_ms":800,"normal_world_context_only":true}
+const ANDROID_SPANS := {"battle_selector":[10096,222],"battle_ladder":[10350,146],"large_battle":[10666,18],"medium_battle":[11038,8],"peace_selector":[11046,340],"faction_table":[0,16],"faction_getter":[0,4],"selected_retained":[0,10],"station_source":[0,28],"system_special":[0,52],"station_special":[0,58],"location_equal":[0,18],"station_getter":[0,4],"cursor_getter":[0,6],"actor_marker_clear":[180,40],"marked_faction_origin":[1442,72],"marked_faction_load":[1870,4],"marked_roll_gate":[5868,54],"marked_size_roll":[5998,58],"marked_group_size":[6118,18],"marked_actor_branch":[7352,30],"marked_wanted_ship":[6450,50],"marked_actor_flag":[6840,12],"marked_radar_use":[3628,30],"stats_marker_zero":[396,70],"stats_marker_setter":[0,16],"stats_marker_getter":[0,6]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
-	for key in VALUES:
-		if not Equal.equal_value(data.get(key),VALUES[key]):return false
+	return _equal(data, VALUES) or _equal(data, ANDROID_VALUES)
+
+static func _equal(data: Dictionary, values: Dictionary) -> bool:
+	for key in values:
+		if not Equal.equal_value(data.get(key),values[key]):return false
 	return true
 
 static func validate(data: Variant, source_bytes: int, arch: String, fast_forward: Dictionary, audio: Dictionary) -> String:
 	if not data is Dictionary:return "Invalid ordinary music declaration"
 	if data.is_empty():return ""
-	if not parameters(data) or arch!="x86_64" or not FastForward.radar_available(fast_forward):return "Ordinary music needs verified Mac radar and event declarations"
+	if not parameters(data) or not arch in ["x86_64","android-armv7"] or not FastForward.radar_available(fast_forward):return "Ordinary music needs verified Mac radar and event declarations"
 	var origin: Variant=fast_forward.radar.provenance.get("radar_music_publication_gate")
-	if not Fonts.extent(origin,"offset","bytes",[22],source_bytes):return "Ordinary music lost its radar source anchor"
-	if not Layouts.matches(data.provenance,int(origin.offset),source_bytes,[LEGACY,APPSTORE]):return "Invalid or mixed ordinary music source provenance"
+	if arch=="android-armv7":
+		if origin==null:return "Ordinary music lost its radar source anchor"
+		if not Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS):return "Invalid or mixed ordinary music source provenance"
+	else:
+		if not Fonts.extent(origin,"offset","bytes",[22],source_bytes):return "Ordinary music lost its radar source anchor"
+		if not Layouts.matches(data.provenance,int(origin.offset),source_bytes,[LEGACY,APPSTORE]):return "Invalid or mixed ordinary music source provenance"
 	var events: Variant=audio.get("events")
 	if not events is Array or events.size()!=2293:return "Ordinary music needs the selected source event project"
 	var selected: Array=VALUES.battle_event_ids+VALUES.faction_event_ids+VALUES.marked_battle_event_ids+[VALUES.intro_hold_id,VALUES.portal_battle_id,VALUES.portal_peace_id,VALUES.deep_science_peace_id,VALUES.kind10_battle_id]

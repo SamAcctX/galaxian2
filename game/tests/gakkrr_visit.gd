@@ -81,7 +81,7 @@ func verify(args: PackedStringArray) -> void:
 		var wrong:=original.duplicate(true)
 		wrong.gakkrr_visit=Travel.Gakkrr.MAC_VALUES.duplicate(true) if Travel.Equal.equal_value(original.gakkrr_visit,Travel.Gakkrr.VALUES) else Travel.Gakkrr.VALUES.duplicate(true)
 		check(not Travel.parameters(wrong),"Gakkrr accepted the other edition's dialogue")
-		for key in Travel.Gakkrr.SPANS:
+		for key in (Travel.Gakkrr.ANDROID_SPANS if header.architecture=="android-armv7" else Travel.Gakkrr.SPANS):
 			var changed:=original.duplicate(true);changed.provenance[key].offset+=1
 			check(not validate(changed,header,bindings).is_empty(),"An incorrect source offset passed: "+key)
 			changed=original.duplicate(true);changed.provenance.erase(key)

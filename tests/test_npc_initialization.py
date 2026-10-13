@@ -116,3 +116,89 @@ class NPCInitialization(unittest.TestCase):
             self.assertFalse(reader.extract_npc_initialization(m,f,m.text['address']+5800))
 
 if __name__=='__main__':unittest.main()
+
+
+ANDROID_NAMES = dict(selector='_ZN6Status12hardCoreModeEv', stats='_ZN6PlayerC1Eiiiii', actor='_ZN13PlayerFighterC1EiiP6PlayerP10AEGeometryfffb',
+                     base='_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', setter='_ZN6Player9setActiveEb')
+
+
+def android_functions(ordinary='0x390', special='0x309', value='2.500000e+00', fighter='#fighter', **changes):
+    """Synthetic Android factory chain: half extents 912/777, hard-core value 2.5."""
+    from android_text_fixture import fill
+    names = dict(ANDROID_NAMES, **changes.pop('names', {}))
+    selection = fill(reader.ANDROID_SELECTION, ordinary=ordinary, special=special, fighter=fighter, **names)
+    functions = {
+        '_ZN5Level10createShipEiiiP8Waypointbb': '\n'.join([
+            'push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', changes.pop('selection', selection), 'bx lr',
+            'fighter:', fill(reader.ANDROID_FIGHTER, **names), 'elsewhere:', 'bx lr']),
+        '_ZN6Status12hardCoreModeEv': fill(reader.ANDROID_SELECTOR, value=value),
+        '_ZN6PlayerC1Eiiiii': changes.pop('stats', '\n'.join([
+            'push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', 'add r7, sp, #0xc', fill(reader.ANDROID_STATS),
+            'call _ZN6Player16updateDamageRateEv', fill(reader.ANDROID_FLAGS), 'bx lr'])),
+        '_ZN13PlayerFighterC1EiiP6PlayerP10AEGeometryfffb': '\n'.join(['push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', fill(reader.ANDROID_BASE_CALL, **names), 'bx lr']),
+        '_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb': changes.pop('base', '\n'.join([
+            'push.w {r4, r5, r6, r7, r8, sb, sl, lr}', 'mov r5, r0', fill(reader.ANDROID_ACTOR_FLAGS),
+            'call _ZN11AbyssEngine6StringC1EPKcb', fill(reader.ANDROID_POINT), 'bx lr'])),
+        '_ZN8KIPlayer10setToSleepEv': fill(reader.ANDROID_DEACTIVATION, **names),
+        '_ZN6Player9setActiveEb': reader.ANDROID_ACTIVITY}
+    functions.update(changes)
+    return {k: v for k, v in functions.items() if v is not None}
+
+
+def android_extract(**changes):
+    from android_text_fixture import text_library
+    lib, addresses = text_library(android_functions(**changes))
+    return reader.extract_npc_initialization(lib, '_ZN5Level10createShipEiiiP8Waypointbb', '_ZN8KIPlayer10setToSleepEv'), addresses
+
+
+class AndroidNPCInitialization(unittest.TestCase):
+    def test_named_chain_gives_extents_flags_and_spans(self):
+        result, addresses = android_extract()
+        self.assertEqual((result['ordinary_half_extent'], result['special_half_extent'], result['special_difficulty']), (912, 777, 2.5))
+        self.assertEqual({k: v for k, v in result.items() if k not in ('ordinary_half_extent', 'special_half_extent', 'special_difficulty', 'provenance')},
+                         {'initial_armor': 0, 'initial_shield': 0.0, 'initial_firing_allowed': True, 'initial_active': False,
+                          'initial_damage_allowed': True, 'is_player': False, 'initial_special_impact_state': False,
+                          'initial_collision_enabled': True, 'initial_point_geometry': False})
+        found = {k: (v['offset'] - addresses[name], v['bytes']) for k, v, name in [
+            (k, v, n) for k, v in result['provenance'].items() for n in [{
+                'selection': '_ZN5Level10createShipEiiiP8Waypointbb', 'fighter_call': '_ZN5Level10createShipEiiiP8Waypointbb',
+                'selector': '_ZN6Status12hardCoreModeEv', 'stats_stores': '_ZN6PlayerC1Eiiiii', 'flags': '_ZN6PlayerC1Eiiiii',
+                'base_call': '_ZN13PlayerFighterC1EiiP6PlayerP10AEGeometryfffb', 'actor_flags': '_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb',
+                'point_geometry': '_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', 'opening_deactivation': '_ZN8KIPlayer10setToSleepEv',
+                'activity_setter': '_ZN6Player9setActiveEb'}[k]]]}
+        self.assertEqual(found, {'selection': (4, 112), 'fighter_call': (118, 72), 'selector': (0, 30), 'stats_stores': (6, 154),
+                                 'flags': (164, 84), 'base_call': (4, 28), 'actor_flags': (6, 58), 'point_geometry': (68, 24),
+                                 'opening_deactivation': (0, 28), 'activity_setter': (0, 6)})
+
+    def test_each_broken_rule_is_unsupported(self):
+        from android_text_fixture import fill
+        stats = lambda *parts: '\n'.join(['push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}', *parts, 'bx lr'])
+        base = lambda *parts: '\n'.join(['push.w {r4, r5, r6, r7, r8, sb, sl, lr}', *parts, 'bx lr'])
+        S, F, A, P = (fill(t) for t in (reader.ANDROID_STATS, reader.ANDROID_FLAGS, reader.ANDROID_ACTOR_FLAGS, reader.ANDROID_POINT))
+        selection = fill(reader.ANDROID_SELECTION, ordinary='0x390', special='0x309', fighter='#fighter', **ANDROID_NAMES)
+        cases = {
+            'two selections': dict(selection=selection + '\n' + selection),
+            'fighter elsewhere': dict(fighter='#elsewhere'),
+            'selector shape': {'_ZN6Status12hardCoreModeEv': fill(reader.ANDROID_SELECTOR, value='2.500000e+00').replace('it eq\nmoveq', 'it ne\nmovne')},
+            'no stores': dict(stats=stats(F)),
+            'flags first': dict(stats=stats(F, S)),
+            'stores twice': dict(stats=stats(S, F, S)),
+            'this changed first': dict(stats=stats('movs r0, #0', S, F)),
+            'this lost': dict(stats=stats(S, 'movs r4, #0', F)),
+            'no base call': {'_ZN13PlayerFighterC1EiiP6PlayerP10AEGeometryfffb': 'bx lr'},
+            'no actor flags': dict(base=base('mov r5, r0', P)),
+            'point first': dict(base=base('mov r5, r0', P, A)),
+            'base this from r1': dict(base=base('mov r5, r1', A, P)),
+            'base r0 changed': dict(base=base('movs r0, #0', 'mov r5, r0', A, P)),
+            'base this lost': dict(base=base('mov r5, r0', A, 'movs r5, #0', P)),
+            'deactivation shape': {'_ZN8KIPlayer10setToSleepEv': fill(reader.ANDROID_DEACTIVATION, **ANDROID_NAMES).replace('movs r0, #5', 'movs r0, #6')},
+            'activity shape': {'_ZN6Player9setActiveEb': 'strb.w r1, [r0, #0xc1]\nbx lr'},
+            'zero extent': dict(ordinary='0'),
+            'huge extent': dict(ordinary='0x1000000'),
+            'zero special extent': dict(special='0'),
+            'negative value': dict(value='-2.500000e+00'),
+            'large value': dict(value='1.600000e+01'),
+        }
+        for name, changes in cases.items():
+            with self.subTest(name):
+                self.assertEqual(android_extract(**changes)[0], {})

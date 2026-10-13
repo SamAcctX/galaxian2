@@ -73,3 +73,81 @@ class WeaponAudioTests(unittest.TestCase):
                 elif field=='origin':staging['provenance']['initial']['offset']+=2
                 else:mach.sections[-1]['segment']=b'__DATA'
                 self.assertFalse(reader.extract_weapon_audio(mach,weapons,actors,staging),(arch,field))
+
+
+def android_parents(lib, **changes):
+    """Parents whose catalogue and modifier spans are the library's own getters."""
+    def span(key):
+        symbol, delta, size = reader.ANDROID[key][:3]
+        start = lib.symbols[symbol][0]
+        return {'offset': lib.text['offset'] + start + delta - lib.text['address'], 'bytes': size}
+    construction = {'price_low_index': 15, 'price_high_index': 17,
+                    'provenance': {'item_layout': span('price_layout'), 'price': span('price_getter')}}
+    actors = {'npc_initialization': {'construction': construction, 'world_initialization': {'world_type': 3}}}
+    weapons = {'provenance': {'interval_getter': span('interval_getter')}}
+    staging = {'player_flight': {'present': True}}
+    parents = {'weapons': weapons, 'actors': actors, 'staging': staging}
+    for path, value in changes.items():
+        *keys, last = path.split('.')
+        target = parents
+        for key in keys:
+            target = target[key]
+        target[last] = value
+    return parents['weapons'], parents['actors'], parents['staging']
+
+
+def roomy(library):
+    """android_fixture.library with .dynstr moved to the image's end: the 21 proven names exceed its 512-byte slot."""
+    def build(functions, strings, **options):
+        from android_fixture import IMPORTS
+        image = bytearray(library(functions, strings, **options))
+        names = b'\0' + b''.join(name.encode() + b'\0' for name in IMPORTS) + b''.join(f[0].encode() + b'\0' for f in functions)
+        table, = struct.unpack_from('<I', image, 32)
+        struct.pack_into('<III', image, table + 40 * 2 + 12, len(image), len(image), len(names))
+        return bytes(image + names)
+    return build
+
+
+class AndroidWeaponAudio(unittest.TestCase):
+    def setUp(self):
+        import android_fixture
+        from unittest.mock import patch
+        self.enterContext(patch.object(android_fixture, 'library', roomy(android_fixture.library)))
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from gof2_content.android_library import AndroidLibrary
+        from unittest.mock import patch
+        verify_android_proof(self, reader, lambda lib: reader.extract_weapon_audio(lib, *android_parents(lib)))
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            self.assertTrue(reader.extract_weapon_audio(lib, *android_parents(lib)))
+            for change in ({'staging.player_flight': {}}, {'actors.npc_initialization.world_initialization': {'world_type': 2}},
+                           {'actors.npc_initialization.construction.price_low_index': 14}, {'actors.npc_initialization.construction.price_high_index': 18},
+                           {'actors.npc_initialization.construction.provenance': {}}, {'weapons.provenance': {}}):
+                self.assertEqual(reader.extract_weapon_audio(lib, *android_parents(lib, **change)), {}, change)
+            self.assertEqual(reader.extract_weapon_audio(lib, {}, *android_parents(lib)[1:]), {})
+            result = reader.extract_weapon_audio(lib, *android_parents(lib))
+            result['player_event_ids'].append(0)
+            result['npc_event_ids'].append(0)
+            self.assertEqual((len(reader.ANDROID_VALUES['player_event_ids']), len(reader.ANDROID_VALUES['npc_event_ids'])), (233, 11))
+            # The getters must be the parents' own.
+            weapons, actors, staging = android_parents(lib)
+            for parent, key in ((actors['npc_initialization']['construction']['provenance'], 'item_layout'),
+                                (actors['npc_initialization']['construction']['provenance'], 'price'), (weapons['provenance'], 'interval_getter')):
+                moved = copy.deepcopy(parent[key])
+                parent[key]['offset'] += 2
+                self.assertEqual(reader.extract_weapon_audio(lib, weapons, actors, staging), {}, key)
+                parent[key] = moved
+
+    def test_android_tables_are_the_hard_coded_events(self):
+        import hashlib
+        for key, ids in (('player_table', reader.ANDROID_VALUES['player_event_ids']), ('npc_table', reader.ANDROID_VALUES['npc_event_ids'])):
+            self.assertEqual('sha256:' + hashlib.sha256(struct.pack('<%di' % len(ids), *ids)).hexdigest(), reader.ANDROID[key][3], key)
+        self.assertEqual({k: v for k, v in reader.ANDROID_VALUES.items() if k not in ('player_event_ids', 'npc_event_ids')}, reader.VALUES)
+        self.assertEqual(reader.ANDROID_VALUES['npc_event_ids'], reader.NPC_EVENTS)
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'weapon_audio_definitions.gd')

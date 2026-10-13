@@ -2,10 +2,18 @@
 
 Only bounded literal assignments and material constructor arguments are read.
 Only the supported fields of two presets are emitted, never executable bytes.
+
+Android: ParticleSettings::init first fills all 48 particle sets (0x9c bytes,
+an 8-byte name, then the Mac's fields 8 bytes lower) with defaults in a loop,
+then assigns each set's name and fields; Level::init constructs the smoke and
+fire ParticleSystemManagers (kept at Level+0x78 and +0x84) with their materials.
 """
 import math
+import re
 import struct
 from .opening_loadout import template
+from .android_listing import Listing, number
+from .ship_models import section_bytes
 
 INTEGER_FIELDS = {0x10:'flags',0x14:'capacity',0x1c:'size_jitter',
     0x2c:'lifetime_ms',0x34:'even_spacing',0x40:'fade_in_ms',
@@ -31,7 +39,33 @@ def parameters(row):
     u0,v0,u1,v1=row['uv_rect']
     return all(math.isfinite(v) for v in row['uv_rect']) and 0<=u0<u1<=1 and 0<=v0<v1<=1 and (u1-u0)*(v1-v0)*row['animation_frames']<=1.000001
 
+def emitter_defaults(zero):
+    return {'auxiliary_sizes':[zero,zero], 'velocity_size_factor':zero,
+            'initial_fade_ms':int(zero), 'velocity_base':[zero,zero,zero],
+            'local_velocity_xy':[zero,zero], 'local_offset_x':zero,
+            'minimum_squared_speed':int(zero)}
+
+def preset_rows(values,ids):
+    """Rows of presets 15 and 42 from their fields (Mac offsets -> words), or None."""
+    records=[]
+    for index,preset in enumerate([15,42]):
+        data=values[preset];row={'preset_id':preset,'material_id':ids[index]}
+        for offset,name in INTEGER_FIELDS.items():
+            value=data[offset]
+            row[name]=value if name=='flags' else struct.unpack('<i',struct.pack('<I',value))[0]
+        for offset,name in FLOAT_FIELDS.items():row[name]=struct.unpack('<f',struct.pack('<I',data[offset]))[0]
+        for key,offset in [('start_rgba',0x38),('end_rgba',0x3c)]:row[key]=list(data[offset].to_bytes(4,'big'))
+        row['uv_rect']=[struct.unpack('<f',struct.pack('<I',data[offset]))[0] for offset in [0x8c,0x90,0x94,0x98]]
+        if not parameters(row):return None
+        records.append(row)
+    return records
+
+def disjoint(provenance):
+    spans=sorted((p['offset'],p['offset']+p['bytes']) for p in provenance.values())
+    return all(a[1]<=b[0] for a,b in zip(spans,spans[1:]))
+
 def extract_damage_particles(mach):
+    if mach.architecture=='android-armv7':return android_particles(mach)
     if mach.architecture not in ['x86_64','armv7']:return {}
     import capstone
     mac=mach.architecture=='x86_64';prefix='MAC_' if mac else 'ARM_'
@@ -69,11 +103,7 @@ def extract_damage_particles(mach):
         # These layouts declare zero in eleven fields used by the supported
         # emission path. Nonzero variants require further behavior recovery.
         require(all(value==0 for value in zeros))
-        zero=float(zeros[0])
-        emitter_defaults={'auxiliary_sizes':[zero,zero], 'velocity_size_factor':zero,
-            'initial_fade_ms':int(zero), 'velocity_base':[zero,zero,zero],
-            'local_velocity_xy':[zero,zero], 'local_offset_x':zero,
-            'minimum_squared_speed':int(zero)}
+        defaults=emitter_defaults(float(zeros[0]))
         require(target(smoke,'call_1d' if mac else 'call_12')==target(fire,'call_1d' if mac else 'call_12'))
         ids=[literal(smoke,'material'),literal(fire,'material')]
         require(all(0<=v<65535 for v in ids) and ids[0]!=ids[1])
@@ -82,20 +112,10 @@ def extract_damage_particles(mach):
             preset,offset=map(int,field.split(':'));v=literal(declarations,expression[0])
             if len(expression)==2:v=(v&65535)|(literal(declarations,expression[1])<<16)
             values[preset][offset]=v
-        records=[]
-        for index,preset in enumerate([15,42]):
-            data=values[preset];row={'preset_id':preset,'material_id':ids[index]}
-            for offset,name in INTEGER_FIELDS.items():
-                value=data[offset]
-                row[name]=value if name=='flags' else struct.unpack('<i',struct.pack('<I',value))[0]
-            for offset,name in FLOAT_FIELDS.items():row[name]=struct.unpack('<f',struct.pack('<I',data[offset]))[0]
-            for key,offset in [('start_rgba',0x38),('end_rgba',0x3c)]:row[key]=list(data[offset].to_bytes(4,'big'))
-            row['uv_rect']=[struct.unpack('<f',struct.pack('<I',data[offset]))[0] for offset in [0x8c,0x90,0x94,0x98]]
-            require(parameters(row));records.append(row)
-        spans=sorted((p['offset'],p['offset']+p['bytes']) for p in provenance.values())
-        require(all(a[1]<=b[0] for a,b in zip(spans,spans[1:])))
+        records=preset_rows(values,ids);require(records)
+        require(disjoint(provenance))
         return {'scope':'damage_particle_sprite_presets','presets':records,
-                'emitter_defaults':emitter_defaults,'provenance':provenance}
+                'emitter_defaults':defaults,'provenance':provenance}
     except (ValueError,KeyError,TypeError,IndexError,OverflowError,struct.error):return {}
 
 MAC_PRESETS = """
@@ -545,3 +565,257 @@ ARM_FIELDS['ARM_DEFAULTS'] = {
     'scalar_defaults': ('movs','r1'),
     'ref_2a': ('movw','r1'), 'ref_2e': ('movt','r1'),
     'call_34': ('bl',''), 'call_40': ('bl',''), 'call_50': ('bl','')}
+
+
+ANDROID_INIT = '_ZN16ParticleSettings4initEv'
+ANDROID_LEVEL = '_ZN5Level4initEv'
+ANDROID_MANAGER = '_ZN21ParticleSystemManagerC1EPN11AbyssEngine11PaintCanvasEN16ParticleSettings9CameraSetEtbtb'
+ANDROID_NAME = 'call _ZN11AbyssEngine6StringaSERKS0_'
+ANDROID_STRINGS = {ANDROID_NAME, 'call _ZN11AbyssEngine6StringC1EPKcb', 'call _ZN11AbyssEngine6StringD1Ev'}
+# Level fields of the two managers (as on iOS); a set's Mac field m lies at set + m - 8.
+ANDROID_MANAGERS = {'smoke_material': 0x78, 'fire_material': 0x84}
+ANDROID_FIELDS = sorted([*INTEGER_FIELDS, *FLOAT_FIELDS, 0x38, 0x3c, 0x8c, 0x90, 0x94, 0x98])
+CALLER_SAVED = r'r[0-3]|ip|d[0-7]|d1[6-9]|d[23]\d'
+
+# ParticleSettings::init: `this` in fp, the default vector (q5 = d10:d11) and
+# scalar (r4), then a branch over a literal pool into the loop below.
+ANDROID_PREAMBLE = r"""mov fp, r0
+ldr r0, =\w+
+vmov\.i32 q5, #(?P<vector>\w+)
+movw sl, #0
+adr r0, \w+
+add\.w r5, fp, #0x8c
+add r6, sp, #0x24
+movs r4, #(?P<scalar>\w+)
+ldr r0, \[r0\]
+mov\.w sb, #0x1f4
+movt sl, #0x427c
+mov\.w r8, #0
+ldr r0, \[r0\]
+str r0, \[sp, #0x2c\]
+adr r0, #0x18
+vld1\.64 \{d8, d9\}, \[r0:0x80\]
+b #(?P<loop>\w+)
+"""
+# One set per pass (r5 = set + 0x8c): the name, then the defaults; Mac fields
+# 0x1c-0x2b take the vector, 0x44 and 0x9c the scalar, 0x4c-0x93 are cleared.
+ANDROID_LOOP = r"""ldr r1, =\w+
+mov r0, r6
+movs r2, #0
+adr r1, \w+
+call _ZN11AbyssEngine6StringC1EPKcb
+sub\.w r0, r5, #0x8c
+mov r1, r6
+call _ZN11AbyssEngine6StringaSERKS0_
+mov r0, r6
+call _ZN11AbyssEngine6StringD1Ev
+movs r0, #0x10
+movs r1, #0x48
+str r0, \[r5, #-0x84\]
+movs r0, #1
+str r0, \[r5, #-0x80\]
+movs r0, #0
+movt r0, #0x42c8
+str r0, \[r5, #-0x7c\]
+sub\.w r0, r5, #0x78
+vst1\.32 \{d10, d11\}, \[r0\]
+movs r0, #0x64
+str r0, \[r5, #-0x68\]
+movs r0, #0
+movt r0, #0x43fa
+str r0, \[r5, #-0x64\]
+sub\.w r0, r5, #0x60
+vst1\.32 \{d8, d9\}, \[r0\]
+sub\.w r0, r5, #0x48
+strd r4, sb, \[r5, #-0x50\]
+call __aeabi_memclr4
+strd sl, sl, \[r5\]
+add\.w r8, r8, #1
+strd r4, r4, \[r5, #8\]
+adds r5, #(?P<stride>\w+)
+cmp\.w r8, #(?P<count>\w+)
+blt #(?P<back>\w+)
+"""
+
+
+class Flow:
+    """Register contents read backwards through code with one entry (nothing is executed)."""
+
+    def __init__(self, listing):
+        from capstone.arm_const import ARM_OP_IMM
+        from .android_library import is_jump
+        self.listing, self.lines, self.used = listing, listing.lines, set()
+        self.jumps = [(ins.address, ins.operands[-1].imm) for ins in listing.code
+                      if ins.id and is_jump(ins) and ins.operands and ins.operands[-1].type == ARM_OP_IMM]
+        self.targets = {target for _, target in self.jumps}
+
+    def source(self, index, register, keep=True):
+        """The last earlier instruction writing `register`, when no jump from elsewhere
+        lands in between and (for a caller-saved register) no call intervenes."""
+        found = self.listing.definition(index, register)
+        if found is None:
+            raise ValueError(register)
+        low, high = self.listing.code[found].address, self.listing.code[index].address
+        if (any(low < target <= high and not low < origin < high for origin, target in self.jumps)
+                or re.fullmatch(CALLER_SAVED, register) and any(line.startswith('call ') for line in self.lines[found + 1:index])):
+            raise ValueError(register)
+        if keep:
+            self.used.add(found)
+        return found
+
+    def value(self, index, register):
+        """The constant word `register` holds at `index`."""
+        found = self.source(index, register)
+        line = self.lines[found]
+        m = re.fullmatch(r'(movs|movw|mov\.w|mvn|movt) %s, #(-?\w+)' % register, line)
+        if m:
+            word = number(m[2]) & 0xffffffff
+            if m[1] == 'movt':
+                return self.value(found, register) & 0xffff | word << 16
+            return ~word & 0xffffffff if m[1] == 'mvn' else word
+        raise ValueError(line)
+
+    def this(self, index, register):
+        """`register` still holds the incoming r0 (the object)."""
+        found = self.source(index, register, keep=False)
+        if self.lines[found] != 'mov %s, r0' % register or self.listing.definition(found, 'r0') is not None:
+            raise ValueError(register)
+
+    def address(self, index, register):
+        """The offset from the object (fp) that `register` holds."""
+        found = self.source(index, register)
+        line = self.lines[found]
+        m = re.fullmatch(r'addw %s, fp, #(\w+)' % register, line)
+        if m or line == 'add %s, fp' % register:
+            self.this(found, 'fp')
+            return number(m[1]) if m else self.value(found, register)
+        m = re.fullmatch(r'mov %s, (\w+)' % register, line)
+        if m:
+            return self.address(found, m[1])
+        raise ValueError(line)
+
+    def vector(self, index, low, high):
+        """Four words loaded into `low`:`high` from the function's literal pool."""
+        found = self.source(index, low)
+        m = re.fullmatch(r'vld1\.64 \{%s, %s\}, \[(\w+):0x80\]' % (low, high), self.lines[found])
+        if self.source(index, high) != found:
+            raise ValueError(high)
+        pool = self.source(found, m[1])
+        n = re.fullmatch(r'addw %s, pc, #(\w+)' % m[1], self.lines[pool])
+        words = section_bytes(self.listing.lib, (self.listing.code[pool].address + 4 & ~3) + number(n[1]), 16, b'__text')
+        return list(struct.unpack('<4I', words[0]))
+
+    def stores(self, index):
+        """(offset from the object in fp, word) of each word one store writes."""
+        line = self.lines[index]
+        m = re.fullmatch(r'str\.w (\w+), \[fp, (#?)(\w+)\]', line)
+        if m:
+            self.this(index, 'fp')
+            return [(number(m[3]) if m[2] else self.value(index, m[3]), self.value(index, m[1]))]
+        m = re.fullmatch(r'vst1\.32 \{(\w+), (\w+)\}, \[(\w+)\]', line)
+        if m:
+            at = self.address(index, m[3])
+            return [(at + 4 * k, word) for k, word in enumerate(self.vector(index, m[1], m[2]))]
+        raise ValueError(line)
+
+    def stack(self, index, slot):
+        """(word, store index) of [sp, #slot] as set by the straight-line code before the call at `index`."""
+        for at in range(index - 1, -1, -1):
+            line = self.lines[at]
+            if line.startswith('call ') or self.listing.code[at + 1].address in self.targets:
+                break
+            pair = re.fullmatch(r'strd (\w+), (\w+), \[sp\]', line)
+            single = re.fullmatch(r'str (\w+), \[sp, #(\w+)\]', line)
+            if pair and slot in (0, 4):
+                return self.value(at, pair[1 + slot // 4]), at
+            if single and number(single[2]) == slot:
+                return self.value(at, single[1]), at
+            if not (pair or single) and line.startswith(('st', 'vst', 'push')) and 'sp' in line:
+                break
+        raise ValueError(slot)
+
+
+def android_set(flow, calls, names, preset, stride):
+    """Mac field offset -> word of one set: its stores between its name and the next
+    name assignment (`calls`: every String::operator=; `names`: offset -> those into it)."""
+    base = preset * stride
+    own = names.get(base, [])
+    later = [i for i in calls if own and i > own[0]]
+    if len(own) != 1 or not later:
+        raise ValueError(preset)
+    fields = {}
+    for i in range(own[0] + 1, later[0]):
+        line = flow.lines[i]
+        if line.startswith('call ') and line not in ANDROID_STRINGS:
+            raise ValueError(line)
+        if line.startswith(('st', 'vst')):
+            for at, word in flow.stores(i):
+                if at in fields or at >= base + stride:
+                    raise ValueError(at)
+                fields[at] = word
+            last = i
+    values = {at - base + 8: word for at, word in fields.items()}
+    if sorted(values) != ANDROID_FIELDS:
+        raise ValueError(preset)
+    return values, last
+
+
+def android_manager(flow, field):
+    """(material, first, last instruction index) of the one manager Level::init keeps at `field`."""
+    lines, found = flow.lines, []
+    for i, line in enumerate(lines):
+        if line != 'call ' + ANDROID_MANAGER:
+            continue
+        held = re.fullmatch(r'mov r0, (\w+)', lines[flow.source(i, 'r0')])[1]
+        j = next(j for j in range(i + 1, len(lines)) if lines[j].startswith(('str %s, [' % held, 'str.w %s, [' % held)))
+        m = re.fullmatch(r'str(?:\.w)? %s, \[(\w+), #(\w+)\]' % held, lines[j])
+        if flow.source(j, held) > i:
+            raise ValueError(held)
+        flow.this(j, m[1])
+        if number(m[2]) == field:
+            found.append((i, j))
+    if len(found) != 1:
+        raise ValueError(field)
+    i, j = found[0]
+    arguments = [flow.stack(i, slot) for slot in (0, 4, 8)]
+    if flow.value(i, 'r2') != 1 or [word for word, _ in arguments] != [0, 0xffff, 0]:
+        raise ValueError(field)
+    first = min([at for _, at in arguments] + [flow.source(i, register) for register in ('r0', 'r2', 'r3')])
+    return flow.value(i, 'r3'), first, j
+
+
+def android_particles(lib):
+    """Sets 15 and 42 (their stores and every constant those read), the defaults
+    loop, and the two managers' constructions; values as the Mac reader emits them."""
+    init, level = Listing(lib, ANDROID_INIT), Listing(lib, ANDROID_LEVEL)
+    preambles, loops = init.find(ANDROID_PREAMBLE), init.find(ANDROID_LOOP)
+    if len(preambles) != 1 or len(loops) != 1:
+        return {}
+    preamble, loop = preambles[0], loops[0]
+    start = init.code[init.index(loop)].address
+    if (number(preamble['loop']) != start or number(loop['back']) != start or number(preamble['vector'])
+            or number(preamble['scalar']) or number(loop['count']) <= 42):
+        return {}
+    try:
+        flow, calls, names = Flow(init), [i for i, line in enumerate(init.lines) if line == ANDROID_NAME], {}
+        for i in calls:
+            try:
+                names.setdefault(flow.address(i, 'r0'), []).append(i)
+            except ValueError:
+                pass
+        flow.used = set()
+        (set15, last15), (set42, last42) = (android_set(flow, calls, names, preset, number(loop['stride'])) for preset in (15, 42))
+        provenance = {'presets': init.span(min(flow.used), max(last15, last42))}
+        level_flow, ids = Flow(level), []
+        for key, field in ANDROID_MANAGERS.items():
+            material, first, last = android_manager(level_flow, field)
+            ids.append(material)
+            provenance[key] = level.span(first, last)
+    except (ValueError, TypeError, StopIteration):
+        return {}
+    provenance['defaults'] = init.span(init.index(preamble), init.last(loop))
+    records = preset_rows({15: set15, 42: set42}, ids) if all(0 <= v < 65535 for v in ids) and ids[0] != ids[1] else None
+    if not records or not disjoint(provenance):
+        return {}
+    return {'scope': 'damage_particle_sprite_presets', 'presets': records,
+            'emitter_defaults': emitter_defaults(0.0), 'provenance': provenance}

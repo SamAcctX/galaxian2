@@ -2,12 +2,17 @@
 
 Runtime owners and spatial rendering are separate capabilities. No original
 instructions, executable pointers or executable bytes enter the binding pack.
+
+Android: PlayerEgo's constructor selects the engine event between the
+handling setup and the agility scaling (its literal pool holds the
+thresholds); PlayerEgo::handleShip sets both engine parameters through
+Player::GetEngineEvent and FModSound::setParamValue before its rotation step.
 """
 import copy
 import math
 import struct
 from .ship_models import section_bytes
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 VALUES = {'selection_input': 'handling_before_equipment',
           'event_ids': [42, 43, 44, 45],
@@ -21,6 +26,8 @@ VALUES = {'selection_input': 'handling_before_equipment',
 
 def extract_engine_audio(mach, vehicle, rotation):
     arch = mach.architecture
+    if arch == 'android-armv7':
+        return android_audio(mach, vehicle, rotation)
     if arch not in LAYOUTS:
         return {}
     try:
@@ -134,3 +141,38 @@ MAC_DATA_REFERENCES = {'threshold_high': ['selection', 136, 140],
  'threshold_low': ['selection', 182, 186],
  'horizontal_scale': ['controls', 147, 151],
  'horizontal_offset': ['controls', 155, 159]}
+
+
+def android_audio(lib, vehicle, rotation):
+    """Spans by function name; the handling setup and rotation step must be the parents' own extents."""
+    proof = recognize_symbols(lib, ANDROID)
+    if not proof:
+        return {}
+
+    def extent(span):
+        return (span.get('offset'), span.get('bytes')) if isinstance(span, dict) else None
+    try:
+        linked = (extent(vehicle['provenance']['handling_setup']) == extent(proof['handling_setup'])
+                  and extent(rotation['provenance'][0]) == extent(proof['rotation_anchor']))
+    except (KeyError, IndexError, TypeError):
+        return {}
+    return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if linked else {}
+
+
+ANDROID = {'handling_setup': ('_ZN9PlayerEgoC2EP6Player', 830, 8, 'c5f732eac4f85401'),
+           'selection': ('_ZN9PlayerEgoC2EP6Player', 838, 156, 'sha256:fa0a0c7fb984e37bf48ec2428c884757702118713dace22861186942d765eb1d'),
+           'equipment_after_selection': ('_ZN9PlayerEgoC2EP6Player', 994, 58, 'sha256:7185f7fef63b81b6d99090988911e27738188460dc6f25559f0edd4ebb31453c'),
+           'threshold_high': ('_ZN9PlayerEgoC2EP6Player', 1308, 4, '3333b33f'),
+           'threshold_middle': ('_ZN9PlayerEgoC2EP6Player', 1312, 4, '3333933f'),
+           'threshold_low': ('_ZN9PlayerEgoC2EP6Player', 1316, 4, '3333733f'),
+           'ship_getter': ('_ZN4Ship8getIndexEv', 0, 4, '00687047'),
+           'control_owner': ('_ZN9PlayerEgo10handleShipEi', 0, 34, 'sha256:0b737580e11f7aa3b9bfdbc984f2b44db404534b2808454559e05d277272c807'),
+           'controls': ('_ZN9PlayerEgo10handleShipEi', 34, 130, 'sha256:b4a1ee45e574cee0a7eb5f9f596f2e7fe94ad21e4d933d40627b4090007bd4ee'),
+           'rotation_anchor': ('_ZN9PlayerEgo10handleShipEi', 256, 72, 'sha256:c707662e42274301219c4b2c9fd4e2ca55f2d0c663dd1ed6dabd70f4c71528a6'),
+           'horizontal_scale': ('_ZN9PlayerEgo10handleShipEi', 904, 4, 'cdcc4c3e'),
+           'instance_getter': ('_ZN6Player14GetEngineEventEv', 0, 6, 'd0f8f0007047'),
+           'parameter_wrapper': ('_ZN9FModSound13setParamValueEPN4FMOD5EventEif', 0, 80, 'sha256:399a3273cc9b5c1f745e6cf788a134e2897d1e7ee29c699cc17a59fca87bcb5a')}
+
+# The Mac 1.0.7 values; the thresholds and horizontal scale are the proven pool floats.
+ANDROID_VALUES = dict(copy.deepcopy(VALUES), thresholds=[0.949999988079071, 1.149999976158142, 1.399999976158142],
+                      horizontal_scale=0.20000000298023224)

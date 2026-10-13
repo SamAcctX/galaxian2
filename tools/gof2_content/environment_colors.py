@@ -2,16 +2,113 @@
 
 Only constant floats and file extents leave this import-time reader. No original
 instructions are evaluated or emitted into the runtime.
+
+Android: StarSystem::initLight reads the sun row at 3 x SolarSystem::
+getTextureIndex(), the rim color from the same row of the rim table
+(LightSetRimColor), and the planet row at 3 x Station::getTextureIndex() of
+Status::getStation() through a shared table read.
 """
 import math
 import struct
 from .opening_loadout import template
+from .opening_sky import android_getter
 from .ship_models import section_bytes
 
 COUNTS = {'sun_rgb':19, 'planet_rgb':27, 'rim_rgb':19}
 
+ANDROID_SUN = r"""ldr r0, =\w+
+adr r0, \w+
+ldr r0, \[r0\]
+ldr r0, \[r0\]
+call _ZN6Status9getSystemEv
+call _ZN11SolarSystem15getTextureIndexEv
+ldrb\.w r1, \[r8, #0x28\]
+add\.w r4, r0, r0, lsl #1
+cmp r1, #0
+it eq
+moveq r5, #1
+ldr r0, =\w+
+add\.w sl, r4, #1
+adds r6, r4, #2
+vldr s22, =0x3e19999a
+adr r0, (?P<table>\w+)
+cmp r5, #1
+ldr\.w r1, \[r0, sl, lsl #2\]
+ldr\.w r2, \[r0, r6, lsl #2\]
+ldr\.w r0, \[r0, r4, lsl #2\]
+stm\.w r8, \{r0, r1, r2\}
+"""
+ANDROID_PLANET = r"""ldr r0, =\w+
+adr r0, \w+
+ldr r0, \[r0\]
+ldr r0, \[r0\]
+call _ZN6Status10getStationEv
+call _ZN7Station15getTextureIndexEv
+ldrb\.w r1, \[r8, #0x28\]
+add\.w r0, r0, r0, lsl #1
+b #(?P<read>\w+)
+"""
+ANDROID_PLANET_TABLE = r"""ldr r2, =\w+
+vmov\.f32 s24, #1\.500000e\+01
+cmp r1, #0
+adr r2, (?P<table>\w+)
+add\.w r0, r2, r0, lsl #2
+vldr s16, \[r0\]
+vldr s18, \[r0, #4\]
+vldr s20, \[r0, #8\]
+"""
+ANDROID_RIM = r"""ldr r0, =\w+
+vmov\.f32 s0, #3\.000000e\+00
+adr r0, (?P<table>\w+)
+add\.w r1, r0, r6, lsl #2
+add\.w r2, r0, r4, lsl #2
+add\.w r0, r0, sl, lsl #2
+vldr s2, \[r2\]
+vldr s4, \[r0\]
+ldr\.w r0, \[sb\]
+vmul\.f32 s22, s2, s0
+vldr s6, \[r1\]
+vmul\.f32 s17, s4, s0
+vmul\.f32 s19, s6, s0
+call _ZN11AbyssEngine18ApplicationManager9GetEngineEv
+vmov r1, s22
+vmov r2, s17
+vmov r3, s19
+call _ZN11AbyssEngine6Engine16LightSetRimColorEfff
+"""
+
+
+def android_colors(lib, sky):
+    """Sun, planet and rim rows in StarSystem::initLight."""
+    from .android_listing import Listing, number
+    light = Listing(lib, '_ZN10StarSystem9initLightEv')
+    sun, planet, rim = (light.find(shape) for shape in (ANDROID_SUN, ANDROID_PLANET, ANDROID_RIM))
+    if 'system' not in sky.get('provenance', {}) or len(sun) != 1 or len(planet) != 1 or len(rim) != 1:
+        return {}
+    sun, planet, rim = sun[0], planet[0], rim[0]
+    read = light.at(number(planet['read']))
+    table = [m for m in light.find(ANDROID_PLANET_TABLE) if light.index(m) == read]
+    if not table:
+        return {}
+    provenance = {key: android_getter(lib, symbol) for key, symbol in
+                  [('system', '_ZN6Status9getSystemEv'), ('sky_index', '_ZN11SolarSystem15getTextureIndexEv'),
+                   ('station', '_ZN6Status10getStationEv'), ('planet_type', '_ZN7Station15getTextureIndexEv')]}
+    provenance.update(sun=light.match_span(sun), planet=light.match_span(planet), planet_table=light.match_span(table[0]),
+                      rim=light.match_span(rim))
+    result = {}
+    for (key, count), m in zip(COUNTS.items(), (sun, table[0], rim)):
+        found = section_bytes(lib, number(m['table']), count * 12, b'__const')
+        values = [list(row) for row in struct.iter_unpack('<3f', found[0])] if found else []
+        if not values or not all(0 <= v <= 16 for row in values for v in row):
+            return {}
+        result[key] = values
+        provenance[key] = {'offset': found[1], 'bytes': count * 12}
+    return dict(result, provenance=provenance) if all(provenance.values()) else {}
+
 
 def extract_environment_colors(mach, sky):
+    if mach.architecture == 'android-armv7':
+        return android_colors(mach, sky or {})
     if not sky or mach.architecture not in ['x86_64','armv7']: return {}
     import capstone
     mac=mach.architecture=='x86_64'; prefix='MAC_' if mac else 'ARM_'

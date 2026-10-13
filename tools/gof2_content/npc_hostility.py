@@ -1,4 +1,11 @@
-"""Fresh opening NPC hostility declarations, with linked constructor/update evidence."""
+"""Fresh opening NPC hostility declarations, with linked constructor/update evidence.
+
+Android: Player::Player and KIPlayer::KIPlayer clear the hostility flags,
+Status::resetGame clears the black-market override; PlayerFighter::update
+(vtable slot 13) marks kind 8/9 actors hostile before any activity check, then
+applies the black-market neutralization, Player::turnedEnemy and
+Player::isAlwaysFriend overrides.
+"""
 import copy
 from .opening_loadout import template
 from .ship_models import section_bytes
@@ -10,7 +17,136 @@ GETTERS={'x86_64':{'special_getter':('call_41','554889e58a87ec00000024015dc3'),
                   'neutral_getter':('call_64','90f8ed007047')}}
 
 
+ANDROID_FRESH = """
+movs r4, #0
+str.w r4, [r8, #0x8c]
+ldr r0, [r0]
+strd r4, r4, [r8, #0x1ac]
+str.w r4, [r8, #0x1c0]
+str.w r4, [r8, #0x1c4]
+vst1.32 {d16, d17}, [r1]
+movs r1, #1
+str.w r4, [r8, #0x1e4]
+strd r1, r4, [r8, #0x1c8]
+str.w r4, [r8, #0x1d0]
+strd r4, r4, [r8, #0x1b8]
+strd r4, r4, [r8, #0x100]
+str.w r4, [r8, #0x10c]
+strb.w r4, [r8, #0x110]
+"""
+# PlayerFighter::update, `this` in r4: hostile (Player 0x5c) for kinds 8 and 9.
+ANDROID_KIND = """
+ldrb.w r0, [r4, #0x3f]
+str r5, [sp, #0xcc]
+cbz r0, {@compute}
+mov r5, r4
+ldr r0, [r5, #4]!
+b {}
+compute: ldr r0, [r4, #0x24]
+bic r0, r0, #1
+cmp r0, #{kind}
+bne {@other}
+movs r0, #1
+b {@store}
+other: mov r0, r4
+call _ZN8KIPlayer9isWingManEv
+cbz r0, {@standing}
+movs r0, #0
+b {@store}
+standing: ldr.w r0, ={}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+call _ZN6Status11getStandingEv
+ldr r1, [r4, #0x24]
+call _ZN8Standing7isEnemyEi
+store: mov r5, r4
+ldr r1, [r5, #4]!
+strb.w r0, [r1, #0x5c]
+"""
+ANDROID_OVERRIDES = """
+ldr.w r0, ={}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+call _ZN6Status19inBlackMarketSystemEv
+cmp r0, #1
+bne {@player}
+ldr.w r0, ={}
+add r0, pc
+ldr r0, [r0]
+ldr r0, [r0]
+ldrb.w r0, [r0, #0x110]
+cbz r0, {@player}
+ldr r0, [r4, #0x24]
+cmp r0, #8
+itttt eq
+ldreq r0, [r4, #4]
+moveq r1, #0
+strbeq.w r1, [r0, #0x5c]
+strbeq.w r1, [r0, #0x5d]
+player: ldr r0, [r4, #4]
+call {special_getter}
+mov r1, r0
+ldr r0, [r4, #4]
+cmp r1, #1
+itt eq
+moveq r1, #1
+strheq.w r1, [r0, #0x5c]
+call {neutral_getter}
+cmp r0, #1
+bne {@done}
+ldr r0, [r4, #4]
+movs r1, #1
+strb.w r1, [r0, #0x5d]
+movs r1, #0
+strb.w r1, [r0, #0x5c]
+done: ldrb.w r0, [r4, #0xd8]
+"""
+ANDROID_GETTERS = {'special_getter': 'ldrb.w r0, [r0, #0xe0]\nbx lr', 'neutral_getter': 'ldrb.w r0, [r0, #0xed]\nbx lr'}
+
+
+def android_hostility(lib):
+    from .android_shapes import Listing, relocation, vtable_slot
+    from .npc_initialization import ANDROID_ACTOR_FLAGS, ANDROID_FLAGS
+    method = relocation(lib, vtable_slot(lib, '_ZTV13PlayerFighter', 13))
+    if method is None:
+        return {}
+    update = Listing(lib, method[0])
+    stats = Listing(lib, '_ZN6PlayerC1Eiiiii')
+    base = Listing(lib, '_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb')
+    status = Listing(lib, '_ZN6Status9resetGameEv')
+    shapes = {'stats_flags': stats.unique(ANDROID_FLAGS), 'base_flags': base.unique(ANDROID_ACTOR_FLAGS),
+              'fresh_override': status.unique(ANDROID_FRESH), 'kind': update.unique(ANDROID_KIND), 'overrides': update.unique(ANDROID_OVERRIDES)}
+    if None in shapes.values() or shapes['kind'].value('kind') != 8:
+        return {}
+    # `this` in r4 (Player), r5 (KIPlayer) and r8 (Status) up to the stores; as in the
+    # Mac reader, the update's other paths are not followed.
+    for listing, register, key in ((stats, 'r4', 'stats_flags'), (base, 'r5', 'base_flags'), (status, 'r8', 'fresh_override')):
+        if not listing.holds(register, shapes[key].last):
+            return {}
+    # Every Globals reference is the Status singleton.
+    adds = [i for key in ('kind', 'overrides') for i in range(shapes[key].first, shapes[key].last + 1) if update.lines[i] == 'add r0, pc']
+    if [(relocation(lib, update.address(i)) or [None])[0] for i in adds] != ['_ZN7Globals6statusE'] * 3:
+        return {}
+    getters = {key: Listing(lib, shapes['overrides'][key]).at(template, 0) for key, template in ANDROID_GETTERS.items()}
+    if None in getters.values():
+        return {}
+    proof = {'virtual_update': method[1], **{key: shape.span() for key, shape in {**shapes, **getters}.items()}}
+    result = copy.deepcopy(VALUES)
+    result['provenance'] = proof
+    return result
+
+
 def extract_npc_hostility(mach,actors):
+    if mach.architecture == 'android-armv7':
+        initial = actors.get('npc_initialization') or {}
+        if not (initial.get('guidance') and initial.get('holding') and initial.get('activation')):
+            return {}
+        if ([r['actor_id'] for r in actors['actors']] != [0, 1, 2] or [r['actor_kind'] for r in actors['actors']] != [8, 8, 8]
+                or [r['hull_catalogue_id'] for r in actors['actors']] != [2, 23, 2]):
+            return {}
+        return android_hostility(mach)
     import capstone
     if mach.architecture not in LAYOUTS:return {}
     mac=mach.architecture=='x86_64';proof={}

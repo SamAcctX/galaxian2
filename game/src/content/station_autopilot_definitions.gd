@@ -9,6 +9,9 @@ const SPANS := {"station_menu":[358266,88],"target_setter":[562440,134],"station
 
 const MAC_ALTERNATE := {"station_menu":[357980,88],"target_setter":[562976,134],"station_position":[650298,22],"ordinary_branch":[579009,459],"ordinary_movement_else":[579468,90],"guidance":[568686,1486],"bank_constructor":[553679,107],"manual_retained_bank":[565591,32],"bank_visual":[579707,493],"effective_handling":[729920,106],"response_scale":[552751,60],"matrix_xyz":[1235426,470],"matrix_right_column":[1233906,81],"model_matrix_set":[-730082,23],"camera_target":[232210,24],"camera_attach":[905716,10],"camera_target_read":[906110,79],"bank_constructor_floats":[1562846,8],"handling_scale":[1520678,4],"gain_and_bank_floats":[1562926,12],"maximum_gain":[1550114,4],"angle_tau":[1550122,4],"pitch_floats":[1563034,24],"bank_sign_angle":[1549994,4]}
 
+# Android: spans inside named functions (Layouts.anchored); the values are VALUES.
+const ANDROID_SPANS := {"station_menu":[2338,48],"cancel_notice":[7194,44],"guidance_gain":[5434,196],"bank_visual":[5820,276],"guidance_constants":[5752,40],"move_to_position":[0,960],"roll":[0,488],"bank_constructor":[1636,62],"bank_constructor_floats":[2200,12],"effective_handling":[0,76],"matrix_xyz":[0,224]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -18,7 +21,8 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, flight: Dictionary) -> String:
 	if not data is Dictionary:return "Missing station autopilot declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data) or not Flight.parameters(flight):return "Unsupported station autopilot declarations"
+	if not (arch=="x86_64" or arch=="android-armv7") or not parameters(data) or not Flight.parameters(flight):return "Unsupported station autopilot declarations"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid station autopilot extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Station autopilot lacks its source anchor"
 	var layouts: Array=[SPANS,MAC_ALTERNATE]

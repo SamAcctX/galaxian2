@@ -2,9 +2,12 @@ extends RefCounted
 ## Shared generated coordinate routes; context owners validate each population.
 const Fonts = preload("res://src/content/font_definitions.gd")
 const Numbers = preload("res://src/content/opening_definitions.gd")
+const Layouts = preload("res://src/content/declaration_layouts.gd")
 const ORIGINS = [[-30000,-10000,20000],[5000,-10000,20000],[5000,-10000,55000],[-30000,-10000,55000]]
 const BOUNDS = [25000,10000,25000]
 const EXPECTED = {"count_minimum":2,"count_bound":3,"candidate_bound":4,"initial_index":0,"arrival_half_extent":2000}
+# Android: spans inside named functions (Layouts.anchored); the values are VALUES.
+const ANDROID_SPANS := {"generation":[202,616],"route":[0,228],"loop":[0,4],"policy":[1070,78],"copy_points":[8,122],"copy_plain":[130,28],"dispatch":[2402,96],"waypoint":[2774,62],"near_gate":[6856,20],"fire_gate":[7690,32],"advance_wrapper":[0,12],"advance":[0,252],"positive_extent":[252,4],"negative_extent":[256,4]}
 
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=EXPECTED.size()+4 or not data.get("provenance") is Dictionary: return false
@@ -26,6 +29,8 @@ static func validate(data: Variant, executable_bytes: int, architecture: String)
 	if not data is Dictionary: return "Missing opening NPC route declaration"
 	if data.is_empty(): return ""
 	if not parameters(data): return "Unsupported opening NPC route parameters"
+	if architecture=="android-armv7":
+		return "" if Layouts.anchored(data.provenance,executable_bytes,ANDROID_SPANS) else "Invalid opening NPC route provenance"
 	var sizes: Dictionary = SIZES.get(architecture,{})
 	if sizes.is_empty() or data.provenance.size()!=sizes.size(): return "Invalid opening NPC route provenance"
 	var spans := []

@@ -2,6 +2,7 @@ extends RefCounted
 ## Source offer terms only. This capability does not enable or complete missions.
 const Equal=preload("res://src/content/opening_escape_definitions.gd")
 const Fonts=preload("res://src/content/font_definitions.gd")
+const Layouts=preload("res://src/content/declaration_layouts.gd")
 const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const Contacts=preload("res://src/content/lounge_contact_definitions.gd")
 const Delivery=preload("res://src/content/delivery_result_definitions.gd")
@@ -23,6 +24,10 @@ const SPANS = {"lounge_gate":[440570,53],"early_selector":[-233602,129],"early_c
 const MAC_SPANS = {"lounge_gate":[441082,53],"early_selector":[-234622,129],"early_choices":[-232390,20],"early_difficulty":[-234248,35],"parameter_dispatch":[-233903,45],"parameter_choices":[-232370,48],"courier_quantity":[-233662,55],"passenger_quantity":[-233607,35],"quantity_constants":[1532090,28],"mido_destination":[-234964,93],"delivery_destination":[-234457,209],"mido_destination_retry":[-238098,81],"same_system_distance":[-664363,31],"reward_base":[-233486,157],"passenger_reward":[-233258,61],"rank_reward":[-233197,54],"bonus_reward":[-233143,127],"credit_quantization":[-233016,91],"reward_constructor":[-232925,79],"parameter_setters":[-232588,32],"reward_one":[1519594,4],"junk_multiplier":[1531918,4],"passenger_multiplier":[1531934,4],"reputation_bonus":[808910,104],"reputation_divisor":[1531926,4],"mission_title":[401112,86],"mission_briefing":[-210071,30],"cargo_description":[-209562,30],"mission_constructor":[399485,178],"mission_quantity":[401036,42],"mission_reward_getter":[401290,10],"mission_bonus_getter":[401330,20],"courier_capacity":[749590,90],"passenger_capacity":[750007,89],"courier_cargo":[744403,111],"passenger_load":[744514,57],"side_mission_owner":[860132,44]}
 const MAC_VALUES = {"scope":"mido_early_contract_terms","system_id":15,"first_cursor":13,"last_cursor":15,"contact_role":0,"kind_choices":[11,0,7,4,12],"difficulty_draw_bound":2,"difficulty_add":1,"initial_destination_count":4,"delivery_kinds":[0,11],"local_challenge_kind":12,"title_text_base":343,"briefing_text_base":775,"courier":{"kind":0,"quantity_by_difficulty":[14,24],"description_text_base":802,"description_draw_bound":7,"cargo_item_id":116,"capacity_text_id":326},"passenger":{"kind":11,"quantity_by_difficulty":[3,5],"capacity_text_id":327},"reward":{"base":1500,"difficulty_divisor":10.0,"difficulty_multiplier":5500.0,"distance_divisor":1200.0,"junk_kind":7,"junk_multiplier":0.699999988079071,"passenger_multiplier":0.6000000238418579,"passenger_quantity_divisor":5.0,"rank_cubic_multiplier":10,"credit_step":50,"credit_rounding":"truncate_except_exact_half_up"},"bonus":{"excluded_kinds":[12],"divisor":100.0,"faction_axes":[0,0,1,1],"faction_signs":[1,-1,1,-1],"other_factions":0,"minimum":0}}
 
+# Android: spans inside named functions (Layouts.anchored); the values are MAC_VALUES and MAC_ACCEPTANCE.
+const ANDROID_SPANS = {"early_lounge_gate":[770,36],"early_mido_destination":[46,68],"early_selector":[284,72],"early_choices":[0,20],"early_delivery_destination":[394,222],"early_difficulty":[624,44],"early_parameter_dispatch":[820,30],"early_courier_quantity":[982,58],"early_passenger_quantity":[1084,34],"early_reward_base":[1186,226],"early_passenger_reward":[1412,56],"early_rank_reward":[1468,44],"early_bonus_reward":[1512,100],"early_credit_quantization":[1612,78],"early_reward_constructor":[1690,56],"early_parameter_setters":[1940,24],"early_quantity_constants":[1840,12],"early_reward_multipliers":[2260,12],"early_destination_retry":[182,60],"early_same_system_distance":[22,22],"early_reputation_bonus":[0,84],"early_mission_title":[0,64],"early_mission_briefing":[104,26],"early_cargo_description":[4792,26],"early_mission_constructor":[0,280],"early_mission_goods_setter":[0,6],"early_mission_goods_index":[0,4],"early_mission_goods_amount":[0,4],"early_mission_reward_getter":[0,4],"early_mission_bonus_getter":[0,4],"early_mission_bonus_setter":[0,4],"early_courier_capacity_kind":[4520,16],"early_courier_capacity":[5444,38],"early_courier_capacity_text":[6978,18],"early_passenger_capacity":[4536,66],"early_contract_load":[7234,120],"early_side_mission_getter":[0,10],"early_side_mission_setter":[0,10]}
+const ANDROID_ACCEPTANCE_SPANS = {"accept_fee_predicate":[0,36],"accept_fee_calculation":[1114,86],"accept_fee_shortfall":[1200,16],"accept_fee_debit":[2920,16],"accept_replacement":[2936,184],"accept_replacement_passengers":[6042,42],"accept_replacement_release":[7132,102],"accept_replacement_notice":[5804,62],"accept_cargo_capacity_sum":[0,20],"accept_installed_capacity":[0,940],"accept_cabin_capacity_getter":[0,4],"accept_cargo_flag_setter":[0,6],"accept_cargo_flag_getter":[0,6],"accept_cargo_merge":[0,402],"accept_passenger_setter":[0,4],"accept_generated_identity":[300,8],"accept_identity_argument":[12,2],"accept_generated_flag":[118,24],"accept_generated_predicate":[0,10],"accept_consumed_setter":[0,6],"accept_contact_consumed":[7600,18],"accept_side_mission":[7544,44],"accept_initial_wallet":[24,12],"accept_initial_passengers":[482,54]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1+int(data.has("acceptance"))+int(data.has("generation"))+int(data.has("delivery_results"))+int(data.has("encounter_construction"))+int(data.has("ship_combat"))+int(data.has("ship_lifecycle"))+int(data.has("flight_results"))+int(data.has("junk_lifecycle"))+int(data.has("world_initialization"))+int(data.has("station_lounges"))+int(data.has("station_generation"))+int(data.has("base_station_stock"))+int(data.has("base_navigation"))+int(data.has("lounge_presentation"))+int(data.has("ordinary_generation")) or not data.get("provenance") is Dictionary:return false
 	var expected: Dictionary=MAC_VALUES if data.get("briefing_text_base")==MAC_VALUES.briefing_text_base else VALUES
@@ -40,7 +45,7 @@ static func parameters(data: Variant) -> bool:
 	if data.has("world_initialization") and (not data.has("junk_lifecycle") or not World.parameters(data.world_initialization)):return false
 	if data.has("station_lounges") and (not data.has("world_initialization") or not data.has("generation") or not Lounges.parameters(data.station_lounges)):return false
 	if data.has("station_generation") and (not data.has("station_lounges") or not Stock.parameters(data.station_generation)):return false
-	if data.has("base_station_stock") and (not data.has("station_generation") or not Equal.equal_value(data.base_station_stock,BaseStock.MAC_VALUES if alternate else BaseStock.VALUES)):return false
+	if data.has("base_station_stock") and (not data.has("station_generation") or not (Equal.equal_value(data.base_station_stock,BaseStock.MAC_VALUES if alternate else BaseStock.VALUES) or alternate and Equal.equal_value(data.base_station_stock,BaseStock.ANDROID_VALUES))):return false
 	if data.has("base_navigation") and (not data.has("base_station_stock") or not Navigation.parameters(data.base_navigation)):return false
 	if data.has("lounge_presentation") and (not data.has("station_lounges") or not LoungePresentation.parameters(data.lounge_presentation)):return false
 	if data.has("ordinary_generation") and (not data.has("base_navigation") or not Ordinary.parameters(data.ordinary_generation)):return false
@@ -70,7 +75,41 @@ static func ship_lifecycle_parameters(data: Variant) -> bool:
 static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dictionary,travel: Dictionary) -> String:
 	if not data is Dictionary:return "Missing early contract terms"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data) or not Travel.parameters(travel) or not travel.has("return_visit"):return "Unsupported early contract terms"
+	var android:=arch=="android-armv7"
+	if (arch!="x86_64" and not android) or not parameters(data) or not Travel.parameters(travel) or not travel.has("return_visit"):return "Unsupported early contract terms"
+	if android:
+		# The Android library holds the Mac 1.0.7 terms.
+		if data.briefing_text_base!=MAC_VALUES.briefing_text_base:return "Unsupported early contract terms"
+		if arrival.get("scope")!="rescue_choreography" or not arrival.get("provenance",{}).has("actor"):return "Early contract terms lack their source anchor"
+		if data.has("encounter_construction") and not Travel.navigation_available(travel,13):return "Contract construction lacks ordinary navigation"
+		# The library's own stock progress (Stock.ANDROID_VALUES).
+		if data.has("station_generation") and not Equal.equal_value(data.station_generation,Stock.ANDROID_VALUES):return "Unsupported early contract terms"
+		if data.has("base_station_stock") and not Equal.equal_value(data.base_station_stock,BaseStock.ANDROID_VALUES):return "Unsupported early contract terms"
+		# The library's own lounge generation (Contacts.ANDROID_VALUES, the jackpot).
+		if data.has("generation") and not Equal.equal_value(data.generation,Contacts.ANDROID_VALUES):return "Unsupported early contract terms"
+		if data.has("base_navigation") and not travel.has("alioth_arrival"):return "Base contracts lack their supported Alioth arrival"
+		if data.has("ordinary_generation") and not travel.has("free_flight"):return "Ordinary contacts lack their supported free-flight context"
+		var android_spans: Dictionary=ANDROID_SPANS.duplicate(true)
+		if data.has("acceptance"):android_spans.merge(ANDROID_ACCEPTANCE_SPANS)
+		# Each ported extension adds its Module.ANDROID_SPANS line here.
+		if data.has("generation"):android_spans.merge(Contacts.ANDROID_SPANS)
+		if data.has("delivery_results"):android_spans.merge(Delivery.ANDROID_SPANS)
+		if data.has("encounter_construction"):android_spans.merge(Encounters.ANDROID_SPANS)
+		if data.has("ship_combat"):android_spans.merge(ShipCombat.ANDROID_SPANS)
+		if data.has("ship_lifecycle"):android_spans.merge(ShipLifecycle.ANDROID_SPANS)
+		if data.has("flight_results"):android_spans.merge(FlightResults.ANDROID_SPANS)
+		if data.has("junk_lifecycle"):android_spans.merge(Junk.ANDROID_SPANS)
+		if data.has("world_initialization"):android_spans.merge(World.ANDROID_SPANS)
+		if data.has("station_lounges"):android_spans.merge(Lounges.ANDROID_SPANS)
+		if data.has("station_generation"):android_spans.merge(Stock.ANDROID_SPANS)
+		if data.has("base_station_stock"):android_spans.merge(BaseStock.ANDROID_SPANS)
+		if data.has("base_navigation"):android_spans.merge(Navigation.ANDROID_SPANS)
+		if data.has("lounge_presentation"):android_spans.merge(LoungePresentation.ANDROID_SPANS)
+		if data.has("ordinary_generation"):android_spans.merge(Ordinary.ANDROID_SPANS)
+		return "" if Layouts.anchored(data.provenance,source_bytes,android_spans) else "Invalid early contract provenance"
+	if data.has("station_generation") and not Equal.equal_value(data.station_generation,Stock.VALUES):return "Unsupported early contract terms"
+	if data.has("base_station_stock") and Equal.equal_value(data.base_station_stock,BaseStock.ANDROID_VALUES):return "Unsupported early contract terms"
+	if data.has("generation") and not Equal.equal_value(data.generation,Contacts.VALUES):return "Unsupported early contract terms"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Early contract terms lack their source anchor"
 	var alternate: bool=data.briefing_text_base==MAC_VALUES.briefing_text_base

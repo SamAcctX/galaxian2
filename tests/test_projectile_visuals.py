@@ -47,3 +47,28 @@ class ProjectileVisualTests(unittest.TestCase):
                 elif key=='section':m.sections[1]['segment']=b'__DATA'
                 else:m.architecture='unsupported'
                 self.assertFalse(reader.extract_projectile_visuals(m,s,a,o),key)
+
+
+class AndroidProjectileVisuals(unittest.TestCase):
+    PARENTS = ({'player_flight': {'present': True}}, {'npc_initialization': {'primary_weapon': {'item_id': 19}}}, {'ship_id': 10})
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from gof2_content.android_library import AndroidLibrary
+        from unittest.mock import patch
+        verify_android_proof(self, reader, lambda lib: reader.extract_projectile_visuals(lib, *self.PARENTS))
+        self.assertEqual(reader.ANDROID_VALUES, reader.VALUES)
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            staging, actors, opening = self.PARENTS
+            result = reader.extract_projectile_visuals(lib, *self.PARENTS)
+            result['item_ids'].append(0)
+            self.assertEqual(reader.VALUES['item_ids'], [2, 19])
+            for parents in (({}, actors, opening), (staging, {'npc_initialization': {'primary_weapon': {'item_id': 21}}}, opening),
+                            (staging, {'npc_initialization': {}}, opening), (staging, actors, {'ship_id': 11}), (staging, actors, {})):
+                self.assertEqual(reader.extract_projectile_visuals(lib, *parents), {}, parents)
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'projectile_visual_definitions.gd')

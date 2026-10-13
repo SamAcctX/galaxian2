@@ -40,7 +40,9 @@ func verify(content: String,pack: String) -> void:
 		["nehma_visit",Travel.Nehma.MAC_VALUES if app_store else Travel.Nehma.VALUES]]:
 		var changed:=original.duplicate(true);changed[pair[0]]=pair[1].duplicate(true)
 		check(not Travel.parameters(changed),"A declaration accepted another edition's text or source layout: "+pair[0])
-	for key in ["ack_ack_advance","flight_briefing_start","map_warning_model","field_ore_direct","result34_voices"]:
+	var keys:=["ack_ack_advance","flight_briefing_start","map_warning_model","field_ore_direct","result34_voices"]
+	if header.architecture=="android-armv7":keys=["post_probe_ack_story_increment","post_probe_flight_briefing_start","void_access_flight_briefing_start","void_access_map_warning_model","void_crystals_ore_weights","nehma_visit_result34_voices"]
+	for key in keys:
 		var changed:=original.duplicate(true);changed.provenance[key].offset+=1
 		check(not validate(changed,header,bindings).is_empty(),"A shared or new source extent moved: "+key)
 	var population: Dictionary=bindings.scenery_population.duplicate(true);population.count_base+=1

@@ -31,13 +31,13 @@ func verify_training_control(args: PackedStringArray, equipment: RefCounted):
 		check(not LiveTraining.new().configure(bindings,cat,TrainingWorld.new(),0,.5),"Earlier pack invented live training control")
 		return
 	var data: Dictionary=bindings.combat_training_control
-	check(LiveRules.validate(data,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.combat_training,bindings.opening_actors).is_empty(),"Training control proof refused its source context")
+	check(LiveRules.validate(data,header.source_executable_bytes,str(header.architecture),bindings.arrival_staging,bindings.combat_training,bindings.opening_actors).is_empty(),"Training control proof refused its source context")
 	for key in LiveRules.VALUES:
 		var bad:=data.duplicate(true);bad[key]=null
 		check(not LiveRules.parameters(bad),"Changed training control rule accepted: "+key)
-	for key in LiveRules.SPANS:
+	for key in (LiveRules.ANDROID_SPANS if header.architecture=="android-armv7" else LiveRules.SPANS):
 		var bad:=data.duplicate(true);bad.provenance[key].offset+=1
-		check(not LiveRules.validate(bad,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.combat_training,bindings.opening_actors).is_empty(),"Changed training control extent accepted: "+key)
+		check(not LiveRules.validate(bad,header.source_executable_bytes,str(header.architecture),bindings.arrival_staging,bindings.combat_training,bindings.opening_actors).is_empty(),"Changed training control extent accepted: "+key)
 	var world:=TrainingWorld.new()
 	check(world.configure_combat_training(bindings,cat,equipment,Vector3(10,10,10000),{"companions_empty":true,"location_match":false,"special_placement":false}),world.error)
 	check(not world.generate({"state":int(TRAINING_GOLDEN[0].input_state)}).is_empty(),world.error)

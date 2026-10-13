@@ -122,3 +122,61 @@ class WorldInitializationTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+
+ANDROID_ACTORS = {'actors': [{'actor_id': i, 'actor_kind': 8, 'hull_catalogue_id': h} for i, h in enumerate((2, 23, 2))],
+                  'npc_initialization': {'construction': {'x': 1}, 'guidance': {'x': 1}, 'primary_weapon': {'item_id': 19, 'projectile_capacity': 4}}}
+ANDROID_OPENING = {'ship_id': 10, 'station_id': 78}
+ANDROID_SCENERY = {'count': 3}
+
+
+class AndroidWorldInitializationTests(unittest.TestCase):
+    def extract(self, lib, actors=ANDROID_ACTORS, opening=ANDROID_OPENING, scenery=ANDROID_SCENERY):
+        return reader.extract_opening_world_initialization(lib, actors, opening, scenery)
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        verify_android_proof(self, reader, self.extract, values='VALUES')
+        image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            self.assertTrue(self.extract(lib))
+            # The result is a deep copy: changing its lists leaves the module's values intact.
+            before = copy.deepcopy(reader.VALUES)
+            for value in self.extract(lib).values():
+                if isinstance(value, list):
+                    value.append(None)
+                    for item in value:
+                        if isinstance(item, list): item.append(None)
+            self.assertEqual(reader.VALUES, before)
+            npc = ANDROID_ACTORS['npc_initialization']
+            cases = {
+                'no construction': dict(actors={**ANDROID_ACTORS, 'npc_initialization': {**npc, 'construction': {}}}),
+                'no guidance': dict(actors={**ANDROID_ACTORS, 'npc_initialization': {**npc, 'guidance': {}}}),
+                'other item': dict(actors={**ANDROID_ACTORS, 'npc_initialization': {**npc, 'primary_weapon': {'item_id': 20, 'projectile_capacity': 4}}}),
+                'other capacity': dict(actors={**ANDROID_ACTORS, 'npc_initialization': {**npc, 'primary_weapon': {'item_id': 19, 'projectile_capacity': 3}}}),
+                'other hulls': dict(actors={**ANDROID_ACTORS, 'actors': [dict(r, hull_catalogue_id=2) for r in ANDROID_ACTORS['actors']]}),
+                'other ship': dict(opening={'ship_id': 11, 'station_id': 78}),
+                'other station': dict(opening={'ship_id': 10, 'station_id': 77}),
+                'no scenery': dict(scenery={}),
+                'no actors': dict(actors={}),
+            }
+            for name, changes in cases.items():
+                self.assertEqual(self.extract(lib, **changes), {}, name)
+
+    def test_android_native_declarations(self):
+        import json
+        import re
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] / 'game/src/content/opening_world_initialization_definitions.gd').read_text()
+        spans = re.findall(r'^const ANDROID_SPANS := (.+)$', source, re.MULTILINE)
+        self.assertEqual(len(spans), 1)
+        self.assertEqual(json.loads(spans[0]), {k: [v[5] if len(v) == 6 else v[1], v[2]] for k, v in reader.ANDROID.items()})
+        # The game's EXPECTED values are the importer's VALUES.
+        expected = re.search(r'^const EXPECTED = (\{.*?^\})', source, re.MULTILINE | re.DOTALL)
+        self.assertEqual(json.loads(expected[1]), reader.VALUES)
+        # The effect table holds 14600 for item 0 and 14605 for item 19.
+        table = struct.unpack('<20i', bytes.fromhex(reader.ANDROID['effect_models'][3]))
+        self.assertEqual([table[i] for i in reader.VALUES['weapon_item_sequence']], reader.VALUES['weapon_effect_sequence'])

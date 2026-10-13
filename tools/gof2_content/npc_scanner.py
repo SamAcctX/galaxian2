@@ -1,6 +1,16 @@
-"""Recognize ordinary opening scanner data; never emit or execute source code."""
+"""Recognize ordinary opening scanner data; never emit or execute source code.
+
+Android: Radar::Radar clears the lock and scanner timers, creates the marker
+images and the 1110 filmstrip Sprite, reads the scanner (item sort 17:
+attributes 31, 30 and 29, else 8000 ms) and keeps width / 16 as the window;
+Radar::draw drops dead locks, times the acquisition strictly against the
+duration, plays sound 26 on a new lock, checks the target within +-24000 and
+reports empty cargo with HUD event 22. BuildResourceList registers image
+1110 (texture 10062, region 10) and marker image 1224 in texture 10063;
+Sprite::Sprite and Sprite::setFrame step the filmstrip.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 VALUES = {'x86_64': {'scope': 'fresh_opening_npcs',
             'equipment_type': 17,
@@ -74,6 +84,13 @@ VALUES = {'x86_64': {'scope': 'fresh_opening_npcs',
 
 def extract_npc_scanner(mach, staging, actors):
     arch = mach.architecture
+    if arch == 'android-armv7':
+        try:
+            npc = actors['npc_initialization']
+            if not staging['player_aim'] or not npc['hull'] or not npc['hostility'] or not npc['construction']: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if proof else {}
     if arch not in LAYOUTS: return {}
     try:
         npc = actors['npc_initialization']
@@ -216,3 +233,28 @@ MAC_ALTERNATE = {'initial_selection': [535783,
                      '554889e589f089c1c1f91f01c831c889473c8b4f4039c87c0899f7f989d089473c99f77f340faf571c89572c0faf47208947305dc390554889e55de900000000554889e54157415653504189d64889fbc74308ffffffff488933'],
  'near_constant': [1428131, 4, '0080bb46'],
  'negative_near_constant': [1442107, 4, '0080bbc6']}
+
+
+# The Mac 1.0.7 values except the window: Android keeps width / 16, as iOS.
+ANDROID_VALUES = dict(copy.deepcopy(VALUES['x86_64']), architecture='android-armv7', window_divisor=16)
+
+ANDROID = {'initial_state': ('_ZN5RadarC2EP5Level', 12, 230, 'sha256:016a8b9b21f0686d144862023008ef3124f6c0e7b5864e68336f182654e2a0b2'),
+           'images': ('_ZN5RadarC2EP5Level', 1086, 462, 'sha256:8c33e0f3e97163ca3a068b33762d210e3f1af1a541206876387feca8eee41628'),
+           'animation_sprite': ('_ZN5RadarC2EP5Level', 2186, 84, 'sha256:e254c972643d28a3c376190b65c5bcdaaf90b2bf8a5ddff321c9ddf82b11427d'),
+           'equipment': ('_ZN5RadarC2EP5Level', 2324, 148, 'sha256:5d5960270b66b43708f20be226c9942005a00dbf7a997d09bcdf48750bf82c51'),
+           'ordinary_permission': ('_ZN5RadarC2EP5Level', 2550, 16, '012000218af8ac01caf8b8118af84800'),
+           # width / 16 (then / 6 and / 8) into the radar.
+           'window': ('_ZN5RadarC2EP5Level', 2584, 48, 'sha256:3828811b0a4acaf92383bc98abffbe472bd350d8f8e000fc8fc1ff1d10266aaf'),
+           'population': ('_ZN5Radar4drawEP6PlayerP3Hudi', 2498, 84, 'sha256:5bef1c5e4fa6c952bb7b87133f7848f19d7d7a75770c91f02ad6c18f5dd55543'),
+           'animation_reset': ('_ZN5Radar4drawEP6PlayerP3Hudi', 5186, 24, '0020c8f8940125b9d8f8081091f8201089b34ff4fa718842'),
+           # Elapsed scan time against the scanner duration, complete only past it.
+           'acquisition_clock': ('_ZN5Radar4drawEP6PlayerP3Hudi', 5308, 48, 'sha256:df4e659cb358d44113b1bb3b2cf3c97883cabcbe6727dcee7d173f3328557c44'),
+           'acquisition': ('_ZN5Radar4drawEP6PlayerP3Hudi', 9592, 252, 'sha256:ecb9d441983f9a2f96a1af15ea64db14328172405de7913803122512a2246284'),
+           'empty_cargo': ('_ZN5Radar4drawEP6PlayerP3Hudi', 11118, 52, 'sha256:d39110321a0ca4ed158f6c2d4df6a7def007631f3b34380dc3225ab4d98cfa52'),
+           'animation_alias': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 78942, 42, 'sha256:155b8eec1a25c88ff6b3e1715077aa0efdfab4013588b88f952e258e14349213'),
+           # Image 1224 in texture 10063, region 87 (as the Mac's image regions read it).
+           'marker_registration': ('_Z17BuildResourceListPN11AbyssEngine6EngineE', 204380, 78, 'sha256:d14da6550e1969ec52a7f48269befe7c8490bef84496efd9f28dbf341e7a885b'),
+           'animation_constructor': ('_ZN6SpriteC1Ejii', 0, 104, 'sha256:ec6aaa97255813c8be65fd4851d4db2a336493a6dd7500545eb1b76f28477d48'),
+           'animation_frame': ('_ZN6Sprite8setFrameEi', 0, 54, 'sha256:ee6fa899d9c1396d1df88e781f0004af19491df5a03dcb5438c759df9c86bef4'),
+           'near_constant': ('_ZN5Radar4drawEP6PlayerP3Hudi', 10496, 4, '0080bb46'),
+           'negative_near_constant': ('_ZN5Radar4drawEP6PlayerP3Hudi', 10500, 4, '0080bbc6')}

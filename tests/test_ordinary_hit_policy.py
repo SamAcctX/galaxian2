@@ -80,3 +80,45 @@ class OrdinaryHitPolicy(unittest.TestCase):
                 self.assertFalse(reader.extract_ordinary_hit_policy(m,w),(mac,bad))
 
 if __name__=='__main__':unittest.main()
+
+
+@unittest.skipUnless(__import__('importlib').util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidOrdinaryHitPolicy(unittest.TestCase):
+    def test_store_gate_and_route_give_policy(self):
+        from test_weapon_parameters import android_guns, android_weapon_chain
+        lib, at, weapon = android_guns()
+        weapon = android_weapon_chain(lib, weapon)
+        result = weapon['ordinary_hit_policy']
+        self.assertEqual({k: v for k, v in result.items() if k != 'provenance'},
+                         {'additional_damage_property': 11, 'missing_additional_damage': -979797979, 'nonplayer_damage_scale': 1.0})
+        p = result['provenance']
+        self.assertEqual(p['classification'], weapon['launch_modes']['provenance']['classification'])
+        self.assertEqual(p['property_getter'], weapon['provenance']['property_getter'])
+        self.assertEqual((p['additional_store']['offset'] - at['setter'], p['additional_store']['bytes']), (54, 4))
+        # The gate and route follow the multiplier setup in the collision.
+        self.assertEqual({k: (p[k]['offset'] - at['collision'], p[k]['bytes']) for k in ('additional_gate', 'damage_route')},
+                         {'additional_gate': (28, 26), 'damage_route': (54, 118)})
+        self.assertEqual(p['normal_hit'], {'offset': at['hit'], 'bytes': 4})
+
+    def test_each_broken_rule_is_unsupported(self):
+        from test_weapon_parameters import android_guns, android_weapon_chain
+        cases = {'other store': dict(edits=[('setter', 'str r0, [r4, #0x70]', 'str r0, [r4, #0x74]')]),
+                 'other missing value': dict(values=dict(missing_low='0x7826')),
+                 'other missing high': dict(values=dict(missing_high='0xc598')),
+                 'hostile scale swapped': dict(edits=[('collision', 'vmul.f32 s0, s0, s24', 'vmul.f32 s0, s0, s16')]),
+                 'collision this lost': dict(edits=[('collision', 'mov fp, r0', 'movs r0, #0\nmov fp, r0')]),
+                 'no store': dict(edits=[('setter', 'ldr r1, =0x10\nstr', 'nop\nstr')]),
+                 'store apart': dict(edits=[('setter', 'ldr r1, =0x10\nstr', 'nop\nldr r1, =0x10\nstr')])}
+        for name, options in cases.items():
+            with self.subTest(name):
+                lib, _, weapon = android_guns(**options)
+                self.assertEqual(android_weapon_chain(lib, weapon)['ordinary_hit_policy'], {})
+        lib, _, weapon = android_guns()
+        weapon = android_weapon_chain(lib, weapon)
+        self.assertEqual(reader.extract_ordinary_hit_policy(lib, {**weapon, 'launch_modes': {}}), {})
+        moved = copy.deepcopy(weapon)
+        moved['launch_modes']['provenance']['classification']['offset'] += 2
+        self.assertEqual(reader.extract_ordinary_hit_policy(lib, moved), {})
+        moved = copy.deepcopy(weapon)
+        moved['launch_modes']['provenance']['property_getter']['offset'] += 2
+        self.assertEqual(reader.extract_ordinary_hit_policy(lib, moved), {})

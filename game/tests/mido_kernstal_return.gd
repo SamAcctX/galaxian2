@@ -18,7 +18,9 @@ func after_yrdal_visit(bindings: RefCounted,cat: RefCounted,library: RefCounted,
 	var visit:=verify_visit(bindings,cat,library,station)
 	if visit==null:return
 	var finished: Dictionary=visit.snapshot()
-	check(finished.mission.completed_contract_target==4 and finished.completed_side_missions==0,"The original four-contract requirement changed")
+	# Android asks for one contract, the Mac for four.
+	var required:=1 if bindings.source_architecture=="android-armv7" else 4
+	check(finished.mission.completed_contract_target==required and finished.completed_side_missions==0,"The original contract requirement changed")
 	check(visit.prepare_departure(bindings,cat).is_empty() and finished.phase=="contracts_required","The pending contract requirement was bypassed")
 	return_verified=true
 	after_contract_intro(bindings,cat,library,visit)

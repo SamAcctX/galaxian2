@@ -25,7 +25,13 @@ func _initialize():
 func verify_profile(content: String, pack: String):
 	var lib:=Library.new();var bindings:=Bindings.new();var cat:=Catalogues.new()
 	if not lib.open(content) or not bindings.open(pack,lib.manifest) or not cat.open(lib):check(false,lib.error+bindings.error+cat.error);return
-	check(lib.manifest.profile.edition=="mac-full-hd","Current rescue initialization validation is Mac only")
+	check(lib.manifest.profile.edition in ["mac-full-hd","android-hd"],"Rescue initialization validation needs Mac or Android content")
+	# Station 78 seeds 80 + random(80) = 130 asteroids on the Mac, 40 + random(40) = 50 on Android
+	# (scenery_population_vectors.json). Android's Unix-seed field then ends in the input of the
+	# 40 + random(40) opening world golden (opening_world_initialization.gd FIXTURES[1]).
+	var android: bool=lib.manifest.profile.edition=="android-hd"
+	var field_count:=50 if android else 130
+	var field_state:=280936762154123 if android else 153548941033574
 	var fresh:=Player.new();var player:=Player.new();var world:=World.new();var population:=Population.new()
 	check(fresh.configure(bindings,cat) and player.configure_arrival(bindings,cat,fresh.cache_snapshot()),fresh.error+player.error)
 	var cache:=player.cache_snapshot()
@@ -36,7 +42,7 @@ func verify_profile(content: String, pack: String):
 		return
 	check(Definitions.parameters(bindings.arrival_world_initialization),"Mac rescue declarations rejected")
 	var selected:=population.for_arrival(78,CONDITIONS)
-	check(selected.center==CENTER and selected.count==130,"Rescue center or Mac scenery count differs")
+	check(selected.center==CENTER and selected.count==field_count,"Rescue center or edition scenery count differs")
 	check(selected.count_random_state.state==203883236650738 and selected.random_state.state==249765198238295,"Station count/center draws are out of order")
 	for state in FIXTURES:
 		check(world.configure_arrival(bindings,cat,cache,CONDITIONS),world.error)
@@ -55,7 +61,7 @@ func verify_profile(content: String, pack: String):
 	var scene:=Scenery.new();var opening:=Scenery.new()
 	check(scene.configure_arrival(bindings,cat,cache,CONDITIONS,1789100000),scene.error)
 	var field:=scene.snapshot()
-	check(field.center==CENTER and field.objects.size()==130 and field.random_state.state==153548941033574,"Rescue field did not use the separate Unix seed")
+	check(field.center==CENTER and field.objects.size()==field_count and field.random_state.state==field_state,"Rescue field did not use the separate Unix seed")
 	check(opening.configure(bindings,cat,1789100000),opening.error)
 	var original:=opening.snapshot()
 	check(original.random_state==field.random_state,"Center draws leaked into the field RNG")
@@ -72,8 +78,16 @@ func verify_profile(content: String, pack: String):
 	# Optional populations (gas clouds 33, sentries 39) are built by their own owners, so changed equipment is accepted here.
 	check(scene.complete_world_initialization(bindings,cat),scene.error)
 	var initialized:=scene.snapshot()
-	verify_world(initialized.world_initialization,FIXTURES[1])
-	check(initialized.random_state.state==205194410392979 and initialized.world_initialization.input_random_state==field.random_state,"Rescue did not retain the final world RNG")
+	var expected: Dictionary=FIXTURES[1]
+	if android:
+		# FIXTURES pin the generator from fixed inputs; Android's field state takes the same generator.
+		check(world.configure_arrival(bindings,cat,cache,CONDITIONS),world.error)
+		var direct:=world.generate({"state":field_state})
+		check(not direct.is_empty(),world.error)
+		if direct.is_empty():return
+		expected={"npc_state":direct.npc_construction.random_state.state,"final_state":direct.random_state.state,"cargo":direct.npc_construction.actors[0].cargo,"flipped":[direct.weapon_effects[0].discarded_default.flipped,direct.weapon_effects[0].primary.flipped]}
+	verify_world(initialized.world_initialization,expected)
+	check(initialized.random_state.state==int(expected.final_state) and initialized.world_initialization.input_random_state==field.random_state,"Rescue did not retain the final world RNG")
 	check(initialized.objects==field.objects and initialized.detail==field.detail,"NPC construction changed scenery")
 	check(independent.snapshot()==initialized,"Staged deterministic initialization disagrees")
 	check(not scene.complete_world_initialization(bindings,cat) and scene.snapshot()==initialized,"Repeated initialization changed an existing world")

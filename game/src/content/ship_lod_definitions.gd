@@ -45,7 +45,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 	if data.is_empty(): return ""
 	if not parameters(data): return "Invalid ship LOD parameters"
 	var expected := {}
-	var count := catalogue_count if catalogue_count > 0 else (64 if architecture == "armv7" else 61)
+	var count := catalogue_count if catalogue_count > 0 else (61 if architecture == "x86_64" else 64)
 	if architecture=="x86_64":
 		expected={"body":57,"fill":74,"step":66,"child":51,"child_copy":64,"limit":13,"select":122,"cull":44,"square":19,"detail":68,"detail_low":4,"detail_high":4,"detail_first":4,"detail_pair":8,"limit_setter":17,"body_table":732,"child_table":732}
 		if count not in [61, 64] or data.body_resource_ids.size()!=count or data.detail_boundaries.size()!=2: return "Ship LOD profile mismatch"
@@ -54,6 +54,9 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 	elif architecture=="armv7":
 		expected={"body":54,"fill":38,"step":42,"child":44,"child_copy":28,"limit":24,"select":52,"cull":48,"square":30,"limit_setter":22,"body_table":768,"child_table":768}
 		if count != 64 or data.body_resource_ids.size()!=count or not data.detail_boundaries.is_empty() or data.squared_distance_factors!=[1.0]: return "Ship LOD profile mismatch"
+	elif architecture=="android-armv7":
+		expected={"body":52,"fill":74,"step":44,"step_ids":22,"child":44,"child_copy":66,"limit":28,"square":32,"square_ids":30,"cull":78,"detail":84,"select":52,"limit_setter":18,"detail_low":4,"detail_high":4,"body_table":768,"child_table":768}
+		if count != 64 or data.body_resource_ids.size()!=count or data.detail_boundaries.size()!=2: return "Ship LOD profile mismatch"
 	var provenance: Variant = data.get("provenance")
 	if expected.is_empty() or not provenance is Dictionary or provenance.size()!=expected.size(): return "Invalid ship LOD provenance"
 	var spans := []

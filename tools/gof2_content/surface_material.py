@@ -2,6 +2,10 @@
 
 This import-time recognizer emits only numeric data and file extents. Setter
 prefixes identify the destination fields; no original runtime code is emitted.
+
+Android: StarSystem::initLight sets the rim color (LightSetRimColor), then the
+material through ApplicationManager::GetEngine and Engine::LightSetMaterialColor
+Ambient/Diffuse/Specular/Shininess with immediates.
 """
 import math
 import struct
@@ -12,7 +16,105 @@ from . import environment_colors
 ROLES = ('ambient', 'diffuse', 'specular', 'power')
 
 
+ENGINE = '_ZN11AbyssEngine6Engine'
+ANDROID_SETTERS = {'ambient': (ENGINE + '28LightSetMaterialColorAmbientEfff', 0x298),
+                   'diffuse': (ENGINE + '28LightSetMaterialColorDiffuseEfff', 0x288),
+                   'specular': (ENGINE + '29LightSetMaterialColorSpecularEfff', 0x2a8),
+                   'power': (ENGINE + '30LightSetMaterialColorShininessEf', 0x2b8)}
+ANDROID_RIM = r"""ldr r0, =\w+
+vmov\.f32 s0, #\S+
+adr r0, \w+
+add\.w r1, r0, \w+, lsl #2
+add\.w r2, r0, \w+, lsl #2
+add\.w r0, r0, \w+, lsl #2
+vldr s2, \[r2\]
+vldr s4, \[r0\]
+ldr\.w r0, \[(?P<app>\w+)\]
+vmul\.f32 (?P<red>s\d+), s2, s0
+vldr s6, \[r1\]
+vmul\.f32 (?P<green>s\d+), s4, s0
+vmul\.f32 (?P<blue>s\d+), s6, s0
+call _ZN11AbyssEngine18ApplicationManager9GetEngineEv
+vmov r1, (?P=red)
+vmov r2, (?P=green)
+vmov r3, (?P=blue)
+call _ZN11AbyssEngine6Engine16LightSetRimColorEfff
+"""
+ANDROID_SETUP = r"""ldr\.w r0, \[(?P<app>\w+)\]
+call _ZN11AbyssEngine18ApplicationManager9GetEngineEv
+mov\.w r1, #(?P<ambient_0>-?\w+)
+mov\.w r2, #(?P<ambient_1>-?\w+)
+mov\.w r3, #(?P<ambient_2>-?\w+)
+call _ZN11AbyssEngine6Engine28LightSetMaterialColorAmbientEfff
+ldr\.w r0, \[(?P=app)\]
+call _ZN11AbyssEngine18ApplicationManager9GetEngineEv
+mov\.w r1, #(?P<diffuse_0>-?\w+)
+mov\.w r2, #(?P<diffuse_1>-?\w+)
+mov\.w r3, #(?P<diffuse_2>-?\w+)
+call _ZN11AbyssEngine6Engine28LightSetMaterialColorDiffuseEfff
+ldr\.w r0, \[(?P=app)\]
+call _ZN11AbyssEngine18ApplicationManager9GetEngineEv
+mov\.w r1, #(?P<specular_0>-?\w+)
+mov\.w r2, #(?P<specular_1>-?\w+)
+mov\.w r3, #(?P<specular_2>-?\w+)
+call _ZN11AbyssEngine6Engine29LightSetMaterialColorSpecularEfff
+ldr\.w r0, \[(?P=app)\]
+call _ZN11AbyssEngine18ApplicationManager9GetEngineEv
+movs r1, #(?P<power_0>\w+)
+movt r1, #(?P<power_1>\w+)
+call _ZN11AbyssEngine6Engine30LightSetMaterialColorShininessEf
+"""
+ANDROID_RENDERER = r"""ldr\.w r0, \[r0, #0xa8\]
+bx lr
+"""
+ANDROID_COLOR = r"""ldr ip, =\w+
+strd r1, r2, \[r0, #{0:#x}\]
+adr ip, \w+
+str\.w r3, \[r0, #{1:#x}\]
+"""
+ANDROID_POWER = r"""mov r2, r1
+ldr r1, =\w+
+str\.w r2, \[r0, #{0:#x}\]
+"""
+
+
+def android_material(lib, colors):
+    from .android_listing import Listing, number, word_float
+    light = Listing(lib, '_ZN10StarSystem9initLightEv')
+    rims, setups = light.find(ANDROID_RIM), light.find(ANDROID_SETUP)
+    # The environment colors must have proven their rim setup; on Android it is found here by name.
+    if 'rim' not in colors.get('provenance', {}) or len(rims) != 1 or len(setups) != 1:
+        return {}
+    rim, setup = rims[0], setups[0]
+    if light.index(setup) != light.last(rim) + 1 or rim['app'] != setup['app']:
+        return {}
+    provenance = {'rim': light.match_span(rim), 'setup': light.match_span(setup)}
+    shapes = {'renderer': ('_ZN11AbyssEngine18ApplicationManager9GetEngineEv', ANDROID_RENDERER)}
+    for role, (setter, field) in ANDROID_SETTERS.items():
+        shapes[role] = (setter, ANDROID_POWER.format(field) if role == 'power' else ANDROID_COLOR.format(field, field + 8))
+    for key, (symbol, shape) in shapes.items():
+        listing = Listing(lib, symbol)
+        found = listing.find(shape)
+        if len(found) != 1 or listing.index(found[0]) != 0:
+            return {}
+        provenance[key] = listing.match_span(found[0])
+    result, sources = {}, {}
+    for role in ROLES:
+        last = 'power_1' if role == 'power' else role + '_2'
+        sources[role] = light.span(light.index(setup, role + '_0'), light.index(setup, last))
+        if role == 'power':
+            numbers = [word_float(number(setup['power_0']) | number(setup['power_1']) << 16)]
+        else:
+            numbers = [word_float(number(setup[role + '_' + str(i)])) for i in range(3)]
+        if not all(math.isfinite(v) and (0 < v <= 1024 if role == 'power' else 0 <= v <= 16) for v in numbers):
+            return {}
+        result['specular_power' if role == 'power' else role + '_rgb'] = numbers[0] if role == 'power' else numbers
+    return dict(result, provenance=provenance, value_sources=sources)
+
+
 def extract_surface_material(mach, colors):
+    if mach.architecture == 'android-armv7':
+        return android_material(mach, colors) if colors else {}
     if not colors or mach.architecture not in ['x86_64', 'armv7']: return {}
     import capstone
     mac = mach.architecture == 'x86_64'; prefix = 'MAC_' if mac else 'ARM_'

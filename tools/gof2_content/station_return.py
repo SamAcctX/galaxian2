@@ -1,9 +1,25 @@
-"""Recover bounded station return content; emit no executable payload."""
+"""Recover bounded station return content; emit no executable payload.
+
+Android: PlayerEgo::calcCollision marks station contact within 16000
+outside alien orbits; MGame::dockEvent keeps the hull, shield, armor and
+gamma values, docks for missions of kinds 11 (and 0, 189, 171, 172), shows
+notice 21 to an autopilot flight with another mission, and switches to
+application module 5. Status::nextCampaignMission case 3 creates mission 11
+at station 78, case 4 clears the cargo (Ship::setCargo) and creates mission
+154 with status value 25. DialogueWindow's success tables hold cursor 3's
+five lines (Mac 1.0.7 numbering) and Globals::getDialogueSoundId their voices.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .station_exterior import declaration_bytes
 
 def extract_station_return(mach, arrival, flight):
+    if mach.architecture == 'android-armv7':
+        try:
+            if flight['scope'] != 'first_mining_flight_construction': return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(MAC_VALUES), provenance=proof) if proof else {}
     if mach.architecture!='x86_64' or flight.get('scope')!='first_mining_flight_construction':return {}
     try:
         origin=arrival['provenance']['actor']
@@ -270,3 +286,21 @@ MAC_VALUES = {'scope': 'first_mining_station_return',
             {'speaker_id': 2, 'text_id': 1724, 'voice_event_id': 413},
             {'speaker_id': 0, 'text_id': 1725, 'voice_event_id': 414},
             {'speaker_id': 2, 'text_id': 1726, 'voice_event_id': 415}]}
+
+# Android spans inside named functions and tables; the values are the Mac 1.0.7 ones.
+ANDROID = {'contact_constant_load': ('_ZN9PlayerEgo13calcCollisionEP5ArrayIP8KIPlayerE', 82, 4, '9fedbc8a'),
+           'contact_radius_constant': ('_ZN9PlayerEgo13calcCollisionEP5ArrayIP8KIPlayerE', 836, 4, '00007a46'),
+           # Outside alien orbits a station closer than 16000 sets the contact flag.
+           'station_contact_radius': ('_ZN9PlayerEgo13calcCollisionEP5ArrayIP8KIPlayerE', 174, 48, 'sha256:e8eb3fe75a1368b659ea64f6e1df18dec0f4685ff3eef9dc339e55629b5a2f9b'),
+           'dock_event': ('_ZN5MGame9dockEventEii', 0, 1500, 'sha256:c509b37791ee035ac28c716b3765e52ba5705d02fa07f400333fcb885a2b9ee0'),
+           # Cursors 1..162 dispatch on cursor - 1; table entries 0..3.
+           'story_dispatch': ('_ZN6Status19nextCampaignMissionEb', 58, 18, 'a12800f21b82dfe810f0ad029804ae04ac0c'),
+           'return_mission': ('_ZN6Status19nextCampaignMissionEb', 2464, 30, 'sha256:1c7d17e109303b1b338dfc8f13c8fe529e6dc319fddac3bbeb17ba31b9aad86e'),
+           'campaign_mission_tail': ('_ZN6Status19nextCampaignMissionEb', 426, 14, '2046294601b0bde8f04322f19cb8'),
+           'next_mining_factory': ('_ZN6Status19nextCampaignMissionEb', 6556, 52, 'sha256:527dfb0a6e2e57cb2aa14bf0186078d818662c76e64c0c3153ec56ec8434b767'),
+           'mode1_counts': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 16, '0000000026000000060000000a000000', 'literal', 0),
+           'mode1_return_events': ('_ZN14DialogueWindow11loadContentEv', 208, 40,
+                                   '02000000c506000000000000c606000002000000c706000000000000c806000002000000c9060000', 'literal', 176),
+           'voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 40,
+                      'c50600009b010000c60600009c010000c70600009d010000c80600009e010000c90600009f010000', 'literal', 1984),
+           'cargo_list_setter': ('_ZN4Ship8setCargoEP5ArrayIP4ItemE', 0, 92, 'sha256:71a00bf8d9656ccfc6fe7984f4d7e5663bef8a101d0b3aa4cd3f566af6554bcf')}

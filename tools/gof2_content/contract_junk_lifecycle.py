@@ -1,9 +1,23 @@
-"""Verified Junk declarations; no original executable code is emitted."""
+"""Verified Junk declarations; no original executable code is emitted.
+
+Android: PlayerJunk::update destroys debris (Level::junkDied counts it, sound
+22), drops item 99 (1-10) for random(100) <= 9 in a KIPlayer::createCrate
+container and bursts particle set 21 (ParticleSystemManager::emitManual, size
+-1), PlayerJunk::render draws live debris; ParticleSettings::init defines set
+21 (SET_EXPLOSION_MANUALLY_JUNK) and Level::initParticleSystems registers it;
+MGame::gameOverCheck fails the contract after its deadline unless
+Objective::isSurvivalObjective; Status::resetGame clears the debris statistic.
+Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 
 def extract_contract_junk_lifecycle(mach, arrival):
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -140,3 +154,13 @@ MAC_ALTERNATE = {'junk_lifecycle_update': [640950,
                                4,
                                '__const',
                                'c68830a25204a09f8e77aada6bc5807f607cccaaa0ebb2a7122d317584478a8b']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'junk_lifecycle_update': ('_ZN10PlayerJunk6updateEi', 0, 368, 'sha256:e0475bd7577cfcfd396b8bdc1446f71c3430b2651dad018d873c8f232558c441'),
+           'junk_lifecycle_render': ('_ZN10PlayerJunk6renderEv', 0, 36, 'sha256:f4d5643e1a26860302be69e997587958b2a9236f87c2d374dd0307254b9c771e'),
+           'junk_lifecycle_world_count': ('_ZN5Level8junkDiedEv', 0, 36, 'sha256:328066320bb132d2761038511421b2cb8318a210fc3cee84e9d8af34a6b72052'),
+           'junk_lifecycle_deadline_exclusion': ('_ZN9Objective19isSurvivalObjectiveEv', 0, 12, '01680020032908bf01207047'),
+           'junk_lifecycle_deadline_poll': ('_ZN5MGame13gameOverCheckEv', 412, 168, 'sha256:f513d1975925c278c374f4939e61866cb937b746f5f2091a1f98cc0a9920e4e4'),
+           'junk_lifecycle_particle_registration': ('_ZN5Level19initParticleSystemsEv', 1522, 48, 'sha256:aff9247daa1974928091a06a64ce81ec86e1236f31fa35d91d3e6f09eaf8d16a'),
+           'junk_lifecycle_particle_presets': ('_ZN16ParticleSettings4initEv', 0, 5828, 'sha256:c1f14b60756290f7c689ddb614fabcd1ff5b653699be7fae10840b1d8d83ef29'),
+           'junk_lifecycle_initial_statistic': ('_ZN6Status9resetGameEv', 310, 6, '0020c8f8b000')}

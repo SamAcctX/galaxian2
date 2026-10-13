@@ -1,8 +1,25 @@
-"""Mac asteroid selection declarations; no original executable runtime."""
+"""Mac asteroid selection declarations; no original executable runtime.
+
+Android: Radar::Radar reads the drill (sort 19), scanner (sort 17, attributes
+31, 30 and the duration 29, else 8000 ms) and tractor beam (sort 13), keeps
+five candidate slots and a window of Globals::w / 16 (the Mac: / 18).
+Radar::draw resets the slots, skips dead/dying asteroids (KIPlayer::isDead /
+isDying), takes minable ones (PlayerAsteroid: size > 3) inside the window
+around PlayerEgo::crosshairPos into four slots, picks the nearest under
+999999, locks after the duration - 200 ms (sound 26, notices 20 without a
+drill and 9 without a tractor beam) and animates the 1110 sprite after
+500 ms. Radar::getLockedAsteroid / unlockAsteroid hold the selection.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 def extract_mining_targeting(mach, arrival, flight):
+    if mach.architecture == 'android-armv7':
+        try:
+            if flight['scope'] != 'first_mining_flight_construction': return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(ANDROID_VALUES, provenance=proof) if proof else {}
     if mach.architecture!='x86_64' or flight.get('scope')!='first_mining_flight_construction':return {}
     try:
         origin=arrival['provenance']['actor']
@@ -126,3 +143,33 @@ MAC_ALTERNATE = {'initial_state': [657810,
                   78,
                   '4180fe017524488b85f0fdffff4883783800741c488b85f0fdffffc7802402000000000000e93b01000049833f0075e4488b85f0fdffff48c7402000000000c7802402000000000000e917010000'],
  'selection_clear': [682088, 24, '554889e5488b47185dc3554889e548c74718000000005dc3']}
+
+# Android: Radar::Radar stores Globals::w / 16 as the candidate half-window (+0x124).
+ANDROID_VALUES = dict(VALUES, window_divisor=16)
+
+# Android spans inside named functions.
+ANDROID = {'animation_source': ('_ZN5RadarC2EP5Level', 2186, 84, 'sha256:e254c972643d28a3c376190b65c5bcdaaf90b2bf8a5ddff321c9ddf82b11427d'),
+           # Drill 19, scanner 17 (attributes 31, 30, duration 29 else 8000) and tractor beam 13.
+           'equipment_and_duration': ('_ZN5RadarC2EP5Level', 2324, 148, 'sha256:5d5960270b66b43708f20be226c9942005a00dbf7a997d09bcdf48750bf82c51'),
+           # Five slots of -1 (new[20], memset 0xff).
+           'candidate_storage': ('_ZN5RadarC2EP5Level', 2550, 34, '012000218af8ac01caf8b8118af84800142012f786ef1421ff22caf8580013f7bced'),
+           # Globals::w / 16 (asrs #4) into +0x124, the half-window Radar::draw compares with.
+           'window': ('_ZN5RadarC2EP5Level', 2584, 48, 'ad484af6ab22c2f6aa22ac497844794400680968006850fb02f2c31700eb137600eb53703611c01002ebd272cae94962'),
+           'mineable_size': ('_ZN14PlayerAsteroidC2EiP10AEGeometryiiRKN11AbyssEngine6AEMath6VectorEfi', 256, 12, '0020032ec8bf012084f83801'),
+           'mineable_accessor': ('_ZN14PlayerAsteroid9isMinableEv', 0, 6, '90f838017047'),
+           'retired_accessor': ('_ZN8KIPlayer6isDeadEv', 0, 14, 'd0f884100020042908bf01207047'),
+           'destruction_accessor': ('_ZN8KIPlayer7isDyingEv', 0, 14, 'd0f884100020032908bf01207047'),
+           'array_reset': ('_ZN5Radar4drawEP6PlayerP3Hudi', 8120, 12, '2f9c1421ff22a06d11f758eb'),
+           'body_eligibility': ('_ZN5Radar4drawEP6PlayerP3Hudi', 8480, 106, 'sha256:e9d3bfcf4fcb52ab508e36f41cdd306ac8ee37dbc54272800934e26b4c531919'),
+           # Minable, inside crosshairPos +- the window, at most four candidates.
+           'candidate_window': ('_ZN5Radar4drawEP6PlayerP3Hudi', 8586, 344, 'sha256:2e94e1e9c76d239fcc9ccbcf06cdede771876ff81900d4233d4fee86003b8798'),
+           # The nearest of the five slots under 999999; a new candidate restarts the clock.
+           'nearest_candidate': ('_ZN5Radar4drawEP6PlayerP3Hudi', 9132, 164, 'sha256:223569f06c4b706f62cfc2b6eb7651270585755d44ca68c3f519948a13e38810'),
+           # Lock after duration - 200 ms; sound 26 unless sound 0 plays.
+           'acquisition': ('_ZN5Radar4drawEP6PlayerP3Hudi', 9296, 296, 'sha256:4cc196386e335222c86420689ae6ec0134e8a4578f61d92c794647f0976c0507'),
+           # Hud::hudEvent 9 (no tractor beam) and 20 (no drill).
+           'missing_devices': ('_ZN5Radar4drawEP6PlayerP3Hudi', 9848, 32, 'sha256:5abc7ec7b88337c6b47579e84c435d7394fab1545a2545a8990563c30965287a'),
+           # After 500 ms the sprite frame follows (elapsed - 500) / (duration - 500).
+           'animation': ('_ZN5Radar4drawEP6PlayerP3Hudi', 9880, 216, 'sha256:bd5297cc88e732716b132709727b09624b0e882076eedfb2d1276a0f76c61846'),
+           'selection_getter': ('_ZN5Radar17getLockedAsteroidEv', 0, 4, 'c0687047'),
+           'selection_clear': ('_ZN5Radar14unlockAsteroidEv', 0, 6, '0021c1607047')}

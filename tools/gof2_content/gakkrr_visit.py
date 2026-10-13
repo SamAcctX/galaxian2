@@ -2,15 +2,26 @@
 
 The next contest is declared, not completed here. Only content identities and
 constant parameters are emitted; no executable bytes or original logic run.
+
+Android: Status::nextCampaignMission case 35 creates Mission(12, 0, 27);
+cursor 35 has no radio lines (Level::createRadioMessages); DialogueWindow and
+Globals::getDialogueSoundId hold its ten landed result lines (Android text
+ids 2006-2015) and the two cursor-36 briefing lines (2016, 2017). Values are
+the Mac 1.0.7 ones (this module's VALUES); the reader requires the Android
+Nehma declaration.
 """
 import copy
 
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 from .nehma_visit import VALUES as NEHMA_APP, MAC_VALUES as NEHMA_OLD
 
 
 def extract_gakkrr_visit(mach, arrival, nehma):
     """Require the same edition's accepted Néhma prerequisite and every guard."""
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival and nehma == NEHMA_APP else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     if not proof or nehma != (NEHMA_APP, NEHMA_OLD)[variant]:
         return {}, {}
@@ -80,3 +91,17 @@ MAC_ALTERNATE = {
     "gakkrr_brief36_voices": [1560306, 16, "__const", "71fa287d27ef5cf5d4fe4519774c3b060df80eda1e17d99edb0ae0faee41f512"],
     "gakkrr_radio35_entry": [104626, 4, "__text", "252213ec6e7c761917a66a526c67bfe75b5eedfbc077d8a3368ae7908990604a"],
 }
+
+ANDROID = {# Status::nextCampaignMission case 35: Mission(12, 0, 27).
+           'gakkrr_factory36_entry': ('_ZN6Status19nextCampaignMissionEb', 138, 2, 'f00c'),
+           'gakkrr_factory36': ('_ZN6Status19nextCampaignMissionEb', 6692, 30, 'sha256:a996fc36b98bf26e7bece8fed5b866b8bff8bc060161eb6447eeaee04b766d01'),
+           'gakkrr_mission_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           # Cursor 35's results, cursor 36's briefing, all voices and no radio lines.
+           'gakkrr_result35_count': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 4, '14000000', 'literal', 140),
+           'gakkrr_result35_pairs': ('_ZN14DialogueWindow11loadContentEv', 208, 80, 'sha256:6a3d411e2507428432b8b2635158345927faa07fd16245fa30619262c0a7cc98', 'literal', 1864),
+           'gakkrr_brief36_count': ('_ZN14DialogueWindow19hasBriefingDialogueEi', 10, 4, '04000000', 'literal', 144),
+           'gakkrr_brief36_pairs': ('_ZN14DialogueWindow11loadContentEv', 128, 16, '07000000e007000000000000e1070000', 'literal', 224),
+           'gakkrr_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0),
+           'gakkrr_radio35_dispatch': ('_ZN5Level19createRadioMessagesEi', 0, 26, 'sha256:2fb27116c5cd427d3d8d01c2af84739cd96a13de8ea5fc929fb78c2963332596'),
+           'gakkrr_radio35_entry': ('_ZN5Level19createRadioMessagesEi', 96, 2, '4119'),
+           'gakkrr_radio_default': ('_ZN5Level19createRadioMessagesEi', 12956, 8, 'd4f8140102b0bde8')}

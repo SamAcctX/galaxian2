@@ -1,8 +1,17 @@
-"""Original impact-table declarations; no executable payloads."""
+"""Original impact-table declarations; no executable payloads.
+
+Android: Gun::setIndex looks up a gun's impact model in the item table (items
+0, 3, 7, 19, 22 and 25: 14600, 14601, 14603, 14605, 14606, 14606). Values
+equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_contract_world(mach, arrival):
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -65,3 +74,7 @@ MAC_ALTERNATE = {'contract_world_impact_0': [1547906,
                               4,
                               '__const',
                               'b18cc146d20e56ff0808059bc8ddf272dc008ee143402c5d32424175d3b54720']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'contract_world_impact_lookup': ('_ZN3Gun8setIndexEi', 56, 16, '33496066794451f82580b8f1000f53db'),
+           'contract_world_impact_models': ('_ZN3Gun8setIndexEi', 56, 104, 'sha256:281673842ca38e22a22daa0ae78e3ac72a58d17ec3af869219ff5e09a1b13395', 'literal', 0)}

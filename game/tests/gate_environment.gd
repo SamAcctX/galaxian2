@@ -63,9 +63,10 @@ func verify(args: PackedStringArray) -> void:
 			if type==1:check(row.child_lod_mesh_ids==[15024.0,15025.0],"Vossk child meshes were interpreted as an animation speed")
 	check(types.size()==4 and locations>100,"Catalogue coverage omitted an ordinary gate faction")
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
-	for key in Definitions.SPANS:
+	var android: bool=str(header.get("architecture",""))=="android-armv7"
+	for key in (Definitions.ANDROID_SPANS if android else Definitions.SPANS):
 		var changed: Dictionary=bindings.mido_travel.duplicate(true);changed.provenance.erase(key)
-		check(not Travel.validate(changed,int(header.source_executable_bytes),"x86_64",bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing gate proof was accepted: "+key)
+		check(not Travel.validate(changed,int(header.source_executable_bytes),str(header.architecture),bindings.arrival_staging,bindings.station_entry,bindings.combat_training).is_empty(),"Missing gate proof was accepted: "+key)
 
 func check(condition: bool,message: String) -> void:
 	checks+=1

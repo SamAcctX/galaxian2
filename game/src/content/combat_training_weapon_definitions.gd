@@ -16,20 +16,29 @@ const SPANS := {"npc_setup":[54772,4266],"weapon_constructor":[-190034,1052],"it
 
 const MAC_ALTERNATE := {"npc_setup":[54772,4266],"weapon_constructor":[-190526,1052],"item_setter":[-189192,356],"nonplayer_setter":[-188818,14],"world_setter":[-188328,10],"spread_setter":[-188836,18],"mount_setter":[-188766,68],"ordinary_launch":[-188290,3176],"ordinary_update":[-180858,710],"contacts":[-183568,2704],"normal_damage":[539472,1846],"player_factory":[-37352,2046],"weapon_factory":[64358,2880],"cache_reset_and_state":[432316,113],"world_entry":[334920,77],"refresh_equipment":[858597,93],"equipment_departure_gate":[437523,262],"player_mount_assignment":[-35754,56],"weapon_dispatch":[67166,12],"npc_dispatch":[58994,36],"spread_scale":[1531914,4],"spread_center":[1547254,4],"npc_speed":[1550414,4]}
 
+# Android: Level::assignGuns halves the kind-8 damage for cursor 7 (3 -> 1) and adds the mercy
+# rule (Mac: no key); spans inside named functions (Layouts.anchored).
+const ANDROID_VALUES := {"scope":"combat_training_ordinary_weapons","campaign_cursor":7,"actor_count":4,"rank_min":0,"rank_max":1,"npc_weapons":[{"actor_id":0,"actor_kind":8,"hull_catalogue_id":2,"item_id":19,"category":0,"kind":1,"catalogue_kind":1,"damage":1,"interval_ms":586,"lifetime_ms":3000,"projectile_capacity":4,"speed_units_per_millisecond":16.0,"model_resource_id":6795,"nonplayer_source":true},{"actor_id":1,"actor_kind":8,"hull_catalogue_id":2,"item_id":19,"category":0,"kind":1,"catalogue_kind":1,"damage":1,"interval_ms":586,"lifetime_ms":3000,"projectile_capacity":4,"speed_units_per_millisecond":16.0,"model_resource_id":6795,"nonplayer_source":true},{"actor_id":2,"actor_kind":8,"hull_catalogue_id":2,"item_id":19,"category":0,"kind":1,"catalogue_kind":1,"damage":1,"interval_ms":586,"lifetime_ms":3000,"projectile_capacity":4,"speed_units_per_millisecond":16.0,"model_resource_id":6795,"nonplayer_source":true},{"actor_id":3,"actor_kind":3,"hull_catalogue_id":30,"item_id":25,"category":0,"kind":0,"catalogue_kind":2,"damage":3,"interval_ms":586,"lifetime_ms":3000,"projectile_capacity":4,"speed_units_per_millisecond":16.0,"model_resource_id":6802,"nonplayer_source":true}],"target_memberships":[[-1,3],[-1,3],[-1,3],[-1,0,1,2]],"player_weapon_targets":[0,1,2,3],"player_primary":{"item_id":22,"category":0,"kind":2,"projectile_capacity":25,"dispersion":{"steps":2,"draw_scale":0.01,"center_scale":0.005}},"player_entry":{"ship_id":0,"station_id":78,"system_id":15,"campaign_cursor":7,"cache_reset":-1},"mercy":{"minimum_failures":3,"damage_factor":0.699999988079071}}
+const ANDROID_SPANS := {"npc_setup":[0,3320],"training_damage_scale":[480,4],"training_damage_cursor":[1898,8],"training_damage":[1940,36],"mercy_factor_load":[518,4],"mercy_factor":[972,4],"mercy_damage":[1976,94],"mercy_failures":[2024,8],"mercy_enemy":[0,8],"mercy_campaign":[0,10],"mercy_count":[178,102],"mercy_once":[10572,86],"weapon_constructor":[0,688],"item_setter":[0,280],"nonplayer_setter":[0,6],"world_setter":[0,4],"spread_setter":[0,14],"mount_setter":[0,84],"ordinary_launch":[0,1948],"ordinary_update":[0,604],"contacts":[0,2024],"normal_damage":[0,1376],"player_factory":[0,1488],"weapon_factory":[0,2100],"cache_reset_and_state":[0,6536],"world_entry":[618,52],"refresh_equipment":[0,1072],"equipment_departure_gate":[0,684]}
+
 static func parameters(data: Variant) -> bool:
-	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
-	for key in VALUES:
-		if not Equal.equal_value(data.get(key),VALUES[key]):return false
+	return _parameters(data,VALUES) or _parameters(data,ANDROID_VALUES)
+
+static func _parameters(data: Variant,expected: Dictionary) -> bool:
+	if not data is Dictionary or data.size()!=expected.size()+1 or not data.get("provenance") is Dictionary:return false
+	for key in expected:
+		if not Equal.equal_value(data.get(key),expected[key]):return false
 	return true
 
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, training: Dictionary, control: Dictionary, equipment: Dictionary, actors: Dictionary, weapons: Dictionary) -> String:
 	if not data is Dictionary:return "Missing combat-training weapon declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data):return "Unsupported combat-training weapon declarations"
+	if not (arch=="x86_64" and _parameters(data,VALUES) or arch=="android-armv7" and _parameters(data,ANDROID_VALUES)):return "Unsupported combat-training weapon declarations"
 	if not Training.parameters(training) or not TrainingControl.parameters(control) or not Equipment.parameters(equipment) or not Player.parameters(actors.get("player_initialization")):return "Combat-training weapons lack verified world, control, equipment or player context"
 	for key in ["ordinary_hit_policy","player_hit_policy","collision_bounds","audio"]:
 		if not weapons.get(key) is Dictionary or weapons[key].is_empty():return "Combat-training weapons lack shared contact or audio declarations"
 	if not Hit.parameters(weapons.ordinary_hit_policy) or not PlayerHit.parameters(weapons.player_hit_policy) or not Bounds.parameters(weapons.collision_bounds) or not Audio.parameters(weapons.audio):return "Invalid combat-training shared weapon context"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid combat training weapon extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Combat-training weapons lack their source anchor"
 	var layouts: Array=[SPANS,MAC_ALTERNATE]

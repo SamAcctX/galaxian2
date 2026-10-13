@@ -9,6 +9,9 @@ const SPANS := {"start_and_cancel":[586674,293],"distance_and_guidance":[587041,
 
 const MAC_ALTERNATE := {"start_and_cancel":[587210,293],"distance_and_guidance":[587577,432],"dock_and_close":[588009,194],"alignment":[588203,647],"wait_and_drill_creation":[588850,222],"player_dispatch":[577558,84],"ordinary_movement_gate":[579468,90],"ordinary_banking_gate":[579707,40],"guidance_heading":[568759,340],"guidance_move":[569579,89],"guidance_stats":[570079,122],"model_parent":[555154,102],"camera_update_gate":[906519,23],"camera_enable_setter":[905706,10],"asteroid_scale":[546631,16],"asteroid_spin_initial":[547163,9],"asteroid_base_flag":[547365,6],"spin_setter":[547942,10],"initial_alignment":[551328,7],"initial_capture":[552011,8],"local_forward":[-730226,26],"local_up":[-730200,26],"matrix_forward":[1234098,82],"matrix_up":[1234002,82],"local_pitch_matrix":[1235426,480],"matrix_product":[1230690,832]}
 
+# Android: the VALUES; spans inside named functions (Layouts.anchored).
+const ANDROID_SPANS := {"start_and_cancel":[0,196],"stand_off_scale":[200,4],"approach":[0,1146],"pitch_row":[1152,16],"tilt_limit":[1172,4],"response_add":[1196,4],"alignment_constants":[1208,16],"player_dispatch":[4340,76],"ordinary_movement_gate":[5248,136],"ordinary_banking_gate":[5820,22],"guidance":[0,932],"turn_fraction":[936,4],"model_parent":[0,80],"camera_update_gate":[156,18],"camera_enable_setter":[0,6],"asteroid_scale":[154,16],"asteroid_scale_getter":[0,6],"asteroid_spin_initial":[576,6],"asteroid_base_flag":[728,6],"spin_setter":[0,6],"cleared_register":[36,2],"initial_alignment":[342,4],"initial_capture":[582,4],"local_forward":[0,26],"local_up":[0,26],"matrix_forward":[0,14],"matrix_up":[0,14],"local_pitch_matrix":[0,224],"matrix_product":[0,448]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -18,7 +21,8 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, targeting: Dictionary) -> String:
 	if not data is Dictionary:return "Missing mining approach declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data) or not Targeting.parameters(targeting):return "Unsupported mining approach declarations"
+	if not (arch=="x86_64" or arch=="android-armv7") or not parameters(data) or not Targeting.parameters(targeting):return "Unsupported mining approach declarations"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid mining approach extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Mining approach lacks its source anchor"
 	var layouts: Array=[SPANS,MAC_ALTERNATE]

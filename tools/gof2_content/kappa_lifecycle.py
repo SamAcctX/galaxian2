@@ -1,8 +1,21 @@
-"""Original Kappa fighter lifecycle and EMP faction reactions. Constant declarations only."""
+"""Original Kappa fighter lifecycle and EMP faction reactions. Constant declarations only.
+
+Android: Player::damageEmp and damage take the hits (a third of the systems
+warns once through Level::friendTurnedEnemy; depletion alarms the system's
+race, Level::alarmAllFriends, and costs 2 of Terran standing,
+Standing::applyDisable and applyDelict); Status::getSystem,
+SolarSystem::getRace, KIPlayer's constructor and isWingMan,
+Level::createRadioMessage and Player::setAlwaysEnemy complete it. Values
+equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_kappa_lifecycle(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -123,3 +136,18 @@ MAC_ALTERNATE = {'kappa_lifecycle_systems_hit': [538630,
                                           28,
                                           '__text',
                                           'b6bfcb7e235910cff0dd3613bb0d4daaad101ddbdbf2166b2708e8a5426891bb']}
+
+# Android spans: whole named functions; the values are VALUES.
+ANDROID = {'kappa_lifecycle_systems_hit': ('_ZN6Player9damageEmpEib', 0, 572, 'sha256:059c68f8a4dc89addca0a325ba3da074d797272dc30fa040c276d4447f0f73bc'),
+           'kappa_lifecycle_normal_hit': ('_ZN6Player6damageEibi', 0, 1376, 'sha256:577391dd7b7a6d8ee3273ce37004ea80f21a4f1a173666529c7b926f4449f3d5'),
+           # Disabling costs 2 (more in hard-core mode) on the race's axis; Terran: axis 0 down.
+           'kappa_lifecycle_systems_reputation': ('_ZN8Standing12applyDisableEi', 0, 6, '022296f0b2bc'),
+           'kappa_lifecycle_reputation_adjust': ('_ZN8Standing11applyDelictEii', 0, 124, 'sha256:262f35c31d0749a01acbf4ae6061d65741bc024e6bdf6ddd6c94ca65ed6fec89'),
+           'kappa_lifecycle_current_system': ('_ZN6Status9getSystemEv', 0, 6, 'd0f8a0017047'),
+           'kappa_lifecycle_system_faction': ('_ZN11SolarSystem7getRaceEv', 0, 4, 'c0697047'),
+           'kappa_lifecycle_actor_constructor': ('_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', 0, 604, 'sha256:3a02b0c7ce6b25d113ff6b119a914a61a149997d03f3853b159537f02d2efee8'),
+           'kappa_lifecycle_attached_actor': ('_ZN8KIPlayer9isWingManEv', 0, 6, '90f8d8007047'),
+           'kappa_lifecycle_warning': ('_ZN5Level17friendTurnedEnemyEi', 0, 22, '0a4690f8881101b17047012180f88811002102f132bd'),
+           'kappa_lifecycle_response': ('_ZN5Level15alarmAllFriendsEib', 0, 156, 'sha256:890f99a20e8e1b944abe5c8b6361ddd8791e24689c0cbfbb5b1367b315b245a3'),
+           'kappa_lifecycle_mission_radio_filter': ('_ZN5Level18createRadioMessageEii', 0, 1912, 'sha256:e81708bb5b5c38a3449efcf4358a2b630c7bbf9d2daea6b44c2fcefbd8fa01c9'),
+           'kappa_lifecycle_persistent_hostility': ('_ZN6Player14setAlwaysEnemyEb', 0, 16, '80f8ec100121a0f85c1080f8e0107047')}
