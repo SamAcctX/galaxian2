@@ -67,3 +67,23 @@ class DeliveryResultTests(unittest.TestCase):
             self.assertEqual(delivery_results.extract_delivery_results(mach, {}), ({}, {}))
             mach.architecture = 'armv7'
             self.assertEqual(delivery_results.extract_delivery_results(mach, arrival), ({}, {}))
+
+
+class DeliveryResultsAndroidTests(unittest.TestCase):
+    def test_android_proofs(self):
+        from gof2_content import delivery_results as reader
+        import android_fixture
+        from unittest.mock import patch
+        from gof2_content.android_library import AndroidLibrary
+        from test_mido_travel import roomy
+        arrival = {'scope': 'rescue_choreography', 'provenance': {'actor': {'offset': 5, 'bytes': 24, 'anchor': 1}}}
+        with patch.object(android_fixture, 'library', roomy(android_fixture.library)):
+            android_fixture.verify_android_proof(self, reader, lambda lib: reader.extract_delivery_results(lib, arrival), layout='ANDROID', values='VALUES')
+            image, layout, _ = android_fixture.layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            self.assertFalse(reader.extract_delivery_results(AndroidLibrary(image), {})[0])
+
+    def test_android_native_declarations(self):
+        from gof2_content import delivery_results as reader
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'delivery_result_definitions.gd', values='VALUES', layout='ANDROID')

@@ -88,6 +88,7 @@ static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dicti
 		if data.has("acceptance"):android_spans.merge(ANDROID_ACCEPTANCE_SPANS)
 		# Each ported extension adds its Module.ANDROID_SPANS line here.
 		if data.has("generation"):android_spans.merge(Contacts.ANDROID_SPANS)
+		if data.has("delivery_results"):android_spans.merge(Delivery.ANDROID_SPANS)
 		return "" if Layouts.anchored(data.provenance,source_bytes,android_spans) else "Invalid early contract provenance"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Early contract terms lack their source anchor"
