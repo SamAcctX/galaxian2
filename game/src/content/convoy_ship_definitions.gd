@@ -6,6 +6,9 @@ const SPANS = {"convoy_ship_factory_dispatch":[-219266,28],"convoy_ship_assembly
 
 const MAC_SPANS = {"convoy_ship_factory_dispatch":[-220222,28],"convoy_ship_assembly":[-219965,225],"convoy_ship_assembly_scale":[1532082,4],"convoy_ship_factory_hull":[78349,37],"convoy_ship_box_factory":[78968,967],"convoy_ship_box_values":[1550638,160],"convoy_ship_box_constructor":[-716150,138],"convoy_ship_box_half_scale":[1519570,4],"convoy_ship_box_point":[-715920,122],"convoy_ship_cargo":[632573,115],"convoy_ship_initial_state":[632781,57],"convoy_ship_motion_gate":[635070,64],"convoy_ship_motion_step":[634470,212],"convoy_ship_motion_flag":[633576,14],"convoy_ship_model_move":[-728598,234]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"convoy_ship_assembly":[0,2116],"convoy_ship_factory":[0,3112],"convoy_ship_box_constructor":[0,152],"convoy_ship_box_point":[0,158],"convoy_ship_object":[0,804],"convoy_ship_motion_gate":[0,2888],"convoy_ship_motion_step":[0,168],"convoy_ship_motion_flag":[0,6],"convoy_ship_model_move":[0,196]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES)
 

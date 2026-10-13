@@ -1,8 +1,21 @@
-"""Original convoy capital-ship assembly and physical constants, import only."""
+"""Original convoy capital-ship assembly and physical constants, import only.
+
+Android: Globals::getShipGroup assembles hull 14 (bodies 14311-14313, children
+14316 and 14315, LOD 35000/60000, scale 2); Level::createShip gives it 25 x
+hull, 3 x shield, range 45000 and eleven BoundingAAB boxes
+(BoundingAAB::BoundingAAB, outerCollide); PlayerFixedObject's constructor
+multiplies its cargo by 5 + rand(8), leaves it parked without engine sound, and
+PlayerFixedObject::update, moveForward, setMoving and AEGeometry::moveForward
+move it. Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_convoy_ship(mach,arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -147,3 +160,17 @@ MAC_ALTERNATE = {'convoy_ship_factory_dispatch': [-220222,
  'convoy_ship_motion_step': [634470, 212, '__text', '96ea25789aeae64e83fcdead3b99e4fd2f9e4448436afd85acd02ba1a30651ea'],
  'convoy_ship_motion_flag': [633576, 14, '__text', '2f5cd2adf4e89c1d33ae38fd13660af81f5e8d562088a4570e24e9765d840ecc'],
  'convoy_ship_model_move': [-728598, 234, '__text', '733a495e07430f5e052584772edb564e11bfa77a5d082b6eec2130c2221cd27d']}
+
+# Android spans inside named functions and their tables; the values are VALUES.
+ANDROID = {# Globals::getShipGroup: hull 14 assembles bodies 14311-14313 with children 14316/14315, LOD 35000/60000, scale 2.
+           'convoy_ship_assembly': ('_ZN7Globals12getShipGroupEiib', 0, 2116, 'sha256:82d79c62239613267037732bb0cfc994cbdfe697c1466fe5e5ece399a14b7109'),
+           # Level::createShip: hull 14 has 25 x hull, 3 x shield, range 45000 and eleven boxes.
+           'convoy_ship_factory': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           'convoy_ship_box_constructor': ('_ZN11BoundingAABC2Efffffffff', 0, 152, 'sha256:88e2b82e14a97cf1bcc053f19e3bbd4ecbb97bc093ad8e92e36157a5098663bc'),
+           'convoy_ship_box_point': ('_ZN11BoundingAAB12outerCollideEfff', 0, 158, 'sha256:b8089f86f85235aaa8e5a2aca0acb9d26a41e44b224ff50c8ec55c4712f274a5'),
+           # PlayerFixedObject: cargo x (5 + rand(8)), parked (not moving), no engine sound.
+           'convoy_ship_object': ('_ZN17PlayerFixedObjectC2EiiP6PlayerP10AEGeometryfff', 0, 804, 'sha256:8e92f8e152d9f1a0c3d99ecc26346df1f048501ee0014047ed2c3a1d67aaec75'),
+           'convoy_ship_motion_gate': ('_ZN17PlayerFixedObject6updateEi', 0, 2888, 'sha256:f84fa1d1be257b92fd04b8e98c2c500190c596804150929bb95ecb8d0da7a252'),
+           'convoy_ship_motion_step': ('_ZN17PlayerFixedObject11moveForwardEi', 0, 168, 'sha256:7aede5b99a8f278fe6bef59f81abf28b609d7219e8c7d3351f0fca07a12b01da'),
+           'convoy_ship_motion_flag': ('_ZN17PlayerFixedObject9setMovingEb', 0, 6, '80f830117047'),
+           'convoy_ship_model_move': ('_ZN10AEGeometry11moveForwardEf', 0, 196, 'sha256:2840a4e39050a43afb94813788a216a675bc125429812155e43fc069c1a319e5')}
