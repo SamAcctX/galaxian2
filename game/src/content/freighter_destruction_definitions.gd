@@ -11,6 +11,8 @@ const VALUES = {"scope":"early_mido_freighter_destruction","campaign_cursor":11,
 const SPANS = {"freighter_update":[634134,4064],"death_model":[633586,336],"freighter_draw":[638262,174],"cargo_model":[-77266,246],"cargo_predicate":[-77020,46],"active_setter":[-78854,18],"wreck_reader":[-677302,398],"wreck_volumes":[-220182,888],"freighter_point":[638832,218],"effect_fragments":[-682314,482],"effect_reset":[-682904,424],"effect_scale":[-683262,358],"effect_trigger":[-681366,484],"effect_sound":[-681822,456],"hostile_death":[106510,1044],"nonhostile_death":[107650,12],"animation_mode":[1067530,112],"animation_step":[1068036,309],"wreck_box_scale":[1557770,4],"wreck_sphere_scale":[1556934,4],"effect_scales":[1588802,8],"cargo_angle_fraction":[1575014,4],"cargo_angle_tau":[1575058,4]}
 
 const MAC_SPANS = {"freighter_update":[634682,4064],"death_model":[634134,336],"freighter_draw":[638810,174],"cargo_model":[-77266,246],"cargo_predicate":[-77020,46],"active_setter":[-78854,18],"wreck_reader":[-683190,398],"wreck_volumes":[-221138,888],"freighter_point":[639380,218],"effect_fragments":[-688202,482],"effect_reset":[-688792,424],"effect_scale":[-689150,358],"effect_trigger":[-687254,484],"effect_sound":[-687710,456],"hostile_death":[106510,1044],"nonhostile_death":[107650,12],"animation_mode":[1068258,112],"animation_step":[1068764,309],"wreck_box_scale":[1532770,4],"wreck_sphere_scale":[1531934,4],"effect_scales":[1563890,8],"cargo_angle_fraction":[1550078,4],"cargo_angle_tau":[1550122,4]}
+# Android: the Mac values; spans inside named functions (Layouts.anchored).
+const ANDROID_SPANS = {"freighter_destruction_update":[0,2888],"freighter_destruction_death_model":[0,192],"freighter_destruction_factory":[0,3112],"freighter_destruction_draw":[0,112],"freighter_destruction_cargo_model":[0,212],"freighter_destruction_cargo_predicate":[0,36],"freighter_destruction_active_setter":[0,6],"freighter_destruction_wreck_reader":[0,300],"freighter_destruction_wreck_volumes":[0,660],"freighter_destruction_point":[0,148],"freighter_destruction_effect_fragments":[0,428],"freighter_destruction_effect_reset":[0,340],"freighter_destruction_effect_scale":[0,316],"freighter_destruction_effect_trigger":[0,424],"freighter_destruction_effect_sound":[0,272],"freighter_destruction_hostile_death":[0,636],"freighter_destruction_nonhostile_death":[0,12],"freighter_destruction_animation_mode":[0,32],"freighter_destruction_animation_step":[0,472]}
 
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
@@ -69,7 +71,11 @@ static func for_faction(bindings: RefCounted,faction: int) -> Dictionary:
 static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dictionary,combat: Dictionary) -> String:
 	if not data is Dictionary:return "Missing freighter destruction declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data) or not Combat.parameters(combat):return "Unsupported freighter destruction declarations"
+	var android:=arch=="android-armv7"
+	if (arch!="x86_64" and not android) or not parameters(data) or not Combat.parameters(combat):return "Unsupported freighter destruction declarations"
+	if android:
+		if arrival.get("scope")!="rescue_choreography" or not arrival.get("provenance",{}).has("actor"):return "Freighter destruction lacks its source anchor"
+		return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid freighter destruction source layout"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Freighter destruction lacks its source anchor"
 	if not Layouts.matches(data.provenance,int(origin.offset),source_bytes,[SPANS,MAC_SPANS]):return "Invalid freighter destruction source layout"

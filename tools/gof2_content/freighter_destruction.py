@@ -1,10 +1,26 @@
-"""Original early Mido freighter lifecycle declarations, without executable code."""
+"""Original early Mido freighter lifecycle declarations, without executable code.
+
+Android: PlayerFixedObject::update runs the death (mode 3, crate, sound 20,
+explosion, wreck at 141 ms, materials, cleanup, mode 4), setWreckedMeshId the
+death model and wreck layout (race 3, hull 15: layout 1, as the Mac),
+render the drawing; Level::createShip names model 18300; KIPlayer::createCrate,
+cargoAvailable and setActive, FileRead::loadWreckCollision and
+Globals::getWreckCollision (box x1.1, sphere x0.6), Explosion's fragments,
+reset, scaling, start and sound, Level::enemyDied and friendDied,
+Transform::SetAnimationState and Update complete it. Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 from .ambient_combat import VALUES as COMBAT_VALUES
 
 def extract_freighter_destruction(mach,arrival,combat):
     if not isinstance(combat,dict) or any(combat.get(key)!=value for key,value in COMBAT_VALUES.items()):return {}
+    if mach.architecture=='android-armv7':
+        proof=recognize_symbols(mach,ANDROID) if arrival else {}
+        if not proof:return {}
+        result=copy.deepcopy(VALUES);result['provenance']=proof
+        return result
     _variant,proof=hashed_variants(mach,arrival,[LAYOUTS,MAC_ALTERNATE])
     if not proof:return {}
     result=copy.deepcopy(VALUES);result['provenance']=proof
@@ -214,3 +230,28 @@ MAC_ALTERNATE = {'freighter_update': [634682,
                      4,
                      '__const',
                      '12d85026b5109a3119231704608d5991a63d8d397d2867a9fc522305810ddb76']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'freighter_destruction_update': ('_ZN17PlayerFixedObject6updateEi', 0, 2888, 'sha256:f84fa1d1be257b92fd04b8e98c2c500190c596804150929bb95ecb8d0da7a252'),
+           'freighter_destruction_death_model': ('_ZN17PlayerFixedObject16setWreckedMeshIdEi', 0, 192, 'sha256:0eddfaaefee7aa0a7ffe17609b092f742042a0adf689940f1cea6f89c4a5f57c'),
+           'freighter_destruction_factory': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           'freighter_destruction_draw': ('_ZN17PlayerFixedObject6renderEv', 0, 112, 'sha256:f0d1b2b7797b7477b081cf73a3b74103ec5bcd8fd75359b844d8b1aac3176ad4'),
+           # Race 3: container 16990.
+           'freighter_destruction_cargo_model': ('_ZN8KIPlayer11createCrateEi', 0, 212, 'sha256:91deeb454ba06465975eb469efc565a2639580023fba721f6c059569ad9060a2'),
+           'freighter_destruction_cargo_predicate': ('_ZN8KIPlayer14cargoAvailableEv', 0, 36, 'sha256:d957cbac863a90042a6bb4bd1d5ea6115d6287c0af45fb312f0e030b7d71e440'),
+           'freighter_destruction_active_setter': ('_ZN8KIPlayer9setActiveEb', 0, 6, '406826f1f7b8'),
+           # wreck_collisions.bin, at most 6 records; boxes x1.1, spheres x0.6.
+           'freighter_destruction_wreck_reader': ('_ZN8FileRead18loadWreckCollisionEi', 0, 300, 'sha256:477bbb97f198787e10169478c1f1998b7ff7686144cbf7d68168012f03b0767c'),
+           'freighter_destruction_wreck_volumes': ('_ZN7Globals17getWreckCollisionEiP10AEGeometry', 0, 660, 'sha256:ee02ba5f53d856196b05a2f2250ac039b297109d20e21ac47f1f6f8d55604640'),
+           'freighter_destruction_point': ('_ZN17PlayerFixedObject12outerCollideEfff', 0, 148, 'sha256:2b8d1feff21a6ac17690be9e8d7e03dea48be571433282b0d7323310809b8992'),
+           # Explosion type 0: fragments, reset, scaling 1 -> 6, start, sounds 18 + random(2).
+           'freighter_destruction_effect_fragments': ('_ZN9Explosion14addFireStreaksEv', 0, 428, 'sha256:25e31ef99a2959f48e5bcd86ddbce4f343143380f13428f8ee440d97b4de199c'),
+           'freighter_destruction_effect_reset': ('_ZN9Explosion5resetEv', 0, 340, 'sha256:81be4cc59f4c7cb24e48a7d1d74a22118f7b8e49aa8177a451e222443d6b7404'),
+           'freighter_destruction_effect_scale': ('_ZN9Explosion10setScalingEf', 0, 316, 'sha256:5a82423ac519a594c5ca605a34dd71dc9ff2a6b6e42431d03ffccbc5e6a83a71'),
+           'freighter_destruction_effect_trigger': ('_ZN9Explosion5startERKN11AbyssEngine6AEMath6VectorES4_', 0, 424, 'sha256:1c46779e818994b2397ab5e986aaef2a0ca7a0d86e012700190e6939b6bf8985'),
+           'freighter_destruction_effect_sound': ('_ZN9Explosion9playSoundEPN11AbyssEngine6AEMath6VectorE', 0, 272, 'sha256:4c7c6d27dc8036d4256b270583ae8902c51d8965ba07113fa4087d3d0948d6b4'),
+           # A hostile death counts down the enemies, any other the friends.
+           'freighter_destruction_hostile_death': ('_ZN5Level9enemyDiedEib', 0, 636, 'sha256:1d244b76f7d5e2deedc549f316d5bd128ac0dc74646f082c294b69202f2e3b19'),
+           'freighter_destruction_nonhostile_death': ('_ZN5Level10friendDiedEv', 0, 12, 'd0f81c110139c0f81c117047'),
+           'freighter_destruction_animation_mode': ('_ZN11AbyssEngine9Transform17SetAnimationStateENS_13AnimationModeEPv', 0, 32, 'sha256:b87fb44c47eea29c4b514e012b39ed9a6c75ea2c5b1adec9fc832911647ade85'),
+           'freighter_destruction_animation_step': ('_ZN11AbyssEngine9Transform6UpdateExb', 0, 472, 'sha256:0600baa00ef72a4489e564e86c5bcdd53c3752bb85e1e453ebd37d3785a54269')}

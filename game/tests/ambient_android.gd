@@ -4,6 +4,7 @@ extends SceneTree
 const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const Population=preload("res://src/content/ambient_population_definitions.gd")
 const Combat=preload("res://src/content/ambient_combat_definitions.gd")
+const Destruction=preload("res://src/content/freighter_destruction_definitions.gd")
 var checks:=0
 var failures:=0
 var source_bytes:=8000000
@@ -27,6 +28,9 @@ func verify() -> void:
 	var combat:=android(Combat.VALUES,Combat.ANDROID_SPANS)
 	common("combat",func(data,arch,staging,parent):return Combat.validate(data,source_bytes,arch,staging,parent),combat,population,{},"ambient_combat_factory")
 	mac("combat",func(data,arch,staging,parent):return Combat.validate(data,source_bytes,arch,staging,parent),Combat.VALUES,Combat.MAC_SPANS,population)
+	var destruction:=android(Destruction.VALUES,Destruction.ANDROID_SPANS)
+	common("freighter destruction",func(data,arch,staging,parent):return Destruction.validate(data,source_bytes,arch,staging,parent),destruction,combat,{},"freighter_destruction_death_model")
+	mac("freighter destruction",func(data,arch,staging,parent):return Destruction.validate(data,source_bytes,arch,staging,parent),Destruction.VALUES,Destruction.MAC_SPANS,combat)
 
 ## Acceptance, other editions, the staging and the proofs of one validator.
 func common(name: String,validate: Callable,data: Dictionary,parent: Dictionary,foreign_parent: Dictionary,span: String) -> void:
