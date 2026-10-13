@@ -1568,6 +1568,7 @@
     "game/tests/eanya_world_geometry.gd.uid",
     "game/tests/eanya_worlds.gd",
     "game/tests/eanya_worlds.gd.uid",
+    "game/tests/early_contracts_android.gd",
     "game/tests/emp_bombs.gd",
     "game/tests/emp_bombs.gd.uid",
     "game/tests/emp_detonation.gd",
