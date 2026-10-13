@@ -36,7 +36,12 @@ func configure_ordinary(bindings: RefCounted,station: Dictionary,mining: Diction
 	var frame_limit: int=Frames.simulation_limit(bindings)
 	if frame_limit<=0:return reject("Ordinary station lock has no supported frame")
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"campaign_cursor":campaign_cursor}
-	_rules=ORDINARY_RULES;_perspective=bindings.flight_projection.duplicate(true)
+	# The ordinary landmark lock reads Radar::draw's windows, as the Void probe lock does (Mac w/8 and w/18, Android w/6 and w/16).
+	_rules=ORDINARY_RULES.duplicate()
+	var lock: Variant=bindings.mido_travel.get("void_probe",{}).get("world29",{}).get("target_lock",{})
+	for key in ["outer_window_width_divisor","inner_aim_width_divisor"]:
+		if lock is Dictionary and lock.has(key):_rules[key]=int(lock[key])
+	_perspective=bindings.flight_projection.duplicate(true)
 	_frame_radii=frame_radii;_max_frame_ms=frame_limit;_scanner_id=int(mining.scanner_id);_duration_ms=int(mining.duration_ms);_station_id=int(station.station_id)
 	_found_index=-1;_aimed_index=-1;_locked_index=-1;_elapsed_ms=0;_sample={}
 	return true
