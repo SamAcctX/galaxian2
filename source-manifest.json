@@ -2798,6 +2798,7 @@
     "tests/test_free_traffic.py",
     "tests/test_freighter_destruction.py",
     "tests/test_full_hold_departure.py",
+    "tests/test_full_hold_flight.py",
     "tests/test_gakkrr_visit.py",
     "tests/test_game_install.py",
     "tests/test_game_over_presentation.py",

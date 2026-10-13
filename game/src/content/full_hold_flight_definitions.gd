@@ -14,6 +14,9 @@ const SPANS := {"actor_dispatch":[315,256],"actor_position_z":[1575338,4],"ordin
 
 const MAC_ALTERNATE := {"actor_dispatch":[315,256],"actor_position_z":[1550402,4],"ordinary_field_center":[-35306,796],"route_and_cargo":[605720,2070],"placement_virtual":[2377266,8],"world_order":[-44096,2458],"factory":[77944,3478],"inactive_mode":[-78898,44],"activity":[-78836,36],"activity_field":[541446,14],"hostile":[536160,28],"position_setter":[609776,176],"weapons":[54772,4266],"extra_story":[51826,1046]}
 
+# Android: the VALUES; spans inside named functions and PlayerFighter's vtable slot 18 (Layouts.anchored).
+const ANDROID_SPANS := {"actor_dispatch":[552,14],"actor_entry":[574,2],"actor_case":[25216,140],"story_tail":[29704,26],"position_setter":[0,120],"factory":[0,3112],"world_order":[0,1792],"environment":[2536,428],"inactive_mode":[0,28],"activity":[0,20],"activity_field":[0,6],"hostile":[0,16],"weapons":[0,3320],"placement_virtual":[80,4]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -29,10 +32,11 @@ static func flight(bindings: RefCounted, cursor: Variant) -> Dictionary:
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, departure: Dictionary, first: Dictionary, actors: Dictionary) -> String:
 	if not data is Dictionary:return "Missing second-flight construction declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data):return "Unsupported second-flight construction declarations"
+	if not (arch=="x86_64" or arch=="android-armv7") or not parameters(data):return "Unsupported second-flight construction declarations"
 	if not Departure.parameters(departure) or not First.parameters(first):return "Second flight lacks its departure or ordinary flight context"
 	var initial: Dictionary=actors.get("npc_initialization",{})
 	if not NPC.parameters(initial.get("construction")) or not Route.parameters(initial.get("routes")) or not World.parameters(initial.get("world_initialization")):return "Second flight lacks shared NPC construction"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid full hold flight extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Second flight lacks its source anchor"
 	var layouts: Array=[SPANS,MAC_ALTERNATE]
