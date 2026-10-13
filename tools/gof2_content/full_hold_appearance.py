@@ -1,9 +1,22 @@
-"""Optional Mac mission placement declarations, without executable runtime code."""
+"""Optional Mac mission placement declarations, without executable runtime code.
+
+Android: LevelScript::process places the cursor-4 pirate once at cursor 5 at
+the player + (5000, 0, 30000), turned by pi, and wakes it through slots 18
+(PlayerFighter::setPosition) and 3 (PlayerFighter::awake) of PlayerFighter's
+vtable; slot 2 (PlayerFighter::setShipGroup -> KIPlayer::setShipGroup) banks
+its model under the flight geometry.
+"""
 import copy
-from .declaration_layouts import recognize
-from .station_exterior import declaration_bytes
+from .declaration_layouts import recognize, recognize_symbols
+from .station_exterior import declaration_bytes, vtable_proof
 
 def extract_full_hold_appearance(mach,arrival,story,death):
+    if mach.architecture == 'android-armv7':
+        try:
+            if story['scope'] != 'full_hold_mining_story' or death['scope'] != 'full_hold_pirate_destruction': return {}
+        except (KeyError, TypeError): return {}
+        proof, slots = recognize_symbols(mach, ANDROID), vtable_proof(mach, ANDROID_VTABLES)
+        return dict(VALUES, provenance={**proof, **slots}) if proof and slots is not None else {}
     if mach.architecture!='x86_64':return {}
     try:
         if story['scope']!='full_hold_mining_story' or death['scope']!='full_hold_pirate_destruction':return {}
@@ -126,3 +139,25 @@ MAC_ALTERNATE = {'mission_controller': [138688,
  'offset_x': [1520974, 4, '__const', '00409c45'],
  'offset_z': [1520570, 4, '__const', '0060ea46'],
  'yaw': [1521054, 4, '__const', 'db0f4940']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# LevelScript::process: once at cursor 5 (phase 0 -> 1) the pirate appears at the player + (5000, 0,
+           # 30000) in world space, turned by pi, and wakes (PlayerFighter::awake: mode 1, active, visible).
+           'mission_controller': ('_ZN11LevelScript7processEi', 0, 59076, 'sha256:fc48a0891a46a9391ae3fe50b9ad196d3c917dbd5cd6c3b58c4d2c9cdc2aa5ca'),
+           'offsets': ('_ZN11LevelScript7processEi', 408, 8, '00409c450060ea46'),
+           'yaw': ('_ZN11LevelScript7processEi', 1172, 8, '40f6db72c4f24902'),
+           # The fighter: activation, placement, exhaust visibility and its banked model (KIPlayer::setShipGroup
+           # under PlayerFighter::setShipGroup), built by Level::createShip; AEGeometry and Explosion helpers.
+           'activation': ('_ZN13PlayerFighter5awakeEv', 0, 48, 'sha256:616faca6c49e0b1debbcee2f7669636c9d29c359be12269b86f53e65061712de'),
+           'placement': ('_ZN13PlayerFighter11setPositionEfff', 0, 120, 'sha256:84b11cc073cadac276caa21eb0eef09b9016bb682c15fad91054bd0e74a4dbe8'),
+           'visibility': ('_ZN13PlayerFighter17setExhaustVisibleEb', 0, 68, 'sha256:2426d18894020f756342842c77b504144571bf20e2ba79ad3b3f09f8c17270dd'),
+           'model_install_entry': ('_ZN13PlayerFighter12setShipGroupEP10AEGeometryib', 0, 4, 'e8f00abd'),
+           'model_install': ('_ZN8KIPlayer12setShipGroupEP10AEGeometryib', 0, 160, 'sha256:249560a0c9fbb1d950cae0becb50f84c6bfd58ac4c548ad7c56e38a098148570'),
+           'actor_factory': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           'matrix_setter': ('_ZN10AEGeometry9setMatrixERKN11AbyssEngine6AEMath6MatrixE', 0, 10, '0a46c168c06a27f1ffbe'),
+           'position_setter': ('_ZN10AEGeometry11setPositionEfff', 0, 76, 'sha256:fdaa786a2e39b20ca9b4f87c24ca1ab881add82b775e8bca70c695fa82b9a154'),
+           'euler_addition': ('_ZN10AEGeometry6rotateEfff', 0, 156, 'sha256:3cb10368bf260dbddd4cb9987882f5ae54c6cc0a85219993b72dcf1b32da66af'),
+           'effect_trigger': ('_ZN9Explosion5startERKN11AbyssEngine6AEMath6VectorES4_', 0, 424, 'sha256:1c46779e818994b2397ab5e986aaef2a0ca7a0d86e012700190e6939b6bf8985')}
+# PlayerFighter's vtable: slots 2 (setShipGroup), 3 (awake) and 18 (setPosition(float, float, float)).
+ANDROID_VTABLES = {'model_install_virtual': ('_ZTV13PlayerFighter', 2, ['_ZN13PlayerFighter12setShipGroupEP10AEGeometryib', '_ZN13PlayerFighter5awakeEv']),
+                   'placement_virtual': ('_ZTV13PlayerFighter', 18, ['_ZN13PlayerFighter11setPositionEfff'])}

@@ -2797,6 +2797,7 @@
     "tests/test_free_population.py",
     "tests/test_free_traffic.py",
     "tests/test_freighter_destruction.py",
+    "tests/test_full_hold_appearance.py",
     "tests/test_full_hold_control.py",
     "tests/test_full_hold_departure.py",
     "tests/test_full_hold_destruction.py",
