@@ -85,6 +85,8 @@ static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dicti
 		# The library's own stock progress (Stock.ANDROID_VALUES).
 		if data.has("station_generation") and not Equal.equal_value(data.station_generation,Stock.ANDROID_VALUES):return "Unsupported early contract terms"
 		if data.has("base_station_stock") and not Equal.equal_value(data.base_station_stock,BaseStock.ANDROID_VALUES):return "Unsupported early contract terms"
+		# The library's own lounge generation (Contacts.ANDROID_VALUES, the jackpot).
+		if data.has("generation") and not Equal.equal_value(data.generation,Contacts.ANDROID_VALUES):return "Unsupported early contract terms"
 		if data.has("base_navigation") and not travel.has("alioth_arrival"):return "Base contracts lack their supported Alioth arrival"
 		if data.has("ordinary_generation") and not travel.has("free_flight"):return "Ordinary contacts lack their supported free-flight context"
 		var android_spans: Dictionary=ANDROID_SPANS.duplicate(true)
@@ -107,6 +109,7 @@ static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dicti
 		return "" if Layouts.anchored(data.provenance,source_bytes,android_spans) else "Invalid early contract provenance"
 	if data.has("station_generation") and not Equal.equal_value(data.station_generation,Stock.VALUES):return "Unsupported early contract terms"
 	if data.has("base_station_stock") and Equal.equal_value(data.base_station_stock,BaseStock.ANDROID_VALUES):return "Unsupported early contract terms"
+	if data.has("generation") and not Equal.equal_value(data.generation,Contacts.VALUES):return "Unsupported early contract terms"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Early contract terms lack their source anchor"
 	var alternate: bool=data.briefing_text_base==MAC_VALUES.briefing_text_base

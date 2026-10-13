@@ -9,7 +9,12 @@ portraits; Generator::generateStationIndex and the head of
 Generator::createMission pick destinations and the kind history;
 FileRead::loadSystemsBinary, SolarSystem::SolarSystem and getRace read the
 system faction; AERandom::nextInt draws; Status::resetGame clears the history.
-Values equal the Mac ones.
+Values equal the Mac ones, plus the Android-only end of createAgents
+(ANDROID_VALUES 'jackpot'): unless at campaign cursor 23 in station 10
+(Thynome, where it always applies), every lounge draws nextInt(100) and on a 1
+raises the first generated contract with reward <= 49999 to ten times it,
+capped at 50000 (Agent::isStoryAgent, getOffer, getMission, Mission::getReward,
+setReward). The Mac createAgents has no such draw.
 """
 import copy
 from .declaration_layouts import recognize_symbols
@@ -19,7 +24,7 @@ from .station_exterior import hashed_variants
 def extract_lounge_contacts(mach, arrival):
     if getattr(mach, 'architecture', None) == 'android-armv7':
         proof = recognize_symbols(mach, ANDROID) if arrival else {}
-        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
+        return (copy.deepcopy(ANDROID_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -306,7 +311,11 @@ MAC_ALTERNATE = {'contact_count': [-237787, 266, '__text', '8ad02494ad714614604a
                              '__text',
                              'dea270e117047e8dde86e9f880b82a78524ca1b1104df04ce9a1c1bc45bc371b']}
 
-# Android spans inside named functions; the values are VALUES.
+ANDROID_VALUES = copy.deepcopy(VALUES)
+ANDROID_VALUES['jackpot'] = {'forced_cursor': 23, 'forced_station_id': 10, 'draw_bound': 100, 'winning_roll': 1,
+                             'role': 0, 'maximum_reward': 49999, 'multiplier': 10, 'cap': 50000}
+
+# Android spans inside named functions; the values are ANDROID_VALUES.
 ANDROID = {'lounge_contact_count': ('_ZN9Generator12createAgentsEP7Station', 30, 202, 'sha256:85df72e4563c2c230d3d4381eb62e603ad7acb69748a4b0c7b3db842ff405d13'),
            'lounge_contact_population': ('_ZN9Generator12createAgentsEP7Station', 968, 116, 'sha256:269529bb04d0499e5d6f300082fa59186dea736dd969a221915e6ff2227dbb5a'),
            'lounge_contact_hostile_replacement': ('_ZN9Generator12createAgentsEP7Station', 1084, 300, 'sha256:1b780825d98e0e06f1863ef5b672f27dc80df77e18cf7845e1c7802e1438fbf8'),
@@ -331,4 +340,7 @@ ANDROID = {'lounge_contact_count': ('_ZN9Generator12createAgentsEP7Station', 30,
            'lounge_contact_system_loader_fields': ('_ZN8FileRead17loadSystemsBinaryEv', 130, 74, 'sha256:0ec9c7da225f138f4b61b294b58f0528cfb56eeb8b245db160a83fa31d611749'),
            'lounge_contact_system_loader_arguments': ('_ZN8FileRead17loadSystemsBinaryEv', 536, 56, 'sha256:2f75c29217f6cdc21de19dacd87c7ae8545a57758fb11510255fe272f99f225e'),
            'lounge_contact_system_constructor': ('_ZN11SolarSystemC2EiN11AbyssEngine6StringEibiiiiiiPiP5ArrayIiES5_S5_', 0, 184, 'sha256:639c7c82d968338fcc85b4f1ebdd98184f3dd075af953f6438614dd93078f7f7'),
-           'lounge_contact_initial_history': ('_ZN6Status9resetGameEv', 416, 22, 'd8f85010086830b1496800220023ca5401338342fbd3')}
+           'lounge_contact_initial_history': ('_ZN6Status9resetGameEv', 416, 22, 'd8f85010086830b1496800220023ca5401338342fbd3'),
+           'lounge_contact_jackpot_start': ('_ZN9Generator12createAgentsEP7Station', 958, 10, 'dbf800000d94844239d2'),
+           'lounge_contact_jackpot_gate': ('_ZN9Generator12createAgentsEP7Station', 1384, 112, 'sha256:1ca0829e121dbb8f4d498ccf3795778f5c30a7ccb41ed2c01139b70bc50bcea1'),
+           'lounge_contact_jackpot_raise': ('_ZN9Generator12createAgentsEP7Station', 1522, 40, 'sha256:79b6252bb1b234eafd9cbb41f78969878a62a7e4c1bbc540472b40111dce5223')}

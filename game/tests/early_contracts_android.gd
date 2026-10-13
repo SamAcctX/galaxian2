@@ -63,6 +63,15 @@ func verify() -> void:
 		var missing: Dictionary=chain.duplicate(true)
 		for key in row[2]:missing.provenance.erase(key)
 		check(not Definitions.validate(missing,source_bytes,"android-armv7",arrival,travel).is_empty(),"Android extension passed without its proofs: "+row[0])
+	# Android lounges add the jackpot; the Mac has none.
+	var unraised: Dictionary=chain.duplicate(true);unraised.generation=Definitions.Contacts.VALUES.duplicate(true)
+	check(Definitions.parameters(unraised) and not Definitions.validate(unraised,source_bytes,"android-armv7",arrival,travel).is_empty(),"Android contracts accepted the lounges without the jackpot")
+	var mac_lounges: Dictionary=mac.duplicate(true)
+	mac_lounges.acceptance=Definitions.MAC_ACCEPTANCE.duplicate(true);anchor_mac(mac_lounges,Definitions.MAC_ACCEPTANCE_SPANS)
+	mac_lounges.generation=Definitions.Contacts.VALUES.duplicate(true);anchor_mac(mac_lounges,Definitions.Contacts.MAC_SPANS)
+	check(Definitions.validate(mac_lounges,source_bytes,"x86_64",mac_arrival,travel).is_empty(),"Mac lounge generation was rejected")
+	mac_lounges.generation=Definitions.Contacts.ANDROID_VALUES.duplicate(true)
+	check(Definitions.parameters(mac_lounges) and not Definitions.validate(mac_lounges,source_bytes,"x86_64",mac_arrival,travel).is_empty(),"Mac contracts accepted the Android jackpot")
 	# Android stock progress is the library's (cursor + 25); the Mac adds 10.
 	if chain.has("station_generation"):
 		var mac_stock: Dictionary=chain.duplicate(true);mac_stock.station_generation=Definitions.Stock.VALUES.duplicate(true)
@@ -105,7 +114,7 @@ func verify() -> void:
 
 ## [key, values, spans] of each ported extension in chain order.
 func extensions() -> Array:
-	return [["generation",Definitions.Contacts.VALUES,Definitions.Contacts.ANDROID_SPANS],
+	return [["generation",Definitions.Contacts.ANDROID_VALUES,Definitions.Contacts.ANDROID_SPANS],
 		["delivery_results",Definitions.Delivery.VALUES,Definitions.Delivery.ANDROID_SPANS],
 		["encounter_construction",Definitions.Encounters.VALUES,Definitions.Encounters.ANDROID_SPANS],
 		["ship_combat",Definitions.ShipCombat.VALUES,Definitions.ShipCombat.ANDROID_SPANS],

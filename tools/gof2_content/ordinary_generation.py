@@ -8,7 +8,9 @@ roster (random(1300) + 700 per pilot, x 7 by Status::hardCoreMode);
 FileRead::loadAgents and Agent::Agent the 27 persistent contacts
 (Agent::getStation, getSystem), FileRead::loadSystemsBinary and
 SolarSystem::SolarSystem, getRoutes and getStations the systems, Item::init,
-getTecLevel and getMaxPrice the collection items. Values equal the Mac ones.
+getTecLevel and getMaxPrice the collection items. Values equal the Mac ones;
+the Android-only end of createAgents (the Thynome tractor-beam vendor and the
+reward jackpot) is declared by persistent_contacts and lounge_contacts.
 """
 import copy
 from .declaration_layouts import recognize_symbols

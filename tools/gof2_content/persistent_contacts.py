@@ -4,7 +4,16 @@ Android: FileRead::loadAgents and Agent::Agent load the authored contacts
 (Agent::getStation, getSystem, getOffer, isGenericAgent, setImageParts,
 getSellBlueprintIndex, getCosts); Generator::createAgents places a station's
 authored contacts first, then fills the lounge, the roster and the hostile
-replacement. Values equal the Mac ones.
+replacement. Values equal the Mac ones, plus the Android-only tractor-beam
+vendor (ANDROID_VALUES 'tractor_vendor'): arriving at station 10 (Thynome) at
+campaign cursor 23, createAgents places a generic male Terran item seller
+(Globals::getRandomName, Agent::Agent, setOffer(2), setSellItemData(68, 1,
+100000), ImageFactory::createChar) in the first slot after the authored
+contacts. At cursor 24 in station 10 a seller of item 68 speaks texts
+3390 + "\n" + 3391 (SpaceLounge::startChat), the first one not yet known
+(Agent::isKnown) greets the player when the lounge opens (SpaceLounge::init),
+and launching (ModStation::OnTouchEnd) retires every one of them
+(Agent::setEvent(1), setOfferAccepted). The Mac has no vendor.
 """
 import copy
 from .declaration_layouts import recognize_symbols
@@ -17,11 +26,13 @@ def extract_persistent_contacts(mach, arrival, ordinary_generation):
         return {}
     if getattr(mach, 'architecture', None) == 'android-armv7':
         proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        values = ANDROID_VALUES
     else:
         _, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
+        values = VALUES
     if not proof:
         return {}
-    result = copy.deepcopy(VALUES)
+    result = copy.deepcopy(values)
     result['provenance'] = proof
     return result
 
@@ -162,7 +173,12 @@ MAC_ALTERNATE = {'persistent_count': [-237787,
                              '__text',
                              'db16203d59cb6d9c92d5a1f8bd7fe7fe0ac50cf45a3e14baa275c4bb0175592a']}
 
-# Android spans inside named functions; the values are VALUES.
+ANDROID_VALUES = copy.deepcopy(VALUES)
+ANDROID_VALUES['tractor_vendor'] = {'creation_cursor': 23, 'station_id': 10, 'faction': 0, 'male': True, 'role': 2,
+                                    'item_id': 68, 'quantity': 1, 'total_price': 100000, 'dialogue_cursor': 24,
+                                    'text_ids': [3390, 3391], 'separator': '\n', 'departure_cursor': 24}
+
+# Android spans inside named functions; the values are ANDROID_VALUES.
 ANDROID = {'persistent_count': ('_ZN9Generator12createAgentsEP7Station', 30, 202, 'sha256:85df72e4563c2c230d3d4381eb62e603ad7acb69748a4b0c7b3db842ff405d13'),
            'persistent_insertion': ('_ZN9Generator12createAgentsEP7Station', 232, 534, 'sha256:21b744e2e6ccc1924b451c4a55d7c77c8247da5edc1cf34c9db0ef57ddd9629d'),
            'persistent_roster': ('_ZN9Generator12createAgentsEP7Station', 968, 116, 'sha256:269529bb04d0499e5d6f300082fa59186dea736dd969a221915e6ff2227dbb5a'),
@@ -175,4 +191,15 @@ ANDROID = {'persistent_count': ('_ZN9Generator12createAgentsEP7Station', 30, 202
            'persistent_generated_getter': ('_ZN5Agent14isGenericAgentEv', 0, 10, '006d012818bf00207047'),
            'persistent_portrait_setter': ('_ZN5Agent13setImagePartsEPi', 0, 4, '81677047'),
            'persistent_blueprint_getter': ('_ZN5Agent21getSellBlueprintIndexEv', 0, 4, '006e7047'),
-           'persistent_price_getter': ('_ZN5Agent8getCostsEv', 0, 4, '806d7047')}
+           'persistent_price_getter': ('_ZN5Agent8getCostsEv', 0, 4, '806d7047'),
+           'persistent_vendor_agent': ('_ZN9Generator12createAgentsEP7Station', 780, 178, 'sha256:8971337819963e50d1d34a2a17eccee76c823a2d8f70237e96ec609776ba35bb'),
+           'persistent_vendor_texts': ('_ZN11SpaceLounge9startChatEv', 2722, 46, 'sha256:dec91e4f756d35665859340dd694237cb067b40684097d9ebbe305929c387139'),
+           'persistent_vendor_text_join': ('_ZN11SpaceLounge9startChatEv', 2768, 90, 'sha256:67cec1531aec53ec5b7423d36f46c9e944c9a653db3bfb927e91e0504b77450d'),
+           'persistent_vendor_text_separator': ('_ZN11SpaceLounge9startChatEv', 2794, 2, '0a00', 'literal', 0),
+           'persistent_vendor_greeting': ('_ZN11SpaceLounge4initEv', 2156, 96, 'sha256:9df5ad25a9cead9b69d35e81c74b539c4ba4d6482012186d05e594ed18761ba2'),
+           'persistent_vendor_departure': ('_ZN10ModStation10OnTouchEndEiiPv', 1834, 148, 'sha256:522ed5e68828f2a94c17e8fa41fdf239965e3fa4cceab0993e7771602dc6a831'),
+           'persistent_vendor_trade_setter': ('_ZN5Agent15setSellItemDataEiii', 0, 6, '2c300ec07047'),
+           'persistent_vendor_item_getter': ('_ZN5Agent16getSellItemIndexEv', 0, 4, 'c06a7047'),
+           'persistent_vendor_known': ('_ZN5Agent7isKnownEv', 0, 12, 'c16c00200029c8bf01207047'),
+           'persistent_vendor_event_setter': ('_ZN5Agent8setEventEi', 0, 4, 'c1647047'),
+           'persistent_vendor_accepted_setter': ('_ZN5Agent16setOfferAcceptedEb', 0, 6, '80f874107047')}
