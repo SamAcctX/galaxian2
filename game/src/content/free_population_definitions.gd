@@ -10,6 +10,9 @@ const SPANS = {"free_population_counts":[-31195,1136],"free_population_overrides
 
 const MAC_SPANS = {"free_population_counts":[-31195,1136],"free_population_overrides":[-30047,1080],"free_population_security":[735286,10],"free_population_enemy_factions":[808370,76],"free_population_freighter_alternate":[-24536,22],"free_population_freighter_choice":[-22069,138],"free_population_patrol_choice":[-24730,83],"free_population_hostile_choice":[-19918,79],"free_population_hostile_factory":[-19598,174],"free_population_hostile_tail":[-19021,77],"free_population_freighter_model":[-218772,205],"free_population_void_initial":[883626,11],"free_population_void_selection":[858258,325]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"free_population_counts_entry":[598,158],"free_population_counts":[1206,722],"free_population_overrides":[1928,722],"free_population_override_mission":[19746,20],"free_population_security":[0,4],"free_population_faction":[0,4],"free_population_enemy_factions":[0,24],"free_population_enemy_table":[0,16],"free_population_patrol_choice":[6400,50],"free_population_freighter_alternate":[7288,14],"free_population_freighter_choice":[8208,92],"free_population_hostile_choice":[9270,42],"free_population_hostile_factory":[9434,128],"free_population_hostile_tail":[9854,58],"free_population_freighter_dispatch":[0,66],"free_population_freighter_races":[212,14],"free_population_freighter_model":[1370,306],"free_population_void_initial":[1346,20],"free_population_void_selection":[742,72],"free_population_void_draw":[884,142]}
+
 static func freighter_assembly(bindings: RefCounted,faction: int) -> Dictionary:
 	var data: Dictionary=bindings.mido_travel
 	if faction==1 and Vossk.parameters(data.get("vossk_traffic")):return data.vossk_traffic.assembly
