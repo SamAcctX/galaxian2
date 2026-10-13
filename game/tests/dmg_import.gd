@@ -29,6 +29,12 @@ func run() -> void:
 	var info:=FileAccess.open(app_path.path_join("Contents/Info.plist"),FileAccess.WRITE);info.store_string("synthetic picker input");info.close()
 	check(Importer.valid_source(app_path),"The player entry must accept an extracted Mac app directory")
 	check(not Importer.valid_source(directory) and not Importer.valid_source("relative.app"),"Do not accept parent or relative directories as apps")
+	# The Android release: its .xapk, or the .7z that holds it.
+	var apk:=FileAccess.open(directory.path_join("release.apk"),FileAccess.WRITE);apk.store_string("synthetic picker input");apk.close()
+	for name in ["release.xapk","GOF2FHD_XAPK.7z"]:
+		var release:=FileAccess.open(directory.path_join(name),FileAccess.WRITE);release.store_string("synthetic picker input");release.close()
+		check(Importer.valid_source(directory.path_join(name)),"The player entry must accept the Android release: "+name)
+	check(not Importer.valid_source(directory.path_join("missing.xapk")) and not Importer.valid_source(directory.path_join("release.apk")),"Accept only an existing Android release archive")
 	var frontend:=Frontend.new();root.add_child(frontend)
 	check(frontend._picker.file_mode==FileDialog.FILE_MODE_OPEN_ANY,"Use one picker for disk images and application folders")
 	check(frontend._picker.file_selected.is_connected(frontend._picked) and frontend._picker.dir_selected.is_connected(frontend._picked),"Both picker selections must enter the same importer")
@@ -42,6 +48,12 @@ func run() -> void:
 	check(not Importer.read_receipt(receipt).is_empty(),"Accept the new app receipt without rejecting existing disk-image receipts")
 	record.format="mac-dmg";file=FileAccess.open(receipt,FileAccess.WRITE);file.store_string(JSON.stringify(record));file.close()
 	check(not Importer.read_receipt(receipt).is_empty(),"Existing disk-image receipts remain valid")
+	for format in ["android-xapk","android-7z"]:
+		record.format=format;file=FileAccess.open(receipt,FileAccess.WRITE);file.store_string(JSON.stringify(record));file.close()
+		check(not Importer.read_receipt(receipt).is_empty(),"Accept the Android release receipt: "+format)
+	record.format="android-apk";file=FileAccess.open(receipt,FileAccess.WRITE);file.store_string(JSON.stringify(record));file.close()
+	check(Importer.read_receipt(receipt).is_empty(),"Accept only the importer's receipt formats")
+	record.format="mac-dmg";file=FileAccess.open(receipt,FileAccess.WRITE);file.store_string(JSON.stringify(record));file.close()
 	for mode in ["success","running","cancelled","failed"]:
 		var worker:=Worker.new()
 		worker._pid=123;worker._status_path=directory.path_join("status.json")

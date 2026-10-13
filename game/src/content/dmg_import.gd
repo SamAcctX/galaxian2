@@ -18,7 +18,7 @@ static func read_receipt(path: String) -> Dictionary:
 	var file:=FileAccess.open(path,FileAccess.READ)
 	if file==null or file.get_length()>32768:return {}
 	var record: Variant=JSON.parse_string(file.get_as_text());file.close()
-	if not record is Dictionary or record.get("schema")!=1 or record.get("format") not in ["mac-dmg","mac-app"] or not Library.valid_hash(record.get("source_sha256")):return {}
+	if not record is Dictionary or record.get("schema")!=1 or record.get("format") not in ["mac-dmg","mac-app","android-xapk","android-7z"] or not Library.valid_hash(record.get("source_sha256")):return {}
 	for pair in [["content","base_content_id"],["bindings","binding_id"],["visuals","visual_id"]]:
 		if not Library.valid_hash(record.get(pair[1])) or record.get(pair[0])!=pair[0]+"/"+record[pair[1]]:return {}
 	return record
@@ -28,7 +28,8 @@ func busy() -> bool:return _pid>=0 or _android_busy
 static func valid_source(source: String) -> bool:
 	if OS.get_name()=="Android":return source.begins_with("content://")
 	if not source.is_absolute_path():return false
-	if source.get_extension().to_lower()=="dmg":return FileAccess.file_exists(source)
+	# The Android release comes as its .xapk or the .7z that holds it (tools/gof2_content/android_source.py).
+	if source.get_extension().to_lower() in ["dmg","xapk","7z"]:return FileAccess.file_exists(source)
 	return source.trim_suffix("/").get_extension().to_lower()=="app" and DirAccess.dir_exists_absolute(source) and FileAccess.file_exists(source.path_join("Contents/Info.plist"))
 
 func start(source: String,directory: String,refresh_receipt: String="") -> bool:
@@ -36,7 +37,7 @@ func start(source: String,directory: String,refresh_receipt: String="") -> bool:
 	if busy():return reject("A Mac import is already running")
 	if not refresh_receipt.is_empty():
 		if read_receipt(refresh_receipt).is_empty() or OS.get_name()=="Android":return reject("Choose your Mac game to update its prepared files")
-	elif not valid_source(source):return reject("Choose a Galaxy on Fire 2 Full HD Mac .dmg or .app ZIP" if OS.get_name()=="Android" else "Choose your Galaxy on Fire 2 Full HD Mac .dmg file or .app folder")
+	elif not valid_source(source):return reject("Choose a Galaxy on Fire 2 Full HD Mac .dmg or .app ZIP, or the Android release .xapk or .7z" if OS.get_name()=="Android" else "Choose your Galaxy on Fire 2 Full HD Mac .dmg file or .app folder, or the Android release .xapk or .7z")
 	if OS.get_name()=="Android":
 		if not Engine.has_singleton("GoF2AndroidImport"):return reject("The Android Mac app importer is missing from this game package")
 		var android_jobs:=directory.path_join("import-jobs")
