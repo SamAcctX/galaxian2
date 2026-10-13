@@ -50,12 +50,18 @@ func verify() -> void:
 		var mac_shop: Dictionary=chain.duplicate(true)
 		mac_shop.travel=Definitions.MAC_VALUES.travel.duplicate(true);mac_shop.return_visit=Definitions.MAC_RETURN_VISIT.duplicate(true)
 		mac_shop.ordinary_shopping=Definitions.Shopping.VALUES.duplicate(true)
+		if mac_shop.has("kappa_return"):mac_shop.kappa_return=Definitions.KappaReturn.MAC_VALUES.duplicate(true)
 		check(Definitions.parameters(mac_shop),"Mac shopping values were refused")
 		mac_shop.ordinary_shopping=Definitions.Shopping.ANDROID_VALUES.duplicate(true)
 		check(not Definitions.parameters(mac_shop),"Mac travel accepted the Android shopping values")
 		var android_shop: Dictionary=chain.duplicate(true)
 		android_shop.ordinary_shopping=Definitions.Shopping.VALUES.duplicate(true)
 		check(not Definitions.validate(android_shop,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted the Mac shopping markup")
+	# Android ends the second Kappa conversation with the tractor-beam vendor lines.
+	if chain.has("kappa_return"):
+		var mac_return: Dictionary=chain.duplicate(true)
+		mac_return.kappa_return=Definitions.KappaReturn.MAC_VALUES.duplicate(true)
+		check(not Definitions.validate(mac_return,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted the Mac Kappa return")
 	var shifted: Dictionary=full.duplicate(true)
 	shifted.provenance.story_dispatch.offset+=1
 	check(not Definitions.validate(shifted,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted a shifted proof extent")
@@ -114,6 +120,8 @@ func extensions() -> Array:
 		["kappa_fighters",Definitions.KappaFighters.VALUES,Definitions.KappaFighters.ANDROID_SPANS],
 		["kappa_lifecycle",Definitions.KappaLife.VALUES,Definitions.KappaLife.ANDROID_SPANS],
 		["secondary_ownership",Definitions.Secondary.VALUES,Definitions.Secondary.ANDROID_SPANS],
+		["kappa_return",Definitions.KappaReturn.ANDROID_VALUES,Definitions.KappaReturn.ANDROID_SPANS],
+		["kappa_outcome",Definitions.KappaOutcome.MAC_VALUES,Definitions.KappaOutcome.ANDROID_SPANS],
 		["vossk_traffic",Definitions.Vossk.VALUES,Definitions.Vossk.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:
