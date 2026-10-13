@@ -6,10 +6,12 @@ const MIN_I32 := -2147483648
 const STORY_BLUEPRINT_ID := 85
 const STORY_MATERIAL_ID := 164
 const STORY_MATERIAL_QUANTITY := 50
+## Mac (imul $0x14 at 0x1000960e0); Android imports declare their own (200).
 const SHIPPING_UNIT_COST := 20
 const Catalogues = preload("res://src/content/catalogues.gd")
 const Library = preload("res://src/content/library.gd")
 const Readonly=preload("res://src/simulation/readonly_state.gd")
+const Shopping=preload("res://src/content/ordinary_shopping_definitions.gd")
 var error := ""
 var _recipes: Dictionary = {}
 var _material_unit_value := 0
@@ -155,13 +157,18 @@ func story_lock(item_id: int) -> bool:
 
 func recipe(item_id: int) -> Dictionary:return _recipes.get(item_id,{}).duplicate(true)
 
-func shipping_cost(item_id: int,station_id: int,quantity: int) -> int:
-	return quote_shipping(entry(item_id),station_id,quantity)
+func shipping_cost(item_id: int,station_id: int,quantity: int,unit:=SHIPPING_UNIT_COST) -> int:
+	return quote_shipping(entry(item_id),station_id,quantity,unit)
 
-static func quote_shipping(row: Dictionary,station_id: int,quantity: int) -> int:
-	if row.is_empty() or quantity<1 or quantity>MAX_I32/SHIPPING_UNIT_COST:return -1
+## HangarWindow::OnTouchBegin/OnTouchEnd: pending units x the unit cost.
+static func quote_shipping(row: Dictionary,station_id: int,quantity: int,unit:=SHIPPING_UNIT_COST) -> int:
+	if row.is_empty() or quantity<1 or unit<1 or quantity>MAX_I32/unit:return -1
 	var site: int=row.get("station_id",-1)
-	return quantity*SHIPPING_UNIT_COST if site>=0 and site!=station_id else 0
+	return quantity*unit if site>=0 and site!=station_id else 0
+
+## The import's unit cost: Android ordinary_shopping blueprints, else the Mac's.
+static func shipping_unit(bindings: RefCounted) -> int:
+	return int(Shopping.blueprints(bindings).get("shipping_unit_cost",SHIPPING_UNIT_COST))
 
 ## Inventory owns the debit and product insertion. Commit this owner and the
 ## returned inventory together, after the career has accepted the shipping fee.

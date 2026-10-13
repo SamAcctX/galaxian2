@@ -611,7 +611,7 @@ func transact_shopping(bindings: RefCounted,cat: RefCounted,equipment: RefCounte
 	if _story_protects(bindings,owned,action,item_id,slot_index):return _shopping_reject("This item cannot be sold or demounted at the moment.")
 	if action=="supply_blueprint":
 		if _blueprints==null:return _shopping_reject("No blueprint is available")
-		var shipping: int=_blueprints.shipping_cost(item_id,_state.station_id,quantity)
+		var shipping: int=_blueprints.shipping_cost(item_id,_state.station_id,quantity,Blueprints.shipping_unit(bindings))
 		if shipping<0 or shipping>_state.credits:return _shopping_reject("Insufficient credits for shipping these materials")
 		var project: RefCounted=_blueprints.fork_for_transaction()
 		var supplied: RefCounted=project.contribute(item_id,slot_index,quantity,equipment)

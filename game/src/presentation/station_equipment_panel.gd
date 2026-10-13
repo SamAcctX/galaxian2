@@ -9,6 +9,7 @@ const Catalogues=preload("res://src/content/catalogues.gd")
 const Atlas=preload("res://src/content/atlas_region.gd")
 const OriginalUI=preload("res://src/presentation/original_ui.gd")
 const Sounds=preload("res://src/presentation/ui_sounds.gd")
+const Progress=preload("res://src/simulation/blueprint_progress.gd")
 const ITEM_ATLAS="resources/data/textures/gof2_items_ipad_1440.aei"
 const CATEGORY_LABELS=[254,255,256,258,259]
 # Verified source interface regions: normal row/cap, category band/cap,
@@ -70,6 +71,7 @@ var _blueprint_rows:={}
 var _blueprint_materials:={}
 var _selected_blueprint:=-1
 var _blueprint_render_state:={}
+var _shipping_unit:=Progress.SHIPPING_UNIT_COST
 var _help_space: Control
 
 func _init() -> void:
@@ -332,6 +334,7 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted=nu
 				var mirrored: Image=row_art[id].get_image();mirrored.flip_x();row_art[-id]=ImageTexture.create_from_image(mirrored)
 	_identity={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,"language":library.active_language}
 	_names=names;_labels=labels;_item_categories=categories;_ship_names=ship_names;_catalogues=cat
+	_shipping_unit=Progress.shipping_unit(bindings)
 	_art=art;_item_pixels=pixels;_item_metadata=metadata;_icon_cache={};_row_art=row_art
 	_background_art=null if art==null else art.sprites[int(bindings.mido_travel.map.ui.panel_background_image_id)]
 	_tab="shop";_state={};_blueprints={};_blueprint_render_state={};_message.text="";_selected_id=-1;_selected_slot=-1;_selected_blueprint=-1
@@ -548,7 +551,7 @@ func _supply_blueprint(id: int,material: int,quantity: int) -> void:
 	var entries: Array=_blueprints.get("entries",[]).filter(func(row):return row.item_id==id)
 	if entries.is_empty():return
 	var entry: Dictionary=entries[0];var site:=int(entry.get("station_id",-1))
-	var shipping: int=preload("res://src/simulation/blueprint_progress.gd").quote_shipping(entry,int(_state.loadout.station_id),quantity)
+	var shipping: int=Progress.quote_shipping(entry,int(_state.loadout.station_id),quantity,_shipping_unit)
 	if shipping>_credits:_message.text=_labels.insufficient.replace("#C","%d$"%(shipping-_credits));return
 	if site<0 or shipping>0:
 		_pending_replace={"blueprint":id,"material_id":material,"quantity":quantity,"entry":entry.duplicate(true),"loadout":_state.loadout.duplicate(true)}
