@@ -135,6 +135,7 @@ func extensions() -> Array:
 		["tractor_recovery",Definitions.TractorRecovery.ANDROID_VALUES,Definitions.TractorRecovery.ANDROID_SPANS],
 		["void_portal",Definitions.VoidPortal.VALUES,Definitions.VoidPortal.ANDROID_SPANS],
 		["post_sahi",Definitions.PostSahi.VALUES,Definitions.PostSahi.ANDROID_SPANS],
+		["thynome_expedition",Definitions.Thynome.VALUES,Definitions.Thynome.ANDROID_SPANS],
 		["vossk_traffic",Definitions.Vossk.VALUES,Definitions.Vossk.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:

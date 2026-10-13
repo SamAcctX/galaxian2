@@ -3,12 +3,29 @@
 This import reads bounded constants only. It does not enable a mission or run
 original code. The eleven mission27 result events are owned by post_sahi and
 are referenced, not copied.
+
+Android: ModStation (OnTouchEnd, OnUpdate) and DialogueWindow present the
+cursor-27 result at station 10; Status::nextCampaignMission case 27 sets the
+course (system 18, station 91) and creates Mission(4, 0, 91), case 28
+Mission(4, 0, -1); Level::createCampaignMission case 28 moves the portal to
+(100000, -50000, -40000) and builds the route there, five Voids and three
+still hull-15 freighters (a quarter hull, no cargo); Level::createRadioMessages
+case 28 creates the three radio lines (Android text ids 1944-1946);
+Level::createSpace rolls the ordinary portal, PlayerWormHole::update closes
+and relocates it, PlayerEgo::isInWormhole and MGame::OnUpdate enter it;
+Status, Station, StarMap, MGame and the Player, KIPlayer, PlayerFixedObject,
+PlayerFighter and Generator helpers complete the Dima rules. Values are the
+Mac 1.0.7 ones, which this module calls VALUES.
 """
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 
 def extract_thynome_expedition(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -750,3 +767,73 @@ MAC_ALTERNATE = {'ack_station_next': [427938,
                       '__const',
                       '933a3cc44dde8810ac9cacc5da45e17c6a5c5ffc22b0430b751727856577ba0a'],
  **DIMA_SEMANTIC_MAC}
+
+ANDROID = {# Cursor 27: the station result and its presenter.
+           'thynome_ack_station_flow': ('_ZN10ModStation10OnTouchEndEiiPv', 0, 6536, 'sha256:5b29b2bf44b1e0a442eb14b5646a1aad12932fedee58112b028e31589316b50e'),
+           'thynome_ack_station_result_open': ('_ZN10ModStation8OnUpdateEv', 0, 4016, 'sha256:5ea1f2b464ebfc3d848a87a9d50f3ddd2dde514688e13b51a4aab467e8fbc8a4'),
+           'thynome_ack_mode1_station_wrapper': ('_ZN14DialogueWindowC2EP7MissionP5Leveli', 0, 86, 'sha256:af40e073975dc60ef72e866a79f8418a86327ba034ddf5328361b636e21e7b2b'),
+           # Status::nextCampaignMission: advance, cases 27 (Mission(4, 0, 91), course 18/91) and 28 (Mission(4, 0, -1)).
+           'thynome_ack_progress_unlock_gate': ('_ZN6Status19nextCampaignMissionEb', 0, 68, 'sha256:975e8c93c4e9798c19a5d1c7cf157f8890dbab65acfe96bfa2a15adecb5a2995'),
+           'thynome_ack_story_increment': ('_ZN6Status19nextCampaignMissionEb', 392, 8, '1846431c00214be7'),
+           'thynome_ack_story_install': ('_ZN6Status19nextCampaignMissionEb', 426, 14, '2046294601b0bde8f04322f19cb8'),
+           'thynome_ack_factory_dispatch': ('_ZN6Status19nextCampaignMissionEb', 122, 4, '2d0dbd04'),
+           'thynome_ack_mission28_factory': ('_ZN6Status19nextCampaignMissionEb', 6814, 40, 'sha256:0ece9f20c0befefa741047f8e5ad61390967b1ff633a3051c5c11e3144b2deb2'),
+           'thynome_world_factory29': ('_ZN6Status19nextCampaignMissionEb', 2494, 32, 'sha256:686c2a47f9c04dc1d9cc124cf7293463e6233d0675b79bdb39557eeaac395884'),
+           'thynome_ack_mission_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           'thynome_ack_reward_getter': ('_ZN7Mission9getRewardEv', 0, 4, '406a7047'),
+           'thynome_ack_bonus_getter': ('_ZN7Mission8getBonusEv', 0, 4, 'c06a7047'),
+           # Level::createCampaignMission and Level::createRadioMessages case 28; counts and voices.
+           'thynome_ack_cast_dispatch': ('_ZN5Level21createCampaignMissionEv', 552, 14, 'ddf840a01d2807f2eb80dfe810f0'),
+           'thynome_ack_cast_slot': ('_ZN5Level21createCampaignMissionEv', 622, 2, '8834'),
+           'thynome_ack_cast28': ('_ZN5Level21createCampaignMissionEv', 27462, 352, 'sha256:4ca5906e3f4cd5904cb057e5461a391751247d687ca520a25c61f0a3817ab6cf'),
+           'thynome_ack_radio_dispatch': ('_ZN5Level19createRadioMessagesEi', 0, 26, 'sha256:2fb27116c5cd427d3d8d01c2af84739cd96a13de8ea5fc929fb78c2963332596'),
+           'thynome_ack_radio_slot': ('_ZN5Level19createRadioMessagesEi', 82, 2, 'dc03'),
+           'thynome_ack_radio28': ('_ZN5Level19createRadioMessagesEi', 2002, 134, 'sha256:0d19e657e577cbb924dcf610ea777c77eb5731c604737cfa0cdfef93b4314ae8'),
+           'thynome_ack_radio28_tail': ('_ZN5Level19createRadioMessagesEi', 10286, 12, 'd4f814014068856000f031bd'),
+           'thynome_ack_radio_message': ('_ZN12RadioMessageC2Eiiii', 0, 52, 'sha256:3846fd4e1bb2e22b2ac9c0a510aa87489cf6562344739be3881098d133598fac'),
+           'thynome_mission28_brief_count': ('_ZN14DialogueWindow19hasBriefingDialogueEi', 10, 4, '00000000', 'literal', 112),
+           'thynome_mission28_result_count': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 4, '00000000', 'literal', 112),
+           'thynome_radio_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0),
+           # The Dima world, portal and the portal transition.
+           'thynome_world_station_target_selection': ('_ZN6Status13departStationEP7Station', 0, 1072, 'sha256:b7432b338855a0a259aa2b3d0d678bb305ea5293e9903e68114efafe3b6170d6'),
+           'thynome_world_selected_story_world': ('_ZN5Level4initEv', 0, 1792, 'sha256:fceec130c720743b341b16f0e8ce63d43a1382808e075533d391370c9949a244'),
+           'thynome_world_ordinary_portal_slot3': ('_ZN5Level11createSpaceEv', 0, 3668, 'sha256:407ff360bb0ce9685a07653897850772aad545364475333f63f21dabb48175d7'),
+           'thynome_world_actor_random_point': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           'thynome_world_actor28_special_target': ('_ZN5Level14connectPlayersEv', 0, 1520, 'sha256:4e316991fbb2c7b755197137dad56b58a22cc3a495b4c038877551bc16a7e0ef'),
+           'thynome_world_actor_flag_setter': ('_ZN17PlayerFixedObject9setMovingEb', 0, 6, '80f830117047'),
+           'thynome_world_generic_kind4_predicate': ('_ZN6Status16missionCompletedEbbx', 0, 1508, 'sha256:0162f8ffdfa5a9e47021d6551470479343189754dde03c334ec2ffc6cbb2634e'),
+           'thynome_world_radio_conditions': ('_ZN12RadioMessage9triggeredExP9PlayerEgoP11LevelScript', 0, 1860, 'sha256:eba93dba536ccdaa67ad0e44c7b5ff4ae1ee5284e9fd8831719b304e90173244'),
+           'thynome_world_portal_clock_and_relocation': ('_ZN14PlayerWormHole6updateEi', 0, 1176, 'sha256:b5acf6c94d686058f788074d04453f1206c112e0f5cc437b026ae78c58850d44'),
+           'thynome_world_portal_current_matches_story_target': ('_ZN7Station18isAttackedByAliensEv', 0, 28, 'sha256:7c23c22f26ebfbc16edf16e2f0f94ec4c44038e907ed64cd53629b29906e6b6e'),
+           'thynome_world_positive_hull_entry': ('_ZN9PlayerEgo12isInWormholeEv', 0, 32, 'sha256:76262d8c2927d88cd55d42ac672809f8def4d5e554a8e791a68e05f9a9ed111a'),
+           'thynome_world_portal_contact_transaction': ('_ZN5MGame8OnUpdateEv', 12080, 496, 'sha256:421dededd3cc1f9cd43234ad6868375cb2db5802c4591984b9f8d37797cae352'),
+           # Retiring the cursor-27 mission; selections and caches.
+           'thynome_world_retire27_presenter': ('_ZN6Status13removeMissionEP7Mission', 0, 160, 'sha256:0cf644b7d9f7e5a9b07d96bd2764a645f7e87d0c410caf0c5e80f29ebd1b8806'),
+           'thynome_world_retired_mission_destructor': ('_ZN7MissionD2Ev', 0, 42, 'sha256:fb3dd69899adf9a6d38b5ffcfe27b648c81b1a99978cf030c180c980b1563b1d'),
+           'thynome_world_retired_presenter_getter': ('_ZN7Mission8getAgentEv', 0, 4, '40687047'),
+           'thynome_world_retired_backlink_clear': ('_ZN5Agent10setMissionEP7Mission', 0, 4, 'c1677047'),
+           'thynome_world_career_portal_object': ('_ZN6StatusC2Ev', 0, 654, 'sha256:8d6ba6d6285a5569eb80466e4be5e8d1b1973f0f6fdfa4110ef51fba916c6f98'),
+           'thynome_world_location_default': ('_ZN7StationC2Ev', 0, 136, 'sha256:6ceac104cd6a2f90e6e853e4a41e67c71c098198bae836371952620f2a300792'),
+           'thynome_world_location_id_equality': ('_ZN7Station6equalsEPS_', 0, 18, '0246002021b1896892688a4208bf01207047'),
+           'thynome_world_selection_alien_orbit': ('_ZN6Status12inAlienOrbitEv', 0, 10, '816fd0f8980122f1afbb'),
+           'thynome_world_selection_station': ('_ZN6Status10getStationEv', 0, 6, 'd0f898017047'),
+           'thynome_world_selected_pointer_setter': ('_ZN6Status10setStationEP7Station', 0, 44, 'sha256:4cefefa981c8fb19d0fe6d5b706cbbdd03f1280c2b6da532ea7cac8e21c1a1a9'),
+           'thynome_world_map_choice': ('_ZN7StarMap6departEb', 0, 608, 'sha256:b34731ccb0911d58dd95a4f2bf80ee9713d545963f5f97b738b6b57730b0c340'),
+           'thynome_world_cache_select': ('_ZN6Status17addStationToStackEP7Station', 0, 120, 'sha256:8f66db4e97360caebda47d73402a3c5c2913f32e264b23568802d9a99e435b4b'),
+           'thynome_world_flight_c8_record': ('_ZN5MGame12OnInitializeEv', 0, 2688, 'sha256:aef3fbe2dca80fd5daed276aba67a4d35f1ad0268acb0947b6bca5d85e7b3ef9'),
+           'thynome_world_special_portal_selection_guard': ('_ZN5MGame10OnTouchEndEiiPv', 0, 9784, 'sha256:fdba63f59493b8c11bd31fd1cad8857708de40b6cfb3e0221e5f2eba567c65e0'),
+           # Actor defaults, freighter cargo and cruise, targets and hulls.
+           'thynome_dima_actor_base_defaults': ('_ZN8KIPlayerC2EiiP6PlayerP10AEGeometryfffb', 0, 604, 'sha256:3a02b0c7ce6b25d113ff6b119a914a61a149997d03f3853b159537f02d2efee8'),
+           'thynome_dima_statistics_defaults': ('_ZN6PlayerC2Eiiiii', 0, 600, 'sha256:f15c0c4c5617f8ed5b0e4e522e5dfda30338d712d628ecf861a9d79e6a041988'),
+           'thynome_dima_actor_constructor': ('_ZN17PlayerFixedObjectC2EiiP6PlayerP10AEGeometryfff', 0, 804, 'sha256:8e92f8e152d9f1a0c3d99ecc26346df1f048501ee0014047ed2c3a1d67aaec75'),
+           'thynome_dima_actor_life_mode_getter': ('_ZN17PlayerFixedObject14getDockingTypeEv', 0, 6, 'd0f8a0017047'),
+           'thynome_dima_cargo_pair_vector': ('_ZN9Generator11getLootListEii', 0, 640, 'sha256:e0f0510c58bb1279aa7e218e9e63b126e869e1bd5f35f2b150e66b2cc1fea3ca'),
+           'thynome_dima_actor_update_cruise_gate': ('_ZN17PlayerFixedObject6updateEi', 0, 2888, 'sha256:f84fa1d1be257b92fd04b8e98c2c500190c596804150929bb95ecb8d0da7a252'),
+           'thynome_dima_freighter_cruise_movement': ('_ZN17PlayerFixedObject11moveForwardEi', 0, 168, 'sha256:7aede5b99a8f278fe6bef59f81abf28b609d7219e8c7d3351f0fca07a12b01da'),
+           'thynome_dima_kind9_opposition': ('_ZN13PlayerFighter6updateEi', 0, 10528, 'sha256:fb79b3bde0fb27a45861c89450940e96ec313695cb5d4b4c290220c25ef78d9e'),
+           'thynome_dima_ambient_gates': ('_ZN5Level19createStaticObjectsEv', 0, 808, 'sha256:2ecbad11f66bcda772d624c59c46341dab700599067357ae69fe201a169bfb6f'),
+           'thynome_dima_actor_124_setter': ('_ZN8KIPlayer10setWingmanEbi', 0, 12, '80f8d8100121c0e937217047'),
+           'thynome_dima_stats_friendly_getter': ('_ZN6Player14isAlwaysFriendEv', 0, 6, '90f8ed007047'),
+           'thynome_dima_hull_maximum_getter': ('_ZN6Player15getMaxHitpointsEv', 0, 6, 'd0f884007047'),
+           'thynome_dima_hull_both_pools_setter': ('_ZN6Player15setMaxHitpointsEi', 0, 10, 'c0f88410816729f1d5bb'),
+           'thynome_dima_hull_percentage_recalculation': ('_ZN6Player16updateDamageRateEv', 0, 136, 'sha256:247748191a87545a36009766486f4640bc7b5a124e64e25d96f692ed16f5d78e')}
