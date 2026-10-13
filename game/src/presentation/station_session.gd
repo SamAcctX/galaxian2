@@ -562,10 +562,14 @@ func contract_action(action: String,id: int,panel: Control,checkpoint: Callable=
 	error=""
 	if status!="running" or not _active or is_paused() or not _wingman_notice.is_empty() or _world.contract_owner()==null or (_world.snapshot().get("hangar_open",false) and action!="result_close"):return reject("The space lounge is unavailable")
 	var candidate: RefCounted=_world.fork();var opened:=_lounge_open
+	var greeting:=-1
 	match action:
 		"open":
 			if candidate.snapshot().dialogue.visible:return reject("Acknowledge the story before opening the lounge")
 			if not opened and not candidate.begin_lounge_visit(_bindings):return reject(candidate.error)
+			# Android: an unmet tractor-beam vendor speaks first (SpaceLounge::init).
+			if not opened:greeting=Locations.greeting(preload("res://src/content/persistent_contact_definitions.gd").vendor(_bindings),candidate.snapshot().get("contracts",{}))
+			if greeting>=0 and not candidate.inspect_contract_contact(greeting,_bindings,_library):return reject(candidate.error)
 			opened=true
 		"close":opened=false
 		"select":
@@ -616,6 +620,7 @@ func contract_action(action: String,id: int,panel: Control,checkpoint: Callable=
 		if opened:lounge_scene.camera.make_current()
 		else:camera.make_current()
 		if panel!=null:panel.set_scene(lounge_scene if opened else null)
+	if greeting>=0 and panel!=null:panel.select_contact(greeting,false)
 	if action=="result_close":
 		var sound:=int(staged.contracts.last_result.notification_sound_id)
 		if sound>=0:audio.play_equipment_effect(sound)

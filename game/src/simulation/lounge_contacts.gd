@@ -90,8 +90,17 @@ func prepare(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: V
 	# The Kaamo Club's bar holds only its own agents (none before they arrive).
 	var kaamo: bool=ordinary and int(context.get("station_id",-1))==Persistent.KAAMO_STATION
 	var count: int=authored_count if kaamo else candidate._population_count(authored_count,persistent_rules)
+	# Android: arriving at Thynome at cursor 23 a tractor-beam vendor takes
+	# the first generated slot (Generator::createAgents).
+	var vendor: Dictionary=persistent_rules.get("tractor_vendor",{})
+	var first:=authored_count
+	if not vendor.is_empty() and context.campaign_cursor==int(vendor.creation_cursor) and context.station_id==int(vendor.station_id):
+		var seller:={"contact_id":first,"faction":int(vendor.faction),"male":vendor.male,"role":int(vendor.role),"name":candidate._name(int(vendor.faction),vendor.male),
+			"portrait":candidate._portrait(int(vendor.faction),vendor.male),"trade":{"item_id":int(vendor.item_id),"quantity":int(vendor.quantity),"total_price":int(vendor.total_price)},"offer":{}}
+		if authored_count>0:seller.source_contact_id=-1;seller.generated=true
+		contacts.append(seller);first+=1
 	var roster_seen:=false
-	for id in range(authored_count,count):
+	for id in range(first,count):
 		var contact: Dictionary=candidate._contact(system_faction)
 		if not candidate.error.is_empty():return reject(candidate.error)
 		contact.contact_id=id;contact.offer={}
@@ -111,6 +120,7 @@ func prepare(bindings: RefCounted,cat: RefCounted,library: RefCounted,context: V
 			contact.source_auxiliary_amount=Offer.quantize_credits(float(amount),int(bindings.early_contracts.reward.credit_step))
 		contacts.append(contact)
 	if not kaamo:candidate._replace_hostile(contacts)
+	if rules.has("jackpot"):candidate._jackpot(bindings,contacts,first)
 	if not candidate.error.is_empty():return reject(candidate.error)
 	_state={"base_content_id":bindings.base_content_id,"binding_id":bindings.binding_id,
 		"context":context.duplicate(true),"initial_random":random_state.duplicate(true),"initial_history":history.duplicate(),
@@ -209,6 +219,21 @@ func _replace_hostile(contacts: Array) -> void:
 				if contacts[id].has("generated"):replacement.source_contact_id=-1;replacement.generated=true
 				contacts[id]=replacement
 				break
+
+## Android (the end of Generator::createAgents): at cursor 23 in Thynome
+## always, elsewhere when nextInt(100) is 1, the first generated contract with
+## a small reward pays ten times as much, capped (Mission::setReward).
+func _jackpot(bindings: RefCounted,contacts: Array,first: int) -> void:
+	var rules: Dictionary=_rules.jackpot
+	if (_context.campaign_cursor!=int(rules.forced_cursor) or _context.station_id!=int(rules.forced_station_id)) and _draw(int(rules.draw_bound))!=int(rules.winning_roll):return
+	for id in range(first,contacts.size()):
+		var offer: Dictionary=contacts[id].offer
+		if contacts[id].role!=int(rules.role) or offer.is_empty() or int(offer.mission.reward)>int(rules.maximum_reward):continue
+		var choices: Dictionary=offer.choices.duplicate(true);choices.jackpot=true
+		var raised:=Offer.new()
+		if not raised.configure(bindings,_catalogues,offer.context,choices,_station_context):reject(raised.error);return
+		contacts[id].offer=raised.snapshot()
+		return
 
 static func decode_names(data: PackedByteArray) -> Array:
 	var reader:=Cursor.new(data)

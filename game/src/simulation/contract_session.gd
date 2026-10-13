@@ -1326,6 +1326,13 @@ func purchase_lounge_goods(bindings: RefCounted,contact_id: int,equipment: RefCo
 	if BaseMedals.booze_type_bit(int(quote.item_id))!=0 and not settle_base_medals():return null
 	return inventory
 
+## Android: launching from Thynome at cursor 24 retires its tractor-beam
+## vendors (lounge_cache.retire_vendors); the Mac has none.
+func retire_departure_vendors(bindings: RefCounted) -> void:
+	var rules: Dictionary=preload("res://src/content/persistent_contact_definitions.gd").vendor(bindings)
+	if rules.is_empty() or _lounges==null or _state.get("campaign_cursor")!=int(rules.departure_cursor) or _state.get("station_id")!=int(rules.station_id):return
+	_lounges=_lounges.fork();_lounges.retire_vendors(rules,int(_state.station_id))
+
 func begin_lounge_visit() -> bool:
 	error=""
 	if _lounges==null:return reject("The lounge is unavailable")

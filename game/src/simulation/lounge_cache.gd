@@ -316,6 +316,30 @@ func consume_goods(station_id: int,contact_id: int) -> bool:
 			return true
 	return reject("The merchant lost its retained lounge")
 
+## Android tractor-beam vendor (persistent_contacts tractor_vendor). At his
+## dialogue cursor in his station the first unmet seller of his item greets
+## the player when the lounge opens (SpaceLounge::init); -1 when none.
+static func greeting(rules: Dictionary,career: Dictionary) -> int:
+	if rules.is_empty() or career.get("campaign_cursor")!=int(rules.dialogue_cursor) or career.get("station_id")!=int(rules.station_id):return -1
+	for entry in career.get("lounges",{}).get("locations",[]):
+		if entry.station_id!=career.station_id:continue
+		for contact in entry.population.contacts:
+			if contact.get("role")==int(rules.role) and contact.get("trade",{}).get("item_id")==int(rules.item_id) and not contact.contact_id in entry.get("known",[]):return int(contact.contact_id)
+	return -1
+
+## Launching from his station at the departure cursor retires every seller of
+## his item, bought or not (ModStation::OnTouchEnd: Agent::setEvent(1),
+## setOfferAccepted): met, with nothing left.
+func retire_vendors(rules: Dictionary,station_id: int) -> void:
+	_read={}
+	for entry in _state.get("locations",[]):
+		if entry.station_id!=station_id:continue
+		for contact in entry.population.contacts:
+			if contact.get("role")!=int(rules.role) or contact.get("trade",{}).get("item_id")!=int(rules.item_id):continue
+			meet(station_id,int(contact.contact_id))
+			if not entry.has("purchased_goods"):entry.purchased_goods=[]
+			if not contact.contact_id in entry.purchased_goods:entry.purchased_goods.append(contact.contact_id)
+
 ## A hired wingman captain has taken his offer (SpaceLounge::onKeyPress, offer
 ## 6: Agent::setOfferAccepted); kept with the lounge's purchases.
 func consume_wingmen(station_id: int,contact_id: int) -> bool:

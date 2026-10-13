@@ -2647,6 +2647,7 @@
     "game/tests/tractor_recovery.gd.uid",
     "game/tests/tractor_supplier_worlds.gd",
     "game/tests/tractor_supplier_worlds.gd.uid",
+    "game/tests/tractor_vendor.gd",
     "game/tests/traffic_population.gd",
     "game/tests/traffic_population.gd.uid",
     "game/tests/tutorial_departure.gd",
