@@ -1,4 +1,10 @@
-"""Recover ordinary weapon additional-damage binding and non-player hit routing."""
+"""Recover ordinary weapon additional-damage binding and non-player hit routing.
+
+Android: Gun::setIndex stores the item's additional-damage attribute next to its
+launch flag; Gun::calcCharacterCollision applies it through Player::damageEmp
+unless it is the missing value, then routes the gun's damage to Player::damage,
+unscaled unless the target is the player.
+"""
 import struct
 from .opening_loadout import template
 from .ship_models import section_bytes
@@ -15,8 +21,100 @@ MAC_GETTER = '554889e5488b4f388b3931d2eb044883c202b8257899c539fa730d488b41083934
 ARM_GETTER = '026bd2f80090b9f1000f08d05268002352f82300884207d002334b45f8d347f62500ccf29950704702eb830040687047'
 
 
+# Gun::setIndex, right after the classification: the attribute into the gun.
+ANDROID_STORE = """
+ldr r1, ={}
+str r0, [r4, #{additional}]
+"""
+# Gun::calcCharacterCollision (`this` in fp, the target in sb).
+ANDROID_GATE = """
+ldr.w r1, [fp, #{additional}]
+movw r0, #{missing_low}
+movt r0, #{missing_high}
+cmp r1, r0
+beq {@route}
+ldrb.w r2, [fp, #0xf9]
+mov r0, sb
+call _ZN6Player9damageEmpEib
+"""
+# Owner without the hostile flag and the player as target: x s24; owner flagged (or
+# none) and the player docked: x s16 x s18; any other target: the damage as is.
+ANDROID_ROUTE = """
+route: ldr.w r0, [fp, #4]
+movs r4, #1
+cbz r0, {@special}
+ldrb.w r0, [r0, #0x5c]
+cbz r0, {@nonhostile}
+special: ldrb.w r0, [sb, #0x69]
+cbz r0, {@normal}
+ldr.w r0, [fp, #0x38]
+call _ZN5Level9getPlayerEv
+cbz r0, {@normal}
+ldr.w r0, [fp, #0x38]
+call _ZN5Level9getPlayerEv
+call _ZN9PlayerEgo22isDockedToDockingPointEv
+cmp r0, #1
+bne {@normal}
+vldr s0, [fp, #{damage}]
+vcvt.f32.s32 s0, s0
+vmul.f32 s0, s0, s16
+vmul.f32 s0, s0, s18
+b {@scaled}
+nonhostile: ldrb.w r0, [sb, #0x69]
+cbz r0, {@normal}
+vldr s0, [fp, #{damage}]
+vcvt.f32.s32 s0, s0
+vmul.f32 s0, s0, s24
+scaled: ldr.w r3, [fp, #0x58]
+ldrb.w r2, [fp, #0xf9]
+vcvt.s32.f32 s0, s0
+vmov r1, s0
+b {@hit}
+normal: ldr.w r3, [fp, #0x58]
+ldr.w r1, [fp, #{damage}]
+ldrb.w r2, [fp, #0xf9]
+hit: mov r0, sb
+call _ZN6Player6damageEibi
+"""
+ANDROID_COLLISION = '_ZN3Gun22calcCharacterCollisionEv'
+
+
+def android_route(lib):
+    """(listing, shape, gate span, route span) of the collision's damage routing, or None."""
+    from .android_shapes import Listing
+    collision = Listing(lib, ANDROID_COLLISION)
+    found = collision.unique(ANDROID_GATE + ANDROID_ROUTE)
+    if found is None or not collision.holds('fp', found.last):
+        return None
+    split = found.first + ANDROID_GATE.strip().count('\n')
+    return collision, found, collision.span(found.first, split), collision.span(split + 1, found.last)
+
+
+def android_policy(lib, weapon):
+    from .android_shapes import Listing
+    from .weapon_parameters import android_classification
+    launch = weapon['launch_modes']['provenance']
+    found = android_classification(lib)
+    setter = Listing(lib, '_ZN3Gun8setIndexEi')
+    store = setter.at(ANDROID_STORE, found.last + 1) if found else None
+    routed = android_route(lib)
+    hit = Listing(lib, '_ZN6Player6damageEibi')
+    if store is None or routed is None or found.span() != launch['classification'] or launch['property_getter'] != weapon['provenance']['property_getter']:
+        return {}
+    _, gate, gate_span, route_span = routed
+    missing = struct.unpack('<i', struct.pack('<I', gate.value('missing_high') << 16 | gate.value('missing_low')))[0]
+    # The gate compares the stored attribute with the getter's missing value.
+    if gate['additional'] != store['additional'] or missing != struct.unpack('<i', bytes.fromhex('257899c5'))[0]:
+        return {}
+    return {'additional_damage_property': found.value('property'), 'missing_additional_damage': missing, 'nonplayer_damage_scale': 1.0,
+            'provenance': {'classification': found.span(), 'additional_store': store.span(), 'property_getter': dict(launch['property_getter']),
+                           'additional_gate': gate_span, 'damage_route': route_span, 'normal_hit': hit.span(0, 0)}}
+
+
 def extract_ordinary_hit_policy(mach, weapon):
     from .weapon_parameters import MAC_LAUNCH_MODE, ARM_LAUNCH_MODE
+    if mach.architecture == 'android-armv7':
+        return android_policy(mach, weapon) if weapon.get('launch_modes') else {}
     import capstone
     if mach.architecture not in ('x86_64','armv7'):return {}
     mac=mach.architecture=='x86_64';proof={}

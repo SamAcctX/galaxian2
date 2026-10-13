@@ -13,7 +13,7 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, executable_bytes: int, architecture: String, weapon: Dictionary) -> String:
 	if not parameters(data): return "Invalid ordinary hit policy"
 	if data.is_empty(): return ""
-	var sizes := {"classification":65,"additional_store":21,"property_getter":42,"additional_gate":34,"damage_route":185,"normal_hit":23} if architecture=="x86_64" else {"classification":56,"additional_store":10,"property_getter":48,"additional_gate":28,"damage_route":120,"normal_hit":40} if architecture=="armv7" else {}
+	var sizes := {"classification":65,"additional_store":21,"property_getter":42,"additional_gate":34,"damage_route":185,"normal_hit":23} if architecture=="x86_64" else {"classification":56,"additional_store":10,"property_getter":48,"additional_gate":28,"damage_route":120,"normal_hit":40} if architecture=="armv7" else {"classification":48,"additional_store":4,"property_getter":54,"additional_gate":26,"damage_route":118,"normal_hit":4} if architecture=="android-armv7" else {}
 	var p: Dictionary = data.provenance
 	if sizes.is_empty() or p.size()!=sizes.size(): return "Invalid ordinary hit provenance"
 	var spans := []

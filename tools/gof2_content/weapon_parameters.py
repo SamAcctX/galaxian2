@@ -154,6 +154,8 @@ def extract_weapon_parameters(mach, vehicle, opening):
 
 def extract_launch_modes(mach, weapon):
     """Item-specific alternate path selector; type zero alone is insufficient."""
+    if mach.architecture == 'android-armv7':
+        return android_launch_modes(mach, weapon)
     import capstone
     mac = mach.architecture == 'x86_64'
     text = mach.text; base = text['address']
@@ -203,6 +205,79 @@ def extract_launch_modes(mach, weapon):
         if any(a[1]>b[0] for a,b in zip(spans,spans[1:])): return {}
         return {'alternate_item_ids':ids,'provenance':provenance}
     except (ValueError,KeyError,TypeError,IndexError,OverflowError): return {}
+
+
+# Gun::setIndex (`this` in r4, the item index in r5): the alternate flag for items
+# first..first+count-1 and the single item, then the catalogue item's attribute
+# (the ordinary hit policy's additional damage).
+ANDROID_CLASSIFICATION = """
+mov r4, r0
+ldr r0, ={}
+mov r5, r1
+movs r1, #0
+add r0, pc
+str r5, [r4, #0x58]
+cmp r5, #{single}
+it eq
+moveq r1, #1
+sub.w r2, r5, #{first}
+ldr r0, [r0]
+cmp r2, #{count}
+it lo
+movlo r1, #1
+strb.w r1, [r4, #{flag}]
+movs r1, #{property}
+ldr r0, [r0]
+ldr r0, [r0, #4]
+ldr.w r0, [r0, r5, lsl #2]
+call _ZN4Item12getAttributeEi
+"""
+# Gun::shootAt (`this` in fp): a clear flag branches to the ordinary path, a set one
+# falls through to the alternate path.
+ANDROID_SELECTOR = """
+ldrb.w r0, [fp, #{flag}]
+cmp r0, #0
+beq.w {ordinary}
+"""
+ANDROID_SELECTED = """
+ldr.w r1, [fp, #0x3c]
+ldr r0, [r1]
+cmp r0, #0
+"""
+ANDROID_SHOOT = '_ZN3Gun7shootAtEN11AbyssEngine6AEMath6MatrixEiP6Playerb'
+
+
+def android_classification(lib):
+    """Gun::setIndex's flag declaration, or None: the index comes from the argument and
+    the attribute's item from Globals::items."""
+    from .android_shapes import Listing, relocation
+    setter = Listing(lib, '_ZN3Gun8setIndexEi')
+    found = setter.unique(ANDROID_CLASSIFICATION)
+    if (found is None or not setter.holds('r4', found.last) or not setter.holds('r5', found.last, 'r1')
+            or (relocation(lib, setter.address(found.first + 4)) or [None])[0] != '_ZN7Globals5itemsE'):
+        return None
+    return found
+
+
+def android_launch_modes(lib, weapon):
+    from .android_shapes import Listing
+    found = android_classification(lib)
+    shooter = Listing(lib, ANDROID_SHOOT)
+    selectors = [shape for shape in shooter.find(ANDROID_SELECTOR) if found and shape['flag'] == found['flag']]
+    selector = selectors[0] if len(selectors) == 1 else None
+    selected = shooter.at(ANDROID_SELECTED, selector.last + 1) if selector else None
+    if selected is None or not shooter.holds('fp', selector.last) or shooter.target(selector['ordinary']) is None:
+        return {}
+    first, count, single = found.value('first'), found.value('count'), found.value('single')
+    getter = Listing(lib, '_ZN4Item12getAttributeEi')
+    origin = weapon.get('provenance', {}).get('property_getter')
+    # The narrow compare holds the single item (0-255); the classification calls the getter.
+    if (not origin or origin.get('offset') != getter.span(0, 0)['offset']
+            or not 1 <= count <= 64 or first > 65536 - count or first <= single < first + count):
+        return {}
+    return {'alternate_item_ids': list(range(first, first + count)) + [single],
+            'provenance': {'classification': found.span(), 'selector': selector.span(), 'selected_path': selected.span(),
+                           'property_getter': dict(origin)}}
 
 
 MAC_LAUNCH_MODE = '''4189b79c00000081fe {single:4} 0f94c08d4e {first:1} 83f9 {count:1} 0f92c108c141888f600100004863de488d05 {address:4} 488b00488b4008488b3cd8be0a000000e8 {getter:4} '''

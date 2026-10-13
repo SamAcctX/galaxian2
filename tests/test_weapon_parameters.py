@@ -237,3 +237,94 @@ class AndroidWeaponParameters(unittest.TestCase):
         self.assertEqual(reader.extract_weapon_parameters(lib, vehicle, {**opening, 'provenance': {'category_getter': {'offset': 4, 'bytes': 4}}}), {})
         self.assertEqual(reader.extract_weapon_parameters(lib, {**vehicle, 'item_type_value_index': 4}, opening), {})
         self.assertEqual(reader.extract_weapon_parameters(lib, vehicle, {**opening, 'item_category_value_index': 2}), {})
+
+
+GUN_VALUES = {'single': '0x30', 'first': '5', 'count': '2', 'flag': '0x120', 'property': '0xb', 'additional': '0x70', 'slots': '0x10',
+              'kinds': '4', 'missing_low': '0x7825', 'missing_high': '0xc599', 'damage': '0x60', 'bounds': '0x6c', 'target': '0x40', 'own': '0x104'}
+GUN_NAMES = {'setter': '_ZN3Gun8setIndexEi', 'shooter': reader.ANDROID_SHOOT, 'getter': '_ZN4Item12getAttributeEi',
+             'factory': '_ZN5Level9createGunEiiiiiiii', 'collision': '_ZN3Gun22calcCharacterCollisionEv',
+             'constructor': '_ZN3GunC1EiiiiiifN11AbyssEngine6AEMath6VectorES2_', 'hit': '_ZN6Player6damageEibi'}
+
+
+def android_guns(values=None, edits=(), omit=()):
+    """Gun::setIndex, Gun::shootAt, Level::createGun, Gun::Gun and Gun::calcCharacterCollision in the
+    Android shapes (alternate items 5, 6 and 0x30, 16 slots). `edits`: (key, old text, new text).
+    Returns (library, {key: address}, weapon parameters with the parents' provenance)."""
+    from android_text_fixture import fill, text_library
+    from gof2_content import ordinary_hit_policy
+    v = {**GUN_VALUES, **(values or {})}
+    push, pop = 'push.w {r4, r5, r6, r7, r8, sb, sl, fp, lr}\nadd r7, sp, #0xc\n', 'pop.w {r4, r5, r6, r7, r8, sb, sl, fp, pc}'
+    texts = {
+        'setter': push + fill(reader.ANDROID_CLASSIFICATION, blank='&_ZN7Globals5itemsE', **v) + fill(ordinary_hit_policy.ANDROID_STORE, **v) + pop,
+        'shooter': '\n'.join([push + 'mov fp, r0', fill(reader.ANDROID_SELECTOR, **dict(v, flag='0xf9', ordinary='#out')), 'movs r5, #0',
+                              fill(reader.ANDROID_SELECTOR, **dict(v, ordinary='#out')), reader.ANDROID_SELECTED, 'out:', pop]),
+        'getter': 'ldr r2, [r0, #0x30]\nbx lr',
+        'collision': '\n'.join([push + 'vpush {d8, d9, d10, d11, d12, d13, d14, d15}', 'mov fp, r0', 'vmov.f32 s16, #3.000000e+00',
+                                'vmov.f32 s18, #2.500000e-01', 'vldr s24, =0x3e4ccccd', 'ldr.w sb, [fp, #0xb4]',
+                                fill(ordinary_hit_policy.ANDROID_GATE + ordinary_hit_policy.ANDROID_ROUTE, **v),
+                                'vpop {d8, d9, d10, d11, d12, d13, d14, d15}', pop]),
+        'hit': push + 'mov r4, r0\n' + pop}
+    for key, old, new in edits:
+        assert old in texts[key], (key, old)
+        texts[key] = texts[key].replace(old, new, 1)
+    lib, addresses = text_library({GUN_NAMES[k]: t for k, t in texts.items() if k not in omit}, {'_ZN7Globals5itemsE': [0]})
+    at = {k: addresses.get(n) for k, n in GUN_NAMES.items()}
+    weapon = {'provenance': {'property_getter': {'offset': at['getter'] or 2, 'bytes': 54}, 'tail': {'offset': 6, 'bytes': 80}}}
+    return lib, at, weapon
+
+
+def android_weapon_chain(lib, weapon):
+    """The weapon sub-readers in extract order, each given the earlier results."""
+    from gof2_content.weapon_capacity import extract_weapon_capacity
+    from gof2_content.ordinary_hit_policy import extract_ordinary_hit_policy
+    from gof2_content.player_hit_policy import extract_player_hit_policy
+    from gof2_content.weapon_collision_bounds import extract_weapon_collision_bounds
+    weapon = dict(weapon)
+    weapon['launch_modes'] = reader.extract_launch_modes(lib, weapon)
+    weapon['projectile_capacity'] = extract_weapon_capacity(lib, weapon, 0)
+    weapon['ordinary_hit_policy'] = extract_ordinary_hit_policy(lib, weapon)
+    weapon['player_hit_policy'] = extract_player_hit_policy(lib, weapon)
+    weapon['collision_bounds'] = extract_weapon_collision_bounds(lib, weapon)
+    return weapon
+
+
+@unittest.skipUnless(__import__('importlib').util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidLaunchModes(unittest.TestCase):
+    def test_named_functions_give_alternate_items(self):
+        lib, at, weapon = android_guns()
+        result = reader.extract_launch_modes(lib, weapon)
+        self.assertEqual(result['alternate_item_ids'], [5, 6, 0x30])
+        p = result['provenance']
+        # setIndex: push, add r7, then the classification; shootAt: the second flag test.
+        self.assertEqual({k: (p[k]['offset'] - at[f], p[k]['bytes']) for k, f in (('classification', 'setter'), ('selector', 'shooter'), ('selected_path', 'shooter'))},
+                         {'classification': (6, 48), 'selector': (20, 10), 'selected_path': (30, 8)})
+        self.assertEqual(p['property_getter'], weapon['provenance']['property_getter'])
+
+    def test_each_broken_rule_is_unsupported(self):
+        cases = {'other flag': dict(edits=[('setter', 'strb.w r1, [r4, #0x120]', 'strb.w r1, [r4, #0x124]')]),
+                 'two flag tests': dict(edits=[('shooter', 'movs r5, #0', fill_selector() + reader.ANDROID_SELECTED)]),
+                 'path apart': dict(edits=[('shooter', 'ldr.w r1, [fp, #0x3c]', 'nop\nldr.w r1, [fp, #0x3c]')]),
+                 'no alternate path': dict(edits=[('shooter', 'ldr.w r1, [fp, #0x3c]', 'ldr.w r1, [fp, #0x40]')]),
+                 'branch outside': dict(edits=[('shooter', '[fp, #0x120]\ncmp r0, #0\nbeq.w #out', '[fp, #0x120]\ncmp r0, #0\nbeq.w #_ZN4Item12getAttributeEi')]),
+                 'shooter this lost': dict(edits=[('shooter', 'mov fp, r0', 'movs r0, #0\nmov fp, r0')]),
+                 'setter this lost': dict(edits=[('setter', 'mov r4, r0', 'movs r0, #0\nmov r4, r0')]),
+                 'index not argument': dict(edits=[('setter', 'add r7, sp, #0xc', 'movs r1, #0')]),
+                 'other catalogue': dict(edits=[('setter', '=&_ZN7Globals5itemsE', '=0x10')]),
+                 'no items': dict(values=dict(count='0')), 'too many items': dict(values=dict(count='0x41', single='0xff')),
+                 'single in range': dict(values=dict(single='6')), 'past the ids': dict(values=dict(first='0xff000'))}
+        for name, options in cases.items():
+            with self.subTest(name):
+                lib, _, weapon = android_guns(**options)
+                self.assertEqual(reader.extract_launch_modes(lib, weapon), {})
+        for key in ('setter', 'shooter'):
+            lib, _, weapon = android_guns(omit=(key,))
+            self.assertEqual(reader.extract_launch_modes(lib, weapon), {}, key)
+        lib, _, weapon = android_guns()
+        weapon['provenance']['property_getter'] = {'offset': weapon['provenance']['property_getter']['offset'] + 2, 'bytes': 54}
+        self.assertEqual(reader.extract_launch_modes(lib, weapon), {})
+        self.assertEqual(reader.extract_launch_modes(lib, {'provenance': {}}), {})
+
+
+def fill_selector():
+    from android_text_fixture import fill
+    return fill(reader.ANDROID_SELECTOR, **dict(GUN_VALUES, ordinary='#out'))

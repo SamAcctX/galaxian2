@@ -118,7 +118,7 @@ static func capacity(data: Variant, executable_bytes: int, architecture: String,
 static func launch_modes(data: Variant, executable_bytes: int, architecture: String, weapon_provenance: Dictionary) -> String:
 	if not launch_values(data): return "Invalid weapon launch modes"
 	if data.is_empty(): return ""
-	var sizes := {"classification":65,"selector":14,"selected_path":9,"property_getter":42} if architecture=="x86_64" else {"classification":56,"selector":14,"selected_path":4,"property_getter":48} if architecture=="armv7" else {}
+	var sizes := {"classification":65,"selector":14,"selected_path":9,"property_getter":42} if architecture=="x86_64" else {"classification":56,"selector":14,"selected_path":4,"property_getter":48} if architecture=="armv7" else {"classification":48,"selector":10,"selected_path":8,"property_getter":54} if architecture=="android-armv7" else {}
 	var provenance: Variant = data.get("provenance")
 	if sizes.is_empty() or not provenance is Dictionary or provenance.size()!=sizes.size(): return "Invalid weapon launch provenance"
 	var spans := []
@@ -130,6 +130,8 @@ static func launch_modes(data: Variant, executable_bytes: int, architecture: Str
 			if span.x<previous.y and span.y>previous.x: return "Overlapping weapon launch contexts"
 		spans.append(span)
 	if provenance.property_getter!=weapon_provenance.get("property_getter"): return "Weapon launch modes use another item catalogue"
+	# Android Gun::shootAt: the alternate path falls through the flag test.
+	if architecture=="android-armv7" and int(provenance.selected_path.offset)!=int(provenance.selector.offset)+10: return "Disconnected weapon launch path"
 	return ""
 
 static func launch_values(data: Variant) -> bool:
