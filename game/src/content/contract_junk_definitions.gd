@@ -10,6 +10,9 @@ const SPANS = {"junk_lifecycle_update":[640402,508],"junk_lifecycle_render":[640
 
 const MAC_SPANS = {"junk_lifecycle_update":[640950,508],"junk_lifecycle_render":[641458,62],"junk_lifecycle_world_count":[107554,28],"junk_lifecycle_deadline_exclusion":[482714,12],"junk_lifecycle_deadline_poll":[389260,340],"junk_lifecycle_particle_registration":[63495,30],"junk_lifecycle_particle_copy":[498571,1407],"junk_lifecycle_initial_statistic":[881865,11],"junk_lifecycle_burst_size":[1531978,4]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by early_contract_definitions.gd).
+const ANDROID_SPANS = {"junk_lifecycle_update":[0,368],"junk_lifecycle_render":[0,36],"junk_lifecycle_world_count":[0,36],"junk_lifecycle_deadline_exclusion":[0,12],"junk_lifecycle_deadline_poll":[412,168],"junk_lifecycle_particle_registration":[1522,48],"junk_lifecycle_particle_presets":[0,5828],"junk_lifecycle_initial_statistic":[310,6]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES)
 
