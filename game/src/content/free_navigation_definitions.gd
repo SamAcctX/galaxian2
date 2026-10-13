@@ -12,6 +12,9 @@ const SPANS = {"free_navigation_gate_helpers":[735008,198],"free_navigation_rout
 
 const MAC_SPANS = {"free_navigation_gate_helpers":[735640,198],"free_navigation_route_graph":[902214,608],"free_navigation_route_search":[902822,430],"free_navigation_route_predecessors":[903252,288],"free_navigation_queue_removal":[903786,98],"free_navigation_course":[137826,368],"free_navigation_story_selection":[857597,661]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"free_navigation_gate_index":[0,4],"free_navigation_gate_enum_index":[0,40],"free_navigation_station_enum_index":[0,38],"free_navigation_orbit_gate":[0,40],"free_navigation_station_in_system":[0,48],"free_navigation_route_graph":[0,400],"free_navigation_route_search":[0,340],"free_navigation_route_predecessors":[0,202],"free_navigation_queue_removal":[0,66],"free_navigation_course":[0,292],"free_navigation_story_selection":[0,1072]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES)
 
