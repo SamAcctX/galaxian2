@@ -2822,6 +2822,7 @@
     "tests/test_map_image_regions.py",
     "tests/test_materials.py",
     "tests/test_mido_continuation.py",
+    "tests/test_mining_targeting.py",
     "tests/test_nehma_return.py",
     "tests/test_nehma_visit.py",
     "tests/test_npc_activation.py",
