@@ -85,7 +85,8 @@ func extensions() -> Array:
 		["ship_combat",Definitions.ShipCombat.VALUES,Definitions.ShipCombat.ANDROID_SPANS],
 		["ship_lifecycle",Definitions.ShipLifecycle.VALUES,Definitions.ShipLifecycle.ANDROID_SPANS],
 		["flight_results",Definitions.FlightResults.VALUES,Definitions.FlightResults.ANDROID_SPANS],
-		["junk_lifecycle",Definitions.Junk.VALUES,Definitions.Junk.ANDROID_SPANS]]
+		["junk_lifecycle",Definitions.Junk.VALUES,Definitions.Junk.ANDROID_SPANS],
+		["world_initialization",Definitions.World.VALUES,Definitions.World.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:
 	var result:={}

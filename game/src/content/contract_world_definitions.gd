@@ -10,6 +10,9 @@ const SPANS = {"contract_world_impact_0":[1572842,4],"contract_world_impact_3":[
 
 const MAC_SPANS = {"contract_world_impact_0":[1547906,4],"contract_world_impact_3":[1547918,4],"contract_world_impact_7":[1547934,4],"contract_world_impact_19":[1547982,4],"contract_world_impact_22":[1547994,4],"contract_world_impact_25":[1548006,4]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by early_contract_definitions.gd).
+const ANDROID_SPANS = {"contract_world_impact_lookup":[56,16],"contract_world_impact_models":[0,104]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES)
 
