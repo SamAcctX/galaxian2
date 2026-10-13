@@ -45,6 +45,17 @@ func verify() -> void:
 		var unproven: Dictionary=chain.duplicate(true)
 		for key in row[2]:unproven.provenance.erase(key)
 		check(not Definitions.validate(unproven,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android extension passed without its proofs: "+row[0])
+	# Android shopping keeps system 25's maximum price; the Mac marks it up.
+	if chain.has("ordinary_shopping"):
+		var mac_shop: Dictionary=chain.duplicate(true)
+		mac_shop.travel=Definitions.MAC_VALUES.travel.duplicate(true);mac_shop.return_visit=Definitions.MAC_RETURN_VISIT.duplicate(true)
+		mac_shop.ordinary_shopping=Definitions.Shopping.VALUES.duplicate(true)
+		check(Definitions.parameters(mac_shop),"Mac shopping values were refused")
+		mac_shop.ordinary_shopping=Definitions.Shopping.ANDROID_VALUES.duplicate(true)
+		check(not Definitions.parameters(mac_shop),"Mac travel accepted the Android shopping values")
+		var android_shop: Dictionary=chain.duplicate(true)
+		android_shop.ordinary_shopping=Definitions.Shopping.VALUES.duplicate(true)
+		check(not Definitions.validate(android_shop,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted the Mac shopping markup")
 	var shifted: Dictionary=full.duplicate(true)
 	shifted.provenance.story_dispatch.offset+=1
 	check(not Definitions.validate(shifted,source_bytes,"android-armv7",arrival,station,training).is_empty(),"Android travel accepted a shifted proof extent")
@@ -93,6 +104,7 @@ func extensions() -> Array:
 		["gate_transit",Definitions.GateTransit.VALUES,Definitions.GateTransit.ANDROID_SPANS],
 		["ordinary_worlds",Definitions.Worlds.VALUES,Definitions.Worlds.ANDROID_SPANS],
 		["gate_arrival",Definitions.GateArrival.VALUES,Definitions.GateArrival.ANDROID_SPANS],
+		["ordinary_shopping",Definitions.Shopping.ANDROID_VALUES,Definitions.Shopping.ANDROID_SPANS],
 		["vossk_traffic",Definitions.Vossk.VALUES,Definitions.Vossk.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:

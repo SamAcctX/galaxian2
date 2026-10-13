@@ -177,7 +177,7 @@ static func _parameters(data: Variant) -> bool:
 	if data.has("emp_bombs") and (not data.has("kappa_preparation") or not EMPBombs.parameters(data.emp_bombs)):return false
 	if data.has("kappa_preparation") and (not data.has("suttnar_visit") or not Equal.equal_value(data.kappa_preparation,KappaPreparation.MAC_VALUES if alternate else KappaPreparation.VALUES)):return false
 	if data.has("suttnar_visit") and (not data.has("ordinary_contracts") or not Equal.equal_value(data.suttnar_visit,SuttnarVisit.MAC_VALUES if alternate else SuttnarVisit.VALUES)):return false
-	if data.has("ordinary_shopping") and (not data.has("ordinary_worlds") or not Shopping.parameters(data.ordinary_shopping)):return false
+	if data.has("ordinary_shopping") and (not data.has("ordinary_worlds") or not Equal.equal_value(data.ordinary_shopping,Shopping.ANDROID_VALUES if android else Shopping.VALUES)):return false
 	var expected: Dictionary=ANDROID_VALUES if android else MAC_VALUES if alternate else VALUES
 	for key in expected:
 		if not Equal.equal_value(data.get(key),expected[key]):return false
@@ -224,6 +224,7 @@ static func validate(data: Variant, source_bytes: int, arch: String, arrival: Di
 		if data.has("gate_transit"):android_spans.merge(GateTransit.ANDROID_SPANS)
 		if data.has("ordinary_worlds"):android_spans.merge(Worlds.ANDROID_SPANS)
 		if data.has("gate_arrival"):android_spans.merge(GateArrival.ANDROID_SPANS)
+		if data.has("ordinary_shopping"):android_spans.merge(Shopping.ANDROID_SPANS)
 		if data.has("kappa_return"):android_spans.merge(KappaReturn.ANDROID_SPANS)
 		if data.has("vossk_traffic"):android_spans.merge(Vossk.ANDROID_SPANS)
 		if data.has("vossk_lod"):android_spans.merge(VosskLOD.ANDROID_SPANS)

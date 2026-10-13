@@ -1,8 +1,26 @@
-"""Original ordinary hangar pricing, transfers and departure capacity boundary. Constant declarations only."""
+"""Original ordinary hangar pricing, transfers and departure capacity boundary. Constant declarations only.
+
+Android: HangarWindow::initialize (free mode at station 108 with story value
+3), Status::calcCargoPrices (cargo, installed, stock; distance ratio via
+Galaxy::distancePercent, SolarSystem::getX/getY and Globals::sqrt; variation
+0.02, global raise 0.01; AERandom::reset), Item::Item and Item::init
+(properties 4, 5, 7, 8), Item::transaction, Status::changeCredits,
+HangarWindow::transaction (texts 312 and 192, Android 323 and 203),
+HangarWindow::update (x5 after 4000 ms), the list commits in setSellMode and
+OnTouchBegin (Item::extractItems, Ship::setCargo, Station::setItems,
+Item::mixItems) and ModStation::leaveStation (text 193, Android 204).
+Unlike the Mac (maximum price x 1.05), Status::calcCargoPrices prices system
+25's goods at their maximum price unchanged: ANDROID_VALUES has special
+multiplier 1.0.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_ordinary_shopping(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(ANDROID_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -205,3 +223,42 @@ MAC_ALTERNATE = {'shopping_hangar_entry': [-173120, 157, '__text', 'd20566f62c40
                                  4,
                                  '__const',
                                  '5af2169fc7e6a3268ca6146f2ba18f312fde17563e7dff42572633d9b0b92c7c']}
+
+# Android: system 25's goods cost their maximum price, without the Mac's 1.05 markup.
+ANDROID_VALUES = copy.deepcopy(VALUES)
+ANDROID_VALUES['pricing']['special_multiplier'] = 1.0
+
+# Android spans inside named functions; the values are ANDROID_VALUES.
+ANDROID = {# HangarWindow::initialize: free mode (station 108, story value 3), prices, the merged list.
+           'shopping_hangar_entry': ('_ZN12HangarWindow10initializeEv', 30, 92, 'sha256:098ad9637d9d5ecbd595ebc5336940b28834b0954d9bdf9d9bed02a328bbe088'),
+           # Status::calcCargoPrices: system 25 takes the maximum price (Mac: x 1.05) at 0xa9fa0..0xa9fae.
+           'shopping_prices': ('_ZN6Status15calcCargoPricesEv', 0, 764, 'sha256:454dee38036c70b75f6641fb36d6621878d6db18296751f23830a346a17fbc97'),
+           # Item::init reads properties 4, 5, 7 and 8 (price systems and bounds).
+           'shopping_item_constructor': ('_ZN4ItemC2EP5ArrayIiES2_S2_', 0, 22, 'd0b502af044604f1280c8ce80e007af7bae92046d0bd'),
+           'shopping_item_init': ('_ZN4Item4initEv', 0, 78, 'sha256:2958dfb1982a848d6f960cdb302d8f062ef241c5d66ccd336fcb72ca1fc2176e'),
+           'shopping_system_x': ('_ZN11SolarSystem4getXEv', 0, 4, '006a7047'),
+           'shopping_system_y': ('_ZN11SolarSystem4getYEv', 0, 4, '406a7047'),
+           'shopping_distance': ('_ZN6Galaxy15distancePercentEiiii', 0, 60, 'sha256:5abadcaa2c7c7199a698b9fa044bb7782bdb483624e6c41aff697c51499c346f'),
+           'shopping_root': ('_ZN7Globals4sqrtEf', 0, 6, '0846dbf0ddbe'),
+           'shopping_station_match': ('_ZN7Station6equalsEPS_', 0, 18, '0246002021b1896892688a4208bf01207047'),
+           'shopping_cargo_list': ('_ZN4Ship8getCargoEv', 0, 4, '006f7047'),
+           'shopping_installed_list': ('_ZN4Ship12getEquipmentEv', 0, 4, 'c06e7047'),
+           # Transfers one unit; the wallet ignores changes above 1e9 and stops at 0.
+           'shopping_unit_transfer': ('_ZN4Item11transactionEbib', 0, 88, 'sha256:e9c3c18c0f35a70469c27e04ccafeb6cd41f5333569fd06b32d739af1d9ee546'),
+           'shopping_wallet': ('_ZN6Status13changeCreditsEi', 0, 40, 'sha256:3db9059bda43f3b08a4900d461d0fc0dd7e2b4e6bd61f4988873498d8d4cdd47'),
+           'shopping_wallet_commit': ('_ZN12HangarWindow11transactionEb', 844, 20, '9bf81d0130b92a485146784400680068f7f68ceb'),
+           'shopping_funds_check': ('_ZN12HangarWindow11transactionEb', 374, 46, 'sha256:7ccfa97a8d256f7f13884ca54c23381840f57fce39fd9a1e8e8d48c9cd9d7771'),
+           'shopping_funds_message': ('_ZN12HangarWindow11transactionEb', 598, 246, 'sha256:b9c6205a0d8f7d754e32d2d13391f703e90064c1f15a3b027f8e1db991101b23'),
+           'shopping_protected_transfer': ('_ZN12HangarWindow11transactionEb', 24, 74, 'sha256:13d0b8d61e601d01d438b7d413cea5b708e63b70314619e098a64ff44c884dcb'),
+           'shopping_sale_transfer': ('_ZN12HangarWindow11transactionEb', 212, 22, 'dbf868003146dbf8a8209bf81d310069fcf6bcee8246'),
+           # The hangar list: merge, split and the committed cargo and stock.
+           'shopping_combine': ('_ZN4Item8mixItemsEP5ArrayIPS_ES3_', 0, 602, 'sha256:37e985e9fb500e19b28f79dc3f806d396111f1a10db90dbff05b054007e16adc'),
+           'shopping_split': ('_ZN4Item12extractItemsEP5ArrayIPS_Eb', 0, 182, 'sha256:cd1ee245e793b989bca822bd1df85458f76ef206156e1497255de45f91d56a05'),
+           'shopping_list_commit': ('_ZN12HangarWindow11setSellModeEb', 478, 62, 'sha256:db95e6abce280ee9971649225aabaa16c3a2caa951587d0ad90ea023c3f89427'),
+           'shopping_list_commit_tab': ('_ZN12HangarWindow12OnTouchBeginEii', 362, 64, 'sha256:8a20297935fe87383ec0d0010f7ca1cc51034cd950b2d7e4b350886f1080c4f5'),
+           'shopping_cargo_setter': ('_ZN4Ship8setCargoEP5ArrayIP4ItemE', 0, 92, 'sha256:71a00bf8d9656ccfc6fe7984f4d7e5663bef8a101d0b3aa4cd3f566af6554bcf'),
+           'shopping_stock_setter': ('_ZN7Station8setItemsEP5ArrayIP4ItemEb', 0, 140, 'sha256:8120ed5e0d56117bc3bd8b601abba8f7aac10839ba44932364fc104ec804340d'),
+           # Held buttons repeat x5 after 4000 ms; overfilled ships cannot leave (Android text 204).
+           'shopping_repeat_quantity': ('_ZN12HangarWindow6updateEi', 340, 162, 'sha256:cc85e9323f3674640d9d3863f61b180cf5027e06254fe2d2ea900eff01ae8fad'),
+           'shopping_overfilled_departure': ('_ZN10ModStation12leaveStationEv', 0, 50, 'sha256:7663d67ae0024c5e09c7bcc485ad9de639dc7edde1b4e8c7879d443012645232'),
+           'shopping_reseed': ('_ZN11AbyssEngine8AERandom5resetEv', 0, 36, 'sha256:48ebaf1bd886ac03af6b109e67b1a8da31eb13841bfed2bd2131cae029d88244')}
