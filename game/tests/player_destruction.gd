@@ -45,9 +45,11 @@ func verify(args: PackedStringArray):
 	var rules: Dictionary=bindings.player_destruction
 	check(Definitions.validate(rules,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_flight,bindings.opening_actors).is_empty(),"Player destruction declaration refused")
 	for key in Definitions.VALUES:
-		# Android has no game-over image: its null image id is changed to -1 instead.
+		# Android has no game-over image: its null image id is changed to -1 instead. Both
+		# editions' values are valid parameters (a Mac declaration without its image id is
+		# Android's), so the edition's validator decides.
 		var bad:=rules.duplicate(true);bad[key]=null if bad[key]!=null else -1
-		check(not Definitions.parameters(bad),"Changed destruction parameter accepted: "+key)
+		check(not Definitions.validate(bad,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_flight,bindings.opening_actors).is_empty(),"Changed destruction parameter accepted: "+key)
 	for key in (Definitions.ANDROID_SPANS if bindings.source_architecture=="android-armv7" else Definitions.SPANS):
 		var bad:=rules.duplicate(true);bad.provenance[key].offset+=1
 		check(not Definitions.validate(bad,header.source_executable_bytes,bindings.source_architecture,bindings.arrival_staging,bindings.full_hold_flight,bindings.opening_actors).is_empty(),"Detached destruction extent accepted: "+key)
