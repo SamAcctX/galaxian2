@@ -1,6 +1,16 @@
-"""Fresh ordinary projectile draw declarations, independently recognized per edition."""
+"""Fresh ordinary projectile draw declarations, independently recognized per edition.
+
+Android: Level::createGun builds the player's ObjectGun from its model table
+(lifetime 1000) and Level::assignGuns the NPC's from model 6795 (10001).
+ObjectGun::ObjectGun adds the model to its one transform, marks kinds 1, 3 and
+8 camera-facing and scales them 0.6 under the reduced-billboard setting;
+ObjectGun::update ticks that transform and ObjectGun::render skips shots at
+x = 50000 and shrinks shots in their last 1000 ms. PaintCanvas::TransformAddMesh
+loops the model's animation, Transform::Update wraps it, Transform::Transform
+starts it at speed 1.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 VALUES = {'item_ids':[2,19], 'model_ids':[6756,6795], 'kinds':[0,1],
           'camera_facing_kind':1, 'shrink_below_ms':1000, 'shrink_divisor':1000.0,
@@ -11,6 +21,12 @@ VALUES = {'item_ids':[2,19], 'model_ids':[6756,6795], 'kinds':[0,1],
 
 def extract_projectile_visuals(mach,staging,actors,opening):
     arch=mach.architecture
+    if arch=='android-armv7':
+        try:
+            if not staging['player_flight'] or actors['npc_initialization']['primary_weapon']['item_id']!=19 or opening['ship_id']!=10:return {}
+        except (KeyError,TypeError):return {}
+        proof=recognize_symbols(mach,ANDROID)
+        return dict(copy.deepcopy(VALUES),provenance=proof) if proof else {}
     if arch not in LAYOUTS:return {}
     try:
         if not staging['player_flight'] or actors['npc_initialization']['primary_weapon']['item_id']!=19:return {}
@@ -169,3 +185,20 @@ MAC_ALTERNATE = {'player_model_table': [-57355, 28, '488b45d04863c0488d0df4af160
  'shrink_constant': [1409903, 4, '00007a44'],
  'hidden_constant': [1398531, 4, '00504347'],
  'unit_constant': [1397567, 4, '0000803f']}
+
+# The values equal the Mac's. Android also gives player guns with a muzzle model
+# (ObjectGun::ObjectGun's second table, 14500 for item 2) a per-gun AEGeometry.
+ANDROID_VALUES = copy.deepcopy(VALUES)
+ANDROID = {'player_model_table': ('_ZN5Level9createGunEiiiiiiii', 118, 20, 'dff8a007e2460d9d784450f825000028c0f25081'),
+           'player_wrapper': ('_ZN5Level9createGunEiiiiiiii', 1616, 30, 'sha256:690ec146edbd22c39402308314363661753addd53da5c427371e68bbe69f60c7'),
+           'npc_model': ('_ZN5Level10assignGunsEv', 1330, 16, '01201321e8652846a0f7e4ef41f68b24'),
+           'npc_wrapper': ('_ZN5Level10assignGunsEv', 2314, 28, 'sha256:a14f9fdd5d6124efe18ad456dd861df49735bff16be03bdf86c8161b7d0f8e77'),
+           'model_2': ('_ZN5Level9createGunEiiiiiiii', 118, 4, '641a0000', 'literal', 8),
+           'model_19': ('_ZN5Level10assignGunsEv', 2194, 4, '8b1a0000', 'literal', 76),
+           # Transform and mesh, camera-facing kinds, reduced scale.
+           'constructor': ('_ZN9ObjectGunC2EiP3GunijP5Level', 120, 148, 'sha256:bda794297b4c90897a9726f98376b894c160452e5c2861dfee6b6039827bcab1'),
+           'model_tick': ('_ZN9ObjectGun6updateEi', 32, 40, 'sha256:e9774977c53b5e1ee21d6f7a0bd8d97e4136a1c08cf4e2f76e45ee8ee13117b1'),
+           'render': ('_ZN9ObjectGun6renderEv', 0, 1580, 'sha256:d90a3a115e19aa3ac6d0f81a5ecd711a462c96adac951ad00f5cf92155ff8f22'),
+           'loop_setup': ('_ZN11AbyssEngine11PaintCanvas16TransformAddMeshEjtb', 170, 8, '02210022e3f748ec'),
+           'loop_update': ('_ZN11AbyssEngine9Transform6UpdateExb', 28, 132, 'sha256:947671d4c61546eefc2f09463105f1e448f41d633bcf26df34b0d336fcdb4268'),
+           'animation_defaults': ('_ZN11AbyssEngine9TransformC2Ev', 256, 52, 'sha256:5cc4e6bffae63edaaa55083e8161fa018f54fc2bb49696ed3bbb201a2d3698e3')}
