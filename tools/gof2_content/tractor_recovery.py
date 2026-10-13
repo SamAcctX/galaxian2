@@ -1,8 +1,24 @@
-"""Verified tractor configuration and wreck recovery declarations; no executable payload."""
+"""Verified tractor configuration and wreck recovery declarations; no executable payload.
+
+Android: PlayerEgo::setShip fits the beam of the first sort-13 item
+(TractorBeam(geometry, item - 68, else 3), sounds 0 and 4); Radar::Radar keeps
+the half window Globals::w / 16 (the Mac: / 18) that Radar::draw's strict
+tractor acquisition uses; TractorBeam::update pulls 10 units per ms beyond
+400; KIPlayer::createCrate, cargoAvailable and captureCrate (Item::makeItem,
+Ship::spaceAvailable, Status::crateCaptured, Ship::getEquipment stacks,
+Ship::addCargo, Level::stealFriendCargo, Standing::applyStealCargo) recover
+the wreck. Values are the Mac 1.0.7 ones except the window (ANDROID_VALUES).
+The Android-only tractor-beam vendor (cursor 23, station 10) only sells item
+68 and leaves these rules unchanged.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_tractor_recovery(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(ANDROID_VALUES), proof) if proof else ({}, {})
     _, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -174,3 +190,40 @@ MAC_ALTERNATE = {'tractor_player_device': [555140, 988, '__text', 'a1d377a6fe43a
                                  8,
                                  '__const',
                                  '6a21be1387099fa691bf2589818075977e15edbb46e7b68a5911c4e9100f5e2b']}
+
+# Radar::Radar: Globals::w / 16 (asrs #4) where the Mac divides by 18.
+ANDROID_VALUES = copy.deepcopy(VALUES)
+ANDROID_VALUES['acquisition']['window_divisor'] = 16
+
+ANDROID = {# PlayerEgo::setShip: the beam of the first sort-13 item; Radar: the w / 16 window and acquisition.
+           'tractor_player_device': ('_ZN9PlayerEgo7setShipEii', 0, 756, 'sha256:304272cdbb4ca92ee9aa341f23315b8037bd9e55a02485c2e3fa560f43baa2ac'),
+           'tractor_equipment_lookup': ('_ZN4Ship23getFirstEquipmentOfSortEi', 0, 96, 'sha256:0f97dfc1498b5f762706c1c35c393bec23e4db1750c18830de480677287ee406'),
+           'tractor_hud_equipment': ('_ZN5RadarC2EP5Level', 0, 3304, 'sha256:24410902c42a798834b190938f024287a3b51f6648d2b209da08b4b57827ff64'),
+           'tractor_hud_requests': ('_ZN5Radar4drawEP6PlayerP3Hudi', 0, 11648, 'sha256:d6017e6e1f0945302c657ba4f0ef7e4169d6f3ca95968037e4f040fcc449dc48'),
+           # TractorBeam: model 14232 + mode, pull of 10 per ms beyond 400.
+           'tractor_constructor': ('_ZN11TractorBeamC2EP10AEGeometryi', 0, 88, 'sha256:c5b266d2e49b6a4c95f55dc4b14aac74b4c5eb836d5943d05e27cb9c76bbdc2a'),
+           'tractor_update': ('_ZN11TractorBeam6updateEiP5RadarP5LevelP3Hud', 0, 856, 'sha256:e34638fa46f7580397f89079bf06126d0b917e503a733bf04902c8bb8402e7d8'),
+           # Wreck recovery and the cargo rows.
+           'tractor_transfer': ('_ZN8KIPlayer12captureCrateEP3Hud', 0, 772, 'sha256:09e3994ad6b6bdd12efbad9bf8b047cdf4052576936143cf0778e04ecb7fe22c'),
+           'tractor_cargo_model': ('_ZN8KIPlayer11createCrateEi', 0, 212, 'sha256:91deeb454ba06465975eb469efc565a2639580023fba721f6c059569ad9060a2'),
+           'tractor_positive_cargo': ('_ZN8KIPlayer14cargoAvailableEv', 0, 36, 'sha256:d957cbac863a90042a6bb4bd1d5ea6115d6287c0af45fb312f0e030b7d71e440'),
+           'tractor_inventory_merge': ('_ZN4Item12combineItemsEP5ArrayIPS_ES3_', 0, 402, 'sha256:4db059a18b43a74a22402ec2ee1616ad74b1436e949a96265310df00ec09272e'),
+           'tractor_inventory_append': ('_ZN4Ship8addCargoEP4Item', 0, 90, 'sha256:c8ce2e005184b07cbaf87b4b3003477bce2dad2138b33520549b1f82e2cc39ef'),
+           'tractor_inventory_refresh': ('_ZN4Ship8setCargoEP5ArrayIP4ItemE', 0, 92, 'sha256:71a00bf8d9656ccfc6fe7984f4d7e5663bef8a101d0b3aa4cd3f566af6554bcf'),
+           'tractor_inventory_rows': ('_ZN4Ship12getEquipmentEv', 0, 4, 'c06e7047'),
+           'tractor_free_space': ('_ZN4Ship12getFreeSpaceEv', 0, 12, 'd0e90321806a1044401a7047'),
+           'tractor_capacity': ('_ZN4Ship14spaceAvailableEi', 0, 20, 'd0e903321144806ac21800209142d8bf01207047'),
+           'tractor_item_kind': ('_ZN4Item7getTypeEv', 0, 4, '40687047'),
+           'tractor_item_quantity_add': ('_ZN4Item12changeAmountEi', 0, 8, '426b114441637047'),
+           'tractor_item_factory': ('_ZN4Item8makeItemEi', 0, 18, 'b0b502af0c46856977f70cee85614463b0bd'),
+           # Pulled actors, autopilot and docking gates, career and faction callbacks.
+           'tractor_actor_translate': ('_ZN8KIPlayer9translateERKN11AbyssEngine6AEMath6VectorE', 0, 30, 'sha256:41d869f2d0e7d66396080535748014597f5b2162c822ea09146ec1d261bfb680'),
+           'tractor_collision_translate': ('_ZN5Route9translateERKN11AbyssEngine6AEMath6VectorE', 0, 94, 'sha256:97c4c77e14f3d30687c18cb02a4299c3b90c9f65db6f9ba0419e21068d840c91'),
+           'tractor_autopilot': ('_ZN9PlayerEgo14isInTurretModeEv', 0, 6, '90f8a0017047'),
+           'tractor_guidance': ('_ZN9PlayerEgo11isAutoPilotEv', 0, 6, '90f858017047'),
+           'tractor_mining_approach': ('_ZN9PlayerEgo19isDockingToAsteroidEv', 0, 22, '0146002091f8c02122b1d1f8c411012918bf01207047'),
+           'tractor_alternate_approach': ('_ZN9PlayerEgo23isDockingToDockingPointEv', 0, 22, '0146002091f8562322b1d1f8c411012918bf01207047'),
+           'tractor_alternate_operation': ('_ZN9PlayerEgo22isDockedToDockingPointEv', 0, 22, '90f8561329b1d0f8c401012818bf0020704700207047'),
+           'tractor_friendly_callback': ('_ZN5Level16stealFriendCargoEv', 0, 8, '012180f83c117047'),
+           'tractor_career_quantity': ('_ZN6Status13crateCapturedEi', 0, 12, 'd0f8e0211144c0f8e0117047'),
+           'tractor_faction_callback': ('_ZN8Standing15applyStealCargoEi', 0, 6, '022296f0b9bc')}

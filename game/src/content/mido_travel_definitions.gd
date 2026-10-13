@@ -154,7 +154,7 @@ static func _parameters(data: Variant) -> bool:
 	if data.has("sahi_visit") and (not data.has("kappa_departure") or not Equal.equal_value(data.sahi_visit,SahiVisit.MAC_VALUES if alternate else SahiVisit.VALUES)):return false
 	if data.has("sahi_encounter") and (not data.has("sahi_visit") or not Equal.equal_value(data.sahi_encounter,SahiEncounter.MAC_VALUES if alternate else SahiEncounter.VALUES)):return false
 	if data.has("sahi_stage") and not SahiStage.coherent(data):return false
-	if data.has("tractor_recovery") and (not data.has("sahi_stage") or not TractorRecovery.parameters(data.tractor_recovery)):return false
+	if data.has("tractor_recovery") and (not data.has("sahi_stage") or not Equal.equal_value(data.tractor_recovery,TractorRecovery.ANDROID_VALUES if android else TractorRecovery.VALUES)):return false
 	if data.has("void_portal") and (not data.has("tractor_recovery") or not VoidPortal.coherent(data)):return false
 	if data.has("post_sahi") and (not data.has("void_portal") or not alternate or not PostSahi.parameters(data.post_sahi)):return false
 	if data.has("thynome_expedition") and (not data.has("post_sahi") or not Thynome.parameters(data.thynome_expedition)):return false
@@ -240,6 +240,7 @@ static func validate(data: Variant, source_bytes: int, arch: String, arrival: Di
 		if data.has("sahi_visit"):android_spans.merge(SahiVisit.ANDROID_SPANS)
 		if data.has("sahi_encounter"):android_spans.merge(SahiEncounter.ANDROID_SPANS)
 		if data.has("sahi_stage"):android_spans.merge(SahiStage.ANDROID_SPANS)
+		if data.has("tractor_recovery"):android_spans.merge(TractorRecovery.ANDROID_SPANS)
 		if data.has("vossk_traffic"):android_spans.merge(Vossk.ANDROID_SPANS)
 		if data.has("vossk_lod"):android_spans.merge(VosskLOD.ANDROID_SPANS)
 		return "" if Layouts.anchored(data.provenance,source_bytes,android_spans) else "Invalid local travel provenance"
