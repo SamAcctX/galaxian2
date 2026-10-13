@@ -1,9 +1,25 @@
-"""Verified Mac early lounge population declarations."""
+"""Verified Mac early lounge population declarations.
+
+Android: Generator::createAgents sizes the early lounge and replaces a
+generated contact with a hostile one (Standing::isEnemy, the faction order
+table); Generator::createAgent draws faction, role, sex and a merchant's
+stock (Item::Item, Item::init); Globals::getRandomName,
+FileRead::loadNamesBinary and ImageFactory::createChar build names and
+portraits; Generator::generateStationIndex and the head of
+Generator::createMission pick destinations and the kind history;
+FileRead::loadSystemsBinary, SolarSystem::SolarSystem and getRace read the
+system faction; AERandom::nextInt draws; Status::resetGame clears the history.
+Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 
 def extract_lounge_contacts(mach, arrival):
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -289,3 +305,30 @@ MAC_ALTERNATE = {'contact_count': [-237787, 266, '__text', '8ad02494ad714614604a
                              36,
                              '__text',
                              'dea270e117047e8dde86e9f880b82a78524ca1b1104df04ce9a1c1bc45bc371b']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'lounge_contact_count': ('_ZN9Generator12createAgentsEP7Station', 30, 202, 'sha256:85df72e4563c2c230d3d4381eb62e603ad7acb69748a4b0c7b3db842ff405d13'),
+           'lounge_contact_population': ('_ZN9Generator12createAgentsEP7Station', 968, 116, 'sha256:269529bb04d0499e5d6f300082fa59186dea736dd969a221915e6ff2227dbb5a'),
+           'lounge_contact_hostile_replacement': ('_ZN9Generator12createAgentsEP7Station', 1084, 300, 'sha256:1b780825d98e0e06f1863ef5b672f27dc80df77e18cf7845e1c7802e1438fbf8'),
+           'lounge_contact_hostile_order': ('_ZN9Generator12createAgentsEP7Station', 1148, 16, '02000000030000000000000001000000', 'literal', 0),
+           'lounge_contact_identity': ('_ZN9Generator11createAgentEP7Station', 32, 320, 'sha256:63166e07774bba7a7e2091de75958aab27bdd61f677c3256100f2eae2f974a56'),
+           'lounge_contact_merchant': ('_ZN9Generator11createAgentEP7Station', 548, 238, 'sha256:caf1921ec97783fa514903296bd9aaae6940314bb08f6f7eb584eca705739b58'),
+           'lounge_contact_name_generation': ('_ZN7Globals13getRandomNameEib', 0, 388, 'sha256:5378d68e3079a424961128838b611df42d3072ad0d47f6178ef67c5739e5da65'),
+           'lounge_contact_name_separator': ('_ZN7Globals13getRandomNameEib', 210, 2, '2000', 'literal', 0),
+           'lounge_contact_name_loader': ('_ZN8FileRead15loadNamesBinaryEibb', 0, 932, 'sha256:ca845011f1cc893bc31ee1a9170bad3225c2d5c4178921287213835de97c1d10'),
+           'lounge_contact_name_paths': ('_ZN8FileRead15loadNamesBinaryEibb', 68, 267, 'sha256:1b4f5dd67009d982d4438bb77fbd554ce0202d57ee41f3e2402313a3eefb2315', 'literal', 0),
+           'lounge_contact_portrait_generation': ('_ZN12ImageFactory10createCharEbi', 0, 128, 'sha256:fe120cbcfe9f1b39bdcda74da62d770c71d5c3856526257a55285a892c52acda'),
+           'lounge_contact_portrait_counts': ('_ZN12ImageFactory10createCharEbi', 38, 176, 'sha256:6248524621eab89d14a32ce8da531f261eb10e9fb1e8f14f4f93b2bf7e5e7efe', 'literal', 0),
+           'lounge_contact_destination_selection': ('_ZN9Generator20generateStationIndexEP5ArrayIP11SolarSystemEi', 0, 420, 'sha256:fb3dbd45737b90e020121d3e2a1443824abfdc47bf34eef2762228180e1d9837'),
+           'lounge_contact_destination_exclusions': ('_ZN9Generator20generateStationIndexEP5ArrayIP11SolarSystemEi', 12, 208, 'sha256:7b025c6051eb6ba4bb48b71edf50703d699cec98fa6673dc87d198053665e81e', 'literal', 0),
+           'lounge_contact_initial_mission_selection': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 0, 284, 'sha256:bbf3c5bbd32c828c3dedccfb06bcaa7666e0783083fbb0a1285ff0ab6085f6a9'),
+           'lounge_contact_auxiliary_amount': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 1748, 198, 'sha256:74fd168664a84aca315d83367b4c191f6a88a29b4906909d0de25ea4d6afb486'),
+           'lounge_contact_hostility': ('_ZN8Standing7isEnemyEi', 0, 118, 'sha256:e48dc557d39a1d28df8cd83c0ffd928da627c0a2e569b8c51369bd5c27b71ce0'),
+           'lounge_contact_source_random': ('_ZN11AbyssEngine8AERandom7nextIntEi', 0, 152, 'sha256:dbdc6d398b2d2ed41a342376d8af938c332ab948c9bb120d02b25f85d1d46e1f'),
+           'lounge_contact_item_cache': ('_ZN4Item4initEv', 0, 78, 'sha256:2958dfb1982a848d6f960cdb302d8f062ef241c5d66ccd336fcb72ca1fc2176e'),
+           'lounge_contact_item_arrays': ('_ZN4ItemC2EP5ArrayIiES2_S2_', 0, 22, 'd0b502af044604f1280c8ce80e007af7bae92046d0bd'),
+           'lounge_contact_system_faction': ('_ZN11SolarSystem7getRaceEv', 0, 4, 'c0697047'),
+           'lounge_contact_system_loader_fields': ('_ZN8FileRead17loadSystemsBinaryEv', 130, 74, 'sha256:0ec9c7da225f138f4b61b294b58f0528cfb56eeb8b245db160a83fa31d611749'),
+           'lounge_contact_system_loader_arguments': ('_ZN8FileRead17loadSystemsBinaryEv', 536, 56, 'sha256:2f75c29217f6cdc21de19dacd87c7ae8545a57758fb11510255fe272f99f225e'),
+           'lounge_contact_system_constructor': ('_ZN11SolarSystemC2EiN11AbyssEngine6StringEibiiiiiiPiP5ArrayIiES5_S5_', 0, 184, 'sha256:639c7c82d968338fcc85b4f1ebdd98184f3dd075af953f6438614dd93078f7f7'),
+           'lounge_contact_initial_history': ('_ZN6Status9resetGameEv', 416, 22, 'd8f85010086830b1496800220023ca5401338342fbd3')}
