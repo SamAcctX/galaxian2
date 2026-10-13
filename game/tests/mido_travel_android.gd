@@ -71,7 +71,8 @@ func verify() -> void:
 
 ## [key, values, spans] of each ported extension in chain order.
 func extensions() -> Array:
-	return [["contract_completion",Definitions.ContractStory.MAC_VALUES,Definitions.ContractStory.ANDROID_SPANS]]
+	return [["contract_completion",Definitions.ContractStory.MAC_VALUES,Definitions.ContractStory.ANDROID_SPANS],
+		["convoy_capture",Definitions.ConvoyCapture.MAC_VALUES,Definitions.ConvoyCapture.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:
 	var result:={}
