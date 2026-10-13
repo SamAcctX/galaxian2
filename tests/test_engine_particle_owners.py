@@ -98,3 +98,59 @@ class EngineParticleOwnerTests(unittest.TestCase):
             self.assertFalse(reader.extract_engine_particle_owners(mach, arrival, engines))
         with patch.multiple(reader, LAYOUTS=proofs, MAC_ALTERNATE=proofs):
             self.assertFalse(reader.extract_engine_particle_owners(mach, arrival, engines))
+
+
+def android_thumb(hex_code):
+    import capstone
+    decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+    return [(i.mnemonic, i.op_str) for i in decoder.disasm(bytes.fromhex(hex_code), 0)]
+
+
+class AndroidEngineParticleOwnerTests(unittest.TestCase):
+    def engines(self):
+        from gof2_content import engine_particles
+        provenance = {key: {'offset': 1, 'bytes': 1, 'anchor': 0} for key in engine_particles.ANDROID}
+        return dict(copy.deepcopy(engine_particles.ANDROID_VALUES), provenance=provenance)
+
+    def extract(self, lib, engines=None):
+        return reader.extract_engine_particle_owners(lib, {}, self.engines() if engines is None else engines)
+
+    def test_android_proofs(self):
+        from android_fixture import layout_library, verify_android_proof
+        from gof2_content.android_library import AndroidLibrary
+        from test_arrival_staging import roomy_layouts
+        with roomy_layouts():
+            verify_android_proof(self, reader, self.extract)
+            image, layout, _ = layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            lib = AndroidLibrary(image)
+            data = self.extract(lib)
+            data['opening_ship']['nozzle_count'] = 1
+            self.assertEqual(reader.ANDROID_VALUES['opening_ship']['nozzle_count'], 3)
+            engines = self.engines()
+            without_opening = {k: v for k, v in engines.items() if k != 'opening_ship'}
+            other_preset = copy.deepcopy(engines); other_preset['preset']['size'] = 1.0
+            missing_span = copy.deepcopy(engines); del missing_span['provenance']['family_table']
+            cases = {'no opening': without_opening, 'other preset': other_preset, 'missing span': missing_span,
+                     'no provenance': {k: v for k, v in engines.items() if k != 'provenance'}, 'empty': {}, 'none': None,
+                     'mac values': dict(copy.deepcopy(NOZZLES), provenance=engines['provenance'])}
+            for name, value in cases.items():
+                self.assertEqual(reader.extract_engine_particle_owners(lib, {}, value), {}, name)
+
+    def test_android_switches(self):
+        rows, values = reader.ANDROID, reader.ANDROID_VALUES
+        def flag(key):
+            return next(int(op.split('#')[1]) for m, op in android_thumb(rows[key][3]) if m == 'movs' and op.startswith('r1,'))
+        self.assertEqual(bool(flag('entry_disable')), values['entry_engine_enabled'])
+        self.assertEqual(bool(flag('mining_capture_disable')), values['mining_capture_engine_enabled'])
+        for key in ['mining_cancel_enable', 'mining_release_enable0', 'mining_release_enable1', 'drill_stop_enable']:
+            self.assertEqual(bool(flag(key)), values['mining_release_engine_enabled'], key)
+        self.assertEqual(bool(flag('death_disable')), values['death_engine_enabled'])
+        self.assertEqual(bool(flag('revive_enable')), values['revive_engine_enabled'])
+        # The constructor stores 1 (r5) to the drawn, visible and engine flags and 0 (r6) to the hidden flag.
+        stores = android_thumb(rows['player_initial_flags'][3])
+        self.assertEqual(stores, [('strb.w', 'r5, [r4, #0x309]'), ('strb.w', 'r5, [r4, #0x32e]'), ('strb.w', 'r5, [r4, #0x32f]'), ('strb.w', 'r6, [r4, #0x32d]')])
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'engine_particle_owner_definitions.gd', values='VALUES')

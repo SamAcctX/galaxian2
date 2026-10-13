@@ -3,11 +3,25 @@
 The original nozzle art and emitter presets remain in engine_particles. This
 reader recognizes bounded manager and flag declarations; only data and source
 extents leave the reader, never executable bytes or a boost implementation.
+
+Android: ParticleSystemManager's constructor starts it updated and drawn
+(flags 0x101); the PlayerEgo constructor enables the engine, shows the ship
+and clears the first-person hiding; Level::update feeds the material-20090
+manager the player position each frame and ParticleSystemManager::update
+recomputes emitter velocities every 10 ms; Level::render draws it
+(ParticleSystemManager::render3d). PlayerEgo::setExhaustVisible sets the
+engine flag, the manager's emit flag and each nozzle system's emission
+(enableSystemEmit, IParticleSystem::enableEmit); hideShipForFirstPerson
+CameraView and setVisible gate only the manager. The LevelScript constructor,
+MGame::updateJumpScene, PlayerEgo::approachAsteroid and explode turn the
+engine off, dockToAsteroid (cancel), dockToDockingPoint, revive and
+stopMining on. Values equal the Mac ones.
 """
 import copy
 
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .engine_particles import VALUES as NOZZLES, OPENING_SHIP, OPENING_SPANS
+from .engine_particles import ANDROID as ANDROID_NOZZLES, ANDROID_VALUES as ANDROID_NOZZLE_VALUES
 from .station_exterior import declaration_bytes
 
 
@@ -191,6 +205,13 @@ MAC_ALTERNATE = {'manager_initial_flags': [509866,
 
 
 def extract_engine_particle_owners(mach, arrival, engines):
+    if mach.architecture == 'android-armv7':
+        try:
+            if {k: v for k, v in engines.items() if k != 'provenance'} != ANDROID_NOZZLE_VALUES: return {}
+            if not set(ANDROID_NOZZLES) <= engines['provenance'].keys(): return {}
+        except (AttributeError, KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if proof else {}
     if mach.architecture != 'x86_64':
         return {}
     try:
@@ -220,3 +241,31 @@ def extract_engine_particle_owners(mach, arrival, engines):
         return result
     except (AttributeError, KeyError, TypeError, ValueError, IndexError, OverflowError):
         return {}
+
+
+# Android: VALUES with the opening ship's three nozzles; spans inside named functions.
+ANDROID_VALUES = copy.deepcopy({**VALUES, 'opening_ship': {key: OPENING_SHIP[key] for key in ('ship_id', 'nozzle_count', 'first_preset')}})
+ANDROID = {# The manager's initial flags, the player's engine and visibility flags, the world update and draw.
+           'manager_initial_flags': ('_ZN21ParticleSystemManagerC2EPN11AbyssEngine11PaintCanvasEN16ParticleSettings9CameraSetEtbtb', 0, 142, 'sha256:95e02fc1e27d5e9ea6e5f0809950d6179a9bed9c16d4c1f897a2f108e7df2cd7'),
+           'player_constructor': ('_ZN9PlayerEgoC2EP6Player', 0, 2256, 'sha256:32e47e8e7a4022ce6a08268493b8fcf1ad21866a22aa6cc97fd1cb530435f7bc'),
+           'player_initial_flags': ('_ZN9PlayerEgoC2EP6Player', 454, 16, '84f8095384f82e5384f82f5384f82d63'),
+           'world_update': ('_ZN5Level6updateExb', 512, 48, 'sha256:96b40fca9ba046244db7cc9c68e4a9a489ba493f9a75057fffbcfe337fb53cb3'),
+           'world_draw': ('_ZN5Level6renderEi', 300, 10, 'd4f8800008b198f75ee9'),
+           'manager_update': ('_ZN21ParticleSystemManager6updateEx', 0, 248, 'sha256:c105d54b0c73830affeda41a25a59d87c10ae7b5400f775df6476a4a48aaf388'),
+           'manager_draw': ('_ZN21ParticleSystemManager8render3dEv', 0, 36, 'sha256:bc95010f8ee3d6a62b00960981a1118e6d23005f66e5641f3d1c561e6884c2bc'),
+           # The engine switch, the per-system emission and the hiding gates.
+           'engine_enable': ('_ZN9PlayerEgo17setExhaustVisibleEb', 0, 84, 'sha256:3aa21ee5a87dea69c03ceff517355862a3ecac8713cdc18c2f9aa51bef3f0be3'),
+           'manager_emitting': ('_ZN21ParticleSystemManager16enableSystemEmitEib', 0, 42, 'sha256:ee288145a3c05e19abc1a59cc18f7feaa7491b9f94a222d1775febdd3a602222'),
+           'emitting_flag': ('_ZN15IParticleSystem10enableEmitEb', 0, 18, '012904bf027b002a01d10022026601737047'),
+           'player_hidden': ('_ZN9PlayerEgo32hideShipForFirstPersonCameraViewEb', 0, 42, 'sha256:9c3c4ffe0e15798975005c65f9544e114148ab2139a10ae2bd1fa451823b60fd'),
+           'player_visible': ('_ZN9PlayerEgo10setVisibleEb', 0, 12, '80f82e1380f809132af199bc'),
+           # setExhaustVisible(false / true) call sites.
+           'entry_disable': ('_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera', 386, 12, '50460cf7c2e900210cf7d6ee'),
+           'arrival_disable': ('_ZN5MGame15updateJumpSceneEv', 466, 16, 'a06d0021bff67aeaa06d0021bbf66aec'),
+           'mining_cancel_enable': ('_ZN9PlayerEgo14dockToAsteroidEP8KIPlayerP5Radar', 108, 12, '20460121c4f8c461bff7aeed'),
+           'mining_capture_disable': ('_ZN9PlayerEgo16approachAsteroidEP3HudiP5Radar', 542, 10, '584600210025bff768ec'),
+           'mining_release_enable0': ('_ZN9PlayerEgo18dockToDockingPointEP8KIPlayerP5Radar', 488, 12, '58460121cbf85863bff71aea'),
+           'mining_release_enable1': ('_ZN9PlayerEgo18dockToDockingPointEP8KIPlayerP5Radar', 638, 12, '58460121cbf8c451bff7d0e9'),
+           'death_disable': ('_ZN9PlayerEgo7explodeEv', 162, 12, '20460021bde8b0402bf1d7b8'),
+           'revive_enable': ('_ZN9PlayerEgo6reviveEv', 118, 8, '20460121bdf7f0ec'),
+           'drill_stop_enable': ('_ZN9PlayerEgo10stopMiningEv', 406, 8, '20460121bdf7acea')}
