@@ -50,7 +50,8 @@ func verify_source(content: String, pack: String, texture_pack: String) -> void:
 	var scenery_start: Dictionary = session.snapshot().scenery
 	if not bindings.opening_actors.npc_initialization.get("world_initialization",{}).is_empty():
 		check(not scenery_start.world_initialization.is_empty(),"Session omitted complete world initialization")
-		check(scenery_start.random_state.state==(203124760899757 if library.manifest.profile.edition=="ios-hd" else 184786094478354),"Session began with the wrong world RNG boundary")
+		# iOS and Android populate 40 + random(40) asteroids, the Mac 80 + random(80).
+		check(scenery_start.random_state.state==(203124760899757 if library.manifest.profile.edition in ["ios-hd","android-hd"] else 184786094478354),"Session began with the wrong world RNG boundary")
 		check(scenery_start.random_state==scenery_start.world_initialization.random_state,"Session did not adopt initialized world RNG")
 	else:
 		check(scenery_start.world_initialization.is_empty(),"Legacy session fabricated world initialization")
@@ -80,7 +81,7 @@ func verify_source(content: String, pack: String, texture_pack: String) -> void:
 		check(not session.step(100000) and session.snapshot()==pending_destruction,"Legacy unsupported destruction advanced the opening timeline")
 		session._scenery._bodies=intact_bodies
 
-	check(scenery_start.objects.size()==(50 if library.manifest.profile.edition=="ios-hd" else 130),"Opening lost edition-local scenery count")
+	check(scenery_start.objects.size()==(50 if library.manifest.profile.edition in ["ios-hd","android-hd"] else 130),"Opening lost edition-local scenery count")
 
 	check(session.radio_resources.line_counts.size()==23,"Missing opening radio timing layout")
 	check(session.step(100000),session.error)

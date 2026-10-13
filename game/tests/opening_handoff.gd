@@ -45,7 +45,8 @@ func verify_profile(content: String,pack: String):
 			packet=handoff.prepare(bindings,cat,opening)
 			var scenery:=Scenery.new()
 			check(scenery.configure_arrival(bindings,cat,packet.player_cache,packet.entry_conditions,1789100000) and scenery.complete_world_initialization(bindings,cat),scenery.error)
-			check(scenery.snapshot().objects.size()==130 and scenery.arrival_motion_construction().actor_id==0,"Actual handoff did not initialize the rescue field and actor")
+			# 80 + random(80) = 130 rescue asteroids on the Mac, 40 + random(40) = 50 on Android (scenery_population_vectors.json, station 78).
+			check(scenery.snapshot().objects.size()==(50 if bindings.source_architecture=="android-armv7" else 130) and scenery.arrival_motion_construction().actor_id==0,"Actual handoff did not initialize the rescue field and actor")
 	var valid:=fixture(bindings,player,3)
 	for scenario in ["early","missing_cache","foreign_cache","live_dead","duplicate","totals","attribution","radio","foreign_world","loadout"]:
 		var bad:=valid.duplicate(true)

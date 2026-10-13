@@ -15,6 +15,7 @@ const World=preload("res://src/simulation/opening_world_initialization.gd")
 const NPC=preload("res://src/simulation/opening_npc_construction.gd")
 const Route=preload("res://src/simulation/npc_route.gd")
 const Numbers=preload("res://src/simulation/combat_vitals.gd")
+const Random=preload("res://src/simulation/seeded_random.gd")
 const CONDITIONS={"companions_empty":true,"location_match":false,"special_placement":false}
 var failures:=0
 var checks:=0
@@ -56,9 +57,23 @@ func verify(args: PackedStringArray):
 		check(packet==untouched and state.departure==packet and not state.activated and not state.entry_released,"Detached preparation changed the packet or activated gameplay")
 		check(state.campaign_cursor==4 and state.location.campaign_cursor==4 and state.location.ship_id==0 and state.player.campaign_cursor==4,"Second flight lost its explicit cursor or starter ship")
 		check(state.departure.progress.rank==int(kills>0) and state.departure.progress.rank_score==4+3*kills and state.departure.mission.source_parameter==25,"Second flight lost earned progress or its full-hold objective")
-		check(state.scenery.departure_population.count==130 and state.scenery.departure_population.center==Vector3(12298,36830,77237) and state.scenery.departure_population.campaign_cursor==4,"Second trip changed source scenery or retained the first cursor")
-		check(world.input_random_state.state==int(GOLDEN[0].input_state) and world.random_state.state==int(GOLDEN[0].world_state),"Full world differs from the verified field-to-NPC boundary")
-		check(state.camera_input_random_state==world.random_state and state.random_state.state==int(GOLDEN[0].camera_state) and state.camera_offset==vec(GOLDEN[0].camera_offset),"Camera omitted the pirate or weapon draws")
+		# Android seeds 40 + random(40) = 50 asteroids at station 78 (scenery_population_vectors.json)
+		# and its field ends in the input of the 40 + random(40) opening world golden
+		# (opening_world_initialization.gd FIXTURES[1]); GOLDEN covers the Mac's 130.
+		var android: bool=header.architecture=="android-armv7"
+		check(state.scenery.departure_population.count==(50 if android else 130) and state.scenery.departure_population.center==Vector3(12298,36830,77237) and state.scenery.departure_population.campaign_cursor==4,"Second trip changed source scenery or retained the first cursor")
+		if android:
+			var direct:=World.new();var expected:={}
+			if direct.configure_departure(bindings,cat,packet.player_cache,CONDITIONS):expected=direct.generate({"state":280936762154123})
+			check(world.input_random_state.state==280936762154123 and not expected.is_empty() and world.random_state==expected.random_state,"Full world differs from the verified field-to-NPC boundary")
+			var random:=Random.new();random.restore(world.random_state)
+			var offset:=Vector3(500+random.next_int(2000),500+random.next_int(2000),9000)
+			if random.next_int(2)==0:offset.x=-offset.x
+			if random.next_int(2)==0:offset.y=-offset.y
+			check(state.camera_input_random_state==world.random_state and state.random_state==random.snapshot() and state.camera_offset==offset,"Camera omitted the pirate or weapon draws")
+		else:
+			check(world.input_random_state.state==int(GOLDEN[0].input_state) and world.random_state.state==int(GOLDEN[0].world_state),"Full world differs from the verified field-to-NPC boundary")
+			check(state.camera_input_random_state==world.random_state and state.random_state.state==int(GOLDEN[0].camera_state) and state.camera_offset==vec(GOLDEN[0].camera_offset),"Camera omitted the pirate or weapon draws")
 		check(state.camera_view.eye.is_equal_approx(state.player_pose*state.camera_offset) and state.camera_view.look==state.player_pose.origin,"Second camera was not transformed by its player pose")
 		var scenery: RefCounted=flight.scenery_owner();var route: RefCounted=scenery.initial_npc_route(0)
 		check(route!=null and route.snapshot()==world.npc_construction.actors[0].route,"Second pirate lost its generated native route")

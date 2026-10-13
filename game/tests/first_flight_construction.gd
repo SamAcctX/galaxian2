@@ -77,8 +77,10 @@ func verify(args: Array):
 		check(state.player_yaw_units==1600*expected_yaw and state.yaw_random_state==random.snapshot(),"Yaw consumed a wrong random stream")
 		var radians:=float(state.player_yaw_units)/65536.0*6.2831854820251465
 		check(state.player_pose.basis.is_equal_approx(Basis(Vector3.UP,radians)),"Initial yaw was dropped or used as degrees")
-		check(state.scenery.objects.size()==130 and state.scenery.center==Vector3(12298,36830,77237),"Departure did not use its ordinary station-seeded field")
-		check(state.scenery.bodies.objects.size()==130,"First field lacks source collision bodies")
+		# Station 78 seeds 80 + random(80) = 130 asteroids on the Mac, 40 + random(40) = 50 on Android (scenery_population_vectors.json).
+		var field_count:=50 if android else 130
+		check(state.scenery.objects.size()==field_count and state.scenery.center==Vector3(12298,36830,77237),"Departure did not use its ordinary station-seeded field")
+		check(state.scenery.bodies.objects.size()==field_count,"First field lacks source collision bodies")
 		var world: Dictionary=state.scenery.world_initialization
 		check(world.campaign_cursor==2 and world.npc_construction.actors.is_empty() and world.weapon_effects.is_empty(),"First field recreated the rescue NPC or its effects")
 		check(world.input_random_state==world.random_state and state.camera_input_random_state==world.random_state,"Empty NPC population consumed random draws")
@@ -91,7 +93,9 @@ func verify(args: Array):
 		check(state.camera_view.eye.is_equal_approx(state.player_pose*offset) and state.camera_view.look==state.player_pose.origin,"Camera offset was not transformed by player pose")
 		var golden: Dictionary=GOLDEN[credit]
 		check(state.environment_object.position==Vector3(golden.position[0],golden.position[1],golden.position[2]) and state.before_yaw_random_state.state==int(golden.before_yaw_state) and state.yaw_random_state.state==int(golden.yaw_state),"Entry differs from independently calculated source vector")
-		check(state.camera_view.eye.distance_to(Vector3(golden.eye[0],golden.eye[1],golden.eye[2]))<0.005,"Source-coordinate camera transform differs from the numeric oracle")
+		# The oracle eye follows the Mac's 130-asteroid field draws; Android's smaller field
+		# shifts them, and its camera draws and transform are checked against the field state above.
+		if not android:check(state.camera_view.eye.distance_to(Vector3(golden.eye[0],golden.eye[1],golden.eye[2]))<0.005,"Source-coordinate camera transform differs from the numeric oracle")
 		check(state.camera_view.pose.basis.is_equal_approx(state.camera_view.pose.basis.orthonormalized()),"Departure camera is not a proper view")
 		check(state.camera_shot.mode=="follow" and state.camera_shot.target=="player","Entry selected a fixed rather than ordinary follow mode")
 		var camera: RefCounted=flight.camera_owner();var scene:={"base_content_id":state.base_content_id,"binding_id":state.binding_id,"player_pose":state.player_pose}

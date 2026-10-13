@@ -71,7 +71,8 @@ func verify_source(content: String, pack: String) -> void:
 	state=advance(state,1,false)
 	if state.is_empty():return
 	# Filled with an independent integer LCG fixture, not the native RNG helper.
-	var expected_rng := 31345831516323 if library.manifest.profile.edition=="ios-hd" else 50048063809760
+	# iOS and Android populate 40 + random(40) asteroids, the Mac 80 + random(80): the world RNG prefix differs.
+	var expected_rng := 31345831516323 if library.manifest.profile.edition in ["ios-hd","android-hd"] else 50048063809760
 	check(state.scenery.snapshot().random_state.state==expected_rng,"Holding refresh changed ordered RNG draws")
 	check_split_frame(state.timeline)
 	var activated := false;var moving_frames := 0;var shots := 0;var radio_boundary := false
@@ -130,8 +131,8 @@ func verify_source(content: String, pack: String) -> void:
 	check(boundary.camera.shot.phase==4 and activated and radio_boundary and moving_frames>3,"Frame run missed activation, motion or final handoff")
 	# Edition-specific world population consumes a different initial RNG prefix.
 	# With the corrected moving target this fixed one-line-radio fixture reaches
-	# the narrow firing cone for one Mac actor and no iOS actor at the handoff.
-	var expected_shots := (0 if library.manifest.profile.edition=="ios-hd" else 1) if scripted_motion else 3
+	# the narrow firing cone for one Mac actor and no iOS or Android actor at the handoff.
+	var expected_shots := (0 if library.manifest.profile.edition in ["ios-hd","android-hd"] else 1) if scripted_motion else 3
 	check(shots==expected_shots,"Final handoff firing geometry changed")
 	check(boundary.radio.finished.slice(0,9).all(func(done):return done) and boundary.radio.started.slice(9).all(func(done):return not done),"Unsupported campaign progress was generated")
 	var frozen := snapshots(state)

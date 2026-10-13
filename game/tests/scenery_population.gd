@@ -53,7 +53,8 @@ func check_profile(content: String, pack: String) -> void:
 		check(not owner.configure(bindings),"Legacy pack invented a scenery count")
 		print(library.manifest.profile.edition,": legacy population remains unavailable")
 		return
-	var base := 40 if library.manifest.profile.edition=="ios-hd" else 80
+	# iOS and Android populate 40 + random(40) asteroids, the Mac 80 + random(80).
+	var base := 40 if library.manifest.profile.edition in ["ios-hd","android-hd"] else 80
 	check(bindings.scenery_population.count_base==base and bindings.scenery_population.count_bound==base,"Edition-specific population changed")
 	check(owner.configure(bindings),owner.error)
 	check_vectors(owner,base,base)
