@@ -1,9 +1,21 @@
-"""Original Sahi selected-arrival briefing. No encounter completion is declared. Constant declarations only."""
+"""Original Sahi selected-arrival briefing. No encounter completion is declared. Constant declarations only.
+
+Android: Status::nextCampaignMission case 23 sets the course (system 9, station
+48) and creates Mission(4, 0, 48); MGame::OnUpdate opens MGame::dialogueEvent
+after 5001 ms; DialogueWindow's tables hold the four briefing lines (Android
+text ids 1913-1916) and no result lines, Globals::getDialogueSoundId their
+voices; Level::init populates a story mission's world through
+Level::createCampaignMission. Values are the Mac 1.0.7 ones (MAC_VALUES).
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 
 def extract_sahi_visit(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(MAC_VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -227,3 +239,27 @@ MAC_ALTERNATE = {'sahi_selection': [857597,
                  12,
                  '__text',
                  '7b6ac350712c939cda20365db5ee194531c65cd25ddc1ed6e8302f99bbbfc162']}
+
+ANDROID = {# Status::departStation selects the story mission; MGame::dialogueEvent opens its briefing.
+           'sahi_selection': ('_ZN6Status13departStationEP7Station', 0, 1072, 'sha256:b7432b338855a0a259aa2b3d0d678bb305ea5293e9903e68114efafe3b6170d6'),
+           'sahi_briefing_start': ('_ZN5MGame13dialogueEventEv', 0, 392, 'sha256:805e9bed6df0875e75c5f64613547a6da41fe7c7d904341c2e32f359ae6baee3'),
+           'sahi_briefing_caller': ('_ZN5MGame8OnUpdateEv', 10072, 68, 'sha256:f59ab7bdc1b81ef90c370633ae334fdb13f3a9aa680a7dfc565f89a546b9ecb9'),
+           'sahi_empty_mission': ('_ZN7Mission7isEmptyEv', 0, 14, '81680020b1f1ff3f08bf01207047'),
+           'sahi_story_flag': ('_ZN7Mission17isCampaignMissionEv', 0, 10, '006d002818bf01207047'),
+           'sahi_briefing_pending': ('_ZN7Mission9isVisibleEv', 0, 6, '90f860007047'),
+           'sahi_population_selection': ('_ZN5Level4initEv', 906, 234, 'sha256:49bd1286bfad5249b65f4bdb574bb0237a2fa4f860aafe407bd3963d35801b21'),
+           'sahi_dialogue_offsets': ('_ZN14DialogueWindow4initEv', 42, 48, 'sha256:72ef1fa454f0a2705c7e19ce77336919a12347a5bc09358f5564ce724a951a0e'),
+           'sahi_dialogue_text': ('_ZN14DialogueWindow11loadContentEv', 0, 3868, 'sha256:4848845d1a3eaed3723c28a67221b83f09cd90f3222aabea7c724a00cc5da7b7'),
+           'sahi_voice_lookup': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 0, 34, 'sha256:9ba804c27b6b2b9e9d4cc439e029afb2dbdb3a6cd0280a652c0d70affd78edca'),
+           'sahi_mission_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           'sahi_controller_ready': ('_ZN11LevelScript17startSequenceOverEv', 0, 6, '90f821007047'),
+           'sahi_has_briefing': ('_ZN14DialogueWindow19hasBriefingDialogueEi', 0, 32, 'sha256:c6a83b54925d2f81e50470392e0b5454589fee8b54394c2dcf3d02728b816bb3'),
+           'sahi_count_selector': ('_ZN14DialogueWindow6lengthEv', 0, 104, 'sha256:0d158e749b8801e6a7a4c8a92bf77c6c50e0322be4eec0c21f8f7534721ed996'),
+           'sahi_factory_dispatch': ('_ZN6Status19nextCampaignMissionEb', 114, 4, 'f0028101'),
+           'sahi_factory': ('_ZN6Status19nextCampaignMissionEb', 1572, 38, 'sha256:c5d4ede29e9b3791a739ddf6c523eece7e2fc66aa37ca1f9e4af0c502b278977'),
+           'sahi_briefing_counts': ('_ZN14DialogueWindow19hasBriefingDialogueEi', 10, 100, 'sha256:3e114520af6bec86fd6a3800c3b1097bea66a21c33f7873a2b19b7e74fee89e2', 'literal', 0),
+           'sahi_result_counts': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 100, 'sha256:c22ed0d55bd7a16f8bdcf9dc8e12b43a1de1515093391afd8ba73facfe4a820a', 'literal', 0),
+           'sahi_briefing_events': ('_ZN14DialogueWindow11loadContentEv', 128, 32, 'sha256:babf7d1f526f64d5f7e09c42114807ca09fbb5b892433537353accc690dc5f5d', 'literal', 152),
+           'sahi_briefing_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 32, 'sha256:769d724173edf3b033d5f2c07d3b86332a9ad00895a03dfaba2292ed91af28a4', 'literal', 48),
+           'sahi_completed': ('_ZN7Mission6hasWonEv', 0, 4, '40787047'),
+           'sahi_failed': ('_ZN7Mission9hasFailedEv', 0, 4, '00787047')}
