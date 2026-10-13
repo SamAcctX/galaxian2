@@ -2802,6 +2802,7 @@
     "tests/test_full_hold_destruction.py",
     "tests/test_full_hold_flight.py",
     "tests/test_full_hold_pirate.py",
+    "tests/test_full_hold_story.py",
     "tests/test_gakkrr_visit.py",
     "tests/test_game_install.py",
     "tests/test_game_over_presentation.py",
