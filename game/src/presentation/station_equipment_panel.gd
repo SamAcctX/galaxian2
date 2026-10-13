@@ -323,9 +323,9 @@ func configure(library: RefCounted, bindings: RefCounted, visuals: RefCounted=nu
 		if metadata.is_empty():return reject(library.error)
 		var region: Dictionary=Atlas.new().region(metadata,0)
 		if region.is_empty() or region.size!=Vector2i(pixels.get_size()):return reject("Hangar item atlas metadata disagrees with imported pixels")
-		# This additional Hangar mapping is verified on the two Mac layouts.
-		# Other profiles retain the existing native row fallback.
-		if library.manifest.profile.edition=="mac-full-hd":
+		# This additional Hangar mapping is verified on the two Mac layouts and
+		# Android (the same interface aliases). Other profiles retain the native row fallback.
+		if library.manifest.profile.edition in ["mac-full-hd","android-hd"]:
 			var rules: Dictionary=bindings.mido_travel.map.ui
 			var interface_resource: String=rules.atlas_resources[str(int(rules.texture_id))]
 			var interface_metadata: PackedByteArray=library.read_resource(interface_resource,Atlas.MAX_BYTES)
