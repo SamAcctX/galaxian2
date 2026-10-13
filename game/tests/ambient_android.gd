@@ -3,6 +3,7 @@ extends SceneTree
 ## in their own functions over the Android local travel (no imported content).
 const Travel=preload("res://src/content/mido_travel_definitions.gd")
 const Population=preload("res://src/content/ambient_population_definitions.gd")
+const Combat=preload("res://src/content/ambient_combat_definitions.gd")
 var checks:=0
 var failures:=0
 var source_bytes:=8000000
@@ -22,13 +23,17 @@ func verify() -> void:
 	var population:=android(Population.VALUES,Population.ANDROID_SPANS)
 	common("population",func(data,arch,staging,parent):return Population.validate(data,source_bytes,arch,staging,parent),population,travel,mac_travel,"ambient_population_counts")
 	mac("population",func(data,arch,staging,parent):return Population.validate(data,source_bytes,arch,staging,parent),Population.VALUES,Population.MAC_SPANS,mac_travel)
+	# The population is the same on both editions.
+	var combat:=android(Combat.VALUES,Combat.ANDROID_SPANS)
+	common("combat",func(data,arch,staging,parent):return Combat.validate(data,source_bytes,arch,staging,parent),combat,population,{},"ambient_combat_factory")
+	mac("combat",func(data,arch,staging,parent):return Combat.validate(data,source_bytes,arch,staging,parent),Combat.VALUES,Combat.MAC_SPANS,population)
 
 ## Acceptance, other editions, the staging and the proofs of one validator.
-func common(name: String,validate: Callable,data: Dictionary,parent: Dictionary,mac_parent: Dictionary,span: String) -> void:
+func common(name: String,validate: Callable,data: Dictionary,parent: Dictionary,foreign_parent: Dictionary,span: String) -> void:
 	check(validate.call(data,"android-armv7",arrival,parent).is_empty(),"Android %s was rejected"%name)
 	check(not validate.call(data,"x86_64",arrival,parent).is_empty(),"Android %s proofs passed as Mac layouts"%name)
 	check(not validate.call(data,"armv7",arrival,parent).is_empty(),"Android %s proofs passed as iOS layouts"%name)
-	check(not validate.call(data,"android-armv7",arrival,mac_parent).is_empty(),"Android %s accepted a Mac parent"%name)
+	check(not validate.call(data,"android-armv7",arrival,foreign_parent).is_empty(),"Android %s accepted a foreign parent"%name)
 	check(not validate.call(data,"android-armv7",{"provenance":arrival.provenance},parent).is_empty(),"Android %s accepted a foreign arrival"%name)
 	check(not validate.call(data,"android-armv7",{"scope":"rescue_choreography","provenance":{}},parent).is_empty(),"Android %s accepted an unproven arrival"%name)
 	var shifted: Dictionary=data.duplicate(true);shifted.provenance[span].offset+=1
