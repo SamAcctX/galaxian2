@@ -219,6 +219,7 @@ static func validate(data: Variant, source_bytes: int, arch: String, arrival: Di
 		if data.has("free_lifecycle"):android_spans.merge(FreeLifecycle.ANDROID_SPANS)
 		if data.has("free_flight"):android_spans.merge(FreeFlight.ANDROID_SPANS)
 		if data.has("free_arrival"):android_spans.merge(FreeArrival.ANDROID_SPANS)
+		if data.has("gate_environment"):android_spans.merge(GateEnvironment.ANDROID_SPANS)
 		if data.has("kappa_return"):android_spans.merge(KappaReturn.ANDROID_SPANS)
 		if data.has("vossk_traffic"):android_spans.merge(Vossk.ANDROID_SPANS)
 		if data.has("vossk_lod"):android_spans.merge(VosskLOD.ANDROID_SPANS)

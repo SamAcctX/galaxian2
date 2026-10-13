@@ -7,6 +7,9 @@ const SPANS = {"gate_zero_origin":[-46492,30],"gate_seed":[-39500,139],"gate_slo
 # Native composition.
 const MAC_SPANS = {"gate_zero_origin":[-46492,30],"gate_seed":[-39500,139],"gate_slots":[-39048,98],"gate_placement":[-38940,351],"gate_resources":[-38589,332],"gate_children_lod":[-39361,313],"gate_constructor":[639880,329],"gate_system_loader":[-679366,1100],"gate_system_constructor":[734764,236],"gate_station_predicate":[735732,44],"gate_type_getter":[735296,10],"gate_rotation":[1235426,480],"gate_vector_transform":[1234546,240],"gate_arrival_selection":[-43078,561],"gate_position_getter":[641808,58],"gate_model_lod":[-727538,310],"gate_child_lod":[-728226,282],"gate_radial_slope":[1531910,4],"gate_radial_bases":[1557330,8],"gate_angle_fraction":[1550078,4],"gate_angle_tau":[1550122,4],"gate_model_yaw":[1521054,4],"gate_resource_table":[1551410,32],"gate_lod_table":[1551442,16]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"gate_zero_origin":[52,8],"gate_seed":[1622,236],"gate_placement":[1858,290],"gate_resources":[2148,388],"gate_angle_basis":[3312,16],"gate_radial_bases":[3528,8],"gate_constructor":[0,292],"gate_system_loader":[0,772],"gate_system_constructor":[0,184],"gate_station_predicate":[0,40],"gate_type_getter":[0,4],"gate_rotation":[0,224],"gate_vector_transform":[0,122],"gate_arrival_selection":[662,138],"gate_arrival_planet":[1416,222],"gate_position_getter":[0,54],"gate_model_lod":[0,254],"gate_child_lod":[0,168],"gate_resource_table":[0,32],"gate_lod_table":[0,16]}
+
 static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALUES)
 
 static func available(bindings: RefCounted) -> bool:

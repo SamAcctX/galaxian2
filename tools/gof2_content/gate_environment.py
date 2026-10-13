@@ -1,8 +1,24 @@
-"""Original gate constants and geometry selectors, without executable payloads."""
+"""Original gate constants and geometry selectors, without executable payloads.
+
+Android: Level's constructor zeroes the origin; Level::createSpace seeds the
+random generator with twice the station index and places gates 1 (only in a
+gate orbit, interactive) and 2 at radius 90000 / 120000 + 3 x the angle
+units (random(500) + 250, signed, x 16) with the race's resources, LOD meshes
+(40000, 70000) and Vossk child LODs; PlayerJumpgate's constructor (radius
+11250 for Vossk systems, else 7500; yaw pi), FileRead::loadSystemsBinary,
+SolarSystem's constructor, currentOrbitHasWarpGate and getRace, the matrix
+helpers, Level::init's arrival at object 2 or the previous planet,
+PlayerStatic::getPosition and AEGeometry's LOD setters complete it. Values
+equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_gate_environment(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -161,3 +177,29 @@ MAC_ALTERNATE = {'gate_zero_origin': [-46492, 30, '__text', 'bd72ae245269edfcd33
  'gate_model_yaw': [1521054, 4, '__const', '3a1d8964b4fe305b5d25d90b8ba168d95e559961da4a9b22df4558cc257e7e11'],
  'gate_resource_table': [1551410, 32, '__const', '46906dfc9b3c08757d68f41e502838788fc1b27edb224f7446594abde9fedcdc'],
  'gate_lod_table': [1551442, 16, '__const', '4eb650239b5a74686b5d5b32a2befc76c53626d7a949e883e545c10bd01e18b4']}
+
+# Android spans inside named functions and their tables; the values are VALUES.
+ANDROID = {# Level::Level and Level::createSpace: origin, seed, the two gate slots and their models.
+           'gate_zero_origin': ('_ZN5LevelC2Ei', 52, 8, 'c4e96355c4f89451'),
+           'gate_seed': ('_ZN5Level11createSpaceEv', 1622, 236, 'sha256:eb71e47cdb66620440ee50099159283f6e30eb95d7e9842e32e592ef46cc3832'),
+           'gate_placement': ('_ZN5Level11createSpaceEv', 1858, 290, 'sha256:f20d860004dcffaac92c35d92fda5c7b31ae5aee5f7b73a85832e65f35e42b3c'),
+           'gate_resources': ('_ZN5Level11createSpaceEv', 2148, 388, 'sha256:c68f5c9878b14a4a43bdb565d49ef444547707b2a247ef94a38888a7ab5e8d3f'),
+           'gate_angle_basis': ('_ZN5Level11createSpaceEv', 3312, 16, '0000803f000000000000803f0000803f'),
+           'gate_radial_bases': ('_ZN5Level11createSpaceEv', 3528, 8, '0060ea4700c8af47'),
+           # PlayerJumpgate, the systems table and its getters, the matrix helpers.
+           'gate_constructor': ('_ZN14PlayerJumpgateC2EiP10AEGeometryfffb', 0, 292, 'sha256:223ed6a07fdd6f1155d2925fa2a0036dbf0a1ac9e7030055c684bc023add709c'),
+           'gate_system_loader': ('_ZN8FileRead17loadSystemsBinaryEv', 0, 772, 'sha256:d094cf702411949da76f9a406c4336c6c0bd2b4342531312c38009e2976e0100'),
+           'gate_system_constructor': ('_ZN11SolarSystemC2EiN11AbyssEngine6StringEibiiiiiiPiP5ArrayIiES5_S5_', 0, 184, 'sha256:639c7c82d968338fcc85b4f1ebdd98184f3dd075af953f6438614dd93078f7f7'),
+           'gate_station_predicate': ('_ZN11SolarSystem23currentOrbitHasWarpGateEv', 0, 40, 'sha256:115b6eccb884e0f76a1f66c5995210327432cdac60a9b93462060736c1ea095f'),
+           'gate_type_getter': ('_ZN11SolarSystem7getRaceEv', 0, 4, 'c0697047'),
+           'gate_rotation': ('_ZN11AbyssEngine6AEMath17MatrixSetRotationERNS0_6MatrixEfff', 0, 224, 'sha256:403ee53aeaf02f337fa4112344e2aab24e3b5ffe56788bb3c88537b918b3465a'),
+           'gate_vector_transform': ('_ZN11AbyssEngine6AEMath18MatrixRotateVectorERKNS0_6MatrixERKNS0_6VectorE', 0, 122, 'sha256:31ceeecf6b6b73e1f4057aa1c056136e45116abc807d11d64b9000e49ce1aa20'),
+           # Level::init: arrival at object 2, or near the previous station's planet.
+           'gate_arrival_selection': ('_ZN5Level4initEv', 662, 138, 'sha256:045ec6507de574389d91d7cb3fff0ac921d7ec786d7fe6db4f6bd90e599110df'),
+           'gate_arrival_planet': ('_ZN5Level4initEv', 1416, 222, 'sha256:c8030454ae0c1dedad9c589a8abbd1cc60155b430cbe11bed20835d589b437ff'),
+           'gate_position_getter': ('_ZN12PlayerStatic11getPositionEv', 0, 54, 'sha256:e42c972cf630159324e6f4b472a8f91902f9322df3ae3f865dce6bf65111d67e'),
+           'gate_model_lod': ('_ZN10AEGeometry12setLodMeshesEPtPii', 0, 254, 'sha256:69ae50556bc43f8867d67ba8c5087deab0a627dbd6cb0e161580209187c35c8f'),
+           'gate_child_lod': ('_ZN10AEGeometry17setLodChildMeshesEPt', 0, 168, 'sha256:b889c092ebeee029064a65ed0c2a01f92fa6e7c36e01b68ef48d6ed00b7f169f'),
+           # Body, transforms and jump animation per race; LOD meshes per race.
+           'gate_resource_table': ('_ZN5Level11createSpaceEv', 2160, 32, 'sha256:46906dfc9b3c08757d68f41e502838788fc1b27edb224f7446594abde9fedcdc', 'literal', 0),
+           'gate_lod_table': ('_ZN5Level11createSpaceEv', 2410, 16, 'a83aac3aa93aad3aaa3aae3aab3aaf3a', 'literal', 0)}
