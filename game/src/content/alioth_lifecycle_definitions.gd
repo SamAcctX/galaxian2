@@ -7,6 +7,9 @@ const SPANS = {"alioth_lifecycle_target_opposition":[614204,102],"alioth_lifecyc
 
 const MAC_SPANS = {"alioth_lifecycle_target_opposition":[614752,102],"alioth_lifecycle_freighter_factory":[80265,13],"alioth_lifecycle_small_constructor":[605720,2562],"alioth_lifecycle_freighter_update":[634682,4064],"alioth_lifecycle_death_model":[634134,336],"alioth_lifecycle_cargo_model":[-77266,246],"alioth_lifecycle_friendship":[536188,28],"alioth_lifecycle_normal_hit":[539472,1846],"alioth_lifecycle_reputation":[808494,184],"alioth_lifecycle_reputation_axis":[808678,184],"alioth_lifecycle_secondary_faction":[735306,76],"alioth_lifecycle_world_death":[106510,1044],"alioth_lifecycle_freighter_wreck_table":[638726,20]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"alioth_lifecycle_target_opposition":[0,10528],"alioth_lifecycle_freighter_factory":[0,3112],"alioth_lifecycle_small_constructor":[0,1668],"alioth_lifecycle_freighter_update":[0,2888],"alioth_lifecycle_death_model":[0,192],"alioth_lifecycle_cargo_model":[0,212],"alioth_lifecycle_friendship":[0,20],"alioth_lifecycle_normal_hit":[0,1376],"alioth_lifecycle_reputation":[0,104],"alioth_lifecycle_reputation_axis":[0,124],"alioth_lifecycle_secondary_faction":[0,24],"alioth_lifecycle_secondary_table":[0,16],"alioth_lifecycle_world_death":[0,636]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES)
 

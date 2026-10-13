@@ -1,8 +1,23 @@
-"""Alioth-specific composition of ordinary NPC lifecycle declarations."""
+"""Alioth-specific composition of ordinary NPC lifecycle declarations.
+
+Android: PlayerFighter::update sets Terrans and Voids against each other and
+lets NPCs boost (PlayerFighter's constructor); Level::createShip and
+PlayerFixedObject (update, setWreckedMeshId) give the hull-15 freighters
+explosion model 18302, materials 34708 and 33354 and wreck layout 3;
+KIPlayer::createCrate drops Void container 16916; Player::setAlwaysFriend,
+Player::damage, Standing::applyKill and applyDelict leave Void kills without
+reputation change; SolarSystem::getAttackRace (table 1, 0, 3, 2) makes the
+Terran system react for factions 0 and 1; Level::enemyDied counts no pirate
+kills for Voids. Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_alioth_lifecycle(mach,arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -133,3 +148,25 @@ MAC_ALTERNATE = {'alioth_lifecycle_target_opposition': [614752,
                                             20,
                                             '__text',
                                             'de6e6debcec626d191654edde387c465fcd9775a9e266ee12caebb9ab3827d1c']}
+
+# Android spans inside named functions and their tables; the values are VALUES.
+ANDROID = {# PlayerFighter::update: Terrans and Voids oppose each other; NPCs boost.
+           'alioth_lifecycle_target_opposition': ('_ZN13PlayerFighter6updateEi', 0, 10528, 'sha256:fb79b3bde0fb27a45861c89450940e96ec313695cb5d4b4c290220c25ef78d9e'),
+           # Level::createShip: hull 15 gets the freighter explosion model 18302.
+           'alioth_lifecycle_freighter_factory': ('_ZN5Level10createShipEiiiP8Waypointbb', 0, 3112, 'sha256:678eef9996991343994b4360f4e6ce25dc05eb2aab54b3b5f09e665f7f83d91c'),
+           'alioth_lifecycle_small_constructor': ('_ZN13PlayerFighterC2EiiP6PlayerP10AEGeometryfffb', 0, 1668, 'sha256:9722fa1dff717e74e4f5d93a1ee0e2af195659b26021723e8d5632f5ba9eaf91'),
+           # PlayerFixedObject::update / setWreckedMeshId: materials 34708 and 33354, Terran wreck layout 3.
+           'alioth_lifecycle_freighter_update': ('_ZN17PlayerFixedObject6updateEi', 0, 2888, 'sha256:f84fa1d1be257b92fd04b8e98c2c500190c596804150929bb95ecb8d0da7a252'),
+           'alioth_lifecycle_death_model': ('_ZN17PlayerFixedObject16setWreckedMeshIdEi', 0, 192, 'sha256:0eddfaaefee7aa0a7ffe17609b092f742042a0adf689940f1cea6f89c4a5f57c'),
+           # KIPlayer::createCrate: Void cargo is container 16916.
+           'alioth_lifecycle_cargo_model': ('_ZN8KIPlayer11createCrateEi', 0, 212, 'sha256:91deeb454ba06465975eb469efc565a2639580023fba721f6c059569ad9060a2'),
+           'alioth_lifecycle_friendship': ('_ZN6Player15setAlwaysFriendEb', 0, 20, '80f8ed104ff48071a0f85c10002180f8e0107047'),
+           'alioth_lifecycle_normal_hit': ('_ZN6Player6damageEibi', 0, 1376, 'sha256:577391dd7b7a6d8ee3273ce37004ea80f21a4f1a173666529c7b926f4449f3d5'),
+           # Standing: Void kills leave the reputation unchanged.
+           'alioth_lifecycle_reputation': ('_ZN8Standing9applyKillEi', 0, 104, 'sha256:8bd296216f97e43401c7b59304cac316144c2c3836301212bcd504103a57542a'),
+           'alioth_lifecycle_reputation_axis': ('_ZN8Standing11applyDelictEii', 0, 124, 'sha256:262f35c31d0749a01acbf4ae6061d65741bc024e6bdf6ddd6c94ca65ed6fec89'),
+           # SolarSystem::getAttackRace: races 0-3 -> 1, 0, 3, 2 (the Terran system reacts for factions 0 and 1).
+           'alioth_lifecycle_secondary_faction': ('_ZN11SolarSystem13getAttackRaceEv', 0, 24, 'c069032884bf082070470249794451f82000704784150d00'),
+           'alioth_lifecycle_secondary_table': ('_ZN11SolarSystem13getAttackRaceEv', 10, 16, '01000000000000000300000002000000', 'literal', 0),
+           # Level::enemyDied: Void deaths count no pirate kills.
+           'alioth_lifecycle_world_death': ('_ZN5Level9enemyDiedEib', 0, 636, 'sha256:1d244b76f7d5e2deedc549f316d5bd128ac0dc74646f082c294b69202f2e3b19')}
