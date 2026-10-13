@@ -1,6 +1,14 @@
-"""Recognize opening escape camera declarations; emit no executable content."""
+"""Recognize opening escape camera declarations; emit no executable content.
+
+Android: TargetFollowCamera's constructor sets the defaults (active, target up,
+no cockpit, no transient shake, rumble radius 5, roll 0, not locked);
+TargetFollowCamera::update in look-at mode (setLookAtCam) needs an elapsed
+millisecond, takes the target's up and position, and adds the rumble shake
+(AERandom::nextInt(2 x radius) - radius per axis, x percentage, x 1.0 outside
+the cockpit) to the look-at point; translate updates at once with 1000 ms.
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 
 VALUES = {'scope': 'fresh_opening_escape_fixed_camera',
  'look_shake_axes': [0, 1, 2],
@@ -16,6 +24,12 @@ VALUES = {'scope': 'fresh_opening_escape_fixed_camera',
 
 def extract_opening_escape_camera(mach, staging):
     arch = mach.architecture
+    if arch == 'android-armv7':
+        try:
+            if not staging['escape']: return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if proof else {}
     if arch not in LAYOUTS: return {}
     try:
         if not staging['escape']: return {}
@@ -120,3 +134,22 @@ MAC_ALTERNATE = {'defaults': [782662,
  'random_bits': [998391,
                  93,
                  '554889e548897df88975f4488b7df848c745e8e6ecde05488b45e848c1e008480d6d000000488945e8488b07480faf45e848050b00000048b9ffffffffffff00004821c8488907488b07be300000002b75f489f148d3f889c689f05dc3']}
+
+# The values equal the Mac's.
+ANDROID_VALUES = copy.deepcopy(VALUES)
+ANDROID = {'lock_gate': ('_ZN18TargetFollowCamera6updateEi', 30, 6, '9bf83801d8b3'),
+           'defaults': ('_ZN18TargetFollowCameraC2EjP10AEGeometryN11AbyssEngine6AEMath6VectorES4_', 30, 356, 'sha256:f8eaa7658138251681a61fcbbc2d93e3b1170ff3405112f4f8539e5c656d5db9'),
+           'roll_defaults': ('_ZN18TargetFollowCameraC2EjP10AEGeometryN11AbyssEngine6AEMath6VectorES4_', 392, 38, 'sha256:c2d030c58d05162688736cdbadb594f0f173dabd7424b3a657e882af620754e8'),
+           'roll_table': ('_ZN18TargetFollowCameraC2EjP10AEGeometryN11AbyssEngine6AEMath6VectorES4_', 544, 16, '0ad7a33ba69bc43b000000000000c842'),
+           'pan': ('_ZN18TargetFollowCamera9translateEfff', 0, 64, 'sha256:b6142bfbe0be4a8120f2c41cfe71a2eaa8237f1567db29d0c7704a4c9e4b5d85'),
+           'ordinary_gate': ('_ZN18TargetFollowCamera6updateEi', 156, 18, 'baf1010fc0f2c7819bf84600002800f0c281'),
+           'fixed_target': ('_ZN18TargetFollowCamera6updateEi', 174, 330, 'sha256:0df4a3030438b7a508d3b4d38ac96c606e8e2ea0a20b21a93b410a331b91f491'),
+           'cockpit_gate': ('_ZN18TargetFollowCamera6updateEi', 504, 86, 'sha256:9e3c6ffca3d2410a736af517d5ee9e737f76b65c47cc112f45e16d8769ba1fa5'),
+           'transient_gate': ('_ZN18TargetFollowCamera6updateEi', 590, 172, 'sha256:3e697b2a4d5403fe53b50e2ceb3d8b6b30e996595c9d14bc7b3225e7cd212b28'),
+           'look_shake': ('_ZN18TargetFollowCamera6updateEi', 762, 312, 'sha256:09aa50788af558cc05798fc5b11074e37f7efc2c66ae1a4b939efe05560a7356'),
+           'cockpit_select': ('_ZN18TargetFollowCamera20enableFirstPersonCamEb', 0, 88, 'sha256:fb4ced13b02087e1395b8af7d7dc9c40a4b0b7a81fcf5ae0f8fbc3823e529c82'),
+           'fixed_select': ('_ZN18TargetFollowCamera12setLookAtCamEb', 0, 6, '80f845107047'),
+           'random_bound': ('_ZN11AbyssEngine8AERandom7nextIntEi', 0, 152, 'sha256:dbdc6d398b2d2ed41a342376d8af938c332ab948c9bb120d02b25f85d1d46e1f'),
+           'random_bits': ('_ZN11AbyssEngine8AERandom4nextEi', 0, 74, 'sha256:efa02bb1694a213294840e3db81115ff5ce9736c60ce155175a5c3d752360e7f'),
+           'transient_scale_constant': ('_ZN18TargetFollowCamera6updateEi', 1560, 4, '6f12833a'),
+           'scale_constant': ('_ZN18TargetFollowCamera6updateEi', 1564, 4, 'a69bc43a')}
