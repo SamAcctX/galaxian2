@@ -95,6 +95,7 @@ static func validate(data: Variant,source_bytes: int,arch: String,arrival: Dicti
 		if data.has("flight_results"):android_spans.merge(FlightResults.ANDROID_SPANS)
 		if data.has("junk_lifecycle"):android_spans.merge(Junk.ANDROID_SPANS)
 		if data.has("world_initialization"):android_spans.merge(World.ANDROID_SPANS)
+		if data.has("station_lounges"):android_spans.merge(Lounges.ANDROID_SPANS)
 		return "" if Layouts.anchored(data.provenance,source_bytes,android_spans) else "Invalid early contract provenance"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Early contract terms lack their source anchor"

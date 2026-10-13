@@ -6,6 +6,9 @@ const SPANS = {"lounge_lifecycle_lookup":[855620,94],"lounge_lifecycle_insert":[
 
 const MAC_SPANS = {"lounge_lifecycle_lookup":[856252,94],"lounge_lifecycle_insert":[856028,204],"lounge_lifecycle_identity":[853920,22],"lounge_lifecycle_current":[856363,20],"lounge_lifecycle_arrival":[857344,38],"lounge_lifecycle_generation":[857535,62],"lounge_lifecycle_ordinary_stock":[857917,83]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by early_contract_definitions.gd).
+const ANDROID_SPANS = {"lounge_lifecycle_lookup":[0,58],"lounge_lifecycle_insert":[0,120],"lounge_lifecycle_identity":[0,18],"lounge_lifecycle_current":[10,14],"lounge_lifecycle_arrival":[140,26],"lounge_lifecycle_ordinary_stock":[184,54],"lounge_lifecycle_generation":[316,30]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES)
 
