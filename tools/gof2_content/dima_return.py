@@ -3,14 +3,27 @@
 Only bounded source constants and verified visit rules are emitted. Void29's
 return portal and mission30's initial kind/target tuple remain owned by
 void_probe; this reader does not execute or emit original code.
+
+Android: MGame::OnUpdate returns through the portal to the course station and
+Status::departStation and Level::init select the story; cursor 30 has no
+case in Level::createCampaignMission, createRadioMessages or
+LevelScript::process; Status::missionCompleted ends the kind-156 visit after
+more than 10000 ms in flight and MGame::successCheck opens its five result
+lines (Android text ids 1955-1959) after 5001 ms; MGame::OnTouchEnd advances
+and Status::nextCampaignMission case 30 creates Mission(11, 30000, 98).
+Values are the Mac 1.0.7 ones (this module's VALUES).
 """
 
 import copy
 
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 
 def extract_dima_return(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy((VALUES, MAC_VALUES)[variant]), proof) if proof else ({}, {})
 
@@ -204,3 +217,30 @@ MAC_ALTERNATE = {'portal_return_story_selection_call': [379651,
                               24,
                               '__text',
                               'e2a830258b27c2ae0cbde8e2dd7b3a1084ebe1463dfb6c849cc4649e08e1a37f']}
+
+ANDROID = {# The return, world selection and cursor 30's default world, radio and stage.
+           'dima_return_portal_return_story_selection_call': ('_ZN5MGame8OnUpdateEv', 12080, 496, 'sha256:421dededd3cc1f9cd43234ad6868375cb2db5802c4591984b9f8d37797cae352'),
+           'dima_return_story_target_selection': ('_ZN6Status13departStationEP7Station', 0, 1072, 'sha256:b7432b338855a0a259aa2b3d0d678bb305ea5293e9903e68114efafe3b6170d6'),
+           'dima_return_world_selected_story': ('_ZN5Level4initEv', 0, 1792, 'sha256:fceec130c720743b341b16f0e8ce63d43a1382808e075533d391370c9949a244'),
+           'dima_return_kind156_cast_dispatch': ('_ZN5Level21createCampaignMissionEv', 50, 72, 'sha256:199f7a8b39991522d2490e0f91eb46db22c738701ada8159377dbb7df6f2d3be'),
+           'dima_return_kind156_cast_range': ('_ZN5Level21createCampaignMissionEv', 552, 10, 'ddf840a01d2807f2eb80'),
+           'dima_return_common_world_default': ('_ZN5Level21createCampaignMissionEv', 29704, 26, 'sha256:51a12ccd37a83d3cc0390e228195c8a57dbd163b8258503299f415cf0179dcea'),
+           'dima_return_radio30_dispatch': ('_ZN5Level19createRadioMessagesEi', 0, 26, 'sha256:2fb27116c5cd427d3d8d01c2af84739cd96a13de8ea5fc929fb78c2963332596'),
+           'dima_return_radio30_dispatch_entry': ('_ZN5Level19createRadioMessagesEi', 86, 2, '4119'),
+           'dima_return_radio30_no_rows': ('_ZN5Level19createRadioMessagesEi', 12956, 8, 'd4f8140102b0bde8'),
+           'dima_return_stage_cursor_range_dispatch': ('_ZN11LevelScript7processEi', 2902, 16, '5b2876dc372800f368811c2800f35383'),
+           'dima_return_stage_slot': ('_ZN11LevelScript7processEi', 4620, 18, '282800f364831d2801f0718528284bf06a81'),
+           # Completion, the result, the final acknowledgement and case 30's Mission(11, 30000, 98).
+           'dima_return_kind156_visit': ('_ZN6Status16missionCompletedEbbx', 0, 1508, 'sha256:0162f8ffdfa5a9e47021d6551470479343189754dde03c334ec2ffc6cbb2634e'),
+           'dima_return_flight_result': ('_ZN5MGame12successCheckEv', 0, 1764, 'sha256:ea65079e511029adc0634a0ca72b39105a299c510ec2315692fb93d2d4ec9434'),
+           'dima_return_result_open_completion_mark': ('_ZN14DialogueWindow3setEP7Missionii', 0, 120, 'sha256:9d7513e11d3d0954171e396f284ecca11aa43033d3d69c6f1e8da8a4c5cbecbb'),
+           'dima_return_final_next': ('_ZN5MGame10OnTouchEndEiiPv', 0, 9784, 'sha256:fdba63f59493b8c11bd31fd1cad8857708de40b6cfb3e0221e5f2eba567c65e0'),
+           'dima_return_factory_dispatch': ('_ZN6Status19nextCampaignMissionEb', 128, 2, '6302'),
+           'dima_return_factory31': ('_ZN6Status19nextCampaignMissionEb', 1290, 30, 'sha256:cc7dd1b8b5ab9ae101ad27289149f24d68de0d3a8fbbe8ba6b24ca05aa00fcda'),
+           'dima_return_mission_constructor': ('_ZN7MissionC2Eiii', 0, 288, 'sha256:e034656d66c8e5c671a0fba356c49d2af308495b7a3dcda2601e9fb9457c9306'),
+           'dima_return_station_contact_sentinel': ('_ZN5MGame9dockEventEii', 0, 1500, 'sha256:c509b37791ee035ac28c716b3765e52ba5705d02fa07f400333fcb885a2b9ee0'),
+           # Cursor 30: counts, the five result lines and all voices.
+           'dima_return_briefing30_count': ('_ZN14DialogueWindow19hasBriefingDialogueEi', 10, 4, '00000000', 'literal', 120),
+           'dima_return_result30_count': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 4, '0a000000', 'literal', 120),
+           'dima_return_result30_pairs': ('_ZN14DialogueWindow11loadContentEv', 208, 40, 'sha256:10c2033d20a606c0e31314aa93c48d5941b20801d303246d3cae79419ffa7e38', 'literal', 1464),
+           'dima_return_result30_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 12032, 'sha256:24201ffc5c374c33aeec4660c20bd8af5788878246a0e6f0b1cae22c09895b52', 'literal', 0)}

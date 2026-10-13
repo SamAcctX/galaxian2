@@ -245,6 +245,7 @@ static func validate(data: Variant, source_bytes: int, arch: String, arrival: Di
 		if data.has("post_sahi"):android_spans.merge(PostSahi.ANDROID_SPANS)
 		if data.has("thynome_expedition"):android_spans.merge(Thynome.ANDROID_SPANS)
 		if data.has("void_probe"):android_spans.merge(VoidProbe.ANDROID_SPANS)
+		if data.has("dima_return"):android_spans.merge(DimaReturn.ANDROID_SPANS)
 		if data.has("vossk_traffic"):android_spans.merge(Vossk.ANDROID_SPANS)
 		if data.has("vossk_lod"):android_spans.merge(VosskLOD.ANDROID_SPANS)
 		return "" if Layouts.anchored(data.provenance,source_bytes,android_spans) else "Invalid local travel provenance"
