@@ -49,3 +49,40 @@ class PlayerHitPolicyTests(unittest.TestCase):
             moved=copy.deepcopy(w);moved['ordinary_hit_policy']['provenance']['damage_route']['offset']+=2
             self.assertEqual(extract_player_hit_policy(m,moved),{})
             self.assertEqual(extract_player_hit_policy(m,{}),{})
+
+
+@unittest.skipUnless(__import__('importlib').util.find_spec('capstone'), 'Optional Capstone dependency not installed')
+class AndroidPlayerHitPolicy(unittest.TestCase):
+    def test_route_registers_give_multipliers(self):
+        from test_weapon_parameters import android_guns, android_weapon_chain
+        lib, at, weapon = android_guns()
+        weapon = android_weapon_chain(lib, weapon)
+        result = weapon['player_hit_policy']
+        self.assertEqual({k: v for k, v in result.items() if k != 'provenance'},
+                         {'nonhostile_scale': 0.20000000298023224, 'special_flight_multipliers': [3.0, 0.25],
+                          'rounding': 'binary32_then_truncate', 'nonhostile_precedes_special': True})
+        p = result['provenance']
+        self.assertEqual(p['damage_route'], weapon['ordinary_hit_policy']['provenance']['damage_route'])
+        self.assertEqual({k: (p[k]['offset'] - at['collision'], p[k]['bytes']) for k in ('special_first', 'special_second', 'nonhostile_load')},
+                         {'special_first': (12, 4), 'special_second': (16, 4), 'nonhostile_load': (20, 4)})
+        self.assertEqual(struct.unpack_from('<f', lib.data, p['nonhostile']['offset'])[0], result['nonhostile_scale'])
+
+    def test_each_broken_rule_is_unsupported(self):
+        from test_weapon_parameters import android_guns, android_weapon_chain
+        cases = {'second write': dict(edits=[('collision', 'vpop', 'vmov.f32 s16, #1.000000e+00\nvpop')]),
+                 'double register write': dict(edits=[('collision', 'vpop', 'vldr d9, [fp, #8]\nvpop')]),
+                 'set after the route': dict(edits=[('collision', 'vmov.f32 s16, #3.000000e+00\n', ''), ('collision', 'vpop', 'vmov.f32 s16, #3.000000e+00\nvpop')]),
+                 'loaded elsewhere': dict(edits=[('collision', 'vldr s24, =0x3e4ccccd', 'vldr s24, [fp, #8]')]),
+                 'other docked scale': dict(edits=[('collision', 'vmov.f32 s18, #2.500000e-01', 'vmov.f32 s18, #5.000000e-01')]),
+                 'other first scale': dict(edits=[('collision', 'vmov.f32 s16, #3.000000e+00', 'vmov.f32 s16, #2.000000e+00')]),
+                 'other hostile scale': dict(edits=[('collision', '=0x3e4ccccd', '=0x3e800000')])}
+        for name, options in cases.items():
+            with self.subTest(name):
+                lib, _, weapon = android_guns(**options)
+                self.assertEqual(android_weapon_chain(lib, weapon)['player_hit_policy'], {})
+        lib, _, weapon = android_guns()
+        weapon = android_weapon_chain(lib, weapon)
+        self.assertEqual(extract_player_hit_policy(lib, {**weapon, 'ordinary_hit_policy': {}}), {})
+        moved = copy.deepcopy(weapon)
+        moved['ordinary_hit_policy']['provenance']['damage_route']['offset'] += 2
+        self.assertEqual(extract_player_hit_policy(lib, moved), {})

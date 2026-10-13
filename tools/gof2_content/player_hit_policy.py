@@ -1,4 +1,9 @@
-"""Static player damage scaling, linked to the existing ordinary collision route."""
+"""Static player damage scaling, linked to the existing ordinary collision route.
+
+Android: Gun::calcCharacterCollision sets the route's multiplier registers once,
+s16 = 3.0 and s18 = 0.25 (docked player) and s24 from a pool word (0.2, owner
+without the hostile flag), before the damage route reads them.
+"""
 import math
 import struct
 from .ordinary_hit_policy import MAC_ROUTE, ARM_ROUTE
@@ -6,7 +11,40 @@ from .opening_loadout import template
 from .ship_models import section_bytes
 
 
+# Each multiplier register's one setup in Gun::calcCharacterCollision (its d alias too).
+ANDROID_SETUP = {'special_first': ('s16', 'd8', 'vmov.f32 s16, #{value}'), 'special_second': ('s18', 'd9', 'vmov.f32 s18, #{value}'),
+                 'nonhostile': ('s24', 'd12', 'vldr s24, ={value}')}
+
+
+def android_player_hit(lib, weapon):
+    from .ordinary_hit_policy import android_route
+    routed = android_route(lib)
+    if routed is None or routed[3] != weapon['ordinary_hit_policy']['provenance']['damage_route']:
+        return {}
+    collision, route, proof, values = routed[0], routed[1], {'damage_route': routed[3]}, {}
+    for key, (single, double, template) in ANDROID_SETUP.items():
+        # vpush/vpop save and restore the caller's registers.
+        writers = [i for i in range(len(collision.code)) if not collision.lines[i].startswith(('vpush', 'vpop'))
+                   and (collision.writes(i, i, single) or collision.writes(i, i, double))]
+        setup = collision.at(template, writers[0]) if len(writers) == 1 and writers[0] < route.first else None
+        if setup is None:
+            return {}
+        proof[key] = setup.span()
+        values[key] = setup.value('value')
+        if key == 'nonhostile':
+            word, proof[key] = setup.pool('value')
+            proof['nonhostile_load'] = setup.span()
+            values[key] = struct.unpack('<f', struct.pack('<I', word))[0]
+    found = [values['nonhostile'], values['special_first'], values['special_second']]
+    if found != [struct.unpack('<f', bytes.fromhex('cdcc4c3e'))[0], 3.0, 0.25]:
+        return {}
+    return {'nonhostile_scale': found[0], 'special_flight_multipliers': found[1:], 'rounding': 'binary32_then_truncate',
+            'nonhostile_precedes_special': True, 'provenance': proof}
+
+
 def extract_player_hit_policy(mach, weapon):
+    if mach.architecture == 'android-armv7':
+        return android_player_hit(mach, weapon) if weapon.get('ordinary_hit_policy') else {}
     if mach.architecture not in ('x86_64','armv7'): return {}
     import capstone
     mac=mach.architecture=='x86_64';proof={};text=mach.text

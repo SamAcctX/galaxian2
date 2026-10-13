@@ -11,7 +11,7 @@ static func validate(data: Variant, executable_bytes: int, architecture: String,
 	if not data is Dictionary: return "Missing player hit policy"
 	if data.is_empty(): return ""
 	if not parameters(data): return "Invalid player hit policy"
-	var sizes := {"damage_route":185,"nonhostile":4,"special_first":4,"special_second":4} if architecture=="x86_64" else {"damage_route":120,"scaling_setup":12} if architecture=="armv7" else {}
+	var sizes := {"damage_route":185,"nonhostile":4,"special_first":4,"special_second":4} if architecture=="x86_64" else {"damage_route":120,"scaling_setup":12} if architecture=="armv7" else {"damage_route":118,"special_first":4,"special_second":4,"nonhostile":4,"nonhostile_load":4} if architecture=="android-armv7" else {}
 	if sizes.is_empty() or data.provenance.size()!=sizes.size(): return "Invalid player hit provenance"
 	var spans := []
 	for key in sizes:
