@@ -14,6 +14,9 @@ const SPANS := {"npc_update":[610766,17180],"actor_constructor":[-81548,948],"np
 
 const MAC_ALTERNATE := {"npc_update":[611314,17180],"actor_constructor":[-81548,948],"npc_constructor":[605720,2562],"cargo_model":[-77266,246],"cargo_predicate":[-77020,46],"drift_setter":[538206,14],"drift_getter":[538234,14],"cargo_owner":[536326,14],"model_constructor":[-731340,430],"model_position_setter":[-730044,82],"model_rotation":[-728986,140],"model_translation":[-728798,200],"effect_update":[-686346,538],"world_death":[106510,1044],"retire":[-78854,18],"pirate_counter":[876932,26],"drift_decay":[1557634,4],"drift_cutoff":[1548846,4],"angle_fraction":[1550078,4],"angle_tau":[1550122,4],"training_actors":[571,611],"factory":[77944,3478],"nonhostile_counter":[107650,12],"death_predicate":[-77838,16],"condition":[481528,1170],"condition_constructor":[481170,42]}
 
+# Android: the VALUES; spans inside named functions (Layouts.anchored).
+const ANDROID_SPANS := {"npc_update":[0,10528],"drift_constants":[8108,8],"angle_constants":[8120,8],"actor_constructor":[0,604],"npc_constructor":[0,1668],"cargo_model":[0,212],"cargo_predicate":[0,36],"drift_setter":[0,6],"drift_getter":[0,6],"cargo_owner":[0,6],"model_constructor":[0,256],"model_position_setter":[0,76],"model_rotation":[0,156],"model_translation":[0,172],"effect_update":[0,488],"world_death":[0,636],"retire":[0,14],"pirate_counter":[0,28],"training_dispatch":[552,14],"training_entry":[580,2],"training_actors":[25356,378],"defeat_store":[26158,8],"factory":[0,3112],"nonhostile_counter":[0,12],"death_predicate":[0,14],"condition":[0,978],"condition_constructor":[0,26]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
 	for key in VALUES:
@@ -23,9 +26,10 @@ static func parameters(data: Variant) -> bool:
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, training: Dictionary, control: Dictionary, weapons: Dictionary, actors: Dictionary) -> String:
 	if not data is Dictionary:return "Missing combat-training destruction declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data):return "Unsupported combat-training destruction declarations"
+	if not (arch=="x86_64" or arch=="android-armv7") or not parameters(data):return "Unsupported combat-training destruction declarations"
 	var npc: Dictionary=actors.get("npc_initialization",{})
 	if not Training.parameters(training) or not TrainingControl.parameters(control) or not Weapons.parameters(weapons) or not Death.parameters(npc.get("destruction")) or not Accounting.parameters(npc.get("death_accounting")) or not Construction.parameters(npc.get("construction")):return "Training destruction lacks its source context"
+	if arch=="android-armv7":return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid combat training destruction extents"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Training destruction lacks its source anchor"
 	var layouts: Array=[SPANS,MAC_ALTERNATE]
