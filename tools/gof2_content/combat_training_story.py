@@ -1,9 +1,33 @@
-"""Optional Mac training dialogue and source return declarations."""
+"""Optional Mac training dialogue and source return declarations.
+
+Android: DialogueWindow's tables hold cursor 7's briefing (texts 1748-1750,
+1753: Mac 1737-1739, 1742), completion (1758-1762) and cursor 8's return
+(1763-1771); loadContent shows them verbatim (no desktop substitution;
+Globals::replaceKeyBindingTokens only copies the string).
+Globals::getDialogueSoundId gives the voices, Level::createRadioMessages the
+two cursor-7 radio lines (1756, 1757) and RadioMessage::triggered their
+conditions 16 and 6. Status::nextCampaignMission makes the starter items
+saleable at their slot-position catalogue price and creates mission 11 at
+78 for cursors 8 and 9; ModStation::OnTouchEnd restarts the station after
+cursor 9's acknowledgement. LevelScript::process takes its ordinary path
+for cursor 7. Level::init, PlayerEgo::update, Radar::draw /
+Radar::calcDistance, Hud::hudEvent and MGame::OnTouchEnd hold the waypoint
+navigation. Values equal the Mac 1.0.7 ones (MAC_VALUES).
+"""
 import copy
-from .declaration_layouts import recognize
+from .declaration_layouts import recognize, recognize_symbols
 from .station_exterior import declaration_bytes
 
 def extract_combat_training_story(mach, arrival, training, destruction, briefing, objective, dialogue, shared_story):
+    if mach.architecture == 'android-armv7':
+        try:
+            if training['scope'] != 'combat_training_encounter_construction' or destruction['scope'] != 'combat_training_cargo_destruction': return {}
+            if briefing['scope'] != 'first_mining_briefing' or objective['scope'] != 'first_mining_cargo_objective': return {}
+            if dialogue['campaign_cursor'] != 0 or dialogue['timing'] != ANDROID_VALUES['radio_timing']: return {}
+            if shared_story['scope'] != 'full_hold_mining_story': return {}
+        except (KeyError, TypeError): return {}
+        proof = recognize_symbols(mach, ANDROID)
+        return dict(copy.deepcopy(ANDROID_VALUES), provenance=proof) if proof else {}
     try:
         if training.get('scope') != 'combat_training_encounter_construction': return {}
         if destruction.get('scope') != 'combat_training_cargo_destruction': return {}
@@ -566,3 +590,96 @@ MAC_VALUES = {'scope': 'combat_training_story',
                 'distance_result_scale': 8,
                 'kilometer_threshold': 1000,
                 'progress_notice': {'source_id': 23, 'text_ids': [532], 'separator': '', 'rgb': [255, 255, 255]}}}
+
+# Android spans inside named functions and tables; the values are MAC_VALUES with the station return and navigation.
+ANDROID_VALUES = copy.deepcopy(MAC_VALUES)
+ANDROID = {
+           # DialogueWindow's tables: cursor 7's briefing (mode 0, words 16-23: texts 1748-1750, 1753), its completion (mode 1,
+           # words 72-81: 1758-1762) and cursor 8's return (words 82-99: 1763-1771); loadContent shows them verbatim
+           # (Globals::replaceKeyBindingTokens only copies). Globals::getDialogueSoundId: 1748 -> 189, 1758-1771 -> 439-452,
+           # 1756/1757 -> 543/544.
+           'mode0_counts': ('_ZN14DialogueWindow19hasBriefingDialogueEi', 10, 32, '04000000000000000a0000000000000002000000000000000000000008000000', 'literal', 0),
+           'mode0_events': ('_ZN14DialogueWindow11loadContentEv', 128, 32, '02000000d406000010000000d506000010000000d606000010000000d9060000', 'literal', 64),
+           'mode1_counts': ('_ZN14DialogueWindow18hasSuccessDialogueEi', 10, 36, '0000000026000000060000000a000000040000000c000000020000000a00000012000000', 'literal', 0),
+           'mode1_events': ('_ZN14DialogueWindow11loadContentEv', 208, 40, '02000000de06000000000000df06000002000000e006000000000000e106000002000000e2060000', 'literal', 288),
+           'station_return_events': ('_ZN14DialogueWindow11loadContentEv', 428, 72, '02000000e306000000000000e406000002000000e506000000000000e606000002000000e706000000000000e806000002000000e906000000000000ea06000002000000eb060000', 'literal', 328),
+           'dialogue_content': ('_ZN14DialogueWindow11loadContentEv', 0, 3868, 'sha256:4848845d1a3eaed3723c28a67221b83f09cd90f3222aabea7c724a00cc5da7b7'),
+           'key_tokens': ('_ZN7Globals23replaceKeyBindingTokensERKN11AbyssEngine6StringE', 0, 14, '80b56f46114600226af738ee80bd'),
+           'briefing_voice': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 8, 8, 'd4060000bd000000', 'literal', 208),
+           'later_voices': ('_ZN7Globals18getDialogueSoundIdEiP5Agent', 186, 848, 'sha256:a14d6b5f1c366d3d7361dda523e9033114208fd827b7052565bbfc301a4e0e77', 'literal', 2208),
+           # Level::createRadioMessages, cursor 7 (tbh entry 7): RadioMessage(1756, 2, 16, 0) and (1757, 0, 6, 0);
+           # RadioMessage::triggered: condition 16 fires on an enemy that is no asteroid, active and not always friendly,
+           # condition 6 once message 0 has fired.
+           'radio_dispatch': ('_ZN5Level19createRadioMessagesEi', 16, 26, 'a12903f24381dfe811f0c500600241194119411941194119a302'),
+           'radio_declaration': ('_ZN5Level19createRadioMessagesEi', 1376, 94, '0c2097f79ee90546042097f70cea002601216860a9602946066002202e60c4f814519cf7bee8282097f78ae9054640f2dc610222102300969cf7b8e8d4f8140140680560282097f77ce9054640f2dd610022062300969cf7aae802f06abb'),
+           'radio_tail': ('_ZN5Level19createRadioMessagesEi', 11410, 10, 'd4f8140140684560ffe2'),
+           'radio_return': ('_ZN5Level19createRadioMessagesEi', 12956, 8, 'd4f8140102b0bde8'),
+           'radio_message': ('_ZN12RadioMessageC2Eiiii', 0, 52, 'sha256:3846fd4e1bb2e22b2ac9c0a510aa87489cf6562344739be3881098d133598fac'),
+           'radio_conditions': ('_ZN12RadioMessage9triggeredExP9PlayerEgoP11LevelScript', 0, 1860, 'sha256:eba93dba536ccdaa67ad0e44c7b5ff4ae1ee5284e9fd8831719b304e90173244'),
+           'radio_lookup': ('_ZN5Radio10getMessageEi', 0, 10, '0068406850f821007047'),
+           'scenery_getter': ('_ZN6Player10isAsteroidEv', 0, 22, 'd0f8d00028b190f83800002818bf0120704700207047'),
+           'active_getter': ('_ZN6Player8isActiveEv', 0, 6, '90f8c0007047'),
+           'friendly_getter': ('_ZN6Player14isAlwaysFriendEv', 0, 6, '90f8ed007047'),
+           # Status::nextCampaignMission, cursor 7 (tbh entry 7): installed and cargo items become saleable and take the price of
+           # the catalogue item at their slot position (Item::init: (w15 + w17) / 2); Mission(11, 0, 78). Cursor 8 (entry 8):
+           # Mission(11, 0, 78).
+           'next_dispatch': ('_ZN6Status19nextCampaignMissionEb', 58, 28, 'a12800f21b82dfe810f0ad029804ae04ac0c1e0df10d870eed002d02'),
+           'next_mission_and_equipment': ('_ZN6Status19nextCampaignMissionEb', 542, 212, 'sha256:88819f27a7ba674443d15632593750a288cad0f9f15aa80aaeb5041933eb7683'),
+           'next_mission_tail': ('_ZN6Status19nextCampaignMissionEb', 426, 14, '2046294601b0bde8f04322f19cb8'),
+           'station_next_factory': ('_ZN6Status19nextCampaignMissionEb', 1182, 28, '6420c4f8e831c9e900ceb0f768ee05460b2100224e23b4f7feef77e6'),
+           'installed_getter': ('_ZN4Ship12getEquipmentEv', 0, 4, 'c06e7047'),
+           'cargo_getter': ('_ZN4Ship8getCargoEv', 0, 4, '006f7047'),
+           'protection_setter': ('_ZN4Item13setUnsaleableEb', 0, 6, '80f844107047'),
+           'price_getter': ('_ZN4Item14getSinglePriceEv', 0, 4, '80697047'),
+           'price_setter': ('_ZN4Item8setPriceEi', 0, 4, '81617047'),
+           'item_table_load': ('_ZN7Globals4initEPN11AbyssEngine18ApplicationManagerEPNS0_6EngineE', 238, 14, '304676f702ed8949794409680860'),
+           'item_constructor': ('_ZN4ItemC2EP5ArrayIiES2_S2_', 0, 22, 'd0b502af044604f1280c8ce80e007af7bae92046d0bd'),
+           'item_price_initialization': ('_ZN4Item4initEv', 0, 78, 'sha256:2958dfb1982a848d6f960cdb302d8f062ef241c5d66ccd336fcb72ca1fc2176e'),
+           'departure_equipment_gate': ('_ZN10ModStation12leaveStationEv', 0, 684, 'sha256:312550b1ddc5c8aaf2d57ee470e9d8eb501690835f2699e068ebed55c62b4120'),
+           # LevelScript::process: cursor 7 passes every cursor test (0, 1, 0x51, 0x4e, 0x59, 0x6a, 0x5f..0xa1, the entry
+           # controller, 5, 0x1a, 0x32, 0x33, 0x2a and the 0x0e/0x10 leaf) to the ordinary tail, whose flag (0xa9) only a
+           # type-0xa3 campaign mission sets; Status::gameWon is cursor > 44.
+           'ordinary_entry_dispatch': ('_ZN11LevelScript7processEi', 62, 28, 'sha256:a7ada91fc6f2860168fa14f9eaf360fa61d0633b513815267f5869824a836d94'),
+           'entry_selection_0': ('_ZN11LevelScript7processEi', 90, 20, 'dff8580e78440068006809f79aea012840f02782'),
+           'entry_selection_1': ('_ZN11LevelScript7processEi', 1212, 20, 'dff8240a78440068006809f76ae8512840f0c680'),
+           'entry_selection_2': ('_ZN11LevelScript7processEi', 1628, 20, 'dff89c0878440068006808f79aef4e2840f01281'),
+           'entry_selection_3': ('_ZN11LevelScript7processEi', 2196, 20, 'dff8800678440068006808f77eee592840f05684'),
+           'entry_selection_4': ('_ZN11LevelScript7processEi', 4436, 20, '5ff8fc0178440068006808f71eea6a2840f0ec81'),
+           'entry_selection_5': ('_ZN11LevelScript7processEi', 5440, 134, '8d48cde9106878440068006808f726e85f2838d0894878440068006808f71ee8632830d0864878440068006808f716e86d2828d0834878440068006808f70ee8772820d0804878440068006808f706e87e2818d07d4878440068006807f7feef852810d07a4878440068006807f7f6efa02808d0774878440068006807f7eeefa1287ef483ae'),
+           'entry_controller': ('_ZN11LevelScript7processEi', 716, 350, 'sha256:2630a3cd0853da9aac7d63759a21ddd046b94ada871410d1189e24a225f4bec1'),
+           'ordinary_chain_0': ('_ZN11LevelScript7processEi', 1066, 20, 'dff8b40a78440068006809f7b2e8052840f0e080'),
+           'ordinary_chain_1': ('_ZN11LevelScript7processEi', 1534, 24, 'dff8f40878440068006808f7c8efddf840801a2840f08680'),
+           'ordinary_chain_2': ('_ZN11LevelScript7processEi', 1826, 20, 'dff8e40778440068006808f736ef322840f0bf81'),
+           'ordinary_chain_3': ('_ZN11LevelScript7processEi', 2740, 56, 'sha256:aba3e2846cacb01a1c964dca6e9ede9ac2a3d5445532a1698b2d8b379a452136'),
+           'ordinary_story_dispatch': ('_ZN11LevelScript7processEi', 2796, 140, 'sha256:69092143c72e6ca1811c370b31309b5398df7d57b13c73d1483b239a69f26e53'),
+           'ordinary_story_tail': ('_ZN11LevelScript7processEi', 50418, 16, 'ddf84c90149e99f8a900002800f08a80'),
+           'ordinary_story_flag': ('_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera', 0, 186, 'sha256:0c31b61c93f835eb720b9de44705cf536983c322d0e32e3e480bbb82acf8556f'),
+           'special_side_mission_gate': ('_ZN11LevelScriptC2EP5LevelP3HudP5RadarP18TargetFollowCamera', 4342, 124, 'sha256:a554e240572332f99a297af5818c96f46c723da06653305e958d409c8c907298'),
+           'early_campaign_predicate': ('_ZN6Status7gameWonEv', 0, 14, 'd0f8e81100202c29c8bf01207047'),
+           # The return: ModStation::OnTouchEnd restarts the station after cursor 9's acknowledgement; Item::extractItems and
+           # Item::mixItems order the cargo.
+           'station_restart_after_ack': ('_ZN10ModStation10OnTouchEndEiiPv', 0, 6536, 'sha256:5b29b2bf44b1e0a442eb14b5646a1aad12932fedee58112b028e31589316b50e'),
+           'cargo_compaction': ('_ZN4Item12extractItemsEP5ArrayIPS_Eb', 0, 182, 'sha256:cd1ee245e793b989bca822bd1df85458f76ef206156e1497255de45f91d56a05'),
+           'cargo_combined_order': ('_ZN4Item8mixItemsEP5ArrayIPS_ES3_', 0, 602, 'sha256:37e985e9fb500e19b28f79dc3f806d396111f1a10db90dbff05b054007e16adc'),
+           # Navigation: Level::init gives the player the level route; PlayerEgo::update samples the root position and advances
+           # the route (Hud::hudEvent 23 / 24: texts 543 / 544); Radar::draw draws images 1264 / 1263 with
+           # Radar::calcDistance (x 0.5, / 4096, Globals::sqrt, x 8, km from 1000); MGame::OnTouchEnd clears the route
+           # unless cursor 0xa2 (Level::setPlayerRoute).
+           'navigation_world_binding': ('_ZN5Level4initEv', 1222, 14, 'd4f8f00018b1d4f80811b0f722ee'),
+           'navigation_player_binding': ('_ZN9PlayerEgo8setRouteEP5Route', 0, 6, 'c0f8fc107047'),
+           'navigation_position_sample': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 66, 24, '1eacd9f808102046c1f762ee09f5a47021460390bef782ef'),
+           'navigation_player_advance': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 7496, 62, 'sha256:340fbab85a79262a6a86d5724be8fc215f3920bfd3e97000f0dfa1f4395ab562'),
+           'navigation_last_notice': ('_ZN9PlayerEgo6updateEiP5RadarP3HudP5RadioP11LevelScriptibi', 7716, 6, '40461821a9e7'),
+           'navigation_world_getter': ('_ZN5Level14getPlayerRouteEv', 0, 6, 'd0f808017047'),
+           'navigation_hud_binding': ('_ZN5Radar4drawEP6PlayerP3Hudi', 188, 10, '286815f71ceac5f85001'),
+           'navigation_images': ('_ZN5RadarC2EP5Level', 1548, 44, 'sha256:547d9dcc395d586be26924d0367ef65edec8b8e83282974ab816c20c8814f4c2'),
+           'navigation_draw': ('_ZN5Radar4drawEP6PlayerP3Hudi', 574, 240, 'sha256:959651e924f04f09df9b22a0c936493ee0ab64e0f79cf6f37dc64ff4c5c9ea20'),
+           'navigation_distance': ('_ZN5Radar12calcDistanceEffffff', 0, 680, 'sha256:8e3ed1db4343cfafdb9363d54627e9473cb8320dc205099281576640eabb7373'),
+           'navigation_root': ('_ZN7Globals4sqrtEf', 0, 6, '0846dbf0ddbe'),
+           'navigation_ack_default': ('_ZN5MGame10OnTouchEndEiiPv', 8200, 32, 'sha256:76bf59747674317088a1ad8a221476fae3a2a7672da5aa9542ec47e894b1caa1'),
+           'navigation_ack_clear': ('_ZN5MGame10OnTouchEndEiiPv', 4788, 88, 'sha256:b5bd74b604558a96b24747128d8d76a816ca1ae2e2f34c2a9e1e2a2e5889eb1b'),
+           'navigation_world_clear': ('_ZN5Level14setPlayerRouteEP5Route', 0, 28, 'sha256:f95e2a8ad31f631fae9c71b9da4d7d87f45318b655936661a08eb1b9d1538a58'),
+           'navigation_notice_dispatch': ('_ZN3Hud8hudEventEiP9PlayerEgoi', 26, 14, 'a8f101002e2800f25c84dfe810f0'),
+           'navigation_notice_entry': ('_ZN3Hud8hudEventEiP9PlayerEgoi', 84, 2, 'db02'),
+           'navigation_notice': ('_ZN3Hud8hudEventEiP9PlayerEgoi', 1502, 12, 'dff8a00540f21f217844d9e0'),
+           'navigation_notice_text': ('_ZN3Hud8hudEventEiP9PlayerEgoi', 1950, 20, '00680068dbf614ee014609f5c870d8f6c8eb94e0')}
