@@ -1,8 +1,21 @@
-"""Ordinary delivery traffic and selected courier construction. Constant declarations only."""
+"""Ordinary delivery traffic and selected courier construction. Constant declarations only.
+
+Android: Level::createMission reseeds for ordinary orbits, sizes the pirate
+group of a freelance mission of kind 0, 11 or 15 (Status::getFreelanceMission:
+difficulty / 10 x 5), creates those pirates (kind 8, one hull per actor) at
+the player's position + (-80000, -50000, -80000) + random(160000, 100000,
+160000) (offsets in its literal pool, divisor and multiplier as immediates)
+and builds no actors for a courier mission (kind 0 falls outside the kind
+switch). Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_ordinary_contracts(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -100,3 +113,14 @@ MAC_ALTERNATE = {'ordinary_contracts_reseed': [-31265,
                                  4,
                                  '__const',
                                  'bb8ae8eac34cb5200e9958e6d9be0fd571c010b50d3e43d5d19015e8d02f2676']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# Level::createMission: reseed, the freelance pirates and the courier's empty dispatch.
+           'ordinary_contracts_reseed': ('_ZN5Level13createMissionEv', 534, 34, 'sha256:34f13d7fdf4c84783cee3ec86d0747574fe1f139f2afd4f03cae506d912d04c6'),
+           'ordinary_contracts_side_slot': ('_ZN6Status19getFreelanceMissionEv', 0, 10, 'd0f89401406840687047'),
+           'ordinary_contracts_count': ('_ZN5Level13createMissionEv', 670, 86, 'sha256:5b5964101f54b063031d3c7a5a2f82fd44c1250a65b17e8ed74461b4c3c1e855'),
+           'ordinary_contracts_pirates': ('_ZN5Level13createMissionEv', 9912, 314, 'sha256:cadf5961ba6d66776f3c0613ee466528608ab189ef587d1fe4e3cbbbec275e59'),
+           'ordinary_contracts_offsets': ('_ZN5Level13createMissionEv', 10520, 8, '00409cc7005043c7'),
+           'ordinary_contracts_dispatch': ('_ZN5Level13createMissionEv', 756, 148, 'sha256:141203cd7eca2eca24558ff346f8deeeee83d576ee61073bf430d18efb05be0c'),
+           'ordinary_contracts_other_kinds': ('_ZN5Level13createMissionEv', 4756, 12, 'b82803f0bd82b7287ff474a8'),
+           'ordinary_contracts_empty_return': ('_ZN5Level13createMissionEv', 904, 32, 'sha256:97e50234ec590ab05e635ef4527311b5f874efae274e268b20854c99c9de11ae')}

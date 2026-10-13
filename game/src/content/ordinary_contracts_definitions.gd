@@ -12,6 +12,9 @@ const Recipe=preload("res://src/content/mission_recipe.gd")
 
 const MAC_SPANS = {"ordinary_contracts_reseed":[-31265,31],"ordinary_contracts_side_slot":[860132,22],"ordinary_contracts_count":[-31097,103],"ordinary_contracts_pirates":[-18932,503],"ordinary_contracts_dispatch":[-15605,124],"ordinary_contracts_empty_return":[-4930,38],"ordinary_contracts_divisor":[1532090,4],"ordinary_contracts_multiplier":[1532114,4],"ordinary_contracts_xz_offset":[1550190,4],"ordinary_contracts_y_offset":[1550206,4]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"ordinary_contracts_reseed":[534,34],"ordinary_contracts_side_slot":[0,10],"ordinary_contracts_count":[670,86],"ordinary_contracts_pirates":[9912,314],"ordinary_contracts_offsets":[10520,8],"ordinary_contracts_dispatch":[756,148],"ordinary_contracts_other_kinds":[4756,12],"ordinary_contracts_empty_return":[904,32]}
+
 static func parameters(data: Variant) -> bool:return Equal.equal_value(data,VALUES)
 
 static func available(bindings: RefCounted) -> bool:

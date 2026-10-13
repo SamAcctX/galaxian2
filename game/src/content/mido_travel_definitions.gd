@@ -226,6 +226,7 @@ static func validate(data: Variant, source_bytes: int, arch: String, arrival: Di
 		if data.has("gate_arrival"):android_spans.merge(GateArrival.ANDROID_SPANS)
 		if data.has("ordinary_shopping"):android_spans.merge(Shopping.ANDROID_SPANS)
 		if data.has("ordinary_fitting"):android_spans.merge(Fitting.ANDROID_SPANS)
+		if data.has("ordinary_contracts"):android_spans.merge(OrdinaryContracts.ANDROID_SPANS)
 		if data.has("kappa_return"):android_spans.merge(KappaReturn.ANDROID_SPANS)
 		if data.has("vossk_traffic"):android_spans.merge(Vossk.ANDROID_SPANS)
 		if data.has("vossk_lod"):android_spans.merge(VosskLOD.ANDROID_SPANS)
