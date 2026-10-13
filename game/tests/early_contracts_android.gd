@@ -114,7 +114,8 @@ func extensions() -> Array:
 		["station_generation",Definitions.Stock.ANDROID_VALUES,Definitions.Stock.ANDROID_SPANS],
 		["base_station_stock",Definitions.BaseStock.ANDROID_VALUES,Definitions.BaseStock.ANDROID_SPANS],
 		["base_navigation",Definitions.Navigation.VALUES,Definitions.Navigation.ANDROID_SPANS],
-		["lounge_presentation",Definitions.LoungePresentation.VALUES,Definitions.LoungePresentation.ANDROID_SPANS]]
+		["lounge_presentation",Definitions.LoungePresentation.VALUES,Definitions.LoungePresentation.ANDROID_SPANS],
+		["ordinary_generation",Definitions.Ordinary.VALUES,Definitions.Ordinary.ANDROID_SPANS]]
 
 ## [key, values, spans] of the Mac 1.0.7 chain.
 func mac_extensions() -> Array:

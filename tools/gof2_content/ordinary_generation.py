@@ -1,8 +1,23 @@
-"""Verified ordinary contact and offer data; no executable payloads."""
+"""Verified ordinary contact and offer data; no executable payloads.
+
+Android: Generator::createMission draws the ordinary offers (15 kinds with
+history, difficulty random(9) + 1 up to 10, destinations, courier, passenger,
+item, random and collection quantities, rewards and bonus),
+Generator::createAgent and createAgents the contacts and the single wingman
+roster (random(1300) + 700 per pilot, x 7 by Status::hardCoreMode);
+FileRead::loadAgents and Agent::Agent the 27 persistent contacts
+(Agent::getStation, getSystem), FileRead::loadSystemsBinary and
+SolarSystem::SolarSystem, getRoutes and getStations the systems, Item::init,
+getTecLevel and getMaxPrice the collection items. Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_ordinary_generation(mach, arrival):
+    if getattr(mach, 'architecture', None) == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -207,3 +222,26 @@ MAC_ALTERNATE = {'ordinary_offer_selection': [-235000,
                                 4,
                                 '__const',
                                 'c0e336a5f371ef22cd534e094269f2c1a9635cd080b71ffa671086832d3b60b7']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {'ordinary_offer_selection': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 0, 624, 'sha256:832664f7aa2dadeccd2706305e4ca7db936bc404052ad634843ce1049daa48d8'),
+           'ordinary_offer_parameters': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 624, 562, 'sha256:34dae0b6fea607c76850c5934b29a7bde15894a1c392fa69bfc3b25487fba945'),
+           'ordinary_offer_reward': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 1186, 778, 'sha256:7be1d87769681dd734affc31cd81f6125e3bdfde77886e436aeab487813e3716'),
+           'ordinary_offer_constants': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 1840, 12, '0000be420000964400e0ab45'),
+           'ordinary_offer_multipliers': ('_ZN9Generator13createMissionEP5AgentP5ArrayIP11SolarSystemE', 2260, 20, '9a99993f3333333f9a99193fc8281c009a99d93f'),
+           'ordinary_contact_identity': ('_ZN9Generator11createAgentEP7Station', 32, 194, 'sha256:b17fb94e28e758425f42fca8543c291b70e6088e582fab306fdb688c509f6125'),
+           'ordinary_contact_roster': ('_ZN9Generator11createAgentEP7Station', 352, 196, 'sha256:94cef30b6deaccf80667aab1ffac9a7b0dbe0a3d76aa0eeb702d301ec775e9f8'),
+           'ordinary_contact_population': ('_ZN9Generator12createAgentsEP7Station', 30, 202, 'sha256:85df72e4563c2c230d3d4381eb62e603ad7acb69748a4b0c7b3db842ff405d13'),
+           'ordinary_contact_unique_role': ('_ZN9Generator12createAgentsEP7Station', 968, 116, 'sha256:269529bb04d0499e5d6f300082fa59186dea736dd969a221915e6ff2227dbb5a'),
+           'ordinary_persistent_loader': ('_ZN8FileRead10loadAgentsEv', 0, 488, 'sha256:79d942dcdeef6cf675d601051e813885965df5345b54bee50cd8fd805350c022'),
+           'ordinary_persistent_constructor': ('_ZN5AgentC2EiN11AbyssEngine6StringEiiibiiii', 0, 246, 'sha256:4143308a9738b6d87b5c13cebfe2b266a5b6e16d8c65b976860ef58747e1a1fb'),
+           'ordinary_contact_station': ('_ZN5Agent10getStationEv', 0, 4, 'c06b7047'),
+           'ordinary_contact_system': ('_ZN5Agent9getSystemEv', 0, 4, '006c7047'),
+           'ordinary_system_loader': ('_ZN8FileRead17loadSystemsBinaryEv', 0, 772, 'sha256:d094cf702411949da76f9a406c4336c6c0bd2b4342531312c38009e2976e0100'),
+           'ordinary_system_constructor': ('_ZN11SolarSystemC2EiN11AbyssEngine6StringEibiiiiiiPiP5ArrayIiES5_S5_', 0, 184, 'sha256:639c7c82d968338fcc85b4f1ebdd98184f3dd075af953f6438614dd93078f7f7'),
+           'ordinary_system_routes': ('_ZN11SolarSystem9getRoutesEv', 0, 4, 'c06b7047'),
+           'ordinary_system_stations': ('_ZN11SolarSystem11getStationsEv', 0, 4, '406b7047'),
+           'ordinary_item_fields': ('_ZN4Item4initEv', 0, 78, 'sha256:2958dfb1982a848d6f960cdb302d8f062ef241c5d66ccd336fcb72ca1fc2176e'),
+           'ordinary_item_difficulty': ('_ZN4Item11getTecLevelEv', 0, 4, 'c0687047'),
+           'ordinary_item_price': ('_ZN4Item11getMaxPriceEv', 0, 4, '406a7047'),
+           'ordinary_roster_hard_predicate': ('_ZN6Status12hardCoreModeEv', 0, 36, 'sha256:d129eedb895b5a8cc5da84fbd316ee5effaae7d16ec57c3ef53f54ee21bd7b12')}
