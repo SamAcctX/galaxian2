@@ -10,11 +10,16 @@ const SPANS := {"world_station":[-39936,286],"station_exclusion":[872234,488],"s
 
 const MAC_ALTERNATE := {"world_station":[-39936,286],"station_exclusion":[872866,488],"station_constructor":[642880,291],"model_choice":[644874,327],"ordinary_layers_gate":[646562,39],"mido_layers":[648176,243],"constructor_finish":[649407,112],"collision_loader":[-683590,346],"little_endian_int":[1384274,53],"shape_dispatch":[646304,197],"box_arguments":[649085,290],"box_constructor":[-716160,147],"box_origin":[-714578,54],"box_point":[-715920,122],"station_point":[650362,244],"station_vtable":[2378642,48],"box_vtable":[2373962,8],"layer_parent":[-730396,48],"layer_bounds_merge":[1161461,94],"sphere_merge":[1063746,769],"layer_sphere":[1062562,1170],"mesh_vertex_copy":[1216380,196],"mesh_sphere_load":[1208146,261],"mesh_sphere_attach":[1160702,45],"model_rotation":[-729390,90],"faction_read":[-679148,45],"faction_argument":[-678532,107],"faction_constructor":[734764,137],"faction_getter":[735296,10],"rotation_pi":[1521054,4],"bounds_padding":[1520974,4],"box_scale":[1519594,4],"box_half":[1519570,4]}
 
+# Android: mesh spheres come from vertex bounds in mesh axes; spans inside named
+# functions and vtables (Layouts.anchored).
+const ANDROID_VALUES := {"scope":"first_mining_station_exterior","station_id":78,"system_id":15,"faction":3,"system_faction_field":2,"model_ids":[21078,21878,22078],"render_types":[28,0,2],"position":[0,0,0],"rotation":[0,3.1415927410125732,0],"mesh_axis_map":[1,2,3],"sphere_axis_map":[1,2,3],"collision_resource":"resources/data/bin/collision.bin","collision_record_limit":136,"collision_box_kind":1,"collision_position_map":[-1,3,2],"collision_half_extent_map":[1,3,2],"collision_scale":1,"bounds_margin":5000,"bounds_rounding":"truncate","bounds_test":"strict_axis_box","volume_test":"strict_axis_box","light_animation_supported":false,"docking_transition_supported":false}
+const ANDROID_SPANS := {"world_station":[1364,134],"station_exclusion":[0,142],"station_constructor":[0,210],"model_choice":[918,132],"layer_gates":[1050,18],"ordinary_layers_gate":[1820,14],"layer_index_gate":[2718,6],"mido_layers":[3174,418],"layer_exit":[1724,12],"volumes":[2102,510],"constructor_finish":[2612,74],"faction_read":[118,474],"faction_constructor":[58,28],"faction_getter":[0,4],"collision_loader":[0,300],"little_endian_int":[0,10],"box_origin":[0,60],"box_constructor":[0,152],"box_point":[0,158],"station_point":[0,204],"layer_parent":[0,32],"layer_bounds_merge":[68,20],"layer_sphere":[0,216],"sphere_merge":[0,344],"mesh_sphere_attach":[98,26],"mesh_vertex_copy":[156,224],"mesh_sphere_bounds":[610,124],"model_rotation":[0,120],"bounds_padding":[3648,4],"station_vtable":[64,12],"box_vtable":[20,4]}
+
 static func parameters(data: Variant) -> bool:
 	if not data is Dictionary or data.size()!=VALUES.size()+1 or not data.get("provenance") is Dictionary:return false
-	for key in VALUES:
-		if not Equal.equal_value(data.get(key),VALUES[key]):return false
-	return true
+	for values in [VALUES,ANDROID_VALUES]:
+		if values.keys().all(func(key):return Equal.equal_value(data.get(key),values[key])):return true
+	return false
 
 static func for_location(bindings: RefCounted, station_id: int, system_id: int, planet_type: int, catalogue_faction: int=-1) -> Dictionary:
 	if bindings==null or not parameters(bindings.station_exterior):return {}
@@ -45,7 +50,10 @@ static func for_location(bindings: RefCounted, station_id: int, system_id: int, 
 static func validate(data: Variant, source_bytes: int, arch: String, arrival: Dictionary, flight: Dictionary) -> String:
 	if not data is Dictionary:return "Missing station exterior declarations"
 	if data.is_empty():return ""
-	if arch!="x86_64" or not parameters(data) or not Flight.parameters(flight):return "Unsupported station exterior declarations"
+	if arch=="android-armv7":
+		if not Equal.equal_value(data.get("sphere_axis_map"),ANDROID_VALUES.sphere_axis_map) or not parameters(data) or not Flight.parameters(flight) or arrival.is_empty():return "Unsupported station exterior declarations"
+		return "" if Layouts.anchored(data.provenance,source_bytes,ANDROID_SPANS) else "Invalid station exterior extents"
+	if arch!="x86_64" or not Equal.equal_value(data.get("sphere_axis_map"),VALUES.sphere_axis_map) or not parameters(data) or not Flight.parameters(flight):return "Unsupported station exterior declarations"
 	var origin: Variant=arrival.get("provenance",{}).get("actor")
 	if not Fonts.extent(origin,"offset","bytes",[315],source_bytes):return "Station exterior lacks its source anchor"
 	var layouts: Array=[SPANS,MAC_ALTERNATE]
