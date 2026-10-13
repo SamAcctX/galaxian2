@@ -511,7 +511,7 @@ func equipped_seed(bindings: RefCounted,cat: RefCounted,source: Dictionary) -> D
 
 func verify_definitions(bindings: RefCounted,source: Dictionary,header: Dictionary) -> void:
 	check(validate(source,header,bindings).is_empty(),"The imported source capability failed validation")
-	for key in Bakka.SPANS:
+	for key in (Bakka.ANDROID_SPANS if header.architecture=="android-armv7" else Bakka.SPANS):
 		var changed: Dictionary=source.duplicate(true)
 		changed.provenance[key].offset+=1
 		check(not validate(changed,header,bindings).is_empty(),"A changed proof was trusted: "+key)

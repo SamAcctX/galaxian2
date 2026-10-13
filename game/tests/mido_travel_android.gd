@@ -69,6 +69,9 @@ func verify() -> void:
 		var mac_return: Dictionary=chain.duplicate(true)
 		mac_return.kappa_return=Definitions.KappaReturn.MAC_VALUES.duplicate(true)
 		check(not Definitions.validate(mac_return,source_bytes,"android-armv7",arrival,station,training,population,resources).is_empty(),"Android travel accepted the Mac Kappa return")
+	# Owners that bindings consult accept their Android declarations.
+	for owner in [Definitions.TractorRecovery,Definitions.VoidProbe,Definitions.VoidCrystals]:
+		check(owner.parameters(owner.ANDROID_VALUES),"An owner refused its Android declarations")
 	# Android's tractor acquisition window is Globals::w / 16 (the Mac: / 18).
 	if chain.has("tractor_recovery"):
 		var mac_tractor: Dictionary=chain.duplicate(true)

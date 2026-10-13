@@ -92,6 +92,12 @@ func verify_scanners() -> void:
 		check(owner.advance(observation(1)) and owner.snapshot().mother_ship_locked,"Scanner failed after strict duration: "+str(case.ids))
 
 func verify_windows_and_clock() -> void:
+	# Source windows: the Mac's width/8 and /18, Android's /6 and /16.
+	var rules: Dictionary=bindings.mido_travel.void_probe.world29.target_lock
+	@warning_ignore("integer_division")
+	var outer_r:int=960/int(rules.outer_window_width_divisor)
+	@warning_ignore("integer_division")
+	var inner_r:int=960/int(rules.inner_aim_width_divisor)
 	var owner:=fresh()
 	for i in 40:check(owner.advance(observation()),owner.error)
 	var before: Dictionary=owner.snapshot()
@@ -103,16 +109,17 @@ func verify_windows_and_clock() -> void:
 	check(owner.advance(disabled) and owner.snapshot()==locked,"Disabled target controller changed the retained phase1 lock")
 	var lost:=observation(1);lost.aim_point=Vector3(680,270,0)
 	check(owner.advance(lost) and owner.snapshot().found_index==0 and owner.snapshot().aimed_index==-1 and owner.snapshot().locked_index==-1 and owner.snapshot().elapsed_ms==0,"Off-center aim moved the viewport-centered outer window or retained the lock")
-	check(not owner._inside(Vector2i(600,270),Vector3(480,270,0),Vector2i(960,540),8) and owner._inside(Vector2i(599,270),Vector3(480,270,0),Vector2i(960,540),8),"Outer viewport-width/8 border is not strict")
-	var outer:=observation(1);outer.aim_point=Vector3(599,270,0)
+	var divisor:=int(rules.outer_window_width_divisor)
+	check(not owner._inside(Vector2i(480+outer_r,270),Vector3(480,270,0),Vector2i(960,540),divisor) and owner._inside(Vector2i(479+outer_r,270),Vector3(480,270,0),Vector2i(960,540),divisor),"Outer viewport-width border is not strict")
+	var outer:=observation(1);outer.aim_point=Vector3(479+outer_r,270,0)
 	check(owner.advance(outer) and owner.snapshot().found_index==0 and owner.snapshot().aimed_index==-1,"Outer candidate incorrectly passed the inner aim window")
-	var inner_border:=observation(1);inner_border.aim_point=Vector3(533,270,0)
-	check(owner.advance(inner_border) and owner.snapshot().found_index==0 and owner.snapshot().aimed_index==-1,"Strict inner-width/18 border acquired")
-	var inner:=observation(1);inner.aim_point=Vector3(532,270,0)
+	var inner_border:=observation(1);inner_border.aim_point=Vector3(480+inner_r,270,0)
+	check(owner.advance(inner_border) and owner.snapshot().found_index==0 and owner.snapshot().aimed_index==-1,"Strict inner-width border acquired")
+	var inner:=observation(1);inner.aim_point=Vector3(479+inner_r,270,0)
 	check(owner.advance(inner) and owner.snapshot().aimed_index==0 and owner.snapshot().elapsed_ms==1,"Inside aim box did not restart acquisition")
-	inner.aim_point=Vector3(531,270,0)
+	inner.aim_point=Vector3(478+inner_r,270,0)
 	check(owner.advance(inner) and owner.snapshot().elapsed_ms==2,"Moving aim within the same station reset pointer-based acquisition")
-	var vertical:=observation(1);vertical.aim_point=Vector3(480,323,0)
+	var vertical:=observation(1);vertical.aim_point=Vector3(480,270+inner_r,0)
 	check(owner.advance(vertical) and owner.snapshot().aimed_index==-1,"Strict vertical inner border acquired")
 	var inactive:=observation(1);inactive.station.active=false
 	check(owner.advance(inactive) and owner.snapshot().found_index==-1 and owner.snapshot().locked_index==-1,"Inactive station gained a target pointer")
