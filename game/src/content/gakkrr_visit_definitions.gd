@@ -8,6 +8,10 @@ const MAC_VALUES:={"scope":"gakkrr_station_visit35","mission35":{"campaign_curso
 const SPANS:={"gakkrr_factory36_entry":[872178,4],"gakkrr_factory36":[863336,38],"gakkrr_result35_count":[1530382,4],"gakkrr_result35_pairs":[1523210,80],"gakkrr_result35_voices":[1536946,80],"gakkrr_brief36_count":[1529730,4],"gakkrr_brief36_pairs":[1531122,16],"gakkrr_brief36_voices":[1535370,16],"gakkrr_radio35_entry":[104626,4]}
 const MAC_SPANS:={"gakkrr_factory36_entry":[871546,4],"gakkrr_factory36":[862704,38],"gakkrr_result35_count":[1555398,4],"gakkrr_result35_pairs":[1548226,80],"gakkrr_result35_voices":[1561882,80],"gakkrr_brief36_count":[1554746,4],"gakkrr_brief36_pairs":[1556122,16],"gakkrr_brief36_voices":[1560306,16],"gakkrr_radio35_entry":[104626,4]}
 
+# Android: the Mac 1.0.7 values (VALUES); spans inside named functions
+# (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"gakkrr_factory36_entry":[138,2],"gakkrr_factory36":[6692,30],"gakkrr_mission_constructor":[0,288],"gakkrr_result35_count":[140,4],"gakkrr_result35_pairs":[1864,80],"gakkrr_brief36_count":[144,4],"gakkrr_brief36_pairs":[224,16],"gakkrr_voices":[0,12032],"gakkrr_radio35_dispatch":[0,26],"gakkrr_radio35_entry":[96,2],"gakkrr_radio_default":[12956,8]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES) or Equal.equal_value(data,MAC_VALUES)
 
