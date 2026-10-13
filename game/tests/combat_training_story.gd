@@ -5,6 +5,7 @@ const TrainingRadio=preload("res://src/simulation/radio_sequence.gd")
 const RadioResources=preload("res://src/presentation/opening_radio_resources.gd")
 const TrainingAudio=preload("res://src/content/audio_resources.gd")
 
+var arch:="x86_64"
 func run():
 	var args:=OS.get_cmdline_user_args()
 	check(args.size()==3,"Expected content, bindings and visuals")
@@ -16,6 +17,7 @@ func verify_training_destruction(args: PackedStringArray, equipment: RefCounted)
 	super.verify_training_destruction(args,equipment)
 	var rules: Dictionary=bindings.combat_training_story
 	var header: Dictionary=JSON.parse_string(FileAccess.get_file_as_string(args[1].path_join("bindings.json")))
+	arch=str(header.architecture)
 	if Bindings.reader_version(header.reader)>=122:check(StoryRules.parameters(rules),"Current Mac pack omitted training story")
 	if rules.is_empty():
 		check(StoryRules.radio(bindings).is_empty() and StoryRules.briefing(bindings).is_empty(),"Earlier pack invented training dialogue")
@@ -24,21 +26,22 @@ func verify_training_destruction(args: PackedStringArray, equipment: RefCounted)
 	for key in StoryRules.VALUES:
 		var bad:=rules.duplicate(true);bad[key]=null
 		check(not StoryRules.parameters(bad),"Changed training story accepted: "+key)
-	for key in StoryRules.SPANS:
+	for key in (StoryRules.ANDROID_SPANS if arch=="android-armv7" else StoryRules.SPANS):
 		var bad:=rules.duplicate(true);bad.provenance[key].offset+=1
 		check(not story_validation(bad,header.source_executable_bytes).is_empty(),"Disconnected training story accepted: "+key)
 	if rules.has("station_return"):
 		for key in StoryRules.RETURN_VALUES:
 			var bad:=rules.duplicate(true);bad.station_return[key]=null
 			check(not StoryRules.parameters(bad),"Changed training return accepted: "+key)
-		for key in StoryRules.RETURN_SPANS:
+		# Android proves the return and navigation in its one span table, checked above.
+		for key in ([] if arch=="android-armv7" else StoryRules.RETURN_SPANS):
 			var bad:=rules.duplicate(true);bad.provenance[key].offset+=1
 			check(not story_validation(bad,header.source_executable_bytes).is_empty(),"Disconnected training return accepted: "+key)
 	if rules.has("navigation"):
 		for key in StoryRules.NAVIGATION_VALUES:
 			var bad:=rules.duplicate(true);bad.navigation[key]=null
 			check(not StoryRules.parameters(bad),"Changed training navigation accepted: "+key)
-		for key in StoryRules.NAVIGATION_SPANS:
+		for key in ([] if arch=="android-armv7" else StoryRules.NAVIGATION_SPANS):
 			var bad:=rules.duplicate(true);bad.provenance[key].offset+=1
 			check(not story_validation(bad,header.source_executable_bytes).is_empty(),"Disconnected training navigation accepted: "+key)
 	var briefing:=StoryRules.briefing(bindings)
@@ -82,7 +85,7 @@ func verify_training_destruction(args: PackedStringArray, equipment: RefCounted)
 	verify_training_voice()
 
 func story_validation(data: Dictionary, source_bytes: int) -> String:
-	return StoryRules.validate(data,source_bytes,"x86_64",bindings.arrival_staging,bindings.combat_training,bindings.combat_training_destruction,bindings.mining_briefing,bindings.mining_objective,bindings.opening_dialogue,bindings.full_hold_story)
+	return StoryRules.validate(data,source_bytes,arch,bindings.arrival_staging,bindings.combat_training,bindings.combat_training_destruction,bindings.mining_briefing,bindings.mining_objective,bindings.opening_dialogue,bindings.full_hold_story)
 
 func verify_training_voice():
 	for language in ["gb","de"]:

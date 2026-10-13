@@ -49,13 +49,13 @@ func verify_training_visuals(args: PackedStringArray, equipment: RefCounted):
 	if rules.is_empty():
 		check(not shots.configure(bindings,lib,world) and not impacts.configure(bindings,lib,world),"Older pack invented training models")
 		return
-	check(TrainingVisualRules.validate(rules,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.combat_training_weapons,bindings.opening_staging).is_empty(),"Training visuals rejected their source context")
+	check(TrainingVisualRules.validate(rules,header.source_executable_bytes,str(header.architecture),bindings.arrival_staging,bindings.combat_training_weapons,bindings.opening_staging).is_empty(),"Training visuals rejected their source context")
 	for key in TrainingVisualRules.VALUES:
 		var bad:=rules.duplicate(true);bad[key]=null
 		check(not TrainingVisualRules.parameters(bad),"Changed training visual accepted: "+key)
-	for key in TrainingVisualRules.SPANS:
+	for key in (TrainingVisualRules.ANDROID_SPANS if header.architecture=="android-armv7" else TrainingVisualRules.SPANS):
 		var bad:=rules.duplicate(true);bad.provenance[key].offset+=1
-		check(not TrainingVisualRules.validate(bad,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.combat_training_weapons,bindings.opening_staging).is_empty(),"Disconnected visual proof accepted: "+key)
+		check(not TrainingVisualRules.validate(bad,header.source_executable_bytes,str(header.architecture),bindings.arrival_staging,bindings.combat_training_weapons,bindings.opening_staging).is_empty(),"Disconnected visual proof accepted: "+key)
 	var construction:=source.snapshot()
 	check(shots.configure(bindings,lib,world) and impacts.configure(bindings,lib,world),shots.error+impacts.error)
 	if shots.snapshot().is_empty() or impacts.snapshot().is_empty():return

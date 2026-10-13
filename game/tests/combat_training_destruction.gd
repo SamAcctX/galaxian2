@@ -31,13 +31,13 @@ func verify_training_destruction(args: PackedStringArray, equipment: RefCounted)
 		check(not resources.configure_combat_training(lib,bindings),"Older pack invented training cargo resources")
 		check(not TrainingDeathCounters.new().configure_combat_training(bindings),"Older pack invented training death counters")
 		return
-	check(TrainingDeathRules.validate(rules,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.combat_training,bindings.combat_training_control,bindings.combat_training_weapons,bindings.opening_actors).is_empty(),"Training death rejected its source context")
+	check(TrainingDeathRules.validate(rules,header.source_executable_bytes,str(header.architecture),bindings.arrival_staging,bindings.combat_training,bindings.combat_training_control,bindings.combat_training_weapons,bindings.opening_actors).is_empty(),"Training death rejected its source context")
 	for key in TrainingDeathRules.VALUES:
 		var bad:=rules.duplicate(true);bad[key]=null
 		check(not TrainingDeathRules.parameters(bad),"Changed training death declaration accepted: "+key)
-	for key in TrainingDeathRules.SPANS:
+	for key in (TrainingDeathRules.ANDROID_SPANS if header.architecture=="android-armv7" else TrainingDeathRules.SPANS):
 		var bad:=rules.duplicate(true);bad.provenance[key].offset+=1
-		check(not TrainingDeathRules.validate(bad,header.source_executable_bytes,"x86_64",bindings.arrival_staging,bindings.combat_training,bindings.combat_training_control,bindings.combat_training_weapons,bindings.opening_actors).is_empty(),"Disconnected training death proof accepted: "+key)
+		check(not TrainingDeathRules.validate(bad,header.source_executable_bytes,str(header.architecture),bindings.arrival_staging,bindings.combat_training,bindings.combat_training_control,bindings.combat_training_weapons,bindings.opening_actors).is_empty(),"Disconnected training death proof accepted: "+key)
 	check(resources.configure_combat_training(lib,bindings),resources.error)
 	if resources.snapshot().is_empty():return
 	check(resources.snapshot().cargo_models.map(func(row):return row.model_id)==[16993,16993,16993,16990],"Gunant inherited the pirate container")
