@@ -35,3 +35,19 @@ class VosskTrafficTests(unittest.TestCase):
         self.assertEqual(len(reader.VALUES['boxes']), 5)
         self.assertEqual(reader.VALUES['death']['wreck_layout_id'], 4)
         self.assertTrue(all(all(value > 0 for value in box['half_extents']) for box in reader.VALUES['boxes']))
+
+
+class VosskTrafficAndroidTests(unittest.TestCase):
+    def test_android_proofs(self):
+        import android_fixture
+        from gof2_content.android_library import AndroidLibrary
+        from test_mido_travel import roomy
+        with patch.object(android_fixture, 'library', roomy(android_fixture.library)):
+            android_fixture.verify_android_proof(self, reader, lambda lib: reader.extract_vossk_traffic(lib, {'scope': 'rescue_choreography'}), values='VALUES')
+            image, layout, _ = android_fixture.layout_library(reader.ANDROID)
+        with patch.object(reader, 'ANDROID', layout):
+            self.assertEqual(reader.extract_vossk_traffic(AndroidLibrary(image), {}), ({}, {}))
+
+    def test_android_native_declarations(self):
+        from android_fixture import assert_native_android
+        assert_native_android(self, reader, 'vossk_traffic_definitions.gd', values='VALUES')

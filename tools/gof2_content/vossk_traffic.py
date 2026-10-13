@@ -1,8 +1,21 @@
-"""Guarded ordinary Vossk freighter declarations."""
+"""Guarded ordinary Vossk freighter declarations.
+
+Android: Globals::getShipGroup builds the Vossk freighter (group 13: body
+17013, children 18713 and 17038, LOD meshes 17139 and 17140 at 35000 and
+45000, LOD children 17040 and 17041); Level::createMission spawns race-1
+freighters as hull 13; Level::createShip gives race 1 five collision boxes
+(immediate extents) and wreck 18303; PlayerFixedObject::setWreckedMeshId
+(hull 13: layout 4) and PlayerFixedObject::update (layout 4: material
+33355). Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_vossk_traffic(mach, arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     _, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -113,3 +126,18 @@ MAC_ALTERNATE = {'vossk_traffic_assembly_entry': [-220250,
                                   17,
                                   '__text',
                                   '86066642558823bebba2cfe81d710ecc6184b0a8b9cd4b5adc191e61af733416']}
+
+# Android spans inside named functions; the values are VALUES.
+ANDROID = {# Globals::getShipGroup: group 13.
+           'vossk_traffic_assembly_entry': ('_ZN7Globals12getShipGroupEiib', 0, 66, 'sha256:1989d04285bc3ef66dcfc301025b512a55dcb0ce5fbbe2c261eef439720f68d6'),
+           'vossk_traffic_assembly': ('_ZN7Globals12getShipGroupEiib', 66, 146, 'sha256:498db4c9310eb2b4a939860da45e9ad084d59d9fb7fe5f6e594eb261028f2465'),
+           'vossk_traffic_assembly_children': ('_ZN7Globals12getShipGroupEiib', 1544, 8, '584672f7d0edb7e0'),
+           # Level::createMission: race-1 freighters are hull 13.
+           'vossk_traffic_spawn_hull': ('_ZN5Level13createMissionEv', 8208, 92, 'sha256:f8a5eb3f4144a97df55a3d582ab7c35cc622e0e77a61e2fbdde431958548a2a4'),
+           # Level::createShip: race 1 gets five boxes (offset, full extents) and wreck 18303.
+           'vossk_traffic_collision_dispatch': ('_ZN5Level10createShipEiiiP8Waypointbb', 652, 32, 'sha256:2f5b2177c1520112fb18bcddd7658d00f46523c52a42cdbdd5a7ec5dcf74497f'),
+           'vossk_traffic_collision_boxes': ('_ZN5Level10createShipEiiiP8Waypointbb', 1774, 426, 'sha256:3ffd43212a4d65d150ec4fd4dadcf46e4e62a9312f010f9382cf388e5c7d5193'),
+           # Hull 13 uses wreck layout 4 and material 33355.
+           'vossk_traffic_death_layout': ('_ZN17PlayerFixedObject16setWreckedMeshIdEi', 0, 192, 'sha256:0eddfaaefee7aa0a7ffe17609b092f742042a0adf689940f1cea6f89c4a5f57c'),
+           'vossk_traffic_wreck_table': ('_ZN17PlayerFixedObject6updateEi', 1988, 28, 'sha256:392270e4c7abca63b24efc6bbe501ce2aba95cc302b1b884c71b30a1b111f839'),
+           'vossk_traffic_wreck_material': ('_ZN17PlayerFixedObject6updateEi', 2562, 10, '48f24b200331c4f89c01')}
