@@ -249,24 +249,32 @@ def extract_font_bindings(mach, registrations):
 BUILD = '_Z17BuildResourceListPN11AbyssEngine6EngineE'
 
 
+def build_instructions(lib):
+    """BuildResourceList decoded as the registration reader does: aligned at each resource literal."""
+    import capstone
+    from .android_library import decode_function, literal_references
+    found = lib.__dict__.get('_build_instructions')
+    extent = lib.symbols.get(BUILD)
+    if found is None and extent is not None:
+        decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+        decoder.detail = True
+        anchors = [at for at in literal_references(lib) if extent[0] <= at < sum(extent)]
+        found = lib.__dict__['_build_instructions'] = decode_function(lib, decoder, *extent, anchors) or []
+    return found or []
+
+
 def payload_records(lib, kind):
     """BuildResourceList's 16-byte records of one kind (u16 id, kind, -1, payload) whose
     4-byte payload holds two u16 (texture id, then font group or atlas region), read
     along straight-line code; provenance is the record's allocation call. Records
     without constant fields come back as None."""
-    import capstone
-    from .android_library import decode_function, interpret, literal_references
+    from .android_library import interpret
     from .android_blocks import offset
-    extent = lib.symbols.get(BUILD)
-    if extent is None:
+    if BUILD not in lib.symbols:
         return []
     objects = lib.__dict__.get('_build_objects')
     if objects is None:
-        decoder = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
-        decoder.detail = True
-        # Decoded as the registration reader does: aligned at each resource literal.
-        anchors = [at for at in literal_references(lib) if extent[0] <= at < sum(extent)]
-        objects = lib.__dict__['_build_objects'] = interpret(lib, decode_function(lib, decoder, *extent, anchors) or [])
+        objects = lib.__dict__['_build_objects'] = interpret(lib, build_instructions(lib))
     rows = []
     for item in objects:
         fields = item['fields']

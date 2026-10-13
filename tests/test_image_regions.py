@@ -3,7 +3,9 @@ import importlib.util
 import struct
 from types import SimpleNamespace
 import unittest
-from gof2_content.image_regions import extract_image_bindings, MAC_RECORD, MAC_STACK_RECORD, MAC_RANGE, ARM_RANGE
+from unittest.mock import patch
+from gof2_content import image_regions
+from gof2_content.image_regions import extract_image_bindings, extract_image_regions, MAC_RECORD, MAC_STACK_RECORD, MAC_RANGE, ARM_RANGE
 from test_font_selection import expand
 from test_materials import arm_wide
 from test_ship_models import branch
@@ -132,20 +134,86 @@ class AndroidImageRegions(unittest.TestCase):
     def test_records_alternatives_and_range(self):
         lib, allocations, start = android_images()
         result = extract_image_bindings(lib)
-        # Type-3 records only, alternatives kept; provenance is each allocation call.
-        self.assertEqual(result['records'], [
-            {'id': 30, 'texture_id': 600, 'region': 4, 'source_offset': allocations[0], 'source_bytes': 4},
-            {'id': 30, 'texture_id': 601, 'region': 9, 'source_offset': allocations[1], 'source_bytes': 4},
-            {'id': 31, 'texture_id': 601, 'region': 2, 'source_offset': allocations[2], 'source_bytes': 4}])
+        # No device-profile guard decides the records: none are declared (the range still is).
+        self.assertEqual(result['records'], [])
         self.assertEqual(result['ranges'], [{'first_id': 5000, 'first_texture_id': 900, 'count': 12, 'region': 0,
                                              'source_offset': start, 'source_bytes': 82}])
-        # A record without constant fields is left out, not the declarations around it.
-        self.assertEqual(extract_image_bindings(android_images(extra=[(32, 3, 603, 1, False)])[0])['records'], result['records'])
+
+
+def imm(value):
+    return '#%d' % value if value < 10 else '#%#x' % value
+
+
+def record(identifier, texture, region, kind=3):
+    """One 16-byte BuildResourceList record (id, kind, -1, payload of texture and region)."""
+    return '\n'.join(['movs r0, #0x10', 'call _Znwj', 'mov r5, r0', 'movs r0, #4', 'call _Znwj', 'mov r6, r0',
+                      'movw r1, ' + imm(texture), 'strh r1, [r6]', 'movs r1, ' + imm(region), 'strh r1, [r6, #2]',
+                      'movw r0, ' + imm(identifier), 'strh r0, [r5]', 'movs r0, ' + imm(kind), 'str r0, [r5, #4]',
+                      'mov.w r1, #-1', 'strd r1, r6, [r5, #8]', 'mov r0, r5', 'call ' + ADD])
+
+
+ADD = '_ZN11AbyssEngine11PaintCanvas11AddResourceEPNS_8ResourceE'
+IPAD = 'ldr r0, =&_ZN7Globals4iPadE\nadd r0, pc\nldr r0, [r0]\nldrb r0, [r0]\n'
+
+
+def profile_images(guard=IPAD + 'cmp r0, #0\nbeq #phone', ipad_first=True, hd='cbz r4, #small'):
+    """BuildResourceList with an unguarded record (31), the iPad guard choosing id 30's
+    texture 601 over the phone's 600, an iPadHD flag kept in r4 across a call (cbz), an
+    ordinary branch both ways take (33 and 36) and an unreachable record (35)."""
+    from android_text_fixture import text_library
+    from gof2_content.font_bindings import build_instructions
+    first, second = (record(30, 601, 9), record(30, 600, 4)) if ipad_first else (record(30, 600, 4), record(30, 601, 9))
+    # The branch target lies after the return (as compiled), so the linear decode reaches it.
+    body = '\n'.join(['push {r4, r5, r6, lr}', record(31, 601, 2), guard, first, 'join:',
+                      'ldr r0, =&_ZN7Globals6iPadHDE', 'add r0, pc', 'ldr r0, [r0]', 'ldrb r4, [r0]', record(32, 602, 1),
+                      hd, record(34, 603, 3), 'small:', 'ldrh r1, [r5]', 'cmp r1, #0', 'beq #extra',
+                      record(33, 604, 5), 'done:', 'movs r0, #0x10', 'call _Znwj', 'pop {r4, r5, r6, pc}',
+                      'phone:', second, 'b #join', 'extra:', record(36, 606, 7), 'b #done', record(35, 605, 6), 'pop {r4, r5, r6, pc}'])
+    flags = {name: [0] for name in ('_ZN7Globals4iPadE', '_ZN7Globals6iPadHDE', '_ZN7Globals5otherE')}
+    lib, _ = text_library({'_Z17BuildResourceListPN11AbyssEngine6EngineE': body, ADD: 'bx lr'}, flags)
+    code = build_instructions(lib)
+    allocations = [b.address for a, b in zip(code, code[1:]) if a.mnemonic == 'movs' and a.op_str == 'r0, #0x10' and b.mnemonic in ('bl', 'blx')]
+    return lib, allocations
+
+
+@unittest.skipUnless(importlib.util.find_spec('capstone'), 'optional static-reader dependency')
+class AndroidImageProfile(unittest.TestCase):
+    def rows(self, lib):
+        return [(r['id'], r['texture_id'], r['region']) for r in extract_image_regions(lib)]
+
+    def test_ipad_profile(self):
+        lib, allocations = profile_images()
+        # The iPad record of id 30, the unguarded and iPadHD ones, and both ways of the ordinary branch;
+        # provenance is each record's allocation call.
+        self.assertEqual(extract_image_regions(lib), [
+            {'id': 30, 'texture_id': 601, 'region': 9, 'source_offset': allocations[1], 'source_bytes': 4},
+            {'id': 31, 'texture_id': 601, 'region': 2, 'source_offset': allocations[0], 'source_bytes': 4},
+            {'id': 32, 'texture_id': 602, 'region': 1, 'source_offset': allocations[2], 'source_bytes': 4},
+            {'id': 33, 'texture_id': 604, 'region': 5, 'source_offset': allocations[4], 'source_bytes': 4},
+            {'id': 34, 'texture_id': 603, 'region': 3, 'source_offset': allocations[3], 'source_bytes': 4},
+            {'id': 36, 'texture_id': 606, 'region': 7, 'source_offset': allocations[7], 'source_bytes': 4}])
+        # Each flag's way follows the profile; bne and cbnz test the flag the other way round.
+        with patch.dict(image_regions.PROFILE, {'_ZN7Globals4iPadE': False, '_ZN7Globals6iPadHDE': False}):
+            self.assertEqual(self.rows(lib), [(30, 600, 4), (31, 601, 2), (32, 602, 1), (33, 604, 5), (36, 606, 7)])
+        flipped, _ = profile_images(IPAD + 'cmp r0, #0\nbne #phone', ipad_first=False)
+        self.assertEqual(self.rows(flipped), self.rows(lib))
+        self.assertEqual(self.rows(profile_images(hd='cbnz r4, #small')[0]), [row for row in self.rows(lib) if row[0] != 34])
+
+    def test_undecided_profile(self):
+        # Without a decided iPad guard no record is declared.
+        for name, guard in {'other symbol': IPAD.replace('4iPadE', '5otherE') + 'cmp r0, #0\nbeq #phone',
+                            'flag overwritten': IPAD + 'movs r0, #1\ncmp r0, #0\nbeq #phone',
+                            'flag lost to a call': IPAD + 'call _Znwj\ncmp r0, #0\nbeq #phone',
+                            'compare replaced': IPAD + 'cmp r0, #0\ncmp r5, #0\nbeq #phone',
+                            'not a zero test': IPAD + 'cmp r0, #1\nbeq #phone',
+                            'displaced pointer': IPAD.replace('ldr r0, [r0]\n', 'ldr r0, [r0, #4]\n') + 'cmp r0, #0\nbeq #phone',
+                            'no slot load': 'ldr r0, [r0]\nldrb r0, [r0]\ncmp r0, #0\nbeq #phone'}.items():
+            self.assertEqual(extract_image_regions(profile_images(guard)[0]), [], name)
 
     def test_unsupported_ranges(self):
         for name, options in {'no loop': dict(with_range=False), 'empty': dict(range_values={'count': 0}),
                               'id overflow': dict(range_values={'first_id': 65530}),
                               'texture overflow': dict(range_values={'first_texture_id': 65530})}.items():
-            self.assertEqual(extract_image_bindings(android_images(**options)[0])['ranges'], [], name)
+            self.assertEqual(extract_image_bindings(android_images(**options)[0]).get('ranges', []), [], name)
 
 if __name__=='__main__': unittest.main()
