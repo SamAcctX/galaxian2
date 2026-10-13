@@ -145,6 +145,7 @@ func extensions() -> Array:
 		["void_probe",Definitions.VoidProbe.ANDROID_VALUES,Definitions.VoidProbe.ANDROID_SPANS],
 		["dima_return",Definitions.DimaReturn.VALUES,Definitions.DimaReturn.ANDROID_SPANS],
 		["post_probe_visits",Definitions.PostProbe.VALUES,Definitions.PostProbe.ANDROID_SPANS],
+		["void_access",Definitions.VoidAccess.VALUES,Definitions.VoidAccess.ANDROID_SPANS],
 		["vossk_traffic",Definitions.Vossk.VALUES,Definitions.Vossk.ANDROID_SPANS]]
 
 func anchored(spans: Dictionary,origin: int) -> Dictionary:

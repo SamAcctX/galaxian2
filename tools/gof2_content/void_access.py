@@ -2,16 +2,31 @@
 
 The station result, story mission, and recurring portal have separate owners.
 This reader only supplies the warning, career selection, and entry rules.
+
+Android: from cursor 32 the StarMap (constructor, initStarSystem,
+drawOnScreenInfo, depart) marks the Void entrance (model 16994) at the course
+system and station and hints it from cursor 33; Status::departStation rerolls
+that entrance (cursors 32-44, every 11th qualifying departure: system
+AERandom::nextInt(22) with access, not 10 or 15 or the story target, then a
+random station) and disables it from cursor 45 (-10, -10);
+Level::createSpace places the ordinary portal there and MGame::OnUpdate
+enters it; Status::nextCampaignMission cases 27-32 and Mission::Mission()
+supply the missions. Values are the Mac 1.0.7 ones (VALUES); the reader
+requires the Mac 1.0.7 post-probe visits.
 """
 
 import copy
 
+from .declaration_layouts import recognize_symbols
 from .post_probe_visits import VALUES as POST_PROBE_APP, MAC_VALUES as POST_PROBE_OLD
 from .station_exterior import hashed_variants
 
 
 def extract_void_access(mach, arrival, visits):
     """Select one complete source layout and its matching station declarations."""
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival and visits == POST_PROBE_APP else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     if not proof or visits != (POST_PROBE_APP, POST_PROBE_OLD)[variant]:
         return {}, {}
@@ -201,3 +216,26 @@ MAC_ALTERNATE = {'map_warning_model': [809691,
                                218,
                                '__text',
                                '2a90b6fd20d6ddfe21b22aaa9fb5f5ae0fb6edfc2fefc4de73b409f982a5d6b6']}
+
+ANDROID = {# StarMap: the entrance marker, hint and departure.
+           'void_access_map_warning_model': ('_ZN7StarMapC2EbP7Missionbi', 0, 1132, 'sha256:b01f1d866a21d9f412325900b545b5ccff4ea8feed1c69ddda258e2a8c1984bc'),
+           'void_access_map_station_marker': ('_ZN7StarMap14initStarSystemEv', 0, 2336, 'sha256:2094f979db70f635399bb81d6d0e65112b8593503e544a67f1e74b4a291ec975'),
+           'void_access_map_target_hint': ('_ZN7StarMap16drawOnScreenInfoEib', 0, 4092, 'sha256:6cc9ceb5943c56ad1f055ead042f9236d2a98e83f56721ced7ec6b1f3b9dc50a'),
+           'void_access_map_location_selection': ('_ZN7StarMap6departEb', 0, 608, 'sha256:b34731ccb0911d58dd95a4f2bf80ee9713d545963f5f97b738b6b57730b0c340'),
+           # Status::departStation's reroll, the portal, its entry and cases 27-32.
+           'void_access_career_location_selection': ('_ZN6Status13departStationEP7Station', 0, 1072, 'sha256:b7432b338855a0a259aa2b3d0d678bb305ea5293e9903e68114efafe3b6170d6'),
+           'void_access_ordinary_portal_construction': ('_ZN5Level11createSpaceEv', 0, 3668, 'sha256:407ff360bb0ce9685a07653897850772aad545364475333f63f21dabb48175d7'),
+           'void_access_factories_dispatch': ('_ZN6Status19nextCampaignMissionEb', 122, 12, '2d0dbd049f02630272023b02'),
+           'void_access_factory28': ('_ZN6Status19nextCampaignMissionEb', 6814, 40, 'sha256:0ece9f20c0befefa741047f8e5ad61390967b1ff633a3051c5c11e3144b2deb2'),
+           'void_access_factory29': ('_ZN6Status19nextCampaignMissionEb', 2494, 32, 'sha256:686c2a47f9c04dc1d9cc124cf7293463e6233d0675b79bdb39557eeaac395884'),
+           'void_access_factory30': ('_ZN6Status19nextCampaignMissionEb', 1410, 28, 'sha256:98db907322f1b07a8bb5153ad516dc720e990eec8addc7722a59b8bc34c2a0ff'),
+           'void_access_factory31': ('_ZN6Status19nextCampaignMissionEb', 1290, 30, 'sha256:cc7dd1b8b5ab9ae101ad27289149f24d68de0d3a8fbbe8ba6b24ca05aa00fcda'),
+           'void_access_factory32': ('_ZN6Status19nextCampaignMissionEb', 1320, 28, 'sha256:45aad0b8af313b9a6c6cb3b978137cdb89fe342eb3e3dab6c49c80d2030beb6d'),
+           'void_access_factory33': ('_ZN6Status19nextCampaignMissionEb', 1210, 50, 'sha256:c517d65cd9d9a4e9d24458a4e26db634b978bde2f1764b54833cd272469c556e'),
+           'void_access_factory33_tail': ('_ZN6Status19nextCampaignMissionEb', 7886, 10, '01b0bde8f04320f124ba'),
+           'void_access_living_portal_transaction': ('_ZN5MGame8OnUpdateEv', 12080, 496, 'sha256:421dededd3cc1f9cd43234ad6868375cb2db5802c4591984b9f8d37797cae352'),
+           'void_access_bounded_random_index': ('_ZN11AbyssEngine8AERandom7nextIntEi', 0, 152, 'sha256:dbdc6d398b2d2ed41a342376d8af938c332ab948c9bb120d02b25f85d1d46e1f'),
+           # The flight briefing and the empty mission.
+           'void_access_flight_briefing_tick': ('_ZN5MGame8OnUpdateEv', 10072, 68, 'sha256:f59ab7bdc1b81ef90c370633ae334fdb13f3a9aa680a7dfc565f89a546b9ecb9'),
+           'void_access_flight_briefing_start': ('_ZN5MGame13dialogueEventEv', 0, 392, 'sha256:805e9bed6df0875e75c5f64613547a6da41fe7c7d904341c2e32f359ae6baee3'),
+           'void_access_empty_mission_constructor': ('_ZN7MissionC2Ev', 0, 216, 'sha256:ba8c3b3f004903389631e2fee8c55f063b0cb75f316a12b619d63c4d258de8f6')}
