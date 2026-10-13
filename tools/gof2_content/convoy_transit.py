@@ -1,8 +1,19 @@
-"""Verified ordinary travel before the convoy story target is selected."""
+"""Verified ordinary travel before the convoy story target is selected.
+
+Android: Status::departStation selects the cursor-14 convoy story mission
+(Status::nextCampaignMission case 13: Mission(4, 0, 79),
+Status::setCampaignMission) before an accepted side mission, which stays;
+ModStation::OnTouchEnd departs; Level::assignGuns gives the NPCs 600 - 2 x 14 =
+572 ms between shots. Values equal the Mac ones.
+"""
 import copy
+from .declaration_layouts import recognize_symbols
 from .station_exterior import hashed_variants
 
 def extract_convoy_transit(mach,arrival):
+    if mach.architecture == 'android-armv7':
+        proof = recognize_symbols(mach, ANDROID) if arrival else {}
+        return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
     variant, proof = hashed_variants(mach, arrival, [LAYOUTS, MAC_ALTERNATE])
     return (copy.deepcopy(VALUES), proof) if proof else ({}, {})
 
@@ -67,3 +78,15 @@ MAC_ALTERNATE = {'convoy_transit_selection': [857138,
                                     107,
                                     '__text',
                                     '6e0a51579be6a46943b6d74e57818e23f0d29d5697488eb4ce573b1d36a9e18c']}
+
+# Android spans inside named functions and their tables; the values are VALUES.
+ANDROID = {# Status::departStation: the convoy story mission is selected before a side mission, which stays.
+           'convoy_transit_selection': ('_ZN6Status13departStationEP7Station', 0, 1072, 'sha256:b7432b338855a0a259aa2b3d0d678bb305ea5293e9903e68114efafe3b6170d6'),
+           # Status::nextCampaignMission case 13: Mission(4, 0, 79).
+           'convoy_transit_dispatch': ('_ZN6Status19nextCampaignMissionEb', 58, 10, 'a12800f21b82dfe810f0'),
+           'convoy_transit_case': ('_ZN6Status19nextCampaignMissionEb', 94, 2, '5a0e'),
+           'convoy_transit_story_factory': ('_ZN6Status19nextCampaignMissionEb', 7416, 30, 'sha256:0ac3d0e6fb11d9a8c33c0fa39815408687aba9f7f2dee1622041276274b314b7'),
+           'convoy_transit_story_slot': ('_ZN6Status18setCampaignMissionEP7Mission', 0, 72, 'sha256:1d0b38f030f7e22ca6bc067f23404c8a6c8e5ff95990b29a89f875b44a0209c1'),
+           'convoy_transit_departure': ('_ZN10ModStation10OnTouchEndEiiPv', 0, 6536, 'sha256:5b29b2bf44b1e0a442eb14b5646a1aad12932fedee58112b028e31589316b50e'),
+           # Level::assignGuns: 600 - 2 x 14 = 572 ms between NPC shots.
+           'convoy_transit_weapon_interval': ('_ZN5Level10assignGunsEv', 0, 3320, 'sha256:2d4c9a0a16410a8459ff79a6c70158b826a10813a8dee82ee37fe387abbcec55')}

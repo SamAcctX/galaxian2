@@ -6,6 +6,9 @@ const SPANS = {"convoy_transit_selection":[856506,1129],"convoy_transit_story_fa
 
 const MAC_SPANS = {"convoy_transit_selection":[857138,1129],"convoy_transit_story_factory":[862017,38],"convoy_transit_story_slot":[860176,122],"convoy_transit_departure_selection":[428586,29],"convoy_transit_departure_state":[432297,126],"convoy_transit_weapon_interval":[57315,107]}
 
+# Android: spans inside named functions (Layouts.anchored, checked by mido_travel_definitions.gd).
+const ANDROID_SPANS = {"convoy_transit_selection":[0,1072],"convoy_transit_dispatch":[58,10],"convoy_transit_case":[94,2],"convoy_transit_story_factory":[7416,30],"convoy_transit_story_slot":[0,72],"convoy_transit_departure":[0,6536],"convoy_transit_weapon_interval":[0,3320]}
+
 static func parameters(data: Variant) -> bool:
 	return Equal.equal_value(data,VALUES)
 
