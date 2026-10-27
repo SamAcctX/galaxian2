@@ -45,6 +45,12 @@ func verify(content: String, pack: String, pixels: String) -> void:
 	check(not hud.present(bad) and hud._sample==before,"Foreign sample replaced marker art")
 	bad=sample.duplicate(true);bad.selected_target.name_text_id=library.strings.size()
 	check(not hud.present(bad) and hud._sample==before and hud.information_snapshot()==information,"Invalid selected identity replaced the accepted target display")
+	var junk:=sample.duplicate(true);junk.selected_target.actor_kind=-1
+	check(hud.present(junk),"Scanned Junk (kind -1) halted the panel: "+hud.error)
+	for kind in [11,-2]:
+		bad=sample.duplicate(true);bad.selected_target.actor_kind=kind
+		check(not hud.present(bad),"Selected kind %d was accepted"%kind)
+	hud.present(sample)
 	bad=sample.duplicate(true);bad.animation_frame=25
 	check(not hud.present(bad) and hud._sample==before,"Out-of-range animation replaced marker art")
 	check(hud.present({}) and not hud.visible,"Missing capability retained markers")
