@@ -87,7 +87,7 @@ func present(sample: Dictionary,suppress_information:=false) -> bool:
 	var information:={}
 	var selected: Variant=sample.get("selected_target",{})
 	if not selected is Dictionary:return fail("Invalid selected NPC information")
-	# ponytail: a dropped Junk container (kind -1) shows no panel until its "Nt Space Waste" label is plumbed through.
+	# Junk (kind -1) has no scanner panel; the tractor and the pickup message handle its crate.
 	if sample.visible and not suppress_information and not selected.is_empty() and selected.get("actor_kind")!=-1:
 		if not Numbers.integer(selected.get("actor_kind"),0,10) or not Numbers.integer(selected.get("name_text_id"),-1,_strings.size()-1) or not Numbers.integer(selected.get("hull_percent"),0,100):return fail("Selected NPC identity or hull is invalid")
 		var named: bool=selected.name_text_id>=0

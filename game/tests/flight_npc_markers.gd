@@ -52,7 +52,7 @@ func verify(content: String, pack: String, pixels: String) -> void:
 		check(not hud.present(bad),"Selected kind %d was accepted"%kind)
 	hud.present(sample)
 	var scanner=preload("res://src/simulation/opening_npc_scanner.gd")
-	for row in [["debris",0,true,false],["debris",4,true,true],["debris",4,false,false],["ship",0,true,true]]:
+	for row in [["debris",0,true,false],["debris",4,true,false],["debris",4,false,false],["ship",0,true,true]]:
 		var actor:={"population_group":row[0],"actor_mode":row[1],"active":row[2]}
 		check(scanner.scannable(actor)==row[3],"Scanner eligibility wrong for %s"%str(row))
 	bad=sample.duplicate(true);bad.animation_frame=25

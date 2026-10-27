@@ -236,9 +236,9 @@ func valid_mode(actor_id: int,mode: Variant) -> bool:
 static func selectable(actor: Dictionary) -> bool:
 	return actor.active and not selection_retired(actor)
 
-## Live Junk is a weapon target only; the scanner marks and locks just its dropped container.
+## Junk is a weapon target only; its dropped crate is locked by the tractor, never the scanner.
 static func scannable(actor: Dictionary) -> bool:
-	return selectable(actor) and (actor.get("population_group")!="debris" or int(actor.actor_mode) in [3,4])
+	return selectable(actor) and actor.get("population_group")!="debris"
 
 static func selection_retired(actor: Dictionary) -> bool:
 	# Junk removes its body immediately. A dropped container keeps the same
