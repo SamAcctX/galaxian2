@@ -309,7 +309,8 @@ func _career(bindings: RefCounted,cat: RefCounted,data: Dictionary,equipment: Re
 	if data.has("stats") and not Locations.Medals.valid_stats(data.stats):return reject("The saved career stats are invalid")
 	if data.has("elite_medals") and not preload("res://src/simulation/elite_medal_progress.gd").valid_earned(data.elite_medals):return reject("The saved add-on medals are invalid")
 	if data.has("rejected_jobs") and not Numbers.integer(data.rejected_jobs,0,2147483647):return reject("The saved refused-job count is invalid")
-	if (cursor!=13 and data.completed_side_missions<4) or not data.get("mission") is Dictionary or data.get("pending_result")!={} or not data.get("accepted_contact") is Dictionary:return reject("The save has an unresolved result or unsupported career boundary")
+	var gate: Dictionary=bindings.mido_travel.return_visit.contract_gate
+	if (cursor!=13 and data.completed_side_missions<int(gate.initial_completed_count)+int(gate.additional_completions)) or not data.get("mission") is Dictionary or data.get("pending_result")!={} or not data.get("accepted_contact") is Dictionary:return reject("The save has an unresolved result or unsupported career boundary")
 	if not preload("res://src/content/gate_arrival_definitions.gd").valid_statistics(data.get("travel_statistics")):return reject("The saved career lost its travel statistics")
 	if not data.get("delivery_statistics") is Dictionary or data.delivery_statistics.size()!=2:return reject("Missing delivery statistics")
 	for key in ["cargo","passengers"]:
