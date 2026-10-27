@@ -85,13 +85,13 @@ func present(sample: Dictionary,suppress_information:=false) -> bool:
 	for marker in sample.markers:
 		if not marker is Dictionary or not marker.get("pixels") is Vector2i or not marker.get("near") is bool or not marker.get("selected") is bool or not marker.get("hostile") is bool or not Numbers.integer(marker.get("hull_percent"),0,100):return fail("Invalid NPC marker row")
 	var information:={}
-	# ponytail: Junk (kind -1) reuses the unknown-object label (text 405) and no badge; swap in the original's label once checked.
 	var selected: Variant=sample.get("selected_target",{})
 	if not selected is Dictionary:return fail("Invalid selected NPC information")
-	if sample.visible and not suppress_information and not selected.is_empty():
-		if not Numbers.integer(selected.get("actor_kind"),-1,10) or not Numbers.integer(selected.get("name_text_id"),-1,_strings.size()-1) or not Numbers.integer(selected.get("hull_percent"),0,100):return fail("Selected NPC identity or hull is invalid")
+	# ponytail: a dropped Junk container (kind -1) shows no panel until its "Nt Space Waste" label is plumbed through.
+	if sample.visible and not suppress_information and not selected.is_empty() and selected.get("actor_kind")!=-1:
+		if not Numbers.integer(selected.get("actor_kind"),0,10) or not Numbers.integer(selected.get("name_text_id"),-1,_strings.size()-1) or not Numbers.integer(selected.get("hull_percent"),0,100):return fail("Selected NPC identity or hull is invalid")
 		var named: bool=selected.name_text_id>=0
-		var id: int=selected.name_text_id if named else 395+(10 if selected.actor_kind<0 else int(selected.actor_kind))
+		var id: int=selected.name_text_id if named else 395+int(selected.actor_kind)
 		if id>=_strings.size() or _strings[id].is_empty():return fail("Selected NPC has no localized identity")
 		var special: bool=selected.name_text_id in [1600,1652]
 		var label: String=String(selected.get("display_name",_strings[id]))
